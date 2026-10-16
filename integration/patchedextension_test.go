@@ -182,9 +182,8 @@ echo "AUTOMODE=$(tr -d ' \n' < "$HOME/` + patchTreeAutomode + `")"`
 	refused := runCommand(t, t.TempDir(), append(jailRunArgs(), "--", "bash", "-c", probe),
 		withoutFixtureProgramInstall(), withHostSemantics())
 	if refused.rc == 0 || strings.Contains(refused.combined(), "LINE10=") ||
-		!strings.Contains(refused.combined(), "ERROR: extension "+owner+": patch application failed at upstream v1.2.0") ||
-		!strings.Contains(refused.combined(), "Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo") ||
-		!strings.Contains(refused.combined(), "Refusing to launch: the patch series of extension "+owner+" does not apply") {
+		!strings.Contains(refused.combined(), "ERROR: extension "+owner+": patch series does not apply to upstream v1.2.0") ||
+		!strings.Contains(refused.combined(), "\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES="+owner+" yolo ") {
 		t.Fatalf("the launch after v1.2.0 was not refused with its error block: rc %d\n%s", refused.rc, refused.combined())
 	}
 	out = launch("the bypassed launch after v1.2.0", withEnv("YOLO_ALLOW_PATCH_FAILURES=1"))
@@ -210,7 +209,7 @@ echo "AUTOMODE=$(tr -d ' \n' < "$HOME/` + patchTreeAutomode + `")"`
 	// conflict, mid-rebase in the clone it made.
 	var recipe []string
 	for _, line := range strings.Split(upd, "\n") {
-		if c, ok := strings.CutPrefix(line, "      git "); ok {
+		if c, ok := strings.CutPrefix(line, "    git "); ok {
 			recipe = append(recipe, "git "+c)
 		}
 	}

@@ -536,8 +536,11 @@ func TestExplicitPostRetryGuardRejectsChangedAuthority(t *testing.T) {
 	}
 }
 
-// check, even when that later check has the same inputs and contains the same newer candidate. The
+// check, even when that later check has the same inputs and contains a newer candidate. The
 // pass-through load seam mutates the actual record immediately before the caller's actual reread.
+// The newer release is published inside that seam, with the later check: a release present at the
+// update's own check would make it walk from the newest instead of retrying the recorded failure
+// (docs/design/patched-build-recovery.md §6.2), which is not the seam this pins.
 func TestPackUpdateStopsAfterLaterCheckArrivesBetweenRetryAndReread(t *testing.T) {
 	t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "")
 	fx, _ := patchedActorLaunch(t)
@@ -560,7 +563,7 @@ func TestPackUpdateStopsAfterLaterCheckArrivesBetweenRetryAndReread(t *testing.T
 	if rc, _, errw := packVerb(t, "update"); rc == 0 || !strings.Contains(errw, "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 		t.Fatalf("fixture did not persist its exact transient target failure: rc=%d\n%s", rc, errw)
 	}
-	v13 := fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty", 21: "twenty-one"})
+	var v13 string
 	f := fx.fork(t)
 	series, err := f.ReadSeries()
 	if err != nil {
@@ -583,6 +586,8 @@ func TestPackUpdateStopsAfterLaterCheckArrivesBetweenRetryAndReread(t *testing.T
 		check := *record.Check
 		check.Seq = record.Seq
 		check.At++
+		v13 = fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty", 21: "twenty-one"})
+		check.List = append([]packsrc.ListEntry{{Commit: v13, Tag: "v1.3.0", Version: "1.3.0"}}, check.List...)
 		record.Check = &check
 		data, err := json.Marshal(record)
 		if err != nil {
@@ -690,7 +695,8 @@ func TestPackUpdateDoesNotAdoptANewerCheckSnapshot(t *testing.T) {
 }
 
 // A pure-core current failure found by the post-retry reread is consumed as that new authority;
-// the older operation's clean retry must not overwrite it or turn it into a fit.
+// the older operation's clean retry must not overwrite it or turn it into a fit. The later check
+// and its newer release arrive inside the reread seam, as in the test above (§6.2).
 func TestPackUpdateConsumesCurrentFailureFromLaterCheckAfterRetry(t *testing.T) {
 	t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "")
 	fx, _ := patchedActorLaunch(t)
@@ -712,7 +718,7 @@ func TestPackUpdateConsumesCurrentFailureFromLaterCheckAfterRetry(t *testing.T) 
 	if rc, _, errw := packVerb(t, "update"); rc == 0 || !strings.Contains(errw, "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 		t.Fatalf("fixture did not persist its transient target failure: rc=%d\n%s", rc, errw)
 	}
-	v13 := fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty", 21: "twenty-one"})
+	var v13 string
 	f, series := fx.fork(t), mustSeries(t, fx)
 	store := &packsrc.Store{Dir: paths.PacksDir()}
 	previousLoad := explicitPostRetryRecordLoad
@@ -725,10 +731,9 @@ func TestPackUpdateConsumesCurrentFailureFromLaterCheckAfterRetry(t *testing.T) 
 		record.Seq++
 		check := *record.Check
 		check.Seq, check.At = record.Seq, check.At+1
+		v13 = fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty", 21: "twenty-one"})
+		check.List = append([]packsrc.ListEntry{{Commit: v13, Tag: "v1.3.0", Version: "1.3.0"}}, check.List...)
 		record.Check = &check
-		if len(check.List) == 0 || check.List[0].Commit != v13 {
-			return nil, fmt.Errorf("later finished check lost shared newer candidate %s", v13)
-		}
 		record.PatchFailure = &packsrc.PatchFailure{Owner: fork.Key(), Inputs: record.Read, Series: s.Digest,
 			Target: check.List[0], Kind: "conflict", Member: "later-authority.patch", Paths: []string{"later.txt"}, Seq: record.Seq}
 		data, err := json.Marshal(record)
