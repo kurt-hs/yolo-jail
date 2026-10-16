@@ -51,8 +51,8 @@ away anything it already shows? Bedrock cost is a later design ([Later](#later-c
 
 **Reads with:** [`providers.md`](../reference/providers.md#profiles-and-options) (what a provider and a profile are);
 [`bedrock-plumbing.md`](bedrock-plumbing.md) (the everything profile, [OQ-BR11](bedrock-plumbing.md#OQ-BR11)) and
-[`wire-bridge-gateway.md`](wire-bridge-gateway.md) (the bridge signer [OQ-BR10](wire-bridge-gateway.md#OQ-BR10) and
-subscription failover [OQ-BR17](wire-bridge-gateway.md#OQ-BR17));
+[`wire-bridge-gateway.md`](wire-bridge-gateway.md) (the bridge signer [OQ-BR10](wire-bridge-gateway.md#decision-ledger) and
+subscription failover [OQ-BR17](wire-bridge-gateway.md#decision-ledger));
 [`handoff-guest-notch-macos.md`](../plans/handoff-guest-notch-macos.md) (the three notches, and why `guest` was unbuilt; on macOS it launches since 2026-10-04).
 
 ## Settled questions
@@ -128,7 +128,7 @@ follows in parentheses.
 
 **A bridged route shows the profile and `(bridge)`, never an upstream.** The everything profile
 ([OQ-BR11](bedrock-plumbing.md#OQ-BR11)) serves Anthropic ids untranslated, translates the rest, and may fail over
-per model to Bedrock ([OQ-BR17](wire-bridge-gateway.md#OQ-BR17)), so no one provider name is true. The pack marks
+per model to Bedrock ([OQ-BR17](wire-bridge-gateway.md#decision-ledger)), so no one provider name is true. The pack marks
 which of its routes are bridged; yolo does not infer it.
 
 ### 1.2 The notch
@@ -478,7 +478,7 @@ You asked for Bedrock cost in a future doc, so none of it is ruled here. Facts f
 
 - No agent reports a billed Bedrock figure. Claude prices at Anthropic list, and guesses $5/$25 per million tokens
   for a bridged non-Anthropic model without saying so.
-- The bridge publishes no failover state. Once [OQ-BR17](wire-bridge-gateway.md#OQ-BR17) is built, failover is per
+- The bridge publishes no failover state. Once [OQ-BR17](wire-bridge-gateway.md#decision-ledger) is built, failover is per
   model and holds until that model's limit resets, and the everything route picks an upstream per request by id, so
   any state file is per model (upstream, and since when), not one "current upstream".
 - A per-session meter needs a session key the bridge lacks (one daemon per jail; whether Claude's session header
