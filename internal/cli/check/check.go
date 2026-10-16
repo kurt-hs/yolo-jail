@@ -684,6 +684,15 @@ func (o *Options) sectionMergedConfig(r *reporter, merged *jsonx.OrderedMap, wor
 		return true
 	}
 	r.ok("Merged config is semantically valid")
+	// Optional `mounts` elements this backend will skip, in the launch's own words: information,
+	// never a finding, because the user marked each one may-be-absent
+	// (docs/reference/context-mounts.md#optional-mounts). Not in the jail's own workspace, whose
+	// sources are host paths that are not here (validateMounts' reason).
+	if !(o.inJail() && config.IsJailOwnWorkspace(workspace)) {
+		for _, line := range run.OptionalMountSkips(workspace, merged, runtimeSel) {
+			r.dim(termsafe.Visible(line))
+		}
+	}
 	if o.AcceptConfigChanges {
 		if o.inJail() {
 			r.warn("--accept-config-changes is host-only (disabled inside running jail)",

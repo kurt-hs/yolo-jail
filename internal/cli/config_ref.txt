@@ -571,6 +571,7 @@
     read-write mount:
       {"host": "~/scratch/datasets", "at": "/ctx/data", "mode": "rw"}
       {"host": "~/notes", "mode": "ro"}
+      {"host": "~/notes", "mode": "ro", "optional": true}   (see "optional" below)
     `mode` is REQUIRED ("ro" or "rw") — there is no default, so a writable
     mount is never one you did not write.  `at` is optional (default
     /ctx/<basename>); a read-write mount must land UNDER /ctx/, where it can
@@ -641,6 +642,23 @@
     Tools that resolve paths print the host path there, and a subfolder the
     sandbox account may not read stays unreadable.  An entry whose source
     does not exist is skipped with a warning, as on every backend.
+    [bold]"optional": true[/bold] (object entries only; default false) marks an entry
+    this backend may not be able to deliver.  Where a required entry would
+    refuse the launch (macos-user can't reach the folder; the macOS Podman
+    Machine doesn't share it) or be skipped with a warning (a read-only entry
+    on an Apple Container older than 1.1.0; a source that does not exist), an
+    optional one is skipped with one plain line and the launch goes on:
+      {"host": "~/.local/share/yolo-jail/logs", "at": "/ctx/host-yolo-logs",
+       "mode": "ro", "optional": true}
+      skipped optional mount: ~/.local/share/yolo-jail/logs → /ctx/host-yolo-logs (macos-user can't reach a folder inside a home)
+    The agent's briefing marks an optional entry "may be absent".  `yolo
+    check` lists what this backend will skip as information.  A string entry
+    has no optional form: a ":optional" suffix is a `yolo check` error naming
+    the object form.  Optional never softens a safety refusal: a read-write
+    source in the refused set above, a source the broker mount fence refuses,
+    and on macos-user a source containing every home, inside the sandbox
+    account's home, or in yolo's own state directory all still refuse, as
+    does a jail-path collision.
 
   [bold]cache_relocations[/bold] (object): Put a jail cache subdir on other storage.
     Keys are cache SUBDIR NAMES, not paths — a single path segment, no "/",
