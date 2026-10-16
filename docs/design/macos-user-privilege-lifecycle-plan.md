@@ -801,7 +801,7 @@ file in flux. Every task runs `just format` before its commit and stages only it
   1. Enrollment: judge the staging root. Foreign with a human uid (≥ 501, not `_yolojail`) →
      second-enrollment refusal, naming the owner (`os/user.LookupId`); foreign otherwise → squat
      refusal. Both before any `sudo`. Then ask the existing rule through `deps.Run`:
-     `/usr/bin/sudo /usr/bin/grep -qx -e '<user> ALL=(_yolojail) NOPASSWD: /usr/bin/env'
+     `/usr/bin/sudo /usr/bin/grep -qxF -e '<user> ALL=(_yolojail) NOPASSWD: /usr/bin/env'
      /etc/sudoers.d/yolo-jail`. Exit 0 is ours, 2 is absent (both continue), 1 is another
      user's rule: the second-enrollment refusal, naming "another macOS user".
   2. Disclose: `• Granting <user> one standing right: run commands as _yolojail, never as root,
@@ -966,15 +966,14 @@ file in flux. Every task runs `just format` before its commit and stages only it
 
 Needs the owner's explicit authorization ([what may happen next](macos-user-privilege-lifecycle.md#what-may-happen-next)):
 it installs the rule on a real machine. On a Mac set up by an older yolo, with one old session
-left running in another terminal:
+left running in another terminal. The
+[runbook](../plans/runbooks/mac-macos-user-e2e.md#8-passwordless-start-and-stop-the-owners-check)
+carries this check as run, with each row's exact text.
 
 1. `yolo macos-setup`: one password prompt; it reports installing the rule, and its ready
    verdict ends "Launches start and stop with no password from now on."; the old session keeps
    running.
 2. `sudo -k; yolo check --no-build`: the four new rows pass.
-
-The [runbook](../plans/runbooks/mac-macos-user-e2e.md#8-passwordless-start-and-stop-the-owners-check)
-carries this check as run, with each row's exact text.
 3. `sudo -k; yolo -- /bin/sh -c 'id -un' </dev/null`: prints `_yolojail`, no prompt.
 4. In a project with a pack whose program installs by capture: `sudo -k; yolo capture <bin>`:
    no prompt.
