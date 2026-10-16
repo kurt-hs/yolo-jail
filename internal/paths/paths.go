@@ -1169,7 +1169,14 @@ func UpdateCheckDir() string { return filepath.Join(GlobalStorage(), "update-che
 // (docs/design/pi-extension-store-builds.md XB-D19, XB-D20). A dedicated leaf for UpdateCheckDir's
 // reasons: never under cache/, which every jail mounts read-write, since a jail must not be able to
 // write the line the host's next launch prints.
-func BackgroundAdvanceDir() string { return filepath.Join(GlobalStorage(), "background-advance") }
+func BackgroundAdvanceDir() string { return BackgroundAdvanceDirUnder(home()) }
+
+// BackgroundAdvanceDirUnder is BackgroundAdvanceDir under an EXPLICIT home — see
+// GlobalStorageUnder for why a caller that has already resolved which home it means must not
+// re-derive it from $HOME.
+func BackgroundAdvanceDirUnder(home string) string {
+	return filepath.Join(GlobalStorageUnder(home), "background-advance")
+}
 
 // UserConfigPath returns $HOME/.config/yolo-jail/config.jsonc (or config.json if config.jsonc is absent).
 func UserConfigPath() string {
