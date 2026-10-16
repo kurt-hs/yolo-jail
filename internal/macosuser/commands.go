@@ -608,9 +608,18 @@ func installSudoersRule(deps Deps, out printer, rule string) int {
 		stop("visudo rejected yolo's sudo rule. Nothing was installed.", output)
 		return reportBug()
 	}
-	if mv := rootArgv([]string{mvBin, "-f", SudoersStagingFile, SudoersFile}); deps.Run(mv) != 0 {
+	// notInstalled is the stop for a failed move of the checked rule into place: the rule is not
+	// installed, the complaints are fixed first, and setup runs again.
+	notInstalled := func(mv []string, complaints []string) int {
 		deps.Run(dropStaged)
-		return stepFailed(mv)
+		stop("yolo's sudo rule is not installed: "+shquote.JoinDisplay(mv)+" failed.",
+			strings.Join(complaints, "\n"))
+		out.commands(append(sudoersRemedies(complaints), "yolo macos-setup")...)
+		out.blank()
+		return 1
+	}
+	if mv := rootArgv([]string{mvBin, "-f", SudoersStagingFile, SudoersFile}); deps.Run(mv) != 0 {
+		return notInstalled(mv, nil)
 	}
 	configCheck := rootArgv([]string{visudoBin, "-c"})
 	withRule, rc := runQuietly(deps, configCheck)
@@ -649,8 +658,7 @@ func installSudoersRule(deps Deps, out printer, rule string) int {
 		// and skips one it cannot trust without dropping the rest; only visudo insists on 0440. So
 		// the rule goes back in, and proveRunAsGrant then shows sudo honors it.
 		if mv := rootArgv([]string{mvBin, "-f", SudoersStagingFile, SudoersFile}); deps.Run(mv) != 0 {
-			deps.Run(dropStaged)
-			return stepFailed(mv)
+			return notInstalled(mv, pre)
 		}
 		out.blank()
 		out.printf("[bold yellow]⚠ Installed %s. visudo -c also fails without it:[/bold yellow]", SudoersFile)
