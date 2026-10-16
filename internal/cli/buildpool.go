@@ -540,6 +540,7 @@ func addForkKeys(pool *buildPool, req run.ForkBuildRequest, color bool, answer f
 		if p.Fork.Patched() {
 			pool.add(p.Fork.Label(), func(it *poolItem) {
 				if req.FreshUpdate {
+					noteSkipPatchesFresh(it.stream(), color, p.Fork)
 					after := req.FreshBoundary[p.Fork.Key()]
 					boundaryErr := req.FreshBoundaryErr[p.Fork.Key()]
 					result := advancePatchedFork(p.Fork, advanceOptions{platform: req.Platform, runtime: req.Runtime,

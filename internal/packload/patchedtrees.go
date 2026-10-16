@@ -35,25 +35,30 @@ func (f Fork) IsTree() bool { return f.Into != "" }
 // Every line of the shared implementation names its subject through here, so a fork's lines stay
 // what they were and an extension's say what it is.
 func (f Fork) Label() string {
-	if f.IsTree() {
-		return "extension " + f.Key()
+	suffix := ""
+	if f.Upstream {
+		suffix = " (upstream)" // an upstream build's lines name the fork, and that it is its upstream build
 	}
-	return "fork " + f.Key()
+	if f.IsTree() {
+		return "extension " + f.SeriesKey() + suffix
+	}
+	return "fork " + f.SeriesKey() + suffix
 }
 
 // Thing is what a jail goes without when f has nothing to serve: the program's bin for a fork,
 // "extension <key>" for a patched extension.
 func (f Fork) Thing() string {
 	if f.IsTree() {
-		return "extension " + f.Key()
+		return "extension " + f.SeriesKey()
 	}
 	return f.Bin
 }
 
-// CaptureArg is what `yolo capture` takes to build f now: a fork's bin, an extension's key.
+// CaptureArg is what `yolo capture` takes to build f now: a fork's bin, an extension's key. An
+// upstream build's is the fork's own, which `yolo capture` builds as one under YOLO_SKIP_PATCHES.
 func (f Fork) CaptureArg() string {
 	if f.IsTree() {
-		return f.Key()
+		return f.SeriesKey()
 	}
 	return f.Bin
 }

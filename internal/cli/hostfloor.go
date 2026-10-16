@@ -342,17 +342,28 @@ func clauseOf(s string) string {
 // read back off the base's rewritten program — the selection's rewrite (packload.forkedProgram)
 // copies the fork's source, build, produces and platforms into it verbatim, and names the fork pack
 // in ForkedBy — at commit, for this host's platform, which is the only one the floor runs a build of.
+//
+// UNDER YOLO_SKIP_PATCHES it is the fork's UPSTREAM BUILD (skippatches.go) for a patched fork the
+// variable covers, so every reader of the floor's program — the pre-write check, the floor's offline
+// state, its advance and the receipt it installs from — names the upstream build's own record and
+// entries, and the floor installs that build. Only a foreground host act's process carries the
+// variable: the detached preparation's environment never does (preparationEnvironment).
 func floorForkBuild(p hostfloor.Program, commit string) forkBuild {
-	in := p.Install
 	return forkBuild{
-		// Patches and Follow too, so a patched fork reads as one to the pinner, which never pins it
-		// (packload.PinForks, PF-D16); and the fork pack's root, which its series is read from.
-		Fork: packload.Fork{Pack: in.ForkedBy, Base: p.Pack, Bin: in.Bin, Source: in.Source, Build: in.Build,
-			Produces: in.Produces, Platforms: in.Platforms, Patches: in.Patches, Follow: in.Follow, PatchBranch: in.PatchBranch,
-			Root: in.ForkRoot},
+		Fork:     upstreamBuildOf(floorFork(p)),
 		Commit:   commit,
 		Platform: hostFloorCapturePlatform(),
 	}
+}
+
+// floorFork is the fork a floor program of a fork is, as its pack declares it. Patches and Follow
+// too, so a patched fork reads as one to the pinner, which never pins it (packload.PinForks,
+// PF-D16); and the fork pack's root, which its series is read from.
+func floorFork(p hostfloor.Program) packload.Fork {
+	in := p.Install
+	return packload.Fork{Pack: in.ForkedBy, Base: p.Pack, Bin: in.Bin, Source: in.Source, Build: in.Build,
+		Produces: in.Produces, Platforms: in.Platforms, Patches: in.Patches, Follow: in.Follow, PatchBranch: in.PatchBranch,
+		Root: in.ForkRoot}
 }
 
 // floorPatchedPlatform is the platform a patched fork's floor build is of: this host's, as a plain
@@ -643,11 +654,11 @@ func floorPatchedStateRecord(p hostfloor.Program, recorded *packsrc.CheckRecord,
 	}
 	switch {
 	case g == nil:
-		ps.Reason = "fork " + f.Key() + " has no build on this machine yet"
+		ps.Reason = f.Label() + " has no build on this machine yet"
 		return ps
 	case g.Recipe != recipe:
 		// THE USER'S EDIT (PF-D23): nothing serves until the edited series or recipe builds.
-		ps.Reason = "fork " + f.Key() + "'s patch series or build recipe changed since its good build " +
+		ps.Reason = f.Label() + "'s patch series or build recipe changed since its good build " +
 			run.GoodBuildLabel(g) + " — reverting the edit brings that build back"
 		return ps
 	}
@@ -957,6 +968,10 @@ func applyHostFloor(pr richtext.Printer, out io.Writer, packs []*packload.Pack, 
 		} else {
 			pr.Printf("%s", line)
 		}
+		if fork := floorFork(p); skipsPatches(fork) {
+			// YOLO_SKIP_PATCHES: the disclosure line, whatever the outcome.
+			sayUpstreamBuild(pr.W, pr.Color, "  ", "running", fork, nil)
+		}
 	}
 	if !complete {
 		return rc
@@ -1137,7 +1152,10 @@ func resolveHostLaunchTarget(packs []*packload.Pack, cmd0 string, lp *hostpath.L
 		fmt.Fprintf(errw, "yolo host: could not install %s into yolo's floor: %v\n", cmd0, err)
 		return hostTarget{}, 127
 	}
-	if prog.Install.IsPatchedFork() && st.Record != nil {
+	if fork := floorFork(prog); skipsPatches(fork) && st.Record != nil {
+		// YOLO_SKIP_PATCHES: the disclosure line of the upstream build the floor runs.
+		sayUpstreamBuild(errw, false, "yolo host: ", "running", fork, nil)
+	} else if prog.Install.IsPatchedFork() && st.Record != nil {
 		// A PATCHED FORK'S LINE (docs/reference/patched-forks.md §7, PF-D11, PF-D53), the one a jail
 		// launch's fork block prints, of the build the FLOOR runs: the series, that build, and the held
 		// suffix while something holds the newest upstream back — or, when the floor runs another build

@@ -89,7 +89,7 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 	if bin != "" {
 		command = "yolo host -- " + bin
 	}
-	var trees []packload.Fork
+	var trees, declared []packload.Fork // declared: each tree as its manifest declares it
 	for _, f := range packload.PatchedTrees(sel.packs) {
 		if !f.DeliveredAtHost() || (bin != "" && !ownerRuns(sel.packs, f, bin)) {
 			continue // no host render links a tree whose list entry reaches jails alone (PPX-D35)
@@ -97,11 +97,19 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 		if hostSkipped(f) {
 			continue // YOLO_SKIP_EXTENSIONS: not advanced or built; the render and the launch say it
 		}
+		declared = append(declared, f)
+		if !freshUpdate {
+			// YOLO_SKIP_PATCHES (skippatches.go): its upstream build, advanced now whatever the timing;
+			// --update prepares the series alone.
+			f = upstreamBuildOf(f)
+		} else {
+			noteSkipPatchesFresh(errw, color, f)
+		}
 		trees = append(trees, f)
 	}
 	var queued []packload.Fork
 	for _, f := range trees {
-		if treeUpdateTiming(f) == timingNextLaunch {
+		if !f.Upstream && treeUpdateTiming(f) == timingNextLaunch {
 			queued = append(queued, f)
 		}
 	}
@@ -148,7 +156,7 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 	results := make([]advanceResult, len(trees))
 	err := runTreesInParallelPrepared(trees, "", act, errw, errw, prepare,
 		func(i int, f packload.Fork, lane treeLane) {
-			if !freshUpdate && treeUpdateTiming(f) == timingNextLaunch && currentPatchFailure(f) == nil {
+			if !freshUpdate && !f.Upstream && treeUpdateTiming(f) == timingNextLaunch && currentPatchFailure(f) == nil {
 				if entry, _, _ := hostTreeServing(f, hostActPerf); entry != nil {
 					richtext.Printer{W: errw, Color: color}.Printf("[dim]%s[/dim]", richtext.Escape(
 						f.Label()+": using admitted build "+entry.Key+"; newer builds are prepared between host launches"))
@@ -172,6 +180,11 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 	}
 	var stopped []string
 	for i, r := range results {
+		if trees[i].Upstream && bin == "" && r.delivery.Key != "" {
+			// YOLO_SKIP_PATCHES at `yolo host apply --assert`: the disclosure line (a launch's is
+			// noteHostTreeLines').
+			sayUpstreamBuild(errw, color, "yolo host: ", "running", declared[i], r.good)
+		}
 		if freshUpdate && r.failed {
 			fmt.Fprintf(errw, "yolo host: refusing --update: fresh preparation of %s failed: %s — repair the named problem and retry, or launch without --update for ordinary recovery\n", trees[i].Label(), r.freshFailure())
 		}
@@ -287,7 +300,7 @@ func hostLaunchTrees(packs []*packload.Pack, bin string) []packload.Fork {
 	var out []packload.Fork
 	for _, f := range packload.PatchedTrees(packs) {
 		if f.ListedAtHost && ownerRuns(packs, f, bin) && f.Fallback == "" && !hostSkipped(f) {
-			out = append(out, f)
+			out = append(out, upstreamBuildOf(f)) // YOLO_SKIP_PATCHES links its upstream build
 		}
 	}
 	return out
@@ -468,7 +481,7 @@ func renderHostTrees(p *packload.Pack, packs []*packload.Pack, home string, man 
 			}
 			continue
 		}
-		out = append(out, renderHostTree(f, home, man, observe))
+		out = append(out, renderHostTree(upstreamBuildOf(f), home, man, observe)) // YOLO_SKIP_PATCHES: its upstream build
 	}
 	return out
 }
@@ -680,6 +693,13 @@ func noteHostTreeLines(errw io.Writer, color bool, bin, home string) {
 				pr.Printf("[dim]%s[/dim]", richtext.Escape("yolo host: "+hostFallbackLine(f)))
 				continue
 			}
+		}
+		if u := upstreamBuildOf(f); u.Upstream {
+			// YOLO_SKIP_PATCHES: the disclosure line of the upstream build the link names.
+			if hostTreeLine(u, home) != "" {
+				sayUpstreamBuild(errw, color, "yolo host: ", "running", f, nil)
+			}
+			continue
 		}
 		if line := hostTreeLine(f, home); line != "" {
 			pr.Printf("[dim]%s[/dim]", richtext.Escape("yolo host: "+line))
