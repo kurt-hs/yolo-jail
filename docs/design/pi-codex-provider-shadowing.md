@@ -59,7 +59,7 @@ and a profile routing one of them through the wire bridge stops doing so in that
 declares for a provider an agent has built in? [OQ-3](#OQ-3) was ruled in review on 2026-10-05:
 the rule covers every provider an agent has built in.
 
-**Released:** pi's Converse route through the wire bridge. [OQ-WG8](wire-bridge-gateway.md#OQ-WG8)
+**Released:** pi's Converse route through the wire bridge. [OQ-WG8](wire-bridge-gateway.md#decision-ledger)
 was decided on 2026-09-30 as [WG-I36](wire-bridge-gateway.md#WG-I36), which left where pi's
 override row lives to [OQ-3](#OQ-3). Under the ruling it may not sit on pi's built-in
 `amazon-bedrock`, so it sits under yolo's own provider key (the shipped `bedrock`) with
@@ -464,7 +464,7 @@ oh-omp 0.15.3, opencode 1.18.32; none of them run):
   row under the provider's own key, and pi and omp already drop it for `openai-codex` under this
   rule. A via profile selecting any of them would re-point nothing, which the launch discloses
   as a via with no effect.
-- **[OQ-WG8](wire-bridge-gateway.md#OQ-WG8)'s override is forbidden.** A `baseUrl` on pi's
+- **[OQ-WG8](wire-bridge-gateway.md#decision-ledger)'s override is forbidden.** A `baseUrl` on pi's
   built-in `amazon-bedrock` is a `models.json` row for a provider pi implements natively. WG8's
   options (a) and (b) both put the re-pointing there. So under this reading WG8 needs its row
   under a key pi does not implement, where whether pi's Converse client still serves it is
@@ -473,7 +473,7 @@ oh-omp 0.15.3, opencode 1.18.32; none of them run):
   with its releases. Keeping it true is the provider marker [OQ-1](#OQ-1) deferred.
 
 **Under the narrow reading**, nothing built changes. `openai-codex` stays excluded in pi, omp
-and codex, and every row above is kept, via rows included. [OQ-WG8](wire-bridge-gateway.md#OQ-WG8)'s override is allowed, since
+and codex, and every row above is kept, via rows included. [OQ-WG8](wire-bridge-gateway.md#decision-ledger)'s override is allowed, since
 pi's `amazon-bedrock` is no subscription: it authenticates with a bearer token or the AWS
 credential chain. The reading has one edge to state. pi's `openrouter` has an OAuth sign-in of
 its own and omp's `kilo` a device-code sign-in, and neither is a subscription, so both stay
@@ -500,7 +500,7 @@ Read 2026-10-05 from the copies installed in this jail, not run: pi 1.0.1 and op
     serves the coding plan is the build's to read.
 - **Routing through the wire bridge stops for those providers** in that agent: a via profile
   selecting one re-points nothing, which the launch discloses as a via with no effect.
-- **[OQ-WG8](wire-bridge-gateway.md#OQ-WG8)'s override may not sit on pi's `amazon-bedrock`**:
+- **[OQ-WG8](wire-bridge-gateway.md#decision-ledger)'s override may not sit on pi's `amazon-bedrock`**:
   [WG-I36](wire-bridge-gateway.md#WG-I36)'s Converse route needs a key pi does not implement, or
   is not built.
 - **The name list goes stale** when an agent adds a provider: until its pack's list names the new
@@ -640,7 +640,7 @@ installed in the jail, and oh-omp 0.15.3's linux-x64 binary fetched with `npm pa
    own client and login (the narrow reading), which is how [P1](#1-verdict-and-core-principles)'s
    example describes it? The two readings agree on `openai-codex`, the only shipped provider the
    narrow reading reaches today. The broad reading also changes four other providers' rows in three
-   agents, and it decides [OQ-WG8](wire-bridge-gateway.md#OQ-WG8), which defers to this rule.
+   agents, and it decides [OQ-WG8](wire-bridge-gateway.md#decision-ledger), which defers to this rule.
 
    What each reading changes, agent by agent:
    [§6.4](#64-what-each-reading-of-the-rule-changes).
@@ -652,7 +652,7 @@ installed in the jail, and oh-omp 0.15.3's linux-x64 binary fetched with `npm pa
    carries the same kind of credential the agent's own client reads, an API key, so that harm
    cannot arise there. The broad reading would take away behavior the shipped packs rely on, above
    all opencode's zai coding plan. It would also turn off via for every same-named provider and
-   forbid [OQ-WG8](wire-bridge-gateway.md#OQ-WG8)'s shape, and it fixes no reported failure.
+   forbid [OQ-WG8](wire-bridge-gateway.md#decision-ledger)'s shape, and it fixes no reported failure.
 
    **Answer:**
    > **Ruled in review 2026-10-05: the broad reading, against the leaning above.** The maintainer

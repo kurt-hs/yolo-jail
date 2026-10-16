@@ -240,7 +240,7 @@ Collected so an implementer does not discover them one at a time.
   backend is a separate question, and it is answered: `HOME` stays the machine tier and a
   per-workspace tier of symlinks sits inside it
   ([`OQ-HT4`](../reference/macos-user-home-tiers.md#oq-ht4), which answers
-  [`OQ-WP12`](../reference/workspace-path-mirroring.md#OQ-WP12)).
+  [`OQ-WP12`](../reference/workspace-path-mirroring.md#decision-ledger)).
 
 ## 8. Open questions
 

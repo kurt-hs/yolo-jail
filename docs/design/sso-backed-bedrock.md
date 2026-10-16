@@ -158,7 +158,7 @@ deliberately does not build would live),
 [`wire-bridge-gateway.md`](wire-bridge-gateway.md) (the wire bridge as the jail's model gateway:
 its [DIR-WG1](wire-bridge-gateway.md#decision-ledger) reopens [§9](#9-non-goals)'s "not a
 gateway, not a proxy, not a model router" for the bridge, not for this credential service, and
-its [OQ-BR10](wire-bridge-gateway.md#OQ-BR10) — the bridge signs — is
+its [OQ-BR10](wire-bridge-gateway.md#decision-ledger) — the bridge signs — is
 the premise of [OQ-SSO9](#OQ-SSO9)'s retirement),
 [`providers.md`'s credential gate](../reference/providers.md#the-credential-gate) (which agent a profile's
 credentials reach — the per-agent half this doc does not decide).
@@ -926,7 +926,7 @@ Which of the seven the 2026-09-29 live-login try-out met, and which it did not, 
   gateway for every agent's model traffic, so models can be filtered and agents routed. That is
   not this credential service growing a proxy, and it is not option E either: option E keeps the
   credential on the host and re-signs there, while the bridge signs **inside** the jail with the
-  credential this doc's pointer serves ([OQ-BR10](wire-bridge-gateway.md#OQ-BR10)). This
+  credential this doc's pointer serves ([OQ-BR10](wire-bridge-gateway.md#decision-ledger)). This
   non-goal stays true of everything this doc builds.
 - **No AWS credentials for anything but inference.** This design does not give a jail a way to
   call S3, deploy, or read Secrets Manager, and no configuration of it should.
@@ -1302,7 +1302,7 @@ Bedrock credential comes from. Two terms both use:
      ([§11](#11-evidence-and-how-to-re-check-it)). INFERRED for claude, codex and opencode, whose
      SDKs document the same environment-first order.
    - **The wire bridge would pick the same winner.** Its signer, ruled in
-     [OQ-BR10](wire-bridge-gateway.md#OQ-BR10), resolves static keys before the `aws-auth`
+     [OQ-BR10](wire-bridge-gateway.md#decision-ledger), resolves static keys before the `aws-auth`
      endpoint. INFERRED: the signer is unbuilt.
 
    | Option | Verdict |
@@ -1441,7 +1441,7 @@ Bedrock credential comes from. Two terms both use:
    minted bearer for copilot, for claude on a non-Anthropic model, and for any agent pointed at
    the gateway route. That was D's whole audience.
 
-   **What the signing bridge changes.** [OQ-BR10](wire-bridge-gateway.md#OQ-BR10) (answered
+   **What the signing bridge changes.** [OQ-BR10](wire-bridge-gateway.md#decision-ledger) (answered
    2026-09-24) has the bridge sign with SigV4 from the chain credential `aws-auth` serves.
    claude and copilot reach the gateway route only through the bridge; codex, opencode and pi
    have native Bedrock clients that take a chain credential; and pi's second path, ruled in

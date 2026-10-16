@@ -48,7 +48,7 @@ is its other half.
 [§11](#11-decision-ledger).
 
 **Reads with:** [`jail-notch-readiness.md`](jail-notch-readiness.md) (the act this mirrors, and the
-[`OQ-JR1`](jail-notch-readiness.md#OQ-JR1) contract it copies), [`host-tool-provisioning.md`](host-tool-provisioning.md) (the floor,
+[`OQ-JR1`](jail-notch-readiness.md#9-decision-ledger) contract it copies), [`host-tool-provisioning.md`](host-tool-provisioning.md) (the floor,
 and `HP-D3` which [HNR-D1](#HNR-D1) reverses), [`../reference/host-agent-environment.md`](../reference/host-agent-environment.md)
 ([`OQ-HE11`](../reference/host-agent-environment.md#oq-he11) (a), which [HNR-D2](#HNR-D2) reverses), [`../plans/notch-convergence.md`](../plans/notch-convergence.md)
 (`NC-D1`: *"host is supposed to act like everywhere else"*).
@@ -74,7 +74,7 @@ Neither is built. Both reverse a ruled decision, and each reversal is recorded i
 ## 2. What existed before the build, and the asymmetry
 
 **The jail** has a launch readiness act since 2026-10-05 ([`jail-notch-readiness.md`](jail-notch-readiness.md),
-[`OQ-JR1`](jail-notch-readiness.md#OQ-JR1)): the boot's provisioning stage installs every program
+[`OQ-JR1`](jail-notch-readiness.md#9-decision-ledger)): the boot's provisioning stage installs every program
 a selected pack declares, before the command, and stops when one cannot install, offline included,
 unless `YOLO_ALLOW_MISSING_PROGRAMS=1` is set. The act lives in
 [`readiness.go`](../../internal/entrypoint/readiness.go).
@@ -116,7 +116,7 @@ declares, before it resolves and execs the target.**
 | **Order** | `floorPrograms` order, which is the pack order. Independent programs may install concurrently as `Ensure` already allows; the per-program lock serializes one program. |
 | **Prompt** | None. `HP-D3` already withdrew the host floor's consent step; a launch with no terminal installs. |
 | **On success** | Continue to target resolution. Each install already prints its own line (`hostfloor.Ensure`), and a warm floor prints nothing but still probes. |
-| **On failure** | **Refuse the launch** (nonzero, before the target runs), naming the program, its pack, the floor's reason or the installer's error, and the way back. This is [`OQ-JR1`](jail-notch-readiness.md#OQ-JR1)'s contract. |
+| **On failure** | **Refuse the launch** (nonzero, before the target runs), naming the program, its pack, the floor's reason or the installer's error, and the way back. This is [`OQ-JR1`](jail-notch-readiness.md#9-decision-ledger)'s contract. |
 | **Bypass** | `YOLO_ALLOW_MISSING_PROGRAMS=1` (`paths.AllowMissingProgramsEnv`, the jail's one spelling, [HNR-D3](#HNR-D3)): the launch proceeds and lists each program it could not install, in the jail's wording. |
 | **`cmd0`** | **Exempt from the bypass.** If `cmd0`'s own install failed or has no entry, there is nothing to run, and the launch refuses in every case — today's exit 127 |
 | **Refresh** | Unchanged. `Ensure` on an already-provisioned entry runs the throttled evergreen refresh and keeps the installed copy on a failed poll. Readiness is not currency ([`jail-notch-readiness.md` §1](jail-notch-readiness.md#1-readiness-and-currency-are-different-questions)). |
@@ -205,7 +205,7 @@ The holes an implementer would otherwise fill silently:
 - **Not `yolo host apply`.** `apply` still renders config, reports state, and prompts; the launch
   installs programs only. This does not move rendering onto the launch path.
 - **Not the wrapper gate.** `host_apply_on_launch` stays the staleness net ([§2](#2-what-existed-before-the-build-and-the-asymmetry)).
-- **Not the jail or macos-user readiness acts.** Their contract ([`OQ-JR1`](jail-notch-readiness.md#OQ-JR1),
+- **Not the jail or macos-user readiness acts.** Their contract ([`OQ-JR1`](jail-notch-readiness.md#9-decision-ledger),
   [`JR-D2`](jail-notch-readiness.md#JR-D2)) is unchanged; this mirrors it at the host.
 - **Not currency.** Refresh cadence and `agent_updates` are untouched.
 - **Not a new installer, floor layout, or record.** `Ensure` and the floor are reused as they are.

@@ -1625,7 +1625,7 @@ answer differs by what is shared:
   again: a setsid'd copy of Codex that *"inherits the environment of the launch that STARTED it,
   so it keeps posting refreshes to that first launch's closed port"*
   ([`codexdaemon.go`](../../internal/openaiauthhost/codexdaemon.go)).
-  [OQ-CDX1](../research/codex-background-service.md#OQ-CDX1) turned it off wherever yolo launches
+  [OQ-CDX1](../research/codex-background-service.md#decision-ledger) turned it off wherever yolo launches
   Codex, giving up `codex queue`. SOURCED. So re-entry at `yolo host` did bring *"the same
   problems"*, and each was patched on its own. The patch for Codex is scoped to the machine, not
   to a workspace.
@@ -2228,7 +2228,7 @@ agent, and the two kinds differ in what they share:
   launch wrote a caller token of its own there, the newest replaced the others, and their
   refreshes failed. Since [NC-D18](../plans/notch-convergence.md#NC-D18) the home's live launches
   share one token, counted by a lock of the home's own. Codex's own background server was the
-  same problem again, and [OQ-CDX1](../research/codex-background-service.md#OQ-CDX1) turned it
+  same problem again, and [OQ-CDX1](../research/codex-background-service.md#decision-ledger) turned it
   off.
 
 **Why it is a question:** the ruling's reading names *"the brokers' doorways"* among what a
