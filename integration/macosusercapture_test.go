@@ -170,15 +170,17 @@ func (f captureFixture) checkMaterialized(t *testing.T, label string, r result) 
 	return m[2]
 }
 
-// checkStagedRootOwned reports a staged entry whose files are not root's or carry any ACE, and
-// schedules its removal.
+// checkStagedSealed reports a staged entry whose files are not the host user's, are writable by
+// anyone but their owner, or carry any ACE, and schedules its removal. Since the passwordless
+// lane (docs/design/macos-user-privilege-lifecycle-plan.md, PL-1 and PL-2) the host user stages
+// without root into the host-owned staging root, sealed so the sandbox reads it only as "other".
 //
 // THE ACL HALF is what the owner half cannot see: the user store's entry carries the shared
 // group's inherited ACE, an ACE grants what the mode bits deny, and nothing strips one from the
 // staged copy, which relies on plain `cp -R` not carrying it (macosuser's stageCaptureScript says
 // why, from Apple's cp source, and why `chmod -R -N` is not the remedy). So a staged tree must
 // carry no ACE at all.
-func checkStagedRootOwned(t *testing.T, key string) {
+func checkStagedSealed(t *testing.T, key string) {
 	t.Helper()
 	dst := filepath.Join(macosuser.StagedCapturesRoot(""), "entries", key)
 	t.Cleanup(func() { removeStagedCapture(t, key) })
@@ -187,8 +189,11 @@ func checkStagedRootOwned(t *testing.T, key string) {
 			t.Errorf("walking the staged entry %s: %v", dst, err)
 			return nil
 		}
-		if st, ok := info.Sys().(*syscall.Stat_t); ok && st.Uid != 0 {
-			t.Errorf("%s in the staged store is uid %d's, not root's", p, st.Uid)
+		if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
+			t.Errorf("%s in the staged store is uid %d's, not the host user's (%d)", p, st.Uid, os.Getuid())
+		}
+		if info.Mode()&os.ModeSymlink == 0 && info.Mode().Perm()&0o022 != 0 {
+			t.Errorf("%s in the staged store is mode %v: writable by someone other than its owner", p, info.Mode().Perm())
 		}
 		return nil
 	})
@@ -231,7 +236,7 @@ func TestMacosUserLaunchesMaterializeACapturedFixture(t *testing.T) {
 	if n := f.runs(t); n != 1 {
 		t.Errorf("the installer ran %d times across one capture and two launches, want 1", n)
 	}
-	checkStagedRootOwned(t, key)
+	checkStagedSealed(t, key)
 }
 
 // TestMacosUserAutoCapturesAFixtureOnFirstLaunch: with auto-capture on, the first launch captures
@@ -262,7 +267,7 @@ func TestMacosUserAutoCapturesAFixtureOnFirstLaunch(t *testing.T) {
 	if n := f.runs(t); n != 1 {
 		t.Errorf("the installer ran %d times across two launches, want 1", n)
 	}
-	checkStagedRootOwned(t, key)
+	checkStagedSealed(t, key)
 }
 
 // removeStagedCapture removes one staged entry, as root: the store's own launches would prune it
@@ -273,7 +278,10 @@ func removeStagedCapture(t *testing.T, key string) {
 		t.Fatalf("refusing to remove staged capture %q: not a store key", key)
 	}
 	dst := filepath.Join(macosuser.StagedCapturesRoot(""), "entries", key)
-	if !runQuiet(2*time.Minute, "sudo", "-n", "/bin/rm", "-rf", dst) {
+	// The staged store is the host user's and sealed read-only (PL-2), so the host unseals and
+	// removes it; no sudo, which a narrowed-sudo run would refuse.
+	if !runQuiet(2*time.Minute, "/bin/chmod", "-R", "--", "u+w", dst) ||
+		!runQuiet(2*time.Minute, "/bin/rm", "-rf", "--", dst) {
 		t.Logf("could not remove the staged capture %s; the next launch that stages one prunes it", dst)
 	}
 }
