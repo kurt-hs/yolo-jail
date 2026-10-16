@@ -10,8 +10,9 @@ import (
 	"time"
 )
 
-// appleBuildPending is an admission refusal, not a build failure: no child ran,
-// and the candidate must remain pending without a retry backoff.
+// appleBuildPending is an admission refusal, not a recorded build failure: no child ran,
+// and the candidate must remain pending without a retry backoff. A foreground act that a
+// good build serves still stops on it (PD-NF1: advance.yoloStepFailure, BuildCauseRuntime).
 type appleBuildPending struct {
 	Reason  string `json:"reason"`
 	Capture string `json:"capture"`

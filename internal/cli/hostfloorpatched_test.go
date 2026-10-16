@@ -593,9 +593,11 @@ func TestTheFloorsCopyOfTheGoodBuildServesWhenItsStoreEntryIsGone(t *testing.T) 
 }
 
 // WHAT A WALK STOPS ON, WHILE THE FLOOR'S COPY SERVES (PF-D55): a classified conflict refuses by
-// default; an opaque read failure and a failed fetch remain independent unavailable-authority /
-// operation errors. None may move Good, replace the installed copy with a base build, or execute a
-// target. The literal compatibility bypass for an intact pruned-store copy is covered separately.
+// default; an apply error refuses too (PD-NF1), and its opaque read failure stays unavailable
+// authority no hatch waives; none may move Good, replace the installed copy with a base build, or
+// execute a target. A FAILED FETCH IS NOT A FAILURE (PD-NF1): yolo could not ask upstream, so the
+// floor's copy runs, said once, hatch or none. The literal compatibility bypass for an intact
+// pruned-store copy is covered separately.
 func TestAWalkThatStopsLeavesTheFloorsCopyServing(t *testing.T) {
 	t.Run("a conflict", func(t *testing.T) {
 		t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "")
@@ -626,18 +628,30 @@ func TestAWalkThatStopsLeavesTheFloorsCopyServing(t *testing.T) {
 		}
 	})
 	t.Run("an apply error", func(t *testing.T) {
-		fx, v11, assertServes := floorServesGoneEntry(t)
+		fx, v11, _ := floorServesGoneEntry(t)
 		v13 := fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty"})
 		failFile := filepath.Join(t.TempDir(), "fail")
 		writeFile(t, failFile, v13)
 		patchedGitWrapper(t, failReadingFilesAt(failFile))
 		fx.later(2 * time.Hour)
-		firstOut := assertServes("an apply error", 1)
-		for _, w := range []string{"could not replay the series", "still running v1.1.0 (" + shortSHA(v11) +
-			") + 2 patches; the next check, in an hour, retries it, or `yolo pack update` now"} {
+		// AN APPLY ERROR STOPS `yolo host -- tool` (PD-NF1, superseding PF-D45's serving): the floor's
+		// copy stays, and runs only under a hatch.
+		t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "")
+		rc, target, firstOut := fx.hostLaunch(t)
+		if rc != 1 || target != "" || len(fx.builds) != 1 {
+			t.Fatalf("an apply error: rc=%d target=%q builds=%d, want a refusal\n%s", rc, target, len(fx.builds), firstOut)
+		}
+		if rec := floorRecord(t, "tool"); rec.Revision != v11 {
+			t.Errorf("the refusal replaced the floor's copy of v1.1.0 with %s", rec.Version)
+		}
+		for _, w := range []string{"the patch series could not be replayed onto upstream v1.3.0 (" + shortSHA(v13) + ")",
+			"simulated: cannot read", "YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo host -- tool "} {
 			if !strings.Contains(firstOut, w) {
-				t.Errorf("the original ordinary apply error lacks %q:\n%s", w, firstOut)
+				t.Errorf("the apply error's refusal lacks %q:\n%s", w, firstOut)
 			}
+		}
+		if strings.Contains(firstOut, "still running v1.1.0") {
+			t.Errorf("the refusal says the older build runs:\n%s", firstOut)
 		}
 		t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "1")
 		goodBefore := *fx.record(t).Good
@@ -662,7 +676,7 @@ func TestAWalkThatStopsLeavesTheFloorsCopyServing(t *testing.T) {
 		}
 	})
 	t.Run("a failed fetch", func(t *testing.T) {
-		t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "1")
+		t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "") // no hatch: being unable to ask upstream is no failure
 		// A CANDIDATE STILL PENDING WHEN THE NEXT CHECK'S FETCH FAILS (§6.2) is not built until a check
 		// fetches: here v1.3.0, whose build a Ctrl-C ended, and an upstream that has since gone away.
 		fx, _, _ := floorServesGoneEntry(t)
@@ -697,8 +711,12 @@ func TestAWalkThatStopsLeavesTheFloorsCopyServing(t *testing.T) {
 		}
 		fx.later(2 * time.Hour)
 		rc, target, out := fx.hostLaunch(t)
-		if rc != 127 || target != "" || len(fx.builds) != 1 {
-			t.Fatalf("the failed fetch was waived or fell back: rc=%d target=%q builds=%d\n%s", rc, target, len(fx.builds), out)
+		if rc != 0 || target != filepath.Join(paths.HostFloorDir(), "bin", "tool") || len(fx.builds) != 1 {
+			t.Fatalf("an unreachable upstream did not run the floor's copy: rc=%d target=%q builds=%d\n%s", rc, target,
+				len(fx.builds), out)
+		}
+		if !strings.Contains(out, "still running v1.1.0") || strings.Contains(out, "ERROR") {
+			t.Errorf("the run does not say it could not check and runs the floor's copy, or it refused:\n%s", out)
 		}
 		after := fx.record(t)
 		if after.Check == nil || after.Check.FetchErr == "" || !reflect.DeepEqual(pendingBefore, after.Check.List) {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 )
 
 func allowAppleContainerBuild(t testing.TB) {
@@ -21,7 +22,13 @@ func allowAppleContainerBuild(t testing.TB) {
 	t.Cleanup(func() { appleContainerBuildCapability = prev })
 }
 
-func TestAppleContainerCheckOnlyDoesNotStartBuildChildAndKeepsAdmittedTree(t *testing.T) {
+// THE BACKGROUND ADVANCE ON APPLE CONTAINER ONLY CHECKS, and the launch that meets the candidate it
+// left, beside a running jail, starts no build child and STOPS (PD-NF1): a newer candidate it cannot
+// build now is not a reason to run the older build on its own. Each extension is handed the runtime's
+// refusal beside the admitted tree a hatch would run; nothing is recorded, so the next launch asks the
+// runtime again.
+func TestAppleContainerCheckOnlyDoesNotStartBuildChildAndStopsBesideTheAdmittedTree(t *testing.T) {
+	t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "")
 	pf := newPoolFixture(t)
 	first, _ := pf.launch(t, "podman", &run.ActInterrupt{})
 	if first[poolKeyA].Entry == "" {
@@ -52,12 +59,27 @@ func TestAppleContainerCheckOnlyDoesNotStartBuildChildAndKeepsAdmittedTree(t *te
 	if children.Load() != built {
 		t.Fatalf("Apple Container started %d build children while another jail was live:\n%s", children.Load()-built, out)
 	}
-	if got[poolKeyA].Entry != first[poolKeyA].Entry || got[poolKeyA].Dir == "" {
-		t.Errorf("the prior admitted tree was not used: before=%+v after=%+v", first[poolKeyA], got[poolKeyA])
+	d := got[poolKeyA]
+	if d.Entry != first[poolKeyA].Entry || d.Dir == "" {
+		t.Errorf("the prior admitted tree is not what a hatch would run: before=%+v after=%+v", first[poolKeyA], d)
 	}
-	for _, want := range []string{"checked candidate", "left it pending", "yolo-another-session", "container ls"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("Apple Container check-only progress lacks %q:\n%s", want, out)
+	if pf := d.PatchFailure; pf == nil || pf.Kind != packsrc.PatchFailureBuild || pf.Cause != packsrc.BuildCauseRuntime ||
+		!strings.Contains(pf.Detail, "yolo-another-session") || pf.Target.Tag != "v1.1.0" {
+		t.Errorf("the launch did not stop on the runtime's refusal of the candidate: %+v\n%s", d, out)
+	}
+	if !strings.Contains(out, "deferred") {
+		t.Errorf("the build's line does not say it was deferred:\n%s", out)
+	}
+	for _, o := range patchedRecordOf(t, poolKeyA).Outcomes {
+		if o.Kind == packsrc.OutcomeBuildFailed {
+			t.Errorf("a build the runtime would not start was recorded as failed: %+v", o)
+		}
+	}
+	block := d.PatchFailure.Render("extension "+poolKeyA, packsrc.RebaseRecipe{}, packsrc.PatchBypass{Key: poolKeyA}, false)
+	for _, want := range []string{"yolo could not build upstream v1.1.0", "Cause: Apple Container has running yolo jail(s): yolo-another-session",
+		"once `container ls` shows no running yolo jail, retry it:"} {
+		if !strings.Contains(block, want) {
+			t.Errorf("the error block lacks %q:\n%s", want, block)
 		}
 	}
 }

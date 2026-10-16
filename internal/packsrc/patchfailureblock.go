@@ -96,7 +96,7 @@ func (f *PatchFailure) Render(label string, recipe RebaseRecipe, bypass PatchByp
 		what, member = "patch branch does not merge into", "Patch branch"
 	}
 	if f.Kind == PatchFailureBuild {
-		what = "the build failed at"
+		what = f.BuildHead()
 	}
 	head := fmt.Sprintf("ERROR: %s: %s upstream %s (%s)", label, what, target, shortCommit(f.Target.Commit))
 	b.WriteString(richtext.Render("[bold red]"+richtext.Escape(head)+"[/bold red]", color) + "\n")
@@ -105,7 +105,15 @@ func (f *PatchFailure) Render(label string, recipe RebaseRecipe, bypass PatchByp
 	}
 	switch f.Kind {
 	case PatchFailureBuild:
-		fmt.Fprintf(&b, "  Build: %s\n", PrintableFailureText(f.Detail))
+		fact := "Build"
+		switch f.Cause {
+		case "":
+		case BuildCauseReplay:
+			fact = "Replay"
+		default:
+			fact = "Cause"
+		}
+		fmt.Fprintf(&b, "  %s: %s\n", fact, PrintableFailureText(f.Detail))
 	case "conflict":
 		if len(f.Paths) > 0 {
 			fmt.Fprintf(&b, "  Conflict: %s\n", PrintableFailureText(strings.Join(f.Paths, ", ")))
@@ -133,7 +141,7 @@ func (f *PatchFailure) Render(label string, recipe RebaseRecipe, bypass PatchByp
 		if retry == "" {
 			retry = "yolo capture " + key
 		}
-		b.WriteString("  read the build's output, and once upstream or the build recipe is fixed, retry it:\n")
+		b.WriteString("  " + buildRepair(f.Cause) + "\n")
 		b.WriteString("    " + retry + "\n")
 	case "base":
 		fmt.Fprintf(&b, "  re-export the series: git format-patch --base=%s\n", f.Target.Commit)
@@ -163,4 +171,24 @@ func PrintableFailureText(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// buildRepair is a PatchFailureBuild's repair sentence, before its retry command: what to fix first,
+// by which step stopped the build (PatchFailure.Cause, PD-NF1).
+func buildRepair(cause string) string {
+	switch cause {
+	case BuildCauseJail:
+		return "fix what stopped its build jail (said above, and in its log), then retry it — on Apple " +
+			"Container, once no other yolo jail is running:"
+	case BuildCauseLock:
+		return "once the build holding its lock ends — or after stopping that pid, if it has hung — retry it:"
+	case BuildCauseRuntime:
+		return "once `container ls` shows no running yolo jail, retry it:"
+	case BuildCauseWorkspace:
+		return "once the earlier build jail of it is gone from its runtime, retry it:"
+	case BuildCauseReplay:
+		return "fix what stopped the replay (git 2.40 or newer on the host, the network, the upstream's " +
+			"objects), then retry it:"
+	}
+	return "read the build's output, and once upstream or the build recipe is fixed, retry it:"
 }

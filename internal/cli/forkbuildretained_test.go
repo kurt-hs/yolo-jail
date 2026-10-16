@@ -114,9 +114,11 @@ func TestAFinishedForkBuildWhoseJailStaysIsRetainedNotFailed(t *testing.T) {
 	}
 }
 
-// A patched advance records nothing against a commit whose build was retained, and the next launch
+// A patched advance records nothing against a commit whose build was retained, but the launch STOPS
+// on it while a good build serves (PD-NF1): the good build runs only under a hatch. The next launch
 // builds it once the jail is gone.
 func TestARetainedPatchedBuildIsNoFailedBuild(t *testing.T) {
+	t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "")
 	fx, _, _, r, _, _ := firstAdvance(t)
 	fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty"})
 	fx.later(2 * time.Hour)
@@ -124,8 +126,10 @@ func TestARetainedPatchedBuildIsNoFailedBuild(t *testing.T) {
 	present := true
 	withForkBuildProbe(t, func(string, string) (bool, bool) { return present, true })
 	got, out, _ := fx.launch(t, "podman")
-	if got.delivery.Key != r.delivery.Key || !strings.Contains(out, "not yet known gone") {
-		t.Errorf("the retained build handed %+v and said:\n%s", got.delivery, out)
+	if pf := got.delivery.PatchFailure; !got.failed || pf == nil || pf.Cause != packsrc.BuildCauseWorkspace ||
+		got.delivery.Key != r.delivery.Key || !strings.Contains(out, "not yet known gone") ||
+		!strings.Contains(out, "once the earlier build jail of it is gone from its runtime, retry it:") {
+		t.Errorf("the retained build did not stop the launch beside the good build: %+v\n%s", got, out)
 	}
 	if strings.Contains(out, "failed") {
 		t.Errorf("a retained build was reported as failed:\n%s", out)

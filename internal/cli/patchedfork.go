@@ -796,9 +796,14 @@ func candidateLines(f packload.Fork, rec *packsrc.CheckRecord, series *packsrc.S
 			state = fmt.Sprintf("does not take %s (conflicts in %s)", conflict.Member, strings.Join(conflict.Paths, ", "))
 		} else if pf := buildFailureOf(f, rec, in, series, forkBuild{Fork: f, Series: series}.recipe(), ""); pf != nil &&
 			pf.Target.Commit == e.Commit {
-			// A FAILED NEWER BUILD STOPS A LAUNCH (OQ-PPX3): what stops it, and the ways on.
-			state = fmt.Sprintf("its build failed: %s — a fresh launch refuses until a build of it succeeds; "+
-				"`yolo capture %s` retries it now, and `%s=%s yolo` runs the good build meanwhile", pf.Detail,
+			// A FAILED NEWER BUILD STOPS A LAUNCH (OQ-PPX3), whether its build line failed or one of yolo's
+			// own steps kept it from running (PD-NF1): what stops it, and the ways on.
+			what := "its build failed"
+			if pf.Cause != "" {
+				what = "yolo could not build it"
+			}
+			state = fmt.Sprintf("%s: %s — a fresh launch refuses until a build of it succeeds; "+
+				"`yolo capture %s` retries it now, and `%s=%s yolo` runs the good build meanwhile", what, pf.Detail,
 				f.CaptureArg(), patchrecovery.UseCachedGoodEnv, f.Key())
 		} else if o := rec.Applies(e.Commit, series.Digest, yolo, gitVer); o != nil {
 			state = "applies — " + patchedNotBuilt
