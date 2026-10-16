@@ -322,10 +322,20 @@ func macActBlocked(p macCaptureProbes, w macActWords, does string) string {
 	}
 	if c, unmet := p.Privilege(); unmet {
 		return w.act + " on a Mac runs as the sandbox account through the one-time setup's sudo rule, which " +
-			"this Mac does not have (" + c.Unmet("") + ") — " + c.Fix("") + ", and the next `yolo host` " +
+			"this Mac does not have (" + c.Unmet("") + ") — " + clauseOf(c.Fix("")) + ", and the next `yolo host` " +
 			"launch " + does
 	}
 	return ""
+}
+
+// clauseOf makes a precondition's Fix, written as its own sentence, read as a clause inside the
+// floor's sentence: its first letter lowercased and its closing period dropped.
+func clauseOf(s string) string {
+	s = strings.TrimSuffix(strings.TrimSpace(s), ".")
+	if s == "" {
+		return s
+	}
+	return strings.ToLower(s[:1]) + s[1:]
 }
 
 // floorForkBuild is the build a floor program of a fork asks for: the fork as its pack declares it,
