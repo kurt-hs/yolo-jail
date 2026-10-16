@@ -56,7 +56,7 @@ type TreeDelivery struct {
 	// builds trees and that the owner's list entry reaches.
 	Stop bool `json:"stop,omitempty"`
 	// Skipped says the launch skipped the extension (YOLO_SKIP_EXTENSIONS,
-	// docs/design/patched-build-recovery.md §6.6): nothing is mounted, the boot leaves every entry
+	// docs/reference/pi-extensions.md §9.1): nothing is mounted, the boot leaves every entry
 	// that loads it out of the owning agent's lists, and no launcher stops for it. Additive: a boot
 	// that predates it reads a skipped extension as one handed no build.
 	Skipped bool `json:"skipped,omitempty"`

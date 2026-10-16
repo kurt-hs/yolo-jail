@@ -540,7 +540,7 @@ func TestExplicitPostRetryGuardRejectsChangedAuthority(t *testing.T) {
 // pass-through load seam mutates the actual record immediately before the caller's actual reread.
 // The newer release is published inside that seam, with the later check: a release present at the
 // update's own check would make it walk from the newest instead of retrying the recorded failure
-// (docs/design/patched-build-recovery.md §6.2), which is not the seam this pins.
+// (docs/reference/patched-forks.md §6.2), which is not the seam this pins.
 func TestPackUpdateStopsAfterLaterCheckArrivesBetweenRetryAndReread(t *testing.T) {
 	t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "")
 	fx, _ := patchedActorLaunch(t)

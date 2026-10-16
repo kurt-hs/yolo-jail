@@ -208,40 +208,37 @@ A patch the new version already contains is dropped by itself, even when upstrea
 again afterwards, as `git rebase` would; yolo says so and names the file you can delete.
 
 When a new version does not take your patches, yolo stops and prints an error. It names the patch
-that failed, the files it conflicts in, the git commands that fix it, and the one way to go on
-without fixing it that works on your machine. yolo never builds an older version or your series'
-base instead. A jail launch prints it as soon as its builds are done, before the jail starts, then
-stops (the commits and paths are shortened here):
+that failed and the files it conflicts in, then the git commands that fix it, then the ways to keep
+going without fixing it that work on your machine, each a command you can copy. A jail launch
+prints it as soon as its builds are done, before the jail starts, then stops (the commits and paths
+are shortened here):
 
 ```text
-ERROR: fork pi-mine/pi: patch application failed at upstream v1.0.2 (cd32f7729e1b…)
+ERROR: fork pi-mine/pi: patch series does not apply to upstream v1.0.2 (cd32f772)
   Patch: 0001-show-fleet-details.patch
   Conflict: packages/tui/src/footer.ts
-  Operation stopped; no older fit or base will be built.
-  Repair: rebase the series with git, yourself or with an agent; the next launch builds it:
-      git clone https://github.com/you/pi.git pi-mine-pi-rebase && cd pi-mine-pi-rebase
-      git checkout -q -b yolo-rebase 5d1e07b2… && git am ~/packs/pi-mine/patches/*.patch && git tag yolo-applied
-      git rebase cd32f7729e1b…
-    resolve each stop (edit, git add, git rebase --continue), then replace the series — this line changes nothing until the rebase is done:
-      test -n "$(git rev-list -n 1 yolo-rebase --not cd32f7729e1b… yolo-applied --)" && mkdir ~/packs/pi-mine/patches.new && git -c format.noprefix=false format-patch … && mv … && rm -r ~/packs/pi-mine/patches.old
-  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo
-    (runs the intact admitted build v1.0.0 (a13d35a7) + 7 patches for this one run, skipping this update; it does not repair the series)
-Refusing to launch: the patch series of fork pi-mine/pi does not apply (the ERROR above), and a launch does not run an older build in its place unless asked.
+
+Repair:
+    git clone https://github.com/you/pi.git pi-mine-pi-rebase && cd pi-mine-pi-rebase
+    git checkout -q -b yolo-rebase 5d1e07b2… && git am ~/packs/pi-mine/patches/*.patch && git tag yolo-applied
+    git rebase cd32f7729e1b…
+  resolve each stop (edit, git add, git rebase --continue), then replace the series — this line changes nothing until the rebase is done:
+    test -n "$(git rev-list -n 1 yolo-rebase --not cd32f7729e1b… yolo-applied --)" && mkdir ~/packs/pi-mine/patches.new && git -c format.noprefix=false format-patch … && mv … && rm -r ~/packs/pi-mine/patches.old
+
+Start anyway:
+  YOLO_ALLOW_PATCH_FAILURES=pi-mine/pi yolo    run v1.0.0 (a13d35a7) + 7 patches
+  YOLO_SKIP_PATCHES=pi-mine/pi yolo            run upstream without the patches
 ```
 
 - **Repair** is the rebase, as below.
+- **Start anyway** lists only what works on your machine right now; the next section explains each.
 - **Every command stops** at the error, even when a good build is on your machine: a jail launch,
   `yolo host`, `yolo host apply --assert`, `yolo pack update` and `yolo capture`. A command that
   writes into your home, such as `yolo host apply --assert`, stops before it writes anything.
-- **Bypass** is the one way on that works on your machine. With a good build of your series here,
-  it is `YOLO_ALLOW_PATCH_FAILURES=1` in front of the command: it runs that build for that one run,
-  says so, and skips the update. It never runs a build your patches did not fully apply to.
-- **With no good build of your series**, the Bypass line says what else works. For a patched
-  program whose only build is of an earlier series, it is `YOLO_USE_CACHED_GOOD=<pack>/<bin>`, as in
-  [When a build fails](#when-a-build-fails). Otherwise a jail launch can start without it,
-  `YOLO_ALLOW_MISSING_PROGRAMS=1`, and so can `yolo host` for a program other than the one it runs.
-  `YOLO_ALLOW_MISSING_PROGRAMS=1` does nothing for a series that does not apply while a good build of
-  it is here: use `YOLO_ALLOW_PATCH_FAILURES=1`.
+- **A newer release clears it.** When upstream tags a version your patches do apply to, the next
+  launch that checks upstream builds that one and the error goes away, with no rebase.
+- yolo never runs a build your patches did not fully apply to, and it builds an older version only
+  when you ask it to.
 
 ### Rebase the series
 
@@ -284,7 +281,9 @@ machine. It writes nothing into your pack, and changes nothing a launch runs.
 | `yolo pack series check <pack folder>` | Says whether each series in a pack folder applies to the newest version, or which patch conflicts and the git commands that rebase it. It works in a jail. |
 | `yolo pack lint [--online] <dir>` | Checks a pack before you select it: each series must be one a launch can read. With `--online` it also checks the upstream in a scratch copy it deletes afterwards: that the ref and the series' base exist, what `follow` finds, and that your patches apply at their base. It works in a jail too. |
 
-To keep running what you have, turn `agent_updates` off for the pack, or put a tag in `?ref=`.
+To keep running what you have, turn `agent_updates` off for the pack: yolo stops checking upstream
+and runs your good build, even after a new version failed. If you own the pack, a tag in `?ref=`
+holds it too.
 
 ## When a build fails
 
@@ -296,31 +295,47 @@ To keep running what you have, turn `agent_updates` off for the pack, or put a t
 - **Nothing to run:** when a patched program, or a pi extension a pack loads, has no build at all,
   the launch stops before the jail starts, whatever you asked it to run. It says why once, for
   every build the same cause left without one, says whether the fix is yours or a bug in yolo to
-  report, and names the ways on: `yolo capture <key>` to build it again,
-  `yolo pack series check` and the rebase it prints when a series no longer applies, or dropping
-  the list entry or the pack. `YOLO_ALLOW_MISSING_PROGRAMS=1` starts the jail anyway: the shell
-  works, and pi says which extension has no build if you run it.
-- **One launch from a previous good patched program:** if a fresh jail launch reports that the
-  current build failed but an intact recorded good build remains, you can explicitly use that old
-  program once: `YOLO_USE_CACHED_GOOD=pi-fork/pi yolo -- pi -c`. Replace `pi-fork/pi` with the
-  selected patched program's `<pack>/<bin>`. It skips only that program's advance for this fresh
-  launch; it does not change the requested series or make the old build current. The old program
-  does not include your current edits, and the next launch follows the normal build path again.
-  If its exact recorded build is missing or cannot safely run, yolo refuses and tells you how to
-  repair the current build. This is different from `YOLO_ALLOW_MISSING_PROGRAMS=1`: that bypass
-  starts a jail without supplying a program. Use `yolo capture` to retry a build failure, and
-  the rebase the error prints only when the series no longer applies.
+  report, then lists `yolo capture <key>` to build it again and the ways to start anyway
+  ([When a build breaks](#when-a-build-breaks)). `yolo pack series check` and the rebase it prints
+  help when a series no longer applies, and dropping the list entry or the pack runs without it.
 
 ```text
-Refusing to launch: 2 patched extensions pack pi loads have no build on this machine.
+ERROR: 2 patched extensions pack pi loads have no build on this machine
   extensions mine/ext-a and mine/ext-b: their build jail refused to start on the host:
       writing pi's automode file (~/.pi/agent/extensions/automode/settings.json), which pack mine declares, failed:
         ~/.pi is mounted read-only in that jail
     This is a bug in yolo, not in pack mine: the build jail refused a config your own launch accepts.
-    Report it at https://github.com/mschulkind-oss/yolo-jail/issues, with /home/you/project/.yolo/build-mine--ext-a-1a2b3c4d.log; once it is fixed, the next fresh launch builds them, or `yolo capture mine/ext-a`, `yolo capture mine/ext-b` now.
-  To launch without them now: YOLO_ALLOW_MISSING_PROGRAMS=1, and what loads them stops in the jail while the shell works.
-  To run without one for good: drop the list entry naming it, or its pack.
+    Report it at https://github.com/mschulkind-oss/yolo-jail/issues, with /home/you/project/.yolo/build-mine--ext-a-1a2b3c4d.log; once it is fixed, retry.
+
+Retry:
+  yolo capture mine/ext-a
+  yolo capture mine/ext-b
+
+Start anyway:
+  YOLO_SKIP_EXTENSIONS=mine/ext-a,mine/ext-b yolo    start pi without it
 ```
+
+## When a build breaks
+
+When the error or the refusal stops you, put one of these in front of the command for that one
+run. Each names what it applies to: `1` for everything, or a comma-separated list of the key the
+error prints (`pi-mine/pi`), the pack (`pi-mine`) or the program or extension (`pi`). A name that
+matches nothing here only prints a warning, so one left in your shell profile does no harm.
+
+| Command | What you get |
+| :--- | :--- |
+| `YOLO_ALLOW_PATCH_FAILURES=pi-mine/pi yolo` | Runs the last good build of your current patches, skipping the new version. |
+| `YOLO_ALLOW_OLDER_UPSTREAM=pi-mine/pi yolo` | Tries your patches on older upstream releases, newest first, and runs the first one that builds. It says which version it picked, and keeps it on later launches until upstream releases something newer. |
+| `YOLO_USE_CACHED_GOOD=pi-mine/pi yolo` | Runs the last good build of your previous patches, for one fresh launch: useful when your own edit is what broke. It does not include that edit. |
+| `YOLO_SKIP_EXTENSIONS=mine/ext-a yolo` | Starts pi without that extension. |
+| `YOLO_ALLOW_MISSING_PROGRAMS=1 yolo` | Starts the jail without a patched program that has no build. The shell works; the program does not. |
+
+`YOLO_SKIP_PATCHES=pi-mine/pi yolo` runs the upstream program or extension with none of your
+patches, built and kept separately, so your own good build is untouched.
+
+For `yolo host` and `yolo capture`, the error prints the same lines with that command in place of
+`yolo`. On an attach to a running jail, inside a jail, or on `macos-user`, the variables do nothing,
+and the launch says so.
 
 ## Where it works
 

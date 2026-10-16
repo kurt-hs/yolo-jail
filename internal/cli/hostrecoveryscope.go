@@ -11,8 +11,8 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
-// hostrecoveryscope.go is `yolo host`'s half of WHAT A SET RECOVERY HATCH REACHES (docs/design/
-// patched-build-recovery.md §6.1, PBR-D3; the launch's is internal/cli/run's recoveryscope.go):
+// hostrecoveryscope.go is `yolo host`'s half of WHAT A SET RECOVERY HATCH REACHES
+// (docs/reference/patched-forks.md §8.5, PBR-D3; the launch's is internal/cli/run's recoveryscope.go):
 // once per invocation, each scoped hatch that is set (run.NoterHatches: not the two that say their own) warns of the names covering none of the
 // patched builds the host selects — its patched forks and the patched extensions it delivers —
 // in patchrecovery.UnmatchedLine's one shape. Never a refusal.

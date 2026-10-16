@@ -96,7 +96,7 @@ type CheckRecord struct {
 	// PatchBranch is the last patch branch a check resolved (patchbranch.go): what a patch branch's series is read from with
 	// no git (PatchBranchSeries), kept apart from Check so a later check's problem does not lose it.
 	PatchBranch *PatchBranchResolved `json:"patch_branch,omitempty"`
-	// WalkBack is the WALK-BACK HOLD (docs/design/patched-build-recovery.md §6.4): set when a run under
+	// WalkBack is the WALK-BACK HOLD (docs/reference/patched-forks.md §8.6): set when a run under
 	// YOLO_ALLOW_OLDER_UPSTREAM admitted an older release because the newest did not take the series or
 	// did not build. While its newest entry is still the newest of the list, the good build it admitted
 	// runs, held, with no refusal (WalkBackHolds). A build any other run admits clears it.

@@ -1,7 +1,7 @@
 package run
 
 // skipextensions.go is a jail launch's half of YOLO_SKIP_EXTENSIONS
-// (patchrecovery.SkipExtensionsEnv; docs/design/patched-build-recovery.md §6.6): a built extension
+// (patchrecovery.SkipExtensionsEnv; docs/reference/pi-extensions.md §9.1): a built extension
 // it covers — patched or unmodified, by key, pack or extension name — is not advanced, built, copied
 // or mounted this launch; the wire marks it skipped, so the jail's boot leaves every entry loading
 // it out of the owning agent's lists and stops no launcher for it; and the missing-build refusal

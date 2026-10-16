@@ -1,7 +1,7 @@
 package packload
 
 // skipextensions_test.go pins ApplyTreeLists' skip (YOLO_SKIP_EXTENSIONS,
-// docs/design/patched-build-recovery.md §6.6): a skipped tree's entries — its own and any path
+// docs/reference/pi-extensions.md §9.1): a skipped tree's entries — its own and any path
 // inside it — leave the contributing pack's config-lists and posture lists, it takes no fallback,
 // another pack's identical entry stays, and the packs handed in are never written.
 

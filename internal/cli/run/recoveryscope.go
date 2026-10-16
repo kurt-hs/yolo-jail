@@ -1,7 +1,7 @@
 package run
 
-// recoveryscope.go is WHAT A SET RECOVERY HATCH REACHES at a jail launch (docs/design/
-// patched-build-recovery.md §6.1, PBR-D3): said once per launch, never a refusal.
+// recoveryscope.go is WHAT A SET RECOVERY HATCH REACHES at a jail launch
+// (docs/reference/patched-forks.md §8.5, PBR-D3): said once per launch, never a refusal.
 //
 //   - A FRESH LAUNCH on a container runtime warns, for each scoped hatch (patchrecovery.Scoped) that
 //     is set (but the two below), of the names that cover none of the patched builds it selects — its patched forks and
