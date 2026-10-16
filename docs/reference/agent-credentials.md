@@ -1010,16 +1010,19 @@ reported by the previous attempt's failure and its age, or, when there is none, 
 saying the launch could not tell. A service that cannot be asked gets a dim line too. Since
 [`HD-R1`](../design/host-daemon-ownership.md#HD-R1) the service a launch asks is always the one it
 just started, so it cannot predate the launch. What can is a machine-wide service an older yolo
-left running through the upgrade: while it runs, a launch **refuses**, naming
-`yolo host-daemon stop --host-wide aws-auth`, and restarts and stops nothing itself
-([`HD-D21`](../design/host-daemon-ownership.md#HD-D21)). A warning is a disclosure, so no flag
+left running through the upgrade: a launch leaves it serving the jails that yolo launched and
+proceeds, printing one line that names it and, as the cleanup once those jails have ended,
+`yolo host-daemon stop --host-wide aws-auth`; it restarts and stops nothing itself
+([`HD-D14`](../design/host-daemon-ownership.md#HD-D14)). A warning is a disclosure, so no flag
 hides it ([`OQ-RO3`](report-tiers.md#why-its-this-way)).
 
 An attach asks too: a new agent entering a jail that is already running, such as
 `yolo -p bedrock -- claude` in a second terminal, gets the same question and the same warning,
 through the front the jail's own launch published. A service older than this yolo does not stop
-it: the attach prints the yellow line naming `yolo host-daemon restart aws-auth` and enters the
-jail ([`HD-D5`](../design/host-daemon-ownership.md#HD-D5)). It starts nothing, so a jail whose
+it: entering a jail an older yolo launched, the attach prints the yellow line naming launching that
+jail again with this yolo and then, once no jail the older yolo launched is left,
+`yolo host-daemon stop --host-wide aws-auth`, and enters the jail
+([`HD-D5`](../design/host-daemon-ownership.md#HD-D5)). It starts nothing, so a jail whose
 launch did not start the service is not asked. The check cannot
 see a session that ended after the cached credential was minted: that credential still works, and
 the lapse shows at the next mint, within its hour. `macos-user`

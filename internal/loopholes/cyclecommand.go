@@ -17,8 +17,8 @@ const HostDaemonVerb = "host-daemon"
 // `yolo host-daemon restart <name>` — broker.CycleCommand's grammar. Since HD-R1
 // (docs/design/host-daemon-ownership.md) no launch runs a host-wide daemon, and the verb answers
 // a restart with the relaunch that restarts a jail's own. No line yolo prints names it any more:
-// the launch check's refusal and its attach line name the stop of an older yolo's copy instead
-// (HD-D21). It stays so the tests that pin its absence spell it one way.
+// a launch's line beside an older yolo's copy and the attach line name that copy's optional stop
+// instead. It stays so the tests that pin its absence spell it one way.
 func HostDaemonCycleCommand(name string) string {
 	return "yolo " + HostDaemonVerb + " restart " + name
 }

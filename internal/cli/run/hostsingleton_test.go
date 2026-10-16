@@ -12,8 +12,8 @@ import (
 // hostsingleton_test.go keeps the front-dialing helper of the tests of a MACHINE-WIDE daemon,
 // which no launch of this build starts any more (HD-R1, docs/design/host-daemon-ownership.md). The
 // tests that pinned yolo ENSURING one (startHostSingleton) went with it; the fixture of an older
-// yolo's copy still running is launchcheck_test.go's leaveAnOlderCopyRunning, since a launch now
-// refuses beside one (HD-D21).
+// yolo's copy still running is launchcheck_test.go's leaveAnOlderCopyRunning, since a launch names
+// one it finds and leaves it running.
 
 // dialFrontLine sends one newline-terminated request through a published endpoint
 // and returns the response line. The endpoint is the jail-facing half: pinned

@@ -4,8 +4,8 @@ package run
 // HD-R1 (docs/design/host-daemon-ownership.md, hostdaemonperjail.go): each session starts its
 // own daemon, in its own host-services dir and keyed by it, and hands the doorways outside the
 // sandbox that daemon's private socket, never the machine-wide one an older yolo's singleton
-// answered on. While such a copy is still running the launch refuses instead, naming its stop
-// (HD-D21, launchcheckrefusal_test.go's TestAMacosUserLaunchRefusesBesideAnOlderYolosCopy).
+// answered on. While such a copy is still running the launch names it and goes on, leaving it
+// running (launchcheckrefusal_test.go's TestAMacosUserLaunchProceedsBesideAnOlderYolosCopy).
 //
 // What these replaced, and why it is gone rather than moved: three tests of the singleton's
 // at-most-twice ensure on this arm (a reused daemon that stopped between the ensure and the

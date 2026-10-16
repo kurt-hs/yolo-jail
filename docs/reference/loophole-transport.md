@@ -261,9 +261,11 @@ the refresh flock beside it, which is what serializes them across jails.
 > **A host-wide daemon an older yolo started is still invisible stale state.** It listens at the
 > machine-wide path keyed by the loophole *name* and serves the jails that yolo launched; no launch
 > of this yolo starts, fronts, restarts or stops it, and a fresh launch of a loophole it serves
-> refuses while it runs ([`HD-D21`](../design/host-daemon-ownership.md#HD-D21)).
-> `yolo host-daemon status` lists it as host-wide, and `yolo host-daemon stop --host-wide <name>`
-> ends it, and no jail's own copy; relaunch the jails it served afterwards. When verifying
+> proceeds beside it, printing one line that names it
+> ([`HD-D14`](../design/host-daemon-ownership.md#HD-D14)). The two take the same credential lock.
+> `yolo host-daemon status` lists it as host-wide. Once the jails it served have been relaunched or
+> have ended, `yolo host-daemon stop --host-wide <name>` ends it, and no jail's own copy; a reboot
+> ends it too ([`HD-D18`](../design/host-daemon-ownership.md#HD-D18)). When verifying
 > transport work from inside a jail, relaunch the jail you measure, or the verification measures
 > the previous binary.
 

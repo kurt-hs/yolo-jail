@@ -49,7 +49,7 @@ import (
 // the budget, gets one dim line saying so: the check is a disclosure, so its absence must not
 // read as a clean bill. No flag hides either (docs/reference/report-tiers.md, OQ-RO3).
 //
-// # An older yolo's machine-wide daemon, still running, REFUSES a fresh launch
+// # An older yolo's machine-wide daemon, still running, is LEFT ALONE and NAMED
 //
 // Since HD-R1 (docs/design/host-daemon-ownership.md) every launch starts its own copy of each host
 // daemon, so the daemon a fresh launch asks is always this yolo's build: one that answers
@@ -58,23 +58,22 @@ import (
 // named the restart of a host-wide daemon too old to answer, has no such daemon left to meet.
 //
 // THE HOST-WIDE DAEMON THAT CAN STILL EXIST is the one an older yolo started and left running
-// through the upgrade, serving the jails that yolo launched. A launch never fronts it, but it works
-// on the same credential and takes the same lock as this launch's copy without the record this
-// yolo's copies share (HD-D16: the Claude broker's replaced and refused tokens), so it can fail
-// this jail's requests. So a FRESH launch whose loophole still has such a copy alive REFUSES, by
-// OQ-HD11's own reason, the maintainer's "don't want to launch without a feature that is
-// promised", naming broker.StopHostWideCommand and what that stop costs the older yolo's jails
-// (HD-D21). It is keyed on the fact, a live copy of this home's at the name-keyed rendezvous
-// (broker.LegacyDeps), and never on the loophole's name.
+// through the upgrade, serving the jails that yolo launched. By the owner's coexistence decision
+// (2026-10-16, which supersedes HD-D21's refusal and restores HD-D14), it keeps serving them until
+// they end or the host reboots: a launch never starts, fronts, restarts or stops it, and a fresh
+// launch beside it PROCEEDS. It works on the same credential file as this launch's copy and takes
+// the same lock, which serializes the two. A fresh launch that started a copy of a loophole such a
+// copy still serves prints one dim line saying so (noteOlderHostWideCopies), naming the optional
+// cleanup once those jails have ended, broker.StopHostWideCommand. It is keyed on the fact, a live
+// copy of this home's at the name-keyed rendezvous (broker.LegacyDeps), and never on the
+// loophole's name.
 //
-//   - AN ATTACH NEVER REFUSES (HD-D5 (1)): it starts nothing, so refusing it would leave the
-//     running jail exactly as it is. An attach into a jail an older yolo launched dials that
+//   - AN ATTACH SAYS SO TOO (HD-D5 (1)). An attach into a jail an older yolo launched dials that
 //     jail's front, which leads to the older copy; when that copy does not answer the check, the
-//     yellow line names the same stop, then relaunching the jail with this yolo
+//     yellow line names relaunching the jail with this yolo, then the same optional stop
 //     (olderHostWideAttachLine).
 //   - NO LAUNCH STOPS THE OLDER COPY ITSELF: it serves jails an older yolo launched, and only the
-//     user knows whether those may lose it now. No hatch reaches the refusal (HD-D5 (4)): the
-//     daemon is yolo's own state, and the fix is one command.
+//     user knows when those have ended.
 //
 // # What it costs
 //
@@ -90,8 +89,9 @@ const launchCheckMargin = time.Second
 // launchCheckTextMax caps one printed line from a daemon, in runes.
 const launchCheckTextMax = 600
 
-// launchCheckEntry is who asks the launch check: a fresh launch, which refuses beside an older
-// yolo's machine-wide copy, or an attach, which says so and goes on (HD-D5 (1)).
+// launchCheckEntry is who asks the launch check: a fresh launch, which names an older yolo's
+// machine-wide copy of a loophole it started (noteOlderHostWideCopies), or an attach, whose front
+// may lead to one (HD-D5 (1)). Neither refuses.
 type launchCheckEntry int
 
 const (
@@ -100,16 +100,14 @@ const (
 )
 
 // runLaunchChecks asks every started daemon that is due one (see the file comment) and prints
-// the answers in the order the daemons started. For a fresh launch it returns the refusal when a
-// loophole it started a copy of still has a machine-wide copy an older yolo left running
-// (olderHostWideRefusal), and nil otherwise; the caller prints it and stops, since what it must
-// unwind (a keeper's services, a macos-user session) is the caller's. A refused daemon is not
-// asked: the refusal stands alone. An attach is never refused: it prints the line instead.
+// the answers in the order the daemons started. A fresh launch first names each older yolo's
+// machine-wide copy of a loophole it started (noteOlderHostWideCopies). It refuses nothing, so it
+// always returns nil; the result is kept only because startPlannedLoopholes returns it beside the
+// startup refusal, which is the one refusal left on that path.
 func (o *Options) runLaunchChecks(rt string, started []loopholeDaemon, payload []loopholes.JailDaemonSpec,
 	entry launchCheckEntry) *olderDaemonRefusal {
-	var refused *olderDaemonRefusal
 	if entry == freshLaunchCheck {
-		refused = olderHostWideRefusal(started)
+		o.noteOlderHostWideCopies(started)
 	}
 	served := map[string]bool{}
 	for _, s := range loopholes.ServedJailDaemons(rt, payload) {
@@ -117,7 +115,7 @@ func (o *Options) runLaunchChecks(rt string, started []loopholeDaemon, payload [
 	}
 	var due []loopholeDaemon
 	for _, h := range started {
-		if !h.launchCheck || h.hostPath == "" || refused.names(h.name) {
+		if !h.launchCheck || h.hostPath == "" {
 			continue
 		}
 		if h.hasJailDaemon && !served[h.name] {
@@ -175,7 +173,7 @@ func (o *Options) runLaunchChecks(rt string, started []loopholeDaemon, payload [
 			out.print("[dim]loophole " + h.name + ": " + richtext.Escape(launchCheckText(n)) + "[/dim]")
 		}
 	}
-	return refused
+	return nil
 }
 
 // olderHostWideAlive reports whether the loophole called name still has a machine-wide copy an
@@ -188,10 +186,11 @@ func olderHostWideAlive(name string) bool {
 	return broker.BrokerIsAlive(deps) && broker.LegacyCopyServesHome(deps, paths.Home())
 }
 
-// olderDaemonRefusal is the refusal of a fresh launch beside an older yolo's machine-wide copies
-// (see the file comment): each by loophole name, in the order this launch started its own.
+// olderDaemonRefusal is the refusal startPlannedLoopholes returns beside its handles. Since the
+// owner's coexistence decision (2026-10-16) an older yolo's machine-wide copy refuses nothing, so
+// the one refusal it carries is an opted-in daemon's startup refusal; the name is the one the
+// keeper and packloopholes.go still spell.
 type olderDaemonRefusal struct {
-	older   []string
 	startup *hostStartupRefusal
 }
 
@@ -222,52 +221,38 @@ func (r *hostStartupRefusal) Error() string {
 	return text
 }
 
-// names reports whether the refusal names the loophole called name. Nil-safe: no refusal names
-// nothing.
-func (r *olderDaemonRefusal) names(name string) bool {
-	return r != nil && slices.Contains(r.older, name)
-}
-
-// olderHostWideRefusal is the refusal for the daemons in started whose loophole still has a
-// machine-wide copy an older yolo left running, in start order, or nil when there is none. The one
-// refusal every fresh launch that starts host services owes: the keeper and the macos-user arm
-// through runLaunchChecks, and `yolo host`'s HostDoorways.Start, which asks no launch check.
-func olderHostWideRefusal(started []loopholeDaemon) *olderDaemonRefusal {
-	var older []string
+// noteOlderHostWideCopies prints one dim line for each loophole in started, once and in start
+// order, that still has a machine-wide copy an older yolo left running for this home
+// (olderHostWideCopyLine). It refuses nothing and stops nothing: the owner's coexistence decision
+// (2026-10-16) leaves that copy serving the jails its yolo launched. Every fresh launch that starts
+// host services owes it: the keeper and the macos-user arm through runLaunchChecks, and `yolo
+// host`'s HostDoorways.Start, which asks no launch check. A launch has no quiet mode (OQ-RO3), so
+// no flag hides it.
+func (o *Options) noteOlderHostWideCopies(started []loopholeDaemon) {
+	var named []string
 	for _, h := range started {
-		if !slices.Contains(older, h.name) && olderHostWideAlive(h.name) {
-			older = append(older, h.name)
+		if slices.Contains(named, h.name) || !olderHostWideAlive(h.name) {
+			continue
 		}
+		named = append(named, h.name)
+		o.pr(o.Stderr).print("[dim]loophole " + h.name + ": " +
+			richtext.Escape(olderHostWideCopyLine(h.name)) + "[/dim]")
 	}
-	if len(older) == 0 {
-		return nil
-	}
-	return &olderDaemonRefusal{older: older}
 }
 
-// text is the refusal after its headline: the copies, why they stop this launch, the one command
-// line that stops them alone, and what that costs the jails the older yolo launched.
+// olderHostWideCopyLine is a fresh launch's one line beside an older yolo's machine-wide copy of
+// the loophole called name: that it still serves the jails that yolo launched, that this launch
+// leaves it running and shares its credential lock, and the optional cleanup once those jails have
+// ended, which a reboot also does.
+func olderHostWideCopyLine(name string) string {
+	return "an older yolo's machine-wide daemon is still serving the jails that yolo launched; it is " +
+		"left running and takes the same credential lock as this jail's own copy. Once those jails " +
+		"have ended, `" + broker.StopHostWideCommand(name) + "` ends it (a reboot does too)"
+}
+
+// text is the refusal after its headline: the startup refusal's own words.
 func (r *olderDaemonRefusal) text() string {
-	if r.startup != nil {
-		return r.startup.Error()
-	}
-	quoted := make([]string, len(r.older))
-	cmds := make([]string, len(r.older))
-	for i, name := range r.older {
-		quoted[i] = "'" + name + "'"
-		cmds[i] = broker.StopHostWideCommand(name)
-	}
-	what, it := "a machine-wide daemon for "+quoted[0]+" that an older yolo started is still running", "it"
-	if len(r.older) > 1 {
-		what = "machine-wide daemons for " + strings.Join(quoted[:len(quoted)-1], ", ") + " and " +
-			quoted[len(quoted)-1] + " that an older yolo started are still running"
-		it = "them"
-	}
-	return what + ". This yolo gives each jail its own, and an older copy running beside them works " +
-		"on the same credential without the record they share, so it can fail this jail's requests." +
-		"\n  Stop " + it + " with: " + strings.Join(cmds, " && ") +
-		"\n  Jails the older yolo launched lose " + it + " until you launch them again with this yolo; " +
-		"every jail's own copy keeps running. Then launch again."
+	return r.startup.Error()
 }
 
 // markup is the refusal as the launch stream prints it; headline names who refuses ("Refusing this
@@ -277,13 +262,15 @@ func (r *olderDaemonRefusal) markup(headline string) string {
 }
 
 // olderHostWideAttachLine is an attach's line when the jail it enters fronts a machine-wide copy an
-// older yolo left running and that copy does not answer the launch check (HD-D5 (1), HD-D21): the
-// attach goes on, and the line names the stop and the relaunch that end it.
+// older yolo left running and that copy does not answer the launch check (HD-D5 (1)): the attach
+// goes on, and the line names the coexistence order (the owner's decision, 2026-10-16): relaunch
+// this jail with this yolo, then, once no jail the older yolo launched is left, the optional stop.
 func olderHostWideAttachLine(name string) string {
 	return "this jail was launched by an older yolo, whose machine-wide daemon does not answer the " +
-		"launch check, so this entry cannot warn about what would fail its agents' requests. Stop " +
-		"that daemon with: " + broker.StopHostWideCommand(name) + ", then leave this jail and " +
-		"launch it again with this yolo, which gives it its own"
+		"launch check, so this entry cannot warn about what would fail its agents' requests. Leave " +
+		"this jail and launch it again with this yolo, which gives it its own; once no jail the " +
+		"older yolo launched is left, `" + broker.StopHostWideCommand(name) + "` ends that daemon " +
+		"(a reboot does too)"
 }
 
 // launchCheckUnknownError is a daemon's answer that it does not know the launch-check action
@@ -417,8 +404,8 @@ func firstNonEmptyLine(s, fallback string) string {
 //
 // IT NEVER REFUSES (HD-D5 (1)). A jail an older yolo launched fronts that yolo's machine-wide copy,
 // and while such a copy is alive the entry's handle says so (hostWide), so a copy that does not
-// answer the check gets the line naming its stop and the relaunch (olderHostWideAttachLine) where a
-// fresh launch refuses. Refusing the entry would leave the running jail exactly as it is.
+// answer the check gets the line naming the relaunch and then the optional stop
+// (olderHostWideAttachLine). Refusing the entry would leave the running jail exactly as it is.
 func (o *Options) runAttachLaunchChecks(cname, rt string, cfg *jsonx.OrderedMap, payload []loopholes.JailDaemonSpec) {
 	socketsDir := hostServiceSocketsDir(cname, o.IsMacOS)
 	var running []loopholeDaemon

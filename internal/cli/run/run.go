@@ -784,10 +784,9 @@ func Run(opts Options) (rc int) {
 			// THE START'S OWN REFUSAL FIRST, as the keeper orders it (keeper.go, then holdKey): a host
 			// service's typed startup refusal stops the start loop, so a service after it, the OpenAI
 			// one included, never starts, and the credential refusal below would otherwise name a
-			// consequence instead of the cause. A machine-wide copy an older yolo left running of a
-			// service this launch started refuses here too, as the keeper refuses it on the container
-			// arm (HD-D21, launchcheck.go). The deferred session teardown closes this launch's own
-			// services and leaves that copy running for the jails the older yolo launched.
+			// consequence instead of the cause. A machine-wide copy an older yolo left running
+			// refuses nothing: the launch check named it in one line and the launch goes on
+			// (launchcheck.go). The deferred session teardown closes this launch's own services.
 			if refused != nil {
 				o.pr(o.Stderr).print(refused.markup("Refusing the macos-user launch"))
 				return 1

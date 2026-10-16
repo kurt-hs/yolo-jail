@@ -98,9 +98,10 @@ func TestCheckReportsEachJailsBroker(t *testing.T) {
 	}
 }
 
-// AN OLDER YOLO'S HOST-WIDE BROKER, still running, is a WARN naming both steps: relaunch the
-// jails it serves with this yolo, then stop it.
-func TestCheckWarnsOfAnOlderYolosHostWideBroker(t *testing.T) {
+// AN OLDER YOLO'S HOST-WIDE BROKER, still running, is INFORMATIONAL (the owner's coexistence
+// decision, 2026-10-16): a pass that says it keeps serving its jails, plus the optional stop once
+// those have ended. Nothing about it is a warning that demands action.
+func TestCheckReportsAnOlderYolosHostWideBrokerAsInformation(t *testing.T) {
 	frontSocketsIn(t)
 	for _, p := range []string{paths.HostSingletonLock(brokerLoopholeName), paths.HostSingletonPIDFile(brokerLoopholeName)} {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -113,15 +114,19 @@ func TestCheckWarnsOfAnOlderYolosHostWideBroker(t *testing.T) {
 	}
 
 	r, out := brokerRows(t)
-	if r.warned == 0 {
-		t.Errorf("a host-wide broker an older yolo left is not a warning:\n%s", out)
+	if r.warned != 0 || r.failed != 0 {
+		t.Errorf("a host-wide broker an older yolo left is graded a warning or failure:\n%s", out)
 	}
-	for _, want := range []string{"a host-wide daemon an older yolo left is running",
-		"a launch of this yolo refuses while it runs", "launch those jails again with this yolo",
-		"yolo host-daemon stop --host-wide " + brokerLoopholeName} {
+	for _, want := range []string{"[PASS]", "a host-wide daemon an older yolo left is still serving the jails it launched",
+		"left running beside this yolo's", "Nothing needs doing",
+		"Once those jails have ended, `yolo host-daemon stop --host-wide " + brokerLoopholeName + "` ends it",
+		"a reboot ends it too"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the row lacks %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "refuses") {
+		t.Errorf("the row says a launch refuses beside the older copy, which none does:\n%s", out)
 	}
 }
 

@@ -12,8 +12,8 @@ import (
 // credentials file and the refresh lock under the home they run in, never under the machine, so
 // a copy started under another HOME (another user's, or a test's private one) shares nothing
 // with a launch here, even though its rendezvous paths, which are keyed by the loophole name in
-// /tmp, are the same. A launch refuses only beside a copy of its own home (HD-D21 in
-// docs/design/host-daemon-ownership.md).
+// /tmp, are the same. A launch names only a copy of its own home, and leaves it running
+// (internal/cli/run/launchcheck.go; docs/design/host-daemon-ownership.md).
 
 // LegacyCopyServesHome reports whether the machine-wide copy deps names runs under home, read from
 // its process's HOME in /proc/<pid>/environ. Where that cannot be read (no PID file, no /proc, as

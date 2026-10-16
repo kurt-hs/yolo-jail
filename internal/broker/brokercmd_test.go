@@ -113,18 +113,26 @@ func TestStatusOfNothingRunningSaysWhy(t *testing.T) {
 	}
 }
 
-// A HOST-WIDE COPY AN OLDER YOLO LEFT is reported as that, with what to do about it.
+// A HOST-WIDE COPY AN OLDER YOLO LEFT is reported as that, informationally (the owner's coexistence
+// decision, 2026-10-16): it keeps serving its jails, needs nothing now, and the optional stop comes
+// once those jails have ended. An accepting one is no failure, so status exits 0.
 func TestStatusReportsAnOlderYolosHostWideCopy(t *testing.T) {
 	st := &verbState{running: []Instance{{Name: fixtureDaemon, HostWide: true,
 		Socket: "/tmp/yolo-" + fixtureDaemon + ".sock", PIDs: []int{3}, Accepting: true}}}
 	deps, buf := newDeps(t, st)
-	PrintStatus(deps, fixtureDaemon)
+	if rc := PrintStatus(deps, fixtureDaemon); rc != 0 {
+		t.Errorf("status of an accepting older copy exited %d, want 0", rc)
+	}
 	for _, want := range []string{"host-wide, left by an older yolo: pid 3",
-		"a launch of this yolo refuses while it runs", "launch those jails again with this yolo",
-		"yolo host-daemon stop --host-wide " + fixtureDaemon} {
+		"still serves the jails that yolo launched", "left running", "nothing needs doing",
+		"Once those jails have ended, `yolo host-daemon stop --host-wide " + fixtureDaemon + "` ends it",
+		"a reboot ends it too"} {
 		if !strings.Contains(buf.String(), want) {
 			t.Errorf("status lacks %q:\n%s", want, buf.String())
 		}
+	}
+	if strings.Contains(buf.String(), "refuses") {
+		t.Errorf("status says a launch refuses beside an older yolo's copy, which none does:\n%s", buf.String())
 	}
 }
 

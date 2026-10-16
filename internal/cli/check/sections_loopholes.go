@@ -450,7 +450,7 @@ func reportSelfCheckLines(r *reporter, name, output string) int {
 }
 
 // reportBrokerDaemon reports the Claude broker's running copies: one row per jail's own copy,
-// and a warning for a host-wide one an older yolo left.
+// and an informational pass, with the optional cleanup, for a host-wide one an older yolo left.
 //
 // NOTHING RUNNING IS A PASS since HD-R1 (docs/design/host-daemon-ownership.md §5.2): each jail
 // starts its own broker and ends it with the jail, so with no jail running there is no daemon,
@@ -480,12 +480,14 @@ func (o *Options) reportBrokerDaemon(r *reporter) {
 		}
 		switch {
 		case i.HostWide:
-			r.warn(fmt.Sprintf("loophole %s: a host-wide daemon an older yolo left is running "+
-				"(pid=%s)", brokerLoopholeName, pids),
-				"It serves only the jails that yolo launched, and a launch of this yolo refuses "+
-					"while it runs. Run `"+broker.StopHostWideCommand(brokerLoopholeName)+"`, which "+
-					"leaves every jail's own copy running, then launch those jails again with this "+
-					"yolo, which gives each its own.")
+			// INFORMATIONAL, not a warning (the owner's coexistence decision, 2026-10-16): the
+			// copy keeps serving the jails its yolo launched, a launch of this yolo proceeds
+			// beside it, and the stop is an optional cleanup once those jails have ended.
+			r.ok(fmt.Sprintf("loophole %s: a host-wide daemon an older yolo left is still serving "+
+				"the jails it launched (pid=%s), left running beside this yolo's", brokerLoopholeName, pids))
+			r.note("Nothing needs doing. Once those jails have ended, `" +
+				broker.StopHostWideCommand(brokerLoopholeName) + "` ends it and leaves every jail's " +
+				"own copy running (a reboot ends it too).")
 		case i.Accepting:
 			r.ok(fmt.Sprintf("loophole %s: jail %s's daemon live (pid=%s, socket accepting)",
 				brokerLoopholeName, i.Jail, pids))

@@ -12,7 +12,7 @@ const HostDaemonVerb = loopholes.HostDaemonVerb
 // CycleCommand is the spelling of the RETIRED cycle of a host-wide daemon,
 // `yolo host-daemon restart <name>` (loopholes.HostDaemonCycleCommand). Since HD-R1 the verb's
 // restart answers with the relaunch that restarts a jail's own copy (Restart), and nothing yolo
-// prints names it (HD-D21); the tests that pin its absence spell it through here.
+// prints names it; the tests that pin its absence spell it through here.
 func CycleCommand(name string) string {
 	return loopholes.HostDaemonCycleCommand(name)
 }

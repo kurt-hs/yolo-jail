@@ -401,13 +401,13 @@ func TestAFreshLaunchsOwnDaemonThatDoesNotKnowTheCheckNamesNoRestart(t *testing.
 	}
 }
 
-// TestAnOlderYolosMachineWideCopyRefusesAFreshLaunch is OQ-HD11's refusal as HD-D21 keeps it under
-// HD-R1: the one host-wide daemon that can still exist is the copy an older yolo left running
-// through the upgrade. This launch starts its own copy, which answers the check, and still the
-// boundary refuses, on both backends whose launch starts the service, naming the stop of that
-// copy alone and what it costs the jails the older yolo launched. It asks the refused daemon
-// nothing, and it stops nothing itself: the older copy is still alive afterwards.
-func TestAnOlderYolosMachineWideCopyRefusesAFreshLaunch(t *testing.T) {
+// TestAFreshLaunchProceedsBesideAnOlderYolosMachineWideCopy is the owner's coexistence decision
+// (2026-10-16, superseding HD-D21's refusal) at the boundary both launch arms cross: the one
+// host-wide daemon that can still exist under HD-R1 is the copy an older yolo left running through
+// the upgrade, serving the jails it launched. A fresh launch beside it is not refused, on either
+// backend whose launch starts the service: it asks its own copy the check as always, prints one
+// line naming the older copy and its optional later stop, and stops nothing itself.
+func TestAFreshLaunchProceedsBesideAnOlderYolosMachineWideCopy(t *testing.T) {
 	for _, rt := range []string{"podman", "macos-user"} {
 		t.Run(rt, func(t *testing.T) {
 			launchCheckIsolation(t)
@@ -418,12 +418,16 @@ func TestAnOlderYolosMachineWideCopyRefusesAFreshLaunch(t *testing.T) {
 			})
 			leaveAnOlderCopyRunning(t, olderThanTheCheck)
 			got, refused := launchCheckedService(t, rt, servedPayload())
-			if refused == nil {
-				t.Fatalf("the boundary did not refuse beside an older yolo's machine-wide copy:\n%s", got)
+			if refused != nil {
+				t.Fatalf("the boundary refused beside an older yolo's machine-wide copy: %s\n%s",
+					refused.text(), got)
 			}
-			assertTheOlderCopyRefusal(t, refused.markup("Refusing this launch"), "Refusing this launch")
-			if asked.Load() != 0 || strings.Contains(got, "loophole "+launchCheckFixtureName+": ") {
-				t.Errorf("the launch asked the daemon it refuses for (%d asks):\n%s", asked.Load(), got)
+			if asked.Load() == 0 {
+				t.Errorf("the launch did not ask its own copy the check:\n%s", got)
+			}
+			assertTheOlderCopyLine(t, got)
+			if n := strings.Count(got, olderCopyLead); n != 1 {
+				t.Errorf("the launch named the older copy %d times, want one line:\n%s", n, got)
 			}
 			if !olderHostWideAlive(launchCheckFixtureName) {
 				t.Error("the launch stopped the older copy itself; only the user may")
@@ -432,58 +436,56 @@ func TestAnOlderYolosMachineWideCopyRefusesAFreshLaunch(t *testing.T) {
 	}
 }
 
-// TestWithNoOlderCopyAFreshLaunchIsNotRefused is the refusal's control: the same launch, with the
-// older copy's PID file gone (what `yolo host-daemon stop --host-wide` leaves), proceeds.
-func TestWithNoOlderCopyAFreshLaunchIsNotRefused(t *testing.T) {
+// TestWithNoOlderCopyAFreshLaunchSaysNothingOfOne is the line's control: the same launch, with
+// the older copy's PID file gone (what `yolo host-daemon stop --host-wide` leaves), names none.
+func TestWithNoOlderCopyAFreshLaunchSaysNothingOfOne(t *testing.T) {
 	launchCheckIsolation(t)
 	serveLaunchCheckDaemon(t, answersTheCheck)
 	serveFrontedFixture(t, olderThanTheCheck, paths.HostSingletonSocket(launchCheckFixtureName))
-	if got, refused := launchCheckedService(t, "podman", servedPayload()); refused != nil {
-		t.Fatalf("a socket with no live PID file beside it was read as an older copy: %s\n%s",
-			refused.text(), got)
-	}
+	got := launchWithCheckedService(t, "podman", servedPayload())
+	assertNoOlderCopyLine(t, got)
 }
 
-// TestAnOlderCopyUnderAnotherHomeDoesNotRefuse: the rendezvous paths are keyed by the loophole's
-// name in /tmp, but a copy running under another home (another user's, or another test run's
-// private one) shares none of this launch's credentials, so it is not refused for.
-func TestAnOlderCopyUnderAnotherHomeDoesNotRefuse(t *testing.T) {
+// TestAnOlderCopyUnderAnotherHomeIsNotNamed: the rendezvous paths are keyed by the loophole's name
+// in /tmp, but a copy running under another home (another user's, or another test run's private
+// one) shares none of this launch's credentials, so the launch does not name it.
+func TestAnOlderCopyUnderAnotherHomeIsNotNamed(t *testing.T) {
 	launchCheckIsolation(t)
 	serveLaunchCheckDaemon(t, answersTheCheck)
 	leaveAnOlderCopyRunningUnder(t, olderThanTheCheck, t.TempDir())
-	if got, refused := launchCheckedService(t, "podman", servedPayload()); refused != nil {
-		t.Fatalf("a copy under another home was refused for: %s\n%s", refused.text(), got)
-	}
+	got := launchWithCheckedService(t, "podman", servedPayload())
+	assertNoOlderCopyLine(t, got)
 }
 
-// assertTheOlderCopyRefusal checks a refusal's words: who refuses, the copy, why, the stop of
-// that copy alone, and what that stop costs.
-func assertTheOlderCopyRefusal(t *testing.T, out, headline string) {
+// olderCopyLead opens the line a fresh launch prints beside an older yolo's machine-wide copy of
+// the fixture loophole.
+const olderCopyLead = "loophole " + launchCheckFixtureName + ": an older yolo's machine-wide daemon"
+
+// assertTheOlderCopyLine checks the line's words: the copy, that it keeps serving the older yolo's
+// jails and is left running, the shared credential lock, and the optional stop once those jails
+// have ended (or a reboot). It names no refusal and no retired restart.
+func assertTheOlderCopyLine(t *testing.T, out string) {
 	t.Helper()
-	for _, want := range []string{headline + ": a machine-wide daemon for '" + launchCheckFixtureName +
-		"' that an older yolo started is still running", "without the record they share",
-		"Stop it with: " + broker.StopHostWideCommand(launchCheckFixtureName),
-		"Jails the older yolo launched lose it until you launch them again with this yolo",
-		"Then launch again."} {
+	for _, want := range []string{olderCopyLead + " is still serving the jails that yolo launched",
+		"left running", "credential lock",
+		"Once those jails have ended, `" + broker.StopHostWideCommand(launchCheckFixtureName) + "` ends it",
+		"a reboot does too"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("the refusal does not say %q:\n%s", want, out)
+			t.Errorf("the launch does not say %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, broker.CycleCommand(launchCheckFixtureName)) {
-		t.Errorf("the refusal names the retired restart:\n%s", out)
+	for _, not := range []string{"Refusing", broker.CycleCommand(launchCheckFixtureName)} {
+		if strings.Contains(out, not) {
+			t.Errorf("the launch says %q beside an older copy:\n%s", not, out)
+		}
 	}
 }
 
-// TestTheRefusalNamesEveryOlderCopyAndOneCommandLine: two older copies are named together, in the
-// order this launch started its own, and one pasteable line stops both.
-func TestTheRefusalNamesEveryOlderCopyAndOneCommandLine(t *testing.T) {
-	got := (&olderDaemonRefusal{older: []string{"aws-auth", "other"}}).markup("Refusing this launch")
-	for _, want := range []string{"machine-wide daemons for 'aws-auth' and 'other' that an older yolo " +
-		"started are still running", "Stop them with: " + broker.StopHostWideCommand("aws-auth") +
-		" && " + broker.StopHostWideCommand("other"), "lose them until you launch them again"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("the refusal does not say %q:\n%s", want, got)
-		}
+// assertNoOlderCopyLine: a launch with no older copy of this home's names none.
+func assertNoOlderCopyLine(t *testing.T, out string) {
+	t.Helper()
+	if strings.Contains(out, "an older yolo's machine-wide daemon") {
+		t.Errorf("a launch with no older copy of this home's named one:\n%s", out)
 	}
 }
 
@@ -588,8 +590,8 @@ func attachWithCheckedService(t *testing.T, payload []loopholes.JailDaemonSpec, 
 		launcher.Stderr = &launchErr
 		launcher.Stdout = discardBuf()
 		launcher.PathExists = func(string) bool { return false }
-		// The refusal is not this helper's: a test that leaves an older copy running stands for
-		// a jail launched before it was the older copy, which no launch of that yolo refused.
+		// A test that leaves an older copy running stands for a jail launched before it was the
+		// older copy; the line naming that copy is not a launch-check answer, so it is cut below.
 		handles, _ := launcher.startLoopholesDisclosed(cname, "podman", newConfig(),
 			[]*packload.Pack{pack}, nil)
 		t.Cleanup(func() {
@@ -602,7 +604,13 @@ func attachWithCheckedService(t *testing.T, payload []loopholes.JailDaemonSpec, 
 		if !startedLoophole(handles, launchCheckFixtureName) {
 			t.Fatalf("the fixture's host service did not start:\n%s", launchErr.String())
 		}
-		if strings.Contains(launchErr.String(), "loophole "+launchCheckFixtureName+":") {
+		var asked []string
+		for _, l := range strings.Split(launchErr.String(), "\n") {
+			if strings.Contains(l, "loophole "+launchCheckFixtureName+":") && !strings.Contains(l, olderCopyLead) {
+				asked = append(asked, l)
+			}
+		}
+		if len(asked) > 0 {
 			t.Fatalf("the launch, which serves no agent of the service, asked it:\n%s",
 				launchErr.String())
 		}
@@ -671,22 +679,28 @@ func TestAnAttachFindingNoFrontAsksNothing(t *testing.T) {
 	}
 }
 
-// TestAnAttachIntoAnOlderYolosJailKeepsTheLineAndNamesTheStop is HD-D5 (1) under HD-D21: an
-// attach never refuses. Its jail's front leads to the machine-wide copy the older yolo that
-// launched it left (stood in for here by this launch's own copy answering as that copy does), and
-// that copy does not answer the check, so the line names stopping it and relaunching the jail,
-// never the retired restart.
+// TestAnAttachIntoAnOlderYolosJailKeepsTheLineAndNamesTheStop is HD-D5 (1) under the owner's
+// coexistence decision (2026-10-16): an attach never refuses. Its jail's front leads to the
+// machine-wide copy the older yolo that launched it left (stood in for here by this launch's own
+// copy answering as that copy does), and that copy does not answer the check, so the line names
+// relaunching the jail and then, once the older yolo's jails have ended, stopping that copy, never
+// the retired restart.
 func TestAnAttachIntoAnOlderYolosJailKeepsTheLineAndNamesTheStop(t *testing.T) {
 	launchCheckIsolation(t)
 	serveLaunchCheckDaemon(t, olderThanTheCheck)
 	leaveAnOlderCopyRunning(t, olderThanTheCheck)
 	got := attachWithCheckedService(t, servedPayload(), true)
+	relaunch := "Leave this jail and launch it again with this yolo"
+	stop := "once no jail the older yolo launched is left, `" +
+		broker.StopHostWideCommand(launchCheckFixtureName) + "` ends that daemon"
 	for _, want := range []string{"loophole " + launchCheckFixtureName + ": this jail was launched by an older yolo",
-		"Stop that daemon with: " + broker.StopHostWideCommand(launchCheckFixtureName),
-		"launch it again with this yolo"} {
+		relaunch, stop} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the attach does not say %q:\n%s", want, got)
 		}
+	}
+	if strings.Index(got, stop) < strings.Index(got, relaunch) {
+		t.Errorf("the attach names the stop before the relaunch:\n%s", got)
 	}
 	if strings.Contains(got, broker.CycleCommand(launchCheckFixtureName)) {
 		t.Errorf("the attach names the retired restart:\n%s", got)
