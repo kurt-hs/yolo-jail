@@ -995,7 +995,9 @@ func WorkspaceACLAces(group string) map[string]string {
 
 // FixPermissionsScript returns the find-based bash script that (re)applies the
 // split ACEs to a tree (the on-demand macos-fix-permissions retrofit, NOT the
-// hot path).
+// hot path). Each path chmod could not change is appended to failedList, one per line (a
+// directory can appear twice, once per directory walk), and the script exits non-zero when
+// any walk failed; shareTree reads the list.
 //
 // IT SKIPS WHAT THE SANDBOX ACCOUNT OWNS. The walk runs as the invoking user, and macOS lets
 // only a file's owner (or root) change its access list, so every file a session wrote under a
@@ -1004,20 +1006,63 @@ func WorkspaceACLAces(group string) map[string]string {
 // grant, so leaving them out loses nothing. The exclusion is built only when the account exists:
 // BSD find refuses `-user` naming an unknown user, and with no account no file can be its.
 // `${skip[@]+...}` because bash 3.2, macOS's, calls an empty array unbound under `set -u`.
-func FixPermissionsScript(root, group string) string {
+//
+// NO `set -e`, so one path chmod refuses does not end the script before the later walks: each
+// walk's status is kept and the script exits with the worst. chmod applies a batch to every path
+// it can before it exits 1, so only a failed batch is retried path by path, to name the paths
+// that failed (adding an entry a path already carries changes nothing).
+func FixPermissionsScript(root, group, failedList string) string {
 	aces := WorkspaceACLAces(group)
-	r := shQuote(root)
 	skip := `${skip[@]+"${skip[@]}"}`
-	return "set -euo pipefail\n" +
-		"root=" + r + "\n" +
+	return "set -uo pipefail\n" +
+		"root=" + shQuote(root) + "\n" +
+		"failed=" + shQuote(failedList) + "\n" +
 		"skip=()\n" +
 		"if /usr/bin/id -u " + SandboxUser + " >/dev/null 2>&1; then skip=('!' -user " +
 		shQuote(SandboxUser) + "); fi\n" +
+		"grant() {\n" +
+		"  local ace=$1; shift\n" +
+		"  find \"$root\" " + skip + " \"$@\" -exec /bin/sh -c " + shQuote(grantBatch) +
+		" sh \"$ace\" \"$failed\" {} +\n" +
+		"}\n" +
 		"echo \"Applying shared-group ACLs under $root (this can take a moment on a large tree)…\"\n" +
-		"find \"$root\" " + skip + " -type d -exec chmod -h +a " + shQuote(aces["dir"]) + " {} +\n" +
-		"find \"$root\" " + skip + " -type d -exec chmod -h +a " + shQuote(aces["file_inherit"]) + " {} +\n" +
-		"find \"$root\" " + skip + " ! -type d -exec chmod -h +a " + shQuote(aces["file"]) + " {} +\n" +
-		"echo \"Done.\"\n"
+		"rc=0\n" +
+		"grant " + shQuote(aces["dir"]) + " -type d || rc=1\n" +
+		"grant " + shQuote(aces["file_inherit"]) + " -type d || rc=1\n" +
+		"grant " + shQuote(aces["file"]) + " '!' -type d || rc=1\n" +
+		"exit $rc\n"
+}
+
+// grantBatch is the /bin/sh body find runs per batch: $1 the entry, $2 the failed list, then
+// the paths.
+const grantBatch = `ace=$1; out=$2; shift 2
+chmod -h +a "$ace" "$@" 2>/dev/null && exit 0
+rc=0
+for f; do
+  chmod -h +a "$ace" "$f" 2>/dev/null || { printf '%s\n' "$f" >>"$out"; rc=1; }
+done
+exit $rc`
+
+// shareTree runs FixPermissionsScript over root as the invoking user and returns the paths
+// that did not get the entry (deduplicated, in walk order) and the script's exit status.
+func shareTree(deps Deps, root string) ([]string, int) {
+	dir, err := os.MkdirTemp("", "yolo-acl-")
+	if err != nil {
+		return nil, 1
+	}
+	defer os.RemoveAll(dir)
+	list := filepath.Join(dir, "failed")
+	rc := deps.RunBash(FixPermissionsScript(root, "", list))
+	data, _ := os.ReadFile(list)
+	var failed []string
+	seen := map[string]bool{}
+	for _, p := range strings.Split(string(data), "\n") {
+		if p != "" && !seen[p] {
+			seen[p] = true
+			failed = append(failed, p)
+		}
+	}
+	return failed, rc
 }
 
 // WorkspaceGrantedScript returns a bash test that exits 0 when `dir` carries an

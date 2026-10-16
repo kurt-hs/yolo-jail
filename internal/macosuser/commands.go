@@ -2,13 +2,14 @@ package macosuser
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/storage"
 )
@@ -128,12 +129,8 @@ func MacosSetup(deps Deps) int {
 	// instead (the reason refuseIfRoot guards this whole command).
 	out.printf("• Sharing existing projects under [bold]%s[/bold] with %s "+
 		"(idempotent; safe to re-run).", SharedRootDefault(), SandboxUser)
-	if deps.RunBash(FixPermissionsScript(SharedRootDefault(), "")) != 0 {
-		out.print("  [yellow]Some ACL entries could not be applied; the rest were.[/yellow] " +
-			"chmod named each file above: it belongs to another account or is locked " +
-			"(`ls -leO <file>` shows which). Take it back with `sudo chown $USER <file>` " +
-			"(or unlock it with `chflags nouchg <file>`), then run " +
-			"[bold]yolo macos-fix-permissions <its directory>[/bold].")
+	if failed, rc := shareTree(deps, SharedRootDefault()); rc != 0 {
+		reportACLFailures(out, SharedRootDefault(), hostUser, failed)
 	} else {
 		out.print("  [green]done[/green]")
 	}
@@ -325,9 +322,8 @@ func MacosFixPermissions(deps Deps, path string) int {
 			"(under %s or another non-home root).", target, SharedRootDefault())
 		return 1
 	}
-	if deps.RunBash(FixPermissionsScript(target, "")) != 0 {
-		out.printf("[yellow]Some ACLs could not be applied under %s "+
-			"(e.g. a file whose ACL is locked). The rest were applied.[/yellow]", target)
+	if failed, rc := shareTree(deps, target); rc != 0 {
+		reportACLFailures(out, target, deps.HostUser(), failed)
 		return 1
 	}
 	out.printf("[green]✓ Applied shared-group ACLs under %s.[/green]", target)
@@ -502,6 +498,47 @@ func ensureHostOwnedRoot(deps Deps, out printer, path, user string, rootMayOwn b
 	return 0
 }
 
+// aclPathsShown caps the paths reportACLFailures puts on its command lines; a re-run after the
+// fix lists any left.
+const aclPathsShown = 20
+
+// reportACLFailures is the stop for a shared-group ACL walk under root that did not finish:
+// what failed, then the commands that show and fix it, with the real paths.
+func reportACLFailures(out printer, root, user string, failed []string) {
+	out.blank()
+	if len(failed) == 0 {
+		out.printf("[bold yellow]⚠ The shared-group ACL walk under %s failed (its error is above).[/bold yellow]",
+			richtext.Escape(root))
+		out.blank()
+		out.commands(shquote.JoinDisplay([]string{"yolo", "macos-fix-permissions", root}))
+		out.blank()
+		return
+	}
+	out.printf("[bold yellow]⚠ %d paths under %s did not get the shared-group ACL.[/bold yellow]",
+		len(failed), richtext.Escape(root))
+	out.blank()
+	shown := failed
+	if len(shown) > aclPathsShown {
+		shown = shown[:aclPathsShown]
+	}
+	out.commands(shquote.JoinDisplay(append([]string{"ls", "-ledO"}, shown...)))
+	out.blank()
+	out.print("Make them yours, then run the walk again:")
+	out.blank()
+	owner := user
+	if owner == "" {
+		owner = "$USER"
+	}
+	out.commands(
+		"sudo chown "+owner+" "+shquote.JoinDisplay(shown),
+		shquote.JoinDisplay([]string{"yolo", "macos-fix-permissions", root}),
+	)
+	if len(failed) > len(shown) {
+		out.printf("[dim]  (%d more not shown; the re-run lists them)[/dim]", len(failed)-len(shown))
+	}
+	out.blank()
+}
+
 // installSudoersRule installs rule as SudoersFile (PL-4): written as the host into a temporary
 // file, copied by root under the inert staging name, owned root:wheel 0440, checked by visudo,
 // renamed into place, and the whole configuration checked again. Anything that fails leaves no
@@ -511,50 +548,23 @@ func installSudoersRule(deps Deps, out printer, rule string) int {
 		out.printf("[bold red]✗ setup step failed:[/bold red] %s", shquote.JoinDisplay(cmd))
 		return 1
 	}
-	// printRule writes the rule verbatim, not through the markup renderer, so a report carries
-	// exactly the bytes visudo read.
-	printRule := func() {
-		out.print("The rule yolo wrote:")
-		fmt.Fprint(out.w, rule)
-	}
-	reportBug := func() {
-		out.print("This is a yolo bug; report it at " + issuesURL + " with visudo's output and the rule.")
-	}
-	// visudo runs without -q in both checks, so its reason (file, line, what it could not
-	// parse) is printed above each of these messages, on the inherited stderr.
-	ruleRejected := func() int {
-		out.print("[bold red]✗ visudo rejected the rule file on its own, so nothing was installed" +
-			"[/bold red] and your sudo configuration is unchanged. visudo's reason is above.")
-		printRule()
-		reportBug()
-		return 1
-	}
-	// configRejected is the whole-configuration check failing with the rule in place. Setup
-	// takes the rule back out and checks again, which says whose problem it is: a configuration
-	// that still fails was broken before yolo touched it.
-	configRejected := func() int {
-		rm := rootArgv([]string{rmBin, "-f", SudoersFile})
-		if deps.Run(rm) != 0 {
-			out.printf("[bold red]✗ visudo rejected your sudo configuration with yolo's rule in place, "+
-				"and setup could not remove the rule: %s is still installed.[/bold red] visudo's "+
-				"reason is above. Remove it with `%s`, then run `sudo visudo -c` to see whether "+
-				"the rest of your sudo configuration passes.", SudoersFile, shquote.JoinDisplay(rm))
-			return 1
+	// stop prints a refusal's headline and visudo's output, each set off by a blank line.
+	stop := func(headline, output string) {
+		out.blank()
+		out.print("[bold red]✗ " + headline + "[/bold red]")
+		if strings.TrimSpace(output) != "" {
+			out.blank()
+			out.verbatim(output)
 		}
-		if deps.Run(rootArgv([]string{visudoBin, "-c"})) != 0 {
-			out.printf("[bold red]✗ Your sudo configuration fails visudo's check even without yolo's "+
-				"rule[/bold red], so it was invalid before setup ran; setup removed %s again and "+
-				"nothing else was changed. visudo's output above names the file and line. Fix "+
-				"that file (edit it with `sudo visudo -f <file>`), confirm with `sudo visudo -c`, "+
-				"then run [bold]yolo macos-setup[/bold] again.", SudoersFile)
-			return 1
-		}
-		out.printf("[bold red]✗ visudo rejected your sudo configuration with yolo's rule in "+
-			"place.[/bold red] Setup removed %s again, and without it visudo accepts the "+
-			"configuration, so the rule is what it rejects; nothing else was changed. visudo's "+
-			"reason is in the first check's output above.", SudoersFile)
-		printRule()
-		reportBug()
+		out.blank()
+	}
+	reportBug := func() int {
+		out.print("This is a yolo bug. Report it with the output above and this rule:")
+		out.blank()
+		out.verbatim(rule)
+		out.blank()
+		out.commands(issuesURL)
+		out.blank()
 		return 1
 	}
 	dir, err := os.MkdirTemp("", "yolo-sudoers-")
@@ -579,19 +589,84 @@ func installSudoersRule(deps Deps, out printer, rule string) int {
 			return stepFailed(cmd)
 		}
 	}
-	if deps.Run(rootArgv([]string{visudoBin, "-c", "-f", SudoersStagingFile})) != 0 {
+	if output, rc := runQuietly(deps, rootArgv([]string{visudoBin, "-c", "-f", SudoersStagingFile})); rc != 0 {
 		deps.Run(dropStaged)
-		return ruleRejected()
+		stop("visudo rejected yolo's sudo rule. Nothing was installed.", output)
+		return reportBug()
 	}
 	if mv := rootArgv([]string{mvBin, "-f", SudoersStagingFile, SudoersFile}); deps.Run(mv) != 0 {
 		deps.Run(dropStaged)
 		return stepFailed(mv)
 	}
-	if deps.Run(rootArgv([]string{visudoBin, "-c"})) != 0 {
-		return configRejected()
+	configCheck := rootArgv([]string{visudoBin, "-c"})
+	withRule, rc := runQuietly(deps, configCheck)
+	if rc == 0 {
+		out.printf("• Installed [bold]%s[/bold]; visudo accepts it.", SudoersFile)
+		return 0
 	}
-	out.printf("• Installed [bold]%s[/bold]; visudo accepts it.", SudoersFile)
-	return 0
+	// The whole configuration fails with the rule in place. Setup takes the rule back out and
+	// checks again, and the second answer says whose problem it is.
+	if deps.Run(rootArgv([]string{rmBin, "-f", SudoersFile})) != 0 {
+		stop("visudo rejected your sudo configuration with yolo's rule in place, and removing the "+
+			"rule failed.", withRule)
+		out.print("Remove the rule, then run setup again:")
+		out.blank()
+		out.commands("sudo rm -f " + SudoersFile)
+		out.print("  [dim]# or, if sudo itself fails:[/dim]")
+		out.commands(
+			`osascript -e 'do shell script "/bin/rm -f `+SudoersFile+`" with administrator privileges'`,
+			"yolo macos-setup",
+		)
+		out.blank()
+		return 1
+	}
+	without, rc := runQuietly(deps, configCheck)
+	if rc == 0 {
+		stop("visudo rejected your sudo configuration with yolo's rule in place. The rule was "+
+			"removed again.", withRule)
+		return reportBug()
+	}
+	stop("Your sudo configuration is invalid without yolo's rule too. Nothing was installed.", without)
+	out.print("Fix it, then run setup again:")
+	out.blank()
+	var cmds []string
+	for _, f := range sudoersFilesBlamed(without) {
+		cmds = append(cmds, shquote.JoinDisplay([]string{"sudo", "visudo", "-f", f}))
+	}
+	out.commands(append(cmds, "sudo visudo -c", "yolo macos-setup")...)
+	out.blank()
+	return 1
+}
+
+// runQuietly runs a check whose output the user needs only when it fails, returning that
+// output (deps.RunCapture). With no RunCapture it runs through deps.Run, the output printed as
+// it comes and none returned.
+func runQuietly(deps Deps, argv []string) (string, int) {
+	if deps.RunCapture == nil {
+		return "", deps.Run(argv)
+	}
+	return deps.RunCapture(argv)
+}
+
+// visudoBlame matches the file a visudo complaint names, in the three shapes sudo 1.9 prints:
+// `>>> /etc/sudoers.d/x: syntax error near line 3 <<<`, `/etc/sudoers.d/x:3:5: syntax error`,
+// and `visudo: /etc/sudoers.d/x: bad permissions, should be mode 0440`.
+var visudoBlame = regexp.MustCompile(`(?m)(?:^>>> (/[^\s:]+): |^(/[^\s:]+):\d+(?::\d+)?: |^visudo: (/[^\s:]+): )`)
+
+// sudoersFilesBlamed is each file visudo's output blames, once, in order, SudoersFile aside:
+// setup has removed it by the time this is printed.
+func sudoersFilesBlamed(output string) []string {
+	var files []string
+	seen := map[string]bool{SudoersFile: true}
+	for _, m := range visudoBlame.FindAllStringSubmatch(output, -1) {
+		for _, f := range m[1:] {
+			if f != "" && !seen[f] {
+				seen[f] = true
+				files = append(files, f)
+			}
+		}
+	}
+	return files
 }
 
 // sweepLegacySessions is the administrator's half of PL-8: for each session record this user's
