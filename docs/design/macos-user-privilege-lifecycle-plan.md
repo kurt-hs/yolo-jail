@@ -728,7 +728,7 @@ file in flux. Every task runs `just format` before its commit and stages only it
   `runCaptureSteps` runs prepare and stage argvs as host; `CaptureStagingCommands` and
   `ForkBuildStagingCommands` use `/usr/bin/chgrp` instead of `chown`; `WriteHostFile` for the
   profile; `RunCaptureCleanup` per PL-7 (the guest pass is
-  `RunAsSandboxArgv(nil, chmodBin, "-R", "u+w", "--", root)` then `RunAsSandboxArgv(nil, rmBin,
+  `RunAsSandboxArgv(nil, chmodBin, "-R", "--", "u+w", root)` then `RunAsSandboxArgv(nil, rmBin,
   "-rf", "--", root)`); `CaptureDriverArgv`, `ForkBuildDriverArgv` use the run-as prefix;
   `capturePlanProblems` gets the rule-shape check; the `SourceCommands` "copied under sudo" check
   keeps working against both spellings. `PrintCapturePlan` and the "sudo may prompt once" line

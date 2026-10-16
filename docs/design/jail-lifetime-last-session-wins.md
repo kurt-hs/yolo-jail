@@ -389,7 +389,7 @@ Setsid fronted daemons are orphaned by a SIGKILL there too, INFERRED. SOURCED ot
 or the managed Codex adapter is needed, it stays resident as their parent
 (`launchservice.RunAgent`, [`agent.go`](../../internal/launchservice/agent.go)): Setpgid
 children with a lifeline, stopped when the agent exits. Since HD-R1 each host launch starts the
-credential daemons it needs as its own (HD-D11, HD-D23 in host-daemon-ownership.md), and every `yolo host -- codex` on the machine, in any workspace, also shares one managed
+credential daemons it needs as its own (HD-D11, HD-D23 in [`host-daemon-ownership.md`](host-daemon-ownership.md)), and every `yolo host -- codex` on the machine, in any workspace, also shares one managed
 Codex home (`host-agents/<pack>` under the machine-wide store, `prepare` in
 [`host.go`](../../internal/openaiauthhost/host.go)): its `auth.json`, one caller token, and a
 shared lock that counts the home's live launches (`sharedCallerToken`,
