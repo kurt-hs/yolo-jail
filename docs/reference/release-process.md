@@ -1,4 +1,4 @@
-# Exact-commit pre-tag release gate
+# Release process: the exact-commit pre-tag release gate
 
 `just release VERSION` submits the current clean, full `HEAD` SHA as data to `release-request.yml` on `main`; it does not create a local tag or substitute a newer main commit. The host checks the notes, official pack-binary pins and main ancestry. Dispatch acceptance is not publication success.
 
@@ -67,4 +67,4 @@ gh release view vVERSION --repo OWNER/REPO
 
 There is no tag-push or release-event publisher trigger in the new workflow source. Human-created tags have already reserved a version and do not acquire normal publication authorization by object presence. The Homebrew-only route is the sole retained explicit backfill; there is no generic automatic publication recovery.
 
-Tests execute actual workflow shell callers with local Git objects, stateful fake APIs/registries, and mutation regressions, plus the optional pinned real CLI fixture. They do not run GitHub Actions or establish live permissions, display-title transport, OIDC exchange, PyPI/registry acceptance or administrator behavior. The parent's read-only PyPI environment policy inspection supports main-source identity compatibility, not live OIDC proof. Independent review and the parent's combined landing gate remain required; this proposal changes no repository settings, secrets, live tags or published state.
+Tests execute actual workflow shell callers with local Git objects, stateful fake APIs/registries, and mutation regressions, plus the optional pinned real CLI fixture. They do not run GitHub Actions or establish live permissions, display-title transport, OIDC exchange, PyPI/registry acceptance or administrator behavior. A read-only inspection of the PyPI environment policy supports main-source identity compatibility, not live OIDC proof.
