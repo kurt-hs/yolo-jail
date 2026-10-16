@@ -206,7 +206,11 @@ func TestACaptureRefusedByTheLockNamesItsNextStep(t *testing.T) {
 		t.Skip("this filesystem does not make a second flock on the same file conflict")
 	}
 	withFakeCaptureJail(t, func(run.Options) int { t.Error("no jail may launch"); return 0 })
-	_, stderr := runCaptureFor(t, "probetool")
+	rc, stderr := runCaptureFor(t, "probetool")
+	if rc != captureBusyStatus {
+		t.Errorf("a capture refused by the lock exited %d, want %d, which the host floor reads as "+
+			"another capture in progress (PD-NF5)", rc, captureBusyStatus)
+	}
 	const want = "  Wait for it to finish: what it stores serves every launch on this machine. If it " +
 		"fails, run `yolo capture probetool` again."
 	if got := stepAfter(t, stderr, "yolo capture: another capture of probetool"); got != want {

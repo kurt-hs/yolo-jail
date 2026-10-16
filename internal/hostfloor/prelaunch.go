@@ -88,9 +88,10 @@ const (
 	// refresh then exited with: one that handles the signal and exits with a status is stopped too.
 	// The lock is released and the caller ends the launch, as that signal asked.
 	RefreshStopped
-	// RefreshUnchecked: the program's upstream could not be reached, so nothing ran and the launch
-	// runs what is installed: a refresh that cannot reach upstream cannot know there is anything
-	// newer, which PD-NF1 does not count as a failure (PD-NF3). Stamped, so an offline hour asks once.
+	// RefreshUnchecked: the refresh failed or timed out, and the probe that followed (PD-NF3) could
+	// not reach its upstream, so the launch runs what is installed: a refresh that cannot reach
+	// upstream cannot know there is anything newer, which PD-NF1 does not count as a failure.
+	// Stamped, so an offline hour asks once. Status keeps the failed refresh's status.
 	RefreshUnchecked
 )
 
@@ -184,20 +185,6 @@ func (f *Floor) prelaunchRefresh(p Program, exe string, env []string, manual boo
 	}
 	defer lk.Release()
 
-	if !manual {
-		// THE PROBE FIRST (PD-NF3): the refresh is itself the check for newer add-ons, so an upstream
-		// it cannot reach is a check that cannot run — said, stamped like a failed poll, and the
-		// program runs what is installed — rather than a bounded hang ending in a refusal.
-		if url := refreshUpstream(p, env); url != "" {
-			if why := f.upstreamUnreachable(context.Background(), url); why != nil {
-				f.say("%s: could not check for newer add-ons: %s is unreachable (%v) — running what is installed",
-					bin, url, why)
-				f.touchRefreshStamp(bin)
-				return RefreshResult{Outcome: RefreshUnchecked}
-			}
-		}
-	}
-
 	// SAID BEFORE IT RUNS (OQ-RO3): the refresh is the network, and a launch has no quiet mode.
 	f.say("Refreshing %s (%s)...", bin, strings.Join(r.Argv, " "))
 	res := f.runRefresh(exe, r.Argv, env)
@@ -209,13 +196,28 @@ func (f *Floor) prelaunchRefresh(p Program, exe string, env []string, manual boo
 		failure = fmt.Errorf("it exited with status %d", res.Status)
 	}
 	refuse := failure != nil && !manual && !f.useInstalled(p)
+	act := "the pre-launch refresh (" + strings.Join(r.Argv, " ") + ")"
+	if refuse {
+		// THE PROBE AFTER THE FAILURE (PD-NF3), as the jail's launcher probes (_yolo_failed_act): the
+		// refresh is itself the check for newer add-ons, so a failure whose upstream cannot be reached
+		// is a check that could not run — said, stamped, and the program runs what is installed. After
+		// rather than before: a refresh that succeeds costs no probe.
+		if url := refreshUpstream(env); url != "" {
+			if why := f.upstreamUnreachable(context.Background(), url); why != nil {
+				f.say("%s: %s failed (%v), and could not check for newer add-ons: %s is unreachable (%v) — running what is installed",
+					bin, act, failure, url, why)
+				f.touchRefreshStamp(bin)
+				res.Outcome = RefreshUnchecked
+				return res
+			}
+		}
+	}
 	// Stamped on every outcome but a refusal, as the launcher's is: the stamp throttles retries,
 	// and a refused refresh must be retried by the next launch, not skipped for an interval while
-	// the program runs with its add-ons as they were (PD-NF1). Offline never gets here (the probe).
+	// the program runs with its add-ons as they were (PD-NF1).
 	if !refuse {
 		f.touchRefreshStamp(bin)
 	}
-	act := "the pre-launch refresh (" + strings.Join(r.Argv, " ") + ")"
 	switch {
 	case res.Outcome == RefreshRan:
 		// The content key only on SUCCESS: a failed refresh leaves the change due, so the next

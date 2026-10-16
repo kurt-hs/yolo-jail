@@ -40,6 +40,15 @@ exit 0
 	return dir
 }
 
+// useInstalledLines is the exact "Start anyway:" list a jail refusal ends with (PD-NF2): the hatch
+// typed in this jail, then typed in front of `yolo --` on the host, whose bare bin would be the
+// host's own. The second command is always eight characters longer, so the first label sits twelve
+// spaces after its command and the second four. what is "version" or the installed version.
+func useInstalledLines(value, bin, what string) string {
+	return "  YOLO_USE_INSTALLED=" + value + " " + bin + "            in this jail: run the installed " + what + "\n" +
+		"  YOLO_USE_INSTALLED=" + value + " yolo -- " + bin + "    from the host: run the installed " + what + "\n"
+}
+
 // answeringHost is an installer host that answers every request, for an update whose upstream is
 // reachable; its URL is returned.
 func answeringHost(t *testing.T) string {

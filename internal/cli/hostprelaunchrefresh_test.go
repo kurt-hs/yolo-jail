@@ -268,8 +268,8 @@ func TestHostPiRefreshThatHangsIsBoundedAndRefused(t *testing.T) {
 	}
 }
 
-// The hatch starts pi past a failed refresh, and an unreachable registry skips the refresh and
-// starts pi with a could-not-check line (PD-NF3).
+// The hatch starts pi past a failed refresh, and a failed refresh whose registry cannot be reached
+// starts pi with a could-not-check line (PD-NF3: the probe follows the failure).
 func TestHostPiStartsPastAFailedRefreshOnlyUnderTheHatchOrOffline(t *testing.T) {
 	t.Run("YOLO_USE_INSTALLED", func(t *testing.T) {
 		h := newRefreshHost(t, piOnItsPathCopy, "  exit 7")
@@ -285,11 +285,11 @@ func TestHostPiStartsPastAFailedRefreshOnlyUnderTheHatchOrOffline(t *testing.T) 
 		hostfloor.ProbeUpstreamDefault = func(context.Context, string) error { return errors.New("no route to host") }
 		t.Cleanup(func() { hostfloor.ProbeUpstreamDefault = orig })
 		r := h.launch(t)
-		if r.rc != 0 || r.execEnv == nil || h.refreshes(t) != 0 {
-			t.Fatalf("offline: rc=%d, exec reached %v, %d refreshes, want pi started and no refresh\n%s",
+		if r.rc != 0 || r.execEnv == nil || h.refreshes(t) != 1 {
+			t.Fatalf("offline: rc=%d, exec reached %v, %d refreshes, want the failed refresh then pi started\n%s",
 				r.rc, r.execEnv != nil, h.refreshes(t), r.errs)
 		}
-		if !strings.Contains(r.errs, "yolo host: pi: could not check for newer add-ons: ") {
+		if !strings.Contains(r.errs, "yolo host: pi: the pre-launch refresh (update --extensions) failed (it exited with status 7), and could not check for newer add-ons: ") {
 			t.Errorf("the could-not-check line was not said:\n%s", r.errs)
 		}
 	})

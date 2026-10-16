@@ -25,6 +25,10 @@ import (
 // it runs what is installed and says it could not check (PD-NF3: where the act itself is the check,
 // a capture or a refresh, a bounded probe of the program's upstream tells the two apart).
 
+// ErrCaptureBusy is what Floor.Capture wraps when another `yolo capture` of the program holds its
+// lock: not a failed update (PD-NF5), since nothing was checked, so the installed version runs.
+var ErrCaptureBusy = errors.New("another capture of it is in progress")
+
 // UpdateRefusal is the error Ensure and the pre-launch refresh return for a failed update the
 // hatch does not cover. The refusal block (Render) is already printed on the floor's Out when a
 // caller sees it; Error is the one-line form for a caller's list.
@@ -134,10 +138,15 @@ func (f *Floor) sayUsingInstalled(p Program, installed, act string, err error) {
 // UpstreamProbeTimeout bounds one probe of a program's upstream.
 const UpstreamProbeTimeout = 8 * time.Second
 
-// ProbeUpstreamDefault is the probe a Floor with no ProbeUpstream uses: one HEAD request to url,
-// bounded by UpstreamProbeTimeout. Any answer below 500 is a reachable upstream; no answer, or a
-// server error, is not. A variable so a test can keep the network out of every floor it builds.
-var ProbeUpstreamDefault = func(ctx context.Context, url string) error {
+// ProbeUpstreamDefault is the probe a Floor with no ProbeUpstream uses, probeUpstreamHEAD. A
+// variable so a test can keep the network out of every floor it builds.
+var ProbeUpstreamDefault = probeUpstreamHEAD
+
+// probeUpstreamHEAD is one HEAD request to url, bounded by UpstreamProbeTimeout. Its classification
+// is the jail launchers' too (_yolo_url_reachable): no answer (a connection error, a timeout) or a
+// server error (5xx) is an unreachable upstream, the could-not-check case; any other HTTP status, a
+// 404 or a 405 for HEAD included, is an upstream that answered.
+func probeUpstreamHEAD(ctx context.Context, url string) error {
 	ctx, cancel := context.WithTimeout(ctx, UpstreamProbeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
@@ -177,12 +186,12 @@ func (f *Floor) upstreamUnreachable(ctx context.Context, url string) error {
 // defaultNpmRegistry is the registry an npm-backed refresh reaches when its environment names none.
 const defaultNpmRegistry = "https://registry.npmjs.org/"
 
-// refreshUpstream is the URL a pre-launch refresh of p reaches, read from the refresh's own
-// environment: the npm registry for an npm program, "" for anything else (no probe).
-func refreshUpstream(p Program, env []string) string {
-	if p.Install.Kind != "npm" {
-		return ""
-	}
+// refreshUpstream is the URL a failed pre-launch refresh is judged by (PD-NF3), read from the
+// refresh's own environment: the npm registry, for every program that declares a refresh, whatever
+// its install kind, as the jail's launchers probe it (_yolo_registry_reachable). A fork (kind
+// "source") keeps its base's refresh (packdecl/fork.go), so a patched pi still runs `pi update
+// --extensions`, which reaches the registry the same way.
+func refreshUpstream(env []string) string {
 	for _, key := range []string{"npm_config_registry", "NPM_CONFIG_REGISTRY"} {
 		for _, kv := range env {
 			if v, ok := strings.CutPrefix(kv, key+"="); ok && v != "" {

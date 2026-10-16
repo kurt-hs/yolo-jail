@@ -441,6 +441,13 @@ _refresh_report_last() {
         *) said="" ;;
         esac
         [ -z "$said" ] || printf '%s\n' "$said" >&2
+        # An agent_updates hold (UPDATES_ENABLED, which _refresh_due is otherwise the only reader of)
+        # runs what is installed, as it does for every update act: no retry, so no refusal.
+        if [ "$UPDATES_ENABLED" != "1" ]; then
+            echo "  $BIN: agent_updates holds its updates, so it is not retried — running what is installed." >&2
+            rm -f "$REFRESH_RESULT" 2>/dev/null || true
+            return 0
+        fi
         if _yolo_use_installed; then
             echo "  $BIN: running what is installed, as ` + patchrecovery.UseInstalledEnv + ` asks." >&2
             rm -f "$REFRESH_RESULT" 2>/dev/null || true
