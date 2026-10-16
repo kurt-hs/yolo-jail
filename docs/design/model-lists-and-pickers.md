@@ -117,7 +117,7 @@ current.
   [MM-D40](#MM-D40)). claude on `-p bedrock-bridge` runs in its own Bedrock mode at the bridge,
   which signs and passes through Bedrock's own invoke routes, and translates a model the list
   declares another maker's, so the everything profile still reaches every model
-  ([MM-D39](#MM-D39), [OQ-BR11](bedrock-plumbing.md#OQ-BR11)). Not yet run against AWS: one claude
+  ([MM-D39](#MM-D39), [OQ-BR11](bedrock-plumbing.md#decision-ledger)). Not yet run against AWS: one claude
   turn on a Claude model, one on another maker's, and one copilot turn under `-p bedrock-bridge`
   are the human check.
 - **Built, 2026-10-05, on [OQ-MM4](#16-decision-ledger)'s ruling B:** copilot's `providers.json`
@@ -195,7 +195,7 @@ questions without asking: [OQ-BR15](#16-decision-ledger) on evidence (the bridge
 **Out of scope, and where it lives instead.** Refusing an off-list model at the wire:
 [`wire-bridge-gateway.md`](wire-bridge-gateway.md#decision-ledger), which reads this doc's effective
 list. Which vendors each agent can call on Bedrock, and the per-agent filter table:
-[`bedrock-plumbing.md`](bedrock-plumbing.md#OQ-BR9). Clearing a model id when you stop
+[`bedrock-plumbing.md`](bedrock-plumbing.md#decision-ledger). Clearing a model id when you stop
 selecting a profile: [`OQ-PSW2`](../reference/providers.md#oq-psw2). Withholding a
 credential so that a menu shrinks: [`providers.md`'s OQ-CN4](../reference/providers.md#oq-cn4).
 What a provider and a profile should mean at all:
@@ -215,7 +215,7 @@ What a provider and a profile should mean at all:
   vocabulary that the retired `provider-switching.md`'s 2026-09-24 version proposed,
   which moved here on 2026-09-25)* is one meant to mean the same capability on
   every provider ([§6](#6-tier-aliases-default-fast-balanced)).
-- **vendor** *(coined in [`bedrock-plumbing.md`](bedrock-plumbing.md#OQ-BR9))*: the model's
+- **vendor** *(coined in [`bedrock-plumbing.md`](bedrock-plumbing.md#decision-ledger))*: the model's
   maker, one lowercase open-vocabulary string per entry, read by derives, uninterpreted by core.
 - <a id="term-company-pack"></a>A **company pack** *(coined in
   [`bedrock-plumbing.md`](bedrock-plumbing.md)'s 2026-09-24 version, from the maintainer's
@@ -236,11 +236,11 @@ What a provider and a profile should mean at all:
 **Where the Bedrock split ended up**, since every example below uses it. yolo ships one Bedrock
 endpoint family, `bedrock-runtime` ([DIR-BR3](bedrock-plumbing.md#decision-ledger)). codex,
 opencode and pi reach it through their own native Bedrock clients. claude has two profiles
-([OQ-BR11](bedrock-plumbing.md#OQ-BR11)): the **native profile**, claude's own Bedrock mode,
+([OQ-BR11](bedrock-plumbing.md#decision-ledger)): the **native profile**, claude's own Bedrock mode,
 Anthropic models only; and the **everything profile** *(coined in [`bedrock-plumbing.md`](bedrock-plumbing.md))*, which
 points claude at the wire bridge so one session can switch between Anthropic and every other
 Bedrock model. copilot goes through the bridge. One provider holds every family: that was
-[OQ-BR9](bedrock-plumbing.md#OQ-BR9), ruled and built 2026-09-29 ([ML-D9](#ML-D9)).
+[OQ-BR9](bedrock-plumbing.md#decision-ledger), ruled and built 2026-09-29 ([ML-D9](#ML-D9)).
 
 ---
 
@@ -339,7 +339,7 @@ The ruling's test is whether the agent can pick if yolo says nothing. Candidates
 | Bedrock runtime × codex | codex starts on its own default slug. Its catalog maps slugs to mantle's bare ids, and holds runtime `global.` ids for Terra and Luna only. An id it does not know runs on fallback metadata (D4) | INFERRED from codex 0.156.1 strings; not run ([bedrock-plumbing evidence](bedrock-plumbing.md#14-evidence-and-how-to-re-check-it)) | **yes**; built 2026-09-29, the first OpenAI entry ([ML-D9](#ML-D9)); **no** since 2026-10-05 ([MM-D32](#MM-D32)) |
 | Bedrock runtime × pi | pi's catalog lists the bare `openai.gpt-5.6-sol` against a runtime base URL: the wrong-spelling 404 bedrock-plumbing's P1 names, shipped in a vendor catalog | pi-ai 0.87.1 source, read not run ([bedrock-plumbing §4](bedrock-plumbing.md#4-what-each-agent-can-actually-do)) | **yes**; built 2026-09-29, the list's first entry; **no** since 2026-10-05, the vendor's fault left to it ([MM-D32](#MM-D32)) |
 | Bedrock runtime × opencode | its default for `amazon-bedrock` is unread | UNMEASURED | **yes until measured**, then drop if opencode's own default is callable; built 2026-09-29, the list's first entry; **no** since 2026-10-05 ([MM-D32](#MM-D32)) |
-| claude everything profile | claude's built-in options are Anthropic names; it has no idea a Kimi or GPT id exists | [OQ-BR11](bedrock-plumbing.md#OQ-BR11); claude 2.1.282 | **yes** |
+| claude everything profile | claude's built-in options are Anthropic names; it has no idea a Kimi or GPT id exists | [OQ-BR11](bedrock-plumbing.md#decision-ledger); claude 2.1.282 | **yes** |
 | copilot through the bridge | `COPILOT_MODEL` unset: copilot has no Bedrock catalog | `packs/copilot/derive.lua` | **yes** (the first callable entry of the same list); since 2026-10-05, with no list, copilot's own one open-weight default ([MM-D34](#MM-D34)) |
 | `openai-codex` × claude, pi, codex | already shipped as picks, and since 2026-09-27 in data: one declaration on the provider, in its own pack ([§3](#3-what-exists-today), [ML-D1](#ML-D1)) | [`packs/openai-auth/pack.json`](../../packs/openai-auth/pack.json) | **yes, already**, in data |
 | claude native profile (`bedrock`) | Claude Code resolves its own tier words to Anthropic models, older ones on Bedrock | vendor docs, 2026-09-04 | **no** under the ruling: the family is right; built 2026-09-29 as no pick ([ML-D9](#ML-D9)) |
@@ -505,11 +505,11 @@ So every provider is expected to declare four conventional aliases, and may decl
 | `default` | what you get when nothing is said | cerebras and llamacpp, and every derive's fallback |
 | `fast` | cheap and quick | nowhere; zai's aliases became its wire ids (`8e901423`) |
 | `balanced` | the middle tier, where one exists | nowhere |
-| `frontier` | the most capable tier | nowhere; added 2026-09-28 by [OQ-XM2](../research/extension-model-defaults.md#OQ-XM2) |
+| `frontier` | the most capable tier | nowhere; added 2026-09-28 by [OQ-XM2](../research/extension-model-defaults.md#7-decision-ledger) |
 
 A derive resolves one for the selected provider with `yolo.model_for(alias)`, which returns
 `provider/id` and warns when a provider lacks one of the four
-([OQ-XM1](../research/extension-model-defaults.md#OQ-XM1),
+([OQ-XM1](../research/extension-model-defaults.md#7-decision-ledger),
 [XM-D1](../research/extension-model-defaults.md#XM-D1)).
 
 They are capability-shaped, not vendor-shaped, because a vendor tier name (`sonnet`, `terra`)
@@ -820,7 +820,7 @@ other agent reads such a route ([§14.3](#143-the-bridges-part-and-get-v1models)
 - an Anthropic-on-Bedrock id whose geographic prefix is unverified.
 
 The old list's third line, *"the bridge dialing anything but its boot-selected upstream"*, is
-dropped here. [OQ-BR11](bedrock-plumbing.md#OQ-BR11) amended that rule for the everything
+dropped here. [OQ-BR11](bedrock-plumbing.md#decision-ledger) amended that rule for the everything
 profile, and what the bridge may dial is now
 [`wire-bridge-gateway.md`](wire-bridge-gateway.md)'s question.
 

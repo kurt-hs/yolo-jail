@@ -238,7 +238,7 @@ through a region, its region is [the region preflight](#the-region-preflight)'s.
 
 A provider declares what service it is in `platform`, an open vocabulary: `"aws-bedrock"` for
 Amazon Bedrock, the one value anything reads today
-([`OQ-BR2`](../design/providers-and-profiles-redesign.md#OQ-BR2), ruled 2026-09-29). A pack sets
+([`OQ-BR2`](../design/providers-and-profiles-redesign.md#8-decision-ledger), ruled 2026-09-29). A pack sets
 it on its `kind: "provider"` contribution, and a user sets it on a `providers.<name>` entry,
 their own or a pack's, from user scope only: the platform decides which agents receive a pack's
 credential pointer, so a workspace file carrying it is refused. Only its shape is checked (one
@@ -278,7 +278,7 @@ the host OS/arch pairs a build exists for.
 
 One provider, `bedrock`, is Amazon Bedrock's `bedrock-runtime` endpoint for every agent, and it
 lives in its own pack, [`packs/bedrock`](../../packs/bedrock/README.md), which installs no program
-([`OQ-BR9`](../design/bedrock-plumbing.md#OQ-BR9), ruled 2026-09-29). Every agent pack whose
+([`OQ-BR9`](../design/bedrock-plumbing.md#decision-ledger), ruled 2026-09-29). Every agent pack whose
 derive binds Bedrock `needs` that pack, so `"packs": ["codex"]` alone carries `-p bedrock`:
 claude, codex, opencode and pi. The pack in turn needs `aws-auth`. copilot, oh-omp and agy need
 neither, having no Bedrock client of their own, so a `-p bedrock` in a jail of them alone is
@@ -339,7 +339,7 @@ pi's own catalog entry of the same id, so pi takes the list's facts for it and l
 and thinking levels.
 
 **`bedrock-bridge`** is the pack's second profile, `{provider: bedrock, via: wire-bridge}`, the
-one shipped way to force the wire bridge ([`OQ-BR1`](../design/bedrock-plumbing.md#OQ-BR1)).
+one shipped way to force the wire bridge ([`OQ-BR1`](../design/bedrock-plumbing.md#decision-ledger)).
 Under it every agent's traffic goes through the bridge: codex, opencode, pi and oh-omp get their
 via rows ([routing a profile through the bridge](#routing-a-profile-through-the-bridge-via)),
 copilot is routed at the bridge's adapter address, which composition gives `bedrock` for this
@@ -361,7 +361,7 @@ Claude model is translated like any other.
 <a id="bedrock-through-the-bridge-on--p-bedrock"></a>
 
 **On plain `-p bedrock` the bridge carries the agents with no Bedrock client**
-([`OQ-BR1`](../design/bedrock-plumbing.md#OQ-BR1): *"through the wire bridge where it has none"*;
+([`OQ-BR1`](../design/bedrock-plumbing.md#decision-ledger): *"through the wire bridge where it has none"*;
 [WG-I44](../design/wire-bridge-gateway.md#WG-I44)). The bridge is the profile's **carrier**, a term
 coined in that decision: the service an address of the provider is marked `for_via`, which carries
 every agent of the launch that declares a protocol and has no client of the provider's platform.
@@ -442,7 +442,7 @@ static key pair refuse, and a `~/.aws` grant warns
 
 A launch refuses when an agent's profile **selects** a provider that is reached through a region
 and the launch can see no region reaching that agent
-([`OQ-BR6`](../design/bedrock-plumbing.md#OQ-BR6), ruled 2026-09-25). Without it codex fails at
+([`OQ-BR6`](../design/bedrock-plumbing.md#decision-ledger), ruled 2026-09-25). Without it codex fails at
 its first Bedrock request, and claude, opencode and pi silently use `us-east-1`.
 
 - **Which providers.** Every provider whose composed entry declares a `platform` that some
@@ -749,9 +749,9 @@ that writes a launch's environment for one notch or backend. There are three:
     refuses, naming the composed ones. It combines with `-p`: an agent keeps its profile and
     also receives the granted keys. Only the typed flag grants. `-p`, the `profile` key, a
     `YOLO_ALLOW_*` variable and config cannot
-    ([OQ-ES5](../design/credential-sources-separation.md#OQ-ES5);
+    ([OQ-ES5](../design/credential-sources-separation.md#10-decision-ledger);
     [ES-D13 to ES-D16](../design/credential-sources-separation.md#10-decision-ledger)).
-  - **At a jail launch the same flag grants the jail** ([OQ-ES5](../design/credential-sources-separation.md#OQ-ES5)'s jail half, 2026-10-05).
+  - **At a jail launch the same flag grants the jail** ([OQ-ES5](../design/credential-sources-separation.md#10-decision-ledger)'s jail half, 2026-10-05).
     `yolo --with-credentials zai -- bash` starts a jail whose every process holds those claimed
     values, keys only, for the jail's life: the session it starts, every session attached later,
     and everything each one starts. The grant is no recipient of the gate: it rides a per-launch
@@ -906,7 +906,7 @@ table, string, math libraries only; no `os`, no `io`). Two registrations and one
   for the SELECTED provider and returns `"<provider>/<id>", "<id>"`, or `nil`. It never reads
   another provider's aliases. A missing [tier alias](#tier-aliases) is a warning at boot, never
   a refusal; any other missing name is `nil`, silently
-  ([OQ-XM1](../research/extension-model-defaults.md#OQ-XM1),
+  ([OQ-XM1](../research/extension-model-defaults.md#7-decision-ledger),
   [XM-D1](../research/extension-model-defaults.md#XM-D1)).
 
 > [!WARNING]
@@ -1477,14 +1477,14 @@ vendor's model name ([model-lists-and-pickers §6](../design/model-lists-and-pic
 | `default` | what you get when nothing is said, and every derive's fallback |
 | `fast` | cheap and quick |
 | `balanced` | the middle tier, where one exists |
-| `frontier` | the most capable tier ([OQ-XM2](../research/extension-model-defaults.md#OQ-XM2)) |
+| `frontier` | the most capable tier ([OQ-XM2](../research/extension-model-defaults.md#7-decision-ledger)) |
 
 It is a convention with a warning, not an enum: a derive asking `yolo.model_for` for one the
 selected provider lacks gets `nil`, and the launch prints one warning naming the provider and
 the alias and proceeds. The list is `luahook.ConventionalModelAliases`.
 
 **Every program an agent starts can read them too**, as environment variables (added
-2026-10-01, [OQ-XM4](../research/extension-model-defaults.md#OQ-XM4); measured by tests only):
+2026-10-01, [OQ-XM4](../research/extension-model-defaults.md#7-decision-ledger); measured by tests only):
 `YOLO_MODEL_DEFAULT`, `YOLO_MODEL_FAST`, `YOLO_MODEL_BALANCED` and `YOLO_MODEL_FRONTIER`, each the
 model the agent's own selected provider names for that alias, as `<provider>/<id>`. They are per
 agent, composed by core beside the agent pack's env derive (`packload.ModelRoleVars`) and carried
@@ -1710,7 +1710,7 @@ profile named `-h` rather than answering help, deliberately.
 A **profile** is a named selection over one provider, and the name is what the user types. It is
 also the whole of the `profile` kind. A fact of the PROVIDER keys on the provider, in the agent's
 own derive or on a `platform` gate, never on the profile's name
-([`OQ-BR8`](../design/providers-and-profiles-redesign.md#OQ-BR8), ruled 2026-09-29), so a second
+([`OQ-BR8`](../design/providers-and-profiles-redesign.md#8-decision-ledger), ruled 2026-09-29), so a second
 profile over one provider gets what the first gets; a variant that really is a name may still be
 gated by name ([the `profile` modifier](#the-profile-modifier)). What `-p <name>` should name at
 all is open in [`providers-and-profiles-redesign.md`](../design/providers-and-profiles-redesign.md).
@@ -1799,7 +1799,7 @@ table, so a pack that installs no CLI — a provider pack — still reads any CL
 
 An agent's value in the `profile` key may be a **list** of profile names, its **active set** (a term
 [`active-provider-sets.md`](../design/active-provider-sets.md) coins: the ordered list of profiles
-one agent runs on for one launch; [OQ-AP1](../design/active-provider-sets.md#OQ-AP1), ruled
+one agent runs on for one launch; [OQ-AP1](../design/active-provider-sets.md#11-decision-ledger), ruled
 2026-09-29). Every listed provider is live for that agent in one session, and the **first
 entry**, the set's primary, is where a fresh session starts when yolo has to pick, and where
 opencode starts every time yolo writes its `model` ([AP-D15](../design/active-provider-sets.md#AP-D15)).
@@ -1824,13 +1824,13 @@ A list of one is the plain name, byte for byte, so no existing config moves.
   [AP-D18](../design/active-provider-sets.md#AP-D18) for oh-omp). A list named at any other
   agent (claude, codex, copilot) is refused before anything starts, naming the
   one-profile spelling
-  ([OQ-AP2](../design/active-provider-sets.md#OQ-AP2)), by config validation for a list named in
+  ([OQ-AP2](../design/active-provider-sets.md#11-decision-ledger)), by config validation for a list named in
   the `profile` key (`validateProfile`), by `checkProfileTargets` for a typed pair, and again
   after resolution by `packload.ProfileSetProblems`. A **bare** list, one naming no agent — a bare
   `-p zai,openrouter`, the key's list form `"profile": ["zai", "openrouter"]`, or a list under
   `"*"` — goes whole to every set-capable agent and its first entry to every other, and the launch
   prints one line naming those agents, the entries they ignore and where the list was written
-  ([OQ-AP3](../design/active-provider-sets.md#OQ-AP3); `config.FoldProfiles`,
+  ([OQ-AP3](../design/active-provider-sets.md#11-decision-ledger); `config.FoldProfiles`,
   `packload.BareListNote`). The entries an agent ignores must still be declared: `-p zai,typo`
   or `"profile": ["zai", "typo"]` refuses naming `typo` whichever agents are selected
   (`checkProfileDeclarations` in a jail, `hostBareListUndeclared` and `composeHostVarsWith` at
@@ -2078,7 +2078,7 @@ active; `env` also takes the provider-keyed gate, `platform: "<platform>"`. An i
 | :--- | :--- | :--- |
 | `profile` on `config-overlay` | the name is the profile active for the **target surface's owning agent** (the `agent` half of `agent/name`) | the surface names an agent, so the surface is what the gate asks |
 | `profile` on `env` | per AGENT: the name is the profile that agent selected, and the pack is either the one installing that agent's CLI or a pack installing no CLI at all | an env has no surface to name an agent, so the delivery names one: the agent's own env file ([the credential gate](#the-credential-gate)) |
-| `platform` on `env` | per AGENT: the provider that agent's profile resolves to declares that [`platform`](#the-platform-what-service-a-provider-is), and the pack is the agent's own or installs no CLI | a provider fact must reach every profile over the provider and every provider of the service, which a name gate misses (trap [D5](../design/providers-and-profiles-redesign.md#D5), [`OQ-BR8`](../design/providers-and-profiles-redesign.md#OQ-BR8)). `packs/aws-auth` ships the CLI-less case: its pointer gates on `aws-bedrock` |
+| `platform` on `env` | per AGENT: the provider that agent's profile resolves to declares that [`platform`](#the-platform-what-service-a-provider-is), and the pack is the agent's own or installs no CLI | a provider fact must reach every profile over the provider and every provider of the service, which a name gate misses (trap [D5](../design/providers-and-profiles-redesign.md#D5), [`OQ-BR8`](../design/providers-and-profiles-redesign.md#8-decision-ledger)). `packs/aws-auth` ships the CLI-less case: its pointer gates on `aws-bedrock` |
 
 A contribution carries one gate at most. **No shipped pack uses the `profile` gate** since
 2026-09-29: every use was a provider fact a second profile over the same provider lost, and each
@@ -2149,7 +2149,7 @@ process, beside `AWS_REGION` and any model id the profile names among the Anthro
 `packs/aws-auth` contributes its
 credentials pointer on a `platform` gate. All three key on the provider's platform, not on the
 profile's name, so a profile of your own over `bedrock`, or a Bedrock provider of your own, gets
-the same ([`OQ-BR8`](../design/providers-and-profiles-redesign.md#OQ-BR8)). The switch also needs
+the same ([`OQ-BR8`](../design/providers-and-profiles-redesign.md#8-decision-ledger)). The switch also needs
 claude's own transport: a profile over the same provider that routes through the wire bridge
 (`via`) gets the pointer and not the switch
 ([PP-D4](../design/providers-and-profiles-redesign.md#PP-D4)). claude speaks `anthropic`, which

@@ -14,8 +14,8 @@ client, on its own default model, with nothing else listed but a region. No requ
 agent yet: what each client sends was read from its shipped code, never run. The launch prints `+ bedrock (needed by codex)` and
 `+ aws-auth (needed by bedrock)`.
 
-Design: [`bedrock-plumbing.md`](../../docs/design/bedrock-plumbing.md) ([OQ-BR9](../../docs/design/bedrock-plumbing.md#OQ-BR9),
-[OQ-BR1](../../docs/design/bedrock-plumbing.md#OQ-BR1)); behavior:
+Design: [`bedrock-plumbing.md`](../../docs/design/bedrock-plumbing.md) ([OQ-BR9](../../docs/design/bedrock-plumbing.md#decision-ledger),
+[OQ-BR1](../../docs/design/bedrock-plumbing.md#decision-ledger)); behavior:
 [`providers.md`](../../docs/reference/providers.md).
 
 ## What the provider declares

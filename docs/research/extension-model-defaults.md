@@ -15,9 +15,9 @@ agents they launch. How does the default model a user carries everywhere reach t
 when yolo can configure pi but not each extension, and must not take an opinion on which
 extensions to support?
 
-**Status:** 2026-10-01 — every ruling is built. On 2026-09-28: [OQ-XM1](#OQ-XM1)'s helper
-(`yolo.model_for`), [OQ-XM2](#OQ-XM2)'s `frontier` and [OQ-XM3](#OQ-XM3)'s `subagents` block for
-every provider. On 2026-10-01: [OQ-XM4](#OQ-XM4)'s role variables, `YOLO_MODEL_<ROLE>` per agent,
+**Status:** 2026-10-01 — every ruling is built. On 2026-09-28: [OQ-XM1](#7-decision-ledger)'s helper
+(`yolo.model_for`), [OQ-XM2](#7-decision-ledger)'s `frontier` and [OQ-XM3](#7-decision-ledger)'s `subagents` block for
+every provider. On 2026-10-01: [OQ-XM4](#7-decision-ledger)'s role variables, `YOLO_MODEL_<ROLE>` per agent,
 composed by core in the env-derive runner (`packload.ModelRoleVars`, called from
 `packload.AgentEnv`) and delivered by the per-agent env files of
 [OQ-CN6](../reference/providers.md#oq-cn6), the macos-user session and the host
@@ -32,7 +32,7 @@ rootful and `--net=host`, neither of which this reads).
 started; macos-user's delivery is by reading alone (it delivers the same composed list,
 `AgentDelivery.Shape`, that the tested vehicles do).
 
-**Rulings (all 2026-09-28, in review):** [OQ-XM1](#OQ-XM1) (build the core helper), [OQ-XM2](#OQ-XM2) (add `frontier`), [OQ-XM3](#OQ-XM3) (the `subagents` block, for every provider, never crossing providers), [OQ-XM4](#OQ-XM4) (role variables only once per-agent environment exists), [OQ-XM5](#OQ-XM5) (no upstream proposal). Nothing here awaits a ruling.
+**Rulings (all 2026-09-28, in review):** [OQ-XM1](#7-decision-ledger) (build the core helper), [OQ-XM2](#7-decision-ledger) (add `frontier`), [OQ-XM3](#7-decision-ledger) (the `subagents` block, for every provider, never crossing providers), [OQ-XM4](#7-decision-ledger) (role variables only once per-agent environment exists), [OQ-XM5](#7-decision-ledger) (no upstream proposal). Nothing here awaits a ruling.
 
 **Reads with:** [`model-lists-and-pickers.md` §6](../design/model-lists-and-pickers.md#6-tier-aliases-default-fast-balanced)
 (the tier aliases this reuses), [`providers.md`'s pi shortlist](../reference/providers.md#pi-enabledmodels-is-a-shortlist) (the default-model question of pi-model-selection-ux.md, since deleted,
@@ -49,7 +49,7 @@ now ride).
 - **Role** — a capability name an extension asks for instead of a model id: `fast`, `balanced`,
   `small`, `big`. pi has none; several extensions invent their own.
 - **Tier alias** — yolo's existing name for the same idea on a provider: `default`, `fast`,
-  `balanced` and, since [OQ-XM2](#OQ-XM2), `frontier` in the provider's `models` map
+  `balanced` and, since [OQ-XM2](#7-decision-ledger), `frontier` in the provider's `models` map
   ([model-lists-and-pickers §6](../design/model-lists-and-pickers.md#6-tier-aliases-default-fast-balanced)).
 - **Adapter pack** *(coined here)* — an ordinary yolo pack whose only job is to render yolo's
   resolved tier aliases into ONE extension's own config file. It needs no new pack kind: a
@@ -127,7 +127,7 @@ mechanism doesn't need to reach claude or opencode plugins today.
   block (`defaultModel`, a strict `modelScope`) in its `openai-codex` branch, added 2026-09-15
   (`d3360c00`, "constrain codex workflow models"). It is exactly an adapter, embedded in the
   agent's own pack and naming one extension. The pi default-model question (from the deleted
-  pi-model-selection-ux.md; answered by [OQ-XM3](#OQ-XM3)) asks what it should do for other providers. *Since 2026-09-28 ([OQ-XM3](#OQ-XM3)) it stays
+  pi-model-selection-ux.md; answered by [OQ-XM3](#7-decision-ledger)) asks what it should do for other providers. *Since 2026-09-28 ([OQ-XM3](#7-decision-ledger)) it stays
   in pi's derive and is written for every provider ([XM-D3](#XM-D3)).*
 
 ## 5. Options, with verdicts
@@ -136,21 +136,30 @@ mechanism doesn't need to reach claude or opencode plugins today.
 | :--- | :--- | :--- | :--- |
 | **(a) Adapter packs.** Core resolves roles for derives; an adapter pack renders them into one extension's file | core: a small derive helper. Adapters: the extension's author (a pack in their repo) or the user's local pack. yolo ships none | inherits (most do), or keeps its own config | **Take it**, as the main layer |
 | **(b) A published env convention** (`YOLO_MODEL_FAST`, …) that extensions may read | core: the vars. Extensions: opt in | unaffected | **Defer.** A jail-wide var is wrong when two agents run different profiles, until per-agent env exists ([OQ-CN6](../reference/providers.md#oq-cn6)). *Built per agent on 2026-10-01 ([XM-D8](#XM-D8)).* |
-| **(c) Upstream: a model-roles setting in pi** (and `ctx.modelFor(role)`) | pi. Then yolo's pi derive writes one key | follows once it adopts the setting | **Propose it**; the long-run fix, not ours to ship |
+| **(c) Upstream: a model-roles setting in pi** (and `ctx.modelFor(role)`) | pi. Then yolo's pi derive writes one key | follows once it adopts the setting | **Propose it**; the long-run fix, not ours to ship. *Ruled no on 2026-09-28 ([OQ-XM5](#7-decision-ledger)): yolo proposes nothing upstream, and adapters stay the way yolo reaches each extension's own settings.* |
 | **(d) Inherit-first only.** yolo writes the default and scope; extensions that inherit follow | nothing new | follows if it inherits; diverges if configured | **Keep as the floor**, already true; not enough alone |
 | **(e) Document and stop** | docs | diverges | **No.** The maintainer wants something layered |
 | **(f) yolo ships adapters for chosen extensions** | yolo, per extension | — | **No.** It's the opinion and the responsibility the maintainer declined |
 
-**Leaning: (d) as the floor, (a) as the layer, (c) proposed upstream, (b) later.** The pieces:
+**Leaning: (d) as the floor, (a) as the layer, (c) proposed upstream, (b) later.** *Ruled
+2026-09-28: (c) is not proposed ([OQ-XM5](#7-decision-ledger)), and piece 3 went the other way
+([OQ-XM3](#7-decision-ledger)).* The pieces:
 
 1. **Core, generic, small:** a derive helper that resolves a tier alias for the selected provider
    to a full `provider/model` id, the same resolution claude's derive does by hand. With it, an
    adapter is about ten lines of Lua. Core names no extension.
 2. **yolo ships no adapters.** It documents the adapter contract and one worked example. The
    example lives in docs, not in `packs/`.
-3. **The `subagents` block moves out of pi's derive** into an adapter pack that yolo does not
-   ship by default ([OQ-XM3](#OQ-XM3)). pi's derive then names no extension, and the pi default-model question's policy
-   question becomes that adapter's business.
+3. **The `subagents` block stays in pi's derive, written for every provider** ([OQ-XM3](#7-decision-ledger),
+   ruled 2026-09-28; the leaning was to move it into an adapter pack yolo does not select by
+   default). *"I want always the default to switch to the default. If it's not otherwise
+   specified, it should switch to the default of that provider or whatever config … unless
+   there's like some very clear exception stated. And regardless, it shouldn't be able to cross
+   providers once we separate the providers per launch."* So `subagents.defaultModel` is the
+   active profile's default model for the selected provider, and `subagents.modelScope` is strict
+   and enforced over that provider's configured models: a child may name another model of the
+   same provider, and never one of another provider ([XM-D3](#XM-D3), [XM-D4](#XM-D4)). That also
+   answers the pi default-model question.
 4. **Adapters compose with the default-models pack and `only`.** An adapter reads the same resolved
    aliases the pickers render, so a company pack's `only` narrows what an adapter can write too.
    Nothing reads a second list.
@@ -159,139 +168,27 @@ mechanism doesn't need to reach claude or opencode plugins today.
 keeps that edit: an adapter's surface follows the same capture rules as any composed file, so an
 in-jail edit is the user's. That's the intended behavior, not a gap.
 
-## 6. Open questions
-
-1. ✅ <a id="OQ-XM1"></a>**[OQ-XM1](#OQ-XM1): Does core expose tier resolution to pack derives?**
-   A helper, for example `yolo.model_for("fast")`, returning the selected provider's aliased
-   model as `provider/id`, or nil. Stakes: without it every adapter re-implements the alias
-   fallback rules claude's derive encodes, and they drift.
-
-   _Leaning:_ yes. It's the one core change, it names no extension, and claude's and opencode's
-   derives can adopt it to lose their hand-written copies.
-
-   <!-- vantage: question id=OQ-XM1 -->
-
-      **Answer:**
-   > **Ruled in review 2026-09-28, as leaned:** yes. A derive helper resolves a tier alias for the
-   > selected provider to `provider/id`. It is the one core change, it names no extension, and
-   > claude's and opencode's derives can adopt it in place of their hand-written copies.
-
-2. ✅ <a id="OQ-XM2"></a>**[OQ-XM2](#OQ-XM2): Which role names does yolo publish?** yolo's
-   aliases are `default`, `fast` and `balanced`. The ecosystem uses `small`/`medium`/`big`
-   (pi-dynamic-workflows) and `fast`/`balanced`/`frontier`/`fav` (pi-task-models), and claude
-   uses `opus`/`sonnet`/`haiku`. Stakes: an adapter maps yolo's names onto the extension's, and a
-   missing `frontier` leaves every "big" slot on the default.
-
-   _Leaning:_ keep yolo's three and add `frontier` as a fourth conventional alias, with the same
-   warn-don't-refuse rule. Each adapter maps names; core does not.
-
-   <!-- vantage: question id=OQ-XM2 -->
-
-   **Answer:**
-   > **Ruled in review 2026-09-28, as leaned:** keep `default`, `fast` and `balanced`, and add
-   > `frontier` as a fourth conventional alias under the same warn-don't-refuse rule. Each
-   > adapter maps yolo's names onto its extension's; core maps none.
-
-3. ✅ <a id="OQ-XM3"></a>**[OQ-XM3](#OQ-XM3): What happens to the `subagents` block pi's derive
-   writes today?** It's yolo's one adapter, embedded in the agent's pack.
-   - **(a)** Move it to an optional adapter pack yolo ships but never selects by default.
-   - **(b)** Move it to the maintainer's own pack, out of yolo entirely.
-   - **(c)** Keep it where it is, as the one sanctioned case.
-
-   Background: [what the block does today, and the stakes](#background-to-oq-xm3).
-
-   _Leaning:_ (a), and it answers the pi default-model question the same way: the adapter writes `defaultModel` from the
-   profile's `default` alias and `modelScope` from the provider's models, for every provider.
-
-   <!-- vantage: question id=OQ-XM3 -->
-
-      **Answer:**
-   > **Ruled in review 2026-09-28, amending the options:** the rule is not about codex. *"I want
-   > always the default to switch to the default. If it's not otherwise specified, it should
-   > switch to the default of that provider or whatever config … unless there's like some very
-   > clear exception stated. And regardless, it shouldn't be able to cross providers once we
-   > separate the providers per launch."* So the block stays in the pi pack, where every launch
-   > gets it without selecting an extra pack (none of (a), (b) or (c) as written), and it is
-   > written for every provider rather than `openai-codex` alone:
-   > - `subagents.defaultModel` is the active profile's default model for the selected provider,
-   >   so a child that names no model starts there;
-   > - `subagents.modelScope` is strict and enforced over the selected provider's configured
-   >   models, so a child may name another model of that provider (the stated exception) and can
-   >   never cross to another provider.
-   >
-   > This also answers the pi default-model question with its leaning.
-
-4. ✅ <a id="OQ-XM4"></a>**[OQ-XM4](#OQ-XM4): Does yolo also publish role env vars?** Stakes: an
-   env var reaches extensions with no adapter, but a jail-wide one is wrong when claude and pi run
-   different profiles.
-
-   _Leaning:_ not until per-agent env exists ([OQ-CN6](../reference/providers.md#oq-cn6));
-   then as `YOLO_MODEL_<ROLE>` per agent.
-
-   <!-- vantage: question id=OQ-XM4 -->
-
-   **Answer:**
-   > **Ruled in review 2026-09-28, as leaned:** not until per-agent environment exists
-   > ([OQ-CN6](../reference/providers.md#oq-cn6)); then as `YOLO_MODEL_<ROLE>`, set
-   > per agent.
-
-   **Built 2026-10-01**, per-agent environment having existed since 2026-09-26:
-   `YOLO_MODEL_DEFAULT`, `YOLO_MODEL_FAST`, `YOLO_MODEL_BALANCED` and `YOLO_MODEL_FRONTIER`, each
-   `<provider>/<id>` for the provider the agent's own profile selects. The decisions the build took
-   are [XM-D8](#XM-D8) and [XM-D9](#XM-D9).
-
-5. ✅ <a id="OQ-XM5"></a>**[OQ-XM5](#OQ-XM5): Propose a model-roles setting to pi upstream?**
-   A `modelRoles` map in `settings.json` and `ctx.modelFor(role)` on the extension context, so
-   extensions stop inventing vocabularies. Stakes: none for yolo's build; it's the maintainer's
-   call whether to spend upstream capital.
-
-   _Leaning:_ yes. It would let yolo's pi derive write one key and most adapters retire, and
-   `@henryqw/pi-task-models` shows the demand.
-
-   <!-- vantage: question id=OQ-XM5 -->
-
-   **Answer:**
-   > **Ruled in review 2026-09-28, against the leaning:** no. yolo does not propose a model-roles
-   > setting to pi upstream; adapters stay the way yolo reaches each extension's own settings.
-
-### 6.1 Background to the open questions
-
-#### Background to [OQ-XM3](#OQ-XM3)
-
-What the block does today: only on the `codex` profile, pi's derive writes pi-subagents' own
-settings. `subagents.defaultModel` is the profile's model, so a child agent with no model of
-its own starts there. `subagents.modelScope` is `{enforce: true, strict: true, allow: [...]}`
-with `allow` set to exactly the subscription's declared model list, so pi-subagents refuses to
-start a child on any other model, including a model an agent file or a workflow names
-explicitly. It was added on 2026-09-15 to stop workflows written for other providers from
-pinning a model the ChatGPT subscription cannot serve. On every other profile the derive
-writes no `subagents` block, and pi-subagents' own default applies: a child inherits its
-parent's model and may name any model.
-
-Stakes: under (a) or (b), a codex user who has not selected the adapter pack loses that
-refusal. Their child agents still start on the codex model, because they inherit it from the
-parent, so only a child that names another model changes: today it is refused, and without
-the block pi-subagents starts it on that model, which works if that model's provider is
-configured and fails if it is not. Under
-(c) nothing changes for codex users, and every other provider keeps having no policy at all,
-which is the gap the pi default-model question asked about.
-
 ## 7. Decision Ledger
 
-The rulings are the Answer blocks in [§6](#6-open-questions). These are the implementation
-decisions the build took under them, each one the builder's to make.
+The maintainer's rulings, all made in review on 2026-09-28, then the implementation decisions the
+build took under them, each one the builder's to make.
 
 | ID | Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| <a id="XM-D1"></a>XM-D1 | *Implementation decision.* **The helper is `yolo.model_for(alias)`, it answers for the SELECTED provider only, and it returns two values**: the model as `<provider>/<id>` and the bare id, or `nil`. It reads the same providers table `ctx.providers` is built from, so it needs no ctx argument. Another provider declaring the alias is never borrowed from, since a child handed that model would cross providers. The bare id is returned because agents spell a model differently (pi's own `defaultModel` is bare, pi-subagents' and opencode's are qualified) and a derive may normalize an id before qualifying it, as pi's does for kilo; the id is never parsed, so kilo's `vendor/model` ids survive whole. With no provider selected, or one the table has no row for, it returns `nil` silently. Like every `yolo.*` member it is a version boundary: an entrypoint older than it reads it through the tolerant guard, whose stub returns nothing, so a shipped derive treats `nil` as "resolved nothing" | 2026-09-28 | [OQ-XM1](#OQ-XM1) | ✅ `e8820505` |
-| <a id="XM-D2"></a>XM-D2 | *Implementation decision.* **Only the four conventional aliases warn, and the warning travels through a new `DeriveCtx.Warn`.** A missing `default`, `fast`, `balanced` or `frontier` is a warning naming the provider, the alias and the fix; any other name is open vocabulary and is silent when absent, because a derive may probe a name no provider is expected to declare (pi probes the profile's `model`, which may be an exact id). The four are one Go list, `luahook.ConventionalModelAliases`. The two surface-rendering paths, the boot loop and `yolo check`'s dry run, route `Warn` to the boot's once-per-message warning; the via-pointer scan and the host env composition leave it nil, as they already leave unknown-API notes to the boot | 2026-09-28 | [OQ-XM1](#OQ-XM1), [OQ-XM2](#OQ-XM2) | ✅ `e8820505` |
-| <a id="XM-D3"></a>XM-D3 | *Implementation decision.* **One function writes the `subagents` block for every provider, codex included**, and the block keeps codex's shape: `defaultProvider`, `defaultModel` as `<provider>/<id>`, and `modelScope` `{enforce: true, strict: true, allow}` over the provider's configured ids, exactly ([ML-D5](../design/model-lists-and-pickers.md#ML-D5)). For a provider with a model list, `allow` is the same distinct ids `enabledModels` holds, kilo's normalized. The child's default is the model the chat selection starts on, so the two cannot drift. codex's default stays `codexDefault`, the one rule its consumers share, because the declared list carries no `default` alias; every other provider resolves the profile's `model` alias, then `default`, through `yolo.model_for`, asked only of a provider that declares a model list, since a provider with none has no alias to miss. The rendered codex block is byte-identical to before | 2026-09-28 | [OQ-XM3](#OQ-XM3) | ✅ `58fc65ce` |
-| <a id="XM-D4"></a>XM-D4 | *Implementation decision.* **A provider with no configured models gets the provider-level scope `<provider>/*`**, strict and enforced, rather than no scope or an empty `allow`. The options: no scope lets a child name any provider's model, which the ruling forbids ("regardless, it shouldn't be able to cross providers"); an empty `allow` is refused by pi-subagents 0.35.1 as a settings error (`parseModelScopeConfig`: "expected a non-empty array of patterns"), and an enforced scope with none would refuse every child. `<provider>/*` keeps the one guarantee the ruling makes unconditional and allows the rest of the ruling's exception, another model of the same provider. pi-subagents turns `*` into `.*`, so it also matches ids with slashes of their own (`kilo/deepseek/deepseek-v4.1-flash`). It applies to openrouter and kilo as shipped, to a kilo profile that names a model (the scope is the provider, not that one model: yolo does not know kilo's models), and to `openai-codex` with its list removed, where it replaces [ML-D5](../design/model-lists-and-pickers.md#ML-D5)'s "an empty list writes no `modelScope`" | 2026-09-28 | [OQ-XM3](#OQ-XM3) | ✅ `58fc65ce` |
-| <a id="XM-D5"></a>XM-D5 | *Implementation decision.* **When yolo can name no default, `subagents.defaultModel` is tombstoned, not omitted.** That is a provider with no model list whose profile names no model, or a list with no alias the profile resolves to. Omitted, a lower layer's value would stand: `pi/settings` reads the host's `settings.json`, and a host that keeps a codex policy would start every openrouter child on a codex model, which pi-subagents only warns about for an inherited model (`checkModelScope`, severity `warn`). Deleted, the child inherits the parent session's model, which is on the selected provider. The rest of a host's `subagents` object, such as `disableBuiltins`, is kept. At the host nothing changes: `yolo host apply` renders no derive's content ([`host-agent-environment.md`'s computed layer at the host](../reference/host-agent-environment.md#what-yolo-host-apply-renders-into-a-derived-surface)), and the proposal that would let it drops a tombstone before writing ([HC-D10](../reference/host-agent-environment.md#HC-D10)) | 2026-09-28 | [OQ-XM3](#OQ-XM3) | ✅ `58fc65ce` |
-| <a id="XM-D6"></a>XM-D6 | *Implementation decision.* **The block stays a computed key, and a profile switch needs no clearing logic.** The selection mechanism lifts scalars and arrays of scalars only ([Selection](../reference/providers.md#selection-write-on-activation-clear-only-what-yolo-wrote)), so [OQ-PSW2](../reference/providers.md#oq-psw2)'s deselect rule does not govern it. A computed key is re-asserted every boot while a profile is active, and each switch rewrites every leaf yolo names, the `allow` array whole; a deselect writes no block, and the file is recomposed from its layers without it. Measured through the boot render, codex → zai → codex → zai and codex → openrouter → codex → openrouter, then a deselect and a reselect: each boot leaves exactly the new provider's block | 2026-09-28 | [OQ-XM3](#OQ-XM3) | ✅ `58fc65ce` |
-| <a id="XM-D7"></a>XM-D7 | *Implementation decision.* **claude's and opencode's derives do not adopt the helper in this change**, because neither is a clean swap. claude reads the vendor aliases `sonnet` and `haiku`, and moving it to `balanced`/`fast` is [OQ-PSW1](../design/model-lists-and-pickers.md#16-decision-ledger), open when this was written and decided on 2026-09-30 as [MM-D17](../design/model-lists-and-pickers.md#MM-D17) (not built). opencode's `small_model` tries `haiku`, `fast` and `small` in turn, so its lookup is a chain of names rather than one tier | 2026-09-28 | [OQ-XM1](#OQ-XM1) | — |
-| <a id="XM-D8"></a>XM-D8 | *Implementation decision.* **Core composes the role variables, for every agent with a profile, in the env-derive runner, and they ride that runner's output to every vehicle.** `packload.AgentEnv` adds `packload.ModelRoleVars` beside its pack's `yolo.env` output, so the per-agent env file, the macos-user session and `yolo host --`'s exec deliver them with no new reader, and an agent whose pack registers no `yolo.env` gets them too: the vocabulary (`luahook.ConventionalModelAliases`) and the lookup are core's, and a relay each agent pack had to remember is one each could forget. The names are `YOLO_MODEL_` plus the alias upper-cased, for the four conventional aliases only: an open-vocabulary alias is a name a derive may probe, not a role yolo publishes ([OQ-XM2](#OQ-XM2)). The value is `<provider>/<id>`, `yolo.model_for`'s qualified return, read through the same lookup (`luahook.ModelAliasID`), so the two cannot disagree. The provider is the agent's PRIMARY's, never a later entry of its active set, as `yolo.model_for` answers with no provider named. A variable of the same name the agent's own pack sets, a tombstone included, wins, since the pack is the more specific statement about its own agent's process. `yolo check` composes none, because its gate input runs no derive (`ScopeInput.NoDerives`) | 2026-10-01 | [OQ-XM4](#OQ-XM4) | ✅ built 2026-10-01 |
-| <a id="XM-D9"></a>XM-D9 | *Implementation decision.* **A role the agent's provider does not name is removed, and only when some provider in the launch's table names it; a missing role is silent.** An agent started by another agent inherits that one's environment, so a `YOLO_MODEL_FAST` left by an agent on another provider would hand a child a model across providers, which [XM-D1](#XM-D1) forbids; the per-agent file writes the removal only for a value yolo set elsewhere, so a value the user typed stays ([OQ-CN8](../reference/providers.md#oq-cn8)), and the host exec removes it outright, as it applies every composed value. A role no provider in the table names is not touched: nothing the launch composes could have set it. Nor is an agent with no profile: it selects no provider, the gate composes no delivery for it, and so it writes no file and its launch removes nothing, which leaves one started by a profiled agent holding that agent's values, as [CN-D8](../reference/providers.md#CN-D8) accepts for every inherited value (found in review). And unlike `yolo.model_for`, nothing warns: no derive asked for the role, so a warning would name a gap nobody relies on, at every launch | 2026-10-01 | [OQ-XM4](#OQ-XM4) | ✅ built 2026-10-01 |
+| OQ-XM1 | **Ruled, as leaned:** core exposes tier resolution to pack derives. A derive helper resolves a tier alias for the selected provider to `provider/id`. It is the one core change, it names no extension, and claude's and opencode's derives can adopt it in place of their hand-written copies | 2026-09-28 | [§5](#5-options-with-verdicts) | ✅ `yolo.model_for` ([XM-D1](#XM-D1)); claude's and opencode's derives have not adopted it ([XM-D7](#XM-D7)) |
+| OQ-XM2 | **Ruled, as leaned:** keep `default`, `fast` and `balanced`, and add `frontier` as a fourth conventional alias under the same warn-don't-refuse rule. Each adapter maps yolo's names onto its extension's; core maps none | 2026-09-28 | [Defined terms](#defined-terms) | ✅ `luahook.ConventionalModelAliases` ([XM-D2](#XM-D2)) |
+| OQ-XM3 | **Ruled, amending the options:** the `subagents` block stays in the pi pack, written for every provider, none of (a) move it to an optional adapter pack, (b) move it to the maintainer's pack or (c) keep it for codex alone. *"regardless, it shouldn't be able to cross providers once we separate the providers per launch."* `defaultModel` is the active profile's default for the selected provider; `modelScope` is strict and enforced over that provider's configured models. It also answers the pi default-model question | 2026-09-28 | [§5](#5-options-with-verdicts), piece 3 | ✅ [XM-D3](#XM-D3) to [XM-D6](#XM-D6) |
+| OQ-XM4 | **Ruled, as leaned:** no role environment variables until per-agent environment exists ([OQ-CN6](../reference/providers.md#oq-cn6)); then `YOLO_MODEL_<ROLE>`, set per agent | 2026-09-28 | [§5](#5-options-with-verdicts), option (b) | ✅ 2026-10-01: `YOLO_MODEL_DEFAULT`, `_FAST`, `_BALANCED`, `_FRONTIER` ([XM-D8](#XM-D8), [XM-D9](#XM-D9)) |
+| OQ-XM5 | **Ruled, against the leaning:** no. yolo does not propose a model-roles setting to pi upstream; adapters stay the way yolo reaches each extension's own settings | 2026-09-28 | [§5](#5-options-with-verdicts), option (c) | — nothing to build |
+| <a id="XM-D1"></a>XM-D1 | *Implementation decision.* **The helper is `yolo.model_for(alias)`, it answers for the SELECTED provider only, and it returns two values**: the model as `<provider>/<id>` and the bare id, or `nil`. It reads the same providers table `ctx.providers` is built from, so it needs no ctx argument. Another provider declaring the alias is never borrowed from, since a child handed that model would cross providers. The bare id is returned because agents spell a model differently (pi's own `defaultModel` is bare, pi-subagents' and opencode's are qualified) and a derive may normalize an id before qualifying it, as pi's does for kilo; the id is never parsed, so kilo's `vendor/model` ids survive whole. With no provider selected, or one the table has no row for, it returns `nil` silently. Like every `yolo.*` member it is a version boundary: an entrypoint older than it reads it through the tolerant guard, whose stub returns nothing, so a shipped derive treats `nil` as "resolved nothing" | 2026-09-28 | [OQ-XM1](#7-decision-ledger) | ✅ `e8820505` |
+| <a id="XM-D2"></a>XM-D2 | *Implementation decision.* **Only the four conventional aliases warn, and the warning travels through a new `DeriveCtx.Warn`.** A missing `default`, `fast`, `balanced` or `frontier` is a warning naming the provider, the alias and the fix; any other name is open vocabulary and is silent when absent, because a derive may probe a name no provider is expected to declare (pi probes the profile's `model`, which may be an exact id). The four are one Go list, `luahook.ConventionalModelAliases`. The two surface-rendering paths, the boot loop and `yolo check`'s dry run, route `Warn` to the boot's once-per-message warning; the via-pointer scan and the host env composition leave it nil, as they already leave unknown-API notes to the boot | 2026-09-28 | [OQ-XM1](#7-decision-ledger), [OQ-XM2](#7-decision-ledger) | ✅ `e8820505` |
+| <a id="XM-D3"></a>XM-D3 | *Implementation decision.* **One function writes the `subagents` block for every provider, codex included**, and the block keeps codex's shape: `defaultProvider`, `defaultModel` as `<provider>/<id>`, and `modelScope` `{enforce: true, strict: true, allow}` over the provider's configured ids, exactly ([ML-D5](../design/model-lists-and-pickers.md#ML-D5)). For a provider with a model list, `allow` is the same distinct ids `enabledModels` holds, kilo's normalized. The child's default is the model the chat selection starts on, so the two cannot drift. codex's default stays `codexDefault`, the one rule its consumers share, because the declared list carries no `default` alias; every other provider resolves the profile's `model` alias, then `default`, through `yolo.model_for`, asked only of a provider that declares a model list, since a provider with none has no alias to miss. The rendered codex block is byte-identical to before | 2026-09-28 | [OQ-XM3](#7-decision-ledger) | ✅ `58fc65ce` |
+| <a id="XM-D4"></a>XM-D4 | *Implementation decision.* **A provider with no configured models gets the provider-level scope `<provider>/*`**, strict and enforced, rather than no scope or an empty `allow`. The options: no scope lets a child name any provider's model, which the ruling forbids ("regardless, it shouldn't be able to cross providers"); an empty `allow` is refused by pi-subagents 0.35.1 as a settings error (`parseModelScopeConfig`: "expected a non-empty array of patterns"), and an enforced scope with none would refuse every child. `<provider>/*` keeps the one guarantee the ruling makes unconditional and allows the rest of the ruling's exception, another model of the same provider. pi-subagents turns `*` into `.*`, so it also matches ids with slashes of their own (`kilo/deepseek/deepseek-v4.1-flash`). It applies to openrouter and kilo as shipped, to a kilo profile that names a model (the scope is the provider, not that one model: yolo does not know kilo's models), and to `openai-codex` with its list removed, where it replaces [ML-D5](../design/model-lists-and-pickers.md#ML-D5)'s "an empty list writes no `modelScope`" | 2026-09-28 | [OQ-XM3](#7-decision-ledger) | ✅ `58fc65ce` |
+| <a id="XM-D5"></a>XM-D5 | *Implementation decision.* **When yolo can name no default, `subagents.defaultModel` is tombstoned, not omitted.** That is a provider with no model list whose profile names no model, or a list with no alias the profile resolves to. Omitted, a lower layer's value would stand: `pi/settings` reads the host's `settings.json`, and a host that keeps a codex policy would start every openrouter child on a codex model, which pi-subagents only warns about for an inherited model (`checkModelScope`, severity `warn`). Deleted, the child inherits the parent session's model, which is on the selected provider. The rest of a host's `subagents` object, such as `disableBuiltins`, is kept. At the host nothing changes: `yolo host apply` renders no derive's content ([`host-agent-environment.md`'s computed layer at the host](../reference/host-agent-environment.md#what-yolo-host-apply-renders-into-a-derived-surface)), and the proposal that would let it drops a tombstone before writing ([HC-D10](../design/host-computed-layer.md#HC-D10)) | 2026-09-28 | [OQ-XM3](#7-decision-ledger) | ✅ `58fc65ce` |
+| <a id="XM-D6"></a>XM-D6 | *Implementation decision.* **The block stays a computed key, and a profile switch needs no clearing logic.** The selection mechanism lifts scalars and arrays of scalars only ([Selection](../reference/providers.md#selection-write-on-activation-clear-only-what-yolo-wrote)), so [OQ-PSW2](../reference/providers.md#oq-psw2)'s deselect rule does not govern it. A computed key is re-asserted every boot while a profile is active, and each switch rewrites every leaf yolo names, the `allow` array whole; a deselect writes no block, and the file is recomposed from its layers without it. Measured through the boot render, codex → zai → codex → zai and codex → openrouter → codex → openrouter, then a deselect and a reselect: each boot leaves exactly the new provider's block | 2026-09-28 | [OQ-XM3](#7-decision-ledger) | ✅ `58fc65ce` |
+| <a id="XM-D7"></a>XM-D7 | *Implementation decision.* **claude's and opencode's derives do not adopt the helper in this change**, because neither is a clean swap. claude reads the vendor aliases `sonnet` and `haiku`, and moving it to `balanced`/`fast` is [OQ-PSW1](../design/model-lists-and-pickers.md#OQ-PSW1), open when this was written and decided on 2026-09-30 as [MM-D17](../design/model-lists-and-pickers.md#MM-D17) (not built). opencode's `small_model` tries `haiku`, `fast` and `small` in turn, so its lookup is a chain of names rather than one tier | 2026-09-28 | [OQ-XM1](#7-decision-ledger) | — |
+| <a id="XM-D8"></a>XM-D8 | *Implementation decision.* **Core composes the role variables, for every agent with a profile, in the env-derive runner, and they ride that runner's output to every vehicle.** `packload.AgentEnv` adds `packload.ModelRoleVars` beside its pack's `yolo.env` output, so the per-agent env file, the macos-user session and `yolo host --`'s exec deliver them with no new reader, and an agent whose pack registers no `yolo.env` gets them too: the vocabulary (`luahook.ConventionalModelAliases`) and the lookup are core's, and a relay each agent pack had to remember is one each could forget. The names are `YOLO_MODEL_` plus the alias upper-cased, for the four conventional aliases only: an open-vocabulary alias is a name a derive may probe, not a role yolo publishes ([OQ-XM2](#7-decision-ledger)). The value is `<provider>/<id>`, `yolo.model_for`'s qualified return, read through the same lookup (`luahook.ModelAliasID`), so the two cannot disagree. The provider is the agent's PRIMARY's, never a later entry of its active set, as `yolo.model_for` answers with no provider named. A variable of the same name the agent's own pack sets, a tombstone included, wins, since the pack is the more specific statement about its own agent's process. `yolo check` composes none, because its gate input runs no derive (`ScopeInput.NoDerives`) | 2026-10-01 | [OQ-XM4](#7-decision-ledger) | ✅ built 2026-10-01 |
+| <a id="XM-D9"></a>XM-D9 | *Implementation decision.* **A role the agent's provider does not name is removed, and only when some provider in the launch's table names it; a missing role is silent.** An agent started by another agent inherits that one's environment, so a `YOLO_MODEL_FAST` left by an agent on another provider would hand a child a model across providers, which [XM-D1](#XM-D1) forbids; the per-agent file writes the removal only for a value yolo set elsewhere, so a value the user typed stays ([OQ-CN8](../reference/providers.md#oq-cn8)), and the host exec removes it outright, as it applies every composed value. A role no provider in the table names is not touched: nothing the launch composes could have set it. Nor is an agent with no profile: it selects no provider, the gate composes no delivery for it, and so it writes no file and its launch removes nothing, which leaves one started by a profiled agent holding that agent's values, as [CN-D8](../design/provider-credential-scope.md#CN-D8) accepts for every inherited value (found in review). And unlike `yolo.model_for`, nothing warns: no derive asked for the role, so a warning would name a gap nobody relies on, at every launch | 2026-10-01 | [OQ-XM4](#7-decision-ledger) | ✅ built 2026-10-01 |
 
 ## Appendix A: evidence
 

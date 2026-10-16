@@ -12,7 +12,7 @@ vantage:
 
 # Providers and profiles, redesigned: what `-p <name>` should mean
 
-**Status:** 2026-09-25. [PP-D13](#PP-D13) to [PP-D15](#PP-D15) ruled and built 2026-10-11: in a jail a profile choice overrides the imported host settings, every launcher makes an agent's provider variables the selection's, and no capture records an edit at a provider key. [OQ-BR8](#OQ-BR8) and [OQ-BR2](#OQ-BR2) ruled 2026-09-29 (key facts on the provider, recognized by its `platform` field), and [PP-D1](#PP-D1) the same day; all three **built 2026-09-29** ([§8](#8-decision-ledger) has how), with the review's fixes the same day: a user's own provider of a platform co-claims its credential names ([PP-D9](#PP-D9)), a switch `yolo host apply` wrote is yolo's to clear and to name ([PP-D1](#PP-D1)), and a via no route carries claude through is disclosed ([PP-D4](#PP-D4)). Trap D5 is closed. [PP-D10](#PP-D10), the `profile` config key that mirrors `-p` and replaces `use_profiles`, was ruled and built the same day ([PP-D11](#PP-D11) has how). Triaged 2026-09-30: [OQ-PP2](#OQ-PP2) is answered by [OQ-BR1](bedrock-plumbing.md#OQ-BR1) with [OQ-WG2](wire-bridge-gateway.md#decision-ledger), and [OQ-PP3](#OQ-PP3) by [OQ-AP3](active-provider-sets.md#OQ-AP3), whose launch line was found already built as the profile line's per-agent warning. [OQ-PP1](#OQ-PP1) stays open, restated against what those rulings built.
+**Status:** 2026-09-25. [PP-D13](#PP-D13) to [PP-D15](#PP-D15) ruled and built 2026-10-11: in a jail a profile choice overrides the imported host settings, every launcher makes an agent's provider variables the selection's, and no capture records an edit at a provider key. [OQ-BR8](#8-decision-ledger) and [OQ-BR2](#8-decision-ledger) ruled 2026-09-29 (key facts on the provider, recognized by its `platform` field), and [PP-D1](#PP-D1) the same day; all three **built 2026-09-29** ([§8](#8-decision-ledger) has how), with the review's fixes the same day: a user's own provider of a platform co-claims its credential names ([PP-D9](#PP-D9)), a switch `yolo host apply` wrote is yolo's to clear and to name ([PP-D1](#PP-D1)), and a via no route carries claude through is disclosed ([PP-D4](#PP-D4)). Trap D5 is closed. [PP-D10](#PP-D10), the `profile` config key that mirrors `-p` and replaces `use_profiles`, was ruled and built the same day ([PP-D11](#PP-D11) has how). Triaged 2026-09-30: [OQ-PP2](#8-decision-ledger) is answered by [OQ-BR1](bedrock-plumbing.md#decision-ledger) with [OQ-WG2](wire-bridge-gateway.md#OQ-WG2), and [OQ-PP3](#8-decision-ledger) by [OQ-AP3](active-provider-sets.md#11-decision-ledger), whose launch line was found already built as the profile line's per-agent warning. [OQ-PP1](#OQ-PP1) stays open, restated against what those rulings built.
 BUILT AND MEASURED BY TESTS ONLY: each moved fact is pinned where it is delivered, through the
 credential gate and the shipped derives, for the shipped profile, a user's own profile over
 `bedrock` and a user's own provider declaring `"platform": "aws-bedrock"`; no launch was run, no
@@ -34,59 +34,47 @@ each mean, how a derive recognizes what a pick is, and whether any fact should k
 profile's name at all.
 
 **Why it exists.** It began as one question in [`bedrock-plumbing.md`](bedrock-plumbing.md):
-[OQ-BR2](#OQ-BR2), a proposed `service` marker on the provider kind. In review on 2026-09-25 the
+[OQ-BR2](#8-decision-ledger), a proposed `service` marker on the provider kind. In review on 2026-09-25 the
 maintainer did not rule it:
 
 > *"a bigger decision than you're making it look … could potentially remake how we do providers
 > and profiles … I already don't love providers and profiles. I find it very confusing … an
 > opportunity to dive deep and change that but this sounds like a design doc on its own."*
 
-[OQ-BR8](#OQ-BR8) came with it, because it is the same function seen from the gate side.
+[OQ-BR8](#8-decision-ledger) came with it, because it is the same function seen from the gate side.
 
 **Where things stand.**
 
 - **Built:** the provider system as [`providers.md`](../reference/providers.md) describes it —
   one composed provider table, profiles of exactly `{name, provider}`, and provider-keyed
-  derives. Since 2026-09-29 a provider declares its `platform` ([OQ-BR2](#OQ-BR2)), every
-  shipped provider fact keys on the provider ([OQ-BR8](#OQ-BR8)): packs/claude's
+  derives. Since 2026-09-29 a provider declares its `platform` ([OQ-BR2](#8-decision-ledger)), every
+  shipped provider fact keys on the provider ([OQ-BR8](#8-decision-ledger)): packs/claude's
   endpoint-less `bedrock` provider declares `"platform": "aws-bedrock"`, claude's derive sets its
   Bedrock switch from that, and `packs/aws-auth`'s credential pointer gates on the platform. The
   name-keyed `profile` gate on `env` and `config-overlay` stays for a variant that really is a
   name; no shipped pack uses it.
 - **Ruled, and binding here:** [OQ-BR4](../reference/providers.md#oq-br4) (2026-09-25): a
   profile's env must not leak to other agents, *"as specific as possible"*.
-  [OQ-BR11](bedrock-plumbing.md#OQ-BR11) (2026-09-24): claude gets a native Bedrock profile
+  [OQ-BR11](bedrock-plumbing.md#decision-ledger) (2026-09-24): claude gets a native Bedrock profile
   and an everything profile. [DIR-BR3](bedrock-plumbing.md#decision-ledger) (2026-09-25): yolo
-  ships `bedrock-runtime` only. [OQ-BR5](bedrock-plumbing.md#OQ-BR5) (2026-09-25): pi is
+  ships `bedrock-runtime` only. [OQ-BR5](bedrock-plumbing.md#decision-ledger) (2026-09-25): pi is
   supported both through its native Converse client and through the bridge.
 - **Not ruled:** [OQ-PP1](#OQ-PP1), what `-p` names.
 
-**Needs your ruling:** [OQ-PP1](#OQ-PP1). The questions, in the order they were asked:
-
-1. ✅ [OQ-BR2](#OQ-BR2) — the marker, **ruled 2026-09-29: a `platform` field.** It gated builds, so it came first.
-
-   _Leaning (⚠ changed
-   2026-09-25):_ rule its substance now (a declared, open-vocabulary field, in both schemas),
-   spelled so it survives any answer to [OQ-PP1](#OQ-PP1) — for example `platform` — and not
-   spelled `service` or `native`.
-2. ✅ [OQ-BR8](#OQ-BR8) — **ruled 2026-09-29:** gates key on the provider, in each agent's own
-   derive. Which agents receive a fact is [OQ-CN6](../reference/providers.md#oq-cn6)'s per-agent
-   vehicle, now built.
-3. [OQ-PP1](#OQ-PP1) — what is the one thing `-p` names?
-
-   _Leaning (⚠ added 2026-09-30):_ (a),
-   keep the profile over a provider as built, since every ruling since has built on the profile.
-4. ✅ [OQ-PP2](#OQ-PP2) — **answered 2026-09-30 by [OQ-BR1](bedrock-plumbing.md#OQ-BR1) with
-   [OQ-WG2](wire-bridge-gateway.md#decision-ledger):** derived per agent, and a profile's `via` forces
-   the bridge.
-5. ✅ [OQ-PP3](#OQ-PP3) — **answered 2026-09-30 by [OQ-AP3](active-provider-sets.md#OQ-AP3):**
-   one launch line naming the agents a bare `-p X` does not reach, never a refusal.
+**Needs your ruling:** [OQ-PP1](#OQ-PP1), what is the one thing `-p` names? Its leaning, added
+2026-09-30, is (a): keep the profile over a provider as built, since every ruling since has built
+on the profile. The other four are settled, in the
+[Decision Ledger](#8-decision-ledger): [OQ-BR2](#8-decision-ledger) (the marker is a `platform`
+field), [OQ-BR8](#8-decision-ledger) (gates key on the provider, in each agent's own derive),
+[OQ-PP2](#8-decision-ledger) (the transport is derived per agent, and a profile's `via` forces
+the bridge) and [OQ-PP3](#8-decision-ledger) (one launch line naming the agents a bare `-p X`
+does not reach, never a refusal).
 
 **Out of scope, and where it lives.** The credential delivery gate:
 [`providers.md`'s credential gate](../reference/providers.md#the-credential-gate), whose
-[OQ-CN1](../reference/providers.md#oq-cn1) reads [OQ-BR8](#OQ-BR8). Bedrock's provider
+[OQ-CN1](../reference/providers.md#oq-cn1) reads [OQ-BR8](#8-decision-ledger). Bedrock's provider
 shape and profile names: [`bedrock-plumbing.md`](bedrock-plumbing.md)
-([OQ-BR9](bedrock-plumbing.md#OQ-BR9), [OQ-BR1](bedrock-plumbing.md#OQ-BR1)). Model lists:
+([OQ-BR9](bedrock-plumbing.md#decision-ledger), [OQ-BR1](bedrock-plumbing.md#decision-ledger)). Model lists:
 [`model-lists-and-pickers.md`](model-lists-and-pickers.md). The deselection state machine:
 [the providers reference](../reference/providers.md#deselection-clear-what-yolo-wrote-keep-what-the-user-wrote). Routing all traffic through the wire bridge:
 [`wire-bridge-gateway.md`](wire-bridge-gateway.md). Rewriting
@@ -156,7 +144,7 @@ gate fires claude's and `aws-auth`'s variables for the whole jail — the leak
 
 Which agent reaches Bedrock by which transport:
 [bedrock-plumbing, Where the split ended up](bedrock-plumbing.md#where-the-split-ended-up). Where
-the transport *lives* in the schema is this doc's [OQ-PP2](#OQ-PP2).
+the transport *lives* in the schema is this doc's [OQ-PP2](#8-decision-ledger).
 
 ---
 
@@ -165,7 +153,7 @@ the transport *lives* in the schema is this doc's [OQ-PP2](#OQ-PP2).
 ### 2.1 D5: a second profile over one provider silently loses every gated fact
 
 > [!NOTE]
-> **Closed 2026-09-29** by [OQ-BR8](#OQ-BR8)'s build: every fact below keys on the
+> **Closed 2026-09-29** by [OQ-BR8](#8-decision-ledger)'s build: every fact below keys on the
 > provider now, and a user profile `bedrock-sso` over `bedrock` gets all of them, as does a user
 > provider with `"platform": "aws-bedrock"`. The text below is the trap as it stood.
 
@@ -192,7 +180,7 @@ second intent over the same provider"* as the case selection resolution exists f
 SELECTION half was fixed: `ProviderFor` reads the resolved table, user profiles included. The
 GATE half never moved. SOURCED from git history.
 
-**It is about to become routine.** [OQ-BR11](bedrock-plumbing.md#OQ-BR11)'s everything
+**It is about to become routine.** [OQ-BR11](bedrock-plumbing.md#decision-ledger)'s everything
 profile is a second claude profile over the Bedrock provider — D5's exact shape. It must not
 set the name-gated `CLAUDE_CODE_USE_BEDROCK`, yet `aws-auth`'s pointer must still reach the
 bridge.
@@ -228,7 +216,7 @@ three unrelated facts:
   agent's native Bedrock client".
 
 So the everything profile can only express "use the bridge" by being a different profile
-name, which is D5; and [OQ-BR1](bedrock-plumbing.md#OQ-BR1)'s naming question could not be
+name, which is D5; and [OQ-BR1](bedrock-plumbing.md#decision-ledger)'s naming question could not be
 answered, because the thing the names should describe had no field. The maintainer's reading
 was right: *"isn't it really provider native and then the wire bridge."*
 
@@ -239,7 +227,7 @@ was right: *"isn't it really provider native and then the wire bridge."*
 degenerate-input rule states the same for agy, and for copilot until the bridge serves the
 provider: *"nothing written, no warning"*. The launch line prints DECLARED and RECEIVED and
 never "honored" ([OQ-10](../reference/providers.md#pv-oq-10)), because what a derive does is
-unobservable from the launcher. That is [OQ-PP3](#OQ-PP3), answered 2026-09-30: one launch line,
+unobservable from the launcher. That is [OQ-PP3](#8-decision-ledger), answered 2026-09-30: one launch line,
 never a refusal.
 
 ---
@@ -274,7 +262,7 @@ An endpoint-less provider needs a declared fact, because every derive but claude
 reachability on a URL. With a marker, codex's derive can say "this provider is Bedrock, select
 my `amazon-bedrock-runtime` built-in and write `aws.region`" without a URL. The marker has
 consumers queued behind it: bedrock-plumbing's native derives, the bridge's decision to sign,
-and [OQ-BR22](bedrock-web-search.md#OQ-BR22)'s search-preset gate.
+and [OQ-BR22](bedrock-web-search.md#decision-ledger)'s search-preset gate.
 
 The three candidates, and what the tree says about each:
 
@@ -309,7 +297,7 @@ The three candidates, and what the tree says about each:
 what a pick means. The other half is "by which transport does *this* agent reach it?"
 ([§2.3](#23-the-transport-has-nowhere-to-live)). Adding the marker without deciding the
 transport's home leaves the everything profile distinguished only by its name. That is why
-[OQ-BR2](#OQ-BR2) is asked beside [OQ-PP1](#OQ-PP1) and [OQ-PP2](#OQ-PP2), not after them.
+[OQ-BR2](#8-decision-ledger) is asked beside [OQ-PP1](#OQ-PP1) and [OQ-PP2](#8-decision-ledger), not after them.
 
 ---
 
@@ -320,11 +308,11 @@ transport's home leaves the everything profile distinguished only by its name. T
   bedrock-plumbing's build step 2. **Built 2026-09-29** (`packdecl.PlatformProblem`): a derive reads it as
   `ctx.selected_platform`, and claude's derive and aws-auth's pointer already key on it.
 - **Built after it:** bedrock-plumbing's native derives (codex, opencode, pi), and
-  [OQ-BR22](bedrock-web-search.md#OQ-BR22)'s Bedrock gate on the search preset.
+  [OQ-BR22](bedrock-web-search.md#decision-ledger)'s Bedrock gate on the search preset.
 - **Not gated on it:** the bridge's SigV4 signer.
   [OQ-WG1](wire-bridge-gateway.md#decision-ledger) leans toward keying the signer on the upstream host
   rather than on a provider marker, so the signer does not wait here.
-- **Built with [OQ-BR8](#OQ-BR8):** closing D5, together with D2's fix under
+- **Built with [OQ-BR8](#8-decision-ledger):** closing D5, together with D2's fix under
   [OQ-BR4](../reference/providers.md#oq-br4), each with a test that fails when the call site
   is deleted. **Built 2026-09-29** ([PP-D2](#PP-D2) to [PP-D6](#PP-D6)).
 
@@ -334,142 +322,31 @@ transport's home leaves the everything profile distinguished only by its name. T
 
 | Ruling | What it settled | How this doc touches it |
 | :--- | :--- | :--- |
-| [OQ-CS9](../reference/providers.md#oq-cs9) | Profiles point at a provider; no `extends` | Rules out `bedrock-sso extends bedrock` ([OQ-BR8](#OQ-BR8)). Under [OQ-PP1](#OQ-PP1) (b) or (c) it is moot for profiles, but may reappear as a provider-level `extends` |
-| [OQ-PT8](../reference/providers.md#oq-pt8), 2026-09-01 | A profile is `{name, provider}`; its body moved onto name-keyed `profile:` contributions | Does **not** answer [OQ-BR8](#OQ-BR8): name versus provider was a consequence, never a choice. [OQ-PP1](#OQ-PP1) (b) would make the `profile` kind an alias or delete it |
-| [OQ-PT3](../reference/providers.md#oq-pt3) | A provider's fact is composed from the provider, not restated in a gated overlay | The precedent [OQ-BR8](#OQ-BR8)'s leaning follows |
+| [OQ-CS9](../reference/providers.md#oq-cs9) | Profiles point at a provider; no `extends` | Rules out `bedrock-sso extends bedrock` ([OQ-BR8](#8-decision-ledger)). Under [OQ-PP1](#OQ-PP1) (b) or (c) it is moot for profiles, but may reappear as a provider-level `extends` |
+| [OQ-PT8](../reference/providers.md#oq-pt8), 2026-09-01 | A profile is `{name, provider}`; its body moved onto name-keyed `profile:` contributions | Does **not** answer [OQ-BR8](#8-decision-ledger): name versus provider was a consequence, never a choice. [OQ-PP1](#OQ-PP1) (b) would make the `profile` kind an alias or delete it |
+| [OQ-PT3](../reference/providers.md#oq-pt3) | A provider's fact is composed from the provider, not restated in a gated overlay | The precedent [OQ-BR8](#8-decision-ledger)'s leaning follows |
 | [OQ-ES8](credential-sources-separation.md#OQ-ES8) | Still open: AWS's two-part credential has no declarative home | Same question as [OQ-CN1](../reference/providers.md#oq-cn1) from the credential side; a transport or marker field may give it one |
 
 ---
 
 ## 7. Open Questions
 
-<a id="oq-br2-background"></a>**Background to [OQ-BR2](#OQ-BR2), below.** Moved here from bedrock-plumbing on 2026-09-25, id kept.
-
-> [!WARNING]
-> **⚠ Leaning changed 2026-09-25.** The old leaning, in bedrock-plumbing, was a provider field
-> spelled `service: "aws-bedrock"`, open vocabulary, unknown values inert. The substance stays.
-> The spelling moved because `service` already names a contribution kind
-> ([§4](#4-the-marker-how-a-derive-recognizes-what-a-pick-is)), and the question moved because
-> the maintainer declined to rule it as a field.
-
-1. ✅ <a id="OQ-BR2"></a>**[OQ-BR2](#OQ-BR2): How does a derive recognize what a provider is
-   (the marker)?** [Its history, and why the leaning changed](#oq-br2-background), are above. Candidates and costs
-   are [§4](#4-the-marker-how-a-derive-recognizes-what-a-pick-is): a declared field, matching the
-   name (rejected), or the implicit reading (fails today). Stakes: it gates bedrock-plumbing's
-   native derives and [OQ-BR22](bedrock-web-search.md#OQ-BR22), it is the one piece of the Bedrock
-   work that touches core, and it is the first stone of whatever [OQ-PP1](#OQ-PP1) builds. **Not
-   ruled 2026-09-25** — the maintainer's words are this doc's opening.
-
-   _Leaning:_ Rule the substance now so the builds are not held for the whole redesign: a
-   declared, open-vocabulary field on the provider, unknown values inert, accepted by both
-   `internal/packdecl` and `knownProviderKeys`. Spell it for what the service IS, not how it is
-   reached: for example `platform: "aws-bedrock"` (coined here). Not `service`, which already
-   names a contribution kind, and not `native`, which is a transport value in
-   [OQ-PP1](#OQ-PP1) (c). It also gives [OQ-PP2](#OQ-PP2)'s derived transport the fact it reads.
-   This asks again for the narrow ruling you declined once. It is safe to give because whatever
-   [OQ-PP1](#OQ-PP1) decides about profiles, a provider still has to say what it is, so the field
-   survives every option there. What still waits on it is bedrock-plumbing's build steps 3–5 (the
-   `bedrock` pack's provider, then the codex, opencode and pi native bindings) and
-   [bedrock-web-search](bedrock-web-search.md)'s step 9.3, the search preset's Bedrock gate
-   ([OQ-BR22](bedrock-web-search.md#OQ-BR22)). The bridge's signer does not wait: [OQ-WG1](wire-bridge-gateway.md#decision-ledger)
-   leans toward keying it on the upstream host.
-
-   <!-- vantage: question id=OQ-BR2 -->
-
-   **Answer:**
-   > **Ruled 2026-09-29, as leaned.** A provider declares what service it is in an
-   > open-vocabulary field, `platform` (for example `"platform": "aws-bedrock"`), accepted by
-   > both `internal/packdecl` and `knownProviderKeys`, with unknown values inert. A derive
-   > recognizes Bedrock by that field, never by a name, so a provider a user defines gets the
-   > same behavior as the shipped one, which completes [OQ-BR8](#OQ-BR8).
-
-<a id="oq-br8-background"></a>**Background to [OQ-BR8](#OQ-BR8), below: its history, stakes and options, the leaning in
-detail, and the workaround that works today.** Moved here from bedrock-plumbing on 2026-09-25, id kept.
-Stakes: whether a second intent
-over a shipped provider is supported or a silent trap; whether the credential adapter's port
-stays written three times ([appendix](#appendix-evidence-and-how-to-re-check-it)); whether
-[OQ-BR11](bedrock-plumbing.md#OQ-BR11)'s everything profile can work; and whether
-[OQ-CN1](../reference/providers.md#oq-cn1) can gate credentials by provider.
-
-| Option | Verdict |
-| :--- | :--- |
-| **Key provider facts on the provider**, in the agent's own derive on `ctx.selected_provider`, then on [OQ-BR2](#OQ-BR2)'s marker | **Leaning** |
-| A profile `extends` another, inheriting its gates | **Rejected**: reopens [OQ-CS9](../reference/providers.md#oq-cs9) |
-| The gate matches the selected provider's NAME instead | **Weaker**: the fact stays in a manifest keyed on one provider name, so a variant provider loses it again |
-| Warn at launch when a gate's name differs from the selected profile over the same provider | **Rejected as the fix**: reports the trap instead of removing it. Kept only as a `yolo check` note for a USER pack |
-
-The leaning, concretely:
-
-- claude's `CLAUDE_CODE_USE_BEDROCK` moves into claude's derive, in env and settings;
-- llamacpp's attribution header becomes a provider option;
-- pi's codex prelaunch env moves into a pi derive;
-- `aws-auth`'s adapter address is composed into a provider row, as codex's Responses address
-  already is (the `openai-codex` provider's `endpoints` in `packs/openai-auth/pack.json`). That
-  removes the duplicated `1461` and makes the pointer fire for the right provider; it reaches
-  only the selecting agent once [OQ-CN6](../reference/providers.md#oq-cn6)'s per-agent
-  vehicle exists. Because provider names are
-  sole-owned ([§3](#3-constraints-any-redesign-keeps)), `aws-auth` ships its own provider
-  rather than annotating claude's;
-- two variants of one service are two PROVIDERS, not two profiles over one.
-
-A derive runs per agent, but today its output still lands in the one shared env file every
-process reads ([what crosses to the jail](../reference/providers.md#what-crosses-to-the-jail)).
-So keying on the provider makes a fact fire for the right provider, which closes D5, and a
-provider-keyed fact reaches only the selecting agent once
-[OQ-CN6](../reference/providers.md#oq-cn6)'s per-agent vehicle exists. The `claude/settings`
-half of claude's flag is per-agent already; the env half is not. So this option is necessary
-for [OQ-BR4](../reference/providers.md#oq-br4)'s *"as specific as possible"*, not
-sufficient. The everything profile then differs from the native one by provider or by a
-transport option ([OQ-PP2](#OQ-PP2)), never by name.
-
-**Working today, as a workaround** (MEASURED by the 2026-09-23 triage): declare a second
-provider in user `providers` (for example `bedrock-sso`, with its own `region`) and a profile
-over it, then a local pack at `~/.config/yolo-jail/local` whose `env` and `config-overlay`
-contributions are gated on the new name, restating `CLAUDE_CODE_USE_BEDROCK=1` in both and
-`AWS_CONTAINER_CREDENTIALS_FULL_URI=http://127.0.0.1:1461/credentials` — the fourth copy of
-the port, checked by nothing.
-
-2. ✅ <a id="OQ-BR8"></a>**[OQ-BR8](#OQ-BR8): Does a contribution's gate key on the profile
-   NAME or on the provider it selects?**
-   It is [OQ-BR4](../reference/providers.md#oq-br4)'s other direction: BR4 ruled that a gate
-   must not fire for the wrong agent; this asks why it fails to fire for the right one
-   ([§2.1](#21-d5-a-second-profile-over-one-provider-silently-loses-every-gated-fact),
-   [§2.2](#22-gates-key-on-the-name-derives-key-on-the-provider)). Its stakes, the options with
-   their verdicts, the leaning in detail and today's workaround are
-   [in the background above](#oq-br8-background).
-
-   _Leaning:_ The first option, as the bullets above spell it, built with
-   [OQ-BR4](../reference/providers.md#oq-br4)'s fix, which is the same function.
-
-   <!-- vantage: question id=OQ-BR8 -->
-
-   **Answer:**
-   > **Ruled 2026-09-29, as leaned: key provider facts on the provider, never the profile's
-   > name.** The maintainer: *"just because you have a differently named profile here doesn't mean
-   > that things should happen differently. So we need to fix this bug. Like you need to be able to
-   > define your own and get the same behavior."* The facts move into each agent's derive on
-   > `ctx.selected_provider` now, which fixes a user's own profile over a shipped provider
-   > (`-p bedrock-sso` over `bedrock`). "Define your own" also covers a user's own PROVIDER, which
-   > a provider-name test would miss again; that half needs [OQ-BR2](#OQ-BR2)'s marker, so BR2 is
-   > the remainder and goes to the next review set. The everything profile's switch-but-pointer
-   > split (a transport check, not only "the provider is Bedrock") is part of the build.
-
 <a id="oq-pp1-background"></a>**Background to [OQ-PP1](#OQ-PP1), below: its options as filed, and as restated
 2026-09-30.**
 
 | Option | What `-p bedrock` names | Costs |
 | :--- | :--- | :--- |
-| **(a)** Today's indirection | a profile, which points at a provider | D5 survives unless [OQ-BR8](#OQ-BR8) moves every fact to the provider; two names for one thing remain to explain. The cheapest path is (a) plus [OQ-BR8](#OQ-BR8)'s leaning, which removes D5's harm without removing the indirection |
+| **(a)** Today's indirection | a profile, which points at a provider | D5 survives unless [OQ-BR8](#8-decision-ledger) moves every fact to the provider; two names for one thing remain to explain. The cheapest path is (a) plus [OQ-BR8](#8-decision-ledger)'s leaning, which removes D5's harm without removing the indirection |
 | **(b)** A provider directly, plus options | the provider `bedrock`; options ride the flag or `use_profiles` | D5 cannot exist. The `profile` kind of [OQ-PT8](../reference/providers.md#oq-pt8) becomes an alias or goes. A variant must be a second provider, and without inheritance it restates the first's facts — so [OQ-CS9](../reference/providers.md#oq-cs9)'s "no `extends`" returns as a question about providers. Pack profiles whose name differs from their provider (`codex` → `openai-codex`) need a migration |
-| **(c)** A provider plus an explicit transport | the provider, and `native` or `bridge` per agent | D5 cannot exist, and the everything profile is spelled, not named. Every user must know what a transport is, and the flag grammar grows. Overlaps [OQ-PP2](#OQ-PP2) |
+| **(c)** A provider plus an explicit transport | the provider, and `native` or `bridge` per agent | D5 cannot exist, and the everything profile is spelled, not named. Every user must know what a transport is, and the flag grammar grows. Overlaps [OQ-PP2](#8-decision-ledger) |
 
 > [!WARNING]
 > **⚠ Restated 2026-09-30, same letters.** The rulings made around this question since it was
-> filed have each built on the profile. [OQ-BR8](#OQ-BR8) is built, so D5 is closed: a renamed profile over a
-> shipped provider gets every fact. [OQ-AP1](active-provider-sets.md#OQ-AP1) chose a list of
+> filed have each built on the profile. [OQ-BR8](#8-decision-ledger) is built, so D5 is closed: a renamed profile over a
+> shipped provider gets every fact. [OQ-AP1](active-provider-sets.md#11-decision-ledger) chose a list of
 > PROFILES per agent over a list of providers, because a provider loses a profile's options
 > (the start model among them). [PP-D10](#PP-D10) made `profile` the config key that mirrors
-> `-p`. [OQ-BR1](bedrock-plumbing.md#OQ-BR1) and [OQ-WG2](wire-bridge-gateway.md#decision-ledger) put
+> `-p`. [OQ-BR1](bedrock-plumbing.md#decision-ledger) and [OQ-WG2](wire-bridge-gateway.md#OQ-WG2) put
 > the force-the-bridge switch on the profile (*"this should be a property of the profile"*).
 > The options now cost this:
 >
@@ -484,25 +361,25 @@ the port, checked by nothing.
 >   migration. A variant becomes a second provider that restates the first, so a provider-level
 >   `extends` comes back as a question ([OQ-CS9](../reference/providers.md#oq-cs9)).
 > - **(c) A provider plus a transport the user types.** Overtaken:
->   [OQ-BR1](bedrock-plumbing.md#OQ-BR1) ruled the transport native by default and forced only
+>   [OQ-BR1](bedrock-plumbing.md#decision-ledger) ruled the transport native by default and forced only
 >   by configuration (*"by default we should pick the right thing, the native by default, but
->   we should allow configurations to force the bridge"*), and [OQ-PP2](#OQ-PP2) is answered
+>   we should allow configurations to force the bridge"*), and [OQ-PP2](#8-decision-ledger) is answered
 >   the same way.
 
-3. 💬 <a id="OQ-PP1"></a>**[OQ-PP1](#OQ-PP1): What is the one thing a user names with `-p`?**
+1. 💬 <a id="OQ-PP1"></a>**[OQ-PP1](#OQ-PP1): What is the one thing a user names with `-p`?**
    The redesign's core. Each option, [as filed and as restated 2026-09-30](#oq-pp1-background),
    in brief:
 
    - **(a) Keep the profile, pointing at one provider.**
    - **(b) `-p` names a provider, and options ride the flag.**
    - **(c) A provider plus a transport the user types.** Overtaken:
-     [OQ-BR1](bedrock-plumbing.md#OQ-BR1) ruled the transport native by default and forced only
+     [OQ-BR1](bedrock-plumbing.md#decision-ledger) ruled the transport native by default and forced only
      by configuration.
 
    <!-- vantage: question id=OQ-PP1 leaning="(a), keep what is built: -p names a profile, and a profile points at one provider plus its options. D5 is closed (OQ-BR8), and every ruling since built on the profile (OQ-AP1's lists, PP-D10's profile key, OQ-WG2's via). The remaining cost is two nouns to explain, which is a plain-words rewrite of providers.md, not a schema change. (c) is overtaken by OQ-BR1." -->
 
    _Leaning (⚠ added 2026-09-30):_ **(a), keep what is built.** The doc first had no leaning,
-   deliberately, so as not to steer the redesign. Since then [OQ-BR8](#OQ-BR8) has closed D5 and
+   deliberately, so as not to steer the redesign. Since then [OQ-BR8](#8-decision-ledger) has closed D5 and
    the rulings above have steered it: each built on the profile. What the maintainer *"already
    doesn't love"* is having two nouns, and that is now a documentation problem. (b) would reopen
    the shipped rulings above to remove it. The first strawman was (b), because it deleted the layer D5
@@ -511,87 +388,15 @@ the port, checked by nothing.
    **Answer:**
    > _(empty — fill in when decided)_
 
-4. ✅ <a id="OQ-PP2"></a>**[OQ-PP2](#OQ-PP2): Is the transport declared, or derived per
-   agent?** Either the provider declares which transport serves which agent (the agent's native
-   client or the wire bridge), so derives, the bridge and the search preset all read one fact;
-   or yolo derives the transport per agent from what that agent can do: a native client for the
-   provider's marker wins, else the bridge if it carries the provider, else nothing. Stakes: where
-   [§2.3](#23-the-transport-has-nowhere-to-live)'s missing fact lives, and whether a provider
-   author must know every agent. It reads [OQ-BR1](bedrock-plumbing.md#OQ-BR1) and does not block
-   it.
-
-   _Leaning:_ Derived, with one opt-in name for "force the bridge" (the everything profile's
-   case, and [OQ-BR5](bedrock-plumbing.md#OQ-BR5)'s bridged pi). A declared per-agent table puts
-   agent knowledge in a provider, against [OQ-CS8](../reference/providers.md#oq-cs8), and
-   protocol resolution already derives the endpoint-ful half this way — an adapter fills a hole
-   and is never preferred over a native endpoint. This confirms
-   [OQ-BR1](bedrock-plumbing.md#OQ-BR1)'s Bedrock leaning for every provider.
-
-   <!-- vantage: question id=OQ-PP2 -->
-
-   **Answer:**
-   > **Answered by [OQ-BR1](bedrock-plumbing.md#OQ-BR1) (2026-09-29), with
-   > [OQ-WG2](wire-bridge-gateway.md#decision-ledger) (2026-09-25): derived per agent, with an opt-in on
-   > the profile that forces the bridge.** The maintainer, ruling BR1: *"by default we should pick
-   > the right thing, the native by default, but we should allow configurations to force the
-   > bridge."* Ruling WG2: *"this should be a property of the profile."* So no provider declares a
-   > per-agent transport table. Each agent's derive uses its own native client for the provider's
-   > `platform` or endpoints, the bridge carries the agents that have none, and a profile's `via`
-   > forces the bridge. The native half is built for Bedrock. The forcing half ships as
-   > `bedrock-bridge` ([BR-D16](bedrock-plumbing.md#BR-D16)), which carries every agent since the
-   > bridge reached Bedrock by region on 2026-09-30
-   > ([`wire-bridge-gateway.md` WG-I39](wire-bridge-gateway.md#WG-I39)).
-
-5. ✅ <a id="OQ-PP3"></a>**[OQ-PP3](#OQ-PP3): What should a bare `-p X` do for an agent that
-   cannot reach X?** Today: nothing written, nothing said
-   ([§2.4](#24-a-bare--p-x-silently-does-nothing-for-an-agent-that-cannot-reach-x)). Stakes: a
-   silent no-op looks exactly like a working selection, which is the failure
-   [OQ-10](../reference/providers.md#pv-oq-10) guards against; but a refusal would stop every
-   multi-agent jail whose other agents cannot reach X. Cost: the launcher cannot see what a
-   derive does, so naming unreachable agents needs a reachability predicate it can compute —
-   which exists only once [OQ-BR2](#OQ-BR2)'s marker and [OQ-PP2](#OQ-PP2)'s transport do.
-
-   _Leaning:_ One launch line naming the agents X does not reach. A disclosure, never a
-   refusal, so a jail with several agents still launches.
-
-   <!-- vantage: question id=OQ-PP3 -->
-
-   **Answer:**
-   > **Answered by [OQ-AP3](active-provider-sets.md#OQ-AP3) (2026-09-29): one launch line
-   > naming the agents the selection does not reach, and never a refusal.** The maintainer, ruling
-   > what a provider list with no agent named does: *"if you don't direct it at a specific agent,
-   > then we should print out a message showing you if you give a comma separated list, if you
-   > have agents that don't support it on your pack list, we're going to print out that these
-   > will only get the first one and the others will be ignored."* That question named this one as
-   > the case it meets. A bare `-p X` is the same kind of selection, aimed at no agent in
-   > particular: an agent that cannot reach X is named on one line, and the launch goes on.
-
-   **Found built, 2026-09-30.** The launch's profile line already carries it: for each agent the
-   profile table keys to X, `packload.profileReach` (`internal/packload/profiledisclosure.go`)
-   decides from the launch's declarations whether the agent can reach X's provider at this
-   notch, through protocol resolution, a via, or its pack's binding of the provider's `platform`,
-   and prints `Warning: profile "X" reaches nothing for <agent>: …`, naming why and the fix, never
-   a refusal.
-   The jail launch (`internal/cli/run/run.go`) and `yolo host` (`internal/cli/host.go`) both call
-   it, and `TestNoteUseProfilesWarnsWhereTheSelectionReachesNothing` pins the bare `-p bedrock`
-   case for copilot. It prints one warning per agent rather than one line naming them all;
-   whether that form is the ruled one is unconfirmed.
-
-### Decision Ledger
-
-The rulings and the decisions that built them are in [§8](#8-decision-ledger). Why this doc
-exists, and the maintainer's words that started it, are under **Why it exists** at the top and
-in [OQ-BR2](#OQ-BR2).
-
 ---
 
 ## 8. Decision ledger
 
 | ID | Ruling / Decision | Date | Built |
 | :--- | :--- | :--- | :--- |
-| [OQ-BR8](#OQ-BR8) | **Maintainer ruling:** a provider fact keys on the provider, in each agent's derive, never on the profile's name; a user-defined provider gets the same behavior through [OQ-BR2](#OQ-BR2)'s marker | 2026-09-29 | ✅ [PP-D2](#PP-D2) to [PP-D6](#PP-D6) |
-| [OQ-BR2](#OQ-BR2) | **Maintainer ruling:** the marker is a declared provider field, `platform`, open vocabulary, unknown values inert | 2026-09-29 | ✅ [PP-D7](#PP-D7) |
-| <a id="PP-D1"></a>PP-D1 | **Maintainer ruling, from a rollout review:** yolo obeys a Bedrock switch (`CLAUDE_CODE_USE_BEDROCK`) that a user wrote in their own Claude settings, and when no Bedrock provider is selected for claude, so the credential gate sends it no AWS credential, the launch prints one line naming the conflict and both fixes (`-p bedrock`, or remove the key). yolo deletes nothing it did not write: the maintainer's *"there could be any uncountable number of environment variables … that we can just like never know about"* rules deletion out; the line exists because the gate is yolo's, so the failure is yolo's to name. **The same premise read from yolo's side** (review, 2026-09-29): a switch `yolo host apply` wrote into the real file for claude's host selection is yolo's, so the next apply that stops asserting it removes it ([HC-D25](../reference/host-agent-environment.md#HC-D25)), and while it is there the line names it as yolo's write, never as the user's | 2026-09-29 | ✅ [PP-D8](#PP-D8); yolo's own write [HC-D25](../reference/host-agent-environment.md#HC-D25) |
+| OQ-BR8 | **Maintainer ruling:** a provider fact keys on the provider, in each agent's derive, never on the profile's name. *"just because you have a differently named profile here doesn't mean that things should happen differently. So we need to fix this bug. Like you need to be able to define your own and get the same behavior."* A user-defined provider gets the same behavior through [OQ-BR2](#8-decision-ledger)'s marker | 2026-09-29 | ✅ [PP-D2](#PP-D2) to [PP-D6](#PP-D6) |
+| OQ-BR2 | **Maintainer ruling:** the marker is a declared provider field, `platform` (for example `"platform": "aws-bedrock"`), open vocabulary, unknown values inert, accepted by both `internal/packdecl` and `knownProviderKeys`; a derive recognizes a provider by it, never by a name | 2026-09-29 | ✅ [PP-D7](#PP-D7) |
+| <a id="PP-D1"></a>PP-D1 | **Maintainer ruling, from a rollout review:** yolo obeys a Bedrock switch (`CLAUDE_CODE_USE_BEDROCK`) that a user wrote in their own Claude settings, and when no Bedrock provider is selected for claude, so the credential gate sends it no AWS credential, the launch prints one line naming the conflict and both fixes (`-p bedrock`, or remove the key). yolo deletes nothing it did not write: the maintainer's *"there could be any uncountable number of environment variables … that we can just like never know about"* rules deletion out; the line exists because the gate is yolo's, so the failure is yolo's to name. **The same premise read from yolo's side** (review, 2026-09-29): a switch `yolo host apply` wrote into the real file for claude's host selection is yolo's, so the next apply that stops asserting it removes it ([HC-D25](host-computed-layer.md#HC-D25)), and while it is there the line names it as yolo's write, never as the user's | 2026-09-29 | ✅ [PP-D8](#PP-D8); yolo's own write [HC-D25](host-computed-layer.md#HC-D25) |
 | <a id="PP-D2"></a>PP-D2 | *Implementation decision.* **Where each name-gated fact went.** claude's `CLAUDE_CODE_USE_BEDROCK`, in env and in `claude/settings`, into claude's own derive, set when `ctx.selected_platform` is `aws-bedrock` and the profile routes through no via service. claude's and pi's OpenAI login prelaunch into their env derives (pi gained a `yolo.env` producer), keyed on the selected provider `openai-codex`: that provider is every agent's built-in subscription provider id, which the derives already match by name, so it takes no platform. llamacpp's `CLAUDE_CODE_ATTRIBUTION_HEADER` became the provider option `attribution_header: "false"`, which claude's derive translates; only claude receives it now. aws-auth's pointer: PP-D3 | 2026-09-29 | ✅ `nativeBedrock` in packs/claude's derive |
 | <a id="PP-D3"></a>PP-D3 | *Implementation decision.* **aws-auth's pointer rides a `platform` gate on its `env` contribution, not a composed provider row.** The ruling's shape was "composed into a provider row, as openai-codex's endpoints are". The pointer carries a per-launch secret (`{caller_token}`) that no composed table may hold ([providers.md](../reference/providers.md#what-this-does-not-license)), and its `served_by` and `overridden_by` declarations live on the contribution. So `env` takes a second gate, `platform: "<p>"`, which fires for each agent whose selected provider declares that platform: the recipients a row composed into every such provider would have had. One gate per contribution, `profile` or `platform` | 2026-09-29 | ✅ aws-auth's `env` `platform` gate |
 | <a id="PP-D4"></a>PP-D4 | *Implementation decision.* **The everything profile's split is a transport check.** claude's native switch requires `ctx.via_url` empty, so a profile over the Bedrock provider with `via: "wire-bridge"` gets aws-auth's pointer and not the switch. At `yolo host`, which serves no via, the same profile falls back to claude's own client and sets the switch. ⚠ **Claude has no via route**, found in review: claude speaks `anthropic`, and the via route passes only the two OpenAI wires. Since 2026-09-30 the everything profile carries claude through the bridge's adapter route instead, on an anthropic address composed for the via ([`wire-bridge-gateway.md` WG-I39](wire-bridge-gateway.md#WG-I39)); before that such a profile ran claude on its own login with a pointer nothing used. The via-route gate still discloses a via that carries none of an agent's requests, naming the agent's own switch for the provider's platform (`unroutedViaNotice`), and never refuses it: a Bedrock provider whose anthropic address is its own is one | 2026-09-29 | ✅ `nativeBedrock`; the disclosure `unroutedViaNotice` |
@@ -606,8 +411,8 @@ in [OQ-BR2](#OQ-BR2).
 | <a id="PP-D13"></a>PP-D13 | **Maintainer ruling** (in chat): *"Inside of JAIL, if we're not already managing the host config, I would say a profile choice does override the host settings file being imported."* At a jail, a [provider key](../reference/providers.md#provider-keys-the-selection-decides-them) that the user's own host copy sets (folded in as the host layer, which happens only while host management is off) is taken out of the bytes the jail composes. The selection alone decides the key there: its value lands when it sets one, and otherwise the key is absent. The boot names each key it took out, with the host file. Narrows [PP-D1](#PP-D1) at the jail only: yolo still never edits the user's real file, and nothing changes where the host copy is yolo's own render (a baseline, never a layer) or at `yolo host`. *Implementation:* the launcher's PP-D1 line at a jail now says the jail leaves the switch out, and offers the profile that would use it there | 2026-10-11 | ✅ `agentcfg.DropHostProviderKeys`, called by `entrypoint.renderPlannedSurface`, and `PlatformSwitchConflict.InJail`; pinned by `TestAProfileChoiceOverridesTheImportedHostSettingsInAJail` and `internal/cli/run/platformswitch_test.go` |
 | <a id="PP-D14"></a>PP-D14 | **Maintainer ruling** (in chat): *"Yes, a Claude started from a Claude shell needs to follow the same auth path everywhere."* Every launcher of an agent, at every notch (a container jail, macos-user, `yolo host`), makes the agent's provider variables exactly what its profile selection says. A value the selection sets is exported as is, never as a default an inherited value beats. A variable it does not set is removed, unless the selected provider itself reads it from the environment (a credential it claims, a region of its platform). A Bedrock-only model id is removed only while the agent is off Bedrock. The launch names what it replaced or cleared. **This narrows [OQ-CN8](../reference/providers.md#oq-cn8)** (2026-09-28, "the user's explicit value wins"), the rule the env file's `${VAR:-…}` form exists for: it now holds only for a variable that is not a provider key, so `ANTHROPIC_MODEL=opus claude` still works and `export ANTHROPIC_BASE_URL=…` before `claude` no longer does. *Implementation decisions:* the variables are the pack's provider keys under the object its new top-level `provider_env` names (`claude/settings` at `/env`), so core lists none. In a jail they go in a second per-agent file, `~/.config/yolo-agent-env/provider-keys/<agent>.sh`, sourced after the env file and written for every agent whose pack declares them, a profile-less one included, because the env file's grammar is read back by the macos-user MCP view and the wire bridge | 2026-10-11 | ✅ `packdecl.Manifest.ProviderEnv`, `packload.CredentialScope.ProviderEnv`, `run.providerEnvFileContent` (through `writeAgentEnvFiles`), `entrypoint.agentEnvShellFn`, `hostComposition.environ`; pinned by `TestAClaudeStartedFromAnotherClaudesShellFollowsItsOwnSelection`, `TestTheLaunchersSourceTheProviderKeysFileLast`, `TestAnImageProvidedAgentWithOnlyAProviderKeysFileGetsACarrier` and `TestHostLaunchMakesClaudesProviderVariablesTheSelections` |
 | <a id="PP-D15"></a>PP-D15 | **Maintainer ruling** (in chat, lightly cleaned up from dictation): *"we should in fact overwrite that. That's just the way precedence works… the profile should [win]… you can set your profile if you want and restarting the jail shouldn't change that… it would then be put back after the jail restart but it would persist while the jail is running and that seems more dangerous."* A provider key behaves like a managed key. The boot re-asserts the selection at every render (it drops a captured value at one), and a capture (`yolo config capture`, the fold at a jail's teardown) never records an in-jail edit at one. It refuses the edit, logs it in the capture log, and names it in one line pointing at the profile. An edit made while the agent runs is not blocked, since Claude Code rereads its settings file: it lasts until the next boot, which renders the selection's value and names the edit. *Implementation decision:* the capture drops only the unconditional keys, because a value-conditional key's verdict needs the selection, which the capture does not read; the boot decides those | 2026-10-11 | ✅ `cli.captureProviderKeys` in `captureSurfaceAt`; pinned by `TestTheCaptureVerbNeverRecordsAProviderKey` and `TestTheTeardownCaptureNeverRecordsAProviderKey` |
-| [OQ-PP2](#OQ-PP2) | **Answered by [OQ-BR1](bedrock-plumbing.md#OQ-BR1)'s ruling** (2026-09-29, the maintainer: *"by default we should pick the right thing, the native by default, but we should allow configurations to force the bridge"*) **and [OQ-WG2](wire-bridge-gateway.md#decision-ledger)'s** (2026-09-25: *"this should be a property of the profile"*). The transport is derived per agent (a native client for the provider's `platform` or endpoints, else the bridge), and a profile's `via` forces the bridge. No provider declares a per-agent table, which also keeps agent knowledge out of providers ([OQ-CS8](../reference/providers.md#oq-cs8)) | 2026-09-30 | ✅ the native half for Bedrock ([BR-D9](bedrock-plumbing.md#BR-D9) to [BR-D14](bedrock-plumbing.md#BR-D14)); the forcing half, `bedrock-bridge` ([BR-D16](bedrock-plumbing.md#BR-D16)), carries every agent since the bridge reached Bedrock by region on 2026-09-30 ([`wire-bridge-gateway.md` WG-I39](wire-bridge-gateway.md#WG-I39)) |
-| [OQ-PP3](#OQ-PP3) | **Answered by [OQ-AP3](active-provider-sets.md#OQ-AP3)'s ruling** (2026-09-29, the maintainer: *"if you don't direct it at a specific agent, then we should print out a message showing you … these will only get the first one and the others will be ignored"*). A bare `-p X` names, on one launch line, each agent it does not reach, and never refuses, so a jail with several agents still launches | 2026-09-30 | found built 2026-09-30 as the profile line's per-agent warning (`packload.profileReach`), one line per agent; pinned by `TestNoteUseProfilesWarnsWhereTheSelectionReachesNothing` |
+| OQ-PP2 | **Answered by [OQ-BR1](bedrock-plumbing.md#decision-ledger)'s ruling** (2026-09-29, the maintainer: *"by default we should pick the right thing, the native by default, but we should allow configurations to force the bridge"*) **and [OQ-WG2](wire-bridge-gateway.md#OQ-WG2)'s** (2026-09-25: *"this should be a property of the profile"*). The transport is derived per agent (a native client for the provider's `platform` or endpoints, else the bridge), and a profile's `via` forces the bridge. No provider declares a per-agent table, which also keeps agent knowledge out of providers ([OQ-CS8](../reference/providers.md#oq-cs8)) | 2026-09-30 | ✅ the native half for Bedrock ([BR-D9](bedrock-plumbing.md#BR-D9) to [BR-D14](bedrock-plumbing.md#BR-D14)); the forcing half, `bedrock-bridge` ([BR-D16](bedrock-plumbing.md#BR-D16)), carries every agent since the bridge reached Bedrock by region on 2026-09-30 ([`wire-bridge-gateway.md` WG-I39](wire-bridge-gateway.md#WG-I39)) |
+| OQ-PP3 | **Answered by [OQ-AP3](active-provider-sets.md#11-decision-ledger)'s ruling** (2026-09-29, the maintainer: *"if you don't direct it at a specific agent, then we should print out a message showing you … these will only get the first one and the others will be ignored"*). A bare `-p X` names, on one launch line, each agent it does not reach, and never refuses, so a jail with several agents still launches | 2026-09-30 | found built 2026-09-30 as the profile line's per-agent warning (`packload.profileReach`), one line per agent rather than one line naming them all, and whether that form is the ruled one is unconfirmed; pinned by `TestNoteUseProfilesWarnsWhereTheSelectionReachesNothing` |
 
 ## Appendix: Evidence, and how to re-check it
 
