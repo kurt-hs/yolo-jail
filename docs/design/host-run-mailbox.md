@@ -121,7 +121,7 @@ Every term here is *coined here* unless it links elsewhere.
 - <a id="HX-P3"></a>**HX-P3. The host trusts nothing the jail wrote.** Every check `ask` makes,
   the host makes again; the host writes the mailbox and never reads it; its contact with
   jail-writable space is metadata, exclusive creates and renames, beneath roots that refuse links
-  (the durable directory's rule, DS-D3 in [`durable-scratch-space.md`](durable-scratch-space.md)).
+  (the durable directory's rule, DS-D3 in [`jail-home.md`](../reference/jail-home.md#storage-classes-and-the-durable-dir)).
 - <a id="HX-P4"></a>**HX-P4. The jail routes; it never decides.** The reply token picks which of
   the jail's own mailboxes is used. It never selects a host path, credential, cwd or environment
   beyond what the human sees in the line ([BB-P3](boundary-broker.md#BB-P3)).

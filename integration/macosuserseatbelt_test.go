@@ -114,7 +114,7 @@ var seatbeltRules = []seatbeltRule{
 	// denied (macosLogDenies says why); TestMacosUserSeatbeltLogStreamMeasurement records a
 	// stream bare and under the profile.
 	{id: "macos-log-deny"},
-	// THE CONTEXT MOUNTS (docs/design/context-mounts.md §3.4, §4 steps 4-5).
+	// THE CONTEXT MOUNTS (docs/reference/context-mounts.md#the-seatbelt-rules).
 	{id: "context-read-allow"},
 	{id: "context-write-allow"},
 	{id: "context-readonly-deny", unproven: "belt and braces by design: every read-only " +
@@ -181,7 +181,7 @@ type seatbeltFixtures struct {
 	skills   string // <stateDir>/skills          — staged, write-protected
 	briefing string // <stateDir>/CLAUDE.md       — staged, write-protected
 	content  macosuser.HomeReadonly
-	// THE CONTEXT MOUNTS (context-mounts.md §3), laid out as a launch delivers them: two
+	// THE CONTEXT MOUNTS (context-mounts.md#delivery-on-macos-user), laid out as a launch delivers them: two
 	// sources under one traversal-only directory BESIDE the workspace, so only the rules this
 	// fixture's links add can open them, and a sibling of both that nothing grants. linkDir is
 	// a stand-in for the context dir: outside the writable set (the profile's root write deny
@@ -536,7 +536,7 @@ func seatbeltCases() []seatbeltCase {
 			script: func(seatbeltFixtures) string { return macosLogStoreProbe },
 			want:   wantRefused,
 		},
-		// --- THE CONTEXT MOUNTS (docs/design/context-mounts.md §3, §4 steps 4-5): the
+		// --- THE CONTEXT MOUNTS (docs/reference/context-mounts.md#delivery-on-macos-user): the
 		// Mac-hardware probes §4 lists that need no sandbox account. The DAC preflight, the
 		// root-owned link and the real launch are macosusercontextmounts_test.go's. ---
 		{
@@ -832,7 +832,7 @@ func TestMacosUserSeatbeltIoctlCoverageMeasurement(t *testing.T) {
 }
 
 // TestMacosUserSeatbeltContextHardLinkMeasurement RECORDS the answer to
-// docs/design/context-mounts.md §3.7's hard-link question and asserts nothing about it: can a
+// docs/reference/context-mounts.md#what-cannot-be-matched's hard-link question and asserts nothing about it: can a
 // sandbox that may write a read-write source make a HARD link there to a file the profile
 // denies, on the same volume, and read the denied file through it? Path-keyed rules would
 // judge the link's own path. If it works, it works against the workspace and /tmp today
@@ -854,11 +854,11 @@ func TestMacosUserSeatbeltContextHardLinkMeasurement(t *testing.T) {
 	if rc == 0 {
 		verdict = "ALLOWED: a hard link carries a denied file into a writable source and it reads"
 	}
-	t.Logf("MEASUREMENT (context-mounts.md §3.7, hard links): %s (rc %d).\noutput:\n%s", verdict, rc, out)
+	t.Logf("MEASUREMENT (context-mounts.md#what-cannot-be-matched, hard links): %s (rc %d).\noutput:\n%s", verdict, rc, out)
 }
 
 // TestMacosUserSeatbeltRelocationOnAVolumeMeasurement RECORDS the profile half of the /Volumes
-// question (CX-D5 narrowed for cache_relocations; OQ-CX8 in docs/design/context-mounts.md) and
+// question (CX-D5 narrowed for cache_relocations; OQ-CX8 in docs/reference/context-mounts.md) and
 // asserts nothing about it: on each volume macos-user.yml attached (macosUserRelocationVolumesEnv;
 // APFS with ownership on, APFS with it off, and exFAT), does the relocation's read allow re-open a folder there past
 // the /Volumes read deny, does its write allow let a write through, and does a sibling folder on

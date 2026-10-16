@@ -2444,7 +2444,7 @@ what it rests on. A row that depends on a question still open says so.
   whose session list lives in the box and not in the keeper; and
   [OQ-EW11](agent-event-watchers.md#OQ-EW11), which decides whether a ping box alone makes a
   keeper ([§9.9.8](#998-a-launch-with-nothing-long-lived)).
-- [`durable-scratch-space.md`](durable-scratch-space.md): the per-launch scratch volumes, which
+- [`jail-home.md`](../reference/jail-home.md#storage-classes-and-the-durable-dir): the per-launch scratch volumes, which
   the keeper's teardown still hands to the detached remover. Its step 3 (*"When the owning
   launch's command exits, the container stops, its attached sessions end"*) changes with this
   design.

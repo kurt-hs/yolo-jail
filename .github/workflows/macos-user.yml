@@ -279,7 +279,7 @@ jobs:
         run: go run ./cmd/yolo macos-setup
 
       # THE /Volumes MEASUREMENT FOR cache_relocations (docs/plans/cache-relocation.md, the
-      # macos-user section; CX-D5 and OQ-CX8 in docs/design/context-mounts.md). A relocation may
+      # macos-user section; CX-D5 and OQ-CX8 in docs/reference/context-mounts.md). A relocation may
       # point at another volume on this backend, which no context mount may, and what decides
       # whether the sandbox account can use one is the volume itself: its ownership setting, and
       # whatever macOS asks of an account touching a removable volume. So two small APFS disk

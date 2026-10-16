@@ -1,7 +1,7 @@
 package config
 
 // selectedpacks_test.go pins the maintainer's OQ-BH14 ruling
-// (docs/design/base-home-legacy-state.md#28-reservation-is-a-rule-about-config-names-not-about-directories):
+// (docs/reference/jail-home.md#reserving-a-name-is-not-creating-a-directory):
 // name reservation covers only the SELECTED packs' directories, and an unselected pack is
 // treated as if it does not exist.
 //

@@ -69,7 +69,7 @@ today.
   sessions in one jail. This doc adds evidence to its [OQ-JL1](../design/jail-lifetime-last-session-wins.md#OQ-JL1).
 - [`agent-event-watchers.md`](../design/agent-event-watchers.md): pinging a running agent. herdr is
   not a delivery route for it.
-- [`durable-scratch-space.md`](../design/durable-scratch-space.md): worktrees and the absolute paths
+- [`jail-home.md`](../reference/jail-home.md#storage-classes-and-the-durable-dir): worktrees and the absolute paths
   git writes.
 - [`host-agent-environment.md`'s launch PATH](../reference/host-agent-environment.md#the-launch-path-and-which-copy-of-a-program-runs): which variables `yolo host`
   passes through.
@@ -715,7 +715,7 @@ client, so the launcher keeps running. SOURCED
   directory by absolute path, and a container jail does not mount that path. With the main
   repository's path absent, `git status` in the worktree fails with
   `fatal: not a git repository: (null)`. MEASURED here, with git 2.55.0, in a scratch repository
-  under the research scratch directory. [`durable-scratch-space.md` §2.6](../design/durable-scratch-space.md#26-a-worktree-records-absolute-paths-measured)
+  under the research scratch directory. [`jail-home.md`](../reference/jail-home.md#a-worktree-records-absolute-paths)
   measured the mirror case, a worktree made in a jail and read on the host.
 - **This is not new; herdr makes it common.** Any `git worktree add` to a place outside the
   repository has the same fault. herdr makes it the default flow.
@@ -727,7 +727,7 @@ client, so the launcher keeps running. SOURCED
   removing a herdr worktree also removes that jail's per-workspace home, which holds the agents'
   transcripts, and its durable directory. That matches the durable-dir design's *"deleting a
   workspace deletes its durable dir with it"*
-  ([`durable-scratch-space.md` §5.2](../design/durable-scratch-space.md#52-the-durable-dir)), but
+  ([`jail-home.md`](../reference/jail-home.md#the-durable-dir)), but
   a herdr user may not expect it. INFERRED.
 
 [OQ-HR3](#OQ-HR3) asks what the launch should do.

@@ -4,7 +4,7 @@ import "path/filepath"
 
 // HomeSkeletonRoot returns AGENTS_DIR/<cname>/home, the directory holding a podman jail's
 // home skeletons. A skeleton (a term coined in
-// docs/design/base-home-legacy-state.md#1-the-question-and-the-answer) is a per-jail
+// docs/reference/jail-home.md#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches) is a per-jail
 // directory bound read-only at /home/agent that holds only the mountpoints and redirect links
 // a launch needs — never file content.
 //
@@ -12,7 +12,7 @@ import "path/filepath"
 // creates a skeleton under it, the podman argv that binds one, and the reaper that removes
 // it. The reaper is prune.PruneOrphanAgentStaging, which removes the WHOLE AGENTS_DIR/<cname>
 // once no container of that name is live or tracked (OQ-BH9 in
-// docs/design/base-home-legacy-state.md#decision-ledger), so a skeleton needs no reaper of
+// docs/reference/jail-home.md#why-its-this-way), so a skeleton needs no reaper of
 // its own.
 //
 // Each fresh launch builds a NEW directory under this root and never edits an old one (the
@@ -31,7 +31,7 @@ func HomeSkeletonRoot(cname string) string { return filepath.Join(AgentsDir(), c
 // No pack's directory is here. `.pi/agent` used to be, as a line of the list the shared base
 // was provisioned from: in a skeleton it put a ~/.pi in every jail whether pi was selected or
 // not, against DIR-BH1 ("a non-selected pack can never have an impact",
-// docs/design/base-home-legacy-state.md#decision-ledger). A pi jail loses nothing: the pi
+// docs/reference/jail-home.md#why-its-this-way). A pi jail loses nothing: the pi
 // pack declares `.pi` itself, so the mountpoint comes with the pack. BaseHomeCoreDirs keeps
 // `.pi/agent` for the legacy walk, which is the one reason there are two functions.
 func HomeSkeletonCoreDirs() []string {

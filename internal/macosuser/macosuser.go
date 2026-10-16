@@ -498,7 +498,7 @@ func StageCtxCommands(hostCtxTree, cname, sd string) [][]string {
 		// reason (SandboxGroup holds the host user),
 		// with list as well as search, because the bootstrap and the agent walk this directory
 		// (SandboxEnvDirCommands grants search alone: a file there is opened by name).
-		// UNMEASURED on a Mac (context-mounts.md CX-D26): both rights are spelled as in the
+		// UNMEASURED on a Mac (context-mounts.md#CX-D26): both rights are spelled as in the
 		// shared root's provisioning ACE (dirRights), but no Mac has yet run a launch through a
 		// root closed this way, and if the ACE does not admit the sandbox nothing here arrives.
 		[]string{chmodBin, "0500", tmp},
@@ -510,7 +510,7 @@ func StageCtxCommands(hostCtxTree, cname, sd string) [][]string {
 
 // StageEmptyCtxCommands stages an EMPTY sealed directory at StagedCtxRoot, for a launch
 // whose host CLI composed no context tree: $YOLO_CONTEXT_DIR is exported on every launch
-// (docs/design/context-mounts.md CX-D4), so the directory it names must exist even when
+// (docs/reference/context-mounts.md#CX-D4), so the directory it names must exist even when
 // nothing is in it — an empty one says "no context mounts", which is true. Same rm-then-mv
 // shape as StageCtxCommands, so a previous launch's tree never survives into this one.
 func StageEmptyCtxCommands(cname, sd string) [][]string {

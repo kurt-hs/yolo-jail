@@ -24,7 +24,7 @@ func (o *Options) yoloVersion(repoRoot string) string {
 	return version.Get(repoRoot)
 }
 
-// seedAgentDir is GONE (docs/design/base-home-legacy-state.md#27-the-seed). It copied every
+// seedAgentDir is GONE (docs/reference/jail-home.md#the-claudejson-seed). It copied every
 // top-level file of <state>/home/.<dir> into each new workspace for every selected pack, and
 // since the base went read-only its only inputs were legacy bytes, zero-byte mountpoint files
 // and the Claude seed below — so the one thing it still did was carry an older yolo's files

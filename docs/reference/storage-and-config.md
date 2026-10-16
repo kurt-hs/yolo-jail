@@ -23,7 +23,7 @@ summary: "Where yolo's bytes live and who owns them: the three config scopes and
 
 # Storage, config scopes and identity
 
-**Status:** CURRENT as of 2026-09-24; the commit it was checked against is the `verified_commit` field in this file's front matter. The `home/` and `agents/` entries and the `.yolo/home/` description were updated 2026-09-25 for the per-jail home skeleton ([`base-home-legacy-state.md`](../design/base-home-legacy-state.md)).
+**Status:** CURRENT as of 2026-09-24; the commit it was checked against is the `verified_commit` field in this file's front matter. The `home/` and `agents/` entries and the `.yolo/home/` description were updated 2026-09-25 for the per-jail home skeleton ([`jail-home.md`](jail-home.md#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches)).
 
 Every durable byte yolo writes lands in one of three places, and which one is a
 consequence of a single question: **is this state one truth per machine, one per
@@ -196,7 +196,7 @@ every one. The four that carry meaning for how a jail behaves:
   ([`jail-home.md`](jail-home.md#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches)).
   Per-workspace bytes an older yolo left here, from when this was the shared *writable* home,
   are unmounted and unread; `yolo check` reports them and prints an optional `mv`
-  (the maintainer's [`OQ-BH13`](../design/base-home-legacy-state.md#decision-ledger) ruling).
+  (the maintainer's [`OQ-BH13`](jail-home.md#oq-bh13) ruling).
 - **`cache/`** — mounted read-write at `~/.cache` in every jail. A shared download cache.
 - **`mise/`** — the jail-land mise store, mounted at `/mise`. Shared by every jail. **The
   host's own mise installation is never a party to this** and is never mounted.

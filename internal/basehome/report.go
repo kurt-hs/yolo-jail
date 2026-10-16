@@ -142,7 +142,7 @@ func (r Report) Summary() string {
 // through the shared base bound at /home/agent, and seedAgentDir copied them into each new
 // workspace. Both are gone — each podman jail binds its own skeleton instead, and seedAgentDir
 // is deleted — so the bytes are unmounted and unread, inert disk that is the user's to clear
-// or keep (the maintainer's OQ-BH13 ruling, docs/design/base-home-legacy-state.md#decision-ledger).
+// or keep (the maintainer's OQ-BH13 ruling, docs/reference/jail-home.md#oq-bh13).
 //
 // # Which roots get an `mv`
 //

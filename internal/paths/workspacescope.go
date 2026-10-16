@@ -104,7 +104,7 @@ func (b *ScopeBreach) What() string {
 
 // WhatFor is What with the subject named by the caller: the same collision said about a
 // path that is not a workspace. Its second caller is a read-write `mounts` source
-// (config.rwMountRefusal, docs/design/context-mounts.md §2.3 clause 1), which runs THIS
+// (config.rwMountRefusal, docs/reference/context-mounts.md#the-refusal-set clause 1), which runs THIS
 // rule over the source rather than a copy of it (WritableSourceScopeBreach) — one spelling
 // of the boundary, with the workspace-only capture-store exemption the one parameter.
 func (b *ScopeBreach) WhatFor(subject string) string {
@@ -160,7 +160,7 @@ func GuardScopeUnder(home string) (restore func()) {
 
 // WritableSourceScopeBreach is the SAME rule for a host path a jail would WRITE through a
 // mount rather than work in as its workspace — a read-write `mounts` source
-// (config.rwMountRefusal, docs/design/context-mounts.md §2.3 clause 1) — with one difference:
+// (config.rwMountRefusal, docs/reference/context-mounts.md#the-refusal-set clause 1) — with one difference:
 // no capture-store exemption. That exemption is a WORKSPACE's (scopeExempt: `yolo capture`
 // launches a jail on its own scratch tree there); a writable mount of the store is every
 // other workspace's captured installers, rewritable from one jail, which is the cross-jail

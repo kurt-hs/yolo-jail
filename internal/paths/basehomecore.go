@@ -6,7 +6,7 @@ import "path/filepath"
 // base home, <state>/home, back when podman bound that one directory at /home/agent in every
 // jail: HomeSkeletonCoreDirs plus `.pi/agent`. storage.EnsureGlobalStorage created them on
 // every launch until the per-jail skeleton replaced the shared base
-// (docs/design/base-home-legacy-state.md#2-the-design-a-per-jail-skeleton), so a legacy base
+// (docs/reference/jail-home.md#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches), so a legacy base
 // holds them, empty.
 //
 // Its consumer is the base-home legacy-state walk (internal/basehome, nonPackDirs), which

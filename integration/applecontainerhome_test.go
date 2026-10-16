@@ -16,7 +16,7 @@ import (
 // both answers pass, are recorded on one `AC-PARITY <fix> VERDICT:` line, and only an experiment
 // not conducted is red.
 //
-//	storage-classes  TestAppleContainerBriefingCarriesItsStorageClasses       docs/design/durable-scratch-space.md, DS-P1
+//	storage-classes  TestAppleContainerBriefingCarriesItsStorageClasses       docs/reference/jail-home.md#storage-classes-and-the-durable-dir, DS-P1
 //
 // The login-seed boot check is promoted to a hard regression assertion; see
 // TestAppleContainerFreshWorkspaceBootsWithTheLoginSeed and its offline assertion controls in

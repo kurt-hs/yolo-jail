@@ -50,7 +50,7 @@ func durableOptions(t *testing.T) (*Options, *bytes.Buffer) {
 
 // A FRESH LAUNCH MAKES THE DURABLE DIR, THE BRIEFING LEADS WITH IT, AND THE ARGV EXPORTS IT —
 // one value for all three, so the agent is never told a path the variable does not hold
-// (docs/design/durable-scratch-space.md §5.2). On both container backends the path is the
+// (docs/reference/jail-home.md#the-durable-dir). On both container backends the path is the
 // workspace bind's spelling, with no mount of its own (DS-D8).
 func TestAFreshLaunchMakesTheDurableDirAndBothBriefingAndArgvName(t *testing.T) {
 	for _, rt := range []string{"podman", "container"} {

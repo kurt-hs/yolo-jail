@@ -10,7 +10,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/durable"
 )
 
-// durablereportpass_test.go pins WHICH PASS walks the durable dir (docs/design/durable-scratch-space.md
+// durablereportpass_test.go pins WHICH PASS walks the durable dir (docs/reference/jail-home.md#storage-classes-and-the-durable-dir
 // §5.4, DS-D11): the jail's own boot, never a session's pass. In a jail whose main process is a
 // hold, that process boots once and its lines reach the launch terminal; every session after it,
 // the first included, runs its own pass of the step table on `<runtime> exec`, and an attach used

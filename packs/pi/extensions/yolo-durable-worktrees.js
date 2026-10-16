@@ -1,4 +1,4 @@
-// Points pi-subagents' worktrees at the durable dir (docs/design/durable-scratch-space.md §5.5,
+// Points pi-subagents' worktrees at the durable dir (docs/reference/jail-home.md#each-agents-own-pack,
 // DS-D4). pi-subagents puts a `worktree: true` run's worktrees under os.tmpdir() — /tmp, which
 // a jail deletes when it exits — unless `worktreeBaseDir` in
 // ~/.pi/agent/extensions/subagent/config.json (or the PI_SUBAGENTS_WORKTREE_DIR environment

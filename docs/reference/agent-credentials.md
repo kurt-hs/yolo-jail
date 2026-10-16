@@ -1393,7 +1393,7 @@ Two asymmetries are the load-bearing part, and neither is visible from a per-age
   jail home. The one channel from the machine store into a new workspace is the Claude login
   seed, and it forwards only the login and onboarding keys; `seedAgentDir`, which copied every
   top-level file of the machine store's copy of the dir, is deleted
-  ([`base-home-legacy-state.md`](../design/base-home-legacy-state.md#27-the-seed)). An agent
+  ([`jail-home.md`](jail-home.md#the-claudejson-seed)). An agent
   pack that declares no `state` dir rides the per-workspace `.config` overlay instead.
 - **Claude and OpenAI subscription authentication have different sharing paths.** Claude gets a separate read-write
   shared-credentials mount plus the relative symlink, so a single OAuth identity is shared across

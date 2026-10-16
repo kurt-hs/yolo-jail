@@ -364,7 +364,7 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 	// the merged config, read-write ones from the user scope alone, each skip said here. A
 	// read-write element gets no mode suffix and its disclosure line, EVERY launch — printed
 	// where the bind is emitted, so no path emits the one without the other
-	// (docs/design/context-mounts.md §2.4).
+	// (docs/reference/context-mounts.md#the-launch-disclosure).
 	var mountArgs []string
 	if !in.sealed { // a fork build gets no `mounts` element (seal.go)
 		rootful := o.rootfulPodmanHost(rt)
@@ -452,7 +452,7 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 	// in the home it binds. NEVER a granted name or value as `-e`: podman resolves an `-e` into the
 	// container's configuration, its inspect output and its database, which outlive the jail.
 	runCmd = append(runCmd, o.jailGrantBindArgs(rt)...)
-	// THE CONTEXT DIR (docs/design/context-mounts.md CX-D4), on both container backends and on
+	// THE CONTEXT DIR (docs/reference/context-mounts.md#CX-D4), on both container backends and on
 	// EVERY launch: /ctx is where every context mount lands here, and the directory exists
 	// whether or not one was declared. macos-user exports its own value (its staged tree),
 	// so pack text and agents spell a context path `$YOLO_CONTEXT_DIR/<rel>` everywhere.

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// A COPIED CONTEXT ENTRY SAYS IT IS A SNAPSHOT (docs/design/context-mounts.md CX-D25): macos-user
+// A COPIED CONTEXT ENTRY SAYS IT IS A SNAPSHOT (docs/reference/context-mounts.md#CX-D25): macos-user
 // copies a pack's single-file `mount` into the context dir at launch, so the agent is told a host
 // edit arrives at the next launch — and the link sentence, which is about the other entries, does
 // not describe it.

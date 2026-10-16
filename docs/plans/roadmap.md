@@ -117,9 +117,12 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     render-mark twin](../design/notch-scoped-config-contributions.md#43-render-mark-parity-on-macos-user),
     [item 1's twin](runbooks/macos-user-manual-checks.md#1-the-privilege-transition),
     [DP-B6](../design/declaration-parity.md), [the footer](../design/agent-footer.md#what-i-would-build-in-order), [the
-    build sandbox](../design/macos-user-build-step-threat-model.md), [the context mounts](../design/context-mounts.md#4-staging-and-the-tests-that-pin-each-piece),
-    [Cachix](../reference/image-staging-vs-baking.md#the-binary-cache), [the in-VM copier](../research/macos-layer-reusing-image-delivery.md), [the login
-    seed](../design/base-home-legacy-state.md) and [the storage classes](../design/durable-scratch-space.md).
+    build sandbox](../design/macos-user-build-step-threat-model.md),
+    [Cachix](../reference/image-staging-vs-baking.md#the-binary-cache) and [the in-VM copier](../research/macos-layer-reusing-image-delivery.md).
+    Beside them, two Mac checks those runs did not cover: [the native login-seed regression
+    check](../reference/jail-home.md#the-owed-apple-container-seed-gate) on Apple Container, and a `macos-user.yml`
+    dispatch for [the context-mount copies, the closed staged tree and a `/Volumes`
+    source](../reference/context-mounts.md#unbuilt-and-unmeasured).
 
     Build [the bounded privilege lifecycle](../design/macos-user-privilege-lifecycle.md) from
     [its plan](../design/macos-user-privilege-lifecycle-plan.md), with the native readiness work:
@@ -173,8 +176,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     [array-append pinning](BACKLOG.md#E5), [the pack system's other calls](../reference/pack-system.md), [relocating
     `.yolo` by a link](../reference/jail-home.md#OQ-JH1), [whether to ask pi-subagents for a registry several
     extensions can share](../design/simultaneous-auth-and-pack-isolation.md#34-what-the-extension-cannot-close), [the shared tool store's relocation contract](../design/shared-tool-store-relocation.md)
-    with [its build handoff](shared-tool-store-relocation.md), and, once item 11 records its cases, [context sources inside a
-    home](../design/context-mounts.md).
+    with [its build handoff](shared-tool-store-relocation.md).
     Beside the storage rulings, [rule how one workspace splits across storage tiers](../design/storage-tiers.md), with its
     [implementation sketch](../design/storage-tiers-plan.md) — the maintainer asked for it 2026-10-09, and its disk-presence
     and backend calls are the same as the tool store's, so rule them together.

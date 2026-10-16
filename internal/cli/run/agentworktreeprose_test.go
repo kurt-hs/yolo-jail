@@ -14,7 +14,7 @@ import (
 )
 
 // EACH AGENT'S OWN PACK SAYS WHERE ITS OWN WORKFLOW TOOL PUTS WORKTREES, AND ONLY TO THAT AGENT
-// (docs/design/durable-scratch-space.md §5.5, §9 step 5; DS-D33). Core's storage-classes section
+// (docs/reference/jail-home.md#each-agents-own-pack; DS-D33). Core's storage-classes section
 // names no agent's directory, so the claude pack tells Claude that its own worktrees stay in
 // `.claude/worktrees/`, and the pi pack tells pi where pi-subagents' and pi-dynamic-workflows'
 // worktrees go. Each is one agent's tool, so it must reach that agent's briefing and no other:
@@ -132,7 +132,7 @@ func TestEachAgentPackShipsItsOwnWorktreeProseToItsOwnAgent(t *testing.T) {
 		}
 	}
 
-	// A LAUNCH WITH NO DURABLE DIR (docs/design/durable-scratch-space.md §5.1's degenerate
+	// A LAUNCH WITH NO DURABLE DIR (docs/reference/jail-home.md#the-storage-class-briefing-section's degenerate
 	// inputs, §5.6): `.yolo` a link, so ensureDurableDir exports nothing and core's section
 	// says there is none. The pack prose is static and follows that section, so it must not
 	// send the agent to `$YOLO_DURABLE_DIR/…` unconditionally: with the variable unset that

@@ -12,7 +12,7 @@ import (
 // THE DURABLE DIR REACHES BOTH HALVES OF A macos-user LAUNCH: the agent through the session
 // env file (the launch env the run pipeline composed), and the bootstrap, whose launch line
 // reports on the directory, through the relay in buildBootstrapEnv — and neither when the
-// launch did not make it (docs/design/durable-scratch-space.md §5.2, §5.4).
+// launch did not make it (docs/reference/jail-home.md#the-durable-dir).
 func TestTheDurableDirReachesTheAgentAndTheBootstrap(t *testing.T) {
 	const ws = "/Users/Shared/yolo/proj"
 	dir := ws + "/.yolo/durable"

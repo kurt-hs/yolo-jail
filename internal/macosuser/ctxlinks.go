@@ -10,7 +10,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
-// ctxlinks.go is the macos-user DELIVERY of context mounts (docs/design/context-mounts.md §3,
+// ctxlinks.go is the macos-user DELIVERY of context mounts (docs/reference/context-mounts.md#delivery-on-macos-user,
 // §4 steps 4 and 5). A config `mounts` element or a pack `mount` grant becomes a ROOT-OWNED
 // SYMBOLIC LINK in the context dir (StagedCtxRoot, which $YOLO_CONTEXT_DIR names), at the path
 // the container backends' /ctx would use, whose target is the resolved host source — and the
@@ -1062,7 +1062,7 @@ func contextWriteAllow(links []ContextLink) string {
 		return ""
 	}
 	return "\n" +
-		";; --- Context mounts, read-write (docs/design/context-mounts.md §3.4): the resolved\n" +
+		";; --- Context mounts, read-write (docs/reference/context-mounts.md#the-seatbelt-rules): the resolved\n" +
 		";;     source, under the shared root.  Before every write deny that must win. ---\n" +
 		";; #seatbelt-test-id:context-write-allow#\n" +
 		"(allow file-write*\n" + subpathClauses(src) + ")\n"

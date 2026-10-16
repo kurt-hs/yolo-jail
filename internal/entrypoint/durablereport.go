@@ -7,7 +7,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// ReportDurableDir is the launch line for the durable dir (docs/design/durable-scratch-space.md
+// ReportDurableDir is the launch line for the durable dir (docs/reference/jail-home.md#storage-classes-and-the-durable-dir
 // §5.4, OQ-DS2): yolo never deletes a durable worktree, so every fresh launch says how many
 // there are, how big they are and how long the oldest has sat idle — and, in a second line,
 // how many worktree registrations point at directories that are gone, which is the /tmp

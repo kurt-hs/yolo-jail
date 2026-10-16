@@ -276,7 +276,7 @@ func TestPackAudienceRefusesAnAgentTheJailDoesNotHave(t *testing.T) {
 }
 
 // TestShippedAgentPacksBriefOnlyTheirOwnAgentAboutWorktrees is the shipped half of the same
-// rule (docs/design/durable-scratch-space.md DS-D33): the claude and pi packs each carry prose
+// rule (docs/reference/jail-home.md#DS-D33): the claude and pi packs each carry prose
 // about their own agent's worktree tools, addressed to that agent alone, and a jail selecting
 // both plus codex must put each section in its own agent's file and in no other. Here rather
 // than only in run.TestEachAgentPackShipsItsOwnWorktreeProseToItsOwnAgent because this is the

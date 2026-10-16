@@ -1,6 +1,6 @@
 package run
 
-// THE PERSISTENCE MAP (docs/design/durable-scratch-space.md §1.2, a term coined there): the
+// THE PERSISTENCE MAP (docs/reference/jail-home.md#storage-class-terms, a term coined there): the
 // list of paths a launch makes writable, each with a durability class and a scope, computed
 // from the SAME definitions the mount argv reads. It feeds the briefing's storage-classes
 // section, and TestThePersistenceMapIsTheMountPlan compares it against the

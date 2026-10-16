@@ -71,7 +71,7 @@ run too) with **no switch on any tool name**. Three things to know before debugg
   covers what launches still share — the attach decision and the skills/briefing staging
   ([concurrent launches](docs/reference/pack-system.md#concurrent-launches-of-one-workspace)).
 - **Name reservation covers only the SELECTED packs**, by the maintainer's ruling
-  ([`OQ-BH14`](docs/design/base-home-legacy-state.md#28-reservation-is-a-rule-about-config-names-not-about-directories)):
+  ([`OQ-BH14`](docs/reference/jail-home.md#reserving-a-name-is-not-creating-a-directory)):
   an unselected pack is treated as if it does not exist. A `writable_home_dirs` entry may not claim a
   selected pack's dir, and the refusal names that pack, because one user-scope entry can now pass in one
   workspace and be refused in another. A `host_files` destination under a selected pack's writable or
@@ -79,7 +79,7 @@ run too) with **no switch on any tool name**. Three things to know before debugg
   `config.WritableHomeDirs` and `HostFileEntry.StagingFor`, and validation resolves the same selection
   itself (`resolveSelectedPacks`, [`selectedpacks.go`](internal/config/selectedpacks.go)). **Do not read
   `packload.Embedded*` to reserve a name.** `host_files`' surface-path reservation follows the same
-  selection (`selectedSurfacePaths`, [`OQ-BH15`](docs/design/base-home-legacy-state.md#decision-ledger)). One
+  selection (`selectedSurfacePaths`, [`OQ-BH15`](docs/reference/jail-home.md#oq-bh15)). One
   shipped-set reader remains: `storage.EnsureGlobalStorage` makes every shipped pack's shared dir in the
   machine store, because it runs before config loads; that is a bind source a jail mounts only when it
   selects the pack (the launch makes the selected packs' own, a configured pack's included:
@@ -398,7 +398,7 @@ live, so edits are visible on the host instantly — there is no sync step.
   content addressing.** Every other writable host bind is the workspace itself, yolo's own state and
   cache directories, or one the user named in their user-scope config — `cache_relocations`, and a
   read-write `mounts` element (`config.LoadRWMounts`,
-  [`context-mounts.md` §2.8](docs/design/context-mounts.md#28-the-agentsmd-invariant-restated)), which every
+  [`context-mounts.md`](docs/reference/context-mounts.md#the-one-host-tool-owned-writable-bind)), which every
   launch names in a disclosure line; a relocation gets no such line on a container backend (macos-user names each link it lays). A recognised **content-addressed** host
   cache is aliased at the path the jail's own copy of the tool already uses, so it stops existing twice
   (`internal/hostcas`, [`hostcasalias.go`](internal/cli/run/hostcasalias.go);

@@ -1,6 +1,6 @@
 package config
 
-// mounts_test.go pins the `mounts` key's read-write form (docs/design/context-mounts.md
+// mounts_test.go pins the `mounts` key's read-write form (docs/reference/context-mounts.md
 // §2.1–§2.3, §4 step 1) at its CALL SITES: every rule is asserted through ValidateConfig,
 // which is what both `yolo check` and the launch's preflight run, or through LoadRWMounts,
 // which is what the run pipeline mounts from. A test of ParseMountElement alone would pass

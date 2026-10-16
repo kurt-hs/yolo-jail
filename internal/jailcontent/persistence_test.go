@@ -7,7 +7,7 @@ import (
 
 // THE HOME LINE SAID "(persistent across sessions)" ON EVERY BACKEND, and on podman the home
 // is a read-only bind: the claim invited writes that fail, and the agent fell back to /tmp,
-// which a restart deletes (docs/design/durable-scratch-space.md §2.5). No backend, notch or
+// which a restart deletes (docs/reference/jail-home.md#storage-classes-and-the-durable-dir). No backend, notch or
 // hand-built input may say it again.
 func TestNoBriefingCallsTheHomePersistent(t *testing.T) {
 	for _, in := range []BriefingInput{
@@ -26,7 +26,7 @@ func TestNoBriefingCallsTheHomePersistent(t *testing.T) {
 }
 
 // macos-user's Home line says the fact that matters there: ONE account home serves every
-// workspace (docs/design/durable-scratch-space.md §2.2). Its section is a later slice.
+// workspace (docs/reference/jail-home.md#the-storage-classes). Its section is a later slice.
 func TestTheMacosUserHomeLineSaysItIsShared(t *testing.T) {
 	out := BriefingContent(BriefingInput{Workspace: "/Users/Shared/yolo/p", Mechanism: "macos-user",
 		Home: "/Users/_yolojail"})
