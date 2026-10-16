@@ -199,7 +199,7 @@ func launchWithCheckedService(t *testing.T, rt string, payload []loopholes.JailD
 }
 
 // launchCheckedService is launchWithCheckedService with the refusal the boundary returned.
-func launchCheckedService(t *testing.T, rt string, payload []loopholes.JailDaemonSpec) (string, *olderDaemonRefusal) {
+func launchCheckedService(t *testing.T, rt string, payload []loopholes.JailDaemonSpec) (string, *servicesRefusal) {
 	t.Helper()
 	pack := launchCheckPack(t)
 	t.Cleanup(loopholes.SnapshotPackModules())

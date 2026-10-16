@@ -28,7 +28,10 @@ package run
 //
 // # What it is not
 //
-// Not a supervisor: it restarts nothing, and nothing restarts it (JL-D18). Not a housekeeper: it
+// Not a supervisor of the jail: nothing restarts it (JL-D18), and the one thing it restarts is a
+// host daemon it spawned that dies mid-session, bounded, through startExternalService's own
+// supervision (OQ-HD5, HD-D25 in docs/design/host-daemon-ownership.md); a port forward or the
+// cgroup delegate it started is not restarted. Not a housekeeper: it
 // cleans up only what its own jail made (JL-D23); the housekeeping slot stays in the launch
 // (JL-D10). And no terminal: its stdio is /dev/null, its output crosses the progress pipe until
 // ready and is its log's after, and a SIGHUP, which only a `kill` can send a process with no
@@ -410,7 +413,7 @@ func (k *keeper) run() int {
 		}
 		guard = g
 	}
-	var refused *olderDaemonRefusal
+	var refused *servicesRefusal
 	if !p.Sealed { // the seal starts no loophole and registers no credential view (seal.go, FP-D15)
 		sp := o.Perf.Span("launch.start_loopholes")
 		k.handles, refused = o.startPlannedLoopholes(p.Cname, p.Runtime, cfg, p.Payload)

@@ -999,12 +999,17 @@ and a refusal refuses it too.
 **The keeper ends the jail.** Each session's launcher holds the jail's host-side session lock
 shared; when the keeper can take it exclusively, the last session is gone, and the keeper stops
 the container and runs the teardown. It ends the same way when the container ends some other
-way or on a SIGTERM, and never on a timer. It restarts nothing and nothing restarts it: an
+way or on a SIGTERM, and never on a timer. Nothing restarts it, and the one thing it restarts is
+a host daemon it started that dies mid-session, up to five times in a row with the in-jail
+supervisor's backoff ([HD-D25](../design/host-daemon-ownership.md#HD-D25)); a port forward or the
+cgroup delegate is not restarted: an
 arrival at a jail whose keeper died is refused and names `yolo stop`. Since 2026-10-01 it says
-when a host service it started ends on its own while the jail is up: one line in its log and an
+when a host service it started ends on its own while the jail is up, for a host daemon once its
+restarts are given up on: one line in its log and an
 entry in its start record, which each session that was in prints at its quit and every later
 arrival as it enters, naming how the service ended, its log, and `yolo stop` then a launch as
-what starts it again. A host-wide daemon is the machine's and is not watched, and a daemonizing
+what starts it again. A machine-wide daemon an older yolo left running is not this keeper's and
+is not watched, and a daemonizing
 wrapper's clean exit that leaves its service reachable is not recorded
 ([JL-D71](../design/jail-lifetime-last-session-wins.md#JL-D71)).
 

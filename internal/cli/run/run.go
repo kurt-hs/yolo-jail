@@ -2996,9 +2996,9 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 	// way round, a death recorded between this stat and that read is named twice, by the notice
 	// and at the quit: two true lines, in a window two file reads wide, which no dedupe is worth.
 	logFrom := keeperLogSize(cname)
-	// And what its keeper recorded DOWN since the jail started (keeperwatch.go, JL-D19): the keeper
-	// restarts nothing, and this session was not in when it went, so its keeper's line never
-	// reached this terminal.
+	// And what its keeper recorded DOWN since the jail started (keeperwatch.go, JL-D19): a service
+	// down for good (a host daemon its supervisor gave up on, HD-D25, or one it does not restart),
+	// and this session was not in when it went, so its keeper's line never reached this terminal.
 	o.noteServicesDown(cname, rt)
 	// Attach gets the notice too, and that is not symmetry for its own sake: once a
 	// jail is up, attaching is how a user re-enters it, so a fresh-launch-only notice

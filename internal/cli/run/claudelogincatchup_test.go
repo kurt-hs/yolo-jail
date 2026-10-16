@@ -112,7 +112,7 @@ func claudeBrokerFixturePack(t *testing.T) *packload.Pack {
 
 // launchStartingPacks runs the spawn boundary for podman over packs and returns the launch's
 // stderr, its handles' names and its refusal; every service it started is stopped at return.
-func launchStartingPacks(t *testing.T, packs ...*packload.Pack) (string, []string, *olderDaemonRefusal) {
+func launchStartingPacks(t *testing.T, packs ...*packload.Pack) (string, []string, *servicesRefusal) {
 	t.Helper()
 	t.Cleanup(loopholes.SnapshotPackModules())
 	loopholes.SetPackModules(packLoopholeModules(packs))
