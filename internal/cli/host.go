@@ -734,6 +734,7 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	// ITS THREE STEPS ARE SPANNED APART (host.apply_gate.advance, .preflight, .render), and each
 	// extension's advance inside the first one step by step (advanceSpan): the gate measured 90 s on
 	// a real launch with 20 s of it after the last build ended and nothing saying where.
+	noteHostRecoveryHatches(errw, selectConfiguredHostPacks().packs) // hostrecoveryscope.go: unmatched hatch names, once
 	sp = trace.span("host.apply_gate")
 	act := &run.ActInterrupt{}
 	if flags.update {

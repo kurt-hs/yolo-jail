@@ -71,6 +71,11 @@ func hostPatchPreflight(errw io.Writer, packs []*packload.Pack, verb, command, t
 		if target != "" && p.Bin() != target && missingHatch && errors.Is(err, hostfloor.ErrPatchFailureNothingRuns) {
 			continue
 		}
+		// A HOLD HOLDS (patched-build-recovery.md §6.3, OQ-PBR5): under `agent_updates` off, a recorded
+		// failure has no bearing while a build of the fork serves; the advance runs that build.
+		if errors.Is(err, hostfloor.ErrPatchFailureBypassable) && hostForkHeld(packs, p) {
+			continue
+		}
 		stopped = append(stopped, "fork "+p.Install.ForkedBy+"/"+p.Bin())
 	}
 	if deferred && hostTreesBuild() {
@@ -78,8 +83,8 @@ func hostPatchPreflight(errw io.Writer, packs []*packload.Pack, verb, command, t
 			if !f.DeliveredAtHost() || currentPatchFailure(f) == nil {
 				continue
 			}
-			if entry, _, _ := hostTreeServing(f); entry != nil && allowPatchFailures(f) {
-				continue // the bypass: the render links the good build, as it does for an advance's
+			if entry, _, _ := hostTreeServing(f); entry != nil && (allowPatchFailures(f) || patchedForkHold(f) != "") {
+				continue // the bypass, or a hold (§6.3): the render links the good build, as it does for an advance's
 			}
 			stopped = append(stopped, f.Label())
 		}
@@ -90,7 +95,18 @@ func hostPatchPreflight(errw io.Writer, packs []*packload.Pack, verb, command, t
 	if !deferred {
 		_, _ = io.Copy(errw, &said)
 	}
-	fmt.Fprintf(errw, "yolo host: refusing %s: the patch series of %s %s not apply (the ERROR above); nothing was "+
-		"written.\n", verb, entrypoint.JoinAnd(stopped), plural(len(stopped), "does", "do"))
+	fmt.Fprintf(errw, "yolo host: refusing %s: the patch series of %s %s not apply; nothing was written\n",
+		verb, entrypoint.JoinAnd(stopped), plural(len(stopped), "does", "do"))
+	return false
+}
+
+// hostForkHeld reports whether `agent_updates` holds the patched fork packs declare for program p
+// (run.PatchedForkHold, the advance's own reading of a hold).
+func hostForkHeld(packs []*packload.Pack, p hostfloor.Program) bool {
+	for _, f := range packload.Forks(packs) {
+		if f.Pack == p.Install.ForkedBy && f.Bin == p.Bin() {
+			return patchedForkHold(f) != ""
+		}
+	}
 	return false
 }

@@ -784,6 +784,9 @@ type Options struct {
 	// (selectCachedGood).
 	cachedGoodOwner                  string
 	cachedGoodForks, cachedGoodTrees []string
+	// recoveryHatchesNoted says this launch has said what its set recovery hatches reach
+	// (noteRecoveryHatches), which it says once.
+	recoveryHatchesNoted bool
 	// forkDelivered is what this launch hands its jail per forked program (forkDeliveriesFor).
 	forkDelivered map[string]entrypoint.ForkDelivery
 	// handedForks are the bins a patched fork's advance recorded itself, under its record lock

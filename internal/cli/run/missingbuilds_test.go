@@ -16,6 +16,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/image"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -60,15 +61,15 @@ func TestAMissingPatchedExtensionRefusesTheLaunchBeforeTheImage(t *testing.T) {
 			t.Errorf("args %q: the launch went on to the image (%v) or the container (%v):\n%s", args, imaged, argv != nil, printed)
 		}
 		for _, w := range []string{
-			"Refusing to launch: 1 patched extension pack agentpack loads has no build on this machine.",
+			"ERROR: 1 patched extension pack agentpack loads has no build on this machine\n",
 			"\n  extension treepack/tree-ext: its build jail refused to start on the host:\n",
 			"\n      writing tool's automode file (~/.tool/ext/automode/settings.json), which pack treepack declares, failed:\n",
 			"\n        ~/.tool/ext/automode is mounted read-only in that jail\n",
 			"This is a bug in yolo, not in pack treepack: the build jail refused a config your own launch accepts.",
 			"Report it at " + entrypoint.IssuesURL + ", with /ws/.yolo/build-treepack--tree-ext-0123abcd.log; once it is " +
-				"fixed, `yolo capture treepack/tree-ext` builds it, or the next fresh launch does.",
-			"To launch without it now: " + paths.AllowMissingProgramsEnv + "=1",
-			"drop the list entry naming it, or its pack",
+				"fixed, retry.",
+			"\n\nRetry:\n  yolo capture treepack/tree-ext\n",
+			"\n\nStart anyway:\n  " + patchrecovery.SkipExtensionsEnv + "=treepack/tree-ext yolo    start agentpack without it\n",
 		} {
 			if !strings.Contains(printed, w) {
 				t.Errorf("args %q: the refusal lacks %q:\n%s", args, w, printed)
@@ -93,8 +94,9 @@ func TestTheBypassLaunchesWithoutAMissingBuild(t *testing.T) {
 	if argv == nil {
 		t.Fatalf("the bypass did not start the jail:\n%s", printed)
 	}
-	if !strings.Contains(printed, "Warning: "+paths.AllowMissingProgramsEnv+" is set — CONTINUING, though 1 patched "+
-		"extension pack agentpack loads has no build on this machine") || strings.Contains(printed, "Refusing to launch") {
+	if !strings.Contains(printed, "Warning: 1 patched extension pack agentpack loads has no build on this machine; "+
+		"starting without it ("+paths.AllowMissingProgramsEnv+")\n") || strings.Contains(printed, "ERROR: 1 patched") ||
+		strings.Contains(printed, patchrecovery.StartAnyway) {
 		t.Errorf("the bypass does not say what it continues without:\n%s", printed)
 	}
 	if d := patchedTreesInArgv(t, argv)[treeKey]; !d.Stop || d.Cause == nil || !d.Cause.YoloBug {
@@ -116,9 +118,11 @@ func TestAMissingPatchedForkRefusesTheLaunch(t *testing.T) {
 		t.Fatalf("a launch with no build of its patched fork started its jail:\n%s", printed)
 	}
 	for _, w := range []string{
-		"Refusing to launch: 1 selected patched fork has no build on this machine.",
-		"\n  fork forkpack/tool: upstream v1.1.0 does not take fork forkpack/tool's patch series — `yolo pack status` prints",
-		"`yolo pack series check` says where it stops and prints the git commands that rebase it",
+		"ERROR: 1 selected patched fork has no build on this machine\n",
+		"\n  fork forkpack/tool: upstream v1.1.0 does not take fork forkpack/tool's patch series\n",
+		"\n  Rebase: yolo pack series check\n",
+		"\n\nRetry:\n  yolo capture tool\n",
+		"\n\nStart anyway:\n  YOLO_ALLOW_MISSING_PROGRAMS=1 yolo    start without it\n",
 	} {
 		if !strings.Contains(printed, w) {
 			t.Errorf("the refusal lacks %q:\n%s", w, printed)
@@ -127,10 +131,10 @@ func TestAMissingPatchedForkRefusesTheLaunch(t *testing.T) {
 }
 
 // A MISSING FORK WHOSE CAUSE IS A PATCH FAILURE (PF-D81, PF-D83): the launch's error block comes
-// first, its Bypass line offering the missing-program hatch since no build is here to run; the
-// refusal points at it rather than saying the target again, names the series' ways back, and the
-// patch failure's own bypass with why it does not start this launch. Red with the patch-failure line
-// in refuseMissingBuilds deleted, or with the block offering YOLO_ALLOW_PATCH_FAILURES.
+// first, its hatch list offering the missing-program hatch since no build is here to run; the
+// refusal points at it rather than saying the target again, and offers neither the patch failure's
+// own hatch, which has no build to run, nor a second rebase pointer. Red with missingBuilds' reason
+// for a patch failure deleted, or with the block offering YOLO_ALLOW_PATCH_FAILURES.
 func TestAMissingForksPatchFailureNamesItsOwnBypass(t *testing.T) {
 	patchedLaunchHome(t)
 	commit := "c5c0f6bd0123456789abcdef0123456789abcdef"
@@ -145,21 +149,18 @@ func TestAMissingForksPatchFailureNamesItsOwnBypass(t *testing.T) {
 		t.Fatalf("a launch with no build of its patched fork started its jail:\n%s", printed)
 	}
 	for _, w := range []string{
-		"ERROR: fork forkpack/tool: patch application failed at upstream v1.2.0 (" + commit + ")\n",
-		"  Bypass: YOLO_ALLOW_MISSING_PROGRAMS=1 yolo\n",
-		"\n  fork forkpack/tool: its patch series does not apply (the ERROR above), and no build of it is on this machine\n",
-		"`yolo pack series check` says where it stops and prints the git commands that rebase it",
-		"  YOLO_ALLOW_PATCH_FAILURES=1 does not start this launch: it runs only an intact admitted build",
-		"To launch without it now: YOLO_ALLOW_MISSING_PROGRAMS=1",
+		"ERROR: fork forkpack/tool: patch series does not apply to upstream v1.2.0 (c5c0f6bd)\n",
+		"\nStart anyway:\n  YOLO_ALLOW_MISSING_PROGRAMS=1 yolo    start without it\n\nERROR: 1 selected patched fork",
+		"\n  fork forkpack/tool: its patch series does not apply (the ERROR above)\n\nRetry:\n  yolo capture tool\n",
 	} {
 		if !strings.Contains(printed, w) {
 			t.Errorf("the refusal lacks %q:\n%s", w, printed)
 		}
 	}
-	if strings.Contains(printed, "Bypass: YOLO_ALLOW_PATCH_FAILURES") {
-		t.Errorf("the block offers a bypass with no build to run:\n%s", printed)
+	if strings.Contains(printed, paths.AllowPatchFailuresEnv) || strings.Contains(printed, "Rebase: yolo pack series check") {
+		t.Errorf("the launch offers a hatch with no build to run, or a second rebase pointer:\n%s", printed)
 	}
-	if strings.Index(printed, "ERROR: fork forkpack/tool") > strings.Index(printed, "Refusing to launch") {
+	if strings.Index(printed, "ERROR: fork forkpack/tool") > strings.Index(printed, "ERROR: 1 selected patched fork") {
 		t.Errorf("the error block follows the refusal:\n%s", printed)
 	}
 	// The block's header and its Repair recipe name the commit — the rebase, then the export's test,
@@ -177,7 +178,8 @@ func TestAMissingBuildWithoutAPatchFailureNamesNoPatchBypass(t *testing.T) {
 			return map[string]entrypoint.ForkDelivery{"tool": {Reason: "fork forkpack/tool's build of v1.1.0 failed"}}
 		}
 	})
-	if !strings.Contains(printed, "Refusing to launch") || strings.Contains(printed, paths.AllowPatchFailuresEnv) {
+	if !strings.Contains(printed, "ERROR: 1 selected patched fork has no build on this machine") ||
+		strings.Contains(printed, paths.AllowPatchFailuresEnv) {
 		t.Errorf("a build failure's refusal names the patch-failure bypass, or refuses nothing:\n%s", printed)
 	}
 }
@@ -211,10 +213,12 @@ func TestOneCauseIsSaidOnceForEveryBuildItLeftWithout(t *testing.T) {
 		t.Errorf("the cause is said %d times, want once for the needed group and once for the unneeded:\n%s", n, got)
 	}
 	for _, w := range []string{
-		"Warning: 1 patched build no selected agent pack loads has no build on this machine:\n  extension treepack/c: ",
-		"Refusing to launch: 2 patched extensions pack agentpack loads have no build on this machine.\n" +
+		"Warning: 1 patched build no selected agent pack loads has no build on this machine\n  extension treepack/c: ",
+		"ERROR: 2 patched extensions pack agentpack loads have no build on this machine\n" +
 			"  extensions treepack/a and treepack/b: their build jail refused to start on the host:\n",
-		"the next fresh launch builds them, or `yolo capture treepack/a`, `yolo capture treepack/b` now",
+		"once it is fixed, `yolo capture treepack/c`.\n",
+		"\n\nRetry:\n  yolo capture treepack/a\n  yolo capture treepack/b\n",
+		"\n\nStart anyway:\n  " + patchrecovery.SkipExtensionsEnv + "=treepack/a,treepack/b yolo    start agentpack without it\n",
 	} {
 		if !strings.Contains(got, w) {
 			t.Errorf("the refusal lacks %q:\n%s", w, got)
@@ -247,7 +251,7 @@ func TestANotchThatBuildsNoTreeRefusesNothing(t *testing.T) {
 	o.treeDelivered = map[string]TreeDelivery{treeKey: {Reason: "its build jail exited before its build line ran on the host",
 		Cause: &entrypoint.BuildCause{Lines: []string{"Error: the runtime would not start it"}}}}
 	if !o.refuseMissingBuilds("container") || !strings.Contains(stderr.String(),
-		"On Apple Container a build jail cannot start beside a running jail") {
+		"Apple Container: a build jail cannot start beside a running jail") {
 		t.Errorf("above the floor the launch did not refuse, or name Apple Container's limit:\n%s", stderr.String())
 	}
 }
@@ -298,7 +302,7 @@ func TestAnUnneededMissingBuildOnAppleContainerNamesItsLimit(t *testing.T) {
 		t.Fatalf("a build no agent pack loads refused the launch:\n%s", stderr.String())
 	}
 	if got := stderr.String(); !strings.Contains(got, "Warning: 1 patched build no selected agent pack loads") ||
-		!strings.Contains(got, "On Apple Container a build jail cannot start beside a running jail") {
+		!strings.Contains(got, "Apple Container: a build jail cannot start beside a running jail") {
 		t.Errorf("the warning does not name Apple Container's limit:\n%s", got)
 	}
 }
@@ -350,7 +354,7 @@ func TestAPooledBuildsFailureReachesTheRefusalOnce(t *testing.T) {
 	if argv != nil || imaged {
 		t.Errorf("the launch went on to the image (%v) or the container (%v):\n%s", imaged, argv != nil, printed)
 	}
-	if !strings.Contains(printed, "Refusing to launch: 1 patched extension pack agentpack loads has no build on this machine.") {
+	if !strings.Contains(printed, "ERROR: 1 patched extension pack agentpack loads has no build on this machine\n") {
 		t.Errorf("the launch did not refuse:\n%s", printed)
 	}
 	if n := strings.Count(printed, "failed on the host (exit 2)"); n != 1 {

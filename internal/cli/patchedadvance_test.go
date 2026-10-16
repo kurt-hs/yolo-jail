@@ -500,10 +500,10 @@ func TestAConflictingTagFailsAndOnlyExplicitBypassContinues(t *testing.T) {
 	if !strings.Contains(out, "0001-ten.patch") || !strings.Contains(out, "v1.4.0 ("+shortSHA(v14)+")") {
 		t.Fatalf("the concrete conflict was not reported:\n%s", out)
 	}
-	// PF-D83: the build is here, so the block offers the patch failure's own bypass, naming what it
+	// PF-D83: the build is here, so the block offers the patch failure's own hatch, naming what it
 	// runs, and the delivery names that build for a jail launch's block.
-	if !strings.Contains(out, "  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo\n    (runs the intact admitted build v1.1.0 ("+
-		shortSHA(v11)+") + 2 patches") || !strings.Contains(failed.delivery.Runs, "v1.1.0 ("+shortSHA(v11)+")") {
+	if !strings.Contains(out, "\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo    run v1.1.0 ("+
+		shortSHA(v11)+") + 2 patches\n") || !strings.Contains(failed.delivery.Runs, "v1.1.0 ("+shortSHA(v11)+")") {
 		t.Errorf("the bypass does not name the build it runs (delivery %+v):\n%s", failed.delivery, out)
 	}
 	// IN A JAIL LAUNCH'S SLOT the act hands the same, and prints no block: the launch prints it

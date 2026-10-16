@@ -53,7 +53,8 @@ func treeDigest(t *testing.T, dir string) string {
 func recipeCommands(printed string) []string {
 	var cmds []string
 	for _, line := range strings.Split(printed, "\n") {
-		if c, ok := strings.CutPrefix(line, "      "); ok && (strings.HasPrefix(c, "git ") || strings.HasPrefix(c, "test ")) {
+		// The error block indents a command four spaces, `yolo pack status` six.
+		if c := strings.TrimLeft(line, " "); len(line)-len(c) >= 4 && (strings.HasPrefix(c, "git ") || strings.HasPrefix(c, "test ")) {
 			cmds = append(cmds, c)
 		}
 	}
@@ -99,7 +100,7 @@ func TestTheConflictsRecipeRunAsPrintedGivesASeriesTheNextLaunchBuilds(t *testin
 	packBefore := treeDigest(t, patches)
 	rc, out, errw := packVerb(t, "update")
 	cmds := recipeCommands(errw)
-	if rc == 0 || len(cmds) != 4 || !strings.Contains(errw, "  Repair: "+packsrc.RecipeLead+"\n") {
+	if rc == 0 || len(cmds) != 4 || !strings.Contains(errw, "\nRepair:\n") {
 		t.Fatalf("update rc=%d, want the conflict's block with four recipe commands, got %q\n%s\n%s", rc, cmds, out, errw)
 	}
 	for i, w := range []string{"git clone ", "git checkout -q -b yolo-rebase " + fx.fork(t).RebaseRecipe().Base +
