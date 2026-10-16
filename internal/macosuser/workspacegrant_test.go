@@ -58,7 +58,7 @@ func TestRunRefusesUnsharedWorkspace(t *testing.T) {
 	}
 	// The launch must NOT walk the tree: that cost is why the check exists rather
 	// than an unconditional retrofit.
-	if strings.Contains(strings.Join(rec, "\n"), "-exec chmod -h +a") {
+	if strings.Contains(strings.Join(rec, "\n"), "chmod -h +a") {
 		t.Error("applied ACLs on the launch path — the walk belongs in macos-fix-permissions")
 	}
 	got := buf.String()
@@ -87,7 +87,7 @@ func TestRunDoesNoACLWorkOnASharedWorkspace(t *testing.T) {
 	if rc := RunMacosUser(d, newOpts("/Users/Shared/yolo/ok")); rc != 42 {
 		t.Errorf("rc = %d, want 42\n%s", rc, buf.String())
 	}
-	if strings.Contains(strings.Join(rec, "\n"), "-exec chmod -h +a") {
+	if strings.Contains(strings.Join(rec, "\n"), "chmod -h +a") {
 		t.Error("walked the tree on a shared workspace — the hot path must do no ACL work")
 	}
 }

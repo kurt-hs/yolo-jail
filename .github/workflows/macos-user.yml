@@ -414,16 +414,22 @@ jobs:
       # are LAST: after the first, no root sudo works on this runner, so nothing after them may
       # need root.
       #
-      # THE BLANKET RULE MUST BE IN A FILE THAT CAN BE MOVED ASIDE. Nobody has looked at where a
-      # hosted macOS runner keeps it, so the step prints every NOPASSWD grant first and moves aside
-      # only files under /etc/sudoers.d carrying a `NOPASSWD: ALL` rule, never yolo's own. The
-      # FIRST RUN of this step is what says whether that was enough. If the grant is in
-      # /etc/sudoers itself, the step fails naming that, and editing the main file is a
-      # reviewer's choice, not this step's.
+      # WHERE THE BLANKET RULE LIVES, MEASURED (run 38913640055): a hosted macOS runner grants it
+      # three times, `%admin ALL = (ALL) NOPASSWD: ALL` in /etc/sudoers itself and
+      # `runner`/`anka ALL=(root) NOPASSWD:ALL` in /etc/sudoers.d. So the step does both, as the
+      # maintainer approved for this ephemeral runner (2026-10-16): it moves aside every
+      # /etc/sudoers.d file carrying a `NOPASSWD: ALL` rule, never yolo's own, and in
+      # /etc/sudoers it comments out only the `NOPASSWD: ALL` lines for `%admin` or the runner
+      # user. Each `%admin` line it comments out is followed by the stock macOS line
+      # `%admin ALL = (ALL) ALL`, so root sudo then asks for a password, as on a normal Mac,
+      # rather than refusing outright. The new /etc/sudoers is written beside the old one,
+      # checked with `visudo -c -f` BEFORE it replaces anything, and installed with one rename;
+      # if the final `visudo -c` still fails, everything is put back. Every NOPASSWD grant is
+      # printed before and after, with the diff of /etc/sudoers.
       #
-      # ONE sudo INVOCATION does the moving, because its own effect removes the permission it
-      # runs under: after the first mv no further sudo works, so the moving, the evidence copy and
-      # `visudo -c` all happen inside one root shell. The moved files are kept under /var/tmp for
+      # ONE sudo INVOCATION does all of it, because its own effect removes the permission it
+      # runs under: after the first change no further sudo works, so the edit, the moving, the
+      # evidence copies and both `visudo` checks all happen inside one root shell. The moved files are kept under /var/tmp for
       # the log, not deleted.
       #
       # `sudo -k` before each probe: a cached credential would pass `sudo -n` through a broad rule
@@ -437,10 +443,41 @@ jobs:
           set -uo pipefail
           echo "Every NOPASSWD grant before narrowing:"
           sudo grep -rn NOPASSWD /etc/sudoers /etc/sudoers.d || true
-          sudo /bin/sh -c '
+          sudo /usr/bin/env NARROW_USER="$(id -un)" /bin/sh -c '
             set -u
+            case "$NARROW_USER" in *[!A-Za-z0-9_-]*|"") echo "unexpected user name: $NARROW_USER"; exit 1;; esac
             aside=/var/tmp/yolo-sudoers-moved-aside
+            main=/private/etc/sudoers
+            # In /etc, not /etc/sudoers.d (sudo would never read it there anyway, the name
+            # holding a dot), and on the same filesystem, so the install is one rename.
+            new=/private/etc/.sudoers.yolo-narrowed
+            blanket="^[[:space:]]*(%admin|$NARROW_USER)[[:space:]].*NOPASSWD:[[:space:]]*ALL[[:space:]]*$"
             mkdir -p "$aside"
+
+            # 1. Stage and validate the main-file edit before anything changes.
+            edit_main=no
+            if grep -Eq "$blanket" "$main"; then
+              cp -p "$main" "$aside/sudoers.orig"
+              awk -v re="$blanket" '"'"'
+                $0 ~ re {
+                  print "# narrowed by yolo-jail CI: " $0
+                  if ($1 == "%admin") print "%admin\t\tALL = (ALL) ALL"
+                  next
+                }
+                { print }
+              '"'"' "$main" > "$new" || exit 1
+              chown root:wheel "$new" && chmod 0440 "$new" || exit 1
+              if ! visudo -c -f "$new"; then
+                echo "visudo -c -f rejects the staged /etc/sudoers (or a file it includes); nothing was changed"
+                rm -f "$new"
+                exit 1
+              fi
+              edit_main=yes
+            else
+              echo "/etc/sudoers carries no NOPASSWD: ALL line for %admin or $NARROW_USER"
+            fi
+
+            # 2. Move aside the sudoers.d grants, never yolo-jail.
             for f in /etc/sudoers.d/*; do
               [ -f "$f" ] || continue
               [ "$f" = /etc/sudoers.d/yolo-jail ] && continue
@@ -448,12 +485,34 @@ jobs:
                 mv -f "$f" "$aside/" && echo "moved aside: $f -> $aside/"
               fi
             done
+
+            # 3. Install the main file with one rename.
+            if [ "$edit_main" = yes ]; then
+              mv -f "$new" "$main" || exit 1
+              echo "edited /etc/sudoers (original kept at $aside/sudoers.orig):"
+              diff "$aside/sudoers.orig" "$main" || true
+            fi
             ls -le "$aside"
-            visudo -c
-          ' || { echo "::error::moving the blanket rule aside, or visudo -c after it, failed"; exit 1; }
+
+            # 4. Check the whole configuration; put everything back if it does not parse.
+            if ! visudo -c; then
+              echo "visudo -c failed after narrowing; restoring the original sudoers"
+              for f in "$aside"/*; do
+                [ "$f" = "$aside/sudoers.orig" ] && continue
+                [ -f "$f" ] && mv -f "$f" /etc/sudoers.d/
+              done
+              if [ "$edit_main" = yes ]; then
+                cp -p "$aside/sudoers.orig" "$new" && mv -f "$new" "$main"
+              fi
+              exit 1
+            fi
+            echo "Every NOPASSWD grant after narrowing:"
+            grep -rn NOPASSWD /etc/sudoers /etc/sudoers.d || true
+          ' || { echo "::error::narrowing sudo failed (staged /etc/sudoers rejected by visudo -c -f, or visudo -c after it); see the lines above"; exit 1; }
           sudo -k
           if sudo -n true 2>/dev/null; then
-            echo "::error::root sudo still passwordless; the blanket rule is in /etc/sudoers itself — editing the main file is a reviewer's choice"
+            echo "::error::root sudo is still passwordless after narrowing; some grant the step does not recognize remains:"
+            sudo grep -rn NOPASSWD /etc/sudoers /etc/sudoers.d || true
             exit 1
           fi
           echo "root sudo now needs a password"

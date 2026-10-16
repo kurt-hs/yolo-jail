@@ -31,6 +31,11 @@ package integration
 // (preparationworkers_test.go has the inventory, and CI run 38856922948 the failure), so the
 // same cleanup stops those too, the same way.
 //
+// AND SO IS AN ORPHANED NIX. A launch refused after it started its image-identity eval beside the
+// fork-build slot leaves that `nix eval` running with no parent under the test's HOME, writing
+// nix's fetcher cache there (homenix_test.go has the measurement, and CI run 38924394239 the
+// failure), so the same cleanup interrupts those too.
+//
 // THE THIRD IS THE JAIL'S KEEPER (docs/design/jail-lifetime-last-session-wins.md §9). A fresh
 // launch spawns it detached, and it ends the jail once the last session is gone. A session that
 // quits waits for that teardown, but one this suite kills (a background run's cancel, at its
@@ -104,6 +109,16 @@ func awaitDetachedWriters(t *testing.T, dir, home string) {
 			if err != nil {
 				t.Errorf("stopping the preparation processes this test's launch left running "+
 					"under %s: %v", home, err)
+			}
+			// A refused launch's image-identity eval, orphaned under the home (homenix_test.go).
+			stoppedNix, err := stopHomeNixProcesses(home)
+			if len(stoppedNix) > 0 {
+				t.Logf("stopped the nix processes left running under this test's HOME %s: %s",
+					home, strings.Join(stoppedNix, ", "))
+			}
+			if err != nil {
+				t.Errorf("stopping the nix processes this test's launch left running under %s: %v",
+					home, err)
 			}
 		}
 		if err := run.WaitForScratchRemovers(dir, detachedWriterWait); err != nil {
@@ -193,6 +208,7 @@ func TestEveryLaunchSiteAwaitsDetachedWriters(t *testing.T) {
 				continue
 			}
 			execsYolo, awaits, waitsScratch, waitsDaemons := false, false, false, false
+			stopsWorkers, stopsNix := false, false
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
@@ -213,6 +229,10 @@ func TestEveryLaunchSiteAwaitsDetachedWriters(t *testing.T) {
 					waitsScratch = true
 				case "awaitHomeHostDaemons":
 					waitsDaemons = true
+				case "stopHomePreparationWorkers":
+					stopsWorkers = true
+				case "stopHomeNixProcesses":
+					stopsNix = true
 				}
 				return true
 			})
@@ -222,6 +242,11 @@ func TestEveryLaunchSiteAwaitsDetachedWriters(t *testing.T) {
 					t.Errorf("awaitDetachedWriters must both wait for the scratch removers "+
 						"(run.WaitForScratchRemovers: %v) and wait for the home's host daemons "+
 						"(awaitHomeHostDaemons: %v)", waitsScratch, waitsDaemons)
+				}
+				if !stopsWorkers || !stopsNix {
+					t.Errorf("awaitDetachedWriters must stop what a launch leaves running under the "+
+						"test's HOME: its preparation workers (stopHomePreparationWorkers: %v) and "+
+						"an orphaned nix (stopHomeNixProcesses: %v)", stopsWorkers, stopsNix)
 				}
 			}
 			if !execsYolo {
