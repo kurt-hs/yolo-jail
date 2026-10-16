@@ -1,7 +1,8 @@
 package macosuser
 
-// sessionfiles.go gives each macos-user SESSION its own root-owned files beside the env dir,
-// and a host-side record that says whether the session is still alive.
+// sessionfiles.go gives each macos-user SESSION its own files beside the env dir, written and
+// removed by the host user in the staging root it owns, and a host-side record that says whether
+// the session is still alive.
 //
 // A SESSION is one macos-user invocation of yolo: one sandbox and what was started for it, from
 // launch to teardown (the term is paths.HostServicesSessionPrefix's). This backend has no
@@ -32,18 +33,22 @@ package macosuser
 //     of the host-services session dir (internal/cli/run/servicessession.go), which can fail to
 //     open, which `yolo host` sweeps machine-wide, and which sits in /tmp where the sandbox can
 //     read it.
-//   - Its teardown removes its own files (sudo rm -f), then the record, then lets the lock go.
-//     A removal that fails KEEPS the record (sessionTeardown): the lock is let go and the file
-//     stays, so the next launch's sweep finds it free and tries again, and the session warns
-//     with the command. Once a session has ended, its record is the only pointer to its files:
-//     env/ is a directory only root can list, and the names carry an id nothing else keeps.
-//   - Each launch, before it writes anything root-owned, SWEEPS: every record whose lock it can
+//   - Its teardown removes its own files (rm -f, as the host user: no sudo, so no prompt), then
+//     the record, then lets the lock go. A removal that fails KEEPS the record
+//     (sessionTeardown): the lock is let go and the file stays, so the next launch's sweep finds
+//     it free and tries again, and the session warns with the command. Once a session has
+//     ended, its record is the only pointer to its files: the names carry an id nothing else
+//     keeps.
+//   - Each launch, before it writes any per-launch file, SWEEPS: every record whose lock it can
 //     take is a session that ended without its teardown (a SIGKILL, a crash, a closed laptop),
 //     so it removes that session's files and the record. A record that is held, cannot be
 //     opened, or does not parse is kept: TRI-STATE, the rule every reaper here follows. The
 //     records are in the launching macOS user's own state dir while the files are in the one
-//     machine-wide state dir, so a killed session's files wait for the next launch by the SAME
-//     macOS user, of any workspace; another user's launch never sees that record.
+//     machine-wide staging root, so a killed session's files wait for the next launch by the
+//     SAME macOS user, of any workspace; another user's launch never sees that record.
+//   - A record whose session an OLDER yolo started names root-owned files in the legacy state
+//     dir, which no launch can remove any more. The sweep keeps that record and warns once,
+//     naming `yolo macos-setup` (PL-8 in docs/design/macos-user-privilege-lifecycle-plan.md).
 
 import (
 	"crypto/rand"
@@ -96,10 +101,10 @@ func parseSessionKey(key string) (cname, sessionID string, ok bool) {
 	return cname, sessionID, true
 }
 
-// SessionFilePaths are every root-owned file a session with this key can leave in the state dir,
-// in the order a sweep removes them: the session env file, the daemons env file, the CA bundle and
-// the extra-CA file beside them, and the Seatbelt profile. A sweep names each one, since env/ is a
-// directory only root can list.
+// SessionFilePaths are every file a session with this key can leave in the staging root (sd, ""
+// for the default), in the order a sweep removes them: the session env file, the daemons env
+// file, the CA bundle and the extra-CA file beside them, and the Seatbelt profile. A sweep names
+// each one rather than listing env/, which only its owner and the sandbox's search reach.
 func SessionFilePaths(key, sd string) []string {
 	return []string{
 		SandboxEnvFile(key, sd),
@@ -200,12 +205,12 @@ type sessionTeardown struct {
 	failed []string
 }
 
-// remove runs each command under sudo, remembering every one that fails.
+// remove runs each command as the host user, as it is (no sudo, so it never prompts, signaled or
+// not), remembering every one that fails.
 func (t *sessionTeardown) remove(cmds [][]string) {
 	for _, cmd := range cmds {
-		argv := append([]string{"sudo"}, cmd...)
-		if t.deps.Run(argv) != 0 {
-			t.failed = append(t.failed, shquote.JoinDisplay(argv))
+		if t.deps.Run(cmd) != 0 {
+			t.failed = append(t.failed, shquote.JoinDisplay(cmd))
 		}
 	}
 }
@@ -223,7 +228,7 @@ func (t *sessionTeardown) finish(out printer, rec *sessionRecord, key, sd string
 	if rec == nil {
 		then = "No record of this session was kept, so no launch removes them"
 	}
-	argv := append([]string{"sudo", rmBin, "-f"}, SessionFilePaths(key, sd)...)
+	argv := append([]string{rmBin, "-f"}, SessionFilePaths(key, sd)...)
 	out.printf("[yellow]Warning: this session could not remove its own files from %s[/yellow] "+
 		"(`%s` failed), and one may hold this launch's credentials. %s; to remove them now, run "+
 		"`%s`.", stateDirOr(sd), strings.Join(t.failed, "`, `"), then, shquote.JoinDisplay(argv))
@@ -288,8 +293,8 @@ func claimOpenedSessionRecord(f *os.File, path string) (*os.File, sessionLivenes
 	return f, sessionGone
 }
 
-// sweepGoneSessions removes the root-owned files of every session whose record in dir says it is
-// gone, then the record. EVERY WORKSPACE'S, not this workspace's alone: liveness is each record's
+// sweepGoneSessions removes, as the host user, the files of every session whose record in dir
+// says it is gone, then the record. EVERY WORKSPACE'S, not this workspace's alone: liveness is each record's
 // own lock, so nothing another workspace's dead session left can be mistaken for a live one, and a
 // workspace nobody launches again would otherwise keep its dead sessions' files for good. dir is
 // the launching macOS user's (SessionRecordsDir), so it holds only that user's sessions.
@@ -297,6 +302,12 @@ func claimOpenedSessionRecord(f *os.File, path string) (*os.File, sessionLivenes
 // Best effort, never a refusal: a removal that fails is warned about, naming the command that
 // would do it, and its record is kept so the next launch tries again. Silent when there is
 // nothing to sweep, which is every launch whose sessions all ended normally.
+//
+// A SESSION AN OLDER YOLO STARTED (PL-8): its files are root's, in LegacyStateDir, and a launch
+// runs no root command, so the record is kept (closed, never unlinked: it is the only pointer to
+// those files) and the sweep warns ONCE, naming the administrator's next step. Whether a session
+// is one is the existence of its legacy Seatbelt profile, the one path in the legacy dir a launch
+// ever looks at (Deps.PathExists; nil looks at nothing). Setup removes those files.
 func sweepGoneSessions(deps Deps, out printer, dir string) {
 	if dir == "" {
 		return
@@ -305,6 +316,7 @@ func sweepGoneSessions(deps Deps, out printer, dir string) {
 	if err != nil {
 		return
 	}
+	warnedLegacy := false
 	for _, path := range matches {
 		key := strings.TrimSuffix(filepath.Base(path), sessionRecordSuffix)
 		if _, _, ok := parseSessionKey(key); !ok {
@@ -314,10 +326,22 @@ func sweepGoneSessions(deps Deps, out printer, dir string) {
 		if state != sessionGone {
 			continue
 		}
+		if deps.PathExists != nil && deps.PathExists(SessionProfilePath(key, LegacyStateDir())) {
+			if !warnedLegacy {
+				warnedLegacy = true
+				out.printf("[yellow]Warning: a macos-user session from an older yolo left root-owned "+
+					"files in %s[/yellow] (session %s). Launches no longer run root commands, so they "+
+					"cannot remove them. Run [bold]yolo macos-setup[/bold] (it asks for your password "+
+					"once), or remove them yourself: `sudo rm -f %s`.", LegacyStateDir(), key,
+					shquote.JoinDisplay(SessionFilePaths(key, LegacyStateDir())))
+			}
+			_ = f.Close()
+			continue
+		}
 		argv := append([]string{rmBin, "-f"}, SessionFilePaths(key, "")...)
-		if deps.Run(append([]string{"sudo"}, argv...)) != 0 {
+		if deps.Run(argv) != 0 {
 			out.printf("[yellow]Warning: could not remove the files a macos-user session that has "+
-				"ended left in %s[/yellow] (`sudo %s` failed). The next macos-user launch by this "+
+				"ended left in %s[/yellow] (`%s` failed). The next macos-user launch by this "+
 				"macOS user tries again; to remove them now, run that command.", stateDir,
 				shquote.JoinDisplay(argv))
 			_ = f.Close()
@@ -342,7 +366,7 @@ func openSessionRecordOrWarn(deps Deps, out printer, key string) *sessionRecord 
 	}
 	rec, err := openSessionRecord(dir, key)
 	if err != nil {
-		argv := append([]string{"sudo", rmBin, "-f"}, SessionFilePaths(key, "")...)
+		argv := append([]string{rmBin, "-f"}, SessionFilePaths(key, "")...)
 		out.printf("[yellow]Warning: could not record this session in %s (%v).[/yellow] It runs "+
 			"anyway, and removes its own files when it ends; if it is killed first, `%s` removes "+
 			"what it left in %s.", dir, err, shquote.JoinDisplay(argv), stateDir)
@@ -352,8 +376,8 @@ func openSessionRecordOrWarn(deps Deps, out printer, key string) *sessionRecord 
 }
 
 // sessionFileInvariants is PlanInvariants' rule for the per-session names: the plan carries a
-// session id, every file a session writes into the state dir is named by its key (so two sessions
-// of one workspace never share one), and the plan removes its own Seatbelt profile and every env
+// session id, every file a session writes into the staging root is named by its key (so two
+// sessions of one workspace never share one), and the plan removes its own Seatbelt profile and every env
 // and CA file it writes when the session ends.
 func sessionFileInvariants(plan RunPlan) []string {
 	var problems []string

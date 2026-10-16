@@ -311,7 +311,7 @@ func TestRunMacosUserDeliversTheHostNixClientToTheAgent(t *testing.T) {
 	d.Out = &out
 	d.HostNix = func() HostNix { return HostNix{BinDir: fakeNixStoreBin} }
 	envFiles := map[string]string{}
-	d.InstallRootFile = func(path, content, mode string) bool {
+	d.WriteHostFile = func(path, content string, mode os.FileMode) bool {
 		envFiles[path] = content
 		return true
 	}
