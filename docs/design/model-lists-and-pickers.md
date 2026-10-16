@@ -2308,46 +2308,42 @@ The options, as the walkthrough drafted them:
     model and on another maker's, and one copilot turn, under `-p bedrock-bridge`, by a human,
     are what is left to watch.
 
-15. 💬 <a id="OQ-ML4"></a>**[OQ-ML4](#OQ-ML4): Does the `models.json` derive inherit pi's catalog facts for a row that states none?**
+15. 💬 <a id="OQ-ML4"></a>**[OQ-ML4](#OQ-ML4): When your config doesn't list a model's facts, should yolo fill them in from pi's catalog?**
 
-    Requested by a downstream pack consumer: a declared row that states no thinking levels loses
-    pi's catalog map, so `--thinking xhigh` is clamped. `base` inherits those facts on the model-list
-    surface, but `config-ref` says the keys that do so are "read by PI's model-list render alone",
-    leaving the `models.json` derive uncovered.
+    yolo writes your pi models into `models.json` (each model's facts, such as thinking levels)
+    and `yolo-model-lists.json` (pi's menu). A row that lists no thinking levels gets none in
+    `models.json`, and pi trusts the row over its catalog, so `--thinking xhigh` is turned down.
+    The menu file lets a row say `base: <a model pi knows>` to borrow pi's facts;
+    `models.json` cannot.
 
-    - **A — The derive fills a row that states none from pi's catalog**, by the row's id or its
-      `base`, so both surfaces behave the same.
-    - **B — Extend `base` to the `models.json` surface**, one mechanism for both.
-    - **C — Document `base` as model-list-surface only**; leave the row as written.
+    - **A — yolo fills in missing facts from pi's catalog**, by the model's id or its `base`.
+    - **B — `base` works in `models.json` too**, so a row borrows facts only when it says `base`.
+    - **C — Leave it**, and document `base` as menu-only.
 
-    <!-- vantage: question id=OQ-ML4 leaning="A: it makes the two rendered surfaces one behavior, while B overloads a key the model-list resolver owns onto a surface it never read. C is what the reference already implies and is the only option that leaves the clamp in place." -->
+    <!-- vantage: question id=OQ-ML4 leaning="A: both files then behave the same with nothing to write. B makes you write base on every row to get it, and C keeps the turned-down thinking level." -->
 
-    _Leaning:_ A: it makes the two rendered surfaces one behavior, while B overloads a key the
-    model-list resolver owns onto a surface it never read. C is what the reference already implies
-    and is the only option that leaves the clamp in place.
+    _Leaning:_ A: both files then behave the same with nothing to write. B makes you write `base`
+    on every row to get it, and C keeps the turned-down thinking level.
 
     **Answer:**
     > _(empty — fill in when decided)_
 
-16. 💬 <a id="OQ-ML5"></a>**[OQ-ML5](#OQ-ML5): Does the pi derive emit `sharedModels` and `extends` on both rendered surfaces?**
+16. 💬 <a id="OQ-ML5"></a>**[OQ-ML5](#OQ-ML5): Should yolo write a model's facts once and point at them, instead of copying them into every row?**
 
-    A downstream pack consumer's pi extension already reads `sharedModels`/`extends`; the yolo side
-    would emit a `sharedModels` entry per referenced model and an `extends` on each row, instead of
-    restating price, window, output cap and reasoning flag per route, on both `models.json` and
-    `yolo-model-lists.json`.
+    One model often appears once per route (Bedrock, OpenRouter), and yolo copies its price,
+    context size, output limit and reasoning flag into each row. The consumer's pi build already
+    reads a shorter form: `sharedModels` holds the facts once, and a row says `extends` to use them.
 
-    - **A — Both surfaces**, with the acceptance: no route reports pi's 128000/16384 defaults, a
-      same-value restatement fails a test, an unresolvable reference is refused by `yolo check` and
-      by pi, and a lower `contextWindow` under an inherited `workingContextWindow` fails loudly.
-    - **B — The model-list surface only**; `models.json` rows stay as written.
-    - **C — Decline**; rows keep restating their facts.
+    - **A — Yes, in both files**, done when no row falls back to pi's generic sizes, a repeated
+      shared value fails a test, and a row pointing at missing facts is refused.
+    - **B — Only in the menu file**; `models.json` keeps full rows.
+    - **C — No**; rows keep their copies.
 
-    <!-- vantage: question id=OQ-ML5 leaning="A: it is the same benefit on both surfaces, and emitting only where a resolver already runs would leave the derived rows — the ones a provider pi does not ship gets — as the one place facts still drift. `extends` is not subsumed by `base`: the io design names them as different mechanisms, and the consumer's design argues it." -->
+    <!-- vantage: question id=OQ-ML5 leaning="A: the same benefit in both files. B leaves models.json, which holds the rows for providers pi does not ship, as the one place copies can drift apart. extends is not the same as base: base borrows from pi's catalog, extends from facts yolo wrote once." -->
 
-    _Leaning:_ A: it is the same benefit on both surfaces, and emitting only where a resolver
-    already runs would leave the derived rows — the ones a provider pi does not ship gets — as the
-    one place facts still drift. `extends` is not subsumed by `base`: the io design names them as
-    different mechanisms, and the consumer's design argues it.
+    _Leaning:_ A: the same benefit in both files. B leaves `models.json`, which holds the rows for
+    providers pi does not ship, as the one place copies can drift apart. `extends` is not the same
+    as `base`: `base` borrows from pi's catalog, `extends` from facts yolo wrote once.
 
     **Answer:**
     > _(empty — fill in when decided)_
