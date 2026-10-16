@@ -429,6 +429,22 @@ func ApplyForks(packs []*Pack) ([]*Pack, error) {
 		// The fork pack's root, which a patched fork's series directory is relative to: a reader of
 		// the base's program (the host floor) reads the series through it.
 		base.Decl.Contributes[at].ForkRoot = f.Root
+		// The fork's `launch_computed` for its bin, merged into the base's (packdecl.MergeForkComputed;
+		// docs/reference/pack-system.md#LC-D1), checked against the base's launch selection, which
+		// the fork pack's own validation could not see.
+		if own := forkLaunchComputed(packs, f); len(own) > 0 {
+			if probs := packdecl.ForkLaunchComputedProblems(f.Pack, f.Bin, base.Decl.Contributes[at].LaunchSelection,
+				own); len(probs) > 0 {
+				problems = append(problems, probs...)
+				continue
+			}
+			merged := make(map[string][]packdecl.LaunchComputedFlag, len(base.Decl.LaunchComputedByBin)+1)
+			for bin, flags := range base.Decl.LaunchComputedByBin {
+				merged[bin] = flags
+			}
+			merged[f.Bin] = packdecl.MergeForkComputed(base.Decl.LaunchComputedByBin[f.Bin], own, f.Pack)
+			base.Decl.LaunchComputedByBin = merged
+		}
 	}
 	if len(problems) > 0 {
 		sort.Strings(problems)
@@ -463,6 +479,16 @@ func forkContributionOf(packs []*Pack, f Fork) packdecl.Contribution {
 		}
 	}
 	return packdecl.Contribution{}
+}
+
+// forkLaunchComputed is the `launch_computed` entries f's own pack declares for f's bin, nil for none.
+func forkLaunchComputed(packs []*Pack, f Fork) []packdecl.LaunchComputedFlag {
+	for _, p := range packs {
+		if p != nil && p.Name == f.Pack && p.Decl != nil {
+			return p.Decl.LaunchComputedByBin[f.Bin]
+		}
+	}
+	return nil
 }
 
 // copyPackDecl copies a pack deep enough to rewrite its contribution list: the Pack, its manifest,
