@@ -560,6 +560,6 @@ implementation decision under them.
 | [`claude-oauth-interposition.md`](../reference/claude-oauth-interposition.md#why-there-is-a-file-on-disk-at-all) | the channel table this doc re-reads for 2.1.284, the interception it retires, and [OQ-CI1](../reference/claude-oauth-interposition.md#OQ-CI1) |
 | [`agent-credentials.md`'s OpenAI service](../reference/agent-credentials.md#openai-one-writer) | the one-writer, two-views design this copies |
 | [`agent-credentials.md`](../reference/agent-credentials.md#the-claude-oauth-broker) | the broker's rulings, its floors and the background refresher [CL-D5](#CL-D5) retunes |
-| [`claude-oauth-refresh-mechanics.md`](../research/claude-oauth-refresh-mechanics.md) | the vendor's refresh state machine, including why writing the file is the right hook |
+| [`claude-oauth-interposition.md`](../reference/claude-oauth-interposition.md#why-its-this-way) | the vendor's refresh behavior as it bears on yolo: the three protections an interception jail has, why the background refresh loop stays, and what is unmeasured |
 | [`wire-bridge.md`](../reference/wire-bridge.md#caller-authentication) | the caller token and ports that options B and C would reuse |
 | [`loopback-tls-reachability.md`](../reference/loopback-tls-reachability.md#a-nested-jail-is-structurally-blind-to-this) | why a nested jail cannot verify a shared-namespace change, which is why [OQ-CL1](#OQ-CL1)'s leaning asks for a real rootless host |

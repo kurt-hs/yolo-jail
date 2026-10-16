@@ -17,7 +17,8 @@ package darwinpkg
 
 // How this relates to the container backends' nix path — what each produces, why
 // only one has a /lib farm, and where a missing build is decided:
-// docs/reference/nix-across-backends.md
+// docs/reference/macos-user-nix-and-features.md (How nix works here) and
+// docs/reference/image-staging-vs-baking.md (Which packages reach the build)
 
 import (
 	"encoding/json"

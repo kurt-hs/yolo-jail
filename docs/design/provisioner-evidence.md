@@ -50,8 +50,9 @@ resolvers, named from the **record** side where this doc names the same mechanis
 floor and its provisioning stage),
 [`provisioner-sets.md` §15](provisioner-sets.md#15-what-a-mac-session-should-measure)
 (the five Mac items' results and what each decides), and
-[`../reference/nix-across-backends.md`](../reference/nix-across-backends.md) (what each backend's
-nix path produces, as built).
+[`../reference/image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md) and
+[`../reference/macos-user-nix-and-features.md`](../reference/macos-user-nix-and-features.md#how-nix-works-here)
+(what each backend's nix path produces, as built).
 
 ---
 
