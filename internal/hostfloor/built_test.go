@@ -838,6 +838,10 @@ func TestAMacFloorBuildsAPlainForkThroughTheMacosUserAct(t *testing.T) {
 	if !strings.Contains(w.out.String(), "as the macos-user sandbox account, sealed under Seatbelt") {
 		t.Errorf("the line that starts the build does not say the sandbox account builds it:\n%s", w.out.String())
 	}
+	// The setup's run-as rule asks for no password, so the line promises no prompt.
+	if strings.Contains(w.out.String(), "password") {
+		t.Errorf("the line that starts the build says a password may be asked for:\n%s", w.out.String())
+	}
 	if strings.Contains(w.out.String(), "every jail on this machine reuses it") {
 		t.Errorf("a Mac's build is described as one every jail reuses, which a darwin build is not:\n%s",
 			w.out.String())

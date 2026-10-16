@@ -1,6 +1,11 @@
 package macosuser
 
-import "github.com/mschulkind-oss/yolo-jail/internal/shquote"
+import (
+	"errors"
+	"strings"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
+)
 
 // preconditions.go is THE list of machine and workspace conditions a macos-user launch refuses
 // without, asked before the nix build. RunMacosUser asks them in this order and stops at the
@@ -27,6 +32,26 @@ type LaunchProbes struct {
 	PathIsDir         func(path string) bool
 	// RunBash runs a bash script and returns its exit status.
 	RunBash func(script string) int
+	// StagingRoot observes the staging root at path without following a link
+	// (stagingRootFactsReal); JudgeStagingRoot decides it. nil is a root that could not be
+	// inspected, which refuses.
+	StagingRoot func(path string) StagingRootFacts
+	// RunAsGrant reports whether readiness probe G2 (RunAsGrantProbeArgv) exits 0. nil answers
+	// no, which refuses.
+	RunAsGrant func() bool
+}
+
+// errNoStagingRootProbe is the facts of a caller that wired no StagingRoot probe: unknown, which
+// refuses, never a pass.
+var errNoStagingRootProbe = errors.New("no staging-root probe")
+
+// stagingRootVerdict is JudgeStagingRoot over this machine's staging root, as the caller runs.
+func (p LaunchProbes) stagingRootVerdict() StagingRootVerdict {
+	f := StagingRootFacts{Err: errNoStagingRootProbe}
+	if p.StagingRoot != nil {
+		f = p.StagingRoot(StagingRoot())
+	}
+	return JudgeStagingRoot(f, p.Geteuid())
 }
 
 // launchProbes is the launch's own answer to every question below.
@@ -38,18 +63,24 @@ func (d Deps) launchProbes() LaunchProbes {
 		SandboxUserExists: d.SandboxUserExists,
 		PathIsDir:         d.PathIsDir,
 		RunBash:           d.RunBash,
+		StagingRoot:       d.StagingRootFacts,
+		RunAsGrant:        d.RunAsGrant,
 	}
 }
 
 // Precondition IDs, for the Requires lists and for callers that key on one.
 const (
-	PreconditionMacOS           = "macos"
-	PreconditionNotRoot         = "not-root"
-	PreconditionSeatbelt        = "sandbox-exec"
-	PreconditionSandboxUser     = "sandbox-user"
-	PreconditionSandboxHome     = "sandbox-home"
-	PreconditionNeutralGround   = "workspace-location"
-	PreconditionWorkspaceShared = "workspace-shared"
+	PreconditionMacOS            = "macos"
+	PreconditionNotRoot          = "not-root"
+	PreconditionSeatbelt         = "sandbox-exec"
+	PreconditionSandboxUser      = "sandbox-user"
+	PreconditionSandboxHome      = "sandbox-home"
+	PreconditionStagingRoot      = "staging-root"
+	PreconditionStagingRootOwner = "staging-root-owner"
+	PreconditionStagingRootSafe  = "staging-root-safe"
+	PreconditionRunAsGrant       = "run-as-grant"
+	PreconditionNeutralGround    = "workspace-location"
+	PreconditionWorkspaceShared  = "workspace-shared"
 )
 
 // Precondition is one condition a macos-user launch refuses without.
@@ -176,6 +207,114 @@ func LaunchPreconditions() []Precondition {
 			},
 		},
 		{
+			// THE STAGING ROOT, the host-owned directory every launch stages what the sandbox
+			// reads into (PL-1): `yolo macos-setup` creates it, so a missing one is a Mac set up by
+			// an older yolo or not at all. Unreadable is asked here too, because unknown is a
+			// refusal, never a pass. The three staging-root rows are one probe judged three ways
+			// (JudgeStagingRoot), split so each refusal names the one remedy that reaches it.
+			// docs/design/macos-user-privilege-lifecycle.md#OQ-MP10 is the ruling.
+			ID: PreconditionStagingRoot, Name: "the staging directory",
+			Requires: []string{PreconditionMacOS},
+			holds: func(p LaunchProbes, _ string) bool {
+				v := p.stagingRootVerdict()
+				return v != StagingRootAbsent && v != StagingRootUnknown
+			},
+			Ready: func(string) string { return "Staging directory " + StagingRoot() + " is present" },
+			Unmet: func(string) string {
+				return "The staging directory " + StagingRoot() + " does not exist or cannot be read"
+			},
+			Fix: func(string) string {
+				return "Run the one-time setup as your normal admin user (not with sudo): yolo macos-setup"
+			},
+			Refusal: func(string) string {
+				return "[bold red]The macos-user staging directory " + StagingRoot() + " is missing.[/bold red]\n" +
+					"This Mac was set up by an older yolo, or not at all. Run the one-time setup as your " +
+					"normal admin user, not with sudo; it asks for your password once:\n" +
+					"  [bold]yolo macos-setup[/bold]"
+			},
+		},
+		{
+			// SQUATTING. The enrolled host user is whoever owns the staging root (PL-3): whoever
+			// owns it controls what the sandbox reads, so a launch refuses one it does not own, and
+			// one macOS user per Mac runs the backend. It requires not running as root too: under
+			// sudo the user's own root reads as someone else's, and this remedy would delete it.
+			ID: PreconditionStagingRootOwner, Name: "the staging directory's owner",
+			Requires: []string{PreconditionNotRoot, PreconditionStagingRoot},
+			holds:    func(p LaunchProbes, _ string) bool { return p.stagingRootVerdict() != StagingRootForeign },
+			Ready:    func(string) string { return "Staging directory " + StagingRoot() + " is yours" },
+			Unmet: func(string) string {
+				return "The staging directory " + StagingRoot() + " belongs to another account"
+			},
+			Fix: func(string) string {
+				return "One macOS user per Mac runs the macos-user backend. If another user set it up, they " +
+					"run yolo macos-teardown; otherwise an administrator inspects it (ls -le " + StagingRoot() +
+					") and removes it (sudo rm -rf " + StagingRoot() + "). Then run yolo macos-setup."
+			},
+			Refusal: func(string) string {
+				return "[bold red]Refusing the macos-user launch: " + StagingRoot() +
+					" belongs to another account.[/bold red]\n" +
+					"A launch stages what the sandbox reads there, so it must be yours.\n" +
+					"If another macOS user set this Mac up, they run [bold]yolo macos-teardown[/bold] first. " +
+					"Otherwise an administrator inspects it with `ls -le " + StagingRoot() + "` and removes it " +
+					"with `sudo rm -rf " + StagingRoot() + "`.\n" +
+					"Then run [bold]yolo macos-setup[/bold] as your normal admin user."
+			},
+		},
+		{
+			// A link, a mode another account can write through, or an access list could let
+			// another account change what the sandbox reads, however the owner is right.
+			ID: PreconditionStagingRootSafe, Name: "the staging directory's safety",
+			Requires: []string{PreconditionStagingRootOwner},
+			holds:    func(p LaunchProbes, _ string) bool { return p.stagingRootVerdict() == StagingRootOK },
+			Ready: func(string) string {
+				return "Staging directory " + StagingRoot() + " is a directory only you can write, with no access list"
+			},
+			Unmet: func(string) string {
+				return "The staging directory " + StagingRoot() +
+					" is a link, writable by others, or carries an access list"
+			},
+			Fix: func(string) string {
+				return "Run yolo macos-setup as your normal admin user; it resets the directory's mode and access list."
+			},
+			Refusal: func(string) string {
+				return "[bold red]Refusing the macos-user launch: " + StagingRoot() +
+					" is not safe to stage into[/bold red] (a symbolic link, writable by another account, " +
+					"or carrying an access list).\n" +
+					"Repair it as your normal admin user:\n" +
+					"  [bold]yolo macos-setup[/bold]"
+			},
+		},
+		{
+			// READINESS PROBE G2: the one-time setup's rule, `<you> ALL=(_yolojail) NOPASSWD:
+			// /usr/bin/env`, through which every crossing into the sandbox account goes. Without
+			// it the launch would stop at a password prompt, or fail with no terminal; asked here,
+			// before the build, it refuses naming the setup. It needs the account to name.
+			ID: PreconditionRunAsGrant, Name: "the run-as rule",
+			Requires: []string{PreconditionSandboxUser},
+			holds:    func(p LaunchProbes, _ string) bool { return p.RunAsGrant != nil && p.RunAsGrant() },
+			Ready: func(string) string {
+				return "sudo runs commands as " + SandboxUser + " without a password (" + SudoersFile + ")"
+			},
+			Unmet: func(string) string {
+				return "sudo cannot run commands as " + SandboxUser + " without a password"
+			},
+			Fix: func(string) string {
+				return "Run the one-time setup as your normal admin user: yolo macos-setup. It installs one rule, " +
+					SudoersFile + ", which runs commands as " + SandboxUser + ", never as root. On a managed " +
+					"Mac that refuses it, ask your administrator to allow that rule."
+			},
+			Refusal: func(string) string {
+				return "[bold red]This launch would stop at a password prompt:[/bold red] sudo cannot run " +
+					"commands as " + SandboxUser + " without one (`" + strings.Join(RunAsGrantProbeArgv(), " ") +
+					"` failed).\n" +
+					"Run the one-time setup as your normal admin user, not with sudo; it asks for your " +
+					"password once:\n" +
+					"  [bold]yolo macos-setup[/bold]\n" +
+					"On a managed Mac that refuses it, ask your administrator to allow the rule it prints. " +
+					"`yolo check --no-build` asks the same question."
+			},
+		},
+		{
 			// THE WORKSPACE MUST NOT BE IN A USER'S HOME — and this is asked BEFORE the ACL
 			// probe below, which is the whole point of where it sits. A workspace under a home
 			// has no sandbox-group ACE either, so the probe fails for it too, and its refusal
@@ -264,6 +403,45 @@ func LaunchPreconditions() []Precondition {
 func unmetLaunchPrecondition(p LaunchProbes, workspace string) (Precondition, bool) {
 	for _, c := range LaunchPreconditions() {
 		if !c.Holds(p, workspace) {
+			return c, true
+		}
+	}
+	return Precondition{}, false
+}
+
+// privilegePreconditions are the setup's privilege facts: the staging root's three and the run-as
+// rule. PrivilegeUnmet asks them and what they require.
+var privilegePreconditions = []string{
+	PreconditionStagingRoot, PreconditionStagingRootOwner, PreconditionStagingRootSafe, PreconditionRunAsGrant,
+}
+
+// PrivilegeUnmet is the first of the privilege preconditions (the staging root's three and the
+// run-as rule), or of what they require, that does not hold on p, in the launch's order; false when
+// all hold. For an act that crosses into the sandbox account without a workspace of its own — the
+// capture and fork-build acts and the host floor that asks for them — so it refuses for the same
+// reasons as the launch, in the launch's words.
+func PrivilegeUnmet(p LaunchProbes) (Precondition, bool) {
+	all := LaunchPreconditions()
+	byID := map[string]Precondition{}
+	for _, c := range all {
+		byID[c.ID] = c
+	}
+	asked := map[string]bool{}
+	var want func(id string)
+	want = func(id string) {
+		if asked[id] {
+			return
+		}
+		asked[id] = true
+		for _, req := range byID[id].Requires {
+			want(req)
+		}
+	}
+	for _, id := range privilegePreconditions {
+		want(id)
+	}
+	for _, c := range all {
+		if asked[c.ID] && !c.Holds(p, "") {
 			return c, true
 		}
 	}
