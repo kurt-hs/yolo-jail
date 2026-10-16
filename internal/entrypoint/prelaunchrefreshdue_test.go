@@ -143,11 +143,12 @@ func TestRefreshDueOnChangeCountsAbsentToPresent(t *testing.T) {
 // leaving it to the program — but it records WHEN it failed (XB-D26 of
 // docs/design/pi-extension-store-builds.md), so that content is due again only once the failure
 // is older than the interval, never at every launch an offline hour makes. A success then
-// records the key and drops the failure.
+// records the key and drops the failure. The failure is an OFFLINE one, the registry unreachable:
+// one whose registry answered stops the launch instead (PD-NF1, updaterefusal_test.go).
 func TestRefreshDueOnChangeFailureIsThrottled(t *testing.T) {
 	p := newDueProbe(t)
 	p.setWatched(t, `{"packages":["git:a"]}`)
-	p.run(t, "", "FAKE_REFRESH_RC=1")
+	p.run(t, "", "FAKE_REFRESH_RC=1", registryDownEnv)
 	entries, _ := os.ReadDir(p.seenDir())
 	if len(entries) != 1 || !strings.HasSuffix(entries[0].Name(), ".failed") {
 		t.Fatalf("a failed refresh must record its failure and no content key, found %v", entries)
@@ -174,7 +175,7 @@ func TestRefreshDueOnChangeFailureIsThrottled(t *testing.T) {
 func TestAFailureOnOtherContentDoesNotThrottleNewContent(t *testing.T) {
 	p := newDueProbe(t)
 	p.setWatched(t, `{"packages":["git:a"]}`)
-	p.run(t, "", "FAKE_REFRESH_RC=1")
+	p.run(t, "", "FAKE_REFRESH_RC=1", registryDownEnv)
 	p.setWatched(t, `{"packages":["git:b"]}`)
 	p.run(t, "")
 	if n := countLine(p.logLines(t), "REFRESH"); n != 2 {

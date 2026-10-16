@@ -283,11 +283,13 @@ func TestNextLaunchKeepsANewInstallInFront(t *testing.T) {
 	waitForJobs(t, p, 1)
 }
 
-// TestAFailedBackgroundRefreshIsSaidOnceAtTheNextLaunch: the job cannot speak to the terminal, so
-// a refresh that failed leaves one line for the NEXT launch, naming the status, the log and how to
-// retry now; that launch says it once and the one after says nothing. The stamp still throttles:
-// the failed job stamped, as the launch path does.
-func TestAFailedBackgroundRefreshIsSaidOnceAtTheNextLaunch(t *testing.T) {
+// TestAFailedBackgroundRefreshIsRetriedInFrontAtTheNextLaunch: the job cannot speak to the
+// terminal, so a refresh that failed while its registry answered leaves a FAILED result for the
+// NEXT launch (PD-NF1). That launch says it, naming the status and the log, and does not run the
+// older content quietly: it runs the refresh again IN FRONT of the program, though the failed job
+// stamped. Here the retry succeeds, the program runs, the result is gone, and the launch after
+// says nothing.
+func TestAFailedBackgroundRefreshIsRetriedInFrontAtTheNextLaunch(t *testing.T) {
 	p := newTimingProbe(t, false, false)
 	p.run(t, "", "FAKE_REFRESH_RC=3")
 	waitForJobs(t, p, 1)
@@ -300,7 +302,7 @@ func TestAFailedBackgroundRefreshIsSaidOnceAtTheNextLaunch(t *testing.T) {
 
 	stdout, stderr := p.run(t, "")
 	for _, want := range []string{"⚠ tool: the background refresh (update --extensions) failed (status 3)",
-		p.jobLog(), "to retry now, run: tool update --extensions"} {
+		p.jobLog(), "retrying it before tool starts"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("the next launch must say %q:\n%s", want, stderr)
 		}
@@ -308,11 +310,15 @@ func TestAFailedBackgroundRefreshIsSaidOnceAtTheNextLaunch(t *testing.T) {
 	if strings.Contains(stdout, "background refresh") {
 		t.Errorf("the report belongs on stderr, never in the program's stdout: %q", stdout)
 	}
-	if countLine(p.logLines(t), "LAUNCH:") != 2 || !strings.Contains(stdout, "RAN") {
-		t.Errorf("the launch that reports must still run the program: %v %q", p.logLines(t), stdout)
+	log := p.logLines(t)
+	if countLine(log, "REFRESH") != 2 || log[len(log)-1] != "LAUNCH:" || !strings.Contains(stdout, "RAN") {
+		t.Errorf("the next launch must run the refresh again in front of the program, then the program: %v %q", log, stdout)
 	}
 	if strings.Contains(stderr, "refreshing in the background") {
-		t.Errorf("inside the hour the failed refresh must not be retried:\n%s", stderr)
+		t.Errorf("the retry runs in front, not in another background job:\n%s", stderr)
+	}
+	if _, err := os.Stat(p.jobResult()); !os.IsNotExist(err) {
+		t.Errorf("a refresh that succeeded must clear the failed result (err=%v)", err)
 	}
 
 	_, stderr = p.run(t, "")
@@ -321,10 +327,69 @@ func TestAFailedBackgroundRefreshIsSaidOnceAtTheNextLaunch(t *testing.T) {
 	}
 }
 
-// TestABackgroundRefreshThatTimesOutIsSaidAtTheNextLaunch: a job whose act outlives the bound
-// stamps, like any other outcome, and leaves the timeout for the next launch to say once — the
-// bound, the log and the way to retry — and the launch after says nothing.
-func TestABackgroundRefreshThatTimesOutIsSaidAtTheNextLaunch(t *testing.T) {
+// TestAFailedBackgroundRefreshRefusesWhenTheRetryFails: the next launch's retry fails as well, its
+// registry answering, so the launch STOPS (PD-NF1) and the result is kept, so the launch after
+// retries in front again rather than starting another background job and running the older
+// content meanwhile. The user's hatch then runs what is installed, with no retry, and clears it.
+func TestAFailedBackgroundRefreshRefusesWhenTheRetryFails(t *testing.T) {
+	p := newTimingProbe(t, false, false)
+	p.run(t, "", "FAKE_REFRESH_RC=3")
+	waitForJobs(t, p, 1)
+
+	stdout, stderr, err := p.runStatus(t, "", "FAKE_REFRESH_RC=3")
+	if code := exitCode(err); code != UpdateRefusedStatus {
+		t.Fatalf("a retry that failed again must refuse with status %d, got %d:\n%s", UpdateRefusedStatus, code, stderr)
+	}
+	for _, want := range []string{"yolo: ERROR: tool: the pre-launch refresh (update --extensions) failed (status 3)",
+		"\nRepair:\n", "\nStart anyway:\n", "YOLO_USE_INSTALLED=tool tool"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("the refusal lacks %q:\n%s", want, stderr)
+		}
+	}
+	if strings.Contains(stdout, "RAN") || countLine(p.logLines(t), "LAUNCH:") != 1 {
+		t.Errorf("a refused launch must not run the program: %v %q", p.logLines(t), stdout)
+	}
+	if _, err := os.Stat(p.jobResult()); err != nil {
+		t.Errorf("a refused retry must keep the failed result for the next launch: %v", err)
+	}
+
+	refreshes := countLine(p.logLines(t), "REFRESH")
+	stdout, stderr = p.run(t, "", "YOLO_USE_INSTALLED=tool", "FAKE_REFRESH_RC=3")
+	if !strings.Contains(stdout, "RAN") || !strings.Contains(stderr, "as YOLO_USE_INSTALLED asks") {
+		t.Errorf("the hatch must run what is installed, saying why:\n%s", stderr)
+	}
+	if n := countLine(p.logLines(t), "REFRESH"); n != refreshes {
+		t.Errorf("the hatch must not retry the refresh (ran %d more)", n-refreshes)
+	}
+	if _, err := os.Stat(p.jobResult()); !os.IsNotExist(err) {
+		t.Errorf("a launch the hatch covers must clear the failed result (err=%v)", err)
+	}
+}
+
+// TestABackgroundRefreshThatCouldNotCheckLeavesNothing: a job whose act failed while its registry
+// could not be reached could not check for a newer version (PD-NF3): nothing is left for the next
+// launch, which runs the program with no retry inside the hour, the failed job having stamped.
+func TestABackgroundRefreshThatCouldNotCheckLeavesNothing(t *testing.T) {
+	p := newTimingProbe(t, false, false)
+	p.run(t, "", "FAKE_REFRESH_RC=3", registryDownEnv)
+	jobLog := waitForJobs(t, p, 1)
+	if !strings.Contains(jobLog, "could not be reached to check for a newer version") {
+		t.Errorf("the job's log must say it could not check:\n%s", jobLog)
+	}
+	if _, err := os.Stat(p.jobResult()); !os.IsNotExist(err) {
+		t.Errorf("a job that could not check must leave no result (err=%v)", err)
+	}
+	stdout, stderr := p.run(t, "", registryDownEnv)
+	if !strings.Contains(stdout, "RAN") || strings.Contains(stderr, "background refresh") ||
+		countLine(p.logLines(t), "REFRESH") != 1 {
+		t.Errorf("the next launch must run the program, quietly, without a retry: %v\n%s", p.logLines(t), stderr)
+	}
+}
+
+// TestABackgroundRefreshThatTimesOutIsRetriedAtTheNextLaunch: a job whose act outlives the bound
+// stamps, like any other outcome, and with its registry answering leaves the timeout for the next
+// launch, which says it — the bound and the log — and retries the refresh in front.
+func TestABackgroundRefreshThatTimesOutIsRetriedAtTheNextLaunch(t *testing.T) {
 	p := newTimingProbe(t, false, false)
 	p.bodyPatch = map[string]string{"\nUPDATE_TIMEOUT=60 ": "\nUPDATE_TIMEOUT=1 ", "\nUPDATE_GRACE=5\n": "\nUPDATE_GRACE=1\n"}
 	p.run(t, "", "FAKE_REFRESH_WAIT="+filepath.Join(p.home, "never"))
@@ -338,7 +403,7 @@ func TestABackgroundRefreshThatTimesOutIsSaidAtTheNextLaunch(t *testing.T) {
 
 	_, stderr := p.run(t, "")
 	for _, want := range []string{"⚠ tool: the background refresh (update --extensions) timed out after 1s",
-		p.jobLog(), "to retry now, run: tool update --extensions"} {
+		p.jobLog(), "retrying it before tool starts"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("the next launch must say %q:\n%s", want, stderr)
 		}
