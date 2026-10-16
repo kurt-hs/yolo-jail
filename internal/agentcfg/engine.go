@@ -1,6 +1,6 @@
 // Package agentcfg is the pure, codec-agnostic composition engine behind
-// yolo's generated-config pipeline (docs/plans/agent-settings-composition.md,
-// §3.1 pipeline, §4 layers, §5 overlay).
+// yolo's generated-config pipeline (docs/reference/pack-system.md,
+// "Config surfaces and the compose engine").
 //
 // yolo regenerates every config file it owns (Claude/Codex/pi settings, MCP,
 // LSP, mise, identity — the "surfaces" of §1.1) on each boot from an ordered

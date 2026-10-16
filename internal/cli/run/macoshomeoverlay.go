@@ -33,7 +33,7 @@ import (
 // tree out, so it maps nothing and cannot disagree with the tree about a path.
 //
 // It also survives the change that should replace it. The per-workspace sandbox home
-// (docs/design/macos-user-home-tiers.md) moves only the DESTINATION home; the overlay
+// (docs/reference/macos-user-home-tiers.md) moves only the DESTINATION home; the overlay
 // itself, and everything below, is unchanged.
 //
 // WHAT THIS IS NOT: it is not a merge. The overlay holds only what yolo composes, and

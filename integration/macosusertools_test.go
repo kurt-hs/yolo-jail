@@ -25,7 +25,7 @@ import (
 // WHAT IT SETTLES. Two launch warnings were RETIRED on 2026-09-12 — `mise_tools` and
 // `lsp_servers` each used to say "this backend installs nothing" — and both were removed
 // on the strength of code that had never run
-// (docs/design/macos-user-provisioning.md §10.6, whose own ⚠ says *"the absence of a
+// (docs/reference/macos-user-provisioning.md, "The two retired warnings, and the rule that retired them", whose own ⚠ says *"the absence of a
 // warning is not evidence of a feature"*). This is the evidence. If a declared tool is
 // absent here, that retirement was premature and the warning it deleted should come back.
 //

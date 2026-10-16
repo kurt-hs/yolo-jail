@@ -19,8 +19,7 @@ which is the authority, with [`OQ-HC1`](../reference/host-agent-environment.md#o
 [`OQ-HC3`](../reference/host-agent-environment.md#oq-hc3) in its why-appendix. MEASURED after the
 build: `yolo config render --at host` for `codex` and `opencode` on 2026-09-28, and each of the
 build's tests failing with its call site removed. UNMEASURED: no agent has been started against a
-file a host apply wrote. The companion sketch,
-[`host-computed-layer-plan.md`](host-computed-layer-plan.md), is a pointer.
+file a host apply wrote. The companion sketch was deleted on 2026-10-15.
 
 **What stays here:** the [implementation-decision ledger](#12-decision-ledger), `HC-D1` to
 `HC-D28`, which code comments and references cite by id, and

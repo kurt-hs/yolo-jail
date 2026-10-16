@@ -47,8 +47,7 @@ rebuild restores it ([Known limit](#known-limit)).
 
 **Needs your ruling:** None.
 
-**Reads with:** [implementation sketch](in-jail-nix-roots-plan.md) (superseded by the build),
-[`workspace-path-mirroring.md`](workspace-path-mirroring.md) (no mirroring needed),
+**Reads with:** [`workspace-path-mirroring.md`](workspace-path-mirroring.md) (no mirroring needed),
 [`nix-across-backends.md`](../reference/nix-across-backends.md) (backend boundaries).
 
 ---

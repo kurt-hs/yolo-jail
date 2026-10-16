@@ -179,7 +179,7 @@ func TestFlakeBuildsTheNoncontainerProfileFromTheFloor(t *testing.T) {
 		t.Errorf("flake.nix's `packages.%s` no longer builds from "+
 			"`noncontainerFloorPackages` — a notch with no image would launch with "+
 			"whatever the user declared and nothing else, which is the state "+
-			"docs/design/macos-user-provisioning.md exists to end:\n%s",
+			"docs/reference/macos-user-provisioning.md exists to end:\n%s",
 			FloorProfileAttr, body)
 	}
 

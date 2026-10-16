@@ -3,8 +3,8 @@ package darwinpkg
 // floor_policy_test.go is THE ASSERTION OQ-P2 NEEDS AND NIX CANNOT PROVIDE.
 //
 // The two rulings behind the floor compose with a gap, and the gap is the whole
-// reason this file exists (docs/design/macos-user-provisioning.md, the note under
-// the Decision Ledger):
+// reason this file exists (docs/reference/macos-user-provisioning.md, "The exclusion
+// list has two kinds of entry, and the fatal protects only one"):
 //
 //	| kind of exclusion   | forgotten entry does what                          |
 //	|---------------------|----------------------------------------------------|
@@ -90,8 +90,8 @@ func TestTheGNUPolicyGateActuallyFires(t *testing.T) {
 // Every name on this list can be removed from the floor by a one-word edit to an
 // exclusion list, and the result is a jail that launches perfectly and then fails
 // on the user's first real command — which is the failure class the whole design
-// is about (§2 of macos-user-provisioning.md: four config keys that render and
-// install nothing). `mise` and `nodejs` in particular are what half two's
+// is about (macos-user-provisioning.md, "What each imperative config key delivers
+// here"). `mise` and `nodejs` in particular are what the stage's
 // provisioning stage EXECUTES; without them the stage fails on its first line.
 func TestTheFloorStillHasTheToolsTheStageNeeds(t *testing.T) {
 	on := map[string]struct{}{}

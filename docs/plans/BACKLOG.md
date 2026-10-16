@@ -71,7 +71,6 @@ restated in [roadmap.md](roadmap.md) instead of linked from it.
 | [../reference/what-yolo-is.md](../reference/what-yolo-is.md) | subsystem boundaries; where composition could run; how logic ships | deciding *where* something executes |
 | [../reference/third-party-pack-logic.md](../reference/third-party-pack-logic.md) | the projector protocol; build/source tiers; trust | implementing pack logic |
 | [agent-config-packs.md](agent-config-packs.md) | the concrete pack proposal: fetch, lockfile, staging, verbs | implementing pack plumbing |
-| [composed-config-work.md](composed-config-work.md) | per-item detail for the prism items below | implementing a prism item |
 
 ---
 
@@ -109,8 +108,7 @@ because surface data can't become pack data while it hardcodes the jail path.
 
 **Gate RESOLVED 2026-07-26:** `reset` also truncates the surface file to the pure render, so
 nothing is left to adopt and first-migration can safely adopt the on-disk file.
-**Stage B is fully unblocked.** Detail: [Ruling 1](../reference/config-migration-to-prism.md#ruling-1),
-[composed-config-work.md §2.1](composed-config-work.md).
+**Stage B is fully unblocked.** Detail: [Ruling 1](../reference/config-migration-to-prism.md#ruling-1).
 
 | # | Item | Kind |
 |---|---|---|

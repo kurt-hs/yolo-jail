@@ -11,7 +11,7 @@ import (
 )
 
 // provision.go is macos-user's PROVISIONING STAGE — half two of
-// docs/design/macos-user-provisioning.md: the imperative step every other backend runs
+// docs/reference/macos-user-provisioning.md: the imperative step every other backend runs
 // inside its jail, run here as a third privileged step between the bootstrap and the
 // agent (orchestrator.go).
 //

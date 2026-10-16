@@ -28,8 +28,7 @@ The earlier bounded experiment stays in
 **Start at [the baseline](#3-the-baseline-is-automatic-and-covers-earlier-commits)** — empty working diffs are not evidence.
 **Ruled:** the owner confirmed [CAC-D7](#CAC-D7) on 2026-10-09: `just done` selects Go checks by package impact.
 Landing (`just check-ci`) is unchanged.
-**Reads with:** [input research](../research/completion-check-inputs.md) (source evidence),
-[the companion sketch](change-aware-completion-plan.md) (not a build hand-off), and
+**Reads with:** [input research](../research/completion-check-inputs.md) (source evidence) and
 [suite speed](../plans/test-suite-speed.md) (independent timing work).
 
 ---
@@ -258,8 +257,8 @@ caller certificate. Direct executables and the project's declared tool-manager l
 initial resolution cases to prove. Opaque shims, custom workspaces, flags, C toolchains and
 unaccounted ambient readers are full-route cases, not silently normalized into another gate.
 Neither a full-environment hash nor a hand-maintained list of variable names proves that external
-files are unchanged. The [source preparation](change-aware-completion-plan.md#verification-context)
-names the remaining reader/profile work; promotion needs an executable positive default-profile
+files are unchanged. The [recorded `go env` context](#CAC-D11)
+closes the remaining reader/profile work; promotion needs an executable positive default-profile
 fixture, not a design that permanently disables inheritance.
 
 ## 4. The first shortcut is an exact allowlist
@@ -275,7 +274,6 @@ not from a proposed all-documentation convention:
 | [The roadmap](../plans/roadmap.md) | Priority/planning prose; source citations and planning routing must survive |
 | [Completion input research](../research/completion-check-inputs.md) | Source findings, not embedded instructions |
 | [This behavior design](change-aware-completion.md) | Planning behavior, not a runtime configuration |
-| [The companion sketch](change-aware-completion-plan.md) | Unbuilt implementation notes, not an executable fixture |
 
 This is a small initial set, not a claim that the rest of the corpus is sourceful. New allowlist
 entries require a reader survey and regression evidence. Unlisted paths always select full.
@@ -307,8 +305,8 @@ slugger into a regex and call that renderer equivalence.
 
 Broader analysis also compares the existing test's own target interpretation, which
 is not identical to the renderer. Keeping one renderer's anchors cannot silently break the Go
-citation test's distinct ATX/explicit-ID matching. The [anchor/referrer preparation](change-aware-completion-plan.md#anchors-and-incoming-references)
-records both mechanisms and the required adapter boundary.
+citation test's distinct ATX/explicit-ID matching. The [test-log census](#CAC-D10)
+replaced the adapter boundary the sketch proposed for both mechanisms.
 
 Strict rendering/link checks run on every actual changed Markdown file and affected incoming
 Markdown referrers, including line anchors, definitions and images. A conservative referrer
@@ -400,9 +398,8 @@ The final observer drain and clean/context comparison precede atomic record publ
 bounded observation, not OS-enforced immutability against a hostile writer.
 
 The Linux file-event diagnostic catches mutate/restore, but does not establish a complete
-portable monitor. [The companion sketch](change-aware-completion-plan.md#stable-interval)
-keeps startup, replacement, overflow, external-input and native-platform controls as explicit
-promotion gates. The suite-wide scheduling ruling is unchanged.
+portable monitor. The build replaced that observer with a before-and-after check and a lock
+([CAC-D12](#CAC-D12)). The suite-wide scheduling ruling is unchanged.
 
 ## 7. Later work must earn broader coverage
 
@@ -470,7 +467,7 @@ Acceptance requires the real `just done` entry point to demonstrate:
 
 Build order is read-only completion and automatic baseline first, then the proven prose shortcut.
 Only after those are independently accepted should package impact or exact result reuse be designed.
-The [companion sketch](change-aware-completion-plan.md#before-promotion) owns remaining tree investigation;
+[What shipped](#what-shipped) records what the build settled;
 engineering gaps go there, not into invented owner questions.
 
 ## Decision Ledger

@@ -18,7 +18,7 @@ import (
 // 2026-09-12 the machine tier, the workspace tier and the session tier were the same
 // directory: every workspace shared one ~/.claude, one set of transcripts, and one
 // composed briefing that concurrent launches raced to overwrite
-// (docs/design/macos-user-home-tiers.md §2). Alternative A′ gives the account a workspace
+// (docs/reference/macos-user-home-tiers.md, "The three tiers, and where each one lives"). The layout gives the account a workspace
 // tier without moving HOME — every directory the podman argv binds from
 // <workspace>/.yolo/home becomes a SYMLINK from the account home into that same sidecar,
 // and every pack-declared `scope: machine` dir stays put and is MIRRORED back into the
@@ -80,13 +80,13 @@ func TestMacosUserHomeTierIsPerWorkspace(t *testing.T) {
 		case got == "ABSENT":
 			t.Errorf("~/%s does not exist in the sandbox home. Every directory the podman "+
 				"argv binds from <workspace>/.yolo/home has to be a symlink here, or this "+
-				"backend has no workspace tier for it (runbook item 5, macos-user-home-tiers.md §5).",
+				"backend has no workspace tier for it (runbook item 5, macos-user-home-tiers.md, \"The layout: what is a symlink, what is a mirror\").",
 				rel)
 		case got == "NOT-A-SYMLINK":
 			t.Errorf("~/%s is a REAL path in the shared account home, not a symlink into %s.\n"+
 				"Every workspace on this Mac then shares it — which for ~/.claude means one "+
 				"set of transcripts and one composed briefing that concurrent launches race "+
-				"to overwrite (runbook item 5; macos-user-home-tiers.md §2).", rel, sidecarA)
+				"to overwrite (runbook item 5; macos-user-home-tiers.md, \"The three tiers, and where each one lives\").", rel, sidecarA)
 		case got != want:
 			t.Errorf("~/%s -> %s\nwant                 %s\n"+
 				"It points somewhere other than THIS workspace's sidecar. If the two differ "+
@@ -111,7 +111,7 @@ func TestMacosUserHomeTierIsPerWorkspace(t *testing.T) {
 			"a RELATIVE link (`../.claude-shared-credentials/…`) by design, and the kernel "+
 			"resolves `..` PHYSICALLY — so from ~/.claude, which is a link into the sidecar, "+
 			"`..` lands in the SIDECAR. Without this mirror the credential dangles "+
-			"(macos-user-home-tiers.md §5.3).", sidecarA, got, want)
+			"(macos-user-home-tiers.md, \"The mirror, and the relative credential link it exists for\").", sidecarA, got, want)
 	}
 
 	// ---- The credential: the relative link the hook wrote, and that the chain resolves ----
@@ -121,7 +121,7 @@ func TestMacosUserHomeTierIsPerWorkspace(t *testing.T) {
 		t.Errorf("~/.claude/.credentials.json -> %q, want %q.\n"+
 			"The RELATIVE spelling is the whole mechanism: it is what makes credential "+
 			"sharing one mechanism on every backend rather than a per-backend question every "+
-			"pack would have to feature-detect (macos-user-home-tiers.md §5.0). An absolute "+
+			"pack would have to feature-detect (macos-user-home-tiers.md OQ-HT4). An absolute "+
 			"target here means this backend grew a branch in the one hook they all share.", got, wantCredTarget)
 	}
 	// THE RESOLUTION IS PROVED WITH A PROBE FILE, NOT WITH .credentials.json, and that is
@@ -137,7 +137,7 @@ func TestMacosUserHomeTierIsPerWorkspace(t *testing.T) {
 			"so the chain breaks at the SIDECAR: `..` from ~/.claude resolves physically into "+
 			"%s, and whatever is at %s/.claude-shared-credentials is not reaching the account "+
 			"home's real directory. On a Mac this is a silent logout in every jail "+
-			"(runbook item 5; macos-user-home-tiers.md §5.3).", got, "machine-tier-bytes", sidecarA, sidecarA)
+			"(runbook item 5; macos-user-home-tiers.md, \"The mirror, and the relative credential link it exists for\").", got, "machine-tier-bytes", sidecarA, sidecarA)
 	}
 
 	// ---- The second workspace gets its OWN tier ----
@@ -163,7 +163,7 @@ func TestMacosUserHomeTierIsPerWorkspace(t *testing.T) {
 		t.Errorf("the second workspace SEES the first workspace's transcript marker %q in "+
 			"~/.claude/projects (%q).\nThe workspace tier did not separate: this is the leak "+
 			"the Seatbelt profile already denies under /Users and the shared home handed back "+
-			"anyway (runbook item 5; macos-user-home-tiers.md §2 symptom 2).", markerA, projectsB)
+			"anyway (runbook item 5; macos-user-home-tiers.md, \"The three tiers, and where each one lives\").", markerA, projectsB)
 	}
 
 	// SEPARATED, NOT ERASED — and this is the assertion that tells the two apart. "B does
@@ -316,7 +316,7 @@ func macosUserHomeTierWantLinks(sidecar string) map[string]string {
 // prefix so `-run '^TestMacosUser'` selects it there too.
 //
 // `..` resolves PHYSICALLY on both kernels — measured on Linux 2026-09-11 and confirmed on
-// macOS 26.5 the same day (macos-user-home-tiers.md §5.3) — which is what makes the
+// macOS 26.5 the same day (macos-user-home-tiers.md, "The mirror, and the relative credential link it exists for") — which is what makes the
 // credential half of this transfer.
 func TestMacosUserHomeTierProbeReadsARealLayout(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {

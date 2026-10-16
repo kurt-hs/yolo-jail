@@ -1,6 +1,6 @@
 // config.go implements `yolo config <subcommand>` — the runnable window into
-// the generated-config composition pipeline (docs/plans/agent-settings-composition.md
-// §6). Today it provides `yolo config render`, which runs the SAME renderer the
+// the generated-config composition pipeline (docs/reference/pack-system.md,
+// "Config surfaces and the compose engine"). Today it provides `yolo config render`, which runs the SAME renderer the
 // entrypoint boot render calls — render.Target.Compose, one implementation over a
 // notch parameter, rather than the hand-copy that claim used to rest on — and prints
 // what it would write, touching no live config. It runs host-side (the edit-before-launch
@@ -32,7 +32,7 @@ const configUsage = `Usage: yolo config <subcommand>
 
 Inspect the generated-config composition pipeline (the layered regeneration of
 agent settings/MCP/LSP/mise config). See 'yolo config-ref' and
-docs/plans/agent-settings-composition.md.
+docs/reference/pack-system.md.
 
 Subcommands:
   ls [--all]               List every composed surface — path, codec, mode,

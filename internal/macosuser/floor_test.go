@@ -10,7 +10,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/progress"
 )
 
-// floor_test.go pins half one of docs/design/macos-user-provisioning.md at the
+// floor_test.go pins "The floor" of docs/reference/macos-user-provisioning.md at the
 // only level this jail can reach: the plan and the call site. Nothing here runs
 // on macOS, and nothing here claims the resulting closure behaves on hardware.
 
@@ -44,7 +44,7 @@ func TestALaunchWithNoPackagesStillBuildsTheFloor(t *testing.T) {
 	if !called {
 		t.Error("a launch with an empty `packages:` never materialized the native closure — " +
 			"the floor (mise, node, git, ripgrep, …) would be absent, which is the state " +
-			"docs/design/macos-user-provisioning.md §1 is about")
+			"docs/reference/macos-user-provisioning.md's floor is about")
 	}
 }
 

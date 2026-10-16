@@ -42,7 +42,7 @@ single fact that makes *"prefer the system manager"* impossible as a rule.
 
 **Reads with:** [`provisioner-sets.md`](provisioner-sets.md) (the model, the rulings and the open
 questions — this doc is its evidence half),
-[`noncontainer-nix-environment.md`](noncontainer-nix-environment.md) (retired;
+`noncontainer-nix-environment.md` (retired;
 [§3](#3-the-nix-resolver-in-depth) is its content, and the note there says why it must not be
 split back out), [`program-delivery.md`](program-delivery.md) (the jail's delivery classes and
 resolvers, named from the **record** side where this doc names the same mechanisms from the
@@ -204,7 +204,7 @@ This table is the single most consequential fact the provisioner work rests on �
 makes P4 and P5 ([`provisioner-sets.md`](provisioner-sets.md)) true rather than merely
 plausible, and it is the only reason *"prefer the system manager"* cannot be a rule. It was
 **measured 2026-08-02** in the retired
-[`noncontainer-nix-environment.md`](noncontainer-nix-environment.md), sourced from the pack-host
+`noncontainer-nix-environment.md`, sourced from the pack-host
 plan's [§8.3](../plans/pack-host-management-plan.md#phase-8--host-deps-for-the-fzf-case--scoped-closes-the-acceptance-test--shipped),
 and is **cited, not re-measured, here** — the two docs carried two copies of it and this is the
 survivor.
@@ -270,7 +270,7 @@ survive the ruling:
 ## 3. The nix resolver, in depth
 
 **This section is the absorbed
-[`noncontainer-nix-environment.md`](noncontainer-nix-environment.md)**, compacted. It is the only
+`noncontainer-nix-environment.md`**, compacted. It is the only
 resolver with depth like this, for a reason worth stating: it is the one that already works at
 two notches and has no caller at the third, so it is where
 [`OQ-PS1`](provisioner-sets.md#OQ-PS1) is decided. Its original analysis ran 2026-08-02 and was
@@ -278,7 +278,7 @@ re-verified 2026-08-23; dates below are the original measurements' unless stated
 
 > [!IMPORTANT]
 > **Do not split this section back into a document of its own.** It was merged out of
-> [`noncontainer-nix-environment.md`](noncontainer-nix-environment.md) on 2026-09-11, and the
+> `noncontainer-nix-environment.md` on 2026-09-11, and the
 > reason recorded in that retirement stub still holds: the nix doc *"was that doc's argument,
 > reached early and stopped at one row of the table"*, and the two documents had been carrying
 > **two copies of the coverage matrix** — the one in

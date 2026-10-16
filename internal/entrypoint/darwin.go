@@ -242,7 +242,7 @@ func retiredYoloLogWrapper(body string) bool {
 //
 // ⚠ THE PATH IS READ FROM THE ENVIRONMENT, NOT BAKED, and that is the point. $HOME is
 // shared by every workspace on this machine — the home-tier layout deliberately leaves it
-// that way (macos-user-home-tiers.md §5, "stated residuals") — and this file sits at its
+// that way (macos-user-home-tiers.md, "What is still shared, and what that costs") — and this file sits at its
 // root, below every symlink the layout lays. A literal PATH here is therefore ONE
 // workspace's `packages:` store dirs written into a file the next workspace's login shell
 // reads: the same cross-workspace race the sidecar closed for briefings, in three files
