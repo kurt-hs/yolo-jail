@@ -447,6 +447,10 @@ lint-ci: lint
     scripts/vantage-check.sh userguide/
     # `just done`'s change-aware front door: its routes, and that `done` still calls it.
     python3 scripts/test-completion-check.py
+    # An answered question left in question form still reads as a decision to make, and only
+    # `vantage-check index` lists it, so check the index (the design-doc skill's compaction rule).
+    python3 scripts/test-check-answered-questions.py
+    python3 scripts/check-answered-questions.py
 
 # Format code (Go: gofmt on tracked files; vendor/ is upstream code and never reformatted)
 format:
