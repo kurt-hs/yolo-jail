@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
@@ -12,7 +13,7 @@ import (
 
 // hostrecoveryscope.go is `yolo host`'s half of WHAT A SET RECOVERY HATCH REACHES (docs/design/
 // patched-build-recovery.md §6.1, PBR-D3; the launch's is internal/cli/run's recoveryscope.go):
-// once per invocation, each scoped hatch that is set warns of the names covering none of the
+// once per invocation, each scoped hatch that is set (run.NoterHatches: not the two that say their own) warns of the names covering none of the
 // patched builds the host selects — its patched forks and the patched extensions it delivers —
 // in patchrecovery.UnmatchedLine's one shape. Never a refusal.
 
@@ -40,7 +41,7 @@ func noteHostRecoveryHatches(errw io.Writer, packs []*packload.Pack) {
 	}
 	subs := hostRecoverySubjects(packs)
 	color := colorForWriter(errw)
-	for _, env := range patchrecovery.Scoped {
+	for _, env := range run.NoterHatches() {
 		s := patchrecovery.Read(os.Getenv, env)
 		if line := patchrecovery.UnmatchedLine(env, s.Unmatched(subs), subs); line != "" {
 			_, _ = io.WriteString(errw, richtext.Render("[yellow]"+richtext.Escape("yolo host: "+line)+"[/yellow]", color)+"\n")
