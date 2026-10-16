@@ -267,3 +267,58 @@ func TestHostPiChildPolicyLeavesTheUnmovedLaunchAlone(t *testing.T) {
 	}
 	unchanged()
 }
+
+// piForkPackDir is a PATCHED FORK of the shipped pi pack's program declaring launch_computed for
+// pi (pack-system.md#LC-D1): the place a flag only the fork's build registers belongs.
+func piForkPackDir(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "pi-fork")
+	writeFile(t, filepath.Join(dir, "patches", "series"), "")
+	writeFile(t, filepath.Join(dir, "pack.json"), `{"name": "pi-fork",
+  "launch_computed": {"pi": [{"key": "subagents", "argv": ["`+piSubagentsFlag+`", "{value}"]}]},
+  "contributes": [{"kind": "program", "bin": "pi", "via": "source", "fork_of": "pi",
+    "source": "git+https://example.invalid/pi-mono?ref=main", "patches": "patches",
+    "build": "sh build.sh", "produces": [".local/bin/pi"]}]}`)
+	return dir
+}
+
+// A FORK'S launch_computed REACHES `yolo host -p` for the bin it forks, and only while the fork's
+// build is the program: with YOLO_SKIP_PATCHES covering the fork, which runs its upstream build,
+// the launch hands the selection alone and says which flag it dropped and why.
+func TestHostAForksComputedFlagFollowsItsBuild(t *testing.T) {
+	src, _ := json.Marshal(piForkPackDir(t))
+	cfg := strings.Replace(piSubagentsCodexCfg, `"pi"]`, `"pi", {"source": `+string(src)+`, "name": "pi-fork"}]`, 1)
+	hostGateHome(t, cfg, map[string]string{"YOLO_SKIP_PATCHES": ""})
+	compose := func() ([]string, string) {
+		t.Helper()
+		var said []string
+		say := func(s string) { said = append(said, s) }
+		c := composeHostLaunch("pi", "codex", nil, say)
+		sel := c.launchSelection([]string{"pi"}, c.environ(), say)
+		if sel == nil {
+			t.Fatalf("no selection step ran:\n%s", strings.Join(said, "\n"))
+		}
+		return sel.argv, strings.Join(said, "\n")
+	}
+	argv, said := compose()
+	if len(argv) < 2 || argv[0] != "--provider" || argv[1] != "openai-codex" {
+		t.Fatalf("the parent must move onto codex: %q\n%s", argv, said)
+	}
+	word, ok := subagentsWord(argv)
+	if !ok || !strings.Contains(word, `"defaultProvider":"openai-codex"`) {
+		t.Fatalf("the fork's %s did not reach the launch: %q\n%s", piSubagentsFlag, argv, said)
+	}
+
+	t.Setenv("YOLO_SKIP_PATCHES", "pi-fork")
+	argv, said = compose()
+	if _, ok := subagentsWord(argv); ok {
+		t.Errorf("the upstream build got the fork's flag: %q", argv)
+	}
+	if len(argv) < 2 || argv[1] != "openai-codex" {
+		t.Errorf("the selection must still be handed: %q", argv)
+	}
+	if !strings.Contains(said, "runs its upstream build this launch (YOLO_SKIP_PATCHES)") ||
+		!strings.Contains(said, "pack pi-fork") || !strings.Contains(said, piSubagentsFlag) {
+		t.Errorf("the dropped flag was not said:\n%s", said)
+	}
+}

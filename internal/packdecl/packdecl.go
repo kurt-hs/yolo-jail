@@ -1301,8 +1301,7 @@ func (ls *LaunchSelection) clone() *LaunchSelection {
 		out.Subcommands = append([]string(nil), ls.Subcommands...)
 	}
 	for _, f := range ls.Computed {
-		out.Computed = append(out.Computed, LaunchComputedFlag{Key: f.Key, Argv: append([]string(nil), f.Argv...),
-			OptIn: f.OptIn})
+		out.Computed = append(out.Computed, f.clone())
 	}
 	return out
 }

@@ -216,3 +216,46 @@ func TestTheForkRewriteKeepsTheBaseModelListCheck(t *testing.T) {
 		t.Fatal("the fork claimed the base's check metadata")
 	}
 }
+
+// A FORK'S launch_computed (docs/reference/pack-system.md#LC-D1) is merged into its base's for the
+// forked bin: the fork's entry replaces the base's for a key both declare, its other keys follow,
+// each names the fork pack, and the base pack the caller passed in is never written. A fork entry
+// the base's launch selection could not hand refuses the selection, naming the fork pack.
+func TestTheForkRewriteMergesTheForksComputedFlags(t *testing.T) {
+	ls := &packdecl.LaunchSelection{Surface: ".pi/s.json",
+		Flags: []packdecl.LaunchSelectionFlag{{Key: "defaultModel", Argv: []string{"--model", "{value}"}}}}
+	base := claimPack(t, "pi", packdecl.Contribution{Kind: packdecl.KindProgram, Bin: "pi", Via: "npm",
+		Package: "pi", LaunchSelection: ls})
+	base.Decl.LaunchComputedByBin = map[string][]packdecl.LaunchComputedFlag{"pi": {
+		{Key: "a", Argv: []string{"--a", "{value}"}}, {Key: "b", Argv: []string{"--b", "{value}"}}}}
+	fork := claimPack(t, "pi-fork", forkContribution("pi", "pi"))
+	fork.Decl.LaunchComputedByBin = map[string][]packdecl.LaunchComputedFlag{"pi": {
+		{Key: "b", Argv: []string{"--b-patched", "{value}"}}, {Key: "c", Argv: []string{"--c", "{value}"}}}}
+	got, err := ApplyForks([]*Pack{base, fork})
+	if err != nil {
+		t.Fatal(err)
+	}
+	installs := got[0].Decl.InstallContributions()
+	if len(installs) != 1 || installs[0].LaunchSelection == nil {
+		t.Fatalf("the rewritten base installs %+v", installs)
+	}
+	var words, by []string
+	for _, f := range installs[0].LaunchSelection.Computed {
+		words, by = append(words, f.Word()), append(by, f.ForkedBy)
+	}
+	if strings.Join(words, ",") != "--a,--b-patched,--c" || strings.Join(by, ",") != ",pi-fork,pi-fork" {
+		t.Errorf("the forked program hands %q from %q, want --a (base), --b-patched and --c (fork)", words, by)
+	}
+	if b := base.Decl.LaunchComputedByBin["pi"]; len(b) != 2 || b[1].Word() != "--b" || b[1].ForkedBy != "" {
+		t.Errorf("the caller's base pack was written: %+v", b)
+	}
+	if own := base.Decl.InstallContributions()[0].LaunchSelection.Computed; len(own) != 2 {
+		t.Errorf("the unforked base hands %+v, want its own two", own)
+	}
+
+	fork.Decl.LaunchComputedByBin["pi"] = []packdecl.LaunchComputedFlag{{Key: "defaultModel", Argv: []string{"--m", "{value}"}}}
+	if _, err := ApplyForks([]*Pack{base, fork}); err == nil || !strings.Contains(err.Error(), "pack pi-fork: launch_computed") ||
+		!strings.Contains(err.Error(), "hand already") {
+		t.Errorf("a fork's selection key was not refused: %v", err)
+	}
+}

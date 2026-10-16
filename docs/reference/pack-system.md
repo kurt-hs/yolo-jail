@@ -845,8 +845,8 @@ selection, so a `-p` whose selection agrees but whose key differs hands that key
 is handed; otherwise the launch says so and the program keeps its file's value (for a program whose
 current release exits over a flag it does not read, as pi 1.0.1 does over an extension flag nothing
 registers). It is top-level, not on the `program`, so an older yolo ignores it rather than
-skipping the program. `packdecl` refuses a bin that is not this pack's own non-fork program with
-an argv-form `launch_selection`, an empty, repeated or `selection` key, a key the selection's
+skipping the program. `packdecl` refuses a bin that this pack neither declares as a program nor
+forks (`fork_of`), a declared program without an argv-form `launch_selection`, an empty, repeated or `selection` key, a key the selection's
 `flags` hand, words that never carry `{value}` or hold an empty word, and a bad variable name
 ([MM-D42](../design/model-lists-and-pickers.md#MM-D42)). No shipped pack declares one. A pack
 declaring a program `tool` whose derive composes a `policy` block for its settings surface hands
@@ -861,6 +861,19 @@ it per launch with:
   }
 }
 ```
+
+<a id="LC-D1"></a>**LC-D1, a fork's pack may declare it** (*implementation decision, reversible*,
+2026-10-16, made under the maintainer's ruling in
+[MM-D42](../design/model-lists-and-pickers.md#MM-D42) that yolo must not know his fork). A pack whose
+`program` contribution forks bin `X` (`fork_of`) may declare `launch_computed` for `X`: the fork
+owns the patched program, so a flag only its build registers belongs with it. The selection's fork
+rewrite merges it into the base's entries for `X`. The fork's entry for a key the base also declares
+replaces the base's, and its other keys follow the base's. The rewrite checks the fork's entries
+against the base's `launch_selection`, refusing the selection and naming the fork pack where one
+could not be handed. The flags apply only while the fork's build is the program. A fork that is not
+selected adds none. Under `YOLO_SKIP_PATCHES` covering the fork, `yolo host -p` runs the upstream
+build, so it hands the base's own entries alone and says which flags it dropped. A pack that
+neither declares nor forks `X` is still refused.
 
 <a id="exact_menu_refuses"></a>`exact_menu_refuses` says the program's model menu can show
 exactly a list only through a filter that also refuses every model off it, so its pack's derive
