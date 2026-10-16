@@ -829,10 +829,18 @@ file in flux. Every task runs `just format` before its commit and stages only it
 - **Texts:**
   - Second user: `[bold red]This Mac's macos-user backend is set up for another macOS user (<name>).[/bold red] One user per Mac. That user runs [bold]yolo macos-teardown[/bold], then you run [bold]yolo macos-setup[/bold]. If that account is gone, an administrator runs `sudo rm -f /etc/sudoers.d/yolo-jail && sudo rm -rf /Users/Shared/yolo-staged`, then you run [bold]yolo macos-setup[/bold].`
   - Squat: `[bold red]/Users/Shared/yolo-staged already exists and belongs to <owner>, not to you.[/bold red] Setup does not adopt it: whoever owns it controls what the sandbox reads. Inspect it with `ls -leR /Users/Shared/yolo-staged`, remove it with `sudo rm -rf /Users/Shared/yolo-staged`, then run [bold]yolo macos-setup[/bold] again.`
-  - visudo rejects the rule file alone: `✗ visudo rejected the rule file on its own, so nothing was installed and your sudo configuration is unchanged. visudo's reason is above.`, then the rule verbatim and `This is a yolo bug; report it at https://github.com/mschulkind-oss/yolo-jail/issues with visudo's output and the rule.`
-  - visudo rejects the whole configuration, and still does without the rule: `✗ Your sudo configuration fails visudo's check even without yolo's rule`, so it was invalid before setup ran; the text names `sudo visudo -f <file>`, `sudo visudo -c`, then `yolo macos-setup`, and does not call it a yolo bug.
-  - visudo rejects the whole configuration only with the rule: `✗ visudo rejected your sudo configuration with yolo's rule in place.`, then the rule verbatim and the yolo-bug line.
-  - The rule cannot be removed after that: the refusal says it is still installed and prints the `rm` that removes it.
+  - Every visudo refusal: one red `✗` headline, a blank line, visudo's captured output (a passing
+    check prints nothing), a blank line, then the commands, one per line, with no placeholders.
+  - The rule file alone fails: `✗ visudo rejected yolo's sudo rule. Nothing was installed.`, then
+    `This is a yolo bug. Report it with the output above and this rule:`, the rule, the issues URL.
+  - The whole configuration fails with and without the rule:
+    `✗ Your sudo configuration is invalid without yolo's rule too. Nothing was installed.`, then
+    `sudo visudo -f <path>` for each file visudo's output names, `sudo visudo -c`, `yolo macos-setup`.
+  - It fails only with the rule: `✗ visudo rejected your sudo configuration with yolo's rule in
+    place. The rule was removed again.`, then the yolo-bug lines.
+  - The rule cannot be removed after that: `sudo rm -f /etc/sudoers.d/yolo-jail`, a no-sudo
+    fallback (`osascript -e 'do shell script "/bin/rm -f /etc/sudoers.d/yolo-jail" with
+    administrator privileges'`), then `yolo macos-setup`.
   - Probe fails after install: `[bold red]✗ The rule is installed, but sudo still asks for a password to run as _yolojail.[/bold red] Check that /etc/sudoers reads /private/etc/sudoers.d (`sudo grep -n includedir /etc/sudoers`); a managed Mac may block it, and then your administrator has to allow the rule. Run [bold]yolo macos-setup[/bold] again afterwards.`
   - Unsafe user name: `[bold red]Your user name <name> cannot be written into a sudo rule safely.[/bold red] The macos-user backend supports names of letters, digits, '_', '.' and '-'.` (that is the whole remedy: there is no workaround to offer).
 - `internal/cli/commands.go`: `macosSetupUsage` names the rule and the staging root and says
