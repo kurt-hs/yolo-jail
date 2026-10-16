@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -229,8 +230,11 @@ func TestCapturePlanNamesNoHomeOverlay(t *testing.T) {
 func TestCaptureDriverArgvRunsTheDriverInsideTheProfile(t *testing.T) {
 	plan := BuildCapturePlan(testCaptureOptions())
 	argv := plan.DriverArgv
-	if argv[0] != "sudo" || !inSlice(argv, "--user=_yolojail") {
+	if argv[0] != "/usr/bin/sudo" || !inSlice(argv, "--user=_yolojail") {
 		t.Errorf("the driver must run as the sandbox user: %v", argv)
+	}
+	if p := RunAsArgvProblems("capture driver", argv); len(p) > 0 {
+		t.Errorf("the driver does not cross through the one run-as rule: %v", p)
 	}
 	if !inSlice(argv, "-i") {
 		t.Errorf("the driver must run under `env -i`: %v", argv)
@@ -387,8 +391,14 @@ func (c *captureDeps) deps() Deps {
 			c.files = append(c.files, path)
 			return !c.failFile
 		},
-		Out:   &c.out,
-		Color: false,
+		// The one-time setup done: the staging root (and every capture root asked about) this
+		// user's, and the run-as rule in place.
+		StagingRootFacts: func(string) StagingRootFacts {
+			return StagingRootFacts{Exists: true, IsDir: true, UID: 501, Mode: 0o755}
+		},
+		RunAsGrant: func() bool { return true },
+		Out:        &c.out,
+		Color:      false,
 	}
 }
 
@@ -401,17 +411,17 @@ func TestRunCapturePlanRunsTheStepsInOrder(t *testing.T) {
 	if rc := RunCapturePlan(c.deps(), plan); rc != 0 {
 		t.Fatalf("RunCapturePlan = %d, want 0\n%s", rc, c.out.String())
 	}
-	// Two root-owned files, in this order: the Seatbelt profile the driver is confined by,
+	// Two host-written files, in this order: the Seatbelt profile the driver is confined by,
 	// then the session env file it reads its composed environment out of (envfile.go). The
-	// order is the contract — the env file's directory is prepared by a sudo step, and a
+	// order is the contract — the env file's directory is prepared by its own step, and a
 	// write before that step would land in a world-readable directory.
 	if len(c.files) != 2 || c.files[0] != plan.ProfilePath || c.files[1] != plan.EnvFile {
 		t.Errorf("want the profile at %s then the env file at %s, got %v",
 			plan.ProfilePath, plan.EnvFile, c.files)
 	}
 	joined := strings.Join(c.ran, "\n")
-	prepare := strings.Index(joined, "sudo "+rmBin+" -rf "+plan.StagingRoot)
-	stage := strings.Index(joined, "sudo "+cpBin+" -f /opt/yolo-jail/bin/yolo")
+	prepare := strings.Index(joined, rmBin+" -rf "+plan.StagingRoot)
+	stage := strings.Index(joined, cpBin+" -f /opt/yolo-jail/bin/yolo")
 	boot := strings.Index(joined, "darwin-bootstrap")
 	drive := strings.Index(joined, "capture-run")
 	for _, step := range []struct {
@@ -454,7 +464,7 @@ func TestCaptureActsRetainGuestPackTreesAfterConsumerDispatch(t *testing.T) {
 				t.Fatalf("capture act = %d, want 0\n%s", rc, c.out.String())
 			}
 			joined := strings.Join(c.ran, "\n")
-			if strings.Contains(joined, "sudo "+rmBin+" -rf -- "+root) {
+			if strings.Contains(joined, rmBin+" -rf -- "+root) {
 				t.Errorf("consumer-dispatched tree was removed: %s", joined)
 			}
 			if !strings.Contains(c.out.String(), "Retaining guest pack tree") ||
@@ -473,7 +483,7 @@ func TestCapturePackTreeWriterFailureRetainsAndReservationCollisionIsUntouched(t
 			t.Fatal("a failed pack copy returned success")
 		}
 		joined := strings.Join(c.ran, "\n")
-		if strings.Contains(joined, "sudo "+rmBin+" -rf -- "+plan.PackRoot) {
+		if strings.Contains(joined, rmBin+" -rf -- "+plan.PackRoot) {
 			t.Errorf("a possibly active writer's tree was removed: %s", joined)
 		}
 		if !strings.Contains(c.out.String(), "Retaining guest pack tree") ||
@@ -487,7 +497,7 @@ func TestCapturePackTreeWriterFailureRetainsAndReservationCollisionIsUntouched(t
 			t.Fatal("a failed exclusive reservation returned success")
 		}
 		joined := strings.Join(c.ran, "\n")
-		if strings.Contains(joined, "sudo "+rmBin+" -rf -- "+plan.PackRoot) {
+		if strings.Contains(joined, rmBin+" -rf -- "+plan.PackRoot) {
 			t.Errorf("the unowned collision path was removed: %s", joined)
 		}
 		for _, want := range []string{"Could not reserve guest pack tree", plan.PackRoot,
@@ -512,7 +522,7 @@ func TestCaptureExecutorRetainsPartialTreeAfterFailedWriter(t *testing.T) {
 	d.Run = func(argv []string) int {
 		joined := strings.Join(argv, " ")
 		ran = append(ran, joined)
-		if len(argv) == 3 && argv[0] == "sudo" && argv[1] == mkdirBin && argv[2] == plan.PackRoot {
+		if len(argv) == 2 && argv[0] == mkdirBin && argv[1] == plan.PackRoot {
 			if err := os.MkdirAll(filepath.Dir(privateRoot), 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -521,7 +531,7 @@ func TestCaptureExecutorRetainsPartialTreeAfterFailedWriter(t *testing.T) {
 			}
 			return 0
 		}
-		if len(argv) == 5 && argv[0] == "sudo" && argv[1] == cpBin && argv[2] == "-R" && argv[4] == plan.PackRoot {
+		if len(argv) == 4 && argv[0] == cpBin && argv[1] == "-R" && argv[3] == plan.PackRoot {
 			if err := os.WriteFile(filepath.Join(privateRoot, "partial-copy"), []byte("writer may remain active"), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -538,7 +548,7 @@ func TestCaptureExecutorRetainsPartialTreeAfterFailedWriter(t *testing.T) {
 	if !strings.Contains(out.String(), plan.PackRoot) || !strings.Contains(out.String(), "Retaining guest pack tree") {
 		t.Errorf("capture did not disclose its retained production path %s: %s", plan.PackRoot, out.String())
 	}
-	if strings.Contains(strings.Join(ran, "\n"), "sudo "+rmBin+" -rf -- "+plan.PackRoot) {
+	if strings.Contains(strings.Join(ran, "\n"), rmBin+" -rf -- "+plan.PackRoot) {
 		t.Errorf("capture executor removed a tree while writer completion was unknown: %v", ran)
 	}
 }
@@ -562,7 +572,7 @@ func TestCaptureExecutorDoesNotRemoveExistingReservationCollision(t *testing.T) 
 	d.Out = &out
 	d.Run = func(argv []string) int {
 		ran = append(ran, strings.Join(argv, " "))
-		if len(argv) == 3 && argv[0] == "sudo" && argv[1] == mkdirBin && argv[2] == plan.PackRoot {
+		if len(argv) == 2 && argv[0] == mkdirBin && argv[1] == plan.PackRoot {
 			return 1
 		}
 		return 0
@@ -573,7 +583,7 @@ func TestCaptureExecutorDoesNotRemoveExistingReservationCollision(t *testing.T) 
 	if got, err := os.ReadFile(sentinel); err != nil || string(got) != "do not delete" {
 		t.Errorf("capture changed the prior owner's collision sentinel: %q, err %v", got, err)
 	}
-	if strings.Contains(strings.Join(ran, "\n"), "sudo "+rmBin+" -rf -- "+plan.PackRoot) {
+	if strings.Contains(strings.Join(ran, "\n"), rmBin+" -rf -- "+plan.PackRoot) {
 		t.Errorf("capture cleanup removed an unowned collision: %v", ran)
 	}
 	for _, want := range []string{"Could not reserve guest pack tree", plan.PackRoot,
@@ -802,8 +812,8 @@ func TestBuildForkBuildPlanIsViable(t *testing.T) {
 	}
 	// The prepare commands make the checkout as they make home/ and out/.
 	prepare := joinCmds(plan.PrepareCommands)
-	for _, want := range []string{"mkdir -p " + root + "/src", "chown admin:" + SandboxGroup + " " + root + "/src",
-		"chmod 2770 " + root + "/src"} {
+	for _, want := range []string{mkdirBin + " -p " + root + "/src", chgrpBin + " " + SandboxGroup + " " + root + "/src",
+		chmodBin + " 2770 " + root + "/src"} {
 		if !strings.Contains(prepare, want) {
 			t.Errorf("the prepare commands lack %q:\n%s", want, prepare)
 		}
@@ -846,6 +856,15 @@ func TestForkBuildPlanInvariantsRefuseEachMissingPiece(t *testing.T) {
 		{"a checkout copied under sudo", func(p *ForkBuildPlan) {
 			p.SourceCommands = [][]string{append([]string{"sudo"}, p.SourceCommands[0]...)}
 		}, "copied under sudo"},
+		{"a checkout copied under /usr/bin/sudo", func(p *ForkBuildPlan) {
+			p.SourceCommands = [][]string{append([]string{"/usr/bin/sudo", "-n"}, p.SourceCommands[0]...)}
+		}, "copied under sudo"},
+		{"a prepare step under sudo", func(p *ForkBuildPlan) {
+			p.PrepareCommands = append([][]string{{"/usr/bin/sudo", rmBin, "-rf", p.StagingRoot}}, p.PrepareCommands...)
+		}, "a capture prepare command runs sudo"},
+		{"a driver off the rule's shape", func(p *ForkBuildPlan) {
+			p.DriverArgv = append([]string{"sudo", "--user=" + SandboxUser}, p.DriverArgv[3:]...)
+		}, "sudo is not named /usr/bin/sudo"},
 		{"no checkout copy", func(p *ForkBuildPlan) { p.SourceCommands = nil }, "nothing copies the checkout"},
 		{"no checkout at all", func(p *ForkBuildPlan) { p.Source, p.SourceCommands = "", nil }, "no checkout to copy"},
 		{"the checkout inside the home", func(p *ForkBuildPlan) { p.SrcDir = p.StagingHome + "/src" },
@@ -865,8 +884,8 @@ func TestForkBuildPlanInvariantsRefuseEachMissingPiece(t *testing.T) {
 	}
 }
 
-// THE RUN ORDER: the tree prepared and the binary staged under sudo, then the checkout copied in as the
-// invoking user — never sudo — then the sealed profile installed, the bootstrap, and the driver.
+// THE RUN ORDER: the tree prepared and the binary staged, then the checkout copied in, all as the
+// invoking user — never sudo — then the sealed profile written, the bootstrap, and the driver.
 func TestRunForkBuildPlanCopiesTheCheckoutAsTheUserBeforeTheProfile(t *testing.T) {
 	c := &captureDeps{}
 	plan := BuildForkBuildPlan(testForkBuildOptions())
@@ -874,7 +893,7 @@ func TestRunForkBuildPlanCopiesTheCheckoutAsTheUserBeforeTheProfile(t *testing.T
 		t.Fatalf("RunForkBuildPlan = %d\n%s", rc, c.out.String())
 	}
 	joined := strings.Join(c.ran, "\n")
-	stage := strings.Index(joined, "sudo "+cpBin+" -f /opt/yolo-jail/bin/yolo")
+	stage := strings.Index(joined, cpBin+" -f /opt/yolo-jail/bin/yolo")
 	copySrc := strings.Index(joined, "\n"+cpBin+" -R "+plan.Source+"/. "+plan.SrcDir)
 	boot := strings.Index(joined, "darwin-bootstrap")
 	drive := strings.Index(joined, "capture-run")
@@ -882,8 +901,10 @@ func TestRunForkBuildPlanCopiesTheCheckoutAsTheUserBeforeTheProfile(t *testing.T
 		t.Errorf("steps out of order or missing (stage %d, copy %d, bootstrap %d, drive %d):\n%s", stage, copySrc,
 			boot, drive, joined)
 	}
-	if strings.Contains(joined, "sudo "+cpBin+" -R "+plan.Source) {
-		t.Errorf("the checkout was copied under sudo:\n%s", joined)
+	for _, r := range c.ran {
+		if strings.Contains(r, cpBin+" -R "+plan.Source) && strings.Contains(r, "sudo") {
+			t.Errorf("the checkout was copied under sudo: %s", r)
+		}
 	}
 	if len(c.files) == 0 || c.files[0] != plan.ProfilePath {
 		t.Fatalf("no profile installed: %v", c.files)
@@ -988,6 +1009,335 @@ func TestRunForkBuildActDryRunExecutesNothing(t *testing.T) {
 		"all capture plan invariants hold"} {
 		if !strings.Contains(c.out.String(), want) {
 			t.Errorf("the dry-run plan does not show %q:\n%s", want, c.out.String())
+		}
+	}
+}
+
+// --- the one run-as rule (docs/design/macos-user-privilege-lifecycle-plan.md, task 6) ----------
+
+// captureActDeps is mockDeps for a whole capture or fork-build act staged under a temp capture
+// root: the driver leaves a proto-entry in the act's own staging tree, as capture.Run would.
+func captureActDeps(t *testing.T, rec *[]string, root string) Deps {
+	t.Helper()
+	d := mockDeps(rec)
+	run := d.Run
+	d.Run = func(argv []string) int {
+		rc := run(argv)
+		if strings.Contains(strings.Join(argv, " "), "capture-run") {
+			if err := os.MkdirAll(filepath.Join(root, "out", "tree"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return rc
+	}
+	return d
+}
+
+// captureAct is one of the two acts this file owns, staged under a temp capture root, with the
+// staging tree its driver fills.
+type captureAct struct {
+	root string
+	run  func(Deps) int
+}
+
+// captureActs are both acts, each over its own temp capture root.
+func captureActs(t *testing.T) map[string]captureAct {
+	t.Helper()
+	tmp, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	capOpts := testCaptureOptions()
+	capOpts.CaptureRoot = filepath.Join(tmp, "captures")
+	forkOpts := testForkBuildOptions()
+	forkOpts.Darwin = nil
+	forkOpts.CaptureRoot = filepath.Join(tmp, "captures")
+	return map[string]captureAct{
+		"capture": {CaptureStagingRoot(capOpts.CaptureRoot, capOpts.Bin), func(d Deps) int {
+			return RunCaptureAct(d, capOpts, filepath.Join(tmp, "store", "capture-out"), false)
+		}},
+		"fork": {ForkBuildStagingRoot(forkOpts.CaptureRoot, forkOpts.BuildID), func(d Deps) int {
+			return RunForkBuildAct(d, forkOpts, filepath.Join(tmp, "store", "fork-out"),
+				filepath.Join(tmp, "store", "toolchain"), false)
+		}},
+	}
+}
+
+// A CAPTURE AND A FORK'S BUILD RUN NO ROOT SUDO, AND EVERY CROSSING IS THE ONE RULE: the acts'
+// mirror of TestALaunchRunsNoRootSudoAndEveryCrossingIsTheRule. Fails if a prepare, stage or
+// cleanup step is run under sudo again, or a driver leaves the rule's shape.
+func TestACaptureAndAForkBuildRunNoRootSudoAndEveryCrossingIsTheRule(t *testing.T) {
+	for name, act := range captureActs(t) {
+		var rec []string
+		var buf bytes.Buffer
+		d := captureActDeps(t, &rec, act.root)
+		d.Out = &buf
+		if rc := act.run(d); rc != 0 {
+			t.Fatalf("%s: rc = %d\n%s", name, rc, buf.String())
+		}
+		crossings := 0
+		for _, r := range rec {
+			argv, ok := strings.CutPrefix(r, "run:")
+			if !ok {
+				continue
+			}
+			words := strings.Fields(argv)
+			if len(words) > 0 && strings.HasSuffix(words[0], "sudo") {
+				crossings++
+				if p := RunAsArgvProblems("t", words); len(p) > 0 {
+					t.Errorf("%s: %s: %v", name, r, p)
+				}
+			}
+		}
+		if crossings == 0 {
+			t.Errorf("%s: no crossing into the sandbox account was recorded, so this test proves nothing:\n%s",
+				name, strings.Join(rec, "\n"))
+		}
+		if recAt(rec, "write:"+StagingRoot()+"/profile-") < 0 {
+			t.Errorf("%s: the profile was not written as the host:\n%s", name, strings.Join(rec, "\n"))
+		}
+		if recAt(rec, "run:"+rmBin+" -rf "+act.root) < 0 {
+			t.Errorf("%s: the staging tree was not removed as the host:\n%s", name, strings.Join(rec, "\n"))
+		}
+		if strings.Contains(buf.String(), "sudo may prompt") {
+			t.Errorf("%s: the act still says sudo may prompt:\n%s", name, buf.String())
+		}
+	}
+}
+
+// NO RULE, NO WORK: an act on a Mac whose one-time setup never installed the run-as rule refuses
+// before it composes, stages or writes anything, naming the setup. Fails if captureGatesPass stops
+// asking PrivilegeUnmet, or RunCaptureAct composes before asking it.
+func TestACaptureRefusesBeforeAnyWorkWhenTheRuleIsMissing(t *testing.T) {
+	for name, act := range map[string]func(Deps) int{
+		"capture": func(d Deps) int { return RunCaptureAct(d, testCaptureOptions(), t.TempDir(), false) },
+		"fork":    func(d Deps) int { return RunForkBuildAct(d, testForkBuildOptions(), t.TempDir(), t.TempDir(), false) },
+	} {
+		var rec []string
+		var buf bytes.Buffer
+		d := mockDeps(&rec)
+		d.Out = &buf
+		d.RunAsGrant = func() bool { return false }
+		if rc := act(d); rc != 1 {
+			t.Errorf("%s: rc = %d", name, rc)
+		}
+		if !strings.Contains(buf.String(), "yolo macos-setup") ||
+			recAt(rec, "sudo") >= 0 || recAt(rec, "write:") >= 0 {
+			t.Errorf("%s: printed %q and ran %v", name, buf.String(), rec)
+		}
+	}
+}
+
+// A STAGING ROOT THAT IS NOT THE HOST'S REFUSES THE ACT TOO, in the launch's words: the capture asks
+// the same privilege facts a launch does. Fails if captureGatesPass stops asking PrivilegeUnmet.
+func TestACaptureRefusesAForeignStagingRoot(t *testing.T) {
+	for name, act := range captureActs(t) {
+		var rec []string
+		var buf bytes.Buffer
+		d := captureActDeps(t, &rec, act.root)
+		d.Out = &buf
+		d.StagingRootFacts = func(p string) StagingRootFacts {
+			if p == StagingRoot() {
+				return StagingRootFacts{Exists: true, IsDir: true, UID: 602, Mode: 0o755}
+			}
+			return StagingRootFacts{Exists: true, IsDir: true, UID: 501, Mode: 0o755}
+		}
+		if rc := act.run(d); rc != 1 {
+			t.Errorf("%s: rc = %d", name, rc)
+		}
+		if !strings.Contains(buf.String(), StagingRoot()+" belongs to another account") || len(rec) != 0 {
+			t.Errorf("%s: printed %q and ran %v", name, buf.String(), rec)
+		}
+	}
+}
+
+// THE CAPTURE ROOT MUST BE THE HOST'S OR ABSENT: the host creates it, then stages the program's
+// tree in it, so one another account owns (today's root-owned captures leave exactly that), or one
+// anyone can write, is refused before any work, naming the setup that gives it to the host user.
+// Absent is fine. Fails if captureGatesPass stops judging the capture root.
+func TestACaptureRefusesAForeignOrUnsafeCaptureRoot(t *testing.T) {
+	// The plan's refusal, as printed with color off (the printer drops the markup).
+	const refusal = " belongs to another account or is not safe. Run yolo macos-setup " +
+		"as your normal admin user; it gives the directory to you."
+	for _, tc := range []struct {
+		name  string
+		facts StagingRootFacts
+		want  string // "" when the act goes ahead
+	}{
+		{"foreign", StagingRootFacts{Exists: true, IsDir: true, UID: 0, Mode: 0o755}, refusal},
+		{"unsafe", StagingRootFacts{Exists: true, IsDir: true, UID: 501, Mode: 0o777}, refusal},
+		{"link", StagingRootFacts{Exists: true, IsSymlink: true, UID: 501}, refusal},
+		{"unreadable", StagingRootFacts{Err: os.ErrPermission}, " could not be inspected"},
+		{"absent", StagingRootFacts{}, ""},
+	} {
+		for name, act := range captureActs(t) {
+			captureRoot := filepath.Dir(act.root)
+			var rec []string
+			var buf bytes.Buffer
+			d := captureActDeps(t, &rec, act.root)
+			d.Out = &buf
+			var asked []string
+			d.StagingRootFacts = func(p string) StagingRootFacts {
+				asked = append(asked, p)
+				if p == captureRoot {
+					return tc.facts
+				}
+				return StagingRootFacts{Exists: true, IsDir: true, UID: 501, Mode: 0o755}
+			}
+			rc := act.run(d)
+			if !slices.Contains(asked, captureRoot) {
+				t.Errorf("%s/%s: the capture root %s was never judged (asked %v)", tc.name, name, captureRoot, asked)
+			}
+			if tc.want == "" {
+				if rc != 0 {
+					t.Errorf("%s/%s: rc = %d\n%s", tc.name, name, rc, buf.String())
+				}
+				continue
+			}
+			if rc != 1 || len(rec) != 0 {
+				t.Errorf("%s/%s: rc = %d, ran %v", tc.name, name, rc, rec)
+			}
+			if !strings.Contains(buf.String(), "Refusing the capture: "+captureRoot+tc.want) ||
+				!strings.Contains(buf.String(), "yolo macos-setup") {
+				t.Errorf("%s/%s: refusal = %q, want %q", tc.name, name, buf.String(), captureRoot+tc.want)
+			}
+		}
+	}
+}
+
+// PL-7, THE CAPTURE SCRATCH CLEANUP: the host removes the staging tree; when that fails (a vendor
+// installer stripped the inherited ACE from files the sandbox account owns), the sandbox account
+// removes its own files through the rule, and the host removes the rest. Never root. Fails if
+// RunCaptureCleanup stops removing as the host, or stops falling back to the guest pass.
+func TestACaptureCleanupFallsBackToTheSandboxAccountAndThenTheHost(t *testing.T) {
+	plan := BuildCapturePlan(testCaptureOptions())
+	root := plan.StagingRoot
+	hostRm := rmBin + " -rf " + root
+	guestChmod := strings.Join(RunAsSandboxArgv(nil, chmodBin, "-R", "u+w", "--", root), " ")
+	guestRm := strings.Join(RunAsSandboxArgv(nil, rmBin, "-rf", "--", root), " ")
+
+	t.Run("the host removes it", func(t *testing.T) {
+		var rec []string
+		var buf bytes.Buffer
+		d := mockDeps(&rec)
+		d.Out = &buf
+		RunCaptureCleanup(d, plan)
+		if recAt(rec, "run:"+hostRm) < 0 || recAt(rec, "--user="+SandboxUser) >= 0 || buf.Len() != 0 {
+			t.Errorf("ran %v, printed %q", rec, buf.String())
+		}
+		for _, r := range rec {
+			if strings.Contains(r, "sudo") {
+				t.Errorf("the host's own removal ran sudo: %s", r)
+			}
+		}
+	})
+	t.Run("the guest pass, then the host again", func(t *testing.T) {
+		var rec []string
+		var buf bytes.Buffer
+		d := mockDeps(&rec)
+		d.Out = &buf
+		hostTries := 0
+		d.Run = func(argv []string) int {
+			j := strings.Join(argv, " ")
+			rec = append(rec, "run:"+j)
+			if j == hostRm {
+				hostTries++
+				if hostTries == 1 {
+					return 1
+				}
+			}
+			return 0
+		}
+		RunCaptureCleanup(d, plan)
+		last := -1
+		for _, w := range []string{"run:" + hostRm, "run:" + guestChmod, "run:" + guestRm, "run:" + hostRm} {
+			i := slices.Index(rec[last+1:], w)
+			if i < 0 {
+				t.Fatalf("%q missing or out of order:\n%s", w, strings.Join(rec, "\n"))
+			}
+			last += i + 1
+		}
+		for _, r := range rec {
+			if p := RunAsArgvProblems("t", strings.Fields(strings.TrimPrefix(r, "run:"))); len(p) > 0 {
+				t.Errorf("%v", p)
+			}
+		}
+		if buf.Len() != 0 {
+			t.Errorf("a cleanup that succeeded warned: %q", buf.String())
+		}
+	})
+	t.Run("a failure stays a warning and never fails a capture", func(t *testing.T) {
+		var rec []string
+		var buf bytes.Buffer
+		tmp, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		opts := testCaptureOptions()
+		opts.CaptureRoot = filepath.Join(tmp, "captures")
+		stuck := CaptureStagingRoot(opts.CaptureRoot, opts.Bin)
+		d := captureActDeps(t, &rec, stuck)
+		d.Out = &buf
+		run := d.Run
+		cleaning := false
+		d.Run = func(argv []string) int {
+			j := strings.Join(argv, " ")
+			rc := run(argv)
+			if strings.Contains(j, "capture-run") {
+				cleaning = true
+			}
+			if cleaning && strings.Contains(j, "-rf") && strings.Contains(j, stuck) {
+				return 1
+			}
+			return rc
+		}
+		if rc := RunCaptureAct(d, opts, filepath.Join(tmp, "store", "out"), false); rc != 0 {
+			t.Fatalf("a capture whose scratch could not be removed failed: rc = %d\n%s", rc, buf.String())
+		}
+		if !strings.Contains(buf.String(), "Warning") || !strings.Contains(buf.String(), stuck) {
+			t.Errorf("the leftover scratch was not named in a warning:\n%s", buf.String())
+		}
+		if recAt(rec, "run:"+strings.Join(RunAsSandboxArgv(nil, rmBin, "-rf", "--", stuck), " ")) < 0 {
+			t.Errorf("no guest pass ran:\n%s", strings.Join(rec, "\n"))
+		}
+	})
+}
+
+// A STALE CAPTURE FILE IS REMOVED BEFORE IT IS WRITTEN AGAIN. The profile, env and CA files are
+// keyed by the program (or the build), so an earlier capture whose cleanup failed leaves files at
+// this capture's exact paths, and the host write is an exclusive create that refuses to replace
+// one. Fails if runCaptureSteps stops clearing them before the writes.
+func TestACaptureRemovesAStaleProfileBeforeWritingIt(t *testing.T) {
+	plan := BuildCapturePlan(testCaptureOptions())
+	if plan.EnvFile == "" {
+		t.Fatal("the plan has no env file, so this test proves nothing about it")
+	}
+	exists := map[string]bool{plan.ProfilePath: true, plan.EnvFile: true}
+	var rec []string
+	var buf bytes.Buffer
+	d := mockDeps(&rec)
+	d.Out = &buf
+	run := d.Run
+	d.Run = func(argv []string) int {
+		if len(argv) == 3 && argv[0] == rmBin && argv[1] == "-f" {
+			delete(exists, argv[2])
+		}
+		return run(argv)
+	}
+	d.WriteHostFile = func(p, _ string, _ os.FileMode) bool {
+		rec = append(rec, "write:"+p)
+		if exists[p] {
+			return false
+		}
+		exists[p] = true
+		return true
+	}
+	if rc := RunCapturePlan(d, plan); rc != 0 {
+		t.Fatalf("a stale profile failed the capture: rc = %d\n%s", rc, buf.String())
+	}
+	for _, p := range []string{plan.ProfilePath, plan.EnvFile} {
+		if rm, w := recAt(rec, "run:"+rmBin+" -f "+p), recAt(rec, "write:"+p); rm < 0 || w < rm {
+			t.Errorf("%s was not removed before it was written:\n%s", p, strings.Join(rec, "\n"))
 		}
 	}
 }
