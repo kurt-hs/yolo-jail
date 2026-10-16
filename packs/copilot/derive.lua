@@ -40,7 +40,7 @@ end)
 -- env: the provider environment copilot's own process launches with — copilot has no
 -- provider directory and no file keys to write; its BYOK is env-var-only, so this
 -- producer IS copilot's whole provider delivery (docs/reference/providers.md §"Per-agent
--- delivery"; docs/reference/cerebras-pack-and-copilot-delivery.md D-2).
+-- delivery"; D-2 in docs/reference/providers.md#reach-d-2).
 --
 -- Dialect map, canonical → copilot's spellings
 -- [provenance: @github/copilot 1.0.48 app.js — the "config" help topic and the enum

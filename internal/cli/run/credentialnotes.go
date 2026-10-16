@@ -105,5 +105,5 @@ func (o *Options) noteMacosUserCredentialScope(channel *packChannel, launched st
 	out.print("[dim]Credential scope on macos-user: this invocation starts " + launched +
 		", whose own scoped values ride the sandbox session; " + strings.Join(others, ", ") +
 		" started inside it read theirs from their own env files " +
-		"(provider-credential-scope.md OQ-CN9).[/dim]")
+		"(providers.md OQ-CN9).[/dim]")
 }

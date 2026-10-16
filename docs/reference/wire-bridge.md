@@ -18,6 +18,8 @@ covers:
   - internal/packload/via.go
   - internal/packload/carrier.go
   - packs/wire-bridge/
+  - internal/openauthclient/
+  - internal/openaiauthdaemon/
 tags: [packs, providers, services, claude, translation, needs, networking, diagnosis]
 summary: "A translating reverse proxy, in a jail or run for one host or macos-user launch, that manufactures an Anthropic-Messages endpoint on the jail's loopback for OpenAI chat-completions providers and Claude's Codex Responses profile, and passes a via agent's own OpenAI chat-completions or Responses traffic through to its provider — plus the `service` contribution kind and `needs`, a pack dependency resolved at selection."
 ---
@@ -72,8 +74,8 @@ A **wire bridge** *(coined here)* is a daemon that manufactures, on the agent's 
 protocol a provider does not natively serve, by translating to one it does. It runs in the jail,
 or, at the host and on macos-user, for one launch ([the host half](#at-the-host-notch)).
 Two translating routes exist: **Anthropic Messages → OpenAI chat-completions** for declared
-providers, and the Claude Codex-profile route to OpenAI Responses described in
-[`omp-and-codex-claude-profile.md`](omp-and-codex-claude-profile.md). A third kind translates
+providers, and [the Codex Responses route](#the-codex-responses-route), which runs claude on the
+ChatGPT subscription through the `codex` profile. A third kind translates
 nothing: the [via route](#the-via-route--one-route-per-agent-under-agentname), which a profile's
 `via` selects, passes an agent's own OpenAI chat-completions or Responses traffic through to its
 provider, adding only the credential. And on a Bedrock upstream the Anthropic route itself
@@ -129,6 +131,7 @@ bridge exists, and should not.
 | Which upstream is Bedrock's, its region, and runtime's URL composed from it | `internal/wirebridged` (`bedrockroute.go`: `bedrockSigning`, `regionalBedrock`, `envRegion`, `route.resolveRegion`); `internal/sigv4` (`RegionVars`, `ValidRegion`, `BedrockRuntimeHost`) |
 | The adapter address composed onto a provider of a fronted platform, marked for a via | `internal/packdecl` (`AdapterPair.FromPlatforms`); `internal/packload` (`adaptEndpoints`, `ForViaKey`, `EndpointsForProfile`); `packs/wire-bridge` (`from_platforms`) |
 | The model allowlist | `internal/wirebridged` (`allowlist.go`: `allowlistsFor`, `adapterAllowlist`, `modelAllowlist.checks`); `internal/packdecl` (`unlisted_background_models`, `SendsUnlistedModels`) |
+| The Codex route's credential view: the client and the broker's response | `internal/openauthclient` (`AccessTokenView`), `internal/openaiauthdaemon` (`accessView`); the handler `wirebridged.NewCodexResponsesHandler` |
 
 **Reads with:** [`providers.md`](providers.md) (what a provider declares and which agent reads
 which endpoint — the authority), [`pack-system.md`](pack-system.md) (the contribution model, and
@@ -198,8 +201,10 @@ condition under which the dependency is live:
 - **the condition** is a set of **bins**: the need is live when some *selected* pack installs one
   of them. Core speaks bins, not agents — "claude" here means "a selected pack installs the
   `claude` CLI", which is exactly "claude is in use". Multiple bins are OR'd. No condition means
-  unconditional; Claude uses this for its Codex profile's credential service and bridge, which
-  then idle unless that profile is selected.
+  unconditional: `packs/claude` names `wire-bridge` that way, so the bridge joins every launch
+  with claude and idles unless claude's selection routes through it. The OpenAI credential
+  service is not a need: `packs/openai-auth`, which declares the `codex` profile and the service,
+  joins a launch only when the user selects it.
 
 **Resolution happens host-side, at selection, before staging** — because the mount is the filter,
 so the closure must be computed before anything stages:
@@ -361,6 +366,67 @@ Exactly one is used per request, so a signature and a bearer never travel togeth
 > requires `store: false` and rejects `max_output_tokens`. The bridge always requests no
 > retention and omits Claude's token cap on this route; a model's own output limit remains in
 > force.
+
+### The Codex Responses route
+
+The second translating route runs claude on the ChatGPT subscription. The `codex` profile, which
+`packs/openai-auth` declares over its `openai-codex` provider, sends Claude Code's Anthropic
+Messages requests to this route, which calls the Codex Responses service. Claude keeps speaking
+its native protocol: the bridge translates only after claude has been routed to the loopback.
+Neither the profile nor the route changes a normal claude launch. Using the profile takes
+`openai-auth` in the user's `packs`, since no agent pack `needs` it; claude's own `needs` names
+only `wire-bridge` ([`needs`](#needs--a-conditional-pack-dependency)).
+
+The route reads no provider key. It asks the OpenAI credential service for a **credential
+view** *(a term coined for this route)*: a deliberately restricted broker response that carries
+the short-lived access token for one upstream call and the account id, and never the refresh or
+ID token that would let the caller refresh credentials itself (`openauthclient.AccessTokenView`,
+served by `openaiauthdaemon`'s `accessView`). The credential service stays the sole owner of the
+refresh token. The bridge requests a view per request, keeps that token in memory, and retries
+once with a fresh view after an upstream 401 ([the key channel](#lifecycle-and-failure-behavior)).
+
+```mermaid
+sequenceDiagram
+    participant C as Claude Code (codex profile)
+    participant B as Wire bridge
+    participant A as OpenAI credential service
+    participant O as Codex Responses service
+
+    C->>B: Anthropic Messages request
+    B->>A: request an access-only view
+    A-->>B: access token and account id
+    B->>O: OpenAI Responses request
+    O-->>B: response or SSE events
+    B-->>C: Anthropic message or SSE events
+```
+
+What the route translates is in [the protocol surface](#the-protocol-surface) table. Three
+behaviors it adds:
+
+- **Streaming stays incremental.** `ResponsesStreamTranslator` turns Responses SSE events into
+  Anthropic SSE events without buffering a completion.
+- **Tool-call ids are retained** across request and response translation, so a later tool result
+  is associated with the original call.
+- **A form with no supported equivalent is rejected** with an Anthropic-shaped error, never
+  silently discarded. Responses reasoning items are not replayed as thinking blocks, because
+  their opaque state is not safe to expose or replay.
+
+> [!WARNING]
+> **Do not turn this route into a general OpenAI gateway, and never copy a refresh token into
+> claude's or any agent's file.** The route has one fixed upstream, and the credential service is
+> the only refresh authority; widening either boundary reintroduces credential duplication and
+> token-refresh races. What a caller sends is checked against the launch's caller token and then
+> dropped ([caller authentication](#caller-authentication)); outbound authorization comes only
+> from the view. Trusting an inbound bearer upstream would let an agent's configuration replace
+> the subscription's identity or quota owner.
+
+What the route does not provide:
+
+- Claude OAuth, an OpenAI API key and a local codex credential are not interchangeable with a
+  Codex subscription.
+- It does not start the codex CLI as a proxy for claude.
+- It does not claim every future Anthropic or Responses feature has a translation. A new
+  protocol form needs an explicit mapping and tests before it passes through.
 
 ### The Messages pass-through, on a Bedrock upstream
 
@@ -1198,18 +1264,14 @@ launch, for the one agent it runs, stopped when that agent exits). The mechanism
 
 ```console
 $ yolo host -p codex -- claude
-yolo host: + bedrock (needed by claude)
-yolo host: + openai-auth (needed by claude)
 yolo host: + wire-bridge (needed by claude)
-yolo host: + aws-auth (needed by bedrock)
-yolo host: Profile codex: declared by claude; claude → provider "openai-codex", on its "anthropic" endpoint
-yolo host: Not set at this notch, because nothing here serves it (docs/plans/notch-convergence.md §2.4):
-  profile "bedrock-bridge"'s via — its service does not run here, so its agents keep their own clients rather than routing through it
+yolo host: Profile codex: declared by openai-auth; claude → provider "openai-codex", on its "anthropic" endpoint
 yolo host: started the "wire-bridge" service (pack "wire-bridge", pid 96868) for claude on 127.0.0.1:36501; it answers only this launch's caller token and stops when claude exits. Its log: ~/.local/share/yolo-jail/logs/launch-service-wire-bridge.log
 ```
 
-That is the stderr of `TestHostCodexClaudeRunsThroughALaunchOwnedBridge`'s launch, with the log
-path shortened; the pid and port are the kernel's, the cause lines are [WB-D12](#wb-d12)'s, and a
+That is the stderr of `TestHostCodexClaudeRunsThroughALaunchOwnedBridge`'s launch, on
+`"packs": ["claude", "openai-auth"]`, with the log path shortened and the lines about where
+claude was found and the test environment's `AWS_REGION` left out; the pid and port are the kernel's, the cause lines are [WB-D12](#wb-d12)'s, and a
 machine never logged in to OpenAI prints the prelaunch's login lines before the service line. <a id="no-macos-user-bridge"></a>On **macos-user** the same host half runs
 outside Seatbelt, started after the launch's host services and stopped when the sandboxed command
 returns. The jail-daemon decline names the bridge's jail daemon with "(its host half runs for this

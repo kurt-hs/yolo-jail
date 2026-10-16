@@ -951,7 +951,7 @@ func TestHostEnvStillResolvesAbsoluteEnvSourceFiles(t *testing.T) {
 
 // writeZaiLocalPack is hostprovidershape_test.go's fixture: the conventional local pack
 // shipping a provider whose credential is a variable NAME the user hydrates, plus a
-// variant naming it — the shape packs/zai would have (zai-plumbing.md §7). It installs no
+// variant naming it — the shape packs/zai has. It installs no
 // CLI, which is the ordinary provider pack.
 
 // The host half of the credential pre-flight (providers.md#the-credential-preflight,

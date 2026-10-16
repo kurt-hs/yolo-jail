@@ -106,7 +106,7 @@ credential, checks the launch's caller token, and builds outbound auth itself:
 - a bearer key read from its `0600` env channel, for API-key providers;
 - a SigV4 signature, for Bedrock;
 - for Claude's Codex profile, an access-only view fetched from the OpenAI broker
-  ([`omp-and-codex-claude-profile.md`](../reference/omp-and-codex-claude-profile.md#claude-profile-and-bridge-protocol)).
+  ([the Codex Responses route](../reference/wire-bridge.md#the-codex-responses-route)).
 
 Pi already uses the bridge's **via route** (a pass-through with no translation, one path
 prefix per agent), sending the caller token as its key. That route deliberately skips
@@ -209,7 +209,7 @@ token. The proxy checks the handle, removes it, adds the real upstream auth, and
   - `openai-codex`: the bridge already injects an access view on Claude's Codex route, but
     the via route skips this provider today. Supporting it means carrying the subscription
     on a pass-through route, which the
-    [Codex-route warning](../reference/omp-and-codex-claude-profile.md#claude-profile-and-bridge-protocol)
+    [Codex-route warning](../reference/wire-bridge.md#the-codex-responses-route)
     ("do not turn the bridge into a general OpenAI gateway") argues against. That warning
     needs re-ruling.
   - Anthropic subscription: no proxy exists. For Claude Code, the `ANTHROPIC_BASE_URL`

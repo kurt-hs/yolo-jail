@@ -291,7 +291,7 @@ func (o *Options) noteUnstartedProfileDaemons() {
 		}
 		o.pr(o.Stderr).print("[dim]Not started: the " + d.Name + " jail daemon, because " +
 			strings.Join(why, ", and ") + ", which it serves; " + remedy + " to start it " +
-			"(provider-credential-scope.md OQ-CN7).[/dim]")
+			"(providers.md OQ-CN7).[/dim]")
 	}
 }
 
