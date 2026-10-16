@@ -2,7 +2,7 @@ package darwinpkg
 
 // floor.go is the Go half of the NON-CONTAINER FLOOR — the set of packages a
 // notch with no baked image has before any config asks for anything
-// (docs/design/macos-user-provisioning.md; "floor" is that document's word, and
+// (docs/reference/macos-user-provisioning.md; "floor" is that document's word, and
 // it is not a yolo config key).
 //
 // WHY THE LIST EXISTS TWICE. flake.nix owns the floor for real: it resolves the

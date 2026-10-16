@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// darwinstage_test.go covers step 8 of macos-user-provisioning.md half two: the native
+// darwinstage_test.go covers "The stage" of macos-user-provisioning.md: the native
 // bootstrap generating the script the confined provisioning stage runs.
 //
 // It drives the REAL boot entry (RunDarwinBootstrap) against a real filesystem, through

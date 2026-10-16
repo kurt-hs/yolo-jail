@@ -11,7 +11,7 @@ import (
 )
 
 // misedatadir_test.go pins the machine tier of the mise store on this backend
-// (docs/design/macos-user-home-tiers.md §5, and macos-user-provisioning.md's OQ-P3).
+// (docs/reference/macos-user-home-tiers.md, "The layout: what is a symlink, what is a mirror", and macos-user-provisioning.md's OQ-P3).
 //
 // WHY IT IS A TEST AND NOT A COMMENT. The failure it guards is SILENT: unset,
 // MISE_DATA_DIR resolves to $HOME/.local/share/mise, and under the home-tier layout

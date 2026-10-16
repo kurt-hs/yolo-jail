@@ -118,8 +118,8 @@ reversed here; that ledger carries the dated reversal rows as of 2026-09-12.
 **Reads with:** [`host-render-target.md`](host-render-target.md) (whose
 [§6.3](host-render-target.md#63-the-structural-problem-on-a-host-target-the-host-layer-is-the-output)
 ruling this re-scopes, and whose `Target`/notch vocabulary this builds on),
-[`../plans/agent-settings-composition.md`](../plans/agent-settings-composition.md)
-(the layer stack and the capture overlay, as designed),
+[`pack-system.md`'s compose engine](../reference/pack-system.md#config-surfaces-and-the-compose-engine)
+(the layer stack and the capture overlay, as built),
 [`environment-manager-user-stories.md`](environment-manager-user-stories.md)
 (story 1 is this problem from the user's side),
 [`../plans/environment-manager-plan.md`](../plans/environment-manager-plan.md)
@@ -816,14 +816,17 @@ be made to agree.** Two corollaries follow, and both are worth having before any
 #### What this ruling obliges
 
 Recorded here rather than in [§10](#10-what-i-would-build-in-order), whose build order is
-history. **All five were done 2026-10-05**: (1) [`OQ-CO14`](#oq-co14) ruled; (2) the value
-dropped and the default moved together ([`CO-D1`](#CO-D1), [`CO-D2`](#CO-D2)); (3)
-`render.HostAssertModes` and its census entry deleted, with the derived coercion
-([`CO-D5`](#CO-D5)), and the `excluded` reasons name `own`; (4) `--to host` dissolved
-([`CO-D6`](#CO-D6)); (5) the three mechanisms re-verified with their `own`-side callers: the
-`retired:` label and `LayerAsserted`'s refusal of `host` by the rmw-arm tests rendering an
-`rmw`-declared surface under `own` (`provenanceretire_test.go`), the mark by the end-to-end tests
-of [`CO-D7`](#CO-D7).
+history. **All five were done 2026-10-05**:
+
+- [`OQ-CO14`](#oq-co14) ruled;
+- the value dropped and the default moved together ([`CO-D1`](#CO-D1), [`CO-D2`](#CO-D2));
+- `render.HostAssertModes` and its census entry deleted, with the derived coercion
+  ([`CO-D5`](#CO-D5)), and the `excluded` reasons name `own`;
+- `--to host` dissolved ([`CO-D6`](#CO-D6));
+- the three mechanisms re-verified with their `own`-side callers: the `retired:` label and
+  `LayerAsserted`'s refusal of `host` by the rmw-arm tests rendering an `rmw`-declared surface
+  under `own` (`provenanceretire_test.go`), the mark by the end-to-end tests of
+  [`CO-D7`](#CO-D7).
 
 1. **Rule [`OQ-CO14`](#oq-co14)
    first.** It decides what the other steps do to an existing installation, and one of its faces
@@ -1806,7 +1809,7 @@ and the archive is still what nets that.
 > later stops supplying the key — loses because the pending edit is invisible and
 > can sit for months: it would silently restore a stale `permissions` grant, or
 > resurrect an MCP server the user had deleted. See
-> [§5.1 of the composition plan](../plans/agent-settings-composition.md#51-the-store-holds-only-edits-that-can-win).
+> [what the first migration keeps](../reference/config-migration-to-prism.md#adoption-what-the-first-migration-keeps).
 
 **Row 3 — the keyless case — is the honest gap, and three facts bound it.**
 

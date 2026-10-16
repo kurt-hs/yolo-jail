@@ -1,6 +1,6 @@
 // Package codec is the decode/encode boundary of yolo's generated-config
-// composition pipeline (docs/plans/agent-settings-composition.md §3.1 pipeline,
-// §3.3 format-agnostic). The engine in internal/agentcfg composes purely over
+// composition pipeline (docs/reference/pack-system.md,
+// "Config surfaces and the compose engine"). The engine in internal/agentcfg composes purely over
 // already-decoded generic values (map[string]any / []any / scalars / nil); this
 // package turns on-disk bytes into that model and back.
 //

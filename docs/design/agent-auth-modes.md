@@ -30,7 +30,7 @@ the body is the record of built work.
 > it is right and this is history: do not cite this doc for how providers work.**
 >
 > It is not reduced to a stub — the way
-> [`noncontainer-nix-environment.md`](noncontainer-nix-environment.md) was when *all* of its
+> `noncontainer-nix-environment.md` was when *all* of its
 > content moved — because that successor's perimeter is the provider and profile code and nothing
 > else. It carries no capability resolution, no failover reasoning, no credential traps, and
 > **the sections below are still cited by live anchor from the plans, research and design trees

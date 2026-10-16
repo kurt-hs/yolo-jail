@@ -182,7 +182,7 @@ func Run(opts Options) (rc int) {
 	// empty repo root reached darwinpkg.Materialize, left exec.Cmd.Dir empty and
 	// had nix resolve a flake from the user's own cwd (measured 2026-09-03). Now
 	// there is no exemption: every macos-user launch builds the non-container FLOOR
-	// (docs/design/macos-user-provisioning.md, OQ-P1), so every macos-user launch
+	// (docs/reference/macos-user-provisioning.md, OQ-P1), so every macos-user launch
 	// needs the flake. --dry-run stays exempt because it materializes nothing.
 	repoRes, repoRootOK := o.RepoRoot()
 	repoRoot := repoRes.Root
@@ -848,7 +848,7 @@ func Run(opts Options) (rc int) {
 		// THE OTHER TIER COLLAPSE — #39's mirror image — USED TO BE WARNED ABOUT HERE, and
 		// is fixed rather than reported: the bootstrap now symlinks every scope:workspace
 		// state dir into <workspace>/.yolo/home, the sidecar the container backends bind
-		// from (entrypoint.InstallDarwinHomeLayout, docs/design/macos-user-home-tiers.md).
+		// from (entrypoint.InstallDarwinHomeLayout, docs/reference/macos-user-home-tiers.md).
 		// What the warning said was that the Seatbelt profile enforces a boundary the home
 		// then leaked — a sibling workspace's transcripts unreadable under /Users and
 		// readable at ~/.claude/projects/<other>/ — which the layout closes with no profile
@@ -966,7 +966,7 @@ func Run(opts Options) (rc int) {
 		// bootstrap already rewrites agent configs and shims on every launch) but this
 		// widens it from workspace-independent files to per-project ones. The fix is a
 		// per-workspace home, which is a design change and has its own doc:
-		// docs/design/macos-user-home-tiers.md.
+		// docs/reference/macos-user-home-tiers.md.
 		// NOT gated on --dry-run, and that is deliberate: the plan's job is to describe
 		// the launch, and a plan that omitted the content staging would show a launch
 		// nobody runs. Composing writes only into the host-side staging dir, which pack

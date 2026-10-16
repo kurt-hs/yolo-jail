@@ -9,7 +9,7 @@ import (
 )
 
 // hometier_test.go pins the launcher's half of the macos-user workspace tier
-// (docs/design/macos-user-home-tiers.md): the bootstrap lays the symlink layout only when
+// (docs/reference/macos-user-home-tiers.md): the bootstrap lays the symlink layout only when
 // it is TOLD where the workspace sidecar is, so this one env var is the whole channel.
 //
 // Its absence is silent by construction — a bootstrap without it generates into the shared

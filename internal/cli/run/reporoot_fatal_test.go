@@ -24,7 +24,7 @@ import (
 // flake to build its IMAGE. macos-user needs it to build the non-container FLOOR
 // — the core set every jail gets — which since 2026-09-12 is materialized on
 // every launch rather than only when `packages:` is non-empty
-// (docs/design/macos-user-provisioning.md, OQ-P1). --dry-run is the one thing
+// (docs/reference/macos-user-provisioning.md, OQ-P1). --dry-run is the one thing
 // still exempt on that arm: it materializes nothing.
 
 // runFatalOptions builds an Options whose seams reach the repo-root gate

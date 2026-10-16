@@ -20,7 +20,7 @@ import (
 
 // darwinhomelayout.go is the macos-user WORKSPACE TIER: the symlink layout that gives the
 // one sandbox account a per-workspace home without moving HOME
-// (docs/design/macos-user-home-tiers.md, alternative A′).
+// (docs/reference/macos-user-home-tiers.md, "The layout: what is a symlink, what is a mirror").
 //
 // WHAT IT IS. `HOME` stays /Users/_yolojail. Every directory the podman argv binds from
 // <workspace>/.yolo/home becomes a symlink from the account home into that same sidecar, so
@@ -235,7 +235,7 @@ func DeriveDarwinHomeLayout(home, sidecar string, writableDirs, sharedDirs []str
 // cannot reach the path it names is worse than no remedy — it looks actionable.
 //
 // Recorded as one of the two defects a mutation pass found and this fixes:
-// docs/design/macos-user-home-tiers.md §10, runbook item 10
+// docs/reference/macos-user-home-tiers.md, "What is still shared, and what that costs", runbook item 10
 // (docs/plans/runbooks/macos-user-manual-checks.md).
 //
 // ⚠ A SYMBOLIC LINK IN THE SIDECAR IS REFUSED FIRST, before anything is created, because

@@ -1,7 +1,6 @@
 // Package manifest declares the per-surface schema behind yolo's
 // generated-config composition pipeline
-// (docs/plans/agent-settings-composition.md §1.1 surface inventory, §3.3
-// codecs, §4 layers/scope). It is a Phase-A leaf library with NO callers: its
+// (docs/reference/pack-system.md, "Config surfaces and the compose engine"). It is a Phase-A leaf library with NO callers: its
 // job is to PIN the shape of a "surface" declaration and the manifest that
 // collects them, so later Phase-A/B pieces (the codecs, the Lua VM, the
 // entrypoint wiring) build against a frozen schema.

@@ -774,7 +774,7 @@ type HomeFileRedirect struct {
 // internal/cli/run), and the macos-user home layout writes the same three into the sandbox
 // account home (entrypoint.DeriveDarwinHomeLayout). A fourth file redirected on one backend and not the
 // other is a per-backend answer to "where does my agent's state live", which is the drift
-// docs/design/macos-user-home-tiers.md §5.0 rules out.
+// docs/reference/macos-user-home-tiers.md OQ-HT4 rules out.
 //
 // These are CORE's. The CONFIG-driven redirects — one per home-root `host_files` file
 // (`~/.npmrc`) — exist on both backends too, outside this list because the user's config

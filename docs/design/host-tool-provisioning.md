@@ -68,8 +68,6 @@ declared program, and a declared program with no floor entry refuses rather than
 Ruled 2026-09-29: [OQ-HP1](#OQ-HP1) (on by default), [OQ-HP2](#OQ-HP2) (moot: on no user PATH), [OQ-HP3](#OQ-HP3) (captures, and a host capture on macOS), [OQ-HP4](#OQ-HP4) (the official Node tarball), [OQ-HP5](#OQ-HP5) (no consent prompt: the pack selection is the consent), [OQ-HP6](#OQ-HP6) (never provision the workspace runtime at the host), [OQ-HP7](#OQ-HP7) (the agent's children see the user's own environment), and [HP-DIR4](#HP-DIR4) (a selected pack's agent runs from the floor, from any launcher).
 
 **Reads with:**
-- [`host-tool-provisioning-plan.md`](host-tool-provisioning-plan.md): the implementation sketch.
-  It is incomplete, and nobody builds from it.
 - [`host-agent-environment.md`'s launch PATH](../reference/host-agent-environment.md#the-launch-path-and-which-copy-of-a-program-runs): the launch PATH yolo's host checks
   read, which is the PATH yolo was started with plus `host_path`'s folders
   ([HE-DIR1](../reference/host-agent-environment.md#he-dir1)). The prefix is not part of it. This doc

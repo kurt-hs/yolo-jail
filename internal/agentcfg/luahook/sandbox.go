@@ -1,7 +1,6 @@
 package luahook
 
-// The sandbox contract (docs/reference/pack-system.md §7; the shape of it is
-// docs/plans/agent-settings-composition.md §3.4, §9 "Sandbox is mandatory",
+// The sandbox contract (docs/reference/pack-system.md §7; the shape of it was
 // written for the config transform that no longer exists and inherited whole by
 // the derive path).
 //

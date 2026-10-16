@@ -44,7 +44,7 @@ func (e *MaterializeError) Error() string { return e.msg }
 // IT IS THE FLOOR PROFILE, NOT THE DECLARED PACKAGES ALONE, and that is the
 // difference between this and MaterializeAt below. This function's only caller is
 // the macos-user launch, which has no image: mise, node, git and ripgrep reach
-// the agent here or nowhere (docs/design/macos-user-provisioning.md, OQ-P1).
+// the agent here or nowhere (docs/reference/macos-user-provisioning.md, OQ-P1).
 // MaterializeAt's caller is a CONTAINER whose image already bakes the core, so it
 // takes ProfileAttr. A macos-user FORK BUILD takes the floor too, rooted elsewhere:
 // MaterializeFloorAt.

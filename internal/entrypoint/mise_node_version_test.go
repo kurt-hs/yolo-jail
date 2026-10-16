@@ -39,7 +39,7 @@ func TestMiseSurfaceInstallsNoBakedRuntime(t *testing.T) {
 	// core list is a list of nixpkgs attr NAMES (`coreFloorNames`) that
 	// `corePackagesFromNixpkgs` maps over — the same names the non-container FLOOR
 	// resolves against the native package set
-	// (docs/design/macos-user-provisioning.md). The quotes are what keep `"go"`
+	// (docs/reference/macos-user-provisioning.md). The quotes are what keep `"go"`
 	// exact: it cannot false-match gh/gawk/git/golangci-lint, nor the host
 	// cross-compiler `pkgs.go`.
 	bakedRuntime := map[string]string{

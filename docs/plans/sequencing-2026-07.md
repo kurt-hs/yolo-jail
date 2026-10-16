@@ -84,7 +84,7 @@ gets (`validate.go`). Existing `<workspace>/.yolo/home/gemini/` dirs and
 `.yolo/prism/gemini-settings.*` sidecars become orphans; `yolo prune` should reap them.
 
 > **The working list for items 3 and 4 now lives in
-> [composed-config-work.md](composed-config-work.md)** — one dependency-ordered,
+> `composed-config-work.md`** — one dependency-ordered,
 > deduplicated list with defect/improvement, ready/needs-decision and size per item. The
 > tables below stay as the summary and the lane/blocker call; do not add work items to
 > them.
@@ -332,7 +332,7 @@ being jail-free is not the same as the *surface data* being jail-free:
 `internal/agentcfg/builtin.go:104` hardcodes the literal `/workspace` in claude's
 `defaults`/`managed`. So extraction is "engine yes, built-ins no" until a
 `${workspace}` substitution exists — tracked as item 3.8 in
-[composed-config-work.md](composed-config-work.md). The broader boundaries question
+`composed-config-work.md`. The broader boundaries question
 (what is separable from the sandbox at all) and the **how pack logic would ship**
 question — compiled binaries vs Lua vs subprocess vs compile-at-first-run — are
 answered in [../reference/what-yolo-is.md](../reference/what-yolo-is.md).
@@ -427,7 +427,7 @@ post-Go-port backlog (nix-ld, color audit, consolidation) into the same picture.
 | [macos-revival-and-distribution-plan.md](macos-revival-and-distribution-plan.md) | Tracks J (Linux-jail fixes), D (distribution/source-access), M (Mac hardware). Roadmap of record. | **J1–J3 + D1/D2/D3 done, Track M M0/M1/M2 PROVEN on HW 2026-07-21; only D4 Mac-download proof remains.** |
 | [handoff-cachix-cache.md](handoff-cachix-cache.md) | The revival plan's **D4**: publish the OCI image to a Cachix cache. | human-gated — substituter ENABLED (flake.nix:13-16, 730c258); Cachix account + cache exist and CI has pushed data; only the Mac download proof remains |
 | `nix-ld-dynamic-linking.md` (retired 2026-09-26; the mechanism is in [`mise-node-dynamic-linking.md`](../reference/mise-node-dynamic-linking.md), the plan is in `git log -- docs/plans/nix-ld-dynamic-linking.md`) | Replace the `LD_LIBRARY_PATH` whack-a-mole with nix-ld; closes the custom-`mcp_servers` startup gap. | jail-side — **DONE 2026-07-22** (Variant A: custom `nix-ld.overrideAttrs`, `DEFAULT_NIX_LD` baked; MCP-wrapper exports removed; `yolo check` tripwire added). The host-gated `env -i` acceptance matrix it waited on was overtaken by shipping: ci.yml's `integration` job runs the podman suite on both arches, and only the scrubbed-environment tripwire, which runs in-jail under `yolo check`, has no recorded aarch64 run. |
-| [agent-settings-composition.md](agent-settings-composition.md) | Layered regeneration of any generated config (agent settings, MCP, LSP, mise, identity) + a Lua transform. **Design FINALIZED 2026-07-20.** | jail-side — **agent-config surfaces DONE 2026-07-22: prism is the sole boot config path (gate retired, bespoke writers deleted); non-agent surfaces (mise/MCP/LSP/identity) still to port** |
+| `agent-settings-composition.md` | Layered regeneration of any generated config (agent settings, MCP, LSP, mise, identity) + a Lua transform. **Design FINALIZED 2026-07-20.** | jail-side — **agent-config surfaces DONE 2026-07-22: prism is the sole boot config path (gate retired, bespoke writers deleted); non-agent surfaces (mise/MCP/LSP/identity) still to port** |
 | [cache-relocation.md](cache-relocation.md) | User-scope-only `cache_relocations` so a huge cold cache subdir can live on other storage; unblinds `prune`/`purge`. Podman behavior proven 2026-07-21; host acceptance discharged 2026-07-22. | **DONE (items 1–10); item 11 held on a design question** |
 | `linux-builder-lifecycle.md` (archived 2026-09-09; git has it) (`linux-builder-lifecycle.md`, archived 2026-09-09 — the removal is DONE; the mechanism is in [`macos-linux-builder-explained.md`](../research/macos-linux-builder-explained.md)) | Decision record: the two builder mechanisms (VM vs container), why the **VM builder was removed** and the container builder is the sole builder, plus the KEYS-bug diagnosis kept as evidence + a manual unblock. | jail-side (macOS-runtime-gated) — **DONE 2026-07-23**: `internal/builder` + the `yolo builder` commands deleted; `yolo check` Image Build + the run-path failure remedy rewired onto the container builder |
 | `cli-color-audit.md` (retired 2026-09-27; the mechanism is in [`cli-color.md`](../reference/cli-color.md), the plan is in `git log -- docs/plans/cli-color-audit.md`) | Shared rich→ANSI renderer + TTY gate across commands. | jail-side — **DONE 2026-07-22** (renderer consolidated, TTY probe unified, check/doctor leak fixed, all commands classified) |
@@ -580,7 +580,7 @@ longer a critical-path chain:
    surfaces (mise, standalone MCP/LSP, git identity) onto the prism and then
    deleting their bespoke generators. This is where the real design
    nuance lives — see the [config-composition build](#config-composition-build-own-self-contained-thread)
-   section and [`agent-settings-composition.md`](agent-settings-composition.md).
+   section and `agent-settings-composition.md`.
 
 2. ~~**cache-relocation**~~ — **DONE 2026-07-21; host acceptance discharged
    2026-07-22.** Work items 1–10 landed (user-scope-only `cache_relocations`,
@@ -643,7 +643,7 @@ commands (`loopholes`/`init`/`init-user-config`) classified. Nothing left.
 
 ## Config-composition build (own self-contained thread)
 
-[agent-settings-composition.md](agent-settings-composition.md) is **finalized**
+`agent-settings-composition.md` is **finalized**
 and jail-side, independent of the macOS J/D/M tracks. Its shape is **serial
 foundation, then parallel fan-out, then deletion** — and Phases A and B have
 **landed**:
