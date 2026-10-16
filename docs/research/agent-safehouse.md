@@ -764,7 +764,7 @@ helper (`containsArgPair`) and the shape.
 ### 8.5 A per-agent knowledge document, with their provenance header — **medium value, ongoing cost**
 
 **What.** Give the class of fact yolo already gathers a published home. yolo *does* write
-per-agent investigations — [workspace-skills.md §2.1](../design/workspace-skills.md#21-where-each-agent-reads-skills--measured) is one,
+per-agent investigations — [the table of where each agent reads skills](../reference/agent-briefings.md#where-each-agent-reads-skills) is one,
 with a row per agent, a version per row, and every claim read from the installed bundle's
 strings rather than from vendor docs — but it is buried inside a design doc because that is
 where a decision happened to need it, and it will be stranded when that design is built.
@@ -779,7 +779,7 @@ adopt.
 found the direction inverted on three of five agents — yolo *writes* files their table marks
 read-only and user-created.
 
-**The seam.** [`workspace-skills.md` §2.1](../design/workspace-skills.md#21-where-each-agent-reads-skills--measured) is the nearest existing home for
+**The seam.** [`agent-briefings.md`'s table of where each agent reads skills](../reference/agent-briefings.md#where-each-agent-reads-skills) is the nearest existing home for
 cross-agent path knowledge, and [the workspace skills layer](../reference/agent-briefings.md#the-workspace-layer)
 [the workspace layer](../reference/agent-briefings.md#the-workspace-layer) — *"The pack declares what its agent reads"* — is the mechanism that would make the
 document's project-scope half machine-checkable, since it proposes the pack declare its agent's

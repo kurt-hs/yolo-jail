@@ -854,7 +854,7 @@ const hostWorkspaceSkillsLeaf = "host-workspace-skills"
 
 // HostWorkspaceSkillsDir returns $HOME/.local/share/yolo-jail/host-workspace-skills — the RECORD
 // of each link `yolo host -- <agent>` put into a workspace for the workspace skills layer
-// (docs/design/workspace-skills.md WS-D19 to WS-D23): one file per workspace and link, keyed by a
+// (docs/reference/agent-briefings.md WS-D19 to WS-D23): one file per workspace and link, keyed by a
 // digest of the workspace's resolved path and the link's path in it. The record is what makes a
 // link yolo's to refresh or remove, so it is host-side and never in the workspace's own .yolo/,
 // which the repository's agent can write. No jail mounts it.

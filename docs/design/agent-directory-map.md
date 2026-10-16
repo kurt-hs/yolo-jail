@@ -749,7 +749,7 @@ this doc's survey ([Appendix A](#appendix-a-evidence)).
   **authoring aid**, offline, never at runtime ([§10](#10-alternatives-considered)).
 - **`skills/`**: composed, with vendor-owned children. `synced` is already `reserved`. The bundle's
   sync-owned prefixes make `.trash` and `.staging` **siblings** of `synced`, while
-  [`synced-skill-trees.md` §2.3](synced-skill-trees.md#23-reserved-siblings) says they are **inside**
+  [`pack-system.md`'s record of the sync root](../reference/pack-system.md#sync-root-reserved-siblings) says they are **inside**
   it. Measure which before the slice. `.trash` holds recoverable skills, so it is state.
 - **Credentials in four places**, and one of them has no path: `.credentials.json` (laid in a jail,
   and a credential by derivation from the claude pack's `shared_credentials` hook, so the claude map
