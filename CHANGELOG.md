@@ -43,6 +43,7 @@ model's facts across providers with per-provider overrides. See `yolo config-ref
 - A patched fork with nothing built no longer keeps refusing for an hour after a fetch failed because the network wasn't up yet; the next launch fetches again, and the refusal names the network.
 - A bare `-p` that some agents can't use now names them all on one line, with the fix for each.
 - `yolo config promote` no longer turns a `null` you set in an agent's config into a deletion in your pack, and `yolo config diff` no longer reports it as deleted.
+- A launch refused while it prepared a patched build no longer leaves a background `nix eval` running for up to two minutes after it exits.
 
 ## [0.14.0] - 2026-10-15
 
