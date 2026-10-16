@@ -268,7 +268,8 @@ func hostTreeGate(errw io.Writer, bin, home string) bool {
 // whose series as it stands has a recorded patch failure stops the launch, read from its check record
 // with no git, its error block said here, even though the linked good build is there to load.
 // paths.AllowPatchFailuresEnv, `1` or a name covering it (internal/patchrecovery), loads that linked
-// build, said in one line; with none linked it offers nothing.
+// build, said in one line. UNDER A HOLD (docs/reference/patched-forks.md §3.4) a failure at another
+// version than the good build's has no bearing while a build is linked: the launch loads it, unsaid.
 func hostTreePatchFailureAllows(errw io.Writer, f packload.Fork, bin, dest string) bool {
 	if config.HostApplyOnLaunchEnabled() {
 		return true
@@ -281,19 +282,60 @@ func hostTreePatchFailureAllows(errw io.Writer, f packload.Fork, bin, dest strin
 	if target, err := os.Readlink(dest); err == nil && filepath.Dir(target) == hostTreeVersionsDir(f) && isDir(dest) {
 		runs = linkedTreeLabel(filepath.Base(target))
 	}
-	continuing := runs != "" && allowPatchFailures(f)
-	bypass := packsrc.PatchBypass{Command: "yolo host -- " + bin, Runs: runs}
-	if continuing {
-		bypass = packsrc.PatchBypass{} // the hatch is set: no list, one line under the block
+	if runs != "" && holdPassesOver(f, recordedGood(f), pf) {
+		return true
 	}
-	_, _ = io.WriteString(errw, pf.Render(f.Key(), f.RebaseRecipe(), bypass, colorForWriter(errw)))
-	if continuing {
+	command := "yolo host -- " + bin
+	if runs != "" && allowPatchFailures(f) {
+		// The hatch is set: the block with no list, and one line under it.
+		_, _ = io.WriteString(errw, pf.Render(f.Label(), f.RebaseRecipe(), packsrc.PatchBypass{Key: f.Key()},
+			colorForWriter(errw)))
 		fmt.Fprintf(errw, "Continuing with %s (%s)\n", runs, allowPatchFailuresEnv)
 		return true
 	}
-	fmt.Fprintf(errw, "yolo host: refusing to launch %s: the patch series of %s does not apply (the ERROR above).\n",
-		bin, f.Label())
+	bypass := packsrc.PatchBypass{Command: command, Key: f.Key(), Hatches: hostTreeGateHatches(f, command, runs)}
+	_, _ = io.WriteString(errw, pf.Render(f.Label(), f.RebaseRecipe(), bypass, colorForWriter(errw)))
 	return false
+}
+
+// hostTreeGateHatches is the hatch list of hostTreePatchFailureAllows' refusal: the advance's own
+// (advance.recoveryHatches, the one authority) as it stands at this launch, which runs no advance —
+// so no walk-back, no cached-good build and no upstream build (YOLO_SKIP_PATCHES would load whatever
+// is linked, not the upstream) — and whose patch-failure bypass loads the LINKED build, runs,
+// offered only when one is linked.
+func hostTreeGateHatches(f packload.Fork, command, runs string) []patchrecovery.Hatch {
+	var from []patchrecovery.Hatch
+	if a, early := newAdvance(f, advanceOptions{platform: captureJailPlatform(), out: io.Discard, errw: io.Discard,
+		launch: true, host: true, bypassCommand: command, readOnlyInitialization: true}); early == nil {
+		from = a.recoveryHatches()
+	}
+	var out []patchrecovery.Hatch
+	if runs != "" {
+		out = append(out, patchrecovery.Hatch{Env: patchrecovery.AllowPatchFailuresEnv, Value: f.Key(),
+			Command: command, Label: "run " + runs})
+	}
+	for _, h := range from {
+		switch h.Env {
+		case patchrecovery.AllowPatchFailuresEnv, patchrecovery.AllowOlderUpstreamEnv, patchrecovery.UseCachedGoodEnv,
+			patchrecovery.SkipPatchesEnv:
+			continue
+		}
+		out = append(out, h)
+	}
+	return out
+}
+
+// recordedGood is f's recorded good build, nil for none or an unreadable record.
+func recordedGood(f packload.Fork) *packsrc.GoodBuild {
+	series, err := f.ReadSeries()
+	if err != nil {
+		return nil
+	}
+	rec, err := run.LoadPatchedRecord(patchedForkStore(), f, series)
+	if err != nil || rec == nil {
+		return nil
+	}
+	return rec.Good
 }
 
 // hostLaunchTrees is every patched extension `yolo host -- <bin>` stops without: those whose owning

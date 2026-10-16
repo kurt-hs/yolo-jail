@@ -172,7 +172,7 @@ func TestAHostLaunchWithoutApplyOnLaunchStopsOnATreesRecordedPatchFailure(t *tes
 	if rc == 0 || got.execed {
 		t.Fatalf("a recorded patch failure: rc=%d execed %v, want a refusal\n%s", rc, got.execed, errw.String())
 	}
-	if n := strings.Count(errw.String(), "ERROR: treepack/tool-ext: patch series does not apply to upstream v1.2.0"); n != 1 ||
+	if n := strings.Count(errw.String(), "ERROR: extension treepack/tool-ext: patch series does not apply to upstream v1.2.0"); n != 1 ||
 		!strings.Contains(errw.String(), "\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES=treepack/tool-ext yolo host -- tool ") {
 		t.Errorf("the refusal says the error %d times, want once, with the bypass:\n%s", n, errw.String())
 	}

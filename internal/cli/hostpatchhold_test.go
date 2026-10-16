@@ -34,6 +34,36 @@ func TestAHeldForksRecordedFailureDoesNotStopTheHostApply(t *testing.T) {
 	}
 }
 
+// A HOLD HOLDS AT `yolo host -- <bin>` TOO (§3.4, OQ-PBR5): held, a patched fork's recorded patch
+// failure has no bearing while its good build serves, so the launch runs that build with no error
+// block, at once and past the hour; without the hold it refuses. Red with the floor's own
+// preparation (floorPatchedStateRecord, floorResolvePatched) not asking whether the fork is held.
+func TestAHeldForksRecordedFailureDoesNotStopTheHostLaunch(t *testing.T) {
+	t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "")
+	fx := patchedFloorFixture(t)
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	fx.writeUserConfig(t, `,"host_management":"own"`)
+	if rc, _, out := fx.hostLaunch(t); rc != 0 {
+		t.Fatalf("the first launch: rc=%d\n%s", rc, out)
+	}
+	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
+	fx.later(2 * time.Hour)
+	if rc, _, out := fx.hostLaunch(t); rc == 0 || !strings.Contains(out, "0001-ten.patch") {
+		t.Fatalf("the launch that records the failure: rc=%d\n%s", rc, out)
+	}
+	fx.writeUserConfig(t, `,"host_management":"own","agent_updates":{"forkpack":false}`)
+	for _, launch := range []string{"the held launch", "the next held launch", "past the hour"} {
+		if launch == "past the hour" {
+			fx.later(2 * time.Hour)
+		}
+		rc, target, out := fx.hostLaunch(t)
+		if rc != 0 || target == "" || strings.Contains(out, "ERROR: ") || strings.Contains(out, "Start anyway:") {
+			t.Fatalf("%s: the held fork's recorded failure stopped or marked the launch: rc=%d target=%q\n%s",
+				launch, rc, target, out)
+		}
+	}
+}
+
 // THE SAME FOR A PATCHED EXTENSION at the apply `yolo pack update` runs: held, its linked good build
 // serves and its recorded failure does not stop the apply. Red with hostPatchPreflight's tree half
 // not asking whether the extension is held.

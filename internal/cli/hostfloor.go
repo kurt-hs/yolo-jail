@@ -452,8 +452,9 @@ func floorResolvePatched(ctx context.Context, p hostfloor.Program, out io.Writer
 		appendFloorAuthorityError(&state, message)
 		authorityBlocked = true
 	case "failure":
-		if authority.Failure != nil && walkBackAsked(fork, authority.Failure) {
-			state.PatchFailure = nil // the walk-back is asked for: the advance decides
+		if authority.Failure != nil && (walkBackAsked(fork, authority.Failure) ||
+			holdPassesOver(fork, a.goodBuild(), authority.Failure)) {
+			state.PatchFailure = nil // the walk-back is asked for, or a hold holds: the advance decides
 		} else if authority.Failure != nil {
 			state.PatchFailure = authority.Failure
 			state.Recovery = a.recoveryHatches()
@@ -640,9 +641,6 @@ func floorPatchedStateRecord(p hostfloor.Program, recorded *packsrc.CheckRecord,
 		}
 		patchFailure = rec.CurrentPatchFailure(in, series.Digest)
 	}
-	if !walkBackAsked(f, patchFailure) {
-		ps.PatchFailure = patchFailure // with the walk-back asked for, the advance decides (walkBackAsked)
-	}
 	if !fixed && g == nil {
 		g = recoverGoodBuild(store, f.Key(), platform, recipe, series.Len())
 		if g == nil && series.LegacyDigest != "" && series.LegacyDigest != series.Digest {
@@ -651,6 +649,11 @@ func floorPatchedStateRecord(p hostfloor.Program, recorded *packsrc.CheckRecord,
 				g.Series, g.Recipe, lookup = series.Digest, recipe, legacy
 			}
 		}
+	}
+	// With the walk-back asked for, the advance decides (walkBackAsked); under a hold, a failure at
+	// another version than the good build's has no bearing (holdPassesOver).
+	if !walkBackAsked(f, patchFailure) && !holdPassesOver(f, g, patchFailure) {
+		ps.PatchFailure = patchFailure
 	}
 	switch {
 	case g == nil:
