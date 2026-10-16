@@ -54,7 +54,7 @@ follows its leaning, which is what this design already said; the other answer is
 **Reads with:**
 
 - [`boundary-broker.md`](boundary-broker.md): the broker. This doc re-rules its
-  [OQ-BB6](boundary-broker.md#OQ-BB6), which makes its [OQ-BB11](boundary-broker.md#OQ-BB11) moot.
+  [OQ-BB6](boundary-broker.md#15-decision-ledger), which makes its [OQ-BB11](boundary-broker.md#15-decision-ledger) moot.
 - [`config-safety.md`](../reference/config-safety.md): the config-change gate.
 
 ---
@@ -80,7 +80,7 @@ these parts:
 - **The user-scope form deleted**, the old key an error naming the new place, and a CHANGELOG
   `### Changed` line ([WW-D2](#WW-D2)).
 - **The refusal** names the entry and the restart ([WW-D5](#WW-D5)).
-- **The reasons, [OQ-BB11](boundary-broker.md#OQ-BB11) among them** ([WW-D7](#WW-D7)).
+- **The reasons, [OQ-BB11](boundary-broker.md#15-decision-ledger) among them** ([WW-D7](#WW-D7)).
 - **Three costs**: the bar drops from a host edit to a y, a cloned project can ask for
   repositories, and restarting stays manual.
 
@@ -89,21 +89,21 @@ ask the user to restart"* ([WW-D6](#WW-D6)). The rest of [§3](#3-the-design) is
 implementation decisions, [WW-D8](#WW-D8) on.
 
 The 2026-09-29 ruling this replaces was provisional by his own words: *"Let's start with A and then
-see how it goes"* ([OQ-BB6](boundary-broker.md#OQ-BB6)).
+see how it goes"* ([OQ-BB6](boundary-broker.md#15-decision-ledger)).
 
 ### 1.2 Why it holds
 
 - **The fence was already open.** The scope is every remote in the workspace's `.git/config` whose
   URL names `github.com` in the https, `ssh://` or `git@` form, and the agent can edit that file.
-  Under [OQ-BB7](boundary-broker.md#OQ-BB7)'s ruling, `git remote add lib
+  Under [OQ-BB7](boundary-broker.md#15-decision-ledger)'s ruling, `git remote add lib
   https://github.com/org/lib` and one y at the next launch admit `org/lib` today. A workspace-config
   entry behind the same y hands the agent nothing it lacks. It just saves the project from carrying
   a remote nobody wants.
-- **Both objections to this option are answered.** [OQ-BB6](boundary-broker.md#OQ-BB6) declined
+- **Both objections to this option are answered.** [OQ-BB6](boundary-broker.md#15-decision-ledger) declined
   option (d), *"a workspace-scope key, honored only once a human approves it through the existing
   config-change diff"*, for two reasons:
   - It put the widening in a file the maintainer had ruled a workspace may not use, under
-    [OQ-BB1](boundary-broker.md#OQ-BB1). His 2026-10-05 ruling withdraws that.
+    [OQ-BB1](boundary-broker.md#15-decision-ledger). His 2026-10-05 ruling withdraws that.
   - It *"rides a diff the human may approve alongside an ordinary package change."*
     [BB-D31](boundary-broker.md#BB-D31) answered that the same day: a scope change is a labeled
     block shown first, one row per repository, never JSON lines. This design extends that block.
@@ -115,9 +115,9 @@ see how it goes"* ([OQ-BB6](boundary-broker.md#OQ-BB6)).
 - **It matches the read-only mount, for reads.** A workspace `mounts` element reaches any host path
   read-only, behind the same gate ([`context-mounts.md` §2.2](context-mounts.md#22-where-an-rw-mount-may-be-declared-deferred)), while
   read-write reach stays user-scope-only. Writes differ, and the difference is a cost. A listed
-  repository joins the scope for every permission set ([OQ-BB9](boundary-broker.md#OQ-BB9)). So once
+  repository joins the scope for every permission set ([OQ-BB9](boundary-broker.md#15-decision-ledger)). So once
   read-write grants are built, it is covered by every read-write window the human grants: the
-  whole set for 15 minutes by default ([OQ-BB2](boundary-broker.md#OQ-BB2)). Writes exit 77 today.
+  whole set for 15 minutes by default ([OQ-BB2](boundary-broker.md#15-decision-ledger)). Writes exit 77 today.
 
 > [!NOTE]
 > **The authority test decides it, applied to the restriction.**
@@ -136,8 +136,8 @@ see how it goes"* ([OQ-BB6](boundary-broker.md#OQ-BB6)).
 
 | Record | Change |
 | :--- | :--- |
-| [OQ-BB6](boundary-broker.md#OQ-BB6) | Re-ruled from (a), a user-scope entry keyed by workspace, to (d), a workspace key honored once approved. (e), an out-of-scope read that rings for approval, stays not adopted ([WW-D1](#WW-D1)) |
-| [OQ-BB1](boundary-broker.md#OQ-BB1)'s *"we can't allow it to be widened in the workspace"* | Read as *not without a human's approval at the gate*, the reading [OQ-BB7](boundary-broker.md#OQ-BB7) already gave it for remotes |
+| [OQ-BB6](boundary-broker.md#15-decision-ledger) | Re-ruled from (a), a user-scope entry keyed by workspace, to (d), a workspace key honored once approved. (e), an out-of-scope read that rings for approval, stays not adopted ([WW-D1](#WW-D1)) |
+| [OQ-BB1](boundary-broker.md#15-decision-ledger)'s *"we can't allow it to be widened in the workspace"* | Read as *not without a human's approval at the gate*, the reading [OQ-BB7](boundary-broker.md#15-decision-ledger) already gave it for remotes |
 | [BB-P9](boundary-broker.md#BB-P9) | Restated. A workspace has two inputs to its scope, its remotes and its entry, and both take effect only through the gate. Its headline, *"a workspace never widens its own reach"*, becomes *"never without a human's y"*. The other half stands: nothing a workspace says adds a command to a permission set |
 | [BB-D30](boundary-broker.md#BB-D30) | The config part is now the workspace config minus `brokered`. The scope part takes in the entry and gains a sources record, `<container-name>.scope-sources.json`, beside it ([§3.2](#32-the-gate)). The P3 exception covers both inputs. Its rule that deleting any part alone fails safe holds for the new part too ([WW-D11](#WW-D11)) |
 | [BB-D33](boundary-broker.md#BB-D33) | Superseded: no path key, no user scope, and the entry is part of the gate |
@@ -145,7 +145,7 @@ see how it goes"* ([OQ-BB6](boundary-broker.md#OQ-BB6)).
 | [BB-D44](boundary-broker.md#BB-D44)'s 2026-10-01 revision | Reversed: an unapproved entry never reaches the broker ([§3.3](#33-what-the-broker-gets)) |
 | [BB-D31](boundary-broker.md#BB-D31), [BB-D32](boundary-broker.md#BB-D32) | Extended: entry rows and source-change rows in the block, and the scope file written from the gate's own result |
 | [§5.7](boundary-broker.md#57-permission-sets) | The `brokered` key splits by child: `<source>.repos` is workspace scope, and `<source>.sets`, still unbuilt, stays user scope ([WW-D14](#WW-D14)) |
-| [OQ-BB11](boundary-broker.md#OQ-BB11) | Moot. A consequence of [WW-D1](#WW-D1) and [WW-D2](#WW-D2), named in the proposal the maintainer accepted: with no user-scope entry, no other workspace's entry reaches the delivery copy ([WW-D7](#WW-D7)) |
+| [OQ-BB11](boundary-broker.md#15-decision-ledger) | Moot. A consequence of [WW-D1](#WW-D1) and [WW-D2](#WW-D2), named in the proposal the maintainer accepted: with no user-scope entry, no other workspace's entry reaches the delivery copy ([WW-D7](#WW-D7)) |
 | [BB-D68](boundary-broker.md#BB-D68) | The github briefing gains one bullet ([§3.4](#34-what-the-agent-is-told)) |
 | [OQ-K2](../reference/pack-system.md#why-its-this-way) | This channel joins its conditional, so a change to either condition reopens this design too |
 | [`config-safety.md`](../reference/config-safety.md) | Several statements move:<br>• The *workspace scope only* invariant: the gate gets a projection.<br>• The repository-scope section: the block shows entries too, and the flag paths print it.<br>• The P3 exception now names two inputs.<br>• The drift sentence is restated ([§3.2](#32-the-gate)).<br>• [OQ-S3](../reference/config-safety.md#oq-s3): a fresh workspace whose only key is `brokered` records an empty config part, and its entry asks when a broker first starts. This falls within [OQ-S3](../reference/config-safety.md#oq-s3)'s purpose rather than excepting it: nothing in `brokered` acts until the scope part's own prompt approves it ([WW-D15](#WW-D15)) |
@@ -299,7 +299,7 @@ design replaced; [§3](#3-the-design) is what the tree holds.
 
 - **`OWNER/REPO` on the source's host**, checked as before (`brokerscope.ValidRepo`). There is no
   wildcard, no organization-wide entry and no account-wide reach
-  ([OQ-BB9](boundary-broker.md#OQ-BB9)).
+  ([OQ-BB9](boundary-broker.md#15-decision-ledger)).
 - **Degenerate inputs.**
   - An absent key, `null` or `[]` asks for nothing.
   - A duplicate, in any case, counts once.
@@ -320,7 +320,7 @@ design replaced; [§3](#3-the-design) is what the tree holds.
   `yolo check --no-build` passes it, and the human meets an unexpected *removed* row at the gate
   ([WW-D24](#WW-D24)).
 - **What it admits** is a whole repository, for every permission set, exactly as a remote does
-  ([OQ-BB9](boundary-broker.md#OQ-BB9)). Today that means reads. Once grants are built, it also
+  ([OQ-BB9](boundary-broker.md#15-decision-ledger)). Today that means reads. Once grants are built, it also
   means every read-write window the human grants: the maintainer's *"whatever that access is."*
 
 **Refused shapes**
@@ -609,7 +609,7 @@ flowchart LR
     under this key*, and that host `yolo check` prints the edit for each.
     - **Why only a count.** Everything a launch prints is teed to that workspace's
       `.yolo/launch.log`, which its jail can read. Naming other projects' paths and private
-      repositories there would recreate [OQ-BB11](boundary-broker.md#OQ-BB11)'s leak in a new
+      repositories there would recreate [OQ-BB11](boundary-broker.md#15-decision-ledger)'s leak in a new
       file ([WW-D21](#WW-D21)).
     - **Where the full list goes.** Host `yolo check` prints it in full, since its output is copied
       into no workspace.
@@ -716,7 +716,7 @@ enabled and one GitHub remote.
   attaches without a word. Whether an attach should say *"config changed since this jail started;
   restart to apply"* is a separate design across every key, not only this one.
 - **A `yolo` verb that writes the entry.** yolo does not edit a hand-written config
-  ([OQ-BB12](boundary-broker.md#OQ-BB12)'s reason). The agent or the human edits the file.
+  ([OQ-BB12](boundary-broker.md#15-decision-ledger)'s reason). The agent or the human edits the file.
 - **Git-ignoring the local file.** yolo adds only `.yolo/` to a project's `.gitignore`, and this
   design does not change that.
 - **Extending `workspace_readonly`'s self-lock to the local file.** The local file is writable
@@ -725,14 +725,14 @@ enabled and one GitHub remote.
 - **Approving the exact object the launch runs.** The launch runs a strict config read before the
   gate, and the gate approves a separate later read, for every key. That gap predates this design.
   [WW-P2](#WW-P2) keeps the scope out of it, and the rest is a separate design.
-- **Per-repository sets or an organization-wide entry.** [OQ-BB9](boundary-broker.md#OQ-BB9)
+- **Per-repository sets or an organization-wide entry.** [OQ-BB9](boundary-broker.md#15-decision-ledger)
   stands.
-- **An out-of-scope read that rings for approval.** [OQ-BB6](boundary-broker.md#OQ-BB6)'s option
+- **An out-of-scope read that rings for approval.** [OQ-BB6](boundary-broker.md#15-decision-ledger)'s option
   (e) stays not adopted.
 - **The permission sets themselves** ([§5.7](boundary-broker.md#57-permission-sets)), which stay
   unbuilt and user scope.
 - **Turning the broker on from the workspace.** The switch stays the human's host command, one
-  project at a time ([OQ-BB13](boundary-broker.md#OQ-BB13)). An agent can propose a repository, but
+  project at a time ([OQ-BB13](boundary-broker.md#15-decision-ledger)). An agent can propose a repository, but
   it cannot make the host login reachable from a project that has not opted in.
 
 ## 6. Alternatives considered
@@ -740,7 +740,7 @@ enabled and one GitHub remote.
 | Alternative | Verdict |
 | :--- | :--- |
 | Keep the user-scope entry | Rejected. It is the status quo the maintainer called unworkable, and it fences nothing a remote does not already open |
-| Keep both forms | Rejected. The user-scope form's only extra is skipping one prompt per change, and two paths to one scope is how they drift. Keeping it would also keep [OQ-BB11](boundary-broker.md#OQ-BB11)'s leak |
+| Keep both forms | Rejected. The user-scope form's only extra is skipping one prompt per change, and two paths to one scope is how they drift. Keeping it would also keep [OQ-BB11](boundary-broker.md#15-decision-ledger)'s leak |
 | The per-workspace file ([BB-D53](boundary-broker.md#BB-D53)'s home for per-project properties) | Rejected. It is host-only, so an agent cannot propose a repository. It would also mean a new key in a file the human edits on the host, which is the status quo's cost |
 | The local file only | Rejected by ruling. A committed list is how a project says it needs `org/lib`. The cost is in [§7](#7-risks) |
 | `git remote add` as the documented way | Rejected. It works today, but it puts a fake remote in every project that wants a second repository |
@@ -754,7 +754,7 @@ enabled and one GitHub remote.
 | :--- | :--- |
 | A human presses y without reading | The block comes first, is labeled as the scope, and names each file. The count line sits at the question. Remotes already have this exposure, and [BB-D31](boundary-broker.md#BB-D31) states the limit |
 | A scripted `--accept-config-changes` admits an agent's entry unread | Both flag paths print the block before recording, and every launch line names each repository and its source |
-| **A cloned project's committed config asks for the user's private repositories.** This channel is new: a repository's author could never set the user's remotes | Two human acts in a fresh clone: `yolo loopholes enable` on the host in that project ([OQ-BB13](boundary-broker.md#OQ-BB13)), then a y (or the flag) to a block naming `yolo-jail.jsonc` as the source. In a project where the broker is already on, a pull that adds an entry meets the y alone |
+| **A cloned project's committed config asks for the user's private repositories.** This channel is new: a repository's author could never set the user's remotes | Two human acts in a fresh clone: `yolo loopholes enable` on the host in that project ([OQ-BB13](boundary-broker.md#15-decision-ledger)), then a y (or the flag) to a block naming `yolo-jail.jsonc` as the source. In a project where the broker is already on, a pull that adds an entry meets the y alone |
 | **An approved committed entry rides every later read-write window** | Accepted as the maintainer's *"whatever that access is"*. The window's notification names the repositories it covers ([`boundary-broker.md` §6.3](boundary-broker.md#63-what-the-notification-shows)). workspace-config-trust's *"never in a git-committed file"* was said of standing writable grants, and a window is not one |
 | Where `workspace_readonly` locks `.git/config`, the entry is a new agent input | It is still behind the y. A lock covering the local file is a [non-goal](#5-non-goals) here |
 | An agent-chosen file name redraws the block | Every label is escaped ([WW-P3](#WW-P3)) |
@@ -829,15 +829,15 @@ what [WW-D11](#WW-D11) said; graduation waits for the ruling.
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| <a id="WW-D1"></a>[`WW-D1`](#10-decision-ledger) | **Maintainer ruling:** extra repositories are a workspace-config key, honored once a human approves it at the config-change gate. [OQ-BB6](boundary-broker.md#OQ-BB6) is re-ruled from (a) to (d), and (e) stays not adopted. *"it should not be in the user file because this is just unworkable. So I should be able to give an agent a repo. It will say it doesn't have access. It will add it to the config, and then I will say restart and yes, and then it will have access, whatever that access is."* | 2026-10-05 | [§1](#1-the-ruling-and-what-it-overturns) | built: `config.ReadWorkspaceForGate` and `config.NewScopeCheck`, read by `run.Options.checkConfigChanges` and `yolo check --accept-config-changes`; pinned by `TestAWorkspaceEntryIsApprovedAtTheGateAndReachesTheBroker` and, end to end, `TestGitHubBrokerAWideningEntryAdmitsARepositoryForOneWorkspace` |
+| <a id="WW-D1"></a>[`WW-D1`](#10-decision-ledger) | **Maintainer ruling:** extra repositories are a workspace-config key, honored once a human approves it at the config-change gate. [OQ-BB6](boundary-broker.md#15-decision-ledger) is re-ruled from (a) to (d), and (e) stays not adopted. *"it should not be in the user file because this is just unworkable. So I should be able to give an agent a repo. It will say it doesn't have access. It will add it to the config, and then I will say restart and yes, and then it will have access, whatever that access is."* | 2026-10-05 | [§1](#1-the-ruling-and-what-it-overturns) | built: `config.ReadWorkspaceForGate` and `config.NewScopeCheck`, read by `run.Options.checkConfigChanges` and `yolo check --accept-config-changes`; pinned by `TestAWorkspaceEntryIsApprovedAtTheGateAndReachesTheBroker` and, end to end, `TestGitHubBrokerAWideningEntryAdmitsARepositoryForOneWorkspace` |
 | <a id="WW-D2"></a>[`WW-D2`](#10-decision-ledger) | **Maintainer ruling:** the user-scope form is deleted. The old key is refused, naming where the entry goes now, and the CHANGELOG gets a `### Changed` line naming the one action. *"Yes, all of that sounds right."* | 2026-10-05 | [§3.6](#36-the-old-form) | built: `config.validateBrokeredRetired`, pinned by `TestTheRetiredFormNamesThisProjectsEditAndOnlyCountsTheRest`; the CHANGELOG `### Changed` line |
 | <a id="WW-D3"></a>[`WW-D3`](#10-decision-ledger) | **Maintainer ruling:** the shape is `brokered.github.repos`, in either workspace file. The committed file says what the project needs, and the local file holds what should not be committed | 2026-10-05 | [§3.1](#31-the-entry) | built: `config.brokeredShapeProblems` and `WorkspaceRead.Entry`, pinned by `TestAWorkspaceEntryIsAcceptedAndEachBadShapeIsRefusedWhereItWasWritten` |
 | <a id="WW-D4"></a>[`WW-D4`](#10-decision-ledger) | **Maintainer ruling:** the entry is shown in the labeled scope block with its source, never as JSON lines in the config diff | 2026-10-05 | [§3.2](#32-the-gate) | built: `config.scopeBlock` and `approvalConfigPart`, pinned by `TestAnEntryIsARowNamingItsFileAndTheGateReturnsWhatItApproved` and `TestTheConfigPartLeavesBrokeredOut` |
 | <a id="WW-D5"></a>[`WW-D5`](#10-decision-ledger) | **Maintainer ruling:** the out-of-scope refusal names the workspace entry and tells the agent to ask for a restart and approval | 2026-10-05 | [§3.4](#34-what-the-agent-is-told) | built: `ghbroker.Scope.widenAdvice`, pinned by `TestTheBrokerRunsAnEntrysRepositoryAndNamesTheEntryForAnother` |
 | <a id="WW-D6"></a>[`WW-D6`](#10-decision-ledger) | **Maintainer ruling:** the briefing tells the agent that after adding the entry it must ask the user to restart. *"the agent should be told if this is added to the config file, then you have to ask the user to restart or whatever."* | 2026-10-05 | [§3.4](#34-what-the-agent-is-told) | built: `packs/github/briefing/gh.md`, pinned by `TestTheGitHubPackBriefsEveryAgentOnGHInTheJail`; the skill's line by `TestTheJailSkillTellsTheTruthAboutTheBrokeredKeysAndTheLocalFile` |
-| <a id="WW-D7"></a>[`WW-D7`](#10-decision-ledger) | *A consequence of WW-D1 and WW-D2, named among the reasons in the proposal the maintainer accepted:* [OQ-BB11](boundary-broker.md#OQ-BB11) is moot. With no user-scope entry, and with entries only from files inside the workspace ([WW-D17](#WW-D17)), the delivery copy carries only this workspace's own entry, which the jail can already read. No filter is built | 2026-10-05 | [§3.6](#36-the-old-form) | built: no filter; [WW-D17](#WW-D17) keeps every other workspace's list out |
+| <a id="WW-D7"></a>[`WW-D7`](#10-decision-ledger) | *A consequence of WW-D1 and WW-D2, named among the reasons in the proposal the maintainer accepted:* [OQ-BB11](boundary-broker.md#15-decision-ledger) is moot. With no user-scope entry, and with entries only from files inside the workspace ([WW-D17](#WW-D17)), the delivery copy carries only this workspace's own entry, which the jail can already read. No filter is built | 2026-10-05 | [§3.6](#36-the-old-form) | built: no filter; [WW-D17](#WW-D17) keeps every other workspace's list out |
 | <a id="WW-D8"></a>[`WW-D8`](#10-decision-ledger) | *Implementation decision:* the ruled `github` key is the manifest's `brokered.source`, so the general shape is `brokered.<source>.repos` with no path key, and core names no tool | 2026-10-05 | [§3.1](#31-the-entry) | built: `config.brokeredReposPath`, the source from the manifest's `brokered.source` |
-| <a id="WW-D9"></a>[`WW-D9`](#10-decision-ledger) | *Implementation decision:* a user-scope `brokered.<source>.repos` is refused as well as the old form. A list with no workspace key would widen every workspace ([OQ-BB6](boundary-broker.md#OQ-BB6)'s premise). Refusals are errors on the host and warnings in a jail | 2026-10-05 | [§3.1](#31-the-entry) | built: `config.validateBrokeredUserScope`, pinned by `TestAUserScopeReposListIsRefusedNamingTheWorkspaceFiles` |
+| <a id="WW-D9"></a>[`WW-D9`](#10-decision-ledger) | *Implementation decision:* a user-scope `brokered.<source>.repos` is refused as well as the old form. A list with no workspace key would widen every workspace ([OQ-BB6](boundary-broker.md#15-decision-ledger)'s premise). Refusals are errors on the host and warnings in a jail | 2026-10-05 | [§3.1](#31-the-entry) | built: `config.validateBrokeredUserScope`, pinned by `TestAUserScopeReposListIsRefusedNamingTheWorkspaceFiles` |
 | <a id="WW-D10"></a>[`WW-D10`](#10-decision-ledger) | *Implementation decision:* the reader takes the workspace config alone, never the merged config: both files, their `.json` spellings, and includes inside the workspace. Lists union, repositories compare without case, the first spelling in merge order is kept, and `null` clears the list | 2026-10-05 | [§3.1](#31-the-entry) | built: `config.WorkspaceRead.Entry`, pinned by `TestTheGatesReadIsStrictAndItsEntryNamesEachFile` |
 | <a id="WW-D11"></a>[`WW-D11`](#10-decision-ledger) | *Implementation decision:* the scope part takes the entry in and keeps its flat shape, so no record reads differently. A sources record beside it, `<container-name>.scope-sources.json`, makes a change of source a prompted row, a remote's rename included ([OQ-WW1](#OQ-WW1)). *Revised in review the same day:* with no recorded sources for a repository, its current sources are recorded unasked only when the set is unchanged and every source is a remote, the only kind that existed before this; a repository an entry lists asks. So deleting the sources record alone fails safe, BB-D30's rule for every part. The config part drops `brokered` through one projection outside `SnapshotJSON`, always, at every comparison and writer | 2026-10-05 | [§3.2](#32-the-gate) | built: `config.compareScope`, `scopeBlock` and the sources record, pinned by `TestAChangeOfSourceAsks`, `TestASourcesRecordMissingFailsSafe` and `TestTheConfigPartLeavesBrokeredOut` |
 | <a id="WW-D12"></a>[`WW-D12`](#10-decision-ledger) | *Implementation decision:* the scope file, and the keeper's plan with its sources, come from this gate's in-memory result alone. The entry fails closed too, reversing [BB-D44](boundary-broker.md#BB-D44)'s 2026-10-01 revision. `widened` is no longer written | 2026-10-05 | [§3.3](#33-what-the-broker-gets) | built: `config.ApproveConfigAndScope`'s result and `run.Options.writeScopeFiles`, pinned by `TestNothingAfterTheGateReachesTheScopeFile` and `TestASpawnWithNoApprovedScopeFailsClosed` |

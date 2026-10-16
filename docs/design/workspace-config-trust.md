@@ -289,7 +289,7 @@ without the part that keeps a stranger from asking.
 
 Moved here from [OQ-WT1](#OQ-WT1). Two later rulings point different ways, and neither is about a writable path.
 [OQ-EW1](agent-event-watchers.md#OQ-EW1) (A, 2026-09-29) refuses a helper that runs on the host from workspace
-config entirely. [OQ-BB7](boundary-broker.md#OQ-BB7) (2026-09-29) lets agent-editable workspace state widen what
+config entirely. [OQ-BB7](boundary-broker.md#15-decision-ledger) (2026-09-29) lets agent-editable workspace state widen what
 a host-side broker may reach, once the config-change prompt approves it.
 
 ## 4. The recommendation: C — scope for the author, trust for the agent
@@ -406,7 +406,7 @@ mounts is [OQ-AS3](../research/agent-safehouse.md#OQ-AS3)'s to decide.
 Moved here verbatim from [OQ-WT5](#OQ-WT5), which is open. *Restated 2026-09-30.* This was first asked as the
 direnv shape (refuse and name the verb) against the mise shape (a prompt at launch). Two later rulings put
 agent-editable workspace state into the config-change prompt rather than a command of its own.
-[OQ-BB7](boundary-broker.md#OQ-BB7) (2026-09-29) did so for the repositories a broker may reach with the host's
+[OQ-BB7](boundary-broker.md#15-decision-ledger) (2026-09-29) did so for the repositories a broker may reach with the host's
 credential, in the maintainer's words *"perhaps this is set in a way that is like part of the launch configuration
 where we confirm config changes. It's just part of that bundle"*. It is built as the approval record's scope part
 ([BB-D30](boundary-broker.md#BB-D30)). [OQ-EW7](agent-event-watchers.md#OQ-EW7) (B, 2026-09-29) did so for a
