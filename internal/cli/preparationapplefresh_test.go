@@ -277,6 +277,11 @@ func TestAppleListingQueryIsBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+":/bin:/usr/bin")
+	// The bound shortened, not removed: the fake runtime sleeps 30 s, so a listing with no
+	// bound still fails the 10 s check below.
+	old := appleListingBound
+	appleListingBound = 100 * time.Millisecond
+	t.Cleanup(func() { appleListingBound = old })
 	start := time.Now()
 	err := appleRequiredBuildAdmission(context.Background(), "container", "pack/tool")
 	if !isAppleBuildPending(err) || time.Since(start) > 10*time.Second {
