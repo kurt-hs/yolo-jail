@@ -237,9 +237,8 @@ func hostReadinessAct(packs []*packload.Pack, cmd []string, errw io.Writer, act 
 	floor.PatchBypassCommand = "yolo host -- " + shquote.Quote(cmd0)
 	ctx := withActInterrupt(context.Background(), act)
 	var failed []hostReadinessFailure
-	// patchFailure is a patch failure the missing-program hatch does not waive (PF-D83), and
-	// bypassable one whose own bypass runs an intact build of the series as it stands.
-	patchFailure, bypassable := false, false
+	// patchFailure is a patch failure the missing-program hatch does not waive (PF-D83).
+	patchFailure := false
 	for _, p := range todo {
 		if floor.OutsideTheFloor(p) {
 			continue
@@ -251,7 +250,6 @@ func hostReadinessAct(packs []*packload.Pack, cmd []string, errw io.Writer, act 
 			var applicationFailure *packsrc.PatchFailure
 			if errors.As(err, &applicationFailure) && !errors.Is(err, hostfloor.ErrPatchFailureNothingRuns) {
 				patchFailure = true
-				bypassable = bypassable || errors.Is(err, hostfloor.ErrPatchFailureBypassable)
 			}
 			failed = append(failed, hostReadinessFailure{who: "program " + p.Bin() + " (pack " + p.Pack + ")",
 				pack: p.Pack, err: err})
@@ -282,19 +280,8 @@ func hostReadinessAct(packs []*packload.Pack, cmd []string, errw io.Writer, act 
 		return r, 0
 	}
 	if patchFailure {
-		if bypassable {
-			fmt.Fprintf(errw, "yolo host: refusing to launch: a patch series does not apply, and an intact build of it is on "+
-				"this machine, so %s does not leave it out. Repair the series as its ERROR above says, or run that build "+
-				"for this launch:\n          %s=1 yolo host -- %s\n", paths.AllowMissingProgramsEnv,
-				paths.AllowPatchFailuresEnv, shquote.Join(cmd))
-		} else {
-			fmt.Fprintf(errw, "yolo host: refusing to launch: a patch series does not apply, and an older copy of the "+
-				"program is installed, so %s does not leave it out. Repair the series as its ERROR above says.\n",
-				paths.AllowMissingProgramsEnv)
-		}
-		fmt.Fprintf(errw, "%s", list.String())
-		fmt.Fprintf(errw, "      Fix what each line names, drop the pack from your packs list, or leave it out of yolo's floor with `\"host_floor\": {%s}` in the user config.\n",
-			strings.Join(leaveOut, ", "))
+		// The error block above names the failure, its repair and the hatch that runs a build here.
+		fmt.Fprintf(errw, "yolo host: refusing to launch: a patch series does not apply\n%s", list.String())
 		return r, 1
 	}
 	// REFUSAL, not a warning, in the jail's words: a launch without a program its own config

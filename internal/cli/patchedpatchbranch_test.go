@@ -142,7 +142,7 @@ func TestAHostApplyStopsOnAPatchBranchsRecordedFailureBeforeItWrites(t *testing.
 	var out, errw bytes.Buffer
 	rc := hostApplyRefreshAndRender(&out, &errw, false, true, nil, "", "")
 	if rc == 0 || strings.Contains(out.String(), "host apply — applying into") ||
-		!strings.Contains(errw.String(), "ERROR: fork forkpack/tool: the patch branch does not merge into upstream v1.2.0") {
+		!strings.Contains(errw.String(), "ERROR: fork forkpack/tool: patch branch does not merge into upstream v1.2.0") {
 		t.Errorf("an apply over a patch branch's recorded failure: rc=%d, want a refusal before its render\n%s\n%s",
 			rc, out.String(), errw.String())
 	}
@@ -219,7 +219,7 @@ func TestAPatchBranchConflictRefusesNamingThePaths(t *testing.T) {
 	}
 	var block bytes.Buffer
 	writePatchFailure(&block, pf, fx.fork(t), packsrc.PatchBypass{}, "")
-	for _, w := range []string{"the patch branch does not merge into upstream v1.1.0", "Conflict: f.txt",
+	for _, w := range []string{"patch branch does not merge into upstream v1.1.0", "Conflict: f.txt",
 		packsrc.PatchBranchRecipeLead, "git checkout mine", "git merge " + pf.Target.Commit, "git push origin mine"} {
 		if !strings.Contains(block.String(), w) {
 			t.Errorf("the error block lacks %q:\n%s", w, block.String())

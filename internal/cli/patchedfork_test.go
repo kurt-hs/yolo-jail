@@ -289,7 +289,7 @@ func TestPackInstallConsumesTypedFailureBeforeGoodSkip(t *testing.T) {
 					!strings.Contains(out+errw, "skips this subject's advance") {
 					t.Fatalf("literal bypass did not identify the skipped subject:\n%s\n%s", out, errw)
 				}
-			} else if !strings.Contains(errw, "ERROR: forkpack/tool: patch application failed at upstream v1.2.0 ("+v12+")") {
+			} else if !strings.Contains(errw, "ERROR: forkpack/tool: patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 				t.Fatalf("install Good shortcut hid current failure:\n%s\n%s", out, errw)
 			}
 			current := fx.record(t)
@@ -387,7 +387,7 @@ func TestPackUpdateAggregatesExplicitFailuresAcrossSubjects(t *testing.T) {
 		t.Fatal(err)
 	}
 	rc, out, errw := packVerb(t, "update")
-	if rc == 0 || !strings.Contains(errw, "ERROR: forkpack/tool: patch application failed at upstream v1.2.0 ("+v12+")") {
+	if rc == 0 || !strings.Contains(errw, "ERROR: forkpack/tool: patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 		t.Fatalf("aggregate update lost its failed subject or exit: rc=%d\n%s\n%s", rc, out, errw)
 	}
 	if !strings.Contains(out, "secondpack/tool2:") || !strings.Contains(out, "applies — "+patchedNotBuilt) {
@@ -414,7 +414,7 @@ func TestPackUpdateLiteralBypassSkipsOnlyTheCurrentGoodSubject(t *testing.T) {
 	before := fx.record(t).Good
 	rc, out, errw := packVerb(t, "update")
 	if rc != 0 || !strings.Contains(out, "skipped this explicit subject; no build or fallback was accepted") ||
-		!strings.Contains(errw, "patch application failed at upstream v1.2.0 ("+v12+")") ||
+		!strings.Contains(errw, "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") ||
 		!strings.Contains(errw, "CONTINUING: using intact admitted build") {
 		t.Fatalf("literal bypass did not skip only this explicit subject: rc=%d\n%s\n%s", rc, out, errw)
 	}
@@ -432,7 +432,7 @@ func TestPackUpdateLiteralBypassWithoutGoodStillFails(t *testing.T) {
 	v12 := f.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
 	rc, out, errw := packVerb(t, "update")
 	if rc == 0 || strings.Contains(out+errw, "CONTINUING: using intact admitted build") ||
-		!strings.Contains(errw, "patch application failed at upstream v1.2.0 ("+v12+")") {
+		!strings.Contains(errw, "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 		t.Fatalf("bypass accepted a subject without Good: rc=%d\n%s\n%s", rc, out, errw)
 	}
 }
@@ -488,7 +488,7 @@ func TestPackUpdateConflictSurvivesReplayRecordFailure(t *testing.T) {
 	usePatchedForkGit(t, wrapper)
 	rc, out, errw := packVerb(t, "update")
 	if rc == 0 || !strings.Contains(errw, "recording the replay:") || !strings.Contains(errw, "is a directory") ||
-		!strings.Contains(errw, "patch application failed at upstream v1.2.0 ("+v12+")") ||
+		!strings.Contains(errw, "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") ||
 		!strings.Contains(errw, "Conflict: f.txt") {
 		t.Fatalf("record failure erased operation failure or exit status: rc=%d\n%s\n%s", rc, out, errw)
 	}
@@ -557,7 +557,7 @@ func TestPackUpdateStopsAfterLaterCheckArrivesBetweenRetryAndReread(t *testing.T
 		t.Fatal(err)
 	}
 	usePatchedForkGit(t, wrapper)
-	if rc, _, errw := packVerb(t, "update"); rc == 0 || !strings.Contains(errw, "patch application failed at upstream v1.2.0 ("+v12+")") {
+	if rc, _, errw := packVerb(t, "update"); rc == 0 || !strings.Contains(errw, "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 		t.Fatalf("fixture did not persist its exact transient target failure: rc=%d\n%s", rc, errw)
 	}
 	v13 := fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty", 21: "twenty-one"})
@@ -630,7 +630,7 @@ func TestPackUpdateDefersHostApplyAfterExplicitFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { hostApplyFromPackUpdate = prevApply })
 	rc, out, errw := packVerb(t, "update")
-	if rc == 0 || !called || !strings.Contains(errw, "patch application failed at upstream v1.2.0 ("+v12+")") {
+	if rc == 0 || !called || !strings.Contains(errw, "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 		t.Fatalf("pack update lost its actor failure or skipped its deferred apply: rc=%d called=%v\n%s\n%s",
 			rc, called, out, errw)
 	}
@@ -709,7 +709,7 @@ func TestPackUpdateConsumesCurrentFailureFromLaterCheckAfterRetry(t *testing.T) 
 		t.Fatal(err)
 	}
 	usePatchedForkGit(t, wrapper)
-	if rc, _, errw := packVerb(t, "update"); rc == 0 || !strings.Contains(errw, "patch application failed at upstream v1.2.0 ("+v12+")") {
+	if rc, _, errw := packVerb(t, "update"); rc == 0 || !strings.Contains(errw, "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 		t.Fatalf("fixture did not persist its transient target failure: rc=%d\n%s", rc, errw)
 	}
 	v13 := fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty", 21: "twenty-one"})
@@ -919,7 +919,7 @@ func TestPackUpdateReportsTypedFailureBeforeBlockingRecordReplay(t *testing.T) {
 		t.Fatal("explicit update did not finish after record lock release")
 	}
 	if !reportedBeforeUnlock || result.rc == 0 ||
-		strings.Count(errw.String(), "ERROR: forkpack/tool: patch application failed at upstream v1.2.0 ("+v12+")") != 1 {
+		strings.Count(errw.String(), "ERROR: forkpack/tool: patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") != 1 {
 		t.Fatalf("typed operation error did not precede persistence exactly once: before-unlock=%v rc=%d\n%s\n%s",
 			reportedBeforeUnlock, result.rc, out.String(), errw.String())
 	}
@@ -935,7 +935,7 @@ func TestCaptureLiteralBypassDeclinesConflictingSubject(t *testing.T) {
 	var out, errw bytes.Buffer
 	rc := captureHost([]string{"tool"}, &out, &errw, false)
 	if rc != 0 || !strings.Contains(out.String(), "capture skipped: explicit patch-failure bypass") ||
-		!strings.Contains(errw.String(), "patch application failed at upstream v1.2.0 ("+v12+")") {
+		!strings.Contains(errw.String(), "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 		t.Fatalf("capture did not report a deliberate non-build skip: rc=%d\nout=%s\nerr=%s", rc, out.String(), errw.String())
 	}
 	good := fx.record(t).Good
@@ -961,7 +961,7 @@ func TestCapturePatchFailureBypassNeedsLiteralOne(t *testing.T) {
 			var out, errw bytes.Buffer
 			rc := captureHost([]string{"tool"}, &out, &errw, false)
 			if rc == 0 || strings.Contains(out.String(), "capture skipped: explicit patch-failure bypass") ||
-				!strings.Contains(errw.String(), "patch application failed at upstream v1.2.0 ("+v12+")") {
+				!strings.Contains(errw.String(), "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 				t.Fatalf("bypass %q was accepted: rc=%d\nout=%s\nerr=%s", tc.bypass, rc, out.String(), errw.String())
 			}
 			if len(fx.builds) != beforeBuilds || fx.record(t).Good == nil || fx.record(t).Good.Entry != oldKey {
@@ -1007,7 +1007,7 @@ func TestCapturePatchFailureBypassRequiresCurrentGoodAndSuccessfulCheck(t *testi
 			var out, errw bytes.Buffer
 			rc := captureHost([]string{"tool"}, &out, &errw, false)
 			if rc == 0 || strings.Contains(out.String(), "capture skipped: explicit patch-failure bypass") ||
-				!strings.Contains(errw.String(), "patch application failed at upstream v1.2.0 ("+v12+")") {
+				!strings.Contains(errw.String(), "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 				t.Fatalf("literal bypass accepted %s Good: rc=%d\nout=%s\nerr=%s", tc.name, rc, out.String(), errw.String())
 			}
 			if len(fx.builds) != beforeBuilds {
@@ -1025,7 +1025,7 @@ func TestCapturePatchFailureBypassWithoutGoodFails(t *testing.T) {
 	var out, errw bytes.Buffer
 	if rc := captureHost([]string{"tool"}, &out, &errw, false); rc == 0 ||
 		strings.Contains(out.String(), "capture skipped: explicit patch-failure bypass") ||
-		!strings.Contains(errw.String(), "patch application failed at upstream v1.2.0 ("+v12+")") {
+		!strings.Contains(errw.String(), "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 		t.Fatalf("literal bypass accepted capture without Good: rc=%d\nout=%s\nerr=%s", rc, out.String(), errw.String())
 	}
 }
@@ -1059,7 +1059,7 @@ func TestCapturePatchFailureBypassDoesNotHideCachedFetchFailureProgram(t *testin
 	t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "")
 	fx, oldKey, v12 := explicitGoodAndConflict(t)
 	if rc, out, errw := packVerb(t, "update"); rc == 0 ||
-		!strings.Contains(errw, "patch application failed at upstream v1.2.0 ("+v12+")") {
+		!strings.Contains(errw, "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 		t.Fatalf("explicit update did not record the cached conflict: rc=%d\n%s\n%s", rc, out, errw)
 	}
 	before := fx.record(t)
@@ -1123,7 +1123,7 @@ func TestCapturePatchFailureBypassDoesNotHideCachedFetchFailureTree(t *testing.T
 	}
 	v12 := fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
 	if rc, out, errw := packVerb(t, "update"); rc == 0 ||
-		!strings.Contains(errw, "patch application failed at upstream v1.2.0 ("+v12+")") {
+		!strings.Contains(errw, "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 		t.Fatalf("explicit update did not record the tree conflict: rc=%d\n%s\n%s", rc, out, errw)
 	}
 	before, err = store.LoadCheckRecord(key)
@@ -1202,7 +1202,7 @@ func TestCapturePatchedExtensionBypassSkipsWithoutBuilding(t *testing.T) {
 	var out, errw bytes.Buffer
 	rc := captureHost([]string{"treespack/ext-1"}, &out, &errw, false)
 	if rc != 0 || !strings.Contains(out.String(), "capture skipped: explicit patch-failure bypass") ||
-		!strings.Contains(errw.String(), "patch application failed at upstream v1.2.0 ("+v12+")") {
+		!strings.Contains(errw.String(), "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 		t.Fatalf("tree-key capture did not report a deliberate non-build skip: rc=%d\nout=%s\nerr=%s", rc, out.String(), errw.String())
 	}
 	after, err := store.LoadCheckRecord(key)
@@ -1230,7 +1230,7 @@ func TestPackUpdateStopsOnAConflictBeforeOlderFit(t *testing.T) {
 		t.Fatalf("update accepted an older fit after the newest candidate failed:\n%s\n%s", out, errw)
 	}
 	for _, w := range []string{
-		"ERROR: forkpack/tool: patch application failed at upstream v1.2.0 (" + v12 + ")",
+		"ERROR: forkpack/tool: patch series does not apply to upstream v1.2.0 (" + short8(v12) + ")",
 		"Patch: 0001-ten.patch", "Conflict: f.txt", "Operation stopped; no older fit or base will be built.",
 	} {
 		if !strings.Contains(errw, w) {
@@ -1264,7 +1264,7 @@ func TestPackUpdateConflictDoesNotFallBackToBase(t *testing.T) {
 	upstreamGit(t, f.repo, "tag", "-d", "v1.0.0")
 	v11 := f.commit(t, "v1.1.0", map[int]string{11: "eleven"})
 	rc, out, errw := packVerb(t, "update")
-	if rc == 0 || !strings.Contains(errw, "patch application failed at upstream v1.1.0 ("+v11+")") {
+	if rc == 0 || !strings.Contains(errw, "patch series does not apply to upstream v1.1.0 ("+short8(v11)+")") {
 		t.Fatalf("update did not stop at the actual application failure: rc=%d\n%s\n%s", rc, out, errw)
 	}
 	if strings.Contains(out+errw, "the series' base "+shortSHA(f.base)+" takes the series") ||

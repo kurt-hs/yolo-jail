@@ -14,6 +14,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -78,7 +79,8 @@ func hostPatchPreflight(errw io.Writer, packs []*packload.Pack, verb, command, t
 			if !f.DeliveredAtHost() || currentPatchFailure(f) == nil {
 				continue
 			}
-			if entry, _, _ := hostTreeServing(f); entry != nil && allowPatchFailures() {
+			if entry, _, _ := hostTreeServing(f); entry != nil && patchrecovery.Read(os.Getenv, patchrecovery.AllowPatchFailuresEnv).
+				Covers(patchrecovery.Subject{Key: f.Key(), Pack: f.Pack, Name: f.Bin}) {
 				continue // the bypass: the render links the good build, as it does for an advance's
 			}
 			stopped = append(stopped, f.Label())
@@ -90,7 +92,7 @@ func hostPatchPreflight(errw io.Writer, packs []*packload.Pack, verb, command, t
 	if !deferred {
 		_, _ = io.Copy(errw, &said)
 	}
-	fmt.Fprintf(errw, "yolo host: refusing %s: the patch series of %s %s not apply (the ERROR above); nothing was "+
-		"written.\n", verb, entrypoint.JoinAnd(stopped), plural(len(stopped), "does", "do"))
+	fmt.Fprintf(errw, "yolo host: refusing %s: the patch series of %s %s not apply; nothing was written\n",
+		verb, entrypoint.JoinAnd(stopped), plural(len(stopped), "does", "do"))
 	return false
 }

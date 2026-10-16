@@ -99,7 +99,7 @@ func TestTheConflictsRecipeRunAsPrintedGivesASeriesTheNextLaunchBuilds(t *testin
 	packBefore := treeDigest(t, patches)
 	rc, out, errw := packVerb(t, "update")
 	cmds := recipeCommands(errw)
-	if rc == 0 || len(cmds) != 4 || !strings.Contains(errw, "  Repair: "+packsrc.RecipeLead+"\n") {
+	if rc == 0 || len(cmds) != 4 || !strings.Contains(errw, "\nRepair:\n") {
 		t.Fatalf("update rc=%d, want the conflict's block with four recipe commands, got %q\n%s\n%s", rc, cmds, out, errw)
 	}
 	for i, w := range []string{"git clone ", "git checkout -q -b yolo-rebase " + fx.fork(t).RebaseRecipe().Base +

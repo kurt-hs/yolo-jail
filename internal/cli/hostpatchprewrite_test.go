@@ -52,7 +52,7 @@ func TestAHostLaunchStopsOnATreesPatchFailureBeforeTheGate(t *testing.T) {
 		t.Fatalf("a series that does not apply: rc=%d execed %v, the gate surveyed %d times, want a refusal before it\n%s",
 			rc, got.execed, *surveys, errw.String())
 	}
-	for _, w := range []string{"ERROR: treepack/tool-ext: patch application failed at upstream v1.2.0",
+	for _, w := range []string{"ERROR: treepack/tool-ext: patch series does not apply to upstream v1.2.0",
 		"  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo host -- tool\n",
 		"yolo host: refusing: the patch series of extension treepack/tool-ext does not apply (the ERROR above); nothing was written."} {
 		if !strings.Contains(errw.String(), w) {
@@ -111,7 +111,7 @@ func TestAHostApplyStopsOnAForksRecordedPatchFailureBeforeItWrites(t *testing.T)
 	var out, errw bytes.Buffer
 	rc := hostApplyRefreshAndRender(&out, &errw, false, true, nil, "", "")
 	if rc == 0 || strings.Contains(out.String(), "host apply — applying into") ||
-		!strings.Contains(errw.String(), "ERROR: fork forkpack/tool: patch application failed at upstream v1.2.0") ||
+		!strings.Contains(errw.String(), "ERROR: fork forkpack/tool: patch series does not apply to upstream v1.2.0") ||
 		!strings.Contains(errw.String(), "  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo host apply --assert\n") ||
 		!strings.Contains(errw.String(), "yolo host: refusing the host apply: the patch series of fork forkpack/tool does not apply") {
 		t.Errorf("an apply over a recorded patch failure: rc=%d, want a refusal before its render\n%s\n%s",
@@ -172,7 +172,7 @@ func TestAHostLaunchWithoutApplyOnLaunchStopsOnATreesRecordedPatchFailure(t *tes
 	if rc == 0 || got.execed {
 		t.Fatalf("a recorded patch failure: rc=%d execed %v, want a refusal\n%s", rc, got.execed, errw.String())
 	}
-	if n := strings.Count(errw.String(), "ERROR: treepack/tool-ext: patch application failed at upstream v1.2.0"); n != 1 ||
+	if n := strings.Count(errw.String(), "ERROR: treepack/tool-ext: patch series does not apply to upstream v1.2.0"); n != 1 ||
 		!strings.Contains(errw.String(), "  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo host -- tool\n") {
 		t.Errorf("the refusal says the error %d times, want once, with the bypass:\n%s", n, errw.String())
 	}

@@ -128,9 +128,9 @@ func TestHostPatchFailureErrorIsSaidOnce(t *testing.T) {
 			if want := map[string]int{"": 1, "1": 0}[bypass]; rc != want {
 				t.Fatalf("bypass %q, %s: rc=%d, want %d\n%s", bypass, launch, rc, want, out)
 			}
-			for _, line := range []string{": patch application failed at upstream v1.2.0 (", "  Patch: 0001-ten.patch\n",
+			for _, line := range []string{": patch series does not apply to upstream v1.2.0 (", "  Patch: 0001-ten.patch\n",
 				"  Conflict: f.txt\n", "  Operation stopped; no older fit or base will be built.\n",
-				"  Repair: " + packsrc.RecipeLead + "\n", "  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo host -- tool\n"} {
+				"\nRepair:\n", "  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo host -- tool\n"} {
 				if n := strings.Count(out, line); n != 1 {
 					t.Errorf("bypass %q, %s: %q said %d times, want once:\n%s", bypass, launch, line, n, out)
 				}
