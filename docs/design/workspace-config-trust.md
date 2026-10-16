@@ -288,7 +288,7 @@ without the part that keeps a stranger from asking.
 ### 3.6 Two later rulings that bear on C against D
 
 Moved here from [OQ-WT1](#OQ-WT1). Two later rulings point different ways, and neither is about a writable path.
-[OQ-EW1](agent-event-watchers.md#OQ-EW1) (A, 2026-09-29) refuses a helper that runs on the host from workspace
+[OQ-EW1](agent-event-watchers.md#14-decision-ledger) (A, 2026-09-29) refuses a helper that runs on the host from workspace
 config entirely. [OQ-BB7](boundary-broker.md#OQ-BB7) (2026-09-29) lets agent-editable workspace state widen what
 a host-side broker may reach, once the config-change prompt approves it.
 
@@ -409,7 +409,7 @@ agent-editable workspace state into the config-change prompt rather than a comma
 [OQ-BB7](boundary-broker.md#OQ-BB7) (2026-09-29) did so for the repositories a broker may reach with the host's
 credential, in the maintainer's words *"perhaps this is set in a way that is like part of the launch configuration
 where we confirm config changes. It's just part of that bundle"*. It is built as the approval record's scope part
-([BB-D30](boundary-broker.md#BB-D30)). [OQ-EW7](agent-event-watchers.md#OQ-EW7) (B, 2026-09-29) did so for a
+([BB-D30](boundary-broker.md#BB-D30)). [OQ-EW7](agent-event-watchers.md#14-decision-ledger) (B, 2026-09-29) did so for a
 repository's own sidecars, over a leaning that cited this question's. Neither rules this question, since a sidecar
 runs inside the jail and neither is a writable host path. So the options are restated in those terms, and the
 leaning moves to (A).
