@@ -233,7 +233,7 @@ model scope, not only the parent session.
 computed block as argv for one launch; the pi pack's declaration of a pi-subagents flag was removed
 by the maintainer's ruling, *"yolo shouldn't depend on my custom pi fork in any way, or even know
 it exists"*, since upstream pi-subagents registers no such flag. The consumer declares
-`launch_computed` for `pi` in the pack that forks pi
+`launch_computed` for `pi` in a pack that forks the `pi` program (a patched pi-subagents extension alone is not enough)
 ([LC-D1](../reference/pack-system.md#LC-D1)); the pi derive still composes the `subagents` block
 it reads.
 

@@ -137,3 +137,17 @@ func TestLaunchComputedIsRefusedWhereNoLaunchCouldHandIt(t *testing.T) {
 		})
 	}
 }
+
+// Merging a fork over an earlier merge must not dereference the Replaces of a key the fork alone
+// declares: ApplyForks run twice over its own output used to crash here.
+func TestMergingAForkTwiceKeepsAForkOnlyKeyReplacingNothing(t *testing.T) {
+	fork := []LaunchComputedFlag{{Key: "policy", Argv: []string{"--policy", "{value}"}}}
+	once := MergeForkComputed(nil, fork, "f")
+	twice := MergeForkComputed(once, fork, "f")
+	if len(twice) != 1 || twice[0].ForkedBy != "f" || twice[0].Replaces != nil {
+		t.Fatalf("merging twice: %+v", twice)
+	}
+	if got := BaseComputed(twice); got != nil {
+		t.Fatalf("the base of a fork-only key is nothing, got %+v", got)
+	}
+}
