@@ -17,7 +17,7 @@ key all ship (env-manager plan Phases 0–6, 8, 9). **No live question remains**
 [`OQ-CO10`](config-ownership-and-promotion.md#13-decision-ledger)/[`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger)
 (the `host` layer stays), and [`OQ-EM1`](#9-decision-ledger), whether the elevation-class batching around the
 shipped confirm-gated install is still owed, is answered no by
-[`OQ-HP5`](host-tool-provisioning.md#OQ-HP5). Two parts are unbuilt, so work is owed:
+[`OQ-HP5`](host-tool-provisioning.md#decision-ledger). Two parts are unbuilt, so work is owed:
 [§3.4](#34-check-becomes-is-this-description-satisfiable-here)'s `check --at <notch>` (re-checked
 2026-09-30: `yolo check` parses no `--at`), whose delivery shape is the user stories'
 [Q1b](environment-manager-user-stories.md#Q1b), and Linux `guest` (plan Phase 7, which has no code

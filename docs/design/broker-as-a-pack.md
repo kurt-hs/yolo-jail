@@ -1077,7 +1077,7 @@ that plan it gated was built the same day.
    > (*"they're all just as weak. anything can be an installer. we're ultimately extending trust
    > somewhere."*), and kept the launch's disclosure, so the host-execution lines print before the
    > daemon spawns and `yolo pack footprint` shows the claim. The 2026-09-29 ruling
-   > [OQ-HP5](host-tool-provisioning.md#OQ-HP5) says the same of installs (*"You've acknowledged
+   > [OQ-HP5](host-tool-provisioning.md#decision-ledger) says the same of installs (*"You've acknowledged
    > this already. We don't have to ask again"*). No new refusal source is added for a binary.
 
 <a id="oq-bp7-background"></a>**Background to [OQ-BP7](#OQ-BP7), below: the scenario, and the options in full.**

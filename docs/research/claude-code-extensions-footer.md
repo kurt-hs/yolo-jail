@@ -76,7 +76,7 @@ At the host, with no tables in the env, it also reads your user config on every 
 **How often it runs.** Claude 2.1.288 re-runs the command when any of `tokenUsage`, `permissionMode`, `vimMode`,
 `mainLoopModel`, `fastMode`, `effortValue`, `thinkingEnabled` or `prStatus` changes (MEASURED, binary strings).
 The design doc read a 300 ms debounce in 2.1.282
-([agent-footer.md:660](../design/agent-footer.md#L660)). So while a reply streams, a token count that keeps
+([agent-footer.md, appendix](../design/agent-footer.md#appendix-evidence)). So while a reply streams, a token count that keeps
 changing can start the renderer up to about three times a second (INFERRED). Each run is a shell plus the
 29 MB `yolo` binary, about 2.2 ms for the renderer alone in a jail and 4.8 ms at the host with a profile
 selected (MEASURED there, [agent-footer.md:194-195](../design/agent-footer.md#L194-L195)). Only the model and
@@ -87,8 +87,8 @@ effort ever change. The billing route, the switches and the notch are fixed per 
 
 | Limit | Why | Where |
 |---|---|---|
-| Claude hides most keyboard hints (`esc to interrupt`, `? for shortcuts`) | Any `statusLine` setting does that, and no key brings them back. The one loss [DIR-FT2](../design/agent-footer.md#DIR-FT2) could not avoid | [agent-footer.md:202](../design/agent-footer.md#L202), [:661](../design/agent-footer.md#L661) (SOURCED there) |
-| Your own `statusLine` replaces yolo's whole | The setting holds one command. To keep both, you call the renderer from your script ([OQ-FT5](../design/agent-footer.md#OQ-FT5)) | [agent-footer.md §3](../design/agent-footer.md#3-how-a-users-own-footer-survives) |
+| Claude hides most keyboard hints (`esc to interrupt`, `? for shortcuts`) | Any `statusLine` setting does that, and no key brings them back. The one loss [DIR-FT2](../design/agent-footer.md#DIR-FT2) could not avoid | [agent-footer.md:202](../design/agent-footer.md#L202), [its appendix](../design/agent-footer.md#appendix-evidence) (SOURCED there) |
+| Your own `statusLine` replaces yolo's whole | The setting holds one command. To keep both, you call the renderer from your script ([OQ-FT5](../design/agent-footer.md#decision-ledger)) | [agent-footer.md §3](../design/agent-footer.md#3-how-a-users-own-footer-survives) |
 | The host value is frozen | `yolo host apply` fills a missing key once, then counts it as yours, so a later template or flag never arrives. A host filled before the effort level was added still shows the model alone | [prism.go:1006-1010](../../internal/entrypoint/prism.go#L1006-L1010), [agent-footer.md:179-180](../design/agent-footer.md#L179-L180) |
 | A process per refresh | Above | — |
 | Bridged upstream and failover cannot be shown cheaply | A per-refresh read of bridge state would cost a connection on every refresh, 3–4 ms, and the bridge publishes no state yet | [agent-footer.md:423-424](../design/agent-footer.md#L423-L424) |
@@ -103,7 +103,7 @@ surface may change between releases without notice"* (types:4).
 | Site | What it is | Surfaces | Fit for the footer |
 |---|---|---|---|
 | `$.ui.status(text)` | *"Pins `text` as this plugin's status line under the prompt, beside the engine's own pinned notices"*, one per plugin (types:2263-2273). In the terminal it is a pinned, low-priority notification with the text `<plugin name>: <text>` (MEASURED, binary strings `plugin-status-${E}` and `` `${lre(e)}: ${IFe(n)}` ``). The pinned-notice block draws each entry as `⚠ <text>` in the theme's `warning` color unless the notice names a color, which `$.ui.status`'s does not, cut at the row's end (MEASURED, binary strings: `cre` draws `[qb," ",E.text]` with `color:E.color??"warning"` and `wrap:E.wrap?"wrap":"truncate"`; `qb="⚠"`). So yolo's segment would read `⚠ yolo: claude-opus-5-5 · high · Bedrock · jail` in the color of a warning. The same block carries the engine's own pinned warnings, such as failed transcript writes. Desktop and SDK hosts are sent a `ui_status` message, *"One status line per plugin"* (MEASURED, binary strings) | terminal; a push to the others, whose drawing is UNMEASURED | **Adopt first**, with the warning style as a known cost for the live look. It is the prototype's site |
-| `PromptHint`, its `tail` prop | The hint line itself. A hook's `tail` is drawn dim at the end of Claude's own line, and *"the terminal keeps the engine's line (its pills stay live)"*. *"No other surface draws it yet"* (types:9531-9566). That line is the one a configured `statusLine` thins ([agent-footer.md:661](../design/agent-footer.md#L661)), so under a user's own `statusLine` this site may show little or nothing (INFERRED; UNMEASURED) | terminal draws; desktop raises but does not draw `tail` | **Fallback** if the live look puts the status entry somewhere poor or its warning style reads badly. It is dim, not a warning |
+| `PromptHint`, its `tail` prop | The hint line itself. A hook's `tail` is drawn dim at the end of Claude's own line, and *"the terminal keeps the engine's line (its pills stay live)"*. *"No other surface draws it yet"* (types:9531-9566). That line is the one a configured `statusLine` thins ([agent-footer.md, appendix](../design/agent-footer.md#appendix-evidence)), so under a user's own `statusLine` this site may show little or nothing (INFERRED; UNMEASURED) | terminal draws; desktop raises but does not draw `tail` | **Fallback** if the live look puts the status entry somewhere poor or its warning style reads badly. It is dim, not a warning |
 | `SessionMode`, its `modes` prop | The dim mode labels at the right of the prompt footer. A hook adds one label (types:9516-9529) | terminal, desktop | Rejected for the footer: one word, and `jail` is already in the segment |
 | `AbovePrompt` | A band above the input *"where the engine draws nothing of its own"*, collapsible (types:9569-9620) | terminal, desktop | Not for the default footer, which would cost rows on every screen. Kept for a richer view a user opens |
 | `Pane` | A framed region; the one site drawn on every surface (types:9630-9632) | all | Too heavy for a footer |
@@ -161,7 +161,7 @@ reference:124).
   [OQ-CM2](#OQ-CM2).
 - **Claude's keyboard hints come back,** because yolo no longer needs a `statusLine` at all
   ([OQ-CM1](#OQ-CM1)). Claude hides most hints *"with a custom status line configured"*
-  ([agent-footer.md:661](../design/agent-footer.md#L661), SOURCED there). With none configured they show
+  ([agent-footer.md, appendix](../design/agent-footer.md#appendix-evidence), SOURCED there). With none configured they show
   (INFERRED from that wording).
 - **Fresh by events, with no process per refresh.** One renderer run per session load. The model and effort
   redraw in-process on each request and model switch. A `-p` run starts no process at all.
@@ -405,7 +405,7 @@ Build order:
 
 2. 💬 **OQ-CM2: Does your own `statusLine` still turn yolo's segment off?**
 
-   Today it does, because the two share one setting ([OQ-FT5](../design/agent-footer.md#OQ-FT5)). With the plugin
+   Today it does, because the two share one setting ([OQ-FT5](../design/agent-footer.md#decision-ledger)). With the plugin
    they are separate sites, so both can show.
 
    - **A — Show both.** yolo's entry stays beside your line. To turn it off, you disable the `yolo@skills-dir`
