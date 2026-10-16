@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -140,6 +141,38 @@ func TestRunRefusesWhenTheHostBinaryIsOlderThanTheTree(t *testing.T) {
 		if !strings.Contains(stderr.String(), want) {
 			t.Errorf("refusal is missing %q:\n%s", want, stderr.String())
 		}
+	}
+}
+
+// TestRunSkewRefusalInAJailNamesTheByPathBinary: in a jail `just install` refuses, and
+// the jail's own yolo is frozen for its session, so the refusal's next step is the
+// by-path binary `just build-go` writes. Since every flake build is stamped
+// (flake.nix: buildStamp), this is a refusal an in-jail user really meets.
+func TestRunSkewRefusalInAJailNamesTheByPathBinary(t *testing.T) {
+	repoRoot := skewRepo(t)
+	t.Setenv("HOME", t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	o := skewOptions(t, repoRoot, map[string]string{"YOLO_VERSION": "0.14.0+gabc"}, &stdout, &stderr)
+
+	if rc := Run(*o); rc != 1 {
+		t.Fatalf("Run() = %d, want 1\nstderr:\n%s", rc, stderr.String())
+	}
+	got := stderr.String()
+	bin := filepath.Join(repoRoot, "dist-go", "linux-"+runtime.GOARCH, "yolo")
+	for _, want := range []string{
+		"older than the source tree",
+		"(cd " + shquote.Quote(repoRoot) + " && just build-go)",
+		shquote.Quote(bin),
+		"frozen for its session",
+		AllowSourceSkewEnv,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("in-jail refusal is missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "just install") {
+		t.Errorf("in-jail refusal names `just install`, which refuses in a jail:\n%s", got)
 	}
 }
 

@@ -3,7 +3,7 @@ title: "What a downstream pack consumer is still waiting on from yolo"
 date: 2026-10-13
 status: in-review
 stage: DESIGN
-next: "Ratify OQ-DA2, built on its leaning; build asks 6 and 8 (OQ-ML4 and OQ-ML5, ruled 2026-10-16); ask 11 waits on its own owner; ask 10 was declined 2026-10-15"
+next: "Build asks 6 and 8 (OQ-ML4 and OQ-ML5, ruled 2026-10-16); ask 11 waits on its own owner; ask 10 was declined 2026-10-15"
 depends-on:
   - ../design/patched-forks.md#OQ-PFK6
   - ../design/patched-forks.md#OQ-PFK7
@@ -18,7 +18,7 @@ vantage:
 # What a downstream pack consumer is still waiting on from yolo
 
 **Status:** 2026-10-15, re-verified in-tree at `6750951f6`, the 0.14.0 release commit (first
-written 2026-10-13 at `80e08f98b`; the handoff was checked at `0.13.0+51.g99f36da2e`). **Why this file exists:** the handoff's nine asks
+written 2026-10-13 at `80e08f98b`; the handoff was checked at `0.13.0+51.g99f36da2e`); [OQ-DA2](#OQ-DA2) ruled 2026-10-16. **Why this file exists:** the handoff's nine asks
 were, with four exceptions now owned elsewhere, recorded nowhere in yolo's own documentation, so a
 reader of the roadmap or a design doc could not tell which of them yolo had accepted, declined, or
 never seen. This is their one index.
@@ -39,7 +39,7 @@ only where a question has no design doc of its own. The source handoff lives out
 | :--- | :--- | :--- | :--- |
 | [1](#1-remove-for-config-list) | a `remove:` sibling for `config-list` | landed, with a profile gate | [`pack-system.md`](../reference/pack-system.md#adding-entries-to-an-array-config-list); ratify [OQ-DA4](#OQ-DA4) |
 | [2](#2-a-pack-cannot-declare-the-yolo-version-it-needs) | a pack can declare a minimum yolo, or lint judges it against an older build | declined | [OQ-DA1](#decision-ledger) |
-| [3](#3-a-build-has-no-version-identity) | two binaries from one revision are distinguishable, and a broadcast clause records its version | landed | ratify [OQ-DA2](#OQ-DA2) |
+| [3](#3-a-build-has-no-version-identity) | two binaries from one revision are distinguishable, and a broadcast clause records its version | first half landed, releases included; second declined | [OQ-DA2](#OQ-DA2), ruled 2026-10-16 |
 | [4](#4-a-reduced-window-child) | a reduced-window child does not silently inherit the small window | narrowed — yolo's part done | decision recorded below; the owner's declaration is the consumer's |
 | [5](#5-a-clean-replay-discards-the-clone-it-built) | a clean replay keeps the clone, and a stale series is signalled | settled — no clone, base lag built | [OQ-PFK7](../design/patched-forks.md#decision-ledger) |
 | [6](#6-a-declared-model-row-loses-the-catalogs-thinking-levels) | a `models.json` row keeps pi's catalog thinking levels | ruled 2026-10-16, not built | [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4) |
@@ -88,13 +88,20 @@ record in [`keys.go`](../../internal/loopholedecl/keys.go).
 **Ask.** Bake an identity into a build so two binaries can be told apart from the outside, and have
 a broadcast clause record the version that added it.
 
-**State.** `landed` 2026-10-15, on [OQ-DA2](#OQ-DA2)'s leaning. **Evidence:** `yolo --version
---full` adds the build stamp, the commit the binary was stamped with and the sha256 of the running
-executable (`8198098ab`, [`identity.go`](../../internal/version/identity.go)); plain `--version` is
-unchanged. `yolo config-ref` now says a content contribution naming neither `into` nor `agents`
-means broadcast "as of 0.9.0" (`00dd7d635`).
+**State.** The identity half is `landed`; the version-record half is `declined`, both by the
+owner's rulings of 2026-10-16 ([OQ-DA2](#OQ-DA2)). **Evidence:** every build's version string
+carries the commit hash, releases included: a release prints `0.14.0+g<12 hex digits>`, and a
+source or flake build adds its distance from the tag and a dirty mark. Every build channel stamps
+it: [`.goreleaser.yaml`](../../.goreleaser.yaml), the Homebrew formula
+([`update-homebrew.sh`](../../tools/release-wiring/update-homebrew.sh), from the release commit,
+since its tarball has no git metadata), the wheels, `scripts/build-go.sh`, `just install` and the
+flake (`e5c807f13`, `buildStamp` in [`flake.nix`](../../flake.nix)). Update checks ignore the hash
+when ordering versions. `yolo --version --full` also prints the commit, the build stamp and the
+sha256 of the running executable (`8198098ab`, [`identity.go`](../../internal/version/identity.go));
+the sha256 stays, because builds from one dirty tree share a version string. `yolo config-ref`
+records no version for a rule: its "as of 0.9.0" on the broadcast clause is removed.
 
-**Owner.** [OQ-DA2](#OQ-DA2), open only for the maintainer to ratify what was built.
+**Owner.** [OQ-DA2](#OQ-DA2), compacted.
 
 ## 4. A reduced-window child
 
@@ -235,30 +242,8 @@ The mechanism asks owned by a design doc of their own are all ruled there:
 [OQ-PFK6](../design/patched-forks.md#OQ-PFK6) (2026-10-15),
 [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4) and
 [OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) (2026-10-16), none built yet; [OQ-PFK7](../design/patched-forks.md#decision-ledger)
-is settled. Of the four with no other home, [OQ-DA1](#decision-ledger), [OQ-DA3](#OQ-DA3) and [OQ-DA4](#OQ-DA4) are settled; the one below
-only awaits ratification of what was built.
-
-1. 💬 **OQ-DA2: What identity does a build carry beyond its revision?**
-
-   Decides [ask 3](#3-a-build-has-no-version-identity). Two binaries built from one revision once
-   printed the same version, so nothing could attribute a rendered artifact to its build or bisect by
-   version. *Since 2026-10-15* option A is built (`yolo --version --full`); a ruling ratifies or
-   reverses it.
-
-   - **A — A binary hash.** `yolo --version --full` prints the revision and a hash of the binary.
-   - **B — A build stamp declared at compile time.** A monotonically increasing build id beside the
-     revision.
-   - **C — A content hash of the flake inputs.** Reuses the image-identity hash the skew gate
-     already computes.
-
-   <!-- vantage: question id=OQ-DA2 leaning="A: the narrowest change that answers the question, and it needs no new build input. C is attractive only if a rendered artifact must be attributable to the flake that produced it rather than the binary that wrote it." -->
-
-   _Leaning:_ A: the narrowest change that answers the question, and it needs no new build input. C
-   is attractive only if a rendered artifact must be attributable to the flake that produced it
-   rather than the binary that wrote it.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+is settled. Of the four with no other home, [OQ-DA1](#decision-ledger), [OQ-DA2](#OQ-DA2), [OQ-DA3](#OQ-DA3) and
+[OQ-DA4](#OQ-DA4) are all settled; none remains open.
 
 ## Decision Ledger
 
@@ -268,3 +253,4 @@ only awaits ratification of what was built.
 | <a id="OQ-DA3"></a>[OQ-DA3](#OQ-DA3) | **Maintainer ruling, B — no `yolo check` notice.** *"I don't see how we could possibly do this YOLO check thing. That's like, how could you warn about every single possible thing that could go wrong? ... there's no way we can help with that one."* A host file in the user's own home that an agent reads (here pi's `~/.pi/agent/APPEND_SYSTEM.md`) reaches no jail by design; the shipped skill says so, and a pack's briefing is the route. Rejected: A, a check for one agent's file | 2026-10-16 | [ask 9](#9-the-yolo-check-notice-for-a-bypassed-append_systemmd) | — (nothing to build) |
 | <a id="OQ-DA4"></a>[OQ-DA4](#OQ-DA4) | **Maintainer ruling, A — `config-list` takes `remove:`**, ratifying what was built: *"of course we can say remove an entry. It seems super useful ... why would we not have this?"* An entry equal to a listed one leaves the array; an absent one is a no-op; within one contribution `remove` runs before `add`; a `profile` gate applies to both | 2026-10-16 | [ask 1](#1-remove-for-config-list) | ✅ `e57c7862c` |
 | OQ-DA1 | **Maintainer ruling, A — neither:** *"Nobody's running old versions."* No pack version declaration and no `yolo pack lint --for-version`. The unknown-field skip a launch has made since 0.12.0 and the source-skew refusal cover a pack ahead of its yolo. Rejected: B, an advisory declaration; C, a lint against an older build | 2026-10-15 | [ask 2](#2-a-pack-cannot-declare-the-yolo-version-it-needs) | — (nothing to build) |
+| <a id="OQ-DA2"></a>[OQ-DA2](#OQ-DA2) | **Owner's ruling:** *"our version string should always have the git hash or a chunk of it in it ... why does it matter when rules were added? that seems like impossible ongoing work. I don't want to set that precedent. why can't nix know a commit?"* and, on releases, *"yes, releases name the hash too. hashes are _actually_ immutable."* Every build's version string carries the commit hash, releases and Homebrew included: a release prints `<version>+g<hash12>`, and ordering ignores the hash. `--full`'s binary sha256 stays for builds that share a string (a dirty tree). The ask's second half, recording the version that added a rule, is declined: docs carry no per-rule version history, as with [OQ-DA1](#decision-ledger). Superseded: the A/B/C options of the 2026-10-15 question | 2026-10-16 | [ask 3](#3-a-build-has-no-version-identity) | 2026-10-16, `e5c807f13`: `buildStamp` in `flake.nix`; pinned by `version.TestTheFlakeStampsWhatBuildGoStamps` and the integration `TestTheJailsYoloCarriesTheCheckoutsCommit`. Releases: `.goreleaser.yaml`, `update-homebrew.sh` and the wheels, pinned by `TestAReleaseBuildPrintsItsVersionAndCommit`, `TestHomebrewFormulaHeredocNeverExecutesLiteralYoloForNormalOrBackfill` and `TestWheelBinariesNameTheReleaseCommit`. The sha256 line since `8198098ab` |
