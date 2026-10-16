@@ -60,6 +60,10 @@ func Run(opts Options) (rc int) {
 	// workspace only by the short code crossings.log already uses.
 	o.armLaunchRecord()
 	defer func() { o.recordLaunchExit(rc) }()
+	// THE PREWARM ENDS WITH THE LAUNCH (imageprewarm.go): whichever return ends it — a refusal, an
+	// error, the jail's own end — the image prewarm's nix is stopped and waited for first, rather
+	// than left running with no parent. A signal's teardown stops it with the rest (nixchildren).
+	defer o.stopImagePrewarm()
 
 	// THE LIVE-OVERLAY GUARD, before any other work — no storage touch beyond the launch
 	// line above, no config load, no staging: this launch would jail the running session's

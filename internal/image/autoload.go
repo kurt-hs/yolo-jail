@@ -6,6 +6,7 @@ package image
 // docs/reference/macos-user-nix-and-features.md (How nix works here)
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/containerbuilder"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -100,6 +102,11 @@ type AutoLoadOptions struct {
 	IsMacOS bool
 	// Getpid names the PID-unique out-link. nil => os.Getpid.
 	Getpid func() int
+	// Context ends the real nix build BuildStorePath runs by default, and Prewarm: a cancel
+	// interrupts that nix as a Ctrl-C would (interruptOnCancel), and Prewarm starts no build after
+	// it. nil => context.Background(). It is how a launch ends its prewarm when it returns
+	// (internal/cli/run's imageprewarm.go).
+	Context context.Context
 	// BuildStorePath runs the nix build and returns (storePath, stderrTail).
 	// nil => the real nix build. Injected for tests.
 	BuildStorePath func(repoRoot string, extra []any, outLink string) (string, []string)
@@ -290,7 +297,7 @@ func (o *AutoLoadOptions) fill() {
 	}
 	if o.BuildStorePath == nil {
 		o.BuildStorePath = func(repoRoot string, extra []any, outLink string) (string, []string) {
-			return buildImageStorePath(o.Attr, repoRoot, extra, outLink, o.nixOut())
+			return buildImageStorePathContext(o.ctx(), o.Attr, repoRoot, extra, outLink, o.nixOut())
 		}
 	}
 	if o.BuildOffload == nil {
@@ -1335,7 +1342,12 @@ func runCapture(argv []string) (string, bool) {
 // repoRoot, streaming a summary and retaining the last 30 stderr lines. Returns
 // (resolvedStorePath, stderrTail); storePath "" on failure.
 func buildImageStorePath(attr, repoRoot string, extra []any, outLink string, out io.Writer) (string, []string) {
-	return buildImageStorePathArgs(attr, repoRoot, extra, outLink, out, nil, nil)
+	return buildImageStorePathContext(context.Background(), attr, repoRoot, extra, outLink, out)
+}
+
+// buildImageStorePathContext is buildImageStorePath ending with ctx (runNixBuildContext).
+func buildImageStorePathContext(ctx context.Context, attr, repoRoot string, extra []any, outLink string, out io.Writer) (string, []string) {
+	return runNixBuildContext(ctx, ociBuildArgv(attr, outLink, nil), repoRoot, imageBuildEnv(extra, nil), outLink, out)
 }
 
 // buildImageStorePathArgs is buildImageStorePath with extra nix args
@@ -1343,14 +1355,39 @@ func buildImageStorePath(attr, repoRoot string, extra []any, outLink string, out
 // macOS container-builder offload uses to retry the build against a remote
 // builder. extraArgs/extraEnv nil => the plain build.
 func buildImageStorePathArgs(attr, repoRoot string, extra []any, outLink string, out io.Writer, extraArgs, extraEnv []string) (string, []string) {
+	return runNixBuild(ociBuildArgv(attr, outLink, extraArgs), repoRoot, imageBuildEnv(extra, extraEnv), outLink, out)
+}
+
+// imageBuildEnv is the image build's environment: this process's, then the `packages:` extras as
+// YOLO_EXTRA_PACKAGES when there are any, then extraEnv.
+func imageBuildEnv(extra []any, extraEnv []string) []string {
 	buildEnv := os.Environ()
 	if len(extra) > 0 {
 		if pkgJSON, err := jsonx.DumpsCompact(extra); err == nil {
 			buildEnv = append(buildEnv, "YOLO_EXTRA_PACKAGES="+pkgJSON)
 		}
 	}
-	buildEnv = append(buildEnv, extraEnv...)
-	return runNixBuild(ociBuildArgv(attr, outLink, extraArgs), repoRoot, buildEnv, outLink, out)
+	return append(buildEnv, extraEnv...)
+}
+
+// ctx is o.Context, or context.Background() when it is nil.
+func (o *AutoLoadOptions) ctx() context.Context {
+	if o.Context == nil {
+		return context.Background()
+	}
+	return o.Context
+}
+
+// nixCancelGrace is how long a nix interruptOnCancel interrupted has to exit before it is killed:
+// nixchildren.Stop's grace, for the same reason.
+const nixCancelGrace = 10 * time.Second
+
+// interruptOnCancel makes cmd, made with exec.CommandContext, end the way a Ctrl-C ends a nix when
+// its context ends: an interrupt, then a kill once nixCancelGrace has passed. exec's own default is
+// an immediate kill.
+func interruptOnCancel(cmd *exec.Cmd) {
+	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
+	cmd.WaitDelay = nixCancelGrace
 }
 
 // runNixBuild runs one `nix build` to completion, streaming SummarizeNixLine's
@@ -1364,8 +1401,15 @@ func buildImageStorePathArgs(attr, repoRoot string, extra []any, outLink string,
 // yolo-entrypoint deserves the same treatment as one that cannot produce an
 // image, and the operator should not have to learn two failure shapes.
 func runNixBuild(argv []string, repoRoot string, buildEnv []string, outLink string, out io.Writer) (string, []string) {
+	return runNixBuildContext(context.Background(), argv, repoRoot, buildEnv, outLink, out)
+}
+
+// runNixBuildContext is runNixBuild ending with ctx (interruptOnCancel). A ctx already ended starts
+// no nix, and the build fails like one that could not run.
+func runNixBuildContext(ctx context.Context, argv []string, repoRoot string, buildEnv []string, outLink string, out io.Writer) (string, []string) {
 	argv = reporoot.FlakeArgv(repoRoot, argv)
-	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	interruptOnCancel(cmd)
 	cmd.Dir = repoRoot
 	cmd.Env = buildEnv
 	cmd.Stdout = nil

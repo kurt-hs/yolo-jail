@@ -56,6 +56,10 @@ type Deps struct {
 	// host-run staging and removal commands, and for each crossing into the sandbox account
 	// (RunAsSandboxArgv), the bootstrap's among them.
 	Run func(argv []string) int
+	// RunCapture runs argv with stdin inherited and its stdout and stderr captured together,
+	// returning them with the returncode: for a check whose output the user needs only when it
+	// fails (setup's visudo checks). nil runs argv through Run instead, its output uncaptured.
+	RunCapture func(argv []string) (string, int)
 	// RunBash runs `bash -c <script>` and returns the returncode (unshare /
 	// fix-permissions).
 	RunBash func(script string) int
@@ -308,6 +312,24 @@ type printer struct {
 
 func (p printer) print(msg string)          { fmt.Fprintln(p.w, richtext.Render(msg, p.color)) }
 func (p printer) printf(f string, a ...any) { p.print(fmt.Sprintf(f, a...)) }
+
+// blank prints an empty line, which sets a stop's commands off from its headline.
+func (p printer) blank() { fmt.Fprintln(p.w) }
+
+// verbatim prints text another program wrote (or a file's content), each line after two
+// spaces and never through the markup renderer, so its bytes reach the user as they were.
+func (p printer) verbatim(text string) {
+	for _, l := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		fmt.Fprintln(p.w, "  "+l)
+	}
+}
+
+// commands prints each line as a copy-pasteable command: two spaces, then bold.
+func (p printer) commands(lines ...string) {
+	for _, l := range lines {
+		p.print("  [bold]" + richtext.Escape(l) + "[/bold]")
+	}
+}
 
 // MacosSandboxEnv returns the extra env layered into the sandbox launch (git
 // identity + TERM/COLORTERM/NO_COLOR, and the reachability hatch). Host credentials never
@@ -2166,6 +2188,7 @@ func RealDeps(runProxy func(argv []string) int, materialize func(repoRoot string
 		Getenv:             os.Getenv,
 		HostUser:           hostUserReal,
 		Run:                runReal,
+		RunCapture:         runCaptureReal,
 		RunBash:            runBashReal,
 		RunWithProxy:       runProxy,
 		WriteHostFile:      writeHostFileReal,

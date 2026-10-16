@@ -261,10 +261,17 @@ const imageIdentityEvalTimeout = 2 * time.Minute
 // the per-system prefixes, so this spelling is the same on every host. Measured
 // in this jail 2026-09-13: 0.49 s, and it touches no nixpkgs.
 func EvalImageIdentity(repoRoot string) (string, bool) {
+	return EvalImageIdentityContext(context.Background(), repoRoot)
+}
+
+// EvalImageIdentityContext is EvalImageIdentity ending with ctx: a cancel interrupts the eval as a
+// Ctrl-C would (interruptOnCancel), and it answers ok=false. A launch's prewarm evaluates through
+// it, so the launch's return ends an eval nothing will read (internal/cli/run's imageprewarm.go).
+func EvalImageIdentityContext(ctx context.Context, repoRoot string) (string, bool) {
 	if repoRoot == "" {
 		return "", false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), imageIdentityEvalTimeout)
+	ctx, cancel := context.WithTimeout(ctx, imageIdentityEvalTimeout)
 	defer cancel()
 	argv := append([]string{}, NixFlakeFlags()...)
 	argv = append(argv, "eval", "--impure", "--raw", ".#imageIdentity")
@@ -275,6 +282,7 @@ func EvalImageIdentity(repoRoot string) (string, bool) {
 	// warnings on stderr, and they would bury the one line we want.
 	var out bytes.Buffer
 	cmd.Stdout = &out
+	interruptOnCancel(cmd)
 	// nixchildren.Run rather than Output: tracked, so a launch a signal ends stops this
 	// eval too.
 	if err := nixchildren.Run(cmd); err != nil {
