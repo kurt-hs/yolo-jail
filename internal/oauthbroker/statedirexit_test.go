@@ -4,8 +4,11 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 )
 
 // THE CALL SITE, in the real daemon process: Main exits once its state dir — BrokerDir, the
@@ -29,8 +32,12 @@ func TestMainExitsWhenItsStateDirIsRemoved(t *testing.T) {
 	}
 	select {
 	case err := <-done:
-		if err != nil {
-			t.Errorf("the daemon exited with %v for a removed state dir, want a clean exit\n%s", err, out())
+		// THE DELIBERATE EXIT'S OWN STATUS, which the supervisor that spawned the daemon reads as
+		// final and never restarts (hostservice.ExitStateDirRetired, HD-D3).
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) || ee.ExitCode() != hostservice.ExitStateDirRetired {
+			t.Errorf("the daemon exited with %v for a removed state dir, want exit status %d "+
+				"(hostservice.ExitStateDirRetired)\n%s", err, hostservice.ExitStateDirRetired, out())
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatalf("the daemon is still serving 15s after its state dir was removed\n%s", out())

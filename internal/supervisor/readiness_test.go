@@ -29,7 +29,7 @@ func TestChildForwardsReadinessFD(t *testing.T) {
 		Name:    "ready",
 		Cmd:     []string{"/bin/sh", "-c", "printf 'ready wire-bridge\\n' >&3"},
 		Restart: "no",
-	}, backoff: restartBackoffInitial}
+	}, backoff: RestartBackoffInitial}
 	if err := c.start(); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestStartDoesNotOwnTheInheritedReadinessFD(t *testing.T) {
 			Name:    "ready",
 			Cmd:     []string{"true"},
 			Restart: "no", // "always" would sleep out the backoff between spawns
-		}, backoff: restartBackoffInitial}
+		}, backoff: RestartBackoffInitial}
 		if err := c.start(); err != nil {
 			t.Fatal(err)
 		}

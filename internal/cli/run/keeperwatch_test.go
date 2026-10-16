@@ -65,6 +65,10 @@ func TestTheKeeperRecordsAHostServiceThatDiesAfterReady(t *testing.T) {
 	if goruntime.GOOS != "linux" {
 		t.Skip("spawns host processes")
 	}
+	// A DEATH THAT STANDS: the daemon's supervisor restarts it (HD-D25), and every restart dies at
+	// once, since the die file is still there, so the supervision gives up; that is the end the
+	// keeper records. The policy is HD-D25's on a millisecond scale.
+	fastHostDaemonRestarts(t, 5*time.Millisecond, 10*time.Second, 5)
 	die := filepath.Join(t.TempDir(), "die")
 	var first, other *sessionLock
 	f := startKeeperFixture(t, true, func(p *keeperPlan) {
@@ -90,7 +94,8 @@ func TestTheKeeperRecordsAHostServiceThatDiesAfterReady(t *testing.T) {
 		t.Fatal(err)
 	}
 	log := f.awaitKeeperLog("host service 'flaky' went down")
-	for _, want := range []string{"exit status 3", "host-service-flaky.log", "Nothing restarts it"} {
+	for _, want := range []string{"exit status 3", "host-service-flaky.log", "Nothing restarts it",
+		"restart 5 of 5", "after 5 restarts in a row; giving up", "its supervisor gave up after 5 restarts"} {
 		if !strings.Contains(log, want) {
 			t.Errorf("the keeper's record of the death lacks %q:\n%s", want, log)
 		}
@@ -258,7 +263,7 @@ func TestAnArrivalSaysWhichHostServicesItsKeeperRecordedDown(t *testing.T) {
 				return
 			}
 			for _, want := range []string{"Host service 'flaky' of this jail has been down since",
-				"its process ended (exit status 3)", "restarts nothing", "'yolo stop' from this workspace",
+				"its process ended (exit status 3)", "Nothing restarts it now", "'yolo stop' from this workspace",
 				"/state/logs/host-service-flaky.log"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("the arrival's notice lacks %q:\n%s", want, out)
@@ -277,6 +282,9 @@ func TestEachHostServiceKindReportsItsEnd(t *testing.T) {
 	}
 	t.Run("a spawned daemon", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
+		// Its end is the end of its supervision (HD-D25): every restart exits 7 again, since the
+		// die file stays, so the supervisor gives up, on a millisecond scale here.
+		fastHostDaemonRestarts(t, 5*time.Millisecond, 10*time.Second, 5)
 		var buf strings.Builder
 		o := &Options{Stdout: &buf}
 		fillDefaults(o)

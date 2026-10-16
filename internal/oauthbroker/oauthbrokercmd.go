@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
@@ -122,8 +123,14 @@ func Main(argv []string) int {
 	// and the refresh lock. When it goes — a launch retiring the loophole, a deleted HOME —
 	// the daemon EXITS, so the next launch that selects claude spawns one that mints again,
 	// instead of adopting this one and never getting a CA (hostservice.WatchStateDir).
+	// A RETIRED STATE DIRECTORY IS A DELIBERATE EXIT, said by its own status
+	// (hostservice.ExitStateDirRetired), so the supervisor that spawned this daemon reports it and
+	// does not restart it: a restart would recreate the directory a launch just archived
+	// (docs/design/host-daemon-ownership.md HD-D3, HD-D25).
+	var retired atomic.Bool
 	if err := hostservice.WatchStateDir(BrokerDir(), stop, func(reason string) {
 		logInfo("%s", hostservice.StateDirGoneExitLine("yolo-claude-oauth-broker-host", reason))
+		retired.Store(true)
 		shutdown()
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "yolo-claude-oauth-broker-host: watch the state directory:", err)
@@ -162,6 +169,9 @@ func Main(argv []string) int {
 	if err := hostservice.ServeFrontedUnix(BuildHandler(*credsFile), *socket, stop); err != nil {
 		fmt.Fprintln(os.Stderr, "yolo-claude-oauth-broker-host:", err)
 		return 1
+	}
+	if retired.Load() {
+		return hostservice.ExitStateDirRetired
 	}
 	return 0
 }

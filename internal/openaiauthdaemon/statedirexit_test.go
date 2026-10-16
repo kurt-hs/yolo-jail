@@ -52,8 +52,11 @@ func TestMainExitsWhenItsStateDirIsRemoved(t *testing.T) {
 	}
 	select {
 	case got := <-rc:
-		if got != 0 {
-			t.Errorf("Main exited %d for a removed state dir, want 0 (a clean shutdown)", got)
+		// THE DELIBERATE EXIT'S OWN STATUS, which the supervisor that spawned the daemon reads as
+		// final and never restarts (hostservice.ExitStateDirRetired, HD-D3).
+		if got != hostservice.ExitStateDirRetired {
+			t.Errorf("Main exited %d for a removed state dir, want %d (hostservice.ExitStateDirRetired)",
+				got, hostservice.ExitStateDirRetired)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Main is still serving 10s after its state dir was removed")

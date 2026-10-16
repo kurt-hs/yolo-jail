@@ -13,7 +13,7 @@ import (
 func runOnce(t *testing.T, name, script string) string {
 	t.Helper()
 	c := &child{spec: Spec{Name: name, Cmd: []string{"sh", "-c", script}, Restart: "no"},
-		backoff: restartBackoffInitial}
+		backoff: RestartBackoffInitial}
 	stop := make(chan struct{})
 	done := make(chan struct{})
 	go func() { c.superviseOne(stop); close(done) }()

@@ -1286,43 +1286,6 @@ func (o *Options) startExternalService(
 	// failing, which IS reported — one fault, one line.
 	_ = os.MkdirAll(logDir, 0o755)
 	logPath := filepath.Join(logDir, "host-service-"+name+".log")
-	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
-	var reasonConn net.Conn
-	var reasonChild *os.File
-	var reasonAttempt string
-	if hd != nil && hd.StartupReason {
-		var channelErr error
-		reasonConn, reasonChild, reasonAttempt, channelErr = hostservice.NewStartupReasonChannel()
-		if channelErr != nil {
-			o.pr(o.Stdout).print("[red]" + richtext.Escape(startupDiagnosticsFailure(name, channelErr)) + "[/red]")
-			outcome.ReasonRead = hostservice.StartupReasonReadOutcome{Kind: hostservice.StartupReasonReadChannelFault,
-				Phase: hostservice.StartupReasonReadPhaseUnknown, Fault: hostservice.StartupReasonFaultUnavailable}
-			return failed(hostservice.StartupKindChannelSetupFailed, hostservice.StartupPhaseChannel)
-		}
-		outcome.ReasonRead = hostservice.StartupReasonReadOutcome{Kind: hostservice.StartupReasonReadUnknown}
-		cmd.ExtraFiles = append(cmd.ExtraFiles, reasonChild)
-	}
-	serviceLog := ""
-	// Bounded at open (internal/logcap): past the cap the log moves to one archived
-	// generation. Trimmed in place, because the same log is held open by this loophole's
-	// daemon in every other jail running it.
-	if lf, err := logcap.Open(logPath, 0o644); err == nil {
-		cmd.Stdout, cmd.Stderr = lf, lf
-		serviceLog = logPath
-	} else {
-		// THE DAEMON STILL STARTS — its log is diagnostics, not a dependency — but
-		// every failure line below ends in "see <logPath>", and sending a reader to a
-		// file that was never opened is worse than the silence it replaced. So the one
-		// launch where that advice is false says so here, once, before it is given.
-		o.pr(o.Stdout).printf("[yellow]Warning: host service '%s' will run with no log: "+
-			"could not open %s (%v).[/yellow]", name, logPath, err)
-	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	// A KEEPER'S DAEMON ENDS WITH THE KEEPER (JL-D32): it leads a session of its own, so no pane
-	// close reaches it, and no reaper kills it, so after a SIGKILLed keeper it would run on unowned.
-	if o.keeperMode {
-		setChildDeathSignal(cmd.SysProcAttr)
-	}
 	// env overrides.
 	env := os.Environ()
 	envSet := false
@@ -1347,14 +1310,62 @@ func (o *Options) startExternalService(
 		}
 		envSet = true
 	}
-	if envSet || reasonConn != nil {
-		if reasonConn != nil {
-			env = append(env,
-				hostservice.StartupReasonFDEnv+"=3",
-				hostservice.StartupReasonAttemptEnv+"="+reasonAttempt,
-				hostservice.StartupReasonServiceEnv+"="+name)
+	// newCmd is the daemon's process, before its start: the argv, the environment and the log,
+	// one spelling for the first spawn and every restart its supervisor makes
+	// (hostdaemonsupervise.go), so a restart is the same daemon. lf is the log it writes, nil
+	// with logErr when the log could not be opened (the daemon still starts: its log is
+	// diagnostics). The first spawn's startup-reason channel is added to its own command only.
+	newCmd := func() (cmd *exec.Cmd, lf *os.File, logErr error) {
+		cmd = exec.Command(cmdArgs[0], cmdArgs[1:]...)
+		// Bounded at open (internal/logcap): past the cap the log moves to one archived
+		// generation. Trimmed in place, because the same log is held open by this loophole's
+		// daemon in every other jail running it.
+		if lf, logErr = logcap.Open(logPath, 0o644); logErr == nil {
+			cmd.Stdout, cmd.Stderr = lf, lf
 		}
-		cmd.Env = env
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		// A KEEPER'S DAEMON ENDS WITH THE KEEPER (JL-D32): it leads a session of its own, so no pane
+		// close reaches it, and no reaper kills it, so after a SIGKILLed keeper it would run on unowned.
+		if o.keeperMode {
+			setChildDeathSignal(cmd.SysProcAttr)
+		}
+		if envSet {
+			cmd.Env = append([]string(nil), env...)
+		}
+		return cmd, lf, logErr
+	}
+	cmd, lf, logErr := newCmd()
+	var reasonConn net.Conn
+	var reasonChild *os.File
+	var reasonAttempt string
+	if hd != nil && hd.StartupReason {
+		var channelErr error
+		reasonConn, reasonChild, reasonAttempt, channelErr = hostservice.NewStartupReasonChannel()
+		if channelErr != nil {
+			o.pr(o.Stdout).print("[red]" + richtext.Escape(startupDiagnosticsFailure(name, channelErr)) + "[/red]")
+			outcome.ReasonRead = hostservice.StartupReasonReadOutcome{Kind: hostservice.StartupReasonReadChannelFault,
+				Phase: hostservice.StartupReasonReadPhaseUnknown, Fault: hostservice.StartupReasonFaultUnavailable}
+			return failed(hostservice.StartupKindChannelSetupFailed, hostservice.StartupPhaseChannel)
+		}
+		outcome.ReasonRead = hostservice.StartupReasonReadOutcome{Kind: hostservice.StartupReasonReadUnknown}
+		cmd.ExtraFiles = append(cmd.ExtraFiles, reasonChild)
+	}
+	serviceLog := ""
+	if lf != nil {
+		serviceLog = logPath
+	} else {
+		// THE DAEMON STILL STARTS — its log is diagnostics, not a dependency — but
+		// every failure line below ends in "see <logPath>", and sending a reader to a
+		// file that was never opened is worse than the silence it replaced. So the one
+		// launch where that advice is false says so here, once, before it is given.
+		o.pr(o.Stdout).printf("[yellow]Warning: host service '%s' will run with no log: "+
+			"could not open %s (%v).[/yellow]", name, logPath, logErr)
+	}
+	if reasonConn != nil {
+		cmd.Env = append(append([]string(nil), env...),
+			hostservice.StartupReasonFDEnv+"=3",
+			hostservice.StartupReasonAttemptEnv+"="+reasonAttempt,
+			hostservice.StartupReasonServiceEnv+"="+name)
 	}
 	if err := cmd.Start(); err != nil {
 		if reasonChild != nil {
@@ -1568,20 +1579,51 @@ func (o *Options) startExternalService(
 		}
 		return loopholeDaemon{name: name, startupOutcome: outcome}, false
 	}
-	// WHAT THE KEEPER WATCHES (keeperwatch.go): the process, and below, for a fronted daemon, the
-	// front too, since either going leaves the jail's clients with nothing. NOT a clean exit that
-	// leaves the service reachable: that is the daemonizing wrapper waitServiceReady accepts, which
-	// handed the service to a child of its own, so its exit is not the service's end, and the end
-	// of that child is one this process cannot see.
-	gone := make(chan struct{})
-	go func() {
-		<-exited
-		if st := cmd.ProcessState; st != nil && st.Success() && reachable() {
+	// THE DAEMON IS SUPERVISED from here on (hostdaemonsupervise.go, OQ-HD5, HD-D25): a death this
+	// process did not cause is reported and restarted with the same argv, env, path and log, bounded,
+	// and only a give-up or a retired state directory leaves it down. Started below, once the
+	// handle is whole; a front that fails to publish stops the first process without it.
+	sup := newDaemonSupervisor(name, serviceLog, cmd, exited)
+	sup.say = supervisorSay(serviceLog, launchLogOnly(o.Stdout))
+	sup.wrapperExit = func(*exec.Cmd) bool { return reachable() }
+	sup.start = func() (*exec.Cmd, <-chan struct{}, error) {
+		// The dead process's artifact first, as the first spawn removed a predecessor's: a leftover
+		// endpoint file satisfies the wait at once, and a leftover socket fails the bind.
+		_ = os.Remove(daemonPath)
+		if fronted {
+			removeSocketSiblings(daemonPath)
+		}
+		next, nextLog, _ := newCmd()
+		if err := next.Start(); err != nil {
+			if nextLog != nil {
+				_ = nextLog.Close()
+			}
+			return nil, nil, err
+		}
+		if nextLog != nil {
+			_ = nextLog.Close() // the child holds its own descriptor
+		}
+		nextExited := make(chan struct{})
+		go func() { _ = next.Wait(); close(nextExited) }()
+		return next, nextExited, nil
+	}
+	sup.ready = func(next *exec.Cmd, nextExited <-chan struct{}) string {
+		return o.waitServiceReady(reachable, nextExited, next)
+	}
+	sup.abandon = func(next *exec.Cmd) {
+		if hd != nil && hd.Detach {
+			detachService(next)
 			return
 		}
-		close(gone)
-	}()
-	end := serviceEnd{done: gone, how: func() string { return "its process " + exitPhrase(cmd) }}
+		_ = syscall.Kill(-next.Process.Pid, syscall.SIGKILL)
+	}
+	// WHAT THE KEEPER WATCHES (keeperwatch.go): the supervision's end, and below, for a fronted
+	// daemon, the front too, since either going leaves the jail's clients with nothing. A death the
+	// supervisor restarted is not an end. Nor is a clean exit that leaves the service reachable:
+	// that is the daemonizing wrapper waitServiceReady accepts, which handed the service to a child
+	// of its own, so its exit is not the service's end, and the end of that child is one this
+	// process cannot see.
+	end := sup.end()
 	// jail_endpoint is canonical; jail_socket stays an accepted alias, for the same
 	// reason {socket} does — silently ignoring a third-party loophole's override key
 	// over a rename is worse than carrying two spellings.
@@ -1599,7 +1641,12 @@ func (o *Options) startExternalService(
 		envVar = hostServiceEnvVar(name)
 	}
 	out := o.pr(o.Stdout)
-	stop := func() { o.stopService(out, name, hd, cmd, exited) }
+	// stopCurrent is the teardown's stop of whichever process the supervisor holds now, marked
+	// stopping first so the stop is never read as a death and restarted.
+	stopCurrent := func() {
+		sup.stop(func(cur *exec.Cmd, curExited <-chan struct{}) { o.stopService(out, name, hd, cur, curExited) })
+	}
+	stop := stopCurrent
 	if fronted {
 		// The daemon's socket accepts; now publish the jail-facing half. The
 		// front is started only AFTER the upstream wait on purpose: ServeFront
@@ -1666,7 +1713,7 @@ func (o *Options) startExternalService(
 			// may still be finishing a request when the lines below remove its sockets:
 			// its front is already closed, so nothing can reach it by them, and the
 			// connection it is serving is unaffected.
-			o.stopService(out, name, hd, cmd, exited)
+			stopCurrent()
 			// Discarded: teardown litter only, and self-limiting — the next launch's
 			// pre-spawn unlink and retireFrontSockets both target this exact path and
 			// both report what they cannot remove.
@@ -1695,6 +1742,7 @@ func (o *Options) startExternalService(
 	if fronted {
 		h.upstream = daemonPath
 	}
+	go sup.run()
 	return h, true
 }
 

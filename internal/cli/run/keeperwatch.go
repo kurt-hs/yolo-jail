@@ -6,8 +6,12 @@ package run
 // recorded while that session was in, and an arrival prints any service the keeper recorded as
 // down".
 //
-// The keeper restarts nothing (JL-D18): a host service that ends while its jail is up stays down,
-// and every in-jail client of it fails from then on. Before this, nothing said so: the end of a
+// The keeper itself restarts nothing (JL-D18). A spawned host DAEMON is restarted by its own
+// supervisor (hostdaemonsupervise.go, OQ-HD5, HD-D25), bounded, and its end reaches this watch only
+// when that supervision gives up or the daemon exits because its state directory was retired: each
+// restarted death is a line in the daemon's log and launch.log, not a record here, since a restarted
+// daemon is not down. A service that ends for good while its jail is up stays down, and every
+// in-jail client of it fails from then on. Before this, nothing said so: the end of a
 // spawned daemon was reaped and dropped, a forward's socat was not reaped at all until the
 // teardown, and the sessions that met the failure had no way to tell a dead service from a broken
 // agent. So the keeper watches the end of each service it runs, and an end it did not cause is
@@ -202,8 +206,8 @@ func (o *Options) noteServicesDown(key, rt string) {
 		if d.Log != "" {
 			where = " Its log: " + richtext.Escape(d.Log) + "."
 		}
-		o.pr(o.Stderr).printf("[yellow]%s of %s has been down since %s: %s. Its keeper restarts "+
-			"nothing, so %s fails; %s, then a launch, starts it again.%s[/yellow]",
+		o.pr(o.Stderr).printf("[yellow]%s of %s has been down since %s: %s. Nothing restarts it "+
+			"now, so %s fails; %s, then a launch, starts it again.%s[/yellow]",
 			richtext.Escape(capitalize(d.What)), of, when, richtext.Escape(d.How), users, stopRemedy(rt, key), where)
 	}
 }
