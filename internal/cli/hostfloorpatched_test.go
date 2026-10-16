@@ -98,7 +98,7 @@ func TestHostPatchFailureRefusesDespiteAValidOldFloor(t *testing.T) {
 	}
 	if !strings.Contains(out, "ERROR:") ||
 		!strings.Contains(out, "0001-ten.patch") ||
-		!strings.Contains(out, "YOLO_ALLOW_PATCH_FAILURES=1") {
+		!strings.Contains(out, "\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo host -- tool ") {
 		t.Fatalf("host refusal lacks concrete error and bypass:\n%s", out)
 	}
 	if fx.record(t).Good.Entry != key || len(fx.builds) != 1 {
@@ -128,12 +128,16 @@ func TestHostPatchFailureErrorIsSaidOnce(t *testing.T) {
 			if want := map[string]int{"": 1, "1": 0}[bypass]; rc != want {
 				t.Fatalf("bypass %q, %s: rc=%d, want %d\n%s", bypass, launch, rc, want, out)
 			}
-			for _, line := range []string{": patch application failed at upstream v1.2.0 (", "  Patch: 0001-ten.patch\n",
-				"  Conflict: f.txt\n", "  Operation stopped; no older fit or base will be built.\n",
-				"  Repair: " + packsrc.RecipeLead + "\n", "  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo host -- tool\n"} {
+			for _, line := range []string{": patch series does not apply to upstream v1.2.0 (", "  Patch: 0001-ten.patch\n",
+				"  Conflict: f.txt\n", "\nRepair:\n"} {
 				if n := strings.Count(out, line); n != 1 {
 					t.Errorf("bypass %q, %s: %q said %d times, want once:\n%s", bypass, launch, line, n, out)
 				}
+			}
+			// The hatch that runs the good build is listed once.
+			hatch := "  YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo host -- tool "
+			if n := strings.Count(out, hatch); n != 1 {
+				t.Errorf("bypass %q, %s: %q said %d times, want once:\n%s", bypass, launch, hatch, n, out)
 			}
 			// The bypass's CONTINUING line is said once too, whether the advance or the floor says it.
 			if n, want := strings.Count(out, "CONTINUING: "), map[string]int{"": 0, "1": 1}[bypass]; n != want {
@@ -588,8 +592,8 @@ func TestAWalkThatStopsLeavesTheFloorsCopyServing(t *testing.T) {
 		if !reflect.DeepEqual(floorBefore, *floorRecord(t, "tool")) || treeDigest(t, floorBefore.Dir) != copyBefore {
 			t.Errorf("the refusal changed the installed floor copy")
 		}
-		for _, w := range []string{"patch application failed", "v1.4.0 (" + shortSHA(v14) + ")",
-			"YOLO_ALLOW_PATCH_FAILURES=1"} {
+		for _, w := range []string{"patch series does not apply", "v1.4.0 (" + shortSHA(v14) + ")",
+			"YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo host -- tool "} {
 			if !strings.Contains(out, w) {
 				t.Errorf("the refusal lacks %q:\n%s", w, out)
 			}

@@ -9,25 +9,31 @@ package run
 //
 //   - WITH AN INTACT ADMITTED BUILD TO RUN (the slot handed one beside the failure), the launch
 //     REFUSES, whatever the command: a serving older build does not turn a patch failure into a
-//     warning (PF-D81). paths.AllowPatchFailuresEnv=1 is the bypass: the launch runs that build for
-//     this one launch, saying so in a CONTINUING line under the block. paths.AllowMissingProgramsEnv
-//     does not waive it, since leaving the program out is not what the block offers when a build of
-//     it is here (PF-D83).
+//     warning (PF-D81). paths.AllowPatchFailuresEnv, `1` or names covering the build
+//     (internal/patchrecovery's grammar), is the bypass: the launch runs that build for this one
+//     launch, saying so in one Continuing line under the block. paths.AllowMissingProgramsEnv does
+//     not waive it, since leaving the program out is not what the block offers when a build of it is
+//     here (PF-D83).
 //   - WITH NOTHING TO RUN, the build is missing, and missingbuilds.go's refusal follows, which
 //     paths.AllowMissingProgramsEnv waives by starting without it (PF-D77, PF-D83); the block's
-//     Bypass line names that, or cached-good recovery (PF-D82) when an older recorded good build of a
+//     hatch list names that, or cached-good recovery (PF-D82) when an older recorded good build of a
 //     fork is here.
 //   - A PATCHED EXTENSION WITH A FALLBACK and no build gets its fallback, as XB-D7 rules, with the
 //     failure as the fallback line's reason (noteTreeDeliveries); one no selected agent pack loads in
 //     a jail stops nothing, its block saying so.
+//
+// THE HATCH LIST is the delivery's Recovery when the advance set it (docs/design/
+// patched-build-recovery.md §6.8, PBR-D5: the advance is its one authority); a delivery without one
+// derives it here from what the slot handed (Runs, CachedGood). The block is the one shape
+// (packsrc.PatchFailure.Render), colored through the launch's own gate (Options.pr).
 
 import (
-	"strings"
+	"io"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
-
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
@@ -35,9 +41,14 @@ import (
 // launchPatchFailure is one patched build whose series this launch found does not apply.
 type launchPatchFailure struct {
 	label   string
+	subject patchrecovery.Subject
 	recipe  packsrc.RebaseRecipe
 	failure *packsrc.PatchFailure
 	bypass  packsrc.PatchBypass
+	// runs names the intact admitted build this launch would run in the failed series' place, ""
+	// when there is none; unneeded says no selected agent pack loads it where this launch runs.
+	runs     string
+	unneeded bool
 }
 
 // launchPatchFailures are this launch's patch failures, in the order the slot ran them: the patched
@@ -58,15 +69,17 @@ func (o *Options) launchPatchFailures(rt string) []launchPatchFailure {
 		if !ok || d.PatchFailure == nil {
 			continue
 		}
-		out = append(out, launchPatchFailure{label: "fork " + p.Fork.Key(), recipe: p.Fork.RebaseRecipe(), failure: d.PatchFailure,
-			bypass: forkPatchBypass(p.Fork.Key(), d)})
+		b := forkPatchBypass(p.Fork.Key(), d)
+		out = append(out, launchPatchFailure{label: "fork " + p.Fork.Key(),
+			subject: patchrecovery.Subject{Key: p.Fork.Key(), Pack: p.Fork.Pack, Name: p.Fork.Bin},
+			recipe:  p.Fork.RebaseRecipe(), failure: d.PatchFailure, bypass: b, runs: b.Runs})
 	}
 	for _, f := range o.patchedTrees {
 		d, ok := o.treeDelivered[f.Key()]
 		if !ok || d.PatchFailure == nil || d.Dir == "" && f.Fallback != "" {
 			continue
 		}
-		b := packsrc.PatchBypass{Command: "yolo"}
+		b := packsrc.PatchBypass{Command: "yolo", Key: f.Key(), Hatches: d.Recovery}
 		switch {
 		case f.Owner == "" || !f.ListedInJail:
 			b.Unneeded = true
@@ -75,20 +88,23 @@ func (o *Options) launchPatchFailures(rt string) []launchPatchFailure {
 		default:
 			b.Missing = true
 		}
-		out = append(out, launchPatchFailure{label: f.Label(), recipe: f.RebaseRecipe(), failure: d.PatchFailure, bypass: b})
+		out = append(out, launchPatchFailure{label: f.Label(),
+			subject: patchrecovery.Subject{Key: f.Key(), Pack: f.Pack, Name: f.Bin},
+			recipe:  f.RebaseRecipe(), failure: d.PatchFailure, bypass: b, runs: b.Runs, unneeded: b.Unneeded})
 	}
 	return out
 }
 
-// forkPatchBypass is a patched fork's Bypass line at a jail launch (PF-D83): the build the slot
-// handed, else the older recorded good build cached-good recovery runs, else leaving it out.
+// forkPatchBypass is a patched fork's hatch list at a jail launch (PF-D83): the advance's Recovery
+// when it set one, else derived from what the slot handed — the build it runs, else the older
+// recorded good build cached-good recovery runs, else leaving it out.
 func forkPatchBypass(owner string, d entrypoint.ForkDelivery) packsrc.PatchBypass {
-	b := packsrc.PatchBypass{Command: "yolo"}
+	b := packsrc.PatchBypass{Command: "yolo", Key: owner, Hatches: d.Recovery}
 	switch {
 	case d.Key != "":
 		b.Runs = d.Runs
 		if b.Runs == "" {
-			b.Runs = "in store entry " + d.Key
+			b.Runs = "store entry " + d.Key
 		}
 	case d.CachedGood != "":
 		b.CachedGood, b.CachedGoodLabel = owner, d.CachedGood
@@ -99,69 +115,34 @@ func forkPatchBypass(owner string, d entrypoint.ForkDelivery) packsrc.PatchBypas
 }
 
 // refusePatchFailures prints every patch failure's error block, then refuses the launch when a
-// failure has a build to run and the bypass is not set: true when this launch refuses. A failure
-// with nothing to run is left to refuseMissingBuilds, after it.
+// failure has a build to run and the bypass does not cover it: true when this launch refuses. A
+// failure with nothing to run is left to refuseMissingBuilds, after it.
 func (o *Options) refusePatchFailures(rt string) bool {
 	failures := o.launchPatchFailures(rt)
 	if len(failures) == 0 {
 		return false
 	}
 	out := o.pr(o.Stderr)
-	bypassed := o.Getenv(paths.AllowPatchFailuresEnv) == "1"
-	var blocking []launchPatchFailure
-	for _, f := range failures {
-		lines := strings.Split(strings.TrimSuffix(f.failure.Block(f.label, f.recipe, f.bypass), "\n"), "\n")
-		out.print("[bold red]" + richtext.Escape(lines[0]) + "[/bold red]")
-		for _, l := range lines[1:] {
-			out.print(richtext.Escape(l))
+	bypass := patchrecovery.Read(o.Getenv, patchrecovery.AllowPatchFailuresEnv)
+	refused := false
+	for i, f := range failures {
+		if i > 0 {
+			out.print("")
 		}
-		if f.bypass.Runs == "" || f.bypass.Unneeded {
-			continue
+		continuing := f.runs != "" && !f.unneeded && bypass.Covers(f.subject)
+		b := f.bypass
+		if continuing {
+			// The hatch is already set: no list, one line under the block instead.
+			b = packsrc.PatchBypass{}
 		}
-		if bypassed {
-			out.print("[yellow]" + richtext.Escape("CONTINUING: "+paths.AllowPatchFailuresEnv+"=1 is set — this launch runs "+
-				"the intact admitted build "+f.bypass.Runs+" of "+f.label+" in place of the series that does not apply; "+
-				"the series is not repaired, and the next launch without the variable stops here again.") + "[/yellow]")
-			continue
-		}
-		blocking = append(blocking, f)
-	}
-	if len(blocking) == 0 {
-		return false
-	}
-	labels := make([]string, len(blocking))
-	patchBranches := 0
-	for i, f := range blocking {
-		labels[i] = f.label
-		if f.recipe.PatchBranchRepo != "" {
-			patchBranches++
+		_, _ = io.WriteString(out.rt.W, f.failure.Render(f.label, f.recipe, b, out.rt.Color))
+		switch {
+		case f.runs == "" || f.unneeded:
+		case continuing:
+			out.print("[yellow]" + richtext.Escape("Continuing with "+f.runs+" ("+paths.AllowPatchFailuresEnv+")") + "[/yellow]")
+		default:
+			refused = true
 		}
 	}
-	// A PATCH BRANCH (docs/reference/patched-forks.md §3.5) is merged, not applied: its refusal says so.
-	what, verb := "the patch series of", plural(len(blocking), "does", "do")+" not apply"
-	switch {
-	case patchBranches == len(blocking):
-		what, verb = "the patch branch of", plural(len(blocking), "does", "do")+" not merge"
-	case patchBranches > 0:
-		what, verb = "the patch series or patch branch of", plural(len(blocking), "does", "do")+" not apply"
-	}
-	out.print("[bold red]" + richtext.Escape("Refusing to launch: "+what+" "+entrypoint.JoinAnd(labels)+" "+
-		verb+" (the ERROR above), and a launch does not run an older build "+
-		"in its place unless asked.") + "[/bold red]")
-	repaired := "the next fresh launch builds the repaired series"
-	switch {
-	case patchBranches == len(blocking):
-		repaired = "push the merged branch, and the next check fetches it and builds"
-	case patchBranches > 0:
-		repaired = "the next fresh launch builds the repaired series, and the next check fetches a pushed branch"
-	}
-	out.print(richtext.Escape("  Repair: the git commands under the ERROR's Repair line; " + repaired + "."))
-	out.print(richtext.Escape("  Bypass: " + paths.AllowPatchFailuresEnv + "=1 yolo — runs the intact admitted " +
-		plural(len(blocking), "build", "builds") + " named above for this one launch."))
-	if o.Getenv(paths.AllowMissingProgramsEnv) != "" {
-		out.print("[dim]" + richtext.Escape("  "+paths.AllowMissingProgramsEnv+" does not leave "+
-			plural(len(blocking), "it", "them")+" out: an intact build of "+plural(len(blocking), "it", "each")+
-			" is on this machine, and only "+paths.AllowPatchFailuresEnv+"=1 runs it.") + "[/dim]")
-	}
-	return true
+	return refused
 }

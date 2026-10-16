@@ -267,7 +267,8 @@ func hostTreeGate(errw io.Writer, bin, home string) bool {
 // gate (host_apply_on_launch off, where advanceHostTrees said and decided it): a patched extension
 // whose series as it stands has a recorded patch failure stops the launch, read from its check record
 // with no git, its error block said here, even though the linked good build is there to load.
-// paths.AllowPatchFailuresEnv=1 loads that linked build, said; with none linked it offers nothing.
+// paths.AllowPatchFailuresEnv, `1` or a name covering it (internal/patchrecovery), loads that linked
+// build, said in one line; with none linked it offers nothing.
 func hostTreePatchFailureAllows(errw io.Writer, f packload.Fork, bin, dest string) bool {
 	if config.HostApplyOnLaunchEnabled() {
 		return true
@@ -280,10 +281,14 @@ func hostTreePatchFailureAllows(errw io.Writer, f packload.Fork, bin, dest strin
 	if target, err := os.Readlink(dest); err == nil && filepath.Dir(target) == hostTreeVersionsDir(f) && isDir(dest) {
 		runs = linkedTreeLabel(filepath.Base(target))
 	}
-	_, _ = io.WriteString(errw, pf.Block(f.Key(), f.RebaseRecipe(), packsrc.PatchBypass{Command: "yolo host -- " + bin, Runs: runs}))
-	if runs != "" && allowPatchFailures(f) {
-		fmt.Fprintf(errw, "CONTINUING: %s=1 is set — %s loads the intact admitted build %s of %s in place of the series "+
-			"that does not apply; the series is not repaired.\n", allowPatchFailuresEnv, bin, runs, f.Label())
+	continuing := runs != "" && allowPatchFailures(f)
+	bypass := packsrc.PatchBypass{Command: "yolo host -- " + bin, Runs: runs}
+	if continuing {
+		bypass = packsrc.PatchBypass{} // the hatch is set: no list, one line under the block
+	}
+	_, _ = io.WriteString(errw, pf.Render(f.Key(), f.RebaseRecipe(), bypass, colorForWriter(errw)))
+	if continuing {
+		fmt.Fprintf(errw, "Continuing with %s (%s)\n", runs, allowPatchFailuresEnv)
 		return true
 	}
 	fmt.Fprintf(errw, "yolo host: refusing to launch %s: the patch series of %s does not apply (the ERROR above).\n",

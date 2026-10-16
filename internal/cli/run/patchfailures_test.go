@@ -65,47 +65,57 @@ func TestAPatchFailureWithABuildToRunRefusesTheLaunch(t *testing.T) {
 			t.Fatalf("args %q: the launch went on to the image (%v) or the container (%v):\n%s", args, imaged, argv != nil, printed)
 		}
 		for _, w := range []string{
-			"ERROR: fork forkpack/tool: patch application failed at upstream v1.2.0 (" + pfCommit + ")\n",
-			"  Patch: 0001-ten.patch\n  Conflict: f.txt\n  Operation stopped; no older fit or base will be built.\n",
-			"  Repair: " + packsrc.RecipeLead + "\n", "      git rebase " + pfCommit + "\n",
-			"  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo\n",
-			"(runs the intact admitted build v1.1.0 (0a1b2c3d) + 1 patch for this one run",
-			"Refusing to launch: the patch series of fork forkpack/tool does not apply (the ERROR above)",
+			"ERROR: fork forkpack/tool: patch series does not apply to upstream v1.2.0 (c5c0f6bd)\n",
+			"  Patch: 0001-ten.patch\n  Conflict: f.txt\n\nRepair:\n",
+			"    git rebase " + pfCommit + "\n",
+			"\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo    run v1.1.0 (0a1b2c3d) + 1 patch\n",
 		} {
 			if !strings.Contains(printed, w) {
 				t.Errorf("args %q: the launch lacks %q:\n%s", args, w, printed)
 			}
 		}
-		if strings.Contains(printed, "CONTINUING") {
+		if strings.Contains(printed, "Continuing with") {
 			t.Errorf("args %q: the refused launch says it continues:\n%s", args, printed)
 		}
 	}
 }
 
-// THE BYPASS runs the intact admitted build for this one launch and says so under the block. Red with
-// the bypass's read deleted, or its CONTINUING line.
+// THE BYPASS runs the intact admitted build for this one launch and says so in one line under the
+// block, which then lists no hatch; it takes `1`, the build's key, its pack or its bin. Red with the
+// bypass's read deleted, or its Continuing line.
 func TestThePatchFailureBypassRunsTheAdmittedBuild(t *testing.T) {
+	for _, value := range []string{"1", "forkpack/tool", "forkpack", "tool", "other, tool"} {
+		patchedLaunchHome(t)
+		argv, printed := fakePodmanLaunch(t, func(o *Options) {
+			servingForkWithFailure(o)
+			withEnv(o, paths.AllowPatchFailuresEnv, value)
+		})
+		if argv == nil {
+			t.Fatalf("%s=%s did not start the jail:\n%s", paths.AllowPatchFailuresEnv, value, printed)
+		}
+		if !strings.Contains(printed, "ERROR: fork forkpack/tool: patch series does not apply") ||
+			!strings.Contains(printed, "\nContinuing with v1.1.0 (0a1b2c3d) + 1 patch (YOLO_ALLOW_PATCH_FAILURES)\n") ||
+			strings.Contains(printed, "Start anyway:") {
+			t.Errorf("%s: the bypass does not say the failure and what it runs:\n%s", value, printed)
+		}
+		if strings.Index(printed, "ERROR: fork forkpack/tool") > strings.Index(printed, "Continuing with") {
+			t.Errorf("%s: the Continuing line precedes the error it continues past:\n%s", value, printed)
+		}
+	}
+	// A name that covers another build does not continue past this one.
 	patchedLaunchHome(t)
 	argv, printed := fakePodmanLaunch(t, func(o *Options) {
 		servingForkWithFailure(o)
-		withEnv(o, paths.AllowPatchFailuresEnv, "1")
+		withEnv(o, paths.AllowPatchFailuresEnv, "otherpack")
 	})
-	if argv == nil {
-		t.Fatalf("the bypass did not start the jail:\n%s", printed)
-	}
-	if !strings.Contains(printed, "ERROR: fork forkpack/tool: patch application failed") ||
-		!strings.Contains(printed, "CONTINUING: YOLO_ALLOW_PATCH_FAILURES=1 is set — this launch runs the intact "+
-			"admitted build v1.1.0 (0a1b2c3d) + 1 patch of fork forkpack/tool") ||
-		strings.Contains(printed, "Refusing to launch") {
-		t.Errorf("the bypass does not say the failure and what it runs:\n%s", printed)
-	}
-	if strings.Index(printed, "ERROR: fork forkpack/tool") > strings.Index(printed, "CONTINUING: YOLO_ALLOW_PATCH") {
-		t.Errorf("the CONTINUING line precedes the error it continues past:\n%s", printed)
+	if argv != nil || !strings.Contains(printed, "Start anyway:") {
+		t.Errorf("a name covering no failed build continued the launch:\n%s", printed)
 	}
 }
 
 // THE MISSING-PROGRAM HATCH DOES NOT WAIVE IT (PF-D83): a build of it is here, so leaving it out is not
-// what the block offers; the refusal says why. Red with the refusal reading that hatch.
+// what the block offers; its hatch list names the patch failure's own hatch alone. Red with the
+// refusal reading that hatch.
 func TestTheMissingProgramHatchDoesNotWaiveAPatchFailureWithABuild(t *testing.T) {
 	patchedLaunchHome(t)
 	argv, printed := fakePodmanLaunch(t, func(o *Options) {
@@ -115,9 +125,9 @@ func TestTheMissingProgramHatchDoesNotWaiveAPatchFailureWithABuild(t *testing.T)
 	if argv != nil {
 		t.Fatalf("the missing-program hatch started a launch whose patch series does not apply:\n%s", printed)
 	}
-	if !strings.Contains(printed, paths.AllowMissingProgramsEnv+" does not leave it out: an intact build of it is on "+
-		"this machine, and only "+paths.AllowPatchFailuresEnv+"=1 runs it.") {
-		t.Errorf("the refusal does not say why the missing-program hatch does not apply:\n%s", printed)
+	if !strings.Contains(printed, "\nStart anyway:\n  "+paths.AllowPatchFailuresEnv+"=forkpack/tool yolo") ||
+		strings.Contains(printed, paths.AllowMissingProgramsEnv+"=1 yolo") {
+		t.Errorf("the refusal does not offer the patch failure's own hatch alone:\n%s", printed)
 	}
 }
 
@@ -135,9 +145,8 @@ func TestAPatchFailureWithOnlyAnOlderGoodBuildOffersCachedGood(t *testing.T) {
 	if argv != nil {
 		t.Fatalf("a launch with no build of its series started its jail:\n%s", printed)
 	}
-	if !strings.Contains(printed, "  Bypass: YOLO_USE_CACHED_GOOD=forkpack/tool yolo\n") ||
-		!strings.Contains(printed, "(runs the older admitted build v1.0.0 (99aa88bb) + 1 patch for this one fresh launch") ||
-		strings.Contains(printed, "Bypass: YOLO_ALLOW_PATCH_FAILURES") {
+	if !strings.Contains(printed, "\nStart anyway:\n  YOLO_USE_CACHED_GOOD=forkpack/tool yolo    run the older build v1.0.0 (99aa88bb) + 1 patch\n") ||
+		strings.Contains(printed, "YOLO_ALLOW_PATCH_FAILURES=") {
 		t.Errorf("the block does not offer cached-good recovery alone:\n%s", printed)
 	}
 }
@@ -162,13 +171,13 @@ func TestAPatchedExtensionsPatchFailureRefusesOnlyWhereItIsLoaded(t *testing.T) 
 		if refused := argv == nil; refused != listed {
 			t.Errorf("listed %v: refused %v:\n%s", listed, refused, printed)
 		}
-		if !strings.Contains(printed, "ERROR: extension "+treeKey+": patch application failed at upstream v1.2.0") {
+		if !strings.Contains(printed, "ERROR: extension "+treeKey+": patch series does not apply to upstream v1.2.0") {
 			t.Errorf("listed %v: no error block:\n%s", listed, printed)
 		}
-		if !listed && !strings.Contains(printed, "Bypass: none needed — no selected agent pack loads it here") {
+		if !listed && !strings.Contains(printed, "\nNo selected agent pack loads it here; this launch goes on.\n") {
 			t.Errorf("an extension nothing loads does not say the launch goes on:\n%s", printed)
 		}
-		if listed && !strings.Contains(printed, "Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo\n") {
+		if listed && !strings.Contains(printed, "\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES="+treeKey+" yolo ") {
 			t.Errorf("a loaded extension's block does not offer its bypass:\n%s", printed)
 		}
 	}
@@ -196,15 +205,14 @@ func TestAPatchFailureBelowAppleContainersReadOnlyFloorStillRefuses(t *testing.T
 	if !o.refusePatchFailures("container") {
 		t.Fatalf("below the floor the launch mounted the older build of a series that does not apply:\n%s", stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "ERROR: extension "+treeKey+": patch application failed at upstream v1.2.0") ||
-		!strings.Contains(stderr.String(), "Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo\n") {
+	if !strings.Contains(stderr.String(), "ERROR: extension "+treeKey+": patch series does not apply to upstream v1.2.0") ||
+		!strings.Contains(stderr.String(), "\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES="+treeKey+" yolo ") {
 		t.Errorf("below the floor the block is missing or offers no bypass:\n%s", stderr.String())
 	}
 }
 
 // A PATCH BRANCH THAT DOES NOT MERGE refuses in its own words (docs/reference/patched-forks.md §3.5):
-// the ERROR names the branch and the merge that repairs it, and the refusal's Repair line says to push
-// the merged branch, not that a launch builds a repaired series.
+// the ERROR names the branch and its Repair the merge that repairs it, never a rebuilt series.
 func TestAPatchBranchThatDoesNotMergeRefusesInItsOwnWords(t *testing.T) {
 	fork := patchedLaunchHome(t)
 	if err := os.WriteFile(fork+"/pack.json", []byte(`{"contributes":[{"kind":"program","bin":"tool",`+
@@ -215,10 +223,10 @@ func TestAPatchBranchThatDoesNotMergeRefusesInItsOwnWords(t *testing.T) {
 	}
 	_, printed := fakePodmanLaunch(t, func(o *Options) { servingForkWithFailure(o) })
 	for _, w := range []string{
-		"ERROR: fork forkpack/tool: the patch branch does not merge into upstream v1.2.0",
-		"  Repair: " + packsrc.PatchBranchRecipeLead + "\n", "git merge " + pfCommit,
-		"Refusing to launch: the patch branch of fork forkpack/tool does not merge (the ERROR above)",
-		"  Repair: the git commands under the ERROR's Repair line; push the merged branch, and the next check fetches it and builds.",
+		"ERROR: fork forkpack/tool: patch branch does not merge into upstream v1.2.0 (c5c0f6bd)\n",
+		"  Patch branch: 0001-ten.patch\n",
+		"\nRepair:\n", "git merge " + pfCommit, "git push origin patches\n",
+		"\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo ",
 	} {
 		if !strings.Contains(printed, w) {
 			t.Errorf("the refused launch lacks %q:\n%s", w, printed)

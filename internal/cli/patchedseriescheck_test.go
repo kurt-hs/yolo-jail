@@ -69,8 +69,8 @@ func TestSeriesCheckInAJailGivesTheVerdictPackStatusGivesOnTheHost(t *testing.T)
 	v11 := f.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
 	v12 := f.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
 	if rc, out, errw := packVerb(t, "update"); rc != 1 ||
-		!strings.Contains(errw, "ERROR: forkpack/tool: patch application failed at upstream v1.2.0 ("+v12+")") ||
-		!strings.Contains(errw, "  Repair: "+packsrc.RecipeLead+"\n") || !strings.Contains(errw, "      git rebase "+v12+"\n") {
+		!strings.Contains(errw, "ERROR: forkpack/tool: patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") ||
+		!strings.Contains(errw, "\nRepair:\n") || !strings.Contains(errw, "    git rebase "+v12+"\n") {
 		t.Fatalf("update rc=%d, want 1 with PF-D81's error naming v1.2.0 and its rebase\n%s\n%s", rc, out, errw)
 	}
 	_, status, _ := packVerb(t, "status")

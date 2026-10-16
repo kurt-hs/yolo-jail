@@ -52,8 +52,8 @@ func TestAHostLaunchStopsOnATreesPatchFailureBeforeTheGate(t *testing.T) {
 		t.Fatalf("a series that does not apply: rc=%d execed %v, the gate surveyed %d times, want a refusal before it\n%s",
 			rc, got.execed, *surveys, errw.String())
 	}
-	for _, w := range []string{"ERROR: treepack/tool-ext: patch application failed at upstream v1.2.0",
-		"  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo host -- tool\n",
+	for _, w := range []string{"ERROR: treepack/tool-ext: patch series does not apply to upstream v1.2.0",
+		"\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES=treepack/tool-ext yolo host -- tool ",
 		"yolo host: refusing: the patch series of extension treepack/tool-ext does not apply (the ERROR above); nothing was written."} {
 		if !strings.Contains(errw.String(), w) {
 			t.Errorf("the refusal lacks %q:\n%s", w, errw.String())
@@ -85,7 +85,7 @@ func TestAHostApplyStopsOnATreesPatchFailureBeforeItWrites(t *testing.T) {
 	errw.Reset()
 	if rc := hostApplyRefreshAndRender(&out, &errw, false, true, nil, "", ""); rc == 0 ||
 		strings.Contains(out.String(), "host apply — applying into") ||
-		!strings.Contains(errw.String(), "  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo host apply --assert\n") ||
+		!strings.Contains(errw.String(), "\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES=treepack/tool-ext yolo host apply --assert ") ||
 		!strings.Contains(errw.String(), "nothing was written") {
 		t.Errorf("an apply over a series that does not apply: rc=%d, want a refusal before its render\n%s\n%s",
 			rc, out.String(), errw.String())
@@ -111,8 +111,8 @@ func TestAHostApplyStopsOnAForksRecordedPatchFailureBeforeItWrites(t *testing.T)
 	var out, errw bytes.Buffer
 	rc := hostApplyRefreshAndRender(&out, &errw, false, true, nil, "", "")
 	if rc == 0 || strings.Contains(out.String(), "host apply — applying into") ||
-		!strings.Contains(errw.String(), "ERROR: fork forkpack/tool: patch application failed at upstream v1.2.0") ||
-		!strings.Contains(errw.String(), "  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo host apply --assert\n") ||
+		!strings.Contains(errw.String(), "ERROR: fork forkpack/tool: patch series does not apply to upstream v1.2.0") ||
+		!strings.Contains(errw.String(), "\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo host apply --assert ") ||
 		!strings.Contains(errw.String(), "yolo host: refusing the host apply: the patch series of fork forkpack/tool does not apply") {
 		t.Errorf("an apply over a recorded patch failure: rc=%d, want a refusal before its render\n%s\n%s",
 			rc, out.String(), errw.String())
@@ -141,7 +141,7 @@ func TestAHostLaunchStopsOnAForksRecordedPatchFailureBeforeTheGate(t *testing.T)
 		t.Fatalf("a recorded patch failure: rc=%d exec %q, the gate surveyed %d times, want a refusal before it\n%s",
 			rc, target, *surveys, out)
 	}
-	if n := strings.Count(out, "ERROR: fork forkpack/tool: patch application failed"); n != 1 ||
+	if n := strings.Count(out, "ERROR: fork forkpack/tool: patch series does not apply"); n != 1 ||
 		!strings.Contains(out, "yolo host: refusing to launch tool: the patch series of fork forkpack/tool does not apply") {
 		t.Errorf("the refusal says the error %d times, want once, and names the stop:\n%s", n, out)
 	}
@@ -172,14 +172,15 @@ func TestAHostLaunchWithoutApplyOnLaunchStopsOnATreesRecordedPatchFailure(t *tes
 	if rc == 0 || got.execed {
 		t.Fatalf("a recorded patch failure: rc=%d execed %v, want a refusal\n%s", rc, got.execed, errw.String())
 	}
-	if n := strings.Count(errw.String(), "ERROR: treepack/tool-ext: patch application failed at upstream v1.2.0"); n != 1 ||
-		!strings.Contains(errw.String(), "  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo host -- tool\n") {
+	if n := strings.Count(errw.String(), "ERROR: treepack/tool-ext: patch series does not apply to upstream v1.2.0"); n != 1 ||
+		!strings.Contains(errw.String(), "\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES=treepack/tool-ext yolo host -- tool ") {
 		t.Errorf("the refusal says the error %d times, want once, with the bypass:\n%s", n, errw.String())
 	}
 	t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "1")
 	errw.Reset()
 	if rc := hostExec(nil, []string{"tool"}, io.Discard, &errw, nil); rc != 0 || !got.execed ||
-		!strings.Contains(errw.String(), "CONTINUING: YOLO_ALLOW_PATCH_FAILURES=1 is set") {
+		!strings.Contains(errw.String(), "\nContinuing with v1.0.0 (") ||
+		!strings.Contains(errw.String(), " (YOLO_ALLOW_PATCH_FAILURES)\n") || strings.Contains(errw.String(), "Start anyway:") {
 		t.Errorf("the bypass: rc=%d execed %v\n%s", rc, got.execed, errw.String())
 	}
 }

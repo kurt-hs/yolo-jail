@@ -327,7 +327,7 @@ func TestBackgroundTreeFailureIsImmediateAndRecoveredHostReportIsOrdered(t *test
 		t.Fatal("the production pool lanes did not finish")
 	}
 	if got, want := hostErr.String(), "immediate background failure\nfirst host tree\n"+
-		"ERROR: "+f.Key()+": patch application failed at upstream v1.2.0"; !strings.HasPrefix(got, want) {
+		"ERROR: "+f.Key()+": patch series does not apply to upstream v1.2.0"; !strings.HasPrefix(got, want) {
 		t.Fatalf("foreground recovery report did not remain ordered after the earlier lane: got %q want prefix %q", got, want)
 	}
 }

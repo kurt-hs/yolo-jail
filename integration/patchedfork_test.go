@@ -225,16 +225,16 @@ func TestPatchedForkFollowsItsUpstreamAndHoldsAtAConflict(t *testing.T) {
 	if refused.rc == 0 || strings.Contains(refused.combined(), patchFixtureMarker) {
 		t.Fatalf("the launch after v1.3.0 started its jail on the older build: rc %d\n%s", refused.rc, refused.combined())
 	}
-	for _, w := range []string{"ERROR: fork " + owner + ": patch application failed at upstream v1.3.0 (" + v13 + ")",
-		"Repair: rebase the series with git", "      git rebase " + v13 + "\n", "Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo",
-		"Refusing to launch: the patch series of fork " + owner + " does not apply"} {
+	for _, w := range []string{"ERROR: fork " + owner + ": patch series does not apply to upstream v1.3.0 (" + v13[:8] + ")",
+		"\nRepair:\n", "    git rebase " + v13 + "\n",
+		"\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES=" + owner + " yolo "} {
 		if !strings.Contains(refused.combined(), w) {
 			t.Errorf("the refused launch lacks %q:\n%s", w, refused.combined())
 		}
 	}
 	out = launch("the bypassed launch after v1.3.0", withEnv("YOLO_ALLOW_PATCH_FAILURES=1"))
 	if !strings.Contains(out, runs("1.2.0")) || strings.Contains(out, patchFixtureMarker+"_1.3.0") ||
-		!strings.Contains(out, "CONTINUING: YOLO_ALLOW_PATCH_FAILURES=1 is set") {
+		!strings.Contains(out, "\nContinuing with v1.2.0 (") || !strings.Contains(out, " (YOLO_ALLOW_PATCH_FAILURES)\n") {
 		t.Fatalf("the bypassed launch does not run the previous build, said:\n%s", out)
 	}
 	if !strings.Contains(out, "held at v1.2.0 ("+v12[:8]+"): upstream v1.3.0 ("+v13[:8]+") does not take 0001-patch-line-ten.patch") {
@@ -244,22 +244,21 @@ func TestPatchedForkFollowsItsUpstreamAndHoldsAtAConflict(t *testing.T) {
 
 // hasPatchFailureBlock reports whether out holds PF-D81's error for a conflict of the fixtures' one
 // patch at upstream tag (commit): its ERROR line through the Repair line, then the git recipe's
-// rebase onto that commit (packsrc.RebaseRecipe, PF-D85), then the Bypass line through the start of
-// the line naming the build it runs (PF-D83: `yolo pack update` offers the bypass when a good build
-// is here).
+// rebase onto that commit (packsrc.RebaseRecipe, PF-D85), then the Start anyway list offering the
+// patch failure's own hatch (PF-D83: `yolo pack update` offers it when a good build is here).
 func hasPatchFailureBlock(out, owner, tag, commit, paths string) bool {
-	head := "ERROR: " + owner + ": patch application failed at upstream " + tag + " (" + commit + ")\n" +
+	head := "ERROR: " + owner + ": patch series does not apply to upstream " + tag + " (" + commit[:8] + ")\n" +
 		"  Patch: 0001-patch-line-ten.patch\n" +
 		"  Conflict: " + paths + "\n" +
-		"  Operation stopped; no older fit or base will be built.\n" +
-		"  Repair: rebase the series with git, yourself or with an agent; the next launch builds it:\n"
+		"\n" +
+		"Repair:\n"
 	i := strings.Index(out, head)
 	if i < 0 {
 		return false
 	}
 	rest := out[i+len(head):]
-	rebase := strings.Index(rest, "      git rebase "+commit+"\n")
-	bypass := strings.Index(rest, "  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo pack update\n    (runs the intact admitted build ")
+	rebase := strings.Index(rest, "    git rebase "+commit+"\n")
+	bypass := strings.Index(rest, "\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES="+owner+" ")
 	return rebase >= 0 && bypass > rebase
 }
 
