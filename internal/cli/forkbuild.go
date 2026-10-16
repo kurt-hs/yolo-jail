@@ -75,6 +75,10 @@ const (
 // than a timeout, and bounded so a build that hangs cannot hold every later launch of its fork.
 const forkBuildWaitBound = 20 * time.Minute
 
+// forkBuildLockBound is the bound a patched advance's launch waits for another build's lock: always
+// forkBuildWaitBound, a variable only so a test can run a lock wait that runs out.
+var forkBuildLockBound = forkBuildWaitBound
+
 const forkBuildProbeTimeout = 30 * time.Second
 
 const forkBuildRuntimeRecordSuffix = ".fork-build-runtime"
@@ -429,8 +433,9 @@ type buildMode struct {
 var errForkBuildLocked = errors.New("another build of this fork is running")
 
 // errForkBuildNotStarted marks a build jail that exited before its build line ran (forkBuildNotStarted
-// is the error itself). Not a failed build (§8.1, PF-D21): a patched fork records nothing for it,
-// and the candidate stays pending.
+// is the error itself). While a good build of a patched fork serves, the advance records it as the
+// candidate's failed build with its cause, and the act stops (PD-NF1, superseding PF-D21's "not a
+// failed build"); with nothing serving, nothing is recorded and the launch's refusal says the cause.
 var errForkBuildNotStarted = errors.New("the build jail exited before its build line ran")
 
 // forkBuildNotStarted is a build jail that exited before its build line ran, with what it said why.
@@ -699,7 +704,9 @@ func (t *jailTail) said() []string {
 
 // forkSourceError is a build that never reached its jail because its source could not be put in
 // place: a checkout that failed, or for a patched fork a replay that failed. Nothing about the
-// build line is known, so a patched fork records nothing for it (an apply error, §5.2).
+// build line is known, so a patched fork records no outcome for it, but keeps it as the check's
+// apply error (§5.2), which stops every act that would run the good build until the next check
+// (PD-NF1).
 type forkSourceError struct{ err error }
 
 func (e forkSourceError) Error() string { return e.err.Error() }

@@ -11,9 +11,11 @@ package cli
 //     that set, so none of them is started: each says it was skipped and why, and carries the first
 //     one's cause, so the launch's refusal (internal/cli/run's missingbuilds.go) says that cause once
 //     with every key it left without a build.
-//   - THE HELD BUILDS, a newer build that met a cause while a good build serves: said once per cause
-//     with every key it holds, when the act ends (flush). A build that leaves nothing serving is
-//     said by the launch's refusal or its warning instead, so its cause is not said twice.
+//   - THE STOPPED BUILDS, a newer build that met a cause while a good build serves: said once per
+//     cause with every key it stopped, when the act ends (flush), each key's error block then naming
+//     the ways on (PD-NF1); under YOLO_ALLOW_PATCH_FAILURES, which runs the good build, the group says
+//     what still runs. A build that leaves nothing serving is said by the launch's refusal or its
+//     warning instead, so its cause is not said twice.
 //
 // A launch's builds run at once (XB-D10), so both are kept under the report's causes lock.
 
@@ -99,9 +101,10 @@ func packsPhrase(packs []string) string {
 	return "packs " + entrypoint.JoinAnd(packs)
 }
 
-// hold records a build held at its good build by cause, which runs names ("still running v1.0.0
-// (3f2a9c1e) + 2 patches"), said once per cause when the act ends; retry is what builds it once the
-// cause is fixed, and runtime the launch's, for Apple Container's limit.
+// hold records a newer build cause stopped while a good build serves, said once per cause when the
+// act ends: runs names what still runs under the patch-failure bypass ("still running v1.0.0
+// (3f2a9c1e) + 2 patches"), "" when the build stops the launch (PD-NF1); retry is what builds it once
+// the cause is fixed, and runtime the launch's, for Apple Container's limit.
 func (r *buildReport) hold(f packload.Fork, runs, retry, runtime string, cause *entrypoint.BuildCause) {
 	if r == nil {
 		return
@@ -144,9 +147,18 @@ func (r *buildReport) flush() {
 			}
 		}
 		head := "⚠ " + entrypoint.JoinAnd(labels) + ": a newer build's jail refused to start, so "
-		if len(held) == 1 {
+		stops := false
+		for _, b := range held {
+			stops = stops || b.runs == ""
+		}
+		switch {
+		case stops:
+			// IT STOPS THIS LAUNCH (PD-NF1): the error block each key's refusal prints says the ways on.
+			head += "this launch stops (the ERROR " + plural(len(held), "block", "blocks") + " below " +
+				plural(len(held), "names", "name") + " the ways on)"
+		case len(held) == 1:
 			head += "it is " + held[0].runs
-		} else {
+		default:
 			head += "each is still running its good build"
 		}
 		r.pr.Print("[yellow]" + richtext.Escape(head) + "[/yellow]")
