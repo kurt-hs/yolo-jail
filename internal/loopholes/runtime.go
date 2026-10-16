@@ -208,7 +208,7 @@ func (sp JailDaemonSpec) NamesModuleDir() bool {
 
 // InGuest is sp with its module directory placed at dir instead of the container mount point:
 // Cmd is ModuleCmd with `{jail_loophole_dir}` resolved to dir. The macos-user guest runs a
-// loophole's jail daemon from the root-owned copy of the launch's staged packs
+// loophole's jail daemon from the host-owned, sealed copy of the launch's staged packs
 // (internal/cli/run's guest resolution), which is where its program is on that backend. A spec
 // that names no module directory (NamesModuleDir) is returned unchanged.
 func (sp JailDaemonSpec) InGuest(dir string) JailDaemonSpec {

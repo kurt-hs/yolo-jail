@@ -26,7 +26,7 @@ import (
 // `sudo --user=… /usr/bin/env -i … darwin-bootstrap` with no sandbox-exec
 // (macosuser/runplan.go); this used to be dated as a 2026-09-11 measurement, and it is a
 // source reading, available from Linux and never run on a Mac — and that is
-// tolerable only because it executes yolo's own code against a root-owned staged tree
+// tolerable only because it executes yolo's own code against a sealed staged tree the guest cannot write
 // (the design's principle P4). THE STAGE RUNS VENDOR CODE: `npm install` postinstall
 // hooks and mise plugins. The container runs that inside the jail, so running it
 // unconfined here would be a regression the container never had. It therefore runs under
