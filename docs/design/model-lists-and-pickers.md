@@ -3,7 +3,7 @@ title: "Which model ids yolo ships, how an org shapes the list, and what each pi
 date: 2026-09-25
 status: in-review
 stage: DESIGN
-next: "Finish MM-D42 on the Pi side: pi-subagents must read --subagents-model-settings (YOLO side built behind YOLO_PI_SUBAGENTS_MODEL_SETTINGS=1, golden in internal/cli/testdata). Build OQ-MM1 (ruled 2026-10-15, A) on claude's native profile: an add's rows appended beside its built-ins. Build OQ-MM3 (ruled 2026-10-15): drop pi's refusing registration for a model_routing list with no only, reconcile pi-subagents' strict scope, and write claude's settings.json model once per provider change, the previous model's tier equivalent else the list default (MM-D43, which needs the file's current value as a derive input and a provider-change trigger the selection record lacks). MM-D41's opt-in supplied-list warning is implemented and parent-gate checked without changing list rendering or enforcement; independent source and documentation review is complete. The overall design stays partly built while MM1 and MM3 are unbuilt. OQ-MM6 is built (MM-D35 to MM-D40); live Claude/Copilot/Pi/AWS turns remain unmeasured"
+next: "Finish MM-D42 on the Pi side: pi-subagents must read --subagents-model-settings (YOLO side built behind YOLO_PI_SUBAGENTS_MODEL_SETTINGS=1, golden in internal/cli/testdata). Build OQ-MM1 (ruled 2026-10-15, A) on claude's native profile: an add's rows appended beside its built-ins. Build OQ-MM3 (ruled 2026-10-15): drop pi's refusing registration for a model_routing list with no only, reconcile pi-subagents' strict scope, and write claude's settings.json model once per provider change, the previous model's tier equivalent else the list default (MM-D43, which needs the file's current value as a derive input and a provider-change trigger the selection record lacks). MM-D41's opt-in supplied-list warning is implemented and parent-gate checked without changing list rendering or enforcement; independent source and documentation review is complete. The overall design stays partly built while MM1, MM3, ML4 and ML5 are unbuilt. Build OQ-ML4 and OQ-ML5 (ruled 2026-10-16): a pi model row merged over pi's catalog field by field, a null fact as the tombstone (ML-D10), facts shared across a model's routes with per-route overrides, and the shared form written only for a pi a pack declares reads it, else full rows (ML-D11). OQ-MM6 is built (MM-D35 to MM-D40); live Claude/Copilot/Pi/AWS turns remain unmeasured. No question in this doc is open"
 tags: [providers, profiles, models, aliases, pickers, packs, bedrock, currency]
 summary: "Where yolo must pick model ids itself (the 2026-09-25 ruling on OQ-BR3: only where an agent cannot just fall back to its own default), how those picks ship in a built-in pack that comes with yolo rather than in core, how a company pack adds to or narrows a model list, how each agent's picker renders the result, and how the list stays current without yolo keeping a catalog."
 vantage:
@@ -127,13 +127,18 @@ current.
   file** *(coined in [MM-D33](#MM-D33))*, which only a jail writes; at `yolo host` copilot keeps
   one model. Where no pack or config gives the provider a list, the file's rows are the fetched
   list ([MM-D35](#MM-D35)), combined at the landing merge on 2026-10-06.
+- **Ruled 2026-10-16, not built:** a pi model row keeps every catalog fact it does not state,
+  and loses one only when it writes it as `null` ([OQ-ML4](#OQ-ML4)); a model's facts may be
+  written once for all its routes, with each route able to override any of them
+  ([OQ-ML5](#OQ-ML5)). The short shared form is written only for a pi that reads it
+  ([ML-D11](#ML-D11)).
 - **Moved here on 2026-09-25**, with their ids unchanged: [OQ-BR3](#OQ-BR3) and
   [OQ-BR12](#OQ-BR12)–[OQ-BR15](#OQ-BR15) from [`bedrock-plumbing.md`](bedrock-plumbing.md), and
   [OQ-PSW1](#OQ-PSW1) and [OQ-PSW3](#OQ-PSW3) from the retired `provider-switching.md`.
   Those two carried the old prefix `PS`, as `PS1` and `PS3`, until later that day, when that doc's series was
   renamed `OQ-PSW` because [`provisioner-sets.md`](provisioner-sets.md) also uses `OQ-PS`.
 
-**Needs your ruling:** [OQ-ML4](#OQ-ML4) and [OQ-ML5](#OQ-ML5) alone; [OQ-MM1](#OQ-MM1) and [OQ-MM3](#OQ-MM3) were ruled 2026-10-15; [OQ-MM4](#OQ-MM4) ([MM-D31](#MM-D31)) [OQ-MM5](#OQ-MM5) ([MM-D30](#MM-D30)) and [OQ-MM6](#OQ-MM6) were ruled 2026-10-05. Added 2026-10-13, at a downstream pack consumer's request: [OQ-ML4](#OQ-ML4) and [OQ-ML5](#OQ-ML5). Decided
+**Needs your ruling:** nothing. [OQ-ML4](#OQ-ML4) and [OQ-ML5](#OQ-ML5), added 2026-10-13 at a downstream pack consumer's request, were ruled 2026-10-16; [OQ-MM1](#OQ-MM1) and [OQ-MM3](#OQ-MM3) were ruled 2026-10-15; [OQ-MM4](#OQ-MM4) ([MM-D31](#MM-D31)) [OQ-MM5](#OQ-MM5) ([MM-D30](#MM-D30)) and [OQ-MM6](#OQ-MM6) were ruled 2026-10-05. Decided
 2026-09-30 as implementation choices, each reversible: [OQ-BR14](#OQ-BR14) ([MM-D16](#MM-D16)) and [OQ-PSW1](#OQ-PSW1) ([MM-D17](#MM-D17)). Ruled 2026-09-29:
 [OQ-ML1](#OQ-ML1), [OQ-ML2](#OQ-ML2) and [OQ-BR12](#OQ-BR12). [OQ-BR13](#OQ-BR13) was directed
 the same day (set the model selection however each agent allows) and is researched in
@@ -179,6 +184,12 @@ questions without asking: [OQ-BR15](#OQ-BR15) on evidence (the bridge serves no 
   ([MM-D17](#MM-D17)): yes, keeping `sonnet`/`haiku` as synonyms. Built 2026-09-30.
 - [OQ-BR15](#OQ-BR15): the bridge serves `GET /v1/models`. Settled 2026-09-29 on the
   measurement it waited on: never ([MM-D4](#MM-D4)).
+- [OQ-ML4](#OQ-ML4): whether a pi model row keeps the catalog facts it does not state. Ruled
+  2026-10-16: yes, merged field by field, and a fact goes only when a row writes it as `null`
+  ([the ruling](#oq-ml4-ml5-setup)). Not built.
+- [OQ-ML5](#OQ-ML5): whether a model's facts can be written once for all its routes. Ruled
+  2026-10-16: yes, and each route can still override any of them, because providers differ for
+  the same model ([the ruling](#oq-ml4-ml5-setup)). Not built.
 
 **Out of scope, and where it lives instead.** Refusing an off-list model at the wire:
 [`wire-bridge-gateway.md`](wire-bridge-gateway.md#OQ-WG3), which reads this doc's effective
@@ -2308,45 +2319,41 @@ The options, as the walkthrough drafted them:
     model and on another maker's, and one copilot turn, under `-p bedrock-bridge`, by a human,
     are what is left to watch.
 
-15. 💬 <a id="OQ-ML4"></a>**[OQ-ML4](#OQ-ML4): When your config doesn't list a model's facts, should yolo fill them in from pi's catalog?**
+<a id="oq-ml4-ml5-setup"></a>**How a pi model row gets its facts (ruled 2026-10-16,
+[OQ-ML4](#OQ-ML4) and [OQ-ML5](#OQ-ML5)).** A model's **facts** here are what pi needs to know
+about it besides its id: its price, context size, output limit, input types, whether it
+reasons, and its thinking levels. yolo writes them into two files: `models.json`, which pi
+itself reads, and `yolo-model-lists.json`, pi's menu, which yolo's own extension reads. pi also
+ships a **catalog** of these facts for the models it knows.
 
-    yolo writes your pi models into `models.json` (each model's facts, such as thinking levels)
-    and `yolo-model-lists.json` (pi's menu). A row that lists no thinking levels gets none in
-    `models.json`, and pi trusts the row over its catalog, so `--thinking xhigh` is turned down.
-    The menu file lets a row say `base: <a model pi knows>` to borrow pi's facts;
-    `models.json` cannot.
+- **A row keeps every catalog fact it does not replace ([OQ-ML4](#OQ-ML4)).** yolo merges a row
+  over pi's catalog entry field by field. A fact the row states wins. A fact the row leaves out
+  comes from the catalog entry for the row's id, or for its `base` when it names one. Today a
+  `models.json` row replaces the catalog entry whole, so a row that lists no thinking levels has
+  none, and `--thinking xhigh` is turned down. The menu file already merges this way.
+- **A fact is removed only when a row says so.** A **tombstone** is a fact written as `null`:
+  the model then has no such fact, whatever any layer below says ([ML-D10](#ML-D10)). It is not
+  "leave this out", which inherits. The word is the one yolo's config layers already use for a
+  `null` that deletes a key ([config surfaces](../reference/pack-system.md#config-surfaces-and-the-compose-engine)).
+  yolo never drops a catalog fact on its own.
+- **Facts may be written once and shared by a model's routes ([OQ-ML5](#OQ-ML5)).** One model
+  often appears once per route, such as Bedrock and OpenRouter, and yolo copies its facts into
+  each row. They may instead be written once and shared. But providers can charge different
+  prices, or serve a different context size or output limit, for the same model, so every
+  route's row can override any shared fact. The order is: the route's own value, then the
+  shared facts, then pi's catalog. A tombstone works at each of those layers.
+- **The shared form goes only to a pi that reads it ([ML-D11](#ML-D11)).** The short spelling,
+  `sharedModels` holding the facts once and a row saying `extends` to use them, is read by the
+  downstream consumer's own pi build. Stock pi ignores both keys without an error, so a row that
+  relies on them silently gets pi's generic defaults. yolo writes the shared form only where the
+  pi that runs reads it, and full merged rows everywhere else.
 
-    - **A — yolo fills in missing facts from pi's catalog**, by the model's id or its `base`.
-    - **B — `base` works in `models.json` too**, so a row borrows facts only when it says `base`.
-    - **C — Leave it**, and document `base` as menu-only.
+**In practice.** A route row for a model on OpenRouter that states only its price keeps the
+catalog's thinking levels, context size and output limit. The same model's Bedrock row that
+states a smaller context size uses that size and shares everything else. A row that writes
+`"reasoning": null` has no reasoning flag at all, even though the catalog has one.
 
-    <!-- vantage: question id=OQ-ML4 leaning="A: both files then behave the same with nothing to write. B makes you write base on every row to get it, and C keeps the turned-down thinking level." -->
-
-    _Leaning:_ A: both files then behave the same with nothing to write. B makes you write `base`
-    on every row to get it, and C keeps the turned-down thinking level.
-
-    **Answer:**
-    > _(empty — fill in when decided)_
-
-16. 💬 <a id="OQ-ML5"></a>**[OQ-ML5](#OQ-ML5): Should yolo write a model's facts once and point at them, instead of copying them into every row?**
-
-    One model often appears once per route (Bedrock, OpenRouter), and yolo copies its price,
-    context size, output limit and reasoning flag into each row. The consumer's pi build already
-    reads a shorter form: `sharedModels` holds the facts once, and a row says `extends` to use them.
-
-    - **A — Yes, in both files**, done when no row falls back to pi's generic sizes, a repeated
-      shared value fails a test, and a row pointing at missing facts is refused.
-    - **B — Only in the menu file**; `models.json` keeps full rows.
-    - **C — No**; rows keep their copies.
-
-    <!-- vantage: question id=OQ-ML5 leaning="A: the same benefit in both files. B leaves models.json, which holds the rows for providers pi does not ship, as the one place copies can drift apart. extends is not the same as base: base borrows from pi's catalog, extends from facts yolo wrote once." -->
-
-    _Leaning:_ A: the same benefit in both files. B leaves `models.json`, which holds the rows for
-    providers pi does not ship, as the one place copies can drift apart. `extends` is not the same
-    as `base`: `base` borrows from pi's catalog, `extends` from facts yolo wrote once.
-
-    **Answer:**
-    > _(empty — fill in when decided)_
+Neither ruling is built yet.
 
 ---
 
@@ -2418,6 +2425,10 @@ The options, as the walkthrough drafted them:
 | <a id="MM-D41"></a>MM-D41 | *Implementation decision, reversible, implementing only [§7.2](#72-composition-rules)'s empty-effective-list diagnostic.* **An optional pack-wide `model_list_check` map keyed only by locally owned non-fork program bins declares callable-maker restrictions and the native empty-source exception; core compares pack-owned strings and knows no agent or maker.** Missing bin means no new diagnostic for an older/custom pack; an empty object for that bin opts in without maker restrictions. **Corrected after review, 2026-10-08:** a program field made v0.12.1 drop the whole program; a pack-wide field is ignored without changing generic skew policy. Existing release-probe identity checks show no extra loss from this metadata; Pi's unchanged nested flag `requires` already loses its program, isolated by a fixture-only edit. Platform/path rules restrict Claude's native Bedrock to Anthropic and Codex's native/via Bedrock to OpenAI, matching unchanged derives. Claude's native exception suppresses a supplied source list already empty, not a non-empty source filtered to zero. A check-only list-presence observer distinguishes a supplied empty list from omission without adding wire keys or changing fetch policy; a pure evaluator follows alias/fact precedence, including empty-string aliases. The warning names the program, provider, active profile and pack, suggests a list edit, and never refuses a launch. No change to menus, model selection, native-provider ownership, adapters or enforcement. Production-caller, schema/compatibility and derive-parity tests pass; the 2026-10-08 parent whole-tree and applicable integration gates passed. Independent source and documentation review is complete; no live agent or AWS-backed model turn has been observed. Neighboring owner questions [OQ-MM1](#OQ-MM1) (ruled after this, 2026-10-15) and [OQ-MM3](#OQ-MM3) were unanswered then | 2026-10-08 | [§7.4](#74-the-empty-effective-list-check-decided-mechanism-2026-10-08) | Built: source, applicable gates and independent review passed. This warning does not answer [OQ-MM1](#OQ-MM1)/[OQ-MM3](#OQ-MM3) or make this partly built design BUILT |
 | <a id="MM-D42"></a>MM-D42 | **Maintainer correction:** an explicit `yolo host -p` profile must govern profile-derived Pi subagent defaults and model restrictions as well as the parent session. A configured OpenRouter default must not leave OpenRouter-only child restrictions under an explicit Codex launch. Supersedes the subagent-policy limitation of [MM-D30](#MM-D30), not its per-process/no-shared-file rule; preserve enforcement and configured defaults without an override. *YOLO side built 2026-10-15:* root cause, a launch selection hands only the `selection` namespace while the `subagents` block is a computed object only a jail's boot or `yolo host apply` (configured profile) writes; repaired by the pack-wide `launch_computed` declaration (`packdecl.LaunchComputedFlag`), with which `packs/pi` hands the `-p` profile's `subagents` block per process as `--subagents-model-settings <compact JSON>`, compared apart from the selection, writing nothing, and OFF unless `YOLO_PI_SUBAGENTS_MODEL_SETTINGS=1` because pi 1.0.1 exits over an unregistered extension flag. *Waits on Pi:* the flag's registration and final name, the JSON schema (proposed: the `subagents` settings block as is, `null` `defaultModel` = inherit), replace-not-merge precedence, and verified delivery to every child process and SDK session ([§14.9](#149-a-host--p-moves-the-program-built-2026-10-05)) | 2026-10-09 | [§14.9](#149-a-host--p-moves-the-program-built-2026-10-05) | Not implemented: YOLO side built 2026-10-15 behind its opt-in (`entrypoint.LaunchSelection.ComputedArgv`, `hostComposition.launchSelection`; `TestHostPiCodexOverConfiguredOpenRouterHandsItsChildPolicy`, `TestHostPiSameProviderProfilesHandTheirOwnRoles`, `TestHostPiChildPolicyWaitsOnItsOptIn`, `TestHostPiChildPolicyLeavesTheUnmovedLaunchAlone`, `TestHostLaunchSelectionHandsPiItsChildPolicyAsOneJSONWord`, `internal/packdecl/launchcomputed_test.go`); Pi side pending |
 | <a id="MM-D43"></a>MM-D43 | *Implementation decision, reversible, building [OQ-MM3](#OQ-MM3)'s write.* **claude's saved `model` goes through the existing selection namespace, and the equivalent is the saved value's tier word.** (1) *The write:* claude's settings derive emits `selection.model`; `agentcfg.ApplySelectionReport` already writes a selection value when it differs from the one yolo last wrote, keeps a user edit while the value is unchanged, and clears an unedited value of yolo's on a deselect, in a jail and at `yolo host apply` alike (`prism.go`). (2) *The value:* the tier is the tier word the saved value is, or contains as a word (`opus` in `claude-opus-5-5`); the new value is the new provider's model for that tier: on a listed provider, the id its `models` map gives the tier's alias, claude's own or yolo's (`tierAlias`, [MM-D17](#MM-D17)), and on a provider with no list, such as first-party, the tier word itself, which claude resolves natively. No tier word, or no model in that tier: the provider's default, and where the provider declares none (first-party, or `bedrock` since [MM-D32](#MM-D32)) claude's own default, reached by removing the key. (3) *A provider-specific id, not a bare tier word, on a listed provider:* a bare word would be the same value on every provider, so the selection would never see a change. (4) *Stable on one provider:* a value that already is the provider's model for its tier maps to itself, so a `/model` choice made there is not rewritten. (5) The per-launch `ANTHROPIC_MODEL` pin on a routed provider goes, as it did on `openai-codex` ([MM-D3](#MM-D3)), since it would override the saved choice every launch. **What the code lacks, read 2026-10-15:** the derive context carries no file value and no previous provider (`luahook/derive.go`); the selection record (`<agent>-<surface>.selection.json`, `readSelectionRecord`) holds only the values yolo wrote, keyed by file key, not the provider; and with no record, `ApplySelectionReport` keeps a file value that differs from the selection as the user's, which is exactly a stale saved model on the first provider change. So the build needs two new inputs: the file's current value of a selection key, handed to the derive, and a provider-change trigger, such as the record also naming the provider its value was written for. UNMEASURED: whether Claude Code's `/model` saves a tier word or a full id, and whether claude rewrites the key itself | 2026-10-15 | [The ruling](#oq-mm3-setup) | Not built |
+| <a id="OQ-ML4"></a>[OQ-ML4](#OQ-ML4) | **A, as a field-by-field merge: a fact a pi model row states wins, a fact it leaves out comes from pi's catalog, and only a tombstone removes one.** The catalog entry is the one for the row's id, or for its `base` when it names one. It holds for both files yolo writes, `models.json` and the menu file. A fact is removed only by a tombstone the row writes ([ML-D10](#ML-D10)); yolo never drops a catalog fact unless a row asks. The owner confirmed the problem first: today a row replaces the catalog entry whole, so a fact it omits, such as the thinking levels, is lost and `--thinking xhigh` is turned down. Then: *"we need to support tombstones, and then just write in the values given, essentially. So don't drop things unnecessarily."* Rejected: `base` in `models.json` only, so a row borrows facts only when it says so (B), and leaving `base` menu-only (C) | 2026-10-16 | [How a pi model row gets its facts](#oq-ml4-ml5-setup) | Not built. Already so: ✅ the menu file's rows merge over the catalog field by field (`definition` in [`yolo-model-lists.js`](../../packs/pi/extensions/yolo-model-lists.js)). Unbuilt: ❌ a `models.json` row carries only the facts it states (`yolo.derive("pi", "models")` in [`derive.lua`](../../packs/pi/derive.lua)), and pi fills the rest with its generic defaults; ❌ no tombstone is read ([ML-D10](#ML-D10)). The derive cannot see pi's catalog today, which only the extension reads, so the build decides where the `models.json` merge runs |
+| <a id="OQ-ML5"></a>[OQ-ML5](#OQ-ML5) | **Facts may be written once and shared by a model's routes, and every route's row can override any shared fact.** The order is: the route's own value, then the shared facts, then pi's catalog ([OQ-ML4](#OQ-ML4)); a tombstone ([ML-D10](#ML-D10)) works at each layer. **How it differs from the old A:** that option shared the facts and treated any per-route copy as drift, failing a test on a repeated value. The ruling keeps sharing but lets each route state its own price, context size or output limit, because providers can differ for the same model. The owner: *"It would be nice to be able to write these facts once, but I'm not sure we can guarantee this is always true. Different providers may have different prices, context sizes, whatever for a model. There's no guarantee they're the same. We still need that possibility."* Rejected: sharing in the menu file only (B), no sharing (C), and sharing with no per-route override (the old A). Mechanism: [ML-D11](#ML-D11) | 2026-10-16 | [How a pi model row gets its facts](#oq-ml4-ml5-setup) | Not built: no `sharedModels` in `internal/`, `cmd/` or `packs/`, checked 2026-10-16 |
+| <a id="ML-D10"></a>ML-D10 | *Implementation decision, reversible, building [OQ-ML4](#OQ-ML4) and [OQ-ML5](#OQ-ML5).* **A tombstone is the fact written as `null`, in the same places a fact is written today: a user's object-form `models.<alias>` entry, a pack's `model_options.<alias>`, and the shared facts.** It means "this model has no such fact", and it beats every layer below it, pi's catalog included. Leaving the fact out means inherit. Why `null`: yolo's config already spells removal that way (a `null` under a provider's `models` removes a model, and the compose fold deletes a key set to `null`, per [config surfaces](../reference/pack-system.md#config-surfaces-and-the-compose-engine)), while an empty value cannot be the spelling because some empty values are real facts or are already refused (`reasoning: false`, an empty `input`). One consequence: a user's `null` over a pack's fact now removes the fact rather than falling back to the catalog; to get the catalog's value back, the user restates it. In a rendered `models.json` row a tombstoned fact is left out of a full row, so pi applies its own default for a missing field. **What the build needs:** the `null` must survive the config merge and the pack lowering to reach the derive as a removal; today the model-entry validator only skips a `null` fact (`validateModelEntry`) | 2026-10-16 | [How a pi model row gets its facts](#oq-ml4-ml5-setup) | Not built |
+| <a id="ML-D11"></a>ML-D11 | *Implementation decision, reversible, building [OQ-ML5](#OQ-ML5).* **yolo writes the shared form (`sharedModels` holding the facts once, a row saying `extends`) only to a reader that reads it, and full merged rows everywhere else.** The form is the downstream consumer's own pi build's. MEASURED 2026-10-16 on stock pi 1.0.1 (`@earendil-works/pi-coding-agent`, the copy installed in this jail), by loading a `models.json` through its own loader (`ModelConfig.load`): a top-level `sharedModels` and a row's `extends` load with no error and are ignored, because pi's file schema accepts unknown keys. So a stock pi handed the shared form does not refuse it; it silently gives the row pi's generic sizes and loses the facts. Stock pi's own per-field layer is `modelOverrides`, which applies over a model pi already has and cannot express a tombstone. The menu file is read by yolo's own extension, which does not read the shared form either today, so the same rule applies there until it does. **How yolo would know:** nothing reaches the derive today that says which pi will run; no pi version or capability is in its context. The nearest precedent is `built_in_providers`, a fact `packs/pi/pack.json` declares and core hands the derive. The build needs one like it, declared by the pack that ships the pi build reading the shared form; with no such declaration, yolo writes full rows | 2026-10-16 | [How a pi model row gets its facts](#oq-ml4-ml5-setup) | Not built |
 
 ---
 
