@@ -888,10 +888,10 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 				"YOLO_RUNTIME=podman yolo -- %s\n", bin)
 			return 1
 		}
-		if seal != nil && seal.build == "" {
+		if seal != nil && (seal.build == "" || seal.id == "") {
 			// A fork's seal handed no build line or id has nothing for the act to run, and an empty build
 			// would be admitted as one. Only a caller of yolo's makes such a seal, so the line says so.
-			fmt.Fprintf(errw, "yolo capture: the build jail of %s on macos-user was handed no build line\n", bin)
+			fmt.Fprintf(errw, "yolo capture: the build jail of %s on macos-user was handed no build line or id\n", bin)
 			fmt.Fprintf(errw, "  That is yolo's to wire. A podman jail builds and runs it today: "+
 				"YOLO_RUNTIME=podman yolo -- %s\n", bin)
 			return 1

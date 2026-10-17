@@ -521,6 +521,9 @@ type captureStreams struct {
 	jailReady                               func()
 	cleanupUnconfirmed                      *bool
 	lifetimeReturned                        *bool
+	// runtime is the runtime the build jail boots with (buildMode.runtime), "" for the one a launch
+	// resolves: what a build run as a child names to it (forkBuildChildArgv's --runtime).
+	runtime string
 }
 
 // notStartedLines are the lines that say why a build jail stopped before its build line, each
@@ -971,6 +974,7 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 	// the process's own streams.
 	tail := &jailTail{}
 	streams = tail.tee(streams)
+	streams.runtime = mode.runtime
 	// THE BUILD'S OWN WORKSPACE, as the build saw it: a link into it dangles once the build ends.
 	workspace := forkBuildWorkspace(mode.runtime, b.id())
 	ownershipUnproven := false

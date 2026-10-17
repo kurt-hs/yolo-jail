@@ -199,13 +199,13 @@ func TestAnNpmExtensionIsBuiltWithNpmsInstallOfTheVersionItsSpecNames(t *testing
 func TestAChildBuildJailIsHandedTheVersionsInstall(t *testing.T) {
 	f := packload.Fork{Pack: "treepack", Bin: "tool-ext", Into: ".tool/ext/tool-ext", Source: "npm:tool-ext@^1",
 		Build: packdecl.TreeBuildLine("npm:tool-ext@^1", "", "")}
-	argv := forkBuildChildArgv("/staging", forkBuild{Fork: f, Commit: "1.2.0", Series: packsrc.EmptySeries()}, false)
+	argv := forkBuildChildArgv("/staging", forkBuild{Fork: f, Commit: "1.2.0", Series: packsrc.EmptySeries()}, false, "")
 	if got := argv[len(argv)-1]; got != packdecl.NpmTreeInstall("tool-ext", "1.2.0") {
 		t.Errorf("the child's build line = %q", got)
 	}
 	git := packload.Fork{Pack: "treepack", Bin: "x", Into: ".x/x", Source: "git+https://h/x?ref=main",
 		Build: packdecl.UnmodifiedGitBuild}
-	argv = forkBuildChildArgv("/staging", forkBuild{Fork: git, Commit: "abc", Series: packsrc.EmptySeries()}, false)
+	argv = forkBuildChildArgv("/staging", forkBuild{Fork: git, Commit: "abc", Series: packsrc.EmptySeries()}, false, "")
 	if got := argv[len(argv)-1]; got != packdecl.UnmodifiedGitBuild {
 		t.Errorf("the git child's build line = %q", got)
 	}
