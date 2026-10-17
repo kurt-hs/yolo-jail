@@ -1637,17 +1637,24 @@ func RunForkBuildAct(deps Deps, opts ForkBuildOptions, dest, toolchainDest strin
 	printCATrust(out, plan.CATrust, plan.EnvFileContent, plan.CABundleFile, plan.CAExtrasFile, plan.CAFollows)
 	rc := RunForkBuildPlan(deps, plan)
 	defer RunCaptureCleanup(deps, plan.CapturePlan)
-	if rc != 0 {
-		return rc
-	}
 	// The record, when the script wrote one: a build that ran without it is still a build, and its
-	// receipt then names no toolchain.
+	// receipt then names no toolchain. MOVED WHEN THE BUILD FAILED TOO: the script writes it first,
+	// so it is how the host act tells a build line that ran and failed from a sandbox that never got
+	// to it (internal/cli's forkBuildNotStarted, forkBuildLineFailed), as a container build jail's
+	// workspace keeps it. Swept with the staging tree, a failed build line read as a build jail that
+	// refused to start (PPX-D47).
 	if _, err := os.Lstat(plan.ToolchainFile); err == nil {
 		if err := moveCaptureOut(plan.ToolchainFile, toolchainDest); err != nil {
 			out.printf("[bold red]Could not move the build's toolchain record beside the store:[/bold red] %s",
 				err.Error())
-			return 1
+			if rc == 0 {
+				rc = 1
+			}
+			return rc
 		}
+	}
+	if rc != 0 {
+		return rc
 	}
 	if err := moveCaptureOut(plan.OutDir, dest); err != nil {
 		out.printf("[bold red]Could not move the build into the store:[/bold red] %s", err.Error())

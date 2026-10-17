@@ -859,7 +859,7 @@ func TestTheFloorsInstalledCopyServesWhileAMovedGoodBuildIsBuiltAgain(t *testing
 		}
 		label13 := "v1.3.0 (" + shortSHA(v13) + ")"
 		for _, w := range []string{
-			"the build of " + label13 + " + 2 patches failed: the capture jail exited 2 — nothing was stored — still " +
+			"the build of " + label13 + " + 2 patches failed: the build line ran and failed; its build jail exited 2 — still " +
 				"running v1.1.0 (" + shortSHA(v11) + ") + 2 patches",
 			"running the installed v1.1.0 (" + shortSHA(v11) + ") + 2 patches",
 			"`yolo capture tool` builds it",

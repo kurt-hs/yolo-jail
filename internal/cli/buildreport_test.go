@@ -234,6 +234,41 @@ func TestAFailedBuildPrintsItsTailAndItsLog(t *testing.T) {
 	}
 }
 
+// A BUILD LINE THAT RAN AND FAILED IS SAID AS ONE, NEVER AS A JAIL THAT REFUSED TO START (PPX-D47):
+// the reason the launch's refusal says names the build line's failure, its jail's exit and the
+// build's own log, all in the headline the refusal keeps (run's missingHeadline ends it at the
+// first " — "), and carries no cause, which is what made the launch say "its build jail refused to
+// start on the host". The maintainer's Mac met it: a globstar build line that failed under bash 3.2
+// was said as a jail that never started. Red with buildFork's forkBuildLineFailed or buildFailed's
+// log deleted.
+func TestAFailedBuildLinesReasonNamesItsFailureAndItsLog(t *testing.T) {
+	fx := newTreeFixture(t, `"f.txt"`)
+	talkingChild(t, 3, 2)
+	ws := t.TempDir()
+	d, stream := fx.deliverWithStream(t, ws)
+	if d.Dir != "" {
+		t.Fatalf("a failed build delivered %+v", d)
+	}
+	if d.Cause != nil {
+		t.Errorf("a failed build line is handed to the launch as a jail that did not start: %+v", d.Cause)
+	}
+	head := d.Reason
+	if i := strings.Index(head, " — "); i >= 0 {
+		head = head[:i]
+	}
+	own := filepath.Join(ws, ".yolo", buildLogName(treeKeyCLI))
+	for _, w := range []string{"the build line ran and failed; its build jail exited 3", "its log: " + own} {
+		if !strings.Contains(head, w) {
+			t.Errorf("the launch's headline for the failed build lacks %q:\n%s\n%s", w, head, stream.terminal())
+		}
+	}
+	for _, not := range []string{"refused to start", "before its build line"} {
+		if strings.Contains(d.Reason+stream.terminal(), not) {
+			t.Errorf("a build line that ran is said as %q:\n%s\n%s", not, d.Reason, stream.terminal())
+		}
+	}
+}
+
 // A BUILD JAIL THAT REFUSED before its build line ran is relayed with what it said (PPX-D39), from
 // the stream it was printed on, each line its own (PPX-D42), in the cause the launch is handed, which
 // says it once (run's missingbuilds.go); the build's result line says the jail stopped. Red with the

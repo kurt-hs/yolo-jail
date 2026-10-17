@@ -254,7 +254,7 @@ func TestEveryForkCaptureStopNamesItsNextStep(t *testing.T) {
 		})
 		_, stderr := runCaptureFor(t, "probetool")
 		const want = "  Its output above says why: fix what it names, then run `yolo capture probetool` again."
-		if got := stepAfter(t, stderr, "yolo capture: the capture jail exited 3"); got != want {
+		if got := stepAfter(t, stderr, "yolo capture: the build line ran and failed; its build jail exited 3"); got != want {
 			t.Errorf("the step is\n%q\nwant\n%q", got, want)
 		}
 	})
