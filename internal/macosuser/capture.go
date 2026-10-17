@@ -1240,6 +1240,17 @@ const (
 	// forkBypassShimsVar is the blocked-tool bypass the build line runs under, as the container
 	// build's does: a build script that runs `find` must not meet a refusal meant for an agent.
 	forkBypassShimsVar = "YOLO_BYPASS_SHIMS"
+	// captureEndGroupFlag has the capture driver end the build line's whole process group when it
+	// exits (capture.Options.EndProcessGroup, PPX-D49): a child the line left running would otherwise
+	// outlive the act and keep its guest pack tree.
+	captureEndGroupFlag = "--end-process-group"
+	// buildScriptEnv is what the build's script exports before its line: the install prefixes a
+	// container build jail is started with (NPM_CONFIG_PREFIX, its cache, GOPATH), which no login
+	// shell sets here, and npm's update check and funding line off, as a container jail has them —
+	// the update check runs as a DETACHED child, in a session of its own, which no process-group end
+	// reaches and which kept the act's pack tree past its end (PPX-D49).
+	buildScriptEnv = "export NPM_CONFIG_PREFIX=\"$HOME/.npm-global\" NPM_CONFIG_CACHE=\"$HOME/.cache/npm\" " +
+		"GOPATH=\"$HOME/go\" NPM_CONFIG_UPDATE_NOTIFIER=false NPM_CONFIG_FUND=false\n"
 )
 
 // ForkBuildStagingRoot is the staging tree of the fork build whose id is id: <captureRoot>/fork-<id>.
@@ -1429,6 +1440,7 @@ func buildDriverArgv(stagedYolo, stagingHome, outDir, script, profilePath, envFi
 		"--home=" + stagingHome,
 		"--out=" + outDir,
 		captureScanFlag,
+		captureEndGroupFlag,
 		"--", "/usr/bin/env", forkBypassShimsVar + "=1", bash, "-c", script,
 	})...)
 	return out
@@ -1441,8 +1453,7 @@ func buildDriverArgv(stagedYolo, stagingHome, outDir, script, profilePath, envFi
 // ends in a `# comment` comments out nothing of the script's.
 func ForkBuildScript(srcDir, toolchainFile, head, build string) string {
 	return "{ printf '%s' " + shQuote(head) + "; printf ' macOS %s' \"$(/usr/bin/sw_vers -productVersion 2>/dev/null)\"; } > " +
-		shQuote(toolchainFile) + " 2>/dev/null || true\n" +
-		"export NPM_CONFIG_PREFIX=\"$HOME/.npm-global\" NPM_CONFIG_CACHE=\"$HOME/.cache/npm\" GOPATH=\"$HOME/go\"\n" +
+		shQuote(toolchainFile) + " 2>/dev/null || true\n" + buildScriptEnv +
 		"cd " + shQuote(srcDir) + " && " + build
 }
 
@@ -1457,8 +1468,7 @@ func ForkBuildScript(srcDir, toolchainFile, head, build string) string {
 func TreeBuildScript(srcDir, toolchainFile, head, build, treeDir string) string {
 	script := "{ printf '%s' " + shQuote(head) + "; printf ' macOS %s' \"$(/usr/bin/sw_vers -productVersion 2>/dev/null)\"; " +
 		"printf ' node %s npm %s' \"$(node --version 2>/dev/null)\" \"$(npm --version 2>/dev/null)\"; } > " +
-		shQuote(toolchainFile) + " 2>/dev/null || true\n" +
-		"export NPM_CONFIG_PREFIX=\"$HOME/.npm-global\" NPM_CONFIG_CACHE=\"$HOME/.cache/npm\" GOPATH=\"$HOME/go\"\n" +
+		shQuote(toolchainFile) + " 2>/dev/null || true\n" + buildScriptEnv +
 		"cd " + shQuote(srcDir)
 	if strings.TrimSpace(build) != "" {
 		script += " && (\n" + build + "\n)"
@@ -1506,6 +1516,11 @@ func ForkBuildPlanInvariants(plan ForkBuildPlan) []string {
 			"the build driver argv does not run its script with the darwin floor's bash ("+want+"); under "+
 				"macOS's /bin/bash 3.2 a build line using globstar, `${x,,}` or an associative array fails "+
 				"where a container build of it succeeds")
+	}
+	if !containsArg(plan.DriverArgv, captureEndGroupFlag) {
+		problems = append(problems,
+			"the build driver argv omits "+captureEndGroupFlag+"; a process the build line left running would "+
+				"outlive the act, and the guest pack tree it reads would be kept")
 	}
 	if !containsArg(plan.DriverArgv, forkBypassShimsVar+"=1") {
 		problems = append(problems,

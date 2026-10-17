@@ -122,7 +122,21 @@ type Options struct {
 	// Stdout and Stderr receive the installer's output. Nil discards it.
 	Stdout io.Writer
 	Stderr io.Writer
+	// EndProcessGroup runs the installer in a process group of its own and ENDS THAT GROUP when the
+	// installer exits, whatever its result: SIGTERM, up to processGroupGrace for it to go, then
+	// SIGKILL. A child the installer left running — a package manager's helper, a node process of a
+	// build line that failed — is then gone before the driver returns, rather than outliving the act
+	// that started it. The sealed macos-user build act asks for it (pi-extensions.md PPX-D49), whose
+	// guest pack tree is kept while any process of the sandbox account it started is alive. The
+	// driver runs as that account, so the group is signalled as that account, through the one run-as
+	// rule that started it. A child that put itself in a session of its own (setsid) is not in the
+	// group; the build's environment turns npm's detached update check off for that reason.
+	EndProcessGroup bool
 }
+
+// processGroupGrace is how long EndProcessGroup waits for the installer's group to go on SIGTERM
+// before it sends SIGKILL; a variable so a test can shorten it.
+var processGroupGrace = 2 * time.Second
 
 // Result reports what one capture produced. Artifact mode copies each changed leaf
 // from pinned descriptors into the private tree, leaving source cleanup to its
@@ -616,7 +630,7 @@ func (d *driver) install() error {
 		return d.installArtifacts(ctx)
 	}
 	cmd := exec.CommandContext(ctx, d.opts.Command[0], d.opts.Command[1:]...) //nolint:gosec // the argv IS the input
-	if d.opts.Context != nil || d.opts.Artifacts != nil {
+	if d.opts.Context != nil || d.opts.Artifacts != nil || d.opts.EndProcessGroup {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		cmd.Cancel = func() error {
 			if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
@@ -639,11 +653,38 @@ func (d *driver) install() error {
 	if d.opts.Artifacts != nil {
 		cmd.Env = programEnvironment(cmd.Env, d.home)
 	}
-	if err := cmd.Run(); err != nil {
+	if d.opts.EndProcessGroup {
+		// Wait returns once the installer has exited and its output is copied; a child still holding
+		// a pipe is bounded by WaitDelay, and then ended with the group below.
+		cmd.WaitDelay = time.Second
+	}
+	err := cmd.Run()
+	if d.opts.EndProcessGroup && cmd.Process != nil {
+		endProcessGroup(cmd.Process.Pid)
+	}
+	if err != nil {
 		return fmt.Errorf("capture: installer %s failed, so nothing was captured: %w",
 			d.opts.Command[0], err)
 	}
 	return nil
+}
+
+// endProcessGroup ends every process left in the group pgid: SIGTERM, then up to processGroupGrace
+// for the group to empty, then SIGKILL and a moment more. A group that is already empty is done.
+func endProcessGroup(pgid int) {
+	gone := func() bool { return errors.Is(syscall.Kill(-pgid, 0), syscall.ESRCH) }
+	if err := syscall.Kill(-pgid, syscall.SIGTERM); errors.Is(err, syscall.ESRCH) {
+		return
+	}
+	for deadline := time.Now().Add(processGroupGrace); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if gone() {
+			return
+		}
+	}
+	_ = syscall.Kill(-pgid, syscall.SIGKILL)
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline) && !gone(); {
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // envWithHome replaces HOME in an environment slice, appending it if absent.

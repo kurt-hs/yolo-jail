@@ -15,7 +15,8 @@ import (
 // home it is pointed at and MOVES the result out of it, which is correct inside a
 // throwaway capture jail and destructive anywhere else.
 const captureRunUsage = "usage: yolo internal capture-run --out=DIR [--home=DIR] " +
-	"[--surface-root=DIR] [--scan-content-refs] [--artifact=HOME-RELATIVE-PATH ...] -- <installer argv...>"
+	"[--surface-root=DIR] [--scan-content-refs] [--end-process-group] [--artifact=HOME-RELATIVE-PATH ...] " +
+	"-- <installer argv...>"
 
 // runCaptureRun is the in-jail half of install-capture (docs/design/program-delivery.md
 // §6.3): baseline the capture surfaces, run the installer, move the delta into --out.
@@ -29,7 +30,7 @@ const captureRunUsage = "usage: yolo internal capture-run --out=DIR [--home=DIR]
 // backends — "a process with a HOME" is the driver's entire contract with the world.
 func runCaptureRun(args []string) int {
 	out, home, surfaceRoot := "", os.Getenv("HOME"), ""
-	scanContentRefs := false
+	scanContentRefs, endGroup := false, false
 	var command []string
 	var artifacts []string
 	for i := 0; i < len(args); i++ {
@@ -51,6 +52,10 @@ func runCaptureRun(args []string) int {
 			// /home/agent it was captured in (captureJailArgv). An unrecorded reference
 			// lands as a dead path. See capture.Options.ScanContentRefs for what it costs.
 			scanContentRefs = true
+		case a == "--end-process-group":
+			// The installer's whole process group ends with it (capture.Options.EndProcessGroup):
+			// the sealed macos-user build act's, so nothing its build line started outlives it.
+			endGroup = true
 		case strings.HasPrefix(a, "--artifact="):
 			artifacts = append(artifacts, strings.TrimPrefix(a, "--artifact="))
 		case strings.HasPrefix(a, "--surface-root="):
@@ -82,6 +87,7 @@ func runCaptureRun(args []string) int {
 		SurfaceRoot:     surfaceRoot,
 		Command:         command,
 		ScanContentRefs: scanContentRefs,
+		EndProcessGroup: endGroup,
 		Stdout:          os.Stdout,
 		Stderr:          os.Stderr,
 	})
