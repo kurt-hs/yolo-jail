@@ -1103,7 +1103,7 @@ func Run(opts Options) (rc int) {
 		// AND THE INSTALL-CAPTURE STORE'S ENTRIES (H4; macosctxtree.go's macosUserCaptures): each
 		// selected installer program's darwin entry, after the auto-capture above may have made it,
 		// for the backend to stage root-owned and name to its launchers.
-		ctxDelivery.ctx.Captures, ctxDelivery.ctx.CapturesKept = o.macosUserCaptures(staged.packs)
+		ctxDelivery.ctx.Captures, ctxDelivery.ctx.CapturesKept, ctxDelivery.ctx.CapturesKeepAll = o.macosUserCaptures(staged.packs)
 		o.noteMacosUserRWMounts(cname, ctxLinks)
 		// And the cache relocations, which the backend discloses by link and target
 		// (macosuser.printCacheRelocations) and stages, probes and opens in the profile.

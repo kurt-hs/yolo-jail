@@ -89,7 +89,7 @@ func TestRunPlanWithNoCapturesNamesNoStore(t *testing.T) {
 			t.Errorf("a launch that stages no capture touches the staged store: %v", c)
 		}
 	}
-	if got := StageCaptureCommands(nil, []string{captureKeyKept}, ""); got != nil {
+	if got := StageCaptureCommands(nil, []string{captureKeyKept}, false, ""); got != nil {
 		t.Errorf("StageCaptureCommands with no entries = %v, want none", got)
 	}
 }
@@ -112,7 +112,7 @@ func TestStageCaptureCommandsDropWhatARootScriptMayNotBeHanded(t *testing.T) {
 		{Bin: "b", Key: "ABCDEF0123456789", Source: captureSource},
 		{Bin: "c", Key: captureKeyA, Source: "relative/entries/" + captureKeyA},
 	}
-	if got := StageCaptureCommands(bad, nil, ""); got != nil {
+	if got := StageCaptureCommands(bad, nil, false, ""); got != nil {
 		t.Errorf("StageCaptureCommands staged entries a root script may not be handed: %v", got)
 	}
 	plan := planWithCtx(t, HostContext{Captures: bad})
@@ -244,7 +244,7 @@ func lineWith(s, sub string) string {
 // writable by none but its owner, and no link of the store's inodes anywhere — a hardlink of an
 // entry a capture made would hand the sandbox account bytes it owns, which every workspace runs.
 func TestStageCaptureCommandsCopyAndNeverLink(t *testing.T) {
-	cmds := StageCaptureCommands(stagedCaptureCtx().Captures, nil, "")
+	cmds := StageCaptureCommands(stagedCaptureCtx().Captures, nil, false, "")
 	joined := ""
 	for _, c := range cmds {
 		joined += strings.Join(c, " ") + "\n"
@@ -348,7 +348,7 @@ func TestStageCaptureCommandsCopyOncePruneAndNeverLink(t *testing.T) {
 	mustMkdir(t, filepath.Join(root, capturesStagingLeaf, captureKeyOld), 0o555)
 
 	cmds := StageCaptureCommands([]CaptureEntry{{Bin: "probetool", Key: captureKeyA, Source: src}},
-		[]string{captureKeyKept}, sd)
+		[]string{captureKeyKept}, false, sd)
 	runAll := func() {
 		t.Helper()
 		for _, c := range cmds {
@@ -417,6 +417,59 @@ func TestStageCaptureCommandsCopyOncePruneAndNeverLink(t *testing.T) {
 	runAll()
 	if _, err := os.Stat(sentinel); err != nil {
 		t.Errorf("a second launch re-copied an entry already staged under its key (%v)", err)
+	}
+}
+
+// THE PLAN CARRIES HostContext.CapturesKeepAll to its prune: the third capture command is the
+// keep-all script, with no key list, and the ordinary prune with its keys otherwise.
+func TestRunPlanKeepsEveryStagedCaptureWhenTheContextSaysSo(t *testing.T) {
+	ctx := stagedCaptureCtx()
+	if got := planWithCtx(t, ctx).CaptureStageCommands; len(got) < 3 || got[2][2] != pruneCapturesScript {
+		t.Fatalf("an ordinary plan's third capture command is not the prune: %v", got)
+	}
+	ctx.CapturesKeepAll = true
+	got := planWithCtx(t, ctx).CaptureStageCommands
+	if len(got) < 3 || got[2][2] != keepCapturesScript || len(got[2]) != 5 {
+		t.Errorf("a keep-all plan's third capture command is %v, want the keep-all script and no keys", got)
+	}
+}
+
+// A LAUNCH THAT CANNOT ASK PRUNES NO STAGED ENTRY (keepAll): an entry in neither list survives,
+// since another running session may yet materialize it, while an unfinished copy under staging/
+// still goes and the store's own third command stays third (stageCaptures' order). Only that
+// command runs, so the test needs only the tools its script names.
+func TestStageCaptureCommandsKeepAllPrunesNoStagedEntry(t *testing.T) {
+	for _, bin := range []string{"/bin/sh", chmodBin, rmBin} {
+		if _, err := os.Stat(bin); err != nil {
+			t.Skipf("%s is not on this machine, so the prune command cannot run here: %v", bin, err)
+		}
+	}
+	tmp, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	unsealOnCleanup(t, tmp)
+	sd := filepath.Join(tmp, "state")
+	src := filepath.Join(tmp, "userstore", "entries", captureKeyA)
+	mustMkdir(t, filepath.Join(src, "tree"), 0o775)
+	mustWrite(t, filepath.Join(src, "tree", "f"), "x", 0o444)
+	root := StagedCapturesRoot(sd)
+	mustMkdir(t, filepath.Join(root, capturesEntriesLeaf, captureKeyOld, "tree"), 0o555)
+	mustMkdir(t, filepath.Join(root, capturesEntriesLeaf, captureKeyOld), 0o555)
+	mustMkdir(t, filepath.Join(root, capturesStagingLeaf, captureKeyOld), 0o555)
+
+	cmds := StageCaptureCommands([]CaptureEntry{{Bin: "probetool", Key: captureKeyA, Source: src}}, nil, true, sd)
+	if len(cmds) < 3 || commandName(cmds[2]) != pruneCapturesScriptName {
+		t.Fatalf("the store's third command is not its prune: %v", cmds)
+	}
+	if out, err := exec.Command(cmds[2][0], cmds[2][1:]...).CombinedOutput(); err != nil {
+		t.Fatalf("%v: %v\n%s", cmds[2], err, out)
+	}
+	if _, err := os.Stat(filepath.Join(root, capturesEntriesLeaf, captureKeyOld)); err != nil {
+		t.Errorf("a launch that could not ask pruned a staged entry: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, capturesStagingLeaf, captureKeyOld)); !os.IsNotExist(err) {
+		t.Errorf("a copy a killed launch left under staging/ survived (%v)", err)
 	}
 }
 
