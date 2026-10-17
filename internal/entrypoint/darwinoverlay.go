@@ -601,7 +601,11 @@ func copyTreeStrictBeneath(src string, dst *os.Root, rel string) error {
 				return err
 			}
 		case fi.IsDir():
-			if err := dst.Mkdir(to, fi.Mode().Perm()); err != nil {
+			// THE OWNER KEEPS rwx: the staged overlay is sealed (a-w), and the sandbox account owns
+			// this copy, so a sealed mode would leave it unable to fill the directory or remove it at
+			// the next install. The agent's writes are the Seatbelt profile's to deny, not this
+			// mode's (docs/reference/pi-extensions.md PPX-D45, as the per-launch copy's PPX-D22).
+			if err := dst.Mkdir(to, fi.Mode().Perm()|0o700); err != nil {
 				return err
 			}
 			if err := copyTreeStrictBeneath(from, dst, to); err != nil {

@@ -615,3 +615,44 @@ func TestOverlayInstallStaysInsideTheJailWhenADirectoryIsSwappedMidInstall(t *te
 		}
 	}
 }
+
+// A PATCHED EXTENSION'S TREE arrives in the overlay SEALED (the host's staging runs chmod a-w over
+// it), so its nested directories are 0555. The sandbox account owns its copy, and on a Mac an owner
+// without a directory's write bit can neither fill it nor let the next install remove it, which a
+// root-run test cannot see by doing it — so the copy keeps each directory's owner write bit, as the
+// per-launch copy does (docs/reference/pi-extensions.md PPX-D22, PPX-D45). The agent's writes are
+// denied by the Seatbelt profile, not by this mode.
+func TestOverlayInstallKeepsTheOwnerWriteBitOnASealedTreesDirectories(t *testing.T) {
+	f := newOverlayFixture(t)
+	tree := filepath.Join(f.overlay, ".pi", "agent", "yolo-patched", "ext")
+	writeTreeFile(t, filepath.Join(tree, "node_modules", "dep", "index.js"), "dep")
+	writeTreeFile(t, filepath.Join(tree, "index.js"), "ext")
+	if _, err := WriteHomeOverlayManifest(f.overlay, []string{".pi/agent/yolo-patched/ext"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{filepath.Join(tree, "node_modules", "dep"), filepath.Join(tree, "node_modules")} {
+		if err := os.Chmod(d, 0o555); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(filepath.Join(tree, "node_modules"), 0o755)
+		_ = os.Chmod(filepath.Join(tree, "node_modules", "dep"), 0o755)
+	})
+	for i := 0; i < 2; i++ {
+		if err := f.install(t); err != nil {
+			t.Fatalf("install %d: %v", i+1, err)
+		}
+	}
+	got := filepath.Join(f.home, ".pi", "agent", "yolo-patched", "ext")
+	requireFile(t, filepath.Join(got, "node_modules", "dep", "index.js"), "dep")
+	for _, d := range []string{filepath.Join(got, "node_modules"), filepath.Join(got, "node_modules", "dep")} {
+		fi, err := os.Stat(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fi.Mode().Perm()&0o700 != 0o700 {
+			t.Errorf("%s was installed %v: its owner, the sandbox account, could not fill it or remove it at the next install", d, fi.Mode().Perm())
+		}
+	}
+}
