@@ -47,6 +47,7 @@ package packsrc
 // mirror's lock is released (lock order, checkrecord.go).
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -116,7 +117,8 @@ type ReplayResult struct {
 	Err error
 	// PatchFailure is set only for a non-cancelled member-application command failure.
 	PatchFailure *PatchFailure
-	// head is a clean replay's last commit, in the scratch repository, for OnFit's checkout.
+	// head is a clean replay's result in the scratch repository, for OnFit's checkout: its last
+	// commit, or the tree of its last pick, which pick does not commit.
 	head string
 }
 
@@ -280,11 +282,13 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 	// The base's files, into the mirror, then the series made into commits there. An EMPTY SERIES
 	// (an unmodified extension, EmptySeries) has no base and makes no commit: each entry's replay
 	// is its own tree, which every entry fits.
+	// A probe that found nothing missing is kept, so the check after it asks no second time.
+	var baseProbe, patchBranchProbe string
 	if series.Replays() && !opts.LocalOnly {
-		s.prefetchBlobs(b, mirror, series.Base, "")
+		baseProbe = s.prefetchBlobs(b, mirror, series.Base, "")
 		if series.PatchBranch != nil {
 			// The patch branch's own files, from the patch branch's repository into its blobless mirror.
-			s.prefetchBlobs(b, patchBranchMirror, series.PatchBranch.Commit, "")
+			patchBranchProbe = s.prefetchBlobs(b, patchBranchMirror, series.PatchBranch.Commit, "")
 		}
 	}
 	sc, err := newScratchOf(s.git(), b, mirrors...)
@@ -298,18 +302,18 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 		sc.fetch = func(oids []string) { s.prefetchObjects(b, mirror, oids) }
 	}
 	if series.Replays() {
-		type need struct{ mirror, commit string }
-		needs := []need{{mirror, series.Base}}
+		type need struct{ mirror, commit, probe string }
+		needs := []need{{mirror, series.Base, baseProbe}}
 		if series.PatchBranch != nil {
-			needs = append(needs, need{patchBranchMirror, series.PatchBranch.Commit})
+			needs = append(needs, need{patchBranchMirror, series.PatchBranch.Commit, patchBranchProbe})
 		}
 		for _, n := range needs {
 			if opts.LocalOnly {
-				if err := missingBlobsScratch(sc, n.commit); err != nil {
+				if _, err := missingBlobsScratch(sc, n.commit); err != nil {
 					res.Err = err
 					return res
 				}
-			} else if err := s.missingBlobs(b, n.mirror, n.commit); err != nil {
+			} else if _, err := s.missingBlobs(b, n.mirror, n.commit, n.probe); err != nil {
 				res.Err = err
 				return res
 			}
@@ -331,14 +335,17 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 
 	for _, e := range list {
 		r := ReplayResult{Entry: e}
+		probe := ""
 		if !opts.LocalOnly {
-			s.prefetchBlobs(b, mirror, e.Commit, "")
+			probe = s.prefetchBlobs(b, mirror, e.Commit, "")
 		}
+		// The check's listing names the entry's root tree first, which the pick compares against.
 		var missingErr error
+		var entryTree string
 		if opts.LocalOnly {
-			missingErr = missingBlobsScratch(sc, e.Commit)
+			entryTree, missingErr = missingBlobsScratch(sc, e.Commit)
 		} else {
-			missingErr = s.missingBlobs(b, mirror, e.Commit)
+			entryTree, missingErr = s.missingBlobs(b, mirror, e.Commit, probe)
 		}
 		if missingErr == nil && series.PatchBranch != nil && !opts.LocalOnly {
 			// An entry that does not contain the patch branch's base (the good build's own commit after the
@@ -357,7 +364,7 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 		if series.PatchBranch != nil {
 			sc.mergePatchBranch(&r, series.PatchBranch, subdir)
 		} else {
-			sc.pick(&r, series, commits, subdir)
+			sc.pick(&r, series, commits, subdir, entryTree)
 		}
 		if r.Clean && res.Fit < 0 && opts.OnFit != nil {
 			if err := sc.export(r.head, subdir, opts.OnFit); err != nil {
@@ -413,42 +420,60 @@ func walkNpm(list []ListEntry, opts WalkOptions) WalkResult {
 // missingBlobsScratch checks object availability through the isolated non-promisor replay repository.
 // It cannot trigger lazy fetches from a partial mirror, even with Git versions that ignore the
 // GIT_NO_LAZY_FETCH environment variable.
-func missingBlobsScratch(sc *scratch, commit string) error {
+// Its first result is commit's root tree when the listing names it (listedRootTree).
+func missingBlobsScratch(sc *scratch, commit string) (string, error) {
 	out, err := sc.git("", "rev-list", "--objects", "--missing=print", commit+"^{tree}")
 	if err != nil {
-		return fmt.Errorf("could not read the upstream's files at %s: %s", shortCommit(commit), oneLine(err))
+		return "", fmt.Errorf("could not read the upstream's files at %s: %s", shortCommit(commit), oneLine(err))
 	}
-	n := 0
-	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "?") {
-			n++
-		}
-	}
-	if n > 0 {
-		return fmt.Errorf("could not fetch the upstream's files at %s (%d missing after the local-only probe)",
+	if n := countMissing(out); n > 0 {
+		return "", fmt.Errorf("could not fetch the upstream's files at %s (%d missing after the local-only probe)",
 			shortCommit(commit), n)
 	}
-	return nil
+	return listedRootTree(out), nil
 }
 
 // missingBlobs is an apply error when the mirror still lacks a file of commit after its prefetch:
-// a blob that could not be fetched is never a conflict.
-func (s *Store) missingBlobs(b budget, mirror, commit string) error {
-	out, err := s.runIn(b, mirror, "rev-list", "--objects", "--missing=print", commit+"^{tree}")
-	if err != nil {
-		return fmt.Errorf("could not read the upstream's files at %s: %s", shortCommit(commit), oneLine(err))
+// a blob that could not be fetched is never a conflict. probe is that prefetch's listing when it
+// found nothing missing (prefetchBlobs), which is this check's answer already; "" asks the mirror.
+// Its first result is commit's root tree when the listing names it (listedRootTree).
+func (s *Store) missingBlobs(b budget, mirror, commit, probe string) (string, error) {
+	out := probe
+	if out == "" {
+		var err error
+		out, err = s.runIn(b, mirror, "rev-list", "--objects", "--missing=print", commit+"^{tree}")
+		if err != nil {
+			return "", fmt.Errorf("could not read the upstream's files at %s: %s", shortCommit(commit), oneLine(err))
+		}
 	}
+	if n := countMissing(out); n > 0 {
+		return "", fmt.Errorf("could not fetch the upstream's files at %s (%d missing after the prefetch) — "+
+			"the next check retries, or `yolo pack update` retries now", shortCommit(commit), n)
+	}
+	return listedRootTree(out), nil
+}
+
+// countMissing counts the objects a `rev-list --missing=print` listing names as missing.
+func countMissing(out string) int {
 	n := 0
 	for _, line := range strings.Split(out, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "?") {
 			n++
 		}
 	}
-	if n > 0 {
-		return fmt.Errorf("could not fetch the upstream's files at %s (%d missing after the prefetch) — "+
-			"the next check retries, or `yolo pack update` retries now", shortCommit(commit), n)
+	return n
+}
+
+// listedRootTree is the tree a `rev-list --objects <commit>^{tree}` listing starts with — git
+// lists the tree it was given before anything in it, with no path — or "" when the first line is
+// not a present object's id, and the caller asks git for the tree instead.
+func listedRootTree(out string) string {
+	first, _, _ := strings.Cut(out, "\n")
+	f := strings.Fields(first)
+	if len(f) != 1 || !isHexID(f[0]) {
+		return ""
 	}
-	return nil
+	return f[0]
 }
 
 // scratch is the replay's scratch repository.
@@ -613,9 +638,16 @@ func (sc *scratch) gitRun(dir string, env []string, stdin io.Reader, args ...str
 	return stdout.String(), 0, nil
 }
 
+// amArgs is the `git am` every member is applied with, its files after it.
+var amArgs = []string{"am", "-q", "--no-3way", "--whitespace=nowarn"}
+
 // applyAtBase checks the series' base out, detached, in the scratch work tree and makes each member
-// a commit with `git am`, one member at a time so a failure names its member. It returns the
-// commits in series order.
+// a commit with `git am`. It returns the commits in series order.
+//
+// ONE `git am` FOR THE WHOLE SERIES when that is sure to make the same commits (amWhole), since
+// every git start costs (on a macOS host about 25 ms, more than the apply itself); otherwise, and
+// whenever that one run does not take the whole series, ONE MEMBER AT A TIME (amEach), so a
+// failure names its member and says what it always said.
 func (sc *scratch) applyAtBase(series *Series) ([]string, *SeriesBaseError, error) {
 	if _, err := sc.git("", "checkout", "-q", "--detach", series.Base); err != nil {
 		return nil, nil, fmt.Errorf("checking the series' base %s out: %s", shortCommit(series.Base), oneLine(err))
@@ -624,13 +656,86 @@ func (sc *scratch) applyAtBase(series *Series) ([]string, *SeriesBaseError, erro
 	if err := os.MkdirAll(files, 0o700); err != nil {
 		return nil, nil, err
 	}
+	if wholeSeriesAppliable(series) {
+		commits, err := sc.amWhole(series, files)
+		if err != nil || commits != nil {
+			return commits, nil, err
+		}
+		// The one run did not take the series: back to the base, and member by member.
+		if _, err := sc.git("", "checkout", "-q", "--detach", series.Base); err != nil {
+			return nil, nil, fmt.Errorf("checking the series' base %s out: %s", shortCommit(series.Base), oneLine(err))
+		}
+	}
+	return sc.amEach(series, files)
+}
+
+// wholeSeriesAppliable reports whether one `git am` over every member makes exactly the commits
+// one run per member makes, in the same order: each member is ONE MAIL, which git's mbox split
+// finds only at a line starting "From ", so a member that starts with one and has no other is
+// exactly one patch, and one run applies the mails in the order of its files. A member with no
+// such line, or more than one, applies member by member.
+func wholeSeriesAppliable(series *Series) bool {
+	if len(series.Members) < 2 {
+		return false
+	}
+	for _, m := range series.Members {
+		if !bytes.HasPrefix(m.Data, []byte("From ")) || bytes.Contains(m.Data, []byte("\nFrom ")) {
+			return false
+		}
+	}
+	return true
+}
+
+// amWhole applies every member in one `git am` and returns the commits it made, in series order.
+// nil commits and a nil error mean the run did not take the whole series, left nothing in progress,
+// and the caller applies member by member, which names the member that fails; an error is one
+// amEach would have returned too (a run ended by the walk's bound or by a signal).
+func (sc *scratch) amWhole(series *Series, files string) ([]string, error) {
+	args := append([]string{}, amArgs...)
+	for _, m := range series.Members {
+		p := filepath.Join(files, m.Name)
+		if err := os.WriteFile(p, m.Data, 0o600); err != nil {
+			return nil, err
+		}
+		args = append(args, p)
+	}
+	if _, err := sc.git("", args...); err != nil {
+		var exit *exec.ExitError
+		if sc.b.ctx.Err() != nil || !errors.As(err, &exit) || exit.ExitCode() < 1 {
+			return nil, err
+		}
+		// git's own way out of a stopped `git am`; the state directory goes by hand if that fails,
+		// since the next `git am` refuses to start over one.
+		if _, err := sc.git("", "am", "--abort"); err != nil {
+			if sc.b.ctx.Err() != nil {
+				return nil, err
+			}
+			if rerr := os.RemoveAll(filepath.Join(sc.repo, ".git", "rebase-apply")); rerr != nil {
+				return nil, rerr
+			}
+		}
+		return nil, nil
+	}
+	out, err := sc.git("", "rev-list", "--reverse", "HEAD", "^"+series.Base)
+	if err != nil {
+		return nil, err
+	}
+	commits := strings.Fields(out)
+	if len(commits) != len(series.Members) {
+		return nil, nil
+	}
+	return commits, nil
+}
+
+// amEach applies the members one `git am` at a time, so a failure names its member.
+func (sc *scratch) amEach(series *Series, files string) ([]string, *SeriesBaseError, error) {
 	var commits []string
 	for _, m := range series.Members {
 		p := filepath.Join(files, m.Name)
 		if err := os.WriteFile(p, m.Data, 0o600); err != nil {
 			return nil, nil, err
 		}
-		if _, err := sc.git("", "am", "-q", "--no-3way", "--whitespace=nowarn", p); err != nil {
+		if _, err := sc.git("", append(append([]string{}, amArgs...), p)...); err != nil {
 			if sc.b.ctx.Err() != nil {
 				return nil, nil, err
 			}
@@ -649,15 +754,18 @@ func (sc *scratch) applyAtBase(series *Series) ([]string, *SeriesBaseError, erro
 	return commits, nil, nil
 }
 
-// pick picks commits onto r.Entry's commit one at a time, filling r.
-func (sc *scratch) pick(r *ReplayResult, series *Series, commits []string, subdir string) {
-	onto := r.Entry.Commit
-	ontoTree, err := sc.git("", "rev-parse", onto+"^{tree}")
-	if err != nil {
-		r.Err = fmt.Errorf("reading %s: %s", shortCommit(onto), oneLine(err))
-		return
+// pick picks commits onto r.Entry's commit one at a time, filling r. entryTree is the entry's root
+// tree when the caller already read it, "" to ask git.
+func (sc *scratch) pick(r *ReplayResult, series *Series, commits []string, subdir, entryTree string) {
+	onto, ontoTree := r.Entry.Commit, entryTree
+	if ontoTree == "" {
+		out, err := sc.git("", "rev-parse", onto+"^{tree}")
+		if err != nil {
+			r.Err = fmt.Errorf("reading %s: %s", shortCommit(onto), oneLine(err))
+			return
+		}
+		ontoTree = strings.TrimSpace(out)
 	}
-	ontoTree = strings.TrimSpace(ontoTree)
 	for i, c := range commits {
 		member := series.Members[i].Name
 		out, code, err := sc.gitStatus("", "merge-tree", "--write-tree", "-z", "--name-only",
@@ -703,6 +811,13 @@ func (sc *scratch) pick(r *ReplayResult, series *Series, commits []string, subdi
 			}
 			continue
 		}
+		if i == len(commits)-1 {
+			// THE LAST PICK IS NOT COMMITTED: nothing is picked onto it, and its tree is all the
+			// replay's result is read for (settle, and export's checkout, which takes a tree as it
+			// takes a commit), so a commit of it would be one git start for nothing.
+			onto, ontoTree = tree, tree
+			break
+		}
 		next, err := sc.git("", "commit-tree", "--no-gpg-sign", tree, "-p", onto, "-m", member)
 		if err != nil {
 			r.Err = fmt.Errorf("committing %s onto %s: %s", member, shortCommit(r.Entry.Commit), oneLine(err))
@@ -710,7 +825,7 @@ func (sc *scratch) pick(r *ReplayResult, series *Series, commits []string, subdi
 		}
 		onto, ontoTree = strings.TrimSpace(next), tree
 	}
-	sc.settle(r, onto, subdir)
+	sc.settle(r, onto, ontoTree, subdir)
 }
 
 // mergePatchBranch merges the patch branch's commit into r.Entry's commit with no work tree — `git merge-tree
@@ -751,12 +866,26 @@ func (sc *scratch) mergePatchBranch(r *ReplayResult, patchBranch *SeriesPatchBra
 		r.Err = fmt.Errorf("committing the merge of %s into %s: %s", member, shortCommit(onto), oneLine(err))
 		return
 	}
-	sc.settle(r, strings.TrimSpace(next), subdir)
+	sc.settle(r, strings.TrimSpace(next), fields[0], subdir)
 }
 
-// settle fills a clean replay's result from its last commit head: the source's subdirectory's tree
-// (the whole tree at the repository root), which must be a directory.
-func (sc *scratch) settle(r *ReplayResult, onto, subdir string) {
+// settle fills a clean replay's result from its result onto (its last commit, or its last pick's
+// tree): the source's subdirectory's tree (the whole tree at the repository root), which must be a
+// directory. headTree is onto's root tree, which the replay has just made or read, so a repository-root source asks git nothing; a
+// subdirectory is looked up and its kind read in one `cat-file --batch-check`, and anything but a
+// tree there is asked again the long way, for the words the failure has always had.
+func (sc *scratch) settle(r *ReplayResult, onto, headTree, subdir string) {
+	if subdir == "" && headTree != "" {
+		r.Clean, r.Tree, r.head = true, headTree, onto
+		return
+	}
+	if subdir != "" && !strings.ContainsAny(subdir, "\n\r") {
+		out, err := sc.gitInput(onto+":"+subdir+"\n", "cat-file", "--batch-check=%(objectname) %(objecttype)")
+		if f := strings.Fields(out); err == nil && len(f) == 2 && f[1] == "tree" && isHexID(f[0]) {
+			r.Clean, r.Tree, r.head = true, f[0], onto
+			return
+		}
+	}
 	spec := onto + "^{tree}"
 	if subdir != "" {
 		spec = onto + ":" + subdir
@@ -804,11 +933,16 @@ func (sc *scratch) upstreamEquivalent(c, entry string) bool {
 	if err != nil {
 		return false
 	}
+	upstream := strings.Fields(out)
+	raws, batched := sc.rawChanges(upstream)
 	var candidates, oids []string
-	for _, u := range strings.Fields(out) {
-		raw, err := sc.git("", "diff-tree", "--no-commit-id", "-r", "-z", "--no-renames", u)
-		if err != nil {
-			return false
+	for _, u := range upstream {
+		raw := raws[u] // a commit the batch printed nothing for changes nothing
+		if !batched {
+			var err error
+			if raw, err = sc.git("", "diff-tree", "--no-commit-id", "-r", "-z", "--no-renames", u); err != nil {
+				return false
+			}
 		}
 		got, blobs := rawPathsAndBlobs(raw)
 		if !slices.Equal(got, want) {
@@ -822,6 +956,18 @@ func (sc *scratch) upstreamEquivalent(c, entry string) bool {
 	if sc.fetch != nil {
 		sc.fetch(oids)
 	}
+	if ids, ok := sc.patchIDs(append([]string{c}, candidates...)); ok {
+		mine := ids[c]
+		if mine == "" {
+			return false
+		}
+		for _, u := range candidates {
+			if ids[u] == mine {
+				return true
+			}
+		}
+		return false
+	}
 	mine := sc.patchID(c)
 	if mine == "" {
 		return false
@@ -832,6 +978,63 @@ func (sc *scratch) upstreamEquivalent(c, entry string) bool {
 		}
 	}
 	return false
+}
+
+// rawChanges is `git diff-tree -r -z --no-renames` of every commit in one run (`--stdin`): each
+// commit's raw records as a run of it alone prints them, a commit that changes nothing absent. ok
+// is false when that run failed or printed what this does not read, and the caller asks commit by
+// commit, so one unreadable commit costs no other its answer.
+func (sc *scratch) rawChanges(commits []string) (map[string]string, bool) {
+	if len(commits) < 2 {
+		return nil, false
+	}
+	out, err := sc.gitInput(strings.Join(commits, "\n")+"\n", "diff-tree", "--stdin", "-r", "-z", "--no-renames")
+	if err != nil {
+		return nil, false
+	}
+	// Each commit's id, then its records — a ":"-led status and its one path (no renames, so never
+	// two) — until the next commit's id. A path is read by its position, whatever it spells.
+	raws := map[string]string{}
+	fields := strings.Split(strings.TrimRight(out, "\x00"), "\x00")
+	cur := ""
+	for i := 0; i < len(fields); i++ {
+		switch f := fields[i]; {
+		case strings.HasPrefix(f, ":") && cur != "" && i+1 < len(fields):
+			raws[cur] += f + "\x00" + fields[i+1] + "\x00"
+			i++
+		case slices.Contains(commits, f):
+			cur = f
+		default:
+			return nil, false
+		}
+	}
+	return raws, true
+}
+
+// patchIDs is the stable patch-id of every commit in two runs: one `git diff-tree --stdin -p`,
+// whose output `git patch-id --stable` reads commit by commit as it reads `git log -p`. A commit
+// with no diff has no id, "" as patchID says. ok is false when either run failed, and the caller
+// asks commit by commit (patchID), so one unreadable commit costs no other its answer.
+func (sc *scratch) patchIDs(commits []string) (map[string]string, bool) {
+	diff, err := sc.gitInput(strings.Join(commits, "\n")+"\n", "diff-tree", "--stdin", "-p", "--no-renames",
+		"--full-index")
+	if err != nil {
+		return nil, false
+	}
+	ids := map[string]string{}
+	if strings.TrimSpace(diff) == "" {
+		return ids, true
+	}
+	out, err := sc.gitInput(diff, "patch-id", "--stable")
+	if err != nil {
+		return nil, false
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if id, commit, ok := strings.Cut(strings.TrimSpace(line), " "); ok {
+			ids[commit] = id
+		}
+	}
+	return ids, true
 }
 
 // patchID is commit c's stable patch-id, "" when it cannot be read.
@@ -877,7 +1080,7 @@ func (sc *scratch) memberEmpty(c string) (bool, error) {
 	return strings.TrimSpace(out) == "", nil
 }
 
-// export checks the source's subdirectory of commit out of the scratch repository into a
+// export checks the source's subdirectory of commit (a commit or a tree) out of the scratch repository into a
 // directory of the scratch space, through a private empty index as the store's own checkout does
 // (Store.checkoutTree), under the replay's config regime — no hook runs, no filter or attribute of
 // the user's applies — and hands its path to fn.

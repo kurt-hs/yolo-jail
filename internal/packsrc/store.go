@@ -851,14 +851,21 @@ func (s *Store) checkoutTree(b budget, mirror, tree, commit, sub string) error {
 // fetches exactly those with the arguments git uses for one lazy fetch of its own, given all
 // of them at once. BEST-EFFORT: a failure here leaves the checkout to fetch lazily, as it
 // always could, and a remote that is really unreachable is then the checkout's error.
-func (s *Store) prefetchBlobs(b budget, mirror, commit, sub string) {
+//
+// It returns the probe's listing when the probe ran and found NOTHING MISSING, so nothing was
+// fetched, and "" otherwise. A caller holding the mirror's lock that is about to ask the same
+// question again (missingBlobs, after the walk's prefetch) takes this answer instead: under the
+// lock nothing can change the mirror between the two, so the second `rev-list` could only repeat
+// it. One git start saved per commit a replay reads, which on a host where starting git is slow
+// is most of what a replay costs.
+func (s *Store) prefetchBlobs(b budget, mirror, commit, sub string) (complete string) {
 	treeish := commit + "^{tree}"
 	if sub != "" {
 		treeish = commit + ":" + sub
 	}
 	out, err := s.runIn(b, mirror, "rev-list", "--objects", "--missing=print", treeish)
 	if err != nil {
-		return
+		return ""
 	}
 	var missing strings.Builder
 	for _, line := range strings.Split(out, "\n") {
@@ -867,13 +874,14 @@ func (s *Store) prefetchBlobs(b budget, mirror, commit, sub string) {
 		}
 	}
 	if missing.Len() == 0 {
-		return
+		return out
 	}
 	cmd := s.gitCmd(b.ctx, mirror, withFsck("-c", "fetch.negotiationAlgorithm=noop",
 		"fetch", "origin", "--no-tags", "--no-write-fetch-head", "--recurse-submodules=no",
 		"--filter=blob:none", "--stdin")...)
 	cmd.Stdin = strings.NewReader(missing.String())
 	_ = cmd.Run()
+	return ""
 }
 
 // prefetchObjects fetches the objects oids names into the blobless mirror, in one request, as
