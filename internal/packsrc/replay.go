@@ -707,6 +707,9 @@ func (sc *scratch) amWhole(series *Series, files string) ([]string, error) {
 		// git's own way out of a stopped `git am`; the state directory goes by hand if that fails,
 		// since the next `git am` refuses to start over one.
 		if _, err := sc.git("", "am", "--abort"); err != nil {
+			if sc.b.ctx.Err() != nil {
+				return nil, err
+			}
 			if rerr := os.RemoveAll(filepath.Join(sc.repo, ".git", "rebase-apply")); rerr != nil {
 				return nil, rerr
 			}

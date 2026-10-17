@@ -103,6 +103,29 @@ func TestAReplaysGitStartsDoNotGrowWithItsSeries(t *testing.T) {
 	}
 }
 
+// A PROBE THAT FINDS NOTHING MISSING IS ITS OWN CHECK: once the mirror holds the base's and the
+// entry's files, a walk lists each tree once — the base, the entry — and the am's commits once,
+// fetching nothing.
+func TestAWalkOverAFilledMirrorListsEachTreeOnce(t *testing.T) {
+	u := newPatchedUpstream(t)
+	v11 := u.release(t, "v1.1.0", map[int]string{14: "fourteen"})
+	series, list := u.checked(t)
+	addr := mustAddr(t, u.source("main"))
+	if w := u.store.WalkSeries(addr.Repo, addr.Path, series, list[:1], WalkOptions{}); w.Err != nil || w.Fit != 0 {
+		t.Fatalf("filling walk = %+v", w)
+	}
+	bin, counts := countingGit(t)
+	u.store.Git = bin
+	w := u.store.WalkSeries(addr.Repo, addr.Path, series, list[:1], WalkOptions{})
+	if w.Err != nil || w.Fit != 0 || w.Results[0].Entry.Commit != v11 {
+		t.Fatalf("walk = %+v", w)
+	}
+	if got := counts(); got["rev-list"] != 3 || got["fetch"] != 0 {
+		t.Errorf("git starts by subcommand %v, want three rev-list (the base's and the entry's listings, the "+
+			"am's commits) and no fetch", got)
+	}
+}
+
 // ONE `git am` OVER THE WHOLE SERIES MAKES THE COMMITS ONE RUN PER MEMBER MAKES, the same ids in the
 // same order, which is what lets applyAtBase take it (wholeSeriesAppliable).
 func TestTheWholeSeriesAmMakesTheMemberByMemberCommits(t *testing.T) {
