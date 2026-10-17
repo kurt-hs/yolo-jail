@@ -38,6 +38,8 @@ func runMacosUserSlot(t *testing.T, mutate func(*Options)) macosUserSlotRun {
 	var r macosUserSlotRun
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, t.TempDir(), "macos-user", &stdout, &stderr, nil)
+	// A Mac set up for this backend, so the arm's preflight admits the slot (macosUserPreflight).
+	o.MacosUserLaunchProbes = setUpMacProbes
 	store := t.TempDir()
 	o.CapturesDir = func() string { return store }
 	o.MacosUserRun = func(_ *jsonx.OrderedMap, _ string, _, _ []string, _, _ string, _ macosuser.HomeOverlay,
@@ -102,6 +104,31 @@ func TestAMacosUserLaunchBuildsAPatchedForkForDarwinAndStagesIt(t *testing.T) {
 	}
 	if strings.Contains(r.out, "is not delivered on macos-user") || strings.Contains(r.out, "has no macOS build") {
 		t.Errorf("a launch that delivered the fork says it does not:\n%s", r.out)
+	}
+}
+
+// A LAUNCH THE BACKEND IS ABOUT TO REFUSE BUILDS NOTHING (macosUserPreflight), as it captures
+// nothing: on a Mac where `yolo macos-setup` never ran, the slot is skipped and no missing-build
+// refusal is printed, so the backend's own refusal, which names the setup, is the launch's.
+// Red with the slot called whatever the preflight says.
+func TestAMacosUserLaunchTheBackendWillRefuseBuildsNoFork(t *testing.T) {
+	patchedLaunchHome(t)
+	r := runMacosUserSlot(t, func(o *Options) {
+		o.MacosUserLaunchProbes = func() macosuser.LaunchProbes {
+			p := setUpMacProbes()
+			p.SandboxUserExists = func() bool { return false }
+			return p
+		}
+		o.BuildSlot = func(req BuildSlotRequest) (map[string]entrypoint.ForkDelivery, map[string]TreeDelivery) {
+			t.Errorf("a launch the backend will refuse ran the fork-build slot: %+v", req)
+			return map[string]entrypoint.ForkDelivery{"tool": {Reason: "its build failed"}}, nil
+		}
+	})
+	if !r.ran {
+		t.Fatalf("the launch stopped before the backend, whose refusal it should have been (rc %d):\n%s", r.rc, r.out)
+	}
+	if strings.Contains(r.out, "has no build on this machine") {
+		t.Errorf("a launch the backend will refuse printed a missing-build refusal:\n%s", r.out)
 	}
 }
 
