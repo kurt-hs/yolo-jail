@@ -32,15 +32,14 @@ func TestMacosUserANormalExitLeavesNoStagedPackTree(t *testing.T) {
 			t.Errorf("a normal exit said %q:\n%s", said, r.combined())
 		}
 	}
-	for _, name := range dirNames(t, packs) {
-		if !slices.Contains(before, name) {
-			t.Errorf("the launch left its staged pack tree %s behind", filepath.Join(packs, name))
-		}
+	// Removed by the launch, or by the reaper it handed the tree to (JD-13).
+	if left := awaitNewTreesGone(packs, before, 30*time.Second); len(left) > 0 {
+		t.Errorf("the launch left its staged pack tree behind: %v", left)
 	}
 }
 
 // TestMacosUserATrueSessionKeepsNoPackTree is `yolo -- true`, the shortest session there is: it
-// says nothing about its guest pack tree and leaves none behind.
+// keeps no guest pack tree, and leaves none behind.
 func TestMacosUserATrueSessionKeepsNoPackTree(t *testing.T) {
 	requireMacosUser(t)
 	packHome(t, `{"packs": ["claude"]}`)
@@ -76,7 +75,8 @@ func TestMacosUserASessionsLingeringProcessDoesNotKeepItsPackTree(t *testing.T) 
 	before := dirNames(t, packs)
 
 	// Orphaned onto launchd, outliving the session by several seconds, holding no pipe of it.
-	r := runMacosUser(t, ws, `( /bin/sleep 8 </dev/null >/dev/null 2>&1 & ); true`)
+	// HUP ignored, so a session run on a terminal does not end it with the session's group.
+	r := runMacosUser(t, ws, `( trap '' HUP; /bin/sleep 8 </dev/null >/dev/null 2>&1 & ); true`)
 	if r.rc != 0 {
 		t.Fatalf("the session failed (rc %d):\n%s", r.rc, r.combined())
 	}

@@ -202,6 +202,13 @@ func TestTheReaperRemovesNothingItWasNotHanded(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer other.Close()
+	// A fresh descriptor of the real claim, while the launch's own still holds it: a launch that
+	// is running, and handed nothing.
+	unhanded, err := os.OpenFile(filepath.Join(claims, filepath.Base(tree)+sessionRecordSuffix), os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unhanded.Close()
 	for _, tc := range []struct {
 		name  string
 		root  string
@@ -212,6 +219,7 @@ func TestTheReaperRemovesNothingItWasNotHanded(t *testing.T) {
 		{"a path with dot-dot", filepath.Dir(tree) + "/../" + packsLeaf + "/" + filepath.Base(tree), claim},
 		{"a descriptor that is not the claim", tree, other},
 		{"no descriptor", tree, nil},
+		{"the claim, not handed", tree, unhanded},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var log bytes.Buffer
@@ -243,5 +251,20 @@ func TestParsePackTreeReapArgsRoundTripsTheArgv(t *testing.T) {
 		if _, _, err := parsePackTreeReapArgs(bad); err == nil {
 			t.Errorf("parse(%q) accepted", bad)
 		}
+	}
+}
+
+// A process names itself, so a name that is markup or carries a control byte reaches no output
+// as anything but text.
+func TestDescribeHoldersNeutralizesAGuestChosenName(t *testing.T) {
+	got := describeHolders([]GuestProc{{PID: 5, Name: "[red]x\x1b[2J"}})
+	if strings.ContainsRune(got, 0x1b) {
+		t.Errorf("describeHolders = %q", got)
+	}
+	var out bytes.Buffer
+	p := printer{w: &out}
+	p.printf("%s", got)
+	if !strings.Contains(out.String(), "red]x") {
+		t.Errorf("the name was rendered as markup: %q", out.String())
 	}
 }

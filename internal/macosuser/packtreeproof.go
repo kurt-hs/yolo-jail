@@ -54,6 +54,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
@@ -324,10 +325,10 @@ func describeHolders(holders []GuestProc) string {
 	sorted := append([]GuestProc(nil), holders...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].PID < sorted[j].PID })
 	label := func(h GuestProc) string {
-		if h.Name == "" {
+		if printableName(h.Name) == "" {
 			return strconv.Itoa(h.PID)
 		}
-		return strconv.Itoa(h.PID) + " (" + h.Name + ")"
+		return strconv.Itoa(h.PID) + " (" + richtext.Escape(printableName(h.Name)) + ")"
 	}
 	if len(sorted) == 1 {
 		return "sandbox process " + label(sorted[0])
@@ -345,6 +346,17 @@ func describeHolders(holders []GuestProc) string {
 		s += fmt.Sprintf(" and %d more", rest)
 	}
 	return s
+}
+
+// printableName is a process's command name with every control byte dropped: the sandbox account
+// chooses the name it execs under, and it reaches the launch's output, prune's and a log.
+func printableName(name string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, name)
 }
 
 // removeSealedTree unseals the tree at root (its 0555 directories block their owner too) and

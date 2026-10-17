@@ -520,4 +520,8 @@ func TestRealDepsWireTheGuestProcessReaderAndTheClaims(t *testing.T) {
 	if d.PackTreeClaimDir == nil || d.PackTreeClaimDir() != PackTreeClaimsDir() {
 		t.Error("RealDeps does not wire PackTreeClaimsDir")
 	}
+	// Without the reaper, every session whose guest outlives the launch's wait keeps its tree.
+	if d.StartPackTreeReaper == nil || reflect.ValueOf(d.StartPackTreeReaper).Pointer() != reflect.ValueOf(startPackTreeReaperReal).Pointer() {
+		t.Error("RealDeps does not wire startPackTreeReaperReal")
+	}
 }
