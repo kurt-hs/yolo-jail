@@ -38,6 +38,9 @@ import (
 // of it, and a HOME whose user config selects the fork and its base.
 type patchedFixture struct {
 	repo, forkDir, manifest, base, packs, home string
+	// tracked is set once f.txt is a tracked file of the repository, so commitMsg's `commit -a`
+	// stages it with no `git add` of its own (one git start fewer per commit).
+	tracked bool
 	// stopWorkers stops the stubbed shared preparation workers (idempotent).
 	stopWorkers func()
 }
@@ -77,12 +80,83 @@ func (f *patchedFixture) commit(t *testing.T, tag string, edits map[int]string) 
 func (f *patchedFixture) commitMsg(t *testing.T, msg, tag string, edits map[int]string) string {
 	t.Helper()
 	writeFile(t, filepath.Join(f.repo, "f.txt"), lines30(edits))
-	upstreamGit(t, f.repo, "add", "-A")
-	upstreamGit(t, f.repo, "commit", "-qm", msg)
+	if f.tracked {
+		// f.txt is the one file a commit changes, and it is tracked: `-a` stages it as `add -A` did.
+		upstreamGit(t, f.repo, "commit", "-qam", msg)
+	} else {
+		upstreamGit(t, f.repo, "add", "-A")
+		upstreamGit(t, f.repo, "commit", "-qm", msg)
+		f.tracked = true
+	}
 	if tag != "" {
 		upstreamGit(t, f.repo, "tag", tag)
 	}
-	return upstreamGit(t, f.repo, "rev-parse", "HEAD")
+	return headCommit(t, f.repo)
+}
+
+// headCommit is the commit a work tree's HEAD names, read from the branch's loose ref file the
+// commit just wrote when there is one, without a git start (about 25 ms on a macOS runner), and
+// from `git rev-parse HEAD` otherwise.
+func headCommit(t *testing.T, repo string) string {
+	t.Helper()
+	if head, err := os.ReadFile(filepath.Join(repo, ".git", "HEAD")); err == nil {
+		if ref, ok := strings.CutPrefix(strings.TrimSpace(string(head)), "ref: "); ok && strings.HasPrefix(ref, "refs/heads/") {
+			if sha, err := os.ReadFile(filepath.Join(repo, ".git", filepath.FromSlash(ref))); err == nil {
+				if s := strings.TrimSpace(string(sha)); len(s) == 40 {
+					return s
+				}
+			}
+		}
+	}
+	return upstreamGit(t, repo, "rev-parse", "HEAD")
+}
+
+// patchedTemplate is the upstream repository and series every patchedFixture starts from, made by
+// git ONCE per test process and copied for each fixture: the same 15 git runs in each of the
+// package's hundreds of patched-fork tests were a large share of its git starts, which cost about
+// 25 ms each on a macOS runner. Each fixture's copy is its own, so a test that commits to or moves
+// its upstream touches no other's.
+var patchedTemplate struct {
+	once               sync.Once
+	dir, base, problem string
+}
+
+// patchedTemplateRoot is the directory holding patchedTemplate, removed by TestMain.
+var patchedTemplateRoot string
+
+// removePatchedTemplate deletes the process's patchedTemplate, if one was made.
+func removePatchedTemplate() {
+	if patchedTemplateRoot != "" {
+		_ = os.RemoveAll(patchedTemplateRoot)
+	}
+}
+
+// makePatchedTemplate makes patchedTemplate: the upstream at v1.0.0 in dir/repo and a two-member
+// series over it (lines 10 and 12) in dir/patches.
+func makePatchedTemplate(t *testing.T) {
+	// What every later fixture reports if this one stops partway (upstreamGit fails the test that
+	// made it).
+	patchedTemplate.problem = "git failed making it, in " + t.Name()
+	root, err := os.MkdirTemp("", "yolo-patched-template-")
+	if err != nil {
+		patchedTemplate.problem = err.Error()
+		return
+	}
+	patchedTemplateRoot = root
+	f := &patchedFixture{repo: filepath.Join(root, "repo")}
+	if err := os.MkdirAll(f.repo, 0o755); err != nil {
+		patchedTemplate.problem = err.Error()
+		return
+	}
+	upstreamGit(t, f.repo, "init", "-q", "-b", "main")
+	base := f.commit(t, "v1.0.0", nil)
+	upstreamGit(t, f.repo, "checkout", "-q", "-b", "fork")
+	f.commitMsg(t, "ten", "", map[int]string{10: "ten"})
+	f.commitMsg(t, "twelve", "", map[int]string{10: "ten", 12: "twelve"})
+	upstreamGit(t, f.repo, "format-patch", "-q", "--base="+base, "-o", filepath.Join(root, "patches"), "main..fork")
+	upstreamGit(t, f.repo, "checkout", "-q", "main")
+	upstreamGit(t, f.repo, "branch", "-q", "-D", "fork")
+	patchedTemplate.dir, patchedTemplate.base = root, base
 }
 
 // newPatchedFixture makes the upstream at v1.0.0, a two-member series over it (lines 10 and 12),
@@ -92,17 +166,19 @@ func newPatchedFixture(t *testing.T, follow string) *patchedFixture {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
-	f := &patchedFixture{repo: t.TempDir()}
-	upstreamGit(t, f.repo, "init", "-q", "-b", "main")
-	f.base = f.commit(t, "v1.0.0", nil)
-	upstreamGit(t, f.repo, "checkout", "-q", "-b", "fork")
-	f.commitMsg(t, "ten", "", map[int]string{10: "ten"})
-	f.commitMsg(t, "twelve", "", map[int]string{10: "ten", 12: "twelve"})
+	patchedTemplate.once.Do(func() { makePatchedTemplate(t) })
+	if patchedTemplate.dir == "" {
+		t.Fatalf("the patched-fork template upstream could not be made: %s", patchedTemplate.problem)
+	}
+	f := &patchedFixture{repo: t.TempDir(), base: patchedTemplate.base, tracked: true}
 	packs := t.TempDir()
 	f.forkDir = filepath.Join(packs, "forkpack")
-	upstreamGit(t, f.repo, "format-patch", "-q", "--base="+f.base, "-o", filepath.Join(f.forkDir, "patches"), "main..fork")
-	upstreamGit(t, f.repo, "checkout", "-q", "main")
-	upstreamGit(t, f.repo, "branch", "-q", "-D", "fork")
+	if err := os.CopyFS(f.repo, os.DirFS(filepath.Join(patchedTemplate.dir, "repo"))); err != nil {
+		t.Fatalf("copying the template upstream: %v", err)
+	}
+	if err := os.CopyFS(filepath.Join(f.forkDir, "patches"), os.DirFS(filepath.Join(patchedTemplate.dir, "patches"))); err != nil {
+		t.Fatalf("copying the template series: %v", err)
+	}
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
