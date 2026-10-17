@@ -1265,6 +1265,11 @@ type ForkBuildOptions struct {
 	RepoRoot string
 	// Toolchain is what the host knows of the build's toolchain, the record's head: "yolo <version>".
 	Toolchain string
+	// TreeDir is, for a PATCHED EXTENSION's build (docs/reference/pi-extensions.md §7.1), the
+	// home-relative directory its fixed final step copies the checkout into
+	// (packdecl.TreeReservedDir); "" for a fork's build. With it set, Build may be "" (a tree with no
+	// build line is still copied and admitted).
+	TreeDir string
 }
 
 // ForkBuildPlan is a CapturePlan for a fork's build, with the checkout and the record beside it.
