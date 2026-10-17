@@ -125,9 +125,10 @@ func TestStatusOfNothingRunningSaysWhy(t *testing.T) {
 	}
 }
 
-// A HOST-WIDE COPY AN OLDER YOLO LEFT is reported as that, informationally (the owner's coexistence
-// decision, 2026-10-16): it keeps serving its jails, needs nothing now, and the optional stop comes
-// once those jails have ended. An accepting one is no failure, so status exits 0.
+// A HOST-WIDE COPY AN OLDER YOLO LEFT is reported as that, informationally, and only with what
+// yolo knows (HD-D31): jails this yolo launches do not use it, only a jail an older yolo launched
+// can, and the stop once none is running is the command to copy. It does not claim the copy still
+// serves anything, which status cannot see. An accepting one is no failure, so status exits 0.
 func TestStatusReportsAnOlderYolosHostWideCopy(t *testing.T) {
 	st := &verbState{running: []Instance{{Name: fixtureDaemon, HostWide: true,
 		Socket: "/tmp/yolo-" + fixtureDaemon + ".sock", PIDs: []int{3}, Accepting: true}}}
@@ -136,12 +137,14 @@ func TestStatusReportsAnOlderYolosHostWideCopy(t *testing.T) {
 		t.Errorf("status of an accepting older copy exited %d, want 0", rc)
 	}
 	for _, want := range []string{"host-wide, left by an older yolo: pid 3",
-		"still serves the jails that yolo launched", "left running", "nothing needs doing",
-		"Once those jails have ended, `yolo host-daemon stop --host-wide " + fixtureDaemon + "` ends it",
-		"a reboot ends it too"} {
+		"Jails this yolo launches do not use it", "only a jail an older yolo launched can",
+		"\n      yolo host-daemon stop --host-wide " + fixtureDaemon + "\n"} {
 		if !strings.Contains(buf.String(), want) {
 			t.Errorf("status lacks %q:\n%s", want, buf.String())
 		}
+	}
+	if strings.Contains(buf.String(), "still serv") || strings.Contains(buf.String(), "nothing needs doing") {
+		t.Errorf("status claims the older copy still serves jails, which it cannot know:\n%s", buf.String())
 	}
 	if strings.Contains(buf.String(), "refuses") {
 		t.Errorf("status says a launch refuses beside an older yolo's copy, which none does:\n%s", buf.String())

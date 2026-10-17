@@ -159,12 +159,14 @@ func PrintStatus(deps CLIDeps, name string) int {
 			mark = "[red]not accepting[/red]"
 		}
 		if i.HostWide {
+			// ONLY WHAT IS KNOWN (HD-D31): the machine-wide model is retired, so no jail this yolo
+			// launched uses the copy; whether a jail an older yolo launched still does is not
+			// something status can see, so it is said as the condition for the stop.
 			out.printf("  host-wide, left by an older yolo: pid %s, socket %s, %s",
 				pidList(i.PIDs), i.Socket, mark)
-			out.printf("    [dim]It still serves the jails that yolo launched and is left running "+
-				"beside this yolo's, sharing their credential lock; nothing needs doing. Once those "+
-				"jails have ended, `%s` ends it and leaves every jail's own copy running (a reboot "+
-				"ends it too).[/dim]", StopHostWideCommand(i.Name))
+			out.print("    [dim]Jails this yolo launches do not use it; only a jail an older yolo " +
+				"launched can. Once no such jail is running, this ends it:[/dim]")
+			out.print("      " + StopHostWideCommand(i.Name))
 			continue
 		}
 		out.printf("  jail %s: pid %s, socket %s, %s", i.Jail, pidList(i.PIDs), i.Socket, mark)

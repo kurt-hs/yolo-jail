@@ -238,13 +238,13 @@ func (o *Options) noteOlderHostWideCopies(started []loopholeDaemon) {
 }
 
 // olderHostWideCopyLine is a fresh launch's one line beside an older yolo's machine-wide copy of
-// the loophole called name: that it still serves the jails that yolo launched, that this launch
-// leaves it running and shares its credential lock, and the optional cleanup once those jails have
-// ended, which a reboot also does.
+// the loophole called name, saying only what the launch knows (HD-D31): the copy is running, no
+// jail this yolo launches uses it, only a jail an older yolo launched can, and the stop once none
+// is. Whether such a jail is still running is not something the launch can see.
 func olderHostWideCopyLine(name string) string {
-	return "an older yolo's machine-wide daemon is still serving the jails that yolo launched; it is " +
-		"left running and takes the same credential lock as this jail's own copy. Once those jails " +
-		"have ended, `" + broker.StopHostWideCommand(name) + "` ends it (a reboot does too)"
+	return "an older yolo's machine-wide daemon is still running; jails this yolo launches do not " +
+		"use it, and only a jail an older yolo launched can. Once none is " +
+		"running, `" + broker.StopHostWideCommand(name) + "` ends it"
 }
 
 // text is the refusal after its headline: the startup refusal's own words.

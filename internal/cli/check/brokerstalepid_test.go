@@ -117,13 +117,15 @@ func TestCheckReportsAnOlderYolosHostWideBrokerAsInformation(t *testing.T) {
 	if r.warned != 0 || r.failed != 0 {
 		t.Errorf("a host-wide broker an older yolo left is graded a warning or failure:\n%s", out)
 	}
-	for _, want := range []string{"[PASS]", "a host-wide daemon an older yolo left is still serving the jails it launched",
-		"left running beside this yolo's", "Nothing needs doing",
-		"Once those jails have ended, `yolo host-daemon stop --host-wide " + brokerLoopholeName + "` ends it",
-		"a reboot ends it too"} {
+	for _, want := range []string{"[PASS]", "a host-wide daemon an older yolo left is running",
+		"jails this yolo launches do not use it", "Only a jail an older yolo launched can",
+		"Once none is running, `yolo host-daemon stop --host-wide " + brokerLoopholeName + "` ends it"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the row lacks %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "still serving") {
+		t.Errorf("the row claims the older copy still serves jails, which check cannot know:\n%s", out)
 	}
 	if strings.Contains(out, "refuses") {
 		t.Errorf("the row says a launch refuses beside the older copy, which none does:\n%s", out)
