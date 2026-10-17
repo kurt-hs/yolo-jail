@@ -206,3 +206,51 @@ func TestMacosUserDeliversAFetchedPacksInTreeLink(t *testing.T) {
 		t.Errorf("~/.acme/tools/alias.txt in the overlay = %q (%v), want the bytes of the file it names", alias, readErr)
 	}
 }
+
+// NO OVERLAY WRITE GOES THROUGH A LINK AN EARLIER DESTINATION LAID: a patched extension's tree
+// keeps its links, absolute ones included, so its `x -> <host file>` and `d -> <host dir>` sit in
+// the overlay when a later `files` contribution at the same destination writes a regular file at
+// `x` and one under `d`. The host user doing that copy must not truncate, write or chmod the host
+// file, nor create a file in the host directory. Red with the overlay writing by plain path.
+func TestMacosUserOverlayNeverWritesThroughALinkItLaid(t *testing.T) {
+	staging := t.TempDir()
+	hostDir := t.TempDir()
+	hostFile := filepath.Join(hostDir, "zshrc")
+	if err := os.WriteFile(hostFile, []byte("host rc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tree := filepath.Join(staging, "tree")
+	plain := filepath.Join(staging, "plain")
+	for _, dir := range []string{tree, filepath.Join(plain, "d")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, target := range map[string]string{"x": hostFile, "d": hostDir} {
+		if err := os.Symlink(target, filepath.Join(tree, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for rel, body := range map[string]string{"x": "PACK BYTES", filepath.Join("d", "planted"): "PACK BYTES"} {
+		if err := os.WriteFile(filepath.Join(plain, rel), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, _, err := buildMacosHomeOverlayFor(staging, nil, nil, []packFilesTarget{
+		{Pack: "acme", Src: tree, Dest: ".acme", Tree: "ext"},
+		{Pack: "acme", Src: plain, Dest: ".acme"},
+	}, nil)
+	if err == nil {
+		t.Errorf("an overlay writing a file through a link to a host path was built without a refusal")
+	}
+	if got, _ := os.ReadFile(hostFile); string(got) != "host rc" {
+		t.Errorf("the host file a laid link names now holds %q", got)
+	}
+	if fi, err := os.Stat(hostFile); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("the host file's mode changed: %v %v", fi.Mode(), err)
+	}
+	if _, err := os.Lstat(filepath.Join(hostDir, "planted")); err == nil {
+		t.Errorf("a pack file was created in the host directory a laid link names")
+	}
+}

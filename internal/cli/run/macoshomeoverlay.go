@@ -124,6 +124,17 @@ func buildMacosHomeOverlayTree(staging string, skills []jailcontent.SkillTarget,
 	if err := os.RemoveAll(overlay); err != nil {
 		return "", nil, fmt.Errorf("clearing the macos-user home overlay: %w", err)
 	}
+	// EVERY WRITE BELOW IS BENEATH THE OVERLAY (os.Root): a link one destination lays — a patched
+	// extension's tree keeps its links, absolute ones included — must not turn a later
+	// destination's write into one through it, onto a host file (copyTreeLinksBeneath, CD-1).
+	if err := os.MkdirAll(overlay, 0o755); err != nil {
+		return "", nil, err
+	}
+	root, err := os.OpenRoot(overlay)
+	if err != nil {
+		return "", nil, err
+	}
+	defer root.Close()
 
 	// Every destination laid out below, in the order it was written — the input to the
 	// list the sandbox install walks (entrypoint.HomeOverlayManifestName). Collected in the
@@ -135,11 +146,7 @@ func buildMacosHomeOverlayTree(staging string, skills []jailcontent.SkillTarget,
 		if _, err := os.Stat(src); err != nil {
 			continue // a pack that declared a skills dest but staged nothing
 		}
-		dst := filepath.Join(overlay, filepath.FromSlash(t.Dest))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return "", nil, err
-		}
-		if err := copyTree(src, dst); err != nil {
+		if err := copyTreeLinksBeneath(src, root, filepath.FromSlash(t.Dest), stagedFileMode); err != nil {
 			return "", nil, fmt.Errorf("staging skills for %s: %w", t.Dest, err)
 		}
 		written = append(written, t.Dest)
@@ -151,11 +158,11 @@ func buildMacosHomeOverlayTree(staging string, skills []jailcontent.SkillTarget,
 		if err != nil {
 			continue // no briefing was written for this destination
 		}
-		dst := filepath.Join(overlay, filepath.FromSlash(d.Into))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		dst := filepath.FromSlash(d.Into)
+		if err := root.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return "", nil, err
 		}
-		if err := os.WriteFile(dst, body, 0o644); err != nil {
+		if err := root.WriteFile(dst, body, 0o644); err != nil {
 			return "", nil, err
 		}
 		written = append(written, d.Into)
@@ -171,14 +178,13 @@ func buildMacosHomeOverlayTree(staging string, skills []jailcontent.SkillTarget,
 			}
 			continue
 		}
-		dst := filepath.Join(overlay, filepath.FromSlash(t.Dest))
-		cp := copyTree
+		mode := stagedFileMode
 		if t.Tree != "" {
 			// A PATCHED EXTENSION'S TREE keeps each file's own permission bits (pi-extensions.md
-			// §7.1, PPX-D45). Its links stay links, as in every copy here (copyTreeWith, CD-1).
-			cp = copyTreeKeepingLinks
+			// §7.1, PPX-D45). Its links stay links, as in every copy here (copyTreeLinksBeneath, CD-1).
+			mode = ownFileMode
 		}
-		if err := cp(t.Src, dst); err != nil {
+		if err := copyTreeLinksBeneath(t.Src, root, filepath.FromSlash(t.Dest), mode); err != nil {
 			return "", nil, fmt.Errorf("staging pack %s's files for %s: %w", t.Pack, t.Dest, err)
 		}
 		written = append(written, t.Dest)
@@ -187,11 +193,11 @@ func buildMacosHomeOverlayTree(staging string, skills []jailcontent.SkillTarget,
 	// CORE'S OWN FILES, each a destination of its own: written by this loop, so listed exactly
 	// when its content is in the tree, as everything above.
 	for _, f := range core {
-		dst := filepath.Join(overlay, filepath.FromSlash(f.Rel))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		dst := filepath.FromSlash(f.Rel)
+		if err := root.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return "", nil, err
 		}
-		if err := os.WriteFile(dst, f.Body, 0o644); err != nil {
+		if err := root.WriteFile(dst, f.Body, 0o644); err != nil {
 			return "", nil, fmt.Errorf("staging %s: %w", f.Rel, err)
 		}
 		written = append(written, f.Rel)
