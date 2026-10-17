@@ -118,7 +118,7 @@ func TestTheSlotBuildsAtMostFourAtOnceAndOneOnAppleContainer(t *testing.T) {
 		rt         string
 		cpus, want int
 	}{{"podman", 1, 1}, {"podman", 2, 1}, {"podman", 3, 1}, {"podman", 4, 2}, {"podman", 7, 3}, {"podman", 8, 4},
-		{"podman", 32, 4}, {"container", 32, 1}} {
+		{"podman", 32, 4}, {"container", 32, 1}, {"macos-user", 32, 1}} {
 		if got := SlotBuildJailsOn(c.rt, c.cpus); got != c.want {
 			t.Errorf("%s on %d CPUs builds %d at once, want %d", c.rt, c.cpus, got, c.want)
 		}
