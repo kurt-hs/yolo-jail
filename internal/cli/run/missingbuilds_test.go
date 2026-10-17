@@ -396,3 +396,28 @@ func TestAPooledBuildsFailureReachesTheRefusalOnce(t *testing.T) {
 		t.Errorf("the refusal does not say the reason as it is, its build named once:\n%s", printed)
 	}
 }
+
+// A FAILED BUILD'S REFUSAL NAMES ITS LOG even when the build's error says " — " itself: the reason
+// carries the error and the log's path in parentheses, and the refusal's headline is cut at the dash
+// after them (missingHeadline, entrypoint.CutReason), never at one inside them. Red with
+// missingHeadline cutting at the first dash.
+func TestAFailedBuildsRefusalKeepsItsLogPastADashInItsError(t *testing.T) {
+	treeLaunchHome(t, true)
+	const log = "/ws/.yolo/build-treepack--tree-ext.log"
+	argv, printed := fakePodmanLaunch(t, func(o *Options) {
+		o.BuildTrees = func(TreeBuildRequest) map[string]TreeDelivery {
+			return map[string]TreeDelivery{treeKey: {Reason: "extension " + treeKey + "'s build of v1.0.0 failed on the " +
+				"host (extension " + treeKey + "'s build left no tree at ~/.local/share/yolo-tree/tree-ext — nothing " +
+				"was stored; its log: " + log + ") — the next fresh launch tries again", Unsaid: true}}
+		}
+	})
+	if argv != nil {
+		t.Fatalf("a launch with no build of its patched extension started its jail:\n%s", printed)
+	}
+	if !strings.Contains(printed, "nothing was stored; its log: "+log+")\n") {
+		t.Errorf("the refusal's headline drops the build's log:\n%s", printed)
+	}
+	if strings.Contains(printed, "the next fresh launch tries again") {
+		t.Errorf("the refusal's headline keeps the act that tries again, which Retry names:\n%s", printed)
+	}
+}

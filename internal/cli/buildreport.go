@@ -60,7 +60,14 @@ import (
 // (FP-D9, FP-D13), for a build jail launched on rt ("" for the runtime its launch resolves). The
 // network is what that launch applies: the runtime's bridge, or — launched from inside a jail, where a
 // nested podman is forced onto its launcher's namespace — the jail's own network.
+//
+// A macos-user build has no network namespace at all: it runs as the sandbox account on the Mac
+// itself, so its network is the Mac's own, whatever jail, if any, launched it.
 func sealDisclosure(rt string) string {
+	if slices.Contains(paths.NativeRuntimes, rt) {
+		return "sealed: no credential, no host file, no env_sources, and this Mac's own network, " +
+			"so what this Mac reaches, the build reaches"
+	}
 	if sealSharesNetwork(rt) {
 		return "sealed: no credential, no host file, no env_sources, and the network of the jail it is launched " +
 			"from, never a bridge of its own (a jail nested in a jail shares its network), so what that jail " +

@@ -148,7 +148,7 @@ func treeGateFor(d map[string]TreeDelivery, pack string) string {
 			continue
 		}
 		if first := firstSaidWith(d, said, t.Cause); first != "" {
-			head, _, _ := strings.Cut(why, " — ")
+			head, _, _ := CutReason(why)
 			lines = append(lines, line+": "+strings.TrimSuffix(head, ".")+", as extension "+first+"'s did")
 			continue
 		}
@@ -163,7 +163,7 @@ func treeGateFor(d map[string]TreeDelivery, pack string) string {
 	}
 	if shared != nil {
 		// The reason's own next step ("— the next fresh launch tries again") is the gate's last line.
-		why, _, _ := strings.Cut(treeGateWhy(d[keys[0]]), " — ")
+		why, _, _ := CutReason(treeGateWhy(d[keys[0]]))
 		if len(keys) > 1 {
 			why = strings.Replace(why, "its build jail", "their build jail", 1)
 		}
@@ -199,7 +199,7 @@ func causeSaid(why string, c *BuildCause, indent string) []string {
 	if !c.says() {
 		return []string{why}
 	}
-	head, _, _ := strings.Cut(why, " — ")
+	head, _, _ := CutReason(why)
 	out := []string{strings.TrimSuffix(head, ".") + colonAfter(len(c.Lines) > 0)}
 	for _, l := range c.Lines {
 		out = append(out, indent+"  "+l)

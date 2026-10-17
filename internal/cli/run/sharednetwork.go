@@ -32,7 +32,7 @@ func (o *Options) launchProfile(cfg *jsonx.OrderedMap, rt string) render.Profile
 //
 // NOR A SEALED BUILD JAIL'S (Options.Sealed, pi-extensions.md PPX-D48): it is no user launch and
 // runs no agent, the fact is about what an agent reaches, and the build's own disclosure — its
-// start line's "sealed: …, and the network of the jail it is launched from" — already says what
+// start line's "sealed: …" network clause (internal/cli's sealDisclosure) — already says what
 // the build reaches. Printed there, it was one more line in every build's output.
 func (o *Options) noteSharedNetwork(cfg *jsonx.OrderedMap, rt string) {
 	if o.Sealed {
