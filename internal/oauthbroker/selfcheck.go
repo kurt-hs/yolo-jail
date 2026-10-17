@@ -132,12 +132,20 @@ func gradeSharedCreds(credsPath string, now time.Time) []selfCheckLine {
 	}
 	if strings.TrimSpace(string(raw)) == "" {
 		// The documented pre-login placeholder: `yolo run` creates the file empty
-		// so the bind mount has something to bind. Not a finding of any grade.
-		return nil
+		// so the bind mount has something to bind. A passing row, never a warning: it is
+		// every machine's state until a first /login, and a Bedrock or API-key Claude never
+		// fills it. But it is said, because a jail sharing this login starts signed out.
+		return []selfCheckLine{{grade: "OK",
+			title: "shared creds " + credsPath + " are empty: no Claude login shared yet " +
+				"(/login inside Claude in a podman or Apple Container jail writes one)"}}
 	}
 	oauth, derr := oauthFromCredsBytes(raw)
 	if derr != nil {
-		return []selfCheckLine{{grade: "FAIL", title: fmt.Sprintf("%s: %s", credsPath, derr)}}
+		return []selfCheckLine{{grade: "FAIL",
+			title: fmt.Sprintf("shared creds %s do not parse (%d bytes): %s", credsPath, len(raw), derr),
+			detail: "Claude in a jail that shares this login starts signed out.\n" +
+				"Run /login inside Claude in a podman or Apple Container jail; it writes a new " +
+				"login to this file."}}
 	}
 	v, ok := oauth.Get("expiresAt")
 	if !ok {

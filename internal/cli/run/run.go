@@ -2292,6 +2292,8 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// so the jail daemons the disclosure names are the ones the jail's supervisor will run.
 	if !o.Sealed {
 		o.discloseLoopholes(rt, cfg, loadedPacks, jailDaemons)
+		// The machine's shared Claude login, when its file does not parse (sharedclaudelogin.go).
+		o.noteBrokenSharedClaudeLogin(rt, cfg, loadedPacks)
 	}
 	services := o.plannedLoopholeNames(rt, cfg)
 	var forwards []PortForward
