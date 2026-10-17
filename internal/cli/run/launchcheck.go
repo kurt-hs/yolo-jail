@@ -58,13 +58,14 @@ import (
 // named the restart of a host-wide daemon too old to answer, has no such daemon left to meet.
 //
 // THE HOST-WIDE DAEMON THAT CAN STILL EXIST is the one an older yolo started and left running
-// through the upgrade, serving the jails that yolo launched. By the owner's coexistence decision
-// (2026-10-16, which supersedes HD-D21's refusal and restores HD-D14), it keeps serving them until
-// they end or the host reboots: a launch never starts, fronts, restarts or stops it, and a fresh
-// launch beside it PROCEEDS. It works on the same credential file as this launch's copy and takes
-// the same lock, which serializes the two. A fresh launch that started a copy of a loophole such a
-// copy still serves prints one dim line saying so (noteOlderHostWideCopies), naming the optional
-// cleanup once those jails have ended, broker.StopHostWideCommand. It is keyed on the fact, a live
+// through the upgrade; only a jail that yolo launched can use it, and whether one still runs is not
+// visible here. By the owner's coexistence decision (2026-10-16, which supersedes HD-D21's refusal
+// and restores HD-D14), it is left alone until those jails end or the host reboots: a launch never
+// starts, fronts, restarts or stops it, and a fresh launch beside it PROCEEDS. It works on the same
+// credential file as this launch's copy and takes the same lock, which serializes the two. A fresh
+// launch that started a copy of a loophole such a copy is alive for prints one dim line saying what
+// is known (noteOlderHostWideCopies, HD-D31), naming the optional cleanup once no older jail is
+// running, broker.StopHostWideCommand. It is keyed on the fact, a live
 // copy of this home's at the name-keyed rendezvous (broker.LegacyDeps), and never on the
 // loophole's name.
 //
@@ -72,8 +73,8 @@ import (
 //     jail's front, which leads to the older copy; when that copy does not answer the check, the
 //     yellow line names relaunching the jail with this yolo, then the same optional stop
 //     (olderHostWideAttachLine).
-//   - NO LAUNCH STOPS THE OLDER COPY ITSELF: it serves jails an older yolo launched, and only the
-//     user knows when those have ended.
+//   - NO LAUNCH STOPS THE OLDER COPY ITSELF: a jail an older yolo launched may still use it, and
+//     only the user knows when those have ended.
 //
 // # What it costs
 //
@@ -221,7 +222,7 @@ func (r *hostStartupRefusal) Error() string {
 // noteOlderHostWideCopies prints one dim line for each loophole in started, once and in start
 // order, that still has a machine-wide copy an older yolo left running for this home
 // (olderHostWideCopyLine). It refuses nothing and stops nothing: the owner's coexistence decision
-// (2026-10-16) leaves that copy serving the jails its yolo launched. Every fresh launch that starts
+// (2026-10-16) leaves that copy to the jails its yolo launched, if any still run. Every fresh launch that starts
 // host services owes it: the keeper and the macos-user arm through runLaunchChecks, and `yolo
 // host`'s HostDoorways.Start, which asks no launch check. A launch has no quiet mode (OQ-RO3), so
 // no flag hides it.

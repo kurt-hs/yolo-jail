@@ -101,6 +101,10 @@ func TestAContainerLaunchSaysTheSharedClaudeLoginDoesNotParse(t *testing.T) {
 
 func TestAContainerLaunchLeavesTheEmptyPlaceholderUnsaid(t *testing.T) {
 	out := claudeContainerLaunch(t, nil)
+	// Reached runContainer's disclosure, beside which the notice is printed: not a vacuous pass.
+	if !strings.Contains(out, "Pack environment this launch:") {
+		t.Fatalf("the launch never reached the point the notice is printed at:\n%s", out)
+	}
 	if strings.Contains(out, brokenLoginHeadline) {
 		t.Errorf("the empty placeholder, every machine's state before a first /login, was reported "+
 			"as a broken login:\n%s", out)
