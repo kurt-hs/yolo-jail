@@ -758,7 +758,7 @@ func TestTheWiredTriggerRunsAPatchedForksAdvance(t *testing.T) {
 func TestTheChildBuildJailRunsTheSealedBuildJail(t *testing.T) {
 	forkBuildHome(t)
 	b := forkBuild{Fork: packload.Fork{Pack: "forkpack", Base: "basepack", Bin: "probetool", Build: "make install && echo 'x y'"}}
-	argv := forkBuildChildArgv("/staging/ws", b, false)
+	argv := forkBuildChildArgv("/staging/ws", b, false, "")
 	if argv[0] != "internal" || argv[1] != forkBuildJailVerb || argv[len(argv)-1] != b.Fork.Build {
 		t.Fatalf("argv = %q", argv)
 	}

@@ -431,8 +431,17 @@ func capturePatchedFork(f packload.Fork, out, errw io.Writer, color bool) int {
 		return 1
 	}
 	subject := upstreamBuildOf(f) // YOLO_SKIP_PATCHES builds the upstream build (skippatches.go)
-	r := advancePatchedFork(subject, advanceOptions{platform: captureJailPlatform(), out: out, errw: errw, color: color,
-		force: true})
+	// A PATCHED FORK'S BUILD IS FOR ITS JAIL'S PLATFORM, as a plain fork's is (FP-D24, PF-D97): under
+	// macos-user it is this Mac's, named to the build so the jail it boots is the one the platform was
+	// read from; any other runtime is left to the run pipeline, as captureHost leaves a plain fork's.
+	// A patched extension's build does not run on macos-user, so it keeps the container's platform.
+	platform, rt := captureJailPlatform(), ""
+	if !f.IsTree() && captureRuntime() == "macos-user" {
+		rt = "macos-user"
+		platform = forkBuildPlatform(rt)
+	}
+	r := capturePatchedAdvance(subject, advanceOptions{platform: platform, runtime: rt, out: out, errw: errw,
+		color: color, force: true})
 	if subject.Upstream && r.delivery.Key != "" {
 		sayUpstreamBuild(out, color, "", "built", f, r.good)
 	}
@@ -455,6 +464,11 @@ func capturePatchedFork(f packload.Fork, out, errw io.Writer, color bool) int {
 	}
 	return 1
 }
+
+// capturePatchedAdvance is advancePatchedFork behind a package var, for captureRunPipeline's reason:
+// a test reads the platform and runtime capturePatchedFork hands its advance, which no fake build
+// jail can see before the advance's own record and lock keys are already chosen.
+var capturePatchedAdvance = advancePatchedFork
 
 // captureTree is `yolo capture <pack>/<name>`: a patched extension's explicit build, as
 // capturePatchedFork is a patched fork's. A key no selected pack declares an extension under is
@@ -787,8 +801,8 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 	// property is unrepresentable instead of conditional: there is nothing in that jail to
 	// resolve a capture against.
 	opts.CapturesDir = func() string { return "" }
-	// A non-nil seal identifies a fork-build capture. seal.build is only the plain-native-build
-	// eligibility field and stays empty for patched forks and trees, which still need provenance.
+	// A non-nil seal identifies a fork-build capture. seal.build is only the native-build eligibility
+	// field (a fork's, plain or patched) and stays empty for trees, which still need provenance.
 	if seal != nil {
 		// The actual runtime is selected inside the ordinary pipeline, where confinement, backend
 		// validation and automatic fallback are all applied. Persist that answer before its backend
@@ -862,14 +876,22 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 	opts.MacosUserRun = func(cfg *jsonx.OrderedMap, _ string, _, _ []string,
 		repoRoot, packRoot string, _ macosuser.HomeOverlay, _ macosuser.HostContext, dryRun bool,
 		packEnv *jsonx.OrderedMap, blocked []packload.BlockedTool, _ macosuser.JailDaemons) int {
-		// A PATCHED FORK'S OR A PATCHED EXTENSION'S BUILD DOES NOT RUN ON THIS BACKEND: only a plain
-		// fork's does (FP-D24, below), for the Mac's host floor, and a patched one's advance and its
-		// record are built for a container's platform.
-		if seal != nil && seal.build == "" {
+		// A PATCHED EXTENSION'S BUILD DOES NOT RUN ON THIS BACKEND: its build jail runs a tree's script
+		// (treeBuildJailArgv), which the fork-build act below does not. A fork's build does, plain
+		// (FP-D24) or patched (PF-D97), its series already replayed into the checkout.
+		if seal != nil && seal.tree != "" {
 			// Rung 4: no step of the user's makes macos-user build one, so the line names whose it
 			// is and what builds and runs one today, a container backend.
-			fmt.Fprintln(errw, "yolo capture: a patched fork or a patched extension is built on a container "+
-				"backend only — on macos-user only a plain fork's build runs, for yolo's host floor")
+			fmt.Fprintln(errw, "yolo capture: a patched extension is built on a container backend only — "+
+				"on macos-user only a fork's build runs")
+			fmt.Fprintf(errw, "  That is yolo's to wire. A podman jail builds and runs it today: "+
+				"YOLO_RUNTIME=podman yolo -- %s\n", bin)
+			return 1
+		}
+		if seal != nil && (seal.build == "" || seal.id == "") {
+			// A fork's seal handed no build line or id has nothing for the act to run, and an empty build
+			// would be admitted as one. Only a caller of yolo's makes such a seal, so the line says so.
+			fmt.Fprintf(errw, "yolo capture: the build jail of %s on macos-user was handed no build line or id\n", bin)
 			fmt.Fprintf(errw, "  That is yolo's to wire. A podman jail builds and runs it today: "+
 				"YOLO_RUNTIME=podman yolo -- %s\n", bin)
 			return 1
@@ -882,8 +904,9 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 			deps.Run = macosuser.RunStdoutTo(jailStdout)
 		}
 		if seal != nil {
-			// A PLAIN FORK'S BUILD, SEALED, FOR THIS MAC (FP-D24): the capture act running the build line
-			// in a staging tree keyed by the build, the checkout in workspace/src copied beside its home,
+			// A FORK'S BUILD, SEALED, FOR THIS MAC (FP-D24; a patched fork's too, PF-D97): the capture act
+			// running the build line in a staging tree keyed by the build, the checkout in workspace/src
+			// (a patched fork's with its series replayed by buildFork) copied beside its home,
 			// under the sealed capture profile, on the darwin floor's tools. It leaves the proto-entry and
 			// the toolchain record where a container build jail leaves them, so buildFork's admit, its
 			// checks and its receipt are the same for both.
