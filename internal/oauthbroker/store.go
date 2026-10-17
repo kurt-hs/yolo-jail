@@ -26,10 +26,13 @@ package oauthbroker
 // caller that never ran ConfigureStore.
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/claudeview"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -138,15 +141,32 @@ func (s store) syncLocked() {
 	legacyBytes, lfi, lerr := readCreds(s.legacy)
 	if lerr != nil {
 		if !errors.Is(lerr, fs.ErrNotExist) {
-			logWarn("canonical: the shared credentials file is unreadable, not synced: %s", lerr)
+			noteSharedFileState(s.legacy, "unreadable: "+lerr.Error(), func() {
+				logWarn("canonical: the shared credentials file is unreadable, not synced: %s", lerr)
+			})
+		} else {
+			noteSharedFileState(s.legacy, "", nil)
 		}
+		return
+	}
+	stamp := fmt.Sprintf("%d/%d", lfi.Size(), lfi.ModTime().UnixNano())
+	if len(bytes.TrimSpace(legacyBytes)) == 0 {
+		// THE PLACEHOLDER (storage.ensureSharedCredentials creates it empty so the bind has a file
+		// to bind): no login has been written there yet. Not a sign-out, and not a parse failure.
+		noteSharedFileState(s.legacy, "empty "+stamp, func() {
+			logInfo("canonical: the shared credentials file is empty (no Claude login written " +
+				"there yet), not synced")
+		})
 		return
 	}
 	legacy, err := oauthFromCredsBytes(legacyBytes)
 	if err != nil {
-		logWarn("canonical: the shared credentials file does not parse, not synced: %s", err)
+		noteSharedFileState(s.legacy, "broken "+stamp, func() {
+			logWarn("canonical: the shared credentials file does not parse, not synced: %s", err)
+		})
 		return
 	}
+	noteSharedFileState(s.legacy, "", nil)
 	canonicalBytes, cfi, cerr := readCreds(s.canonical)
 	if errors.Is(cerr, fs.ErrNotExist) {
 		if !hasLogin(legacy) {
@@ -293,4 +313,70 @@ func (s store) signOutLocked(clearLegacy bool) int {
 func isDir(p string) bool {
 	fi, err := os.Stat(p)
 	return err == nil && fi.IsDir()
+}
+
+// sharedFileStates is the last state of the shared credentials file each tick logged, by path:
+// "" when it last parsed, else what was wrong and the file's size and mtime. The tick runs every
+// minute, so a file left empty or broken would otherwise log the same line forever.
+var (
+	sharedFileStatesMu sync.Mutex
+	sharedFileStates   = map[string]string{}
+)
+
+// noteSharedFileState records path's state and runs log only when that state differs from the
+// last one recorded: once per change of the file, not once per tick. A state of "" (the file
+// parsed, or is absent) logs nothing and re-arms the next failure.
+func noteSharedFileState(path, state string, log func()) {
+	sharedFileStatesMu.Lock()
+	changed := sharedFileStates[path] != state
+	sharedFileStates[path] = state
+	sharedFileStatesMu.Unlock()
+	if changed && log != nil {
+		log()
+	}
+}
+
+// resetSharedFileState forgets every recorded state (tests).
+func resetSharedFileState() {
+	sharedFileStatesMu.Lock()
+	sharedFileStates = map[string]string{}
+	sharedFileStatesMu.Unlock()
+}
+
+// SharedFileCondition is what a reader of a shared credentials file finds there, without the
+// bytes: whether a login could be read from it at all.
+type SharedFileCondition int
+
+const (
+	// SharedFileAbsent: no file.
+	SharedFileAbsent SharedFileCondition = iota
+	// SharedFileEmpty: the placeholder a launch creates so the bind has a file to bind; no login
+	// has been written there yet.
+	SharedFileEmpty
+	// SharedFileUnreadable: the file could not be read (a link at its path included, which the
+	// broker refuses).
+	SharedFileUnreadable
+	// SharedFileBroken: bytes that are not a credentials object, so a Claude reading it starts
+	// signed out.
+	SharedFileBroken
+	// SharedFileParsed: a credentials object, whether or not it holds a login.
+	SharedFileParsed
+)
+
+// SharedFileStatus reads the shared credentials file at path the way the broker does (readCreds)
+// and reports its condition and size. It never returns the bytes.
+func SharedFileStatus(path string) (SharedFileCondition, int64) {
+	data, fi, err := readCreds(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return SharedFileAbsent, 0
+	case err != nil:
+		return SharedFileUnreadable, 0
+	case len(bytes.TrimSpace(data)) == 0:
+		return SharedFileEmpty, fi.Size()
+	}
+	if _, err := oauthFromCredsBytes(data); err != nil {
+		return SharedFileBroken, fi.Size()
+	}
+	return SharedFileParsed, fi.Size()
 }

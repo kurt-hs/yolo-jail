@@ -1110,6 +1110,9 @@ func TestOnlyTheListedFunctionsNameTheMachineStore(t *testing.T) {
 			"shared dirs, and nothing else; the snapshot below drives it",
 		"noteRetiredSharedDirs": "Lstats a retired shared dir to say it can be deleted, and " +
 			"writes nothing (TestALeftoverPiSharedNpmFolderIsNamedWithItsDelete)",
+		"noteBrokenSharedClaudeLogin": "reads the shared Claude credentials file's condition to " +
+			"name a broken one, and writes nothing " +
+			"(TestAContainerLaunchSaysTheSharedClaudeLoginDoesNotParse checks the bytes are unchanged)",
 	}
 	files, err := filepath.Glob("*.go")
 	if err != nil {
