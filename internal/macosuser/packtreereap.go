@@ -120,6 +120,9 @@ func startPackTreeReaperReal(argv []string, claim *os.File) error {
 	}
 	defer log.Close()
 	cmd := exec.Command(argv[0], argv[1:]...)
+	// Not the launcher's working directory: a reaper that waits must not pin the workspace's
+	// volume.
+	cmd.Dir = "/"
 	cmd.Stdout, cmd.Stderr = log, log
 	cmd.ExtraFiles = []*os.File{claim}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -153,6 +156,7 @@ func PackTreeReapMain(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: yolo internal "+PackTreeReapVerb+" --root <guest pack tree> --anchor <unix ns>  (claim on fd 3)")
 		return 2
 	}
+	closeInheritedFiles()
 	return reapHandedPackTree(packTreeReaper{
 		root:     root,
 		anchor:   anchor,
@@ -165,6 +169,13 @@ func PackTreeReapMain(args []string) int {
 		now:      time.Now,
 		sleep:    time.Sleep,
 	})
+}
+
+// closeInheritedFiles keeps the claim from the reaper's own children (the unseal shell, chmod,
+// rm). Descriptors above it are left alone: Go opens every file of its own close-on-exec, and
+// closing one blindly could close the runtime's poller.
+func closeInheritedFiles() {
+	syscall.CloseOnExec(packTreeReapClaimFD)
 }
 
 func parsePackTreeReapArgs(args []string) (string, time.Time, error) {
@@ -273,6 +284,10 @@ func confirmHandedClaim(f *os.File, path string) (*sessionRecord, error) {
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		return nil, fmt.Errorf("its lock is not this process's: %w", err)
+	}
+	// Asked again under the lock: a claim its holder removed in between is no claim.
+	if again, err := os.Lstat(path); err != nil || !os.SameFile(held, again) {
+		return nil, fmt.Errorf("%s changed while it was being locked", path)
 	}
 	return &sessionRecord{path: path, lock: f}, nil
 }
