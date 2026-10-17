@@ -42,6 +42,13 @@ import (
 // HOME is set (packHome). YOLO_PACK_ROOT is cleared, so a jail's staged tree cannot answer for it.
 func fetchedPackSource(t *testing.T, files map[string]string) string {
 	t.Helper()
+	return fetchedPackSourceWithLinks(t, files, nil)
+}
+
+// fetchedPackSourceWithLinks is fetchedPackSource with symbolic links committed beside the files
+// (pack-relative path → link target, written as given), as a fetched repository can carry them.
+func fetchedPackSourceWithLinks(t *testing.T, files, links map[string]string) string {
+	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
@@ -53,6 +60,15 @@ func fetchedPackSource(t *testing.T, files map[string]string) string {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for rel, target := range links {
+		path := filepath.Join(repo, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, path); err != nil {
 			t.Fatal(err)
 		}
 	}

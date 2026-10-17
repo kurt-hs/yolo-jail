@@ -740,13 +740,6 @@ the patch-failure block's `git format-patch --base=…` (which also has no `-o` 
 with `format.noprefix` or `diff.noprefix` set exports a series `git am` rejects. Found 2026-10-16
 by the review of the recipe fix.
 
-### <a id="macos-user-copies-follow-links"></a>🔧 **Security: macos-user's pack `files` and skills copies follow symbolic links**
-
-On macos-user, ordinary pack `files` contributions and skills are copied into the sandbox home
-following symbolic links, so a link in a pack (a fetched pack's included) to a host file copies
-that file's contents where the agent can read it. Patched extension trees copy links as links since
-2026-10-16; these copies need the same rule. Found by the review of the patched-extensions lane.
-
 ### <a id="mac-host-extension-checks"></a>🔧 **`yolo host` on a Mac checks the sandbox account before it knows an extension is selected**
 
 It runs the sandbox-account setup checks before checking whether any patched extension is selected,
