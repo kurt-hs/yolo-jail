@@ -113,6 +113,7 @@ func TestMain(m *testing.M) {
 	// they get a private directory, not the machine-wide /tmp/yolo-<name>.* (testsupport).
 	releaseSingletons := testsupport.IsolateHostSingletons()
 	code := m.Run()
+	removePatchedTemplate()
 	releaseSingletons()
 	releaseStagedTree()
 	os.Exit(code)
