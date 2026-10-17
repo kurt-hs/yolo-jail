@@ -1919,6 +1919,7 @@
 "internal/wirebridged",
 "packs/**",
 "scripts",
+"scripts/__pycache__",
 "tools/**",
 "userguide/**"
 ]
@@ -3288,7 +3289,8 @@
 "internal/wirebridge",
 "internal/wirebridged",
 "packs/**",
-"scripts"
+"scripts",
+"scripts/__pycache__"
 ]
 },
 {
@@ -3341,6 +3343,7 @@
 "internal/capture/clone_linux_test.go",
 "internal/capture/confine.go",
 "internal/capture/confine_test.go",
+"internal/capture/endgroup_test.go",
 "internal/capture/gatetoolchain_pin_test.go",
 "internal/capture/gc.go",
 "internal/capture/gc_test.go",
@@ -3438,6 +3441,8 @@
 "internal/loopholes/*",
 "internal/macosuser/bootstrapgit_test.go",
 "internal/macosuser/briefingresources_test.go",
+"internal/macosuser/buildactfloor_test.go",
+"internal/macosuser/buildactsealed_test.go",
 "internal/macosuser/cabundle.go",
 "internal/macosuser/cabundle_test.go",
 "internal/macosuser/capture.go",
@@ -5160,6 +5165,7 @@
 "internal/capture/clone_darwin_test.go",
 "internal/capture/clone_linux_test.go",
 "internal/capture/confine_test.go",
+"internal/capture/endgroup_test.go",
 "internal/capture/gatetoolchain_pin_test.go",
 "internal/capture/gc_test.go",
 "internal/capture/inner_test.go",
@@ -5250,6 +5256,7 @@
 "internal/cli/captureproviderkeys_test.go",
 "internal/cli/capturerelocate_test.go",
 "internal/cli/captureremoverwait_test.go",
+"internal/cli/capturerunendgroup_test.go",
 "internal/cli/capturescan_test.go",
 "internal/cli/capturescopecleanup_test.go",
 "internal/cli/capturesecurity_test.go",
