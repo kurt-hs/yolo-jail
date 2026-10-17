@@ -73,7 +73,8 @@ var kinds = map[packdecl.Kind]Entry{
 			"store is not mounted (captures.go's roBindsUnsupported gate), so a first use runs " +
 			"the vendor installer"),
 		MacosUser: honored("the darwin bootstrap runs the same generate_agent_launchers step; " +
-			"there is no capture store, so a first use runs the vendor installer"),
+			"an installer program's capture and a fork's darwin build are staged into the sandbox's copy of " +
+			"the capture store, and with no capture a first use runs the vendor installer"),
 		// A patched fork (`program` with `patches`) has the parent's disposition everywhere: on
 		// macos-user the fork's advance builds it for darwin as the sandbox account in the sealed
 		// macos-user act (FP-D24, PF-D97), and the launch stages it into the sandbox's capture store.

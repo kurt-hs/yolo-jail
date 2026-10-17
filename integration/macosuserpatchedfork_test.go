@@ -151,9 +151,10 @@ func TestMacosUserLaunchBuildsAndRunsAPatchedFork(t *testing.T) {
 			"replayed, built for darwin and materialized in the sandbox)\nstdout:\n%s\nstderr:\n%s",
 			r.rc, patchedRuns("1.1.0"), r.stdout, r.stderr)
 	}
+	// The darwin build itself is proved by the receipt's platform below; a launch's build report
+	// names no backend, so only its result line is asserted here.
 	for _, want := range []string{
 		"built fork " + f.owner + ": v1.1.0 (" + f.v11[:8] + ") + 1 patch",
-		"as the macos-user sandbox account, sealed under Seatbelt",
 	} {
 		if !strings.Contains(r.stderr, want) {
 			t.Errorf("the first launch's stderr lacks %q:\n%s", want, r.stderr)
