@@ -58,7 +58,7 @@ capture store yet (install-capture.md hand-off H4)". H4 was answered (b) and lan
 ([`provisioner-evidence.md`](../design/provisioner-evidence.md), row 7 and the "Auto-capture
 cannot run on macos-user" row, retired 2026-10-05). This very launch materialized three programs
 from the store. The same clause also appears in
-[`forked-programs-as-packs.md`](../design/forked-programs-as-packs.md) OQ-FP9 and FP-D3.
+[`forked-programs-as-packs.md`](../design/forked-programs-as-packs.md) [OQ-FP9](../design/forked-programs-as-packs.md#14-decision-ledger) and FP-D3.
 **Decision needed:** reword the reason to name only what is still missing (next section), and
 update the tests that pin the old wording (`macosuserforks_test.go`, `guestcontainerstep_test.go`).
 
