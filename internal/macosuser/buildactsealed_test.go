@@ -39,7 +39,7 @@ func TestABuildPlanWhoseBootstrapIsNotSealedIsRefused(t *testing.T) {
 
 // THE BUILD ACT ENDS ITS BUILD LINE'S PROCESS GROUP (PPX-D49): the driver argv the act runs asks the
 // capture driver for it, for a fork's build and a patched extension's, and a plan without it is
-// refused. The script turns npm's update check off too, whose detached child no group end reaches.
+// refused. The script turns npm's update check off too, as a container jail has it.
 // An installer capture's driver is unchanged.
 func TestTheBuildActEndsItsBuildLinesProcessGroup(t *testing.T) {
 	for _, opts := range []ForkBuildOptions{testForkBuildOptions(), testTreeBuildOptions("npm ci")} {
@@ -50,7 +50,7 @@ func TestTheBuildActEndsItsBuildLinesProcessGroup(t *testing.T) {
 			t.Errorf("the build driver does not ask capture-run to end the build line's group: %q", plan.DriverArgv)
 		}
 		if script := inst[len(inst)-1]; !strings.Contains(script, "NPM_CONFIG_UPDATE_NOTIFIER=false") {
-			t.Errorf("the build's script leaves npm's detached update check on:\n%s", script)
+			t.Errorf("the build's script leaves npm's update check on:\n%s", script)
 		}
 		plan.DriverArgv = slices.DeleteFunc(slices.Clone(plan.DriverArgv), func(a string) bool { return a == captureEndGroupFlag })
 		if problems := strings.Join(ForkBuildPlanInvariants(plan), "\n"); !strings.Contains(problems, captureEndGroupFlag) {

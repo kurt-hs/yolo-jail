@@ -130,7 +130,7 @@ type Options struct {
 	// guest pack tree is kept while any process of the sandbox account it started is alive. The
 	// driver runs as that account, so the group is signalled as that account, through the one run-as
 	// rule that started it. A child that put itself in a session of its own (setsid) is not in the
-	// group; the build's environment turns npm's detached update check off for that reason.
+	// group, and is not ended.
 	EndProcessGroup bool
 }
 
@@ -652,11 +652,6 @@ func (d *driver) install() error {
 	}
 	if d.opts.Artifacts != nil {
 		cmd.Env = programEnvironment(cmd.Env, d.home)
-	}
-	if d.opts.EndProcessGroup {
-		// Wait returns once the installer has exited and its output is copied; a child still holding
-		// a pipe is bounded by WaitDelay, and then ended with the group below.
-		cmd.WaitDelay = time.Second
 	}
 	err := cmd.Run()
 	if d.opts.EndProcessGroup && cmd.Process != nil {
