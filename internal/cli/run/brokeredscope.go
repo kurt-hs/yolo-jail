@@ -133,8 +133,17 @@ func (o *Options) writeScopeFiles(cname string, brokered []*loopholes.Loophole) 
 		shown := make([]string, len(approvedRepos))
 		for i, r := range approvedRepos {
 			shown[i] = r.Repo
+			// A wildcard entry admits every repository its token covers, so the line says so
+			// rather than naming it as one more repository.
+			var facts []string
+			if n := brokerscope.WildcardNote(r.Repo, lp.Brokered.RemoteHost); n != "" {
+				facts = append(facts, n)
+			}
 			if len(r.Sources) > 0 {
-				shown[i] += " (" + strings.Join(r.Sources, ", ") + ")"
+				facts = append(facts, strings.Join(r.Sources, ", "))
+			}
+			if len(facts) > 0 {
+				shown[i] += " (" + strings.Join(facts, "; ") + ")"
 			}
 		}
 		out.printf("[dim]%s: scope for this workspace: %s[/dim]", lp.Name, richtext.Escape(strings.Join(shown, ", ")))

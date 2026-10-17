@@ -245,7 +245,8 @@ func ApprovalRecordFiles(cname string) []string {
 	}
 }
 
-// scopeRecord is the scope part's content: an approved `owner/repo` list per source.
+// scopeRecord is the scope part's content: an approved repository-scope entry list per source,
+// each an `owner/repo` or a whole-segment wildcard (WW-D31).
 type scopeRecord map[string][]string
 
 // sourcesRecord is the sources record's content: per source, per approved repository spelled in
@@ -451,6 +452,15 @@ func scopeBlock(s ScopeSource, cur []scopeRepo, prev []string, had bool,
 	lines := []string{s.Label + " repository scope, read from " + from + ":"}
 	type row struct{ mark, repo, sources, what string }
 	var rows []row
+	// A wildcard entry admits far more than one repository, so its row says what it admits
+	// rather than leaving the human to read the token as one repository's name. A literal
+	// entry gets no note.
+	note := func(repo string) string {
+		if n := brokerscope.WildcardNote(repo, s.RemoteHost); n != "" {
+			return " (" + n + ")"
+		}
+		return ""
+	}
 	inPrev := map[string]bool{}
 	for _, r := range prev {
 		inPrev[strings.ToLower(r)] = true
@@ -468,7 +478,7 @@ func scopeBlock(s ScopeSource, cur []scopeRepo, prev []string, had bool,
 		k := strings.ToLower(r.repo)
 		label := strings.Join(r.labels(), ", ")
 		if !inPrev[k] {
-			rows = append(rows, row{"+", r.repo, label, "added"})
+			rows = append(rows, row{"+", r.repo, label, "added" + note(r.repo)})
 			added++
 			addFiles(r.files)
 			continue
@@ -483,17 +493,17 @@ func scopeBlock(s ScopeSource, cur []scopeRepo, prev []string, had bool,
 			if known {
 				old = "was " + labelOfKeys(was)
 			}
-			rows = append(rows, row{"~", r.repo, label + " (" + old + ")", "source changed"})
+			rows = append(rows, row{"~", r.repo, label + " (" + old + ")", "source changed" + note(r.repo)})
 			moved++
 			addFiles(r.files)
 			addFiles(filesOfKeys(was))
 			continue
 		}
-		rows = append(rows, row{" ", r.repo, label, "unchanged"})
+		rows = append(rows, row{" ", r.repo, label, "unchanged" + note(r.repo)})
 	}
 	for _, r := range prev {
 		if inPrev[strings.ToLower(r)] {
-			rows = append(rows, row{"-", r, "", "removed"})
+			rows = append(rows, row{"-", r, "", "removed" + note(r)})
 			removed++
 			addFiles(filesOfKeys(recorded[strings.ToLower(r)]))
 		}

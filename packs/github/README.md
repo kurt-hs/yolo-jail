@@ -62,6 +62,11 @@ approve it; `yolo config-ref` documents the key:
 An agent may add one: a repository outside the scope is refused with a message telling the agent
 where to add it and to ask you to restart the jail and approve it.
 
+An entry may be a whole-segment wildcard instead of one repository: `*/*` is every repository the
+login can reach, `OWNER/*` is one owner's, and `*/REPO` is that name under any owner. A wildcard
+is approved at the same prompt, which names what it admits, and it widens only which repositories
+run: account-wide commands stay refused.
+
 ## What runs
 
 | | |

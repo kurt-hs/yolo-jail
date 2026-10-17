@@ -581,7 +581,7 @@ func retiredMoves(source string, wv any) ([]BrokeredMove, bool) {
 			rv, _ := entry.Get(brokeredReposKey)
 			list, _ := rv.([]any)
 			for _, e := range list {
-				if r, ok := e.(string); ok && brokerscope.ValidRepo(r) {
+				if r, ok := e.(string); ok && brokerscope.ValidPattern(r) {
 					m.Repos = append(m.Repos, r)
 				}
 			}
@@ -746,15 +746,17 @@ func brokeredShapeProblems(v any) []string {
 		}
 		list, ok := rv.([]any)
 		if !ok {
-			out = append(out, srcPath+"."+brokeredReposKey+": expected a list of OWNER/REPO strings (got "+
-				pyReprValue(rv)+")")
+			out = append(out, srcPath+"."+brokeredReposKey+": expected a list of OWNER/REPO strings "+
+				"or wildcard entries (got "+pyReprValue(rv)+")")
 			continue
 		}
 		for i, e := range list {
-			if r, ok := e.(string); !ok || !brokerscope.ValidRepo(r) {
+			if r, ok := e.(string); !ok || !brokerscope.ValidPattern(r) {
 				out = append(out, srcPath+"."+brokeredReposKey+"["+itoa(i)+"]: "+pyReprValue(e)+
-					" is not OWNER/REPO: two names of letters, digits, `_`, `.` and `-`, with one `/` "+
-					"between them, and no host")
+					" is not a repository scope entry: OWNER/REPO, two names of letters, digits, `_`, `.` "+
+					"and `-` with one `/` between them and no host, or a whole-segment wildcard — `*/*` "+
+					"for every repository, `OWNER/*` for one owner's, `*/REPO` for a name under any owner. "+
+					"A partial wildcard such as `org*` is not one")
 			}
 		}
 	}

@@ -139,8 +139,10 @@ whole thing is shown as a diff against nothing.
 A launch that starts a **brokered** loophole (one whose manifest declares `brokered`, such as
 `packs/github`'s `github-broker`) puts a second thing through the same decision: the
 **repository scope**, the `owner/repo` of each remote on the declared forge, read from the
-workspace's git config as text, and each repository the workspace config lists under
-`brokered.<source>.repos`. Both are agent-editable workspace state, so they take this gate
+workspace's git config as text, and each entry the workspace config lists under
+`brokered.<source>.repos` — a repository, or a wildcard (`*/*`, `OWNER/*`, `*/REPO`:
+[`workspace-widening.md` §3.1](../design/workspace-widening.md#31-the-entry)). Both are
+agent-editable workspace state, so they take this gate
 rather than a new one (designs:
 [`boundary-broker.md` §5.6](../design/boundary-broker.md#56-the-repository-scope),
 [`workspace-widening.md`](../design/workspace-widening.md)).

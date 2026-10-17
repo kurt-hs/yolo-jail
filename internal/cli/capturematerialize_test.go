@@ -248,3 +248,37 @@ func readOnlyReceipt(t *testing.T, path string) map[string]any {
 	}
 	return m
 }
+
+// TestInternalCaptureMaterializeWritesTheReceiptOfAMacosUserRelaunch is a macos-user relaunch's
+// "the materialize receipt could not be written": the sandbox account's ~/.local links into the
+// workspace's own sidecar <ws>/.yolo/home/local, which by then holds share/yolo-jail. Judged by the
+// process HOME, that link put "yolo's own state directory" inside the workspace and refused the
+// receipt. The account's boundary is the one to judge by, as `yolo internal log-append` does.
+func TestInternalCaptureMaterializeWritesTheReceiptOfAMacosUserRelaunch(t *testing.T) {
+	account := sandboxAccountHome(t)
+	ws := filepath.Join(resolvedDir(t), "ws")
+	sidecarLocal := filepath.Join(ws, ".yolo", "home", "local")
+	if err := os.MkdirAll(filepath.Join(sidecarLocal, "share", "yolo-jail"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(sidecarLocal, filepath.Join(account, ".local")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", account)
+
+	home := t.TempDir()
+	store := &capture.Store{Dir: t.TempDir()}
+	admitCaptureEntry(t, store, "probetool", "probetool", capture.Platform(),
+		home, "#!/bin/sh\necho probe\n", time.Now())
+	receipts := filepath.Join(ws, ".yolo", "receipts.jsonl")
+
+	rc := runInternal([]string{"capture-materialize",
+		"--store=" + store.Dir, "--home=" + home, "--bin=probetool",
+		"--declared=https://example.invalid/i.sh", "--receipts=" + receipts})
+	if rc != 0 {
+		t.Fatalf("capture-materialize exited %d", rc)
+	}
+	if _, err := os.Stat(receipts); err != nil {
+		t.Fatalf("a macos-user relaunch's materialize wrote no receipt: %v", err)
+	}
+}

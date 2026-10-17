@@ -75,6 +75,40 @@ func TestScopeFirstLaunchAsksOnceAndNLeavesNoRecord(t *testing.T) {
 	}
 }
 
+// A wildcard entry is a row of the scope block, and the row says what it admits rather than
+// leaving the human to read the token as one repository's name (WW-D31). It is recorded as its
+// own entry, so an approving launch does not ask again.
+func TestAWildcardEntryIsARowThatSaysWhatItAdmits(t *testing.T) {
+	ws := approvalWorkspace(t)
+	scope := githubScope()
+	scope.Sources[0].RemoteHost = "github.com"
+	scope.Sources[0].Entry = []EntryRepo{{Repo: "*/*", Files: []string{"yolo-jail.jsonc"}}}
+	p := &reportPrompter{accept: true}
+	if ok, err := CheckConfigAndScopeChanges(ws, decode(t, `{}`), scope, true, false, p); err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	block := strings.Join(p.got.ScopeBlock, "\n")
+	if !strings.Contains(block, "*/*") || !strings.Contains(block, "added (every repository on github.com)") {
+		t.Fatalf("block:\n%s", block)
+	}
+	if got := ApprovedScope(ws, "github"); len(got) != 1 || got[0] != "*/*" {
+		t.Fatalf("approved scope %v", got)
+	}
+	ok, err := CheckConfigAndScopeChanges(ws, decode(t, `{}`), scope, false, false, &failPrompter{t: t})
+	if err != nil || !ok {
+		t.Fatalf("an approved wildcard re-asked: ok=%v err=%v", ok, err)
+	}
+	// Removing it shows what is being given up, not the bare token either.
+	scope.Sources[0].Entry = nil
+	p = &reportPrompter{accept: true}
+	if ok, err := CheckConfigAndScopeChanges(ws, decode(t, `{}`), scope, true, false, p); err != nil || !ok {
+		t.Fatalf("a removal gate refused: ok=%v err=%v", ok, err)
+	}
+	if got := strings.Join(p.got.ScopeBlock, "\n"); !strings.Contains(got, "removed (every repository on github.com)") {
+		t.Fatalf("removal block:\n%s", got)
+	}
+}
+
 // An empty scope with no record is nothing to approve: recorded silently, as `{}` is.
 func TestAnEmptyScopeRecordsSilently(t *testing.T) {
 	ws := approvalWorkspace(t)

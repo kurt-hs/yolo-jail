@@ -16,6 +16,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
 )
 
@@ -54,6 +55,13 @@ const captureMaterializeUsage = "usage: yolo internal capture-materialize --stor
 
 // runCaptureMaterialize is the `yolo internal capture-materialize` entry.
 func runCaptureMaterialize(args []string) int {
+	// On the macos-user backend this runs as the sandbox account, whose ~/.local links into the
+	// workspace's own sidecar (<ws>/.yolo/home/local). Judged by the process HOME, that link put
+	// "yolo's own state directory" inside the workspace and refused every materialize receipt.
+	// Judge by the account's boundary, as `yolo internal log-append` does (logsink.go).
+	if darwinBootstrapIdentityRefusal() == nil {
+		defer paths.GuardScopeUnder(darwinBootstrapScopeHome())()
+	}
 	var opts materializeArgs
 	opts.home = os.Getenv("HOME")
 	for _, a := range args {

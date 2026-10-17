@@ -22,6 +22,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**The GitHub broker takes wildcards.** A project's `brokered.github.repos` accepts `*/*`,
+`OWNER/*` and `*/REPO`; the scope prompt says what each admits, and access stays read-only.
+See [GitHub](userguide/guides/github.md#every-repository-or-every-repository-of-one-owner).
+
 **A launch says when the jail has no internet,** naming what failed and the next step. See [Troubleshooting](userguide/guides/troubleshooting.md).
 
 **Optional mounts.** A `mounts` entry marked `"optional": true` is skipped with one line where a
