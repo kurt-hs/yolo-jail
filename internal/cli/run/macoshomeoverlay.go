@@ -172,7 +172,15 @@ func buildMacosHomeOverlayTree(staging string, skills []jailcontent.SkillTarget,
 			continue
 		}
 		dst := filepath.Join(overlay, filepath.FromSlash(t.Dest))
-		if err := copyTree(t.Src, dst); err != nil {
+		cp := copyTree
+		if t.Tree != "" {
+			// A PATCHED EXTENSION'S TREE keeps its links as links (pi-extensions.md §7.1, PPX-D45),
+			// as a container's read-only mount of it does: copyTree reads through them, which fails
+			// on a link to a directory, turns node_modules/.bin into copies, and would read a host
+			// file an upstream's absolute link names into the overlay the sandbox account is handed.
+			cp = copyTreeKeepingLinks
+		}
+		if err := cp(t.Src, dst); err != nil {
 			return "", nil, fmt.Errorf("staging pack %s's files for %s: %w", t.Pack, t.Dest, err)
 		}
 		written = append(written, t.Dest)
@@ -208,4 +216,46 @@ func buildMacosHomeOverlayTree(staging string, skills []jailcontent.SkillTarget,
 		return "", nil, fmt.Errorf("listing the macos-user home overlay's destinations: %w", err)
 	}
 	return overlay, dests, nil
+}
+
+// copyTreeKeepingLinks copies the tree src to dest, recreating each symbolic link as the same link
+// and never reading through one: directories 0755, regular files with their permission bits, and
+// anything else (a socket, a device) refused, since skipping it would report a partial copy as a
+// whole one. Only a patched extension's per-launch copy takes it (buildMacosHomeOverlayTree).
+func copyTreeKeepingLinks(src, dest string) error {
+	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dest, rel)
+		switch {
+		case d.Type()&os.ModeSymlink != 0:
+			link, err := os.Readlink(p)
+			if err != nil {
+				return err
+			}
+			return os.Symlink(link, target)
+		case d.IsDir():
+			return os.MkdirAll(target, 0o755)
+		case d.Type().IsRegular():
+			fi, err := d.Info()
+			if err != nil {
+				return err
+			}
+			data, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(target, data, fi.Mode().Perm()|0o600); err != nil {
+				return err
+			}
+			return os.Chmod(target, fi.Mode().Perm()|0o600)
+		default:
+			return fmt.Errorf("%s is a %s, which the overlay copy cannot reproduce", p, d.Type())
+		}
+	})
 }

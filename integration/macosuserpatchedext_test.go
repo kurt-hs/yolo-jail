@@ -164,6 +164,7 @@ echo "LINE10=$(sed -n 10p "$d/f.txt" 2>/dev/null)"
 echo "VER=$(cat "$d/ver.txt" 2>/dev/null)"
 if [ -r "$d/built.txt" ]; then echo BUILT_READABLE; else echo BUILT_UNREADABLE; fi
 echo "BUILT=$(cat "$d/built.txt" 2>/dev/null)"
+if [ -L "$d/bin/built-link" ]; then echo "LINK_KEPT=$(cat "$d/bin/built-link" 2>/dev/null)"; else echo LINK_LOST; fi
 if touch "$d/.probe" 2>/dev/null; then echo TREE_WRITABLE; else echo TREE_READONLY; fi
 if [ -e "$d/f.txt" ] && (echo x >> "$d/f.txt") 2>/dev/null; then echo FILE_WRITABLE; else echo FILE_READONLY; fi
 echo "TREES=$YOLO_PATCHED_TREES"
@@ -252,7 +253,7 @@ func (f *macExtFixture) assertDarwinEntry(t *testing.T, r result) string {
 // in YOLO_PATCHED_TREES and the agent's list naming it.
 func TestMacosUserPatchedExtensionWithABuildIsBuiltAndDelivered(t *testing.T) {
 	requireMacosUser(t)
-	build := `printf '%s_%s\n' "$(cat ver.txt)" "$(sed -n 10p f.txt)" > built.txt`
+	build := `printf '%s_%s\n' "$(cat ver.txt)" "$(sed -n 10p f.txt)" > built.txt && mkdir -p bin && ln -s ../built.txt bin/built-link`
 	f := newMacExtFixture(t, "ten", build, []string{"built.txt"})
 
 	r := f.launch(t)
@@ -267,6 +268,7 @@ func TestMacosUserPatchedExtensionWithABuildIsBuiltAndDelivered(t *testing.T) {
 		"VER=1.1.0",
 		"BUILT_READABLE",
 		"BUILT=1.1.0_patched",
+		"LINK_KEPT=1.1.0_patched",
 		"TREE_READONLY",
 		"FILE_READONLY",
 	} {

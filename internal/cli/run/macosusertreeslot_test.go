@@ -305,3 +305,62 @@ func TestAMacosUserLaunchMatchesAHatchAgainstItsExtensions(t *testing.T) {
 		}
 	}
 }
+
+// A DELIVERED TREE'S LINKS CROSS AS LINKS on macos-user (pi-extensions.md §7.1, PPX-D45), as they do
+// through a container's read-only mount: a link to a directory (an npm workspace), a relative file
+// link (node_modules/.bin) and an absolute link out of the tree each arrive in the home overlay as the
+// same link, and the host process never reads through one — an absolute link to a host file left by
+// an upstream must not put that file's bytes into the overlay the sandbox account is handed. Red with
+// the overlay copying a tree's files by reading them.
+func TestAMacosUserLaunchOverlaysATreesLinksAsLinks(t *testing.T) {
+	treeLaunchHome(t, true)
+	secret := filepath.Join(t.TempDir(), "id_host")
+	if err := os.WriteFile(secret, []byte("HOST-SECRET-BYTES"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	links := map[string]string{"pkgs": "sub", filepath.Join("bin", "x"): "../" + treeCopyFile, "secret": secret}
+	var checked bool
+	r := runMacosUserTreeSlot(t, func(o *Options) {
+		deliver := deliverTreeCopyWithFile(t)
+		o.BuildSlot = func(req BuildSlotRequest) (map[string]entrypoint.ForkDelivery, map[string]TreeDelivery) {
+			forks, trees := deliver(req)
+			if d, ok := trees[treeKey]; ok {
+				for _, dir := range []string{"sub", "bin"} {
+					if err := os.MkdirAll(filepath.Join(d.Dir, dir), 0o755); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for rel, target := range links {
+					if err := os.Symlink(target, filepath.Join(d.Dir, rel)); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			return forks, trees
+		}
+		backend := o.MacosUserRun
+		o.MacosUserRun = func(cfg *jsonx.OrderedMap, a string, b, c []string, d, e string, overlay macosuser.HomeOverlay,
+			hc macosuser.HostContext, dry bool, env *jsonx.OrderedMap, bt []packload.BlockedTool, jd macosuser.JailDaemons) int {
+			checked = true
+			root := filepath.Join(overlay.Tree, filepath.FromSlash(treeInto))
+			for rel, target := range links {
+				got, err := os.Readlink(filepath.Join(root, rel))
+				if err != nil || got != target {
+					t.Errorf("~/%s/%s reached the overlay as %q (%v), want the link to %q", treeInto, rel, got, err, target)
+				}
+			}
+			_ = filepath.WalkDir(overlay.Tree, func(p string, de os.DirEntry, err error) error {
+				if err == nil && de.Type().IsRegular() {
+					if b, _ := os.ReadFile(p); bytes.Contains(b, []byte("HOST-SECRET-BYTES")) {
+						t.Errorf("the host file an absolute link named was copied into the overlay at %s", p)
+					}
+				}
+				return nil
+			})
+			return backend(cfg, a, b, c, d, e, overlay, hc, dry, env, bt, jd)
+		}
+	})
+	if r.rc != 0 || !checked {
+		t.Fatalf("Run() = %d (backend ran %v):\n%s", r.rc, checked, r.out)
+	}
+}
