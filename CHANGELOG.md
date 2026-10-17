@@ -56,6 +56,7 @@ build, an older release, upstream without your patches, or pi without an extensi
 - Claude on Kilo no longer assumes a 1M-token context for every model.
 - `yolo --update` on a patched fork now waits for another yolo building it, instead of failing.
 - On Apple Container, `yolo check` points an expired-login symptom at the jail's network, not the Claude broker.
+- A damaged shared Claude login file is now named at launch with `/login` as the fix, and the Claude broker no longer logs an empty one every minute.
 - A patched fork with nothing built now retries a fetch that failed while the network was down, instead of refusing for an hour.
 - A bare `-p` that some agents can't use names them all on one line.
 - `yolo config promote` and `yolo config diff` no longer treat a `null` you set in an agent's config as a deletion.

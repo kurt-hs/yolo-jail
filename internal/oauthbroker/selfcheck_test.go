@@ -72,9 +72,9 @@ func TestGradeSharedCredsClock(t *testing.T) {
 }
 
 // TestGradeSharedCredsPreLogin: the two states that precede a first `/login` are
-// not findings. An ABSENT file is a NOTE naming the fix; an EMPTY one is the
+// not failures. An ABSENT file is a NOTE naming the fix; an EMPTY one is the
 // documented placeholder `yolo run` creates so the bind mount has something to
-// bind, and grading it would turn every fresh install into a warning.
+// bind, so it is a passing row that says so: a warning would flag every fresh install.
 func TestGradeSharedCredsPreLogin(t *testing.T) {
 	dir := t.TempDir()
 
@@ -88,8 +88,8 @@ func TestGradeSharedCredsPreLogin(t *testing.T) {
 	if err := os.WriteFile(empty, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := gradeSharedCreds(empty, time.Now()); len(got) != 0 {
-		t.Errorf("empty placeholder => %#v, want no findings", got)
+	if got := gradeSharedCreds(empty, time.Now()); len(got) != 1 || got[0].grade != "OK" {
+		t.Errorf("empty placeholder => %#v, want one passing row, never a warning", got)
 	}
 }
 
@@ -240,6 +240,54 @@ func TestSelfCheckOutputSurvivesTheDoctorSeam(t *testing.T) {
 		// finding — that is what puts the fix in front of the user.
 		if !strings.Contains(lines[0].Detail, "Run /login from inside a jail") {
 			t.Errorf("detail = %q, want the remediation text", lines[0].Detail)
+		}
+	})
+
+	t.Run("an empty shared file arrives as a passing row that says no login is there", func(t *testing.T) {
+		primeBrokerState(t)
+		creds := filepath.Join(t.TempDir(), ".credentials.json")
+		if err := os.WriteFile(creds, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var rc int
+		out := captureSelfCheckStdout(t, func() { rc = SelfCheck(creds) })
+		if rc != 0 {
+			t.Errorf("rc = %d, want 0: an empty file is every machine's state before a first /login\n%s", rc, out)
+		}
+		lines := nixdiag.SplitSelfCheckLines(out)
+		if len(lines) != 1 || lines[0].Grade != nixdiag.GradeOK {
+			t.Fatalf("want exactly one OK row, got %#v\nraw output:\n%s", lines, out)
+		}
+		for _, want := range []string{"empty", "no Claude login", "/login"} {
+			if !strings.Contains(lines[0].Title, want) {
+				t.Errorf("title = %q, want it to contain %q", lines[0].Title, want)
+			}
+		}
+	})
+
+	t.Run("a broken shared file arrives as a FAIL naming the next step", func(t *testing.T) {
+		primeBrokerState(t)
+		creds := filepath.Join(t.TempDir(), ".credentials.json")
+		if err := os.WriteFile(creds, []byte(`{"claudeAiOauth": {`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var rc int
+		out := captureSelfCheckStdout(t, func() { rc = SelfCheck(creds) })
+		if rc != 1 {
+			t.Errorf("rc = %d, want 1\n%s", rc, out)
+		}
+		lines := nixdiag.SplitSelfCheckLines(out)
+		if len(lines) != 1 || lines[0].Grade != nixdiag.GradeFail {
+			t.Fatalf("want exactly one FAIL row, got %#v\nraw output:\n%s", lines, out)
+		}
+		if !strings.Contains(lines[0].Title, "do not parse") {
+			t.Errorf("title = %q, want it to say the file does not parse", lines[0].Title)
+		}
+		if !strings.Contains(lines[0].Detail, "/login inside Claude") {
+			t.Errorf("detail = %q, want the next step", lines[0].Detail)
+		}
+		if strings.Contains(out, `"claudeAiOauth": {`) {
+			t.Errorf("the self-check echoed the file's bytes:\n%s", out)
 		}
 	})
 }
