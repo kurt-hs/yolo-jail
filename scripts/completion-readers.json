@@ -1536,6 +1536,7 @@
 "internal/cli/run/command.go",
 "internal/cli/run/console.go",
 "internal/cli/run/contracttags.go",
+"internal/cli/run/copytree.go",
 "internal/cli/run/credentialnotes.go",
 "internal/cli/run/ctxmounts.go",
 "internal/cli/run/currentimage.go",
@@ -1918,7 +1919,6 @@
 "internal/wirebridged",
 "packs/**",
 "scripts",
-"scripts/__pycache__",
 "tools/**",
 "userguide/**"
 ]
@@ -3288,8 +3288,7 @@
 "internal/wirebridge",
 "internal/wirebridged",
 "packs/**",
-"scripts",
-"scripts/__pycache__"
+"scripts"
 ]
 },
 {
@@ -5894,6 +5893,7 @@
 "internal/cli/run/macoshomeoverlay_test.go",
 "internal/cli/run/macoshomereadonly_test.go",
 "internal/cli/run/macosoverlaydispatch_test.go",
+"internal/cli/run/macosoverlaylinks_test.go",
 "internal/cli/run/macosuseragentenv_test.go",
 "internal/cli/run/macosuserarm_test.go",
 "internal/cli/run/macosuserbridgereal_test.go",
