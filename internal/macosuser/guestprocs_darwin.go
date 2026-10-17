@@ -44,9 +44,21 @@ func guestProcessesReal() ([]GuestProc, error) {
 			Sandbox: kp.Eproc.Pcred.P_ruid == uid || kp.Eproc.Ucred.Uid == uid ||
 				kp.Eproc.Pcred.P_svuid == uid,
 			Start: time.Unix(sec, nsec),
+			Name:  commName(kp.Proc.P_comm[:]),
 		})
 	}
 	return out, nil
+}
+
+// commName is a kinfo_proc's p_comm, the first bytes of the name its last exec ran, up to the
+// first NUL. Public like the rest of the row, and only ever printed: a process names itself.
+func commName(b []byte) string {
+	for i, c := range b {
+		if c == 0 {
+			return string(b[:i])
+		}
+	}
+	return string(b)
 }
 
 // sandboxUID caches the account's uid once read: a finishing launch reads the table every few

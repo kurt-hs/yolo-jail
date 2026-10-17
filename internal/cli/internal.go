@@ -37,7 +37,7 @@ import (
 // rewrite semantics.
 func runInternal(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|daemon|darwin-bootstrap|discard-rm|fork-build-jail|footer|image-copy|installer-check|log-append|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|probe-services|refresh-programs|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
+		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|daemon|darwin-bootstrap|discard-rm|fork-build-jail|footer|image-copy|installer-check|log-append|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|pack-tree-reap|probe-services|refresh-programs|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
 		return 2
 	}
 	switch args[0] {
@@ -180,6 +180,11 @@ func runInternal(args []string) int {
 		// the launch argv runs inside the sandbox, between the env-file reader and the shell that
 		// execs the agent. Hidden: its caller is that argv, and it runs the command it is handed.
 		return macosuser.SessionGuardMain(args[1:])
+	case macosuser.PackTreeReapVerb:
+		// The macos-user pack-tree reaper (internal/macosuser/packtreereap.go): a finishing
+		// launch whose guest left processes running hands it the guest pack tree and its claim
+		// (fd 3), and it removes the tree once they exit. Hidden: its caller is that launch.
+		return macosuser.PackTreeReapMain(args[1:])
 	case macosuser.ProbeServicesVerb:
 		// The macos-user launch's host-service witness (internal/macosuser/serviceprobe.go),
 		// the container boot's last step run as a confined stage of its own. Hidden: its caller

@@ -58,11 +58,14 @@ import (
 )
 
 // GuestProc is one process as the holder proof reads it: its pid, its parent's, whether any of
-// its uids is the sandbox account's, and when it started.
+// its uids is the sandbox account's, and when it started. Name is the command name the table
+// carries for it (p_comm, "" when unknown): never part of the proof, which a process could
+// rename itself out of, only what a report prints beside the pid so a kept tree says what kept it.
 type GuestProc struct {
 	PID, PPID int
 	Sandbox   bool
 	Start     time.Time
+	Name      string
 }
 
 // packTreeClaimLeaf is the claims' directory under locks/.
@@ -243,9 +246,12 @@ func beginPackTree(deps Deps, out printer, root string) *packTreeUse {
 	return u
 }
 
-// finishPackTree removes the launch's own tree once nothing may still hold it, and otherwise
-// keeps it and says so in one line naming the command that removes it later. A tree the launch
-// does not own is never touched. The claim goes last, whatever was decided.
+// finishPackTree removes the launch's own tree once nothing may still hold it. A holder still
+// running when the launch's wait ends hands the tree, with its claim, to the pack-tree reaper
+// (packtreereap.go), which removes it once the holders have exited; only a launch that cannot
+// hand it over keeps it, and says so in one line naming the command that removes it later. A
+// tree the launch does not own is never touched. The claim goes last, whatever was decided,
+// unless the reaper took it.
 func finishPackTree(deps Deps, out printer, u *packTreeUse) {
 	if u == nil {
 		return
@@ -263,8 +269,16 @@ func finishPackTree(deps Deps, out printer, u *packTreeUse) {
 			return
 		}
 		if len(holders) > 0 {
-			out.printf("[yellow]Kept guest pack tree %s:[/yellow] %s may still read it; "+
-				"`yolo prune --apply` removes it once %s exited.", path, describeHolders(holders),
+			handed, err := handOffPackTree(deps, out, u, holders)
+			if handed {
+				return
+			}
+			why := ""
+			if err != nil {
+				why = " (its removal in the background could not start: " + err.Error() + ")"
+			}
+			out.printf("[yellow]Kept guest pack tree %s:[/yellow] %s may still read it%s; "+
+				"`yolo prune --apply` removes it once %s exited.", path, describeHolders(holders), why,
 				map[bool]string{true: "it has", false: "they have"}[len(holders) == 1])
 			return
 		}
@@ -304,27 +318,30 @@ func awaitNoPackTreeHolders(deps Deps, u *packTreeUse) ([]GuestProc, error) {
 	}
 }
 
-// describeHolders names up to three holders by pid: "sandbox process 812", "sandbox processes
-// 812, 913 and 2 more".
+// describeHolders names up to three holders by pid, each with its command name when the table
+// has one: "sandbox process 812 (sleep)", "sandbox processes 812, 913 and 2 more".
 func describeHolders(holders []GuestProc) string {
-	pids := make([]int, 0, len(holders))
-	for _, h := range holders {
-		pids = append(pids, h.PID)
+	sorted := append([]GuestProc(nil), holders...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].PID < sorted[j].PID })
+	label := func(h GuestProc) string {
+		if h.Name == "" {
+			return strconv.Itoa(h.PID)
+		}
+		return strconv.Itoa(h.PID) + " (" + h.Name + ")"
 	}
-	sort.Ints(pids)
-	if len(pids) == 1 {
-		return "sandbox process " + strconv.Itoa(pids[0])
+	if len(sorted) == 1 {
+		return "sandbox process " + label(sorted[0])
 	}
-	shown := pids
+	shown := sorted
 	if len(shown) > 3 {
 		shown = shown[:3]
 	}
 	words := make([]string, len(shown))
-	for i, p := range shown {
-		words[i] = strconv.Itoa(p)
+	for i, h := range shown {
+		words[i] = label(h)
 	}
 	s := "sandbox processes " + strings.Join(words, ", ")
-	if rest := len(pids) - len(shown); rest > 0 {
+	if rest := len(sorted) - len(shown); rest > 0 {
 		s += fmt.Sprintf(" and %d more", rest)
 	}
 	return s
