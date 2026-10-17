@@ -1032,7 +1032,7 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 		},
 		func(m *capture.Manifest) string {
 			if f.IsTree() {
-				return treeAdmitProblem(m, f)
+				return treeAdmitProblem(m, f, workspace)
 			}
 			if why := missingProduces(m, f.Produces); why != "" {
 				return why
@@ -1407,14 +1407,13 @@ func forkBuildJailArgv(build string) []string {
 //
 // on, at most one, is what its caller decided of the jail (captureAct), as runCaptureJail takes it.
 func forkBuildRunJail(workspace string, b forkBuild, s captureStreams, color bool, on ...captureAct) int {
-	seal := &captureSeal{only: sealPacks(b.Fork), tree: sealTree(b.Fork)}
-	// A fork's build, plain or PATCHED (PF-D97): by now buildFork has replayed a patched fork's series
-	// into the workspace's src/, so the macos-user arm building that checkout with the fork's line
-	// builds the patched tree. A patched extension's jail runs a tree's script (treeBuildJailArgv),
-	// which that arm does not.
-	if !b.Fork.IsTree() {
-		seal.build, seal.id = b.buildLine(), b.id()
-	}
+	// Every build carries its line and id for the macos-user arm (macosuser.RunForkBuildAct). A fork's,
+	// plain or PATCHED (PF-D97): by now buildFork has replayed a patched fork's series into the
+	// workspace's src/, so that arm building the checkout with the fork's line builds the patched
+	// tree. A PATCHED EXTENSION's too: its line may be "" (PPX-D3), and that arm runs the tree's
+	// script — the optional line, then the copy into seal.tree's reserved directory — as a container
+	// build jail runs treeBuildJailArgv.
+	seal := &captureSeal{only: sealPacks(b.Fork), tree: sealTree(b.Fork), build: b.buildLine(), id: b.id()}
 	return runCaptureJail(workspace, b.Fork.Bin, buildJailArgv(b.Fork, b.buildLine()), seal, s, color, on...)
 }
 
@@ -1496,7 +1495,7 @@ func treeBuildJailArgv(build, name string) []string {
 //   - the full content scan finds no reference to the build jail's home: the tree lands at another
 //     path in every jail and at the host, so the relocation a program gets cannot rescue it (it
 //     rewrites one home prefix into another, and a tree also moves within the home).
-func treeAdmitProblem(m *capture.Manifest, f packload.Fork) string {
+func treeAdmitProblem(m *capture.Manifest, f packload.Fork, workspace string) string {
 	reserved := packdecl.TreeReservedDir(f.Bin)
 	have := map[string]bool{}
 	var strays []string
@@ -1544,8 +1543,9 @@ func treeAdmitProblem(m *capture.Manifest, f packload.Fork) string {
 			"path in every jail and at the host, where such a reference breaks; have the build leave "+
 			"relative paths", m.Home, strings.Join(sampleOf(refs, 3), ", "))
 	}
-	// A tree's build runs in a container build jail alone: macos-user builds no patched extension.
-	return linksIntoTheBuild(m, containerWorkspace)
+	// The workspace the build ran in, by its runtime (forkBuildWorkspace): /workspace in a container
+	// build jail, the build's staging tree on macos-user.
+	return linksIntoTheBuild(m, workspace)
 }
 
 // forkBuildWorkspace is the workspace of the build whose id is id, at the path the build itself ran
@@ -1575,10 +1575,10 @@ func forkBuildPlatform(rt string) string {
 // jail is unsealed and keeps the whole selection, but is still a capture jail, so it too is handed
 // none of the user's `mise_tools` (FP-D19, run.Options.captureJail).
 //
-// build and id are a fork's build line and its build's id — a plain fork's (FP-D24) or a patched
-// fork's, whose series buildFork has replayed into the checkout first (PF-D97) — which the macos-user
-// arm runs itself (macosuser.RunForkBuildAct), since it has no container to run buildJailArgv in.
-// Both "" for a patched extension's build, which that arm still refuses.
+// build and id are a build's line and its build's id — a plain fork's (FP-D24), a patched fork's,
+// whose series buildFork has replayed into the checkout first (PF-D97), or a patched extension's,
+// whose line may be "" (PPX-D3) — which the macos-user arm runs itself (macosuser.RunForkBuildAct,
+// with TreeDir for a tree), since it has no container to run buildJailArgv in.
 type captureSeal struct {
 	only      []string
 	tree      string

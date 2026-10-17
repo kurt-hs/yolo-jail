@@ -18,6 +18,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -140,6 +141,35 @@ func TestAContainerForkBuildChildNamesItsRuntime(t *testing.T) {
 		}
 		if rt == "" && seen.Getenv != nil && seen.Getenv("YOLO_RUNTIME") != os.Getenv("YOLO_RUNTIME") {
 			t.Errorf("a child told no runtime named one: %q", seen.Getenv("YOLO_RUNTIME"))
+		}
+	}
+}
+
+// A PATCHED EXTENSION'S BUILD, RUN AS THE CHILD ON A MAC (PPX-D5): the child is told the tree, the
+// build's id and the runtime, so its seal carries the tree's line — "" included — and the darwin
+// build's id, and its arm hands the act the tree's reserved directory. Drop --build-id for a tree
+// from forkBuildChildArgv, or the tree's line and id from runForkBuildJail's seal, and the arm
+// refuses or the act is handed none.
+func TestAMacosUserTreeBuildChildReachesTheForkBuildActWithItsTree(t *testing.T) {
+	forkBuildHome(t)
+	for _, build := range []string{"npm ci", ""} {
+		tree := packload.Fork{Pack: "treepack", Bin: "tool-ext", Into: ".pi/extensions/tool-ext",
+			Source: forkTestSource, Build: build, Patches: "patches"}
+		b := forkBuild{Fork: tree, Commit: forkTestCommit, Platform: "darwin/" + goruntime.GOARCH}
+		argv := forkBuildChildArgv(t.TempDir(), b, false, "macos-user")
+		for _, want := range []string{"--tree=tool-ext", "--build-id=" + b.id(), "--runtime=macos-user"} {
+			if !slices.Contains(argv, want) {
+				t.Errorf("build %q: the child's argv %q lacks %s", build, argv, want)
+			}
+		}
+		seen, got := runChildArgvOnMac(t, argv)
+		if seen.SealedTree != "tool-ext" {
+			t.Errorf("build %q: the child's jail was told it builds tree %q", build, seen.SealedTree)
+		}
+		if len(got) != 1 || got[0].TreeDir != packdecl.TreeReservedDir("tool-ext") || got[0].BuildID != b.id() ||
+			got[0].Build != build || got[0].Source != filepath.Join(seen.Workspace, forkSourceLeaf) {
+			t.Errorf("build %q: the act was handed %+v, want tree dir %q id %q", build, got,
+				packdecl.TreeReservedDir("tool-ext"), b.id())
 		}
 	}
 }
