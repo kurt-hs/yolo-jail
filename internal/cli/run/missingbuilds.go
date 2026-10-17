@@ -401,12 +401,11 @@ func (o *Options) printMissingGroups(builds []missingBuild, inline bool) {
 }
 
 // missingHeadline is a reason as a group's headline: its own words, without the act that tries
-// again, which the Retry list or missingRetry names.
+// again, which the Retry list or missingRetry names. Cut where entrypoint.CutReason cuts, never inside
+// the parentheses that carry a failed build's error and its log's path.
 func missingHeadline(reason string) string {
-	if i := strings.Index(reason, " — "); i >= 0 {
-		return reason[:i]
-	}
-	return reason
+	head, _, _ := entrypoint.CutReason(reason)
+	return head
 }
 
 // colonIf is ":" when lines follow.

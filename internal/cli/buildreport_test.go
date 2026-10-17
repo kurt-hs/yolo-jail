@@ -14,13 +14,16 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/progress"
@@ -103,11 +106,13 @@ func talkingChild(t *testing.T, rc, lines int) {
 		fmt.Fprintln(s.errw, jailErrLine)
 		fmt.Fprintln(s.errw, jailBuildError)
 		if rc != 0 {
+			// As the real jail ends: the driver records the line's own status and exits 1.
 			writeFile(t, filepath.Join(staging, forkToolchainLeaf), "image-identity\n")
+			writeFile(t, filepath.Join(staging, capture.InstallerStatusLeaf), strconv.Itoa(rc)+"\n")
 			for i := 1; i <= lines; i++ {
 				fmt.Fprintf(s.errw, "build output line %d\n", i)
 			}
-			return rc, false
+			return 1, false
 		}
 		return forkBuildRunJail(staging, b, s, color), false
 	}
@@ -234,38 +239,109 @@ func TestAFailedBuildPrintsItsTailAndItsLog(t *testing.T) {
 	}
 }
 
-// A BUILD LINE THAT RAN AND FAILED IS SAID AS ONE, NEVER AS A JAIL THAT REFUSED TO START (PPX-D47):
-// the reason the launch's refusal says names the build line's failure, its jail's exit and the
-// build's own log, all in the headline the refusal keeps (run's missingHeadline ends it at the
-// first " — "), and carries no cause, which is what made the launch say "its build jail refused to
-// start on the host". The maintainer's Mac met it: a globstar build line that failed under bash 3.2
-// was said as a jail that never started. Red with buildFork's forkBuildLineFailed or buildFailed's
-// log deleted.
-func TestAFailedBuildLinesReasonNamesItsFailureAndItsLog(t *testing.T) {
-	fx := newTreeFixture(t, `"f.txt"`)
-	talkingChild(t, 3, 2)
-	ws := t.TempDir()
-	d, stream := fx.deliverWithStream(t, ws)
-	if d.Dir != "" {
-		t.Fatalf("a failed build delivered %+v", d)
+// A BUILD LINE THAT RAN AND FAILED IS SAID AS ONE, NEVER AS A JAIL THAT REFUSED TO START (PPX-D47),
+// and with the build line's OWN exit status, never the driver's: the capture driver exits 1 for every
+// failure, so the jail's exit said neither the line's status nor whether the line or the driver
+// after it failed. A line that succeeded and a driver that failed after it is said as that; with no
+// record of the line's status, neither is claimed. Red with buildFork's read of the driver's record
+// deleted, or forkBuildLineFailed's three cases collapsed.
+func TestAFailedBuildLinesReasonSaysWhichFailedAndTheLinesStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status string // the driver's record of the line's status; "" for none
+		want   string
+	}{
+		{"the build line failed", "3", "the build line ran and failed with exit status 3"},
+		{"the driver failed after the build line", "0",
+			"the build line succeeded, then capturing its output failed; its build jail exited 1"},
+		{"no record of the line's status", "", "the build line started, and its build jail exited 1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := newTreeFixture(t, `"f.txt"`)
+			prev := forkBuildChild
+			forkBuildChild = func(_ context.Context, _ time.Duration, staging string, _ forkBuild, _ captureStreams,
+				_ bool) (int, bool) {
+				writeFile(t, filepath.Join(staging, forkToolchainLeaf), "image-identity\n")
+				if tc.status != "" {
+					writeFile(t, filepath.Join(staging, capture.InstallerStatusLeaf), tc.status+"\n")
+				}
+				return 1, false
+			}
+			t.Cleanup(func() { forkBuildChild = prev })
+			d, stream := fx.deliverWithStream(t, t.TempDir())
+			if d.Dir != "" || d.Cause != nil {
+				t.Fatalf("a failed build delivered %+v, or was handed over as a jail that did not start", d)
+			}
+			if !strings.Contains(d.Reason, tc.want) {
+				t.Errorf("the reason does not say %q:\n%s\n%s", tc.want, d.Reason, stream.terminal())
+			}
+			for _, not := range []string{"refused to start", "before its build line"} {
+				if strings.Contains(d.Reason+stream.terminal(), not) {
+					t.Errorf("a build line that ran is said as %q:\n%s\n%s", not, d.Reason, stream.terminal())
+				}
+			}
+			if tc.status != "3" && strings.Contains(d.Reason, "ran and failed") {
+				t.Errorf("a failure the build line did not have is said as the line's:\n%s", d.Reason)
+			}
+		})
 	}
-	if d.Cause != nil {
-		t.Errorf("a failed build line is handed to the launch as a jail that did not start: %+v", d.Cause)
-	}
-	head := d.Reason
-	if i := strings.Index(head, " — "); i >= 0 {
-		head = head[:i]
-	}
-	own := filepath.Join(ws, ".yolo", buildLogName(treeKeyCLI))
-	for _, w := range []string{"the build line ran and failed; its build jail exited 3", "its log: " + own} {
-		if !strings.Contains(head, w) {
-			t.Errorf("the launch's headline for the failed build lacks %q:\n%s\n%s", w, head, stream.terminal())
-		}
-	}
-	for _, not := range []string{"refused to start", "before its build line"} {
-		if strings.Contains(d.Reason+stream.terminal(), not) {
-			t.Errorf("a build line that ran is said as %q:\n%s\n%s", not, d.Reason, stream.terminal())
-		}
+}
+
+// EVERY FAILED BUILD'S REASON KEEPS ITS LOG IN THE HEADLINE A LAUNCH OR A LAUNCHER SAYS: the
+// reason carries the build's error and its own log's path in parentheses, and the headline is cut
+// at the dash before the act that tries again (entrypoint.CutReason). Most of the build's errors
+// say " — " themselves (an empty result, every admission check), and a cut at the FIRST dash ended
+// each of those headlines inside the error, so the launch named no log for any of them. The
+// class, through the real build path: a failed build line, a driver that failed after one, and each
+// refusal of the build's result. Red with CutReason's parenthesis rule deleted.
+func TestEveryFailedBuildsHeadlineKeepsItsLog(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		set   func(*treeFixture)
+		child func(t *testing.T, staging string) int
+	}{
+		{"a build line that failed", nil, func(t *testing.T, staging string) int {
+			writeFile(t, filepath.Join(staging, forkToolchainLeaf), "x\n")
+			writeFile(t, filepath.Join(staging, capture.InstallerStatusLeaf), "2\n")
+			return 1
+		}},
+		{"a driver that failed after the build line", nil, func(t *testing.T, staging string) int {
+			writeFile(t, filepath.Join(staging, forkToolchainLeaf), "x\n")
+			writeFile(t, filepath.Join(staging, capture.InstallerStatusLeaf), "0\n")
+			return 1
+		}},
+		{"an empty result", func(fx *treeFixture) { fx.empty = true }, nil},
+		{"a path outside the tree", func(fx *treeFixture) { fx.stray = true }, nil},
+		{"a reference to the build's home", func(fx *treeFixture) { fx.homeRef = true }, nil},
+		{"a declared path the build left out", func(fx *treeFixture) { fx.noFile = true }, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := newTreeFixture(t, `"f.txt"`)
+			if tc.set != nil {
+				tc.set(fx)
+			}
+			if tc.child != nil {
+				prev := forkBuildChild
+				forkBuildChild = func(_ context.Context, _ time.Duration, staging string, _ forkBuild, _ captureStreams,
+					_ bool) (int, bool) {
+					return tc.child(t, staging), false
+				}
+				t.Cleanup(func() { forkBuildChild = prev })
+			}
+			ws := t.TempDir()
+			d, stream := fx.deliverWithStream(t, ws)
+			if d.Dir != "" {
+				t.Fatalf("a failed build delivered %+v\n%s", d, stream.terminal())
+			}
+			own := "its log: " + filepath.Join(ws, ".yolo", buildLogName(treeKeyCLI))
+			head, next, cut := entrypoint.CutReason(d.Reason)
+			if !strings.Contains(head, own) {
+				t.Errorf("the headline lacks %q:\n%s", own, head)
+			}
+			if !cut || strings.Contains(next, own) || next == "" {
+				t.Errorf("the act that tries again is not cut off the headline (%v): %q", cut, next)
+			}
+		})
 	}
 }
 

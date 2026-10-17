@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -182,6 +183,11 @@ func (fx *patchedAdvanceFixture) buildJail(t *testing.T) func(run.Options) int {
 			fmt.Fprintln(o.Stderr, "keeper: started, pid 42")
 			fmt.Fprintln(jailStderr(o), fx.said)
 			fmt.Fprintln(o.Stderr, "keeper: done")
+		}
+		if fx.rc != 0 && fx.ran {
+			// As the real driver ends a build line that failed: the line's own status recorded, and 1.
+			writeFile(t, filepath.Join(o.Workspace, capture.InstallerStatusLeaf), strconv.Itoa(fx.rc)+"\n")
+			return 1
 		}
 		if fx.rc != 0 {
 			return fx.rc

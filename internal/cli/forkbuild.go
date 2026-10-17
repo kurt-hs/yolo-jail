@@ -513,12 +513,26 @@ func (e forkBuildNotStarted) Unwrap() error        { return e.exit }
 // jail never reached the line, because the two are told apart in every message: a build line's
 // failure is the pack's or the build's to fix, and its own output, in its log, says why (PPX-D47).
 // Its jail's exit to errors.As, so `yolo capture` exits with the jail's status.
-type forkBuildLineFailed struct{ exit captureJailExit }
+//
+// line is the build line's own exit status, as the capture driver recorded it
+// (capture.InstallerStatusLeaf): the jail's exit is the driver's, 1 for every failure, so it says
+// neither the line's status nor whether the line or the driver after it failed. 0 is a line that
+// succeeded and a driver that failed afterwards; -1 is no record, so which of the two is unknown.
+type forkBuildLineFailed struct {
+	exit captureJailExit
+	line int
+}
 
-// Error says the build line failed and its jail's exit, one line with no dash, so a launch's
-// headline (run's missingHeadline, which ends at the first " — ") keeps it whole.
+// Error says which failed and the status that says so, one line with no dash.
 func (e forkBuildLineFailed) Error() string {
-	return fmt.Sprintf("the build line ran and failed; its build jail exited %d", e.exit.rc)
+	switch {
+	case e.line > 0:
+		return fmt.Sprintf("the build line ran and failed with exit status %d", e.line)
+	case e.line == 0:
+		return fmt.Sprintf("the build line succeeded, then capturing its output failed; its build jail exited %d",
+			e.exit.rc)
+	}
+	return fmt.Sprintf("the build line started, and its build jail exited %d", e.exit.rc)
 }
 
 func (e forkBuildLineFailed) Unwrap() error { return e.exit }
@@ -937,7 +951,7 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 					f.Key(), patchedBuildSource(f.Source), b.Entry.Label(), b.Series.Len(),
 					plural(b.Series.Len(), "patch", "patches"), b.Series.ShortDigest())
 			}
-			pr.Printf("[dim]  %s[/dim]", richtext.Escape(sealDisclosure("")+"; "+buildRuns(f, b.buildLine())))
+			pr.Printf("[dim]  %s[/dim]", richtext.Escape(sealDisclosure(mode.runtime)+"; "+buildRuns(f, b.buildLine())))
 		}
 	} else {
 		mode.run.phase("checking out its source")
@@ -953,7 +967,7 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 		}
 		if mode.run == nil {
 			pr.Printf("[bold]build[/bold] [cyan]%s[/cyan]  [dim]%s at %s, in a sealed jail[/dim]", f.Key(), f.Source, b.Commit)
-			pr.Printf("[dim]  %s[/dim]", richtext.Escape(sealDisclosure("")+"; "+buildRuns(f, b.buildLine())))
+			pr.Printf("[dim]  %s[/dim]", richtext.Escape(sealDisclosure(mode.runtime)+"; "+buildRuns(f, b.buildLine())))
 		}
 	}
 	sourceSp.End()
@@ -1076,8 +1090,13 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 		return nil, forkBuildNotStarted{exit: exit, said: tail.said(), boot: entrypoint.ReadBootRefusal(staging)}
 	}
 	if err != nil && errors.As(err, &exit) {
-		// THE BUILD LINE RAN AND FAILED: the record says the script started (PPX-D47).
-		return nil, forkBuildLineFailed{exit: exit}
+		// THE BUILD LINE RAN: the record says the script started (PPX-D47). Whether the line failed,
+		// and with what status, or the driver after it, the driver's own record says.
+		line := -1
+		if st, ok := capture.ReadInstallerStatus(filepath.Join(staging, capture.InstallerStatusLeaf)); ok {
+			line = st
+		}
+		return nil, forkBuildLineFailed{exit: exit, line: line}
 	}
 	if err != nil {
 		return nil, err
@@ -1426,6 +1445,7 @@ func forkBuildJailArgv(build string) []string {
 		"--out=" + path.Join(containerWorkspace, captureOutLeaf),
 		"--surface-root=" + paths.WorkspaceHomeState(containerWorkspace),
 		"--scan-content-refs",
+		"--line-status=" + path.Join(containerWorkspace, capture.InstallerStatusLeaf),
 		"--", "env", "YOLO_BYPASS_SHIMS=1", "bash", "-c", script,
 	}
 }
@@ -1510,6 +1530,7 @@ func treeBuildJailArgv(build, name string) []string {
 		"--out=" + path.Join(containerWorkspace, captureOutLeaf),
 		"--surface-root=" + paths.WorkspaceHomeState(containerWorkspace),
 		"--scan-content-refs",
+		"--line-status=" + path.Join(containerWorkspace, capture.InstallerStatusLeaf),
 		"--", "env", "YOLO_BYPASS_SHIMS=1", "bash", "-c", script,
 	}
 }

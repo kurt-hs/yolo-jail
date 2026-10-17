@@ -15,7 +15,8 @@ import (
 // home it is pointed at and MOVES the result out of it, which is correct inside a
 // throwaway capture jail and destructive anywhere else.
 const captureRunUsage = "usage: yolo internal capture-run --out=DIR [--home=DIR] " +
-	"[--surface-root=DIR] [--scan-content-refs] [--end-process-group] [--artifact=HOME-RELATIVE-PATH ...] " +
+	"[--surface-root=DIR] [--scan-content-refs] [--end-process-group] [--line-status=FILE] " +
+	"[--artifact=HOME-RELATIVE-PATH ...] " +
 	"-- <installer argv...>"
 
 // runCaptureRun is the in-jail half of install-capture (docs/design/program-delivery.md
@@ -29,7 +30,7 @@ const captureRunUsage = "usage: yolo internal capture-run --out=DIR [--home=DIR]
 // --home defaults to $HOME, which is the one environment variable that IS set in all three
 // backends — "a process with a HOME" is the driver's entire contract with the world.
 func runCaptureRun(args []string) int {
-	out, home, surfaceRoot := "", os.Getenv("HOME"), ""
+	out, home, surfaceRoot, lineStatus := "", os.Getenv("HOME"), "", ""
 	scanContentRefs, endGroup := false, false
 	var command []string
 	var artifacts []string
@@ -56,6 +57,11 @@ func runCaptureRun(args []string) int {
 			// The installer's whole process group ends with it (capture.Options.EndProcessGroup):
 			// the sealed macos-user build act's, so nothing its build line started outlives it.
 			endGroup = true
+		case strings.HasPrefix(a, "--line-status="):
+			// Where the installer's own exit status is recorded when it exits
+			// (capture.Options.StatusFile): a build's, so its host tells a build line that failed,
+			// and its status, from this driver failing after one that succeeded.
+			lineStatus = strings.TrimPrefix(a, "--line-status=")
 		case strings.HasPrefix(a, "--artifact="):
 			artifacts = append(artifacts, strings.TrimPrefix(a, "--artifact="))
 		case strings.HasPrefix(a, "--surface-root="):
@@ -88,6 +94,7 @@ func runCaptureRun(args []string) int {
 		Command:         command,
 		ScanContentRefs: scanContentRefs,
 		EndProcessGroup: endGroup,
+		StatusFile:      lineStatus,
 		Stdout:          os.Stdout,
 		Stderr:          os.Stderr,
 	})
