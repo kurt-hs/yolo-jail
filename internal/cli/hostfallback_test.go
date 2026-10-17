@@ -1,8 +1,8 @@
 package cli
 
 // hostfallback_test.go pins an UNMODIFIED EXTENSION's FALLBACK at the host notch
-// (docs/design/pi-extension-store-builds.md §4.3, XB-D7): where the host renders no tree — a macOS
-// host, which builds none, or a Linux host with no good build — `yolo host apply` writes the author's
+// (docs/design/pi-extension-store-builds.md §4.3, XB-D7): where the host renders no tree — a host
+// that builds none now (a Mac before its setup), or a host with no good build — `yolo host apply` writes the author's
 // raw entry into the agent's list in the tree's place and says so, the owning agent is never stopped
 // for it, and once a good build serves the tree's own entry is written again.
 
