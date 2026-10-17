@@ -23,6 +23,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 )
 
 // waitFor polls cond every few milliseconds until it holds or within passes, and reports which.
@@ -76,6 +77,8 @@ func TestEndMacosUserSessionReplaysAKeeperAlreadyGoneBeforeTheProbe(t *testing.T
 			var output lockedBuffer
 			o := &Options{Workspace: ws, Stdout: &output, Stderr: &output}
 			fillDefaults(o)
+			var events []perf.Event
+			o.Perf = perf.New(nil, func(e perf.Event) { events = append(events, e) })
 			o.Exec = func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {
 				t.Errorf("quit ran an unexpected stop or reap command: %v", argv)
 				return ExecResult{RC: 1}
@@ -145,6 +148,17 @@ func TestEndMacosUserSessionReplaysAKeeperAlreadyGoneBeforeTheProbe(t *testing.T
 			o.endMacosUserKeying()
 			o.endMacosUserSession("macos-user", 7)
 			got := output.String()
+			// The teardown a ready session ended is in its timing report, however fast its keeper
+			// was: TestAMacosUserLaunchReportsItsTimingAfterItsTeardown lost the row when it was not.
+			teardowns := 0
+			for _, e := range events {
+				if e.Kind == perf.KindEnd && e.Name == "session.keeper_teardown" {
+					teardowns++
+				}
+			}
+			if want := map[bool]int{true: 1, false: 0}[tc.wantReplay]; teardowns != want {
+				t.Errorf("session.keeper_teardown spans = %d, want %d: %+v", teardowns, want, events)
+			}
 			if tc.wantReplay {
 				if n := strings.Count(got, marker); n != 1 {
 					t.Errorf("post-ready marker replayed %d times, want exactly once:\n%s", n, got)
