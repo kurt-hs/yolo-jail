@@ -868,19 +868,3 @@ func TestAMacFloorBuildsAPlainForkThroughTheMacosUserAct(t *testing.T) {
 		t.Fatalf("running the Mac floor's forkcli with no environment: %q %v", got, err)
 	}
 }
-
-// A PATCHED FORK STAYS LINUX'S on a Mac whose build act could run: its advance builds for a
-// container's platform alone, so it is no floor entry, naming a jail, and nothing is built.
-func TestAMacFloorHoldsNoPatchedForkEvenWithItsBuildAct(t *testing.T) {
-	pin := forkCommitOne
-	w, bs := macForkWorld(t, &pin, "")
-	p := forkProgram()
-	p.Install.Patches = "patches"
-	st, _, err := w.floor.Ensure(context.Background(), p)
-	if !errors.Is(err, ErrNoEntry) || !strings.Contains(st.Reason, "in a Linux capture jail, and this machine is darwin/") {
-		t.Errorf("a patched fork on a Mac: %s (%s), %v", st.Disposition, st.Reason, err)
-	}
-	if len(bs.builds) != 0 {
-		t.Errorf("a patched fork on a Mac was built: %v", bs.builds)
-	}
-}

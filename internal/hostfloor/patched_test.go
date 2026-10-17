@@ -14,10 +14,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/capture"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 )
 
@@ -59,7 +62,12 @@ func (pf *patchedFake) good(commit, recipe, label string, relocatable bool) *Pat
 // patchedWorld is a Linux world holding patchedProgram, its Patched and Advance the fake's.
 func patchedWorld(t *testing.T) (*world, *patchedFake) {
 	t.Helper()
-	w := newLinuxWorld(t)
+	return patchedWorldOver(t, newLinuxWorld(t))
+}
+
+// patchedWorldOver is w holding patchedProgram, its Patched and Advance the fake's.
+func patchedWorldOver(t *testing.T, w *world) (*world, *patchedFake) {
+	t.Helper()
 	pf := &patchedFake{t: t, bs: newBuildStore(t),
 		state: PatchedState{Recipe: patchedRecipeOne, Reason: "fork forkpack/forkcli has no build on this machine yet"}}
 	w.floor.Patched = func(p Program) PatchedState {
@@ -620,24 +628,99 @@ func TestAPatchedForkOnAMachineThatCannotBuildInstallsOnlyWhatTheStoreHolds(t *t
 	}
 }
 
-// ON A MAC A PATCHED FORK HAS NO FLOOR ENTRY, as no fork has (FP-D16: the build is of the jail's
-// platform), and the reason names the next step — a jail on a container backend — and nothing
-// advances. A series that cannot be read is no floor entry on Linux too, with the series' own reason.
+// A MACHINE THE FLOOR BUILDS NO FORK ON has no floor entry for a patched fork, and the reason names
+// the next step — a jail — and nothing advances: not Linux, whose build is a capture jail's, nor a
+// Mac, whose build is the macos-user act's (FP-D24, PF-D97). A series that cannot be read is no floor
+// entry on Linux too, with the series' own reason.
 func TestAPatchedForkWithNoFloorEntryNamesWhereItRuns(t *testing.T) {
 	w, pf := patchedWorld(t)
 	pf.advance = func(*patchedFake) { t.Error("a patched fork with no floor entry ran the advance") }
-	w.floor.GOOS = "darwin"
+	w.floor.GOOS = "freebsd"
 	p := patchedProgram()
 	st, _, err := w.floor.Ensure(context.Background(), p)
-	if !errors.Is(err, ErrNoEntry) || !strings.Contains(st.Reason, "in a Linux capture jail, and this machine is darwin/") ||
-		!strings.Contains(st.Reason, "run it in a jail instead (`yolo -- forkcli`, on a container backend") {
-		t.Errorf("on a Mac: %s (%s), %v", st.Disposition, st.Reason, err)
+	if !errors.Is(err, ErrNoEntry) || !strings.Contains(st.Reason, "and this machine is freebsd/") ||
+		!strings.Contains(st.Reason, "run it in a jail instead (`yolo -- forkcli`)") {
+		t.Errorf("on freebsd: %s (%s), %v", st.Disposition, st.Reason, err)
 	}
 	w.floor.GOOS = "linux"
 	pf.state = PatchedState{Reason: "patches/0001-a.patch is not a git format-patch member"}
 	st, _, err = w.floor.Ensure(context.Background(), p)
 	if !errors.Is(err, ErrNoEntry) || !strings.Contains(st.Reason, "whose series cannot be read: patches/0001-a.patch") {
 		t.Errorf("an unreadable series: %s (%s), %v", st.Disposition, st.Reason, err)
+	}
+}
+
+// macPatchedWorld is patchedWorld on a Mac (PF-D97): a darwin floor over a darwin Node distribution,
+// the macos-user build act's predicate answering blocked (with its step's does appended), and a
+// CaptureUnavailable a Mac's advance must never ask, its build being the sandbox account's.
+func macPatchedWorld(t *testing.T, blocked string) (*world, *patchedFake) {
+	t.Helper()
+	w, pf := patchedWorldOver(t, newWorldOn(t, floortest.NewDistOn(t, "darwin", runtime.GOARCH)))
+	w.floor.Build = func(Program, string) (*capture.Entry, error) {
+		t.Error("a patched fork's install ran the plain fork's build")
+		return nil, errors.New("no plain build")
+	}
+	w.floor.BuildActUnavailable = func(bin, does string) string {
+		if bin != "forkcli" {
+			t.Errorf("BuildActUnavailable asked about %q", bin)
+		}
+		if blocked == "" {
+			return ""
+		}
+		return blocked + " " + does
+	}
+	w.floor.CaptureUnavailable = func() string { return "no container runtime (podman) is on PATH" }
+	return w, pf
+}
+
+// A MAC'S FLOOR HOLDS A PATCHED FORK'S PROGRAM (PF-D97), as it holds a plain fork's: with the
+// macos-user build act able to run it is missing rather than no floor entry — though no container
+// runtime is here — and the install runs the advance and installs the good build it leaves.
+func TestAMacFloorAdvancesAPatchedForkThroughItsBuildAct(t *testing.T) {
+	w, pf := macPatchedWorld(t, "")
+	pf.advance = firstGood
+	p := patchedProgram()
+	if st := w.floor.Status(p); st.Disposition != Missing || !strings.Contains(st.Reason, "the install checks fork pack "+
+		"forkpack's upstream, replays its patch series and builds it") {
+		t.Fatalf("before any install on a Mac: %s (%s), want missing", st.Disposition, st.Reason)
+	}
+	st, outcome, err := w.floor.Ensure(context.Background(), p)
+	if err != nil || outcome != Installed || pf.advances != 1 {
+		t.Fatalf("Ensure on a Mac: %s %v, %d advances\n%s", outcome, err, pf.advances, w.out.String())
+	}
+	if rec := st.Record; rec.Revision != forkCommitOne || rec.Recipe != patchedRecipeOne || rec.Node == "" {
+		t.Errorf("record = %+v", rec)
+	}
+}
+
+// A MAC WHOSE BUILD ACT CANNOT RUN says why in that act's words, with its step, as a plain fork's
+// does — never the container runtime a Mac's build does not use — and runs no advance; a good build
+// the store holds still installs. A Mac floor given no build act at all holds no fork's build.
+func TestAMacFloorWhoseBuildActCannotRunNamesItsStepForAPatchedFork(t *testing.T) {
+	const blocked = "the sandbox account _yolojail, which a fork's build on a Mac runs as, does not exist — " +
+		"run the one-time setup, `yolo macos-setup`, and the next `yolo host` launch"
+	w, pf := macPatchedWorld(t, blocked)
+	pf.advance = func(*patchedFake) { t.Error("a Mac whose build act cannot run ran the advance") }
+	p := patchedProgram()
+	st, _, err := w.floor.Ensure(context.Background(), p)
+	if !errors.Is(err, ErrNoEntry) || !strings.Contains(st.Reason, "there is no build of forkcli from fork pack "+
+		"forkpack's patch series on this machine, and "+blocked+" builds it") ||
+		strings.Contains(st.Reason, "podman") || strings.Contains(st.Reason, "install one (`yolo check`") {
+		t.Fatalf("a blocked Mac: %s (%s), %v", st.Disposition, st.Reason, err)
+	}
+	firstGood(pf)
+	if st, outcome, err := w.floor.Ensure(context.Background(), p); err != nil || outcome != Installed ||
+		st.Record.Revision != forkCommitOne {
+		t.Fatalf("a good build in a blocked Mac's store: %s %v %+v", outcome, err, st.Record)
+	}
+
+	w, pf = macPatchedWorld(t, "")
+	w.floor.BuildActUnavailable = nil
+	pf.advance = func(*patchedFake) { t.Error("a Mac floor with no build act ran the advance") }
+	st, _, err = w.floor.Ensure(context.Background(), p)
+	if !errors.Is(err, ErrNoEntry) || !strings.Contains(st.Reason, "it is built from source by fork pack forkpack, "+
+		"which on a Mac the floor builds as the macos-user sandbox account, and this floor runs no such build") {
+		t.Errorf("a Mac floor with no build act: %s (%s), %v", st.Disposition, st.Reason, err)
 	}
 }
 
