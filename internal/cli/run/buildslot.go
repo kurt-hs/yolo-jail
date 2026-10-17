@@ -52,7 +52,7 @@ func SlotBuildJails(rt string) int {
 // setup steps (its category dirs, its staging trees' modes) no run has measured side by side, so a
 // launch's darwin builds take turns (docs/reference/patched-forks.md PF-D97).
 func SlotBuildJailsOn(rt string, cpus int) int {
-	if !BuildJailsSideBySide(rt) || rt == "macos-user" {
+	if !BuildJailsSideBySide(rt) || rt == "macos-user" { // parity: Honored — macos-user builds too, one at a time (its one sandbox account's capture acts are unmeasured side by side)
 		return 1
 	}
 	return min(4, max(1, cpus/2))
