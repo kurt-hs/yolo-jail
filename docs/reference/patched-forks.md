@@ -1026,7 +1026,7 @@ Where a set hatch has nothing to act on, the act says so in one line rather than
 | :--- | :--- |
 | An **attach** | nothing: the running jail keeps what it was handed; the line says the hatch applies at the next fresh launch. `YOLO_USE_CACHED_GOOD` refuses there, naming `yolo stop` |
 | **In a jail** | nothing, since a jail launch builds no patched build; `YOLO_USE_CACHED_GOOD` refuses |
-| **macos-user** | nothing, since that backend delivers no patched build ([§9](#9-notch-coverage)); `YOLO_USE_CACHED_GOOD` refuses |
+| **macos-user** | a patched fork's hatches act as on podman, its darwin build being this backend's ([PF-D97](#PF-D97)), `YOLO_USE_CACHED_GOOD` serving the darwin good build; an extension's say they do nothing there, since no patched extension is built on it yet |
 | **`--update`** | `YOLO_ALLOW_PATCH_FAILURES` does not carry a fresh check past a failure, and `YOLO_USE_CACHED_GOOD` refuses to combine with it, naming either launch without `--update` |
 
 `YOLO_USE_CACHED_GOOD` additionally needs a capture store the runtime can mount read-only. With it,
@@ -1126,19 +1126,17 @@ A notch is where an agent runs: a jail, the host through `yolo host`, or the unb
 | :--- | :--- |
 | **jail, podman (Linux or a macOS VM)** | yes: the check, the host replay and the sealed build run at a fresh launch |
 | **jail, Apple Container** | as a plain fork: above the read-only bind floor, yes; below it, no store is mounted and the fork's reason says so. A capture jail cannot start beside a running jail (INFERRED), so while another workspace's jail runs an advance cannot build: nothing is recorded, the candidate stays pending, and the launch stops, naming `yolo capture <bin>` once the other jails stop and the hatches that run the good build meanwhile ([PF-D92](#PF-D92)). With no good build, the launch refuses with that line |
-| **jail, macos-user** | none: the fork route delivers nothing there ([FP-D3](../design/forked-programs-as-packs.md#FP-D3)). The launch says why, names both container backends, and hands the sandbox's launcher the same reason ([PF-D54](#PF-D54)). Delivery is deferred ([OQ-PFK5](#why-its-this-way), [PF-D59](#PF-D59)) |
+| **jail, macos-user** | yes ([PF-D97](#PF-D97)): the check and the host replay run at a fresh launch as on podman, the build is the sealed darwin build of the macos-user act ([FP-D24](../design/forked-programs-as-packs.md#FP-D24)), one at a time, and the launch stages the build into the sandbox's capture store, whose source launcher materializes it. With no build the launch refuses, naming `YOLO_RUNTIME=container yolo`, `YOLO_RUNTIME=podman yolo` and `YOLO_ALLOW_MISSING_PROGRAMS=1 yolo` ([JR-D6](program-readiness.md#JR-D6)). A dry run builds nothing. A patched extension is not built there yet: the launch says so and the agent starts without it |
 | **`yolo host`, Linux** | yes ([PF-D14](#PF-D14), [PF-D50](#PF-D50)–[PF-D53](#PF-D53), [PF-D55](#PF-D55)): the floor's install act runs the advance first, outside the floor's own lock and the render gate's budget, honoring `agent_updates` for the fork pack and its base. Its readers of the recipe read the good build's. A newer upstream that fails, or that one of yolo's own steps keeps from building, keeps the installed copy, which `yolo host -- <bin>` then runs only under a recovery hatch or a hold ([OQ-PPX3](pi-extensions.md#OQ-PPX3), [PD-NF1](../design/program-delivery.md#PD-NF1)); an upstream it cannot reach runs the installed copy, said ([PF-D95](#PF-D95)); the user's own edit that does not build removes it. The floor's installed copy serves while the good build's store entry is gone |
-| **`yolo host`, macOS** | none: the Mac's darwin build ([FP-D24](../design/forked-programs-as-packs.md#FP-D24)) is a plain fork's only. The no-copy line names a jail on a container backend ([PF-D54](#PF-D54)) |
+| **`yolo host`, macOS** | yes ([PF-D97](#PF-D97)): the floor's advance runs as on Linux, its build the macos-user act's darwin build; a Mac whose act cannot run (no sandbox account, root, no `sandbox-exec`) gets no entry, the reason naming the act's step, as for a plain fork |
 | **guest** | unbuilt, as every verb there is |
 
-**Why a patched fork does not reach macos-user** ([OQ-PFK5](#why-its-this-way), ruled "defer"): a macos-user
-launch delivers no fork's program, because that backend's run pipeline returns before the
-fresh-launch slot. A patched fork has no darwin build path at all: the darwin build
-([FP-D24](../design/forked-programs-as-packs.md#FP-D24)) covers only a plain fork, and the
-patched-fork advance runs only in a container launch's build slot. The launch's line names the ways
-out: a container backend, or starting without the program. (Install-capture's
-[hand-off H4](install-capture.md#H4), which once also kept the capture store out of reach there,
-landed 2026-10-05.)
+**How a patched fork reaches macos-user** ([PF-D97](#PF-D97)): the macos-user arm of the run
+pipeline runs the fork half of the fresh launch's build slot before its session, with the darwin
+platform and the macos-user runtime, so the advance is the container launch's own (check, replay,
+recorded failures, hatches, the refusal) and only its builder differs: the sealed act building the
+replayed tree as the sandbox account. The delivered store key is staged into the sandbox's
+root-owned copy of the capture store. Not measured on a Mac yet: see [§14](#14-unbuilt-and-unmeasured).
 
 ## 10. Migration from a plain fork
 
@@ -1250,7 +1248,11 @@ keeps the plain-fork manifest where older users point and publishes the patched 
   There, a required build Apple Container cannot start is pending, never failed; exact artifact reuse
   precedes the capability query; and a retained build workspace is checked against its original
   backend before a new child is admitted.
-- **macos-user delivery** ([OQ-PFK5](#why-its-this-way)), deferred as above.
+- **A patched fork on macos-user** ([PF-D97](#PF-D97)): built and pinned by Linux unit tests
+  with the act stood in; the three cells in `integration/macosuserpatchedfork_test.go` run only on
+  the `macos-user.yml` job, and no Mac has run them or a real fork's darwin build.
+- **A patched extension on macos-user**: not built. Its build needs a darwin tree-build driver and
+  its delivery a copy into the sandbox in place of the read-only mount.
 
 ## Current values
 
