@@ -747,7 +747,7 @@ func TestBuildForkBuildPlanIsViable(t *testing.T) {
 	argv := strings.Join(plan.DriverArgv, " ")
 	for _, want := range []string{"/usr/bin/sandbox-exec -f " + plan.ProfilePath, "internal capture-run",
 		"--home=" + plan.StagingHome, "--out=" + plan.OutDir, "--scan-content-refs",
-		"/usr/bin/env YOLO_BYPASS_SHIMS=1 /nix/store/abc-profile/bin/bash -c", "cd '" + root + "/src' && npm ci && npm install -g",
+		"/usr/bin/env YOLO_BYPASS_SHIMS=1 /bin/bash -c", "cd '" + root + "/src' && npm ci && npm install -g",
 		"/nix/store/abc-profile/bin", "printf '%s' 'yolo 1.2.3, darwin floor /nix/store/abc-profile'",
 		"> '" + root + "/toolchain'", `NPM_CONFIG_PREFIX="$HOME/.npm-global"`} {
 		if !strings.Contains(argv, want) {

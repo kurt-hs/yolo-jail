@@ -19,7 +19,6 @@ package darwinpkg
 // written.
 
 import (
-	"slices"
 	"strings"
 	"testing"
 )
@@ -147,17 +146,5 @@ func TestFloorIsTheCoreMinusExactlyTheExclusions(t *testing.T) {
 			t.Fatalf("FloorNames()[%d] = %q, want %q — the floor is no longer in flake order", i, got, n)
 		}
 		i++
-	}
-}
-
-// THE FLOOR CARRIES A BASH 4+, because the sealed macos-user build act runs every build's script with
-// the floor's own bin/bash (macosuser's floorBash, pi-extensions.md PPX-D46): macOS's /bin/bash is
-// 3.2, which has no globstar, no `${x,,}` and no associative arrays, so a build line that builds in a
-// container failed on a Mac. bashInteractive is GNU bash, and no BSD tool it could surprise a user
-// against, so the no-GNU-userland gate must not exclude it.
-func TestTheDarwinFloorCarriesBash(t *testing.T) {
-	if !slices.Contains(FloorNames(), "bashInteractive") {
-		t.Errorf("the darwin floor has no bashInteractive: %v\n\nEvery macos-user build runs its script "+
-			"with <floor>/bin/bash; without it the build act has no shell to run.", FloorNames())
 	}
 }

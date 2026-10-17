@@ -11,8 +11,8 @@ import (
 // (docs/reference/pi-extensions.md PPX-D46 to PPX-D49), all four met on the maintainer's Mac by one
 // patched extension's build line, `… && shopt -s globstar && rm -f packages/**/*.test.ts`:
 //
-//   - the build's script runs under the darwin floor's bash, so a bash 4+ build line builds
-//     (PPX-D46);
+//   - the build's script runs under macOS's own /bin/bash, the platform's base system, so a build
+//     line must be portable to it; that globstar line was the recipe's bug to fix (PPX-D46);
 //   - a build line that ran and failed is said as one, naming its log, never as a build jail that
 //     refused to start (PPX-D47);
 //   - the build jail prints no line meant for an agent session: no ownerless list, no shared-network
@@ -53,12 +53,12 @@ func noAgentSessionLines(t *testing.T, lines []string) {
 	}
 }
 
-// TestMacosUserPatchedExtensionBuildLineRunsUnderBash4: a build line using globstar and `${x,,}`,
-// neither of which macOS's /bin/bash 3.2 has, builds and is delivered, and the build jail prints no
-// agent-session line.
-func TestMacosUserPatchedExtensionBuildLineRunsUnderBash4(t *testing.T) {
+// TestMacosUserPatchedExtensionBuildJailPrintsNoAgentSessionLine: a portable build line (one that
+// runs under macOS's own /bin/bash 3.2 and BSD tools, PPX-D46) builds and is delivered, and the build
+// jail prints no agent-session line.
+func TestMacosUserPatchedExtensionBuildJailPrintsNoAgentSessionLine(t *testing.T) {
 	requireMacosUser(t)
-	build := `shopt -s globstar && x=AB && printf '%s_%s\n' "${x,,}" "$(ls **/f.txt | head -n 1)" > built.txt`
+	build := `x=AB && printf '%s_%s\n' "$(printf '%s' "$x" | tr 'A-Z' 'a-z')" "$(ls f.txt)" > built.txt`
 	f := newMacExtFixture(t, "ten", build, []string{"built.txt"})
 
 	r := f.launch(t)
@@ -67,7 +67,7 @@ func TestMacosUserPatchedExtensionBuildLineRunsUnderBash4(t *testing.T) {
 			r.rc, r.stdout, r.stderr)
 	}
 	if got, _ := probeLine(r.stdout, "BUILT"); got != "ab_f.txt" {
-		t.Errorf("the bash 4 build line's output is %q, want %q (globstar and ${x,,} under the floor's bash):\n%s",
+		t.Errorf("the build line's output is %q, want %q:\n%s",
 			got, "ab_f.txt", r.stdout)
 	}
 	noAgentSessionLines(t, buildJailLines(t, f.ws, f.owner))

@@ -1919,7 +1919,6 @@
 "internal/wirebridged",
 "packs/**",
 "scripts",
-"scripts/__pycache__",
 "tools/**",
 "userguide/**"
 ]
@@ -3289,8 +3288,7 @@
 "internal/wirebridge",
 "internal/wirebridged",
 "packs/**",
-"scripts",
-"scripts/__pycache__"
+"scripts"
 ]
 },
 {
@@ -3441,8 +3439,8 @@
 "internal/loopholes/*",
 "internal/macosuser/bootstrapgit_test.go",
 "internal/macosuser/briefingresources_test.go",
-"internal/macosuser/buildactfloor_test.go",
 "internal/macosuser/buildactsealed_test.go",
+"internal/macosuser/buildactshell_test.go",
 "internal/macosuser/cabundle.go",
 "internal/macosuser/cabundle_test.go",
 "internal/macosuser/capture.go",

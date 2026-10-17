@@ -1213,11 +1213,10 @@ func (p CapturePlan) envFileCommands() ([][]string, [][]string) {
 //   - A src/ SIBLING holds the checkout, copied in by the INVOKING user from the host's staging
 //     directory (which sits under that user's home, where the profile denies every read), into a
 //     directory the user owns with the shared group's inherited ACLs, so the build can write it.
-//   - THE DRIVER RUNS THE BUILD LINE, `env YOLO_BYPASS_SHIMS=1 <floor>/bin/bash -c 'cd src && <build>'`,
+//   - THE DRIVER RUNS THE BUILD LINE, `env YOLO_BYPASS_SHIMS=1 /bin/bash -c 'cd src && <build>'`,
 //     under the full reference scan, as the container build's does (internal/cli's forkBuildJailArgv).
-//     The bash is the DARWIN FLOOR's (floorBash), never macOS's /bin/bash: that is bash 3.2, with no
-//     globstar, no `${x,,}` and no associative arrays, where a container build line runs under the
-//     image's bash 5, so a build line that builds in a container failed here (PPX-D46).
+//     The bash is macOS's own: a build for this platform runs on its base system, and a recipe must
+//     work there (PPX-D46).
 //   - THE TOOLCHAIN RECORD names yolo, the darwin floor's store path and the macOS release, where a
 //     container build names its image's identity; the script writes it first, beside out/.
 //   - THE TOOLCHAIN IS THE DARWIN FLOOR every launch on this backend materializes (mise, node, git
@@ -1296,10 +1295,6 @@ type ForkBuildPlan struct {
 	TreeDir string
 	// SrcDir is the staging tree's checkout and ToolchainFile the record the build's script writes.
 	SrcDir, ToolchainFile string
-	// Floor is the darwin floor's profile the build runs on (Darwin.ProfilePath), "" before it is
-	// built (a dry run); Bash the shell the driver runs the build's script with, the floor's
-	// (floorBash).
-	Floor, Bash string
 	// SourceCommands copy the checkout into SrcDir, run as the INVOKING user and never under sudo:
 	// the source is that user's, and a copy made as root would leave files the build cannot write.
 	SourceCommands [][]string
@@ -1320,47 +1315,20 @@ func BuildForkBuildPlan(opts ForkBuildOptions) ForkBuildPlan {
 	plan.BootstrapArgv = append(slices.Clone(plan.BootstrapArgv), DarwinBootstrapSealedFlag)
 	src := ForkBuildSourceDir(stagingRoot)
 	toolchain := filepath.Join(stagingRoot, forkToolchainLeaf)
-	bash := floorBash(inner.Darwin)
 	if opts.TreeDir != "" {
 		plan.DriverArgv = TreeBuildDriverArgv(plan.StagedYolo, plan.StagingHome, plan.OutDir, src, toolchain,
 			forkToolchainHead(opts), opts.Build, opts.TreeDir, plan.ProfilePath, plan.EnvFile,
-			plan.DarwinPathPrefix, bash)
+			plan.DarwinPathPrefix)
 	} else {
 		plan.DriverArgv = ForkBuildDriverArgv(plan.StagedYolo, plan.StagingHome, plan.OutDir, src, toolchain,
-			forkToolchainHead(opts), opts.Build, plan.ProfilePath, plan.EnvFile, plan.DarwinPathPrefix, bash)
+			forkToolchainHead(opts), opts.Build, plan.ProfilePath, plan.EnvFile, plan.DarwinPathPrefix)
 	}
 	var copySource [][]string
 	if opts.Source != "" {
 		copySource = [][]string{{cpBin, "-R", opts.Source + "/.", src}}
 	}
 	return ForkBuildPlan{CapturePlan: plan, BuildID: opts.BuildID, Build: opts.Build, Source: opts.Source,
-		TreeDir: opts.TreeDir, SrcDir: src, ToolchainFile: toolchain, Floor: floorProfile(inner.Darwin), Bash: bash,
-		SourceCommands: copySource}
-}
-
-// floorBashUnbuilt is the shell a plan names while its darwin floor is not built yet: a dry run,
-// which skips the floor's nix build. It is no path, so nothing can run it; a real build always has
-// the floor (materializeForkToolchain refuses without one).
-const floorBashUnbuilt = "<darwin floor>/bin/bash"
-
-// floorBash is the shell a build's script runs under: the DARWIN FLOOR's bash, at the floor
-// profile's own bin (flake.nix's coreFloorNames carries bashInteractive, so every floor has it, and a
-// `packages:` bash the user declared replaces the floor's at the same place). Read off the floor's
-// store path, never resolved through PATH: the build's PATH is the sandbox's, and macOS's own
-// /bin/bash 3.2 is on it. floorBashUnbuilt with no floor.
-func floorBash(d *Darwin) string {
-	if p := floorProfile(d); p != "" {
-		return filepath.Join(p, "bin", "bash")
-	}
-	return floorBashUnbuilt
-}
-
-// floorProfile is d's profile store path, "" for no floor.
-func floorProfile(d *Darwin) string {
-	if d == nil {
-		return ""
-	}
-	return d.ProfilePath
+		TreeDir: opts.TreeDir, SrcDir: src, ToolchainFile: toolchain, SourceCommands: copySource}
 }
 
 // withDarwinEnv is env with the darwin floor's build variables (PKG_CONFIG_PATH and the like) set
@@ -1407,28 +1375,27 @@ func ForkBuildStagingCommands(stagingRoot, hostUser string) [][]string {
 }
 
 // ForkBuildDriverArgv is CaptureDriverArgv for a fork's build: the same account, environment,
-// profile and capture driver, around `env YOLO_BYPASS_SHIMS=1 <bash> -c <ForkBuildScript>`, bash
-// being the darwin floor's (floorBash).
+// profile and capture driver, around `env YOLO_BYPASS_SHIMS=1 /bin/bash -c <ForkBuildScript>`.
 func ForkBuildDriverArgv(stagedYolo, stagingHome, outDir, srcDir, toolchainFile, toolchainHead, build,
-	profilePath, envFile string, pathPrefix []string, bash string) []string {
+	profilePath, envFile string, pathPrefix []string) []string {
 	return buildDriverArgv(stagedYolo, stagingHome, outDir, ForkBuildScript(srcDir, toolchainFile,
-		toolchainHead, build), profilePath, envFile, pathPrefix, bash)
+		toolchainHead, build), profilePath, envFile, pathPrefix)
 }
 
 // TreeBuildDriverArgv is ForkBuildDriverArgv for a PATCHED EXTENSION's build
 // (docs/reference/pi-extensions.md §7.1): the same crossing, around TreeBuildScript.
 func TreeBuildDriverArgv(stagedYolo, stagingHome, outDir, srcDir, toolchainFile, toolchainHead, build,
-	treeDir, profilePath, envFile string, pathPrefix []string, bash string) []string {
+	treeDir, profilePath, envFile string, pathPrefix []string) []string {
 	return buildDriverArgv(stagedYolo, stagingHome, outDir, TreeBuildScript(srcDir, toolchainFile,
-		toolchainHead, build, treeDir), profilePath, envFile, pathPrefix, bash)
+		toolchainHead, build, treeDir), profilePath, envFile, pathPrefix)
 }
 
 // buildDriverArgv is the crossing both build drivers share: the sandbox account, its environment,
-// the profile and the capture driver, around `env YOLO_BYPASS_SHIMS=1 <bash> -c <script>`. The whole
-// script runs under bash — the toolchain record, the build line and a tree's subshell around it — so
-// one shell, the floor's, is every pack-authored line's.
+// the profile and the capture driver, around `env YOLO_BYPASS_SHIMS=1 /bin/bash -c <script>`. The
+// shell is macOS's own /bin/bash: a build runs on the platform's base system, and a recipe must work
+// there (pi-extensions.md PPX-D46).
 func buildDriverArgv(stagedYolo, stagingHome, outDir, script, profilePath, envFile string,
-	pathPrefix []string, bash string) []string {
+	pathPrefix []string) []string {
 	// The crossing is the one run-as rule (RunAsSandboxArgv): `-n`, so it never prompts.
 	out := RunAsSandboxArgv(nil, "-i")
 	out = append(out, sandboxEnvPairs(stagingHome, SandboxUser,
@@ -1440,7 +1407,7 @@ func buildDriverArgv(stagedYolo, stagingHome, outDir, script, profilePath, envFi
 		"--out=" + outDir,
 		captureScanFlag,
 		captureEndGroupFlag,
-		"--", "/usr/bin/env", forkBypassShimsVar + "=1", bash, "-c", script,
+		"--", "/usr/bin/env", forkBypassShimsVar + "=1", "/bin/bash", "-c", script,
 	})...)
 	return out
 }
@@ -1508,13 +1475,6 @@ func ForkBuildPlanInvariants(plan ForkBuildPlan) []string {
 		problems = append(problems,
 			"the build's bootstrap is not told it is a sealed build ("+DarwinBootstrapSealedFlag+"); it would "+
 				"render every selected pack's agent config into the staging home and print each one's notices")
-	}
-	if want := floorBash(&Darwin{ProfilePath: plan.Floor}); plan.Bash != want ||
-		!containsArgPair(plan.DriverArgv, forkBypassShimsVar+"=1", plan.Bash, "-c") {
-		problems = append(problems,
-			"the build driver argv does not run its script with the darwin floor's bash ("+want+"); under "+
-				"macOS's /bin/bash 3.2 a build line using globstar, `${x,,}` or an associative array fails "+
-				"where a container build of it succeeds")
 	}
 	if !containsArg(plan.DriverArgv, captureEndGroupFlag) {
 		problems = append(problems,
