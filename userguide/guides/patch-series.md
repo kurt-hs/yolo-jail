@@ -377,8 +377,8 @@ matches nothing here only prints a warning, so one left in your shell profile do
 | `YOLO_ALLOW_MISSING_PROGRAMS=1 yolo` | Starts the jail without a patched program that has no build. The shell works; the program does not. |
 
 For `yolo host` and `yolo capture`, the error prints the same lines with that command in place of
-`yolo`. On an attach to a running jail, inside a jail, or on `macos-user`, the variables do nothing,
-and the launch says so.
+`yolo`. On an attach to a running jail or inside a jail the variables do nothing, and on `macos-user`
+the extension ones do nothing; the launch says so.
 
 ## Where it works
 
@@ -387,9 +387,9 @@ and the launch says so.
 | Jail, Podman (Linux, or a Mac's Podman machine) | Works | Works |
 | Jail, Apple Container 1.1.0 or later | Works. A new build cannot start while another jail is running: the launch stops and says so, and `yolo capture` builds it once the other jails stop. To run your good build meanwhile, use `YOLO_USE_CACHED_GOOD`. | Works, the same way |
 | Jail, older Apple Container | Doesn't: the launch says so | No new builds; a good build already on this Mac is still copied in |
-| `macos-user` | Doesn't yet. The launch says so and names a container backend, where it works. | Doesn't yet; the same line |
+| `macos-user` | Works: the launch builds it for your Mac as the sandbox account, one build at a time. Until a build exists the launch stops and names a container backend. | Doesn't yet. The launch says so, and pi starts without it |
 | `yolo host`, Linux | Works: `yolo host -- <bin>` and `yolo host apply --assert` build and install it | Works: `yolo host apply --assert` builds it and links `~/<into>` to a copy yolo keeps, and so does `yolo host -- pi` with `host_apply_on_launch` on. `yolo host -- pi` does not start pi while an extension it loads has no build. |
-| `yolo host`, macOS | Doesn't: builds are for Linux. The line names a jail that has it. | Doesn't; the line names `YOLO_RUNTIME=podman yolo -- pi` |
+| `yolo host`, macOS | Works: built for your Mac as the sandbox account (run `yolo macos-setup` once) | Doesn't; the line names `YOLO_RUNTIME=podman yolo -- pi` |
 
 On a Linux host under host management, `yolo pack update` also runs `yolo host apply --assert`. That
 run installs only builds that already exist; it builds nothing new.

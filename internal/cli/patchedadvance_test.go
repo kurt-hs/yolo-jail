@@ -93,6 +93,9 @@ type patchedAdvanceFixture struct {
 	// relocatable records the fake build as the full reference scan found it free of its home, which
 	// the host floor's materialize out of the jail's home requires.
 	relocatable bool
+	// captureHome is the capture home the fake build's manifest records, /home/agent when empty: a container
+	// build jail's. A macos-user build records its staging home (macosuser.ForkBuildStagingRoot).
+	captureHome string
 }
 
 // clock is patchedNow's reading of the fixture clock, safe beside setNow.
@@ -193,7 +196,11 @@ func (fx *patchedAdvanceFixture) buildJail(t *testing.T) func(run.Options) int {
 		if err := os.Chmod(filepath.Join(capture.TreeDir(out), ".local", "bin", "tool"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		m := &capture.Manifest{Schema: capture.ManifestSchema, Home: "/home/agent", Platform: fx.platform,
+		home := fx.captureHome
+		if home == "" {
+			home = "/home/agent"
+		}
+		m := &capture.Manifest{Schema: capture.ManifestSchema, Home: home, Platform: fx.platform,
 			Surfaces: []string{".local"}, Excluded: capture.DefaultExcludes(), Entries: []capture.ManifestEntry{
 				{Path: ".local", Kind: capture.KindDir, Mode: "0755"},
 				{Path: ".local/bin", Kind: capture.KindDir, Mode: "0755"},
@@ -246,9 +253,15 @@ func (fx *patchedAdvanceFixture) fork(t *testing.T) packload.Fork {
 // launch runs one fresh launch's advance and returns it, what it printed, and what it handed.
 func (fx *patchedAdvanceFixture) launch(t *testing.T, runtime string) (advanceResult, string, []run.HandedFork) {
 	t.Helper()
+	return fx.launchOn(t, runtime, patchedTestPlatform)
+}
+
+// launchOn is launch for platform: the advance a launch on that platform's backend runs.
+func (fx *patchedAdvanceFixture) launchOn(t *testing.T, runtime, platform string) (advanceResult, string, []run.HandedFork) {
+	t.Helper()
 	var out, errw syncBuffer
 	var handed []run.HandedFork
-	r := advancePatchedFork(fx.fork(t), advanceOptions{platform: patchedTestPlatform, runtime: runtime,
+	r := advancePatchedFork(fx.fork(t), advanceOptions{platform: platform, runtime: runtime,
 		workspace: "/ws", out: &out, errw: &errw, launch: true,
 		hand: func(_ string, h run.HandedFork) error { handed = append(handed, h); return nil }})
 	return r, out.String() + errw.String(), handed
@@ -758,7 +771,7 @@ func TestTheWiredTriggerRunsAPatchedForksAdvance(t *testing.T) {
 func TestTheChildBuildJailRunsTheSealedBuildJail(t *testing.T) {
 	forkBuildHome(t)
 	b := forkBuild{Fork: packload.Fork{Pack: "forkpack", Base: "basepack", Bin: "probetool", Build: "make install && echo 'x y'"}}
-	argv := forkBuildChildArgv("/staging/ws", b, false)
+	argv := forkBuildChildArgv("/staging/ws", b, false, "")
 	if argv[0] != "internal" || argv[1] != forkBuildJailVerb || argv[len(argv)-1] != b.Fork.Build {
 		t.Fatalf("argv = %q", argv)
 	}

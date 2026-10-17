@@ -267,10 +267,10 @@ func (f *Floor) patchedProvisionable(st Status, ps PatchedState) Status {
 		}
 		return st
 	}
-	if why := f.cannotAdvance(); why != "" {
+	if why := f.advanceBlocked(p.Bin(), "builds it"); why != "" {
 		st.Disposition = NoEntry
 		st.Reason = "there is no build of " + p.Bin() + " from fork pack " + in.ForkedBy + "'s patch series on this " +
-			"machine, and " + why + runtimeStep(f.canAdvance(), "builds it")
+			"machine, and " + why
 		return st
 	}
 	switch {
@@ -289,8 +289,24 @@ func (f *Floor) patchedWhat(p Program, g *PatchedBuild) string {
 	return "fork pack " + p.Install.ForkedBy + "'s patched build of " + p.Bin() + " at " + g.Label
 }
 
+// advanceBlocked says why this machine cannot run a patched fork's advance for bin now, with the step
+// that ends it, "" when it can. On a Mac the advance builds through the macos-user act (PF-D97), so
+// that act's refusal answers, in its own words and with its own step (BuildActUnavailable, as a
+// plain fork's cannotBuild); everywhere else the advance builds in a jail (cannotAdvance), whose
+// runtime's step ends the reason.
+func (f *Floor) advanceBlocked(bin, does string) string {
+	if f.GOOS == "darwin" && f.canAdvance() && f.BuildActUnavailable != nil {
+		return f.BuildActUnavailable(bin, does)
+	}
+	if why := f.cannotAdvance(); why != "" {
+		return why + runtimeStep(f.canAdvance(), does)
+	}
+	return ""
+}
+
 // cannotAdvance says why this machine cannot run a patched fork's advance now, "" when it can: the
-// advance builds in a jail, as a plain fork's build act does (cannotBuild).
+// advance builds in a jail, as a plain fork's build act does (cannotBuild). On a Mac advanceBlocked
+// asks the macos-user act instead.
 func (f *Floor) cannotAdvance() string {
 	switch {
 	case f.NoAdvance != "":
@@ -321,7 +337,7 @@ func (f *Floor) patchedUpdatesAllowed(p Program) bool {
 // A Missing or pending entry runs it even under a hold, which builds an edit at the good build's
 // commit and gives a fork with no good build its first advance (PF-D19), and checks nothing else.
 func (f *Floor) advances(p Program, st Status) bool {
-	if f.cannotAdvance() != "" {
+	if f.advanceBlocked(p.Bin(), "builds it") != "" {
 		return false
 	}
 	return !(st.Disposition == Provisioned && st.Pending == "" && !f.patchedUpdatesAllowed(p))
@@ -392,8 +408,8 @@ func (f *Floor) ensurePatched(ctx context.Context, p Program) (Status, Outcome, 
 // cannot, the runtime it needs.
 func (f *Floor) patchedGoneReason(p Program, g *PatchedBuild) string {
 	gone := "fork pack " + p.Install.ForkedBy + "'s good build " + g.Label + " is gone from the capture store"
-	if why := f.cannotAdvance(); why != "" {
-		return gone + ", and " + why + runtimeStep(f.canAdvance(), "builds it")
+	if why := f.advanceBlocked(p.Bin(), "builds it"); why != "" {
+		return gone + ", and " + why
 	}
 	return gone + ", and nothing built it again — `yolo capture " + p.Bin() + "` builds it, and the next `yolo host -- " +
 		p.Bin() + "` installs it"

@@ -128,6 +128,10 @@ func TestAMissingPatchedForkRefusesTheLaunch(t *testing.T) {
 			t.Errorf("the refusal lacks %q:\n%s", w, printed)
 		}
 	}
+	// The other backends are macos-user's ways out (PF-D97), never a container launch's.
+	if strings.Contains(printed, "YOLO_RUNTIME=") {
+		t.Errorf("a podman launch's refusal names another runtime:\n%s", printed)
+	}
 }
 
 // A MISSING FORK WHOSE CAUSE IS A PATCH FAILURE (PF-D81, PF-D83): the launch's error block comes

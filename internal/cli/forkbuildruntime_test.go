@@ -52,7 +52,7 @@ func TestForkBuildChildRecordsRuntimeForEveryBuildKind(t *testing.T) {
 			if b.Fork.Build != "" {
 				b.Commit = forkTestCommit
 			}
-			argv := forkBuildChildArgv(workspace, b, false)
+			argv := forkBuildChildArgv(workspace, b, false, "")
 			var resolvedOpts run.Options
 			withFakeCaptureJail(t, func(o run.Options) int {
 				resolvedOpts = o
@@ -222,7 +222,7 @@ func runActualBuildChild(t *testing.T, workspace, build string, isTree bool, twe
 	if isTree {
 		fork = packload.Fork{Pack: "treepack", Bin: "tool-ext", Into: ".tool/ext/tool-ext", Build: build}
 	}
-	argv := forkBuildChildArgv(workspace, forkBuild{Fork: fork}, false)
+	argv := forkBuildChildArgv(workspace, forkBuild{Fork: fork}, false, "")
 	rc := runForkBuildJail(argv[2:], io.Discard, &stderr)
 	return rc, stderr.String()
 }

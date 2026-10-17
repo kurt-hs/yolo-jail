@@ -480,7 +480,7 @@ func Run(opts Options) (rc int) {
 		return 1
 	}
 	if rt == "macos-user" {
-		o.noteRecoveryHatches(rt, false) // recoveryscope.go: macos-user delivers no patched build
+		o.noteRecoveryHatches(rt, false) // recoveryscope.go: what each set hatch reaches here, forks alone (PF-D97)
 		if o.MacosUserRun == nil {
 			o.pr(o.Stdout).print(
 				"[bold red]macos-user runtime handler not wired.[/bold red]  " +
@@ -583,6 +583,28 @@ func Run(opts Options) (rc int) {
 			captureSpan := o.Perf.Span("launch.auto_capture")
 			o.autoCaptureMacosUser(staged.packs)
 			captureSpan.End()
+		}
+		// THE FORK BUILDS, ON THIS ARM TOO (docs/reference/patched-forks.md PF-D97, FP-D25): every
+		// selected fork, plain or patched, is readied for the sandbox's darwin platform by the
+		// container path's own slot sequence (runForkBuildSlotAndRefusals), fork half only, and a
+		// patch failure or a missing patched build refuses here as it does there. HERE for the
+		// auto-capture's reason, just above: a build is a sealed launch of its own, which arms,
+		// starts and holds its own, so it runs after the config-change approval and before this
+		// arm's signal arm and host services. Before the capture store is staged below, which stages
+		// each key this slot hands (macosUserCaptures). A dry run builds nothing; its line says so
+		// (dryRunForkDeliveries). And, as the auto-capture, never for a launch the backend's own
+		// first steps are about to refuse (macosUserPreflight): on a Mac where `yolo macos-setup`
+		// never ran the build act would fail and the launch refuse for a missing program, where the
+		// backend's refusal names the setup. Skipped silently, the backend's refusal follows; the
+		// account home's hold is kept through the builds, as through a capture.
+		if o.DryRun {
+			o.dryRunForkDeliveries()
+		} else if release, ok := o.macosUserPreflight(); ok {
+			slotOK := o.runForkBuildSlotAndRefusals(cfg, rt, repoRoot)
+			release()
+			if !slotOK {
+				return 1
+			}
 		}
 		// THE MACOS-USER ARM (macosuserarm.go; JL-D40), from here to the last teardown below. A
 		// signal before the session ends the launch at its next step boundary, so every deferred
@@ -889,13 +911,12 @@ func Run(opts Options) (rc int) {
 		// backend shares, so the printer is this backend's.
 		o.noteMacosUserPlatformGaps(cfg)
 		o.noteMacosUserPortKeys(cfg, portPlan)
-		// A FORK DELIVERS NO PROGRAM ON THIS BACKEND, and says so (FP-D3; forkbuild.go): the build
-		// trigger sits below this arm's return, and a patched fork has no darwin build path at all
-		// (FP-D24 builds only a plain fork, for the host floor). The sandbox's own launcher
-		// for the program is told the same reason (macosUserForkWire), so typing it there names
-		// this backend and the next step.
-		o.noteMacosUserForks()
-		if wire := o.macosUserForkWire(); wire != "" {
+		// THE FORK DECISIONS the slot above made, handed to the sandbox as a container's jail is handed
+		// them (entrypoint.ForkBuildsEnv): each fork's store key, staged into the sandbox's capture
+		// store below, or why there is none. A fork with none is said here, with the ways out on this
+		// backend (noteMacosUserForks), and its launcher in the sandbox repeats that reason.
+		o.noteMacosUserForks(rt)
+		if wire := entrypoint.ForkBuildsWire(o.forkDelivered); wire != "" {
 			launchEnv.Set(entrypoint.ForkBuildsEnv, wire)
 		}
 		// Nor any patched extension (docs/reference/pi-extensions.md §11, FP-D3's shape).
@@ -1090,7 +1111,7 @@ func Run(opts Options) (rc int) {
 		// AND THE INSTALL-CAPTURE STORE'S ENTRIES (H4; macosctxtree.go's macosUserCaptures): each
 		// selected installer program's darwin entry, after the auto-capture above may have made it,
 		// for the backend to stage root-owned and name to its launchers.
-		ctxDelivery.ctx.Captures, ctxDelivery.ctx.CapturesKept = o.macosUserCaptures(staged.packs)
+		ctxDelivery.ctx.Captures, ctxDelivery.ctx.CapturesKept, ctxDelivery.ctx.CapturesKeepAll = o.macosUserCaptures(staged.packs)
 		o.noteMacosUserRWMounts(cname, ctxLinks)
 		// And the cache relocations, which the backend discloses by link and target
 		// (macosuser.printCacheRelocations) and stages, probes and opens in the profile.
@@ -1733,24 +1754,12 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	//
 	// ONE ACT FOR BOTH (buildslot.go, XB-D10): every key of the slot runs at once in the build act's
 	// pool, under one interrupt scope, with the image's own build started beside it.
-	forkSpan := o.Perf.Span("launch.fork_builds")
-	o.noteRecoveryHatches(rt, false) // recoveryscope.go: what each set recovery hatch reaches, once
-	o.runForkBuildSlot(cfg, rt, repoRoot)
-	// A PATCH SERIES THAT DOES NOT APPLY IS FATAL (patchfailures.go; PF-D81, PF-D83): its error block
-	// first, before any line about what the slot delivered, then the refusal when an intact older build would
-	// otherwise run in silence; YOLO_ALLOW_PATCH_FAILURES=1 runs that build for this launch.
-	if o.refuseFreshPreparation() || o.refusePatchFailures(rt) {
-		forkSpan.End()
-		lock.Close()
-		return 1
-	}
-	o.noteTreeDeliveries(rt)
-	forkSpan.End()
-	// A MISSING PATCHED BUILD IS FATAL (missingbuilds.go; PPX-D40, PF-D77): a patched fork this launch
-	// selects, or a patched extension a selected agent pack loads, with no build to deliver refuses
-	// the launch here, before the image step and the boot, whatever the command, naming each cause
-	// once and the ways back; YOLO_ALLOW_MISSING_PROGRAMS=1 goes on without them.
-	if o.refuseMissingBuilds(rt) {
+	//
+	// THE REFUSALS THE SLOT DECIDES follow it at once (runForkBuildSlotAndRefusals, the macos-user
+	// arm's sequence too): a patch series that does not apply (patchfailures.go; PF-D81, PF-D83) and
+	// a missing patched build (missingbuilds.go; PPX-D40, PF-D77) refuse the launch here, before the
+	// image step and the boot, whatever the command.
+	if !o.runForkBuildSlotAndRefusals(cfg, rt, repoRoot) {
 		lock.Close()
 		return 1
 	}

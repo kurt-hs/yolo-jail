@@ -1026,7 +1026,7 @@ Where a set hatch has nothing to act on, the act says so in one line rather than
 | :--- | :--- |
 | An **attach** | nothing: the running jail keeps what it was handed; the line says the hatch applies at the next fresh launch. `YOLO_USE_CACHED_GOOD` refuses there, naming `yolo stop` |
 | **In a jail** | nothing, since a jail launch builds no patched build; `YOLO_USE_CACHED_GOOD` refuses |
-| **macos-user** | nothing, since that backend delivers no patched build ([§9](#9-notch-coverage)); `YOLO_USE_CACHED_GOOD` refuses |
+| **macos-user** | a patched fork's hatches act as on podman, its darwin build being this backend's ([PF-D97](#PF-D97)), `YOLO_USE_CACHED_GOOD` serving the darwin good build; an extension's say they do nothing there, since no patched extension is built on it yet |
 | **`--update`** | `YOLO_ALLOW_PATCH_FAILURES` does not carry a fresh check past a failure, and `YOLO_USE_CACHED_GOOD` refuses to combine with it, naming either launch without `--update` |
 
 `YOLO_USE_CACHED_GOOD` additionally needs a capture store the runtime can mount read-only. With it,
@@ -1126,19 +1126,17 @@ A notch is where an agent runs: a jail, the host through `yolo host`, or the unb
 | :--- | :--- |
 | **jail, podman (Linux or a macOS VM)** | yes: the check, the host replay and the sealed build run at a fresh launch |
 | **jail, Apple Container** | as a plain fork: above the read-only bind floor, yes; below it, no store is mounted and the fork's reason says so. A capture jail cannot start beside a running jail (INFERRED), so while another workspace's jail runs an advance cannot build: nothing is recorded, the candidate stays pending, and the launch stops, naming `yolo capture <bin>` once the other jails stop and the hatches that run the good build meanwhile ([PF-D92](#PF-D92)). With no good build, the launch refuses with that line |
-| **jail, macos-user** | none: the fork route delivers nothing there ([FP-D3](../design/forked-programs-as-packs.md#FP-D3)). The launch says why, names both container backends, and hands the sandbox's launcher the same reason ([PF-D54](#PF-D54)). Delivery is deferred ([OQ-PFK5](#why-its-this-way), [PF-D59](#PF-D59)) |
+| **jail, macos-user** | yes ([PF-D97](#PF-D97)): the check and the host replay run at a fresh launch as on podman, the build is the sealed darwin build of the macos-user act ([FP-D24](../design/forked-programs-as-packs.md#FP-D24)), one at a time, and the launch stages the build into the sandbox's capture store, whose source launcher materializes it. With no build the launch refuses, naming `YOLO_RUNTIME=container yolo`, `YOLO_RUNTIME=podman yolo` and `YOLO_ALLOW_MISSING_PROGRAMS=1 yolo` ([JR-D6](program-readiness.md#JR-D6)). A dry run builds nothing. A patched extension is not built there yet: the launch says so and the agent starts without it |
 | **`yolo host`, Linux** | yes ([PF-D14](#PF-D14), [PF-D50](#PF-D50)–[PF-D53](#PF-D53), [PF-D55](#PF-D55)): the floor's install act runs the advance first, outside the floor's own lock and the render gate's budget, honoring `agent_updates` for the fork pack and its base. Its readers of the recipe read the good build's. A newer upstream that fails, or that one of yolo's own steps keeps from building, keeps the installed copy, which `yolo host -- <bin>` then runs only under a recovery hatch or a hold ([OQ-PPX3](pi-extensions.md#OQ-PPX3), [PD-NF1](../design/program-delivery.md#PD-NF1)); an upstream it cannot reach runs the installed copy, said ([PF-D95](#PF-D95)); the user's own edit that does not build removes it. The floor's installed copy serves while the good build's store entry is gone |
-| **`yolo host`, macOS** | none: the Mac's darwin build ([FP-D24](../design/forked-programs-as-packs.md#FP-D24)) is a plain fork's only. The no-copy line names a jail on a container backend ([PF-D54](#PF-D54)) |
+| **`yolo host`, macOS** | yes ([PF-D97](#PF-D97)): the floor's advance runs as on Linux, its build the macos-user act's darwin build; a Mac whose act cannot run (no sandbox account, root, no `sandbox-exec`) gets no entry, the reason naming the act's step, as for a plain fork |
 | **guest** | unbuilt, as every verb there is |
 
-**Why a patched fork does not reach macos-user** ([OQ-PFK5](#why-its-this-way), ruled "defer"): a macos-user
-launch delivers no fork's program, because that backend's run pipeline returns before the
-fresh-launch slot. A patched fork has no darwin build path at all: the darwin build
-([FP-D24](../design/forked-programs-as-packs.md#FP-D24)) covers only a plain fork, and the
-patched-fork advance runs only in a container launch's build slot. The launch's line names the ways
-out: a container backend, or starting without the program. (Install-capture's
-[hand-off H4](install-capture.md#H4), which once also kept the capture store out of reach there,
-landed 2026-10-05.)
+**How a patched fork reaches macos-user** ([PF-D97](#PF-D97)): the macos-user arm of the run
+pipeline runs the fork half of the fresh launch's build slot before its session, with the darwin
+platform and the macos-user runtime, so the advance is the container launch's own (check, replay,
+recorded failures, hatches, the refusal) and only its builder differs: the sealed act building the
+replayed tree as the sandbox account. The delivered store key is staged into the sandbox's
+root-owned copy of the capture store. Not measured on a Mac yet: see [§14](#14-unbuilt-and-unmeasured).
 
 ## 10. Migration from a plain fork
 
@@ -1250,7 +1248,11 @@ keeps the plain-fork manifest where older users point and publishes the patched 
   There, a required build Apple Container cannot start is pending, never failed; exact artifact reuse
   precedes the capability query; and a retained build workspace is checked against its original
   backend before a new child is admitted.
-- **macos-user delivery** ([OQ-PFK5](#why-its-this-way)), deferred as above.
+- **A patched fork on macos-user** ([PF-D97](#PF-D97)): built and pinned by Linux unit tests
+  with the act stood in; the three cells in `integration/macosuserpatchedfork_test.go` run only on
+  the `macos-user.yml` job, and no Mac has run them or a real fork's darwin build.
+- **A patched extension on macos-user**: not built. Its build needs a darwin tree-build driver and
+  its delivery a copy into the sandbox in place of the read-only mount.
 
 ## Current values
 
@@ -1354,7 +1356,8 @@ adjust later."*), and remain his to overrule.
 | <a id="PF-D56"></a>PF-D56 | The host apply `yolo pack update` runs builds no patched fork and no patched extension: it installs what is admitted and renders what is built, naming `yolo host apply --assert` or the next `yolo host` launch as the act that builds |
 | <a id="PF-D57"></a>PF-D57 | One Ctrl-C ends an act's whole wait: an **act interrupt** is shared by every advance of one act, and an advance that begins after a Ctrl-C runs no check, replay or build; the bound stays per build, so a healthy later build is never stopped early and recorded failed |
 | <a id="PF-D58"></a>PF-D58 | A host git older than 2.40 is its own error (`packsrc.GitTooOldError`), and every line that meets it names updating git rather than a retry. While a good build serves it is an apply error that stops the act, whose repair names git first ([PF-D93](#PF-D93)) |
-| <a id="PF-D59"></a>PF-D59 | ([OQ-PFK5](#why-its-this-way).) A patched fork reaches macos-user only with the fork route's own macos-user step, after install-capture H4; until then the launch names a container backend |
+| <a id="PF-D59"></a>PF-D59 | ([OQ-PFK5](#why-its-this-way).) A patched fork reaches macos-user only with the fork route's own macos-user step, after install-capture H4; until then the launch names a container backend . **Superseded by [PF-D97](#PF-D97), 2026-10-16** |
+| <a id="PF-D97"></a>PF-D97 | The maintainer's ruling, 2026-10-16, overruling [OQ-PFK5](#why-its-this-way)'s *"defer"*: *"Patched forks definitely need to work on macOS user. Sure, we can refuse until then, but let's fix it now ASAP."* **A patched fork gets a darwin build on macos-user**: its advance (the upstream check, the replay of its series or the merge of its `patch_branch`, the recorded failures and the recovery hatches) runs at a macos-user launch with the sealed darwin build act of [FP-D24](../design/forked-programs-as-packs.md#FP-D24) as its builder. The good build's commit stays one per fork, and each platform serves its own build of it (the exact lookup is per platform, [§6.3](#63-what-is-served-and-the-store-key)), so a Mac that launches on podman and on macos-user builds that commit once for each. **Until a darwin build exists, the launch keeps refusing** ([JR-D6](program-readiness.md#JR-D6) stands, not amended into a [JR-D5](program-readiness.md#JR-D5) skip), and the refusal names `YOLO_RUNTIME=container yolo`, `YOLO_RUNTIME=podman yolo` and `YOLO_ALLOW_MISSING_PROGRAMS=1 yolo` |
 | <a id="PF-D60"></a>PF-D60 | Under a release rule, a branch with no version tag at all is the same empty list as one whose versions predate the base: the base is built and a good build keeps running; the check records a note, never a problem, said once at a launch and every time by the explicit acts, naming `follow: "head"` |
 | <a id="PF-D61"></a>PF-D61 | The series digest is taken over each file's **digested bytes**, less the mbox `From` line and git's own version signature, so a re-export of the same patches is no edit |
 | <a id="PF-D62"></a>PF-D62 | A good build recorded under the **legacy digest** is the build of the series as it stands: every reader that loads the record with the series re-keys it once under the record lock (`run.LoadPatchedRecord`), appending a receipt under the new recipe; a good build of another recipe is an edit |
@@ -1395,7 +1398,7 @@ adjust later."*), and remain his to overrule.
 | OQ-PFK2 | Decided on its leaning (A) under delegation: with no `follow`, the newest version tag. Recorded as [PF-D24](#PF-D24) |
 | OQ-PFK3 | Decided on its leaning (A) under delegation: the launch that finds a candidate waits for its build, bounded, and a Ctrl-C ends the advance, not the launch. Recorded as [PF-D25](#PF-D25) |
 | OQ-PFK4 | Decided (A, a rebase verb) under delegation, then overruled 2026-10-15 by [PF-D85](#PF-D85) |
-| OQ-PFK5 | Ruled in review, 2026-10-05: *"defer"*. macos-user delivery waits on install-capture H4 and the fork route's own macos-user step. Recorded as [PF-D59](#PF-D59) |
+| OQ-PFK5 | Ruled in review, 2026-10-05: *"defer"*. macos-user delivery waits on install-capture H4 and the fork route's own macos-user step. Recorded as [PF-D59](#PF-D59) . **Overruled 2026-10-16** by the maintainer: *"Patched forks definitely need to work on macOS user."* Recorded as [PF-D97](#PF-D97) |
 | OQ-PFK6 | The owner's ruling, 2026-10-15: *"We should support both carry and patches in YOLO, but they cannot be used for the same thing. That is a conflict and a fatal error."* Both a patch branch and a series are supported; one contribution naming both is refused. Named `patch_branch` on 2026-10-16 (*"yes, patch_branch"*); `carry` is not an alias ([§3.5](#35-a-patch-branch-instead-of-a-series)) |
 | OQ-PFK7 | Settled by [PF-D85](#PF-D85): no clone is kept; a stale series is signalled by its base lag in the fork line and `yolo pack status`. Not built: a kept clone and a `yolo check` warning |
 
