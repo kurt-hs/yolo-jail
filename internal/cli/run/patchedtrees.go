@@ -2,8 +2,8 @@ package run
 
 // patchedtrees.go is the launch's half of a PATCHED EXTENSION (docs/reference/pi-extensions.md §6.1,
 // §8.1, §9, §11): the tree arm beside the fork builds in their slot, the per-launch copy beside the
-// pack tree, the read-only mount from that copy, YOLO_PATCHED_TREES, the launch's lines and an
-// attach's.
+// pack tree, the read-only mount from that copy (on macos-user, the home overlay's copy of it),
+// YOLO_PATCHED_TREES, the launch's lines and an attach's.
 //
 // THE TERMS are the designs' (patched-forks.md and pi-extensions.md §1): a PATCHED EXTENSION is
 // a `files` contribution with `source` and `patches`, keyed by its EXTENSION KEY `<pack>/<name>`; its
@@ -22,8 +22,11 @@ package run
 //   - BELOW APPLE CONTAINER'S READ-ONLY FLOOR it checks and builds nothing, as the fork slot does, and
 //     still delivers a good build already on this machine: the mount is a per-launch copy, so a write
 //     through an ignored `:ro` changes only that copy (§11).
-//   - On macos-user it is never reached (the arm returns above the slot) and noteMacosUserTrees
-//     says so.
+//   - ON macos-user it runs too, in the arm's own slot call (runForkBuildSlotAndRefusals), and builds
+//     each tree for the sandbox's darwin platform (jailPlatform). The per-launch copy is made here as
+//     on a container, and instead of a mount the home overlay copies it to `~/<into>`
+//     (buildMacosHomeOverlayWith), where the Seatbelt profile write-protects it: this backend's `:ro`.
+//     A dry run builds nothing and says what a launch would (dryRunTreeDeliveries).
 //
 // # The copy is beside the pack tree, never in it
 //
@@ -79,7 +82,8 @@ type TreeBuildRequest struct {
 	FreshIdentity    map[string]string
 	// Trees are the patched extensions to deliver (packload.PatchedTrees).
 	Trees []packload.Fork
-	// Platform is the jail's platform (containerJailPlatform), never the host's.
+	// Platform is the jail's platform (jailPlatform: a container's linux, or the macos-user
+	// sandbox's darwin), never the host's.
 	Platform string
 	// Runtime is the backend the jail runs on, for the lines that name what differs there.
 	Runtime string
@@ -209,8 +213,9 @@ func patchedTreeLine(f packload.Fork) (string, bool) {
 	}
 	if !f.DeliveredInJail() {
 		if !hostBuildsOwnTrees() {
-			// A MACOS HOST builds no tree for its own render, so the guarded entry reaches no notch that
-			// has the tree (PPX-D38): a warning, with the step that works.
+			// A HOST THAT BUILDS NO TREE for its own render (hostBuildsOwnTrees: neither Linux nor a macOS
+			// host's own render), so the guarded entry reaches no notch that has the tree (PPX-D38): a
+			// warning, with the step that works.
 			return head + " — " + packload.NotDeliveredAnywhereNote, true
 		}
 		return head + " — " + packload.NotDeliveredInJailNote, false
@@ -297,7 +302,7 @@ func (o *Options) treeBuildPlan(rt string) (map[string]TreeDelivery, *TreeBuildR
 	if len(trees) == 0 {
 		return out, nil
 	}
-	return out, &TreeBuildRequest{FreshUpdate: o.Update && !o.DryRun, Trees: trees, Platform: containerJailPlatform(), Runtime: rt,
+	return out, &TreeBuildRequest{FreshUpdate: o.Update && !o.DryRun, Trees: trees, Platform: jailPlatform(rt), Runtime: rt,
 		Workspace: o.Workspace, Stdout: o.Stdout, Stderr: o.Stderr, Progress: o.progressConfig(),
 		Build: floor == "", BuildFloor: floor,
 		CopyRoot: patchedCopiesDir(o.packTree), Interrupt: o.actInterrupt(), CachedGood: o.cachedGoodTrees}
@@ -317,8 +322,10 @@ func (o *Options) finishTreeDeliveries(out, answers map[string]TreeDelivery) map
 	return out
 }
 
-// patchedTreeDirs is what packFilesTargets mounts for each patched extension: its per-launch copy,
-// by extension key, for the trees this launch delivered one of.
+// patchedTreeDirs is what packFilesTargets delivers for each patched extension: its per-launch copy,
+// by extension key, for the trees this launch delivered one of — mounted on a container, copied into
+// the home overlay on macos-user. A tree with no copy (skipped, or nothing serves) has no key, and
+// so no destination.
 func (o *Options) patchedTreeDirs() map[string]string {
 	dirs := map[string]string{}
 	for key, d := range o.treeDelivered {
@@ -420,22 +427,21 @@ func FallbackLine(key, reason, fallback string) string {
 		"; the agent installs " + fallback + " itself, in this workspace, from its raw entry"
 }
 
-// noteMacosUserTrees is the macos-user launch's line for each patched extension (§11, FP-D3's
-// shape): no sealed build runs on this backend, so the agent starts without it.
-func (o *Options) noteMacosUserTrees() {
-	o.noteSkipExtensionsHasNoEffect("on macos-user")
-	for _, f := range o.patchedTrees {
-		if f.Fallback != "" {
-			// THE FALLBACK (XB-D7): with no wire on this backend the sandbox's boot takes it, so the
-			// agent installs the extension itself, as it does with no yolo in between.
-			o.pr(o.Stderr).print("[dim]" + richtext.Escape(FallbackLine(f.Key(), "its tree is built from source in a "+
-				"capture jail, which macos-user has none of", f.Fallback)) + "[/dim]")
-			continue
-		}
-		o.pr(o.Stderr).print("[yellow]Warning: " + richtext.Escape(f.Label()) + " is not delivered on macos-user[/yellow] — " +
-			"its tree is built from source in a capture jail, which this backend has none of; the agent starts " +
-			"without it. Run it on a container backend (YOLO_RUNTIME=podman)" + o.containerStepClause() + ".")
+// dryRunTreeDeliveries is a macos-user DRY RUN's tree decisions, which build nothing, as
+// dryRunForkDeliveries is its forks': a skipped extension is skipped as a launch would skip it
+// (skipExtensions says so), and every other is said to be built for macOS by a launch without
+// --dry-run. The reasons are this launch's wire, so the plan shows what the sandbox would be handed.
+func (o *Options) dryRunTreeDeliveries() {
+	if len(o.patchedTrees) == 0 || o.CapturesDir() == "" || config.InJail() {
+		return
 	}
+	out := map[string]TreeDelivery{}
+	for _, f := range o.skipExtensions(out) {
+		why := "a dry run builds no extension; a launch without --dry-run builds " + f.Label() + " for macOS"
+		out[f.Key()] = TreeDelivery{Reason: why}
+		o.pr(o.Stderr).print("[dim]" + richtext.Escape(why) + "[/dim]")
+	}
+	o.treeDelivered = out
 }
 
 // removeTreeCopies removes a pack tree's per-launch copies, which live and die with it.

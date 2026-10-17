@@ -64,7 +64,7 @@ import (
 // the selection's scope:workspace state list, which is what decides where each
 // destination physically lands once the bootstrap lays the home-tier layout.
 func buildMacosHomeOverlay(staging string, packs []*packload.Pack, warn func(string)) (macosuser.HomeOverlay, error) {
-	return buildMacosHomeOverlayWith(staging, packs, nil, warn)
+	return buildMacosHomeOverlayWith(staging, packs, nil, nil, warn)
 }
 
 // overlayFile is one file CORE composes for the sandbox home — not a pack's, so no declaration
@@ -76,13 +76,22 @@ type overlayFile struct {
 	Body []byte
 }
 
-// buildMacosHomeOverlayWith is buildMacosHomeOverlay with core's own files laid in beside the
-// packs' content. Each is a destination of its own in the list the tree carries, so the bootstrap
+// buildMacosHomeOverlayWith is buildMacosHomeOverlay with this launch's patched extensions and
+// core's own files laid in beside the packs' content.
+//
+// trees is the launch's per-launch copies by extension key (Options.patchedTreeDirs), the SAME map
+// the container path hands packFilesTargets for its mounts, so a delivered patched extension is a
+// `files` target like any other — read through the one declaration list, not a fourth — copied to
+// its `~/<into>` and write-protected with it (docs/reference/pi-extensions.md §11). A tree with no
+// copy has no key, so packFilesTargets makes it no target and nothing lands at its `into`.
+//
+// Each core file is a destination of its own in the list the tree carries, so the bootstrap
 // installs it as it installs a briefing (replacing that one file, and nothing beside it) and the
 // Seatbelt profile write-protects it (macosuser.ResolveHomeReadonly), which is this backend's `:ro`.
-func buildMacosHomeOverlayWith(staging string, packs []*packload.Pack, core []overlayFile, warn func(string)) (macosuser.HomeOverlay, error) {
+func buildMacosHomeOverlayWith(staging string, packs []*packload.Pack, trees map[string]string, core []overlayFile,
+	warn func(string)) (macosuser.HomeOverlay, error) {
 	tree, dests, err := buildMacosHomeOverlayTree(staging, packSkillTargets(packs),
-		briefingDestinations(packs), packFilesTargets(packs, nil), core, warn)
+		briefingDestinations(packs), packFilesTargets(packs, trees), core, warn)
 	if err != nil || tree == "" {
 		return macosuser.HomeOverlay{}, err
 	}

@@ -160,12 +160,9 @@ func TestMacosGuestNotesNameTheJailNotchBesideAContainerRuntime(t *testing.T) {
 				}
 			},
 		},
-		{
-			name:   "a patched extension",
-			setup:  func(t *testing.T) { treeLaunchHome(t, true) },
-			marker: "extension " + treeKey + " is not delivered on macos-user",
-			want:   1,
-		},
+		// No patched-extension case: the macos-user launch builds one for darwin now, and the
+		// refusal of a missing one names the container runtimes through withContainerBackends,
+		// whose guest clause the fork case's refusal tests already pin.
 		{
 			// A refused host half whose jail daemon the guest declines too: the refusal line and the
 			// Declined: line each name a container runtime (macosuserdoorways.go, jaildaemondecline.go).

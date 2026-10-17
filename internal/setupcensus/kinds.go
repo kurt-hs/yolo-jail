@@ -111,22 +111,11 @@ var kinds = map[packdecl.Kind]Entry{
 			"can write it"),
 		MacosUser: honoredBy("copied by install_home_overlay (buildMacosHomeOverlay) and " +
 			"write-protected by the profile (macosuser homereadonly.go)"),
-		Guide: []string{"`files` — a tree in the agent's home"},
-		Aspects: map[string]Entry{
-			// A tree built from its upstream and a patch series (a patched pi extension).
-			"patches": {
-				PodmanLinux: honored("built in a capture jail and bound as a read-only copy " +
-					"(internal/cli/run patchedtrees.go)"),
-				PodmanMac: honored("the same build and copy (patchedtrees.go)"),
-				AppleContainer: honored("the same from Apple Container 1.1.0, a build waiting " +
-					"for the other jails; below it patchedtrees.go builds nothing and copies a " +
-					"good build already on this machine"),
-				MacosUser: warned("noteMacosUserTrees (internal/cli/run patchedtrees.go), called " +
-					"from run.go's macos-user arm, names each tree it does not deliver (FP-D3's " +
-					"shape)"),
-				Guide: []string{"`files` with `source` and `patches`"},
-			},
-		},
+		// A patched pi extension (`files` with `source` and `patches`) has the parent's disposition
+		// everywhere: on macos-user its advance builds it for darwin as the sandbox account in the
+		// sealed macos-user act (pi-extensions.md §11, PF-D97), and the launch copies its per-launch
+		// copy into the sandbox home through the same overlay (buildMacosHomeOverlayWith).
+		Guide: []string{"`files` — a tree in the agent's home", "`files` with `source` and `patches`"},
 	},
 	packdecl.KindState: {
 		PodmanLinux: honored("assembleRunCmd binds per-workspace dirs from wsState and " +

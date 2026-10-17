@@ -8,8 +8,9 @@ package run
 // passes over it (TreeDelivery.Skipped). Nothing is persisted: the next launch without the variable
 // delivers it as before.
 //
-// Only a fresh container launch acts on it. An attach keeps what its jail booted with, and a launch
-// in a jail or on macos-user delivers no tree: each says so in one line.
+// Every fresh launch from the host acts on it, a macos-user one included, whose sandbox boot reads
+// the same wire. An attach keeps what its jail booted with, and a launch in a jail delivers no tree:
+// each says so in one line.
 
 import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
