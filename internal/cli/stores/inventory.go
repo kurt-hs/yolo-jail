@@ -1292,9 +1292,8 @@ func macosUserStateRows(o Options, stateDir string, f macosUserFlavor) (rows []S
 					f.inspect("<exact-path>") + "` and remove it with `" + f.removeTree("<exact-path>") + "`; " + teardown
 			} else if leaf.remove == nil {
 				s.Reclaimer = Reclaimer{Detail: "no automatic reclaimer; a guest consumer may still hold a launch tree"}
-				s.Note = leaf.what + ", " + f.owned + ". A tree is retained after a pack writer or guest consumer is dispatched because yolo cannot prove all writers, readers and restart capability ended; yolo does not reclaim it. Use the exact " +
-					"retained path printed by the launch and inspect it with `" + f.inspect("<exact-path>") + "` " +
-					"before any manual removal (`" + f.removeTree("<exact-path>") + "`); " + teardown
+				s.Note = leaf.what + ", " + f.owned + ", left by an older yolo; yolo does not reclaim it. Inspect a tree with `" +
+					f.inspect("<exact-path>") + "` before you remove it (`" + f.removeTree("<exact-path>") + "`); " + teardown
 			} else if f.legacy {
 				s.Reclaimer = Reclaimer{Detail: "no reclaimer; no launch writes here any more"}
 				s.Note = leaf.what + ", " + f.owned + ", left by an older yolo. Each workspace's copy stays until " +

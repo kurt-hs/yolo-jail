@@ -3880,9 +3880,9 @@ longer waits for the other launch's staging.
   environment and the session environment both set `YOLO_PACK_ROOT` to this run's tree, so a
   later run does not redirect an existing session to new module bytes. The launch removes its
   tree once no sandbox-account process may still read it, and `yolo prune --apply` removes one a
-  launch had to keep
-  ([JD-12](macos-user-provisioning.md#JD-12)). This is source behavior, not a Mac observation: native ownership and modes, Seatbelt execution, and
-  real overlapping-session/restart behavior remain **UNMEASURED**.
+  launch had to keep ([JD-12](macos-user-provisioning.md#JD-12)). This is source behavior, not a
+  Mac observation: native ownership and modes, Seatbelt execution, and real
+  overlapping-session/restart behavior remain **UNMEASURED**.
 - **A lock file that cannot be opened** warns and leaves the launch unserialised, because the
   workspace lock is a courtesy (`acquireWorkspaceLock`).
 - <a id="oq-pk3-background"></a>**Background to [`OQ-PK3`](#oq-pk3), below: what a host daemon
