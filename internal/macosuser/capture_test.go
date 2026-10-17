@@ -443,7 +443,9 @@ func TestRunCapturePlanRunsTheStepsInOrder(t *testing.T) {
 	}
 }
 
-func TestCaptureActsRetainGuestPackTreesAfterConsumerDispatch(t *testing.T) {
+// With no process-table reader there is no proof the guest ended, so a capture keeps its tree,
+// in one line.
+func TestCaptureActsKeepGuestPackTreesWithoutAProof(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		run  func(Deps) (string, int)
@@ -465,30 +467,23 @@ func TestCaptureActsRetainGuestPackTreesAfterConsumerDispatch(t *testing.T) {
 			}
 			joined := strings.Join(c.ran, "\n")
 			if strings.Contains(joined, rmBin+" -rf -- "+root) {
-				t.Errorf("consumer-dispatched tree was removed: %s", joined)
+				t.Errorf("a tree was removed with no proof its guest ended: %s", joined)
 			}
-			if !strings.Contains(c.out.String(), "Retaining guest pack tree") ||
-				!strings.Contains(c.out.String(), root) || !strings.Contains(c.out.String(), "restart capability") {
-				t.Errorf("the retained exact tree was not disclosed: %s", c.out.String())
-			}
+			assertOneKeptLine(t, c.out.String(), root)
 		})
 	}
 }
 
 func TestCapturePackTreeWriterFailureRetainsAndReservationCollisionIsUntouched(t *testing.T) {
 	plan := BuildCapturePlan(testCaptureOptions())
-	t.Run("failed copy retains owned tree", func(t *testing.T) {
+	t.Run("failed copy removes the owned tree", func(t *testing.T) {
 		c := &captureDeps{failOn: cpBin + " -R " + testCaptureOptions().HostPackRoot}
 		if rc := RunCapturePlan(c.deps(), plan); rc == 0 {
 			t.Fatal("a failed pack copy returned success")
 		}
 		joined := strings.Join(c.ran, "\n")
-		if strings.Contains(joined, rmBin+" -rf -- "+plan.PackRoot) {
-			t.Errorf("a possibly active writer's tree was removed: %s", joined)
-		}
-		if !strings.Contains(c.out.String(), "Retaining guest pack tree") ||
-			!strings.Contains(c.out.String(), plan.PackRoot) || !strings.Contains(c.out.String(), "writer was dispatched") {
-			t.Errorf("unknown writer outcome was not disclosed: %s", c.out.String())
+		if !strings.Contains(joined, rmBin+" -rf -- "+plan.PackRoot) {
+			t.Errorf("the tree of a writer that returned was kept: %s", joined)
 		}
 	})
 	t.Run("failed reservation is not cleaned", func(t *testing.T) {
@@ -507,50 +502,6 @@ func TestCapturePackTreeWriterFailureRetainsAndReservationCollisionIsUntouched(t
 			}
 		}
 	})
-}
-
-func TestCaptureExecutorRetainsPartialTreeAfterFailedWriter(t *testing.T) {
-	opts := testCaptureOptions()
-	opts.HostPackRoot = writeFixturePackTree(t, "#!/bin/sh\necho capture\n", "capture-writer")
-	plan := BuildCapturePlan(opts)
-	state := t.TempDir()
-	privateRoot := StagedPackTreeRoot(plan.Cname, opts.HostPackRoot, state)
-	var ran []string
-	var out bytes.Buffer
-	d := mockDeps(&ran)
-	d.Out = &out
-	d.Run = func(argv []string) int {
-		joined := strings.Join(argv, " ")
-		ran = append(ran, joined)
-		if len(argv) == 2 && argv[0] == mkdirBin && argv[1] == plan.PackRoot {
-			if err := os.MkdirAll(filepath.Dir(privateRoot), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Mkdir(privateRoot, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			return 0
-		}
-		if len(argv) == 4 && argv[0] == cpBin && argv[1] == "-R" && argv[3] == plan.PackRoot {
-			if err := os.WriteFile(filepath.Join(privateRoot, "partial-copy"), []byte("writer may remain active"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			return 1
-		}
-		return 0
-	}
-	if rc := RunCapturePlan(d, plan); rc == 0 {
-		t.Fatal("failed capture pack writer returned success")
-	}
-	if got, err := os.ReadFile(filepath.Join(privateRoot, "partial-copy")); err != nil || string(got) != "writer may remain active" {
-		t.Errorf("capture removed or lost the partial writer sentinel: %q, err %v", got, err)
-	}
-	if !strings.Contains(out.String(), plan.PackRoot) || !strings.Contains(out.String(), "Retaining guest pack tree") {
-		t.Errorf("capture did not disclose its retained production path %s: %s", plan.PackRoot, out.String())
-	}
-	if strings.Contains(strings.Join(ran, "\n"), rmBin+" -rf -- "+plan.PackRoot) {
-		t.Errorf("capture executor removed a tree while writer completion was unknown: %v", ran)
-	}
 }
 
 func TestCaptureExecutorDoesNotRemoveExistingReservationCollision(t *testing.T) {

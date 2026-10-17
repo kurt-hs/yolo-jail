@@ -49,6 +49,7 @@ your patches, or start pi without an extension. See [Patch series](userguide/gui
 
 ### Fixed
 
+- A macOS (macos-user) launch no longer leaves a copy of its packs behind on exit; `yolo prune --apply` removes older ones.
 - Claude on Kilo no longer assumes a 1M-token context for every model.
 - `yolo --update` on a patched fork now waits while another yolo process is building it, instead of failing.
 - On Apple Container, `yolo check` points an expired-login symptom at the jail's network, not the Claude broker.

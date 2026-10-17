@@ -200,7 +200,7 @@ func TestAnUnusedReservedPackTreeIsUnsealedAndRemovedAsTheHost(t *testing.T) {
 		return 0
 	}
 	var out bytes.Buffer
-	finishPackTree(d, printer{w: &out}, root, true, false, false)
+	finishPackTree(d, printer{w: &out}, &packTreeUse{root: root, owned: true})
 	if _, err := os.Lstat(root); !os.IsNotExist(err) {
 		t.Errorf("the unused reserved tree survived its removal (%v); ran:\n%s\n%s", err,
 			strings.Join(ran, "\n"), out.String())
@@ -211,8 +211,8 @@ func TestAnUnusedReservedPackTreeIsUnsealedAndRemovedAsTheHost(t *testing.T) {
 
 	out.Reset()
 	d.Run = func([]string) int { return 1 }
-	finishPackTree(d, printer{w: &out}, root, true, false, false)
-	if !strings.Contains(out.String(), "Could not remove unused reserved guest pack tree") ||
+	finishPackTree(d, printer{w: &out}, &packTreeUse{root: root, owned: true})
+	if !strings.Contains(out.String(), "Could not remove guest pack tree") ||
 		!strings.Contains(out.String(), chmodBin+" -R -- u+w "+root) || strings.Contains(out.String(), "sudo") {
 		t.Errorf("a failed removal does not name the host's commands:\n%s", out.String())
 	}
@@ -237,43 +237,6 @@ func TestRunMacosUserPackTreeOwnershipBoundaries(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-
-	t.Run("writer failure retains only the owned tree", func(t *testing.T) {
-		hostB := writeFixturePackTree(t, "#!/bin/sh\necho B\n")
-		owned := StagedPackTreeRoot(cname, hostB, state)
-		var rec []string
-		d := fixtureStateDeps(t, state, &rec, func(argv []string) bool {
-			if len(argv) < 4 || argv[0] != cpBin || argv[1] != "-R" ||
-				!strings.Contains(argv[2], hostB) {
-				return false
-			}
-			privateRoot := strings.ReplaceAll(argv[3], stateDir, state)
-			if err := os.WriteFile(filepath.Join(privateRoot, "partial-copy"), []byte("writer may still be active"), 0o644); err != nil {
-				t.Errorf("write partial fixture payload: %v", err)
-			}
-			return true
-		})
-		var out bytes.Buffer
-		d.Out = &out
-		opts := newOpts(workspace)
-		opts.HostPackRoot = hostB
-		if rc := RunMacosUser(d, opts); rc == 0 {
-			t.Fatal("the injected pack copy failure returned success")
-		}
-		if got, err := os.ReadFile(filepath.Join(owned, "partial-copy")); err != nil || string(got) != "writer may still be active" {
-			t.Errorf("an unknown writer outcome did not preserve its sentinel: %q, err %v", got, err)
-		}
-		for _, dir := range []string{sibling, legacy} {
-			if _, err := os.Stat(filepath.Join(dir, "sentinel")); err != nil {
-				t.Errorf("cleanup changed sibling %s: %v", dir, err)
-			}
-		}
-		if !strings.Contains(out.String(), "Could not stage entrypoint") ||
-			!strings.Contains(out.String(), StagedPackTreeRoot(cname, hostB, "")) ||
-			!strings.Contains(out.String(), "Retaining guest pack tree") {
-			t.Errorf("unknown writer outcome was not disclosed: %s", out.String())
-		}
-	})
 
 	t.Run("failed reservation does not claim collision", func(t *testing.T) {
 		hostC := writeFixturePackTree(t, "#!/bin/sh\necho C\n")
@@ -314,43 +277,26 @@ func TestRunMacosUserPackTreeOwnershipBoundaries(t *testing.T) {
 		}
 	})
 
-	for _, agentRC := range []int{0, 42} {
-		t.Run("consumer return "+strconv.Itoa(agentRC)+" retains", func(t *testing.T) {
-			hostD := writeFixturePackTree(t, "#!/bin/sh\necho D\n", strconv.Itoa(agentRC))
-			retainedProduction := StagedPackTreeRoot(cname, hostD, "")
-			retainedFixture := StagedPackTreeRoot(cname, hostD, state)
-			var rec []string
-			d := fixtureStateDeps(t, state, &rec, nil)
-			d.RunWithProxy = func(argv []string) int {
-				rec = append(rec, "proxy:"+strings.Join(argv, " "))
-				return agentRC
+	t.Run("a finished launch leaves its siblings alone", func(t *testing.T) {
+		shortSettle(t)
+		hostD := writeFixturePackTree(t, "#!/bin/sh\necho D\n")
+		d := fixtureStateDeps(t, state, nil, nil)
+		d.GuestProcesses = func() ([]GuestProc, error) { return hostTable(), nil }
+		d.RunWithProxy = func([]string) int { return 0 }
+		opts := newOpts(workspace)
+		opts.HostPackRoot = hostD
+		if rc := RunMacosUser(d, opts); rc != 0 {
+			t.Fatalf("RunMacosUser = %d", rc)
+		}
+		if _, err := os.Lstat(StagedPackTreeRoot(cname, hostD, state)); !os.IsNotExist(err) {
+			t.Errorf("the launch kept its own tree (%v)", err)
+		}
+		for _, dir := range []string{sibling, legacy} {
+			if _, err := os.Stat(filepath.Join(dir, "sentinel")); err != nil {
+				t.Errorf("launch changed sibling %s: %v", dir, err)
 			}
-			var out bytes.Buffer
-			d.Out = &out
-			opts := newOpts(workspace)
-			opts.HostPackRoot = hostD
-			if rc := RunMacosUser(d, opts); rc != agentRC {
-				t.Fatalf("RunMacosUser = %d, want agent status %d\n%s", rc, agentRC, out.String())
-			}
-			if _, err := os.Stat(filepath.Join(retainedFixture, "local", "loopholes", "hello", "bin", "hello")); err != nil {
-				t.Errorf("the consumer's pack tree was not retained: %v", err)
-			}
-			for _, dir := range []string{sibling, legacy} {
-				if _, err := os.Stat(filepath.Join(dir, "sentinel")); err != nil {
-					t.Errorf("launch changed sibling %s: %v", dir, err)
-				}
-			}
-			if !strings.Contains(out.String(), "Retaining guest pack tree") ||
-				!strings.Contains(out.String(), retainedProduction) || !strings.Contains(out.String(), "restart capability") {
-				t.Errorf("the retained path was not disclosed: %s", out.String())
-			}
-			for _, call := range rec {
-				if strings.Contains(call, rmBin+" -rf -- "+StagedPackTreeRoot(cname, hostD, "")) {
-					t.Errorf("post-consumer tree was removed: %s", call)
-				}
-			}
-		})
-	}
+		}
+	})
 }
 
 // macos-user had NEITHER MISE_TRUSTED_CONFIG_PATHS nor a `mise trust` call, so a

@@ -1,0 +1,12 @@
+//go:build !darwin
+
+package macosuser
+
+import "errors"
+
+// guestProcessesReal off macOS: there is no sandbox account to look for, so the answer is
+// unknown, and a guest pack tree is kept. The backend only launches on macOS; this half keeps the
+// package whole where its unit tests run, and those inject the table.
+func guestProcessesReal() ([]GuestProc, error) {
+	return nil, errors.New("the sandbox account's processes are read on macOS only")
+}

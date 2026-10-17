@@ -352,16 +352,6 @@ func isPackTreeReservationCommand(cmd []string, packRoot string) bool {
 	return packRoot != "" && len(cmd) == 2 && cmd[0] == mkdirBin && cmd[1] == packRoot
 }
 
-// isPackTreeWriterCommand identifies a command that may still be changing this launch's
-// reserved tree after it returns: the copy, and the chmod that seals it.
-func isPackTreeWriterCommand(cmd []string, packRoot string) bool {
-	if packRoot == "" || len(cmd) != 4 || cmd[3] != packRoot {
-		return false
-	}
-	return (cmd[0] == cpBin && cmd[1] == "-R") ||
-		(cmd[0] == chmodBin && cmd[1] == "-R" && cmd[2] == sealTreeMode)
-}
-
 // printPackTreeReservationFailure names an untouched collision and gives the only safe
 // recovery: retry the action with a fresh staged-tree identity, then inspect this exact path.
 func printPackTreeReservationFailure(out printer, packRoot string) {

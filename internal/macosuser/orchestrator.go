@@ -55,7 +55,9 @@ type Deps struct {
 	HostUser func() string
 	// Run runs argv (inherit stdio) and returns the returncode. Used for the
 	// host-run staging and removal commands, and for each crossing into the sandbox account
-	// (RunAsSandboxArgv), the bootstrap's among them.
+	// (RunAsSandboxArgv), the bootstrap's among them. It returns only once the process it
+	// started has exited and been reaped, which is what proves a pack-tree writer has stopped
+	// (packtreeproof.go).
 	Run func(argv []string) int
 	// RunCapture runs argv with stdin inherited and its stdout and stderr captured together,
 	// returning them with the returncode: for a check whose output the user needs only when it
@@ -165,6 +167,14 @@ type Deps struct {
 	// (sessionfiles.go): <global storage>/locks/macos-user-sessions in production. nil, or "",
 	// means no record is kept and no ended session's files are swept, which is a test's launch.
 	SessionRecordDir func() string
+	// PackTreeClaimDir is the directory holding each launch's claim on its guest pack tree
+	// (packtreeproof.go): <global storage>/locks/macos-user-pack-trees in production. nil, or "",
+	// claims nothing, which is a test's launch.
+	PackTreeClaimDir func() string
+	// GuestProcesses lists every process on the machine with its parent, start time and whether
+	// it runs as the sandbox account (packtreeproof.go), without privilege. nil, or an error,
+	// means the launch cannot prove its guest has stopped, so it keeps its pack tree.
+	GuestProcesses func() ([]GuestProc, error)
 	// ReadSystemKeychain exports every certificate in the Mac's System keychain as PEM, as the
 	// invoking user (`security find-certificate -a -p`, no sudo), and VerifyCA asks macOS whether
 	// it trusts one CA for TLS (`security verify-cert -p ssl`, offline). The two seams of the
@@ -1224,15 +1234,11 @@ func RunMacosUser(deps Deps, opts Options) int {
 		}
 	}
 	steps.begin("stage")
-	// A pack tree becomes ours only at its successful exclusive mkdir. Mark any copy or chmod
-	// writer before dispatch: the returned status does not prove its command stopped. Before
-	// that first writer, cleanup can remove only this reservation; afterward retain and disclose
-	// because writer completion is unknown. Bootstrap is the first guest consumer, and after its
-	// dispatch yolo also cannot prove readers and restart capability ended.
-	packTreeOwned, packTreeWriterDispatched, packConsumerDispatched := false, false, false
-	defer func() {
-		finishPackTree(deps, out, plan.PackRoot, packTreeOwned, packTreeWriterDispatched, packConsumerDispatched)
-	}()
+	// THE GUEST PACK TREE (packtreeproof.go): claimed before anything reserves it, ours at its
+	// successful exclusive mkdir, and removed on every return once nothing this launch started
+	// may still read it. Bootstrap is its first guest consumer.
+	packTree := beginPackTree(deps, out, plan.PackRoot)
+	defer finishPackTree(deps, out, packTree)
 	// A GRANT ANOTHER SESSION OF THE WORKSPACE MADE is not made again (Options.SkipGrant): the
 	// keeper's endpoint files are every session's (§9.9.5).
 	var granted []string
@@ -1242,9 +1248,6 @@ func RunMacosUser(deps Deps, opts Options) int {
 			if opts.SkipGrant != nil && opts.SkipGrant(target) {
 				continue
 			}
-		}
-		if isPackTreeWriterCommand(cmd, plan.PackRoot) {
-			packTreeWriterDispatched = true
 		}
 		if deps.Run(cmd) != 0 {
 			if rc, ending := deps.ending(); ending {
@@ -1258,7 +1261,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 			return 1
 		}
 		if isPackTreeReservationCommand(cmd, plan.PackRoot) {
-			packTreeOwned = true
+			packTree.owned = true
 		}
 	}
 	if opts.OnStaged != nil {
@@ -1311,7 +1314,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// So the line says how to tell (the log's first line carries the time it started) and where
 	// the output is otherwise.
 	steps.begin("bootstrap")
-	packConsumerDispatched = true
+	packTree.consumerDispatched = true
 	bootRC := deps.Run(plan.BootstrapArgv)
 	if rc, ending := deps.ending(); ending {
 		return rc
@@ -1428,49 +1431,6 @@ func (d Deps) endingOr(rc int) int {
 		return status
 	}
 	return rc
-}
-
-// finishPackTree removes only a tree this launch exclusively reserved when no pack writer or
-// guest consumer was dispatched. Once a writer is dispatched, the returned status cannot
-// prove its child ended; once bootstrap is dispatched, no current artifact proves guest readers
-// and restart capability ended. Both cases disclose and retain the exact path.
-func finishPackTree(deps Deps, out printer, packRoot string, owned, writerDispatched, consumerDispatched bool) {
-	if !owned || packRoot == "" {
-		return
-	}
-	path := shquote.QuoteDisplay(packRoot)
-	if writerDispatched || consumerDispatched {
-		reason := ""
-		if writerDispatched {
-			reason = "a pack-tree writer was dispatched and yolo cannot prove it has stopped"
-		}
-		if consumerDispatched {
-			if reason != "" {
-				reason += "; "
-			}
-			reason += "a guest consumer was dispatched and yolo cannot prove its readers or restart capability ended"
-		}
-		out.printf("[yellow]Retaining guest pack tree %s[/yellow] because %s. Inspect this exact "+
-			"path with `ls -la -- %s`; do not remove it while a writer or guest process may "+
-			"still access it.", path, reason, path)
-		return
-	}
-	// THE TREE IS SEALED (0555 directories), and a 0555 directory blocks its owner too, so the
-	// removal unseals it first (unsealCommands), as the host user that made it.
-	removed := deps.Run != nil
-	for _, cmd := range append(unsealCommands(packRoot), []string{rmBin, "-rf", "--", packRoot}) {
-		if !removed {
-			break
-		}
-		removed = deps.Run(cmd) == 0
-	}
-	if removed {
-		return
-	}
-	out.printf("[yellow]Could not remove unused reserved guest pack tree %s[/yellow] before any "+
-		"consumer was dispatched. Inspect this exact path with `ls -la -- %s`, then remove "+
-		"only this path with `%s -R -- u+w %s && %s -rf -- %s` before retrying.",
-		path, path, chmodBin, path, rmBin, path)
 }
 
 // launchSteps spans RunMacosUser's steps one after another on the launch's collector, as
@@ -2222,6 +2182,8 @@ func RealDeps(runProxy func(argv []string) int, materialize func(repoRoot string
 		MaterializeDarwin:  materialize,
 		StartBackground:    startBackgroundReal,
 		SessionRecordDir:   SessionRecordsDir,
+		PackTreeClaimDir:   PackTreeClaimsDir,
+		GuestProcesses:     guestProcessesReal,
 		ReadSystemKeychain: readSystemKeychainReal,
 		VerifyCA:           verifyCAReal,
 		SetDiskIOPolicy:    ioprio.SetProcessDiskPolicy,

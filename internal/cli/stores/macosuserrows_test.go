@@ -138,6 +138,9 @@ func TestTheMacosUserSectionListsTheStateDirAndTheHomesStores(t *testing.T) {
 		if s.Sizing != SizingMeasured || s.Bytes != bytes {
 			t.Errorf("%s = %s %d B, want measured %d B", key, s.Sizing, s.Bytes, bytes)
 		}
+		if key == "macos.state.packs" {
+			continue // `yolo prune --apply` reclaims it, asserted below
+		}
 		if s.Reclaimer.Func != "" || s.Verdict != VerdictHuman || s.Note == "" {
 			t.Errorf("%s: reclaimer %+v verdict %q note %q; want no reclaimer, the user's verdict, and a note",
 				key, s.Reclaimer, s.Verdict, s.Note)
@@ -164,8 +167,11 @@ func TestTheMacosUserSectionListsTheStateDirAndTheHomesStores(t *testing.T) {
 		t.Errorf("no legacy dir exists, yet the legacy section has rows %v", keysIn(legacy))
 	}
 	packs := rows["macos.state.packs"]
-	for _, want := range []string{"per-launch immutable guest trees", "exact retained path printed by the launch",
-		"`ls -la -- <exact-path>`", "`chmod -R -- u+w <exact-path> && rm -rf -- <exact-path>`", "yolo macos-teardown"} {
+	if packs.Reclaimer.Trigger != "yolo prune --apply" || packs.Verdict != VerdictYolo {
+		t.Errorf("the packs row names no reclaimer: %+v, verdict %s", packs.Reclaimer, packs.Verdict)
+	}
+	for _, want := range []string{"per-launch immutable guest trees", "A launch removes its own tree once its guest has exited",
+		"`yolo prune --apply`", "`ls -la -- <exact-path>`", "`chmod -R -- u+w <exact-path> && rm -rf -- <exact-path>`", "yolo macos-teardown"} {
 		if !strings.Contains(packs.Note, want) {
 			t.Errorf("the packs row does not name %q: %s", want, packs.Note)
 		}

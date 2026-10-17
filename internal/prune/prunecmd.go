@@ -140,6 +140,11 @@ type Options struct {
 	// reader every entry looks attributed to no program, and the complement of an empty
 	// selection is the entire store.
 	CaptureRecords capture.Records
+	// GuestPackTrees sweeps macos-user's per-launch guest pack trees (internal/macosuser's
+	// PrunePackTrees, which this package does not import: it pulls internal/config), returning
+	// the sweep and whether the staging root has a packs directory at all. nil, and a machine
+	// with no such directory, print nothing: no macos-user launch ever staged a tree there.
+	GuestPackTrees func(apply bool) (EmbeddedReap, bool)
 	// RelayBase is the dir scanned for orphaned broker-relay PID files left by a
 	// PRE-broker-conversion yolo (see ReapRelayOrphans — this is a legacy sweep;
 	// nothing writes these files any more). "" =>
@@ -902,6 +907,22 @@ func Run(opts Options) int {
 		totalSaved += legacyTempBytes
 	}
 
+	// --- macos-user guest pack trees ---
+	// One per launch, in the host-owned staging root. A launch removes its own once its guest
+	// has exited; one it had to keep (a guest still running, a table it could not read) waits
+	// here for a sweep that can prove no sandbox process may still read it.
+	var guestTreeBytes int64
+	var guestTreeCount int
+	if opts.GuestPackTrees != nil {
+		if trees, ok := opts.GuestPackTrees(apply); ok {
+			p.line("")
+			p.line("[bold]macos-user guest pack trees[/bold]  [dim](staging root: packs/, one per launch)[/dim]")
+			declinedSweep = renderEmbeddedReap(p, apply, trees, "tree(s)") || declinedSweep
+			guestTreeBytes, guestTreeCount = trees.Bytes, trees.RemovedCount()
+			totalSaved += guestTreeBytes
+		}
+	}
+
 	// --- Orphaned image GC roots ---
 	// The durable per-image roots (build/roots/<sha16>, image-retention.md "A GC is safe at any moment") that
 	// keep a `nix-collect-garbage` from deleting a jail's closure. Reap the ones
@@ -1278,6 +1299,7 @@ func Run(opts Options) int {
 				{Name: "superseded_captures", Bytes: captureBytes, Count: captureEntries, Unit: "entries"},
 				{Name: "embedded_pack_trees", Bytes: embeddedTreeBytes, Count: embeddedTreeCount, Unit: "trees"},
 				{Name: "leaked_embedded_temp", Bytes: legacyTempBytes, Count: legacyTempCount, Unit: "dirs"},
+				{Name: "macos_guest_pack_trees", Bytes: guestTreeBytes, Count: guestTreeCount, Unit: "trees"},
 				{Name: "agent_staging", Bytes: agentStagingBytes, Count: agentStagingDirs, Unit: "dirs"},
 				{Name: "shadowed_home", Bytes: shadowedBytes, Count: shadowedItems, Unit: "paths"},
 				{Name: "caches", Bytes: cacheBytes, Count: cacheFiles, Unit: "files"},

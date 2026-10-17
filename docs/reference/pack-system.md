@@ -3878,10 +3878,10 @@ longer waits for the other launch's staging.
   exclusively and copies into it before guest consumers start. It never merges with or replaces
   an existing destination, and the legacy workspace-keyed tree is untouched. The bootstrap
   environment and the session environment both set `YOLO_PACK_ROOT` to this run's tree, so a
-  later run does not redirect an existing session to new module bytes. Once a staging writer or
-  guest consumer has been dispatched, the exact tree is retained and disclosed, even on
-  ordinary return, because completion is not proof that every writer or reader ended. This is
-  source behavior, not a Mac observation: native ownership and modes, Seatbelt execution, and
+  later run does not redirect an existing session to new module bytes. The launch removes its
+  tree once no sandbox-account process may still read it, and `yolo prune --apply` removes one a
+  launch had to keep
+  ([JD-12](macos-user-provisioning.md#JD-12)). This is source behavior, not a Mac observation: native ownership and modes, Seatbelt execution, and
   real overlapping-session/restart behavior remain **UNMEASURED**.
 - **A lock file that cannot be opened** warns and leaves the launch unserialised, because the
   workspace lock is a courtesy (`acquireWorkspaceLock`).
