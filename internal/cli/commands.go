@@ -296,6 +296,9 @@ func pruneOptions(args []string) prune.Options {
 	// so the resolver and the reaper cannot disagree about which lines are records. Without
 	// it the section declines and says so; see prune.Options.CaptureRecords.
 	opts.CaptureRecords = captureRecords
+	// The macos-user guest-pack-tree sweep, which prune cannot import (macosuser pulls
+	// internal/config). On a machine with no staging root it reports nothing.
+	opts.GuestPackTrees = guestPackTreeSweep
 	// The output format. Assigned HERE rather than in runPrune so it sits on the
 	// same TESTED seam as CaptureRecords and the runtime resolver below — a line
 	// that can be deleted with prune's own suite still green is exactly what this
@@ -1602,4 +1605,25 @@ func runCheck(args []string) int {
 		return 2
 	}
 	return check.Check(opts)
+}
+
+// guestPackTreeSweep is prune.Options.GuestPackTrees: macosuser.PrunePackTrees in prune's own
+// reap shape, and whether the staging root has a packs directory at all.
+func guestPackTreeSweep(apply bool) (prune.EmbeddedReap, bool) {
+	r := macosuser.PrunePackTrees(apply)
+	return guestPackTreeReap(r), r.Applicable
+}
+
+// guestPackTreeReap converts one macos-user sweep to prune's reap shape.
+func guestPackTreeReap(r macosuser.PackTreeReap) prune.EmbeddedReap {
+	out := prune.EmbeddedReap{Declined: r.Declined, Bytes: r.Bytes()}
+	for _, e := range r.Removed {
+		out.Removed = append(out.Removed, prune.EmbeddedEntry{Name: e.Path, Path: e.Path, Bytes: e.Bytes,
+			Why: "no sandbox process may read it", Err: e.Err})
+	}
+	for _, e := range r.Kept {
+		out.Kept = append(out.Kept, prune.EmbeddedEntry{Name: e.Path, Path: e.Path, Bytes: e.Bytes,
+			Why: e.Reason, Detail: e.Detail})
+	}
+	return out
 }

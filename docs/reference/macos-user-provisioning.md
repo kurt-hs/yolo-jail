@@ -583,23 +583,45 @@ new tree id, and to inspect it with `ls -la -- <path>`, and says not to remove i
 launch that changes or drops a module cannot change an earlier launch's bytes or its daemons'
 restart target.
 
-**Cleanup: unknown keeps the bytes.** The tree is this launch's, never the keeper's, and no age
-rule, process scan or sweep collects it.
+**Cleanup: a tree goes once nothing may still hold it** ([JD-12](#JD-12)). The tree is this
+launch's, never the keeper's. The launch removes it on every return once it can prove that every
+process it started that could read the tree has exited, and keeps it otherwise. No root is needed
+for that proof:
+
+- **Writers** are the host user's own `/bin/cp` and `/bin/chmod`, which start no process of their
+  own, and the launch waits for each to exit. A writer whose command returned has stopped.
+- **Guest processes** all run as the sandbox account, the only way in being the one run-as rule
+  and Seatbelt refusing a setuid exec. Every process's pid, parent, uids and start time are public
+  on macOS (the `kern.proc.all` sysctl). A sandbox-account process is a **holder** unless it is
+  provably another launch's: its ancestors include another launch that holds a claim (below), or
+  it started before this tree was reserved. So a daemon that double-forked onto launchd and
+  started after the reservation still holds the tree.
+
+Before deciding, the launch waits up to a few seconds for its guest to exit, which covers a
+jail-daemon supervisor that was just told to stop.
+
+Each launch and capture also holds a **claim** on its tree: an exclusive lock on
+`<global storage>/locks/macos-user-pack-trees/<tree leaf>.lock` that holds the launcher's pid. It
+is taken before the tree is reserved and let go after the tree's fate is decided. The claim is
+what lets `yolo prune --apply` reap a tree a launch had to keep. Prune leaves a claimed tree
+alone. It removes an unclaimed per-launch tree only when no sandbox-account process that started
+after the tree's last modification is outside every claimed launch. Prune lists the trees before
+it reads the claims, so a tree reserved after its claim was taken is never seen unclaimed.
 
 | State | What happens |
 | :--- | :--- |
 | No host tree, or no destination created | Nothing to remove |
 | The exclusive reservation fails | The existing destination is untouched and not this launch's |
-| Reserved; no writer and no guest consumer dispatched | Unsealed and removed on the launch's return path |
-| A copy or seal writer was dispatched | Retained and disclosed: a returned status does not prove the writer stopped |
-| The bootstrap or another guest consumer was dispatched | Retained and disclosed on every return, ordinary completion included |
-| Removal before any dispatch fails | Retained; the message names the exact path and the exact unseal-and-remove command, and the launch's exit status is unchanged |
+| Reserved; no guest consumer dispatched, a writer failed or not | Unsealed and removed on the launch's return path |
+| A guest consumer was dispatched, and no holder remains | Unsealed and removed, ordinary exit and refusal alike, with nothing printed |
+| A holder remains, or the process table cannot be read | Kept, in one line naming the holders and `yolo prune --apply` |
+| Removal fails | Kept, in one line naming the exact unseal-and-remove command; the launch's exit status is unchanged |
 
-There is **no complete post-consumer proof that no holder remains**: neither the sudo launcher's
-status nor the supervisor's stop shows every guest reader and restart capability ended. That is
-why retention follows any dispatch. The [liveness record](#the-session-key) still sweeps the
-session's env, profile and CA files; it proves the launcher ended, not the guest's processes,
-and it removes no guest tree. Capture follows the same rule: each capture gets its own tree, and
+A sandbox-account process that yolo did not start, such as a manual `sudo -u _yolojail` shell,
+counts as a holder when it started after the tree was reserved. That is conservative, not a hole.
+A launch whose claim could not be made says so and should not be pruned under. The
+[liveness record](#the-session-key) still sweeps the session's env, profile and CA files; it
+removes no guest tree. Capture follows the same rule: each capture gets its own tree, and
 its plan treats a nil environment as empty and adds `YOLO_PACK_ROOT` to a copy, leaving the
 caller's map unchanged. Trees written by an older yolo under the [legacy state dir](#the-legacy-sweep)
 are neither read nor replaced by this path.
@@ -771,7 +793,10 @@ Seatbelt execution from it, the collision refusal, and two overlapping launches 
 distinct trees, where B changes and then drops a module while A's daemon reads and restarts from
 A's original bytes, and a later capture touches neither tree. The earlier single-session evidence
 covers only the original daemon start. `TestMacosUserRunsAModuleDirJailDaemonInTheGuest` is the
-Mac test for the module-dir shape, not yet run on hardware. The native proof is on
+Mac test for the module-dir shape, not yet run on hardware, and
+`TestMacosUserANormalExitLeavesNoStagedPackTree` is the one for [JD-12](#JD-12)'s ordinary exit.
+Whether macOS starts its own per-user agents as the sandbox account during a launch, which would
+keep a tree until `yolo prune --apply`, is also unmeasured. The native proof is on
 [the roadmap](../plans/roadmap.md).
 
 ### The one unmeasured claim — what a first stage costs
@@ -818,7 +843,8 @@ Rulings a future change would otherwise undo, kept with the IDs source comments 
 | <a id="oq-p5"></a>[`OQ-P5`](#oq-p5) — **wire** the two LSP install variables; do not restore the retired warning | A warning is what you leave when the gap stays; this one did not have to. Both variables now cross into the bootstrap env **and** the session env file, from the one recipe table both backends share. |
 | <a id="JD-4"></a>`JD-4` — **the wire bridge keeps its host half on macos-user**; whether its jail daemon should move into the guest is **a maintainer follow-up, not decided** | Its jail daemon publishes at `/run/yolo-services`, which the guest has no counterpart of, and the bridge is already served launch-owned (NC-D65). Moving it would retire that host half. As built the guest declines it, now by JD-9's rule (a). Open, and owned by the maintainer: [the roadmap](../plans/roadmap.md) carries it. |
 | <a id="JD-9"></a>`JD-9` — **the one guest rule for a pack service's daemon**: declined only when (a) the service serves a protocol adaptation and this launch admits its host half, or (b) it declares an `endpoint`; everything else runs confined in the guest. *Implementation decision under the maintainer's 2026-10-04 delegation; reversible.* | (a) is the wire bridge, whose admitted host half already serves its address; (b) is a file under `/run/yolo-services`, a container path with no sandbox counterpart. Everything else follows [`OQ-DP8`](../design/declaration-parity.md#decision-ledger)'s *"if you would have run it in the jail container, you run it on the guest"*, with confinement preferred: a worker declaring both halves runs its jail half here and its host half is not started. The old rule declined every service's daemon, which ran most of them nowhere. Built in `loopholes.JailDaemonsRunIn` over `launchservice.ServiceJailDaemons`, read by the launch and `yolo check`. |
-| <a id="JD-10"></a>`JD-10` — **each launch's `{jail_loophole_dir}` resolves into its own sealed guest pack tree**, keyed by the host pack tree's leaf, exclusively reserved, never replaced, and retained after any writer or consumer dispatch. *Implementation decision under the maintainer's 2026-10-04 delegation; reversible.* | A reusable workspace tree let a later launch change or drop the module an earlier launch's daemon restarts from. No current artifact proves dispatched writers or guest consumers ended, so retention is the only safe default. The keeper, privileges, keychain behavior and the decline rules are unchanged. Native behavior is [unmeasured](#the-guest-pack-tree-is-unmeasured-natively). |
+| <a id="JD-10"></a>`JD-10` — **each launch's `{jail_loophole_dir}` resolves into its own sealed guest pack tree**, keyed by the host pack tree's leaf, exclusively reserved and never replaced. *Implementation decision under the maintainer's 2026-10-04 delegation; reversible.* | A reusable workspace tree let a later launch change or drop the module an earlier launch's daemon restarts from. When the tree is removed is [JD-12](#JD-12). The keeper, privileges, keychain behavior and the decline rules are unchanged. Native behavior is [unmeasured](#the-guest-pack-tree-is-unmeasured-natively). |
+| <a id="JD-12"></a>`JD-12` — **a guest pack tree is removed once no sandbox-account process may still hold it**, proven from the public process table with no root, and claimed while its launch runs so `yolo prune --apply` can reap one a launch had to keep. *Implementation decision, 2026-10-16, under the same delegation; reversible.* | JD-10 first kept every tree after any dispatch, because no artifact proved the guest ended, so every launch leaked one and printed a paragraph. Process ancestry plus start time is that proof: every guest process is the sandbox account's, and none can start before its launch reserves the tree. Unknown still keeps the bytes. |
 | **P1** — a backend either provides a mechanism or **refuses it out loud** | Rendering the config for a mechanism that does nothing is the failure this whole mechanism exists to end, and it has produced an instance per imperative key on this backend. |
 | **P2** — the declarative path is the one that composes | `packages:` works here precisely because nix needs nothing pre-installed. Every imperative installer assumes a runtime something else put there — which is why the floor has to exist before the stage can. |
 | **P3** — convergence beats a second dialect | Two ways to say "install neovim" depending on backend is a tax on every user and every doc. One mechanism on every backend; only the primitive enforcing the boundary may differ. |

@@ -816,19 +816,14 @@ func runCaptureSteps(deps Deps, plan CapturePlan, problems []string, asUser [][]
 		return 1
 	}
 
-	packTreeOwned, packTreeWriterDispatched, packConsumerDispatched := false, false, false
-	defer func() {
-		finishPackTree(deps, out, plan.PackRoot, packTreeOwned, packTreeWriterDispatched, packConsumerDispatched)
-	}()
+	packTree := beginPackTree(deps, out, plan.PackRoot)
+	defer finishPackTree(deps, out, packTree)
 	out.printf("[dim]Preparing the capture sandbox at %s.[/dim]", plan.StagingRoot)
 	for _, group := range [][2]any{
 		{"prepare the capture staging tree", plan.PrepareCommands},
 		{"stage the capture binary and packs", plan.StageCommands},
 	} {
 		for _, cmd := range group[1].([][]string) {
-			if isPackTreeWriterCommand(cmd, plan.PackRoot) {
-				packTreeWriterDispatched = true
-			}
 			// The clear of a tree a killed capture left: the host's removal, backed by PL-7's
 			// guest pass, so files an installer stripped the shared ACE from cannot wedge every
 			// later capture of the program.
@@ -852,7 +847,7 @@ func runCaptureSteps(deps Deps, plan CapturePlan, problems []string, asUser [][]
 				return 1
 			}
 			if isPackTreeReservationCommand(cmd, plan.PackRoot) {
-				packTreeOwned = true
+				packTree.owned = true
 			}
 		}
 	}
@@ -888,7 +883,7 @@ func runCaptureSteps(deps Deps, plan CapturePlan, problems []string, asUser [][]
 	if !installCATrustFiles(deps, out, plan.caTrustFilePlans()) {
 		return 1
 	}
-	packConsumerDispatched = true
+	packTree.consumerDispatched = true
 	if deps.Run(plan.BootstrapArgv) != 0 {
 		out.print("[bold red]capture bootstrap failed[/bold red] — the staging home has no " +
 			"generated launcher, so there is nothing for the capture to run. Aborting.")

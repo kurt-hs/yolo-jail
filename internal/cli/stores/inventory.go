@@ -1282,7 +1282,15 @@ func macosUserStateRows(o Options, stateDir string, f macosUserFlavor) (rows []S
 		leaf, perWorkspace := macosUserPerWorkspaceLeaves[name]
 		switch {
 		case perWorkspace:
-			if leaf.remove == nil {
+			if leaf.remove == nil && !f.legacy {
+				s.Reclaimer = Reclaimer{Func: "macosuser.PrunePackTrees",
+					Detail: "per-launch trees no running launch claims and no sandbox process may read", Trigger: "yolo prune --apply"}
+				s.Verdict = VerdictYolo
+				s.Note = leaf.what + ", " + f.owned + ". A launch removes its own tree once its guest has exited; " +
+					"`yolo prune --apply` removes one a launch had to keep once no sandbox process may still read it. " +
+					"A legacy workspace tree (no `.<tree id>` in its name) is not reclaimed: inspect it with `" +
+					f.inspect("<exact-path>") + "` and remove it with `" + f.removeTree("<exact-path>") + "`; " + teardown
+			} else if leaf.remove == nil {
 				s.Reclaimer = Reclaimer{Detail: "no automatic reclaimer; a guest consumer may still hold a launch tree"}
 				s.Note = leaf.what + ", " + f.owned + ". A tree is retained after a pack writer or guest consumer is dispatched because yolo cannot prove all writers, readers and restart capability ended; yolo does not reclaim it. Use the exact " +
 					"retained path printed by the launch and inspect it with `" + f.inspect("<exact-path>") + "` " +
