@@ -93,7 +93,7 @@ pi's `packages` list that makes pi load it:
 - **The folder is built only where the entry reaches.** An entry in the `autonomy` kind's `guarded`
   list reaches `yolo host` alone, so `yolo host apply --assert` builds and installs the folder and
   no jail does. One in its `autonomous` list reaches jails alone, so `yolo host` installs nothing.
-  A Mac builds no folder for `yolo host`, so there a `guarded` entry reaches nothing that has it.
+  On a Mac, `yolo host` builds the folder for the Mac as the sandbox account.
 - **Drop the extension's old `git:` entry in the same edit.** pi would otherwise load the extension
   twice, and `yolo pack lint` warns when one list has both.
 
@@ -150,7 +150,7 @@ as above, or an npm package:
   or a commit as the `?ref=` holds it there. With no `build`, yolo runs npm's install of the
   extension's dependencies when it has a `package.json`, as pi would.
 - **`fallback`**, optional, is the extension's old entry in pi's own spelling. Wherever a launch has
-  no build to hand, such as on `macos-user` or a macOS host, or after a failed first build, pi gets
+  no build to hand, such as after a failed first build, pi gets
   that entry instead and installs the extension itself, and the launch says so. Without one, pi does
   not start without the extension, as for a patched one.
 - **Drop the extension's old entry** in the same edit, or keep it as the `fallback`.
@@ -377,8 +377,7 @@ matches nothing here only prints a warning, so one left in your shell profile do
 | `YOLO_ALLOW_MISSING_PROGRAMS=1 yolo` | Starts the jail without a patched program that has no build. The shell works; the program does not. |
 
 For `yolo host` and `yolo capture`, the error prints the same lines with that command in place of
-`yolo`. On an attach to a running jail or inside a jail the variables do nothing, and on `macos-user`
-the extension ones do nothing; the launch says so.
+`yolo`. On an attach to a running jail or inside a jail the variables do nothing; the launch says so.
 
 ## Where it works
 
@@ -387,9 +386,9 @@ the extension ones do nothing; the launch says so.
 | Jail, Podman (Linux, or a Mac's Podman machine) | Works | Works |
 | Jail, Apple Container 1.1.0 or later | Works. A new build cannot start while another jail is running: the launch stops and says so, and `yolo capture` builds it once the other jails stop. To run your good build meanwhile, use `YOLO_USE_CACHED_GOOD`. | Works, the same way |
 | Jail, older Apple Container | Doesn't: the launch says so | No new builds; a good build already on this Mac is still copied in |
-| `macos-user` | Works: the launch builds it for your Mac as the sandbox account, one build at a time. Until a build exists the launch stops and names a container backend. | Doesn't yet. The launch says so, and pi starts without it |
+| `macos-user` | Works: the launch builds it for your Mac as the sandbox account, one build at a time. Until a build exists the launch stops and names a container backend. | Works, the same way: built for your Mac and copied into the sandbox home, read-only |
 | `yolo host`, Linux | Works: `yolo host -- <bin>` and `yolo host apply --assert` build and install it | Works: `yolo host apply --assert` builds it and links `~/<into>` to a copy yolo keeps, and so does `yolo host -- pi` with `host_apply_on_launch` on. `yolo host -- pi` does not start pi while an extension it loads has no build. |
-| `yolo host`, macOS | Works: built for your Mac as the sandbox account (run `yolo macos-setup` once) | Doesn't; the line names `YOLO_RUNTIME=podman yolo -- pi` |
+| `yolo host`, macOS | Works: built for your Mac as the sandbox account (run `yolo macos-setup` once) | Works as on Linux, built for your Mac as the sandbox account |
 
 On a Linux host under host management, `yolo pack update` also runs `yolo host apply --assert`. That
 run installs only builds that already exist; it builds nothing new.

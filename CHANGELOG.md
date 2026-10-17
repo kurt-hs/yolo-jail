@@ -22,8 +22,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-**Patched forks run on macOS (macos-user).** A patched fork such as pi is now built for your Mac
-at launch and by `yolo host`, with the same recovery hatches. See
+**Patched forks and extensions run on macOS (macos-user).** A patched fork such as pi, and a
+patched pi extension, are now built for your Mac at launch and by `yolo host`, with the same
+recovery hatches. See
 [Patch series](userguide/guides/patch-series.md).
 
 **The GitHub broker takes wildcards.** A project's `brokered.github.repos` accepts `*/*`,
