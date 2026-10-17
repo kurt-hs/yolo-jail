@@ -69,6 +69,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -1278,6 +1279,9 @@ type ForkBuildOptions struct {
 	RepoRoot string
 	// Toolchain is what the host knows of the build's toolchain, the record's head: "yolo <version>".
 	Toolchain string
+	// LineStatusDest is where the act moves the driver's record of the build line's exit status
+	// (ForkBuildPlan.LineStatusFile), whether or not the build succeeded; "" moves none.
+	LineStatusDest string
 	// TreeDir is, for a PATCHED EXTENSION's build (docs/reference/pi-extensions.md §7.1), the
 	// home-relative directory its fixed final step copies the checkout into
 	// (packdecl.TreeReservedDir); "" for a fork's build. With it set, Build may be "" (a tree with no
@@ -1295,6 +1299,10 @@ type ForkBuildPlan struct {
 	TreeDir string
 	// SrcDir is the staging tree's checkout and ToolchainFile the record the build's script writes.
 	SrcDir, ToolchainFile string
+	// LineStatusFile is where the capture driver records the build line's own exit status
+	// (capture.InstallerStatusLeaf, beside the toolchain record): how the host act tells a build line
+	// that failed, and its status, from the driver failing after one that succeeded.
+	LineStatusFile string
 	// SourceCommands copy the checkout into SrcDir, run as the INVOKING user and never under sudo:
 	// the source is that user's, and a copy made as root would leave files the build cannot write.
 	SourceCommands [][]string
@@ -1328,7 +1336,8 @@ func BuildForkBuildPlan(opts ForkBuildOptions) ForkBuildPlan {
 		copySource = [][]string{{cpBin, "-R", opts.Source + "/.", src}}
 	}
 	return ForkBuildPlan{CapturePlan: plan, BuildID: opts.BuildID, Build: opts.Build, Source: opts.Source,
-		TreeDir: opts.TreeDir, SrcDir: src, ToolchainFile: toolchain, SourceCommands: copySource}
+		TreeDir: opts.TreeDir, SrcDir: src, ToolchainFile: toolchain, LineStatusFile: lineStatusFile(toolchain),
+		SourceCommands: copySource}
 }
 
 // withDarwinEnv is env with the darwin floor's build variables (PKG_CONFIG_PATH and the like) set
@@ -1378,23 +1387,23 @@ func ForkBuildStagingCommands(stagingRoot, hostUser string) [][]string {
 // profile and capture driver, around `env YOLO_BYPASS_SHIMS=1 /bin/bash -c <ForkBuildScript>`.
 func ForkBuildDriverArgv(stagedYolo, stagingHome, outDir, srcDir, toolchainFile, toolchainHead, build,
 	profilePath, envFile string, pathPrefix []string) []string {
-	return buildDriverArgv(stagedYolo, stagingHome, outDir, ForkBuildScript(srcDir, toolchainFile,
-		toolchainHead, build), profilePath, envFile, pathPrefix)
+	return buildDriverArgv(stagedYolo, stagingHome, outDir, lineStatusFile(toolchainFile),
+		ForkBuildScript(srcDir, toolchainFile, toolchainHead, build), profilePath, envFile, pathPrefix)
 }
 
 // TreeBuildDriverArgv is ForkBuildDriverArgv for a PATCHED EXTENSION's build
 // (docs/reference/pi-extensions.md §7.1): the same crossing, around TreeBuildScript.
 func TreeBuildDriverArgv(stagedYolo, stagingHome, outDir, srcDir, toolchainFile, toolchainHead, build,
 	treeDir, profilePath, envFile string, pathPrefix []string) []string {
-	return buildDriverArgv(stagedYolo, stagingHome, outDir, TreeBuildScript(srcDir, toolchainFile,
-		toolchainHead, build, treeDir), profilePath, envFile, pathPrefix)
+	return buildDriverArgv(stagedYolo, stagingHome, outDir, lineStatusFile(toolchainFile),
+		TreeBuildScript(srcDir, toolchainFile, toolchainHead, build, treeDir), profilePath, envFile, pathPrefix)
 }
 
 // buildDriverArgv is the crossing both build drivers share: the sandbox account, its environment,
 // the profile and the capture driver, around `env YOLO_BYPASS_SHIMS=1 /bin/bash -c <script>`. The
 // shell is macOS's own /bin/bash: a build runs on the platform's base system, and a recipe must work
 // there (pi-extensions.md PPX-D46).
-func buildDriverArgv(stagedYolo, stagingHome, outDir, script, profilePath, envFile string,
+func buildDriverArgv(stagedYolo, stagingHome, outDir, lineStatus, script, profilePath, envFile string,
 	pathPrefix []string) []string {
 	// The crossing is the one run-as rule (RunAsSandboxArgv): `-n`, so it never prompts.
 	out := RunAsSandboxArgv(nil, "-i")
@@ -1407,9 +1416,16 @@ func buildDriverArgv(stagedYolo, stagingHome, outDir, script, profilePath, envFi
 		"--out=" + outDir,
 		captureScanFlag,
 		captureEndGroupFlag,
+		"--line-status=" + lineStatus,
 		"--", "/usr/bin/env", forkBypassShimsVar + "=1", "/bin/bash", "-c", script,
 	})...)
 	return out
+}
+
+// lineStatusFile is where a build's driver records its build line's exit status: beside the
+// toolchain record, in the staging tree's root.
+func lineStatusFile(toolchainFile string) string {
+	return filepath.Join(filepath.Dir(toolchainFile), capture.InstallerStatusLeaf)
 }
 
 // ForkBuildScript is the build's bash script: the toolchain record first (head, then the macOS
@@ -1634,6 +1650,15 @@ func RunForkBuildAct(deps Deps, opts ForkBuildOptions, dest, toolchainDest strin
 				rc = 1
 			}
 			return rc
+		}
+	}
+	// THE BUILD LINE'S OWN EXIT STATUS, moved as the record is: the act's exit is the driver's, 1 for
+	// every failure, so this is how the host says whether the line or the driver after it failed,
+	// and the line's real status. Best-effort: without it the host says only that the line started.
+	if _, err := os.Lstat(plan.LineStatusFile); err == nil && opts.LineStatusDest != "" {
+		if err := moveCaptureOut(plan.LineStatusFile, opts.LineStatusDest); err != nil {
+			out.printf("[bold red]Could not move the build line's exit status beside the store:[/bold red] %s",
+				err.Error())
 		}
 	}
 	if rc != 0 {

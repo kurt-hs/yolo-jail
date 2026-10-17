@@ -154,7 +154,7 @@ func sourceAgentLauncherSegments(inst *packdecl.Install, d ForkDelivery, stampDi
 // gate's last line to say, is this launcher's last line, since it has no other.
 func forkReasonSaid(d ForkDelivery) string {
 	lines := causeSaid(d.Reason, d.Cause, "    ")
-	if _, next, ok := strings.Cut(d.Reason, " — "); ok && len(lines) > 1 && next != "" {
+	if _, next, ok := CutReason(d.Reason); ok && len(lines) > 1 && next != "" {
 		lines = append(lines, "    "+strings.ToUpper(next[:1])+next[1:]+".")
 	}
 	return strings.Join(lines, "\n")

@@ -913,6 +913,7 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 					SandboxEnv: packEnv, BlockedTools: blocked},
 				BuildID: seal.id, Build: seal.build, Source: filepath.Join(workspace, forkSourceLeaf),
 				RepoRoot: repoRoot, Toolchain: forkBuildToolchainHead(), TreeDir: sealTreeDir(seal),
+				LineStatusDest: filepath.Join(workspace, capture.InstallerStatusLeaf),
 			}, filepath.Join(workspace, captureOutLeaf), filepath.Join(workspace, forkToolchainLeaf), dryRun)
 		}
 		return macCaptureAct(deps, macosuser.CaptureOptions{

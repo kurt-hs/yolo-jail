@@ -250,11 +250,12 @@ func TestEveryForkCaptureStopNamesItsNextStep(t *testing.T) {
 		// The toolchain record is the build script's first line, so a jail that wrote it ran its build.
 		withFakeCaptureJail(t, func(o run.Options) int {
 			writeFile(t, filepath.Join(o.Workspace, forkToolchainLeaf), "image-identity\n")
-			return 3
+			writeFile(t, filepath.Join(o.Workspace, capture.InstallerStatusLeaf), "3\n")
+			return 1
 		})
 		_, stderr := runCaptureFor(t, "probetool")
 		const want = "  Its output above says why: fix what it names, then run `yolo capture probetool` again."
-		if got := stepAfter(t, stderr, "yolo capture: the build line ran and failed; its build jail exited 3"); got != want {
+		if got := stepAfter(t, stderr, "yolo capture: the build line ran and failed with exit status 3"); got != want {
 			t.Errorf("the step is\n%q\nwant\n%q", got, want)
 		}
 	})
