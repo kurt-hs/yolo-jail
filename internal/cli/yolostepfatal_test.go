@@ -180,11 +180,12 @@ func TestAnApplyErrorInTheBuildsOwnReplayStopsTheLaunch(t *testing.T) {
 	failFile := filepath.Join(t.TempDir(), "fail")
 	countFile := filepath.Join(t.TempDir(), "count")
 	writeFile(t, failFile, v13)
-	// The walk reads v1.3.0's tree three times; the build's own replay reads it again, and fails.
+	// The walk reads v1.3.0's tree once (its prefetch's probe, whose listing the missing-file check and the
+	// pick reuse); the build's own replay reads it again, and fails.
 	patchedGitWrapper(t, "fail=$(cat "+shquote.Quote(failFile)+" 2>/dev/null)\n"+
 		"if [ -n \"$fail\" ]; then for a in \"$@\"; do if [ \"$a\" = \"$fail^{tree}\" ]; then "+
 		"n=$(cat "+shquote.Quote(countFile)+" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "+shquote.Quote(countFile)+"; "+
-		"if [ $n -ge 4 ]; then echo \"fatal: simulated: cannot read $fail\" >&2; exit 128; fi; fi; done; fi")
+		"if [ $n -ge 2 ]; then echo \"fatal: simulated: cannot read $fail\" >&2; exit 128; fi; fi; done; fi")
 	fx.later(2 * time.Hour)
 	got, out, _ := fx.launch(t, "podman")
 	pf := got.delivery.PatchFailure
