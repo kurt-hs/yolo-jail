@@ -28,6 +28,8 @@ func macosUserLaunchEnv(t *testing.T) (string, *jsonx.OrderedMap) {
 	var stdout, stderr bytes.Buffer
 	var env *jsonx.OrderedMap
 	o := dispatchOptions(t, t.TempDir(), "macos-user", &stdout, &stderr, nil)
+	// A Mac set up for this backend, so the arm's preflight admits the fork slot (macosUserPreflight).
+	o.MacosUserLaunchProbes = setUpMacProbes
 	o.MacosUserRun = func(_ *jsonx.OrderedMap, _ string, _, _ []string, _, _ string, _ macosuser.HomeOverlay,
 		_ macosuser.HostContext, _ bool, launchEnv *jsonx.OrderedMap, _ []packload.BlockedTool, _ macosuser.JailDaemons) int {
 		env = launchEnv

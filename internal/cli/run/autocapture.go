@@ -114,16 +114,26 @@ func (o *Options) autoCaptureMacosUser(packs []*packload.Pack) {
 	if len(bins) == 0 {
 		return
 	}
-	probes := o.MacosUserLaunchProbes
-	if probes == nil {
-		probes = macosuser.RealLaunchProbes
-	}
-	release, ok := macosuser.PreflightLaunch(probes(), HoldAccountHome, o.Workspace)
+	release, ok := o.macosUserPreflight()
 	if !ok {
 		return
 	}
 	defer release()
 	o.AutoCapture(bins, macosUserJailPlatform())
+}
+
+// macosUserPreflight asks the macos-user backend's own first steps for this launch
+// (macosuser.PreflightLaunch): ok is false when the backend is about to refuse it, and when it is
+// true the account home's hold is held until release. The probes are
+// Options.MacosUserLaunchProbes, nil meaning the launch's own (macosuser.RealLaunchProbes), and
+// the hold the backend's (HoldAccountHome). Its callers are the arm's acts that must not run for
+// a launch about to be refused: the auto-capture (autoCaptureMacosUser) and the fork-build slot.
+func (o *Options) macosUserPreflight() (release func(), ok bool) {
+	probes := o.MacosUserLaunchProbes
+	if probes == nil {
+		probes = macosuser.RealLaunchProbes
+	}
+	return macosuser.PreflightLaunch(probes(), HoldAccountHome, o.Workspace)
 }
 
 // installerBins is every program the SELECTED packs install with `via: "installer"`,

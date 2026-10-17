@@ -592,11 +592,19 @@ func Run(opts Options) (rc int) {
 		// starts and holds its own, so it runs after the config-change approval and before this
 		// arm's signal arm and host services. Before the capture store is staged below, which stages
 		// each key this slot hands (macosUserCaptures). A dry run builds nothing; its line says so
-		// (dryRunForkDeliveries).
+		// (dryRunForkDeliveries). And, as the auto-capture, never for a launch the backend's own
+		// first steps are about to refuse (macosUserPreflight): on a Mac where `yolo macos-setup`
+		// never ran the build act would fail and the launch refuse for a missing program, where the
+		// backend's refusal names the setup. Skipped silently, the backend's refusal follows; the
+		// account home's hold is kept through the builds, as through a capture.
 		if o.DryRun {
 			o.dryRunForkDeliveries()
-		} else if !o.runForkBuildSlotAndRefusals(cfg, rt, repoRoot) {
-			return 1
+		} else if release, ok := o.macosUserPreflight(); ok {
+			slotOK := o.runForkBuildSlotAndRefusals(cfg, rt, repoRoot)
+			release()
+			if !slotOK {
+				return 1
+			}
 		}
 		// THE MACOS-USER ARM (macosuserarm.go; JL-D40), from here to the last teardown below. A
 		// signal before the session ends the launch at its next step boundary, so every deferred
