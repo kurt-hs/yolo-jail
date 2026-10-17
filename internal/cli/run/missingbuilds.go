@@ -25,7 +25,8 @@ package run
 // NOT WHERE NO TREE OR FORK IS BUILT: below Apple Container's read-only floor, inside a jail, and
 // for a patched fork that builds for none of the jail's platform (forkUnpublishedHere) nothing was
 // built, so nothing failed; those keep their warning line (noteTreeDeliveries, and the fork's
-// launcher). macos-user returns above the slot and says so itself (noteMacosUserTrees).
+// launcher). macos-user runs the fork half of the slot alone (PF-D97), and says itself that it builds no
+// patched extension (noteMacosUserTrees).
 //
 // THE REFUSAL'S SHAPE is a normal tool's (docs/reference/patched-forks.md §8.7, the maintainer's ruling of
 // 2026-10-16): one ERROR line, each cause once with every build it left without one
@@ -98,7 +99,7 @@ func (o *Options) missingBuilds(rt string) []missingBuild {
 			if !p.Fork.Patched() {
 				continue // a plain fork's failed build is the fork route's (forked-programs-as-packs.md §9)
 			}
-			if forkUnpublishedHere(p.Fork) != "" {
+			if forkUnpublishedHere(p.Fork, rt) != "" {
 				continue // built for none of this jail's platform: no build was tried, so none failed
 			}
 			if d, ok := o.forkDelivered[p.Fork.Bin]; ok && d.Key == "" {

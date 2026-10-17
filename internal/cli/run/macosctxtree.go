@@ -361,6 +361,14 @@ func (o *Options) buildMacosCtxTree(staging string, packs []*packload.Pack,
 // `capture-materialize` will ask with (macosUserJailPlatform), never a container jail's. And the
 // same suppression: a capture's own launch has CapturesDir "" (internal/cli's runCaptureJail),
 // so it stages nothing a launcher could materialize from.
+//
+// AND EVERY FORK KEY THE SLOT HANDS THE SANDBOX (docs/reference/patched-forks.md PF-D97): the
+// fork's launcher materializes that key from the staged store, so it is staged even when no
+// installer program is selected. kept grows by every key a live launch on this machine recorded
+// handing a jail (HandedForkKeys), so this launch's prune never removes a build another
+// workspace's running session has yet to materialize (a launcher materializes at the program's
+// first run, not at boot). A record that cannot be read adds nothing: the prune then reads only
+// the store's current entries, as it did before forks were staged.
 func (o *Options) macosUserCaptures(packs []*packload.Pack) ([]macosuser.CaptureEntry, []string) {
 	if o.MacosUserCaptures == nil || o.CapturesDir == nil {
 		return nil, nil
@@ -370,10 +378,37 @@ func (o *Options) macosUserCaptures(packs []*packload.Pack) ([]macosuser.Capture
 		return nil, nil
 	}
 	bins := installerBins(packs)
-	if len(bins) == 0 {
+	forks := map[string]string{}
+	for bin, d := range o.forkDelivered {
+		if d.Key != "" {
+			forks[bin] = d.Key
+		}
+	}
+	if len(bins) == 0 && len(forks) == 0 {
 		return nil, nil
 	}
-	return o.MacosUserCaptures(dir, bins, macosUserJailPlatform())
+	stage, kept := o.MacosUserCaptures(dir, bins, macosUserJailPlatform(), forks)
+	if len(stage) == 0 {
+		return stage, kept
+	}
+	if handed, err := HandedForkKeys(); err == nil {
+		seen := map[string]bool{}
+		for _, e := range stage {
+			seen[e.Key] = true
+		}
+		for _, k := range kept {
+			seen[k] = true
+		}
+		extra := make([]string, 0, len(handed))
+		for k := range handed {
+			if !seen[k] {
+				extra = append(extra, k)
+			}
+		}
+		sort.Strings(extra)
+		kept = append(kept, extra...)
+	}
+	return stage, kept
 }
 
 // macosCtxLinks is the macos-user decider for the two context-mount declarations

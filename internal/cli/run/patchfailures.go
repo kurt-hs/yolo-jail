@@ -63,7 +63,7 @@ func (o *Options) launchPatchFailures(rt string) []launchPatchFailure {
 	}
 	var out []launchPatchFailure
 	for _, p := range o.forkPinned {
-		if !p.Fork.Patched() || forkUnpublishedHere(p.Fork) != "" {
+		if !p.Fork.Patched() || forkUnpublishedHere(p.Fork, rt) != "" {
 			continue
 		}
 		d, ok := o.forkDelivered[p.Fork.Bin]
