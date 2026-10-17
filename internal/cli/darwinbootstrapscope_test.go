@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
@@ -174,5 +175,39 @@ func clearLaunchEnv(t *testing.T) {
 			t.Setenv(k, "")
 			os.Unsetenv(k)
 		}
+	}
+}
+
+// THE SEALED BUILD ACT'S BOOTSTRAP, THROUGH THE ENTRY (PPX-D48): the word macosuser puts on its argv
+// makes the boot a sealed build's, which its boot log records, and the same bootstrap without it is a
+// launch's. Any other argument is refused before anything is generated, since only yolo writes this
+// argv. Red with runDarwinBootstrap's options no longer carrying the parsed flag.
+func TestTheDarwinBootstrapTakesTheSealedBuildWordFromItsArgv(t *testing.T) {
+	const skipped = "a sealed build jail runs no agent"
+	for _, sealed := range []bool{true, false} {
+		t.Run(map[bool]string{true: "sealed", false: "a launch's"}[sealed], func(t *testing.T) {
+			home := sandboxAccountHome(t)
+			ws := filepath.Join(resolvedDir(t), "ws")
+			clearLaunchEnv(t)
+			t.Cleanup(packload.OverrideSkewTolerance(false))
+			t.Setenv("HOME", home)
+			t.Setenv("JAIL_HOME", home)
+			t.Setenv("YOLO_DARWIN_WORKSPACE", ws)
+			var args []string
+			if sealed {
+				args = []string{macosuser.DarwinBootstrapSealedFlag}
+			}
+			runDarwinBootstrap(args)
+			log, err := os.ReadFile(filepath.Join(paths.WorkspaceStateDir(ws), "boot.log"))
+			if err != nil {
+				t.Fatalf("no boot.log: %v", err)
+			}
+			if got := strings.Contains(string(log), skipped); got != sealed {
+				t.Errorf("the boot log records a sealed build = %v, want %v:\n%s", got, sealed, log)
+			}
+		})
+	}
+	if rc := runDarwinBootstrap([]string{"--sealed"}); rc != 2 {
+		t.Errorf("an unknown argument ran the bootstrap (rc %d)", rc)
 	}
 }

@@ -350,6 +350,13 @@ func darwinSystemLabel(d *Darwin) string {
 // YOLO_DARWIN_* extras (workspace, macos-log, login-path) ride verbatim. No
 // --set-home: the subcommand self-sets HOME/JAIL_HOME, and env -i controls the
 // environment precisely.
+// DarwinBootstrapSealedFlag is the bootstrap argv's word making it a SEALED BUILD's boot (the
+// sealed macos-user build act's, BuildForkBuildPlan): no pack-declared surface, no pack hook and no
+// agent-config notice (pi-extensions.md PPX-D48). An argument rather than an environment variable
+// because the bootstrap's environment carries the user's own channel, which must never be able to
+// switch a launch's agents off.
+const DarwinBootstrapSealedFlag = "--sealed-build"
+
 func DarwinBootstrapArgv(stagedYolo, home string, bootstrapEnv *jsonx.OrderedMap, _ string) []string {
 	if home == "" {
 		home = SandboxHome()

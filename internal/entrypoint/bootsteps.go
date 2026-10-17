@@ -122,7 +122,7 @@ func runBootSteps(b *bootRun) { runSteps(b, bootSteps()) }
 // runSteps is runBootSteps over a given table, split out so the runner's own rules can be
 // driven over a synthetic table.
 func runSteps(b *bootRun, steps []bootStep) {
-	b.sealed = b.e.launchedSealed(b.target)
+	b.sealed = b.e.launchedSealed(b.target) || (b.target == bootDarwin && b.darwin.Sealed)
 	for _, s := range steps {
 		if s.excludedFrom(b.target) != "" || (b.sessionPass && s.notSessionPass != "") {
 			continue
@@ -402,6 +402,10 @@ func bootSteps() []bootStep {
 			// each preset the config enabled.
 			name: "mcp_presets_declined",
 			run: func(b *bootRun) {
+				// A sealed build runs no agent, so no agent's MCP config is left wanting (PPX-D48).
+				if b.sealed {
+					return
+				}
 				if names := b.e.LoadMCPPresetNames(); len(names) > 0 {
 					b.e.warn(setupcensus.Warning(setupcensus.MacosUser, "mcp_presets").Plain(strings.Join(names, ", ")))
 				}

@@ -65,6 +65,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -1304,6 +1305,9 @@ func BuildForkBuildPlan(opts ForkBuildOptions) ForkBuildPlan {
 	plan := buildCapturePlanAt(inner, stagingRoot)
 	plan.Seatbelt = SeatbeltSealedCaptureProfile(stagingRoot)
 	plan.PrepareCommands = ForkBuildStagingCommands(stagingRoot, inner.HostUser)
+	// A SEALED BUILD'S BOOT: the staging home gets no agent's config and the build's output no line
+	// about one (PPX-D48), as a container build jail's boot (YOLO_SEALED_BUILD).
+	plan.BootstrapArgv = append(slices.Clone(plan.BootstrapArgv), DarwinBootstrapSealedFlag)
 	src := ForkBuildSourceDir(stagingRoot)
 	toolchain := filepath.Join(stagingRoot, forkToolchainLeaf)
 	bash := floorBash(inner.Darwin)
@@ -1491,6 +1495,11 @@ func ForkBuildPlanInvariants(plan ForkBuildPlan) []string {
 		}
 	}
 	problems = append(problems, sealedProfileProblems(plan.Seatbelt)...)
+	if n := len(plan.BootstrapArgv); n == 0 || plan.BootstrapArgv[n-1] != DarwinBootstrapSealedFlag {
+		problems = append(problems,
+			"the build's bootstrap is not told it is a sealed build ("+DarwinBootstrapSealedFlag+"); it would "+
+				"render every selected pack's agent config into the staging home and print each one's notices")
+	}
 	if want := floorBash(&Darwin{ProfilePath: plan.Floor}); plan.Bash != want ||
 		!containsArgPair(plan.DriverArgv, forkBypassShimsVar+"=1", plan.Bash, "-c") {
 		problems = append(problems,

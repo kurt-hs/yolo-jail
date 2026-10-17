@@ -21,8 +21,9 @@ const SealedBuildEnv = "YOLO_SEALED_BUILD"
 // a sealed build jail is. The launcher's word is its own `-e` argv, so runSteps asks before
 // hydrate_user_env folds ~/.config/yolo-user-env.sh into Vars: that file carries a selected pack's
 // ungated `env` vars and the user's env_sources, neither of which may switch a jail's agents off.
-// A macos-user boot is never one, since that backend runs no sealed build (FP-D3), and its
-// environment relays the same channel, so a gate name in it is never the launcher's.
+// A macos-user boot is never one by its environment, which relays the same channel, so a gate name
+// in it is never the launcher's: the macos-user build act says so on the bootstrap's argv instead
+// (DarwinBootstrapOptions.Sealed, PPX-D48), which runSteps reads beside this.
 func (e *Env) launchedSealed(target bootTarget) bool {
 	if target != bootContainer {
 		return false
