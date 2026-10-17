@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/jailcontent"
 )
 
 // wsSkillsTree writes a repo's skills — `.claude/skills/review/` — and, in an owned
@@ -52,12 +54,19 @@ func wsSkillsTree(t *testing.T, ws, nonce string) {
 	}
 
 	// This target is lexically inside the workspace but does not exist. It must be refused
-	// as dangling, independently of the outside-workspace link above.
+	// as dangling, independently of the outside-workspace link above. It is spelled through
+	// the workspace's REAL path: the harness's explicit Env leaves the launcher no PWD, so its
+	// root is getcwd's real path, and the reader (which never lstats outside the workspace)
+	// cannot know that macOS's /var/folders/… spelling of t.TempDir() names the same tree.
+	realWS, err := filepath.EvalSymlinks(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
 	dangling := filepath.Join(ws, ".agents", "skills", "dangling", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(dangling), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(filepath.Join(ws, "missing", "SKILL.md"), dangling); err != nil {
+	if err := os.Symlink(filepath.Join(realWS, "missing", "SKILL.md"), dangling); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -170,4 +179,52 @@ func TestMacosUserWorkspaceSkillsArriveThroughTheComposedTree(t *testing.T) {
 			t.Errorf("the launch must name %q:\n%s", want, r.combined())
 		}
 	}
+}
+
+// THE DARWIN PATH-RESOLUTION CLASS, for wsSkillsTree's dangling link, reproduced on Linux with
+// no container, so it runs under -short. The harness launches yolo with an explicit Env, which
+// os/exec takes as license NOT to set PWD to cmd.Dir, so the launcher's os.Getwd falls back to
+// getcwd and its workspace root is the REAL path. On macOS t.TempDir() sits under /var, a link
+// to /private/var, and an absolute link spelled through /var names a path under no spelling of
+// that root: the reader refuses it, by design without an lstat outside the workspace, as one
+// that resolves outside — and the launch never says "a dangling symlink" (the macOS nightly's
+// TestWorkspaceSkillsReachAContainerJail failure).
+func TestWsSkillsTreeDanglingLinkIsDanglingUnderASymlinkedTempDir(t *testing.T) {
+	base := resolvedTempDir(t)
+	real := filepath.Join(base, "real")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("cannot create a symlink here (%v); the class is unreproducible on this filesystem", err)
+	}
+	t.Setenv("TMPDIR", link)
+
+	// A subtest, because t.TempDir() reuses the parent dir this test already made under the
+	// old TMPDIR.
+	t.Run("fixture", func(t *testing.T) {
+		ws := t.TempDir()
+		root, err := filepath.EvalSymlinks(ws)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if root == ws {
+			t.Skipf("t.TempDir() came back already resolved (%s), so the class cannot show here", ws)
+		}
+		wsSkillsTree(t, ws, acParityNonce())
+
+		check, err := jailcontent.CheckWorkspaceSkillSource(root, filepath.Join(".agents", "skills"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := jailcontent.WorkspaceSkillRefusal{Path: ".agents/skills/dangling/SKILL.md", Reason: "a dangling symlink"}
+		for _, r := range check.Refused {
+			if r == want {
+				return
+			}
+		}
+		t.Errorf("with the workspace root at its real path %s, the fixture's dangling link must be "+
+			"refused as %q; the reader refused %+v", root, want.Reason, check.Refused)
+	})
 }
