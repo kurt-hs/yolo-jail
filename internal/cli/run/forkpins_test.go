@@ -70,7 +70,7 @@ func launchToDispatch(t *testing.T) string {
 func TestRunContainerCallsFreshJailForkPreflight(t *testing.T) {
 	fn := funcDecl(t, "run.go", "runContainer")
 	called := callsIn(fn)
-	if !called["freshJailForkPinRefusal"] || called["RepinLaunchForks"] || !called["runForkBuildSlot"] {
+	if !called["freshJailForkPinRefusal"] || called["RepinLaunchForks"] || !called["runForkBuildSlotAndRefusals"] {
 		t.Fatalf("runContainer must preflight in-jail mutable pins and delegate fresh source authority to the actual build slot; calls=%v", called)
 	}
 	var repin, lockAcquire, lastAttach token.Pos
@@ -88,7 +88,7 @@ func TestRunContainerCallsFreshJailForkPreflight(t *testing.T) {
 				lockAcquire = call.Pos()
 			}
 		case *ast.SelectorExpr:
-			if f.Sel.Name == "runForkBuildSlot" {
+			if f.Sel.Name == "runForkBuildSlotAndRefusals" {
 				repin = call.Pos()
 			}
 			if f.Sel.Name == "attachExisting" && call.Pos() > lastAttach {
