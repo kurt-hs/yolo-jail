@@ -13,9 +13,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - `yolo --version` now names the commit in every build, releases included, as in `yolo-jail 0.15.0+g0123456789ab`.
-- A model list with no `only` no longer refuses a model you type; it goes to the provider. pi's child agents may use any model of their provider unless an `only` narrows the list.
+- A model list with no `only` no longer refuses a model you type, for pi's child agents too.
 - `YOLO_PI_SUBAGENTS_MODEL_SETTINGS` is gone; to hand pi that flag, declare [`launch_computed`](docs/reference/pack-system.md#launch_computed) in a pack that forks the `pi` program.
-- Claude keeps your `/model` choice across launches. When you switch providers, yolo picks the same tier on the new one, or its default, once.
+- Claude keeps your `/model` choice across launches; switching providers picks the same tier on the new one.
 - **macOS (macos-user) launches no longer ask for a password.** Run `yolo macos-setup` once after upgrading; it installs one sudo rule that runs commands only as the sandbox account, and allows one macOS user per Mac. See [the macOS guide](userguide/guides/macos.md).
 - **Each jail now runs its own credential services** for Claude, OpenAI and AWS logins. An older yolo's machine-wide service keeps serving its jails; once they end, stop it with `yolo host-daemon stop --host-wide <name>`. See [host services](userguide/guides/host-services.md).
 - **A newer version of an agent, tool or patched build that fails to install now stops the launch** instead of quietly running the older one; the error gives the command that runs what you have. Offline, yolo still starts what is installed.
@@ -45,16 +45,16 @@ commands that start anyway: run your last good build, build on an older release,
 your patches, or start pi without an extension. See [Patch series](userguide/guides/patch-series.md#when-a-build-breaks).
 
 - A company list that only adds models now shows in Claude Code after Claude's own models.
-- A launch refreshes your shared Claude login when it is close to expiring, and a host service that crashes mid-session is restarted, up to five times in a row.
+- A launch refreshes a Claude login close to expiring, and a host service that crashes mid-session is restarted.
 
 ### Fixed
 
 - A macOS (macos-user) launch no longer leaves a copy of its packs behind on exit; `yolo prune --apply` removes older ones.
 - Claude on Kilo no longer assumes a 1M-token context for every model.
-- `yolo --update` on a patched fork now waits while another yolo process is building it, instead of failing.
+- `yolo --update` on a patched fork now waits for another yolo building it, instead of failing.
 - On Apple Container, `yolo check` points an expired-login symptom at the jail's network, not the Claude broker.
 - A patched fork with nothing built now retries a fetch that failed while the network was down, instead of refusing for an hour.
-- A bare `-p` that some agents can't use now names them all on one line, with the fix for each.
+- A bare `-p` that some agents can't use names them all on one line.
 - `yolo config promote` and `yolo config diff` no longer treat a `null` you set in an agent's config as a deletion.
 - A launch refused while it prepared a patched build no longer leaves a background `nix eval` running after it exits.
 - A patch series that stopped applying no longer keeps refusing after upstream releases a version it applies to.
