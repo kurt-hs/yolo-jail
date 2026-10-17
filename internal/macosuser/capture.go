@@ -1246,9 +1246,8 @@ const (
 	captureEndGroupFlag = "--end-process-group"
 	// buildScriptEnv is what the build's script exports before its line: the install prefixes a
 	// container build jail is started with (NPM_CONFIG_PREFIX, its cache, GOPATH), which no login
-	// shell sets here, and npm's update check and funding line off, as a container jail has them —
-	// the update check runs as a DETACHED child, in a session of its own, which no process-group end
-	// reaches and which kept the act's pack tree past its end (PPX-D49).
+	// shell sets here, and npm's update check and funding line off, as a container jail has them, so
+	// a build makes no registry request and prints no box it did not ask for (PPX-D49).
 	buildScriptEnv = "export NPM_CONFIG_PREFIX=\"$HOME/.npm-global\" NPM_CONFIG_CACHE=\"$HOME/.cache/npm\" " +
 		"GOPATH=\"$HOME/go\" NPM_CONFIG_UPDATE_NOTIFIER=false NPM_CONFIG_FUND=false\n"
 )
