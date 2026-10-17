@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 )
 
@@ -92,13 +93,21 @@ func TestAFailedBuildLineKeepsItsToolchainRecord(t *testing.T) {
 				return &Darwin{PathPrefix: []string{testProfile + "/bin"}, ProfilePath: testProfile}, true, nil
 			}
 			opts, tmp := forkBuildActOptions(t)
+			opts.LineStatusDest = filepath.Join(tmp, "store", "line-status")
 			plan := BuildForkBuildPlan(opts)
 			run := d.Run
 			d.Run = func(argv []string) int {
 				if slices.Contains(argv, "capture-run") {
 					run(argv)
+					// The driver is asked to record the line's own status where the act moves it from.
+					if !slices.Contains(argv, "--line-status="+plan.LineStatusFile) {
+						t.Errorf("the driver is not asked to record the line's status at %s: %q", plan.LineStatusFile, argv)
+					}
 					if tc.record {
 						if err := os.WriteFile(plan.ToolchainFile, []byte("yolo 1.2.3 macOS 26.1"), 0o644); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.WriteFile(plan.LineStatusFile, []byte("3\n"), 0o644); err != nil {
 							t.Fatal(err)
 						}
 					}
@@ -119,6 +128,11 @@ func TestAFailedBuildLineKeepsItsToolchainRecord(t *testing.T) {
 			_, err := os.Stat(dest)
 			if moved := err == nil; moved != tc.record {
 				t.Errorf("toolchain record beside the store = %v, want %v\n%s", moved, tc.record, c.out.String())
+			}
+			// THE BUILD LINE'S OWN STATUS is moved beside it, so the host says the line's status, not the
+			// driver's 1.
+			if st, ok := capture.ReadInstallerStatus(opts.LineStatusDest); ok != tc.record || (ok && st != 3) {
+				t.Errorf("the line's status beside the store = %d (moved %v), want 3 moved %v", st, ok, tc.record)
 			}
 		})
 	}

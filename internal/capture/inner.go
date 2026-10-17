@@ -132,6 +132,13 @@ type Options struct {
 	// rule that started it. A child that put itself in a session of its own (setsid) is not in the
 	// group, and is not ended.
 	EndProcessGroup bool
+	// StatusFile, when set, is where the installer's own exit status is written the moment it exits
+	// (WriteInstallerStatus), before the delta is moved or described. A caller reading the driver's
+	// exit alone cannot tell an installer that failed from a driver that failed after a successful
+	// one, and sees 1 for every installer's failure; this record says which, and the installer's
+	// real status (ReadInstallerStatus). Written whatever the installer's result; absent when the
+	// driver failed before the installer ran.
+	StatusFile string
 }
 
 // processGroupGrace is how long EndProcessGroup waits for the installer's group to go on SIGTERM
@@ -199,8 +206,14 @@ func Run(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("capture baseline: %w", err)
 	}
-	if err := d.install(); err != nil {
-		return nil, err
+	ierr := d.install()
+	if opts.StatusFile != "" {
+		// Best-effort: a capture that succeeds needs no record, and a reader with none says only
+		// that the driver failed.
+		_ = WriteInstallerStatus(opts.StatusFile, InstallerExitStatus(ierr))
+	}
+	if ierr != nil {
+		return nil, ierr
 	}
 	res := &Result{Tree: d.tree}
 	if err := d.moveDelta(baseline, res); err != nil {

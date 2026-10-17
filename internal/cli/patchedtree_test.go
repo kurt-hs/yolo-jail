@@ -49,6 +49,7 @@ type treeFixture struct {
 	stray   bool // the fake build also leaves a path outside the reserved directory
 	homeRef bool // the fake build's tree names the build home
 	noFile  bool // the fake build leaves no f.txt in the tree
+	empty   bool // the fake build's manifest records nothing
 }
 
 // clock is patchedNow's reading of the fixture clock, safe beside setNow.
@@ -139,6 +140,9 @@ func (fx *treeFixture) buildJail(t *testing.T) func(run.Options) int {
 			RefScan: capture.RefScanFull, Relocatable: true}
 		if fx.homeRef {
 			m.AbsoluteRefs = []capture.AbsoluteRef{{Path: reserved + "/f.txt", Kind: capture.RefFileContent, Value: "/home/agent"}}
+		}
+		if fx.empty {
+			m.Entries = []capture.ManifestEntry{}
 		}
 		slices.SortFunc(m.Entries, func(a, b capture.ManifestEntry) int { return strings.Compare(a.Path, b.Path) })
 		if err := capture.WriteManifest(out, m); err != nil {
