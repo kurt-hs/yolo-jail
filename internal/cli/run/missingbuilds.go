@@ -202,8 +202,34 @@ func (o *Options) refuseMissingBuilds(rt string) bool {
 	for _, m := range needed {
 		out.print("  [bold cyan]" + richtext.Escape("yolo capture "+m.capture) + "[/bold cyan]")
 	}
-	_, _ = out.rt.W.Write([]byte(patchrecovery.Section(patchrecovery.StartAnyway, missingRecovery(needed), out.rt.Color)))
+	_, _ = out.rt.W.Write([]byte(patchrecovery.Section(patchrecovery.StartAnyway,
+		o.withContainerBackends(rt, missingRecovery(needed)), out.rt.Color)))
 	return true
+}
+
+// withContainerBackends is hatches with, on macos-user, the two container backends a launch can
+// take instead (docs/reference/patched-forks.md PF-D97): `YOLO_RUNTIME=container yolo` and
+// `YOLO_RUNTIME=podman yolo`, each of which builds the fork for linux in its own build jail. They
+// stand before the missing-program hatch, the ruling's order, or last when the list has none. At
+// the guest notch a container runtime also needs the jail notch (containerStepClause), so their
+// command is `yolo --at jail`. Every other runtime keeps hatches as they are.
+func (o *Options) withContainerBackends(rt string, hatches []patchrecovery.Hatch) []patchrecovery.Hatch {
+	if rt != "macos-user" { // parity: HonoredBy — only macos-user builds a patched fork in its own act; the container backends' refusal needs no other backend to finish
+		return hatches
+	}
+	cmd := "yolo"
+	if o.containerStepClause() != "" {
+		cmd = "yolo --at jail"
+	}
+	backends := []patchrecovery.Hatch{
+		{Env: "YOLO_RUNTIME", Value: "container", Command: cmd, Label: "launch on Apple Container"},
+		{Env: "YOLO_RUNTIME", Value: "podman", Command: cmd, Label: "launch on podman"},
+	}
+	i := slices.IndexFunc(hatches, func(h patchrecovery.Hatch) bool { return h.Env == patchrecovery.AllowMissingProgramsEnv })
+	if i < 0 {
+		i = len(hatches)
+	}
+	return slices.Insert(slices.Clone(hatches), i, backends...)
 }
 
 // missingRecovery is the union of the needed builds' hatch lists, in patchrecovery.Scoped's order

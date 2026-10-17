@@ -367,15 +367,15 @@ func (o *Options) buildMacosCtxTree(staging string, packs []*packload.Pack,
 // installer program is selected. kept grows by every key a live launch on this machine recorded
 // handing a jail (HandedForkKeys), so this launch's prune never removes a build another
 // workspace's running session has yet to materialize (a launcher materializes at the program's
-// first run, not at boot). A record that cannot be read adds nothing: the prune then reads only
-// the store's current entries, as it did before forks were staged.
-func (o *Options) macosUserCaptures(packs []*packload.Pack) ([]macosuser.CaptureEntry, []string) {
+// first run, not at boot). When those records cannot be read, keepAll is true: a reaper that
+// cannot ask declines, so the launch prunes no staged entry (HostContext.CapturesKeepAll).
+func (o *Options) macosUserCaptures(packs []*packload.Pack) (stage []macosuser.CaptureEntry, kept []string, keepAll bool) {
 	if o.MacosUserCaptures == nil || o.CapturesDir == nil {
-		return nil, nil
+		return nil, nil, false
 	}
 	dir := o.CapturesDir()
 	if dir == "" {
-		return nil, nil
+		return nil, nil, false
 	}
 	bins := installerBins(packs)
 	forks := map[string]string{}
@@ -385,30 +385,31 @@ func (o *Options) macosUserCaptures(packs []*packload.Pack) ([]macosuser.Capture
 		}
 	}
 	if len(bins) == 0 && len(forks) == 0 {
-		return nil, nil
+		return nil, nil, false
 	}
-	stage, kept := o.MacosUserCaptures(dir, bins, macosUserJailPlatform(), forks)
+	stage, kept = o.MacosUserCaptures(dir, bins, macosUserJailPlatform(), forks)
 	if len(stage) == 0 {
-		return stage, kept
+		return stage, kept, false
 	}
-	if handed, err := HandedForkKeys(); err == nil {
-		seen := map[string]bool{}
-		for _, e := range stage {
-			seen[e.Key] = true
-		}
-		for _, k := range kept {
-			seen[k] = true
-		}
-		extra := make([]string, 0, len(handed))
-		for k := range handed {
-			if !seen[k] {
-				extra = append(extra, k)
-			}
-		}
-		sort.Strings(extra)
-		kept = append(kept, extra...)
+	handed, err := HandedForkKeys()
+	if err != nil {
+		return stage, kept, true
 	}
-	return stage, kept
+	seen := map[string]bool{}
+	for _, e := range stage {
+		seen[e.Key] = true
+	}
+	for _, k := range kept {
+		seen[k] = true
+	}
+	extra := make([]string, 0, len(handed))
+	for k := range handed {
+		if !seen[k] {
+			extra = append(extra, k)
+		}
+	}
+	sort.Strings(extra)
+	return stage, append(kept, extra...), false
 }
 
 // macosCtxLinks is the macos-user decider for the two context-mount declarations

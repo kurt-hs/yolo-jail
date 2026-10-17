@@ -704,12 +704,19 @@ var pruneCapturesScript = strings.Join([]string{
 		`for want in "$@"; do if [ "$k" = "$want" ]; then keep=yes; fi; done`,
 		`if [ "$keep" = no ]; then ` + unsealInScript(`"$d"`) + "; " + rmBin + ` -rf "$d"; fi`,
 	}, "; ") + "; done",
-	`for s in "$root"/` + capturesStagingLeaf + `/*; do ` + strings.Join([]string{
-		`if [ ! -e "$s" ] && [ ! -L "$s" ]; then continue; fi`,
-		unsealInScript(`"$s"`),
-		rmBin + ` -rf "$s"`,
-	}, "; ") + "; done",
+	pruneUnfinishedCopies,
 }, "; ")
+
+// pruneUnfinishedCopies removes everything under staging/: copies a killed launch did not finish.
+var pruneUnfinishedCopies = `for s in "$root"/` + capturesStagingLeaf + `/*; do ` + strings.Join([]string{
+	`if [ ! -e "$s" ] && [ ! -L "$s" ]; then continue; fi`,
+	unsealInScript(`"$s"`),
+	rmBin + ` -rf "$s"`,
+}, "; ") + "; done"
+
+// keepCapturesScript is pruneCapturesScript for a launch that may not prune (StageCaptureCommands'
+// keepAll): it keeps every staged entry and removes only the unfinished copies under staging/.
+var keepCapturesScript = strings.Join([]string{"set -eu", "root=$1", "shift", pruneUnfinishedCopies}, "; ")
 
 // stageCaptureArgv is the one command that stages entry e under root.
 func stageCaptureArgv(root string, e CaptureEntry) []string {
@@ -757,7 +764,11 @@ func captureKeyOK(k string) bool {
 // `kept` are the keys of the user store's OTHER current entries at this backend's platform — a
 // program another workspace selects — so alternating between two workspaces' pack sets copies
 // nothing twice. A key in neither list is superseded or gone from the user store.
-func StageCaptureCommands(entries []CaptureEntry, kept []string, sd string) [][]string {
+//
+// keepAll says the caller could not learn every key another running session still needs
+// (HostContext.CapturesKeepAll): a reaper that cannot ask declines, so the store's own third
+// command then removes no staged entry, only unfinished copies, and stays third.
+func StageCaptureCommands(entries []CaptureEntry, kept []string, keepAll bool, sd string) [][]string {
 	entries = stageableCaptures(entries)
 	if len(entries) == 0 {
 		return nil
@@ -780,8 +791,12 @@ func StageCaptureCommands(entries []CaptureEntry, kept []string, sd string) [][]
 	// The mode is explicit (categoryDirCommands): the sandbox has to search the root and entries/
 	// to reach an entry, and a launcher that cannot reach one downloads instead, saying nothing.
 	cmds := categoryDirCommands(root, filepath.Join(root, capturesEntriesLeaf), filepath.Join(root, capturesStagingLeaf))
-	cmds = append(cmds,
-		append([]string{shBin, "-c", pruneCapturesScript, pruneCapturesScriptName, root}, keep...))
+	if keepAll {
+		cmds = append(cmds, []string{shBin, "-c", keepCapturesScript, pruneCapturesScriptName, root})
+	} else {
+		cmds = append(cmds,
+			append([]string{shBin, "-c", pruneCapturesScript, pruneCapturesScriptName, root}, keep...))
+	}
 	for _, e := range entries {
 		cmds = append(cmds, stageCaptureArgv(root, e))
 	}
