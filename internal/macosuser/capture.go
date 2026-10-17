@@ -1277,6 +1277,9 @@ type ForkBuildPlan struct {
 	CapturePlan
 	// BuildID and Build are the options' own; Source the host checkout the plan copies.
 	BuildID, Build, Source string
+	// TreeDir is the options' own: for a patched extension's build, the home-relative directory the
+	// tree script's fixed final step copies the checkout into; "" for a fork's build.
+	TreeDir string
 	// SrcDir is the staging tree's checkout and ToolchainFile the record the build's script writes.
 	SrcDir, ToolchainFile string
 	// SourceCommands copy the checkout into SrcDir, run as the INVOKING user and never under sudo:
@@ -1296,14 +1299,20 @@ func BuildForkBuildPlan(opts ForkBuildOptions) ForkBuildPlan {
 	plan.PrepareCommands = ForkBuildStagingCommands(stagingRoot, inner.HostUser)
 	src := ForkBuildSourceDir(stagingRoot)
 	toolchain := filepath.Join(stagingRoot, forkToolchainLeaf)
-	plan.DriverArgv = ForkBuildDriverArgv(plan.StagedYolo, plan.StagingHome, plan.OutDir, src, toolchain,
-		forkToolchainHead(opts), opts.Build, plan.ProfilePath, plan.EnvFile, plan.DarwinPathPrefix)
+	if opts.TreeDir != "" {
+		plan.DriverArgv = TreeBuildDriverArgv(plan.StagedYolo, plan.StagingHome, plan.OutDir, src, toolchain,
+			forkToolchainHead(opts), opts.Build, opts.TreeDir, plan.ProfilePath, plan.EnvFile,
+			plan.DarwinPathPrefix)
+	} else {
+		plan.DriverArgv = ForkBuildDriverArgv(plan.StagedYolo, plan.StagingHome, plan.OutDir, src, toolchain,
+			forkToolchainHead(opts), opts.Build, plan.ProfilePath, plan.EnvFile, plan.DarwinPathPrefix)
+	}
 	var copySource [][]string
 	if opts.Source != "" {
 		copySource = [][]string{{cpBin, "-R", opts.Source + "/.", src}}
 	}
 	return ForkBuildPlan{CapturePlan: plan, BuildID: opts.BuildID, Build: opts.Build, Source: opts.Source,
-		SrcDir: src, ToolchainFile: toolchain, SourceCommands: copySource}
+		TreeDir: opts.TreeDir, SrcDir: src, ToolchainFile: toolchain, SourceCommands: copySource}
 }
 
 // withDarwinEnv is env with the darwin floor's build variables (PKG_CONFIG_PATH and the like) set
@@ -1353,6 +1362,22 @@ func ForkBuildStagingCommands(stagingRoot, hostUser string) [][]string {
 // profile and capture driver, around `env YOLO_BYPASS_SHIMS=1 /bin/bash -c <ForkBuildScript>`.
 func ForkBuildDriverArgv(stagedYolo, stagingHome, outDir, srcDir, toolchainFile, toolchainHead, build,
 	profilePath, envFile string, pathPrefix []string) []string {
+	return buildDriverArgv(stagedYolo, stagingHome, outDir, ForkBuildScript(srcDir, toolchainFile,
+		toolchainHead, build), profilePath, envFile, pathPrefix)
+}
+
+// TreeBuildDriverArgv is ForkBuildDriverArgv for a PATCHED EXTENSION's build
+// (docs/reference/pi-extensions.md §7.1): the same crossing, around TreeBuildScript.
+func TreeBuildDriverArgv(stagedYolo, stagingHome, outDir, srcDir, toolchainFile, toolchainHead, build,
+	treeDir, profilePath, envFile string, pathPrefix []string) []string {
+	return buildDriverArgv(stagedYolo, stagingHome, outDir, TreeBuildScript(srcDir, toolchainFile,
+		toolchainHead, build, treeDir), profilePath, envFile, pathPrefix)
+}
+
+// buildDriverArgv is the crossing both build drivers share: the sandbox account, its environment,
+// the profile and the capture driver, around `env YOLO_BYPASS_SHIMS=1 /bin/bash -c <script>`.
+func buildDriverArgv(stagedYolo, stagingHome, outDir, script, profilePath, envFile string,
+	pathPrefix []string) []string {
 	// The crossing is the one run-as rule (RunAsSandboxArgv): `-n`, so it never prompts.
 	out := RunAsSandboxArgv(nil, "-i")
 	out = append(out, sandboxEnvPairs(stagingHome, SandboxUser,
@@ -1363,8 +1388,7 @@ func ForkBuildDriverArgv(stagedYolo, stagingHome, outDir, srcDir, toolchainFile,
 		"--home=" + stagingHome,
 		"--out=" + outDir,
 		captureScanFlag,
-		"--", "/usr/bin/env", forkBypassShimsVar + "=1", "/bin/bash", "-c",
-		ForkBuildScript(srcDir, toolchainFile, toolchainHead, build),
+		"--", "/usr/bin/env", forkBypassShimsVar + "=1", "/bin/bash", "-c", script,
 	})...)
 	return out
 }
@@ -1379,6 +1403,32 @@ func ForkBuildScript(srcDir, toolchainFile, head, build string) string {
 		shQuote(toolchainFile) + " 2>/dev/null || true\n" +
 		"export NPM_CONFIG_PREFIX=\"$HOME/.npm-global\" NPM_CONFIG_CACHE=\"$HOME/.cache/npm\" GOPATH=\"$HOME/go\"\n" +
 		"cd " + shQuote(srcDir) + " && " + build
+}
+
+// TreeBuildScript is a PATCHED EXTENSION's build script (docs/reference/pi-extensions.md §7.1),
+// the container's tree script (internal/cli's treeBuildJailArgv) on this backend: the toolchain
+// record first (head, the macOS release, then the Node and npm the sandbox PATH resolves — the darwin
+// floor's, since macOS has no /bin/node to put first as the container's script does), the install
+// prefixes ForkBuildScript exports, then in the checkout the build line, if any, in a subshell on
+// lines of its own, so a `cd` in it cannot move the copy's source and a trailing `# comment` cannot
+// eat the step after it. Last, the FIXED final step: the checkout copied, links kept as links
+// (BSD cp's -P), modes and times kept (-p), to ~/<treeDir>, a directory under a capture surface.
+func TreeBuildScript(srcDir, toolchainFile, head, build, treeDir string) string {
+	script := "{ printf '%s' " + shQuote(head) + "; printf ' macOS %s' \"$(/usr/bin/sw_vers -productVersion 2>/dev/null)\"; " +
+		"printf ' node %s npm %s' \"$(node --version 2>/dev/null)\" \"$(npm --version 2>/dev/null)\"; } > " +
+		shQuote(toolchainFile) + " 2>/dev/null || true\n" +
+		"export NPM_CONFIG_PREFIX=\"$HOME/.npm-global\" NPM_CONFIG_CACHE=\"$HOME/.cache/npm\" GOPATH=\"$HOME/go\"\n" +
+		"cd " + shQuote(srcDir)
+	if strings.TrimSpace(build) != "" {
+		script += " && (\n" + build + "\n)"
+	}
+	return script + treeCopyStep(srcDir, treeDir)
+}
+
+// treeCopyStep is TreeBuildScript's fixed final step, chained after what precedes it.
+func treeCopyStep(srcDir, treeDir string) string {
+	return " && /bin/mkdir -p \"$HOME\"/" + shQuote(filepath.Dir(treeDir)) +
+		" && /bin/cp -pPR " + shQuote(srcDir) + " \"$HOME\"/" + shQuote(treeDir)
 }
 
 // ForkBuildPlanInvariants returns static-check violation messages over a ForkBuildPlan: every
@@ -1409,12 +1459,16 @@ func ForkBuildPlanInvariants(plan ForkBuildPlan) []string {
 			"the build driver argv omits "+forkBypassShimsVar+"=1; a build line that runs a blocked tool "+
 				"would meet the refusal meant for an agent")
 	}
-	script := ForkBuildScript(plan.SrcDir, plan.ToolchainFile, "", plan.Build)
-	script = script[strings.Index(script, "\n")+1:]
-	if !argvMentions(plan.DriverArgv, script) {
-		problems = append(problems,
-			"the build driver argv does not run the fork's build line in "+plan.SrcDir+"; the build would "+
-				"run somewhere else, or not at all")
+	if plan.TreeDir == "" {
+		script := ForkBuildScript(plan.SrcDir, plan.ToolchainFile, "", plan.Build)
+		script = script[strings.Index(script, "\n")+1:]
+		if !argvMentions(plan.DriverArgv, script) {
+			problems = append(problems,
+				"the build driver argv does not run the fork's build line in "+plan.SrcDir+"; the build would "+
+					"run somewhere else, or not at all")
+		}
+	} else {
+		problems = append(problems, treePlanProblems(plan)...)
 	}
 	if plan.Source == "" {
 		problems = append(problems, "the build has no checkout to copy into "+plan.SrcDir+
@@ -1434,6 +1488,33 @@ func ForkBuildPlanInvariants(plan ForkBuildPlan) []string {
 	if !commandsInclude(plan.PrepareCommands, []string{mkdirBin, "-p", plan.SrcDir}) {
 		problems = append(problems,
 			"the prepare commands never make "+plan.SrcDir+"; the checkout's copy would have nowhere to land")
+	}
+	return problems
+}
+
+// treePlanProblems are a patched extension's build's own invariants: its tree directory is a plain
+// home-relative path, and the driver runs the tree script — the build line, if any, in the
+// checkout, then the fixed copy into ~/<TreeDir>, without which the admit finds no tree. A tree's
+// Build may be empty; its copy may not be missing.
+func treePlanProblems(plan ForkBuildPlan) []string {
+	var problems []string
+	clean := filepath.Clean(plan.TreeDir)
+	if filepath.IsAbs(plan.TreeDir) || clean != plan.TreeDir || clean == "." || clean == ".." ||
+		strings.HasPrefix(clean, "../") {
+		problems = append(problems, "the tree directory "+plan.TreeDir+" is not a plain home-relative path; "+
+			"the build's copy would land outside the staging home the capture walks")
+	}
+	if !argvMentions(plan.DriverArgv, treeCopyStep(plan.SrcDir, plan.TreeDir)) {
+		problems = append(problems,
+			"the build driver argv never copies the checkout to ~/"+plan.TreeDir+
+				"; the admit would find no tree")
+	}
+	script := TreeBuildScript(plan.SrcDir, plan.ToolchainFile, "", plan.Build, plan.TreeDir)
+	script = script[strings.Index(script, "\n")+1:]
+	if !argvMentions(plan.DriverArgv, script) {
+		problems = append(problems,
+			"the build driver argv does not run the tree build in "+plan.SrcDir+" and then copy the checkout "+
+				"to ~/"+plan.TreeDir+"; the build would run somewhere else, or leave no tree to admit")
 	}
 	return problems
 }
@@ -1467,6 +1548,9 @@ func PrintForkBuildPlan(w io.Writer, plan ForkBuildPlan, problems []string) {
 	p.printf("build:       %s", plan.BuildID)
 	p.printf("checkout:    %s → %s", plan.Source, plan.SrcDir)
 	p.printf("toolchain:   %s", plan.ToolchainFile)
+	if plan.TreeDir != "" {
+		p.printf("tree:        %s → ~/%s", plan.SrcDir, plan.TreeDir)
+	}
 	p.print("")
 	PrintCapturePlan(w, plan.CapturePlan, problems)
 }
