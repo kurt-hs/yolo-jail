@@ -36,3 +36,28 @@ func TestABuildPlanWhoseBootstrapIsNotSealedIsRefused(t *testing.T) {
 		t.Errorf("the unsealed bootstrap is not refused:\n%s", problems)
 	}
 }
+
+// THE BUILD ACT ENDS ITS BUILD LINE'S PROCESS GROUP (PPX-D49): the driver argv the act runs asks the
+// capture driver for it, for a fork's build and a patched extension's, and a plan without it is
+// refused. The script turns npm's update check off too, whose detached child no group end reaches.
+// An installer capture's driver is unchanged.
+func TestTheBuildActEndsItsBuildLinesProcessGroup(t *testing.T) {
+	for _, opts := range []ForkBuildOptions{testForkBuildOptions(), testTreeBuildOptions("npm ci")} {
+		plan := BuildForkBuildPlan(opts)
+		inst := driverScriptArgv(t, plan.DriverArgv)
+		i := slices.Index(plan.DriverArgv, "capture-run")
+		if j := slices.Index(plan.DriverArgv[i:], captureEndGroupFlag); j < 0 || i+j >= len(plan.DriverArgv)-len(inst) {
+			t.Errorf("the build driver does not ask capture-run to end the build line's group: %q", plan.DriverArgv)
+		}
+		if script := inst[len(inst)-1]; !strings.Contains(script, "NPM_CONFIG_UPDATE_NOTIFIER=false") {
+			t.Errorf("the build's script leaves npm's detached update check on:\n%s", script)
+		}
+		plan.DriverArgv = slices.DeleteFunc(slices.Clone(plan.DriverArgv), func(a string) bool { return a == captureEndGroupFlag })
+		if problems := strings.Join(ForkBuildPlanInvariants(plan), "\n"); !strings.Contains(problems, captureEndGroupFlag) {
+			t.Errorf("a build plan whose driver does not end the group is not refused:\n%s", problems)
+		}
+	}
+	if slices.Contains(BuildCapturePlan(testCaptureOptions()).DriverArgv, captureEndGroupFlag) {
+		t.Error("an installer capture's driver changed")
+	}
+}
