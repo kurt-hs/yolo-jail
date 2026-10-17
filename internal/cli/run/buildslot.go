@@ -66,24 +66,18 @@ var handedForksMu sync.Mutex
 // and both answered and recorded. With no BuildSlot (a caller that injects the halves alone) each
 // half calls its own act, the forks' first.
 //
-// ON macos-user ONLY THE FORK HALF RUNS (docs/reference/patched-forks.md PF-D97): a fork gets a
-// darwin build there, while a patched extension still has none, and says so itself
-// (noteMacosUserTrees).
+// BOTH HALVES RUN ON EVERY BACKEND, macos-user's included (docs/reference/patched-forks.md PF-D97,
+// docs/reference/pi-extensions.md §11): there a fork and a patched extension are each built for the
+// sandbox's darwin platform (jailPlatform), and a delivered extension's per-launch copy reaches the
+// sandbox home through the home overlay (buildMacosHomeOverlayWith) rather than a mount.
 func (o *Options) runForkBuildSlot(cfg *jsonx.OrderedMap, rt, repoRoot string) {
-	withTrees := rt != "macos-user" // parity: Warned — macos-user builds no patched extension, and noteMacosUserTrees says so
 	if o.BuildSlot == nil {
 		o.forkDelivered = o.forkDeliveriesFor(rt)
-		if withTrees {
-			o.treeDelivered = o.treeDeliveriesFor(rt)
-		}
+		o.treeDelivered = o.treeDeliveriesFor(rt)
 		return
 	}
 	forks, fReq := o.forkBuildPlan(rt)
-	var trees map[string]TreeDelivery
-	var tReq *TreeBuildRequest
-	if withTrees {
-		trees, tReq = o.treeBuildPlan(rt)
-	}
+	trees, tReq := o.treeBuildPlan(rt)
 	if fReq != nil || tReq != nil {
 		// THE IMAGE'S OWN BUILD, BESIDE THE POOL: nothing the slot does feeds it, so it starts now
 		// rather than once the slowest key has ended.

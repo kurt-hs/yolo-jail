@@ -116,8 +116,8 @@ func TestATreeListedForJailsIsDeliveredAndAnEntryUnderItLoadsIt(t *testing.T) {
 }
 
 // MACOS-USER says nothing of a tree no jail loads: its agent would not load it on any backend. Red if
-// the macos-user arm's line stops reading the trees a jail is delivered. macos-user runs on a macOS
-// host, which builds no tree for itself, so the block's line names the step that works (PPX-D38).
+// the macos-user arm's line stops reading the trees a jail is delivered. On a host that builds no
+// tree for itself (the seam set so), the block's line names the step that works (PPX-D38).
 func TestAMacosUserLaunchIsSilentOnAGuardedOnlyTree(t *testing.T) {
 	asHostThatBuildsTrees(t, false)
 	treeLaunchHomeListing(t, postureListing("guarded", "~/"+treeInto))
@@ -150,4 +150,19 @@ func asHostThatBuildsTrees(t *testing.T, builds bool) {
 	prev := hostBuildsOwnTrees
 	hostBuildsOwnTrees = func() bool { return builds }
 	t.Cleanup(func() { hostBuildsOwnTrees = prev })
+}
+
+// A MACOS HOST BUILDS ITS OWN TREES now, through the macos-user build act (pi-extensions.md §11),
+// so its block names `yolo host apply --assert` for a guarded-only tree as a Linux host's does; the
+// macos-user sandbox, a darwin jail, builds none. Red if darwin goes back to building no tree.
+func TestAMacOSHostBuildsItsOwnTrees(t *testing.T) {
+	for _, c := range []struct {
+		goos   string
+		inJail bool
+		want   bool
+	}{{"linux", false, true}, {"linux", true, true}, {"darwin", false, true}, {"darwin", true, false}, {"windows", false, false}} {
+		if got := hostBuildsOwnTreesOn(c.goos, c.inJail); got != c.want {
+			t.Errorf("hostBuildsOwnTreesOn(%q, inJail %v) = %v, want %v", c.goos, c.inJail, got, c.want)
+		}
+	}
 }

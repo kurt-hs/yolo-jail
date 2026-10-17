@@ -64,7 +64,7 @@ import (
 // the selection's scope:workspace state list, which is what decides where each
 // destination physically lands once the bootstrap lays the home-tier layout.
 func buildMacosHomeOverlay(staging string, packs []*packload.Pack, warn func(string)) (macosuser.HomeOverlay, error) {
-	return buildMacosHomeOverlayWith(staging, packs, nil, warn)
+	return buildMacosHomeOverlayWith(staging, packs, nil, nil, warn)
 }
 
 // overlayFile is one file CORE composes for the sandbox home — not a pack's, so no declaration
@@ -76,13 +76,22 @@ type overlayFile struct {
 	Body []byte
 }
 
-// buildMacosHomeOverlayWith is buildMacosHomeOverlay with core's own files laid in beside the
-// packs' content. Each is a destination of its own in the list the tree carries, so the bootstrap
+// buildMacosHomeOverlayWith is buildMacosHomeOverlay with this launch's patched extensions and
+// core's own files laid in beside the packs' content.
+//
+// trees is the launch's per-launch copies by extension key (Options.patchedTreeDirs), the SAME map
+// the container path hands packFilesTargets for its mounts, so a delivered patched extension is a
+// `files` target like any other — read through the one declaration list, not a fourth — copied to
+// its `~/<into>` and write-protected with it (docs/reference/pi-extensions.md §11). A tree with no
+// copy has no key, so packFilesTargets makes it no target and nothing lands at its `into`.
+//
+// Each core file is a destination of its own in the list the tree carries, so the bootstrap
 // installs it as it installs a briefing (replacing that one file, and nothing beside it) and the
 // Seatbelt profile write-protects it (macosuser.ResolveHomeReadonly), which is this backend's `:ro`.
-func buildMacosHomeOverlayWith(staging string, packs []*packload.Pack, core []overlayFile, warn func(string)) (macosuser.HomeOverlay, error) {
+func buildMacosHomeOverlayWith(staging string, packs []*packload.Pack, trees map[string]string, core []overlayFile,
+	warn func(string)) (macosuser.HomeOverlay, error) {
 	tree, dests, err := buildMacosHomeOverlayTree(staging, packSkillTargets(packs),
-		briefingDestinations(packs), packFilesTargets(packs, nil), core, warn)
+		briefingDestinations(packs), packFilesTargets(packs, trees), core, warn)
 	if err != nil || tree == "" {
 		return macosuser.HomeOverlay{}, err
 	}
@@ -163,7 +172,15 @@ func buildMacosHomeOverlayTree(staging string, skills []jailcontent.SkillTarget,
 			continue
 		}
 		dst := filepath.Join(overlay, filepath.FromSlash(t.Dest))
-		if err := copyTree(t.Src, dst); err != nil {
+		cp := copyTree
+		if t.Tree != "" {
+			// A PATCHED EXTENSION'S TREE keeps its links as links (pi-extensions.md §7.1, PPX-D45),
+			// as a container's read-only mount of it does: copyTree reads through them, which fails
+			// on a link to a directory, turns node_modules/.bin into copies, and would read a host
+			// file an upstream's absolute link names into the overlay the sandbox account is handed.
+			cp = copyTreeKeepingLinks
+		}
+		if err := cp(t.Src, dst); err != nil {
 			return "", nil, fmt.Errorf("staging pack %s's files for %s: %w", t.Pack, t.Dest, err)
 		}
 		written = append(written, t.Dest)
@@ -199,4 +216,46 @@ func buildMacosHomeOverlayTree(staging string, skills []jailcontent.SkillTarget,
 		return "", nil, fmt.Errorf("listing the macos-user home overlay's destinations: %w", err)
 	}
 	return overlay, dests, nil
+}
+
+// copyTreeKeepingLinks copies the tree src to dest, recreating each symbolic link as the same link
+// and never reading through one: directories 0755, regular files with their permission bits, and
+// anything else (a socket, a device) refused, since skipping it would report a partial copy as a
+// whole one. Only a patched extension's per-launch copy takes it (buildMacosHomeOverlayTree).
+func copyTreeKeepingLinks(src, dest string) error {
+	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dest, rel)
+		switch {
+		case d.Type()&os.ModeSymlink != 0:
+			link, err := os.Readlink(p)
+			if err != nil {
+				return err
+			}
+			return os.Symlink(link, target)
+		case d.IsDir():
+			return os.MkdirAll(target, 0o755)
+		case d.Type().IsRegular():
+			fi, err := d.Info()
+			if err != nil {
+				return err
+			}
+			data, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(target, data, fi.Mode().Perm()|0o600); err != nil {
+				return err
+			}
+			return os.Chmod(target, fi.Mode().Perm()|0o600)
+		default:
+			return fmt.Errorf("%s is a %s, which the overlay copy cannot reproduce", p, d.Type())
+		}
+	})
 }
