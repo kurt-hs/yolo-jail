@@ -321,7 +321,12 @@ func runBundleDir(args []string) int {
 // the session env file, which the bootstrap reads into its Env and never into this process's
 // environment (entrypoint's hydrate_session_env step). The bootstrap writes
 // <workspace>/.yolo/boot.log as the container boot does.
-func runDarwinBootstrap(_ []string) int {
+func runDarwinBootstrap(args []string) int {
+	sealed, err := parseDarwinBootstrapArgs(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "yolo internal darwin-bootstrap:", err)
+		return 2
+	}
 	// ONLY AS THE SANDBOX ACCOUNT. A launch and a capture both run this through
 	// `sudo --user=_yolojail`; a human hand-running it would generate the sandbox layout into
 	// their OWN home, and the scope check below guards the account's home, not theirs.
@@ -377,6 +382,8 @@ func runDarwinBootstrap(_ []string) int {
 		// The boot log's version line, from this binary's own stamp. NEVER relayed as
 		// YOLO_VERSION: that variable is the jail marker, and this process is not in one.
 		Version: version.Baked(),
+		// The macos-user build act's bootstrap, told so on its argv (PPX-D48).
+		Sealed: sealed,
 	}
 	if err := entrypoint.RunDarwinBootstrap(e, opts); err != nil {
 		// A12: do NOT print "ok" over a failed bootstrap.
@@ -385,6 +392,20 @@ func runDarwinBootstrap(_ []string) int {
 	}
 	fmt.Println("yolo-jail macos-user bootstrap ok")
 	return 0
+}
+
+// parseDarwinBootstrapArgs reads the bootstrap's argv: nothing for a launch's or an installer
+// capture's, macosuser.DarwinBootstrapSealedFlag for the sealed build act's (PPX-D48). Anything else
+// is refused, since only yolo writes this argv.
+func parseDarwinBootstrapArgs(args []string) (sealed bool, err error) {
+	for _, a := range args {
+		if a != macosuser.DarwinBootstrapSealedFlag {
+			return false, fmt.Errorf("unexpected argument %q (usage: yolo internal darwin-bootstrap [%s])",
+				a, macosuser.DarwinBootstrapSealedFlag)
+		}
+		sealed = true
+	}
+	return sealed, nil
 }
 
 // darwinBootstrapScopeHome is the home whose boundary runDarwinBootstrap guards: the sandbox

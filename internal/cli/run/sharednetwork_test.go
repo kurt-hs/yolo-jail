@@ -61,12 +61,18 @@ func TestTheBriefingStatesASharedNetwork(t *testing.T) {
 // container arm is expected to stop later (no image, no runtime): the line is printed above the
 // backend dispatch, so what matters is that it was printed, not how the launch ended.
 func sharedNetworkLaunch(t *testing.T, rt, network string, nested bool) string {
+	return sharedNetworkLaunchSealed(t, rt, network, nested, false)
+}
+
+// sharedNetworkLaunchSealed is sharedNetworkLaunch, sealed as a build jail's launch when sealed.
+func sharedNetworkLaunchSealed(t *testing.T, rt, network string, nested, sealed bool) string {
 	t.Helper()
 	home := packHome(t)
 	writeUserPacks(t, home, `[]`)
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, t.TempDir(), rt, &stdout, &stderr, nil)
 	o.Network = network
+	o.Sealed = sealed
 	if nested {
 		o.PathExists = func(p string) bool { return p == "/run/.containerenv" }
 	}
@@ -98,6 +104,29 @@ func TestTheLaunchLineStatesASharedNetwork(t *testing.T) {
 			got := sharedNetworkLaunch(t, tc.rt, tc.net, tc.nested)
 			if has := strings.Contains(got, sharedNetworkMark); has != tc.wantShared {
 				t.Errorf("launch line present = %v, want %v:\n%s", has, tc.wantShared, got)
+			}
+		})
+	}
+}
+
+// A SEALED BUILD JAIL'S LAUNCH DOES NOT SAY IT (PPX-D48): it runs no agent, and its build's own start
+// line already discloses the network the build reaches. The maintainer's Mac printed it in every
+// build jail's output. The user's own launch on the same backend still says it.
+func TestASealedBuildJailsLaunchDoesNotStateASharedNetwork(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		rt     string
+		nested bool
+	}{
+		{"macos-user", "macos-user", false},
+		{"nested podman", "podman", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sharedNetworkLaunchSealed(t, tc.rt, "bridge", tc.nested, true); strings.Contains(got, sharedNetworkMark) {
+				t.Errorf("a sealed build jail's launch states the shared network:\n%s", got)
+			}
+			if got := sharedNetworkLaunch(t, tc.rt, "bridge", tc.nested); !strings.Contains(got, sharedNetworkMark) {
+				t.Errorf("the user's own launch no longer states the shared network:\n%s", got)
 			}
 		})
 	}

@@ -35,6 +35,12 @@ type DarwinBootstrapOptions struct {
 	// bootstrap's environment must never carry that variable: it is the jail marker, so
 	// config.InJail would answer true for this process and for every child it spawns.
 	Version string
+	// Sealed makes this boot a SEALED BUILD JAIL's (sealedbuild.go): the macos-user build act's
+	// bootstrap of its throwaway staging home, which runs one build line and no agent, so it renders
+	// no pack-declared surface, runs no pack hook and says nothing about an agent's config (PPX-D48).
+	// Only the launcher's argv sets it (`yolo internal darwin-bootstrap --sealed-build`), never the
+	// environment, which on this backend relays the user's own channel.
+	Sealed bool
 }
 
 // DarwinEnvFrom builds the bootstrap Env from the launcher's env-var contract, and
