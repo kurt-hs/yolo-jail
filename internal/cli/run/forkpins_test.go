@@ -57,6 +57,8 @@ func launchToDispatch(t *testing.T) string {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, t.TempDir(), "macos-user", &stdout, &stderr, nil)
+	// A Mac set up for this backend, so the arm's preflight admits the fork slot (macosUserPreflight).
+	o.MacosUserLaunchProbes = setUpMacProbes
 	o.MacosUserRun = func(*jsonx.OrderedMap, string, []string, []string, string, string, macosuser.HomeOverlay,
 		macosuser.HostContext, bool, *jsonx.OrderedMap, []packload.BlockedTool, macosuser.JailDaemons) int {
 		return 0

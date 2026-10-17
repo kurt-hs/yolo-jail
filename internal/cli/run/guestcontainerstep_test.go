@@ -51,6 +51,8 @@ func launchMacosUserAt(t *testing.T, guest bool, wsExtra string, tweak func(*Opt
 	o := dispatchOptions(t, ws, ytoRuntime, &stdout, &stderr, nil)
 	o.IsMacOS, o.IsLinux = true, false
 	o.AcceptConfigChanges = true // the workspace config is new to this machine
+	// A Mac set up for this backend, so the arm's preflight admits the fork slot (macosUserPreflight).
+	o.MacosUserLaunchProbes = setUpMacProbes
 	var got guestLaunchResult
 	o.MacosUserRun = func(_ *jsonx.OrderedMap, _ string, _, _ []string, _, _ string, _ macosuser.HomeOverlay,
 		_ macosuser.HostContext, _ bool, launchEnv *jsonx.OrderedMap, _ []packload.BlockedTool, _ macosuser.JailDaemons) int {

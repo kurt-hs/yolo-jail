@@ -9,6 +9,8 @@ package run
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -36,6 +38,8 @@ func runMacosUserSlot(t *testing.T, mutate func(*Options)) macosUserSlotRun {
 	var r macosUserSlotRun
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, t.TempDir(), "macos-user", &stdout, &stderr, nil)
+	// A Mac set up for this backend, so the arm's preflight admits the slot (macosUserPreflight).
+	o.MacosUserLaunchProbes = setUpMacProbes
 	store := t.TempDir()
 	o.CapturesDir = func() string { return store }
 	o.MacosUserRun = func(_ *jsonx.OrderedMap, _ string, _, _ []string, _, _ string, _ macosuser.HomeOverlay,
@@ -103,6 +107,57 @@ func TestAMacosUserLaunchBuildsAPatchedForkForDarwinAndStagesIt(t *testing.T) {
 	}
 }
 
+// A LAUNCH THE BACKEND IS ABOUT TO REFUSE BUILDS NOTHING (macosUserPreflight), as it captures
+// nothing: on a Mac where `yolo macos-setup` never ran, the slot is skipped and no missing-build
+// refusal is printed, so the backend's own refusal, which names the setup, is the launch's.
+// Red with the slot called whatever the preflight says.
+func TestAMacosUserLaunchTheBackendWillRefuseBuildsNoFork(t *testing.T) {
+	patchedLaunchHome(t)
+	r := runMacosUserSlot(t, func(o *Options) {
+		o.MacosUserLaunchProbes = func() macosuser.LaunchProbes {
+			p := setUpMacProbes()
+			p.SandboxUserExists = func() bool { return false }
+			return p
+		}
+		o.BuildSlot = func(req BuildSlotRequest) (map[string]entrypoint.ForkDelivery, map[string]TreeDelivery) {
+			t.Errorf("a launch the backend will refuse ran the fork-build slot: %+v", req)
+			return map[string]entrypoint.ForkDelivery{"tool": {Reason: "its build failed"}}, nil
+		}
+	})
+	if !r.ran {
+		t.Fatalf("the launch stopped before the backend, whose refusal it should have been (rc %d):\n%s", r.rc, r.out)
+	}
+	if strings.Contains(r.out, "has no build on this machine") {
+		t.Errorf("a launch the backend will refuse printed a missing-build refusal:\n%s", r.out)
+	}
+}
+
+// A LAUNCH THAT CANNOT READ WHAT OTHER SESSIONS WERE HANDED PRUNES NO STAGED ENTRY: a reaper that
+// cannot ask declines (HandedForkKeys' error), so the host context says keep every staged entry,
+// and the plan's prune command names no keys to keep. With readable records it prunes as before.
+func TestAMacosUserLaunchThatCannotReadHandedKeysPrunesNoStagedCapture(t *testing.T) {
+	patchedLaunchHome(t)
+	r := runMacosUserSlot(t, func(*Options) {})
+	if !r.ran || r.ctx.CapturesKeepAll {
+		t.Fatalf("with readable records the launch kept every staged entry (ran %v, keepAll %v):\n%s",
+			r.ran, r.ctx.CapturesKeepAll, r.out)
+	}
+	if err := os.MkdirAll(paths.PackTreeRoot("yolo-other"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.PackTreeRoot("yolo-other"), "x"+handedForksSuffix), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r = runMacosUserSlot(t, func(*Options) {})
+	if !r.ran || !r.ctx.CapturesKeepAll {
+		t.Fatalf("an unreadable handed record did not keep every staged entry (ran %v, keepAll %v):\n%s",
+			r.ran, r.ctx.CapturesKeepAll, r.out)
+	}
+	if len(r.ctx.Captures) == 0 {
+		t.Errorf("the launch staged nothing for its fork: %+v", r.ctx)
+	}
+}
+
 // A PATCHED FORK WITH NO BUILD REFUSES the macos-user launch, as a container's does (PF-D77), with
 // the hatches; the missing-program hatch starts it without the program.
 func TestAMacosUserLaunchRefusesAPatchedForkWithNoBuild(t *testing.T) {
@@ -117,7 +172,12 @@ func TestAMacosUserLaunchRefusesAPatchedForkWithNoBuild(t *testing.T) {
 		t.Fatalf("Run() = %d, backend ran %v: a patched fork with no build did not refuse:\n%s", r.rc, r.ran, r.out)
 	}
 	for _, w := range []string{"ERROR: 1 selected patched fork has no build on this machine", "yolo capture",
-		"Start anyway:", paths.AllowMissingProgramsEnv + "=1 yolo"} {
+		// PF-D97: the container backends, which build it for linux, before starting without it, in
+		// the hatch list's own one-column format (patchrecovery.Lines).
+		"\nStart anyway:\n" +
+			"  YOLO_RUNTIME=container yolo           launch on Apple Container\n" +
+			"  YOLO_RUNTIME=podman yolo              launch on podman\n" +
+			"  YOLO_ALLOW_MISSING_PROGRAMS=1 yolo    start without it\n"} {
 		if !strings.Contains(r.out, w) {
 			t.Errorf("the refusal lacks %q:\n%s", w, r.out)
 		}
@@ -129,6 +189,28 @@ func TestAMacosUserLaunchRefusesAPatchedForkWithNoBuild(t *testing.T) {
 	if d := handedOnMacosUser(t, r.env)["tool"]; d.Key != "" || !strings.Contains(d.Reason, "YOLO_RUNTIME=container yolo") ||
 		!strings.Contains(d.Reason, "YOLO_ALLOW_MISSING_PROGRAMS=1 yolo") {
 		t.Errorf("the sandbox is handed %+v for tool, want the reason and the macOS ways out", d)
+	}
+}
+
+// A PATCH FAILURE WITH NO BUILD TO RUN on macos-user: the error block's list is the launch's only
+// one (refuseMissingBuilds prints no second), so it names the container backends too (PF-D97).
+func TestAMacosUserPatchFailureWithNoBuildNamesTheContainerBackends(t *testing.T) {
+	patchedLaunchHome(t)
+	r := runMacosUserSlot(t, func(o *Options) {
+		o.BuildSlot = func(BuildSlotRequest) (map[string]entrypoint.ForkDelivery, map[string]TreeDelivery) {
+			return map[string]entrypoint.ForkDelivery{"tool": {Reason: "its series does not apply", PatchFailure: pfFailure()}}, nil
+		}
+	})
+	if r.rc == 0 || r.ran {
+		t.Fatalf("Run() = %d, backend ran %v: a patch failure with no build did not refuse:\n%s", r.rc, r.ran, r.out)
+	}
+	for _, w := range []string{"ERROR: fork forkpack/tool: patch series does not apply",
+		"  YOLO_RUNTIME=container yolo           launch on Apple Container\n" +
+			"  YOLO_RUNTIME=podman yolo              launch on podman\n" +
+			"  YOLO_ALLOW_MISSING_PROGRAMS=1 yolo    start without it\n"} {
+		if !strings.Contains(r.out, w) {
+			t.Errorf("the refusal lacks %q:\n%s", w, r.out)
+		}
 	}
 }
 
