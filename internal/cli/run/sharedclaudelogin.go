@@ -25,7 +25,7 @@ import (
 // A macos-user session's shared directory is the sandbox account's own, so this file is not what
 // its Claude reads.
 func (o *Options) noteBrokenSharedClaudeLogin(rt string, cfg *jsonx.OrderedMap, packs []*packload.Pack) {
-	if rt != "podman" && rt != "container" {
+	if rt != "podman" && rt != "container" { // parity: NotApplicable — macos-user's shared dir is the sandbox account's, so this file is not its Claude's
 		return
 	}
 	dir := o.claudeSecureStorageDir(rt, cfg, packs, paths.GlobalHome())
