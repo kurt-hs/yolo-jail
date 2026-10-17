@@ -461,20 +461,20 @@ func TestAnOlderCopyUnderAnotherHomeIsNotNamed(t *testing.T) {
 // the fixture loophole.
 const olderCopyLead = "loophole " + launchCheckFixtureName + ": an older yolo's machine-wide daemon"
 
-// assertTheOlderCopyLine checks the line's words: the copy, that it keeps serving the older yolo's
-// jails and is left running, the shared credential lock, and the optional stop once those jails
-// have ended (or a reboot). It names no refusal and no retired restart.
+// assertTheOlderCopyLine checks the line's words (HD-D31): the copy is running, this launch's jail
+// does not use it, only a jail an older yolo launched can, and the stop once none is running. It
+// claims no jail it serves, names no refusal and no retired restart.
 func assertTheOlderCopyLine(t *testing.T, out string) {
 	t.Helper()
-	for _, want := range []string{olderCopyLead + " is still serving the jails that yolo launched",
-		"left running", "credential lock",
-		"Once those jails have ended, `" + broker.StopHostWideCommand(launchCheckFixtureName) + "` ends it",
-		"a reboot does too"} {
+	for _, want := range []string{olderCopyLead + " is still running",
+		"jails this yolo launches do not use it",
+		"only a jail an older yolo launched can",
+		"Once none is running, `" + broker.StopHostWideCommand(launchCheckFixtureName) + "` ends it"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the launch does not say %q:\n%s", want, out)
 		}
 	}
-	for _, not := range []string{"Refusing", broker.CycleCommand(launchCheckFixtureName)} {
+	for _, not := range []string{"Refusing", broker.CycleCommand(launchCheckFixtureName), "still serving"} {
 		if strings.Contains(out, not) {
 			t.Errorf("the launch says %q beside an older copy:\n%s", not, out)
 		}
