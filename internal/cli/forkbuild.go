@@ -508,6 +508,21 @@ func (e forkBuildNotStarted) configRefused(f packload.Fork) bool {
 func (e forkBuildNotStarted) Is(target error) bool { return target == errForkBuildNotStarted }
 func (e forkBuildNotStarted) Unwrap() error        { return e.exit }
 
+// forkBuildLineFailed is a build jail whose build line ran and failed: its script wrote the toolchain
+// record, which it does first, and the jail exited non-zero. Apart from forkBuildNotStarted, whose
+// jail never reached the line, because the two are told apart in every message: a build line's
+// failure is the pack's or the build's to fix, and its own output, in its log, says why (PPX-D47).
+// Its jail's exit to errors.As, so `yolo capture` exits with the jail's status.
+type forkBuildLineFailed struct{ exit captureJailExit }
+
+// Error says the build line failed and its jail's exit, one line with no dash, so a launch's
+// headline (run's missingHeadline, which ends at the first " — ") keeps it whole.
+func (e forkBuildLineFailed) Error() string {
+	return fmt.Sprintf("the build line ran and failed; its build jail exited %d", e.exit.rc)
+}
+
+func (e forkBuildLineFailed) Unwrap() error { return e.exit }
+
 // captureStreams are the four writers a capture jail prints on: out and errw take the launch's own
 // lines (run.Options.Stdout and Stderr), and jailOut and jailErr the JAIL'S OWN, what its runtime
 // client and pid 1 print up to its ready, which the launch relays apart from its own
@@ -1060,6 +1075,10 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 		// PATCHED fork's record keeps apart (§8.1, PF-D21). Which it was, the jail said last.
 		return nil, forkBuildNotStarted{exit: exit, said: tail.said(), boot: entrypoint.ReadBootRefusal(staging)}
 	}
+	if err != nil && errors.As(err, &exit) {
+		// THE BUILD LINE RAN AND FAILED: the record says the script started (PPX-D47).
+		return nil, forkBuildLineFailed{exit: exit}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1174,10 +1193,20 @@ func buildPlainForkForLaunch(b forkBuild, rt string, report *buildReport, it *po
 			epr.Print(l)
 		}
 		return entrypoint.ForkDelivery{Reason: "fork " + b.Fork.Pack + "'s build of commit " +
-			shortSHA(b.Commit) + " failed on the host (" + err.Error() + ")"}
+			shortSHA(b.Commit) + " failed on the host (" + err.Error() + withBuildLog(r.logPath) + ")"}
 	}
 	r.done("[green]built[/green] " + richtext.Escape(b.Fork.Label()+" at "+shortSHA(b.Commit)+"; this jail runs it"))
 	return entrypoint.ForkDelivery{Key: entry.Key}
+}
+
+// withBuildLog is "; its log: <path>" for a build whose own log is at path, "" for none: what a failed
+// build's reason carries, so the launch's refusal, which says the reason alone, names where the
+// build's whole output is.
+func withBuildLog(path string) string {
+	if path == "" {
+		return ""
+	}
+	return "; its log: " + path
 }
 
 // missingProduces names the `produces` paths the build's result lacks, or "" when it has them all.

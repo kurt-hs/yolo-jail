@@ -160,3 +160,55 @@ func TestAGlobstarBuildLineRunsUnderTheFloorsBash(t *testing.T) {
 		t.Errorf("the tree lost what the build line kept: %v", err)
 	}
 }
+
+// A BUILD LINE THAT RAN AND FAILED LEAVES ITS TOOLCHAIN RECORD where the host act reads it
+// (PPX-D47): the script writes it first, so it is how internal/cli tells a failed build line from a
+// sandbox that never reached it. Swept with the staging tree, the maintainer's failed globstar build
+// was said as "its build jail refused to start on the host". A driver that stopped before the script
+// left none, and none is moved.
+func TestAFailedBuildLineKeepsItsToolchainRecord(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		record bool
+	}{
+		{"the build line ran and failed", true},
+		{"the sandbox stopped before the script", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &captureDeps{}
+			d := c.deps()
+			d.MaterializeDarwin = func(string, []any) (*Darwin, bool, error) {
+				return &Darwin{PathPrefix: []string{testProfile + "/bin"}, ProfilePath: testProfile}, true, nil
+			}
+			opts, tmp := forkBuildActOptions(t)
+			plan := BuildForkBuildPlan(opts)
+			run := d.Run
+			d.Run = func(argv []string) int {
+				if slices.Contains(argv, "capture-run") {
+					run(argv)
+					if tc.record {
+						if err := os.WriteFile(plan.ToolchainFile, []byte("yolo 1.2.3 macOS 26.1"), 0o644); err != nil {
+							t.Fatal(err)
+						}
+					}
+					return 1
+				}
+				return run(argv)
+			}
+			if err := os.MkdirAll(plan.StagingRoot, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			dest := filepath.Join(tmp, "store", "toolchain")
+			if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if rc := RunForkBuildAct(d, opts, filepath.Join(tmp, "store", "out"), dest, false); rc == 0 {
+				t.Fatalf("a failed build line's act exited 0\n%s", c.out.String())
+			}
+			_, err := os.Stat(dest)
+			if moved := err == nil; moved != tc.record {
+				t.Errorf("toolchain record beside the store = %v, want %v\n%s", moved, tc.record, c.out.String())
+			}
+		})
+	}
+}

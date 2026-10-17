@@ -2852,6 +2852,14 @@ func (a *advance) holdStopped(cause *entrypoint.BuildCause) {
 	a.o.report.hold(a.f, runs, "`yolo capture "+a.f.CaptureArg()+"` builds it", a.o.runtime, cause)
 }
 
+// buildLog is the path of this act's build's own log, "" when it keeps none.
+func (a *advance) buildLog() string {
+	if a.inFlight == nil {
+		return ""
+	}
+	return a.inFlight.logPath
+}
+
 // retryNotStarted is what builds a build whose jail stopped before its build line, once its cause
 // is fixed: its capture, and the act that tries again.
 func (a *advance) retryNotStarted() string {
@@ -2877,8 +2885,8 @@ func (a *advance) buildFailed(b forkBuild, err error) advanceResult {
 			next = "reverting the edit to the series or the build brings back the good build " +
 				run.GoodBuildLabel(g) + "; " + next
 		}
-		r = a.finish(nil, forkBuild{}, 0, o, fmt.Sprintf("%s's build of %s failed on the host (%s) — %s",
-			f.Label(), b.Entry.Label(), oneLineErr(err), next))
+		r = a.finish(nil, forkBuild{}, 0, o, fmt.Sprintf("%s's build of %s failed on the host (%s%s) — %s",
+			f.Label(), b.Entry.Label(), oneLineErr(err), withBuildLog(a.buildLog()), next))
 	}
 	if a.leaveToLaunch(&r) {
 		// The launch says the cause (missingbuilds.go); the build's own output is the act's to show.

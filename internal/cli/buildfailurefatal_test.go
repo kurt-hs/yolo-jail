@@ -239,7 +239,7 @@ func TestPackStatusSaysAFailedNewerBuildStopsTheLaunch(t *testing.T) {
 	if rc != 0 {
 		t.Fatalf("status rc=%d\n%s\n%s", rc, status, errw)
 	}
-	for _, w := range []string{"its build failed: the capture jail exited 2",
+	for _, w := range []string{"its build failed: the build line ran and failed; its build jail exited 2",
 		"a fresh launch refuses until a build of it succeeds",
 		"`yolo capture tool` retries it now", "YOLO_USE_CACHED_GOOD=forkpack/tool yolo"} {
 		if !strings.Contains(status, w) {
