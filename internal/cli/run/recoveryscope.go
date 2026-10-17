@@ -7,9 +7,9 @@ package run
 //     is set (but the two below), of the names that cover none of the patched builds it selects — its patched forks and
 //     its built extensions — in patchrecovery.UnmatchedLine's one shape. A hatch left in a shell
 //     profile must not stop a workspace that does not select the pack it names.
-//   - A FRESH macos-user LAUNCH builds its patched forks for darwin and no patched extension
-//     (docs/reference/patched-forks.md PF-D97), so a hatch is matched against its forks alone, and a
-//     launch that selects a patched extension is told the hatch does nothing for it.
+//   - A FRESH macos-user LAUNCH builds its patched forks and its patched extensions for darwin
+//     (docs/reference/patched-forks.md PF-D97, pi-extensions.md PPX-D45), so a hatch is matched
+//     against both, as on a container runtime.
 //   - AN ATTACH, A LAUNCH IN A JAIL, OR A macos-user DRY RUN builds and delivers no patched build,
 //     so a set hatch does nothing there and the launch says so in one line per hatch, except
 //     patchrecovery.UseCachedGoodEnv, which keeps its own refusals (cachedgood.go), and
@@ -39,7 +39,7 @@ func (o *Options) noteRecoveryHatches(rt string, attach bool) {
 	o.recoveryHatchesNoted = true
 	out := o.pr(o.Stderr)
 	where := ""
-	macosUser := rt == "macos-user" // parity: Warned — macos-user builds patched forks but no patched extension, so a hatch is matched against its forks alone and said to do nothing for its extensions
+	macosUser := rt == "macos-user" // parity: Honored — macos-user builds patched forks and extensions for darwin, so a hatch is matched against both; only its sealed build launch and its dry run build nothing
 	switch {
 	case attach:
 		where = "on an attach; it applies at the next fresh launch"
@@ -51,9 +51,6 @@ func (o *Options) noteRecoveryHatches(rt string, attach bool) {
 		where = "on a dry run, which builds nothing; it applies when you launch without --dry-run"
 	}
 	subs := o.recoverySubjects()
-	if macosUser {
-		subs = o.forkRecoverySubjects()
-	}
 	for _, env := range noterHatches() {
 		s := patchrecovery.Read(o.Getenv, env)
 		if !s.Set() {
@@ -66,16 +63,10 @@ func (o *Options) noteRecoveryHatches(rt string, attach bool) {
 		if line := patchrecovery.UnmatchedLine(env, s.Unmatched(subs), subs); line != "" {
 			out.print("[yellow]" + richtext.Escape(line) + "[/yellow]")
 		}
-		if macosUser && len(o.patchedTrees) > 0 {
-			out.print("[yellow]" + richtext.Escape(env+" has no effect on a patched extension on macos-user, "+
-				"which builds none; run it on a container backend with `YOLO_RUNTIME=podman yolo`"+
-				o.containerStepClause()) + "[/yellow]")
-		}
 	}
 }
 
-// forkRecoverySubjects are the patched forks this launch selects, recoverySubjects' first half: what
-// a hatch reaches on macos-user, which builds forks and no extension (PF-D97).
+// forkRecoverySubjects are the patched forks this launch selects, recoverySubjects' first half.
 func (o *Options) forkRecoverySubjects() []patchrecovery.Subject {
 	var subs []patchrecovery.Subject
 	for _, p := range o.forkPinned {

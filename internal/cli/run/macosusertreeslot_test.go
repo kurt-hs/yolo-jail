@@ -285,3 +285,23 @@ func TestAMacosUserLaunchServesTheCachedGoodExtension(t *testing.T) {
 		t.Errorf("the tree request is %+v, want %s's cached good build at darwin:\n%s", req, treeKey, r.out)
 	}
 }
+
+// A RECOVERY HATCH NAMING A PATCHED EXTENSION REACHES IT ON macos-user (pi-extensions.md PPX-D45): the
+// launch matches the hatch against its extensions as well as its forks, so it neither warns that the
+// name matches no patched build nor says the hatch does nothing for an extension there. Red with
+// noteRecoveryHatches matching a macos-user launch's hatches against its forks alone.
+func TestAMacosUserLaunchMatchesAHatchAgainstItsExtensions(t *testing.T) {
+	treeLaunchHome(t, true)
+	r := runMacosUserTreeSlot(t, func(o *Options) {
+		o.BuildSlot = deliverTreeCopyWithFile(t)
+		withEnv(o, patchrecovery.AllowOlderUpstreamEnv, treeKey)
+	})
+	if r.rc != 0 || !r.ran {
+		t.Fatalf("Run() = %d (backend ran %v):\n%s", r.rc, r.ran, r.out)
+	}
+	for _, bad := range []string{"matches no patched build", "has no effect on a patched extension"} {
+		if strings.Contains(r.out, bad) {
+			t.Errorf("the macos-user launch says %q of a hatch naming its extension:\n%s", bad, r.out)
+		}
+	}
+}
