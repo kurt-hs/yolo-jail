@@ -9,6 +9,8 @@ package run
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -100,6 +102,32 @@ func TestAMacosUserLaunchBuildsAPatchedForkForDarwinAndStagesIt(t *testing.T) {
 	}
 	if strings.Contains(r.out, "is not delivered on macos-user") || strings.Contains(r.out, "has no macOS build") {
 		t.Errorf("a launch that delivered the fork says it does not:\n%s", r.out)
+	}
+}
+
+// A LAUNCH THAT CANNOT READ WHAT OTHER SESSIONS WERE HANDED PRUNES NO STAGED ENTRY: a reaper that
+// cannot ask declines (HandedForkKeys' error), so the host context says keep every staged entry,
+// and the plan's prune command names no keys to keep. With readable records it prunes as before.
+func TestAMacosUserLaunchThatCannotReadHandedKeysPrunesNoStagedCapture(t *testing.T) {
+	patchedLaunchHome(t)
+	r := runMacosUserSlot(t, func(*Options) {})
+	if !r.ran || r.ctx.CapturesKeepAll {
+		t.Fatalf("with readable records the launch kept every staged entry (ran %v, keepAll %v):\n%s",
+			r.ran, r.ctx.CapturesKeepAll, r.out)
+	}
+	if err := os.MkdirAll(paths.PackTreeRoot("yolo-other"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.PackTreeRoot("yolo-other"), "x"+handedForksSuffix), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r = runMacosUserSlot(t, func(*Options) {})
+	if !r.ran || !r.ctx.CapturesKeepAll {
+		t.Fatalf("an unreadable handed record did not keep every staged entry (ran %v, keepAll %v):\n%s",
+			r.ran, r.ctx.CapturesKeepAll, r.out)
+	}
+	if len(r.ctx.Captures) == 0 {
+		t.Errorf("the launch staged nothing for its fork: %+v", r.ctx)
 	}
 }
 
