@@ -130,9 +130,10 @@ func TestTheMacosUserArmWarnsOnlyWhereTheCensusDoes(t *testing.T) {
 
 // kindNoticeRoutes names, for each pack kind the census marks Warned on macos-user, the printer
 // in this package that says so and the test that drives it through Run.
-var kindNoticeRoutes = map[string]struct{ printer, test string }{
-	"kind:files.patches": {"noteMacosUserTrees", "TestAMacosUserLaunchSaysItDeliversNoTree"},
-}
+//
+// Empty today: a patched fork and a patched extension are both built for darwin on macos-user
+// (PF-D97, pi-extensions.md §11), which were the last two kinds the census marked Warned there.
+var kindNoticeRoutes = map[string]struct{ printer, test string }{}
 
 // TestEveryMacosUserWarnedKindIsRoutedToAPrinterThatSaysIt: every kind cell the census marks
 // Warned on macos-user has a route, every route is such a cell, and each route's printer and

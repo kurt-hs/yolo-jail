@@ -525,7 +525,7 @@ Every contribution kind is delivered on all four setups — config files and the
 | `env` — static vars | works | works | works — a pack edit needs a restart[^acfreeze] | works — carried in the launch env[^servedby] |
 | `files` — a tree in the agent's home | works | works | works — read-only, but a single file arrives as a writable copy | works — protected copy[^files] |
 | `program` with `patches` — a patched fork, built from its upstream and your patch series | works | works | works on 1.1.0+; a new build waits for the other jails to stop[^patchedac] | works — built for this Mac[^patched] |
-| `files` with `source` and `patches` — a patched pi extension | works — read-only copy | works — read-only copy | works on 1.1.0+, with the same wait; below 1.1.0 no new build, and a good build already on this Mac is copied in[^patchedac] | works — built for this Mac, read-only copy[^patched] |
+| `files` with `source` and `patches` — a patched pi extension | works — read-only copy | works — read-only copy | works on 1.1.0+, with the same wait; below 1.1.0 no new build, and a good build already on this Mac is copied in[^patchedac] | works — built for this Mac, protected copy[^patched] |
 | `mount` — host dir read-only at `/ctx/<into>` | works | works | works — needs Apple Container 1.1.0+[^acver-mount] | a single file: copied at launch; a folder: refuses the launch[^mountmu] |
 | `service` — an in-jail daemon (the wire bridge) | works | works | works | works — the wire bridge's host half runs for the launch that needs it; another service's daemon runs in the sandbox unless it publishes an endpoint file[^svc] |
 | `profile` — a named `-p` selection | works | works | works — a pack edit needs a restart[^acfreeze] | works[^profmu] |
