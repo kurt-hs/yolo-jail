@@ -213,7 +213,7 @@ func TestTheChildBuildJailRelaysItsJailToTheDescriptorsItWasHanded(t *testing.T)
 		}
 		return 0
 	})
-	argv := forkBuildChildArgv("/staging", forkBuild{Fork: forkFixture()}, false)
+	argv := forkBuildChildArgv("/staging", forkBuild{Fork: forkFixture()}, false, "")
 	if rc := runForkBuildJail(argv[2:], io.Discard, io.Discard); rc != 0 {
 		t.Fatalf("the child refused its argv: rc %d", rc)
 	}

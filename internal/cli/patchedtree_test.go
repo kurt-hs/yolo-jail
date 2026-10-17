@@ -342,7 +342,7 @@ func TestATreesMoveReapsTheOldBuildEvenWhenARecordNamesIt(t *testing.T) {
 // pack, and an empty build line accepted.
 func TestTheChildBuildJailRunsATreesBuild(t *testing.T) {
 	f := packload.Fork{Pack: "treepack", Bin: "tool-ext", Into: ".tool/ext/tool-ext", Patches: "patches"}
-	argv := forkBuildChildArgv("/staging", forkBuild{Fork: f}, false)
+	argv := forkBuildChildArgv("/staging", forkBuild{Fork: f}, false, "")
 	if !slices.Contains(argv, "--tree=tool-ext") || !slices.Contains(argv, "--only=treepack") ||
 		slices.ContainsFunc(argv, func(a string) bool { return a == "--only=" }) {
 		t.Fatalf("the child's argv = %q", argv)

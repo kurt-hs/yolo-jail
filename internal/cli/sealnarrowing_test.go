@@ -124,7 +124,7 @@ func TestATreesSealCarriesTheConfiguredBaseOfItsPacksFork(t *testing.T) {
 		t.Fatalf("the build jail ran %d times, the first sealed to %v; want the contributing pack and its fork's "+
 			"base", len(fx.seen), fx.seen[0].OnlyPacks)
 	}
-	if got := forkBuildChildArgv("/staging", forkBuild{Fork: fx.tree(t)}, false); !slices.Contains(got, "--only=basepack") {
+	if got := forkBuildChildArgv("/staging", forkBuild{Fork: fx.tree(t)}, false, ""); !slices.Contains(got, "--only=basepack") {
 		t.Errorf("the child build jail's argv %q does not carry the fork's base", got)
 	}
 }
@@ -158,7 +158,7 @@ func TestATreesSealCarriesItsForkBasesOwnBases(t *testing.T) {
 	if want := []string{"treepack", "basepack", "cpack"}; len(fx.seen) != 1 || !slices.Equal(fx.seen[0].OnlyPacks, want) {
 		t.Fatalf("the build jail ran %d times, the first sealed to %v; want %v", len(fx.seen), fx.seen[0].OnlyPacks, want)
 	}
-	if got := forkBuildChildArgv("/staging", forkBuild{Fork: fx.tree(t)}, false); !slices.Contains(got, "--only=cpack") {
+	if got := forkBuildChildArgv("/staging", forkBuild{Fork: fx.tree(t)}, false, ""); !slices.Contains(got, "--only=cpack") {
 		t.Errorf("the child build jail's argv %q does not carry the base's own base", got)
 	}
 }
