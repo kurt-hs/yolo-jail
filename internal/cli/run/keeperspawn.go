@@ -1612,8 +1612,10 @@ func (o *Options) endMacosUserSession(rt string, rc int) int {
 	case quitLast:
 		o.streamKeeperTeardown(m.key, m.logFrom)
 	case quitNoKeeper:
-		// A ready keeper can finish and remove its roster before the first quit probe. Replay
-		// its completed log only for a session that joined it or observed its ready frame.
+		// A ready keeper can finish and remove its roster before the first quit probe: this was
+		// its last session, and its teardown is already done. Stream it as quitLast does, so the
+		// log is replayed and the timing report still carries the session.keeper_teardown row,
+		// only for a session that joined it or observed its ready frame.
 		ready := m.joined != nil
 		if m.kp != nil {
 			select {
@@ -1623,7 +1625,7 @@ func (o *Options) endMacosUserSession(rt string, rc int) int {
 			}
 		}
 		if ready {
-			o.printKeeperRecords(m.key, m.logFrom)
+			o.streamKeeperTeardown(m.key, m.logFrom)
 		}
 	case quitUnkeptLast:
 		if rec, ok := readKeeperRecord(m.key); ok {
