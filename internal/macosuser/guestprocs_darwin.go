@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -48,9 +49,22 @@ func guestProcessesReal() ([]GuestProc, error) {
 	return out, nil
 }
 
+// sandboxUID caches the account's uid once read: a finishing launch reads the table every few
+// milliseconds while it waits for its guest, and the uid does not change under it.
+var sandboxUID struct {
+	sync.Mutex
+	uid   uint32
+	known bool
+}
+
 // sandboxUIDReal is the sandbox account's uid through `/usr/bin/id -u`, which asks the directory
 // service (os/user's pure-Go path reads /etc/passwd, which a Mac's accounts are not in).
 func sandboxUIDReal() (uint32, error) {
+	sandboxUID.Lock()
+	defer sandboxUID.Unlock()
+	if sandboxUID.known {
+		return sandboxUID.uid, nil
+	}
 	out, rc := outputWithTimeout(exec.Command("/usr/bin/id", "-u", "--", SandboxUser), 10*time.Second)
 	if rc != 0 {
 		return 0, fmt.Errorf("`/usr/bin/id -u %s` exited %d", SandboxUser, rc)
@@ -59,5 +73,6 @@ func sandboxUIDReal() (uint32, error) {
 	if err != nil {
 		return 0, fmt.Errorf("`/usr/bin/id -u %s` printed %q", SandboxUser, strings.TrimSpace(out))
 	}
-	return uint32(n), nil
+	sandboxUID.uid, sandboxUID.known = uint32(n), true
+	return sandboxUID.uid, nil
 }

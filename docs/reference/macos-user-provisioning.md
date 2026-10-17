@@ -604,8 +604,10 @@ Each launch and capture also holds a **claim** on its tree: an exclusive lock on
 `<global storage>/locks/macos-user-pack-trees/<tree leaf>.lock` that holds the launcher's pid. It
 is taken before the tree is reserved and let go after the tree's fate is decided. The claim is
 what lets `yolo prune --apply` reap a tree a launch had to keep. Prune leaves a claimed tree
-alone. It removes an unclaimed per-launch tree only when no sandbox-account process that started
-after the tree's last modification is outside every claimed launch. Prune lists the trees before
+alone, and so is a tree whose workspace has a running session, which covers a launch whose claim
+failed and an older yolo that makes no claims. It removes any other per-launch tree only when no
+sandbox-account process that started after the tree's last modification is outside every claimed
+launch. Prune lists the trees before
 it reads the claims, so a tree reserved after its claim was taken is never seen unclaimed.
 
 | State | What happens |
@@ -619,7 +621,7 @@ it reads the claims, so a tree reserved after its claim was taken is never seen 
 
 A sandbox-account process that yolo did not start, such as a manual `sudo -u _yolojail` shell,
 counts as a holder when it started after the tree was reserved. That is conservative, not a hole.
-A launch whose claim could not be made says so and should not be pruned under. The
+A launch whose claim could not be made says so in one line. The
 [liveness record](#the-session-key) still sweeps the session's env, profile and CA files; it
 removes no guest tree. Capture follows the same rule: each capture gets its own tree, and
 its plan treats a nil environment as empty and adds `YOLO_PACK_ROOT` to a copy, leaving the

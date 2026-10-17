@@ -382,17 +382,51 @@ func (r PackTreeReap) Bytes() int64 {
 // every one this macOS user staged that no running launch claims and no sandbox process may
 // still read. apply false removes nothing.
 func PrunePackTrees(apply bool) PackTreeReap {
-	return reapPackTrees(stateDir, PackTreeClaimsDir(), guestProcessesReal, runReal, os.Geteuid(), apply)
+	return reapPackTrees(stateDir, PackTreeClaimsDir(), SessionRecordsDir(), guestProcessesReal, runReal,
+		os.Geteuid(), apply)
+}
+
+// liveSessionCnames is the container name of every session whose liveness record (sessionfiles.go)
+// is held in dir: a running launch of that workspace, which may be between steps with no guest
+// process alive. known is false when a record could not be asked.
+func liveSessionCnames(dir string) (cnames map[string]bool, known bool) {
+	cnames = map[string]bool{}
+	if dir == "" {
+		return cnames, true
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "*"+sessionRecordSuffix))
+	if err != nil {
+		return cnames, false
+	}
+	known = true
+	for _, path := range matches {
+		cname, _, ok := parseSessionKey(strings.TrimSuffix(filepath.Base(path), sessionRecordSuffix))
+		if !ok {
+			continue
+		}
+		f, state := claimGoneSessionRecord(path)
+		switch state {
+		case sessionGone:
+			_ = f.Close() // the next launch's sweep removes what that session left
+		case sessionLive:
+			cnames[cname] = true
+		default:
+			known = false
+		}
+	}
+	return cnames, known
 }
 
 // reapPackTrees is PrunePackTrees with every input injected: sd the staging root, claimDir the
-// claims, procs the process table, run the host user's command runner, uid the host user.
+// claims, sessionDir the session liveness records, procs the process table, run the host user's command runner, uid the host user.
 //
 // Only per-launch trees (<cname>.<tree id>) are considered; a legacy workspace-keyed tree is left
-// alone. Each is kept when another account owns it, when a running launch claims it, or when a
+// alone. Each is kept when another account owns it, when a running launch claims it, when a
+// session of its workspace is running (a launch whose claim failed, or an older yolo that makes no
+// claims, between steps with no guest alive), or when a
 // sandbox process may still read it (packTreeHolders, anchored at the tree's mtime: the copy into
 // it is the last change it sees before any guest starts, and a sealed tree changes no more).
-func reapPackTrees(sd, claimDir string, procs func() ([]GuestProc, error), run func([]string) int, uid int, apply bool) PackTreeReap {
+func reapPackTrees(sd, claimDir, sessionDir string, procs func() ([]GuestProc, error), run func([]string) int, uid int, apply bool) PackTreeReap {
 	r := PackTreeReap{Dir: filepath.Join(sd, packsLeaf)}
 	entries, err := os.ReadDir(r.Dir)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -433,6 +467,11 @@ func reapPackTrees(sd, claimDir string, procs func() ([]GuestProc, error), run f
 		r.Declined = "the launches' claims in " + claimDir + " could not all be read"
 		return r
 	}
+	sessions, known := liveSessionCnames(sessionDir)
+	if !known {
+		r.Declined = "the sessions' liveness records in " + sessionDir + " could not all be read"
+		return r
+	}
 	table, err := procs()
 	if err != nil {
 		r.Declined = "the sandbox account's processes could not be listed (" + err.Error() + ")"
@@ -442,6 +481,11 @@ func reapPackTrees(sd, claimDir string, procs func() ([]GuestProc, error), run f
 		e := PackTreeReapEntry{Path: t.path, Bytes: treeBytes(t.path)}
 		if claims.leaves[filepath.Base(t.path)] {
 			e.Reason = "a running launch's"
+			r.Kept = append(r.Kept, e)
+			continue
+		}
+		if cname, _, ok := strings.Cut(filepath.Base(t.path), "."); ok && sessions[cname] {
+			e.Reason = "its workspace has a running session"
 			r.Kept = append(r.Kept, e)
 			continue
 		}

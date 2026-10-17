@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -271,6 +272,16 @@ func TestAFailedPackCopyRemovesTheReservedTree(t *testing.T) {
 	unsealOnCleanup(t, state)
 	host := writeFixturePackTree(t, "#!/bin/sh\necho copy\n")
 	tree := StagedPackTreeRoot(cnameFor(workspace), host, state)
+	sibling := StagedPackTreeRoot(cnameFor(workspace), writeFixturePackTree(t, "#!/bin/sh\necho sibling\n"), state)
+	legacy := StagedPackRoot(cnameFor(workspace), state)
+	for _, dir := range []string{sibling, legacy} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "sentinel"), []byte(dir), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	d := fixtureStateDeps(t, state, nil, func(argv []string) bool {
 		return len(argv) == 4 && argv[0] == cpBin && argv[1] == "-R" && strings.Contains(argv[2], host)
 	})
@@ -283,6 +294,14 @@ func TestAFailedPackCopyRemovesTheReservedTree(t *testing.T) {
 	}
 	if _, err := os.Lstat(tree); !os.IsNotExist(err) {
 		t.Errorf("the reserved tree of a failed copy was kept (%v):\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "Could not stage entrypoint") {
+		t.Errorf("the failed copy was not reported:\n%s", out.String())
+	}
+	for _, dir := range []string{sibling, legacy} {
+		if _, err := os.Stat(filepath.Join(dir, "sentinel")); err != nil {
+			t.Errorf("cleanup changed %s: %v", dir, err)
+		}
 	}
 }
 
@@ -392,7 +411,7 @@ func TestPruneReapsKeptPackTreesOnceNothingMayReadThem(t *testing.T) {
 	}
 
 	// The dry run first: removes nothing.
-	dry := reapPackTrees(sd, claims, table, hostRun(t), os.Geteuid(), false)
+	dry := reapPackTrees(sd, claims, "", table, hostRun(t), os.Geteuid(), false)
 	if !dry.Applicable || dry.Declined != "" {
 		t.Fatalf("dry run: applicable %v, declined %q", dry.Applicable, dry.Declined)
 	}
@@ -400,7 +419,7 @@ func TestPruneReapsKeptPackTreesOnceNothingMayReadThem(t *testing.T) {
 		t.Fatalf("the dry run removed a tree: %v", err)
 	}
 
-	r := reapPackTrees(sd, claims, table, hostRun(t), os.Geteuid(), true)
+	r := reapPackTrees(sd, claims, "", table, hostRun(t), os.Geteuid(), true)
 	removed := map[string]bool{}
 	for _, e := range r.Removed {
 		if e.Err != nil {
@@ -437,7 +456,7 @@ func TestPruneKeepsATreeAnEscapedGuestMayRead(t *testing.T) {
 	table := func() ([]GuestProc, error) {
 		return []GuestProc{{PID: 1}, {PID: 88, PPID: 1, Sandbox: true, Start: time.Now()}}, nil
 	}
-	r := reapPackTrees(sd, t.TempDir(), table, hostRun(t), os.Geteuid(), true)
+	r := reapPackTrees(sd, t.TempDir(), "", table, hostRun(t), os.Geteuid(), true)
 	if len(r.Removed) != 0 || len(r.Kept) != 1 || !strings.Contains(r.Kept[0].Detail, "sandbox process 88") {
 		t.Errorf("removed %+v, kept %+v", r.Removed, r.Kept)
 	}
@@ -450,7 +469,7 @@ func TestPruneDeclinesWhenItCannotListTheSandboxProcesses(t *testing.T) {
 	sd := t.TempDir()
 	unsealOnCleanup(t, sd)
 	tree := makeSealedTree(t, sd, "yolo-a.x", time.Now().Add(-time.Hour))
-	r := reapPackTrees(sd, t.TempDir(), func() ([]GuestProc, error) { return nil, syscall.EPERM },
+	r := reapPackTrees(sd, t.TempDir(), "", func() ([]GuestProc, error) { return nil, syscall.EPERM },
 		hostRun(t), os.Geteuid(), true)
 	if r.Declined == "" || len(r.Removed) != 0 {
 		t.Errorf("declined %q, removed %+v", r.Declined, r.Removed)
@@ -458,7 +477,47 @@ func TestPruneDeclinesWhenItCannotListTheSandboxProcesses(t *testing.T) {
 	if _, err := os.Stat(tree); err != nil {
 		t.Errorf("the tree was removed: %v", err)
 	}
-	if none := reapPackTrees(t.TempDir(), "", nil, nil, 0, true); none.Applicable {
+	if none := reapPackTrees(t.TempDir(), "", "", nil, nil, 0, true); none.Applicable {
 		t.Errorf("a staging root with no packs dir is applicable: %+v", none)
+	}
+}
+
+// A running session of the tree's workspace keeps it even with no claim and no guest alive: a
+// launch whose claim failed, or an older yolo that makes none, between two steps.
+func TestPruneKeepsATreeWhoseWorkspaceHasARunningSession(t *testing.T) {
+	sd := t.TempDir()
+	unsealOnCleanup(t, sd)
+	tree := makeSealedTree(t, sd, "yolo-a.unclaimed", time.Now().Add(-time.Hour))
+	gone := makeSealedTree(t, sd, "yolo-b.unclaimed", time.Now().Add(-time.Hour))
+	sessions := t.TempDir()
+	rec, err := openSessionRecord(sessions, SessionKey("yolo-a", "0123456789abcdef"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rec.close()
+	ended, err := openSessionRecord(sessions, SessionKey("yolo-b", "fedcba9876543210"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ended.release()
+	table := func() ([]GuestProc, error) { return []GuestProc{{PID: 1}}, nil }
+	r := reapPackTrees(sd, t.TempDir(), sessions, table, hostRun(t), os.Geteuid(), true)
+	if _, err := os.Stat(tree); err != nil {
+		t.Errorf("a running session's tree was removed: %v", err)
+	}
+	if _, err := os.Lstat(gone); !os.IsNotExist(err) {
+		t.Errorf("an ended session's tree was kept (%v): %+v", err, r.Kept)
+	}
+}
+
+// The production wiring: a real launch reads the process table and claims its tree. Without
+// either, every launch keeps its tree again, and only a Mac would notice.
+func TestRealDepsWireTheGuestProcessReaderAndTheClaims(t *testing.T) {
+	d := RealDeps(nil, nil, false)
+	if d.GuestProcesses == nil || reflect.ValueOf(d.GuestProcesses).Pointer() != reflect.ValueOf(guestProcessesReal).Pointer() {
+		t.Error("RealDeps does not wire guestProcessesReal")
+	}
+	if d.PackTreeClaimDir == nil || d.PackTreeClaimDir() != PackTreeClaimsDir() {
+		t.Error("RealDeps does not wire PackTreeClaimsDir")
 	}
 }
