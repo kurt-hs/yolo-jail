@@ -131,7 +131,6 @@ func TestTheMacosUserArmWarnsOnlyWhereTheCensusDoes(t *testing.T) {
 // kindNoticeRoutes names, for each pack kind the census marks Warned on macos-user, the printer
 // in this package that says so and the test that drives it through Run.
 var kindNoticeRoutes = map[string]struct{ printer, test string }{
-	"kind:program.patches": {"noteMacosUserForks", "TestAMacosUserLaunchNamesWhatRunsAPatchedFork"},
 	"kind:files.patches":   {"noteMacosUserTrees", "TestAMacosUserLaunchSaysItDeliversNoTree"},
 }
 

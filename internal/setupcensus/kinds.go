@@ -74,22 +74,10 @@ var kinds = map[packdecl.Kind]Entry{
 			"the vendor installer"),
 		MacosUser: honored("the darwin bootstrap runs the same generate_agent_launchers step; " +
 			"there is no capture store, so a first use runs the vendor installer"),
-		Aspects: map[string]Entry{
-			// A program built from its upstream and a patch series (or any source-built fork),
-			// which only the capture store delivers.
-			"patches": {
-				PodmanLinux: honored("the fork is built in a capture jail and seeded from the " +
-					"store (internal/cli/run forkbuild.go)"),
-				PodmanMac: honored("the same capture build (internal/cli/run forkbuild.go)"),
-				AppleContainer: honored("the same build from Apple Container 1.1.0, waiting for " +
-					"the other jails to stop; below it forkbuild.go's roBindsUnsupported gate " +
-					"builds nothing and each fork's launcher prints why"),
-				MacosUser: warned("noteMacosUserForks (internal/cli/run forkbuild.go), called from " +
-					"run.go's macos-user arm, names each fork and a container backend's launch that " +
-					"has it (FP-D3)"),
-				Guide: []string{"`program` with `patches`"},
-			},
-		},
+		// A patched fork (`program` with `patches`) has the parent's disposition everywhere: on
+		// macos-user the fork's advance builds it for darwin as the sandbox account in the sealed
+		// macos-user act (FP-D24, PF-D97), and the launch stages it into the sandbox's capture store.
+		Guide: []string{"`program` with `patches`"},
 	},
 	packdecl.KindSkills: {
 		PodmanLinux: honored("assembleRunCmd's skills loop (internal/cli/run assemble.go) binds " +
