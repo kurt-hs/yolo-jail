@@ -25,8 +25,9 @@ package run
 // NOT WHERE NO TREE OR FORK IS BUILT: below Apple Container's read-only floor, inside a jail, and
 // for a patched fork that builds for none of the jail's platform (forkUnpublishedHere) nothing was
 // built, so nothing failed; those keep their warning line (noteTreeDeliveries, and the fork's
-// launcher). macos-user runs the fork half of the slot alone (PF-D97), and says itself that it builds no
-// patched extension (noteMacosUserTrees).
+// launcher). macos-user runs both halves of the slot (PF-D97, pi-extensions.md §11), each built for
+// darwin, so a needed build it has nothing of refuses there exactly as on podman, and a newer build that
+// fails beside a good one stops it too (OQ-PPX3, PD-NF1: no silent fallback).
 //
 // THE REFUSAL'S SHAPE is a normal tool's (docs/reference/patched-forks.md §8.7, the maintainer's ruling of
 // 2026-10-16): one ERROR line, each cause once with every build it left without one
@@ -209,12 +210,13 @@ func (o *Options) refuseMissingBuilds(rt string) bool {
 
 // withContainerBackends is hatches with, on macos-user, the two container backends a launch can
 // take instead (docs/reference/patched-forks.md PF-D97): `YOLO_RUNTIME=container yolo` and
-// `YOLO_RUNTIME=podman yolo`, each of which builds the fork for linux in its own build jail. They
+// `YOLO_RUNTIME=podman yolo`, each of which builds the fork or extension for linux in its own build
+// jail. They
 // stand before the missing-program hatch, the ruling's order, or last when the list has none. At
 // the guest notch a container runtime also needs the jail notch (containerStepClause), so their
 // command is `yolo --at jail`. Every other runtime keeps hatches as they are.
 func (o *Options) withContainerBackends(rt string, hatches []patchrecovery.Hatch) []patchrecovery.Hatch {
-	if rt != "macos-user" { // parity: HonoredBy — only macos-user builds a patched fork in its own act; the container backends' refusal needs no other backend to finish
+	if rt != "macos-user" { // parity: HonoredBy — only macos-user builds a patched fork or extension in its own act; the container backends' refusal needs no other backend to finish
 		return hatches
 	}
 	cmd := "yolo"

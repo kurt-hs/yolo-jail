@@ -35,11 +35,10 @@ func (o *Options) selectCachedGood(rt string) bool {
 	if o.inJail() || config.InJail() {
 		return refuse("it applies only to a fresh host-to-container launch")
 	}
-	// ON macos-user a fork's cached good build is a darwin entry, handed and staged into the
-	// sandbox's capture store like any key the slot hands (docs/reference/patched-forks.md PF-D97);
-	// that backend builds no patched extension, so no extension is selected there and a selector
-	// naming only one is a name that matches nothing here.
-	forksOnly := rt == "macos-user" // parity: Warned — macos-user delivers a fork's cached good build and no extension's
+	// ON macos-user a fork's or an extension's cached good build is its darwin good build, which the
+	// tree act and the fork act each read for the request's platform (TreeBuildRequest.Platform,
+	// ForkBuildRequest.Platform; docs/reference/patched-forks.md PF-D97): selected here exactly as on
+	// a container backend.
 	if o.CapturesDir() == "" {
 		return refuse("this launch has no host capture store to deliver from")
 	}
@@ -61,9 +60,6 @@ func (o *Options) selectCachedGood(rt string) bool {
 		}
 	}
 	for _, f := range o.patchedTrees {
-		if forksOnly {
-			break
-		}
 		sub := TreeSubject(f)
 		subs = append(subs, sub)
 		if scope.Covers(sub) {

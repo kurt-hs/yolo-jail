@@ -584,21 +584,23 @@ func Run(opts Options) (rc int) {
 			o.autoCaptureMacosUser(staged.packs)
 			captureSpan.End()
 		}
-		// THE FORK BUILDS, ON THIS ARM TOO (docs/reference/patched-forks.md PF-D97, FP-D25): every
-		// selected fork, plain or patched, is readied for the sandbox's darwin platform by the
-		// container path's own slot sequence (runForkBuildSlotAndRefusals), fork half only, and a
+		// THE FORK BUILDS AND THE PATCHED EXTENSIONS, ON THIS ARM TOO (docs/reference/patched-forks.md
+		// PF-D97, FP-D25; docs/reference/pi-extensions.md §11): every selected fork, plain or patched,
+		// and every patched extension a jail is delivered, is readied for the sandbox's darwin platform
+		// by the container path's own slot sequence (runForkBuildSlotAndRefusals), both halves, and a
 		// patch failure or a missing patched build refuses here as it does there. HERE for the
 		// auto-capture's reason, just above: a build is a sealed launch of its own, which arms,
 		// starts and holds its own, so it runs after the config-change approval and before this
 		// arm's signal arm and host services. Before the capture store is staged below, which stages
 		// each key this slot hands (macosUserCaptures). A dry run builds nothing; its line says so
-		// (dryRunForkDeliveries). And, as the auto-capture, never for a launch the backend's own
+		// (dryRunForkDeliveries, dryRunTreeDeliveries). And, as the auto-capture, never for a launch the backend's own
 		// first steps are about to refuse (macosUserPreflight): on a Mac where `yolo macos-setup`
 		// never ran the build act would fail and the launch refuse for a missing program, where the
 		// backend's refusal names the setup. Skipped silently, the backend's refusal follows; the
 		// account home's hold is kept through the builds, as through a capture.
 		if o.DryRun {
 			o.dryRunForkDeliveries()
+			o.dryRunTreeDeliveries()
 		} else if release, ok := o.macosUserPreflight(); ok {
 			slotOK := o.runForkBuildSlotAndRefusals(cfg, rt, repoRoot)
 			release()
@@ -919,8 +921,14 @@ func Run(opts Options) (rc int) {
 		if wire := entrypoint.ForkBuildsWire(o.forkDelivered); wire != "" {
 			launchEnv.Set(entrypoint.ForkBuildsEnv, wire)
 		}
-		// Nor any patched extension (docs/reference/pi-extensions.md §11, FP-D3's shape).
-		o.noteMacosUserTrees()
+		// AND THE PATCHED EXTENSIONS the slot decided, as a container's jail is handed them
+		// (entrypoint.PatchedTreesEnv, PPX-D8): each delivered tree's build and label — its copy reaches
+		// the sandbox home through the overlay below (buildMacosHomeOverlayWith) — or why there is none,
+		// a skipped one marked so the sandbox's boot leaves its list entries out. The slot said each
+		// decision itself (noteTreeDeliveries, refuseMissingBuilds).
+		if wire := entrypoint.PatchedTreesWire(o.patchedTreesWire(rt)); wire != "" {
+			launchEnv.Set(entrypoint.PatchedTreesEnv, wire)
+		}
 		// YOLO_STORE_PACKAGES's only consumer (planStorePackages) is below this arm's
 		// return, so on this backend the dial vanished without a line. A NOTICE, not a
 		// refusal — planStorePackages' own ruling for an ineligible launch — and here the
@@ -1061,7 +1069,10 @@ func Run(opts Options) (rc int) {
 		// `yolo check`, `pack` and `loopholes` reads as its user scope, write-protected like the
 		// rest of the overlay. A dry run composes it too, for the overlay's reason.
 		sp = o.Perf.Span("launch.build_home_overlay")
-		homeOverlay, err = buildMacosHomeOverlayWith(staging, staged.packs, o.macosUserInheritedScope(rt), func(line string) {
+		// THE PATCHED EXTENSIONS' PER-LAUNCH COPIES ride in it too (o.patchedTreeDirs): each at its
+		// `~/<into>`, write-protected like the rest, the copy living beside this launch's pack tree,
+		// which outlives this call (discardUnheldPackTree runs at Run's return).
+		homeOverlay, err = buildMacosHomeOverlayWith(staging, staged.packs, o.patchedTreeDirs(), o.macosUserInheritedScope(rt), func(line string) {
 			o.pr(o.Stdout).print("[yellow]" + line + "[/yellow]")
 		})
 		sp.End()
