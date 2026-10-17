@@ -38,7 +38,7 @@ func TestATreeBuildPlanRunsTheBuildThenCopiesTheCheckout(t *testing.T) {
 	src := shQuote(plan.SrcDir)
 	for _, want := range []string{
 		"/usr/bin/sandbox-exec -f " + plan.ProfilePath, "internal capture-run", "--home=" + plan.StagingHome,
-		"/usr/bin/env YOLO_BYPASS_SHIMS=1 /bin/bash -c",
+		"/usr/bin/env YOLO_BYPASS_SHIMS=1 /nix/store/abc-profile/bin/bash -c",
 		"cd " + src + " && (\nnpm ci # trailing comment\n)",
 		` && /bin/mkdir -p "$HOME"/` + shQuote(packdecl.TreeReservedRoot),
 		` && /bin/cp -pPR ` + src + ` "$HOME"/` + shQuote(packdecl.TreeReservedDir("pi-ext")),
@@ -85,7 +85,7 @@ func TestTreeBuildPlanInvariantsRefuseEachMissingPiece(t *testing.T) {
 		}, "never copies the checkout"},
 		{"the fork script instead", func(p *ForkBuildPlan) {
 			p.DriverArgv = ForkBuildDriverArgv(p.StagedYolo, p.StagingHome, p.OutDir, p.SrcDir, p.ToolchainFile,
-				"", p.Build, p.ProfilePath, p.EnvFile, p.DarwinPathPrefix)
+				"", p.Build, p.ProfilePath, p.EnvFile, p.DarwinPathPrefix, p.Bash)
 		}, "does not run the tree build"},
 		{"an absolute tree dir", func(p *ForkBuildPlan) { p.TreeDir = "/" + p.TreeDir }, "not a plain home-relative"},
 		{"an escaping tree dir", func(p *ForkBuildPlan) { p.TreeDir = "../outside" }, "not a plain home-relative"},
@@ -110,13 +110,13 @@ func TestAForkPlanIsUnchangedByTheTreeSeam(t *testing.T) {
 		t.Fatalf("a fork plan carries a tree dir %q", plan.TreeDir)
 	}
 	want := ForkBuildDriverArgv(plan.StagedYolo, plan.StagingHome, plan.OutDir, plan.SrcDir, plan.ToolchainFile,
-		forkToolchainHead(opts), opts.Build, plan.ProfilePath, plan.EnvFile, plan.DarwinPathPrefix)
+		forkToolchainHead(opts), opts.Build, plan.ProfilePath, plan.EnvFile, plan.DarwinPathPrefix, plan.Bash)
 	if !slices.Equal(plan.DriverArgv, want) {
 		t.Errorf("the fork driver changed:\n%q\nwant\n%q", plan.DriverArgv, want)
 	}
 	plan.DriverArgv = TreeBuildDriverArgv(plan.StagedYolo, plan.StagingHome, plan.OutDir, plan.SrcDir,
 		plan.ToolchainFile, "", opts.Build, packdecl.TreeReservedDir("x"), plan.ProfilePath, plan.EnvFile,
-		plan.DarwinPathPrefix)
+		plan.DarwinPathPrefix, plan.Bash)
 	if problems := strings.Join(ForkBuildPlanInvariants(plan), "\n"); !strings.Contains(problems, "fork's build line") {
 		t.Errorf("a fork plan running the tree script is not refused:\n%s", problems)
 	}
