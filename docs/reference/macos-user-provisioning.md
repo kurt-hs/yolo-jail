@@ -600,6 +600,20 @@ for that proof:
 Before deciding, the launch waits up to a few seconds for its guest to exit, which covers a
 jail-daemon supervisor that was just told to stop.
 
+**A holder that outlives that wait does not keep the tree** ([JD-13](#JD-13)). A session can leave
+sandbox-account processes running in sessions of their own: a `next-launch` refresh, which is meant
+to outlive the program, git's detached auto-maintenance after a fetch, or an agent macOS starts for
+the account. Ending the session's process group would not reach them, and the account is every
+workspace's, so none is the launch's to kill. The launch instead hands the tree and its claim to
+the **pack-tree reaper**, a term coined here for a detached host-user process,
+`yolo internal pack-tree-reap`. The reaper inherits the claim's lock, so `yolo prune` still sees the
+tree claimed, and applies the same proof, anchored where the launch's was, every two seconds. It
+removes the tree once no holder remains, and gives up after 30 minutes, letting the claim go and
+leaving the tree to `yolo prune --apply`. The launch says the hand-off in one dim line naming the
+holders and the reaper's log, `<global storage>/logs/macos-user-pack-tree-reap.log`, where every
+outcome is one line. Holders are named by pid and by the command name the process table carries,
+which is printed only and never part of the proof.
+
 Each launch and capture also holds a **claim** on its tree: an exclusive lock on
 `<global storage>/locks/macos-user-pack-trees/<tree leaf>.lock` that holds the launcher's pid. It
 is taken before the tree is reserved and let go after the tree's fate is decided. The claim is
@@ -616,7 +630,8 @@ it reads the claims, so a tree reserved after its claim was taken is never seen 
 | The exclusive reservation fails | The existing destination is untouched and not this launch's |
 | Reserved; no guest consumer dispatched, a writer failed or not | Unsealed and removed on the launch's return path |
 | A guest consumer was dispatched, and no holder remains | Unsealed and removed, ordinary exit and refusal alike, with nothing printed |
-| A holder remains, or the process table cannot be read | Kept, in one line naming the holders and `yolo prune --apply` |
+| A holder remains after the wait | Handed to the pack-tree reaper, in one dim line naming the holders and its log; removed once they exit |
+| A holder remains and the reaper cannot start, or the process table cannot be read | Kept, in one line naming the holders and `yolo prune --apply` |
 | Removal fails | Kept, in one line naming the exact unseal-and-remove command; the launch's exit status is unchanged |
 
 A sandbox-account process that yolo did not start, such as a manual `sudo -u _yolojail` shell,
@@ -847,6 +862,7 @@ Rulings a future change would otherwise undo, kept with the IDs source comments 
 | <a id="JD-9"></a>`JD-9` — **the one guest rule for a pack service's daemon**: declined only when (a) the service serves a protocol adaptation and this launch admits its host half, or (b) it declares an `endpoint`; everything else runs confined in the guest. *Implementation decision under the maintainer's 2026-10-04 delegation; reversible.* | (a) is the wire bridge, whose admitted host half already serves its address; (b) is a file under `/run/yolo-services`, a container path with no sandbox counterpart. Everything else follows [`OQ-DP8`](../design/declaration-parity.md#decision-ledger)'s *"if you would have run it in the jail container, you run it on the guest"*, with confinement preferred: a worker declaring both halves runs its jail half here and its host half is not started. The old rule declined every service's daemon, which ran most of them nowhere. Built in `loopholes.JailDaemonsRunIn` over `launchservice.ServiceJailDaemons`, read by the launch and `yolo check`. |
 | <a id="JD-10"></a>`JD-10` — **each launch's `{jail_loophole_dir}` resolves into its own sealed guest pack tree**, keyed by the host pack tree's leaf, exclusively reserved and never replaced. *Implementation decision under the maintainer's 2026-10-04 delegation; reversible.* | A reusable workspace tree let a later launch change or drop the module an earlier launch's daemon restarts from. When the tree is removed is [JD-12](#JD-12). The keeper, privileges, keychain behavior and the decline rules are unchanged. Native behavior is [unmeasured](#the-guest-pack-tree-is-unmeasured-natively). |
 | <a id="JD-12"></a>`JD-12` — **a guest pack tree is removed once no sandbox-account process may still hold it**, proven from the public process table with no root, and claimed while its launch runs so `yolo prune --apply` can reap one a launch had to keep. *Implementation decision, 2026-10-16, under the same delegation; reversible.* | JD-10 first kept every tree after any dispatch, because no artifact proved the guest ended, so every launch leaked one and printed a paragraph. Process ancestry plus start time is that proof: every guest process is the sandbox account's, and none can start before its launch reserves the tree. Unknown still keeps the bytes. |
+| <a id="JD-13"></a>`JD-13` — **a guest pack tree whose holders outlive the launch's wait is handed, with its claim, to a detached host-user reaper that removes it once they exit**, giving up after 30 minutes. *Implementation decision, 2026-10-17, under the same delegation; reversible.* | Found on the maintainer's Mac: `yolo -- pi --version` exited cleanly and kept its tree because two sandbox-account processes were still running. Processes in sessions of their own escape the session's process group, so the build act's group ending ([PPX-D49](pi-extensions.md#PPX-D49)) cannot reach them, and the shared account's processes are not the launch's to kill. |
 | **P1** — a backend either provides a mechanism or **refuses it out loud** | Rendering the config for a mechanism that does nothing is the failure this whole mechanism exists to end, and it has produced an instance per imperative key on this backend. |
 | **P2** — the declarative path is the one that composes | `packages:` works here precisely because nix needs nothing pre-installed. Every imperative installer assumes a runtime something else put there — which is why the floor has to exist before the stage can. |
 | **P3** — convergence beats a second dialect | Two ways to say "install neovim" depending on backend is a tax on every user and every doc. One mechanism on every backend; only the primitive enforcing the boundary may differ. |
