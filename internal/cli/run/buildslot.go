@@ -47,8 +47,12 @@ func SlotBuildJails(rt string) int {
 
 // SlotBuildJailsOn is SlotBuildJails on a machine of cpus CPUs: the one statement of the rule, which
 // a caller that reads its CPU count through a seam of its own (cli's pools) applies to that count.
+//
+// One on macos-user too: every build there is a capture act of the ONE sandbox account, whose
+// setup steps (its category dirs, its staging trees' modes) no run has measured side by side, so a
+// launch's darwin builds take turns (docs/reference/patched-forks.md PF-D97).
 func SlotBuildJailsOn(rt string, cpus int) int {
-	if !BuildJailsSideBySide(rt) {
+	if !BuildJailsSideBySide(rt) || rt == "macos-user" {
 		return 1
 	}
 	return min(4, max(1, cpus/2))
