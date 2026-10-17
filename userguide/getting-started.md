@@ -574,8 +574,8 @@ new place. Both work only for a from-source install.
 A jail that is already running keeps working through a Homebrew or from-source update, and uses the
 new version once you exit it and start it again. Each jail runs its own login services and keeps the
 ones it started, so nothing needs restarting. If you upgraded from a yolo that ran one shared login
-service for the whole machine, that shared service keeps serving the jails the older yolo started,
-and new jails start beside it with their own; a launch prints one line naming it. Relaunch your
+service for the whole machine, only jails the older yolo started can use that shared service, and
+new jails start beside it with their own; a launch prints one line naming it. Relaunch your
 jails when convenient, or let them end. Once none of them is left, you can end the old shared
 service with `yolo host-daemon stop --host-wide <name>`, which leaves each jail's own running; a
 reboot ends it too. `yolo host-daemon status` lists it as host-wide.

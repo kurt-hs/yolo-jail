@@ -68,4 +68,12 @@ func TestTheBrokerLogsAnEmptyOrBrokenSharedFileOncePerChange(t *testing.T) {
 	if got := count("the shared credentials file is empty"); got != 2 {
 		t.Fatalf("an emptied shared file logged %d times in all, want 2:\n%s", got, buf.String())
 	}
+	// AN EMPTIED FILE IS NOT A SIGN-OUT: the canonical login it was adopted into is still there.
+	canonical, err := oauthFromCreds(CanonicalPath)
+	if err != nil {
+		t.Fatalf("the canonical login is gone after the shared file was emptied: %v", err)
+	}
+	if at, _ := stringField(canonical, "accessToken"); at != "AT_1" {
+		t.Errorf("the canonical login changed after the shared file was emptied: access token %q", at)
+	}
 }
