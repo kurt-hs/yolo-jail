@@ -41,7 +41,8 @@
 //     macos-user fork-build act, Seatbelt and the sandbox account under the seal (FP-D24). A Node
 //     script among them is started by the floor's own Node, as an npm program is. A PATCHED fork's
 //     (patched.go) is the build of its GOOD BUILD instead, and its install runs the fork's advance
-//     first (docs/reference/patched-forks.md §9); it is Linux's alone.
+//     first (docs/reference/patched-forks.md §9), whose build is made as a plain fork's is: a capture
+//     jail's on Linux, the macos-user act's on a Mac (PF-D97).
 //
 // # The layout (every name below is this package's)
 //
@@ -265,7 +266,8 @@ type Floor struct {
 	Capture func(bin string) error
 	// CaptureUnavailable says why this machine cannot boot a capture or build JAIL right now ("" when
 	// it can): a Linux fork's build and a patched fork's advance each boot one, so a host with no
-	// container runtime cannot make one (a Mac's fork build boots none: BuildActUnavailable). Asked only for a program that is neither provisioned nor in the store,
+	// container runtime cannot make one (a Mac's fork build and patched advance boot none:
+	// BuildActUnavailable). Asked only for a program that is neither provisioned nor in the store,
 	// which then has no floor entry HERE rather than an install bound to fail (a selected pack
 	// delivers a program the floor "holds, or can provision", host-agent-environment.md's launch PATH
 	// terms), its reason ending with runtimeStep. It answers for an installer's capture too, unless
@@ -333,8 +335,9 @@ type Floor struct {
 	// that ends with the step that ends it — does is what the next launch then does ("builds it") — or
 	// "" when it can. It exists because a fork's build need not boot a container: a Mac's is the
 	// macos-user fork-build act (FP-D24), whose reasons and steps are the sandbox account's, not a
-	// runtime's. On a Mac it is also what admits a plain fork's program at all: a floor given none has
-	// no darwin build to run. nil => CaptureUnavailable answers, with runtimeStep.
+	// runtime's. On a Mac it is also what admits a fork's program at all, plain or patched (PF-D97),
+	// and it answers for a patched fork's advance there (advanceBlocked): a floor given none has no
+	// darwin build to run. nil => CaptureUnavailable answers, with runtimeStep.
 	BuildActUnavailable func(bin, does string) string
 	// Environ is the environment the installers are derived from (installerEnv strips the
 	// parts that would steer where an install lands). nil => os.Environ().
@@ -638,28 +641,27 @@ func (f *Floor) recipeNoEntryReason(p Program) string {
 		// A FORK (docs/design/forked-programs-as-packs.md): its host copy is the capture store's
 		// build of the fork's PINNED commit, relocated into the floor (FP-D4). A notch gets a build
 		// made for its own platform or none (§1: no cross-compilation): on Linux the capture jail's,
-		// and on a Mac a darwin build of the macos-user fork-build act (FP-D24), which a floor given
-		// that act's predicate runs. With no pin there is no build to ask for, and an older build the
+		// and on a Mac a darwin build of the macos-user fork-build act (FP-D24; a patched fork's too,
+		// PF-D97), which a floor given that act's predicate runs. With no pin there is no build to ask for, and an older build the
 		// floor still holds is a near-miss it never serves (§9), so that is no entry too — unless
 		// the install can make the pin (awaitsPin, FP-D18), which it does before it builds.
-		switch {
-		case f.GOOS == "linux":
-		case f.GOOS == "darwin" && !in.IsPatchedFork():
-			// A MAC BUILDS A PLAIN FORK THROUGH THE MACOS-USER ACT ALONE: a container build jail's
-			// entry is a Linux one no Mac runs. Whether that act can run HERE is the build's question
-			// (cannotBuild, asked where the store holds no build), so only a floor given none is
-			// refused now.
+		switch f.GOOS {
+		case "linux":
+		case "darwin":
+			// A MAC BUILDS A FORK THROUGH THE MACOS-USER ACT ALONE, plain or patched (FP-D24,
+			// PF-D97): a container build jail's entry is a Linux one no Mac runs. Whether that act can
+			// run HERE is the build's question (cannotBuild, and advanceBlocked for a patched fork),
+			// asked where the store holds no build, so only a floor given none is refused now.
 			if f.BuildActUnavailable == nil {
 				return "it is built from source by fork pack " + in.ForkedBy + ", which on a Mac the floor " +
 					"builds as the macos-user sandbox account, and this floor runs no such build"
 			}
 		default:
-			// The next step is a jail's: a patched fork's advance builds for a container's platform
-			// alone, and a jail launch on a container backend runs it.
-			return "it is built from source by fork pack " + in.ForkedBy + " in a Linux capture " +
-				"jail, and this machine is " + f.GOOS + "/" + f.GOARCH + ": the floor holds a build " +
-				"made for its own platform only — run it in a jail instead (`yolo -- " + in.Bin + "`, on " +
-				"a container backend: Apple Container or podman), whose fresh launch builds it"
+			// The next step is a jail's: the floor builds a fork on Linux and on a Mac alone.
+			return "it is built from source by fork pack " + in.ForkedBy + ", which the floor builds in a " +
+				"Linux capture jail or, on a Mac, as the macos-user sandbox account, and this machine is " +
+				f.GOOS + "/" + f.GOARCH + ": the floor holds a build made for its own platform only — run it " +
+				"in a jail instead (`yolo -- " + in.Bin + "`), whose fresh launch builds it"
 		}
 		if in.IsPatchedFork() {
 			// A PATCHED fork has no pin (PF-D16): its good build answers instead (patched.go).

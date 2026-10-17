@@ -224,7 +224,7 @@ func macosUserCaptureSeams(rec *macosUserCaptureCalls) func(*Options) {
 			rec.order = append(rec.order, "capture")
 			rec.captureBins, rec.capturePlatform = bins, platform
 		}
-		o.MacosUserCaptures = func(dir string, bins []string, platform string) ([]macosuser.CaptureEntry, []string) {
+		o.MacosUserCaptures = func(dir string, bins []string, platform string, _ map[string]string) ([]macosuser.CaptureEntry, []string) {
 			rec.order = append(rec.order, "pick")
 			rec.pickDir, rec.pickBins, rec.pickPlat = dir, bins, platform
 			if len(rec.order) < 2 || rec.order[0] != "capture" {

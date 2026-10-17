@@ -521,6 +521,9 @@ type captureStreams struct {
 	jailReady                               func()
 	cleanupUnconfirmed                      *bool
 	lifetimeReturned                        *bool
+	// runtime is the runtime the build jail boots with (buildMode.runtime), "" for the one a launch
+	// resolves: what a build run as a child names to it (forkBuildChildArgv's --runtime).
+	runtime string
 }
 
 // notStartedLines are the lines that say why a build jail stopped before its build line, each
@@ -971,6 +974,7 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 	// the process's own streams.
 	tail := &jailTail{}
 	streams = tail.tee(streams)
+	streams.runtime = mode.runtime
 	// THE BUILD'S OWN WORKSPACE, as the build saw it: a link into it dangles once the build ends.
 	workspace := forkBuildWorkspace(mode.runtime, b.id())
 	ownershipUnproven := false
@@ -1404,7 +1408,11 @@ func forkBuildJailArgv(build string) []string {
 // on, at most one, is what its caller decided of the jail (captureAct), as runCaptureJail takes it.
 func forkBuildRunJail(workspace string, b forkBuild, s captureStreams, color bool, on ...captureAct) int {
 	seal := &captureSeal{only: sealPacks(b.Fork), tree: sealTree(b.Fork)}
-	if b.Series == nil && !b.Fork.IsTree() {
+	// A fork's build, plain or PATCHED (PF-D97): by now buildFork has replayed a patched fork's series
+	// into the workspace's src/, so the macos-user arm building that checkout with the fork's line
+	// builds the patched tree. A patched extension's jail runs a tree's script (treeBuildJailArgv),
+	// which that arm does not.
+	if !b.Fork.IsTree() {
 		seal.build, seal.id = b.buildLine(), b.id()
 	}
 	return runCaptureJail(workspace, b.Fork.Bin, buildJailArgv(b.Fork, b.buildLine()), seal, s, color, on...)
@@ -1567,9 +1575,10 @@ func forkBuildPlatform(rt string) string {
 // jail is unsealed and keeps the whole selection, but is still a capture jail, so it too is handed
 // none of the user's `mise_tools` (FP-D19, run.Options.captureJail).
 //
-// build and id are a PLAIN fork's build line and its build's id, which the macos-user arm runs
-// itself (FP-D24: macosuser.RunForkBuildAct), since it has no container to run buildJailArgv in.
-// Both "" for a patched fork's or a patched extension's build, which that arm still refuses.
+// build and id are a fork's build line and its build's id — a plain fork's (FP-D24) or a patched
+// fork's, whose series buildFork has replayed into the checkout first (PF-D97) — which the macos-user
+// arm runs itself (macosuser.RunForkBuildAct), since it has no container to run buildJailArgv in.
+// Both "" for a patched extension's build, which that arm still refuses.
 type captureSeal struct {
 	only      []string
 	tree      string

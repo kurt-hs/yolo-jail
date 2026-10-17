@@ -353,11 +353,31 @@ func resolveProgramCaptureFor(store *capture.Store, bin, platform, compatibility
 // fork, so a fork's build of the same bin is never picked (capture.Program). kept is every other
 // installer program's current entry at platform, the keys whose staged copies the launch leaves in
 // place. An unreadable store stages nothing, the materialize path's own answer to it.
-func macosUserCaptures(dir string, bins []string, platform string) (stage []macosuser.CaptureEntry, kept []string) {
+//
+// forks is each forked program and the store key the launch's fork-build slot hands the sandbox for
+// it (docs/reference/patched-forks.md PF-D97): staged by that KEY, never resolved by bin, since the
+// key is what the program's launcher materializes, and the entry is copied whole, its receipts
+// being what that materialize checks the build's platform against. A key the store cannot resolve
+// is not staged: its launcher then says it found no build. Staged in bin order, after the installer
+// entries.
+func macosUserCaptures(dir string, bins []string, platform string, forks map[string]string) (stage []macosuser.CaptureEntry, kept []string) {
 	store := &capture.Store{Dir: dir}
 	picked := map[string]bool{}
 	for _, bin := range bins {
 		entry, _, err := resolveCaptureFor(store, bin, platform)
+		if err != nil || picked[entry.Key] {
+			continue
+		}
+		picked[entry.Key] = true
+		stage = append(stage, macosuser.CaptureEntry{Bin: bin, Key: entry.Key, Source: entry.Root})
+	}
+	forkBins := make([]string, 0, len(forks))
+	for bin := range forks {
+		forkBins = append(forkBins, bin)
+	}
+	sort.Strings(forkBins)
+	for _, bin := range forkBins {
+		entry, err := store.Resolve(forks[bin])
 		if err != nil || picked[entry.Key] {
 			continue
 		}

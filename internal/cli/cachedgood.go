@@ -84,9 +84,9 @@ func runCachedGoodFork(f packload.Fork, req run.ForkBuildRequest, out io.Writer)
 		return cachedGoodRefusal(f, record, req, out, "the selected Good entry was not handed")
 	}
 	fmt.Fprintf(out, "Cached good: %s at %s (%s, series %s, entry %s); this old build does not contain current edits or the current failure's output; this launch skips its advance.\n",
-		f.Key(), goodCommitLabel(good), good.Commit, good.Series, good.Entry)
+		f.Key(), goodCommitLabel(good), good.Commit, good.Series, delivery.Key)
 	writeCachedGoodFailure(out, f, record, req.Workspace)
-	writeCachedGoodPatchFailure(out, f, record, good.Entry)
+	writeCachedGoodPatchFailure(out, f, record, delivery.Key)
 	return delivery
 }
 
@@ -263,14 +263,62 @@ func goodCommitLabel(g *packsrc.GoodBuild) string {
 	return g.Commit
 }
 
+// cachedGoodKey is the store entry cached-good recovery validates for good on platform: THIS
+// platform's build of the good commit under the good recipe, found as the advance's exact lookup
+// finds it (resolvePatchedBuild), so a Mac alternating podman and macos-user launches runs each
+// platform's own build of the one recorded good. Good.Entry names the build of whichever platform
+// recorded the good last, and is the answer only when no build of this platform is recorded
+// (validateCachedGood then names the platform it is for). The key is still validated in full.
+func cachedGoodKey(store *capture.Store, f packload.Fork, platform string, good *packsrc.GoodBuild) string {
+	if good.Commit == "" || good.Recipe == "" {
+		return good.Entry
+	}
+	entry, _, err := resolvePatchedBuild(store, f.Key(), f.Bin, platform, patchedBuildSource(f.Source),
+		good.Commit, good.Recipe)
+	if err != nil || entry == nil || !cachedGoodKeyRE.MatchString(entry.Key) {
+		return good.Entry
+	}
+	return entry.Key
+}
+
+// cachedGoodHome reports why a build captured in m.Home cannot serve a launch on platform, "" when
+// it can. A container jail's home is /home/agent, where its build was captured. A darwin build
+// (macos-user, PF-D97) is captured in its build's staging home and materialized into the sandbox
+// account's home, another path, so it must meet the relocation contract that materialize enforces
+// (capture.Manifest.Relocatable): relocatable, licensed by the full reference scan, from an absolute
+// home a rewrite can substitute.
+func cachedGoodHome(m *capture.Manifest, platform string) string {
+	if !strings.HasPrefix(platform, "darwin/") {
+		if filepath.Clean(m.Home) != "/home/agent" {
+			return fmt.Sprintf("the recorded Good entry was captured for %s, not the container home /home/agent", m.Home)
+		}
+		return ""
+	}
+	home := filepath.Clean(m.Home)
+	switch {
+	case m.Home == "" || !filepath.IsAbs(home) || home == string(filepath.Separator):
+		return fmt.Sprintf("the recorded Good entry's capture home %q is not one a materialize can move it from", m.Home)
+	case !m.Relocatable:
+		why := "the recorded Good entry cannot move from its build's home " + m.Home + " into the sandbox account's home"
+		if len(m.NotRelocatable) > 0 {
+			why += ": " + strings.Join(m.NotRelocatable, "; ")
+		}
+		return why
+	case m.RefScan != capture.RefScanFull:
+		return "the recorded Good entry says it is relocatable, but its reference scan is not the full one that licenses a move"
+	}
+	return ""
+}
+
 func validateCachedGood(f packload.Fork, platform string, good *packsrc.GoodBuild) (*capture.Entry, *entrypoint.BuildReceipt, string) {
 	if good == nil || good.Entry == "" || !cachedGoodKeyRE.MatchString(good.Entry) {
 		return nil, nil, "the check record does not name a safe Good.Entry; yolo will not guess an older directory"
 	}
 	store := &capture.Store{Dir: paths.CapturesDir()}
-	entry, err := store.Resolve(good.Entry)
+	key := cachedGoodKey(store, f, platform, good)
+	entry, err := store.Resolve(key)
 	if err != nil {
-		return nil, nil, fmt.Sprintf("recorded Good.Entry %s is missing or pruned (%v)", good.Entry, err)
+		return nil, nil, fmt.Sprintf("recorded Good.Entry %s is missing or pruned (%v)", key, err)
 	}
 	if why := requireRealDir(entry.Root, "entry"); why != "" {
 		return nil, nil, why
@@ -283,7 +331,7 @@ func validateCachedGood(f packload.Fork, platform string, good *packsrc.GoodBuil
 		return nil, nil, why
 	}
 	markerBytes, err := os.ReadFile(marker)
-	if err != nil || strings.TrimSpace(string(markerBytes)) != good.Entry {
+	if err != nil || strings.TrimSpace(string(markerBytes)) != key {
 		return nil, nil, "the recorded Good entry has an invalid completion marker"
 	}
 	manifestPath := capture.ManifestPath(entry.Root)
@@ -297,18 +345,18 @@ func validateCachedGood(f packload.Fork, platform string, good *packsrc.GoodBuil
 	if manifest.Platform != platform {
 		return nil, nil, fmt.Sprintf("the recorded Good entry is for %s, not this jail's %s", manifest.Platform, platform)
 	}
-	if filepath.Clean(manifest.Home) != "/home/agent" {
-		return nil, nil, fmt.Sprintf("the recorded Good entry was captured for %s, not the container home /home/agent", manifest.Home)
+	if why := cachedGoodHome(manifest, platform); why != "" {
+		return nil, nil, why
 	}
 	if why := compareManifestTree(entry.Tree, manifest); why != "" {
 		return nil, nil, why
 	}
 	digest, err := treedigest.Of(entry.Tree)
 	if err != nil {
-		return nil, nil, fmt.Sprintf("cannot digest recorded Good entry %s (%v)", good.Entry, err)
+		return nil, nil, fmt.Sprintf("cannot digest recorded Good entry %s (%v)", key, err)
 	}
-	if capture.Key(digest) != good.Entry {
-		return nil, nil, fmt.Sprintf("recorded Good entry %s no longer matches its content address", good.Entry)
+	if capture.Key(digest) != key {
+		return nil, nil, fmt.Sprintf("recorded Good entry %s no longer matches its content address", key)
 	}
 	receiptsPath := capture.ReceiptsPath(entry.Root)
 	if why := requireRegularFile(receiptsPath, "build receipts"); why != "" {
@@ -341,7 +389,7 @@ func validateCachedGood(f packload.Fork, platform string, good *packsrc.GoodBuil
 	var matched *entrypoint.BuildReceipt
 	for i := range receipts {
 		r := &receipts[i]
-		if r.Act != entrypoint.ReceiptActRecord || r.Key != good.Entry || r.Bin != f.Bin || r.Fork != f.Key() ||
+		if r.Act != entrypoint.ReceiptActRecord || r.Key != key || r.Bin != f.Bin || r.Fork != f.Key() ||
 			r.Platform != platform || filepath.Clean(r.Path) != filepath.Clean(entry.Root) ||
 			(r.Revision != "" && good.Commit != "" && r.Revision != good.Commit) ||
 			(r.Recipe != "" && good.Recipe != "" && r.Recipe != good.Recipe) ||

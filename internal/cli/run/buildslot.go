@@ -47,8 +47,12 @@ func SlotBuildJails(rt string) int {
 
 // SlotBuildJailsOn is SlotBuildJails on a machine of cpus CPUs: the one statement of the rule, which
 // a caller that reads its CPU count through a seam of its own (cli's pools) applies to that count.
+//
+// One on macos-user too: every build there is a capture act of the ONE sandbox account, whose
+// setup steps (its category dirs, its staging trees' modes) no run has measured side by side, so a
+// launch's darwin builds take turns (docs/reference/patched-forks.md PF-D97).
 func SlotBuildJailsOn(rt string, cpus int) int {
-	if !BuildJailsSideBySide(rt) {
+	if !BuildJailsSideBySide(rt) || rt == "macos-user" { // parity: Honored — macos-user builds too, one at a time (its one sandbox account's capture acts are unmeasured side by side)
 		return 1
 	}
 	return min(4, max(1, cpus/2))
@@ -61,14 +65,25 @@ var handedForksMu sync.Mutex
 // runForkBuildSlot is the slot: both halves planned, one call of the act for every key they ready,
 // and both answered and recorded. With no BuildSlot (a caller that injects the halves alone) each
 // half calls its own act, the forks' first.
+//
+// ON macos-user ONLY THE FORK HALF RUNS (docs/reference/patched-forks.md PF-D97): a fork gets a
+// darwin build there, while a patched extension still has none, and says so itself
+// (noteMacosUserTrees).
 func (o *Options) runForkBuildSlot(cfg *jsonx.OrderedMap, rt, repoRoot string) {
+	withTrees := rt != "macos-user" // parity: Warned — macos-user builds no patched extension, and noteMacosUserTrees says so
 	if o.BuildSlot == nil {
 		o.forkDelivered = o.forkDeliveriesFor(rt)
-		o.treeDelivered = o.treeDeliveriesFor(rt)
+		if withTrees {
+			o.treeDelivered = o.treeDeliveriesFor(rt)
+		}
 		return
 	}
 	forks, fReq := o.forkBuildPlan(rt)
-	trees, tReq := o.treeBuildPlan(rt)
+	var trees map[string]TreeDelivery
+	var tReq *TreeBuildRequest
+	if withTrees {
+		trees, tReq = o.treeBuildPlan(rt)
+	}
 	if fReq != nil || tReq != nil {
 		// THE IMAGE'S OWN BUILD, BESIDE THE POOL: nothing the slot does feeds it, so it starts now
 		// rather than once the slowest key has ended.
@@ -89,6 +104,30 @@ func (o *Options) runForkBuildSlot(cfg *jsonx.OrderedMap, rt, repoRoot string) {
 		o.recordHandedTrees(trees)
 	}
 	o.forkDelivered, o.treeDelivered = forks, trees
+}
+
+// runForkBuildSlotAndRefusals is a fresh launch's whole fork-build slot, both arms' one sequence
+// (the container path's runContainer and the macos-user arm, PF-D97): the recovery hatches' scope
+// said once, the slot run, then the refusals the slot's answers decide — a failed fresh
+// preparation, a patch failure (patchfailures.go; PF-D81, PF-D83) and a missing patched build
+// (missingbuilds.go; PPX-D40, PF-D77) — with the fallback lines between them. False when the
+// launch refuses, having said why; the caller lets go of what it holds and returns 1.
+func (o *Options) runForkBuildSlotAndRefusals(cfg *jsonx.OrderedMap, rt, repoRoot string) bool {
+	forkSpan := o.Perf.Span("launch.fork_builds")
+	o.noteRecoveryHatches(rt, false) // recoveryscope.go: what each set recovery hatch reaches, once
+	o.runForkBuildSlot(cfg, rt, repoRoot)
+	// A PATCH SERIES THAT DOES NOT APPLY IS FATAL: its error block first, before any line about what
+	// the slot delivered, then the refusal when an intact older build would otherwise run in silence;
+	// YOLO_ALLOW_PATCH_FAILURES=1 runs that build for this launch.
+	if o.refuseFreshPreparation() || o.refusePatchFailures(rt) {
+		forkSpan.End()
+		return false
+	}
+	o.noteTreeDeliveries(rt)
+	forkSpan.End()
+	// A MISSING PATCHED BUILD IS FATAL, whatever the command, naming each cause once and the ways
+	// back; YOLO_ALLOW_MISSING_PROGRAMS=1 goes on without them.
+	return !o.refuseMissingBuilds(rt)
 }
 
 // refuseFreshPreparation runs before the ordinary patch/missing-build hatches.

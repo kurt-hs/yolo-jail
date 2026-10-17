@@ -57,6 +57,8 @@ func launchToDispatch(t *testing.T) string {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, t.TempDir(), "macos-user", &stdout, &stderr, nil)
+	// A Mac set up for this backend, so the arm's preflight admits the fork slot (macosUserPreflight).
+	o.MacosUserLaunchProbes = setUpMacProbes
 	o.MacosUserRun = func(*jsonx.OrderedMap, string, []string, []string, string, string, macosuser.HomeOverlay,
 		macosuser.HostContext, bool, *jsonx.OrderedMap, []packload.BlockedTool, macosuser.JailDaemons) int {
 		return 0
@@ -70,7 +72,7 @@ func launchToDispatch(t *testing.T) string {
 func TestRunContainerCallsFreshJailForkPreflight(t *testing.T) {
 	fn := funcDecl(t, "run.go", "runContainer")
 	called := callsIn(fn)
-	if !called["freshJailForkPinRefusal"] || called["RepinLaunchForks"] || !called["runForkBuildSlot"] {
+	if !called["freshJailForkPinRefusal"] || called["RepinLaunchForks"] || !called["runForkBuildSlotAndRefusals"] {
 		t.Fatalf("runContainer must preflight in-jail mutable pins and delegate fresh source authority to the actual build slot; calls=%v", called)
 	}
 	var repin, lockAcquire, lastAttach token.Pos
@@ -88,7 +90,7 @@ func TestRunContainerCallsFreshJailForkPreflight(t *testing.T) {
 				lockAcquire = call.Pos()
 			}
 		case *ast.SelectorExpr:
-			if f.Sel.Name == "runForkBuildSlot" {
+			if f.Sel.Name == "runForkBuildSlotAndRefusals" {
 				repin = call.Pos()
 			}
 			if f.Sel.Name == "attachExisting" && call.Pos() > lastAttach {

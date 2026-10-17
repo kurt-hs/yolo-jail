@@ -63,7 +63,7 @@ func (o *Options) launchPatchFailures(rt string) []launchPatchFailure {
 	}
 	var out []launchPatchFailure
 	for _, p := range o.forkPinned {
-		if !p.Fork.Patched() || forkUnpublishedHere(p.Fork) != "" {
+		if !p.Fork.Patched() || forkUnpublishedHere(p.Fork, rt) != "" {
 			continue
 		}
 		d, ok := o.forkDelivered[p.Fork.Bin]
@@ -71,6 +71,11 @@ func (o *Options) launchPatchFailures(rt string) []launchPatchFailure {
 			continue
 		}
 		b := forkPatchBypass(p.Fork.Key(), d)
+		if b.Missing {
+			// Nothing of it to run: this block's list is the launch's only one (refuseMissingBuilds
+			// says no second), so on macos-user it names the container backends too.
+			b.Hatches = o.withContainerBackends(rt, b.List(p.Fork.Key()))
+		}
 		out = append(out, launchPatchFailure{label: "fork " + p.Fork.Key(),
 			subject: patchrecovery.Subject{Key: p.Fork.Key(), Pack: p.Fork.Pack, Name: p.Fork.Bin},
 			recipe:  p.Fork.RebaseRecipe(), failure: d.PatchFailure, bypass: b, runs: b.Runs})

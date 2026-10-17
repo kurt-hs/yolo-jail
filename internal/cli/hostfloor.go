@@ -370,10 +370,36 @@ func floorFork(p hostfloor.Program) packload.Fork {
 }
 
 // floorPatchedPlatform is the platform a patched fork's floor build is of: this host's, as a plain
-// fork's floor build is (floorForkBuild), the only one a materialize on the host takes. The floor
-// holds a PATCHED fork's build on Linux only (noEntryReason refuses every other host first), where it
-// is a capture jail's too, so the floor's lookups and a jail launch's name one build.
+// fork's floor build is (floorForkBuild), the only one a materialize on the host takes. On Linux it is
+// a capture jail's too, so the floor's lookups and a jail launch's name one build; on a Mac it is
+// darwin, the platform the macos-user fork-build act makes (forkBuildPlatform, PF-D97).
 func floorPatchedPlatform() string { return hostFloorCapturePlatform() }
+
+// floorPatchedRuntime is the runtime a patched fork's floor advance builds under, read off the
+// floor's platform so the two name one build: on a Mac the macos-user fork-build act
+// (macosuser.RunForkBuildAct, FP-D24, PF-D97), named for this one build whatever `runtime` is
+// configured — a container build here is a Linux build, which no floor on a Mac runs — as a plain
+// fork's floor build is (wireFloorBuild); elsewhere "", the advance's capture jail resolving its own.
+func floorPatchedRuntime() string {
+	if goos, _, _ := strings.Cut(floorPatchedPlatform(), "/"); goos == "darwin" {
+		return "macos-user"
+	}
+	return ""
+}
+
+// floorPatchedOptions is what every advance the floor opens of a patched fork starts from: the
+// floor's platform and runtime, its lines on out (the launch's stderr), as a launch at the host.
+func floorPatchedOptions(out io.Writer) advanceOptions {
+	return advanceOptions{platform: floorPatchedPlatform(), runtime: floorPatchedRuntime(), out: out, errw: out,
+		launch: true, host: true}
+}
+
+// floorNewAdvance and floorAdvancePatchedFork are the floor's advance seams (newAdvance,
+// advancePatchedFork), vars so a test can read the options the floor opens an advance with.
+var (
+	floorNewAdvance         = newAdvance
+	floorAdvancePatchedFork = advancePatchedFork
+)
 
 func floorAdvanceState(p hostfloor.Program, result advanceResult) hostfloor.PatchedState {
 	state := floorPatchedState(p)
@@ -419,9 +445,9 @@ func floorResolvePatched(ctx context.Context, p hostfloor.Program, out io.Writer
 		}
 	}()
 	fork := floorForkBuild(p, "").Fork
-	a, early := newAdvance(fork, advanceOptions{platform: floorPatchedPlatform(), out: out, errw: out,
-		launch: true, host: true, installed: installed, act: actInterruptOf(ctx), operationCtx: ctx,
-		readOnlyInitialization: true})
+	o := floorPatchedOptions(out)
+	o.installed, o.act, o.operationCtx, o.readOnlyInitialization = installed, actInterruptOf(ctx), ctx, true
+	a, early := floorNewAdvance(fork, o)
 	if early != nil {
 		state := floorPatchedState(p)
 		if early.problem != "" {
@@ -553,12 +579,12 @@ type floorFreshRequest struct {
 // context (withActInterrupt). It hands nothing: the floor installs the good build the record names
 // once it returns. A var so a test can count the floor's advances.
 var floorAdvance = func(ctx context.Context, f packload.Fork, out io.Writer, installed *installedCopy, act *run.ActInterrupt) advanceResult {
-	o := advanceOptions{platform: floorPatchedPlatform(), out: out, errw: out, launch: true, host: true,
-		installed: installed, act: act, operationCtx: ctx}
+	o := floorPatchedOptions(out)
+	o.installed, o.act, o.operationCtx = installed, act, ctx
 	if request, ok := ctx.Value(floorFreshRequestKey{}).(floorFreshRequest); ok {
 		o.freshCheck, o.freshIdentity, o.freshBoundary, o.ctx = true, request.identity, request.boundary, ctx
 	}
-	result := advancePatchedFork(f, o)
+	result := floorAdvancePatchedFork(f, o)
 	if o.freshCheck {
 		result.delivery.FreshFailure = result.freshFailure()
 	}

@@ -292,6 +292,10 @@ type HostContext struct {
 	// leaves in place (StageCaptureCommands).
 	Captures     []CaptureEntry
 	CapturesKept []string
+	// CapturesKeepAll says the caller could not read which store keys other running sessions were
+	// handed (internal/cli/run's HandedForkKeys), so CapturesKept may lack a key one of them has yet
+	// to materialize: the launch then prunes no staged entry (StageCaptureCommands' keepAll).
+	CapturesKeepAll bool
 }
 
 // GlobalGitignoreEnv names the global gitignore's staged path to the bootstrap, whose git step
@@ -836,7 +840,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		// THE CAPTURE STORE'S ENTRIES (H4), copied once per machine and pruned to what the user's
 		// store still selects; nothing at all when the launch stages none. Their own field, run
 		// best-effort, never StageCommands, every one of which refuses the launch when it fails.
-		CaptureStageCommands: StageCaptureCommands(captures, hostCtx.CapturesKept, ""),
+		CaptureStageCommands: StageCaptureCommands(captures, hostCtx.CapturesKept, hostCtx.CapturesKeepAll, ""),
 	}
 }
 
