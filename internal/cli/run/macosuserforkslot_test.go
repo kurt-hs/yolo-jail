@@ -117,7 +117,12 @@ func TestAMacosUserLaunchRefusesAPatchedForkWithNoBuild(t *testing.T) {
 		t.Fatalf("Run() = %d, backend ran %v: a patched fork with no build did not refuse:\n%s", r.rc, r.ran, r.out)
 	}
 	for _, w := range []string{"ERROR: 1 selected patched fork has no build on this machine", "yolo capture",
-		"Start anyway:", paths.AllowMissingProgramsEnv + "=1 yolo"} {
+		// PF-D97: the container backends, which build it for linux, before starting without it, in
+		// the hatch list's own one-column format (patchrecovery.Lines).
+		"\nStart anyway:\n" +
+			"  YOLO_RUNTIME=container yolo           launch on Apple Container\n" +
+			"  YOLO_RUNTIME=podman yolo              launch on podman\n" +
+			"  YOLO_ALLOW_MISSING_PROGRAMS=1 yolo    start without it\n"} {
 		if !strings.Contains(r.out, w) {
 			t.Errorf("the refusal lacks %q:\n%s", w, r.out)
 		}
@@ -129,6 +134,28 @@ func TestAMacosUserLaunchRefusesAPatchedForkWithNoBuild(t *testing.T) {
 	if d := handedOnMacosUser(t, r.env)["tool"]; d.Key != "" || !strings.Contains(d.Reason, "YOLO_RUNTIME=container yolo") ||
 		!strings.Contains(d.Reason, "YOLO_ALLOW_MISSING_PROGRAMS=1 yolo") {
 		t.Errorf("the sandbox is handed %+v for tool, want the reason and the macOS ways out", d)
+	}
+}
+
+// A PATCH FAILURE WITH NO BUILD TO RUN on macos-user: the error block's list is the launch's only
+// one (refuseMissingBuilds prints no second), so it names the container backends too (PF-D97).
+func TestAMacosUserPatchFailureWithNoBuildNamesTheContainerBackends(t *testing.T) {
+	patchedLaunchHome(t)
+	r := runMacosUserSlot(t, func(o *Options) {
+		o.BuildSlot = func(BuildSlotRequest) (map[string]entrypoint.ForkDelivery, map[string]TreeDelivery) {
+			return map[string]entrypoint.ForkDelivery{"tool": {Reason: "its series does not apply", PatchFailure: pfFailure()}}, nil
+		}
+	})
+	if r.rc == 0 || r.ran {
+		t.Fatalf("Run() = %d, backend ran %v: a patch failure with no build did not refuse:\n%s", r.rc, r.ran, r.out)
+	}
+	for _, w := range []string{"ERROR: fork forkpack/tool: patch series does not apply",
+		"  YOLO_RUNTIME=container yolo           launch on Apple Container\n" +
+			"  YOLO_RUNTIME=podman yolo              launch on podman\n" +
+			"  YOLO_ALLOW_MISSING_PROGRAMS=1 yolo    start without it\n"} {
+		if !strings.Contains(r.out, w) {
+			t.Errorf("the refusal lacks %q:\n%s", w, r.out)
+		}
 	}
 }
 
