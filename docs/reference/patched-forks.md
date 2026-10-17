@@ -1026,7 +1026,7 @@ Where a set hatch has nothing to act on, the act says so in one line rather than
 | :--- | :--- |
 | An **attach** | nothing: the running jail keeps what it was handed; the line says the hatch applies at the next fresh launch. `YOLO_USE_CACHED_GOOD` refuses there, naming `yolo stop` |
 | **In a jail** | nothing, since a jail launch builds no patched build; `YOLO_USE_CACHED_GOOD` refuses |
-| **macos-user** | a patched fork's hatches act as on podman, its darwin build being this backend's ([PF-D97](#PF-D97)), `YOLO_USE_CACHED_GOOD` serving the darwin good build; an extension's say they do nothing there, since no patched extension is built on it yet |
+| **macos-user** | a patched fork's hatches act as on podman, its darwin build being this backend's ([PF-D97](#PF-D97)), `YOLO_USE_CACHED_GOOD` serving the darwin good build; a patched extension's act as well, its darwin build likewise this backend's ([`pi-extensions.md` PPX-D45](pi-extensions.md#PPX-D45)) |
 | **`--update`** | `YOLO_ALLOW_PATCH_FAILURES` does not carry a fresh check past a failure, and `YOLO_USE_CACHED_GOOD` refuses to combine with it, naming either launch without `--update` |
 
 `YOLO_USE_CACHED_GOOD` additionally needs a capture store the runtime can mount read-only. With it,
@@ -1251,8 +1251,10 @@ keeps the plain-fork manifest where older users point and publishes the patched 
 - **A patched fork on macos-user** ([PF-D97](#PF-D97)): built and pinned by Linux unit tests
   with the act stood in; the three cells in `integration/macosuserpatchedfork_test.go` run only on
   the `macos-user.yml` job, and no Mac has run them or a real fork's darwin build.
-- **A patched extension on macos-user**: not built. Its build needs a darwin tree-build driver and
-  its delivery a copy into the sandbox in place of the read-only mount.
+- **A patched extension on macos-user**: built and delivered ([`pi-extensions.md`
+  PPX-D45](pi-extensions.md#PPX-D45)), unit-tested with the act stood in; the cells in
+  `integration/macosuserpatchedext_test.go` run only on the `macos-user.yml` job, and no Mac has run
+  them.
 
 ## Current values
 
