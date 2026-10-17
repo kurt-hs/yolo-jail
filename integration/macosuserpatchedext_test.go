@@ -334,9 +334,13 @@ func TestMacosUserPatchedExtensionConflictRefusesAndSkipStartsWithoutIt(t *testi
 			t.Errorf("the refusal lacks %q:\n%s", w, out)
 		}
 	}
-	if !strings.Contains(out, "YOLO_RUNTIME=podman") && !strings.Contains(out, "YOLO_RUNTIME=container") {
-		t.Errorf("the refusal names no container backend step (`YOLO_RUNTIME=podman yolo` or "+
-			"`YOLO_RUNTIME=container yolo`):\n%s", out)
+	// A series that does not apply fails on every backend, so the refusal offers the patch hatches,
+	// never a runtime switch (that belongs to the no-darwin-build refusal alone).
+	if !strings.Contains(out, "YOLO_SKIP_PATCHES=") {
+		t.Errorf("the refusal lacks YOLO_SKIP_PATCHES:\n%s", out)
+	}
+	if strings.Contains(out, "YOLO_RUNTIME=") {
+		t.Errorf("a conflicting series' refusal offers a runtime switch, which cannot help:\n%s", out)
 	}
 	// §8.7: YOLO_ALLOW_PATCH_FAILURES is listed only when a build of the series serves.
 	if strings.Contains(out, "YOLO_ALLOW_PATCH_FAILURES=") {
