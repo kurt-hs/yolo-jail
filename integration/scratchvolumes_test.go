@@ -433,6 +433,12 @@ func waitForScratchRemoval(dir, cname string, runs int, runtime string) (string,
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		left, err := scratchVolumesOf(ctx, runtime, cname)
 		cancel()
+		// podman 4.x fails the whole `volume ls` with "no such volume" when a volume is removed
+		// while it lists, which is exactly what the remover is doing here: list again.
+		if err != nil && strings.Contains(err.Error(), "no such volume") && time.Now().Before(deadline) {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
 		if err != nil {
 			return "", fmt.Errorf("%s", scratchRemovalFailureMessage(dir,
 				fmt.Sprintf("could not list scratch volumes after quit: %v", err)))
