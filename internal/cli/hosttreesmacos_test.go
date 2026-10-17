@@ -1,7 +1,7 @@
 package cli
 
 // hosttreesmacos_test.go pins PPX-D38 (docs/reference/pi-extensions.md) at the host notch: on a
-// host that builds no tree (macOS), a tree whose list entry is in a guarded posture list reaches no
+// host that builds no tree, a tree whose list entry is in a guarded posture list reaches no
 // notch that has it, so neither the render's refusal nor a host launch's line sends the user to a
 // jail, which would not load it either; both name moving the entry instead.
 

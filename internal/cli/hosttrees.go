@@ -27,9 +27,12 @@ package cli
 //   - Inside the comparison, and at every other bin's launch, the arm only reads which build the
 //     link names against the good build the record names.
 //
-// macOS hosts build no tree (the build is the jail's Linux platform): the render says so once,
-// naming a jail that has the extension, and so does `yolo host -- <bin>` of the owning agent,
-// which starts without it (noteHostTreeLines).
+// A Linux host builds its trees in a capture jail; a Mac builds them for darwin through the
+// macos-user fork-build act, as its host floor builds a patched fork (hostTreeRuntime,
+// hostTreePlatform). A host that cannot build one now — a Mac before `yolo macos-setup`, whose
+// reason names that step (hostTreeBuildBlocked), or a host yolo builds none on — has the render say
+// so once, with its step, and so does `yolo host -- <bin>` of the owning agent, which starts
+// without it (noteHostTreeLines).
 //
 // # A revert
 //
@@ -44,7 +47,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	goruntime "runtime"
 	"sort"
 	"strings"
 
@@ -62,12 +64,73 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
-// hostTreesBuild reports whether this host builds patched extensions: a Linux host, outside a
-// jail. A var so a test can stand a macOS host in.
-var hostTreesBuild = func() bool { return goruntime.GOOS == "linux" && !config.InJail() }
+// hostTreesBuild reports whether this host builds patched extensions now, outside a jail: a Linux
+// host, in a capture jail of its container runtime; and a Mac whose macos-user fork-build act can run
+// here (hostTreeBuildBlocked), the build being the sandbox account's, for darwin (PPX-D5, PF-D97). A
+// var so a test can stand a host that builds none in.
+var hostTreesBuild = func() bool {
+	if config.InJail() {
+		return false
+	}
+	switch hostTreeGOOS() {
+	case "linux":
+		return true
+	case "darwin":
+		return hostTreeBuildBlocked() == ""
+	}
+	return false
+}
+
+// hostTreeGOOS is the OS this host's tree builds are for, read off the host floor's platform
+// (hostFloorCapturePlatform), the seam a test stands a Mac in through.
+func hostTreeGOOS() string {
+	goos, _, _ := strings.Cut(floorPatchedPlatform(), "/")
+	return goos
+}
+
+// hostTreeRuntime is the runtime a host's tree advance builds under: on a Mac the macos-user
+// fork-build act, as the Mac host floor's patched fork's (floorPatchedRuntime) — a container build
+// there is a Linux build, which no Mac host agent loads; elsewhere "", the advance's capture jail
+// resolving its own.
+func hostTreeRuntime() string { return floorPatchedRuntime() }
+
+// hostTreePlatform is the platform a host's tree advance builds and reads builds for: on a Mac this
+// Mac's (floorPatchedPlatform, darwin), what the macos-user act makes; elsewhere a capture jail's
+// (captureJailPlatform), so the host and a jail launch name one build.
+func hostTreePlatform() string {
+	if hostTreeRuntime() == "macos-user" {
+		return floorPatchedPlatform()
+	}
+	return captureJailPlatform()
+}
+
+// hostTreeBuildBlocked is why this Mac's macos-user fork-build act cannot build a patched extension
+// now, with the step that ends it (the act's own refusals, as the Mac host floor asks them before a
+// fork's build: macActBlocked), or "" when it can, and on a host that is no Mac.
+func hostTreeBuildBlocked() string {
+	if hostTreeRuntime() != "macos-user" {
+		return ""
+	}
+	return macActBlocked(hostFloorMacProbes(), macActWords{act: "a patched extension's build",
+		confines: "a patched extension's build", runsAs: "a patched extension's build on a Mac runs as"},
+		"builds it")
+}
+
+// hostNoTreeWhy is why this host builds no tree, with its step when there is one: a Mac's blocked
+// act (hostTreeBuildBlocked), or a host yolo builds no tree on at all.
+func hostNoTreeWhy() string {
+	if why := hostTreeBuildBlocked(); why != "" {
+		return "this Mac cannot build a tree now: " + why
+	}
+	return "this host builds no tree"
+}
 
 // hostTreeAdvance runs a patched extension's advance at the host: a var so a test can count it.
 var hostTreeAdvance = advancePatchedFork
+
+// hostTreeNewAdvance opens a patched extension's advance at the host for a read (newAdvance): a var
+// so a test can read the options the host opens it with.
+var hostTreeNewAdvance = newAdvance
 
 // advanceHostTrees runs the check and the advance of every patched extension the host's selection
 // carries — only those bin's owning agent pack runs, when bin is not "" — before any render reads
@@ -107,9 +170,13 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 		}
 		trees = append(trees, f)
 	}
+	// A MAC PREPARES NOTHING BETWEEN LAUNCHES: macos-user runs no preparation (run.BackgroundChecksOn),
+	// so a Mac registers none and builds a next-launch tree's newer build in this act, as the Mac host
+	// floor does a patched fork's.
+	prepares := hostTreeRuntime() != "macos-user"
 	var queued []packload.Fork
 	for _, f := range trees {
-		if !f.Upstream && treeUpdateTiming(f) == timingNextLaunch {
+		if prepares && !f.Upstream && treeUpdateTiming(f) == timingNextLaunch {
 			queued = append(queued, f)
 		}
 	}
@@ -127,6 +194,10 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 	}
 	if !hostTreesBuild() {
 		if freshUpdate && len(trees) > 0 {
+			if why := hostTreeBuildBlocked(); why != "" {
+				fmt.Fprintf(errw, "yolo host: refusing --update: patched trees cannot be freshly prepared on this Mac now: %s\n", why)
+				return false
+			}
 			fmt.Fprintln(errw, "yolo host: refusing --update: patched trees cannot be freshly prepared on this host; run a fresh supported Linux jail launch instead")
 			return false
 		}
@@ -144,19 +215,21 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 		store.Ctx = ctx
 		errs := make(map[string]error, len(trees))
 		for _, f := range trees {
-			if err := registerFreshPreparation(ctx, store, f, captureJailPlatform(), identities, boundaries, errs); err != nil {
+			if err := registerFreshPreparation(ctx, store, f, hostTreePlatform(), identities, boundaries, errs); err != nil {
 				return fmt.Errorf("could not register a fresh check for %s: %w", f.Label(), err)
 			}
 		}
 		return nil
 	}
-	// A PARALLEL ADVANCE, as a jail launch's tree arm runs one (treepool.go, XB-D10): the host builds
-	// in podman's own capture jails, side by side. An admitted next-launch build is read without a
-	// foreground upstream refresh; only a cold/mismatched build or strict patch failure advances here.
+	// A PARALLEL ADVANCE, as a jail launch's tree arm runs one (treepool.go, XB-D10): a Linux host
+	// builds in podman's own capture jails, side by side; a Mac in its one sandbox account, one build
+	// at a time (run.SlotBuildJailsOn). An admitted next-launch build is read without a foreground
+	// upstream refresh where preparation runs; only a cold/mismatched build or strict patch failure
+	// advances here.
 	results := make([]advanceResult, len(trees))
-	err := runTreesInParallelPrepared(trees, "", act, errw, errw, prepare,
+	err := runTreesInParallelPrepared(trees, hostTreeRuntime(), act, errw, errw, prepare,
 		func(i int, f packload.Fork, lane treeLane) {
-			if !freshUpdate && !f.Upstream && treeUpdateTiming(f) == timingNextLaunch && currentPatchFailure(f) == nil {
+			if prepares && !freshUpdate && !f.Upstream && treeUpdateTiming(f) == timingNextLaunch && currentPatchFailure(f) == nil {
 				if entry, _, _ := hostTreeServing(f, hostActPerf); entry != nil {
 					richtext.Printer{W: errw, Color: color}.Printf("[dim]%s[/dim]", richtext.Escape(
 						f.Label()+": using admitted build "+entry.Key+"; newer builds are prepared between host launches"))
@@ -165,7 +238,7 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 				richtext.Printer{W: errw, Color: color}.Printf("[dim]%s[/dim]", richtext.Escape(
 					f.Label()+": no admitted build serves yet; preparing the cold host build now"))
 			}
-			opts := lane.options(advanceOptions{platform: captureJailPlatform(), color: color,
+			opts := lane.options(advanceOptions{platform: hostTreePlatform(), runtime: hostTreeRuntime(), color: color,
 				launch: true, host: true, act: act, bypassCommand: command})
 			if freshUpdate {
 				opts.freshCheck = true
@@ -233,7 +306,7 @@ func ownerRuns(packs []*packload.Pack, f packload.Fork, bin string) bool {
 // it loads at the host — its list entry reaches the host — is not there to load: `~/<into>` names
 // no directory, because nothing has built it or no apply has rendered it. It names the extension,
 // the cause and the next step, and returns false to stop the launch. Silent where the host builds
-// no tree (macOS, a jail), which is exempt.
+// no tree now (a jail, a Mac before its setup — noteHostTreeLines says that one), which is exempt.
 func hostTreeGate(errw io.Writer, bin, home string) bool {
 	// Under `host_management: none` yolo writes nothing into the home, so no link is ever there:
 	// that contract delivers no tree at the host, and stops nothing for one.
@@ -312,8 +385,8 @@ func hostTreePatchFailureAllows(errw io.Writer, f packload.Fork, bin, dest strin
 // offered only when one is linked.
 func hostTreeGateHatches(f packload.Fork, command, runs string) []patchrecovery.Hatch {
 	var from []patchrecovery.Hatch
-	if a, early := newAdvance(f, advanceOptions{platform: captureJailPlatform(), out: io.Discard, errw: io.Discard,
-		launch: true, host: true, bypassCommand: command, readOnlyInitialization: true}); early == nil {
+	if a, early := hostTreeNewAdvance(f, advanceOptions{platform: hostTreePlatform(), runtime: hostTreeRuntime(), out: io.Discard,
+		errw: io.Discard, launch: true, host: true, bypassCommand: command, readOnlyInitialization: true}); early == nil {
 		from = a.recoveryHatches()
 	}
 	var out []patchrecovery.Hatch
@@ -420,7 +493,8 @@ func linkHostLaunchTrees(errw io.Writer, bin, home string) {
 
 // hostTreeFallbacks is packs with every UNMODIFIED EXTENSION's fallback taken that the host renders
 // no tree for (packload.ApplyTreeFallbacks; docs/design/pi-extension-store-builds.md XB-D7): every
-// one on a host that builds none (macOS), and on a Linux host each whose good build does not serve.
+// one on a host that builds none now (hostTreesBuild), and on a host that builds them each whose
+// good build does not serve.
 // What the host apply's list contributions are collected from, so the agent installs each such
 // extension itself, from its raw entry, as it would with no yolo in between; the trees taken come
 // back for the apply's lines.
@@ -474,7 +548,7 @@ const hostFallbackAction = "not rendered: "
 // hostFallbackLine is the line a host act prints for a fallback it took: what the agent installs in
 // the tree's place, and why there is no tree.
 func hostFallbackLine(f packload.Fork) string {
-	why := "this host builds no tree (a macOS host builds none)"
+	why := hostNoTreeWhy()
 	if hostTreesBuild() {
 		if _, _, reason := hostTreeServing(f); reason != "" {
 			why = reason
@@ -490,7 +564,8 @@ func hostTreeServing(f packload.Fork, logs ...*perf.Log) (*capture.Entry, *packs
 	if len(logs) > 0 {
 		defer logs[0].Span("preparation.admitted_read").End()
 	}
-	a, early := newAdvance(f, advanceOptions{platform: captureJailPlatform(), out: io.Discard, errw: io.Discard, host: true})
+	a, early := hostTreeNewAdvance(f, advanceOptions{platform: hostTreePlatform(), runtime: hostTreeRuntime(), out: io.Discard,
+		errw: io.Discard, host: true})
 	if early != nil {
 		return nil, nil, early.delivery.Reason
 	}
@@ -576,8 +651,7 @@ func renderHostTree(f packload.Fork, home string, man *hostskills.Manifest, obse
 			res.Action = hostFallbackAction + hostFallbackLine(f)
 			return res
 		}
-		res.Action = "refused: " + f.Label() + " is built for a Linux jail, and this host builds no tree — " +
-			noHostTreeStep(f, ownerBinFor(f))
+		res.Action = "refused: " + f.Label() + " is not built here — " + noHostTreeStep(f, ownerBinFor(f))
 		return res
 	}
 	entry, _, why := hostTreeServing(f)
@@ -708,8 +782,8 @@ func swapLink(dest, target string) error {
 // (its list entry reaches the host) — a disclosure (OQ-RO3), as a jail launch's block is (PPX-D26).
 // It names the build `~/<into>` links to, which is what the agent loads, and, when this machine's
 // good build has moved past it with no render since, that `yolo host apply --assert` renders the good
-// one. On a host that builds no tree (macOS) it says the agent starts without it and names a jail that
-// has it (§9, §11). Silent under `host_management: none`, which writes no link, and in a jail.
+// one. On a host that builds no tree now it says the agent starts without it and names the step: a
+// Mac's setup, or a jail that has it (§9, §11). Silent under `host_management: none`, which writes no link, and in a jail.
 func noteHostTreeLines(errw io.Writer, color bool, bin, home string) {
 	if config.InJail() || config.HostManagementMode() == config.HostManagementNone {
 		return
@@ -733,13 +807,12 @@ func noteHostTreeLines(errw io.Writer, color bool, bin, home string) {
 		if !hostTreesBuild() {
 			if f.Fallback != "" {
 				pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("yolo host: %s is not built on this host — "+
-					"its tree is built for a Linux jail, and a macOS host builds none; %s installs %s itself, "+
-					"in this home, from its raw entry", f.Label(), bin, f.Fallback)))
+					"%s; %s installs %s itself, in this home, from its raw entry", f.Label(), hostNoTreeWhy(), bin,
+					f.Fallback)))
 				continue
 			}
-			pr.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf("yolo host: %s is not delivered on this host — "+
-				"its tree is built for a Linux jail, and a macOS host builds none; %s starts without it. %s",
-				f.Label(), bin, noHostTreeStep(f, bin))))
+			pr.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf("yolo host: %s is not delivered on this host, "+
+				"so %s starts without it — %s", f.Label(), bin, noHostTreeStep(f, bin))))
 			continue
 		}
 		if f.Fallback != "" {
@@ -761,15 +834,21 @@ func noteHostTreeLines(errw io.Writer, color bool, bin, home string) {
 	}
 }
 
-// noHostTreeStep is the next step for f on a host that builds no tree (PPX-D38): a jail that has
-// it, running bin, when its list entry reaches a jail; otherwise no notch has it, since the entry is
-// in a guarded posture list, which reaches the host alone, so the step is moving the entry.
+// noHostTreeStep is why f is not built on a host that builds no tree now, and the next step for it.
+// On a Mac whose macos-user act cannot run yet, that act's own reason and step (hostNoTreeWhy): the
+// Mac builds the tree once it can, whatever lists the entry. Elsewhere (PPX-D38): a jail that has it,
+// running bin, when its list entry reaches a jail; otherwise no notch has it, since the entry is in a
+// guarded posture list, which reaches the host alone, so the step is moving the entry.
 func noHostTreeStep(f packload.Fork, bin string) string {
-	if f.DeliveredInJail() {
-		return "YOLO_RUNTIME=podman yolo -- " + bin + " runs it in a jail that has it"
+	why := hostNoTreeWhy()
+	if hostTreeBuildBlocked() != "" {
+		return why
 	}
-	return "its list entry is in a guarded posture list, which reaches the host alone, so no jail has it either — " +
-		packload.GuardedOnlyStep
+	if f.DeliveredInJail() {
+		return why + "; YOLO_RUNTIME=podman yolo -- " + bin + " runs it in a jail that has it"
+	}
+	return why + ", and its list entry is in a guarded posture list, which reaches the host alone, so no jail " +
+		"has it either — " + packload.GuardedOnlyStep
 }
 
 // hostTreeLine is f's line at a host launch, read from the link the render owns: "" when
