@@ -91,9 +91,9 @@ var errForkBuildChildFromTest = errors.New("a test binary does not self-exec the
 // forkBuildChildArgv is the child's arguments for b's build in staging, its jail booted with rt
 // ("" for the one the child's launch resolves).
 //
-// A fork's build — plain or patched — names its build's id (--build-id), which the macos-user arm
-// hands the fork-build act with the build line, as forkBuildRunJail seals it in this process
-// (FP-D24, PF-D97); and a known runtime is named (--runtime) rather than left to the child's
+// Every build — a fork's, plain or patched, and a patched extension's — names its build's id
+// (--build-id), which the macos-user arm hands the fork-build act with the build line, as
+// forkBuildRunJail seals it in this process (FP-D24, PF-D97, PPX-D5); and a known runtime is named (--runtime) rather than left to the child's
 // environment, so the child's build jail boots on the runtime its build is filed under.
 func forkBuildChildArgv(staging string, b forkBuild, color bool, rt string) []string {
 	argv := []string{"internal", forkBuildJailVerb, "--workspace=" + staging, "--bin=" + b.Fork.Bin}
@@ -101,9 +101,8 @@ func forkBuildChildArgv(staging string, b forkBuild, color bool, rt string) []st
 		// A PATCHED EXTENSION's build jail: the tree's final copy, and the seal narrowed to the
 		// contributing pack (PPX-D5).
 		argv = append(argv, "--tree="+b.Fork.Bin)
-	} else {
-		argv = append(argv, "--build-id="+b.id())
 	}
+	argv = append(argv, "--build-id="+b.id())
 	if rt != "" {
 		argv = append(argv, "--runtime="+rt)
 	}
@@ -460,7 +459,7 @@ func exitStatus(err error) int {
 	return 1
 }
 
-// runForkBuildJail is `yolo internal fork-build-jail --workspace=W --bin=B [--tree=N | --build-id=I]
+// runForkBuildJail is `yolo internal fork-build-jail --workspace=W --bin=B [--tree=N] --build-id=I
 // [--runtime=R] --only=P... [--color] [--jail-streams] -- <build>`: the build jail of one fork, in
 // the staged workspace W, under the seal and narrowed to the packs named (forkBuildRunJail's jail,
 // run here as a child of the launch that staged it), booted with R when it is named, relaying its
@@ -499,7 +498,7 @@ func runForkBuildJail(args []string, out, errw io.Writer) int {
 	}
 	// A tree's build line is optional (PPX-D3): its jail still copies the checkout and is admitted.
 	if workspace == "" || bin == "" || (build == "" && tree == "") || len(only) == 0 {
-		fmt.Fprintln(errw, "usage: yolo internal fork-build-jail --workspace=DIR --bin=NAME [--tree=NAME | --build-id=ID] "+
+		fmt.Fprintln(errw, "usage: yolo internal fork-build-jail --workspace=DIR --bin=NAME [--tree=NAME] --build-id=ID "+
 			"[--runtime=RUNTIME] --only=PACK... [--color] -- BUILD")
 		return 2
 	}
@@ -519,12 +518,10 @@ func runForkBuildJail(args []string, out, errw io.Writer) int {
 			s.jailReady = func() { _, _ = jr.Write([]byte{'R'}); _ = jr.Close() }
 		}
 	}
-	seal := &captureSeal{only: only, tree: tree}
-	if tree == "" {
-		// A FORK'S BUILD, plain or patched, carries its line and id for the macos-user arm, as
-		// forkBuildRunJail's seal does in this process (FP-D24, PF-D97).
-		seal.build, seal.id = build, buildID
-	}
+	// EVERY BUILD — a fork's, plain or patched, and a patched extension's, whose line may be "" —
+	// carries its line and id for the macos-user arm, as forkBuildRunJail's seal does in this process
+	// (FP-D24, PF-D97, PPX-D5).
+	seal := &captureSeal{only: only, tree: tree, build: build, id: buildID}
 	var on []captureAct
 	if rt != "" {
 		on = append(on, captureAct{runtime: rt})

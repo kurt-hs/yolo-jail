@@ -3,8 +3,8 @@ package cli
 // hosttrees_test.go pins a PATCHED EXTENSION at the host notch (docs/reference/pi-extensions.md
 // §8.3, §11; PPX-D11, PPX-D18): the render links `~/<into>` to a versioned copy of the good build in
 // the host-private trees directory, through an owned link swapped by rename, keeps the previous
-// version until the next move, never takes a path the user owns, and says on a macOS host that it
-// builds none; `yolo host apply` advances before the render in its acting posture only; `yolo host
+// version until the next move, never takes a path the user owns, and says on a host that builds no
+// tree that it builds none (a Mac's own lines: patchedtreemac_test.go); `yolo host apply` advances before the render in its acting posture only; `yolo host
 // -- <bin>` advances only for its owning agent's programs; and the owning agent does not start at
 // the host without the tree it loads.
 //
@@ -165,8 +165,8 @@ func TestTheHostRenderNeverTakesAUsersPath(t *testing.T) {
 	}
 }
 
-// A MACOS HOST builds no tree, and the render says so naming a jail that has it (§11).
-func TestAMacOSHostRendersNoTreeAndNamesAJail(t *testing.T) {
+// A HOST THAT BUILDS NO TREE advances none, and the render says so naming a jail that has it (§11).
+func TestAHostThatBuildsNoTreeRendersNoneAndNamesAJail(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
 	prev := hostTreesBuild
 	hostTreesBuild = func() bool { return false }
@@ -650,9 +650,9 @@ func TestATreeListedOnlyForJailsNeverStopsAHostLaunch(t *testing.T) {
 	}
 }
 
-// ON A MACOS HOST `yolo host -- tool` starts the owner without the tree, and says so once, naming a
-// jail that has it (§9, §11). Red if hostExec stops calling noteHostTreeLines.
-func TestAMacOSHostLaunchSaysTheOwnerStartsWithoutItsTree(t *testing.T) {
+// ON A HOST THAT BUILDS NO TREE `yolo host -- tool` starts the owner without the tree, and says so
+// once, naming a jail that has it (§9, §11). Red if hostExec stops calling noteHostTreeLines.
+func TestAHostThatBuildsNoTreeLaunchSaysTheOwnerStartsWithoutItsTree(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
 	fx.listTreeForAgent(t)
 	// host_apply_on_launch off, as this config had it before `own` derived it on: the lines under

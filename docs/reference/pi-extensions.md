@@ -272,6 +272,16 @@ for another build of the same key and its bound are [PF-D17](patched-forks.md#PF
 Ctrl-C ends the act's whole wait ([PF-D57](patched-forks.md#PF-D57)). A tree's build jail is told
 which extension it builds (`YOLO_TREE_BUILD`, [PPX-D30](#PPX-D30)).
 
+**On macos-user, and at a Mac's host, the build is darwin's** ([PPX-D45](#PPX-D45)): the act is the
+sealed macos-user build act a patched fork's darwin build runs in
+([`patched-forks.md` PF-D97](patched-forks.md#PF-D97),
+[FP-D24](../design/forked-programs-as-packs.md#FP-D24)), as the sandbox account under the sealed
+Seatbelt profile, in a staging tree keyed by the build. Its script is the tree's: the toolchain record
+(the yolo, the darwin floor, the macOS release, and the floor's own `node` and `npm`), the optional
+build line in a subshell in the checkout, then the same fixed copy into the reserved directory, with
+macOS's `/bin/cp`. The admit is the same, its link check reading that staging tree. The good build is
+per platform, so a Mac that launches on podman and on macos-user builds one commit once for each.
+
 **The admit** keeps the empty-delta refusal and the link check, and adds three ([PPX-D21](#PPX-D21)):
 
 - **Every `produces` path exists** in the tree.
@@ -319,6 +329,13 @@ running: its build jail not starting, a lock wait running out, an apply error
    `YOLO_FORK_BUILDS`, not an overload of it.
 4. **An attach names the build its jail was handed**, from the delivery record each fresh launch
    leaves beside its tree, and says when a newer good build waits for the next fresh launch.
+
+**On macos-user there is no mount** ([PPX-D45](#PPX-D45)): the per-launch copy is laid into the
+launch's home overlay at `~/<into>`, the same overlay that carries every other `files` tree there. It
+is staged host-owned and read-only under `/Users/Shared/yolo-staged`, the sandbox's bootstrap installs
+it into the sandbox home, and the session's Seatbelt profile denies writes to it, which is this
+backend's `:ro`. `YOLO_PATCHED_TREES` is relayed to the bootstrap, so the boot reads the same
+decisions a container's does.
 
 A move reaps every other build of the key at once: no jail reads the store for a tree, so no running
 jail's copy can be stranded. A copy can still be cut short by another workspace's launch moving the
@@ -380,9 +397,9 @@ contribution with no `from`:
   agent loads is what the link names ([PPX-D26](#PPX-D26)).
 
 A `pi` started outside yolo at the host finds whatever the link names, and with no link pi skips the
-path silently. **macOS host:** none, since the build is the jail's Linux platform; a line says so
-once and names a jail that has the extension, `YOLO_RUNTIME=podman yolo -- pi`, or, for a tree
-listed only in a guarded posture list, the step that works ([PPX-D38](#PPX-D38)).
+path silently. **macOS host:** the same render, with a darwin build made by the macos-user build act
+([§7.1](#71-the-build-act), [PPX-D45](#PPX-D45)). Where that act cannot run on this Mac (no sandbox
+account yet), the line says why and names its step.
 
 ## 9. Failure, and the next step
 
@@ -421,8 +438,10 @@ that fails while a good build exists refuses too, unless a recovery hatch is set
   agent pack's launchers, the base's and any fork's, carry a gate that runs first, before any install,
   update or refresh ([XB-D25](../design/pi-extension-store-builds.md#XB-D25)), and the jail's shell
   stays up. It is the backstop for an attach, which boots nothing, and a nested launch.
-- **Notches that build no tree** (macos-user, the macOS host, Apple Container below its read-only
-  floor, a nested launch) start pi with a line said once, naming `YOLO_RUNTIME=podman`.
+- **Notches that build no tree** (Apple Container below its read-only floor, a nested launch) start
+  pi with a line said once, naming `YOLO_RUNTIME=podman`. macos-user and a Mac's host build one
+  ([PPX-D45](#PPX-D45)); macos-user's refusal also names the two container backends,
+  `YOLO_RUNTIME=container yolo` and `YOLO_RUNTIME=podman yolo`, as a patched fork's does.
 - **With no owning agent pack** no list entry names the tree, pi does not load it, the lint says so,
   and nothing stops. **A tree is built and mounted only at a notch its entry reaches**
   ([PPX-D35](#PPX-D35)): one listed only in a guarded posture list reaches the host and no jail, so
@@ -457,8 +476,8 @@ as they serve a fork ([OQ-PBR6](patched-forks.md#why-its-this-way)), named by th
   -- pi` leave it out the same way: no link is written or moved and the entries are dropped from the
   render. Nothing is recorded, so the next launch without the variable delivers it as before. An
   entry the user wrote, or another pack's, is not touched. An attach keeps the extensions its jail
-  booted with, and a launch in a jail or on macos-user delivers no tree; each says the variable has
-  no effect there.
+  booted with, and a launch in a jail delivers no tree; each says the variable has no effect there.
+  On macos-user it works as on podman ([PPX-D45](#PPX-D45)).
 - **`YOLO_USE_CACHED_GOOD`** takes an extension's key too: the record's older good build's tree,
   validated as a fork's is, becomes the launch's per-launch copy, with one line naming the older
   build. No check, replay or build runs, and the record is not written. With nothing usable it hands
@@ -492,9 +511,9 @@ as they serve a fork ([OQ-PBR6](patched-forks.md#why-its-this-way)), named by th
 | :--- | :--- |
 | **jail, podman** | yes |
 | **jail, Apple Container** | from the read-only floor up, yes, built as a patched fork is: a capture jail cannot start beside a running jail (INFERRED), so a candidate stays pending and the good build serves. **Below the floor no tree is built**, because `:ro` is ignored there and a build jail's read-only binds would be writable, which the seal does not allow for. A good build already on this machine is still delivered as a per-launch copy; with none, pi starts without the extension and the line names `YOLO_RUNTIME=podman` |
-| **jail, macos-user** | none: no sealed build there ([FP-D3](../design/forked-programs-as-packs.md#FP-D3)); the line names `YOLO_RUNTIME=podman` |
+| **jail, macos-user** | yes, built for darwin by the sealed macos-user build act and copied into the sandbox home through the home overlay ([PPX-D45](#PPX-D45)). UNMEASURED on a Mac: the `macos-user.yml` cells |
 | **`yolo host`, Linux** | yes ([§8.3](#83-at-the-host)) |
-| **`yolo host`, macOS** | none; the line names `YOLO_RUNTIME=podman yolo -- pi` |
+| **`yolo host`, macOS** | yes, the Linux host's render with a darwin build from the same act ([PPX-D45](#PPX-D45)). UNMEASURED on a Mac |
 | **guest** | unbuilt, as every verb there is |
 
 ## 12. Relation to the other pi routes
@@ -524,11 +543,8 @@ which is exactly the fork's current tree, and the held suffix names `yolo pack s
 only in a guarded posture list is built and loaded at the Linux host and in no jail
 ([PPX-D35](#PPX-D35)).
 
-> [!WARNING]
-> **On macos-user and a macOS host every migrated extension is absent**, where before pi installed
-> each fork from its `git:` entry there. Step 2 drops that entry from a list that reaches every notch,
-> no list can be narrowed to those notches alone, and those notches build no tree. Each says so once
-> and names `YOLO_RUNTIME=podman`.
+On macos-user and a Mac's host each migrated extension is built for darwin, as on Linux
+([PPX-D45](#PPX-D45)). The first launch there builds every one, so it takes longer.
 
 **An older yolo** refuses the manifest at the host, as it refuses a patched fork's; the mitigations
 are [`patched-forks.md` §10](patched-forks.md#10-migration-from-a-plain-fork)'s, and `yolo features`
@@ -560,12 +576,12 @@ names `patched-extensions`.
 
 **Not covered:**
 
-- **A tree with no build, admitted without a jail.** It would reach macos-user; deferred.
+- **A tree with no build, admitted without a jail.** macos-user builds trees now
+  ([PPX-D45](#PPX-D45)), so this is no longer needed there.
 - **Writing the list entry for the author.** It waits on [OQ-PR1](pack-system.md#oq-pr1).
 - **Moving a tree inside a running jail.** A running jail keeps what it booted with; a tree moves
   only at a fresh launch, where pi's own refresh would move a `git:` package in a running jail.
-- **A `files` contribution, or a list entry, scoped to a posture or notch**, which could keep the
-  `git:` entry on macos-user and a macOS host.
+- **A `files` contribution, or a list entry, scoped to a posture or notch.**
 - **A lint for an old entry under another name** than the extension's or its upstream's. The pi pack
   could declare the pattern, as it does for the subagents render's `whenListed.matches`.
 - **Resolving conflicts, and writing the series**, as for [patched forks](patched-forks.md#13-what-this-does-not-cover).
@@ -785,7 +801,7 @@ adjust later."*), and remain his to overrule once he has tested a build.
 | <a id="PPX-D22"></a>PPX-D22 | The per-launch copy is `<tree>.patched/<slug>`, made by `capture.CopyTree` keeping every directory's owner write bit so it can be removed, and removed with its tree; the record's one re-read is the advance run again |
 | <a id="PPX-D23"></a>PPX-D23 | `YOLO_PATCHED_TREES` carries, per extension key, `into`, the handed entry or the reason there is none, the owning agent pack, and `stop`; the delivery record gains an additive `trees` map, which an attach reads |
 | <a id="PPX-D24"></a>PPX-D24 | A jail's `stop` is set when nothing serves, the owner's entry reaches a jail, and the notch builds trees; the gate is baked into each of the owner's launchers immediately before exec. Amended: a fresh launch refuses instead ([PPX-D40](#PPX-D40)), and the gate runs first in each launcher ([XB-D25](../design/pi-extension-store-builds.md#XB-D25)) |
-| <a id="PPX-D25"></a>PPX-D25 | The host's versioned copies live under `~/.local/share/yolo-jail/host-trees/`, 0700 and never mounted by a jail; the advance runs at `yolo host apply --assert` and `yolo apply --at host --assert`, never a dry run, and at `yolo host -- <bin>` only under `host_apply_on_launch` when the owning agent pack declares `<bin>`; a macOS host refuses each tree naming a jail |
+| <a id="PPX-D25"></a>PPX-D25 | The host's versioned copies live under `~/.local/share/yolo-jail/host-trees/`, 0700 and never mounted by a jail; the advance runs at `yolo host apply --assert` and `yolo apply --at host --assert`, never a dry run, and at `yolo host -- <bin>` only under `host_apply_on_launch` when the owning agent pack declares `<bin>`; a macOS host refuses each tree naming a jail. **Amended by [PPX-D45](#PPX-D45):** a Mac's host builds its trees for darwin |
 | <a id="PPX-D26"></a>PPX-D26 | At the Linux host, `yolo host -- <bin>` of an owning agent stops before exec when a tree its entry reaches the host with names no directory at `~/<into>`, reading the link rather than the record; under `host_management: none` it stops nothing |
 | <a id="PPX-D27"></a>PPX-D27 | The no-entry lint is a warning at `yolo pack lint`, never a failure, and a line in every launch's "Patched extensions this launch" block; lint counts a series directory as content the pack ships |
 | <a id="PPX-D28"></a>PPX-D28 | The explicit acts take the extension key: `yolo capture <pack>/<name>` (a slashed name routes there only where the selection declares a patched extension), and `yolo pack update`, `install` and `status`; lines name "extension `<key>`" |
@@ -805,6 +821,7 @@ adjust later."*), and remain his to overrule once he has tested a build.
 | <a id="PPX-D42"></a>PPX-D42 | A refused boot writes its structured cause (`boot-refusal.json`) and the host reads it rather than parse prose; each **build cause** is said once, with every build it left without; one config refusal at boot stops the later builds sealed the same way; a read-only path under a directory the user's own jail makes writable is yolo's bug, said so with where to report it. Found when one file's refusal was relayed four times in unreadable form |
 | <a id="PPX-D43"></a>PPX-D43 | Superseded 2026-10-06 by [PPX-D40](#PPX-D40) and deleted: a host-side line, keyed on the command's base name, warning that the program would not start |
 | <a id="PPX-D44"></a>PPX-D44 | A host launch links the tree it built even when the render gate's observe pass overruns or names a decision the launch cannot ask (`linkHostLaunchTrees`), taking nothing the render would not; the overrun's line is about the rest of the render. Found at the maintainer's first `yolo host -- pi` with a patched extension, which a successful build turned into a refusal |
+| <a id="PPX-D45"></a>PPX-D45 | **The maintainer's rulings, 2026-10-16:** *"Patched forks definitely need to work on macOS user. Sure, we can refuse until then, but let's fix it now ASAP"* ([`patched-forks.md` PF-D97](patched-forks.md#PF-D97)), and earlier *"All of my opinions here go for anything that could be patched, the PI agent or PI extensions."* So **a patched extension works on macos-user and at a Mac's host too**, superseding this doc's "no sealed build there" for both. The advance, the hatches (`YOLO_SKIP_EXTENSIONS` included), the refusal and [OQ-PPX3](#OQ-PPX3) are the container's. The builder is the sealed macos-user build act running the tree's script for darwin. Delivery is a copy through the home overlay into the sandbox home, write-protected by Seatbelt, in place of the read-only mount, and `YOLO_PATCHED_TREES` is relayed to the sandbox's bootstrap. A tree with no build line needs no build, only that copy, but still passes the act and the admit (one admit path, [§4](#4-the-declaration)). Amends [PPX-D25](#PPX-D25)'s "a macOS host refuses each tree"; [PPX-D38](#PPX-D38) stays for a host that still builds none. **NOT MEASURED on a Mac:** the `macos-user.yml` cells |
 | OQ-PPX1 | Decided on its leaning (B) under delegation: the good build serves; with none, the owning agent pack's launchers stop before exec and say why; notches that never build trees are exempt. Recorded as [PPX-D18](#PPX-D18), amended by [PPX-D40](#PPX-D40) |
 | OQ-PPX2 | Decided on its leaning (A) under delegation: no pin in `packs.lock.json`; a hold is a tag ref or `agent_updates`. Recorded as [PPX-D19](#PPX-D19) |
 | OQ-1 | Machine-scoped storage for pi's npm prefix, ruled 2026-09-20 and built 2026-09-21. **Retired 2026-10-05** by [XB-D14](../design/pi-extension-store-builds.md#XB-D14): one jail's install could change what another ran ([§17.1](#171-the-storage-tier-retired)) |

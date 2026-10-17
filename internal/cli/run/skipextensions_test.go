@@ -3,19 +3,17 @@ package run
 // skipextensions_test.go pins YOLO_SKIP_EXTENSIONS and cached-good for extensions at a launch's call
 // sites (docs/reference/pi-extensions.md §9.1, patched-forks.md §8.5), from Run's own entry point: a fresh
 // launch hands the tree arm no skipped extension, mounts nothing for it, marks it skipped on the
-// wire with no stop and says so in one line; a name covering nothing warns; an attach, a nested
-// launch and a macos-user launch each say the hatch does nothing there; and YOLO_USE_CACHED_GOOD
+// wire with no stop and says so in one line; a name covering nothing warns; an attach and a nested
+// launch each say the hatch does nothing there (a macos-user launch acts on it:
+// macosusertreeslot_test.go); and YOLO_USE_CACHED_GOOD
 // naming an extension reaches the tree arm.
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
-	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
-	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
@@ -110,24 +108,6 @@ func TestAnAttachSaysTheSkipAppliesAtTheNextFreshLaunch(t *testing.T) {
 	}
 	if !strings.Contains(printed, "YOLO_SKIP_EXTENSIONS: this jail keeps its extensions; it applies at the next fresh launch") {
 		t.Errorf("the attach does not say the hatch waits for a fresh launch:\n%s", printed)
-	}
-}
-
-// MACOS-USER delivers no tree, so the hatch does nothing there, and says so.
-func TestAMacosUserLaunchSaysTheSkipHasNoEffect(t *testing.T) {
-	treeLaunchHome(t, true)
-	var stdout, stderr bytes.Buffer
-	o := dispatchOptions(t, t.TempDir(), "macos-user", &stdout, &stderr, nil)
-	withEnv(o, patchrecovery.SkipExtensionsEnv, "1")
-	o.MacosUserRun = func(*jsonx.OrderedMap, string, []string, []string, string, string, macosuser.HomeOverlay,
-		macosuser.HostContext, bool, *jsonx.OrderedMap, []packload.BlockedTool, macosuser.JailDaemons) int {
-		return 0
-	}
-	if rc := Run(*o); rc != 0 {
-		t.Fatalf("Run() = %d\n%s%s", rc, stdout.String(), stderr.String())
-	}
-	if out := stdout.String() + stderr.String(); !strings.Contains(out, "YOLO_SKIP_EXTENSIONS: no effect on macos-user") {
-		t.Errorf("the macos-user launch does not say the hatch has no effect:\n%s", out)
 	}
 }
 

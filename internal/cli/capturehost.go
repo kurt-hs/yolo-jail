@@ -434,9 +434,9 @@ func capturePatchedFork(f packload.Fork, out, errw io.Writer, color bool) int {
 	// A PATCHED FORK'S BUILD IS FOR ITS JAIL'S PLATFORM, as a plain fork's is (FP-D24, PF-D97): under
 	// macos-user it is this Mac's, named to the build so the jail it boots is the one the platform was
 	// read from; any other runtime is left to the run pipeline, as captureHost leaves a plain fork's.
-	// A patched extension's build does not run on macos-user, so it keeps the container's platform.
+	// A patched extension's build is too (PPX-D5): its tree is built where it runs.
 	platform, rt := captureJailPlatform(), ""
-	if !f.IsTree() && captureRuntime() == "macos-user" {
+	if captureRuntime() == "macos-user" {
 		rt = "macos-user"
 		platform = forkBuildPlatform(rt)
 	}
@@ -801,8 +801,8 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 	// property is unrepresentable instead of conditional: there is nothing in that jail to
 	// resolve a capture against.
 	opts.CapturesDir = func() string { return "" }
-	// A non-nil seal identifies a fork-build capture. seal.build is only the native-build eligibility
-	// field (a fork's, plain or patched) and stays empty for trees, which still need provenance.
+	// A non-nil seal identifies a fork-build capture: a fork's, plain or patched, or a patched
+	// extension's (seal.tree), whose seal.build may be "" and which still needs provenance.
 	if seal != nil {
 		// The actual runtime is selected inside the ordinary pipeline, where confinement, backend
 		// validation and automatic fallback are all applied. Persist that answer before its backend
@@ -876,21 +876,15 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 	opts.MacosUserRun = func(cfg *jsonx.OrderedMap, _ string, _, _ []string,
 		repoRoot, packRoot string, _ macosuser.HomeOverlay, _ macosuser.HostContext, dryRun bool,
 		packEnv *jsonx.OrderedMap, blocked []packload.BlockedTool, _ macosuser.JailDaemons) int {
-		// A PATCHED EXTENSION'S BUILD DOES NOT RUN ON THIS BACKEND: its build jail runs a tree's script
-		// (treeBuildJailArgv), which the fork-build act below does not. A fork's build does, plain
-		// (FP-D24) or patched (PF-D97), its series already replayed into the checkout.
-		if seal != nil && seal.tree != "" {
-			// Rung 4: no step of the user's makes macos-user build one, so the line names whose it
-			// is and what builds and runs one today, a container backend.
-			fmt.Fprintln(errw, "yolo capture: a patched extension is built on a container backend only — "+
-				"on macos-user only a fork's build runs")
-			fmt.Fprintf(errw, "  That is yolo's to wire. A podman jail builds and runs it today: "+
-				"YOLO_RUNTIME=podman yolo -- %s\n", bin)
-			return 1
-		}
-		if seal != nil && (seal.build == "" || seal.id == "") {
-			// A fork's seal handed no build line or id has nothing for the act to run, and an empty build
-			// would be admitted as one. Only a caller of yolo's makes such a seal, so the line says so.
+		// EVERY BUILD RUNS ON THIS BACKEND through the fork-build act below: a fork's, plain (FP-D24) or
+		// patched (PF-D97), its series already replayed into the checkout, and a PATCHED EXTENSION's
+		// (PPX-D5), whose act runs the tree's script — the optional build line, then the checkout copied
+		// into its reserved directory (TreeDir) — as a container build jail runs treeBuildJailArgv.
+		//
+		// Every seal names its build's id; a fork's names its build line too, which a tree's may omit
+		// (PPX-D3): a fork's build with no line has nothing to run, and would be admitted as one.
+		if seal != nil && (seal.id == "" || (seal.tree == "" && seal.build == "")) {
+			// Only a caller of yolo's makes such a seal, so the line says so.
 			fmt.Fprintf(errw, "yolo capture: the build jail of %s on macos-user was handed no build line or id\n", bin)
 			fmt.Fprintf(errw, "  That is yolo's to wire. A podman jail builds and runs it today: "+
 				"YOLO_RUNTIME=podman yolo -- %s\n", bin)
@@ -904,10 +898,11 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 			deps.Run = macosuser.RunStdoutTo(jailStdout)
 		}
 		if seal != nil {
-			// A FORK'S BUILD, SEALED, FOR THIS MAC (FP-D24; a patched fork's too, PF-D97): the capture act
-			// running the build line in a staging tree keyed by the build, the checkout in workspace/src
-			// (a patched fork's with its series replayed by buildFork) copied beside its home,
-			// under the sealed capture profile, on the darwin floor's tools. It leaves the proto-entry and
+			// A FORK'S BUILD, SEALED, FOR THIS MAC (FP-D24; a patched fork's too, PF-D97; a patched
+			// extension's, PPX-D5): the capture act running the build line in a staging tree keyed by the
+			// build, the checkout in workspace/src (a patched fork's with its series replayed by buildFork)
+			// copied beside its home, under the sealed capture profile, on the darwin floor's tools — and
+			// for a tree, the checkout then copied into its reserved directory. It leaves the proto-entry and
 			// the toolchain record where a container build jail leaves them, so buildFork's admit, its
 			// checks and its receipt are the same for both.
 			// Its toolchain rooted at a link of the build's own, in this staging workspace and removed
@@ -917,7 +912,7 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 				CaptureOptions: macosuser.CaptureOptions{Bin: bin, Config: cfg, HostPackRoot: packRoot,
 					SandboxEnv: packEnv, BlockedTools: blocked},
 				BuildID: seal.id, Build: seal.build, Source: filepath.Join(workspace, forkSourceLeaf),
-				RepoRoot: repoRoot, Toolchain: forkBuildToolchainHead(),
+				RepoRoot: repoRoot, Toolchain: forkBuildToolchainHead(), TreeDir: sealTreeDir(seal),
 			}, filepath.Join(workspace, captureOutLeaf), filepath.Join(workspace, forkToolchainLeaf), dryRun)
 		}
 		return macCaptureAct(deps, macosuser.CaptureOptions{
@@ -953,6 +948,15 @@ var captureRunPipeline = run.Run
 // captureRunPipeline's reason: a test drives runCaptureJail's own macos-user closure and reads the
 // account runner it composed, without sudo or Seatbelt.
 var macCaptureAct = macosuser.RunCaptureAct
+
+// sealTreeDir is the home-relative directory a patched extension's build copies its checkout into
+// (packdecl.TreeReservedDir), "" for a fork's build: the macos-user act's TreeDir.
+func sealTreeDir(seal *captureSeal) string {
+	if seal == nil || seal.tree == "" {
+		return ""
+	}
+	return packdecl.TreeReservedDir(seal.tree)
+}
 
 // macForkBuildAct is the macos-user fork-build act (macosuser.RunForkBuildAct) behind a package var,
 // for macCaptureAct's reason: a test drives the sealed closure and reads the options it composed.

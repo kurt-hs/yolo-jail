@@ -1030,6 +1030,14 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 		if v, ok := sandboxEnv.Get(entrypoint.ForkBuildsEnv); ok {
 			bootstrapEnv.Set(entrypoint.ForkBuildsEnv, v)
 		}
+		// THE PATCHED-EXTENSION DECISIONS (entrypoint.PatchedTreesEnv), relayed the same way and for
+		// the same reason — a YOLO_ value the env hydrator would drop from the session file: the host's
+		// per-extension decisions (which tree the home overlay delivered, which extensions were
+		// skipped, and the launcher gate), read by the bootstrap's file render (the tree fallbacks)
+		// and its launcher generation (the gate), as the container boot reads them.
+		if v, ok := sandboxEnv.Get(entrypoint.PatchedTreesEnv); ok {
+			bootstrapEnv.Set(entrypoint.PatchedTreesEnv, v)
+		}
 	}
 	// host_files, IN TWO HALVES THAT COME FROM DIFFERENT PLACES, and the split is the
 	// credential boundary rather than a structure.
