@@ -655,7 +655,12 @@ type Options struct {
 	// A seam for AutoCapture's reason: the resolver and the receipt adapter it reads through live
 	// in internal/cli, which imports this package. nil stages no capture, and every launcher on
 	// that backend then downloads, as it did before H4.
-	MacosUserCaptures func(dir string, bins []string, platform string) (stage []macosuser.CaptureEntry, kept []string)
+	//
+	// forks is each fork's program and the store key this launch's fork-build slot hands the
+	// sandbox for it (docs/reference/patched-forks.md PF-D97): each is staged too, its entry whole
+	// (its receipts are what the sandbox's `capture-materialize` checks), so the fork's launcher
+	// materializes it from the staged store.
+	MacosUserCaptures func(dir string, bins []string, platform string, forks map[string]string) (stage []macosuser.CaptureEntry, kept []string)
 	// MacosUserLaunchProbes answers macos-user's launch preconditions (macosuser.LaunchProbes)
 	// for the arm's auto-capture, which runs only for a launch the backend will not refuse at its
 	// first two steps (autoCaptureMacosUser, macosuser.PreflightLaunch). nil =>

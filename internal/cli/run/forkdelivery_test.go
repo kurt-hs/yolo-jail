@@ -162,13 +162,14 @@ func TestNoForkIsBuiltBelowTheAppleContainerFloor(t *testing.T) {
 	}
 }
 
-// FP-D3's line: a macos-user launch carrying a fork says it delivers no program, and why.
+// FP-D3's line: a macos-user launch that readies no build of a fork (no build act here) says it
+// delivers no program, and why.
 func TestAMacosUserLaunchSaysItDeliversNoFork(t *testing.T) {
 	forkLaunchHome(t, forkPinSource)
 	pinFork(t, strings.Repeat("ef", 20))
 	out := launchToDispatch(t)
 	if !strings.Contains(out, "tool is not delivered on macos-user") ||
-		!strings.Contains(out, "a macos-user launch does not build fork forkpack") {
+		!strings.Contains(out, "this launch builds no fork; run it on a container backend") {
 		t.Errorf("the macos-user launch does not name the undelivered fork:\n%s", out)
 	}
 }

@@ -13,7 +13,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	goruntime "runtime" // stdlib; this package's `runtime` is yolo's own (run.go)
+	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
@@ -41,7 +41,8 @@ type ForkBuildRequest struct {
 	// Good.Entry is delivered instead of advancing them (selectCachedGood). Empty preserves the
 	// strict ordinary launch path.
 	CachedGoodOwner string
-	// Platform is the jail's platform (containerJailPlatform), never the host's.
+	// Platform is the jail's platform (jailPlatform: containerJailPlatform, or macosUserJailPlatform
+	// for the Seatbelt sandbox), never the host's.
 	Platform string
 	// Runtime is the backend the jail runs on, for a line that names what differs there (§9: an
 	// Apple Container capture jail cannot start beside a running one).
@@ -118,7 +119,7 @@ func (o *Options) forkBuildPlan(rt string) (map[string]entrypoint.ForkDelivery, 
 		return nil, nil
 	}
 	out := map[string]entrypoint.ForkDelivery{}
-	platform := containerJailPlatform()
+	platform := jailPlatform(rt)
 	var build []packload.ForkPin
 	for _, p := range o.forkPinned {
 		if p.Fork.Patched() && config.InJail() {
@@ -131,7 +132,7 @@ func (o *Options) forkBuildPlan(rt string) (map[string]entrypoint.ForkDelivery, 
 			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: p.Reason}
 			continue
 		}
-		if why := forkUnpublishedHere(p.Fork); why != "" {
+		if why := forkUnpublishedHere(p.Fork, rt); why != "" {
 			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: "fork " + p.Fork.Pack + " builds for none of this jail's platform: " + why}
 			continue
 		}
@@ -183,11 +184,22 @@ func (o *Options) finishForkDeliveries(out map[string]entrypoint.ForkDelivery, r
 	return out
 }
 
-// forkUnpublishedHere is why f builds for none of a container jail's platform, "" when it builds
-// for it: a fork no build is tried for, which the launch's refusal of a missing patched build
-// passes over (missingbuilds.go), since nothing failed.
-func forkUnpublishedHere(f packload.Fork) string {
-	return (packdecl.Install{Platforms: f.Platforms}).UnpublishedReason("linux", goruntime.GOARCH)
+// forkUnpublishedHere is why f builds for none of the platform a jail on rt runs (jailPlatform), ""
+// when it builds for it: a fork no build is tried for, which the launch's refusal of a missing
+// patched build passes over (missingbuilds.go), since nothing failed.
+func forkUnpublishedHere(f packload.Fork, rt string) string {
+	goos, arch, _ := strings.Cut(jailPlatform(rt), "/")
+	return (packdecl.Install{Platforms: f.Platforms}).UnpublishedReason(goos, arch)
+}
+
+// jailPlatform is capture.Platform() as a jail on rt will answer it: the Seatbelt sandbox's darwin
+// on macos-user (PF-D97, FP-D25: a fork gets a darwin build there), a container jail's linux on
+// every other runtime.
+func jailPlatform(rt string) string {
+	if rt == "macos-user" { // parity: HonoredBy — the macos-user sandbox runs darwin programs, so its forks are built for darwin
+		return macosUserJailPlatform()
+	}
+	return containerJailPlatform()
 }
 
 // actInterrupt is this launch's act interrupt (ActInterrupt, PF-D57): one per launch, made by the
@@ -200,47 +212,72 @@ func (o *Options) actInterrupt() *ActInterrupt {
 	return o.patchedAct
 }
 
-// noteMacosUserForks is FP-D3's line: a macos-user launch that carries a fork says it delivers no
-// program for it, and why. On this backend the fork-build slot sits below the arm's return, so a
-// silent absence would read as the fork being broken. A PATCHED fork says what it is too
-// (docs/reference/patched-forks.md §9): FP-D24's darwin build covers only a plain fork, and a
-// patched fork's advance (its upstream check and series replay) runs only in a container launch's
-// build slot, so a patched fork has no macOS build at all.
-func (o *Options) noteMacosUserForks() {
+// noteMacosUserForks is FP-D3's line for each fork a macos-user launch hands its sandbox no build of,
+// once the slot has decided (docs/reference/patched-forks.md PF-D97: a fork gets a darwin build on
+// this backend): the program is not delivered, why, and the ways out here. The same words become the
+// fork's reason on the wire (o.forkDelivered), so `<bin>` typed in the sandbox says what the launch
+// said, never "the launch that started this jail built no <bin>". A patched fork the missing-build
+// refusal already named (missingbuilds.go; it starts without it only under
+// YOLO_ALLOW_MISSING_PROGRAMS) is not said twice. A fork with a key is said by the slot's own lines.
+func (o *Options) noteMacosUserForks(rt string) {
+	said := map[string]bool{}
+	if !o.DryRun {
+		for _, m := range o.missingBuilds(rt) {
+			if m.owner == "" {
+				said[m.key] = true
+			}
+		}
+	}
 	for _, p := range o.forkPinned {
-		o.pr(o.Stderr).print("[yellow]Warning: " + p.Fork.Bin + " is not delivered on macos-user[/yellow] — " +
-			richtext.Escape(macosUserForkWhy(p.Fork, o.containerStepClause())) + ".")
+		d, ok := o.forkDelivered[p.Fork.Bin]
+		if !ok || d.Key != "" {
+			continue
+		}
+		why := d.Reason
+		if !o.DryRun {
+			why = macosUserForkWhy(d.Reason, o.containerStepClause())
+		}
+		d.Reason = p.Fork.Bin + " is not delivered on macos-user: " + why
+		o.forkDelivered[p.Fork.Bin] = d
+		if !said[p.Fork.Key()] {
+			o.pr(o.Stderr).print("[yellow]Warning: " + p.Fork.Bin + " is not delivered on macos-user[/yellow] — " +
+				richtext.Escape(why) + ".")
+		}
 	}
 }
 
-// macosUserForkWhy is why a macos-user launch delivers no program for fork f, ending in the next step:
-// the one clause FP-D3's warning prints and the sandbox's launcher for the program repeats
-// (macosUserForkWire), so `<bin>` typed in the sandbox says what the launch said. step is the
-// launch's containerStepClause, which a guest's container backend needs (EMP-D5).
-func macosUserForkWhy(f packload.Fork, step string) string {
-	what := "a macos-user launch does not build fork " + f.Pack
-	if f.Patched() {
-		what = "fork " + f.Key() + " is a patched fork, which has no macOS build"
-	}
-	return what + "; run it on a container backend with `YOLO_RUNTIME=container yolo` or " +
+// macosUserForkWhy is why a macos-user launch delivers no program for a fork, the slot's reason,
+// ending in the next steps on this backend: a container backend, which builds it for linux, or
+// starting without it. step is the launch's containerStepClause, which a guest's container backend
+// needs (EMP-D5).
+func macosUserForkWhy(reason, step string) string {
+	return strings.TrimSuffix(reason, ".") + "; run it on a container backend with `YOLO_RUNTIME=container yolo` or " +
 		"`YOLO_RUNTIME=podman yolo`, or start without it with `YOLO_ALLOW_MISSING_PROGRAMS=1 yolo`" + step
 }
 
-// macosUserForkWire is the fork decisions a macos-user launch hands its sandbox (entrypoint.ForkBuildsEnv):
-// each fork's program, with no build and the reason a macos-user launch delivers none
-// (macosUserForkWhy), so the sandbox's launcher for the program names this backend and the step that
-// runs it, never "the launch that started this jail built no <bin>", which names a container launch's
-// fault. "" when the launch carries no fork.
-func (o *Options) macosUserForkWire() string {
-	if len(o.forkPinned) == 0 {
-		return ""
+// dryRunForkDeliveries is a macos-user DRY RUN's fork decisions, which build nothing: a fork the
+// slot would hand its act is said to be built by a launch without --dry-run, and any other keeps
+// the reason the slot would give it (no pin, or no darwin build for the fork's platforms), with the
+// ways out (macosUserForkWhy). noteMacosUserForks says each.
+func (o *Options) dryRunForkDeliveries() {
+	if len(o.forkPinned) == 0 || o.CapturesDir() == "" {
+		return
 	}
-	d := make(map[string]entrypoint.ForkDelivery, len(o.forkPinned))
+	rt := "macos-user"
+	o.forkDelivered = make(map[string]entrypoint.ForkDelivery, len(o.forkPinned))
 	for _, p := range o.forkPinned {
-		d[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: p.Fork.Bin + " is not delivered on macos-user: " +
-			macosUserForkWhy(p.Fork, o.containerStepClause())}
+		var why string
+		switch {
+		case p.Commit == "" && !p.Fork.Patched():
+			why = macosUserForkWhy(p.Reason, o.containerStepClause())
+		case forkUnpublishedHere(p.Fork, rt) != "":
+			why = macosUserForkWhy("fork "+p.Fork.Pack+" builds for none of this jail's platform: "+
+				forkUnpublishedHere(p.Fork, rt), o.containerStepClause())
+		default:
+			why = "a dry run builds no fork; a launch without --dry-run builds fork " + p.Fork.Key() + " for macOS"
+		}
+		o.forkDelivered[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: why}
 	}
-	return entrypoint.ForkBuildsWire(d)
 }
 
 // forkLockPath is the fork lock beside the user config.
@@ -272,7 +309,7 @@ func mutableForkRef(fork packload.Fork) bool {
 // because its fork lock is the host's read-only input. Fixed refs and unselected forks are unaffected.
 func freshJailForkPinRefusal(forks []packload.Fork) error {
 	for _, fork := range forks {
-		if !mutableForkRef(fork) || forkUnpublishedHere(fork) != "" {
+		if !mutableForkRef(fork) || forkUnpublishedHere(fork, "podman") != "" { // a jail is a container's
 			continue
 		}
 		return fmt.Errorf("refusing --update: mutable source fork %s needs a fresh pin, but this jail cannot write its host fork lock. Run `yolo --update -- <command>` from the host workspace, or run this launch without --update",
@@ -317,9 +354,9 @@ func (o *Options) forkPins(packs []*packload.Pack) []packload.ForkPin {
 // each source-built program is pinned to — never only its ref — or why it has none and what pins
 // it, after one line for each pin this launch made (FP-D18) and each warning a pin left. Disclosures,
 // so none has a quiet switch (OQ-RO3). It returns the pins, for the build trigger that acts on them.
-// rt is the backend: a macos-user launch builds no fork (FP-D3), so a patched fork's line there names
-// a container backend's launch as what builds an edited series.
-func (o *Options) noteForkPins(packs []*packload.Pack, rt string) []packload.ForkPin {
+// rt is the backend; every backend's fresh launch builds a fork, macos-user's for darwin (PF-D97), so
+// a patched fork's line names a fresh launch on each.
+func (o *Options) noteForkPins(packs []*packload.Pack, _ string) []packload.ForkPin {
 	// NOT IN A CAPTURE OR BUILD JAIL (the one switch, CapturesDir returning ""): no fork is built
 	// or delivered from inside one, and the launch that started it has already said this line.
 	if o.CapturesDir() == "" {
@@ -342,11 +379,8 @@ func (o *Options) noteForkPins(packs []*packload.Pack, rt string) []packload.For
 	for _, p := range pins {
 		if p.Fork.Patched() {
 			// No pin by design (PF-D16): its line is its series and its good build (patchedforkline.go).
-			rebuilds := "a fresh launch"
-			if rt == "macos-user" { // parity: Warned — macos-user builds no fork (FP-D3), so the line names a container backend's launch, and noteMacosUserForks says why
-				rebuilds = "a fresh launch on a container backend"
-			}
-			line, warn := patchedForkLine(p, rebuilds)
+			// Every backend's fresh launch builds it, macos-user's included (PF-D97).
+			line, warn := patchedForkLine(p, "a fresh launch")
 			line = richtext.Escape(line)
 			if warn {
 				out.print("[yellow]  " + line + "[/yellow]")

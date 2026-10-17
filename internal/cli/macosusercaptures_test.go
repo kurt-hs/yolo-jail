@@ -77,7 +77,7 @@ func TestMacosUserCapturesPickTheDarwinInstallerEntry(t *testing.T) {
 	admitCaptureEntry(t, store, "otherlinux", "othertool", "linux/"+goruntime.GOARCH, "/home/agent",
 		"other linux bytes", t0)
 
-	stage, kept := macosUserCaptures(store.Dir, []string{"probetool", "absenttool"}, darwinPlatform)
+	stage, kept := macosUserCaptures(store.Dir, []string{"probetool", "absenttool"}, darwinPlatform, nil)
 	if len(stage) != 1 {
 		t.Fatalf("staged %+v, want the one darwin installer entry for probetool (absenttool has none)", stage)
 	}
@@ -91,12 +91,40 @@ func TestMacosUserCapturesPickTheDarwinInstallerEntry(t *testing.T) {
 
 	// No installer entry for any bin asked about: nothing staged, and nothing kept either, since a
 	// launch that stages nothing runs no prune.
-	if stage, kept := macosUserCaptures(store.Dir, []string{"absenttool"}, darwinPlatform); stage != nil || kept != nil {
+	if stage, kept := macosUserCaptures(store.Dir, []string{"absenttool"}, darwinPlatform, nil); stage != nil || kept != nil {
 		t.Errorf("a launch whose programs the store lacks was handed %+v / %v", stage, kept)
 	}
 	// An absent store is an empty one.
-	if stage, _ := macosUserCaptures(filepath.Join(t.TempDir(), "none"), []string{"probetool"}, darwinPlatform); stage != nil {
+	if stage, _ := macosUserCaptures(filepath.Join(t.TempDir(), "none"), []string{"probetool"}, darwinPlatform, nil); stage != nil {
 		t.Errorf("an absent store staged %+v", stage)
+	}
+}
+
+// A FORK'S DELIVERED KEY IS STAGED (docs/reference/patched-forks.md PF-D97): by key, entry whole,
+// even when no installer program is selected, and beside an installer entry when one is; a key the
+// store cannot resolve stages nothing, and the fork's build is never kept as some other program's.
+func TestMacosUserCapturesStageTheForksDeliveredKey(t *testing.T) {
+	store := &capture.Store{Dir: t.TempDir()}
+	t0 := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	fork := admitForkBuildEntry(t, store, "fork", "tool", darwinPlatform, t0)
+	installer := admitCaptureEntry(t, store, "darwin", "probetool", darwinPlatform, "/Users/Shared/yolo-captures/probetool/home",
+		"darwin bytes", t0)
+
+	stage, kept := macosUserCaptures(store.Dir, nil, darwinPlatform, map[string]string{"tool": fork.Key})
+	if len(stage) != 1 || stage[0].Bin != "tool" || stage[0].Key != fork.Key || stage[0].Source != fork.Root {
+		t.Fatalf("with no installer program, staged %+v, want the fork's entry %s at %s", stage, fork.Key, fork.Root)
+	}
+	if len(kept) != 1 || kept[0] != installer.Key {
+		t.Errorf("kept %v, want only probetool's installer capture %s", kept, installer.Key)
+	}
+
+	stage, _ = macosUserCaptures(store.Dir, []string{"probetool"}, darwinPlatform, map[string]string{"tool": fork.Key})
+	if len(stage) != 2 || stage[0].Key != installer.Key || stage[1].Key != fork.Key {
+		t.Errorf("staged %+v, want the installer entry then the fork's", stage)
+	}
+
+	if stage, kept := macosUserCaptures(store.Dir, nil, darwinPlatform, map[string]string{"tool": "deadbeef"}); stage != nil || kept != nil {
+		t.Errorf("a key the store does not hold staged %+v / %v", stage, kept)
 	}
 }
 
@@ -121,7 +149,7 @@ func TestALaunchWiresTheMacosUserCaptures(t *testing.T) {
 	store := &capture.Store{Dir: t.TempDir()}
 	e := admitCaptureEntry(t, store, "probetool", "probetool", darwinPlatform, "/Users/Shared/yolo-captures/probetool/home",
 		"bytes", time.Now())
-	stage, _ := seen.MacosUserCaptures(store.Dir, []string{"probetool"}, darwinPlatform)
+	stage, _ := seen.MacosUserCaptures(store.Dir, []string{"probetool"}, darwinPlatform, nil)
 	if len(stage) != 1 || stage[0].Key != e.Key {
 		t.Errorf("the wired seam picked %+v, want the store's entry %s", stage, e.Key)
 	}
