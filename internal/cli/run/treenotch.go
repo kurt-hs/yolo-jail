@@ -10,6 +10,7 @@ package run
 import (
 	goruntime "runtime"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -26,6 +27,19 @@ func jailDeliveredTrees(trees []packload.Fork) []packload.Fork {
 }
 
 // hostBuildsOwnTrees reports whether this host's own render builds patched extensions, as the host
-// apply's does (a Linux host): on a macOS host a tree listed for the host alone is delivered nowhere,
-// and the block says so (PPX-D38). A var so a test can be either host.
-var hostBuildsOwnTrees = func() bool { return goruntime.GOOS == "linux" }
+// apply's does: a Linux host through its build jail, and a macOS host through the macos-user build
+// act, for darwin (docs/reference/pi-extensions.md §11). Inside the macos-user sandbox (a darwin
+// jail) nothing builds a tree, so there a tree listed for the host alone is delivered nowhere, and the
+// block says so (PPX-D38). A var so a test can be either host.
+var hostBuildsOwnTrees = func() bool { return hostBuildsOwnTreesOn(goruntime.GOOS, config.InJail()) }
+
+// hostBuildsOwnTreesOn is hostBuildsOwnTrees for a host of goos, inside a jail or not.
+func hostBuildsOwnTreesOn(goos string, inJail bool) bool {
+	switch goos {
+	case "linux":
+		return true
+	case "darwin":
+		return !inJail
+	}
+	return false
+}

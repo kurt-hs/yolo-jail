@@ -330,17 +330,6 @@ func TestAnAttachThroughRunNamesTheTreeItsJailMounts(t *testing.T) {
 	}
 }
 
-// MACOS-USER builds no tree (§11): its launch says so, naming a container backend. Red when the
-// macos-user arm stops calling noteMacosUserTrees.
-func TestAMacosUserLaunchSaysItDeliversNoTree(t *testing.T) {
-	treeLaunchHome(t, true)
-	out := launchToDispatch(t)
-	if !strings.Contains(out, "extension "+treeKey+" is not delivered on macos-user") ||
-		!strings.Contains(out, "YOLO_RUNTIME=podman") {
-		t.Errorf("the macos-user launch does not name the undelivered extension:\n%s", out)
-	}
-}
-
 // A DELIVERED TREE GETS A DIRECTORY MOUNTPOINT, in the skeleton or in the workspace overlay, and one
 // with no copy gets none: an empty directory at `into` is one an agent may try to load (§9).
 func TestOnlyADeliveredTreeGetsAMountpoint(t *testing.T) {
