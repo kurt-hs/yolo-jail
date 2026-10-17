@@ -337,16 +337,20 @@ func TestTheHostFloorsAdvanceRunsAfterTheRenderGatesObservePass(t *testing.T) {
 	}
 }
 
-// ON A MAC `yolo host` HOLDS NO FORK'S BUILD (§9, FP-D16): the launch runs no advance, refuses rather
-// than run a copy on PATH (HNR-D2), and names the next step — a jail on a container backend, whose fresh launch builds it.
-// The floor's platform decides, so this runs on every CI host.
-func TestHostLaunchOfAPatchedForkOnAMacNamesTheJailThatRunsIt(t *testing.T) {
+// ON A MAC WHOSE SANDBOX ACCOUNT IS NOT SET UP `yolo host` builds no patched fork (PF-D97): the
+// launch runs no advance, refuses rather than run a copy on PATH (HNR-D2), and names the step the
+// macos-user build act needs — `yolo macos-setup` — as it does for a plain fork, never a container
+// runtime, which a Mac's build does not use. The floor's platform decides, so this runs on every CI
+// host. Drop the Mac arm from the floor's advance gate (advanceBlocked) and the runtime's step, or
+// an advance, comes back.
+func TestHostLaunchOfAPatchedForkOnAMacWithNoSandboxAccountNamesTheSetup(t *testing.T) {
 	fx := patchedFloorFixture(t)
 	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
 	withFloorPlatform(t, "darwin")
+	withMac(t, macSetup{})
 	prevAdvance := floorAdvance
 	floorAdvance = func(context.Context, packload.Fork, io.Writer, *installedCopy, *run.ActInterrupt) advanceResult {
-		t.Error("a Mac's floor ran a patched fork's advance")
+		t.Error("a Mac whose sandbox account is not set up ran a patched fork's advance")
 		return advanceResult{}
 	}
 	t.Cleanup(func() { floorAdvance = prevAdvance })
@@ -357,11 +361,41 @@ func TestHostLaunchOfAPatchedForkOnAMacNamesTheJailThatRunsIt(t *testing.T) {
 			target, len(fx.builds), stub, out)
 	}
 	for _, w := range []string{"yolo host: yolo has no copy of tool on this Mac (", declaredNoCopyRefusal,
-		"run it in a jail instead (`yolo -- tool`, on a container backend: Apple Container or podman), whose fresh " +
-			"launch builds it"} {
+		"there is no build of tool from fork pack forkpack's patch series on this machine, and the sandbox " +
+			"account _yolojail, which a fork's build on a Mac runs as, does not exist",
+		"`yolo macos-setup`, and the next `yolo host` launch builds it"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("the Mac's line lacks %q:\n%s", w, out)
 		}
+	}
+	for _, w := range []string{"container backend", "install one (`yolo check`"} {
+		if strings.Contains(out, w) {
+			t.Errorf("the Mac's line names %q, which a Mac's build does not use:\n%s", w, out)
+		}
+	}
+}
+
+// ON A MAC WHOSE SANDBOX ACCOUNT IS SET UP `yolo host` RUNS A PATCHED FORK'S ADVANCE (PF-D97), the
+// floor admitting the program as it does a plain fork's, where it used to refuse every patched fork
+// on a Mac. Restore the Mac refusal in noEntryReason and no advance runs.
+func TestHostLaunchOfAPatchedForkOnASetUpMacRunsItsAdvance(t *testing.T) {
+	fx := patchedFloorFixture(t)
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	withFloorPlatform(t, "darwin")
+	withMac(t, macSetup{account: true, privilege: true})
+	advances := 0
+	prevAdvance := floorAdvance
+	floorAdvance = func(context.Context, packload.Fork, io.Writer, *installedCopy, *run.ActInterrupt) advanceResult {
+		advances++
+		return advanceResult{}
+	}
+	t.Cleanup(func() { floorAdvance = prevAdvance })
+	_, _, out := fx.hostLaunch(t)
+	if advances != 1 {
+		t.Fatalf("a set-up Mac ran %d advances of a patched fork, want one\n%s", advances, out)
+	}
+	if strings.Contains(out, "on a container backend") {
+		t.Errorf("a set-up Mac still sends a patched fork to a jail:\n%s", out)
 	}
 }
 
