@@ -149,11 +149,13 @@ func (fx *treeFixture) buildJail(t *testing.T) func(run.Options) int {
 }
 
 // asLinuxTreeHost stands in a host that builds patched extensions — a Linux one, which is what every
-// host test of a tree is about — whatever OS runs the test: on a macOS runner hostTreesBuild is
-// false, and every host advance and render of a tree would build and link nothing. A test of the
-// Mac's own lines sets it false after the fixture.
+// host test of a tree is about — whatever OS runs the test: on a macOS runner the host's tree builds
+// would be the macos-user act's, for darwin (hostTreeRuntime, read off the floor's platform), and
+// hostTreesBuild would ask that runner's sandbox account. A test of a Mac's own lines stands the Mac
+// in after the fixture (asMacTreeHost), and one of a host that builds no tree sets it false.
 func asLinuxTreeHost(t *testing.T) {
 	t.Helper()
+	onFloorPlatform(t, captureJailPlatform())
 	prev := hostTreesBuild
 	hostTreesBuild = func() bool { return true }
 	t.Cleanup(func() { hostTreesBuild = prev })
