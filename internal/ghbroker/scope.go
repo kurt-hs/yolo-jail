@@ -8,13 +8,17 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 )
 
-// scope.go is the repository scope as the broker holds it: the `owner/repo` list its launch's
+// scope.go is the repository scope as the broker holds it: the scope entries its launch's
 // config-change gate approved, the workspace's remotes and its `brokered.github.repos` entry
 // alike (docs/design/boundary-broker.md §5.6, BB-D32; docs/design/workspace-widening.md). The
 // broker never reads a remote, an approval record or a config file; it is handed this list in
 // the launch's scope file and checks every command against it.
 
-// Scope is the set of repositories a jail's brokered calls may touch.
+// Scope is the set of repositories a jail's brokered calls may touch. An entry is an
+// `OWNER/REPO`, or a whole-segment wildcard the human approved at the gate
+// (brokerscope.ValidPattern): `*/*` admits every repository, `OWNER/*` every repository of one
+// owner. The jail can never widen an entry by NAMING a wildcard on a command line: the
+// repository a command names is checked by ValidRepo, which refuses one.
 type Scope struct {
 	repos []string
 	// configFile and localFile are the names of the workspace's config file and local file as
@@ -23,12 +27,13 @@ type Scope struct {
 	configFile, localFile string
 }
 
-// NewScope builds a scope from `owner/repo` names, dropping malformed ones.
+// NewScope builds a scope from `OWNER/REPO` names and approved wildcard entries, dropping
+// malformed ones.
 func NewScope(repos []string) Scope {
 	seen := map[string]bool{}
 	var out []string
 	for _, r := range repos {
-		if !ValidRepo(r) || seen[strings.ToLower(r)] {
+		if !brokerscope.ValidPattern(r) || seen[strings.ToLower(r)] {
 			continue
 		}
 		seen[strings.ToLower(r)] = true
@@ -49,10 +54,11 @@ func (s Scope) ForFiles(configFile, localFile string) Scope {
 func (s Scope) Repos() []string { return append([]string(nil), s.repos...) }
 
 // Contains reports whether repo is in scope. GitHub owner and repository names are
-// case-insensitive, so the comparison is too.
+// case-insensitive, so the comparison is too, and a whole-segment wildcard an entry holds
+// admits any name in its position (brokerscope.Admits).
 func (s Scope) Contains(repo string) bool {
 	for _, r := range s.repos {
-		if strings.EqualFold(r, repo) {
+		if brokerscope.Admits(r, repo) {
 			return true
 		}
 	}
@@ -63,12 +69,21 @@ func (s Scope) Contains(repo string) bool {
 // the github pack's broker, so it names its source literally (WW-D13).
 const entryKey = "brokered." + Source + ".repos"
 
-// describe renders the scope for a message.
+// describe renders the scope for a message. A wildcard entry is shown for what it admits,
+// not just its token, so an out-of-scope message never reads as a list of ordinary
+// repositories when one of them is every repository.
 func (s Scope) describe() string {
 	if len(s.repos) == 0 {
 		return "empty: this workspace has no approved GitHub remote and no approved `" + entryKey + "` entry"
 	}
-	return strings.Join(s.repos, ", ")
+	shown := make([]string, len(s.repos))
+	for i, r := range s.repos {
+		shown[i] = r
+		if note := brokerscope.WildcardNote(r, SourceHost); note != "" {
+			shown[i] += " (" + note + ")"
+		}
+	}
+	return strings.Join(shown, ", ")
 }
 
 // widenAdvice is the one way a repository outside the scope gets in (WW-D5, WW-D6): the agent

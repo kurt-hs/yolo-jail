@@ -19,6 +19,11 @@ GitHub repositories. The jail holds no GitHub token; `gh auth status` names the 
   beside it for what the project should not commit, or when the config file is read-only here.
   Then run `yolo check --no-build`, and ask the user to restart the jail and answer y to the
   repository-scope prompt. Nothing changes before that restart.
+- A wildcard entry reaches more than one repository: `*/*` is every repository the host login can
+  reach, `OWNER/*` is one owner's, `*/REPO` is that name under any owner. A whole segment is the
+  only wildcard form. Use one only when the user asks for that reach; it goes through the same
+  approval and stays read-only, and it still does not admit a command that acts across the
+  account (a search with no `--repo`, `gh repo list`, `gh status`).
 - In a `gh api` path, percent-encode a slash in a branch name as usual:
   `repos/OWNER/REPO/branches/MS%2Fmain`.
 - Exit 69: no broker in this jail, or no `gh` login on the host.

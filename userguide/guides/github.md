@@ -56,8 +56,9 @@ so it no longer asks.
 
 The broker only works on **this project's own GitHub repositories**: the `github.com` remotes in
 the project's `.git/config`, such as `origin` and `upstream`, and any repository the project's
-config lists, [below](#adding-a-repository-the-project-has-no-remote-for). It never reaches your
-other repositories, even though your login can.
+config lists, [below](#adding-a-repository-the-project-has-no-remote-for) — a specific one, or,
+with a wildcard, every repository it can reach. With no such entry it never reaches your other
+repositories, even though your login can.
 
 Because an agent can edit `.git/config` and the project's config, yolo asks you to approve that
 list. The first launch of a project with a GitHub remote shows it at the top of the usual
@@ -118,6 +119,39 @@ github-broker: scope for this workspace: you/app (remote "origin"), you/lib (yol
 No other project gets it. yolo does not git-ignore `yolo-jail.local.jsonc`, so check your
 `.gitignore` before keeping a private repository there. No entry allows a command across your
 whole account, such as a search with no `--repo`. `yolo config-ref` has the details.
+
+### Every repository, or every repository of one owner
+
+When a project needs reach beyond a fixed list, list a wildcard instead. `*/*` is every
+repository your login can reach, `you/*` is every repository under one owner, and `*/lib` is that
+repository name under any owner:
+
+```jsonc
+{
+  "brokered": {
+    "github": { "repos": ["*/*"] }
+  }
+}
+```
+
+A wildcard is a whole segment between the slashes: `*/*`, `you/*` and `*/lib` are entries, and a
+partial glob such as `you*/*` is a mistake that `yolo check` refuses.
+
+It is approved the same way, and the prompt says what you are approving rather than leaving you to
+decode the token:
+
+```text
+  + */*  yolo-jail.jsonc  added (every repository on github.com)
+```
+
+A wildcard widens which repositories the agent can reach, and nothing else. It stays read-only:
+a command that would change something still does not run. It also does not allow a command that
+acts across your whole account rather than on a repository, such as `gh search code` with no
+`--repo`, `gh repo list` or `gh status` — those are refused whatever the scope holds.
+
+The wildcard is a workspace entry like any other: the project's own config file, or the local one
+beside it, honored only from files inside the workspace, and taking effect at the next fresh
+launch once you approve it.
 
 The old way, a `brokered.github.workspaces` entry in your user config keyed by the project's
 folder, is retired. A user config that still has one stops every launch, and the message names

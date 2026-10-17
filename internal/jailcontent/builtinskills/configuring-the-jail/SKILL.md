@@ -59,7 +59,10 @@ here but refuses the next host launch, so don't write it; ask the human to run
 
 Its repository list is the other way round: `brokered.<source>.repos`
 (`brokered.github.repos` for the github pack) is a workspace key you may write,
-listing a repository the project has no remote for. It takes effect only once the
+listing a repository the project has no remote for — or, with a whole-segment
+wildcard, more than one: `*/*` is every repository the host login can reach,
+`OWNER/*` is one owner's, and `*/REPO` is that name under any owner. It takes
+effect only once the
 human approves it at the next fresh launch, so after adding it, run
 `yolo check --no-build` and ask the human to restart the jail and answer y.
 

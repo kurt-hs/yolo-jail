@@ -44,6 +44,11 @@ import (
 // as `brokered.source`, which is the spelling core reads.
 const Source = "github"
 
+// SourceHost is the forge's hostname: what packs/github's manifest declares as
+// `brokered.remote_host`, and what a wildcard scope note names (`*/*` on this host is "every
+// repository on github.com"). The broker talks to no other host.
+const SourceHost = "github.com"
+
 // Request is the forwarder's frame, and the whole of what a jail can say: an argv, the
 // repository it resolved, its stdin, and an agent name it reports. None of it is a
 // decision, a grant, a jail identity or a duration (§9.3).

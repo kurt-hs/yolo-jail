@@ -339,21 +339,94 @@ func configValue(raw string) string {
 
 var segmentRE = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
+// wildcardSegment is the one token a SCOPE ENTRY may put in a segment's place. It is never a
+// name git or GitHub writes, so ValidRepo refuses it and a remote can never reduce to it.
+const wildcardSegment = "*"
+
 // ValidRepo reports whether s is exactly `owner/repo`: two segments, each a forge name of
-// letters, digits, `_`, `.` and `-`, neither "." nor "..". It is the one shape a remote
-// reduces to (RepoFromRemoteURL) and the one a workspace's `brokered.<source>.repos` entry may
-// list (config.WorkspaceRead.Entry), so a repository reaches a scope file in no other spelling.
+// letters, digits, `_`, `.` and `-`, neither "." nor "..". It is the shape a remote reduces to
+// (RepoFromRemoteURL), and the shape a repository must have wherever it NAMES one repository: a
+// command's repository (`ghbroker.ValidRepo`), a scope file's entry, and the literal half of a
+// scope pattern. It refuses the wildcard, so nothing but a workspace's own
+// `brokered.<source>.repos` entry can put one in a scope.
 func ValidRepo(s string) bool {
 	owner, repo, ok := strings.Cut(s, "/")
 	if !ok || strings.Contains(repo, "/") {
 		return false
 	}
-	for _, seg := range []string{owner, repo} {
-		if seg == "." || seg == ".." || !segmentRE.MatchString(seg) {
-			return false
-		}
+	return validNameSegment(owner) && validNameSegment(repo)
+}
+
+// ValidPattern reports whether s is a repository SCOPE entry: an `OWNER/REPO` as ValidRepo
+// checks it, or one whose segments each name a forge name or the whole-segment wildcard `*`.
+// The wildcard forms are `*/*` (every repository), `OWNER/*` (every repository of one owner)
+// and `*/REPO` (that repository name under any owner). A wildcard is the token `*` alone, never
+// a partial glob: `org*`, `o*/r` and a bare `*` are refused. It is the check a workspace's
+// `brokered.<source>.repos` entry takes (config.WorkspaceRead.Entry), and the one the scope
+// file takes; a remote does NOT take it (RepoFromRemoteURL uses ValidRepo).
+func ValidPattern(s string) bool {
+	owner, repo, ok := strings.Cut(s, "/")
+	if !ok || strings.Contains(repo, "/") {
+		return false
 	}
-	return true
+	return validPatternSegment(owner) && validPatternSegment(repo)
+}
+
+func validNameSegment(seg string) bool {
+	return seg != "." && seg != ".." && segmentRE.MatchString(seg)
+}
+
+func validPatternSegment(seg string) bool {
+	return seg == wildcardSegment || validNameSegment(seg)
+}
+
+// Admits reports whether a scope entry admits repo, a literal `OWNER/REPO`. Owner and
+// repository names compare without regard to case, as GitHub compares them; a segment of the
+// entry that is the whole-segment wildcard admits any name in that position. It is the one
+// matcher every reader of an approved scope uses, so the broker, the scope-file check and the
+// gate cannot drift. Both sides must be two well-formed segments — the entry a pattern one, the
+// repository a literal one — so anything else admits nothing.
+func Admits(pattern, repo string) bool {
+	pOwner, pRepo, ok := strings.Cut(pattern, "/")
+	rOwner, rRepo, ok2 := strings.Cut(repo, "/")
+	if !ok || !ok2 || strings.Contains(pRepo, "/") || strings.Contains(rRepo, "/") {
+		return false
+	}
+	if !validPatternSegment(pOwner) || !validPatternSegment(pRepo) ||
+		!validNameSegment(rOwner) || !validNameSegment(rRepo) {
+		return false
+	}
+	return segmentAdmits(pOwner, rOwner) && segmentAdmits(pRepo, rRepo)
+}
+
+func segmentAdmits(pattern, name string) bool {
+	return pattern == wildcardSegment || strings.EqualFold(pattern, name)
+}
+
+// WildcardNote is plain words for a wildcard entry, for the gate's scope block and the
+// launch's disclosure: `*/*` on github.com is "every repository on github.com". host may be ""
+// for a caller that has none. It is "" for a literal entry, which needs no note, and for
+// anything that is not a well-formed pattern, so a caller never prints a note for a string it
+// did not validate.
+func WildcardNote(pattern, host string) string {
+	owner, repo, ok := strings.Cut(pattern, "/")
+	if !ok || strings.Contains(repo, "/") ||
+		!validPatternSegment(owner) || !validPatternSegment(repo) {
+		return ""
+	}
+	on := ""
+	if host != "" {
+		on = " on " + host
+	}
+	switch {
+	case owner == wildcardSegment && repo == wildcardSegment:
+		return "every repository" + on
+	case repo == wildcardSegment:
+		return "every repository under " + owner + on
+	case owner == wildcardSegment:
+		return "every repository named " + repo + ", under any owner" + on
+	}
+	return ""
 }
 
 // RepoFromRemoteURL reduces a remote URL on host to `owner/repo`, in the https, `ssh://`

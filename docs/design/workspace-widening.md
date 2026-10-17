@@ -253,6 +253,18 @@ design replaced; [§3](#3-the-design) is what the tree holds.
 }
 ```
 
+A `repos` entry may also be a **wildcard**, for a project that needs reach beyond a fixed list —
+the maintainer's ruling of 2026-10-16: *"I want to be able to grant an agent full read-only
+access to my GitHub account … at least … all repos."* `*/*` lists every repository on the
+source's host, `org/*` every repository of one owner, and `*/lib` that name under any owner.
+A wildcard is a whole segment; a partial glob such as `org*` is not one (WW-D31).
+
+```jsonc
+{
+  "brokered": { "github": { "repos": ["*/*"] } }
+}
+```
+
 **Where it lives**
 
 - **The source key** is the loophole manifest's `brokered.source`, `github` for the github pack,
@@ -297,17 +309,20 @@ design replaced; [§3](#3-the-design) is what the tree holds.
 
 **What each element is**
 
-- **`OWNER/REPO` on the source's host**, checked as before (`brokerscope.ValidRepo`). There is no
-  wildcard, no organization-wide entry and no account-wide reach
+- **`OWNER/REPO` on the source's host**, checked as before (`brokerscope.ValidRepo`), **or a
+  whole-segment wildcard** (`brokerscope.ValidPattern`): `*/*`, `OWNER/*` or `*/REPO`
+  ([WW-D31](#WW-D31)). A wildcard widens which repositories run; it does not widen what a
+  command may do, so an account-wide command is still out of scope
   ([OQ-BB9](boundary-broker.md#15-decision-ledger)).
 - **Degenerate inputs.**
   - An absent key, `null` or `[]` asks for nothing.
-  - A duplicate, in any case, counts once.
+  - A duplicate, in any case, counts once. `*/*` and `OWNER/*` are different entries, and both
+    may be listed; the union is what the matcher applies.
   - An entry matching a remote is one repository whose row names every source.
   - There is no cap on the count. The gate states the count beside the question
     ([§3.2](#32-the-gate)).
 - **A malformed element is a config error.** That covers a host prefix, a URL, one segment, three
-  segments, or a non-string.
+  segments, a non-string, and a partial wildcard (`org*`, `*/lib*`, a bare `*`).
   - It is reported at the element's file and line, `yolo check` fails, and the launch refuses as it
     does for any invalid config.
   - An attach validates the config too, so it refuses a new terminal of the running jail. That is
@@ -320,8 +335,11 @@ design replaced; [§3](#3-the-design) is what the tree holds.
   `yolo check --no-build` passes it, and the human meets an unexpected *removed* row at the gate
   ([WW-D24](#WW-D24)).
 - **What it admits** is a whole repository, for every permission set, exactly as a remote does
-  ([OQ-BB9](boundary-broker.md#15-decision-ledger)). Today that means reads. Once grants are built, it also
-  means every read-write window the human grants: the maintainer's *"whatever that access is."*
+  ([OQ-BB9](boundary-broker.md#15-decision-ledger)), or — for a wildcard entry — every repository its
+  segments cover. A wildcard entry is shown in the scope block and on the launch line with plain
+  words for what it admits (*"every repository on github.com"*), never as a bare token the human
+  must decode. Today that means reads. Once grants are built, it also means every read-write
+  window the human grants: the maintainer's *"whatever that access is."*
 
 **Refused shapes**
 
@@ -859,3 +877,4 @@ what [WW-D11](#WW-D11) said; graduation waits for the ruling.
 | <a id="WW-D28"></a>[`WW-D28`](#10-decision-ledger) | *Implementation decision:* the keeper's plan carries each approved repository with its source labels, already escaped, in place of the flat list; the plan is build-stamped, so its shape changes with no migration. Host `yolo check --accept-config-changes` prints the block and count lines above its recorded lines, which stay a flat list of repositories | 2026-10-05 | [§3.3](#33-what-the-broker-gets) | built: `run.keeperPlan.ApprovedScopes`, pinned by `TestTheKeepersPlanCarriesTheApprovedScopes` and, through the keeper on the container arm, `TestGitHubBrokerAWideningEntryAdmitsARepositoryForOneWorkspace` |
 | <a id="WW-D29"></a>[`WW-D29`](#10-decision-ledger) | *Implementation decision:* inside a jail the old form's refusal is a warning naming no edit, since its keys are host paths that match no workspace there, and the check's full list is never printed in a jail | 2026-10-05 | [§3.6](#36-the-old-form) | built: pinned by `TestTheRetiredFormNamesThisProjectsEditAndOnlyCountsTheRest` |
 | <a id="WW-D30"></a>[`WW-D30`](#10-decision-ledger) | *Implementation decision, from review the next day:* the launch and host `yolo check` print every config error and warning, and a config load error, as text, escaped at the printer: every rune a terminal acts on is written as a visible escape except the newlines yolo's own multi-line messages use, and markup is escaped where the line is printed through it. A file label is escaped where it enters a message as well, in the file and line a located message leads with, the include the outside refusal names, and the loader's parse and not-an-object refusals, so a newline in such a name prints as `\n` rather than starting a line. Escaping labels alone was declined: a message can echo a key or a value the agent wrote. Reversible: each printer escapes in one call | 2026-10-06 | [§3.2](#32-the-gate) | built: `termsafe.VisibleLines` in `run.configMessageText` and the check's config section, and `config.srcFile.label`; pinned by `TestTheLaunchsConfigMessagesPrintTheAgentsTextAsText`, `TestCheckPrintsTheAgentsConfigTextAsText`, `TestABrokeredRefusalNamesAnAgentChosenFileAsText`, `TestALoadRefusalNamesAnAgentChosenFileAsText` and `TestVisibleLines` |
+| <a id="WW-D31"></a>[`WW-D31`](#10-decision-ledger) | **Maintainer ruling, extending [OQ-BB9](boundary-broker.md#15-decision-ledger):** a `repos` entry may be a whole-segment wildcard, so one entry can grant every repository the login can reach. *"I want you to add wildcards for the GitHub grants in JL configs. I want to be able to grant an agent full read-only access to my GitHub account … we don't have to expand the scope of what account access means, but I just want it at least to be all repos."* The forms are `*/*`, `OWNER/*` and `*/REPO`; a partial glob (`org*`) is still malformed, and [OQ-BB9](boundary-broker.md#15-decision-ledger)'s other half stands: an account-wide command is out of scope however wide the scope is. Only a workspace ENTRY takes a wildcard, so a remote, and any repository a jail NAMES on a command line, cannot be one. The gate and the launch line show what a wildcard admits in plain words, not the token alone, because the human approves it | 2026-10-16 | [§3.1](#31-the-entry) | built: `brokerscope.ValidPattern`, `brokerscope.Admits` and `brokerscope.WildcardNote`; the matcher in `ghbroker.Scope.Contains` and `brokerscope.ValidateCurrent`; the check and rendering in `config.brokeredShapeProblems`, `config.WorkspaceRead.Entry`, `config.scopeBlock` and `run.Options.writeScopeFiles`; pinned by `TestValidPatternAndAdmits`, `TestValidateCurrentAdmitsUnderAWildcardAndFailsClosedOnAMalformedEntry`, `TestClassifyAWildcardScope`, `TestAWildcardEntryIsARowThatSaysWhatItAdmits` and `TestAWildcardEntryIsApprovedAtTheGateAndReachesTheBroker` |

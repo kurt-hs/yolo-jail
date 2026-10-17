@@ -57,7 +57,7 @@ func brokeredLines(all string) string {
 // file and line it was written at; a workspace `sets` is refused as user scope only (BB-P9).
 func TestAWorkspaceEntryIsAcceptedAndEachBadShapeIsRefusedWhereItWasWritten(t *testing.T) {
 	h := newBrokeredHost(t)
-	write(t, filepath.Join(h.ws, WorkspaceConfigName), `{"brokered": {"github": {"repos": ["org/lib", "a.b/c_d-e"]}}}`)
+	write(t, filepath.Join(h.ws, WorkspaceConfigName), `{"brokered": {"github": {"repos": ["org/lib", "a.b/c_d-e", "*/*", "org/*", "*/lib"]}}}`)
 	write(t, filepath.Join(h.ws, WorkspaceLocalConfigName), `{"brokered": {"github": {"repos": ["private/one"]}}}`)
 	if errs, _ := h.validate(t); brokeredLines(errs) != "" {
 		t.Fatalf("a workspace entry was refused:\n%s", errs)
@@ -67,12 +67,18 @@ func TestAWorkspaceEntryIsAcceptedAndEachBadShapeIsRefusedWhereItWasWritten(t *t
 		`{"brokered": []}`:                                                "config.brokered: expected an object of source name",
 		`{"brokered": {"github": "x"}}`:                                   `config.brokered.github: expected an object holding "repos"`,
 		`{"brokered": {"github": {"sets": []}}}`:                          "config.brokered.github.sets: user scope only",
-		`{"brokered": {"github": {"repos": "org/lib"}}}`:                  "config.brokered.github.repos: expected a list of OWNER/REPO strings",
-		`{"brokered": {"github": {"repos": ["github.com/o/r"]}}}`:         "config.brokered.github.repos[0]: 'github.com/o/r' is not OWNER/REPO",
-		`{"brokered": {"github": {"repos": ["ok/one", 3]}}}`:              "config.brokered.github.repos[1]: 3 is not OWNER/REPO",
-		`{"brokered": {"github": {"repos": ["one"]}}}`:                    "'one' is not OWNER/REPO",
-		`{"brokered": {"github": {"repos": ["a/b/c"]}}}`:                  "'a/b/c' is not OWNER/REPO",
-		`{"brokered": {"github": {"repos": ["https://github.com/o/r"]}}}`: "is not OWNER/REPO",
+		`{"brokered": {"github": {"repos": "org/lib"}}}`:                  "config.brokered.github.repos: expected a list of OWNER/REPO strings or wildcard entries",
+		`{"brokered": {"github": {"repos": ["github.com/o/r"]}}}`:         "config.brokered.github.repos[0]: 'github.com/o/r' is not a repository scope entry",
+		`{"brokered": {"github": {"repos": ["ok/one", 3]}}}`:              "config.brokered.github.repos[1]: 3 is not a repository scope entry",
+		`{"brokered": {"github": {"repos": ["one"]}}}`:                    "'one' is not a repository scope entry",
+		`{"brokered": {"github": {"repos": ["a/b/c"]}}}`:                  "'a/b/c' is not a repository scope entry",
+		`{"brokered": {"github": {"repos": ["https://github.com/o/r"]}}}`: "is not a repository scope entry",
+		// A wildcard is the whole segment alone: a partial glob is not one.
+		`{"brokered": {"github": {"repos": ["org*/*"]}}}`: "'org*/*' is not a repository scope entry",
+		`{"brokered": {"github": {"repos": ["org/l*"]}}}`: "'org/l*' is not a repository scope entry",
+		`{"brokered": {"github": {"repos": ["*"]}}}`:      "'*' is not a repository scope entry",
+		`{"brokered": {"github": {"repos": ["*/*/*"]}}}`:  "'*/*/*' is not a repository scope entry",
+		`{"brokered": {"github": {"repos": ["*/* "]}}}`:   "is not a repository scope entry",
 	} {
 		write(t, filepath.Join(h.ws, WorkspaceLocalConfigName), "{}")
 		write(t, filepath.Join(h.ws, WorkspaceConfigName), body)
