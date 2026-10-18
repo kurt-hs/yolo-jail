@@ -52,7 +52,7 @@ func (f *patchBranchFixture) checkedPatchBranch(t *testing.T) (*Series, CheckRes
 	if p := res.Record.Check.Problem; p != "" {
 		t.Fatalf("check problem: %s", p)
 	}
-	s, err := PatchBranchSeries(f.patchBranchSource(), f.source("main"), res.Record)
+	s, err := PatchBranchSeries(f.patchBranchSource(), "", f.source("main"), res.Record)
 	if err != nil {
 		t.Fatalf("PatchBranchSeries: %v", err)
 	}
@@ -94,6 +94,56 @@ func TestAPatchBranchConflictNamesThePatchBranchAndThePaths(t *testing.T) {
 	if pf == nil || pf.Kind != "conflict" || pf.Target.Tag != "v1.1.0" || len(pf.Paths) != 1 || pf.Paths[0] != "f.txt" ||
 		!strings.Contains(pf.Member, "mine@") {
 		t.Fatalf("the walk's failure = %+v, want a conflict at v1.1.0 naming the patch branch and f.txt", pf)
+	}
+}
+
+func TestRelativePatchBranchChecksAreIsolatedByDeclaringRepository(t *testing.T) {
+	u := newPatchedUpstream(t)
+	makeClone := func(name, contents string) (string, string) {
+		t.Helper()
+		repo := filepath.Join(t.TempDir(), name)
+		gitIn(t, filepath.Dir(repo), "clone", "-q", u.repo, repo)
+		gitIn(t, repo, "checkout", "-q", "-b", "mine", u.base)
+		commitFile(t, repo, "patch.txt", contents)
+		packDir := filepath.Join(repo, "packs", "tool")
+		if err := os.MkdirAll(packDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return repo, packDir
+	}
+	_, packA := makeClone("clone-a", "clone a\n")
+	_, packB := makeClone("clone-b", "clone b\n")
+	branchA := gitIn(t, filepath.Dir(filepath.Dir(packA)), "rev-parse", "mine")
+	branchB := gitIn(t, filepath.Dir(filepath.Dir(packB)), "rev-parse", "mine")
+	if branchA == branchB {
+		t.Fatal("fixture patch branches unexpectedly have the same commit")
+	}
+	want := func(dir string) PatchedWant {
+		return PatchedWant{Owner: "forkpack/tool", Source: u.source("main"), PatchBranch: "../..?ref=mine", PatchBranchDir: dir}
+	}
+	first := u.store.CheckPatched(want(packA), CheckOptions{Force: true, Now: func() time.Time { return u.now }})
+	if first.Err != nil || first.Record == nil || first.Record.PatchBranch == nil || first.Record.PatchBranch.Commit != branchA {
+		t.Fatalf("first clone check = %+v, want resolved branch %s", first, branchA)
+	}
+	if _, err := PatchBranchSeries("../..?ref=mine", packB, u.source("main"), first.Record); err == nil {
+		t.Fatal("second clone reused the first clone's resolved branch record")
+	}
+	legacy := *first.Record
+	legacy.Read.PatchBranchRepo = ""
+	if due, _ := CheckDue(&legacy, mustInputs(t, want(packA)), u.now, 0); !due {
+		t.Fatal("a pre-identity relative record was not invalidated")
+	}
+	second := u.store.CheckPatched(want(packB), CheckOptions{Now: func() time.Time { return u.now }})
+	if second.Err != nil || !second.Ran || second.Record == nil || second.Record.PatchBranch == nil || second.Record.PatchBranch.Commit != branchB {
+		t.Fatalf("second clone check = %+v, want its own resolution %s and a fresh check", second, branchB)
+	}
+	seriesA, err := PatchBranchSeries("../..?ref=mine", packA, u.source("main"), first.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seriesB, err := PatchBranchSeries("../..?ref=mine", packB, u.source("main"), second.Record)
+	if err != nil || seriesA.Digest == seriesB.Digest {
+		t.Fatalf("clone build series digests = %q / %q, err %v; want each clone's distinct branch commit", seriesA.Digest, seriesB.Digest, err)
 	}
 }
 

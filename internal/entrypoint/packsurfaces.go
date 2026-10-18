@@ -135,6 +135,13 @@ func loadPackRootAsStaged(e *Env, root string) ([]*packload.Pack, error) {
 				return nil, err
 			}
 			p.LaunchName = entry.Name
+			p.PatchBranchMappings = map[string]packload.PatchBranchMapping{}
+			for owner, mapping := range entry.PatchBranches {
+				if mapping.Mapped {
+					mapping.Directory = filepath.Join(e.WorkspaceDir(), filepath.FromSlash(mapping.Directory))
+				}
+				p.PatchBranchMappings[owner] = mapping
+			}
 			packs = append(packs, p)
 		}
 		return packs, nil

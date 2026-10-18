@@ -4259,14 +4259,16 @@ included, because a flat skills dir can carry none of them.
 | `yolo pack update` | everything `install` does, plus the refresh of npm-declared programs |
 | `yolo pack status` | show locked commits and flag config/lock drift |
 | `yolo pack status <pack>/<name>` | print one selected fork's or built tree's build line whole, with its recipe digest: the digest a launch's disclosure block shows in the line's place ([`OQ-RO9`](report-tiers.md#OQ-RO9)) |
-| `yolo pack series check [<pack-dir>] [--onto <ref>]` | the verdict a launch would reach on each patch series of the local pack in that directory, `.` by default: whether the newest version takes it, or the patch that stops it and the git commands that rebase it ([`patched-forks.md` §8.4](patched-forks.md#84-rebasing-the-series)), reached in a scratch copy of the upstream with no check record read or written, so it runs in a jail as on the host ([PF-D65](patched-forks.md#PF-D65)) |
+| `yolo pack series check [<pack-dir>] [--onto <ref>] [--online]` | checks each patch series in a disposable scratch copy; for a patch branch, reads its current recorded check and replays from existing mirrors without fetching. An absent or stale branch verdict names `yolo pack update` on the host or a launch; `--online` opts into a disposable scratch check that cannot write the durable record ([`patched-forks.md` PF-D65, PF-D98](patched-forks.md#PF-D65)) |
 
 **No `yolo pack` verb asks a question, and `packMain` takes no stdin at all.** `install` and
-`update` fetch and report; `series check` fetches into a scratch copy it deletes, printing the git
-commands that would change the pack rather than running them; `init` scaffolds a pack; every other verb inspects. That is a
-property of the whole surface rather than an omission from one row: the only reader ever threaded through here was the
-fetched-pack approval prompt. `install` and `update` share the fetch body, a forced refresh
-of every git pack. `update` adds the refresh of npm-declared programs ([`program`](#program)). The distinction a user cares about is *did my pins move*, which the
+`update` fetch and report; `series check` uses its current record without fetching for a patch branch,
+or checks in a scratch copy it deletes for patch series and with `--online`, printing the git
+commands that would change the pack rather than running them; `init` scaffolds a pack; every other
+verb inspects. That is a property of the whole surface rather than an omission from one row: the
+only reader ever threaded through here was the fetched-pack approval prompt. `install` and `update`
+share the fetch body, a forced refresh of every git pack. `update` adds the refresh of npm-declared
+programs ([`program`](#program)). The distinction a user cares about is *did my pins move*, which the
 output reports directly, as a launch's `Fetched pack` and `Updated pack` lines do.
 
 ## What this does not license

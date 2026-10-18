@@ -171,6 +171,8 @@ name; `patches` is otherwise unchanged.
 
 **Owner.** [OQ-PFK6](../reference/patched-forks.md#why-its-this-way), ruled 2026-10-15: both `carry` and `patches` are supported, and one contribution naming both is a fatal conflict; on 2026-10-16 the owner named the key `patch_branch` ([PF-D87](../reference/patched-forks.md#PF-D87)). Built 2026-10-16, on `files` extensions and forked programs alike; the lag is reported as the patch branch's merge base behind upstream releases ([PF-D90](../reference/patched-forks.md#PF-D90)).
 
+**2026-10-18 review disposition — landed on the isolated candidate.** Clone isolation, record-only reporting, and the default caller's host-identity hydration are now closed. The command applies the selected tree's host mapping only when its recorded workspace-relative directory resolves to the exact named pack directory and a matching relative branch is still declared; it keeps the explicitly named manifest as authority and does not lend the mapping to another clone. The caller regression uses different host/guest repository identities and paths, a host-written check record and pack-tree mapping, deleted mirrors, and a `git` wrapper that denies every invocation; it then rejects an unrelated clone elsewhere in the workspace. Record-only behavior still performs no fetch or mirror access. Evidence: `go test ./internal/cli -run '^TestSeriesCheckHydratesOnlyTheExactSelectedWorkspacePackIdentity$' -count=1`, alongside the retained clone-isolation, entrypoint mapping, record-only, and affected-package tests. See [PF-D98](../reference/patched-forks.md#PF-D98).
+
 ## 8. Model inheritance — emit `sharedModels` and `extends`
 
 **Ask.** The pi derive and the model-lists resolver emit a `sharedModels` entry per referenced
