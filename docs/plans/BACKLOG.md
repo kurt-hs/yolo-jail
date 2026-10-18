@@ -753,6 +753,13 @@ machine-wide copy" (`internal/cli/run/launchcheck_test.go`), then passed alone t
 the next full run. The fixture's stand-in copy is probably not answering yet under load. Found
 2026-10-18.
 
+### <a id="mount-table-test-race"></a>🔧 **`TestIsMountPointReadsTheProcessMountTable` races a changing mount table**
+
+It reads the jail's live mount table, picks a line, then asks `IsMountPoint`, which reads the table
+again. It failed once on `/var/lib/containers/storage/overlay` while integration tests in the same
+jail were adding and removing podman mounts (`internal/entrypoint/fsx_test.go`). A fixture mount
+table instead of the live one would remove the race. Found 2026-10-18.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
