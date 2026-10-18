@@ -135,7 +135,7 @@ func (o *Options) stagePacks(cname string) (string, []*packload.Pack, []jailcont
 	touchAgentStagingDir(cname)
 	loaded, briefings, err := o.stagePacksInto(tree, entries)
 	if err == nil {
-		err = writePackTreeRecord(tree, loaded)
+		err = writePackTreeRecord(tree, loaded, o.Workspace)
 	}
 	if err != nil {
 		discardPackTree(cname, tree)

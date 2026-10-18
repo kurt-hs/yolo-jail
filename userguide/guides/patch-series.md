@@ -119,6 +119,9 @@ If you keep your changes on a branch that you merge the upstream into, name that
   branch, the next check rebuilds. `yolo pack update` checks now.
 - **When the branch does not merge**, the launch stops and names the conflicting files. It also
   prints the `git merge` commands that fix the branch.
+- **A pack inside the repository it patches from names it by a relative path**, such as
+  `"patch_branch": "../..?ref=patches"`. The path starts at the pack's directory and cannot climb
+  above the pack's own git repository, so it names the same repository in a jail and on the host.
 - **A `files` extension takes `patch_branch` the same way.** One contribution names `patches` or
   `patch_branch`, never both.
 - **`yolo pack status`** shows the patch branch's commit and how many releases it is behind.
@@ -258,17 +261,12 @@ For a pack fetched from git, the lines say `<patches>` instead of a folder: run 
 own clone of the pack's repository, then commit and push the new series. yolo never writes into
 your pack itself.
 
-## Check a series in a jail
+## Check a series
 
-A jail cannot see your machine's copy of the upstream, or what yolo recorded about it. So
-**`yolo pack series check <pack folder>`** works from the pack's own folder instead, with a copy of
-the upstream it fetches for itself and deletes when it finishes. It works on your machine too.
+`yolo pack series check <pack folder>` reports whether the newest upstream version takes each patch series, or which patch conflicts and the git commands that repair it. Patch series are checked in a temporary mirror that is deleted when the command ends; `--onto <tag or commit>` checks that upstream revision instead.
 
-It says whether each series in the pack still applies: it applies, or the first patch that conflicts
-and its files, with the git commands that rebase it. That is what `yolo pack status` would show for
-the same series. `--onto <tag or commit>` checks that version instead of the newest. In a jail, run
-the last line where the pack's folder is your machine's own copy: inside the workspace, or on your
-machine. It writes nothing into your pack, and changes nothing a launch runs.
+A patch branch uses the current recorded check by default and fetches nothing. If its verdict is missing or stale, run `yolo pack update` on the host or start a launch to record one. Add `--online` for a throwaway scratch check; it does not update the durable record. The command writes nothing to your pack.
+
 
 ## Commands
 
@@ -278,7 +276,7 @@ machine. It writes nothing into your pack, and changes nothing a launch runs.
 | `yolo pack status` | Shows each good build, the newest version and what happened when yolo tried it, what holds it, and when the next check is due. It works offline. |
 | `yolo pack status <key>` | Prints the build line in full. A launch names the build line by a short digest instead of printing it each time; the build itself always prints it in full first. |
 | `yolo capture <bin>` or `yolo capture <pack>/<name>` | Checks now and builds the newest version if your series applies to it, or rebuilds the good build. It stops at a series that does not apply. |
-| `yolo pack series check <pack folder>` | Says whether each series in a pack folder applies to the newest version, or which patch conflicts and the git commands that rebase it. It works in a jail. |
+| `yolo pack series check <pack folder>` | Says whether each patch series applies to the newest version, in a disposable scratch mirror. For a patch branch, reads the current recorded check by default; if there is no current record, run `yolo pack update` on the host or start a launch. Add `--online` for a disposable scratch check that does not update the record. |
 | `yolo pack lint [--online] <dir>` | Checks a pack before you select it: each series must be one a launch can read. With `--online` it also checks the upstream in a scratch copy it deletes afterwards: that the ref and the series' base exist, what `follow` finds, and that your patches apply at their base. It works in a jail too. |
 
 To keep running what you have, turn `agent_updates` off for the pack: yolo stops checking upstream

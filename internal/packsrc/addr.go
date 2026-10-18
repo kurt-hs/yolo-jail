@@ -124,8 +124,10 @@ func parseFile(raw, rest string) (Addr, error) {
 	// and would be silently ignored, so name it.
 	if path, q, hasQ := strings.Cut(rest, "?"); hasQ {
 		return Addr{}, fmt.Errorf("pack address %q: file:// takes no query parameters "+
-			"(got %q) — a local pack is whatever is on disk; use %s",
-			raw, q, "file://"+path)
+			"(got %q) — file:// is a directory, read as it is on disk; to name a revision of a local "+
+			"repository (a patch branch's ?ref=) write git+file://%s?%s, or a path relative to the pack "+
+			"(../..?%s); for a directory, drop the query: %s",
+			raw, q, path, q, q, "file://"+path)
 	}
 	path := "/" + strings.TrimPrefix(rest, "/")
 	if strings.Contains(rest, "//") {

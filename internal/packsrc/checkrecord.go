@@ -249,6 +249,10 @@ type CheckInputs struct {
 	// PatchBranch is a PATCH BRANCH's address as written (patchbranch.go), "" for a patch series: an edit to it makes
 	// a check due at once, as an edit to the ref does. A patch branch's Base is "": the check resolves it.
 	PatchBranch string `json:"patch_branch,omitempty"`
+	// PatchBranchRepo is the filesystem identity of the resolved repository for a relative patch branch. It
+	// distinguishes clones while staying the same through a bind mount's host and jail path spellings.
+	// It is empty for explicit locators, whose address already names their repository.
+	PatchBranchRepo string `json:"patch_branch_repo,omitempty"`
 }
 
 // CheckFound is what a finished check found in the upstream's mirror.

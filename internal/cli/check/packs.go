@@ -231,6 +231,13 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 	o.selectedPacks = append([]*packload.Pack(nil), loaded...)
 	o.selectedPacksKnown = true
 
+	// A REF NO CHECK HAS RESOLVED ON THIS MACHINE: check reaches no network, so a patch branch or an
+	// upstream ?ref= naming nothing passes here and is refused at the launch that fetches it. Said, with
+	// the step that resolves it now.
+	for _, line := range unresolvedRefLines(loaded) {
+		r.dim(line)
+	}
+
 	// Config-surface exclusivity over the SELECTED set — the check that would otherwise be
 	// learned at launch. FATAL here for the same reason the footprint collision below is: the
 	// launch refuses it, so reporting it as a warning would mean `yolo check` passing on a
@@ -385,6 +392,46 @@ func (o *Options) reportUnresolvedPack(r *reporter, e config.PackEntry, err erro
 		}
 	}
 	r.fail(e.Name+": "+why.Error(), packFixNote(e))
+}
+
+// unresolvedRefLines is a line for each patched fork or extension of the selected packs whose git refs no
+// check on this machine has resolved (packload.Fork.RefNotResolvedLine): a patch branch whose commit no
+// check record holds, or an upstream with no check record at all. A plain fork's pin and an npm upstream
+// have no ref to resolve. Read from the machine's pack store, which check never writes.
+func unresolvedRefLines(packs []*packload.Pack) []string {
+	store := &packsrc.Store{Dir: paths.PacksDir()}
+	var lines []string
+	for _, f := range append(packload.Forks(packs), packload.PatchedTrees(packs)...) {
+		if !f.FollowsUpstream() {
+			continue
+		}
+		if f.PatchBranch != "" {
+			if s, err := f.ReadSeriesFrom(store); err == nil && s.Unresolved() {
+				lines = append(lines, unresolvedRefLine(f))
+			}
+			continue
+		}
+		if f.Npm() {
+			continue
+		}
+		if _, err := store.LoadCheckRecord(f.Key()); errors.Is(err, packsrc.ErrNoCheckRecord) {
+			lines = append(lines, unresolvedRefLine(f))
+		}
+	}
+	return lines
+}
+
+// unresolvedRefLine is unresolvedRefLines' line for f. A RELATIVE patch branch that does not resolve from
+// the directory this process read the pack from is a pack read through a copy — in a jail, the tree
+// the launch delivered, which is in no repository — so the lint to run is of the pack's own directory.
+func unresolvedRefLine(f packload.Fork) string {
+	if packsrc.IsRelativeLocator(f.PatchBranch) {
+		if _, err := f.PatchBranchAddr(); err != nil {
+			return f.Label() + ": ref not resolved (offline) — run `yolo pack lint --online <dir>` on the pack's own " +
+				"directory, inside the repository its patch branch " + f.PatchBranch + " names, to check it"
+		}
+	}
+	return f.RefNotResolvedLine(f.PatchBranchDir)
 }
 
 // packFixNote is the next step for a pack whose declaration or address the launch refuses: the
