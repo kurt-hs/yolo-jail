@@ -151,7 +151,6 @@ sequenceDiagram
         C->>J: apply one change
         C->>C: fold it into the effective-config record
     end
-    C->>J: re-render briefings and skills from the effective config
     C->>H: per-change result, exit 0 or 3
     C->>C: release the lock
 ```
@@ -177,8 +176,9 @@ sequenceDiagram
    the gate's decline lines.
 6. **Apply** each live step in order. Every step is idempotent, and is independent of the others
    ([§8](#8-failure-concurrency-and-recovery)).
-7. **Re-render** the briefings and skills staging from the effective config, as an attach does
-   ([LA-D7](#LA-D7)).
+7. **No re-render here** ([LA-D7](#LA-D7)). A running agent read its briefing when it started, so
+   rewriting it mid-session tells that agent nothing; every later session's attach re-renders the
+   briefings and skills right after its own apply, from the config the jail then has.
 8. **Report and exit.** Exit 0 means nothing is pending. Exit 3 means approved with restart still
    owed, matching `drift`'s 3. Exit 1 means declined, refused or failed before the record was
    written.
@@ -247,7 +247,7 @@ Classes:
 | `mounts` removed | **B**, ruled in by [OQ-LA3](#decision-ledger) | **B** | C | next | Lazy detach in the jail's namespace. |
 | `brokered.github.repos`, and remotes changing scope | **B** | B | n/a: the broker never starts | **B**, for every live session's broker | Rewrite the scope file. The broker classifies against its re-read ([§7](#7-github-scope-live)). |
 | `env_sources`, `providers`, `profiles`, `profile`, `model_facts`, `adapters`; pack `env`, `profile`, `provider`, `models`, `adapter` | A, next | A, next | A, next | next | An attach already recomposes the channel (`run.go:2852`). A process keeps its environment. |
-| `agents_md_extra`, `briefing_provenance`; built-in, user and workspace skills | A | A | B, because the briefing is copied once (`attachskewbriefing.go:64-66`) | next | Bind-mounted staging, which the apply re-renders ([LA-D7](#LA-D7)). |
+| `agents_md_extra`, `briefing_provenance`; built-in, user and workspace skills | A | A | B, because the briefing is copied once (`attachskewbriefing.go:64-66`) | next | Bind-mounted staging, which every attach re-renders ([LA-D7](#LA-D7)). |
 | `mcp_servers`, `mcp_presets`, pack `mcp`, `lsp_servers` | B, next | B, next | B, next | next | Boot regenerates them every session, but the input is frozen launch argv `-e`. Moving it into the per-entry channel makes the next session pick it up. |
 | `security.blocked_tools`, pack `blocked-tool`, `intercept` | B, next | B, next | B, next | next | Same: `YOLO_BLOCK_CONFIG` is argv. Shims regenerate per session. |
 | `mise_tools` | B, next | B, next | B, next | next | Channel input, plus a re-run of provisioning. |
@@ -393,8 +393,10 @@ before live mounts existed"* ([LA-D6](#LA-D6)). There is no bootstrap shim, as
   principle](../reference/happy-path-principle.md)).
 - **The in-jail agent** sees three things ([LA-D7](#LA-D7)):
   - the mount appear;
-  - the briefing re-rendered from the effective config, which also fixes today's attach re-render
-    from the unapproved config ([§2](#2-what-exists-today));
+  - at its next session, the briefing re-rendered after that attach's apply, so a mount it lists
+    is one the jail has. The re-render still reads the current config, so a restart-only key
+    (`network.ports`, say) can be described before the jail has it, as before
+    ([§2](#2-what-exists-today));
   - `yolo config drift` answering against the effective config: exit 0 once nothing is pending.
 
   Nothing is pushed into a running agent's conversation, because agents do not poll a channel.
@@ -556,7 +558,7 @@ The `OQ-LA` rows are the maintainer's rulings of 2026-10-18, quoted in the secti
 | <a id="LA-D4"></a>LA-D4 | Every change has one of four outcomes. Restart-only changes are recorded and reported | 2026-10-18 | [§4](#4-which-changes-can-reach-a-running-jail) | — |
 | <a id="LA-D5"></a>LA-D5 | Launches mount `/ctx` as a jail-read-only tmpfs. Mountpoints are made through a private writable clone | 2026-10-18 | [§5.1](#51-the-mechanism) | — |
 | <a id="LA-D6"></a>LA-D6 | A `live-ctx-mounts` contract tag. Without it, a mount change waits for restart, and there is no shim | 2026-10-18 | [§5.5](#55-old-jails) | — |
-| <a id="LA-D7"></a>LA-D7 | Briefings and skills are re-rendered from the effective config, by the apply and by an attach | 2026-10-18 | [§6](#6-outcomes-and-what-each-party-sees) | — |
+| <a id="LA-D7"></a>LA-D7 | An attach re-renders briefings and skills after its apply; the command does not, since a running agent read its briefing at start. Rendering from the effective config, rather than the current one, is not built | 2026-10-18 | [§6](#6-outcomes-and-what-each-party-sees) | — |
 | <a id="LA-D8"></a>LA-D8 | `.yolo/config-boot.json` becomes the effective config, folded per key, and written after each step | 2026-10-18 | [§6](#6-outcomes-and-what-each-party-sees) | — |
 | <a id="LA-D9"></a>LA-D9 | An interactive attach runs the gate and the apply in its lock hold, after the contract gate and before the exec; a non-interactive one asks nothing and prints one line naming `apply` and `drift`, unless given `--accept-config-changes` | 2026-10-18 | [§3.3](#33-the-attach-time-gate) | — |
 | <a id="LA-D10"></a>LA-D10 | The github-broker classifies against the re-read scope file. The apply rewrites `Repos` only, under the broker transaction | 2026-10-18 | [§7](#7-github-scope-live) | — |
@@ -564,3 +566,5 @@ The `OQ-LA` rows are the maintainer's rulings of 2026-10-18, quoted in the secti
 | <a id="LA-D12"></a>LA-D12 | Approve first, then apply. No cross-step rollback. 10 s per step, 60 s per apply | 2026-10-18 | [§8](#8-failure-concurrency-and-recovery) | — |
 | <a id="LA-D13"></a>LA-D13 | "A human is there" is the launch gate's predicate, stdin is a terminal (`Options.IsTTYStdin`); stdout is not consulted | 2026-10-18 | [§3.3](#33-the-attach-time-gate) | — |
 | <a id="LA-D14"></a>LA-D14 | An N at an attach records and applies nothing and still starts the session; a failed live step never fails an attach | 2026-10-18 | [§3.3](#33-the-attach-time-gate) | — |
+| <a id="LA-D15"></a>LA-D15 | What config mounts a jail has comes from a host-side record (`paths.AgentsDir()/<cname>/ctx-mounts/`), tied to the jail by a token frozen in its env; read-write mounts are user scope and absent from `.yolo/config-boot.json` | 2026-10-18 | [§5.5](#55-old-jails) | — |
+| <a id="LA-D16"></a>LA-D16 | A rootful podman reached by a yolo that is not root reports mounts *at next restart*; the injector never asks for `sudo` | 2026-10-18 | [§5.3](#53-verdict-per-backend) | — |

@@ -8,7 +8,7 @@ covers:
   - internal/cli/run/preflight.go
   - internal/cli/check/checkcmd.go
 tags: [config, security, agents, approval, scope]
-summary: "How an agent's config edit reaches a jail: a host-side approval snapshot of the WORKSPACE config only, a unified diff and a y/N prompt at fresh launch, a refusal when there is no terminal, and `--accept-config-changes` as the one per-launch opt-in. Where a brokered loophole starts, the workspace's repository scope, its remotes and its `brokered.<source>.repos` entry, is approved in the same prompt as a labeled block. Host user config is trusted on disk and never prompts."
+summary: "How an agent's config edit reaches a jail: a host-side approval snapshot of the WORKSPACE config only, a unified diff and a y/N prompt at fresh launch (and in `yolo config apply` and an interactive attach), a refusal when there is no terminal, and `--accept-config-changes` as the one per-launch opt-in. Where a brokered loophole starts, the workspace's repository scope, its remotes and its `brokered.<source>.repos` entry, is approved in the same prompt as a labeled block. Host user config is trusted on disk and never prompts."
 ---
 
 # Config-change approval — the gate on agent-editable config
@@ -173,10 +173,14 @@ rather than a new one (designs:
 
 ### Where it runs, and where it deliberately does not
 
-The check is a **fresh-launch** gate. Attaching to a running container (`podman exec`) does
-not re-check, because that container was created with its config already approved — which is
-why an agent must run `yolo check` itself after every config edit, and why `yolo config drift`
-exists to tell it whether a restart is owed.
+The check runs at every **fresh launch**, in **`yolo config apply`** on the host, and at an
+**attach a human is at** (stdin is a terminal, the same probe the launch uses). The last two take
+the approved changes a running jail can take into it without a restart, read-only and read-write
+`mounts` and the repository scope, and say per change what waits for the next session or restart
+([`live-config-apply.md`](../design/live-config-apply.md)). A non-interactive attach asks nothing
+and prints one line naming `yolo config apply` and `yolo config drift`. An `N` at an attach records
+nothing and still starts the session. `yolo config drift` compares against the config the jail
+has, which a live apply moves forward key by key.
 
 **Every backend gates, including `macos-user`.** The call sits inside the `macos-user` arm
 rather than above the backend dispatch, because "fresh launch only" is a container-path
@@ -288,8 +292,9 @@ its baseline and re-prompts, which is the direction to fail in.
 
 - **Not a claim that config is a sandbox boundary.** Packages are nix packages built in the
   nix sandbox; the gate is about *disclosure and consent*, not about what a package may do.
-- **Not a mid-session control.** An attached session's config is frozen until restart. The
-  gate cannot make a running jail safe; it decides what the *next* one launches with.
+- **Not a mid-session control for most keys.** Only `mounts` and the repository scope reach a
+  running jail; every other approved change waits for the next session or restart. The gate
+  cannot make a running jail safe.
 - **Not a gate on host user config**, at any scope, for any key. A key that would be unsafe to
   read from the workspace is refused by scope validation instead — that is a different
   mechanism with its own reasoning.
