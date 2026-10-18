@@ -33,7 +33,7 @@ import (
 // specimen installed with it. On the macos-user workflow's runner that is darwin-arm64, whose digest
 // no other job checks; the macOS nightly runs the same cell on darwin-x64.
 //
-// ⚠ Mac-only, behind requireMacosUser: the sandbox account and passwordless sudo.
+// ⚠ Mac-only, behind requireMacosUser: the sandbox account and the run-as rule.
 func TestMacosUserHostFloorIsTheHostUsersAlone(t *testing.T) {
 	requireMacosUser(t)
 	root, err := os.MkdirTemp("/private/tmp", "yolo-hostfloor-")
@@ -112,14 +112,14 @@ func TestMacosUserHostFloorIsTheHostUsersAlone(t *testing.T) {
 	}
 }
 
-// asSandboxUser runs argv as the sandbox account, without a password prompt, and returns its
-// combined output.
+// asSandboxUser runs argv as the sandbox account through the one run-as rule (sandboxCommand),
+// without a password prompt, and returns its combined output. A bare `sudo -u _yolojail /bin/ls`
+// is not that rule, which names /usr/bin/env, so it asked for a password and the control failed
+// on any Mac without passwordless root sudo.
 func asSandboxUser(argv ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sudo", append([]string{"-n", "-u", macosuser.SandboxUser}, argv...)...)
-	cmd.Stdin = nil
-	out, err := cmd.CombinedOutput()
+	out, err := sandboxCommand(ctx, argv...).CombinedOutput()
 	return string(out), err
 }
 

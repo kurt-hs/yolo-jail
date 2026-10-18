@@ -70,7 +70,7 @@ func TestMacosUserIOPolicyAcrossTheLaunchArgv(t *testing.T) {
 			"NOTHING was measured.\n%s", ioPolicyThrottle, controlOut)
 	}
 	viaSudo, sudoOut := ioPolicyHostReading(append(append(append([]string{}, setter...),
-		"sudo", "-n", "--set-home", "--user="+macosuser.SandboxUser, "/usr/bin/env", "-i"), reader...))
+		macosuser.RunAsSandboxArgv([]string{"--set-home"}, "-i")...), reader...))
 	viaSandbox, sandboxOut := ioPolicyHostReading(append(append(append([]string{}, setter...),
 		"/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)"), reader...))
 
@@ -206,7 +206,11 @@ print("IOPOL process=" + get(0) + " thread=" + get(1))`
 func ioPolicyHostReading(argv []string) (map[string]string, string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, argv[0], argv[1:]...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	// From "/", as every crossing into the sandbox account starts (sandboxCommand): the SUDO
+	// reading's reader runs as that account, which cannot traverse this package's directory.
+	cmd.Dir = "/"
+	out, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(out))
 	if err != nil {
 		text += fmt.Sprintf(" (%v)", err)

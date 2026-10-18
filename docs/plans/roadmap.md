@@ -60,21 +60,16 @@ and a pi-subagents registry several extensions can share stays in item 28.
 
 5. [Let the macos-user suite run on a developer Mac](../design/macos-user-suite-on-a-developer-mac.md)
    — the first full `-run '^TestMacosUser'` on a Mac that grants only the run-as rule (2026-10-17,
-   128 passed / 3 skipped / 12 failed, every failure reproducible). **Nine of the twelve are
-   privileges no gate declares** — six want passwordless root `sudo`, two a readable unified log
-   store — so the suite fails where it should skip countably, and a developer cannot tell a
-   regression from an unprivileged host.
-   [OQ-DM1](../design/macos-user-suite-on-a-developer-mac.md#8-open-questions) and
-   [OQ-DM2](../design/macos-user-suite-on-a-developer-mac.md#8-open-questions) are owed before the
-   two probes go in; `4d3248ded` already started removing the need rather than declaring it. Of
-   the other three failures, two were the tests reading machine-wide state and are fixed in the
-   tests, awaiting a Mac re-run: another session's doorway read as this one's survivor
-   ([§6.2](../design/macos-user-suite-on-a-developer-mac.md#62-another-sessions-doorway-was-read-as-this-sessions-survivor)), and a housekeeping stamp the
-   suite shares with the machine
-   ([§6.3](../design/macos-user-suite-on-a-developer-mac.md#63-the-housekeeping-tests-slot-was-not-due-because-its-stamp-is-the-machines)). The third, the nix floor losing to
-   a mise shim ([§6.1](../design/macos-user-suite-on-a-developer-mac.md#61-the-nix-floor-loses-to-a-mise-shim)),
-   waits on [OQ-DM3](../design/macos-user-suite-on-a-developer-mac.md#8-open-questions).
-   That run also cleared measurements items 38 and 40 were waiting on, listed there.
+   128 passed / 3 skipped / 12 failed, every failure reproducible). The four DM rulings are now
+   compacted in the design's [Decision Ledger](../design/macos-user-suite-on-a-developer-mac.md#decision-ledger):
+   no root `sudo`, honest counted skips for the host log policy, mise shims continue to win, and
+   local measurements count with provenance. Original commits `98715e67b` and `41dd11e3f` are
+   preserved in the candidate merge, but remain unlanded on main and have not been run on a native
+   Mac. The separate doorway and housekeeping test repairs remain in main at
+   [§6.2](../design/macos-user-suite-on-a-developer-mac.md#62-another-sessions-doorway-was-read-as-this-sessions-survivor)
+   and [§6.3](../design/macos-user-suite-on-a-developer-mac.md#63-the-housekeeping-tests-slot-was-not-due-because-its-stamp-is-the-machines),
+   awaiting their documented Mac re-runs. The floor test's changed diagnostic is also pending its
+   native-Mac run. That first run cleared measurements items 38 and 40, listed in the design.
 
 Native readiness and credential-store work retain their places below: assess
 [the privilege prerequisites](../research/sandvault-macos-privileges.md) without broad root
@@ -366,7 +361,7 @@ classes, its sub-parts are named and the cross-cutting ones repeat in the two li
 |---|---|---|
 | IC1 — profile-served daemons on attach | D | [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1): activate late-selected profile daemons additively, or refuse conflicting late bridge plans in this slice? **Maintainer** (synthesis leaning: refuse). Today's restart prompt is the ruled [OQ-SK1](../reference/attach-skew.md#why-its-this-way) disposition, not a defect. |
 | IC2 — ongoing launch preparation and update-and-wait | A | Review the connected combined candidate and complete final runtime acceptance; reuse the admitted-build pipeline before optimizing isolated waits. |
-| IC5 — the macos-user suite on a developer Mac | A / D | A: [§6.2](../design/macos-user-suite-on-a-developer-mac.md#62-another-sessions-doorway-was-read-as-this-sessions-survivor) and [§6.3](../design/macos-user-suite-on-a-developer-mac.md#63-the-housekeeping-tests-slot-was-not-due-because-its-stamp-is-the-machines) are fixed in the tests and await a Mac re-run; D: [OQ-DM1](../design/macos-user-suite-on-a-developer-mac.md#8-open-questions) and [OQ-DM2](../design/macos-user-suite-on-a-developer-mac.md#8-open-questions) (declare the two undeclared privileges, or remove the need), [OQ-DM3](../design/macos-user-suite-on-a-developer-mac.md#8-open-questions) (floor vs mise shim) and [OQ-DM4](../design/macos-user-suite-on-a-developer-mac.md#8-open-questions) (whether a developer Mac clears a `NOT MEASURED on a Mac` line — five such lines are already written that way) |
+| IC5 — the macos-user suite on a developer Mac | A | The four rulings are compacted into the [Decision Ledger](../design/macos-user-suite-on-a-developer-mac.md#decision-ledger). Original commits `98715e67b` and `41dd11e3f` are preserved in the candidate merge but remain unlanded and unverified on native Mac; the main-tree doorway and housekeeping repairs in [§6.2](../design/macos-user-suite-on-a-developer-mac.md#62-another-sessions-doorway-was-read-as-this-sessions-survivor) and [§6.3](../design/macos-user-suite-on-a-developer-mac.md#63-the-housekeeping-tests-slot-was-not-due-because-its-stamp-is-the-machines) also need Mac re-runs. |
 
 The section's other pointers are not items of their own: Pi's profile-set extension call is item 28, native readiness
 and the credential store are items 11 and 20, and storage relocation and OrbStack are items 28 and 31.
@@ -440,7 +435,6 @@ The ruling set, in the order it unblocks work:
 - [OQ-DB2](../design/diagnostics-past-the-boundary.md#OQ-DB2) — is the boot snapshot always-on? (item 22)
 - [OQ-BB10](../design/boundary-broker.md#OQ-BB10) — how a host daemon hands the launching terminal a line (items 3, 30)
 - [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1) — activate late profile daemons additively, or refuse conflicting late bridge plans? (IC1)
-- [OQ-DM1](../design/macos-user-suite-on-a-developer-mac.md#8-open-questions) and [OQ-DM2](../design/macos-user-suite-on-a-developer-mac.md#8-open-questions) — declare the two privileges the macos-user suite spends but no gate probes, or keep removing the need? (IC5); with [OQ-DM3](../design/macos-user-suite-on-a-developer-mac.md#8-open-questions) (does the nix floor outrank a mise shim?) and [OQ-DM4](../design/macos-user-suite-on-a-developer-mac.md#8-open-questions) (does a developer Mac clear a `NOT MEASURED on a Mac` line?)
 - The motivating fork's name — its source, build line and `produces` list (item 26)
 - [OQ-FP11](../design/forked-programs-as-packs.md#OQ-FP11) — the open patched-fork ruling (item 1); [OQ-PFK5](../reference/patched-forks.md#why-its-this-way), [OQ-PFK6](../reference/patched-forks.md#why-its-this-way) and [OQ-PFK7](../reference/patched-forks.md#why-its-this-way) are ruled
 - The W1(e) `yolo run` progress golden sign-off (item 32)

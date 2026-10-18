@@ -468,7 +468,8 @@ stub. So prune does not over-report freed bytes — it goes **blind**.
   (`TestMacosUserCacheRelocationOnAVolumeMeasurement`,
   `TestMacosUserSeatbeltRelocationOnAVolumeMeasurement`). They record what
   [CR-D2](#CR-D2), [CR-D7](#CR-D7) and [OQ-CX8](../reference/context-mounts.md#oq-cx8) wait on.
-  **Both ran 2026-10-18 on a developer Mac** with an ownership-*off* APFS image and an exFAT
+  **Both ran 2026-10-18 on a developer Mac** (macOS 26.5, arm64; `macos-user.yml` has not
+  confirmed them) with an ownership-*off* APFS image and an exFAT
   image attached; both passed, delivery held on both, and the Seatbelt grant proved to be
   per-target rather than per-volume
   ([the record](../design/macos-user-suite-on-a-developer-mac.md#7-measurements-this-run-produced)).

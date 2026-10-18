@@ -633,7 +633,8 @@ host or CI.
 - **Where an rw element may be declared** waits on
   [`OQ-WT1`](../design/workspace-config-trust.md#OQ-WT1); until then, user scope only.
 - **MEASURED on a Mac 2026-10-18, two volume kinds of three** ([`OQ-CX8`](#oq-cx8)'s other half;
-  on a developer Mac, not on `macos-user.yml`, whose runner still has no second volume —
+  on a developer Mac (macOS 26.5, arm64); `macos-user.yml` has not confirmed it, its runner
+  having no second volume —
   [the run's record](../design/macos-user-suite-on-a-developer-mac.md#7-measurements-this-run-produced)).
   On an APFS volume with ownership *disabled* and on an ExFAT volume, a `cache_relocations`
   target under `/Volumes` was **DELIVERED**: the sandbox wrote through the link and the file was
