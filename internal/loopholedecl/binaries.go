@@ -6,11 +6,12 @@ package loopholedecl
 //
 // # Why a download and not a file in the pack tree
 //
-// A file committed to the tree reaches a jail with its exec bit only from a pack configured BY
-// PATH (packstage.copyFile carries 0o111). An EMBEDDED pack, the shape every official pack has,
-// cannot carry one at all: `embed.FS` reads every file back 0444, and the leased per-build tree
-// is sealed read-only (pack-binaries.md, "A pack's own tree cannot carry an executable", measured with packs/hello-daemon). So
-// the bytes live OUTSIDE every pack tree. `yolo pack install` fetches each build this machine
+// A file committed to the tree reaches a jail with its exec bit by every route (packstage
+// carries it for a by-path pack, packs/executables.txt for an embedded one;
+// pack-system.md#the-exec-bit), but a compiled program needs one build per platform, and in an
+// official pack every build would ride in every yolo binary (pack-binaries.md, "A pack's own
+// tree cannot carry an executable", measured with packs/hello-daemon). So the bytes live
+// OUTSIDE every pack tree. `yolo pack install` fetches each build this machine
 // needs, verifies it against the digest written here, and caches it by digest with the exec bit
 // set (internal/packbin); the launch reads the cache and never fetches. The manifest pins the
 // bytes and the pack's commit pins the manifest, so a pinned pack pins everything that runs

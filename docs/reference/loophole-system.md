@@ -414,9 +414,10 @@ author hears about it.
 
 ### A program the loophole downloads
 
-A pack's own tree can carry an executable only when the pack is configured by path: an
-**embedded** pack's files read back `0444`, whatever their mode in the repository. So a loophole
-that ships a compiled program declares it as a **download** instead, under `binaries`, one build
+A pack's own tree carries its files' exec bits by every route
+([the exec bit](pack-system.md#the-exec-bit)), but a compiled program needs one build per platform, and
+one committed to an official pack would ride in every `yolo` binary. So a loophole that ships a compiled program declares
+it as a **download** instead, under `binaries`, one build
 per `<goos>/<goarch>` with an https `url` and a **mandatory** `sha256`
 ([`pack-binaries.md`](pack-binaries.md#the-manifest-key-and-its-two-tokens), [BP-D1](pack-binaries.md#BP-D1) to [BP-D6](pack-binaries.md#BP-D6)). The manifest pins
 the bytes and the pack's commit pins the manifest, so a pinned pack pins everything that runs.

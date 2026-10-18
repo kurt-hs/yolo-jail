@@ -10,8 +10,8 @@ package packload_test
 //
 // A pack CAN ship the executable its jail-side daemon runs — through the CONFIGURED
 // route (a pack selected by path, staged by internal/packstage, which carries the exec
-// bit). It CANNOT through the EMBEDDED route, and that half is pinned too, as a negative,
-// because it is the finding.
+// bit). Through the EMBEDDED route it could not at first, because embed.FS carries no mode;
+// packs/executables.txt closed that, and TestTheEmbeddedChannelDeliversAnExecutable pins it.
 //
 // # Why the assertions run the real pipeline instead of a fixture
 //
@@ -56,9 +56,9 @@ const helloProgramRel = "bin/hello"
 // selected BY PATH — `"packs": ["/abs/path/to/packs/hello-daemon"]`, which lowers to a
 // file:// entry and reaches packstage.Stage — and returns the staged loophole MODULE dir.
 //
-// Out of the WORKTREE deliberately, where the other embedded-pack tests read packs.FS:
-// the exec bit is the subject here and the embed channel does not carry one, so reading
-// it from the binary would test the wrong artifact. That asymmetry is the finding.
+// Out of the WORKTREE deliberately, where the other embedded-pack tests read packs.FS: this is
+// the by-path route, whose exec bit comes from the file's own mode rather than from
+// packs/executables.txt.
 func stageHelloPackByPath(t *testing.T) string {
 	t.Helper()
 	src := filepath.Join(repoRootFor(t), "packs", helloPackName)
@@ -217,25 +217,15 @@ func TestTheSubsetAcceptsAJailOnlyLoophole(t *testing.T) {
 	}
 }
 
-// THE NEGATIVE HALF, and it is the finding: the EMBEDDED channel cannot deliver an
-// executable, so `packs: ["hello-daemon"]` — the bare-name spelling — stages a program
-// the jail cannot run.
+// THE EMBEDDED HALF. It was the negative finding — embed.FS reports 0444 for every file and
+// packload.copyEmbeddedTree wrote 0o644 — and it closed (2026-10-17) when packs/executables.txt
+// began recording the source tree's exec bits beside the bytes, which copyEmbeddedTree
+// restores. So `packs: ["hello-daemon"]` — the bare-name spelling — now stages a program the
+// jail can run, the same as the by-path selection above.
 //
-// Two independent causes, asserted separately because fixing either one alone changes
-// nothing:
-//
-//	embed.FS reports 0444 for every file, whatever its mode on disk. Nothing downstream
-//	can recover a bit that was never carried.
-//
-//	packload.copyEmbeddedTree then writes 0o644 unconditionally. Its comment says
-//	"packstage enforces the same rule for configured packs" — packstage does the
-//	OPPOSITE now (its copyFile carries 0o111 deliberately), and internal/cli/run's own
-//	copyTree carries it too, so this is the last stripper standing.
-//
-// ⚠ IF THIS TEST FAILS BECAUSE THE BITS NOW SURVIVE, that is the gap closing rather than
-// a regression: update packs/hello-daemon/README.md's result table, which currently says
-// the embedded route cannot work.
-func TestTheEmbeddedChannelCannotDeliverAnExecutable(t *testing.T) {
+// embed.FS itself still carries no mode, and that is asserted first: it is WHY the list
+// exists, and a Go release that started carrying modes would make the list redundant.
+func TestTheEmbeddedChannelDeliversAnExecutable(t *testing.T) {
 	embeddedProgram := helloPackName + "/loopholes/" + helloPackName + "/" + helloProgramRel
 	fi, err := packs.FS.Open(embeddedProgram)
 	if err != nil {
@@ -248,8 +238,8 @@ func TestTheEmbeddedChannelCannotDeliverAnExecutable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if info.Mode().Perm()&0o111 != 0 {
-		t.Fatalf("embed.FS reported %04o for %s — it used to report 0444 for every file, and "+
-			"packs/hello-daemon/README.md's result table depends on that",
+		t.Fatalf("embed.FS reported %04o for %s — it used to report 0444 for every file, which "+
+			"is the whole reason packs/executables.txt exists",
 			info.Mode().Perm(), embeddedProgram)
 	}
 
@@ -273,10 +263,13 @@ func TestTheEmbeddedChannelCannotDeliverAnExecutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mi.Mode().Perm()&0o111 != 0 {
-		t.Fatalf("%s materialized as %04o — the embedded route now carries the exec bit, so "+
-			"packs/hello-daemon/README.md's result table is out of date (and the bare-name "+
-			"selection may now work)", materialized, mi.Mode().Perm())
+	if mi.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("%s materialized as %04o — the embedded route must restore the exec bit "+
+			"packs/executables.txt records", materialized, mi.Mode().Perm())
+	}
+	out, err := exec.Command(materialized).CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "hello") {
+		t.Fatalf("running the materialized program: %v\n%s", err, out)
 	}
 }
 

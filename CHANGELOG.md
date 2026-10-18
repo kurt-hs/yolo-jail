@@ -52,6 +52,7 @@ build, an older release, upstream without your patches, or pi without an extensi
 
 ### Fixed
 
+- A script a pack delivers keeps its executable bit in every jail and through `yolo host apply`, shipped packs included; see [the exec bit](docs/reference/pack-system.md#the-exec-bit).
 - A macOS (macos-user) launch no longer leaves a copy of its packs behind on exit; `yolo prune --apply` removes older ones.
 - Claude on Kilo no longer assumes a 1M-token context for every model.
 - `yolo --update` on a patched fork now waits for another yolo building it, instead of failing.
