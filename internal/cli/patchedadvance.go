@@ -626,7 +626,7 @@ func newAdvance(f packload.Fork, o advanceOptions) (*advance, *advanceResult) {
 	series, err := f.ReadSeriesFrom(a.packs)
 	if packsrc.IsPatchBranchRecordError(err) {
 		// A RECORD THAT CANNOT BE READ is recovered by loadOrRecover and started over by the check.
-		series, err = packsrc.UnresolvedPatchBranchSeries(f.PatchBranch), nil
+		series, err = packsrc.UnresolvedPatchBranchSeries(f.PatchBranch, f.PatchBranchDir), nil
 	}
 	if err != nil {
 		// THE SERIES CANNOT BE READ (§8.1): nothing serves under PF-D23, since the manifest's recipe
@@ -1164,7 +1164,8 @@ func (a *advance) patchBranchResolved() bool {
 	if a.f.PatchBranch == "" || a.rec == nil {
 		return false
 	}
-	s, err := packsrc.PatchBranchSeries(a.f.PatchBranch, a.f.Source, a.rec)
+	s, err := packsrc.PatchBranchSeriesWithIdentity(a.f.PatchBranch, a.f.PatchBranchDir,
+		a.f.PatchBranchRepoIdentity, a.f.Source, a.rec)
 	if err != nil || s.Digest == a.series.Digest {
 		return false
 	}

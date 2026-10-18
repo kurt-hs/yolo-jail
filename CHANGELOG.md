@@ -15,15 +15,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `yolo --version` now names the commit in every build, releases included, as in `yolo-jail 0.15.0+g0123456789ab`.
 - A model list with no `only` no longer refuses a model you type, for pi's child agents too.
 - `YOLO_PI_SUBAGENTS_MODEL_SETTINGS` is gone; to hand pi that flag, declare [`launch_computed`](docs/reference/pack-system.md#launch_computed) in a pack that forks the `pi` program.
-- Claude keeps your `/model` choice across launches; switching providers picks the same tier on the new one.
-- **macOS (macos-user) launches no longer ask for a password.** Run `yolo macos-setup` once after upgrading; it installs one sudo rule scoped to the sandbox account, one macOS user per Mac. See [the macOS guide](userguide/guides/macos.md).
+- Claude keeps your `/model` choice across launches, and its tier when you switch providers.
+- **macOS (macos-user) launches no longer ask for a password.** Run `yolo macos-setup` once after upgrading. See [the macOS guide](userguide/guides/macos.md).
 - **Each jail runs its own credential services** for Claude, OpenAI and AWS. Once an older yolo's jails end, run `yolo host-daemon stop --host-wide <name>`. See [host services](userguide/guides/host-services.md).
-- **A newer agent, tool or patched build that fails to install now stops the launch**; the error gives the command that runs what you have. Offline, yolo starts what is installed.
+- **A newer agent, tool or patched build that fails to install now stops the launch**, naming the command that runs what you have. Offline, yolo starts what is installed.
 
 ### Added
 
-**Patched forks and extensions run on macOS (macos-user),** built for your Mac at launch and by
-`yolo host`. See [Patch series](userguide/guides/patch-series.md).
+**Patched forks and extensions run on macOS (macos-user).** See [Patch series](userguide/guides/patch-series.md).
 
 **The GitHub broker takes wildcards** in `brokered.github.repos` (`*/*`, `OWNER/*`, `*/REPO`),
 still read-only.
@@ -38,7 +37,9 @@ setup can't deliver it. See
 [Settings per setup](userguide/reference/settings-per-setup.md#workspace-mounts-and-host-files).
 
 **Keep your patches on a branch.** Name a `patch_branch` in place of `patches`; yolo merges it
-into each new upstream version. See [Patch series](userguide/guides/patch-series.md#keep-your-patches-on-a-branch).
+into each new upstream version and names any conflicting files. A pack inside that repository names it by
+a relative path, such as `../..?ref=patches`. `yolo pack series check` reads the recorded verdict by default;
+`--online` checks in a disposable scratch copy. See [Patch series](userguide/guides/patch-series.md#keep-your-patches-on-a-branch).
 
 **pi model facts merge instead of replace.** A model row keeps the catalog facts it does not
 state; `null` removes one. See `yolo config-ref`.
@@ -47,11 +48,12 @@ state; `null` removes one. See `yolo config-ref`.
 
 **Ways past a broken patched build.** The error lists commands that start anyway. See [Patch series](userguide/guides/patch-series.md#when-a-build-breaks).
 
-- A company list that only adds models now shows in Claude Code after Claude's own models.
-- A launch refreshes a Claude login close to expiring, and a host service that crashes mid-session is restarted.
+- A company list that only adds models shows in Claude Code after Claude's own.
+- A launch refreshes a nearly expired Claude login, and a crashed host service is restarted.
 
 ### Fixed
 
+- `yolo pack lint` and `yolo check` say when they did not check a patched build's `?ref=`, naming `yolo pack lint --online`.
 - A pack's script keeps its executable bit everywhere it is delivered; see [the exec bit](docs/reference/pack-system.md#the-exec-bit).
 - On btrfs or XFS, a captured agent is shared into a new workspace even when a direct reflink is refused.
 - A macOS (macos-user) launch no longer leaves a copy of its packs behind on exit; `yolo prune --apply` removes older ones.

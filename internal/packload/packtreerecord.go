@@ -19,6 +19,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 )
 
 // PackTreeRecordName is the record's file name, at the tree's top level, where the boot's
@@ -26,6 +28,16 @@ import (
 // every byte outside [A-Za-z0-9.-] as "_" plus two hex digits, so no slug starts "_pa". A
 // dot-name could collide, because a pack name may be any string without "/", "\" or ":".
 const PackTreeRecordName = "_pack-tree.json"
+
+type PatchBranchMapping struct {
+	// Repository is the host-established identity of the relative locator's repository.
+	Repository string `json:"repository"`
+	// Directory is the declaring pack directory relative to the host workspace.
+	Directory string `json:"directory,omitempty"`
+	// Mapped says Directory is available under the jail workspace. It is separate from
+	// Directory because "." is a valid mapping for a pack at the workspace root.
+	Mapped bool `json:"mapped,omitempty"`
+}
 
 // PackTreeEntry is one pack in a tree's record.
 type PackTreeEntry struct {
@@ -41,6 +53,9 @@ type PackTreeEntry struct {
 	// did not print, as from an entrypoint of another build, still warns. Absent from a tree an
 	// older launch staged, and ignored by an older boot.
 	Skipped []string `json:"skipped,omitempty"`
+	// PatchBranches carries host-side repository identity and the workspace-relative declaring
+	// directory for selected relative patch branches, keyed by staged owner key.
+	PatchBranches map[string]PatchBranchMapping `json:"patch_branches,omitempty"`
 }
 
 type packTreeRecord struct {
@@ -50,6 +65,13 @@ type packTreeRecord struct {
 // WritePackTreeRecord writes root's record from the packs a launch loaded out of it, in the order
 // given, which is the precedence order (config.PackSelection.Packs).
 func WritePackTreeRecord(root string, packs []*Pack) error {
+	return WritePackTreeRecordForWorkspace(root, packs, "")
+}
+
+// WritePackTreeRecordForWorkspace writes root's record and carries the selected packs' relative branch
+// identity across the host-to-jail path mapping. A branch directory outside workspace is not mapped;
+// its identity still distinguishes its record, without making that host path accessible in the jail.
+func WritePackTreeRecordForWorkspace(root string, packs []*Pack, workspace string) error {
 	rec := packTreeRecord{Packs: []PackTreeEntry{}}
 	for _, p := range packs {
 		rel, err := filepath.Rel(root, p.Root)
@@ -60,6 +82,11 @@ func WritePackTreeRecord(root string, packs []*Pack) error {
 		for _, note := range p.SkewNotes {
 			entry.Skipped = append(entry.Skipped, strings.TrimPrefix(note, "pack "+p.Name+": "))
 		}
+		mappings, err := patchBranchMappingsForTree(p, workspace)
+		if err != nil {
+			return fmt.Errorf("packs: recording relative patch branches for %s: %w", p.Name, err)
+		}
+		entry.PatchBranches = mappings
 		rec.Packs = append(rec.Packs, entry)
 	}
 	data, err := json.MarshalIndent(rec, "", "  ")
@@ -67,6 +94,45 @@ func WritePackTreeRecord(root string, packs []*Pack) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(root, PackTreeRecordName), append(data, '\n'), 0o644)
+}
+
+func patchBranchMappingsForTree(p *Pack, workspace string) (map[string]PatchBranchMapping, error) {
+	if p == nil || p.Decl == nil {
+		return nil, nil
+	}
+	dir := p.SourceRoot
+	if dir == "" {
+		dir = p.Root
+	}
+	var mappedDir string
+	mapped := false
+	if workspace != "" {
+		ws, err := filepath.EvalSymlinks(workspace)
+		if err == nil {
+			source, sourceErr := filepath.EvalSymlinks(dir)
+			if sourceErr == nil {
+				if rel, relErr := filepath.Rel(ws, source); relErr == nil && filepath.IsLocal(rel) {
+					mappedDir, mapped = filepath.ToSlash(rel), true
+				}
+			}
+		}
+	}
+	var out map[string]PatchBranchMapping
+	for _, c := range p.Decl.Contributions() {
+		if c.PatchBranch == "" || !packsrc.IsRelativeLocator(c.PatchBranch) {
+			continue
+		}
+		identity, err := packsrc.RelativeRepositoryIdentity(c.PatchBranch, dir)
+		if err != nil {
+			return nil, err
+		}
+		if out == nil {
+			out = make(map[string]PatchBranchMapping)
+		}
+		owner := p.StagedSlug() + "/" + c.ExtensionName()
+		out[owner] = PatchBranchMapping{Repository: identity, Directory: mappedDir, Mapped: mapped}
+	}
+	return out, nil
 }
 
 // ReadPackTreeRecord reads root's record: its packs in precedence order, and recorded=false with
@@ -90,6 +156,15 @@ func ReadPackTreeRecord(root string) (entries []PackTreeEntry, recorded bool, er
 		if e.Name == "" || !filepath.IsLocal(filepath.FromSlash(e.Dir)) {
 			return nil, true, fmt.Errorf("the record %s names %q at %q, which is not a pack inside the tree",
 				path, e.Name, e.Dir)
+		}
+		for owner, mapping := range e.PatchBranches {
+			if owner == "" || mapping.Repository == "" {
+				return nil, true, fmt.Errorf("the record %s has an incomplete relative patch branch mapping for %q", path, owner)
+			}
+			if !mapping.Mapped && mapping.Directory != "" || mapping.Mapped && !filepath.IsLocal(filepath.FromSlash(mapping.Directory)) {
+				return nil, true, fmt.Errorf("the record %s maps a relative patch branch directory outside the workspace: %q",
+					path, mapping.Directory)
+			}
 		}
 	}
 	return rec.Packs, true, nil
