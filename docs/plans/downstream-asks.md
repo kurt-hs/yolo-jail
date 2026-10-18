@@ -184,7 +184,9 @@ not switch, because the fork rewrite kept the base's value; it now takes the for
 ([ML-D14](../design/model-lists-and-pickers.md#ML-D14),
 `TestAPiForkDeclaringReadsSharedModelsSwitchesTheRender`). `models.json` then holds the facts once
 as `sharedModels` with `extends` rows; the model-lists file carries the same keys beside full rows,
-since yolo's own extension reads it. A dangling `extends` is refused by `yolo check`.
+since yolo's own extension reads it. One exception: on pi's own Bedrock client a row naming a
+catalog id is a `modelOverrides` entry ([ask 6](#6-a-declared-model-row-loses-the-catalogs-thinking-levels)),
+which stays full, with no `extends`. A dangling `extends` is refused by `yolo check`.
 
 **Landed.** (Verbatim acceptance from the consumer's design.) The rendered surfaces carry
 `sharedModels`/`extends` rather than restated facts; no route reports pi's 128000/16384 defaults; a

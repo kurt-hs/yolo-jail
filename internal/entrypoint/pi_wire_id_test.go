@@ -46,6 +46,35 @@ func wireTwinsRender(t *testing.T) *pioencodeRender {
 	return r
 }
 
+// A TWIN WITH NO PIN ON pi'S OWN openrouter: pi's built-in provider gets no models.json row, so
+// the twin reaches pi only through a registration, which a `wire_id` (or a `base`) now triggers on
+// its own, with no routing and no `only`.
+func TestPiRegistersAWireIdTwinWithNoPinOnABuiltInProvider(t *testing.T) {
+	decoded, err := jsonx.Decode([]byte(`{"openrouter":{"models":{
+	  "floor":{"id":"deepseek/deepseek-v4.1-flash:floor","base":"deepseek/deepseek-v4.1-flash"},
+	  "floor-200k":{"id":"deepseek/deepseek-v4.1-flash:floor@200k","wire_id":"deepseek/deepseek-v4.1-flash:floor",
+	    "base":"deepseek/deepseek-v4.1-flash","context_window":204800}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, _ := decoded.(*jsonx.OrderedMap)
+	providers, err := packload.ComposeProviders(user, testPacksForAgent(t, "pi"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newPioencodeRender(t, mustCompactJSON(t, providers))
+	r.wireProfiles(`{"openrouter":{"provider":"openrouter"}}`)
+	r.render(t, `{"pi":"openrouter"}`)
+	rows, _ := piModelListsFile(t, r)["openrouter"]["models"].([]any)
+	ids := map[any]bool{}
+	for _, row := range rows {
+		ids[row.(map[string]any)["id"]] = true
+	}
+	if !ids["deepseek/deepseek-v4.1-flash:floor"] || !ids["deepseek/deepseek-v4.1-flash:floor@200k"] {
+		t.Errorf("openrouter registration rows = %v, want the full-window alias and its twin", rows)
+	}
+}
+
 // A MODELS.JSON PROVIDER: both rows, the twin carrying `wireId` and its own window.
 func TestPiWritesAWireIdTwinIntoModelsJSON(t *testing.T) {
 	m := wireTwinsRender(t).piModels(t)

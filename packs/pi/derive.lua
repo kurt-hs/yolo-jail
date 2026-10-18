@@ -1778,6 +1778,15 @@ yolo.derive("pi", "model-lists", function(ctx)
     -- refuses a model outside it (OQ-MM3).
     local hasRouting = type(prov) == "table" and type(prov.model_routing) == "table" and
       next(prov.model_routing) ~= nil
+    -- So does a `wire_id` or a `base` on a provider pi has built in: pi writes no models.json row
+    -- for it (OQ-3), so a twin's client id or a variant's catalog base reaches pi only here.
+    if not hasRouting and type(own) == "table" and type(prov.model_options) == "table" then
+      for _, mo in pairs(prov.model_options) do
+        if type(mo) == "table" and (piWireId(mo) or (type(mo.base) == "string" and mo.base ~= "")) then
+          hasRouting = true
+        end
+      end
+    end
     if name ~= "openai-codex" and usable and (prov.models_only == true or hasRouting) then
       local piID = nativeBedrock and "amazon-bedrock" or name
       local rowApi, rowUrl = nil, nil
@@ -1821,7 +1830,7 @@ yolo.derive("pi", "model-lists", function(ctx)
           end
         end
         -- The wire id rides the row, and the extension forwards it into the registered
-        -- definition with the rest of what yolo declares. A [1m] variant names its base's.
+        -- definition with the rest of what yolo declares. A [1m] variant (e.base) gets none.
         if not e.base then
           m.wireId = sent(piWireId(mopts))
         end
