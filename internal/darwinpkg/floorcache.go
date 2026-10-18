@@ -7,7 +7,8 @@ package darwinpkg
 // Mac for a floor nothing changed, measured 2026-10-17).
 //
 // THE KEY IS THE INPUTS, NOT A TIME OR A VERSION. It hashes the system, the build argv (the attr
-// and the out-link), the YOLO_EXTRA_PACKAGES value the flake reads, and the bytes of flake.nix and
+// and the out-link), the YOLO_EXTRA_PACKAGES value the flake reads, every NIXPKGS_* variable
+// (nixpkgs' own --impure opt-ins, such as NIXPKGS_ALLOW_UNFREE), and the bytes of flake.nix and
 // flake.lock: the same two files the flake's own `imageIdentity` treats as deciding the image, for
 // the same reason — every package the floor names, and the nixpkgs it resolves them in, is spelled
 // in those two files, and flake.nix reads no other environment variable (a test pins that:
@@ -27,6 +28,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -67,6 +69,18 @@ func floorKey(repoRoot string, packages []any, system string, argv []string) (st
 		extra = s
 	}
 	field(extra)
+	// NIXPKGS' OWN ENVIRONMENT OPT-INS: the build is --impure, so nixpkgs' check-meta reads
+	// NIXPKGS_ALLOW_UNFREE (and _INSECURE, _BROKEN, _UNSUPPORTED_SYSTEM), which move what the floor
+	// can hold and what the skip list names. Every NIXPKGS_* variable is hashed, sorted, so the
+	// remedy for a skipped unfree package is a different key.
+	var nixpkgsEnv []string
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "NIXPKGS_") {
+			nixpkgsEnv = append(nixpkgsEnv, kv)
+		}
+	}
+	sort.Strings(nixpkgsEnv)
+	field(strings.Join(nixpkgsEnv, "\x00"))
 	for _, name := range []string{"flake.nix", "flake.lock"} {
 		body, err := os.ReadFile(filepath.Join(repoRoot, name))
 		if err != nil {
