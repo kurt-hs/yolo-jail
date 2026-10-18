@@ -3,17 +3,21 @@ title: "Approve a config change once, on the host, and let the running jail take
 date: 2026-10-18
 status: accepted
 stage: DECIDED
-next: "Build v1 from the implementation plan (read-only and read-write mounts, mount removal, GitHub scope, the attach-time gate); M1 runs in CI's rootless jobs"
+next: "Land v1; read CI's rootless integration jobs for TestLiveCtxMountInjectAndRemove (M1), then build the staged later slices"
 tags: [design, config, approval, attach, mounts, github, broker, live-apply, podman, macos-user, apple-container]
 summary: "A host command, `yolo config apply`, runs the launch's own config-change gate (same diff, same scope block, same y/N, same host-side approval record) against a running jail, then applies the approved changes that can reach a jail without a restart and says, per change, which ones wait for the next restart. An attach with a human at its terminal runs the same gate and apply before its session starts. Read-only context mounts are injected into a running podman jail with the kernel's new mount API, which a probe in this jail on 2026-10-18 showed working, read-only and recursive, into a read-only-rootfs container. The github-broker's repository scope is widened by rewriting the per-launch scope file it already re-reads per request, once its classification reads that file instead of its start-time copy. Everything else is classified per key and per backend; most keys stay restart-only, and the command still captures the trust for them."
 ---
 
 # Approve a config change once, on the host, and let the running jail take what it can
 
-**Status:** 2026-10-18. Every question ruled the same day; nothing built. Evidence read at
-`79d4e0a22`. MEASURED: mount injection into a running `--read-only` container, in this jail's
-nested podman only (`--userns host`); the rootless-host case it stands in for is UNMEASURED
-([§5.4](#54-what-still-has-to-be-measured)).
+**Status:** 2026-10-18. Every question ruled the same day. v1 is built on the branch that carries
+this edit (not yet on `main`); the command's own briefing re-render from the effective config is
+not ([LA-D7](#LA-D7)), and the later slices of [§13](#13-sequencing) are not. MEASURED, in this
+jail's nested podman only (`--userns host`, the direct injector branch): `yolo config apply` and an
+interactive attach adding, removing and moving read-only mounts in a running jail, writes refused,
+`/ctx` still read-only, `yolo config drift` exit 0 afterwards. UNMEASURED: the rootless
+`podman unshare` branch ([M1](#LA-M1), which CI's rootless integration jobs run), a live broker
+widening end to end, and M2 to M6 ([§5.4](#54-what-still-has-to-be-measured)).
 
 > **In short.** "Restart to apply" is wrong for the two changes people actually make mid-session,
 > a read-only mount and a GitHub repository: both can reach a running jail. So approval moves to a
@@ -553,30 +557,30 @@ v1 is items 1 to 3 ([OQ-LA1](#decision-ledger)); item 4 is staged on the
 ## Decision Ledger
 
 The `OQ-LA` rows are the maintainer's rulings of 2026-10-18, quoted in the sections they settle. The
-`LA-D` rows are implementation decisions, reversible. Nothing is built.
+`LA-D` rows are implementation decisions, reversible. Built is read from the branch's tree.
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| OQ-LA1 | v1 applies live: read-only mounts and GitHub scope (option A), plus read-write mounts and removal. The next-session moves and resources stay in this doc as later slices, staged on the roadmap | 2026-10-18 | [§4](#4-which-changes-can-reach-a-running-jail), [§13](#13-sequencing) | — |
-| OQ-LA2 | A read-write mount may be added live, with the launch's disclosure line and the command's one y | 2026-10-18 | [§4](#4-which-changes-can-reach-a-running-jail) | — |
-| OQ-LA3 | An apply removes what the config no longer lists: removed mounts are lazily detached, removed repositories leave the scope now | 2026-10-18 | [§4](#4-which-changes-can-reach-a-running-jail) | — |
-| OQ-LA4 | An attach runs the same gate and applies before its session starts whenever a human is there; the leaning (notice only) was rejected | 2026-10-18 | [§3.3](#33-the-attach-time-gate) | — |
-| OQ-LA5 | The command never offers a restart; it prints `yolo stop`, then `yolo` | 2026-10-18 | [§3.2](#32-the-sequence) | — |
-| OQ-LA6 | The agent cannot request an apply: it asks the human in its own words, and no channel is added. A broker-store request is iced | 2026-10-18 | [§3.1](#31-surface), [§13](#13-sequencing) | — |
-| <a id="LA-D1"></a>LA-D1 | The verb is `yolo config apply`, host-only, cwd-scoped | 2026-10-18 | [§3.1](#31-surface) | — |
-| <a id="LA-D2"></a>LA-D2 | `--record-only` is the explicit accept-without-applying. `check --accept-config-changes` never touches a running jail | 2026-10-18 | [§3.1](#31-surface) | — |
-| <a id="LA-D3"></a>LA-D3 | The launch lock is held for the whole command, prompt included. An apply is not a session | 2026-10-18 | [§3.2](#32-the-sequence) | — |
-| <a id="LA-D4"></a>LA-D4 | Every change has one of four outcomes. Restart-only changes are recorded and reported | 2026-10-18 | [§4](#4-which-changes-can-reach-a-running-jail) | — |
-| <a id="LA-D5"></a>LA-D5 | Launches mount `/ctx` as a jail-read-only tmpfs. Mountpoints are made through a private writable clone | 2026-10-18 | [§5.1](#51-the-mechanism) | — |
-| <a id="LA-D6"></a>LA-D6 | A `live-ctx-mounts` contract tag. Without it, a mount change waits for restart, and there is no shim | 2026-10-18 | [§5.5](#55-old-jails) | — |
-| <a id="LA-D7"></a>LA-D7 | An attach re-renders briefings and skills after its apply; the command does not, since a running agent read its briefing at start. Rendering from the effective config, rather than the current one, is not built | 2026-10-18 | [§6](#6-outcomes-and-what-each-party-sees) | — |
-| <a id="LA-D8"></a>LA-D8 | `.yolo/config-boot.json` becomes the effective config, folded per key, and written after each step | 2026-10-18 | [§6](#6-outcomes-and-what-each-party-sees) | — |
-| <a id="LA-D9"></a>LA-D9 | An interactive attach runs the gate and the apply in its lock hold, after the contract gate and before the exec; a non-interactive one asks nothing and prints one line naming `apply` and `drift`, unless given `--accept-config-changes` | 2026-10-18 | [§3.3](#33-the-attach-time-gate) | — |
-| <a id="LA-D10"></a>LA-D10 | The github-broker classifies against the re-read scope file. The apply rewrites `Repos` only, under the broker transaction | 2026-10-18 | [§7](#7-github-scope-live) | — |
-| <a id="LA-D11"></a>LA-D11 | The broker advertises live scope by a capability field in its scope file | 2026-10-18 | [§7](#7-github-scope-live) | — |
-| <a id="LA-D12"></a>LA-D12 | Approve first, then apply. No cross-step rollback. 10 s per step, 60 s per apply | 2026-10-18 | [§8](#8-failure-concurrency-and-recovery) | — |
-| <a id="LA-D13"></a>LA-D13 | "A human is there" is the launch gate's predicate, stdin is a terminal (`Options.IsTTYStdin`); stdout is not consulted | 2026-10-18 | [§3.3](#33-the-attach-time-gate) | — |
-| <a id="LA-D14"></a>LA-D14 | An N at an attach records and applies nothing and still starts the session; a failed live step never fails an attach | 2026-10-18 | [§3.3](#33-the-attach-time-gate) | — |
-| <a id="LA-D15"></a>LA-D15 | What config mounts a jail has comes from a host-side record (`paths.AgentsDir()/<cname>/ctx-mounts/`), tied to the jail by a token frozen in its env; read-write mounts are user scope and absent from `.yolo/config-boot.json` | 2026-10-18 | [§5.5](#55-old-jails) | — |
-| <a id="LA-D16"></a>LA-D16 | A rootful podman reached by a yolo that is not root reports mounts *at next restart*; the injector never asks for `sudo` | 2026-10-18 | [§5.3](#53-verdict-per-backend) | — |
-| <a id="LA-D17"></a>LA-D17 | In a jail, the command refuses only the jail's own workspace; a nested workspace's apply runs, as its launch's gate does | 2026-10-18 | [§3.1](#31-surface) | — |
+| OQ-LA1 | v1 applies live: read-only mounts and GitHub scope (option A), plus read-write mounts and removal. The next-session moves and resources stay in this doc as later slices, staged on the roadmap | 2026-10-18 | [§4](#4-which-changes-can-reach-a-running-jail), [§13](#13-sequencing) | ✅ |
+| OQ-LA2 | A read-write mount may be added live, with the launch's disclosure line and the command's one y | 2026-10-18 | [§4](#4-which-changes-can-reach-a-running-jail) | ✅ |
+| OQ-LA3 | An apply removes what the config no longer lists: removed mounts are lazily detached, removed repositories leave the scope now | 2026-10-18 | [§4](#4-which-changes-can-reach-a-running-jail) | ✅ |
+| OQ-LA4 | An attach runs the same gate and applies before its session starts whenever a human is there; the leaning (notice only) was rejected | 2026-10-18 | [§3.3](#33-the-attach-time-gate) | ✅ |
+| OQ-LA5 | The command never offers a restart; it prints `yolo stop`, then `yolo` | 2026-10-18 | [§3.2](#32-the-sequence) | ✅ |
+| OQ-LA6 | The agent cannot request an apply: it asks the human in its own words, and no channel is added. A broker-store request is iced | 2026-10-18 | [§3.1](#31-surface), [§13](#13-sequencing) | ✅ |
+| <a id="LA-D1"></a>LA-D1 | The verb is `yolo config apply`, host-only, cwd-scoped | 2026-10-18 | [§3.1](#31-surface) | ✅ |
+| <a id="LA-D2"></a>LA-D2 | `--record-only` is the explicit accept-without-applying. `check --accept-config-changes` never touches a running jail | 2026-10-18 | [§3.1](#31-surface) | ✅ |
+| <a id="LA-D3"></a>LA-D3 | The launch lock is held for the whole command, prompt included. An apply is not a session | 2026-10-18 | [§3.2](#32-the-sequence) | ✅ |
+| <a id="LA-D4"></a>LA-D4 | Every change has one of four outcomes. Restart-only changes are recorded and reported | 2026-10-18 | [§4](#4-which-changes-can-reach-a-running-jail) | ✅ |
+| <a id="LA-D5"></a>LA-D5 | Launches mount `/ctx` as a jail-read-only tmpfs. Mountpoints are made through a private writable clone | 2026-10-18 | [§5.1](#51-the-mechanism) | ✅ |
+| <a id="LA-D6"></a>LA-D6 | A `live-ctx-mounts` contract tag. Without it, a mount change waits for restart, and there is no shim | 2026-10-18 | [§5.5](#55-old-jails) | ✅ |
+| <a id="LA-D7"></a>LA-D7 | An attach re-renders briefings and skills after its apply; the command does not, since a running agent read its briefing at start. Rendering from the effective config, rather than the current one, is not built | 2026-10-18 | [§6](#6-outcomes-and-what-each-party-sees) | partial: an attach re-renders; the command does not render from the effective config |
+| <a id="LA-D8"></a>LA-D8 | `.yolo/config-boot.json` becomes the effective config, folded per key, and written after each step | 2026-10-18 | [§6](#6-outcomes-and-what-each-party-sees) | ✅ |
+| <a id="LA-D9"></a>LA-D9 | An interactive attach runs the gate and the apply in its lock hold, after the contract gate and before the exec; a non-interactive one asks nothing and prints one line naming `apply` and `drift`, unless given `--accept-config-changes` | 2026-10-18 | [§3.3](#33-the-attach-time-gate) | ✅ |
+| <a id="LA-D10"></a>LA-D10 | The github-broker classifies against the re-read scope file. The apply rewrites `Repos` only, under the broker transaction | 2026-10-18 | [§7](#7-github-scope-live) | ✅ |
+| <a id="LA-D11"></a>LA-D11 | The broker advertises live scope by a capability field in its scope file | 2026-10-18 | [§7](#7-github-scope-live) | ✅ |
+| <a id="LA-D12"></a>LA-D12 | Approve first, then apply. No cross-step rollback. 10 s per step, 60 s per apply | 2026-10-18 | [§8](#8-failure-concurrency-and-recovery) | ✅ |
+| <a id="LA-D13"></a>LA-D13 | "A human is there" is the launch gate's predicate, stdin is a terminal (`Options.IsTTYStdin`); stdout is not consulted | 2026-10-18 | [§3.3](#33-the-attach-time-gate) | ✅ |
+| <a id="LA-D14"></a>LA-D14 | An N at an attach records and applies nothing and still starts the session; a failed live step never fails an attach | 2026-10-18 | [§3.3](#33-the-attach-time-gate) | ✅ |
+| <a id="LA-D15"></a>LA-D15 | What config mounts a jail has comes from a host-side record (`paths.AgentsDir()/<cname>/ctx-mounts/`), tied to the jail by a token frozen in its env; read-write mounts are user scope and absent from `.yolo/config-boot.json` | 2026-10-18 | [§5.5](#55-old-jails) | ✅ |
+| <a id="LA-D16"></a>LA-D16 | A rootful podman reached by a yolo that is not root reports mounts *at next restart*; the injector never asks for `sudo` | 2026-10-18 | [§5.3](#53-verdict-per-backend) | ✅ |
+| <a id="LA-D17"></a>LA-D17 | In a jail, the command refuses only the jail's own workspace; a nested workspace's apply runs, as its launch's gate does | 2026-10-18 | [§3.1](#31-surface) | ✅ |
