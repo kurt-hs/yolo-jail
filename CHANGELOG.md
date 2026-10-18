@@ -72,6 +72,7 @@ last good build or upstream without your patches. See [Patch series](userguide/g
 - An exported rebased patch series now applies whatever your git version or settings.
 - pi, omp and opencode no longer wait about two seconds at start for yolo's footer line.
 - Models another pi extension registers for a provider are no longer dropped by yolo's model list, unless the profile enforces it.
+- `yolo features` on a terminal says what each capability is for.
 
 ## [0.14.0] - 2026-10-15
 
