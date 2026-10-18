@@ -2,8 +2,7 @@
 title: "Live config apply: implementation sketch"
 status: draft
 stage: SKETCH
-next: "Grow this into the implementation plan once OQ-LA1 is ruled and M1 is measured"
-depends-on: [live-config-apply.md#OQ-LA1, live-config-apply.md#OQ-LA2, live-config-apply.md#OQ-LA3]
+next: "Complete this into the implementation plan against the tree; every ruling is in"
 tags: [plan, sketch, config, mounts, github, live-apply]
 ---
 
@@ -54,7 +53,7 @@ design wins on behavior. This file only parks the material below the design's al
 - **Destination open.** Use `openat2` with `RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS` inside
   the jail namespace. Check that `/ctx`'s filesystem is tmpfs (`statfs` magic) before the
   private-clone `mkdirat`.
-- **Removal (pending [OQ-LA3](live-config-apply.md#OQ-LA3)).** `setns`, then `umount2(dest, MNT_DETACH)`, then `rmdir` through
+- **Removal ([OQ-LA3](live-config-apply.md#decision-ledger)).** `setns`, then `umount2(dest, MNT_DETACH)`, then `rmdir` through
   the private clone.
 - **The launch half.** Add `--mount type=tmpfs,destination=/ctx,ro=true` to the podman argv in
   `internal/cli/run/assemble.go`, near the `--read-only` flags at `:380-391`.

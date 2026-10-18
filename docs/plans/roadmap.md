@@ -50,7 +50,12 @@ accepted limits remain in
 and a pi-subagents registry several extensions can share stays in item 28.
 
 3. [Apply config changes to a running jail](../design/live-config-apply.md) — the maintainer's
-   2026-10-18 ask (read-only mounts and GitHub scope first); rulings owed before building.
+   2026-10-18 ask, ruled the same day: v1 is read-only and read-write mounts, their removal,
+   GitHub scope, and the same gate at an interactive attach. Its later slices are staged here,
+   each built on its own after v1: [the next-session moves](../design/live-config-apply.md#LA-S4a),
+   [Apple Container's briefing re-copy](../design/live-config-apply.md#LA-S4b),
+   [resources through `podman update`](../design/live-config-apply.md#LA-S4c) and
+   [live host-port forwards](../design/live-config-apply.md#LA-S4d).
 
 4. [Give each session in one jail its own profile](../design/per-session-profiles.md) — the
    maintainer's 2026-10-18 report: an attach on another profile, or a bare attach of another agent,
@@ -331,7 +336,8 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
   **Iced**, with what would thaw each: [`yolo cache relocate`](cache-relocation.md) (someone wanting it), [trust-gated
   grants in a local config](../design/workspace-config-trust.md) (a read-write mount that cannot move into the
   workspace), [in-jail nix on the container Macs](setup-support-gaps.md#2-ranked-gap-backlog) (a user for whom
-  `packages:`, mise and macos-user all fall short) and [a central host watcher](../research/central-yolo-watcher.md#7-what-would-have-to-be-true-before-building-one)
+  `packages:`, mise and macos-user all fall short), [an in-jail agent's request for a live config apply](../design/live-config-apply.md#LA-S5)
+  (the boundary broker's request store and doorbell being ready) and [a central host watcher](../research/central-yolo-watcher.md#7-what-would-have-to-be-true-before-building-one)
   (a duty that must hold a listener across launches).
 - **Ids Vantage cannot index**, reached here by name: [Q1 to Q9](../design/environment-manager-user-stories.md#Q1),
   [9.2 and 9.6](../design/host-render-target.md#9.2), [CFP-1 to CFP-3](../design/composed-file-permissions.md#CFP-1),
