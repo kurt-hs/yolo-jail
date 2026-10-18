@@ -98,9 +98,15 @@ func writeUserEnvFile(userEnvFile string, userEnv *jsonx.OrderedMap, channel *pa
 	// that followed it would put these secrets in, and narrow, a host file of its choosing
 	// (wsstatebeneath.go).
 	dir, name := filepath.Dir(userEnvFile), filepath.Base(userEnvFile)
+	_ = writeFileBeneathMode(dir, name, userEnvFileBody(userEnv, channel), userEnvFileMode)
+}
+
+// userEnvFileBody is yolo-user-env.sh's content for this entry (writeUserEnvFile's), nil for an
+// entry with no channel and no env_sources. One body for both of its writers: the shared file and
+// the entry snapshot's copy (sessionsnapshot.go), which must be byte-identical.
+func userEnvFileBody(userEnv *jsonx.OrderedMap, channel *packChannel) []byte {
 	if channel == nil && (userEnv == nil || userEnv.Len() == 0) {
-		_ = writeFileBeneathMode(dir, name, nil, userEnvFileMode)
-		return
+		return nil
 	}
 	var b strings.Builder
 	b.WriteString("# Auto-generated from yolo-jail.jsonc env config.\n")
@@ -180,7 +186,7 @@ func writeUserEnvFile(userEnvFile string, userEnv *jsonx.OrderedMap, channel *pa
 			b.WriteString(exportPlain(paths.ServedAddressesEnv, v))
 		}
 	}
-	_ = writeFileBeneathMode(dir, name, []byte(b.String()), userEnvFileMode)
+	return []byte(b.String())
 }
 
 // sharedFoldWinners is the shared composition's fold winners (packload's envcompose.go): the

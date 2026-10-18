@@ -44,7 +44,7 @@ func inlinePack(t *testing.T, name, manifest string) *packload.Pack {
 func deliveredFiles(t *testing.T, channel *packChannel) (shared string, agents map[string]string) {
 	t.Helper()
 	ws := t.TempDir()
-	deliverChannel(ws, "podman", channel)
+	deliverChannel(ws, "podman", "", channel)
 	b, err := os.ReadFile(filepath.Join(ws, "yolo-user-env.sh"))
 	if err != nil {
 		t.Fatalf("the shared file was not written: %v", err)
@@ -127,7 +127,7 @@ func TestAnAgentFileLandsBesideItsEnvFileAndLeavesWithIt(t *testing.T) {
 
 	o.UseProfiles = map[string]string{"copilot": "zai"}
 	channel := channelFor(t, o, bareConfig(), packs, awsAndZaiKeys())
-	deliverChannel(ws, "podman", channel)
+	deliverChannel(ws, "podman", "", channel)
 	file := filepath.Join(ws, agentEnvStateDir, "copilot.providers.json")
 	st, err := os.Stat(file)
 	if err != nil {
@@ -165,7 +165,7 @@ func TestAnAgentFileLandsBesideItsEnvFileAndLeavesWithIt(t *testing.T) {
 	}
 
 	o.UseProfiles = nil
-	deliverChannel(ws, "podman", channelFor(t, o, bareConfig(), packs, awsAndZaiKeys()))
+	deliverChannel(ws, "podman", "", channelFor(t, o, bareConfig(), packs, awsAndZaiKeys()))
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
 		t.Errorf("the entry that deselected copilot's profile left its providers.json behind: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestDeliverChannelRevokesADeselectedAgentsFile(t *testing.T) {
 	ws := t.TempDir()
 
 	o.UseProfiles = map[string]string{"pi": "zai"}
-	deliverChannel(ws, "podman", channelFor(t, o, bareConfig(), packs, awsAndZaiKeys()))
+	deliverChannel(ws, "podman", "", channelFor(t, o, bareConfig(), packs, awsAndZaiKeys()))
 	piFile := filepath.Join(ws, agentEnvStateDir, "pi.sh")
 	if _, err := os.Stat(piFile); err != nil {
 		t.Fatalf("the first entry wrote no pi file: %v", err)
@@ -193,7 +193,7 @@ func TestDeliverChannelRevokesADeselectedAgentsFile(t *testing.T) {
 	}
 
 	o.UseProfiles = nil
-	deliverChannel(ws, "podman", channelFor(t, o, bareConfig(), packs, awsAndZaiKeys()))
+	deliverChannel(ws, "podman", "", channelFor(t, o, bareConfig(), packs, awsAndZaiKeys()))
 	if _, err := os.Stat(piFile); !os.IsNotExist(err) {
 		t.Errorf("the deselecting entry left pi's credential file behind: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestAppleContainerWritesOwnerOnlyAgentFilesAtTheJailsPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deliverChannel(ws, "container", channel)
+	deliverChannel(ws, "container", "", channel)
 
 	st, err := os.Stat(inHome)
 	if err != nil || st.Mode().Perm() != 0o700 {
@@ -398,7 +398,7 @@ func TestAppleContainerWritesOwnerOnlyAgentFilesAtTheJailsPath(t *testing.T) {
 	if err := os.Symlink(outside, inHome); err != nil {
 		t.Fatal(err)
 	}
-	deliverChannel(ws, "container", channel)
+	deliverChannel(ws, "container", "", channel)
 	if fi, err := os.Lstat(inHome); err != nil || !fi.IsDir() {
 		t.Errorf("the planted link must be replaced by a real directory: %v %v", fi, err)
 	}
@@ -417,7 +417,7 @@ func TestAppleContainerAttachRevokesADeselectedAgentsFile(t *testing.T) {
 	o, cfg, channel, stderr := attachFixture(t, currentJailEnv, packs, awsAndZaiKeys(),
 		func(o *Options, _ *jsonx.OrderedMap) { o.UseProfiles = map[string]string{"pi": "zai"} })
 	ws := paths.WorkspaceHomeState(o.Workspace)
-	deliverChannel(ws, "container", channel) // the fresh launch
+	deliverChannel(ws, "container", "", channel) // the fresh launch
 	pi := filepath.Join(ws, entrypoint.AgentEnvDirRel, "pi.sh")
 	if _, err := os.Stat(pi); err != nil {
 		t.Fatalf("the fresh launch wrote no in-home pi file: %v", err)
@@ -425,7 +425,7 @@ func TestAppleContainerAttachRevokesADeselectedAgentsFile(t *testing.T) {
 
 	o.UseProfiles = nil
 	deselected := channelFor(t, o, cfg, packs, awsAndZaiKeys())
-	if rc := o.deliverChannelOnAttach("yolo-ws-abcd1234", "container", cfg,
+	if rc := o.deliverChannelOnAttach("yolo-ws-abcd1234", "container", "", cfg,
 		stagedPacks{root: "/ctx/packs", packs: packs}, deselected); rc != 0 {
 		t.Fatalf("the attach refused: rc=%d\n%s", rc, stderr.String())
 	}

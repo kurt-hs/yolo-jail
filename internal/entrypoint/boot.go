@@ -202,8 +202,12 @@ func ParseEntryChannel(data []byte) (map[string]string, bool) {
 // turn on. Such a line is skipped here, in e.Vars and in the process environment alike; the
 // session's shell still sources the whole file for itself (activationPrefix), so only the
 // boot's contract is protected. The plain-form channel is the launcher's own and is read whole.
+//
+// A SESSION WITH AN ENTRY SNAPSHOT reads the snapshot's copy instead (userEnvFilePath,
+// per-session-profiles.md §4.3 step 3): the shared file is whichever entry wrote last, and a
+// session's boot must hydrate its own entry's channel.
 func hydrateEnvFromUserEnvFile(e *Env) {
-	f := filepath.Join(e.Home, ".config", "yolo-user-env.sh")
+	f := userEnvFilePath(e)
 	data, err := os.ReadFile(f)
 	if err != nil {
 		return
@@ -670,9 +674,9 @@ func execBash(e *Env, command string, announce bool) error {
 // activationPrefix is what every session's shell runs before its command: the frozen user
 // env file, when there is one, then mise's environment. The provisioning stage gets the same
 // prefix (runProvisionStage), as it did when it was the first clause of the container's own
-// command.
+// command. A session with an entry snapshot sources the snapshot's copy (userEnvFilePath).
 func activationPrefix(e *Env) string {
-	userEnvFile := filepath.Join(e.Home, ".config", "yolo-user-env.sh")
+	userEnvFile := userEnvFilePath(e)
 	sourceUserEnv := ""
 	if pathExists(userEnvFile) {
 		sourceUserEnv = `. "` + userEnvFile + `" 2>/dev/null; `

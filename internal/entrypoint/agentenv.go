@@ -59,6 +59,71 @@ func ProviderKeysFile(home, agent string) string {
 	return filepath.Join(home, AgentEnvDirRel, ProviderKeysSubdir, agent+".sh")
 }
 
+// SessionSnapshotsSubdir is the directory, inside the per-agent env directory, holding one ENTRY
+// SNAPSHOT per session id (docs/design/per-session-profiles.md §4.3, SP-D12): the host launcher
+// writes the entry's shared yolo-user-env.sh, its <agent>.sh, <agent>.<name> and
+// provider-keys/<agent>.sh files there, complete, before that entry's exec, and never rewrites
+// them. A session reads its own snapshot instead of the shared files the NEXT entry rewrites,
+// which is what keeps one session's profile from reaching another session's processes. A
+// directory, so no reader of the env files (agentsWithEnvFiles, the wire bridge) mistakes it for
+// an agent's file.
+const SessionSnapshotsSubdir = "sessions"
+
+// SessionSnapshotDirRel is session id's entry snapshot, relative to the jail home. The host
+// writes it at the same path beneath its bind source (internal/cli/run's writeSessionSnapshot);
+// the layout is the contract between the two halves.
+func SessionSnapshotDirRel(id string) string {
+	return AgentEnvDirRel + "/" + SessionSnapshotsSubdir + "/" + id
+}
+
+// ValidSessionID reports whether id has the shape the entrypoint accepts as a session's name
+// (lowercase hex), which is also what makes it safe as a snapshot's directory name.
+func ValidSessionID(id string) bool { return validSessionID(id) }
+
+// sessionSnapshotDir is the snapshot of the session e runs as, absolute, when e names a valid
+// session id and the host published a snapshot for it; "" otherwise — no id (the jail's main
+// process, a raw exec) or no snapshot (a launcher older than snapshots) — and the reader then
+// falls back to the shared files, as before (per-session-profiles.md §4.3 step 3).
+func sessionSnapshotDir(e *Env) string {
+	id, _ := e.Lookup(SessionIDEnv)
+	if !validSessionID(id) {
+		return ""
+	}
+	dir := filepath.Join(e.Home, SessionSnapshotDirRel(id))
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return ""
+	}
+	return dir
+}
+
+// userEnvFilePath is the shared-env file (yolo-user-env.sh) the session e runs as reads: its
+// entry snapshot's copy when it has one (sessionSnapshotDir), else the shared
+// ~/.config/yolo-user-env.sh the last entry wrote. The boot's hydrate and the session's shell
+// prefix read through it. The jail's long-lived daemons (the wire bridge's HydrateEntryChannel,
+// ScopedCallerToken) do not: they follow the LATEST entry by design, and a snapshot is one
+// entry's, frozen.
+func userEnvFilePath(e *Env) string {
+	if dir := sessionSnapshotDir(e); dir != "" {
+		return filepath.Join(dir, "yolo-user-env.sh")
+	}
+	return filepath.Join(e.Home, ".config", "yolo-user-env.sh")
+}
+
+// sessionSnapshotShellFn picks, in shell, the directory this process's per-entry files are read
+// from into _yolo_entry_dir: the session's snapshot when YOLO_SESSION_ID names one (the test
+// sessionSnapshotDir makes in Go: an id of lowercase hex, a directory present), else the shared
+// per-agent env directory. The whole directory, never file by file: a snapshot with no file for
+// an agent means its entry scoped nothing to that agent, and the shared file beside it is
+// whichever entry wrote last. The caller unsets the variable.
+const sessionSnapshotShellFn = `_yolo_entry_dir="$HOME/` + AgentEnvDirRel + `"
+case "${` + SessionIDEnv + `-}" in
+    ''|*[!0-9a-f]*) ;;
+    *) if [ -d "$_yolo_entry_dir/` + SessionSnapshotsSubdir + `/$` + SessionIDEnv + `" ]; then
+           _yolo_entry_dir="$_yolo_entry_dir/` + SessionSnapshotsSubdir + `/$` + SessionIDEnv + `"
+       fi ;;
+esac
+`
+
 // agentEnvShellFn is spliced into the npm and native agent launchers immediately ahead of the
 // pre-launch authentication step and the exec, and into the wrapper ahead of its exec. Ahead
 // of the authentication step because that step reads its own switches from the environment,
@@ -72,19 +137,23 @@ func ProviderKeysFile(home, agent string) string {
 //
 // $HOME, not a baked path: the path is the same fact on every backend (a jail home's
 // .config/yolo-agent-env), and the templates already name their install prefixes through
-// $HOME. A missing file is the ordinary case — an agent this launch scoped nothing to — and
+// $HOME. The directory is the session's entry snapshot when it has one
+// (sessionSnapshotShellFn). A missing file is the ordinary case — an agent this launch scoped nothing to — and
 // sources nothing.
 const agentEnvShellFn = `# --- this agent's own environment (providers.md, OQ-CN6) ----------------
 # The credentials and profile-gated variables a launch scoped to THIS agent alone, written
 # per entry by yolo from its one credential gate. Absent when the launch scoped nothing here.
-if [ -r "$HOME/` + AgentEnvDirRel + `/$BIN.sh" ]; then
-    . "$HOME/` + AgentEnvDirRel + `/$BIN.sh"
+# Read from this session's entry snapshot when it has one (per-session-profiles.md), so a
+# later attach's profile never reaches this session's agents.
+` + sessionSnapshotShellFn + `if [ -r "$_yolo_entry_dir/$BIN.sh" ]; then
+    . "$_yolo_entry_dir/$BIN.sh"
 fi
 # Its PROVIDER variables, last, exactly as its profile selection says whatever this process
 # inherited (PP-D14): a nested agent follows the same auth path as a fresh one.
-if [ -r "$HOME/` + AgentEnvDirRel + `/` + ProviderKeysSubdir + `/$BIN.sh" ]; then
-    . "$HOME/` + AgentEnvDirRel + `/` + ProviderKeysSubdir + `/$BIN.sh"
+if [ -r "$_yolo_entry_dir/` + ProviderKeysSubdir + `/$BIN.sh" ]; then
+    . "$_yolo_entry_dir/` + ProviderKeysSubdir + `/$BIN.sh"
 fi
+unset _yolo_entry_dir
 `
 
 // agentsWithEnvFiles lists, sorted, the agents this entry wrote an env file for — the names

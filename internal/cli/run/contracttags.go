@@ -95,6 +95,12 @@ const (
 	// before, and its arm says it cannot hang the session up. No legacy inference: a jail that
 	// predates the tag list predates the hangup too.
 	contractSessionHangup = "session-hangup"
+	// contractSessionHomes: the jail's sessions read the entry snapshot their launcher wrote
+	// under their entrypoint.SessionIDEnv (sessionsnapshot.go, per-session-profiles.md SP-D12)
+	// rather than the shared files every entry rewrites. No attach NEEDS it: an attach to a jail
+	// without it delivers as before, and says once that a session already running there may read
+	// this entry's profile (noteSessionSnapshotsUnsupported, SP-D8). No legacy inference.
+	contractSessionHomes = "session-homes"
 )
 
 // launchContractTags is every contract THIS build's jail implements, frozen into every
@@ -109,7 +115,7 @@ const (
 // attach no longer writes any pack tree, so it asks nothing of the jail's binaries, and it finds
 // the tree an older jail binds on the host side (packtree.go's runningJailPackTree).
 var launchContractTags = []string{contractEntryChannel, contractAgentEnvFiles, contractProfileSets,
-	contractSessionHangup}
+	contractSessionHangup, contractSessionHomes}
 
 // launchContractTagsValue is ContractTagsEnv's value for a launch: the tags, comma-joined.
 func launchContractTagsValue() string { return strings.Join(launchContractTags, ",") }
