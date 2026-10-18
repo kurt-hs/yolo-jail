@@ -38,7 +38,8 @@ setup can't deliver it. See
 
 **Keep your patches on a branch.** Name a `patch_branch` in place of `patches`; yolo merges it
 into each new upstream version and names any conflicting files. A pack inside that repository names it by
-a relative path, such as `../..?ref=patches`, and `yolo pack series check` checks the merge. See [Patch series](userguide/guides/patch-series.md#keep-your-patches-on-a-branch).
+a relative path, such as `../..?ref=patches`. `yolo pack series check` reads the recorded verdict by default;
+`--online` checks in a disposable scratch copy. See [Patch series](userguide/guides/patch-series.md#keep-your-patches-on-a-branch).
 
 **pi model facts merge instead of replace.** A model row keeps the catalog facts it does not
 state; `null` removes one. See `yolo config-ref`.

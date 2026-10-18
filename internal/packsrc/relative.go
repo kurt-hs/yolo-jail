@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // IsRelativeLocator reports whether raw is written as a relative locator: no scheme, and a path
@@ -75,6 +76,29 @@ func ParseFrom(raw, dir string) (Addr, error) {
 	}
 	a.Repo = "file://" + filepath.ToSlash(repo)
 	return a, nil
+}
+
+// RelativeRepositoryIdentity names the resolved declaring repository by its filesystem identity rather than its
+// path. A container bind mount exposes the same device and inode under the jail's path, while independent clones
+// receive different identities. The returned identity is empty for an explicit, non-relative address.
+func RelativeRepositoryIdentity(raw, dir string) (string, error) {
+	if !IsRelativeLocator(raw) {
+		return "", nil
+	}
+	a, err := ParseFrom(raw, dir)
+	if err != nil {
+		return "", err
+	}
+	root := strings.TrimPrefix(a.Repo, "file://")
+	info, err := os.Stat(root)
+	if err != nil {
+		return "", fmt.Errorf("reading the relative patch branch repository %s: %w", root, err)
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return "", fmt.Errorf("reading the relative patch branch repository %s: filesystem identity is unavailable", root)
+	}
+	return fmt.Sprintf("file-id:%x:%x", st.Dev, st.Ino), nil
 }
 
 // resolveRelativeRepo is the repository rel names from dir, bounded by dir's own repository.

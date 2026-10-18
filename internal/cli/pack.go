@@ -224,14 +224,13 @@ yolo pack install or yolo pack update re-fetches a tag its author re-pointed.
                               line's place
   yolo pack prepare start|stop|status
                               manage or inspect the detached built-tree preparation worker
-  yolo pack series check [dir] [--onto <ref>]
+  yolo pack series check [dir] [--onto <ref>] [--online]
                               say whether each patch series in a local pack directory (default:
-                              the current one) still applies: fetches the upstream into a
-                              scratch copy, replays the series at its base and onto the newest
-                              version (or --onto), and prints the verdict a launch would reach —
-                              it applies, or the first patch that conflicts and its files, with
-                              the git commands that rebase the series onto that version for you
-                              or an agent to run. It writes nothing, and works in a jail
+                              the current one) still applies. Patch branches use the current
+                              recorded check by default; --online checks them in a disposable
+                              scratch copy. Patch series are checked in a scratch copy by default.
+                              A missing or stale patch-branch verdict names yolo pack update or
+                              a launch to record one. It writes nothing in the pack.
   yolo pack --help, -h        this text (also 'yolo pack help', and after any verb)
 
 Packs are configured in ~/.config/yolo-jail/config.jsonc under "packs" (USER scope
@@ -269,8 +268,8 @@ func runPack(args []string) int {
 //
 // IT TAKES NO STDIN. It used to, for one reason: the install-time host-access approval
 // prompt, which OQ-TP9 deleted (docs/design/trust-paths.md, 2026-09-04). No `yolo pack`
-// verb asks a question now — `install`/`update` fetch and report, `series check` fetches
-// into a scratch copy it deletes, `init` scaffolds a pack, and everything else inspects — so there is no
+// verb asks a question now — `install`/`update` fetch and report, `series check` fetches patch series
+// and explicit `--online` patch branches into scratch copies it deletes, `init` scaffolds a pack, and everything else inspects — so there is no
 // reader to thread.
 func packMain(args []string, out, errw io.Writer, color bool) int {
 	if len(args) == 0 || packHelpAsked(args[1:]) {

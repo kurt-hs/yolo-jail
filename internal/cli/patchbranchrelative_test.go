@@ -108,7 +108,7 @@ func TestSeriesCheckOfARelativePatchBranchMergesThePacksOwnRepository(t *testing
 	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
 	inRepoPatchBranch(t, fx, "../..?ref=mine")
 	tip := upstreamGit(t, fx.patchBranch, "rev-parse", "mine")
-	rc, out, errw := seriesVerb(t, "check", fx.forkDir)
+	rc, out, errw := seriesVerb(t, "check", "--online", fx.forkDir)
 	if rc != 0 || !strings.Contains(out, "merges the patch branch mine@"+shortSHA(tip)+" cleanly") {
 		t.Errorf("series check of a relative patch branch: rc=%d\n%s%s", rc, out, errw)
 	}

@@ -1,35 +1,15 @@
 package cli
 
-// patchedseriescheck.go is `yolo pack series check [<pack-dir>] [--onto <ref>]`
-// (docs/reference/patched-forks.md PF-D65): the verdict a launch would reach on the patch series of
-// every patched fork and patched extension in a local pack's directory, reached in a SCRATCH MIRROR
-// (a term coined here: a pack store rooted in a new private temporary directory, outside yolo's
-// state directory and outside the pack, which the check fetches the upstream into and which is
-// deleted when the act ends). It writes nothing in the pack, nothing in yolo's state directory, and
-// reads no check record, so it answers the same in a jail, which has neither the host's mirror nor
-// its record, as on the host.
+// patchedseriescheck.go is `yolo pack series check [<pack-dir>] [--onto <ref>] [--online]`
+// (docs/reference/patched-forks.md PF-D65): the verdict a launch would reach on a local pack's
+// patch series. Patch branches use a current durable check record by default; `--online` keeps the
+// disposable scratch-mirror fetch available. Patch series retain their scratch-mirror check.
 //
-// The act, for each patched fork or extension of the pack, in declaration order:
-//
-//  1. The pack is read as a launch reads a local pack (the one resolver,
-//     config.ResolvePackForProcess), and the series as a launch reads it (packload.Fork.ReadSeries),
-//     once.
-//  2. THE CHECK, forced, into the scratch mirror (packsrc.Store.CheckPatched): the fetch, the ref
-//     rule, the follow rule and the walk's list. With no good build to cut it at, the list is the
-//     whole of it, as a machine's first advance reads it.
-//  3. THE WALK (packsrc.Store.WalkSeries), `yolo pack update`'s replay: the series applied at its
-//     base, then picked onto the newest entry, stopping at its first conflict as a launch does since
-//     PF-D81; or onto --onto alone; or, with nothing on the list and the base on the branch, onto
-//     the base, which a first advance builds.
-//  4. THE VERDICT: the newest entry takes the series, or the member that stops it and its paths,
-//     with the git that rebases it (packsrc.RebaseRecipe). Exit 0 when the newest entry (or
-//     --onto, or the base) takes the series, 1 otherwise.
-//
-// A PATCH BRANCH (packsrc/patchbranch.go) takes the same steps as a series, as every other act serves it
-// (PF-D89): its declared address is read in step 1, the check fetches the branch into the scratch mirror
-// too and resolves its commit and merge base, the walk merges that commit into the newest entry, and
-// the verdict is a clean merge, or the conflicting paths with the merge that repairs the branch. It
-// reads no check record for it either, so a branch this machine never fetched is answered all the same.
+// The act reads the pack as a launch does. It either checks and replays in a disposable scratch
+// mirror, or for a patch branch reads its current record and replays from existing mirrors without
+// fetching. A missing or stale patch-branch record names `yolo pack update` or a launch; `--online`
+// is a throwaway verdict and never populates the durable record. A patch branch merges its resolved
+// commit into the newest candidate; a series is replayed as patches.
 
 import (
 	"context"
@@ -134,45 +114,47 @@ func packSeries(args []string, out, errw io.Writer, color bool) int {
 }
 
 // parseSeriesCheckArgs reads `yolo pack series check`'s command line: at most one pack directory,
-// "." by default, and --onto. rc 2 says what is wrong with it.
-func parseSeriesCheckArgs(args []string, errw io.Writer) (dir, onto string, rc int) {
+// "." by default, --onto and --online. rc 2 says what is wrong with it.
+func parseSeriesCheckArgs(args []string, errw io.Writer) (dir, onto string, online bool, rc int) {
 	var dirs []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
+		case a == "--online":
+			online = true
 		case a == "--onto":
 			if i+1 >= len(args) || args[i+1] == "" {
 				fmt.Fprintf(errw, "yolo pack series check: --onto needs a value (see `yolo pack --help`)\n")
-				return "", "", 2
+				return "", "", false, 2
 			}
 			i++
 			onto = args[i]
 		case strings.HasPrefix(a, "--onto="):
 			if onto = strings.TrimPrefix(a, "--onto="); onto == "" {
 				fmt.Fprintf(errw, "yolo pack series check: --onto needs a value (see `yolo pack --help`)\n")
-				return "", "", 2
+				return "", "", false, 2
 			}
 		case strings.HasPrefix(a, "-"):
-			fmt.Fprintf(errw, "yolo pack series check: unknown flag %q — it takes a pack directory and --onto <ref> "+
+			fmt.Fprintf(errw, "yolo pack series check: unknown flag %q — it takes a pack directory, --onto <ref> and --online "+
 				"(see `yolo pack --help`)\n", a)
-			return "", "", 2
+			return "", "", false, 2
 		default:
 			dirs = append(dirs, a)
 		}
 	}
 	switch len(dirs) {
 	case 0:
-		return ".", onto, 0
+		return ".", onto, online, 0
 	case 1:
-		return dirs[0], onto, 0
+		return dirs[0], onto, online, 0
 	}
 	fmt.Fprintf(errw, "yolo pack series check: unexpected argument %q — it checks one pack directory\n", dirs[1])
-	return "", "", 2
+	return "", "", false, 2
 }
 
 // packSeriesCheck is `yolo pack series check`. See the file doc.
 func packSeriesCheck(args []string, out, errw io.Writer, color bool) int {
-	dir, onto, rc := parseSeriesCheckArgs(args, errw)
+	dir, onto, online, rc := parseSeriesCheckArgs(args, errw)
 	if rc != 0 {
 		return rc
 	}
@@ -209,7 +191,7 @@ func packSeriesCheck(args []string, out, errw io.Writer, color bool) int {
 	defer stop()
 	rc = 0
 	for _, f := range forks {
-		n := seriesCheckOne(ctx, pr, errw, f, abs, onto)
+		n := seriesCheckOne(ctx, pr, errw, f, abs, onto, online)
 		if ctx.Err() != nil {
 			fmt.Fprintf(errw, "yolo pack series check: interrupted — the scratch copy of the upstream is removed\n")
 			return 130
@@ -219,11 +201,102 @@ func packSeriesCheck(args []string, out, errw io.Writer, color bool) int {
 	return rc
 }
 
-// seriesCheckOne is one patched fork's or extension's check, walk and verdict (the file doc's steps
-// 2 to 4), in a scratch mirror of its own that is deleted when it returns. packDir is the pack's
+const recordedBranchVerdict = "a fresh launch uses this recorded check and its build results"
+
+// recordedPatchBranchCheck is the offline `series check` path for a patch branch. The check record supplies
+// the resolved branch commit and the candidate list; replay uses existing mirrors only. A missing or stale record
+// is not silently replaced by an online scratch fetch, because that scratch result cannot update durable state.
+func recordedPatchBranchCheck(ctx context.Context, pr richtext.Printer, errw io.Writer, f packload.Fork,
+	packDir, onto string) int {
+	unavailable := func(state string) int {
+		fmt.Fprintf(errw, "yolo pack series check: %s: %s — run `yolo pack update` on the host or start a launch to "+
+			"record a current verdict; `yolo pack series check --online %s` checks a disposable scratch copy and "+
+			"does not populate the record\n", f.Label(), state, shquote.QuoteDisplay(packDir))
+		return 1
+	}
+	series, err := f.DeclaredSeries()
+	if err != nil {
+		fmt.Fprintf(errw, "yolo pack series check: %s: %v\n", f.Label(), err)
+		return 1
+	}
+	in, _, _, err := f.CheckWant(series).Inputs()
+	if err != nil {
+		fmt.Fprintf(errw, "yolo pack series check: %s: %v\n", f.Label(), err)
+		return 1
+	}
+	store := patchedForkStore()
+	rec, err := store.LoadCheckRecord(f.Key())
+	if err != nil {
+		if errors.Is(err, packsrc.ErrNoCheckRecord) {
+			return unavailable("the patch branch is not yet resolved on this machine")
+		}
+		return unavailable("the patch branch's check record cannot be read (" + err.Error() + ")")
+	}
+	if rec.Read != in {
+		return unavailable("the recorded verdict is stale because this pack now resolves its patch branch differently")
+	}
+	if due, why := packsrc.CheckDue(rec, in, patchedNow(), 0); due {
+		return unavailable("the recorded verdict is stale (" + why + ")")
+	}
+	if rec.Check == nil || rec.Check.FetchErr != "" || rec.Check.Problem != "" {
+		return unavailable("the last check did not resolve a current patch-branch verdict")
+	}
+	series, err = packsrc.PatchBranchSeries(f.PatchBranch, f.PatchBranchDir, f.Source, rec)
+	if err != nil {
+		return unavailable("the recorded patch-branch resolution is stale")
+	}
+	pr.Printf("[dim]%s[/dim]", richtext.Escape(f.Label()+": uses the recorded patch-branch check"))
+	pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: patch branch %s, merge base with upstream %s",
+		f.Label(), series.PatchBranch.Label(), shortSHA(series.Base))))
+
+	repo, subdir := mustRepo(f.Source), subdirOf(f.Source)
+	var list []packsrc.ListEntry
+	atBase := false
+	if onto != "" {
+		target, err := store.ResolveOnto(repo, onto, nil)
+		if err != nil {
+			return unavailable("the local upstream mirror cannot resolve --onto " + onto + " (" + err.Error() + ")")
+		}
+		list = []packsrc.ListEntry{target}
+	} else {
+		list = rec.Candidates(in)
+		if len(list) == 0 && rec.Check.BaseOnBranch {
+			list, atBase = []packsrc.ListEntry{{Commit: series.Base}}, true
+		}
+		if len(list) == 0 {
+			if rec.Good != nil && rec.Good.Series == series.Digest {
+				pr.Printf("[green]%s[/green]: no newer candidate is pending; the recorded good build already uses this patch branch",
+					richtext.Escape(f.Label()))
+				return 0
+			}
+			return unavailable("the recorded upstream check has no candidate this patch branch can be built at")
+		}
+	}
+	walk := store.WalkSeries(repo, subdir, series, list, packsrc.WalkOptions{StopOnPatchFailure: true})
+	if ctx.Err() != nil {
+		return 130
+	}
+	if walk.Err != nil {
+		return unavailable("the recorded candidates are no longer available in this machine's mirrors (" + walk.Err.Error() + ")")
+	}
+	lines, clean := seriesCheckReport(f, packDir, series, walk, atBase, onto, false, recordedBranchVerdict)
+	for _, line := range lines {
+		pr.Printf("%s", line)
+	}
+	if clean {
+		return 0
+	}
+	return 1
+}
+
+// seriesCheckOne is one patched fork's or extension's check, walk and verdict. packDir is the pack's
 // directory, onto --onto's ref or "".
-func seriesCheckOne(ctx context.Context, pr richtext.Printer, errw io.Writer, f packload.Fork, packDir, onto string) int {
-	again := seriesCheckLine(packDir, onto)
+func seriesCheckOne(ctx context.Context, pr richtext.Printer, errw io.Writer, f packload.Fork, packDir, onto string,
+	online bool) int {
+	if f.PatchBranch != "" && !online {
+		return recordedPatchBranchCheck(ctx, pr, errw, f, packDir, onto)
+	}
+	again := seriesCheckLine(packDir, onto, online)
 	var series *packsrc.Series
 	var err error
 	if f.PatchBranch != "" {
@@ -332,7 +405,7 @@ func seriesCheckOne(ctx context.Context, pr richtext.Printer, errw io.Writer, f 
 	if ctx.Err() != nil {
 		return 130
 	}
-	lines, clean := seriesCheckReport(f, packDir, series, w, atBase, onto)
+	lines, clean := seriesCheckReport(f, packDir, series, w, atBase, onto, online, scratchBuilds)
 	for _, line := range lines {
 		pr.Printf("%s", line)
 	}
@@ -342,12 +415,11 @@ func seriesCheckOne(ctx context.Context, pr richtext.Printer, errw io.Writer, f 
 	return 1
 }
 
-// seriesCheckReport is the verdict's lines for a walk, and whether the first entry it replayed —
-// the newest, --onto's, or the base — took the series. atBase is a walk of the base alone; onto is
-// --onto's ref, "" for none, whose walk of its one commit says nothing about what a launch builds.
+// seriesCheckReport is the verdict's lines and whether the first entry it replayed — the newest,
+// --onto's, or the base — took the series. buildNote describes what the clean result means at this path.
 func seriesCheckReport(f packload.Fork, packDir string, series *packsrc.Series, w packsrc.WalkResult,
-	atBase bool, onto string) ([]string, bool) {
-	again := "`" + seriesCheckLine(packDir, onto) + "`"
+	atBase bool, onto string, online bool, buildNote string) ([]string, bool) {
+	again := "`" + seriesCheckLine(packDir, onto, online) + "`"
 	warn := func(s string) []string {
 		return []string{"[yellow]" + richtext.Escape("⚠ "+f.Label()+": "+s) + "[/yellow]"}
 	}
@@ -398,7 +470,7 @@ func seriesCheckReport(f packload.Fork, packDir string, series *packsrc.Series, 
 			}
 			tail := ""
 			if onto == "" {
-				tail = " — " + scratchBuilds
+				tail = " — " + buildNote
 			}
 			if branch {
 				lines = append(lines, "[green]"+richtext.Escape(f.Label())+"[/green]: "+richtext.Escape(fmt.Sprintf(
@@ -433,10 +505,13 @@ func scratchStayAt(series *packsrc.Series) string {
 }
 
 // seriesCheckLine is the check's own command line, for a line that names running it again.
-func seriesCheckLine(packDir, onto string) string {
+func seriesCheckLine(packDir, onto string, online bool) string {
 	argv := []string{"yolo", "pack", "series", "check", packDir}
 	if onto != "" {
 		argv = append(argv, "--onto", onto)
+	}
+	if online {
+		argv = append(argv, "--online")
 	}
 	return shquote.JoinDisplay(argv)
 }
