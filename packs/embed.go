@@ -34,7 +34,9 @@
 // answer pack-binaries.md's experiment ("A pack's own tree cannot carry an executable") — can a pack ship the
 // EXECUTABLE its jail-side daemon runs? Its README records what that measured, including
 // the part this file is responsible for: `embed.FS` reports 0444 for every file whatever
-// its mode on disk, so nothing delivered through THIS channel can ever be executable.
+// its mode on disk. So executables.txt, embedded below beside the packs, records every file
+// whose repository mode carries an exec bit, and the materializer restores it
+// (packload.EmbeddedExecutablesFile; a test fails when the list and the tree disagree).
 // `zai`, `cerebras`, `openrouter`, `kilo`, `llamacpp` and `bedrock` ship neither CLI nor
 // loophole: provider/profile
 // packs. zai was the first pack whose whole content is declarative facts; cerebras was the
@@ -85,5 +87,5 @@ package packs
 
 import "embed"
 
-//go:embed all:claude all:copilot all:opencode all:pi all:codex all:agy all:omp all:zai all:cerebras all:openrouter all:kilo all:llamacpp all:audio all:host-processes all:journal all:macos-log all:cgroup-delegate all:serial all:guardrails all:wire-bridge all:openai-auth all:aws-auth all:bedrock all:hello-daemon all:github all:chrome-devtools all:muse-code all:meta-provider all:muse-planner
+//go:embed executables.txt all:claude all:copilot all:opencode all:pi all:codex all:agy all:omp all:zai all:cerebras all:openrouter all:kilo all:llamacpp all:audio all:host-processes all:journal all:macos-log all:cgroup-delegate all:serial all:guardrails all:wire-bridge all:openai-auth all:aws-auth all:bedrock all:hello-daemon all:github all:chrome-devtools all:muse-code all:meta-provider all:muse-planner
 var FS embed.FS

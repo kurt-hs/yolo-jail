@@ -78,6 +78,13 @@ const (
 	KindBriefing Kind = "briefing"
 	// KindFiles: an opaque file/dir tree the pack owns exclusively at a path.
 	// Two packs on one path would shadow — an error.
+	//
+	// THE EXEC BIT IS GUARANTEED, and there is deliberately no `mode` key: every delivery
+	// path (the jail's mount and merged copy, the macos-user overlay, `yolo host apply`, a
+	// built tree's copy) carries the source file's exec bit, and every route a pack arrives
+	// by has one to carry — a by-path pack's own file modes, a git pack's committed 100755,
+	// an embedded pack's packs/executables.txt. Authors `chmod +x` the file in the pack.
+	// docs/reference/pack-system.md#the-exec-bit is the reference.
 	KindFiles Kind = "files"
 	// KindConfig: a composed config surface the pack owns (path + codec + layers).
 	// Sole-owned by surface identity; a second writer must be KindConfigOverlay.

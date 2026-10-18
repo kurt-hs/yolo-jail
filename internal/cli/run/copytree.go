@@ -30,7 +30,7 @@ func ownFileMode(perm fs.FileMode) fs.FileMode { return perm | 0o600 }
 
 // copyTree copies a staged tree to dest under stagedFileMode, keeping every symbolic link as the
 // same link (copyTreeLinksBeneath, with dest as the root). Pack staging itself does not use it: an
-// embedded pack is copied into the launch's fresh tree by treesync, which applies the same mode
+// embedded pack is copied into the launch's fresh tree by packstage, which applies the same mode
 // rule. The macos-user home overlay calls copyTreeLinksBeneath directly, rooted at the whole overlay.
 func copyTree(src, dest string) error {
 	if err := os.MkdirAll(dest, 0o755); err != nil {

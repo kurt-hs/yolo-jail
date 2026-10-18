@@ -2,8 +2,8 @@
 # chrome-devtools-mcp-wrapper: what the chrome-devtools pack's MCP server entry runs, as
 # `/bin/sh <this file>`, at every notch — a container jail, macos-user, and `yolo host`.
 #
-# The pack delivers it as a `files` tree, and a pack selected by its bare name carries no
-# exec bit (embed.FS holds none), so the entry names /bin/sh and passes this file to it.
+# The pack delivers it as a `files` tree, and the entry names /bin/sh and passes this file
+# to it, which needs no exec bit (chosen when a pack selected by its bare name carried none).
 # An MCP client starts its servers with a scrubbed environment, so this script trusts
 # neither PATH nor any variable to say where it runs; it looks, at run time, for:
 #

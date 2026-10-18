@@ -532,8 +532,8 @@ func runtimeArgsWith(loopholes []*Loophole, runtime string, gate *Set, specs []J
 			dirMounted = true
 			// Each JAIL BINARY the jail daemon's argv names, as ONE read-only file bind from
 			// the pack-binary cache (binaries.go) at the path `{jail_binary:<name>}` resolved
-			// to. The file carries its exec bit from the cache, which is how a pack whose own
-			// tree cannot (an embedded one reads back 0444) still ships a program
+			// to. The file carries its exec bit from the cache, which is how a pack ships a
+			// compiled program without committing one build per platform to its own tree
 			// (docs/reference/pack-binaries.md BP-D1). Never the cache directory: the host runs
 			// host daemons' builds from it (paths.PackBinariesDir).
 			for _, n := range m.BinaryNeeds() {

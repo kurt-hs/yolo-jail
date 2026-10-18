@@ -116,6 +116,16 @@ func TestPackFilesTreeReachesTheJail(t *testing.T) {
 		[]byte("nested-ok\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// THE EXEC BIT (docs/reference/pack-system.md#the-exec-bit): a script carrying it in the
+	// pack runs in the jail by path, and so does a SHIPPED pack's (muse-planner's, whose bit
+	// travels in packs/executables.txt because embed.FS holds none).
+	hook := filepath.Join(pack, "files", "hook.sh")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho HOOK-RAN\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	// `from` is HONORED for files (unlike skills/briefing, where the stager reads the
 	// conventional location) — so the manifest is what names the tree.
 	if err := os.WriteFile(filepath.Join(pack, "pack.json"),
@@ -129,16 +139,18 @@ func TestPackFilesTreeReachesTheJail(t *testing.T) {
 	// two mountpoint cases (the OCI runtime will not always create a mountpoint inside a
 	// :ro bind — see preparePackFiles).
 	dir := writeProject(t, `{}`)
-	packHome(t, `{"packs": ["file://`+pack+`"]}`)
+	packHome(t, `{"packs": ["muse-planner", "file://`+pack+`"]}`)
 
 	r := runYolo(t, dir,
 		`cat /home/agent/.filespack/marker.txt && `+
 			`cat /home/agent/.filespack/nested/deep.txt && `+
+			`/home/agent/.filespack/hook.sh && `+
+			`(test -x /home/agent/.pi/agent/bin/muse-planner-exec.sh && echo SHIPPED-EXEC-OK) && `+
 			`(touch /home/agent/.filespack/should-fail 2>&1 || echo REFUSED-RW)`)
 	if r.rc != 0 {
 		t.Fatalf("`files` delivery failed: rc %d\nstdout: %s\nstderr: %s", r.rc, r.stdout, r.stderr)
 	}
-	for _, want := range []string{"FILESKINDMARKER", "nested-ok", "REFUSED-RW"} {
+	for _, want := range []string{"FILESKINDMARKER", "nested-ok", "HOOK-RAN", "SHIPPED-EXEC-OK", "REFUSED-RW"} {
 		if !strings.Contains(r.stdout, want) {
 			t.Errorf("missing %q in jail output — `files` must deliver the whole tree, "+
 				"read-only:\n%s", want, r.stdout)
