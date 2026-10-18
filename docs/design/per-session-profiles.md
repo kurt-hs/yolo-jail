@@ -3,14 +3,14 @@ title: "One jail, several profiles: each session reads its own agent config"
 date: 2026-10-18
 status: in-review
 stage: DESIGN
-next: "Rule OQ-SP1 (a per-session pi config dir); the plan waits on it"
+next: "Complete the implementation plan against the tree; OQ-SP4 (the host) is a later slice"
 tags: [design, profiles, attach, sessions, pi, pi-subagents, providers, concurrency]
 summary: "An attach renders the attaching entry's profile into files every running pi session reads later, so a second session on another provider (or a bare attach of an unrelated agent on the default profile) changes what the first session's pi-subagents children run on, while the first session's provider policy still forbids that provider. The fix keys every profile-dependent read on the session: each exec already carries a session id that its whole process tree inherits, so the attach writes its environment into a per-session entry snapshot, and the session's own boot pass renders a pack's profile-dependent files into a per-session copy of the program's config dir, which stock pi follows through PI_CODING_AGENT_DIR. Shared state (logins, session history, packages, caches) stays one copy, linked into every session's dir."
 ---
 
 # One jail, several profiles: each session reads its own agent config
 
-**Status:** 2026-10-18. Nothing built. Evidence read at `8bf1afce9` and in stock pi 1.0.1 and
+**Status:** 2026-10-18. Ruled for jails ([OQ-SP1](#11-decision-ledger) to [OQ-SP3](#11-decision-ledger)); nothing built. Evidence read at `8bf1afce9` and in stock pi 1.0.1 and
 pi-subagents 0.79.1. MEASURED: stock pi 1.0.1 reads `models.json` from a directory named by
 `PI_CODING_AGENT_DIR`, and creates `auth.json` and `models-store.json` there when they are absent
 (`pi --list-models`, offline, 2026-10-18). UNMEASURED: everything a session does with the design.
@@ -28,13 +28,13 @@ host-written) and the **session home** (a pack's profile-dependent files, render
 plus links back to the one shared copy of everything else.
 
 **Cost.** One small directory per session for the jail's lifetime; pi's in-session setting changes
-reach other sessions only through capture ([OQ-SP2](#OQ-SP2)); jails launched before it keep today's
+reach other sessions only through capture, at the next entry ([OQ-SP2](#11-decision-ledger)); jails launched before it keep today's
 behavior.
 
 **Start at [§4](#4-the-design-session-homes-over-entry-snapshots).** [§2](#2-what-an-attach-rewrites-today)
 is the cause, file by file.
 
-**Needs your ruling:** [OQ-SP1](#OQ-SP1), [OQ-SP2](#OQ-SP2), [OQ-SP3](#OQ-SP3), [OQ-SP4](#OQ-SP4).
+**Needs your ruling:** [OQ-SP4](#OQ-SP4).
 
 **Reads with:** [`per-session-profiles-plan.md`](per-session-profiles-plan.md) (the implementation
 sketch; incomplete while questions are open),
@@ -146,7 +146,7 @@ No ruling covers two profiles in one jail. These bound the design:
 | :--- | :--- | :--- |
 | [OQ-MM5 / MM-D30](model-lists-and-pickers.md#MM-D30) (ruled 2026-10-05) | *"The vehicle is per-process flags, never a file, so the user's own config files are untouched and concurrent host launches cannot collide."* | the goal (no collision); its letter is host-only, and in a jail MM-D30 *"does nothing"* |
 | [MM-D42](model-lists-and-pickers.md#MM-D42) (2026-10-09, amended 2026-10-16) | a host `-p` must govern pi-subagents' defaults and scope; *"yolo shouldn't depend on my custom pi fork in any way, or even know it exists."* | the fork-free constraint |
-| [roadmap](../plans/roadmap.md#immediate-continuation) | *"Do not invent a yolo settings overlay or rewrite shared settings."* | written about the host's pi-subagents gap; [OQ-SP1](#OQ-SP1) asks whether it covers this |
+| [roadmap](../plans/roadmap.md#immediate-continuation) | *"Do not invent a yolo settings overlay or rewrite shared settings."* | written about the host's pi-subagents gap; [OQ-SP1](#11-decision-ledger) asks whether it covers this |
 | [isolation §3.1](simultaneous-auth-and-pack-isolation.md#31-the-request-boundary) (PAS-D2) | *"The policy belongs to the process invocation … A launch does not change another process already running."* | P1 extends this from the policy to the config |
 | [isolation §3.1](simultaneous-auth-and-pack-isolation.md#31-the-request-boundary) | *"Do not infer one from … a previous invocation's persistent selection."* | the deadlock is exactly that inference |
 | [attach-daemon-activation §4.2](attach-daemon-activation.md#42-publication-and-concurrent-attaches) and [§6](attach-daemon-activation.md#6-the-jail-owns-daemons-sessions-own-commands) (unbuilt) | entry snapshots so launchers read *"its files, not whichever attach last rewrote the shared files"*; *"Shared pack-rendered configuration remains the existing system's limitation, explicitly outside this proposal."* | this design is that missing half |
@@ -230,8 +230,8 @@ saying the pack's declaration should list it.
 
 Pi writes `settings.json` itself: the "set default" model action, `/settings` toggles,
 `lastChangelogVersion`, `pi install`; pi-subagents writes agent overrides. With a session home these
-land in the session's copy, merged under pi's own lock. What happens next is
-[OQ-SP2](#OQ-SP2). Under its leaning:
+land in the session's copy, merged under pi's own lock. They reach later sessions by capture
+([OQ-SP2](#11-decision-ledger)):
 
 - **Every render pass captures** each session home's rendered files into the shared overlay, by the
   existing capture rule for that surface, before it renders. The pass holds an in-jail render lock
@@ -278,7 +278,7 @@ land in the session's copy, merged under pi's own lock. What happens next is
 | :--- | :--- |
 | Hand the selection per process (`launch_selection` argv, the list files by variable) in the jail launcher | **Rejected as insufficient.** It moves the parent's model but not the `subagents` block, which stock pi-subagents reads only from `settings.json` ([§2.2](#22-the-readers-and-which-read-per-child)). |
 | `launch_computed` per session in the jail | **Rejected.** Needs a flag stock pi-subagents does not register; MM-D42 rules out depending on the fork that does. |
-| Strip the `subagents` block and selection from the shared file in jails | **Rejected as the main fix**: children would follow the parent's model, but a profile's `subagents` declarations would stop working in every jail. It is [OQ-SP1](#OQ-SP1)'s option B. |
+| Strip the `subagents` block and selection from the shared file in jails | **Rejected** ([OQ-SP1](#11-decision-ledger)): children would follow the parent's model, but a profile's `subagents` declarations would stop working in every jail. |
 | A settings overlay file pi reads by variable | **Impossible:** stock pi has no `--settings` flag or settings variable; the agent dir is the only lever. |
 | Per-session mount namespaces binding files over `~/.pi/agent` | **Rejected**: `podman exec` cannot give an exec its own mount namespace, and a nested unshare needs privileges a jail does not have. |
 | Refuse an attach whose profile differs from a running session's | **Rejected**: it forbids the maintainer's actual use, and core cannot tell whether the attach runs pi at all (P5). |
@@ -315,7 +315,7 @@ land in the session's copy, merged under pi's own lock. What happens next is
    built first.
 2. The session-home declaration and the pass that renders and links, with the pi pack's
    declaration and extension paths. This closes the reported deadlock.
-3. Capture from session homes ([OQ-SP2](#OQ-SP2)).
+3. Capture from session homes ([OQ-SP2](#11-decision-ledger)).
 4. macos-user's per-launch id; then other agents' declarations, one measured agent at a time.
 
 Correct the two stale claims in [§2.1](#21-the-writers-file-by-file) when step 2 lands, since step 2
@@ -323,61 +323,7 @@ changes what a session pass renders.
 
 ## 10. Open questions
 
-1. 💬 **OQ-SP1: May yolo give each pi session its own config dir (`PI_CODING_AGENT_DIR`)?**
-
-   It is the only stock lever for pi-subagents' settings, and the roadmap says *"do not invent a yolo
-   settings overlay or rewrite shared settings"* (written for the host gap). Example: A's children
-   keep `a/*` after `-p B` attaches.
-
-   - **A — Yes, session homes.** Each session's children follow its profile; logins and history stay
-     shared by links.
-   - **B — No; strip profile-derived subagent keys from shared settings in jails.** Children follow
-     their parent's model; profile `subagents` declarations stop working in jails.
-   - **C — No; keep last-writer and document it.** The deadlock stays.
-
-   <!-- vantage: question id=OQ-SP1 leaning="A. It rewrites no shared settings and hands pi no overlay; it moves the dir pi already reads, which is the only fork-free fix that keeps subagents declarations." -->
-
-   _Leaning:_ A. It rewrites no shared settings and hands pi no overlay; it moves the dir pi already
-   reads, which is the only fork-free fix that keeps subagents declarations.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-2. 💬 **OQ-SP2: Should a pi setting saved in one session reach later sessions?**
-
-   Pi saves `/settings` toggles, `pi install` packages and a "set default" model into its
-   `settings.json`, which becomes the session's copy. Example: `pi install npm:foo` in session A.
-
-   - **A — Captured.** The next render pass folds it into the shared layer; sessions entered later
-     have it, running ones keep theirs. Today's persistence, delayed to the next entry.
-   - **B — Session-local.** Gone when the jail stops; nothing to capture.
-
-   <!-- vantage: question id=OQ-SP2 leaning="A. Losing a pi install or a theme at jail stop would be a regression; capture already exists for the shared file." -->
-
-   _Leaning:_ A. Losing a `pi install` or a theme at jail stop would be a regression; capture already
-   exists for the shared file.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-3. 💬 **OQ-SP3: Which profile does an attach with no `-p` use?**
-
-   With session homes it affects only its own session. Example: the jail launched with `-p A` while
-   B's quota is out; `yolo -- agy`, then `pi` in that shell.
-
-   - **A — The configured `profile`, as today.** That pi runs on B.
-   - **B — The jail's launch selection.** That pi runs on A; "no `-p`" then means different things
-     for a fresh launch and an attach.
-
-   <!-- vantage: question id=OQ-SP3 leaning="A. One meaning for no -p everywhere; the harm in the report came from shared files, which session homes remove." -->
-
-   _Leaning:_ A. One meaning for no `-p` everywhere; the harm in the report came from shared files,
-   which session homes remove.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-4. 💬 **OQ-SP4: Should `yolo host -p` give pi a per-launch session home too?**
+1. 💬 **OQ-SP4: Should `yolo host -p` give pi a per-launch session home too?**
 
    It would close [MM-D42](model-lists-and-pickers.md#MM-D42) for stock pi at the host, where yolo
    ships nothing today. [OQ-MM5](model-lists-and-pickers.md#16-decision-ledger) chose flags,
@@ -397,10 +343,13 @@ changes what a session pass renders.
 
 ## 11. Decision ledger
 
-Implementation decisions, reversible, made while drafting; none is built.
+The maintainer's rulings, then implementation decisions (reversible, made while drafting). None is built.
 
 | ID | Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
+| OQ-SP1 | **Each pi session gets its own config dir (`PI_CODING_AGENT_DIR`), its profile-dependent files rendered there and everything else linked to the shared copy.** *"Yes, this sounds like the right solution."* It moves the dir stock pi already reads and rewrites no shared settings, so the roadmap's "no settings overlay" line does not apply | 2026-10-18 | [§4](#4-the-design-session-homes-over-entry-snapshots) | — |
+| OQ-SP2 | **A pi setting saved in one session (a `pi install`, a theme, a default model) is captured into the shared layer and reaches sessions entered later**; running sessions keep their own copy. *"Yes, it would be nice if this is possible."* | 2026-10-18 | [§4.5](#45-pis-own-writes) | — |
+| OQ-SP3 | **An attach with no `-p` uses the configured `profile`, as today.** *"We're not changing anything about how profiles are selected."* | 2026-10-18 | [§4.3](#43-an-entry-in-order) | — |
 | <a id="SP-D1"></a>SP-D1 | The key is `YOLO_SESSION_ID`, inherited by every descendant; no new id | 2026-10-18 | [§4.3](#43-an-entry-in-order) | — |
 | <a id="SP-D2"></a>SP-D2 | A session pass renders surfaces inside a declared directory only into its session home; the shared copies are the jail boot's alone | 2026-10-18 | [§4.2](#42-who-writes-what) | — |
 | <a id="SP-D3"></a>SP-D3 | Link every entry present plus every declared shared name; never copy; strays are kept and named | 2026-10-18 | [§4.4](#44-what-a-session-home-holds) | — |
@@ -419,7 +368,6 @@ Implementation decisions, reversible, made while drafting; none is built.
 3. In session A, quitting pi and starting `pi` again starts on A, with A's provider policy.
 4. A `/login` in session B works in session A's next request without a restart.
 5. `pi -c` in any session lists every session's history.
-6. A `pi install npm:foo` in A is in `packages` for a session entered afterwards (under
-   [OQ-SP2](#OQ-SP2) A).
+6. A `pi install npm:foo` in A is in `packages` for a session entered afterwards ([OQ-SP2](#11-decision-ledger)).
 7. An attach to a jail launched before this prints the one-line warning and otherwise behaves as
    today.

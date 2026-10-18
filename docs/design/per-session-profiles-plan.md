@@ -2,18 +2,16 @@
 title: "Per-session profiles: implementation sketch"
 status: draft
 stage: SKETCH
-next: "Grow this into the implementation plan once OQ-SP1 is ruled"
-depends-on: [per-session-profiles.md#OQ-SP1, per-session-profiles.md#OQ-SP2]
+next: "Grow this into the implementation plan; OQ-SP1 and OQ-SP2 are ruled"
 tags: [plan, sketch, profiles, attach, sessions, pi]
 ---
 
 # Per-session profiles: implementation sketch
 
-**Status:** 2026-10-18. This is incomplete, and it is unstable while
-[`per-session-profiles.md`](per-session-profiles.md)'s questions are open. **Do not build from it.**
-The design wins on behavior; this file only parks material below its altitude. Blocked on
-[OQ-SP1](per-session-profiles.md#OQ-SP1) (whether to build at all) and, for the capture step,
-[OQ-SP2](per-session-profiles.md#OQ-SP2).
+**Status:** 2026-10-18. Incomplete. **Do not build from it** until it is completed against the tree.
+The design wins on behavior; this file only parks material below its altitude.
+[OQ-SP1](per-session-profiles.md#11-decision-ledger) and [OQ-SP2](per-session-profiles.md#11-decision-ledger)
+are ruled (build it; capture in-session settings).
 
 ## Where the pieces attach
 
