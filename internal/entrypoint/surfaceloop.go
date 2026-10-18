@@ -237,6 +237,14 @@ func renderPackSet(e *Env, packs []*packload.Pack,
 		deriveScript := packload.DeriveScript(p)
 		for _, pl := range plans {
 			pl := pl
+			// A SESSION PASS NEVER WRITES A DECLARED DIRECTORY'S SHARED COPY
+			// (docs/design/per-session-profiles.md SP-D2): its surfaces go to the session's own
+			// home (the target's redirect), or, where the session got none, nowhere.
+			if e.renderTarget().SessionSkips(expandHomePath(e, pl.surface.Path)) {
+				e.note(pl.surface.Agent + "/" + pl.surface.Name + " not rendered in this session: " +
+					"its directory is the jail boot's shared copy, and this session has no home of its own for it")
+				continue
+			}
 			src := jailLayerSource{
 				tables:       tablesForAgent(tables, mcp, pl.surface.Agent),
 				deriveScript: deriveScript,

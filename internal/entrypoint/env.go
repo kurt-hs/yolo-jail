@@ -106,6 +106,25 @@ type Env struct {
 	// outside should be reaching for RenderHostPack, not assembling a host Env by hand.
 	hostTarget bool
 
+	// session is this session pass's render into its session homes (sessionhome.go,
+	// docs/design/per-session-profiles.md SP-D2): set by prepare_session_homes once every
+	// declared home is made, and applied by renderTarget() to the jail target. nil on the jail's
+	// own boot, on a pass with no session id, and at the host.
+	session *render.Session
+
+	// captureHomes are the session homes this pass captures from before it renders each
+	// surface (sessioncapture.go, OQ-SP2), found under the render lock by beginSessionCapture.
+	captureHomes []sessionCaptureHome
+	// captureOnly marks the compose captureFromSessionHomes runs over ANOTHER session's home: it
+	// takes that file's own edits against that session's baseline and nothing of this pass's
+	// profile selection, whose lift and clears belong to the session that renders the file (the
+	// review's M1: applied there, a selection the capturing pass lacks cleared a model the user
+	// had saved in another session).
+	captureOnly bool
+	// keepHomes are the session homes (by id) this pass could not capture a file from: the jail's
+	// own boot keeps them, so a file pi was writing is read again at the next entry, not lost.
+	keepHomes map[string]bool
+
 	// genFailures accumulates the config-generator failures collected by genStep.
 	// A12: a generator failure is FATAL — boot must not hand the agent a
 	// half-configured home — but each step still runs so one run reports every
@@ -341,6 +360,15 @@ func (e *Env) renderTarget() render.Target {
 		// rather than bound to an arbitrary dir. So this must NOT pass WorkspaceDir(),
 		// which would hand it the container default and make KindOf() call it a jail.
 		return render.Host(e.Home, e.Stderr, e.hostOwnership)
+	}
+	return render.Jail(e.Home, e.WorkspaceDir(), e.Stderr).WithSession(e.session)
+}
+
+// sharedRenderTarget is renderTarget without this session's redirect: where the shared copies and
+// the shared sidecars are, which capture from session homes reads and writes.
+func (e *Env) sharedRenderTarget() render.Target {
+	if e.hostTarget {
+		return e.renderTarget()
 	}
 	return render.Jail(e.Home, e.WorkspaceDir(), e.Stderr)
 }

@@ -304,7 +304,11 @@ var stateReclaimers = map[string]Reclaimer{
 	// docs/design/model-lists-and-pickers.md MM-D27). Self-bounded, collected by liveness: a launch
 	// that writes a new menu removes a program's others once no program holding one runs
 	// (modelmenu.Request.WriteIn), so no sweep of prune's has anything to add.
-	"model-menus": {Detail: "self-bounded: a `yolo host --` that writes a new menu removes the program's others once no program holding one runs", Trigger: "the next `yolo host --` that writes a menu"},
+	// The per-launch session homes `yolo host --` makes for a pack that declares `session_homes`
+	// (docs/design/per-session-profiles.md §4.7). Lease-gated: a launch holds its directory's lease
+	// across the exec, and the next host launch and prune reap the ones nothing holds.
+	"host-session-homes": {Func: "ReapHostSessionHomes", Detail: "ended launches' homes, lease-gated", Trigger: "the next `yolo host --`, and yolo prune --apply"},
+	"model-menus":        {Detail: "self-bounded: a `yolo host --` that writes a new menu removes the program's others once no program holding one runs", Trigger: "the next `yolo host --` that writes a menu"},
 	// The host's copies of each patched extension's good build (paths.HostTreesDir;
 	// docs/reference/pi-extensions.md §8.3), which the links `yolo host apply` owns at `~/<into>`
 	// name and the host agent loads. All historical versions are conservatively retained because no

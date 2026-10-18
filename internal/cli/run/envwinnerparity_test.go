@@ -181,7 +181,7 @@ func TestTheContainerFilesDeliverTheCompositionsWinner(t *testing.T) {
 	for _, rt := range []string{"podman", "container"} {
 		t.Run(rt, func(t *testing.T) {
 			ws := t.TempDir()
-			deliverChannel(ws, rt, channel)
+			deliverChannel(ws, rt, "", channel)
 			sharedFile := filepath.Join(ws, "yolo-user-env.sh")
 			agentFile := filepath.Join(ws, agentEnvStateDir, "fxa.sh")
 			if rt == "container" {
@@ -252,7 +252,7 @@ func TestGuardrailsGitOptionalLocksReachesJailVehicles(t *testing.T) {
 			}
 
 			ws := t.TempDir()
-			deliverChannel(ws, "podman", channel)
+			deliverChannel(ws, "podman", "", channel)
 			file := filepath.Join(ws, "yolo-user-env.sh")
 			if got := sourcedWinners(t, nil, file)["GIT_OPTIONAL_LOCKS"]; got != tc.want {
 				t.Errorf("container shared environment has GIT_OPTIONAL_LOCKS=%q, want %q", got, tc.want)
@@ -354,10 +354,10 @@ func TestAnAttachLeavesASharedWinnerWhereTheJailShellHasIt(t *testing.T) {
 			}
 			fresh := t.TempDir()
 			channel.bootEnv = nil
-			deliverChannel(fresh, rt, channel)
+			deliverChannel(fresh, rt, "", channel)
 			attach := t.TempDir()
 			channel.bootEnv = frozen
-			deliverChannel(attach, rt, channel)
+			deliverChannel(attach, rt, "", channel)
 			channel.bootEnv = nil
 
 			freshShared, freshAgent := files(fresh)
@@ -437,7 +437,7 @@ func TestTheJailVehiclesKeepTheWireTablesOverEnvSources(t *testing.T) {
 		}
 	}
 	ws := t.TempDir()
-	deliverChannel(ws, "podman", channel)
+	deliverChannel(ws, "podman", "", channel)
 	sharedFile, agentFile := filepath.Join(ws, "yolo-user-env.sh"), filepath.Join(ws, agentEnvStateDir, "fxa.sh")
 	check(t, "jail shell", read(t, nil, sharedFile))
 	check(t, "fxa in the jail (shared file, then fxa's)", read(t, nil, sharedFile, agentFile))
@@ -455,7 +455,7 @@ func TestTheJailVehiclesKeepTheWireTablesOverEnvSources(t *testing.T) {
 	}
 	want = folded.wireTableValues()
 	ws = t.TempDir()
-	deliverChannel(ws, "podman", folded)
+	deliverChannel(ws, "podman", "", folded)
 	sharedFile, agentFile = filepath.Join(ws, "yolo-user-env.sh"), filepath.Join(ws, agentEnvStateDir, "fxa.sh")
 	check(t, "jail shell, a pack's env naming a table", read(t, nil, sharedFile))
 	check(t, "fxa in the jail, a pack's env naming a table", read(t, nil, sharedFile, agentFile))
@@ -514,7 +514,7 @@ func TestAnAgentFileWritesNoLineForAWinnerEveryProcessShares(t *testing.T) {
 	ws := t.TempDir()
 	writeMacosUserAgentEnvFiles(ws, channel)
 	podman := t.TempDir()
-	deliverChannel(podman, "podman", channel)
+	deliverChannel(podman, "podman", "", channel)
 	for vehicle, dir := range map[string]string{
 		"macos-user": filepath.Join(ws, macosUserAgentEnvDir),
 		"podman":     filepath.Join(podman, agentEnvStateDir),

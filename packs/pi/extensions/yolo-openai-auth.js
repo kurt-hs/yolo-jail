@@ -107,7 +107,26 @@ async function brokerLogin(signal) {
 // `yolo host apply` renders the same file into a real home from the provider table it composes
 // there (docs/reference/host-agent-environment.md OQ-HC1, superseding ML-D8), so host pi registers
 // the same list.
-const CODEX_LIST_FILE = join(homedir(), ".pi", "agent", "yolo-openai-codex-models.json");
+//
+// pi reads its state under PI_CODING_AGENT_DIR when that is set (a per-session home,
+// docs/design/per-session-profiles.md SP-D9), so the list file is read there too, resolved the
+// way pi resolves the variable: `~` and `~/...` against HOME, ~/.pi/agent when it is unset. The
+// idiom is subagentConfigPath's in yolo-durable-worktrees.js.
+function codexListFile(env = process.env) {
+	const configured = env.PI_CODING_AGENT_DIR;
+	const home = env.HOME || env.USERPROFILE || homedir();
+	let agentDir;
+	if (configured === "~") {
+		agentDir = home;
+	} else if (configured?.startsWith("~/") || configured?.startsWith("~\\")) {
+		agentDir = join(home, configured.slice(2));
+	} else if (configured) {
+		agentDir = configured;
+	} else {
+		agentDir = join(home, ".pi", "agent");
+	}
+	return join(agentDir, "yolo-openai-codex-models.json");
+}
 
 // THE LAUNCH'S OWN LIST, READ FIRST. `yolo host -p <profile> -- pi` composes this file's content
 // for its own -p and hands it in this variable, never writing the file, which `yolo host apply`
@@ -129,7 +148,7 @@ function readCodexModelList() {
 	let parsed;
 	try {
 		const fromLaunch = process.env[CODEX_LIST_ENV];
-		parsed = JSON.parse(fromLaunch ? fromLaunch : readFileSync(CODEX_LIST_FILE, "utf8"));
+		parsed = JSON.parse(fromLaunch ? fromLaunch : readFileSync(codexListFile(), "utf8"));
 	} catch {
 		return { list: [], enforce: false };
 	}

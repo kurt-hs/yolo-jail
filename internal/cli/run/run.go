@@ -1884,7 +1884,15 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// holds no provider state for a later exec to inherit, and this same write is what an
 	// attach performs to deliver a different profile into a running jail.
 	userEnv := channel.userEnv
-	deliverChannel(wsState, rt, channel)
+	// THE FIRST SESSION'S ID, minted here rather than beside its exec below, because its entry
+	// snapshot is written now (sessionsnapshot.go): one id for the session's snapshot and for its
+	// hangup, never two.
+	sessionID := newSessionID()
+	if err := deliverChannel(wsState, rt, sessionID, channel); err != nil {
+		o.refuseSnapshotWrite(err)
+		lock.Close()
+		return 1
+	}
 	// THE JAIL'S --with-credentials GRANT FILE (jailgrant.go, ES-D37): written here, once, by the
 	// fresh launch alone, outside the workspace (and on Apple Container copied into the home it
 	// binds), never on the argv. An attach never reaches this line, so no later entry changes it.
@@ -2316,8 +2324,8 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// once it has started them (insertHostServiceEnv), exactly where this launch used to.
 	runCmd = append(runCmd, entrypoint.HoldMainArg, o.provisionStage())
 	// THE FIRST SESSION IS NAMED IN THE JAIL, as an attach's is (sessionhangup.go), so its arm hangs
-	// up its own processes and nothing else (JL-D4, as OQ-JL8 ruled).
-	sessionID := newSessionID()
+	// up its own processes and nothing else (JL-D4, as OQ-JL8 ruled). Its id was minted with its
+	// entry snapshot, above.
 	firstExec := o.firstSessionExecCmd(rt, cname, o.sessionCmd(targetCmd), sessionID)
 
 	if o.Getenv("YOLO_DEBUG") != "" {
@@ -3016,6 +3024,11 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 	// What this attach did NOT deliver: the configured packs, when they differ from the ones
 	// the jail booted with (OQ-PK2 (c)'s notice).
 	o.noteBootedPackSetDiffers(rt, cname, view)
+	// And, for a jail whose sessions cannot read an entry snapshot, that this entry's delivery
+	// may reach a session already running there (SP-D8).
+	if deliver {
+		o.noteSessionSnapshotsUnsupported(rt, cname, envLines)
+	}
 	// And what it runs of each patched fork and mounts of each patched extension, from what the jail
 	// was handed (patchedforkline.go): the good build may have moved since it booted, and only a
 	// fresh launch delivers a move.
@@ -3051,6 +3064,11 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 	// attach branch never had — until it did, 'yolo -p <name> -- claude' against a
 	// running jail parsed and validated the selection, composed the channel, and
 	// dropped it, silently.
+	//
+	// THIS SESSION'S NAME in the jail, minted before the delivery because the delivery writes the
+	// session's entry snapshot under it (sessionsnapshot.go), and handed to the exec below; ""
+	// for a jail that cannot name a session, which then gets no snapshot.
+	sessionID := attachSessionID(envLines)
 	if deliver {
 		// What the container's frozen environment already carries is yolo's, not the user's
 		// (inheritedValues, OQ-CN8): the agent files override it rather than defer to it.
@@ -3067,7 +3085,7 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 				channel.bootEnv[k] = v
 			}
 		}
-		if rc := o.deliverChannelOnAttach(cname, rt, cfg, view.staged, channel); rc != 0 {
+		if rc := o.deliverChannelOnAttach(cname, rt, sessionID, cfg, view.staged, channel); rc != 0 {
 			return rc, false
 		}
 		// The channel is now written into the running jail. Disclose inheritance from this
@@ -3109,8 +3127,8 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 	// the same reasoning makes this invocation's rather than the launch's (attachUseInstalledArgs).
 	execFlags = append(execFlags, o.attachUseInstalledArgs(envLines)...)
 	// THIS SESSION'S NAME in the jail, which its signal arm hands back to end its processes
-	// there (sessionhangup.go); none for a jail that cannot hang a session up.
-	sessionID := attachSessionID(envLines)
+	// there (sessionhangup.go); none for a jail that cannot hang a session up. Minted above, with
+	// the delivery.
 	execFlags = append(execFlags, sessionEnvArgs(sessionID)...)
 	runCmd := append([]string{rt, "exec"}, execFlags...)
 	// The absolute path into the mounted install prefix, matching the fresh-launch
@@ -3199,7 +3217,7 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 // A session that would start with a base URL and no token is the
 // mysterious-first-API-call failure the gate refuses elsewhere;
 // YOLO_ALLOW_MISSING_PROVIDERS=1 remains the loud hatch.
-func (o *Options) deliverChannelOnAttach(cname, rt string, cfg *jsonx.OrderedMap,
+func (o *Options) deliverChannelOnAttach(cname, rt, sessionID string, cfg *jsonx.OrderedMap,
 	staged stagedPacks, channel *packChannel) int {
 	// The two pre-flights run BEFORE the write, not after it. The file is the RUNNING
 	// jail's, live-mounted: every new shell and agent process in it sources what was last
@@ -3224,7 +3242,12 @@ func (o *Options) deliverChannelOnAttach(cname, rt string, cfg *jsonx.OrderedMap
 	// this entry did not compose is revoked by the rewrite — including a previous
 	// entry's shape vars and a deselected agent's whole file, which an override-only
 	// channel would have left behind. Both binds are live; no argv changes.
-	deliverChannel(paths.WorkspaceHomeState(o.Workspace), rt, channel)
+	// With this session's entry snapshot, under sessionID; a snapshot that cannot be written
+	// refuses the entry (refuseSnapshotWrite).
+	if err := deliverChannel(paths.WorkspaceHomeState(o.Workspace), rt, sessionID, channel); err != nil {
+		o.refuseSnapshotWrite(err)
+		return 1
+	}
 	o.noteCredentialScope(channel)
 	// WHERE THE SELECTIONS LANDED, on this arm too — the disclosure line the fresh
 	// path prints beside its banner. An attach that delivers a profile owes the same

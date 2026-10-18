@@ -47,7 +47,7 @@ func TestAnAttachNamesAYoloWrittenSwitchsRemovalByWhetherAHostApplyRendersHere(t
 			if err := os.WriteFile(rec, []byte(`{"/env/CLAUDE_CODE_USE_BEDROCK": "1"}`), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", cfg,
+			o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", "", cfg,
 				stagedPacks{root: "/ctx/packs", packs: packs}, channel)
 			got := stderr.String()
 			if !strings.Contains(got, "which `yolo host apply` wrote there for claude's host selection") {
