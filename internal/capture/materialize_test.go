@@ -323,11 +323,18 @@ func TestMaterializeUsesHardlinkWhenReflinkCannot(t *testing.T) {
 
 // forceChain replaces the two O(1) arms and returns the undo. See the file comment for why
 // the mechanisms are seams here and measured for real elsewhere.
+//
+// It also switches the copy_file_range arm off, so the copy these tests force is the user-space
+// one: on btrfs that arm reflinks after a forced reflink refusal, which is right, and is
+// copyrange_linux_test.go's to measure.
 func forceChain(t *testing.T, rl func(string, string, fs.FileMode) error, hl func(string, string) error) func() {
 	t.Helper()
-	oldR, oldH := reflinkOne, hardlinkOne
+	oldR, oldH, oldC := reflinkOne, hardlinkOne, copyRangeOne
 	reflinkOne, hardlinkOne = rl, hl
-	return func() { reflinkOne, hardlinkOne = oldR, oldH }
+	copyRangeOne = func(string, string, fs.FileMode) (copyRangeVerdict, error) {
+		return rangeUnknown, errCopyRangeUnsupported
+	}
+	return func() { reflinkOne, hardlinkOne, copyRangeOne = oldR, oldH, oldC }
 }
 
 // An entry captured under ANOTHER HOME whose record says it may not move is refused (clause two
