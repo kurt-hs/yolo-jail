@@ -126,6 +126,71 @@ func unnarrowedMenuReport(r *reporter, packs []*packload.Pack, merged *jsonx.Ord
 	}
 }
 
+// inertRoutingReport names every `openrouter_routing` pin no request can carry (the downstream
+// handoff's fix 22: a pin that does nothing must never be silently accepted). The pin is
+// OpenRouter's chat-completions `provider` field, so over the composition the launch runs, an
+// alias's pin is inert on a provider that is on Bedrock (`platform: aws-bedrock`, whose agents
+// speak Bedrock's own Converse), or that declares no `openai` endpoint on the chat-completions
+// wire (`wire_api` absent or `openai-chat-completions`) and that no selected agent runs on a
+// client of its own (`built_in_providers`, whose request is the agent's to shape). A WARNING: the
+// launch runs, and the model works, only unpinned.
+func inertRoutingReport(r *reporter, packs []*packload.Pack, merged *jsonx.OrderedMap) {
+	providers, err := packload.ComposeProviders(subMap(merged, "providers"), packs)
+	if err != nil || providers == nil {
+		return
+	}
+	builtIn := func(name string) bool {
+		for _, p := range packs {
+			for _, bin := range p.InstallBins() {
+				if own, ok := packload.BuiltInProviderFor(packs, bin, name); ok && own.ID != "" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	for _, name := range providers.Keys() {
+		entry := subMap(providers, name)
+		routing := subMap(entry, "model_routing")
+		if entry == nil || routing == nil || routing.Len() == 0 {
+			continue
+		}
+		platform, _ := entry.Get("platform")
+		why := ""
+		switch {
+		case platform == "aws-bedrock":
+			why = fmt.Sprintf("provider %q is on Bedrock, which is not OpenRouter: no request to it "+
+				"carries an OpenRouter `provider` field. Remove `openrouter_routing` from it", name)
+		case builtIn(name) || chatCompletionsEndpoint(entry):
+			continue
+		default:
+			why = fmt.Sprintf("the pin is OpenRouter's chat-completions `provider` field, and provider %q "+
+				"declares no `endpoints.openai` on that wire (its `wire_api` absent or "+
+				"\"openai-chat-completions\"), so no request to it carries the pin. Declare one, or "+
+				"remove `openrouter_routing`", name)
+		}
+		for _, alias := range routing.Keys() {
+			r.warn(fmt.Sprintf("Model list: providers.%s.models.%s.openrouter_routing pins nothing", name, alias),
+				why)
+		}
+	}
+}
+
+// chatCompletionsEndpoint reports whether a composed provider entry declares an `openai`
+// endpoint on the chat-completions wire: `wire_api` absent, the canonical default, or
+// "openai-chat-completions".
+func chatCompletionsEndpoint(entry *jsonx.OrderedMap) bool {
+	ep := subMap(subMap(entry, "endpoints"), "openai")
+	if ep == nil {
+		return false
+	}
+	if u, _ := ep.Get("base_url"); u == nil || u == "" {
+		return false
+	}
+	wire, _ := ep.Get("wire_api")
+	return wire == nil || wire == "openai-chat-completions"
+}
+
 // modelCatalogReport is MM-D16's currency check (docs/design/model-lists-and-pickers.md §9), over
 // the provider table the launch composes from the selected packs and the merged config:
 //
@@ -339,6 +404,11 @@ func listedModelIDs(providers *jsonx.OrderedMap) (map[string][]string, int) {
 			id, _ := v.(string)
 			if om, ok := v.(*jsonx.OrderedMap); ok {
 				id = str(om, "id")
+			}
+			// A row whose `id` is a client spelling names the id it sends as `wire_id`: that is
+			// the one a catalog can know (the composed `model_options.<alias>.wire_id`).
+			if w := str(subMap(subMap(entry, "model_options"), alias), "wire_id"); w != "" {
+				id = w
 			}
 			if id == "" || seen[id] {
 				continue

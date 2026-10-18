@@ -1051,7 +1051,8 @@ type Contribution struct {
 	// core, is the one that says so.
 	//
 	// A PACK FACT for `built_in_providers`' reason: what a binary reads is that binary's fact,
-	// and core names no agent. ON `program` ALONE.
+	// and core names no agent. ON `program` ALONE, and on a FORK (`fork_of`) it replaces the
+	// base's, since the fork supplies the bytes (packload.forkedProgram; ML-D14).
 	ReadsSharedModels bool `json:"reads_shared_models,omitempty"`
 
 	// --- adapter (docs/reference/protocol-resolution.md#the-three-declarations, OQ-PR1) ---

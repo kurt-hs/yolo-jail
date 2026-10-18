@@ -16,60 +16,60 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A model list with no `only` no longer refuses a model you type, for pi's child agents too.
 - `YOLO_PI_SUBAGENTS_MODEL_SETTINGS` is gone; to hand pi that flag, declare [`launch_computed`](docs/reference/pack-system.md#launch_computed) in a pack that forks the `pi` program.
 - Claude keeps your `/model` choice across launches; switching providers picks the same tier on the new one.
-- **macOS (macos-user) launches no longer ask for a password.** Run `yolo macos-setup` once after upgrading; it installs one sudo rule that runs commands only as the sandbox account, and allows one macOS user per Mac. See [the macOS guide](userguide/guides/macos.md).
-- **Each jail now runs its own credential services** for Claude, OpenAI and AWS logins. Once an older yolo's jails end, stop its machine-wide service with `yolo host-daemon stop --host-wide <name>`. See [host services](userguide/guides/host-services.md).
-- **A newer version of an agent, tool or patched build that fails to install now stops the launch** instead of quietly running the older one; the error gives the command that runs what you have. Offline, yolo still starts what is installed.
+- **macOS (macos-user) launches no longer ask for a password.** Run `yolo macos-setup` once after upgrading; it installs one sudo rule scoped to the sandbox account, one macOS user per Mac. See [the macOS guide](userguide/guides/macos.md).
+- **Each jail runs its own credential services** for Claude, OpenAI and AWS. Once an older yolo's jails end, run `yolo host-daemon stop --host-wide <name>`. See [host services](userguide/guides/host-services.md).
+- **A newer agent, tool or patched build that fails to install now stops the launch**; the error gives the command that runs what you have. Offline, yolo starts what is installed.
 
 ### Added
 
-**Patched forks and extensions run on macOS (macos-user).** A patched fork such as pi, and a
-patched pi extension, are now built for your Mac at launch and by `yolo host`, with the same
-recovery hatches. See
-[Patch series](userguide/guides/patch-series.md).
+**Patched forks and extensions run on macOS (macos-user),** built for your Mac at launch and by
+`yolo host`. See [Patch series](userguide/guides/patch-series.md).
 
-**The GitHub broker takes wildcards.** A project's `brokered.github.repos` accepts `*/*`,
-`OWNER/*` and `*/REPO`; the scope prompt says what each admits, and access stays read-only.
+**The GitHub broker takes wildcards** in `brokered.github.repos` (`*/*`, `OWNER/*`, `*/REPO`),
+still read-only.
 See [GitHub](userguide/guides/github.md#every-repository-or-every-repository-of-one-owner).
 
 **A launch says when the jail has no internet,** and what to do. See [Troubleshooting](userguide/guides/troubleshooting.md).
 
-**`--timing` breaks down a macOS (macos-user) launch's slow steps:** the package build, each
-copy into the sandbox, and every step of the sandbox's setup. See [Timing spans](docs/reference/perf-logging.md).
+**`--timing` breaks down a macOS (macos-user) launch's slow steps.** See [Timing spans](docs/reference/perf-logging.md).
 
-**Optional mounts.** A `mounts` entry marked `"optional": true` is skipped with one line where a
-setup can't deliver it, such as a home folder on macOS, instead of stopping the launch. See
+**Optional mounts.** A `mounts` entry marked `"optional": true` is skipped, with one line, where a
+setup can't deliver it. See
 [Settings per setup](userguide/reference/settings-per-setup.md#workspace-mounts-and-host-files).
 
-**Keep your patches on a branch.** A patched fork or pi extension can name a `patch_branch` in
-place of `patches`; yolo merges it into each new upstream version and names the conflicting files
-when it does not merge. See [Patch series](userguide/guides/patch-series.md#keep-your-patches-on-a-branch).
+**Keep your patches on a branch.** Name a `patch_branch` in place of `patches`; yolo merges it
+into each new upstream version and names any conflicting files. See [Patch series](userguide/guides/patch-series.md#keep-your-patches-on-a-branch).
 
 **pi model facts merge instead of replace.** A model row keeps the catalog facts it does not
-state; `null` removes one, and `model_facts` with `extends` shares facts. See `yolo config-ref`.
+state, thinking levels included; `null` removes one, and `model_facts` with `extends` shares
+them. See `yolo config-ref`.
 
-**Ways past a broken patched build.** The error lists commands that start anyway: your last good
-build, an older release, upstream without your patches, or pi without an extension. See [Patch series](userguide/guides/patch-series.md#when-a-build-breaks).
+**One model at two context windows.** A model entry's `wire_id` names the id it sends, so one
+provider can list a model and a narrowed twin. See [`wire_id`](docs/reference/providers.md#wire-id).
+
+**Ways past a broken patched build.** The error lists commands that start anyway, such as your
+last good build or upstream without your patches. See [Patch series](userguide/guides/patch-series.md#when-a-build-breaks).
 
 - A company list that only adds models now shows in Claude Code after Claude's own models.
 - A launch refreshes a Claude login close to expiring, and a host service that crashes mid-session is restarted.
 
 ### Fixed
 
-- A script a pack delivers keeps its executable bit in every jail and through `yolo host apply`, shipped packs included; see [the exec bit](docs/reference/pack-system.md#the-exec-bit).
+- A pack's script keeps its executable bit everywhere it is delivered; see [the exec bit](docs/reference/pack-system.md#the-exec-bit).
 - A macOS (macos-user) launch no longer leaves a copy of its packs behind on exit; `yolo prune --apply` removes older ones.
 - Claude on Kilo no longer assumes a 1M-token context for every model.
+- pi sends `openrouter_routing` on your own providers too; `yolo check` warns about a pin nothing sends.
 - `yolo --update` on a patched fork now waits for another yolo building it, instead of failing.
 - On Apple Container, `yolo check` points an expired-login symptom at the jail's network, not the Claude broker.
-- A damaged shared Claude login file is now named at launch with `/login` as the fix, and the Claude broker no longer logs an empty one every minute.
-- A patched fork with nothing built now retries a fetch that failed while the network was down, instead of refusing for an hour.
+- A damaged shared Claude login file is named at launch with `/login` as the fix.
+- A patched fork with nothing built retries a fetch that failed offline, instead of refusing for an hour.
 - A bare `-p` that some agents can't use names them all on one line.
-- `yolo config promote` and `yolo config diff` no longer treat a `null` you set in an agent's config as a deletion.
-- A launch refused while it prepared a patched build no longer leaves a background `nix eval` running after it exits.
+- `yolo config promote` and `diff` no longer treat a `null` you set as a deletion.
 - A patch series that stopped applying no longer keeps refusing after upstream releases a version it applies to.
-- With `agent_updates` off, a patched fork or extension now keeps running its good build even after a newer version failed.
-- The printed command that exports a rebased patch series now writes a series that applies whatever your git version or settings.
-- pi, omp and opencode sessions no longer wait about two seconds at start for yolo's footer line, which now appears once it is ready.
-- Models another pi extension registers for a provider, such as Bedrock long-context variants, are no longer dropped by yolo's model list, unless the profile enforces that list.
+- With `agent_updates` off, a patched fork or extension keeps its good build after a newer one fails.
+- An exported rebased patch series now applies whatever your git version or settings.
+- pi, omp and opencode no longer wait about two seconds at start for yolo's footer line.
+- Models another pi extension registers for a provider are no longer dropped by yolo's model list, unless the profile enforces it.
 
 ## [0.14.0] - 2026-10-15
 

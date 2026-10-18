@@ -600,6 +600,11 @@ func TestValidateProviderModelObjects(t *testing.T) {
 		// `base` is a catalog id, `openrouter_routing` an object sent verbatim to OpenRouter.
 		`{"openrouter": {"models": {"floor": {"id": "deepseek/deepseek-v4.1-flash:floor", "base": "deepseek/deepseek-v4.1-flash", "openrouter_routing": {"order": ["streamlake", "morph"], "allow_fallbacks": false}}}}}`,
 		`{"openrouter": {"models": {"plain": {"id": "x", "openrouter_routing": {}}}}}`,
+		// `wire_id`, the id a row SENDS where its `id` is a client spelling, so one provider
+		// carries a model at two windows: the full-window alias and a narrowed twin naming the
+		// same wire id (the downstream handoff's fix 14).
+		`{"openrouter": {"models": {"floor": {"id": "deepseek/deepseek-v4.1-flash:floor"}, "floor-200k": {"id": "deepseek/deepseek-v4.1-flash:floor@200k", "wire_id": "deepseek/deepseek-v4.1-flash:floor", "context_window": 204800}}}}`,
+		`{"openrouter": {"models": {"x": {"id": "m", "wire_id": null}}}}`,
 	}
 	for _, body := range valid {
 		if errs := providerErrors(t, body); len(errs) != 0 {
@@ -627,6 +632,11 @@ func TestValidateProviderModelObjects(t *testing.T) {
 		{`{"kilo": {"models": {"default": {"id": "m", "base": ""}}}}`, ".models.default.base: expected a non-empty model id string"},
 		{`{"kilo": {"models": {"default": {"id": "m", "openrouter_routing": []}}}}`, ".models.default.openrouter_routing: expected an object"},
 		{`{"kilo": {"models": {"default": {"id": "m", "openrouter_routing": "order"}}}}`, ".models.default.openrouter_routing: expected an object"},
+		{`{"kilo": {"models": {"default": {"id": "m", "wire_id": ""}}}}`, ".models.default.wire_id: expected a non-empty model id string"},
+		{`{"kilo": {"models": {"default": {"id": "m", "wire_id": 5}}}}`, ".models.default.wire_id: expected a non-empty model id string"},
+		// pi's own spelling names yolo's, and `variants` names the one-alias-per-variant form.
+		{`{"kilo": {"models": {"default": {"id": "m", "wireId": "w"}}}}`, ".models.default.wireId: unknown key — the wire id is spelled `wire_id`"},
+		{`{"kilo": {"models": {"default": {"id": "m", "variants": {}}}}}`, ".models.default.variants: unknown key — declare each variant as its own alias"},
 	}
 	for _, tc := range invalid {
 		errs := providerErrors(t, tc.body)
