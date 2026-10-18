@@ -65,6 +65,7 @@ build, an older release, upstream without your patches, or pi without an extensi
 - With `agent_updates` off, a patched fork or extension now keeps running its good build even after a newer version failed.
 - The printed command that exports a rebased patch series now writes a series that applies whatever your git version or settings.
 - A pi session no longer waits about two seconds at start for yolo's footer line, which now appears once it is ready.
+- Models another pi extension registers for a provider, such as Bedrock long-context variants, are no longer dropped by yolo's model list, unless the profile enforces that list.
 
 ## [0.14.0] - 2026-10-15
 
