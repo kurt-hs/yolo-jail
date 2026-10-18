@@ -6,6 +6,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
@@ -160,5 +161,42 @@ func TestRegistrationTimingReportsStartFailure(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("failed registration claimed no failure outcome")
+	}
+}
+
+// THE POOL'S PHASES ARE SPANNED, each noting its key: a first build of each of two extensions
+// records one preparation.build pair per key, and a check, where one runs, one preparation.check
+// pair per check, so launch.fork_builds' time can be told apart by key and phase. Red if the pool's
+// build or check slot stops spanning what it runs.
+func TestThePoolSpansEachKeysBuildAndCheck(t *testing.T) {
+	fx := newTreesFixture(t, 2)
+	var mu sync.Mutex
+	var events []perf.Event
+	log := perf.New(nil, func(e perf.Event) { mu.Lock(); events = append(events, e); mu.Unlock() })
+	req := run.TreeBuildRequest{Trees: fx.trees, Platform: patchedTestPlatform, Runtime: "podman", Workspace: t.TempDir(),
+		Build: true, CopyRoot: filepath.Join(t.TempDir(), "trees.patched"), Interrupt: &run.ActInterrupt{}}
+	_, got := runBuildSlot(run.BuildSlotRequest{Trees: &req, Perf: log}, io.Discard, false)
+	for _, f := range fx.trees {
+		if got[f.Key()].Dir == "" {
+			t.Fatalf("%s was not delivered: %+v", f.Key(), got[f.Key()])
+		}
+	}
+	for _, name := range []string{"preparation.build", "preparation.check"} {
+		starts, ends := phaseCount(events, name, perf.KindStart), phaseCount(events, name, perf.KindEnd)
+		if starts != ends {
+			t.Errorf("%s: %d starts, %d ends", name, starts, ends)
+		}
+		if name == "preparation.build" && starts != len(fx.trees) {
+			t.Errorf("%s: %d spans, want one per key (%d)", name, starts, len(fx.trees))
+		}
+		noted := map[string]bool{}
+		for _, e := range events {
+			if e.Kind == perf.KindNote && e.Name == name {
+				noted[e.Detail] = true
+			}
+		}
+		if starts > 0 && len(noted) == 0 {
+			t.Errorf("%s spans note no key: %+v", name, events)
+		}
 	}
 }

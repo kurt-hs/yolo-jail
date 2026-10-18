@@ -49,6 +49,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 	"github.com/mschulkind-oss/yolo-jail/internal/progress"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
@@ -288,8 +289,20 @@ func (it *poolItem) check(fn func()) bool {
 	defer it.pool.checks.release()
 	it.setPhase("checking")
 	defer it.setPhase("")
+	defer it.phaseSpan("preparation.check").End()
 	fn()
 	return true
+}
+
+// phaseSpan starts the launch's span for one key's check or build once its slot is taken, noting
+// the key: the slot's keys run at once, so launch.fork_builds alone could not say which of them,
+// or which phase, its time went to.
+func (it *poolItem) phaseSpan(name string) *perf.Span {
+	sp := it.pool.report.preparationSpan(name)
+	if sp != nil {
+		it.pool.report.perf.Note(name, it.label)
+	}
+	return sp
 }
 
 // build takes a build slot for the key's walk, replay and build, waiting for one, and returns its
@@ -302,7 +315,9 @@ func (it *poolItem) build() (release func(), ok bool) {
 		return func() {}, false
 	}
 	it.setPhase("building")
+	sp := it.phaseSpan("preparation.build")
 	return func() {
+		sp.End()
 		it.setPhase("")
 		it.pool.builds.release()
 	}, true

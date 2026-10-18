@@ -164,9 +164,10 @@ func (l *Log) Note(name, detail string) {
 // process is doing, and this is the opposite — an interval no yolo code was
 // present for, priced afterwards from another system's record.
 //
-// Window A is the only caller (run/perfevents.go): the stretch inside the
-// podman child, whose length comes from podman's own event log once the child
-// is already gone.
+// Window A (run/perfevents.go) is one caller: the stretch inside the podman
+// child, whose length comes from podman's own event log once the child is
+// already gone. The other is a boot's own step timings, read back from a file
+// the boot wrote (StepsFromMarks: macos_user.bootstrap.*, container.boot.*).
 //
 // It emits a KindEnd with NO KindStart, deliberately. A synthetic start would
 // have to carry a timestamp from the past, putting the file's lines out of
