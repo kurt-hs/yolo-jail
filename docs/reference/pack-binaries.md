@@ -76,19 +76,25 @@ the pin.
 of the loophole reading as unsupported. An official program's build set is therefore derived,
 never written by hand ([BP-D7](#BP-D7)), and a census refuses any other.
 
-## A pack's own tree cannot carry an executable
+<a id="a-packs-own-tree-cannot-carry-an-executable"></a>
+
+## A compiled program does not belong in a pack's own tree
 
 The first route anyone reaches for, committing `bin/<goos>-<goarch>/<program>` beside the
-manifest, works only for a pack **configured by path**, whose files the stager copies with their
-mode. It cannot work for an **embedded** pack, the shape every official pack has: `embed.FS` has
-no exec bit, so an embedded file reads back `0444` whatever its mode in the repository, and
-yolo's on-disk copies of the embedded tree are read-only. That was measured with
-`packs/hello-daemon`, a throwaway pack whose jail daemon is a two-line `#!/bin/sh` program in its
-own folder (`internal/packload`'s `packshippedjailbinary_test.go` pins it). Everything
-declarative held: `{jail_loophole_dir}` resolves in `jail_daemon.cmd`, the module directory is
-mounted read-only without `noexec`, and a jail-daemon-only manifest is accepted. Only delivery
-failed, and that is what `binaries` exists for: the cached file carries the exec bit an embedded
-tree cannot.
+manifest, worked at first only for a pack **configured by path**, whose files the stager copies
+with their mode. It failed for an **embedded** pack, the shape every official pack has:
+`embed.FS` has no exec bit, so an embedded file read back `0444` whatever its mode in the
+repository. That was measured with `packs/hello-daemon`, a throwaway pack whose jail daemon is a
+two-line `#!/bin/sh` program in its own folder (`internal/packload`'s
+`packshippedjailbinary_test.go` pins it). Everything declarative held: `{jail_loophole_dir}`
+resolves in `jail_daemon.cmd`, the module directory is mounted read-only without `noexec`, and a
+jail-daemon-only manifest is accepted. Only delivery failed.
+
+The exec bit now reaches the jail by both routes: `packs/executables.txt` records it for an
+embedded pack ([the exec bit](pack-system.md#the-exec-bit)). A committed **compiled** program is
+still the wrong shape: it needs one build per platform, and in an official pack every build rides
+in every `yolo` binary. That is what
+`binaries` exists for: one verified download per platform, cached with its exec bit.
 
 Two consequences of that experiment are still in force:
 
@@ -373,7 +379,7 @@ which numbered its own decisions in the gap.
 | <a id="OQ-BP5"></a>[`OQ-BP5`](#OQ-BP5) | Download-with-digest only; no declared build step (as [BP-D1](#BP-D1)), ruled 2026-09-30 | A build step is arbitrary code and loses P4. A pack that needs a built binary takes the source-build route in a throwaway capture jail, never a second build path here |
 | <a id="OQ-BP6"></a>[`OQ-BP6`](#OQ-BP6) | A fetched pack may ship a host-side binary, honored and disclosed like its `host_daemon.cmd`, with no approval and no origin refusal, ruled 2026-09-30 | [`OQ-TP9`](../design/trust-paths.md#decision-ledger) deleted every origin refusal. A binary is no sharper than the host argv `host_daemon.cmd` already names, and refusing it would be the only origin refusal in the tree |
 | <a id="OQ-BP7"></a>[`OQ-BP7`](#OQ-BP7) | Between releases main pins its own build, built and installed with the tree; no per-push prerelease, ruled 2026-10-05 | *"We need freedom to just fork, change things, install, and have it all work … It has to be built all together, installed all together."* |
-| <a id="BP-D1"></a>BP-D1 | A binary is a declared download with a mandatory `sha256`, cached by digest with its exec bit | Per-arch selection and download were asked for, and the cached file carries the exec bit an embedded pack cannot |
+| <a id="BP-D1"></a>BP-D1 | A binary is a declared download with a mandatory `sha256`, cached by digest with its exec bit | Per-arch selection and download were asked for, and the cached file carries the exec bit an embedded pack could not then (it now can, [the exec bit](pack-system.md#the-exec-bit)) |
 | <a id="BP-D2"></a>BP-D2 | Declared in the loophole manifest, named by `{binary:}` and `{jail_binary:}`, each refused in the other half | The argv that runs the program is in that manifest, so a reference to nothing and a download nothing runs are both refusable at decode |
 | <a id="BP-D3"></a>BP-D3 | Each reference takes the build for where it runs; a missing build is unsupported on the platform axis | A compiled file runs on one architecture, and the jail is Linux on the machine's architecture |
 | <a id="BP-D4"></a>BP-D4 | Digest-keyed cache outside every jail mount, admitted only by verified rename; one read-only file bind per build; https at every hop, a size bound | A host daemon's build runs from the cache with the user's authority, and a jail should see only what its daemon runs |

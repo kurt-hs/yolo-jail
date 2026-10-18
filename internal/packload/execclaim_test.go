@@ -56,8 +56,8 @@ func TestFootprintReportsShippedExecutables(t *testing.T) {
 	if c.Target != "1 file" {
 		t.Errorf("Target = %q, want %q", c.Target, "1 file")
 	}
-	if c.Detail != "skills/s/references/check.sh" {
-		t.Errorf("Detail = %q, want the executable's path", c.Detail)
+	if want := "skills/s/references/check.sh — " + ExecClaimGuarantee; c.Detail != want {
+		t.Errorf("Detail = %q, want the executable's path and the delivery guarantee %q", c.Detail, want)
 	}
 	// NOT review-worthy: review-worthy claims reach the launch disclosure, which is about
 	// boundary crossings. Flagging this would put an unchanging line in front of the user

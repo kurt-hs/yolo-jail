@@ -247,8 +247,9 @@ Per agent, as built:
   value is `test ! -r ~/.copilot/yolo/footer.sh || sh ~/.copilot/yolo/footer.sh`. Three measured
   copilot behaviors shape that value:
   - Copilot spawns a command that is an existing path directly, which needs an exec bit, and runs
-    anything else with `/bin/sh`. No file an embedded pack ships can carry an exec bit (`embed.FS`
-    reports every file as 0444), so the value names `sh`.
+    anything else with `/bin/sh`. The value names `sh`, which needs no exec bit; it was chosen
+    when an embedded pack could carry none, which [the exec bit](pack-system.md#the-exec-bit) has
+    since closed.
   - Copilot counts a non-zero exit as a failure and blanks the line with a warning. The `test`
     makes a missing script exit 0 with nothing printed, for a backend that delivered none.
   - Copilot expands env references in the command before a shell sees it, so the value carries no

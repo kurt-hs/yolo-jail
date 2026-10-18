@@ -1,0 +1,7 @@
+# Every embedded pack file whose mode in this repository carries an exec bit, one path per
+# line relative to packs/. embed.FS cannot carry a mode, so this list is how a shipped
+# pack's script reaches the jail and `yolo host apply` executable (packload.EmbeddedExecutablesFile).
+# TestEmbeddedExecutablesMatchTheTree fails when this and the on-disk modes disagree.
+chrome-devtools/bin/chrome-devtools-mcp-wrapper
+hello-daemon/loopholes/hello-daemon/bin/hello
+muse-planner/files/scripts/muse-planner-exec.sh

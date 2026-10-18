@@ -373,6 +373,12 @@ func envGateClause(profile, platform string) string {
 // A pack of scripts should not push its other claims off the reader's screen.
 const execClaimListCap = 5
 
+// ExecClaimGuarantee closes the executables claim's Detail: the delivery guarantee those
+// files get, so `yolo pack lint` and `yolo pack footprint` name what the author can rely on
+// rather than leaving the reader to wonder whether a jail or `yolo host apply` keeps the bit
+// (docs/reference/pack-system.md, "The exec bit").
+const ExecClaimGuarantee = "each keeps its exec bit wherever it is delivered"
+
 // audienceTarget is the TARGET column for a `briefing`/`skills` claim: the destination it
 // names, or — for an ADDRESSED contribution, which names an audience and deliberately no path
 // (docs/reference/agent-briefings.md#ba-p4) — the audience itself.
@@ -750,6 +756,7 @@ func FootprintOf(p *Pack) Footprint {
 		} else {
 			detail = strings.Join(shown, ", ")
 		}
+		detail += " — " + ExecClaimGuarantee
 		fp.Claims = append(fp.Claims, Claim{
 			Kind: ExecutablesClaimKind, Target: target, Pack: p.Name, Detail: detail,
 		})

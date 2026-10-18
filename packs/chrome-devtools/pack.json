@@ -22,7 +22,7 @@
     },
     // The wrapper the entry runs. OFF PATH on purpose (a `files` tree may not land on a PATH
     // directory; the program above is what owns a name there), and run through /bin/sh,
-    // since a pack selected by its bare name carries no exec bit.
+    // which needs no exec bit (chosen when a pack selected by its bare name carried none).
     {
       "kind": "files",
       "from": "bin/chrome-devtools-mcp-wrapper",

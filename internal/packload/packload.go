@@ -16,6 +16,7 @@
 package packload
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -1105,11 +1106,15 @@ func MaterializeEmbedded(embedded fs.FS, dest string) ([]*Pack, []string) {
 	if err != nil {
 		return nil, []string{"embedded packs: " + err.Error()}
 	}
+	exec, err := embeddedExecutables(embedded)
+	if err != nil {
+		return nil, []string{"embedded packs: " + err.Error()}
+	}
 	var packs []*Pack
 	var problems []string
 	for _, name := range names {
 		root := filepath.Join(dest, name)
-		if err := copyEmbeddedTree(embedded, name, root); err != nil {
+		if err := copyEmbeddedTree(embedded, name, root, exec); err != nil {
 			problems = append(problems, "embedded pack "+name+": "+err.Error())
 			continue
 		}
@@ -1173,8 +1178,63 @@ func loadEmbeddedPacks(embedded fs.FS, dest string) ([]*Pack, []string) {
 	return packs, problems
 }
 
-// copyEmbeddedTree writes one embedded pack dir to disk.
-func copyEmbeddedTree(embedded fs.FS, sub, dest string) error {
+// EmbeddedExecutablesFile is the top-level file of the embedded packs FS that lists, one
+// slash path per line relative to packs/, every embedded file whose mode in the repository
+// carries an exec bit. `#` starts a comment; blank lines are ignored.
+//
+// IT EXISTS BECAUSE embed.FS CANNOT CARRY A MODE: every embedded file reads back 0444,
+// whatever its mode on disk (measured 2026-09-17). So the source tree's exec bit is recorded
+// beside the bytes instead, and copyEmbeddedTree restores it. That is what lets the delivery
+// guarantee in docs/reference/pack-system.md ("a `files` source's exec bit is preserved")
+// hold for a shipped pack exactly as for one selected by path: every later copier — the
+// launch's packstage staging, the jail's merged-root copy, the macos-user overlay copy, `yolo
+// host apply` — already carries the bit it finds.
+//
+// The list is a fact about the tree, never a policy: TestEmbeddedExecutablesMatchTheTree
+// fails the moment it and the files' on-disk modes disagree, in either direction. Being in
+// the FS, it is also in the content hash naming the embedded cache tree, so changing it
+// alone moves that tree.
+const EmbeddedExecutablesFile = "executables.txt"
+
+// embeddedExecutables reads EmbeddedExecutablesFile from embedded. An FS without one (a test
+// fixture) has no executables. A listed path that is not a regular file of the FS is an
+// error: a stale list must stop the copy, not silently deliver a script without its bit.
+func embeddedExecutables(embedded fs.FS) (map[string]bool, error) {
+	data, err := fs.ReadFile(embedded, EmbeddedExecutablesFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		return map[string]bool{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fi, serr := fs.Stat(embedded, line)
+		if serr != nil || !fi.Mode().IsRegular() {
+			return nil, fmt.Errorf("%s lists %s, which is not an embedded file", EmbeddedExecutablesFile, line)
+		}
+		out[line] = true
+	}
+	return out, nil
+}
+
+// embeddedFileMode is the mode copyEmbeddedTree writes an embedded file at: 0o755 for one
+// EmbeddedExecutablesFile lists, 0o644 otherwise — the same rule packstage applies
+// to a pack on disk, so the two routes deliver one tree identically.
+func embeddedFileMode(exec map[string]bool, p string) os.FileMode {
+	if exec[p] {
+		return 0o755
+	}
+	return 0o644
+}
+
+// copyEmbeddedTree writes one embedded pack dir to disk, restoring each listed file's exec
+// bit (EmbeddedExecutablesFile).
+func copyEmbeddedTree(embedded fs.FS, sub, dest string, exec map[string]bool) error {
 	return fs.WalkDir(embedded, sub, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -1194,19 +1254,12 @@ func copyEmbeddedTree(embedded fs.FS, sub, dest string) error {
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}
-		// 0o644 always, and it is NOT a policy choice any more — it is the only
-		// reachable value. embed.FS cannot represent an exec bit: an embedded file
-		// reads back as 0444 whatever its mode in the tree (measured 2026-09-17), so
-		// there is no bit here to carry even if we wanted to.
-		//
-		// ⚠ The old justification — "packstage enforces the same rule for configured
-		// packs" — is false and was the misleading half: packstage.copyFile carries
-		// 0o111 now, as does run.copyTree. A pack shipping an executable therefore
-		// works when it is CONFIGURED BY PATH and silently does not when it is
-		// EMBEDDED, which is what packs/hello-daemon exists to pin
-		// (internal/packload/packshippedjailbinary_test.go). Nothing here can fix
-		// that; closing it means not shipping such a binary through embed.FS.
-		return os.WriteFile(target, data, 0o644)
+		mode := embeddedFileMode(exec, p)
+		if err := os.WriteFile(target, data, mode); err != nil {
+			return err
+		}
+		// Explicit chmod: WriteFile's mode is masked by umask and ignored for an existing file.
+		return os.Chmod(target, mode)
 	})
 }
 

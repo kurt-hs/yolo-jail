@@ -273,8 +273,8 @@ The rules:
 
 - **`{pack_dir}`** in `cmd` is the only substituted token, and it resolves to the pack's staged
   tree wherever the sidecar runs. A pack runs a script through its interpreter, as above,
-  because an embedded pack's files carry no execute bit
-  ([`packs/hello-daemon/README.md`](../../packs/hello-daemon/README.md)).
+  which needs no execute bit (chosen when an embedded pack's files carried none; they now do,
+  [the exec bit](../reference/pack-system.md#the-exec-bit)).
 - **A name collision** between two packs resolves as `service` does: the later pack in
   selection order wins. User config beats every pack, and only by writing a whole declaration of
   its own. A workspace config never takes a name that user config, the local pack or a selected

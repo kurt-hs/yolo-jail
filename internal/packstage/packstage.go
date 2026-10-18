@@ -88,9 +88,9 @@ type Result struct {
 // the caller turns it into a halt.
 //
 // The exec bit is CARRIED, not refused — copyFile preserves 0o111. It was in the
-// refusal list above until a pack needed to ship a program; the embedded path cannot
-// follow (see packload.copyEmbeddedTree), so the two routes disagree about what a
-// pack can deliver.
+// refusal list above until a pack needed to ship a program. The embedded path carries it
+// too, through packs/executables.txt (packload.EmbeddedExecutablesFile), so both routes
+// deliver one tree identically (docs/reference/pack-system.md#the-exec-bit).
 func Stage(spec Spec) (*Result, error) { return walk(spec, true) }
 
 // Check applies Stage's rules to spec.Root — the no-escape refusal and the only/exclude

@@ -62,7 +62,7 @@ import (
 // without the bump a new build whose FS hashes the same silently adopts a tree written the
 // old way. TestEmbeddedHashCoversTheFormatConstant pins that the constant is hashed at all;
 // only review can pin that it was bumped.
-const EmbeddedTreeFormat = "yolo-embedded-packs/v1"
+const EmbeddedTreeFormat = "yolo-embedded-packs/v2"
 
 // Age floors. Every non-current entry a reaper considers must be at least embeddedReapFloor
 // old — a fallback tree is created and leased within microseconds, but a populate's .tmp-
@@ -411,15 +411,21 @@ func copyEmbeddedPacks(f fs.FS, dest string) error {
 	if err != nil {
 		return err
 	}
+	exec, err := embeddedExecutables(f)
+	if err != nil {
+		return err
+	}
 	for _, name := range names {
-		if err := copyEmbeddedTree(f, name, filepath.Join(dest, name)); err != nil {
+		if err := copyEmbeddedTree(f, name, filepath.Join(dest, name), exec); err != nil {
 			return fmt.Errorf("embedded pack %s: %w", name, err)
 		}
 	}
 	return nil
 }
 
-// sealEmbeddedTree makes a populated tree READ-ONLY: files 0444, directories 0755.
+// sealEmbeddedTree makes a populated tree READ-ONLY: files 0444 — 0555 for one copyEmbeddedTree
+// wrote executable (EmbeddedExecutablesFile), so the exec bit survives the seal — directories
+// 0755.
 //
 // Directories stay owner-WRITABLE on purpose. Unlinking needs write permission on the parent,
 // so a 0555 directory would make the tree undeletable by `rm -rf ~/.local/share/yolo-jail`,
@@ -437,6 +443,13 @@ func sealEmbeddedTree(root string) error {
 		}
 		if d.IsDir() {
 			return os.Chmod(p, 0o755)
+		}
+		fi, ierr := d.Info()
+		if ierr != nil {
+			return ierr
+		}
+		if fi.Mode().Perm()&0o111 != 0 {
+			return os.Chmod(p, 0o555)
 		}
 		return os.Chmod(p, 0o444)
 	})
@@ -533,6 +546,10 @@ func verifyEmbeddedTree(f fs.FS, root string) error {
 	if err != nil {
 		return err
 	}
+	exec, err := embeddedExecutables(f)
+	if err != nil {
+		return err
+	}
 	want := map[string]bool{} // slash path -> isDir
 	for _, n := range names {
 		if err := fs.WalkDir(f, n, func(p string, d fs.DirEntry, err error) error {
@@ -588,6 +605,16 @@ func verifyEmbeddedTree(f fs.FS, root string) error {
 		}
 		if !bytes.Equal(got, exp) {
 			return mismatchf("%s differs from the embedded copy", rel)
+		}
+		// The exec bit is part of what a populate writes (EmbeddedExecutablesFile), so a tree
+		// that lost or gained one is not this build's tree.
+		info, ierr := d.Info()
+		if ierr != nil {
+			return ierr
+		}
+		if (info.Mode().Perm()&0o111 != 0) != exec[rel] {
+			return mismatchf("%s has mode %04o, and the embedded list says executable=%t",
+				rel, info.Mode().Perm(), exec[rel])
 		}
 		return nil
 	})

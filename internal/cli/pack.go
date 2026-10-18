@@ -91,7 +91,8 @@ one file's audience never stops another file from shipping:
   requires         a tool that must already exist
   skills           merge a skills tree (optionally addressed: "agents")
   briefing         prose for the briefing (optionally addressed: "agents")
-  files            own a file tree, bind-mounted :ro in the jail
+  files            own a file tree, bind-mounted :ro in the jail; each file keeps
+                   its exec bit there and at the host (chmod +x it in the pack)
   config           a composed config surface ("readsHost" composes the user's own
                    copy of that same file, from their real home, :ro)
   config-overlay   keys on a config surface another pack owns
