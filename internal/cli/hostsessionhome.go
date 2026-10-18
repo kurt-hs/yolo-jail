@@ -248,6 +248,12 @@ func prepareHostSessionHomes(launch *hostComposition, environ []string, errw io.
 	// THE REAP FIRST, on every launch, whatever this one declares: a launch whose program died
 	// leaves its directory for the next one (SP-D24).
 	prune.ReapHostSessionHomes(root, true, time.Now())
+	// SP-D30: under `host_management: none` (the default) yolo leaves the program's config to the
+	// user, so only a launch that typed a -p, an explicit request for its own profile, gets a
+	// session home; a bare launch reads the user's own directory as it always did.
+	if launch.typedProfile == "" && config.HostManagementMode() != config.HostManagementOwn {
+		return nil, environ, nil
+	}
 	packs, _ := packload.ResolveDestinations(launch.packs)
 	decls := hostSessionDecls(packs, home)
 	if len(decls) == 0 {
