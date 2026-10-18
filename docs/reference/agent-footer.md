@@ -256,7 +256,7 @@ Per agent, as built:
 - **pi and omp**: one extension file each, delivered by a `files` contribution into the agent's own
   extension discovery. On `session_start`, in a session with a UI, it runs the renderer once and
   calls `ctx.ui.setStatus("yolo", line)`; with no `yolo` on PATH or an empty line it sets nothing.
-  pi's adapter does not await the renderer, because pi awaits every `session_start` handler
+  Neither adapter awaits the renderer, because pi and omp await every `session_start` handler
   before the session is usable and a cold renderer takes over a second: the handler returns at
   once, the line lands when the renderer answers (within its 2-second timeout), and a line whose
   session was replaced or shut down meanwhile is dropped.
@@ -277,6 +277,9 @@ Per agent, as built:
   slot that keeps the host's own content and adds each plugin's after it: `home_prompt_right` and
   `session_prompt_right`, the right end of the prompt's info row, where opencode names the model and
   provider. The text takes the theme's muted color. With no `yolo` on PATH it registers nothing.
+  `tui()` does not await the renderer, for the same reason as pi's handler: the slots register when
+  the renderer answers, so a session does not wait on it. The plugin has no session event, so it
+  has no superseded or shut-down session to drop.
 
 > [!WARNING]
 > **opencode's list goes in `tui.jsonc`, never `tui.json`.** opencode moves `theme`, `keybinds` and

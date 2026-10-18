@@ -572,12 +572,10 @@ func TestExtensionAdaptersSetOneYoloStatus(t *testing.T) {
 					c.adapter.pack)
 			}
 			run := runExtension(t, source, true, true, c.env)
-			// pi's render is not awaited, so it also hears session_shutdown, to drop a render
-			// whose session has gone (TestPiFooterDoesNotHoldSessionStart).
-			wantEvents := "session_start"
-			if c.adapter.pack == "pi" {
-				wantEvents = "session_shutdown,session_start"
-			}
+			// pi's and omp's renders are not awaited, so they also hear session_shutdown, to drop a
+			// render whose session has gone (TestPiFooterDoesNotHoldSessionStart,
+			// TestOmpFooterDoesNotHoldSessionStart).
+			wantEvents := "session_shutdown,session_start"
 			if strings.Join(run.Events, ",") != wantEvents {
 				t.Errorf("events registered = %q, want %s", run.Events, wantEvents)
 			}
@@ -598,12 +596,13 @@ func TestExtensionAdaptersSetOneYoloStatus(t *testing.T) {
 	}
 }
 
-// piFooterTimingHarness loads the pi extension once per scenario and records, per scenario, the
-// calls each session's ctx received, tagged with that ctx's name, and how many had landed when the
-// awaited handlers returned. Scenarios: one session_start; a session_start superseded by a
-// second; a session_start followed by session_shutdown; and a session_start whose ctx pi has
-// invalidated by the time the line arrives, which throws as pi's stale ctx does.
-const piFooterTimingHarness = `
+// extensionFooterTimingHarness loads a pi-style extension once per scenario and records, per
+// scenario, the calls each session's ctx received, tagged with that ctx's name, and how many had
+// landed when the awaited handlers returned. Scenarios: one session_start; a session_start
+// superseded by a second; a session_start followed by session_shutdown; and a session_start whose
+// ctx the agent has invalidated by the time the line arrives, which throws as pi's and omp's stale
+// ctx does. pi and omp share this API, so one harness serves both.
+const extensionFooterTimingHarness = `
 import register from "./extension.mjs";
 const out = {};
 function load() {
@@ -641,14 +640,23 @@ process.once("beforeExit", () => console.log(JSON.stringify(out)));
 // session was superseded by a later session_start, or shut down, is dropped; and a ctx pi
 // invalidated meanwhile (its setStatus throws) costs nothing but the line.
 func TestPiFooterDoesNotHoldSessionStart(t *testing.T) {
-	source := extensionSource(t, packNamed(t, shippedPacks(t), "pi"), extensionAdapters[0].into)
+	testFooterDoesNotHoldSessionStart(t, extensionAdapters[0], "yolo: pi's own login · host")
+}
+
+// TestOmpFooterDoesNotHoldSessionStart is TestPiFooterDoesNotHoldSessionStart for omp, whose
+// extension is the same shape on the same API: the four cases are the same.
+func TestOmpFooterDoesNotHoldSessionStart(t *testing.T) {
+	testFooterDoesNotHoldSessionStart(t, extensionAdapters[1], "yolo: omp's own login · host")
+}
+
+func testFooterDoesNotHoldSessionStart(t *testing.T, a extensionAdapter, line string) {
+	source := extensionSource(t, packNamed(t, shippedPacks(t), a.pack), a.into)
 	type result struct {
 		Calls        [][]string `json:"calls"`
 		HandlerCalls int        `json:"handlerCalls"`
 	}
 	var run map[string]result
-	runExtensionHarness(t, piFooterTimingHarness, source, true, true, map[string]string{}, &run)
-	const line = "yolo: pi's own login · host"
+	runExtensionHarness(t, extensionFooterTimingHarness, source, true, true, map[string]string{}, &run)
 	want := map[string][][]string{
 		"one":        {{"a", "yolo", line}},
 		"superseded": {{"b", "yolo", line}},
@@ -700,22 +708,26 @@ var opencodeSlotModes = map[string]string{
 // opencodeHarness loads a TUI plugin the way opencode 1.18.32 does (the module's default export,
 // `{ id, tui }`), calls tui() with an API whose slots.register records what it is handed, and
 // renders every registered slot with a slot context whose theme answers $MUTED (or has no
-// theme at all when it is empty). It prints the module's shape and the rendered elements.
+// theme at all when it is empty). It prints the module's shape and the rendered elements once
+// node has nothing left to run, so a registration the plugin did not await is counted too.
+// registeredAtReturn is how many registrations had landed when tui() returned.
 const opencodeHarness = `
 import plugin from "./plugin.mjs";
 const registered = [];
 const api = { slots: { register(p) { registered.push(p); return "yolo-footer"; } } };
 await plugin.tui(api, undefined, { id: "yolo-footer", source: "file", state: "first" });
+const registeredAtReturn = registered.length;
 const ctx = process.env.MUTED ? { theme: { current: { textMuted: process.env.MUTED } } } : {};
-console.log(JSON.stringify({
+process.once("beforeExit", () => console.log(JSON.stringify({
 	keys: Object.keys(plugin).sort(),
 	id: plugin.id,
 	tui: typeof plugin.tui,
+	registeredAtReturn,
 	registered: registered.map((p) => ({
 		keys: Object.keys(p).sort(),
 		slots: Object.fromEntries(Object.entries(p.slots).map(([name, render]) => [name, render(ctx, {})])),
 	})),
-}));
+})));
 `
 
 // opencodeJSXStub stands in for `@opentui/solid/jsx-runtime`, which opencode maps to the copy in
@@ -725,10 +737,11 @@ export const jsxs = jsx;
 `
 
 type opencodeRun struct {
-	Keys       []string `json:"keys"`
-	ID         string   `json:"id"`
-	TUI        string   `json:"tui"`
-	Registered []struct {
+	Keys               []string `json:"keys"`
+	ID                 string   `json:"id"`
+	TUI                string   `json:"tui"`
+	RegisteredAtReturn int      `json:"registeredAtReturn"`
+	Registered         []struct {
 		Keys  []string `json:"keys"`
 		Slots map[string]struct {
 			Type  string         `json:"type"`
@@ -866,6 +879,34 @@ func TestOpencodeAdapter(t *testing.T) {
 			t.Errorf("with no yolo on PATH the plugin registered %d slot plugins, want none", len(run.Registered))
 		}
 	})
+}
+
+// TestOpencodeFooterDoesNotHoldTUIStart is the pi test's cases for opencode's TUI plugin, with
+// tui() standing where session_start does. opencode's loader awaits tui() before the TUI is
+// usable, and a cold renderer costs ~1.7 s, so tui() starts the renderer and returns. Two of
+// the four cases apply:
+//   - the handler returns before the line: no slot is registered when tui() returns;
+//   - the line lands afterwards: the slots are registered once the renderer answers.
+//
+// Two do not, and have no test: the plugin registers no session event (its module exports
+// only id and tui, TestOpencodeAdapter), and its slots belong to the prompt row, not to a
+// session. So there is no superseded session and no session_shutdown whose line would need
+// dropping. Those cases are absent here because the event they test does not exist, not skipped.
+func TestOpencodeFooterDoesNotHoldTUIStart(t *testing.T) {
+	source := extensionSource(t, packNamed(t, shippedPacks(t), "opencode"), path.Join(path.Dir(opencodeTUIConfig), opencodePluginSpec))
+	run := runOpencodePlugin(t, source, true, "MUTED", map[string]string{"YOLO_VERSION": "0.10.0"})
+	if run.RegisteredAtReturn != 0 {
+		t.Errorf("%d slot registrations had landed when tui() returned, want 0: the plugin must not wait on the renderer",
+			run.RegisteredAtReturn)
+	}
+	if len(run.Registered) != 1 {
+		t.Fatalf("the plugin registered %d slot plugins once the renderer answered, want 1", len(run.Registered))
+	}
+	for name, el := range run.Registered[0].Slots {
+		if el.Props["children"] != "yolo: jail" {
+			t.Errorf("slot %s registered after tui() returned renders %v, want yolo: jail", name, el.Props["children"])
+		}
+	}
 }
 
 func mustJSON(t *testing.T, v any) string {
