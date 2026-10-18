@@ -31,6 +31,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // forkClaimDetailPrefix opens a fork claim's Detail; Claim.DisclosureSentence keys its sentence
@@ -208,6 +209,13 @@ func (f Fork) RebaseRecipe() packsrc.RebaseRecipe {
 // (packsrc.ParseFrom): the repository it names, or why it names none.
 func (f Fork) PatchBranchAddr() (packsrc.Addr, error) {
 	return packsrc.ParseFrom(f.PatchBranch, f.PatchBranchDir)
+}
+
+// RefNotResolvedLine is what a reader that resolved none of f's git refs says of it, dir being the pack's
+// directory to lint: the default (offline) `yolo pack lint`, and `yolo check` when no check record holds
+// them. `--online` resolves them, in a scratch mirror.
+func (f Fork) RefNotResolvedLine(dir string) string {
+	return f.Label() + ": ref not resolved (offline) — `yolo pack lint --online " + shquote.QuoteDisplay(dir) + "` checks it"
 }
 
 // patchBranchDirOf is the directory a pack's relative patch branch is resolved against: the

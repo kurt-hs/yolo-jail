@@ -604,6 +604,9 @@ func packLint(args []string, out, errw io.Writer, color bool) int {
 		onlineProblems, lines := lintOnline(pr, readSeries)
 		problems = append(problems, onlineProblems...)
 		onlineLines = lines
+	} else {
+		// OFFLINE, NO REF WAS RESOLVED, and the pass says so where the online lines would be.
+		onlineLines = offlineRefLines(readSeries, lintRoot)
 	}
 
 	// WHAT THIS PACK DELIVERS, from the one governance predicate every notch reads
