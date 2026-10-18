@@ -12,7 +12,8 @@ import (
 
 // The two seams that are closures rather than the step itself are driven against real files:
 // liveScopeFilesSeam reads a bound broker scope file under a temp HOME and carries its live-scope
-// capability, and writeCtxMountRecordSeam rewrites the host's mount record, keeping its token.
+// capability, and writeCtxMountRecordSeam restores the inspected token after the real record
+// invalidator leaves its tombstone.
 func TestLiveApplyClosureSeamsReachTheRealFiles(t *testing.T) {
 	home, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -45,8 +46,11 @@ func TestLiveApplyClosureSeamsReachTheRealFiles(t *testing.T) {
 	if err := writeCtxMountRecord(cname, "tok", nil); err != nil {
 		t.Fatal(err)
 	}
+	if err := invalidateCtxMountRecord(cname); err != nil {
+		t.Fatal(err)
+	}
 	want := []liveCtxMount{{Source: "/h/a", Dest: "/ctx/a", RW: true}}
-	if err := writeCtxMountRecordSeam(cname, "ignored", want); err != nil {
+	if err := writeCtxMountRecordSeam(cname, "tok", want); err != nil {
 		t.Fatal(err)
 	}
 	got, ok := readCtxMountRecord(cname, []string{ctxMountsTokenEnv + "=tok"})

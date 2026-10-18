@@ -175,22 +175,27 @@ func TestCtxMountRecordRoundTripAndTokenMismatch(t *testing.T) {
 func TestUpdateCtxMountRecordKeepsTheToken(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	const cname = "yolo-ws-abcd1234"
-	if err := writeCtxMountRecord(cname, "tok-1", nil); err != nil {
+	if err := writeCtxMountRecord(cname, "tok-1", []ctxMountEntry{{Source: "/h/a", Dest: "/ctx/a"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := invalidateCtxMountRecord(cname); err != nil {
 		t.Fatal(err)
 	}
 	now := []ctxMountEntry{{Source: "/h/c", Dest: "/ctx/c"}}
-	if err := updateCtxMountRecord(cname, now); err != nil {
+	if err := updateCtxMountRecord(cname, "tok-1", now); err != nil {
 		t.Fatal(err)
 	}
 	got, ok := readCtxMountRecord(cname, []string{ctxMountsTokenEnv + "=tok-1"})
 	if !ok || !slices.Equal(got, now) {
 		t.Errorf("read after update = %+v, %v; want %+v, true", got, ok, now)
 	}
-	if err := updateCtxMountRecord("yolo-none", now); err == nil {
+	if err := updateCtxMountRecord("yolo-none", "tok-1", now); err == nil {
 		t.Error("updating a record that does not exist succeeded; want an error (no token to keep)")
 	}
 }
 
+// TestInvalidatedCtxMountRecordCannotClaimStaleMounts: an invalidated record cannot be read for
+// the old jail, and its postmutation writer cannot replace a different launch's new token.
 func TestInvalidatedCtxMountRecordCannotClaimStaleMounts(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	const cname = "yolo-ws-abcd1234"
@@ -216,11 +221,21 @@ func TestInvalidatedCtxMountRecordCannotClaimStaleMounts(t *testing.T) {
 	if ctxMountRecordInvalidated(cname, nil) {
 		t.Fatal("a jail without the live-mount token was treated as an invalidated record")
 	}
+	// Simulate a launch completing between invalidation and a stale postmutation write.
+	if err := writeCtxMountRecord(cname, "", nil); err != nil {
+		t.Fatal(err)
+	}
 	if err := writeCtxMountRecord(cname, "tok-2", nil); err != nil {
 		t.Fatal(err)
 	}
+	if err := updateCtxMountRecord(cname, "tok-1", []ctxMountEntry{{Source: "/h/stale", Dest: "/ctx/a"}}); err == nil {
+		t.Fatal("a postmutation write replaced another launch's record")
+	}
+	if got, ok := readCtxMountRecord(cname, []string{ctxMountsTokenEnv + "=tok-2"}); !ok || len(got) != 0 {
+		t.Errorf("the competing launch record was changed: %+v, %v", got, ok)
+	}
 	if ctxMountRecordInvalidated(cname, []string{ctxMountsTokenEnv + "=tok-2"}) {
-		t.Fatal("a fresh launch's token did not clear the invalidation state")
+		t.Error("the competing launch token was marked invalid")
 	}
 }
 

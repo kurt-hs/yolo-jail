@@ -233,7 +233,11 @@ func TestTheJailSkillTellsTheTruthAboutTheBrokeredKeysAndTheLocalFile(t *testing
 	flat := strings.Join(strings.Fields(string(raw)), " ")
 	for _, want := range []string{
 		"`brokered.<source>.repos` (`brokered.github.repos` for the github pack) is a workspace key you may write",
-		"run `yolo check --no-build` and ask the human to restart the jail and answer y",
+		"`yolo config apply` on the host in this workspace",
+		"That command uses the launch's same approval gate;",
+		"approved read-only and user-scope read-write mounts under `/ctx`, and a running GitHub broker's repository scope, can apply live",
+		"a running broker that supports live scope takes the change at its next request",
+		"It never restarts the jail or offers to do so.",
 		"yolo does not git-ignore it",
 		"`git check-ignore yolo-jail.local.jsonc`",
 	} {

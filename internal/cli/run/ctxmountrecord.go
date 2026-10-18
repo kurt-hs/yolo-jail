@@ -154,19 +154,21 @@ func ctxMountRecordInvalidated(cname string, envLines []string) bool {
 	return err != nil || rec.Token != token
 }
 
-// updateCtxMountRecord rewrites cname's record with the mounts the jail has now, keeping its
-// token: `yolo config apply` calls it after each injection or removal step, so the record never
-// claims a mount the jail lacks or misses one it has. A missing or unreadable record is the error,
-// since there is no token to keep.
-func updateCtxMountRecord(cname string, entries []ctxMountEntry) error {
+// updateCtxMountRecord restores cname's record after one successful mount mutation. token is the
+// launch token already validated from the inspected jail env before invalidation. Only an empty
+// tombstone can be replaced: a record written by a different launch must never be adopted.
+func updateCtxMountRecord(cname, token string, entries []ctxMountEntry) error {
+	if token == "" {
+		return errors.New("cannot restore a live-mount record without the inspected launch token")
+	}
 	rec, err := loadCtxMountRecord(cname)
 	if err != nil {
 		return err
 	}
-	if rec.Token == "" {
-		return errors.New(ctxMountRecordPath(cname) + " carries no token")
+	if rec.Token != "" {
+		return errors.New(ctxMountRecordPath(cname) + " no longer carries the invalidation tombstone")
 	}
-	return writeCtxMountRecord(cname, rec.Token, entries)
+	return writeCtxMountRecord(cname, token, entries)
 }
 
 // diffCtxMounts compares the mounts a jail has with the ones the config now wants. A destination

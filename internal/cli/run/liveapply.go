@@ -59,10 +59,10 @@ var (
 	ctxMountsLiveSeam             = (*Options).ctxMountsLive
 	ctxMountRecordInvalidatedSeam = ctxMountRecordInvalidated
 	readCtxMountRecordSeam        = readCtxMountRecord
-	// The token is the one the jail's launch wrote; updateCtxMountRecord keeps it, so a
-	// rewrite can never adopt a record for a jail it was not written for.
-	writeCtxMountRecordSeam = func(cname, _ string, entries []liveCtxMount) error {
-		return updateCtxMountRecord(cname, entries)
+	// The token is validated against the inspected jail env before mount planning. After the
+	// record is tombstoned, restore only that token and only while the tombstone is still there.
+	writeCtxMountRecordSeam = func(cname, token string, entries []liveCtxMount) error {
+		return updateCtxMountRecord(cname, token, entries)
 	}
 	diffCtxMountsSeam  = diffCtxMounts
 	injectCtxMountSeam = (*Options).injectCtxMount
