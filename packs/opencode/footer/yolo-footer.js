@@ -54,20 +54,26 @@ function renderFooter() {
 	});
 }
 
+// tui() does not await the renderer: opencode's loader waits on the plugin's tui() before the TUI
+// is usable, and a cold `yolo internal footer` costs ~1.7 s. The slots are registered once the
+// renderer answers, and only if it printed a line, so a plugin that never answers registers
+// nothing. The plugin keeps no session state: its slots are the prompt row's, not a session's, so
+// there is no superseded or shut-down session whose line would need dropping.
 export default {
 	id: "yolo-footer",
-	async tui(api) {
-		const line = await renderFooter();
-		if (!line) return;
-		const slots = {};
-		for (const name of SLOTS) {
-			slots[name] = (ctx) => {
-				// The muted color opencode gives the provider name in the same row. A theme that
-				// does not answer leaves the text in the default color.
-				const muted = ctx?.theme?.current?.textMuted;
-				return jsx("text", muted === undefined ? { children: line } : { fg: muted, children: line });
-			};
-		}
-		api.slots.register({ slots });
+	tui(api) {
+		void renderFooter().then((line) => {
+			if (!line) return;
+			const slots = {};
+			for (const name of SLOTS) {
+				slots[name] = (ctx) => {
+					// The muted color opencode gives the provider name in the same row. A theme that
+					// does not answer leaves the text in the default color.
+					const muted = ctx?.theme?.current?.textMuted;
+					return jsx("text", muted === undefined ? { children: line } : { fg: muted, children: line });
+				};
+			}
+			api.slots.register({ slots });
+		});
 	},
 };
