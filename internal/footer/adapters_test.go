@@ -430,8 +430,10 @@ func runFooterArgv(t *testing.T, args []string, env map[string]string) string {
 }
 
 // extensionHarness loads an extension the way pi and omp do (a default-exported factory handed
-// the extension API), fires every session_start handler it registered with a context whose
-// hasUI is $HAS_UI, and prints what the extension registered and called as JSON.
+// the extension API), awaits every session_start handler it registered with a context whose
+// hasUI is $HAS_UI, as the agent does, and prints what the extension registered and called as
+// JSON once node has nothing left to run, so a render the handler did not await is counted too.
+// handlerCalls is how many calls had landed when the handlers returned.
 const extensionHarness = `
 import register from "./extension.mjs";
 const handlers = {};
@@ -447,12 +449,16 @@ const ctx = {
 for (const fn of handlers["session_start"] ?? []) {
 	await fn({ type: "session_start", reason: "startup" }, ctx);
 }
-console.log(JSON.stringify({ events: Object.keys(handlers).sort(), calls }));
+const handlerCalls = calls.length;
+process.once("beforeExit", () => {
+	console.log(JSON.stringify({ events: Object.keys(handlers).sort(), calls, handlerCalls }));
+});
 `
 
 type extensionRun struct {
-	Events []string   `json:"events"`
-	Calls  [][]string `json:"calls"`
+	Events       []string   `json:"events"`
+	Calls        [][]string `json:"calls"`
+	HandlerCalls int        `json:"handlerCalls"`
 }
 
 // requireNode returns node's path, or SKIPS the calling test — naming what went unexercised —
@@ -481,12 +487,21 @@ func requireNode(t *testing.T, what string) string {
 // puts the stand-in yolo on the extension's PATH; without it the PATH holds node alone.
 func runExtension(t *testing.T, source []byte, hasUI, withYolo bool, env map[string]string) extensionRun {
 	t.Helper()
+	var run extensionRun
+	runExtensionHarness(t, extensionHarness, source, hasUI, withYolo, env, &run)
+	return run
+}
+
+// runExtensionHarness runs source under node through harness, with the stand-in yolo on PATH when
+// withYolo is set, and decodes the JSON the harness prints into out.
+func runExtensionHarness(t *testing.T, harness string, source []byte, hasUI, withYolo bool, env map[string]string, out any) {
+	t.Helper()
 	node := requireNode(t, "the pi and omp extensions")
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "extension.mjs"), source, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "harness.mjs"), []byte(extensionHarness), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "harness.mjs"), []byte(harness), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
@@ -511,15 +526,13 @@ func runExtension(t *testing.T, source []byte, hasUI, withYolo bool, env map[str
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
-	out, err := cmd.CombinedOutput()
+	raw, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("running the extension under node: %v\n%s", err, out)
+		t.Fatalf("running the extension under node: %v\n%s", err, raw)
 	}
-	var run extensionRun
-	if err := json.Unmarshal(bytes.TrimSpace(out), &run); err != nil {
-		t.Fatalf("harness output is not the expected JSON (%v): %s", err, out)
+	if err := json.Unmarshal(bytes.TrimSpace(raw), out); err != nil {
+		t.Fatalf("harness output is not the expected JSON (%v): %s", err, raw)
 	}
-	return run
 }
 
 // TestExtensionAdaptersSetOneYoloStatus is build step 4: pi's and omp's packs each deliver an
@@ -559,8 +572,14 @@ func TestExtensionAdaptersSetOneYoloStatus(t *testing.T) {
 					c.adapter.pack)
 			}
 			run := runExtension(t, source, true, true, c.env)
-			if strings.Join(run.Events, ",") != "session_start" {
-				t.Errorf("events registered = %q, want only session_start", run.Events)
+			// pi's render is not awaited, so it also hears session_shutdown, to drop a render
+			// whose session has gone (TestPiFooterDoesNotHoldSessionStart).
+			wantEvents := "session_start"
+			if c.adapter.pack == "pi" {
+				wantEvents = "session_shutdown,session_start"
+			}
+			if strings.Join(run.Events, ",") != wantEvents {
+				t.Errorf("events registered = %q, want %s", run.Events, wantEvents)
 			}
 			want := [][]string{{"setStatus", "yolo", c.want}}
 			if got, _ := json.Marshal(run.Calls); string(got) != mustJSON(t, want) {
@@ -575,6 +594,79 @@ func TestExtensionAdaptersSetOneYoloStatus(t *testing.T) {
 		}
 		if run := runExtension(t, source, true, false, codexTables(a.agent)); len(run.Calls) != 0 {
 			t.Errorf("%s extension with no yolo on PATH called %v, want nothing", a.pack, run.Calls)
+		}
+	}
+}
+
+// piFooterTimingHarness loads the pi extension once per scenario and records, per scenario, the
+// calls each session's ctx received, tagged with that ctx's name, and how many had landed when the
+// awaited handlers returned. Scenarios: one session_start; a session_start superseded by a
+// second; a session_start followed by session_shutdown; and a session_start whose ctx pi has
+// invalidated by the time the line arrives, which throws as pi's stale ctx does.
+const piFooterTimingHarness = `
+import register from "./extension.mjs";
+const out = {};
+function load() {
+	const handlers = {};
+	register({ on(event, fn) { (handlers[event] ??= []).push(fn); } });
+	return async (event, ctx) => { for (const fn of handlers[event] ?? []) await fn({ type: event }, ctx); };
+}
+function ctx(calls, name, stale) {
+	return { hasUI: true, ui: { setStatus(key, text) {
+		if (stale) throw new Error("This extension ctx is stale after session replacement or reload.");
+		calls.push([name, key, text]);
+	} } };
+}
+async function scenario(name, steps) {
+	const calls = [], fire = load();
+	await steps(fire, (n, stale) => ctx(calls, n, stale));
+	out[name] = { calls, handlerCalls: calls.length };
+}
+await scenario("one", async (fire, c) => { await fire("session_start", c("a")); });
+await scenario("superseded", async (fire, c) => {
+	await fire("session_start", c("a"));
+	await fire("session_start", c("b"));
+});
+await scenario("shutdown", async (fire, c) => {
+	await fire("session_start", c("a"));
+	await fire("session_shutdown", c("a"));
+});
+await scenario("stale", async (fire, c) => { await fire("session_start", c("a", true)); });
+process.once("beforeExit", () => console.log(JSON.stringify(out)));
+`
+
+// TestPiFooterDoesNotHoldSessionStart: pi awaits every session_start handler before the session
+// is usable, and a cold `yolo internal footer` costs ~1.7 s, so pi's adapter starts the renderer
+// and returns without awaiting it. The line still lands once the renderer answers; a render whose
+// session was superseded by a later session_start, or shut down, is dropped; and a ctx pi
+// invalidated meanwhile (its setStatus throws) costs nothing but the line.
+func TestPiFooterDoesNotHoldSessionStart(t *testing.T) {
+	source := extensionSource(t, packNamed(t, shippedPacks(t), "pi"), extensionAdapters[0].into)
+	type result struct {
+		Calls        [][]string `json:"calls"`
+		HandlerCalls int        `json:"handlerCalls"`
+	}
+	var run map[string]result
+	runExtensionHarness(t, piFooterTimingHarness, source, true, true, map[string]string{}, &run)
+	const line = "yolo: pi's own login · host"
+	want := map[string][][]string{
+		"one":        {{"a", "yolo", line}},
+		"superseded": {{"b", "yolo", line}},
+		"shutdown":   {},
+		"stale":      {},
+	}
+	for name, calls := range want {
+		got, ok := run[name]
+		if !ok {
+			t.Errorf("scenario %s did not run: %v", name, run)
+			continue
+		}
+		if got.HandlerCalls != 0 {
+			t.Errorf("%s: %d status calls had landed when session_start returned, want 0: the "+
+				"handler must not wait on the renderer", name, got.HandlerCalls)
+		}
+		if mustJSON(t, got.Calls) != mustJSON(t, calls) {
+			t.Errorf("%s: calls = %s, want %s", name, mustJSON(t, got.Calls), mustJSON(t, calls))
 		}
 	}
 }

@@ -256,6 +256,10 @@ Per agent, as built:
 - **pi and omp**: one extension file each, delivered by a `files` contribution into the agent's own
   extension discovery. On `session_start`, in a session with a UI, it runs the renderer once and
   calls `ctx.ui.setStatus("yolo", line)`; with no `yolo` on PATH or an empty line it sets nothing.
+  pi's adapter does not await the renderer, because pi awaits every `session_start` handler
+  before the session is usable and a cold renderer takes over a second: the handler returns at
+  once, the line lands when the renderer answers (within its 2-second timeout), and a line whose
+  session was replaced or shut down meanwhile is dropped.
   The renderer's arguments sit in the file as a JSON array, `FOOTER_ARGS`, which the adapter tests
   read out and run. The login words are `pi's own login` and `omp's own login`: neither agent has
   one built-in login to name. omp marks `openai-codex` bridged, because it speaks no Responses wire
