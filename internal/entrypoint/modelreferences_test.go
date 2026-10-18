@@ -77,6 +77,30 @@ func TestTheBootNamesASubagentModelPisRegistryDoesNotHold(t *testing.T) {
 	}
 }
 
+// The derive's own values resolve in the registry it renders: no shipped profile or set, the
+// openai-codex [1m] variants and kilo's respelled ids included, draws a reference warning, with
+// pi's catalog installed and without it.
+func TestTheBootNamesNothingForTheShippedProfilesOwnValues(t *testing.T) {
+	for _, catalog := range []bool{false, true} {
+		for _, profiles := range []string{`"codex"`, `"zai"`, `"openrouter"`, `"kilo"`, `"llamacpp"`,
+			`"bedrock"`, `"bedrock-bridge"`, `"cerebras"`, `"meta"`,
+			`["codex","zai"]`, `["zai","openrouter"]`, `["kilo","zai"]`} {
+			r := shippedScopeRender(t)
+			if catalog {
+				r.e.NpmPrefix = t.TempDir()
+				writePiCatalog(t, r.e.NpmPrefix, "deepseek/deepseek-v4-flash")
+			}
+			r.render(t, `{"pi":`+profiles+`}`)
+			for _, never := range []string{"matches no model", "is outside the scope"} {
+				if out := r.errw.String(); strings.Contains(out, never) {
+					t.Errorf("profile %s (catalog %t): the boot must not say %q of yolo's own values:\n%s",
+						profiles, catalog, never, out)
+				}
+			}
+		}
+	}
+}
+
 // writePiCatalog is a fixture install of pi's package under prefix whose catalog names ids.
 func writePiCatalog(t *testing.T, prefix string, ids ...string) {
 	t.Helper()

@@ -27,6 +27,10 @@ func TestModelListCheckReferencesDecodeAndValidate(t *testing.T) {
 		{"selection without scope", `{"surface":"a/b","models":["/a"],"selection":{"provider":"/p","model":"/m"}}`,
 			`needs a "scope"`},
 		{"unknown member", `{"surface":"a/b","models":["/a"],"future":1}`, `unknown field`},
+		{"registry with no provider", `{"surface":"a/b","models":["/a"],"registry":[{"surface":"a/m","ids":"/models/0/id"}]}`,
+			`needs a "provider", or a`},
+		{"registry bad surface", `{"surface":"a/b","models":["/a"],"registry":[{"surface":"m","ids":"/*/id"}]}`,
+			`registry[0].surface "m" must name`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, problems := Decode([]byte(modelListCheckManifest(`{"references":` + tc.refs + `}`)))

@@ -15,14 +15,16 @@ import (
 // Two terms are coined for it. A MODEL REFERENCE is one value in the surface that names a model
 // a later process will look up: a qualified `<provider>/<id>` string, or a pattern over such
 // strings. A program's MODEL REGISTRY is what that program can resolve one against: every model
-// id the composed provider table lists, under the program's own provider id for it, plus, for a
-// provider the program runs on a list of its own (`built_in_providers`), the ids its installed
-// catalog names (`model_catalog`).
+// id the composed provider table lists, under the program's own provider id for it; every id the
+// program's own model surfaces hold as its derive renders them (Registry); and, for a provider
+// the program runs on a list of its own (`built_in_providers`), the ids its installed catalog
+// names (`model_catalog`).
 //
 // Core knows no agent, so the pack says where the references are. Every pointer is an RFC 6901
 // JSON Pointer (internal/jsonptr) into the surface's document in which a token that is exactly
 // `*` stands for every member of an object or array at that step. A pattern is a string in which
-// `*` matches any run of characters and every other character matches itself.
+// `*` matches any run of characters and every other character matches itself, ignoring case; a
+// pattern with neither a `/` nor a `*` names no provider and is not a model reference.
 type ModelReferences struct {
 	// Surface is the config surface the references live in, as `<agent>/<name>`.
 	Surface string `json:"surface"`
@@ -38,9 +40,24 @@ type ModelReferences struct {
 	// program's own model picker writes; nil when the surface holds none.
 	Selection *ModelSelectionKeys `json:"selection,omitempty"`
 	// ProfileSubagents says the program's derive writes the active profile's `subagents` models
-	// (profiles.<name>.subagents) into this surface, so `yolo check` resolves each declared value
-	// where the user wrote it rather than only where the derive put it.
+	// (profiles.<name>.subagents) into this surface, resolving each through the provider's list
+	// the way the profile's `model` is: an alias of it, else an id of it, else the list's
+	// `default` alias in its place, else a refusal of the render. A provider with no list passes
+	// the value through. `yolo check` resolves each declared value where the user wrote it.
 	ProfileSubagents bool `json:"profile_subagents,omitempty"`
+	// Registry are the program's own model surfaces, whose ids join its registry.
+	Registry []ModelRegistrySource `json:"registry,omitempty"`
+}
+
+// ModelRegistrySource is one surface the program's derive writes model ids into.
+type ModelRegistrySource struct {
+	// Surface is the surface, as `<agent>/<name>`.
+	Surface string `json:"surface"`
+	// IDs points at the bare model ids.
+	IDs string `json:"ids"`
+	// Provider is the program's provider id the ids belong to; "" means the member the pointer's
+	// first `*` stands for.
+	Provider string `json:"provider,omitempty"`
 }
 
 // ModelSelectionKeys are the two pointers of a surface's selected model.
@@ -62,6 +79,16 @@ func modelReferencesProblems(label string, r *ModelReferences) []string {
 	pointer := func(field, p string) {
 		if tokens, err := jsonptr.Parse(p); err != nil || len(tokens) == 0 {
 			problems = append(problems, fmt.Sprintf("%s.%s %q must be a JSON Pointer to a key below the document's root", label, field, p))
+		}
+	}
+	for i, src := range r.Registry {
+		field := fmt.Sprintf("registry[%d]", i)
+		if agent, name, ok := strings.Cut(src.Surface, "/"); !ok || agent == "" || name == "" || strings.Contains(name, "/") {
+			problems = append(problems, fmt.Sprintf("%s.%s.surface %q must name a config surface as \"<agent>/<name>\"", label, field, src.Surface))
+		}
+		pointer(field+".ids", src.IDs)
+		if tokens, _ := jsonptr.Parse(src.IDs); src.Provider == "" && !containsToken(tokens, "*") {
+			problems = append(problems, fmt.Sprintf("%s.%s needs a \"provider\", or a `*` in \"ids\" that stands for it", label, field))
 		}
 	}
 	for i, p := range r.Models {
@@ -97,4 +124,13 @@ func (m *Manifest) ProgramModelReferences(bin string) *ModelReferences {
 		return nil
 	}
 	return check.References
+}
+
+func containsToken(tokens []string, want string) bool {
+	for _, t := range tokens {
+		if t == want {
+			return true
+		}
+	}
+	return false
 }
