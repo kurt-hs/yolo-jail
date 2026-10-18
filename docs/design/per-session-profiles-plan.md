@@ -3,7 +3,7 @@ title: "Per-session profiles: implementation plan"
 status: accepted
 stage: BUILT
 next: "Tasks 1-6 landed on the lane branch; graduate into a system doc once OQ-SP5 is ruled and step 4 is built or dropped"
-depends-on: [docs/design/per-session-profiles.md]
+depends-on: [per-session-profiles.md]
 tags: [plan, profiles, attach, sessions, pi]
 ---
 
@@ -263,7 +263,9 @@ on one machine do not today. Ledgered as SP-D10; never link a `*.lock` name.
 - **Fences:** only `packs/pi/extensions/yolo-model-lists.js`, `yolo-openai-auth.js` and their tests.
 - **Commit:** `fix(pi): resolve yolo's model-list files under PI_CODING_AGENT_DIR`.
 
-### Task 4 — capture from session homes (after 2; OQ-SP2)
+### Task 4 — capture from session homes (after 2)
+
+Ruled by [OQ-SP2](per-session-profiles.md#11-decision-ledger).
 
 - **Settled:** "Every render pass captures each session home's rendered files into the shared
   overlay, by the existing capture rule for that surface, before it renders. The pass holds an
@@ -282,7 +284,9 @@ on one machine do not today. Ledgered as SP-D10; never link a `*.lock` name.
   home is named once.
 - **Commit:** `feat(entrypoint): capture settings saved in a session home into the shared layer`.
 
-### Task 5 — `yolo host` per-launch session home (after 2; OQ-SP4)
+### Task 5 — `yolo host` per-launch session home (after 2)
+
+Ruled by [OQ-SP4](per-session-profiles.md#11-decision-ledger).
 
 - **Settled:** "`yolo host -p` gives pi a per-launch session home: links to the user's real
   `~/.pi/agent` shared state, profile-dependent files rendered in the throwaway dir,
