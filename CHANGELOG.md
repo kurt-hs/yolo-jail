@@ -33,6 +33,9 @@ See [GitHub](userguide/guides/github.md#every-repository-or-every-repository-of-
 
 **A launch says when the jail has no internet,** and what to do. See [Troubleshooting](userguide/guides/troubleshooting.md).
 
+**`--timing` breaks down a macOS (macos-user) launch's slow steps:** the package build, each
+copy into the sandbox, and every step of the sandbox's setup. See [Timing spans](docs/reference/perf-logging.md).
+
 **Optional mounts.** A `mounts` entry marked `"optional": true` is skipped with one line where a
 setup can't deliver it, such as a home folder on macOS, instead of stopping the launch. See
 [Settings per setup](userguide/reference/settings-per-setup.md#workspace-mounts-and-host-files).

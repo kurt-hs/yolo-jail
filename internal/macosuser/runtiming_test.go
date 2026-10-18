@@ -45,11 +45,18 @@ func TestRunMacosUserSpansEveryStepInOrder(t *testing.T) {
 	if rc := RunMacosUser(d, o); rc != 42 {
 		t.Fatalf("rc = %d", rc)
 	}
-	got := spanEnds(events)
+	// The top-level steps only: each step's own sub-spans (macos_user.<step>.<sub>) are
+	// stagetiming_test.go's.
+	var got []string
+	for _, name := range spanEnds(events) {
+		if strings.Count(name, ".") == 1 {
+			got = append(got, name)
+		}
+	}
 	want := []string{"preconditions", "account_home", "context_preflight", "materialize", "host_nix",
 		"guest_binaries", "ca_trust", "build_plan", "workspace_lock", "session_sweep", "install_profile",
 		"stage", "env_file", "bootstrap", "provision", "start_jail_daemons", "service_probe", "agent",
-		"stop_jail_daemons", "remove_env_file"}
+		"stop_jail_daemons", "remove_env_file", "release_pack_tree"}
 	for i := range want {
 		want[i] = "macos_user." + want[i]
 	}
@@ -57,14 +64,17 @@ func TestRunMacosUserSpansEveryStepInOrder(t *testing.T) {
 		t.Errorf("the launch's spans ended as\n  %s\nwant\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
 	}
 	// Every span that started ended: a dangling start is a hang in the host perf log.
-	starts := 0
+	starts, ends := 0, 0
 	for _, e := range *events {
-		if e.Kind == perf.KindStart {
+		switch e.Kind {
+		case perf.KindStart:
 			starts++
+		case perf.KindEnd:
+			ends++
 		}
 	}
-	if starts != len(got) {
-		t.Errorf("%d spans started and %d ended", starts, len(got))
+	if starts != ends {
+		t.Errorf("%d spans started and %d ended", starts, ends)
 	}
 }
 

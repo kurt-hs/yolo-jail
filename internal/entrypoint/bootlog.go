@@ -62,6 +62,37 @@ func BootLogPath(workspace string) string {
 	return filepath.Join(paths.WorkspaceStateDir(workspace), bootLogName)
 }
 
+// bootPerfName is the macos-user bootstrap's step timings (writeBootPerf), a sibling of the boot
+// log: one line per boot step, the seconds since the bootstrap started and the step's name, which
+// the host launcher reads back into its own perf log as macos_user.bootstrap.<step>
+// (docs/reference/perf-logging.md). The container boot keeps ~/.yolo-perf.log instead.
+const bootPerfName = "boot-perf.log"
+
+// BootPerfPath is <workspace>/.yolo/boot-perf.log, the file the macos-user bootstrap writes its
+// step timings to and the launcher reads them from.
+func BootPerfPath(workspace string) string {
+	return filepath.Join(paths.WorkspaceStateDir(workspace), bootPerfName)
+}
+
+// writeBootPerf writes p's marks to the workspace's boot-perf.log, beneath a root on `.yolo` like
+// the boot log, so a link at the name is never written through. A sink: every error is dropped,
+// and a missing file costs the launcher's breakdown and nothing else.
+func writeBootPerf(e *Env, p *perfLog) {
+	if p == nil || len(p.entries) == 0 {
+		return
+	}
+	f, err := paths.OpenWorkspaceStateFile(e.WorkspaceDir(), bootPerfName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return
+	}
+	var b strings.Builder
+	for _, m := range p.entries {
+		fmt.Fprintf(&b, "%.6f\t%s\n", m.elapsed, m.label)
+	}
+	_, _ = f.WriteString(b.String())
+	_ = f.Close()
+}
+
 // bootLogPrevName holds the PREVIOUS boot's log. One boot of history is what makes
 // "it worked last time" answerable, and it is the difference between diagnosing a
 // failed launch and diagnosing it twice: the natural reaction to a broken jail is to
