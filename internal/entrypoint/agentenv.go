@@ -195,7 +195,14 @@ func agentEnvLookup(e *Env, agent string) func(string) (string, bool) {
 	// The provider-keys file is sourced after the env file (agentEnvShellFn), so its plain
 	// exports and unsets apply last; its value-conditional lines are bash tests this grammar
 	// does not read, and change nothing here.
-	lines := append(readAgentEnvFile(e.Home, agent), readEnvLines(ProviderKeysFile(e.Home, agent))...)
+	// A session with an entry snapshot reads ITS files (sessionSnapshotDir), the ones its launcher
+	// sources, rather than the shared ones the next entry rewrites (per-session-profiles.md §4.3).
+	envFile, keysFile := AgentEnvFile(e.Home, agent), ProviderKeysFile(e.Home, agent)
+	if dir := sessionSnapshotDir(e); dir != "" {
+		envFile = filepath.Join(dir, agent+".sh")
+		keysFile = filepath.Join(dir, ProviderKeysSubdir, agent+".sh")
+	}
+	lines := append(readEnvLines(envFile), readEnvLines(keysFile)...)
 	for _, l := range lines {
 		if v, _ := current(l.key); !l.appliesTo(v) {
 			continue
