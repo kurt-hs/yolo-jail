@@ -244,8 +244,15 @@ if [ -f "$HOME/.yolo-ca-bundle.crt" ]; then
 fi
 
 # Source user-defined env vars from config (defaults, overridable by .env).
-# Loaded early so mise activation can override with .env values.
-[ -f "$HOME/.config/yolo-user-env.sh" ] && . "$HOME/.config/yolo-user-env.sh"
+# Loaded early so mise activation can override with .env values. This session's entry
+# snapshot's copy when it has one (per-session-profiles.md), so a nested shell keeps its own
+# entry's tables rather than whichever attach wrote the shared file last.
+` + sessionSnapshotShellFn + `if [ -f "$_yolo_entry_dir/yolo-user-env.sh" ] && [ "$_yolo_entry_dir" != "$HOME/` + AgentEnvDirRel + `" ]; then
+    . "$_yolo_entry_dir/yolo-user-env.sh"
+elif [ -f "$HOME/.config/yolo-user-env.sh" ]; then
+    . "$HOME/.config/yolo-user-env.sh"
+fi
+unset _yolo_entry_dir
 
 # PATH with npm-global and go binaries
 export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-$HOME/.npm-global}"

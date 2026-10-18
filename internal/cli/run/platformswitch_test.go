@@ -69,7 +69,7 @@ func TestAnAttachNamesAUsersOwnBedrockSwitch(t *testing.T) {
 	packs := []*packload.Pack{officialPack(t, "claude"), officialPack(t, "bedrock")}
 	o, cfg, channel, stderr := attachFixture(t, currentJailEnv, packs, emptyEnv(), nil)
 	writeHostClaudeSettings(t, os.Getenv("HOME"), `{"env": {"CLAUDE_CODE_USE_BEDROCK": "true"}}`)
-	if rc := o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", cfg,
+	if rc := o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", "", cfg,
 		stagedPacks{root: "/ctx/packs", packs: packs}, channel); rc != 0 {
 		t.Fatalf("the attach must deliver: rc=%d\n%s", rc, stderr)
 	}
@@ -91,7 +91,7 @@ func TestAnAttachNamesAUsersOwnBedrockSwitch(t *testing.T) {
 	if err := os.WriteFile(rec, []byte(`{"/env/CLAUDE_CODE_USE_BEDROCK": "1"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", cfg, stagedPacks{root: "/ctx/packs", packs: packs}, channel)
+	o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", "", cfg, stagedPacks{root: "/ctx/packs", packs: packs}, channel)
 	if got := stderr.String(); !strings.Contains(got, "(which `yolo host apply` wrote there for claude's host selection)") ||
 		!strings.Contains(got, "this jail leaves it out") {
 		t.Errorf("a switch yolo's host apply wrote must be named as yolo's:\n%s", got)
@@ -103,7 +103,7 @@ func TestAnAttachNamesAUsersOwnBedrockSwitch(t *testing.T) {
 	// A switch that is off says nothing.
 	o, cfg, channel, stderr = attachFixture(t, currentJailEnv, packs, emptyEnv(), nil)
 	writeHostClaudeSettings(t, os.Getenv("HOME"), `{"env": {"CLAUDE_CODE_USE_BEDROCK": "0"}}`)
-	o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", cfg, stagedPacks{root: "/ctx/packs", packs: packs}, channel)
+	o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", "", cfg, stagedPacks{root: "/ctx/packs", packs: packs}, channel)
 	if strings.Contains(stderr.String(), "CLAUDE_CODE_USE_BEDROCK") {
 		t.Errorf("a switch that is off is no conflict:\n%s", stderr)
 	}

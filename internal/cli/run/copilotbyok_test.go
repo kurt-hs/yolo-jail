@@ -29,7 +29,7 @@ const copilotProvidersPath = "/home/agent/.config/yolo-agent-env/copilot.provide
 func copilotProvidersFile(t *testing.T, la assembled) (map[string]any, os.FileMode) {
 	t.Helper()
 	ws := t.TempDir()
-	deliverChannel(ws, "podman", la.in.envChannel(la.o))
+	deliverChannel(ws, "podman", "", la.in.envChannel(la.o))
 	path := filepath.Join(ws, agentEnvStateDir, "copilot.providers.json")
 	raw, err := os.ReadFile(path)
 	if os.IsNotExist(err) {

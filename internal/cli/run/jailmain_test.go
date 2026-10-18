@@ -589,7 +589,7 @@ func TestTheFreshLaunchRunsTheJailAsAHoldAndItsFirstSessionByExec(t *testing.T) 
 		name := skelCallee(call)
 		switch name {
 		case "discloseLoopholes", "plannedLoopholeNames", "provisionStage", "newSessionID",
-			"firstSessionExecCmd", "sessionCmd", "keeperPlanFor", "keeperLine", "holdSessionLock",
+			"deliverChannel", "firstSessionExecCmd", "sessionCmd", "keeperPlanFor", "keeperLine", "holdSessionLock",
 			"startKeeper", "armLaunchSignalsWith", "relay", "retarget", "runArmedSession",
 			"detach", "endSession":
 			firstPos(name, call.Pos())
@@ -627,8 +627,10 @@ func TestTheFreshLaunchRunsTheJailAsAHoldAndItsFirstSessionByExec(t *testing.T) 
 		}
 		return true
 	})
-	order := []string{"discloseLoopholes", "plannedLoopholeNames", "append HoldMainArg",
-		"provisionStage", "newSessionID", "firstSessionExecCmd", "sessionCmd", "keeperPlanFor",
+	// The first session's id is minted BEFORE the channel's delivery, which writes that session's
+	// entry snapshot under it (sessionsnapshot.go): one id for the snapshot and the hangup.
+	order := []string{"newSessionID", "deliverChannel", "discloseLoopholes", "plannedLoopholeNames",
+		"append HoldMainArg", "provisionStage", "firstSessionExecCmd", "sessionCmd", "keeperPlanFor",
 		"keeperLine", "holdSessionLock", "startKeeper", "armLaunchSignalsWith", "relay", "retarget",
 		"runArmedSession", "detach", "endSession"}
 	last := token.NoPos

@@ -181,7 +181,7 @@ func TestAnAttachNamesWhatItShadowed(t *testing.T) {
 			packs := []*packload.Pack{pack}
 			o, cfg, channel, stderr := attachFixture(t, currentJailEnv, packs, userEnv,
 				func(_ *Options, cfg *jsonx.OrderedMap) { configSelects(cfg, "fxa", "fxp") })
-			if rc := o.deliverChannelOnAttach("yolo-ws-abcd1234", rt, cfg,
+			if rc := o.deliverChannelOnAttach("yolo-ws-abcd1234", rt, "", cfg,
 				stagedPacks{root: "/ctx/packs", packs: packs}, channel); rc != 0 {
 				t.Fatalf("%s: the attach refused: rc=%d\n%s", rt, rc, stderr.String())
 			}

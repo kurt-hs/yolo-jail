@@ -26,7 +26,7 @@ func TestTheGuestDaemonEnvCarriesTheContainersChannelSection(t *testing.T) {
 		`{"kind":"env","vars":{"`+entrypoint.ProfilesWireEnv+`":"fold-static"}}]}`)
 	channel := channelFor(t, o, winnerFixtureConfig(), []*packload.Pack{winnerFixturePack(t), tablePack}, nil)
 	ws := t.TempDir()
-	deliverChannel(ws, "podman", channel)
+	deliverChannel(ws, "podman", "", channel)
 	body, err := os.ReadFile(filepath.Join(ws, "yolo-user-env.sh"))
 	if err != nil {
 		t.Fatal(err)
