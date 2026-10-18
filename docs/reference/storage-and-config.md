@@ -206,7 +206,9 @@ every one. The four that carry meaning for how a jail behaves:
   edited, and reaped with the whole entry; and under `pack-trees/`, the staged packs: a new
   tree per launch, bound `:ro` at `/ctx/packs`, never edited, gone once its container is
   known gone ([`OQ-PK2`](pack-system.md#oq-pk2)). A `packs/` directory there is the one
-  shared tree a jail launched before per-launch trees still binds; nothing writes it.
+  shared tree a jail launched before per-launch trees still binds; nothing writes it. On
+  macos-user, `tree-copies/` holds each patched extension's copy, one per build and shared
+  by the launches handed it ([`PPX-D51`](pi-extensions.md#PPX-D51)).
 
 Also worth knowing by name, because each is a distinct on-disk contract rather than a
 cache: `approvals/` (never mounted), `captures/` (the machine-wide install-capture store,

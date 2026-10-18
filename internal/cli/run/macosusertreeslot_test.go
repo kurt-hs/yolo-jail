@@ -23,6 +23,8 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
 // macosUserTreeRun is one macos-user launch through Run with what its backend was handed.
@@ -129,8 +131,12 @@ func TestAMacosUserLaunchBuildsAPatchedExtensionForDarwinAndOverlaysIt(t *testin
 		t.Errorf("the tree request is for runtime %q platform %q, want macos-user and %s", req.Runtime, req.Platform,
 			macosUserJailPlatform())
 	}
-	if !strings.HasSuffix(req.CopyRoot, patchedCopiesSuffix) {
-		t.Errorf("the tree request's copy root is %q, want one beside the pack tree", req.CopyRoot)
+	// THE STABLE ROOT, reused (TreeBuildRequest.ReuseCopies): an unchanged relaunch is handed the
+	// copy the last one made instead of copying the tree out of the store again. Red with the
+	// per-launch root a container takes.
+	if want := paths.TreeCopyRoot(yoloruntime.FromWorkspace(req.Workspace)); req.CopyRoot != want || !req.ReuseCopies {
+		t.Errorf("the tree request's copy root is %q (reused %v), want the workspace's stable %q, reused",
+			req.CopyRoot, req.ReuseCopies, want)
 	}
 	if len(req.Trees) != 1 || req.Trees[0].Key() != treeKey {
 		t.Errorf("the tree request carries %+v, want %s", req.Trees, treeKey)

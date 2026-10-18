@@ -418,7 +418,8 @@ func FilterInherit(effective *jsonx.OrderedMap, scope InheritScope) (out *jsonx.
 // maintainer's ruling requires, and between them the answer to "why is my key not in
 // here?" for someone reading the file with no design doc at hand.
 //
-// launchedAt is a human-readable timestamp ("" omits the line, for a byte-stable golden).
+// launchedAt is a human-readable timestamp ("" omits the line: for a byte-stable golden, and for
+// the macos-user home overlay, which an unchanged relaunch reuses only while its bytes are the same).
 // The header is JSONC comments, so the file parses as the config it is.
 //
 // BACKEND-NEUTRAL WORDING, because the same file reaches a macos-user sandbox, as a copy the

@@ -142,7 +142,7 @@ func runCachedGoodTree(f packload.Fork, req run.TreeBuildRequest, out io.Writer,
 			}
 			return false, fmt.Errorf("%s", why)
 		}
-		dir, err := copyTreeForLaunch(f, entryAgain.Key, req.CopyRoot, out)
+		dir, err := copyTreeForLaunch(f, entryAgain.Key, req.CopyRoot, req.ReuseCopies, out)
 		if err != nil {
 			return false, fmt.Errorf("copying it for this jail: %w", err)
 		}
