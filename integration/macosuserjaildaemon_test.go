@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -421,9 +422,12 @@ type supervisorWatch struct {
 // watchForGuestSupervisor polls until it sees the supervisor, then writes its line to seen,
 // where the session's probe is waiting for it.
 //
-// `sudo -n ps` first: the sandbox account is another uid, and whether a non-root `ps` may
-// read another uid's command line is not something this suite has measured on macOS. The
-// macos-user gate has already proved `sudo -n` does not prompt; plain `ps` is the fallback.
+// `ps` AS THE SANDBOX ACCOUNT first, through the one run-as rule (hostProcessListing): the
+// supervisor is that account's process, and whether a `ps` run by another uid may read its
+// command line is not something this suite has measured on macOS, while its own uid may. The
+// macos-user gate has already proved the rule does not prompt; `ps` as the invoking user is the
+// fallback. Never root (OQ-DM1): the root sudo above the supervisor may then list without its
+// arguments, which only a failure listing reads.
 func watchForGuestSupervisor(uid, seen string) *supervisorWatch {
 	w := &supervisorWatch{quit: make(chan struct{}), done: make(chan struct{})}
 	go func() {
@@ -465,7 +469,9 @@ func (w *supervisorWatch) stop() (saw, last string) {
 
 func hostProcessListing() string {
 	args := []string{"-axww", "-o", "uid=,pid=,command="}
-	if out, err := exec.Command("sudo", append([]string{"-n", "/bin/ps"}, args...)...).Output(); err == nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if out, err := sandboxCommand(ctx, append([]string{"/bin/ps"}, args...)...).Output(); err == nil {
 		return string(out)
 	}
 	out, _ := exec.Command("/bin/ps", args...).Output()

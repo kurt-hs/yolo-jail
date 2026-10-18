@@ -24,18 +24,20 @@ import (
 //
 // THE PROFILE AND THE TREE ARE THE CAPTURE'S OWN. macosuser.BuildCapturePlan builds both, with a
 // capture root of the test's own under /Users/Shared, CapturePlanInvariants must pass on that plan
-// first, and the plan's PrepareCommands make the staging tree under sudo, as RunCapturePlan does.
-// Nothing else of a capture runs: no binary is staged, no bootstrap, no installer.
+// first, and the plan's PrepareCommands make the staging tree AS THE INVOKING USER, as
+// RunCapturePlan runs them: a capture's host steps are never a sudo (CapturePlanInvariants refuses
+// one), so neither are this test's (OQ-DM1). Nothing else of a capture runs: no binary is staged,
+// no bootstrap, no installer.
 //
-// EVERY CASE RUNS BARE FIRST, as the sandbox account under the same sudo and environment, where it
-// must succeed. A refusal is the profile's only when the same command, as the same account, works
+// EVERY CASE RUNS BARE FIRST, as the sandbox account through the same run-as rule and environment,
+// where it must succeed. A refusal is the profile's only when the same command, as the same account, works
 // without it (macosuserseatbelt_test.go's rule, for its reason), so a failed control fails the test
 // rather than being counted.
 //
 // ⚠ Not the session profile's suite. That one (macosuserseatbelt_test.go) loads the session
 // profile as the invoking user; a capture runs as the sandbox account against a staging HOME, and
 // the shared home it must not touch is that account's own, so only a run as that account measures
-// it. Hence requireMacosUser's gate (the account and passwordless sudo), not the seatbelt one.
+// it. Hence requireMacosUser's gate (the account and the run-as rule), not the seatbelt one.
 
 // captureSeatbeltFixture is the tree the capture cases are written against.
 type captureSeatbeltFixture struct {
@@ -59,7 +61,7 @@ type captureSeatbeltFixture struct {
 
 // captureSeatbeltTree builds the plan and the fixture paths over root, sharedHome and neutralDir,
 // and creates the sibling. It does NOT make the staging tree: on a Mac that is the plan's
-// PrepareCommands under sudo, and in the twin a plain MkdirAll.
+// PrepareCommands, run as the invoking user, and in the twin a plain MkdirAll.
 func captureSeatbeltTree(t *testing.T, root, sharedHome, neutralDir string) captureSeatbeltFixture {
 	t.Helper()
 	self, err := os.Executable()
@@ -174,7 +176,7 @@ func captureSeatbeltCases() []captureSeatbeltCase {
 }
 
 // captureSeatbeltRootPrefix is what every capture root this file mints starts with, which is what
-// the one root `rm -rf` below checks before it runs.
+// the sandbox account's `rm -rf` below checks before it runs.
 const captureSeatbeltRootPrefix = sharedUsersDir + "/yolo-capsb-"
 
 // TestMacosUserCaptureSeatbeltProfileDeniesTheSharedHome loads the capture profile with
@@ -190,24 +192,26 @@ func TestMacosUserCaptureSeatbeltProfileDeniesTheSharedHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { removeCaptureSeatbeltRoot(t, root) })
-	// 1777, as /Users/Shared is: the plan's PrepareCommands make the staging tree under it as
-	// root, and the profile's directory below is the test's own.
-	if err := os.Chmod(root, 0o777|os.ModeSticky); err != nil {
+	// 0755 and ours, as a capture root must be (captureRootUsable: the host's, writable by no one
+	// else): the plan's PrepareCommands make the staging tree under it as us, and the profile's
+	// directory below is the test's own.
+	if err := os.Chmod(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	f := captureSeatbeltTree(t, root, macosuser.SandboxHome(), "/private/var/tmp")
+	// A write case the profile failed to refuse leaves its probe file behind, the sandbox
+	// account's, where only that account can remove it (and, in its home, even see it).
 	t.Cleanup(func() {
 		for _, p := range []string{filepath.Join(f.sharedHome, f.probe), f.neutral} {
-			if _, err := os.Lstat(p); err == nil {
-				if !runQuiet(time.Minute, "sudo", "-n", "/bin/rm", "-f", p) {
-					t.Logf("could not remove the probe file %s; remove it by hand", p)
-				}
+			if !runAsSandboxQuiet(time.Minute, "/bin/rm", "-f", "--", p) {
+				t.Logf("could not remove the probe file %s as %s; remove it by hand", p, macosuser.SandboxUser)
 			}
 		}
 	})
 	for _, cmd := range f.plan.PrepareCommands {
-		if out, err := exec.Command("sudo", append([]string{"-n"}, cmd...)...).CombinedOutput(); err != nil {
-			t.Fatalf("the capture plan's prepare step `sudo %s` failed: %v\n%s", strings.Join(cmd, " "), err, out)
+		if out, err := exec.Command(cmd[0], cmd[1:]...).CombinedOutput(); err != nil {
+			t.Fatalf("the capture plan's prepare step `%s` failed as you, which is how `yolo capture` "+
+				"runs it: %v\n%s", strings.Join(cmd, " "), err, out)
 		}
 	}
 	// The profile where the sandbox account can read it: a 0755 directory of the test's under the
@@ -225,8 +229,7 @@ func TestMacosUserCaptureSeatbeltProfileDeniesTheSharedHome(t *testing.T) {
 	}
 	t.Logf("capture Seatbelt profile under test (%s):\n%s", profile, f.plan.Seatbelt)
 
-	bare := []string{"sudo", "-n", "--user=" + macosuser.SandboxUser, "/usr/bin/env", "-i",
-		"HOME=" + f.plan.StagingHome, "PATH=/usr/bin:/bin"}
+	bare := macosuser.RunAsSandboxArgv(nil, "-i", "HOME="+f.plan.StagingHome, "PATH=/usr/bin:/bin")
 	sandboxed := append(append([]string{}, bare...), "/usr/bin/sandbox-exec", "-f", profile, "--")
 	for _, tc := range captureSeatbeltCases() {
 		t.Run(tc.name, func(t *testing.T) {
@@ -277,8 +280,9 @@ func logSandboxDenials(t *testing.T) {
 }
 
 // removeCaptureSeatbeltRoot deletes a capture root this file minted. The staging tree in it is
-// root's and the sandbox account's, so the removal is `sudo rm -rf`, the one in this file, and it
-// refuses any path but a direct child of /Users/Shared with this file's prefix.
+// ours, and anything in it the sandbox account wrote is that account's, so the escalation is
+// removeSandboxWritten's guest pass through the run-as rule, never root; it refuses any path but
+// a direct child of /Users/Shared with this file's prefix.
 func removeCaptureSeatbeltRoot(t *testing.T, root string) {
 	t.Helper()
 	if err := os.RemoveAll(root); err == nil {
@@ -289,8 +293,8 @@ func removeCaptureSeatbeltRoot(t *testing.T, root string) {
 		t.Fatalf("refusing to escalate removal of %s: it is not a capture root this test minted "+
 			"under %s", root, sharedUsersDir)
 	}
-	if !runQuiet(2*time.Minute, "sudo", "-n", "/bin/rm", "-rf", root) {
-		t.Logf("could not remove the capture root %s even with sudo; remove it by hand", root)
+	if err := removeSandboxWritten(root); err != nil {
+		t.Logf("could not remove the capture root %s (%v): %s", root, err, removeByHandHint(root))
 	}
 }
 

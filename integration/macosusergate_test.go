@@ -103,7 +103,11 @@ type macosUserLedger struct {
 }
 
 // record files an outcome, replacing any earlier one for the same test name. LAST
-// WRITE WINS, which is what lets a caller record optimistically and correct itself.
+// WRITE WINS, which is what lets a caller record optimistically and correct itself — with
+// one exception: a skip carrying only the gate's generic past-gate reason never replaces a
+// skip that named its own. A host-fact check after the gate (requireUnifiedLog) records the
+// reason it skipped for from its own cleanup, which runs BEFORE the gate's (cleanups run
+// last-registered first), and the gate, which cannot know why, must not erase it.
 func (l *macosUserLedger) record(o macosUserOutcome) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -111,6 +115,10 @@ func (l *macosUserLedger) record(o macosUserOutcome) {
 		l.index = map[string]int{}
 	}
 	if i, ok := l.index[o.test]; ok {
+		if prev := l.list[i]; !o.ran && !prev.ran && o.reason == macosUserSkippedPastGate &&
+			prev.reason != "" && prev.reason != macosUserSkippedPastGate {
+			return
+		}
 		l.list[i] = o
 		return
 	}
@@ -326,6 +334,146 @@ func runQuiet(d time.Duration, argv ...string) bool {
 	return cmd.Run() == nil
 }
 
+// THE SUITE TAKES NO PRIVILEGE `yolo macos-setup` DOES NOT INSTALL (OQ-DM1 in
+// docs/design/macos-user-suite-on-a-developer-mac.md, ruled 2026-10-18). Setup installs one sudo
+// rule, `<host user> ALL=(_yolojail) NOPASSWD: /usr/bin/env`, and a launch needs nothing else, so
+// a test needs nothing else either: every step that acts as another account is a crossing through
+// that rule, built by the launch's own builder (macosuser.RunAsSandboxArgv), and every other step
+// is the invoking user's own file operation. There is no root sudo anywhere in the suite, and
+// TestMacosUserSuiteSpendsNoRootSudo fails if one is spelled.
+
+// sandboxCommand runs argv as the sandbox account through the one run-as rule —
+// macosuser.RunAsSandboxArgv, `/usr/bin/sudo -n --user=_yolojail /usr/bin/env <argv…>` — started
+// in "/", as the launch's own runner starts every crossing (internal/macosuser's commandFor): a
+// test's cwd is under the invoking user's home, which the account cannot traverse. A bare
+// `sudo --user=_yolojail <cmd>` is NOT the rule — sudo matches the command's path, and the rule
+// names /usr/bin/env — so it asks for a password.
+func sandboxCommand(ctx context.Context, argv ...string) *exec.Cmd {
+	full := macosuser.RunAsSandboxArgv(nil, argv...)
+	cmd := exec.CommandContext(ctx, full[0], full[1:]...)
+	cmd.Dir = "/"
+	cmd.Stdin = nil
+	return cmd
+}
+
+// runAsSandboxQuiet is runQuiet through sandboxCommand.
+func runAsSandboxQuiet(d time.Duration, argv ...string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	return sandboxCommand(ctx, argv...).Run() == nil
+}
+
+// removeSandboxWritten removes dir, a fixture the sandbox account may have written into, with no
+// root. First as the invoking user, after making every directory of ours writable again (a
+// launch seals what it stages, and nobody unlinks inside a directory with no write bit); then the
+// guest pass a capture's cleanup runs (macosuser.CaptureScratchGuestCommands, PL-7): as the
+// sandbox account, through the run-as rule, `chmod -R u+w` on what it owns and `rm -rf`, which
+// removes what it made and we cannot unlink; then as the invoking user again, for the rest. It
+// returns the last removal's error.
+//
+// The guest pass is an `rm -rf` as another account, so every caller first checks that dir is a
+// fixture it minted. The account reaches dir only where it can search every directory above it:
+// under the shared root, /Users/Shared and /private/tmp it can; under the invoking user's 0700
+// home it cannot, and what it wrote there is left for the caller to report.
+func removeSandboxWritten(dir string) error {
+	if err := os.RemoveAll(dir); err == nil {
+		return nil
+	}
+	_ = filepath.Walk(dir, func(p string, fi os.FileInfo, err error) error {
+		if err == nil && fi.IsDir() {
+			_ = os.Chmod(p, fi.Mode().Perm()|0o700)
+		}
+		return nil
+	})
+	if err := os.RemoveAll(dir); err == nil {
+		return nil
+	}
+	for _, cmd := range macosuser.CaptureScratchGuestCommands(dir) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		c := exec.CommandContext(ctx, cmd[0], cmd[1:]...)
+		c.Dir = "/"
+		_ = c.Run()
+		cancel()
+	}
+	return os.RemoveAll(dir)
+}
+
+// removeByHandHint is the next step a cleanup names when removeSandboxWritten left something: the
+// one command an administrator runs. The suite never runs it itself (OQ-DM1).
+func removeByHandHint(dir string) string {
+	return fmt.Sprintf("neither you nor %s could remove it; an administrator can, with "+
+		"`sudo rm -rf -- '%s'`", macosuser.SandboxUser, dir)
+}
+
+// THE UNIFIED LOG STORE IS THE MAC'S POLICY, NOT A PRIVILEGE YOLO ASKS FOR (OQ-DM2 in
+// docs/design/macos-user-suite-on-a-developer-mac.md, ruled 2026-10-18). A managed Mac closes the
+// store to a non-admin user (`log show` answers "Could not open local log store: Operation not
+// permitted"), and nothing yolo installs opens it. So a test whose control is a read of the store
+// asks for it here, after its gate, and skips — countably, with this reason in the ledger — when
+// this Mac refuses it. The GitHub runner's user is an admin with an open store, so CI still runs
+// every such test.
+
+// unifiedLogProbe answers whether the invoking user can read the unified log store. A variable
+// only so that a -short test can stand a refusing Mac in; nothing else assigns it.
+var unifiedLogProbe = probeUnifiedLogOnce
+
+var unifiedLogOnce struct {
+	sync.Once
+	readable bool
+	detail   string
+}
+
+// probeUnifiedLogOnce runs macosLogStoreProbe — the store read the seatbelt control makes — once
+// per process, as the invoking user, from "/". The store does not open and close during a run,
+// and `log show` can take seconds.
+func probeUnifiedLogOnce() (readable bool, detail string) {
+	unifiedLogOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", macosLogStoreProbe)
+		cmd.Dir = "/"
+		out, err := cmd.CombinedOutput()
+		unifiedLogOnce.readable = err == nil
+		unifiedLogOnce.detail = strings.TrimSpace(string(out))
+		if err != nil && unifiedLogOnce.detail == "" {
+			unifiedLogOnce.detail = err.Error()
+		}
+	})
+	return unifiedLogOnce.readable, unifiedLogOnce.detail
+}
+
+// unifiedLogSkipReason is the ledger's reason for a test this Mac's closed log store stops.
+func unifiedLogSkipReason(detail string) string {
+	return fmt.Sprintf("this Mac's unified log store is closed to you: `log show` as the invoking "+
+		"user read nothing (%s). That is the Mac's own policy (a managed Mac closes the store to a "+
+		"non-admin user), not a privilege `yolo macos-setup` grants, so this test's control cannot "+
+		"run here; the macos-user CI job, whose user is an admin, runs it", detail)
+}
+
+// requireUnifiedLog skips t, countably, when the invoking user cannot read the unified log store.
+// It records its own outcome for t under gate, because t may be a subtest no gate recorded; on a
+// top-level test the gate's own cleanup keeps this reason (macosUserLedger.record).
+func requireUnifiedLog(t *testing.T, gate string) {
+	t.Helper()
+	readable, detail := unifiedLogProbe()
+	if readable {
+		return
+	}
+	macosUserSkipCountably(t, gate, unifiedLogSkipReason(detail))
+}
+
+// macosUserSkipCountably skips t for a fact about this host that a test learns after its gate,
+// and files that reason in the ledger under gate — from its own cleanup, because t may be a
+// subtest no gate records; on a top-level test the gate's own cleanup keeps this reason
+// (macosUserLedger.record), so the run's report says why rather than "see its own skip message".
+func macosUserSkipCountably(t *testing.T, gate, reason string) {
+	t.Helper()
+	t.Cleanup(func() {
+		macosUserTests.record(macosUserOutcomeFor(t.Name(), t.Skipped(), reason, gate))
+	})
+	t.Skip("macos-user: " + reason)
+}
+
 // requireMacosUser is the first line of every test in this suite: it enforces the
 // name prefix, skips (countably) when this host cannot run one, and isolates HOME.
 //
@@ -462,13 +610,12 @@ func macosUserWorkspace(t *testing.T, configJSON string) string {
 // (umask 022) is not writable by us — we can see its children and cannot unlink them.
 // The ACL grants the _yolojail GROUP, which the invoking user is not in.
 //
-// So the escalation is first `/bin/rm -rf` AS THE SANDBOX ACCOUNT, through the run-as rule
-// the gate already required: _yolojail owns what it made, which is the part we cannot
-// unlink. Then a plain RemoveAll again for what is left, and only then root
-// `sudo /bin/rm -rf`, which the narrow-sudo CI step has taken away and a developer's Mac
-// may not have. The prefix assertion before both is not paranoia theatre: this is the one
-// `rm -rf` in the suite that runs as another account, and it must be impossible for it to
-// name anything but a directory this file minted under the shared root.
+// So the escalation is removeSandboxWritten: `/bin/rm -rf` AS THE SANDBOX ACCOUNT, through
+// the run-as rule the gate already required — _yolojail owns what it made, which is the part
+// we cannot unlink — then a plain RemoveAll again for what is left. Never root `sudo`
+// (OQ-DM1). The prefix assertion before it is not paranoia theatre: the guest pass is an
+// `rm -rf` that runs as another account, and it must be impossible for it to name anything
+// but a directory this file minted under the shared root.
 func removeMacosUserWorkspace(t *testing.T, dir string) {
 	t.Helper()
 	if err := os.RemoveAll(dir); err == nil {
@@ -479,13 +626,8 @@ func removeMacosUserWorkspace(t *testing.T, dir string) {
 		t.Fatalf("refusing to escalate removal of %s: it is not a fixture directory "+
 			"under %s", dir, root)
 	}
-	_ = runQuiet(2*time.Minute, macosuser.RunAsSandboxArgv(nil, "/bin/rm", "-rf", dir)...)
-	if err := os.RemoveAll(dir); err == nil {
-		return
-	}
-	if !runQuiet(2*time.Minute, "sudo", "-n", "/bin/rm", "-rf", dir) {
-		t.Logf("could not remove the macos-user workspace %s even with sudo; it holds "+
-			"files owned by %s and will need removing by hand", dir, macosuser.SandboxUser)
+	if err := removeSandboxWritten(dir); err != nil {
+		t.Logf("could not remove the macos-user workspace %s (%v): %s", dir, err, removeByHandHint(dir))
 	}
 }
 
@@ -751,6 +893,116 @@ func TestMacosUserLedgerKeepsTheLastWordPerTest(t *testing.T) {
 	}
 	if got[1].test != "TestMacosUserB" || !got[1].ran {
 		t.Errorf("recording one test's outcome disturbed another's: %+v", got[1])
+	}
+}
+
+// TestMacosUserLedgerKeepsASkipsOwnReason: the gate's cleanup runs after a later check's and
+// knows only that the test skipped, so its generic reason must not replace the one the check
+// named; anything else still replaces it.
+func TestMacosUserLedgerKeepsASkipsOwnReason(t *testing.T) {
+	var l macosUserLedger
+	l.record(macosUserOutcome{test: "TestMacosUserA", reason: "the log store is closed"})
+	l.record(macosUserOutcome{test: "TestMacosUserA", reason: macosUserSkippedPastGate})
+	if got := l.snapshot()[0]; got.reason != "the log store is closed" {
+		t.Errorf("the gate's generic reason replaced the skip's own: %+v", got)
+	}
+	l.record(macosUserOutcome{test: "TestMacosUserA", ran: true})
+	if got := l.snapshot()[0]; !got.ran {
+		t.Errorf("an execution no longer replaces an earlier skip: %+v", got)
+	}
+	l.record(macosUserOutcome{test: "TestMacosUserB", reason: macosUserSkippedPastGate})
+	l.record(macosUserOutcome{test: "TestMacosUserB", reason: "a reason of its own"})
+	if got := l.snapshot()[1]; got.reason != "a reason of its own" {
+		t.Errorf("a named reason no longer replaces the generic one: %+v", got)
+	}
+}
+
+// TestMacosUserUnifiedLogSkipIsCountedWithItsReason drives requireUnifiedLog on a stand-in Mac
+// whose log store is closed, behind the real gate, through a top-level-shaped test and a subtest
+// no gate records: both must skip, and the ledger must carry the policy reason for each — the
+// half of OQ-DM2 that makes the skip countable rather than a quiet pass. Then on an open store it
+// must not skip.
+func TestMacosUserUnifiedLogSkipIsCountedWithItsReason(t *testing.T) {
+	ledger := fakeReadyMacosUserHost(t)
+	probe := unifiedLogProbe
+	t.Cleanup(func() { unifiedLogProbe = probe })
+	const detail = "log exited 1: Could not open local log store: Operation not permitted"
+	unifiedLogProbe = func() (bool, string) { return false, detail }
+
+	var gated, sub string
+	t.Run("gated", func(t *testing.T) {
+		gated = t.Name()
+		requireMacosUser(t)
+		requireUnifiedLog(t, macosUserGateLaunch)
+		t.Error("requireUnifiedLog did not skip on a closed store")
+	})
+	t.Run("parent", func(t *testing.T) {
+		t.Run("subtest", func(t *testing.T) {
+			sub = t.Name()
+			requireUnifiedLog(t, macosUserGateSeatbelt)
+			t.Error("requireUnifiedLog did not skip a subtest on a closed store")
+		})
+	})
+	got := map[string]macosUserOutcome{}
+	for _, o := range ledger.snapshot() {
+		got[o.test] = o
+	}
+	for name, gate := range map[string]string{gated: macosUserGateLaunch, sub: macosUserGateSeatbelt} {
+		o, ok := got[name]
+		switch {
+		case !ok:
+			t.Errorf("%s skipped and the ledger has no outcome for it, so the skip is not counted", name)
+		case o.ran || o.gate != gate || !strings.Contains(o.reason, detail) ||
+			!strings.Contains(o.reason, "Mac's own policy"):
+			t.Errorf("%s's outcome does not record a skip for the closed log store under the %s gate: %+v",
+				name, gate, o)
+		}
+	}
+
+	unifiedLogProbe = func() (bool, string) { return true, "" }
+	reached := false
+	t.Run("open", func(t *testing.T) {
+		requireUnifiedLog(t, macosUserGateLaunch)
+		reached = true
+	})
+	if !reached {
+		t.Error("requireUnifiedLog skipped on a store the invoking user can read")
+	}
+	for _, o := range ledger.snapshot() {
+		if strings.HasSuffix(o.test, "/open") {
+			t.Errorf("an open store recorded an outcome: %+v", o)
+		}
+	}
+}
+
+// TestMacosUserUnifiedLogGatesOnlyTheLogControls pins requireUnifiedLog's two call sites, which
+// only a Mac with a closed store reaches: the log bridge test asks for the store after its gate,
+// and the seatbelt rules test asks for it in the one case whose control reads the store — that
+// case and no other, so a managed Mac still asserts every other rule (OQ-DM2). It reads the
+// source for TestMacosUserHD10GuardsTheMachineWideBroker's reason.
+func TestMacosUserUnifiedLogGatesOnlyTheLogControls(t *testing.T) {
+	var flagged []string
+	for _, tc := range seatbeltCases() {
+		if tc.needsUnifiedLog {
+			flagged = append(flagged, tc.id)
+		}
+	}
+	if len(flagged) != 1 || flagged[0] != "macos-log-deny" {
+		t.Errorf("the seatbelt cases that skip on a closed log store are %v, want exactly the "+
+			"macos-log-deny control: any other skips a rule a managed Mac can measure", flagged)
+	}
+	for file, call := range map[string]string{
+		"macosuserseatbelt_test.go":  "\t\t\tif tc.needsUnifiedLog {\n\t\t\t\trequireUnifiedLog(t, macosUserGateSeatbelt)\n",
+		"macosuserlogbridge_test.go": "\trequireMacosUser(t)\n\trequireUnifiedLog(t, macosUserGateLaunch)\n",
+	} {
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("reading %s: %v", file, err)
+		}
+		if !strings.Contains(string(src), call) {
+			t.Errorf("%s no longer asks requireUnifiedLog where its control reads the log store, "+
+				"so a Mac whose store is closed fails it instead of skipping countably:\n%s", file, call)
+		}
 	}
 }
 

@@ -1,25 +1,27 @@
 ---
 title: "What may a macos-user test assume about its host?"
 date: 2026-10-18
-status: in-review
-stage: DESIGN
-next: "Rule OQ-DM1 and OQ-DM2 (the two undeclared privileges), then OQ-DM3 (floor vs mise shim); the two defects in §6 need no ruling"
+status: accepted
+stage: DECIDED
+next: "Run `-run '^TestMacosUser'` on a Mac that grants only the run-as rule, to confirm the rewritten tests pass there; then the two defects in §6"
 tags: [design, macos-user, testing, privilege, seatbelt, measurement]
-summary: "The macos-user suite's gate probes one privilege — the run-as rule a launch needs — but twelve of its 148 tests need two more that no gate names: passwordless root sudo, and a readable unified log store. On the GitHub runner both are free, so the suite is green there and the dependency is invisible; on a Mac that grants yolo only what yolo asks for, those twelve FAIL rather than skip countably, and a developer cannot tell a broken change from an unprivileged host. The first full run on such a Mac is recorded here: 128 passed, 3 skipped, 12 failed, of which nine are the host's privileges and three are candidate defects."
+summary: "The macos-user suite may assume only what `yolo macos-setup` installs: every step that acts as the sandbox account crosses through the one run-as rule, every other step is the invoking user's, and a guard test refuses a sudo the suite spells itself. The host's unified log store is the Mac's own policy, so its two tests skip countably where it is closed. Mise shims outrank the floor, as in the jail. A developer-Mac measurement counts, with its host and date. The first full run on a Mac that grants only the run-as rule (128 passed, 3 skipped, 12 failed) is the evidence."
 ---
 
 # What may a macos-user test assume about its host?
 
-**Status:** DESIGN, 2026-10-18. Nothing built. Evidence measured on this machine
-2026-10-17 (full suite, at `245a2203d`) and 2026-10-18 (the twelve re-run, at `4d3248ded`).
-Host of record: macOS 26.5, arm64, uid 501, `_yolojail` present, `/Users/Shared/yolo`
-present, the run-as grant passwordless after `sudo -k`, **root `sudo` not passwordless**,
-and `log show` refused.
+**Status:** DECIDED, 2026-10-18: all four questions were ruled that day ([the ledger](#decision-ledger)),
+and the test changes they call for are built. **They have not run on a Mac yet**: they were
+written in a Linux jail, where `GOOS=darwin go vet` and the `-short` build are the only checks.
+Evidence measured on this machine 2026-10-17 (full suite, at `245a2203d`) and 2026-10-18 (the
+twelve re-run, at `4d3248ded`). Host of record: macOS 26.5, arm64, uid 501, `_yolojail`
+present, `/Users/Shared/yolo` present, the run-as grant passwordless after `sudo -k`, **root
+`sudo` not passwordless**, and `log show` refused.
 
-> **In short.** The suite gates on the one privilege a macos-user *launch* needs and then
-> quietly spends two more that only a CI runner hands out. That is not a test-tidiness
-> problem: it means the backend's confinement claims are measured exclusively on a host far
-> more privileged than the backend asks for, and nobody has checked whether that matters.
+> **In short.** The suite may assume only what the backend itself asks a host for. A test that
+> needs another account crosses through the one rule `yolo macos-setup` installs, like a launch;
+> a fact that is the Mac's own policy, like a closed log store, is a countable skip; and a red
+> run on a developer Mac then means a broken change, never an unprivileged host.
 
 **Why it matters.** This suite is the only instrument for a darwin-only, privilege-bearing
 backend, and [`integration/macosusergate_test.go`](../../integration/macosusergate_test.go)
@@ -28,20 +30,21 @@ THAT PASSES."* The inverse now holds and is unguarded — a suite that FAILS for
 never declared is indistinguishable from a suite that caught a regression. Twelve tests, every
 run, deterministically.
 
-**The shape.** One gate today (`requireMacosUser`, probing five host facts). The proposal adds
-the two privileges the body of the suite actually spends as *declared* preconditions beside it,
-each with the same countable skip, so the ledger says `skipped=N (no root sudo)` instead of a
-red run.
+**The shape.** One gate (`requireMacosUser`, probing five host facts) and no new privilege
+beside it. Every crossing into the sandbox account goes through one helper built on the launch's
+own argv builder, a guard test refuses any other sudo, and one host-fact probe, the log store's,
+skips the two tests that read it with its reason in the suite's ledger.
 
-**Cost.** Three behaviours stop being measured anywhere but a privileged host. That is already
-true; stating it is the change.
+**Cost.** The System-keychain CA test now uses a CA the Mac already trusts and skips where there
+is none, the GitHub runner included, so no Mac measures a TLS handshake through the session's
+bundle any more. And a cleanup can leave a file the sandbox account wrote where that account
+cannot reach it; the test then prints the one command an administrator runs.
 
 **Start at [§3](#3-the-three-classes)** — the classification is the whole argument;
-[§5](#5-the-proposed-shape) and [§6](#6-two-defects-and-one-design-question-this-run-found) fall out
+[§5](#5-the-shape) and [§6](#6-two-defects-and-one-design-question-this-run-found) fall out
 of it.
 
-**Needs your ruling:** [OQ-DM1](#8-open-questions), [OQ-DM2](#8-open-questions),
-[OQ-DM3](#8-open-questions), [OQ-DM4](#8-open-questions).
+**Needs your ruling:** None.
 
 **Reads with:** [`macos-user-privilege-lifecycle.md`](macos-user-privilege-lifecycle.md) (what
 privilege the backend itself takes, and when), [`macos-user-build-step-threat-model.md`](macos-user-build-step-threat-model.md)
@@ -97,24 +100,30 @@ The full suite was run with CI's own command —
 and every one of the twelve failures reproduced on a re-run at a later commit. **No failure in
 classes A or B says anything about yolo's code.**
 
-### 3.1 Class A — six tests need passwordless root `sudo`
+### 3.1 Class A — six tests spent a privilege `yolo macos-setup` does not install
 
-Each fails with `sudo: a password is required`, in a fixture or a *control* probe rather than
-in the behaviour under test.
+Each failed with `sudo: a password is required`, in a fixture or a *control* probe rather than
+in the behaviour under test. **Only half of them wanted root.** The other three spelled a
+crossing off the rule's shape: sudo matches the command's path, and the rule names
+`/usr/bin/env`, so `sudo -u _yolojail /bin/ls` is a different command that only a broader grant
+admits. Per [OQ-DM1](#decision-ledger), none of the six needs more than setup installs now.
 
-| Test | What needs root |
-| :--- | :--- |
-| `TestMacosUserCaptureSeatbeltProfileDeniesTheSharedHome` | `sudo /bin/rm -rf` of a staged capture tree |
-| `TestMacosUserTrustsSystemKeychainCA` | `security add-trusted-cert` into the System keychain, and its cleanup |
-| `TestMacosUserHostFloorIsTheHostUsersAlone` | the **control** probe, which must first prove `_yolojail` *can* list an ancestor |
-| `TestMacosUserLaunchDeniesReadOfHost0644File` | fixture setup |
-| `TestMacosUserMacosLogAsTheSandboxAccountMeasurement` | fixture setup (also class B) |
-| `TestMacosUserServiceProbeRefusesAnEndpointTheSandboxCannotRead` | fixture setup |
+| Test | What it spent | What it does now |
+| :--- | :--- | :--- |
+| `TestMacosUserCaptureSeatbeltProfileDeniesTheSharedHome` | root `sudo` for the capture plan's prepare steps, and `sudo rm` at cleanup | the prepare steps as the invoking user, exactly as `RunCapturePlan` runs them; cleanup through the sandbox account's own removal |
+| `TestMacosUserTrustsSystemKeychainCA` | root `sudo security add-trusted-cert` into the System keychain, and its cleanup | reads the System keychain as the launch does and takes the CAs the launch's own composition keeps; skips, saying so, where there are none; never writes a keychain |
+| `TestMacosUserHostFloorIsTheHostUsersAlone` | `sudo -u _yolojail /bin/ls`, off the rule's shape, in the **control** | the control through the rule |
+| `TestMacosUserLaunchDeniesReadOfHost0644File` | `sudo --user=_yolojail /bin/bash`, off the rule's shape | through the rule |
+| `TestMacosUserMacosLogAsTheSandboxAccountMeasurement` | `sudo --user=_yolojail /bin/sh`, off the rule's shape | through the rule; it records the account's view and asserts nothing about the host's store, so it is not class B |
+| `TestMacosUserServiceProbeRefusesAnEndpointTheSandboxCannotRead` | root `sudo` for the launch's endpoint ACL grant | the grant as the invoking user, who owns the endpoint, as the launch applies it |
+
+The same pass removed every root `sudo` left in the suite's cleanups, diagnostic listings and
+process kills, each now the invoking user's act or the sandbox account's through the rule.
 
 > [!NOTE]
-> **`4d3248ded` is the first commit to attack this class** — *"test(macos-user): unseal the
-> staged overlay fixtures before cleanup, so a non-root run removes them"* — and it is the
-> right shape: remove the need, don't declare it. It did not move any of the six above.
+> **`4d3248ded` was the first commit to attack this class** — *"test(macos-user): unseal the
+> staged overlay fixtures before cleanup, so a non-root run removes them"* — and its shape is
+> the one the ruling took: remove the need, don't declare it.
 
 ### 3.2 Class B — two tests need a readable unified log store
 
@@ -126,17 +135,22 @@ in the behaviour under test.
   relocation ancestor stats. The profile itself is not in question; the test cannot establish
   that the host could read the log it then proves the sandbox cannot.
 
-The test's own comment anticipates this (*"the runner is an admin, so …"*), which is the
-dependency being noticed but not declared.
+The store is the Mac's policy, so there is nothing to remove. Per [OQ-DM2](#decision-ledger)
+both skip countably where the invoking user cannot read it: the log-bridge test whole, and of
+`SeatbeltProfileEnforcesItsRules` only the `macos_log_store_read_refused` case
+([§5](#5-the-shape)).
 
-### 3.3 Class C — one test could not reproduce its own precondition
+### 3.3 Class C — one root-`sudo` probe that read as a missing precondition
 
-`TestMacosUserSweepsAKilledSessionsFiles` reports
+`TestMacosUserSweepsAKilledSessionsFiles` reported
 *"NOT OBSERVED: the killed session left no env file … or profile … so there was nothing for the
-next launch to sweep"* ([`integration/macosuserspawnlock_test.go:934`](../../integration/macosuserspawnlock_test.go)).
-Either the kill no longer leaves those files — in which case the sweep has nothing to do and
-the test is stale — or this host's timing differs from the runner's. **It is not classified
-until somebody looks**, and it is the one failure that might be hiding a product change.
+next launch to sweep"* ([`integration/macosuserspawnlock_test.go`](../../integration/macosuserspawnlock_test.go)).
+**It is class A, and neither stale nor timing.** Its existence probe was root
+`sudo -n /bin/test -e`, from when a session's files were root's. On a Mac without passwordless
+root `sudo` that probe answered "absent" for every path, so the control reported a kill that
+left nothing. The same probe answered the later sweep check, where "absent" is a pass. A
+session's files are now the invoking user's, in the staging root it owns, so a plain `lstat` is
+the probe, and the sandbox's sleep is stopped by the sandbox account itself, through the rule.
 
 ## 4. Why CI cannot see any of this
 
@@ -151,25 +165,64 @@ The workflow is honest about the last one and added a `--rebuild` step to force 
 **That step has still never produced an answer on a runner**; it did here
 ([§7](#7-measurements-this-run-produced)).
 
-## 5. The proposed shape
+## 5. The shape
 
-Two new host facts, probed where the other five are, each with a skip reason and a ledger
-label — not a new gate function per privilege, and not a new reporting channel.
+**The suite's privilege floor is the product's** ([OQ-DM1](#decision-ledger)). The maintainer
+ruled it on 2026-10-18: *"I'm very unlikely to grant this for tests ... There's no reason why we
+need to get around restrictions like this."* So there is no root-`sudo` probe and no
+`requireRootSudo`; the gap [P3](#1-recommendation-and-principles) names is closed rather than
+printed.
 
-- **`rootSudoQuiet`** — `sudo -n /usr/bin/true`. A test that needs it calls
-  `requireRootSudo(t)` after `requireMacosUser(t)`; the skip reason names what the test would
-  have done and that `yolo macos-setup` deliberately does not grant it.
-- **`unifiedLogReadable`** — `log show --last 1m --style json` returning an `eventMessage`.
-  `requireUnifiedLog(t)` likewise, and for `SeatbeltProfileEnforcesItsRules` it gates **the one
-  subtest**, so the other nine still assert.
+- **One way into the sandbox account.** A step that acts as `_yolojail` runs through the
+  suite's `sandboxCommand`, which builds its argv with the launch's own
+  `macosuser.RunAsSandboxArgv` (`/usr/bin/sudo -n --user=_yolojail /usr/bin/env <argv…>`, the
+  one rule setup installs) and starts it in `/`, as the launch's runner starts every crossing.
+  A test that runs a production argv, such as the service probe's, runs it as built.
+- **Everything else is the invoking user's.** Fixture setup, the capture plan's prepare steps,
+  the launch's ACL grants, existence checks in the staging root: the launch and `yolo capture`
+  run these as the invoking user, so the tests do too.
+- **Cleanup never escalates to root.** A fixture the sandbox account wrote into is removed as
+  the invoking user, then by that account's own `chmod -R u+w` and `rm -rf` through the rule
+  (the guest pass a capture's cleanup runs), then as the invoking user again. What that leaves,
+  where the account cannot reach it, is logged with the one command an administrator runs.
+- **The guard.** `TestMacosUserSuiteSpendsNoRootSudo` reads every Go file in `integration/` and
+  fails on any string literal that is a sudo command name (`sudo`, `/usr/bin/sudo`). It runs in
+  the Linux unit gate, so a regression is red before any Mac sees it. Two allowances are named in
+  it, and each takes no privilege: the narrow-sudo test's `sudo -k` and its probe that root
+  `sudo` must fail, and a stub named `sudo` on a temporary PATH. ⚠ It cannot see a sudo inside a
+  shell script's text; no host-side script has one.
+- **The System-keychain CA test reads, never writes.** It takes the CAs the launch's own
+  composition (`ComposeCATrust`) keeps from the System keychain. Where there are none it skips,
+  naming that it only reads the keychain; that includes the GitHub runner.
 
-**The vacuity check keeps working unchanged.** A declared macos-user run that executes zero
-tests still exits non-zero; what changes is that `skipped=12` can now carry
-`(no root sudo)` and `(no readable unified log)` instead of a red run with no verdict.
+**The unified log store is a countable skip** ([OQ-DM2](#decision-ledger)). The suite probes
+it once per run, as the invoking user, with the seatbelt control's own store read (`log show`
+returning an `eventMessage`). Where the store is closed, `requireUnifiedLog` skips the log-bridge
+test and the one `macos_log_store_read_refused` case of `SeatbeltProfileEnforcesItsRules`; every
+other rule in that test still asserts. Each skip enters the suite's ledger with the policy
+reason, as a gate skip does, and a test's own reason is never overwritten by the gate's generic
+one.
 
-**Where the privileges are spent is itself a result.** Six tests needing root is a number worth
-printing: it is the gap between what the suite asks of a host and what the backend asks, and
-P3 says that gap should shrink. `4d3248ded` shrank it by one fixture pattern.
+**Mise shims outrank the floor, as in the jail** ([OQ-DM3](#decision-ledger)): *"parity with the
+jail should certainly be the goal, which I think is the mise ones always win."* `SandboxPath`'s
+order stays. The floor test asks two lookups per binary: the agent's, on the whole PATH, and the
+floor's, on that PATH with every directory under the sandbox's `$HOME` taken out. The sandbox
+home is one account home shared by every workspace and test on the Mac, so a shim another
+workspace's mise install left is no fault of this launch's; the second lookup is the floor's own
+reach, and only it can fail. A mise shim or another home directory winning the first lookup is
+logged as by design, and path_helper and Homebrew are blamed only when the second lookup lost. ⚠
+The container jail has the same exposure, through the machine-wide `/mise/shims`
+([backlog](../plans/BACKLOG.md#stale-mise-shims)).
+
+**A developer-Mac measurement counts** ([OQ-DM4](#decision-ledger)). A line it clears stays
+cleared, recording the host and the date and saying `macos-user.yml` has not confirmed it.
+
+**The vacuity check is unchanged.** A declared macos-user run that executes zero tests, or a gate
+nothing got through, still exits non-zero.
+
+**What only a Mac can confirm.** Every rewritten test passing on a Mac that grants only the
+run-as rule; the CA test on a Mac whose System keychain holds a TLS CA; the guest-pass cleanup;
+and the `ps` the jail-daemon test now runs as the sandbox account, whose listing is diagnostic.
 
 ## 6. Two defects and one design question this run found
 
@@ -256,86 +309,16 @@ runner.
 
 ## 8. Open questions
 
-1. 💬 **OQ-DM1: Should passwordless root `sudo` become a declared precondition, or should the six tests stop needing it?**
+None. All four were ruled on 2026-10-18 and are compacted into the ledger below.
 
-   This is the closure question for the whole doc: it decides whether a developer Mac is a
-   supported instrument for this suite or only CI is. [P3](#1-recommendation-and-principles)
-   leans toward removing the need where a fixture can be unsealed instead, which `4d3248ded`
-   has started.
+### Decision Ledger
 
-   - **A — Declare it.** `requireRootSudo(t)`, countable skip, ledger label. Cheap; the six keep
-     measuring on CI; the gap is printed every run.
-   - **B — Remove the need.** Rewrite each fixture to work with the run-as grant alone, as
-     `4d3248ded` did for the staged overlay. Strictly better, unbounded work.
-   - **C — Keep failing.** Treat a Mac without root `sudo` as unsupported for the suite.
-
-   <!-- vantage: question id=OQ-DM1 leaning="A now, B as the standing direction: declare it this week so a developer Mac gives a clean verdict, and keep removing the need fixture by fixture." -->
-
-   _Leaning:_ A now, B as the standing direction — declare it so a developer Mac gives a clean
-   verdict immediately, and keep removing the need one fixture at a time. C costs the project
-   its only non-CI instrument.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-2. 💬 **OQ-DM2: Is a readable unified log store a precondition, and does it gate a whole test or one subtest?**
-
-   Decides whether `SeatbeltProfileEnforcesItsRules` — nine passing confinement assertions —
-   stays red on every managed Mac. The log store is the host's policy, not yolo's, so there is
-   nothing to remove here, unlike [OQ-DM1](#8-open-questions).
-
-   - **A — Probe it; gate the one `macos-log` subtest.** The other nine keep asserting.
-   - **B — Probe it; skip the whole test.** Simpler, loses nine assertions on such a host.
-
-   <!-- vantage: question id=OQ-DM2 leaning="A — the control is one subtest, and a managed Mac should still get the other nine confinement assertions." -->
-
-   _Leaning:_ A. The control belongs to one subtest; a managed Mac should still measure the
-   other nine rules.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-3. 💬 **OQ-DM3: On macos-user, does the nix floor outrank a mise shim, or the other way round?**
-
-   [§6.1](#61-the-nix-floor-loses-to-a-mise-shim) is a red test either way; which thing is
-   wrong depends on this. [OQ-PD27](program-delivery.md#decision-ledger) ruled mise shims above
-   `~/.local/bin` and said nothing about the floor, and `sandboxpathorder_test.go` pins the
-   order as written rather than as ruled.
-
-   - **A — The floor outranks the shims.** The floor is what the backend guarantees; a workspace
-     `mise_tools` entry should not silently replace the `node` yolo provisioned. Product fix.
-   - **B — The shims outrank the floor, as today.** A user who declares a tool means it. Then
-     the test is stale and its message is wrong twice.
-
-   <!-- vantage: question id=OQ-DM3 leaning="B for a tool the config declares, A for a floor name the config never mentioned; the test currently asks about jq, which nothing declared." -->
-
-   _Leaning:_ Split it — B for a tool the workspace actually declares, A for a floor name the
-   config never mentioned. The failing probe is `jq`, which nothing in this config declares,
-   so today's behaviour is wrong under either half.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-4. 💬 **OQ-DM4: Does a developer Mac clear a `NOT MEASURED on a Mac` claim, or only a CI run?**
-
-   [§7](#7-measurements-this-run-produced) clears five such claims and answers Q3. If only CI
-   counts, those lines stay as they are and this doc is the record instead. The host here is
-   *managed* (a closed log store, an MDM CA), so it is not a neutral Mac — but it is a real
-   one, and it measured things CI cannot.
-
-   - **A — Yes, with provenance.** The line records the host and the date, and says CI has not
-     confirmed it.
-   - **B — No.** Only `macos-user.yml` clears such a line; a local run is evidence in a design
-     doc.
-
-   <!-- vantage: question id=OQ-DM4 leaning="A with provenance — a measurement nobody records is one somebody repeats, and the provenance makes the weaker claim visible." -->
-
-   _Leaning:_ A, with the host named. A measurement nobody writes down gets repeated, and
-   naming the host keeps the weaker claim honest. I have written the five lines this way
-   already; reverting them is one commit if you rule B.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+| ID | Ruling / Decision | Date | Settled in | Built |
+| :--- | :--- | :--- | :--- | :--- |
+| OQ-DM1 | **The suite never needs passwordless root `sudo`** (option B, remove the need). The maintainer: *"I'm very unlikely to grant this for tests ... There's no reason why we need to get around restrictions like this."* Every privileged step goes through what yolo itself installs, the one run-as rule, built by `macosuser.RunAsSandboxArgv`, or is the invoking user's own; a capture plan's prepare steps run exactly as production runs them; the CA test uses a CA the System keychain already holds and never adds one; a guard test fails on a sudo the suite spells itself | 2026-10-18 | [§3.1](#31-class-a--six-tests-spent-a-privilege-yolo-macos-setup-does-not-install), [§3.3](#33-class-c--one-root-sudo-probe-that-read-as-a-missing-precondition), [§5](#5-the-shape) | ✅ not yet run on a Mac |
+| OQ-DM2 | **An honest skip.** The host's unified log store being closed is the Mac's policy: probe it once (`log show` as the invoking user); the log-bridge test skips naming the policy; `SeatbeltProfileEnforcesItsRules` skips only its `macos-log-deny` control; both skips are counted in the suite's ledger, as the gate's are | 2026-10-18 | [§3.2](#32-class-b--two-tests-need-a-readable-unified-log-store), [§5](#5-the-shape) | ✅ not yet run on a Mac |
+| OQ-DM3 | **Mise shims outrank the floor, for parity with the jail** (option B). The maintainer: *"parity with the jail should certainly be the goal, which I think is the mise ones always win."* `SandboxPath`'s order stays; the floor test asks for the floor's reach past the sandbox home's shared directories, and blames path_helper or Homebrew only when that lost | 2026-10-18 | [§5](#5-the-shape) | ✅ not yet run on a Mac |
+| OQ-DM4 | **A developer Mac clears a `NOT MEASURED on a Mac` line, with provenance** (option A). The maintainer: *"I can guess we can count it."* The lines [§7](#7-measurements-this-run-produced) cleared stay, each recording the host and the date and saying `macos-user.yml` has not confirmed it | 2026-10-18 | [§5](#5-the-shape) | ✅ |
 
 ## 9. What this does not cover
 

@@ -44,7 +44,8 @@ func TestMacosUserSerialClientDrivesAHostPtyFromTheSandbox(t *testing.T) {
 		`"settings": {"allowed_devices": [%q]}}}}`, slave))
 	ws := macosUserWorkspace(t, `{}`)
 	out := fmt.Sprintf("/private/tmp/yolo-it-serial-pty-%d.out", os.Getpid())
-	t.Cleanup(func() { _ = runQuiet(time.Minute, "sudo", "-n", "/bin/rm", "-f", out) })
+	// The sandbox account writes it, in sticky /private/tmp, so only that account removes it.
+	t.Cleanup(func() { _ = runAsSandboxQuiet(time.Minute, "/bin/rm", "-f", "--", out) })
 	r := macosUserRunProbe(t, "serial", ws, strings.Join([]string{
 		`echo "=== CLIENT ==="`,
 		`command -v yolo-serial || echo MISSING`,

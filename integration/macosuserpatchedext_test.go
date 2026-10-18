@@ -31,7 +31,7 @@ import (
 // the readiness act is off (withoutFixtureProgramInstall), so nothing is installed and no agent
 // starts: every session runs bash only.
 //
-// ⚠ Mac-only, behind requireMacosUser: the sandbox account, passwordless sudo and nix. Every
+// ⚠ Mac-only, behind requireMacosUser: the sandbox account, the run-as rule and nix. Every
 // Linux runner, and a nested jail, cannot reach it; .github/workflows/macos-user.yml selects these
 // with `-run '^TestMacosUser'`. Each test removes the capture entries it added and its
 // extension's check records.
