@@ -714,7 +714,8 @@ end
 --     only, no reasoning, zero cost). So the same rows also ride the model-lists surface,
 --     marked `keep_catalog`, and yolo's extension registers pi's catalog with each row merged
 --     over its own entry field by field (docs/design/model-lists-and-pickers.md OQ-ML4,
---     ML-D12); the models.json row is what pi keeps if the extension does not load.
+--     ML-D12). A row naming a catalog id is written as a `modelOverrides` entry instead, which
+--     pi itself merges over that entry (ML-D13, at the native row below).
 --
 -- The models are every entry of the list (Converse serves each shipped maker's), the session
 -- starts on the list's first or the one a profile names, and only the selected provider, on pi's
@@ -954,27 +955,54 @@ yolo.derive("pi", "models", function(ctx)
   -- array or the whole file is discarded (see the `models` note above). The row is the set's
   -- Bedrock entry's wherever it sits (piNativeBedrockEntry), so pi on [zai, bedrock] can switch
   -- to a Bedrock model its own catalog lacks.
+  --
+  -- A ROW NAMING A CATALOG ID IS AN OVERRIDE (docs/design/model-lists-and-pickers.md OQ-ML4, the
+  -- models.json half): pi's models.json `models` entry REPLACES the catalog entry of its id, so a
+  -- row stating no thinking levels lost pi's (`--thinking xhigh` clamped to high), while its
+  -- `modelOverrides` entry merges over that entry field by field (pi 1.0.1 core/provider-composer.js,
+  -- applyModelOverride, which keeps the catalog's thinkingLevelMap and takes each cost rate
+  -- separately). So a row is written as an override of the facts it states, and keeps every other
+  -- catalog fact in pi itself, with no patch and whether or not yolo's extension loads. Three rows
+  -- stay `models` rows, written in full: one naming a `base` (a variant id, which the catalog lacks
+  -- by its own declaration), one naming a `wire_id` (a client spelling, likewise), and one with a
+  -- tombstone, which an override, merged over the catalog, cannot express. An id the catalog lacks
+  -- and that says none of these is offered through the keep_catalog registration the model-lists
+  -- derive writes for the same rows; without yolo's extension, pi does not list it.
   local bedrockName = piNativeBedrockEntry(ctx)
   if bedrockName and providers[piBedrockProvider] == nil then
     local p = ctx.providers[bedrockName]
-    local modelList = {}
+    local modelList, overrides = {}, {}
     for _, e in ipairs(callableModels(p, nil)) do
-      local m = { id = e.id, name = e.facts.name or e.id }
-      local cw, maxTokens = tonumber(e.facts.context_window), tonumber(e.facts.max_tokens)
-      if cw then m.contextWindow = cw end
-      if maxTokens then m.maxTokens = maxTokens end
-      local facts = piModelFacts(e.facts, p, ctx, bedrockName)
-      if facts then
-        for k, v in pairs(facts) do m[k] = v end
-      end
-      m.wireId = piWireId(e.facts)
       local alias = piModelAliasFor(p, e.id)
       local mopts = alias and type(p.model_options) == "table" and p.model_options[alias] or nil
-      local tombs = piDropTombstoned(ctx, m, mopts)
-      table.insert(modelList, piShareRow(ctx, p, alias, m, tombs, sharedModels))
+      local cw, maxTokens = tonumber(e.facts.context_window), tonumber(e.facts.max_tokens)
+      local wireId = piWireId(e.facts)
+      local hasBase = type(e.facts.base) == "string" and e.facts.base ~= ""
+      if not hasBase and not wireId and piTombstones(ctx, mopts) == nil then
+        local o = { name = e.facts.name, contextWindow = cw, maxTokens = maxTokens }
+        local facts = piModelFacts(e.facts, p, ctx, bedrockName, true)
+        if facts then
+          for k, v in pairs(facts) do o[k] = v end
+        end
+        if next(o) ~= nil then overrides[e.id] = o end
+      else
+        local m = { id = e.id, name = e.facts.name or e.id }
+        if cw then m.contextWindow = cw end
+        if maxTokens then m.maxTokens = maxTokens end
+        local facts = piModelFacts(e.facts, p, ctx, bedrockName)
+        if facts then
+          for k, v in pairs(facts) do m[k] = v end
+        end
+        m.wireId = wireId
+        local tombs = piDropTombstoned(ctx, m, mopts)
+        table.insert(modelList, piShareRow(ctx, p, alias, m, tombs, sharedModels))
+      end
     end
-    if #modelList > 0 then
-      providers[piBedrockProvider] = { models = modelList }
+    local entry = {}
+    if #modelList > 0 then entry.models = modelList end
+    if next(overrides) ~= nil then entry.modelOverrides = overrides end
+    if next(entry) ~= nil then
+      providers[piBedrockProvider] = entry
     end
   end
   if next(providers) == nil then
