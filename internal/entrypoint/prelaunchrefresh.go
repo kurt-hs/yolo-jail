@@ -2,6 +2,7 @@ package entrypoint
 
 import (
 	"path"
+	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
@@ -96,6 +97,12 @@ HAS_REFRESH_ONLY_IF=__YOLO_HAS_REFRESH_ONLY_IF__
 REFRESH_ONLY_IF_FILES=(__YOLO_REFRESH_ONLY_IF_FILES__)
 REFRESH_ONLY_IF_PROJECT=(__YOLO_REFRESH_ONLY_IF_PROJECT__)
 REFRESH_ONLY_IF_CONTAINS=(__YOLO_REFRESH_ONLY_IF_CONTAINS__)
+# The pack's SESSION HOMES (packdecl.Refresh.SessionHomes, docs/design/per-session-profiles.md §5):
+# pairs of a home-relative declared directory and the variable that relocates it. A watched file
+# under one resolves under the variable when the session set it. HAS_REFRESH_SESSION_HOMES gates
+# every expansion.
+HAS_REFRESH_SESSION_HOMES=__YOLO_HAS_REFRESH_SESSION_HOMES__
+REFRESH_SESSION_HOMES=(__YOLO_REFRESH_SESSION_HOMES__)
 `
 
 // prelaunchRefreshShellFn defines the declared refresh: its variables, its functions, and the
@@ -185,14 +192,36 @@ _refresh_state_dir() {
     mkdir -p "$REFRESH_STATE" 2>/dev/null
 }
 
+# _refresh_home_file prints where the home-relative watched file $1 is for THIS session: under a
+# declared session-home directory whose variable is set, the same place under the variable's
+# directory, since that is the copy the program reads (per-session-profiles.md §5); else $HOME/$1.
+# A while loop and ${!var}, both in bash 3.2.
+_refresh_home_file() {
+    local f="$1" i=0 dir var val
+    if [ "$HAS_REFRESH_SESSION_HOMES" = "1" ]; then
+        while [ "$i" -lt "${#REFRESH_SESSION_HOMES[@]}" ]; do
+            dir="${REFRESH_SESSION_HOMES[$i]}"
+            var="${REFRESH_SESSION_HOMES[$((i + 1))]}"
+            i=$((i + 2))
+            val="${!var:-}"
+            [ -n "$val" ] || continue
+            case "$f" in
+                "$dir"/*) printf '%s\n' "$val/${f#"$dir"/}"; return 0 ;;
+            esac
+        done
+    fi
+    printf '%s\n' "$HOME/$f"
+}
+
 # _refresh_content_key prints one key for the current content of every declared file: an
 # absent file contributes "absent", so absent and present differ. cksum is POSIX and ships on a
 # stock macOS; the key is only compared, never trusted, so a CRC is enough.
 _refresh_content_key() {
-    local f all=""
+    local f p all=""
     for f in "${REFRESH_DUE_ON_CHANGE[@]}"; do
-        if [ -f "$HOME/$f" ]; then
-            all="$all$f $(cksum < "$HOME/$f" 2>/dev/null || echo unreadable)
+        p=$(_refresh_home_file "$f")
+        if [ -f "$p" ]; then
+            all="$all$f $(cksum < "$p" 2>/dev/null || echo unreadable)
 "
         else
             all="$all$f absent
@@ -244,7 +273,7 @@ _refresh_worth() {
     [ "$HAS_REFRESH_ONLY_IF" = "1" ] || return 0
     local f
     for f in ${REFRESH_ONLY_IF_FILES[@]+"${REFRESH_ONLY_IF_FILES[@]}"}; do
-        _refresh_file_holds "$HOME/$f" && return 0
+        _refresh_file_holds "$(_refresh_home_file "$f")" && return 0
     done
     for f in ${REFRESH_ONLY_IF_PROJECT[@]+"${REFRESH_ONLY_IF_PROJECT[@]}"}; do
         _refresh_file_holds "$PWD/$f" && return 0
@@ -717,7 +746,7 @@ func refreshSplices(r *packdecl.Refresh, timing string) []string {
 			"__YOLO_HAS_REFRESH_DUE__", shquote.Quote(boolFlag(false)),
 			"__YOLO_REFRESH_DUE_ON_CHANGE__", "",
 			"__YOLO_REFRESH_TIMING__", shquote.Quote(timing),
-		}, onlyIfSplices(nil)...)
+		}, append(onlyIfSplices(nil), sessionHomeSplices(nil)...)...)
 	}
 	return append([]string{
 		"__YOLO_HAS_REFRESH__", shquote.Quote(boolFlag(len(r.Argv) > 0 && r.Lock != "")),
@@ -728,7 +757,21 @@ func refreshSplices(r *packdecl.Refresh, timing string) []string {
 		"__YOLO_HAS_REFRESH_DUE__", shquote.Quote(boolFlag(len(r.DueOnChange) > 0)),
 		"__YOLO_REFRESH_DUE_ON_CHANGE__", shquote.Join(r.DueOnChange),
 		"__YOLO_REFRESH_TIMING__", shquote.Quote(timing),
-	}, onlyIfSplices(r.OnlyIf)...)
+	}, append(onlyIfSplices(r.OnlyIf), sessionHomeSplices(r.SessionHomes)...)...)
+}
+
+// sessionHomeSplices renders the pack's session homes for _refresh_home_file: one word pair per
+// declaration, the declared directory and its variable. Off, with an empty list, for none. Join,
+// as for the argv: a LIST whose every entry is one word.
+func sessionHomeSplices(homes []packdecl.SessionHome) []string {
+	var pairs []string
+	for _, h := range homes {
+		pairs = append(pairs, strings.TrimSuffix(h.Dir, "/"), h.Env)
+	}
+	return []string{
+		"__YOLO_HAS_REFRESH_SESSION_HOMES__", shquote.Quote(boolFlag(len(pairs) > 0)),
+		"__YOLO_REFRESH_SESSION_HOMES__", shquote.Join(pairs),
+	}
 }
 
 // onlyIfSplices renders a refresh's worth-running test (XB-D23): off, with empty lists, for none.

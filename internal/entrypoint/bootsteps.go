@@ -427,6 +427,21 @@ func bootSteps() []bootStep {
 				"and the jail's uid 0 owns the workspace there, so git needs no safe.directory entry",
 		},
 		{
+			// EACH SESSION'S OWN CONFIG DIRECTORY (sessionhome.go, docs/design/per-session-
+			// profiles.md): on a session's pass with a valid YOLO_SESSION_ID, every selected pack's
+			// `session_homes` declaration gets a session home, the render below writes the
+			// declared directory's surfaces there instead of into the shared copy (SP-D2), and the
+			// declared variable is exported for the session's shell (SP-D4). Directly above
+			// configure_pack_surfaces, which renders into what this decides. Not marked
+			// notSessionPass's opposite in the table, since the table has no such flag: the step
+			// itself does nothing on the jail's own boot. A home that cannot be made fails the
+			// step, and the boot refuses the session (SP-D6).
+			name: "prepare_session_homes",
+			run:  prepareSessionHomesStep,
+			notDarwin: "the macos-user launch carries no YOLO_SESSION_ID yet, so it has no session " +
+				"to key a home on (per-session-profiles.md §4.6, unmeasured without a Mac)",
+		},
+		{
 			// Render every PACK-DECLARED surface. One loop over declarations — no switch on
 			// tool names, because core does not know any (see packsurfaces.go). A pack that
 			// parsed on the host and not here means the mounted tree disagrees with what was
@@ -446,7 +461,11 @@ func bootSteps() []bootStep {
 					b.e.note(sealedBuildSkipNote)
 					return
 				}
+				// A session rendering into its session homes holds the in-jail render lock
+				// across its renders (sessionhome.go); every other pass takes nothing.
+				release := holdSessionRenderLock(b.e)
 				ConfigurePackSurfaces(b.e, packs)
+				release()
 				RunPackHooks(b.e, packs)
 			},
 		},
