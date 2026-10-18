@@ -285,6 +285,17 @@ local function piModelFacts(mopts, prov, ctx, provName, statedCost)
   return facts
 end
 
+-- THE WIRE ID (a user's `wire_id`, a pack's `model_options.<alias>.wire_id`): the model id a row
+-- SENDS when its `id` is a client spelling, so one provider carries one model at two windows, the
+-- full-window alias and a narrowed twin naming the same wire id, each its own row with its own
+-- facts. Written as the definition's `wireId` on both surfaces; a pi that does not read it sends
+-- the row's `id`. nil when the alias states none, or tombstones it.
+local function piWireId(mopts)
+  local w = type(mopts) == "table" and mopts.wire_id or nil
+  if type(w) == "string" and w ~= "" then return w end
+  return nil
+end
+
 -- THE TOMBSTONES (docs/design/model-lists-and-pickers.md ML-D10): a model fact written as null,
 -- which core carries through the composed table and hands this derive as ctx.tombstone under
 -- model_options.<alias>. It means "this model has no such fact", where a fact left out inherits
@@ -846,6 +857,10 @@ yolo.derive("pi", "models", function(ctx)
           if facts then
             for k, v in pairs(facts) do m[k] = v end
           end
+          local wireId = piWireId(mopts)
+          if wireId then
+            m.wireId = isKilo and normalizeKiloModel(wireId) or wireId
+          end
           -- A tombstoned fact (ML-D10) is left out, the provider-wide fallback included, so pi
           -- applies its own default for the field.
           local tombs = piDropTombstoned(ctx, m, mopts)
@@ -944,6 +959,7 @@ yolo.derive("pi", "models", function(ctx)
       if facts then
         for k, v in pairs(facts) do m[k] = v end
       end
+      m.wireId = piWireId(e.facts)
       local alias = piModelAliasFor(p, e.id)
       local mopts = alias and type(p.model_options) == "table" and p.model_options[alias] or nil
       local tombs = piDropTombstoned(ctx, m, mopts)
@@ -1751,6 +1767,11 @@ yolo.derive("pi", "model-lists", function(ctx)
             m.base = sent(mopts.base)
           end
         end
+        -- The wire id rides the row, and the extension forwards it into the registered
+        -- definition with the rest of what yolo declares. A [1m] variant names its base's.
+        if not e.base then
+          m.wireId = sent(piWireId(mopts))
+        end
         -- The routing object rides the row verbatim; the extension lowers it into pi's
         -- `compat.openRouterRouting`, which pi sends as the request's `provider` field.
         local routing = alias and type(prov.model_routing) == "table" and prov.model_routing[alias] or nil
@@ -1784,6 +1805,7 @@ yolo.derive("pi", "model-lists", function(ctx)
       if cw then m.contextWindow = cw end
       if maxTokens then m.maxTokens = maxTokens end
       if type(e.facts.base) == "string" and e.facts.base ~= "" then m.base = e.facts.base end
+      m.wireId = piWireId(e.facts)
       local facts = piModelFacts(e.facts, p, ctx, bedrockName, true)
       if facts then
         for k, v in pairs(facts) do m[k] = v end
