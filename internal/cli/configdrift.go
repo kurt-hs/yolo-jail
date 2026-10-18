@@ -76,13 +76,14 @@ func configDrift(args []string, out, errw io.Writer, color bool) int {
 		return 4
 	}
 	if !hasDrift {
-		pr.Printf("[green]In sync[/green] — the workspace config on disk matches the one that " +
-			"started this jail. No restart needed for config reasons.")
+		pr.Printf("[green]In sync[/green] — the workspace config on disk matches the config this " +
+			"jail has. No restart needed for config reasons.")
 		printUserScopeDriftLimit(pr)
 		return 0
 	}
 	pr.Printf("[bold yellow]Workspace config has drifted since this jail started.[/bold yellow]")
-	pr.Printf("[dim]Restart the jail to apply these changes.[/dim]")
+	pr.Printf("[dim]Run `yolo config apply` on the host to approve these changes and apply what the " +
+		"running jail can take; the rest waits for a restart (yolo stop, then yolo).[/dim]")
 	pr.Printf("")
 	for _, line := range diffLines {
 		switch {
