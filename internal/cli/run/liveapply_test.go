@@ -436,6 +436,7 @@ func TestConfigApplyReplacesTheLiveScope(t *testing.T) {
 	if _, err := config.WriteWorkspaceBootBaseline(o.Workspace, jsonx.NewOrderedMap()); err != nil {
 		t.Fatal(err)
 	}
+	writeUserConfigOf(t, gbOn())
 	answer(o, "y")
 	f := liveScopeFile{Path: "/scope/1", LiveScope: true,
 		File: brokerscope.File{Source: "gbsrc", Repos: []string{"o/old"}}}
@@ -471,6 +472,7 @@ func TestConfigApplyScopeOnAnOldBrokerWaits(t *testing.T) {
 	if _, err := config.WriteWorkspaceBootBaseline(o.Workspace, jsonx.NewOrderedMap()); err != nil {
 		t.Fatal(err)
 	}
+	writeUserConfigOf(t, gbOn())
 	answer(o, "y")
 	swapSeam(t, &liveScopeFilesSeam, func(string, string, string) ([]liveScopeFile, error) {
 		return []liveScopeFile{{Path: "/scope/1", File: brokerscope.File{Repos: nil}}}, nil

@@ -422,19 +422,24 @@ func (o *Options) checkConfigChanges(merged *jsonx.OrderedMap, rt string) bool {
 // prompter, the record and the approved scope stay checkConfigChanges' own, because there is
 // one gate (LA-P1).
 type gateHooks struct {
-	// plan is handed the gate's scope check, nil when no broker is in play, once the read and
-	// the scope are made and before anything is asked or recorded. The lines it returns, in
-	// markup, print after the gate's diff and directly above its question.
-	plan func(scope *config.ScopeCheck) []string
+	// plan is handed the gate's read, the config it approves, and its scope check, nil when no
+	// broker is in play, once the read and the scope are made and before anything is asked or
+	// recorded. The lines it returns, in markup, print after the gate's diff and directly above
+	// its question.
+	plan func(read *config.WorkspaceRead, scope *config.ScopeCheck) []string
 	// attach is an attach's gate: an N does not stop the session, so the decline says that
 	// the session starts and names `yolo config apply` instead of "Exiting." (LA-D14).
 	attach bool
 }
 
+// readWorkspaceForGateSeam is the gate's one read (config.ReadWorkspaceForGate), a variable so a
+// test can change the file between a caller's own load and this read.
+var readWorkspaceForGateSeam = config.ReadWorkspaceForGate
+
 // runConfigGate is checkConfigChanges' body, with h (nil for a fresh launch) for the apply
 // command and the attach (gateHooks).
 func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHooks) bool {
-	read, err := config.ReadWorkspaceForGate(o.Workspace)
+	read, err := readWorkspaceForGateSeam(o.Workspace)
 	if err != nil {
 		// The file names come from the workspace, whose includes the agent names.
 		out := o.pr(o.Stdout)
@@ -449,7 +454,7 @@ func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHook
 	if h != nil {
 		pr.attach = h.attach
 		if h.plan != nil {
-			pr.preQuestion = h.plan(scope)
+			pr.preQuestion = h.plan(read, scope)
 		}
 	}
 	ok, approved, err := config.ApproveConfigAndScope(o.Workspace, read.Config, scope, o.IsTTYStdin(),

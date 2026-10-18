@@ -494,6 +494,30 @@ func composeConfig(workspace string, strict bool, warn Warn, record, withWorkspa
 			return snap, assembledOriginsTree(workspace, snap), nil
 		}
 	}
+	return composeAround(workspace, strict, warn, record, withWorkspaceFile,
+		func() (*jsonx.OrderedMap, *srcNode, error) {
+			return loadWorkspaceConfig(workspace, strict, warn, record)
+		})
+}
+
+// ComposeWithWorkspaceRead is LoadConfig with wsCfg, a workspace config already read (the
+// config-change gate's read, ReadWorkspaceForGate), in place of reading the workspace's files
+// again: the user scope under it and the per-workspace file over it, strictly, exactly as
+// LoadConfig composes them. A caller that loaded the config once and had the gate read it again
+// compares the two to know the gate approved the config it is about to act on.
+func ComposeWithWorkspaceRead(workspace string, wsCfg *jsonx.OrderedMap) (*jsonx.OrderedMap, error) {
+	if wsCfg == nil {
+		wsCfg = jsonx.NewOrderedMap()
+	}
+	m, _, err := composeAround(workspaceOrCwd(workspace), true, func(string) {}, false, true,
+		func() (*jsonx.OrderedMap, *srcNode, error) { return wsCfg, nil, nil })
+	return m, err
+}
+
+// composeAround is composeConfig's assembly, with the workspace half from loadWS: the user scope
+// under it, and the per-workspace file over both when withWorkspaceFile is set.
+func composeAround(workspace string, strict bool, warn Warn, record, withWorkspaceFile bool,
+	loadWS func() (*jsonx.OrderedMap, *srcNode, error)) (*jsonx.OrderedMap, *srcNode, error) {
 	// The user half goes through loadUserScopeConfig so a --user-layer lands at user-level
 	// precedence (a workspace config still wins over it — see userlayer.go).
 	userCfg, userNode, err := loadUserScope(
@@ -501,7 +525,7 @@ func composeConfig(workspace string, strict bool, warn Warn, record, withWorkspa
 	if err != nil {
 		return nil, nil, err
 	}
-	wsCfg, wsNode, err := loadWorkspaceConfig(workspace, strict, warn, record)
+	wsCfg, wsNode, err := loadWS()
 	if err != nil {
 		return nil, nil, err
 	}
