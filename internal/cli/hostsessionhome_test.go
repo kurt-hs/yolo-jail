@@ -192,7 +192,8 @@ func TestHostPiSessionHomeCarriesTheProfilesChildPolicy(t *testing.T) {
 	home := hostGateHome(t, piSubagentsAcmeCfg, nil)
 	unchanged := piSettingsFixture(t, home, `{"defaultProvider":"acme"}`)
 	runB := hostSelectionRun(t, home, []string{"-p", "pi=acme-b"}, "pi")
-	runA := hostSelectionRun(t, home, nil, "pi")
+	// Typed, since under host_management none a bare launch gets no session home (SP-D30).
+	runA := hostSelectionRun(t, home, []string{"-p", "pi=acme-a"}, "pi")
 	unchanged()
 	type policy struct {
 		Subagents map[string]any `json:"subagents"`
@@ -245,6 +246,27 @@ func TestHostPiSessionHomeYieldsToThePresetVariable(t *testing.T) {
 	}
 }
 
+// SP-D30: UNDER `host_management: none` (the default) A LAUNCH WITH NO -p GETS NO SESSION HOME.
+// `none` leaves pi's config to the user, so pi reads the user's own directory as it did; only a typed
+// -p, an explicit request for this launch's profile, gets one.
+func TestHostPiBareLaunchUnderNoneGetsNoSessionHome(t *testing.T) {
+	env := piSessionHomeEnv(t)
+	home := hostGateHome(t, piSubagentsCodexCfg, nil)
+	piSettingsFixture(t, home, `{"defaultProvider":"openrouter"}`)
+	run := hostSelectionRun(t, home, nil, "pi")
+	if v := run.env[env]; v != "" {
+		t.Errorf("a bare launch under host_management none got %s=%q, want none", env, v)
+	}
+	root := filepath.Join(paths.GlobalStorageUnder(home), prune.HostSessionHomesLeaf)
+	if entries, _ := os.ReadDir(root); len(entries) > 0 {
+		t.Errorf("a bare launch under none must make no session home, found %d in %s", len(entries), root)
+	}
+	typed := hostSelectionRun(t, home, []string{"-p", "pi=codex"}, "pi")
+	if typed.env[env] == "" {
+		t.Errorf("a -p launch under none must still get its session home")
+	}
+}
+
 // A DEAD LAUNCH'S HOME IS REAPED by the next launch: one whose lease nobody holds goes, one whose
 // lease is held (a pi still running) stays.
 func TestHostPiSessionHomeReapsADeadLaunch(t *testing.T) {
@@ -272,7 +294,7 @@ func TestHostPiSessionHomeReapsADeadLaunch(t *testing.T) {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH); err != nil {
 		t.Fatal(err)
 	}
-	run := hostSelectionRun(t, home, nil, "pi")
+	run := hostSelectionRun(t, home, []string{"-p", "pi=codex"}, "pi")
 	if run.env[env] == "" {
 		t.Fatalf("the launch got no session home\n%s", run.errs)
 	}
