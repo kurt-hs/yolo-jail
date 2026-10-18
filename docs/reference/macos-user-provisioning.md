@@ -186,8 +186,8 @@ with a content-keyed link.
 
 **An unchanged floor runs no nix.** After a successful build whose skip-list eval also succeeded,
 `Materialize` records the profile and skip list beside the root, keyed on the system, the build
-argv, the declared `packages:` and the bytes of `flake.nix` and `flake.lock` — the two files the
-flake's own `imageIdentity` treats as deciding the image, and the only environment the flake reads
+argv, the declared `packages:`, every `NIXPKGS_*` variable (nixpkgs' own opt-ins, such as `NIXPKGS_ALLOW_UNFREE`) and the bytes of `flake.nix` and `flake.lock` — the two files the
+flake's own `imageIdentity` treats as deciding the image, and the only environment `flake.nix` itself reads
 is `YOLO_EXTRA_PACKAGES` (`TestTheFlakeReadsOnlyTheEnvTheFloorKeyHashes`). A launch whose inputs
 hash to the recorded key, while the root still names the recorded profile and that store path
 exists, takes the record; anything else builds, and a failed build is fatal as before

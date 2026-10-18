@@ -111,6 +111,7 @@ func TestAnUnchangedFloorRunsNoNix(t *testing.T) {
 	}{
 		{"flake.lock changed", func() { writeFile(t, filepath.Join(root, "flake.lock"), "{\"nodes\":{\"x\":1}}\n") }},
 		{"flake.nix changed", func() { writeFile(t, filepath.Join(root, "flake.nix"), "{ x = 1; }\n") }},
+		{"NIXPKGS_ALLOW_UNFREE set", func() { t.Setenv("NIXPKGS_ALLOW_UNFREE", "1") }},
 		{"the profile was collected", func() {
 			if err := os.RemoveAll(profile); err != nil {
 				t.Fatal(err)
