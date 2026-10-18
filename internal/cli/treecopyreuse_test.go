@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -66,6 +67,44 @@ func TestAMacosUserLaunchReusesItsTreeCopyWhileTheEntryIsUnchanged(t *testing.T)
 	if got, err := os.ReadFile(filepath.Join(second.Dir, "f.txt")); err != nil ||
 		string(got) != lines30(map[int]string{10: "ten", 12: "twelve"}) {
 		t.Errorf("the reused copy's f.txt = %q (%v)", got, err)
+	}
+}
+
+// A REUSABLE COPY WHOSE ENTRY IS REAPED WHILE IT RUNS is never put in place: the marker gone when
+// the copy ends, it is removed and the record re-read once, and the copy handed is the second one,
+// whole, with nothing left beside it. This matters more here than for a per-launch copy, which one
+// launch reads: a partial copy at its final name would be handed to every later launch of the
+// build. Red with the completion check after the copy deleted.
+func TestAReusableTreeCopyWhoseEntryIsReapedIsNeverPutInPlace(t *testing.T) {
+	fx := newTreeFixture(t, `"f.txt"`)
+	reaped := 0
+	prev := treeCopied
+	treeCopied = func(key string) {
+		if reaped == 0 {
+			reaped++
+			if err := (&capture.Store{Dir: paths.CapturesDir()}).ReapEntry(key); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	t.Cleanup(func() { treeCopied = prev })
+	root := filepath.Join(t.TempDir(), "tree-copies")
+	d, out := fx.deliverReusing(t, root)
+	if d.Dir == "" || len(fx.builds) != 2 || !strings.Contains(out, "was reaped while this launch copied it") {
+		t.Fatalf("delivered %+v after %d builds:\n%s", d, len(fx.builds), out)
+	}
+	if _, err := os.Stat(filepath.Join(d.Dir, "f.txt")); err != nil {
+		t.Errorf("the second copy is not whole: %v", err)
+	}
+	slug := filepath.Dir(filepath.Dir(d.Dir))
+	ents, err := os.ReadDir(slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		if p := filepath.Join(slug, e.Name()); p != filepath.Dir(d.Dir) {
+			t.Errorf("%s was left beside the copy", p)
+		}
 	}
 }
 
