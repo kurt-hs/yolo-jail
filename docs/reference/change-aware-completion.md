@@ -85,8 +85,7 @@ names what ran, what was inherited from the baseline, and what `just done` never
    - the individual tests recorded as **reading** a changed path, or listing a directory that
      gained or lost a direct entry ([CAC-D10](#CAC-D10)), and on every change every **scanning**
      test ([CAC-D15](#CAC-D15));
-   - `gofmt -l` on the changed Go files, and the official-binary pin check when Go or pack sources
-     moved;
+   - `gofmt -l` on the changed Go files;
    - for documents: the [Vantage wrapper](../../scripts/vantage-check.sh), at a pinned release, on
      changed Markdown ([CAC-D14](#CAC-D14), [CAC-D16](#CAC-D16)); the guide's closed-tree and
      whole-guide checks when `userguide/` changed; and the changelog extraction tests when

@@ -530,9 +530,8 @@ A future new `cmd/` binary must satisfy [the repository's ship-set rule](../../A
 add it to both [`flake.nix`](../../flake.nix) and
 [`stage-source-bundle.sh`](../../scripts/stage-source-bundle.sh), keep imported source inside
 `goSrc`'s fileset and preserve the host/guest install distinction. A helper is not implicitly
-host-installed by `just install`, whose host ship set is currently only yolo. If changed
-packages alter an official pack program, [the digest re-pin rule](../../AGENTS.md#build--deploy--the-traps)
-applies; a standalone helper does not invent a pack pin for itself. Administrator-approved
+host-installed by `just install`, whose host ship set is currently only yolo. A standalone
+helper does not invent a pack pin for itself. Administrator-approved
 helper publication is a separate distribution contract, not today's guest staging path.
 
 ## 8. The grant inventory

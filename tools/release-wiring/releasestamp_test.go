@@ -8,7 +8,6 @@ import (
 	"testing"
 	"text/template"
 
-	"github.com/mschulkind-oss/yolo-jail/internal/releasematrix"
 	"gopkg.in/yaml.v3"
 )
 
@@ -62,11 +61,11 @@ func TestAReleaseBuildPrintsItsVersionAndCommit(t *testing.T) {
 	}
 	// The release gates take the TAG, which is unchanged: v0.14.0 is still accepted as
 	// version 0.14.0, and a stamped binary string is not a release version.
-	if v, err := releasematrix.NormalizeVersion("v0.14.0"); err != nil || v != "0.14.0" {
-		t.Errorf("NormalizeVersion(v0.14.0) = %q, %v; the tag gate must still accept it", v, err)
+	if v, err := normalizeVersion("v0.14.0"); err != nil || v != "0.14.0" {
+		t.Errorf("normalizeVersion(v0.14.0) = %q, %v; the tag gate must still accept it", v, err)
 	}
-	if _, err := releasematrix.NormalizeVersion("0.14.0+g" + hash); err == nil {
-		t.Error("NormalizeVersion accepted a binary's stamped string as a release version")
+	if _, err := normalizeVersion("0.14.0+g" + hash); err == nil {
+		t.Error("normalizeVersion accepted a binary's stamped string as a release version")
 	}
 	if testing.Short() {
 		return

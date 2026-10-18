@@ -143,25 +143,3 @@ func TestTheTolerantDecoderReadsTheRetiredHostScopeAsPerJail(t *testing.T) {
 		t.Error("the strict (authoring) decoder now accepts scope=\"host\"; it must still refuse it")
 	}
 }
-
-// TestDecodeReleasedReadsOnlyTheRetiredScope pins the release wiring's reader of a released
-// tree: a manifest from before HD-R1 declaring `scope: "host"` decodes, as one per jail, while
-// every other strict refusal stands, so the reader is not the tolerant decoder that would also
-// skip a key this build does not know.
-func TestDecodeReleasedReadsOnlyTheRetiredScope(t *testing.T) {
-	body := []byte(`{"name": "probe", "transport": "none", "host_daemon": {"cmd": ["probe-daemon"], "scope": "host"}}`)
-	if _, err := loopholedecl.Decode(body, probeDir); err == nil {
-		t.Fatal("the strict decoder accepted the retired scope; the test no longer exercises DecodeReleased's one exception")
-	}
-	m, err := loopholedecl.DecodeReleased(body, probeDir)
-	if err != nil {
-		t.Fatalf("DecodeReleased refused a released manifest declaring the retired scope: %v", err)
-	}
-	if m.HostDaemon == nil || m.HostDaemon.Scope != loopholedecl.ScopeJail {
-		t.Fatalf("the retired scope was not read as per-jail: %+v", m.HostDaemon)
-	}
-	unknown := []byte(`{"name": "probe", "transport": "none", "not_a_key": 1}`)
-	if _, err := loopholedecl.DecodeReleased(unknown, probeDir); err == nil {
-		t.Fatal("DecodeReleased accepted an unknown key; it must stay as strict as Decode")
-	}
-}

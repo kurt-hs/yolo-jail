@@ -35,7 +35,9 @@ a digest-pinned download only) and
 [`OQ-BP6`](pack-binaries.md#OQ-BP6) (may a *fetched* pack ship a **host-side**
 binary? Yes, disclosed). The third was settled on 2026-10-05:
 [`OQ-BP7`](pack-binaries.md#OQ-BP7) (between releases, does main pin the last
-release's build of an official binary, or its own? Its own, built and installed with the tree).
+release's build of an official binary, or its own? Its own, built and installed with the tree),
+and superseded on 2026-10-18 by [`OQ-BP8`](pack-binaries.md#OQ-BP8): yolo's build pins no pack
+binary at all, and an official pack declares none.
 This page settles none of them.
 
 ---

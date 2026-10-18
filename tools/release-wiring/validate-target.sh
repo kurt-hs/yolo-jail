@@ -17,8 +17,4 @@ if ! (cd "$TARGET_ROOT" && env -u GITHUB_TOKEN -u GH_TOKEN -u HOMEBREW_TAP_TOKEN
   echo "✗ Target changelog has no usable section for ${RELEASE_VERSION}; preserve the tag and ask the owner to review it." >&2
   exit 1
 fi
-if ! (cd "$TARGET_ROOT" && env -u GITHUB_TOKEN -u GH_TOKEN -u HOMEBREW_TAP_TOKEN -u CACHIX_AUTH_TOKEN go run ./tools/pack-binaries check "$RELEASE_VERSION"); then
-  echo "✗ Target official pack binaries are not pinned for ${RELEASE_VERSION}; preserve the tag and ask the owner to review it." >&2
-  exit 1
-fi
-echo "Target changelog and official pack binary pins verified read-only for v${RELEASE_VERSION} at ${RELEASE_SHA}."
+echo "Target changelog verified read-only for v${RELEASE_VERSION} at ${RELEASE_SHA}."

@@ -13,8 +13,8 @@ Design: docs/reference/change-aware-completion.md. In short:
   values) for the changed packages and every package that imports them, `go test -short` for
   the changed packages alone, the individual tests recorded as READING a changed file
   (scripts/completion-readers.json, written by scripts/completion-census.py), gofmt on the
-  changed Go files, the official-binary pin check when Go or pack sources moved, and the
-  Markdown, guide and changelog checks for the documents that changed. The importer closure's
+  changed Go files, and the Markdown, guide and changelog checks for the documents that
+  changed. The importer closure's
   TESTS are CI's: Go's test cache invalidates for every package a change reaches, so running
   them here cost the closure's whole suite on every core edit. Its lint still covers the
   closure, so a compile-level break in an importer stays local at 14 s; CI is the backstop that
@@ -347,12 +347,10 @@ def plan_selective(root, base, entries, readers):
     pkg_dirs = {p["rel"]: ip for g in graphs.values() for ip, p in g.items()}
 
     changed_pkgs, gofmt, docs, guide, changelog = set(), [], [], False, False
-    owned = False
     reads = reader_tests(readers, entries, listings_touched(root, base, entries))
     for status, path, _, _ in entries:
         o = owner(path, pkg_dirs) if pkg_dirs else None
         if o is not None:
-            owned = True
             changed_pkgs.add(pkg_dirs[o])
             if path.endswith(".go") and status != "D":
                 gofmt.append(path)
@@ -403,9 +401,6 @@ def plan_selective(root, base, entries, readers):
     if gofmt:
         plan.add(f"gofmt -l ({len(gofmt)} file{'s' if len(gofmt) != 1 else ''})",
                  ["gofmt", "-l"] + sorted(gofmt), "changed Go files", kind="gofmt")
-    if owned:
-        plan.add("official pack binary pins", ["go", "run", "./tools/pack-binaries", "check"],
-                 "Go or pack sources changed")
 
     # Tests recorded as reading a changed path, in packages not already tested whole.
     linux = graphs.get("linux")
@@ -436,8 +431,6 @@ def plan_selective(root, base, entries, readers):
         "every other package's vet, staticcheck and short tests",
         "gofmt of unchanged files",
     ]
-    if not owned:
-        plan.inherited.append("the official pack binary pins")
     if not guide:
         plan.inherited.append("the user guide and site checks")
     if not changelog:

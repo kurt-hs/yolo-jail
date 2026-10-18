@@ -136,7 +136,7 @@ jobs:
         with:
           go-version-file: target/go.mod
 
-      - name: Verify target notes and official binary pins without write credentials
+      - name: Verify target notes without write credentials
         env:
           RELEASE_VERSION: ${{ inputs.version }}
           RELEASE_SHA: ${{ needs.eligibility.outputs.sha }}
@@ -252,23 +252,10 @@ jobs:
               if not m or m.group(2) in checks:
                   raise SystemExit("malformed or duplicate checksums.txt entry")
               checks[m.group(2)] = m.group(1)
-          pack_dir = target / "bundle/pack-binaries"
-          extras = set(checks) - archives
-          if set(checks) != archives | extras:
-              raise SystemExit("checksum asset set is malformed")
-          pack_files = {}
-          if pack_dir.exists():
-              if not pack_dir.is_dir() or pack_dir.is_symlink():
-                  raise SystemExit("pack-binaries output is not a real directory")
-              for item in pack_dir.iterdir():
-                  mode = item.lstat().st_mode
-                  if not stat.S_ISREG(mode) or item.is_symlink() or item.name in pack_files:
-                      raise SystemExit(f"unsafe pack-binary output: {item.name}")
-                  pack_files[item.name] = item
-          if set(pack_files) != extras:
-              raise SystemExit(f"pack-binary output/checksum mismatch: missing={sorted(extras-set(pack_files))} extra={sorted(set(pack_files)-extras)}")
+          if set(checks) != archives:
+              raise SystemExit(f"checksum asset set is not the archives: missing={sorted(archives-set(checks))} extra={sorted(set(checks)-archives)}")
           for name, expected in checks.items():
-              source = dist / name if name in archives else pack_files[name]
+              source = dist / name
               digest = hashlib.sha256(source.read_bytes()).hexdigest()
               if digest != expected:
                   raise SystemExit(f"checksum mismatch for {name}")

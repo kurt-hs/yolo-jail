@@ -416,8 +416,8 @@ author hears about it.
 
 A pack's own tree carries its files' exec bits by every route
 ([the exec bit](pack-system.md#the-exec-bit)), but a compiled program needs one build per platform, and
-one committed to an official pack would ride in every `yolo` binary. So a loophole that ships a compiled program declares
-it as a **download** instead, under `binaries`, one build
+one committed to an official pack would ride in every `yolo` binary. So a loophole in a pack yolo
+does not ship that runs a compiled program declares it as a **download** instead, under `binaries`, one build
 per `<goos>/<goarch>` with an https `url` and a **mandatory** `sha256`
 ([`pack-binaries.md`](pack-binaries.md#the-manifest-key-and-its-two-tokens), [BP-D1](pack-binaries.md#BP-D1) to [BP-D6](pack-binaries.md#BP-D6)). The manifest pins
 the bytes and the pack's commit pins the manifest, so a pinned pack pins everything that runs.
@@ -434,13 +434,12 @@ Each is refused in the other half, naming the fix, and in every other field, whe
 substitutes it. A token must name a declared binary, and a declared binary must be named by a
 token, since one nothing runs would be downloaded for nothing.
 
-**Only `yolo pack install` fetches**, for every selected pack, embedded ones included, and
+**Only `yolo pack install` fetches**, for every selected pack, and
 whatever the loophole's switch says, but nothing for a loophole whose `platforms` leaves this
 machine out. It verifies each build against its digest and admits it
 by rename into `~/.local/share/yolo-jail/pack-binaries/<sha256>/<name>`, mode `0555`, a
-directory no jail mounts: a host daemon's build runs from there with the user's authority. The
-one other way in is no fetch: a from-source `just install` builds the official programs from its
-tree and admits each the same way (below). A
+directory no jail mounts: a host daemon's build runs from there with the user's authority.
+Nothing else fills it. A
 **launch never fetches**, so an offline launch of a pack whose builds are cached is an ordinary
 one. What each missing piece produces:
 
@@ -462,28 +461,13 @@ daemon whose argv names a jail binary: that path exists only in a container, and
 Linux one (placing a darwin build there is deferred, [BP-D6](pack-binaries.md#BP-D6)).
 A host binary runs there as it does anywhere.
 
-**No pack yolo ships declares `binaries` yet.** When one does, yolo's own release builds the
-program from `cmd/<name>` for each platform the release ships `yolo` to that the loophole runs
-on (a jail build is always `linux/<arch>`), and publishes each build as a bare file on the tag's
-GitHub release, named `<name>_<version>_<goos>_<goarch>`
-([`pack-binaries.md`](pack-binaries.md#the-release-matrix)). The
-url and `sha256` are committed before the tag by `just pin-pack-binaries <version>`, which runs
-the pin tool (`tools/pack-binaries`) and builds reproducibly with one pinned Go. `just release`,
-the release before it uploads, and PyPI's gate each rebuild and refuse a digest the tree does
-not produce. `TestEveryOfficialBinaryIsOnTheReleaseMatrix` (`internal/loopholedecl`) holds every
-embedded manifest to that matrix in the short suite, so a build no release produces is refused
-before it can ship.
-
-**Between two releases, main pins its own build** of each official program
-([`OQ-BP7`](pack-binaries.md#OQ-BP7), ruled 2026-10-05), while each url still names
-the last release. `just check-ci` rebuilds every build and refuses a digest the tree no longer
-produces, naming `just pin-pack-binaries`, which with no version re-pins the digests and keeps
-the urls. A from-source `just install` builds this machine's builds from the tree and seeds them
-into the cache, re-pinning a program the tree has changed, so its jail runs the tree's program
-with no download. Any other build of such a tree meets, at `yolo pack install`, the release's
-file failing its digest for a changed program, or no file at all for one added since the last
-release. Either failure then names `just install` in the checkout when the `yolo` came from one
-([BP-D21](pack-binaries.md#BP-D21) to [BP-D29](pack-binaries.md#BP-D29)).
+**No pack yolo ships declares `binaries`, and none may**
+([`OQ-BP8`](pack-binaries.md#OQ-BP8), ruled 2026-10-18). Every official loophole program is a
+subcommand, `yolo internal daemon <name>` on the host or `yolo-jaild <name>` in the jail, so it
+ships with the binary it is part of, and yolo's build neither builds nor pins a pack program.
+`TestNoOfficialPackDeclaresABinary` (`internal/loopholedecl`) refuses an official `binaries`
+entry in the short suite, naming that route
+([official packs declare no binary](pack-binaries.md#official-packs-declare-no-binary)).
 
 > [!WARNING]
 > **A yolo older than the key reads a manifest with `binaries` tolerantly**: it skips the key
@@ -1166,7 +1150,7 @@ and after the design docs were deleted this table is where they resolve.
 | <a id="oq-lp12"></a>[`OQ-LP12`](#oq-lp12) | No request/grant machinery for per-workspace loopholes | The two verbs answer it: install once at user scope, and each workspace enables from the vetted set. The residual — a workspace can enable **any** installed loophole, not only the one that repo was installed for — is bounded by install-time vetting and visible in the per-launch disclosure. |
 | <a id="oq-lp13"></a>[`OQ-LP13`](#oq-lp13) | **Not hashing, and no new confirmation** — a placement rule, and it must not judge yolo's own shipped content | *If you can edit user-level files, you have all the perms already.* A dialog guarding an act that already required the authority it protects is theatre. And the rule exists because installed content in an agent-writable tree can be swapped by an actor with **none** of the authority that installed it — so applying it to the very artifact that performs the check protects nothing it does not already presuppose. |
 | <a id="oq-lp14"></a>[`OQ-LP14`](#oq-lp14) | The bind-host path rule is **withdrawn, not extended** | Its two cases were inverted: it admitted `~/.ssh` and refused a session runtime-dir socket. A gate with its cases inverted is not a weak gate, it is not a gate — and adding vocabulary to it keeps the inversion. See the warning under [The pack-shipped subset](#the-pack-shipped-subset). |
-| <a id="oq-bp1"></a>[`OQ-BP1`](#oq-bp1) | The broker move and the pack-shipped binary capability ship in **one sprint, as separable commits**; an official pack may keep a baked daemon | The broker's manifest is correct on a baked daemon, so the binary work could slip without reverting it. Do not read it as "binaries are done": the mechanism and its release matrix followed, in [`pack-binaries.md`](pack-binaries.md). |
+| <a id="oq-bp1"></a>[`OQ-BP1`](#oq-bp1) | The broker move and the pack-shipped binary capability ship in **one sprint, as separable commits**; an official pack may keep a baked daemon | The broker's manifest is correct on a baked daemon, so the binary work could slip without reverting it. Do not read it as "binaries are done": the mechanism followed, in [`pack-binaries.md`](pack-binaries.md), and [`OQ-BP8`](pack-binaries.md#OQ-BP8) later ruled that no official pack declares a binary. |
 | <a id="oq-bp2"></a>[`OQ-BP2`](#oq-bp2) | Every connection is **raw**; yolo prepends its own connection preamble (`preamble: false` for a dumb pipe) and never parses a daemon's payload | A payload stamp needed decode, byte-identical re-encode and verbatim fallbacks for one protocol; the preamble is "write N bytes, then splice" for any protocol. Turning it off costs the daemon its identity, never yolo its audit trail. |
 | <a id="oq-bp3"></a>[`OQ-BP3`](#oq-bp3) | Superseded by [`OQ-BP4`](#oq-bp4): the bind-host path rule ([`OQ-LP14`](#oq-lp14)) was a dependency of emptying the channel, through `audio`, not of the broker | Superseded, not wrong: a future goal smaller than emptying a channel gets the original answer, proceed beside it, and should not inherit the coupling. |
 | <a id="oq-bp4"></a>[`OQ-BP4`](#oq-bp4) | **No inhabitants**: the bundled channel is retired, not shrunk | Deleting the last entry deleted the directory, its embed and every reader; see [What emptying the bundled channel left behind](#what-emptying-the-bundled-channel-left-behind). |

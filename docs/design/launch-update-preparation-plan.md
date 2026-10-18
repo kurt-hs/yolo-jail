@@ -50,7 +50,7 @@ Ordinary CLI/MCP producer details are in [Ordinary CLI and MCP capture](#ordinar
 - In a test of host exec, install the exec-capture fixture before calling the real front door.
   Otherwise syscall exec can replace the test process and falsely finish the suite with zero.
 - Add new files to the reviewed index before Nix verification; its fileset does not see untracked
-  source. Regenerate the completion-reader census and official binary digests after source changes.
+  source. Regenerate the completion-reader census after source changes.
 
 ## Ordinary CLI and MCP capture
 

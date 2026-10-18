@@ -850,11 +850,6 @@ topic now. They are listed by area, in no priority order; nothing here is ranked
   deleting the member is the wrong way to retire the key. From `broker-as-a-pack.md`, deleted
   2026-10-16. Owner:
   [what emptying the bundled channel left behind](../reference/loophole-system.md#what-emptying-the-bundled-channel-left-behind).
-- **Order PyPI after the GitHub release.** `publish.yml` runs beside `release.yml`, so for a few
-  minutes a pip-installed `yolo` can name an official pack binary not yet uploaded. Waiting on the
-  release through `workflow_run`, as `tap-install.yml` does, would close the window. From
-  `broker-as-a-pack.md`, deleted 2026-10-16. Owner:
-  [the pin tool and the three gates](../reference/pack-binaries.md#the-pin-tool-and-the-three-gates).
 
 ### pi extensions
 
@@ -927,8 +922,8 @@ topic now. They are listed by area, in no priority order; nothing here is ranked
   2026-10-16. Owner:
   [how the container path works](../reference/image-staging-vs-baking.md#the-macos-linux-builder-for-a-linux-reader).
 - **A darwin jail build for the macos-user guest.** The guest declines a jail daemon naming a
-  `{jail_binary:}` path, because the release matrix makes only Linux jail builds. Placing a darwin
-  build there would let an official pack's jail program run on macos-user. From
+  `{jail_binary:}` path, because a manifest's jail build is a Linux one. Placing a darwin
+  build there would let a pack's downloaded jail program run on macos-user. From
   `broker-as-a-pack.md` (BP-D6), deleted 2026-10-16. Owner:
   [the cache, and who fills it](../reference/pack-binaries.md#the-cache-and-who-fills-it).
 - **Reclaim retained guest pack trees.** Each macos-user launch keeps its own sealed pack copy, and

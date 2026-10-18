@@ -921,15 +921,14 @@ if command -v just >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
         git init -q -b main .
         cp "$root/Justfile" Justfile
         cp "$script" scripts/changelog-section.sh
-        # The recipe also runs the pack binaries' pin check, `go run ./tools/pack-binaries
-        # check <version>`, which needs this module and a Go toolchain; the scratch repo has
-        # neither. A stub `go` stands in, answering with $PIN_CHECK_EXIT and recording each
-        # call, so the cases below reach the gates they are about, and case 3 pins the check's
-        # own refusal. The tool is tested in tools/pack-binaries.
+        # The recipe runs no Go: the pack binaries' pin check it used to run is retired
+        # (docs/reference/pack-binaries.md OQ-BP8). A recording stub `go` stands in, so a
+        # recipe that ran one again is caught below rather than reaching a real toolchain.
         mkdir -p "$rr/bin"
-        printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s/go-calls"\nexit "${PIN_CHECK_EXIT:-0}"\n' \
+        printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s/go-calls"\nexit 0\n' \
             "$rr" >"$rr/bin/go"
         chmod +x "$rr/bin/go"
+        : >"$rr/go-calls"
         printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s/gh-calls"\nexit "${GH_DISPATCH_EXIT:-0}"\n' \
             "$rr" >"$rr/bin/gh"
         chmod +x "$rr/bin/gh"
@@ -990,28 +989,12 @@ EOF
         git tag -d v0.11.1 >/dev/null 2>&1 || true
         git push -q origin --delete v0.11.1 >/dev/null 2>&1 || true
 
-        # 3. On origin's main, with pack binaries whose pins the tree does not rebuild: the
-        # pin check refuses, says nothing was tagged, and no tag reaches origin.
         git push -q origin main
-        : >"$rr/go-calls"
-        if PIN_CHECK_EXIT=1 just release 0.11.1 >"$rr/out" 2>&1; then
-            echo "UNGATED-pins"
-        elif git ls-remote --tags origin | grep -q 'v0.11.1' || git tag -l | grep -q 'v0.11.1'; then
-            echo "TAGGED-pins"
-        elif ! grep -qx 'run ./tools/pack-binaries check 0.11.1' "$rr/go-calls"; then
-            echo "UNASKED-pins"
-        elif ! grep -q 'No release request was sent' "$rr/out"; then
-            echo "UNSAID-pins"
-        else
-            echo "ok-pins"
-        fi
-        git tag -d v0.11.1 >/dev/null 2>&1 || true
-        git push -q origin --delete v0.11.1 >/dev/null 2>&1 || true
 
         # Every refusal above must occur before the dispatch stub is invoked.
         if [ ! -s "$rr/gh-calls" ]; then echo "ok-nodispatch"; else echo "DISPATCHED-refusal"; fi
 
-        # 4. On origin's main: submit exact HEAD to the main-sourced workflow,
+        # 3. On origin's main: submit exact HEAD to the main-sourced workflow,
         # but create neither a local tag nor a remote tag.
         requested_sha=$(git rev-parse HEAD)
         if just release 0.11.1 >"$rr/out" 2>&1 \
@@ -1023,7 +1006,7 @@ EOF
             echo "REFUSED-origin"
         fi
 
-        # 5. A dispatch failure cannot reserve the version either. Its refusal
+        # 4. A dispatch failure cannot reserve the version either. Its refusal
         # must name the failed boundary rather than claiming publication.
         : >"$rr/gh-calls"
         if GH_DISPATCH_EXIT=1 just release 0.11.1 >"$rr/out" 2>&1; then
@@ -1035,8 +1018,11 @@ EOF
         else
             echo "ok-dispatchfailure"
         fi
+
+        # No run of the recipe above asked Go for anything.
+        if [ ! -s "$rr/go-calls" ]; then echo "ok-nogo"; else echo "RAN-nogo"; fi
     ) >"$tmp/release-results" 2>"$tmp/release-err"
-    for _case in nosection other stale pins nodispatch origin dispatchfailure; do
+    for _case in nosection other stale nodispatch origin dispatchfailure nogo; do
         if grep -qx "ok-$_case" "$tmp/release-results"; then
             pass=$((pass + 1))
         else

@@ -15,27 +15,36 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-
-	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
-	"github.com/mschulkind-oss/yolo-jail/internal/releasematrix"
 )
 
 var releaseAssetHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
-var releaseGitObject = regexp.MustCompile(`^[0-9a-f]{40}$`)
 var releaseCommitSHA = regexp.MustCompile(`^[0-9a-f]{40}$`)
+var releaseVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`)
 
 var releaseArchivePlatforms = []string{
 	"darwin/amd64", "darwin/arm64", "linux/amd64", "linux/arm64",
 }
 
-// expectedReleaseAssets derives the only files GoReleaser may upload from the
-// pinned archive matrix and the exact target tree's declarative pack manifests.
-// It reads Git blobs as data; no target source is executed in a write-capable job.
+// normalizeVersion strips a tag's leading "v" and refuses anything but X.Y.Z[-pre], so a
+// binary's stamped `X.Y.Z+g<hash>` is never taken for a release version.
+func normalizeVersion(version string) (string, error) {
+	v := strings.TrimPrefix(version, "v")
+	if !releaseVersion.MatchString(v) {
+		return "", fmt.Errorf("%q is not a release version (want X.Y.Z or X.Y.Z-pre)", version)
+	}
+	return v, nil
+}
+
+// expectedReleaseAssets derives the only files GoReleaser may upload: one archive per
+// platform of the pinned archive matrix. A release publishes nothing else — an official
+// pack program ships as a yolo subcommand, never as a release file
+// (docs/reference/pack-binaries.md OQ-BP8). It reads the target's GoReleaser config as a Git
+// blob; no target source is executed in a write-capable job.
 func expectedReleaseAssets(root, targetSHA, version, trustedConfig string) ([]string, error) {
 	if !releaseCommitSHA.MatchString(targetSHA) {
 		return nil, fmt.Errorf("target SHA must be a full lowercase commit SHA")
 	}
-	normalized, err := releasematrix.NormalizeVersion(version)
+	normalized, err := normalizeVersion(version)
 	if err != nil {
 		return nil, err
 	}
@@ -51,97 +60,17 @@ func expectedReleaseAssets(root, targetSHA, version, trustedConfig string) ([]st
 		return nil, errors.New("target .goreleaser.yaml differs from the trusted release config; no target-selected publisher config is accepted")
 	}
 
-	allowed := make(map[string]struct{}, len(releaseArchivePlatforms)+8)
+	assets := make([]string, 0, len(releaseArchivePlatforms))
 	for _, platform := range releaseArchivePlatforms {
 		osArch := strings.Split(platform, "/")
-		name := fmt.Sprintf("yolo-jail_%s_%s_%s.tar.gz", normalized, osArch[0], osArch[1])
-		allowed[name] = struct{}{}
-	}
-	manifests, err := gitTreeManifests(root, targetSHA)
-	if err != nil {
-		return nil, err
-	}
-	for _, entry := range manifests {
-		data, err := gitBlob(root, entry.sha, "")
-		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", entry.name, err)
-		}
-		moduleDir := strings.TrimSuffix(entry.name, "/manifest.jsonc")
-		// DecodeReleased, because the target is a released commit: every release before HD-R1
-		// declares `host_daemon.scope: "host"`, which the strict decoder now refuses
-		// (docs/design/host-daemon-ownership.md HD-D17). It reads exactly that retired value as
-		// per-jail and is otherwise as strict as Decode; only `binaries` is read here.
-		manifest, err := loopholedecl.DecodeReleased(data, moduleDir)
-		if err != nil {
-			return nil, fmt.Errorf("decode target loophole manifest %s: %w", entry.name, err)
-		}
-		for _, binary := range manifest.Binaries {
-			for _, build := range binary.Builds {
-				if !contains(releaseArchivePlatforms, build.Platform) {
-					return nil, fmt.Errorf("%s binary %s declares unsupported release platform %q", entry.name, binary.Name, build.Platform)
-				}
-				if build.URL != releasematrix.AssetURL(binary.Name, normalized, build.Platform) {
-					return nil, fmt.Errorf("%s binary %s has a URL other than the exact release asset for %s", entry.name, binary.Name, build.Platform)
-				}
-				name := releasematrix.AssetName(binary.Name, normalized, build.Platform)
-				if _, duplicate := allowed[name]; duplicate {
-					return nil, fmt.Errorf("duplicate release asset name %q", name)
-				}
-				allowed[name] = struct{}{}
-			}
-		}
-	}
-	assets := make([]string, 0, len(allowed))
-	for name := range allowed {
-		assets = append(assets, name)
+		assets = append(assets, fmt.Sprintf("yolo-jail_%s_%s_%s.tar.gz", normalized, osArch[0], osArch[1]))
 	}
 	sort.Strings(assets)
 	return assets, nil
 }
 
-type manifestBlob struct {
-	name string
-	sha  string
-}
-
-func gitTreeManifests(root, sha string) ([]manifestBlob, error) {
-	cmd := exec.Command("git", "ls-tree", "-rz", sha, "--", "packs")
-	cmd.Dir = root
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("list target pack manifests: %w", err)
-	}
-	var manifests []manifestBlob
-	for _, record := range strings.Split(string(output), "\x00") {
-		if record == "" {
-			continue
-		}
-		parts := strings.SplitN(record, "\t", 2)
-		if len(parts) != 2 {
-			return nil, errors.New("malformed target Git tree entry")
-		}
-		meta := strings.Fields(parts[0])
-		if len(meta) != 3 {
-			return nil, errors.New("malformed target Git tree metadata")
-		}
-		name := parts[1]
-		if !strings.HasPrefix(name, "packs/") || !strings.HasSuffix(name, "/manifest.jsonc") {
-			continue
-		}
-		if meta[0] != "100644" || meta[1] != "blob" || !releaseGitObject.MatchString(meta[2]) {
-			return nil, fmt.Errorf("target manifest %q is not a regular Git blob", name)
-		}
-		manifests = append(manifests, manifestBlob{name: name, sha: meta[2]})
-	}
-	return manifests, nil
-}
-
 func gitBlob(root, commit, name string) ([]byte, error) {
-	args := []string{"cat-file", "blob", commit}
-	if name != "" {
-		args = []string{"show", commit + ":" + name}
-	}
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", "show", commit+":"+name)
 	cmd.Dir = root
 	return cmd.Output()
 }

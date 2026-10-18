@@ -231,14 +231,11 @@ live, so edits are visible on the host instantly — there is no sync step.
   `go mod vendor` committed, or the image build breaks while `go test` passes.
 - Image reload sentinel is `BUILD_DIR/last-load-<runtime>` (not `.last-load`). `nix build --impure` exists
   so `builtins.getEnv` can read `YOLO_EXTRA_PACKAGES` from the config's `packages` list.
-- **Main pins its OWN build of every official pack program** (a loophole manifest's `binaries`;
-  [BP-D15](docs/reference/pack-binaries.md#BP-D15)). A change that moves one's bytes — its source, a
-  package it imports, `vendor/`, the pin tool's `Toolchain` — needs its re-pin committed: `just check-ci`
-  refuses the stale digest, naming `just pin-pack-binaries` (no version: digests only, urls kept). A host
-  `just install` re-pins only the builds THIS machine made and seeds them into the pack-binary cache, so a
-  from-source jail runs the tree's program with no download; the other platforms still need the pin before
-  landing ([BP-D30](docs/reference/pack-binaries.md#BP-D30)). `yolo update` never re-pins: it deploys the
-  pulled tree as is ([BP-D31](docs/reference/pack-binaries.md#BP-D31)). No hatch: the fix is the pin.
+- **An official pack declares no `binaries`**: every official loophole program is a
+  `yolo internal daemon <name>` or `yolo-jaild <name>` subcommand, and the build pins and publishes no
+  pack binary ([OQ-BP8](docs/reference/pack-binaries.md#OQ-BP8), ruled 2026-10-18).
+  `TestNoOfficialPackDeclaresABinary` refuses one; a third-party pack's download URL with its sha256 is
+  unaffected.
 
 ## Testing
 
@@ -566,10 +563,8 @@ the leading dot stripped) and on macos-user (the account home's links point ther
 
 **[`CHANGELOG.md`](CHANGELOG.md)'s section for a version IS its GitHub release body, word for word**,
 and `just release <version>` is the one path to a tag: rename `[Unreleased]` to
-`[<version>] - <YYYY-MM-DD>`, run `just pin-pack-binaries <version>`, and commit both first, and the
-recipe refuses a bad version, a dirty tree, an existing tag (a request may only [resume a tag-only release](docs/reference/release-process.md#resuming-a-tag-only-release)), a HEAD origin cannot see, an official pack
-binary whose pinned digest the tree does not rebuild (`tools/pack-binaries` checks that, and
-`release.yml` and `publish.yml` run it too: [BP-D9](docs/reference/pack-binaries.md#BP-D9)), or a section
+`[<version>] - <YYYY-MM-DD>` and commit it first, and the
+recipe refuses a bad version, a dirty tree, an existing tag (a request may only [resume a tag-only release](docs/reference/release-process.md#resuming-a-tag-only-release)), a HEAD origin cannot see, or a section
 [`scripts/changelog-section.sh`](scripts/changelog-section.sh) rejects. That script is the gate
 everywhere — `just release`, `release.yml` and `publish.yml` all run it, and `just check-ci` runs its
 tests — and it refuses a missing, empty or placeholder section, filler ("various improvements",
