@@ -321,7 +321,7 @@ func (o *Options) measureAndPurgeCache(consent reclaimConsent, guard prune.Guard
 	// launch's prompt is — it was given against a measurement the debounce is
 	// about to hide (reclaimConsent).
 	consented := consent.has(cachePurgeClass)
-	due, done := o.classDebounce("cache")
+	due, done := o.classDebounce(CacheHousekeepingClass)
 	if !due && !consent.freshFor(cachePurgeClass) {
 		return
 	}
@@ -541,6 +541,10 @@ func HousekeepingStampPath(class string) string {
 // LoopholeStateHousekeepingClass is the macos-user slot's retired loophole-state class
 // (reapRetiredLoopholeState), by its debounce name.
 const LoopholeStateHousekeepingClass = "loophole-state"
+
+// CacheHousekeepingClass is the shared cache's offered-tier measurement and purge
+// (measureAndPurgeCache), by its debounce name.
+const CacheHousekeepingClass = "cache"
 
 // classDebounce is §5.3's "at most once per 24 h PER STORE CLASS", generalised
 // from the image reap's single `last-image-reap` stamp exactly as the design
