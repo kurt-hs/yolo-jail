@@ -43,7 +43,8 @@ when it does not merge. See [Patch series](userguide/guides/patch-series.md#keep
 
 **pi model facts merge instead of replace.** A model row keeps the catalog facts it does not
 state, thinking levels included, on Bedrock even in an unpatched pi; `null` removes one, and
-`model_facts` with `extends` shares facts. See `yolo config-ref`.
+`model_facts` with `extends` shares facts, written once for a pi or pi fork declaring
+`reads_shared_models`. See `yolo config-ref`.
 
 **One model at two context windows.** A model entry's `wire_id` names the id it sends, so one
 provider can list a model and a narrowed twin. See [`wire_id`](docs/reference/providers.md#wire-id).
