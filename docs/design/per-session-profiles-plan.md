@@ -1,8 +1,8 @@
 ---
 title: "Per-session profiles: implementation plan"
 status: accepted
-stage: DECIDED
-next: "Build tasks 1-3 in parallel lanes; then task 4 (capture) after 2, task 5 (host) after 2, task 6 (integration + docs) last"
+stage: BUILT
+next: "Tasks 1-6 landed on the lane branch; graduate into a system doc once OQ-SP5 is ruled and step 4 is built or dropped"
 depends-on: [docs/design/per-session-profiles.md]
 tags: [plan, profiles, attach, sessions, pi]
 ---
