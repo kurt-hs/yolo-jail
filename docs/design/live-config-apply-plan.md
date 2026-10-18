@@ -96,6 +96,41 @@ unchanged tombstone; the final closure review above accepted that narrowed fix. 
 certify rootless mount capability, a real broker request after widening, or resistance to a jail's
 `CAP_SYS_ADMIN` remount.
 
+**Independent review provenance:** The initial reviewer assessed candidate
+`286d051efdc5bea3fd13d451aecf0295d0d9c653` against base
+`1a9ded40bd6b22a6e7f78bd3f5b4a022a4429b8c`; it returned **BLOCK** on four P1s. Its recorded
+independent test command, `go test -short ./internal/brokerscope ./internal/ctxinject
+./internal/ghbroker ./internal/cli/run ./internal/config ./internal/cli`, passed. The recorded
+`go test -short ./integration -run '^TestLiveCtxMountInjectAndRemove$' -count=1` only compiled and
+skipped the short-gated runtime test; it is not runtime mount evidence.
+
+The repair reviewer assessed candidate `026ab4de96d6d84f259aecbcfc19d8e89f887230` and returned
+**BLOCK**. It reported passing short tests for `internal/brokerscope` and `internal/ctxinject`,
+a focused `internal/cli/run` selection matching
+`TestConfigApply|TestApplyPlan|TestChangedBootScope|TestInjectCtxMount|TestLiveApplyClosure|TestInvalidatedCtxMountRecord`,
+and `internal/cli -run TestCtxAttachVerb`. The repair report does not retain full command lines or
+flags for those focused runs. Its reviewed coverage included broker lock deadlines, pending
+missing/erroring-scope discovery, pre-pinned process identity, and fail-closed record-write/removal
+behavior; it did not show successful mount-record recovery. A broader `internal/cli/run` invocation hit its
+120-second command deadline and is **not** a pass. That review found the successful-mount record
+lifecycle still broken: fail-closed record-write handling did not restore the token after a
+successful mutation. Thus it did not establish that ordinary add/remove/replacement worked.
+
+The final reviewer assessed the exact range
+`026ab4de96d6d84f259aecbcfc19d8e89f887230..e80f3a2ae3acc3724b83aaa66b207edd9cbd18f4`, verified
+ancestry and a clean candidate, and returned **OK only for the narrowed mount-record closure**—not a
+renewed broad review. Its report records a focused four-package run with
+`-short -count=1 -timeout=90s`, verbose targeted executions of the lifecycle, token, failure-pending
+and skill regressions, the retained deadline/scope/identity regressions, and
+`git diff --check 026ab4de HEAD`; these passed. The report does not retain the four package names or
+the full verbose-command strings, so neither is inferred here. The separately recorded combined
+landing gate is not attributed to this review. A later rootful probe, also outside these reviews,
+remounted both launch-time and injected read-only binds writable with effective `CAP_SYS_ADMIN`;
+that is a parity result, not remount resistance. No review here accepted rootless behavior,
+real-broker widening, or remount resistance; rootless runs on both architectures remain outstanding.
+The review dispositions are also summarized
+in [`october-18-integration.md`](../plans/october-18-integration.md).
+
 **Design:** [`live-config-apply.md`](live-config-apply.md), every question ruled
 ([Decision Ledger](live-config-apply.md#decision-ledger)).
 
