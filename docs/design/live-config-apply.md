@@ -115,9 +115,11 @@ $ yolo config apply --record-only   # approve; touch no running jail
   `config` the word is unambiguous; `yolo apply` and `yolo host apply` stay as they are.
 - The workspace is the current directory's, found the way `yolo` finds it. There is no
   `--workspace` flag, as there is none on a launch.
-- **In a jail it refuses**, naming the host command
+- **In a jail it refuses for the jail's own workspace**, naming the host command
   ([OQ-S2](../reference/config-safety.md#oq-s2) holds: recording an approval must not be
-  reachable from the side being approved).
+  reachable from the side being approved). A workspace a launch inside the jail would open is a
+  nested jail's, whose own launch already runs its gate there, so its apply is no wider
+  ([LA-D17](#LA-D17)).
 - **The in-jail agent cannot request an apply** ([OQ-LA6](#decision-ledger)). It edits the config
   and asks the human, in its own words, to run the command; there is no new channel. The
   maintainer: *"it can certainly ask the user to do whatever it wants. We're not creating a new
@@ -568,3 +570,4 @@ The `OQ-LA` rows are the maintainer's rulings of 2026-10-18, quoted in the secti
 | <a id="LA-D14"></a>LA-D14 | An N at an attach records and applies nothing and still starts the session; a failed live step never fails an attach | 2026-10-18 | [§3.3](#33-the-attach-time-gate) | — |
 | <a id="LA-D15"></a>LA-D15 | What config mounts a jail has comes from a host-side record (`paths.AgentsDir()/<cname>/ctx-mounts/`), tied to the jail by a token frozen in its env; read-write mounts are user scope and absent from `.yolo/config-boot.json` | 2026-10-18 | [§5.5](#55-old-jails) | — |
 | <a id="LA-D16"></a>LA-D16 | A rootful podman reached by a yolo that is not root reports mounts *at next restart*; the injector never asks for `sudo` | 2026-10-18 | [§5.3](#53-verdict-per-backend) | — |
+| <a id="LA-D17"></a>LA-D17 | In a jail, the command refuses only the jail's own workspace; a nested workspace's apply runs, as its launch's gate does | 2026-10-18 | [§3.1](#31-surface) | — |
