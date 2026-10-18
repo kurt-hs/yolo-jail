@@ -468,6 +468,11 @@ stub. So prune does not over-report freed bytes — it goes **blind**.
   (`TestMacosUserCacheRelocationOnAVolumeMeasurement`,
   `TestMacosUserSeatbeltRelocationOnAVolumeMeasurement`). They record what
   [CR-D2](#CR-D2), [CR-D7](#CR-D7) and [OQ-CX8](../reference/context-mounts.md#oq-cx8) wait on.
+  **Both ran 2026-10-18 on a developer Mac** with an ownership-*off* APFS image and an exFAT
+  image attached; both passed, delivery held on both, and the Seatbelt grant proved to be
+  per-target rather than per-volume
+  ([the record](../design/macos-user-suite-on-a-developer-mac.md#7-measurements-this-run-produced)).
+  The ownership-*on* case is still owed: `diskutil enableOwnership` needs root `sudo`.
   **For a human with a Mac**, which no runner can do: a real USB drive and a network share as the
   target (each may raise a privacy prompt for removable or network volumes when the sandbox
   account touches it through `sudo -u`), and a real huggingface download onto that drive.
