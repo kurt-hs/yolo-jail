@@ -99,7 +99,10 @@ func canNest(rt string) bool { return rt == "podman" }
 // filtered would invite the reader to hunt for a key they never set. And it keeps the
 // promise the golden argv makes: a jail launched from a config with nothing to inherit emits
 // byte-identical argv to the one it emitted before this feature existed.
-func inheritScopeFiles(effective *jsonx.OrderedMap, rt, launchedAt string) (files []inheritScopeFile, unknown []string, err error) {
+//
+// src is effective's provenance, which each file records in its header so a refusal in the jail
+// names the host file that set a key (config.RenderFilteredWithOrigins); nil records nothing.
+func inheritScopeFiles(effective *jsonx.OrderedMap, src *config.Sources, rt, launchedAt string) (files []inheritScopeFile, unknown []string, err error) {
 	seen := map[string]bool{}
 	addUnknown := func(keys []string) {
 		for _, k := range keys {
@@ -118,7 +121,7 @@ func inheritScopeFiles(effective *jsonx.OrderedMap, rt, launchedAt string) (file
 		if filtered.Len() == 0 {
 			return nil
 		}
-		body, rerr := config.RenderFiltered(filtered, scope, launchedAt)
+		body, rerr := config.RenderFilteredWithOrigins(filtered, src, scope, launchedAt)
 		if rerr != nil {
 			return rerr
 		}
@@ -151,7 +154,8 @@ func (o *Options) inheritedScope(rt string, stamped bool) []inheritScopeFile {
 	if stamped {
 		stamp = o.inheritStamp()
 	}
-	files, unknown, err := inheritScopeFiles(o.effectiveConfigForInherit(), rt, stamp)
+	effective, src := o.effectiveConfigForInherit()
+	files, unknown, err := inheritScopeFiles(effective, src, rt, stamp)
 	if err != nil {
 		// LOUD, and the reason matters: a jail whose user scope silently failed to render
 		// looks like a jail whose user config is empty — `yolo pack ls` shows nothing, a
@@ -321,12 +325,15 @@ func inheritHeaderFirstLine() string {
 // which applies to every workspace a launch inside the jail opens. Inherited, a brokered
 // loophole switched on here would also reach the inner user scope, which refuses it
 // (docs/design/boundary-broker.md BB-D56).
-func (o *Options) effectiveConfigForInherit() *jsonx.OrderedMap {
-	cfg, err := config.LoadConfigWithoutWorkspaceFile(o.Workspace, false, func(string) {})
+//
+// The provenance comes with it (config.LoadConfigWithoutWorkspaceFileWithSources), so each file
+// records which host file set each key and a refusal in the jail names that file.
+func (o *Options) effectiveConfigForInherit() (*jsonx.OrderedMap, *config.Sources) {
+	cfg, src, err := config.LoadConfigWithoutWorkspaceFileWithSources(o.Workspace, false, func(string) {})
 	if err != nil {
-		return nil
+		return nil, nil
 	}
-	return cfg
+	return cfg, src
 }
 
 // inheritStamp is the human-readable launch time for the generated files' headers. It uses

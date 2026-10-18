@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/reporoot"
+	"github.com/mschulkind-oss/yolo-jail/internal/version"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -98,6 +99,29 @@ func TestCheckNoRuntimeGolden(t *testing.T) {
 	// so exit must be 1.
 	if exit != 1 {
 		t.Errorf("exit = %d, want 1", exit)
+	}
+}
+
+// TestCheckVersionLineCarriesTheBuildIdentity pins the Version line a real check prints (no
+// injected Version): the build stamp and commit beside the version, and the binary's own
+// version beside a YOLO_VERSION override (version.CheckLine), while the JSON report's
+// "version" stays the version alone.
+func TestCheckVersionLineCarriesTheBuildIdentity(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, override := range []string{"", "9.9.9"} {
+		t.Setenv("YOLO_VERSION", override)
+		var out bytes.Buffer
+		opts := baseOptions(t, &out)
+		opts.Version = ""
+		Check(opts)
+		want := "Version: " + version.CheckLine("")
+		if !strings.Contains(stripANSI(out.String()), "\n"+want+"\n") {
+			t.Errorf("YOLO_VERSION=%q: no %q line:\n%s", override, want, out.String())
+		}
+		if !strings.Contains(want, "build stamp ") || !strings.Contains(want, ", commit ") ||
+			(override != "" && !strings.Contains(want, "YOLO_VERSION override; binary ")) {
+			t.Errorf("YOLO_VERSION=%q: the Version line lacks the build identity: %q", override, want)
+		}
 	}
 }
 

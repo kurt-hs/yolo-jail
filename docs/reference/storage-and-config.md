@@ -146,6 +146,9 @@ questions.
 - **`config-assembled.json`** — the merged config the host assembled for *this* launch,
   read verbatim in-jail. Every launch rewrites it. It is how an in-jail `yolo` sees the
   same effective config the launcher used without re-reading a user file it cannot reach.
+  Beside it, `config-assembled-origins.json` records which host file set each key, so a
+  refusal in the jail names that file and says an edit takes effect at relaunch. The
+  generated user-scope files carry the same record as one `// yolo-origins:` comment line.
 - **`config-boot.json`** — the frozen *workspace* config the running jail was built from.
   It is the baseline `yolo config drift` compares against, which is why it is the
   workspace half rather than the merged whole: folding in the user scope would make "the

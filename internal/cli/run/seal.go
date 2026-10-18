@@ -238,6 +238,15 @@ func (o *Options) assembledConfigFor(cfg *jsonx.OrderedMap) *jsonx.OrderedMap {
 	return cfg
 }
 
+// assembledSourcesFor is the provenance recorded beside that copy (config.WriteAssembledOrigins):
+// the loaded config's, or under the seal none, since the copy holds nothing.
+func (o *Options) assembledSourcesFor() *config.Sources {
+	if o.Sealed {
+		return nil
+	}
+	return o.configSources
+}
+
 // agentServerTables is the `lsp_servers` and `mcp_servers` tables and the `mcp_presets` list
 // this launch hands its jail: cfg's, or under the seal none. An MCP server's `env` and an LSP
 // server's `args` are literal strings the user writes, an API key among them, and a build runs

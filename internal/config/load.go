@@ -79,6 +79,13 @@ func loadJSONCFile(path, label string, strict bool, warn Warn, record bool, at r
 	if !record {
 		return m, f, nil, nil
 	}
+	if rel == "" && isGeneratedUserScope(path) {
+		// A user-scope file the launch generated for this jail: its values were written in host
+		// files, which its launch-origins line names (launchorigins.go).
+		if t := generatedOrigins(data); t != nil {
+			return m, f, launchCopyTree(f, m, t), nil
+		}
+	}
 	return m, f, fileTree(f, m), nil
 }
 
@@ -393,8 +400,8 @@ func LoadConfig(workspace string, strict bool, warn Warn) (*jsonx.OrderedMap, er
 
 // LoadConfigWithSources is LoadConfig plus where each value of the merged config was written
 // (sources.go), for a caller that reports validation problems: Annotate the messages with it.
-// The Sources is nil where LoadConfig reads the in-jail copy of the host's assembled config,
-// whose source files the jail does not have.
+// Where LoadConfig reads the in-jail copy of the host's assembled config, the Sources is the
+// record the launch wrote beside it (launchorigins.go), nil when there is none.
 func LoadConfigWithSources(workspace string, strict bool, warn Warn) (*jsonx.OrderedMap, *Sources, error) {
 	m, n, err := loadConfig(workspace, strict, warn, true)
 	return m, sourcesOf(n), err
@@ -408,6 +415,14 @@ func LoadConfigWithSources(workspace string, strict bool, warn Warn) (*jsonx.Ord
 func LoadConfigWithoutWorkspaceFile(workspace string, strict bool, warn Warn) (*jsonx.OrderedMap, error) {
 	m, _, err := composeConfig(workspace, strict, warn, false, false)
 	return m, err
+}
+
+// LoadConfigWithoutWorkspaceFileWithSources is LoadConfigWithoutWorkspaceFile plus where each
+// value was written (sources.go): what a launch records beside the user scope it generates for a
+// jail, so a refusal in there names the file that set the key (launchorigins.go).
+func LoadConfigWithoutWorkspaceFileWithSources(workspace string, strict bool, warn Warn) (*jsonx.OrderedMap, *Sources, error) {
+	m, n, err := composeConfig(workspace, strict, warn, true, false)
+	return m, sourcesOf(n), err
 }
 
 // loadConfig is LoadConfig, with the provenance beside it when record is set.
@@ -471,7 +486,12 @@ func composeConfig(workspace string, strict bool, warn Warn, record, withWorkspa
 	// With a layer set we fall through and assemble, then merge it in.
 	if inJail() && jailOwnWorkspace(workspace) && UserLayerPath() == "" {
 		if snap, ok := loadAssembledSnapshot(workspace); ok {
-			return snap, nil, nil
+			if !record {
+				return snap, nil, nil
+			}
+			// Where each value was set, as the launch recorded it beside the copy
+			// (launchorigins.go); nil when it recorded nothing.
+			return snap, assembledOriginsTree(workspace, snap), nil
 		}
 	}
 	// The user half goes through loadUserScopeConfig so a --user-layer lands at user-level
