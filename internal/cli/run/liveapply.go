@@ -10,25 +10,9 @@ package run
 // own, with its own deadline, and a step that fails leaves the trust captured and the change
 // pending. Nothing is rolled back across steps.
 //
-// SEAMS FOR THE TWO PARALLEL LANES. This file codes against the contracts of
-// docs/design/live-config-apply-plan.md ("Contracts between lanes") through package-level
-// variables, so it builds and tests before those lanes land. At integration each default
-// below is replaced by the real function:
-//
-//	liveScopeFilesSeam      → brokerscope.LiveFiles, mapping each LiveFile to
-//	                          liveScopeFile{Path, File, LiveScope: File.LiveScope}   (lane B)
-//	replaceScopeReposSeam   → brokerscope.ReplaceRepos                               (lane B)
-//	ctxMountsLiveSeam       → (*Options).ctxMountsLive                               (lane C)
-//	readCtxMountRecordSeam  → readCtxMountRecord, ctxMountEntry ↔ liveCtxMount       (lane C)
-//	writeCtxMountRecordSeam → writeCtxMountRecord                                    (lane C)
-//	diffCtxMountsSeam       → diffCtxMounts                                          (lane C)
-//	injectCtxMountSeam      → (*Options).injectCtxMount                              (lane C)
-//	removeCtxMountSeam      → (*Options).removeCtxMount                              (lane C)
-//	liveCtxMount            → ctxMountEntry (same fields)                            (lane C)
-//	ctxMountsTokenEnvName   → lane C's YOLO_CTX_MOUNTS_TOKEN constant                (lane C)
-//
-// Until then the defaults answer as a jail from before either lane does: mounts wait for a
-// restart ("this jail started before live mounts existed") and no live broker file is found.
+// SEAMS. The live-apply steps reach the broker's scope files (brokerscope) and the mount
+// injector (ctxinjectdrive.go, ctxmountrecord.go) through the package-level variables below, so
+// a test can drive every outcome without a running jail or a broker.
 
 import (
 	"errors"
@@ -53,44 +37,33 @@ type liveScopeFile struct {
 	LiveScope bool
 }
 
-// liveCtxMount is one config mount the host's record says the jail has: lane C's ctxMountEntry.
-type liveCtxMount struct {
-	Source, Dest string
-	RW           bool
-}
+// liveCtxMount is one config mount the host's record says the jail has.
+type liveCtxMount = ctxMountEntry
 
 // ctxMountsTokenEnvName is the jail-env variable carrying the token its mount record is
-// written with (lane C).
-const ctxMountsTokenEnvName = "YOLO_CTX_MOUNTS_TOKEN"
-
-// errNotBuiltHere is what a default seam answers for a step this build cannot take.
-var errNotBuiltHere = errors.New("this yolo cannot apply it to a running jail")
+// written with.
+const ctxMountsTokenEnvName = ctxMountsTokenEnv
 
 var (
 	liveScopeFilesSeam = func(source, container, workspace string) ([]liveScopeFile, error) {
-		return nil, nil
+		files, err := brokerscope.LiveFiles(source, container, workspace)
+		out := make([]liveScopeFile, 0, len(files))
+		for _, f := range files {
+			out = append(out, liveScopeFile{Path: f.Path, File: f.File, LiveScope: f.File.LiveScope})
+		}
+		return out, err
 	}
-	replaceScopeReposSeam = func(path string, expect brokerscope.File, repos []string) error {
-		return errNotBuiltHere
+	replaceScopeReposSeam  = brokerscope.ReplaceRepos
+	ctxMountsLiveSeam      = (*Options).ctxMountsLive
+	readCtxMountRecordSeam = readCtxMountRecord
+	// The token is the one the jail's launch wrote; updateCtxMountRecord keeps it, so a
+	// rewrite can never adopt a record for a jail it was not written for.
+	writeCtxMountRecordSeam = func(cname, _ string, entries []liveCtxMount) error {
+		return updateCtxMountRecord(cname, entries)
 	}
-	ctxMountsLiveSeam = func(o *Options, rt, cname string, envLines []string) (bool, string) {
-		return false, "this jail started before live mounts existed"
-	}
-	readCtxMountRecordSeam = func(cname string, envLines []string) ([]liveCtxMount, bool) {
-		return nil, false
-	}
-	writeCtxMountRecordSeam = func(cname, token string, entries []liveCtxMount) error {
-		return errNotBuiltHere
-	}
-	diffCtxMountsSeam = func(have []liveCtxMount, want []configCtxMount) ([]configCtxMount, []liveCtxMount) {
-		return nil, nil
-	}
-	injectCtxMountSeam = func(o *Options, rt, cname string, m configCtxMount) error {
-		return errNotBuiltHere
-	}
-	removeCtxMountSeam = func(o *Options, rt, cname string, e liveCtxMount) error {
-		return errNotBuiltHere
-	}
+	diffCtxMountsSeam  = diffCtxMounts
+	injectCtxMountSeam = (*Options).injectCtxMount
+	removeCtxMountSeam = (*Options).removeCtxMount
 )
 
 // applyStepDeadline and applyBudget are §8's defaults: each live step gets 10 s, and the

@@ -36,7 +36,7 @@ with exit 64, as is anything outside the workspace's repositories.
 
 A repository joins the scope through the workspace config: add it to the
 ` + "`repos`" + ` list under ` + "`brokered.github`" + `, run ` + "`yolo check --no-build`" + `, and ask the user to
-restart the jail and approve the repository scope at launch.
+run ` + "`yolo config apply`" + ` on the host and approve the repository scope there.
 
 The repository is -R OWNER/REPO, or this workspace's origin remote. Standard
 input is sent when the arguments read it (` + "`--body-file -`" + `).
