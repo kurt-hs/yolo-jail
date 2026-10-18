@@ -18,11 +18,14 @@ the bounded repair. v1 and its review repairs are built; the command's briefing 
 effective config is not ([LA-D7](#LA-D7)), nor are the later slices of [§13](#13-sequencing).
 MEASURED in the nested rootful Podman path only (`--userns host`): the command and interactive
 attach added, removed and moved read-only mounts in a running jail, refused writes, kept `/ctx`
-read-only, and left `yolo config drift` at exit 0. UNMEASURED: rootless Podman on both required
-architectures ([M1](#LA-M1)), a real broker request after widening, and a jail's own
-`CAP_SYS_ADMIN` remount attempt against an injected read-only bind. The Podman Machine live-injection
-path is not built (M3); native-Mac execution of the separate macos-user suite also remains owed. The
-accepted host-side repair tests and nested rootful run do not discharge these obligations.
+read-only, and left `yolo config drift` at exit 0. A nested rootful Linux/amd64 probe also found
+`CAP_SYS_ADMIN` effective in the jail: remounting both a launch-time and an injected read-only
+bind writable succeeded, and writes reached both disposable host sentinels. This is parity, not
+read-only resistance against a jail with that capability. UNMEASURED: rootless Podman on both
+required architectures ([M1](#LA-M1)) and a real broker request after widening. The Podman
+Machine live-injection path is not built (M3); native-Mac execution of the separate macos-user
+suite also remains owed. The accepted host-side repair tests and nested rootful run do not
+discharge the rootless obligation.
 
 > **In short.** "Restart to apply" is wrong for the two changes people actually make mid-session,
 > a read-only mount and a GitHub repository: both can reach a running jail. So approval moves to a
@@ -361,6 +364,15 @@ with `--read-only --mount type=tmpfs,destination=/ctx,ro=true`, an existing `:ro
   - that the injected mount is read-only inside;
   - and the result with the jail's own `CAP_SYS_ADMIN`, which can remount any unlocked mount. The
     same holds for launch-time `:ro` binds, so live must match launch, not exceed it ([LA-P4](#LA-P4)).
+
+  A separate nested rootful Linux/amd64 probe (`podman info` reported `false`) had `CAP_SYS_ADMIN`
+  in the jail's effective set. Its direct bind-remount syscall succeeded for both the launch-time
+  and injected mounts, and writes changed both sacrificial host sentinels. That establishes parity
+  only for this nested rootful path and records a baseline trust issue: a jail holding this
+  capability can make either read-only bind writable. It does not show a regression in live apply,
+  nor does it satisfy the rootless-on-both-arches measurement above. The policy consequence of
+  granting a jail `CAP_SYS_ADMIN` while exposing read-only host binds remains a backlog item; do
+  not describe either bind mode as resistant to that jail-side remount.
 
   Report `podman info --format '{{.Host.Security.Rootless}}'` with the result.
 - **M2**, rootful podman. **M3**, a podman machine on a Mac.
