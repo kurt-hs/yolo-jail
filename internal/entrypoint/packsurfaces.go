@@ -722,6 +722,9 @@ func renderPlannedSurface(e *Env, pl surfacePlan, src jailLayerSource) error {
 		providerLeaves)
 	noteHostProviderKeyDrops(e, surface, hostDrops, layers.computed)
 
+	// CAPTURE FROM SESSION HOMES first (sessioncapture.go, OQ-SP2): an edit a program saved in
+	// another session's own copy of this surface reaches the shared overlay this render folds.
+	captureFromSessionHomes(e, surface, layers, contribs)
 	w, err := writeSurfaceThrough(e, pl.mechanism, surface, layers, contribs)
 	if pl.mechanism == manifest.ModeRMW {
 		// A REFUSAL IS A WARNING HERE, NOT AN A12 BOOT FAILURE, and the distinction is the
