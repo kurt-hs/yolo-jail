@@ -57,6 +57,12 @@ type File struct {
 	// edit (WW-D23). Empty from a launch that predates them, and the refusal then says less.
 	ConfigFile string `json:"config_file,omitempty"`
 	LocalFile  string `json:"local_file,omitempty"`
+	// LiveScope says the broker bound to this file classifies every request against the file
+	// as it reads it then, so a host `yolo config apply` that rewrites Repos (ReplaceRepos)
+	// reaches it at its next request (docs/design/live-config-apply.md §7, LA-D10, LA-D11).
+	// BindBroker writes it; a file a broker of an older build bound lacks it, and a scope
+	// change there waits for the next restart.
+	LiveScope bool `json:"live_scope,omitempty"`
 }
 
 // NewLaunchID draws a random launch id.
@@ -237,6 +243,8 @@ func BindBroker(path string, expected File, start string, acquireLease func() er
 			return err
 		}
 		f.BrokerStart, f.BrokerPID = start, os.Getpid()
+		// This build's broker re-reads the file for every request (LA-D11).
+		f.LiveScope = true
 		got, err := write(f)
 		if err != nil {
 			return err

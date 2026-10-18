@@ -25,6 +25,20 @@ type Scope struct {
 	// the launch's loader reads them (brokerscope.File, WW-D23), for the out-of-scope message
 	// alone; "" when the launch handed none. They admit nothing.
 	configFile, localFile string
+	// live says the scope came from the scope file as the broker re-read it for this request,
+	// from a file a broker that takes live scope bound (brokerscope.File.LiveScope): a host
+	// `yolo config apply` then changes it with no restart, and the out-of-scope message says
+	// so (docs/design/live-config-apply.md §6, §7).
+	live bool
+}
+
+// scopeOfFile is the scope a scope file holds, naming its config files, and live when a
+// broker that takes live scope bound it. Widened is no longer written; a file a previous
+// build wrote still reads as it did.
+func scopeOfFile(f brokerscope.File) Scope {
+	s := NewScope(append(append([]string(nil), f.Repos...), f.Widened...)).ForFiles(f.ConfigFile, f.LocalFile)
+	s.live = f.LiveScope
+	return s
 }
 
 // NewScope builds a scope from `OWNER/REPO` names and approved wildcard entries, dropping
@@ -88,8 +102,10 @@ func (s Scope) describe() string {
 
 // widenAdvice is the one way a repository outside the scope gets in (WW-D5, WW-D6): the agent
 // adds it to the workspace's `brokered.github.repos` entry, checks its edit, and asks the user
-// to restart the jail and approve the repository scope at that fresh launch. No answer the jail
-// gives and no notification widens the scope.
+// to approve the repository scope on the host. Where the broker takes live scope that is
+// `yolo config apply` in the workspace, which the running broker sees at its next request
+// (docs/design/live-config-apply.md §6); elsewhere it is a restart and the fresh launch's
+// gate. No answer the jail gives and no notification widens the scope.
 //
 // It tells the agent to add to the list, never to paste a new object: a second top-level
 // `brokered` in a file that already has one would replace the first (WW-D24). It names the two
@@ -102,13 +118,18 @@ func (s Scope) widenAdvice(repo string) string {
 	if s.configFile != "" && s.localFile != "" {
 		config, local, readOnly, useLocal = s.configFile, s.localFile, s.configFile, s.localFile
 	}
-	return "A repository joins this jail's scope only when the user approves it at a fresh launch. To " +
+	approves, ask := "at a fresh launch", "ask the user to restart the jail and approve the repository scope at launch"
+	if s.live {
+		approves = "on the host"
+		ask = "ask the user to run `yolo config apply` on the host, in this workspace, and approve the " +
+			"repository scope there; this jail's running broker takes it at its next call"
+	}
+	return "A repository joins this jail's scope only when the user approves it " + approves + ". To " +
 		"ask for " + repo + ", add it to the `repos` list under `brokered." + Source + "` in " + config +
 		", or in " + local + " for what the project should not commit; if " + readOnly + " is " +
 		"read-only here, use " + useLocal + ". Only if the file has no `brokered` key yet, add " +
 		"\"brokered\": {\"" + Source + "\": {\"repos\": [\"" + repo + "\"]}}. Then run `yolo check " +
-		"--no-build`, and ask the user to restart the jail and approve the repository scope at " +
-		"launch. Nothing sent through gh adds a repository."
+		"--no-build`, and " + ask + ". Nothing sent through gh adds a repository."
 }
 
 // ValidRepo reports whether s is exactly `owner/repo`: two segments, each a GitHub name,

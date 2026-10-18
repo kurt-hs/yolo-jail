@@ -169,8 +169,9 @@ func newBroker(sf brokerscope.File, spawnCwd string, log io.Writer) (*Broker, fu
 	startID, startErr := brokerstore.NewStartID()
 	store := &brokerstore.Store{Dir: paths.BrokerSourceDir(Source)}
 	b := &Broker{
-		// Widened is no longer written; a file a previous build wrote still reads as it did.
-		scope:     NewScope(append(append([]string(nil), sf.Repos...), sf.Widened...)).ForFiles(sf.ConfigFile, sf.LocalFile),
+		// The start-time copy, used only by a broker no host authority is bound to; a bound
+		// broker classifies against the file as it re-reads it (ServeContext).
+		scope:     scopeOfFile(sf),
 		workspace: sf.Workspace,
 		startID:   startID,
 		store:     store,
@@ -432,7 +433,20 @@ func (b *Broker) ServeContext(ctx context.Context, req Request, jail string, std
 		say(fmt.Sprintf("refused: standard input is %d bytes, over the %d-byte cap", len(req.Stdin), StdinCap))
 		return finish(ExitUsage)
 	}
-	d := Classify(req.Argv, req.Repo, b.scope)
+	// A BOUND BROKER CLASSIFIES AGAINST THE SCOPE FILE AS IT READS IT NOW, not the copy it took
+	// at start (docs/design/live-config-apply.md §7, LA-D10): a host `yolo config apply` that
+	// rewrote the file's repositories widens or narrows this broker at this request.
+	scope := b.scope
+	if b.authority != nil {
+		f, err := b.authority.live()
+		if err != nil {
+			ev.Set, ev.Outcome, ev.Reason = "refused", "refused", err.Error()
+			say("current host authority refused: " + err.Error() + "; repair the host policy or relaunch the jail")
+			return finish(ExitNoPerm)
+		}
+		scope = scopeOfFile(f)
+	}
+	d := Classify(req.Argv, req.Repo, scope)
 	if b.authority != nil && (d.Outcome == OutcomeStanding || d.Outcome == OutcomeWindowed) {
 		current, _, err := b.authority.Classify(req.Argv, req.Repo)
 		if err != nil {
@@ -505,7 +519,7 @@ func (b *Broker) ServeContext(ctx context.Context, req Request, jail string, std
 		return finish(ExitUnavailable)
 	}
 	if d.Path == "auth status" && !slices.Contains(d.Argv, "--help") {
-		return finish(b.answerAuthStatus(d.Argv, &ev, stdout, stderr, say))
+		return finish(b.answerAuthStatus(d.Argv, scope, &ev, stdout, stderr, say))
 	}
 	var stdin []byte
 	if d.ReadsStdin {
@@ -546,7 +560,7 @@ const noHostLogin = "the host's gh has no usable GitHub login; run `gh auth stat
 // <login>`), so a script that greps for them still matches; `--json hosts` keeps gh's shape,
 // with the token source naming the broker and no scopes. Exit 0 when logged in, as gh's; no
 // usable host login is the broker's 69, as for every other call.
-func (b *Broker) answerAuthStatus(argv []string, ev *brokeraudit.Event, stdout, stderr func([]byte),
+func (b *Broker) answerAuthStatus(argv []string, scope Scope, ev *brokeraudit.Event, stdout, stderr func([]byte),
 	say func(string)) int {
 	jsonFields := ""
 	for _, a := range argv {
@@ -594,7 +608,7 @@ func (b *Broker) answerAuthStatus(argv []string, ev *brokeraudit.Event, stdout, 
 		out = []byte("github.com\n" +
 			"  ✓ Logged in to github.com account " + login + " through yolo's github-broker; the token " +
 			"stays on the host\n" +
-			"  - Repositories this jail can use: " + b.scope.describe() + "\n")
+			"  - Repositories this jail can use: " + scope.describe() + "\n")
 	}
 	ev.BytesOut = int64(len(out))
 	stdout(out)
