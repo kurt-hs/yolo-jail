@@ -1060,9 +1060,9 @@ end
 -- The ladder, in order (docs/reference/providers.md OQ-CS4, OQ-XM1):
 --
 --   1. `yolo.model_for(value, ctx.selected_provider)` — the value as an ALIAS, the id under it;
---   2. `yolo.model_for("default", ...)` — the provider's declared `default` alias, the same
---      fallback the generic branch takes when a named alias does not resolve;
---   3. the value as one of the provider's declared IDS (the profile naming an exact id).
+--   2. the value as one of the provider's declared IDS (the profile naming an exact id);
+--   3. `yolo.model_for("default", ...)` — the provider's declared `default` alias, the fallback
+--      when neither the alias nor exact id resolves.
 --
 -- pi matches a model id EXACTLY against the provider's list, so an unresolved alias — the
 -- defect this closes, `openrouter/deepseek-floor` for the alias `deepseek-floor` whose id is
@@ -1088,12 +1088,13 @@ local function profileModel(ctx, value, permitMiss)
     return value
   end
   local _, id = yolo.model_for(value, provName)
-  if not id and value ~= "default" then
-    _, id = yolo.model_for("default", provName)
-  end
   if id then return id end
   for _, modelId in pairs(models) do
     if modelId == value then return value end
+  end
+  if value ~= "default" then
+    _, id = yolo.model_for("default", provName)
+    if id then return id end
   end
   if permitMiss then return nil end
   error(string.format(
