@@ -64,6 +64,7 @@ mode with an empty series, and the parallel build pool — its XB-D ids), [`pack
 | The trees a selection declares; the owning agent pack; where each is delivered; the lints | `internal/packload` (`PatchedTrees`, `owningAgentPack`, `Fork.DeliveredInJail`, `LintPatchedTrees`, `LintDuplicateLoads`) |
 | The tree build act and its admit | `internal/cli` (`treeBuildJailArgv`, `treeAdmitProblem`, `sealPacks`, `deliverTree`, `treepool.go`) |
 | The per-launch copy | `internal/capture` (`CopyTree`), `internal/cli/run` (`patchedtrees.go`, `PatchedCopySlug`) |
+| The macos-user per-build copy | `internal/cli` (`treecopyreuse.go`), `internal/paths` (`TreeCopyRoot`) |
 | A launch's refusal when a needed tree has no build | `internal/cli/run` (`refuseMissingBuilds`, `missingbuilds.go`) |
 | The jail's view and the launchers' gate | `internal/entrypoint` (`PatchedTreesEnv`, `treeGateFor`, `TreeBuildEnv`, `SealedBuildEnv`, `BootRefusal`, `BuildCause`) |
 | The host render: versioned copies and an owned link | `internal/cli` (`hosttrees.go`, `renderHostTree`, `advanceHostTrees`, `linkHostLaunchTrees`, `revertHostTreeLinks`) |

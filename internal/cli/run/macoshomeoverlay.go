@@ -84,7 +84,8 @@ type overlayFile struct {
 // buildMacosHomeOverlayWith is buildMacosHomeOverlay with this launch's patched extensions and
 // core's own files laid in beside the packs' content.
 //
-// trees is the launch's per-launch copies by extension key (Options.patchedTreeDirs), the SAME map
+// trees is the launch's copies by extension key (Options.patchedTreeDirs; on macos-user one per
+// build, shared by the launches handed it, macosUserTreeCopyRoot), the SAME map
 // the container path hands packFilesTargets for its mounts, so a delivered patched extension is a
 // `files` target like any other — read through the one declaration list, not a fourth — copied to
 // its `~/<into>` and write-protected with it (docs/reference/pi-extensions.md §11). A tree with no
@@ -99,7 +100,7 @@ func buildMacosHomeOverlayWith(staging string, packs []*packload.Pack, trees map
 }
 
 // buildMacosHomeOverlayDelivering is buildMacosHomeOverlayWith with each patched extension's
-// IDENTITY beside its per-launch copy: treeIDs maps an extension key to a string naming the
+// IDENTITY beside its copy: treeIDs maps an extension key to a string naming the
 // copy's content (Options.patchedTreeIdentities — the content-addressed store entry it was copied
 // from). The overlay's digest takes that string in place of reading every byte of the copy, which
 // for a node_modules tree is most of what an unchanged relaunch would otherwise pay. A key with no
