@@ -2,13 +2,13 @@
 title: "Plan: October 18 serial landing and verification"
 status: accepted
 stage: DECIDED
-next: "Verify the combined candidate, fast-forward it to unchanged main, then run just done on clean main"
+next: "Close the remaining rootless, real-broker, remount-parity and native-Mac verification obligations; do not infer them from the recorded nested run"
 summary: "Records the prior model/Mac landing, full patch/live candidate histories, exact review closure, combined validation and remaining platform obligations."
 ---
 
 # Plan: October 18 serial landing and verification
 
-**Baseline:** primary `main` was clean at `6683038d29e073e015af9396b117fa36f1e9f63d` before this serial integration. This isolated candidate merges the full patch-branch history through `770d9c2c9f83592d2c904de23a1f4fb36bd9cdb0` and the full live-config history through `e80f3a2ae3acc3724b83aaa66b207edd9cbd18f4`; neither history was reduced to its final repair commit. Both are ancestors of the candidate. The candidate's verified fast-forward to main is pending.
+**Baseline and landing:** primary `main` was clean at `6683038d29e073e015af9396b117fa36f1e9f63d` before serial integration. The verified fast-forward is now on main at `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`; the full patch-branch history through `770d9c2c9f83592d2c904de23a1f4fb36bd9cdb0` and live-config history through `e80f3a2ae3acc3724b83aaa66b207edd9cbd18f4` remain ancestors, not squashed to their last repair commits.
 
 ## Prior model and Mac landing at `6683038d2`
 
@@ -168,20 +168,20 @@ The cleanup helper first removes the fixture as the invoking user, makes owned d
 | Mac test privilege, log-skip, floor and recovery fixes | Already on main at `6683038d2`; preserved unchanged. |
 | Relative patch-branch feature and exact named-pack offline caller closure | Included by merge of the full `770d9c2c9` history; final caller review accepted. |
 | Live config apply, broker live-scope changes, `/ctx` mount injection and bounded repair | Included by merge of the full `e80f3a2ae` history; final closure review accepted with the limits above. |
-| Primary movement | Still pending until the final candidate passes gates and main is confirmed unchanged and clean; then fast-forward only. |
+| Primary movement | Fast-forwarded to main at `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`; the recorded implementation histories remain intact. |
 
-The serial merge retains the existing model/Mac mappings, the exact selected-pack mapping, and bounded broker scope, inspected mount-token restoration and process-identity pinning. It does not widen the model-reference claims, give a patch identity to another pack, authorize a restart offer, or change the primary ref before candidate verification.
+The serial merge retains the existing model/Mac mappings, the exact selected-pack mapping, and bounded broker scope, inspected mount-token restoration and process-identity pinning. The main fast-forward changed no accepted behavior: it did not widen the model-reference claims, give a patch identity to another pack, authorize a restart offer, or bypass candidate verification.
 
 ## Validation and remaining obligations
 
-- Candidate verification passed before any primary mutation. `just format`, `git diff --check`, and `just check-ci` all returned success; check-ci included Linux and Darwin vet/staticcheck, short tests, changelog and site gates, closed-tree checks, and release checks. The authored docs were separately checked with `uvx vantage-check` (8 files, clean). The one early affected-package run exposed two ordinary `internal/cli/run` issues: the new backend parity needed its rationale, and a stale mount-token mismatch needed its accurate reason. Both were fixed at their production seam; the final affected package selection passed: `go test -count=1 ./internal/cli/check ./internal/cli ./internal/cli/run ./internal/entrypoint ./internal/packdecl ./internal/packload ./internal/packsrc ./internal/hostfloor ./internal/ctxinject ./internal/brokerscope ./internal/ghbroker`.
+- Candidate verification passed before the primary fast-forward. `just format`, `git diff --check`, and `just check-ci` all returned success; check-ci included Linux and Darwin vet/staticcheck, short tests, changelog and site gates, closed-tree checks, and release checks. The authored docs were separately checked with `uvx vantage-check` (8 files, clean). The one early affected-package run exposed two ordinary `internal/cli/run` issues: the new backend parity needed its rationale, and a stale mount-token mismatch needed its accurate reason. Both were fixed at their production seam; the final affected package selection passed: `go test -count=1 ./internal/cli/check ./internal/cli ./internal/cli/run ./internal/entrypoint ./internal/packdecl ./internal/packload ./internal/packsrc ./internal/hostfloor ./internal/ctxinject ./internal/brokerscope ./internal/ghbroker`.
 - `python3 scripts/completion-census.py` was run. Its generated reader map had broad environment-dependent churn; comparison found no actual new readers beyond the existing map, so unrelated output was restored. The shared Go cache was preserved. `just build-go` succeeded, then the candidate's own `dist-go/linux-amd64/yolo` ran in a nested jail from a throwaway workspace with a temporary HOME, `YOLO_REPO_ROOT` pointing at this checkout, and no selected packs: `candidate-nested-ok home=/home/agent workspace=/workspace`.
-- The required combined integration suite ran once against the final candidate source and passed: `YOLO_NO_PROGRAM_READINESS=1 go test -count=1 -timeout 0 ./integration` → `ok ... 722.513s`. The nested smoke exercises the candidate binary and boot path but its Podman-in-Podman environment is structurally rootful; it is not rootless integration evidence. After confirming main remains clean at `6683038d2`, fast-forward only; `just done` remains due on clean main after that mutation.
+- The required combined integration suite ran once against the final candidate source and passed: `YOLO_NO_PROGRAM_READINESS=1 go test -count=1 -timeout 0 ./integration` → `ok ... 722.513s`. The nested smoke exercises the candidate binary and boot path but its Podman-in-Podman environment is structurally rootful; it is not rootless integration evidence. The fast-forward is recorded above; the landing receipt records `just done` green on clean main afterward.
 - **Outstanding:** rootless Podman integration on both required architectures; real-broker widening/narrowing after a request; a jail's `CAP_SYS_ADMIN` attempt to remount an injected read-only mount; native-Mac execution of the Mac integration tests. These remain explicit runtime/platform obligations, not claims inferred from the combined Linux suite.
 - No push, tag, release, deployment, credential change, cache cleanup, or Pi core/extension work is authorized.
 
-## Primary landing boundary
+## Landing record
 
-1. The only primary mutation is `git -C /workspace merge --ff-only <verified-candidate-tip>`, after confirming primary is still at `6683038d2` and clean. If main has moved, reconcile and regate; never reset or force it.
-2. Record the candidate's exact ancestry, complete diffstat, validation commands and limits in the final serial landing report. The plan's candidate-pending status is intentionally a checkpoint; a later ordinary docs update can record the completed primary fast-forward.
-3. Run `just done` only after the primary fast-forward, on clean main. Do not push or publish.
+1. The serial candidate passed its recorded gates and was fast-forwarded to `main` at `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`; no history was squashed or rewritten.
+2. The landing receipt records `just done` passing on clean main after the fast-forward. The four external/runtime obligations above remain open; neither this landing nor its nested smoke discharges them.
+3. No push, tag, release or publication is recorded here.
