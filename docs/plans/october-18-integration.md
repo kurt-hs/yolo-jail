@@ -144,6 +144,7 @@ The cleanup helper first removes the fixture as the invoking user, makes owned d
 +}
 ```
 
+## Patch-branch history and review disposition
 
 - **Initial review:** blocked on two P1 classes—relative-locator resolution/build state could cross clone boundaries, and the offline/default check required a fresh fetch rather than trusting the recorded verdict. The early candidate was not accepted.
 - **Repair sequence:** the full retained history adds clone isolation, record-only reporting, offline verdict handling, and host-to-guest mapping of the branch identity. A later caller audit still **BLOCKED** with a P1: default `yolo pack series check` did not hydrate the host mapping and could reject a correct host record in a distinct guest checkout.
