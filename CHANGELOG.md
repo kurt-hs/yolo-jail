@@ -18,7 +18,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Claude keeps your `/model` choice across launches and provider switches.
 - **macOS (macos-user) launches no longer ask for a password.** Run `yolo macos-setup` once after upgrading. See [the macOS guide](userguide/guides/macos.md).
 - **Each jail runs its own credential services** for Claude, OpenAI and AWS. Once an older yolo's jails end, run `yolo host-daemon stop --host-wide <name>`. See [host services](userguide/guides/host-services.md).
-- **A newer agent, tool or patched build that fails to install now stops the launch**; the error gives the command that runs what you have. Offline, yolo starts what is installed.
+- **A newer agent, tool or patched build that fails to install now stops the launch**, naming the command that runs what you have. Offline, yolo starts what is installed.
 
 ### Added
 
@@ -38,7 +38,7 @@ setup can't deliver it. See
 
 **Keep your patches on a branch.** Name a `patch_branch` in place of `patches`; yolo merges it
 into each new upstream version and names any conflicting files. A pack inside that repository names it by
-a relative path, such as `../..?ref=patches`. See [Patch series](userguide/guides/patch-series.md#keep-your-patches-on-a-branch).
+a relative path, such as `../..?ref=patches`, and `yolo pack series check` checks the merge. See [Patch series](userguide/guides/patch-series.md#keep-your-patches-on-a-branch).
 
 **pi model facts merge instead of replace.** A model row keeps the catalog facts it does not
 state; `null` removes one. See `yolo config-ref`.
@@ -47,7 +47,7 @@ state; `null` removes one. See `yolo config-ref`.
 
 **Ways past a broken patched build.** The error lists commands that start anyway. See [Patch series](userguide/guides/patch-series.md#when-a-build-breaks).
 
-- A company list that only adds models now shows in Claude Code after Claude's own models.
+- A company list that only adds models shows in Claude Code after Claude's own.
 - A launch refreshes a nearly expired Claude login, and a crashed host service is restarted.
 
 ### Fixed
