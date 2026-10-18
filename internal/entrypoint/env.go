@@ -106,6 +106,12 @@ type Env struct {
 	// outside should be reaching for RenderHostPack, not assembling a host Env by hand.
 	hostTarget bool
 
+	// session is this session pass's render into its session homes (sessionhome.go,
+	// docs/design/per-session-profiles.md SP-D2): set by prepare_session_homes once every
+	// declared home is made, and applied by renderTarget() to the jail target. nil on the jail's
+	// own boot, on a pass with no session id, and at the host.
+	session *render.Session
+
 	// genFailures accumulates the config-generator failures collected by genStep.
 	// A12: a generator failure is FATAL — boot must not hand the agent a
 	// half-configured home — but each step still runs so one run reports every
@@ -342,7 +348,7 @@ func (e *Env) renderTarget() render.Target {
 		// which would hand it the container default and make KindOf() call it a jail.
 		return render.Host(e.Home, e.Stderr, e.hostOwnership)
 	}
-	return render.Jail(e.Home, e.WorkspaceDir(), e.Stderr)
+	return render.Jail(e.Home, e.WorkspaceDir(), e.Stderr).WithSession(e.session)
 }
 
 // ShimBinPath returns the directory a shim exec's the real tool from, defaulting

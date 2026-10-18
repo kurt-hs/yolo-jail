@@ -197,14 +197,17 @@ func (t Target) ComposeStateful(s manifest.Surface, l Layers, st State) (manifes
 // entrypoint.targetExpandHome, keyed on an Env. The first is why a host-side verb could
 // silently act on the wrong home (§6.1); having one keyed on the Target is the fix, since
 // a Target can only be built by a constructor that was told which home it means.
+//
+// A SESSION RENDER (session.go, WithSession) then redirects the expanded path: one under a
+// declared directory lands in the session's own home (docs/design/per-session-profiles.md SP-D2).
 func (t Target) ExpandHome(p string) string {
 	if p == "~" {
-		return t.Home
+		return t.redirect(t.Home)
 	}
 	if strings.HasPrefix(p, "~/") {
-		return filepath.Join(t.Home, p[2:])
+		return t.redirect(filepath.Join(t.Home, p[2:]))
 	}
-	return p
+	return t.redirect(p)
 }
 
 // SurfacePath is where this surface's file lands at this target: its declared path with
