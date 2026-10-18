@@ -26,7 +26,7 @@ import (
 // git repository (git+file://) and the build writes a marker script naming the upstream version and
 // the line the series patches. No agent starts.
 //
-// ⚠ Mac-only, behind requireMacosUser: the sandbox account, passwordless sudo and nix. Every Linux
+// ⚠ Mac-only, behind requireMacosUser: the sandbox account, the run-as rule and nix. Every Linux
 // runner, and a nested jail, cannot reach it. Each test removes the capture entries it added and its
 // fork's check record.
 

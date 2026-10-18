@@ -25,7 +25,7 @@ import (
 // marker prints only if the floor's materialize rewrote that path out of the staging home. The base's
 // installer is never run: the fork supplies the program. No agent starts.
 //
-// ⚠ Mac-only, behind requireMacosUser: the sandbox account, passwordless sudo and nix. A nested jail,
+// ⚠ Mac-only, behind requireMacosUser: the sandbox account, the run-as rule and nix. A nested jail,
 // and every Linux runner, cannot reach it.
 func TestMacosUserHostFloorBuildsAForkFixtureForTheMac(t *testing.T) {
 	requireMacosUser(t)

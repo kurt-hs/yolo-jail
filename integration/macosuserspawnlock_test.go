@@ -864,11 +864,11 @@ func TestMacosUserHD10GuardsTheMachineWideBroker(t *testing.T) {
 }
 
 // TestMacosUserSweepsAKilledSessionsFiles: A SESSION KILLED BEFORE ITS TEARDOWN LEAVES ITS
-// ROOT-OWNED FILES AND ITS LIVENESS RECORD, AND THE NEXT LAUNCH SWEEPS BOTH
+// STAGED FILES AND ITS LIVENESS RECORD, AND THE NEXT LAUNCH SWEEPS BOTH
 // (internal/macosuser/sessionfiles.go). The first launch writes the env file it was handed into
 // the workspace and sleeps; this process SIGKILLs its `yolo`, so no deferred teardown runs, and
-// checks, as root, that the session's env file and profile are still there (the control: a kill
-// that left nothing shows nothing). A second launch of the same workspace must then remove every
+// checks, as the invoking user who owns the staging root, that the session's env file and profile
+// are still there (the control: a kill that left nothing shows nothing). A second launch of the same workspace must then remove every
 // one of them and the record, while the first session's sandbox, stopped here too, no longer
 // holds anything.
 func TestMacosUserSweepsAKilledSessionsFiles(t *testing.T) {
@@ -896,8 +896,9 @@ func TestMacosUserSweepsAKilledSessionsFiles(t *testing.T) {
 	}
 	exited := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(exited) }()
+	// The account ends its own sleep, through the run-as rule; never root (OQ-DM1).
 	stopSandbox := func() {
-		_ = runQuiet(time.Minute, "sudo", "-n", "/usr/bin/pkill", "-u", macosuser.SandboxUser, "-f", nap)
+		_ = runAsSandboxQuiet(time.Minute, "/usr/bin/pkill", "-u", macosuser.SandboxUser, "-f", nap)
 	}
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
@@ -929,7 +930,11 @@ func TestMacosUserSweepsAKilledSessionsFiles(t *testing.T) {
 	key := strings.TrimSuffix(filepath.Base(envFile), ".env")
 	files := macosuser.SessionFilePaths(key, "")
 	record := filepath.Join(macosuser.SessionRecordsDir(), key+".lock")
-	present := func(p string) bool { return runQuiet(time.Minute, "sudo", "-n", "/bin/test", "-e", p) }
+	// The session's files are the invoking user's, in the staging root it owns (the one-rule
+	// contract, OQ-MP10), so a plain Lstat sees them. This was `sudo -n /bin/test -e`, from when
+	// they were root's: on a Mac without passwordless root sudo that probe failed for every path,
+	// and the control reported a kill that left nothing.
+	present := func(p string) bool { _, err := os.Lstat(p); return err == nil }
 	if !present(envFile) || !present(macosuser.SessionProfilePath(key, "")) {
 		t.Fatalf("NOT OBSERVED: the killed session left no env file (%s: %v) or profile (%v), so "+
 			"there was nothing for the next launch to sweep", envFile, present(envFile),

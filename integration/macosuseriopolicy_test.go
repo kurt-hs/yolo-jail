@@ -70,7 +70,7 @@ func TestMacosUserIOPolicyAcrossTheLaunchArgv(t *testing.T) {
 			"NOTHING was measured.\n%s", ioPolicyThrottle, controlOut)
 	}
 	viaSudo, sudoOut := ioPolicyHostReading(append(append(append([]string{}, setter...),
-		"sudo", "-n", "--set-home", "--user="+macosuser.SandboxUser, "/usr/bin/env", "-i"), reader...))
+		macosuser.RunAsSandboxArgv([]string{"--set-home"}, "-i")...), reader...))
 	viaSandbox, sandboxOut := ioPolicyHostReading(append(append(append([]string{}, setter...),
 		"/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)"), reader...))
 

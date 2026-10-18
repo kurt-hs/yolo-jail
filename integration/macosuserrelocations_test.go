@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 )
@@ -30,8 +29,8 @@ const macosUserRelocationVolumesEnv = "YOLO_TEST_MACOS_USER_RELOCATION_VOLUMES"
 
 // macosUserRelocationTarget is a relocation target that does not exist yet, in a 0755 folder of
 // the test's own under parent, so the launch makes it and grants it the sandbox's access. The
-// folder is removed when the test ends, with sudo when the sandbox wrote into it, for
-// removeMacosUserWorkspace's reason. It returns the resolved target.
+// folder is removed when the test ends, with the sandbox account's own removal when it wrote
+// into it, for removeMacosUserWorkspace's reason. It returns the resolved target.
 func macosUserRelocationTarget(t *testing.T, parent string) string {
 	t.Helper()
 	dir, err := os.MkdirTemp(parent, "yolo-it-reloc-")
@@ -57,8 +56,8 @@ func macosUserRelocationTarget(t *testing.T, parent string) string {
 		if !strings.HasPrefix(filepath.Base(resolved), "yolo-it-reloc-") || strings.Contains(resolved, "..") {
 			t.Fatalf("refusing to escalate removal of %s: not a fixture", resolved)
 		}
-		if !runQuiet(2*time.Minute, "sudo", "-n", "/bin/rm", "-rf", resolved) {
-			t.Logf("could not remove %s even with sudo; remove it by hand", resolved)
+		if err := removeSandboxWritten(resolved); err != nil {
+			t.Logf("could not remove %s (%v): %s", resolved, err, removeByHandHint(resolved))
 		}
 	})
 	return filepath.Join(resolved, "cache")
