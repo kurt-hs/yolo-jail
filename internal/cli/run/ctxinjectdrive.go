@@ -37,6 +37,24 @@ var ctxGeteuid = os.Geteuid
 // ctxInjectBranch is where the injector runs for rt: unshare is true for the `podman unshare`
 // prefix. reason is non-empty when it cannot run at all, in the outcome line's words.
 func (o *Options) ctxInjectBranch(rt string) (unshare bool, reason string) {
+	return o.ctxInjectBranchBy(rt, time.Time{})
+}
+
+// stepTimeout is limit, shortened to what is left before deadline; a zero deadline is no step
+// deadline. ok is false once the deadline has passed, when nothing more may run.
+func stepTimeout(limit time.Duration, deadline time.Time) (time.Duration, bool) {
+	if deadline.IsZero() {
+		return limit, true
+	}
+	left := time.Until(deadline)
+	if left <= 0 {
+		return 0, false
+	}
+	return min(limit, left), true
+}
+
+// ctxInjectBranchBy is ctxInjectBranch with its one podman call bounded by deadline as well.
+func (o *Options) ctxInjectBranchBy(rt string, deadline time.Time) (unshare bool, reason string) {
 	switch {
 	case rt == "container": // parity: NotApplicable — Apple Container has no verb to add a share to a running VM (design §5.3, M4)
 		return false, "Apple Container shares are fixed when its VM boots"
@@ -53,7 +71,11 @@ func (o *Options) ctxInjectBranch(rt string) (unshare bool, reason string) {
 		if o.Exec == nil {
 			return false, "podman info could not be run"
 		}
-		res := o.Exec([]string{"podman", "info", "--format", "json"}, "", nil, ctxInjectDeadline)
+		timeout, ok := stepTimeout(ctxInjectDeadline, deadline)
+		if !ok {
+			return false, "the mount step ran out of time before podman info"
+		}
+		res := o.Exec([]string{"podman", "info", "--format", "json"}, "", nil, timeout)
 		if !res.Ran || res.RC != 0 || res.Timeout {
 			return false, "podman info did not answer" + firstLineSuffix(res.Stderr)
 		}
@@ -95,27 +117,39 @@ func (o *Options) ctxMountsLive(rt, cname string, envLines []string) (ok bool, r
 	return true, ""
 }
 
-// injectCtxMount mounts m into the running jail cname.
-func (o *Options) injectCtxMount(rt, cname string, m configCtxMount) error {
+// injectCtxMount mounts m into the running jail cname. Every call it makes ends by deadline (a
+// zero deadline leaves each call its own bound alone), so nothing it starts outlives the step.
+// An add is idempotent: the injector succeeds when the destination already holds this source in
+// this mode, so a mount a step made before it was cut off is recorded by the next apply.
+func (o *Options) injectCtxMount(rt, cname string, m configCtxMount, deadline time.Time) error {
 	args := []string{"--source", m.source, "--dest", m.dest}
 	if m.rw {
 		args = append(args, "--rw")
 	}
-	return o.runCtxAttach(rt, cname, args)
+	return o.runCtxAttach(rt, cname, args, deadline)
 }
 
-// removeCtxMount unmounts e from the running jail cname and removes its mountpoint.
-func (o *Options) removeCtxMount(rt, cname string, e ctxMountEntry) error {
-	return o.runCtxAttach(rt, cname, []string{"--dest", e.Dest, "--remove"})
+// removeCtxMount unmounts e from the running jail cname and removes its mountpoint, by deadline.
+func (o *Options) removeCtxMount(rt, cname string, e ctxMountEntry, deadline time.Time) error {
+	return o.runCtxAttach(rt, cname, []string{"--dest", e.Dest, "--remove"}, deadline)
 }
 
-// runCtxAttach runs the injector verb against cname's main process with args.
-func (o *Options) runCtxAttach(rt, cname string, args []string) error {
-	unshare, reason := o.ctxInjectBranch(rt)
+// ctxPidInspectTimeout bounds the pid inspect, before the verb and after it.
+const ctxPidInspectTimeout = 3 * time.Second
+
+// runCtxAttach runs the injector verb against cname's main process with args, every call bounded
+// by deadline.
+//
+// THE PID IS ASKED AGAIN AFTER THE VERB. The injector opens /proc/<pid>/ns/mnt and cannot know
+// whose namespace that is: a jail that stopped between the inspect and the open, its pid reused,
+// would have had the change made in another process's namespace. A pid that changed, or that
+// cannot be asked, is an error, so the step is never recorded as the jail's.
+func (o *Options) runCtxAttach(rt, cname string, args []string, deadline time.Time) error {
+	unshare, reason := o.ctxInjectBranchBy(rt, deadline)
 	if reason != "" {
 		return errors.New(reason)
 	}
-	pid, err := o.jailMainPid(rt, cname)
+	pid, err := o.jailMainPid(rt, cname, deadline)
 	if err != nil {
 		return err
 	}
@@ -123,12 +157,16 @@ func (o *Options) runCtxAttach(rt, cname string, args []string) error {
 	if unshare {
 		argv = append([]string{"podman", "unshare", "--"}, argv...)
 	}
-	res := o.Exec(argv, "", nil, ctxInjectDeadline)
+	timeout, ok := stepTimeout(ctxInjectDeadline, deadline)
+	if !ok {
+		return errors.New("the mount step ran out of time before the injector could run")
+	}
+	res := o.Exec(argv, "", nil, timeout)
 	switch {
 	case !res.Ran:
 		return fmt.Errorf("could not run %s", argv[0])
 	case res.Timeout:
-		return fmt.Errorf("the mount step did not finish within %s", ctxInjectDeadline)
+		return fmt.Errorf("the mount step did not finish within %s", timeout.Round(time.Millisecond))
 	case res.RC != 0:
 		msg := strings.TrimSpace(res.Stderr)
 		msg = strings.TrimPrefix(msg, "yolo internal "+ctxAttachVerbName+": ")
@@ -137,16 +175,28 @@ func (o *Options) runCtxAttach(rt, cname string, args []string) error {
 		}
 		return errors.New(msg)
 	}
+	after, err := o.jailMainPid(rt, cname, deadline)
+	if err != nil {
+		return fmt.Errorf("the mount step ran, but yolo could not confirm it reached this jail: %w", err)
+	}
+	if after != pid {
+		return fmt.Errorf("this jail's process changed while the mount step ran (pid %d, now %d), so "+
+			"the step may have reached another process", pid, after)
+	}
 	return nil
 }
 
 // jailMainPid is the host pid of cname's main process, the process whose mount namespace is the
-// jail's.
-func (o *Options) jailMainPid(rt, cname string) (int, error) {
+// jail's, asked by deadline.
+func (o *Options) jailMainPid(rt, cname string, deadline time.Time) (int, error) {
 	if o.Exec == nil {
 		return 0, errors.New("could not ask " + rt + " for the jail's pid")
 	}
-	res := o.Exec([]string{rt, "inspect", "--format", "{{.State.Pid}}", cname}, "", nil, 3*time.Second)
+	timeout, ok := stepTimeout(ctxPidInspectTimeout, deadline)
+	if !ok {
+		return 0, errors.New("the mount step ran out of time before " + rt + " inspect")
+	}
+	res := o.Exec([]string{rt, "inspect", "--format", "{{.State.Pid}}", cname}, "", nil, timeout)
 	if !res.Ran || res.RC != 0 || res.Timeout {
 		return 0, fmt.Errorf("%s inspect %s did not answer%s", rt, cname, firstLineSuffix(res.Stderr))
 	}

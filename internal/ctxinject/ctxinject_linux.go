@@ -44,12 +44,27 @@ func Attach(pid int, source, dest string, rw bool) error {
 		return errors.New("source " + quote(source) + " must be an absolute path")
 	}
 	// Step 1: the detached copy, in the caller's namespace, where the host source is visible.
-	tree, err := unix.OpenTree(unix.AT_FDCWD, source,
-		unix.OPEN_TREE_CLONE|unix.OPEN_TREE_CLOEXEC|unix.AT_RECURSIVE)
+	// THE SOURCE IS OPENED WITH NO LINK FOLLOWED, then copied through that open file: the host
+	// resolved every link before this ran, so a resolved path has none, and a component swapped
+	// for a link between that resolution and this open is refused rather than followed.
+	src, err := unix.Openat2(unix.AT_FDCWD, source, &unix.OpenHow{
+		Flags:   unix.O_PATH | unix.O_DIRECTORY | unix.O_CLOEXEC,
+		Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS,
+	})
+	if err != nil {
+		return fmt.Errorf("open %s (a directory, reached with no link followed): %w", source, err)
+	}
+	tree, err := unix.OpenTree(src, "",
+		unix.OPEN_TREE_CLONE|unix.OPEN_TREE_CLOEXEC|unix.AT_RECURSIVE|unix.AT_EMPTY_PATH)
+	unix.Close(src)
 	if err != nil {
 		return fmt.Errorf("open_tree(%s): %w", source, err)
 	}
 	defer unix.Close(tree)
+	var srcStat unix.Stat_t
+	if err := unix.Fstat(tree, &srcStat); err != nil {
+		return fmt.Errorf("stat the copy of %s: %w", source, err)
+	}
 	// Step 2: read-only before the jail can see it.
 	if !rw {
 		if err := unix.MountSetattr(tree, "", unix.AT_EMPTY_PATH|unix.AT_RECURSIVE,
@@ -63,7 +78,7 @@ func Attach(pid int, source, dest string, rw bool) error {
 	}
 	defer unix.Close(ns)
 	// Steps 3 to 5.
-	return inMountNS(ns, func() error { return attachHere(tree, rel) })
+	return inMountNS(ns, func() error { return attachHere(tree, rel, srcStat, rw) })
 }
 
 // Detach unmounts dest inside the mount namespace of pid and removes its mountpoint. A dest that
@@ -145,13 +160,19 @@ func writableClone() (int, error) {
 	return clone, nil
 }
 
-// attachHere is steps 4 and 5, run inside the jail's mount namespace.
-func attachHere(tree int, rel string) error {
+// attachHere is steps 4 and 5, run inside the jail's mount namespace. src is the copy's own stat
+// and rw its mode: a destination that already holds a mount of that same directory in that same
+// mode is success with nothing done, so an add is idempotent (a step cut off after its mount
+// landed is recorded by the next apply instead of refused).
+func attachHere(tree int, rel string, src unix.Stat_t, rw bool) error {
 	ctx, err := openCtx()
 	if err != nil {
 		return err
 	}
 	defer unix.Close(ctx)
+	if sameMountAt(ctx, rel, src, rw) {
+		return nil
+	}
 	clone, err := writableClone()
 	if err != nil {
 		return err
@@ -179,6 +200,34 @@ func attachHere(tree int, rel string) error {
 		return fmt.Errorf("move_mount onto %s/%s: %w", Root, rel, err)
 	}
 	return nil
+}
+
+// sameMountAt reports whether rel below the jail's /ctx is the root of a mount of the directory
+// src describes (same device and inode), read-only exactly when rw is false. It opens rel with no
+// link followed and without leaving /ctx, crossing mounts as it must to reach the mount's root.
+func sameMountAt(ctx int, rel string, src unix.Stat_t, rw bool) bool {
+	fd, err := unix.Openat2(ctx, rel, &unix.OpenHow{
+		Flags:   unix.O_PATH | unix.O_DIRECTORY | unix.O_CLOEXEC,
+		Resolve: resolveFlags(false),
+	})
+	if err != nil {
+		return false
+	}
+	defer unix.Close(fd)
+	var stx unix.Statx_t
+	if err := unix.Statx(fd, "", unix.AT_EMPTY_PATH, unix.STATX_INO, &stx); err != nil ||
+		stx.Attributes_mask&unix.STATX_ATTR_MOUNT_ROOT == 0 || stx.Attributes&unix.STATX_ATTR_MOUNT_ROOT == 0 {
+		return false
+	}
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil || st.Dev != src.Dev || st.Ino != src.Ino {
+		return false
+	}
+	var fs unix.Statfs_t
+	if err := unix.Fstatfs(fd, &fs); err != nil {
+		return false
+	}
+	return (fs.Flags&unix.ST_RDONLY != 0) == !rw
 }
 
 // mkdirsBeneath makes every missing component of rel below dirfd, mode 0755, and returns the
