@@ -29,7 +29,9 @@ package integration
 // AND SO ARE THE PREPARATION WORKERS. A host launch whose packs declare a program leaves the
 // preparation scheduler and a shared-demand worker running under the test's HOME
 // (preparationworkers_test.go has the inventory, and CI run 38856922948 the failure), so the
-// same cleanup stops those too, the same way.
+// same cleanup stops those too. Not by the locks they hold, which missed a worker the scheduler
+// had just spawned (CI run 39096056377): it stops every process still running with the test's
+// HOME, round after round until none is, and only then lets the removal run.
 //
 // AND SO IS AN ORPHANED NIX. A launch refused after it started its image-identity eval beside the
 // fork-build slot leaves that `nix eval` running with no parent under the test's HOME, writing
@@ -101,16 +103,8 @@ func awaitDetachedWriters(t *testing.T, dir, home string) {
 					"it, past the upstream deadline a detached daemon is bounded by, and were "+
 					"killed: %s", home, homeDaemonBound, strings.Join(left, ", "))
 			}
-			workers, err := stopHomePreparationWorkers(home)
-			if len(workers) > 0 {
-				t.Logf("stopped the preparation processes left running under this test's HOME %s: %s",
-					home, strings.Join(workers, ", "))
-			}
-			if err != nil {
-				t.Errorf("stopping the preparation processes this test's launch left running "+
-					"under %s: %v", home, err)
-			}
-			// A refused launch's image-identity eval, orphaned under the home (homenix_test.go).
+			// A refused launch's image-identity eval, orphaned under the home (homenix_test.go),
+			// FIRST, so it gets the interrupt nix is given rather than the general stop's SIGTERM.
 			stoppedNix, err := stopHomeNixProcesses(home)
 			if len(stoppedNix) > 0 {
 				t.Logf("stopped the nix processes left running under this test's HOME %s: %s",
@@ -118,6 +112,18 @@ func awaitDetachedWriters(t *testing.T, dir, home string) {
 			}
 			if err != nil {
 				t.Errorf("stopping the nix processes this test's launch left running under %s: %v",
+					home, err)
+			}
+			// Then EVERYTHING else still running under the home — the preparation scheduler, its
+			// workers and the capture jails they run among them — until nothing is
+			// (preparationworkers_test.go).
+			stopped, err := stopHomeProcesses(home)
+			if len(stopped) > 0 {
+				t.Logf("stopped the processes left running under this test's HOME %s: %s",
+					home, strings.Join(stopped, ", "))
+			}
+			if err != nil {
+				t.Errorf("stopping the processes this test's launch left running under %s: %v",
 					home, err)
 			}
 		}
@@ -229,7 +235,7 @@ func TestEveryLaunchSiteAwaitsDetachedWriters(t *testing.T) {
 					waitsScratch = true
 				case "awaitHomeHostDaemons":
 					waitsDaemons = true
-				case "stopHomePreparationWorkers":
+				case "stopHomeProcesses":
 					stopsWorkers = true
 				case "stopHomeNixProcesses":
 					stopsNix = true
@@ -245,7 +251,7 @@ func TestEveryLaunchSiteAwaitsDetachedWriters(t *testing.T) {
 				}
 				if !stopsWorkers || !stopsNix {
 					t.Errorf("awaitDetachedWriters must stop what a launch leaves running under the "+
-						"test's HOME: its preparation workers (stopHomePreparationWorkers: %v) and "+
+						"test's HOME: every process left under it (stopHomeProcesses: %v) and "+
 						"an orphaned nix (stopHomeNixProcesses: %v)", stopsWorkers, stopsNix)
 				}
 			}
