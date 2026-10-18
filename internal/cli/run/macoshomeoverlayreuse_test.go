@@ -2,9 +2,12 @@ package run
 
 import (
 	"bytes"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jailcontent"
@@ -85,6 +88,73 @@ func TestAnUnchangedMacosUserRelaunchReusesTheHomeOverlay(t *testing.T) {
 	}
 	if after, _, ok := entrypoint.HomeOverlayDigest(third.Tree); !ok || after == before {
 		t.Fatalf("a changed input left the overlay's digest at %q (now %q, ok=%v)", before, after, ok)
+	}
+}
+
+// A RELAUNCH SECONDS LATER REUSES THE OVERLAY TOO, with the clock, the pid and the per-launch pack
+// tree all moving as they do on a real machine, a patched extension's per-launch copy among the
+// destinations, and the generated user scope (a file of core's) in it. The test above runs on the
+// fixed epoch clock dispatchOptions installs, which is how the generated user scope's launch
+// timestamp moved every real launch's digest unseen: every relaunch rebuilt, re-staged and
+// re-installed the whole overlay. Red with the timestamp in the overlay's copy of that file.
+func TestAMacosUserRelaunchLaterReusesTheHomeOverlay(t *testing.T) {
+	treeLaunchHome(t, true)
+	ws, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := t.TempDir()
+	clock := time.Unix(1_760_000_000, 0)
+	pid := 1000
+	launch := func() macosuser.HomeOverlay {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
+		o.MacosUserLaunchProbes = setUpMacProbes
+		o.CapturesDir = func() string { return store }
+		// A real clock moves between two launches, and so does the pid.
+		clock = clock.Add(7 * time.Second)
+		now := clock
+		o.Now = func() time.Time { return now }
+		pid++
+		mine := pid
+		o.Getpid = func() int { return mine }
+		o.BuildSlot = deliverTreeCopyWithFile(t)
+		var got macosuser.HomeOverlay
+		o.MacosUserRun = func(_ *jsonx.OrderedMap, _ string, _, _ []string, _, _ string, overlay macosuser.HomeOverlay,
+			_ macosuser.HostContext, _ bool, _ *jsonx.OrderedMap, _ []packload.BlockedTool, _ macosuser.JailDaemons) int {
+			got = overlay
+			return 0
+		}
+		if rc := Run(*o); rc != 0 || got.Tree == "" {
+			t.Fatalf("Run() = %d, overlay %q\nstdout:\n%s\nstderr:\n%s", rc, got.Tree, stdout.String(), stderr.String())
+		}
+		return got
+	}
+	first := launch()
+	if !slices.Contains(first.Dests, inheritPreflightRel) || !slices.Contains(first.Dests, treeInto) {
+		t.Fatalf("the overlay delivers %v, want the generated user scope and the patched extension among them", first.Dests)
+	}
+	files := map[string]os.FileInfo{}
+	if err := filepath.WalkDir(first.Tree, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			files[p] = overlayFileInfo(t, p)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, _, _ := entrypoint.HomeOverlayDigest(first.Tree)
+
+	second := launch()
+	after, _, _ := entrypoint.HomeOverlayDigest(second.Tree)
+	if after != before {
+		t.Fatalf("an unchanged relaunch moved the overlay's digest from %s to %s", before, after)
+	}
+	for p, fi := range files {
+		if !os.SameFile(fi, overlayFileInfo(t, p)) {
+			t.Errorf("an unchanged relaunch rewrote %s", p)
+		}
 	}
 }
 
