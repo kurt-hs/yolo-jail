@@ -588,7 +588,7 @@ func (f piExtensionFixture) runWarningHarness(t *testing.T, hasUI bool) (notifie
 	}
 	cmd := exec.Command(requireNode(t, "the pi openai-auth extension"), "harness.mjs")
 	cmd.Dir = f.dir
-	cmd.Env = append(append(os.Environ(), "HOME="+f.home, "PI_HAS_UI="+ui), piJailRoute.env()...)
+	cmd.Env = append(append(environWithout("PI_CODING_AGENT_DIR"), "HOME="+f.home, "PI_HAS_UI="+ui), piJailRoute.env()...)
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("executing the Pi OpenAI extension warning harness: %v\n%s", err, out)

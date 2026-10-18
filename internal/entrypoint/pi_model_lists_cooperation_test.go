@@ -114,7 +114,7 @@ func runPiCooperation(t *testing.T, lists, prior string, loads string, allJS str
 	}
 	cmd := exec.Command(requireNode(t, "the pi model-lists extension"), "harness.mjs")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "HOME="+home, "PRIOR="+prior, "YOLO_LOADS="+loads)
+	cmd.Env = append(environWithout("PI_CODING_AGENT_DIR"), "HOME="+home, "PRIOR="+prior, "YOLO_LOADS="+loads)
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("running the shipped extension: %v\n%s", err, out)

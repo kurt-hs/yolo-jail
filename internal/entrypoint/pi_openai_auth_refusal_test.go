@@ -194,7 +194,7 @@ func runPiCodexRefusal(t *testing.T, route piRoute, list []byte, allJS, compatJS
 	}
 	cmd := exec.Command(requireNode(t, "the pi openai-auth extension"), "harness.mjs")
 	cmd.Dir = dir
-	cmd.Env = append(append(os.Environ(), "HOME="+home, "PROBE_IDS="+string(probeJSON)), route.env()...)
+	cmd.Env = append(append(environWithout("PI_CODING_AGENT_DIR"), "HOME="+home, "PROBE_IDS="+string(probeJSON)), route.env()...)
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("running the shipped extension on the %s: %v\n%s", route.name, err, out)
