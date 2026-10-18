@@ -1,12 +1,15 @@
 package integration
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 )
 
 // THE HOUSEKEEPING SLOT ON A MAC (disk-footprint.md, the macos-user slot): a macos-user
@@ -46,6 +49,15 @@ func TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession(t *testi
 		}
 	})
 
+	// THE CLASS'S DEBOUNCE STAMP IS THE MACHINE'S (§6.3 of
+	// docs/design/macos-user-suite-on-a-developer-mac.md): the run store keeps this archive private
+	// but links the machine's build dir, where the stamp lives, so a developer's own launch earlier
+	// that day left this launch's slot not due, and it reaped nothing and noted nothing. The test
+	// owns the stamp for its launch, under the cross-run lock so another run's launch cannot stamp
+	// it meanwhile, and puts the machine's back.
+	holdMachineLock(t, true, "the macos-user housekeeping test owns the machine's loophole-state debounce stamp")
+	before := ownHousekeepingStamp(t, run.LoopholeStateHousekeepingClass)
+
 	r := runMacosUser(t, ws, "sleep 5\necho \"=== END ===\"", withAutoReapers())
 	if r.rc != 0 || !strings.Contains(r.stdout, "=== END ===") {
 		t.Fatalf("the macos-user launch did not run its session (rc %d), so nothing below is a "+
@@ -63,12 +75,46 @@ func TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession(t *testi
 	if len(left) < 3 || strings.Join(left[len(left)-3:], ",") != strings.Join(seeded[2:], ",") ||
 		strings.Contains(strings.Join(left, ","), seeded[0]) || strings.Contains(strings.Join(left, ","), seeded[1]) {
 		t.Errorf("after the session the retired generations are %v, want the newest three %v kept "+
-			"and %v reaped: the launch ran no housekeeping slot, or its exit cut the pass",
-			left, seeded[2:], seeded[:2])
+			"and %v reaped: the launch ran no housekeeping slot, its exit cut the pass, or another "+
+			"pass held the machine's pass lock%s", left, seeded[2:], seeded[:2], before)
 	}
 	note, err := os.ReadFile(filepath.Join(ws, ".yolo", "housekeeping.log"))
 	if err != nil || !strings.Contains(string(note), "loophole state: reclaimed ") ||
 		!strings.Contains(string(note), " retired generation(s), keeping the newest 3") {
-		t.Errorf("housekeeping.log does not record the reap (err %v):\n%s", err, note)
+		t.Errorf("housekeeping.log does not record the reap (err %v)%s:\n%s", err, before, note)
 	}
+}
+
+// ownHousekeepingStamp takes the debounce stamp of the housekeeping class named class over for
+// the calling test: it removes it, so the test's launch finds the class due, and restores it when
+// the test ends — the machine's bytes when there were any, no stamp when there was none — so the
+// machine's own cadence is what it was. It returns a clause saying what it found, for a failure.
+func ownHousekeepingStamp(t *testing.T, class string) string {
+	t.Helper()
+	path := run.HousekeepingStampPath(class)
+	data, err := os.ReadFile(path)
+	had := err == nil
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("reading the %s housekeeping stamp %s: %v", class, path, err)
+	}
+	if had {
+		if err := os.Remove(path); err != nil {
+			t.Fatalf("setting the machine's %s housekeeping stamp %s aside: %v", class, path, err)
+		}
+	}
+	t.Cleanup(func() {
+		if !had {
+			_ = os.Remove(path)
+			return
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Errorf("restoring the machine's %s housekeeping stamp %s (it held %q): %v",
+				class, path, strings.TrimSpace(string(data)), err)
+		}
+	})
+	if !had {
+		return fmt.Sprintf(" (the %s stamp %s was absent before the launch)", class, path)
+	}
+	return fmt.Sprintf(" (the machine's %s stamp %s, %q, was set aside for the launch)", class, path,
+		strings.TrimSpace(string(data)))
 }

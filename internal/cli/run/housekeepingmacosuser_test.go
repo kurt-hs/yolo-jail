@@ -201,6 +201,49 @@ func TestMacosUserRetiredLoopholeStateReapIsDebounced(t *testing.T) {
 	}
 }
 
+// THE STAMP A TEST OWNS IS THE ONE THE SLOT READS: HousekeepingStampPath of
+// LoopholeStateHousekeepingClass, which the macos-user integration test takes over for its launch
+// because the suite links the machine's build dir (docs/design/macos-user-suite-on-a-developer-mac.md
+// §6.3). A fresh stamp there leaves the archive whole, and the same launch with it removed reaps.
+// Fails if the slot's stamp moves away from the exported path, which would leave that test
+// owning a file nothing reads.
+func TestMacosUserSlotReadsTheExportedLoopholeStateStamp(t *testing.T) {
+	home := packHome(t)
+	writeUserPacks(t, home, `[]`)
+	ws := t.TempDir()
+	seeded := seedRetiredLoopholeGenerations(t, 5)
+	stamp := HousekeepingStampPath(LoopholeStateHousekeepingClass)
+
+	launch := func() {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
+		o.MacosUserRun = fakeMacosUserRun(func(macosUserCall) int { return 0 })
+		if rc := Run(*o); rc != 0 {
+			t.Fatalf("Run() = %d\nstderr:\n%s", rc, stderr.String())
+		}
+		housekeepingSlots.Wait()
+	}
+	var probe bytes.Buffer
+	now := dispatchOptions(t, ws, "macos-user", &probe, &probe, nil).Now()
+	if err := os.MkdirAll(filepath.Dir(stamp), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	prune.RecordAutoImageReap(stamp, now)
+	launch()
+	if got := remainingRetiredGenerations(t); strings.Join(got, ",") != strings.Join(seeded, ",") {
+		t.Fatalf("with a fresh stamp at %s the slot reaped (left %v): it reads another stamp", stamp, got)
+	}
+	if err := os.Remove(stamp); err != nil {
+		t.Fatal(err)
+	}
+	launch()
+	if got := remainingRetiredGenerations(t); strings.Join(got, ",") != strings.Join(seeded[2:], ",") {
+		t.Fatalf("with the stamp at %s removed the slot left %v, want the newest %d %v", stamp, got,
+			hostArchiveKeepInSlot, seeded[2:])
+	}
+}
+
 // THE OPT-OUT: YOLO_NO_AUTO_IMAGE_REAP turns the automatic classes off on this arm too (storage.md
 // says so for every launch), so the archive is left whole and the class leaves no stamp that would
 // delay the first pass after the opt-out is lifted. Fails if reapRetiredLoopholeState stops

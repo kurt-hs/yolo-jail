@@ -3,14 +3,14 @@ title: "What may a macos-user test assume about its host?"
 date: 2026-10-18
 status: in-review
 stage: DESIGN
-next: "Rule OQ-DM1 and OQ-DM2 (the two undeclared privileges), then OQ-DM3 (floor vs mise shim); the two defects in §6 need no ruling"
+next: "Rule OQ-DM1 and OQ-DM2 (the two undeclared privileges), then OQ-DM3 (floor vs mise shim); the two §6 defects are fixed in the tests and await a Mac re-run"
 tags: [design, macos-user, testing, privilege, seatbelt, measurement]
 summary: "The macos-user suite's gate probes one privilege — the run-as rule a launch needs — but twelve of its 148 tests need two more that no gate names: passwordless root sudo, and a readable unified log store. On the GitHub runner both are free, so the suite is green there and the dependency is invisible; on a Mac that grants yolo only what yolo asks for, those twelve FAIL rather than skip countably, and a developer cannot tell a broken change from an unprivileged host. The first full run on such a Mac is recorded here: 128 passed, 3 skipped, 12 failed, of which nine are the host's privileges and three are candidate defects."
 ---
 
 # What may a macos-user test assume about its host?
 
-**Status:** DESIGN, 2026-10-18. Nothing built. Evidence measured on this machine
+**Status:** DESIGN, 2026-10-18. The proposal ([§5](#5-the-proposed-shape)) is not built; [§6.2 and §6.3](#6-two-defects-and-one-design-question-this-run-found) are fixed in the tests, unmeasured on a Mac. Evidence measured on this machine
 2026-10-17 (full suite, at `245a2203d`) and 2026-10-18 (the twelve re-run, at `4d3248ded`).
 Host of record: macOS 26.5, arm64, uid 501, `_yolojail` present, `/Users/Shared/yolo`
 present, the run-as grant passwordless after `sudo -k`, **root `sudo` not passwordless**,
@@ -173,7 +173,8 @@ P3 says that gap should shrink. `4d3248ded` shrank it by one fixture pattern.
 
 ## 6. Two defects and one design question this run found
 
-These are the only three failures that are about yolo. None is fixed here.
+These are the only three failures that are about yolo. §6.2 and §6.3 are fixed, in the tests:
+neither was a product defect. §6.1 waits on [OQ-DM3](#8-open-questions).
 
 ### 6.1 The nix floor loses to a mise shim
 
@@ -218,15 +219,39 @@ two wire-bridge tests share that check. `doorwaysightings_test.go` runs the §6.
 closes this item. A failure now prints the survivor's full listing line, with its uid and
 `--listen` port, which tells a leak in the teardown apart from another session's doorway.
 
-### 6.3 Housekeeping reaps nothing and writes no log
+### 6.3 The housekeeping test's slot was not due, because its stamp is the machine's
 
-`TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession`: after the session the
-retired generations were all still present, and
-`<ws>/.yolo/housekeeping.log` did not exist
-([`integration/macosuserhousekeeping_test.go:65`](../../integration/macosuserhousekeeping_test.go)).
-⚠ The generation list it printed includes timestamps minted by *this suite's own earlier
-tests*, so shared state between tests is a live alternative explanation and should be ruled out
-first.
+`TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession` found the retired
+generations all still present after the session, and no `<ws>/.yolo/housekeeping.log`.
+
+**Shared state between tests is not the cause.** The suite's run store keeps `state/`, and so
+the retired loophole-state archive, private to the run. Earlier tests' generations do land
+there, which is why the list carried their timestamps. The test dates its seeds in 2099,
+though, and the slot keeps by name order, so those generations can only sort below the seeds.
+
+**The cause is shared state with the machine.** The run store links `build/` back to the
+machine's store, and that is where every housekeeping class keeps its once-a-day debounce stamp
+(`classDebounce`). So when the developer's own yolo launches had run a pass in the last 24 hours,
+the test's slot was not due. It reaped nothing and noted nothing, and finished in milliseconds,
+which matches the 0.000–0.002 s `housekeeping.slot` in the maintainer's macos-user timing. The
+earlier suite tests did not stamp it: they run with the automatic reapers off, and this class
+checks that before its stamp. A CI runner starts with no stamp, which is why only a developer
+Mac failed.
+
+**The product is right and matches containers.** The container slot debounces the same archive
+by a stamp in the same directory (`small-classes`), and the macos-user slot reaps and notes
+whenever its class is due (`TestMacosUserLaunchRunsItsHousekeepingSlot`).
+
+**Fixed in the test.** It takes the stamp over for its one launch (`ownHousekeepingStamp`) under
+the cross-run lock, and puts it back afterwards: the machine's bytes if it had a stamp, nothing
+if it had none. The stamp's path is exported from the slot (`run.HousekeepingStampPath`), so the
+test cannot drift onto a file the slot does not read. `TestMacosUserSlotReadsTheExportedLoopholeStateStamp`
+and `TestOwnHousekeepingStampHandsTheMachinesStampBack` pin both halves under `-short` on Linux.
+One thing the test cannot own is the machine-wide pass lock. A real pass running at the same
+moment still skips this one, and a failure now says so and names the stamp it set aside.
+
+**The Mac re-runs** `-run '^TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession$'`.
+A pass closes this item.
 
 ## 7. Measurements this run produced
 
@@ -390,8 +415,9 @@ runner.
 2. Add the two probes and their skip reasons beside the existing five facts; label them in the
    ledger. One commit, no assertion touched.
 3. Take [§6.2](#62-another-sessions-doorway-was-read-as-this-sessions-survivor) and
-   [§6.3](#63-housekeeping-reaps-nothing-and-writes-no-log) as ordinary defects, the latter after
-   ruling out cross-test state.
+   [§6.3](#63-the-housekeeping-tests-slot-was-not-due-because-its-stamp-is-the-machines) as ordinary
+   defects. Both turned out to be the tests reading machine-wide state, and both are fixed in the
+   tests.
 4. Rule [OQ-DM3](#8-open-questions); fix whichever side it condemns, and fix the failure
    message either way — it names two causes that were both innocent here.
 5. Keep removing root-`sudo` fixtures in the direction `4d3248ded` set.
