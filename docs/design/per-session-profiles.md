@@ -362,6 +362,22 @@ The maintainer's rulings, then implementation decisions (reversible, made while 
 | <a id="SP-D12"></a>SP-D12 | The snapshot lives at `~/.config/yolo-agent-env/sessions/<id>/` (the already-bound agent-env directory, no new mount), is published by rename, and an entry whose snapshot cannot be written is refused | 2026-10-18 | [plan](per-session-profiles-plan.md#task-1--entry-snapshots-environment-half-independent) | — |
 | <a id="SP-D13"></a>SP-D13 | The declaration is a top-level `session_homes` list (directory, variable, shared names, `prefer` links), so an older yolo reading a newer pack ignores it instead of skipping the pack's program | 2026-10-18 | [plan](per-session-profiles-plan.md#task-2--session-home-declaration-render-and-link-pass-pis-declaration-independent) | — |
 | <a id="SP-D14"></a>SP-D14 | A session render keeps its own baseline sidecars (last render, selection, provenance, insert record) under `.yolo/prism/sessions/<id>/`; the overlay and list capture stay shared, which is what capture writes | 2026-10-18 | [plan](per-session-profiles-plan.md#traps) | — |
+| <a id="SP-D15"></a>SP-D15 | The jail's boot keeps a leftover session home that holds a stray, with its sidecars, instead of deleting it, so nothing is lost | 2026-10-18 | [§4.5](#45-pis-own-writes) | — |
+| <a id="SP-D16"></a>SP-D16 | Before a session's first render its baseline is seeded from the shared copy's last render, so the shared overlay folds in whole | 2026-10-18 | [§4.5](#45-pis-own-writes) | — |
+| <a id="SP-D17"></a>SP-D17 | Leftover homes are removed only by the hold jail's own boot (pid 1), never by a session pass | 2026-10-18 | [§4.5](#45-pis-own-writes) | — |
+| <a id="SP-D18"></a>SP-D18 | Capture skips a home with no baseline for a surface, which would otherwise read that session's profile values as edits | 2026-10-18 | [§4.5](#45-pis-own-writes) | — |
+| <a id="SP-D19"></a>SP-D19 | SP-D2 holds when a session gets no home too (SP-D5, SP-D6): the pass renders nothing into the declared directory | 2026-10-18 | [§4.6](#46-lifetime-and-failure) | — |
+| <a id="SP-D20"></a>SP-D20 | Capture and the render lock run on every container pass whenever a selected pack declares a session home | 2026-10-18 | [§4.5](#45-pis-own-writes) | — |
+| <a id="SP-D21"></a>SP-D21 | At the host each launch's home is `<state dir>/host-session-homes/<pack>-<random>/`, with a `.lease` and a scratch home whose declared directory is the session home, so every render bookkeeping byte lands in the throwaway directory | 2026-10-18 | [§4.7](#47-the-host) | — |
+| <a id="SP-D22"></a>SP-D22 | The host's session render runs as `own` into the scratch home whatever `host_management` says, seeded with copies of the real files (and, under `own`, the real capture store's sidecars for those surfaces) | 2026-10-18 | [§4.7](#47-the-host) | — |
+| <a id="SP-D23"></a>SP-D23 | The host's inputs are `yolo host apply`'s, with the launch's own selection for its agent when a `-p` was typed | 2026-10-18 | [§4.7](#47-the-host) | — |
+| <a id="SP-D24"></a>SP-D24 | Every host launch reaps homes whose lease nobody holds, before reading declarations; `yolo prune` runs the same sweep | 2026-10-18 | [§4.7](#47-the-host) | — |
+| <a id="SP-D25"></a>SP-D25 | Inside a jail, `yolo host` makes no session home | 2026-10-18 | [§4.7](#47-the-host) | — |
+| <a id="SP-D26"></a>SP-D26 | A host render that refuses a surface refuses the launch (SP-D6), never a silent fallback to the seeded copy | 2026-10-18 | [§4.7](#47-the-host) | — |
+| <a id="SP-D27"></a>SP-D27 | Under `host_management: own` every host launch of a declaring pack gets a home, `-p` or not; the existing `-p` argv selection is still handed | 2026-10-18 | [§4.7](#47-the-host) | — |
+| <a id="SP-D28"></a>SP-D28 | Each host home gets one disclosure line, since a launch has no quiet mode | 2026-10-18 | [§4.7](#47-the-host) | — |
+| <a id="SP-D29"></a>SP-D29 | The host's SP-D5 check reads the child's composed environment (the shell plus `env_sources`) | 2026-10-18 | [§4.7](#47-the-host) | — |
+| <a id="SP-D30"></a>SP-D30 | Under `host_management: none` (the default) only a launch with a typed `-p` gets a session home; a bare launch reads the user's own directory, because `none` leaves the program's config to the user | 2026-10-18 | [§4.7](#47-the-host) | — |
 
 ## 12. What done looks like
 
