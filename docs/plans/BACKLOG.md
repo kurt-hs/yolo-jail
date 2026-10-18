@@ -760,6 +760,13 @@ again. It failed once on `/var/lib/containers/storage/overlay` while integration
 jail were adding and removing podman mounts (`internal/entrypoint/fsx_test.go`). A fixture mount
 table instead of the live one would remove the race. Found 2026-10-18.
 
+### <a id="worker-sigterm-capture-jail"></a>🔧 **A stopped preparation worker leaves its capture jail's keeper running**
+
+A shared-demand worker that gets SIGTERM while a `program-capture-jail` runs exits without waiting
+for that jail's teardown, so the jail's `internal daemon jail-keeper` outlives it until something
+else stops it. Seen 2026-10-18 by the integration cleanup fixture (`stopHomeProcesses`), which now
+stops it in a later round. Whether the worker should end its capture jail first is open.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
