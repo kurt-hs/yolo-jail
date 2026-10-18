@@ -23,6 +23,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -135,6 +136,82 @@ func WorkspaceConfigDrift(workspace string) (diffLines []string, hasDrift, ok bo
 	}
 	diff := unifiedDiff(
 		splitLines(baseline), splitLines(liveJSON),
-		"config that started this jail", "workspace config on disk now")
+		"config this jail has", "workspace config on disk now")
 	return diff, true, true, nil
+}
+
+// ReadWorkspaceBootBaseline reads the effective-config record, WorkspaceConfigBootPath, as a
+// map. ok is false when there is none (a jail launched before baselines, or the file removed).
+//
+// THE RECORD IS THE CONFIG A RUNNING JAIL HAS, not only the one it booted with
+// (docs/design/live-config-apply.md LA-D8): `yolo config apply` folds each change it applied
+// live into it, one top-level key at a time (FoldBootBaselineKey), so drift against it is
+// exactly what is still pending. It stays a convenience in the agent-writable workspace; the
+// approval record is the trust, and nothing reads this one to decide what to admit.
+func ReadWorkspaceBootBaseline(workspace string) (*jsonx.OrderedMap, bool, error) {
+	data, err := os.ReadFile(WorkspaceConfigBootPath(workspace))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	v, err := jsonx.Decode(data)
+	if err != nil {
+		return nil, false, fmt.Errorf("%s: %w", WorkspaceConfigBootPath(workspace), err)
+	}
+	m, ok := v.(*jsonx.OrderedMap)
+	if !ok {
+		return nil, false, fmt.Errorf("%s: not a JSON object", WorkspaceConfigBootPath(workspace))
+	}
+	return m, true, nil
+}
+
+// FoldBootBaselineKey makes one top-level key of the effective-config record equal the
+// workspace config's current value of it, or removes the key when current has none. Every
+// other key keeps the value it had. Called by `yolo config apply` once EVERY element of that
+// key's change reached the running jail (LA-D8), so a key with a failed element keeps its boot
+// value and `drift` keeps reporting it.
+//
+// It refuses when there is no record: a fold would otherwise create a baseline holding one key,
+// and drift would then report every other key as a change the jail never had.
+func FoldBootBaselineKey(workspace, key string, current *jsonx.OrderedMap) error {
+	boot, ok, err := ReadWorkspaceBootBaseline(workspace)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("%s does not exist, so there is no record to fold %s into",
+			WorkspaceConfigBootPath(workspace), key)
+	}
+	if v, has := current.Get(key); has {
+		boot.Set(key, jsonx.DeepCopy(v))
+	} else {
+		boot.Delete(key)
+	}
+	j, err := SnapshotJSON(boot)
+	if err != nil {
+		return err
+	}
+	return writeWorkspaceSnapshot(workspace, WorkspaceConfigBootPath(workspace), j)
+}
+
+// ConfigPartChanged reports whether the workspace config part of the approval record differs
+// from wsCfg, as the config-change gate would compare them (ApproveConfigAndScope), writing
+// nothing. A workspace with no record differs unless its config is empty, which the gate
+// records with no question. It is the cheap check a non-interactive attach makes before
+// saying that a change waits for `yolo config apply` (LA-D9); the scope half is ScopeChanges.
+func ConfigPartChanged(workspace string, wsCfg *jsonx.OrderedMap) (bool, error) {
+	currentJSON, err := SnapshotJSON(approvalConfigPart(wsCfg))
+	if err != nil {
+		return false, err
+	}
+	old, err := os.ReadFile(ApprovalSnapshotPath(workspace))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return currentJSON != "{}", nil
+		}
+		return false, err
+	}
+	return pyRstrip(string(old)) != currentJSON, nil
 }
