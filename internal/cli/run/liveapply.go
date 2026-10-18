@@ -225,7 +225,16 @@ type applyRun struct {
 func (o *Options) liveApply(cfg *jsonx.OrderedMap, rt, cname string, envLines []string, mode applyMode) int {
 	run := &applyRun{cfg: cfg, rt: rt, cname: cname, envLines: envLines, mode: mode}
 	var plan []applyChange
-	hooks := &gateHooks{attach: mode.attach, plan: func(scope *config.ScopeCheck) []string {
+	moved := false
+	hooks := &gateHooks{attach: mode.attach, plan: func(read *config.WorkspaceRead, scope *config.ScopeCheck) []string {
+		// THE PLAN IS OF THE CONFIG THE GATE APPROVES (B1). cfg was loaded before the gate read
+		// the workspace again, and an agent can rewrite the file between the two: every step
+		// below is derived from cfg, so it runs only when the gate's read composes to cfg.
+		if !o.gateReadIsLoaded(cfg, read) {
+			moved = true
+			return nil
+		}
+		run.current = read.Config
 		plan = o.applyPlan(run, scope)
 		if len(plan) == 0 {
 			return nil
@@ -236,6 +245,17 @@ func (o *Options) liveApply(cfg *jsonx.OrderedMap, rt, cname string, envLines []
 		if mode.attach {
 			return 0
 		}
+		return 1
+	}
+	if moved {
+		out := o.pr(o.Stdout)
+		out.print("[bold red]Nothing was applied: the workspace config changed while yolo was reading it.[/bold red]")
+		if mode.attach {
+			out.print("[dim]This session starts with the jail as it is. Run `yolo config apply` again " +
+				"on the host to apply the config as it is now.[/dim]")
+			return 0
+		}
+		out.print("[dim]Run `yolo config apply` again to see and apply the config as it is now.[/dim]")
 		return 1
 	}
 	if len(plan) == 0 {
@@ -267,11 +287,11 @@ func (o *Options) liveApply(cfg *jsonx.OrderedMap, rt, cname string, envLines []
 // applyPlan gathers the plan's inputs (applyPlanInput) and builds it. scope is the gate's own
 // scope check; nothing here writes.
 func (o *Options) applyPlan(run *applyRun, scope *config.ScopeCheck) []applyChange {
-	current, err := config.LoadWorkspaceConfig(o.Workspace, false, func(string) {})
-	if err != nil || current == nil {
+	current := run.current
+	if current == nil {
 		current = jsonx.NewOrderedMap()
+		run.current = current
 	}
-	run.current = current
 	boot, bootOK, _ := config.ReadWorkspaceBootBaseline(o.Workspace)
 	in := applyPlanInput{rt: run.rt, running: run.mode.running || run.mode.unknown, boot: boot,
 		bootOK: bootOK, current: current}
@@ -308,6 +328,22 @@ func (o *Options) applyPlan(run *applyRun, scope *config.ScopeCheck) []applyChan
 		}
 	}
 	return plan
+}
+
+// gateReadIsLoaded reports whether the gate's read of the workspace config, composed as a launch
+// composes it, is cfg, the config this apply loaded and validated before the gate read again.
+// Anything it cannot prove is false.
+func (o *Options) gateReadIsLoaded(cfg *jsonx.OrderedMap, read *config.WorkspaceRead) bool {
+	if cfg == nil || read == nil {
+		return false
+	}
+	composed, err := config.ComposeWithWorkspaceRead(o.Workspace, read.Config)
+	if err != nil {
+		return false
+	}
+	a, err1 := jsonx.DumpsSnapshot(cfg)
+	b, err2 := jsonx.DumpsSnapshot(composed)
+	return err1 == nil && err2 == nil && a == b
 }
 
 // applyBlock renders the outcome block: one line per change, colored by outcome, each with
