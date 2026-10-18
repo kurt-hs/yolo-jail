@@ -122,6 +122,10 @@ func New(now func() time.Time, sinks ...Sink) *Log {
 
 func (l *Log) enabled() bool { return l != nil && l.on }
 
+// Enabled reports whether the Log records anything, for a caller whose event detail costs
+// something to compose (a formatted argv): it composes only when a recording reads it.
+func (l *Log) Enabled() bool { return l.enabled() }
+
 // Span starts a named span. The returned Span's End records the duration;
 // ending is idempotent, and a nil Span (timing off, or a nil Log) makes End a
 // no-op — `defer o.Perf.Span("x").End()` is safe unconditionally.

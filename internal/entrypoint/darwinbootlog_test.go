@@ -1,6 +1,7 @@
 package entrypoint
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -289,5 +290,40 @@ func TestTheDarwinBootLogFollowsALinkAboveTheStateDir(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "macos-user bootstrap, yolo via-link\n") {
 		t.Errorf("boot.log is not this bootstrap's log:\n%s", raw)
+	}
+}
+
+// The bootstrap times its steps for the launcher (writeBootPerf): one `<seconds>\t<step>` line
+// per step it ran, in order and never going backwards, in <workspace>/.yolo/boot-perf.log.
+//
+// MUTATION: drop the perf log from RunDarwinBootstrap's bootRun, or the writeBootPerf call, and
+// this goes red at the read.
+func TestTheDarwinBootstrapWritesItsStepTimings(t *testing.T) {
+	home, ws := resolvedDir(t), resolvedDir(t)
+	e := darwinBootEnv(t, home, ws, nil)
+	var term strings.Builder
+	e.Stderr = &term
+	if err := RunDarwinBootstrap(e, DarwinBootstrapOptions{Version: "0.12.0"}); err != nil {
+		t.Fatalf("bootstrap failed: %v\n%s", err, term.String())
+	}
+	raw, err := os.ReadFile(BootPerfPath(ws))
+	if err != nil {
+		t.Fatalf("the macos-user bootstrap wrote no step timings: %v", err)
+	}
+	lines := strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
+	if len(lines) < 5 {
+		t.Fatalf("only %d timed steps:\n%s", len(lines), raw)
+	}
+	prev := -1.0
+	for _, line := range lines {
+		secs, label, ok := strings.Cut(line, "\t")
+		var at float64
+		if _, err := fmt.Sscanf(secs, "%f", &at); !ok || err != nil || label == "" || at < prev {
+			t.Errorf("a malformed or backwards step line %q", line)
+		}
+		prev = at
+	}
+	if !strings.Contains(string(raw), "\tdarwin_home_layout\n") {
+		t.Errorf("the darwin home layout step is not among the timings:\n%s", raw)
 	}
 }

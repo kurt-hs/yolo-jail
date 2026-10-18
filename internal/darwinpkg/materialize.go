@@ -16,6 +16,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/nixchildren"
 	"github.com/mschulkind-oss/yolo-jail/internal/nixstderr"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 	"github.com/mschulkind-oss/yolo-jail/internal/reporoot"
 )
 
@@ -56,12 +57,16 @@ func (e *MaterializeError) Error() string { return e.msg }
 // repoRoot is the nix build cwd (the repo ROOT — parent of src). system ""
 // defaults to NativeSystem(). errStderr defaults to os.Stderr (injectable for
 // tests). The returned error is always a *MaterializeError on failure.
-func Materialize(repoRoot string, packages []any, system string, errStderr io.Writer) (*DarwinPackages, error) {
+//
+// log is the launch's timing collector (nil records nothing): the build's two halves are spanned
+// on it as macos_user.materialize.skip_eval and macos_user.materialize.build
+// (docs/reference/perf-logging.md), on every return.
+func Materialize(repoRoot string, packages []any, system string, errStderr io.Writer, log *perf.Log) (*DarwinPackages, error) {
 	if system == "" {
 		system = NativeSystem()
 	}
 	return materializeWithArgv(repoRoot, packages, system,
-		materializeArgv(system, paths.Home()), errStderr)
+		materializeArgv(system, paths.Home()), errStderr, log)
 }
 
 // MaterializeAt is Materialize with the GC-root out-link named by the CALLER, and it exists
@@ -83,7 +88,7 @@ func MaterializeAt(repoRoot string, packages []any, system, outLink string, errS
 		system = NativeSystem()
 	}
 	return materializeWithArgv(repoRoot, packages, system,
-		BuildProfileArgv(system, outLink), errStderr)
+		BuildProfileArgv(system, outLink), errStderr, nil)
 }
 
 // MaterializeFloorAt is Materialize — the floor PLUS the declared `packages:` — with its GC-root
@@ -109,14 +114,14 @@ func MaterializeFloorAt(repoRoot string, packages []any, system, outLink string,
 		system = NativeSystem()
 	}
 	return materializeWithArgv(repoRoot, packages, system,
-		BuildFloorProfileArgv(system, outLink), errStderr)
+		BuildFloorProfileArgv(system, outLink), errStderr, nil)
 }
 
 // materializeWithArgv is the shared impure body: refuse an empty repoRoot, read the skip
 // list, run the given build argv while streaming its stderr, and derive the profile paths.
 // The argv is a parameter so the ROOTING decision belongs to the caller that has the
 // lifetime argument for it — see Materialize and MaterializeAt.
-func materializeWithArgv(repoRoot string, packages []any, system string, argv []string, errStderr io.Writer) (*DarwinPackages, error) {
+func materializeWithArgv(repoRoot string, packages []any, system string, argv []string, errStderr io.Writer, log *perf.Log) (*DarwinPackages, error) {
 	// AN EMPTY repoRoot IS REFUSED, not defaulted. Every nix invocation here sets
 	// cmd.Dir = repoRoot, and an empty Dir does not mean "no directory" — it means
 	// INHERIT THE CALLER'S, so nix would resolve `.#` against whatever the user
@@ -140,7 +145,9 @@ func materializeWithArgv(repoRoot string, packages []any, system string, argv []
 		return nil, &MaterializeError{msg: fmt.Sprintf("could not build nix env: %v", err)}
 	}
 
+	evalSpan := log.Span("macos_user.materialize.skip_eval")
 	skipped := skippedNames(repoRoot, baseEnv, system)
+	evalSpan.End()
 
 	// Stream stderr live while capturing stdout (the store out-path) and a
 	// bounded stderr tail for the error message.
@@ -151,7 +158,9 @@ func materializeWithArgv(repoRoot string, packages []any, system string, argv []
 	var stdout strings.Builder
 	cmd.Stdout = &stdout
 
+	buildSpan := log.Span("macos_user.materialize.build")
 	tailLines, exitCode, err := streamStderrTail(cmd, errStderr, 30)
+	buildSpan.End()
 	if err != nil {
 		// FileNotFoundError → "nix command not found on PATH"; other start
 		// failures → "nix build failed to run: …" (matches the Python split).

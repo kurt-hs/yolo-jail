@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
@@ -1242,40 +1243,25 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// THE GUEST PACK TREE (packtreeproof.go): claimed before anything reserves it, ours at its
 	// successful exclusive mkdir, and removed on every return once nothing this launch started
 	// may still read it. Bootstrap is its first guest consumer.
+	claimSpan := deps.Perf.Span("macos_user.stage.claim_pack_tree")
 	packTree := beginPackTree(deps, out, plan.PackRoot)
-	defer finishPackTree(deps, out, packTree)
-	// A GRANT ANOTHER SESSION OF THE WORKSPACE MADE is not made again (Options.SkipGrant): the
-	// keeper's endpoint files are every session's (§9.9.5).
-	var granted []string
-	for _, cmd := range plan.StageCommands {
-		if target, ok := grantTarget(cmd); ok {
-			granted = append(granted, target)
-			if opts.SkipGrant != nil && opts.SkipGrant(target) {
-				continue
-			}
-		}
-		if deps.Run(cmd) != 0 {
-			if rc, ending := deps.ending(); ending {
-				return rc
-			}
-			if isPackTreeReservationCommand(cmd, plan.PackRoot) {
-				printPackTreeReservationFailure(out, plan.PackRoot)
-			} else {
-				out.printf("[bold red]Could not stage entrypoint (%s).[/bold red]", shquote.JoinDisplay(cmd))
-			}
-			return 1
-		}
-		if isPackTreeReservationCommand(cmd, plan.PackRoot) {
-			packTree.owned = true
-		}
-	}
-	if opts.OnStaged != nil {
-		opts.OnStaged(granted)
+	claimSpan.End()
+	defer func() {
+		steps.end() // a refused stage's span ends before the release's
+		sp := deps.Perf.Span("macos_user.release_pack_tree")
+		finishPackTree(deps, out, packTree)
+		sp.End()
+	}()
+	if rc, ok := runStageCommands(deps, out, opts, plan, packTree); !ok {
+		return rc
 	}
 	// THE INSTALL-CAPTURE STORE'S ENTRIES (H4), after every stage command this launch cannot run
 	// without, and best-effort where those are fatal (stageCaptures).
-	if rc, ending := stageCaptures(deps, out, plan); ending {
-		return rc
+	capturesSpan := deps.Perf.Span("macos_user.stage.captures")
+	captureRC, ending := stageCaptures(deps, out, plan)
+	capturesSpan.End()
+	if ending {
+		return captureRC
 	}
 
 	// 2.5 THE SESSION ENV FILE — everything this launch composed, delivered as a host-owned
@@ -1300,10 +1286,16 @@ func RunMacosUser(deps Deps, opts Options) int {
 		sp.End()
 	}()
 	steps.begin("env_file")
-	if !installSandboxEnvFile(deps, out, plan) {
+	envSpan := deps.Perf.Span("macos_user.env_file.session_env")
+	envOK := installSandboxEnvFile(deps, out, plan)
+	envSpan.End()
+	if !envOK {
 		return deps.endingOr(1)
 	}
-	if !installCATrustFiles(deps, out, plan.caTrustFilePlans()) {
+	caSpan := deps.Perf.Span("macos_user.env_file.ca_trust_files")
+	caOK := installCATrustFiles(deps, out, plan.caTrustFilePlans())
+	caSpan.End()
+	if !caOK {
 		return deps.endingOr(1)
 	}
 
@@ -1320,7 +1312,9 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// the output is otherwise.
 	steps.begin("bootstrap")
 	packTree.consumerDispatched = true
+	bootPerf := clearBootPerf(deps, plan.Workspace)
 	bootRC := deps.Run(plan.BootstrapArgv)
+	recordBootPerf(deps, bootPerf)
 	if rc, ending := deps.ending(); ending {
 		return rc
 	}
@@ -1455,6 +1449,83 @@ func (s *launchSteps) end() {
 	s.open.End()
 	s.open = nil
 }
+
+// runStageCommands runs plan.StageCommands in order, the stage's fatal half, spanning each run of
+// one step (RunPlan.StageCommandSteps) as macos_user.stage.<step> and noting each command with
+// its duration as macos_user.stage.command — a note, so the host perf log carries every command
+// and the --timing table only the steps (docs/reference/perf-logging.md). The open span ends on
+// every return. ok is false when the stage refused, with the status to return.
+//
+// A GRANT ANOTHER SESSION OF THE WORKSPACE MADE is not made again (Options.SkipGrant): the
+// keeper's endpoint files are every session's (§9.9.5).
+func runStageCommands(deps Deps, out printer, opts Options, plan RunPlan, packTree *packTreeUse) (int, bool) {
+	var span *perf.Span
+	open := ""
+	defer func() { span.End() }()
+	var granted []string
+	for i, cmd := range plan.StageCommands {
+		if target, ok := grantTarget(cmd); ok {
+			granted = append(granted, target)
+			if opts.SkipGrant != nil && opts.SkipGrant(target) {
+				continue
+			}
+		}
+		if step := plan.stageStep(i); step != open {
+			span.End()
+			span, open = deps.Perf.Span("macos_user.stage."+step), step
+		}
+		if deps.runNoted("macos_user.stage.command", open, cmd) != 0 {
+			span.End()
+			if rc, ending := deps.ending(); ending {
+				return rc, false
+			}
+			if isPackTreeReservationCommand(cmd, plan.PackRoot) {
+				printPackTreeReservationFailure(out, plan.PackRoot)
+			} else {
+				out.printf("[bold red]Could not stage entrypoint (%s).[/bold red]", shquote.JoinDisplay(cmd))
+			}
+			return 1, false
+		}
+		if isPackTreeReservationCommand(cmd, plan.PackRoot) {
+			packTree.owned = true
+		}
+	}
+	span.End()
+	if opts.OnStaged != nil {
+		opts.OnStaged(granted)
+	}
+	return 0, true
+}
+
+// stageStep is the timing step of plan.StageCommands[i] (RunPlan.StageCommandSteps), or
+// "commands" for a plan whose two lists disagree, which a hand-edited plan can.
+func (plan RunPlan) stageStep(i int) string {
+	if len(plan.StageCommandSteps) != len(plan.StageCommands) || plan.StageCommandSteps[i] == "" {
+		return "commands"
+	}
+	return plan.StageCommandSteps[i]
+}
+
+// runNoted is Deps.Run that also notes the command on the launch's collector as name, with its
+// step, its duration and its argv — composed only when the collector records, so an
+// unrecorded launch pays one nil check per command.
+func (d Deps) runNoted(name, step string, argv []string) int {
+	if !d.Perf.Enabled() {
+		return d.Run(argv)
+	}
+	start := time.Now()
+	rc := d.Run(argv)
+	cmd := shquote.JoinDisplay(argv)
+	if len(cmd) > maxNotedArgv {
+		cmd = cmd[:maxNotedArgv] + "…"
+	}
+	d.Perf.Note(name, fmt.Sprintf("%s %.3fs rc=%d %s", step, time.Since(start).Seconds(), rc, cmd))
+	return rc
+}
+
+// maxNotedArgv bounds a noted command's argv in the perf log: an unseal script's text would
+// otherwise fill a line.
+const maxNotedArgv = 240
 
 // stageCaptures runs plan.CaptureStageCommands (macosuser.go's StageCaptureCommands), BEST-EFFORT:
 // the store only spares a program its vendor's download, and its launcher falls back to that
