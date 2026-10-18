@@ -52,6 +52,11 @@ and a pi-subagents registry several extensions can share stays in item 28.
 3. [Apply config changes to a running jail](../design/live-config-apply.md) — the maintainer's
    2026-10-18 ask (read-only mounts and GitHub scope first); rulings owed before building.
 
+4. [Give each session in one jail its own profile](../design/per-session-profiles.md) — the
+   maintainer's 2026-10-18 report: an attach on another profile, or a bare attach of another agent,
+   re-renders the files a running pi's subagents read, and they deadlock against its provider
+   policy. Rulings owed before building.
+
 Native readiness and credential-store work retain their places below: assess
 [the privilege prerequisites](../research/sandvault-macos-privileges.md) without broad root
 cleanup, and rule [keychain scope/unlock/migration](../design/keychain-from-a-jail.md) without
