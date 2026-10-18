@@ -376,7 +376,7 @@ func TestUnclassifiedKeyIsDroppedAndReported(t *testing.T) {
 	effective := jsonx.NewOrderedMap()
 	effective.Set("packs", []any{"claude"})
 	effective.Set("some_future_key", "value")
-	files, unknown, err := inheritScopeFiles(effective, "podman", "")
+	files, unknown, err := inheritScopeFiles(effective, nil, "podman", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,7 +452,7 @@ func TestPreflightFileIsTheInJailUserConfigPath(t *testing.T) {
 func TestDeliveredBytesAreTheRendererOutput(t *testing.T) {
 	effective := jsonx.NewOrderedMap()
 	effective.Set("packs", []any{"claude"})
-	files, _, err := inheritScopeFiles(effective, "podman", "2026-08-14T12:00:00Z")
+	files, _, err := inheritScopeFiles(effective, nil, "podman", "2026-08-14T12:00:00Z")
 	if err != nil {
 		t.Fatal(err)
 	}

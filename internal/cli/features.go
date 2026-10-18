@@ -13,12 +13,15 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/outfmt"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/tty"
 )
 
 const featuresUsage = `Usage: yolo features [--format json]
 
 List what this build of yolo can read in a pack, one capability per line, so a pack
-author or a script can check a host before selecting a pack that needs one.
+author or a script can check a host before selecting a pack that needs one. On a
+terminal each name is followed by what a pack uses it for; piped, each line is the
+name alone, so a script can match it whole.
 
 Three families of names:
   <name>         a field or mode of a pack, such as patch-series, patched-extensions
@@ -37,7 +40,7 @@ Flags:
 With --format json, stdout is one document: {"features": [{"name", "summary"}, …]}.
 
 Examples:
-  yolo features                       # every capability this yolo reads, one per line
+  yolo features                       # every capability this yolo reads, and what it is for
   yolo features --format json         # the same, with what each one is for
   yolo features | grep -qx patch-series || echo "this yolo predates patch series"`
 
@@ -64,8 +67,13 @@ func runFeatures(args []string) int {
 			"Run `yolo features --help` for its flags.\n", extra)
 		return 2
 	}
-	return featuresRun(os.Stdout, format)
+	return featuresRun(os.Stdout, format, featuresStdoutIsTerminal())
 }
+
+// featuresStdoutIsTerminal decides whether the text form carries each name's summary: a person at
+// a terminal reads what a name means, and a script reading a pipe gets the bare name it matches
+// whole (the help's `grep -qx` example). A variable so the front-door test can stand in a terminal.
+var featuresStdoutIsTerminal = func() bool { return tty.IsTerminalFile(os.Stdout) }
 
 // featuresPositional is the first argument that is neither the command's own name, a flag, nor
 // --format's value, "" when there is none: the command takes no argument, and a script that
@@ -85,8 +93,9 @@ func featuresPositional(args []string) string {
 	return ""
 }
 
-// featuresRun writes the capability list to w, as one name per line or as one JSON document.
-func featuresRun(w io.Writer, format string) int {
+// featuresRun writes the capability list to w, as one JSON document or one name per line; with
+// summaries set, each name is padded to one column and followed by what a pack uses it for.
+func featuresRun(w io.Writer, format string, summaries bool) int {
 	features := packdecl.Features()
 	if outfmt.IsJSON(format) {
 		enc := json.NewEncoder(w)
@@ -97,7 +106,15 @@ func featuresRun(w io.Writer, format string) int {
 		}
 		return 0
 	}
+	width := 0
 	for _, f := range features {
+		width = max(width, len(f.Name))
+	}
+	for _, f := range features {
+		if summaries {
+			fmt.Fprintf(w, "%-*s  %s\n", width, f.Name, f.Summary)
+			continue
+		}
 		fmt.Fprintln(w, f.Name)
 	}
 	return 0

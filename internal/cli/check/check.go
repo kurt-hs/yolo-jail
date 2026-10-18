@@ -76,19 +76,19 @@ func Check(opts Options) int {
 	r.blank()
 
 	// Version line (dim).
-	ver := o.Version
+	// The line carries the build's identity beside the version (version.CheckLine): its stamp
+	// and commit, and the binary's own version when YOLO_VERSION overrides it, since two builds
+	// with different rules can print one version string. The JSON report keeps the version alone.
+	ver, verLine := o.Version, o.Version
 	if ver == "" {
 		repoRootForVer := ""
 		if rr, ok := o.RepoRoot(); ok {
 			repoRootForVer = rr.Root
 		}
-		ver = version.Get(repoRootForVer)
-		if ver == "" {
-			ver = "unknown"
-		}
+		ver, verLine = version.Get(repoRootForVer), version.CheckLine(repoRootForVer)
 	}
 	r.version = ver
-	r.line(r.style("Version: "+ver, ansiDim))
+	r.line(r.style("Version: "+verLine, ansiDim))
 	r.blank()
 
 	// --- Container Runtime ---

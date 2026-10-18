@@ -26,7 +26,7 @@ func TestFeaturesIsARegisteredCommand(t *testing.T) {
 
 func TestYoloFeaturesPrintsOneNamePerLine(t *testing.T) {
 	var out bytes.Buffer
-	if rc := featuresRun(&out, "text"); rc != 0 {
+	if rc := featuresRun(&out, "text", false); rc != 0 {
 		t.Fatalf("rc = %d", rc)
 	}
 	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
@@ -48,7 +48,7 @@ func TestYoloFeaturesPrintsOneNamePerLine(t *testing.T) {
 
 func TestYoloFeaturesJSONIsOneDocument(t *testing.T) {
 	var out bytes.Buffer
-	if rc := featuresRun(&out, "json"); rc != 0 {
+	if rc := featuresRun(&out, "json", true); rc != 0 {
 		t.Fatalf("rc = %d", rc)
 	}
 	var doc struct {
@@ -81,5 +81,36 @@ func TestYoloFeaturesRefusesAnArgument(t *testing.T) {
 		if got := featuresPositional(strings.Fields(args)); got != want {
 			t.Errorf("featuresPositional(%q) = %q, want %q", args, got, want)
 		}
+	}
+}
+
+// On a terminal, `yolo features` THROUGH ITS FRONT DOOR prints what each name is for beside it,
+// the summary the JSON form carries; piped, the same command keeps one bare name per line.
+func TestYoloFeaturesOnATerminalPrintsEachSummary(t *testing.T) {
+	orig := featuresStdoutIsTerminal
+	t.Cleanup(func() { featuresStdoutIsTerminal = orig })
+
+	featuresStdoutIsTerminal = func() bool { return true }
+	var rc int
+	out := captureStdout(t, func() { rc = registry["features"]([]string{"features"}) })
+	if rc != 0 {
+		t.Fatalf("rc = %d", rc)
+	}
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	want := packdecl.Features()
+	if len(lines) != len(want) {
+		t.Fatalf("%d lines for %d features:\n%s", len(lines), len(want), out)
+	}
+	for i, f := range want {
+		name, summary, ok := strings.Cut(lines[i], "  ")
+		if !ok || name != f.Name || strings.TrimLeft(summary, " ") != f.Summary {
+			t.Errorf("line %d = %q, want %q and its summary %q", i, lines[i], f.Name, f.Summary)
+		}
+	}
+
+	featuresStdoutIsTerminal = func() bool { return false }
+	out = captureStdout(t, func() { rc = registry["features"]([]string{"features"}) })
+	if rc != 0 || !strings.Contains("\n"+out, "\npatch-series\n") {
+		t.Errorf("piped, `yolo features` must print patch-series as a whole line; rc=%d out=%q", rc, out)
 	}
 }

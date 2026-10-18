@@ -161,13 +161,14 @@ func unknownFieldSkip(i int, c Contribution, field string) (note string, keep bo
 		return fmt.Sprintf("contributes[%d]: keeping %s without its unknown field %q, which this "+
 			"yolo does not know — %s contribution restricts the agent, and a restriction is never "+
 			"dropped for a field this yolo cannot read, so the rest of it holds and only what the "+
-			"field adds is lost; %s", i, what, field, article(c.Kind), skewNextStep), true
+			"field adds is lost; %s", i, what, field, article(c.Kind), fieldNextStep(field)), true
 	}
 	return fmt.Sprintf("contributes[%d]: skipping %s — unknown field %q, which this yolo does not "+
-		"know, so the contribution is not used; %s", i, what, field, skewNextStep), false
+		"know, so the contribution is not used; %s", i, what, field, fieldNextStep(field)), false
 }
 
-// skewNextStep is the next step every unknown-field line names.
+// skewNextStep is the next step an unknown-field line names for a field never renamed
+// (fieldNextStep, renames.go).
 const skewNextStep = "a newer yolo may read the field (update yolo), or it is misspelled " +
 	"(`yolo pack lint <pack dir>` names it)"
 
@@ -243,7 +244,7 @@ func unknownFields(clean []byte) (perContribution, packWide []string) {
 		}
 		if unknownField(alone, &Manifest{}) != "" {
 			packWide = append(packWide, fmt.Sprintf("unknown field %q is ignored — this yolo "+
-				"does not know it; %s", key, skewNextStep))
+				"does not know it; %s", key, fieldNextStep(key)))
 			continue
 		}
 		whole, err := json.Marshal(map[string]json.RawMessage{key: raw})
@@ -252,7 +253,7 @@ func unknownFields(clean []byte) (perContribution, packWide []string) {
 		}
 		if field := unknownField(whole, &Manifest{}); field != "" {
 			packWide = append(packWide, fmt.Sprintf("%q is read without its unknown field %q, "+
-				"which this yolo does not know; %s", key, field, skewNextStep))
+				"which this yolo does not know; %s", key, field, fieldNextStep(field)))
 		}
 	}
 	return perContribution, packWide

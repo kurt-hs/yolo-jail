@@ -177,3 +177,37 @@ func TestIsDigits(t *testing.T) {
 		}
 	}
 }
+
+// TestLineNamesTheBinaryBesideAnOverride pins `yolo --version`'s line and `yolo check`'s: when
+// YOLO_VERSION names a version other than the binary's own, both lines also name the binary's,
+// so a quoted line never hides which build printed it. An override naming the binary's own
+// version — a jail whose launcher was built from the same commit — and no override print the
+// plain line.
+func TestLineNamesTheBinaryBesideAnOverride(t *testing.T) {
+	orig, origCommit := buildVersion, GitCommit
+	t.Cleanup(func() { buildVersion, GitCommit = orig, origCommit })
+	buildVersion, GitCommit = "v0.14.0-428-g772997837bbd", "772997837bbd"
+
+	t.Setenv("YOLO_VERSION", "")
+	if got, want := Line(""), "yolo-jail 0.14.0+428.g772997837bbd"; got != want {
+		t.Errorf("no override: Line = %q, want %q", got, want)
+	}
+	if got, want := CheckLine(""), "0.14.0+428.g772997837bbd (build stamp v0.14.0-428-g772997837bbd, "+
+		"commit 772997837bbd)"; got != want {
+		t.Errorf("no override: CheckLine = %q, want %q", got, want)
+	}
+
+	t.Setenv("YOLO_VERSION", "9.9.9")
+	if got, want := Line(""), "yolo-jail 9.9.9 (YOLO_VERSION override; binary 0.14.0+428.g772997837bbd)"; got != want {
+		t.Errorf("override: Line = %q, want %q", got, want)
+	}
+	if got, want := CheckLine(""), "9.9.9 (YOLO_VERSION override; binary 0.14.0+428.g772997837bbd; "+
+		"build stamp v0.14.0-428-g772997837bbd, commit 772997837bbd)"; got != want {
+		t.Errorf("override: CheckLine = %q, want %q", got, want)
+	}
+
+	t.Setenv("YOLO_VERSION", "0.14.0+428.g772997837bbd")
+	if got, want := Line(""), "yolo-jail 0.14.0+428.g772997837bbd"; got != want {
+		t.Errorf("override naming the binary's own version: Line = %q, want %q", got, want)
+	}
+}

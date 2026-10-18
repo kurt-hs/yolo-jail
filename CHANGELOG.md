@@ -70,6 +70,8 @@ state; `null` removes one. See `yolo config-ref`.
 - pi, omp and opencode no longer wait about two seconds at start for yolo's footer line.
 - Models another pi extension registers are no longer dropped by yolo's model list unless the profile enforces it.
 - pi sessions on different profiles, in one jail or under `yolo host -p`, no longer change each other's child agents' models.
+- In a jail, a config refusal names the host file that set the key.
+- `yolo --version` names the real binary beside a `YOLO_VERSION` override.
 
 ## [0.14.0] - 2026-10-15
 

@@ -573,6 +573,21 @@ func TestInstalledVersion(t *testing.T) {
 	}
 }
 
+// The probe asks the installed binary for ITS version: a YOLO_VERSION in this process's
+// environment would be printed in its place, and reported as what the update installed.
+func TestInstalledVersionIgnoresYOLOVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "yolo")
+	script := "#!/bin/sh\nif [ -n \"${YOLO_VERSION:-}\" ]; then echo \"yolo-jail $YOLO_VERSION\"; " +
+		"else echo 'yolo-jail 0.11.0+3.gabc'; fi\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YOLO_VERSION", "9.9.9")
+	if got, err := installedVersion(path); err != nil || got != "0.11.0+3.gabc" {
+		t.Errorf("installedVersion = %q, %v; want the binary's own 0.11.0+3.gabc", got, err)
+	}
+}
+
 func TestUpdateCommand(t *testing.T) {
 	available := func(_ context.Context, ch selfupdate.Channel, _ selfupdate.State) selfupdate.State {
 		st := selfupdate.State{Identity: ch.Identity(), Kind: ch.Kind, Current: ch.Version, Latest: "0.11.0", Available: true, CheckedAt: time.Now()}

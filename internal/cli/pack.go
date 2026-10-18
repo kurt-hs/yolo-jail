@@ -715,6 +715,11 @@ func packLint(args []string, out, errw io.Writer, color bool) int {
 	// one, and printing a second, contradictory line beside it is how a fixed rule becomes new
 	// noise.
 	switch {
+	case manifestUndecoded(manifestProblems):
+		// The manifest did not decode, so it declares nothing HERE and both questions below
+		// would answer about an empty manifest: the decode refusal already names the cause
+		// (a renamed field names its new spelling, packdecl's renames.go), and "declares ZERO
+		// contributions" beside it reports that one cause twice.
 	case missingSkillsSource, missingFilesSource, missingBriefingSource:
 		// Already diagnosed, precisely. `files` joins this arm for the identical reason
 		// skills is here: a typo'd `from` leaves the pack's real tree UNCLAIMED, so question
@@ -1311,6 +1316,18 @@ func sampleOf(items []string, n int) []string {
 func stagedAtOrUnder(staged []string, src string) bool {
 	for _, s := range staged {
 		if stagedPathClaimed(s, []string{src}) {
+			return true
+		}
+	}
+	return false
+}
+
+// manifestUndecoded reports whether one of a pack's manifest problems is the manifest failing
+// to decode at all — packdecl.Decode's "<pack.json>: <decode error>", which packload prefixes with
+// "pack <name>: " — rather than a problem with a manifest that decoded.
+func manifestUndecoded(problems []string) bool {
+	for _, p := range problems {
+		if strings.Contains(p, ": "+packdecl.ManifestName+": ") {
 			return true
 		}
 	}

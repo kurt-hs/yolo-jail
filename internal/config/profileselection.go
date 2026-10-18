@@ -501,7 +501,11 @@ func profileKeyFix(key ProfileSelection, cli, every string) string {
 	}
 	if inJail() && !locatedInUserLayer(loc) {
 		where := "your host config's `" + ProfileKey + "` key"
-		if loc != "" {
+		switch {
+		case strings.HasSuffix(loc, " on the host"):
+			// Located through the launch copy's record (launchorigins.go): loc is the host file.
+			where += ", set in " + loc
+		case loc != "":
 			where += ", which this jail reads from a read-only copy at " + loc
 		}
 		return where + ", so write " + spelling + " in your user config on the host" + none

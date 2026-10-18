@@ -71,10 +71,11 @@ func Main(argv []string) int {
 		// Resolve the repo root the SAME way run/check do (the shared method), so
 		// an unstamped binary describes the yolo-jail repo, never the cwd's repo.
 		repoRes, _ := reporoot.Resolve(os.Getenv)
-		fmt.Println("yolo-jail " + version.Get(repoRes.Root))
+		// The line names the binary's own version beside a YOLO_VERSION override (version.Line).
+		fmt.Println(version.Line(repoRes.Root))
 		// `--full` adds the build's identity below the one-line version: the commit it was
 		// stamped with and the sha256 of the running bytes (internal/version/identity.go).
-		// The first line stays byte-identical, since other tools parse it.
+		// The first line stays the one plain --version prints, since other tools parse it.
 		if slices.Contains(args[1:], "--full") {
 			for _, line := range version.FullLines() {
 				fmt.Println(line)
