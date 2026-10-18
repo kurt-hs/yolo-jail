@@ -68,7 +68,7 @@ func (f *ctxDriveFixture) verbCall() ([]string, time.Duration) {
 func TestInjectCtxMountRunsTheVerbUnderPodmanUnshareOnRootless(t *testing.T) {
 	f := newCtxDriveFixture(t)
 	f.o.acceptPodmanFacts(rootlessInfo)
-	if err := f.o.injectCtxMount("podman", "yolo-ws-abcd1234", ctxWant("/h/src", "/ctx/src", false)); err != nil {
+	if err := f.o.injectCtxMount("podman", "yolo-ws-abcd1234", ctxWant("/h/src", "/ctx/src", false), time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	argv, timeout := f.verbCall()
@@ -104,7 +104,7 @@ func TestInjectCtxMountRunsTheVerbDirectlyWhenNestedOrRootful(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := newCtxDriveFixture(t)
 			setup(f)
-			if err := f.o.injectCtxMount("podman", "yolo-ws-abcd1234", ctxWant("/h/src", "/ctx/src", true)); err != nil {
+			if err := f.o.injectCtxMount("podman", "yolo-ws-abcd1234", ctxWant("/h/src", "/ctx/src", true), time.Time{}); err != nil {
 				t.Fatal(err)
 			}
 			argv, _ := f.verbCall()
@@ -122,7 +122,7 @@ func TestInjectCtxMountRunsTheVerbDirectlyWhenNestedOrRootful(t *testing.T) {
 func TestRemoveCtxMountRunsTheRemoval(t *testing.T) {
 	f := newCtxDriveFixture(t)
 	f.o.acceptPodmanFacts(rootlessInfo)
-	if err := f.o.removeCtxMount("podman", "yolo-ws-abcd1234", ctxMountEntry{Source: "/h/src", Dest: "/ctx/src"}); err != nil {
+	if err := f.o.removeCtxMount("podman", "yolo-ws-abcd1234", ctxMountEntry{Source: "/h/src", Dest: "/ctx/src"}, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	argv, _ := f.verbCall()
@@ -136,7 +136,7 @@ func TestRemoveCtxMountRunsTheRemoval(t *testing.T) {
 func TestInjectCtxMountReadsPodmanInfoWhenTheLaunchHasNoFacts(t *testing.T) {
 	f := newCtxDriveFixture(t)
 	f.info = rootlessInfo
-	if err := f.o.injectCtxMount("podman", "yolo-ws-abcd1234", ctxWant("/h/src", "/ctx/src", false)); err != nil {
+	if err := f.o.injectCtxMount("podman", "yolo-ws-abcd1234", ctxWant("/h/src", "/ctx/src", false), time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	infoAt, verbAt := -1, -1
@@ -178,7 +178,7 @@ func TestInjectCtxMountRefusesWithoutABranch(t *testing.T) {
 			ctxGeteuid = func() int { return 1000 }
 			t.Cleanup(func() { ctxGeteuid = restore })
 			tc.setup(f)
-			err := f.o.injectCtxMount(tc.rt, "yolo-ws-abcd1234", ctxWant("/h/src", "/ctx/src", false))
+			err := f.o.injectCtxMount(tc.rt, "yolo-ws-abcd1234", ctxWant("/h/src", "/ctx/src", false), time.Time{})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err %v; want one naming %q", err, tc.want)
 			}
@@ -195,14 +195,14 @@ func TestInjectCtxMountReportsTheVerbsFailureAndDeadline(t *testing.T) {
 	f := newCtxDriveFixture(t)
 	f.o.acceptPodmanFacts(rootlessInfo)
 	f.verbRC, f.verbErr = 1, "yolo internal ctx-attach: move_mount onto /ctx/src: operation not permitted\n"
-	err := f.o.injectCtxMount("podman", "yolo-ws-abcd1234", ctxWant("/h/src", "/ctx/src", false))
+	err := f.o.injectCtxMount("podman", "yolo-ws-abcd1234", ctxWant("/h/src", "/ctx/src", false), time.Time{})
 	if err == nil || !strings.Contains(err.Error(), "move_mount onto /ctx/src: operation not permitted") {
 		t.Errorf("err %v; want the verb's line", err)
 	}
 	f = newCtxDriveFixture(t)
 	f.o.acceptPodmanFacts(rootlessInfo)
 	f.verbHang = true
-	err = f.o.injectCtxMount("podman", "yolo-ws-abcd1234", ctxWant("/h/src", "/ctx/src", false))
+	err = f.o.injectCtxMount("podman", "yolo-ws-abcd1234", ctxWant("/h/src", "/ctx/src", false), time.Time{})
 	if err == nil || !strings.Contains(err.Error(), "10s") {
 		t.Errorf("err %v; want the deadline named", err)
 	}

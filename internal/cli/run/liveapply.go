@@ -389,8 +389,11 @@ func (o *Options) runApplySteps(run *applyRun, plan []applyChange) []applyChange
 			c.outcome, c.reason = outcomeNextRestart, fmt.Sprintf("the apply's %s budget ran out", applyBudget)
 			continue
 		}
-		deadline := min(applyStepDeadline, left)
-		err := runWithDeadline(deadline, func() error { return o.applyStep(run, c) })
+		// THE DEADLINE GOES DOWN TO EVERY CALL THE STEP MAKES, rather than a wait abandoning a
+		// step that keeps running: one cut off that way could mount after the record below was
+		// written without it.
+		limit := min(applyStepDeadline, left)
+		err := o.applyStep(run, c, time.Now().Add(limit))
 		if err != nil {
 			if run.rt != "macos-user" { // parity: HonoredBy — macos-user's steps are scope files, not a container that can stop
 				if cid, known := o.probeRunningContainer(run.cname, run.rt, attachProbeTimeout); known && cid == "" {
@@ -434,13 +437,14 @@ func (o *Options) noteMountRecord(run *applyRun, token string, have []liveCtxMou
 	}
 }
 
-// applyStep is one change's live-apply step.
-func (o *Options) applyStep(run *applyRun, c *applyChange) error {
+// applyStep is one change's live-apply step, every call it makes ending by deadline. A scope step
+// rewrites local files only, which no deadline interrupts.
+func (o *Options) applyStep(run *applyRun, c *applyChange, deadline time.Time) error {
 	switch c.kind {
 	case changeMountAdd:
-		return injectCtxMountSeam(o, run.rt, run.cname, c.mountAdd)
+		return injectCtxMountSeam(o, run.rt, run.cname, c.mountAdd, deadline)
 	case changeMountRemove:
-		return removeCtxMountSeam(o, run.rt, run.cname, c.mountRemove)
+		return removeCtxMountSeam(o, run.rt, run.cname, c.mountRemove, deadline)
 	case changeScope:
 		// THE SCOPE THE GATE APPROVED, its in-memory result (WW-P2), never a re-read.
 		approved, ok := o.approvedScopes[c.scope.label]
@@ -459,21 +463,6 @@ func (o *Options) applyStep(run *applyRun, c *applyChange) error {
 		return nil
 	}
 	return nil
-}
-
-// runWithDeadline runs fn and gives up waiting at d: a step past its deadline is reported as
-// such and left to finish or fail on its own (lane C's injector has its own deadline inside).
-func runWithDeadline(d time.Duration, fn func() error) error {
-	done := make(chan error, 1)
-	go func() { done <- fn() }()
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case err := <-done:
-		return err
-	case <-t.C:
-		return fmt.Errorf("did not finish within %s", d)
-	}
 }
 
 // foldApplied folds into the effective-config record every key whose every change took effect

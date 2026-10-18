@@ -259,14 +259,17 @@ func buildApplyPlan(in applyPlanInput) []applyChange {
 	mo, mwhy := mountsOutcome(in.rt, in.mountsLive, in.mountsReason)
 	elements := 0
 	if in.mountRecordOK && in.bootOK {
-		for _, m := range in.mountAdds {
-			plan = append(plan, applyChange{kind: changeMountAdd, sign: "+", label: mountLabel(m.dest, m.rw),
-				key: "mounts", outcome: mo, reason: mwhy, disclosure: m.rw, mountAdd: m})
-			elements++
-		}
+		// REMOVALS FIRST. A destination is a mount's identity in the jail, so a source or mode
+		// changed at one is a removal and an addition of the same destination: the addition run
+		// first finds it taken, and the mount is lost.
 		for _, m := range in.mountRemoves {
 			plan = append(plan, applyChange{kind: changeMountRemove, sign: "-", label: mountLabel(m.Dest, m.RW),
 				key: "mounts", outcome: mo, reason: mwhy, note: openFileNote, mountRemove: m})
+			elements++
+		}
+		for _, m := range in.mountAdds {
+			plan = append(plan, applyChange{kind: changeMountAdd, sign: "+", label: mountLabel(m.dest, m.rw),
+				key: "mounts", outcome: mo, reason: mwhy, disclosure: m.rw, mountAdd: m})
 			elements++
 		}
 	}

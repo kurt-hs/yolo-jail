@@ -168,6 +168,19 @@ func TestLiveCtxMountInjectAndRemove(t *testing.T) {
 		t.Errorf("the host file changed through a read-only injection: %q", b)
 	}
 
+	// AN ADD IS IDEMPOTENT: the same source in the same mode again is success (a step cut off
+	// after its mount landed is recorded by the next apply); another source there is refused.
+	if out, err := ctxAttach("--source", ro, "--dest", "/ctx/live"); err != nil {
+		t.Errorf("the same injection again failed (%v): %s", err, out)
+	}
+	if out, err := ctxAttach("--source", t.TempDir(), "--dest", "/ctx/live"); err == nil ||
+		!strings.Contains(out, "a mount already") {
+		t.Errorf("another source over /ctx/live was not refused (%v): %s", err, out)
+	}
+	if out, err := ctxAttach("--source", ro, "--dest", "/ctx/live", "--rw"); err == nil {
+		t.Errorf("the same source read-write over its read-only mount was not refused: %s", out)
+	}
+
 	// REMOVAL.
 	if out, err := ctxAttach("--dest", "/ctx/live", "--remove"); err != nil {
 		t.Fatalf("removal failed (%v): %s", err, out)

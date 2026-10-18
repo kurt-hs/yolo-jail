@@ -298,7 +298,7 @@ func TestConfigApplyRecordOnlyTouchesNoJail(t *testing.T) {
 	o, buf := applyFixture(t, `{}`, `{"mounts":["`+src+`"]}`, applyJail{running: true})
 	liveMounts(t)
 	injected := 0
-	swapSeam(t, &injectCtxMountSeam, func(*Options, string, string, configCtxMount) error {
+	swapSeam(t, &injectCtxMountSeam, func(*Options, string, string, configCtxMount, time.Time) error {
 		injected++
 		return nil
 	})
@@ -357,7 +357,7 @@ func TestConfigApplyInjectsALiveMount(t *testing.T) {
 	o, buf := applyFixture(t, `{}`, `{"mounts":["`+src+`"]}`, applyJail{running: true})
 	rec := liveMounts(t)
 	var got []configCtxMount
-	swapSeam(t, &injectCtxMountSeam, func(_ *Options, _, _ string, m configCtxMount) error {
+	swapSeam(t, &injectCtxMountSeam, func(_ *Options, _, _ string, m configCtxMount, _ time.Time) error {
 		got = append(got, m)
 		return nil
 	})
@@ -380,17 +380,25 @@ func TestConfigApplyInjectsALiveMount(t *testing.T) {
 }
 
 // A failed step reports, stays pending (no fold), and the exit is 3; a step past its deadline
-// is at next restart with the reason.
+// is at next restart with the reason. The step is handed the deadline and ends by it
+// (TestConfigApplyBoundsEveryCallOfAMountStep runs the real driver against it).
 func TestConfigApplyAFailedOrSlowMountStaysPending(t *testing.T) {
 	for _, c := range []struct {
 		name   string
-		inject func(*Options, string, string, configCtxMount) error
+		inject func(*Options, string, string, configCtxMount, time.Time) error
 		want   string
 	}{
-		{"fails", func(*Options, string, string, configCtxMount) error { return errors.New("move_mount: EPERM") },
+		{"fails", func(*Options, string, string, configCtxMount, time.Time) error {
+			return errors.New("move_mount: EPERM")
+		},
 			"move_mount: EPERM"},
-		{"slow", func(*Options, string, string, configCtxMount) error { time.Sleep(time.Second); return nil },
-			"did not finish within"},
+		{"slow", func(_ *Options, _, _ string, _ configCtxMount, deadline time.Time) error {
+			if left := time.Until(deadline); left <= 0 || left > 50*time.Millisecond {
+				return errors.New("handed no step deadline")
+			}
+			time.Sleep(time.Until(deadline))
+			return errors.New("the mount step did not finish within 50ms")
+		}, "did not finish within"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			src := t.TempDir()
@@ -421,7 +429,7 @@ func TestConfigApplyDisclosesAReadWriteMount(t *testing.T) {
 	swapSeam(t, &diffCtxMountsSeam, func([]liveCtxMount, []configCtxMount) ([]configCtxMount, []liveCtxMount) {
 		return []configCtxMount{{source: src, dest: "/ctx/rw", rw: true}}, nil
 	})
-	swapSeam(t, &injectCtxMountSeam, func(*Options, string, string, configCtxMount) error { return nil })
+	swapSeam(t, &injectCtxMountSeam, func(*Options, string, string, configCtxMount, time.Time) error { return nil })
 	answer(o, "y")
 	o.configApply(false)
 	if !strings.Contains(buf.String(), "Read-write mount:") {
