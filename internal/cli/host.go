@@ -958,6 +958,21 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	environ = hostClaudeView(launch, environ, errw)
 	// The launch selection's variables (MM-D30), disclosed above with its argv.
 	environ = selection.applyEnv(environ)
+	// THE SESSION HOMES (docs/design/per-session-profiles.md §4.7, OQ-SP4; hostsessionhome.go): a
+	// selected pack's declared config directory, rendered for this launch's selection in a
+	// throwaway directory of its own, its variable set for this launch's program alone, so two
+	// launches on different profiles never rewrite one shared file. After every variable above,
+	// so a user's own value of the variable is seen (SP-D5); a home that cannot be made refuses
+	// the launch (SP-D6). Removed when this function returns, unless the exec below hands it to
+	// the program.
+	sp = trace.span("host.session_homes")
+	sessionHomes, environ, err := prepareHostSessionHomes(launch, environ, errw)
+	sp.End()
+	if err != nil {
+		fmt.Fprintf(errw, "yolo host: refusing to launch: %v\n", err)
+		return 1
+	}
+	defer sessionHomes.Close()
 	// THE LAUNCH-OWNED SERVICES (docs/design/host-notch-services.md §4.4): started after the
 	// agent resolved on PATH and after the prelaunch, so a missing agent starts nothing and the
 	// OpenAI login exists before the bridge asks for a view; the agent starts only once each
@@ -1069,8 +1084,12 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	// The menu's lock crosses the exec, so the program holds it for its own life (MM-D27): the
 	// deferred Close above never runs once this process is replaced.
 	menu.KeepAcrossExec(errw)
+	// The session homes' leases cross the exec too, so the program holds them for its life and a
+	// later launch reaps its directory only once it has exited.
+	sessionHomes.KeepAcrossExec(errw)
 	trace.log.HandedOver("exec")
 	if err := hostSyscallExec(target, argv, environ); err != nil {
+		sessionHomes.remove()
 		fmt.Fprintf(errw, "yolo host: exec %s: %v\n", target, err)
 		return 126
 	}

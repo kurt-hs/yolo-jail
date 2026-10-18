@@ -773,6 +773,18 @@ func Run(opts Options) int {
 		totalSaved += hostFloorBytes
 	}
 
+	// --- Ended host launches' session homes ---
+	// `yolo host`'s per-launch config directories (hostsessionhomes.go): each exec'd launch's is
+	// left for a later sweep, which the next launch runs too. Lease-gated, so the directory of a
+	// program still running is never touched.
+	{
+		p.line("")
+		p.line("[bold]Ended host launches' session homes[/bold]  [dim](state dir: " + HostSessionHomesLeaf + "/, one per launch)[/dim]")
+		homes := ReapHostSessionHomes(joinPath(gs, HostSessionHomesLeaf), apply, opts.Now())
+		declinedSweep = renderEmbeddedReap(p, apply, homes, "dir(s)") || declinedSweep
+		totalSaved += homes.Bytes
+	}
+
 	// --- Retired loophole state generations ---
 	// What a LAUNCH moves aside when a pack that shipped a loophole leaves `packs`
 	// (docs/reference/loophole-system.md#retirement-what-happens-when-a-pack-goes-away).
