@@ -37,7 +37,7 @@ import (
 // rewrite semantics.
 func runInternal(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|daemon|darwin-bootstrap|discard-rm|fork-build-jail|footer|image-copy|installer-check|log-append|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|pack-tree-reap|probe-services|refresh-programs|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
+		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|ctx-attach|daemon|darwin-bootstrap|discard-rm|fork-build-jail|footer|image-copy|installer-check|log-append|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|pack-tree-reap|probe-services|refresh-programs|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
 		return 2
 	}
 	switch args[0] {
@@ -166,6 +166,10 @@ func runInternal(args []string) int {
 		// no controlling terminal and a /dev/null stdin (internal/notty). Hidden: its caller is the
 		// launcher, and a shell has no way to drop its terminal itself.
 		return runNoTerminal(args[1:])
+	case ctxAttachVerb:
+		// The live context-mount injector (docs/design/live-config-apply.md §5.1), run by the
+		// host driver directly or under `podman unshare` (internalctxattach.go).
+		return runCtxAttach(args[1:])
 	case imageCopyVerb:
 		// The launch's podman-on-Linux image copy for `just load` and the integration
 		// suite's stale-image fix, so neither spells it in shell (internalimagecopy.go).

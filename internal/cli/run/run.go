@@ -2180,9 +2180,21 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// FROM HERE TO THE CONTAINER START, EVERY RETURN DISCARDS THE SKELETON: no container ever
 	// held it, so leaving it would be one more directory for the reaper from a launch that
 	// never ran (discardUnheldSkeleton; TestNoReturnAfterTheSkeletonLeaksIt pins each one).
+	// THE LIVE-MOUNTS RECORD (ctxmountrecord.go): a fresh podman launch mints a token the argv
+	// freezes into the container and writes the record of the config mounts the argv bound, so a
+	// later `yolo config apply` knows what this jail has. An attach never reaches here. A failure
+	// costs only live mount changes, which then wait for a restart, so it warns and launches.
+	if _, err := o.prepareCtxMountsToken(in); err != nil {
+		out.printf("[yellow]Warning: live context mounts are off for this jail: %s. A `mounts` change "+
+			"will need `yolo stop`, then `yolo`.[/yellow]", richtext.Escape(err.Error()))
+	}
 	sp = o.Perf.Span("launch.assemble_argv")
 	runCmd := o.assembleRunCmd(in)
 	sp.End()
+	if err := o.recordLaunchCtxMounts(in); err != nil {
+		out.printf("[yellow]Warning: live context mounts are off for this jail: %s. A `mounts` change "+
+			"will need `yolo stop`, then `yolo`.[/yellow]", richtext.Escape(err.Error()))
+	}
 
 	// Every bind source against the macOS Podman Machine's share list, now that the argv
 	// names them all: a workspace on /Volumes, a `mounts` entry or a `host_files` folder
