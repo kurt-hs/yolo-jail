@@ -1698,6 +1698,17 @@ decides: while it is on, the default, that command ends its turn with yolo's ref
 here is a pack's: a plain user config declares the routes, and a config with no routing fact
 renders and registers nothing at all.
 
+<a id="wire-id"></a>**One model at two windows: `wire_id`.** A row's `id` must be unique in its
+provider's list, so a narrowed twin of a model (the same upstream model at a 200k working window,
+say) takes a client spelling as its `id` and names the id it sends as `wire_id`:
+`"deepseek-floor-200k": {"id": "deepseek/deepseek-v4.1-flash:floor@200k", "wire_id":
+"deepseek/deepseek-v4.1-flash:floor", "context_window": 204800}` beside the full-window
+`deepseek-floor`. Both rows reach pi, each with its own facts, from the one provider entry;
+packs/pi writes the key as the definition's `wireId` in `models.json` and the model-lists file.
+pi resolves `wireId` only in a build that reads it (stock pi 1.0.1 has no such field and sends the
+row's `id`), and no other agent reads it. There is no `variants` key: config validation refuses
+it, and pi's camelCase `wireId`, naming the alias-per-variant form and `wire_id`.
+
 The provider's `options` is the **fallback**: a fact common to every model is declared once
 there, and a per-model value overrides it for that alias. The facts are **additive** — an alias
 that declares none renders the same `models.json` row it did before, leaving pi's own defaults

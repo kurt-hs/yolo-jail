@@ -223,8 +223,21 @@ var (
 	// (docs/design/model-lists-and-pickers.md OQ-ML5): the composition lays them under the
 	// entry's own facts, so each route can override any of them. A null fact anywhere in the
 	// entry is a TOMBSTONE (ML-D10): the model has no such fact, where leaving it out inherits.
+	//
+	// `wire_id` is the model id a row SENDS when its `id` is a client spelling: one provider then
+	// carries one model at two windows, the full-window alias and a narrowed twin naming the same
+	// wire id, each its own row with its own facts. pi's renders write it as the definition's
+	// `wireId`; core only checks its shape.
 	knownModelKeys = set("id", "name", "description", "vendor", "reasoning", "input", "cost", "context_window", "max_tokens",
-		"base", "openrouter_routing", "extends")
+		"base", "openrouter_routing", "extends", "wire_id")
+	// unknownModelKeyHints is the next step for a model key a user is likely to write and yolo
+	// does not take: pi's own camelCase spelling of `wire_id`, and pi-fork's `variants`, which a
+	// row expresses as one alias per variant.
+	unknownModelKeyHints = map[string]string{
+		"wireId": "the wire id is spelled `wire_id`, like every other key here",
+		"variants": "declare each variant as its own alias under this provider's `models`, " +
+			"with `wire_id` naming the id it sends and `base` the catalog row it inherits from",
+	}
 	// knownSharedModelKeys is the closed field set a `model_facts.<name>` entry may carry: the
 	// facts a model keeps on every route, so knownModelKeys less what only a route can say — its
 	// wire `id`, its `vendor` (a route-level routing fact the bridge reads), its OpenRouter
