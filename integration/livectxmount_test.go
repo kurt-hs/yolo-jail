@@ -8,6 +8,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,6 +44,71 @@ func liveCtxExec(t *testing.T, cname, script string) (string, bool) {
 	defer cancel()
 	out, err := jailExec(ctx, "podman", cname, script).CombinedOutput()
 	return string(out), err == nil
+}
+
+// liveCtxRemountProbeScript runs the probe against both disposable binds and preserves enough
+// information to distinguish a syscall result from a helper that could not execute.
+func liveCtxRemountProbeScript(probePath, launchTarget, injectedTarget string) string {
+	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
+	return fmt.Sprintf(`for pair in launch:%s injected:%s; do
+  name=${pair%%:*}; target=${pair#*:}
+  probe_output=$(%s "$target" 2>&1)
+  probe_rc=$?
+  case "$probe_output" in
+    remount-succeeded)
+      if [ "$probe_rc" -eq 0 ]; then echo "$name-REMOUNT=remount-succeeded"; else echo "$name-REMOUNT-HELPER-ERROR=exit-$probe_rc"; fi ;;
+    remount-failed:*)
+      if [ "$probe_rc" -eq 1 ]; then printf '%%s-REMOUNT=%%s\n' "$name" "$probe_output"; else echo "$name-REMOUNT-HELPER-ERROR=exit-$probe_rc"; fi ;;
+    *) printf '%%s-REMOUNT-HELPER-ERROR=exit-%%s:%%s\n' "$name" "$probe_rc" "$probe_output" ;;
+  esac
+  if printf attack >> "$target/sentinel" 2>/dev/null; then echo "$name-AFTER-REMOUNT-WRITE=OK"; else echo "$name-AFTER-REMOUNT-WRITE=DENIED"; fi
+done`, quote(launchTarget), quote(injectedTarget), quote(probePath))
+}
+
+// validateLiveCtxRemountResults requires a syscall result attributable to each disposable bind.
+func validateLiveCtxRemountResults(output string) error {
+	results := make(map[string]bool, 2)
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		if strings.Contains(line, "-REMOUNT-HELPER-ERROR") {
+			return fmt.Errorf("remount helper failed: %s", line)
+		}
+		name, result, ok := strings.Cut(line, "-REMOUNT=")
+		if !ok {
+			if strings.Contains(line, "-REMOUNT") && !strings.Contains(line, "-AFTER-REMOUNT") {
+				return fmt.Errorf("malformed remount result %q", line)
+			}
+			continue
+		}
+		if name != "launch" && name != "injected" {
+			return fmt.Errorf("remount result has unknown target %q", name)
+		}
+		if _, exists := results[name]; exists {
+			return fmt.Errorf("duplicate remount result for %s", name)
+		}
+		if result != "remount-succeeded" && !(strings.HasPrefix(result, "remount-failed:") && strings.TrimSpace(strings.TrimPrefix(result, "remount-failed:")) != "") {
+			return fmt.Errorf("malformed remount result for %s: %q", name, result)
+		}
+		results[name] = true
+	}
+	for _, target := range []string{"launch", "injected"} {
+		if !results[target] {
+			return fmt.Errorf("missing remount result for %s bind", target)
+		}
+	}
+	return nil
+}
+
+func TestLiveCtxRemountProbeRejectsMissingHelper(t *testing.T) {
+	out, err := exec.Command("sh", "-c", liveCtxRemountProbeScript("/proc/self/yolo-no-such-remount-probe", "/proc/self/yolo-no-such-launch-target", "/proc/self/yolo-no-such-injected-target")).CombinedOutput()
+	if err != nil {
+		t.Fatalf("shell should report helper failures per target: %v\n%s", err, out)
+	}
+	if err := validateLiveCtxRemountResults(string(out)); err == nil {
+		t.Fatalf("missing helper was accepted as syscall results:\n%s", out)
+	}
+	if !strings.Contains(string(out), "launch-REMOUNT-HELPER-ERROR") || !strings.Contains(string(out), "injected-REMOUNT-HELPER-ERROR") {
+		t.Fatalf("the nonexistent procfs helpers did not fail for both targets:\n%s", out)
+	}
 }
 
 // TestLiveCtxMountInjectAndRemove: a podman launch puts /ctx on a read-only tmpfs and records the
@@ -210,6 +276,9 @@ func TestLiveCtxMountInjectAndRemove(t *testing.T) {
 	if b, err := os.ReadFile(filepath.Join(rw, "new.txt")); err != nil || string(b) != "from-the-jail\n" {
 		t.Errorf("the jail's write did not reach the host file: %q, %v", b, err)
 	}
+	if out, err := ctxAttach("--dest", "/ctx/liverw", "--remove"); err != nil {
+		t.Errorf("removing the read-write injection failed (%v): %s", err, out)
+	}
 }
 
 func TestLiveCtxMountReadOnlyRemountParity(t *testing.T) {
@@ -364,13 +433,12 @@ func main() {
 	// Try the same kernel remount syscall and follow-up write against each bind. The helper
 	// is a static test binary staged only in the two disposable source directories; sentinels
 	// are the witness for any jail write.
-	out, ok := liveCtxExec(t, cname, `for pair in launch:/ctx/launch-ro injected:/ctx/injected-ro; do
-	  name=${pair%%:*}; target=${pair#*:}
-	  if /ctx/launch-ro/remount-probe "$target"; then echo "$name-REMOUNT=OK"; else echo "$name-REMOUNT=DENIED"; fi
-	  if printf attack >> "$target/sentinel" 2>/dev/null; then echo "$name-AFTER-REMOUNT-WRITE=OK"; else echo "$name-AFTER-REMOUNT-WRITE=DENIED"; fi
-	done`)
+	out, ok := liveCtxExec(t, cname, liveCtxRemountProbeScript("/ctx/launch-ro/remount-probe", "/ctx/launch-ro", "/ctx/injected-ro"))
 	if !ok {
 		t.Fatalf("jail remount probe did not complete:\n%s", out)
+	}
+	if err := validateLiveCtxRemountResults(out); err != nil {
+		t.Fatalf("jail remount probe did not return attributable syscall results: %v\n%s", err, out)
 	}
 	t.Logf("CAP_SYS_ADMIN was effective in the jail; remount/write witness:\n%s", out)
 	launchBytes, launchErr := os.ReadFile(filepath.Join(launchSource, "sentinel"))
