@@ -85,7 +85,8 @@ type bootRun struct {
 	sessionPass bool
 	// darwin carries the macos-user bootstrap's own inputs.
 	darwin DarwinBootstrapOptions
-	// perf is the container boot's perf log; nil on macos-user, which keeps none.
+	// perf is the boot's step marks: the container's ~/.yolo-perf.log, and the macos-user
+	// bootstrap's boot-perf.log for its launcher (writeBootPerf); nil marks nothing.
 	perf *perfLog
 
 	packsLoaded bool

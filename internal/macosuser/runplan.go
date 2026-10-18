@@ -38,6 +38,12 @@ type RunPlan struct {
 	StagedDir     string
 	StagedYolo    string
 	StageCommands [][]string
+	// StageCommandSteps names, index for index, the step of the stage each StageCommands entry
+	// belongs to ("binary", "pack_tree", "home_overlay", ...): the run spans each run of one
+	// step as macos_user.stage.<step> (docs/reference/perf-logging.md). Timing only — nothing
+	// decides on it, and a plan whose two lists differ in length times its commands as
+	// "commands" (stageStep).
+	StageCommandSteps []string
 	// PackRoot is the sealed staged pack tree this session's bootstrap renders
 	// from (YOLO_PACK_ROOT in BootstrapArgv), or "" when the launch staged no packs.
 	PackRoot string
@@ -703,15 +709,25 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 			profilePath, envFile, workspace, "", "", darwinPrefix)
 	}
 
-	stageCommands := append([][]string{}, StageBinaryCommands(selfExe, "")...)
-	stageCommands = append(stageCommands, StagePackCommands(hostPackRoot, cname, "")...)
-	stageCommands = append(stageCommands, StageHomeOverlayCommands(hostHomeOverlay.Tree, cname, "")...)
+	// Each group is named for the stage's timing spans (RunPlan.StageCommandSteps) as it is
+	// appended, so the names cannot drift from the commands they label.
+	var stageCommands [][]string
+	var stageSteps []string
+	stageStep := func(step string, cmds [][]string) {
+		for range cmds {
+			stageSteps = append(stageSteps, step)
+		}
+		stageCommands = append(stageCommands, cmds...)
+	}
+	stageStep("binary", StageBinaryCommands(selfExe, ""))
+	stageStep("pack_tree", StagePackCommands(hostPackRoot, cname, ""))
+	stageStep("home_overlay", StageHomeOverlayCommands(hostHomeOverlay.Tree, cname, ""))
 	// THE CONTEXT DIR, with the composed tree in it when there is one and a host-owned link per
 	// delivered context mount (ctxlinks.go). The links ride the same `.new`-then-swap as the
 	// tree, so a mount dropped from the config stops being named on the next launch.
 	ctxLinks := append([]ContextLink(nil), hostCtx.Links...)
-	stageCommands = append(stageCommands, StageContextDirCommands(hostCtx.Tree, ctxLinks, cname, "")...)
-	stageCommands = append(stageCommands, endpointGrantCommands(sandboxEnv)...)
+	stageStep("context_dir", StageContextDirCommands(hostCtx.Tree, ctxLinks, cname, ""))
+	stageStep("endpoint_grants", endpointGrantCommands(sandboxEnv))
 
 	// THE GUEST'S BINARIES (OQ-DP8; jaildaemon.go), staged as ONE SET when the launch runs a
 	// jail daemon OR its session env carries an endpoint a guest client reads (GuestClientsIn,
@@ -724,7 +740,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		guestSource = jailDaemons.GuestBinSource
 		// The binaries the supervisor, the payload's argvs and the agent's clients name, beside
 		// the staged yolo.
-		stageCommands = append(stageCommands, StageGuestBinaryCommands(guestSource, "")...)
+		stageStep("guest_binaries", StageGuestBinaryCommands(guestSource, ""))
 	}
 
 	// THE GUEST'S JAIL DAEMONS (OQ-DP8, OQ-DP9; jaildaemon.go), composed only when the
@@ -741,7 +757,11 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		// Every endpoint the DAEMONS dial is granted too — the same grant the agent's
 		// endpoints get, read off the daemon env for endpointGrantCommands' reason (the env
 		// is the manifest), deduped against the ones already granted.
+		before := len(stageCommands)
 		stageCommands = appendNewCommands(stageCommands, endpointGrantCommands(jailDaemons.Env))
+		for range stageCommands[before:] {
+			stageSteps = append(stageSteps, "daemon_endpoint_grants")
+		}
 	}
 
 	// THE HOST-SERVICE WITNESS (serviceprobe.go), composed only when the session env carries a
@@ -783,12 +803,13 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		// Binary first, then the pack trees, then the content overlay, then the context
 		// tree: all four are prerequisites of the bootstrap the caller runs immediately
 		// after this list, and the binary is the one that fails most cheaply.
-		StageCommands:    stageCommands,
-		PackRoot:         packRoot,
-		CtxRoot:          ctxRoot,
-		ContextDir:       contextDir,
-		ContextLinks:     ctxLinks,
-		ContextPreflight: ContextPreflight(ctxLinks, ""),
+		StageCommands:     stageCommands,
+		StageCommandSteps: stageSteps,
+		PackRoot:          packRoot,
+		CtxRoot:           ctxRoot,
+		ContextDir:        contextDir,
+		ContextLinks:      ctxLinks,
+		ContextPreflight:  ContextPreflight(ctxLinks, ""),
 		// A copied pack `mount` occupies its path as a copied host file does, so the plan's own
 		// re-siting (contextLinkProblems) refuses a link at, inside or around either.
 		ContextOccupied: ContextOccupied(append(append([]string(nil), hostCtx.Delivered...),
