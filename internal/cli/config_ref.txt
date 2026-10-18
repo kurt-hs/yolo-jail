@@ -2211,7 +2211,11 @@
                      name different upstream orders.  A list carrying one is registered
                      with pi as that provider's menu: its declared models are what pi
                      offers there, and a model outside it is refused only when an `only`
-                     narrowed the list and `enforce_models` is on.
+                     narrowed the list and `enforce_models` is on.  pi's models.json
+                     row for a provider pi does not ship carries it too, as
+                     `compat.openRouterRouting`.  `yolo check` warns about a pin no
+                     request can carry: on a Bedrock provider, or one with no
+                     chat-completions `endpoints.openai` that no agent runs itself.
                      Example: {"bedrock": {"models": {"kimi":
                      {"id": "global.moonshotai.kimi-k3", "vendor": "moonshotai"}}}}
       capabilities   the named jobs this provider performs for itself, e.g.

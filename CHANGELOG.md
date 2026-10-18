@@ -57,6 +57,7 @@ build, an older release, upstream without your patches, or pi without an extensi
 
 - A macOS (macos-user) launch no longer leaves a copy of its packs behind on exit; `yolo prune --apply` removes older ones.
 - Claude on Kilo no longer assumes a 1M-token context for every model.
+- pi now sends a model's `openrouter_routing` on a provider of your own too, and `yolo check` warns about a pin nothing sends.
 - `yolo --update` on a patched fork now waits for another yolo building it, instead of failing.
 - On Apple Container, `yolo check` points an expired-login symptom at the jail's network, not the Claude broker.
 - A damaged shared Claude login file is now named at launch with `/login` as the fix, and the Claude broker no longer logs an empty one every minute.

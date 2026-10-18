@@ -1687,7 +1687,11 @@ replaces pi's menu for the provider and makes `base` a lookup into pi's catalog 
 restatement of it. The lookup inherits `thinkingLevelMap` (the nulls that mark an unsupported
 thinking level included), `inputLimits`, `compat` and every other catalog fact, and the routing
 is merged into the registered model's `compat.openRouterRouting`, which pi sends as the
-request's `provider` field.
+request's `provider` field. A provider pi does not ship (a second OpenRouter entry of your own,
+say) is written to `models.json`, and its rows carry the same pin as `compat.openRouterRouting`
+there. `yolo check` warns about a pin no request can carry, naming the alias: one on a Bedrock
+provider, or on a provider that declares no chat-completions `endpoints.openai` and that no
+selected agent runs on its own client.
 
 A registration replaces the menu, so **the declared rows are the menu**: with the example
 above, `pi --list-models` offers those two models under `openrouter`, not pi's whole gateway
