@@ -1,6 +1,28 @@
 {
   "model_list_check": {
-    "pi": {}
+    "pi": {
+      // Where pi's settings name a model a child agent is looked up by: pi-subagents' block,
+      // whose values are `<provider>/<id>` and whose allow lists are patterns in which `*`
+      // matches any run (pi-subagents 0.35.1 globToRegExp), and pi's own picker pair, which
+      // the scope must admit for a child that inherits the session's model (MM-D45, MM-D46).
+      "references": {
+        "models": [
+          "/subagents/defaultModel",
+          "/subagents/agentOverrides/*/model"
+        ],
+        "patterns": [
+          "/subagents/modelScope/allow",
+          "/subagents/modelScope/agents/*/allow"
+        ],
+        "profile_subagents": true,
+        "scope": "/subagents/modelScope/allow",
+        "selection": {
+          "model": "/defaultModel",
+          "provider": "/defaultProvider"
+        },
+        "surface": "pi/settings"
+      }
+    }
   },
   "contributes": [
     // Where each install hint's name came from, one line per manager, checked 2026-10-02.
