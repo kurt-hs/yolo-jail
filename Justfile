@@ -51,43 +51,6 @@ install:
         exit 1
     fi
 
-    # --- The official pack programs, built and installed WITH the tree ---
-    # A program an official loophole manifest declares under `binaries` is built from this
-    # checkout's cmd/<name> for this machine — its host build, and linux/<arch> for the jail —
-    # and admitted to the pack-binary cache every launch reads, as yolo's own binaries are staged
-    # below: NOTHING IS DOWNLOADED but the pinned Go toolchain, once, into the module cache —
-    # and when even that cannot be fetched, a go on PATH reporting the pinned version seeds
-    # instead, re-pinning nothing (BP-D26)
-    # (docs/reference/pack-binaries.md BP-D15, OQ-BP7 ruled 2026-10-05: "it has to be built all
-    # together, installed all together"). So a from-source or forked tree's jail runs that tree's
-    # programs. --repin: a program this tree changed since its pin is re-pinned first (the
-    # sha256 of each build this machine made, and no other platform's, urls kept; BP-D30), so
-    # the manifest `go install` embeds below pins the build it seeds; the
-    # tool names the manifest and says: commit it, then re-run `just install` — `just check-ci`
-    # refuses the old pin, and the commit moves HEAD through packs/, so version.SourceSkew then
-    # refuses a YOLO_REPO_ROOT launch by this install's stamp until the next one (BP-D28). FIRST, before
-    # VERSION, so a re-pin shows in the stamp as -dirty, and before anything is installed, so a
-    # failure installs nothing. With no official binary declared it says so and fetches nothing.
-    #
-    # UNDER `yolo update` (YOLO_INSTALL_KEEP_TREE, selfupdate.InstallKeepTreeEnv) the tree is the
-    # one it just pulled, and it is deployed EXACTLY: the seed never re-pins, so the checkout stays
-    # clean for the next update and an autostash pops back onto it, and a build it cannot seed is
-    # reported without failing the deploy, which would leave the pulled tree with the old binary.
-    # That build's loophole stays off here until a plain `just install` re-pins it (BP-D31).
-    if [ -n "${YOLO_INSTALL_KEEP_TREE:-}" ]; then
-        if ! go run ./tools/pack-binaries seed; then
-            echo "" >&2
-            echo "⚠ some of this tree's official pack programs were not seeded (the lines above say why)," >&2
-            echo "  so their loopholes stay off on this machine. The update deploys the tree as pulled;" >&2
-            echo "  'just install' in this checkout re-pins and seeds them, leaving the manifest to commit." >&2
-        fi
-    elif ! go run ./tools/pack-binaries seed --repin; then
-        echo "" >&2
-        echo "✗ could not build this tree's official pack programs into the pack-binary cache —" >&2
-        echo "  the lines above say why. Nothing has been installed: fix that and re-run 'just install'." >&2
-        exit 1
-    fi
-
     VERSION="$(git describe --tags --always --dirty --long --abbrev=12 2>/dev/null || echo unknown)"
     COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
     # SourceDir records THIS checkout so `yolo update` knows what to pull and
@@ -457,18 +420,7 @@ format:
     gofmt -w $(git ls-files --cached --others --exclude-standard -- '*.go' ':(exclude)vendor/')
 
 # Quality checks (interactive use)
-check: format lint test-fast check-pack-binaries
-
-# WHAT MAIN PINS BETWEEN RELEASES IS ITS OWN BUILD (docs/reference/pack-binaries.md BP-D15, OQ-BP7
-# ruled 2026-10-05). Each official pack program is rebuilt with the release recipe and its digest
-# compared with the manifest's; a url may still name any earlier release, which the release's own
-# pin rewrites. A refusal names the binary, the platform, both digests and `just
-# pin-pack-binaries`. With no official binary declared it says so, builds nothing and fetches no
-# toolchain; once one is, it cross-compiles each build, and fetches the pinned Go the first time.
-#
-# Check that this tree still builds every official pack program's pinned digest
-check-pack-binaries:
-    go run ./tools/pack-binaries check
+check: format lint test-fast
 
 # `[parallel]` runs the two dependencies at once: neither writes anything the other reads, so
 # the gate takes as long as the slower of them instead of their sum. A failure in either still
@@ -482,7 +434,7 @@ check-pack-binaries:
 #
 # The landing gate CI also runs (no formatting — just verify and test).
 [parallel]
-check-ci: lint-ci test-fast check-pack-binaries
+check-ci: lint-ci test-fast
 
 # Full quality checks including container integration tests
 check-all: format lint test
@@ -507,18 +459,6 @@ clean:
 # It is not the landing gate: landing still runs `just check-ci` (AGENTS.md, Workflow).
 done:
     @python3 scripts/completion-check.py
-
-# Each official pack binary is built with the release recipe, and its sha256 is written into its
-# loophole manifest in place (docs/reference/pack-binaries.md BP-D9). WITH A VERSION it writes
-# each release url too, and a release goes: rename the changelog section, run this, commit both,
-# `just release VERSION`. WITHOUT ONE it writes the digests alone and keeps each url — what main
-# pins between releases, and the fix `just check-ci` names when a change moved a program
-# (BP-D15); `just install` makes the same re-pin itself. With no official binary declared it says
-# so and writes nothing. The first run downloads the pinned Go toolchain into the module cache.
-#
-# Pin every official pack binary: to this tree's builds, or for VERSION (before `just release`)
-pin-pack-binaries *version:
-    go run ./tools/pack-binaries pin {{version}}
 
 # Request a release for one frozen commit. The host performs the cheap local gates, then
 # dispatches release-request.yml on main with that exact SHA. Trusted-main eligibility and
@@ -552,10 +492,6 @@ release version:
     fi
     if ! sh scripts/changelog-section.sh "$v" >/dev/null; then
         echo "✗ CHANGELOG.md has no usable section for $v — write and commit it, then retry. No release request was sent." >&2
-        exit 1
-    fi
-    if ! go run ./tools/pack-binaries check "$v"; then
-        echo "✗ official pack binaries are not pinned for $v — run 'just pin-pack-binaries $v', commit, and retry. No release request was sent." >&2
         exit 1
     fi
     if ! gh workflow run release-request.yml --ref main -f "version=$v" -f "sha=$sha"; then

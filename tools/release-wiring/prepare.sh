@@ -31,14 +31,6 @@ fi
 if ! (
   cd "$TARGET_ROOT"
   env -u GITHUB_TOKEN -u GH_TOKEN -u HOMEBREW_TAP_TOKEN -u CACHIX_AUTH_TOKEN \
-    go run ./tools/pack-binaries check "$RELEASE_VERSION"
-); then
-  echo "✗ Official pack binaries are not pinned for ${RELEASE_VERSION}; correct and commit the exact target before requesting the still-unreserved version again." >&2
-  exit 1
-fi
-if ! (
-  cd "$TARGET_ROOT"
-  env -u GITHUB_TOKEN -u GH_TOKEN -u HOMEBREW_TAP_TOKEN -u CACHIX_AUTH_TOKEN \
     VERSION="$RELEASE_VERSION" scripts/stage-source-bundle.sh "$prepare_root/source-bundle"
 ); then
   echo "✗ release source-bundle preparation failed for ${RELEASE_VERSION}. No tag was created; fix the build and request again." >&2
@@ -56,4 +48,4 @@ if [ ! -f "$prepare_root/source-bundle/flake.nix" ] || ! compgen -G "$prepare_ro
   echo "✗ release preparation returned without its source bundle and wheels. No tag was created; inspect the build output and retry." >&2
   exit 1
 fi
-echo "Target source-bundle, official binary pin, changelog and wheel preparation passed for ${RELEASE_VERSION} at ${RELEASE_SHA}; no build output is reused as a publication artifact."
+echo "Target source-bundle, changelog and wheel preparation passed for ${RELEASE_VERSION} at ${RELEASE_SHA}; no build output is reused as a publication artifact."

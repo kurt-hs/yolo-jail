@@ -38,8 +38,7 @@ func (s Step) String() string {
 // Locate returns the span of the value at path, a list of object keys from the top-level
 // object down, read by the same grammar Decode uses. It is how a tool EDITS a value in place,
 // replacing those bytes and nothing else, so every comment and every other byte of a
-// hand-written file survives (the pack binaries' pin tool, tools/pack-binaries, writes a
-// manifest's url and sha256 this way).
+// hand-written file survives.
 //
 // ok is false when nothing sits at path. A key written twice along the path is an error rather
 // than a guess: Decode keeps the last one, and an edit made to the other would change nothing

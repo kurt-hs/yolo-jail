@@ -926,9 +926,8 @@ const packBinariesLeaf = "pack-binaries"
 // PackBinariesDir returns $HOME/.local/share/yolo-jail/pack-binaries — the cache of the
 // executables loophole manifests declare under `binaries`, each build verified against the
 // manifest's sha256 and kept at <dir>/<sha256>/<name> with its exec bit set
-// (docs/reference/pack-binaries.md BP-D1). `yolo pack install` fills it by download, a
-// from-source `just install` seeds it with the tree's own builds of the official programs
-// (packbin.Seed, BP-D15), and a launch only reads it.
+// (docs/reference/pack-binaries.md BP-D1). `yolo pack install` fills it by download, the only
+// writer, and a launch only reads it.
 //
 // ⚠ NO JAIL MOUNTS THE DIRECTORY, for HostFloorDir's reason: a host daemon's binary is run
 // from here by absolute path, with the user's authority, so a copy a jail could write would

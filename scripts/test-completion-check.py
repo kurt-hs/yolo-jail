@@ -228,7 +228,8 @@ class FrontDoor(unittest.TestCase):
         self.assertIn(["-checks=inherit,-SA4023"] + closure,
                       [c["argv"] for c in self.ran(calls, "staticcheck") if c["GOOS"] == "darwin"])
         self.assertEqual([c["argv"] for c in self.ran(calls, "gofmt")], [["-l", "a/a.go"]])
-        self.assertTrue(self.ran(calls, "go", "run", "./tools/pack-binaries", "check"))
+        # The retired pin tool (docs/reference/pack-binaries.md OQ-BP8) is not run.
+        self.assertFalse([c for c in self.ran(calls, "go", "run") if "./tools/pack-binaries" in c["argv"]])
         self.assertEqual(self.ran(calls, "just"), [])
 
     def test_unformatted_go_fails_without_rewriting_it(self):

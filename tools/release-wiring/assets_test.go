@@ -81,36 +81,6 @@ func TestReleaseArtifactHandoffFailsClosedOnUnexpectedPathsTypesAndDigests(t *te
 	}
 }
 
-func TestExpectedReleaseAssetsReadsPackManifestAsData(t *testing.T) {
-	root := t.TempDir()
-	mustRun(t, root, "git", "init", "-q")
-	mustRun(t, root, "git", "config", "user.name", "release test")
-	mustRun(t, root, "git", "config", "user.email", "release-test@example.invalid")
-	config := []byte("version: 2\n")
-	if err := os.WriteFile(filepath.Join(root, ".goreleaser.yaml"), config, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	manifestPath := filepath.Join(root, "packs/tool/loopholes/tool/manifest.jsonc")
-	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	manifest := `{"name":"tool","description":"Test tool","binaries":{"toold":{"linux/amd64":{"url":"https://github.com/mschulkind-oss/yolo-jail/releases/download/v1.2.3/toold_1.2.3_linux_amd64","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}},"host_daemon":{"cmd":["{binary:toold}","--socket","{socket}"],"publishes":"socket"}}`
-	if err := os.WriteFile(manifestPath, []byte(manifest), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	mustRun(t, root, "git", "add", ".")
-	mustRun(t, root, "git", "commit", "-qm", "fixture")
-	targetSHA := strings.TrimSpace(string(mustRun(t, root, "git", "rev-parse", "HEAD")))
-	trustedConfig := filepath.Join(root, ".goreleaser.yaml")
-	assets, err := expectedReleaseAssets(root, targetSHA, "1.2.3", trustedConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(assets) != 5 || !contains(assets, "toold_1.2.3_linux_amd64") {
-		t.Fatalf("pack asset set = %v, missing expected official binary", assets)
-	}
-}
-
 func makeAssetFixture(t *testing.T, assets []string) string {
 	t.Helper()
 	dir := t.TempDir()

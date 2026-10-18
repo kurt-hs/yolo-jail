@@ -258,7 +258,6 @@ case "$*" in
     ;;
   *tools/release-wiring\ check-version-order*) exit 0 ;;
   *tools/release-wiring\ verify-resume*) if [ "${FAIL_RESUME:-}" = 1 ]; then echo "verify-resume: a draft GitHub Release exists" >&2; exit 1; fi ;;
-  *tools/pack-binaries\ check*) if [ "${FAIL_PINS:-}" = 1 ]; then exit 1; fi ;;
   *tools/build-wheels*)
     if [ "${FAIL_PREPARE:-}" = 1 ]; then exit 1; fi
     while [ "$#" -gt 0 ]; do
@@ -493,7 +492,7 @@ func TestPrepareTargetRunsWithoutWriteCredentialsAndChecksExactHead(t *testing.T
 	}
 	for name, body := range map[string]string{
 		"git": `echo "git $*" >> "$TRACE"; if [ "$1" = "-C" ] && [ "$3" = "rev-parse" ] && [ "$4" = "HEAD" ]; then echo "${TARGET_SHA:-$TEST_SHA}"; fi`,
-		"go":  `echo "go $* token=${GITHUB_TOKEN:-} gh=${GH_TOKEN:-} tap=${HOMEBREW_TAP_TOKEN:-} cachix=${CACHIX_AUTH_TOKEN:-}" >> "$TRACE"; case "$*" in *pack-binaries*) exit 0;; *build-wheels*) [ "${FAIL_PREPARE:-}" != 1 ] || exit 1; while [ "$#" -gt 0 ]; do if [ "$1" = --output-dir ]; then mkdir -p "$2"; : > "$2/wheel.whl"; shift 2; else shift; fi; done;; esac`,
+		"go":  `echo "go $* token=${GITHUB_TOKEN:-} gh=${GH_TOKEN:-} tap=${HOMEBREW_TAP_TOKEN:-} cachix=${CACHIX_AUTH_TOKEN:-}" >> "$TRACE"; case "$*" in *build-wheels*) [ "${FAIL_PREPARE:-}" != 1 ] || exit 1; while [ "$#" -gt 0 ]; do if [ "$1" = --output-dir ]; then mkdir -p "$2"; : > "$2/wheel.whl"; shift 2; else shift; fi; done;; esac`,
 		"sh":  `echo "sh $* token=${GITHUB_TOKEN:-} gh=${GH_TOKEN:-} tap=${HOMEBREW_TAP_TOKEN:-} cachix=${CACHIX_AUTH_TOKEN:-}" >> "$TRACE"; exit 0`,
 	} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+body), 0o755); err != nil {
@@ -553,7 +552,7 @@ func readFile(t *testing.T, path string) string {
 	return string(data)
 }
 
-func TestHostJustReleaseSubmitsOnlyFrozenSHAAfterLocalPinCheck(t *testing.T) {
+func TestHostJustReleaseSubmitsOnlyFrozenSHAAfterLocalChangelogCheck(t *testing.T) {
 	if _, err := exec.LookPath("just"); err != nil {
 		t.Skip("just is not installed")
 	}
@@ -567,9 +566,12 @@ func TestHostJustReleaseSubmitsOnlyFrozenSHAAfterLocalPinCheck(t *testing.T) {
 		t.Fatalf("just release failed: %v output=%s trace=%v", err, output.String(), readTrace(t, trace))
 	}
 	lines := readTrace(t, trace)
-	check, request := traceIndex(lines, "tools/pack-binaries check"), traceIndex(lines, "workflow run release-request.yml")
+	check, request := traceIndex(lines, "sh scripts/changelog-section.sh 9.8.7"), traceIndex(lines, "workflow run release-request.yml")
 	if check < 0 || request <= check || !strings.Contains(lines[request], "sha="+testSHA) || !strings.Contains(lines[request], "--ref main") {
-		t.Fatalf("host recipe did not pin-check then dispatch frozen SHA on main: %v", lines)
+		t.Fatalf("host recipe did not changelog-check then dispatch frozen SHA on main: %v", lines)
+	}
+	if traceIndex(lines, "pack-binaries") >= 0 {
+		t.Fatalf("host recipe still runs the retired pack-binary pin check: %v", lines)
 	}
 	if traceIndex(lines, "git tag") >= 0 || traceIndex(lines, "git push") >= 0 {
 		t.Fatalf("host recipe wrote a tag instead of submitting a request: %v", lines)
@@ -747,14 +749,11 @@ func TestGoReleaserPackagingScriptAcceptsOnlyItsDeclaredInertOutputSet(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 6 {
-		t.Fatalf("packaged release asset count = %d, want 4 archives + pack binary + checksums", len(entries))
+	if len(entries) != 5 {
+		t.Fatalf("packaged release asset count = %d, want 4 archives + checksums", len(entries))
 	}
 	if _, err := os.Stat(filepath.Join(root, "release-assets", "checksums.txt")); err != nil {
 		t.Fatalf("checksum asset was omitted: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(root, "release-assets", "fixture_1.2.3_linux_amd64")); err != nil {
-		t.Fatalf("pack-binary asset was omitted: %v", err)
 	}
 
 	bad := makeGoReleaserPackagingFixture(t, "1.2.3")
@@ -769,17 +768,30 @@ func TestGoReleaserPackagingScriptAcceptsOnlyItsDeclaredInertOutputSet(t *testin
 	if err := refuse.Run(); err == nil || !strings.Contains(output.String(), "unexpected GoReleaser dist paths") {
 		t.Fatalf("actual workflow packaging script accepted an unknown dist path: err=%v output=%s", err, output.String())
 	}
+
+	// A release publishes the four archives and nothing else (pack-binaries.md OQ-BP8): a
+	// checksummed file beside them, as the retired pack-binary staging produced, is refused.
+	extra := makeGoReleaserPackagingFixture(t, "1.2.3")
+	sums := filepath.Join(extra, "target/dist/checksums.txt")
+	if err := os.WriteFile(sums, []byte(readFile(t, sums)+strings.Repeat("0", 64)+"  fixture_1.2.3_linux_amd64\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	refuse = exec.Command("bash", "-e", "-c", command)
+	refuse.Dir = extra
+	refuse.Env = append(os.Environ(), "RELEASE_VERSION=1.2.3")
+	output.Reset()
+	refuse.Stdout, refuse.Stderr = &output, &output
+	if err := refuse.Run(); err == nil || !strings.Contains(output.String(), "checksum asset set is not the archives") {
+		t.Fatalf("actual workflow packaging script accepted a checksummed file beside the archives: err=%v output=%s", err, output.String())
+	}
 }
 
 func makeGoReleaserPackagingFixture(t *testing.T, version string) string {
 	t.Helper()
 	root := t.TempDir()
 	dist := filepath.Join(root, "target/dist")
-	packDir := filepath.Join(root, "target/bundle/pack-binaries")
-	for _, directory := range []string{dist, packDir} {
-		if err := os.MkdirAll(directory, 0o755); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.MkdirAll(dist, 0o755); err != nil {
+		t.Fatal(err)
 	}
 	platforms := []struct{ os, arch, slug string }{
 		{"darwin", "amd64", "darwin_amd64_v1"}, {"darwin", "arm64", "darwin_arm64_v8.0"},
@@ -815,12 +827,6 @@ func makeGoReleaserPackagingFixture(t *testing.T, version string) string {
 	}
 	records = append(records, map[string]string{"type": "Metadata", "name": "metadata.json", "path": "dist/metadata.json"},
 		map[string]string{"type": "Checksum", "name": "checksums.txt", "path": "dist/checksums.txt"})
-	packName := fmt.Sprintf("fixture_%s_linux_amd64", version)
-	packBytes := []byte("official pinned pack program")
-	if err := os.WriteFile(filepath.Join(packDir, packName), packBytes, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	addChecksum(packName, packBytes)
 	for name, content := range map[string]string{"artifacts.json": mustJSON(t, records), "checksums.txt": strings.Join(checksumLines, "\n") + "\n"} {
 		if err := os.WriteFile(filepath.Join(dist, name), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
@@ -999,15 +1005,10 @@ func TestMainBackfillCallerUsesTrustedToolsWhenOldTagHasNone(t *testing.T) {
 	if err := os.Mkdir(old, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, dir := range []string{"scripts", "tools/pack-binaries"} {
-		if err := os.MkdirAll(filepath.Join(old, dir), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(old, "scripts/changelog-section.sh"), []byte("#!/bin/sh\nprintf 'Historical notes\\n'\n"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(old, "scripts"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(old, "tools/pack-binaries/main.go"), []byte("package main\nfunc main() {}\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(old, "scripts/changelog-section.sh"), []byte("#!/bin/sh\nprintf 'Historical notes\\n'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	mustRun(t, old, "git", "init", "-q")
@@ -1053,13 +1054,10 @@ func TestMainBackfillCallerUsesTrustedToolsWhenOldTagHasNone(t *testing.T) {
 		}
 
 		if e == nil {
-			prep := namedStep(t, wf, "prepare-target", "Verify target notes and official binary pins without write credentials")
+			prep := namedStep(t, wf, "prepare-target", "Verify target notes without write credentials")
 			out, e = runWorkflowCommand(t, prep, root, bin, trace, "RELEASE_VERSION=9.8.7", "RELEASE_SHA="+oldSHA, "TARGET_ROOT="+old, "REAL_GIT="+realGit)
 			if e != nil {
 				t.Fatalf("old immutable source required new tools: %v %s", e, out)
-			}
-			if traceIndex(readTrace(t, trace), "tools/pack-binaries check 9.8.7") < 0 {
-				t.Fatal("old source preparation bypassed pin gate")
 			}
 		}
 	}
@@ -1144,7 +1142,7 @@ func TestPinnedRealGoReleaserReadonlyPreparationFeedsActualPackagingCaller(t *te
 	}
 	files := map[string]string{
 		"go.mod": "module fixture.invalid/yolo\n\ngo 1.25\n", "cmd/yolo/main.go": "package main\nfunc main() {}\n", "notes.md": "Offline release body.\n",
-		"prepare.sh": "#!/bin/sh\nset -eu\nmkdir -p bundle/share/yolo-jail/bin/linux-amd64 bundle/share/yolo-jail/bin/linux-arm64 bundle/pack-binaries\nprintf 'fixture flake' > bundle/share/yolo-jail/flake.nix\nprintf 'linux binary' > bundle/share/yolo-jail/bin/linux-amd64/yolo-entrypoint\nprintf 'arm binary' > bundle/share/yolo-jail/bin/linux-arm64/yolo-entrypoint\nprintf 'pack binary' > bundle/pack-binaries/fixture_1.2.3_linux_amd64\n",
+		"prepare.sh": "#!/bin/sh\nset -eu\nmkdir -p bundle/share/yolo-jail/bin/linux-amd64 bundle/share/yolo-jail/bin/linux-arm64\nprintf 'fixture flake' > bundle/share/yolo-jail/flake.nix\nprintf 'linux binary' > bundle/share/yolo-jail/bin/linux-amd64/yolo-entrypoint\nprintf 'arm binary' > bundle/share/yolo-jail/bin/linux-arm64/yolo-entrypoint\n",
 	}
 	// Preserve the production archive/checksum/extra-file settings and matrix;
 	// replace only expensive project hooks with inert tiny fixture inputs.
@@ -1220,7 +1218,7 @@ func TestPinnedRealGoReleaserReadonlyPreparationFeedsActualPackagingCaller(t *te
 			}
 		}
 	}
-	if err := verifyReleaseChecksums(filepath.Join(root, "release-assets"), []string{"yolo-jail_1.2.3_darwin_amd64.tar.gz", "yolo-jail_1.2.3_darwin_arm64.tar.gz", "yolo-jail_1.2.3_linux_amd64.tar.gz", "yolo-jail_1.2.3_linux_arm64.tar.gz", "fixture_1.2.3_linux_amd64"}); err != nil {
+	if err := verifyReleaseChecksums(filepath.Join(root, "release-assets"), []string{"yolo-jail_1.2.3_darwin_amd64.tar.gz", "yolo-jail_1.2.3_darwin_arm64.tar.gz", "yolo-jail_1.2.3_linux_amd64.tar.gz", "yolo-jail_1.2.3_linux_arm64.tar.gz"}); err != nil {
 		t.Fatal(err)
 	}
 }
