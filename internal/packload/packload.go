@@ -91,6 +91,11 @@ type Pack struct {
 	// (SourcePath): a refusal a user fixes by editing a file must name the file they edit, not
 	// the throwaway copy the verb read.
 	SourceRoot string
+	// PatchBranchMappings are host-established relative-locator identities delivered by the
+	// selected pack-tree record. The directory is the declaring pack's path under the jail's
+	// workspace when that source is mounted there; an unmapped source keeps its identity but
+	// is not made reachable from the jail.
+	PatchBranchMappings map[string]PatchBranchMapping
 	// Decl is the parsed manifest. Never nil — a pack with no pack.json gets an empty
 	// one, because a skills-only pack must stay zero-ceremony.
 	Decl *packdecl.Manifest

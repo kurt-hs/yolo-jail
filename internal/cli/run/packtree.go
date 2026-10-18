@@ -96,8 +96,8 @@ func newPackTree(cname string) (string, error) {
 
 // writePackTreeRecord writes root's record from the packs a launch loaded out of it, in the
 // precedence order they were loaded in (config.PackSelection.Packs).
-func writePackTreeRecord(root string, packs []*packload.Pack) error {
-	return packload.WritePackTreeRecord(root, packs)
+func writePackTreeRecord(root string, packs []*packload.Pack, workspace string) error {
+	return packload.WritePackTreeRecordForWorkspace(root, packs, workspace)
 }
 
 // discardPackTree removes a pack tree no container holds: one this launch staged and then

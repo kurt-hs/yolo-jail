@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
@@ -53,18 +54,18 @@ type lintedSeries struct {
 }
 
 // patchedOfPack is every patched fork and patched extension pack declares, each reading its series
-// from root, the pack's own directory.
+// from root, the pack's own directory, and resolving a relative patch branch against it.
 func patchedOfPack(pack *packload.Pack, root string) []packload.Fork {
 	one := []*packload.Pack{pack}
 	var out []packload.Fork
 	for _, f := range packload.Forks(one) {
 		if f.Patched() {
-			f.Root = root
+			f.Root, f.PatchBranchDir = root, root
 			out = append(out, f)
 		}
 	}
 	for _, f := range packload.PatchedTrees(one) {
-		f.Root = root
+		f.Root, f.PatchBranchDir = root, root
 		out = append(out, f)
 	}
 	return out
@@ -78,8 +79,16 @@ func lintSeries(pack *packload.Pack, root string) ([]lintedSeries, []string) {
 	for _, f := range patchedOfPack(pack, root) {
 		if f.PatchBranch != "" {
 			// A PATCH BRANCH has nothing in the pack to read: its address is the manifest's to check, and
-			// `--online` fetches and resolves it (docs/reference/patched-forks.md §3.5).
-			read = append(read, lintedSeries{fork: f, series: packsrc.UnresolvedPatchBranchSeries(f.PatchBranch)})
+			// `--online` fetches and resolves it (docs/reference/patched-forks.md §3.5). A RELATIVE one is
+			// resolved here, against the pack's own directory, which the manifest's check cannot know:
+			// a climb out of the pack's repository fails lint as it fails every check.
+			if _, syntaxErr := packsrc.ParseFrom(f.PatchBranch, ""); syntaxErr == nil && packsrc.IsRelativeLocator(f.PatchBranch) {
+				if _, err := f.PatchBranchAddr(); err != nil {
+					problems = append(problems, richtext.Escape(f.Label()+": the patch branch: "+err.Error()))
+					continue
+				}
+			}
+			read = append(read, lintedSeries{fork: f, series: packsrc.UnresolvedPatchBranchSeries(f.PatchBranch, f.PatchBranchDir)})
 			continue
 		}
 		if packdecl.PatchesDirProblem(f.Patches) != "" {
@@ -141,6 +150,31 @@ func lintOnline(pr richtext.Printer, read []lintedSeries) (problems, lines []str
 		problems = append(problems, "online: interrupted, and the scratch mirror is deleted — "+lintOnlineAgain)
 	}
 	return problems, lines
+}
+
+// offlineRefLines is the default (offline) lint's line for each patched fork or extension whose refs it
+// resolved none of: a pass means the manifest reads, never that a ?ref= names a branch, and a pass that
+// does not say so reads as the second until a launch refuses the ref. One line per fork or extension,
+// naming each git ref and `--online`, which resolves them in a scratch mirror; dir is the pack's.
+func offlineRefLines(read []lintedSeries, dir string) []string {
+	var lines []string
+	for _, r := range read {
+		var refs []string
+		if r.fork.PatchBranch != "" {
+			if a, err := packsrc.ParseFrom(r.fork.PatchBranch, ""); err == nil {
+				refs = append(refs, "the patch branch's ?ref="+a.Ref)
+			}
+		}
+		if a, err := packsrc.Parse(r.fork.Source); err == nil && a.Kind == packsrc.KindGit {
+			refs = append(refs, "the upstream's ?ref="+a.Ref)
+		}
+		if len(refs) == 0 {
+			continue // an npm upstream with no patch branch: no git ref to resolve
+		}
+		lines = append(lines, "[yellow]ℹ[/yellow] "+richtext.Escape(r.fork.RefNotResolvedLine(dir)+
+			" ("+strings.Join(refs, ", ")+")"))
+	}
+	return lines
 }
 
 // printLines prints lines already in markup, each escaped where it was made.

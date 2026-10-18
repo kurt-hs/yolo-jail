@@ -101,7 +101,7 @@ func checkPatchedForks(pr richtext.Printer, errw io.Writer, forks []packload.For
 func checkPatchedFork(pr richtext.Printer, errw io.Writer, store *packsrc.Store, f packload.Fork) int {
 	series, err := f.ReadSeriesFrom(store) // a patch branch not resolved yet: this check resolves it
 	if packsrc.IsPatchBranchRecordError(err) {
-		series, err = packsrc.UnresolvedPatchBranchSeries(f.PatchBranch), nil // this check starts the record over
+		series, err = packsrc.UnresolvedPatchBranchSeries(f.PatchBranch, f.PatchBranchDir), nil // this check starts the record over
 	}
 	if err != nil {
 		fmt.Fprintf(errw, "yolo pack: %s: %v\n", f.Label(), err)
@@ -123,7 +123,8 @@ func checkPatchedFork(pr richtext.Printer, errw io.Writer, store *packsrc.Store,
 	original := res.Record
 	if f.PatchBranch != "" {
 		// The patch branch as this check resolved it: its commit is what the walk merges and keys.
-		if s, err := packsrc.PatchBranchSeries(f.PatchBranch, f.Source, original); err == nil {
+		if s, err := packsrc.PatchBranchSeriesWithIdentity(f.PatchBranch, f.PatchBranchDir,
+			f.PatchBranchRepoIdentity, f.Source, original); err == nil {
 			series = s
 		}
 	}
