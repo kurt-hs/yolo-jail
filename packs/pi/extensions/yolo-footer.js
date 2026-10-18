@@ -43,10 +43,27 @@ function renderFooter() {
 	});
 }
 
+// THE FIRST RENDER IS FIRE-AND-FORGET. pi awaits every session_start handler before the session
+// is usable, and a cold `yolo internal footer` costs ~1.7 s, so the handler starts the child and
+// returns; the line is set when the child answers, and the 2000 ms timeout above still bounds it.
+// A render that answers after its session has moved on is dropped: each session_start and
+// session_shutdown moves `generation` on, so only the render the latest session_start began can
+// land, and a ctx pi has already invalidated (it throws once its session is replaced) sets nothing.
 export default function registerYoloFooter(pi) {
-	pi.on("session_start", async (_event, ctx) => {
+	let generation = 0;
+	pi.on("session_shutdown", () => {
+		generation++;
+	});
+	pi.on("session_start", (_event, ctx) => {
+		const mine = ++generation;
 		if (!ctx.hasUI) return;
-		const line = await renderFooter();
-		if (line) ctx.ui.setStatus("yolo", line);
+		void renderFooter().then((line) => {
+			if (!line || mine !== generation) return;
+			try {
+				ctx.ui.setStatus("yolo", line);
+			} catch {
+				// a stale ctx: its session is gone, and so is the footer it would have shown
+			}
+		});
 	});
 }
