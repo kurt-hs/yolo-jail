@@ -597,9 +597,16 @@ func Decode(data []byte) (*Manifest, []string) {
 // patched fork's `patches` read by a yolo older than the mode — and encoding/json's bare
 // `json: unknown field "x"` names neither. It helps the next new field, not one an older binary
 // already refuses.
+//
+// A field this build RENAMED (renames.go) is neither, and updating yolo cannot help it: the hint
+// names the new spelling instead.
 func unknownFieldHint(err error) string {
-	if !strings.HasPrefix(err.Error(), "json: unknown field ") {
+	field := unknownFieldName(err)
+	if field == "" {
 		return ""
+	}
+	if step := renameStep(field); step != "" {
+		return " — " + step
 	}
 	return " — check its spelling; if the pack was written for a newer yolo, that yolo may read " +
 		"this field: update yolo"

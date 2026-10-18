@@ -1082,3 +1082,25 @@ func TestPackLintAcceptsAFilesFromNamingOneFile(t *testing.T) {
 			out.String(), errw.String())
 	}
 }
+
+// A pack still writing a RENAMED field (`carry`, now `patch_branch`) is told the new spelling,
+// once: the decode refusal names the rename, and lint does not add "declares ZERO contributions"
+// beside it, which is the same cause reported a second time.
+func TestPackLintNamesARenamedFieldOnce(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "pack.json"), `{"name":"carried","contributes":[{"kind":"files",`+
+		`"into":"~/.pi/x","from":"x","carry":"git+https://example.com/r?ref=b"}]}`)
+	writeFile(t, filepath.Join(dir, "x", "a.txt"), "a\n")
+
+	var out, errw bytes.Buffer
+	if rc := packMain([]string{"lint", dir}, &out, &errw, false); rc == 0 {
+		t.Fatalf("a manifest carrying `carry` must not lint clean:\n%s", out.String())
+	}
+	got := out.String() + errw.String()
+	if !strings.Contains(got, `"carry" was renamed to "patch_branch"`) || strings.Contains(got, "update yolo") {
+		t.Errorf("lint must name the rename, not send the author to update yolo:\n%s", got)
+	}
+	if strings.Contains(got, "ZERO contributions") || strings.Contains(got, "nothing reads") {
+		t.Errorf("lint reported the undecodable manifest a second time:\n%s", got)
+	}
+}
