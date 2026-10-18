@@ -39,7 +39,7 @@ func TestTheGitHubPackBriefsEveryAgentOnGHInTheJail(t *testing.T) {
 		"(create the key only if the file has none)",
 		"or in the local file beside it for what the project should not commit, or when the config file is read-only here",
 		"Then run `yolo check --no-build`, and ask the user to run `yolo config apply` on the host, in this workspace, and answer y to the repository-scope prompt.",
-		"The running broker takes the repository at its next call; nothing changes before that y.",
+		"In a jail started by this yolo, the running broker takes the repository at its next call; an older one needs a restart. Nothing changes before that y.",
 	} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("the github briefing lacks %q:\n%s", want, prose)

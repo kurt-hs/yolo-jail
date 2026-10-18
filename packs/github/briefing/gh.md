@@ -18,8 +18,9 @@ GitHub repositories. The jail holds no GitHub token; `gh auth status` names the 
   environment briefing names (create the key only if the file has none), or in the local file
   beside it for what the project should not commit, or when the config file is read-only here.
   Then run `yolo check --no-build`, and ask the user to run `yolo config apply` on the host, in
-  this workspace, and answer y to the repository-scope prompt. The running broker takes the
-  repository at its next call; nothing changes before that y.
+  this workspace, and answer y to the repository-scope prompt. In a jail started by this yolo,
+  the running broker takes the repository at its next call; an older one needs a restart.
+  Nothing changes before that y.
 - A wildcard entry reaches more than one repository: `*/*` is every repository the host login can
   reach, `OWNER/*` is one owner's, `*/REPO` is that name under any owner. A whole segment is the
   only wildcard form. Use one only when the user asks for that reach; it goes through the same
