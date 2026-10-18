@@ -15,7 +15,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `yolo --version` now names the commit in every build, releases included, as in `yolo-jail 0.15.0+g0123456789ab`.
 - A model list with no `only` no longer refuses a model you type, for pi's child agents too.
 - `YOLO_PI_SUBAGENTS_MODEL_SETTINGS` is gone; to hand pi that flag, declare [`launch_computed`](docs/reference/pack-system.md#launch_computed) in a pack that forks the `pi` program.
-- Claude keeps your `/model` choice across launches and provider switches.
+- Claude keeps your `/model` choice across launches, and its tier when you switch providers.
 - **macOS (macos-user) launches no longer ask for a password.** Run `yolo macos-setup` once after upgrading. See [the macOS guide](userguide/guides/macos.md).
 - **Each jail runs its own credential services** for Claude, OpenAI and AWS. Once an older yolo's jails end, run `yolo host-daemon stop --host-wide <name>`. See [host services](userguide/guides/host-services.md).
 - **A newer agent, tool or patched build that fails to install now stops the launch**, naming the command that runs what you have. Offline, yolo starts what is installed.

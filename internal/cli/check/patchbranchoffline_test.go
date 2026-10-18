@@ -58,4 +58,15 @@ func TestCheckSaysWhenAPatchBranchsRefWasNeverResolved(t *testing.T) {
 	if report, _ := run(); strings.Contains(report, "not resolved (offline)") {
 		t.Errorf("check of a patch branch a record resolved still says it is unresolved:\n%s", report)
 	}
+
+	// A RELATIVE patch branch read where it does not resolve (in a jail, the delivered copy of a host pack) names
+	// the lint of the pack's own directory, never one of the copy that would refuse.
+	relative := strings.Replace(manifest, branch, "../..?ref=mine", 1)
+	if err := os.WriteFile(filepath.Join(dir, "pack.json"), []byte(relative), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	report, r = run()
+	if r.failed != 0 || !strings.Contains(report, "ref not resolved (offline) — run `yolo pack lint --online <dir>` on the pack's own directory") {
+		t.Errorf("check of a relative patch branch it cannot resolve: failed=%d\n%s", r.failed, report)
+	}
 }
