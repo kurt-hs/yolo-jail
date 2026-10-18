@@ -247,6 +247,7 @@ changes nothing.
 | `paths.ApprovalsDir()/<container-name>.scope.json` | Last-approved repository scope per brokered source, written only where a brokered loophole starts. Host-side, never mounted |
 | `paths.ApprovalsDir()/<container-name>.scope-sources.json` | Where each approved repository came from, beside the scope part. Host-side, never mounted |
 | `<workspace>/.yolo/config-assembled.json` | The merged config the host assembled for this launch, delivered into the jail |
+| `<workspace>/.yolo/config-assembled-origins.json` | Which host file set each key of that copy, so an in-jail refusal names the file to edit |
 | `<workspace>/.yolo/config-boot.json` | Frozen workspace-only config the jail was built from (`yolo config drift`) |
 
 **Why there are two workspace-side files at all.** The approval record must be somewhere the

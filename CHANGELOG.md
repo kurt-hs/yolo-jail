@@ -72,6 +72,7 @@ last good build or upstream without your patches. See [Patch series](userguide/g
 - An exported rebased patch series now applies whatever your git version or settings.
 - pi, omp and opencode no longer wait about two seconds at start for yolo's footer line.
 - Models another pi extension registers for a provider are no longer dropped by yolo's model list, unless the profile enforces it.
+- In a jail, a config refusal names the host file that set the key, and that an edit there takes effect at relaunch.
 - `yolo features` on a terminal says what each capability is for.
 - `yolo --version` names the binary's own version beside a `YOLO_VERSION` override, and `yolo check`'s Version line names the build stamp and commit.
 

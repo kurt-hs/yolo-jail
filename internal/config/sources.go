@@ -28,10 +28,11 @@ package config
 // all but the reporting reads would discard it. A plain reader with a problem to report
 // (LoadPacks, LoadProfiles, …) reads the user scope again for the record, on that path only.
 //
-// WHAT IT CANNOT SEE. A config the loader did not read from files has no tree: the in-jail
-// copy of the host's assembled config (LoadConfig's short-circuit for the jail's own
-// workspace), whose host files are not in the jail, and any map a caller built by hand. A nil
-// *Sources annotates nothing.
+// WHAT IT CANNOT SEE. A config the loader did not read from files has no tree: any map a caller
+// built by hand. A nil *Sources annotates nothing. The copies a launch hands a jail — the
+// generated user scope and the assembled config LoadConfig reads back for the jail's own
+// workspace — carry the host's record beside them, and are located through it, by host file
+// only (launchorigins.go).
 
 import (
 	"strconv"
@@ -100,9 +101,14 @@ func (f *srcFile) writtenTwice(steps []json5.Step) error {
 }
 
 // srcOrigin is one place a value was written: a file, and the path to the value inside it.
+//
+// host is set on an origin in a copy a launch made for a jail (launchorigins.go): the label of
+// the host file that wrote the value, which a message names in place of the copy, file being the
+// copy itself.
 type srcOrigin struct {
 	file  *srcFile
 	steps []json5.Step
+	host  string
 }
 
 // srcNode mirrors one value of a composed config. Nodes are never modified once built: a merge
@@ -296,10 +302,16 @@ func (s *Sources) AnnotateOne(msg string) string {
 	if n == nil {
 		return msg
 	}
-	locs := n.locations()
-	if len(locs) == 0 {
+	origins := n.origins()
+	if len(origins) == 0 {
 		return msg
 	}
+	if origins[0].host != "" {
+		// Set in a host file this jail reads a launch copy of: the location goes after the
+		// message, with the step that makes an edit there count (launchorigins.go).
+		return msg + launchCopyNote(origins)
+	}
+	locs := n.locations()
 	out := locs[0] + ": " + msg
 	if len(locs) > 1 {
 		out += " (also written at " + strings.Join(locs[1:], ", ") + ")"
@@ -377,23 +389,39 @@ func (n *srcNode) longestKeyAt(rest string) (string, bool) {
 // "<path>:<line>:<column>", or the path alone where the file no longer locates the value
 // (a key written twice in one file, which Locate refuses to guess at). Duplicates collapse.
 func (n *srcNode) locations() []string {
+	origins := n.origins()
+	out := make([]string, 0, len(origins))
+	for _, o := range origins {
+		out = append(out, o.String())
+	}
+	return out
+}
+
+// origins is the node's writers, highest precedence first, one per location locations names.
+func (n *srcNode) origins() []srcOrigin {
 	ws := n.writerList()
 	seen := make(map[string]bool, len(ws))
-	var out []string
+	var out []srcOrigin
 	for i := len(ws) - 1; i >= 0; i-- {
 		loc := ws[i].String()
 		if loc == "" || seen[loc] {
 			continue
 		}
 		seen[loc] = true
-		out = append(out, loc)
+		out = append(out, ws[i])
 	}
 	return out
 }
 
 // String is the origin as a person types it: the file's label, then the line and column the
 // value starts at.
+//
+// An origin in a launch copy is its host file's label and the words "on the host": the line and
+// column are the copy's, which name nothing the user wrote.
 func (o srcOrigin) String() string {
+	if o.host != "" {
+		return o.host + " on the host"
+	}
 	if o.file == nil {
 		return ""
 	}
