@@ -271,3 +271,41 @@ func TestInjectCtxMountRefusesAPidThatChangedUnderTheStep(t *testing.T) {
 		t.Error("the verb never ran")
 	}
 }
+
+// A REMOVAL IS JUDGED BY ITS DESTINATION ALONE: the detach never reads the source, so a recorded
+// mount whose host source has since become a file still leaves the jail now.
+func TestAMountRemovalIgnoresWhatItsSourceBecame(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "now-a-file")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := buildApplyPlan(applyPlanInput{rt: "podman", running: true, bootOK: true,
+		boot: mapOf(t, `{"mounts":["x"]}`), current: mapOf(t, `{}`), mountsLive: true, mountRecordOK: true,
+		mountRefusal: liveMountRefusal, mountRemoves: []liveCtxMount{{Source: file, Dest: "/ctx/gone"}}})
+	joined := strings.Join(renderApplyChanges(plan), "\n")
+	if !strings.Contains(joined, "- /ctx/gone (read-only): applied now") {
+		t.Errorf("the removal waits for its old source:\n%s", joined)
+	}
+}
+
+// THE UNREADABLE-RECORD LINE IS PODMAN'S ALONE: Apple Container never writes a record and binds
+// its shares at VM boot, so a line there would stand on every apply and attach, restarts
+// included; macos-user has no mounts.
+func TestUserScopeMountsUnknownOnlyOnPodman(t *testing.T) {
+	rw := []configCtxMount{{source: "/h/rw", dest: "/ctx/rw", rw: true}}
+	ro := []configCtxMount{{source: "/h/ro", dest: "/ctx/ro"}}
+	for _, c := range []struct {
+		rt     string
+		mounts []configCtxMount
+		want   bool
+	}{
+		{"podman", rw, true},
+		{"podman", ro, false},
+		{"container", rw, false},
+		{"macos-user", rw, false},
+	} {
+		if got := userScopeMountsUnknown(c.rt, c.mounts); got != c.want {
+			t.Errorf("userScopeMountsUnknown(%s, rw=%v) = %v, want %v", c.rt, c.mounts[0].rw, got, c.want)
+		}
+	}
+}
