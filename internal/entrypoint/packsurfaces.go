@@ -232,6 +232,8 @@ func ConfigurePackSurfaces(e *Env, packs []*packload.Pack) {
 		genStepAbout(e, name, about[name], run)
 		return nil
 	})
+	// What the rendered files name a model by, read back once they are written (MM-D45, MM-D46).
+	reportModelReferences(e, packs)
 }
 
 // surfaceStepsAbout is what each step of the render loop is about, by the step's name
