@@ -38,7 +38,7 @@ func hostGateLaunch(t *testing.T, flags []string, agent string) (map[string]stri
 var hostGateNames = []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "ZAI_API_KEY",
 	"CLAUDE_CODE_USE_BEDROCK", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN",
 	"ANTHROPIC_AUTH_TOKEN",
-	"ANTHROPIC_BASE_URL", "PORT", "DEEPSEEK_API_KEY", "CEREBRAS_API_KEY",
+	"ANTHROPIC_BASE_URL", "PORT", "DEEPSEEK_API_KEY", "CEREBRAS_API_KEY", "PI_CODING_AGENT_DIR",
 	"OPENROUTER_API_KEY", "KILO_API_KEY", "YOLO_PROVIDERS", "AWS_PROFILE", "AWS_CONFIG_FILE"}
 
 // shippedCredentialNames is every credential variable a SHIPPED provider declares: the

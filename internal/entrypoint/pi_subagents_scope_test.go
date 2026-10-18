@@ -30,13 +30,14 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
-// shippedScopeRender is a render harness over the providers the shipped pi, zai, openrouter,
-// kilo and llamacpp packs compose (plus openai-auth, which declares openai-codex),
-// with the profiles those packs ship resolved the way a launch resolves them. kilo's profile
-// states a model, because kilo declares no model list and names none of its own.
+// shippedScopeRender is a render harness over every shipped provider pack with a Pi profile,
+// including bridge routes (plus openai-auth, which declares openai-codex), with profiles resolved
+// the way a launch resolves them. kilo's profile states a model, because kilo declares no model
+// list and names none of its own.
 func shippedScopeRender(t *testing.T) *pioencodeRender {
 	t.Helper()
-	packs := testPacksForAgent(t, "pi", "zai", "openrouter", "kilo", "llamacpp", "openai-auth")
+	packs := testPacksForAgent(t, "pi", "zai", "openrouter", "kilo", "llamacpp", "openai-auth",
+		"bedrock", "cerebras", "meta-provider", "wire-bridge")
 	providers, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +48,8 @@ func shippedScopeRender(t *testing.T) *pioencodeRender {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"codex", "zai", "openrouter", "kilo", "llamacpp"} {
+	for _, name := range []string{"codex", "zai", "openrouter", "kilo", "llamacpp", "bedrock",
+		"bedrock-bridge", "cerebras", "meta"} {
 		if _, ok := resolved[name]; !ok {
 			t.Fatalf("the shipped packs resolve no %q profile, so its case measures nothing", name)
 		}
@@ -290,6 +292,43 @@ func TestPiBuiltInProviderResolvesAProfileModelAlias(t *testing.T) {
 	}
 	if got := sub["defaultProvider"]; got != "openrouter" {
 		t.Errorf("subagents.defaultProvider = %v, want openrouter", got)
+	}
+}
+
+// An exact id must win over the provider's `default` alias. The profile and its subagent
+// declaration use the same explicit id, while `default` points elsewhere: this pins the stated
+// alias → exact-id → default-fallback order at the derive call site.
+func TestPiProfileAndSubagentsExactIDOutranksDefaultAlias(t *testing.T) {
+	packs := testPacksForAgent(t, "pi", "openrouter")
+	user, err := jsonx.Decode([]byte(`{"openrouter":{"models":{` +
+		`"default":"deepseek/deepseek-v4.1-flash:nitro",` +
+		`"deepseek-floor":"deepseek/deepseek-v4.1-flash:floor",` +
+		`"deepseek-nitro":"deepseek/deepseek-v4.1-flash:nitro"}}}`))
+	if err != nil {
+		t.Fatalf("fixture providers: %v", err)
+	}
+	providers, err := packload.ComposeProviders(user.(*jsonx.OrderedMap), packs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := "deepseek/deepseek-v4.1-flash:floor"
+	resolved, err := packload.ResolveProfiles(packs, map[string]packload.UserProfile{
+		"or": {Provider: "openrouter", Options: map[string]string{"model": model},
+			Subagents: luahook.Subagents{Default: model}},
+	}, providers)
+	if err != nil {
+		t.Fatalf("resolve the or profile: %v", err)
+	}
+	r := newPioencodeRender(t, mustCompactJSON(t, providers))
+	r.wireProfiles(mustCompactJSON(t, packload.ProfilesWireTable(resolved)))
+	r.render(t, `{"pi":"or"}`)
+	settings := r.piSettings(t)
+	if got := settings["defaultModel"]; got != model {
+		t.Errorf("defaultModel = %v, want the exact profile model %q rather than the list default", got, model)
+	}
+	sub, _ := settings["subagents"].(map[string]any)
+	if got := sub["defaultModel"]; got != "openrouter/"+model {
+		t.Errorf("subagents.defaultModel = %v, want the exact declared id %q rather than the list default", got, "openrouter/"+model)
 	}
 }
 
