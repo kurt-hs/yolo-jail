@@ -1,0 +1,75 @@
+package cli
+
+import (
+	"flag"
+	"fmt"
+	"io"
+	"os"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/ctxinject"
+)
+
+// ctxAttachVerb is `yolo internal ctx-attach`: the INJECTOR of docs/design/live-config-apply.md
+// §5.1, which adds one context mount to a running podman jail (or, with --remove, takes one
+// away). Hidden because its caller is the host driver (run's ctxinjectdrive.go), which runs it
+// directly on a rootful or nested podman and under `podman unshare` on a rootless one, where the
+// jail's user namespace is a child of podman's. Short-lived: it holds no secret and never runs as
+// a daemon (§5.6).
+//
+// The source arrives already resolved by the host (§5.6: host paths are resolved before setns,
+// never after); the destination is the one jail-side input.
+const ctxAttachVerb = "ctx-attach"
+
+// ctxInjector is the verb's effect, injected for its tests.
+type ctxInjector struct {
+	attach func(pid int, identity ctxinject.ProcessIdentity, source, dest string, rw bool) error
+	detach func(pid int, identity ctxinject.ProcessIdentity, dest string) error
+}
+
+func runCtxAttach(args []string) int {
+	// Ends with its parent, so a host deadline that kills `podman unshare` ends this too.
+	if err := ctxinject.DieWithParent(); err != nil {
+		fmt.Fprintln(os.Stderr, "yolo internal "+ctxAttachVerb+": "+err.Error())
+		return 1
+	}
+	return ctxAttachMain(args, os.Stderr, ctxInjector{attach: ctxinject.Attach, detach: ctxinject.Detach})
+}
+
+func ctxAttachMain(args []string, stderr io.Writer, inj ctxInjector) int {
+	fs := flag.NewFlagSet("yolo internal "+ctxAttachVerb, flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	pid := fs.Int("pid", 0, "the jail's main process, as the host sees it")
+	startTime := fs.Uint64("start-time", 0, "the inspected process start time")
+	nsDevice := fs.Uint64("mount-ns-device", 0, "the inspected mount namespace device")
+	nsInode := fs.Uint64("mount-ns-inode", 0, "the inspected mount namespace inode")
+	source := fs.String("source", "", "the resolved host directory to mount")
+	dest := fs.String("dest", "", "the jail path, under /ctx/")
+	rw := fs.Bool("rw", false, "mount read-write (default read-only)")
+	remove := fs.Bool("remove", false, "unmount --dest and remove its mountpoint instead")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	identity := ctxinject.ProcessIdentity{StartTime: *startTime, MountNSDevice: *nsDevice, MountNSInode: *nsInode}
+	bad := *pid <= 0 || !identity.Valid() || *dest == "" || fs.NArg() != 0
+	if *remove {
+		bad = bad || *source != "" || *rw
+	} else {
+		bad = bad || *source == ""
+	}
+	if bad {
+		fmt.Fprintln(stderr, "usage: yolo internal "+ctxAttachVerb+
+			" --pid <pid> --start-time <ticks> --mount-ns-device <dev> --mount-ns-inode <ino> --source <dir> --dest /ctx/<name> [--rw] | --pid <pid> --start-time <ticks> --mount-ns-device <dev> --mount-ns-inode <ino> --dest /ctx/<name> --remove")
+		return 2
+	}
+	var err error
+	if *remove {
+		err = inj.detach(*pid, identity, *dest)
+	} else {
+		err = inj.attach(*pid, identity, *source, *dest, *rw)
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "yolo internal %s: %v\n", ctxAttachVerb, err)
+		return 1
+	}
+	return 0
+}

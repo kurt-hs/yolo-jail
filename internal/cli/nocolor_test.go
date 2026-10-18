@@ -209,7 +209,7 @@ func TestMacosLaunchDepsHonorNoColor(t *testing.T) {
 
 // colorVerbs is every `yolo config` verb that prints in color. `dump` prints
 // JSON, which never colors.
-var colorVerbs = []string{"render", "ls", "diff", "reset", "capture", "promote", "drift"}
+var colorVerbs = []string{"render", "ls", "diff", "reset", "capture", "promote", "drift", "apply"}
 
 // TestEveryConfigVerbTakesTheOneColorDecision pins the `yolo config` dispatch:
 // every verb that colors is handed THE decision configRunW makes once, through

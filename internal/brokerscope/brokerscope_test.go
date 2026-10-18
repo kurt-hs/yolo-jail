@@ -1,12 +1,16 @@
 package brokerscope
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -292,6 +296,64 @@ func TestValidateCurrentAdmitsUnderAWildcardAndFailsClosedOnAMalformedEntry(t *t
 	}
 }
 
+func TestLiveScopeTransactionsHonorContextWhileSourceLockIsHeld(t *testing.T) {
+	home := resolvedTempDir(t)
+	t.Setenv("HOME", home)
+	id, err := NewLaunchID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := File{Source: "github", LaunchID: id, Workspace: "/w", Container: "c", PID: os.Getpid(),
+		BrokerPID: os.Getpid(), BrokerStart: "start", LiveScope: true, Repos: []string{"o/r"}}
+	path, err := Write(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	held, release := make(chan struct{}), make(chan struct{})
+	lockDone := make(chan error, 1)
+	go func() {
+		lockDone <- brokerlock.WithTransaction(paths.BrokerSourceDir("github"), func() error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	defer func() {
+		close(release)
+		if err := <-lockDone; err != nil {
+			t.Errorf("release source transaction: %v", err)
+		}
+	}()
+
+	for _, tc := range []struct {
+		name string
+		call func(context.Context) error
+	}{
+		{"discovery", func(ctx context.Context) error {
+			_, err := LiveFilesContext(ctx, "github", "c", "/w")
+			return err
+		}},
+		{"replacement", func(ctx context.Context) error {
+			return ReplaceReposContext(ctx, path, file, []string{"o/new"})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+			defer cancel()
+			started := time.Now()
+			err := tc.call(ctx)
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("call error = %v, want context deadline while the source lock is held", err)
+			}
+			if elapsed := time.Since(started); elapsed > time.Second {
+				t.Fatalf("context-bounded transaction took %s", elapsed)
+			}
+		})
+	}
+}
+
 func TestScopeFileRoundTripAndSweep(t *testing.T) {
 	home := resolvedTempDir(t)
 	t.Setenv("HOME", home)
@@ -364,5 +426,105 @@ func TestFenceReachesInsideContainsAndSymlinks(t *testing.T) {
 		if got := Reaches(src, fenced); got != want {
 			t.Errorf("Reaches(%s) = %q, want %q", src, got, want)
 		}
+	}
+}
+
+// liveFixture writes a scope file and binds a broker lifetime to it, as a launch and its
+// daemon do.
+func liveFixture(t *testing.T, launchID, container string, pid int) (string, File) {
+	t.Helper()
+	f := File{Source: "github", LaunchID: launchID, Workspace: "/w", Container: container, PID: pid,
+		Repos: []string{"o/r"}, ConfigFile: "yolo-jail.jsonc", LocalFile: "yolo-jail.local.jsonc"}
+	path, err := Write(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := BindBroker(path, f, "start-"+launchID, func() error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path, bound
+}
+
+func TestBindBrokerWritesTheLiveScopeCapability(t *testing.T) {
+	t.Setenv("HOME", resolvedTempDir(t))
+	path, _ := liveFixture(t, "one", "c", os.Getpid())
+	got, err := ReadFile(path)
+	if err != nil || !got.LiveScope || got.BrokerStart != "start-one" || got.BrokerPID != os.Getpid() {
+		t.Fatalf("bound file %+v, %v", got, err)
+	}
+}
+
+func TestReplaceReposKeepsEveryOtherField(t *testing.T) {
+	t.Setenv("HOME", resolvedTempDir(t))
+	path, bound := liveFixture(t, "one", "c", os.Getpid())
+	if err := ReplaceRepos(path, bound, []string{"o/r", "x/*"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := bound
+	want.Version = FileVersion
+	want.Repos = []string{"o/r", "x/*"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("rewritten file\n got %+v\nwant %+v", got, want)
+	}
+	if fi, err := os.Lstat(path); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("rewritten file mode %v, %v", fi.Mode(), err)
+	}
+}
+
+func TestReplaceReposRefusesAChangedIdentityABadEntryAndASymlink(t *testing.T) {
+	t.Setenv("HOME", resolvedTempDir(t))
+	path, bound := liveFixture(t, "one", "c", os.Getpid())
+	for name, mutate := range map[string]func(*File){
+		"container": func(f *File) { f.Container = "other" },
+		"workspace": func(f *File) { f.Workspace = "/elsewhere" },
+		"pid":       func(f *File) { f.PID++ },
+	} {
+		expect := bound
+		mutate(&expect)
+		if err := ReplaceRepos(path, expect, []string{"o/new"}); err == nil {
+			t.Errorf("%s: a changed identity was rewritten", name)
+		}
+	}
+	if err := ReplaceRepos(path, bound, []string{"org*/*"}); err == nil {
+		t.Error("a malformed entry was written")
+	}
+	if got, _ := ReadFile(path); !reflect.DeepEqual(got.Repos, []string{"o/r"}) {
+		t.Fatalf("a refused rewrite changed the file: %v", got.Repos)
+	}
+	real := path + ".real"
+	if err := os.Rename(path, real); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, path); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplaceRepos(path, bound, []string{"o/new"}); err == nil {
+		t.Error("a symlinked scope file was rewritten")
+	}
+}
+
+func TestLiveFilesSkipsADeadLaunchAndAnotherContainer(t *testing.T) {
+	t.Setenv("HOME", resolvedTempDir(t))
+	livePath, _ := liveFixture(t, "live", "c", os.Getpid())
+	liveFixture(t, "dead", "c", 1<<30)
+	liveFixture(t, "other", "elsewhere", os.Getpid())
+	// Written but never bound: no broker serves it.
+	if _, err := Write(File{Source: "github", LaunchID: "unbound", Workspace: "/w", Container: "c", PID: os.Getpid()}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LiveFiles("github", "c", "/w")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Path != livePath || got[0].File.LaunchID != "live" || !got[0].File.LiveScope {
+		t.Fatalf("live files %+v, want only %s", got, livePath)
+	}
+	if got, err := LiveFiles("github", "c", "/other-workspace"); err != nil || len(got) != 0 {
+		t.Fatalf("another workspace: %+v, %v", got, err)
 	}
 }
