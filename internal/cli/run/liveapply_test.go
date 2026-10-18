@@ -1,0 +1,587 @@
+package run
+
+import (
+	"bytes"
+	"errors"
+	"go/ast"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+)
+
+// liveapply_test.go pins `yolo config apply` and the attach-time gate
+// (docs/design/live-config-apply.md §3, §6; the plan's Task A "Tests first").
+
+// applyJail is what the fake runtime answers about this workspace's jail.
+type applyJail struct {
+	running bool
+	psFail  bool   // `podman ps` exits non-zero: the runtime could not be asked
+	env     string // the container's frozen environment, one entry per line
+}
+
+// swapSeam replaces a package-level seam for one test.
+func swapSeam[T any](t *testing.T, p *T, v T) {
+	t.Helper()
+	old := *p
+	*p = v
+	t.Cleanup(func() { *p = old })
+}
+
+// applyFixture is a host-side apply against a fake podman: a workspace whose config is
+// bootConfig when the jail started (its effective-config record and its approval), then
+// wsConfig on disk now.
+func applyFixture(t *testing.T, bootConfig, wsConfig string, jail applyJail) (*Options, *strings.Builder) {
+	t.Helper()
+	t.Setenv("YOLO_VERSION", "")
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	emptyLoopholeDirs(t)
+	ws, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bootConfig != "" {
+		writeWorkspaceConfig(t, ws, bootConfig)
+		boot, err := config.LoadWorkspaceConfig(ws, false, func(string) {})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := config.WriteWorkspaceBootBaseline(ws, boot); err != nil {
+			t.Fatal(err)
+		}
+		if err := config.RecordApproval(ws, boot, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeWorkspaceConfig(t, ws, wsConfig)
+
+	buf := &strings.Builder{}
+	o := &Options{}
+	fillDefaults(o)
+	o.Workspace, o.Stdout, o.Stderr = ws, buf, buf
+	o.Getenv = func(string) string { return "" }
+	o.IsMacOS, o.IsLinux = false, true
+	o.IsTTYStdin = func() bool { return false }
+	o.IsTTYStdout = func() bool { return false }
+	o.PerfLoggingConfig = func() bool { return false }
+	o.LookPath = func(name string) (string, bool) {
+		if name == "podman" {
+			return "/usr/bin/podman", true
+		}
+		return "", false
+	}
+	answeringPodman(o, minimalPodmanInfo)
+	o.Exec = func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {
+		if len(argv) > 1 && argv[0] == "podman" {
+			switch argv[1] {
+			case "ps":
+				if jail.psFail {
+					return ExecResult{Ran: true, RC: 125, Stderr: "cannot connect to the podman socket"}
+				}
+				if jail.running {
+					return ExecResult{Ran: true, Stdout: "abc123\n"}
+				}
+				return ExecResult{Ran: true}
+			case "inspect":
+				if jail.running {
+					return ExecResult{Ran: true, Stdout: jail.env}
+				}
+				return ExecResult{Ran: true, RC: 125}
+			}
+		}
+		return ExecResult{Ran: false}
+	}
+	return o, buf
+}
+
+// answer makes the gate's question read a, as a person at a terminal answers it.
+func answer(o *Options, a string) {
+	o.IsTTYStdin = func() bool { return true }
+	o.Stdin = strings.NewReader(a + "\n")
+}
+
+// In a jail the command refuses, naming the host command (OQ-S2 holds: recording an approval
+// must not be reachable from the side being approved), and records nothing.
+func TestConfigApplyRefusesInAJail(t *testing.T) {
+	o, buf := applyFixture(t, `{}`, `{"packages":["jq"]}`, applyJail{running: true})
+	o.Getenv = func(k string) string {
+		if k == "YOLO_VERSION" {
+			return "9.9.9"
+		}
+		return ""
+	}
+	before, _ := os.ReadFile(config.ApprovalSnapshotPath(o.Workspace))
+	answer(o, "y")
+	if rc := o.configApply(false); rc != 1 {
+		t.Fatalf("rc = %d, want 1", rc)
+	}
+	out := buf.String()
+	for _, want := range []string{"yolo config apply", "on the host"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the refusal does not name %q:\n%s", want, out)
+		}
+	}
+	if now, _ := os.ReadFile(config.ApprovalSnapshotPath(o.Workspace)); !bytes.Equal(before, now) {
+		t.Error("an in-jail apply rewrote the approval record")
+	}
+}
+
+// THE GATE IS THE LAUNCH'S (LA-P1). The record a `y` writes is byte for byte the record a
+// fresh launch's gate writes for the same config, so deleting the command's call to the gate
+// fails here (nothing recorded), and so does a second gate that records differently.
+func TestConfigApplyRecordsWhatALaunchsGateRecords(t *testing.T) {
+	const cfg = `{"packages":["jq"],"network":{"ports":["8080:8080"]}}`
+	o, buf := applyFixture(t, `{}`, cfg, applyJail{running: true})
+	answer(o, "y")
+	o.configApply(false)
+	got, err := os.ReadFile(config.ApprovalSnapshotPath(o.Workspace))
+	if err != nil {
+		t.Fatalf("the apply recorded nothing: %v\n%s", err, buf.String())
+	}
+
+	l, lbuf := applyFixture(t, `{}`, cfg, applyJail{})
+	answer(l, "y")
+	merged, ok := l.loadAndValidateConfig()
+	if !ok || !l.checkConfigChanges(merged, "podman") {
+		t.Fatalf("the launch's gate did not pass:\n%s", lbuf.String())
+	}
+	want, _ := os.ReadFile(config.ApprovalSnapshotPath(l.Workspace))
+	if !bytes.Equal(got, want) {
+		t.Errorf("the apply's record differs from a launch's:\napply:\n%s\nlaunch:\n%s", got, want)
+	}
+	if !strings.Contains(buf.String(), "Accept these workspace config changes? [y/N]") {
+		t.Errorf("the apply did not ask the launch's question:\n%s", buf.String())
+	}
+}
+
+// N records nothing, applies nothing, and exits 1 with the gate's decline lines.
+func TestConfigApplyDeclineRecordsNothing(t *testing.T) {
+	o, buf := applyFixture(t, `{}`, `{"packages":["jq"]}`, applyJail{running: true})
+	before, _ := os.ReadFile(config.ApprovalSnapshotPath(o.Workspace))
+	bootBefore, _ := os.ReadFile(config.WorkspaceConfigBootPath(o.Workspace))
+	answer(o, "n")
+	if rc := o.configApply(false); rc != 1 {
+		t.Fatalf("rc = %d, want 1\n%s", rc, buf.String())
+	}
+	if now, _ := os.ReadFile(config.ApprovalSnapshotPath(o.Workspace)); !bytes.Equal(before, now) {
+		t.Error("a declined apply rewrote the approval record")
+	}
+	if now, _ := os.ReadFile(config.WorkspaceConfigBootPath(o.Workspace)); !bytes.Equal(bootBefore, now) {
+		t.Error("a declined apply folded a change into the effective-config record")
+	}
+	if !strings.Contains(buf.String(), "nothing was recorded") {
+		t.Errorf("the decline does not say nothing was recorded:\n%s", buf.String())
+	}
+}
+
+// The outcome block prints after the gate's diff and before its question, and again, as the
+// result, after it (LA-P3). network.ports is restart-only: its line names the next step, the
+// command never offers a restart, and the exit is 3 (approved, restart owed).
+func TestConfigApplyNetworkPortsWaitsForRestart(t *testing.T) {
+	o, buf := applyFixture(t, `{"network":{"ports":["1:1"]}}`, `{"network":{"ports":["2:2"]}}`,
+		applyJail{running: true})
+	answer(o, "y")
+	if rc := o.configApply(false); rc != 3 {
+		t.Fatalf("rc = %d, want 3\n%s", rc, buf.String())
+	}
+	out := buf.String()
+	line := "network.ports: at next restart (yolo stop, then yolo)"
+	diff := strings.Index(out, `"2:2"`)
+	first := strings.Index(out, line)
+	question := strings.Index(out, "[y/N]")
+	last := strings.LastIndex(out, line)
+	if diff < 0 || first < 0 || question < 0 {
+		t.Fatalf("want the diff, the outcome line and the question:\n%s", out)
+	}
+	if !(diff < first && first < question && question < last) {
+		t.Errorf("the outcome block must follow the diff, precede the question, and print again after:\n%s", out)
+	}
+	if strings.Contains(strings.ToLower(out), "restart now") || strings.Contains(out, "[y/N] ") &&
+		strings.Count(out, "[y/N]") > 1 {
+		t.Errorf("the command offered a restart:\n%s", out)
+	}
+	if _, drifted, _, _ := config.WorkspaceConfigDrift(o.Workspace); !drifted {
+		t.Error("a restart-only key was folded into the effective-config record")
+	}
+}
+
+// A next-session key is folded into the effective-config record at once, so drift says nothing
+// is pending, and the exit is 0.
+func TestConfigApplyFoldsANextSessionKey(t *testing.T) {
+	o, buf := applyFixture(t, `{"agents_md_extra":"one"}`, `{"agents_md_extra":"two"}`, applyJail{running: true})
+	answer(o, "y")
+	if rc := o.configApply(false); rc != 0 {
+		t.Fatalf("rc = %d, want 0\n%s", rc, buf.String())
+	}
+	if !strings.Contains(buf.String(), "agents_md_extra: from your next yolo session") {
+		t.Errorf("no next-session line:\n%s", buf.String())
+	}
+	if _, drifted, ok, err := config.WorkspaceConfigDrift(o.Workspace); err != nil || !ok || drifted {
+		t.Errorf("after the apply the record must match the workspace: drifted=%v ok=%v err=%v", drifted, ok, err)
+	}
+}
+
+// With no jail running the command records only and says the next `yolo` launches with the
+// changes; a restart key changed, so the exit is 3.
+func TestConfigApplyWithNoJailRunningRecordsOnly(t *testing.T) {
+	o, buf := applyFixture(t, `{}`, `{"packages":["jq"]}`, applyJail{running: false})
+	answer(o, "y")
+	if rc := o.configApply(false); rc != 3 {
+		t.Fatalf("rc = %d, want 3\n%s", rc, buf.String())
+	}
+	out := buf.String()
+	for _, want := range []string{"No jail is running", "the next `yolo`"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the output does not say %q:\n%s", want, out)
+		}
+	}
+	if b, _ := os.ReadFile(config.ApprovalSnapshotPath(o.Workspace)); !strings.Contains(string(b), "jq") {
+		t.Error("the approval was not recorded")
+	}
+}
+
+// Could not ask is not "not running": record only, and name the runtime's error and the
+// command that lists running containers.
+func TestConfigApplyThatCannotAskRecordsOnly(t *testing.T) {
+	o, buf := applyFixture(t, `{}`, `{"packages":["jq"]}`, applyJail{psFail: true})
+	answer(o, "y")
+	if rc := o.configApply(false); rc != 3 {
+		t.Fatalf("rc = %d, want 3\n%s", rc, buf.String())
+	}
+	out := buf.String()
+	for _, want := range []string{"cannot connect to the podman socket", "podman ps"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the output does not name %q:\n%s", want, out)
+		}
+	}
+	if b, _ := os.ReadFile(config.ApprovalSnapshotPath(o.Workspace)); !strings.Contains(string(b), "jq") {
+		t.Error("the approval was not recorded")
+	}
+}
+
+// --record-only approves and touches no running jail: a live mount change waits for restart.
+func TestConfigApplyRecordOnlyTouchesNoJail(t *testing.T) {
+	src := t.TempDir()
+	o, buf := applyFixture(t, `{}`, `{"mounts":["`+src+`"]}`, applyJail{running: true})
+	liveMounts(t)
+	injected := 0
+	swapSeam(t, &injectCtxMountSeam, func(*Options, string, string, configCtxMount) error {
+		injected++
+		return nil
+	})
+	answer(o, "y")
+	if rc := o.configApply(true); rc != 3 {
+		t.Fatalf("rc = %d, want 3\n%s", rc, buf.String())
+	}
+	if injected != 0 {
+		t.Error("--record-only injected a mount")
+	}
+	if !strings.Contains(buf.String(), "at next restart") {
+		t.Errorf("a recorded-only live change must say it waits:\n%s", buf.String())
+	}
+}
+
+// liveMounts makes the C seams answer for a jail that takes live mounts and recorded none.
+func liveMounts(t *testing.T) *[]liveCtxMount {
+	t.Helper()
+	rec := &[]liveCtxMount{}
+	swapSeam(t, &ctxMountsLiveSeam, func(*Options, string, string, []string) (bool, string) { return true, "" })
+	swapSeam(t, &readCtxMountRecordSeam, func(string, []string) ([]liveCtxMount, bool) { return *rec, true })
+	swapSeam(t, &writeCtxMountRecordSeam, func(_, _ string, e []liveCtxMount) error {
+		*rec = append([]liveCtxMount(nil), e...)
+		return nil
+	})
+	swapSeam(t, &diffCtxMountsSeam, func(have []liveCtxMount, want []configCtxMount) ([]configCtxMount, []liveCtxMount) {
+		var add []configCtxMount
+		for _, w := range want {
+			found := false
+			for _, h := range have {
+				found = found || (h.Source == w.source && h.Dest == w.dest && h.RW == w.rw)
+			}
+			if !found {
+				add = append(add, w)
+			}
+		}
+		var remove []liveCtxMount
+		for _, h := range have {
+			found := false
+			for _, w := range want {
+				found = found || (h.Source == w.source && h.Dest == w.dest && h.RW == w.rw)
+			}
+			if !found {
+				remove = append(remove, h)
+			}
+		}
+		return add, remove
+	})
+	return rec
+}
+
+// A read-only mount added to a jail that takes live mounts: injected, recorded in the host's
+// mount record, folded into the effective-config record, `applied now`, exit 0.
+func TestConfigApplyInjectsALiveMount(t *testing.T) {
+	src := t.TempDir()
+	o, buf := applyFixture(t, `{}`, `{"mounts":["`+src+`"]}`, applyJail{running: true})
+	rec := liveMounts(t)
+	var got []configCtxMount
+	swapSeam(t, &injectCtxMountSeam, func(_ *Options, _, _ string, m configCtxMount) error {
+		got = append(got, m)
+		return nil
+	})
+	answer(o, "y")
+	if rc := o.configApply(false); rc != 0 {
+		t.Fatalf("rc = %d, want 0\n%s", rc, buf.String())
+	}
+	if len(got) != 1 || got[0].source != src {
+		t.Fatalf("injected %v, want the one source %s", got, src)
+	}
+	if len(*rec) != 1 || (*rec)[0].Source != src {
+		t.Errorf("the host's mount record is %v, want the injected mount", *rec)
+	}
+	if !strings.Contains(buf.String(), "(read-only): applied now") {
+		t.Errorf("no applied-now line:\n%s", buf.String())
+	}
+	if _, drifted, _, _ := config.WorkspaceConfigDrift(o.Workspace); drifted {
+		t.Error("the applied mounts key was not folded")
+	}
+}
+
+// A failed step reports, stays pending (no fold), and the exit is 3; a step past its deadline
+// is at next restart with the reason.
+func TestConfigApplyAFailedOrSlowMountStaysPending(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		inject func(*Options, string, string, configCtxMount) error
+		want   string
+	}{
+		{"fails", func(*Options, string, string, configCtxMount) error { return errors.New("move_mount: EPERM") },
+			"move_mount: EPERM"},
+		{"slow", func(*Options, string, string, configCtxMount) error { time.Sleep(time.Second); return nil },
+			"did not finish within"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			src := t.TempDir()
+			o, buf := applyFixture(t, `{}`, `{"mounts":["`+src+`"]}`, applyJail{running: true})
+			liveMounts(t)
+			swapSeam(t, &applyStepDeadline, 50*time.Millisecond)
+			swapSeam(t, &injectCtxMountSeam, c.inject)
+			answer(o, "y")
+			if rc := o.configApply(false); rc != 3 {
+				t.Fatalf("rc = %d, want 3\n%s", rc, buf.String())
+			}
+			out := buf.String()
+			if !strings.Contains(out, "at next restart") || !strings.Contains(out, c.want) {
+				t.Errorf("want at next restart naming %q:\n%s", c.want, out)
+			}
+			if _, drifted, _, _ := config.WorkspaceConfigDrift(o.Workspace); !drifted {
+				t.Error("a key with a failed element was folded")
+			}
+		})
+	}
+}
+
+// A read-write mount add carries the launch's disclosure line in the outcome block.
+func TestConfigApplyDisclosesAReadWriteMount(t *testing.T) {
+	o, buf := applyFixture(t, `{}`, `{"packages":["jq"]}`, applyJail{running: true})
+	liveMounts(t)
+	src := t.TempDir()
+	swapSeam(t, &diffCtxMountsSeam, func([]liveCtxMount, []configCtxMount) ([]configCtxMount, []liveCtxMount) {
+		return []configCtxMount{{source: src, dest: "/ctx/rw", rw: true}}, nil
+	})
+	swapSeam(t, &injectCtxMountSeam, func(*Options, string, string, configCtxMount) error { return nil })
+	answer(o, "y")
+	o.configApply(false)
+	if !strings.Contains(buf.String(), "Read-write mount:") {
+		t.Errorf("a read-write add must carry the launch's disclosure:\n%s", buf.String())
+	}
+}
+
+// GitHub scope: with every live broker file taking live scope, the apply replaces Repos with
+// what the gate approved, on each file, and says applied now.
+func TestConfigApplyReplacesTheLiveScope(t *testing.T) {
+	o, buf, _ := brokeredFixture(t)
+	if _, err := config.WriteWorkspaceBootBaseline(o.Workspace, jsonx.NewOrderedMap()); err != nil {
+		t.Fatal(err)
+	}
+	answer(o, "y")
+	f := liveScopeFile{Path: "/scope/1", LiveScope: true,
+		File: brokerscope.File{Source: "gbsrc", Repos: []string{"o/old"}}}
+	swapSeam(t, &liveScopeFilesSeam, func(source, _, _ string) ([]liveScopeFile, error) {
+		if source != "gbsrc" {
+			return nil, nil
+		}
+		return []liveScopeFile{f}, nil
+	})
+	var replaced []string
+	swapSeam(t, &replaceScopeReposSeam, func(path string, _ brokerscope.File, repos []string) error {
+		if path != "/scope/1" {
+			t.Errorf("replaced %s", path)
+		}
+		replaced = repos
+		return nil
+	})
+	rc := o.liveApply(gbOn(), "podman", "yolo-ws", nil, applyMode{running: true})
+	if rc != 0 {
+		t.Fatalf("rc = %d, want 0\n%s", rc, buf.String())
+	}
+	if len(replaced) != 1 || replaced[0] != "o/r" {
+		t.Errorf("the live file's repos became %v, want the approved [o/r]", replaced)
+	}
+	if !strings.Contains(buf.String(), "gb repository scope") || !strings.Contains(buf.String(), "applied now") {
+		t.Errorf("no applied-now scope line:\n%s", buf.String())
+	}
+}
+
+// A broker that cannot take live scope: recorded, at next restart.
+func TestConfigApplyScopeOnAnOldBrokerWaits(t *testing.T) {
+	o, buf, _ := brokeredFixture(t)
+	if _, err := config.WriteWorkspaceBootBaseline(o.Workspace, jsonx.NewOrderedMap()); err != nil {
+		t.Fatal(err)
+	}
+	answer(o, "y")
+	swapSeam(t, &liveScopeFilesSeam, func(string, string, string) ([]liveScopeFile, error) {
+		return []liveScopeFile{{Path: "/scope/1", File: brokerscope.File{Repos: nil}}}, nil
+	})
+	swapSeam(t, &replaceScopeReposSeam, func(string, brokerscope.File, []string) error {
+		t.Error("an old broker's file was rewritten")
+		return nil
+	})
+	if rc := o.liveApply(gbOn(), "podman", "yolo-ws", nil, applyMode{running: true}); rc != 3 {
+		t.Fatalf("rc = %d, want 3\n%s", rc, buf.String())
+	}
+	if got := config.ApprovedScope(o.Workspace, "gbsrc"); len(got) != 1 {
+		t.Errorf("the scope was not recorded: %v", got)
+	}
+}
+
+// AN ATTACH WITH NO TERMINAL asks nothing, records nothing, and prints one notice naming
+// `yolo config apply` and `yolo config drift` when a change is pending (LA-D9).
+func TestAttachWithoutATerminalPrintsTheNotice(t *testing.T) {
+	o, buf := applyFixture(t, `{}`, `{"packages":["jq"]}`, applyJail{running: true})
+	before, _ := os.ReadFile(config.ApprovalSnapshotPath(o.Workspace))
+	merged, _ := o.loadAndValidateConfig()
+	buf.Reset()
+	o.applyAtAttach("yolo-ws", "podman", merged, nil)
+	out := buf.String()
+	if strings.Contains(out, "[y/N]") {
+		t.Errorf("a non-interactive attach asked:\n%s", out)
+	}
+	for _, want := range []string{"yolo config apply", "yolo config drift"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the notice does not name %q:\n%s", want, out)
+		}
+	}
+	if strings.Count(strings.TrimSpace(out), "\n") != 0 {
+		t.Errorf("the notice must be one line:\n%s", out)
+	}
+	if now, _ := os.ReadFile(config.ApprovalSnapshotPath(o.Workspace)); !bytes.Equal(before, now) {
+		t.Error("a non-interactive attach recorded an approval")
+	}
+
+	// Nothing pending: nothing said.
+	o2, buf2 := applyFixture(t, `{"packages":["jq"]}`, `{"packages":["jq"]}`, applyJail{running: true})
+	merged2, _ := o2.loadAndValidateConfig()
+	buf2.Reset()
+	o2.applyAtAttach("yolo-ws", "podman", merged2, nil)
+	if buf2.String() != "" {
+		t.Errorf("an attach with nothing pending said something:\n%s", buf2.String())
+	}
+}
+
+// AN ATTACH AT A TERMINAL asks; an N records nothing, and its lines say the session starts and
+// name `yolo config apply`, never "Exiting." (LA-D14).
+func TestAttachAtATerminalDeclineStillStarts(t *testing.T) {
+	o, buf := applyFixture(t, `{}`, `{"packages":["jq"]}`, applyJail{running: true})
+	before, _ := os.ReadFile(config.ApprovalSnapshotPath(o.Workspace))
+	merged, _ := o.loadAndValidateConfig()
+	answer(o, "n")
+	o.applyAtAttach("yolo-ws", "podman", merged, nil)
+	out := buf.String()
+	if !strings.Contains(out, "[y/N]") {
+		t.Fatalf("an interactive attach did not ask:\n%s", out)
+	}
+	if strings.Contains(out, "Exiting.") {
+		t.Errorf("a declined attach said it exits:\n%s", out)
+	}
+	for _, want := range []string{"yolo config apply", "session starts"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the decline does not say %q:\n%s", want, out)
+		}
+	}
+	if now, _ := os.ReadFile(config.ApprovalSnapshotPath(o.Workspace)); !bytes.Equal(before, now) {
+		t.Error("a declined attach recorded an approval")
+	}
+}
+
+// An approval already recorded (by --record-only, or `yolo check --accept-config-changes`) is
+// applied at an interactive attach with no second question.
+func TestAttachAppliesAnAlreadyRecordedApproval(t *testing.T) {
+	o, buf := applyFixture(t, `{"agents_md_extra":"one"}`, `{"agents_md_extra":"two"}`, applyJail{running: true})
+	cur, _ := config.LoadWorkspaceConfig(o.Workspace, false, func(string) {})
+	if err := config.RecordApproval(o.Workspace, cur, nil); err != nil {
+		t.Fatal(err)
+	}
+	merged, _ := o.loadAndValidateConfig()
+	answer(o, "")
+	o.applyAtAttach("yolo-ws", "podman", merged, nil)
+	out := buf.String()
+	if strings.Contains(out, "[y/N]") {
+		t.Errorf("an already-approved change was asked about again:\n%s", out)
+	}
+	if !strings.Contains(out, "agents_md_extra: from your next yolo session") {
+		t.Errorf("the recorded change was not applied:\n%s", out)
+	}
+}
+
+// The call-site pin (AGENTS.md: a test that pins the callee while the call site is unpinned is
+// not a test): attachExisting calls applyAtAttach once, after it counts the session and before
+// it refreshes the briefings.
+func TestAttachExistingRunsTheApplyGate(t *testing.T) {
+	fn := methodDecl(t, "run.go", "attachExisting")
+	var hook, session, refresh []int
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+			switch sel.Sel.Name {
+			case "applyAtAttach":
+				hook = append(hook, int(call.Pos()))
+			case "holdSessionLock":
+				session = append(session, int(call.Pos()))
+			case "refreshJailBriefings":
+				refresh = append(refresh, int(call.Pos()))
+			}
+		}
+		return true
+	})
+	if len(hook) != 1 {
+		t.Fatalf("attachExisting calls applyAtAttach %d times, want once", len(hook))
+	}
+	if len(session) == 0 || len(refresh) == 0 || !(session[0] < hook[0] && hook[0] < refresh[0]) {
+		t.Errorf("applyAtAttach must run after the session count and before the briefing refresh")
+	}
+}
+
+// The command reaches the apply through the registered entry, which parses its flags.
+func TestConfigApplyEntryParsesItsFlags(t *testing.T) {
+	var out, errw bytes.Buffer
+	if rc := ConfigApply([]string{"--help"}, &out, &errw, false); rc != 0 ||
+		!strings.Contains(out.String(), "--record-only") {
+		t.Errorf("--help: rc=%d\n%s", rc, out.String())
+	}
+	out.Reset()
+	if rc := ConfigApply([]string{"--bogus"}, &out, &errw, false); rc != 2 {
+		t.Errorf("an unknown flag: rc=%d, want 2", rc)
+	}
+}
