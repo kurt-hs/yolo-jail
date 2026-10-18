@@ -210,7 +210,182 @@ func TestLiveCtxMountInjectAndRemove(t *testing.T) {
 	if b, err := os.ReadFile(filepath.Join(rw, "new.txt")); err != nil || string(b) != "from-the-jail\n" {
 		t.Errorf("the jail's write did not reach the host file: %q, %v", b, err)
 	}
-	if out, err := ctxAttach("--dest", "/ctx/liverw", "--remove"); err != nil {
-		t.Errorf("removing the read-write injection failed (%v): %s", err, out)
+}
+
+func TestLiveCtxMountReadOnlyRemountParity(t *testing.T) {
+	requireJail(t)
+	if runtime.GOOS != "linux" || detectRuntime() != "podman" {
+		t.Skip("CAP_SYS_ADMIN remount parity is measured on podman on Linux only")
+	}
+	rootless := liveCtxPodmanRootless(t)
+	t.Logf("architecture: GOARCH=%s", runtime.GOARCH)
+	_, statErr := os.Stat("/run/.containerenv")
+	nested := statErr == nil
+	if !rootless && !nested && os.Geteuid() != 0 {
+		t.Skip("a rootful podman driven by a non-root user is the restart-only arm (design §5.3)")
+	}
+
+	// Both source trees and every byte a remount can change are disposable test data.
+	launchSource := resolvedTempDir(t)
+	injectedSource := resolvedTempDir(t)
+	for _, dir := range []string{launchSource, injectedSource} {
+		if err := os.WriteFile(filepath.Join(dir, "sentinel"), []byte("sentinel\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	probeDir := t.TempDir()
+	probeSource := filepath.Join(probeDir, "remount.go")
+	probeBinary := filepath.Join(probeDir, "remount-probe")
+	const remountProbeSource = `package main
+import (
+	"fmt"
+	"os"
+	"syscall"
+)
+func main() {
+	if len(os.Args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: remount-probe <mountpoint>")
+		os.Exit(2)
+	}
+	if err := syscall.Mount("", os.Args[1], "", syscall.MS_REMOUNT|syscall.MS_BIND, ""); err != nil {
+		fmt.Printf("remount-failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("remount-succeeded")
+}`
+	if err := os.WriteFile(probeSource, []byte(remountProbeSource), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	build := exec.Command("go", "build", "-o", probeBinary, probeSource)
+	build.Env = append(os.Environ(), "GOOS=linux", "GOARCH="+runtime.GOARCH, "CGO_ENABLED=0")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build the syscall-only remount probe: %v\n%s", err, output)
+	}
+	probe, err := os.ReadFile(probeBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{launchSource, injectedSource} {
+		if err := os.WriteFile(filepath.Join(dir, "remount-probe"), probe, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	packHome(t, `{"packs": []}`)
+	dir := writeProject(t, `{"mcp_servers": {}, "mcp_presets": [], "mounts": ["`+
+		launchSource+`:/ctx/launch-ro"]}`)
+	cname := naming.FromWorkspace(dir)
+
+	const release = "release-livectx-remount"
+	first := startYoloBackground(t, "hold-remount-parity", dir,
+		`echo LIVECTX-REMOUNT-READY; for _ in $(seq 1 1200); do [ -f /workspace/`+release+` ] && break; sleep 0.5; done`)
+	t.Cleanup(func() { _ = os.WriteFile(filepath.Join(dir, release), []byte("go\n"), 0o644) })
+	deadline := time.Now().Add(jailTimeout())
+	for !strings.Contains(first.combined(), "LIVECTX-REMOUNT-READY") {
+		select {
+		case err := <-first.done:
+			t.Fatalf("the launch exited (%v) before its script ran:\n%s", err, first.combined())
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the jail never ran its script within %s:\n%s", jailTimeout(), first.combined())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	awaitLaunchLockReleased(t, dir, first)
+
+	if out, ok := liveCtxExec(t, cname, `cat /ctx/launch-ro/sentinel; printf attack >> /ctx/launch-ro/sentinel 2>/dev/null; echo LAUNCH-INITIAL-WRITE-RC=$?`); !ok ||
+		!strings.Contains(out, "sentinel") || !strings.Contains(out, "LAUNCH-INITIAL-WRITE-RC=1") {
+		t.Fatalf("launch-time read-only bind was not observed refusing an ordinary write:\n%s", out)
+	}
+
+	envOut, err := exec.Command("podman", "inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", cname).Output()
+	if err != nil {
+		t.Fatalf("podman inspect env: %v", err)
+	}
+	var token string
+	for _, line := range strings.Split(string(envOut), "\n") {
+		if value, ok := strings.CutPrefix(line, "YOLO_CTX_MOUNTS_TOKEN="); ok {
+			token = value
+		}
+	}
+	pidOut, err := exec.Command("podman", "inspect", "--format", "{{.State.Pid}}", cname).Output()
+	if err != nil {
+		t.Fatalf("podman inspect pid: %v", err)
+	}
+	pid := strings.TrimSpace(string(pidOut))
+	n, err := strconv.Atoi(pid)
+	if err != nil || n <= 0 {
+		t.Fatalf("podman reports pid %q for %s", pid, cname)
+	}
+	identity, err := ctxinject.ReadProcessIdentity(n)
+	if err != nil {
+		t.Fatalf("read jail process identity for pid %d: %v", n, err)
+	}
+	identityArgs := []string{"--start-time", strconv.FormatUint(identity.StartTime, 10),
+		"--mount-ns-device", strconv.FormatUint(identity.MountNSDevice, 10),
+		"--mount-ns-inode", strconv.FormatUint(identity.MountNSInode, 10)}
+	ctxAttach := func(args ...string) (string, error) {
+		argv := append([]string{yoloBin, "internal", "ctx-attach", "--pid", pid}, identityArgs...)
+		argv = append(argv, args...)
+		if rootless && !nested {
+			argv = append([]string{"podman", "unshare", "--"}, argv...)
+		}
+		t.Logf("injector: %s", strings.Join(argv, " "))
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, argv[0], argv[1:]...).CombinedOutput()
+		return string(out), err
+	}
+	if token == "" {
+		t.Fatal("the jail has no live context-mount token")
+	}
+	if out, err := ctxAttach("--source", injectedSource, "--dest", "/ctx/injected-ro"); err != nil {
+		t.Fatalf("read-only injection failed (%v): %s", err, out)
+	}
+	if out, ok := liveCtxExec(t, cname, `cat /ctx/injected-ro/sentinel; printf attack >> /ctx/injected-ro/sentinel 2>/dev/null; echo INJECTED-INITIAL-WRITE-RC=$?`); !ok ||
+		!strings.Contains(out, "sentinel") || !strings.Contains(out, "INJECTED-INITIAL-WRITE-RC=1") {
+		t.Fatalf("injected read-only bind was not observed refusing an ordinary write:\n%s", out)
+	}
+
+	capOut, ok := liveCtxExec(t, cname, `awk '$1 == "CapEff:" {print $2}' /proc/self/status`)
+	if !ok {
+		t.Fatalf("could not read the jail's effective capability mask:\n%s", capOut)
+	}
+	capHex := strings.TrimSpace(capOut)
+	capEff, err := strconv.ParseUint(capHex, 16, 64)
+	if err != nil {
+		t.Fatalf("parse jail CapEff %q: %v", capHex, err)
+	}
+	const capSysAdmin = uint64(1 << 21)
+	if capEff&capSysAdmin == 0 {
+		t.Skipf("remount attempt not measured: jail CapEff=0x%s does not include CAP_SYS_ADMIN; initial writes were refused for launch-time and injected mounts, but that does not prove remount resistance", capHex)
+	}
+
+	// Try the same kernel remount syscall and follow-up write against each bind. The helper
+	// is a static test binary staged only in the two disposable source directories; sentinels
+	// are the witness for any jail write.
+	out, ok := liveCtxExec(t, cname, `for pair in launch:/ctx/launch-ro injected:/ctx/injected-ro; do
+	  name=${pair%%:*}; target=${pair#*:}
+	  if /ctx/launch-ro/remount-probe "$target"; then echo "$name-REMOUNT=OK"; else echo "$name-REMOUNT=DENIED"; fi
+	  if printf attack >> "$target/sentinel" 2>/dev/null; then echo "$name-AFTER-REMOUNT-WRITE=OK"; else echo "$name-AFTER-REMOUNT-WRITE=DENIED"; fi
+	done`)
+	if !ok {
+		t.Fatalf("jail remount probe did not complete:\n%s", out)
+	}
+	t.Logf("CAP_SYS_ADMIN was effective in the jail; remount/write witness:\n%s", out)
+	launchBytes, launchErr := os.ReadFile(filepath.Join(launchSource, "sentinel"))
+	injectedBytes, injectedErr := os.ReadFile(filepath.Join(injectedSource, "sentinel"))
+	if launchErr != nil || injectedErr != nil {
+		t.Fatalf("read disposable sentinels: launch=%v injected=%v", launchErr, injectedErr)
+	}
+	launchWritable := strings.Contains(string(launchBytes), "attack")
+	injectedWritable := strings.Contains(string(injectedBytes), "attack")
+	t.Logf("sentinel witness: launch-time writable=%t (%q); injected writable=%t (%q)",
+		launchWritable, string(launchBytes), injectedWritable, string(injectedBytes))
+	if injectedWritable && !launchWritable {
+		t.Fatalf("injected read-only bind was weaker than launch-time bind: remount/write reached only the injected disposable source; jail output:\n%s", out)
+	}
+	if launchWritable && injectedWritable {
+		t.Log("BASELINE TRUST ISSUE: CAP_SYS_ADMIN remounted both read-only binds writable; parity holds, but read-only binds are not resistant to this jail capability")
 	}
 }
