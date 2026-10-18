@@ -31,7 +31,7 @@ See [GitHub](userguide/guides/github.md#every-repository-or-every-repository-of-
 
 **A launch says when the jail has no internet,** and what to do. See [Troubleshooting](userguide/guides/troubleshooting.md).
 
-**`--timing` breaks down a macOS (macos-user) launch's slow steps.** See [Timing spans](docs/reference/perf-logging.md).
+**`--timing` breaks down a launch's slow steps,** on macOS (macos-user) and now in a Linux or Apple Container jail's boot and builds too. See [Timing spans](docs/reference/perf-logging.md).
 
 **Optional mounts.** A `mounts` entry marked `"optional": true` is skipped, with one line, where a
 setup can't deliver it. See

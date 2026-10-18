@@ -2405,6 +2405,9 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// THE KEEPER, handed the plan, the progress pipe, the lifeline and the launch lock (JL-D31),
 	// and from here the owner of the jail's host services and of the jail's life (§9). The whole
 	// child window — the keeper's start, the boot it relays and the first session — under one span.
+	// THE JAIL HALF'S BOOT TIMINGS (jailperf.go): its last block before the boot, so a block the
+	// boot never wrote is never recorded as this launch's.
+	jailPerf := o.snapshotJailPerf(rt)
 	sp = o.Perf.Span("launch.run_with_proxy")
 	kp, err := o.startKeeper(plan)
 	if errors.Is(err, errLaunchEnded) {
@@ -2455,6 +2458,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 			housekeepingSlots.Go(func() { safeRun(func() { o.runHousekeeping(rt, reclaimConsent, cname) }) })
 		},
 		ready: func(int64, bool) {
+			jailPerf.recordBoot(o.Perf)
 			if o.OnJailReady != nil {
 				o.OnJailReady()
 			}
@@ -2486,6 +2490,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 			}
 			o.unwindUnspawned(cname, rt, packStaging, in.homeSkeleton)
 		}
+		jailPerf.recordBoot(o.Perf) // a refused boot wrote its block too
 		o.emitTimingReport(kp.exitCode, cname, rt)
 		return kp.exitCode
 	}
@@ -2521,6 +2526,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// lock, then one line while others remain, or the keeper's teardown streamed when it was the
 	// last. The prompt comes back as soon as the agent is gone.
 	rc = o.endSession(cname, rt, rc, sessionStart, logFrom, true)
+	jailPerf.recordProvision(o.Perf)
 	o.emitTimingReport(rc, cname, rt)
 	return rc
 }
@@ -2643,7 +2649,7 @@ func (o *Options) emitTimingReportLocked(rc int, cname, rt string) {
 		filepath.Join(paths.WorkspaceStateDir(o.Workspace), HostPerfLogName))
 	if rt != "macos-user" { // parity: NotApplicable — the macos-user bootstrap keeps no jail perf log, so there is no jail half to name
 		o.pr(o.Stderr).printf("[dim]  jail half: %s[/dim]",
-			filepath.Join(paths.WorkspaceHomeState(o.Workspace), "yolo-perf.log"))
+			filepath.Join(paths.WorkspaceStateDir(o.Workspace), jailPerfRel(rt)))
 	}
 }
 

@@ -136,7 +136,9 @@ intended.
   `end` with no `start`, deliberately: a synthetic start would carry a past
   timestamp out of the file's time order and would claim yolo was there when the
   interval began, and a lone `start` has to keep meaning "this is where it hung".
-  Window A and its two halves are the only ones.
+  Window A and its two halves are entered this way, and so are a boot's own step
+  timings, read back from the file the boot wrote (`macos_user.bootstrap.*`,
+  `container.boot.*`, `container.provision`).
 - **Note** — a point event carrying a line of detail (`perf.Log.Note`). Ours. A
   note is written to the file as `note   <name>  <detail>` and never appears in the
   printed table: notes are the probe's samples and podman's per-event offsets,
@@ -320,6 +322,7 @@ and the members that carry meaning:
 | `assemble.*` | the two argv-assembly steps that run subprocesses: the host-loopback probe and the host git identity | |
 | `child.*` (marks) | the tty proxy's own transitions: `spawned`, `exited`, `drain_done`, `termios_restored` | `child.exited` → `child.drain_done` bounds the proxy-drain hypothesis; a path that skips a stage (a non-tty stdin, the non-Linux fallback, and the macos-user session's runner, which marks `spawned` and `exited` alone) simply never reports it. On a fresh launch the proxy's child is the first session's `exec` |
 | `jail_main.*` (marks) | the main-process client, which the keeper starts: `spawned`, `exited`, in the keeper's block; the fresh launch marks `jail_main.spawned` in its own when the keeper says so | `jail_main.exited` is where Window A ends; from `spawned` the boot is relayed to the terminal, so slow-span notices wait, as they do while the proxy's child has it |
+| `container.*` | a fresh container launch's boot, read back from [the jail half](#the-jail-half): `container.boot.<boot step>`, one per step of the boot table pid 1 ran (the block's `start` zero line excluded), recorded when the keeper relays the boot done, or before the report when the boot refused; and `container.provision`, the provisioning stage's duration from its `provisioning stage:` line, recorded at the session's end | completed intervals (an end with no start, as Window A is), inside `launch.run_with_proxy`. Podman and Apple Container alike; an attach boots nothing and records neither. The naming is `<backend>.<boot>.<step>`, as `macos_user.bootstrap.<step>` is |
 | `macos_user.*` | a macos-user launch's backend steps, one after another, on the run's own collector (`macosuser.Deps.Perf`): `preconditions`, `account_home`, `context_preflight`, `materialize` (the floor's evaluation and build), `host_nix`, `guest_binaries`, `ca_trust`, `build_plan`, `workspace_lock`, `session_sweep`, `install_profile` (usually the first `sudo`, so its password prompt is in it; a context mount's preflight or the session sweep asks first when it runs one), `stage`, `env_file`, `bootstrap`, `provision`, `start_jail_daemons`, `service_probe`, `agent` (the session); then the teardown's `stop_jail_daemons`, `remove_env_file` and `release_pack_tree` (waiting out the guest pack tree's readers). The slow steps carry sub-spans as `macos_user.<step>.<sub>`: `materialize.skip_eval` and `materialize.build` (the flake eval of the skip list, then the nix build); `stage.claim_pack_tree`, then one span per consecutive group of stage commands, named for the group (`stage.binary`, `stage.pack_tree`, `stage.home_overlay`, `stage.context_dir`, `stage.endpoint_grants`, `stage.guest_binaries`, `stage.daemon_endpoint_grants`; a group the launch has no commands for is absent), then `stage.captures`; `env_file.session_env` and `env_file.ca_trust_files`; and `bootstrap.<boot step>`, one per step of the boot table the bootstrap ran, which the sandbox-side bootstrap writes to `<workspace>/.yolo/boot-perf.log` and the launcher records afterwards as completed intervals (an end with no start, as Window A is). Every stage command is also a `macos_user.stage.command` note in the file alone — its group, its duration, its exit status and its argv, cut at 240 characters — so the table names the groups and the file the command that cost the time | inside `launch.macos_user`, the host side's span around the backend; a refused step ends its own span and no later one starts. Beside them, the arm's host side is spanned under the container's names (`launch.refresh_jail_briefings`, `launch.start_loopholes`, `shutdown.stop_loopholes`) and its own (`launch.build_home_overlay`, `launch.build_ctx_tree`, `launch.start_doorways`, `launch.start_services`, `shutdown.stop_doorways`, `shutdown.stop_services`) |
 | `housekeeping.slot` | the post-launch housekeeping slot, on a goroutine the fresh launch starts once its keeper says the container is running | runs *concurrently with the child*, so it overlaps `launch.run_with_proxy` by design |
 | `shutdown.*` | the keeper's teardown chain, after its stop (`keeper.stop_jail`), in the keeper's block | see [The shutdown path](#the-shutdown-path) |
@@ -798,8 +801,22 @@ block, as one `provisioning stage: <ms>ms (exit <rc>)` line appended after the s
 environment; the line carries no block header, because a header would make it the last block
 and hide the boot checkpoints. A jail with no recorded stage writes no line.
 
+The host records the boot half of that block too. A fresh container launch notes the jail
+half's last block before its keeper starts; at the keeper's ready frame (pid 1's boot is done
+and has dumped its block) it records a new last block's checkpoints as `container.boot.<step>`,
+and at the session's end the first `provisioning stage:` line after that block as
+`container.provision` (`run/jailperf.go`). A block identical to the one noted before the launch
+is the previous launch's and records nothing. The file is the jail's writing, so it is read
+beneath a root on the workspace's `.yolo` (a link escaping it is refused), regular files only,
+at most its last MiB, and the steps through `perf.StepsFromMarks`: at most 80, every name
+reduced to `[a-z0-9_]`, a line that does not parse or runs backwards dropped. The session's own
+pass and the in-container phase timers stay in the printed block alone.
+
 The build slot forwards its optional host collector for `preparation.registration`,
-`preparation.admitted_read` and `preparation.copy_install`. These time actual attempts,
+`preparation.admitted_read`, `preparation.copy_install`, and the pool's
+`preparation.check` and `preparation.build`, each spanning one key's check or build from
+the moment its slot is taken, with a note naming the key: these are where
+`launch.fork_builds`' time between copies goes. These time actual attempts,
 not admission or installation claims; copy and registration notes record their return
 outcomes. Skipped registration or copy emits no span. They can overlap other launch
 spans and must not be added into a wall-clock total.
@@ -1292,7 +1309,9 @@ is the only place the exact values and spellings are stated.
 | Host notch quiet line (plain, D20) | `yolo: timings recorded in <file> (--timing prints them)` | `run.HostNotchTiming.Report` |
 | Host notch report headers | `yolo host timing (to the hand-over):`, `yolo host apply timing (rc <n>):` | `cli.hostLaunchTrace.handOver`, `cli.startHostApplyTiming` |
 | Host notch spans | `host.{pack_refresh,capability_gate,apply_gate,compose,preflight,resolve_target,model_menu,openai_prelaunch,services_start}`, mark `host.handover`; `host_apply.{pack_refresh,render,wrappers,floor,revert}` | `cli.hostLaunch`, `cli.hostApplyRefreshAndRender`, `cli.hostApplyRevert`, `cli.applyHostSurveyed` |
-| Jail perf log | `~/.yolo-perf.log` in the jail, backed by `<workspace>/.yolo/home/yolo-perf.log` | `internal/entrypoint` (`perfLog.dump`), `internal/cli/run` mount args |
+| Jail perf log | `~/.yolo-perf.log` in the jail, backed by `<workspace>/.yolo/home/yolo-perf.log` (podman) or `<workspace>/.yolo/home/.yolo-perf.log` (Apple Container, which binds the home whole) | `internal/entrypoint` (`perfLog.dump`), `internal/cli/run` mount args, `run.jailPerfRel` |
+| Container boot spans | `container.boot.<boot step>`, `container.provision` (Records) | `run.jailPerfReader` (`recordBoot`, `recordProvision`), `perf.StepsFromMarks` |
+| Build pool phase spans | `preparation.{check,build}`, each with a note naming its key | `cli.poolItem.phaseSpan` |
 | Run header prefix (also the trim delimiter) | `=== YOLO Host Perf (<timestamp>) jail=<name> ===` | `perf.runPrefix`, `perf.FileSink` |
 | Runs retained per workspace | 50 | `perf.MaxRuns` |
 | Slow-span notice threshold | 1 s | `perf.SlowSpanThreshold` |

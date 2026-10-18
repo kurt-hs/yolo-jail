@@ -63,6 +63,10 @@ func TestTimingReportSpansShutdown(t *testing.T) {
 		"mark   child.exited",
 		"end    keeper.stop_jail",
 		"end    shutdown.stop_loopholes",
+		// The boot pid 1 ran, read back from the jail half (run/jailperf.go): one step every boot
+		// runs, and the first session's provisioning stage.
+		"end    container.boot.generate_shims",
+		"end    container.provision",
 	} {
 		if !strings.Contains(log, want) {
 			t.Errorf("host-perf.log missing %q;\ngot:\n%s", want, log)
