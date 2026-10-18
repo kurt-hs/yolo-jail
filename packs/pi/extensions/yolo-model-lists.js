@@ -263,6 +263,78 @@ function refusal(provider, id, listed) {
 	);
 }
 
+// ANOTHER EXTENSION'S REGISTRATION OF THE SAME PROVIDER IS KEPT (docs/design/model-lists-and-pickers.md
+// ML-D13). pi composes a re-registration of a provider by laying each key it defines over the
+// previous registration's, so a second `models` replaces the first whole (pi 1.0.1
+// ModelRuntime.registerProvider, "Re-registration merges defined values over the previous
+// registration"), and an extension cannot read another's registration through its API: before
+// pi binds them, registrations are queued write-only (core/extensions/loader.js). So a pack
+// extension that registered, say, amazon-bedrock's long-context variant rows lost them to yolo's
+// list, which pi applies later. The one place both are visible is pi's model runtime as it
+// applies a registration, where `getRegisteredProviderConfig` returns the one before it; yolo
+// wraps `registerProvider` there once per process, and the wrapper acts only on a config carrying
+// MERGE, yolo's own: it hands MERGE what was registered before, and registers what MERGE returns.
+// For a list nothing enforces, that is the other extension's rows as it registered them, then
+// each of yolo's declared rows whose id they lack, and every other key the other extension set is
+// kept by pi's own key merge. A list the profile enforces still replaces the provider's models
+// (it is the list the profile asked pi to refuse outside, MM-D21), and says so once. Where pi
+// does not export ModelRuntime with both methods, the registration is yolo's list as before.
+const MERGE = Symbol.for("yolo-jail.pi.model-lists.merge");
+
+// THEIRS marks a models array yolo registered with what another extension had registered before
+// it (undefined for none), so a later registration of yolo's merges with that and never with
+// yolo's own earlier rows.
+const THEIRS = Symbol.for("yolo-jail.pi.model-lists.theirs");
+
+function markTheirs(models, theirs) {
+	Object.defineProperty(models, THEIRS, { value: theirs });
+	return models;
+}
+
+// foreignModels is the models another extension registered for the provider before yolo, read
+// off the registration pi holds, or undefined when there is none.
+function foreignModels(prior) {
+	const models = prior?.models;
+	if (!Array.isArray(models)) return undefined;
+	const theirs = THEIRS in models ? models[THEIRS] : models;
+	return Array.isArray(theirs) && theirs.length > 0 ? theirs : undefined;
+}
+
+// installMerge wraps pi's ModelRuntime.registerProvider so a config carrying MERGE is resolved
+// against the registration before it; true when the wrapper is in place.
+async function installMerge() {
+	let proto;
+	try {
+		proto = (await import("@earendil-works/pi-coding-agent")).ModelRuntime?.prototype;
+	} catch {
+		return false;
+	}
+	if (!proto || typeof proto.registerProvider !== "function" || typeof proto.getRegisteredProviderConfig !== "function") {
+		return false;
+	}
+	if (proto[MERGE]) return true;
+	const original = proto.registerProvider;
+	Object.defineProperty(proto, "registerProvider", {
+		configurable: true,
+		writable: true,
+		value: function registerProvider(providerId, config, ...rest) {
+			const merge = config?.[MERGE];
+			if (typeof merge === "function") {
+				let prior;
+				try {
+					prior = this.getRegisteredProviderConfig(providerId);
+				} catch {
+					prior = undefined;
+				}
+				config = merge(prior);
+			}
+			return original.call(this, providerId, config, ...rest);
+		},
+	});
+	Object.defineProperty(proto, MERGE, { value: true });
+	return true;
+}
+
 // pi awaits an extension's factory (core/extensions/loader.js), so the catalog import finishes
 // before any registration is read.
 export default async function registerYoloModelLists(pi) {
@@ -270,10 +342,13 @@ export default async function registerYoloModelLists(pi) {
 	const providers = Object.keys(lists);
 	if (providers.length === 0) return;
 	const lib = await piAI();
+	const merging = await installMerge();
 	const unenforced = [];
+	const replaced = [];
 	for (const provider of providers) {
 		const list = lists[provider];
-		let models = list.models.map((entry) => definition(provider, entry, lib.lookup));
+		const declared = list.models.map((entry) => definition(provider, entry, lib.lookup));
+		let models = declared;
 		if (list.keepCatalog) {
 			// With no catalog to complete, a registration would only replace pi's list with yolo's
 			// rows; the models.json rows pi already loaded say the same without narrowing anything.
@@ -281,42 +356,81 @@ export default async function registerYoloModelLists(pi) {
 			models = withCatalog(provider, models, lib);
 		}
 		if (!list.enforce) {
-			pi.registerProvider(provider, { models });
+			pi.registerProvider(provider, {
+				models: markTheirs(models, undefined),
+				[MERGE]: (prior) => {
+					const theirs = foreignModels(prior);
+					if (!theirs) return { models: markTheirs([...models], undefined) };
+					const ids = new Set(theirs.map((m) => m?.id));
+					// pi validates a registration on its own, so the other extension's provider-level
+					// api and baseUrl ride along for its rows that rely on them (unchanged values).
+					return {
+						...(prior.api ? { api: prior.api } : {}),
+						...(prior.baseUrl ? { baseUrl: prior.baseUrl } : {}),
+						models: markTheirs([...theirs, ...declared.filter((m) => !ids.has(m.id))], theirs),
+					};
+				},
+			});
 			continue;
 		}
+		// An enforced list replaces another extension's models, and is told about (ML-D13).
+		const replacing = (config) => ({
+			...config,
+			models: markTheirs(config.models, undefined),
+			[MERGE]: (prior) => {
+				if (foreignModels(prior) && !replaced.includes(provider)) replaced.push(provider);
+				return { ...config, models: markTheirs([...config.models], undefined) };
+			},
+		});
 		const api = listApi(provider, list, lib);
 		const delegate = api && delegateFor(provider, api, lib);
 		if (!delegate) {
-			pi.registerProvider(provider, { models });
+			pi.registerProvider(provider, replacing({ models }));
 			unenforced.push(provider);
 			continue;
 		}
 		const listed = list.models.map((entry) => entry.id);
 		const allowed = new Set(listed);
-		pi.registerProvider(provider, {
+		pi.registerProvider(provider, replacing({
 			api,
 			models,
 			streamSimple: (model, context, options) => {
 				if (!allowed.has(model?.id)) throw new Error(refusal(provider, model?.id, listed));
 				return delegate(model, context, options);
 			},
-		});
+		}));
 	}
 
 	// ONCE PER LOAD, where the user can see it, as yolo-openai-auth.js reports its degradation: a
 	// list the profile enforces that pi could not be made to refuse is a softer limit than the one
-	// the profile asked for, and says so.
-	if (unenforced.length > 0) {
-		const warning =
-			`yolo: pi shows exactly yolo's model list for ${unenforced.join(", ")}, but cannot refuse a model ` +
-			`outside it there (the list's models do not share one pi api, or pi's own stream for it was not ` +
-			`found), so \`pi --model\` can still run an unlisted one.`;
+	// the profile asked for, and an enforced list that replaced another extension's models took
+	// something away; each says so. `replaced` fills when pi applies the registrations, before it
+	// starts a session.
+	if (unenforced.length > 0 || (merging && providers.some((p) => lists[p].enforce))) {
 		let told = false;
 		pi.on?.("session_start", (_event, ctx) => {
 			if (told) return;
+			const warnings = [];
+			if (unenforced.length > 0) {
+				warnings.push(
+					`yolo: pi shows exactly yolo's model list for ${unenforced.join(", ")}, but cannot refuse a model ` +
+					`outside it there (the list's models do not share one pi api, or pi's own stream for it was not ` +
+					`found), so \`pi --model\` can still run an unlisted one.`,
+				);
+			}
+			if (replaced.length > 0) {
+				warnings.push(
+					`yolo: the profile enforces yolo's model list for ${replaced.join(", ")}, so it replaced the models ` +
+					`another pi extension registered there. Set "enforce_models": false on the profile to keep that ` +
+					`extension's models beside yolo's.`,
+				);
+			}
+			if (warnings.length === 0) return;
 			told = true;
-			if (ctx?.hasUI) ctx.ui.notify(warning, "warning");
-			else console.warn(warning);
+			for (const warning of warnings) {
+				if (ctx?.hasUI) ctx.ui.notify(warning, "warning");
+				else console.warn(warning);
+			}
 		});
 	}
 }
