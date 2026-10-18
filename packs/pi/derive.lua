@@ -997,7 +997,9 @@ yolo.derive("pi", "models", function(ctx)
         if facts then
           for k, v in pairs(facts) do o[k] = v end
         end
-        if next(o) ~= nil then overrides[e.id] = o end
+        -- Written even with nothing stated (`{}`, a no-op over the catalog), so the row still
+        -- names every model the list declares and the selection's provider has its row.
+        overrides[e.id] = o
       else
         local m = { id = e.id, name = e.facts.name or e.id }
         if cw then m.contextWindow = cw end
