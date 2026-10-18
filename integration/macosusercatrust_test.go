@@ -3,20 +3,9 @@ package integration
 import (
 	"bytes"
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/sha1"
-	"crypto/tls"
 	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/hex"
 	"encoding/pem"
-	"errors"
 	"fmt"
-	"math/big"
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,265 +18,191 @@ import (
 
 // TestMacosUserTrustsSystemKeychainCA: A CERTIFICATE AUTHORITY THE MAC'S SYSTEM KEYCHAIN TRUSTS
 // FOR TLS IS TRUSTED INSIDE THE SANDBOX, and the launch names it (internal/macosuser/cabundle.go;
-// docs/design/provisioner-sets.md PS-D10). It stands in for an MDM-installed corporate CA:
+// docs/design/provisioner-sets.md PS-D10).
 //
-//   - a CA made here is added to /Library/Keychains/System.keychain as a trusted root, and a
-//     second one is added WITHOUT trust settings, the control the launch must leave out;
-//   - this process serves TLS on 127.0.0.1 with a leaf the first CA signed;
-//   - a macos-user launch runs the floor's nix curl against it, which trusts only a file a
-//     variable names, CURL_CA_BUNDLE ahead of the others, and prints four of the variables;
-//   - the launch's output and launch.log must name the first CA and not the second.
+// THE CA IS ONE THIS MAC ALREADY TRUSTS. The test never writes a keychain: the suite takes no
+// privilege `yolo macos-setup` does not install, and adding a trusted root to the System keychain
+// needs root (OQ-DM1 in docs/design/macos-user-suite-on-a-developer-mac.md, ruled 2026-10-18). It
+// reads the System keychain as the invoking user, the way a launch does, through the launch's own
+// composition (macosuser.ComposeCATrust over macosuser.RealDeps: `security find-certificate`, then
+// `security verify-cert` per candidate), and takes the CAs that composition keeps. A Mac whose
+// System keychain holds none — an unmanaged Mac, and the GitHub runner — skips, countably, saying
+// so; an MDM-managed Mac, the case the feature exists for, runs it.
 //
-// Both certificates and the trust setting are removed at cleanup. Adding a trusted root to the
-// System keychain non-interactively can need the admin trust-settings right opened first; that
-// is a change to the machine's authorization policy, so it is made only on a run that declared
-// itself the macos-user job (macosUserDeclareEnv) and restored at cleanup, and anywhere else the
-// test skips, saying why.
+// WHAT IT ASSERTS, with no key for any of those CAs and so no server one signed to connect to:
+//
+//   - the five bundle variables name the session's CA bundle, and NODE_EXTRA_CA_CERTS its extras
+//     file;
+//   - the sandbox account can READ both, and each holds every CA the composition kept;
+//   - the launch's output and launch.log name each kept CA, and the disclosure names no keychain
+//     certificate the composition left out.
+//
+// ⚠ What it no longer measures: a TLS handshake through the bundle. That needs a server whose
+// leaf the CA signed, which needs the CA's key, which a CA already on the machine does not hand
+// over. That the tools read the variables is measured in a Linux jail (PS-D10's MEASURED clause).
 func TestMacosUserTrustsSystemKeychainCA(t *testing.T) {
 	requireMacosUser(t)
-	dir := resolvedTempDir(t)
-	tag := hex.EncodeToString(randomBytes(t, 4))
-	caName, controlName := "yolo-it trusted CA "+tag, "yolo-it untrusted CA "+tag
-	ca, caKey := catrustCA(t, caName)
-	control, _ := catrustCA(t, controlName)
-	caFile, controlFile := filepath.Join(dir, "ca.pem"), filepath.Join(dir, "control.pem")
-	writePEM(t, caFile, ca)
-	writePEM(t, controlFile, control)
-
-	if err := catrustInstall(t, dir, caFile, ca, controlFile, control, catrustSystemSecurity); err != nil {
-		t.Fatalf("installing the test CAs and trust setting: %v", err)
+	kept, leftOut := catrustKeychainCAs(t)
+	if len(kept) == 0 {
+		macosUserSkipCountably(t, macosUserGateLaunch, fmt.Sprintf("this Mac's System keychain holds no "+
+			"certificate authority macOS trusts for TLS (%d certificate(s) read, every one left out), "+
+			"and this test only reads it: it never adds one, which would need root (OQ-DM1). A Mac "+
+			"whose MDM or administrator installed a TLS CA in the System keychain runs it",
+			len(leftOut)))
+	}
+	for _, c := range kept {
+		t.Logf("a CA this Mac's System keychain trusts for TLS: %s", c.Name)
 	}
 
-	addr := catrustServe(t, ca, caKey)
 	ws := macosUserWorkspace(t, `{}`)
-	r := runMacosUser(t, ws, fmt.Sprintf(`echo "CURL=$(command -v curl)"; curl -fsS https://%s/; echo; `+
-		`echo "SSL=${SSL_CERT_FILE-}"; echo "NIX=${NIX_SSL_CERT_FILE-}"; echo "CURLCA=${CURL_CA_BUNDLE-}"; `+
-		`echo "NODE=${NODE_EXTRA_CA_CERTS-}"`, addr))
-	vars := hd10Fields(r.stdout)
-	// The floor's nix curl, which reads only a bundle a variable names (CURL_CA_BUNDLE first):
-	// Apple's /usr/bin/curl asks the system, so a pass through it would show nothing about the
-	// bundle.
-	if !strings.HasPrefix(vars["CURL"], "/nix/store/") {
-		t.Fatalf("the sandbox's curl is %q, not the floor's nix curl, so this run cannot show that "+
-			"the bundle is trusted:\n%s", vars["CURL"], lastLines(r.combined(), 40))
+	r := runMacosUser(t, ws, `echo "=== VARS ==="; `+
+		`echo "NIX=${NIX_SSL_CERT_FILE-}"; echo "SSL=${SSL_CERT_FILE-}"; echo "REQ=${REQUESTS_CA_BUNDLE-}"; `+
+		`echo "CURLCA=${CURL_CA_BUNDLE-}"; echo "GIT=${GIT_SSL_CAINFO-}"; echo "NODE=${NODE_EXTRA_CA_CERTS-}"; `+
+		`echo "=== BUNDLE ==="; cat "$CURL_CA_BUNDLE"; echo "BUNDLE_RC=$?"; `+
+		`echo "=== EXTRAS ==="; cat "$NODE_EXTRA_CA_CERTS"; echo "EXTRAS_RC=$?"; echo "=== END ==="`)
+	if r.rc != 0 {
+		t.Fatalf("the macos-user launch failed (rc %d):\n%s", r.rc, lastLines(r.combined(), 40))
 	}
-	if r.rc != 0 || !strings.Contains(r.stdout, catrustBody) {
-		t.Fatalf("nix curl in the sandbox did not trust the System keychain's CA (rc %d):\n%s",
-			r.rc, lastLines(r.combined(), 40))
-	}
-	for _, k := range []string{"SSL", "NIX", "CURLCA"} {
+	vars := hd10Fields(section(r.stdout, "=== VARS ===", "=== BUNDLE ==="))
+	for _, k := range []string{"NIX", "SSL", "REQ", "CURLCA", "GIT"} {
 		if !strings.HasPrefix(vars[k], macosuser.StateDir()+"/env/") || !strings.HasSuffix(vars[k], ".ca-bundle.crt") {
 			t.Errorf("%s names %q, not the session's CA bundle", k, vars[k])
 		}
 	}
-	if !strings.HasSuffix(vars["NODE"], ".extra-ca.pem") {
+	if !strings.HasPrefix(vars["NODE"], macosuser.StateDir()+"/env/") || !strings.HasSuffix(vars["NODE"], ".extra-ca.pem") {
 		t.Errorf("NODE_EXTRA_CA_CERTS names %q, not the session's extra-CA file", vars["NODE"])
 	}
+	for _, f := range []struct{ name, start, end, rc string }{
+		{"the CA bundle", "=== BUNDLE ===", "=== EXTRAS ===", "BUNDLE_RC=0"},
+		{"the extra-CA file", "=== EXTRAS ===", "=== END ===", "EXTRAS_RC=0"},
+	} {
+		body := section(r.stdout, f.start, f.end)
+		if !strings.Contains(body, f.rc) {
+			t.Errorf("the sandbox could not read %s:\n%s", f.name, lastLines(body, 10))
+			continue
+		}
+		for _, c := range kept {
+			if !catrustHoldsCert(body, c.PEM) {
+				t.Errorf("%s the sandbox read does not hold %s", f.name, c.Name)
+			}
+		}
+	}
 	logBody, _ := os.ReadFile(filepath.Join(ws, ".yolo", "launch.log"))
-	for name, text := range map[string]string{"the launch's output": r.combined(), "launch.log": string(logBody)} {
-		if !strings.Contains(text, "from this Mac's System keychain") || !strings.Contains(text, caName) {
-			t.Errorf("%s does not name the CA it trusted (%s):\n%s", name, caName, lastLines(text, 40))
+	for where, text := range map[string]string{"the launch's output": r.combined(), "launch.log": string(logBody)} {
+		disclosure := catrustDisclosure(text)
+		if disclosure == "" {
+			t.Errorf("%s has no line naming the CAs it took from this Mac's System keychain:\n%s",
+				where, lastLines(text, 40))
+			continue
 		}
-		if strings.Contains(text, controlName) {
-			t.Errorf("%s names the CA with no trust settings (%s), which must be left out", name, controlName)
+		for _, c := range kept {
+			if !strings.Contains(disclosure, c.Name) {
+				t.Errorf("%s does not name the CA it trusted (%s):\n%s", where, c.Name, disclosure)
+			}
+		}
+		for _, name := range leftOut {
+			if strings.Contains(disclosure, name) {
+				t.Errorf("%s names %s, which the keychain holds and the launch must leave out:\n%s",
+					where, name, disclosure)
+			}
 		}
 	}
 }
 
-// catrustBody is what the test's TLS server answers.
-const catrustBody = "hello from the System keychain's CA"
-
-func randomBytes(t *testing.T, n int) []byte {
+// catrustKeychainCAs is the launch's own composition over this Mac's System keychain: the CAs it
+// keeps, and the names of the certificates it leaves out that no kept CA shares (a shared name
+// cannot tell the two apart in the disclosure). It reads only; nothing here can write a keychain.
+func catrustKeychainCAs(t *testing.T) (kept []macosuser.TrustedCA, leftOut []string) {
 	t.Helper()
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
+	// ComposeCATrust needs a tool profile with a bundle to append to; a stand-in is enough, since
+	// only the keychain half is asked.
+	profile := t.TempDir()
+	bundle := filepath.Join(profile, "etc", "ssl", "certs", "ca-bundle.crt")
+	if err := os.MkdirAll(filepath.Dir(bundle), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return b
-}
-
-// catrustCA makes a self-signed CA certificate and its key.
-func catrustCA(t *testing.T, cn string) (*x509.Certificate, *ecdsa.PrivateKey) {
-	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
+	if err := os.WriteFile(bundle, []byte("# stand-in public roots\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	tmpl := &x509.Certificate{
-		SerialNumber:          new(big.Int).SetBytes(randomBytes(t, 8)),
-		Subject:               pkix.Name{CommonName: cn},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(24 * time.Hour),
-		IsCA:                  true,
-		BasicConstraintsValid: true,
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+	ca := macosuser.ComposeCATrust(macosuser.RealDeps(nil, nil, false), &macosuser.Darwin{ProfilePath: profile})
+	if ca.ReadError != "" {
+		t.Fatalf("the launch's own read of the System keychain failed (%s); a launch would warn and "+
+			"trust the public roots alone, so there is nothing for this test to measure. Check "+
+			"`/usr/bin/security find-certificate -a -p /Library/Keychains/System.keychain` as yourself",
+			ca.ReadError)
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
-	if err != nil {
-		t.Fatal(err)
+	keptNames := map[string]bool{}
+	for _, c := range ca.Kept {
+		keptNames[c.Name] = true
 	}
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return cert, key
-}
-
-func writePEM(t *testing.T, path string, c *x509.Certificate) {
-	t.Helper()
-	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Raw}), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// catrustSecurityRunner runs one security operation with optional stdin. Both installation and
-// every cleanup use it, so one deadline and output-pipe bound cover the whole fixture lifecycle.
-type catrustSecurityRunner func(args []string, stdin []byte, stdoutOnly bool) ([]byte, error)
-
-const (
-	catrustSecurityTimeout   = 30 * time.Second
-	catrustSecurityWaitDelay = time.Second
-)
-
-// catrustSystemSecurity is the real runner used only by the native fixture. Its context deadline
-// bounds a stalled `security` call; WaitDelay also closes inherited output pipes after the child
-// exits or is killed, so CombinedOutput cannot wait forever for a descendant holding them open.
-func catrustSystemSecurity(args []string, stdin []byte, stdoutOnly bool) ([]byte, error) {
-	return runCatrustCommand("sudo", append([]string{"-n", "/usr/bin/security"}, args...), stdin, stdoutOnly,
-		catrustSecurityTimeout, catrustSecurityWaitDelay)
-}
-
-func runCatrustCommand(command string, args []string, stdin []byte, stdoutOnly bool,
-	timeout, waitDelay time.Duration) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, command, args...)
-	cmd.WaitDelay = waitDelay
-	if stdin != nil {
-		cmd.Stdin = bytes.NewReader(stdin)
+	out, err := exec.CommandContext(ctx, "/usr/bin/security", "find-certificate", "-a", "-p",
+		"/Library/Keychains/System.keychain").Output()
+	if err != nil {
+		t.Fatalf("reading the System keychain as yourself: %v", err)
 	}
-	var out []byte
-	var err error
-	if stdoutOnly {
-		out, err = cmd.Output()
-	} else {
-		out, err = cmd.CombinedOutput()
+	seen := map[string]bool{}
+	for rest := out; ; {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			continue
+		}
+		name := cert.Subject.CommonName
+		if name == "" {
+			name = cert.Subject.String()
+		}
+		if !keptNames[name] && !seen[name] && !catrustNameInside(name, ca.Kept) {
+			seen[name] = true
+			leftOut = append(leftOut, name)
+		}
 	}
-	if ctx.Err() != nil {
-		return out, fmt.Errorf("command timed out after %s: %w", timeout, ctx.Err())
-	}
-	if errors.Is(err, exec.ErrWaitDelay) {
-		return out, fmt.Errorf("command output remained open after %s: %w", waitDelay, err)
-	}
-	return out, err
+	return ca.Kept, leftOut
 }
 
-// catrustInstall adds the CA as a trusted root and the control with no trust settings to the
-// System keychain, and registers their removal. A trusted root needs the admin trust-settings
-// right, which is opened only on a declared run and put back at cleanup.
-func catrustInstall(t *testing.T, dir, caFile string, ca *x509.Certificate, controlFile string,
-	control *x509.Certificate, run catrustSecurityRunner) error {
-	t.Helper()
-	const keychain = "/Library/Keychains/System.keychain"
-	const right = "com.apple.trust-settings.admin"
-	// Cleanups run last-registered first. The certificates go LAST, so this one is registered
-	// first; the trust setting goes before them and before the right is restored (untrust).
-	t.Cleanup(func() {
-		for _, c := range []*x509.Certificate{ca, control} {
-			sum := sha1.Sum(c.Raw)
-			t.Log("macos-user CA trust fixture cleanup: delete System keychain certificate")
-			if out, err := run([]string{"delete-certificate", "-Z",
-				strings.ToUpper(hex.EncodeToString(sum[:])), keychain}, nil, false); err != nil {
-				t.Logf("removing %s from the System keychain: %v\n%s", c.Subject.CommonName, err, out)
-			}
+// catrustNameInside reports whether name is part of a kept CA's name, which the disclosure then
+// carries whether or not the certificate it names was left out.
+func catrustNameInside(name string, kept []macosuser.TrustedCA) bool {
+	for _, c := range kept {
+		if strings.Contains(c.Name, name) {
+			return true
 		}
-	})
-	// untrust removes the CA's admin trust setting at cleanup, registered once the setting exists
-	// and after any opening of the right, so it runs while the right that made it is still open.
-	untrust := func() {
-		t.Cleanup(func() {
-			t.Log("macos-user CA trust fixture cleanup: remove trusted-root setting")
-			if out, err := run([]string{"remove-trusted-cert", "-d", caFile}, nil, false); err != nil {
-				t.Logf("removing the trust setting for %s: %v\n%s", ca.Subject.CommonName, err, out)
-			}
-		})
 	}
-
-	t.Log("macos-user CA trust fixture: add control certificate")
-	if out, err := run([]string{"add-certificates", "-k", keychain, controlFile}, nil, false); err != nil {
-		return fmt.Errorf("adding the control CA to the System keychain: %w\n%s", err, out)
-	}
-	t.Log("macos-user CA trust fixture: add trusted root")
-	out, err := run([]string{"add-trusted-cert", "-d", "-r", "trustRoot", "-k", keychain, caFile}, nil, false)
-	if err == nil {
-		untrust()
-		return nil
-	}
-	if os.Getenv(macosUserDeclareEnv) == "" {
-		t.Skipf("could not add a trusted root to the System keychain without opening the admin "+
-			"trust-settings right (%v: %s); this test opens it only on a run that sets %s=1, a "+
-			"disposable machine", err, strings.TrimSpace(string(out)), macosUserDeclareEnv)
-	}
-	saved := filepath.Join(dir, "trust-settings-admin.plist")
-	// stdout alone: `authorizationdb read` reports its status on stderr, and the plist it prints
-	// on stdout is what a write reads back.
-	t.Log("macos-user CA trust fixture: read admin trust-settings rule for restoration")
-	rule, rerr := run([]string{"authorizationdb", "read", right}, nil, true)
-	if rerr != nil {
-		return fmt.Errorf("reading %s to restore it later: %w\n%s", right, rerr, rule)
-	}
-	if err := os.WriteFile(saved, rule, 0o600); err != nil {
-		return fmt.Errorf("saving %s for restoration: %w", right, err)
-	}
-	t.Cleanup(func() {
-		t.Log("macos-user CA trust fixture cleanup: restore admin trust-settings rule")
-		if out, err := run([]string{"authorizationdb", "write", right}, rule, false); err != nil {
-			t.Errorf("restoring %s from %s failed: %v\n%s", right, saved, err, out)
-		}
-	})
-	t.Log("macos-user CA trust fixture: open admin trust-settings right")
-	if out, err := run([]string{"authorizationdb", "write", right, "allow"}, nil, false); err != nil {
-		return fmt.Errorf("opening %s: %w\n%s", right, err, out)
-	}
-	t.Log("macos-user CA trust fixture: retry trusted-root installation")
-	if out, err := run([]string{"add-trusted-cert", "-d", "-r", "trustRoot", "-k", keychain, caFile}, nil, false); err != nil {
-		return fmt.Errorf("adding the CA as a trusted root, with %s open: %w\n%s", right, err, out)
-	}
-	untrust()
-	return nil
+	return false
 }
 
-// catrustServe serves catrustBody over TLS on 127.0.0.1 with a leaf the CA signed, until the
-// test ends, and returns its address.
-func catrustServe(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey) string {
-	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
+// catrustHoldsCert reports whether text carries the certificate pemText encodes, compared by DER
+// so line wrapping cannot decide it.
+func catrustHoldsCert(text, pemText string) bool {
+	want, _ := pem.Decode([]byte(pemText))
+	if want == nil {
+		return false
 	}
-	tmpl := &x509.Certificate{
-		SerialNumber: new(big.Int).SetBytes(randomBytes(t, 8)),
-		Subject:      pkix.Name{CommonName: "127.0.0.1"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(24 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+	for rest := []byte(text); ; {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			return false
+		}
+		if bytes.Equal(block.Bytes, want.Bytes) {
+			return true
+		}
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca, &key.PublicKey, caKey)
-	if err != nil {
-		t.Fatal(err)
+}
+
+// catrustDisclosure is every line of text in which the launch names the CAs it took from the
+// System keychain (cabundle.go's printCATrust), joined.
+func catrustDisclosure(text string) string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "from this Mac's System keychain") {
+			out = append(out, strings.TrimSpace(line))
+		}
 	}
-	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
-		Certificates: []tls.Certificate{{Certificate: [][]byte{der, ca.Raw}, PrivateKey: key}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(catrustBody))
-	}), ReadHeaderTimeout: 10 * time.Second}
-	go func() { _ = srv.Serve(ln) }()
-	t.Cleanup(func() { _ = srv.Close() })
-	return ln.Addr().String()
+	return strings.Join(out, "\n")
 }

@@ -28,7 +28,7 @@ import (
 // an absolute link to it, which the relocation rewrites. Each run of it appends one line to a log
 // the test reads, so "one installer run" is counted rather than inferred. No agent starts.
 //
-// ⚠ Mac-only, behind requireMacosUser: the sandbox account and passwordless sudo.
+// ⚠ Mac-only, behind requireMacosUser: the sandbox account and the run-as rule.
 
 // captureFixture is one fixture installer pack under /private/tmp.
 type captureFixture struct {
@@ -301,8 +301,8 @@ func removeUserStoreEntries(t *testing.T, bin string) {
 	}
 }
 
-// removeAsSandboxOwned removes dir, escalating to sudo for files the sandbox account wrote, and
-// only for a path under prefix.
+// removeAsSandboxOwned removes dir, escalating to the sandbox account's own removal
+// (removeSandboxWritten) for files that account wrote, and only for a path under prefix.
 func removeAsSandboxOwned(t *testing.T, dir, prefix string) {
 	t.Helper()
 	if err := os.RemoveAll(dir); err == nil {
@@ -311,7 +311,7 @@ func removeAsSandboxOwned(t *testing.T, dir, prefix string) {
 	if !strings.HasPrefix(dir, prefix) || strings.Contains(dir, "..") {
 		t.Fatalf("refusing to escalate removal of %s: it is not under %s", dir, prefix)
 	}
-	if !runQuiet(2*time.Minute, "sudo", "-n", "/bin/rm", "-rf", dir) {
-		t.Logf("could not remove %s even with sudo; it will need removing by hand", dir)
+	if err := removeSandboxWritten(dir); err != nil {
+		t.Logf("could not remove %s (%v): %s", dir, err, removeByHandHint(dir))
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
@@ -35,8 +34,9 @@ func TestMacosUserLaunchDeniesReadOfHost0644File(t *testing.T) {
 	probe := macosUserRead0644Probe(path)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	bare, err := exec.CommandContext(ctx, "sudo", "-n", "--user="+macosuser.SandboxUser,
-		"/bin/bash", "-c", probe).CombinedOutput()
+	// Through the one run-as rule (sandboxCommand): a bare `sudo --user=_yolojail /bin/bash` is
+	// not the rule, which names /usr/bin/env, and asks for a password.
+	bare, err := sandboxCommand(ctx, "/bin/bash", "-c", probe).CombinedOutput()
 	if err != nil {
 		t.Fatalf("unsandboxed account control failed: %v\n%s", err, bare)
 	}

@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,7 +21,7 @@ import (
 // /usr/bin/log as the runner, an admin, since the sandbox account cannot read the log itself
 // (TestMacosUserMacosLogAsTheSandboxAccountMeasurement).
 //
-// TWO ENTRIES, ONE PER ACCOUNT, logged before the launch: one as the sandbox account (sudo -u),
+// TWO ENTRIES, ONE PER ACCOUNT, logged before the launch: one as the sandbox account (the run-as rule),
 // one as the runner. `show` in the user scope attributes an entry by its own `userID` alone (a
 // pid's owner today says nothing about history), so it must never return the runner's entry,
 // and returns the sandbox's only if this macOS's ndjson carries `userID` — recorded as a
@@ -36,9 +37,15 @@ import (
 // came back from `show` as `"userID":600`) and spells `timestamp` as
 // "2026-10-09 22:16:08.389816+0000", the layout macoslog.go's parseEntryTime reads.
 //
+// THE BRIDGE READS THE STORE AS THE INVOKING USER, so a Mac whose store is closed to that user
+// (a managed Mac, to a non-admin) has nothing for it to scope: `show` comes back empty
+// (SHOW_RC=77) for a reason that is the Mac's policy, not the bridge's. requireUnifiedLog skips
+// there, countably (OQ-DM2); the macos-user CI job's admin user runs it.
+//
 // Darwin-only by build constraint, like the serial test: requireMacosUser skips everywhere else.
 func TestMacosUserMacosLogBridgeScopesToTheSandbox(t *testing.T) {
 	requireMacosUser(t)
+	requireUnifiedLog(t, macosUserGateLaunch)
 	token := fmt.Sprintf("yolo-it-maclog-%d-%d", os.Getpid(), time.Now().UnixNano())
 	mine, theirs := token+"-sandbox", token+"-host"
 	syslogAs(t, true, mine)
@@ -120,22 +127,24 @@ func TestMacosUserMacosLogBridgeScopesToTheSandbox(t *testing.T) {
 }
 
 // syslogAs logs msg through syslog(3) from a process that stays alive until the test ends, as the
-// sandbox account (sudo -n -u) or as the runner. Kept alive so a bridge attributing an entry by
+// sandbox account (through the run-as rule, sandboxCommand) or as the runner. Kept alive so a bridge attributing an entry by
 // its live process can still find the owner.
 func syslogAs(t *testing.T, asSandbox bool, msg string) {
 	t.Helper()
 	argv := []string{"/usr/bin/perl", "-MSys::Syslog", "-e",
 		`openlog("yolo-it", "pid", "user"); syslog("notice", "%s", $ARGV[0]); closelog(); sleep 900`, msg}
-	if asSandbox {
-		argv = append([]string{"/usr/bin/sudo", "-n", "--user=" + macosuser.SandboxUser}, argv...)
-	}
 	cmd := exec.Command(argv[0], argv[1:]...)
+	if asSandbox {
+		// Through the one run-as rule; context.Background because the cleanup ends it.
+		cmd = sandboxCommand(context.Background(), argv...)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("logging %q: %v", msg, err)
 	}
 	t.Cleanup(func() {
 		if asSandbox {
-			_ = runQuiet(time.Minute, "/usr/bin/sudo", "-n", "/usr/bin/pkill", "-u", macosuser.SandboxUser, "-f", msg)
+			// The account ends its own process; killing the sudo above it would not reach it.
+			_ = runAsSandboxQuiet(time.Minute, "/usr/bin/pkill", "-u", macosuser.SandboxUser, "-f", msg)
 		}
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
