@@ -3502,6 +3502,7 @@
 "internal/logstamp/*",
 "internal/loopholedecl/*",
 "internal/loopholes/*",
+"internal/macosuser/bootperf.go",
 "internal/macosuser/bootstrapgit_test.go",
 "internal/macosuser/briefingresources_test.go",
 "internal/macosuser/buildactsealed_test.go",
@@ -3564,6 +3565,7 @@
 "internal/macosuser/optionalmount_test.go",
 "internal/macosuser/orchestrator.go",
 "internal/macosuser/orchestrator_test.go",
+"internal/macosuser/overlaycurrent_test.go",
 "internal/macosuser/packroot_test.go",
 "internal/macosuser/packtreeproof.go",
 "internal/macosuser/packtreeproof_test.go",
@@ -3602,6 +3604,7 @@
 "internal/macosuser/setupnix_test.go",
 "internal/macosuser/skippedpackages_test.go",
 "internal/macosuser/stagedyolopath_test.go",
+"internal/macosuser/stagetiming_test.go",
 "internal/macosuser/statedir.go",
 "internal/macosuser/supervisorlog_test.go",
 "internal/macosuser/terminate_test.go",
@@ -5355,6 +5358,7 @@
 "internal/cli/check/happypath_sweep_test.go",
 "internal/cli/check/happypath_test.go",
 "internal/cli/check/hookstate_test.go",
+"internal/cli/check/inertrouting_test.go",
 "internal/cli/check/inheritedscope_test.go",
 "internal/cli/check/jsonreport_test.go",
 "internal/cli/check/loopholebinary_test.go",
@@ -5967,6 +5971,7 @@
 "internal/cli/run/macosctxtree_test.go",
 "internal/cli/run/macosfiles_test.go",
 "internal/cli/run/macoshomeoverlay_test.go",
+"internal/cli/run/macoshomeoverlayreuse_test.go",
 "internal/cli/run/macoshomereadonly_test.go",
 "internal/cli/run/macosoverlaydispatch_test.go",
 "internal/cli/run/macosoverlaylinks_test.go",
@@ -6703,7 +6708,8 @@
 "internal/darwinpkg": {
 "TestFlakeBuildsTheNoncontainerProfileFromTheFloor": 4,
 "TestFlakeExposesTheAttrsThisPackageRealizes": 4,
-"TestFloorConstantsMatchTheFlake": 4
+"TestFloorConstantsMatchTheFlake": 4,
+"TestTheFlakeReadsOnlyTheEnvTheFloorKeyHashes": 4
 },
 "internal/entrypoint": {
 "TestACaptureJailsReadinessIsOffAndSaysWhy": 3,

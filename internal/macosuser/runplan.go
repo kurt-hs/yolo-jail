@@ -721,7 +721,11 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	}
 	stageStep("binary", StageBinaryCommands(selfExe, ""))
 	stageStep("pack_tree", StagePackCommands(hostPackRoot, cname, ""))
-	stageStep("home_overlay", StageHomeOverlayCommands(hostHomeOverlay.Tree, cname, ""))
+	// An overlay whose sealed staged copy is already this one (HomeOverlay.StagedCurrent) stages
+	// nothing: the copy, seal and swap of an unchanged tree were most of an unchanged relaunch.
+	if !hostHomeOverlay.StagedCurrent {
+		stageStep("home_overlay", StageHomeOverlayCommands(hostHomeOverlay.Tree, cname, ""))
+	}
 	// THE CONTEXT DIR, with the composed tree in it when there is one and a host-owned link per
 	// delivered context mount (ctxlinks.go). The links ride the same `.new`-then-swap as the
 	// tree, so a mount dropped from the config stops being named on the next launch.

@@ -60,6 +60,19 @@ func (f overlayFixture) stage(t *testing.T) {
 	}
 }
 
+// restage replaces the overlay with a fresh copy of the same content, as the host's re-staging
+// does (a new sealed tree, never an edit in place), so the next install has new inodes to deliver.
+func (f overlayFixture) restage(t *testing.T) {
+	t.Helper()
+	if err := os.RemoveAll(f.overlay); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(f.overlay, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.stage(t)
+}
+
 func (f overlayFixture) install(t *testing.T) error {
 	t.Helper()
 	e := DarwinEnvFrom(map[string]string{
@@ -190,7 +203,13 @@ func TestOverlayInstallFailureKeepsThePreviousDeliveryWhole(t *testing.T) {
 	if err := syscall.Mkfifo(filepath.Join(f.overlay, ".pi", "agent", "skills", "demo", "pipe"), 0o644); err != nil {
 		t.Skipf("cannot make a FIFO here: %v", err)
 	}
-	writeTreeFile(t, filepath.Join(f.overlay, ".pi", "agent", "skills", "demo", "SKILL.md"), "never delivered")
+	// A NEW file, as a re-staged tree carries: the delivered SKILL.md is a hard link of the staged
+	// one, and the host never edits a staged file in place.
+	staged := filepath.Join(f.overlay, ".pi", "agent", "skills", "demo", "SKILL.md")
+	if err := os.Remove(staged); err != nil {
+		t.Fatal(err)
+	}
+	writeTreeFile(t, staged, "never delivered")
 
 	if err := f.install(t); err == nil {
 		t.Fatal("an install whose copy failed reported success")
@@ -567,6 +586,9 @@ func TestOverlayInstallStaysInsideTheJailWhenADirectoryIsSwappedMidInstall(t *te
 				if err := f.install(t); err != nil {
 					t.Fatal(err)
 				}
+				// And this launch re-staged, so the install has a replacement to build: an
+				// unchanged delivery is left in place and reaches no window past "opened".
+				f.restage(t)
 				state := f.agentState(t)
 				outside := filepath.Join(t.TempDir(), "another-workspace", "pi-agent")
 				writeTreeFile(t, filepath.Join(outside, "skills", "theirs", "SKILL.md"), "someone else's")

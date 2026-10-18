@@ -184,6 +184,15 @@ farm, on a backend this mechanism is not about.
 agent executes from is GC-rooted. `MaterializeAt`, the container's caller, takes `ProfileAttr`
 with a content-keyed link.
 
+**An unchanged floor runs no nix.** After a successful build whose skip-list eval also succeeded,
+`Materialize` records the profile and skip list beside the root, keyed on the system, the build
+argv, the declared `packages:`, every `NIXPKGS_*` variable (nixpkgs' own opt-ins, such as `NIXPKGS_ALLOW_UNFREE`) and the bytes of `flake.nix` and `flake.lock` — the two files the
+flake's own `imageIdentity` treats as deciding the image, and the only environment `flake.nix` itself reads
+is `YOLO_EXTRA_PACKAGES` (`TestTheFlakeReadsOnlyTheEnvTheFloorKeyHashes`). A launch whose inputs
+hash to the recorded key, while the root still names the recorded profile and that store path
+exists, takes the record; anything else builds, and a failed build is fatal as before
+([`floorcache.go`](../../internal/darwinpkg/floorcache.go)).
+
 ### What the floor changed by arriving
 
 `$YOLO_DARWIN_LOGIN_PATH` is the PATH a generator probes before it writes anything:
@@ -228,7 +237,10 @@ rather than prompt, and the launch asks for the rule before any of this
 
 1. the Seatbelt profile, written by the host user at mode `0444` at the session path and removed
    when the session ends, plus the staging commands that copy the yolo binary (sealed `0555`),
-   the pack tree, the home overlay and the `/ctx` tree, each sealed read-only once copied;
+   the pack tree, the home overlay and the `/ctx` tree, each sealed read-only once copied. The home
+   overlay carries a content digest in its destination list: the host rebuilds its own overlay only
+   when the digest of its inputs moves, and stages nothing for it when the sealed copy already
+   carries that digest (`macosuser.HomeOverlayStagedCurrent`);
 2. the **session env file** — everything this launch composed, host-owned `0600` with one
    `user:_yolojail` read ACE, in a `0700` directory with a search ACE, swept on every exit path
    below it — and beside it the session's CA
@@ -899,6 +911,7 @@ $ nix eval --json '.#yoloNoncontainerFloorNames.aarch64-darwin'
 | Declared-packages profile attr | `yoloNoncontainerPackages` | `internal/darwinpkg/darwinpkg.go` (`ProfileAttr`) |
 | Floor + declared profile attr | `yoloNoncontainerProfile` — what every macos-user launch builds | `internal/darwinpkg/darwinpkg.go` (`FloorProfileAttr`), `materialize.go` (`Materialize`) |
 | Floor profile GC root | `ProfileRootLink(home)`, the build's own `--out-link` | `internal/darwinpkg/gcroot.go` |
+| Floor build record | `packages.floor.json` beside the GC root | `internal/darwinpkg/floorcache.go` |
 | Stage step set | four of six: announce + `mise install`, announce + the generated script | `internal/macosuser/provision.go` (`ProvisionSetup`); the six in `internal/provision/provision.go` |
 | Stage skip rule | `mise_tools` non-empty, a declared Node floor the host cannot show met, or a selected launcher-backed program absent/unknown to the host | `internal/macosuser` (`ProvisionNeeded`, `programReadinessStageFor`) and `internal/entrypoint` (`MissingProgramReadiness`) |
 | Provisioning log | `<workspace>/.yolo/startup.log` | `internal/provision/provision.go` (`StartupLog`) |

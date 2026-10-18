@@ -336,6 +336,22 @@ func (o *Options) patchedTreeDirs() map[string]string {
 	return dirs
 }
 
+// patchedTreeIdentities names, by extension key, the content of each per-launch copy
+// patchedTreeDirs delivers: the content-addressed capture store entry it was copied from and the
+// prefix copied out of it (internal/cli's copyTreeForLaunch), which together decide every byte of the copy. The
+// macos-user home overlay's digest reads this instead of the copy's bytes
+// (buildMacosHomeOverlayDelivering). A delivery with no entry is left out, and its copy is hashed.
+func (o *Options) patchedTreeIdentities() map[string]string {
+	ids := map[string]string{}
+	for _, f := range o.patchedTrees {
+		d := o.treeDelivered[f.Key()]
+		if d.Dir != "" && d.Entry != "" {
+			ids[f.Key()] = "capture-entry:" + d.Entry + ";prefix:" + packdecl.TreeReservedDir(f.Bin)
+		}
+	}
+	return ids
+}
+
 // treesBuildHere reports whether a launch on rt builds patched extensions at all: the notches
 // PPX-D18 does not exempt. A launch inside a jail builds none, and Apple Container below its
 // read-only floor builds none (pi-extensions.md §9, §11).
