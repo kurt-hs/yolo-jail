@@ -77,6 +77,32 @@ func TestAStagedOverlayIsCurrentOnlyForTheSameDigest(t *testing.T) {
 	}
 }
 
+// A RE-STAGING INTERRUPTED WHILE IT REMOVES THE OLD COPY never leaves that copy's digest behind:
+// the list goes before anything else of it, so a later launch whose overlay has the OLD digest
+// re-stages rather than delivering a half-removed tree.
+func TestAnInterruptedRestagingLeavesNoTrustedDigest(t *testing.T) {
+	sd := t.TempDir()
+	oldHost := hostOverlayWithDigest(t, "aaaa")
+	execArgvs(t, StageHomeOverlayCommands(oldHost, "ws", sd))
+	cmds := StageHomeOverlayCommands(hostOverlayWithDigest(t, "bbbb"), "ws", sd)
+	cut := -1
+	for i, c := range cmds {
+		if len(c) > 3 && c[3] == dropListScriptName {
+			cut = i
+		}
+	}
+	if cut < 0 {
+		t.Fatalf("no command drops the old copy's list first:\n%v", cmds)
+	}
+	execArgvs(t, cmds[:cut+1]) // the launch dies right after
+	if _, err := os.Stat(filepath.Join(StagedHomeOverlay("ws", sd), ".pi")); err != nil {
+		t.Fatalf("the fixture lost the old copy's content before its removal: %v", err)
+	}
+	if HomeOverlayStagedCurrent(oldHost, "ws", sd) {
+		t.Fatal("a half-removed staged copy still carries a digest a launch trusts")
+	}
+}
+
 // An overlay with no digest (one an older yolo built) is never current, so it is re-staged.
 func TestAnOverlayWithoutADigestIsNeverCurrent(t *testing.T) {
 	sd := t.TempDir()

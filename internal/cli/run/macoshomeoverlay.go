@@ -195,7 +195,14 @@ func buildMacosHomeOverlayTreeIDs(staging string, skills []jailcontent.SkillTarg
 		}
 	}
 	// Rebuilt from scratch: RemoveAll is fine because nothing binds this path (unlike the jail's
-	// ~/.yolo/bin anchor, which is why that one is cleared contents-only).
+	// ~/.yolo/bin anchor, which is why that one is cleared contents-only). THE LIST GOES FIRST: a
+	// removal interrupted part way must not leave the old digest beside a gutted tree, for a later
+	// launch with that digest's inputs to reuse.
+	if fi, err := os.Lstat(overlay); err == nil && fi.IsDir() {
+		if err := os.Remove(filepath.Join(overlay, entrypoint.HomeOverlayManifestName)); err != nil && !os.IsNotExist(err) {
+			return "", nil, fmt.Errorf("clearing the macos-user home overlay: %w", err)
+		}
+	}
 	if err := os.RemoveAll(overlay); err != nil {
 		return "", nil, fmt.Errorf("clearing the macos-user home overlay: %w", err)
 	}

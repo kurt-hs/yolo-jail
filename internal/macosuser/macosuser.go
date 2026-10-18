@@ -401,6 +401,12 @@ func StageHomeOverlayCommands(hostOverlay, cname, sd string) [][]string {
 		[]string{cpBin, "-R", hostOverlay, tmp},
 		[]string{chmodBin, "-R", sealTreeMode, tmp},
 	)
+	// THE OLD COPY'S DESTINATION LIST GOES BEFORE THE REST OF IT: the list carries the digest
+	// HomeOverlayStagedCurrent trusts, and an `rm -rf` interrupted part way must not leave that
+	// digest beside a gutted tree for a later launch with the same digest to deliver.
+	// Only the root needs its write bit for that, and a link at dst is never followed.
+	cmds = append(cmds, []string{shBin, "-c", dropListScript, dropListScriptName, dst,
+		entrypoint.HomeOverlayManifestName})
 	cmds = append(cmds, removeSealedCommands(dst)...)
 	return append(cmds, []string{mvBin, "-f", tmp, dst})
 }
@@ -432,6 +438,13 @@ func HomeOverlayStagedCurrent(hostOverlay, cname, sd string) bool {
 	have, _, ok := entrypoint.HomeOverlayDigest(dst)
 	return ok && have == want
 }
+
+// dropListScript removes the destination list ($2) from a sealed staged overlay ($1), giving the
+// owner write on its root alone; a path that is absent or a link is left alone.
+const (
+	dropListScript     = `if [ -d "$1" ] && [ ! -L "$1" ]; then ` + chmodBin + ` -- u+w "$1" && exec ` + rmBin + ` -f -- "$1/$2"; fi`
+	dropListScriptName = "yolo-drop-overlay-list"
+)
 
 // homeOverlayStagedCurrent is what the orchestrator asks; a test swaps it, since the staging root
 // it reads is a fixed path under /Users/Shared.

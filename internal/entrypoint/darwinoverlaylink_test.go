@@ -115,6 +115,20 @@ func TestOverlayInstallReplacesADestinationChangedBetweenSessions(t *testing.T) 
 				t.Fatal(err)
 			}
 		},
+		"a directory's mode widened": func(t *testing.T, home string) {
+			if err := os.Chmod(filepath.Join(home, ".pi", "agent", "skills", "demo"), 0o777); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"the destination swapped for a link to a copy of itself": func(t *testing.T, home string) {
+			dest := filepath.Join(home, ".pi", "agent", "skills")
+			if err := os.Rename(dest, dest+".real"); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink("skills.real", dest); err != nil {
+				t.Fatal(err)
+			}
+		},
 		"a briefing rewritten": func(t *testing.T, home string) {
 			p := filepath.Join(home, ".pi", "agent", "AGENTS.md")
 			if err := os.Remove(p); err != nil {
@@ -131,8 +145,12 @@ func TestOverlayInstallReplacesADestinationChangedBetweenSessions(t *testing.T) 
 				t.Fatal(err)
 			}
 			tamper(t, f.home)
+			staged := countStagedWindows(t)
 			if err := f.install(t); err != nil {
 				t.Fatal(err)
+			}
+			if staged[".pi/agent/skills"]+staged[".pi/agent/AGENTS.md"] != 1 {
+				t.Fatalf("the install after tampering built %v replacements, want exactly the tampered destination", staged)
 			}
 			requireSameFile(t, filepath.Join(f.home, skillRel), filepath.Join(f.overlay, skillRel),
 				"the skill is the staged file again")

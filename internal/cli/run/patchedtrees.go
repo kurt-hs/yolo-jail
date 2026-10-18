@@ -338,7 +338,7 @@ func (o *Options) patchedTreeDirs() map[string]string {
 
 // patchedTreeIdentities names, by extension key, the content of each per-launch copy
 // patchedTreeDirs delivers: the content-addressed capture store entry it was copied from and the
-// prefix copied out of it (copyTreeForLaunch), which together decide every byte of the copy. The
+// prefix copied out of it (internal/cli's copyTreeForLaunch), which together decide every byte of the copy. The
 // macos-user home overlay's digest reads this instead of the copy's bytes
 // (buildMacosHomeOverlayDelivering). A delivery with no entry is left out, and its copy is hashed.
 func (o *Options) patchedTreeIdentities() map[string]string {

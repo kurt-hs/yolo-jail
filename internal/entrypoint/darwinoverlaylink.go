@@ -168,15 +168,29 @@ func overlayInstalledFrom(src string, srcInfo os.FileInfo, dir *os.Root, rel str
 		return err == nil && sameEntry(src, srcInfo, cur, func() (string, error) { return dir.Readlink(rel) })
 	}
 	cur, err := dir.Lstat(rel)
-	if err != nil || !cur.IsDir() {
+	if err != nil || !cur.IsDir() || !dirModeIntact(uint32(cur.Mode().Perm()), 0o755) {
 		return false
 	}
-	d, err := dir.Open(rel)
+	// Opened beneath its parent WITHOUT following a link, so a destination swapped for a link
+	// after the Lstat above is not walked as if it were the directory.
+	parent, err := dir.Open(".")
+	if err != nil {
+		return false
+	}
+	defer parent.Close()
+	d, err := openDirAt(int(parent.Fd()), rel, rel)
 	if err != nil {
 		return false
 	}
 	defer d.Close()
 	return dirInstalledFrom(src, d)
+}
+
+// dirModeIntact reports whether a delivered directory's permission bits are no wider than the
+// install gave it (want). The sandbox account owns these directories and could widen one between
+// sessions; a narrower mode is the umask's doing and is left alone.
+func dirModeIntact(perm, want uint32) bool {
+	return perm&0o7777&^want == 0
 }
 
 // dirInstalledFrom is overlayInstalledFrom for an open destination directory.
@@ -216,7 +230,8 @@ func dirInstalledFrom(src string, dir *os.File) bool {
 				return false
 			}
 		case sfi.IsDir():
-			if st.Mode&unix.S_IFMT != unix.S_IFDIR {
+			if st.Mode&unix.S_IFMT != unix.S_IFDIR ||
+				!dirModeIntact(uint32(st.Mode)&0o7777, uint32(sfi.Mode().Perm()|0o700)) {
 				return false
 			}
 			sub, err := openDirAt(fd, name, filepath.Join(dir.Name(), name))
