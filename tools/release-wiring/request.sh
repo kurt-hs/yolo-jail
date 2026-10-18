@@ -60,7 +60,7 @@ fi
 if ! gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main \
   -f mode=publish -f "version=${RELEASE_VERSION}" -f "sha=${RELEASE_SHA}" \
   -f "request_run_id=${GITHUB_RUN_ID}"; then
-  echo "✗ ${tag} exists for ${RELEASE_SHA}, but Release dispatch failed. Nothing after the tag was written, so once the cause is fixed, request ${RELEASE_VERSION} at ${RELEASE_SHA} again (just release ${RELEASE_VERSION}) to resume it; never move the tag. Inspect this run and the tag read-only first." >&2
+  echo "✗ ${tag} exists for ${RELEASE_SHA}, but Release dispatch failed. Nothing after the tag was written, so once the cause is fixed, request ${RELEASE_VERSION} at ${RELEASE_SHA} again ('just release' in a checkout at that commit) to resume it; never move the tag. Inspect this run and the tag read-only first." >&2
   exit 1
 fi
 

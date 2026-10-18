@@ -270,6 +270,10 @@ esac
 exit 0
 `)
 	write("sh", `echo "sh $*" >> "$TRACE"
+case "$*" in
+  *release-version.sh\ --unreleased*) echo empty ;;
+  *release-version.sh*) echo "${CHANGELOG_VERSION:-9.8.7}" ;;
+esac
 exit 0
 `)
 	write("sleep", `exit 0
@@ -557,7 +561,9 @@ func TestHostJustReleaseSubmitsOnlyFrozenSHAAfterLocalChangelogCheck(t *testing.
 		t.Skip("just is not installed")
 	}
 	bin, trace := fakeCommands(t)
-	cmd := exec.Command("just", "--justfile", "Justfile", "release", "9.8.7")
+	// No version argument: the recipe reads it from CHANGELOG.md (release-process.md PTG-D3),
+	// which the fake sh answers for scripts/release-version.sh.
+	cmd := exec.Command("just", "--justfile", "Justfile", "release")
 	cmd.Dir = repositoryRoot(t)
 	cmd.Env = commandEnv(bin, trace)
 	var output bytes.Buffer
@@ -573,8 +579,38 @@ func TestHostJustReleaseSubmitsOnlyFrozenSHAAfterLocalChangelogCheck(t *testing.
 	if traceIndex(lines, "pack-binaries") >= 0 {
 		t.Fatalf("host recipe still runs the retired pack-binary pin check: %v", lines)
 	}
+	if pick := traceIndex(lines, "sh scripts/release-version.sh"); pick < 0 || pick > check {
+		t.Fatalf("host recipe did not read the version from CHANGELOG.md before checking it: %v", lines)
+	}
+	if !strings.Contains(output.String(), "Releasing v9.8.7") {
+		t.Fatalf("host recipe did not print the version it chose: %s", output.String())
+	}
 	if traceIndex(lines, "git tag") >= 0 || traceIndex(lines, "git push") >= 0 {
 		t.Fatalf("host recipe wrote a tag instead of submitting a request: %v", lines)
+	}
+}
+
+// TestHostJustReleaseRefusesAVersionArgument pins PTG-D3's refusal: `just release` takes no
+// version, and an argument is refused before anything is dispatched, naming the version
+// CHANGELOG.md gives so the fix is to drop the argument.
+func TestHostJustReleaseRefusesAVersionArgument(t *testing.T) {
+	if _, err := exec.LookPath("just"); err != nil {
+		t.Skip("just is not installed")
+	}
+	bin, trace := fakeCommands(t)
+	cmd := exec.Command("just", "--justfile", "Justfile", "release", "9.8.7")
+	cmd.Dir = repositoryRoot(t)
+	cmd.Env = commandEnv(bin, trace)
+	var output bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &output, &output
+	if err := cmd.Run(); err == nil {
+		t.Fatalf("just release accepted a version argument: %s", output.String())
+	}
+	if !strings.Contains(output.String(), "takes no version; it releases 9.8.7 from CHANGELOG.md") {
+		t.Fatalf("the refusal did not name the version CHANGELOG.md gives: %s", output.String())
+	}
+	if lines := readTrace(t, trace); traceIndex(lines, "workflow run") >= 0 || traceIndex(lines, "git fetch") >= 0 {
+		t.Fatalf("a refused argument still reached git or the dispatch: %v", lines)
 	}
 }
 
@@ -846,9 +882,9 @@ func mustJSON(t *testing.T, value any) string {
 
 func TestRequestHostRecipeDoesNotTagLocally(t *testing.T) {
 	data := string(mustRead(t, "Justfile"))
-	start := strings.Index(data, "release version:")
+	start := strings.Index(data, "release *args:")
 	if start < 0 {
-		t.Fatal("Justfile has no release version recipe")
+		t.Fatal("Justfile has no release recipe")
 	}
 	body := data[start:]
 	if !strings.Contains(body, "gh workflow run release-request.yml --ref main") || !strings.Contains(body, "sha=$sha") {

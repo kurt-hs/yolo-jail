@@ -892,6 +892,168 @@ for _spelling in \
     fi
 done
 
+# --- release-version.sh: which version `just release` releases -------------------
+
+# `just release` takes no version (release-process.md PTG-D3): it releases the
+# newest dated section, read by release-version.sh. Each case is a fixture
+# changelog; today is pinned so the future-date refusal is deterministic.
+picker="$here/release-version.sh"
+
+# pick <want-exit> <label> <want-stdout> — on success stdout must be the version
+# alone; on failure the reason is on stderr, which expect_says then reads.
+pick() {
+    _got=0
+    RELEASE_VERSION_TODAY=2026-10-18 sh "$picker" "$tmp/CHANGELOG.md" >"$tmp/out" 2>"$tmp/err" || _got=$?
+    if [ "$_got" != "$1" ]; then
+        fail=$((fail + 1))
+        echo "FAIL [release-version: $2]: wanted exit $1, got $_got"
+        sed 's/^/      /' "$tmp/err"
+    elif [ "$1" = 0 ] && [ "$(cat "$tmp/out")" != "$3" ]; then
+        fail=$((fail + 1))
+        echo "FAIL [release-version: $2]: picked '$(cat "$tmp/out")', want '$3'"
+    else
+        pass=$((pass + 1))
+    fi
+}
+
+# unreleased <label> <want> — what --unreleased says about the fixture.
+unreleased() {
+    _said=$(sh "$picker" --unreleased "$tmp/CHANGELOG.md" 2>/dev/null || echo error)
+    if [ "$_said" = "$2" ]; then
+        pass=$((pass + 1))
+    else
+        fail=$((fail + 1))
+        echo "FAIL [release-version --unreleased: $1]: said '$_said', want '$2'"
+    fi
+}
+
+# The release-prep shape: [Unreleased] emptied above the renamed section.
+changelog <<'EOF'
+## [Unreleased]
+
+## [0.12.0] - 2026-10-18
+
+### Added
+
+- **A feature.** It does a thing.
+
+## [0.11.1] - 2026-10-02
+
+### Fixed
+
+- A fix.
+EOF
+pick 0 "newest dated section, dated today" 0.12.0
+unreleased "emptied" empty
+
+# Notes written under [Unreleased] after the last release do not move the pick.
+changelog <<'EOF'
+## [Unreleased]
+
+### Added
+
+- Something not released yet.
+
+## [0.11.1] - 2026-10-02
+
+### Fixed
+
+- A fix.
+EOF
+pick 0 "[Unreleased] with content above the newest dated section" 0.11.1
+unreleased "with content" content
+
+# A comment-only [Unreleased] is empty.
+changelog <<'EOF'
+## [Unreleased]
+
+<!-- next release's notes go here -->
+
+## [0.11.1] - 2026-10-02
+
+- A fix.
+EOF
+unreleased "comment only" empty
+
+# The heading spellings changelog-section.sh accepts: a `v`, an em dash, a pre-release.
+changelog <<'EOF'
+## [v1.0.0-rc.1] — 2026-10-17
+
+- A candidate.
+
+## [0.11.1] - 2026-10-02
+
+- A fix.
+EOF
+pick 0 "a v, an em dash and a pre-release" 1.0.0-rc.1
+
+# A `## [` line inside fenced code is code, not the newest section.
+changelog <<'EOF'
+## [Unreleased]
+
+```markdown
+## [9.9.9] - 2026-10-01
+```
+
+## [0.11.1] - 2026-10-02
+
+- A fix.
+EOF
+pick 0 "a heading inside fenced code is skipped" 0.11.1
+unreleased "fenced code is content" content
+
+# No dated section: [Unreleased] with content is told to rename.
+changelog <<'EOF'
+## [Unreleased]
+
+- Written, never released.
+
+## 0.10.x
+
+Retrospective.
+EOF
+pick 1 "no dated section, [Unreleased] has content" ""
+expect_says "rename '## [Unreleased]'" "no dated section names the rename"
+expect_says "just release" "no dated section names the command"
+
+# No dated section and nothing to release.
+changelog <<'EOF'
+## 0.10.x
+
+Retrospective.
+EOF
+pick 1 "no dated section at all" ""
+expect_says "nothing under [Unreleased]" "no dated section says nothing is written"
+
+# A version that is not X.Y.Z[-pre].
+changelog <<'EOF'
+## [0.12] - 2026-10-18
+
+- Something.
+EOF
+pick 1 "a version that is not X.Y.Z" ""
+expect_says "not a release version" "a bad version is named"
+
+# A date after today.
+changelog <<'EOF'
+## [0.12.0] - 2026-10-19
+
+- Something.
+EOF
+pick 1 "a date after today" ""
+expect_says "after today" "a future date is named"
+expect_says "set the heading's date" "a future date names the fix"
+
+# The real file picks a version.
+if RELEASE_VERSION_TODAY=9999-12-31 sh "$picker" >"$tmp/out" 2>"$tmp/err" &&
+    grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?' "$tmp/out"; then
+    pass=$((pass + 1))
+else
+    fail=$((fail + 1))
+    echo "FAIL [release-version: the repository's CHANGELOG.md]: picked nothing"
+    sed 's/^/      /' "$tmp/err"
+fi
+
 # --- `just release`, run -------------------------------------------------------
 
 # The recipe's refusals are behavior, not text, so they are exercised: the real
@@ -921,6 +1083,7 @@ if command -v just >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
         git init -q -b main .
         cp "$root/Justfile" Justfile
         cp "$script" scripts/changelog-section.sh
+        cp "$here/release-version.sh" scripts/release-version.sh
         # The recipe runs no Go: the pack binaries' pin check it used to run is retired
         # (docs/reference/pack-binaries.md OQ-BP8). A recording stub `go` stands in, so a
         # recipe that ran one again is caught below rather than reaching a real toolchain.
@@ -949,21 +1112,42 @@ EOF
         git remote add origin "$rr/origin.git"
         git remote add other "$rr/other.git"
 
-        # 0. No section for the version: refused before anything else is asked.
+        # 0. A version argument: refused, naming the version the changelog gives, and
+        # nothing else is asked (PTG-D3).
         git push -q origin main
-        if just release 0.11.2 >"$rr/out" 2>&1; then
-            echo "UNGATED-nosection"
-        elif git ls-remote --tags origin | grep -q 'v0.11.2'; then
-            echo "TAGGED-nosection"
+        if just release 0.11.1 >"$rr/out" 2>&1; then
+            echo "UNGATED-arg"
+        elif ! grep -qF "takes no version; it releases 0.11.1 from CHANGELOG.md" "$rr/out"; then
+            echo "UNSAID-arg"
         else
-            echo "ok-nosection"
+            echo "ok-arg"
         fi
+
+        # 0a. The changelog cannot name a release: each is refused before git is asked,
+        # naming the fix. The fixture is the working tree's, restored after each.
+        printf '# Changelog\n\n## [Unreleased]\n\n- Not released yet.\n' >CHANGELOG.md
+        if just release >"$rr/out" 2>&1; then
+            echo "UNGATED-nodated"
+        elif ! grep -qF "rename '## [Unreleased]'" "$rr/out"; then
+            echo "UNSAID-nodated"
+        else
+            echo "ok-nodated"
+        fi
+        printf '# Changelog\n\n## [0.11.2] - 2999-01-01\n\n- From the future.\n' >CHANGELOG.md
+        if just release >"$rr/out" 2>&1; then
+            echo "UNGATED-future"
+        elif ! grep -qF "after today" "$rr/out"; then
+            echo "UNSAID-future"
+        else
+            echo "ok-future"
+        fi
+        git checkout -q -- CHANGELOG.md
         git --git-dir="$rr/origin.git" branch -q -D main
         git fetch -q --prune origin
 
         # 1. The commit is on `other` only: refused, and no tag reaches origin.
         git push -q other main
-        if just release 0.11.1 >"$rr/out" 2>&1; then
+        if just release >"$rr/out" 2>&1; then
             echo "UNGATED-other"
         elif git ls-remote --tags origin | grep -q 'v0.11.1'; then
             echo "TAGGED-other"
@@ -980,7 +1164,7 @@ EOF
         # retire the tracking ref itself and leave nothing for the prune to do.
         git push -q origin main:gone
         git --git-dir="$rr/origin.git" branch -q -D gone
-        if just release 0.11.1 >"$rr/out" 2>&1; then
+        if just release >"$rr/out" 2>&1; then
             echo "UNGATED-stale"
         else
             echo "ok-stale"
@@ -991,13 +1175,29 @@ EOF
 
         git push -q origin main
 
+        # 2a. The newest dated version is already tagged at another commit, and
+        # nothing is under [Unreleased]: refused, naming the tag's commit.
+        elsewhere=$(git commit-tree -m "an earlier commit" "HEAD^{tree}")
+        git tag -a -m "yolo-jail 0.11.1" v0.11.1 "$elsewhere"
+        git push -q origin v0.11.1
+        if just release >"$rr/out" 2>&1; then
+            echo "UNGATED-tagged"
+        elif ! grep -qF "already tagged at $elsewhere" "$rr/out" || ! grep -qF "nothing new to release" "$rr/out"; then
+            echo "UNSAID-tagged"
+        else
+            echo "ok-tagged"
+        fi
+        git tag -d v0.11.1 >/dev/null 2>&1 || true
+        git push -q origin --delete v0.11.1 >/dev/null 2>&1 || true
+
         # Every refusal above must occur before the dispatch stub is invoked.
         if [ ! -s "$rr/gh-calls" ]; then echo "ok-nodispatch"; else echo "DISPATCHED-refusal"; fi
 
-        # 3. On origin's main: submit exact HEAD to the main-sourced workflow,
-        # but create neither a local tag nor a remote tag.
+        # 3. On origin's main: say the version it chose, submit exact HEAD to the
+        # main-sourced workflow, but create neither a local tag nor a remote tag.
         requested_sha=$(git rev-parse HEAD)
-        if just release 0.11.1 >"$rr/out" 2>&1 \
+        if just release >"$rr/out" 2>&1 \
+            && grep -qF "Releasing v0.11.1" "$rr/out" \
             && grep -qx "workflow run release-request.yml --ref main -f version=0.11.1 -f sha=$requested_sha" "$rr/gh-calls" \
             && [ "$(wc -l <"$rr/gh-calls")" -eq 1 ] \
             && [ -z "$(git tag -l)" ] && [ -z "$(git ls-remote --tags origin)" ]; then
@@ -1009,7 +1209,7 @@ EOF
         # 4. A dispatch failure cannot reserve the version either. Its refusal
         # must name the failed boundary rather than claiming publication.
         : >"$rr/gh-calls"
-        if GH_DISPATCH_EXIT=1 just release 0.11.1 >"$rr/out" 2>&1; then
+        if GH_DISPATCH_EXIT=1 just release >"$rr/out" 2>&1; then
             echo "UNGATED-dispatchfailure"
         elif [ -n "$(git tag -l)" ] || [ -n "$(git ls-remote --tags origin)" ]; then
             echo "TAGGED-dispatchfailure"
@@ -1019,10 +1219,43 @@ EOF
             echo "ok-dispatchfailure"
         fi
 
+        # 5. The tag-only resume: v0.11.1 is already tagged at HEAD, so the request
+        # goes on, and the workflow decides whether it can resume.
+        : >"$rr/gh-calls"
+        git tag -a -m "yolo-jail 0.11.1" v0.11.1 HEAD
+        git push -q origin v0.11.1
+        if just release >"$rr/out" 2>&1 \
+            && grep -qF "already tagged at HEAD" "$rr/out" \
+            && grep -qx "workflow run release-request.yml --ref main -f version=0.11.1 -f sha=$requested_sha" "$rr/gh-calls"; then
+            echo "ok-resume"
+        else
+            echo "REFUSED-resume"
+        fi
+        git tag -d v0.11.1 >/dev/null 2>&1 || true
+        git push -q origin --delete v0.11.1 >/dev/null 2>&1 || true
+
+        # 6. Tagged elsewhere with notes under [Unreleased]: the refusal says to rename
+        # it for the next version. A commit of its own, since a dirty tree is refused.
+        printf '# Changelog\n\n## [Unreleased]\n\n- Since 0.11.1.\n\n' >"$rr/head"
+        tail -n +2 CHANGELOG.md | sed '1{/^$/d;}' >>"$rr/head"
+        cp "$rr/head" CHANGELOG.md
+        git commit -qam "notes since 0.11.1"
+        git push -q origin main
+        git tag -a -m "yolo-jail 0.11.1" v0.11.1 "$requested_sha"
+        git push -q origin v0.11.1
+        : >"$rr/gh-calls"
+        if just release >"$rr/out" 2>&1; then
+            echo "UNGATED-nextversion"
+        elif ! grep -qF "[Unreleased] holds the changes since" "$rr/out" || [ -s "$rr/gh-calls" ]; then
+            echo "UNSAID-nextversion"
+        else
+            echo "ok-nextversion"
+        fi
+
         # No run of the recipe above asked Go for anything.
         if [ ! -s "$rr/go-calls" ]; then echo "ok-nogo"; else echo "RAN-nogo"; fi
     ) >"$tmp/release-results" 2>"$tmp/release-err"
-    for _case in nosection other stale nodispatch origin dispatchfailure nogo; do
+    for _case in arg nodated future other stale tagged nodispatch origin dispatchfailure resume nextversion nogo; do
         if grep -qx "ok-$_case" "$tmp/release-results"; then
             pass=$((pass + 1))
         else

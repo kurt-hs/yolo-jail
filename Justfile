@@ -466,15 +466,30 @@ done:
 # immutable tag, waits for the exact original Release/GoReleaser run to succeed, then dispatches
 # publish.yml on main. Dispatch acceptance is not publication success; inspect Actions. See
 # docs/reference/release-process.md for capability boundaries and fail-closed partial state.
-release version:
+#
+# IT TAKES NO VERSION (release-process.md PTG-D3): the version is CHANGELOG.md's newest dated
+# section, the one the release-prep commit renamed from [Unreleased] (scripts/release-version.sh).
+# An argument is refused, naming the version it would release. A version already tagged at
+# another commit is refused; one tagged at HEAD goes on, for the tag-only resume the request
+# workflow verifies.
+#
+# Request a release of CHANGELOG.md's newest dated section, for this exact commit
+release *args:
     #!/usr/bin/env bash
     set -euo pipefail
-    v="{{version}}"
-    v="${v#v}"
-    if ! printf '%s\n' "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
-        echo "✗ '{{version}}' is not a release version (want X.Y.Z or X.Y.Z-pre)." >&2
+    if [ -n {{ quote(args) }} ]; then
+        if v="$(sh scripts/release-version.sh 2>/dev/null)"; then
+            echo "✗ 'just release' takes no version; it releases $v from CHANGELOG.md — run 'just release' with no argument." >&2
+        else
+            echo "✗ 'just release' takes no version; it reads it from CHANGELOG.md's newest dated section — run 'just release' with no argument." >&2
+        fi
         exit 2
     fi
+    if ! v="$(sh scripts/release-version.sh)"; then
+        echo "  No release request was sent." >&2
+        exit 1
+    fi
+    echo "Releasing v$v, CHANGELOG.md's newest dated section."
     if [ -n "$(git status --porcelain)" ]; then
         echo "✗ the working tree is dirty — commit or stash first. No release request was sent." >&2
         git status --short >&2
@@ -489,6 +504,25 @@ release version:
         echo "✗ HEAD ($sha) is not contained in origin/main — push/merge this exact commit first." >&2
         echo "  No release request was sent and no newer main commit will be substituted." >&2
         exit 1
+    fi
+    if ! refs="$(git ls-remote origin "refs/tags/v$v" "refs/tags/v$v^{}")"; then
+        echo "✗ could not ask origin whether v$v is already tagged — restore connectivity and retry. No release request was sent." >&2
+        exit 1
+    fi
+    if [ -n "$refs" ]; then
+        # An annotated tag lists its object and, peeled, its commit; a lightweight one only
+        # its commit.
+        tagged="$(printf '%s\n' "$refs" | awk -v peeled="refs/tags/v$v^{}" '$2 == peeled { print $1 }')"
+        [ -n "$tagged" ] || tagged="$(printf '%s\n' "$refs" | awk 'NR == 1 { print $1 }')"
+        if [ "$tagged" = "$sha" ]; then
+            echo "v$v is already tagged at HEAD; requesting it again, which only a tag-only release can resume (docs/reference/release-process.md#resuming-a-tag-only-release)."
+        elif [ "$(sh scripts/release-version.sh --unreleased)" = content ]; then
+            echo "✗ v$v, CHANGELOG.md's newest dated section, is already tagged at $tagged, and [Unreleased] holds the changes since — rename '## [Unreleased]' to '## [X.Y.Z] - $(date -u +%Y-%m-%d)' for the next version, commit, and run 'just release' again. No release request was sent." >&2
+            exit 1
+        else
+            echo "✗ v$v, CHANGELOG.md's newest dated section, is already tagged at $tagged, and nothing is under [Unreleased] — there is nothing new to release. No release request was sent." >&2
+            exit 1
+        fi
     fi
     if ! sh scripts/changelog-section.sh "$v" >/dev/null; then
         echo "✗ CHANGELOG.md has no usable section for $v — write and commit it, then retry. No release request was sent." >&2

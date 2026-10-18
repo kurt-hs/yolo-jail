@@ -7,9 +7,10 @@
 # yolo-jaild) also ship inside the NIX IMAGE and must NOT be listed here;
 # goprobe is dev-only.
 #
-# Releasing = `just release <version>`: it refuses unless CHANGELOG.md has a
-# written section for the version and the tree is clean, then pushes the v* tag
-# that .github/workflows/release.yml runs this config on. The release body is
+# Releasing = `just release`, which takes its version from CHANGELOG.md's newest
+# dated section: it refuses unless that section is written and the tree is
+# clean, then requests the v* tag that .github/workflows/release.yml runs this
+# config on. The release body is
 # that section, passed as --release-notes; see the note where `changelog:` was.
 #
 # Version stamping: internal/version resolves a baked stamp before live
