@@ -18,17 +18,34 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 )
 
-// sessionHomeProbe prints, for the session it runs in, the directory pi would read its config
+// sessionHomeProbeTemplate prints, for the session it runs in, the directory pi would read its config
 // from, the provider that directory's settings.json names, the shared copy's provider, the
 // settings file's digest, and whether auth.json is linked to the shared login.
-const sessionHomeProbe = `printf 'DIR=%s\n' "${PI_CODING_AGENT_DIR-unset}"; ` +
-	`printf 'PROV=%s\n' "$(jq -r .defaultProvider "${PI_CODING_AGENT_DIR:-/nonexistent}/settings.json" 2>/dev/null)"; ` +
+const sessionHomeProbeTemplate = `printf 'DIR=%s\n' "${AGENT_DIR_VAR-unset}"; ` +
+	`printf 'PROV=%s\n' "$(jq -r .defaultProvider "${AGENT_DIR_VAR:-/nonexistent}/settings.json" 2>/dev/null)"; ` +
 	`printf 'SHARED=%s\n' "$(jq -r .defaultProvider ~/.pi/agent/settings.json 2>/dev/null)"; ` +
-	`printf 'SUM=%s\n' "$(sha256sum "${PI_CODING_AGENT_DIR:-/nonexistent}/settings.json" 2>/dev/null | cut -c1-16)"; ` +
-	`if [ -L "${PI_CODING_AGENT_DIR:-/nonexistent}/auth.json" ]; then echo AUTH=linked; else echo AUTH=missing; fi; ` +
-	`if [ -f "${PI_CODING_AGENT_DIR:-/nonexistent}/extensions/yolo-provider-policy.js" ]; then echo EXT=present; else echo EXT=missing; fi`
+	`printf 'SUM=%s\n' "$(sha256sum "${AGENT_DIR_VAR:-/nonexistent}/settings.json" 2>/dev/null | cut -c1-16)"; ` +
+	`if [ -L "${AGENT_DIR_VAR:-/nonexistent}/auth.json" ]; then echo AUTH=linked; else echo AUTH=missing; fi; ` +
+	`if [ -f "${AGENT_DIR_VAR:-/nonexistent}/extensions/yolo-provider-policy.js" ]; then echo EXT=present; else echo EXT=missing; fi`
+
+// sessionHomeProbe is the probe for the variable the shipped pi pack's session-home declaration
+// names, read from the pack rather than spelled here.
+func sessionHomeProbe(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "packs", "pi", "pack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, problems := packdecl.Decode(data)
+	if len(problems) > 0 || len(m.SessionHomes()) != 1 {
+		t.Fatalf("the shipped pi pack must declare one session home: %v", problems)
+	}
+	return strings.ReplaceAll(sessionHomeProbeTemplate, "AGENT_DIR_VAR", m.SessionHomes()[0].Env)
+}
 
 // Each field is matched as a whole LINE: the boot echoes the command it runs, probe text and all,
 // on a line of its own that starts elsewhere.
@@ -53,6 +70,7 @@ func sessionHomeReport(t *testing.T, out string) map[string]string {
 
 func TestEachSessionReadsItsOwnPiProfile(t *testing.T) {
 	requireJail(t)
+	probe := sessionHomeProbe(t)
 	// Both providers' keys ride env_sources, the channel the credential gate delivers into pi's
 	// own env file (as in TestPiRunsOnEveryProviderOfItsSet); the shell's copies are blanked.
 	t.Setenv("ZAI_API_KEY", "")
@@ -66,9 +84,9 @@ func TestEachSessionReadsItsOwnPiProfile(t *testing.T) {
 	// so the test can see A's file after B and C entered.
 	const release = "release-session-home"
 	first := startYoloBackground(t, "first", dir,
-		sessionHomeProbe+`; echo A-READY; `+
+		probe+`; echo A-READY; `+
 			`for _ in $(seq 1 600); do [ -f /workspace/`+release+` ] && break; sleep 0.5; done; `+
-			`echo A-AFTER; `+sessionHomeProbe)
+			`echo A-AFTER; `+probe)
 	t.Cleanup(func() { _ = os.WriteFile(filepath.Join(dir, release), []byte("go\n"), 0o644) })
 	deadline := time.Now().Add(jailTimeout())
 	for !aReadyLine.MatchString(first.combined()) {
@@ -87,7 +105,7 @@ func TestEachSessionReadsItsOwnPiProfile(t *testing.T) {
 	a := sessionHomeReport(t, before[:aReadyLine.FindStringIndex(before)[0]])
 
 	// Session B: an attach on another profile.
-	rb := runCommand(t, dir, append(jailRunArgs(), "-p", "pi=openrouter", "--", "bash", "-lc", sessionHomeProbe))
+	rb := runCommand(t, dir, append(jailRunArgs(), "-p", "pi=openrouter", "--", "bash", "-lc", probe))
 	if rb.rc != 0 {
 		t.Fatalf("the -p attach failed: rc %d\n%s", rb.rc, rb.combined())
 	}
@@ -97,7 +115,7 @@ func TestEachSessionReadsItsOwnPiProfile(t *testing.T) {
 	b := sessionHomeReport(t, rb.stdout)
 
 	// Session C: a bare attach running no pi (P5: core cannot tell what an attach runs).
-	rc := runCommand(t, dir, append(jailRunArgs(), "--", "bash", "-lc", sessionHomeProbe))
+	rc := runCommand(t, dir, append(jailRunArgs(), "--", "bash", "-lc", probe))
 	if rc.rc != 0 {
 		t.Fatalf("the bare attach failed: rc %d\n%s", rc.rc, rc.combined())
 	}
@@ -120,7 +138,7 @@ func TestEachSessionReadsItsOwnPiProfile(t *testing.T) {
 
 	for name, r := range map[string]map[string]string{"A": a, "B": b, "C": c} {
 		if r["DIR"] == "" || r["DIR"] == "unset" || !strings.Contains(r["DIR"], "/.pi/.yolo-sessions/") {
-			t.Errorf("session %s: PI_CODING_AGENT_DIR = %q, want a session home under ~/.pi/.yolo-sessions/", name, r["DIR"])
+			t.Errorf("session %s: the session-home variable = %q, want a session home under ~/.pi/.yolo-sessions/", name, r["DIR"])
 		}
 		if r["AUTH"] != "linked" {
 			t.Errorf("session %s: auth.json in its session home must link the shared login (P3)", name)

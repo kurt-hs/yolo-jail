@@ -36,6 +36,12 @@ const sessionRenderLockName = ".session-render.lock"
 // baseline sidecars, one directory per session id (SP-D14).
 const sessionSidecarsDir = "sessions"
 
+// seededBaselineSuffix marks a session baseline seeded from the shared one (seedSessionBaselines)
+// that no render of the session has replaced yet. Capture skips such a home: its file, if any, is
+// a render that stopped before its baseline was written, and diffing it against the shared
+// baseline would read that session's profile values as the user's edits.
+const seededBaselineSuffix = ".seeded"
+
 // prepareSessionHomesStep is the boot step: a session's pass with a valid YOLO_SESSION_ID gets a
 // session home per declaration, and every other run (the jail's own boot, a raw exec with no id,
 // a sealed build, which runs no agent) gets none and renders the shared copies as today.
@@ -200,7 +206,12 @@ func prepareSessionHomes(e *Env, packs []*packload.Pack, id string) error {
 		}
 		surfaces = append(surfaces, pl.surfaces...)
 	}
-	if err := seedSessionBaselines(base, sess, surfaces); err != nil {
+	// Under the render lock: a pass with no session id may be rewriting the shared baseline in
+	// place, and a torn copy would make this session's first render a first migration.
+	release := holdSessionRenderLock(e)
+	err := seedSessionBaselines(base, sess, surfaces)
+	release()
+	if err != nil {
 		return refuse(err)
 	}
 	e.session = sess
@@ -233,6 +244,9 @@ func seedSessionBaselines(base render.Target, sess *render.Session, surfaces []m
 		data, err := os.ReadFile(base.LastRenderPath(s.Agent, s.Name))
 		if err != nil {
 			continue // no shared baseline: the shared copy was never rendered, so nothing was captured
+		}
+		if err := writeSidecar(at, to+seededBaselineSuffix, ""); err != nil {
+			return fmt.Errorf("cannot mark this session's seeded baseline %s: %w", to, err)
 		}
 		if err := writeSidecar(at, to, string(data)); err != nil {
 			return fmt.Errorf("cannot seed this session's baseline %s: %w\n\n"+

@@ -115,6 +115,15 @@ type Env struct {
 	// captureHomes are the session homes this pass captures from before it renders each
 	// surface (sessioncapture.go, OQ-SP2), found under the render lock by beginSessionCapture.
 	captureHomes []sessionCaptureHome
+	// captureOnly marks the compose captureFromSessionHomes runs over ANOTHER session's home: it
+	// takes that file's own edits against that session's baseline and nothing of this pass's
+	// profile selection, whose lift and clears belong to the session that renders the file (the
+	// review's M1: applied there, a selection the capturing pass lacks cleared a model the user
+	// had saved in another session).
+	captureOnly bool
+	// keepHomes are the session homes (by id) this pass could not capture a file from: the jail's
+	// own boot keeps them, so a file pi was writing is read again at the next entry, not lost.
+	keepHomes map[string]bool
 
 	// genFailures accumulates the config-generator failures collected by genStep.
 	// A12: a generator failure is FATAL — boot must not hand the agent a

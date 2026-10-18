@@ -80,6 +80,9 @@ func (j *sessionHomeJail) pass(t *testing.T, id, profile string, sessionPass boo
 		_ = os.Setenv(SessionIDEnv, id)
 	}
 	use := `{"pi":"` + profile + `"}`
+	if profile == "" {
+		use = `{}` // no profile selected for pi
+	}
 	errw := &bytes.Buffer{}
 	e := &Env{Home: j.home, Workspace: j.workspace, Stderr: errw, Vars: map[string]string{
 		"YOLO_PROVIDERS": composedFor(t, twoProviders, ""), "YOLO_USE_PROFILES": use,

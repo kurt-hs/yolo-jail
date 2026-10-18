@@ -238,3 +238,18 @@ func TestBuildMergesASubdirectoryHoldingARenderedFile(t *testing.T) {
 		t.Errorf("a file the program created inside a merged directory is a stray named by its path; got %v", strays)
 	}
 }
+
+// A lock the program takes in its session home (`<file>.lock`, made by mkdir, SP-D10) is neither
+// linked nor a stray, so a pass during a write names nothing and a leftover lock keeps no home.
+func TestALockIsNeverAStray(t *testing.T) {
+	_, s := fixture(t)
+	if err := Build(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(s.Home, "settings.json.lock"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if strays, err := Strays(s); err != nil || len(strays) != 0 {
+		t.Errorf("Strays = %v, %v; a lock is the program's, never a stray", strays, err)
+	}
+}

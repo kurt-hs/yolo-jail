@@ -145,6 +145,14 @@ func noteSessionHomeStrays(e *Env, homes []sessionCaptureHome) {
 		len(found), plural(len(found), "y", "ies"), strings.Join(found, ", "), strings.Join(names, ", ")))
 }
 
+// keepSessionHome marks id's home as one the jail's own boot keeps (Env.keepHomes).
+func (e *Env) keepSessionHome(id string) {
+	if e.keepHomes == nil {
+		e.keepHomes = map[string]bool{}
+	}
+	e.keepHomes[id] = true
+}
+
 // retireSessionHomes is the jail's own boot removing every session home the previous container
 // left once it has captured them (SP-D7), with that session's baseline sidecars; a home holding
 // a stray is kept, with its sidecars, so nothing is lost (SP-D15).
@@ -155,7 +163,7 @@ func retireSessionHomes(e *Env, homes []sessionCaptureHome) {
 	}
 	kept := map[string]bool{}
 	for _, h := range homes {
-		if len(homeStrays(h)) > 0 {
+		if len(homeStrays(h)) > 0 || e.keepHomes[h.id] {
 			kept[h.id] = true
 			continue
 		}
@@ -208,6 +216,7 @@ func captureFromSessionHomes(e *Env, surface manifest.Surface, l surfaceLayers, 
 		}
 		if c, ok := codec.LookupCodec(surface.Codec); ok {
 			if _, derr := c.Decode(render.StripGeneratedHeader(data)); derr != nil {
+				e.keepSessionHome(h.id)
 				e.note(fmt.Sprintf("capture: skipped %s this pass: it does not parse (%v), so it is "+
 					"read again at the next entry, never as a deletion", file, derr))
 				continue
@@ -215,6 +224,7 @@ func captureFromSessionHomes(e *Env, surface manifest.Surface, l surfaceLayers, 
 		}
 		at := *e
 		at.captureHomes = nil
+		at.captureOnly = true
 		at.session = &render.Session{
 			Redirects:  []render.Redirect{{From: h.decl.shared, To: h.home}},
 			SidecarDir: filepath.Join(sidecars, sessionSidecarsDir, h.id),
@@ -228,8 +238,12 @@ func captureFromSessionHomes(e *Env, surface manifest.Surface, l surfaceLayers, 
 		if _, err := os.Stat(baseline); err != nil {
 			continue
 		}
+		if _, err := os.Lstat(baseline + seededBaselineSuffix); err == nil {
+			continue // the session's render never finished: its file is not the user's
+		}
 		r, err := composeStatefulSurface(&at, surface, l.hostBytes, l.computed, l.inFull, contribs)
 		if err != nil {
+			e.keepSessionHome(h.id)
 			e.warn(fmt.Sprintf("warning: capture from %s skipped: %v", file, err))
 			continue
 		}

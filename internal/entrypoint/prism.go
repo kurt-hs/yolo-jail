@@ -608,6 +608,10 @@ func composeStatefulSurface(e *Env, surface manifest.Surface, hostBytes []byte, 
 		e.warn(surface.Agent + "/" + surface.Name + ": " + problem)
 	}
 	selectionRecord := readSelectionRecord(e, surface.Agent, surface.Name)
+	if e.captureOnly {
+		// A capture of another session's home: its own edits only, no selection (Env.captureOnly).
+		selection, selectionRecord = nil, nil
+	}
 	if len(selection) > 0 && surface.Kind() != codec.KindObject {
 		// A keyless surface has no keys to lift, so there is nothing the namespace
 		// could mean. Dropped above; named here because a pack author reading a
@@ -749,6 +753,8 @@ func persistStatefulSurface(e *Env, r *statefulRender) error {
 		surfaceText(surface, out.LastRenderBytes)); err != nil {
 		return err
 	}
+	// A session's own baseline now matches its file: no longer the seeded one (seededBaselineSuffix).
+	_ = os.Remove(prismLastRenderPath(e, surface.Agent, surface.Name) + seededBaselineSuffix)
 	// The selection record, if this surface carries a selection at all: what yolo's
 	// selection mechanism wrote THIS boot, so the next boot can tell its own values
 	// from the user's. Beside the last_render write for the reason

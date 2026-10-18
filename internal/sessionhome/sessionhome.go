@@ -309,7 +309,7 @@ func Strays(s Spec) ([]string, error) {
 		}
 		for _, ent := range inner {
 			rel := dir + "/" + ent.Name()
-			if files[rel] || merged[rel] {
+			if files[rel] || merged[rel] || packdecl.SessionHomeNameProblem(ent.Name()) != "" {
 				continue
 			}
 			if ent.Type()&os.ModeSymlink != 0 {
@@ -323,7 +323,8 @@ func Strays(s Spec) ([]string, error) {
 	}
 	for _, ent := range entries {
 		name := ent.Name()
-		if rendered[name] {
+		// A `*.lock` is the program's own lock (SP-D10), never linked and never a stray.
+		if rendered[name] || packdecl.SessionHomeNameProblem(name) != "" {
 			continue
 		}
 		if ent.Type()&os.ModeSymlink != 0 {

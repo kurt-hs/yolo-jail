@@ -322,8 +322,10 @@ func prepareHostSessionHomes(launch *hostComposition, environ []string, errw io.
 		homes.vars = append(homes.vars, d.env+"="+sessionHome)
 		fmt.Fprintf(errw, "yolo host: yolo SET %s=%s for %s, from pack %s: this launch's own config "+
 			"directory, rendered for %s, with everything else linked to %s, which it leaves untouched; "+
-			"yolo removes it after %s exits.\n", d.env, sessionHome, launch.agent, d.pack,
-			hostSessionSelectionWords(launch), d.shared, launch.agent)
+			"yolo removes it after %s exits, so a setting %s saves during this launch is not kept "+
+			"(to keep one, save it in %s run directly, without `yolo host`).\n", d.env, sessionHome,
+			launch.agent, d.pack, hostSessionSelectionWords(launch), d.shared, launch.agent, launch.agent,
+			launch.agent)
 	}
 	if len(homes.dirs) == 0 {
 		return nil, environ, nil
