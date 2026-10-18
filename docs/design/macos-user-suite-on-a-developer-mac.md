@@ -3,14 +3,14 @@ title: "What may a macos-user test assume about its host?"
 date: 2026-10-18
 status: accepted
 stage: DECIDED
-next: "Integrate the reviewed candidate, then run `-run '^TestMacosUser'` on a Mac that grants only the run-as rule; native-Mac runtime remains unverified"
+next: "Run `-run '^TestMacosUser'` on a Mac that grants only the run-as rule; native-Mac runtime remains unverified"
 tags: [design, macos-user, testing, privilege, seatbelt, measurement]
-summary: "The macos-user suite takes no privilege beyond the run-as rule yolo installs; a closed unified log store is a countable policy skip, and mise shims remain ahead of the floor. The answered decisions and implementation are recorded in candidate commits, not yet landed on main; native-Mac runtime remains unverified."
+summary: "The macos-user suite takes no privilege beyond the run-as rule yolo installs; a closed unified log store is a countable policy skip, and mise shims remain ahead of the floor. The answered decisions and implementation are recorded; native-Mac runtime remains unverified."
 ---
 
 # What may a macos-user test assume about its host?
 
-**Status:** 2026-10-18. All four rulings are compacted into the [Decision Ledger](#decision-ledger). The fixture changes are in original commits `98715e67b` and `41dd11e3f`, preserved in the candidate merge and not landed on main. Linux and darwin compile/test evidence is recorded in the handoff; native-Mac runtime is not verified.
+**Status:** 2026-10-18. All four rulings are compacted into the [Decision Ledger](#decision-ledger). The fixture changes are preserved in original commits `98715e67b` and `41dd11e3f`. Linux and darwin compile/test evidence is recorded in the handoff; native-Mac runtime is not verified.
 
 
 > **In short.** The suite may assume only what the backend itself asks a host for. A test that
