@@ -157,7 +157,14 @@ func (o *Options) runCtxAttach(rt, cname string, args []string, deadline time.Ti
 	if unshare {
 		argv = append([]string{"podman", "unshare", "--"}, argv...)
 	}
-	timeout, ok := stepTimeout(ctxInjectDeadline, deadline)
+	// The pid check after the verb keeps its own share of the step, so a verb that used the rest
+	// of it cannot leave a mount that landed reported as one that did not.
+	// A quarter of what is left, at most the inspect's own bound.
+	verbDeadline := deadline
+	if !deadline.IsZero() {
+		verbDeadline = deadline.Add(-min(ctxPidInspectTimeout, time.Until(deadline)/4))
+	}
+	timeout, ok := stepTimeout(ctxInjectDeadline, verbDeadline)
 	if !ok {
 		return errors.New("the mount step ran out of time before the injector could run")
 	}

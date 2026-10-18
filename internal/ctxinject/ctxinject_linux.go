@@ -329,3 +329,10 @@ func detachHere(rel string) error {
 	}
 	return nil
 }
+
+// DieWithParent asks the kernel to SIGKILL this process when its parent ends. The host's step
+// deadline kills the process it started, which under rootless podman is `podman unshare`, not
+// this injector; without this an injector past its deadline could still mount afterwards.
+func DieWithParent() error {
+	return unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(unix.SIGKILL), 0, 0, 0)
+}

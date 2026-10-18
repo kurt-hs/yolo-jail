@@ -305,13 +305,8 @@ func (o *Options) applyPlan(run *applyRun, scope *config.ScopeCheck) []applyChan
 	}
 	// NO RECORD, READ-WRITE MOUNTS: those come from the user scope, which the workspace config
 	// and its record never carry, so nothing else can say whether they moved (M3).
-	if run.rt != "macos-user" && run.mode.running && !run.mode.unknown && !in.mountRecordOK { // parity: NotApplicable — macos-user has no mounts, only links each session re-stages
-		for _, m := range o.configCtxMounts(run.rt, run.cfg, nil) {
-			if m.rw {
-				in.userMountsUnknown = true
-				break
-			}
-		}
+	if run.mode.running && !run.mode.unknown && !in.mountRecordOK {
+		in.userMountsUnknown = userScopeMountsUnknown(run.rt, o.configCtxMounts(run.rt, run.cfg, nil))
 	}
 	if scope != nil {
 		changedLabels := map[string]bool{}
@@ -566,4 +561,21 @@ func (o *Options) configChangesPending(rt, cname string, cfg *jsonx.OrderedMap, 
 	}
 	r, err := config.ScopeChanges(o.Workspace, config.NewScopeCheck(o.Workspace, brokers, read))
 	return err == nil && r.ScopeChanged
+}
+
+// userScopeMountsUnknown reports whether a running jail with no readable mount record may lack a
+// read-write mount the user scope lists. PODMAN ONLY: its record is what would vouch, and a
+// launch writes one, so a restart clears the line. Apple Container never writes a record and
+// binds its shares when its VM boots, so a line there would stand on every apply and attach,
+// restarts included; macos-user has no mounts, only links each session re-stages.
+func userScopeMountsUnknown(rt string, mounts []configCtxMount) bool {
+	if rt != "podman" { // parity: Warned — only podman keeps the record a read-write mount change is read from
+		return false
+	}
+	for _, m := range mounts {
+		if m.rw {
+			return true
+		}
+	}
+	return false
 }

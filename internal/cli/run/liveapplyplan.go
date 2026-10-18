@@ -296,7 +296,9 @@ func buildApplyPlan(in applyPlanInput) []applyChange {
 		// changed at one is a removal and an addition of the same destination: the addition run
 		// first finds it taken, and the mount is lost.
 		for _, m := range in.mountRemoves {
-			o, why := in.elementOutcome(mo, mwhy, m.Dest, m.Source)
+			// A removal names only its destination: the detach never reads the source, which
+			// may since have become a file or gone.
+			o, why := in.elementOutcome(mo, mwhy, m.Dest, "")
 			plan = append(plan, applyChange{kind: changeMountRemove, sign: "-", label: mountLabel(m.Dest, m.RW),
 				key: "mounts", outcome: o, reason: why, note: openFileNote, mountRemove: m})
 			elements++

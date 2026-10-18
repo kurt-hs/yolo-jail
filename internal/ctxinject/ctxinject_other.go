@@ -29,3 +29,6 @@ func Detach(pid int, dest string) error {
 	}
 	return errNotLinux
 }
+
+// DieWithParent is a no-op off Linux, where nothing is injected.
+func DieWithParent() error { return nil }

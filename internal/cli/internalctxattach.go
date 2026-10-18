@@ -27,6 +27,11 @@ type ctxInjector struct {
 }
 
 func runCtxAttach(args []string) int {
+	// Ends with its parent, so a host deadline that kills `podman unshare` ends this too.
+	if err := ctxinject.DieWithParent(); err != nil {
+		fmt.Fprintln(os.Stderr, "yolo internal "+ctxAttachVerb+": "+err.Error())
+		return 1
+	}
 	return ctxAttachMain(args, os.Stderr, ctxInjector{attach: ctxinject.Attach, detach: ctxinject.Detach})
 }
 
