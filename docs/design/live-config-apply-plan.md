@@ -1,109 +1,208 @@
 ---
-title: "Live config apply: implementation sketch"
-status: draft
-stage: SKETCH
-next: "Complete this into the implementation plan against the tree; every ruling is in"
-tags: [plan, sketch, config, mounts, github, live-apply]
+title: "Live config apply: implementation plan"
+status: accepted
+stage: DECIDED
+next: "Build lanes A, B and C in parallel worktrees, then integrate serially (task 4)"
+depends-on: [live-config-apply.md]
+tags: [plan, config, mounts, github, live-apply]
 ---
 
-# Live config apply: implementation sketch
+# Live config apply: implementation plan
 
-**Status:** 2026-10-18. This is incomplete, and it is unstable while
-[`live-config-apply.md`](live-config-apply.md)'s questions are open. **Do not build from it.** The
-design wins on behavior. This file only parks the material below the design's altitude.
+**Status:** 2026-10-18. Completed against the tree, written against `42541fb78`.
+**Design:** [`live-config-apply.md`](live-config-apply.md), every question ruled
+([Decision Ledger](live-config-apply.md#decision-ledger)).
 
-## Reuse, not fork
+Precedence: the design wins on behavior, the tree wins on fact (cosmetic drift only), this file is
+advice and is the first thing to be wrong. **Stop and report; do not commit** when a test does not
+fail the way a task predicts, a file a task names is dirty with someone else's work, a symbol a task
+names is gone, the fix needs a file outside the task's fence, or a gate fails outside the task's
+scope.
 
-- **The gate.** Call `config.ApproveConfigAndScope` (`internal/config/snapshot.go:329`) through the
-  same wrapper shape as `Options.checkConfigChanges` (`internal/cli/run/preflight.go:416-450`),
-  reading through `config.ReadWorkspaceForGate`. Use the same `changePrompter.PromptReport` and
-  `declineLines`.
-  - The outcome block needs a hook between the diff and the question. Add one parameter for
-    pre-question lines; do not copy the prompt.
-- **The scope read.** Use `brokeredScopeForCheck` (`internal/cli/check/check.go`) or
-  `brokeredScopeCheck` (`internal/cli/run/brokeredscope.go:35`), whichever already takes a
-  workspace without a launch plan.
-- **The lock.** Use `holdLaunchLock` / `acquireWorkspaceLock` (`internal/cli/run/flock.go:69-99`,
-  `:293-318`), keyed on `runtime.FromWorkspace`.
-- **The probe.** Use `probeRunningContainer` (`internal/cli/run/lifecycle.go:96-115`), which is
-  tri-state.
-- **Contract tags.** Freeze them through `entrypoint.ContractTagsEnv`, and read them the way
-  `internal/cli/run/contracttags.go` reads them.
-- **The briefing re-render.** Use `refreshJailBriefings` (`internal/cli/run/run.go:2978-2990`,
-  `prepare.go:40`). Change its config input to the effective config (LA-D7). Note that today it
-  is passed the current `cfg` at `run.go:2987`.
-- **Verb registration.** Register it in `internal/cli/config.go:236-246`, the help-token list at
-  `:348`, and the notchless verbs at `:256-264`.
+## Map
 
-## Mount injector
+| Path | Lane | Change |
+| :--- | :--- | :--- |
+| `internal/cli/run/liveapply.go` | A | new: `ConfigApply` entry, the sequence of [design §3.2](live-config-apply.md#32-the-sequence), attach entry, report, exit codes |
+| `internal/cli/run/liveapplyplan.go` | A | new: per-key, per-backend outcome table ([design §4](live-config-apply.md#4-which-changes-can-reach-a-running-jail)), pure |
+| `internal/cli/run/preflight.go` | A | `changePrompter` gains pre-question lines and an attach decline variant |
+| `internal/cli/run/run.go` | A | one call in `attachExisting`, after the session count, before `refreshJailBriefings` (~`:2955`) |
+| `internal/cli/config.go` | A | register `apply` in `configColorVerbs`, `notchlessVerbs`, `configHelpToken`, usage text |
+| `internal/config/drift.go` | A | `FoldBootBaselineKey(workspace, key, value)`; drift labels say "config this jail has" |
+| `internal/brokerscope/file.go` (or new `live.go`) | B | `LiveScope` field, `LiveFiles`, `ReplaceRepos` |
+| `internal/ghbroker/daemon.go`, `authority.go` | B | classify against the re-read file; write the capability at bind; refusal names `yolo config apply` |
+| `internal/ctxinject/` | C | new package: the five-step injector and removal, Linux only, a darwin stub |
+| `internal/cli/internalctxattach.go`, `internal/cli/internal.go` | C | new hidden verb `yolo internal ctx-attach` |
+| `internal/cli/run/ctxmountrecord.go` | C | new: host-side record of the config mounts a jail has; diff against desired |
+| `internal/cli/run/ctxinjectdrive.go` | C | new: host driver choosing direct vs `podman unshare`, pid lookup, deadline |
+| `internal/cli/run/assemble.go`, `contracttags.go` | C | `/ctx` tmpfs flag, `live-ctx-mounts` tag, record token env |
+| `integration/livectxmount_test.go` | C | new: inject, read, write refused, remove; runs in CI rootless jobs |
 
-- A hidden host subcommand, for example `yolo internal ctx-attach`, with the arguments
-  `--pid <container pid> --source <resolved> --dest </ctx/...> [--rw]`.
-  - Rootless: run it under `podman unshare`.
-  - Rootful: run it directly when yolo runs podman as root.
-  - podman machine: run it through `podman machine ssh`, using the Linux binary from the mounted
-    bundle.
-  - The branch comes from `podman info`, as `internal/image/storespec.go` decides its own.
-- Syscalls: `open_tree` 428, `move_mount` 429, `mount_setattr` 442 on x86_64 and arm64 alike.
-  `golang.org/x/sys/unix` is vendored and wraps all three. Check that the vendored version has
-  `MountSetattr` before relying on it.
-- **Go detail.** `runtime.LockOSThread()`, then `unix.Unshare(CLONE_FS)` before
-  `setns(CLONE_NEWNS)`. A multi-threaded Go process otherwise gets `EINVAL`. The probe confirmed the
-  sequence works.
-- **Destination open.** Use `openat2` with `RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS` inside
-  the jail namespace. Check that `/ctx`'s filesystem is tmpfs (`statfs` magic) before the
-  private-clone `mkdirat`.
-- **Removal ([OQ-LA3](live-config-apply.md#decision-ledger)).** `setns`, then `umount2(dest, MNT_DETACH)`, then `rmdir` through
-  the private clone.
-- **The launch half.** Add `--mount type=tmpfs,destination=/ctx,ro=true` to the podman argv in
-  `internal/cli/run/assemble.go`, near the `--read-only` flags at `:380-391`.
-  - Check the flake's baked `/ctx/host-*` directories (`flake.nix:1851-1863`). podman copies them
-    up into the tmpfs; the probe saw `host-claude` and `host-nvim-config` there.
-  - Check `paths.ReservedContextPaths` consumers for any assumption that `/ctx` is image content.
-- **The probe program** used on 2026-10-18 was a 90-line Go `main` making raw syscalls. Rewrite
-  it as a test fixture rather than keeping it.
+## Contracts between lanes (binding)
 
-## GitHub broker
+Lane A codes against these and stubs them with package-level function variables until task 4
+wires the real ones. Lanes B and C implement them with exactly these signatures.
 
-- In `internal/ghbroker/daemon.go:435`, classify against the scope from `authority.live()` rather
-  than `b.scope`. Keep `b.scope.describe()` (`:597`) and `widenAdvice` on the same source.
-- Write the capability field (LA-D11) in `BindAuthority` (`internal/ghbroker/authority.go:30`).
-  The struct is `internal/brokerscope/file.go:33`; an unknown field is ignored by older readers.
-- Rewrite with `brokerlock.WithTransaction(BrokerSourceDir)`. `brokerscope.Write` drops
-  `broker_*` fields unless they are copied across, which is a trap.
-- macos-user: enumerate the live launch-id files under `broker/github/scope/` for this workspace.
-  Liveness is the file's `pid`.
+```go
+// lane B, package brokerscope
+type LiveFile struct {
+	Path string
+	File File // as read, identity fields included
+}
+// LiveFiles: every scope file of source whose Container == container and Workspace == workspace,
+// whose launching PID and BrokerPID are alive. Read under brokerlock.WithTransaction.
+func LiveFiles(source, container, workspace string) ([]LiveFile, error)
+// ReplaceRepos rewrites Repos only, under the source's transaction, refusing when the file's
+// identity fields differ from expect's. Every other field, broker_* and live_scope included, is kept.
+func ReplaceRepos(path string, expect File, repos []string) error
+// File gains: LiveScope bool `json:"live_scope,omitempty"` — set by BindBroker for this build.
 
-## Effective-config record
+// lane C, package run
+type ctxMountEntry struct{ Source, Dest string; RW bool }
+func (o *Options) ctxMountsLive(rt, cname string, envLines []string) (ok bool, reason string)
+func readCtxMountRecord(cname string, envLines []string) ([]ctxMountEntry, bool)
+func writeCtxMountRecord(cname, token string, entries []ctxMountEntry) error
+func diffCtxMounts(have []ctxMountEntry, want []configCtxMount) (add []configCtxMount, remove []ctxMountEntry)
+func (o *Options) injectCtxMount(rt, cname string, m configCtxMount) error // 10 s deadline inside
+func (o *Options) removeCtxMount(rt, cname string, e ctxMountEntry) error
+```
 
-- `config.WriteWorkspaceBootBaseline` (`internal/config/drift.go:52-61`) writes the whole snapshot.
-  Add a fold-in writer that takes the boot JSON and replaces one top-level key.
-  `WorkspaceConfigDrift` (`drift.go:103-139`) needs no change, beyond its labels ("config this
-  jail has" rather than "config that started this jail").
+`reason` strings are the outcome line's words, for example `this jail started before live mounts
+existed`, `Apple Container shares are fixed when its VM boots`, `the Podman Machine path is not built
+yet`.
 
-## Per-row delivery evidence (from the 2026-10-18 inventory)
+## Reuse
 
-- `mounts`: `ctxmounts.go:55-110`, `assemble.go:368-377,712`. Read-write mounts come from
-  `config/mounts.go:312-326`. The read-write `at` must be under `/ctx` (`config/mounts.go:203-210`).
-- `env_sources`, providers, profiles: channel delivery at `run.go:2852,3054-3071`;
-  `agentenvfiles.go:66`.
-- `mcp_servers` / `lsp_servers`: `assemble.go:1212,1259,1264-1265,1453`; boot
-  `bootsteps.go:381`.
-- `security.blocked_tools`: `assemble.go:358-359,1243`; boot `bootsteps.go:250`.
-- `resources`: `assemble_parts.go:878`; `backendcaps.go:267-314`.
-- `network.forward_host_ports`: `assemble_parts.go:484-503`; `network.go:43`; boot
-  `bootsteps.go:523`.
-- Loopholes: `loopholesruntime.go:274`, `packloopholes.go:920,983`, argv
-  `assemble_parts.go:839`.
-- Pack kinds: `internal/packdecl/kinds.go:46-377`; surfaces `entrypoint/surfaceloop.go`.
-- Apple Container briefing copy: `assemble.go:1059-1060`; `attachskewbriefing.go:64-66`.
+- Gate: `(*Options).checkConfigChanges` (`preflight.go:416`) is the launch's gate. Lane A calls it,
+  or a sibling that shares its body, so the read (`config.ReadWorkspaceForGate`), the scope
+  (`brokeredScopeCheck`), the prompter and `recordApprovedScopes` are one code path. The approved
+  scope is in `o.approvedScopes` afterwards, per loophole name.
+- Config and runtime: `loadAndValidateConfig` (`preflight.go:23`), `resolveRuntime`
+  (`preflight.go:198`), `runtime.FromWorkspace`, `NewDefaultOptions` + `fillDefaults`.
+- Lock: `holdLaunchLock(cname)` / `releaseLaunchLock` (`flock.go`). An attach already holds it at
+  the hook point.
+- Probe: `probeRunningContainer` (`lifecycle.go:96`), tri-state. Env: `inspectContainerEnv`
+  (`run.go:3358`).
+- Mount desire: `configCtxMounts(rt, cfg, note)` (`ctxmounts.go:54`), the launch's own reading;
+  `rwMountDisclosure` for the read-write line; `rootfulPodmanHost` and `o.podmanFacts` for the branch.
+- Scope disclosure lines: `writeScopeFiles` (`brokeredscope.go:79`) shows the shape of the
+  per-repository line.
+- Host record location: mirror `jailgrant.go`'s `paths.AgentsDir()/<cname>/grant/` (outside every
+  bound dir); use `paths.AgentsDir()/<cname>/ctx-mounts/record.json`.
+- Internal verb: mirror `internalimagecopy.go` (flag set, usage, exit 2 on bad args).
+- Syscalls: `unix.OpenTree`, `unix.MountSetattr`, `unix.MoveMount`, `unix.Openat2`, `unix.Setns`,
+  `unix.Unshare` are vendored in `golang.org/x/sys/unix`.
 
-## Tests to write (shape only)
+## Traps
 
-- Gate reuse: a fixture where the apply and a launch see the same diff and write the same record
-  bytes.
-- **Delete-the-call-site check.** Removing the apply's call into the gate must fail a test.
-- Integration (container): inject into a running jail and assert the mount is read-only inside.
-  This runs in CI's rootless jobs for M1; a nested jail gives a free green here.
-- The broker: widen through the file and see a request admitted; narrow and see it refused; a file
-  without the capability field reports *at next restart*.
+- `configCtxMounts` reads read-write elements from user scope (`config.LoadRWMounts`), not from
+  `cfg`, and they are absent from `.yolo/config-boot.json`. So mount state comes from the host
+  record, never from the boot baseline.
+- `brokerscope.Write` drops `broker_*` fields; never use it to rewrite a live file.
+- `daemon.go:435` classifies against `b.scope` before the authority is consulted, so a widened file
+  is never seen unless classification moves to the re-read scope.
+- A Go process is multi-threaded: `runtime.LockOSThread()` then `unix.Unshare(CLONE_FS)` before
+  `Setns(CLONE_NEWNS)`, or `EINVAL`.
+- The decline lines say "Exiting." An attach that is declined does not exit (LA-D14).
+- A nested jail runs podman with `--userns host` and reports rootful: the direct branch. It proves
+  nothing about rootless; only CI's rootless jobs do (AGENTS.md carve-out).
+- `launchContractTags` is shared by every container backend; Apple Container must still report
+  *at next restart* for mounts (the backend check comes before the tag).
+- `/ctx` must stay read-only to the jail after the tmpfs change: `ro=true` on the tmpfs.
+
+## Tasks
+
+### Task A: the command, the plan table and the attach gate (independent)
+
+- **Settled, do not re-open:** [design §3](live-config-apply.md#3-the-command) and [§6](live-config-apply.md#6-outcomes-and-what-each-party-sees). `yolo config apply [--record-only]
+  [--accept-config-changes]`, host only (in a jail: refuse naming the host command, exit 1). Lock
+  for the whole run. Probe: not running → record only, say the next `yolo` launches with the
+  changes; could not ask → record only, name the runtime error. Gate exactly the launch's. N →
+  nothing recorded, exit 1. Outcome block printed before the question (after the diff) and after.
+  Exit 0 nothing pending, 3 restart owed, 1 declined/refused/failed before record. Never offer a
+  restart; print `yolo stop`, then `yolo`. Attach: stdin a terminal (`o.IsTTYStdin()`) or
+  `--accept-config-changes` → same sequence, N continues into the session with a decline that names
+  `yolo config apply`; otherwise one notice line naming `yolo config apply` and `yolo config drift`
+  when the boot baseline drifts or the approval record differs. A failed step never fails an attach.
+- **Outcome table (liveapplyplan.go):** `mounts` → applied now when `ctxMountsLive` is true, else
+  next restart with its reason; macos-user → next session. `brokered` and scope → applied now when
+  every live broker file has `LiveScope`, next restart otherwise; Apple Container → next restart
+  ("no broker runs in this jail"). `env_sources`, `providers`, `profiles`, `profile`,
+  `model_facts`, `adapters` → next session on every backend. `agents_md_extra`,
+  `briefing_provenance` → next session, Apple Container next restart. Every other key → next
+  restart; on macos-user every key → next session.
+- **Effective record:** after each successful step, `config.FoldBootBaselineKey` replaces the one
+  top-level key in `.yolo/config-boot.json` with the current workspace value (or deletes it). Fold
+  next-session keys at once. A key with any failed element is not folded. macos-user writes none.
+- **Tests first** (`internal/cli/run/liveapply_test.go`): the gate is the launch's (delete the call
+  → a test fails: record bytes equal a launch's for the same fixture); N exits 1 and writes nothing;
+  not running → record only, exit 3 when a restart key changed; `network.ports` change → `at next
+  restart` line naming `yolo stop`; in-jail refusal; attach non-TTY prints the notice and does not
+  prompt; attach TTY + N starts the session; plan table cases for every row above.
+- **Gates:** `go test ./internal/cli/run/ ./internal/cli/ ./internal/config/ -run 'Apply|Drift|Config'`,
+  then `just test-fast`.
+- **Fences:** nothing in `internal/ghbroker`, `internal/brokerscope`, `internal/ctxinject`,
+  `assemble.go`, `contracttags.go`, `agentenvfiles.go`. In `run.go`, only the one hook.
+- **Commit:** `feat(config): yolo config apply and the attach-time gate`.
+
+### Task B: live GitHub scope (independent)
+
+- **Settled, do not re-open:** [design §7](live-config-apply.md#7-github-scope-live). The broker classifies every request against the scope
+  file it re-reads; the apply rewrites `Repos` only under the broker transaction, keeping identity
+  fields; the broker advertises the capability with a field written at bind. A removed repository
+  is refused at its next request. The out-of-scope refusal says to ask the user to run
+  `yolo config apply` on the host where the broker takes live scope.
+- **Tests first:** in `internal/ghbroker`: widen the file through `ReplaceRepos` and see a request
+  for the new repository admitted; narrow and see it refused; the bound file carries
+  `live_scope: true`. In `internal/brokerscope`: `ReplaceRepos` keeps `broker_start`, `broker_pid`,
+  `live_scope`; refuses a changed identity; `LiveFiles` skips a dead PID and another container.
+- **Gates:** `go test ./internal/ghbroker/ ./internal/brokerscope/`, then `just test-fast`.
+- **Fences:** only `internal/ghbroker`, `internal/brokerscope`.
+- **Commit:** `feat(ghbroker): classify against the live scope file`.
+
+### Task C: mount injection on podman (independent)
+
+- **Settled, do not re-open:** [design §5](live-config-apply.md#5-mount-injection-per-backend). Five steps: `open_tree(source, CLONE|RECURSIVE)`,
+  `mount_setattr(RECURSIVE, RDONLY)` unless read-write, `setns` into the jail's mount namespace,
+  `mkdirat` through a private writable clone of `/ctx` after checking `/ctx` is tmpfs, `move_mount`.
+  Destination opened with `RESOLVE_NO_SYMLINKS|RESOLVE_NO_MAGICLINKS`. Removal: `setns`, `umount2
+  MNT_DETACH`, `rmdir` through the clone; an empty mountpoint whose move failed is removed. The
+  injector refuses when `/ctx` is not a tmpfs. Rootless: run the verb under `podman unshare`;
+  rootful (including nested): directly; macOS Podman Machine and Apple Container: not built, *at
+  next restart* with a reason. Launch: `--mount type=tmpfs,destination=/ctx,ro=true` on podman only,
+  the `live-ctx-mounts` tag, a random token in `YOLO_CTX_MOUNTS_TOKEN`, and the record of the config
+  mounts this launch bound, written with that token. `readCtxMountRecord` answers false when the
+  token in the jail's env differs.
+- **Tests first:** unit: `diffCtxMounts` (add, remove, source change is remove+add, mode change is
+  remove+add); record round trip and token mismatch; argv carries the tmpfs flag on podman, not on
+  Apple Container. Integration (`integration/livectxmount_test.go`, `requireJail`): launch a jail,
+  inject a read-only directory, read a file inside, writing it fails with EROFS, `mkdir /ctx/x`
+  fails, remove it and it is gone; repeat read-write and write succeeds. The test logs
+  `podman info --format '{{.Host.Security.Rootless}}'`.
+- **Gates:** `go test ./internal/ctxinject/ ./internal/cli/run/ -run 'Ctx'`, `just test-fast`, then
+  `YOLO_NO_AUTO_IMAGE_REAP=1 go test -count=1 -run LiveCtx ./integration` (nested here: rootful
+  branch only).
+- **Fences:** no `liveapply*.go`, `preflight.go`, `config.go`, `internal/ghbroker`.
+- **Commit:** `feat(run): inject context mounts into a running podman jail`.
+
+### Task 4: integration (after A, B, C; the lead)
+
+Merge B, C, then A; replace A's stubs with the real functions; run `just check-ci`, the
+integration tests the change reaches, a nested-jail launch and attach from `/tmp`; update
+`CHANGELOG.md`, `docs/reference/config-safety.md` ("An attached session's config is frozen until
+restart" is now false), `docs/reference/context-mounts.md`, the design's Built column.
+
+## Ships with
+
+- Docs: `docs/reference/config-safety.md`, `docs/reference/context-mounts.md`,
+  [`workspace-widening.md` §3.5](workspace-widening.md#35-what-restart-means)'s claim that an attach is silent, `yolo config --help`,
+  `CHANGELOG.md` `[Unreleased]`.
+- Tests that will break and should be rewritten to the new behavior: any argv golden that lists the
+  podman run flags (the tmpfs flag joins it); any assertion that the attach prints nothing about
+  config changes.
+
+## Don't
+
+- Don't add a second approval path or a second consent store. The record is the approval snapshot.
+- Don't read anything from inside the jail to decide a source (design P5).
+- Don't build the later slices (`LA-S4a` to `LA-S4d`) or the macOS Podman Machine injector.
