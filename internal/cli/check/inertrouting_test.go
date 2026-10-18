@@ -11,6 +11,22 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
 
+// A WIRE-ID TWIN IS LOOKED UP BY THE ID IT SENDS. The catalog-currency check reads the composed
+// table, where a twin's `id` is a client spelling no catalog lists and its `wire_id` is the id a
+// catalog can know.
+func TestTheCatalogCheckLooksUpATwinByItsWireID(t *testing.T) {
+	v, err := jsonx.Decode([]byte(`{"or":{"endpoints":{"openai":{"base_url":"https://openrouter.ai/api/v1"}},
+	  "models":{"floor":"x:floor","floor-200k":"x:floor@200k"},
+	  "model_options":{"floor-200k":{"wire_id":"x:floor","context_window":"204800"}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, total := listedModelIDs(v.(*jsonx.OrderedMap))
+	if got := strings.Join(ids["or"], ","); got != "x:floor" || total != 1 {
+		t.Errorf("listed ids = %q (total %d), want the one wire id x:floor", got, total)
+	}
+}
+
 // AN OPENROUTER PIN NOTHING SENDS IS NAMED, NEVER SILENTLY ACCEPTED (the downstream handoff's
 // fix 22). `openrouter_routing` is OpenRouter's chat-completions `provider` field: a provider on
 // Bedrock, or one whose only OpenAI-protocol endpoint speaks the Responses wire, gets a warning

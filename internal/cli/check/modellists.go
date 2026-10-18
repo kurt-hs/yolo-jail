@@ -405,6 +405,11 @@ func listedModelIDs(providers *jsonx.OrderedMap) (map[string][]string, int) {
 			if om, ok := v.(*jsonx.OrderedMap); ok {
 				id = str(om, "id")
 			}
+			// A row whose `id` is a client spelling names the id it sends as `wire_id`: that is
+			// the one a catalog can know (the composed `model_options.<alias>.wire_id`).
+			if w := str(subMap(subMap(entry, "model_options"), alias), "wire_id"); w != "" {
+				id = w
+			}
 			if id == "" || seen[id] {
 				continue
 			}

@@ -2211,7 +2211,8 @@
                      restating them.  `openrouter_routing` is an OBJECT sent verbatim as
                      OpenRouter's request `provider` field, e.g. {"order": ["streamlake",
                      "morph"], "allow_fallbacks": false}, so two rows for one model can
-                     name different upstream orders.  A list carrying one is registered
+                     name different upstream orders.  A list carrying one (or, on a
+                     provider pi ships, a `wire_id` or `base`) is registered
                      with pi as that provider's menu: its declared models are what pi
                      offers there, and a model outside it is refused only when an `only`
                      narrowed the list and `enforce_models` is on.  pi's models.json
