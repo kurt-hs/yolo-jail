@@ -2,7 +2,7 @@
 title: "Plan: October 18 serial landing and verification"
 status: accepted
 stage: DECIDED
-next: "Close the remaining rootless, real-broker, remount-parity and native-Mac verification obligations; do not infer them from the recorded nested run"
+next: "Obtain rootless M1 on both architectures, isolated real-broker before/after evidence, and native-Mac execution; do not infer them from the nested rootful run"
 summary: "Records the prior model/Mac landing, full patch/live candidate histories, exact review closure, combined validation and remaining platform obligations."
 ---
 
@@ -177,7 +177,7 @@ The serial merge retains the existing model/Mac mappings, the exact selected-pac
 - Candidate verification passed before the primary fast-forward. `just format`, `git diff --check`, and `just check-ci` all returned success; check-ci included Linux and Darwin vet/staticcheck, short tests, changelog and site gates, closed-tree checks, and release checks. The authored docs were separately checked with `uvx vantage-check` (8 files, clean). The one early affected-package run exposed two ordinary `internal/cli/run` issues: the new backend parity needed its rationale, and a stale mount-token mismatch needed its accurate reason. Both were fixed at their production seam; the final affected package selection passed: `go test -count=1 ./internal/cli/check ./internal/cli ./internal/cli/run ./internal/entrypoint ./internal/packdecl ./internal/packload ./internal/packsrc ./internal/hostfloor ./internal/ctxinject ./internal/brokerscope ./internal/ghbroker`.
 - `python3 scripts/completion-census.py` was run. Its generated reader map had broad environment-dependent churn; comparison found no actual new readers beyond the existing map, so unrelated output was restored. The shared Go cache was preserved. `just build-go` succeeded, then the candidate's own `dist-go/linux-amd64/yolo` ran in a nested jail from a throwaway workspace with a temporary HOME, `YOLO_REPO_ROOT` pointing at this checkout, and no selected packs: `candidate-nested-ok home=/home/agent workspace=/workspace`.
 - The required combined integration suite ran once against the final candidate source and passed: `YOLO_NO_PROGRAM_READINESS=1 go test -count=1 -timeout 0 ./integration` → `ok ... 722.513s`. The nested smoke exercises the candidate binary and boot path but its Podman-in-Podman environment is structurally rootful; it is not rootless integration evidence. The fast-forward is recorded above; the landing receipt records `just done` green on clean main afterward.
-- **Outstanding:** rootless Podman integration on both required architectures; real-broker widening/narrowing after a request; a jail's `CAP_SYS_ADMIN` attempt to remount an injected read-only mount; native-Mac execution of the Mac integration tests. These remain explicit runtime/platform obligations, not claims inferred from the combined Linux suite.
+- **Outstanding runtime obligations:** rootless Podman live-mount integration, including remount parity, on both required architectures; an isolated real-broker widening/narrowing exchange; and native-Mac execution of the Mac integration tests. The nested rootful remount result is measured below; it is not rootless evidence or resistance proof.
 - No push, tag, release, deployment, credential change, cache cleanup, or Pi core/extension work is authorized.
 
 ## Landing record
@@ -185,3 +185,39 @@ The serial merge retains the existing model/Mac mappings, the exact selected-pac
 1. The serial candidate passed its recorded gates and was fast-forwarded to `main` at `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`; no history was squashed or rewritten.
 2. The landing receipt records `just done` passing on clean main after the fast-forward. The four external/runtime obligations above remain open; neither this landing nor its nested smoke discharges them.
 3. No push, tag, release or publication is recorded here.
+
+## Blocker assessment at `9ab03637c`
+
+**Observed source state:** HEAD was `9ab03637cf7c124a4bf8973a9cd394a67455e04b` and clean. The exact-HEAD query `gh run list --repo mschulkind-oss/yolo-jail --commit 9ab03637cf7c124a4bf8973a9cd394a67455e04b --limit 30 --json databaseId,headSha,name,status,conclusion,url,createdAt` succeeded with `[]`; no eligible exact-HEAD run or result was available. The bounded newest host-log inspection found no eligible platform test result. This records absence at observation time, not a prediction about later CI. Local Linux amd64 Podman reported `Rootless=false` (`slirp4netns`); it cannot discharge the required external runs. No tests or source gates were rerun for this assessment.
+
+### Rootless Linux and native Mac
+
+The nested rootful probe is now a measured parity result: with effective `CAP_SYS_ADMIN`, the jail remounted both the launch-time and injected read-only binds writable and writes changed both disposable host sentinels. That is **parity, not resistance**. It does not measure rootless behavior or authorize a capability-policy change; see [M1 and its remount result](../design/live-config-apply.md#LA-M1). The canonical instruments are in [`integration/livectxmount_test.go`](../../integration/livectxmount_test.go).
+
+On **each** real rootless Linux host (amd64 and arm64), retain the exact source commit, OS/architecture, Podman rootless and network identity, `CAP_SYS_ADMIN` disposition, and verbose executed/skipped test ledger. Require the tested source commit to be `9ab03637cf7c124a4bf8973a9cd394a67455e04b`, `Linux`, the matching architecture, rootless `true`, and actual non-skipped PASS results for both named live-mount tests. A capability-related skip is not remount evidence. Use the existing focused command:
+
+```sh
+git rev-parse HEAD
+go env GOOS GOARCH
+podman info --format '{{.Host.Security.Rootless}}'
+podman info --format '{{.Host.RootlessNetworkCmd}}'
+YOLO_NO_PROGRAM_READINESS=1 go test -count=1 -timeout 0 -v -run '^TestLiveCtxMount(InjectAndRemove|ReadOnlyRemountParity)$' ./integration
+```
+
+On a native Mac already provisioned for the repository's sandbox/Nix contract, retain the exact commit, native Darwin architecture and executed/skipped ledger; require an actual non-skipped run. Do not acquire privilege or run setup under this task's authority. Existing command and privilege boundary: [the Mac suite's done contract](../design/macos-user-suite-on-a-developer-mac.md#12-what-done-looks-like).
+
+```sh
+git rev-parse HEAD
+go env GOOS GOARCH
+YOLO_TEST_MACOS_USER=1 go test -count=1 -timeout 0 -v -run '^TestMacosUser' ./integration
+```
+
+### Real broker, owner decision, and release boundary
+
+One real baseline request succeeded through the existing forwarding route: `gh repo view mschulkind-oss/yolo-jail --json nameWithOwner --jq .nameWithOwner` returned `mschulkind-oss/yolo-jail`. This proves only that metadata read under the existing scope; it is not before/after evidence, does not show widening or narrowing, and says nothing about the host broker's version or capability. The frozen jail binary stamp `1a9ded40b` predates the live-scope implementation, but the **host** broker binary and its bound `live_scope` capability were not observed; infer neither from the jail stamp. The relevant authority and transaction contract remains [§7, GitHub scope live](../design/live-config-apply.md#7-github-scope-live) and [Task B](../design/live-config-apply-plan.md#task-b-live-github-scope-independent).
+
+The remaining before/after test requires an operator-owned disposable workspace and two explicitly approved real repository identities, A and B; an agent must not invent B. The operator must use host `yolo` built from the landed live-apply tree, establish that the bound host broker scope has `live_scope: true`, and retain the broker lifetime identity. With A approved, retain a successful A request; use the existing human `yolo config apply` gate to approve adding B, then retain B's successful request; use that same gate to remove B, then retain the next-request refusal for B. The broker lifetime identity must remain stable through the sequence. If host capability is absent, host yolo must be updated and the disposable fixture freshly launched before testing. Never edit the scope file directly, copy the jail endpoint credential, or record endpoint addresses, certificates, tokens, credential fields or sensitive logs.
+
+[OQ-SP5](../design/per-session-profiles.md#OQ-SP5) remains genuinely unanswered: its Answer is blank, and the A/B/C alternatives are for the owner alone to rule. This assessment does not change that design or its leaning. A likely patch release is not a selected version or publication authorization; no version, date, tag, push or release is authorized or recorded here.
+
+This handoff updates only the existing integration plan. It adds no implementation or tests, makes no new source/runtime claim beyond the cited prior observation receipts, and does not change capability policy or grants.
