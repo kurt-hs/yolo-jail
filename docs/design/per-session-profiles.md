@@ -2,7 +2,7 @@
 title: "One jail, several profiles: each session reads its own agent config"
 date: 2026-10-18
 status: in-review
-stage: BUILT
+stage: DESIGN
 next: "Rule OQ-SP5 (host saves); then macos-user's per-launch id and other agents' declarations (§9 step 4)"
 tags: [design, profiles, attach, sessions, pi, pi-subagents, providers, concurrency]
 summary: "An attach renders the attaching entry's profile into files every running pi session reads later, so a second session on another provider (or a bare attach of an unrelated agent on the default profile) changes what the first session's pi-subagents children run on, while the first session's provider policy still forbids that provider. The fix keys every profile-dependent read on the session: each exec already carries a session id that its whole process tree inherits, so the attach writes its environment into a per-session entry snapshot, and the session's own boot pass renders a pack's profile-dependent files into a per-session copy of the program's config dir, which stock pi follows through PI_CODING_AGENT_DIR. Shared state (logins, session history, packages, caches) stays one copy, linked into every session's dir."
@@ -10,7 +10,7 @@ summary: "An attach renders the attaching entry's profile into files every runni
 
 # One jail, several profiles: each session reads its own agent config
 
-**Status:** 2026-10-18. Built for jails (podman, Apple Container) and `yolo host`: §9 steps 1-3 and the host slice; step 4 (macos-user, other agents) remains. [OQ-SP5](#OQ-SP5) is open. Evidence read at `8bf1afce9` and in stock pi 1.0.1 and
+**Status:** 2026-10-18. Built for jails (podman, Apple Container) and `yolo host`: [§9](#9-sequencing) steps 1-3 and the host slice; step 4 (macos-user, other agents) remains. [OQ-SP5](#OQ-SP5) is open. Evidence read at `8bf1afce9` and in stock pi 1.0.1 and
 pi-subagents 0.79.1. MEASURED: stock pi 1.0.1 reads `models.json` from a directory named by
 `PI_CODING_AGENT_DIR`, and creates `auth.json` and `models-store.json` there when they are absent
 (`pi --list-models`, offline, 2026-10-18). MEASURED in a nested jail (2026-10-18): each session's home, its links and its render. UNMEASURED: a real pi session's subagents on two providers, since no test runs an agent.
@@ -339,19 +339,15 @@ changes what a session pass renders.
 
 1. 💬 <a id="OQ-SP5"></a>**OQ-SP5: Should a setting pi saves during a `yolo host` launch be kept?**
 
-   A host launch's session home is removed when the launch ends ([§4.7](#47-the-host)), so a
-   `pi install`, a `/settings` toggle or a "set default model" in that launch is lost; before the
-   session home, pi wrote it into the real `~/.pi/agent/settings.json`. Keeping it means yolo
-   writing the user's real file, which the OQ-SP4 ruling says stays untouched. Example: `yolo host
-   -p codex -- pi`, then `pi install npm:foo`; the next launch lacks `foo` in `packages`. Today the
-   launch line says such a setting is not kept and names running pi directly.
+   The launch's session home is removed when it ends ([§4.7](#47-the-host)), so a `pi install`
+   or a "set default model" made in it is lost; before, pi wrote the real
+   `~/.pi/agent/settings.json`. Keeping it means yolo writing the user's real file, which the
+   [OQ-SP4](#11-decision-ledger) ruling keeps untouched. Today the launch line says such a setting
+   is not kept.
 
-   - **A: Write pi's own changes back.** At the launch's end, or when a later launch reaps it, apply
-     the keys pi changed (the session file against its render) to the real file. yolo writes only
-     what pi wrote.
-   - **B: Capture them into yolo's store.** Under `host_management: own`, fold them into the capture
-     store, so `yolo host apply` and the next launch carry them; under `none`, they are lost.
-   - **C: Keep them lost.** The launch line already says so.
+   - **A: Write pi's own changes back** to the real file when the launch ends or is reaped.
+   - **B: Capture them into yolo's store** under `host_management: own`; lost under `none`.
+   - **C: Keep them lost.**
 
    <!-- vantage: question id=OQ-SP5 leaning="A: the bytes are pi's own writes, which reached the real file before the session home, so writing them back restores the old behavior rather than adding a yolo write." -->
 
