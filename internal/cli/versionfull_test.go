@@ -15,7 +15,7 @@ import (
 // ignored and printed the same single line as plain --version.
 func TestVersionFullAddsCommitAndBinaryDigest(t *testing.T) {
 	repoRes, _ := reporoot.Resolve(os.Getenv)
-	firstLine := "yolo-jail " + version.Get(repoRes.Root)
+	firstLine := version.Line(repoRes.Root)
 
 	var rc int
 	out := captureStdout(t, func() { rc = Main([]string{"yolo", "--version", "--full"}) })
@@ -50,7 +50,7 @@ func TestVersionFullAddsCommitAndBinaryDigest(t *testing.T) {
 // one line other tools parse.
 func TestPlainVersionIsOneLineAndUnchanged(t *testing.T) {
 	repoRes, _ := reporoot.Resolve(os.Getenv)
-	want := "yolo-jail " + version.Get(repoRes.Root) + "\n"
+	want := version.Line(repoRes.Root) + "\n"
 
 	var rc int
 	out := captureStdout(t, func() { rc = Main([]string{"yolo", "--version"}) })
@@ -59,5 +59,28 @@ func TestPlainVersionIsOneLineAndUnchanged(t *testing.T) {
 	}
 	if out != want {
 		t.Fatalf("plain --version = %q, want exactly %q", out, want)
+	}
+}
+
+// TestPlainVersionNamesTheBinaryBesideYOLOVersion pins the plain line THROUGH THE FRONT DOOR
+// when YOLO_VERSION names another version: the override first, then the binary's own version,
+// so the line a person quotes names the build that printed it. A jail sets the variable to its
+// launcher's version, which prints the plain line when the two builds agree.
+func TestPlainVersionNamesTheBinaryBesideYOLOVersion(t *testing.T) {
+	repoRes, _ := reporoot.Resolve(os.Getenv)
+	t.Setenv("YOLO_VERSION", "")
+	binary := version.Binary(repoRes.Root)
+
+	t.Setenv("YOLO_VERSION", "9.9.9")
+	var rc int
+	out := captureStdout(t, func() { rc = Main([]string{"yolo", "--version"}) })
+	if want := "yolo-jail 9.9.9 (YOLO_VERSION override; binary " + binary + ")\n"; rc != 0 || out != want {
+		t.Errorf("--version with YOLO_VERSION=9.9.9: rc=%d out=%q, want %q", rc, out, want)
+	}
+
+	t.Setenv("YOLO_VERSION", binary)
+	out = captureStdout(t, func() { rc = Main([]string{"yolo", "--version"}) })
+	if want := "yolo-jail " + binary + "\n"; rc != 0 || out != want {
+		t.Errorf("--version with YOLO_VERSION naming the binary's own version: rc=%d out=%q, want %q", rc, out, want)
 	}
 }

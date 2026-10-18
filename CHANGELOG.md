@@ -73,6 +73,7 @@ last good build or upstream without your patches. See [Patch series](userguide/g
 - pi, omp and opencode no longer wait about two seconds at start for yolo's footer line.
 - Models another pi extension registers for a provider are no longer dropped by yolo's model list, unless the profile enforces it.
 - `yolo features` on a terminal says what each capability is for.
+- `yolo --version` names the binary's own version beside a `YOLO_VERSION` override, and `yolo check`'s Version line names the build stamp and commit.
 
 ## [0.14.0] - 2026-10-15
 
