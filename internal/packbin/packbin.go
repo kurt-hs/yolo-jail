@@ -198,20 +198,6 @@ func admit(tmp, final string) error {
 	return os.Rename(tmp, final)
 }
 
-// validDigest reports whether s is a sha256 as the manifest spells one, so a caller's string can
-// name a directory under the cache root and nothing else.
-func validDigest(s string) bool {
-	if len(s) != sha256.Size*2 {
-		return false
-	}
-	for _, c := range s {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
-	}
-	return true
-}
-
 // download streams url into a temp file under the cache root, hashing as it goes. The temp file
 // is in the cache's own directory so the rename that admits it is atomic.
 func (f Fetcher) download(ctx context.Context, url string) (file, sum string, err error) {

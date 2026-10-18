@@ -1,7 +1,7 @@
 ---
 status: current
 verified: 2026-10-18
-verified_commit: 4d3248ded
+verified_commit: 37ea6bca3
 covers:
   - internal/loopholedecl/binaries.go
   - internal/loopholedecl/officialbinaries_test.go
@@ -15,7 +15,7 @@ summary: "How a loophole ships a compiled program: the `binaries` manifest key a
 
 # Pack-shipped binaries — the `binaries` key and the cache
 
-**Status:** Verified 2026-10-18 against `4d3248ded`. UNMEASURED: no shipped pack declares
+**Status:** Verified 2026-10-18 against `37ea6bca3`. UNMEASURED: no shipped pack declares
 `binaries`, and by [OQ-BP8](#OQ-BP8) none may, so the mechanism runs only for a pack someone
 else publishes. [What is not measured](#what-is-not-measured) lists the rest.
 
@@ -195,7 +195,7 @@ its checksum, exactly as the sections above describe.
 
 ## Current values
 
-Verified at `4d3248ded`. The prose above explains what each is for; this table is the only place
+Verified at `37ea6bca3`. The prose above explains what each is for; this table is the only place
 the values are stated.
 
 | Value | Setting | Defined in |

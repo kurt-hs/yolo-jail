@@ -1180,7 +1180,7 @@ func TestPinnedRealGoReleaserReadonlyPreparationFeedsActualPackagingCaller(t *te
 		"go.mod": "module fixture.invalid/yolo\n\ngo 1.25\n", "cmd/yolo/main.go": "package main\nfunc main() {}\n", "notes.md": "Offline release body.\n",
 		"prepare.sh": "#!/bin/sh\nset -eu\nmkdir -p bundle/share/yolo-jail/bin/linux-amd64 bundle/share/yolo-jail/bin/linux-arm64\nprintf 'fixture flake' > bundle/share/yolo-jail/flake.nix\nprintf 'linux binary' > bundle/share/yolo-jail/bin/linux-amd64/yolo-entrypoint\nprintf 'arm binary' > bundle/share/yolo-jail/bin/linux-arm64/yolo-entrypoint\n",
 	}
-	// Preserve the production archive/checksum/extra-file settings and matrix;
+	// Preserve the production archive/checksum settings and matrix;
 	// replace only expensive project hooks with inert tiny fixture inputs.
 	var config map[string]any
 	if err := yaml.Unmarshal(mustRead(t, ".goreleaser.yaml"), &config); err != nil {
