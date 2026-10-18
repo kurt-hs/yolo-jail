@@ -136,7 +136,7 @@ type hostSessionDecl struct {
 	names       []string
 	prefer      map[string]string
 	// surfaces are every selected pack's surfaces whose path lies in the directory, by owner;
-	// rendered the top-level names they land on.
+	// rendered the files they land on, relative to the directory and slash-separated.
 	surfaces map[*packload.Pack][]manifest.Surface
 	rendered []string
 }
@@ -178,7 +178,7 @@ func hostSessionDecls(packs []*packload.Pack, home string) []hostSessionDecl {
 					continue
 				}
 				d.surfaces[o.p] = append(d.surfaces[o.p], o.s)
-				if top := strings.SplitN(rest, string(filepath.Separator), 2)[0]; !seen[top] {
+				if top := filepath.ToSlash(rest); !seen[top] {
 					seen[top] = true
 					d.rendered = append(d.rendered, top)
 				}

@@ -66,7 +66,7 @@ type sessionDecl struct {
 	names  []string
 	// prefer is the declaration's prefer map with each target expanded.
 	prefer map[string]string
-	// rendered are the top-level names in the directory a surface renders into.
+	// rendered are the files, relative to the directory and slash-separated, its surfaces render (sessionhome.Spec.Rendered).
 	rendered []string
 	// surfaces are the surfaces whose path lies in the directory; rmw the read-modify-write ones
 	// among them, seeded from the shared file before a session's render (SP-D11).
@@ -117,7 +117,7 @@ func declaredSessionHomes(e *Env, packs []*packload.Pack) []sessionDecl {
 					continue
 				}
 				d.surfaces = append(d.surfaces, s)
-				if top := strings.SplitN(rel, string(filepath.Separator), 2)[0]; !seen[top] {
+				if top := filepath.ToSlash(rel); !seen[top] {
 					seen[top] = true
 					d.rendered = append(d.rendered, top)
 				}

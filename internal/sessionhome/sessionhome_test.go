@@ -186,3 +186,55 @@ func TestSpecRefusesALockName(t *testing.T) {
 		t.Fatalf("Build = %v, want a refusal naming x.lock", err)
 	}
 }
+
+// A RENDERED FILE IN A SUBDIRECTORY makes only the directories on its path real: every other
+// entry of each of them is still linked to its shared counterpart. Measured in a nested jail on
+// 2026-10-18: a pack rendering `extensions/subagent/config.json` turned the whole `extensions/`
+// into a directory holding that one file, so the session's pi loaded none of its extensions.
+func TestBuildMergesASubdirectoryHoldingARenderedFile(t *testing.T) {
+	_, s := fixture(t)
+	for name, body := range map[string]string{
+		"extensions/policy.js":            "js",
+		"extensions/subagent/other.txt":   "o",
+		"extensions/subagent/config.json": `{"shared":true}`,
+	} {
+		p := filepath.Join(s.Shared, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Rendered = append(s.Rendered, "extensions/subagent/config.json")
+	if err := Build(s); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{"extensions", "extensions/subagent"} {
+		fi, err := os.Lstat(filepath.Join(s.Home, filepath.FromSlash(dir)))
+		if err != nil || !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
+			t.Errorf("%s must be a real directory in the session home (%v, %v)", dir, fi, err)
+		}
+	}
+	for _, name := range []string{"extensions/policy.js", "extensions/subagent/other.txt"} {
+		got, err := os.Readlink(filepath.Join(s.Home, filepath.FromSlash(name)))
+		if want := filepath.Join(s.Shared, filepath.FromSlash(name)); err != nil || got != want {
+			t.Errorf("%s = link %q (%v), want a link to %s", name, got, err, want)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(s.Home, "extensions", "subagent", "config.json")); !os.IsNotExist(err) {
+		t.Errorf("the rendered file must be left for the render to write, not linked (%v)", err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Home, "extensions", "subagent", "config.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if strays, err := Strays(s); err != nil || len(strays) != 0 {
+		t.Errorf("a merged directory and its rendered file are not strays: %v, %v", strays, err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Home, "extensions", "new.js"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if strays, _ := Strays(s); !reflect.DeepEqual(strays, []string{"extensions/new.js"}) {
+		t.Errorf("a file the program created inside a merged directory is a stray named by its path; got %v", strays)
+	}
+}
