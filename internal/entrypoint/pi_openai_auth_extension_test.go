@@ -387,7 +387,7 @@ func (f piExtensionFixture) output(t *testing.T, route piRoute, harness string, 
 	}
 	cmd := exec.Command(requireNode(t, "the pi openai-auth extension"), "harness.mjs")
 	cmd.Dir = f.dir
-	cmd.Env = append(os.Environ(), "HOME="+f.home, "CALLS="+filepath.Join(f.dir, "calls"),
+	cmd.Env = append(environWithout("PI_CODING_AGENT_DIR"), "HOME="+f.home, "CALLS="+filepath.Join(f.dir, "calls"),
 		"PATH="+filepath.Join(f.dir, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"))
 	cmd.Env = append(append(cmd.Env, route.env()...), env...)
 	output, err := cmd.CombinedOutput()
@@ -494,6 +494,51 @@ func TestPiOpenAIAuthExtensionWithoutAListKeepsPisCatalogAndTheLogin(t *testing.
 			f.run(t, piRegisterHarness+`
 if ("models" in cfg) throw new Error("models registered from no list: " + JSON.stringify(cfg.models));
 `)
+		})
+	}
+}
+
+// PI READS ITS STATE UNDER PI_CODING_AGENT_DIR WHEN SET (a per-session home,
+// docs/design/per-session-profiles.md SP-D9), so the extension reads its list there too: a list
+// only in that directory is what registers, over a different one at ~/.pi/agent, for an absolute
+// path and for pi's `~` and `~/x` spellings. Unset, ~/.pi/agent is read; the launch's
+// YOLO_PI_OPENAI_CODEX_MODELS still wins over the directory's file.
+func TestPiOpenAIAuthExtensionReadsUnderPiCodingAgentDir(t *testing.T) {
+	const sessionList = `{"models":[{"id":"gpt-6-session"}]}`
+	const fallbackList = `{"models":[{"id":"gpt-6-fallback"}]}`
+	const launchList = `{"models":[{"id":"gpt-6-launch"}]}`
+	base := filepath.Base(filepath.FromSlash(piCodexModelsRel(t)))
+	cases := []struct {
+		name     string
+		agentDir func(home, tmp string) (env, dir string)
+		env      []string
+		want     string
+	}{
+		{"absolute", func(_, tmp string) (string, string) { return tmp, tmp }, nil, "gpt-6-session"},
+		{"tilde-subdir", func(home, _ string) (string, string) { return "~/session", filepath.Join(home, "session") }, nil, "gpt-6-session"},
+		{"tilde", func(home, _ string) (string, string) { return "~", home }, nil, "gpt-6-session"},
+		{"unset-falls-back", nil, nil, "gpt-6-fallback"},
+		{"variable-wins", func(_, tmp string) (string, string) { return tmp, tmp },
+			[]string{"YOLO_PI_OPENAI_CODEX_MODELS=" + launchList}, "gpt-6-launch"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newPiExtensionFixture(t)
+			f.modelsFile(t, fallbackList)
+			env := c.env
+			if c.agentDir != nil {
+				envDir, dir := c.agentDir(f.home, t.TempDir())
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, base), []byte(sessionList), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				env = append(env, "PI_CODING_AGENT_DIR="+envDir)
+			}
+			f.output(t, piJailRoute, piRegisterHarness+`
+eq(cfg.models.map((m) => m.id), ["`+c.want+`"], "registered ids");
+`, env...)
 		})
 	}
 }
