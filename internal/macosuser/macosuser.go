@@ -405,6 +405,38 @@ func StageHomeOverlayCommands(hostOverlay, cname, sd string) [][]string {
 	return append(cmds, []string{mvBin, "-f", tmp, dst})
 }
 
+// HomeOverlayStagedCurrent reports whether this session's sealed staged copy (StagedHomeOverlay)
+// is already the host overlay hostOverlay: both carry the same non-empty content digest in their
+// destination lists (entrypoint.HomeOverlayDigest, written by the host builder after the tree it
+// describes). When it is, a launch stages nothing for the overlay — no copy, no seal, no swap —
+// and the guest's install finds the same staged inodes it hard-linked last time
+// (entrypoint.overlayInstalledFrom), so it replaces nothing either.
+//
+// The staged copy is trusted on its digest for the reason it is trusted at all: it is the host
+// user's, sealed, in a root the sandbox cannot write, and it only ever appears whole (the
+// rm-then-mv in StageHomeOverlayCommands renames a fully copied and sealed tree into place). A
+// destination that is not a real directory, a list that is missing, unreadable or digest-less,
+// or a different digest is false, and the launch re-stages as it always has.
+func HomeOverlayStagedCurrent(hostOverlay, cname, sd string) bool {
+	if hostOverlay == "" {
+		return false
+	}
+	want, _, ok := entrypoint.HomeOverlayDigest(hostOverlay)
+	if !ok {
+		return false
+	}
+	dst := StagedHomeOverlay(cname, sd)
+	if fi, err := os.Lstat(dst); err != nil || !fi.IsDir() {
+		return false
+	}
+	have, _, ok := entrypoint.HomeOverlayDigest(dst)
+	return ok && have == want
+}
+
+// homeOverlayStagedCurrent is what the orchestrator asks; a test swaps it, since the staging root
+// it reads is a fixed path under /Users/Shared.
+var homeOverlayStagedCurrent = HomeOverlayStagedCurrent
+
 // ---------------------------------------------------------------------------
 // Staging the /ctx CONTEXT TREE into the host-owned staging root
 // ---------------------------------------------------------------------------
