@@ -203,7 +203,7 @@ EOF
 expect 1 "0.7.0 does not match 10.7.0" 0.7.0
 
 # A retrospective heading summarizes a whole minor line written after the fact.
-# It must never be found by a release of that line: `just release 0.9.0` would
+# It must never be found by a release of that line: releasing 0.9.0 would
 # otherwise publish the summary as the notes of a new tag. `0.9.x` is safe
 # because the version must end at `]`, whitespace or end of line.
 changelog <<'EOF'
@@ -975,6 +975,20 @@ changelog <<'EOF'
 EOF
 unreleased "comment only" empty
 
+# Empty subheadings left for the next release are not notes either.
+changelog <<'EOF'
+## [Unreleased]
+
+### Added
+
+### Fixed
+
+## [0.11.1] - 2026-10-02
+
+- A fix.
+EOF
+unreleased "bare subheadings" empty
+
 # The heading spellings changelog-section.sh accepts: a `v`, an em dash, a pre-release.
 changelog <<'EOF'
 ## [v1.0.0-rc.1] — 2026-10-17
@@ -1142,6 +1156,22 @@ EOF
             echo "ok-future"
         fi
         git checkout -q -- CHANGELOG.md
+
+        # 0b. A dated section changelog-section.sh rejects (no prose): the picker names
+        # it, the section gate refuses it, and nothing is dispatched. A commit of its
+        # own on origin's main, reverted after, since a dirty tree is refused first.
+        printf '# Changelog\n\n## [0.11.2] - 2026-10-01\n\n## [0.11.1] - 2026-09-25\n\n- Old.\n' >CHANGELOG.md
+        git commit -qam "an empty section"
+        git push -q origin main
+        if just release >"$rr/out" 2>&1; then
+            echo "UNGATED-nosection"
+        elif ! grep -qF "has no usable section for 0.11.2" "$rr/out" || [ -s "$rr/gh-calls" ]; then
+            echo "UNSAID-nosection"
+        else
+            echo "ok-nosection"
+        fi
+        git reset -q --hard HEAD~1
+        git push -q -f origin main
         git --git-dir="$rr/origin.git" branch -q -D main
         git fetch -q --prune origin
 
@@ -1255,7 +1285,7 @@ EOF
         # No run of the recipe above asked Go for anything.
         if [ ! -s "$rr/go-calls" ]; then echo "ok-nogo"; else echo "RAN-nogo"; fi
     ) >"$tmp/release-results" 2>"$tmp/release-err"
-    for _case in arg nodated future other stale tagged nodispatch origin dispatchfailure resume nextversion nogo; do
+    for _case in arg nodated future nosection other stale tagged nodispatch origin dispatchfailure resume nextversion nogo; do
         if grep -qx "ok-$_case" "$tmp/release-results"; then
             pass=$((pass + 1))
         else
