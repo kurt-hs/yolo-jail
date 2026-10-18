@@ -63,9 +63,13 @@ func holdTreeCopyLease(f *os.File) {
 	heldTreeCopiesMu.Unlock()
 }
 
+// treeCopyFormat is folded into every copy's name. Bump it whenever what a copy holds for the same
+// entry changes (capture.CopyTree's modes or link handling), so no copy an older yolo made is handed.
+const treeCopyFormat = "tree-copy/1"
+
 // treeCopyName is the directory name of the copy of entry key's prefix.
 func treeCopyName(key, prefix string) string {
-	sum := sha256.Sum256([]byte(key + "\x00" + prefix))
+	sum := sha256.Sum256([]byte(treeCopyFormat + "\x00" + key + "\x00" + prefix))
 	return hex.EncodeToString(sum[:])[:32]
 }
 
@@ -91,6 +95,7 @@ func reusableTreeCopy(f packload.Fork, key, root string, errw io.Writer) (string
 	// goes into with its lease held; then reap what no launch holds.
 	var tmp string
 	var lease *os.File
+	var reaped []string
 	err = withTreeCopyLock(slugDir, func() error {
 		keep := name
 		if l, ok := leaseTreeCopy(final); ok {
@@ -109,9 +114,14 @@ func reusableTreeCopy(f packload.Fork, key, root string, errw io.Writer) (string
 			}
 			tmp, lease = d, l
 		}
-		reapTreeCopies(slugDir, keep, tmp)
+		reaped = reapTreeCopies(slugDir, keep, tmp)
 		return nil
 	})
+	// THE REMOVALS RUN OUTSIDE THE LOCK: each reaped copy was renamed aside under it, so no launch can
+	// take it, and a large tree's removal must not hold up another launch of the extension.
+	for _, p := range reaped {
+		_ = removeTreeCopy(p)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -205,15 +215,17 @@ func leaseTreeCopy(dir string) (*os.File, bool) {
 	return l, true
 }
 
-// reapTreeCopies removes every directory under slugDir other than keep and tmp that no launch
+// reapTreeCopies takes every directory under slugDir other than keep and tmp that no launch
 // holds: one whose lease this process can lock exclusively, or one with no lease at all (a copy
 // can only lack one if its launch died between making the directory and its lease, both under the
-// lock this runs under). Each is renamed aside first, so a removal cut short leaves nothing at a
-// name a launch would take. Best-effort: a copy left behind costs disk, never a launch.
-func reapTreeCopies(slugDir, keep, tmp string) {
+// lock this runs under). Each is renamed aside, so nothing is left at a name a launch would take,
+// and returned for the caller to remove once it has let go of the lock; a `.reap-` directory an
+// earlier removal left is returned as it is. Best-effort: a copy left behind costs disk, never a
+// launch.
+func reapTreeCopies(slugDir, keep, tmp string) (aside []string) {
 	ents, err := os.ReadDir(slugDir)
 	if err != nil {
-		return
+		return nil
 	}
 	for _, e := range ents {
 		name := e.Name()
@@ -232,19 +244,19 @@ func reapTreeCopies(slugDir, keep, tmp string) {
 			} else if !errors.Is(err, os.ErrNotExist) {
 				continue
 			}
-			aside, err := os.MkdirTemp(slugDir, treeCopyReapLeaf)
+			dir, err := os.MkdirTemp(slugDir, treeCopyReapLeaf)
 			if err != nil {
 				continue
 			}
-			to := filepath.Join(aside, "x")
-			if os.Rename(p, to) != nil {
-				_ = os.Remove(aside)
+			if os.Rename(p, filepath.Join(dir, "x")) != nil {
+				_ = os.Remove(dir)
 				continue
 			}
-			p = aside
+			p = dir
 		}
-		_ = removeTreeCopy(p)
+		aside = append(aside, p)
 	}
+	return aside
 }
 
 // removeTreeCopy removes a copy, giving its directories their owner write bit first should a

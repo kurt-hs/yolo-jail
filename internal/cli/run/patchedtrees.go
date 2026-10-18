@@ -349,9 +349,9 @@ func (o *Options) finishTreeDeliveries(out, answers map[string]TreeDelivery) map
 	return out
 }
 
-// patchedTreeDirs is what packFilesTargets delivers for each patched extension: its per-launch copy,
-// by extension key, for the trees this launch delivered one of — mounted on a container, copied into
-// the home overlay on macos-user. A tree with no copy (skipped, or nothing serves) has no key, and
+// patchedTreeDirs is what packFilesTargets delivers for each patched extension: its copy, by
+// extension key, for the trees this launch delivered one of — a per-launch copy mounted on a
+// container, a per-build one copied into the home overlay on macos-user (macosUserTreeCopyRoot). A tree with no copy (skipped, or nothing serves) has no key, and
 // so no destination.
 func (o *Options) patchedTreeDirs() map[string]string {
 	dirs := map[string]string{}
@@ -363,7 +363,7 @@ func (o *Options) patchedTreeDirs() map[string]string {
 	return dirs
 }
 
-// patchedTreeIdentities names, by extension key, the content of each per-launch copy
+// patchedTreeIdentities names, by extension key, the content of each copy
 // patchedTreeDirs delivers: the content-addressed capture store entry it was copied from and the
 // prefix copied out of it (internal/cli's copyTreeForLaunch), which together decide every byte of the copy. The
 // macos-user home overlay's digest reads this instead of the copy's bytes
