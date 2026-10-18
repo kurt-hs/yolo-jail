@@ -130,7 +130,12 @@ func gitDescribe(repoRoot string) string {
 	if raw := os.Getenv("YOLO_VERSION"); raw != "" {
 		return raw
 	}
+	return binaryDescribe(repoRoot)
+}
 
+// binaryDescribe is gitDescribe without the YOLO_VERSION override: the version THIS binary
+// answers to, from its -ldflags stamp or, unstamped, a live describe of repoRoot.
+func binaryDescribe(repoRoot string) string {
 	// "unknown" guard: an older scripts/build-go.sh stamped the literal
 	// string "unknown" when describe failed at build time; never let that
 	// legacy stamp shadow a live describe.
@@ -174,4 +179,51 @@ func Get(repoRoot string) string {
 		return "unknown"
 	}
 	return v
+}
+
+// overrideEnv is the variable whose value Get returns in place of the binary's own version.
+// The launcher sets it in every jail to its own version (internal/cli/run/assemble.go), so an
+// in-jail banner names the host's yolo, and a test or a script may set it too.
+const overrideEnv = "YOLO_VERSION"
+
+// Binary is the version this binary answers to with YOLO_VERSION ignored: its stamp, or an
+// unstamped binary's describe of repoRoot, else "unknown".
+func Binary(repoRoot string) string {
+	if v := binaryDescribe(repoRoot); v != "" {
+		return v
+	}
+	return "unknown"
+}
+
+// overridden is the YOLO_VERSION value Get returned in place of the binary's own version, ""
+// when the variable is unset or names that same version, so nothing needs saying.
+func overridden(repoRoot string) string {
+	raw := os.Getenv(overrideEnv)
+	if raw == "" || raw == Binary(repoRoot) {
+		return ""
+	}
+	return raw
+}
+
+// Line is `yolo --version`'s one line: "yolo-jail <version>", and when YOLO_VERSION names a
+// version other than the binary's own, both — "yolo-jail 9.9.9 (YOLO_VERSION override; binary
+// 0.14.0+428.g772997837bbd)" — so a quoted version line never names a build other than the one
+// that printed it. A reader that wants the version alone takes the text up to the first space.
+func Line(repoRoot string) string {
+	line := "yolo-jail " + Get(repoRoot)
+	if raw := overridden(repoRoot); raw != "" {
+		line += " (" + overrideEnv + " override; binary " + Binary(repoRoot) + ")"
+	}
+	return line
+}
+
+// CheckLine is the version `yolo check` reports: Line's version and override, then the build's
+// identity, its stamp and commit (FullLines' first two), so one line of a check report says
+// which build answered it.
+func CheckLine(repoRoot string) string {
+	detail := "build stamp " + StampLabel() + ", commit " + CommitLabel()
+	if raw := overridden(repoRoot); raw != "" {
+		detail = overrideEnv + " override; binary " + Binary(repoRoot) + "; " + detail
+	}
+	return Get(repoRoot) + " (" + detail + ")"
 }

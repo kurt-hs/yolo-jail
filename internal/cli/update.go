@@ -296,7 +296,10 @@ func readAnswer(r io.Reader) string {
 }
 
 func installedVersion(path string) (string, error) {
-	out, err := exec.Command(path, "--version").Output()
+	// Without YOLO_VERSION, which the probed binary would print in place of its own version.
+	cmd := exec.Command(path, "--version")
+	cmd.Env = slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "YOLO_VERSION=") })
+	out, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
