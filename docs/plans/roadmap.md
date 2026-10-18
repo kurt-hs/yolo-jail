@@ -49,6 +49,9 @@ accepted limits remain in
 [its design's §3.4](../design/simultaneous-auth-and-pack-isolation.md#34-what-the-extension-cannot-close),
 and a pi-subagents registry several extensions can share stays in item 28.
 
+3. [Apply config changes to a running jail](../design/live-config-apply.md) — the maintainer's
+   2026-10-18 ask (read-only mounts and GitHub scope first); rulings owed before building.
+
 Native readiness and credential-store work retain their places below: assess
 [the privilege prerequisites](../research/sandvault-macos-privileges.md) without broad root
 cleanup, and rule [keychain scope/unlock/migration](../design/keychain-from-a-jail.md) without
