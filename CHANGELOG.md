@@ -57,6 +57,7 @@ last good build or upstream without your patches. See [Patch series](userguide/g
 
 - A pack's script keeps its executable bit everywhere it is delivered; see [the exec bit](docs/reference/pack-system.md#the-exec-bit).
 - A macOS (macos-user) launch no longer leaves a copy of its packs behind on exit; `yolo prune --apply` removes older ones.
+- A macOS (macos-user) relaunch with nothing changed no longer re-copies skills and extensions into the sandbox or re-runs nix for the tool floor.
 - Claude on Kilo no longer assumes a 1M-token context for every model.
 - pi sends `openrouter_routing` on your own providers too; `yolo check` warns about a pin nothing sends.
 - `yolo --update` on a patched fork now waits for another yolo building it, instead of failing.
