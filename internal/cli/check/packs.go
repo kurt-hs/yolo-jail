@@ -390,8 +390,6 @@ func (o *Options) reportUnresolvedPack(r *reporter, e config.PackEntry, err erro
 	r.fail(e.Name+": "+why.Error(), packFixNote(e))
 }
 
-// packFixNote is the next step for a pack whose declaration or address the launch refuses: the
-// user's own pack is theirs to fix, and a pack that ships with yolo is the maintainers'.
 // unresolvedRefLines is a line for each patched fork or extension of the selected packs whose git refs no
 // check on this machine has resolved (packload.Fork.RefNotResolvedLine): a patch branch whose commit no
 // check record holds, or an upstream with no check record at all. A plain fork's pin and an npm upstream
@@ -405,7 +403,7 @@ func unresolvedRefLines(packs []*packload.Pack) []string {
 		}
 		if f.PatchBranch != "" {
 			if s, err := f.ReadSeriesFrom(store); err == nil && s.Unresolved() {
-				lines = append(lines, f.RefNotResolvedLine(f.PatchBranchDir))
+				lines = append(lines, unresolvedRefLine(f))
 			}
 			continue
 		}
@@ -413,12 +411,27 @@ func unresolvedRefLines(packs []*packload.Pack) []string {
 			continue
 		}
 		if _, err := store.LoadCheckRecord(f.Key()); errors.Is(err, packsrc.ErrNoCheckRecord) {
-			lines = append(lines, f.RefNotResolvedLine(f.PatchBranchDir))
+			lines = append(lines, unresolvedRefLine(f))
 		}
 	}
 	return lines
 }
 
+// unresolvedRefLine is unresolvedRefLines' line for f. A RELATIVE patch branch that does not resolve from
+// the directory this process read the pack from is a pack read through a copy — in a jail, the tree
+// the launch delivered, which is in no repository — so the lint to run is of the pack's own directory.
+func unresolvedRefLine(f packload.Fork) string {
+	if packsrc.IsRelativeLocator(f.PatchBranch) {
+		if _, err := f.PatchBranchAddr(); err != nil {
+			return f.Label() + ": ref not resolved (offline) — run `yolo pack lint --online <dir>` on the pack's own " +
+				"directory, inside the repository its patch branch " + f.PatchBranch + " names, to check it"
+		}
+	}
+	return f.RefNotResolvedLine(f.PatchBranchDir)
+}
+
+// packFixNote is the next step for a pack whose declaration or address the launch refuses: the
+// user's own pack is theirs to fix, and a pack that ships with yolo is the maintainers'.
 func packFixNote(e config.PackEntry) string {
 	if e.Embedded() {
 		return ShippedPackFix(e.Name) + ", " + recheck

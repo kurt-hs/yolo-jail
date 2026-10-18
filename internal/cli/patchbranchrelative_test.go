@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 )
 
@@ -97,6 +99,27 @@ func TestARelativePatchBranchOfAFilteredPackResolvesAgainstItsSource(t *testing.
 	_, launched, _ := fx.launch(t, "podman")
 	if len(fx.builds) != 1 {
 		t.Fatalf("a filtered pack's relative patch branch built %d\n%s", len(fx.builds), launched)
+	}
+}
+
+// `yolo pack series check` resolves a relative patch branch against the pack directory it is named, and merges it.
+func TestSeriesCheckOfARelativePatchBranchMergesThePacksOwnRepository(t *testing.T) {
+	fx := newPatchBranchAdvanceFixture(t)
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	inRepoPatchBranch(t, fx, "../..?ref=mine")
+	tip := upstreamGit(t, fx.patchBranch, "rev-parse", "mine")
+	rc, out, errw := seriesVerb(t, "check", fx.forkDir)
+	if rc != 0 || !strings.Contains(out, "merges the patch branch mine@"+shortSHA(tip)+" cleanly") {
+		t.Errorf("series check of a relative patch branch: rc=%d\n%s%s", rc, out, errw)
+	}
+}
+
+// THE HOST FLOOR's fork carries the directory a relative patch branch resolves against.
+func TestTheFloorForkKeepsThePatchBranchDir(t *testing.T) {
+	in := packdecl.Install{Bin: "tool", ForkedBy: "forkpack", PatchBranch: "../..?ref=mine", ForkRoot: "/staged",
+		ForkPatchBranchDir: "/src/forkpack"}
+	if f := floorFork(hostfloor.Program{Pack: "basepack", Install: in}); f.PatchBranchDir != "/src/forkpack" || f.Root != "/staged" {
+		t.Errorf("floorFork = %+v, want the fork's root and patch branch directory", f)
 	}
 }
 

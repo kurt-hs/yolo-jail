@@ -192,7 +192,13 @@ func (f Fork) RebaseRecipe() packsrc.RebaseRecipe {
 		Dir: f.Pack + "-" + f.Bin + "-rebase"}
 	if f.PatchBranch != "" {
 		// A PATCH BRANCH is repaired in its own repository, by a merge (packsrc.RebaseRecipe.Lines).
-		a, _ := f.PatchBranchAddr()
+		a, err := f.PatchBranchAddr()
+		if err != nil || a.Repo == "" {
+			// A RELATIVE PATCH BRANCH THIS PROCESS CANNOT RESOLVE (a pack read through a copy) is still
+			// repaired by a merge: the recipe names the repository as the manifest writes it.
+			a, _ = packsrc.ParseFrom(f.PatchBranch, "")
+			a.Repo = strings.SplitN(f.PatchBranch, "?", 2)[0]
+		}
 		r.PatchBranchRepo, r.PatchBranchRef, r.Dir = a.Repo, a.Ref, f.Pack+"-"+f.Bin+"-patch-branch"
 		return r
 	}

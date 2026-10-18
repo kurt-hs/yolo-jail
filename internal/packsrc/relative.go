@@ -69,7 +69,7 @@ func ParseFrom(raw, dir string) (Addr, error) {
 	if dir == "" {
 		return a, nil
 	}
-	repo, err := resolveRelativeRepo(raw, rel, dir)
+	repo, err := resolveRelativeRepo(raw, rel, query, dir)
 	if err != nil {
 		return Addr{}, err
 	}
@@ -78,7 +78,7 @@ func ParseFrom(raw, dir string) (Addr, error) {
 }
 
 // resolveRelativeRepo is the repository rel names from dir, bounded by dir's own repository.
-func resolveRelativeRepo(raw, rel, dir string) (string, error) {
+func resolveRelativeRepo(raw, rel, query, dir string) (string, error) {
 	real, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return "", fmt.Errorf("pack address %q is relative to the pack's directory %s, which cannot be read (%v) — "+
@@ -89,15 +89,15 @@ func resolveRelativeRepo(raw, rel, dir string) (string, error) {
 		return "", fmt.Errorf("pack address %q is relative to the pack's directory, and %s is in no git repository\n\n"+
 			"A relative locator may name only the repository the pack lives in, or one inside it, so with no "+
 			"repository it names nothing. Put the pack in its repository, or write the repository's absolute "+
-			"address:\n\n  git+file:///abs/path/to/repo?ref=<branch>", raw, real)
+			"address:\n\n  git+file:///abs/path/to/repo?%s", raw, real, query)
 	}
 	target := filepath.Join(real, filepath.FromSlash(rel))
 	if !within(target, top) {
 		return "", fmt.Errorf("pack address %q climbs to %s, above the git repository the pack lives in\n\n"+
 			"A relative locator is bounded by %s (the pack's own repository, what `git -C %s rev-parse "+
 			"--show-toplevel` names), so a pack copied elsewhere never reaches what sits above it. Name that "+
-			"repository, or write the other repository's absolute address:\n\n  %s\n  git+file://%s?ref=<branch>",
-			raw, target, top, real, relativeTo(raw, real, top), target)
+			"repository, or write the other repository's absolute address:\n\n  %s\n  git+file://%s?%s",
+			raw, target, top, real, relativeTo(raw, real, top), target, query)
 	}
 	resolved, err := filepath.EvalSymlinks(target)
 	if err != nil {
@@ -107,7 +107,7 @@ func resolveRelativeRepo(raw, rel, dir string) (string, error) {
 	if !within(resolved, top) {
 		return "", fmt.Errorf("pack address %q names %s, a link to %s above the git repository %s the pack lives in "+
 			"— a relative locator is bounded by that repository; write the repository's absolute address "+
-			"(git+file://%s?ref=<branch>)", raw, target, resolved, top, resolved)
+			"(git+file://%s?%s)", raw, target, resolved, top, resolved, query)
 	}
 	if !hasGitDir(resolved) {
 		return "", fmt.Errorf("pack address %q names %s, which is not a repository's root — a patch branch is merged "+

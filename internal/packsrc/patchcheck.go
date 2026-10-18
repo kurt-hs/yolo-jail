@@ -84,8 +84,16 @@ func (w PatchedWant) Inputs() (CheckInputs, Addr, FollowRule, error) {
 		return CheckInputs{}, Addr{}, FollowRule{}, err
 	}
 	if w.PatchBranch != "" {
-		if _, err := ParseFrom(w.PatchBranch, w.PatchBranchDir); err != nil {
+		c, err := ParseFrom(w.PatchBranch, w.PatchBranchDir)
+		if err != nil {
 			return CheckInputs{}, Addr{}, FollowRule{}, fmt.Errorf("the patch branch: %w", err)
+		}
+		if c.Repo == "" {
+			// A RELATIVE PATCH BRANCH WITH NO PACK DIRECTORY: a caller that lost the directory, never the user's
+			// manifest, so no fetch runs on a repository named "".
+			return CheckInputs{}, Addr{}, FollowRule{}, fmt.Errorf("the patch branch %s is relative to its pack's "+
+				"directory, and this check was handed none — a yolo bug; report it with this line, and meanwhile "+
+				"write the repository's absolute address (git+file:///abs/path?ref=%s)", w.PatchBranch, c.Ref)
 		}
 		return CheckInputs{Repo: a.Repo, Subdir: a.Path, Ref: a.Ref, Follow: f.String(), PatchBranch: w.PatchBranch}, a, f, nil
 	}
