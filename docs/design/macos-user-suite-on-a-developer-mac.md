@@ -189,13 +189,34 @@ tool on every backend"* ([OQ-PD27](program-delivery.md#decision-ledger)). What w
 is whether it outranks **the floor**, and this is the first host with mise tools installed in
 the sandbox home to ask. That is [OQ-DM3](#8-open-questions).
 
-### 6.2 A doorway process outlives its session
+### 6.2 Another session's doorway was read as this session's survivor
 
-`TestMacosUserOpensTheAWSDoorwayOutsideTheSandbox` reports *"the doorway survives the session
-(pids 81026)"* ([`integration/macosuserdoorway_test.go:211`](../../integration/macosuserdoorway_test.go)),
-reproducibly, 14.7 s and 26.7 s on two runs. A host-side process yolo opened for a session was
-still running after that session ended. No ruling needed: either the teardown misses it or the
-test's wait is too short, and the pid makes it answerable.
+`TestMacosUserOpensTheAWSDoorwayOutsideTheSandbox` reported *"the doorway survives the session
+(pids 81026)"*, on both runs. A *doorway* is
+[HS-D15](host-notch-services.md#HS-D15)'s word for the thin host-side adapter an agent's client talks
+to, which checks the launch's caller token and forwards to a credential service.
+
+**The teardown is right; the check was not.** On macos-user the workspace's keeper opens the
+doorway, stops it when the last session leaves (`endKey`), and the last session's quit waits
+for that keeper to be gone before the launch returns (`streamKeeperTeardown`), so the test's 10 s
+wait is slack rather than the bound. What failed was the check's selection: it ran
+`pgrep -f "internal daemon aws-credential-adapter --listen"` machine-wide, and every AWS doorway
+has that argv whichever launch opened it, short of its port. A developer who runs Claude on
+Bedrock through `yolo host -- claude`, or in another macos-user workspace, holds one for as long
+as that session runs. CI's runner has none, which is why only a developer Mac failed. That
+reading is inferred from the code: the run did not record the surviving process's port or start
+time.
+
+**Fixed in the test.** The doorway checks now judge only the pids the launch itself named on its
+`Opened the … doorway (pack …, pid N)`, `Started the … service (pack …, pid N)` or
+`… is back (pid N)` lines. A survivor of this launch's still fails, and another process with the
+same argv is printed beside it as "not this launch's, so not judged". The codex doorway and the
+two wire-bridge tests share that check. `doorwaysightings_test.go` runs the §6.2 shape under
+`-short` on Linux.
+
+**The Mac re-runs** `-run '^TestMacosUserOpensThe(AWS|Codex)DoorwayOutsideTheSandbox$'`. A pass
+closes this item. A failure now prints the survivor's full listing line, with its uid and
+`--listen` port, which tells a leak in the teardown apart from another session's doorway.
 
 ### 6.3 Housekeeping reaps nothing and writes no log
 
@@ -368,7 +389,7 @@ runner.
    block a clean local verdict.
 2. Add the two probes and their skip reasons beside the existing five facts; label them in the
    ledger. One commit, no assertion touched.
-3. Take [§6.2](#62-a-doorway-process-outlives-its-session) and
+3. Take [§6.2](#62-another-sessions-doorway-was-read-as-this-sessions-survivor) and
    [§6.3](#63-housekeeping-reaps-nothing-and-writes-no-log) as ordinary defects, the latter after
    ruling out cross-test state.
 4. Rule [OQ-DM3](#8-open-questions); fix whichever side it condemns, and fix the failure

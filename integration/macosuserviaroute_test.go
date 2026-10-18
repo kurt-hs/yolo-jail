@@ -77,5 +77,5 @@ func TestMacosUserBridgesPiThroughTheHostHalfViaRoute(t *testing.T) {
 		t.Errorf("pi's via route must answer 503 naming runtime's URL composed from us-east-1, got %q %s%s",
 			got["TOKEN"], got["BODY"], diag)
 	}
-	requireDoorwayRanOutsideAndStopped(t, wireBridgeHostHalfArgv, saw, me, uid, diag)
+	requireDoorwayRanOutsideAndStopped(t, wireBridgeHostHalfArgv, saw, r.combined(), me, uid, diag)
 }
