@@ -1072,9 +1072,12 @@ func Run(opts Options) (rc int) {
 		// THE PATCHED EXTENSIONS' PER-LAUNCH COPIES ride in it too (o.patchedTreeDirs): each at its
 		// `~/<into>`, write-protected like the rest, the copy living beside this launch's pack tree,
 		// which outlives this call (discardUnheldPackTree runs at Run's return).
-		homeOverlay, err = buildMacosHomeOverlayWith(staging, staged.packs, o.patchedTreeDirs(), o.macosUserInheritedScope(rt), func(line string) {
-			o.pr(o.Stdout).print("[yellow]" + line + "[/yellow]")
-		})
+		// Content-keyed (buildMacosHomeOverlayTreeIDs): an overlay already built from the same
+		// inputs is returned as it is, each patched copy standing in by its store entry.
+		homeOverlay, err = buildMacosHomeOverlayDelivering(staging, staged.packs, o.patchedTreeDirs(),
+			o.patchedTreeIdentities(), o.macosUserInheritedScope(rt), func(line string) {
+				o.pr(o.Stdout).print("[yellow]" + line + "[/yellow]")
+			})
 		sp.End()
 		if err != nil {
 			o.pr(o.Stderr).printf("[bold red]%s[/bold red]", err.Error())

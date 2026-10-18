@@ -77,6 +77,10 @@ type HomeOverlay struct {
 	// (packload.WritableDirs), which the bootstrap links from the account home into the
 	// workspace sidecar. They are what decides where each Dest physically lands.
 	WorkspaceDirs []string
+	// StagedCurrent says this session's sealed staged copy already is Tree
+	// (HomeOverlayStagedCurrent), so the plan stages nothing for it. Decided by the
+	// orchestrator, which may read the staging root, because the plan builder is pure.
+	StagedCurrent bool
 }
 
 // HomeReadonly is the sandbox-home half of the profile's write carve-outs: the rendered

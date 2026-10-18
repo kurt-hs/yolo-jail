@@ -661,8 +661,13 @@ func buildPlan(deps Deps, opts Options, darwin *Darwin) RunPlan {
 	floors := floorStageFor(opts.HostPackRoot, met)
 	programs := programReadinessStageFor(opts.HostPackRoot, home, opts.Workspace,
 		paths.WorkspaceHomeState(opts.Workspace), loginPath, config.MergeMiseTools(opts.Config), env)
+	// THE STAGED OVERLAY'S CURRENCY, asked here for floorStageFor's reason: it reads the staging
+	// root, and the plan builder below is pure. The plan keys the staged copy on the same
+	// spelling (cnameFor of the resolved workspace).
+	overlay := opts.HostHomeOverlay
+	overlay.StagedCurrent = homeOverlayStagedCurrent(overlay.Tree, cnameFor(resolvePathAbs(opts.Workspace)), "")
 	return BuildRunPlanWithStages(opts.Workspace, opts.Config, opts.Agents, opts.AgentArgv,
-		selfExe, opts.HostPackRoot, opts.HostHomeOverlay, opts.HostCtx, env, darwin,
+		selfExe, opts.HostPackRoot, overlay, opts.HostCtx, env, darwin,
 		opts.BlockedTools, opts.JailDaemons, floors, programs,
 		PlanSession{ID: opts.SessionID, CATrust: opts.CATrust})
 }
