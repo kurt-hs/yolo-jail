@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/ctxinject"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	naming "github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
@@ -128,13 +129,22 @@ func TestLiveCtxMountInjectAndRemove(t *testing.T) {
 		t.Fatalf("podman inspect pid: %v", err)
 	}
 	pid := strings.TrimSpace(string(pidOut))
-	if n, err := strconv.Atoi(pid); err != nil || n <= 0 {
+	n, err := strconv.Atoi(pid)
+	if err != nil || n <= 0 {
 		t.Fatalf("podman reports pid %q for %s", pid, cname)
 	}
+	identity, err := ctxinject.ReadProcessIdentity(n)
+	if err != nil {
+		t.Fatalf("read jail process identity for pid %d: %v", n, err)
+	}
+	identityArgs := []string{"--start-time", strconv.FormatUint(identity.StartTime, 10),
+		"--mount-ns-device", strconv.FormatUint(identity.MountNSDevice, 10),
+		"--mount-ns-inode", strconv.FormatUint(identity.MountNSInode, 10)}
 	// The branch the host driver takes (ctxinjectdrive.go): `podman unshare` on rootless, the verb
 	// directly when nested (--userns host) or rootful as root.
 	ctxAttach := func(args ...string) (string, error) {
-		argv := append([]string{yoloBin, "internal", "ctx-attach", "--pid", pid}, args...)
+		argv := append([]string{yoloBin, "internal", "ctx-attach", "--pid", pid}, identityArgs...)
+		argv = append(argv, args...)
 		if rootless && !nested {
 			argv = append([]string{"podman", "unshare", "--"}, argv...)
 		}

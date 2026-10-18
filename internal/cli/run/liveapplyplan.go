@@ -122,6 +122,26 @@ func scopeChangeOutcome(rt string, files []liveScopeFile) (applyOutcome, string)
 	return outcomeAppliedNow, ""
 }
 
+func verifiedScopeOutcome(rt string, scopes []scopeDelta) (applyOutcome, string) {
+	if len(scopes) == 0 {
+		return scopeChangeOutcome(rt, nil)
+	}
+	for _, d := range scopes {
+		if d.discoveryErr != "" {
+			return outcomeNextRestart, "could not verify the running broker's scope: " + d.discoveryErr
+		}
+		outcome, reason := scopeChangeOutcome(rt, d.files)
+		if outcome != outcomeAppliedNow {
+			return outcome, reason
+		}
+		added, removed := d.addedRemoved()
+		if len(added) != 0 || len(removed) != 0 {
+			return outcomeNextRestart, "the running broker's scope differs from the approved scope"
+		}
+	}
+	return outcomeAppliedNow, "the running broker's scope already matches"
+}
+
 // changeKind is what a change's live-apply step does.
 type changeKind int
 
@@ -179,6 +199,7 @@ type scopeDelta struct {
 	label, source string
 	desired       []string
 	files         []liveScopeFile
+	discoveryErr  string
 	// recordChanged is the gate's own answer when no live file was found: the scope differs
 	// from the approval record. With no broker to compare against, that is the change.
 	recordChanged bool
@@ -227,11 +248,12 @@ type applyPlanInput struct {
 	// mountsLive and mountsReason are the jail's own answer (the C lane's ctxMountsLive);
 	// mountRecordOK says the host's record of its mounts was readable, and the adds and
 	// removes are that record against what the launch's own reading would bind now.
-	mountsLive    bool
-	mountsReason  string
-	mountRecordOK bool
-	mountAdds     []configCtxMount
-	mountRemoves  []liveCtxMount
+	mountsLive             bool
+	mountsReason           string
+	mountRecordOK          bool
+	mountRecordInvalidated bool
+	mountAdds              []configCtxMount
+	mountRemoves           []liveCtxMount
 	// mountRefusal, when set, is why one element cannot be injected or removed live (dest and
 	// host source), "" when it can: liveMountRefusal.
 	mountRefusal func(dest, source string) string
@@ -310,6 +332,11 @@ func buildApplyPlan(in applyPlanInput) []applyChange {
 			elements++
 		}
 	}
+	if in.mountRecordInvalidated && !changed["mounts"] {
+		plan = append(plan, applyChange{kind: changeKey, sign: "~", label: "mounts (live state)", key: "mounts",
+			outcome: outcomeNextRestart,
+			reason:  "the host invalidated this jail's mount record after a failed update; the jail must restart to restore known state"})
+	}
 	if in.userMountsUnknown {
 		// Folds nothing: the user scope is no workspace key.
 		why := mwhy
@@ -342,6 +369,9 @@ func buildApplyPlan(in applyPlanInput) []applyChange {
 			if !d.recordChanged {
 				continue
 			}
+			if d.discoveryErr != "" {
+				why = "could not verify the running broker's scope: " + d.discoveryErr
+			}
 			plan = append(plan, applyChange{kind: changeKey, sign: "~", label: d.label + " repository scope",
 				key: "brokered", outcome: o, reason: why})
 			scopeLines++
@@ -368,14 +398,7 @@ func buildApplyPlan(in applyPlanInput) []applyChange {
 		scopeLines++
 	}
 	if changed["brokered"] && scopeLines == 0 {
-		o, why := outcomeNextRestart, ""
-		if len(in.scopes) > 0 {
-			// A broker is in play and its live scope already holds what the entry asks for.
-			o = outcomeAppliedNow
-			why = "the running broker's scope already matches"
-		} else if in.rt == "macos-user" { // parity: HonoredBy — every macos-user invocation is a fresh launch that runs the gate
-			o = outcomeNextSession
-		}
+		o, why := verifiedScopeOutcome(in.rt, in.scopes)
 		plan = append(plan, applyChange{kind: changeKey, sign: "~", label: "brokered", key: "brokered",
 			outcome: o, reason: why})
 	}

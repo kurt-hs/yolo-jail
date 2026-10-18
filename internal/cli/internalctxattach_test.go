@@ -5,11 +5,14 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/ctxinject"
 )
 
 type ctxAttachCall struct {
 	op           string
 	pid          int
+	identity     ctxinject.ProcessIdentity
 	source, dest string
 	rw           bool
 }
@@ -17,12 +20,12 @@ type ctxAttachCall struct {
 func fakeCtxInjector(err error) (*[]ctxAttachCall, ctxInjector) {
 	var calls []ctxAttachCall
 	return &calls, ctxInjector{
-		attach: func(pid int, source, dest string, rw bool) error {
-			calls = append(calls, ctxAttachCall{"attach", pid, source, dest, rw})
+		attach: func(pid int, identity ctxinject.ProcessIdentity, source, dest string, rw bool) error {
+			calls = append(calls, ctxAttachCall{"attach", pid, identity, source, dest, rw})
 			return err
 		},
-		detach: func(pid int, dest string) error {
-			calls = append(calls, ctxAttachCall{"detach", pid, "", dest, false})
+		detach: func(pid int, identity ctxinject.ProcessIdentity, dest string) error {
+			calls = append(calls, ctxAttachCall{"detach", pid, identity, "", dest, false})
 			return err
 		},
 	}
@@ -31,13 +34,15 @@ func fakeCtxInjector(err error) (*[]ctxAttachCall, ctxInjector) {
 // TestCtxAttachVerbRunsTheInjector: the verb hands its flags to the injector unchanged, read-only
 // unless --rw, and --remove takes the detach.
 func TestCtxAttachVerbRunsTheInjector(t *testing.T) {
+	identityFlags := []string{"--start-time", "123", "--mount-ns-device", "5", "--mount-ns-inode", "456"}
+	identity := ctxinject.ProcessIdentity{StartTime: 123, MountNSDevice: 5, MountNSInode: 456}
 	cases := []struct {
 		args []string
 		want ctxAttachCall
 	}{
-		{[]string{"--pid", "42", "--source", "/src", "--dest", "/ctx/a"}, ctxAttachCall{"attach", 42, "/src", "/ctx/a", false}},
-		{[]string{"--pid", "42", "--source", "/src", "--dest", "/ctx/a", "--rw"}, ctxAttachCall{"attach", 42, "/src", "/ctx/a", true}},
-		{[]string{"--pid", "7", "--dest", "/ctx/a", "--remove"}, ctxAttachCall{"detach", 7, "", "/ctx/a", false}},
+		{append([]string{"--pid", "42"}, append(identityFlags, "--source", "/src", "--dest", "/ctx/a")...), ctxAttachCall{"attach", 42, identity, "/src", "/ctx/a", false}},
+		{append([]string{"--pid", "42"}, append(identityFlags, "--source", "/src", "--dest", "/ctx/a", "--rw")...), ctxAttachCall{"attach", 42, identity, "/src", "/ctx/a", true}},
+		{append([]string{"--pid", "7"}, append(identityFlags, "--dest", "/ctx/a", "--remove")...), ctxAttachCall{"detach", 7, identity, "", "/ctx/a", false}},
 	}
 	for _, tc := range cases {
 		calls, inj := fakeCtxInjector(nil)
@@ -78,7 +83,8 @@ func TestCtxAttachVerbRefusesBadArgsWithExit2(t *testing.T) {
 func TestCtxAttachVerbFailureIsOneLineAndExit1(t *testing.T) {
 	_, inj := fakeCtxInjector(errors.New("move_mount onto /ctx/a: operation not permitted"))
 	var stderr bytes.Buffer
-	rc := ctxAttachMain([]string{"--pid", "42", "--source", "/src", "--dest", "/ctx/a"}, &stderr, inj)
+	args := []string{"--pid", "42", "--start-time", "123", "--mount-ns-device", "5", "--mount-ns-inode", "456", "--source", "/src", "--dest", "/ctx/a"}
+	rc := ctxAttachMain(args, &stderr, inj)
 	if rc != 1 {
 		t.Errorf("rc %d, want 1", rc)
 	}

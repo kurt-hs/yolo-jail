@@ -1,6 +1,7 @@
 package brokerscope
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -25,16 +26,21 @@ type LiveFile struct {
 	File File // as read, identity fields included
 }
 
-// LiveFiles returns every scope file of source whose Container is container and whose
-// Workspace is workspace, and whose launching process and bound broker are both alive. A file
-// no broker has bound (BrokerPID 0) is not live, and neither is one that does not parse. It
-// reads under the source's lock transaction.
+// LiveFiles reads under the source's lock transaction. A missing scope directory is an empty set.
 func LiveFiles(source, container, workspace string) ([]LiveFile, error) {
+	return LiveFilesContext(context.Background(), source, container, workspace)
+}
+
+// LiveFilesContext is LiveFiles with context-bounded source lock acquisition.
+func LiveFilesContext(ctx context.Context, source, container, workspace string) ([]LiveFile, error) {
+	if ctx == nil {
+		return nil, errors.New("scope discovery requires a context")
+	}
 	if source == "" || strings.ContainsAny(source, "/\\.") {
 		return nil, errors.New("scope file: bad source")
 	}
 	var out []LiveFile
-	err := brokerlock.WithTransaction(paths.BrokerSourceDir(source), func() error {
+	err := brokerlock.WithTransactionContext(ctx, paths.BrokerSourceDir(source), func() error {
 		dir := filepath.Dir(paths.BrokerScopeFile(source, "x"))
 		entries, err := os.ReadDir(dir)
 		if errors.Is(err, os.ErrNotExist) {
@@ -73,12 +79,16 @@ func processAlive(pid int) bool {
 
 // ReplaceRepos rewrites the Repos of the scope file at path and nothing else, under the
 // source's transaction. It refuses a path that is not expect's launch path, a symlink, an
-// entry ValidPattern rejects, and a file whose identity (source, launch id, container,
-// workspace, launching pid) differs from expect's: the broker validates those fields on every
-// request, so a rewrite that changed them would refuse every call. Every other field, the
-// broker binding (broker_start, broker_pid) and live_scope included, is kept as read. The
-// write is atomic and 0600.
+// entry ValidPattern rejects, and a file whose identity differs from expect.
 func ReplaceRepos(path string, expect File, repos []string) error {
+	return ReplaceReposContext(context.Background(), path, expect, repos)
+}
+
+// ReplaceReposContext is ReplaceRepos with context-bounded source lock acquisition.
+func ReplaceReposContext(ctx context.Context, path string, expect File, repos []string) error {
+	if ctx == nil {
+		return errors.New("scope replacement requires a context")
+	}
 	if expect.Source == "" || expect.LaunchID == "" || strings.ContainsAny(expect.Source+expect.LaunchID, "/\\.") {
 		return errors.New("scope file: bad source or launch id")
 	}
@@ -90,7 +100,7 @@ func ReplaceRepos(path string, expect File, repos []string) error {
 			return fmt.Errorf("scope file: %q is not an OWNER/REPO or a whole-segment wildcard", r)
 		}
 	}
-	return brokerlock.WithTransaction(paths.BrokerSourceDir(expect.Source), func() error {
+	return brokerlock.WithTransactionContext(ctx, paths.BrokerSourceDir(expect.Source), func() error {
 		fi, err := os.Lstat(path)
 		if err != nil {
 			return err

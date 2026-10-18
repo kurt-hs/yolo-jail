@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/ctxinject"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
 
@@ -148,6 +149,9 @@ func TestConfigApplyBoundsEveryCallOfAMountStep(t *testing.T) {
 	o.PathExists = func(string) bool { return false }
 	answeringPodman(o, rootlessInfo)
 	swapSeam(t, &applyStepDeadline, 200*time.Millisecond)
+	swapSeam(t, &ctxProcessIdentitySeam, func(int) (ctxinject.ProcessIdentity, error) {
+		return ctxinject.ProcessIdentity{StartTime: 11, MountNSDevice: 22, MountNSInode: 33}, nil
+	})
 	inner := o.Exec
 	var stepTimeouts []time.Duration
 	o.Exec = func(argv []string, dir string, env []string, timeout time.Duration) ExecResult {
@@ -246,10 +250,9 @@ func TestThePlanWaitsForAMountTheInjectorCannotMake(t *testing.T) {
 	}
 }
 
-// THE JAIL'S PID IS ASKED AGAIN AFTER THE VERB: the injector opens /proc/<pid>/ns/mnt and cannot
-// know whose namespace that is, so a pid that changed while the step ran (the jail stopped, its
-// pid reused) is an error, and the step is never recorded as the jail's.
-func TestInjectCtxMountRefusesAPidThatChangedUnderTheStep(t *testing.T) {
+// The postcheck remains useful, but is supplementary to the pre-mutation process and namespace
+// pin: a jail that changes after the injector has joined its pinned namespace is still reported.
+func TestInjectCtxMountReportsAPidThatChangedAfterTheStep(t *testing.T) {
 	f := newCtxDriveFixture(t)
 	f.o.acceptPodmanFacts(rootlessInfo)
 	inner := f.o.Exec
@@ -257,7 +260,7 @@ func TestInjectCtxMountRefusesAPidThatChangedUnderTheStep(t *testing.T) {
 	f.o.Exec = func(argv []string, dir string, env []string, timeout time.Duration) ExecResult {
 		if len(argv) > 3 && argv[1] == "inspect" && argv[3] == "{{.State.Pid}}" {
 			inspects++
-			if inspects > 1 {
+			if inspects > 2 {
 				return ExecResult{Ran: true, Stdout: "5151\n"}
 			}
 		}
@@ -268,7 +271,7 @@ func TestInjectCtxMountRefusesAPidThatChangedUnderTheStep(t *testing.T) {
 		t.Errorf("err %v; want the changed pid named", err)
 	}
 	if argv, _ := f.verbCall(); argv == nil {
-		t.Error("the verb never ran")
+		t.Error("the verb did not run before the supplementary postcheck")
 	}
 }
 

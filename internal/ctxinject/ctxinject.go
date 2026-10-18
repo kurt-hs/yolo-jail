@@ -34,6 +34,18 @@ import (
 // this package imports nothing of yolo's.
 const Root = "/ctx"
 
+// ProcessIdentity is a launch-local pin for the target PID and mount namespace. It is captured
+// immediately after runtime inspection and revalidated under a pidfd before any namespace change.
+type ProcessIdentity struct {
+	StartTime     uint64
+	MountNSDevice uint64
+	MountNSInode  uint64
+}
+
+func (p ProcessIdentity) Valid() bool {
+	return p.StartTime != 0 && p.MountNSInode != 0
+}
+
 // ErrNotTmpfs is the refusal when the jail's /ctx is not a tmpfs: a jail launched before live
 // mounts existed has /ctx on its read-only image rootfs, which the injector cannot add to.
 var ErrNotTmpfs = errors.New("/ctx in this jail is not the tmpfs a live-mounts launch makes " +

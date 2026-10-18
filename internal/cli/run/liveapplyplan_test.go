@@ -172,6 +172,33 @@ func TestThePlanSplitsMountsIntoElements(t *testing.T) {
 	}
 }
 
+func TestChangedBootScopeWithoutVerifiedLiveFilesWaitsForRestart(t *testing.T) {
+	boot := mapOf(t, `{"brokered":{"github":{"repos":["o/old"]}}}`)
+	current := mapOf(t, `{"brokered":{"github":{"repos":["o/new"]}}}`)
+	for _, tc := range []struct {
+		name string
+		err  string
+	}{
+		{"absent scope file", ""},
+		{"discovery error", "source lock wait timed out"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plan := buildApplyPlan(applyPlanInput{rt: "podman", running: true, bootOK: true,
+				boot: boot, current: current, scopes: []scopeDelta{{label: "github", source: "github",
+					desired: []string{"o/new"}, discoveryErr: tc.err}}})
+			if len(plan) != 1 || plan[0].outcome != outcomeNextRestart {
+				t.Fatalf("plan = %+v, want one restart-required brokered change", plan)
+			}
+			if tc.err != "" && !strings.Contains(plan[0].reason, tc.err) {
+				t.Errorf("reason %q does not retain discovery error %q", plan[0].reason, tc.err)
+			}
+			if strings.Contains(plan[0].reason, "already matches") {
+				t.Errorf("configured source was treated as proof of the live scope: %+v", plan[0])
+			}
+		})
+	}
+}
+
 // The scope half: one change per brokered loophole whose live broker files hold a different
 // scope than the one approved, naming each repository added and removed.
 func TestThePlanNamesTheScopeChange(t *testing.T) {

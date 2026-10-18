@@ -191,6 +191,39 @@ func TestUpdateCtxMountRecordKeepsTheToken(t *testing.T) {
 	}
 }
 
+func TestInvalidatedCtxMountRecordCannotClaimStaleMounts(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	const cname = "yolo-ws-abcd1234"
+	if err := writeCtxMountRecord(cname, "tok-1", []ctxMountEntry{{Source: "/h/old", Dest: "/ctx/old"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := invalidateCtxMountRecord(cname); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{ctxMountsTokenEnv + "=tok-1"}
+	if !ctxMountRecordInvalidated(cname, env) {
+		t.Fatal("record invalidation did not leave a detectable tombstone")
+	}
+	if _, ok := readCtxMountRecord(cname, env); ok {
+		t.Fatal("stale mount record still answered for the jail's token")
+	}
+	if err := os.Remove(ctxMountRecordPath(cname)); err != nil {
+		t.Fatal(err)
+	}
+	if !ctxMountRecordInvalidated(cname, env) {
+		t.Fatal("a missing record for a current jail was not detected as unknown state")
+	}
+	if ctxMountRecordInvalidated(cname, nil) {
+		t.Fatal("a jail without the live-mount token was treated as an invalidated record")
+	}
+	if err := writeCtxMountRecord(cname, "tok-2", nil); err != nil {
+		t.Fatal(err)
+	}
+	if ctxMountRecordInvalidated(cname, []string{ctxMountsTokenEnv + "=tok-2"}) {
+		t.Fatal("a fresh launch's token did not clear the invalidation state")
+	}
+}
+
 // TestCtxMountRecordIsOwnerOnly: the record names host paths, so it is the owner's alone, like
 // the grant beside it.
 func TestCtxMountRecordIsOwnerOnly(t *testing.T) {

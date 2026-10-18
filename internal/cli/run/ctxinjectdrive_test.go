@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/ctxinject"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 )
 
@@ -19,11 +20,17 @@ type ctxDriveFixture struct {
 	verbRC   int
 	verbErr  string
 	verbHang bool
+	identity ctxinject.ProcessIdentity
 }
 
 func newCtxDriveFixture(t *testing.T) *ctxDriveFixture {
 	t.Helper()
-	f := &ctxDriveFixture{o: goldenOptions("/ws", t.TempDir())}
+	f := &ctxDriveFixture{o: goldenOptions("/ws", t.TempDir()), identity: ctxinject.ProcessIdentity{
+		StartTime: 11, MountNSDevice: 22, MountNSInode: 33,
+	}}
+	swapSeam(t, &ctxProcessIdentitySeam, func(int) (ctxinject.ProcessIdentity, error) {
+		return f.identity, nil
+	})
 	f.o.Exec = func(argv []string, _ string, _ []string, timeout time.Duration) ExecResult {
 		f.calls = append(f.calls, argv)
 		f.timeouts = append(f.timeouts, timeout)
@@ -76,7 +83,7 @@ func TestInjectCtxMountRunsTheVerbUnderPodmanUnshareOnRootless(t *testing.T) {
 		t.Fatalf("verb argv %v; want it under podman unshare --", argv)
 	}
 	tail := argv[4:]
-	want := []string{"internal", "ctx-attach", "--pid", "4242", "--source", "/h/src", "--dest", "/ctx/src"}
+	want := []string{"internal", "ctx-attach", "--pid", "4242", "--start-time", "11", "--mount-ns-device", "22", "--mount-ns-inode", "33", "--source", "/h/src", "--dest", "/ctx/src"}
 	if !slices.Equal(tail, want) {
 		t.Errorf("verb args %v; want %v", tail, want)
 	}
@@ -111,7 +118,7 @@ func TestInjectCtxMountRunsTheVerbDirectlyWhenNestedOrRootful(t *testing.T) {
 			if len(argv) == 0 || argv[0] == "podman" {
 				t.Fatalf("verb argv %v; want the verb run directly", argv)
 			}
-			if !slices.Equal(argv[1:], []string{"internal", "ctx-attach", "--pid", "4242", "--source", "/h/src", "--dest", "/ctx/src", "--rw"}) {
+			if !slices.Equal(argv[1:], []string{"internal", "ctx-attach", "--pid", "4242", "--start-time", "11", "--mount-ns-device", "22", "--mount-ns-inode", "33", "--source", "/h/src", "--dest", "/ctx/src", "--rw"}) {
 				t.Errorf("verb args %v", argv[1:])
 			}
 		})
@@ -126,7 +133,7 @@ func TestRemoveCtxMountRunsTheRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 	argv, _ := f.verbCall()
-	if !slices.Equal(argv[4:], []string{"internal", "ctx-attach", "--pid", "4242", "--dest", "/ctx/src", "--remove"}) {
+	if !slices.Equal(argv[4:], []string{"internal", "ctx-attach", "--pid", "4242", "--start-time", "11", "--mount-ns-device", "22", "--mount-ns-inode", "33", "--dest", "/ctx/src", "--remove"}) {
 		t.Errorf("verb args %v", argv)
 	}
 }
@@ -154,6 +161,29 @@ func TestInjectCtxMountReadsPodmanInfoWhenTheLaunchHasNoFacts(t *testing.T) {
 	argv, _ := f.verbCall()
 	if argv[0] != "podman" || argv[1] != "unshare" {
 		t.Errorf("verb argv %v; want the rootless branch from the read", argv)
+	}
+}
+
+func TestInjectCtxMountRefusesChangedRuntimePIDBeforeRunningVerb(t *testing.T) {
+	f := newCtxDriveFixture(t)
+	f.o.acceptPodmanFacts(rootlessInfo)
+	inner := f.o.Exec
+	inspects := 0
+	f.o.Exec = func(argv []string, dir string, env []string, timeout time.Duration) ExecResult {
+		if len(argv) > 3 && argv[1] == "inspect" && argv[3] == "{{.State.Pid}}" {
+			inspects++
+			if inspects == 2 {
+				return ExecResult{Ran: true, Stdout: "5151\n"}
+			}
+		}
+		return inner(argv, dir, env, timeout)
+	}
+	err := f.o.injectCtxMount("podman", "yolo-ws-abcd1234", ctxWant("/h/src", "/ctx/src", false), time.Time{})
+	if err == nil || !strings.Contains(err.Error(), "changed before mount injection") {
+		t.Fatalf("error = %v, want changed target refused before mutation", err)
+	}
+	if argv, _ := f.verbCall(); argv != nil {
+		t.Errorf("injector ran for a changed target: %v", argv)
 	}
 }
 
