@@ -366,7 +366,8 @@ func floorFork(p hostfloor.Program) packload.Fork {
 	in := p.Install
 	return packload.Fork{Pack: in.ForkedBy, Base: p.Pack, Bin: in.Bin, Source: in.Source, Build: in.Build,
 		Produces: in.Produces, Platforms: in.Platforms, Patches: in.Patches, Follow: in.Follow, PatchBranch: in.PatchBranch,
-		Root: in.ForkRoot, PatchBranchDir: in.ForkPatchBranchDir}
+		Root: in.ForkRoot, PatchBranchDir: in.ForkPatchBranchDir,
+		PatchBranchRepoIdentity: in.ForkPatchBranchRepoIdentity}
 }
 
 // floorPatchedPlatform is the platform a patched fork's floor build is of: this host's, as a plain

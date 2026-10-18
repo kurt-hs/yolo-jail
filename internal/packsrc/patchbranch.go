@@ -97,13 +97,19 @@ func UnresolvedPatchBranchSeries(source, dir string) *Series {
 // upstream is the source upstream: the commit and base the last check that resolved it found.
 // PatchBranchUnresolvedError when rec names no resolution of this patch branch against this upstream.
 func PatchBranchSeries(source, dir, upstream string, rec *CheckRecord) (*Series, error) {
-	declaringRepo := ""
-	if IsRelativeLocator(source) {
-		identity, err := RelativeRepositoryIdentity(source, dir)
+	return PatchBranchSeriesWithIdentity(source, dir, "", upstream, rec)
+}
+
+// PatchBranchSeriesWithIdentity reads a resolution using the host-established repository identity when the
+// declaring pack was mapped into a guest with a different filesystem identity.
+func PatchBranchSeriesWithIdentity(source, dir, identity, upstream string, rec *CheckRecord) (*Series, error) {
+	declaringRepo := identity
+	if IsRelativeLocator(source) && declaringRepo == "" {
+		var err error
+		declaringRepo, err = RelativeRepositoryIdentity(source, dir)
 		if err != nil {
 			return nil, err
 		}
-		declaringRepo = identity
 	}
 	if rec == nil || rec.PatchBranch == nil || rec.PatchBranch.Source != source || rec.PatchBranch.Upstream != CheckRepo(upstream) ||
 		rec.PatchBranch.Commit == "" || rec.PatchBranch.Repository != declaringRepo ||
@@ -117,6 +123,12 @@ func PatchBranchSeries(source, dir, upstream string, rec *CheckRecord) (*Series,
 
 // ReadPatchBranch is PatchBranchSeries from the owner's check record in this store: a file read, no git.
 func (s *Store) ReadPatchBranch(owner, source, dir, upstream string) (*Series, error) {
+	return s.ReadPatchBranchWithIdentity(owner, source, dir, "", upstream)
+}
+
+// ReadPatchBranchWithIdentity reads a relative patch branch whose declaring repository identity was
+// established by the host and carried through a selected pack-tree mapping.
+func (s *Store) ReadPatchBranchWithIdentity(owner, source, dir, identity, upstream string) (*Series, error) {
 	rec, err := s.LoadCheckRecord(owner)
 	if err != nil {
 		if errors.Is(err, ErrNoCheckRecord) {
@@ -124,7 +136,7 @@ func (s *Store) ReadPatchBranch(owner, source, dir, upstream string) (*Series, e
 		}
 		return nil, &PatchBranchRecordError{Source: source, Err: err}
 	}
-	return PatchBranchSeries(source, dir, upstream, rec)
+	return PatchBranchSeriesWithIdentity(source, dir, identity, upstream, rec)
 }
 
 // PatchBranchRecordError is a check record that holds a patch branch's commit and cannot be read:

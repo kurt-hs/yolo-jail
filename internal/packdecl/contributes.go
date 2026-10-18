@@ -152,6 +152,9 @@ type Contribution struct {
 	// was read from (its source, where ForkRoot is a staged copy), which a relative `patch_branch` is
 	// resolved against (packsrc.ParseFrom). Never serialized, for ForkRoot's reason.
 	ForkPatchBranchDir string `json:"-"`
+	// ForkPatchBranchRepoIdentity is the host-established repository identity carried through a jail's
+	// selected pack-tree record. Never serialized into a manifest.
+	ForkPatchBranchRepoIdentity string `json:"-"`
 
 	// Update is the argv that makes the program update ITSELF, with the bin omitted:
 	// `"update": ["install"]` for claude, `["update", "--self"]` for pi. Read only on
@@ -1482,6 +1485,7 @@ func (m *Manifest) InstallContributions() []Install {
 			// bytes these are. Copied, so an Install edited by a consumer cannot reach back.
 			in.Source, in.Build, in.ForkedBy, in.ForkRoot = c.Source, c.Build, c.ForkedBy, c.ForkRoot
 			in.ForkPatchBranchDir = c.ForkPatchBranchDir
+			in.ForkPatchBranchRepoIdentity = c.ForkPatchBranchRepoIdentity
 			in.Produces = append([]string(nil), c.Produces...)
 			// A patched fork's series directory and follow rule ride along, so every reader of
 			// the program can tell a patched fork from a plain one (Install.IsPatchedFork).

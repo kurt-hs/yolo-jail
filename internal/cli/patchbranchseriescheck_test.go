@@ -1,9 +1,8 @@
 package cli
 
-// patchbranchseriescheck_test.go pins `yolo pack series check` on a PATCH BRANCH: the same question it answers
-// for a series — does the newest upstream candidate take it — answered by merging the branch's commit into
-// that candidate in a scratch mirror, as a launch would, so it answers the same in a jail as on the host
-// and writes nothing on this machine. It used to decline a patch branch as having nothing to check.
+// patchbranchseriescheck_test.go pins `yolo pack series check` on a PATCH BRANCH: the default reports a matching
+// recorded merge verdict, and `--online` answers the question against the newest upstream in a disposable scratch
+// mirror without writing this machine's durable check record.
 
 import (
 	"os"
@@ -12,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -36,9 +36,26 @@ func TestSeriesCheckUsesTheRecordedPatchBranchVerdictAndNamesStaleRemedy(t *test
 		t.Fatalf("launch did not record a patch branch check:\n%s", out)
 	}
 	tip := upstreamGit(t, fx.patchBranch, "rev-parse", "mine")
+	store := patchedForkStore()
+	mirrors := filepath.Join(store.Dir, "mirrors")
+	if err := os.RemoveAll(mirrors); err != nil {
+		t.Fatal(err)
+	}
+	gitLog := filepath.Join(t.TempDir(), "git-invocations")
+	gitWrapper := filepath.Join(filepath.Dir(gitLog), "git")
+	if err := os.WriteFile(gitWrapper, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> "+gitLog+"\nexit 97\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", filepath.Dir(gitWrapper)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	rc, out, errw := seriesVerb(t, "check", fx.forkDir)
-	if rc != 0 || !strings.Contains(out, "merges the patch branch mine@"+shortSHA(tip)+" cleanly") {
-		t.Fatalf("recorded patch branch verdict: rc=%d\n%s\n%s", rc, out, errw)
+	if rc != 0 || !strings.Contains(out, "recorded good build") || !strings.Contains(out, "merges the patch branch mine@"+shortSHA(tip)+" cleanly") {
+		t.Fatalf("recorded patch branch verdict with no mirror objects: rc=%d\\n%s\\n%s", rc, out, errw)
+	}
+	if _, err := os.Stat(gitLog); !os.IsNotExist(err) {
+		t.Fatalf("default series check invoked git despite the recorded verdict (log stat error %v)", err)
+	}
+	if _, err := os.Stat(mirrors); !os.IsNotExist(err) {
+		t.Fatalf("default series check recreated its deleted mirrors: %v", err)
 	}
 	noScratchLeft(t, tmp)
 
@@ -51,6 +68,50 @@ func TestSeriesCheckUsesTheRecordedPatchBranchVerdictAndNamesStaleRemedy(t *test
 		t.Fatalf("stale patch branch verdict: rc=%d\n%s\n%s", rc, out, errw)
 	}
 	noScratchLeft(t, tmp)
+}
+
+func TestSeriesCheckUsesRecordedConflictWithoutWalking(t *testing.T) {
+	fx := newPatchBranchAdvanceFixture(t)
+	fx.commit(t, "v1.1.0", map[int]string{11: "eleven"})
+	if _, out, _ := fx.launch(t, "podman"); len(fx.builds) != 0 {
+		t.Fatalf("conflicting branch unexpectedly built:\n%s", out)
+	}
+	rc, out, errw := seriesVerb(t, "check", fx.forkDir)
+	for _, want := range []string{"does not merge the patch branch", "conflicts in f.txt", "git checkout mine", "git push origin mine"} {
+		if rc == 0 || !strings.Contains(out, want) {
+			t.Errorf("recorded conflict omitted %q: rc=%d\n%s\n%s", want, rc, out, errw)
+		}
+	}
+}
+
+func TestSeriesCheckReportsUnavailableWhenNoRecordedMergeVerdictExists(t *testing.T) {
+	fx := newPatchBranchAdvanceFixture(t)
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	fx.launch(t, "podman")
+	goodBefore := fx.record(t).Good
+	fx.commit(t, "v1.2.0", map[int]string{15: "fifteen"})
+	f := fx.fork(t)
+	series, err := f.ReadSeries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := patchedForkStore().CheckPatched(f.CheckWant(series), packsrc.CheckOptions{Force: true,
+		Now: func() time.Time { return fx.now }})
+	if checked.Err != nil || checked.Record == nil {
+		t.Fatalf("refreshing the durable check without a merge walk: %+v", checked)
+	}
+	rc, out, errw := seriesVerb(t, "check", fx.forkDir)
+	for _, want := range []string{"no historical merge verdict", "`yolo pack update`", "start a launch", "--online"} {
+		if !strings.Contains(errw, want) {
+			t.Errorf("unavailable recorded verdict omitted %q:\n%s%s", want, out, errw)
+		}
+	}
+	if rc != 1 || strings.Contains(out, "merges the patch branch") {
+		t.Fatalf("missing historical verdict was invented: rc=%d\n%s\n%s", rc, out, errw)
+	}
+	if got := fx.record(t).Good; got == nil || goodBefore == nil || got.Commit != goodBefore.Commit || got.Series != goodBefore.Series {
+		t.Errorf("reporting an unavailable verdict changed the recorded good build: before=%+v after=%+v", goodBefore, got)
+	}
 }
 
 func TestSeriesCheckOnlineRefreshesPatchBranchInScratch(t *testing.T) {

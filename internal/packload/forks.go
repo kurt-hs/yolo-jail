@@ -101,9 +101,11 @@ type Fork struct {
 	// patched, its series the patch branch's commit as the last check resolved it. "" otherwise.
 	PatchBranch string
 	// PatchBranchDir is the directory a RELATIVE patch branch (packsrc.ParseFrom) is resolved against: the
-	// directory the fork pack was read from — its source, where Root is a staged copy (Pack.SourceRoot) —
-	// as this process sees it, so `../..` names the pack's own repository in either notch.
+	// declaring directory, or its host-to-jail workspace mapping.
 	PatchBranchDir string
+	// PatchBranchRepoIdentity is the host-established identity of this relative branch's repository,
+	// carried from the selected pack-tree record into the jail. Empty on the host, where it is derived.
+	PatchBranchRepoIdentity string
 	// PackBases is the base of every fork the fork pack declares, this one's included, and in turn
 	// every base those bases fork (forkBaseClosure): the packs a build sealed to that pack must
 	// carry, since a selection holding a fork whose base it lacks is refused (ApplyForks) on the
@@ -224,13 +226,26 @@ func (f Fork) RefNotResolvedLine(dir string) string {
 	return f.Label() + ": ref not resolved (offline) — `yolo pack lint --online " + shquote.QuoteDisplay(dir) + "` checks it"
 }
 
-// patchBranchDirOf is the directory a pack's relative patch branch is resolved against: the
-// directory it was read from.
-func patchBranchDirOf(p *Pack) string {
-	if p.SourceRoot != "" {
-		return p.SourceRoot
+// patchBranchDirOf is the directory a pack's relative patch branch is resolved against: its mapped
+// host source directory in a jail, otherwise the directory it was read from.
+func patchBranchDirOf(p *Pack, contribution string) string {
+	if p != nil {
+		if mapping, ok := p.PatchBranchMappings[p.StagedSlug()+"/"+contribution]; ok && mapping.Mapped {
+			return mapping.Directory
+		}
+		if p.SourceRoot != "" {
+			return p.SourceRoot
+		}
+		return p.Root
 	}
-	return p.Root
+	return ""
+}
+
+func patchBranchRepositoryOf(p *Pack, contribution string) string {
+	if p == nil {
+		return ""
+	}
+	return p.PatchBranchMappings[p.StagedSlug()+"/"+contribution].Repository
 }
 
 // notUsersPackRoot reports whether a pack root is a copy yolo made rather than the user's own
@@ -275,7 +290,8 @@ func (f Fork) ReadSeriesFrom(store *packsrc.Store) (*packsrc.Series, error) {
 		if store == nil {
 			store = &packsrc.Store{Dir: paths.PacksDir()}
 		}
-		s, err := store.ReadPatchBranch(f.Key(), f.PatchBranch, f.PatchBranchDir, f.Source)
+		s, err := store.ReadPatchBranchWithIdentity(f.Key(), f.PatchBranch, f.PatchBranchDir,
+			f.PatchBranchRepoIdentity, f.Source)
 		switch {
 		case packsrc.IsPatchBranchRecordError(err):
 			// A RECORD THAT CANNOT BE READ is said as that, never as "not fetched yet": an act that
@@ -304,7 +320,7 @@ func (f Fork) ReadSeriesFrom(store *packsrc.Store) (*packsrc.Series, error) {
 // upstream and follow rule, and the series' base.
 func (f Fork) CheckWant(s *packsrc.Series) packsrc.PatchedWant {
 	w := packsrc.PatchedWant{Owner: f.Key(), Source: f.Source, Follow: f.Follow, PatchBranch: f.PatchBranch,
-		PatchBranchDir: f.PatchBranchDir}
+		PatchBranchDir: f.PatchBranchDir, PatchBranchRepoIdentity: f.PatchBranchRepoIdentity}
 	if s != nil && f.PatchBranch == "" {
 		w.Base = s.Base // a patch branch's base is the check's to resolve
 	}
@@ -327,9 +343,11 @@ func Forks(packs []*Pack) []Fork {
 				Pack: p.Name, Base: c.ForkOf, Bin: c.Bin, Source: c.Source, Build: c.Build,
 				Produces:  append([]string(nil), c.Produces...),
 				Platforms: append([]string(nil), c.Platforms...),
-				Root:      p.Root, Patches: c.Patches, Follow: c.Follow, PatchBranch: c.PatchBranch, PatchBranchDir: patchBranchDirOf(p),
-				PackBases: slices.Clone(bases),
-				NodeFloor: baseProgramNodeFloor(packs, c.ForkOf, c.Bin),
+				Root:      p.Root, Patches: c.Patches, Follow: c.Follow, PatchBranch: c.PatchBranch,
+				PatchBranchDir:          patchBranchDirOf(p, c.ExtensionName()),
+				PatchBranchRepoIdentity: patchBranchRepositoryOf(p, c.ExtensionName()),
+				PackBases:               slices.Clone(bases),
+				NodeFloor:               baseProgramNodeFloor(packs, c.ForkOf, c.Bin),
 			})
 		}
 	}
@@ -465,6 +483,7 @@ func ApplyForks(packs []*Pack) ([]*Pack, error) {
 		// the base's program (the host floor) reads the series through it.
 		base.Decl.Contributes[at].ForkRoot = f.Root
 		base.Decl.Contributes[at].ForkPatchBranchDir = f.PatchBranchDir
+		base.Decl.Contributes[at].ForkPatchBranchRepoIdentity = f.PatchBranchRepoIdentity
 		// The fork's `launch_computed` for its bin, merged into the base's (packdecl.MergeForkComputed;
 		// docs/reference/pack-system.md#LC-D1), checked against the base's launch selection, which
 		// the fork pack's own validation could not see.

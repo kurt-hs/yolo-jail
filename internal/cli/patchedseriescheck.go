@@ -201,13 +201,16 @@ func packSeriesCheck(args []string, out, errw io.Writer, color bool) int {
 	return rc
 }
 
-const recordedBranchVerdict = "a fresh launch uses this recorded check and its build results"
+const recordedBranchVerdict = "the recorded merge verdict; no git ran"
 
-// recordedPatchBranchCheck is the offline `series check` path for a patch branch. The check record supplies
-// the resolved branch commit and the candidate list; replay uses existing mirrors only. A missing or stale record
-// is not silently replaced by an online scratch fetch, because that scratch result cannot update durable state.
+// recordedPatchBranchCheck is the offline `series check` path for a patch branch. It reports only a matching
+// recorded merge outcome or an accepted good build; it never resolves refs, walks a series, or touches mirrors.
+// A missing or stale verdict names the host-side act that can record it; scratch recomputation is `--online` only.
 func recordedPatchBranchCheck(ctx context.Context, pr richtext.Printer, errw io.Writer, f packload.Fork,
 	packDir, onto string) int {
+	if ctx.Err() != nil {
+		return 130
+	}
 	unavailable := func(state string) int {
 		fmt.Fprintf(errw, "yolo pack series check: %s: %s — run `yolo pack update` on the host or start a launch to "+
 			"record a current verdict; `yolo pack series check --online %s` checks a disposable scratch copy and "+
@@ -241,7 +244,8 @@ func recordedPatchBranchCheck(ctx context.Context, pr richtext.Printer, errw io.
 	if rec.Check == nil || rec.Check.FetchErr != "" || rec.Check.Problem != "" {
 		return unavailable("the last check did not resolve a current patch-branch verdict")
 	}
-	series, err = packsrc.PatchBranchSeries(f.PatchBranch, f.PatchBranchDir, f.Source, rec)
+	series, err = packsrc.PatchBranchSeriesWithIdentity(f.PatchBranch, f.PatchBranchDir,
+		f.PatchBranchRepoIdentity, f.Source, rec)
 	if err != nil {
 		return unavailable("the recorded patch-branch resolution is stale")
 	}
@@ -249,44 +253,89 @@ func recordedPatchBranchCheck(ctx context.Context, pr richtext.Printer, errw io.
 	pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: patch branch %s, merge base with upstream %s",
 		f.Label(), series.PatchBranch.Label(), shortSHA(series.Base))))
 
-	repo, subdir := mustRepo(f.Source), subdirOf(f.Source)
-	var list []packsrc.ListEntry
+	var target packsrc.ListEntry
 	atBase := false
 	if onto != "" {
-		target, err := store.ResolveOnto(repo, onto, nil)
-		if err != nil {
-			return unavailable("the local upstream mirror cannot resolve --onto " + onto + " (" + err.Error() + ")")
+		for _, entry := range rec.Check.List {
+			if onto == entry.Commit || onto == entry.Tag || onto == entry.Version {
+				target = entry
+				break
+			}
 		}
-		list = []packsrc.ListEntry{target}
+		if target.Commit == "" {
+			return unavailable("the recorded upstream check has no candidate matching --onto " + onto)
+		}
 	} else {
-		list = rec.Candidates(in)
+		list := rec.Candidates(in)
+		if len(list) == 0 && rec.Good != nil && rec.Good.Series == series.Digest {
+			good := packsrc.ListEntry{Commit: rec.Good.Commit}
+			for _, entry := range rec.Check.List {
+				if entry.Commit == rec.Good.Commit {
+					good = entry
+					break
+				}
+			}
+			pr.Printf("[green]%s[/green]: the recorded good build at upstream %s already merges the patch branch %s cleanly; no newer candidate is pending",
+				richtext.Escape(f.Label()), richtext.Escape(good.Label()), richtext.Escape(series.PatchBranch.Label()))
+			return 0
+		}
 		if len(list) == 0 && rec.Check.BaseOnBranch {
 			list, atBase = []packsrc.ListEntry{{Commit: series.Base}}, true
 		}
 		if len(list) == 0 {
-			if rec.Good != nil && rec.Good.Series == series.Digest {
-				pr.Printf("[green]%s[/green]: no newer candidate is pending; the recorded good build already uses this patch branch",
-					richtext.Escape(f.Label()))
-				return 0
-			}
 			return unavailable("the recorded upstream check has no candidate this patch branch can be built at")
 		}
+		target = list[0]
 	}
-	walk := store.WalkSeries(repo, subdir, series, list, packsrc.WalkOptions{StopOnPatchFailure: true})
-	if ctx.Err() != nil {
-		return 130
+	outcome := recordedBranchOutcome(rec, target.Commit, series.Digest)
+	if outcome == nil {
+		return unavailable("the record has no historical merge verdict for upstream " + target.Label())
 	}
-	if walk.Err != nil {
-		return unavailable("the recorded candidates are no longer available in this machine's mirrors (" + walk.Err.Error() + ")")
+	if outcome.Kind != packsrc.OutcomeApplies && outcome.Kind != packsrc.OutcomeConflict {
+		return unavailable("the record's outcome for upstream " + target.Label() + " is not a merge verdict")
 	}
-	lines, clean := seriesCheckReport(f, packDir, series, walk, atBase, onto, false, recordedBranchVerdict)
-	for _, line := range lines {
-		pr.Printf("%s", line)
+	pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: reports %s for patch branch %s (recorded by yolo %s, git %s)",
+		f.Label(), recordedBranchVerdict, series.PatchBranch.Label(), recordedVersion(outcome.Yolo), recordedVersion(outcome.Git))))
+	if outcome.Kind == packsrc.OutcomeConflict {
+		paths := strings.Join(outcome.Paths, ", ")
+		if paths == "" {
+			paths = "(no path named)"
+		}
+		pr.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf("%s: upstream %s does not merge the patch branch —", f.Label(), target.Label())))
+		pr.Printf("%s", richtext.Escape("  conflicts in "+paths))
+		for _, line := range f.RebaseRecipe().Repair(target, packsrc.RecipeLead, "  ") {
+			pr.Printf("[dim]%s[/dim]", richtext.Escape(line))
+		}
+		return 1
 	}
-	if clean {
-		return 0
+	what := "upstream " + target.Label()
+	if atBase {
+		what = "the patch branch's merge base " + target.Label() + " (no version of the branch contains it)"
 	}
-	return 1
+	pr.Printf("[green]%s[/green]: %s merges the patch branch %s cleanly — %s",
+		richtext.Escape(f.Label()), richtext.Escape(what), richtext.Escape(series.PatchBranch.Label()), recordedBranchVerdict)
+	return 0
+}
+
+func recordedVersion(v string) string {
+	if v == "" {
+		return "unknown version"
+	}
+	return v
+}
+
+func recordedBranchOutcome(rec *packsrc.CheckRecord, commit, series string) *packsrc.EntryOutcome {
+	var found *packsrc.EntryOutcome
+	for i := range rec.Outcomes {
+		o := &rec.Outcomes[i]
+		if o.Commit != commit || o.Series != series || (o.Kind != packsrc.OutcomeConflict && o.Kind != packsrc.OutcomeApplies) {
+			continue
+		}
+		if found == nil || o.At >= found.At {
+			found = o
+		}
+	}
+	return found
 }
 
 // seriesCheckOne is one patched fork's or extension's check, walk and verdict. packDir is the pack's
@@ -356,7 +405,8 @@ func seriesCheckOne(ctx context.Context, pr richtext.Printer, errw io.Writer, f 
 	}
 	if f.PatchBranch != "" {
 		// THE PATCH BRANCH AS THIS CHECK RESOLVED IT, in the scratch record: its commit is what the walk merges.
-		resolved, err := packsrc.PatchBranchSeries(f.PatchBranch, f.PatchBranchDir, f.Source, res.Record)
+		resolved, err := packsrc.PatchBranchSeriesWithIdentity(f.PatchBranch, f.PatchBranchDir,
+			f.PatchBranchRepoIdentity, f.Source, res.Record)
 		if err != nil {
 			fmt.Fprintf(errw, "yolo pack series check: %s: %v — run `%s` again\n", f.Label(), err, again)
 			return 1
