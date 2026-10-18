@@ -178,6 +178,74 @@ func TestConfigApplyBoundsEveryCallOfAMountStep(t *testing.T) {
 	}
 }
 
+// A READ-WRITE MOUNT CHANGE WITH NO RECORD STILL HAS A LINE (M3). Read-write elements come from
+// the user scope, never the workspace config, so without the host's record of the jail's mounts
+// (Apple Container, a jail launched before the record existed) nothing else can say they moved:
+// the apply prints one line for them, at next restart with the reason, and exits 3.
+func TestConfigApplyNamesUserScopeMountsTheRecordCannotVouchFor(t *testing.T) {
+	o, buf := applyFixture(t, `{}`, `{}`, applyJail{running: true})
+	rw := t.TempDir()
+	writeUserConfig(t, os.Getenv("HOME"), `{"mounts":[{"host":"`+rw+`","mode":"rw"}]}`)
+	swapSeam(t, &ctxMountsLiveSeam, func(*Options, string, string, []string) (bool, string) {
+		return false, "this jail started before live mounts existed"
+	})
+	swapSeam(t, &readCtxMountRecordSeam, func(string, []string) ([]liveCtxMount, bool) { return nil, false })
+	if rc := o.configApply(false); rc != 3 {
+		t.Fatalf("rc = %d, want 3\n%s", rc, buf.String())
+	}
+	if out := buf.String(); !strings.Contains(out,
+		"~ mounts (user config): at next restart (yolo stop, then yolo) — this jail started before live mounts existed") {
+		t.Errorf("no user-scope mounts line:\n%s", out)
+	}
+}
+
+// A non-interactive attach's notice counts a user-scope mount change the record shows: the
+// workspace config and its approval can both be unchanged while a read-write mount moved.
+func TestAttachNoticeCountsAUserScopeMountChange(t *testing.T) {
+	o, buf := applyFixture(t, `{}`, `{}`, applyJail{running: true})
+	rw := t.TempDir()
+	writeUserConfig(t, os.Getenv("HOME"), `{"mounts":[{"host":"`+rw+`","mode":"rw"}]}`)
+	swapSeam(t, &readCtxMountRecordSeam, func(string, []string) ([]liveCtxMount, bool) { return nil, true })
+	merged, ok := o.loadAndValidateConfig()
+	if !ok {
+		t.Fatal(buf.String())
+	}
+	buf.Reset()
+	o.applyAtAttach("yolo-ws", "podman", merged, nil)
+	if !strings.Contains(buf.String(), "yolo config apply") {
+		t.Errorf("a read-write mount the jail lacks printed no notice:\n%s", buf.String())
+	}
+}
+
+// A MOUNT THE INJECTOR CANNOT MAKE WAITS FOR A RESTART, saying why, rather than claiming
+// `applied now` and failing: a destination outside /ctx (the injector's only target) and a
+// source that is a file (the injector mounts on a directory it makes).
+func TestThePlanWaitsForAMountTheInjectorCannotMake(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	boot, cur := mapOf(t, `{}`), mapOf(t, `{"mounts":["x"]}`)
+	plan := buildApplyPlan(applyPlanInput{rt: "podman", running: true, bootOK: true, boot: boot, current: cur,
+		mountsLive: true, mountRecordOK: true, mountRefusal: liveMountRefusal,
+		mountAdds: []configCtxMount{{source: dir, dest: "/opt/elsewhere"}, {source: file, dest: "/ctx/f.txt"},
+			{source: dir, dest: "/ctx/ok"}},
+		mountRemoves: []liveCtxMount{{Source: dir, Dest: "/srv/old"}},
+	})
+	joined := strings.Join(renderApplyChanges(plan), "\n")
+	for _, want := range []string{
+		"+ /opt/elsewhere (read-only): at next restart (yolo stop, then yolo) — a mount outside /ctx/",
+		"+ /ctx/f.txt (read-only): at next restart (yolo stop, then yolo) — a file",
+		"- /srv/old (read-only): at next restart (yolo stop, then yolo) — a mount outside /ctx/",
+		"+ /ctx/ok (read-only): applied now",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("the plan has no %q:\n%s", want, joined)
+		}
+	}
+}
+
 // THE JAIL'S PID IS ASKED AGAIN AFTER THE VERB: the injector opens /proc/<pid>/ns/mnt and cannot
 // know whose namespace that is, so a pid that changed while the step ran (the jail stopped, its
 // pid reused) is an error, and the step is never recorded as the jail's.
