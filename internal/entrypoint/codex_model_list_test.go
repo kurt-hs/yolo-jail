@@ -659,7 +659,8 @@ func TestTheHostNotchGivesPiTheDeclaredCodexList(t *testing.T) {
 	var ids []string
 	for _, route := range piRoutes {
 		cmd := exec.Command(node, harness)
-		cmd.Env = append(append(os.Environ(), "HOME="+home, "EXT="+ext), route.env()...)
+		cmd.Env = append(environWithout("PI_CODING_AGENT_DIR"), "HOME="+home, "EXT="+ext)
+		cmd.Env = append(cmd.Env, route.env()...)
 		out, err := cmd.Output()
 		if err != nil {
 			t.Fatalf("running the host-delivered extension on the %s: %v\n%s", route.name, err, out)

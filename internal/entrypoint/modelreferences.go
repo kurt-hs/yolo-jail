@@ -1,0 +1,157 @@
+package entrypoint
+
+// modelreferences.go is the boot's half of MM-D45 and MM-D46 (docs/design/model-lists-and-pickers.md):
+// once the pack surfaces are rendered, each MODEL REFERENCE a program's pack declares
+// (packdecl.ModelReferences, where the term is coined) is read back out of the file the render
+// WROTE and resolved against the program's model registry, and the file's selected model is
+// compared with the scope a child agent runs under.
+//
+// Why the boot and not only `yolo check`: a jail cannot run the host render, and the file holds
+// what no declaration does — the computed layer the derive re-asserts each boot, and the model
+// the user picked in the agent's own picker, which persists across launches by design. So a
+// picked model the scope excludes is said here, at the next boot, naming both and the fix (MM-D46).
+//
+// Warnings only, each once per boot: nothing here refuses a launch, and nothing is written.
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg"
+	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/manifest"
+	"github.com/mschulkind-oss/yolo-jail/internal/modelcatalog"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/render"
+)
+
+// reportModelReferences warns about every declared model reference the rendered surfaces hold
+// that matches nothing in its program's registry, and about a selected model outside its scope.
+func reportModelReferences(e *Env, packs []*packload.Pack) {
+	autonomy := e.renderTarget().Profile().AgentAutonomy
+	profiles := packload.ProfileTable(e.LoadUseProfiles())
+	var providers = e.LoadProviders()
+	for _, p := range packs {
+		if p == nil || p.Decl == nil {
+			continue
+		}
+		for _, bin := range p.InstallBins() {
+			refs := p.Decl.ProgramModelReferences(bin)
+			if refs == nil {
+				continue
+			}
+			s, doc, ok := renderedSurface(e, p, refs.Surface, autonomy)
+			if !ok {
+				continue
+			}
+			governs := ""
+			if name := profiles[bin]; name != "" {
+				governs = fmt.Sprintf(", which profile %q derives each boot", name)
+			}
+			if selected, scope, outside := packload.SelectionOutsideScope(doc, refs); outside {
+				e.warnOnce(fmt.Sprintf("%s: the model saved in %s, %s, is outside the scope %s's child agents "+
+					"run under (%s %s: %s%s), so a child agent that inherits the session's model is refused. "+
+					"%s keeps a model picked in its own picker across launches: pick one the scope admits "+
+					"there, or select a profile whose provider serves %s",
+					bin, s.Path, selected, bin, s.Path, refs.Scope, strings.Join(scope, ", "), governs,
+					bin, selected))
+			}
+			values := packload.ModelReferenceValuesIn(doc, refs, s.Path+" ")
+			if len(values) == 0 {
+				continue
+			}
+			reg := packload.NewModelRegistry(packs, providers, bin, bootCatalog(e, p, bin))
+			for _, src := range refs.Registry {
+				if _, rendered, ok := renderedSurface(e, p, src.Surface, autonomy); ok {
+					reg.AddRendered(rendered, src)
+				}
+			}
+			findings, unasked := packload.EvaluateModelReferences(reg, values)
+			for _, f := range findings {
+				nearest := ""
+				if len(f.Nearest) > 0 {
+					nearest = " (nearest: " + strings.Join(f.Nearest, ", ") + ")"
+				}
+				e.warnOnce(fmt.Sprintf("%s: %s names %q, which matches no model in %s's registry%s, so a child "+
+					"agent started on it fails at dispatch. `yolo check` on the host names the profile or pack "+
+					"that set it; if it names none, the value is the one yolo's derive computed, so report it at %s",
+					bin, f.Where, f.Value, bin, nearest, IssuesURL))
+			}
+			if unasked > 0 {
+				e.noteOnce(fmt.Sprintf("%s: %d model reference(s) in %s not checked: %s's catalog is not "+
+					"installed yet", bin, unasked, s.Path, bin))
+			}
+		}
+	}
+}
+
+// renderedSurface is p's surface id as this boot rendered it, decoded; false when p declares no
+// such surface or the file is absent or does not decode.
+func renderedSurface(e *Env, p *packload.Pack, id string, autonomy bool) (manifest.Surface, map[string]any, bool) {
+	key, err := manifest.ParseSurfaceID(id)
+	if err != nil {
+		return manifest.Surface{}, nil, false
+	}
+	surfaces, _ := p.SurfacesFor(autonomy)
+	for _, s := range surfaces {
+		if s.Key() != key {
+			continue
+		}
+		data, err := os.ReadFile(e.renderTarget().SurfacePath(s))
+		if err != nil {
+			return s, nil, false
+		}
+		doc := agentcfg.DecodeSurfaceObject(s.Codec, data)
+		return s, doc, doc != nil
+	}
+	return manifest.Surface{}, nil, false
+}
+
+// bootCatalog is the ids bin's installed catalog names, read where this jail's launcher installs
+// it (the npm prefix), nil when it is not installed or names none.
+func bootCatalog(e *Env, p *packload.Pack, bin string) map[string]bool {
+	installs, _ := p.HonoredInstalls()
+	for _, inst := range installs {
+		if inst.Bin != bin || inst.Kind != "npm" || len(inst.ModelCatalog) == 0 {
+			continue
+		}
+		name, _ := packdecl.SplitNpmSpec(inst.Package)
+		dir := filepath.Join(e.NpmPrefix, "lib", "node_modules", filepath.FromSlash(name))
+		if !modelcatalog.Installed(dir) {
+			return nil
+		}
+		if cat := modelcatalog.Read(dir, inst.ModelCatalog); cat.Files > 0 {
+			return cat.IDs
+		}
+	}
+	return nil
+}
+
+// DerivedSurface is the document p's derive composes for its surface id over the wire tables vars
+// (the YOLO_PROVIDERS, YOLO_PROFILES and YOLO_USE_PROFILES a launch exports) and the selected
+// packs, at the host notch and writing nothing: where `yolo check`, which renders no file, reads a
+// program's own model surfaces from (packdecl.ModelReferences.Registry, MM-D45). An error means
+// p declares no such surface or its derive failed.
+func DerivedSurface(p *packload.Pack, id string, vars map[string]string, packs []*packload.Pack) (map[string]any, error) {
+	key, err := manifest.ParseSurfaceID(id)
+	if err != nil {
+		return nil, err
+	}
+	surfaces, _ := p.SurfacesFor(render.ProfileFor(render.KindHost).AgentAutonomy)
+	for _, s := range surfaces {
+		if s.Key() != key {
+			continue
+		}
+		home, err := os.MkdirTemp("", "yolo-derived-surface-")
+		if err != nil {
+			return nil, err
+		}
+		defer os.RemoveAll(home)
+		_, layer, err := hostSurfaceLayer(p, strings.TrimPrefix(s.Path, "~/"), home,
+			&HostInputs{Vars: vars, Packs: packs}, nil)
+		return layer, err
+	}
+	return nil, fmt.Errorf("pack %s declares no surface %s", p.Name, id)
+}

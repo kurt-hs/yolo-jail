@@ -65,6 +65,8 @@ state; `null` removes one. See `yolo config-ref`.
 - A bare `-p` that some agents can't use names them all on one line.
 - `yolo config promote` and `diff` keep a `null` you set.
 - A patch series that stopped applying works again once upstream releases a version it fits.
+- `yolo check` and the launch name a `subagents` model or `modelScope` pattern no model matches, with where it is set and the nearest ids.
+- A launch warns when the model you picked in pi is outside the scope its child agents run under, and says how to fix it.
 - With `agent_updates` off, a patched fork or extension keeps its good build after a newer one fails.
 - An exported rebased patch series now applies whatever your git version or settings.
 - pi, omp and opencode no longer wait about two seconds at start for yolo's footer line.

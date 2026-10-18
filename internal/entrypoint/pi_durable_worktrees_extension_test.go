@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
@@ -127,13 +126,7 @@ process.stdout.write(JSON.stringify({ env: envVal, file: fileVal }));
 			}
 			cmd := exec.Command(requireNode(t, "the pi durable-worktrees extension"), harness)
 			cmd.Dir = dir
-			var env []string
-			for _, kv := range os.Environ() {
-				if !strings.HasPrefix(kv, "YOLO_DURABLE_DIR=") && !strings.HasPrefix(kv, "PI_SUBAGENTS_WORKTREE_DIR=") {
-					env = append(env, kv)
-				}
-			}
-			cmd.Env = append(append(env, "HOME="+home), tc.env...)
+			cmd.Env = append(append(environWithout("YOLO_DURABLE_DIR", "PI_SUBAGENTS_WORKTREE_DIR", "PI_CODING_AGENT_DIR"), "HOME="+home), tc.env...)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("executing the extension: %v\n%s", err, out)
