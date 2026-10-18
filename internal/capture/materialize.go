@@ -34,6 +34,10 @@ import (
 //  1. REFLINK — O(1), shares extents, and the destination is its own inode. Works on btrfs,
 //     XFS with reflink=1, and ZFS, ACROSS mounts; on macOS it is APFS's clonefile(2), within
 //     one APFS volume (clone_darwin.go).
+//     When FICLONE refuses (a kernel before 5.18 refuses it across two mounts, even within one
+//     filesystem), copy_file_range(2) is tried next: within one btrfs or XFS it reflinks too,
+//     and it is counted as one only when the destination's extent map says so
+//     (copyrange_linux.go).
 //  2. HARDLINK — free to try, and it wins in the one arrangement reflink does not cover: a
 //     store and a home that share a mount (a host-side materialize, or a jail whose home and
 //     store arrive through one bind). Rare here, and it is second rather than first because
@@ -114,10 +118,18 @@ type MaterializeResult struct {
 	// Dirs, Files and Symlinks count the manifest entries realized, by kind.
 	Dirs, Files, Symlinks int
 	// Reflinked, Linked, Copied and Rewritten partition Files by the mechanism that placed
-	// them. Rewritten is a relocation's file-content rewrite (rewrite.go): new bytes, so no
+	// them. Reflinked counts a file copy_file_range placed only when its extent map shows its
+	// data shared (or it holds no data extent to share); Copied counts every other file it
+	// placed. Rewritten is a relocation's file-content rewrite (rewrite.go): new bytes, so no
 	// arm of the chain could have placed them, and counted apart so the copy report stays a
 	// report about the chain.
 	Reflinked, Linked, Copied, Rewritten int
+	// RangeCloned is the subset of Reflinked that copy_file_range placed, after FICLONE refused.
+	// RangeCopied and RangeUnverified are the subsets of Copied it placed: the first with an
+	// extent map showing unshared data, the second with one that could not be read.
+	RangeCloned, RangeCopied, RangeUnverified int
+	// CopiedBytes is the size of the files counted in Copied.
+	CopiedBytes int64
 	// RelocatedFrom is the capture home a relocating materialize rewrote references FROM,
 	// empty when the destination was the capture home itself. RewrittenLinks counts the
 	// symlinks created with a rewritten target; Rewritten above counts the files.
@@ -126,13 +138,15 @@ type MaterializeResult struct {
 	// Bytes is the total size of the files placed — what a copy actually cost, and what a
 	// reflink did not. A rewritten file counts the bytes actually written.
 	Bytes int64
-	// ReflinkRetired and LinkRetired carry the error that retired each mechanism for this
-	// run, empty when it was never needed or never failed. They are the "measured, never
+	// ReflinkRetired, LinkRetired and RangeRetired carry the error that retired each mechanism
+	// for this run, empty when it was never needed or never failed. RangeRetired is also set
+	// when copy_file_range was demoted below hardlink because a file it placed was not shared. They are the "measured, never
 	// assumed" half: a reader can see WHY the chain fell through rather than inferring it
 	// from a counter.
-	ReflinkRetired, LinkRetired string
-	// SourceFS and DestFS are the filesystems of the store and the home, named only when
-	// something had to be copied — the clause the loud report owes its reader.
+	ReflinkRetired, LinkRetired, RangeRetired string
+	// SourceFS and DestFS are the filesystems of the store and of the directory the first
+	// copied file went into, named only when something had to be copied — the clause the loud
+	// report owes its reader.
 	SourceFS, DestFS string
 }
 
@@ -233,7 +247,7 @@ func Materialize(opts MaterializeOptions) (*MaterializeResult, error) {
 	if rel != nil {
 		res.RelocatedFrom = rel.from
 	}
-	ch := &chain{reflink: true, link: true}
+	ch := newChain(true, "")
 	for _, e := range m.Entries {
 		if opts.Confined {
 			if err := confinedParents(home, e.Path, e.Kind == KindDir); err != nil {
@@ -244,9 +258,8 @@ func Materialize(opts MaterializeOptions) (*MaterializeResult, error) {
 			return res, fmt.Errorf("capture materialize %s: %w", e.Path, err)
 		}
 	}
-	res.ReflinkRetired, res.LinkRetired = ch.reflinkWhy, ch.linkWhy
+	ch.finish(res, opts.Entry.Tree, home)
 	if res.Copied > 0 {
-		res.SourceFS, res.DestFS = fsName(opts.Entry.Tree), fsName(home)
 		reportCopy(opts.Stderr, opts.Entry, home, res)
 	}
 	return res, nil
@@ -319,14 +332,7 @@ func placeEntry(tree, home string, e ManifestEntry, ch *chain, rel *relocation, 
 		}
 		res.Files++
 		res.Bytes += e.Size
-		switch ch.last {
-		case mechReflink:
-			res.Reflinked++
-		case mechLink:
-			res.Linked++
-		default:
-			res.Copied++
-		}
+		ch.count(res, dst, e.Size)
 		return nil
 	}
 }
@@ -336,7 +342,12 @@ type mechanism int
 
 const (
 	mechReflink mechanism = iota
+	// mechRangeClone, mechRangeCopy and mechRangeUnknown are copy_file_range placements, by
+	// what the destination's extent map said: shared (or no data to share), unshared, unread.
+	mechRangeClone
 	mechLink
+	mechRangeCopy
+	mechRangeUnknown
 	mechCopy
 )
 
@@ -351,11 +362,27 @@ const (
 // because that is a fact about one file and not about the pair of filesystems.
 type chain struct {
 	reflink, link bool
-	// reflinkWhy and linkWhy are the errors that retired each arm — reported, so a human
-	// sees the measurement rather than the conclusion.
-	reflinkWhy, linkWhy string
+	// rangeOK is the copy_file_range arm, retired by a "not here" answer. rangeFirst puts it
+	// BEFORE hardlink, which it is only when FICLONE was retired by EXDEV — the one refusal
+	// copy_file_range can get past, a kernel before 5.18 answering it for two mounts of one
+	// filesystem. Any other refusal means the filesystem cannot share extents, and a hardlink
+	// costs no bytes where a kernel copy does. A file it places unshared (or unverifiably)
+	// demotes it below hardlink for the rest of the run, for the same reason.
+	rangeOK, rangeFirst bool
+	// reflinkWhy, linkWhy and rangeWhy are the errors that retired each arm — reported, so a
+	// human sees the measurement rather than the conclusion.
+	reflinkWhy, linkWhy, rangeWhy string
 	// last is the arm that placed the most recent file.
 	last mechanism
+	// copiedDir is the directory the first copied file went into, whose filesystem the copy
+	// report names.
+	copiedDir string
+}
+
+// newChain is a chain with every arm live, except hardlink when link is false (noLinkWhy says
+// why).
+func newChain(link bool, noLinkWhy string) *chain {
+	return &chain{reflink: true, link: link, linkWhy: noLinkWhy, rangeOK: copyRangeAvailable}
 }
 
 // placeFile puts one file at dst, trying each arm in turn.
@@ -371,6 +398,12 @@ func (c *chain) placeFile(src, dst string, perm fs.FileMode) error {
 		}
 		c.reflink = false
 		c.reflinkWhy = err.Error()
+		c.rangeFirst = errors.Is(err, syscall.EXDEV)
+	}
+	if c.rangeOK && c.rangeFirst {
+		if placed, err := c.placeByRange(src, dst, perm); placed || err != nil {
+			return err
+		}
 	}
 	if c.link {
 		// NO CHMOD AFTER A HARDLINK: dst and the store entry are one inode, so a chmod
@@ -388,11 +421,89 @@ func (c *chain) placeFile(src, dst string, perm fs.FileMode) error {
 		c.link = false
 		c.linkWhy = err.Error()
 	}
+	if c.rangeOK {
+		if placed, err := c.placeByRange(src, dst, perm); placed || err != nil {
+			return err
+		}
+	}
 	if err := copyOne(src, dst, perm); err != nil {
 		return err
 	}
 	c.last = mechCopy
 	return nil
+}
+
+// placeByRange is the copy_file_range arm: placed is false, with no error and no file left at
+// dst, when the arm answered "not here" and is retired for the run.
+func (c *chain) placeByRange(src, dst string, perm fs.FileMode) (placed bool, err error) {
+	v, err := copyRangeOne(src, dst, perm)
+	if err != nil {
+		if errors.Is(err, errCopyRangeUnsupported) {
+			c.rangeOK = false
+			c.rangeWhy = err.Error()
+			return false, nil
+		}
+		return false, err
+	}
+	switch v {
+	case rangeShared, rangeNoData:
+		c.last = mechRangeClone
+		return true, nil
+	case rangeUnshared:
+		c.last = mechRangeCopy
+	default:
+		c.last = mechRangeUnknown
+	}
+	if c.rangeFirst {
+		c.rangeFirst = false
+		how := "and its extents could not be read"
+		if v == rangeUnshared {
+			how = "without sharing its extents"
+		}
+		c.rangeWhy = "copy_file_range placed " + src + " " + how
+	}
+	return true, nil
+}
+
+// count adds the file just placed at dst, of size bytes, to res under the arm that placed it.
+func (c *chain) count(res *MaterializeResult, dst string, size int64) {
+	switch c.last {
+	case mechReflink:
+		res.Reflinked++
+		return
+	case mechRangeClone:
+		res.Reflinked++
+		res.RangeCloned++
+		return
+	case mechLink:
+		res.Linked++
+		return
+	case mechRangeCopy:
+		res.RangeCopied++
+	case mechRangeUnknown:
+		res.RangeUnverified++
+	}
+	res.Copied++
+	res.CopiedBytes += size
+	if c.copiedDir == "" {
+		c.copiedDir = filepath.Dir(dst)
+	}
+}
+
+// finish records the chain's retirements in res and, when anything was copied, the two
+// filesystems the copy report names: the store's, and that of the directory the first copy
+// went into (dest's when unknown). dest itself is not always the right one: a home's surfaces
+// are separate mounts, which may sit on another filesystem than the home's root.
+func (c *chain) finish(res *MaterializeResult, tree, dest string) {
+	res.ReflinkRetired, res.LinkRetired, res.RangeRetired = c.reflinkWhy, c.linkWhy, c.rangeWhy
+	if res.Copied == 0 {
+		return
+	}
+	dir := c.copiedDir
+	if dir == "" {
+		dir = dest
+	}
+	res.SourceFS, res.DestFS = fsName(tree), fsName(dir)
 }
 
 // reflinkOne and hardlinkOne are the two O(1) arms, behind package vars so a test can force
@@ -409,9 +520,37 @@ func (c *chain) placeFile(src, dst string, perm fs.FileMode) error {
 var (
 	reflinkOne  = reflinkFile
 	hardlinkOne = func(src, dst string) error { return os.Link(src, dst) }
+	// copyRangeOne is the kernel copy arm: copy_file_range(2) on Linux (copyrange_linux.go),
+	// "not here" everywhere else.
+	copyRangeOne = copyRangeFile
 )
 
-// copyOne duplicates the bytes. The arm that is always correct and never cheap.
+// errCopyRangeUnsupported reports that copy_file_range cannot work for this pair, which
+// retires the arm for the run, as errCloneUnsupported retires reflink.
+var errCopyRangeUnsupported = errors.New("copy_file_range is not supported here")
+
+// copyRangeVerdict is what the destination's extent map says about a file copy_file_range
+// placed (copyrange_linux.go, extentVerdict).
+type copyRangeVerdict int
+
+const (
+	// rangeShared: every data extent of the destination is shared — a reflink.
+	rangeShared copyRangeVerdict = iota
+	// rangeNoData: the destination holds no data extent of its own (empty, or btrfs inline
+	// data kept in its metadata), so there was nothing a reflink could share; FICLONE leaves
+	// the same file behind.
+	rangeNoData
+	// rangeUnshared: some data extent is not shared — the kernel copied it.
+	rangeUnshared
+	// rangeUnknown: the extent map could not be read.
+	rangeUnknown
+)
+
+// copyOne duplicates the bytes in user space. The arm that is always correct and never cheap.
+//
+// The writer and reader are wrapped so io.Copy cannot hand the copy to os.File.ReadFrom, which
+// on Linux tries copy_file_range itself: that is the arm above, which retired or was demoted
+// for a reason, and a copy this arm reports must be one it made.
 func copyOne(src, dst string, perm fs.FileMode) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -422,7 +561,7 @@ func copyOne(src, dst string, perm fs.FileMode) error {
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(out, in); err != nil {
+	if _, err := io.Copy(struct{ io.Writer }{out}, struct{ io.Reader }{in}); err != nil {
 		out.Close()
 		return err
 	}
@@ -510,10 +649,22 @@ func reportCopy(w io.Writer, entry *Entry, home string, res *MaterializeResult) 
 	if why == "" {
 		why = "reflink was not attempted"
 	}
+	if res.RangeRetired != "" {
+		why += "; " + res.RangeRetired
+	}
+	kernel := ""
+	if res.RangeCopied > 0 {
+		kernel += fmt.Sprintf(" %d of them were copied by the kernel (copy_file_range): their "+
+			"extents are not shared with the store.", res.RangeCopied)
+	}
+	if res.RangeUnverified > 0 {
+		kernel += fmt.Sprintf(" %d of them were cloned or copied by the kernel "+
+			"(copy_file_range): their extents could not be read to tell which.", res.RangeUnverified)
+	}
 	fmt.Fprintf(w, "yolo: capture %s was COPIED into %s: %d of %d files (%d bytes) could be "+
-		"neither reflinked nor hardlinked%s (%s). Those bytes are this workspace's own, and "+
+		"neither reflinked nor hardlinked%s (%s).%s Those bytes are this workspace's own, and "+
 		"every other workspace will pay for them again.\n",
-		entry.Key, home, res.Copied, res.Files, res.Bytes, where, why)
+		entry.Key, home, res.Copied, res.Files, res.CopiedBytes, where, why, kernel)
 }
 
 func orUnknown(s string) string {
