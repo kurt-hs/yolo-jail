@@ -71,7 +71,7 @@ func CopyTree(opts CopyTreeOptions) (*MaterializeResult, error) {
 	}
 	res := &MaterializeResult{}
 	found := false
-	ch := &chain{reflink: true, link: false, linkWhy: "a tree is never hardlinked out of the store"}
+	ch := newChain(false, "a tree is never hardlinked out of the store")
 	for _, e := range m.Entries {
 		var rel string
 		switch {
@@ -98,9 +98,8 @@ func CopyTree(opts CopyTreeOptions) (*MaterializeResult, error) {
 	if !found {
 		return res, fmt.Errorf("capture copy: entry %s holds no directory %s", opts.Entry.Key, prefix)
 	}
-	res.ReflinkRetired, res.LinkRetired = ch.reflinkWhy, ch.linkWhy
+	ch.finish(res, opts.Entry.Tree, opts.Dest)
 	if res.Copied > 0 {
-		res.SourceFS, res.DestFS = fsName(opts.Entry.Tree), fsName(opts.Dest)
 		reportCopy(opts.Stderr, opts.Entry, opts.Dest, res)
 	}
 	return res, nil
@@ -135,11 +134,7 @@ func placeTreeEntry(src, dst string, e ManifestEntry, ch *chain, res *Materializ
 		}
 		res.Files++
 		res.Bytes += e.Size
-		if ch.last == mechReflink {
-			res.Reflinked++
-		} else {
-			res.Copied++
-		}
+		ch.count(res, dst, e.Size)
 		return nil
 	}
 }

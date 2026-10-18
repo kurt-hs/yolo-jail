@@ -39,6 +39,10 @@ import (
 // copies-on-write and touches nothing else. That is a strictly better property than a
 // hardlink's, not merely an equal one — see the hazard note on Materialize.
 //
+// That measurement is of a recent kernel. Before Linux 5.18 the FICLONE ioctl itself refused two
+// different vfsmounts with EXDEV, one superblock or not, so on an older host it is retired at the
+// first file and the chain's copy_file_range arm (copyrange_linux.go) is what can still reflink.
+//
 // # Where it does not work, and why that is a real path
 //
 // btrfs, XFS with reflink=1, and ZFS support it; ext4 does not, and ext4 is the default
@@ -99,16 +103,20 @@ func reflinkFile(src, dst string, perm fs.FileMode) error {
 // option (XFS without reflink=1) or an unaligned/unsupported case, and ENOSYS for a kernel
 // without the interface.
 func cloneFile(dst, src *os.File) error {
-	err := unix.IoctlFileClone(int(dst.Fd()), int(src.Fd()))
+	err := ficlone(int(dst.Fd()), int(src.Fd()))
 	if err == nil {
 		return nil
 	}
 	switch err {
 	case unix.EXDEV, unix.EOPNOTSUPP, unix.ENOTTY, unix.EINVAL, unix.ENOSYS, unix.EPERM:
-		return fmt.Errorf("%w: %v", errCloneUnsupported, err)
+		return fmt.Errorf("%w: %w", errCloneUnsupported, err)
 	}
 	return err
 }
+
+// ficlone is the FICLONE ioctl, behind a var so a test can answer EXDEV for it: the kernels that
+// answer that for two mounts of one filesystem (before 5.18) are not the one a test runs on.
+var ficlone = unix.IoctlFileClone
 
 // fsName is the filesystem type at path, for the message a copy fallback owes its reader.
 //
