@@ -196,13 +196,17 @@ func Binary(repoRoot string) string {
 }
 
 // overridden is the YOLO_VERSION value Get returned in place of the binary's own version, ""
-// when the variable is unset or names that same version, so nothing needs saying.
-func overridden(repoRoot string) string {
-	raw := os.Getenv(overrideEnv)
-	if raw == "" || raw == Binary(repoRoot) {
-		return ""
+// when the variable is unset or names that same version, so nothing needs saying; and the
+// binary's own version, computed once, since an unstamped binary's is a git describe.
+func overridden(repoRoot string) (raw, binary string) {
+	raw = os.Getenv(overrideEnv)
+	if raw == "" {
+		return "", ""
 	}
-	return raw
+	if binary = Binary(repoRoot); raw == binary {
+		return "", binary
+	}
+	return raw, binary
 }
 
 // Line is `yolo --version`'s one line: "yolo-jail <version>", and when YOLO_VERSION names a
@@ -210,11 +214,10 @@ func overridden(repoRoot string) string {
 // 0.14.0+428.g772997837bbd)" — so a quoted version line never names a build other than the one
 // that printed it. A reader that wants the version alone takes the text up to the first space.
 func Line(repoRoot string) string {
-	line := "yolo-jail " + Get(repoRoot)
-	if raw := overridden(repoRoot); raw != "" {
-		line += " (" + overrideEnv + " override; binary " + Binary(repoRoot) + ")"
+	if raw, binary := overridden(repoRoot); raw != "" {
+		return "yolo-jail " + raw + " (" + overrideEnv + " override; binary " + binary + ")"
 	}
-	return line
+	return "yolo-jail " + Get(repoRoot)
 }
 
 // CheckLine is the version `yolo check` reports: Line's version and override, then the build's
@@ -222,8 +225,8 @@ func Line(repoRoot string) string {
 // which build answered it.
 func CheckLine(repoRoot string) string {
 	detail := "build stamp " + StampLabel() + ", commit " + CommitLabel()
-	if raw := overridden(repoRoot); raw != "" {
-		detail = overrideEnv + " override; binary " + Binary(repoRoot) + "; " + detail
+	if raw, binary := overridden(repoRoot); raw != "" {
+		return raw + " (" + overrideEnv + " override; binary " + binary + "; " + detail + ")"
 	}
 	return Get(repoRoot) + " (" + detail + ")"
 }
