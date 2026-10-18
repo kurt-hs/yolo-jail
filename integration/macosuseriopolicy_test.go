@@ -206,7 +206,11 @@ print("IOPOL process=" + get(0) + " thread=" + get(1))`
 func ioPolicyHostReading(argv []string) (map[string]string, string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, argv[0], argv[1:]...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	// From "/", as every crossing into the sandbox account starts (sandboxCommand): the SUDO
+	// reading's reader runs as that account, which cannot traverse this package's directory.
+	cmd.Dir = "/"
+	out, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(out))
 	if err != nil {
 		text += fmt.Sprintf(" (%v)", err)

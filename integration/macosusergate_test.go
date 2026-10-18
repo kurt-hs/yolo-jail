@@ -442,12 +442,19 @@ func probeUnifiedLogOnce() (readable bool, detail string) {
 	return unifiedLogOnce.readable, unifiedLogOnce.detail
 }
 
-// unifiedLogSkipReason is the ledger's reason for a test this Mac's closed log store stops.
+// unifiedLogSkipReason is the ledger's reason for a test whose log-store control cannot run here.
+// It calls the store closed only when `log` said so; any other empty read (a timeout, a quiet
+// minute) is reported as what it was, since the next step differs.
 func unifiedLogSkipReason(detail string) string {
-	return fmt.Sprintf("this Mac's unified log store is closed to you: `log show` as the invoking "+
-		"user read nothing (%s). That is the Mac's own policy (a managed Mac closes the store to a "+
-		"non-admin user), not a privilege `yolo macos-setup` grants, so this test's control cannot "+
-		"run here; the macos-user CI job, whose user is an admin, runs it", detail)
+	if strings.Contains(detail, "Operation not permitted") || strings.Contains(detail, "Could not open local log store") {
+		return fmt.Sprintf("this Mac's unified log store is closed to you: `log show` as the invoking "+
+			"user was refused (%s). That is the Mac's own policy (a managed Mac closes the store to a "+
+			"non-admin user), not a privilege `yolo macos-setup` grants, so this test's control cannot "+
+			"run here; the macos-user CI job, whose user is an admin, runs it", detail)
+	}
+	return fmt.Sprintf("`log show` as the invoking user read no entry from the unified log store "+
+		"(%s), and was not refused, so this test's control cannot run here. Run `log show --last 1m` "+
+		"yourself to see why; if it lists entries, run the suite again", detail)
 }
 
 // requireUnifiedLog skips t, countably, when the invoking user cannot read the unified log store.
@@ -960,6 +967,11 @@ func TestMacosUserUnifiedLogSkipIsCountedWithItsReason(t *testing.T) {
 	}
 
 	unifiedLogProbe = func() (bool, string) { return true, "" }
+	// An empty read that `log` did not refuse is not blamed on the Mac's policy.
+	if r := unifiedLogSkipReason("log exited 0: "); strings.Contains(r, "policy") || !strings.Contains(r, "not refused") {
+		t.Errorf("an unrefused empty read is reported as the store's policy: %s", r)
+	}
+
 	reached := false
 	t.Run("open", func(t *testing.T) {
 		requireUnifiedLog(t, macosUserGateLaunch)

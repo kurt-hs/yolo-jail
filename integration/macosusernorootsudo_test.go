@@ -23,16 +23,24 @@ import (
 // catches the regression before any Mac does. The prefix puts it in the macos-user job too.
 //
 // ⚠ What it cannot see: a sudo inside a shell script's text ("… && sudo rm …"), which is one
-// literal of many words. No such script runs on the host today; a message that names a sudo
-// command for a human to type is such a literal, and is allowed.
+// literal of many words, and a sudo path read out of a production argv rather than spelled
+// (runPreflight compares an argv's head with macosuser.RunAsGrantProbeArgv()[0], and runs nothing
+// with it). The one host-side script that names sudo stubs it out with a shell function first
+// (macosuserlayoutrefusal_test.go); a message that names a sudo command for a human to type is
+// such a literal, and is allowed.
 func TestMacosUserSuiteSpendsNoRootSudo(t *testing.T) {
-	// Each entry is file:function, with why a sudo literal there takes no privilege.
-	allowed := map[string]string{
-		"macosuserpasswordless_test.go:TestMacosUserPasswordlessStartAndExit": "`sudo -k` drops a " +
+	// Each entry is file:function, with how many sudo literals it holds and why none of them takes
+	// a privilege. The count is exact, so a new sudo in an allowed function still fails.
+	type allowance struct {
+		count int
+		why   string
+	}
+	allowed := map[string]allowance{
+		"macosuserpasswordless_test.go:TestMacosUserPasswordlessStartAndExit": {2, "`sudo -k` drops a " +
 			"cached credential, and `sudo -n /usr/bin/true` is the probe that must FAIL: the test " +
-			"refuses to run while root sudo needs no password",
-		"macosmachinereset_test.go:runNightlyMachineStep": "the name of a stub written into a " +
-			"temporary PATH, so the nightly workflow's script runs no real sudo",
+			"refuses to run while root sudo needs no password"},
+		"macosmachinereset_test.go:runNightlyMachineStep": {1, "the name of a stub written into a " +
+			"temporary PATH, so the nightly workflow's script runs no real sudo"},
 	}
 	_, self, _, ok := goruntime.Caller(0)
 	if !ok {
@@ -42,7 +50,7 @@ func TestMacosUserSuiteSpendsNoRootSudo(t *testing.T) {
 	if err != nil || len(files) == 0 {
 		t.Fatalf("listing this package's Go files: %v (%d found)", err, len(files))
 	}
-	used := map[string]bool{}
+	used := map[string]int{}
 	fset := token.NewFileSet()
 	for _, path := range files {
 		f, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
@@ -67,7 +75,7 @@ func TestMacosUserSuiteSpendsNoRootSudo(t *testing.T) {
 				}
 				key := base + ":" + name
 				if _, ok := allowed[key]; ok {
-					used[key] = true
+					used[key]++
 					return true
 				}
 				t.Errorf("%s spells a sudo command (%s) in %s. The macos-user suite takes no "+
@@ -79,10 +87,11 @@ func TestMacosUserSuiteSpendsNoRootSudo(t *testing.T) {
 			})
 		}
 	}
-	for key, why := range allowed {
-		if !used[key] {
-			t.Errorf("the allowance for %s (%s) no longer matches any sudo in the suite; remove it, "+
-				"so it cannot admit a new one later", key, why)
+	for key, a := range allowed {
+		if used[key] != a.count {
+			t.Errorf("%s holds %d sudo literal(s) and its allowance admits exactly %d (%s). A new one "+
+				"there is a new privilege: route it through sandboxCommand. One gone: lower the count, "+
+				"or remove the allowance, so it cannot admit a new one later", key, used[key], a.count, a.why)
 		}
 	}
 }
