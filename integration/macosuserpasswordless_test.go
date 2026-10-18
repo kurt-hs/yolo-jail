@@ -158,13 +158,11 @@ func runAsSandboxAccount(t *testing.T, argv ...string) (string, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	full := macosuser.RunAsSandboxArgv(nil, argv...)
-	cmd := exec.CommandContext(ctx, full[0], full[1:]...)
-	cmd.Dir = "/"
+	cmd := sandboxCommand(ctx, argv...)
 	cmd.Stdin = strings.NewReader("")
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {
-		t.Fatalf("`%s` did not finish within 60s", strings.Join(full, " "))
+		t.Fatalf("`%s` did not finish within 60s", strings.Join(cmd.Args, " "))
 	}
 	return string(out), err
 }

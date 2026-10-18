@@ -189,8 +189,9 @@ printed.
   fails on any string literal that is a sudo command name (`sudo`, `/usr/bin/sudo`). It runs in
   the Linux unit gate, so a regression is red before any Mac sees it. Two allowances are named in
   it, and each takes no privilege: the narrow-sudo test's `sudo -k` and its probe that root
-  `sudo` must fail, and a stub named `sudo` on a temporary PATH. ⚠ It cannot see a sudo inside a
-  shell script's text; no host-side script has one.
+  `sudo` must fail, and a stub named `sudo` on a temporary PATH. Each admits an exact count. ⚠ It
+  cannot see a sudo inside a shell script's text; the one host-side script that names sudo
+  replaces it with a shell function first.
 - **The System-keychain CA test reads, never writes.** It takes the CAs the launch's own
   composition (`ComposeCATrust`) keeps from the System keychain. Where there are none it skips,
   naming that it only reads the keychain; that includes the GitHub runner.
@@ -201,7 +202,8 @@ returning an `eventMessage`). Where the store is closed, `requireUnifiedLog` ski
 test and the one `macos_log_store_read_refused` case of `SeatbeltProfileEnforcesItsRules`; every
 other rule in that test still asserts. Each skip enters the suite's ledger with the policy
 reason, as a gate skip does, and a test's own reason is never overwritten by the gate's generic
-one.
+one. An empty read that `log` did not refuse also skips, and its reason says so rather than
+blaming the Mac's policy.
 
 **Mise shims outrank the floor, as in the jail** ([OQ-DM3](#decision-ledger)): *"parity with the
 jail should certainly be the goal, which I think is the mise ones always win."* `SandboxPath`'s
@@ -222,7 +224,9 @@ nothing got through, still exits non-zero.
 
 **What only a Mac can confirm.** Every rewritten test passing on a Mac that grants only the
 run-as rule; the CA test on a Mac whose System keychain holds a TLS CA; the guest-pass cleanup;
-and the `ps` the jail-daemon test now runs as the sandbox account, whose listing is diagnostic.
+and the host's process listing, which was root's `ps` and is now `ps` run by the sandbox account
+followed by `ps` run by the invoking user, so each account's processes are listed by their own
+uid. The supervisor and doorway watches decide their tests' assertions from it.
 
 ## 6. Two defects and one design question this run found
 

@@ -221,8 +221,9 @@ func parseFloorProbe(out string) map[string]string {
 //     failure path_helper and Homebrew are named for.
 //   - full under the home: a mise shim (or another home directory) outranks the floor, as on the
 //     container jail, where /mise/shims sits ahead of /bin. A note, not a failure.
-//   - full anywhere else but floor's own path: an outside directory beat the floor on the
-//     agent's PATH while the floor lookup did not see it — the re-prepend lost to it.
+//   - full anything else: not a PATH lookup at all, since a file outside the home that came first
+//     on the whole PATH comes first on the filtered one too. `command -v` printing an alias or a
+//     function the login rc files define is what reaches here.
 func floorBinProblem(bin, full, floor, home, store string) (problem, note string) {
 	inHome := func(p string) bool { return p == home || strings.HasPrefix(p, home+"/") }
 	switch {
@@ -247,9 +248,9 @@ func floorBinProblem(bin, full, floor, home, store string) (problem, note string
 			"OQ-DM3). The sandbox home is shared by every workspace on this Mac, so it may be another "+
 			"workspace's install.", bin, full, kind, floor)
 	default:
-		return fmt.Sprintf("%s: the agent gets %s, outside the sandbox home and not the floor's %s. "+
-			"The floor is on PATH but LOST to that directory: macOS's path_helper or a Homebrew prefix "+
-			"is ahead of the login rc files' re-prepend of $YOLO_DARWIN_LOGIN_PATH.", bin, full, floor), ""
+		return fmt.Sprintf("%s: `command -v` in the agent's shell answers %q, which is no file on its "+
+			"PATH (the floor's is %s): an alias or a function the login rc files define shadows the "+
+			"floor's binary. Look for it in the sandbox home's rc files.", bin, full, floor), ""
 	}
 }
 

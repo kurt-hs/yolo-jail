@@ -61,7 +61,7 @@ and a pi-subagents registry several extensions can share stays in item 28.
    — the first full `-run '^TestMacosUser'` on a Mac that grants only the run-as rule (2026-10-17,
    128 passed / 3 skipped / 12 failed, every failure reproducible). **All four of its questions
    were ruled 2026-10-18** ([the ledger](../design/macos-user-suite-on-a-developer-mac.md#decision-ledger)): the suite takes no
-   privilege `yolo macos-setup` does not install, so the six root-`sudo` tests and the killed-session
+   privilege `yolo macos-setup` does not install, so the six tests that failed on `sudo` and the killed-session
    sweep now cross through the run-as rule or act as the invoking user, and a guard test refuses a
    sudo the suite spells itself; a closed unified log store skips its two tests countably; mise
    shims outrank the floor, as in the jail; and a developer-Mac measurement counts, with its host
