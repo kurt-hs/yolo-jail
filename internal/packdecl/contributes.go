@@ -111,8 +111,9 @@ type Contribution struct {
 	// and following an upstream is the patched mode's opt-in, not a dial on a plain fork.
 	Follow string `json:"follow,omitempty"`
 	// PatchBranch is a PATCH BRANCH (docs/reference/patched-forks.md §3.5, OQ-PFK6): a git repository and a branch,
-	// written as a source address with `?ref=` (`git+https://github.com/you/pi?ref=patches`, or
-	// `git+file:///abs/path?ref=patches` for a local repository), whose commit graph is merged against
+	// written as a source address with `?ref=` (`git+https://github.com/you/pi?ref=patches`,
+	// `git+file:///abs/path?ref=patches` for a local repository, or a path relative to the pack's own
+	// directory, `../..?ref=patches`, bounded by the pack's git repository: packsrc.ParseFrom), whose commit graph is merged against
 	// the upstream candidate instead of replaying a `patches` series. It opts in to the patched
 	// mode exactly as `patches` does, on a fork's program and on a `files` extension, and `follow`
 	// reads beside it as beside a series.
@@ -147,6 +148,10 @@ type Contribution struct {
 	// handed programs and not packs (docs/reference/patched-forks.md §9). Never serialized: it is a
 	// host path, and a jail repeats the rewrite against its own tree.
 	ForkRoot string `json:"-"`
+	// ForkPatchBranchDir is set beside ForkRoot, and not a manifest field either: the directory the fork pack
+	// was read from (its source, where ForkRoot is a staged copy), which a relative `patch_branch` is
+	// resolved against (packsrc.ParseFrom). Never serialized, for ForkRoot's reason.
+	ForkPatchBranchDir string `json:"-"`
 
 	// Update is the argv that makes the program update ITSELF, with the bin omitted:
 	// `"update": ["install"]` for claude, `["update", "--self"]` for pi. Read only on
@@ -1476,6 +1481,7 @@ func (m *Manifest) InstallContributions() []Install {
 			// recipe and outputs, and the fork pack's name for every line that says whose
 			// bytes these are. Copied, so an Install edited by a consumer cannot reach back.
 			in.Source, in.Build, in.ForkedBy, in.ForkRoot = c.Source, c.Build, c.ForkedBy, c.ForkRoot
+			in.ForkPatchBranchDir = c.ForkPatchBranchDir
 			in.Produces = append([]string(nil), c.Produces...)
 			// A patched fork's series directory and follow rule ride along, so every reader of
 			// the program can tell a patched fork from a plain one (Install.IsPatchedFork).

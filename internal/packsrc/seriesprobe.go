@@ -72,7 +72,7 @@ func (s *Store) ProbeSeries(w PatchedWant, series *Series, waiting func(string))
 	if w.PatchBranch != "" {
 		// A PATCH BRANCH (patchbranch.go) is what the check just resolved, merged into its own merge base: the
 		// patch branch's tree, which takes the git floor and every file the patch branch names.
-		resolved, err := PatchBranchSeries(w.PatchBranch, w.Source, res.Record)
+		resolved, err := PatchBranchSeries(w.PatchBranch, w.PatchBranchDir, w.Source, res.Record)
 		if err != nil {
 			unlock()
 			return p // the check's problem names why the patch branch did not resolve

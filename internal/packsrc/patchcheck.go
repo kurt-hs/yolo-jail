@@ -55,6 +55,9 @@ type PatchedWant struct {
 	// PatchBranch is a PATCH BRANCH's address as written (patchbranch.go), "" for a patch series: the check fetches
 	// it with the upstream and resolves it, its commit and its merge base with the upstream.
 	PatchBranch string
+	// PatchBranchDir is the directory of the pack declaring the patch branch, as this process sees it: what a
+	// relative locator (relative.go) is resolved against. "" when the declaring pack has none.
+	PatchBranchDir string
 }
 
 // Inputs is what a check of w reads (CheckInputs), or why w cannot be checked at all. An npm
@@ -81,7 +84,7 @@ func (w PatchedWant) Inputs() (CheckInputs, Addr, FollowRule, error) {
 		return CheckInputs{}, Addr{}, FollowRule{}, err
 	}
 	if w.PatchBranch != "" {
-		if _, err := Parse(w.PatchBranch); err != nil {
+		if _, err := ParseFrom(w.PatchBranch, w.PatchBranchDir); err != nil {
 			return CheckInputs{}, Addr{}, FollowRule{}, fmt.Errorf("the patch branch: %w", err)
 		}
 		return CheckInputs{Repo: a.Repo, Subdir: a.Path, Ref: a.Ref, Follow: f.String(), PatchBranch: w.PatchBranch}, a, f, nil
@@ -206,7 +209,7 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 		} else {
 			var patchBranch *Addr
 			if w.PatchBranch != "" {
-				c, _ := Parse(w.PatchBranch) // Inputs parsed it
+				c, _ := ParseFrom(w.PatchBranch, w.PatchBranchDir) // Inputs parsed it
 				patchBranch = &c
 			}
 			found = s.findCandidates(addr, follow, w.Base, patchBranch, opts.Force || opts.FreshAfter != nil, now(), waiting)

@@ -103,7 +103,8 @@ func PatchedTrees(packs []*Pack) []Fork {
 			f := Fork{
 				Pack: p.Name, Bin: c.ExtensionName(), Source: c.Source, Build: c.TreeBuild(),
 				Produces: append([]string(nil), c.Produces...),
-				Root:     p.Root, Patches: c.Patches, PatchBranch: c.PatchBranch, Follow: follow, Into: c.Into, Fallback: c.Fallback,
+				Root:     p.Root, Patches: c.Patches, PatchBranch: c.PatchBranch, PatchBranchDir: patchBranchDirOf(p), Follow: follow,
+				Into: c.Into, Fallback: c.Fallback,
 				PackBases: forkBaseClosure(packs, p),
 			}
 			f.Owner, f.ListedInJail, f.ListedAtHost = owningAgentPack(packs, p, c.TreeListEntry())
