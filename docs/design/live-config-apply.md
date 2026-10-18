@@ -467,7 +467,16 @@ before live mounts existed"* ([LA-D6](#LA-D6)). There is no bootstrap shim, as
     own gate against the record. It sees either the old record, and asks, or the new one.
 - **Probe failures** ("could not ask the runtime") record and apply nothing live. They never guess.
 - **Defaults.** Each live step has a 10-second deadline. The whole apply has a 60-second budget
-  after the y. A step past its deadline is *at next restart*, with the reason.
+  after the y. A step past its deadline is *at next restart*, with the reason. The deadline bounds
+  every call the step makes, so no step keeps running after it is reported. A mount add that
+  finds its destination already holding the same source, in the same mode, succeeds, so a mount
+  that landed after a cut-off is recorded by the next apply.
+- **The plan is of the config the gate approved.** The apply loads the config before the gate reads
+  the workspace again, and an agent can rewrite the file between the two reads. When the gate's
+  read, composed as a launch composes it, differs from the loaded config, nothing is applied, and
+  the apply says to run `yolo config apply` again. An attach starts its session anyway.
+- **Removals run before additions.** A destination is a mount's identity in the jail, so a source
+  or mode changed at one destination is a removal and then an addition.
 
 ## 9. What done looks like
 
