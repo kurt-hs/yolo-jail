@@ -1,0 +1,151 @@
+package integration
+
+// sessionhome_test.go is the integration tier of docs/design/per-session-profiles.md: one jail,
+// several sessions, each reading its OWN pi config. A first session holds the jail open on the
+// configured profile; an attach with another `-p`, and a bare attach running no pi at all, each get
+// a session home of their own (the pi pack's `session_homes` declaration, PI_CODING_AGENT_DIR
+// exported by the session pass), and neither changes what the first session reads. No agent CLI
+// runs: each session prints what its pi WOULD read — the exported directory and the provider its
+// settings.json names — which is exactly the file stock pi and pi-subagents read through
+// getAgentDir() (§2.2). The unit pins are internal/entrypoint's session-home tests and
+// internal/cli/run's snapshot tests; only a real attach proves the host's snapshot and the jail's
+// pass meet.
+
+import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+)
+
+// sessionHomeProbe prints, for the session it runs in, the directory pi would read its config
+// from, the provider that directory's settings.json names, the shared copy's provider, the
+// settings file's digest, and whether auth.json is linked to the shared login.
+const sessionHomeProbe = `printf 'DIR=%s\n' "${PI_CODING_AGENT_DIR-unset}"; ` +
+	`printf 'PROV=%s\n' "$(jq -r .defaultProvider "${PI_CODING_AGENT_DIR:-/nonexistent}/settings.json" 2>/dev/null)"; ` +
+	`printf 'SHARED=%s\n' "$(jq -r .defaultProvider ~/.pi/agent/settings.json 2>/dev/null)"; ` +
+	`printf 'SUM=%s\n' "$(sha256sum "${PI_CODING_AGENT_DIR:-/nonexistent}/settings.json" 2>/dev/null | cut -c1-16)"; ` +
+	`[ -L "${PI_CODING_AGENT_DIR:-/nonexistent}/auth.json" ] && echo AUTH-LINKED || echo AUTH-NOT-LINKED`
+
+var sessionHomeField = regexp.MustCompile(`(?m)^(DIR|PROV|SHARED|SUM)=(.*)$`)
+
+// The first session's two markers, as LINES: the boot echoes the command it runs, so the bare
+// literal appears before the session has printed anything (firstHasAnswer's lesson).
+var (
+	aReadyLine = regexp.MustCompile(`(?m)^A-READY$`)
+	aAfterLine = regexp.MustCompile(`(?m)^A-AFTER$`)
+)
+
+// sessionHomeReport parses one probe's output.
+func sessionHomeReport(t *testing.T, out string) map[string]string {
+	t.Helper()
+	got := map[string]string{}
+	for _, m := range sessionHomeField.FindAllStringSubmatch(out, -1) {
+		got[m[1]] = m[2]
+	}
+	got["AUTH"] = "missing"
+	if strings.Contains(out, "AUTH-LINKED") {
+		got["AUTH"] = "linked"
+	}
+	return got
+}
+
+func TestEachSessionReadsItsOwnPiProfile(t *testing.T) {
+	requireJail(t)
+	// Both providers' keys ride env_sources, the channel the credential gate delivers into pi's
+	// own env file (as in TestPiRunsOnEveryProviderOfItsSet); the shell's copies are blanked.
+	t.Setenv("ZAI_API_KEY", "")
+	t.Setenv("OPENROUTER_API_KEY", "")
+	dir := writeProject(t, `{}`)
+	packHome(t, `{"packs": ["pi", "zai", "openrouter"], "profile": {"pi": "zai"}, "env_sources": [`+
+		`{"ZAI_API_KEY": "integration-probe-not-a-real-key", "OPENROUTER_API_KEY": "integration-probe-not-a-real-key"}]}`)
+
+	// Session A: the fresh launch's first session, on the configured profile (OQ-SP3: no -p is the
+	// configured profile). It reports, then holds the jail open until released, then reports again
+	// so the test can see A's file after B and C entered.
+	const release = "release-session-home"
+	first := startYoloBackground(t, "first", dir,
+		sessionHomeProbe+`; echo A-READY; `+
+			`for _ in $(seq 1 600); do [ -f /workspace/`+release+` ] && break; sleep 0.5; done; `+
+			`echo A-AFTER; `+sessionHomeProbe)
+	t.Cleanup(func() { _ = os.WriteFile(filepath.Join(dir, release), []byte("go\n"), 0o644) })
+	deadline := time.Now().Add(jailTimeout())
+	for !aReadyLine.MatchString(first.combined()) {
+		select {
+		case err := <-first.done:
+			t.Fatalf("first launch exited (%v) before its session reported:\n%s", err, first.combined())
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("first session never reported within %s:\n%s", jailTimeout(), first.combined())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	awaitLaunchLockReleased(t, dir, first)
+	before := first.combined()
+	a := sessionHomeReport(t, before[:aReadyLine.FindStringIndex(before)[0]])
+
+	// Session B: an attach on another profile.
+	rb := runCommand(t, dir, append(jailRunArgs(), "-p", "pi=openrouter", "--", "bash", "-lc", sessionHomeProbe))
+	if rb.rc != 0 {
+		t.Fatalf("the -p attach failed: rc %d\n%s", rb.rc, rb.combined())
+	}
+	if !strings.Contains(rb.combined(), "Attaching to existing jail") {
+		t.Fatalf("the second entry must attach to the running jail:\n%s", rb.combined())
+	}
+	b := sessionHomeReport(t, rb.stdout)
+
+	// Session C: a bare attach running no pi (P5: core cannot tell what an attach runs).
+	rc := runCommand(t, dir, append(jailRunArgs(), "--", "bash", "-lc", sessionHomeProbe))
+	if rc.rc != 0 {
+		t.Fatalf("the bare attach failed: rc %d\n%s", rc.rc, rc.combined())
+	}
+	c := sessionHomeReport(t, rc.stdout)
+
+	if err := os.WriteFile(filepath.Join(dir, release), []byte("go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-first.exited:
+	case <-time.After(jailTimeout()):
+		t.Fatalf("first session did not end after release:\n%s", first.combined())
+	}
+	all := first.combined()
+	loc := aAfterLine.FindStringIndex(all)
+	if loc == nil {
+		t.Fatalf("first session never reported after release:\n%s", all)
+	}
+	after := sessionHomeReport(t, all[loc[0]:])
+
+	for name, r := range map[string]map[string]string{"A": a, "B": b, "C": c} {
+		if r["DIR"] == "" || r["DIR"] == "unset" || !strings.Contains(r["DIR"], "/.pi/.yolo-sessions/") {
+			t.Errorf("session %s: PI_CODING_AGENT_DIR = %q, want a session home under ~/.pi/.yolo-sessions/", name, r["DIR"])
+		}
+		if r["AUTH"] != "linked" {
+			t.Errorf("session %s: auth.json in its session home must link the shared login (P3)", name)
+		}
+	}
+	if a["DIR"] == b["DIR"] || a["DIR"] == c["DIR"] || b["DIR"] == c["DIR"] {
+		t.Errorf("each session must get its own home: A %q, B %q, C %q", a["DIR"], b["DIR"], c["DIR"])
+	}
+	if a["PROV"] != "zai" {
+		t.Errorf("session A (configured profile) reads defaultProvider %q, want zai", a["PROV"])
+	}
+	if b["PROV"] != "openrouter" {
+		t.Errorf("session B (-p pi=openrouter) reads defaultProvider %q, want openrouter", b["PROV"])
+	}
+	if c["PROV"] != "zai" {
+		t.Errorf("session C (bare attach) reads defaultProvider %q, want the configured zai", c["PROV"])
+	}
+	// The deadlock's end-to-end form: B's and C's entries leave A's file as it was.
+	if after["DIR"] != a["DIR"] || after["SUM"] != a["SUM"] || after["PROV"] != "zai" {
+		t.Errorf("session A's config changed under it after B and C entered: before %v, after %v", a, after)
+	}
+	// SP-D2: no session pass rewrote the shared copy; it is still the launch's own render.
+	if b["SHARED"] != "zai" || after["SHARED"] != "zai" {
+		t.Errorf("the shared ~/.pi/agent/settings.json moved (B saw %q, A after saw %q); only the jail's boot writes it",
+			b["SHARED"], after["SHARED"])
+	}
+}
