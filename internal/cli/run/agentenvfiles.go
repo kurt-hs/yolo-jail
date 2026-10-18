@@ -63,15 +63,30 @@ const (
 // assembly, so an attach rewrote files that jail never reads: a deselecting attach left the
 // previous entry's credential in the agent's file, and the copy made the files 0644 in a
 // 0755 directory on a host path under the workspace.
-func deliverChannel(wsState, rt string, channel *packChannel) {
+//
+// THE ENTRY SNAPSHOT (sessionsnapshot.go, per-session-profiles.md §4.3 step 1): with a session id,
+// the same composition is ALSO written, complete, into that session's snapshot, which the
+// session's boot, launchers and shells read instead of the shared files the next entry rewrites.
+// The shared files are still written, for a jail and processes with no session id. An error is
+// the snapshot's alone, and the caller refuses the entry on it (refuseSnapshotWrite): a session
+// without its snapshot would read the shared files and bring the cross-session leak back. No id
+// (a jail that cannot name its sessions) writes no snapshot and cannot fail.
+//
+// The snapshot is written FIRST, so an entry refused for it leaves the shared files as the
+// previous entry wrote them, as every other attach refusal does (deliverChannelOnAttach).
+func deliverChannel(wsState, rt, sessionID string, channel *packChannel) error {
+	if err := writeSessionSnapshot(wsState, rt, sessionID, channel); err != nil {
+		return err
+	}
 	shared := filepath.Join(wsState, "yolo-user-env.sh")
 	writeUserEnvFile(shared, channel.sharedEnvSourceWinners(), channel)
 	if rt == "container" { // parity: HonoredBy — Apple Container binds wsState at /home/agent, so both files are written at their in-home paths beneath it, live on every entry, instead of bound
 		acMaterialize(shared, ".config/yolo-user-env.sh", wsState)
-		writeAgentEnvFiles(wsState, entrypoint.AgentEnvDirRel, jailHome, channel)
-		return
+		_ = writeAgentEnvFiles(wsState, entrypoint.AgentEnvDirRel, entrypoint.AgentEnvDirRel, jailHome, channel)
+	} else {
+		_ = writeAgentEnvFiles(wsState, agentEnvStateDir, entrypoint.AgentEnvDirRel, jailHome, channel)
 	}
-	writeAgentEnvFiles(wsState, agentEnvStateDir, jailHome, channel)
+	return nil
 }
 
 // clearAgentEnvFiles removes every per-agent env file a container jail's entries wrote under
@@ -86,7 +101,7 @@ func clearAgentEnvFiles(wsState, rt string) {
 	if _, err := os.Stat(filepath.Join(wsState, dir)); err != nil {
 		return // nothing written, so nothing to make
 	}
-	writeAgentEnvFiles(wsState, dir, "", nil)
+	_ = writeAgentEnvFiles(wsState, dir, entrypoint.AgentEnvDirRel, "", nil)
 }
 
 // writeMacosUserAgentEnvFiles is the macos-user arm's delivery of the per-agent files (OQ-CN9):
@@ -95,7 +110,7 @@ func clearAgentEnvFiles(wsState, rt string) {
 // links the sandbox's ~/.config by (entrypoint.DeriveDarwinHomeLayout: `.config` → `config`).
 // One writer, so the two backends' files cannot differ in grammar, mode or revocation.
 func writeMacosUserAgentEnvFiles(sidecar string, channel *packChannel) {
-	writeAgentEnvFiles(sidecar, macosUserAgentEnvDir, macosuser.SandboxHome(), channel)
+	_ = writeAgentEnvFiles(sidecar, macosUserAgentEnvDir, entrypoint.AgentEnvDirRel, macosuser.SandboxHome(), channel)
 }
 
 // macosUserAgentEnvDir is the per-agent env directory beneath the macos-user sidecar.
@@ -118,16 +133,37 @@ var macosUserAgentEnvDir = strings.TrimPrefix(entrypoint.AgentEnvDirRel, ".")
 // The directory is agentEnvDirMode and each file agentEnvFileMode on EVERY write, not only
 // on creation: a directory an earlier build or the jail left wider is narrowed again. The
 // writes and removals are beneath wsState's os.Root for writeUserEnvFile's reason.
-func writeAgentEnvFiles(wsState, dir, home string, channel *packChannel) {
+//
+// jailDir is where dir is seen in the jail, relative to home: the agent-file lines name a file by
+// that path. It is AgentEnvDirRel for the shared files and the snapshot's own directory for an
+// entry snapshot (sessionsnapshot.go), whose files are written under a temporary name and
+// published by rename, so dir and jailDir differ there on every backend.
+//
+// THE SNAPSHOTS SURVIVE A REWRITE: an entry's channel keeps the SessionSnapshotsSubdir every
+// earlier entry published into, since each is a running session's (SP-D7). A nil channel, the
+// jail's teardown (clearAgentEnvFiles), keeps nothing and removes them with the rest.
+//
+// The returned error is the first write that failed; the shared files' callers ignore it, as
+// they always have (best-effort, fail closed), and the snapshot's writer refuses the entry on it.
+func writeAgentEnvFiles(wsState, dir, jailDir, home string, channel *packChannel) error {
 	r, err := openStateRoot(wsState)
 	if err != nil {
-		return
+		return err
 	}
 	defer r.Close()
 	if err := agentEnvDirBeneath(r, dir); err != nil {
-		return
+		return err
+	}
+	var first error
+	note := func(err error) {
+		if first == nil && err != nil {
+			first = err
+		}
 	}
 	keep := map[string]bool{}
+	if channel != nil {
+		keep[entrypoint.SessionSnapshotsSubdir] = true
+	}
 	if channel != nil && channel.scope != nil {
 		for _, agent := range channel.scope.Agents() {
 			if !packdecl.ValidBinName(agent) {
@@ -138,18 +174,20 @@ func writeAgentEnvFiles(wsState, dir, home string, channel *packChannel) {
 				name := agentFileName(agent, f)
 				if err := writeBeneath(r, filepath.Join(dir, name),
 					agentEnvFileMode, agentEnvFileMode, writeBytes(f.Content)); err != nil {
+					note(err)
 					continue
 				}
 				keep[name] = true
 				written = append(written, f)
 			}
-			body := agentEnvFileContentWith(channel, agent, agentFileLines(channel, agent, home, written))
+			body := agentEnvFileContentWith(channel, agent, agentFileLines(channel, agent, home, jailDir, written))
 			if body == "" {
 				continue
 			}
 			name := agent + ".sh"
 			if err := writeBeneath(r, filepath.Join(dir, name),
 				agentEnvFileMode, agentEnvFileMode, writeBytes([]byte(body))); err != nil {
+				note(err)
 				continue
 			}
 			keep[name] = true
@@ -166,10 +204,12 @@ func writeAgentEnvFiles(wsState, dir, home string, channel *packChannel) {
 				continue
 			}
 			if err := agentEnvDirBeneath(r, keysDir); err != nil {
+				note(err)
 				break
 			}
 			if err := writeBeneath(r, filepath.Join(keysDir, agent+".sh"),
 				agentEnvFileMode, agentEnvFileMode, writeBytes([]byte(body))); err != nil {
+				note(err)
 				continue
 			}
 			keep[entrypoint.ProviderKeysSubdir] = true
@@ -186,6 +226,7 @@ func writeAgentEnvFiles(wsState, dir, home string, channel *packChannel) {
 			_ = r.RemoveAll(filepath.Join(dir, e.Name()))
 		}
 	}
+	return first
 }
 
 // agentEnvDirBeneath makes dir below r a real directory of agentEnvDirMode. Its PARENTS are
@@ -356,9 +397,10 @@ func agentFileName(agent string, f packload.AgentFile) string {
 }
 
 // agentFileLines points each of written, the agent files this entry wrote for agent, at its path
-// in the jail home home, in the env file's grammar and precedence (agentEnvFileContent): a value
-// the user set themselves for the variable wins, as for every composed value.
-func agentFileLines(channel *packChannel, agent, home string, written []packload.AgentFile) string {
+// in the jail home home, under jailDir (writeAgentEnvFiles), in the env file's grammar and
+// precedence (agentEnvFileContent): a value the user set themselves for the variable wins, as for
+// every composed value.
+func agentFileLines(channel *packChannel, agent, home, jailDir string, written []packload.AgentFile) string {
 	if len(written) == 0 {
 		return ""
 	}
@@ -368,7 +410,7 @@ func agentFileLines(channel *packChannel, agent, home string, written []packload
 		if !packdecl.ValidEnvName(f.Var) {
 			continue
 		}
-		path := filepath.ToSlash(filepath.Join(home, entrypoint.AgentEnvDirRel, agentFileName(agent, f)))
+		path := filepath.ToSlash(filepath.Join(home, jailDir, agentFileName(agent, f)))
 		others := slices.DeleteFunc(channel.inheritedValues(view, agent, f.Var, true),
 			func(v string) bool { return v == path })
 		b.WriteString(exportComposed(f.Var, path, others))

@@ -179,7 +179,7 @@ func TestAnAttachSelectingBedrockWithNoRegionRefusesBeforeTheWrite(t *testing.T)
 	o, cfg, channel, stderr := attachFixture(t, currentJailEnv, packs, emptyEnv(),
 		func(o *Options, _ *jsonx.OrderedMap) { o.ProfileName = "bedrock" })
 	file := filepath.Join(paths.WorkspaceHomeState(o.Workspace), "yolo-user-env.sh")
-	if rc := o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", cfg,
+	if rc := o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", "", cfg,
 		stagedPacks{root: "/ctx/packs", packs: packs}, channel); rc != 1 {
 		t.Fatalf("an attach selecting bedrock with no region must refuse: rc=%d\n%s", rc, stderr.String())
 	}
@@ -192,7 +192,7 @@ func TestAnAttachSelectingBedrockWithNoRegionRefusesBeforeTheWrite(t *testing.T)
 
 	o, cfg, channel, stderr = attachFixture(t, currentJailEnv, packs, emptyEnv(),
 		func(o *Options, cfg *jsonx.OrderedMap) { o.ProfileName = "bedrock"; withBedrockRegion(cfg) })
-	if rc := o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", cfg,
+	if rc := o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", "", cfg,
 		stagedPacks{root: "/ctx/packs", packs: packs}, channel); rc != 0 {
 		t.Fatalf("with the provider's region the attach must deliver: rc=%d\n%s", rc, stderr.String())
 	}

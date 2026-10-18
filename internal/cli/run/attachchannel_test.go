@@ -79,7 +79,7 @@ func TestAttachDeliversTheChannelFile(t *testing.T) {
 	o, cfg, channel, stderr := attachFixture(t, currentJailEnv,
 		packs, hydratedKey(), func(o *Options, _ *jsonx.OrderedMap) { o.ProfileName = "zai" })
 
-	rc := o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", cfg,
+	rc := o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", "", cfg,
 		stagedPacks{root: "/ctx/packs", packs: packs}, channel)
 	if rc != 0 {
 		t.Fatalf("delivery refused a healthy attach: rc=%d\n%s", rc, stderr.String())

@@ -67,7 +67,7 @@ func TestAClaudeStartedFromAnotherClaudesShellFollowsItsOwnSelection(t *testing.
 	t.Run("claude not on bedrock", func(t *testing.T) {
 		wsState := t.TempDir()
 		channel := channelFor(t, o, newConfig(), packs, emptyEnv())
-		writeAgentEnvFiles(wsState, entrypoint.AgentEnvDirRel, jailHome, channel)
+		writeAgentEnvFiles(wsState, entrypoint.AgentEnvDirRel, entrypoint.AgentEnvDirRel, jailHome, channel)
 		if _, err := os.Stat(filepath.Join(wsState, entrypoint.AgentEnvDirRel,
 			entrypoint.ProviderKeysSubdir, "claude.sh")); err != nil {
 			t.Fatalf("an unprofiled claude must still get its provider-keys file: %v", err)
@@ -100,7 +100,7 @@ func TestAClaudeStartedFromAnotherClaudesShellFollowsItsOwnSelection(t *testing.
 		on := *o
 		on.UseProfiles = map[string]string{"claude": "bedrock"}
 		channel := channelFor(t, &on, newConfig(), packs, emptyEnv())
-		writeAgentEnvFiles(wsState, entrypoint.AgentEnvDirRel, jailHome, channel)
+		writeAgentEnvFiles(wsState, entrypoint.AgentEnvDirRel, entrypoint.AgentEnvDirRel, jailHome, channel)
 		got, _ := sourceAgentFiles(t, wsState, "claude", map[string]string{"CLAUDE_CODE_USE_BEDROCK": "0"},
 			"CLAUDE_CODE_USE_BEDROCK")
 		if got != "CLAUDE_CODE_USE_BEDROCK=1\n" {

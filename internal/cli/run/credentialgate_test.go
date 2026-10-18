@@ -96,7 +96,7 @@ func launchGateJailWith(t *testing.T, packNames []string, config func([]*packloa
 	}
 	channel := channelFor(t, o, config(packs), packs, creds)
 	ws := t.TempDir()
-	deliverChannel(ws, "podman", channel)
+	deliverChannel(ws, "podman", "", channel)
 	o.noteCredentialScope(channel)
 
 	jail := &gateJail{t: t, home: t.TempDir(), fakeBin: t.TempDir()}
@@ -347,11 +347,15 @@ func TestTheLaunchPathsDeliverThroughTheGate(t *testing.T) {
 					return true
 				}
 				if f, ok := call.Fun.(*ast.Ident); ok && f.Name == "deliverChannel" {
-					if len(call.Args) != 3 {
-						t.Errorf("%s: deliverChannel takes (wsState, rt, channel)", fn)
+					if len(call.Args) != 4 {
+						t.Errorf("%s: deliverChannel takes (wsState, rt, sessionID, channel)", fn)
 					} else if id, ok := call.Args[1].(*ast.Ident); !ok || id.Name != "rt" {
 						t.Errorf("%s hands deliverChannel something other than its own runtime, "+
 							"so Apple Container's attach would miss the files its jail reads", fn)
+					} else if id, ok := call.Args[2].(*ast.Ident); !ok || id.Name != "sessionID" {
+						// The snapshot is written under the id the session's exec carries, or the
+						// session finds no snapshot and reads the shared files (per-session-profiles.md).
+						t.Errorf("%s hands deliverChannel something other than the session's own id", fn)
 					}
 				}
 				return true
