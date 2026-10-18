@@ -294,6 +294,9 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 	// (docs/design/model-lists-and-pickers.md MM-D5, MM-D29): over the same selected set and the
 	// same composition, with the profiles resolved as the launch resolves them.
 	unnarrowedMenuReport(r, loaded, merged, userProfiles)
+	// Which per-model OpenRouter pins no request to their provider can carry, over the same
+	// composition, so a pin that does nothing is named rather than silently accepted.
+	inertRoutingReport(r, loaded, merged)
 	// Whether the ids those lists name are ones an installed agent's own catalog knows
 	// (docs/design/model-lists-and-pickers.md MM-D16): over the same selected set and the same
 	// composition, read from the files each agent's pack declares, so a warning here names an id

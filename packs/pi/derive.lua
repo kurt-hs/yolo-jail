@@ -861,6 +861,14 @@ yolo.derive("pi", "models", function(ctx)
           if wireId then
             m.wireId = isKilo and normalizeKiloModel(wireId) or wireId
           end
+          -- THE ROW'S OPENROUTER PIN, as pi's own `compat.openRouterRouting`, which pi merges over
+          -- the provider's compat block (mergeCompat) and sends as the request's `provider` field.
+          -- The model-lists registration lowers the same pin in the extension; a row written only
+          -- here would otherwise be silently unpinned (`yolo check` names a pin no request carries).
+          local routing = type(prov.model_routing) == "table" and prov.model_routing[alias] or nil
+          if type(routing) == "table" and next(routing) ~= nil then
+            m.compat = { openRouterRouting = routing }
+          end
           -- A tombstoned fact (ML-D10) is left out, the provider-wide fallback included, so pi
           -- applies its own default for the field.
           local tombs = piDropTombstoned(ctx, m, mopts)
