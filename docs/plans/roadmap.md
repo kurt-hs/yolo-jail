@@ -50,7 +50,7 @@ accepted limits remain in
 and a pi-subagents registry several extensions can share stays in item 28.
 
 3. [Apply config changes to a running jail](../design/live-config-apply.md) — the maintainer's
-   2026-10-18 ask, ruled the same day: v1 is read-only and read-write mounts, their removal,
+   2026-10-18 ask, ruled and built the same day (landing and CI's rootless run owed): v1 is read-only and read-write mounts, their removal,
    GitHub scope, and the same gate at an interactive attach. Its later slices are staged here,
    each built on its own after v1: [the next-session moves](../design/live-config-apply.md#LA-S4a),
    [Apple Container's briefing re-copy](../design/live-config-apply.md#LA-S4b),
