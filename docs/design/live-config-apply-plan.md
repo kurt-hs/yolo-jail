@@ -1,15 +1,20 @@
 ---
 title: "Live config apply: implementation plan"
 status: accepted
-stage: DECIDED
-next: "Build lanes A, B and C in parallel worktrees, then integrate serially (task 4)"
+stage: BUILT
+next: "Built on the branch; delete this plan when the design graduates"
 depends-on: [live-config-apply.md]
 tags: [plan, config, mounts, github, live-apply]
 ---
 
 # Live config apply: implementation plan
 
-**Status:** 2026-10-18. Completed against the tree, written against `42541fb78`.
+**Status:** 2026-10-18. Completed against the tree, written against `42541fb78`; built the same
+day in three lanes and integrated. What the plan missed: lane B's refusal names `yolo config apply`,
+which `TestEveryHintedYoloCommandExists` refuses until lane A lands, so B cannot land alone; the
+github briefing, `yolo gh` help and user guide also said "restart"; the plan's step order put mount
+additions before removals, read the config twice, and let a step outlive its deadline, all caught
+by review.
 **Design:** [`live-config-apply.md`](live-config-apply.md), every question ruled
 ([Decision Ledger](live-config-apply.md#decision-ledger)).
 
