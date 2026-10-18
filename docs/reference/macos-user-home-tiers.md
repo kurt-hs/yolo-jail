@@ -446,8 +446,13 @@ live directory. The per-declaration census and its rulings are
 ## The staged skills and briefings are write-protected, at the path the kernel sees
 
 Built 2026-09-27 (gap G14 in [`setup-support-gaps.md`](../plans/setup-support-gaps.md)). The
-bootstrap copies every staged skills dir and briefing over the home **as the sandbox user**, so the
-agent owns those files and their mode protects nothing. What protects them is the session's own
+bootstrap delivers every staged skills dir and briefing into the home **as the sandbox user**: each
+directory it makes is the agent's, and each file is a hard link of the sealed staged file, which the
+host user owns and nobody can write — or, where the filesystem refuses the link (a workspace on
+another volume), a copy the agent owns. A destination whose files are all still links of the staged
+ones, with nothing added or removed, is left in place, so an unchanged relaunch replaces nothing; any
+other destination is replaced, as every launch replaced it before. The directories and any copy are
+the agent's, so their mode protects nothing. What protects them is the session's own
 Seatbelt profile, which carries two rules after the writable-set allow, beside
 `workspace_readonly`'s:
 

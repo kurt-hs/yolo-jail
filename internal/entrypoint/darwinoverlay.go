@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
@@ -54,6 +55,11 @@ type homeOverlayManifest struct {
 	// Destinations are home-relative, slash-separated paths, each a directory or a file
 	// the overlay carries at that same relative path.
 	Destinations []string `json:"destinations"`
+	// Digest is the tree's content identity, computed by the host from the inputs it laid the
+	// tree out from (run.homeOverlayDigest): two overlays with one digest are one tree. The host
+	// keeps its own overlay, and skips re-staging the sealed copy, when the digest it would write
+	// is the one already there (HomeOverlayDigest). Empty matches nothing.
+	Digest string `json:"digest,omitempty"`
 }
 
 // overlayStagedSuffix and overlayAsideSuffix name the two siblings an install of one
@@ -76,11 +82,18 @@ const (
 // macosuser.HomeOverlay.Dests, so the destinations Seatbelt write-protects and the ones this
 // package's install replaces are one list, written once.
 func WriteHomeOverlayManifest(overlay string, dests []string) ([]string, error) {
+	return WriteHomeOverlayManifestDigest(overlay, dests, "")
+}
+
+// WriteHomeOverlayManifestDigest is WriteHomeOverlayManifest recording digest, the tree's
+// content identity, in the list. The host writes the list LAST, after every destination is laid
+// out, so a list carrying a digest marks a complete tree: a build that died part way left none.
+func WriteHomeOverlayManifestDigest(overlay string, dests []string, digest string) ([]string, error) {
 	out, err := normalizeOverlayDests(dests)
 	if err != nil {
 		return nil, err
 	}
-	body, err := json.MarshalIndent(homeOverlayManifest{Destinations: out}, "", "  ")
+	body, err := json.MarshalIndent(homeOverlayManifest{Destinations: out, Digest: digest}, "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -88,6 +101,30 @@ func WriteHomeOverlayManifest(overlay string, dests []string) ([]string, error) 
 		return nil, err
 	}
 	return out, nil
+}
+
+// HomeOverlayDigest returns the digest an overlay's destination list carries and the list itself,
+// normalized as the install reads it. ok is false for an overlay with no list, an unreadable or
+// invalid one, or one written with no digest — none of which is a complete tree this host can
+// vouch for. The list is opened without following a link at it.
+func HomeOverlayDigest(overlay string) (digest string, dests []string, ok bool) {
+	f, err := os.OpenFile(filepath.Join(overlay, HomeOverlayManifestName), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return "", nil, false
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return "", nil, false
+	}
+	var m homeOverlayManifest
+	if err := json.NewDecoder(io.LimitReader(f, 1<<20)).Decode(&m); err != nil || m.Digest == "" {
+		return "", nil, false
+	}
+	out, err := normalizeOverlayDests(m.Destinations)
+	if err != nil {
+		return "", nil, false
+	}
+	return m.Digest, out, true
 }
 
 // readHomeOverlayManifest returns the overlay's destinations, normalized the way
@@ -455,15 +492,26 @@ func installOverlayDestination(overlay, home string, roots []overlayRoot, links 
 		}
 	}
 
+	// ALREADY THIS DELIVERY: every file at the destination is a hard link of the staged file at
+	// the same path, and nothing else is there (overlayInstalledFrom). The staged tree is the
+	// host user's and sealed, so no file the sandbox account wrote can share one of its inodes:
+	// an unchanged relaunch replaces nothing, and a destination edited between sessions fails
+	// the check and is replaced as before.
+	if curErr == nil && overlayInstalledFrom(src, srcInfo, dir, base) {
+		return nil
+	}
+
 	// Build the whole replacement before touching the destination. Strict: a partial copy
-	// renamed into place would look like a complete delivery.
+	// renamed into place would look like a complete delivery. Each file is a hard link of the
+	// sealed staged file where the filesystem allows one and a copy where it does not
+	// (linkTreeStrictBeneath).
 	if srcInfo.IsDir() {
 		err = dir.Mkdir(staged, 0o755)
 		if err == nil {
-			err = copyTreeStrictBeneath(src, dir, staged)
+			err = linkTreeStrictBeneath(src, dir, staged)
 		}
 	} else {
-		err = copyFileStrictBeneath(src, dir, staged, srcInfo.Mode().Perm())
+		err = linkFileStrictBeneath(src, dir, staged, srcInfo.Mode().Perm())
 	}
 	if err != nil {
 		_ = dir.RemoveAll(staged)
@@ -571,74 +619,4 @@ func containingOverlayRoot(roots []overlayRoot, resolved string) (overlayRoot, s
 		}
 	}
 	return best, bestRel, found
-}
-
-// copyTreeStrictBeneath is copyTreeStrict with the destination beneath an os.Root: it copies
-// the tree src into rel below dst, which must exist and be empty, and returns the FIRST error
-// it meets. Symlinks are recreated, not followed; a directory is created with Mkdir and a
-// file with O_EXCL, so nothing already there — a link swapped in, above all — is written
-// through. The source is read by path: it is the root-owned staged overlay, which the sandbox
-// account cannot write.
-func copyTreeStrictBeneath(src string, dst *os.Root, rel string) error {
-	ents, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-	for _, ent := range ents {
-		from := filepath.Join(src, ent.Name())
-		to := filepath.Join(rel, ent.Name())
-		fi, err := os.Lstat(from)
-		if err != nil {
-			return err
-		}
-		switch {
-		case fi.Mode()&os.ModeSymlink != 0:
-			target, err := os.Readlink(from)
-			if err != nil {
-				return err
-			}
-			if err := dst.Symlink(target, to); err != nil {
-				return err
-			}
-		case fi.IsDir():
-			// THE OWNER KEEPS rwx: the staged overlay is sealed (a-w), and the sandbox account owns
-			// this copy, so a sealed mode would leave it unable to fill the directory or remove it at
-			// the next install. The agent's writes are the Seatbelt profile's to deny, not this
-			// mode's (docs/reference/pi-extensions.md PPX-D45, as the per-launch copy's PPX-D22).
-			if err := dst.Mkdir(to, fi.Mode().Perm()|0o700); err != nil {
-				return err
-			}
-			if err := copyTreeStrictBeneath(from, dst, to); err != nil {
-				return err
-			}
-		case fi.Mode().IsRegular():
-			if err := copyFileStrictBeneath(from, dst, to, fi.Mode().Perm()); err != nil {
-				return err
-			}
-		default:
-			// A socket, fifo or device node: skipping it would be a partial copy reported as
-			// a whole one (copyTreeStrict's rule).
-			return fmt.Errorf("%s is a %s, which this copy cannot reproduce", from, fi.Mode().Type())
-		}
-	}
-	return nil
-}
-
-// copyFileStrictBeneath is copyFileStrict with the destination beneath an os.Root, created
-// O_EXCL: rel must not exist.
-func copyFileStrictBeneath(src string, dst *os.Root, rel string, perm os.FileMode) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = in.Close() }()
-	out, err := dst.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		return err
-	}
-	return out.Close()
 }

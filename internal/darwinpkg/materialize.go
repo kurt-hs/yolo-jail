@@ -61,12 +61,36 @@ func (e *MaterializeError) Error() string { return e.msg }
 // log is the launch's timing collector (nil records nothing): the build's two halves are spanned
 // on it as macos_user.materialize.skip_eval and macos_user.materialize.build
 // (docs/reference/perf-logging.md), on every return.
+//
+// AN UNCHANGED FLOOR RUNS NO NIX (floorcache.go): when the inputs that decide the build hash to
+// the key the last successful build recorded, and nix still roots that build's profile, the
+// recorded answer is returned, spanned as macos_user.materialize.cached. Anything else builds.
 func Materialize(repoRoot string, packages []any, system string, errStderr io.Writer, log *perf.Log) (*DarwinPackages, error) {
 	if system == "" {
 		system = NativeSystem()
 	}
-	return materializeWithArgv(repoRoot, packages, system,
-		materializeArgv(system, paths.Home()), errStderr, log)
+	home := paths.Home()
+	link := ProfileRootLink(home)
+	argv := materializeArgv(system, home)
+	key, keyed := "", false
+	if repoRoot != "" {
+		key, keyed = floorKey(repoRoot, packages, system, argv)
+	}
+	if keyed {
+		sp := log.Span("macos_user.materialize.cached")
+		pkgs, ok := cachedFloor(link, key)
+		sp.End()
+		if ok {
+			return pkgs, nil
+		}
+	}
+	pkgs, err := materializeWithArgv(repoRoot, packages, system, argv, errStderr, log)
+	// A nil skip list is an eval that failed (ParseSkippedNames answers [] with an empty list):
+	// recording it would freeze a best-effort miss into every later launch's answer.
+	if err == nil && keyed && pkgs.Skipped != nil {
+		recordFloor(link, key, pkgs)
+	}
+	return pkgs, err
 }
 
 // MaterializeAt is Materialize with the GC-root out-link named by the CALLER, and it exists
