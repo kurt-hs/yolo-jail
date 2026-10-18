@@ -86,8 +86,8 @@ func TestMacosUserServiceProbeRefusesAnEndpointTheSandboxCannotRead(t *testing.T
 	if err := os.WriteFile(envFile, []byte(macosuser.SandboxEnvFileContent(env)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// THE REAL ARGV, plain sudo and all: the runner's sudo needs no password, and the stage's sudo
-	// is deliberately not `-n` (ProbeServicesArgv says why).
+	// THE REAL ARGV, its crossing included: the one run-as rule, `-n` and all (ProbeServicesArgv
+	// says why the `-n` costs nothing), started in "/" as the launch's runner starts it.
 	argv := macosuser.ProbeServicesArgv(macosuser.StagedYoloPath(""), profile, envFile, "", "", nil)
 	run := func() (int, string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -132,9 +132,11 @@ func TestMacosUserServiceProbeRefusesAnEndpointTheSandboxCannotRead(t *testing.T
 		t.Errorf("the boot log does not keep the bootstrap's record followed by the witness's refusal:\n%s", log)
 	}
 
+	// The grant as the launch applies it (runplan.go): as the invoking user, who owns the endpoint
+	// and its directory, never under sudo.
 	for _, cmd := range macosuser.EndpointGrantCommands(endpoint, "") {
-		if b, err := exec.Command("sudo", append([]string{"-n"}, cmd...)...).CombinedOutput(); err != nil {
-			t.Fatalf("the launch's grant `sudo %s` failed: %v\n%s", strings.Join(cmd, " "), err, b)
+		if b, err := exec.Command(cmd[0], cmd[1:]...).CombinedOutput(); err != nil {
+			t.Fatalf("the launch's grant `%s` failed as you: %v\n%s", strings.Join(cmd, " "), err, b)
 		}
 	}
 	if rc, out := run(); rc != 0 {

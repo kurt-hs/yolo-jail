@@ -25,7 +25,7 @@ import (
 // directory and ~/.local/bin/<bin> an absolute link to it — so the relocation has a link to rewrite.
 // No agent starts; the program it installs prints its argv.
 //
-// ⚠ Mac-only, behind requireMacosUser: the sandbox account and passwordless sudo. A nested jail, and
+// ⚠ Mac-only, behind requireMacosUser: the sandbox account and the run-as rule. A nested jail, and
 // every Linux runner, cannot reach it.
 func TestMacosUserHostFloorMaterializesAFixtureInstallerCapture(t *testing.T) {
 	requireMacosUser(t)

@@ -767,6 +767,21 @@ for that jail's teardown, so the jail's `internal daemon jail-keeper` outlives i
 else stops it. Seen 2026-10-18 by the integration cleanup fixture (`stopHomeProcesses`), which now
 stops it in a later round. Whether the worker should end its capture jail first is open.
 
+### <a id="stale-mise-shims"></a>🔧 **A mise shim another workspace installed shadows the jail's own tool**
+
+The mise data directory, `/mise`, is shared by every jail on a machine, and its `shims/` directory
+sits ahead of `/bin` on the jail's PATH (`BootPath`). So a tool any workspace installed with mise
+leaves a shim that `command -v` reports in every other jail, whatever that workspace configures.
+Measured 2026-10-18 in this repository's jail (mise 2026.10.3): `rg`, `python3` and `overmind`
+resolve to `/mise/shims/` although no mise config this workspace reads declares them. Running the
+shim falls through to the image's copy (`/mise/shims/rg --version` printed the image's ripgrep
+15.2.0, not the installed 14.1.0, and `python3` reported `/bin/python3` as its executable), so what
+runs is right today and only the reported path is wrong. The cost is a mise lookup on every call, a
+`command -v` answer that names the wrong file, and a dependence on mise falling through. The
+macos-user sandbox home has the same exposure; the order itself is by design on both backends
+([OQ-DM3](../design/macos-user-suite-on-a-developer-mac.md#decision-ledger)). A shims directory
+per workspace would end it.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
