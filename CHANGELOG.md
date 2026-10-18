@@ -31,24 +31,21 @@ See [GitHub](userguide/guides/github.md#every-repository-or-every-repository-of-
 
 **A launch says when the jail has no internet,** and what to do. See [Troubleshooting](userguide/guides/troubleshooting.md).
 
-**`--timing` breaks down a launch's slow steps,** on macOS (macos-user) and now in a Linux or Apple Container jail's boot and builds too. See [Timing spans](docs/reference/perf-logging.md).
+**`--timing` breaks down a launch's slow steps,** on every backend, boot and builds included. See [Timing spans](docs/reference/perf-logging.md).
 
-**Optional mounts.** A `mounts` entry marked `"optional": true` is skipped, with one line, where a
+**Optional mounts.** A `mounts` entry marked `"optional": true` is skipped where a
 setup can't deliver it. See
 [Settings per setup](userguide/reference/settings-per-setup.md#workspace-mounts-and-host-files).
 
 **Keep your patches on a branch.** Name a `patch_branch` in place of `patches`; yolo merges it
-into each new upstream version and names any conflicting files. See [Patch series](userguide/guides/patch-series.md#keep-your-patches-on-a-branch).
+into each new upstream version. See [Patch series](userguide/guides/patch-series.md#keep-your-patches-on-a-branch).
 
 **pi model facts merge instead of replace.** A model row keeps the catalog facts it does not
-state, thinking levels included; `null` removes one, and `model_facts` with `extends` shares
-them. See `yolo config-ref`.
+state; `null` removes one. See `yolo config-ref`.
 
-**One model at two context windows.** A model entry's `wire_id` names the id it sends, so one
-provider can list a model and a narrowed twin. See [`wire_id`](docs/reference/providers.md#wire-id).
+**One model at two context windows.** A model entry's `wire_id` names the id it sends. See [`wire_id`](docs/reference/providers.md#wire-id).
 
-**Ways past a broken patched build.** The error lists commands that start anyway, such as your
-last good build or upstream without your patches. See [Patch series](userguide/guides/patch-series.md#when-a-build-breaks).
+**Ways past a broken patched build.** The error lists commands that start anyway. See [Patch series](userguide/guides/patch-series.md#when-a-build-breaks).
 
 - A company list that only adds models now shows in Claude Code after Claude's own models.
 - A launch refreshes a Claude login close to expiring, and a host service that crashes mid-session is restarted.
@@ -56,22 +53,23 @@ last good build or upstream without your patches. See [Patch series](userguide/g
 ### Fixed
 
 - A pack's script keeps its executable bit everywhere it is delivered; see [the exec bit](docs/reference/pack-system.md#the-exec-bit).
-- On Linux, a captured agent is shared into a new workspace on btrfs or XFS even when the direct reflink is refused, and the "was COPIED" warning counts only what was really copied.
+- On btrfs or XFS, a captured agent is shared into a new workspace even when a direct reflink is refused.
 - A macOS (macos-user) launch no longer leaves a copy of its packs behind on exit; `yolo prune --apply` removes older ones.
-- A macOS (macos-user) relaunch with nothing changed no longer re-copies skills and extensions into the sandbox or re-runs nix for the tool floor.
+- An unchanged macOS (macos-user) relaunch no longer re-copies skills and extensions or re-runs nix.
 - Claude on Kilo no longer assumes a 1M-token context for every model.
 - pi sends `openrouter_routing` on your own providers too; `yolo check` warns about a pin nothing sends.
-- `yolo --update` on a patched fork now waits for another yolo building it, instead of failing.
+- `yolo --update` on a patched fork waits for another yolo building it.
 - On Apple Container, `yolo check` points an expired-login symptom at the jail's network, not the Claude broker.
 - A damaged shared Claude login file is named at launch with `/login` as the fix.
-- A patched fork with nothing built retries a fetch that failed offline, instead of refusing for an hour.
+- A patched fork with nothing built retries a fetch that failed offline.
 - A bare `-p` that some agents can't use names them all on one line.
-- `yolo config promote` and `diff` no longer treat a `null` you set as a deletion.
-- A patch series that stopped applying no longer keeps refusing after upstream releases a version it applies to.
+- `yolo config promote` and `diff` keep a `null` you set.
+- A patch series that stopped applying works again once upstream releases a version it fits.
 - With `agent_updates` off, a patched fork or extension keeps its good build after a newer one fails.
 - An exported rebased patch series now applies whatever your git version or settings.
 - pi, omp and opencode no longer wait about two seconds at start for yolo's footer line.
-- Models another pi extension registers for a provider are no longer dropped by yolo's model list, unless the profile enforces it.
+- Models another pi extension registers are no longer dropped by yolo's model list unless the profile enforces it.
+- pi sessions on different profiles, in one jail or under `yolo host -p`, no longer change each other's child agents' models.
 
 ## [0.14.0] - 2026-10-15
 
