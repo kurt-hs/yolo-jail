@@ -1,6 +1,23 @@
 # Release process: the exact-commit pre-tag release gate
 
-`just release VERSION` submits the current clean, full `HEAD` SHA as data to `release-request.yml` on `main`; it does not create a local tag or substitute a newer main commit. The host checks the notes and main ancestry. Dispatch acceptance is not publication success.
+`just release` submits the current clean, full `HEAD` SHA as data to `release-request.yml` on `main`; it does not create a local tag or substitute a newer main commit. It takes no version: it releases CHANGELOG.md's newest dated section, the `## [X.Y.Z] - YYYY-MM-DD` heading the release-prep commit renamed from `[Unreleased]`, and prints the version it chose before dispatching ([PTG-D3](#PTG-D3)). The host checks the notes, the version's tag and main ancestry. Dispatch acceptance is not publication success.
+
+## What `just release` refuses
+
+Each refusal names the step that fixes it, and none dispatches anything:
+
+| Refused | Next step it names |
+| :--- | :--- |
+| A version argument | Run `just release` with none; the message names the version CHANGELOG.md gives |
+| No dated section (with notes under `[Unreleased]`) | Rename `## [Unreleased]` to `## [X.Y.Z] - <today>` and commit |
+| A newest dated version that is not `X.Y.Z` or `X.Y.Z-pre` | Fix the heading and commit |
+| A newest dated section dated after today (UTC) | Set the date to the release day and commit |
+| A dirty tree, or a `HEAD` origin's `main` does not contain | Commit, or push this exact commit |
+| The version already tagged at another commit, with notes under `[Unreleased]` | Rename `[Unreleased]` for the next version and commit |
+| The version already tagged at another commit, and nothing under `[Unreleased]` | Nothing new to release |
+| A section `scripts/changelog-section.sh` rejects | Write the section's prose and commit |
+
+The version is read by [`scripts/release-version.sh`](../../scripts/release-version.sh); `scripts/test-changelog-section.sh` runs it over fixture changelogs and runs the recipe in a scratch repository for each row above. A version already tagged **at `HEAD`** is not refused: the request goes on, for the [tag-only resume](#resuming-a-tag-only-release), which the workflow verifies.
 
 ## Trusted source and capability boundaries
 
@@ -46,9 +63,11 @@ A request whose tag was created but whose publication never started may **resume
 6. The Homebrew tap's formula does not name the tag, and an unreadable formula refuses.
 7. The requested SHA's regular `ci.yml` push proof passes, as for any request.
 
-A resume never creates, moves or deletes the tag. It skips tag creation and goes on from the Release dispatch. The new request's run ID goes into the Release `run-name`, and the Release run checks that this request is still in progress, exactly as for a first request. The publisher and claim bind that same request ID. The trigger is `just release VERSION` run from a checkout whose `HEAD` is the tagged commit. Orchestration is always the `main` workflow source, and every target build checks out the requested SHA, so the published content is the tagged commit whatever `main` holds. The write job's timeout covers a resume's waits as well as a first request's (`TestRequestJobTimeoutExceedsItsWaits`).
+A resume never creates, moves or deletes the tag. It skips tag creation and goes on from the Release dispatch. The new request's run ID goes into the Release `run-name`, and the Release run checks that this request is still in progress, exactly as for a first request. The publisher and claim bind that same request ID. The trigger is `just release` run from a checkout whose `HEAD` is the tagged commit and whose newest dated CHANGELOG.md section names that version. Orchestration is always the `main` workflow source, and every target build checks out the requested SHA, so the published content is the tagged commit whatever `main` holds. The write job's timeout covers a resume's waits as well as a first request's (`TestRequestJobTimeoutExceedsItsWaits`).
 
 **Ledger.** PTG-D1 (2026-10-08, maintainer ruling: *"let's rollback and redo 12.2 add the resume now"*). 0.12.2's first live request created the tag and then failed before any Release run did anything. The version is not abandoned. *Superseded 2026-10-09 by [PTG-D2](#PTG-D2): 0.12.2 was abandoned instead.* A request may resume exactly that tag-only state, under the preconditions above. Everything else stays fail-closed.
+
+<a id="PTG-D3"></a>**PTG-D3** (2026-10-18, maintainer ruling: *"why do I have to specify a version if we've already agreed and the gate will fail without it anyway from the changelog?"*). `just release` takes no version argument; it releases CHANGELOG.md's newest dated section. *Implementation decision under it:* an argument is **refused** rather than accepted when it matches, naming the version the changelog gives. One spelling of the command is simpler to document and test than two, and a matching argument would add nothing the changelog does not already say. The tag check moved into the recipe so that "already released" is refused locally with its next step; a version tagged at `HEAD` still goes on, so the tag-only resume keeps working.
 
 <a id="PTG-D2"></a>**PTG-D2** (2026-10-09, maintainer ruling: *"can we just cancle 0.12.2 entirelyi and move to 0.13.0 like it never happened?"*). 0.12.2 is abandoned. It was never published: no GitHub Release, no PyPI upload, and the Homebrew formula stayed at 0.12.1. The owner deletes its tag on the host, and its notes are folded into the next release, 0.13.0. This is a ruling about one version, not a new path: the workflows still provide no delete or move, and the [tag-only resume](#resuming-a-tag-only-release) stays the only recovery they automate.
 

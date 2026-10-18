@@ -562,10 +562,14 @@ the leading dot stripped) and on macos-user (the account home's links point ther
 ## The changelog is the release
 
 **[`CHANGELOG.md`](CHANGELOG.md)'s section for a version IS its GitHub release body, word for word**,
-and `just release <version>` is the one path to a tag: rename `[Unreleased]` to
-`[<version>] - <YYYY-MM-DD>` and commit it first, and the
-recipe refuses a bad version, a dirty tree, an existing tag (a request may only [resume a tag-only release](docs/reference/release-process.md#resuming-a-tag-only-release)), a HEAD origin cannot see, or a section
-[`scripts/changelog-section.sh`](scripts/changelog-section.sh) rejects. That script is the gate
+and `just release` is the one path to a tag: rename `[Unreleased]` to
+`[<version>] - <YYYY-MM-DD>` and commit it first. **It takes no version**: it releases the newest dated
+section, read by [`scripts/release-version.sh`](scripts/release-version.sh), prints the version it chose,
+and refuses an argument, naming that version
+([PTG-D3](docs/reference/release-process.md#PTG-D3)). The recipe refuses a heading that is not
+`X.Y.Z[-pre]` or is dated after today, a dirty tree, a HEAD origin cannot see, a version already tagged at
+another commit (one tagged at HEAD goes on, for a [tag-only resume](docs/reference/release-process.md#resuming-a-tag-only-release)),
+or a section [`scripts/changelog-section.sh`](scripts/changelog-section.sh) rejects. That script is the gate
 everywhere — `just release`, `release.yml` and `publish.yml` all run it, and `just check-ci` runs its
 tests — and it refuses a missing, empty or placeholder section, filler ("various improvements",
 "under the hood") and a list of commit subjects. There is no hatch, because a tag is never moved: a bad
