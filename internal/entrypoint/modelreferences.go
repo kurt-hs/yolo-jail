@@ -1,12 +1,15 @@
 package entrypoint
 
-// modelreferences.go is the boot's half of MM-D45 (docs/design/model-lists-and-pickers.md): once
-// the pack surfaces are rendered, each MODEL REFERENCE a program's pack declares
+// modelreferences.go is the boot's half of MM-D45 and MM-D46 (docs/design/model-lists-and-pickers.md):
+// once the pack surfaces are rendered, each MODEL REFERENCE a program's pack declares
 // (packdecl.ModelReferences, where the term is coined) is read back out of the file the render
-// WROTE and resolved against the program's model registry.
+// WROTE and resolved against the program's model registry, and the file's selected model is
+// compared with the scope a child agent runs under.
 //
 // Why the boot and not only `yolo check`: a jail cannot run the host render, and the file holds
-// what no declaration does — the computed layer the derive re-asserts each boot.
+// what no declaration does — the computed layer the derive re-asserts each boot, and the model
+// the user picked in the agent's own picker, which persists across launches by design. So a
+// picked model the scope excludes is said here, at the next boot, naming both and the fix (MM-D46).
 //
 // Warnings only, each once per boot: nothing here refuses a launch, and nothing is written.
 
@@ -24,7 +27,7 @@ import (
 )
 
 // reportModelReferences warns about every declared model reference the rendered surfaces hold
-// that matches nothing in its program's registry.
+// that matches nothing in its program's registry, and about a selected model outside its scope.
 func reportModelReferences(e *Env, packs []*packload.Pack) {
 	autonomy := e.renderTarget().Profile().AgentAutonomy
 	profiles := packload.ProfileTable(e.LoadUseProfiles())
@@ -45,6 +48,14 @@ func reportModelReferences(e *Env, packs []*packload.Pack) {
 			governs := ""
 			if name := profiles[bin]; name != "" {
 				governs = fmt.Sprintf(", which profile %q derives each boot", name)
+			}
+			if selected, scope, outside := packload.SelectionOutsideScope(doc, refs); outside {
+				e.warnOnce(fmt.Sprintf("%s: the model saved in %s, %s, is outside the scope %s's child agents "+
+					"run under (%s %s: %s%s), so a child agent that inherits the session's model is refused. "+
+					"%s keeps a model picked in its own picker across launches: pick one the scope admits "+
+					"there, or select a profile whose provider serves %s",
+					bin, s.Path, selected, bin, s.Path, refs.Scope, strings.Join(scope, ", "), governs,
+					bin, selected))
 			}
 			values := packload.ModelReferenceValuesIn(doc, refs, s.Path+" ")
 			if len(values) == 0 {

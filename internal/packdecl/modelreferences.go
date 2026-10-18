@@ -30,10 +30,23 @@ type ModelReferences struct {
 	Models []string `json:"models,omitempty"`
 	// Patterns point at arrays of patterns over qualified ids.
 	Patterns []string `json:"patterns,omitempty"`
+	// Scope is the one Patterns pointer whose array admits a child process that runs on the
+	// session's own selected model; "" when the program has none. With Selection it is the boot's
+	// question "is the model the user picked still inside the scope?" (MM-D46).
+	Scope string `json:"scope,omitempty"`
+	// Selection points at the surface's selected provider id and bare model id, the pair the
+	// program's own model picker writes; nil when the surface holds none.
+	Selection *ModelSelectionKeys `json:"selection,omitempty"`
 	// ProfileSubagents says the program's derive writes the active profile's `subagents` models
 	// (profiles.<name>.subagents) into this surface, so `yolo check` resolves each declared value
 	// where the user wrote it rather than only where the derive put it.
 	ProfileSubagents bool `json:"profile_subagents,omitempty"`
+}
+
+// ModelSelectionKeys are the two pointers of a surface's selected model.
+type ModelSelectionKeys struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
 }
 
 // modelReferencesProblems validates one `references` declaration.
@@ -56,6 +69,22 @@ func modelReferencesProblems(label string, r *ModelReferences) []string {
 	}
 	for i, p := range r.Patterns {
 		pointer(fmt.Sprintf("patterns[%d]", i), p)
+	}
+	if r.Scope != "" {
+		found := false
+		for _, p := range r.Patterns {
+			found = found || p == r.Scope
+		}
+		if !found {
+			problems = append(problems, fmt.Sprintf("%s.scope %q must be one of its \"patterns\"", label, r.Scope))
+		}
+	}
+	if s := r.Selection; s != nil {
+		pointer("selection.provider", s.Provider)
+		pointer("selection.model", s.Model)
+		if r.Scope == "" {
+			problems = append(problems, label+".selection needs a \"scope\" to compare the selected model with")
+		}
 	}
 	return problems
 }

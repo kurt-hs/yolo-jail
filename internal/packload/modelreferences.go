@@ -4,7 +4,8 @@ package packload
 // coined in packdecl.ModelReferences (docs/design/model-lists-and-pickers.md MM-D45): a value its
 // config names a model by, or a pattern over models, and what the program can resolve one
 // against. `yolo check` asks it of what the user and the packs DECLARE; the jail's boot asks it
-// of the file the render WROTE.
+// of the file the render WROTE, where it also asks whether the model the user picked is still
+// inside the scope a child runs under (MM-D46).
 //
 // It is a pure evaluation, like EmptyModelLists: it reads no file, runs nothing and refuses
 // nothing. A reference it cannot judge — its provider's ids include a catalog the caller could
@@ -264,6 +265,30 @@ func ModelReferenceValuesIn(doc any, refs *packdecl.ModelReferences, where strin
 	return out
 }
 
+// PatternsAt is the string items of the array at pointer in doc, nil when there is none.
+func PatternsAt(doc any, pointer string) []string {
+	var out []string
+	for _, hit := range pointerHits(doc, pointer) {
+		items, _ := hit.value.([]any)
+		for _, item := range items {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+// StringAt is the string at pointer in doc, "" when there is none.
+func StringAt(doc any, pointer string) string {
+	for _, hit := range pointerHits(doc, pointer) {
+		if s, ok := hit.value.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
 type pointerHit struct {
 	pointer string
 	value   any
@@ -369,6 +394,22 @@ func ProfileSubagentValues(packs []*Pack, providers *jsonx.OrderedMap, profiles 
 		}
 	}
 	return out
+}
+
+// SelectionOutsideScope is MM-D46's question over a rendered document: the selected model refs
+// declares (`<provider>/<model>`), the scope's patterns, and whether the selection is outside
+// them. False when refs declares no selection, or the document holds no selection or no scope.
+func SelectionOutsideScope(doc any, refs *packdecl.ModelReferences) (string, []string, bool) {
+	if refs == nil || refs.Selection == nil || refs.Scope == "" {
+		return "", nil, false
+	}
+	provider, model := StringAt(doc, refs.Selection.Provider), StringAt(doc, refs.Selection.Model)
+	scope := PatternsAt(doc, refs.Scope)
+	if provider == "" || model == "" || len(scope) == 0 {
+		return "", nil, false
+	}
+	selected := provider + "/" + model
+	return selected, scope, !MatchesAny(selected, scope)
 }
 
 // nearestStrings is up to three of candidates closest to s by edit distance, ties in sorted order.

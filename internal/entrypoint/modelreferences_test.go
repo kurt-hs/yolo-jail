@@ -1,8 +1,10 @@
 package entrypoint
 
-// modelreferences_test.go pins the boot's half of MM-D45 (docs/design/model-lists-and-pickers.md):
-// after the boot's own loop (ConfigurePackSurfaces) renders the SHIPPED pi pack, a subagent model
-// pi's registry does not hold is named. Deleting the call in ConfigurePackSurfaces turns it red. pi's catalog is a
+// modelreferences_test.go pins the boot's half of MM-D45 and MM-D46
+// (docs/design/model-lists-and-pickers.md): after the boot's own loop (ConfigurePackSurfaces)
+// renders the SHIPPED pi pack, a model the user picked in pi that the derived modelScope excludes
+// is named at that boot with the scope and the fix, and a subagent model pi's registry does not
+// hold is named too. Deleting the call in ConfigurePackSurfaces turns both red. pi's catalog is a
 // fixture on disk; no agent runs.
 
 import (
@@ -15,6 +17,39 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/luahook"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
+
+// A pair pi's picker saved on another provider survives the re-render (a user edit is kept), and
+// the boot says the scope excludes it, naming the model, the scope and the profile; before the
+// edit, yolo's own pair is inside the scope and nothing is said.
+func TestTheBootNamesAPickedModelTheDerivedScopeExcludes(t *testing.T) {
+	r := shippedScopeRender(t)
+	r.render(t, `{"pi":"zai"}`)
+	if strings.Contains(r.errw.String(), "is outside the scope") {
+		t.Fatalf("yolo's own selection is inside the scope it derives:\n%s", r.errw.String())
+	}
+	settings := []string{".pi", "agent", "settings.json"}
+	r.edit(t, settings, "defaultProvider", "openrouter")
+	r.edit(t, settings, "defaultModel", "deepseek/deepseek-v4-flash")
+	r.render(t, `{"pi":"zai"}`)
+	if got := r.piSettings(t)["defaultProvider"]; got != "openrouter" {
+		t.Fatalf("the picked provider must survive the render, the premise of the warning; got %v", got)
+	}
+	out := r.errw.String()
+	for _, want := range []string{
+		"pi: the model saved in ~/.pi/agent/settings.json, openrouter/deepseek/deepseek-v4-flash, is outside the scope",
+		"/subagents/modelScope/allow: zai/*",
+		`which profile "zai" derives each boot`,
+		"a child agent that inherits the session's model is refused",
+		"pick one the scope admits there, or select a profile whose provider serves openrouter/deepseek/deepseek-v4-flash",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the boot should say %q:\n%s", want, out)
+		}
+	}
+	if fails := r.e.GenFailures(); len(fails) != 0 {
+		t.Errorf("the warning must never refuse the boot: %v", fails)
+	}
+}
 
 // A profile's subagents.default that pi's catalog does not hold, on a provider pi runs on its own
 // catalog, is written verbatim; the boot names it with the nearest catalog id.
