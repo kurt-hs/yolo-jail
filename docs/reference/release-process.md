@@ -17,7 +17,7 @@ Each refusal names the step that fixes it, and none dispatches anything:
 | The version already tagged at another commit, and nothing under `[Unreleased]` | Nothing new to release |
 | A section `scripts/changelog-section.sh` rejects | Write the section's prose and commit |
 
-The version is read by [`scripts/release-version.sh`](../../scripts/release-version.sh); `scripts/test-changelog-section.sh` runs it over fixture changelogs and runs the recipe in a scratch repository for each row above. A version already tagged **at `HEAD`** is not refused: the request goes on, for the [tag-only resume](#resuming-a-tag-only-release), which the workflow verifies.
+The version is read by [`scripts/release-version.sh`](../../scripts/release-version.sh); `scripts/test-changelog-section.sh` runs it over fixture changelogs, including every heading refusal, and runs the recipe in a scratch repository for the argument, the missing dated section, the future date, an origin that lacks `HEAD`, both tagged-elsewhere rows, a rejected section, the resume and a dispatch failure. A version already tagged **at `HEAD`** is not refused: the request goes on, for the [tag-only resume](#resuming-a-tag-only-release), which the workflow verifies.
 
 ## Trusted source and capability boundaries
 

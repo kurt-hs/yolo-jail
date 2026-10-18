@@ -40,7 +40,8 @@ if [ ! -r "$file" ]; then
 fi
 
 # One pass: the first dated heading (version, date), and whether [Unreleased]
-# holds any line that is neither blank nor an HTML comment. Fenced code is
+# holds any line that is neither blank, an HTML comment nor a bare subheading
+# (an empty `### Added` left for the next release is not notes). Fenced code is
 # skipped, as changelog-section.sh skips it, so a `## ` line inside one is code.
 parsed=$(awk '
     BEGIN { fence = 0; inunrel = 0; unrel = "empty"; v = ""; d = "" }
@@ -58,7 +59,7 @@ parsed=$(awk '
         next
     }
     /^#[ \t]/ { inunrel = 0; next }
-    inunrel && $0 !~ /^[ \t]*$/ && $0 !~ /^[ \t]*<!--.*-->[ \t]*$/ { unrel = "content" }
+    inunrel && $0 !~ /^[ \t]*$/ && $0 !~ /^[ \t]*<!--.*-->[ \t]*$/ && $0 !~ /^###/ { unrel = "content" }
     END { print unrel; print v; print d }
 ' "$file")
 unreleased=$(printf '%s\n' "$parsed" | sed -n 1p)
