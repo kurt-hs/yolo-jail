@@ -354,9 +354,9 @@ reader: links are followed only while they stay inside the workspace, and one th
 skipped and named, never read ([the workspace layer](agent-briefings.md#the-workspace-layer)).
 
 A pack **ships its tools**: a file carrying the exec bit stages executable, so a skill can
-deliver the script it tells an agent to run. That holds for a pack configured by path; an
-**embedded** pack's files read back `0444` whatever their mode in the repository, so a program
-an embedded pack's loophole runs is declared as a download instead
+deliver the script it tells an agent to run. That holds for every route a pack arrives by,
+embedded packs included ([the exec bit](#the-exec-bit)). A compiled program an embedded pack's
+loophole runs is still declared as a download, because it needs a build per platform
 ([a program the loophole downloads](loophole-system.md#a-program-the-loophole-downloads)).
 
 > [!WARNING]
@@ -1664,6 +1664,25 @@ extension, with none, from a git address or `npm:<name>[@<spec>]` and an optiona
 yolo builds it on the host in a sealed capture jail and mounts a per-launch copy at `into`. The source bound is the pack's **staged**
 tree, so `packstage`'s escaping-symlink refusal has already run on it — `files` is not a
 channel around it.
+
+<a id="the-exec-bit"></a>**The exec bit.** A `files` source's exec bit is preserved on every
+delivery path: the jail's mount (a tree bound from the staged pack, or a per-launch copy when contributions
+share or nest a root), the macos-user home overlay, `yolo host apply` and a built tree's copy. It is
+the only part of a pack file's mode that is carried: a file from the pack's own tree is `0755` or
+`0644` in a jail and `0555` or `0444` at the host, read-only there in place of the jail's `:ro`, and
+never group- or world-writable. There is no `mode` or `executable` key, because nothing needs one: `chmod +x` the
+file in the pack. Each route keeps the bit as follows:
+
+| Route | Where the bit comes from |
+| :--- | :--- |
+| A pack selected by path | the file's own mode, which `packstage` carries |
+| A git pack fetched by `yolo pack install` | the committed mode (`100755`), which a checkout restores even under `core.fileMode=false`; on a filesystem without modes, commit it with `git update-index --chmod=+x` |
+| A shipped (embedded) pack | `packs/executables.txt`, because `embed.FS` cannot carry a mode; a test fails when that list and the repository's modes disagree |
+| A built tree | the build's own output modes, kept by its capture and per-launch copy |
+
+`yolo pack lint` and `yolo pack footprint` list a pack's executable files under an
+`executables` claim that names this guarantee. This is an implementation decision of 2026-10-17,
+made in place of a declarative `mode` key, which every route above made unnecessary.
 
 `files` also carries the `agent`/`agents` pair, and it is the kind where the two spellings are
 **two different declarations** rather than one field used two ways:

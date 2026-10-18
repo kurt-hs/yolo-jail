@@ -19,30 +19,25 @@ through the other."*
 
 ## The result
 
-**A pack can ship the executable its jail daemon runs — but only a pack selected BY
-PATH.** The same directory selected by BARE NAME cannot, because the embedded channel
-strips the execute bit and nothing puts it back.
+**A pack can ship the executable its jail daemon runs, by either route.** When this ran,
+only a pack selected BY PATH could; the same directory selected by BARE NAME could not,
+because the embedded channel stripped the execute bit. That gap closed on 2026-10-17.
 
 | Route | How it is selected | What reaches the jail |
 |---|---|---|
 | **configured** | `"packs": ["/abs/path/to/packs/hello-daemon"]` | `bin/hello` at `0755` — `packstage.copyFile` carries the `0o111` bits |
-| **embedded** | `"packs": ["hello-daemon"]` | `bin/hello` at `0644` — **it cannot be executed** |
+| **embedded** | `"packs": ["hello-daemon"]` | `bin/hello` at `0755` — [`packs/executables.txt`](../executables.txt) records the bit |
 
-Two independent causes sit on the embedded route, and the second one would still bite
-if the first were fixed:
+There were two causes on the embedded route:
 
 1. **`embed.FS` cannot represent an exec bit at all.** It reports `0444` for every
    file and `0555` for every directory, whatever the mode on disk — measured, not
    inferred: a `0755` source file embedded with `//go:embed all:sub` reads back as
-   `perm=0444`. So no mode-preserving copier could recover it; the bit is gone before
-   `packs.FS` is ever read.
-2. **`packload.copyEmbeddedTree` writes `0o644` unconditionally**, and the comment
-   justifying it — *"packstage enforces the same rule for configured packs"* — is no
-   longer true of `packstage`, which carries the bit deliberately (its `copyFile` doc:
-   *"that is what made a pack unable to ship a working script through any channel"*).
-   `internal/cli/run`'s own `copyTree`, which moves the materialized tree into the
-   staged one, already carries the bit too. packload's is the last stripper standing,
-   and its stated reason has moved out from under it.
+   `perm=0444`. That is still true, so the bit now travels beside the bytes:
+   `packs/executables.txt` lists every embedded file whose repository mode carries one,
+   and a test fails when the list and the tree disagree.
+2. **`packload.copyEmbeddedTree` wrote `0o644` unconditionally.** It now restores the
+   listed bit, and the read-only cache tree seals such a file `0555` rather than `0444`.
 
 **The failure was silent when this ran, and is not now.** A start that fails —
 `permission denied` from `cmd.Start` on a non-executable file — used to take a
@@ -52,14 +47,14 @@ spawn-failure arm that discarded the error and retried for the life of the jail,
 `"restart": "no"` gives up after one line that names the error
 ([the reference](../../docs/reference/pack-binaries.md#a-packs-own-tree-cannot-carry-an-executable) records the fix).
 
-**The embedded route has an answer now, and it is not this tree** (2026-09-30,
-[`pack-binaries.md`](../../docs/reference/pack-binaries.md), [BP-D1](../../docs/reference/pack-binaries.md#BP-D1)). A pack that must
-work when selected by bare name declares its program as a DOWNLOAD in the loophole's
+**A compiled program still takes a download** (2026-09-30,
+[`pack-binaries.md`](../../docs/reference/pack-binaries.md), [BP-D1](../../docs/reference/pack-binaries.md#BP-D1)). A pack shipping a
+compiled program declares it as a DOWNLOAD in the loophole's
 manifest — `binaries`, one build per platform with a mandatory `sha256` — and names it
 `{jail_binary:<name>}` in `jail_daemon.cmd`. `yolo pack install` fetches and verifies each
 build and caches it with its exec bit, and the launch mounts that file into the jail, so
-the bit never has to survive `embed.FS`. This pack keeps its checked-in script because a
-throwaway has no release to download from.
+one build per platform reaches the jail. This pack keeps its checked-in script because a
+script needs no per-platform build.
 
 ## Why it ships a script and not an ELF binary
 
@@ -70,14 +65,13 @@ Every property the experiment is about is **identical** for the two: a file the 
 ships, delivered through pack staging, mounted `:ro` into the container, named by
 `{jail_loophole_dir}`, and executed by the kernel off that read-only bind. A `#!`
 script needs the execute bit exactly as an ELF image does — which is why this pack
-still finds the gap above rather than dodging it.
+found the gap above rather than dodging it.
 
 What a committed ELF would have cost is the reason not to: `packs/` is inside
 [`flake.nix`](../../flake.nix)'s `goSrc` fileset **and** inside
 [`packs/embed.go`](../embed.go), so the blob would ride in every `yolo` binary and every
 hermetic image build — once per platform, under [the design's](../../docs/reference/pack-binaries.md#a-packs-own-tree-cannot-carry-an-executable) `bin/<goos>-<goarch>/`
-convention — forever, for a throwaway. And it would not have worked anyway: the embed
-channel would have stripped its exec bit just the same.
+convention — forever, for a throwaway.
 
 **What the script therefore leaves unproven is the ELF half**: that a non-nix,
 dynamically-linked binary finds its interpreter through `nix-ld` inside the jail. [The design](../../docs/reference/pack-binaries.md#a-packs-own-tree-cannot-carry-an-executable)
@@ -87,8 +81,8 @@ measured here.
 
 ## Running it
 
-It is off behind two gates. Select the pack **by path** (the bare name takes the
-embedded route, which is the one that cannot work), then enable the loophole:
+It is off behind two gates. Select the pack, by path or by its bare name, then enable the
+loophole:
 
 ```jsonc
 // ~/.config/yolo-jail/config.jsonc
@@ -127,7 +121,9 @@ that runs it.
 
 ## Retiring it
 
-Delete the directory and its entry in [`packs/embed.go`](../embed.go). Nothing depends
+Delete the directory, its entry in [`packs/embed.go`](../embed.go) and its line in
+[`packs/executables.txt`](../executables.txt), which refuses to load every shipped pack while it
+names a missing file. Nothing depends
 on it: the loophole crosses nothing, no other pack names it, and the test above builds
 its own fixtures from this tree — it will fail loudly rather than pass vacuously if the
 tree goes.

@@ -3,11 +3,9 @@ name: muse-planner
 description: Read-only planning and analysis through Meta's Muse Code CLI (`muse exec`), on the local Muse login. Returns a plan or a recommendation; it never edits the repository.
 runner:
   type: external-cli
-  # BASH IS THE COMMAND, NOT THE SCRIPT, on purpose. The EMBEDDED pack channel cannot carry
-  # an exec bit (embed.FS reports 0444 for every file whatever its mode on disk, and the
-  # materializer writes 0o644 — internal/packload's copyEmbeddedTree), so a script invoked by
-  # its own bare name is unexecutable whenever this pack is selected as a SHIPPED pack. `bash`
-  # is always executable, and `-c` lets `$HOME` name the script: the runner spawns with no
+  # BASH IS THE COMMAND, NOT THE SCRIPT, on purpose. It was chosen when the EMBEDDED pack
+  # channel carried no exec bit (packs/executables.txt now records it), and it still needs
+  # none and no PATH entry. `bash` is always executable, and `-c` lets `$HOME` name the script: the runner spawns with no
   # shell, so neither `~` nor a hard-coded /home/agent path resolves on every backend. The
   # prompt on stdin reaches the script unchanged — `exec` replaces bash without reading it.
   command: bash

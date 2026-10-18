@@ -9,8 +9,8 @@
 # in ~/.copilot/yolo/, a directory only yolo uses, never beside copilot's own
 # state.
 #
-# It is run as `sh <this file>`, because nothing an embedded pack ships can carry
-# an exec bit (packs/embed.go), and only when the file is readable, because a
+# It is run as `sh <this file>`, which needs no exec bit (chosen when an embedded
+# pack could carry none; packs/executables.txt now can), and only when the file is readable, because a
 # backend that delivers no `files` (macos-user) still renders copilot's config.
 # With no yolo on PATH it prints nothing and exits 0, and copilot's footer item
 # stays empty.
