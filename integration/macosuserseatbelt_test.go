@@ -46,7 +46,7 @@ const sharedUsersDir = "/Users/Shared"
 // .github/workflows/macos-user.yml exists to give.
 //
 // THE GATE IS NARROWER THAN A LAUNCH'S, deliberately. requireMacosUser needs the
-// _yolojail account, a shared root and passwordless sudo, because it launches. This
+// _yolojail account, a shared root and the run-as rule, because it launches. This
 // needs `sandbox-exec` and a writable /Users/Shared, because it loads a profile and
 // runs /bin/sh under it. So the policy suite still reports on a Mac where
 // `yolo macos-setup` has not run or has failed — which is the one machine state where
@@ -223,6 +223,10 @@ type seatbeltCase struct {
 	// devices, when non-nil, is the `devices` list this case's profile declares INSTEAD of
 	// seatbeltFixtureDevices: the case runs under its own variant of the fixture profile.
 	devices []string
+	// needsUnifiedLog marks a case whose CONTROL reads the unified log store as the invoking
+	// user. On a Mac whose store is closed to that user the control cannot succeed, so the case
+	// skips, countably (requireUnifiedLog, OQ-DM2), and every other case still asserts.
+	needsUnifiedLog bool
 }
 
 // seatbeltCases is the whole suite. It is a pure function of the fixtures so the
@@ -531,10 +535,11 @@ func seatbeltCases() []seatbeltCase {
 			id:   "macos-log-deny",
 			why: "the log is the macos-log loophole's, read on the host, so the sandbox never " +
 				"reads it: the profile denies the store whatever the config says. The probe " +
-				"passes only when an entry was actually read (the runner is an admin, so the " +
-				"bare control does).",
-			script: func(seatbeltFixtures) string { return macosLogStoreProbe },
-			want:   wantRefused,
+				"passes only when an entry was actually read, so the bare control needs a store " +
+				"the invoking user can read (an admin's; a managed Mac closes it to anyone else).",
+			script:          func(seatbeltFixtures) string { return macosLogStoreProbe },
+			want:            wantRefused,
+			needsUnifiedLog: true,
 		},
 		// --- THE CONTEXT MOUNTS (docs/reference/context-mounts.md#delivery-on-macos-user): the
 		// Mac-hardware probes §4 lists that need no sandbox account. The DAC preflight, the
@@ -745,6 +750,9 @@ func TestMacosUserSeatbeltProfileEnforcesItsRules(t *testing.T) {
 
 	for _, tc := range seatbeltCases() {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.needsUnifiedLog {
+				requireUnifiedLog(t, macosUserGateSeatbelt)
+			}
 			script := tc.script(f)
 			bareOut, bareRC := runScript(t, script, nil)
 			// THE CONTROL, always first. Every case is a claim that the SANDBOX is what
@@ -1574,9 +1582,9 @@ func TestMacosUserMacosLogAsTheSandboxAccountMeasurement(t *testing.T) {
 	if err := os.WriteFile(profile, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	asSandbox := func(prefix []string) []string {
-		return append([]string{"/usr/bin/sudo", "-n", "--user=" + macosuser.SandboxUser}, prefix...)
-	}
+	// Through the one run-as rule: a bare `sudo --user=_yolojail /bin/sh` is not that rule, which
+	// names /usr/bin/env, and asks for a password. runScript starts every run in "/".
+	asSandbox := func(prefix []string) []string { return macosuser.RunAsSandboxArgv(nil, prefix...) }
 	if out, rc := runScript(t, "true", asSandbox(nil)); rc != 0 {
 		t.Fatalf("cannot run a command as %s (rc %d), so there is nothing to measure:\n%s",
 			macosuser.SandboxUser, rc, out)

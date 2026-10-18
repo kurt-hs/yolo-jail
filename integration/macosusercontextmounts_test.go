@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -25,8 +24,8 @@ import (
 // unit-tested there; what the kernel answers is what the first scheduled run will say.
 
 // ctxSourceUnder makes a context-mount source directory under parent, mode `mode`, holding a
-// seed file, and removes it when the test ends — with sudo when the sandbox wrote into it, for
-// removeMacosUserWorkspace's reason. It returns the resolved path.
+// seed file, and removes it when the test ends — with the sandbox account's own removal when it
+// wrote into it, for removeMacosUserWorkspace's reason. It returns the resolved path.
 func ctxSourceUnder(t *testing.T, parent string, mode os.FileMode) string {
 	t.Helper()
 	dir, err := os.MkdirTemp(parent, "yolo-it-ctx-")
@@ -50,8 +49,8 @@ func ctxSourceUnder(t *testing.T, parent string, mode os.FileMode) string {
 		if !strings.HasPrefix(filepath.Base(resolved), "yolo-it-ctx-") || strings.Contains(resolved, "..") {
 			t.Fatalf("refusing to escalate removal of %s: not a fixture", resolved)
 		}
-		if !runQuiet(2*time.Minute, "sudo", "-n", "/bin/rm", "-rf", resolved) {
-			t.Logf("could not remove %s even with sudo; remove it by hand", resolved)
+		if err := removeSandboxWritten(resolved); err != nil {
+			t.Logf("could not remove %s (%v): %s", resolved, err, removeByHandHint(resolved))
 		}
 	})
 	return resolved
@@ -61,8 +60,8 @@ func ctxSourceUnder(t *testing.T, parent string, mode os.FileMode) string {
 // already carrying `-n` — and reports whether the kernel granted the access.
 func runPreflight(t *testing.T, argv []string) bool {
 	t.Helper()
-	if len(argv) == 0 || argv[0] != "/usr/bin/sudo" {
-		t.Fatalf("a preflight argv that does not start with /usr/bin/sudo: %v", argv)
+	if sudo := macosuser.RunAsGrantProbeArgv()[0]; len(argv) == 0 || argv[0] != sudo {
+		t.Fatalf("a preflight argv that does not start with %s: %v", sudo, argv)
 	}
 	if p := macosuser.RunAsArgvProblems("preflight", argv); len(p) > 0 {
 		t.Fatalf("a preflight argv off the run-as rule's shape: %v", p)
@@ -202,8 +201,7 @@ func TestMacosUserContextVolumesAndPrivacyDirsMeasurement(t *testing.T) {
 			t.Fatal(err)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		out, err := exec.CommandContext(ctx, "sudo", "-n", "--user="+macosuser.SandboxUser,
-			"/usr/bin/sandbox-exec", "-f", profile, "/bin/ls", src).CombinedOutput()
+		out, err := sandboxCommand(ctx, "/usr/bin/sandbox-exec", "-f", profile, "/bin/ls", src).CombinedOutput()
 		cancel()
 		t.Logf("MEASUREMENT %s (resolved %s): DAC read as %s = %v; listing under a profile "+
 			"granting it: err=%v\n%s", c, src, macosuser.SandboxUser, dac, err, out)
