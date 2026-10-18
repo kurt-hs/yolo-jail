@@ -142,9 +142,16 @@ func inheritScopeFiles(effective *jsonx.OrderedMap, rt, launchedAt string) (file
 // what went wrong with the render, for every backend's delivery: the container path mounts each
 // file (userConfigMountArgs) and the macos-user arm lays it into the home overlay
 // (macosUserInheritedScope). A render that failed delivers nothing, and says so.
-func (o *Options) inheritedScope(rt string) []inheritScopeFile {
+//
+// stamped puts the launch time in each header (inheritStamp). A delivery reused across launches
+// while its bytes are unchanged passes false, because a timestamp makes every launch's bytes new.
+func (o *Options) inheritedScope(rt string, stamped bool) []inheritScopeFile {
 	out := o.pr(o.Stdout)
-	files, unknown, err := inheritScopeFiles(o.effectiveConfigForInherit(), rt, o.inheritStamp())
+	stamp := ""
+	if stamped {
+		stamp = o.inheritStamp()
+	}
+	files, unknown, err := inheritScopeFiles(o.effectiveConfigForInherit(), rt, stamp)
 	if err != nil {
 		// LOUD, and the reason matters: a jail whose user scope silently failed to render
 		// looks like a jail whose user config is empty — `yolo pack ls` shows nothing, a
@@ -187,7 +194,7 @@ func (o *Options) userConfigMountArgs(rt, wsState string) []string {
 	// which is where every other composed file goes — the gitconfig, the user-env script)
 	// and mounted from there, one bind per file.
 	out := o.pr(o.Stdout)
-	for _, f := range o.inheritedScope(rt) {
+	for _, f := range o.inheritedScope(rt, true) {
 		// Both writes are BENEATH wsState (writeFileBeneath, wsstatebeneath.go): the jail can
 		// leave a link at either destination, or above the Apple Container one, for a plain
 		// write to follow onto a host file, and podman would then bind the link's target.
@@ -235,7 +242,10 @@ func (o *Options) userConfigMountArgs(rt, wsState string) []string {
 func (o *Options) macosUserInheritedScope(rt string) []overlayFile {
 	var core []overlayFile
 	preflight := false
-	for _, f := range o.inheritedScope(rt) {
+	// UNSTAMPED: the home overlay is content-keyed and an unchanged relaunch reuses it whole
+	// (buildMacosHomeOverlayTreeIDs). A launch time in this header moved the overlay's digest on
+	// every launch, so every relaunch rebuilt, re-staged and re-installed all of it.
+	for _, f := range o.inheritedScope(rt, false) {
 		core = append(core, overlayFile{Rel: f.rel, Body: []byte(f.body)})
 		preflight = preflight || f.rel == inheritPreflightRel
 	}
