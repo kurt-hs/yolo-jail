@@ -9,12 +9,13 @@ tags: [plan, config, mounts, github, live-apply]
 
 # Live config apply: implementation plan
 
-**Status:** 2026-10-18. Completed against the tree, written against `42541fb78`; built the same
-day in three lanes and integrated. What the plan missed: lane B's refusal names `yolo config apply`,
-which `TestEveryHintedYoloCommandExists` refuses until lane A lands, so B cannot land alone; the
-github briefing, `yolo gh` help and user guide also said "restart"; the plan's step order put mount
-additions before removals, read the config twice, and let a step outlive its deadline, all caught
-by review.
+**Status:** 2026-10-18. The implementation and review repairs are integrated into an isolated
+serial candidate based on primary `6683038d2`, which already contains the independently accepted
+model-reference and Mac/recovery landing. This candidate merges the complete live-apply history
+through `e80f3a2ae` rather than cherry-picking its last repair; the primary fast-forward is still
+pending. The final bounded closure review accepted the last mount-record repair. The rootless,
+real-broker and `CAP_SYS_ADMIN` remount obligations below remain outstanding; this status records
+candidate integration, not proof of those runtime cases.
 **Review disposition for candidate `286d051ef`:** Four P1 findings were repaired on the isolated
 current-main branch without changing the gate, consent store, attach prompt, or backend policy.
 The repair is bounded to four failure paths:
@@ -70,6 +71,32 @@ because the selected patched `pi` program was unavailable; the successful retry 
 `YOLO_ALLOW_MISSING_PROGRAMS=1` hatch. This is candidate-specific boot/command evidence, not a live
 apply or rootless-mount test: nested podman forces `--userns=host`. Rootless two-architecture, live
 broker, and remount-resistance evidence remain owned by M1 and the final landing gate.
+
+**Final closure review for `e80f3a2ae`: ACCEPT, limited to the narrowed mount-record closure.** The
+review verified that restoration accepts only the empty-token tombstone and the exact inspected
+launch token; a competing launch token is left untouched. It exercised successful add → removal and
+remove → replacement-add through production apply, record invalidation, token restoration, reading
+and effective-baseline folding. It also confirmed that record-write failure remains pending and
+is not folded, scope discovery/replacement honor their deadline, absent/erroring live files cannot
+prove an unchanged scope is applied, and PID start-time plus mount-namespace identity are pinned
+before source/destination mutation. The accepted tests include
+`TestConfigApplyRestoresTheInvalidatedMountRecordThroughRealApply`,
+`TestInvalidatedCtxMountRecordCannotClaimStaleMounts`,
+`TestConfigApplyRecordFailureInvalidatesMountStateAndKeepsRemovalPending`,
+`TestLiveScopeTransactionsHonorContextWhileSourceLockIsHeld`,
+`TestApplyPlanRequiresVerifiedLiveScopeAfterApprovalIsUnchanged`,
+`TestInjectCtxMountRefusesChangedRuntimePIDBeforeRunningVerb`, and
+`TestAttachRejectsAChangedProcessOrMountNamespaceBeforeSourceMutation`. The exact workflow and
+scope limits are recorded in [`october-18-integration.md`](../plans/october-18-integration.md).
+
+**Earlier review sequence:** the first review blocked on four P1s (false completion after mount
+record-write failure; unbounded broker-lock acquisition; missing/unreadable scope treated as
+already applied; process identity checked after namespace mutation). The first repair review
+confirmed those repairs and found a new P1: successful mount mutation invalidated its own record,
+so add/remove/replacement never settled. The next repair restored only the inspected token into an
+unchanged tombstone; the final closure review above accepted that narrowed fix. The closure does not
+certify rootless mount capability, a real broker request after widening, or resistance to a jail's
+`CAP_SYS_ADMIN` remount.
 
 **Design:** [`live-config-apply.md`](live-config-apply.md), every question ruled
 ([Decision Ledger](live-config-apply.md#decision-ledger)).

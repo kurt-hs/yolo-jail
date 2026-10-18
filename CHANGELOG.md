@@ -22,6 +22,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**Apply changes to a running jail without restarting it.** `yolo config apply` uses the usual approval prompt, applies eligible mount and GitHub-scope changes, and reports what still needs a restart. See [When a change takes effect](userguide/reference/configuration.md#when-a-change-takes-effect).
+
 **Patched forks and extensions run on macOS (macos-user).** See [Patch series](userguide/guides/patch-series.md).
 
 **The GitHub broker takes wildcards** in `brokered.github.repos` (`*/*`, `OWNER/*`, `*/REPO`),

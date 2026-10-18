@@ -3,23 +3,26 @@ title: "Approve a config change once, on the host, and let the running jail take
 date: 2026-10-18
 status: accepted
 stage: DECIDED
-next: "Land v1; read CI's rootless integration jobs for TestLiveCtxMountInjectAndRemove (M1), then build the staged later slices"
+next: "After the verified serial candidate lands, read CI's rootless integration jobs for TestLiveCtxMountInjectAndRemove (M1); then build the staged later slices"
 tags: [design, config, approval, attach, mounts, github, broker, live-apply, podman, macos-user, apple-container]
 summary: "A host command, `yolo config apply`, runs the launch's own config-change gate (same diff, same scope block, same y/N, same host-side approval record) against a running jail, then applies the approved changes that can reach a jail without a restart and says, per change, which ones wait for the next restart. An attach with a human at its terminal runs the same gate and apply before its session starts. Read-only context mounts are injected into a running podman jail with the kernel's new mount API, which a probe in this jail on 2026-10-18 showed working, read-only and recursive, into a read-only-rootfs container. The github-broker's repository scope is widened by rewriting the per-launch scope file it already re-reads per request, once its classification reads that file instead of its start-time copy. Everything else is classified per key and per backend; most keys stay restart-only, and the command still captures the trust for them."
 ---
 
 # Approve a config change once, on the host, and let the running jail take what it can
 
-**Status:** 2026-10-18. Every question ruled the same day. v1 and four bounded review repairs are
-built on the branch that carries this edit (not yet on `main`); the command's own briefing
-re-render from the effective config is not ([LA-D7](#LA-D7)), and the later slices of [§13](#13-sequencing)
-are not. MEASURED, in this jail's nested podman only (`--userns host`, the direct injector branch):
-`yolo config apply` and an interactive attach adding, removing and moving read-only mounts in a
-running jail, writes refused, `/ctx` still read-only, `yolo config drift` exit 0 afterwards.
-UNMEASURED: the rootless `podman unshare` branch ([M1](#LA-M1), which CI's rootless integration
-jobs run), a live broker widening end to end, and M2 to M6 ([§5.4](#54-what-still-has-to-be-measured)).
-The repair's unit tests and nested rootful run do not verify the rootless branch, a real broker
-request after widening, or a read-only remount attempt by the jail's own `CAP_SYS_ADMIN`.
+**Status:** 2026-10-18. Every question was ruled the same day. The model-reference and Mac/recovery
+implementation had already landed on primary at `6683038d2`; this serial candidate merges the full
+live-apply history through `e80f3a2ae` and the full patch-series history through `770d9c2c9`, with
+both histories retained, and is pending primary fast-forward. The final live-closure review accepted
+the bounded repair. v1 and its review repairs are built; the command's briefing re-render from the
+effective config is not ([LA-D7](#LA-D7)), nor are the later slices of [§13](#13-sequencing).
+MEASURED in the nested rootful Podman path only (`--userns host`): the command and interactive
+attach added, removed and moved read-only mounts in a running jail, refused writes, kept `/ctx`
+read-only, and left `yolo config drift` at exit 0. UNMEASURED: rootless Podman on both required
+architectures ([M1](#LA-M1)), a real broker request after widening, and a jail's own
+`CAP_SYS_ADMIN` remount attempt against an injected read-only bind. The Podman Machine live-injection
+path is not built (M3); native-Mac execution of the separate macos-user suite also remains owed. The
+accepted host-side repair tests and nested rootful run do not discharge these obligations.
 
 > **In short.** "Restart to apply" is wrong for the two changes people actually make mid-session,
 > a read-only mount and a GitHub repository: both can reach a running jail. So approval moves to a
@@ -249,10 +252,10 @@ Classes:
 
 | Key or kind | podman (Linux) | podman (macOS machine) | Apple Container | macos-user | Why |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `mounts` read-only, landing under `/ctx` | **B** | **B**, run inside the VM, and the source must be VM-shared | **C** | next; the gate and the record still apply | Injection with the new mount API ([§5](#5-mount-injection-per-backend)). Apple Container shares are fixed when its VM boots. A macos-user session's Seatbelt profile is fixed at exec. |
+| `mounts` read-only, landing under `/ctx` | **B** | **B**, intended inside the VM with a shared source (M3 is not built) | **C** | next; the gate and the record still apply | Injection with the new mount API ([§5](#5-mount-injection-per-backend)). Apple Container shares are fixed when its VM boots. A macos-user session's Seatbelt profile is fixed at exec. |
 | `mounts` read-only, with `at` outside `/ctx` | C | C | C | refused today | The parent directory is in the read-only image rootfs. Making a mountpoint there means writing the container layer ([§10](#10-non-goals)). |
-| `mounts` read-write (user scope only) | **B**, ruled in by [OQ-LA2](#decision-ledger) | **B** | C | next | Same mechanism without `MOUNT_ATTR_RDONLY`. Validation stays user-scope-only ([`OQ-WT1`](workspace-config-trust.md#OQ-WT1) is unchanged). |
-| `mounts` removed | **B**, ruled in by [OQ-LA3](#decision-ledger) | **B** | C | next | Lazy detach in the jail's namespace. |
+| `mounts` read-write (user scope only) | **B**, ruled in by [OQ-LA2](#decision-ledger) | **B**, M3 not built | C | next | Same mechanism without `MOUNT_ATTR_RDONLY`. Validation stays user-scope-only ([`OQ-WT1`](workspace-config-trust.md#OQ-WT1) is unchanged). |
+| `mounts` removed | **B**, ruled in by [OQ-LA3](#decision-ledger) | **B**, M3 not built | C | next | Lazy detach in the jail's namespace. |
 | `brokered.github.repos`, and remotes changing scope | **B** | B | n/a: the broker never starts | **B**, for every live session's broker | Rewrite the scope file. The broker classifies against its re-read ([§7](#7-github-scope-live)). |
 | `env_sources`, `providers`, `profiles`, `profile`, `model_facts`, `adapters`; pack `env`, `profile`, `provider`, `models`, `adapter` | A, next | A, next | A, next | next | An attach already recomposes the channel (`run.go:2852`). A process keeps its environment. |
 | `agents_md_extra`, `briefing_provenance`; built-in, user and workspace skills | A | A | B, because the briefing is copied once (`attachskewbriefing.go:64-66`) | next | Bind-mounted staging, which every attach re-renders ([LA-D7](#LA-D7)). |
@@ -276,13 +279,13 @@ Evidence for the delivery moment of each row: `internal/cli/run/assemble.go`,
 `internal/entrypoint/bootsteps.go`, and the 23 kinds in `internal/packdecl/kinds.go:46-377`, read
 2026-10-18. The plan sketch keeps the per-row file:line list.
 
-**What v1 builds** is the four bold rows: read-only mounts under `/ctx`, read-write mounts, mount
-removal, and GitHub scope in both directions. The maintainer, ruling [OQ-LA1](#decision-ledger)
-on 2026-10-18: *"let's go with yours. A let's try this out first. We can keep the rest on the
-design doc for our future. So we don't lose track of it ... and stage it on the roadmap."* On
-read-write ([OQ-LA2](#decision-ledger)): *"I just don't use them yet, but yes, I think we should
-have ReadWrite available."* On removal ([OQ-LA3](#decision-ledger)): *"definitely removes. If we
-can add, we can definitely remove."*
+**The four bold changes are the v1 scope**, as ruled in [OQ-LA1](#decision-ledger); read-write
+mounts ([OQ-LA2](#decision-ledger)) and removal ([OQ-LA3](#decision-ledger)) were added by the
+maintainer's rulings. Live mount injection is implemented only for Linux Podman in this candidate:
+rootless behavior still needs M1 on both required architectures, rootful requires yolo to already
+run as root, and the Podman Machine path is not built (M3). Apple Container mounts remain
+restart-only. The command's GitHub-scope step has separate broker behavior described in
+[§7](#7-github-scope-live); its live widening still needs a real broker request after the change.
 
 - Every **A** row reports *next session*: an attach already recomposes those inputs.
 - Every **C** row, and every **B** row v1 does not build, reports *at next restart*. The command

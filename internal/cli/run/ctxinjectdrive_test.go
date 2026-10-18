@@ -265,7 +265,7 @@ func TestCtxMountsLiveReasons(t *testing.T) {
 		{"apple container", "container", false, liveEnv("tok"), false, "Apple Container shares are fixed when its VM boots"},
 		{"podman machine", "podman", true, liveEnv("tok"), false, "the Podman Machine path is not built yet"},
 		{"no tag", "podman", false, oldTags, false, "this jail started before live mounts existed"},
-		{"no record match", "podman", false, liveEnv("other"), false, "this jail started before live mounts existed"},
+		{"no record match", "podman", false, liveEnv("other"), false, "the host's live-mount record is missing or does not match this jail's launch token"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

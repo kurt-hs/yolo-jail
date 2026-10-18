@@ -124,28 +124,31 @@ over to a later launch or a child process. yolo asks only when its input is a te
 
 ## When a change takes effect
 
-**A running jail keeps the config it started with.** Running `yolo` in a project whose jail is
-already running joins that jail, and joining neither asks about changes nor applies them. Stop the
-jail and launch again:
+**A running jail keeps most of the config it started with.** Running `yolo` in a project whose jail is
+already running joins that jail; joining alone does not apply most config changes. On a host, run
+`yolo config apply` to review and approve the same config-change gate. It applies eligible mount
+changes under `/ctx` and supported GitHub repository-scope changes to the running jail; changes it
+cannot apply remain pending for a fresh launch. Live mount injection currently supports Linux
+`podman` jails; Podman Machine and Apple Container mount changes wait for a restart. The command
+reports which changes took effect and which wait for restart. `yolo config drift` shows what remains
+different from the jail's effective config. For a fresh jail, run:
 
 ```bash
 yolo stop        # from the project folder
 yolo -- claude
 ```
 
-On `macos-user` every launch starts fresh, so there is nothing to stop.
-
-A few things do reach a running jail when you run `yolo` in it again, such as a new API key or a
-`-p` profile choice. [Settings per setup](settings-per-setup.md#what-a-running-jail-picks-up-when-you-run-yolo-again)
-lists exactly which.
+On `macos-user` every launch starts fresh, so there is no running jail to update between invocations.
 
 **When an agent edits the config from inside the jail**, the workflow is:
 
 1. The agent edits `yolo-jail.jsonc` and runs `yolo check --no-build`, the fast check, to validate
    it.
-2. The agent asks you to restart the jail.
-3. You exit, then run `yolo` again, review the difference and approve it.
+2. The agent asks you to run `yolo config apply` on the host. Eligible mount and GitHub repository-
+   scope changes can reach a supported running jail; the command names anything that still needs a
+   restart.
+3. If a restart-only change is needed, exit the jail, then run `yolo` again and review its prompt.
 
 `yolo config drift`, run inside a jail, tells an agent whether the project config on disk differs
-from the one the jail started with: it exits `0` when they match, `3` when they differ (printing the
-difference) and `4` when it cannot tell.
+from the config the jail has actually applied: it exits `0` when they match, `3` when they differ
+(printing the difference) and `4` when it cannot tell.
