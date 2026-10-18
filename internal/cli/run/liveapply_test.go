@@ -109,8 +109,9 @@ func answer(o *Options, a string) {
 	o.Stdin = strings.NewReader(a + "\n")
 }
 
-// In a jail the command refuses, naming the host command (OQ-S2 holds: recording an approval
-// must not be reachable from the side being approved), and records nothing.
+// In a jail the command refuses for the jail's own workspace, naming the host command (OQ-S2
+// holds: recording an approval must not be reachable from the side being approved), and records
+// nothing.
 func TestConfigApplyRefusesInAJail(t *testing.T) {
 	o, buf := applyFixture(t, `{}`, `{"packages":["jq"]}`, applyJail{running: true})
 	o.Getenv = func(k string) string {
@@ -119,6 +120,8 @@ func TestConfigApplyRefusesInAJail(t *testing.T) {
 		}
 		return ""
 	}
+	t.Setenv("YOLO_VERSION", "9.9.9")
+	t.Setenv("YOLO_WORKSPACE", o.Workspace)
 	before, _ := os.ReadFile(config.ApprovalSnapshotPath(o.Workspace))
 	answer(o, "y")
 	if rc := o.configApply(false); rc != 1 {
@@ -132,6 +135,27 @@ func TestConfigApplyRefusesInAJail(t *testing.T) {
 	}
 	if now, _ := os.ReadFile(config.ApprovalSnapshotPath(o.Workspace)); !bytes.Equal(before, now) {
 		t.Error("an in-jail apply rewrote the approval record")
+	}
+}
+
+// A workspace a launch inside the jail would open is a nested jail's, whose own launch runs its
+// gate in here: the apply is not refused there (LA-D17).
+func TestConfigApplyInAJailServesANestedWorkspace(t *testing.T) {
+	o, buf := applyFixture(t, `{}`, `{"packages":["jq"]}`, applyJail{running: true})
+	o.Getenv = func(k string) string {
+		if k == "YOLO_VERSION" {
+			return "9.9.9"
+		}
+		return ""
+	}
+	t.Setenv("YOLO_VERSION", "9.9.9")
+	t.Setenv("YOLO_WORKSPACE", "/workspace")
+	answer(o, "y")
+	if rc := o.configApply(false); rc == 1 {
+		t.Fatalf("rc = 1, want the nested workspace's apply to run:\n%s", buf.String())
+	}
+	if strings.Contains(buf.String(), "not in this jail") {
+		t.Errorf("a nested workspace's apply was refused:\n%s", buf.String())
 	}
 }
 

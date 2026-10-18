@@ -136,9 +136,13 @@ type applyMode struct {
 // config, resolve the runtime, hold the launch lock for the whole run, probe the jail
 // tri-state, then the gate and the apply.
 func (o *Options) configApply(recordOnly bool) int {
-	if o.inJail() {
+	// THE JAIL'S OWN WORKSPACE IS REFUSED, not every in-jail run (LA-D17): approving this jail's
+	// config from inside it is the side being approved approving itself (OQ-S2). A workspace a
+	// launch inside the jail opens is a nested jail, whose launch already runs its gate in here,
+	// so its apply is no wider than that launch.
+	if o.inJail() && config.IsJailOwnWorkspace(o.Workspace) {
 		out := o.pr(o.Stderr)
-		out.print("[bold red]yolo config apply runs on the host, not in a jail: recording an approval " +
+		out.print("[bold red]yolo config apply runs on the host, not in this jail: recording an approval " +
 			"must not be reachable from the side being approved.[/bold red]")
 		out.print("[dim]Ask the user to run `yolo config apply` on the host, in this workspace. " +
 			"It shows them the change and applies what the running jail can take.[/dim]")
