@@ -10,7 +10,7 @@ summary: "The macos-user suite takes no privilege beyond the run-as rule yolo in
 
 # What may a macos-user test assume about its host?
 
-**Status:** 2026-10-18. All four rulings are compacted into the [Decision Ledger](#decision-ledger). The fixture changes are preserved in original commits `98715e67b` and `41dd11e3f`. Linux and darwin compile/test evidence is recorded in the handoff; native-Mac runtime is not verified.
+**Status:** 2026-10-18. All four rulings are compacted into the [Decision Ledger](#decision-ledger). The fixture changes are preserved in original commits `98715e67b` and `41dd11e3f` and landed on main at `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`. Linux and darwin compile/test evidence is recorded in the handoff; native-Mac runtime is not verified.
 
 
 > **In short.** The suite may assume only what the backend itself asks a host for. A test that
@@ -213,7 +213,7 @@ uid. The supervisor and doorway watches decide their tests' assertions from it.
 These are the only three failures that are about yolo. [§6.2](#62-another-sessions-doorway-was-read-as-this-sessions-survivor) and
 [§6.3](#63-the-housekeeping-tests-slot-was-not-due-because-its-stamp-is-the-machines) are fixed in the tests: in the code,
 neither reads as a product defect, and the Mac's re-run is what confirms it.
-[§6.1](#61-the-nix-floor-loses-to-a-mise-shim) now has a settled disposition in the [Decision Ledger](#decision-ledger); candidate tests distinguish intended mise precedence from a floor lookup failure, pending a Mac run.
+[§6.1](#61-the-nix-floor-loses-to-a-mise-shim) now has a settled disposition in the [Decision Ledger](#decision-ledger); the rewritten test distinguishes intended mise precedence from a floor lookup failure, pending a Mac run.
 
 ### 6.1 The nix floor loses to a mise shim
 
@@ -221,7 +221,7 @@ neither reads as a product defect, and the Mac's re-run is what confirms it.
 `/Users/_yolojail/.yolo/mise/shims/<name>` instead of into the nix profile
 ([`integration/macosuserfloor_test.go:68`](../../integration/macosuserfloor_test.go)).
 
-The maintainer ruled that mise shims outrank the floor, as in the jail ([Decision Ledger](#decision-ledger)). `entrypoint.HomePathDirs` is shared between `BootPath` and `macosuser.SandboxPath` so that a mise shim outranks a `~/.local/bin` tool on every backend ([OQ-PD27](program-delivery.md#decision-ledger)). The candidate test now distinguishes the agent's full-PATH result from the floor's reach after removing sandbox-home directories. Mise winning the first lookup is by design; only the second lookup can fail the floor check. The rewritten test still needs its native-Mac run.
+The maintainer ruled that mise shims outrank the floor, as in the jail ([Decision Ledger](#decision-ledger)). `entrypoint.HomePathDirs` is shared between `BootPath` and `macosuser.SandboxPath` so that a mise shim outranks a `~/.local/bin` tool on every backend ([OQ-PD27](program-delivery.md#decision-ledger)). The rewritten test distinguishes the agent's full-PATH result from the floor's reach after removing sandbox-home directories. Mise winning the first lookup is by design; only the second lookup can fail the floor check. The rewritten test still needs its native-Mac run.
 
 ### 6.2 Another session's doorway was read as this session's survivor
 
@@ -349,9 +349,9 @@ None. All four were ruled on 2026-10-18 and are compacted into the ledger below.
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| OQ-DM1 | **The suite never needs passwordless root `sudo`** (option B, remove the need). The 2026-10-18 ruling rejects tests requesting root privileges not required by the product. Every privileged step goes through what yolo itself installs, the one run-as rule, built by `macosuser.RunAsSandboxArgv`, or is the invoking user's own; a capture plan's prepare steps run exactly as production runs them; the CA test uses a CA the System keychain already holds and never adds one; a guard test fails on a sudo the suite spells itself | 2026-10-18 | [§3.1](#31-class-a--six-tests-spent-a-privilege-yolo-macos-setup-does-not-install), [§3.3](#33-class-c--one-root-sudo-probe-that-read-as-a-missing-precondition), [§5](#5-the-shape) | Candidate implementation; native-Mac runtime unverified |
-| OQ-DM2 | **An honest skip.** The host's unified log store being closed is the Mac's policy: probe it once (`log show` as the invoking user); the log-bridge test skips naming the policy; `SeatbeltProfileEnforcesItsRules` skips only its `macos-log-deny` control; both skips are counted in the suite's ledger, as the gate's are | 2026-10-18 | [§3.2](#32-class-b--two-tests-need-a-readable-unified-log-store), [§5](#5-the-shape) | Candidate implementation; native-Mac runtime unverified |
-| OQ-DM3 | **Mise shims outrank the floor, for parity with the jail** (option B). The 2026-10-18 ruling preserves `SandboxPath`'s order; the floor test asks for the floor's reach past the sandbox home's shared directories, and blames path_helper or Homebrew only when the second lookup loses | 2026-10-18 | [§5](#5-the-shape), [§6.1](#61-the-nix-floor-loses-to-a-mise-shim) | Candidate implementation; native-Mac runtime unverified |
+| OQ-DM1 | **The suite never needs passwordless root `sudo`** (option B, remove the need). The 2026-10-18 ruling rejects tests requesting root privileges not required by the product. Every privileged step goes through what yolo itself installs, the one run-as rule, built by `macosuser.RunAsSandboxArgv`, or is the invoking user's own; a capture plan's prepare steps run exactly as production runs them; the CA test uses a CA the System keychain already holds and never adds one; a guard test fails on a sudo the suite spells itself | 2026-10-18 | [§3.1](#31-class-a--six-tests-spent-a-privilege-yolo-macos-setup-does-not-install), [§3.3](#33-class-c--one-root-sudo-probe-that-read-as-a-missing-precondition), [§5](#5-the-shape) | Landed; native-Mac runtime unverified |
+| OQ-DM2 | **An honest skip.** The host's unified log store being closed is the Mac's policy: probe it once (`log show` as the invoking user); the log-bridge test skips naming the policy; `SeatbeltProfileEnforcesItsRules` skips only its `macos-log-deny` control; both skips are counted in the suite's ledger, as the gate's are | 2026-10-18 | [§3.2](#32-class-b--two-tests-need-a-readable-unified-log-store), [§5](#5-the-shape) | Landed; native-Mac runtime unverified |
+| OQ-DM3 | **Mise shims outrank the floor, for parity with the jail** (option B). The 2026-10-18 ruling preserves `SandboxPath`'s order; the floor test asks for the floor's reach past the sandbox home's shared directories, and blames path_helper or Homebrew only when the second lookup loses | 2026-10-18 | [§5](#5-the-shape), [§6.1](#61-the-nix-floor-loses-to-a-mise-shim) | Landed; native-Mac runtime unverified |
 | OQ-DM4 | **A developer Mac clears a `NOT MEASURED on a Mac` line, with provenance** (option A). The 2026-10-18 ruling counts the local measurements with host and date provenance. The lines [§7](#7-measurements-this-run-produced) cleared stay, each recording the host and the date and saying `macos-user.yml` has not confirmed it | 2026-10-18 | [§5](#5-the-shape) | ✅ |
 
 ## 9. What this does not cover
@@ -381,11 +381,11 @@ None. All four were ruled on 2026-10-18 and are compacted into the ledger below.
 
 ## 11. Sequencing
 
-The four rulings and candidate changes are recorded above. The remaining work is to integrate the candidate commits, run the rewritten suite on a Mac with only the run-as rule, and report any remaining failures without granting root `sudo` or bypassing the host's log policy.
+The four rulings and test changes are now in main at `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`. The remaining work is to run the rewritten suite on a Mac with only the run-as rule and report any failures without granting root `sudo` or bypassing the host's log policy.
 
 ## 12. What done looks like
 
 - On a Mac with only the run-as grant, `-run '^TestMacosUser'` **exits 0**, and the ledger prints the two log-policy skip reasons where the store is closed.
 - The same command on CI executes every runnable assertion; the host's policy determines only the two unified-log skip dispositions.
 - `TestMacosUserSeatbeltProfileEnforcesItsRules` asserts its other rules on a host with no readable log.
-- The two test repairs in [§6](#6-two-defects-and-one-design-question-this-run-found) remain subject to their documented Mac re-runs; the candidate implementation is not accepted as native-Mac runtime proof.
+- The two test repairs in [§6](#6-two-defects-and-one-design-question-this-run-found) are landed but still need their documented Mac re-runs; landed code is not native-Mac runtime proof.
