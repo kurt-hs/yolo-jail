@@ -1,12 +1,16 @@
 package brokerscope
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -289,6 +293,64 @@ func TestValidateCurrentAdmitsUnderAWildcardAndFailsClosedOnAMalformedEntry(t *t
 	}
 	if err := ValidateCurrent(badPath, bad, "o/r"); err == nil {
 		t.Fatal("a malformed scope entry admitted a repository")
+	}
+}
+
+func TestLiveScopeTransactionsHonorContextWhileSourceLockIsHeld(t *testing.T) {
+	home := resolvedTempDir(t)
+	t.Setenv("HOME", home)
+	id, err := NewLaunchID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := File{Source: "github", LaunchID: id, Workspace: "/w", Container: "c", PID: os.Getpid(),
+		BrokerPID: os.Getpid(), BrokerStart: "start", LiveScope: true, Repos: []string{"o/r"}}
+	path, err := Write(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	held, release := make(chan struct{}), make(chan struct{})
+	lockDone := make(chan error, 1)
+	go func() {
+		lockDone <- brokerlock.WithTransaction(paths.BrokerSourceDir("github"), func() error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	defer func() {
+		close(release)
+		if err := <-lockDone; err != nil {
+			t.Errorf("release source transaction: %v", err)
+		}
+	}()
+
+	for _, tc := range []struct {
+		name string
+		call func(context.Context) error
+	}{
+		{"discovery", func(ctx context.Context) error {
+			_, err := LiveFilesContext(ctx, "github", "c", "/w")
+			return err
+		}},
+		{"replacement", func(ctx context.Context) error {
+			return ReplaceReposContext(ctx, path, file, []string{"o/new"})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+			defer cancel()
+			started := time.Now()
+			err := tc.call(ctx)
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("call error = %v, want context deadline while the source lock is held", err)
+			}
+			if elapsed := time.Since(started); elapsed > time.Second {
+				t.Fatalf("context-bounded transaction took %s", elapsed)
+			}
+		})
 	}
 }
 

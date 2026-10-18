@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/ctxinject"
 )
 
 // ctxInjectDeadline bounds one injector run, unshare prefix included.
@@ -33,6 +35,10 @@ const ctxAttachVerbName = "ctx-attach"
 
 // ctxGeteuid is os.Geteuid, a variable for the rootful branch's tests.
 var ctxGeteuid = os.Geteuid
+
+// ctxProcessIdentitySeam captures the target's process start time and mount-namespace identity
+// after runtime inspection, before the injector can mutate either namespace.
+var ctxProcessIdentitySeam = ctxinject.ReadProcessIdentity
 
 // ctxInjectBranch is where the injector runs for rt: unshare is true for the `podman unshare`
 // prefix. reason is non-empty when it cannot run at all, in the outcome line's words.
@@ -108,6 +114,9 @@ func (o *Options) ctxMountsLive(rt, cname string, envLines []string) (ok bool, r
 	if !tags[contractLiveCtxMounts] {
 		return false, "this jail started before live mounts existed"
 	}
+	if ctxMountRecordInvalidated(cname, envLines) {
+		return false, "the host's live-mount record was invalidated after an update failed"
+	}
 	if _, ok := readCtxMountRecord(cname, envLines); !ok {
 		return false, "this jail started before live mounts existed"
 	}
@@ -138,12 +147,8 @@ func (o *Options) removeCtxMount(rt, cname string, e ctxMountEntry, deadline tim
 const ctxPidInspectTimeout = 3 * time.Second
 
 // runCtxAttach runs the injector verb against cname's main process with args, every call bounded
-// by deadline.
-//
-// THE PID IS ASKED AGAIN AFTER THE VERB. The injector opens /proc/<pid>/ns/mnt and cannot know
-// whose namespace that is: a jail that stopped between the inspect and the open, its pid reused,
-// would have had the change made in another process's namespace. A pid that changed, or that
-// cannot be asked, is an error, so the step is never recorded as the jail's.
+// by deadline. It compares the runtime PID around a process-start/mount-namespace snapshot; the
+// injector pins a pidfd and namespace fd and verifies that exact snapshot before any mutation.
 func (o *Options) runCtxAttach(rt, cname string, args []string, deadline time.Time) error {
 	unshare, reason := o.ctxInjectBranchBy(rt, deadline)
 	if reason != "" {
@@ -153,7 +158,22 @@ func (o *Options) runCtxAttach(rt, cname string, args []string, deadline time.Ti
 	if err != nil {
 		return err
 	}
-	argv := o.selfExecArgv(append([]string{"yolo", "internal", ctxAttachVerbName, "--pid", strconv.Itoa(pid)}, args...))
+	identity, err := ctxProcessIdentitySeam(pid)
+	if err != nil {
+		return fmt.Errorf("could not pin this jail's process identity before mount injection: %w", err)
+	}
+	confirmedPID, err := o.jailMainPid(rt, cname, deadline)
+	if err != nil {
+		return fmt.Errorf("could not confirm this jail's process before mount injection: %w", err)
+	}
+	if confirmedPID != pid {
+		return fmt.Errorf("this jail's process changed before mount injection (pid %d, now %d)", pid, confirmedPID)
+	}
+	argv := o.selfExecArgv(append([]string{"yolo", "internal", ctxAttachVerbName,
+		"--pid", strconv.Itoa(pid),
+		"--start-time", strconv.FormatUint(identity.StartTime, 10),
+		"--mount-ns-device", strconv.FormatUint(identity.MountNSDevice, 10),
+		"--mount-ns-inode", strconv.FormatUint(identity.MountNSInode, 10)}, args...))
 	if unshare {
 		argv = append([]string{"podman", "unshare", "--"}, argv...)
 	}

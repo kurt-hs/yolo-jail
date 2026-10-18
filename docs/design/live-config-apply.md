@@ -10,14 +10,16 @@ summary: "A host command, `yolo config apply`, runs the launch's own config-chan
 
 # Approve a config change once, on the host, and let the running jail take what it can
 
-**Status:** 2026-10-18. Every question ruled the same day. v1 is built on the branch that carries
-this edit (not yet on `main`); the command's own briefing re-render from the effective config is
-not ([LA-D7](#LA-D7)), and the later slices of [§13](#13-sequencing) are not. MEASURED, in this
-jail's nested podman only (`--userns host`, the direct injector branch): `yolo config apply` and an
-interactive attach adding, removing and moving read-only mounts in a running jail, writes refused,
-`/ctx` still read-only, `yolo config drift` exit 0 afterwards. UNMEASURED: the rootless
-`podman unshare` branch ([M1](#LA-M1), which CI's rootless integration jobs run), a live broker
-widening end to end, and M2 to M6 ([§5.4](#54-what-still-has-to-be-measured)).
+**Status:** 2026-10-18. Every question ruled the same day. v1 and four bounded review repairs are
+built on the branch that carries this edit (not yet on `main`); the command's own briefing
+re-render from the effective config is not ([LA-D7](#LA-D7)), and the later slices of [§13](#13-sequencing)
+are not. MEASURED, in this jail's nested podman only (`--userns host`, the direct injector branch):
+`yolo config apply` and an interactive attach adding, removing and moving read-only mounts in a
+running jail, writes refused, `/ctx` still read-only, `yolo config drift` exit 0 afterwards.
+UNMEASURED: the rootless `podman unshare` branch ([M1](#LA-M1), which CI's rootless integration
+jobs run), a live broker widening end to end, and M2 to M6 ([§5.4](#54-what-still-has-to-be-measured)).
+The repair's unit tests and nested rootful run do not verify the rootless branch, a real broker
+request after widening, or a read-only remount attempt by the jail's own `CAP_SYS_ADMIN`.
 
 > **In short.** "Restart to apply" is wrong for the two changes people actually make mid-session,
 > a read-only mount and a GitHub repository: both can reach a running jail. So approval moves to a
@@ -376,6 +378,11 @@ before live mounts existed"* ([LA-D6](#LA-D6)). There is no bootstrap shim, as
 
 ### 5.6 Safety of the injector
 
+- **The target process is pinned before mutation.** The host captures the runtime PID's
+  `/proc/<pid>/stat` start time and mount-namespace device/inode, then confirms the runtime still
+  reports that PID. The injector opens a pidfd and namespace fd, verifies the captured identity
+  against both, and performs `setns` through that pinned fd; the post-step PID check remains a
+  supplementary check, not the protection against PID reuse.
 - **Host paths are resolved before `setns`, and never after** ([LA-P5](#LA-P5)). Resolution uses
   the launch's own path: `~` expansion, symlink resolution, the scope refusals, and the read-write
   breach predicate.
@@ -413,7 +420,11 @@ before live mounts existed"* ([LA-D6](#LA-D6)). There is no bootstrap shim, as
     only in the host-side record.
   - A key is folded in only once **every** element of its change applied. A key with a failed
     element keeps its boot value, so `drift` keeps reporting it, and re-running the command retries
-    only what is missing.
+    only what is missing. If a mount injection succeeds but its host record cannot be rewritten,
+    the old mount record is invalidated, that key stays pending, and no later mount step runs until
+    the host again knows the jail's mount state. A fresh launch writes the token-bound record; an
+    old jail without the live-mount token is still distinguished from a current jail whose record
+    is missing or mismatched.
   - On macos-user it is not written. Each session's digest already says what that session has.
 - **The github briefing and the broker's out-of-scope refusal**
   ([WW-D5](workspace-widening.md#WW-D5), [WW-D6](workspace-widening.md#WW-D6)) say *"ask the user
@@ -430,7 +441,11 @@ before live mounts existed"* ([LA-D6](#LA-D6)). There is no bootstrap shim, as
   the start-time copy refuses first (`daemon.go:435`).
 - **The apply rewrites `Repos` only**, inside the broker source's existing lock transaction, and
   keeps the identity fields (`launch_id`, `container`, `workspace`, `pid`, `broker_start`,
-  `broker_pid`). If those changed, the broker's validation would refuse every request.
+  `broker_pid`). If those changed, the broker's validation would refuse every request. Scope-file
+  discovery and replacement obey the apply step's context while waiting for that transaction; a
+  lock timeout or discovery error is pending, never evidence that the live scope already matches.
+  A match is reported only after reading every live scope file for this jail and comparing its
+  repositories with the approved scope.
 - **A broker that takes live scope says so**: it writes a capability field into its scope file at
   bind ([LA-D11](#LA-D11)). It is a field rather than a contract tag because the broker is a host
   process started by the host `yolo`, not jail code. With the field absent, a scope change is
@@ -459,6 +474,15 @@ before live mounts existed"* ([LA-D6](#LA-D6)). There is no bootstrap shim, as
   failed is removed if empty. That cleanup is best-effort and reported.
 - **The effective record is written after each successful step**, so a Ctrl-C or a dead jail
   mid-apply leaves it true.
+- **A mount mutation never runs against an unprotected host record.** Before each live mount add or
+  removal, the host invalidates the existing record; if that cannot be done, it does not run the
+  injector. After a successful mutation the host writes the token-bound record of the new state.
+  If that write fails, the step stays pending, the record remains invalidated, and later mount
+  steps stop. The current jail's token distinguishes a missing/unreadable record from an old jail
+  that never had one; a fresh launch writes a new token-bound record.
+- **Broker scope discovery and replacement share the live step's deadline.** The source lock is
+  context-bounded. If discovery cannot read the live files, or replacement cannot acquire the
+  lock in time, the approved scope is not claimed to match and the change stays pending.
 - **Concurrency: one lock, one writer.**
   - The launch lock serializes the apply against launches, attaches and other applies.
   - The approval record's writers are a launch's gate, `yolo check --accept-config-changes` and this

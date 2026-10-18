@@ -32,19 +32,20 @@ func TestRelDestAcceptsOnlyPathsStrictlyUnderTheContextDir(t *testing.T) {
 // any syscall, so nothing is cloned or created.
 func TestAttachRefusesBadArgumentsBeforeTouchingAnything(t *testing.T) {
 	src := t.TempDir()
-	if err := Attach(0, src, "/ctx/x", false); err == nil || !strings.Contains(err.Error(), "pid") {
+	identity := ProcessIdentity{StartTime: 1, MountNSInode: 1}
+	if err := Attach(0, identity, src, "/ctx/x", false); err == nil || !strings.Contains(err.Error(), "pid") {
 		t.Errorf("Attach(pid 0) = %v; want a pid refusal", err)
 	}
-	if err := Attach(os.Getpid(), src, "/etc/x", false); err == nil || !strings.Contains(err.Error(), "/ctx") {
+	if err := Attach(os.Getpid(), identity, src, "/etc/x", false); err == nil || !strings.Contains(err.Error(), "/ctx") {
 		t.Errorf("Attach(dest /etc/x) = %v; want a destination refusal", err)
 	}
-	if err := Attach(os.Getpid(), "relative/src", "/ctx/x", false); err == nil || !strings.Contains(err.Error(), "absolute") {
+	if err := Attach(os.Getpid(), identity, "relative/src", "/ctx/x", false); err == nil || !strings.Contains(err.Error(), "absolute") {
 		t.Errorf("Attach(relative source) = %v; want an absolute-path refusal", err)
 	}
-	if err := Detach(-1, "/ctx/x"); err == nil || !strings.Contains(err.Error(), "pid") {
+	if err := Detach(-1, identity, "/ctx/x"); err == nil || !strings.Contains(err.Error(), "pid") {
 		t.Errorf("Detach(pid -1) = %v; want a pid refusal", err)
 	}
-	if err := Detach(os.Getpid(), "/ctx"); err == nil {
+	if err := Detach(os.Getpid(), identity, "/ctx"); err == nil {
 		t.Errorf("Detach(/ctx) = nil; want a destination refusal")
 	}
 }
@@ -55,7 +56,7 @@ func TestAttachRefusesBadArgumentsBeforeTouchingAnything(t *testing.T) {
 // /ctx not a tmpfs — it is an error, and /ctx/ctxinject-test is never created.
 func TestAttachIntoANamespaceWithoutTheTmpfsIsRefused(t *testing.T) {
 	src := t.TempDir()
-	err := Attach(os.Getpid(), src, "/ctx/ctxinject-test", false)
+	err := Attach(os.Getpid(), ProcessIdentity{StartTime: 1, MountNSInode: 1}, src, "/ctx/ctxinject-test", false)
 	if err == nil {
 		t.Fatal("Attach into a namespace with no /ctx tmpfs succeeded; want a refusal")
 	}

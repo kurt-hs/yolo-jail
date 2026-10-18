@@ -15,6 +15,7 @@ package run
 // a test can drive every outcome without a running jail or a broker.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -45,17 +46,19 @@ type liveCtxMount = ctxMountEntry
 const ctxMountsTokenEnvName = ctxMountsTokenEnv
 
 var (
-	liveScopeFilesSeam = func(source, container, workspace string) ([]liveScopeFile, error) {
-		files, err := brokerscope.LiveFiles(source, container, workspace)
+	liveScopeFilesSeam = func(ctx context.Context, source, container, workspace string) ([]liveScopeFile, error) {
+		files, err := brokerscope.LiveFilesContext(ctx, source, container, workspace)
 		out := make([]liveScopeFile, 0, len(files))
 		for _, f := range files {
 			out = append(out, liveScopeFile{Path: f.Path, File: f.File, LiveScope: f.File.LiveScope})
 		}
 		return out, err
 	}
-	replaceScopeReposSeam  = brokerscope.ReplaceRepos
-	ctxMountsLiveSeam      = (*Options).ctxMountsLive
-	readCtxMountRecordSeam = readCtxMountRecord
+	replaceScopeReposSeam         = brokerscope.ReplaceReposContext
+	invalidateCtxMountRecordSeam  = invalidateCtxMountRecord
+	ctxMountsLiveSeam             = (*Options).ctxMountsLive
+	ctxMountRecordInvalidatedSeam = ctxMountRecordInvalidated
+	readCtxMountRecordSeam        = readCtxMountRecord
 	// The token is the one the jail's launch wrote; updateCtxMountRecord keeps it, so a
 	// rewrite can never adopt a record for a jail it was not written for.
 	writeCtxMountRecordSeam = func(cname, _ string, entries []liveCtxMount) error {
@@ -295,6 +298,9 @@ func (o *Options) applyPlan(run *applyRun, scope *config.ScopeCheck) []applyChan
 	boot, bootOK, _ := config.ReadWorkspaceBootBaseline(o.Workspace)
 	in := applyPlanInput{rt: run.rt, running: run.mode.running || run.mode.unknown, boot: boot,
 		bootOK: bootOK, current: current, mountRefusal: liveMountRefusal}
+	if run.rt == "podman" && run.mode.running {
+		in.mountRecordInvalidated = ctxMountRecordInvalidatedSeam(run.cname, run.envLines)
+	}
 	if run.rt == "podman" && run.mode.running { // parity: Warned — live mounts are podman only; elsewhere the mounts line says why it waits
 		in.mountsLive, in.mountsReason = ctxMountsLiveSeam(o, run.rt, run.cname, run.envLines)
 		if have, ok := readCtxMountRecordSeam(run.cname, run.envLines); ok {
@@ -315,11 +321,18 @@ func (o *Options) applyPlan(run *applyRun, scope *config.ScopeCheck) []applyChan
 				changedLabels[l] = true
 			}
 		}
+		discoveryCtx, cancelDiscovery := context.WithTimeout(context.Background(), applyStepDeadline)
+		defer cancelDiscovery()
 		for _, s := range scope.Sources {
 			d := scopeDelta{label: s.Label, source: s.Source, desired: s.Repos(),
 				recordChanged: changedLabels[s.Label]}
 			if run.mode.running && run.rt != "container" { // parity: Warned — Apple Container starts no broker; the scope line says so
-				d.files, _ = liveScopeFilesSeam(s.Source, run.cname, o.Workspace)
+				files, discoveryErr := liveScopeFilesSeam(discoveryCtx, s.Source, run.cname, o.Workspace)
+				d.files = files
+				if discoveryErr != nil {
+					d.discoveryErr = discoveryErr.Error()
+					d.files = nil
+				}
 			}
 			in.scopes = append(in.scopes, d)
 		}
@@ -378,6 +391,7 @@ func (o *Options) runApplySteps(run *applyRun, plan []applyChange) []applyChange
 	res := append([]applyChange(nil), plan...)
 	budgetEnd := time.Now().Add(applyBudget)
 	stopped := false
+	mountRecordUnavailable := false
 	token := envLineValue(run.envLines, ctxMountsTokenEnvName)
 	have := append([]liveCtxMount(nil), run.have...)
 	for i := range res {
@@ -389,10 +403,25 @@ func (o *Options) runApplySteps(run *applyRun, plan []applyChange) []applyChange
 			c.outcome, c.reason = outcomeNextLaunch, "jail stopped; applies at next launch"
 			continue
 		}
+		if mountRecordUnavailable && (c.kind == changeMountAdd || c.kind == changeMountRemove) {
+			c.outcome, c.reason = outcomeNextRestart, "the host's mount record is unavailable; further mount changes wait for restart"
+			continue
+		}
 		left := time.Until(budgetEnd)
 		if left <= 0 {
 			c.outcome, c.reason = outcomeNextRestart, fmt.Sprintf("the apply's %s budget ran out", applyBudget)
 			continue
+		}
+		if c.kind == changeMountAdd || c.kind == changeMountRemove {
+			// Make the host's record non-authoritative before a mutation. If the injector or the
+			// following record write fails, a later apply cannot trust the previous mount set.
+			if err := invalidateCtxMountRecordSeam(run.cname); err != nil {
+				c.outcome, c.reason = outcomeNextRestart,
+					"could not invalidate the live-mount record before changing mounts: "+err.Error()
+				mountRecordUnavailable = true
+				continue
+			}
+			mountRecordUnavailable = true
 		}
 		// THE DEADLINE GOES DOWN TO EVERY CALL THE STEP MAKES, rather than a wait abandoning a
 		// step that keeps running: one cut off that way could mount after the record below was
@@ -413,7 +442,11 @@ func (o *Options) runApplySteps(run *applyRun, plan []applyChange) []applyChange
 		switch c.kind {
 		case changeMountAdd:
 			have = append(have, liveCtxMount{Source: c.mountAdd.source, Dest: c.mountAdd.dest, RW: c.mountAdd.rw})
-			o.noteMountRecord(run, token, have, c)
+			if !o.noteMountRecord(run, token, have, c) {
+				mountRecordUnavailable = true
+			} else {
+				mountRecordUnavailable = false
+			}
 		case changeMountRemove:
 			kept := have[:0:0]
 			for _, h := range have {
@@ -422,24 +455,39 @@ func (o *Options) runApplySteps(run *applyRun, plan []applyChange) []applyChange
 				}
 			}
 			have = kept
-			o.noteMountRecord(run, token, have, c)
+			if !o.noteMountRecord(run, token, have, c) {
+				mountRecordUnavailable = true
+			} else {
+				mountRecordUnavailable = false
+			}
 		}
 	}
 	o.foldApplied(run, res)
 	return res
 }
 
-// noteMountRecord rewrites the host's record of the jail's mounts after one step, so the next
-// apply's diff starts from what the jail has. A record that cannot be written is said on the
-// change's line: the mount is in the jail either way.
-func (o *Options) noteMountRecord(run *applyRun, token string, have []liveCtxMount, c *applyChange) {
-	if err := writeCtxMountRecordSeam(run.cname, token, have); err != nil {
-		note := "the host's record of this jail's mounts was not updated (" + err.Error() + ")"
-		if c.note != "" {
-			note = c.note + "; " + note
+// noteMountRecord rewrites the host's record of the jail's mounts after one step. If that
+// write fails, the injected mount still exists, but its state is unknown to the next apply: the
+// stale record is invalidated, this change stays pending, and no later mount step runs.
+func (o *Options) noteMountRecord(run *applyRun, token string, have []liveCtxMount, c *applyChange) bool {
+	if err := writeCtxMountRecordSeam(run.cname, token, have); err == nil {
+		return true
+	} else {
+		invalidateErr := invalidateCtxMountRecordSeam(run.cname)
+		c.outcome = outcomeNextRestart
+		c.reason = "the mount succeeded, but its host record could not be updated: " + err.Error()
+		if invalidateErr != nil {
+			c.reason += "; the stale record could not be invalidated: " + invalidateErr.Error()
 		}
-		c.note = note
+		return false
 	}
+}
+
+func contextForDeadline(deadline time.Time) (context.Context, context.CancelFunc) {
+	if deadline.IsZero() {
+		return context.WithCancel(context.Background())
+	}
+	return context.WithDeadline(context.Background(), deadline)
 }
 
 // applyStep is one change's live-apply step, every call it makes ending by deadline. A scope step
@@ -460,8 +508,10 @@ func (o *Options) applyStep(run *applyRun, c *applyChange, deadline time.Time) e
 		for i, r := range approved {
 			repos[i] = r.Repo
 		}
+		ctx, cancel := contextForDeadline(deadline)
+		defer cancel()
 		for _, f := range c.scope.files {
-			if err := replaceScopeReposSeam(f.Path, f.File, repos); err != nil {
+			if err := replaceScopeReposSeam(ctx, f.Path, f.File, repos); err != nil {
 				return err
 			}
 		}
@@ -537,6 +587,9 @@ func (o *Options) configChangesPending(rt, cname string, cfg *jsonx.OrderedMap, 
 		return true
 	}
 	if rt == "podman" { // parity: NotApplicable — only a podman jail has the host's record of its mounts
+		if ctxMountRecordInvalidatedSeam(cname, envLines) {
+			return true
+		}
 		if have, ok := readCtxMountRecordSeam(cname, envLines); ok {
 			if add, rm := diffCtxMountsSeam(have, o.configCtxMounts(rt, cfg, nil)); len(add) > 0 || len(rm) > 0 {
 				return true

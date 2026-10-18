@@ -127,6 +127,33 @@ func readCtxMountRecord(cname string, envLines []string) ([]ctxMountEntry, bool)
 	return rec.Entries, true
 }
 
+// invalidateCtxMountRecord makes the record unreadable for this jail before another apply can
+// infer mount state from it. A blank token is a durable tombstone; if it cannot be written, remove
+// the stale record as the fail-closed fallback.
+func invalidateCtxMountRecord(cname string) error {
+	writeErr := writeCtxMountRecord(cname, "", nil)
+	if writeErr == nil {
+		return nil
+	}
+	removeErr := os.Remove(ctxMountRecordPath(cname))
+	if removeErr == nil || errors.Is(removeErr, os.ErrNotExist) {
+		return nil
+	}
+	return fmt.Errorf("could not write invalidation tombstone (%v) or remove stale record: %w", writeErr, removeErr)
+}
+
+// ctxMountRecordInvalidated distinguishes a current jail with no usable record from an old jail
+// that never had the live-mount token. Missing, unreadable, malformed, or mismatched records are
+// unknown state once the inspected env says this jail was launched with a token.
+func ctxMountRecordInvalidated(cname string, envLines []string) bool {
+	token, ok := envLineLookup(envLines, ctxMountsTokenEnv)
+	if !ok || token == "" {
+		return false
+	}
+	rec, err := loadCtxMountRecord(cname)
+	return err != nil || rec.Token != token
+}
+
 // updateCtxMountRecord rewrites cname's record with the mounts the jail has now, keeping its
 // token: `yolo config apply` calls it after each injection or removal step, so the record never
 // claims a mount the jail lacks or misses one it has. A missing or unreadable record is the error,

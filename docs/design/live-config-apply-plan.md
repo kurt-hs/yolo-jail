@@ -15,6 +15,36 @@ which `TestEveryHintedYoloCommandExists` refuses until lane A lands, so B cannot
 github briefing, `yolo gh` help and user guide also said "restart"; the plan's step order put mount
 additions before removals, read the config twice, and let a step outlive its deadline, all caught
 by review.
+**Review disposition for candidate `286d051ef`:** Four P1 findings were repaired on the isolated
+current-main branch without changing the gate, consent store, attach prompt, or backend policy.
+The repair is bounded to four failure paths:
+
+- Before each live mount mutation, invalidate the current record; if that cannot be done, refuse
+  that mutation. After a mount cannot be recorded, keep `mounts` pending, stop subsequent mount
+  steps, and recognize a missing or mismatched record for a current tokened jail as unknown. Old
+  jails without the token remain distinct.
+- Bound live-scope discovery and replacement on the broker source transaction by the existing
+  apply-step deadline. A discovery error or absent verified live files can never prove a scope
+  already matches.
+- Let the full planner call broker scope live only after verified files have been read and
+  compared with approved repositories; preserve lock/discovery errors as restart-pending results.
+- Capture PID start time and mount-namespace identity before dispatch; validate under a pidfd and
+  operate through the validated namespace fd before source/destination mutation. The runtime PID
+  postcheck is supplementary.
+
+Regression tests cover each path: `TestConfigApplyRecordFailureInvalidatesMountStateAndKeepsRemovalPending`
+exercises injection → record-write failure → config removal; `TestConfigApplyDoesNotMutateMountWhenRecordCannotBeInvalidated`
+refuses mutation when protection cannot be persisted; `TestLiveScopeTransactionsHonorContextWhileSourceLockIsHeld`
+holds the broker lock across discovery and replacement; `TestApplyPlanRequiresVerifiedLiveScopeAfterApprovalIsUnchanged`
+reaches the full planner with a changed boot baseline, unchanged approval, and absent/erroring live
+files; and `TestInjectCtxMountRefusesChangedRuntimePIDBeforeRunningVerb` plus
+`TestAttachRejectsAChangedProcessOrMountNamespaceBeforeSourceMutation` pin the pre-mutation PID
+check. The direct nested-Podman path does not verify the rootless branch, a real broker request
+after widening, or resistance to remounting read-only injections with the jail's `CAP_SYS_ADMIN`;
+those remain M1 and CI/real-host verification, not claims made by these repairs. There is no
+separate tracked live-apply integration plan; the integration case and its verification limits
+are tracked under Task C below.
+
 **Design:** [`live-config-apply.md`](live-config-apply.md), every question ruled
 ([Decision Ledger](live-config-apply.md#decision-ledger)).
 
@@ -181,12 +211,15 @@ yet`.
 - **Tests first:** unit: `diffCtxMounts` (add, remove, source change is remove+add, mode change is
   remove+add); record round trip and token mismatch; argv carries the tmpfs flag on podman, not on
   Apple Container. Integration (`integration/livectxmount_test.go`, `requireJail`): launch a jail,
-  inject a read-only directory, read a file inside, writing it fails with EROFS, `mkdir /ctx/x`
-  fails, remove it and it is gone; repeat read-write and write succeeds. The test logs
-  `podman info --format '{{.Host.Security.Rootless}}'`.
-- **Gates:** `go test ./internal/ctxinject/ ./internal/cli/run/ -run 'Ctx'`, `just test-fast`, then
-  `YOLO_NO_AUTO_IMAGE_REAP=1 go test -count=1 -run LiveCtx ./integration` (nested here: rootful
-  branch only).
+  capture its PID start-time and mount-namespace identity, then pass that pin to each hidden
+  injector invocation; inject a read-only directory, read a file inside, writing it fails with
+  EROFS, `mkdir /ctx/x` fails, remove it and it is gone; repeat read-write and write succeeds. The
+  test logs `podman info --format '{{.Host.Security.Rootless}}'`.
+- **Gates:** focused broker-lock, planner, process-pin, and record-failure regression tests; then
+  `go test -count=1 -run LiveCtx ./integration` in a fresh nested workspace. Do not run the full
+  slow suite for this repair. The nested run proves only the direct rootful branch: it does not
+  verify rootless `podman unshare`, a real broker request, or a jail `CAP_SYS_ADMIN` remount of a
+  read-only injection. Rootless CI/real-host verification remains M1.
 - **Fences:** no `liveapply*.go`, `preflight.go`, `config.go`, `internal/ghbroker`.
 - **Commit:** `feat(run): inject context mounts into a running podman jail`.
 

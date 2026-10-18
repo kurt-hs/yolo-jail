@@ -5,9 +5,11 @@ package ctxinject
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	goruntime "runtime"
+	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -32,10 +34,36 @@ func openBeneath(dirfd int, rel string, noXDev bool) (int, error) {
 	})
 }
 
-// Attach mounts source at dest inside the mount namespace of the process pid, read-only unless
-// rw. source must already be resolved (absolute, symlinks followed, refusals applied) by the
-// caller; it is opened in THIS process's namespace before any setns.
-func Attach(pid int, source, dest string, rw bool) error {
+func ReadProcessIdentity(pid int) (ProcessIdentity, error) {
+	if pid <= 0 {
+		return ProcessIdentity{}, errors.New("the jail's pid must be positive")
+	}
+	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return ProcessIdentity{}, fmt.Errorf("read process %d identity: %w", pid, err)
+	}
+	end := strings.LastIndexByte(string(stat), ')')
+	if end < 0 {
+		return ProcessIdentity{}, errors.New("process stat has no command terminator")
+	}
+	fields := strings.Fields(string(stat[end+1:]))
+	if len(fields) <= 19 {
+		return ProcessIdentity{}, errors.New("process stat has no start time")
+	}
+	start, err := strconv.ParseUint(fields[19], 10, 64)
+	if err != nil || start == 0 {
+		return ProcessIdentity{}, errors.New("process stat has an invalid start time")
+	}
+	var ns unix.Stat_t
+	if err := unix.Stat(fmt.Sprintf("/proc/%d/ns/mnt", pid), &ns); err != nil {
+		return ProcessIdentity{}, fmt.Errorf("stat process %d mount namespace: %w", pid, err)
+	}
+	return ProcessIdentity{StartTime: start, MountNSDevice: ns.Dev, MountNSInode: ns.Ino}, nil
+}
+
+// Attach mounts source at dest inside the process identity pinned from runtime inspection.
+// source must already be resolved (absolute, symlinks followed, refusals applied) by the caller.
+func Attach(pid int, expected ProcessIdentity, source, dest string, rw bool) error {
 	rel, err := checkArgs(pid, dest)
 	if err != nil {
 		return err
@@ -43,6 +71,14 @@ func Attach(pid int, source, dest string, rw bool) error {
 	if !filepath.IsAbs(source) {
 		return errors.New("source " + quote(source) + " must be an absolute path")
 	}
+	if !expected.Valid() {
+		return errors.New("the target process identity is missing")
+	}
+	ns, err := pinMountNS(pid, expected)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(ns)
 	// Step 1: the detached copy, in the caller's namespace, where the host source is visible.
 	// THE SOURCE IS OPENED WITH NO LINK FOLLOWED, then copied through that open file: the host
 	// resolved every link before this ran, so a resolved path has none, and a component swapped
@@ -72,28 +108,60 @@ func Attach(pid int, source, dest string, rw bool) error {
 			return fmt.Errorf("mount_setattr(read-only) on the copy of %s: %w", source, err)
 		}
 	}
-	ns, err := openMountNS(pid)
-	if err != nil {
-		return err
-	}
-	defer unix.Close(ns)
-	// Steps 3 to 5.
+	// Steps 3 to 5 use the namespace fd pinned and checked before the jail can be mutated.
 	return inMountNS(ns, func() error { return attachHere(tree, rel, srcStat, rw) })
 }
 
-// Detach unmounts dest inside the mount namespace of pid and removes its mountpoint. A dest that
-// is already gone is success.
-func Detach(pid int, dest string) error {
+// Detach unmounts dest inside the already-validated, pinned namespace and removes its mountpoint.
+// A dest that is already gone is success.
+func Detach(pid int, expected ProcessIdentity, dest string) error {
 	rel, err := checkArgs(pid, dest)
 	if err != nil {
 		return err
 	}
-	ns, err := openMountNS(pid)
+	if !expected.Valid() {
+		return errors.New("the target process identity is missing")
+	}
+	ns, err := pinMountNS(pid, expected)
 	if err != nil {
 		return err
 	}
 	defer unix.Close(ns)
 	return inMountNS(ns, func() error { return detachHere(rel) })
+}
+
+func pinMountNS(pid int, expected ProcessIdentity) (int, error) {
+	pidfd, err := unix.PidfdOpen(pid, 0)
+	if err != nil {
+		return -1, fmt.Errorf("pin target process %d: %w", pid, err)
+	}
+	defer unix.Close(pidfd)
+	ns, err := openMountNS(pid)
+	if err != nil {
+		return -1, err
+	}
+	fail := func(err error) (int, error) {
+		unix.Close(ns)
+		return -1, err
+	}
+	actual, err := ReadProcessIdentity(pid)
+	if err != nil {
+		return fail(err)
+	}
+	var pinned unix.Stat_t
+	if err := unix.Fstat(ns, &pinned); err != nil {
+		return fail(fmt.Errorf("stat pinned target mount namespace: %w", err))
+	}
+	if actual != expected || pinned.Dev != expected.MountNSDevice || pinned.Ino != expected.MountNSInode {
+		return fail(errors.New("target process or mount namespace changed since runtime inspection"))
+	}
+	// A pidfd remains tied to the process opened above even if its numeric PID is reused. Check
+	// it after opening and validating the namespace, then retain the namespace fd itself through
+	// setns and the mutation; an exit after this point cannot redirect the operation to a new PID.
+	if err := unix.PidfdSendSignal(pidfd, 0, nil, 0); err != nil {
+		return fail(fmt.Errorf("target process exited while its mount namespace was being pinned: %w", err))
+	}
+	return ns, nil
 }
 
 func openMountNS(pid int) (int, error) {

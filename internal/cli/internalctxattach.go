@@ -22,8 +22,8 @@ const ctxAttachVerb = "ctx-attach"
 
 // ctxInjector is the verb's effect, injected for its tests.
 type ctxInjector struct {
-	attach func(pid int, source, dest string, rw bool) error
-	detach func(pid int, dest string) error
+	attach func(pid int, identity ctxinject.ProcessIdentity, source, dest string, rw bool) error
+	detach func(pid int, identity ctxinject.ProcessIdentity, dest string) error
 }
 
 func runCtxAttach(args []string) int {
@@ -38,7 +38,10 @@ func runCtxAttach(args []string) int {
 func ctxAttachMain(args []string, stderr io.Writer, inj ctxInjector) int {
 	fs := flag.NewFlagSet("yolo internal "+ctxAttachVerb, flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	pid := fs.Int("pid", 0, "the jail's main process, as the host sees it (podman inspect .State.Pid)")
+	pid := fs.Int("pid", 0, "the jail's main process, as the host sees it")
+	startTime := fs.Uint64("start-time", 0, "the inspected process start time")
+	nsDevice := fs.Uint64("mount-ns-device", 0, "the inspected mount namespace device")
+	nsInode := fs.Uint64("mount-ns-inode", 0, "the inspected mount namespace inode")
 	source := fs.String("source", "", "the resolved host directory to mount")
 	dest := fs.String("dest", "", "the jail path, under /ctx/")
 	rw := fs.Bool("rw", false, "mount read-write (default read-only)")
@@ -46,7 +49,8 @@ func ctxAttachMain(args []string, stderr io.Writer, inj ctxInjector) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	bad := *pid <= 0 || *dest == "" || fs.NArg() != 0
+	identity := ctxinject.ProcessIdentity{StartTime: *startTime, MountNSDevice: *nsDevice, MountNSInode: *nsInode}
+	bad := *pid <= 0 || !identity.Valid() || *dest == "" || fs.NArg() != 0
 	if *remove {
 		bad = bad || *source != "" || *rw
 	} else {
@@ -54,14 +58,14 @@ func ctxAttachMain(args []string, stderr io.Writer, inj ctxInjector) int {
 	}
 	if bad {
 		fmt.Fprintln(stderr, "usage: yolo internal "+ctxAttachVerb+
-			" --pid <pid> --source <dir> --dest /ctx/<name> [--rw] | --pid <pid> --dest /ctx/<name> --remove")
+			" --pid <pid> --start-time <ticks> --mount-ns-device <dev> --mount-ns-inode <ino> --source <dir> --dest /ctx/<name> [--rw] | --pid <pid> --start-time <ticks> --mount-ns-device <dev> --mount-ns-inode <ino> --dest /ctx/<name> --remove")
 		return 2
 	}
 	var err error
 	if *remove {
-		err = inj.detach(*pid, *dest)
+		err = inj.detach(*pid, identity, *dest)
 	} else {
-		err = inj.attach(*pid, *source, *dest, *rw)
+		err = inj.attach(*pid, identity, *source, *dest, *rw)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "yolo internal %s: %v\n", ctxAttachVerb, err)

@@ -1,6 +1,7 @@
 package run
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -31,12 +32,12 @@ func TestLiveApplyClosureSeamsReachTheRealFiles(t *testing.T) {
 	if _, err := brokerscope.BindBroker(path, f, "start-l1", func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	files, err := liveScopeFilesSeam("github", "yolo-c", "/w")
+	files, err := liveScopeFilesSeam(context.Background(), "github", "yolo-c", "/w")
 	if err != nil || len(files) != 1 || files[0].Path != path || !files[0].LiveScope ||
 		len(files[0].File.Repos) != 1 || files[0].File.Repos[0] != "o/r" {
 		t.Fatalf("liveScopeFilesSeam = %+v, %v; want the one bound file %s, taking live scope", files, err, path)
 	}
-	if files, _ := liveScopeFilesSeam("github", "yolo-other", "/w"); len(files) != 0 {
+	if files, _ := liveScopeFilesSeam(context.Background(), "github", "yolo-other", "/w"); len(files) != 0 {
 		t.Errorf("another container's file was returned: %+v", files)
 	}
 
@@ -63,7 +64,7 @@ func TestLiveApplySeamsAreTheRealSteps(t *testing.T) {
 		name       string
 		seam, real any
 	}{
-		{"replaceScopeRepos", replaceScopeReposSeam, brokerscope.ReplaceRepos},
+		{"replaceScopeRepos", replaceScopeReposSeam, brokerscope.ReplaceReposContext},
 		{"ctxMountsLive", ctxMountsLiveSeam, (*Options).ctxMountsLive},
 		{"readCtxMountRecord", readCtxMountRecordSeam, readCtxMountRecord},
 		{"diffCtxMounts", diffCtxMountsSeam, diffCtxMounts},

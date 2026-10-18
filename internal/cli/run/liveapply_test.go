@@ -2,6 +2,7 @@ package run
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"go/ast"
 	"os"
@@ -350,6 +351,49 @@ func liveMounts(t *testing.T) *[]liveCtxMount {
 	return rec
 }
 
+func TestApplyPlanRequiresVerifiedLiveScopeAfterApprovalIsUnchanged(t *testing.T) {
+	bootConfig := `{"brokered":{"github":{"repos":["o/old"]}}}`
+	currentConfig := `{"brokered":{"github":{"repos":["o/new"]}}}`
+	scope := &config.ScopeCheck{Sources: []config.ScopeSource{{Source: "github", Label: "github-broker",
+		Entry: []config.EntryRepo{{Repo: "o/new", Files: []string{"yolo-jail.jsonc"}}}}}}
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{name: "absent live scope"},
+		{name: "discovery error", err: errors.New("source lock wait timed out")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o, _ := applyFixture(t, bootConfig, currentConfig, applyJail{running: true})
+			current := mapOf(t, currentConfig)
+			if err := config.RecordApproval(o.Workspace, current, scope); err != nil {
+				t.Fatal(err)
+			}
+			if changes, err := config.ScopeChanges(o.Workspace, scope); err != nil || len(changes.ScopeLabels) != 0 {
+				t.Fatalf("scope approval is not unchanged: changes=%+v err=%v", changes, err)
+			}
+			swapSeam(t, &liveScopeFilesSeam, func(context.Context, string, string, string) ([]liveScopeFile, error) {
+				return nil, tc.err
+			})
+			run := &applyRun{cfg: current, current: current, rt: "podman", cname: "yolo-ws-abcd1234",
+				mode: applyMode{running: true}}
+			plan := o.applyPlan(run, scope)
+			if len(plan) != 1 || plan[0].outcome != outcomeNextRestart {
+				t.Fatalf("applyPlan = %+v, want one restart-required change", plan)
+			}
+			if !strings.Contains(plan[0].reason, "no running broker") && tc.err == nil {
+				t.Errorf("absent live scope reason = %q", plan[0].reason)
+			}
+			if tc.err != nil && !strings.Contains(plan[0].reason, tc.err.Error()) {
+				t.Errorf("discovery error %q was not preserved in %q", tc.err, plan[0].reason)
+			}
+			if strings.Contains(plan[0].reason, "already matches") {
+				t.Errorf("unchanged approval was treated as proof the live scope matched: %+v", plan[0])
+			}
+		})
+	}
+}
+
 // A read-only mount added to a jail that takes live mounts: injected, recorded in the host's
 // mount record, folded into the effective-config record, `applied now`, exit 0.
 func TestConfigApplyInjectsALiveMount(t *testing.T) {
@@ -376,6 +420,88 @@ func TestConfigApplyInjectsALiveMount(t *testing.T) {
 	}
 	if _, drifted, _, _ := config.WorkspaceConfigDrift(o.Workspace); drifted {
 		t.Error("the applied mounts key was not folded")
+	}
+}
+
+// A successful mount whose host record cannot be updated is not synchronized. The stale record is
+// invalidated, the effective baseline stays pending, and a later removal waits for restart rather
+// than trusting the record that predated the injected mount.
+func TestConfigApplyRecordFailureInvalidatesMountStateAndKeepsRemovalPending(t *testing.T) {
+	src := t.TempDir()
+	o, buf := applyFixture(t, `{}`, `{"mounts":["`+src+`"]}`, applyJail{running: true})
+	rec := liveMounts(t)
+	recordValid := true
+	swapSeam(t, &readCtxMountRecordSeam, func(string, []string) ([]liveCtxMount, bool) {
+		return append([]liveCtxMount(nil), (*rec)...), recordValid
+	})
+	swapSeam(t, &ctxMountsLiveSeam, func(*Options, string, string, []string) (bool, string) {
+		if !recordValid {
+			return false, "the host's live-mount record is unavailable"
+		}
+		return true, ""
+	})
+	swapSeam(t, &ctxMountRecordInvalidatedSeam, func(string, []string) bool { return !recordValid })
+	invalidated := 0
+	swapSeam(t, &invalidateCtxMountRecordSeam, func(string) error {
+		invalidated++
+		recordValid = false
+		return nil
+	})
+	injected := 0
+	swapSeam(t, &injectCtxMountSeam, func(*Options, string, string, configCtxMount, time.Time) error {
+		injected++
+		return nil
+	})
+	swapSeam(t, &writeCtxMountRecordSeam, func(string, string, []liveCtxMount) error {
+		return errors.New("record disk is full")
+	})
+	answer(o, "y")
+	if rc := o.configApply(false); rc != 3 {
+		t.Fatalf("record failure rc = %d, want restart-required 3\n%s", rc, buf.String())
+	}
+	if injected != 1 || invalidated != 2 {
+		t.Fatalf("injections %d, invalidations %d; want one injection and invalidation before and after the failed record write", injected, invalidated)
+	}
+	if _, drifted, _, _ := config.WorkspaceConfigDrift(o.Workspace); !drifted {
+		t.Fatal("a mount whose record failed was folded as applied")
+	}
+	if !strings.Contains(buf.String(), "record disk is full") || !strings.Contains(buf.String(), "at next restart") {
+		t.Fatalf("the failed record was not reported as pending:\n%s", buf.String())
+	}
+
+	writeWorkspaceConfig(t, o.Workspace, `{}`)
+	answer(o, "y")
+	removed := 0
+	swapSeam(t, &removeCtxMountSeam, func(*Options, string, string, liveCtxMount, time.Time) error {
+		removed++
+		return nil
+	})
+	if rc := o.configApply(false); rc != 3 {
+		t.Fatalf("removal rc = %d, want restart-required 3\n%s", rc, buf.String())
+	}
+	if removed != 0 || !strings.Contains(buf.String(), "host invalidated this jail's mount record") {
+		t.Fatalf("removal trusted invalid state (removed %d):\n%s", removed, buf.String())
+	}
+}
+
+func TestConfigApplyDoesNotMutateMountWhenRecordCannotBeInvalidated(t *testing.T) {
+	src := t.TempDir()
+	o, buf := applyFixture(t, `{}`, `{"mounts":["`+src+`"]}`, applyJail{running: true})
+	liveMounts(t)
+	swapSeam(t, &invalidateCtxMountRecordSeam, func(string) error {
+		return errors.New("record directory is read-only")
+	})
+	injected := 0
+	swapSeam(t, &injectCtxMountSeam, func(*Options, string, string, configCtxMount, time.Time) error {
+		injected++
+		return nil
+	})
+	answer(o, "y")
+	if rc := o.configApply(false); rc != 3 {
+		t.Fatalf("rc = %d, want restart-required 3\n%s", rc, buf.String())
+	}
+	if injected != 0 || !strings.Contains(buf.String(), "could not invalidate the live-mount record before changing mounts") {
+		t.Fatalf("mount changed without an invalidated host record (injections %d):\n%s", injected, buf.String())
 	}
 }
 
@@ -448,14 +574,14 @@ func TestConfigApplyReplacesTheLiveScope(t *testing.T) {
 	answer(o, "y")
 	f := liveScopeFile{Path: "/scope/1", LiveScope: true,
 		File: brokerscope.File{Source: "gbsrc", Repos: []string{"o/old"}}}
-	swapSeam(t, &liveScopeFilesSeam, func(source, _, _ string) ([]liveScopeFile, error) {
+	swapSeam(t, &liveScopeFilesSeam, func(_ context.Context, source, _, _ string) ([]liveScopeFile, error) {
 		if source != "gbsrc" {
 			return nil, nil
 		}
 		return []liveScopeFile{f}, nil
 	})
 	var replaced []string
-	swapSeam(t, &replaceScopeReposSeam, func(path string, _ brokerscope.File, repos []string) error {
+	swapSeam(t, &replaceScopeReposSeam, func(_ context.Context, path string, _ brokerscope.File, repos []string) error {
 		if path != "/scope/1" {
 			t.Errorf("replaced %s", path)
 		}
@@ -482,10 +608,10 @@ func TestConfigApplyScopeOnAnOldBrokerWaits(t *testing.T) {
 	}
 	writeUserConfigOf(t, gbOn())
 	answer(o, "y")
-	swapSeam(t, &liveScopeFilesSeam, func(string, string, string) ([]liveScopeFile, error) {
+	swapSeam(t, &liveScopeFilesSeam, func(_ context.Context, _, _, _ string) ([]liveScopeFile, error) {
 		return []liveScopeFile{{Path: "/scope/1", File: brokerscope.File{Repos: nil}}}, nil
 	})
-	swapSeam(t, &replaceScopeReposSeam, func(string, brokerscope.File, []string) error {
+	swapSeam(t, &replaceScopeReposSeam, func(_ context.Context, _ string, _ brokerscope.File, _ []string) error {
 		t.Error("an old broker's file was rewritten")
 		return nil
 	})
