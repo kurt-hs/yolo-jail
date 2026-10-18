@@ -23,12 +23,14 @@ import (
 func TestPiOnBedrockUsesItsOwnConverseClient(t *testing.T) {
 	const opus, sol, astra = "global.anthropic.claude-opus-5-5", "us.openai.gpt-6.1-sol",
 		"global.openai.gpt-6-astra"
-	wantModels := []any{
-		map[string]any{"id": opus, "name": "Claude Opus 5.5 (Global)", "contextWindow": float64(1000000),
+	// Each row names a catalog id with no base, wire id or tombstone, so it is an override of the
+	// facts it states, merged by pi over its own catalog entry (OQ-ML4's models.json half).
+	wantOverrides := map[string]any{
+		opus: map[string]any{"name": "Claude Opus 5.5 (Global)", "contextWindow": float64(1000000),
 			"maxTokens": float64(128000), "reasoning": true, "input": []any{"text", "image"}},
-		map[string]any{"id": sol, "name": "GPT-6.1 Sol (US)", "contextWindow": float64(1000000),
+		sol: map[string]any{"name": "GPT-6.1 Sol (US)", "contextWindow": float64(1000000),
 			"maxTokens": float64(131072), "input": []any{"text", "image"}},
-		map[string]any{"id": astra, "name": "GPT-6 Astra (Global)", "contextWindow": float64(1050000),
+		astra: map[string]any{"name": "GPT-6 Astra (Global)", "contextWindow": float64(1050000),
 			"maxTokens": float64(128000), "input": []any{"text", "image"}},
 	}
 	for _, tc := range []struct {
@@ -64,8 +66,11 @@ func TestPiOnBedrockUsesItsOwnConverseClient(t *testing.T) {
 					t.Errorf("the native row carries %s = %v; it must leave pi's built-in Converse client in place", key, v)
 				}
 			}
-			if !reflect.DeepEqual(native["models"], wantModels) {
-				t.Errorf("models = %#v\nwant %#v", native["models"], wantModels)
+			if !reflect.DeepEqual(native["modelOverrides"], wantOverrides) {
+				t.Errorf("modelOverrides = %#v\nwant %#v", native["modelOverrides"], wantOverrides)
+			}
+			if rows, has := native["models"]; has {
+				t.Errorf("models = %v, want none: every row names a catalog id", rows)
 			}
 
 			s := r.piSettings(t)

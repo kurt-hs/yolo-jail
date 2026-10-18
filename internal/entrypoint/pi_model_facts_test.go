@@ -246,9 +246,13 @@ func TestPiPartialCostKeepsTheCatalogsOtherRates(t *testing.T) {
 	r := newPioencodeRender(t, mustCompactJSON(t, table))
 	r.render(t, `{"pi":"mybr"}`)
 
-	row := piRow(t, r.piModels(t), "amazon-bedrock", "global.anthropic.claude-opus-5-5")
-	if want := map[string]any{"input": float64(9), "output": float64(0), "cacheRead": float64(0), "cacheWrite": float64(0)}; !reflect.DeepEqual(row["cost"], want) {
-		t.Errorf("models.json cost = %v, want %v (its schema needs all four)", row["cost"], want)
+	// models.json writes a catalog id as a `modelOverrides` entry (OQ-ML4's models.json half),
+	// whose cost rates are each optional, so the stated rate alone: pi takes the others from its
+	// catalog (applyModelOverride).
+	bedrock, _ := r.piModels(t)["providers"].(map[string]any)["amazon-bedrock"].(map[string]any)
+	override, _ := bedrock["modelOverrides"].(map[string]any)["global.anthropic.claude-opus-5-5"].(map[string]any)
+	if want := map[string]any{"input": float64(9)}; !reflect.DeepEqual(override["cost"], want) {
+		t.Errorf("models.json override cost = %v, want %v, the stated rate over the catalog's others", override["cost"], want)
 	}
 	entry := piModelListsFile(t, r)["amazon-bedrock"]
 	models, _ := entry["models"].([]any)

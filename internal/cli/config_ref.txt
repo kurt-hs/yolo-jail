@@ -2189,7 +2189,10 @@
                      for the id.  A fact written as null is a TOMBSTONE: the model has no
                      such fact, whatever a layer below says, pi's catalog included (so
                      "reasoning": null over a pack's true removes it; restate the value to
-                     get the catalog's back).
+                     get the catalog's back).  On pi's own Bedrock client, a row naming a
+                     catalog id goes into pi's models.json as a `modelOverrides` entry,
+                     which pi merges over its catalog, so its thinking levels survive in
+                     any pi; a row with `base`, `wire_id` or a null is written whole.
                      `extends` names a top-level `model_facts` entry: the facts this
                      model's routes share, laid under this entry's own, so each route can
                      state its own price, context size or output limit.
