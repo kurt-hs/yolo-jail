@@ -53,18 +53,18 @@ type lintedSeries struct {
 }
 
 // patchedOfPack is every patched fork and patched extension pack declares, each reading its series
-// from root, the pack's own directory.
+// from root, the pack's own directory, and resolving a relative patch branch against it.
 func patchedOfPack(pack *packload.Pack, root string) []packload.Fork {
 	one := []*packload.Pack{pack}
 	var out []packload.Fork
 	for _, f := range packload.Forks(one) {
 		if f.Patched() {
-			f.Root = root
+			f.Root, f.PatchBranchDir = root, root
 			out = append(out, f)
 		}
 	}
 	for _, f := range packload.PatchedTrees(one) {
-		f.Root = root
+		f.Root, f.PatchBranchDir = root, root
 		out = append(out, f)
 	}
 	return out
@@ -78,8 +78,16 @@ func lintSeries(pack *packload.Pack, root string) ([]lintedSeries, []string) {
 	for _, f := range patchedOfPack(pack, root) {
 		if f.PatchBranch != "" {
 			// A PATCH BRANCH has nothing in the pack to read: its address is the manifest's to check, and
-			// `--online` fetches and resolves it (docs/reference/patched-forks.md §3.5).
-			read = append(read, lintedSeries{fork: f, series: packsrc.UnresolvedPatchBranchSeries(f.PatchBranch)})
+			// `--online` fetches and resolves it (docs/reference/patched-forks.md §3.5). A RELATIVE one is
+			// resolved here, against the pack's own directory, which the manifest's check cannot know:
+			// a climb out of the pack's repository fails lint as it fails every check.
+			if _, syntaxErr := packsrc.ParseFrom(f.PatchBranch, ""); syntaxErr == nil && packsrc.IsRelativeLocator(f.PatchBranch) {
+				if _, err := f.PatchBranchAddr(); err != nil {
+					problems = append(problems, richtext.Escape(f.Label()+": the patch branch: "+err.Error()))
+					continue
+				}
+			}
+			read = append(read, lintedSeries{fork: f, series: packsrc.UnresolvedPatchBranchSeries(f.PatchBranch, f.PatchBranchDir)})
 			continue
 		}
 		if packdecl.PatchesDirProblem(f.Patches) != "" {

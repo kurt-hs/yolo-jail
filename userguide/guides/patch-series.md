@@ -119,6 +119,9 @@ If you keep your changes on a branch that you merge the upstream into, name that
   branch, the next check rebuilds. `yolo pack update` checks now.
 - **When the branch does not merge**, the launch stops and names the conflicting files. It also
   prints the `git merge` commands that fix the branch.
+- **A pack inside the repository it patches from names it by a relative path**, such as
+  `"patch_branch": "../..?ref=patches"`. The path starts at the pack's directory and cannot climb
+  above the pack's own git repository, so it names the same repository in a jail and on the host.
 - **A `files` extension takes `patch_branch` the same way.** One contribution names `patches` or
   `patch_branch`, never both.
 - **`yolo pack status`** shows the patch branch's commit and how many releases it is behind.

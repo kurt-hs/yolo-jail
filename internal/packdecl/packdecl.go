@@ -333,6 +333,9 @@ type Install struct {
 	// ForkRoot is the fork pack's root directory (Contribution.ForkRoot), which a patched fork's
 	// Patches is relative to; "" for every program that is not a fork's. Never serialized.
 	ForkRoot string `json:"-"`
+	// ForkPatchBranchDir is the directory a relative `patch_branch` is resolved against
+	// (Contribution.ForkPatchBranchDir); "" for every program that is not a fork's. Never serialized.
+	ForkPatchBranchDir string `json:"-"`
 	// Gate is NOT a manifest field, and no manifest can set it: the jail's launcher generator sets
 	// it on its copy of an OWNING AGENT PACK's program when a patched extension that agent loads
 	// has no build this launch (docs/reference/pi-extensions.md PPX-D18), and the launcher stops

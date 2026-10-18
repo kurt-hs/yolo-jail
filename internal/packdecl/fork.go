@@ -260,19 +260,22 @@ func patchedForkProblems(label string, c Contribution) []string {
 	return problems
 }
 
-// patchBranchProblems validates a `patch_branch` statically (docs/reference/patched-forks.md §3.5): a git address,
-// local or remote, with a `?ref=` naming the branch to merge, and never `HEAD`, which moves with
-// whatever the repository has checked out. The commit graph it names is fetched and asked about at
-// each check, never here.
+// patchBranchProblems validates a `patch_branch` statically (docs/reference/patched-forks.md §3.5): a git
+// repository — a path relative to the pack's own directory (`../..?ref=patches`, packsrc.ParseFrom), a
+// git+file:// address or a URL — with a `?ref=` naming the branch to merge, and never `HEAD`, which moves
+// with whatever the repository has checked out. The manifest knows no directory, so a relative path's
+// climb is bounded where the pack's directory is known (lint, and every check); the commit graph it
+// names is fetched and asked about at each check, never here.
 func patchBranchProblems(label, patchBranch string) []string {
-	if why := ForkSourceProblem(patchBranch); why != "" {
-		return []string{fmt.Sprintf("%s.patch_branch %q: %s — a patch branch is the repository and branch whose "+
-			"commits are merged against the upstream, e.g. git+https://github.com/you/pi?ref=patches",
-			label, patchBranch, why)}
-	}
-	a, err := packsrc.Parse(patchBranch)
-	if err != nil {
-		return nil // ForkSourceProblem said it
+	const example = "a patch branch is the repository and branch whose commits are merged against the upstream: " +
+		"../..?ref=patches for the repository the pack lives in, or git+https://github.com/you/pi?ref=patches"
+	a, err := packsrc.ParseFrom(patchBranch, "")
+	switch {
+	case err != nil:
+		return []string{fmt.Sprintf("%s.patch_branch %q: %s — %s", label, patchBranch, err.Error(), example)}
+	case a.Kind != packsrc.KindGit:
+		return []string{fmt.Sprintf("%s.patch_branch %q: a patch branch is a REVISION, and a file:// directory has "+
+			"none to merge — %s", label, patchBranch, example)}
 	}
 	if a.Ref == "HEAD" {
 		return []string{fmt.Sprintf("%s.patch_branch %q: ?ref=HEAD is whatever the repository has checked "+

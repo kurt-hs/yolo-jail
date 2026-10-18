@@ -184,7 +184,7 @@ The five principles, numbered so other documents can cite them:
 | `source` | The upstream repository, with the mandatory `?ref=` naming a branch to follow, or a tag or a full commit to hold at. `HEAD` and an abbreviated commit are refused, since neither says whether it moves | statically, as for any fork; the ref's kind at the check |
 | `patches` | A clean pack-relative directory holding the series ([§3.2](#32-the-series)). Its presence is the opt-in to this mode | statically: relative, no `..`, only beside `via: "source"`; its contents at each advance |
 | `follow` | What a branch ref yields: `release` (the newest version tag on it, the default, [PF-D24](#PF-D24)), `release:<prefix>` (the same, among tags named `<prefix><version>`), or `head` (its newest commit) | statically: the grammar, and only beside `patches` or `patch_branch` |
-| `patch_branch` | In place of `patches`: a git address with `?ref=` naming the branch whose commits are merged against the upstream ([§3.5](#35-a-patch-branch-instead-of-a-series)) | statically: a git address with a ref, not `HEAD`, no `//subdir`, never beside `patches` ([PF-D87](#PF-D87)); its commit at each check |
+| `patch_branch` | In place of `patches`: a git repository (a path relative to the pack, `git+file://` or a URL) with `?ref=` naming the branch whose commits are merged against the upstream ([§3.5](#35-a-patch-branch-instead-of-a-series)) | statically: a git address with a ref, not `HEAD`, no `//subdir`, never beside `patches` ([PF-D87](#PF-D87)); a relative path's bound by lint and every check; its commit at each check |
 
 `follow` without `patches` or `patch_branch` is refused, naming the reason: a plain fork's pin moves
 only by `yolo pack update`, and following an upstream is this mode's opt-in.
@@ -270,8 +270,22 @@ the ref ([§6.3](#63-what-is-served-and-the-store-key)).
 
 Ruled 2026-10-15 ([OQ-PFK6](#why-its-this-way)) and built 2026-10-16. A **patch branch** (the manifest's
 `patch_branch`, named by the owner) is a commit graph a contribution names in place of a `patches`
-series: a repository plus a branch, where the repository may be a local path or a URL with `?ref=`.
-At each check the patch branch's repository is fetched into a mirror of its own and resolved to a
+series: a repository plus a `?ref=` naming its branch. The repository is written one of three ways:
+
+- **A path relative to the declaring pack's directory**, starting `./` or `../`:
+  `"patch_branch": "../..?ref=carry/pi-subagents"` from `yolo-packs/matt` names the repository that
+  pack lives in. It is the spelling for a pack that ships inside the repository it patches from,
+  because it names the same repository in a jail and on the host: a jail reads its packs from the
+  host's tree, so each side resolves the path against the pack's directory as it sees it. The climb is
+  bounded by the pack's own git repository (the directory `git rev-parse --show-toplevel` names from
+  the pack's directory): a path above it is refused, naming that bound, and so is a path that is not
+  a repository's root, naming the one that is.
+- **`git+file:///abs/path?ref=…`**, a local repository by its absolute path, which names it on one
+  machine and in one notch only.
+- **A URL**, `git+https://…?ref=…` or `git+ssh://…?ref=…`.
+
+A `file://` address is a directory read as it is on disk, takes no `?ref=`, and its refusal names the
+`git+file://` form. At each check the patch branch's repository is fetched into a mirror of its own and resolved to a
 commit and that commit's merge base with the upstream's tip, and the record keeps both, so every
 reader rebuilds it with no git. At the advance `git merge-tree --write-tree`, with no working tree,
 answers whether the patch branch merges into the candidate: a conflict refuses, naming the

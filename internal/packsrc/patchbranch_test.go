@@ -52,7 +52,7 @@ func (f *patchBranchFixture) checkedPatchBranch(t *testing.T) (*Series, CheckRes
 	if p := res.Record.Check.Problem; p != "" {
 		t.Fatalf("check problem: %s", p)
 	}
-	s, err := PatchBranchSeries(f.patchBranchSource(), f.source("main"), res.Record)
+	s, err := PatchBranchSeries(f.patchBranchSource(), "", f.source("main"), res.Record)
 	if err != nil {
 		t.Fatalf("PatchBranchSeries: %v", err)
 	}

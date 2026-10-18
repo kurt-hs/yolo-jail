@@ -99,6 +99,10 @@ type Fork struct {
 	// PatchBranch is a PATCH BRANCH's address (docs/reference/patched-forks.md §3.5), in Patches' place: the fork is
 	// patched, its series the patch branch's commit as the last check resolved it. "" otherwise.
 	PatchBranch string
+	// PatchBranchDir is the directory a RELATIVE patch branch (packsrc.ParseFrom) is resolved against: the
+	// directory the fork pack was read from — its source, where Root is a staged copy (Pack.SourceRoot) —
+	// as this process sees it, so `../..` names the pack's own repository in either notch.
+	PatchBranchDir string
 	// PackBases is the base of every fork the fork pack declares, this one's included, and in turn
 	// every base those bases fork (forkBaseClosure): the packs a build sealed to that pack must
 	// carry, since a selection holding a fork whose base it lacks is refused (ApplyForks) on the
@@ -187,7 +191,7 @@ func (f Fork) RebaseRecipe() packsrc.RebaseRecipe {
 		Dir: f.Pack + "-" + f.Bin + "-rebase"}
 	if f.PatchBranch != "" {
 		// A PATCH BRANCH is repaired in its own repository, by a merge (packsrc.RebaseRecipe.Lines).
-		a, _ := packsrc.Parse(f.PatchBranch)
+		a, _ := f.PatchBranchAddr()
 		r.PatchBranchRepo, r.PatchBranchRef, r.Dir = a.Repo, a.Ref, f.Pack+"-"+f.Bin+"-patch-branch"
 		return r
 	}
@@ -198,6 +202,21 @@ func (f Fork) RebaseRecipe() packsrc.RebaseRecipe {
 		r.Patches = filepath.Join(f.Root, filepath.FromSlash(f.Patches))
 	}
 	return r
+}
+
+// PatchBranchAddr is the patch branch's address, a relative locator resolved against PatchBranchDir
+// (packsrc.ParseFrom): the repository it names, or why it names none.
+func (f Fork) PatchBranchAddr() (packsrc.Addr, error) {
+	return packsrc.ParseFrom(f.PatchBranch, f.PatchBranchDir)
+}
+
+// patchBranchDirOf is the directory a pack's relative patch branch is resolved against: the
+// directory it was read from.
+func patchBranchDirOf(p *Pack) string {
+	if p.SourceRoot != "" {
+		return p.SourceRoot
+	}
+	return p.Root
 }
 
 // notUsersPackRoot reports whether a pack root is a copy yolo made rather than the user's own
@@ -228,7 +247,7 @@ func (f Fork) ReadSeries() (*packsrc.Series, error) { return f.ReadSeriesFrom(ni
 // resolves and records, so reading it would change the identity in the middle of the run that checks.
 func (f Fork) DeclaredSeries() (*packsrc.Series, error) {
 	if f.PatchBranch != "" {
-		return packsrc.UnresolvedPatchBranchSeries(f.PatchBranch), nil
+		return packsrc.UnresolvedPatchBranchSeries(f.PatchBranch, f.PatchBranchDir), nil
 	}
 	return f.ReadSeries()
 }
@@ -242,7 +261,7 @@ func (f Fork) ReadSeriesFrom(store *packsrc.Store) (*packsrc.Series, error) {
 		if store == nil {
 			store = &packsrc.Store{Dir: paths.PacksDir()}
 		}
-		s, err := store.ReadPatchBranch(f.Key(), f.PatchBranch, f.Source)
+		s, err := store.ReadPatchBranch(f.Key(), f.PatchBranch, f.PatchBranchDir, f.Source)
 		switch {
 		case packsrc.IsPatchBranchRecordError(err):
 			// A RECORD THAT CANNOT BE READ is said as that, never as "not fetched yet": an act that
@@ -251,7 +270,7 @@ func (f Fork) ReadSeriesFrom(store *packsrc.Store) (*packsrc.Series, error) {
 		case err != nil:
 			// NOT RESOLVED HERE YET: the unresolved patch branch, whose recipe no build carries; the
 			// next check resolves it.
-			return packsrc.UnresolvedPatchBranchSeries(f.PatchBranch), nil
+			return packsrc.UnresolvedPatchBranchSeries(f.PatchBranch, f.PatchBranchDir), nil
 		}
 		return s, nil
 	}
@@ -270,7 +289,8 @@ func (f Fork) ReadSeriesFrom(store *packsrc.Store) (*packsrc.Series, error) {
 // CheckWant is the check request for a patched fork whose series s was read: its owner key, its
 // upstream and follow rule, and the series' base.
 func (f Fork) CheckWant(s *packsrc.Series) packsrc.PatchedWant {
-	w := packsrc.PatchedWant{Owner: f.Key(), Source: f.Source, Follow: f.Follow, PatchBranch: f.PatchBranch}
+	w := packsrc.PatchedWant{Owner: f.Key(), Source: f.Source, Follow: f.Follow, PatchBranch: f.PatchBranch,
+		PatchBranchDir: f.PatchBranchDir}
 	if s != nil && f.PatchBranch == "" {
 		w.Base = s.Base // a patch branch's base is the check's to resolve
 	}
@@ -293,7 +313,8 @@ func Forks(packs []*Pack) []Fork {
 				Pack: p.Name, Base: c.ForkOf, Bin: c.Bin, Source: c.Source, Build: c.Build,
 				Produces:  append([]string(nil), c.Produces...),
 				Platforms: append([]string(nil), c.Platforms...),
-				Root:      p.Root, Patches: c.Patches, Follow: c.Follow, PatchBranch: c.PatchBranch, PackBases: slices.Clone(bases),
+				Root:      p.Root, Patches: c.Patches, Follow: c.Follow, PatchBranch: c.PatchBranch, PatchBranchDir: patchBranchDirOf(p),
+				PackBases: slices.Clone(bases),
 				NodeFloor: baseProgramNodeFloor(packs, c.ForkOf, c.Bin),
 			})
 		}
@@ -429,6 +450,7 @@ func ApplyForks(packs []*Pack) ([]*Pack, error) {
 		// The fork pack's root, which a patched fork's series directory is relative to: a reader of
 		// the base's program (the host floor) reads the series through it.
 		base.Decl.Contributes[at].ForkRoot = f.Root
+		base.Decl.Contributes[at].ForkPatchBranchDir = f.PatchBranchDir
 		// The fork's `launch_computed` for its bin, merged into the base's (packdecl.MergeForkComputed;
 		// docs/reference/pack-system.md#LC-D1), checked against the base's launch selection, which
 		// the fork pack's own validation could not see.
