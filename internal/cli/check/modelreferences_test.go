@@ -136,9 +136,25 @@ func TestCheckWarnsAboutAPacksScopePatternThatMatchesNothing(t *testing.T) {
 }
 
 // runPacksCheck runs sectionPacks over cfg (the user config) with pi on profile, no catalog read.
-func runPacksCheck(t *testing.T, cfg, profile string) (string, *reporter) {
+func runPacksCheck(t *testing.T, cfg, profile string, extraPacks ...string) (string, *reporter) {
 	t.Helper()
-	packsFixture(t, cfg)
+	var userConfig map[string]any
+	if err := json.Unmarshal([]byte(cfg), &userConfig); err != nil {
+		t.Fatal(err)
+	}
+	packs, ok := userConfig["packs"].([]any)
+	if !ok {
+		t.Fatalf("config packs must be an array: %s", cfg)
+	}
+	for _, pack := range extraPacks {
+		packs = append(packs, "file://"+pack)
+	}
+	userConfig["packs"] = packs
+	encoded, err := json.Marshal(userConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packsFixture(t, string(encoded))
 	env := map[string]string{"YOLO_VERSION": "test", "NPM_CONFIG_PREFIX": t.TempDir()}
 	var buf bytes.Buffer
 	r := &reporter{w: &buf}
@@ -210,13 +226,22 @@ func TestCheckAcceptsExactSubagentIDBeforeListDefault(t *testing.T) {
 func TestCheckResolvesEveryShippedPiProfileModelReference(t *testing.T) {
 	cfg := `{"packs": ["pi", "openai-auth", "zai", "openrouter", "kilo", "llamacpp", "bedrock",
   "cerebras", "meta-provider", "wire-bridge"]}`
+	knownScope := "openai-codex/gpt-6.1-sol[1m]"
+	unknownScope := "openai-codex/yolo-no-such-model"
 	for _, profile := range []string{"codex", "zai", "openrouter", "kilo", "llamacpp", "bedrock",
 		"bedrock-bridge", "cerebras", "meta"} {
 		t.Run(profile, func(t *testing.T) {
-			out, _ := runPacksCheck(t, cfg, profile)
-			if strings.Contains(out, "Model reference:") &&
-				(strings.Contains(out, "matches no model") || strings.Contains(out, "[FAIL] Model reference:")) {
-				t.Fatalf("shipped profile %q produces an unresolved model reference at the host:\n%s", profile, out)
+			out, _ := runPacksCheck(t, cfg, profile, scopePack(t, knownScope))
+			if strings.Contains(out, "matches no model") ||
+				strings.Contains(out, "Model reference: 1 model reference not checked") ||
+				!strings.Contains(out, "Model reference: every model pi's config names resolves in its registry (1 reference checked)") {
+				t.Fatalf("shipped profile %q must check and resolve the qualified scope reference %q:\n%s", profile, knownScope, out)
+			}
+
+			out, _ = runPacksCheck(t, cfg, profile, scopePack(t, unknownScope))
+			if !strings.Contains(out, "which matches no model in pi's registry") ||
+				strings.Contains(out, "Model reference: 1 model reference not checked") {
+				t.Fatalf("shipped profile %q must detect the unknown qualified scope control %q:\n%s", profile, unknownScope, out)
 			}
 		})
 	}
