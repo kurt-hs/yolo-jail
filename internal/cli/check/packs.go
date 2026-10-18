@@ -302,6 +302,10 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 	// composition, read from the files each agent's pack declares, so a warning here names an id
 	// the launch would really hand an agent.
 	o.modelCatalogReport(r, loaded, merged)
+	// Whether each model a profile's `subagents` or a pack names in an agent's config resolves in
+	// that agent's registry (docs/design/model-lists-and-pickers.md MM-D45), over the same
+	// prediction, so a value that matches nothing is named where it was declared.
+	o.modelReferenceReport(r, prediction)
 
 	// The launch's ENV-OVERRIDE refusal, predicted over the same selected set and for the
 	// same reason it sits in this section rather than in Merged Configuration: both the
