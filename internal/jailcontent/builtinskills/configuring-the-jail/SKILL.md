@@ -18,17 +18,21 @@ must persist across restarts or be present for every future session.
 ## You already know the loop — here's what it leaves out
 
 The always-on briefing already states the rule: **edit → `yolo check --no-build`
-→ fix any `[FAIL]` → then STOP and ask the human to restart** (you cannot
-restart this jail from inside it). Assume that. This skill covers the parts that
-rule leaves out.
+→ fix any `[FAIL]` → then STOP and ask the human to run `yolo config apply` on
+the host, in this workspace.** That command uses the launch's same approval
+gate; approved read-only and user-scope read-write mounts under `/ctx`, and a
+running GitHub broker's repository scope, can apply live, while other changes
+wait for the next restart. It never restarts the jail or offers to do so. Assume that. This skill covers the parts
+that rule leaves out.
 
 ### When the config file is read-only
 
 If the project sets `workspace_readonly` at all, yolo also makes the workspace
 config file **read-only inside the jail**, so an agent cannot edit its own
 sandbox. Your briefing says so, and `yolo check --no-build` prints a line naming
-the file. Then the loop is different: write out the exact edit and ask the human
-to apply it on the host, run `yolo check` there, and restart. Do not route the
+the file. Then write out the exact edit and ask the human to apply it on the host,
+run `yolo check` there, and run `yolo config apply`; that command reports whether
+the change takes effect live or remains pending for a restart. Do not route the
 change through `yolo-jail.local.jsonc`, an included file, or a new config file
 beside the locked one: those are not locked, and using them to get round the
 lock undoes the protection the human chose, and the config diff at the next
@@ -61,10 +65,12 @@ Its repository list is the other way round: `brokered.<source>.repos`
 (`brokered.github.repos` for the github pack) is a workspace key you may write,
 listing a repository the project has no remote for — or, with a whole-segment
 wildcard, more than one: `*/*` is every repository the host login can reach,
-`OWNER/*` is one owner's, and `*/REPO` is that name under any owner. It takes
-effect only once the
-human approves it at the next fresh launch, so after adding it, run
-`yolo check --no-build` and ask the human to restart the jail and answer y.
+`OWNER/*` is one owner's, and `*/REPO` is that name under any owner. After
+adding it, run `yolo check --no-build` and ask the human to run
+`yolo config apply` on the host in this workspace. Its existing approval prompt
+records the trust; a running broker that supports live scope takes the change
+at its next request, otherwise it remains pending for the next restart. The
+command never restarts the jail or offers to do so.
 
 ### Which file — and how the layers merge
 

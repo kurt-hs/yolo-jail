@@ -121,10 +121,17 @@ type assembleInput struct {
 	captureJail bool
 	// sealedTree is, under the seal, the patched extension the build jail builds
 	// (Options.SealedTree), emitted as entrypoint.TreeBuildEnv.
-	sealedTree   string
-	hostTZ       string // "" => no TZ
-	yoloVersion  string // _git_describe_version() or "unknown"
-	mountTargets map[string]struct{}
+	sealedTree string
+	// ctxMountsToken is this fresh podman launch's live-mounts record token
+	// (ctxmountrecord.go, prepareCtxMountsToken), frozen as YOLO_CTX_MOUNTS_TOKEN; "" emits
+	// nothing. INPUT because the record written after assembly must carry the same value.
+	ctxMountsToken string
+	// ctxMountsBound is OUTPUT: the config `mounts` elements the argv bound, as configCtxMounts
+	// returned them, for the live-mounts record (recordLaunchCtxMounts). Set by assembleRunCmd.
+	ctxMountsBound []configCtxMount
+	hostTZ         string // "" => no TZ
+	yoloVersion    string // _git_describe_version() or "unknown"
+	mountTargets   map[string]struct{}
 	// storePruneOK is true when the host CLI proved no other jail is live and
 	// grants the in-jail store prune (`-e YOLO_STORE_PRUNE_OK=1`). Set by the
 	// lifecycle phase; false leaves the env unset.
@@ -368,7 +375,8 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 	var mountArgs []string
 	if !in.sealed { // a fork build gets no `mounts` element (seal.go)
 		rootful := o.rootfulPodmanHost(rt)
-		for _, m := range o.configCtxMounts(rt, cfg, out.print) {
+		in.ctxMountsBound = o.configCtxMounts(rt, cfg, out.print)
+		for _, m := range in.ctxMountsBound {
 			mountArgs = append(mountArgs, "-v", m.bindArg())
 			if m.rw {
 				out.print(rwMountDisclosure(m, rootful))
@@ -399,6 +407,12 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 		// every session (docs/design/jail-lifetime-last-session-wins.md JL-D15, §3.1).
 		// podman only: whether Apple Container's client can be told the same is unmeasured.
 		runFlags = append(runFlags, "--sig-proxy=false")
+		// /CTX IS A TMPFS, READ-ONLY TO THE JAIL (docs/design/live-config-apply.md LA-D5), so
+		// `yolo config apply` can make a mountpoint in it through a private writable clone and
+		// inject a context mount into the running jail (internal/ctxinject). podman still makes
+		// every launch-time /ctx mountpoint under it and copies up the image's baked /ctx dirs.
+		// ro=true keeps the jail's own view of /ctx as unwritable as the image rootfs was.
+		runFlags = append(runFlags, "--mount", "type=tmpfs,destination="+paths.ContainerContextDir+",ro=true")
 	}
 	// NO DETACH SEQUENCE on the main process's client, as on every session's exec
 	// (runtime.DetachKeysArgs, JL-D27). This client holds no terminal, so nothing can type the
@@ -459,6 +473,11 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 	// Not YOLO_CTX_ROOT, which is the entrypoint's composition input and means ~/.yolo-ctx
 	// on Apple Container.
 	runCmd = append(runCmd, "-e", paths.ContextDirEnv+"="+paths.ContainerContextDir)
+	// THE LIVE-MOUNTS RECORD TOKEN (ctxmountrecord.go): frozen into a podman jail so the host
+	// record of its config mounts answers for this container and no earlier one of its name.
+	if rt == "podman" && in.ctxMountsToken != "" { // parity: NotApplicable — only podman makes the /ctx tmpfs a live mount needs; Apple Container's shares are fixed at VM boot (design §5.3)
+		runCmd = append(runCmd, "-e", ctxMountsTokenEnv+"="+in.ctxMountsToken)
+	}
 	// THE DURABLE DIR (durabledir.go), on both container backends, and ONLY when this launch
 	// made it: a variable naming a directory that is not there would send every agent and
 	// tool to nothing. A container env var, so every exec an attach starts inherits it.

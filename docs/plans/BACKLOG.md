@@ -782,6 +782,25 @@ macos-user sandbox home has the same exposure; the order itself is by design on 
 ([OQ-DM3](../design/macos-user-suite-on-a-developer-mac.md#decision-ledger)). A shims directory
 per workspace would end it.
 
+### <a id="boot-baseline-fifo"></a>🔧 **The host reads `.yolo/config-boot.json` with a plain read under the launch lock**
+
+`config.ReadWorkspaceBootBaseline` and `WorkspaceConfigDrift` open the agent-writable baseline with
+`os.ReadFile`, so a FIFO planted there would hang a launch, an attach or `yolo config apply` while
+it holds the workspace's launch lock. The workspace config file has the same exposure today. Found
+by the live config apply review, 2026-10-18.
+
+### <a id="launch-two-reads"></a>🔧 **A fresh launch reads the workspace config twice: once to load, once at its gate**
+
+What a launch builds from comes from its first read, and what its gate approves from the second.
+Nothing in the workspace runs during a fresh launch of a container jail, so this needs a host-side
+writer to matter; `yolo config apply` closes the same gap for the running case. Found 2026-10-18.
+
+### <a id="scope-widened-field"></a>🔧 **A live scope rewrite keeps a scope file's legacy `widened` list**
+
+`brokerscope.ReplaceRepos` rewrites `repos` only, so on a scope file a build before WW-D12 wrote, a
+repository listed under `widened` and removed from the config is never narrowed live. Such a file
+belongs to a broker that cannot take live scope anyway. Found 2026-10-18.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
