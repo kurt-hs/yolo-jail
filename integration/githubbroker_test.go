@@ -710,7 +710,7 @@ func TestGitHubBrokerAWideningEntryAdmitsARepositoryForOneWorkspace(t *testing.T
 	flat := strings.Join(strings.Fields(out), " ")
 	if got := kvLine(r.stdout, "RCB"); got != "64" ||
 		!strings.Contains(flat, "add it to the `repos` list under `brokered.github` in yolo-jail.jsonc") ||
-		!strings.Contains(flat, "ask the user to restart the jail and approve the repository scope at launch") {
+		!strings.Contains(flat, "ask the user to run `yolo config apply` on the host, in this workspace, and approve the repository scope there") {
 		t.Errorf("a repository outside the scope answered %q, want 64 saying where to add it:\n%s", got, out)
 	}
 	if got := kvLine(r.stdout, "RCC"); got != "64" || !strings.Contains(out, "`brokered.github.repos` entry can add") {

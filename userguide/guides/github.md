@@ -99,9 +99,10 @@ should not commit:
 ```
 
 The agent can add it too. When it asks for a repository outside the list, the refusal tells it
-where to add the repository and to ask you to restart the jail. Nothing changes until you do: the
-next fresh launch shows the repository as a row of the prompt, naming the file it came from, and
-asks you to approve it:
+where to add the repository and to ask you to run `yolo config apply` on the host. Nothing changes
+until you do: that command, or the next launch, shows the repository as a row of the prompt,
+naming the file it came from, and asks you to approve it. A running jail takes it at once, with no
+restart:
 
 ```text
 github-broker repository scope, read from /home/you/code/app/.git/config and yolo-jail.jsonc:
