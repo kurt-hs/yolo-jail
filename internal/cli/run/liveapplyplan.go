@@ -3,16 +3,19 @@ package run
 // liveapplyplan.go is the pure half of `yolo config apply` (docs/design/live-config-apply.md
 // §4): which changes a running jail can take, per key and per backend, and the plan, which is
 // one change per difference between what the jail has and what the config now asks for. It
-// runs nothing and reads nothing; liveapply.go gathers its inputs and carries it out.
+// runs nothing, and reads nothing but what the mountRefusal it is handed stats;
+// liveapply.go gathers its inputs and carries it out.
 //
 // Terms (the design's, §1): the EFFECTIVE CONFIG is the workspace config a running jail has,
 // recorded in .yolo/config-boot.json; a PENDING CHANGE is approved but not in it; a LIVE-APPLY
 // STEP moves one change from pending to effective.
 
 import (
+	"os"
 	"sort"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/ctxinject"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
 
@@ -229,7 +232,37 @@ type applyPlanInput struct {
 	mountRecordOK bool
 	mountAdds     []configCtxMount
 	mountRemoves  []liveCtxMount
-	scopes        []scopeDelta
+	// mountRefusal, when set, is why one element cannot be injected or removed live (dest and
+	// host source), "" when it can: liveMountRefusal.
+	mountRefusal func(dest, source string) string
+	// userMountsUnknown: the record is unreadable and the user scope has read-write elements,
+	// which the workspace config never carries, so only a line of their own can say they wait.
+	userMountsUnknown bool
+	scopes            []scopeDelta
+}
+
+// liveMountRefusal is why the injector cannot reach the mount at dest from source, "" when it
+// can: it targets only a directory it makes below /ctx/ (ctxinject.RelDest), so a destination
+// elsewhere or a source that is a file waits for the launch that binds it.
+func liveMountRefusal(dest, source string) string {
+	if _, err := ctxinject.RelDest(dest); err != nil {
+		return "a mount outside " + ctxinject.Root + "/ is bound only when the jail starts"
+	}
+	if st, err := os.Stat(source); err == nil && !st.IsDir() {
+		return "a file is bound only when the jail starts"
+	}
+	return ""
+}
+
+// elementOutcome is one mount element's outcome: the key's, unless the element is one the
+// injector cannot make.
+func (in applyPlanInput) elementOutcome(mo applyOutcome, mwhy, dest, source string) (applyOutcome, string) {
+	if mo == outcomeAppliedNow && in.mountRefusal != nil {
+		if why := in.mountRefusal(dest, source); why != "" {
+			return outcomeNextRestart, why
+		}
+	}
+	return mo, mwhy
 }
 
 // openFileNote is a removal's caveat (design §4, M5): a lazy detach leaves open files readable.
@@ -263,15 +296,30 @@ func buildApplyPlan(in applyPlanInput) []applyChange {
 		// changed at one is a removal and an addition of the same destination: the addition run
 		// first finds it taken, and the mount is lost.
 		for _, m := range in.mountRemoves {
+			o, why := in.elementOutcome(mo, mwhy, m.Dest, m.Source)
 			plan = append(plan, applyChange{kind: changeMountRemove, sign: "-", label: mountLabel(m.Dest, m.RW),
-				key: "mounts", outcome: mo, reason: mwhy, note: openFileNote, mountRemove: m})
+				key: "mounts", outcome: o, reason: why, note: openFileNote, mountRemove: m})
 			elements++
 		}
 		for _, m := range in.mountAdds {
+			o, why := in.elementOutcome(mo, mwhy, m.dest, m.source)
 			plan = append(plan, applyChange{kind: changeMountAdd, sign: "+", label: mountLabel(m.dest, m.rw),
-				key: "mounts", outcome: mo, reason: mwhy, disclosure: m.rw, mountAdd: m})
+				key: "mounts", outcome: o, reason: why, disclosure: m.rw, mountAdd: m})
 			elements++
 		}
+	}
+	if in.userMountsUnknown {
+		// Folds nothing: the user scope is no workspace key.
+		why := mwhy
+		if why == "" {
+			why = "yolo has no record of the mounts this jail has"
+		}
+		o := mo
+		if o == outcomeAppliedNow {
+			o = outcomeNextRestart
+		}
+		plan = append(plan, applyChange{kind: changeKey, sign: "~", label: "mounts (user config)",
+			outcome: o, reason: why})
 	}
 	if changed["mounts"] && elements == 0 {
 		// The key moved but no element did (a source that does not exist, which a launch skips

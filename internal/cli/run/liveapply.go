@@ -294,13 +294,23 @@ func (o *Options) applyPlan(run *applyRun, scope *config.ScopeCheck) []applyChan
 	}
 	boot, bootOK, _ := config.ReadWorkspaceBootBaseline(o.Workspace)
 	in := applyPlanInput{rt: run.rt, running: run.mode.running || run.mode.unknown, boot: boot,
-		bootOK: bootOK, current: current}
+		bootOK: bootOK, current: current, mountRefusal: liveMountRefusal}
 	if run.rt == "podman" && run.mode.running { // parity: Warned — live mounts are podman only; elsewhere the mounts line says why it waits
 		in.mountsLive, in.mountsReason = ctxMountsLiveSeam(o, run.rt, run.cname, run.envLines)
 		if have, ok := readCtxMountRecordSeam(run.cname, run.envLines); ok {
 			run.have = have
 			in.mountRecordOK = true
 			in.mountAdds, in.mountRemoves = diffCtxMountsSeam(have, o.configCtxMounts(run.rt, run.cfg, nil))
+		}
+	}
+	// NO RECORD, READ-WRITE MOUNTS: those come from the user scope, which the workspace config
+	// and its record never carry, so nothing else can say whether they moved (M3).
+	if run.rt != "macos-user" && run.mode.running && !run.mode.unknown && !in.mountRecordOK { // parity: NotApplicable — macos-user has no mounts, only links each session re-stages
+		for _, m := range o.configCtxMounts(run.rt, run.cfg, nil) {
+			if m.rw {
+				in.userMountsUnknown = true
+				break
+			}
 		}
 	}
 	if scope != nil {
@@ -518,17 +528,25 @@ func (o *Options) applyAtAttach(cname, rt string, cfg *jsonx.OrderedMap, envLine
 		o.liveApply(cfg, rt, cname, envLines, applyMode{running: true, attach: true})
 		return
 	}
-	if o.configChangesPending(rt, cfg) {
+	if o.configChangesPending(rt, cname, cfg, envLines) {
 		o.pr(o.Stdout).print("[yellow]" + attachPendingNotice + "[/yellow]")
 	}
 }
 
 // configChangesPending is the non-interactive attach's cheap check, with no side effect: the
 // effective-config record drifted from the workspace config, or the approval record differs
-// from it, config part or scope part.
-func (o *Options) configChangesPending(rt string, cfg *jsonx.OrderedMap) bool {
+// from it, config part or scope part, or the host's record of the jail's mounts differs from the
+// mounts the config now binds (a read-write one is the user scope's, which neither record holds).
+func (o *Options) configChangesPending(rt, cname string, cfg *jsonx.OrderedMap, envLines []string) bool {
 	if _, drifted, _, err := config.WorkspaceConfigDrift(o.Workspace); err == nil && drifted {
 		return true
+	}
+	if rt == "podman" { // parity: NotApplicable — only a podman jail has the host's record of its mounts
+		if have, ok := readCtxMountRecordSeam(cname, envLines); ok {
+			if add, rm := diffCtxMountsSeam(have, o.configCtxMounts(rt, cfg, nil)); len(add) > 0 || len(rm) > 0 {
+				return true
+			}
+		}
 	}
 	read, err := config.ReadWorkspaceForGate(o.Workspace)
 	if err != nil {
