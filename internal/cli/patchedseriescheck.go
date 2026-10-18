@@ -24,6 +24,12 @@ package cli
 //  4. THE VERDICT: the newest entry takes the series, or the member that stops it and its paths,
 //     with the git that rebases it (packsrc.RebaseRecipe). Exit 0 when the newest entry (or
 //     --onto, or the base) takes the series, 1 otherwise.
+//
+// A PATCH BRANCH (packsrc/patchbranch.go) takes the same steps as a series, as every other act serves it
+// (PF-D89): its declared address is read in step 1, the check fetches the branch into the scratch mirror
+// too and resolves its commit and merge base, the walk merges that commit into the newest entry, and
+// the verdict is a clean merge, or the conflicting paths with the merge that repairs the branch. It
+// reads no check record for it either, so a branch this machine never fetched is answered all the same.
 
 import (
 	"context"
@@ -218,20 +224,25 @@ func packSeriesCheck(args []string, out, errw io.Writer, color bool) int {
 // directory, onto --onto's ref or "".
 func seriesCheckOne(ctx context.Context, pr richtext.Printer, errw io.Writer, f packload.Fork, packDir, onto string) int {
 	again := seriesCheckLine(packDir, onto)
+	var series *packsrc.Series
+	var err error
 	if f.PatchBranch != "" {
-		// A PATCH BRANCH has no series in the pack to check: its merge is asked of the upstream by every check.
-		pr.Printf("[dim]%s[/dim]", richtext.Escape(f.Label()+": merges the patch branch "+f.PatchBranch+", not a patch series, "+
-			"so there is nothing here to check — `yolo pack update` fetches it and merges it against the upstream, "+
-			"and `yolo pack status` says how it stands"))
-		return 0
+		// A PATCH BRANCH is the declared one here, never this machine's record of it: the scratch check below
+		// fetches the branch and resolves its commit and merge base, which the walk then merges.
+		series, err = f.DeclaredSeries()
+	} else {
+		series, err = f.ReadSeries()
 	}
-	series, err := f.ReadSeries()
 	if err != nil {
 		pr.Printf("[yellow]%s[/yellow]", richtext.Escape("⚠ "+f.Label()+": "+err.Error()))
 		return 1
 	}
-	pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: %d %s in %s (series %s), base %s", f.Label(), series.Len(),
-		plural(series.Len(), "patch", "patches"), series.Dir, series.ShortDigest(), shortSHA(series.Base))))
+	if f.PatchBranch != "" {
+		pr.Printf("[dim]%s[/dim]", richtext.Escape(f.Label()+": merges the patch branch "+f.PatchBranch))
+	} else {
+		pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: %d %s in %s (series %s), base %s", f.Label(), series.Len(),
+			plural(series.Len(), "patch", "patches"), series.Dir, series.ShortDigest(), shortSHA(series.Base))))
+	}
 	store, remove, err := scratchPatchedStore(f.Root)
 	if err != nil {
 		fmt.Fprintf(errw, "yolo pack series check: %s: %v\n", f.Label(), err)
@@ -254,16 +265,32 @@ func seriesCheckOne(ctx context.Context, pr richtext.Printer, errw io.Writer, f 
 	found := res.Record.Check
 	if found.FetchErr != "" {
 		// A SCRATCH MIRROR STARTS EMPTY, so a fetch that failed leaves nothing to check against.
-		fmt.Fprintf(errw, "yolo pack series check: %s: could not fetch %s into a scratch copy (%s) — check the "+
-			"address and this machine's network, then run `%s` again\n", f.Label(), f.Source, found.FetchErr, again)
+		what := f.Source + " "
+		if f.PatchBranch != "" {
+			what = "" // the error names which of the upstream and the patch branch it could not fetch
+		}
+		fmt.Fprintf(errw, "yolo pack series check: %s: could not fetch %sinto a scratch copy (%s) — check the "+
+			"address and this machine's network, then run `%s` again\n", f.Label(), what, found.FetchErr, again)
 		return 1
 	}
 	if found.Problem != "" {
-		if onto == "" {
+		if onto == "" || f.PatchBranch != "" {
+			// A PATCH BRANCH THE CHECK COULD NOT RESOLVE has no commit to merge, onto anything.
 			fmt.Fprintf(errw, "yolo pack series check: %s: %s\n", f.Label(), found.Problem)
 			return 1
 		}
 		fmt.Fprintf(errw, "yolo pack series check: %s: %s — checking --onto %s anyway\n", f.Label(), found.Problem, onto)
+	}
+	if f.PatchBranch != "" {
+		// THE PATCH BRANCH AS THIS CHECK RESOLVED IT, in the scratch record: its commit is what the walk merges.
+		resolved, err := packsrc.PatchBranchSeries(f.PatchBranch, f.PatchBranchDir, f.Source, res.Record)
+		if err != nil {
+			fmt.Fprintf(errw, "yolo pack series check: %s: %v — run `%s` again\n", f.Label(), err, again)
+			return 1
+		}
+		series = resolved
+		pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: patch branch %s, merge base with upstream %s",
+			f.Label(), series.PatchBranch.Label(), shortSHA(series.Base))))
 	}
 	repo, subdir := mustRepo(f.Source), subdirOf(f.Source)
 	var list []packsrc.ListEntry
@@ -333,6 +360,8 @@ func seriesCheckReport(f packload.Fork, packDir string, series *packsrc.Series, 
 	case w.Err != nil:
 		return warn(fmt.Sprintf("could not replay the series: %v — %s tries again", w.Err, again)), false
 	}
+	// A PATCH BRANCH is merged, not replayed (packsrc/patchbranch.go), and its lines say so.
+	branch := series.PatchBranch != nil
 	var lines []string
 	for i, r := range w.Results {
 		switch {
@@ -341,8 +370,12 @@ func seriesCheckReport(f packload.Fork, packDir string, series *packsrc.Series, 
 			if paths == "" {
 				paths = "(no path named)"
 			}
+			takes := "take the patch series"
+			if branch {
+				takes = "merge the patch branch"
+			}
 			lines = append(lines,
-				"[yellow]"+richtext.Escape(f.Label()+": upstream "+r.Entry.Label()+" does not take the patch series —")+"[/yellow]",
+				"[yellow]"+richtext.Escape(f.Label()+": upstream "+r.Entry.Label()+" does not "+takes+" —")+"[/yellow]",
 				richtext.Escape("  "+r.Conflict.Member+" conflicts in "+paths))
 			lines = append(lines, scratchRecipeLines(f, packDir, r.Entry)...)
 		case r.Clean:
@@ -356,6 +389,8 @@ func seriesCheckReport(f packload.Fork, packDir string, series *packsrc.Series, 
 			}
 			what := "upstream " + r.Entry.Label()
 			switch {
+			case atBase && branch:
+				what = "the patch branch's merge base " + r.Entry.Label() + " (no version of the branch contains it)"
 			case atBase:
 				what = "the series' base " + r.Entry.Label() + " (no version of the branch contains it)"
 			case i > 0:
@@ -364,6 +399,11 @@ func seriesCheckReport(f packload.Fork, packDir string, series *packsrc.Series, 
 			tail := ""
 			if onto == "" {
 				tail = " — " + scratchBuilds
+			}
+			if branch {
+				lines = append(lines, "[green]"+richtext.Escape(f.Label())+"[/green]: "+richtext.Escape(fmt.Sprintf(
+					"%s merges the patch branch %s cleanly%s", what, series.PatchBranch.Label(), tail)))
+				continue
 			}
 			lines = append(lines, "[green]"+richtext.Escape(f.Label())+"[/green]: "+richtext.Escape(fmt.Sprintf(
 				"%s takes the series (%d %s, series %s): applies%s", what, series.Len(),
@@ -376,8 +416,11 @@ func seriesCheckReport(f packload.Fork, packDir string, series *packsrc.Series, 
 	if onto == "" && w.Fit < 0 && len(w.Results) > 0 && w.Results[len(w.Results)-1].Err == nil {
 		// PF-D81: the conflict stops a launch; it neither keeps an older build as if nothing failed
 		// nor builds an older version or the series' base in its place.
-		lines = append(lines, warn("a launch stops at this conflict and builds no older version or the series' "+
-			"base until the series is rebased")...)
+		repair := "the series' base until the series is rebased"
+		if branch {
+			repair = "the patch branch's merge base until the upstream is merged into the patch branch"
+		}
+		lines = append(lines, warn("a launch stops at this conflict and builds no older version or "+repair)...)
 	}
 	return lines, len(w.Results) > 0 && w.Results[0].Clean
 }
@@ -404,7 +447,7 @@ func seriesCheckLine(packDir, onto string) string {
 // into the host's.
 func scratchRecipeLines(f packload.Fork, packDir string, e packsrc.ListEntry) []string {
 	var out []string
-	if notTheHostsCopy(packDir) {
+	if f.PatchBranch == "" && notTheHostsCopy(packDir) { // a patch branch is repaired in its own repository
 		out = append(out, "[dim]"+richtext.Escape("  "+packDir+" is outside this jail's workspace, so it is not the "+
 			"host's own copy of the pack: run the export below on the host, against the host's copy")+"[/dim]")
 	}

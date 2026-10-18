@@ -281,7 +281,7 @@ machine. It writes nothing into your pack, and changes nothing a launch runs.
 | `yolo pack status` | Shows each good build, the newest version and what happened when yolo tried it, what holds it, and when the next check is due. It works offline. |
 | `yolo pack status <key>` | Prints the build line in full. A launch names the build line by a short digest instead of printing it each time; the build itself always prints it in full first. |
 | `yolo capture <bin>` or `yolo capture <pack>/<name>` | Checks now and builds the newest version if your series applies to it, or rebuilds the good build. It stops at a series that does not apply. |
-| `yolo pack series check <pack folder>` | Says whether each series in a pack folder applies to the newest version, or which patch conflicts and the git commands that rebase it. It works in a jail. |
+| `yolo pack series check <pack folder>` | Says whether each series or patch branch in a pack folder applies to the newest version, or what conflicts and the git commands that fix it. It works in a jail. |
 | `yolo pack lint [--online] <dir>` | Checks a pack before you select it: each series must be one a launch can read. With `--online` it also checks the upstream in a scratch copy it deletes afterwards: that the ref and the series' base exist, what `follow` finds, and that your patches apply at their base. It works in a jail too. |
 
 To keep running what you have, turn `agent_updates` off for the pack: yolo stops checking upstream
