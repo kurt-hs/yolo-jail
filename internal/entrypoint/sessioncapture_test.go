@@ -150,3 +150,69 @@ func TestAStrayIsNamedOnceAndKept(t *testing.T) {
 		t.Errorf("the boot kept a session home holding no stray: %v", err)
 	}
 }
+
+// M1 of the review: capturing ANOTHER session's home must take only that file's own edits, never
+// the capturing pass's profile selection. A pass on no profile capturing a home a profile wrote
+// used to read every key that profile's selection wrote as "deselected" and clear it from the
+// shared overlay, deleting a default model the user had saved in another session (OQ-SP2).
+func TestCapturingAProfiledHomeKeepsAUsersSavedSelection(t *testing.T) {
+	j := newSessionHomeJail(t)
+	j.cleanPass(t, "", "acme", false)
+	j.cleanPass(t, sessionA, "acme", true)
+	const d, f, g = "dddddddddddddddddddddddddddddddd", "ffffffffffffffffffffffffffffffff", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	j.cleanPass(t, d, "", true)
+	dSettings := filepath.Join(j.sessionHome(t, d), "settings.json")
+	setJSONKey(t, dSettings, "defaultModel", "user-picked")
+	setJSONKey(t, dSettings, "defaultProvider", "beta")
+	j.cleanPass(t, f, "", true)
+	j.cleanPass(t, g, "", true)
+	gSettings := filepath.Join(j.sessionHome(t, g), "settings.json")
+	if got := jsonKey(t, gSettings, "defaultModel"); got != "user-picked" {
+		t.Errorf("a later unprofiled session's defaultModel = %v, want the one saved in session D", got)
+	}
+	if got := jsonKey(t, gSettings, "defaultProvider"); got != "beta" {
+		t.Errorf("a later unprofiled session's defaultProvider = %v, want the one saved in session D", got)
+	}
+}
+
+// The review's minor 5: the jail's own boot keeps a leftover home whose file it could not capture
+// (pi mid-write when the container stopped), so the edit is read again at the next entry.
+func TestTheJailsBootKeepsAHomeItCouldNotCapture(t *testing.T) {
+	j := newSessionHomeJail(t)
+	j.cleanPass(t, "", "acme", false)
+	j.cleanPass(t, sessionA, "beta", true)
+	aSettings := filepath.Join(j.sessionHome(t, sessionA), "settings.json")
+	if err := os.WriteFile(aSettings, []byte(`{"theme": "half`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e, errw := j.pass(t, "", "acme", false, JailMainEnv, JailMainHold)
+	mustBootClean(t, e, errw)
+	if string(readBytes(t, aSettings)) != `{"theme": "half` {
+		t.Error("the jail's boot removed or changed a session home whose file it could not capture")
+	}
+}
+
+// The review's minor 3: a session whose render wrote its file but never replaced the seeded
+// baseline is not captured, so its profile's values never reach the shared overlay as edits.
+func TestAHomeWhoseRenderNeverFinishedIsNotCaptured(t *testing.T) {
+	j := newSessionHomeJail(t)
+	j.cleanPass(t, "", "acme", false)
+	j.cleanPass(t, sessionA, "beta", true)
+	baseline := filepath.Join(j.workspace, ".yolo", "prism", "sessions", sessionA, "pi-settings.last_render")
+	if err := os.WriteFile(baseline, readBytes(t, filepath.Join(j.workspace, ".yolo", "prism", "pi-settings.last_render")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(baseline+seededBaselineSuffix, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	overlay := filepath.Join(j.workspace, ".yolo", "prism", "pi-settings.overlay.json")
+	before := readBytes(t, overlay)
+	// An unprofiled pass: its layers set none of beta's selection, so nothing filters it out.
+	j.cleanPass(t, sessionB, "", true)
+	if !bytes.Equal(readBytes(t, overlay), before) {
+		t.Errorf("an unfinished session render was captured into the shared overlay:\n%s", readBytes(t, overlay))
+	}
+	if got := defaultProviderIn(t, filepath.Join(j.sessionHome(t, sessionB), "settings.json")); got == "beta" {
+		t.Errorf("session B selects session A's beta: A's profile reached the shared overlay")
+	}
+}
