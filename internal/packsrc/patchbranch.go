@@ -55,9 +55,11 @@ func (c *SeriesPatchBranch) Label() string { return c.Ref + "@" + shortCommit(c.
 // PatchBranchResolved is what a check resolved a patch branch to, kept in the check record.
 type PatchBranchResolved struct {
 	// Source is the patch branch as the manifest wrote it, and Upstream the upstream repository it was
-	// resolved against: a record whose either differs from what is asked names nothing.
-	Source   string `json:"source"`
-	Upstream string `json:"upstream"`
+	// resolved against: a record whose either differs from what is asked names nothing. Repository is the
+	// filesystem identity of the declaring repository for a relative Source, empty for absolute locators.
+	Source     string `json:"source"`
+	Upstream   string `json:"upstream"`
+	Repository string `json:"repository,omitempty"`
 	// Commit is the branch's commit; Base its merge base with the upstream ref's tip.
 	Commit string `json:"commit"`
 	Base   string `json:"base"`
@@ -95,8 +97,17 @@ func UnresolvedPatchBranchSeries(source, dir string) *Series {
 // upstream is the source upstream: the commit and base the last check that resolved it found.
 // PatchBranchUnresolvedError when rec names no resolution of this patch branch against this upstream.
 func PatchBranchSeries(source, dir, upstream string, rec *CheckRecord) (*Series, error) {
+	declaringRepo := ""
+	if IsRelativeLocator(source) {
+		identity, err := RelativeRepositoryIdentity(source, dir)
+		if err != nil {
+			return nil, err
+		}
+		declaringRepo = identity
+	}
 	if rec == nil || rec.PatchBranch == nil || rec.PatchBranch.Source != source || rec.PatchBranch.Upstream != CheckRepo(upstream) ||
-		rec.PatchBranch.Commit == "" {
+		rec.PatchBranch.Commit == "" || rec.PatchBranch.Repository != declaringRepo ||
+		rec.Read.PatchBranchRepo != declaringRepo {
 		return nil, &PatchBranchUnresolvedError{Source: source}
 	}
 	s := UnresolvedPatchBranchSeries(source, dir)

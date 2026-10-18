@@ -171,6 +171,8 @@ name; `patches` is otherwise unchanged.
 
 **Owner.** [OQ-PFK6](../reference/patched-forks.md#why-its-this-way), ruled 2026-10-15: both `carry` and `patches` are supported, and one contribution naming both is a fatal conflict; on 2026-10-16 the owner named the key `patch_branch` ([PF-D87](../reference/patched-forks.md#PF-D87)). Built 2026-10-16, on `files` extensions and forked programs alike; the lag is reported as the patch branch's merge base behind upstream releases ([PF-D90](../reference/patched-forks.md#PF-D90)).
 
+**2026-10-18 follow-up — landed.** Relative locators now key checks and resolved records by the declaring repository's filesystem identity, preventing one clone from reusing another's branch or build while preserving host/jail bind-path identity. `yolo pack series check` reads the current durable verdict by default and names host update/launch remedies when it is absent or stale; `--online` remains a disposable scratch check. The independent review's two P1 findings are repaired ([PF-D98](../reference/patched-forks.md#PF-D98)).
+
 ## 8. Model inheritance — emit `sharedModels` and `extends`
 
 **Ask.** The pi derive and the model-lists resolver emit a `sharedModels` entry per referenced

@@ -55,6 +55,45 @@ func TestParseFromBoundsALinkOutOfThePacksRepository(t *testing.T) {
 	}
 }
 
+func TestRelativeRepositoryIdentityMapsBindPathAliasesAndSeparatesClones(t *testing.T) {
+	makeRepo := func() (string, string) {
+		t.Helper()
+		root := t.TempDir()
+		pack := filepath.Join(root, "repo", "packs", "p")
+		if err := os.MkdirAll(filepath.Join(root, "repo", ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(pack, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return root, pack
+	}
+	rootA, packA := makeRepo()
+	_, packB := makeRepo()
+	alias := filepath.Join(t.TempDir(), "mapped-pack")
+	if err := os.Symlink(packA, alias); err != nil {
+		t.Fatal(err)
+	}
+	idA, err := RelativeRepositoryIdentity("../..?ref=mine", packA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mapped, err := RelativeRepositoryIdentity("../..?ref=mine", alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idB, err := RelativeRepositoryIdentity("../..?ref=mine", packB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idA != mapped {
+		t.Errorf("same declaring repository at %s and mapped path %s has identities %q / %q", rootA, alias, idA, mapped)
+	}
+	if idA == idB {
+		t.Errorf("independent declaring repositories share identity %q", idA)
+	}
+}
+
 // A CHECK HANDED A RELATIVE PATCH BRANCH WITH NO PACK DIRECTORY refuses before any fetch, rather than fetching
 // a repository named "".
 func TestACheckOfARelativePatchBranchWithNoDirectoryRefuses(t *testing.T) {

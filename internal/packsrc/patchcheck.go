@@ -95,7 +95,14 @@ func (w PatchedWant) Inputs() (CheckInputs, Addr, FollowRule, error) {
 				"directory, and this check was handed none — a yolo bug; report it with this line, and meanwhile "+
 				"write the repository's absolute address (git+file:///abs/path?ref=%s)", w.PatchBranch, c.Ref)
 		}
-		return CheckInputs{Repo: a.Repo, Subdir: a.Path, Ref: a.Ref, Follow: f.String(), PatchBranch: w.PatchBranch}, a, f, nil
+		in := CheckInputs{Repo: a.Repo, Subdir: a.Path, Ref: a.Ref, Follow: f.String(), PatchBranch: w.PatchBranch}
+		if IsRelativeLocator(w.PatchBranch) {
+			in.PatchBranchRepo, err = RelativeRepositoryIdentity(w.PatchBranch, w.PatchBranchDir)
+			if err != nil {
+				return CheckInputs{}, Addr{}, FollowRule{}, fmt.Errorf("the patch branch: %w", err)
+			}
+		}
+		return in, a, f, nil
 	}
 	return CheckInputs{Repo: a.Repo, Subdir: a.Path, Ref: a.Ref, Follow: f.String(), Base: w.Base}, a, f, nil
 }
@@ -241,6 +248,7 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 		if found.PatchBranch != nil {
 			resolved := *found.PatchBranch
 			resolved.At = found.At
+			resolved.Repository = in.PatchBranchRepo
 			r.PatchBranch = &resolved
 		}
 		if pf := r.PatchFailure; pf != nil {
