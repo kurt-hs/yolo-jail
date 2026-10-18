@@ -239,7 +239,12 @@ func (o *Options) nixRepairNote() string {
 // (config.Sources.Annotate); an unlocated one names only the key, so the note names the files.
 func configNote(msg, workspace string) string {
 	where := "Fix it where this says it was written"
-	if strings.HasPrefix(msg, "config.") {
+	switch {
+	case config.LocatedInLaunchCopy(msg):
+		// Set in a host file this jail reads a launch copy of (the message names it): the jail's
+		// copy is read-only, and an edit counts once the jail is relaunched.
+		return "Edit the host file this names, then relaunch the jail (`yolo config-ref` documents every key)"
+	case strings.HasPrefix(msg, "config."):
 		// The workspace config the loader reads (config.ResolveWorkspaceConfigPath): naming
 		// `yolo-jail.jsonc` beside a `yolo-jail.json` sent the user to create a file that shadows it.
 		wsPath, _ := config.ResolveWorkspaceConfigPath(workspace, config.WorkspaceConfigName)
