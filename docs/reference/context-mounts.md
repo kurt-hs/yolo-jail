@@ -351,6 +351,21 @@ session env file, since the launch argv's `env -i` list is closed; so every maco
 writes a session env file. `PlanInvariants` checks the context dir is staged, root-owned and in
 both envs ([CX-D14](#CX-D14)).
 
+### A running jail takes `mounts` changes
+
+On podman a launch mounts `/ctx` itself as a tmpfs the jail sees read-only, freezes the
+`live-ctx-mounts` contract tag, and keeps a host-side record of the config mounts it bound
+(`paths.AgentsDir()/<cname>/ctx-mounts/record.json`, keyed to the jail by a token in its
+`YOLO_CTX_MOUNTS_TOKEN`). `yolo config apply`, and an attach a human is at, then add, remove and
+re-point `mounts` elements under `/ctx` in the running jail, read-only and read-write alike, after
+the launch's own approval gate; an element with `at` outside `/ctx` waits for a restart. The
+injector is `yolo internal ctx-attach`, run under `podman unshare` on a rootless host and directly
+otherwise. It clones the source mount, marks it read-only before the jail can see it, enters the
+jail's mount namespace, and makes the mountpoint through a private writable clone of `/ctx`. The
+jail's own `/ctx` stays read-only. Apple Container, a macOS Podman Machine and a jail launched
+before this report the change as waiting for the next restart; macos-user takes it at the next
+session. Design and rulings: [`live-config-apply.md`](../design/live-config-apply.md).
+
 ## Delivery on macos-user
 
 macos-user has no mounts. A context mount there is delivered by a **root-owned link** in the

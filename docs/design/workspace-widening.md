@@ -596,12 +596,13 @@ flowchart LR
 
 - **The human ends the jail and launches it fresh.** Either quit every session (the last one out
   ends the jail) or run `yolo stop` on the host in the project. Then run `yolo` and answer y.
-- **A second terminal is an attach.** It validates the config, so a malformed entry refuses it.
-  It runs no gate, and the running broker keeps its scope. The one exception is an attach whose skew
-  gate restarts the jail: that becomes a fresh launch and asks. An attach-time notice of a pending
-  entry is a [non-goal](#5-non-goals).
+- **A restart is no longer the only way in.** [`live-config-apply.md`](live-config-apply.md)
+  amends this section: `yolo config apply` on the host, and a second terminal's attach when a human
+  is at it, run this gate and rewrite the running broker's scope file, which the broker classifies
+  against at its next call. A non-interactive attach asks nothing and prints one line naming
+  `yolo config apply`.
 - **On macos-user**, every invocation is fresh and runs the gate, so the next session sees the
-  entry. Sessions already running keep their scope.
+  entry; `yolo config apply` also rewrites the scope of every session already running.
 - **On Apple Container** the broker never starts, so the entry is inert.
 - **Nested launches** are unchanged. `brokered` stays out of the inherited user-scope files: there
   it would apply to every workspace an inner launch opens, and user scope now refuses it. Only the
