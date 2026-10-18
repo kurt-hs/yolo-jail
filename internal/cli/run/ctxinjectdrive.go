@@ -115,7 +115,7 @@ func (o *Options) ctxMountsLive(rt, cname string, envLines []string) (ok bool, r
 		return false, "this jail started before live mounts existed"
 	}
 	if ctxMountRecordInvalidated(cname, envLines) {
-		return false, "the host's live-mount record was invalidated after an update failed"
+		return false, "the host's live-mount record is missing or does not match this jail's launch token"
 	}
 	if _, ok := readCtxMountRecord(cname, envLines); !ok {
 		return false, "this jail started before live mounts existed"

@@ -269,9 +269,9 @@ This block is what the jail can see of your machine's filesystem, and what it ma
 
 | Row | `podman`/Linux | `podman`/macOS | `container`/macOS | `macos-user`/macOS | Takes effect |
 |---|---|---|---|---|---|
-| `mounts` — host dirs read-only at `/ctx` | works | works — VM must share the source[^vm-share] | works on 1.1.0+; older: `absent, warns`[^acro] | works for a folder outside every home, at `$YOLO_CONTEXT_DIR`; others refuse the launch — never run on a Mac[^mumounts] | fresh launch |
-| `mounts` read-write form — `{"host", "mode": "rw"}`, user config only | works — named on every launch[^rwmount] | works — VM must share the source; never run on a Mac[^vm-share] | works on any version — never measured on a Mac[^rwmount] | works under `/Users/Shared/yolo`; elsewhere refuses the launch — never run on a Mac[^mumounts] | fresh launch |
-| `mounts` entry with `"optional": true` — skip, don't refuse | works — a missing folder is one skip line | works — a folder the VM does not share is one skip line[^optmount] | works — below 1.1.0 a read-only entry is one skip line[^optmount] | works — a folder this setup can't reach is one skip line[^optmount] | fresh launch |
+| `mounts` — host dirs read-only at `/ctx` | works | works — VM must share the source[^vm-share] | works on 1.1.0+; older: `absent, warns`[^acro] | works for a folder outside every home, at `$YOLO_CONTEXT_DIR`; others refuse the launch — never run on a Mac[^mumounts] | fresh launch; eligible podman changes can be applied with host `yolo config apply`[^liveapply] |
+| `mounts` read-write form — `{"host", "mode": "rw"}`, user config only | works — named on every launch[^rwmount] | works — VM must share the source; never run on a Mac[^vm-share] | works on any version — never measured on a Mac[^rwmount] | works under `/Users/Shared/yolo`; elsewhere refuses the launch — never run on a Mac[^mumounts] | fresh launch; eligible podman changes can be applied with host `yolo config apply`[^liveapply] |
+| `mounts` entry with `"optional": true` — skip, don't refuse | works — a missing folder is one skip line | works — a folder the VM does not share is one skip line[^optmount] | works — below 1.1.0 a read-only entry is one skip line[^optmount] | works — a folder this setup can't reach is one skip line[^optmount] | fresh launch; eligible podman changes can be applied with host `yolo config apply`[^liveapply] |
 | `workspace_readonly` — lock workspace sub-paths | works — read-only overlay per path | works | works on 1.1.0+; older: **paths stay writable**, warns[^acro] | works — sandbox policy rule, not a mount | fresh launch |
 | … and the `yolo-jail.jsonc` lock it also performs | works | works | works on 1.1.0+; below, lost **silently**[^acro] | works — the same sandbox rule as the entries[^mujsonc] | fresh launch |
 | `per_side_paths` — `.venv`/`node_modules` not shared | works — private dir mounted over each path[^leftover] | works | works — unverified on Apple silicon[^achw] | `absent, warns` — host and sandbox share them; uv gets its own venv[^mupsp] | fresh launch |
@@ -347,7 +347,11 @@ Two things to read before the table:
 > **"Unconfigured" is not "uncapped" on Apple Container.** With no `resources` block, the `container` backend still gets a memory and CPU cap — **yolo's own arithmetic**, roughly half your RAM and half your cores. The startup banner does not mention it (it prints only what you wrote); the agent's briefing does. On both podman backends, unset really does mean unlimited.
 
 > [!IMPORTANT]
-> **Every key in this table is frozen at the fresh launch.** All of them ride the container command line, so re-entering an already-running jail returns before the config-change prompt and before the command line is rebuilt. An edited value does nothing, silently — and worse, the agent's briefing *is* re-rendered from your edited file, so the agent is told a cap or a port that is not in force. `yolo config drift` is the detector; nothing points you at it. Exit the jail and relaunch.
+> **The resource and networking controls in this table are fixed when the jail starts.** Re-entering a
+> running jail does not change its limits, network mode or published ports. `yolo config apply` can
+> apply eligible context-mount additions/removals and supported GitHub repository-scope changes; it
+> does not hot-update the resource and network rows below. The command reports what took effect and
+> what still needs a restart.
 
 | Key | `podman` / Linux | `podman` / macOS | `container` / macOS | `macos-user` / macOS | Takes effect |
 |---|---|---|---|---|---|
@@ -485,7 +489,7 @@ The keys the tables above leave out. Most of them do the same thing on every set
 
 ## What a running jail picks up when you run `yolo` again
 
-Re-running `yolo` in a workspace whose jail is still running does **not** start a new jail — it *re-enters* the one you have (the banner says `Attaching to existing jail`). Settings passed when the container was created stay as they were, and so do its packs. Skills and briefings are rebuilt on every entry from the packs the jail started with, so you see the boot run again, yet some edits still wait for a restart. This table says which.
+Re-running `yolo` in a workspace whose jail is still running does **not** start a new jail — it *re-enters* the one you have (the banner says `Attaching to existing jail`). Most launch-time settings and the jail's pack tree stay as they were. A human at an interactive attach gets the config-change gate; `yolo config apply` can apply eligible mount changes and supported GitHub repository-scope changes without restarting. Skills and briefings are rebuilt on every entry from the packs the jail started with, so some edits still wait for a restart. This table says which.
 
 | What you changed | `podman` re-entry (Linux, macOS) | `container` re-entry | `macos-user` |
 |---|---|---|---|
@@ -497,9 +501,9 @@ Re-running `yolo` in a workspace whose jail is still running does **not** start 
 | `-p <profile>` / a rotated key in `env_sources` | `works` — live env file | `works` — rewritten on every entry, not yet run on a Mac[^reentry] | `works differently` |
 | `--with-credentials <provider>` | `refuses` unless the jail was launched with it; the refusal names `yolo stop` and the fresh launch | `refuses` the same, not yet run on a Mac | `works` — every invocation is its own launch |
 | `mcp_servers`, `lsp_servers`, `mise_tools`, `blocked_tools` | **absent, silent**[^envhalf] | **absent, silent** | `works` |
-| `resources`, `network`, `ports`, `mounts`, `devices`, `gpu`, `packages`, `host_files` | **absent, silent** | **absent, silent** | `works`[^macuserkeys] |
-| The config-change diff prompt (your y/N review) | **absent, silent** | **absent, silent** | `works` — every invocation shows the diff |
-| The frozen config snapshot `yolo config drift` compares against | **absent, silent**[^drift] | **absent, silent** | `works` — written at every launch; a session whose project was launched again since says so instead of comparing |
+| `resources`, `network`, `ports`, `devices`, `gpu`, `packages`, `host_files` | **absent, restart-only** | **absent, restart-only** | `works`[^macuserkeys] |
+| The config-change diff prompt (your y/N review) | works at an interactive attach; `yolo config apply` uses the same gate | works at an interactive attach; `yolo config apply` uses the same gate | `works` — every invocation shows the diff |
+| The config snapshot `yolo config drift` compares against | works; live-applied changes update the effective record | works; live-applied changes update the effective record | `works` — written at every launch; a session whose project was launched again since says so instead of comparing |
 | The jail's own `yolo` version | `absent, warns` — one dim line naming `yolo stop`, or a restart question when the older jail cannot take what you selected[^olderjail] | `absent, warns` | `n/a` — re-staged every launch |
 
 **On `macos-user` every `yolo` starts a fresh sandbox from your current config**, so every setting it reads takes effect on the next launch. What differs there is which settings it reads at all.
@@ -513,7 +517,7 @@ Re-running `yolo` in a workspace whose jail is still running does **not** start 
 [^acpack]: Apple Container gets a copy of the packs at launch, so the agent cannot rewrite them. As on podman, a running jail keeps the packs it started with, and a re-entry says which differ. A jail an earlier release started is the exception: yolo cannot tell which packs it copied, says so, and uses your configured ones. The restart it names is `yolo stop`, then a new launch. Not yet run on a Mac.
 [^envhalf]: These cross as environment variables on the container command line. An added MCP server does not appear in the agent's list until you stop and relaunch, even though the boot visibly regenerated the MCP config.
 [^olderjail]: A jail keeps the yolo it started with. When a newer yolo re-enters it with a profile whose credentials that jail cannot receive, yolo asks `Restart jail now? [Y/n]` and says how many sessions the restart ends. Without a terminal it stops and tells you to run `yolo stop` first. `YOLO_ALLOW_ATTACH_SKEW=1` re-enters anyway, without delivering the profile, and the agent's briefing then says which yolo the jail started with and what it did not receive (on podman; an Apple Container jail keeps the briefing it started with).
-[^drift]: After a re-entry, in-jail config readers still see the config the jail was *launched* with, and `yolo config drift` compares against a baseline that may be several edits old — so it reports drift for edits you thought you had applied.
+[^liveapply]: Live mount injection currently applies only to supported Linux `podman` jails and eligible sources/destinations under `/ctx`. Podman Machine mount injection on macOS is not built; Apple Container cannot change its shares while the VM runs. GitHub repository-scope changes are live only where a broker for that jail runs. `yolo config apply` shows its per-change outcome; read [When a change takes effect](configuration.md#when-a-change-takes-effect).
 [^macuserkeys]: For the keys this setup reads. Resource limits are not kernel-enforced here, and a `mounts` entry is a link rather than a bind.
 
 ## What a pack can contribute, per setup
