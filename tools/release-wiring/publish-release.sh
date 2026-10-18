@@ -20,8 +20,8 @@ if ! GITHUB_REPOSITORY="$GITHUB_REPOSITORY" GITHUB_REF_TYPE="$GITHUB_REF_TYPE" G
   exit 1
 fi
 
-# This trusted validator reads target pack manifests as Git blobs and never
-# executes target code, configuration, hooks, or artifact-selected commands.
+# This trusted validator reads the target's GoReleaser config as a Git blob and
+# never executes target code, configuration, hooks, or artifact-selected commands.
 assets_json=$(go run ./tools/release-wiring validate-assets \
   --repo-root "$GITHUB_WORKSPACE" --sha "$RELEASE_SHA" --version "$RELEASE_VERSION" \
   --trusted-config "$GITHUB_WORKSPACE/.goreleaser.yaml" --dir "$RELEASE_ASSETS_DIR") || {

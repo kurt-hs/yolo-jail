@@ -17,7 +17,7 @@ Run IDs are positive decimal Actions run IDs. Commit identifiers are full lowerc
 
 ## Safety properties and boundaries
 
-- Git blob/tree reads are data-only; the helper does not execute target code or parse target GoReleaser YAML as an executable configuration. A target `.goreleaser.yaml` must byte-match the separately supplied trusted config; expected basenames come from that config's fixed release archive shape plus the target's declarative pack binary manifests.
+- Git blob/tree reads are data-only; the helper does not execute target code or parse target GoReleaser YAML as an executable configuration. A target `.goreleaser.yaml` must byte-match the separately supplied trusted config; expected basenames come from that config's fixed release archive shape alone: four platform archives and `checksums.txt`.
 - Filesystem inputs must be real directories and regular files, with exact names, bounded size, no symlink acceptance, and verified checksums for release assets. Wheel ZIP metadata paths/types and collisions are checked without extracting or executing wheel contents.
 - GitHub API errors are status-only; response bodies are discarded, API URLs must be HTTPS without userinfo/query/fragment, API redirects are not followed, and claim upload outcomes other than a definite create are treated as ambiguous/conflicting with no automatic retry, deletion, or clobber.
 - Claim creation is not proof of registry completion and is not administrator-immutable. The caller must gate it on exact request/release-run identity and order checks. Legacy versions without provenance, reruns, duplicates, partial/unknown outcomes, and older-version publication refuse.
