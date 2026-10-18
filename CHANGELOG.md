@@ -68,6 +68,7 @@ last good build or upstream without your patches. See [Patch series](userguide/g
 - A bare `-p` that some agents can't use names them all on one line.
 - `yolo config promote` and `diff` no longer treat a `null` you set as a deletion.
 - A patch series that stopped applying no longer keeps refusing after upstream releases a version it applies to.
+- `yolo check` and the launch warn about a `subagents` model or `modelScope` pattern no model matches, naming where it is set and the nearest ids.
 - With `agent_updates` off, a patched fork or extension keeps its good build after a newer one fails.
 - An exported rebased patch series now applies whatever your git version or settings.
 - pi, omp and opencode no longer wait about two seconds at start for yolo's footer line.

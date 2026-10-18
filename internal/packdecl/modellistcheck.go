@@ -9,6 +9,8 @@ import (
 // program can call on a provider platform. It is not part of any install or launch payload.
 type ModelListCheck struct {
 	Rules []ModelListCheckRule `json:"rules,omitempty"`
+	// References says where the program's config surface names models (modelreferences.go).
+	References *ModelReferences `json:"references,omitempty"`
 }
 
 // ModelListCheckRule selects a provider platform and optionally whether a live via route reaches
@@ -88,6 +90,9 @@ func (m *Manifest) validateModelListChecks() []string {
 			continue
 		}
 		problems = append(problems, modelListCheckProblems(label, check)...)
+		if check.References != nil {
+			problems = append(problems, modelReferencesProblems(label, check.References)...)
+		}
 	}
 	return problems
 }
