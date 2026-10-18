@@ -22,7 +22,8 @@ const lunaProviders = `{"bedrock":{"region":"us-east-1","models":{
   "luna":{"id":"global.openai.gpt-6-luna","vendor":"openai","context_window":272000},
   "luna-1m":{"id":"global.openai.gpt-6-luna[1m]","base":"global.openai.gpt-6-luna","vendor":"openai",
     "context_window":1000000},
-  "plain":{"id":"global.openai.gpt-6-astra","vendor":"openai","reasoning":null}}}}`
+  "plain":{"id":"global.openai.gpt-6-astra","vendor":"openai","reasoning":null},
+  "bare":{"id":"global.anthropic.claude-opus-5-5","vendor":"anthropic"}}}}`
 
 func TestPiOnBedrockKeepsTheCatalogsThinkingLevelsInModelsJSON(t *testing.T) {
 	providersJSON, wire := bedrockTables(t, "pi", lunaProviders, nil)
@@ -37,6 +38,11 @@ func TestPiOnBedrockKeepsTheCatalogsThinkingLevelsInModelsJSON(t *testing.T) {
 	overrides, _ := native["modelOverrides"].(map[string]any)
 	if got, want := overrides["global.openai.gpt-6-luna"], map[string]any{"contextWindow": float64(272000)}; !reflect.DeepEqual(got, want) {
 		t.Errorf("modelOverrides[luna] = %v, want %v: the stated facts alone, over pi's catalog entry", got, want)
+	}
+	// A row stating nothing is still named, as an empty override: the row lists every declared
+	// model, and pi's catalog entry stands as it is.
+	if got := overrides["global.anthropic.claude-opus-5-5"]; !reflect.DeepEqual(got, map[string]any{}) {
+		t.Errorf("modelOverrides[opus] = %#v, want an empty object", got)
 	}
 	ids := map[string]map[string]any{}
 	list, _ := native["models"].([]any)
