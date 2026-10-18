@@ -341,3 +341,13 @@ func TestHomeSurfacesPinsBothSpellings(t *testing.T) {
 		t.Error("HomeSurfaces() hands out a shared backing array")
 	}
 }
+
+// TreeCopyRootFor, from a launch's pack tree, names the same directory TreeCopyRoot does from the
+// cname, so the launch that copies and anything that cleans up by cname agree.
+func TestTreeCopyRootForAPackTreeIsTheWorkspacesTreeCopyRoot(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	tree := filepath.Join(PackTreeRoot("yolo-ws-1"), "20261018T000000Z-1")
+	if got, want := TreeCopyRootFor(tree), TreeCopyRoot("yolo-ws-1"); got != want {
+		t.Fatalf("TreeCopyRootFor(%q) = %q, want %q", tree, got, want)
+	}
+}

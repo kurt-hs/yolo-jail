@@ -260,7 +260,7 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 				"tree to copy it beside — a fresh launch delivers it", PatchFailure: patchFailure}, later
 		}
 		span := report.preparationSpan("preparation.copy_install")
-		dir, err := copyTreeForLaunch(f, r.delivery.Key, req.CopyRoot, errw)
+		dir, err := copyTreeForLaunch(f, r.delivery.Key, req.CopyRoot, req.ReuseCopies, errw)
 		report.preparationOutcome("preparation.copy_install", f.Key(), err)
 		span.End()
 		switch {
@@ -403,7 +403,13 @@ func servingTreeOf(f packload.Fork, o advanceOptions, floor string, probeLegacy 
 // copyTreeForLaunch copies f's built tree out of entry key into its per-launch directory under
 // copyRoot — reflink or copy, never a hardlink (capture.CopyTree) — and checks the entry's
 // completion marker once the copy ends: gone, the copy is removed and errTreeEntryGone returned.
-func copyTreeForLaunch(f packload.Fork, key, copyRoot string, errw io.Writer) (string, error) {
+//
+// reuse is the request's ReuseCopies: copyRoot is then a stable root, and the copy is
+// reusableTreeCopy's, made once per build and handed as it is to a later launch of the same build.
+func copyTreeForLaunch(f packload.Fork, key, copyRoot string, reuse bool, errw io.Writer) (string, error) {
+	if reuse {
+		return reusableTreeCopy(f, key, copyRoot, errw)
+	}
 	store := &capture.Store{Dir: paths.CapturesDir()}
 	dest := run.PatchedTreeCopyDir(copyRoot, f.Key())
 	_ = os.RemoveAll(dest)

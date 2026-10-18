@@ -41,3 +41,21 @@ func LivePackTreeRecord(cname string) string {
 // the first fresh container launch that finds no container of the workspace's name retires it
 // (run.retireLegacyPackStaging).
 func LegacyPackStagingDir(cname string) string { return filepath.Join(AgentsDir(), cname, "packs") }
+
+// treeCopiesLeaf is TreeCopyRoot's name under AGENTS_DIR/<cname>.
+const treeCopiesLeaf = "tree-copies"
+
+// TreeCopyRoot returns AGENTS_DIR/<cname>/tree-copies, where a macos-user launch keeps its patched
+// extensions' copies: one per extension and store entry, made whole and then renamed into place, so
+// the next launch handed the same build reuses it instead of copying the tree out of the store
+// again (internal/cli's reusableTreeCopy). It is a sibling of PackTreeRoot rather than inside a
+// launch's tree, because a tree is one launch's and is removed with it. It goes with the whole
+// AGENTS_DIR/<cname> (prune.PruneOrphanAgentStaging); a copy no live launch holds is reaped by the
+// next launch that settles a copy of the same extension.
+func TreeCopyRoot(cname string) string { return filepath.Join(AgentsDir(), cname, treeCopiesLeaf) }
+
+// TreeCopyRootFor is TreeCopyRoot for the workspace whose pack tree is packTree (a directory under
+// PackTreeRoot), for a caller holding the tree and not the cname.
+func TreeCopyRootFor(packTree string) string {
+	return filepath.Join(filepath.Dir(filepath.Dir(packTree)), treeCopiesLeaf)
+}
