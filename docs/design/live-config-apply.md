@@ -3,19 +3,18 @@ title: "Approve a config change once, on the host, and let the running jail take
 date: 2026-10-18
 status: accepted
 stage: DECIDED
-next: "After the verified serial candidate lands, read CI's rootless integration jobs for TestLiveCtxMountInjectAndRemove (M1); then build the staged later slices"
+next: "After CI on this landed tree, verify rootless M1 on both architectures; retain the real-broker, remount-parity and native-Mac obligations"
 tags: [design, config, approval, attach, mounts, github, broker, live-apply, podman, macos-user, apple-container]
 summary: "A host command, `yolo config apply`, runs the launch's own config-change gate (same diff, same scope block, same y/N, same host-side approval record) against a running jail, then applies the approved changes that can reach a jail without a restart and says, per change, which ones wait for the next restart. An attach with a human at its terminal runs the same gate and apply before its session starts. Read-only context mounts are injected into a running podman jail with the kernel's new mount API, which a probe in this jail on 2026-10-18 showed working, read-only and recursive, into a read-only-rootfs container. The github-broker's repository scope is widened by rewriting the per-launch scope file it already re-reads per request, once its classification reads that file instead of its start-time copy. Everything else is classified per key and per backend; most keys stay restart-only, and the command still captures the trust for them."
 ---
 
 # Approve a config change once, on the host, and let the running jail take what it can
 
-**Status:** 2026-10-18. Every question was ruled the same day. The model-reference and Mac/recovery
-implementation had already landed on primary at `6683038d2`; this serial candidate merges the full
-live-apply history through `e80f3a2ae` and the full patch-series history through `770d9c2c9`, with
-both histories retained, and is pending primary fast-forward. The final live-closure review accepted
-the bounded repair. v1 and its review repairs are built; the command's briefing re-render from the
-effective config is not ([LA-D7](#LA-D7)), nor are the later slices of [§13](#13-sequencing).
+**Status:** 2026-10-18. Every question was ruled the same day. The model-reference, Mac/recovery,
+live-apply and patch-series histories are on main at `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`; the
+serial landing retained their complete histories. The final live-closure review accepted the bounded
+repair. v1 and its review repairs are built; the command's briefing re-render from the effective
+config is not ([LA-D7](#LA-D7)), nor are the later slices of [§13](#13-sequencing).
 MEASURED in the nested rootful Podman path only (`--userns host`): the command and interactive
 attach added, removed and moved read-only mounts in a running jail, refused writes, kept `/ctx`
 read-only, and left `yolo config drift` at exit 0. UNMEASURED: rootless Podman on both required
@@ -281,7 +280,7 @@ Evidence for the delivery moment of each row: `internal/cli/run/assemble.go`,
 
 **The four bold changes are the v1 scope**, as ruled in [OQ-LA1](#decision-ledger); read-write
 mounts ([OQ-LA2](#decision-ledger)) and removal ([OQ-LA3](#decision-ledger)) were added by the
-maintainer's rulings. Live mount injection is implemented only for Linux Podman in this candidate:
+maintainer's rulings. Live mount injection is implemented for Linux Podman in the landed tree:
 rootless behavior still needs M1 on both required architectures, rootful requires yolo to already
 run as root, and the Podman Machine path is not built (M3). Apple Container mounts remain
 restart-only. The command's GitHub-scope step has separate broker behavior described in

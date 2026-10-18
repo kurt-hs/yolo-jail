@@ -2,20 +2,18 @@
 title: "Live config apply: implementation plan"
 status: accepted
 stage: BUILT
-next: "Built on the branch; delete this plan when the design graduates"
+next: "Keep the plan with the design until graduation; rootless M1, real-broker, remount-parity and native-Mac evidence remain outstanding"
 depends-on: [live-config-apply.md]
 tags: [plan, config, mounts, github, live-apply]
 ---
 
 # Live config apply: implementation plan
 
-**Status:** 2026-10-18. The implementation and review repairs are integrated into an isolated
-serial candidate based on primary `6683038d2`, which already contains the independently accepted
-model-reference and Mac/recovery landing. This candidate merges the complete live-apply history
-through `e80f3a2ae` rather than cherry-picking its last repair; the primary fast-forward is still
-pending. The final bounded closure review accepted the last mount-record repair. The rootless,
-real-broker and `CAP_SYS_ADMIN` remount obligations below remain outstanding; this status records
-candidate integration, not proof of those runtime cases.
+**Status:** 2026-10-18. The implementation and review repairs are landed on main at
+`4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`; the serial landing retained the full history rather
+than cherry-picking the last repair. The final bounded closure review accepted the last mount-record
+repair. Rootless, real-broker and `CAP_SYS_ADMIN` remount obligations below remain outstanding; this
+status records landed implementation, not proof of those runtime cases.
 **Review disposition for candidate `286d051ef`:** Four P1 findings were repaired on the isolated
 current-main branch without changing the gate, consent store, attach prompt, or backend policy.
 The repair is bounded to four failure paths:
@@ -70,7 +68,7 @@ checkout; it printed `nested-live-final-repair-ok`. The initial nested attempt w
 because the selected patched `pi` program was unavailable; the successful retry used the refusal's
 `YOLO_ALLOW_MISSING_PROGRAMS=1` hatch. This is candidate-specific boot/command evidence, not a live
 apply or rootless-mount test: nested podman forces `--userns=host`. Rootless two-architecture, live
-broker, and remount-resistance evidence remain owned by M1 and the final landing gate.
+broker, and remount-resistance evidence remain owned by M1 and post-landing verification.
 
 **Final closure review for `e80f3a2ae`: ACCEPT, limited to the narrowed mount-record closure.** The
 review verified that restoration accepts only the empty-token tombstone and the exact inspected
