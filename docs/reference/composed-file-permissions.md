@@ -389,7 +389,10 @@ Class-2 guidance depends on this, and the boundary is sharper than it looks:
   execs into the existing container with no `-e` and no `-v`, so nothing carried by environment
   or mounts can change without a new container.
 - **The entrypoint re-runs every generator on each attach — but reads only that frozen
-  environment.** So composed surfaces *are* re-rendered live, from **stale config**. This is
+  environment plus the entry's own profile selection** (its `-p`, delivered per entry). So
+  composed surfaces *are* re-rendered live, from **stale config**, and a surface inside a pack's
+  [`session_homes`](pack-system.md#session-homes) directory is rendered into that session's own
+  copy rather than the shared file. This is
   idempotent recomputation, not a config re-read, and it is the subtlety most likely to mislead:
   "the file regenerated" does not mean "my config change took".
 - **One thing genuinely is live:** briefing and skills refresh runs on every invocation *before*
