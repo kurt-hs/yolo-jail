@@ -428,11 +428,15 @@ func flattenModelFacts(obj *jsonx.OrderedMap) *jsonx.OrderedMap {
 	}
 	// The pi CATALOG base a variant row inherits from (docs/reference/providers.md §"Per-model
 	// OpenRouter routing"): a string, so it rides the same flat map the derives read.
-	if v, ok := obj.Get("base"); ok {
-		if v == nil {
-			facts.Set("base", nil)
-		} else if s, isString := v.(string); isString && s != "" {
-			facts.Set("base", s)
+	// And the id the row SENDS where its `id` is a client spelling (`wire_id`, config's
+	// knownModelKeys): a string too, a null being a tombstone over a pack's.
+	for _, key := range []string{"base", "wire_id"} {
+		if v, ok := obj.Get(key); ok {
+			if v == nil {
+				facts.Set(key, nil)
+			} else if s, isString := v.(string); isString && s != "" {
+				facts.Set(key, s)
+			}
 		}
 	}
 	// The shared facts this route's model takes (OQ-ML5): liftModelFacts lays them under these.

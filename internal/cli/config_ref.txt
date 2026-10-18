@@ -2176,8 +2176,9 @@
                      catalog knows, and says when it could read no catalog; it never
                      refuses one, and no launch asks.
                      A value may be an object instead of an id string: {id, name, vendor,
-                     reasoning, input, cost, context_window, max_tokens, extends}, where
-                     `id` is the wire model id and the rest are facts an agent's derive reads.
+                     reasoning, input, cost, context_window, max_tokens, extends, base,
+                     openrouter_routing, wire_id}, where `id` is the wire model id and
+                     the rest are facts an agent's derive reads.
                      `vendor` is the model's MAKER, one lowercase token such as
                      "anthropic" or "openai": on a provider that serves several makers'
                      models (`bedrock`), each agent is offered only the entries its own
@@ -2188,21 +2189,37 @@
                      for the id.  A fact written as null is a TOMBSTONE: the model has no
                      such fact, whatever a layer below says, pi's catalog included (so
                      "reasoning": null over a pack's true removes it; restate the value to
-                     get the catalog's back).
+                     get the catalog's back).  On pi's own Bedrock client, a row naming a
+                     catalog id goes into pi's models.json as a `modelOverrides` entry,
+                     which pi merges over its catalog, so its thinking levels survive in
+                     any pi; a row with `base`, `wire_id` or a null is written whole.
                      `extends` names a top-level `model_facts` entry: the facts this
                      model's routes share, laid under this entry's own, so each route can
                      state its own price, context size or output limit.
-                     Two keys are pi's alone.  `base` names the pi CATALOG model id this
+                     Three keys are pi's alone.  `wire_id` is the id the row SENDS when
+                     its `id` is a client spelling, so one provider carries one model at
+                     two windows: {"floor": {"id": "x:floor"}, "floor-200k": {"id":
+                     "x:floor@200k", "wire_id": "x:floor", "context_window": 204800}}
+                     gives pi two rows, each with its own facts, written with `wireId` in
+                     models.json and the model-lists file.  A pi that does not read
+                     `wireId` sends the row's `id`, and every other agent sends `id`.
+                     There is no `variants` key: declare each variant as its own alias.
+                     `base` names the pi CATALOG model id this
                      row INHERITS from, so a variant id such as
                      "deepseek/deepseek-v4.1-flash:floor" keeps the catalog's thinking
                      levels (nulls included), inputs, limits and cost instead of
                      restating them.  `openrouter_routing` is an OBJECT sent verbatim as
                      OpenRouter's request `provider` field, e.g. {"order": ["streamlake",
                      "morph"], "allow_fallbacks": false}, so two rows for one model can
-                     name different upstream orders.  A list carrying one is registered
+                     name different upstream orders.  A list carrying one (or, on a
+                     provider pi ships, a `wire_id` or `base`) is registered
                      with pi as that provider's menu: its declared models are what pi
                      offers there, and a model outside it is refused only when an `only`
-                     narrowed the list and `enforce_models` is on.
+                     narrowed the list and `enforce_models` is on.  pi's models.json
+                     row for a provider pi does not ship carries it too, as
+                     `compat.openRouterRouting`.  `yolo check` warns about a pin no
+                     request can carry: on a Bedrock provider, or one with no
+                     chat-completions `endpoints.openai` that no agent runs itself.
                      Example: {"bedrock": {"models": {"kimi":
                      {"id": "global.moonshotai.kimi-k3", "vendor": "moonshotai"}}}}
       capabilities   the named jobs this provider performs for itself, e.g.
@@ -2235,8 +2252,12 @@
     The order is: the route's own value, then these shared facts, then the agent's own
     catalog, so a route that serves a smaller context or charges a different price states
     just that.  An `extends` naming no entry here is refused.  pi gets every row in full,
-    unless the pack installing pi declares its pi reads the shared form, which then gets
-    the facts once, as models.json's `sharedModels`.
+    unless its pi reads the shared form: then models.json holds the facts once, as
+    `sharedModels`, each row saying `extends` and stating only what differs, and the
+    model-lists file carries the same `sharedModels` and `extends` beside full rows.  The
+    declaration is `"reads_shared_models": true` on the `program` contribution whose
+    `bin` is "pi" and that supplies pi's bytes: a fork's (`fork_of`, `via: "source"`),
+    which replaces the base pack's, or else the pack installing pi.
     Example: {"opus-5.5": {"reasoning": true, "input": ["text", "image"],
               "context_window": 1000000, "max_tokens": 128000}}
 

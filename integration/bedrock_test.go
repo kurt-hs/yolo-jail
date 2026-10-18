@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -91,14 +92,19 @@ func TestBedrockRendersEachAgentsOwnClient(t *testing.T) {
 				t.Errorf("pi's amazon-bedrock row carries %s = %v, which would move it off its built-in client", key, v)
 			}
 		}
-		var ids []any
-		list, _ := row["models"].([]any)
-		for _, m := range list {
-			entry, _ := m.(map[string]any)
-			ids = append(ids, entry["id"])
+		// Each entry names a catalog id, so it is pi's `modelOverrides` entry, merged over pi's
+		// catalog (docs/design/model-lists-and-pickers.md ML-D13), not a `models` row replacing it.
+		var ids []string
+		overrides, _ := row["modelOverrides"].(map[string]any)
+		for id := range overrides {
+			ids = append(ids, id)
 		}
-		if want := []any{opus, sol}; !reflect.DeepEqual(ids, want) {
-			t.Errorf("pi's amazon-bedrock models = %v, want %v", ids, want)
+		sort.Strings(ids)
+		if want := []string{opus, sol}; !reflect.DeepEqual(ids, want) {
+			t.Errorf("pi's amazon-bedrock modelOverrides = %v, want %v", ids, want)
+		}
+		if list, has := row["models"]; has {
+			t.Errorf("pi's amazon-bedrock models = %v, want none: every entry names a catalog id", list)
 		}
 	})
 

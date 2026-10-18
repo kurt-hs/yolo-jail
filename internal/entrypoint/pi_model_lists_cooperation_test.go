@@ -1,6 +1,6 @@
 package entrypoint
 
-// pi_model_lists_cooperation_test.go pins ML-D13 (docs/design/model-lists-and-pickers.md): when
+// pi_model_lists_cooperation_test.go pins ML-D15 (docs/design/model-lists-and-pickers.md): when
 // another pi extension registered a provider before yolo's model-lists extension, yolo's
 // registration keeps that extension's models and its other keys and adds only yolo's declared
 // rows whose ids it lacks; a list the profile enforces still replaces the models and says so; and
@@ -148,7 +148,7 @@ const packBedrockPrior = `[["amazon-bedrock",{"api":"bedrock-converse-stream","m
 	{"id":"global.anthropic.claude-opus-5-5[1m]","name":"Pack Opus 1M","contextWindow":1000000},
 	{"id":"global.anthropic.claude-opus-5-5","name":"Pack Opus","contextWindow":272000}]}]]`
 
-// ML-D13: AN EXTENSION'S EARLIER REGISTRATION KEEPS ITS ROWS AND ITS HOOK, AND YOLO ADDS ONLY
+// ML-D15: AN EXTENSION'S EARLIER REGISTRATION KEEPS ITS ROWS AND ITS HOOK, AND YOLO ADDS ONLY
 // ITS DECLARED ROWS THE EXTENSION LACKS. pi's catalog filler (nova-pro) is not added: the
 // extension's list replaced pi's catalog by its own choice, and yolo only completes what it
 // declares. A second load of yolo's extension merges with the extension's rows again, not with

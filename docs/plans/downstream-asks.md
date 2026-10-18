@@ -18,7 +18,7 @@ vantage:
 # What a downstream pack consumer is still waiting on from yolo
 
 **Status:** 2026-10-15, re-verified in-tree at `6750951f6`, the 0.14.0 release commit (first
-written 2026-10-13 at `80e08f98b`; the handoff was checked at `0.13.0+51.g99f36da2e`); [OQ-DA2](#OQ-DA2) ruled 2026-10-16. **Why this file exists:** the handoff's nine asks
+written 2026-10-13 at `80e08f98b`; the handoff was checked at `0.13.0+51.g99f36da2e`); [OQ-DA2](#OQ-DA2) ruled 2026-10-16; asks 6 and 8 landed 2026-10-17. **Why this file exists:** the handoff's nine asks
 were, with four exceptions now owned elsewhere, recorded nowhere in yolo's own documentation, so a
 reader of the roadmap or a design doc could not tell which of them yolo had accepted, declined, or
 never seen. This is their one index.
@@ -42,9 +42,9 @@ only where a question has no design doc of its own. The source handoff lives out
 | [3](#3-a-build-has-no-version-identity) | two binaries from one revision are distinguishable, and a broadcast clause records its version | first half landed, releases included; second declined | [OQ-DA2](#OQ-DA2), ruled 2026-10-16 |
 | [4](#4-a-reduced-window-child) | a reduced-window child does not silently inherit the small window | narrowed — yolo's part done | decision recorded below; the owner's declaration is the consumer's |
 | [5](#5-a-clean-replay-discards-the-clone-it-built) | a clean replay keeps the clone, and a stale series is signalled | settled — no clone, base lag built | [OQ-PFK7](../reference/patched-forks.md#why-its-this-way) |
-| [6](#6-a-declared-model-row-loses-the-catalogs-thinking-levels) | a `models.json` row keeps pi's catalog thinking levels | ruled 2026-10-16, not built | [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4) |
+| [6](#6-a-declared-model-row-loses-the-catalogs-thinking-levels) | a `models.json` row keeps pi's catalog thinking levels | landed 2026-10-17, on pi's own Bedrock client | [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4), [ML-D13](../design/model-lists-and-pickers.md#ML-D13) |
 | [7](#7-the-carry-key) | a `files` contribution may name a commit graph instead of a series | landed, as `patch_branch` | [OQ-PFK6](../reference/patched-forks.md#why-its-this-way) |
-| [8](#8-model-inheritance--emit-sharedmodels-and-extends) | the pi derive emits `sharedModels` and `extends` on both surfaces | ruled 2026-10-16, not built | [OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) |
+| [8](#8-model-inheritance--emit-sharedmodels-and-extends) | the pi derive emits `sharedModels` and `extends` on both surfaces | landed 2026-10-17, for a pi or a fork of it declaring `reads_shared_models` | [OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5), [ML-D14](../design/model-lists-and-pickers.md#ML-D14) |
 | [9](#9-the-yolo-check-notice-for-a-bypassed-append_systemmd) | `yolo check` names a bypassed `~/.pi/agent/APPEND_SYSTEM.md` | declined 2026-10-16 (the skill half landed) | [OQ-DA3](#OQ-DA3) |
 | [10](#10-model-auth-for-an-isolated-agent-process) | an isolated agent process gets model auth without a copy of the login | declined 2026-10-15 | [IA-D1](../design/isolated-agent-model-auth.md#IA-D1) |
 | [11](#11-the-host--p-profile-governs-pi-subagents-children) | an explicit `yolo host -p` governs pi-subagents' child defaults and model scope | yolo ships nothing for it (2026-10-16); the consumer declares `launch_computed` in their own pack | [MM-D42](../design/model-lists-and-pickers.md#MM-D42) |
@@ -137,18 +137,21 @@ does ([PF-D86](../reference/patched-forks.md#PF-D86)).
 **Ask.** A `models.json` row that states no thinking levels keeps pi's catalog map, so
 `--thinking xhigh` is not silently clamped on a declared model.
 
-**State.** `ruled 2026-10-16, not built` on the reported surface; **partially landed** on the other. **Evidence:** the
-`base` key inherits the pi catalog's thinking levels, inputs, limits and cost — but
-`config-ref` states the two keys that do this are "read by PI's model-list render alone"
-([`config_ref.txt`](../../internal/cli/config_ref.txt)), and the reported symptom is on a
-`models.json` row. So the model-list surface is covered and the `models.json` derive is not.
+**State.** `landed` 2026-10-17 ([ML-D13](../design/model-lists-and-pickers.md#ML-D13)), after the
+menu-file half on 2026-10-16 ([ML-D12](../design/model-lists-and-pickers.md#ML-D12)). **Evidence:**
+on pi's own Bedrock client, a row naming a catalog id is written to `models.json` as pi's
+`modelOverrides` entry, which pi merges over its catalog; stock pi 1.0.1's own composer, run by
+`TestPiOnBedrockKeepsTheCatalogsThinkingLevelsInModelsJSON` where pi is installed, keeps
+`global.openai.gpt-6-luna`'s `xhigh` with yolo's window. A row with `base`, `wire_id` or a
+tombstone is still written whole. A provider pi ships no catalog for has no catalog entry to
+keep.
 
 **Landed.** The derive merges catalog facts into a declared row that states none, the first of
 the two outcomes the ask offered; the ruling took it.
 
 **Owner.** [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4), ruled 2026-10-16: the derive
 merges a row over pi's catalog field by field, in both files, and a fact goes only when the row
-writes it as `null` ([ML-D10](../design/model-lists-and-pickers.md#ML-D10)). Not built.
+writes it as `null` ([ML-D10](../design/model-lists-and-pickers.md#ML-D10)). Built.
 
 ## 7. The `carry` key
 
@@ -174,8 +177,16 @@ name; `patches` is otherwise unchanged.
 model and `extends: "<name>"` on the rows, on **both** rendered surfaces —
 `~/.pi/agent/models.json` and `~/.pi/agent/yolo-model-lists.json`.
 
-**State.** `ruled 2026-10-16, not built` on the yolo side; the pi extension half is the consumer's. **Evidence:** zero
-occurrences of `sharedModels` in `internal/`, `cmd/` or `packs/`.
+**State.** `landed` 2026-10-17 on the yolo side; resolving the form is the consumer's pi build's.
+**Evidence:** the declaration is `"reads_shared_models": true` on the `program` contribution that
+supplies pi's bytes, a fork's included. The consumer set it on their fork pack and the render did
+not switch, because the fork rewrite kept the base's value; it now takes the fork's
+([ML-D14](../design/model-lists-and-pickers.md#ML-D14),
+`TestAPiForkDeclaringReadsSharedModelsSwitchesTheRender`). `models.json` then holds the facts once
+as `sharedModels` with `extends` rows; the model-lists file carries the same keys beside full rows,
+since yolo's own extension reads it. One exception: on pi's own Bedrock client a row naming a
+catalog id is a `modelOverrides` entry ([ask 6](#6-a-declared-model-row-loses-the-catalogs-thinking-levels)),
+which stays full, with no `extends`. A dangling `extends` is refused by `yolo check`.
 
 **Landed.** (Verbatim acceptance from the consumer's design.) The rendered surfaces carry
 `sharedModels`/`extends` rather than restated facts; no route reports pi's 128000/16384 defaults; a
@@ -188,7 +199,7 @@ shared across a model's routes, and every route can override any shared fact, si
 differ for the same model. The shared form is written only for a pi that reads it, and full
 merged rows otherwise, because stock pi ignores both keys without an error
 ([ML-D11](../design/model-lists-and-pickers.md#ML-D11)); so the verbatim acceptance above changes
-where it fails a test on a repeated value, which a route may now restate on purpose. Not built.
+where it fails a test on a repeated value, which a route may now restate on purpose. Built.
 ⚠ `extends` is a different
 mechanism from the `base` key of [ask 6](#6-a-declared-model-row-loses-the-catalogs-thinking-levels);
 the consumer's design argues why `base` does not subsume it.

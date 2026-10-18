@@ -285,6 +285,17 @@ local function piModelFacts(mopts, prov, ctx, provName, statedCost)
   return facts
 end
 
+-- THE WIRE ID (a user's `wire_id`, a pack's `model_options.<alias>.wire_id`): the model id a row
+-- SENDS when its `id` is a client spelling, so one provider carries one model at two windows, the
+-- full-window alias and a narrowed twin naming the same wire id, each its own row with its own
+-- facts. Written as the definition's `wireId` on both surfaces; a pi that does not read it sends
+-- the row's `id`. nil when the alias states none, or tombstones it.
+local function piWireId(mopts)
+  local w = type(mopts) == "table" and mopts.wire_id or nil
+  if type(w) == "string" and w ~= "" then return w end
+  return nil
+end
+
 -- THE TOMBSTONES (docs/design/model-lists-and-pickers.md ML-D10): a model fact written as null,
 -- which core carries through the composed table and hands this derive as ctx.tombstone under
 -- model_options.<alias>. It means "this model has no such fact", where a fact left out inherits
@@ -400,6 +411,19 @@ local function piShareRow(ctx, prov, alias, m, tombs, sharedOut)
     if k ~= "id" and not piSame(v, s[k]) then row[k] = v end
   end
   return row
+end
+
+-- piMarkShared is the menu file's half of the shared form (ML-D14): for a pi that reads it, a row
+-- whose alias `extends` shared facts names them as `extends`, and the facts are recorded once in
+-- sharedOut, while the row stays FULL, because yolo's own extension, the menu file's reader,
+-- resolves no `extends`. A no-op for a stock pi.
+local function piMarkShared(ctx, prov, mopts, m, sharedOut)
+  if not ctx.reads_shared_models or type(prov) ~= "table" or type(mopts) ~= "table" then return end
+  local name = mopts.extends
+  local flat = type(name) == "string" and type(prov.model_shared) == "table" and prov.model_shared[name] or nil
+  if type(flat) ~= "table" then return end
+  sharedOut[name] = piSharedFacts(ctx, flat)
+  m.extends = name
 end
 
 local function isLocalEndpoint(url)
@@ -703,7 +727,8 @@ end
 --     only, no reasoning, zero cost). So the same rows also ride the model-lists surface,
 --     marked `keep_catalog`, and yolo's extension registers pi's catalog with each row merged
 --     over its own entry field by field (docs/design/model-lists-and-pickers.md OQ-ML4,
---     ML-D12); the models.json row is what pi keeps if the extension does not load.
+--     ML-D12). A row naming a catalog id is written as a `modelOverrides` entry instead, which
+--     pi itself merges over that entry (ML-D13, at the native row below).
 --
 -- The models are every entry of the list (Converse serves each shipped maker's), the session
 -- starts on the list's first or the one a profile names, and only the selected provider, on pi's
@@ -846,6 +871,18 @@ yolo.derive("pi", "models", function(ctx)
           if facts then
             for k, v in pairs(facts) do m[k] = v end
           end
+          local wireId = piWireId(mopts)
+          if wireId then
+            m.wireId = isKilo and normalizeKiloModel(wireId) or wireId
+          end
+          -- THE ROW'S OPENROUTER PIN, as pi's own `compat.openRouterRouting`, which pi merges over
+          -- the provider's compat block (mergeCompat) and sends as the request's `provider` field.
+          -- The model-lists registration lowers the same pin in the extension; a row written only
+          -- here would otherwise be silently unpinned (`yolo check` names a pin no request carries).
+          local routing = type(prov.model_routing) == "table" and prov.model_routing[alias] or nil
+          if type(routing) == "table" and next(routing) ~= nil then
+            m.compat = { openRouterRouting = routing }
+          end
           -- A tombstoned fact (ML-D10) is left out, the provider-wide fallback included, so pi
           -- applies its own default for the field.
           local tombs = piDropTombstoned(ctx, m, mopts)
@@ -931,26 +968,56 @@ yolo.derive("pi", "models", function(ctx)
   -- array or the whole file is discarded (see the `models` note above). The row is the set's
   -- Bedrock entry's wherever it sits (piNativeBedrockEntry), so pi on [zai, bedrock] can switch
   -- to a Bedrock model its own catalog lacks.
+  --
+  -- A ROW NAMING A CATALOG ID IS AN OVERRIDE (docs/design/model-lists-and-pickers.md OQ-ML4, the
+  -- models.json half): pi's models.json `models` entry REPLACES the catalog entry of its id, so a
+  -- row stating no thinking levels lost pi's (`--thinking xhigh` clamped to high), while its
+  -- `modelOverrides` entry merges over that entry field by field (pi 1.0.1 core/provider-composer.js,
+  -- applyModelOverride, which keeps the catalog's thinkingLevelMap and takes each cost rate
+  -- separately). So a row is written as an override of the facts it states, and keeps every other
+  -- catalog fact in pi itself, with no patch and whether or not yolo's extension loads. Three rows
+  -- stay `models` rows, written in full: one naming a `base` (a variant id, which the catalog lacks
+  -- by its own declaration), one naming a `wire_id` (a client spelling, likewise), and one with a
+  -- tombstone, which an override, merged over the catalog, cannot express. An id the catalog lacks
+  -- and that says none of these is offered through the keep_catalog registration the model-lists
+  -- derive writes for the same rows; without yolo's extension, pi does not list it.
   local bedrockName = piNativeBedrockEntry(ctx)
   if bedrockName and providers[piBedrockProvider] == nil then
     local p = ctx.providers[bedrockName]
-    local modelList = {}
+    local modelList, overrides = {}, {}
     for _, e in ipairs(callableModels(p, nil)) do
-      local m = { id = e.id, name = e.facts.name or e.id }
-      local cw, maxTokens = tonumber(e.facts.context_window), tonumber(e.facts.max_tokens)
-      if cw then m.contextWindow = cw end
-      if maxTokens then m.maxTokens = maxTokens end
-      local facts = piModelFacts(e.facts, p, ctx, bedrockName)
-      if facts then
-        for k, v in pairs(facts) do m[k] = v end
-      end
       local alias = piModelAliasFor(p, e.id)
       local mopts = alias and type(p.model_options) == "table" and p.model_options[alias] or nil
-      local tombs = piDropTombstoned(ctx, m, mopts)
-      table.insert(modelList, piShareRow(ctx, p, alias, m, tombs, sharedModels))
+      local cw, maxTokens = tonumber(e.facts.context_window), tonumber(e.facts.max_tokens)
+      local wireId = piWireId(e.facts)
+      local hasBase = type(e.facts.base) == "string" and e.facts.base ~= ""
+      if not hasBase and not wireId and piTombstones(ctx, mopts) == nil then
+        local o = { name = e.facts.name, contextWindow = cw, maxTokens = maxTokens }
+        local facts = piModelFacts(e.facts, p, ctx, bedrockName, true)
+        if facts then
+          for k, v in pairs(facts) do o[k] = v end
+        end
+        -- Written even with nothing stated (`{}`, a no-op over the catalog), so the row still
+        -- names every model the list declares and the selection's provider has its row.
+        overrides[e.id] = o
+      else
+        local m = { id = e.id, name = e.facts.name or e.id }
+        if cw then m.contextWindow = cw end
+        if maxTokens then m.maxTokens = maxTokens end
+        local facts = piModelFacts(e.facts, p, ctx, bedrockName)
+        if facts then
+          for k, v in pairs(facts) do m[k] = v end
+        end
+        m.wireId = wireId
+        local tombs = piDropTombstoned(ctx, m, mopts)
+        table.insert(modelList, piShareRow(ctx, p, alias, m, tombs, sharedModels))
+      end
     end
-    if #modelList > 0 then
-      providers[piBedrockProvider] = { models = modelList }
+    local entry = {}
+    if #modelList > 0 then entry.models = modelList end
+    if next(overrides) ~= nil then entry.modelOverrides = overrides end
+    if next(entry) ~= nil then
+      providers[piBedrockProvider] = entry
     end
   end
   if next(providers) == nil then
@@ -1689,6 +1756,8 @@ end)
 -- reads that api from pi's catalog, which this derive cannot see.
 yolo.derive("pi", "model-lists", function(ctx)
   local lists = {}
+  -- The shared facts rows name, for a pi that reads the shared form (piMarkShared, ML-D14).
+  local sharedModels = {}
   for name, prov in pairs(ctx.providers or {}) do
     -- A provider pi has built in (piOwn, OQ-3) has no models.json row and no via row: its list is
     -- registered under pi's own id, with no `api`, so the extension reads the api from pi's own
@@ -1709,6 +1778,15 @@ yolo.derive("pi", "model-lists", function(ctx)
     -- refuses a model outside it (OQ-MM3).
     local hasRouting = type(prov) == "table" and type(prov.model_routing) == "table" and
       next(prov.model_routing) ~= nil
+    -- So does a `wire_id` or a `base` on a provider pi has built in: pi writes no models.json row
+    -- for it (OQ-3), so a twin's client id or a variant's catalog base reaches pi only here.
+    if not hasRouting and type(own) == "table" and type(prov.model_options) == "table" then
+      for _, mo in pairs(prov.model_options) do
+        if type(mo) == "table" and (piWireId(mo) or (type(mo.base) == "string" and mo.base ~= "")) then
+          hasRouting = true
+        end
+      end
+    end
     if name ~= "openai-codex" and usable and (prov.models_only == true or hasRouting) then
       local piID = nativeBedrock and "amazon-bedrock" or name
       local rowApi, rowUrl = nil, nil
@@ -1751,6 +1829,11 @@ yolo.derive("pi", "model-lists", function(ctx)
             m.base = sent(mopts.base)
           end
         end
+        -- The wire id rides the row, and the extension forwards it into the registered
+        -- definition with the rest of what yolo declares. A [1m] variant (e.base) gets none.
+        if not e.base then
+          m.wireId = sent(piWireId(mopts))
+        end
         -- The routing object rides the row verbatim; the extension lowers it into pi's
         -- `compat.openRouterRouting`, which pi sends as the request's `provider` field.
         local routing = alias and type(prov.model_routing) == "table" and prov.model_routing[alias] or nil
@@ -1762,6 +1845,7 @@ yolo.derive("pi", "model-lists", function(ctx)
           for k, v in pairs(facts) do m[k] = v end
         end
         m.tombstones = piDropTombstoned(ctx, m, mopts)
+        piMarkShared(ctx, prov, mopts, m, sharedModels)
         table.insert(models, m)
       end
       if #models > 0 then
@@ -1784,6 +1868,7 @@ yolo.derive("pi", "model-lists", function(ctx)
       if cw then m.contextWindow = cw end
       if maxTokens then m.maxTokens = maxTokens end
       if type(e.facts.base) == "string" and e.facts.base ~= "" then m.base = e.facts.base end
+      m.wireId = piWireId(e.facts)
       local facts = piModelFacts(e.facts, p, ctx, bedrockName, true)
       if facts then
         for k, v in pairs(facts) do m[k] = v end
@@ -1791,6 +1876,7 @@ yolo.derive("pi", "model-lists", function(ctx)
       local alias = piModelAliasFor(p, e.id)
       local mopts = alias and type(p.model_options) == "table" and p.model_options[alias] or nil
       m.tombstones = piDropTombstoned(ctx, m, mopts)
+      piMarkShared(ctx, p, mopts, m, sharedModels)
       table.insert(models, m)
     end
     if #models > 0 then
@@ -1798,6 +1884,9 @@ yolo.derive("pi", "model-lists", function(ctx)
     end
   end
   if next(lists) == nil then return {} end
+  if next(sharedModels) ~= nil then
+    return { providers = in_full(ctx, lists), sharedModels = in_full(ctx, sharedModels) }
+  end
   return { providers = in_full(ctx, lists) }
 end)
 

@@ -264,7 +264,7 @@ function refusal(provider, id, listed) {
 }
 
 // ANOTHER EXTENSION'S REGISTRATION OF THE SAME PROVIDER IS KEPT (docs/design/model-lists-and-pickers.md
-// ML-D13). pi composes a re-registration of a provider by laying each key it defines over the
+// ML-D15). pi composes a re-registration of a provider by laying each key it defines over the
 // previous registration's, so a second `models` replaces the first whole (pi 1.0.1
 // ModelRuntime.registerProvider, "Re-registration merges defined values over the previous
 // registration"), and an extension cannot read another's registration through its API: before
@@ -373,7 +373,7 @@ export default async function registerYoloModelLists(pi) {
 			});
 			continue;
 		}
-		// An enforced list replaces another extension's models, and is told about (ML-D13).
+		// An enforced list replaces another extension's models, and is told about (ML-D15).
 		const replacing = (config) => ({
 			...config,
 			models: markTheirs(config.models, undefined),

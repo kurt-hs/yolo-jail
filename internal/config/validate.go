@@ -1414,7 +1414,18 @@ func validateProviderRegion(v any, path string, errs *[]string) {
 // that map's names, and a name it does not hold is refused, since the row would silently lose
 // every fact it meant to share.
 func validateModelEntry(entry *jsonx.OrderedMap, path string, sharedNames map[string]bool, errs *[]string) {
-	reportUnknownKeys(entry, knownModelKeys, path, errs)
+	keys := append([]string(nil), entry.Keys()...)
+	sort.Strings(keys)
+	for _, key := range keys {
+		if _, ok := knownModelKeys[key]; ok {
+			continue
+		}
+		if hint, ok := unknownModelKeyHints[key]; ok {
+			add(errs, path+"."+key+": unknown key — "+hint)
+			continue
+		}
+		add(errs, path+"."+key+": unknown key")
+	}
 	id, hasID := entry.Get("id")
 	switch {
 	case !hasID || id == nil:
@@ -1508,9 +1519,14 @@ func validateModelFactValues(entry *jsonx.OrderedMap, path string, errs *[]strin
 	// providers.md §"Per-model OpenRouter routing"): a non-empty wire id, checked here for
 	// the same reason `id` is — a variant id the catalog lacks would otherwise lose every
 	// catalog fact silently, and pi's menu would show a bare default row.
-	if v, ok := entry.Get("base"); ok && v != nil {
-		if s, isString := asStr(v); !isString || s == "" {
-			add(errs, path+".base: expected a non-empty model id string")
+	// `wire_id` is the id the row sends where `id` is a client spelling (knownModelKeys). Only a
+	// route's entry reaches here with it: `model_facts` refuses it as an unknown key, a wire id
+	// being a route's and never a fact every route of a model shares.
+	for _, key := range []string{"base", "wire_id"} {
+		if v, ok := entry.Get(key); ok && v != nil {
+			if s, isString := asStr(v); !isString || s == "" {
+				add(errs, path+"."+key+": expected a non-empty model id string")
+			}
 		}
 	}
 	// `openrouter_routing` is the one OBJECT-valued model fact, because it is sent VERBATIM as

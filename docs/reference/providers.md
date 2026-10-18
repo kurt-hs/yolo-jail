@@ -1687,7 +1687,11 @@ replaces pi's menu for the provider and makes `base` a lookup into pi's catalog 
 restatement of it. The lookup inherits `thinkingLevelMap` (the nulls that mark an unsupported
 thinking level included), `inputLimits`, `compat` and every other catalog fact, and the routing
 is merged into the registered model's `compat.openRouterRouting`, which pi sends as the
-request's `provider` field.
+request's `provider` field. A provider pi does not ship (a second OpenRouter entry of your own,
+say) is written to `models.json`, and its rows carry the same pin as `compat.openRouterRouting`
+there. `yolo check` warns about a pin no request can carry, naming the alias: one on a Bedrock
+provider, or on a provider that declares no chat-completions `endpoints.openai` and that no
+selected agent runs on its own client.
 
 A registration replaces the menu, so **the declared rows are the menu**: with the example
 above, `pi --list-models` offers those two models under `openrouter`, not pi's whole gateway
@@ -1697,6 +1701,17 @@ catalog. **Nothing is refused for being off it**: no `only` narrowed the list, s
 decides: while it is on, the default, that command ends its turn with yolo's refusal. Nothing
 here is a pack's: a plain user config declares the routes, and a config with no routing fact
 renders and registers nothing at all.
+
+<a id="wire-id"></a>**One model at two windows: `wire_id`.** A row's `id` must be unique in its
+provider's list, so a narrowed twin of a model (the same upstream model at a 200k working window,
+say) takes a client spelling as its `id` and names the id it sends as `wire_id`:
+`"deepseek-floor-200k": {"id": "deepseek/deepseek-v4.1-flash:floor@200k", "wire_id":
+"deepseek/deepseek-v4.1-flash:floor", "context_window": 204800}` beside the full-window
+`deepseek-floor`. Both rows reach pi, each with its own facts, from the one provider entry;
+packs/pi writes the key as the definition's `wireId` in `models.json` and the model-lists file.
+pi resolves `wireId` only in a build that reads it (stock pi 1.0.1 has no such field and sends the
+row's `id`), and no other agent reads it. There is no `variants` key: config validation refuses
+it, and pi's camelCase `wireId`, naming the alias-per-variant form and `wire_id`.
 
 The provider's `options` is the **fallback**: a fact common to every model is declared once
 there, and a per-model value overrides it for that alias. The facts are **additive** — an alias
@@ -1714,7 +1729,10 @@ a `models.json` row leaves the field out, so pi applies its own default. Where p
 the provider, its own Bedrock client, the extension completes the rows: the same rows ride
 `yolo-model-lists.json` marked `keep_catalog`, and the extension registers pi's catalog with each
 row merged over its own entry field by field (`cost` rate by rate, so a row stating one rate keeps the catalog's others), the row's `tombstones` removed
-([ML-D12](../design/model-lists-and-pickers.md#ML-D12)).
+([ML-D12](../design/model-lists-and-pickers.md#ML-D12)). In `models.json` itself such a row is
+pi's `modelOverrides` entry rather than a `models` row whenever it names a catalog id (no `base`,
+no `wire_id`, no tombstone), so pi merges it over its catalog with no extension at all, thinking
+levels included ([ML-D13](../design/model-lists-and-pickers.md#ML-D13)).
 
 **Facts one model shares across its routes** are written once, in the top-level `model_facts`,
 and each route's object-form entry names them with `extends`
@@ -1735,7 +1753,12 @@ ignores `sharedModels` and `extends`, so a row relying on them would silently ta
 sizes. Only a pi whose pack declares `reads_shared_models` on its program gets the short form,
 the facts once as `sharedModels` and each row saying `extends` with what it overrides
 ([ML-D11](../design/model-lists-and-pickers.md#ML-D11)). A row that tombstones a shared fact stays
-full there, since leaving a fact out of an `extends` row inherits it. pi's schema accepts all of these
+full there, since leaving a fact out of an `extends` row inherits it. The declaration sits on the
+`program` contribution that supplies pi's bytes: a fork of packs/pi's program (`fork_of`) declares
+it on its own contribution, which replaces the base's
+([ML-D14](../design/model-lists-and-pickers.md#ML-D14)). The model-lists file then carries the same
+`sharedModels` and `extends` beside rows still written in full, since yolo's own extension reads it.
+pi's schema accepts all of these
 (`dist/core/model-config.js`, `ModelDefinitionSchema`), but its `modelFromJson` fills those
 defaults for an absent field — so before this the derive was the only path from config to the
 file, and a user-set capability read as inert. All four cost rates are required (pi's
