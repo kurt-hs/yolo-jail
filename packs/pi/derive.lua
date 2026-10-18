@@ -413,6 +413,19 @@ local function piShareRow(ctx, prov, alias, m, tombs, sharedOut)
   return row
 end
 
+-- piMarkShared is the menu file's half of the shared form (ML-D14): for a pi that reads it, a row
+-- whose alias `extends` shared facts names them as `extends`, and the facts are recorded once in
+-- sharedOut, while the row stays FULL, because yolo's own extension, the menu file's reader,
+-- resolves no `extends`. A no-op for a stock pi.
+local function piMarkShared(ctx, prov, mopts, m, sharedOut)
+  if not ctx.reads_shared_models or type(prov) ~= "table" or type(mopts) ~= "table" then return end
+  local name = mopts.extends
+  local flat = type(name) == "string" and type(prov.model_shared) == "table" and prov.model_shared[name] or nil
+  if type(flat) ~= "table" then return end
+  sharedOut[name] = piSharedFacts(ctx, flat)
+  m.extends = name
+end
+
 local function isLocalEndpoint(url)
   if type(url) ~= "string" then return false end
   return string.find(url, "://localhost") or
@@ -1741,6 +1754,8 @@ end)
 -- reads that api from pi's catalog, which this derive cannot see.
 yolo.derive("pi", "model-lists", function(ctx)
   local lists = {}
+  -- The shared facts rows name, for a pi that reads the shared form (piMarkShared, ML-D14).
+  local sharedModels = {}
   for name, prov in pairs(ctx.providers or {}) do
     -- A provider pi has built in (piOwn, OQ-3) has no models.json row and no via row: its list is
     -- registered under pi's own id, with no `api`, so the extension reads the api from pi's own
@@ -1819,6 +1834,7 @@ yolo.derive("pi", "model-lists", function(ctx)
           for k, v in pairs(facts) do m[k] = v end
         end
         m.tombstones = piDropTombstoned(ctx, m, mopts)
+        piMarkShared(ctx, prov, mopts, m, sharedModels)
         table.insert(models, m)
       end
       if #models > 0 then
@@ -1849,6 +1865,7 @@ yolo.derive("pi", "model-lists", function(ctx)
       local alias = piModelAliasFor(p, e.id)
       local mopts = alias and type(p.model_options) == "table" and p.model_options[alias] or nil
       m.tombstones = piDropTombstoned(ctx, m, mopts)
+      piMarkShared(ctx, p, mopts, m, sharedModels)
       table.insert(models, m)
     end
     if #models > 0 then
@@ -1856,6 +1873,9 @@ yolo.derive("pi", "model-lists", function(ctx)
     end
   end
   if next(lists) == nil then return {} end
+  if next(sharedModels) ~= nil then
+    return { providers = in_full(ctx, lists), sharedModels = in_full(ctx, sharedModels) }
+  end
   return { providers = in_full(ctx, lists) }
 end)
 

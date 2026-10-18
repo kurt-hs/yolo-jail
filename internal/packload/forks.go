@@ -507,7 +507,8 @@ func copyPackDecl(p *Pack) *Pack {
 // THE FORK'S (each absent unless the fork sets it, and packdecl refuses all but two on a fork):
 // `via`, `package`, `url`, `flags`, `update`, `versions_dir`, `installer_env`, `install_hints`,
 // `platforms` and `model_catalog`, plus the fork's own `source`, `build` and `produces`. Those
-// say how the bytes ARRIVE. An inherited `update` would let the launcher's hourly self-update
+// say how the bytes ARRIVE. `reads_shared_models` is the fork's too, replacing the base's: it
+// says what the bytes READ. An inherited `update` would let the launcher's hourly self-update
 // replace the pinned build with the vendor's release; an inherited install hint would tell
 // `yolo check-deps` to install the upstream program; an inherited `model_catalog` names files
 // inside an npm package a fork does not install.
@@ -534,6 +535,11 @@ func forkedProgram(base, fork packdecl.Contribution, forkPack string) packdecl.C
 		out.NodeFloor = fork.NodeFloor
 	}
 	out.Source, out.Build = fork.Source, fork.Build
+	// What model file the program READS is a fact about its bytes, and the fork supplies them, so
+	// the fork's `reads_shared_models` replaces the base's (docs/design/model-lists-and-pickers.md
+	// ML-D14): a patched pi reading the shared form says so on its own fork, and the upstream pi
+	// it replaces did not.
+	out.ReadsSharedModels = fork.ReadsSharedModels
 	out.Produces = append([]string(nil), fork.Produces...)
 	// A patched fork's series directory and follow rule, so the rewritten program says it is one
 	// (Install.IsPatchedFork). The directory stays relative to the FORK pack's root, which

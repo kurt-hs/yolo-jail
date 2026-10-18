@@ -1729,7 +1729,10 @@ a `models.json` row leaves the field out, so pi applies its own default. Where p
 the provider, its own Bedrock client, the extension completes the rows: the same rows ride
 `yolo-model-lists.json` marked `keep_catalog`, and the extension registers pi's catalog with each
 row merged over its own entry field by field (`cost` rate by rate, so a row stating one rate keeps the catalog's others), the row's `tombstones` removed
-([ML-D12](../design/model-lists-and-pickers.md#ML-D12)).
+([ML-D12](../design/model-lists-and-pickers.md#ML-D12)). In `models.json` itself such a row is
+pi's `modelOverrides` entry rather than a `models` row whenever it names a catalog id (no `base`,
+no `wire_id`, no tombstone), so pi merges it over its catalog with no extension at all, thinking
+levels included ([ML-D13](../design/model-lists-and-pickers.md#ML-D13)).
 
 **Facts one model shares across its routes** are written once, in the top-level `model_facts`,
 and each route's object-form entry names them with `extends`
@@ -1750,7 +1753,12 @@ ignores `sharedModels` and `extends`, so a row relying on them would silently ta
 sizes. Only a pi whose pack declares `reads_shared_models` on its program gets the short form,
 the facts once as `sharedModels` and each row saying `extends` with what it overrides
 ([ML-D11](../design/model-lists-and-pickers.md#ML-D11)). A row that tombstones a shared fact stays
-full there, since leaving a fact out of an `extends` row inherits it. pi's schema accepts all of these
+full there, since leaving a fact out of an `extends` row inherits it. The declaration sits on the
+`program` contribution that supplies pi's bytes: a fork of packs/pi's program (`fork_of`) declares
+it on its own contribution, which replaces the base's
+([ML-D14](../design/model-lists-and-pickers.md#ML-D14)). The model-lists file then carries the same
+`sharedModels` and `extends` beside rows still written in full, since yolo's own extension reads it.
+pi's schema accepts all of these
 (`dist/core/model-config.js`, `ModelDefinitionSchema`), but its `modelFromJson` fills those
 defaults for an absent field — so before this the derive was the only path from config to the
 file, and a user-set capability read as inert. All four cost rates are required (pi's

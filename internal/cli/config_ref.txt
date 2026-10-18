@@ -2251,8 +2251,12 @@
     The order is: the route's own value, then these shared facts, then the agent's own
     catalog, so a route that serves a smaller context or charges a different price states
     just that.  An `extends` naming no entry here is refused.  pi gets every row in full,
-    unless the pack installing pi declares its pi reads the shared form, which then gets
-    the facts once, as models.json's `sharedModels`.
+    unless its pi reads the shared form: then models.json holds the facts once, as
+    `sharedModels`, each row saying `extends` and stating only what differs, and the
+    model-lists file carries the same `sharedModels` and `extends` beside full rows.  The
+    declaration is `"reads_shared_models": true` on the `program` contribution whose
+    `bin` is "pi" and that supplies pi's bytes: a fork's (`fork_of`, `via: "source"`),
+    which replaces the base pack's, or else the pack installing pi.
     Example: {"opus-5.5": {"reasoning": true, "input": ["text", "image"],
               "context_window": 1000000, "max_tokens": 128000}}
 
