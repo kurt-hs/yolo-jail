@@ -392,17 +392,32 @@ func TestStopHomeProcessesWaitsForAScratchRemover(t *testing.T) {
 // empty: this stand-in scheduler starts a worker as it winds down, detached, as a real one can.
 func TestStopHomeProcessesStopsWhatIsSpawnedDuringTheStop(t *testing.T) {
 	home := t.TempDir()
-	pidFile := filepath.Join(t.TempDir(), "late.pid")
+	pidDir := t.TempDir()
+	pidFile := filepath.Join(pidDir, "late.pid")
+	readyFile := filepath.Join(pidDir, "scheduler-ready")
 	scheduler := startStandIn(t, home,
-		[]string{"LATE_PID=" + pidFile, "WORKER=" + standInScript},
-		"sh", `trap '(sh -c "$WORKER" internal background-advance </dev/null >/dev/null 2>&1 & echo $! > "$LATE_PID"); kill $!; exit 143' TERM; sleep 600 & wait`,
+		[]string{"LATE_PID=" + pidFile, "READY_FILE=" + readyFile, "WORKER=" + standInScript},
+		"sh", `trap '(sh -c "$WORKER" internal background-advance </dev/null >/dev/null 2>&1 & echo $! > "$LATE_PID"); kill $!; exit 143' TERM; : > "$READY_FILE"; sleep 600 & wait`,
 		"internal", "preparation-scheduler")
 	t.Cleanup(func() {
+		stopStandIn(scheduler)
 		if raw, err := os.ReadFile(pidFile); err == nil {
 			late, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
 			stopStandIn(late)
 		}
 	})
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(readyFile); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			t.Fatalf("stat scheduler readiness marker: %v", err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the stand-in scheduler did not install its stop handler within 10s")
+		}
+		time.Sleep(time.Millisecond)
+	}
 
 	stopped, err := stopHomeProcessesWithin(home, 30*time.Second, 5*time.Second)
 	if err != nil {
