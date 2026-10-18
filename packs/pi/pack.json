@@ -339,5 +339,28 @@
       "kind": "hook"
     }
   ],
-  "name": "pi"
+  "name": "pi",
+  // EACH SESSION READS ITS OWN CONFIG DIR (docs/design/per-session-profiles.md): a session's
+  // boot pass renders this pack's surfaces in ~/.pi/agent into ~/.pi/.yolo-sessions/<id>/agent,
+  // links everything else back to ~/.pi/agent, and exports PI_CODING_AGENT_DIR, which stock pi
+  // and stock pi-subagents read through getAgentDir(). So a later attach on another profile
+  // never changes what a running session's subagents read.
+  //
+  // `shared` is what may be ABSENT when a session home is made and must still be one copy,
+  // measured in stock pi 1.0.1 and pi-subagents' source on 2026-10-18 (the plan's
+  // "Measurements behind the shared list"): each is written in place or appended inside, so a
+  // link holds. No *.lock: pi locks <path>.lock by mkdir, per path (SP-D10). `agents/`:
+  // pi-subagents reads <dir>/agents instead of ~/.agents once the variable is set, so the link
+  // points at ~/.agents when that exists, which is stock behavior.
+  "session_homes": [
+    {
+      "dir": ".pi/agent",
+      "env": "PI_CODING_AGENT_DIR",
+      "shared": [
+        "auth.json", "models-store.json", "mcp-auth.json", "trust.json", "run-history.jsonl",
+        "sessions/", "bin/", "tools/", "npm/", "git/"
+      ],
+      "prefer": {"agents/": "~/.agents"}
+    }
+  ]
 }
