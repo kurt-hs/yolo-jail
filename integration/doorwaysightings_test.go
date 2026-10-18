@@ -73,7 +73,7 @@ func TestThisLaunchsDoorwayMustRunAsTheHostUser(t *testing.T) {
 }
 
 // TestLaunchOwnedPIDsReadsEveryStartLine: the three lines a launch names a host process it
-// started by, a terminal's wrapping included.
+// started by, with any run of whitespace between the words after the name.
 func TestLaunchOwnedPIDsReadsEveryStartLine(t *testing.T) {
 	out := "Opened the \"openai-auth-broker\" doorway (pack \"openai-auth\",\n  pid 101) on 127.0.0.1:1\n" +
 		"Started the \"wire-bridge\" service (pack \"wire-bridge\", pid 202) on 127.0.0.1:2 for this launch\n" +

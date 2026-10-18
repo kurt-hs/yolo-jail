@@ -10,7 +10,7 @@ summary: "The macos-user suite's gate probes one privilege — the run-as rule a
 
 # What may a macos-user test assume about its host?
 
-**Status:** DESIGN, 2026-10-18. The proposal ([§5](#5-the-proposed-shape)) is not built; [§6.2 and §6.3](#6-two-defects-and-one-design-question-this-run-found) are fixed in the tests, unmeasured on a Mac. Evidence measured on this machine
+**Status:** DESIGN, 2026-10-18. The proposal ([§5](#5-the-proposed-shape)) is not built; [§6.2](#62-another-sessions-doorway-was-read-as-this-sessions-survivor) and [§6.3](#63-the-housekeeping-tests-slot-was-not-due-because-its-stamp-is-the-machines) are fixed in the tests, unmeasured on a Mac. Evidence measured on this machine
 2026-10-17 (full suite, at `245a2203d`) and 2026-10-18 (the twelve re-run, at `4d3248ded`).
 Host of record: macOS 26.5, arm64, uid 501, `_yolojail` present, `/Users/Shared/yolo`
 present, the run-as grant passwordless after `sudo -k`, **root `sudo` not passwordless**,
@@ -173,8 +173,10 @@ P3 says that gap should shrink. `4d3248ded` shrank it by one fixture pattern.
 
 ## 6. Two defects and one design question this run found
 
-These are the only three failures that are about yolo. §6.2 and §6.3 are fixed, in the tests:
-neither was a product defect. §6.1 waits on [OQ-DM3](#8-open-questions).
+These are the only three failures that are about yolo. [§6.2](#62-another-sessions-doorway-was-read-as-this-sessions-survivor) and
+[§6.3](#63-the-housekeeping-tests-slot-was-not-due-because-its-stamp-is-the-machines) are fixed in the tests: in the code,
+neither reads as a product defect, and the Mac's re-run is what confirms it.
+[§6.1](#61-the-nix-floor-loses-to-a-mise-shim) waits on [OQ-DM3](#8-open-questions).
 
 ### 6.1 The nix floor loses to a mise shim
 
@@ -212,7 +214,7 @@ time.
 `Opened the … doorway (pack …, pid N)`, `Started the … service (pack …, pid N)` or
 `… is back (pid N)` lines. A survivor of this launch's still fails, and another process with the
 same argv is printed beside it as "not this launch's, so not judged". The codex doorway and the
-two wire-bridge tests share that check. `doorwaysightings_test.go` runs the §6.2 shape under
+two wire-bridge tests share that check. `doorwaysightings_test.go` runs that shape under
 `-short` on Linux.
 
 **The Mac re-runs** `-run '^TestMacosUserOpensThe(AWS|Codex)DoorwayOutsideTheSandbox$'`. A pass
@@ -231,12 +233,13 @@ though, and the slot keeps by name order, so those generations can only sort bel
 
 **The cause is shared state with the machine.** The run store links `build/` back to the
 machine's store, and that is where every housekeeping class keeps its once-a-day debounce stamp
-(`classDebounce`). So when the developer's own yolo launches had run a pass in the last 24 hours,
-the test's slot was not due. It reaped nothing and noted nothing, and finished in milliseconds,
-which matches the 0.000–0.002 s `housekeeping.slot` in the maintainer's macos-user timing. The
-earlier suite tests did not stamp it: they run with the automatic reapers off, and this class
-checks that before its stamp. A CI runner starts with no stamp, which is why only a developer
-Mac failed.
+(`classDebounce`). So when one of the developer's own macos-user launches had run this class in
+the last 24 hours, the test's slot was not due, and it reaped nothing and noted nothing. A pass
+with every class debounced finishes in milliseconds, which is what the maintainer's own
+macos-user launches show for `housekeeping.slot` (0.000–0.002 s). The failing run did not record
+its slot's timing, so this reading is inferred from the code. The earlier suite tests did not
+stamp the class: they run with the automatic reapers off, and this class checks that before its
+stamp. A CI runner starts with no stamp, which is why only a developer Mac failed.
 
 **The product is right and matches containers.** The container slot debounces the same archive
 by a stamp in the same directory (`small-classes`), and the macos-user slot reaps and notes
@@ -244,11 +247,14 @@ whenever its class is due (`TestMacosUserLaunchRunsItsHousekeepingSlot`).
 
 **Fixed in the test.** It takes the stamp over for its one launch (`ownHousekeepingStamp`) under
 the cross-run lock, and puts it back afterwards: the machine's bytes if it had a stamp, nothing
-if it had none. The stamp's path is exported from the slot (`run.HousekeepingStampPath`), so the
+if it had none. It also freshens the shared cache class's stamp for that launch, because the slot
+runs that class first and its walk is bounded at a minute, longer than the test's session. The stamp's path is exported from the slot (`run.HousekeepingStampPath`), so the
 test cannot drift onto a file the slot does not read. `TestMacosUserSlotReadsTheExportedLoopholeStateStamp`
 and `TestOwnHousekeepingStampHandsTheMachinesStampBack` pin both halves under `-short` on Linux.
-One thing the test cannot own is the machine-wide pass lock. A real pass running at the same
-moment still skips this one, and a failure now says so and names the stamp it set aside.
+Two things the cross-run lock does not keep out, because a developer's own launches do not take
+it: a real pass holding the machine-wide pass lock at that moment, which makes this one skip, and
+a real macos-user launch stamping the class in between. A failure now names both, and the stamps
+it set aside.
 
 **The Mac re-runs** `-run '^TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession$'`.
 A pass closes this item.

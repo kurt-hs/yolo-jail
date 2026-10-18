@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -55,8 +56,13 @@ func TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession(t *testi
 	// that day left this launch's slot not due, and it reaped nothing and noted nothing. The test
 	// owns the stamp for its launch, under the cross-run lock so another run's launch cannot stamp
 	// it meanwhile, and puts the machine's back.
-	holdMachineLock(t, true, "the macos-user housekeeping test owns the machine's loophole-state debounce stamp")
-	before := ownHousekeepingStamp(t, run.LoopholeStateHousekeepingClass)
+	//
+	// AND THE CACHE CLASS'S, made fresh: the slot runs the shared cache's measurement first, whose
+	// walk is bounded at a minute, against a session of seconds. On a machine whose cache stamp is
+	// stale that walk could use the session up before the loophole-state class ran.
+	holdMachineLock(t, true, "the macos-user housekeeping test owns the machine's housekeeping debounce stamps")
+	before := ownHousekeepingStamp(t, run.LoopholeStateHousekeepingClass, true) +
+		ownHousekeepingStamp(t, run.CacheHousekeepingClass, false)
 
 	r := runMacosUser(t, ws, "sleep 5\necho \"=== END ===\"", withAutoReapers())
 	if r.rc != 0 || !strings.Contains(r.stdout, "=== END ===") {
@@ -75,8 +81,8 @@ func TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession(t *testi
 	if len(left) < 3 || strings.Join(left[len(left)-3:], ",") != strings.Join(seeded[2:], ",") ||
 		strings.Contains(strings.Join(left, ","), seeded[0]) || strings.Contains(strings.Join(left, ","), seeded[1]) {
 		t.Errorf("after the session the retired generations are %v, want the newest three %v kept "+
-			"and %v reaped: the launch ran no housekeeping slot, its exit cut the pass, or another "+
-			"pass held the machine's pass lock%s", left, seeded[2:], seeded[:2], before)
+			"and %v reaped: the launch ran no housekeeping slot, its exit cut the pass, another "+
+			"pass held the machine's pass lock, or a launch outside the suite stamped the class meanwhile%s", left, seeded[2:], seeded[:2], before)
 	}
 	note, err := os.ReadFile(filepath.Join(ws, ".yolo", "housekeeping.log"))
 	if err != nil || !strings.Contains(string(note), "loophole state: reclaimed ") ||
@@ -86,10 +92,11 @@ func TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession(t *testi
 }
 
 // ownHousekeepingStamp takes the debounce stamp of the housekeeping class named class over for
-// the calling test: it removes it, so the test's launch finds the class due, and restores it when
-// the test ends — the machine's bytes when there were any, no stamp when there was none — so the
-// machine's own cadence is what it was. It returns a clause saying what it found, for a failure.
-func ownHousekeepingStamp(t *testing.T, class string) string {
+// the calling test: it removes it when due, so the test's launch finds the class due, or writes a
+// fresh one when not, so the launch skips the class; and it restores it when the test ends — the
+// machine's bytes when there were any, no stamp when there was none — so the machine's own cadence
+// is what it was. It returns a clause saying what it found, for a failure.
+func ownHousekeepingStamp(t *testing.T, class string, due bool) string {
 	t.Helper()
 	path := run.HousekeepingStampPath(class)
 	data, err := os.ReadFile(path)
@@ -97,9 +104,18 @@ func ownHousekeepingStamp(t *testing.T, class string) string {
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatalf("reading the %s housekeeping stamp %s: %v", class, path, err)
 	}
-	if had {
+	if had && due {
 		if err := os.Remove(path); err != nil {
 			t.Fatalf("setting the machine's %s housekeeping stamp %s aside: %v", class, path, err)
+		}
+	}
+	if !due {
+		fresh := []byte(strconv.FormatInt(time.Now().Unix(), 10) + "\n")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, fresh, 0o644); err != nil {
+			t.Fatalf("freshening the %s housekeeping stamp %s: %v", class, path, err)
 		}
 	}
 	t.Cleanup(func() {
@@ -112,9 +128,13 @@ func ownHousekeepingStamp(t *testing.T, class string) string {
 				class, path, strings.TrimSpace(string(data)), err)
 		}
 	})
-	if !had {
-		return fmt.Sprintf(" (the %s stamp %s was absent before the launch)", class, path)
+	held := "absent"
+	if had {
+		held = fmt.Sprintf("%q", strings.TrimSpace(string(data)))
 	}
-	return fmt.Sprintf(" (the machine's %s stamp %s, %q, was set aside for the launch)", class, path,
-		strings.TrimSpace(string(data)))
+	made := "removed, so the class was due"
+	if !due {
+		made = "freshened, so the class was skipped"
+	}
+	return fmt.Sprintf(" (the machine's %s stamp %s, %s before the launch, was %s)", class, path, held, made)
 }

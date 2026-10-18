@@ -161,7 +161,7 @@ func doorwayProblems(argv string, saw doorwaySightings, output, me, uid string, 
 // launchPIDLine is a line a launch (or its keeper, whose lines it relays) prints for a process it
 // started outside the sandbox: a doorway's start (startMacosUserDoorways), a launch-owned
 // service's (serviceStartedLine), or a supervised restart of either (launchservice's
-// restartAfter). Any whitespace a terminal's wrapping puts between words is allowed.
+// restartAfter). Past the quoted name, any run of whitespace between words is accepted.
 var launchPIDLine = regexp.MustCompile(`(?:Opened the "[^"]+" doorway|Started the "[^"]+" service)\s+\(pack\s+"[^"]+",\s+pid\s+(\d+)\)|service is back\s+\(pid\s+(\d+)\)`)
 
 // launchOwnedPIDs is every pid output names on a launchPIDLine.
