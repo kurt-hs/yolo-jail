@@ -26,8 +26,9 @@ summary: "How a host path outside the workspace reaches a jail: the config `moun
 case, the DAC preflight, a real launch reading and writing through `$YOLO_CONTEXT_DIR` and the
 hard-link measurement passed in the scheduled `macos-user.yml` run
 [37121866798](https://github.com/mschulkind-oss/yolo-jail/actions/runs/37121866798) at
-`0e34798c6`, 2026-10-03. UNMEASURED: the `/Volumes` half of [`OQ-CX8`](#oq-cx8) (that runner
-had no second volume), and everything built after that run: the copies of a pack's single-file
+`0e34798c6`, 2026-10-03. The `/Volumes` half of [`OQ-CX8`](#oq-cx8) was MEASURED 2026-10-18 on
+a developer Mac, two of its three volume kinds ([below](#unbuilt-and-unmeasured)). UNMEASURED:
+an ownership-*enabled* volume, and everything built after that run: the copies of a pack's single-file
 `mount` and of a directory `host_files` entry ([CX-D25](#CX-D25)), and the closed staged-tree
 root ([CX-D26](#CX-D26)). See [Unbuilt and unmeasured](#unbuilt-and-unmeasured).
 
@@ -631,8 +632,18 @@ host or CI.
 - **A pack rw `mount`** is not built, and waits for a pack that needs one ([CX-D3](#CX-D3)).
 - **Where an rw element may be declared** waits on
   [`OQ-WT1`](../design/workspace-config-trust.md#OQ-WT1); until then, user scope only.
-- **UNMEASURED on a Mac:** a source under `/Volumes` ([`OQ-CX8`](#oq-cx8)'s other half, so the
-  [CX-D5](#CX-D5) refusal stays until it is measured); the single-file and directory copies
+- **MEASURED on a Mac 2026-10-18, two volume kinds of three** ([`OQ-CX8`](#oq-cx8)'s other half;
+  on a developer Mac, not on `macos-user.yml`, whose runner still has no second volume —
+  [the run's record](../design/macos-user-suite-on-a-developer-mac.md#7-measurements-this-run-produced)).
+  On an APFS volume with ownership *disabled* and on an ExFAT volume, a `cache_relocations`
+  target under `/Volumes` was **DELIVERED**: the sandbox wrote through the link and the file was
+  at the target. **The grant is per-target, not per-volume** — a sibling directory on the same
+  volume was refused under the profile on both, including on ExFAT, where the target itself
+  *"was NOT granted (the volume took no access entries)"* and delivery still worked. ⚠ Whether
+  this clears the [CX-D5](#CX-D5) refusal is the maintainer's call, and an ownership-*enabled*
+  APFS volume remains unmeasured: enabling it needs root `sudo`, which that host does not grant
+  without a password.
+- **UNMEASURED on a Mac:** the single-file and directory copies
   ([CX-D25](#CX-D25)); whether the closed root's ACE admits the sandbox account
   ([CX-D26](#CX-D26)); and whether macOS's `/bin/test` answers through `access(2)` with the ACLs
   weighed ([CX-D19](#CX-D19)).

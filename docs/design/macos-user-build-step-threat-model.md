@@ -338,10 +338,30 @@ What the runs do settle is narrower: **with `cache.nixos.org` reachable, the flo
 the sandbox on.** Nothing a floor build does locally breaks under it, because the only local
 build is the `buildEnv`, and that passed four times.
 
+#### The cache-miss half, answered by hand on a developer Mac (2026-10-18)
+
+**A floor package BUILDS under the sandbox.** The CI step below has still never run, so its
+commands were run by hand on a developer Mac (macOS 26.5, aarch64-darwin), recorded in
+[the run's record](macos-user-suite-on-a-developer-mac.md#7-measurements-this-run-produced):
+
+- `nix build --inputs-from . --rebuild --option sandbox true nixpkgs#jq^*` **built `jq` here, in
+  91 s**, along with `remove-references-to.drv`. The sandbox policy **refused nothing**, and no
+  builder failed under it.
+- **Not VOID.** No `ignoring the client-specified setting 'sandbox'` warning appeared, because
+  this host's `trusted-users` includes the invoking user — the same inference the four runner
+  runs rest on, and the condition a GitHub runner happens to satisfy rather than guarantee.
+- The rebuilt output **differs** from the substituted one (`may not be deterministic`), which by
+  this step's own classification is a reproducibility difference and **not a sandbox refusal**.
+
+So the narrow answer the four runs could not give is given: **one real floor builder works with
+the macOS nix build sandbox on.** One package still answers for one builder, not for the floor,
+and the floor step itself substituted every path here exactly as it does on the runner — VOID,
+as ever.
+
 Still UNMEASURED:
 
-- a floor package built from source on darwin, which happens only when the cache misses. **The
-  step that measures it was added on 2026-10-01** and has not run yet:
+- the same measurement **in CI**, where the step remains unrun. **The step was added on
+  2026-10-01** and has not run there yet:
   `Q3 — rebuild one floor package from source with the nix build sandbox ON (measurement only)`,
   right after the floor step in [`macos-user.yml`](../../.github/workflows/macos-user.yml). It
   realizes `nixpkgs#jq^*` from this flake's locked `nixpkgs` input (`--inputs-from .`, the set
