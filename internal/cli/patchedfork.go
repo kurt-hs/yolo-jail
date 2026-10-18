@@ -123,7 +123,8 @@ func checkPatchedFork(pr richtext.Printer, errw io.Writer, store *packsrc.Store,
 	original := res.Record
 	if f.PatchBranch != "" {
 		// The patch branch as this check resolved it: its commit is what the walk merges and keys.
-		if s, err := packsrc.PatchBranchSeries(f.PatchBranch, f.PatchBranchDir, f.Source, original); err == nil {
+		if s, err := packsrc.PatchBranchSeriesWithIdentity(f.PatchBranch, f.PatchBranchDir,
+			f.PatchBranchRepoIdentity, f.Source, original); err == nil {
 			series = s
 		}
 	}

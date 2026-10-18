@@ -58,6 +58,9 @@ type PatchedWant struct {
 	// PatchBranchDir is the directory of the pack declaring the patch branch, as this process sees it: what a
 	// relative locator (relative.go) is resolved against. "" when the declaring pack has none.
 	PatchBranchDir string
+	// PatchBranchRepoIdentity is the host-established repository identity carried through the pack-tree
+	// mapping. Empty on the host, where Inputs derives it from PatchBranchDir.
+	PatchBranchRepoIdentity string
 }
 
 // Inputs is what a check of w reads (CheckInputs), or why w cannot be checked at all. An npm
@@ -88,18 +91,21 @@ func (w PatchedWant) Inputs() (CheckInputs, Addr, FollowRule, error) {
 		if err != nil {
 			return CheckInputs{}, Addr{}, FollowRule{}, fmt.Errorf("the patch branch: %w", err)
 		}
-		if c.Repo == "" {
-			// A RELATIVE PATCH BRANCH WITH NO PACK DIRECTORY: a caller that lost the directory, never the user's
-			// manifest, so no fetch runs on a repository named "".
+		if c.Repo == "" && (!IsRelativeLocator(w.PatchBranch) || w.PatchBranchRepoIdentity == "") {
+			// A RELATIVE PATCH BRANCH WITH NO PACK DIRECTORY and no host-established identity is a caller
+			// that lost the directory, never the user's manifest.
 			return CheckInputs{}, Addr{}, FollowRule{}, fmt.Errorf("the patch branch %s is relative to its pack's "+
 				"directory, and this check was handed none — a yolo bug; report it with this line, and meanwhile "+
 				"write the repository's absolute address (git+file:///abs/path?ref=%s)", w.PatchBranch, c.Ref)
 		}
 		in := CheckInputs{Repo: a.Repo, Subdir: a.Path, Ref: a.Ref, Follow: f.String(), PatchBranch: w.PatchBranch}
 		if IsRelativeLocator(w.PatchBranch) {
-			in.PatchBranchRepo, err = RelativeRepositoryIdentity(w.PatchBranch, w.PatchBranchDir)
-			if err != nil {
-				return CheckInputs{}, Addr{}, FollowRule{}, fmt.Errorf("the patch branch: %w", err)
+			in.PatchBranchRepo = w.PatchBranchRepoIdentity
+			if in.PatchBranchRepo == "" {
+				in.PatchBranchRepo, err = RelativeRepositoryIdentity(w.PatchBranch, w.PatchBranchDir)
+				if err != nil {
+					return CheckInputs{}, Addr{}, FollowRule{}, fmt.Errorf("the patch branch: %w", err)
+				}
 			}
 		}
 		return in, a, f, nil
@@ -163,7 +169,9 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 	if err != nil {
 		return CheckResult{Err: err}
 	}
-	// THE THROTTLE, A FILE READ: no lock and no git when the stamp is fresh.
+	if w.PatchBranch != "" && addr.Repo == "" {
+		return CheckResult{Err: fmt.Errorf("the patch branch repository is not mapped into this workspace — run `yolo pack series check` on the host or start a host launch")}
+	}
 	rec, readErr := s.LoadCheckRecord(w.Owner)
 	if readErr == nil && !opts.Force && opts.FreshAfter == nil && !retryFetch(opts, rec, in) {
 		if due, _ := CheckDue(rec, in, now(), opts.Interval); !due {

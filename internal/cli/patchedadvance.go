@@ -1164,7 +1164,8 @@ func (a *advance) patchBranchResolved() bool {
 	if a.f.PatchBranch == "" || a.rec == nil {
 		return false
 	}
-	s, err := packsrc.PatchBranchSeries(a.f.PatchBranch, a.f.PatchBranchDir, a.f.Source, a.rec)
+	s, err := packsrc.PatchBranchSeriesWithIdentity(a.f.PatchBranch, a.f.PatchBranchDir,
+		a.f.PatchBranchRepoIdentity, a.f.Source, a.rec)
 	if err != nil || s.Digest == a.series.Digest {
 		return false
 	}

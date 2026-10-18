@@ -137,6 +137,7 @@ func cloneProgram(p Program) (Program, error) {
 		return Program{}, fmt.Errorf("copying the host program declaration: %w", err)
 	}
 	install.ForkRoot, install.ForkPatchBranchDir = p.Install.ForkRoot, p.Install.ForkPatchBranchDir
+	install.ForkPatchBranchRepoIdentity = p.Install.ForkPatchBranchRepoIdentity
 	install.Gate = p.Install.Gate
 	install.RefreshTiming = p.Install.RefreshTiming
 	return Program{Pack: p.Pack, Install: install}, nil
