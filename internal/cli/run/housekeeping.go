@@ -290,7 +290,7 @@ func (o *Options) reapRetiredLoopholeState(guard prune.Guard) {
 	if o.Getenv(autoReapOptOutEnv) != "" {
 		return
 	}
-	due, done := o.classDebounce("loophole-state")
+	due, done := o.classDebounce(LoopholeStateHousekeepingClass)
 	if !due {
 		return
 	}
@@ -321,7 +321,7 @@ func (o *Options) measureAndPurgeCache(consent reclaimConsent, guard prune.Guard
 	// launch's prompt is — it was given against a measurement the debounce is
 	// about to hide (reclaimConsent).
 	consented := consent.has(cachePurgeClass)
-	due, done := o.classDebounce("cache")
+	due, done := o.classDebounce(CacheHousekeepingClass)
 	if !due && !consent.freshFor(cachePurgeClass) {
 		return
 	}
@@ -531,6 +531,21 @@ func (o *Options) lockHousekeepingFn() func() func() {
 	}
 }
 
+// HousekeepingStampPath is the debounce stamp of the housekeeping class named class
+// (classDebounce): one file per class under BuildDir(), holding the Unix time its last
+// completed pass ran.
+func HousekeepingStampPath(class string) string {
+	return filepath.Join(paths.BuildDir(), "last-"+class+"-reap")
+}
+
+// LoopholeStateHousekeepingClass is the macos-user slot's retired loophole-state class
+// (reapRetiredLoopholeState), by its debounce name.
+const LoopholeStateHousekeepingClass = "loophole-state"
+
+// CacheHousekeepingClass is the shared cache's offered-tier measurement and purge
+// (measureAndPurgeCache), by its debounce name.
+const CacheHousekeepingClass = "cache"
+
 // classDebounce is §5.3's "at most once per 24 h PER STORE CLASS", generalised
 // from the image reap's single `last-image-reap` stamp exactly as the design
 // says it should be: one stamp per class under BuildDir().
@@ -543,8 +558,14 @@ func (o *Options) lockHousekeepingFn() func() func() {
 // STAMP ON COMPLETION, never before: the slot's goroutine dies when the
 // terminate arm calls os.Exit, so a pass can be cut mid-flight. A stamp written
 // first turns one interrupted pass into a day of not running.
+//
+// ⚠ THE STAMP IS THE MACHINE'S, wherever the store it debounces is. The integration suite's
+// run store keeps its own state/ (and so its own retired loophole-state archive) but links the
+// machine's build/, so a developer's own launch earlier that day leaves a test's slot not due
+// (docs/design/macos-user-suite-on-a-developer-mac.md §6.3): a test whose subject is a class's
+// pass owns that class's stamp for its launch (HousekeepingStampPath).
 func (o *Options) classDebounce(class string) (due bool, done func()) {
-	stamp := filepath.Join(paths.BuildDir(), "last-"+class+"-reap")
+	stamp := HousekeepingStampPath(class)
 	if !prune.DueForAutoImageReap(stamp, prune.AutoReapInterval, o.Now()) {
 		return false, func() {}
 	}
