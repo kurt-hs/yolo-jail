@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 )
 
 // The parse line names the `.json` files a workspace keeps its config in, as it names the
@@ -59,6 +61,56 @@ func TestMergedConfigPresetNullFindingNamesTheJSONWorkspaceConfig(t *testing.T) 
 	got := stripANSI(buf.String())
 	if want := "yolo-jail.json: preset 'chrome-devtools' is enabled"; !strings.Contains(got, want) {
 		t.Errorf("the finding does not name the workspace's yolo-jail.json (want %q):\n%s", want, got)
+	}
+}
+
+// In a jail, a refusal about a key the host's config set names that host file and the relaunch,
+// and `yolo check`'s next step under it says the same: edit the host file, then relaunch — not
+// the jail's read-only copy of the user config.
+func TestCheckSendsALaunchCopyRefusalToTheHostFile(t *testing.T) {
+	// The host half: the user scope a launch generates for a jail, with its record.
+	hostHome := t.TempDir()
+	t.Setenv("HOME", hostHome)
+	t.Setenv("YOLO_VERSION", "")
+	t.Setenv(config.UserLayerEnv, "")
+	hostDir := filepath.Join(hostHome, ".config", "yolo-jail")
+	if err := os.MkdirAll(hostDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hostDir, "config.jsonc"),
+		[]byte(`{"providers": {"kilo": {"models": {"default": {"id": "m", "wireId": "w"}}}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	effective, src, err := config.LoadConfigWithoutWorkspaceFileWithSources(t.TempDir(), false, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	filtered, _ := config.FilterInherit(effective, config.InheritPreflight)
+	body, err := config.RenderFilteredWithOrigins(filtered, src, config.InheritPreflight, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The jail half: that file is the user config `yolo check` reads.
+	var out bytes.Buffer
+	opts := baseOptions(t, &out)
+	t.Setenv("HOME", t.TempDir())
+	jailDir := filepath.Join(os.Getenv("HOME"), ".config", "yolo-jail")
+	if err := os.MkdirAll(jailDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jailDir, "config.jsonc"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YOLO_VERSION", "9.9.9-test")
+	Check(opts)
+	got := stripANSI(out.String())
+	if !strings.Contains(got, "(set in ~/.config/yolo-jail/config.jsonc on the host;") {
+		t.Fatalf("the refusal does not name the host file:\n%s", got)
+	}
+	if !strings.Contains(got, "Edit the host file this names, then relaunch the jail") ||
+		strings.Contains(got, "Fix it in ") {
+		t.Errorf("the next step does not send the user to the host file and a relaunch:\n%s", got)
 	}
 }
 

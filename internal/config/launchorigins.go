@@ -22,10 +22,14 @@ package config
 // own file and adding the host label, and Annotate then says where the key was set and that the
 // jail reads a copy made at launch.
 //
-// THE RECORD IS ONLY EVER WORDS. It is read only in a jail, only for the files the host
-// generated, and it changes what a message says and nothing a gate decides: an origin with a
-// host label still carries the copy's own file, so every reader that asks which file wrote a
-// value (gateread.go, brokered.go) gets the answer it got before.
+// THE RECORD IS ONLY EVER WORDS. It is read only in a jail, only at the paths the host generates
+// (the user-scope files by path, the assembled copy's record only while its digest matches the
+// copy), and it changes what a message says and nothing a gate decides: an origin with a host
+// label still carries the copy's own file, so every reader that asks which file wrote a value
+// (gateread.go, brokered.go) gets the answer it got before. The jail can write some of those
+// paths, so a forged record can only mislabel a message, and every label is escaped on the way
+// in. It does show the jail the NAMES of host files that set its keys, includes among them,
+// never their contents.
 
 import (
 	"bytes"
@@ -206,13 +210,32 @@ func isGeneratedUserScope(path string) bool {
 	return path == paths.UserConfigPath() || path == InheritedLaunchPath()
 }
 
+// launchCopyStep is the clause a refusal located through a launch copy ends with: the next step
+// that makes an edit to the host file count.
+const launchCopyStep = "; this jail reads a copy made at launch, so an edit there takes effect when the jail is relaunched)"
+
 // launchCopyNote is what a refusal adds when the key it names was set in a host file the jail
-// reads a launch copy of: where, every writer highest precedence first, and the next step.
+// reads a launch copy of: the host files that set it, highest precedence first, then any file
+// of the jail's own that writes it too, then the next step — which is about the host files alone.
 func launchCopyNote(origins []srcOrigin) string {
-	locs := make([]string, 0, len(origins))
+	var host, live []string
 	for _, o := range origins {
-		locs = append(locs, o.String())
+		if o.host != "" {
+			host = append(host, o.String())
+		} else {
+			live = append(live, o.String())
+		}
 	}
-	return " (set in " + strings.Join(locs, ", ") + "; this jail reads a copy made at launch, so " +
-		"an edit there takes effect when the jail is relaunched)"
+	note := " (set in " + strings.Join(host, ", ")
+	if len(live) > 0 {
+		note += ", also written at " + strings.Join(live, ", ")
+	}
+	return note + launchCopyStep
+}
+
+// LocatedInLaunchCopy reports whether msg is a refusal Annotate located through a launch copy:
+// one about a key set in a host file, whose fix is an edit there and a relaunch, so a caller
+// naming the next step names that one rather than a file in the jail.
+func LocatedInLaunchCopy(msg string) bool {
+	return strings.HasSuffix(msg, launchCopyStep)
 }

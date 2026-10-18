@@ -108,6 +108,17 @@ func TestARefusalAboutTheAssembledCopyNamesTheHostFile(t *testing.T) {
 		t.Errorf("got %s", got)
 	}
 
+	// A copy rewritten without a record (an older launcher) is not described by the old record.
+	if err := WriteAssembledConfig(ws, decode(t, `{"packages": ["jq"]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, jsrc, _ := LoadConfigWithSources(ws, false, discard); jsrc != nil {
+		t.Errorf("a record of another copy still located this one: %v", jsrc.Locations("config.packages"))
+	}
+	if err := WriteAssembledConfig(ws, merged); err != nil {
+		t.Fatal(err)
+	}
+
 	// A launch that records nothing (a sealed one) overwrites the record, so no earlier
 	// launch's record describes it.
 	if err := WriteAssembledOrigins(ws, merged, nil); err != nil {

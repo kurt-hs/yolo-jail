@@ -30,6 +30,9 @@ package config
 // gates on that short-circuit (own workspace only; no --user-layer set).
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 
@@ -90,12 +93,36 @@ func WorkspaceAssembledOriginsPath(workspace string) string {
 // wrote, from src, its provenance. Written on every launch beside that copy, as an empty record
 // when src knows nothing (a sealed launch's empty copy), so a record from an earlier launch never
 // describes this one.
+//
+// The record names the digest of the copy it describes, and a reader ignores a record whose
+// digest is not the copy's, so a copy rewritten by a launcher that writes no record (an older
+// yolo) is never described by the record an earlier launch left.
 func WriteAssembledOrigins(workspace string, merged *jsonx.OrderedMap, src *Sources) error {
-	record := LaunchOriginsJSON(merged, src)
-	if record == "" {
-		record = "{}"
+	j, err := SnapshotJSON(merged)
+	if err != nil {
+		return err
 	}
-	return writeWorkspaceSnapshot(workspace, WorkspaceAssembledOriginsPath(workspace), record)
+	rec := assembledOrigins{Copy: copyDigest([]byte(j + "\n"))}
+	if record := LaunchOriginsJSON(merged, src); record != "" {
+		rec.Origins = json.RawMessage(record)
+	}
+	b, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	return writeWorkspaceSnapshot(workspace, WorkspaceAssembledOriginsPath(workspace), string(b))
+}
+
+// assembledOrigins is the file WriteAssembledOrigins writes: the sha256 of the copy's bytes, and
+// the copy's launch origins (absent when nothing was recorded).
+type assembledOrigins struct {
+	Copy    string          `json:"copy_sha256"`
+	Origins json.RawMessage `json:"origins,omitempty"`
+}
+
+func copyDigest(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // assembledOriginsTree is the provenance tree of snap, the assembled copy, from the launch
@@ -105,11 +132,18 @@ func assembledOriginsTree(workspace string, snap *jsonx.OrderedMap) *srcNode {
 	if err != nil {
 		return nil
 	}
-	t := parseOrigins(data)
-	if t == nil || (t.W == nil && t.K == nil && t.E == nil) {
+	var rec assembledOrigins
+	if json.Unmarshal(data, &rec) != nil {
 		return nil
 	}
 	copyPath := WorkspaceAssembledConfigPath(workspace)
-	copyData, _ := os.ReadFile(copyPath)
+	copyData, err := os.ReadFile(copyPath)
+	if err != nil || rec.Copy != copyDigest(copyData) {
+		return nil // a record of another copy
+	}
+	t := parseOrigins(rec.Origins)
+	if t == nil || (t.W == nil && t.K == nil && t.E == nil) {
+		return nil
+	}
 	return launchCopyTree(&srcFile{path: copyPath, data: copyData}, snap, t)
 }
