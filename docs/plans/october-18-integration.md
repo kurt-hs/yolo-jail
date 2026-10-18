@@ -2,7 +2,7 @@
 title: "Plan: October 18 candidate recovery and serial landing"
 status: accepted
 stage: DECIDED
-next: "Finish the combined candidate gates, then fast-forward only the verified model and Mac recovery slices to the unchanged main"
+next: "Fast-forward the verified combined tip to unchanged main, run just done, and retain native-Mac, rootless-host and real-broker checks as outstanding"
 summary: "Records the authorized October 18 recovery scope, ownership boundaries, review dispositions, evidence and outstanding platform checks."
 ---
 
@@ -38,15 +38,20 @@ The Mac repair was rechecked against its recorded review fixes: process listings
 
 ## Validation and limits
 
-Prior candidate receipts report `just format`, `just check-ci`, and scoped unit/compile checks as passed for their respective trees. The Mac candidate's recorded checks include Linux and darwin compilation and a short integration build; these are not native-Mac runtime evidence. The model candidate's recorded nested launch used its freshly built candidate binary, not the frozen launcher in `/workspace`; this combined candidate still requires its own full integration run.
-
-For this landing, run `just format`, commit the coherent combined resolution, then `just check-ci` and the changed-path tests. Run the full serial integration suite exactly once on the final combined candidate with `-timeout 0`, the suite's bounded per-command timeout, and `YOLO_NO_PROGRAM_READINESS=1`; do not make agent API calls or bypass image-skew checks. Keep the shared Go cache intact. Run `just done` only after the candidate has been fast-forwarded to clean main.
-
-The native-Mac run remains `YOLO_TEST_MACOS_USER=1 go test -count=1 -timeout 0 -run '^TestMacosUser' ./integration` on a Mac with only the product's run-as rule. Rootless Linux checks, real-broker widening/narrowing, and read-only remount resistance remain separate obligations; none is implied by this landing.
+- `just format` passed before the integration-resolution commit.
+- `just check-ci` passed on the combined candidate: Linux vet, short tests, Linux/Darwin static analysis, changelog and documentation gates, and lint.
+- `go test ./internal/cli/check -run '^TestCheckResolvesEveryShippedPiProfileModelReference$' -count=1` passed after adding the known qualified scope reference and unresolved control for each Pi profile.
+- `YOLO_NO_PROGRAM_READINESS=1 go test -count=1 -timeout 0 ./integration` passed on the combined candidate in 762.205s. Integration `TestMain` builds the CLI from this checkout; no stale-image override was used. `podman info --format '{{.Host.Security.Rootless}}'` returned `false`, so this run is not rootless-host evidence. Readiness was disabled for the suite; no agent API calls were made.
+- The model candidate's recorded nested smoke used its freshly built candidate binary and candidate `YOLO_REPO_ROOT`, not `/workspace`'s main binary. It remains prior model-slice evidence; the combined candidate's full integration run above is the final-runtime evidence for this landing.
+- `uvx vantage-check` passed for the Mac design, model design, roadmap, backlog and this recovery plan. `git diff --check` passed.
+- `python3 scripts/completion-census.py` was rerun. It produced broad environment-dependent census churn; comparison showed no new out-of-package reader for the added host-check test, so the generated drift was restored and the tracked census remains unchanged.
+- The shared Go cache at `/home/agent/.cache/go-build` was inspected (root-owned, mode `755`, reported 441G) and preserved. The Mac candidate's recorded Linux/darwin compile checks remain portable evidence only.
+- Native-Mac runtime, rootless Linux, real-broker widening/narrowing and read-only remount resistance remain outstanding. No `YOLO_ALLOW_*` stale-image bypass, root grant, log-policy bypass or cache cleanup was used.
 
 ## Serial landing boundary
 
-1. Keep current main at `1a9ded40b` while the combined candidate is edited and gated. Preserve both accepted candidate histories; do not cherry-pick their commits a second time.
-2. Reconcile the shared changelog, design references, recovery record and completion census. Keep the Mac Decision Ledger IDs and both existing section anchors stable.
-3. Fast-forward only this verified combined tip to `main`, after confirming `/workspace` is still clean and unchanged from `1a9ded40b`. If main moved, stop and reconcile/regate; never force or reset it.
-4. Do not include the blocked patch-series or live-config candidates. No push, tag, release, deployment, root grant, log-policy bypass or shared-cache cleanup is part of this task.
+1. Current main was observed clean at `1a9ded40b` before landing. Fast-forward only the fully gated combined tip; if main moved, stop and reconcile/regate rather than force or reset it.
+2. The model and Mac/recovery slice is the only authorized landing. The patch-series and live-config candidates remain excluded and blocked by the P1s recorded above.
+3. The final update retains the shared changelog's two user-facing model-reference entries; the Mac work is test/documentation work and adds no separate user-facing release note. The Mac Decision Ledger IDs and section anchors remain stable.
+4. After the fast-forward, run `just done` on clean main. Native-Mac, rootless-host, real-broker and remount-resistance evidence remains separately owed.
+5. No push, tag, release, deployment, root grant, log-policy bypass or shared-cache cleanup is part of this task.
