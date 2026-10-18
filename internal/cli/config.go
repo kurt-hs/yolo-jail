@@ -18,6 +18,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg"
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/manifest"
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonptr"
 	"github.com/mschulkind-oss/yolo-jail/internal/packoverlay"
@@ -89,13 +90,23 @@ Subcommands:
                            record them, into the host's capture store, so
                            'diff --at host' shows them before the next apply.
   drift                    Show whether the WORKSPACE config (yolo-jail.jsonc) on
-                           disk differs from the one this jail was started with —
-                           i.e. whether a restart is needed to apply an edit. Exit
+                           disk differs from the config this jail has (what it
+                           started with, plus what 'config apply' applied since) —
+                           i.e. whether an edit is still pending. Exit
                            0 in sync, 3 drifted (prints the diff), 4 no baseline.
                            WORKSPACE ONLY: the user-level config reaches a jail as a
                            generated snapshot taken at launch, so an edit to it is
                            not visible in here and not detectable as drift. In a jail
                            the output says so rather than implying both were checked.
+  apply [--record-only] [--accept-config-changes]
+                           HOST ONLY. Approve this workspace's config changes and
+                           apply to its RUNNING jail what it can take without a
+                           restart: the same diff and y/N a fresh launch asks,
+                           then one line per change — applied now, from your next
+                           yolo session, or at next restart (yolo stop, then
+                           yolo). It never restarts the jail. --record-only
+                           approves and touches no jail. Exit 0 nothing pending,
+                           3 a restart still owed, 1 declined or refused.
   dump                     Print the full COMPUTED config as canonical JSON (sorted
                            keys) — the effective merged config this jail runs under,
                            the same form the startup config-change diff validates.
@@ -243,6 +254,11 @@ var configColorVerbs = map[string]func(t configTarget, args []string, out, errw 
 	"drift": func(_ configTarget, args []string, out, errw io.Writer, color bool) int {
 		return configDrift(args, out, errw, color)
 	},
+	// apply acts on the cwd's workspace and its running jail, as `yolo` does, so it takes no
+	// target either (docs/design/live-config-apply.md §3.1).
+	"apply": func(_ configTarget, args []string, out, errw io.Writer, color bool) int {
+		return run.ConfigApply(args, out, errw, color)
+	},
 }
 
 // notchlessVerbs are the `yolo config` verbs no notch selects, with the reason each one gives
@@ -260,6 +276,8 @@ var notchlessVerbs = map[string]string{
 	"drift": "drift compares THIS workspace's config against the baseline its own launch froze, " +
 		"so there is no notch to select",
 	"dump": "dump prints the effective merged config, which no notch selects",
+	"apply": "apply approves this workspace's config and applies it to the workspace's running " +
+		"jail from the host, which no notch selects",
 }
 
 // extractAtFlag pulls `--at <notch>` / `--at=<notch>` out of a verb's argv and returns the
@@ -345,9 +363,9 @@ func writeConfigUsage(out io.Writer, color bool) {
 
 func configHelpToken(token string) bool {
 	switch token {
-	case "ls", "render", "diff", "reset", "promote", "capture", "drift", "dump",
+	case "ls", "render", "diff", "reset", "promote", "capture", "drift", "dump", "apply",
 		"--help", "-h", "--all", "--explain", "--at", "--force", "--keys", "--to",
-		"--plan", "--json", "--accept-promotion":
+		"--plan", "--json", "--accept-promotion", "--record-only", "--accept-config-changes":
 		return true
 	default:
 		return false

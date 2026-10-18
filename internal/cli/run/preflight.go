@@ -414,6 +414,26 @@ func runtimeProbeFailure(command string, res ExecResult) string {
 // applies. The scope is READ HERE, at every fresh launch that starts such a loophole, and only
 // here: an attach never reaches this function.
 func (o *Options) checkConfigChanges(merged *jsonx.OrderedMap, rt string) bool {
+	return o.runConfigGate(merged, rt, nil)
+}
+
+// gateHooks is what `yolo config apply` and the attach-time gate add to the launch's gate
+// (docs/design/live-config-apply.md §3.2, §3.3), and ALL they add: the read, the scope, the
+// prompter, the record and the approved scope stay checkConfigChanges' own, because there is
+// one gate (LA-P1).
+type gateHooks struct {
+	// plan is handed the gate's scope check, nil when no broker is in play, once the read and
+	// the scope are made and before anything is asked or recorded. The lines it returns, in
+	// markup, print after the gate's diff and directly above its question.
+	plan func(scope *config.ScopeCheck) []string
+	// attach is an attach's gate: an N does not stop the session, so the decline says that
+	// the session starts and names `yolo config apply` instead of "Exiting." (LA-D14).
+	attach bool
+}
+
+// runConfigGate is checkConfigChanges' body, with h (nil for a fresh launch) for the apply
+// command and the attach (gateHooks).
+func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHooks) bool {
 	read, err := config.ReadWorkspaceForGate(o.Workspace)
 	if err != nil {
 		// The file names come from the workspace, whose includes the agent names.
@@ -426,6 +446,12 @@ func (o *Options) checkConfigChanges(merged *jsonx.OrderedMap, rt string) bool {
 	}
 	pr := &changePrompter{o: o}
 	scope := o.brokeredScopeCheck(rt, merged, read)
+	if h != nil {
+		pr.attach = h.attach
+		if h.plan != nil {
+			pr.preQuestion = h.plan(scope)
+		}
+	}
 	ok, approved, err := config.ApproveConfigAndScope(o.Workspace, read.Config, scope, o.IsTTYStdin(),
 		o.AcceptConfigChanges, pr)
 	if ok && err == nil {
@@ -559,7 +585,16 @@ func printConfigDiff(out printer, diffLines []string) {
 }
 
 // changePrompter renders the config diff and reads the y/N answer.
-type changePrompter struct{ o *Options }
+//
+// preQuestion is the apply's outcome block (docs/design/live-config-apply.md LA-P3), printed
+// after the diff and the count lines and directly above the question, so the reader answers
+// knowing what each change will do; nil for a fresh launch. attach selects the attach's
+// decline lines (declineLines).
+type changePrompter struct {
+	o           *Options
+	preQuestion []string
+	attach      bool
+}
 
 func (p *changePrompter) Prompt(diffLines []string) bool {
 	return p.PromptReport(config.ChangeReport{ConfigChanged: true, DiffLines: diffLines})
@@ -585,6 +620,9 @@ func (p *changePrompter) PromptReport(r config.ChangeReport) bool {
 	printConfigDiff(out, r.DiffLines)
 	out.print("")
 	printScopeCounts(out, r.ScopeCounts)
+	for _, line := range p.preQuestion {
+		out.print(line)
+	}
 	if _, err := p.o.Stdout.Write([]byte(question)); err != nil {
 		return false
 	}
@@ -597,7 +635,7 @@ func (p *changePrompter) PromptReport(r config.ChangeReport) bool {
 	if answer == "y" || answer == "yes" {
 		return true
 	}
-	lines := declineLines(r)
+	lines := declineLines(r, p.attach)
 	out.print("[red]" + richtext.Escape(lines[0]) + "[/red]")
 	for _, line := range lines[1:] {
 		out.print(richtext.Escape(line))
@@ -621,15 +659,24 @@ func (p *changePrompter) ReportAccepted(r config.ChangeReport) {
 // changed config names the files it was read from, and that the next launch asks again; a changed
 // repository scope names the command that launches this project without the loophole that reads
 // it, since that is the one way past the question that answers no to it.
-func declineLines(r config.ChangeReport) []string {
-	head := "Config changes rejected; nothing was recorded. Exiting."
+//
+// AN ATTACH'S DECLINE does not exit (docs/design/live-config-apply.md LA-D14): the session starts
+// in the jail as it is, so its lines say that instead of "Exiting.", and name `yolo config apply`
+// as the way to approve the change later without restarting anything.
+func declineLines(r config.ChangeReport, attach bool) []string {
+	head := "Config changes rejected; nothing was recorded."
 	switch {
 	case r.ScopeChanged && r.ConfigChanged:
-		head = "Workspace config and repository scope changes rejected; nothing was recorded. Exiting."
+		head = "Workspace config and repository scope changes rejected; nothing was recorded."
 	case r.ScopeChanged:
-		head = "Repository scope changes rejected; nothing was recorded. Exiting."
+		head = "Repository scope changes rejected; nothing was recorded."
 	}
-	lines := []string{head}
+	if attach {
+		return []string{head + " This session starts in the jail as it is.",
+			"To approve the changes later, run `yolo config apply` on the host, in this workspace: " +
+				"it asks this question again and applies what the running jail can take."}
+	}
+	lines := []string{head + " Exiting."}
 	if r.ConfigChanged && len(r.ConfigFiles) > 0 {
 		lines = append(lines, "The workspace config change is in "+strings.Join(r.ConfigFiles, " and ")+
 			": undo it there, or answer y at the next launch, which asks again.")

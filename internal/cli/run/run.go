@@ -2984,6 +2984,10 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 		o.pr(o.Stderr).print("[yellow]The jail's keeper cannot see this session, so it may end the jail " +
 			"under it once the sessions it counts have left.[/yellow]")
 	}
+	// THE ATTACH-TIME GATE (liveapply.go, docs/design/live-config-apply.md §3.3), lock still
+	// held: with a human at stdin, the config apply's own sequence; without one, one notice.
+	// It never fails the attach.
+	o.applyAtAttach(cname, rt, cfg, envLines)
 	// Going ahead. The host-side readers switch to the jail's own packs, and the skills and
 	// briefing staging the jail binds is refreshed from them, still under the lock: another
 	// launch of the workspace writes the same staging. This launch's own pack tree has done its
