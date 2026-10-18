@@ -122,6 +122,9 @@ func TestALaunchRunsTheTreeArmAndMountsItsCopy(t *testing.T) {
 		filepath.Dir(req.CopyRoot) != paths.PackTreeRoot(yoloruntime.FromWorkspace(req.Workspace)) {
 		t.Errorf("the copy root %q is not beside the launch's pack tree", req.CopyRoot)
 	}
+	if req.ReuseCopies {
+		t.Error("a container launch's copy is marked reusable; it is mounted for the jail's life and is the launch's own")
+	}
 	mounts := mountsAt(argv, treeInto)
 	if len(mounts) != 1 || mounts[0] != copyDir+":/home/agent/"+treeInto+":ro" {
 		t.Errorf("the mounts at ~/%s are %q, want the per-launch copy, read-only, alone", treeInto, mounts)
