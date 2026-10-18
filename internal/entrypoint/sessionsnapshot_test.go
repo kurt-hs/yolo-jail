@@ -188,3 +188,32 @@ func TestSnapshotBashrcSourcesTheSessionsSharedFile(t *testing.T) {
 		})
 	}
 }
+
+// TestSnapshotAgentEnvLookupReadsTheSessionsFiles: the boot's per-agent view (agentEnvLookup), which
+// gates an MCP server on a variable only the agent's env file carries (mcp.go), reads the session's
+// snapshot when it has one, so a session's mcp.json follows its own entry rather than the last one.
+func TestSnapshotAgentEnvLookupReadsTheSessionsFiles(t *testing.T) {
+	home := t.TempDir()
+	shared := filepath.Join(home, AgentEnvDirRel)
+	if err := os.MkdirAll(filepath.Join(shared, ProviderKeysSubdir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(shared, "probe.sh"), []byte("export SNAPTEST_GATE='shared'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeSnapshotFile(t, home, snapshotID, "probe.sh", "export SNAPTEST_GATE='snap'\n")
+	writeSnapshotFile(t, home, snapshotID, filepath.Join(ProviderKeysSubdir, "probe.sh"), "export SNAPTEST_KEY='snapkey'\n")
+
+	e := NewEnv(map[string]string{"JAIL_HOME": home, SessionIDEnv: snapshotID})
+	look := agentEnvLookup(e, "probe")
+	if v, _ := look("SNAPTEST_GATE"); v != "snap" {
+		t.Errorf("agentEnvLookup read SNAPTEST_GATE = %q, want the snapshot's \"snap\"", v)
+	}
+	if v, _ := look("SNAPTEST_KEY"); v != "snapkey" {
+		t.Errorf("agentEnvLookup read SNAPTEST_KEY = %q, want the snapshot's provider-keys value", v)
+	}
+	bare := NewEnv(map[string]string{"JAIL_HOME": home})
+	if v, _ := agentEnvLookup(bare, "probe")("SNAPTEST_GATE"); v != "shared" {
+		t.Errorf("without a session id agentEnvLookup must read the shared file; got %q", v)
+	}
+}
