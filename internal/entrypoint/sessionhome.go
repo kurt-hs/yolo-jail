@@ -55,23 +55,40 @@ func prepareSessionHomesStep(b *bootRun) {
 	genStep(b.e, "prepare_session_homes", func() error { return prepareSessionHomes(b.e, packs, id) })
 }
 
-// sessionHomePlan is one declaration resolved at this home.
-type sessionHomePlan struct {
+// sessionDecl is one selected pack's session-home declaration resolved at this home: everything
+// but the session id. The pass that makes a home and the pass that captures from one read the
+// same resolution.
+type sessionDecl struct {
 	pack string
 	env  string
-	spec sessionhome.Spec
-	// rmw are the in-directory surfaces rendered read-modify-write, seeded from the shared file
-	// before the render (SP-D11).
-	rmw []manifest.Surface
+	// shared is the declared directory, absolute.
+	shared string
+	names  []string
+	// prefer is the declaration's prefer map with each target expanded.
+	prefer map[string]string
+	// rendered are the top-level names in the directory a surface renders into.
+	rendered []string
+	// surfaces are the surfaces whose path lies in the directory; rmw the read-modify-write ones
+	// among them, seeded from the shared file before a session's render (SP-D11).
+	surfaces []manifest.Surface
+	rmw      []manifest.Surface
 }
 
-// prepareSessionHomes builds every declared session home for session id, then points e's render
-// target at them and exports each declared variable. A home that cannot be made is the step's
-// error, and the boot refuses the session on it (SP-D6): falling back to the shared directory
-// would silently bring the deadlock back. Nothing is exported or redirected unless every home was
-// made.
-func prepareSessionHomes(e *Env, packs []*packload.Pack, id string) error {
-	base := e.renderTarget()
+// spec is the link builder's input for this declaration's home at home.
+func (d sessionDecl) spec(home string) sessionhome.Spec {
+	return sessionhome.Spec{Shared: d.shared, Home: home, Names: d.names, Prefer: d.prefer,
+		Rendered: d.rendered}
+}
+
+// sessionHomePlan is one declaration with the home this session makes for it.
+type sessionHomePlan struct {
+	sessionDecl
+	spec sessionhome.Spec
+}
+
+// declaredSessionHomes resolves every selected pack's session-home declaration at e's home.
+func declaredSessionHomes(e *Env, packs []*packload.Pack) []sessionDecl {
+	base := e.sharedRenderTarget() // the declared paths, never this session's redirect of them
 	// Every selected pack's declared surfaces, read for their PATHS and modes alone: which of
 	// them lie in a declared directory. Decoded here rather than planned, because this decides
 	// no render (the one loop, surfaceloop.go, does); a malformed declaration is reported there.
@@ -82,52 +99,65 @@ func prepareSessionHomes(e *Env, packs []*packload.Pack, id string) error {
 			surfaces = append(surfaces, s...)
 		}
 	}
+	var out []sessionDecl
+	for _, p := range packs {
+		for _, decl := range p.Decl.SessionHomes() {
+			d := sessionDecl{pack: p.Name, env: decl.Env, names: decl.Shared,
+				shared: filepath.Join(e.Home, filepath.FromSlash(strings.TrimSuffix(decl.Dir, "/")))}
+			if len(decl.Prefer) > 0 {
+				d.prefer = map[string]string{}
+				for name, target := range decl.Prefer {
+					d.prefer[name] = base.ExpandHome(target)
+				}
+			}
+			seen := map[string]bool{}
+			for _, s := range surfaces {
+				rel, ok := strings.CutPrefix(base.SurfacePath(s), d.shared+string(filepath.Separator))
+				if !ok {
+					continue
+				}
+				d.surfaces = append(d.surfaces, s)
+				if top := strings.SplitN(rel, string(filepath.Separator), 2)[0]; !seen[top] {
+					seen[top] = true
+					d.rendered = append(d.rendered, top)
+				}
+				if s.ResolvedMode() == manifest.ModeRMW {
+					d.rmw = append(d.rmw, s)
+				}
+			}
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// prepareSessionHomes builds every declared session home for session id, then points e's render
+// target at them and exports each declared variable. A home that cannot be made is the step's
+// error, and the boot refuses the session on it (SP-D6): falling back to the shared directory
+// would silently bring the deadlock back. Nothing is exported or redirected unless every home was
+// made.
+func prepareSessionHomes(e *Env, packs []*packload.Pack, id string) error {
+	base := e.sharedRenderTarget()
 	var plans []sessionHomePlan
 	// skips are the declared directories this pass renders nothing into: SP-D2 holds whether or
 	// not the session got a home, so a preset variable (SP-D5) and a refused session (SP-D6) both
 	// leave the shared copies to the jail's own boot.
 	var skips []string
-	for _, p := range packs {
-		for _, decl := range p.Decl.SessionHomes() {
-			shared := filepath.Join(e.Home, filepath.FromSlash(strings.TrimSuffix(decl.Dir, "/")))
-			// SP-D5: the user's own value wins, in this session alone.
-			if v := e.Vars[decl.Env]; v != "" || os.Getenv(decl.Env) != "" {
-				e.warn(fmt.Sprintf("Note: pack %s: %s is already set in this session, so the session "+
-					"reads the directory you set and gets no config directory of its own; another "+
-					"session's profile can change what it reads, so unset the variable for yolo to "+
-					"give each session its own", p.Name, decl.Env))
-				skips = append(skips, shared)
-				continue
-			}
-			home, err := sessionhome.Home(shared, id)
-			if err != nil {
-				return err
-			}
-			plan := sessionHomePlan{pack: p.Name, env: decl.Env, spec: sessionhome.Spec{
-				Shared: shared, Home: home, Names: decl.Shared}}
-			if len(decl.Prefer) > 0 {
-				plan.spec.Prefer = map[string]string{}
-				for name, target := range decl.Prefer {
-					plan.spec.Prefer[name] = base.ExpandHome(target)
-				}
-			}
-			seen := map[string]bool{}
-			for _, s := range surfaces {
-				rel, ok := strings.CutPrefix(base.SurfacePath(s), shared+string(filepath.Separator))
-				if !ok {
-					continue
-				}
-				top := strings.SplitN(rel, string(filepath.Separator), 2)[0]
-				if !seen[top] {
-					seen[top] = true
-					plan.spec.Rendered = append(plan.spec.Rendered, top)
-				}
-				if s.ResolvedMode() == manifest.ModeRMW {
-					plan.rmw = append(plan.rmw, s)
-				}
-			}
-			plans = append(plans, plan)
+	for _, d := range declaredSessionHomes(e, packs) {
+		// SP-D5: the user's own value wins, in this session alone.
+		if v := e.Vars[d.env]; v != "" || os.Getenv(d.env) != "" {
+			e.warn(fmt.Sprintf("Note: pack %s: %s is already set in this session, so the session "+
+				"reads the directory you set and gets no config directory of its own; another "+
+				"session's profile can change what it reads, so unset the variable for yolo to "+
+				"give each session its own", d.pack, d.env))
+			skips = append(skips, d.shared)
+			continue
 		}
+		home, err := sessionhome.Home(d.shared, id)
+		if err != nil {
+			return err
+		}
+		plans = append(plans, sessionHomePlan{sessionDecl: d, spec: d.spec(home)})
 	}
 	if len(plans) == 0 {
 		if len(skips) > 0 {
@@ -162,13 +192,13 @@ func prepareSessionHomes(e *Env, packs []*packload.Pack, id string) error {
 				sess.SidecarDir, err, filepath.Dir(sess.SidecarDir)))
 		}
 	}
+	var surfaces []manifest.Surface
 	for _, pl := range plans {
 		sess.Redirects = append(sess.Redirects, render.Redirect{From: pl.spec.Shared, To: pl.spec.Home})
-		for _, s := range surfaces {
-			if strings.HasPrefix(base.SurfacePath(s), pl.spec.Shared+string(filepath.Separator)) {
-				sess.Surfaces[s.Key()] = true
-			}
+		for _, s := range pl.surfaces {
+			sess.Surfaces[s.Key()] = true
 		}
+		surfaces = append(surfaces, pl.surfaces...)
 	}
 	if err := seedSessionBaselines(base, sess, surfaces); err != nil {
 		return refuse(err)
@@ -253,18 +283,16 @@ func sessionHomeRefusal(pl sessionHomePlan, err error) error {
 		pl.spec.Home, pl.pack, err, pl.spec.Shared, root, root, filepath.Dir(root))
 }
 
-// holdSessionRenderLock takes the in-jail render lock for a session pass that renders into
-// session homes, and returns its release. A pass with no session homes takes nothing, and a lock
-// that cannot be opened is a warning, never a refusal: it orders two renders, and each still
-// renders only its own session's files.
+// holdSessionRenderLock takes the in-jail render lock, which a container pass holds across its
+// capture from session homes and its render whenever a selected pack declares a session home
+// (beginSessionCapture), and returns its release. A lock that cannot be taken is a warning, never
+// a refusal: it orders two passes, and each still renders only its own session's files.
 func holdSessionRenderLock(e *Env) func() {
-	if e.session == nil {
-		return func() {}
-	}
-	dir := e.renderTarget().SidecarDir()
+	dir := e.sharedRenderTarget().SidecarDir()
 	if dir == "" {
 		return func() {}
 	}
+	_ = os.MkdirAll(dir, e.sharedRenderTarget().SidecarDirMode())
 	f, err := os.OpenFile(filepath.Join(dir, sessionRenderLockName), os.O_CREATE|os.O_RDWR, 0o644)
 	if err == nil {
 		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)

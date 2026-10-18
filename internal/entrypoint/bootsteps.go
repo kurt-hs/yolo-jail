@@ -461,11 +461,17 @@ func bootSteps() []bootStep {
 					b.e.note(sealedBuildSkipNote)
 					return
 				}
-				// A session rendering into its session homes holds the in-jail render lock
-				// across its renders (sessionhome.go); every other pass takes nothing.
-				release := holdSessionRenderLock(b.e)
-				ConfigurePackSurfaces(b.e, packs)
-				release()
+				// CAPTURE FROM SESSION HOMES (sessioncapture.go, OQ-SP2): a container pass
+				// captures every other session home's rendered files into the shared overlay
+				// before it renders, under the in-jail render lock, and the jail's own boot then
+				// removes the homes the previous container left.
+				if b.target == bootContainer {
+					capture := beginSessionCapture(b.e, packs, b.sessionPass)
+					ConfigurePackSurfaces(b.e, packs)
+					capture.end(b.e)
+				} else {
+					ConfigurePackSurfaces(b.e, packs)
+				}
 				RunPackHooks(b.e, packs)
 			},
 		},
