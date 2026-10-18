@@ -101,6 +101,14 @@ const (
 	// without it delivers as before, and says once that a session already running there may read
 	// this entry's profile (noteSessionSnapshotsUnsupported, SP-D8). No legacy inference.
 	contractSessionHomes = "session-homes"
+	// contractLiveCtxMounts: the jail's /ctx is a tmpfs, read-only to the jail, and the host holds
+	// a record of the config mounts it bound (ctxmountrecord.go), so `yolo config apply` can add
+	// a context mount to it or take one away while it runs (docs/design/live-config-apply.md §5.5).
+	// Only a podman launch makes the tmpfs and the record; the apply decides the backend before it
+	// reads this tag, because every container backend freezes the same list. No legacy inference:
+	// a jail without the tag has /ctx on its read-only image rootfs, and every mount change waits
+	// for its restart.
+	contractLiveCtxMounts = "live-ctx-mounts"
 )
 
 // launchContractTags is every contract THIS build's jail implements, frozen into every
@@ -115,7 +123,7 @@ const (
 // attach no longer writes any pack tree, so it asks nothing of the jail's binaries, and it finds
 // the tree an older jail binds on the host side (packtree.go's runningJailPackTree).
 var launchContractTags = []string{contractEntryChannel, contractAgentEnvFiles, contractProfileSets,
-	contractSessionHangup, contractSessionHomes}
+	contractSessionHangup, contractSessionHomes, contractLiveCtxMounts}
 
 // launchContractTagsValue is ContractTagsEnv's value for a launch: the tags, comma-joined.
 func launchContractTagsValue() string { return strings.Join(launchContractTags, ",") }

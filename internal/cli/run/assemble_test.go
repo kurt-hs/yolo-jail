@@ -443,7 +443,10 @@ func podmanLinuxGolden(home string) []string {
 	add("podman", "run",
 		"--rm", "-i", "--init", "--cgroupns=private", "--read-only", "--name", "yolo-ws-abcd1234",
 		"--read-only-tmpfs=false", "--pull=never", "--log-driver", "none",
-		"--security-opt", "unmask=/proc/sys", "--unsetenv", "LD_LIBRARY_PATH", "--sig-proxy=false", "--detach-keys=")
+		"--security-opt", "unmask=/proc/sys", "--unsetenv", "LD_LIBRARY_PATH", "--sig-proxy=false",
+		// /ctx on a tmpfs read-only to the jail, so a live mount can be injected (LA-D5).
+		"--mount", "type=tmpfs,destination=/ctx,ro=true",
+		"--detach-keys=")
 	// podman base mounts. The home root is THIS JAIL'S skeleton, not the machine store
 	// (<state>/home) every podman jail used to share: that store's only mounts left are the
 	// selected packs' shared dirs, below (docs/reference/jail-home.md#backend-differences).
@@ -535,7 +538,7 @@ func podmanLinuxGolden(home string) []string {
 		// (contracttags.go). Spelled out, not read from launchContractTags: a tag dropped
 		// from the launch must fail here, since an attach from this build would then refuse
 		// a jail this build launched.
-		"-e", "YOLO_CONTRACT_TAGS=entry-channel,agent-env-files,profile-sets,session-hangup,session-homes",
+		"-e", "YOLO_CONTRACT_TAGS=entry-channel,agent-env-files,profile-sets,session-hangup,session-homes,live-ctx-mounts",
 		"-e", "YOLO_JAIL_MAIN=hold",
 		// The three provider/profile wire tables are NOT on the argv: they cross in
 		// yolo-user-env.sh's channel section with the pack env fold and the shape
