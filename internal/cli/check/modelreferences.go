@@ -21,7 +21,9 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/manifest"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonptr"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/modelcatalog"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -49,6 +51,27 @@ func (o *Options) modelReferenceReport(r *reporter, prediction protocolPredictio
 		}
 	}
 	autonomy := render.ProfileFor(render.KindJail).AgentAutonomy
+	// The wire tables a launch exports, for the derives of each program's own model surfaces;
+	// composed once, and only when a program declares one.
+	var vars map[string]string
+	wire := func() map[string]string {
+		if vars == nil {
+			use := jsonx.NewOrderedMap()
+			for agent, set := range active {
+				if len(set) > 1 {
+					use.Set(agent, packload.ProfileSetWire(set))
+				} else {
+					use.Set(agent, set[0])
+				}
+			}
+			vars = map[string]string{
+				entrypoint.ProvidersWireEnv:   jsonx.MustDumpsCompact(prediction.Providers),
+				entrypoint.ProfilesWireEnv:    jsonx.MustDumpsCompact(packload.ProfilesWireTable(prediction.Resolved)),
+				entrypoint.UseProfilesWireEnv: jsonx.MustDumpsCompact(use),
+			}
+		}
+		return vars
+	}
 	var overlays *packoverlay.OverlaySet
 	catalogs := map[string]declaredCatalog{}
 	for _, c := range o.declaredCatalogs(prediction.Packs) {
@@ -66,10 +89,22 @@ func (o *Options) modelReferenceReport(r *reporter, prediction protocolPredictio
 			if overlays == nil {
 				overlays = packoverlay.Collect(prediction.Packs, autonomy, active)
 			}
-			values := packload.ProfileSubagentValues(prediction.Packs, prediction.Providers, prediction.Profiles,
+			sub := packload.ProfileSubagentValues(prediction.Packs, prediction.Providers, prediction.Profiles,
 				prediction.Sets, prediction.Resolved, bin)
-			values = append(values, packReferenceValues(prediction.Packs, p, refs, overlays, autonomy)...)
+			for _, f := range sub.Findings {
+				title, note := modelReferenceTitle(bin, f), modelReferenceNote(bin, f)
+				if f.Refused {
+					r.fail(title, note)
+				} else {
+					r.warn(title, note)
+				}
+			}
+			values := append(sub.Values, packReferenceValues(prediction.Packs, p, refs, overlays, autonomy)...)
 			if len(values) == 0 {
+				if len(sub.Findings) == 0 && sub.Listed > 0 {
+					r.ok(fmt.Sprintf("Model reference: every model %s's config names resolves in its registry (%s)",
+						bin, plural(sub.Listed, "reference")+" checked"))
+				}
 				continue
 			}
 			var ids map[string]bool
@@ -80,6 +115,11 @@ func (o *Options) modelReferenceReport(r *reporter, prediction protocolPredictio
 				}
 			}
 			reg := packload.NewModelRegistry(prediction.Packs, prediction.Providers, bin, ids)
+			for _, src := range refs.Registry {
+				if doc, err := entrypoint.DerivedSurface(p, src.Surface, wire(), prediction.Packs); err == nil {
+					reg.AddRendered(doc, src)
+				}
+			}
 			findings, unasked := packload.EvaluateModelReferences(reg, values)
 			for _, f := range findings {
 				r.warn(modelReferenceTitle(bin, f), modelReferenceNote(bin, f))
@@ -92,9 +132,9 @@ func (o *Options) modelReferenceReport(r *reporter, prediction protocolPredictio
 				r.skip(fmt.Sprintf("Model reference: %s not checked against %s's registry — its provider "+
 					"runs on %s's own catalog, which could not be read", plural(unasked, "model reference"), bin, bin), why)
 			}
-			if len(findings) == 0 && unasked < len(values) {
+			if checked := len(values) - unasked + sub.Listed; len(findings) == 0 && len(sub.Findings) == 0 && checked > 0 {
 				r.ok(fmt.Sprintf("Model reference: every model %s's config names resolves in its registry (%s)",
-					bin, plural(len(values)-unasked, "reference")+" checked"))
+					bin, plural(checked, "reference")+" checked"))
 			}
 		}
 	}
@@ -110,6 +150,10 @@ func modelReferenceTitle(bin string, f packload.ModelReferenceFinding) string {
 	if f.Qualified != "" && f.Qualified != f.Value {
 		value += fmt.Sprintf(" (%s receives %q)", bin, f.Qualified)
 	}
+	if f.Refused || f.Fallback != "" {
+		return fmt.Sprintf("Model reference: %s names the %s %s, which is not on its provider's list",
+			strings.TrimPrefix(f.Where, "config."), what, fmt.Sprintf("%q", f.Value))
+	}
 	return fmt.Sprintf("Model reference: %s names the %s %s, which matches no model in %s's registry",
 		strings.TrimPrefix(f.Where, "config."), what, value, bin)
 }
@@ -123,9 +167,18 @@ func modelReferenceNote(bin string, f packload.ModelReferenceFinding) string {
 	if len(f.Nearest) > 0 {
 		parts = append(parts, "Nearest: "+strings.Join(f.Nearest, ", "))
 	}
-	parts = append(parts, fmt.Sprintf("%s's registry is every id the composed provider table lists, plus "+
-		"%s's own catalog for a provider it runs itself. A warning, never a refusal: the launch starts, "+
-		"and a child agent started on it fails at dispatch", bin, bin))
+	switch {
+	case f.Refused:
+		parts = append(parts, fmt.Sprintf("It is neither an alias nor an id of the provider's list, which has no "+
+			"`default` alias to fall back to, so %s's render refuses it and the launch stops", bin))
+	case f.Fallback != "":
+		parts = append(parts, fmt.Sprintf("It is neither an alias nor an id of the provider's list, so %s's child "+
+			"agents start on the list's `default`, %s, instead", bin, f.Fallback))
+	default:
+		parts = append(parts, fmt.Sprintf("%s's registry is every id the composed provider table lists, the ids "+
+			"%s's own model files hold, and %s's catalog for a provider it runs itself. A warning, never a "+
+			"refusal: the launch starts, and a child agent started on it fails at dispatch", bin, bin, bin))
+	}
 	next := "Point it at one of the nearest ids"
 	if strings.HasPrefix(f.Where, "config.") {
 		next += " in your `" + strings.TrimPrefix(f.Where, "config.") + "`"

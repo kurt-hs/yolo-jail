@@ -107,16 +107,53 @@ func NewModelRegistry(packs []*Pack, providers *jsonx.OrderedMap, agent string, 
 	return r
 }
 
+// AddRendered adds the ids src points at in doc, a document the agent's derive rendered, under
+// src's provider: src.Provider, else the member the pointer's first `*` stands for.
+func (r *ModelRegistry) AddRendered(doc any, src packdecl.ModelRegistrySource) {
+	declared, err := jsonptr.Parse(src.IDs)
+	if err != nil {
+		return
+	}
+	star := -1
+	for i, t := range declared {
+		if t == "*" {
+			star = i
+			break
+		}
+	}
+	for _, hit := range pointerHits(doc, src.IDs) {
+		id, ok := hit.value.(string)
+		if !ok || id == "" {
+			continue
+		}
+		provider := src.Provider
+		if provider == "" && star >= 0 && star < len(hit.tokens) {
+			provider = hit.tokens[star]
+		}
+		if provider == "" {
+			continue
+		}
+		p := r.byProvider[provider]
+		if p == nil {
+			p = &registryProvider{ids: map[string]bool{}}
+			r.byProvider[provider] = p
+		}
+		p.ids[id] = true
+	}
+}
+
 // Model is the verdict on a qualified `<provider>/<id>` reference, with the nearest ids the
 // registry holds for an unknown one.
 func (r *ModelRegistry) Model(qualified string) (ModelVerdict, []string) {
 	provider, id, ok := strings.Cut(qualified, "/")
-	p := r.byProvider[provider]
+	p := r.lookup(provider)
 	if !ok || p == nil {
 		return ModelUnknown, nearestStrings(qualified, r.qualified())
 	}
-	if p.ids[id] {
-		return ModelKnown, nil
+	for known := range p.ids {
+		if strings.EqualFold(known, id) {
+			return ModelKnown, nil
+		}
 	}
 	if p.unasked {
 		return ModelUnasked, nil
@@ -130,7 +167,7 @@ func (r *ModelRegistry) Pattern(pattern string) (ModelVerdict, []string) {
 	re := globRegexp(pattern)
 	provider, rest, _ := strings.Cut(pattern, "/")
 	if !strings.Contains(provider, "*") {
-		p := r.byProvider[provider]
+		p := r.lookup(provider)
 		if p == nil {
 			return ModelUnknown, nearestStrings(pattern, r.qualified())
 		}
@@ -159,6 +196,19 @@ func (r *ModelRegistry) Pattern(pattern string) (ModelVerdict, []string) {
 	return ModelUnknown, nil
 }
 
+// lookup is the registry's entry for a provider id, matched ignoring case; nil for none.
+func (r *ModelRegistry) lookup(provider string) *registryProvider {
+	if p := r.byProvider[provider]; p != nil {
+		return p
+	}
+	for name, p := range r.byProvider {
+		if strings.EqualFold(name, provider) {
+			return p
+		}
+	}
+	return nil
+}
+
 // MatchesAny reports whether qualified matches one of patterns.
 func MatchesAny(qualified string, patterns []string) bool {
 	for _, p := range patterns {
@@ -179,13 +229,20 @@ func (r *ModelRegistry) qualified() []string {
 	return out
 }
 
-// globRegexp is pattern as an anchored regexp: `*` any run of characters, everything else itself.
+// globRegexp is pattern as an anchored regexp ignoring case: `*` any run of characters,
+// everything else itself.
 func globRegexp(pattern string) *regexp.Regexp {
 	parts := strings.Split(pattern, "*")
 	for i, part := range parts {
 		parts[i] = regexp.QuoteMeta(part)
 	}
-	return regexp.MustCompile("^" + strings.Join(parts, ".*") + "$")
+	return regexp.MustCompile("(?i)^" + strings.Join(parts, ".*") + "$")
+}
+
+// namesAProvider reports whether a reference can be judged: it has a `/` before its id, or is a
+// pattern with a `*`. One with neither (pi-subagents' `inherit`, say) names no provider.
+func namesAProvider(v string) bool {
+	return strings.Contains(v, "/") || strings.Contains(v, "*")
 }
 
 // ModelReferenceValue is one model reference as declared or written: where it is, its value, and
@@ -207,6 +264,10 @@ type ModelReferenceFinding struct {
 	ModelReferenceValue
 	// Nearest are up to three registry ids closest to it.
 	Nearest []string
+	// Fallback is the qualified model the agent's derive writes in its place, "" when none.
+	Fallback string
+	// Refused says the agent's derive refuses the render over it, so the launch stops.
+	Refused bool
 }
 
 // Subject is what the registry was asked about: Qualified when set, else Value.
@@ -246,7 +307,7 @@ func ModelReferenceValuesIn(doc any, refs *packdecl.ModelReferences, where strin
 	var out []ModelReferenceValue
 	for _, p := range refs.Models {
 		for _, hit := range pointerHits(doc, p) {
-			if s, ok := hit.value.(string); ok && s != "" {
+			if s, ok := hit.value.(string); ok && namesAProvider(s) {
 				out = append(out, ModelReferenceValue{Where: where + hit.pointer, Value: s})
 			}
 		}
@@ -255,7 +316,7 @@ func ModelReferenceValuesIn(doc any, refs *packdecl.ModelReferences, where strin
 		for _, hit := range pointerHits(doc, p) {
 			items, _ := hit.value.([]any)
 			for i, item := range items {
-				if s, ok := item.(string); ok && s != "" {
+				if s, ok := item.(string); ok && namesAProvider(s) {
 					out = append(out, ModelReferenceValue{Where: fmt.Sprintf("%s%s/%d", where, hit.pointer, i),
 						Value: s, Pattern: true})
 				}
@@ -291,6 +352,7 @@ func StringAt(doc any, pointer string) string {
 
 type pointerHit struct {
 	pointer string
+	tokens  []string
 	value   any
 }
 
@@ -305,7 +367,7 @@ func pointerHits(doc any, pointer string) []pointerHit {
 	var walk func(v any, rest, done []string)
 	walk = func(v any, rest, done []string) {
 		if len(rest) == 0 {
-			out = append(out, pointerHit{pointer: jsonptr.Format(done), value: v})
+			out = append(out, pointerHit{pointer: jsonptr.Format(done), tokens: done, value: v})
 			return
 		}
 		step := rest[0]
@@ -345,52 +407,91 @@ func pointerHits(doc any, pointer string) []pointerHit {
 	return out
 }
 
-// ProfileSubagentValues is the `subagents` declaration of agent's governing profile, as model
-// references: each value resolved the way a derive resolves it (an alias of the provider's list
-// to the id under it, else the value as an id) and qualified by agent's own id for the provider.
-// Only the primary profile's declaration is read, the one a set's derive renders. Nil when the
-// owning pack does not declare `profile_subagents`, or the profile declares nothing.
+// ProfileSubagentCheck is what the governing profile's `subagents` declaration resolves to for one
+// agent (ProfileSubagentValues).
+type ProfileSubagentCheck struct {
+	// Values are the declared models on a provider with no list, qualified by the agent's own id
+	// for the provider, for the registry to judge: the derive passes each through as written.
+	Values []ModelReferenceValue
+	// Findings are the declared models off the provider's list, which the derive replaces with
+	// the list's `default` alias or refuses.
+	Findings []ModelReferenceFinding
+	// Listed is how many declared models the provider's list resolves.
+	Listed int
+}
+
+// ProfileSubagentValues is the `subagents` declaration of agent's governing profile, resolved the
+// way packdecl.ModelReferences.ProfileSubagents says the derive resolves it: on a provider with a
+// list, an alias of it or an id of it is the model, and any other value is the list's `default`
+// alias in its place, or a refusal where there is none; on a provider with no list the value is
+// passed through, for the registry to judge. Only the primary profile's declaration is read, the
+// one a set's derive renders. Empty when the owning pack does not declare `profile_subagents`, or
+// the profile declares nothing.
 func ProfileSubagentValues(packs []*Pack, providers *jsonx.OrderedMap, profiles map[string]string,
-	sets map[string][]string, resolved map[string]ResolvedProfile, agent string) []ModelReferenceValue {
+	sets map[string][]string, resolved map[string]ResolvedProfile, agent string) ProfileSubagentCheck {
+	var out ProfileSubagentCheck
 	owner := binOwner(packs, agent)
 	if owner == nil || owner.Decl == nil {
-		return nil
+		return out
 	}
 	refs := owner.Decl.ProgramModelReferences(agent)
 	if refs == nil || !refs.ProfileSubagents {
-		return nil
+		return out
 	}
 	profile := profiles[agent]
 	if set := sets[agent]; len(set) > 0 {
 		profile = set[0]
 	}
 	r, ok := resolved[profile]
-	if !ok || r.Provider == "" {
-		return nil
+	if !ok || r.Provider == "" || (r.Subagents.Default == "" && len(r.Subagents.Roles) == 0) {
+		return out
 	}
 	provider := r.Provider
 	if b, ok := BuiltInProviderFor(packs, agent, provider); ok {
 		if b.ID == "" {
-			return nil
+			return out
 		}
 		provider = b.ID
 	}
-	models := childMap(providerEntry(providers, r.Provider), "models")
-	value := func(where, v string) ModelReferenceValue {
-		id := v
-		if s, ok := stringAt(models, v); ok && s != "" {
-			id = s
-		}
-		return ModelReferenceValue{Where: "config.profiles." + profile + ".subagents." + where, Value: v,
-			Qualified: provider + "/" + id}
+	var models *jsonx.OrderedMap
+	if entry := providerEntry(providers, r.Provider); entry != nil {
+		models = childMap(entry, "models")
 	}
-	var out []ModelReferenceValue
+	var listed []string
+	for _, row := range callableModelRows(providerEntry(providers, r.Provider)) {
+		listed = append(listed, row.id)
+	}
+	check := func(where, v string) {
+		ref := ModelReferenceValue{Where: "config.profiles." + profile + ".subagents." + where, Value: v,
+			Qualified: provider + "/" + v}
+		if len(listed) == 0 {
+			out.Values = append(out.Values, ref)
+			return
+		}
+		if id, ok := stringAt(models, v); ok && id != "" {
+			out.Listed++
+			return
+		}
+		for _, id := range listed {
+			if id == v {
+				out.Listed++
+				return
+			}
+		}
+		f := ModelReferenceFinding{ModelReferenceValue: ref, Nearest: qualify(provider, nearestStrings(v, listed))}
+		if id, ok := stringAt(models, "default"); ok && id != "" {
+			f.Fallback = provider + "/" + id
+		} else {
+			f.Refused = true
+		}
+		out.Findings = append(out.Findings, f)
+	}
 	if d := r.Subagents.Default; d != "" {
-		out = append(out, value("default", d))
+		check("default", d)
 	}
 	for _, role := range sortedKeysOf(r.Subagents.Roles) {
 		if v := r.Subagents.Roles[role]; v != "" {
-			out = append(out, value("roles."+role, v))
+			check("roles."+role, v)
 		}
 	}
 	return out
@@ -407,6 +508,12 @@ func SelectionOutsideScope(doc any, refs *packdecl.ModelReferences) (string, []s
 	scope := PatternsAt(doc, refs.Scope)
 	if provider == "" || model == "" || len(scope) == 0 {
 		return "", nil, false
+	}
+	for _, p := range scope {
+		if !namesAProvider(p) {
+			// An entry naming no provider (pi-subagents' `inherit`) may admit any model.
+			return "", nil, false
+		}
 	}
 	selected := provider + "/" + model
 	return selected, scope, !MatchesAny(selected, scope)

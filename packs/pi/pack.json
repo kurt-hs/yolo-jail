@@ -15,6 +15,24 @@
           "/subagents/modelScope/agents/*/allow"
         ],
         "profile_subagents": true,
+        // pi's own model surfaces, whose ids are pi's registry beside the table and its
+        // catalog: the models.json rows, the openai-codex list with its [1m] variants, and the
+        // lists an `only` narrows.
+        "registry": [
+          {
+            "ids": "/providers/*/models/*/id",
+            "surface": "pi/models"
+          },
+          {
+            "ids": "/models/*/id",
+            "provider": "openai-codex",
+            "surface": "pi/codex-models"
+          },
+          {
+            "ids": "/*/models/*/id",
+            "surface": "pi/model-lists"
+          }
+        ],
         "scope": "/subagents/modelScope/allow",
         "selection": {
           "model": "/defaultModel",

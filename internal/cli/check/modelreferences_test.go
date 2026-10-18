@@ -135,25 +135,113 @@ func TestCheckWarnsAboutAPacksScopePatternThatMatchesNothing(t *testing.T) {
 	}
 }
 
-// On a provider with a declared list the list's ids are in the registry beside pi's catalog: an
-// id of neither is warned about, and an id of the list is not.
-func TestCheckResolvesASubagentAliasThroughTheProvidersList(t *testing.T) {
-	prefix := t.TempDir()
-	installPiCatalog(t, prefix, "glm-5.2")
-	packsFixture(t, `{"packs": ["pi", "zai"],
-  "profiles": {"z": {"provider": "zai", "subagents": {"default": "glm-5.3-flash", "roles": {"scout": "glm-9"}}}}}`)
-	env := map[string]string{"YOLO_VERSION": "test", "NPM_CONFIG_PREFIX": prefix}
+// runPacksCheck runs sectionPacks over cfg (the user config) with pi on profile, no catalog read.
+func runPacksCheck(t *testing.T, cfg, profile string) (string, *reporter) {
+	t.Helper()
+	packsFixture(t, cfg)
+	env := map[string]string{"YOLO_VERSION": "test", "NPM_CONFIG_PREFIX": t.TempDir()}
 	var buf bytes.Buffer
 	r := &reporter{w: &buf}
-	(&Options{Getenv: func(k string) string { return env[k] }}).sectionPacks(r, useProfiles("pi", "z"))
-	out := buf.String()
-	if !strings.Contains(out, `profiles.z.subagents.roles.scout names the model "glm-9" (pi receives "zai/glm-9")`) {
-		t.Fatalf("an id off the list must be warned about:\n%s", out)
+	(&Options{Getenv: func(k string) string { return env[k] }}).sectionPacks(r, useProfiles("pi", profile))
+	return buf.String(), r
+}
+
+// On a provider with a declared list the list alone decides, catalog or none: an id on it is
+// fine, and one off it with no `default` alias to fall back to FAILS, since pi's render refuses
+// it and the launch stops.
+func TestCheckFailsASubagentModelOffAListWithNoDefault(t *testing.T) {
+	out, r := runPacksCheck(t, `{"packs": ["pi", "zai"],
+  "profiles": {"z": {"provider": "zai", "subagents": {"default": "glm-5.3-flash", "roles": {"scout": "glm-9"}}}}}`, "z")
+	for _, want := range []string{
+		`[FAIL] Model reference: profiles.z.subagents.roles.scout names the model "glm-9", which is not on its provider's list`,
+		"refuses it and the launch stops", "Nearest: zai/glm-",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the check should say %q:\n%s", want, out)
+		}
 	}
-	if !strings.Contains(out, "Nearest: zai/glm-") {
-		t.Errorf("the warning names the list's nearest ids:\n%s", out)
+	if strings.Contains(out, `subagents.default names`) || r.failed != 1 {
+		t.Errorf("only the off-list role fails (failed=%d):\n%s", r.failed, out)
 	}
-	if strings.Contains(out, `subagents.default names`) {
-		t.Errorf("an id on the list must not be warned about:\n%s", out)
+}
+
+// Off a list that declares a `default` alias, the derive starts the children on that instead: a
+// warning naming the model they get.
+func TestCheckWarnsASubagentModelOffAListFallsBackToItsDefault(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "pack.json"), []byte(`{"name": "acme", "contributes": [
+	  {"kind": "provider", "name": "acme", "endpoints": {"openai": {"base_url": "https://acme.example.test/v1"}},
+	   "models": {"default": "acme-large", "acme-large": "acme-large", "acme-mini": "acme-mini"}},
+	  {"kind": "profile", "name": "acme", "provider": "acme"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, r := runPacksCheck(t, `{"packs": ["pi", "file://`+dir+`"],
+  "profiles": {"a": {"provider": "acme", "subagents": {"default": "acme-mni"}}}}`, "a")
+	want := "child agents start on the list's `default`, acme/acme-large, instead"
+	if !strings.Contains(out, `[WARN] Model reference: profiles.a.subagents.default names the model "acme-mni"`) ||
+		!strings.Contains(out, want) || !strings.Contains(out, "Nearest: acme/acme-mini") {
+		t.Fatalf("the check should warn and say %q:\n%s", want, out)
+	}
+	if r.failed != 0 {
+		t.Errorf("a fallback is not a refusal:\n%s", out)
+	}
+}
+
+// The list's exact id wins over its `default` alias at the host check, the same ordering the
+// selected profile's derive uses. This drives the production sectionPacks report with the model
+// named verbatim in the profile rather than an alias.
+func TestCheckAcceptsExactSubagentIDBeforeListDefault(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "pack.json"), []byte(`{"name": "acme", "contributes": [
+	  {"kind": "provider", "name": "acme", "endpoints": {"openai": {"base_url": "https://acme.example.test/v1"}},
+	   "models": {"default": "acme/model-large", "large": "acme/model-large", "mini": "acme/model-mini"}},
+	  {"kind": "profile", "name": "acme", "provider": "acme"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, r := runPacksCheck(t, `{"packs": ["pi", "file://`+dir+`"],
+  "profiles": {"a": {"provider": "acme", "subagents": {"default": "acme/model-mini"}}}}`, "a")
+	if strings.Contains(out, `profiles.a.subagents.default names`) || r.failed != 0 {
+		t.Fatalf("an exact id on the provider list must not be treated as an off-list fallback:\n%s", out)
+	}
+}
+
+// Every shipped profile usable by Pi reaches the production host check. The registry is derived
+// from the same pack surfaces and provider/profile composition each selected profile uses at boot.
+func TestCheckResolvesEveryShippedPiProfileModelReference(t *testing.T) {
+	cfg := `{"packs": ["pi", "openai-auth", "zai", "openrouter", "kilo", "llamacpp", "bedrock",
+  "cerebras", "meta-provider", "wire-bridge"]}`
+	for _, profile := range []string{"codex", "zai", "openrouter", "kilo", "llamacpp", "bedrock",
+		"bedrock-bridge", "cerebras", "meta"} {
+		t.Run(profile, func(t *testing.T) {
+			out, _ := runPacksCheck(t, cfg, profile)
+			if strings.Contains(out, "Model reference:") &&
+				(strings.Contains(out, "matches no model") || strings.Contains(out, "[FAIL] Model reference:")) {
+				t.Fatalf("shipped profile %q produces an unresolved model reference at the host:\n%s", profile, out)
+			}
+		})
+	}
+}
+
+// A profile whose provider has no row in the composed table, or that declares no subagents, reads
+// nothing and never stops the check.
+func TestCheckReadsNothingForAProfileWithNoProviderRow(t *testing.T) {
+	out, _ := runPacksCheck(t, `{"packs": ["pi", "zai"], "profiles": {"d": {"provider": "deepseek",
+  "subagents": {"default": "deepseek-v4-flash"}}}}`, "d")
+	if strings.Contains(out, "is not on its provider's list") {
+		t.Errorf("a provider with no list passes the value through:\n%s", out)
+	}
+	runPacksCheck(t, `{"packs": ["pi"], "profiles": {"cx": {"provider": "openai-codex"}}}`, "cx")
+}
+
+// A pack pattern naming one of the openai-codex [1m] variants resolves: the registry holds the ids
+// pi's own codex-models surface renders, which the table's list does not spell.
+func TestCheckResolvesAPatternAgainstPisRenderedModelFiles(t *testing.T) {
+	out, _ := runPacksCheck(t, `{"packs": ["pi", "openai-auth", "file://`+scopePack(t, "openai-codex/gpt-6.1-sol[1m]")+`"]}`,
+		"codex")
+	if strings.Contains(out, "matches no model") {
+		t.Fatalf("a variant pi's codex-models file holds must resolve:\n%s", out)
+	}
+	if !strings.Contains(out, "Model reference: every model pi's config names resolves in its registry") {
+		t.Errorf("the check says what it checked:\n%s", out)
 	}
 }

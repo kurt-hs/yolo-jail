@@ -24,6 +24,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/modelcatalog"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/render"
 )
 
 // reportModelReferences warns about every declared model reference the rendered surfaces hold
@@ -62,6 +63,11 @@ func reportModelReferences(e *Env, packs []*packload.Pack) {
 				continue
 			}
 			reg := packload.NewModelRegistry(packs, providers, bin, bootCatalog(e, p, bin))
+			for _, src := range refs.Registry {
+				if _, rendered, ok := renderedSurface(e, p, src.Surface, autonomy); ok {
+					reg.AddRendered(rendered, src)
+				}
+			}
 			findings, unasked := packload.EvaluateModelReferences(reg, values)
 			for _, f := range findings {
 				nearest := ""
@@ -69,8 +75,9 @@ func reportModelReferences(e *Env, packs []*packload.Pack) {
 					nearest = " (nearest: " + strings.Join(f.Nearest, ", ") + ")"
 				}
 				e.warnOnce(fmt.Sprintf("%s: %s names %q, which matches no model in %s's registry%s, so a child "+
-					"agent started on it fails at dispatch. `yolo check` on the host names the declaration that "+
-					"wrote it%s", bin, f.Where, f.Value, bin, nearest, governs))
+					"agent started on it fails at dispatch. `yolo check` on the host names the profile or pack "+
+					"that set it; if it names none, the value is the one yolo's derive computed, so report it at %s",
+					bin, f.Where, f.Value, bin, nearest, IssuesURL))
 			}
 			if unasked > 0 {
 				e.noteOnce(fmt.Sprintf("%s: %d model reference(s) in %s not checked: %s's catalog is not "+
@@ -120,4 +127,31 @@ func bootCatalog(e *Env, p *packload.Pack, bin string) map[string]bool {
 		}
 	}
 	return nil
+}
+
+// DerivedSurface is the document p's derive composes for its surface id over the wire tables vars
+// (the YOLO_PROVIDERS, YOLO_PROFILES and YOLO_USE_PROFILES a launch exports) and the selected
+// packs, at the host notch and writing nothing: where `yolo check`, which renders no file, reads a
+// program's own model surfaces from (packdecl.ModelReferences.Registry, MM-D45). An error means
+// p declares no such surface or its derive failed.
+func DerivedSurface(p *packload.Pack, id string, vars map[string]string, packs []*packload.Pack) (map[string]any, error) {
+	key, err := manifest.ParseSurfaceID(id)
+	if err != nil {
+		return nil, err
+	}
+	surfaces, _ := p.SurfacesFor(render.ProfileFor(render.KindHost).AgentAutonomy)
+	for _, s := range surfaces {
+		if s.Key() != key {
+			continue
+		}
+		home, err := os.MkdirTemp("", "yolo-derived-surface-")
+		if err != nil {
+			return nil, err
+		}
+		defer os.RemoveAll(home)
+		_, layer, err := hostSurfaceLayer(p, strings.TrimPrefix(s.Path, "~/"), home,
+			&HostInputs{Vars: vars, Packs: packs}, nil)
+		return layer, err
+	}
+	return nil, fmt.Errorf("pack %s declares no surface %s", p.Name, id)
 }
