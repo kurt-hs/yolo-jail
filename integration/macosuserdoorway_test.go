@@ -1,9 +1,11 @@
 package integration
 
 import (
+	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,7 +76,7 @@ func TestMacosUserOpensTheCodexDoorwayOutsideTheSandbox(t *testing.T) {
 	if got["TOKEN"] == "401" || got["TOKEN"] == "000" || got["TOKEN"] == "" {
 		t.Errorf("a refresh carrying the launch's token did not get past the doorway%s", diag)
 	}
-	requireDoorwayRanOutsideAndStopped(t, codexDoorwayArgv, saw, me, uid, diag)
+	requireDoorwayRanOutsideAndStopped(t, codexDoorwayArgv, saw, r.combined(), me, uid, diag)
 }
 
 // codexDoorwayArgv and awsDoorwayArgv are what a doorway's host process listing contains: the
@@ -84,29 +86,148 @@ const (
 	awsDoorwayArgv   = "internal daemon aws-credential-adapter --listen"
 )
 
-// requireDoorwayRanOutsideAndStopped is the two host-side facts every doorway test asserts: the
-// host saw the doorway (saw, its listing line) run as the host user me, never as the sandbox
-// account uid, and no process with its argv survives the session.
-func requireDoorwayRanOutsideAndStopped(t *testing.T, argv, saw, me, uid, diag string) {
+// requireDoorwayRanOutsideAndStopped is the two host-side facts every doorway test asserts, about
+// THIS LAUNCH'S process with argv and no other: the host saw it run as the host user me, never as
+// the sandbox account uid, and it does not survive the session. saw is what the watch listed during
+// the session; output is the launch's own output, whose start line names the pid (launchOwnedPIDs).
+func requireDoorwayRanOutsideAndStopped(t *testing.T, argv string, saw doorwaySightings, output, me, uid, diag string) {
 	t.Helper()
-	if saw == "" {
-		t.Errorf("the host saw no `%s` during the session%s", argv, diag)
-	} else if f := strings.Fields(saw); len(f) < 1 || f[0] != me || f[0] == uid {
-		t.Errorf("the doorway ran as uid %s, want the host user's %s (the sandbox account is %s): %s%s",
-			f[0], me, uid, saw, diag)
+	for _, p := range doorwayProblems(argv, saw, output, me, uid, hostProcessListing,
+		doorwayGoneWait, 250*time.Millisecond) {
+		t.Errorf("%s%s", p, diag)
 	}
-	deadline := time.Now().Add(10 * time.Second)
+}
+
+// doorwayGoneWait bounds the wait for this launch's doorway to be gone once the launch returned.
+// The launch has already waited for it: the last session's quit follows its keeper's teardown
+// until the keeper is gone (streamKeeperTeardown), and the keeper stops each doorway before that
+// (endKey), so this is slack, not the teardown's own bound.
+const doorwayGoneWait = 10 * time.Second
+
+// doorwayProblems is requireDoorwayRanOutsideAndStopped's judgement, with the process listing
+// (list) and the wait given, so a -short test can drive it with a listing of its own.
+//
+// IT JUDGES ONLY THE PIDS THE LAUNCH NAMED. Every doorway of one kind has the same argv short of
+// its --listen port, whichever launch opened it: a developer's own `yolo host -- claude` on
+// Bedrock, or another workspace's keeper, holds an aws-credential-adapter doorway for as long as
+// that session runs, and a check matching the argv machine-wide reported it as this session's
+// survivor on a developer Mac (docs/design/macos-user-suite-on-a-developer-mac.md §6.2). Another
+// process with the argv is named in the message for the reader and never fails the test.
+func doorwayProblems(argv string, saw doorwaySightings, output, me, uid string, list func() string,
+	wait, poll time.Duration) []string {
+	ours := launchOwnedPIDs(output)
+	if len(ours) == 0 {
+		return []string{fmt.Sprintf("the launch's output names no pid for `%s` (no \"Opened the … "+
+			"doorway (pack …, pid N)\" or \"Started the … service (pack …, pid N)\" line), so no "+
+			"process can be told to be this launch's", argv)}
+	}
+	var problems []string
+	seen := false
+	for pid, line := range saw {
+		if !ours[pid] {
+			continue
+		}
+		seen = true
+		if f := strings.Fields(line); len(f) < 1 || f[0] != me || f[0] == uid {
+			problems = append(problems, fmt.Sprintf("the doorway ran as uid %s, want the host user's %s "+
+				"(the sandbox account is %s): %s", firstField(line), me, uid, line))
+		}
+	}
+	if !seen {
+		problems = append(problems, fmt.Sprintf("the host saw no `%s` with a pid the launch named (%s) "+
+			"during the session%s", argv, joinPIDs(ours), othersClause(saw, ours)))
+	}
+	deadline := time.Now().Add(wait)
 	for {
-		left, _ := exec.Command("pgrep", "-f", argv).Output()
-		if strings.TrimSpace(string(left)) == "" {
-			break
+		left := sightingsIn(list(), argv)
+		var survivors []string
+		for pid, line := range left {
+			if ours[pid] {
+				survivors = append(survivors, line)
+			}
 		}
-		if time.Now().After(deadline) {
-			t.Errorf("the doorway survives the session (pids %s)", strings.TrimSpace(string(left)))
-			break
+		if len(survivors) == 0 {
+			return problems
 		}
-		time.Sleep(250 * time.Millisecond)
+		if !time.Now().Before(deadline) {
+			sort.Strings(survivors)
+			return append(problems, fmt.Sprintf("this launch's doorway survives the session %s after the "+
+				"launch returned: %s%s", wait, strings.Join(survivors, "; "), othersClause(left, ours)))
+		}
+		time.Sleep(poll)
 	}
+}
+
+// launchPIDLine is a line a launch (or its keeper, whose lines it relays) prints for a process it
+// started outside the sandbox: a doorway's start (startMacosUserDoorways), a launch-owned
+// service's (serviceStartedLine), or a supervised restart of either (launchservice's
+// restartAfter). Past the quoted name, any run of whitespace between words is accepted.
+var launchPIDLine = regexp.MustCompile(`(?:Opened the "[^"]+" doorway|Started the "[^"]+" service)\s+\(pack\s+"[^"]+",\s+pid\s+(\d+)\)|service is back\s+\(pid\s+(\d+)\)`)
+
+// launchOwnedPIDs is every pid output names on a launchPIDLine.
+func launchOwnedPIDs(output string) map[string]bool {
+	pids := map[string]bool{}
+	for _, m := range launchPIDLine.FindAllStringSubmatch(output, -1) {
+		for _, g := range m[1:] {
+			if g != "" {
+				pids[g] = true
+			}
+		}
+	}
+	return pids
+}
+
+// doorwaySightings is the processes a listing showed with a doorway's argv: each one's
+// `uid pid command` line, by pid.
+type doorwaySightings map[string]string
+
+// sightingsIn is the lines of a `ps -o uid=,pid=,command=` listing whose command contains argv,
+// by pid, less a listing tool's own.
+func sightingsIn(listing, argv string) doorwaySightings {
+	out := doorwaySightings{}
+	for _, line := range strings.Split(listing, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.Contains(line, argv) || strings.Contains(line, "pgrep") {
+			continue
+		}
+		if f := strings.Fields(line); len(f) >= 2 {
+			out[f[1]] = line
+		}
+	}
+	return out
+}
+
+// othersClause names the processes with the argv that are not the launch's, for a message.
+func othersClause(s doorwaySightings, ours map[string]bool) string {
+	var others []string
+	for pid, line := range s {
+		if !ours[pid] {
+			others = append(others, line)
+		}
+	}
+	if len(others) == 0 {
+		return ""
+	}
+	sort.Strings(others)
+	return fmt.Sprintf(" (not this launch's, so not judged: %s)", strings.Join(others, "; "))
+}
+
+// joinPIDs is pids sorted, comma-separated, for a message.
+func joinPIDs(pids map[string]bool) string {
+	var out []string
+	for pid := range pids {
+		out = append(out, pid)
+	}
+	sort.Strings(out)
+	return strings.Join(out, ", ")
+}
+
+// firstField is line's first whitespace-separated field, "" for none.
+func firstField(line string) string {
+	if f := strings.Fields(line); len(f) > 0 {
+		return f[0]
+	}
+	return ""
 }
 
 // TestMacosUserOpensTheAWSDoorwayOutsideTheSandbox is HS-D15 for aws-auth on the hardware: with
@@ -208,34 +329,36 @@ func TestMacosUserOpensTheAWSDoorwayOutsideTheSandbox(t *testing.T) {
 		t.Errorf("a request carrying claude's caller token got %q, want 200 with the stand-in's "+
 			"credentials: the doorway did not reach the host aws-auth service%s", got["TOKEN"], diag)
 	}
-	requireDoorwayRanOutsideAndStopped(t, awsDoorwayArgv, saw, me, uid, diag)
+	requireDoorwayRanOutsideAndStopped(t, awsDoorwayArgv, saw, r.combined(), me, uid, diag)
 }
 
-// doorwayWatch polls the host's process table for the doorway during a session.
+// doorwayWatch polls the host's process table for a doorway's argv during a session.
 type doorwayWatch struct {
 	quit chan struct{}
 	done chan struct{}
 	once sync.Once
 	mu   sync.Mutex
-	saw  string
+	saw  doorwaySightings
 }
 
-// watchForDoorway polls for a host process whose listing contains argv.
+// watchForDoorway polls for host processes whose listing contains argv, recording every one it
+// sees until stopped. Which of them is this launch's is decided afterwards, from the pid the
+// launch's own line names (doorwayProblems).
 func watchForDoorway(argv string) *doorwayWatch {
-	w := &doorwayWatch{quit: make(chan struct{}), done: make(chan struct{})}
+	w := &doorwayWatch{quit: make(chan struct{}), done: make(chan struct{}), saw: doorwaySightings{}}
 	go func() {
 		defer close(w.done)
 		tick := time.NewTicker(250 * time.Millisecond)
 		defer tick.Stop()
 		for {
-			for _, line := range strings.Split(hostProcessListing(), "\n") {
-				if strings.Contains(line, argv) && !strings.Contains(line, "pgrep") {
-					w.mu.Lock()
-					w.saw = strings.TrimSpace(line)
-					w.mu.Unlock()
-					return
+			found := sightingsIn(hostProcessListing(), argv)
+			w.mu.Lock()
+			for pid, line := range found {
+				if _, ok := w.saw[pid]; !ok {
+					w.saw[pid] = line
 				}
 			}
+			w.mu.Unlock()
 			select {
 			case <-w.quit:
 				return
@@ -246,11 +369,15 @@ func watchForDoorway(argv string) *doorwayWatch {
 	return w
 }
 
-// stop ends the poll and returns the doorway's listing line ("" for none).
-func (w *doorwayWatch) stop() string {
+// stop ends the poll and returns every process it saw with the argv.
+func (w *doorwayWatch) stop() doorwaySightings {
 	w.once.Do(func() { close(w.quit) })
 	<-w.done
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.saw
+	out := doorwaySightings{}
+	for pid, line := range w.saw {
+		out[pid] = line
+	}
+	return out
 }

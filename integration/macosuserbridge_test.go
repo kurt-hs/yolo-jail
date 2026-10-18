@@ -164,5 +164,5 @@ func TestMacosUserRunsTheWireBridgeHostHalfForABridgedProfile(t *testing.T) {
 		upstream.Body.Messages[0].Content != "say bridge" {
 		t.Errorf("upstream body = %+v, want the one user turn translated with the model passed through", upstream.Body)
 	}
-	requireDoorwayRanOutsideAndStopped(t, wireBridgeHostHalfArgv, saw, me, uid, diag)
+	requireDoorwayRanOutsideAndStopped(t, wireBridgeHostHalfArgv, saw, r.combined(), me, uid, diag)
 }
