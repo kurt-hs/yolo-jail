@@ -98,7 +98,14 @@ func DarwinEnvFrom(vars map[string]string, home string) *Env {
 func RunDarwinBootstrap(e *Env, opts DarwinBootstrapOptions) error {
 	stderr, logOnly := e.Stderr, e.LogOnly
 	blog := attachDarwinBootLog(e, opts.Version)
-	runBootSteps(&bootRun{e: e, target: bootDarwin, darwin: opts})
+	// THE STEPS ARE TIMED for the launcher (writeBootPerf), which records them as
+	// macos_user.bootstrap.<step>; only for a workspace the launch named, like the boot log.
+	var p *perfLog
+	if e.Getenv("YOLO_DARWIN_WORKSPACE") != "" {
+		p = newPerfLog()
+	}
+	runBootSteps(&bootRun{e: e, target: bootDarwin, darwin: opts, perf: p})
+	writeBootPerf(e, p)
 	err := genFailuresError(e)
 	blog.finish(err)
 	// The log is closed, so the writers it installed go back to the caller's: a MultiWriter

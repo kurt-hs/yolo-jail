@@ -17,7 +17,7 @@ import (
 // and not "nix command not found".
 func TestMaterializeRefusesEmptyRepoRoot(t *testing.T) {
 	var stderr bytes.Buffer
-	got, err := Materialize("", []any{"fzf"}, "aarch64-darwin", &stderr)
+	got, err := Materialize("", []any{"fzf"}, "aarch64-darwin", &stderr, nil)
 	if err == nil {
 		t.Fatalf("Materialize(\"\") = %+v, nil — want an error; nix would have run in the caller's cwd", got)
 	}

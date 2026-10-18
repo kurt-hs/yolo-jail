@@ -1369,7 +1369,7 @@ func macosUserRun(cfg *jsonx.OrderedMap, workspace string, agents, agentArgv []s
 		// hardcoded aarch64-darwin: this backend is macOS-only but Macs are not
 		// all Apple Silicon (BACKLOG E8's bug class).
 		system := darwinpkg.NativeSystem()
-		pkgs, err := darwinpkg.Materialize(nixRoot, packages, system, os.Stderr)
+		pkgs, err := darwinpkg.Materialize(nixRoot, packages, system, os.Stderr, log)
 		if err != nil {
 			return nil, false, err
 		}
