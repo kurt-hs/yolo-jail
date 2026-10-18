@@ -30,6 +30,7 @@ package config
 // gates on that short-circuit (own workspace only; no --user-layer set).
 
 import (
+	"os"
 	"path/filepath"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -73,4 +74,42 @@ func WriteAssembledConfig(workspace string, merged *jsonx.OrderedMap) error {
 		return err
 	}
 	return writeWorkspaceSnapshot(workspace, WorkspaceAssembledConfigPath(workspace), j)
+}
+
+// WorkspaceAssembledOriginsPath is <workspace>/.yolo/config-assembled-origins.json: the launch
+// origins of the assembled config beside it (launchorigins.go), which host file set each value,
+// so a refusal in the jail about a key of that copy names the file to edit.
+func WorkspaceAssembledOriginsPath(workspace string) string {
+	if workspace == "" {
+		workspace = cwd()
+	}
+	return filepath.Join(workspace, ".yolo", "config-assembled-origins.json")
+}
+
+// WriteAssembledOrigins writes the launch origins of merged, the config WriteAssembledConfig
+// wrote, from src, its provenance. Written on every launch beside that copy, as an empty record
+// when src knows nothing (a sealed launch's empty copy), so a record from an earlier launch never
+// describes this one.
+func WriteAssembledOrigins(workspace string, merged *jsonx.OrderedMap, src *Sources) error {
+	record := LaunchOriginsJSON(merged, src)
+	if record == "" {
+		record = "{}"
+	}
+	return writeWorkspaceSnapshot(workspace, WorkspaceAssembledOriginsPath(workspace), record)
+}
+
+// assembledOriginsTree is the provenance tree of snap, the assembled copy, from the launch
+// origins beside it; nil when there are none.
+func assembledOriginsTree(workspace string, snap *jsonx.OrderedMap) *srcNode {
+	data, err := os.ReadFile(WorkspaceAssembledOriginsPath(workspace))
+	if err != nil {
+		return nil
+	}
+	t := parseOrigins(data)
+	if t == nil || (t.W == nil && t.K == nil && t.E == nil) {
+		return nil
+	}
+	copyPath := WorkspaceAssembledConfigPath(workspace)
+	copyData, _ := os.ReadFile(copyPath)
+	return launchCopyTree(&srcFile{path: copyPath, data: copyData}, snap, t)
 }

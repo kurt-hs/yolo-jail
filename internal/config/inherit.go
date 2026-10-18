@@ -487,11 +487,24 @@ func FilterInheritErr(effective *jsonx.OrderedMap, scope InheritScope) (*jsonx.O
 // through the ordinary config loader with no special case, and the leading `//` comments
 // ride along.
 func RenderFiltered(filtered *jsonx.OrderedMap, scope InheritScope, launchedAt string) (string, error) {
+	return RenderFilteredWithOrigins(filtered, nil, scope, launchedAt)
+}
+
+// RenderFilteredWithOrigins is RenderFiltered with the file's launch origins (launchorigins.go)
+// from src, the provenance of the effective config filtered was cut from: one comment line at the
+// end of the header naming, for each value, the host file that set it, so a refusal in the jail
+// names that file rather than this one. A nil src writes no such line.
+func RenderFilteredWithOrigins(filtered *jsonx.OrderedMap, src *Sources, scope InheritScope, launchedAt string) (string, error) {
 	body, err := SnapshotJSON(filtered)
 	if err != nil {
 		return "", err
 	}
-	return InheritHeader(scope, launchedAt) + body + "\n", nil
+	header := InheritHeader(scope, launchedAt)
+	if record := LaunchOriginsJSON(filtered, src); record != "" {
+		header += "//\n// The line below records which host file set each key, so a refusal in this jail\n" +
+			"// names that file.\n" + originsLinePrefix + record + "\n"
+	}
+	return header + body + "\n", nil
 }
 
 // RenderInherit filters and renders in one step — the whole-file form, for callers with no

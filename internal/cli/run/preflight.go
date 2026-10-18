@@ -521,8 +521,12 @@ func printScopeCounts(out printer, counts []string) {
 // container arm ignores it, since its baseline cannot be replaced while its jail runs.
 func (o *Options) writeLaunchConfigArtifacts(cfg *jsonx.OrderedMap) (baselineDigest string) {
 	out := o.pr(o.Stdout)
-	if err := config.WriteAssembledConfig(o.Workspace, o.assembledConfigFor(cfg)); err != nil {
+	assembled := o.assembledConfigFor(cfg)
+	if err := config.WriteAssembledConfig(o.Workspace, assembled); err != nil {
 		out.printf("[dim]Warning: could not write the assembled config for the jail: %s[/dim]", err.Error())
+	} else if err := config.WriteAssembledOrigins(o.Workspace, assembled, o.assembledSourcesFor()); err != nil {
+		// Beside it, which host file set each key, so a refusal in the jail names that file.
+		out.printf("[dim]Warning: could not record where the jail's config keys were set: %s[/dim]", err.Error())
 	}
 	if wsCfg, wsErr := config.LoadWorkspaceConfig(o.Workspace, false, func(string) {}); wsErr == nil {
 		d, err := config.WriteWorkspaceBootBaseline(o.Workspace, wsCfg)
