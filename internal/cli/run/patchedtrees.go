@@ -23,8 +23,9 @@ package run
 //     still delivers a good build already on this machine: the mount is a per-launch copy, so a write
 //     through an ignored `:ro` changes only that copy (§11).
 //   - ON macos-user it runs too, in the arm's own slot call (runForkBuildSlotAndRefusals), and builds
-//     each tree for the sandbox's darwin platform (jailPlatform). The per-launch copy is made here as
-//     on a container, and instead of a mount the home overlay copies it to `~/<into>`
+//     each tree for the sandbox's darwin platform (jailPlatform). The copy is made under a STABLE
+//     root of the workspace's instead (macosUserTreeCopyRoot), keyed by its store entry, so an
+//     unchanged relaunch copies nothing; and instead of a mount the home overlay copies it to `~/<into>`
 //     (buildMacosHomeOverlayWith), where the Seatbelt profile write-protects it: this backend's `:ro`.
 //     A dry run builds nothing and says what a launch would (dryRunTreeDeliveries).
 //
@@ -34,6 +35,7 @@ package run
 // compares (packtree.go), and never at the tree's top level, which the boot's fallback walk reads as
 // packs. Its name carries a dot, which a tree's name never does, as the delivery record's does
 // (forkhanded.go), and it goes with its tree (discardPackTree) or with the jail's whole AGENTS_DIR.
+// On macos-user it is beside the pack trees instead, in paths.TreeCopyRoot, which outlives them.
 
 import (
 	"crypto/sha256"
@@ -50,6 +52,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/progress"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
@@ -101,6 +104,12 @@ type TreeBuildRequest struct {
 	BuildFloor string
 	// CopyRoot is the directory each tree's per-launch copy is made in, as <CopyRoot>/<PatchedCopySlug>.
 	CopyRoot string
+	// ReuseCopies makes CopyRoot a STABLE root rather than this launch's own: each copy is keyed by
+	// the store entry and prefix it was made from, a later launch handed the same build is given
+	// the copy as it is, and a copy no live launch holds is reaped (internal/cli's
+	// reusableTreeCopy). Set on macos-user only, where the copy is read once, into the home
+	// overlay, and never mounted (macosUserTreeCopyRoot).
+	ReuseCopies bool
 	// Interrupt is this launch's act interrupt, the fork builds' (ForkBuildRequest.Interrupt,
 	// PF-D57): once a Ctrl-C has ended a wait in this launch's fork-build slot, each extension's
 	// good build is copied with no check and no build.
@@ -302,10 +311,28 @@ func (o *Options) treeBuildPlan(rt string) (map[string]TreeDelivery, *TreeBuildR
 	if len(trees) == 0 {
 		return out, nil
 	}
+	copyRoot, reuse := patchedCopiesDir(o.packTree), false
+	if rt == "macos-user" { // parity: Honored — only macos-user reads a copy once, into its home overlay, rather than mounting it for the jail's life
+		copyRoot, reuse = macosUserTreeCopyRoot(o.packTree), true
+	}
 	return out, &TreeBuildRequest{FreshUpdate: o.Update && !o.DryRun, Trees: trees, Platform: jailPlatform(rt), Runtime: rt,
 		Workspace: o.Workspace, Stdout: o.Stdout, Stderr: o.Stderr, Progress: o.progressConfig(),
 		Build: floor == "", BuildFloor: floor,
-		CopyRoot: patchedCopiesDir(o.packTree), Interrupt: o.actInterrupt(), CachedGood: o.cachedGoodTrees}
+		CopyRoot: copyRoot, ReuseCopies: reuse, Interrupt: o.actInterrupt(), CachedGood: o.cachedGoodTrees}
+}
+
+// macosUserTreeCopyRoot is where a macos-user launch's patched-extension copies live: a STABLE
+// directory of the workspace's (AGENTS_DIR/<cname>/tree-copies, paths.TreeCopyRoot), beside the pack
+// trees rather than inside this launch's, so the next launch handed the same build finds its copy
+// and copies nothing (TreeBuildRequest.ReuseCopies). A container mounts its copy for the jail's
+// whole life, so it keeps one per launch, removed with the tree; macos-user reads it once, into the
+// home overlay, whose own reuse keys on the copy's store entry rather than its path. "" when this
+// launch staged no pack tree.
+func macosUserTreeCopyRoot(packTree string) string {
+	if packTree == "" {
+		return ""
+	}
+	return paths.TreeCopyRootFor(packTree)
 }
 
 // finishTreeDeliveries is the tree arm's second half: the act's answers merged into out, and a
@@ -322,9 +349,9 @@ func (o *Options) finishTreeDeliveries(out, answers map[string]TreeDelivery) map
 	return out
 }
 
-// patchedTreeDirs is what packFilesTargets delivers for each patched extension: its per-launch copy,
-// by extension key, for the trees this launch delivered one of — mounted on a container, copied into
-// the home overlay on macos-user. A tree with no copy (skipped, or nothing serves) has no key, and
+// patchedTreeDirs is what packFilesTargets delivers for each patched extension: its copy, by
+// extension key, for the trees this launch delivered one of — a per-launch copy mounted on a
+// container, a per-build one copied into the home overlay on macos-user (macosUserTreeCopyRoot). A tree with no copy (skipped, or nothing serves) has no key, and
 // so no destination.
 func (o *Options) patchedTreeDirs() map[string]string {
 	dirs := map[string]string{}
@@ -336,7 +363,7 @@ func (o *Options) patchedTreeDirs() map[string]string {
 	return dirs
 }
 
-// patchedTreeIdentities names, by extension key, the content of each per-launch copy
+// patchedTreeIdentities names, by extension key, the content of each copy
 // patchedTreeDirs delivers: the content-addressed capture store entry it was copied from and the
 // prefix copied out of it (internal/cli's copyTreeForLaunch), which together decide every byte of the copy. The
 // macos-user home overlay's digest reads this instead of the copy's bytes

@@ -64,6 +64,7 @@ mode with an empty series, and the parallel build pool — its XB-D ids), [`pack
 | The trees a selection declares; the owning agent pack; where each is delivered; the lints | `internal/packload` (`PatchedTrees`, `owningAgentPack`, `Fork.DeliveredInJail`, `LintPatchedTrees`, `LintDuplicateLoads`) |
 | The tree build act and its admit | `internal/cli` (`treeBuildJailArgv`, `treeAdmitProblem`, `sealPacks`, `deliverTree`, `treepool.go`) |
 | The per-launch copy | `internal/capture` (`CopyTree`), `internal/cli/run` (`patchedtrees.go`, `PatchedCopySlug`) |
+| The macos-user per-build copy | `internal/cli` (`treecopyreuse.go`), `internal/paths` (`TreeCopyRoot`) |
 | A launch's refusal when a needed tree has no build | `internal/cli/run` (`refuseMissingBuilds`, `missingbuilds.go`) |
 | The jail's view and the launchers' gate | `internal/entrypoint` (`PatchedTreesEnv`, `treeGateFor`, `TreeBuildEnv`, `SealedBuildEnv`, `BootRefusal`, `BuildCause`) |
 | The host render: versioned copies and an owned link | `internal/cli` (`hosttrees.go`, `renderHostTree`, `advanceHostTrees`, `linkHostLaunchTrees`, `revertHostTreeLinks`) |
@@ -337,12 +338,19 @@ running: its build jail not starting, a lock wait running out, an apply error
 4. **An attach names the build its jail was handed**, from the delivery record each fresh launch
    leaves beside its tree, and says when a newer good build waits for the next fresh launch.
 
-**On macos-user there is no mount** ([PPX-D45](#PPX-D45)): the per-launch copy is laid into the
+**On macos-user there is no mount** ([PPX-D45](#PPX-D45)): the copy is laid into the
 launch's home overlay at `~/<into>`, the same overlay that carries every other `files` tree there. It
 is staged host-owned and read-only under `/Users/Shared/yolo-staged`, the sandbox's bootstrap installs
 it into the sandbox home, and the session's Seatbelt profile denies writes to it, which is this
 backend's `:ro`. `YOLO_PATCHED_TREES` is relayed to the bootstrap, so the boot reads the same
 decisions a container's does.
+
+**The macos-user copy is made once per build, not once per launch** ([PPX-D51](#PPX-D51)). The
+overlay reads it once and never mounts it, so it lives in the workspace's
+`AGENTS_DIR/<cname>/tree-copies`, keyed by its store entry, and a later launch handed the same build
+gets the same copy with nothing copied. Each launch that hands a copy holds a lease on it for the rest
+of its process, and the next launch to settle a copy of that extension removes the copies of other
+builds that no launch holds.
 
 A move reaps every other build of the key at once: no jail reads the store for a tree, so no running
 jail's copy can be stranded. A copy can still be cut short by another workspace's launch moving the
@@ -755,6 +763,7 @@ back-off) are in [`patched-forks.md`](patched-forks.md#current-values).
 | :--- | :--- | :--- |
 | The tree build's reserved directory | `~/.local/share/yolo-tree/<name>` | `packdecl.TreeReservedRoot` |
 | A launch's per-launch copy | `<tree>.patched/<key, "/" as "--">-<8 hex of the key's sha256>` beside the pack tree | `run.PatchedCopySlug`, `patchedCopiesSuffix` |
+| A macos-user launch's copy | `AGENTS_DIR/<cname>/tree-copies/<the same slug>/<32 hex of the entry and prefix>/tree`, beside its `lease` | `paths.TreeCopyRoot`, `internal/cli`'s `reusableTreeCopy` |
 | The host's versioned copies | `~/.local/share/yolo-jail/host-trees/<slug>/<entry key>`, mode 0700 | `paths.HostTreesDir` |
 | The jail's tree decisions | `YOLO_PATCHED_TREES` | `entrypoint.PatchedTreesEnv` |
 | A tree's build jail | `YOLO_TREE_BUILD=<name>` | `entrypoint.TreeBuildEnv` |
@@ -834,6 +843,7 @@ adjust later."*), and remain his to overrule once he has tested a build.
 | <a id="PPX-D48"></a>PPX-D48 | A sealed build jail prints no line meant for an agent session, on every backend: the macos-user build act's bootstrap is a sealed build's, told by `darwin-bootstrap --sealed-build` on its argv (never the environment, which carries the user's channel), so it renders no pack surface, names no ownerless overlay, list or autonomy entry, and says nothing of `mcp_presets`; and no sealed launch prints the shared-network line. A decision, not a quiet mode: [OQ-RO3](report-tiers.md#why-its-this-way)'s "a launch has no quiet mode" is about the user's launch, and a build jail is none — it runs no agent, and its build's start line already discloses the seal and the network the build reaches. The read and exec disclosures of the packs it runs stay. Found on the maintainer's Mac: every build jail printed the `mcp_presets` warning, eight "no owner" lines and the network line |
 | <a id="PPX-D49"></a>PPX-D49 | The sealed macos-user build act runs its build line in a process group of its own and ends that group when the line exits, whatever its result — SIGTERM, a short grace, then SIGKILL — sent by the capture driver, which runs as the sandbox account through the one run-as rule (`capture-run --end-process-group`); the build's script also turns npm's update check off, as a container jail has it. A child that starts a session of its own is outside the group and is not ended. So the act's guest pack tree is removed as on a normal exit. Found on the maintainer's Mac: a failed build left a sandbox-account process alive past the act's three-second wait, and the tree was kept for `yolo prune` |
 | <a id="PPX-D50"></a>PPX-D50 | A failed build's reason says which part failed, on every backend: the capture driver records the build line's own exit status the moment it exits (`capture-run --line-status`, beside the toolchain record; the macos-user act moves it beside the store as it moves the record), so the host says "the build line ran and failed with exit status N" with the line's real status, "the build line succeeded, then capturing its output failed" when the driver failed after it, and with no record claims neither. Before, both read as the driver's exit, always 1, and as a line that ran and failed. Every failed build's reason keeps the path of the build's own log in the headline a launch or a launcher says: the headline is cut at the first " — " outside parentheses, since the reason carries the build's error, which may say " — " itself (an empty result, each admission check), and the log's path in parentheses. A macos-user build's start line says it runs on the Mac's own network, never "the network of the jail it is launched from": the build runs as the sandbox account on the Mac, with no network namespace. Found in the review of [PPX-D47](#PPX-D47)–[PPX-D49](#PPX-D49) |
+| <a id="PPX-D51"></a>PPX-D51 | *Implementation decision.* A macos-user launch's copy of a patched extension is made once per build, in the workspace's `AGENTS_DIR/<cname>/tree-copies` keyed by store entry and prefix, renamed into place only once whole and checked against the entry's completion marker, and handed as it is to a later launch of the same build. Liveness, not age, decides what goes: each launch holding a copy keeps a shared lock on its lease for its process's life, and a launch settling a copy removes every other copy of the extension whose lease it can lock exclusively. Forced by an unchanged relaunch copying the whole tree out of the store again only for the home overlay, itself reused on the entry, to read none of it. A container keeps its per-launch copy ([PPX-D22](#PPX-D22)): it mounts the copy for the jail's life |
 | OQ-PPX1 | Decided on its leaning (B) under delegation: the good build serves; with none, the owning agent pack's launchers stop before exec and say why; notches that never build trees are exempt. Recorded as [PPX-D18](#PPX-D18), amended by [PPX-D40](#PPX-D40) |
 | OQ-PPX2 | Decided on its leaning (A) under delegation: no pin in `packs.lock.json`; a hold is a tag ref or `agent_updates`. Recorded as [PPX-D19](#PPX-D19) |
 | OQ-1 | Machine-scoped storage for pi's npm prefix, ruled 2026-09-20 and built 2026-09-21. **Retired 2026-10-05** by [XB-D14](../design/pi-extension-store-builds.md#XB-D14): one jail's install could change what another ran ([§17.1](#171-the-storage-tier-retired)) |

@@ -10,11 +10,28 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 )
 
+// writableAtCleanup is t.TempDir whose tree is made writable again before the test's own removal,
+// since the stage seals it (no write bit, directories included) and a non-root user cannot unlink
+// inside a sealed directory. Cleanups run last-registered first, so this runs before TempDir's.
+func writableAtCleanup(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Cleanup(func() {
+		_ = filepath.Walk(dir, func(p string, fi os.FileInfo, err error) error {
+			if err == nil && fi.Mode()&os.ModeSymlink == 0 {
+				_ = os.Chmod(p, fi.Mode().Perm()|0o700)
+			}
+			return nil
+		})
+	})
+	return dir
+}
+
 // hostOverlayWithDigest lays a one-destination host overlay out the way the run pipeline's builder
 // does, its destination list carrying digest.
 func hostOverlayWithDigest(t *testing.T, digest string) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := writableAtCleanup(t)
 	if err := os.MkdirAll(filepath.Join(dir, ".pi", "agent", "skills", "demo"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +63,7 @@ func execArgvs(t *testing.T, cmds [][]string) int {
 // staged copy of the same overlay is current, a changed digest is not, and an overlay never
 // staged is not.
 func TestAStagedOverlayIsCurrentOnlyForTheSameDigest(t *testing.T) {
-	sd := t.TempDir()
+	sd := writableAtCleanup(t)
 	host := hostOverlayWithDigest(t, "aaaa")
 	if HomeOverlayStagedCurrent(host, "ws", sd) {
 		t.Fatal("an overlay never staged reported current")
@@ -81,7 +98,7 @@ func TestAStagedOverlayIsCurrentOnlyForTheSameDigest(t *testing.T) {
 // the list goes before anything else of it, so a later launch whose overlay has the OLD digest
 // re-stages rather than delivering a half-removed tree.
 func TestAnInterruptedRestagingLeavesNoTrustedDigest(t *testing.T) {
-	sd := t.TempDir()
+	sd := writableAtCleanup(t)
 	oldHost := hostOverlayWithDigest(t, "aaaa")
 	execArgvs(t, StageHomeOverlayCommands(oldHost, "ws", sd))
 	cmds := StageHomeOverlayCommands(hostOverlayWithDigest(t, "bbbb"), "ws", sd)
@@ -105,7 +122,7 @@ func TestAnInterruptedRestagingLeavesNoTrustedDigest(t *testing.T) {
 
 // An overlay with no digest (one an older yolo built) is never current, so it is re-staged.
 func TestAnOverlayWithoutADigestIsNeverCurrent(t *testing.T) {
-	sd := t.TempDir()
+	sd := writableAtCleanup(t)
 	host := hostOverlayWithDigest(t, "")
 	execArgvs(t, StageHomeOverlayCommands(host, "ws", sd))
 	if HomeOverlayStagedCurrent(host, "ws", sd) {

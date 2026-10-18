@@ -1069,9 +1069,9 @@ func Run(opts Options) (rc int) {
 		// `yolo check`, `pack` and `loopholes` reads as its user scope, write-protected like the
 		// rest of the overlay. A dry run composes it too, for the overlay's reason.
 		sp = o.Perf.Span("launch.build_home_overlay")
-		// THE PATCHED EXTENSIONS' PER-LAUNCH COPIES ride in it too (o.patchedTreeDirs): each at its
-		// `~/<into>`, write-protected like the rest, the copy living beside this launch's pack tree,
-		// which outlives this call (discardUnheldPackTree runs at Run's return).
+		// THE PATCHED EXTENSIONS' COPIES ride in it too (o.patchedTreeDirs): each at its `~/<into>`,
+		// write-protected like the rest, the copy living in the workspace's stable tree-copies root
+		// (macosUserTreeCopyRoot), held by this process's lease until it ends.
 		// Content-keyed (buildMacosHomeOverlayTreeIDs): an overlay already built from the same
 		// inputs is returned as it is, each patched copy standing in by its store entry.
 		homeOverlay, err = buildMacosHomeOverlayDelivering(staging, staged.packs, o.patchedTreeDirs(),
