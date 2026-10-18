@@ -10,7 +10,7 @@ vantage:
 
 # Roadmap
 
-**Reconciled:** 2026-10-13; 0.14.0 was tagged 2026-10-15 (release commit `6750951f6`).
+**Reconciled:** 2026-10-18; 0.14.0 was tagged 2026-10-15 (release commit `6750951f6`).
 
 This page owns the order in which open work is taken up, and why. Each linked document owns its state, next step and
 gates; read it before starting, because a place on this list is not permission to build.
@@ -50,7 +50,7 @@ accepted limits remain in
 and a pi-subagents registry several extensions can share stays in item 28.
 
 3. [Apply config changes to a running jail](../design/live-config-apply.md) — the maintainer's
-   2026-10-18 ask, ruled and built the same day (landing and CI's rootless run owed): v1 is read-only and read-write mounts, their removal,
+   2026-10-18 ask, ruled and built the same day; v1 is landed, with rootless CI evidence still owed: read-only and read-write mounts, their removal,
    GitHub scope, and the same gate at an interactive attach. Its later slices are staged here,
    each built on its own after v1: [the next-session moves](../design/live-config-apply.md#LA-S4a),
    [Apple Container's briefing re-copy](../design/live-config-apply.md#LA-S4b),
@@ -69,11 +69,10 @@ and a pi-subagents registry several extensions can share stays in item 28.
    compacted in the design's [Decision Ledger](../design/macos-user-suite-on-a-developer-mac.md#decision-ledger):
    no root `sudo`, honest counted skips for the host log policy, mise shims continue to win, and
    local measurements count with provenance. Original commits `98715e67b` and `41dd11e3f` are
-   preserved in the candidate merge, but remain unlanded on main and have not been run on a native
-   Mac. The separate doorway and housekeeping test repairs remain in main at
+   preserved in main at `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`; native-Mac execution remains unverified. The doorway and housekeeping test repairs are also in main at
    [§6.2](../design/macos-user-suite-on-a-developer-mac.md#62-another-sessions-doorway-was-read-as-this-sessions-survivor)
    and [§6.3](../design/macos-user-suite-on-a-developer-mac.md#63-the-housekeeping-tests-slot-was-not-due-because-its-stamp-is-the-machines),
-   awaiting their documented Mac re-runs. The floor test's changed diagnostic is also pending its
+   but still need their documented Mac re-runs. The floor test's changed diagnostic also needs its
    native-Mac run. That first run cleared measurements items 38 and 40, listed in the design.
 
 Native readiness and credential-store work retain their places below: assess
@@ -367,7 +366,7 @@ classes, its sub-parts are named and the cross-cutting ones repeat in the two li
 |---|---|---|
 | IC1 — profile-served daemons on attach | D | [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1): activate late-selected profile daemons additively, or refuse conflicting late bridge plans in this slice? **Maintainer** (synthesis leaning: refuse). Today's restart prompt is the ruled [OQ-SK1](../reference/attach-skew.md#why-its-this-way) disposition, not a defect. |
 | IC2 — ongoing launch preparation and update-and-wait | A | Review the connected combined candidate and complete final runtime acceptance; reuse the admitted-build pipeline before optimizing isolated waits. |
-| IC5 — the macos-user suite on a developer Mac | A | The four rulings are compacted into the [Decision Ledger](../design/macos-user-suite-on-a-developer-mac.md#decision-ledger). Original commits `98715e67b` and `41dd11e3f` are preserved in the candidate merge but remain unlanded and unverified on native Mac; the main-tree doorway and housekeeping repairs in [§6.2](../design/macos-user-suite-on-a-developer-mac.md#62-another-sessions-doorway-was-read-as-this-sessions-survivor) and [§6.3](../design/macos-user-suite-on-a-developer-mac.md#63-the-housekeeping-tests-slot-was-not-due-because-its-stamp-is-the-machines) also need Mac re-runs. |
+| IC5 — the macos-user suite on a developer Mac | A | The four rulings are compacted into the [Decision Ledger](../design/macos-user-suite-on-a-developer-mac.md#decision-ledger). The original test changes and the doorway, housekeeping and floor-test repairs are in main at `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`; native-Mac reruns remain unverified. |
 
 The section's other pointers are not items of their own: Pi's profile-set extension call is item 28, native readiness
 and the credential store are items 11 and 20, and storage relocation and OrbStack are items 28 and 31.
