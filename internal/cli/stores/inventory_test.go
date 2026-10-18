@@ -444,3 +444,12 @@ func TestHostTreesRowIsYolosOwn(t *testing.T) {
 			"`yolo host apply --assert`, 12", row.Verdict, row.Reclaimer, row.Bytes)
 	}
 }
+
+// The host's per-launch session homes are named with their reaper, so `yolo stores` never reports
+// the folder as something nothing cleans (per-session-profiles.md §4.7).
+func TestHostSessionHomesHaveAReclaimer(t *testing.T) {
+	r, ok := stateReclaimers[prune.HostSessionHomesLeaf]
+	if !ok || r.Func != "ReapHostSessionHomes" {
+		t.Errorf("stateReclaimers[%q] = %+v, %v; want the ReapHostSessionHomes row", prune.HostSessionHomesLeaf, r, ok)
+	}
+}

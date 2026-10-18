@@ -875,6 +875,30 @@ selected adds none. Under `YOLO_SKIP_PATCHES` covering the fork, `yolo host -p` 
 build, so it hands the base's own entries alone and says which flags it dropped. A pack that
 neither declares nor forks `X` is still refused.
 
+<a id="session-homes"></a>`session_homes`, a **top-level** list, declares the directory a pack's
+program reads its config from, so each session reads its own copy of it
+([per-session profiles](../design/per-session-profiles.md)). A **session home** (a term that design
+coins) is a per-session directory holding that session's render of the pack's surfaces inside the
+declared directory, plus a symbolic link to every other entry of the shared directory. Each entry
+is `{"dir", "env", "shared", "prefer"}`:
+
+- `dir` is home-relative and lies under one of the pack's own `state` directories.
+- `env` is the variable that relocates the program to another directory. Each session pass in a
+  jail (every attach, and the first session of a fresh launch) exports it, pointing at
+  `<parent of dir>/.yolo-sessions/<session id>/<last part of dir>`.
+- `shared` names entries that are linked even when the shared directory lacks them. A trailing `/`
+  marks a directory, which is created in the shared directory first; a file is linked dangling, so
+  its first write creates the shared file. A `*.lock` name is refused, because a linked lock reads
+  as held forever.
+- `prefer` maps a name to a home path to link instead whenever that path exists.
+
+A session whose environment already sets `env` gets no session home, and the pass says so. A
+session home that cannot be made refuses the session. Settings a program saves in its session home
+are captured into the shared overlay by the next entry, so sessions entered later have them. The
+jail's own boot renders the shared copies, then captures and deletes the homes a previous
+container left. It is top-level, not on the `program`, so an older yolo ignores it rather than
+skipping the program. `packs/pi` declares `.pi/agent` with `PI_CODING_AGENT_DIR`.
+
 <a id="exact_menu_refuses"></a>`exact_menu_refuses` says the program's model menu can show
 exactly a list only through a filter that also refuses every model off it, so its pack's derive
 writes that filter only while the governing profile's `enforce_models` is on. It is an object.
@@ -3788,7 +3812,10 @@ image-build inputs, which feed a nix derivation built before any container exist
 that reads a host file or a host credential, such as pack fetch and the lockfile, `host_files`
 staging and the `host` layer. Everything that needs no host influence runs in the jail's
 entrypoint: composing each surface, capturing in-jail edits into overlays, and writing the
-sidecars under `<workspace>/.yolo/prism/`. **A running jail is never re-rendered.** An agent's
+sidecars under `<workspace>/.yolo/prism/`. **A running jail is re-rendered by each entry, from the
+config frozen at launch plus that entry's own profile selection.** A surface inside a pack's
+[`session_homes`](#session-homes) directory is rendered into that session's own copy and never into
+the shared file; every other surface is rewritten for the latest entry. An agent's
 edit to a composed file is folded into its overlay by the next boot's render
 ([`config-migration-to-prism.md`](config-migration-to-prism.md)), so only observability waits for a
 restart, and nothing is lost.
@@ -4304,7 +4331,7 @@ in the config-overlay comments (R2, R3) it means the R1–R5 table below, never
 | <a id="pd-r3"></a>**R3** (pack drop) — a dropped pack's `config-overlay` keys ride the SAME prompt; and provenance never launders an unclaimed key yolo force-wrote into `host` ([the `retired:` label](#the-retired-provenance-label)) | The key is a value, not content, but it sits in a file the user owns, so it gets no silent path of its own; two prompts for one edit to `packs` would teach the user to stop reading them. The record exists so yolo can tell its output from the user's, and a record that relabels yolo's key as the user's defeats every mechanism that asks. |
 | <a id="pd-r4"></a>**R4** (pack drop) — briefing retirement stays OUTSIDE the prompt | Every byte moved is one yolo composed: a briefing destination is generated wholesale. Pinned by `TestApplyHostRetireDoesNotGateBriefingRemoval`, so the two halves cannot be quietly unified. |
 | <a id="open-rulings-2"></a>**Ruling 2** (open rulings) — pack selection is user scope only; state a pack keeps across jails is pack-declared (a `machine`-scope [`state`](#state) contribution, the `shared_credentials` and `shared_directory` hooks); dropping a pack deletes nothing it left in a workspace | A repository needs no distribution mechanism to reach files it already owns, so there is no workspace pack scope. Declaring shared state per pack is what let claude's credential directory become pack data instead of a path core hardcoded. A workspace clean-up on drop would have nothing to walk, since nothing enumerates workspaces, and the render already stops composing a dropped input: a re-selected pack finds its state intact, and `<workspace>/.yolo/` is the user's to delete. Nothing reports what a drop left in a workspace. The real home is handled differently on purpose ([retiring a dropped pack's host output](#retiring-a-dropped-packs-host-output)). |
-| <a id="open-rulings-3"></a>**Rulings 3 and 4** (open rulings) — for a jail launch, composition runs in the jail and only what needs the host runs host-side; a running jail is never re-rendered ([staging](#host-side-staging-then-jail-side-render)) | Where composition runs was a free choice, since the engine composes with no container at all ([`what-yolo-is.md`](what-yolo-is.md#the-separability-test-could-you-use-the-config-engine-without-a-jail)). Moving it host-side would have bought earlier error reporting, and Ruling 5 recovered that directly by making a failed generator fatal at boot. Re-rendering a running jail was ruled unsupported, which removed the one reason left to move. |
+| <a id="open-rulings-3"></a>**Rulings 3 and 4** (open rulings) — for a jail launch, composition runs in the jail and only what needs the host runs host-side; a running jail is never re-rendered ([staging](#host-side-staging-then-jail-side-render)) | Where composition runs was a free choice, since the engine composes with no container at all ([`what-yolo-is.md`](what-yolo-is.md#the-separability-test-could-you-use-the-config-engine-without-a-jail)). Moving it host-side would have bought earlier error reporting, and Ruling 5 recovered that directly by making a failed generator fatal at boot. Re-rendering a running jail was ruled unsupported, which removed the one reason left to move. Corrected 2026-10-18: each entry does re-render, from the config frozen at launch plus its own profile selection; a pack's [`session_homes`](#session-homes) directory is rendered per session. |
 | <a id="batch-6a"></a><a id="batch-6a-2"></a>[**§6a**](#batch-6a) **and** [**§6a-2**](#batch-6a-2) (pack batch) — `briefing` and `skills` destinations are composed wholesale at every notch, and a user's own prose and skills MOVE into the conventional local pack, archived only when they cannot move ([`briefing`](#briefing), [composed-file posture](#composed-file-posture-what-writable-means)) | A destination two parties own needs a negotiation (a marker block for prose, refuse-what-yolo-cannot-prove for skills) and a second mechanism beside the jail's, which already composed wholesale. One owner and one mechanism remove the question at every notch. Archiving alone is safe but is not a migration: moved content still reaches the user's agents, and one copy cannot drift per agent. Maintainer rulings, 2026-08-04. |
 | <a id="batch-6a-3"></a>[**§6a-3**](#batch-6a-3) (pack batch) — conventions over configuration: a `skills` or `briefing` source defaults to its conventional location, and a destination's `into` is always declared by the pack that owns the agent, never inferred by core | A destination has one right answer per agent, so core inferring one would mean core knowing the agent set, which is what `packs` states. When one notch inferred a destination and the other did not, a pack rendered at one and silently rendered nothing at the other. |
 | <a id="batch-6a-4"></a>[**§6a-4**](#batch-6a-4) (pack batch) — every notch reads a pack's sources through one resolver | A `from` that one notch honored and the other ignored was a silent divergence. The resolver is now `packload.GovernedSources` ([R5 (briefing defaults)](#briefing-r5-row)), and the fallback chain that once stood behind a missing `from` is gone ([P4](#briefing-p4)). |

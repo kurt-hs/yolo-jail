@@ -132,6 +132,13 @@ type Manifest struct {
 	// reason; projected onto the program's LaunchSelection.Computed.
 	LaunchComputedByBin map[string][]LaunchComputedFlag `json:"launch_computed,omitempty"`
 
+	// SessionHomeDecls are the pack's session-home declarations, spelled `session_homes`
+	// (sessionhome.go; docs/design/per-session-profiles.md SP-D13): the directory its program
+	// reads its config from, the variable that relocates it, and the names in it that are shared
+	// state. Top-level, so an older reader ignores the unknown key instead of dropping a
+	// contribution. Read it through SessionHomes().
+	SessionHomeDecls []SessionHome `json:"session_homes,omitempty"`
+
 	// Contributes is the pack's effects: one list of typed contributions, each with
 	// an explicit `kind` from the closed set (see contributes.go / kinds.go). It
 	// each with an explicit kind from the closed core-owned set
@@ -414,6 +421,12 @@ type Refresh struct {
 	// workspace whose every extension is a tree yolo built refreshes nothing. nil runs the refresh
 	// whenever it is due.
 	OnlyIf *RefreshOnlyIf `json:"only_if,omitempty"`
+	// SessionHomes are the pack's session-home declarations (Manifest.SessionHomes), projected
+	// here by InstallContributions so the launcher resolves a watched file in DueOnChange or
+	// OnlyIf.Files that lies under a declared directory under the declared variable when it is
+	// set: a session reads its own copy of that file (docs/design/per-session-profiles.md §5).
+	// Never decoded: a manifest declares it as the top-level `session_homes`.
+	SessionHomes []SessionHome `json:"-"`
 }
 
 // RefreshOnlyIf is a refresh's worth-running test (Refresh.OnlyIf): the refresh runs when any file
@@ -888,6 +901,7 @@ func (m *Manifest) Validate() []string {
 	problems = append(problems, m.validateLaunchComputed()...)
 	problems = append(problems, m.validateProviderKeys()...)
 	problems = append(problems, m.validateProviderEnv()...)
+	problems = append(problems, m.validateSessionHomes()...)
 	return append(problems, m.validateMCP()...)
 }
 

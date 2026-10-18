@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -169,35 +170,45 @@ console.log(JSON.stringify({
 // compatJS.
 func runPiModelListsExtension(t *testing.T, lists []byte, allJS, compatJS string) piModelListsRun {
 	t.Helper()
+	home := t.TempDir()
+	return runPiModelListsExtensionWith(t, home,
+		map[string][]byte{filepath.Join(home, filepath.FromSlash(piModelListsRel(t))): lists}, nil, allJS, compatJS)
+}
+
+// runPiModelListsExtensionWith runs the SHIPPED yolo-model-lists.js under node with HOME set to
+// home, every file in files written at its absolute path, and env after the inherited environment,
+// from which PI_CODING_AGENT_DIR is dropped so only env can set it.
+func runPiModelListsExtensionWith(t *testing.T, home string, files map[string][]byte, env []string, allJS, compatJS string) piModelListsRun {
+	t.Helper()
 	p := shippedPiPack(t)
 	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-model-lists.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir, home := t.TempDir(), t.TempDir()
-	dest := filepath.Join(home, filepath.FromSlash(piModelListsRel(t)))
+	dir := t.TempDir()
 	pkg := filepath.Join(dir, "node_modules", "@earendil-works", "pi-ai")
-	for _, d := range []string{filepath.Dir(dest), pkg} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for path, body := range map[string]string{
+	all := map[string]string{
 		filepath.Join(dir, "extension.mjs"): string(source),
 		filepath.Join(dir, "harness.mjs"):   piModelListsHarness,
-		dest:                                string(lists),
 		filepath.Join(pkg, "package.json"): `{"name":"@earendil-works/pi-ai","type":"module",` +
 			`"exports":{"./providers/all":"./all.js","./compat":"./compat.js"}}`,
 		filepath.Join(pkg, "all.js"):    allJS,
 		filepath.Join(pkg, "compat.js"): compatJS,
-	} {
+	}
+	for path, body := range files {
+		all[path] = string(body)
+	}
+	for path, body := range all {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	cmd := exec.Command(requireNode(t, "the pi model-lists extension"), "harness.mjs")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	cmd.Env = append(append(environWithout("PI_CODING_AGENT_DIR"), "HOME="+home), env...)
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("running the shipped extension: %v\n%s", err, out)
@@ -207,6 +218,68 @@ func runPiModelListsExtension(t *testing.T, lists []byte, allJS, compatJS string
 		t.Fatalf("decoding %s: %v", out, err)
 	}
 	return run
+}
+
+// environWithout is os.Environ with every named variable dropped.
+func environWithout(names ...string) []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		if !slices.Contains(names, name) {
+			env = append(env, kv)
+		}
+	}
+	return env
+}
+
+// PI READS ITS STATE UNDER PI_CODING_AGENT_DIR WHEN SET (a per-session home,
+// docs/design/per-session-profiles.md SP-D9), so the extension reads its list there too: an
+// enforced list only in that directory is what registers, over an open one at ~/.pi/agent, for an
+// absolute path and for pi's `~` and `~/x` spellings. Unset, ~/.pi/agent is read; the launch's
+// YOLO_PI_MODEL_LISTS still wins over the directory's file.
+func TestPiModelListsExtensionReadsUnderPiCodingAgentDir(t *testing.T) {
+	enforced, open := renderedZaiLists(t, false), renderedZaiLists(t, true)
+	base := filepath.Base(filepath.FromSlash(piModelListsRel(t)))
+	cases := []struct {
+		name     string
+		agentDir func(home, tmp string) (env, dir string)
+		envLists bool
+		wantKeys string
+	}{
+		{"absolute", func(home, tmp string) (string, string) { return tmp, tmp }, false, "api,models,streamSimple"},
+		{"tilde-subdir", func(home, _ string) (string, string) { return "~/session", filepath.Join(home, "session") }, false, "api,models,streamSimple"},
+		{"tilde", func(home, _ string) (string, string) { return "~", home }, false, "api,models,streamSimple"},
+		{"variable-wins", func(home, tmp string) (string, string) { return tmp, tmp }, true, "models"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			home, tmp := t.TempDir(), t.TempDir()
+			envDir, dir := c.agentDir(home, tmp)
+			files := map[string][]byte{
+				filepath.Join(dir, base):                                    enforced,
+				filepath.Join(home, filepath.FromSlash(piModelListsRel(t))): open,
+			}
+			env := []string{"PI_CODING_AGENT_DIR=" + envDir}
+			if c.envLists {
+				env = append(env, "YOLO_PI_MODEL_LISTS="+string(open))
+			}
+			run := runPiModelListsExtensionWith(t, home, files, env, piZaiCatalogStub, piCompatStub)
+			if len(run.Registrations) != 1 {
+				t.Fatalf("registrations = %+v, want one", run.Registrations)
+			}
+			if got := strings.Join(run.Registrations[0].Keys, ","); got != c.wantKeys {
+				t.Errorf("registration keys = %s, want %s", got, c.wantKeys)
+			}
+		})
+	}
+	t.Run("unset-falls-back", func(t *testing.T) {
+		home := t.TempDir()
+		files := map[string][]byte{filepath.Join(home, filepath.FromSlash(piModelListsRel(t))): enforced}
+		run := runPiModelListsExtensionWith(t, home, files, nil, piZaiCatalogStub, piCompatStub)
+		if len(run.Registrations) != 1 || strings.Join(run.Registrations[0].Keys, ",") != "api,models,streamSimple" {
+			t.Fatalf("registrations = %+v, want the enforced list at ~/.pi/agent", run.Registrations)
+		}
+	})
 }
 
 // renderedZaiLists is the pi/model-lists file a real boot render writes for zai narrowed by a

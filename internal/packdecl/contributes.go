@@ -1397,6 +1397,9 @@ func (m *Manifest) InstallContributions() []Install {
 				r.OnlyIf = &RefreshOnlyIf{Files: append([]string(nil), o.Files...),
 					ProjectFiles: append([]string(nil), o.ProjectFiles...), Contains: append([]string(nil), o.Contains...)}
 			}
+			// The pack's session homes, so a watched file resolves in the session's own copy
+			// (Refresh.SessionHomes).
+			r.SessionHomes = m.SessionHomes()
 			in.Refresh = &r
 		}
 		// The probe arguments and the temporary-directory caches too, for the same reason: what

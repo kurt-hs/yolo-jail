@@ -79,6 +79,10 @@ type Target struct {
 	// Unexported for the reason `kind` is: a struct literal assembled outside this package
 	// cannot claim a contract, and gets OwnershipUnstated — the guarded answer.
 	ownership HostOwnership
+
+	// session is a session pass's render (session.go): redirected surface paths and their
+	// baseline sidecars. nil everywhere but a jail session pass; set only by WithSession.
+	session *Session
 }
 
 // HostOwnership is the declared ownership contract for the files yolo renders into a real
@@ -435,6 +439,9 @@ func (t Target) OverlayPath(agent, name string) string {
 
 // LastRenderPath is the baseline sidecar: the exact surface-codec bytes yolo wrote last.
 func (t Target) LastRenderPath(agent, name string) string {
+	if p := t.sessionSidecar(agent, name, ".last_render"); p != "" {
+		return p
+	}
 	return t.sidecarPath(agent, name, ".last_render")
 }
 
@@ -445,6 +452,9 @@ func (t Target) LastRenderPath(agent, name string) string {
 // ProvenanceDir instead, having no capture store; a home that still holds one there is left
 // alone, and its first `own` apply selects as a first apply does.
 func (t Target) SelectionPath(agent, name string) string {
+	if p := t.sessionSidecar(agent, name, ".selection.json"); p != "" {
+		return p
+	}
 	return t.sidecarPath(agent, name, ".selection.json")
 }
 
@@ -493,6 +503,9 @@ func (t Target) ListCapturePath(agent, name string) string {
 // lifetime is the record's rather than the capture store's (a home the retired `assert` wrote
 // into keeps its records here too, for `--revert`).
 func (t Target) ListRecordPath(agent, name string) string {
+	if p := t.sessionSidecar(agent, name, ListRecordSuffix); p != "" {
+		return p
+	}
 	dir := t.ProvenanceDir()
 	if dir == "" {
 		return ""
@@ -563,6 +576,9 @@ func (t Target) ProvenanceDir() string {
 // the target has nowhere to keep one. The file name is the same agent-name.provenance the
 // jail sidecar tree uses, so one reader serves both notches.
 func (t Target) ProvenancePath(agent, name string) string {
+	if p := t.sessionSidecar(agent, name, ".provenance"); p != "" {
+		return p
+	}
 	dir := t.ProvenanceDir()
 	if dir == "" {
 		return ""
