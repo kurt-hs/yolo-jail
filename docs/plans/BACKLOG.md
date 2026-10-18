@@ -746,6 +746,13 @@ It runs the sandbox-account setup checks before checking whether any patched ext
 and the launch block and `yolo host` word a Mac that has not run `yolo macos-setup` differently.
 Found by the review of the patched-extensions lane.
 
+### <a id="older-copy-attach-flake"></a>🔧 **`TestAnAttachIntoAnOlderYolosJailKeepsTheLineAndNamesTheStop` fails intermittently**
+
+It failed once in a full `just check-ci` run with "the fixture does not read as an older yolo's
+machine-wide copy" (`internal/cli/run/launchcheck_test.go`), then passed alone three times and in
+the next full run. The fixture's stand-in copy is probably not answering yet under load. Found
+2026-10-18.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
