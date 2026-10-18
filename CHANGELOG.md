@@ -52,6 +52,7 @@ state; `null` removes one. See `yolo config-ref`.
 
 ### Fixed
 
+- `yolo pack lint` and `yolo check` say when they did not check a patched build's `?ref=`, naming `yolo pack lint --online`.
 - A pack's script keeps its executable bit everywhere it is delivered; see [the exec bit](docs/reference/pack-system.md#the-exec-bit).
 - On btrfs or XFS, a captured agent is shared into a new workspace even when a direct reflink is refused.
 - A macOS (macos-user) launch no longer leaves a copy of its packs behind on exit; `yolo prune --apply` removes older ones.

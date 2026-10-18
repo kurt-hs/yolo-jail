@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
@@ -149,6 +150,31 @@ func lintOnline(pr richtext.Printer, read []lintedSeries) (problems, lines []str
 		problems = append(problems, "online: interrupted, and the scratch mirror is deleted — "+lintOnlineAgain)
 	}
 	return problems, lines
+}
+
+// offlineRefLines is the default (offline) lint's line for each patched fork or extension whose refs it
+// resolved none of: a pass means the manifest reads, never that a ?ref= names a branch, and a pass that
+// does not say so reads as the second until a launch refuses the ref. One line per fork or extension,
+// naming each git ref and `--online`, which resolves them in a scratch mirror; dir is the pack's.
+func offlineRefLines(read []lintedSeries, dir string) []string {
+	var lines []string
+	for _, r := range read {
+		var refs []string
+		if r.fork.PatchBranch != "" {
+			if a, err := packsrc.ParseFrom(r.fork.PatchBranch, ""); err == nil {
+				refs = append(refs, "the patch branch's ?ref="+a.Ref)
+			}
+		}
+		if a, err := packsrc.Parse(r.fork.Source); err == nil && a.Kind == packsrc.KindGit {
+			refs = append(refs, "the upstream's ?ref="+a.Ref)
+		}
+		if len(refs) == 0 {
+			continue // an npm upstream with no patch branch: no git ref to resolve
+		}
+		lines = append(lines, "[yellow]ℹ[/yellow] "+richtext.Escape(r.fork.RefNotResolvedLine(dir)+
+			" ("+strings.Join(refs, ", ")+")"))
+	}
+	return lines
 }
 
 // printLines prints lines already in markup, each escaped where it was made.

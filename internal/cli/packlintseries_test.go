@@ -139,8 +139,8 @@ func TestPackLintPassesAReadableSeries(t *testing.T) {
 	if rc != 0 || !strings.Contains(out, "1 patch in patches (series") {
 		t.Errorf("lint of a readable series: rc %d\n%s", rc, out)
 	}
-	if strings.Contains(out, "online") {
-		t.Errorf("lint without --online says something about the upstream:\n%s", out)
+	if strings.Contains(out, "online:") || !strings.Contains(out, "ref not resolved (offline)") {
+		t.Errorf("lint without --online says what an online check found, or not that it resolved no ref:\n%s", out)
 	}
 }
 
@@ -284,7 +284,7 @@ func TestPackLintOnlineFailsAnUpstreamItCannotFetch(t *testing.T) {
 		t.Errorf("lint --online of a gone upstream: rc %d\n%s", rc, out)
 	}
 	mustBeEmpty(t, tmp)
-	if rc, out := lintArgs(t, f.forkDir); rc != 0 || strings.Contains(out, "online") {
+	if rc, out := lintArgs(t, f.forkDir); rc != 0 || strings.Contains(out, "online:") {
 		t.Errorf("lint without --online reached the upstream: rc %d\n%s", rc, out)
 	}
 }
