@@ -1,16 +1,16 @@
 ---
 title: "One jail, several profiles: each session reads its own agent config"
 date: 2026-10-18
-status: in-review
+status: accepted
 stage: DESIGN
-next: "Complete the implementation plan against the tree; OQ-SP4 (the host) is a later slice"
+next: "Build per the implementation plan: the jail slices, then the host slice (OQ-SP4)"
 tags: [design, profiles, attach, sessions, pi, pi-subagents, providers, concurrency]
 summary: "An attach renders the attaching entry's profile into files every running pi session reads later, so a second session on another provider (or a bare attach of an unrelated agent on the default profile) changes what the first session's pi-subagents children run on, while the first session's provider policy still forbids that provider. The fix keys every profile-dependent read on the session: each exec already carries a session id that its whole process tree inherits, so the attach writes its environment into a per-session entry snapshot, and the session's own boot pass renders a pack's profile-dependent files into a per-session copy of the program's config dir, which stock pi follows through PI_CODING_AGENT_DIR. Shared state (logins, session history, packages, caches) stays one copy, linked into every session's dir."
 ---
 
 # One jail, several profiles: each session reads its own agent config
 
-**Status:** 2026-10-18. Ruled for jails ([OQ-SP1](#11-decision-ledger) to [OQ-SP3](#11-decision-ledger)); nothing built. Evidence read at `8bf1afce9` and in stock pi 1.0.1 and
+**Status:** 2026-10-18. Accepted: [OQ-SP1](#11-decision-ledger) to [OQ-SP4](#11-decision-ledger) ruled; nothing built. Evidence read at `8bf1afce9` and in stock pi 1.0.1 and
 pi-subagents 0.79.1. MEASURED: stock pi 1.0.1 reads `models.json` from a directory named by
 `PI_CODING_AGENT_DIR`, and creates `auth.json` and `models-store.json` there when they are absent
 (`pi --list-models`, offline, 2026-10-18). UNMEASURED: everything a session does with the design.
@@ -34,7 +34,7 @@ behavior.
 **Start at [§4](#4-the-design-session-homes-over-entry-snapshots).** [§2](#2-what-an-attach-rewrites-today)
 is the cause, file by file.
 
-**Needs your ruling:** [OQ-SP4](#OQ-SP4).
+**Needs your ruling:** None.
 
 **Reads with:** [`per-session-profiles-plan.md`](per-session-profiles-plan.md) (the implementation
 sketch; incomplete while questions are open),
@@ -261,6 +261,20 @@ land in the session's copy, merged under pi's own lock. They reach later session
   launches each session as its own sandbox and does not carry `YOLO_SESSION_ID`; there the launch
   mints one per invocation and hands it in the session env. UNMEASURED: needs a Mac.
 
+### 4.7 The host
+
+Ruled by [OQ-SP4](#11-decision-ledger): `yolo host` gives each launch the same session home, so
+host children follow the launch's `-p` like a jail session's do.
+
+- The **shared directory** is the user's real one (`~/.pi/agent` on the host). Nothing in it is
+  written: the session home only links to it.
+- The **session home** is a throwaway directory per launch, holding the launch's render of the
+  pack's surfaces in the declared directory, and links to everything else, by the rules of
+  [§4.4](#44-what-a-session-home-holds).
+- The declared variable is exported into **that launch's** environment only.
+- The launch removes its home when it ends; a home whose launch died is reaped by a later launch.
+- The user's own value of the variable wins, as in a jail ([SP-D5](#SP-D5)).
+
 ## 5. What changes in the pi pack
 
 - A session-home declaration: directory `.pi/agent`, variable `PI_CODING_AGENT_DIR`, shared names
@@ -295,7 +309,6 @@ land in the session's copy, merged under pi's own lock. They reach later session
   ([wire-bridge](../reference/wire-bridge.md)); this design moves config, not traffic.
 - **Credential confidentiality between sessions.** A snapshot is readable by the jail's uid, as H2 is
   ([OQ-ES5](credential-sources-separation.md#10-decision-ledger)).
-- **`yolo host -p`**, which [OQ-SP4](#OQ-SP4) asks about.
 
 ## 8. Risks
 
@@ -323,23 +336,7 @@ changes what a session pass renders.
 
 ## 10. Open questions
 
-1. 💬 **OQ-SP4: Should `yolo host -p` give pi a per-launch session home too?**
-
-   It would close [MM-D42](model-lists-and-pickers.md#MM-D42) for stock pi at the host, where yolo
-   ships nothing today. [OQ-MM5](model-lists-and-pickers.md#16-decision-ledger) chose flags,
-   *"never a file"*, so the user's files stay untouched; a per-launch directory of links writes none
-   of them. Example: `yolo host -p codex -- pi` over a configured OpenRouter profile.
-
-   - **A — Yes, a later slice.** Host children follow the `-p`; amends the host ruling's vehicle, not its goal.
-   - **B — No.** The host keeps flags and the documented gap.
-
-   <!-- vantage: question id=OQ-SP4 leaning="A, after the jail slice: same mechanism, and it meets the host ruling's goal of no shared-file collision." -->
-
-   _Leaning:_ A, after the jail slice: same mechanism, and it meets the host ruling's goal of no
-   shared-file collision.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+None. Every question is ruled in the [decision ledger](#11-decision-ledger).
 
 ## 11. Decision ledger
 
@@ -350,6 +347,7 @@ The maintainer's rulings, then implementation decisions (reversible, made while 
 | OQ-SP1 | **Each pi session gets its own config dir (`PI_CODING_AGENT_DIR`), its profile-dependent files rendered there and everything else linked to the shared copy.** *"Yes, this sounds like the right solution."* It moves the dir stock pi already reads and rewrites no shared settings, so the roadmap's "no settings overlay" line does not apply | 2026-10-18 | [§4](#4-the-design-session-homes-over-entry-snapshots) | — |
 | OQ-SP2 | **A pi setting saved in one session (a `pi install`, a theme, a default model) is captured into the shared layer and reaches sessions entered later**; running sessions keep their own copy. *"Yes, it would be nice if this is possible."* | 2026-10-18 | [§4.5](#45-pis-own-writes) | — |
 | OQ-SP3 | **An attach with no `-p` uses the configured `profile`, as today.** *"We're not changing anything about how profiles are selected."* | 2026-10-18 | [§4.3](#43-an-entry-in-order) | — |
+| OQ-SP4 | **`yolo host -p` gives pi a per-launch session home too**: links to the user's real `~/.pi/agent` shared state, the profile-dependent files rendered in a throwaway dir, `PI_CODING_AGENT_DIR` exported to that launch only, the user's own files untouched; removed when the launch ends, reaped later if it dies. *"If we can use these throwaway things on the host to make the host also act similarly, that would be great ... So then, yes."* *"The principle should always be parity. It doesn't matter if I do or do not use it. Somebody else may or may not use it, and we need parity here."* | 2026-10-18 | [§4.7](#47-the-host) | — |
 | <a id="SP-D1"></a>SP-D1 | The key is `YOLO_SESSION_ID`, inherited by every descendant; no new id | 2026-10-18 | [§4.3](#43-an-entry-in-order) | — |
 | <a id="SP-D2"></a>SP-D2 | A session pass renders surfaces inside a declared directory only into its session home; the shared copies are the jail boot's alone | 2026-10-18 | [§4.2](#42-who-writes-what) | — |
 | <a id="SP-D3"></a>SP-D3 | Link every entry present plus every declared shared name; never copy; strays are kept and named | 2026-10-18 | [§4.4](#44-what-a-session-home-holds) | — |
