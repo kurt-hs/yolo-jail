@@ -4,16 +4,21 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"go/ast"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
 // liveapply_test.go pins `yolo config apply` and the attach-time gate
@@ -389,6 +394,123 @@ func TestApplyPlanRequiresVerifiedLiveScopeAfterApprovalIsUnchanged(t *testing.T
 			}
 			if strings.Contains(plan[0].reason, "already matches") {
 				t.Errorf("unchanged approval was treated as proof the live scope matched: %+v", plan[0])
+			}
+		})
+	}
+}
+
+func TestConfigApplyRestoresTheInvalidatedMountRecordThroughRealApply(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		replacement bool
+	}{
+		{name: "add then later removal"},
+		{name: "remove then replacement add", replacement: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var boot, current string
+			var initial []ctxMountEntry
+			var wantActions []string
+			var laterRemoval bool
+			if tc.replacement {
+				root := t.TempDir()
+				oldSource, newSource := filepath.Join(root, "old", "repo"), filepath.Join(root, "new", "repo")
+				for _, dir := range []string{oldSource, newSource} {
+					if err := os.MkdirAll(dir, 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				boot = `{"mounts":["` + oldSource + `"]}`
+				current = `{"mounts":["` + newSource + `"]}`
+				initial = []ctxMountEntry{{Source: oldSource, Dest: "/ctx/repo"}}
+				wantActions = []string{"remove:" + oldSource, "add:" + newSource}
+			} else {
+				source := filepath.Join(t.TempDir(), "addition")
+				if err := os.MkdirAll(source, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				boot = `{}`
+				current = `{"mounts":["` + source + `"]}`
+				wantActions = []string{"add:" + source, "remove:" + source}
+				laterRemoval = true
+			}
+
+			const token = "captured-launch-token"
+			env := entrypoint.ContractTagsEnv + "=" + launchContractTagsValue() + "\n" +
+				ctxMountsTokenEnv + "=" + token + "\n"
+			o, buf := applyFixture(t, boot, current, applyJail{running: true, env: env})
+			cname := runtime.FromWorkspace(o.Workspace)
+			if err := writeCtxMountRecord(cname, token, initial); err != nil {
+				t.Fatal(err)
+			}
+			mounted := append([]ctxMountEntry(nil), initial...)
+			parsed, err := config.LoadWorkspaceConfig(o.Workspace, false, func(string) {})
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantMounts := o.configCtxMounts("podman", parsed, nil)
+			var final []ctxMountEntry
+			for _, m := range wantMounts {
+				final = append(final, ctxMountEntry{Source: m.source, Dest: m.dest, RW: m.rw})
+			}
+			var actions []string
+			// The only mocked production seams are the namespace mutations themselves. Record
+			// invalidation, postmutation writes, reads, planning, and baseline folding are real.
+			swapSeam(t, &injectCtxMountSeam, func(_ *Options, _, _ string, m configCtxMount, _ time.Time) error {
+				mounted = append(mounted, ctxMountEntry{Source: m.source, Dest: m.dest, RW: m.rw})
+				actions = append(actions, "add:"+m.source)
+				return nil
+			})
+			swapSeam(t, &removeCtxMountSeam, func(_ *Options, _, _ string, e liveCtxMount, _ time.Time) error {
+				found := false
+				kept := mounted[:0:0]
+				for _, m := range mounted {
+					if m.Dest == e.Dest {
+						found = m == e
+						continue
+					}
+					kept = append(kept, m)
+				}
+				if !found {
+					return fmt.Errorf("namespace does not contain mount %+v", e)
+				}
+				mounted = kept
+				actions = append(actions, "remove:"+e.Source)
+				return nil
+			})
+
+			applyAndCheck := func(want []ctxMountEntry) {
+				t.Helper()
+				answer(o, "y")
+				if rc := o.configApply(false); rc != 0 {
+					t.Fatalf("config apply rc = %d, want 0\n%s", rc, buf.String())
+				}
+				got, ok := readCtxMountRecord(cname, []string{ctxMountsTokenEnv + "=" + token})
+				if !ok || !slices.Equal(got, want) {
+					t.Fatalf("real mount record = %+v, %v; want %+v", got, ok, want)
+				}
+				if ctxMountRecordInvalidated(cname, []string{ctxMountsTokenEnv + "=" + token}) {
+					t.Fatal("successful apply left its live-mount record invalidated")
+				}
+				if !slices.Equal(mounted, want) {
+					t.Fatalf("mock namespace mounts = %+v; want %+v", mounted, want)
+				}
+				if _, drifted, ok, err := config.WorkspaceConfigDrift(o.Workspace); err != nil || !ok || drifted {
+					t.Fatalf("successful mount change was not folded: drifted=%v ok=%v err=%v", drifted, ok, err)
+				}
+			}
+
+			if tc.replacement {
+				applyAndCheck(final)
+			} else {
+				applyAndCheck(final)
+				if laterRemoval {
+					writeWorkspaceConfig(t, o.Workspace, `{}`)
+					applyAndCheck(nil)
+				}
+			}
+			if !reflect.DeepEqual(actions, wantActions) {
+				t.Fatalf("namespace mutations = %v; want %v", actions, wantActions)
 			}
 		})
 	}

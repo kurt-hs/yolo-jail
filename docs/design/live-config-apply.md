@@ -477,12 +477,32 @@ before live mounts existed"* ([LA-D6](#LA-D6)). There is no bootstrap shim, as
 - **A mount mutation never runs against an unprotected host record.** Before each live mount add or
   removal, the host invalidates the existing record; if that cannot be done, it does not run the
   injector. After a successful mutation the host writes the token-bound record of the new state.
-  If that write fails, the step stays pending, the record remains invalidated, and later mount
-  steps stop. The current jail's token distinguishes a missing/unreadable record from an old jail
-  that never had one; a fresh launch writes a new token-bound record.
+  The writer gets the launch token validated from the inspected jail env before mutation, and only
+  restores it while the record is still the empty tombstone. A record installed under another
+  launch's token is rejected rather than adopted. If the postmutation write fails, the step stays
+  pending, the record remains invalidated, and later mount steps stop. The current jail's token
+  distinguishes a missing/unreadable record from an old jail that never had one; a fresh launch
+  writes a new token-bound record.
+- **Cycle 2 review disposition (2026-10-18).** Review found that the successful postmutation
+  writer rejected its own empty invalidation tombstone, making every otherwise successful live
+  mount change restart-required. The writer now restores only the inspected launch token and only
+  while the tombstone remains; a competing launch token is rejected. `TestConfigApplyRestoresTheInvalidatedMountRecordThroughRealApply`
+  runs full apply through the real invalidator, record writer, record reader and effective-baseline
+  fold, mocking only namespace mutation; it covers add then a later removal and removal then a
+  replacement add. `TestInvalidatedCtxMountRecordCannotClaimStaleMounts` rejects a competing token,
+  and `TestConfigApplyRecordFailureInvalidatesMountStateAndKeepsRemovalPending` retains the
+  restart-required, not-folded failure path. The review's other verified P1 fixes remain covered by
+  `brokerscope.TestLiveScopeTransactionsHonorContextWhileSourceLockIsHeld`,
+  `run.TestApplyPlanRequiresVerifiedLiveScopeAfterApprovalIsUnchanged`,
+  `run.TestInjectCtxMountRefusesChangedRuntimePIDBeforeRunningVerb`, and
+  `ctxinject.TestAttachRejectsAChangedProcessOrMountNamespaceBeforeSourceMutation`: broker lock
+  deadlines, unverified scope discovery staying pending, and process/namespace identity pinned
+  before mutation. These host-side tests do not settle rootless mount capability; the real rootless
+  integration evidence remains M1 in CI.
+
 - **Broker scope discovery and replacement share the live step's deadline.** The source lock is
-  context-bounded. If discovery cannot read the live files, or replacement cannot acquire the
-  lock in time, the approved scope is not claimed to match and the change stays pending.
+  context-bounded. If discovery cannot read the live files, or replacement cannot acquire the lock
+  in time, the approved scope is not claimed to match and the change stays pending.
 - **Concurrency: one lock, one writer.**
   - The launch lock serializes the apply against launches, attaches and other applies.
   - The approval record's writers are a launch's gate, `yolo check --accept-config-changes` and this

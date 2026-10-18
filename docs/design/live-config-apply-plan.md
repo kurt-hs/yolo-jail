@@ -45,6 +45,32 @@ those remain M1 and CI/real-host verification, not claims made by these repairs.
 separate tracked live-apply integration plan; the integration case and its verification limits
 are tracked under Task C below.
 
+**Cycle 2 final repair disposition for candidate `026ab4de`:** Review found a P1 in the successful
+mount path: production invalidates the host record to an empty-token tombstone before changing a
+mount, then the writer rejected that tombstone and left every successful mutation restart-required.
+`updateCtxMountRecord` now restores only the token captured and validated from the running jail's
+inspected env, and only if the file remains the tombstone; a competing launch's token is not
+replaced. `TestConfigApplyRestoresTheInvalidatedMountRecordThroughRealApply` drives production
+apply through the actual invalidator, writer, reader and baseline fold while mocking only namespace
+mutation. It proves add then later removal and remove then replacement-add. The competing-token
+regression is `TestInvalidatedCtxMountRecordCannotClaimStaleMounts`; the existing
+`TestConfigApplyRecordFailureInvalidatesMountStateAndKeepsRemovalPending` still proves failure is
+restart-required and not folded. The task-owned skill,
+`internal/jailcontent/builtinskills/configuring-the-jail/SKILL.md`, now describes the shared
+approval gate and live mount/GitHub-scope cases without an alternate asker, a restart offer or a
+new confirmation. Broker lock deadlines, pending missing/erroring discovery, and pre-pinned process
+identity remain covered by `brokerscope.TestLiveScopeTransactionsHonorContextWhileSourceLockIsHeld`,
+`run.TestApplyPlanRequiresVerifiedLiveScopeAfterApprovalIsUnchanged`,
+`run.TestInjectCtxMountRefusesChangedRuntimePIDBeforeRunningVerb`, and
+`ctxinject.TestAttachRejectsAChangedProcessOrMountNamespaceBeforeSourceMutation`; the focused
+package tests pass. `just build-go` also passed, and the candidate-built `dist-go/linux-amd64/yolo`
+was launched from `/tmp/yolo-nested-live-finalrepair-worker` with `YOLO_REPO_ROOT` naming this
+checkout; it printed `nested-live-final-repair-ok`. The initial nested attempt was correctly refused
+because the selected patched `pi` program was unavailable; the successful retry used the refusal's
+`YOLO_ALLOW_MISSING_PROGRAMS=1` hatch. This is candidate-specific boot/command evidence, not a live
+apply or rootless-mount test: nested podman forces `--userns=host`. Rootless two-architecture, live
+broker, and remount-resistance evidence remain owned by M1 and the final landing gate.
+
 **Design:** [`live-config-apply.md`](live-config-apply.md), every question ruled
 ([Decision Ledger](live-config-apply.md#decision-ledger)).
 
