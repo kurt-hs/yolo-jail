@@ -357,6 +357,11 @@ The maintainer's rulings, then implementation decisions (reversible, made while 
 | <a id="SP-D7"></a>SP-D7 | Retained until the jail is known gone, in the pack's own state beside the declared dir; captured and deleted by the next fresh boot | 2026-10-18 | [§4.6](#46-lifetime-and-failure) | — |
 | <a id="SP-D8"></a>SP-D8 | An older jail keeps last-writer behavior; the attach prints one line naming `yolo stop` and a fresh launch | 2026-10-18 | [§4.6](#46-lifetime-and-failure) | — |
 | <a id="SP-D9"></a>SP-D9 | yolo's pi extensions resolve their files under `PI_CODING_AGENT_DIR` | 2026-10-18 | [§5](#5-what-changes-in-the-pi-pack) | — |
+| <a id="SP-D10"></a>SP-D10 | No `*.lock` name is linked: pi's `proper-lockfile` locks `<path>.lock` by `mkdir`, and a linked lock reads as held forever. Two sessions in one jail then no longer serialize `auth.json` writes through pi's lock, as two jails on one machine do not today (measured in stock pi 1.0.1, 2026-10-18) | 2026-10-18 | [plan](per-session-profiles-plan.md#measurements-behind-the-shared-list-2026-10-18-offline-no-model-calls) | — |
+| <a id="SP-D11"></a>SP-D11 | A read-modify-write surface in a declared directory is seeded from the shared file's bytes before its session render; pi declares none | 2026-10-18 | [plan](per-session-profiles-plan.md#traps) | — |
+| <a id="SP-D12"></a>SP-D12 | The snapshot lives at `~/.config/yolo-agent-env/sessions/<id>/` (the already-bound agent-env directory, no new mount), is published by rename, and an entry whose snapshot cannot be written is refused | 2026-10-18 | [plan](per-session-profiles-plan.md#task-1--entry-snapshots-environment-half-independent) | — |
+| <a id="SP-D13"></a>SP-D13 | The declaration is a top-level `session_homes` list (directory, variable, shared names, `prefer` links), so an older yolo reading a newer pack ignores it instead of skipping the pack's program | 2026-10-18 | [plan](per-session-profiles-plan.md#task-2--session-home-declaration-render-and-link-pass-pis-declaration-independent) | — |
+| <a id="SP-D14"></a>SP-D14 | A session render keeps its own baseline sidecars (last render, selection, provenance, insert record) under `.yolo/prism/sessions/<id>/`; the overlay and list capture stay shared, which is what capture writes | 2026-10-18 | [plan](per-session-profiles-plan.md#traps) | — |
 
 ## 12. What done looks like
 
