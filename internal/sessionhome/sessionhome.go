@@ -70,19 +70,49 @@ type Spec struct {
 	// Prefer maps a name (trailing "/" for a directory) to the absolute path its link points at
 	// when that path exists (packdecl.SessionHome.Prefer, "~/" already expanded).
 	Prefer map[string]string
-	// Rendered are the top-level names in Home the caller renders itself: never linked.
+	// Rendered are the files the caller renders itself, as slash-separated paths relative to
+	// Home: never linked. A path with a directory in it makes each directory on the way a real
+	// directory of the home whose other entries are still linked (a MERGED directory), so one
+	// rendered file in a subdirectory never hides the rest of that subdirectory.
 	Rendered []string
 }
 
 func bare(name string) string { return strings.TrimSuffix(name, "/") }
 
+// renderedSets is s.Rendered split into the rendered files and the merged directories on their
+// paths, both as clean slash-separated paths relative to the home, plus the top-level names
+// either occupies (never linked at the top).
+func (s Spec) renderedSets() (files, merged, top map[string]bool) {
+	files, merged, top = map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, r := range s.Rendered {
+		rel := strings.Trim(filepath.ToSlash(filepath.Clean(filepath.FromSlash(bare(r)))), "/")
+		if rel == "" || rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+			continue
+		}
+		files[rel] = true
+		parts := strings.Split(rel, "/")
+		top[parts[0]] = true
+		for i := 1; i < len(parts); i++ {
+			merged[strings.Join(parts[:i], "/")] = true
+		}
+	}
+	return files, merged, top
+}
+
+// sortedKeys is m's keys, sorted, so a parent directory precedes its children.
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // targets is the link each name in the home should be, deciding nothing on disk except that a
 // declared directory is created in the shared dir (create == true). The map is name -> target.
 func (s Spec) targets(create bool) (map[string]string, error) {
-	rendered := map[string]bool{}
-	for _, r := range s.Rendered {
-		rendered[bare(r)] = true
-	}
+	_, _, rendered := s.renderedSets()
 	out := map[string]string{}
 	entries, err := os.ReadDir(s.Shared)
 	if err != nil && !os.IsNotExist(err) {
@@ -159,11 +189,47 @@ func Build(s Spec) error {
 	if fi, err := os.Lstat(s.Home); err != nil || !fi.IsDir() {
 		return fmt.Errorf("the session home %s is not a directory", s.Home)
 	}
-	for _, r := range s.Rendered {
-		p := filepath.Join(s.Home, bare(r))
+	files, merged, _ := s.renderedSets()
+	// The merged directories first, parents before children: each is a real directory of the
+	// home (a link left there is replaced, since writing through it would write the shared copy).
+	for _, dir := range sortedKeys(merged) {
+		p := filepath.Join(s.Home, filepath.FromSlash(dir))
+		if fi, err := os.Lstat(p); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			if err := os.Remove(p); err != nil {
+				return fmt.Errorf("unlinking %s, which the session renders into: %w", p, err)
+			}
+		}
+		if err := os.Mkdir(p, 0o755); err != nil && !os.IsExist(err) {
+			return fmt.Errorf("creating %s in the session home: %w", p, err)
+		}
+		if fi, err := os.Lstat(p); err != nil || !fi.IsDir() {
+			return fmt.Errorf("%s in the session home is not a directory, and the session renders into it", p)
+		}
+	}
+	for _, rel := range sortedKeys(files) {
+		p := filepath.Join(s.Home, filepath.FromSlash(rel))
 		if fi, err := os.Lstat(p); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 			if err := os.Remove(p); err != nil {
 				return fmt.Errorf("unlinking %s, which the session renders itself: %w", p, err)
+			}
+		}
+	}
+	// Inside each merged directory, every entry of its shared counterpart is linked except a
+	// rendered file, a deeper merged directory and a lock.
+	for _, dir := range sortedKeys(merged) {
+		sharedDir := filepath.Join(s.Shared, filepath.FromSlash(dir))
+		entries, err := os.ReadDir(sharedDir)
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("reading the shared directory %s: %w", sharedDir, err)
+		}
+		for _, ent := range entries {
+			rel := dir + "/" + ent.Name()
+			if files[rel] || merged[rel] || packdecl.SessionHomeNameProblem(ent.Name()) != "" {
+				continue
+			}
+			if err := link(filepath.Join(s.Home, filepath.FromSlash(rel)),
+				filepath.Join(s.Shared, filepath.FromSlash(rel))); err != nil {
+				return err
 			}
 		}
 	}
@@ -234,11 +300,27 @@ func Strays(s Spec) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	rendered := map[string]bool{}
-	for _, r := range s.Rendered {
-		rendered[bare(r)] = true
-	}
+	files, merged, rendered := s.renderedSets()
 	var out []string
+	for _, dir := range sortedKeys(merged) {
+		inner, err := os.ReadDir(filepath.Join(s.Home, filepath.FromSlash(dir)))
+		if err != nil {
+			continue
+		}
+		for _, ent := range inner {
+			rel := dir + "/" + ent.Name()
+			if files[rel] || merged[rel] {
+				continue
+			}
+			if ent.Type()&os.ModeSymlink != 0 {
+				got, _ := os.Readlink(filepath.Join(s.Home, filepath.FromSlash(rel)))
+				if got == filepath.Join(s.Shared, filepath.FromSlash(rel)) {
+					continue
+				}
+			}
+			out = append(out, rel)
+		}
+	}
 	for _, ent := range entries {
 		name := ent.Name()
 		if rendered[name] {

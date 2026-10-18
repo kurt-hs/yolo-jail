@@ -27,9 +27,12 @@ const sessionHomeProbe = `printf 'DIR=%s\n' "${PI_CODING_AGENT_DIR-unset}"; ` +
 	`printf 'PROV=%s\n' "$(jq -r .defaultProvider "${PI_CODING_AGENT_DIR:-/nonexistent}/settings.json" 2>/dev/null)"; ` +
 	`printf 'SHARED=%s\n' "$(jq -r .defaultProvider ~/.pi/agent/settings.json 2>/dev/null)"; ` +
 	`printf 'SUM=%s\n' "$(sha256sum "${PI_CODING_AGENT_DIR:-/nonexistent}/settings.json" 2>/dev/null | cut -c1-16)"; ` +
-	`[ -L "${PI_CODING_AGENT_DIR:-/nonexistent}/auth.json" ] && echo AUTH-LINKED || echo AUTH-NOT-LINKED`
+	`if [ -L "${PI_CODING_AGENT_DIR:-/nonexistent}/auth.json" ]; then echo AUTH=linked; else echo AUTH=missing; fi; ` +
+	`if [ -f "${PI_CODING_AGENT_DIR:-/nonexistent}/extensions/yolo-provider-policy.js" ]; then echo EXT=present; else echo EXT=missing; fi`
 
-var sessionHomeField = regexp.MustCompile(`(?m)^(DIR|PROV|SHARED|SUM)=(.*)$`)
+// Each field is matched as a whole LINE: the boot echoes the command it runs, probe text and all,
+// on a line of its own that starts elsewhere.
+var sessionHomeField = regexp.MustCompile(`(?m)^(DIR|PROV|SHARED|SUM|AUTH|EXT)=(.*)$`)
 
 // The first session's two markers, as LINES: the boot echoes the command it runs, so the bare
 // literal appears before the session has printed anything (firstHasAnswer's lesson).
@@ -44,10 +47,6 @@ func sessionHomeReport(t *testing.T, out string) map[string]string {
 	got := map[string]string{}
 	for _, m := range sessionHomeField.FindAllStringSubmatch(out, -1) {
 		got[m[1]] = m[2]
-	}
-	got["AUTH"] = "missing"
-	if strings.Contains(out, "AUTH-LINKED") {
-		got["AUTH"] = "linked"
 	}
 	return got
 }
@@ -125,6 +124,9 @@ func TestEachSessionReadsItsOwnPiProfile(t *testing.T) {
 		}
 		if r["AUTH"] != "linked" {
 			t.Errorf("session %s: auth.json in its session home must link the shared login (P3)", name)
+		}
+		if r["EXT"] != "present" {
+			t.Errorf("session %s: yolo's pi extensions must be reachable from its session home", name)
 		}
 	}
 	if a["DIR"] == b["DIR"] || a["DIR"] == c["DIR"] || b["DIR"] == c["DIR"] {
