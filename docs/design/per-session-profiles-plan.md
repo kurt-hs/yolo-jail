@@ -1,16 +1,18 @@
 ---
 title: "Per-session profiles: implementation plan"
 status: accepted
-stage: BUILT
-next: "Tasks 1-6 landed on the lane branch; graduate into a system doc once OQ-SP5 is ruled and step 4 is built or dropped"
+stage: DECIDED
+next: "Build Task 7: require own for host command launches and capture ended owned session homes through normal host config capture; then complete or drop step 4"
 depends-on: [per-session-profiles.md]
 tags: [plan, profiles, attach, sessions, pi]
 ---
 
 # Per-session profiles: implementation plan
 
-**Status:** 2026-10-18. Completed against the tree, written against `4cfe985a9`.
-**Design:** [`per-session-profiles.md`](per-session-profiles.md) (all four questions ruled).
+**Status:** 2026-10-19. Tasks 1-6 completed against the tree; Task 7 is the remaining host
+boundary and capture work, written against `bd5d211a5`.
+**Design:** [`per-session-profiles.md`](per-session-profiles.md) (all filed rulings settled;
+host boundary and capture are specified).
 
 Precedence: the design wins on behavior, the tree wins on fact (cosmetic drift only: follow the
 tree and say so in the report), this file is advice and the first thing to be wrong. **Stop and
@@ -82,6 +84,9 @@ on one machine do not today. Ledgered as SP-D10; never link a `*.lock` name.
 | `internal/cli/host.go`, `internal/cli/hostsessionhome.go` (new), `internal/prune/` | `yolo host` per-launch session home | 5 |
 | `integration/sessionhome_test.go` (new) | attach-path integration | 6 |
 | `docs/reference/pack-system.md`, `docs/reference/composed-file-permissions.md`, `internal/cli/config_ref.txt`, `CHANGELOG.md`, the design's ledger | docs | 6 |
+| `internal/cli/host.go`, `internal/cli/hostsessionhome.go`, `internal/cli/configdiff.go`, `internal/prune/hostsessionhomes.go`, `internal/prune/prunecmd.go` | host command ownership gate and host managed-config capture for resident and reaped owned session homes | 7 |
+| `internal/cli/hostsessionhome_test.go`, `internal/prune/hostsessionhomes_test.go` | boundary, capture semantics and cleanup regressions | 7 |
+| `internal/cli/frontdoornotch_test.go`, `internal/cli/hostwrapperspath_test.go` | `--at host` execution spellings and generated-wrapper execution share the same ownership gate | 7 |
 
 ## Reuse before you write
 
@@ -292,7 +297,8 @@ Ruled by [OQ-SP4](per-session-profiles.md#11-decision-ledger).
   `~/.pi/agent` shared state, profile-dependent files rendered in the throwaway dir,
   `PI_CODING_AGENT_DIR` exported to that launch only; the user's real files untouched; removed when
   the launch ends, or reaped later if it dies." Same declaration; no pi knowledge in core. SP-D5
-  holds at the host.
+  holds at the host. These session-home cases run under `host_management: own`; SP-R1's separate
+  `none` refusal and the old test that expected a launch under `none` are handled by Task 7.
 - **Shape (advice):** in `hostLaunch` after composition (`host.go:~803`) and before the exec arms:
   for each selected pack with `session_homes`, make `os.MkdirTemp(<yolo state>/host-session-homes,
   "<pack>-")`, render the pack's in-directory surfaces with `RenderHostPack` into a temp home whose
@@ -302,10 +308,11 @@ Ruled by [OQ-SP4](per-session-profiles.md#11-decision-ledger).
   host launch and `yolo prune` reap dirs whose lease is free. Reuse task 2's link builder (keep it
   in a package both sides import, e.g. `internal/sessionhome`).
 - **Tests first** (`internal/cli/hostsessionhome_test.go`, through `hostMain` with
-  `hostSyscallExec` stubbed, `hostSelectionRun` / `piSettingsFixture`): `-p` → the child env carries
-  `PI_CODING_AGENT_DIR` under the store, its `settings.json` holds the `-p`'s `defaultProvider`,
-  `auth.json` is a link to the real one, the real `~/.pi/agent/*` bytes are unchanged; a preset
-  variable wins; a dead launch's dir is reaped by the next launch.
+  `hostSyscallExec` stubbed, `hostSelectionRun` / `piSettingsFixture`): the configured user scope
+  explicitly sets `host_management: own`; `-p` → the child env carries `PI_CODING_AGENT_DIR` under
+  the store, its `settings.json` holds the `-p`'s `defaultProvider`, `auth.json` is a link to the
+  real one, the real `~/.pi/agent/*` bytes are unchanged; a preset variable wins; a dead launch's
+  dir is reaped by the next launch.
 - **Commit:** `feat(host): give each pi launch its own session home`.
 
 ### Task 6 — integration and docs (after 1-4)
@@ -321,6 +328,52 @@ Ruled by [OQ-SP4](per-session-profiles.md#11-decision-ledger).
   read only that frozen environment"); document `session_homes` in `pack-system.md` beside
   `launch_computed`; `internal/cli/config_ref.txt` only if it lists top-level manifest keys; one
   `### Fixed` line in `CHANGELOG.md`; the design's ledger Built column and status.
+
+### Task 7 — require ownership and capture edits from owned host session homes (after 5)
+
+Ruled by [SP-R1](per-session-profiles.md#SP-R1) and [OQ-SP5](per-session-profiles.md#decision-ledger).
+
+- **Settled (do not re-open):** a host command execution requires `host_management: own`; `none`
+  or unset refuses before host launch assistance. Under `own`, user edits to a session home's
+  stateful config surface go through ordinary host managed-config capture into the standard
+  capture overlay, so later managed renders receive them. Generated/computed/managed values keep
+  the existing surface and layer precedence; do not capture them as user edits. Do not copy the
+  generated file wholesale or write it back to the native host settings file. No new schema or
+  capture layer. `yolo host apply`, `yolo host env`, `yolo host wrappers status` and direct,
+  non-yolo agent starts remain outside this command-launch boundary.
+- **Change:** gate actual host command execution before pack refresh/preparation. Capture a
+  resident `own` session's edits after its child ends and before its cleanup removes the home.
+  For exec'd homes, add a pre-removal capture hook to `ReapHostSessionHomes`, supplied by both
+  the next `yolo host` launch and `yolo prune --apply`. An active lease is never captured or
+  reaped, and prune's dry run stays read-only. Extract or reuse the ordinary host capture path in
+  `internal/cli/configdiff.go`: render/observe the ended home and its own sidecars as the source,
+  but write through the standard capture overlay and list-capture sidecars under the existing
+  owned-host lock. Respect existing surface/layer and refusal semantics. If capture cannot accept
+  a home's changes, do not delete that source or report it captured; keep it retryable and use
+  the normal refusal with its repair/retry command. Keep the user's real
+  `~/.pi/agent/settings.json` unchanged by the session.
+- **Tests first:** in `internal/cli/hostsessionhome_test.go`, rewrite
+  `TestHostPiBareLaunchUnderNoneGetsNoSessionHome` to cover explicit `none` and unset: neither a
+  bare launch nor `-p`/`--with-credentials` starts a command, composes an environment, creates a
+  session home, or starts a service; `own` still launches. Use a direct harmless command and the
+  exec stub, never an agent. Add a session-edit case: change a user key in the generated session
+  `settings.json`, and cover both resident exit and an ended exec-home cleanup; verify the standard
+  host capture overlay records that user edit but not profile-derived provider/model values, then
+  launch under a different `-p` and verify the user's edit survives while the new profile's
+  generated values win. The real settings file remains byte-identical. In
+  `internal/cli/frontdoornotch_test.go`, exercise the none/unset refusal through every `--at host`
+  command-launch spelling as well as `yolo host --`; verify a generated host wrapper still enters
+  that same gated path. Keep `yolo host apply`, `yolo host env`, and `yolo host wrappers status`
+  on their existing separate paths. Extend the `yolo prune --apply` case to prove capture precedes
+  removal and normal capture failure retains the source. Keep existing session-home scenarios
+  explicitly under `own`. Red:
+  `go test ./internal/cli ./internal/prune -run 'Host.*(SessionHome|None)|HostSessionHomes|EveryAtHostSpellingLaunchesAtTheHost'`.
+- **Gates:** `go test -short ./internal/cli ./internal/prune`; the specific red command above; existing
+  host capture, host wrapper and host session-home tests.
+- **Fences:** do not change `host env`, host-apply's ownership behavior, host wrapper status semantics,
+  pack schemas, or the jail's capture rules. No whole-file copy-back, native host file writer,
+  pi-specific capture schema, or edits to computed/managed surfaces' precedence.
+- **Commit:** `fix(host): capture owned session-home edits normally`.
 
 ## Ships with
 

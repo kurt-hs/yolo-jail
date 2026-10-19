@@ -8,6 +8,10 @@ summary: "Records the prior model/Mac landing, full patch/live candidate histori
 
 # Plan: October 18 serial landing and verification
 
+**Status:** 2026-10-19. The historical integration record is settled; rootless both-architecture,
+real-broker before/after, and native-Mac validation remain owed. The owner follow-up below records
+a docs-only ruling and does not change release authority.
+
 **Baseline and integration:** primary `main` was clean at `6683038d29e073e015af9396b117fa36f1e9f63d` before the serial source merges. The patch-branch code entered the integrated history in merge `08e6566c4`; live-config code entered in merge `6f7c72a25`, with the inspected-mount-record repair in `388ea8a1b`. The full patch-branch history through `770d9c2c9f83592d2c904de23a1f4fb36bd9cdb0` and live-config history through `e80f3a2ae3acc3724b83aaa66b207edd9cbd18f4` remain ancestors. `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1` is the later one-line documentation repair, not the source-code merge.
 
 ## Prior model and Mac source history
@@ -220,9 +224,25 @@ One real baseline request succeeded in the earlier assessment at `9ab03637c` thr
 
 The remaining before/after test requires an operator-owned disposable workspace and two explicitly approved real repository identities, A and B; an agent must not invent B. The operator must use host `yolo` built from the landed live-apply tree, establish that the bound host broker scope has `live_scope: true`, and retain the broker lifetime identity. With A approved, retain a successful A request; use the existing human `yolo config apply` gate to approve adding B, then retain B's successful request; use that same gate to remove B, then retain the next-request refusal for B. The broker lifetime identity must remain stable through the sequence. If host capability is absent, host yolo must be updated and the disposable fixture freshly launched before testing. Never edit the scope file directly, copy the jail endpoint credential, or record endpoint addresses, certificates, tokens, credential fields or sensitive logs.
 
-[OQ-SP5](../design/per-session-profiles.md#OQ-SP5) remains genuinely unanswered: its Answer is blank, and the A/B/C alternatives are for the owner alone to rule. This assessment does not change that design or its leaning. A likely patch release is not a selected version or publication authorization; no version, date, tag, push or release is authorized or recorded here.
+At the time of this assessment, [OQ-SP5](../design/per-session-profiles.md#decision-ledger) remained
+unanswered: its Answer was blank, and its A/B/C alternatives were for the owner to rule. The
+follow-up ruling is recorded below. A likely patch release is not a selected version or publication
+authorization; no version, date, tag, push or release is authorized or recorded here.
 
-This update corrects the current blocker and source-attribution record only. It adds no implementation or tests and changes no capability policy, grants, publication authority or [OQ-SP5](../design/per-session-profiles.md#OQ-SP5).
+At that time, this update corrected the current blocker and source-attribution record only. It
+added no implementation or tests and changed no capability policy, grants, publication authority
+or then-open [OQ-SP5](../design/per-session-profiles.md#decision-ledger).
+
+### Owner's follow-up rulings (2026-10-19)
+
+The assessment above predates the owner's rulings. The former [OQ-SP5](../design/per-session-profiles.md#decision-ledger) is settled in the
+[per-session profiles Decision Ledger](../design/per-session-profiles.md#decision-ledger): under
+`host_management: own`, edits from an ended host session home use ordinary managed-config capture
+into the standard overlay for later managed renders, without wholesale generated-file copying or
+native host settings-file writeback. SP-R1 also requires `own` for host command execution; under
+`none` or unset, yolo provides no host-launch assistance. These rulings are documentation only at
+this stage; implementation remains in the [bounded plan](../design/per-session-profiles-plan.md).
+They do not authorize a release or change the earlier release-boundary record.
 
 ## Final combined verification at `09178659b`
 
