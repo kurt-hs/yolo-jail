@@ -71,12 +71,30 @@ and a pi-subagents registry several extensions can share stays in item 28.
    local measurements count with provenance. Original Mac commits `98715e67b` and `41dd11e3f`,
    and the doorway, housekeeping and floor-test repairs remain in current main ancestry. Portable
    guard hardening followed in `cab34b522` and `201c4009e`; the `4e7b9b92b` commit itself changed
-   only a documentation heading. Native-Mac execution remains unverified. The doorway and
-   housekeeping test diagnoses remain in
-   [§6.2](../design/macos-user-suite-on-a-developer-mac.md#62-another-sessions-doorway-was-read-as-this-sessions-survivor)
-   and [§6.3](../design/macos-user-suite-on-a-developer-mac.md#63-the-housekeeping-tests-slot-was-not-due-because-its-stamp-is-the-machines),
-   but still need their documented Mac re-runs. The floor test's changed diagnostic also needs its
-   native-Mac run. That first run cleared measurements items 38 and 40, listed in the design.
+   only a documentation heading. **Native-Mac execution is now VERIFIED: 2026-10-19 at
+   `c3a38e634`, `-run '^TestMacosUser'` exits 0 on that host — 150 passed, 4 skipped, 0 failed,
+   626 s, ledger `executed=100 skipped=14`.** Every one of the twelve 2026-10-17 failures is
+   gone, no test asked for root `sudo`, and the host's log policy produces the two counted skips
+   the ruling designed, one of them only the `macos_log_store_read_refused` subtest so the other
+   nine rules still assert. That covers the re-runs owed for
+   [§6.2](../design/macos-user-suite-on-a-developer-mac.md#62-another-sessions-doorway-was-read-as-this-sessions-survivor),
+   [§6.3](../design/macos-user-suite-on-a-developer-mac.md#63-the-housekeeping-tests-slot-was-not-due-because-its-stamp-is-the-machines)
+   and the floor test's changed diagnostic. **The narrow-sudo cell passed there too** (all three
+   tests), which that host satisfies natively rather than by narrowing `sudoers` as CI must. Still
+   owed: a `macos-user.yml` run, and the ownership-*enabled* volume, which needs root. That first
+   run cleared measurements items 38 and 40, listed in the design.
+
+6. **`yolo check`'s host-floor section reads a pack root its own Packs section already deleted**
+   — a verified live defect, measured 2026-10-19 on a host selecting a patched fork, and an
+   agent can fix it now. The Packs section stages each entry under one temp tree and removes it
+   when the section returns, but the loaded packs it keeps carry a `Root` inside that tree, so
+   the floor section prints `pi — no floor entry: … the pack's root cannot be opened (open
+   /var/folders/…/T/yolo-check-pack-<n>/pi-fork: no such file or directory)` one screen after
+   printing `[PASS] pi-fork: 143 file(s) stage`. **The warning is false** — `yolo pack status
+   pi-fork/pi` reads the same series fine — and its next step misdirects the reader to
+   `yolo host`'s floor. The mechanism, the evidence and the rule it breaks are in
+   [the pack system's check/launch callout](../reference/pack-system.md#one-governance-reader).
+   No ruling needed.
 
 Native readiness and credential-store work retain their places below: assess
 [the privilege prerequisites](../research/sandvault-macos-privileges.md) without broad root

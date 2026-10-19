@@ -318,6 +318,23 @@ alone; a `skills` or `files` `from` is not checked against the basenames.
 > (`TestSectionPacksFailsOnALoadProblemTheLaunchRefuses`). The gap was closed in `check`,
 > where it was; do not answer a check/launch disagreement with a second refusal site.
 
+> [!WARNING]
+> **A pack `check` loaded outlives the tree `check` staged it into, and a later section that
+> reads a file from its root reads a deleted path.** The Packs section stages every entry under
+> one `os.MkdirTemp("", "yolo-check-pack-")` and removes it with a `defer` when that section
+> returns (`internal/cli/check/packs.go`), but the loaded `*packload.Pack` values it keeps on
+> `o.selectedPacks` carry a `Root` inside that tree, and later sections read them. **Measured
+> 2026-10-19** on a host whose user config selects a patched fork: the Packs section prints
+> `[PASS] pi-fork: 143 file(s) stage`, and the host-floor section then prints
+> `pi — no floor entry: … whose series cannot be read: patch series patches: the pack's root
+> cannot be opened (open /var/folders/…/T/yolo-check-pack-<n>/pi-fork: no such file or
+> directory)`. **The warning is false:** `yolo pack status pi-fork/pi` reads that fork's series
+> and recipe from the real pack root in the same breath. It is worse than noise, because its
+> next step tells the reader `yolo host` will refuse to launch until the floor holds the
+> program, which this says nothing about. Anything surviving the Packs section must either hold
+> the bytes it needs or re-resolve the pack; a section may not assume the staged root still
+> exists.
+
 The rule is about sources only. A destination path ending in `AGENTS.md`, which several shipped
 agent packs declare, and `after: "host:AGENTS.md"` are not sources, and neither is checked.
 
