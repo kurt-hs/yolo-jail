@@ -361,14 +361,17 @@ with `--read-only --mount type=tmpfs,destination=/ctx,ro=true`, an existing `:ro
   - and the result with the jail's own `CAP_SYS_ADMIN`, which can remount any unlocked mount. The
     same holds for launch-time `:ro` binds, so live must match launch, not exceed it ([LA-P4](#LA-P4)).
 
-  A separate nested rootful Linux/amd64 probe (`podman info` reported `false`) had `CAP_SYS_ADMIN`
-  in the jail's effective set. Its direct bind-remount syscall succeeded for both the launch-time
-  and injected mounts, and writes changed both sacrificial host sentinels. That establishes parity
-  only for this nested rootful path and records a baseline trust issue: a jail holding this
-  capability can make either read-only bind writable. It does not show a regression in live apply,
-  nor does it satisfy the rootless-on-both-arches measurement above. The policy consequence of
-  granting a jail `CAP_SYS_ADMIN` while exposing read-only host binds remains a backlog item; do
-  not describe either bind mode as resistant to that jail-side remount.
+  The latest full integration run (2026-10-19 UTC) at software source
+  `09178659bd98c3a974a1d83f5f2d8d572965c3fa`: `podman info --format '{{.Host.Security.Rootless}}'`
+  returned `false`, `GOARCH=amd64`, and `PASS: TestLiveCtxMountReadOnlyRemountParity`. The test separately observed effective
+  `CAP_SYS_ADMIN` in the jail: `launch-REMOUNT=remount-succeeded` and
+  `injected-REMOUNT=remount-succeeded`; both follow-up writes were `OK`, and both host sentinels
+  read `sentinel\nattack` (`launch-time writable=true`, `injected writable=true`). This is
+  parity only for the nested rootful path, not protection against a jail with that capability and
+  not rootless-host evidence. It does not show a regression in live apply or satisfy the
+  rootless-on-both-arches measurement above. The policy consequence of granting a jail
+  `CAP_SYS_ADMIN` while exposing read-only host binds remains a backlog item; do not describe
+  either bind mode as resistant to that jail-side remount.
 
   Report `podman info --format '{{.Host.Security.Rootless}}'` with the result.
 - **M2**, rootful podman. **M3**, a podman machine on a Mac.
