@@ -3,14 +3,14 @@ title: "Pants cannot resolve github.com in a podman jail where curl can"
 date: 2026-10-19
 status: open
 tags: [lab-report, podman, macos, dns, vpn, musl, pants]
-summary: "On a coworker's Mac, with the VPN connected, pants' first run in a podman jail fails with \"Could not resolve host: github.com\" while curl and ping in the same shell reach github.com. scie-pants is a static musl binary, and musl asks every nameserver at once; the jail lists two. Unconfirmed: the decisive one-nameserver test has not been run."
+summary: "On a coworker's Mac, with the VPN connected, pants' first run in a podman jail fails with \"Could not resolve host: github.com\" while curl and ping in the same shell reach it. scie-pants is a static musl binary. Measured: musl fails, and glibc succeeds, when the upstream answers the AAAA query with NXDOMAIN, SERVFAIL or REFUSED. Both jail nameservers relay the Mac's own resolver, and every hop on the maintainer's Mac answers correctly, so his DNS is the remaining suspect."
 ---
 
 # Pants cannot resolve github.com in a podman jail where curl can, 2026-10-19
 
 A [lab report](README.md). Two Macs on arm64, both on the company VPN, both running a podman
 jail. On the maintainer's, pants bootstraps. On a coworker's, it fails to resolve `github.com`.
-Nothing here has been fixed, and the cause is a hypothesis with one test left to run.
+Nothing here has been fixed, and the mechanism is measured, with one fact about his DNS left to collect.
 
 ## Observed
 
@@ -54,57 +54,66 @@ reported as podman, but no launch output from that machine was seen.
   `getaddrinfo() thread failed to start` string. So its downloads resolve names through musl's
   `getaddrinfo`, and the `[6]` in the error is libcurl's "could not resolve host" code.
 
-## Not reproduced on the maintainer's Mac
+## Proven: which DNS answers break musl and not glibc
 
-A plain musl container under the same podman (6.0.2, `applehv` VM, rootless, pasta), VPN up:
-`podman run --rm docker.io/library/alpine:3.20` running musl's `getent hosts github.com` five
-times, then busybox `nslookup` of `A` and `AAAA` against each of the two nameservers. **Every
-lookup succeeded**, and both servers answered both types. Repeating it with the coworker's
-search domains (`--dns-search int.hs.ai --dns-search ec2.internal`) changed nothing, so **the
-search line alone is not the cause.**
+A stub DNS server in one podman container, misbehaving in one way at a time, with
+`socket.getaddrinfo("github.com", 443)` (the call libcurl's threaded resolver makes) run from
+`python:3.12-alpine` (musl) and `python:3.12-slim` (glibc) in its network namespace, three runs
+each:
 
-**What does differ is the host's DNS.** `scutil --dns` on the maintainer's Mac names the VPN's
-`10.19.0.2` with search domain `lan`. The coworker's jail got `int.hs.ai ec2.internal`, so his Mac
-gets a different DNS configuration from the VPN. He also reached GitHub's `fra` edge, so he is
-connecting from elsewhere and possibly through another gateway. A different upstream server
-answering differently is the remaining suspect, not anything yolo does. The same container
-test, run on his Mac, separates the two: a musl failure there is outside yolo entirely.
+| The stub's answer | musl | glibc |
+| :--- | :--- | :--- |
+| forwarded unchanged | ok | ok |
+| `AAAA` answered `NXDOMAIN`, `A` forwarded | **fails at once** | ok |
+| `AAAA` answered `SERVFAIL` or `REFUSED` | **fails after 5 s** | ok |
+| two servers listed; the second answers everything `NXDOMAIN` at once | **fails** | ok |
+| two servers listed; the first answers everything `NXDOMAIN` | fails | fails |
 
-## Open: why only musl fails on the coworker's machine
+**Every row where musl fails and glibc succeeds is an upstream misbehaving** about the `AAAA`
+query, or a second listed server answering negatively and fast. glibc keeps the `A` answer and
+asks servers in order; musl fails the whole lookup and takes the first reply from any server.
 
-**Two hypotheses, both musl-only, which is why curl and ping are unaffected.** The jail's `curl`
-and `ping` are presumably glibc builds (unchecked).
+## Not reproduced on the maintainer's Mac, and why
 
-1. **A negative answer to the IPv6 query (the stronger one).** Every lookup sends an `A` and an
-   `AAAA` query together. glibc returns the `A` addresses when the `AAAA` query comes back
-   `NXDOMAIN`; musl fails the whole lookup on an `NXDOMAIN` to either one. A resolver that answers
-   `AAAA` for outside names with `NXDOMAIN` breaks only musl programs. Corporate and cloud
-   resolvers are where that behaviour is plausible, and `ec2.internal` hints at an AWS one. The
-   maintainer's servers answer `AAAA` correctly, which would explain why it does not reproduce.
-2. **A race between the two nameservers (weaker).** musl asks every listed server at once and
-   takes the first reply, a negative one included; glibc asks them in order. But both jail
-   servers are relays inside the podman VM (pasta's forwarder and gvproxy) that most likely end
-   at the same host resolver, so their answers should agree.
+**Every hop answers correctly there.** `dig` for `github.com`, `A` then `AAAA`: `NOERROR` with
+one answer, then `NOERROR` with none, from every server. That means the VPN resolver `10.19.0.2`
+and the home router `192.168.1.1` asked directly from the Mac, and gvproxy and pasta asked from
+inside a container. A plain musl container resolves `github.com` every time, with or without the
+coworker's search domains.
 
-The `nslookup -type=AAAA` lines in the container test below tell the two apart.
+**Both jail nameservers end at the Mac's own resolver.** The podman VM's `/etc/resolv.conf` names
+only `192.168.127.1`, so pasta's `169.254.1.1` forwards there too, and gvproxy (v0.8.9) answers
+through macOS's `libresolv`. So the race between the two jail servers (the fourth row) cannot
+happen: both relay one upstream. What decides the answer is **which DNS server the coworker's
+Mac uses for outside names.**
 
-**Not checked:** which of the two servers misbehaves, whether it is the A or the AAAA query, and
-whether `/ctx/workspace` means this was not the backend it was reported as.
+**The search domains are a snapshot, not a cause.** The VM's `resolv.conf` was written by
+NetworkManager when the VM booted, from gvproxy's DHCP, so it carries the search domains of
+whatever network the Mac was on at that moment: `lan` for the maintainer, the VPN's for the
+coworker.
 
-**The decisive test**, for the coworker, inside the jail. Keep one nameserver at a time and
-rerun pants:
+**The maintainer's AWS Client VPN** (tunnel `utun4`) sends all DNS to `10.19.0.2`, the VPC's
+resolver. Per the maintainer, the coworker's VPN setup is the same and his internet DNS is not.
+The remaining suspect is therefore his internet (router or ISP) DNS, reached for outside names,
+answering `AAAA` for `github.com` with `NXDOMAIN`, `SERVFAIL` or `REFUSED`.
+
+## Open: what the coworker's DNS answers
+
+**On his Mac**, the commands that settle it:
 
 ```console
-$ cp /etc/resolv.conf /tmp/resolv.orig
-$ grep -v '192.168.127.1' /tmp/resolv.orig > /etc/resolv.conf && pants --version
-$ grep -v '169.254.1.1'   /tmp/resolv.orig > /etc/resolv.conf && pants --version
-$ cp /tmp/resolv.orig /etc/resolv.conf
+$ scutil --dns | grep -m8 -E 'nameserver|search domain'
+$ for s in $(scutil --dns | awk '/nameserver/{print $3}' | sort -u); do dig +short +comments @$s github.com AAAA | grep -m1 status; done
+$ podman run --rm docker.io/library/alpine:3.20 sh -c 'apk add -q bind-tools; dig @192.168.127.1 github.com AAAA | grep status'
 ```
 
-If one spelling works and the other fails, that server is the bad one and the hypothesis holds.
-If both fail, the cause is not musl's parallel queries and this report is wrong about it.
-`dig` or `nslookup` against each server, for `A` and `AAAA`, would then say what it answers, if
-either tool is in the image.
+An `NXDOMAIN`, `SERVFAIL` or `REFUSED` names the server, and the table above says why only
+pants fails.
+
+**Workaround, measured on the maintainer's Mac:** point the jail straight at the VPN resolver,
+which answers both internal and outside names correctly. A musl container with
+`--dns 10.19.0.2` resolved `github.com` and `vision.int.hyperscience.net`. In a running jail that
+is `echo 'nameserver 10.19.0.2' > /etc/resolv.conf`, lost when the jail restarts.
 
 **The empty cache file.** The failed fetch left a zero-byte archive in pants' cache (`e3b0c442…`
 is the SHA-256 of empty input). Each rerun refetches, so it is not what blocks the coworker, but
