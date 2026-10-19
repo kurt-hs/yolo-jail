@@ -177,7 +177,7 @@ fixture setup.
 **MEASURED on that Mac, 2026-10-19 at `8d8e73653`, and it is 41 seconds:** `go test -short
 -count=1 -timeout 60m ./...` reports `ok … /internal/cli 1241.180s`. The package **passes** — it
 is not hanging, and no test in it fails — but 1241 s is 41 s past the gate's own
-`-timeout=20m` ([`justfile:320`](../../justfile)), so `just check-ci` and `just done` cannot go
+`-timeout=20m` ([`Justfile:320`](../../Justfile)), so `just check-ci` and `just done` cannot go
 green on that host while every other package passes. ⚠ **This supersedes the ~25-minute estimate
 below as the number to plan against.** It also changes what the fix has to be worth: the levers
 in this section are each a ruling and a build, and the gap they must close is 3.4% of one
