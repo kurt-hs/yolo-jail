@@ -223,3 +223,102 @@ The remaining before/after test requires an operator-owned disposable workspace 
 [OQ-SP5](../design/per-session-profiles.md#OQ-SP5) remains genuinely unanswered: its Answer is blank, and the A/B/C alternatives are for the owner alone to rule. This assessment does not change that design or its leaning. A likely patch release is not a selected version or publication authorization; no version, date, tag, push or release is authorized or recorded here.
 
 This update corrects the current blocker and source-attribution record only. It adds no implementation or tests and changes no capability policy, grants, publication authority or [OQ-SP5](../design/per-session-profiles.md#OQ-SP5).
+
+## Final combined verification at `09178659b`
+
+The software source tested here was clean at `09178659bd98c3a974a1d83f5f2d8d572965c3fa`; the primary checkout's `main` was also clean at that exact commit before this documentation handoff. Ancestry checks against that source passed for the patch caller merge `08e6566c4` and full candidate `770d9c2c9`, the live-apply merge `6f7c72a25`, candidate `e80f3a2ae` and inspected-record repair `388ea8a1b`, plus the model and Mac source/test history (`bfb4f6f47`, `203182fd4`, `082d3cab3`, `98715e67b`, `41dd11e3f`, `4bc941d53`, `cab34b522`, `201c4009e`). The prior documentation-only repair `efe0d88f1` is also an ancestor. This confirms the requested histories were already integrated; nothing was re-merged or reimplemented.
+
+The single full local integration run used the existing Go cache and Podman setup, without changing either:
+
+```sh
+YOLO_NO_PROGRAM_READINESS=1 go test -count=1 -timeout 0 -v ./integration
+```
+
+It ran on Linux/amd64 with Podman `Rootless=false`; it **passed** with package result `ok ... 744.650s`, outer elapsed time 750 seconds, exit 0 (2026-10-19 01:24:07–01:36:37 UTC). The observed verbose ledger contains 793 test-result events including nested subtests: 633 PASS and 160 SKIP. Both `TestLiveCtxMountInjectAndRemove` and `TestLiveCtxMountReadOnlyRemountParity` passed on this rootful host. `TestARootlessCopyLandsInPodmansStoreWhateverStorageConfSays` skipped because Podman is not rootless. The macos-user integration summary was `executed=0 skipped=111` because this was Linux and `YOLO_TEST_MACOS_USER` was unset; the Mac-only integration behavior was not exercised.
+
+The exact-HEAD `just check-ci` result for source `09178659bd98c3a974a1d83f5f2d8d572965c3fa` is already recorded as passed in the retained worker/scout receipts (`subagent-worker-682ed780-27a2-45a0-9307-7bd62382df94-1` and `subagent-scout-05163b44-3270-479b-8ae6-51941417c41c-1`). Source remained unchanged at that commit, so this task reused that fast-gate provenance and did not rerun it.
+
+### Bounded source excerpts and regression identities
+
+These are literal selected lines from the original first-parent diff for `770d9c2c9` and original diffs for `e80f3a2ae` and `026ab4de`. Original file and hunk headers and every shown source line are retained; omitted lines are described outside the fences. See [PF-D98](../reference/patched-forks.md#PF-D98) for the selected-pack identity contract. The named pack manifest is decoded before this caller hydrates identity. The mapping helper accepts only a host-recorded relative contribution whose workspace-resolved source is the exact directory named to `series check`. Its record/path setup and mapping-map initialization are omitted here:
+
+```diff
+diff --git a/internal/cli/patchedseriescheck.go b/internal/cli/patchedseriescheck.go
+@@ -106,6 +93,64 @@ func loadPatchedPackDir(dir, name string, errw io.Writer, color bool) (*packload
++	namedDir, ok := resolve(dir)
++	if !ok {
++		return
++	}
++	for _, entry := range entries {
++		for owner, mapping := range entry.PatchBranches {
++			stagedSlug, contribution, ok := strings.Cut(owner, "/")
++			if !ok || stagedSlug != filepath.Base(filepath.FromSlash(entry.Dir)) || !mapping.Mapped {
++				continue
++			}
++			mappedDir := filepath.Join(e.WorkspaceDir(), filepath.FromSlash(mapping.Directory))
++			resolvedMapping, ok := resolve(mappedDir)
++			if !ok || resolvedMapping != namedDir {
++				continue
++			}
++			for _, declared := range p.Decl.Contributions() {
++				if declared.ExtensionName() != contribution || !packsrc.IsRelativeLocator(declared.PatchBranch) {
++					continue
++				}
++				mappings[p.StagedSlug()+"/"+contribution] = packload.PatchBranchMapping{
++					Repository: mapping.Repository, Directory: mappedDir, Mapped: true,
++				}
++			}
++		}
++	}
+```
+
+The original caller hunk adds hydration after named-directory load/validation:
+
+```diff
+diff --git a/internal/cli/patchedseriescheck.go b/internal/cli/patchedseriescheck.go
+@@ -187,6 +234,7 @@ func packSeriesCheck(args []string, out, errw io.Writer, color bool) int {
++	hydrateSelectedWorkspacePackMappings(p, abs)
+```
+
+`TestSeriesCheckHydratesOnlyTheExactSelectedWorkspacePackIdentity` ([source](../../internal/cli/patchbranchseriescheck_test.go#L74)) uses distinct host/guest clones, removes mirrors, denies git execution, and rejects both a changed named manifest and an unrelated clone. An empty-token tombstone means the host cannot trust its mount record. Restoration accepts only the inspected launch token while that tombstone remains; a failed write invalidates the record and leaves the change pending. The shown lines come from the original repair diffs; unrelated lines in those hunks are omitted:
+
+```diff
+diff --git a/internal/cli/run/ctxmountrecord.go b/internal/cli/run/ctxmountrecord.go
+@@ -154,19 +154,21 @@ func ctxMountRecordInvalidated(cname string, envLines []string) bool {
++func updateCtxMountRecord(cname, token string, entries []ctxMountEntry) error {
++	if token == "" {
++		return errors.New("cannot restore a live-mount record without the inspected launch token")
++	}
++	rec, err := loadCtxMountRecord(cname)
++	if err != nil {
++		return err
++	}
++	if rec.Token != "" {
++		return errors.New(ctxMountRecordPath(cname) + " no longer carries the invalidation tombstone")
++	}
++	return writeCtxMountRecord(cname, token, entries)
+```
+
+```diff
+diff --git a/internal/cli/run/liveapply.go b/internal/cli/run/liveapply.go
+@@ -422,26 +455,41 @@ func (o *Options) runApplySteps(run *applyRun, plan []applyChange) []applyChange {
++func (o *Options) noteMountRecord(run *applyRun, token string, have []liveCtxMount, c *applyChange) bool {
++	if err := writeCtxMountRecordSeam(run.cname, token, have); err == nil {
++		return true
++	} else {
++		invalidateErr := invalidateCtxMountRecordSeam(run.cname)
++		c.outcome = outcomeNextRestart
++		c.reason = "the mount succeeded, but its host record could not be updated: " + err.Error()
++		if invalidateErr != nil {
++			c.reason += "; the stale record could not be invalidated: " + invalidateErr.Error()
++		}
++		return false
++	}
++}
+```
+
+Regression identities are `TestConfigApplyRestoresTheInvalidatedMountRecordThroughRealApply` ([source](../../internal/cli/run/liveapply_test.go#L402)), `TestInvalidatedCtxMountRecordCannotClaimStaleMounts` ([source](../../internal/cli/run/ctxmountrecord_test.go#L199)), `TestConfigApplyFilesystemRecordRestoreFailureKeepsRemovalPending` ([source](../../internal/cli/run/liveapply_test.go#L548)), and `TestConfigApplyRecordFailureInvalidatesMountStateAndKeepsRemovalPending` ([source](../../internal/cli/run/liveapply_test.go#L623)). The real-apply lifecycle test mocks namespace mutation only; these tests are not rootless or native-Mac runtime evidence.
+
+### Residual platform and service obligations
+
+This run does **not** settle rootless live-mount behavior on Linux/amd64 or Linux/arm64, a real broker's approved-scope widening/narrowing exchange, or native-Mac execution. The rootful remount-parity pass is not evidence of rootless resistance: nested Podman forces the rootful path, as [M1](../design/live-config-apply.md#LA-M1) and the [live-apply implementation plan](../design/live-config-apply-plan.md) state. The Mac suite remains subject to its existing [developer-Mac contract](../design/macos-user-suite-on-a-developer-mac.md#12-what-done-looks-like). No agent session/API, broker credentials, real scope change, host grant, publish, tag, release, or deployment was attempted or authorized. This handoff changes documentation only; no tests were added or updated here. The next verification remains those three obligations under their existing owner and environment requirements.
