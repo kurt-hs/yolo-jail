@@ -114,6 +114,28 @@ func retiredHostManagementRefusal(errw io.Writer, verb string) (int, bool) {
 	return 1, true
 }
 
+// refuseHostCommandLaunch enforces SP-R1 at the host command-execution doorway. Unlike the
+// separate host configuration and inspection verbs, a command launch receives yolo-composed
+// environment, credentials, profile selection, readiness, session homes and services; none of
+// that assistance is available unless the user explicitly owns the host config.
+func refuseHostCommandLaunch(errw io.Writer) bool {
+	if _, refused := retiredHostManagementRefusal(errw, "yolo host"); refused {
+		return true
+	}
+	mode, declared := config.HostManagementDeclared()
+	if mode == config.HostManagementOwn {
+		return false
+	}
+	state := "is unset in " + paths.UserConfigPath() + ", which means \"none\""
+	if declared {
+		state = "is \"none\" in " + paths.UserConfigPath()
+	}
+	fmt.Fprintf(errw, "yolo host: refusing to launch: host command launches require `host_management: \"own\"`; `host_management` %s. No command was started and yolo provided no host launch assistance.\n"+
+		"Set `\"host_management\": \"own\"` in %s to opt in. Separate host configuration and inspection commands use their own rules; `yolo host env` and `yolo host wrappers status` are not subject to this launch gate.\n",
+		state, paths.UserConfigPath())
+	return true
+}
+
 // refuseHostManagement stops a host apply the declared contract does not permit, printing the
 // refusal and returning its exit code.
 //

@@ -106,7 +106,7 @@ func TestHostApplyJSONKeepsTheFetchDisclosureOffStdout(t *testing.T) {
 // `yolo host -- <bin>` fetches before the gate and the composition resolve packs: the pack is
 // recorded in the lockfile and disclosed, and the launch proceeds to the PATH lookup.
 func TestHostExecFetchesANeverInstalledGitPack(t *testing.T) {
-	neverInstalledGitPackHome(t, "")
+	neverInstalledGitPackHome(t, `,"host_management":"own","host_apply_on_launch":false`)
 	var out, errw bytes.Buffer
 	rc := hostMain([]string{"--", "no-such-agent-binary"}, &out, &errw, false, nil)
 	if rc != 127 {

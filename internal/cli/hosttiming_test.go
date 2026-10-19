@@ -35,6 +35,11 @@ var hostLaunchStages = []string{"host.pack_refresh", "host.capability_gate", "ho
 // It returns the directory the launch runs in, which is also a scratch directory.
 func timingHome(t *testing.T, cfg string) (home, cwd string) {
 	t.Helper()
+	if cfg == "" {
+		cfg = `{"host_management":"own","host_apply_on_launch":false}`
+	} else if !strings.Contains(cfg, `"host_management"`) {
+		cfg = strings.Replace(strings.TrimSpace(cfg), "{", `{"host_management":"own","host_apply_on_launch":false,`, 1)
+	}
 	home = t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
@@ -313,9 +318,9 @@ func TestHostApplyTimingSpansTheRevertAndTheNoPackApply(t *testing.T) {
 		apply     bool // through applyMain, not hostMain
 		stages    []string
 	}{
-		{"host apply --revert --timing", `{"packs": ["pi"]}`, []string{"apply", "--revert", "--timing"}, false,
+		{"host apply --revert --timing", `{"host_management":"none","packs": ["pi"]}`, []string{"apply", "--revert", "--timing"}, false,
 			[]string{"host_apply.revert"}},
-		{"apply --at host --revert --timing", `{"packs": ["pi"]}`, []string{"--at", "host", "--revert", "--timing"}, true,
+		{"apply --at host --revert --timing", `{"host_management":"none","packs": ["pi"]}`, []string{"--at", "host", "--revert", "--timing"}, true,
 			[]string{"host_apply.revert"}},
 		{"host apply --timing with no pack", `{"host_management": "own"}`, []string{"apply", "--timing"}, false,
 			[]string{"host_apply.pack_refresh", "host_apply.render", "host_apply.wrappers", "host_apply.floor"}},

@@ -37,6 +37,12 @@ func TestGeneratedCodexWrapperReachesManagedHostLaunch(t *testing.T) {
 	if body := hostwrap.BodyFor(yolo, "codex"); !strings.Contains(body, `exec `+yolo+` host -- codex "$@"`) {
 		t.Fatalf("Codex wrapper bypasses managed host launch:\n%s", body)
 	}
+	hostGateHomeRaw(t, `{"host_management":"none","packs":["codex"]}`, nil)
+	rc, execed, errs := hostExecThroughMain(t, "host", "--", "codex")
+	if rc != 1 || execed != nil || !strings.Contains(errs, `host_management: "own"`) {
+		t.Fatalf("the generated wrapper's `yolo host -- codex` route must share the ownership gate (rc=%d exec=%q):\n%s",
+			rc, execed, errs)
+	}
 }
 
 func (f *fakeManagedHostLaunch) Run(_ string, argv []string, env []string, _ io.Reader, _, _ io.Writer) (int, bool) {
@@ -59,6 +65,7 @@ func TestHostExecUsesManagedOpenAIAuthLaunch(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	userCfg(t, home, `{"host_management":"own","host_apply_on_launch":false}`)
 	original := prepareOpenAIAuthHost
 	fake := &fakeManagedHostLaunch{}
 	prepareOpenAIAuthHost = func(hostPrelaunch, io.Writer) (managedOpenAIHostLaunch, error) { return fake, nil }
@@ -82,6 +89,7 @@ func TestHostExecRunsTheManagedLaunchsArgvRewriteAndSaysSo(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	userCfg(t, home, `{"host_management":"own","host_apply_on_launch":false}`)
 	original := prepareOpenAIAuthHost
 	fake := &fakeManagedHostLaunch{}
 	prepareOpenAIAuthHost = func(hostPrelaunch, io.Writer) (managedOpenAIHostLaunch, error) { return fake, nil }

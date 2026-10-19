@@ -30,7 +30,8 @@ func selectedNPMUser(t *testing.T, f *selectedNPMFixture, updates bool) run.Prog
 		manifest = strings.Replace(manifest, `"package":"probe-pkg"`, `"package":"probe-pkg","node_floor":`+string(floor), 1)
 	}
 	writeFile(t, filepath.Join(pack, "pack.json"), manifest)
-	cfgJSON, _ := json.Marshal(map[string]any{"packs": []any{map[string]string{"source": pack, "name": "fixture"}}, "agent_updates": updates, "host_floor": true})
+	cfgJSON, _ := json.Marshal(map[string]any{"host_management": "own", "host_apply_on_launch": false,
+		"packs": []any{map[string]string{"source": pack, "name": "fixture"}}, "agent_updates": updates, "host_floor": true})
 	writeFile(t, paths.UserConfigPath(), string(cfgJSON))
 	f.store.Dir = paths.CapturesDir()
 	selected := selectConfiguredHostPacks()

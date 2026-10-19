@@ -42,8 +42,10 @@ const (
 // ReapHostSessionHomes sweeps root (<state dir>/HostSessionHomesLeaf): every real directory this
 // user owns, at least hostSessionReapFloor old, whose lease no process holds; or past
 // hostSessionUnleasedFloor with no lease file. A held lease, one that cannot be asked, another
-// user's directory and anything not a directory are kept. An absent root is no work.
-func ReapHostSessionHomes(root string, apply bool, now time.Time) EmbeddedReap {
+// user's directory and anything not a directory are kept. An absent root is no work. When apply
+// is true, capture runs after the lease is proven free and before removal; an error retains the
+// source and is recorded on that entry.
+func ReapHostSessionHomes(root string, apply bool, now time.Time, capture func(string) error) EmbeddedReap {
 	var r EmbeddedReap
 	if root == "" {
 		return r
@@ -89,6 +91,16 @@ func ReapHostSessionHomes(root string, apply bool, now time.Time) EmbeddedReap {
 		}
 		e.Bytes = dirSizeBytes(p)
 		if apply {
+			if capture == nil {
+				e.Err = errors.New("host session-home capture is unavailable; source retained")
+			} else {
+				e.Err = capture(p)
+			}
+			if e.Err != nil {
+				unlock()
+				r.Removed = append(r.Removed, e)
+				continue
+			}
 			e.Err = os.RemoveAll(p)
 		}
 		unlock()

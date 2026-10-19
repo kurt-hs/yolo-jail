@@ -44,7 +44,7 @@ func nativeFloorFixture(t *testing.T) (pack string) {
 	writeFile(t, filepath.Join(pack, "pack.json"), `{"name":"nativepack","contributes":[
 	  {"kind":"program","bin":"nativecli","via":"installer","url":"https://example.invalid/nativecli/install.sh"}]}`)
 	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
-		`{"packs":[{"source":"file://`+pack+`","name":"nativepack"}]}`)
+		`{"host_management":"own","host_apply_on_launch":false,"packs":[{"source":"file://`+pack+`","name":"nativepack"}]}`)
 	orig := prepareOpenAIAuthHost
 	prepareOpenAIAuthHost = func(hostPrelaunch, io.Writer) (managedOpenAIHostLaunch, error) { return nil, nil }
 	t.Cleanup(func() { prepareOpenAIAuthHost = orig })

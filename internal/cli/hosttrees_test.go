@@ -579,11 +579,9 @@ func TestAHostLaunchNamesTheBuildItsLinkNames(t *testing.T) {
 	}
 }
 
-// UNDER host_management: none `yolo host -- tool` advances nothing even with host_apply_on_launch
-// (PPX-D25): that contract renders nothing, so a build would serve no one — written, or with the
-// key unset, which is `none` since OQ-CO14. Red if hostExec's advance stops reading
-// host_management.
-func TestAHostLaunchUnderHostManagementNoneAdvancesNothing(t *testing.T) {
+// Under host_management none or unset every `yolo host -- tool` launch refuses before preparation.
+// A no-op host apply gate does not license executing the command without host ownership.
+func TestAHostLaunchUnderHostManagementNoneOrUnsetRefusesBeforePreparation(t *testing.T) {
 	for name, extra := range map[string]string{"none": `,"host_management":"none"`, "unset": ""} {
 		t.Run(name, func(t *testing.T) {
 			fx := newTreeFixture(t, `"f.txt"`)
@@ -592,11 +590,10 @@ func TestAHostLaunchUnderHostManagementNoneAdvancesNothing(t *testing.T) {
 			stubBins(t, "tool")
 			got := captureHostExec(t)
 			var errw bytes.Buffer
-			if rc := hostExec(nil, []string{"tool"}, io.Discard, &errw, nil); rc != 0 || !got.execed {
-				t.Fatalf("rc=%d, execed %v\n%s", rc, got.execed, errw.String())
-			}
-			if len(fx.builds) != 0 {
-				t.Errorf("under host_management %s the launch built %d trees:\n%s", name, len(fx.builds), errw.String())
+			rc := hostExec(nil, []string{"tool"}, io.Discard, &errw, nil)
+			if rc == 0 || got.execed || len(fx.builds) != 0 || !strings.Contains(errw.String(), "host_management") {
+				t.Fatalf("host launch under host_management %s did not refuse before preparation (rc=%d exec=%v builds=%d):\n%s",
+					name, rc, got.execed, len(fx.builds), errw.String())
 			}
 		})
 	}
@@ -895,7 +892,7 @@ func TestAHostLaunchQueuesAndConsumesItsOwnersTrees(t *testing.T) {
 func TestHostUpdateUnsupportedTreeRefusesOnlyItsRequiredOwnerBeforeEffects(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
 	fx.listTreeForAgent(t)
-	fx.writeHostConfig(t, `,"host_management":"none"`)
+	fx.writeHostConfig(t, `,"host_management":"own","host_apply_on_launch":false`)
 	stubBins(t, "tool", "other")
 	previous := hostTreesBuild
 	hostTreesBuild = func() bool { return false }

@@ -140,6 +140,10 @@ type Options struct {
 	// reader every entry looks attributed to no program, and the complement of an empty
 	// selection is the entire store.
 	CaptureRecords capture.Records
+	// CaptureHostSessionHome runs the CLI's ordinary owned-host capture for an ended session home
+	// before removal. nil leaves that section unable to capture, so an applying sweep retains the
+	// source and reports the per-entry error rather than silently losing user edits.
+	CaptureHostSessionHome func(path string) error
 	// GuestPackTrees sweeps macos-user's per-launch guest pack trees (internal/macosuser's
 	// PrunePackTrees, which this package does not import: it pulls internal/config), returning
 	// the sweep and whether the staging root has a packs directory at all. nil, and a machine
@@ -780,7 +784,8 @@ func Run(opts Options) int {
 	{
 		p.line("")
 		p.line("[bold]Ended host launches' session homes[/bold]  [dim](state dir: " + HostSessionHomesLeaf + "/, one per launch)[/dim]")
-		homes := ReapHostSessionHomes(joinPath(gs, HostSessionHomesLeaf), apply, opts.Now())
+		homes := ReapHostSessionHomes(joinPath(gs, HostSessionHomesLeaf), apply, opts.Now(),
+			opts.CaptureHostSessionHome)
 		declinedSweep = renderEmbeddedReap(p, apply, homes, "dir(s)") || declinedSweep
 		totalSaved += homes.Bytes
 	}

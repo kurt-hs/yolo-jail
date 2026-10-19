@@ -24,6 +24,9 @@ const skewedSkillsContribution = `{"kind":"skills","from":"skills","into":".clau
 // profile the pack declares. extra is the user config's extra top-level keys.
 func skewedPackHome(t *testing.T, extra string) (home, packDir string) {
 	t.Helper()
+	if !strings.Contains(extra, `"host_management"`) {
+		extra = `,"host_management":"own","host_apply_on_launch":false` + extra
+	}
 	home, packDir = malformedPackHome(t, "", false, extra)
 	writeFile(t, filepath.Join(packDir, "pack.json"), `{"name":"bad","description":"d","contributes":[`+
 		skewedSkillsContribution+`,`+badProfileContribs+

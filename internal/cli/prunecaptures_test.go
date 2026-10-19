@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +12,9 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/prune"
+	"github.com/mschulkind-oss/yolo-jail/internal/render"
 )
 
 // prunecaptures_test.go joins the three halves of the superseded-capture sweep that each own
@@ -100,6 +104,55 @@ func TestPruneWiresTheCaptureReceiptReaderAndReapsThroughIt(t *testing.T) {
 	// THE ENTRY THE RESOLVER RETURNED IS STILL THERE — the complement, from the other side.
 	if _, _, err := resolveCaptureFor(store, "probetool", capture.Platform()); err != nil {
 		t.Errorf("prune reaped the entry the resolver would return: %v", err)
+	}
+}
+
+// THE FRONT-DOOR WIRING: an ended host session is captured by prune's configured callback
+// before the real reaper removes it. Without the callback assignment in pruneOptions, this source
+// stays unrecorded and the test's normal host overlay is absent.
+func TestPruneWiresCaptureForEndedHostSessionHomes(t *testing.T) {
+	if opts := pruneOptions([]string{"prune"}); opts.CaptureHostSessionHome == nil {
+		t.Fatal("pruneOptions did not wire owned host session-home capture")
+	}
+	home := hostGateHome(t, ownedSessionHomeConfig(piSubagentsCodexCfg), nil)
+	piSettingsFixture(t, home, `{"defaultProvider":"openrouter"}`)
+	launch := composeHostLaunch("pi", "codex", nil, nil)
+	homes, _, err := prepareHostSessionHomes(launch, os.Environ(), io.Discard)
+	if err != nil || homes == nil || len(homes.dirs) != 1 {
+		t.Fatalf("prepare session home: homes=%+v err=%v", homes, err)
+	}
+	dir := homes.dirs[0]
+	_, sessionHome, ok := strings.Cut(homes.vars[0], "=")
+	if !ok {
+		t.Fatalf("malformed session-home variable %q", homes.vars[0])
+	}
+	if err := os.WriteFile(filepath.Join(sessionHome, "settings.json"),
+		[]byte(`{"customUserSetting":"saved-by-user"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	homes.preserveForRetry() // the exec'd session has ended; the reaper now owns this directory.
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(dir, old, old); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	opts := pruneRunOnTemp(t, pruneOptions([]string{"prune"}), paths.GlobalStorage(), &out)
+	opts.Now = time.Now
+	opts.Apply = true
+	opts.NoEmbeddedPacks = true
+	if rc := prune.Run(opts); rc != 0 {
+		t.Fatalf("prune rc=%d:\n%s", rc, out.String())
+	}
+	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
+		t.Fatalf("prune did not remove the captured ended home: %v", err)
+	}
+	overlay, err := os.ReadFile(render.Host(home, nil, render.OwnershipOwn).OverlayPath("pi", "settings"))
+	if err != nil {
+		t.Fatalf("prune did not persist the standard host capture overlay: %v\n%s", err, out.String())
+	}
+	var captured map[string]any
+	if err := json.Unmarshal(overlay, &captured); err != nil || captured["customUserSetting"] != "saved-by-user" {
+		t.Fatalf("prune did not capture the ended session edit: %s (%v)", overlay, err)
 	}
 }
 

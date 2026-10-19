@@ -42,7 +42,7 @@ func forkHostFixture(t *testing.T, bin, baseProgram string) string {
 	writeFile(t, filepath.Join(packs, "basepack", "pack.json"),
 		`{"name":"basepack","contributes":[`+baseProgram+`]}`)
 	writeFile(t, filepath.Join(packs, "forkpack", "pack.json"), forkManifest("forkpack", "basepack", bin))
-	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"), `{"packs":[`+
+	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"), `{"host_management":"own","host_apply_on_launch":false,"packs":[`+
 		`{"source":"file://`+filepath.Join(packs, "basepack")+`","name":"basepack"},`+
 		`{"source":"file://`+filepath.Join(packs, "forkpack")+`","name":"forkpack"}]}`)
 	return home

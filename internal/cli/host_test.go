@@ -970,7 +970,7 @@ func TestHostExecRefusesASelectedPackWithNoKey(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	t.Chdir(t.TempDir())
 	writeZaiLocalPack(t, home)
-	userCfg(t, home, `{}`)
+	userCfg(t, home, `{"host_management":"own","host_apply_on_launch":false}`)
 
 	var out, errw bytes.Buffer
 	if rc := hostMain([]string{"-p", "zai", "--", "claude"}, &out, &errw, false, nil); rc != 1 {
@@ -1003,7 +1003,7 @@ func TestHostExecProceedsOnceTheKeyIsHydrated(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	t.Chdir(t.TempDir())
 	writeZaiLocalPack(t, home)
-	userCfg(t, home, `{"env_sources": [{"ZAI_API_KEY": "sk-zai"}]}`)
+	userCfg(t, home, `{"host_management":"own","host_apply_on_launch":false,"env_sources": [{"ZAI_API_KEY": "sk-zai"}]}`)
 
 	var out, errw bytes.Buffer
 	if rc := hostMain([]string{"-p", "zai", "--", "claude"}, &out, &errw, false, nil); rc != 127 {
@@ -1024,7 +1024,7 @@ func TestHostExecHatchLiftsTheRefusal(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	t.Chdir(t.TempDir())
 	writeZaiLocalPack(t, home)
-	userCfg(t, home, `{}`)
+	userCfg(t, home, `{"host_management":"own","host_apply_on_launch":false}`)
 
 	var out, errw bytes.Buffer
 	if rc := hostMain([]string{"-p", "zai", "--", "claude"}, &out, &errw, false, nil); rc != 127 {
@@ -1074,7 +1074,7 @@ func TestHostExecRefusesAManufacturedAddressPair(t *testing.T) {
 	t.Setenv("ZAI_API_KEY", "sk-zai") // the credential is fine; the ADDRESS is what refuses
 	t.Chdir(t.TempDir())
 	writeZaiLocalPack(t, home)
-	userCfg(t, home, `{"providers": {"zai": {"base_url": "https://my.proxy.example/v1"}}}`)
+	userCfg(t, home, `{"host_management":"own","host_apply_on_launch":false,"providers": {"zai": {"base_url": "https://my.proxy.example/v1"}}}`)
 
 	var out, errw bytes.Buffer
 	if rc := hostMain([]string{"--", "no-such-agent-binary"}, &out, &errw, false, nil); rc != 1 {
@@ -1131,6 +1131,7 @@ func hostExecFallbackSetup(t *testing.T, scratch string) string {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("TMPDIR", mk("tmp"))
 	t.Chdir(mk("cwd"))
+	userCfg(t, home, `{"host_management":"own","host_apply_on_launch":false}`)
 	orig := prepareOpenAIAuthHost
 	prepareOpenAIAuthHost = func(hostPrelaunch, io.Writer) (managedOpenAIHostLaunch, error) { return nil, nil }
 	t.Cleanup(func() { prepareOpenAIAuthHost = orig })

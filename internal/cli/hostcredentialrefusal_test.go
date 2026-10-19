@@ -25,7 +25,7 @@ const hostCredentialRefusalBody = `yolo host: Refusing to launch: a selected pac
 // in words of its own.
 func TestHostCredentialRefusalIsTheJailsBody(t *testing.T) {
 	// pi, an agent CLI a selected pack installs: a bare -p reaches agent CLIs only (OQ-NC5).
-	valueFlagHome(t, `{"packs":["zai", "pi"]}`)
+	valueFlagHome(t, `{"host_management":"own","host_apply_on_launch":false,"packs":["zai", "pi"]}`)
 	t.Setenv("ZAI_API_KEY", "")
 	t.Setenv("YOLO_ALLOW_MISSING_PROVIDERS", "")
 	rc, reached, errw := hostExecRun(t, "pi", "-p", "zai")

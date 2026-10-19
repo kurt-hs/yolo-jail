@@ -132,7 +132,7 @@ func floorHostFixtureWith(t *testing.T, program, extra string) (dist *floortest.
 	pack = filepath.Join(floortest.ResolvedTemp(t), "floorpack")
 	writeFile(t, filepath.Join(pack, "pack.json"), `{"name":"floorpack","contributes":[`+program+`]}`)
 	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
-		`{"packs":[{"source":"file://`+pack+`","name":"floorpack"}]`+extra+`}`)
+		`{"host_management":"own","host_apply_on_launch":false,"packs":[{"source":"file://`+pack+`","name":"floorpack"}]`+extra+`}`)
 	orig := prepareOpenAIAuthHost
 	prepareOpenAIAuthHost = func(hostPrelaunch, io.Writer) (managedOpenAIHostLaunch, error) { return nil, nil }
 	t.Cleanup(func() { prepareOpenAIAuthHost = orig })
