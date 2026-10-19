@@ -115,6 +115,25 @@ podman directly:
 host's `/tmp` symlink, so **any bind source spelled through a symlinked prefix fails** while the
 resolved spelling of the same directory works. The workspace is shared into the VM either way.
 
+**The path the error names is just whichever bind podman checks first.** Two later launches from
+`/tmp/jail_test` the same day named different paths:
+
+| Launch | Error names | On the host |
+| :--- | :--- | :--- |
+| 13:09, installed `yolo` (`0.14.0+562.g39bc3302286b`) | `.yolo/home/yolo-gitconfig` | **absent** |
+| 13:13, the same source plus a print after the gitconfig write | `.yolo/home/npm-global` | exists |
+
+The second run's print showed the composed gitconfig written without error (418 bytes), and
+podman still refused a directory that exists, so one cause covers all three errors.
+
+⚠ **One fact this does not explain:** before the 13:13 run, `yolo-gitconfig` was missing from the
+overlay and `.yolo/home` had not been modified since 10:50, although `host-perf.log` records
+`assemble.host_git_identity` running at 13:09. That launch should have created the file, through
+[`gitIdentityMountArgs`](../../internal/cli/run/assemble_parts.go), which discards the write's
+error. The same write succeeds when run alone and in the 13:13 launch. The failure is
+unreproduced and does not change the diagnosis, but a bind source written with its error thrown
+away and then found missing is the shape `preparePodmanBindSources` was written to rule out.
+
 > [!WARNING]
 > **This is [AGENTS.md](../../AGENTS.md)'s darwin symlink class, on the production side.** The
 > documented version is a test comparing an unresolved fixture path against code that resolves;
@@ -134,6 +153,10 @@ with `EvalSymlinks` before handing it to podman — which makes the jail's own p
 what the user typed, and `/workspace` is a mount destination, not a host path — or whether it
 preflights and refuses with the resolved spelling as the next step. The first is invisible and
 total; the second keeps the user's spelling and teaches the rule once.
+
+**The investigating agent's recommendation (not a ruling):** resolve. The user never typed the bind
+sources, so a refusal stops them over a spelling they did not choose, and the jail still sees the
+workspace at `/workspace`, whatever the host path is.
 
 ## 4. `yolo host --` calls its cwd a bind-mounted workspace, and refuses `aws-auth` in the home
 

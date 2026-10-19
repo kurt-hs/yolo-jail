@@ -150,7 +150,9 @@ and a pi-subagents registry several extensions can share stays in item 28.
    rather than a missing directory"* — creates the sources without resolving the path they are
    spelled with. Resolve before handing podman a bind, or preflight and refuse with the resolved
    spelling; [the lab report](../lab-reports/2026-10-19-launch-diagnostics-on-a-mac.md) weighs
-   the two.
+   the two. Reproduced twice more the same day, naming `yolo-gitconfig` and then `npm-global`, so
+   the path in the error is just whichever bind podman checks first. One launch also left
+   `yolo-gitconfig` unwritten, which is unexplained.
 
 10. **`yolo host --` calls its cwd a bind-mounted workspace, so it refuses `aws-auth` in the home**
     — measured 2026-10-19. The host notch takes `os.Getwd()`
