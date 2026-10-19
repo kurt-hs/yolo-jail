@@ -2,7 +2,7 @@
 title: "Per-session profiles: implementation plan"
 status: accepted
 stage: DECIDED
-next: "Build Task 7: require own for host command launches and capture ended owned session homes through normal host config capture; then complete or drop step 4"
+next: "Continue with the design's remaining macos-user per-launch id and other-agent declarations (step 4)"
 depends-on: [per-session-profiles.md]
 tags: [plan, profiles, attach, sessions, pi]
 ---
