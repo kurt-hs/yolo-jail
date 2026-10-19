@@ -54,6 +54,22 @@ reported as podman, but no launch output from that machine was seen.
   `getaddrinfo() thread failed to start` string. So its downloads resolve names through musl's
   `getaddrinfo`, and the `[6]` in the error is libcurl's "could not resolve host" code.
 
+## Not reproduced on the maintainer's Mac
+
+A plain musl container under the same podman (6.0.2, `applehv` VM, rootless, pasta), VPN up:
+`podman run --rm docker.io/library/alpine:3.20` running musl's `getent hosts github.com` five
+times, then busybox `nslookup` of `A` and `AAAA` against each of the two nameservers. **Every
+lookup succeeded**, and both servers answered both types. Repeating it with the coworker's
+search domains (`--dns-search int.hs.ai --dns-search ec2.internal`) changed nothing, so **the
+search line alone is not the cause.**
+
+**What does differ is the host's DNS.** `scutil --dns` on the maintainer's Mac names the VPN's
+`10.19.0.2` with search domain `lan`. The coworker's jail got `int.hs.ai ec2.internal`, so his Mac
+gets a different DNS configuration from the VPN. He also reached GitHub's `fra` edge, so he is
+connecting from elsewhere and possibly through another gateway. A different upstream server
+answering differently is the remaining suspect, not anything yolo does. The same container
+test, run on his Mac, separates the two: a musl failure there is outside yolo entirely.
+
 ## Open: why only musl fails on the coworker's machine
 
 **The hypothesis.** musl's resolver sends each query to every listed nameserver at once and takes
