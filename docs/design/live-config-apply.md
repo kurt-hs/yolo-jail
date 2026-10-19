@@ -23,6 +23,37 @@ Machine live-injection path is not built (M3); native-Mac execution of the separ
 suite also remains owed. The accepted host-side repair tests and nested rootful run do not
 discharge the rootless obligation.
 
+> [!WARNING]
+> **Five of this feature's own `-short` tests fail on a Mac, measured 2026-10-19 at `8d8e73653`
+> (`go test -short ./internal/cli/run/`), and the two causes are different.** Both are host facts
+> the tests inherit rather than state, so Linux CI is green and `check-macos` is where they would
+> otherwise surface.
+>
+> - **Three are the darwin symlink class** ([AGENTS.md, Testing](../../AGENTS.md)):
+>   `TestRecordLaunchCtxMountsWritesWhatTheArgvBound`,
+>   `TestConfigApplyInjectsALiveMount` and
+>   `TestConfigApplyMovesAChangedSourceAtTheSameDestination` compare a bare `t.TempDir()` against
+>   code that resolves symlinks, so a fixture says `/var/folders/…` where the argv and the record
+>   hold `/private/var/folders/…`. **Proven by re-running them with `TMPDIR` pre-resolved
+>   (`cd "$TMPDIR" && pwd -P`), where all three pass.** The three new files use bare
+>   `t.TempDir()` while this package's older tests already mint resolved
+>   (`accounthomehold_test.go`, `assemble_test.go`, `brokeredscope_test.go`); the fix is to
+>   resolve where the path is minted, as those do.
+> - **Two depend on the host's podman answering whether it is rootless**, and no seam stubs it:
+>   `TestConfigApplyRestoresTheInvalidatedMountRecordThroughRealApply` and
+>   `TestConfigApplyFilesystemRecordRestoreFailureKeepsRemovalPending` fail with
+>   `config apply rc = 3, want 0` — restart-required rather than applied — and the reason the run
+>   prints is *"at next restart (yolo stop, then yolo) — podman info did not say whether this
+>   podman is rootless"*. They still fail with `TMPDIR` resolved, so this is not the class above.
+>   ⚠ **The product half is the interesting half, and it bears on [M1](#LA-M1):** an inconclusive
+>   rootless probe is a legitimate production state — [`hostloopback.go`](../../internal/cli/run/hostloopback.go)
+>   emits nothing for an unproven fact, and a nested jail cannot prove it at all — and in that
+>   state live injection does not happen; the user is told to restart. Whether that degradation is
+>   intended is worth saying in this doc either way, since it is what a host with an unreadable
+>   `podman info` will always get. (Bare `podman info --format '{{.Host.Security.Rootless}}'` on
+>   the measuring host answers `true`, so the inconclusive answer is the test environment's, not
+>   the machine's.)
+
 > **In short.** "Restart to apply" is wrong for the two changes people actually make mid-session,
 > a read-only mount and a GitHub repository: both can reach a running jail. So approval moves to a
 > host command that reuses the launch's gate unchanged, and so does any attach a human is at, and

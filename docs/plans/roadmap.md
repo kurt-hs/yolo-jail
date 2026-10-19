@@ -50,7 +50,13 @@ accepted limits remain in
 and a pi-subagents registry several extensions can share stays in item 28.
 
 3. [Apply config changes to a running jail](../design/live-config-apply.md) — the maintainer's
-   2026-10-18 ask, ruled and built the same day; v1 is landed, with rootless CI evidence still owed: read-only and read-write mounts, their removal,
+   2026-10-18 ask, ruled and built the same day; v1 is landed, with rootless CI evidence still owed.
+   ⚠ **Five of its own `-short` tests fail on a Mac** (measured 2026-10-19 at `8d8e73653`), in two
+   causes, neither visible to Linux CI: three are the darwin symlink class, and two inherit the
+   host podman's rootless answer and so assert `rc = 0` where an inconclusive probe gives
+   restart-required `rc = 3` — which is also a live question about the feature, since an
+   unprovable rootless fact is a real production state. Both are set out in
+   [the design's status block](../design/live-config-apply.md). Covers: read-only and read-write mounts, their removal,
    GitHub scope, and the same gate at an interactive attach. Its later slices are staged here,
    each built on its own after v1: [the next-session moves](../design/live-config-apply.md#LA-S4a),
    [Apple Container's briefing re-copy](../design/live-config-apply.md#LA-S4b),
