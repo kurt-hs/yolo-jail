@@ -485,6 +485,16 @@ func verifyHostSessionCaptureInventory(dir string, decl hostSessionDecl, surface
 		}
 	}
 	root := filepath.Join(scratch, decl.rel)
+	rootInfo, err := os.Lstat(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return hostSessionInventoryRefusal(dir, fmt.Sprintf("the retained session-home root %s is missing", decl.rel))
+		}
+		return hostSessionInventoryRefusal(dir, fmt.Sprintf("cannot inspect retained session-home root %s: %v", decl.rel, err))
+	}
+	if !rootInfo.IsDir() {
+		return hostSessionInventoryRefusal(dir, fmt.Sprintf("the retained session-home root %s is not a real directory", decl.rel))
+	}
 	expected := make(map[string]bool, len(decl.rendered))
 	for _, rel := range decl.rendered {
 		expected[filepath.FromSlash(rel)] = true
@@ -571,12 +581,48 @@ func captureHostSessionDirs(captures []hostSessionCapture, errw io.Writer) error
 				pr.Printf("Captured [cyan]%s/%s[/cyan] from an ended host session — %d %s now recorded.",
 					s.Agent, s.Name, n, plural(n, "key", "keys"))
 			}
+			if err := seedMissingHostSessionBaseline(target, c.home, s); err != nil {
+				return fmt.Errorf("preserve the first host session baseline for %s/%s: %w", s.Agent, s.Name, err)
+			}
 		}
 	}
 	if errw != nil {
 		_, _ = io.Copy(errw, &messages)
 	}
 	return nil
+}
+
+// seedMissingHostSessionBaseline retains the ended session's trusted baseline in the ordinary host
+// capture store when this was the first owned session render and launch-time apply was disabled.
+// Later session renders then apply the captured overlay normally without writing session bytes to
+// the native home. Existing apply baselines always win.
+func seedMissingHostSessionBaseline(durable configTarget, sessionHome string, s manifest.Surface) error {
+	if s.Mode != "" && s.Mode != manifest.ModeStateful {
+		return nil
+	}
+	durableBaseline := durable.lastRenderFile(s.Agent, s.Name)
+	if _, err := durableBaseline.lstat(); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	session := render.Host(sessionHome, nil, render.OwnershipOwn)
+	sessionBaseline := session.LastRenderPath(s.Agent, s.Name)
+	info, err := os.Lstat(sessionBaseline)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("session baseline %s is not a regular file", sessionBaseline)
+	}
+	data, err := os.ReadFile(sessionBaseline)
+	if err != nil {
+		return err
+	}
+	return durableBaseline.replace(data, durable.sidecarFileMode())
 }
 
 // seedCurrentHostCaptureSidecars makes each capture calculate the session's change from its

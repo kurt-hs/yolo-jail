@@ -28,6 +28,46 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/render"
 )
 
+// copyHostSessionPack makes a private selected-pack fixture so a test can change the manifest
+// after an ended session was rendered without changing the shipped source tree.
+func copyHostSessionPack(t *testing.T) string {
+	t.Helper()
+	source, err := filepath.Abs(shippedPiPackDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "pi")
+	err = filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		to := filepath.Join(destination, rel)
+		if entry.IsDir() {
+			return os.MkdirAll(to, 0o755)
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
+			link, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			return os.Symlink(link, to)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(to, data, 0o644)
+	})
+	if err != nil {
+		t.Fatalf("copy shipped pi pack: %v", err)
+	}
+	return destination
+}
+
 // piSessionHomeEnv is the variable the shipped pi pack's session-home declaration names.
 func piSessionHomeEnv(t *testing.T) string {
 	t.Helper()
@@ -370,6 +410,83 @@ func TestHostPiResidentSessionCapturesUserEditNormally(t *testing.T) {
 	}
 }
 
+// With no prior managed render or capture sidecar, the first own launch still adopts the real
+// settings file as its session baseline, captures a later user edit, and carries it into the next
+// profile without letting it replace computed profile values.
+func TestHostPiFirstOwnedSessionCapturesUserEditWithoutDurableBaseline(t *testing.T) {
+	testHostPiFirstOwnedSessionCapture(t, true)
+}
+
+// An explicitly disabled launch-time apply must still keep a first session's user edit by
+// retaining that session's baseline in the normal host capture store, not by applying to the home.
+func TestHostPiFirstOwnedSessionWithApplyDisabledCapturesUserEditWithoutDurableBaseline(t *testing.T) {
+	testHostPiFirstOwnedSessionCapture(t, false)
+}
+
+func testHostPiFirstOwnedSessionCapture(t *testing.T, applyOnLaunch bool) {
+	t.Helper()
+	env := piSessionHomeEnv(t)
+	upstream, _ := fakeUpstream(t)
+	fakeHostBroker(t)
+	apply := `,"host_management":"own"`
+	if !applyOnLaunch {
+		apply += `,"host_apply_on_launch":false`
+	}
+	cfg := strings.TrimSuffix(piSubagentsCodexCfg, "}") + apply +
+		`,"providers":{"openai-codex":{"endpoints":{"openai-responses":{"base_url":"` +
+		upstream.URL + `/codex"}}}}}`
+	home := hostGateHome(t, cfg, nil)
+	const original = `{"defaultProvider":"openrouter","theme":"system"}`
+	settingsPath := filepath.Join(home, ".pi", "agent", "settings.json")
+	piSettingsFixture(t, home, original)
+	durable := render.Host(home, nil, render.OwnershipOwn)
+	if _, err := os.Stat(durable.LastRenderPath("pi", "settings")); !os.IsNotExist(err) {
+		t.Fatalf("fresh-user fixture unexpectedly had a durable baseline: %v", err)
+	}
+	bin := t.TempDir()
+	agent := filepath.Join(bin, "claude")
+	if err := os.WriteFile(agent, []byte("#!/bin/sh\nprintf '%s\\n' '{\"customUserSetting\":\"saved-by-user\"}' > \"$PI_CODING_AGENT_DIR/settings.json\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	origExec := hostSyscallExec
+	hostSyscallExec = func(string, []string, []string) error { t.Error("the resident launch exec'd"); return nil }
+	t.Cleanup(func() { hostSyscallExec = origExec })
+	var out, errw bytes.Buffer
+	if rc := hostMain([]string{"-p", "codex", "--", "claude"}, &out, &errw, false, nil); rc != 0 {
+		t.Fatalf("first resident host launch rc=%d:\n%s", rc, errw.String())
+	}
+	if data, err := os.ReadFile(settingsPath); err != nil || strings.Contains(string(data), "customUserSetting") {
+		t.Fatalf("the session edit was written back into pi's native settings: %s (%v)", data, err)
+	}
+	if _, err := os.Stat(durable.LastRenderPath("pi", "settings")); err != nil {
+		t.Fatalf("the normal first-owned-launch apply did not establish its durable baseline: %v", err)
+	}
+	data, err := os.ReadFile(durable.OverlayPath("pi", "settings"))
+	if err != nil {
+		t.Fatalf("first owned session did not persist its edit without a prior durable baseline: %v\n%s", err, errw.String())
+	}
+	var captured map[string]any
+	if err := json.Unmarshal(data, &captured); err != nil {
+		t.Fatalf("first capture overlay is invalid: %v (%s)", err, data)
+	}
+	if captured["customUserSetting"] != "saved-by-user" || captured["defaultProvider"] != nil {
+		t.Errorf("first capture should keep the user edit without capturing profile output: %s", data)
+	}
+	next := hostSelectionRun(t, home, []string{"-p", "pi=openrouter"}, "pi")
+	data, err = os.ReadFile(filepath.Join(next.env[env], "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	if settings["defaultProvider"] != "openrouter" || settings["customUserSetting"] != "saved-by-user" {
+		t.Errorf("next profile must regenerate its provider and retain the first-session user edit: %s", data)
+	}
+}
+
 // Independent ended sessions accumulate baseline-relative edits over the latest durable sidecars.
 // The unchanged oldest home is captured last to prove it cannot roll back newer captures.
 func TestHostPiSessionCaptureAccumulatesCurrentOverlayAndListRecords(t *testing.T) {
@@ -486,6 +603,71 @@ func TestHostPiSessionCaptureAccumulatesCurrentOverlayAndListRecords(t *testing.
 	}
 	if !contains(record.Remove, "removed") {
 		t.Errorf("list capture lost prior removal: %s", listCapture)
+	}
+}
+
+// prune must refuse cleanup when a retained session's selected pack moved both its declared
+// session-home root and surface paths. The fixture changes the actual selected pack manifest after
+// the session ended; renaming files in place would not exercise that relocation case.
+func TestPruneRunRefusesRelocatedHostSessionHomeAndRetainsOriginalBytes(t *testing.T) {
+	piSessionHomeEnv(t)
+	packDir := copyHostSessionPack(t)
+	cfg := strings.Replace(piSubagentsCodexCfg, `, "pi"]`,
+		`, {"source":"file://`+packDir+`","name":"pi"}]`, 1)
+	cfg = strings.Replace(cfg, `{"packs"`, `{"host_management":"own","host_apply_on_launch":false,"packs"`, 1)
+	home := hostGateHome(t, cfg, nil)
+	piSettingsFixture(t, home, `{"defaultProvider":"openrouter","theme":"system"}`)
+	launch := composeHostLaunch("pi", "codex", nil, nil)
+	if launch.err != nil {
+		t.Fatal(launch.err)
+	}
+	homes, _, err := prepareHostSessionHomes(launch, os.Environ(), io.Discard)
+	if err != nil || homes == nil || len(homes.vars) != 1 {
+		t.Fatalf("prepare owned session home: homes=%+v err=%v", homes, err)
+	}
+	dir := homes.dirs[0]
+	_, sessionHome, ok := strings.Cut(homes.vars[0], "=")
+	if !ok {
+		t.Fatalf("malformed session-home variable %q", homes.vars[0])
+	}
+	const edited = `{"defaultProvider":"openai-codex","customUserSetting":"must-survive"}`
+	original := filepath.Join(sessionHome, "settings.json")
+	if err := os.WriteFile(original, []byte(edited), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	homes.preserveForRetry()
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(dir, old, old); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(packDir, "pack.json")
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.ReplaceAll(string(manifest), ".pi/agent", ".pi/relocated-agent")
+	if changed == string(manifest) {
+		t.Fatal("fixture pack manifest had no pi surface paths to relocate")
+	}
+	if err := os.WriteFile(manifestPath, []byte(changed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	opts := pruneRunOnTemp(t, pruneOptions([]string{"prune"}), paths.GlobalStorage(), &out)
+	opts.Now = time.Now
+	opts.Apply = true
+	opts.NoEmbeddedPacks = true
+	if rc := prune.Run(opts); rc == 0 {
+		t.Fatalf("prune succeeded after the selected pack relocated the retained session-home root and surfaces; source=%s\n%s", dir, out.String())
+	}
+	if data, err := os.ReadFile(original); err != nil || string(data) != edited {
+		t.Fatalf("prune did not retain the original edited session bytes: %q (%v)", data, err)
+	}
+	for _, want := range []string{"Restore the original pack manifest and surface paths", "retry `yolo prune --apply`"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("prune refusal must explain %q:\n%s", want, out.String())
+		}
 	}
 }
 
