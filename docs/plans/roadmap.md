@@ -127,7 +127,21 @@ and a pi-subagents registry several extensions can share stays in item 28.
    during provisioning prints *"Provisioning log could not be written … repair workspace .yolo
    permissions or free disk space"* when neither holds: the writer was merely signalled
    (`PIPESTATUS` `_plog`, setup `_prc` = 141 = SIGPIPE), and the same run then appended
-   `PROVISIONING FAILED (exit 141)` to the file it called unwritable.
+   `PROVISIONING FAILED (exit 141)` to the file it called unwritable. **(a) is RULED 2026-10-19 —
+   both halves, name the backend on screen and warn on an unknown `YOLO_*`** — so it is
+   actionable now; (b) still wants its small ruling.
+
+9. **A podman launch cannot use a workspace reached through a symlink** — measured 2026-10-19, and
+   the first real podman launch on that host. `YOLO_RUNTIME=podman yolo` in `/tmp/jail_test` dies
+   with `Error: statfs /tmp/jail_test/.yolo/home/local: no such file or directory` naming a path
+   yolo had just created. The cause is the `/tmp` → `private/tmp` symlink: podman's macOS VM
+   cannot resolve it, so `/tmp/jail_test` fails to bind while `/private/tmp/jail_test` binds.
+   ⚠ This is [AGENTS.md](../../AGENTS.md)'s darwin symlink class on the **production** side, and
+   `preparePodmanBindSources` — written because podman's bare `statfs` *"reads as a yolo bug
+   rather than a missing directory"* — creates the sources without resolving the path they are
+   spelled with. Resolve before handing podman a bind, or preflight and refuse with the resolved
+   spelling; [the lab report](../lab-reports/2026-10-19-launch-diagnostics-on-a-mac.md) weighs
+   the two.
 
 Native readiness and credential-store work retain their places below: assess
 [the privilege prerequisites](../research/sandvault-macos-privileges.md) without broad root
