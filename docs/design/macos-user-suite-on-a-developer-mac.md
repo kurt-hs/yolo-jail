@@ -367,6 +367,10 @@ None. All four were ruled on 2026-10-18 and are compacted into the ledger below.
   which were red here two days earlier and have since been fixed. So a developer Mac can run the
   macos-user suite but not the landing gate, and the two problems are independent.
 
+  **Candidate status (2026-10-19):** the focused repairs did not change the `internal/cli` suite or its
+  20-minute limit and established no localized speedup. The reported Mac run remains 1241.180 s;
+  no Mac timing rerun is claimed.
+
 ## 10. Alternatives considered
 
 | Alternative | Verdict |
