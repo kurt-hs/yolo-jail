@@ -392,6 +392,7 @@ func TestBuildSlotCachedGoodRunsThroughGeneratedLauncherAndCaptureMaterializer(t
 	body := "#!/bin/sh\nprintf '%s\\0' \"$@\" > \"$CACHED_GOOD_ARGV\"\nprintf '%s\\n' \"$PWD\" > \"$CACHED_GOOD_CWD\"\nprintf 'old-good-stdout\\n'\nprintf 'old-good-stderr\\n' >&2\nexit 23\n"
 	fx := newPatchedAdvanceFixture(t, "")
 	fx.programBody = body
+	fx.programSymlink = true
 	fx.relocatable = true
 	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
 	good, _, _ := fx.launch(t, "podman")
@@ -400,14 +401,19 @@ func TestBuildSlotCachedGoodRunsThroughGeneratedLauncherAndCaptureMaterializer(t
 	}
 	manifestPath := filepath.Join(fx.forkDir, "pack.json")
 	manifest := strings.Replace(mustRead(t, manifestPath), `"build":"sh build.sh"`, `"build":"sh build2.sh"`, 1)
-	if manifest == mustRead(t, manifestPath) {
-		t.Fatal("fixture build recipe was not changed")
+	manifest = strings.Replace(manifest, `"produces":[".local/bin/tool"]`,
+		`"produces":[".local/bin/tool",".local/lib/required"]`, 1)
+	if manifest == mustRead(t, manifestPath) || !strings.Contains(manifest, `".local/lib/required"`) {
+		t.Fatal("fixture recipe/output declaration was not changed")
 	}
 	writeFile(t, manifestPath, manifest)
 	fx.rc = 2
 	failed, _, _ := fx.launch(t, "podman")
 	if !failed.failed || failed.delivery.Key != "" {
 		t.Fatalf("changed recipe did not fail while old Good remained: %+v", failed)
+	}
+	if current := fx.record(t); current.Good == nil || current.Good.Entry != good.delivery.Key {
+		t.Fatalf("failed current recipe forged success or discarded the historical Good: Good=%+v", current.Good)
 	}
 
 	var output bytes.Buffer
@@ -484,6 +490,12 @@ func TestBuildSlotCachedGoodRunsThroughGeneratedLauncherAndCaptureMaterializer(t
 		t.Errorf("readiness ran the program (argv stat: %v)", err)
 	}
 
+	// Leave the program symlink and matching key stamp intact, but corrupt only its admitted
+	// target. The generated launcher must validate the closure and rematerialize the old entry.
+	target := filepath.Join(home, ".local", "share", "vendor", "1.0", "vendor")
+	if err := os.WriteFile(target, []byte("#!/bin/sh"+"\n"+"echo stale-cached-good"+"\n"+"exit 99"+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	command := exec.Command(launcher, "arg-one", "space argument")
 	command.Dir, command.Env = workspace, baseEnv
 	var stdout, stderr bytes.Buffer
@@ -493,8 +505,15 @@ func TestBuildSlotCachedGoodRunsThroughGeneratedLauncherAndCaptureMaterializer(t
 	if !ok || exit.ExitCode() != 23 {
 		t.Fatalf("old Good program exit = %v, want 23; stdout=%q stderr=%q", err, stdout.String(), stderr.String())
 	}
-	if stdout.String() != "old-good-stdout\n" || stderr.String() != "old-good-stderr\n" {
+	if !strings.Contains(stdout.String(), "old-good-stdout"+"\n") || !strings.Contains(stderr.String(), "old-good-stderr"+"\n") {
 		t.Errorf("old Good program streams differ: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Materialized tool from fork build "+key) {
+		t.Errorf("stale target was not repaired by the production materializer: stderr=%q", stderr.String())
+	}
+	repaired, err := os.ReadFile(target)
+	if err != nil || string(repaired) != body {
+		t.Errorf("the stale symlink target was not rematerialized from the old admitted entry: err=%v body=%q", err, repaired)
 	}
 	argv, err := os.ReadFile(argvPath)
 	if err != nil || string(argv) != "arg-one\x00space argument\x00" {

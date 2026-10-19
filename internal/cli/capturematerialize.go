@@ -51,7 +51,7 @@ import (
 // nobody has ruled on: a first run on a machine with no capture must still work.
 
 const captureMaterializeUsage = "usage: yolo internal capture-materialize --store=DIR --bin=NAME " +
-	"[--key=KEY] [--verify-installed] [--produces=PATH] [--compatibility=IDENTITY] " +
+	"[--key=KEY] [--verify-installed --program=PATH] [--produces=PATH] [--compatibility=IDENTITY] " +
 	"[--home=DIR] [--declared=URL] [--receipts=PATH]"
 
 // runCaptureMaterialize is the `yolo internal capture-materialize` entry.
@@ -73,6 +73,8 @@ func runCaptureMaterialize(args []string) int {
 			opts.store = strings.TrimPrefix(a, "--store=")
 		case strings.HasPrefix(a, "--bin="):
 			opts.bin = strings.TrimPrefix(a, "--bin=")
+		case strings.HasPrefix(a, "--program="):
+			opts.programPath = strings.TrimPrefix(a, "--program=")
 		case strings.HasPrefix(a, "--home="):
 			opts.home = strings.TrimPrefix(a, "--home=")
 		case strings.HasPrefix(a, "--declared="):
@@ -107,8 +109,8 @@ func runCaptureMaterialize(args []string) int {
 		fmt.Fprintln(os.Stderr, captureMaterializeUsage)
 		return 2
 	}
-	if opts.verifyInstalled && opts.key == "" {
-		fmt.Fprintln(os.Stderr, "capture-materialize: --verify-installed requires --key")
+	if opts.verifyInstalled && (opts.key == "" || opts.programPath == "") {
+		fmt.Fprintln(os.Stderr, "capture-materialize: --verify-installed requires --key and --program")
 		return 2
 	}
 	return materializeCapture(opts, os.Stderr)
@@ -116,9 +118,9 @@ func runCaptureMaterialize(args []string) int {
 
 // materializeArgs is one materialize request, parsed.
 type materializeArgs struct {
-	programRuntime, nodeFloor, nodePath string
-	validateOnly, verifyInstalled       bool
-	produces                            []string
+	programRuntime, nodeFloor, nodePath, programPath string
+	validateOnly, verifyInstalled                    bool
+	produces                                         []string
 	// compatibility, when set, requires the exact resolved ordinary input identity.
 	compatibility string
 	// store is the store root AS THIS PROCESS SEES IT — the in-jail mount point, not the
@@ -289,7 +291,7 @@ func verifyForkBuild(store *capture.Store, a materializeArgs, platform string) i
 	}
 	for _, rec := range recs {
 		if rec.Source != "" && rec.Bin == a.bin && rec.Platform == platform {
-			if capture.VerifyMaterialized(entry, a.home, a.produces) == nil {
+			if capture.VerifyMaterialized(entry, a.home, a.programPath, a.produces) == nil {
 				return 0
 			}
 			return 1

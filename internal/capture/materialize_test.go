@@ -88,9 +88,10 @@ func entryFixture(t *testing.T, home, platform string, refs []AbsoluteRef) (*Sto
 // stamp: matching paths alone are not enough if the files have changed since materialization.
 func TestVerifyMaterializedChecksTheAdmittedOutputTree(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		mutate func(t *testing.T, home string)
-		wantOK bool
+		name    string
+		mutate  func(t *testing.T, home string)
+		wantOK  bool
+		outputs []string
 	}{
 		{name: "valid", wantOK: true},
 		{name: "stale bytes", mutate: func(t *testing.T, home string) {
@@ -102,6 +103,15 @@ func TestVerifyMaterializedChecksTheAdmittedOutputTree(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, wantOK: false},
+		{name: "stale symlink target", mutate: func(t *testing.T, home string) {
+			path := filepath.Join(home, ".local/share/vendor/1.0/vendor")
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("#!/bin/sh\\necho stale vendor\\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}, wantOK: false, outputs: []string{".local/bin/vendor"}},
 		{name: "missing output", mutate: func(t *testing.T, home string) {
 			if err := os.Remove(filepath.Join(home, ".local/share/vendor/1.0/vendor")); err != nil {
 				t.Fatal(err)
@@ -122,7 +132,11 @@ func TestVerifyMaterializedChecksTheAdmittedOutputTree(t *testing.T) {
 			if tc.mutate != nil {
 				tc.mutate(t, home)
 			}
-			err := VerifyMaterialized(entry, home, []string{".local/share/vendor/1.0", ".local/bin/vendor"})
+			outputs := tc.outputs
+			if outputs == nil {
+				outputs = []string{".local/share/vendor/1.0", ".local/bin/vendor"}
+			}
+			err := VerifyMaterialized(entry, home, ".local/bin/vendor", outputs)
 			if (err == nil) != tc.wantOK {
 				t.Errorf("VerifyMaterialized() error = %v, want success %t", err, tc.wantOK)
 			}
@@ -130,7 +144,101 @@ func TestVerifyMaterializedChecksTheAdmittedOutputTree(t *testing.T) {
 	}
 }
 
-// A materialize into a POPULATED home puts the vendor's files where the manifest says, with
+// A program symlink may traverse a captured directory link before it reaches its executable.
+// The warm verifier follows that admitted closure, rather than trusting the first link's text.
+func TestVerifyMaterializedChecksTransitiveSymlinkTarget(t *testing.T) {
+	home := t.TempDir()
+	store := &Store{Dir: t.TempDir()}
+	staged, err := store.Stage("transitive-link")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := TreeDir(staged)
+	program := filepath.Join(tree, ".local", "share", "vendor", "1.0", "vendor")
+	if err := os.MkdirAll(filepath.Dir(program), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(program, []byte("#!/bin/sh\\necho vendor\\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tree, ".local", "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("1.0", filepath.Join(tree, ".local", "share", "vendor", "current")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(home+"/.local/share/vendor/current/vendor", filepath.Join(tree, ".local", "bin", "vendor")); err != nil {
+		t.Fatal(err)
+	}
+	entries, refs, err := describeTree(tree, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteManifest(staged, &Manifest{Schema: ManifestSchema, Home: home, Platform: Platform(),
+		Surfaces: []string{".local"}, Excluded: []string{}, Entries: entries, AbsoluteRefs: refs}); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := store.AdmitEntry(staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Materialize(MaterializeOptions{Entry: entry, Home: home}); err != nil {
+		t.Fatal(err)
+	}
+	installed := filepath.Join(home, ".local", "share", "vendor", "1.0", "vendor")
+	if err := os.Remove(installed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installed, []byte("#!/bin/sh\\necho stale\\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyMaterialized(entry, home, ".local/bin/vendor", []string{".local/bin/vendor"}); err == nil {
+		t.Fatal("the verifier trusted a stale executable behind a captured directory-link chain")
+	}
+}
+
+// An admitted symlink to a path outside the capture is validated by its target text only. The
+// verifier must not turn it into an arbitrary host-file read or invalidate this captured shape.
+func TestVerifyMaterializedDoesNotReadExternalSymlinkTargets(t *testing.T) {
+	home, external := t.TempDir(), filepath.Join(t.TempDir(), "external-program")
+	if err := os.WriteFile(external, []byte("#!/bin/sh\\necho external\\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store := &Store{Dir: t.TempDir()}
+	staged, err := store.Stage("external-link")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := TreeDir(staged)
+	if err := os.MkdirAll(filepath.Join(tree, ".local", "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, filepath.Join(tree, ".local", "bin", "vendor")); err != nil {
+		t.Fatal(err)
+	}
+	entries, refs, err := describeTree(tree, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteManifest(staged, &Manifest{Schema: ManifestSchema, Home: home, Platform: Platform(),
+		Surfaces: []string{".local"}, Excluded: []string{}, Entries: entries, AbsoluteRefs: refs}); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := store.AdmitEntry(staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Materialize(MaterializeOptions{Entry: entry, Home: home}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(external, []byte("changed outside the admitted capture"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyMaterialized(entry, home, ".local/bin/vendor", []string{".local/bin/vendor"}); err != nil {
+		t.Fatalf("an external target's bytes were read or required: %v", err)
+	}
+}
+
 // the modes the INSTALLER made rather than the read-only modes admit froze the entry to.
 //
 // The mode assertion is the one that would not survive a walk-the-tree implementation:

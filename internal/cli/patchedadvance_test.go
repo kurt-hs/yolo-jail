@@ -67,16 +67,17 @@ func (s *syncBuffer) String() string {
 type patchedAdvanceFixture struct {
 	*patchedFixture
 	// now is the fixture clock; writes go through setNow and other goroutines read it through clock.
-	now         time.Time
-	clockMu     sync.Mutex
-	builds      []string // f.txt as each build saw it in its src/
-	rc          int      // what the fake build jail exits with
-	ran         bool     // whether the fake build jail writes the toolchain record (its build line ran)
-	said        string   // a line the fake build jail's runtime prints on the jail's stderr before it exits, "" for none
-	programBody string   // optional exact executable bytes for intact-runtime fixtures
-	duringBuild func()   // mutation hook for testing final guarded freshness admission
-	child       int      // how many builds went through the child-process runner
-	scoped      []bool   // per child build, whether an interrupt scope's context could cancel it
+	now            time.Time
+	clockMu        sync.Mutex
+	builds         []string // f.txt as each build saw it in its src/
+	rc             int      // what the fake build jail exits with
+	ran            bool     // whether the fake build jail writes the toolchain record (its build line ran)
+	said           string   // a line the fake build jail's runtime prints on the jail's stderr before it exits, "" for none
+	programBody    string   // optional exact executable bytes for intact-runtime fixtures
+	programSymlink bool     // capture the program through a link to an admitted vendor target
+	duringBuild    func()   // mutation hook for testing final guarded freshness admission
+	child          int      // how many builds went through the child-process runner
+	scoped         []bool   // per child build, whether an interrupt scope's context could cancel it
 	// sharedLocks is set where other keys of the selection run beside the build in the slot's pool,
 	// whose checks and walks hold their own record and mirror locks meanwhile (PPX-D13): the lock
 	// assertion is then the single-key tests'.
@@ -198,20 +199,46 @@ func (fx *patchedAdvanceFixture) buildJail(t *testing.T) func(run.Options) int {
 			body = "#!/bin/sh\n# " + hex.EncodeToString(sum[:]) + "\n"
 		}
 		out := filepath.Join(o.Workspace, captureOutLeaf)
-		writeFile(t, filepath.Join(capture.TreeDir(out), ".local", "bin", "tool"), body)
-		if err := os.Chmod(filepath.Join(capture.TreeDir(out), ".local", "bin", "tool"), 0o755); err != nil {
-			t.Fatal(err)
-		}
+		tree := capture.TreeDir(out)
 		home := fx.captureHome
 		if home == "" {
 			home = "/home/agent"
 		}
+		programPath := filepath.Join(tree, ".local", "bin", "tool")
+		if fx.programSymlink {
+			target := filepath.Join(tree, ".local", "share", "vendor", "1.0", "vendor")
+			writeFile(t, target, body)
+			if err := os.MkdirAll(filepath.Dir(programPath), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(target, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink("../share/vendor/1.0/vendor", programPath); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			writeFile(t, programPath, body)
+			if err := os.Chmod(programPath, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		entries := []capture.ManifestEntry{
+			{Path: ".local", Kind: capture.KindDir, Mode: "0755"},
+			{Path: ".local/bin", Kind: capture.KindDir, Mode: "0755"},
+		}
+		if fx.programSymlink {
+			entries = append(entries,
+				capture.ManifestEntry{Path: ".local/bin/tool", Kind: capture.KindSymlink, Target: "../share/vendor/1.0/vendor"},
+				capture.ManifestEntry{Path: ".local/share", Kind: capture.KindDir, Mode: "0755"},
+				capture.ManifestEntry{Path: ".local/share/vendor", Kind: capture.KindDir, Mode: "0755"},
+				capture.ManifestEntry{Path: ".local/share/vendor/1.0", Kind: capture.KindDir, Mode: "0755"},
+				capture.ManifestEntry{Path: ".local/share/vendor/1.0/vendor", Kind: capture.KindFile, Mode: "0755", Size: int64(len(body))})
+		} else {
+			entries = append(entries, capture.ManifestEntry{Path: ".local/bin/tool", Kind: capture.KindFile, Mode: "0755", Size: int64(len(body))})
+		}
 		m := &capture.Manifest{Schema: capture.ManifestSchema, Home: home, Platform: fx.platform,
-			Surfaces: []string{".local"}, Excluded: capture.DefaultExcludes(), Entries: []capture.ManifestEntry{
-				{Path: ".local", Kind: capture.KindDir, Mode: "0755"},
-				{Path: ".local/bin", Kind: capture.KindDir, Mode: "0755"},
-				{Path: ".local/bin/tool", Kind: capture.KindFile, Mode: "0755", Size: int64(len(body))},
-			}}
+			Surfaces: []string{".local"}, Excluded: capture.DefaultExcludes(), Entries: entries}
 		if fx.relocatable {
 			m.RefScan, m.Relocatable = capture.RefScanFull, true
 		}
