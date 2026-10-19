@@ -10,7 +10,7 @@ vantage:
 
 # Roadmap
 
-**Reconciled:** 2026-10-18; 0.14.0 was tagged 2026-10-15 (release commit `6750951f6`).
+**Reconciled:** 2026-10-19; 0.14.0 was tagged 2026-10-15 (release commit `6750951f6`).
 
 This page owns the order in which open work is taken up, and why. Each linked document owns its state, next step and
 gates; read it before starting, because a place on this list is not permission to build.
@@ -415,6 +415,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     and [VZ keeping freed guest memory](../research/macos-vm-runtime-comparison.md#42-adding-a-balloon-to-apple-container-ourselves)
     — last, since only Apple can ship either fix.
 50. Native macOS verification of [JD-10's guest pack-tree lifetime](../reference/macos-user-provisioning.md#JD-10): observe root ownership and modes and Seatbelt execution while overlapping launches use distinct trees, A's daemon restarts from A's unchanged module after B changes or drops its module, and capture leaves both trees unchanged. The source gates passed, but no native execution has established these properties; they remain **UNMEASURED**.
+51. After 0.15, discuss and measure the [native Pi session-profile proposal](../design/macos-user-session-profiles.md), [concurrent-workspace design](../design/macos-user-concurrent-workspaces.md) and [Claude refresh proposal](../design/macos-user-claude-refresh.md) before promoting any sketch to build work. Same-workspace profiles are independent; concurrent workspaces remain under [OQ-HT6](../reference/macos-user-home-tiers.md#OQ-HT6), and Claude remains behind its existing credential-view gate.
 
 ## Boundaries
 
