@@ -413,7 +413,7 @@ func TestConfigApplyRestoresTheInvalidatedMountRecordThroughRealApply(t *testing
 			var wantActions []string
 			var laterRemoval bool
 			if tc.replacement {
-				root := t.TempDir()
+				root := resolvedRunTemp(t)
 				oldSource, newSource := filepath.Join(root, "old", "repo"), filepath.Join(root, "new", "repo")
 				for _, dir := range []string{oldSource, newSource} {
 					if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -425,7 +425,7 @@ func TestConfigApplyRestoresTheInvalidatedMountRecordThroughRealApply(t *testing
 				initial = []ctxMountEntry{{Source: oldSource, Dest: "/ctx/repo"}}
 				wantActions = []string{"remove:" + oldSource, "add:" + newSource}
 			} else {
-				source := filepath.Join(t.TempDir(), "addition")
+				source := filepath.Join(resolvedRunTemp(t), "addition")
 				if err := os.MkdirAll(source, 0o700); err != nil {
 					t.Fatal(err)
 				}
@@ -439,6 +439,8 @@ func TestConfigApplyRestoresTheInvalidatedMountRecordThroughRealApply(t *testing
 			env := entrypoint.ContractTagsEnv + "=" + launchContractTagsValue() + "\n" +
 				ctxMountsTokenEnv + "=" + token + "\n"
 			o, buf := applyFixture(t, boot, current, applyJail{running: true, env: env})
+			o.PathExists = func(string) bool { return false }
+			answeringPodman(o, rootlessInfo)
 			cname := runtime.FromWorkspace(o.Workspace)
 			if err := writeCtxMountRecord(cname, token, initial); err != nil {
 				t.Fatal(err)
@@ -519,7 +521,7 @@ func TestConfigApplyRestoresTheInvalidatedMountRecordThroughRealApply(t *testing
 // A read-only mount added to a jail that takes live mounts: injected, recorded in the host's
 // mount record, folded into the effective-config record, `applied now`, exit 0.
 func TestConfigApplyInjectsALiveMount(t *testing.T) {
-	src := t.TempDir()
+	src := resolvedRunTemp(t)
 	o, buf := applyFixture(t, `{}`, `{"mounts":["`+src+`"]}`, applyJail{running: true})
 	rec := liveMounts(t)
 	var got []configCtxMount
@@ -546,7 +548,7 @@ func TestConfigApplyInjectsALiveMount(t *testing.T) {
 }
 
 func TestConfigApplyFilesystemRecordRestoreFailureKeepsRemovalPending(t *testing.T) {
-	src := filepath.Join(t.TempDir(), "addition")
+	src := filepath.Join(resolvedRunTemp(t), "addition")
 	if err := os.MkdirAll(src, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -554,6 +556,8 @@ func TestConfigApplyFilesystemRecordRestoreFailureKeepsRemovalPending(t *testing
 	env := entrypoint.ContractTagsEnv + "=" + launchContractTagsValue() + "\n" +
 		ctxMountsTokenEnv + "=" + token + "\n"
 	o, buf := applyFixture(t, `{}`, `{"mounts":["`+src+`"]}`, applyJail{running: true, env: env})
+	o.PathExists = func(string) bool { return false }
+	answeringPodman(o, rootlessInfo)
 	cname := runtime.FromWorkspace(o.Workspace)
 	if err := writeCtxMountRecord(cname, token, nil); err != nil {
 		t.Fatal(err)

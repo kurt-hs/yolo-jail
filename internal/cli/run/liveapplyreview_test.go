@@ -110,7 +110,7 @@ func writeUserConfigOf(t *testing.T, cfg *jsonx.OrderedMap) {
 // the removal runs first (M1): the destination is the mount's identity in the jail, so an add
 // run first finds it taken and the mount is lost. The jail ends with the new source.
 func TestConfigApplyMovesAChangedSourceAtTheSameDestination(t *testing.T) {
-	oldSrc, newSrc := t.TempDir(), t.TempDir()
+	oldSrc, newSrc := resolvedRunTemp(t), resolvedRunTemp(t)
 	o, buf := applyFixture(t, `{"mounts":["`+oldSrc+`:/ctx/a"]}`, `{"mounts":["`+newSrc+`:/ctx/a"]}`,
 		applyJail{running: true})
 	rec := liveMounts(t)
