@@ -3,14 +3,17 @@ title: "What may a macos-user test assume about its host?"
 date: 2026-10-18
 status: accepted
 stage: DECIDED
-next: "Run `-run '^TestMacosUser'` on a Mac that grants only the run-as rule; native-Mac runtime remains unverified"
+next: "Done on hardware 2026-10-19 (§12, all conditions met); owed only a macos-user.yml run and the ownership-enabled volume, neither a developer Mac's to give"
 tags: [design, macos-user, testing, privilege, seatbelt, measurement]
-summary: "The macos-user suite takes no privilege beyond the run-as rule yolo installs; a closed unified log store is a countable policy skip, and mise shims remain ahead of the floor. The answered decisions and implementation are recorded; native-Mac runtime remains unverified."
+summary: "The macos-user suite takes no privilege beyond the run-as rule yolo installs; a closed unified log store is a countable policy skip, and mise shims remain ahead of the floor. The answered decisions and implementation are recorded, and native-Mac runtime is verified: on the host of record the suite exits 0 (150 passed, 4 skipped, 0 failed) and the narrow-sudo cell passes, leaving only a macos-user.yml run and an ownership-enabled volume owed."
 ---
 
 # What may a macos-user test assume about its host?
 
-**Status:** 2026-10-18. All four rulings are compacted into the [Decision Ledger](#decision-ledger). The fixture changes in original commits `98715e67b` and `41dd11e3f`, and subsequent recovery fixes, are in the current source ancestry. Portable guard hardening is in `cab34b522` and `201c4009e`; the `201c4009e` commit itself only changes the test. The earlier `4e7b9b92b` commit changed a documentation heading, not the suite code. Linux and darwin compile/test evidence is recorded in the handoff; native-Mac runtime is not verified.
+**Status:** 2026-10-18. All four rulings are compacted into the [Decision Ledger](#decision-ledger). The fixture changes in original commits `98715e67b` and `41dd11e3f`, and subsequent recovery fixes, are in the current source ancestry. Portable guard hardening is in `cab34b522` and `201c4009e`; the `201c4009e` commit itself only changes the test. The earlier `4e7b9b92b` commit changed a documentation heading, not the suite code. Linux and darwin compile/test evidence is recorded in the handoff. **NATIVE-MAC RUNTIME IS NOW
+VERIFIED:** 2026-10-19 at `c3a38e634`, on the host of record, `-run '^TestMacosUser'` exits 0 —
+150 passed, 4 skipped, 0 failed — and the narrow-sudo cell passes beside it
+([§12](#12-what-done-looks-like)).
 
 
 > **In short.** The suite may assume only what the backend itself asks a host for. A test that
@@ -379,7 +382,25 @@ The four rulings are compacted into the [Decision Ledger](#decision-ledger). The
 
 ## 12. What done looks like
 
-- On a Mac with only the run-as grant, `-run '^TestMacosUser'` **exits 0**, and the ledger prints the two log-policy skip reasons where the store is closed.
-- The same command on CI executes every runnable assertion; the host's policy determines only the two unified-log skip dispositions.
-- `TestMacosUserSeatbeltProfileEnforcesItsRules` asserts its other rules on a host with no readable log.
-- The two test repairs in [§6](#6-two-defects-and-one-design-question-this-run-found) are landed but still need their documented Mac re-runs; landed code is not native-Mac runtime proof.
+**Every condition below is MET, measured 2026-10-19 at `c3a38e634` on the host of record.**
+
+- ✅ On a Mac with only the run-as grant, `-run '^TestMacosUser'` **exits 0**: 150 passed, 4
+  skipped, 0 failed, 626.5 s, ledger `executed=100 skipped=14`. The ledger prints both
+  log-policy skips, each naming the policy and quoting `log exited 77`.
+- ✅ No test asked for root `sudo` — the privilege is gone from the suite, not declared
+  ([OQ-DM1](#decision-ledger) option B holding on hardware). Every one of the twelve 2026-10-17
+  failures is gone, and none was replaced by a privileged skip.
+- ✅ `TestMacosUserSeatbeltProfileEnforcesItsRules` asserts its other rules on a host with no
+  readable log: only the `macos_log_store_read_refused` subtest skips, which is
+  [OQ-DM2](#decision-ledger) option A as built.
+- ✅ The [§6](#6-two-defects-and-one-design-question-this-run-found) repairs have had their Mac
+  re-runs: the doorway, housekeeping and floor tests all pass, so the three re-diagnoses hold at
+  runtime and not only in review.
+- ✅ **The narrow-sudo cell passes on this host** — `PasswordlessStartAndExit`,
+  `TheGuestCannotWriteTheStagingRoot` and `TerminateEndsTheSessionThroughItsTeardown`, with
+  `executed=3 skipped=0`. It needed no `sudoers` edit: the cell's own skip message is *"set
+  `YOLO_TEST_MACOS_USER_NARROW_SUDO=1` once root sudo needs a password"*, and here it already
+  does, so a developer Mac measures for free what CI must narrow `sudoers` to reach.
+- ⬜ **Still owed, and neither is this host's to give:** a `macos-user.yml` run (CI has confirmed
+  none of it), and an ownership-*enabled* APFS volume for the third relocation case, which needs
+  `diskutil enableOwnership` and so root.
