@@ -14,6 +14,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
 // installPiCatalog writes a fixture install of pi's package under prefix, its catalog naming ids.
@@ -137,6 +140,10 @@ func TestCheckWarnsAboutAPacksScopePatternThatMatchesNothing(t *testing.T) {
 
 // runPacksCheck runs sectionPacks over cfg (the user config) with pi on profile, no catalog read.
 func runPacksCheck(t *testing.T, cfg, profile string, extraPacks ...string) (string, *reporter) {
+	return runPacksCheckWithPrefix(t, cfg, profile, t.TempDir(), extraPacks...)
+}
+
+func runPacksCheckWithPrefix(t *testing.T, cfg, profile, prefix string, extraPacks ...string) (string, *reporter) {
 	t.Helper()
 	var userConfig map[string]any
 	if err := json.Unmarshal([]byte(cfg), &userConfig); err != nil {
@@ -155,10 +162,20 @@ func runPacksCheck(t *testing.T, cfg, profile string, extraPacks ...string) (str
 		t.Fatal(err)
 	}
 	packsFixture(t, string(encoded))
-	env := map[string]string{"YOLO_VERSION": "test", "NPM_CONFIG_PREFIX": t.TempDir()}
+	mergedAny, err := jsonx.Decode(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged := useProfiles("pi", profile)
+	if configured, ok := mergedAny.(*jsonx.OrderedMap); ok {
+		if providers, present := configured.Get("providers"); present {
+			merged.Set("providers", providers)
+		}
+	}
+	env := map[string]string{"YOLO_VERSION": "test", "NPM_CONFIG_PREFIX": prefix}
 	var buf bytes.Buffer
 	r := &reporter{w: &buf}
-	(&Options{Getenv: func(k string) string { return env[k] }}).sectionPacks(r, useProfiles("pi", profile))
+	(&Options{Getenv: func(k string) string { return env[k] }}).sectionPacks(r, merged)
 	return buf.String(), r
 }
 
@@ -221,27 +238,95 @@ func TestCheckAcceptsExactSubagentIDBeforeListDefault(t *testing.T) {
 	}
 }
 
-// Every shipped profile usable by Pi reaches the production host check. The registry is derived
-// from the same pack surfaces and provider/profile composition each selected profile uses at boot.
+// Every shipped Pi profile selects its own provider. The explicit expected provider table and
+// the selected-profile resolution check below keep a common registry hit from standing in for
+// profile coverage. Model IDs come from each provider's shipped list, Pi's native catalog, or a
+// test-only configured row for dynamic providers that ship no model list.
 func TestCheckResolvesEveryShippedPiProfileModelReference(t *testing.T) {
 	cfg := `{"packs": ["pi", "openai-auth", "zai", "openrouter", "kilo", "llamacpp", "bedrock",
   "cerebras", "meta-provider", "wire-bridge"]}`
-	knownScope := "openai-codex/gpt-6.1-sol[1m]"
-	unknownScope := "openai-codex/yolo-no-such-model"
-	for _, profile := range []string{"codex", "zai", "openrouter", "kilo", "llamacpp", "bedrock",
-		"bedrock-bridge", "cerebras", "meta"} {
-		t.Run(profile, func(t *testing.T) {
-			out, _ := runPacksCheck(t, cfg, profile, scopePack(t, knownScope))
-			if strings.Contains(out, "matches no model") ||
-				strings.Contains(out, "Model reference: 1 model reference not checked") ||
-				!strings.Contains(out, "Model reference: every model pi's config names resolves in its registry (1 reference checked)") {
-				t.Fatalf("shipped profile %q must check and resolve the qualified scope reference %q:\n%s", profile, knownScope, out)
+	cases := []struct {
+		profile, provider, model, scopeModel string
+		catalogIDs                           []string
+		configuredModel                      bool
+	}{
+		{profile: "codex", provider: "openai-codex", model: "gpt-6.1-sol", scopeModel: "gpt-6.1-sol[1m]"},
+		{profile: "zai", provider: "zai", model: "glm-5.3", catalogIDs: []string{"glm-5.3"}},
+		{profile: "openrouter", provider: "openrouter", model: "fixture/openrouter-known",
+			catalogIDs: []string{"fixture/openrouter-known"}},
+		{profile: "kilo", provider: "kilo", model: "fixture-kilo-model", configuredModel: true},
+		{profile: "llamacpp", provider: "llamacpp", model: "llama"},
+		{profile: "bedrock", provider: "bedrock", model: "fixture-bedrock-model", configuredModel: true},
+		{profile: "bedrock-bridge", provider: "bedrock", model: "fixture-bedrock-model", configuredModel: true},
+		{profile: "cerebras", provider: "cerebras", model: "qwen-3.8-27b",
+			catalogIDs: []string{"qwen-3.8-27b"}},
+		{profile: "meta", provider: "meta", model: "fixture/meta-known",
+			catalogIDs: []string{"fixture/meta-known"}},
+	}
+
+	// Resolve the shipped declarations themselves, independently of the test's user-profile
+	// overrides below. This pins each selected profile's own provider mapping.
+	shipped := packload.Embedded()
+	providers, err := packload.ComposeProviders(nil, shipped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := packload.ResolveProfiles(shipped, nil, providers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range cases {
+		got, ok := resolved[tc.profile]
+		if !ok || got.Provider != tc.provider {
+			t.Errorf("shipped profile %q resolves to provider %q (present=%t), want %q",
+				tc.profile, got.Provider, ok, tc.provider)
+		}
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.profile, func(t *testing.T) {
+			prefix := t.TempDir()
+			if len(tc.catalogIDs) > 0 {
+				installPiCatalog(t, prefix, tc.catalogIDs...)
+			}
+			providerConfig := ""
+			if tc.configuredModel {
+				// Kilo and Bedrock accept dynamic IDs but ship no callable model list. These
+				// deterministic user-config rows exercise their provider-specific verdicts; they
+				// are not IDs shipped by the provider packs or discovered from a native catalog.
+				providerConfig = `,"providers":{"` + tc.provider + `":{"models":{"fixture":"` + tc.model + `"}}}`
+			}
+			knownProfile := `,"profiles":{"` + tc.profile + `":{"provider":"` + tc.provider +
+				`","subagents":{"default":"` + tc.model + `"}}}`
+			knownScope := tc.provider + "/" + tc.model
+			if tc.scopeModel != "" {
+				knownScope = tc.provider + "/" + tc.scopeModel
+			}
+			unknownScope := tc.provider + "/yolo-no-such-model"
+			unknownPack := scopePack(t, unknownScope)
+
+			out, r := runPacksCheckWithPrefix(t,
+				strings.TrimSuffix(cfg, "}")+providerConfig+knownProfile+"}", tc.profile, prefix,
+				scopePack(t, knownScope))
+			if r.failed != 0 || strings.Contains(out, "matches no model") ||
+				strings.Contains(out, "not checked against pi's registry") ||
+				!strings.Contains(out, "Model reference: every model pi's config names resolves in its registry (2 references checked)") {
+				t.Fatalf("profile %q must resolve its own provider model %q from the declared source:\n%s", tc.profile, knownScope, out)
 			}
 
-			out, _ = runPacksCheck(t, cfg, profile, scopePack(t, unknownScope))
-			if !strings.Contains(out, "which matches no model in pi's registry") ||
-				strings.Contains(out, "Model reference: 1 model reference not checked") {
-				t.Fatalf("shipped profile %q must detect the unknown qualified scope control %q:\n%s", profile, unknownScope, out)
+			unknownProfile := `,"profiles":{"` + tc.profile + `":{"provider":"` + tc.provider +
+				`","subagents":{"default":"yolo-no-such-model"}}}`
+			out, _ = runPacksCheckWithPrefix(t,
+				strings.TrimSuffix(cfg, "}")+providerConfig+unknownProfile+"}", tc.profile, prefix,
+				unknownPack)
+			if !strings.Contains(out, `profiles.`+tc.profile+`.subagents.default`) ||
+				!strings.Contains(out, `which matches no model in pi's registry`) ||
+				strings.Contains(out, "not checked against pi's registry") ||
+				!strings.Contains(out, `pack `+filepath.Base(unknownPack)) {
+				t.Fatalf("profile %q must report an unknown reference against its own provider, not skip it:\n%s", tc.profile, out)
+			}
+			if !strings.Contains(out, "Nearest: ") {
+				t.Errorf("unknown profile %q reference should retain useful nearest-ID provenance:\n%s", tc.profile, out)
 			}
 		})
 	}
