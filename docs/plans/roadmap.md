@@ -92,19 +92,23 @@ and a pi-subagents registry several extensions can share stays in item 28.
    owed: a `macos-user.yml` run, and the ownership-*enabled* volume, which needs root. That first
    run cleared measurements items 38 and 40, listed in the design.
 
-6. **Candidate repair: retain selected pack roots through `yolo check`'s host-floor read**
-   **Candidate status (2026-10-19):** `8e66a6dfe` passes the production-callsite regression on Linux,
-   and disabling retention reproduces the historical warning; native Mac `yolo check` remains unrerun.
+6. **Retain selected pack roots through `yolo check`'s host-floor read**
+   **Linux verification (2026-10-19):** the production-callsite regression passes, and
+   disabling retention reproduces the historical warning. Native Mac `yolo check` has not been
+   rerun; this landing makes no native-Mac claim.
 
-   — a verified live defect, measured 2026-10-19 on a host selecting a patched fork, and an
-   agent can fix it now. The Packs section stages each entry under one temp tree and removes it
-   when the section returns, but the loaded packs it keeps carry a `Root` inside that tree, so
-   the floor section prints `pi — no floor entry: … the pack's root cannot be opened (open
-   /var/folders/…/T/yolo-check-pack-<n>/pi-fork: no such file or directory)` one screen after
-   printing `[PASS] pi-fork: 143 file(s) stage`. **The warning is false** — `yolo pack status
-   pi-fork/pi` reads the same series fine — and its next step misdirects the reader to
-   `yolo host`'s floor. The mechanism, the evidence and the rule it breaks are in
-   [the pack system's check/launch callout](../reference/pack-system.md#one-governance-reader).
+   **Review note (P2):** a controlled signal during a later check section can call `os.Exit`
+   before the cleanup defer runs, leaking the retained temporary pack tree. No credential
+   exposure was demonstrated. This landing does not repair the leak; follow-up work should
+   connect cleanup to controlled signal teardown and add a subprocess interruption regression.
+
+   — measured 2026-10-19 on a host selecting a patched fork. The Packs section stages each
+   entry under one temp tree and removes it when the section returns, but the loaded packs it
+   keeps carry a `Root` inside that tree, so the floor section prints the false
+   `pi — no floor entry: … the pack's root cannot be opened` warning one screen after
+   `[PASS] pi-fork: 143 file(s) stage`. The production-callsite regression keeps the staged
+   tree alive for its later reader and verifies cleanup on ordinary return. The full mechanism,
+   evidence and rule it breaks are in [the pack system's check/launch callout](../reference/pack-system.md#one-governance-reader).
    No ruling needed.
 
 7. **Apple Container builds no patched fork or extension on any Mac that has a container running**
