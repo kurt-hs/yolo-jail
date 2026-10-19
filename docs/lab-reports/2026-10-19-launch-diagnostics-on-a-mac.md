@@ -2,8 +2,8 @@
 title: "Two launch diagnostics that sent a reader the wrong way"
 date: 2026-10-19
 status: open
-tags: [lab-report, apple-container, podman, diagnostics, happy-path, provisioning]
-summary: "A maintainer ran two launches believing they were on podman; both were Apple Container, because YOLO_BACKEND is not a yolo variable and the line naming the chosen runtime goes only to the launch log. A Ctrl-C during provisioning then reported that the provisioning log could not be written and named permissions and disk, while the log on disk was complete and 67 GiB were free."
+tags: [lab-report, apple-container, podman, macos, symlinks, diagnostics, happy-path, provisioning]
+summary: "Three diagnostics from one session. Two launches reported as podman were Apple Container, because YOLO_BACKEND is not a yolo variable and the line naming the runtime goes only to the launch log — both halves now ruled: name the backend, and warn on an unknown YOLO_*. A Ctrl-C during provisioning blamed permissions and disk while the log was complete and 67 GiB were free. And the first real podman launch died on a bare statfs naming a path that exists, because the workspace was spelled through the /tmp symlink, which podman's macOS VM cannot resolve."
 ---
 
 # Two launch diagnostics that sent a reader the wrong way, 2026-10-19
@@ -43,10 +43,10 @@ roadmap item 7), and its gate is `runtime == "container"`, so podman never meets
 believes they switched runtimes and did not will attribute a backend-specific failure to both,
 which is exactly what happened. **Podman remains untested on this host.**
 
-**What a fix has to decide, rather than what it is.** Whether the launch names its runtime on
-screen (a one-line disclosure, and
-[AGENTS.md](../../AGENTS.md)'s *"a launch has no quiet mode"* argues it should), whether an
-unrecognized `YOLO_*` variable is warned about, or both. ⚠ The second is not free: yolo
+**RULED 2026-10-19, by the maintainer, both halves:** the launch **names the backend on
+screen**, and an unrecognized `YOLO_*` variable **warns**
+(*"I like the idea of adding an unknown YOLO_* warning … and yes we should name the backend"*). ⚠ The warning half is not free, and
+whoever builds it inherits this: yolo
 deliberately gives `YOLO_*` dials no central registry
 ([AGENTS.md](../../AGENTS.md), *"`YOLO_*` environment dials have no authority row, because they
 have no authority"*), so "unknown" has no cheap definition today, and a warning list is a second
@@ -87,6 +87,53 @@ or 141 (SIGPIPE) is the user's own interrupt, and its next step is nothing. Whet
 distinguished by status, or whether the message simply stops naming causes it has not checked,
 is a ruling — [the happy-path principle](../reference/happy-path-principle.md) says a stop names
 *the easiest next step that keeps the user's trust*, and naming two wrong ones spends it instead.
+
+## 3. A podman launch cannot use a workspace reached through a symlink
+
+**Observed.** The first real podman launch of that workspace — `YOLO_RUNTIME=podman yolo` in
+`/tmp/jail_test` — got as far as starting the keeper and then died:
+
+```text
+Error: statfs /tmp/jail_test/.yolo/home/local: no such file or directory
+```
+
+**The named path exists**, and yolo had just created it: `<ws>/.yolo/home/local` is one of the
+bind sources `preparePodmanBindSources` makes, and the overlay now holds the whole undotted set
+(`local`, `config`, `npm-global`, `go`, `ssh`, `yolo-bin`, `claude`, `codex`, `copilot`, `pi`)
+beside the dotted set an earlier Apple Container launch left.
+
+**The cause is the `/tmp` symlink, not a missing directory.** Measured by binding each path with
+podman directly:
+
+| Bind source | Result |
+| :--- | :--- |
+| `/Users`, `/private/tmp`, `/Users/Shared/yolo` | bind |
+| `/tmp/jail_test` | `Error: statfs /tmp/jail_test: no such file or directory` |
+| **`/private/tmp/jail_test`** | **binds** |
+
+`/tmp` is a symlink to `private/tmp`. Podman on macOS runs in a VM, and the VM cannot resolve the
+host's `/tmp` symlink, so **any bind source spelled through a symlinked prefix fails** while the
+resolved spelling of the same directory works. The workspace is shared into the VM either way.
+
+> [!WARNING]
+> **This is [AGENTS.md](../../AGENTS.md)'s darwin symlink class, on the production side.** The
+> documented version is a test comparing an unresolved fixture path against code that resolves;
+> here it is yolo handing podman a path it has *not* resolved, to a consumer that cannot. The
+> guard that exists for the adjacent cause —
+> [`preparePodmanBindSources`](../../internal/cli/run/prepare.go), whose comment says podman's
+> bare `statfs` *"reads as a yolo bug rather than a missing directory"* — creates the sources but
+> never resolves the path they are spelled with, so the symptom it was written to prevent arrives
+> anyway, by another route.
+
+**Workaround, verified at the bind level:** launch from the resolved path
+(`cd /private/tmp/jail_test`). A full launch there was not run, because this host's VPN stalls the
+mise stage ([below](#not-a-yolo-defect)).
+
+**What a fix has to decide.** Whether the launch resolves the workspace (and every bind source)
+with `EvalSymlinks` before handing it to podman — which makes the jail's own paths differ from
+what the user typed, and `/workspace` is a mount destination, not a host path — or whether it
+preflights and refuses with the resolved spelling as the next step. The first is invisible and
+total; the second keeps the user's spelling and teaches the rule once.
 
 ## Not a yolo defect
 
