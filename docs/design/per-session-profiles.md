@@ -3,17 +3,22 @@ title: "One jail, several profiles: each session reads its own agent config"
 date: 2026-10-18
 status: in-review
 stage: DESIGN
-next: "Rule OQ-SP5 (host saves); then macos-user's per-launch id and other agents' declarations (§9 step 4)"
+next: "Implement SP-R1 (host command execution requires own); rule OQ-SP5 (owned host-session saves); then macos-user's per-launch id and other agents' declarations (§9 step 4)"
 tags: [design, profiles, attach, sessions, pi, pi-subagents, providers, concurrency]
 summary: "An attach renders the attaching entry's profile into files every running pi session reads later, so a second session on another provider (or a bare attach of an unrelated agent on the default profile) changes what the first session's pi-subagents children run on, while the first session's provider policy still forbids that provider. The fix keys every profile-dependent read on the session: each exec already carries a session id that its whole process tree inherits, so the attach writes its environment into a per-session entry snapshot, and the session's own boot pass renders a pack's profile-dependent files into a per-session copy of the program's config dir, which stock pi follows through PI_CODING_AGENT_DIR. Shared state (logins, session history, packages, caches) stays one copy, linked into every session's dir."
 ---
 
 # One jail, several profiles: each session reads its own agent config
 
-**Status:** 2026-10-18. Built for jails (podman, Apple Container) and `yolo host`: [§9](#9-sequencing) steps 1-3 and the host slice; step 4 (macos-user, other agents) remains. [OQ-SP5](#OQ-SP5) is open. Evidence read at `8bf1afce9` and in stock pi 1.0.1 and
-pi-subagents 0.79.1. MEASURED: stock pi 1.0.1 reads `models.json` from a directory named by
-`PI_CODING_AGENT_DIR`, and creates `auth.json` and `models-store.json` there when they are absent
-(`pi --list-models`, offline, 2026-10-18). MEASURED in a nested jail (2026-10-18): each session's home, its links and its render. UNMEASURED: a real pi session's subagents on two providers, since no test runs an agent.
+**Status:** 2026-10-19. Built for jails (podman, Apple Container) and `yolo host`: [§9](#9-sequencing)
+steps 1-3 and the host slice; step 4 (macos-user, other agents) remains. Evidence read at
+`8bf1afce9` and in stock pi 1.0.1 and pi-subagents 0.79.1. The host command-execution boundary
+is ruled in [§4.7](#47-the-host) as [`SP-R1`](#SP-R1), but not built; [OQ-SP5](#OQ-SP5), whether
+an owned host session keeps pi's own saved settings, remains open. MEASURED: stock pi 1.0.1 reads
+`models.json` from a directory named by `PI_CODING_AGENT_DIR`, and creates `auth.json` and
+`models-store.json` there when they are absent (`pi --list-models`, offline, 2026-10-18). MEASURED
+in a nested jail (2026-10-18): each session's home, its links and its render. UNMEASURED: a real
+pi session's subagents on two providers, since no test runs an agent.
 
 > **In short.** A profile is a property of a session's process tree, not of the jail. A pi session's
 > profile breaks today because every later entry re-renders the files its children read. Key each
@@ -263,8 +268,17 @@ land in the session's copy, merged under pi's own lock. They reach later session
 
 ### 4.7 The host
 
-Ruled by [OQ-SP4](#11-decision-ledger): `yolo host` gives each launch the same session home, so
-host children follow the launch's `-p` like a jail session's do.
+Ruled by [OQ-SP4](#11-decision-ledger): under `host_management: own`, `yolo host` gives each
+launch the same session home, so host children follow the launch's `-p` like a jail session's do.
+The maintainer's 2026-10-19 ruling ([`SP-R1`](#SP-R1)) makes `own` a prerequisite for a host
+command launch: when `host_management` is `none` or unset, `yolo host -- <command>` refuses
+regardless of command or launch flags. It does not start the command or provide yolo's composed
+environment and credential grants, profile selection, broker or other host service, launch-time
+apply, program readiness/floor preparation, or per-launch session home. This includes host
+wrappers and the equivalent `--at host` execution spellings, which enter the same launch path.
+The ruling does not decide or change separate config and inspection verbs such as
+`yolo host apply`, `yolo host env` or `yolo host wrappers`; their existing modes and gates remain
+distinct. Directly running a program outside yolo is unchanged.
 
 - The **shared directory** is the user's real one (`~/.pi/agent` on the host). No file in it is
   written: the session home only links to it. A declared shared directory it lacks is created
@@ -275,6 +289,8 @@ host children follow the launch's `-p` like a jail session's do.
 - The declared variable is exported into **that launch's** environment only.
 - The launch removes its home when it ends; a home whose launch died is reaped by a later launch.
 - The user's own value of the variable wins, as in a jail ([SP-D5](#SP-D5)).
+
+The session-home persistence question remains open separately: see [OQ-SP5](#OQ-SP5).
 
 ## 5. What changes in the pi pack
 
@@ -337,16 +353,16 @@ changes what a session pass renders.
 
 ## 10. Open questions
 
-1. 💬 <a id="OQ-SP5"></a>**OQ-SP5: Should a setting pi saves during a `yolo host` launch be kept?**
+1. 💬 <a id="OQ-SP5"></a>**OQ-SP5: Should a setting pi saves during an owned `yolo host` launch be kept?**
 
-   The launch's session home is removed when it ends ([§4.7](#47-the-host)), so a `pi install`
-   or a "set default model" made in it is lost; before, pi wrote the real
-   `~/.pi/agent/settings.json`. Keeping it means yolo writing the user's real file, which the
-   [OQ-SP4](#11-decision-ledger) ruling keeps untouched. Today the launch line says such a setting
-   is not kept.
+   [SP-R1](#SP-R1) requires `host_management: own` for a host command launch; this question is
+   only about persistence when that launch runs under `own`. Its session home is removed when
+   the launch ends ([§4.7](#47-the-host)), so a `pi install` or a "set default model" made in it
+   is lost; previously pi wrote the real `~/.pi/agent/settings.json`. The host-ownership ruling
+   does not answer whether yolo should preserve those session-local writes.
 
    - **A: Write pi's own changes back** to the real file when the launch ends or is reaped.
-   - **B: Capture them into yolo's store** under `host_management: own`; lost under `none`.
+   - **B: Capture them into yolo's store** under `host_management: own`.
    - **C: Keep them lost.**
 
    <!-- vantage: question id=OQ-SP5 leaning="A: the bytes are pi's own writes, which reached the real file before the session home, so writing them back restores the old behavior rather than adding a yolo write." -->
@@ -396,7 +412,8 @@ The maintainer's rulings, then implementation decisions (reversible, made while 
 | <a id="SP-D27"></a>SP-D27 | Under `host_management: own` every host launch of a declaring pack gets a home, `-p` or not; the existing `-p` argv selection is still handed | 2026-10-18 | [§4.7](#47-the-host) | `bc70acb54` |
 | <a id="SP-D28"></a>SP-D28 | Each host home gets one disclosure line, since a launch has no quiet mode | 2026-10-18 | [§4.7](#47-the-host) | `bc70acb54` |
 | <a id="SP-D29"></a>SP-D29 | The host's SP-D5 check reads the child's composed environment (the shell plus `env_sources`) | 2026-10-18 | [§4.7](#47-the-host) | `bc70acb54` |
-| <a id="SP-D30"></a>SP-D30 | Under `host_management: none` (the default) only a launch with a typed `-p` gets a session home; a bare launch reads the user's own directory, because `none` leaves the program's config to the user | 2026-10-18 | [§4.7](#47-the-host) | `1964fad2b` |
+| <a id="SP-D30"></a>SP-D30 | Superseded by [SP-R1](#SP-R1): under `host_management: none` (the default) only a launch with a typed `-p` gets a session home; a bare launch reads the user's own directory, because `none` leaves the program's config to the user | 2026-10-18 | [§4.7](#47-the-host) | `1964fad2b` |
+| <a id="SP-R1"></a>SP-R1 | **Maintainer ruling:** A host command launch requires `host_management: own`; under `none` or unset, yolo gives no host launch assistance. *"Let's just get rid of it. If you are on none, then you just get none of this."* Separate config and inspection verbs remain outside this host-command-launch ruling; this does not answer whether an owned session's pi settings are saved ([OQ-SP5](#OQ-SP5)) | 2026-10-19 | [§4.7](#47-the-host) | not built |
 | <a id="SP-D31"></a>SP-D31 | A rendered file in a subdirectory of the declared directory makes only the directories on its path real; every other entry of each is still linked (measured in a nested jail: a pack's `extensions/subagent/config.json` had hidden every extension) | 2026-10-18 | [§4.4](#44-what-a-session-home-holds) | `30ff8484e` |
 | <a id="SP-D32"></a>SP-D32 | A capture of another session's home takes only that file's edits against its baseline, never the capturing pass's selection, whose clears had deleted a model the user saved | 2026-10-18 | [§4.5](#45-pis-own-writes) | `54b97baed` |
 | <a id="SP-D33"></a>SP-D33 | A seeded session baseline is marked until the session's own render replaces it, and capture skips a marked home | 2026-10-18 | [§4.5](#45-pis-own-writes) | `54b97baed` |
