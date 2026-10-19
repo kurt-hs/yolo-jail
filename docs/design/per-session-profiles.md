@@ -3,21 +3,22 @@ title: "One jail, several profiles: each session reads its own agent config"
 date: 2026-10-18
 status: accepted
 stage: DECIDED
-next: "Implement SP-R1 and the owned-session capture ruling; then macos-user's per-launch id and other agents' declarations (§9 step 4)"
+next: "Implement macos-user's per-launch id and other agents' declarations (§9 step 4)"
 tags: [design, profiles, attach, sessions, pi, pi-subagents, providers, concurrency]
 summary: "An attach renders the attaching entry's profile into files every running pi session reads later, so a second session on another provider (or a bare attach of an unrelated agent on the default profile) changes what the first session's pi-subagents children run on, while the first session's provider policy still forbids that provider. The fix keys every profile-dependent read on the session: each exec already carries a session id that its whole process tree inherits, so the attach writes its environment into a per-session entry snapshot, and the session's own boot pass renders a pack's profile-dependent files into a per-session copy of the program's config dir, which stock pi follows through PI_CODING_AGENT_DIR. Shared state (logins, session history, packages, caches) stays one copy, linked into every session's dir."
 ---
 
 # One jail, several profiles: each session reads its own agent config
 
-**Status:** 2026-10-19. The per-session profile mechanism is built for jails and the existing host
-session-home slice. The host command-execution boundary ([SP-R1](#SP-R1)) and owned-session capture
-([OQ-SP5](#decision-ledger)) are now ruled but not built; step 4 (macos-user, other agents) remains.
-Evidence read at `8bf1afce9` and in stock pi 1.0.1 and pi-subagents 0.79.1. MEASURED: stock pi 1.0.1
-reads `models.json` from a directory named by `PI_CODING_AGENT_DIR`, and creates `auth.json` and
-`models-store.json` there when they are absent (`pi --list-models`, offline, 2026-10-18). MEASURED
-in a nested jail (2026-10-18): each session's home, its links and its render. UNMEASURED: a real
-pi session's subagents on two providers, since no test runs an agent.
+**Status:** 2026-10-19. The per-session profile mechanism is built for jails, and the host command
+boundary and owned-session capture are built. Evidence checked through `a81e048f2`. MEASURED in
+host CLI/prune unit fixtures: host launches require `own`, ended-session edits accumulate in the
+normal capture store, first-session edits survive without a prior apply baseline, and generated
+profile values retain precedence. MEASURED: stock pi 1.0.1 reads `models.json` from a directory
+named by `PI_CODING_AGENT_DIR`, and creates `auth.json` and `models-store.json` there when absent
+(`pi --list-models`, offline, 2026-10-18). MEASURED in a nested jail (2026-10-18): each session's
+home, links and render. UNMEASURED: a real pi session's subagents on two providers, since no test
+runs an agent.
 
 > **In short.** A profile is a property of a session's process tree, not of the jail. A pi session's
 > profile breaks today because every later entry re-renders the files its children read. Key each
@@ -41,7 +42,7 @@ is the cause, file by file.
 **Needs your ruling:** None.
 
 **Reads with:** [`per-session-profiles-plan.md`](per-session-profiles-plan.md) (the implementation
-handoff; host boundary and capture remain unbuilt),
+handoff; host boundary and owned-session capture are built),
 [`attach-daemon-activation.md`](attach-daemon-activation.md) (coins the entry snapshot this design
 builds on, and leaves rendered config out of its scope),
 [`simultaneous-auth-and-pack-isolation.md`](simultaneous-auth-and-pack-isolation.md) (the
@@ -375,7 +376,7 @@ The maintainer's rulings, then implementation decisions (reversible, made while 
 | OQ-SP2 | **A pi setting saved in one session (a `pi install`, a theme, a default model) is captured into the shared layer and reaches sessions entered later**; running sessions keep their own copy. *"Yes, it would be nice if this is possible."* | 2026-10-18 | [§4.5](#45-pis-own-writes) | `dd60df26d` |
 | OQ-SP3 | **An attach with no `-p` uses the configured `profile`, as today.** *"We're not changing anything about how profiles are selected."* | 2026-10-18 | [§4.3](#43-an-entry-in-order) | yes (unchanged) |
 | OQ-SP4 | **Under `host_management: own`, `yolo host -p` gives pi a per-launch session home**: links to the user's real `~/.pi/agent` shared state, the profile-dependent files rendered in a throwaway dir, `PI_CODING_AGENT_DIR` exported to that launch only, the user's own files untouched; removed when the launch ends, reaped later if it dies. *"If we can use these throwaway things on the host to make the host also act similarly, that would be great ... So then, yes."* *"The principle should always be parity. It doesn't matter if I do or do not use it. Somebody else may or may not use it, and we need parity here."* | 2026-10-18 | [§4.7](#47-the-host) | `bc70acb54` |
-| OQ-SP5 | **A pi setting saved in an owned host session is captured by the normal host managed-config capture machinery into the standard capture overlay, so later managed renders receive user edits. Existing capture and surface/layer precedence distinguish user edits from computed or managed values; those values are regenerated. No wholesale generated-file copy or native host settings-file writeback.** | 2026-10-19 | [§4.7](#47-the-host) | not built |
+| OQ-SP5 | **A pi setting saved in an owned host session is captured by the normal host managed-config capture machinery into the standard capture overlay, so later managed renders receive user edits. Existing capture and surface/layer precedence distinguish user edits from computed or managed values; those values are regenerated. No wholesale generated-file copy or native host settings-file writeback.** | 2026-10-19 | [§4.7](#47-the-host) | `a81e048f2` |
 | <a id="SP-D1"></a>SP-D1 | The key is `YOLO_SESSION_ID`, inherited by every descendant; no new id | 2026-10-18 | [§4.3](#43-an-entry-in-order) | `6bbb48f15` |
 | <a id="SP-D2"></a>SP-D2 | A session pass renders surfaces inside a declared directory only into its session home; the shared copies are the jail boot's alone | 2026-10-18 | [§4.2](#42-who-writes-what) | `83f3be77e` |
 | <a id="SP-D3"></a>SP-D3 | Link every entry present plus every declared shared name; never copy; strays are kept and named | 2026-10-18 | [§4.4](#44-what-a-session-home-holds) | `83f3be77e` |
@@ -399,14 +400,14 @@ The maintainer's rulings, then implementation decisions (reversible, made while 
 | <a id="SP-D21"></a>SP-D21 | At the host each launch's home is `<state dir>/host-session-homes/<pack>-<random>/`, with a `.lease` and a scratch home whose declared directory is the session home, so every render bookkeeping byte lands in the throwaway directory | 2026-10-18 | [§4.7](#47-the-host) | `bc70acb54` |
 | <a id="SP-D22"></a>SP-D22 | Superseded by [SP-R1](#SP-R1): under `host_management: own`, the host session render runs as `own` into the scratch home, seeded with the real files and its capture sidecars; under `none` or unset there is no host command launch or session home | 2026-10-18 | [§4.7](#47-the-host) | `bc70acb54` |
 | <a id="SP-D23"></a>SP-D23 | Under `host_management: own`, the host's inputs are `yolo host apply`'s, with the launch's own selection for its agent when a `-p` was typed | 2026-10-18 | [§4.7](#47-the-host) | `bc70acb54` |
-| <a id="SP-D24"></a>SP-D24 | Under `host_management: own`, every host launch reaps homes whose lease nobody holds; `yolo prune` runs the same sweep. [OQ-SP5](#decision-ledger) adds capture before removal; that is not built | 2026-10-18 | [§4.7](#47-the-host) | `bc70acb54` |
+| <a id="SP-D24"></a>SP-D24 | Under `host_management: own`, every host launch reaps homes whose lease nobody holds; `yolo prune` runs the same sweep. [OQ-SP5](#decision-ledger) captures through the host managed-config path before removal | 2026-10-18 | [§4.7](#47-the-host) | `bc70acb54` |
 | <a id="SP-D25"></a>SP-D25 | Inside a jail, `yolo host` makes no session home | 2026-10-18 | [§4.7](#47-the-host) | `bc70acb54` |
 | <a id="SP-D26"></a>SP-D26 | A host render that refuses a surface refuses the launch (SP-D6), never a silent fallback to the seeded copy | 2026-10-18 | [§4.7](#47-the-host) | `bc70acb54` |
 | <a id="SP-D27"></a>SP-D27 | Under `host_management: own` every host launch of a declaring pack gets a home, `-p` or not; the existing `-p` argv selection is still handed | 2026-10-18 | [§4.7](#47-the-host) | `bc70acb54` |
 | <a id="SP-D28"></a>SP-D28 | Each host home gets one disclosure line, since a launch has no quiet mode | 2026-10-18 | [§4.7](#47-the-host) | `bc70acb54` |
 | <a id="SP-D29"></a>SP-D29 | The host's SP-D5 check reads the child's composed environment (the shell plus `env_sources`) | 2026-10-18 | [§4.7](#47-the-host) | `bc70acb54` |
 | <a id="SP-D30"></a>SP-D30 | Superseded by [SP-R1](#SP-R1): under `host_management: none` (the default) only a launch with a typed `-p` gets a session home; a bare launch reads the user's own directory, because `none` leaves the program's config to the user | 2026-10-18 | [§4.7](#47-the-host) | `1964fad2b` |
-| <a id="SP-R1"></a>SP-R1 | **Maintainer ruling:** A host command launch requires `host_management: own`; under `none` or unset, yolo gives no host launch assistance. *"Let's just get rid of it. If you are on none, then you just get none of this."* Separate config and inspection verbs remain outside this host-command-launch ruling; see [Decision Ledger](#decision-ledger) for owned session-home capture | 2026-10-19 | [§4.7](#47-the-host) | not built |
+| <a id="SP-R1"></a>SP-R1 | **Maintainer ruling:** A host command launch requires `host_management: own`; under `none` or unset, yolo gives no host launch assistance. *"Let's just get rid of it. If you are on none, then you just get none of this."* Separate config and inspection verbs remain outside this host-command-launch ruling; see [Decision Ledger](#decision-ledger) for owned session-home capture | 2026-10-19 | [§4.7](#47-the-host) | `0f930c32c` |
 | <a id="SP-D31"></a>SP-D31 | A rendered file in a subdirectory of the declared directory makes only the directories on its path real; every other entry of each is still linked (measured in a nested jail: a pack's `extensions/subagent/config.json` had hidden every extension) | 2026-10-18 | [§4.4](#44-what-a-session-home-holds) | `30ff8484e` |
 | <a id="SP-D32"></a>SP-D32 | A capture of another session's home takes only that file's edits against its baseline, never the capturing pass's selection, whose clears had deleted a model the user saved | 2026-10-18 | [§4.5](#45-pis-own-writes) | `54b97baed` |
 | <a id="SP-D33"></a>SP-D33 | A seeded session baseline is marked until the session's own render replaces it, and capture skips a marked home | 2026-10-18 | [§4.5](#45-pis-own-writes) | `54b97baed` |
