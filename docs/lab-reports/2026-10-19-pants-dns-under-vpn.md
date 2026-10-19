@@ -99,16 +99,27 @@ answering `AAAA` for `github.com` with `NXDOMAIN`, `SERVFAIL` or `REFUSED`.
 
 ## Open: what the coworker's DNS answers
 
-**On his Mac**, the commands that settle it:
+**Sent to the coworker on 2026-10-19; his reply is expected the next day.** Run in a terminal on
+his Mac, outside any jail, with the podman machine running:
 
-```console
-$ scutil --dns | grep -m8 -E 'nameserver|search domain'
-$ for s in $(scutil --dns | awk '/nameserver/{print $3}' | sort -u); do dig +short +comments @$s github.com AAAA | grep -m1 status; done
-$ podman run --rm docker.io/library/alpine:3.20 sh -c 'apk add -q bind-tools; dig @192.168.127.1 github.com AAAA | grep status'
+```bash
+echo "== Mac DNS config"; scutil --dns | grep -E 'nameserver|search domain' | sort -u
+echo "== each Mac DNS server, github.com AAAA"; for s in $(scutil --dns | awk '/nameserver/{print $3}' | sort -u); do echo "$s: $(dig +time=3 +tries=1 @$s github.com AAAA | grep -o 'status: [A-Z]*')"; done
+echo "== gvproxy, github.com AAAA"; podman run --rm docker.io/library/alpine:3.20 sh -c 'apk add -q bind-tools; dig @192.168.127.1 github.com AAAA | grep -o "status: [A-Z]*"'
+echo "== musl lookup (what pants does)"; podman run --rm docker.io/library/python:3.12-alpine python3 -c 'import socket; print(socket.getaddrinfo("github.com", 443, 0, socket.SOCK_STREAM)[0][4])'
 ```
 
-An `NXDOMAIN`, `SERVFAIL` or `REFUSED` names the server, and the table above says why only
-pants fails.
+**The baseline, from the maintainer's Mac:** `nameserver 10.19.0.2` and `search domain lan`,
+`10.19.0.2: status: NOERROR`, gvproxy `status: NOERROR`, and the musl lookup printed
+`('140.82.114.3', 443)`.
+
+**Reading his output:**
+
+- **The last line errors** (`gaierror`): the pants failure reproduces outside yolo.
+- **A `status:` other than `NOERROR`** names the server sending the bad answer, and the table
+  above says why only pants fails.
+- **Identical to the baseline:** the hypothesis is wrong, and the next comparison is his jail's
+  networking against a plain podman container's.
 
 **Workaround, measured on the maintainer's Mac:** point the jail straight at the VPN resolver,
 which answers both internal and outside names correctly. A musl container with
