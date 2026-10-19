@@ -10,7 +10,7 @@ summary: "The macos-user suite takes no privilege beyond the run-as rule yolo in
 
 # What may a macos-user test assume about its host?
 
-**Status:** 2026-10-18. All four rulings are compacted into the [Decision Ledger](#decision-ledger). The fixture changes are preserved in original commits `98715e67b` and `41dd11e3f` and landed on main at `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`. Linux and darwin compile/test evidence is recorded in the handoff; native-Mac runtime is not verified.
+**Status:** 2026-10-18. All four rulings are compacted into the [Decision Ledger](#decision-ledger). The fixture changes in original commits `98715e67b` and `41dd11e3f`, and subsequent recovery fixes, are in the current source ancestry. Portable guard hardening is in `cab34b522` and `201c4009e`; the `201c4009e` commit itself only changes the test. The earlier `4e7b9b92b` commit changed a documentation heading, not the suite code. Linux and darwin compile/test evidence is recorded in the handoff; native-Mac runtime is not verified.
 
 
 > **In short.** The suite may assume only what the backend itself asks a host for. A test that
@@ -167,13 +167,7 @@ The workflow is honest about the last one and added a `--rebuild` step to force 
   the invoking user, then by that account's own `chmod -R u+w` and `rm -rf` through the rule
   (the guest pass a capture's cleanup runs), then as the invoking user again. What that leaves,
   where the account cannot reach it, is logged with the one command an administrator runs.
-- **The guard.** `TestMacosUserSuiteSpendsNoRootSudo` reads every Go file in `integration/` and
-  fails on any string literal that is a sudo command name (`sudo`, `/usr/bin/sudo`). It runs in
-  the Linux unit gate, so a regression is red before any Mac sees it. Two allowances are named in
-  it, and each takes no privilege: the narrow-sudo test's `sudo -k` and its probe that root
-  `sudo` must fail, and a stub named `sudo` on a temporary PATH. Each admits an exact count. ⚠ It
-  cannot see a sudo inside a shell script's text; the one host-side script that names sudo
-  replaces it with a shell function first.
+- **The guard.** `TestMacosUserSuiteSpendsNoRootSudo` reads every Go file in `integration/` and fails on an unapproved sudo command literal or a root-sudo command at command position inside a literal passed to `sh`, `bash`, `zsh` or `dash` with `-c`. These source-reading checks run in the Linux short suite, before a Mac is needed. The scanner handles the shell separators and quoting it tests; it is not a general shell interpreter and does not inspect sourced or generated scripts. Root operands include `root` and numeric UID zero (`#0`), whether separated or attached/quoted; command-like diagnostic prose is not treated as execution. The product-built run-as argv remains outside this source scan, and the host-side script that names sudo replaces it with a shell function first.
 - **The System-keychain CA test reads, never writes.** It takes the CAs the launch's own
   composition (`ComposeCATrust`) keeps from the System keychain. Where there are none it skips,
   naming that it only reads the keychain; that includes the GitHub runner.
@@ -381,7 +375,7 @@ None. All four were ruled on 2026-10-18 and are compacted into the ledger below.
 
 ## 11. Sequencing
 
-The four rulings and test changes are now in main at `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`. The remaining work is to run the rewritten suite on a Mac with only the run-as rule and report any failures without granting root `sudo` or bypassing the host's log policy.
+The four rulings are compacted into the [Decision Ledger](#decision-ledger). The original Mac changes and the doorway, housekeeping and floor-test repairs are in the current source ancestry; portable shell-guard hardening followed in `cab34b522` and `201c4009e`. The `4e7b9b92b` commit itself changed only a documentation heading. The remaining work is to run the rewritten suite on a Mac with only the run-as rule and report any failures without granting root `sudo` or bypassing the host's log policy.
 
 ## 12. What done looks like
 

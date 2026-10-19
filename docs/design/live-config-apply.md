@@ -10,10 +10,7 @@ summary: "A host command, `yolo config apply`, runs the launch's own config-chan
 
 # Approve a config change once, on the host, and let the running jail take what it can
 
-**Status:** 2026-10-18. Every question was ruled the same day. The model-reference, Mac/recovery,
-live-apply and patch-series histories are on main at `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`; the
-serial landing retained their complete histories. The final live-closure review accepted the bounded
-repair. v1 and its review repairs are built; the command's briefing re-render from the effective
+**Status:** 2026-10-18. Every question was ruled the same day. The patch-branch code entered the integrated history in merge `08e6566c4`; live-apply code entered in merge `6f7c72a25`, and the inspected-mount-record repair followed in `388ea8a1b`. The later `4e7b9b92b` commit is a documentation-only heading repair, not the implementation merge. The final live-closure review accepted the bounded repair. v1 and its review repairs are built; the command's briefing re-render from the effective
 config is not ([LA-D7](#LA-D7)), nor are the later slices of [§13](#13-sequencing).
 MEASURED in the nested rootful Podman path only (`--userns host`): the command and interactive
 attach added, removed and moved read-only mounts in a running jail, refused writes, kept `/ctx`
