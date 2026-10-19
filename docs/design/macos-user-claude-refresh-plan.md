@@ -2,6 +2,9 @@
 status: draft
 stage: SKETCH
 next: "Measure existing native CL-D22 lock and view behavior; refine only after owner discussion following 0.15, with no build authorization"
+depends-on:
+  - macos-user-claude-refresh.md
+  - ../plans/runbooks/claude-credential-view-measures.md
 ---
 
 # Sketch: measure native Claude's existing coordination paths
