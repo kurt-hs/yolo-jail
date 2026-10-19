@@ -11,6 +11,15 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
+func resolvedRunTemp(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 // ctxArgvInput is a minimal assembly input for rt with one read-only config mount whose source
 // exists.
 func ctxArgvInput(t *testing.T, rt string) (*Options, *assembleInput, string) {
@@ -19,7 +28,7 @@ func ctxArgvInput(t *testing.T, rt string) (*Options, *assembleInput, string) {
 	t.Setenv("HOME", home)
 	emptyLoopholeDirs(t)
 	o := goldenOptions("/ws", home)
-	src := t.TempDir()
+	src := resolvedRunTemp(t)
 	sec := jsonx.NewOrderedMap()
 	sec.Set("blocked_tools", []any{})
 	return o, &assembleInput{
