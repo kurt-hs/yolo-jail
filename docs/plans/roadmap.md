@@ -66,8 +66,10 @@ and a pi-subagents registry several extensions can share stays in item 28.
 4. [Give each session in one jail its own profile](../design/per-session-profiles.md) — the
    maintainer's 2026-10-18 report: an attach on another profile, or a bare attach of another agent,
    re-renders the files a running pi's subagents read, and they deadlock against its provider
-   policy. Built for jails and `yolo host`; [OQ-SP5](../design/per-session-profiles.md#OQ-SP5)
-   (host saves) is owed, and macos-user and other agents remain.
+   policy. The jail and existing host session-home mechanism are built. The 2026-10-19 host rulings
+   require `own` for launches and normal managed-config capture for owned session edits; neither is
+   built yet. Implement them in the [plan](../design/per-session-profiles-plan.md). macos-user and
+   other agents remain.
 
 5. [Let the macos-user suite run on a developer Mac](../design/macos-user-suite-on-a-developer-mac.md)
    — the first full `-run '^TestMacosUser'` on a Mac that grants only the run-as rule (2026-10-17,
