@@ -143,6 +143,19 @@ and a pi-subagents registry several extensions can share stays in item 28.
    spelling; [the lab report](../lab-reports/2026-10-19-launch-diagnostics-on-a-mac.md) weighs
    the two.
 
+10. **`yolo host --` calls its cwd a bind-mounted workspace, so it refuses `aws-auth` in the home**
+    — measured 2026-10-19. The host notch takes `os.Getwd()`
+    ([`host.go:2399`](../../internal/cli/host.go)) and hands it to the placement rule, whose
+    workspace branch is worded for a jail (*"the workspace this launch bind-mounts :rw"*); the
+    host notch mounts nothing. Run from `$HOME` that tree contains `~/.local/share/yolo-jail`, so
+    the rule refuses the loophole serving Bedrock credentials, and ⚠ the refused tree is
+    `embedded-packs` — kept out of `cache/` precisely so no agent writes it. The empty-workspace
+    path the rule documents (*"a caller with no workspace in hand"*) already exists and
+    `internal/loopholes` uses it; this notch does not. Two notes beside it: the refusal did not
+    stop the doorway from opening, and a jail launch would have refused that cwd outright via
+    `refuseWorkspaceScope`, which the host notch bypasses. Details and the workaround are in
+    [the lab report](../lab-reports/2026-10-19-launch-diagnostics-on-a-mac.md).
+
 Native readiness and credential-store work retain their places below: assess
 [the privilege prerequisites](../research/sandvault-macos-privileges.md) without broad root
 cleanup, and rule [keychain scope/unlock/migration](../design/keychain-from-a-jail.md) without

@@ -135,7 +135,67 @@ what the user typed, and `/workspace` is a mount destination, not a host path �
 preflights and refuses with the resolved spelling as the next step. The first is invisible and
 total; the second keeps the user's spelling and teaches the rule once.
 
+## 4. `yolo host --` calls its cwd a bind-mounted workspace, and refuses `aws-auth` in the home
+
+**Observed.** `yolo host -- claude`, run from `/Users/matt`:
+
+```text
+Refusing to start loophole aws-auth: loophole 'aws-auth': module dir
+/Users/matt/.local/share/yolo-jail/embedded-packs/<hash>/aws-auth/loopholes/aws-auth is inside
+the workspace this launch bind-mounts :rw, where an agent can rewrite it between launches
+```
+
+**The premise is false at that notch: `yolo host` bind-mounts no workspace.** The host notch takes
+its workspace from `os.Getwd()` ([`internal/cli/host.go:2399`](../../internal/cli/host.go)) and
+hands it to the placement rule, whose workspace branch is worded for a jail —
+*"the workspace this launch bind-mounts :rw"*
+([`loopholeplacement.go:110`](../../internal/config/loopholeplacement.go)). Run from `$HOME`, that
+tree contains `~/.local/share/yolo-jail`, so the rule fires on yolo's own store.
+
+⚠ **The refused tree is the one deliberately placed to satisfy this rule.**
+`paths.EmbeddedPacksDir` is kept out of `cache/` precisely because *"every jail mounts
+[cache] read-write"* ([AGENTS.md](../../AGENTS.md)), so no agent writes `embedded-packs` — and the
+rule rejects it anyway, for being under the home the user happened to `cd` into.
+
+**The empty-workspace path already exists and the host notch does not take it.**
+`agentWritableTrees` documents *"workspace may be empty (a caller with no workspace in hand), in
+which case only the jail home tree is checked"*, and `internal/loopholes` passes `""` in two
+places. A notch that mounts nothing has no workspace in hand.
+
+**Two more things the same run showed.**
+
+- **The refusal did not stop the doorway.** Three lines later:
+  *"opened the `aws-auth` doorway (pack `aws-auth`, pid 30076) on 127.0.0.1:61750 for claude"*.
+  Claude then started on Bedrock, so the practical damage here is a red refusal with a false
+  reason rather than a broken launch — but a gate that prints "Refusing" and is then bypassed is
+  worth a look on its own.
+- **A jail launch would have refused the cwd outright.** `refuseWorkspaceScope` makes a workspace
+  that IS `$HOME` a hard refusal — *"the SECOND thing `Run` does"* — and the host notch does not
+  go through `Run`, so `$HOME` is accepted there and only this rule notices.
+
+**Workaround:** run `yolo host` from any directory that is not an ancestor of
+`~/.local/share/yolo-jail` — the repo checkout under `/Users/Shared` does it.
+
+**What a fix has to decide.** Whether the host notch passes no workspace (the rule then checks the
+jail home tree alone, which is what that notch actually hands an agent), or whether the rule keeps
+a workspace at this notch and the message stops claiming a mount. The first looks right and is
+the smaller change; neither is mine to pick.
+
 ## Not a yolo defect
+
+**Opus 5.5 missing from Claude Code's `/model` menu is not yolo's doing**, and nothing on the
+host is caching a model list. Checked 2026-10-19, four ways: `packs/bedrock/pack.json` carries
+**no model ids at all**, so yolo ships no Bedrock model list; `yolo config diff claude` shows the
+only captured edit for `claude/settings` is `enabledPlugins {}`, itself flagged *"same as yolo's
+last render — redundant capture"*, with no `model` key; `~/.claude/settings.json` is a 48-byte
+regular file holding only `{"model": "us.anthropic.claude-opus-5[1m]"}`, which Claude Code wrote
+itself when a default was set and attributes on screen (*"from .claude/settings.json"*); and the
+one place yolo touches a Bedrock model value — `ANTHROPIC_MODEL`'s `matches` in
+[`packs/claude/pack.json`](../../packs/claude/pack.json) — is a prefix check on the
+inference-profile/ARN shape
+(`^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\.)?anthropic\.)`) that matches
+every Opus 5.5 id tested, so it filters no model family. The menu's contents are Claude Code
+v2.1.303's own Bedrock list plus that pinned custom entry.
 
 The mise stage's long stall — `github:pantsbuild/scie-pants@0.13.2` retrying
 `mise-versions.jdx.dev` and then `api.github.com` at 20 s a time for over two minutes — is **the
