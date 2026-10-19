@@ -232,8 +232,25 @@ if [ -z "$KEY" ]; then
     exit 1
 fi
 
+# Verify a warm home's declared outputs against the admitted capture. The key stamp identifies
+# what was requested; it does not prove the files still match that artifact.
+_yolo_verify_fork_tree() {
+    local -a args=(internal capture-materialize --verify-installed --store="$CAPTURES_DIR" \
+        --home="$HOME" --bin="$BIN" --key="$KEY")
+    for p in "${PRODUCES[@]}"; do args+=(--produces="$p"); done
+    YOLO_BYPASS_SHIMS=1 yolo "${args[@]}" >/dev/null 2>&1
+}
+
 # THE HOST'S BUILD, materialized once per key: a cold home, or one holding another pin's build.
+_NEEDS_MATERIALIZE=0
 if [ ! -x "$REAL_BIN" ] || [ "$(cat "$KEY_STAMP" 2>/dev/null || true)" != "$KEY" ]; then
+    _NEEDS_MATERIALIZE=1
+elif [ -z "$CAPTURES_DIR" ] || [ ! -d "$CAPTURES_DIR" ] || ! command -v yolo >/dev/null 2>&1; then
+    _NEEDS_MATERIALIZE=1
+elif ! _yolo_verify_fork_tree; then
+    _NEEDS_MATERIALIZE=1
+fi
+if [ "$_NEEDS_MATERIALIZE" = "1" ]; then
     if [ -z "$CAPTURES_DIR" ] || [ ! -d "$CAPTURES_DIR" ] || ! command -v yolo >/dev/null 2>&1; then
         echo "  ⚠ $BIN is not available: this jail has no capture store to materialize fork $FORKED_BY's build from" >&2
         exit 1
@@ -244,6 +261,10 @@ if [ ! -x "$REAL_BIN" ] || [ "$(cat "$KEY_STAMP" 2>/dev/null || true)" != "$KEY"
     if ! YOLO_BYPASS_SHIMS=1 yolo internal capture-materialize --store="$CAPTURES_DIR" --home="$HOME" \
         --bin="$BIN" --key="$KEY" --declared="$SOURCE" --receipts="$_YOLO_RECEIPTS"; then
         echo "  ⚠ $BIN is not available: fork $FORKED_BY's build ($KEY) could not be put in place" >&2
+        exit 1
+    fi
+    if [ ! -x "$REAL_BIN" ] || ! _yolo_verify_fork_tree; then
+        echo "  ⚠ $BIN is not available: fork $FORKED_BY's build ($KEY) did not materialize as the admitted output tree" >&2
         exit 1
     fi
     mkdir -p "$KEY_DIR"

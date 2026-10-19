@@ -51,7 +51,8 @@ import (
 // nobody has ruled on: a first run on a machine with no capture must still work.
 
 const captureMaterializeUsage = "usage: yolo internal capture-materialize --store=DIR --bin=NAME " +
-	"[--key=KEY] [--compatibility=IDENTITY] [--home=DIR] [--declared=URL] [--receipts=PATH]"
+	"[--key=KEY] [--verify-installed] [--produces=PATH] [--compatibility=IDENTITY] " +
+	"[--home=DIR] [--declared=URL] [--receipts=PATH]"
 
 // runCaptureMaterialize is the `yolo internal capture-materialize` entry.
 func runCaptureMaterialize(args []string) int {
@@ -90,6 +91,10 @@ func runCaptureMaterialize(args []string) int {
 			opts.nodePath = strings.TrimPrefix(a, "--node-path=")
 		case strings.HasPrefix(a, "--node-floor="):
 			opts.nodeFloor = strings.TrimPrefix(a, "--node-floor=")
+		case a == "--verify-installed":
+			opts.verifyInstalled = true
+		case strings.HasPrefix(a, "--produces="):
+			opts.produces = append(opts.produces, strings.TrimPrefix(a, "--produces="))
 		case strings.HasPrefix(a, "--key="):
 			opts.key = strings.TrimPrefix(a, "--key=")
 		default:
@@ -102,13 +107,18 @@ func runCaptureMaterialize(args []string) int {
 		fmt.Fprintln(os.Stderr, captureMaterializeUsage)
 		return 2
 	}
+	if opts.verifyInstalled && opts.key == "" {
+		fmt.Fprintln(os.Stderr, "capture-materialize: --verify-installed requires --key")
+		return 2
+	}
 	return materializeCapture(opts, os.Stderr)
 }
 
 // materializeArgs is one materialize request, parsed.
 type materializeArgs struct {
 	programRuntime, nodeFloor, nodePath string
-	validateOnly                        bool
+	validateOnly, verifyInstalled       bool
+	produces                            []string
 	// compatibility, when set, requires the exact resolved ordinary input identity.
 	compatibility string
 	// store is the store root AS THIS PROCESS SEES IT — the in-jail mount point, not the
@@ -139,6 +149,9 @@ type materializeArgs struct {
 func materializeCapture(a materializeArgs, errw io.Writer) int {
 	store := &capture.Store{Dir: a.store}
 	platform := capture.Platform()
+	if a.verifyInstalled {
+		return verifyForkBuild(store, a, platform)
+	}
 	if a.key != "" {
 		return materializeForkBuild(store, a, platform, errw)
 	}
@@ -261,6 +274,28 @@ func preparedNodeHasSameFilePATHBinding(node string) bool {
 	}
 	pathNode, err := os.Stat(filepath.Join(filepath.Dir(node), "node"))
 	return err == nil && pathNode.Mode().IsRegular() && pathNode.Mode().Perm()&0o111 != 0 && os.SameFile(selected, pathNode)
+}
+
+// verifyForkBuild is the source launcher's warm-hit check. It deliberately writes nothing and
+// says nothing: a mismatch makes the launcher rematerialize from the admitted artifact.
+func verifyForkBuild(store *capture.Store, a materializeArgs, platform string) int {
+	entry, err := store.Resolve(a.key)
+	if err != nil {
+		return 1
+	}
+	recs, err := captureRecords(entry.Root)
+	if err != nil {
+		return 1
+	}
+	for _, rec := range recs {
+		if rec.Source != "" && rec.Bin == a.bin && rec.Platform == platform {
+			if capture.VerifyMaterialized(entry, a.home, a.produces) == nil {
+				return 0
+			}
+			return 1
+		}
+	}
+	return 1
 }
 
 // materializeForkBuild is the --key mode: put the fork build the HOST decided on into this home
