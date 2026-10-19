@@ -545,6 +545,78 @@ func TestConfigApplyInjectsALiveMount(t *testing.T) {
 	}
 }
 
+func TestConfigApplyFilesystemRecordRestoreFailureKeepsRemovalPending(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "addition")
+	if err := os.MkdirAll(src, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const token = "captured-launch-token"
+	env := entrypoint.ContractTagsEnv + "=" + launchContractTagsValue() + "\n" +
+		ctxMountsTokenEnv + "=" + token + "\n"
+	o, buf := applyFixture(t, `{}`, `{"mounts":["`+src+`"]}`, applyJail{running: true, env: env})
+	cname := runtime.FromWorkspace(o.Workspace)
+	if err := writeCtxMountRecord(cname, token, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	injected, removed := 0, 0
+	namespaceHasMount := false
+	swapSeam(t, &injectCtxMountSeam, func(_ *Options, _, _ string, _ configCtxMount, _ time.Time) error {
+		injected++
+		namespaceHasMount = true
+		// The real invalidator has just left its tombstone. Replace that isolated file with an
+		// empty directory: updateCtxMountRecord's real read fails, and the real invalidator must
+		// recover durable unknown state before returning from this successful namespace mutation.
+		path := ctxMountRecordPath(cname)
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+		return os.Mkdir(path, 0o700)
+	})
+	swapSeam(t, &removeCtxMountSeam, func(*Options, string, string, liveCtxMount, time.Time) error {
+		removed++
+		namespaceHasMount = false
+		return nil
+	})
+
+	answer(o, "y")
+	if rc := o.configApply(false); rc != 3 {
+		t.Fatalf("record restore failure rc = %d, want restart-required 3\n%s", rc, buf.String())
+	}
+	if injected != 1 || !namespaceHasMount {
+		t.Fatalf("namespace injections = %d, mount remains = %v; want one successful injection", injected, namespaceHasMount)
+	}
+	rec, err := loadCtxMountRecord(cname)
+	if err != nil || rec.Token != "" || len(rec.Entries) != 0 {
+		t.Fatalf("real recovery record = %+v, err %v; want an empty-token tombstone", rec, err)
+	}
+	envLines := strings.Split(strings.TrimSuffix(env, "\n"), "\n")
+	if !ctxMountRecordInvalidated(cname, envLines) {
+		t.Fatal("the inspected launch token trusted the recovered tombstone")
+	}
+	if _, ok := readCtxMountRecord(cname, envLines); ok {
+		t.Fatal("the tombstone answered as the inspected jail's mount state")
+	}
+	out := buf.String()
+	for _, want := range []string{"the mount succeeded, but its host record could not be updated", "is a directory", "at next restart"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("record failure output does not contain %q:\n%s", want, out)
+		}
+	}
+	if _, drifted, _, err := config.WorkspaceConfigDrift(o.Workspace); err != nil || !drifted {
+		t.Fatalf("failed record update was folded: drifted=%v err=%v", drifted, err)
+	}
+
+	writeWorkspaceConfig(t, o.Workspace, `{}`)
+	answer(o, "y")
+	if rc := o.configApply(false); rc != 3 {
+		t.Fatalf("later removal rc = %d, want restart-required 3\n%s", rc, buf.String())
+	}
+	if removed != 0 || !namespaceHasMount || !strings.Contains(buf.String(), "host invalidated this jail's mount record") {
+		t.Fatalf("later removal trusted unknown namespace state (removals %d, mount remains %v):\n%s", removed, namespaceHasMount, buf.String())
+	}
+}
+
 // A successful mount whose host record cannot be updated is not synchronized. The stale record is
 // invalidated, the effective baseline stays pending, and a later removal waits for restart rather
 // than trusting the record that predated the injected mount.
