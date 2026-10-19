@@ -39,7 +39,7 @@ func hostExecThroughMain(t *testing.T, argv ...string) (int, []string, string) {
 // explicit-run, run-after-flag and implicit-command spellings used to reach the jail launcher,
 // which refused them; deleting routeArgv's host route sends them there again.
 func TestEveryAtHostSpellingLaunchesAtTheHost(t *testing.T) {
-	valueFlagHome(t, "")
+	valueFlagHome(t, `{"host_management":"own","host_apply_on_launch":false}`)
 	for _, spelling := range [][]string{
 		{"--at", "host", "--", "mytool", "x"},
 		{"--at=host", "--", "mytool", "x"},
@@ -56,6 +56,38 @@ func TestEveryAtHostSpellingLaunchesAtTheHost(t *testing.T) {
 			t.Errorf("`yolo %s`: rc=%d exec=%q, want the host exec of [mytool x]\n%s",
 				strings.Join(spelling, " "), rc, execed, errs)
 		}
+	}
+}
+
+// Every front-door spelling shares hostExec's ownership refusal. A command is not started under
+// either explicit none or an unset host_management key.
+func TestEveryAtHostSpellingRequiresOwn(t *testing.T) {
+	spellings := [][]string{
+		{"--at", "host", "--", "mytool", "x"},
+		{"--at=host", "--", "mytool", "x"},
+		{"run", "--at", "host", "--", "mytool", "x"},
+		{"--at", "host", "run", "--", "mytool", "x"},
+		{"run", "--at", "host", "mytool", "x"},
+		{"host", "--at", "host", "--", "mytool", "x"},
+		{"host", "--at=host", "--", "mytool", "x"},
+		{"--at", "jail", "--at", "host", "--", "mytool", "x"},
+	}
+	for _, mode := range []struct {
+		name, config string
+	}{
+		{"unset", ""},
+		{"none", `{"host_management":"none"}`},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			for _, spelling := range spellings {
+				valueFlagHome(t, mode.config)
+				rc, execed, errs := hostExecThroughMain(t, spelling...)
+				if rc != 1 || execed != nil || !strings.Contains(errs, "host command launches require `host_management: \"own\"`") {
+					t.Errorf("`yolo %s`: rc=%d exec=%q, want ownership refusal and no command\n%s",
+						strings.Join(spelling, " "), rc, execed, errs)
+				}
+			}
+		})
 	}
 }
 

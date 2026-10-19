@@ -141,9 +141,18 @@ func hostGateRunIn(t *testing.T, cfg string, shell map[string]string, flags []st
 	return rc, env, errw.String()
 }
 
-// hostGateHome sets up a temp HOME with the user config, a blanked shell and the broker seam
-// stubbed, for a host-notch cell.
+// hostGateHome makes an owned host fixture unless its config explicitly chooses another
+// host_management value. Ordinary command-launch tests opt into the new launch contract; tests
+// of unset/none use hostGateHomeRaw so this convenience cannot mask the refusal.
 func hostGateHome(t *testing.T, cfg string, shell map[string]string) string {
+	t.Helper()
+	if !strings.Contains(cfg, `"host_management"`) {
+		cfg = strings.Replace(strings.TrimSpace(cfg), "{", `{"host_management":"own","host_apply_on_launch":false,`, 1)
+	}
+	return hostGateHomeRaw(t, cfg, shell)
+}
+
+func hostGateHomeRaw(t *testing.T, cfg string, shell map[string]string) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)

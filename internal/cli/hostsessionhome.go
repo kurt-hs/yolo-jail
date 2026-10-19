@@ -28,11 +28,13 @@ package cli
 // alone: nothing here names an agent.
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -48,6 +50,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/prune"
 	"github.com/mschulkind-oss/yolo-jail/internal/render"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/sessionhome"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
@@ -62,18 +65,42 @@ type hostSessionHomes struct {
 	leases []*os.File
 	// vars are the KEY=VALUE entries the launch adds to its child's environment.
 	vars []string
+	// captures names the stateful surfaces and render homes whose edits must be folded into
+	// the host capture overlay before a resident home is removed.
+	captures []hostSessionCapture
 	// kept is set once the leases are handed across the exec: the program that replaces this
 	// process owns the directories from then on, and Close leaves them for the reaper.
 	kept bool
+	// preserved keeps a resident home for a later capture attempt after this one refused.
+	preserved bool
+}
+
+// hostSessionCapture is one render home and the surfaces its session-home declaration holds.
+type hostSessionCapture struct {
+	home     string
+	surfaces []manifest.Surface
 }
 
 // Close removes the launch's directories and releases their leases, unless KeepAcrossExec handed
-// them to the program. Safe on nil and more than once.
+// them to the program or capture preserved them for a retry. Safe on nil and more than once.
 func (h *hostSessionHomes) Close() {
-	if h == nil || h.kept {
+	if h == nil || h.kept || h.preserved {
 		return
 	}
 	h.remove()
+}
+
+// preserveForRetry releases resident leases but leaves their files for the next host launch or
+// `yolo prune --apply` to capture. A normal close after this only releases descriptors.
+func (h *hostSessionHomes) preserveForRetry() {
+	if h == nil || h.preserved {
+		return
+	}
+	h.preserved = true
+	for _, f := range h.leases {
+		_ = f.Close()
+	}
+	h.leases = nil
 }
 
 // remove is Close without the kept check: an exec that failed after KeepAcrossExec gives the
@@ -243,16 +270,22 @@ func prepareHostSessionHomes(launch *hostComposition, environ []string, errw io.
 	if config.InJail() {
 		return nil, environ, nil
 	}
+	if config.HostManagementMode() != config.HostManagementOwn {
+		return nil, environ, fmt.Errorf("host session homes require `host_management: \"own\"`")
+	}
 	home := paths.Home()
 	root := hostSessionHomesRoot()
-	// THE REAP FIRST, on every launch, whatever this one declares: a launch whose program died
-	// leaves its directory for the next one (SP-D24).
-	prune.ReapHostSessionHomes(root, true, time.Now())
-	// SP-D30: under `host_management: none` (the default) yolo leaves the program's config to the
-	// user, so only a launch that typed a -p, an explicit request for its own profile, gets a
-	// session home; a bare launch reads the user's own directory as it always did.
-	if launch.typedProfile == "" && config.HostManagementMode() != config.HostManagementOwn {
-		return nil, environ, nil
+	// THE REAP FIRST, on every owned launch, whatever this one declares: a launch whose program
+	// died leaves its directory for the next one (SP-D24). Capture precedes removal; a refusal
+	// leaves the source for retry and stops this launch from proceeding past the failed capture.
+	reaped := prune.ReapHostSessionHomes(root, true, time.Now(), func(dir string) error {
+		return captureHostSessionHomePath(dir, errw)
+	})
+	for _, entry := range reaped.Removed {
+		if entry.Err != nil {
+			return nil, environ, fmt.Errorf("could not capture ended session home %s: %w; it was kept for retry",
+				entry.Path, entry.Err)
+		}
 	}
 	packs, _ := packload.ResolveDestinations(launch.packs)
 	decls := hostSessionDecls(packs, home)
@@ -319,18 +352,141 @@ func prepareHostSessionHomes(launch *hostComposition, environ []string, errw io.
 				}
 			}
 		}
+		var captureSurfaces []manifest.Surface
+		for _, surfaces := range d.surfaces {
+			captureSurfaces = append(captureSurfaces, surfaces...)
+		}
+		sort.Slice(captureSurfaces, func(i, j int) bool {
+			if captureSurfaces[i].Agent != captureSurfaces[j].Agent {
+				return captureSurfaces[i].Agent < captureSurfaces[j].Agent
+			}
+			return captureSurfaces[i].Name < captureSurfaces[j].Name
+		})
+		homes.captures = append(homes.captures, hostSessionCapture{home: scratch, surfaces: captureSurfaces})
 		homes.vars = append(homes.vars, d.env+"="+sessionHome)
 		fmt.Fprintf(errw, "yolo host: yolo SET %s=%s for %s, from pack %s: this launch's own config "+
 			"directory, rendered for %s, with everything else linked to %s, which it leaves untouched; "+
-			"yolo removes it after %s exits, so a setting %s saves during this launch is not kept "+
-			"(to keep one, save it in %s run directly, without `yolo host`).\n", d.env, sessionHome,
-			launch.agent, d.pack, hostSessionSelectionWords(launch), d.shared, launch.agent, launch.agent,
-			launch.agent)
+			"yolo captures user edits to its stateful config surfaces into the normal host overlay when "+
+			"this launch ends, then removes the session directory. Generated profile values keep their "+
+			"normal precedence and are regenerated. If this launch is exec'd and later dies, capture "+
+			"runs when the ended home is reaped.\n", d.env, sessionHome, launch.agent, d.pack,
+			hostSessionSelectionWords(launch), d.shared)
 	}
 	if len(homes.dirs) == 0 {
 		return nil, environ, nil
 	}
 	return &homes, homes.environ(environ), nil
+}
+
+func finishHostSessionHomes(h *hostSessionHomes, errw io.Writer) error {
+	if err := captureHostSessionHomes(h, errw); err != nil {
+		h.preserveForRetry()
+		return err
+	}
+	if h != nil && !h.kept {
+		h.remove()
+	}
+	return nil
+}
+
+func captureHostSessionHomes(h *hostSessionHomes, errw io.Writer) error {
+	if h == nil || h.kept {
+		return nil
+	}
+	return captureHostSessionDirs(h.captures, errw)
+}
+
+// captureHostSessionHomePath captures one ended host session home before the lease-protected
+// reaper removes it. Its name identifies the pack; the current user-scope selection supplies the
+// same surfaces and host composition that ordinary capture uses.
+func captureHostSessionHomePath(dir string, errw io.Writer) error {
+	set := selectConfiguredHostPacks()
+	decls := hostSessionDecls(set.packs, paths.Home())
+	name := filepath.Base(dir)
+	packName := ""
+	for _, d := range decls {
+		if strings.HasPrefix(name, d.pack+"-") && len(d.pack) > len(packName) {
+			packName = d.pack
+		}
+	}
+	if packName == "" {
+		return fmt.Errorf("cannot identify ended host session home %q from the current selected packs; its source was kept. Restore the pack that declared it in %s, then retry `yolo prune --apply`, or inspect and remove the retained directory manually",
+			name, paths.UserConfigPath())
+	}
+	var captures []hostSessionCapture
+	for _, d := range decls {
+		if d.pack != packName {
+			continue
+		}
+		var surfaces []manifest.Surface
+		for _, owned := range d.surfaces {
+			surfaces = append(surfaces, owned...)
+		}
+		sort.Slice(surfaces, func(i, j int) bool {
+			if surfaces[i].Agent != surfaces[j].Agent {
+				return surfaces[i].Agent < surfaces[j].Agent
+			}
+			return surfaces[i].Name < surfaces[j].Name
+		})
+		captures = append(captures, hostSessionCapture{
+			home: filepath.Join(dir, hostScratchHomeName), surfaces: surfaces,
+		})
+	}
+	return captureHostSessionDirs(captures, errw)
+}
+
+// captureHostSessionDirs captures each home under the ordinary host apply lock. The render reads
+// the ended session's own file and baseline, while configTarget keeps the normal host overlay and
+// list-capture sidecars as the only persistent destination.
+func captureHostSessionDirs(captures []hostSessionCapture, errw io.Writer) error {
+	if len(captures) == 0 {
+		return nil
+	}
+	target := hostConfigTarget("an ended owned host session home")
+	if !target.hostOwned() {
+		return fmt.Errorf("host session-home capture requires `host_management: \"own\"`; the source was kept. Set it to `own` and retry with `yolo prune --apply` or a host command launch")
+	}
+	var identity string
+	for _, c := range captures {
+		if len(c.surfaces) > 0 {
+			identity = surfaceIdentity(c.surfaces[0].Agent, c.surfaces[0].Name)
+			break
+		}
+	}
+	if identity != "" {
+		lock, ok := holdOwnedHostLock(target, "capture", "not captured", identity, errw)
+		if !ok {
+			return fmt.Errorf("the host capture lock was unavailable; source kept; retry after `yolo host apply` or another capture finishes")
+		}
+		defer lock.Close()
+	}
+	if err := os.MkdirAll(target.sidecarDir(), target.store.SidecarDirMode()); err != nil {
+		return fmt.Errorf("cannot create the host capture store %s: %w; the source was kept. Fix the path or its permissions and retry with `yolo prune --apply` or a host command launch",
+			target.sidecarDir(), err)
+	}
+	var messages bytes.Buffer
+	pr := richtext.Printer{W: &messages}
+	for _, c := range captures {
+		owned := newOwnedHostRender(c.home)
+		for _, s := range c.surfaces {
+			n, refused, err := owned.capture(pr, target, s)
+			if err != nil {
+				return fmt.Errorf("capture of %s/%s failed: %w", s.Agent, s.Name, err)
+			}
+			if refused {
+				return fmt.Errorf("capture of %s/%s was refused; source kept for retry: %s",
+					s.Agent, s.Name, strings.TrimSpace(messages.String()))
+			}
+			if n >= 0 {
+				pr.Printf("Captured [cyan]%s/%s[/cyan] from an ended host session — %d %s now recorded.",
+					s.Agent, s.Name, n, plural(n, "key", "keys"))
+			}
+		}
+	}
+	if errw != nil {
+		_, _ = io.Copy(errw, &messages)
+	}
+	return nil
 }
 
 // hostSessionSelectionWords names the selection a session home is rendered for.

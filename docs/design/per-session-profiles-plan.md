@@ -9,8 +9,9 @@ tags: [plan, profiles, attach, sessions, pi]
 
 # Per-session profiles: implementation plan
 
-**Status:** 2026-10-19. Tasks 1-6 completed against the tree; Task 7 is the remaining host
-boundary and capture work, written against `bd5d211a5`.
+**Status:** 2026-10-19. Tasks 1-7 implemented against the tree. The host boundary and capture
+work were grounded against `7941904b6` after checking the settled design and current host launch,
+capture and reap call sites.
 **Design:** [`per-session-profiles.md`](per-session-profiles.md) (all filed rulings settled;
 host boundary and capture are specified).
 
@@ -111,6 +112,26 @@ on one machine do not today. Ledgered as SP-D10; never link a `*.lock` name.
   launch's `-p` selection (`hostmodelmenu.go:293`). The model-menu store's `Held.KeepAcrossExec`
   (`internal/modelmenu/shared.go:70`) is the lock that survives `syscall.Exec`; `sweepLeasedDirs`
   (`internal/packload/embeddedcache.go:708`) the reap shape.
+
+- `hostExec` (`internal/cli/host.go`) is the shared command-launch doorway for `yolo host --`,
+  `--at host`, and generated wrappers. Its earliest side-effect-free gate is after flag/command
+  validation and before `hostProfileFor`/`startHostLaunchTrace`; the current `hostLaunch` starts
+  pack refresh immediately, so gating only near session-home preparation is too late. Keep the
+  separate host verbs on `hostMain`'s verb dispatch.
+- `prepareHostSessionHomes` currently reaps at entry and its reaper removes unleased homes before
+  the current launch proceeds. `hostSessionHomes.Close` removes resident homes; `KeepAcrossExec`
+  leaves exec'd homes lease-protected. Both reaping callers are direct: this launch path and
+  `prune.Run` (`internal/prune/prunecmd.go`). Capture must run only after a lease is proven free,
+  and before `RemoveAll`; dry-run prune must not call it.
+- `ownedHostRender.capture` (`internal/cli/configdiff.go`) is the normal host capture route: it
+  observes one host render and persists only its `Capture` overlay/list records via `configTarget`.
+  Construct its render against the ended scratch home while retaining the real owned host target
+  for standard sidecar destinations; the scratch home was seeded with the launch's baselines and
+  stores its own capture sidecars. Do not call jail `captureSurfaceAt` or copy session files back.
+- In the host launcher, `prepareOpenAIAuthHost`, `hostWorkspaceSkills`, session-home preparation
+  and service startup are downstream effects; the ownership refusal must precede all of them.
+  Existing tests build host homes with temporary `HOME` (`hostGateHome`) and stub the exec
+  boundary (`hostSelectionRun` / `hostGateRunIn`); extend these production-callsite fixtures.
 
 ## House style that is not obvious
 

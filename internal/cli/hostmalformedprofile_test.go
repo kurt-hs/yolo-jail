@@ -49,9 +49,9 @@ const badProfileContribs = `{"kind":"provider","name":"badprov",` +
 func TestHostLaunchNamesTheMalformedPackDeclaringTheSelectedProfile(t *testing.T) {
 	for _, via := range []string{"profile", "-p"} {
 		for _, malformed := range []bool{true, false} {
-			extra, flags := `,"profile":{"claude":"bp"}`, []string(nil)
+			extra, flags := `,"host_management":"own","host_apply_on_launch":false,"profile":{"claude":"bp"}`, []string(nil)
 			if via == "-p" {
-				extra, flags = "", []string{"-p", "bp"}
+				extra, flags = `,"host_management":"own","host_apply_on_launch":false`, []string{"-p", "bp"}
 			}
 			malformedPackHome(t, badProfileContribs, malformed, extra)
 			rc, reached, errw := hostExecRun(t, "claude", flags...)
@@ -86,7 +86,7 @@ func TestHostLaunchNamesTheMalformedPackDeclaringTheSelectedProfile(t *testing.T
 // TestHostLaunchRunsAPackWithAFieldFromANewerYolo).
 func TestHostLaunchNamesAnUnusablePackBeforeAnUndeclaredProfile(t *testing.T) {
 	for _, broken := range []bool{true, false} {
-		_, dir := malformedPackHome(t, "", false, `,"profile":{"claude":"bp"}`)
+		_, dir := malformedPackHome(t, "", false, `,"host_management":"own","host_apply_on_launch":false,"profile":{"claude":"bp"}`)
 		if broken {
 			writeFile(t, filepath.Join(dir, "pack.json"),
 				`{"name":"bad","description":1,"contributes":[`+

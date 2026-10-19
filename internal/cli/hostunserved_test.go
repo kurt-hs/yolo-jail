@@ -26,7 +26,7 @@ func hostUnservedHome(t *testing.T, cfg string) {
 	t.Setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "")
 	t.Setenv("CODEX_REFRESH_TOKEN_URL_OVERRIDE", "")
 	t.Chdir(t.TempDir())
-	userCfg(t, home, cfg)
+	userCfg(t, home, ownedSessionHomeConfig(cfg))
 }
 
 // setsVarManagedLaunch is a managed host launch that serves CODEX_REFRESH_TOKEN_URL_OVERRIDE

@@ -20,7 +20,7 @@ import (
 
 func TestAHostLaunchRecordsItsInvocationAndWhatChanged(t *testing.T) {
 	const secret = "do-not-log-this-argument"
-	home, cwd := timingHome(t, `{"profile": {"*": null}}`)
+	home, cwd := timingHome(t, `{"host_management":"own","host_apply_on_launch":false,"profile": {"*": null}}`)
 	orig := hostSyscallExec
 	hostSyscallExec = func(string, []string, []string) error { return nil }
 	t.Cleanup(func() { hostSyscallExec = orig })
@@ -68,7 +68,7 @@ func TestAHostLaunchRecordsItsInvocationAndWhatChanged(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond)
 	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
-		`{"profile": {"*": null}, "perf_logging": false}`)
+		`{"host_management":"own", "profile": {"*": null}, "perf_logging": false}`)
 	second := launch()
 	for _, w := range []string{
 		id + "   config: effective config changed since the previous launch (",

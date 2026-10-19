@@ -74,7 +74,7 @@ func TestHostLaunchRefusesAPointerBesideItsOverride(t *testing.T) {
 			}
 			// The control: the same home without the overriding variable launches.
 			t.Setenv("WIDGET_TOKEN", "")
-			userCfg(t, home, `{"packs": ["claude", "bedrock"]}`)
+			userCfg(t, home, `{"host_management":"own","host_apply_on_launch":false,"packs": ["claude", "bedrock"]}`)
 			if rc, reached, errw := hostExecRun(t, "claude", "-p", "bedrock"); rc != 0 || !reached {
 				t.Fatalf("fixture control: without WIDGET_TOKEN the launch runs: rc=%d\n%s", rc, errw)
 			}

@@ -115,7 +115,7 @@ func forkFloorHome(t *testing.T) (repo string, commit func(msg string) string, f
 		`{"kind":"program","bin":"forkcli","via":"source","fork_of":"basepack",`+
 		`"source":"git+file://`+repo+`?ref=main","build":"sh build.sh",`+
 		`"produces":[".npm-global/bin/forkcli",".npm-global/lib/node_modules/forkcli"]}]}`)
-	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"), `{"packs":[`+
+	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"), `{"host_management":"own","host_apply_on_launch":false,"packs":[`+
 		`{"source":"file://`+filepath.Join(packs, "basepack")+`","name":"basepack"},`+
 		`{"source":"file://`+filepath.Join(packs, "forkpack")+`","name":"forkpack"}]}`)
 	origAuth, origRefresh, origApply := prepareOpenAIAuthHost, programRefresh, hostApplyFromPackUpdate

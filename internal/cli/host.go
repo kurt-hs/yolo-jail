@@ -602,6 +602,11 @@ func hostExec(flagArgs, cmd []string, out, errw io.Writer, stdin io.Reader) int 
 		fmt.Fprintf(errw, "yolo host: nothing to run after `--`\n\n%s\n", hostUsage)
 		return 2
 	}
+	// SP-R1: decide whether this is an owned host launch before profile selection, the trace,
+	// pack refresh, environment/credential composition, readiness or any launch-owned writes.
+	if refuseHostCommandLaunch(errw) {
+		return 1
+	}
 	profile, err := hostProfileFor(flags.profile, filepath.Base(cmd[0]), false)
 	if err != nil {
 		fmt.Fprintf(errw, "yolo host: %v\n", err)
@@ -682,7 +687,7 @@ func (t *hostLaunchTrace) end(rc int) {
 // stream for yolo's own lines, rawErrw the caller's, handed only to an agent yolo stays resident
 // under.
 func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, rawErrw io.Writer,
-	stdin io.Reader, trace *hostLaunchTrace) int {
+	stdin io.Reader, trace *hostLaunchTrace) (rc int) {
 	profile, bareNote, err := narrowHostBareList(flags.profile, profile, filepath.Base(cmd[0]))
 	if err != nil {
 		fmt.Fprintf(errw, "yolo host: refusing to launch: %v\n", err)
@@ -972,7 +977,15 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 		fmt.Fprintf(errw, "yolo host: refusing to launch: %v\n", err)
 		return 1
 	}
-	defer sessionHomes.Close()
+	defer func() {
+		if err := finishHostSessionHomes(sessionHomes, errw); err != nil {
+			fmt.Fprintf(errw, "yolo host: session-home capture failed: %v. Its source remains under %s; fix the named issue and retry with `yolo host -- <command>`.\n",
+				err, hostSessionHomesRoot())
+			if rc == 0 {
+				rc = 1
+			}
+		}
+	}()
 	// THE LAUNCH-OWNED SERVICES (docs/design/host-notch-services.md §4.4): started after the
 	// agent resolved on PATH and after the prelaunch, so a missing agent starts nothing and the
 	// OpenAI login exists before the bridge asks for a view; the agent starts only once each

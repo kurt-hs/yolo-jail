@@ -296,6 +296,11 @@ func pruneOptions(args []string) prune.Options {
 	// so the resolver and the reaper cannot disagree about which lines are records. Without
 	// it the section declines and says so; see prune.Options.CaptureRecords.
 	opts.CaptureRecords = captureRecords
+	// Host session-home reclamation must run the same owned-host capture before deletion. The
+	// callback returns any refusal through prune's per-entry result, which keeps the source.
+	opts.CaptureHostSessionHome = func(path string) error {
+		return captureHostSessionHomePath(path, io.Discard)
+	}
 	// The macos-user guest-pack-tree sweep, which prune cannot import (macosuser pulls
 	// internal/config). On a machine with no staging root it reports nothing.
 	opts.GuestPackTrees = guestPackTreeSweep

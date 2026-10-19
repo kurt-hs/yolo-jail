@@ -199,7 +199,7 @@ func newPatchedFixture(t *testing.T, follow string) *patchedFixture {
 // (a leading-comma JSON member list, "" for none) after "packs".
 func (f *patchedFixture) writeUserConfig(t *testing.T, extra string) {
 	t.Helper()
-	writeFile(t, filepath.Join(f.home, ".config", "yolo-jail", "config.jsonc"), `{"packs":[`+
+	writeFile(t, filepath.Join(f.home, ".config", "yolo-jail", "config.jsonc"), `{"host_management":"own","packs":[`+
 		`{"source":"file://`+filepath.Join(f.packs, "basepack")+`","name":"basepack"},`+
 		`{"source":"file://`+f.forkDir+`","name":"forkpack"}]`+extra+`}`)
 }

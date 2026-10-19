@@ -39,6 +39,9 @@ func blockerHostFixture(t *testing.T, cfg string, fakes ...string) (home, bin st
 	t.Setenv("YOLO_VERSION", "")
 	t.Setenv("YOLO_BYPASS_SHIMS", "")
 	t.Chdir(resolved())
+	if !strings.Contains(cfg, `"host_management"`) {
+		cfg = strings.Replace(strings.TrimSpace(cfg), "{", `{"host_management":"own","host_apply_on_launch":false,`, 1)
+	}
 	userCfg(t, home, cfg)
 	orig := prepareOpenAIAuthHost
 	prepareOpenAIAuthHost = func(hostPrelaunch, io.Writer) (managedOpenAIHostLaunch, error) { return nil, nil }

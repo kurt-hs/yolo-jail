@@ -143,42 +143,29 @@ func hostBedrockSwitchRoundTrip(t *testing.T, packEntry string) {
 // The launched program is claude by NAME, since the host notch names the conflicts of the one
 // agent it launches, but a path that does not exist: the line prints in the pre-flight, before
 // the target resolves, and nothing can be exec'd past it.
-func TestHostLaunchWhereNoHostApplyRendersNamesAYoloWrittenSwitchForRemovalByHand(t *testing.T) {
+func TestHostLaunchUnderNoneOrUnsetRefusesBeforePreflightDiagnostics(t *testing.T) {
 	const providers = `"providers": {"mine": {"endpoints": {"anthropic": {"base_url": "https://anthropic.example"}}}},
 	  "profiles": {"mine": {"provider": "mine"}}`
-	for _, mode := range []string{"", `"host_management": "none", `} {
-		home := hostGateHome(t, `{"packs": ["claude"], `+mode+providers+`}`, nil)
-		writeFile(t, filepath.Join(home, ".claude", "settings.json"), `{"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}`)
-		rec := render.Host(home, nil, render.OwnershipUnstated).LeafRecordPath("claude", "settings")
-		if want := filepath.Join(home, ".local", "share", "yolo-jail", "host-provenance",
-			"claude-settings.leaves.json"); rec != want {
-			t.Fatalf("fixture: the leaf record is at %s, want %s", rec, want)
-		}
-		writeFile(t, rec, `{"/env/CLAUDE_CODE_USE_BEDROCK": "1"}`)
+	for _, tc := range []struct{ name, management string }{{"unset", ""}, {"none", `"host_management": "none", `}} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := hostGateHomeRaw(t, `{"packs": ["claude"], `+tc.management+providers+`}`, nil)
+			writeFile(t, filepath.Join(home, ".claude", "settings.json"), `{"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}`)
+			rec := render.Host(home, nil, render.OwnershipUnstated).LeafRecordPath("claude", "settings")
+			writeFile(t, rec, `{ "/env/CLAUDE_CODE_USE_BEDROCK": "1" }`)
 
-		reached := false
-		orig := hostSyscallExec
-		hostSyscallExec = func(string, []string, []string) error { reached = true; return nil }
-		t.Cleanup(func() { hostSyscallExec = orig })
-		var out, errw bytes.Buffer
-		bin := filepath.Join(t.TempDir(), "no-such-dir", "claude")
-		hostMain([]string{"-p", "mine", "--", bin}, &out, &errw, false, nil)
-		errs := errw.String()
-		if reached {
-			t.Fatalf("host_management %q: the launch exec'd a program that does not exist:\n%s", mode, errs)
-		}
-		if !strings.Contains(errs, "which `yolo host apply` wrote there for claude's host selection") {
-			t.Fatalf("host_management %q: no line naming the switch yolo wrote:\n%s", mode, errs)
-		}
-		if strings.Contains(errs, "or run `yolo host apply` with") {
-			t.Errorf("host_management %q: the line sends the user to an apply that refuses here:\n%s", mode, errs)
-		}
-		for _, want := range []string{"remove CLAUDE_CODE_USE_BEDROCK from ~/.claude/settings.json by hand",
-			`host_management is not "own"`, "`yolo host apply --revert`"} {
-			if !strings.Contains(errs, want) {
-				t.Errorf("host_management %q: the line does not say %q:\n%s", mode, want, errs)
+			reached := false
+			orig := hostSyscallExec
+			hostSyscallExec = func(string, []string, []string) error { reached = true; return nil }
+			t.Cleanup(func() { hostSyscallExec = orig })
+			var out, errw bytes.Buffer
+			bin := filepath.Join(t.TempDir(), "no-such-dir", "claude")
+			rc := hostMain([]string{"-p", "mine", "--", bin}, &out, &errw, false, nil)
+			if rc == 0 || reached || !strings.Contains(errw.String(), "host_management") ||
+				strings.Contains(errw.String(), "sets CLAUDE_CODE_USE_BEDROCK") || strings.Contains(errw.String(), "no-such-dir") {
+				t.Fatalf("host_management %s did not refuse before preflight/target diagnostics (rc=%d reached=%v):\n%s",
+					tc.name, rc, reached, errw.String())
 			}
-		}
+		})
 	}
 }
 

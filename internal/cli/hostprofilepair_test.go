@@ -107,7 +107,7 @@ func TestHostPairStartsTheBridgeInBothOrders(t *testing.T) {
 		prepareOpenAIAuthHost = func(hostPrelaunch, io.Writer) (managedOpenAIHostLaunch, error) { return nil, nil }
 		os.Exit(Main(append([]string{"yolo"}, strings.Fields(spelling)...)))
 	}
-	for _, cfg := range []string{`{"packs": ["claude", "openai-auth"]}`} {
+	for _, cfg := range []string{`{"host_management":"own","host_apply_on_launch":false,"packs": ["claude", "openai-auth"]}`} {
 		for _, spelling := range []string{"host -p claude=codex -- claude", "-p claude=codex host -- claude",
 			"host --profile=claude=codex -- claude"} {
 			t.Run(cfg+" "+spelling, func(t *testing.T) {

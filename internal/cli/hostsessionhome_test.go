@@ -10,7 +10,9 @@ package cli
 // The variable's name is read from the shipped pi pack's own declaration, never spelled here.
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -42,6 +44,10 @@ func piSessionHomeEnv(t *testing.T) string {
 		t.Fatalf("the shipped pi pack declares %d session homes, want one with a variable", len(homes))
 	}
 	return homes[0].Env
+}
+
+func ownedSessionHomeConfig(cfg string) string {
+	return strings.Replace(cfg, `{"packs"`, `{"host_management":"own","host_apply_on_launch":false,"packs"`, 1)
 }
 
 // treeSnapshot is every regular file and link under root, with its bytes or target.
@@ -78,7 +84,9 @@ func hostCaptureStores(home string) []string {
 // one, and leaves every byte of the real ~/.pi/agent and the real capture stores as it was.
 func TestHostPiLaunchGetsItsOwnSessionHome(t *testing.T) {
 	env := piSessionHomeEnv(t)
-	home := hostGateHome(t, piSubagentsCodexCfg, nil)
+	// The user opted into host ownership, which is required for every command launch, not just
+	// for an explicit profile selection.
+	home := hostGateHome(t, ownedSessionHomeConfig(piSubagentsCodexCfg), nil)
 	unchanged := piSettingsFixture(t, home, `{"defaultProvider":"openrouter","theme":"dark"}`)
 	shared := filepath.Join(home, ".pi", "agent")
 	before := treeSnapshot(t, shared)
@@ -185,14 +193,12 @@ func TestHostPiSessionHomeFoldsTheCapturedEditsUnderOwn(t *testing.T) {
 	}
 }
 
-// A PROFILE THAT DECLARES A CHILD POLICY reaches the session's own settings.json, so pi's
-// subagents follow the -p rather than the configured profile.
 func TestHostPiSessionHomeCarriesTheProfilesChildPolicy(t *testing.T) {
 	env := piSessionHomeEnv(t)
-	home := hostGateHome(t, piSubagentsAcmeCfg, nil)
+	home := hostGateHome(t, ownedSessionHomeConfig(piSubagentsAcmeCfg), nil)
 	unchanged := piSettingsFixture(t, home, `{"defaultProvider":"acme"}`)
 	runB := hostSelectionRun(t, home, []string{"-p", "pi=acme-b"}, "pi")
-	// Typed, since under host_management none a bare launch gets no session home (SP-D30).
+	// Typed, since the launch under host_management=own creates a fresh, profile-specific home.
 	runA := hostSelectionRun(t, home, []string{"-p", "pi=acme-a"}, "pi")
 	unchanged()
 	type policy struct {
@@ -227,11 +233,10 @@ func TestHostPiSessionHomeCarriesTheProfilesChildPolicy(t *testing.T) {
 	}
 }
 
-// SP-D5 AT THE HOST: a variable the user already set wins, no home is made, and one line says so.
 func TestHostPiSessionHomeYieldsToThePresetVariable(t *testing.T) {
 	env := piSessionHomeEnv(t)
 	own := t.TempDir()
-	home := hostGateHome(t, piSubagentsCodexCfg, map[string]string{env: own})
+	home := hostGateHome(t, ownedSessionHomeConfig(piSubagentsCodexCfg), map[string]string{env: own})
 	piSettingsFixture(t, home, `{"defaultProvider":"openrouter"}`)
 	run := hostSelectionRun(t, home, []string{"-p", "pi=codex"}, "pi")
 	if run.env[env] != own {
@@ -246,24 +251,241 @@ func TestHostPiSessionHomeYieldsToThePresetVariable(t *testing.T) {
 	}
 }
 
-// SP-D30: UNDER `host_management: none` (the default) A LAUNCH WITH NO -p GETS NO SESSION HOME.
-// `none` leaves pi's config to the user, so pi reads the user's own directory as it did; only a typed
-// -p, an explicit request for this launch's profile, gets one.
-func TestHostPiBareLaunchUnderNoneGetsNoSessionHome(t *testing.T) {
+// SP-R1: NONE OR UNSET REFUSES EVERY HOST COMMAND LAUNCH before trace creation, profile
+// composition, readiness, credentials/services, session-home creation, or the exec. The
+// configuration-management verbs use a different hostMain route and remain outside this gate.
+func TestHostCommandLaunchRequiresOwnBeforeAssistance(t *testing.T) {
+	for _, mgmt := range []string{"none", ""} {
+		name := mgmt
+		if name == "" {
+			name = "unset"
+		}
+		for _, flags := range [][]string{nil, {"-p", "pi=codex"}, {"--with-credentials", "all"}} {
+			t.Run(name+"/"+strings.Join(flags, "-"), func(t *testing.T) {
+				cfg := piSubagentsCodexCfg
+				if mgmt != "" {
+					cfg = strings.Replace(cfg, `{"packs"`, `{"host_management":"none","packs"`, 1)
+				}
+				home := hostGateHomeRaw(t, cfg, nil)
+				bin := filepath.Join(t.TempDir(), "bin")
+				writeFile(t, filepath.Join(bin, "pi"), "#!/bin/sh\nexit 0\n")
+				if err := os.Chmod(filepath.Join(bin, "pi"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+				execs := 0
+				orig := hostSyscallExec
+				hostSyscallExec = func(string, []string, []string) error { execs++; return nil }
+				t.Cleanup(func() { hostSyscallExec = orig })
+				var out, errw bytes.Buffer
+				argv := append(append([]string{}, flags...), "--", "pi")
+				rc := hostMain(argv, &out, &errw, false, nil)
+				if rc == 0 || execs != 0 || !strings.Contains(errw.String(), "host_management") ||
+					!strings.Contains(errw.String(), "own") {
+					t.Fatalf("host launch under %s must refuse before exec (rc=%d execs=%d):\n%s", name, rc, execs, errw.String())
+				}
+				if _, err := os.Stat(paths.GlobalStorageUnder(home)); !os.IsNotExist(err) {
+					t.Errorf("refusal created yolo host state before launch assistance was allowed: %v", err)
+				}
+			})
+		}
+	}
+}
+
+// Under own, the configured profile applies to a bare launch and a typed profile overrides it.
+func TestHostPiSessionHomeUsesConfiguredOrExplicitProfile(t *testing.T) {
 	env := piSessionHomeEnv(t)
-	home := hostGateHome(t, piSubagentsCodexCfg, nil)
+	cfg := strings.Replace(piSubagentsCodexCfg, `{"packs"`, `{"host_management":"own","host_apply_on_launch":false,"packs"`, 1)
+	home := hostGateHome(t, cfg, nil)
 	piSettingsFixture(t, home, `{"defaultProvider":"openrouter"}`)
-	run := hostSelectionRun(t, home, nil, "pi")
-	if v := run.env[env]; v != "" {
-		t.Errorf("a bare launch under host_management none got %s=%q, want none", env, v)
+	for _, tc := range []struct {
+		flags []string
+		want  string
+	}{{nil, "openrouter"}, {[]string{"-p", "pi=codex"}, "openai-codex"}} {
+		run := hostSelectionRun(t, home, tc.flags, "pi")
+		var settings map[string]any
+		data, err := os.ReadFile(filepath.Join(run.env[env], "settings.json"))
+		if err != nil {
+			t.Fatalf("read session settings: %v", err)
+		}
+		if err := json.Unmarshal(data, &settings); err != nil {
+			t.Fatal(err)
+		}
+		if got := settings["defaultProvider"]; got != tc.want {
+			t.Errorf("profile settings defaultProvider=%v, want %q", got, tc.want)
+		}
 	}
-	root := filepath.Join(paths.GlobalStorageUnder(home), prune.HostSessionHomesLeaf)
-	if entries, _ := os.ReadDir(root); len(entries) > 0 {
-		t.Errorf("a bare launch under none must make no session home, found %d in %s", len(entries), root)
+}
+
+// An owned resident session captures only user edits through the host overlay; computed profile
+// values regenerate on the next selection, and the native settings file remains untouched.
+func TestHostPiResidentSessionCapturesUserEditNormally(t *testing.T) {
+	env := piSessionHomeEnv(t)
+	upstream, _ := fakeUpstream(t)
+	fakeHostBroker(t)
+	cfg := strings.TrimSuffix(piSubagentsCodexCfg, "}") +
+		`,"host_management":"own","host_apply_on_launch":false,"providers":{"openai-codex":{"endpoints":{"openai-responses":{"base_url":"` +
+		upstream.URL + `/codex"}}}}}`
+	home := hostGateHome(t, cfg, nil)
+	const original = `{"defaultProvider":"openrouter","theme":"system"}`
+	unchanged := piSettingsFixture(t, home, original)
+	bin := t.TempDir()
+	agent := filepath.Join(bin, "claude")
+	if err := os.WriteFile(agent, []byte("#!/bin/sh\nprintf '%s\\n' '{\"customUserSetting\":\"saved-by-user\"}' > \"$PI_CODING_AGENT_DIR/settings.json\"\n"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	typed := hostSelectionRun(t, home, []string{"-p", "pi=codex"}, "pi")
-	if typed.env[env] == "" {
-		t.Errorf("a -p launch under none must still get its session home")
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	origExec := hostSyscallExec
+	hostSyscallExec = func(string, []string, []string) error { t.Error("the resident launch exec'd"); return nil }
+	t.Cleanup(func() { hostSyscallExec = origExec })
+	var out, errw bytes.Buffer
+	rc := hostMain([]string{"-p", "codex", "--", "claude"}, &out, &errw, false, nil)
+	if rc != 0 {
+		t.Fatalf("resident host launch rc=%d:\\n%s", rc, errw.String())
+	}
+	unchanged()
+	overlayPath := render.Host(home, nil, render.OwnershipOwn).OverlayPath("pi", "settings")
+	overlay, err := os.ReadFile(overlayPath)
+	if err != nil {
+		t.Fatalf("resident session did not persist the normal host capture overlay: %v\\n%s", err, errw.String())
+	}
+	var captured map[string]any
+	if err := json.Unmarshal(overlay, &captured); err != nil {
+		t.Fatalf("capture overlay is invalid: %v (%s)", err, overlay)
+	}
+	if captured["customUserSetting"] != "saved-by-user" || captured["defaultProvider"] != nil || captured["defaultModel"] != nil {
+		t.Errorf("capture should contain only the user edit, not the profile render: %s", overlay)
+	}
+	next := hostSelectionRun(t, home, []string{"-p", "pi=openrouter"}, "pi")
+	var settings map[string]any
+	data, err := os.ReadFile(filepath.Join(next.env[env], "settings.json"))
+	if err != nil || json.Unmarshal(data, &settings) != nil {
+		t.Fatalf("read next session settings: %v (%s)", err, data)
+	}
+	if settings["defaultProvider"] != "openrouter" {
+		t.Errorf("next profile did not regenerate its provider: %s", data)
+	}
+}
+
+// An ended exec's retained session-home render is captured through the same host sidecars before
+// the reaper removes it. The explicit profile is part of the stored baseline, so capture excludes
+// it while preserving only the session user's theme edit.
+func TestHostPiEndedSessionHomeIsCapturedBeforeReap(t *testing.T) {
+	cfg := ownedSessionHomeConfig(piSubagentsCodexCfg)
+	home := hostGateHome(t, cfg, nil)
+	piSettingsFixture(t, home, `{"defaultProvider":"openrouter","theme":"system"}`)
+	launch := composeHostLaunch("pi", "codex", nil, nil)
+	homes, _, err := prepareHostSessionHomes(launch, os.Environ(), io.Discard)
+	if err != nil || homes == nil || len(homes.dirs) != 1 {
+		t.Fatalf("prepare session home: homes=%+v err=%v", homes, err)
+	}
+	dir := homes.dirs[0]
+	sessionSettings := filepath.Join(homes.vars[0][strings.Index(homes.vars[0], "=")+1:], "settings.json")
+	data, err := os.ReadFile(sessionSettings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	settings["customUserSetting"] = "saved-by-user"
+	data, err = json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sessionSettings, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The exec has ended: release its lease and make the home old enough for the normal reaper.
+	homes.preserveForRetry()
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(dir, old, old); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Dir(dir)
+	r := prune.ReapHostSessionHomes(root, true, time.Now(), func(path string) error {
+		return captureHostSessionHomePath(path, io.Discard)
+	})
+	if len(r.Removed) != 1 || r.Removed[0].Err != nil || existsHostPath(dir) {
+		t.Fatalf("ended home was not captured and reaped: %+v exists=%v", r.Removed, existsHostPath(dir))
+	}
+	overlay, err := os.ReadFile(render.Host(home, nil, render.OwnershipOwn).OverlayPath("pi", "settings"))
+	if err != nil {
+		t.Fatalf("reaper did not persist the normal host capture overlay: %v", err)
+	}
+	var captured map[string]any
+	if err := json.Unmarshal(overlay, &captured); err != nil {
+		t.Fatal(err)
+	}
+	if captured["customUserSetting"] != "saved-by-user" || captured["defaultProvider"] != nil {
+		t.Errorf("capture included generated profile values or lost the user edit: %s", overlay)
+	}
+}
+
+func TestHostPiResidentCaptureRefusalKeepsHomeForRetry(t *testing.T) {
+	home := hostGateHome(t, ownedSessionHomeConfig(piSubagentsCodexCfg), nil)
+	piSettingsFixture(t, home, `{"defaultProvider":"openrouter"}`)
+	launch := composeHostLaunch("pi", "codex", nil, nil)
+	homes, _, err := prepareHostSessionHomes(launch, os.Environ(), io.Discard)
+	if err != nil || homes == nil || len(homes.dirs) != 1 {
+		t.Fatalf("prepare session home: homes=%+v err=%v", homes, err)
+	}
+	dir := homes.dirs[0]
+	_, sessionHome, ok := strings.Cut(homes.vars[0], "=")
+	if !ok {
+		t.Fatalf("malformed session-home variable %q", homes.vars[0])
+	}
+	settingsPath := filepath.Join(sessionHome, "settings.json")
+	if err := os.WriteFile(settingsPath, []byte(`{"customUserSetting":"saved-by-user"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writer := tryHostApplyLock(paths.Home())
+	if writer == nil {
+		t.Fatal("could not take host-apply lock for the concurrency fixture")
+	}
+	if err := finishHostSessionHomes(homes, io.Discard); err == nil {
+		t.Fatal("capture must refuse while another yolo writer holds the host lock")
+	}
+	if !homes.preserved {
+		t.Fatal("a refused resident capture did not preserve the source for retry")
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("the resident session source was removed after capture refused: %v", err)
+	}
+	writer.Close()
+	if err := finishHostSessionHomes(homes, io.Discard); err != nil {
+		t.Fatalf("retry after the writer finished: %v", err)
+	}
+	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
+		t.Errorf("successful retry did not remove the ended home: %v", err)
+	}
+	overlay, err := os.ReadFile(render.Host(home, nil, render.OwnershipOwn).OverlayPath("pi", "settings"))
+	if err != nil {
+		t.Fatalf("retry did not write the host capture overlay: %v", err)
+	}
+	var captured map[string]any
+	if err := json.Unmarshal(overlay, &captured); err != nil {
+		t.Fatal(err)
+	}
+	if captured["customUserSetting"] != "saved-by-user" {
+		t.Errorf("retry did not capture the session edit: %s", overlay)
+	}
+}
+
+func existsHostPath(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
+}
+
+// The host env command is an inspection verb, not a command launch, so it remains available under
+// `none` and must not enter the SP-R1 launch gate.
+func TestHostEnvRemainsAvailableWhenCommandLaunchesAreRefused(t *testing.T) {
+	hostGateHomeRaw(t, `{"host_management":"none","packs":["pi"]}`, nil)
+	var out, errw bytes.Buffer
+	rc := hostMain([]string{"env", "--agent", "pi"}, &out, &errw, false, nil)
+	if rc != 0 || strings.Contains(errw.String(), "refusing to launch") {
+		t.Fatalf("host env is an inspection command under none (rc=%d):\n%s", rc, errw.String())
 	}
 }
 
@@ -271,7 +493,7 @@ func TestHostPiBareLaunchUnderNoneGetsNoSessionHome(t *testing.T) {
 // lease is held (a pi still running) stays.
 func TestHostPiSessionHomeReapsADeadLaunch(t *testing.T) {
 	env := piSessionHomeEnv(t)
-	home := hostGateHome(t, piSubagentsCodexCfg, nil)
+	home := hostGateHome(t, ownedSessionHomeConfig(piSubagentsCodexCfg), nil)
 	piSettingsFixture(t, home, `{"defaultProvider":"openrouter"}`)
 	root := filepath.Join(paths.GlobalStorageUnder(home), prune.HostSessionHomesLeaf)
 	old := time.Now().Add(-2 * time.Hour)
@@ -310,7 +532,7 @@ func TestHostPiSessionHomeReapsADeadLaunch(t *testing.T) {
 // command to copy, and pi never starts.
 func TestHostPiSessionHomeRefusesWhenItCannotBeMade(t *testing.T) {
 	var root string
-	rc, env, errs := hostGateRunIn(t, piSubagentsCodexCfg, nil, []string{"-p", "pi=codex"}, "pi", func(home string) {
+	rc, env, errs := hostGateRunIn(t, ownedSessionHomeConfig(piSubagentsCodexCfg), nil, []string{"-p", "pi=codex"}, "pi", func(home string) {
 		piSettingsFixture(t, home, `{"defaultProvider":"openrouter"}`)
 		root = filepath.Join(paths.GlobalStorageUnder(home), prune.HostSessionHomesLeaf)
 		writeFile(t, root, "not a directory")

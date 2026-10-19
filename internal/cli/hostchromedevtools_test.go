@@ -210,7 +210,7 @@ func agentWithChromeFixtureOn(t *testing.T, extra string, newDist func(*testing.
 	writeFile(t, filepath.Join(pack, "pack.json"), `{"name":"floorpack","contributes":[`+
 		`{"kind":"program","bin":"floorcli","via":"npm","package":"floorcli-pkg"}]}`)
 	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
-		`{"packs":[{"source":"file://`+pack+`","name":"floorpack"},"chrome-devtools"]`+extra+`}`)
+		`{"host_management":"own","host_apply_on_launch":false,"packs":[{"source":"file://`+pack+`","name":"floorpack"},"chrome-devtools"]`+extra+`}`)
 	orig := prepareOpenAIAuthHost
 	prepareOpenAIAuthHost = func(hostPrelaunch, io.Writer) (managedOpenAIHostLaunch, error) { return nil, nil }
 	t.Cleanup(func() { prepareOpenAIAuthHost = orig })
@@ -363,7 +363,7 @@ func TestAHostAgentLaunchInstallsNothingForAFetchedPacksMCPServer(t *testing.T) 
 		`{"kind":"program","bin":"floorcli","via":"npm","package":"floorcli-pkg"},`+
 		`{"kind":"program","bin":"acme-mcp-bin","via":"npm","package":"acme-mcp-pkg"}]}`)
 	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
-		`{"packs":[{"source":"file://`+pack+`","name":"floorpack"},`+fetchedMCPPackSource(t)+`],`+
+		`{"host_management":"own","host_apply_on_launch":false,"packs":[{"source":"file://`+pack+`","name":"floorpack"},`+fetchedMCPPackSource(t)+`],`+
 			`"host_floor":{"floorpack":false}}`)
 	installGitPack(t)
 	orig := prepareOpenAIAuthHost
