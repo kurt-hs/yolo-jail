@@ -428,11 +428,98 @@ func captureHostSessionHomePath(dir string, errw io.Writer) error {
 			}
 			return surfaces[i].Name < surfaces[j].Name
 		})
+		if err := verifyHostSessionCaptureInventory(dir, d, surfaces); err != nil {
+			return err
+		}
 		captures = append(captures, hostSessionCapture{
 			home: filepath.Join(dir, hostScratchHomeName), surfaces: surfaces,
 		})
 	}
 	return captureHostSessionDirs(captures, errw)
+}
+
+// verifyHostSessionCaptureInventory uses the retained render's own files and sidecars as the
+// inventory. If a pack's surfaces disappeared or moved since the launch, the current selection
+// cannot account for those bytes; refuse cleanup instead of treating them as uncapturable.
+func verifyHostSessionCaptureInventory(dir string, decl hostSessionDecl, surfaces []manifest.Surface) error {
+	scratch := filepath.Join(dir, hostScratchHomeName)
+	target := render.Host(scratch, nil, render.OwnershipOwn)
+	known := make(map[string]manifest.Surface, len(surfaces))
+	for _, s := range surfaces {
+		known[s.Agent+"-"+s.Name+".last_render"] = s
+	}
+	if sidecars, err := os.ReadDir(target.SidecarDir()); err == nil {
+		for _, entry := range sidecars {
+			if !strings.HasSuffix(entry.Name(), ".last_render") {
+				continue
+			}
+			if _, ok := known[entry.Name()]; !ok {
+				return hostSessionInventoryRefusal(dir, "the retained render has baseline "+entry.Name()+", which the current selected packs no longer declare")
+			}
+			info, err := entry.Info()
+			if err != nil || !info.Mode().IsRegular() {
+				return hostSessionInventoryRefusal(dir, "the retained baseline "+entry.Name()+" is not a regular file")
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return hostSessionInventoryRefusal(dir, fmt.Sprintf("cannot read retained capture baselines: %v", err))
+	}
+	for _, s := range surfaces {
+		if s.Mode != "" && s.Mode != manifest.ModeStateful {
+			continue
+		}
+		file := target.SurfacePath(s)
+		info, err := os.Lstat(file)
+		if os.IsNotExist(err) {
+			continue // deleting the whole surface file is the capture engine's existing no-op.
+		}
+		if err != nil {
+			return hostSessionInventoryRefusal(dir, fmt.Sprintf("cannot inspect rendered surface %s/%s: %v", s.Agent, s.Name, err))
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		baseline, err := os.Lstat(target.LastRenderPath(s.Agent, s.Name))
+		if err != nil || !baseline.Mode().IsRegular() {
+			return hostSessionInventoryRefusal(dir, fmt.Sprintf("rendered stateful surface %s/%s has no retained baseline", s.Agent, s.Name))
+		}
+	}
+	root := filepath.Join(scratch, decl.rel)
+	expected := make(map[string]bool, len(decl.rendered))
+	for _, rel := range decl.rendered {
+		expected[filepath.FromSlash(rel)] = true
+	}
+	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if !expected[rel] {
+			return fmt.Errorf("retained file %s is not in the current session-home render inventory", filepath.ToSlash(rel))
+		}
+		return nil
+	}); err != nil && !os.IsNotExist(err) {
+		return hostSessionInventoryRefusal(dir, err.Error())
+	}
+	return nil
+}
+
+func hostSessionInventoryRefusal(dir, reason string) error {
+	return fmt.Errorf("ended host session home %s does not match the current pack capture inventory: %s; its source was kept. Restore the original pack manifest and surface paths, then retry `yolo prune --apply`; if that is unavailable, inspect the retained directory before removing it manually",
+		dir, reason)
 }
 
 // captureHostSessionDirs captures each home under the ordinary host apply lock. The render reads
@@ -469,6 +556,9 @@ func captureHostSessionDirs(captures []hostSessionCapture, errw io.Writer) error
 	for _, c := range captures {
 		owned := newOwnedHostRender(c.home)
 		for _, s := range c.surfaces {
+			if err := seedCurrentHostCaptureSidecars(target, c.home, s); err != nil {
+				return fmt.Errorf("refresh capture inputs for %s/%s: %w", s.Agent, s.Name, err)
+			}
 			n, refused, err := owned.capture(pr, target, s)
 			if err != nil {
 				return fmt.Errorf("capture of %s/%s failed: %w", s.Agent, s.Name, err)
@@ -485,6 +575,38 @@ func captureHostSessionDirs(captures []hostSessionCapture, errw io.Writer) error
 	}
 	if errw != nil {
 		_, _ = io.Copy(errw, &messages)
+	}
+	return nil
+}
+
+// seedCurrentHostCaptureSidecars makes each capture calculate the session's change from its
+// launch-time baseline against the latest durable overlay and list record. The host lock is held
+// by the caller, so distinct sessions accumulate their deltas without replacing one another.
+func seedCurrentHostCaptureSidecars(durable configTarget, sessionHome string, s manifest.Surface) error {
+	session := render.Host(sessionHome, nil, render.OwnershipOwn)
+	for _, paths := range [][2]string{
+		{durable.overlayPath(s.Agent, s.Name), session.OverlayPath(s.Agent, s.Name)},
+		{durable.listCapturePath(s.Agent, s.Name), session.ListCapturePath(s.Agent, s.Name)},
+	} {
+		if paths[0] == "" || paths[1] == "" {
+			continue
+		}
+		data, err := os.ReadFile(paths[0])
+		if os.IsNotExist(err) {
+			if err := os.Remove(paths[1]); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(paths[1]), session.SidecarDirMode()); err != nil {
+			return err
+		}
+		if err := os.WriteFile(paths[1], data, session.SidecarFileMode()); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -38,10 +38,8 @@ func deselectedFixture(t *testing.T, cfg func(pack string) string) (handInstalle
 	return handInstalledDir
 }
 
-// TestADeselectedFloorEntryIsNeverRun: in both cases, from a PATH with no other floorcli the
-// launch refuses with 127 and names the act that removes the entry; from a PATH that has one,
-// that copy runs and the hand-over line says it came from the PATH — never the floor's copy
-// under a "from your PATH" label.
+// TestADeselectedFloorEntryIsNeverRun: the unowned command path is denied by the host policy gate;
+// after opting into own with apply disabled, a PATH copy still outranks the deselected floor entry.
 func TestADeselectedFloorEntryIsNeverRun(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -57,20 +55,16 @@ func TestADeselectedFloorEntryIsNeverRun(t *testing.T) {
 			got := captureHostExec(t)
 			var errw bytes.Buffer
 			rc := hostExec(nil, []string{"floorcli"}, io.Discard, &errw, nil)
-			if rc != 127 || got.execed {
-				t.Fatalf("rc=%d execed=%v (target %s), want 127 and no exec: the deselected entry ran\n%s",
-					rc, got.execed, got.target, errw.String())
-			}
-			// Unset host_management is "none" (OQ-CO14), under which `yolo host apply --assert`
-			// writes nothing: the step is the removal by hand, never that apply by itself.
-			if !strings.Contains(errw.String(), "yolo host does not run it: remove it by hand with `rm -rf ") {
-				t.Errorf("the refusal does not say what the entry is and what removes it:\n%s", errw.String())
-			}
-			if strings.Contains(errw.String(), "`yolo host apply --assert` removes it\n") {
-				t.Errorf("under none the refusal names `yolo host apply --assert`, which writes nothing there:\n%s",
-					errw.String())
+			if rc != 1 || got.execed || !strings.Contains(errw.String(), "host command launches require `host_management: \"own\"`") {
+				t.Fatalf("host_management none must refuse before checking the deselected entry: rc=%d execed=%v\n%s",
+					rc, got.execed, errw.String())
 			}
 
+			cfg, err := os.ReadFile(paths.UserConfigPath())
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, paths.UserConfigPath(), strings.Replace(string(cfg), "{", `{"host_management":"own","host_apply_on_launch":false,`, 1))
 			t.Setenv("PATH", handDir+string(os.PathListSeparator)+t.TempDir())
 			errw.Reset()
 			*got = execCapture{}

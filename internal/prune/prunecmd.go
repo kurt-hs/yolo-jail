@@ -786,7 +786,7 @@ func Run(opts Options) int {
 		p.line("[bold]Ended host launches' session homes[/bold]  [dim](state dir: " + HostSessionHomesLeaf + "/, one per launch)[/dim]")
 		homes := ReapHostSessionHomes(joinPath(gs, HostSessionHomesLeaf), apply, opts.Now(),
 			opts.CaptureHostSessionHome)
-		declinedSweep = renderEmbeddedReap(p, apply, homes, "dir(s)") || declinedSweep
+		declinedSweep = renderHostSessionHomeReap(p, apply, homes) || declinedSweep
 		totalSaved += homes.Bytes
 	}
 
@@ -1337,6 +1337,22 @@ func Run(opts Options) int {
 		return 1
 	}
 	return 0
+}
+
+// renderHostSessionHomeReap adds the command-level failure disposition for a refused capture.
+// The generic embedded reaper still reports the retained entry; the command must also exit
+// unsuccessfully so the caller knows the source needs a retry.
+func renderHostSessionHomeReap(p *printer, apply bool, r EmbeddedReap) bool {
+	failed := renderEmbeddedReap(p, apply, r, "dir(s)")
+	for _, e := range r.Removed {
+		if e.Err == nil {
+			continue
+		}
+		failed = true
+		p.line(fmt.Sprintf("  [bold red]FAILED — capture failed for %s; source retained for retry; rerun `yolo prune --apply`: %v[/bold red]",
+			e.Name, e.Err))
+	}
+	return failed
 }
 
 // renderEmbeddedReap prints one embedded-tree sweep and reports whether it DECLINED.

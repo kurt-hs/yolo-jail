@@ -34,12 +34,12 @@ func TestEveryHostSpellingOfClaudeOnCodexStartsTheBridge(t *testing.T) {
 		prepareOpenAIAuthHost = func(hostPrelaunch, io.Writer) (managedOpenAIHostLaunch, error) { return nil, nil }
 		os.Exit(Main(append([]string{"yolo"}, strings.Fields(spelling)...)))
 	}
-	claudeCodex := `{"packs": ["claude", "openai-auth"]}`
+	claudeCodex := `{"host_management":"own","host_apply_on_launch":false,"packs": ["claude", "openai-auth"]}`
 	for _, tc := range []struct{ cfg, spelling string }{
 		{claudeCodex, "host -p codex -- claude"},
 		{claudeCodex, "-p codex host -- claude"},
 		{claudeCodex, "--at host -p codex -- claude"},
-		{`{"packs": ["claude", "openai-auth"], "profile": {"claude": "codex"}}`, "host -- claude"},
+		{`{"host_management":"own","host_apply_on_launch":false,"packs": ["claude", "openai-auth"], "profile": {"claude": "codex"}}`, "host -- claude"},
 	} {
 		t.Run(tc.spelling, func(t *testing.T) {
 			out := runHostSpelling(t, "^TestEveryHostSpellingOfClaudeOnCodexStartsTheBridge$", helper,

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/prune"
 	"github.com/mschulkind-oss/yolo-jail/internal/render"
@@ -153,6 +155,106 @@ func TestPruneWiresCaptureForEndedHostSessionHomes(t *testing.T) {
 	var captured map[string]any
 	if err := json.Unmarshal(overlay, &captured); err != nil || captured["customUserSetting"] != "saved-by-user" {
 		t.Fatalf("prune did not capture the ended session edit: %s (%v)", overlay, err)
+	}
+}
+
+func TestPruneRetainsHostSessionHomeWhenCaptureInventoryChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*testing.T, string)
+	}{
+		{
+			name: "surface identity removed",
+			change: func(t *testing.T, dir string) {
+				target := render.Host(filepath.Join(dir, hostScratchHomeName), nil, render.OwnershipOwn)
+				from := target.LastRenderPath("pi", "settings")
+				to := filepath.Join(filepath.Dir(from), "removed-contributor-settings.last_render")
+				if err := os.Rename(from, to); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "rendered path changed",
+			change: func(t *testing.T, dir string) {
+				settings := filepath.Join(dir, hostScratchHomeName, ".pi", "agent", "settings.json")
+				if err := os.Rename(settings, settings+".old"); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			piSessionHomeEnv(t)
+			home := hostGateHome(t, ownedSessionHomeConfig(piSubagentsCodexCfg), nil)
+			piSettingsFixture(t, home, `{"defaultProvider":"openrouter"}`)
+			launch := composeHostLaunch("pi", "codex", nil, nil)
+			homes, _, err := prepareHostSessionHomes(launch, os.Environ(), io.Discard)
+			if err != nil || homes == nil || len(homes.dirs) != 1 {
+				t.Fatalf("prepare session home: homes=%+v err=%v", homes, err)
+			}
+			dir := homes.dirs[0]
+			tc.change(t, dir)
+			for _, lease := range homes.leases {
+				_ = lease.Close()
+			}
+			homes.leases = nil
+			old := time.Now().Add(-2 * time.Hour)
+			if err := os.Chtimes(dir, old, old); err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			opts := pruneRunOnTemp(t, pruneOptions([]string{"prune"}), paths.GlobalStorage(), &out)
+			opts.Now = time.Now
+			opts.Apply = true
+			opts.NoEmbeddedPacks = true
+			if rc := prune.Run(opts); rc == 0 {
+				t.Fatalf("prune accepted changed inventory; source exists=%v:\n%s", existsHostPath(dir), out.String())
+			}
+			if !existsHostPath(dir) {
+				t.Fatal("prune removed a source whose capture inventory changed")
+			}
+			for _, want := range []string{"FAILED", "source was kept", "Restore the original pack manifest", "retry `yolo prune --apply`"} {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("prune inventory refusal omitted %q:\n%s", want, out.String())
+				}
+			}
+		})
+	}
+}
+
+func TestPruneFailsAndRetainsHostSessionHomeWhenCaptureFails(t *testing.T) {
+	home := hostGateHome(t, ownedSessionHomeConfig(piSubagentsCodexCfg), nil)
+	root := filepath.Join(paths.GlobalStorageUnder(home), prune.HostSessionHomesLeaf)
+	dir := filepath.Join(root, "pi-ended")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, packload.EmbeddedLeaseName), nil, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(dir, old, old); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	opts := pruneRunOnTemp(t, pruneOptions([]string{"prune"}), paths.GlobalStorage(), &out)
+	opts.Now = time.Now
+	opts.Apply = true
+	opts.NoEmbeddedPacks = true
+	opts.CaptureHostSessionHome = func(string) error {
+		return errors.New("capture refused; retry with `yolo prune --apply`")
+	}
+	if rc := prune.Run(opts); rc == 0 {
+		t.Fatalf("prune returned success after capture failed; source exists=%v:\n%s", existsHostPath(dir), out.String())
+	}
+	if !existsHostPath(dir) {
+		t.Fatal("prune removed the source after capture failed")
+	}
+	for _, want := range []string{"FAILED", "NOT removed", "source retained for retry", "rerun `yolo prune --apply`"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("prune failure report omitted %q:\n%s", want, out.String())
+		}
 	}
 }
 

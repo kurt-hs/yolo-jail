@@ -168,7 +168,7 @@ func TestLastAtWinsTowardTheJail(t *testing.T) {
 // --timing IS THE HOST VERB'S TOO (perf-logging.md D18): every spelling that carries it to the host
 // exec times the launch and runs the command, instead of refusing it as a jail-launch flag.
 func TestTheHostVerbTakesTiming(t *testing.T) {
-	valueFlagHome(t, "")
+	valueFlagHome(t, `{"host_management":"own","host_apply_on_launch":false}`)
 	for _, spelling := range [][]string{
 		{"host", "--timing", "--", "mytool", "x"},
 		{"--at", "host", "--timing", "--", "mytool", "x"},
