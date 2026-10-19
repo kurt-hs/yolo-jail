@@ -24,10 +24,11 @@ suite also remains owed. The accepted host-side repair tests and nested rootful 
 discharge the rootless obligation.
 
 > [!WARNING]
-> **Five of this feature's own `-short` tests fail on a Mac, measured 2026-10-19 at `8d8e73653`
-> (`go test -short ./internal/cli/run/`), and the two causes are different.** Both are host facts
-> the tests inherit rather than state, so Linux CI is green and `check-macos` is where they would
-> otherwise surface.
+> **Five of this feature's own `-short` tests failed on a Mac, measured 2026-10-19 at `8d8e73653`
+> (`go test -short ./internal/cli/run/`), and the two causes are different.** Both were host facts
+> the tests inherited rather than stated, so Linux CI was green and `check-macos` was where they
+> would otherwise surface. The candidate repair commits are `3a96ed8b7` and `8e66a6dfe`; the
+> portable targeted reruns below pass on Linux, but the native-Mac rerun is still owed.
 >
 > - **Three are the darwin symlink class** ([AGENTS.md, Testing](../../AGENTS.md)):
 >   `TestRecordLaunchCtxMountsWritesWhatTheArgvBound`,
@@ -37,8 +38,8 @@ discharge the rootless obligation.
 >   hold `/private/var/folders/…`. **Proven by re-running them with `TMPDIR` pre-resolved
 >   (`cd "$TMPDIR" && pwd -P`), where all three pass.** The three new files use bare
 >   `t.TempDir()` while this package's older tests already mint resolved
->   (`accounthomehold_test.go`, `assemble_test.go`, `brokeredscope_test.go`); the fix is to
->   resolve where the path is minted, as those do.
+>   (`accounthomehold_test.go`, `assemble_test.go`, `brokeredscope_test.go`); the candidate
+>   resolves paths where the fixtures mint them, using `resolvedRunTemp`.
 > - **Two depend on the host's podman answering whether it is rootless**, and no seam stubs it:
 >   `TestConfigApplyRestoresTheInvalidatedMountRecordThroughRealApply` and
 >   `TestConfigApplyFilesystemRecordRestoreFailureKeepsRemovalPending` fail with
@@ -52,7 +53,14 @@ discharge the rootless obligation.
 >   intended is worth saying in this doc either way, since it is what a host with an unreadable
 >   `podman info` will always get. (Bare `podman info --format '{{.Host.Security.Rootless}}'` on
 >   the measuring host answers `true`, so the inconclusive answer is the test environment's, not
->   the machine's.)
+>   the machine's.) The candidate injects a deterministic rootless readiness answer and disables
+>   the nested-jail shortcut in those fixtures; it retains the real apply, record and pending-removal
+>   assertions.
+>
+> **Candidate validation, Linux, 2026-10-19:** the five named tests pass with `TMPDIR` pointing
+> through a symlink, using `go test -short ./internal/cli/run -run
+> '^(TestRecordLaunchCtxMountsWritesWhatTheArgvBound|TestConfigApplyInjectsALiveMount|TestConfigApplyMovesAChangedSourceAtTheSameDestination|TestConfigApplyRestoresTheInvalidatedMountRecordThroughRealApply|TestConfigApplyFilesystemRecordRestoreFailureKeepsRemovalPending)$' -count=1`.
+> This is not a native-Mac run and does not measure rootless Podman live mount injection.
 
 > **In short.** "Restart to apply" is wrong for the two changes people actually make mid-session,
 > a read-only mount and a GitHub repository: both can reach a running jail. So approval moves to a

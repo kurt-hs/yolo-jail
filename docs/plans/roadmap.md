@@ -92,15 +92,15 @@ and a pi-subagents registry several extensions can share stays in item 28.
    owed: a `macos-user.yml` run, and the ownership-*enabled* volume, which needs root. That first
    run cleared measurements items 38 and 40, listed in the design.
 
-6. **`yolo check`'s host-floor section reads a pack root its own Packs section already deleted**
-   — a verified live defect, measured 2026-10-19 on a host selecting a patched fork, and an
-   agent can fix it now. The Packs section stages each entry under one temp tree and removes it
-   when the section returns, but the loaded packs it keeps carry a `Root` inside that tree, so
-   the floor section prints `pi — no floor entry: … the pack's root cannot be opened (open
-   /var/folders/…/T/yolo-check-pack-<n>/pi-fork: no such file or directory)` one screen after
-   printing `[PASS] pi-fork: 143 file(s) stage`. **The warning is false** — `yolo pack status
-   pi-fork/pi` reads the same series fine — and its next step misdirects the reader to
-   `yolo host`'s floor. The mechanism, the evidence and the rule it breaks are in
+6. **`yolo check`'s host-floor section read a pack root its own Packs section already deleted**
+   — a verified live defect measured 2026-10-19 on a host selecting a patched fork. Packs staged
+   each entry under a temporary tree, but the host-floor reader later consumed the selected fork's
+   patch series after that tree had been removed. Commit `8e66a6dfe` retains the tree through the
+   remaining `Check` readers and removes it when `Check` returns.
+   `TestCheckKeepsSelectedForkRootThroughTheHostFloor` drives the real `Check` sequence and
+   patched-series reader; releasing the tree at section exit reproduces the false "the pack's root
+   cannot be opened" warning after `[PASS] … file(s) stage`. The targeted Linux regression passes;
+   a native Mac `yolo check` remains unrerun. The mechanism and rule it breaks are documented in
    [the pack system's check/launch callout](../reference/pack-system.md#one-governance-reader).
    No ruling needed.
 
