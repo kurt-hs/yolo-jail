@@ -174,7 +174,17 @@ tests. No test takes more than 4.1 s, and only 22 take 1 s or more (39 s togethe
 product's own patched-fork replay (`rev-parse`, `rev-list`, `am`, `merge-tree`, `commit-tree`), not
 fixture setup.
 
-**INFERRED from the lab report's two timings:** the two tests it names take 45.9 s and 29.8 s on
+**MEASURED on that Mac, 2026-10-19 at `8d8e73653`, and it is 41 seconds:** `go test -short
+-count=1 -timeout 60m ./...` reports `ok … /internal/cli 1241.180s`. The package **passes** — it
+is not hanging, and no test in it fails — but 1241 s is 41 s past the gate's own
+`-timeout=20m` ([`justfile:320`](../../justfile)), so `just check-ci` and `just done` cannot go
+green on that host while every other package passes. ⚠ **This supersedes the ~25-minute estimate
+below as the number to plan against.** It also changes what the fix has to be worth: the levers
+in this section are each a ruling and a build, and the gap they must close is 3.4% of one
+package's wall time. `internal/entrypoint` is second at 722.8 s, so nothing else is near the
+ceiling. A per-package timeout, or the first lever that saves a minute, settles it.
+
+**INFERRED from the lab report's two timings, superseded by the measurement above:** the two tests it names take 45.9 s and 29.8 s on
 the Mac, and start 1468 and 837 `git` processes on Linux, so each start costs about 31 to 36 ms
 there. 48,536 starts at that cost is about 25 minutes, past the limit. Unmeasured: whether the cost
 is the `/usr/bin/git` xcrun shim, which CI's Homebrew git skips, or per-exec scanning. To tell them
