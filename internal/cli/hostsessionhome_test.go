@@ -329,9 +329,12 @@ func TestHostPiResidentSessionCapturesUserEditNormally(t *testing.T) {
 	home := hostGateHome(t, cfg, nil)
 	const original = `{"defaultProvider":"openrouter","theme":"system"}`
 	unchanged := piSettingsFixture(t, home, original)
+	durable := render.Host(home, nil, render.OwnershipOwn)
+	writeFile(t, durable.LastRenderPath("pi", "settings"), original+"\n")
+	writeFile(t, durable.OverlayPath("pi", "settings"), `{"existingCapturedSetting":"from-earlier-session"}`)
 	bin := t.TempDir()
 	agent := filepath.Join(bin, "claude")
-	if err := os.WriteFile(agent, []byte("#!/bin/sh\nprintf '%s\\n' '{\"customUserSetting\":\"saved-by-user\"}' > \"$PI_CODING_AGENT_DIR/settings.json\"\n"), 0o755); err != nil {
+	if err := os.WriteFile(agent, []byte("#!/bin/sh\nprintf '%s\\n' '{\"customUserSetting\":\"saved-by-user\",\"existingCapturedSetting\":\"from-earlier-session\"}' > \"$PI_CODING_AGENT_DIR/settings.json\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -353,8 +356,8 @@ func TestHostPiResidentSessionCapturesUserEditNormally(t *testing.T) {
 	if err := json.Unmarshal(overlay, &captured); err != nil {
 		t.Fatalf("capture overlay is invalid: %v (%s)", err, overlay)
 	}
-	if captured["customUserSetting"] != "saved-by-user" || captured["defaultProvider"] != nil || captured["defaultModel"] != nil {
-		t.Errorf("capture should contain only the user edit, not the profile render: %s", overlay)
+	if captured["customUserSetting"] != "saved-by-user" || captured["existingCapturedSetting"] != "from-earlier-session" || captured["defaultProvider"] != nil || captured["defaultModel"] != nil {
+		t.Errorf("capture should accumulate user settings, not profile values: %s", overlay)
 	}
 	next := hostSelectionRun(t, home, []string{"-p", "pi=openrouter"}, "pi")
 	var settings map[string]any
@@ -362,8 +365,127 @@ func TestHostPiResidentSessionCapturesUserEditNormally(t *testing.T) {
 	if err != nil || json.Unmarshal(data, &settings) != nil {
 		t.Fatalf("read next session settings: %v (%s)", err, data)
 	}
-	if settings["defaultProvider"] != "openrouter" {
-		t.Errorf("next profile did not regenerate its provider: %s", data)
+	if settings["defaultProvider"] != "openrouter" || settings["customUserSetting"] != "saved-by-user" || settings["existingCapturedSetting"] != "from-earlier-session" {
+		t.Errorf("next profile must regenerate its provider while keeping new and preexisting captured user settings: %s", data)
+	}
+}
+
+// Independent ended sessions accumulate baseline-relative edits over the latest durable sidecars.
+// The unchanged oldest home is captured last to prove it cannot roll back newer captures.
+func TestHostPiSessionCaptureAccumulatesCurrentOverlayAndListRecords(t *testing.T) {
+	piSessionHomeEnv(t)
+	home := hostGateHome(t, ownedSessionHomeConfig(piSubagentsCodexCfg), nil)
+	original := `{"defaultProvider":"openrouter","theme":"system","packages":["base","removed"]}`
+	piSettingsFixture(t, home, original)
+	durable := render.Host(home, nil, render.OwnershipOwn)
+	writeFile(t, durable.LastRenderPath("pi", "settings"), original+"\n")
+	writeFile(t, durable.OverlayPath("pi", "settings"), `{"preexisting":"durable","oldTombstone":null}`)
+	writeFile(t, durable.ListCapturePath("pi", "settings"), `{"/packages":{"add":["previous"],"remove":["removed"]}}`)
+
+	launch := composeHostLaunch("pi", "codex", nil, nil)
+	if launch.err != nil {
+		t.Fatal(launch.err)
+	}
+	makeSession := func() (*hostSessionHomes, string) {
+		t.Helper()
+		homes, _, err := prepareHostSessionHomes(launch, os.Environ(), io.Discard)
+		if err != nil || homes == nil || len(homes.vars) != 1 {
+			t.Fatalf("prepare session home: homes=%+v err=%v", homes, err)
+		}
+		_, path, ok := strings.Cut(homes.vars[0], "=")
+		if !ok {
+			t.Fatalf("malformed session-home variable %q", homes.vars[0])
+		}
+		return homes, filepath.Join(path, "settings.json")
+	}
+	old, _ := makeSession()
+	a, aSettings := makeSession()
+	b, bSettings := makeSession()
+	edit := func(path string, change func(map[string]any)) {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var settings map[string]any
+		if err := json.Unmarshal(data, &settings); err != nil {
+			t.Fatalf("decode session settings: %v (%s)", err, data)
+		}
+		change(settings)
+		data, err = json.Marshal(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	edit(aSettings, func(settings map[string]any) {
+		settings["sessionA"] = "A"
+		delete(settings, "theme") // a tombstone relative to this home's baseline
+		settings["packages"] = append(settings["packages"].([]any), "session-package-A")
+	})
+	edit(bSettings, func(settings map[string]any) {
+		settings["sessionB"] = "B"
+		settings["packages"] = append(settings["packages"].([]any), "session-package-B")
+	})
+	for _, homes := range []*hostSessionHomes{a, b, old} {
+		t.Cleanup(func() { homes.remove() })
+	}
+	for _, homes := range []*hostSessionHomes{a, b, old} {
+		// End the retained session before capture, as a normally-exited exec does.
+		for _, lease := range homes.leases {
+			_ = lease.Close()
+		}
+		homes.leases = nil
+	}
+	for _, homes := range []*hostSessionHomes{a, b, old} {
+		if err := finishHostSessionHomes(homes, io.Discard); err != nil {
+			t.Fatalf("capture session: %v", err)
+		}
+	}
+
+	overlay, err := os.ReadFile(durable.OverlayPath("pi", "settings"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var captured map[string]any
+	if err := json.Unmarshal(overlay, &captured); err != nil {
+		t.Fatalf("decode durable overlay: %v (%s)", err, overlay)
+	}
+	if captured["preexisting"] != "durable" || captured["oldTombstone"] != nil || captured["sessionA"] != "A" || captured["sessionB"] != "B" {
+		t.Errorf("capture lost a durable key/tombstone or an independent session delta: %s", overlay)
+	}
+	if v, ok := captured["theme"]; !ok || v != nil {
+		t.Errorf("session deletion was not retained as a tombstone: %s", overlay)
+	}
+	listCapture, err := os.ReadFile(durable.ListCapturePath("pi", "settings"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lists map[string]struct {
+		Add    []any `json:"add"`
+		Remove []any `json:"remove"`
+	}
+	if err := json.Unmarshal(listCapture, &lists); err != nil {
+		t.Fatalf("decode durable list capture: %v (%s)", err, listCapture)
+	}
+	contains := func(values []any, want string) bool {
+		for _, value := range values {
+			if value == want {
+				return true
+			}
+		}
+		return false
+	}
+	record := lists["/packages"]
+	for _, want := range []string{"previous", "session-package-A", "session-package-B"} {
+		if !contains(record.Add, want) {
+			t.Errorf("list capture lost add %q: %s", want, listCapture)
+		}
+	}
+	if !contains(record.Remove, "removed") {
+		t.Errorf("list capture lost prior removal: %s", listCapture)
 	}
 }
 
@@ -502,6 +624,8 @@ func TestHostPiSessionHomeReapsADeadLaunch(t *testing.T) {
 		dir := filepath.Join(root, name)
 		writeFile(t, filepath.Join(dir, packload.EmbeddedLeaseName), "")
 		writeFile(t, filepath.Join(dir, "home", ".pi", "agent", "settings.json"), "{}")
+		target := render.Host(filepath.Join(dir, hostScratchHomeName), nil, render.OwnershipOwn)
+		writeFile(t, target.LastRenderPath("pi", "settings"), "{}\n")
 		if err := os.Chtimes(dir, old, old); err != nil {
 			t.Fatal(err)
 		}

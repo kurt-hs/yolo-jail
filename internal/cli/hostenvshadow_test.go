@@ -10,9 +10,12 @@ package cli
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // wantHostShadowLines is what `yolo host -- fxa` prints over writeWinnerFixture: K3, which the
@@ -60,6 +63,11 @@ func TestTheHostLaunchNamesWhatItShadowed(t *testing.T) {
 	t.Setenv("YOLO_VERSION", "")
 	t.Chdir(t.TempDir())
 	writeWinnerFixture(t, home)
+	cfg, err := os.ReadFile(paths.UserConfigPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	userCfg(t, home, strings.Replace(string(cfg), "{", `{"host_management":"own","host_apply_on_launch":false,`, 1))
 	rc, reached, errw := hostExecRun(t, "fxa")
 	if rc != 0 || !reached {
 		t.Fatalf("yolo host -- fxa: rc=%d reached=%v\n%s", rc, reached, errw)
@@ -107,7 +115,7 @@ func TestTheHostLaunchShadowingNothingSaysNothing(t *testing.T) {
 	writeFile(t, filepath.Join(root, "pack.json"), `{"name":"plain","contributes":[`+
 		`{"kind":"program","bin":"plainbin","via":"npm","package":"@acme/plainbin"},`+
 		`{"kind":"env","vars":{"PLAIN_K":"fold-static"}}]}`)
-	userCfg(t, home, `{"packs": [{"source": "file://`+root+`", "name": "plain"}],
+	userCfg(t, home, `{"host_management":"own","host_apply_on_launch":false,"packs": [{"source": "file://`+root+`", "name": "plain"}],
 	  "env_sources": [{"OTHER_K": "es-unclaimed"}]}`)
 	t.Setenv("PLAIN_K", "user-shell")
 	rc, reached, errw := hostExecRun(t, "plainbin")

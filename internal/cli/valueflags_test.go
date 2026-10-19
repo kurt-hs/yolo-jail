@@ -129,7 +129,7 @@ func TestGluedShortProfileWorksAtBothNotches(t *testing.T) {
 	}
 
 	// pi, an agent CLI a selected pack installs: a bare -p reaches agent CLIs only (OQ-NC5).
-	valueFlagHome(t, `{"packs":["zai", "pi"]}`)
+	valueFlagHome(t, `{"host_management":"own","host_apply_on_launch":false,"packs":["zai", "pi"]}`)
 	t.Setenv("ZAI_API_KEY", "test-key")
 	for _, spelling := range [][]string{{"-p", "zai"}, {"-p=zai"}, {"--profile=zai"}} {
 		rc, reached, errw := hostExecRun(t, "pi", spelling...)

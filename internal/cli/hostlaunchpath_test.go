@@ -199,7 +199,7 @@ func TestAProgramWithNoBuildHereStillPrintsTheMissLine(t *testing.T) {
 // exec both name it, with the fix. Drop the refused entries from the resolver, or from the line, and
 // this fails.
 func TestARefusedHostPathEntryIsNamedInTheMissLine(t *testing.T) {
-	home, pathDir := launchPathFixture(t, `,"host_path":["$HOME/.cargo/bin","~/tools/bin"]`, hpTool)
+	home, pathDir := launchPathFixture(t, `,"host_management":"own","host_apply_on_launch":false,"host_path":["$HOME/.cargo/bin","~/tools/bin"]`, hpTool)
 	putExe(t, filepath.Join(home, ".cargo", "bin"), "yolo-hp-tool")
 	ignored := `. host_path's entry "$HOME/.cargo/bin" is ignored: host_path expands no variable, so write it ` +
 		`"~/.cargo/bin". If yolo-hp-tool is installed, add its folder to "host_path" in ~/.config/yolo-jail/config.jsonc; ` +
@@ -432,7 +432,7 @@ func TestTheManagerGuessReadsHostPath(t *testing.T) {
 // it missing, naming the skipped folder, and the exec exits 127 with the miss line rather than
 // running the wrapper — which would exec `yolo host` again.
 func TestAWrapperNeverReadsAsItsProgram(t *testing.T) {
-	launchPathFixture(t, "", `{"kind":"requires","bin":"yolo-hp-wrapped","install_hints":{"apt":"x"}}`)
+	launchPathFixture(t, `,"host_management":"own","host_apply_on_launch":false`, `{"kind":"requires","bin":"yolo-hp-wrapped","install_hints":{"apt":"x"}}`)
 	wrap := paths.WrapDir()
 	putExe(t, wrap, "yolo-hp-wrapped")
 	t.Setenv("PATH", wrap+pathSep+os.Getenv("PATH"))
