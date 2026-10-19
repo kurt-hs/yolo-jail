@@ -24,9 +24,9 @@ import (
 // cacheHarness is one generated launcher for a program that reports its NODE_COMPILE_CACHE and
 // what <tmpdir>/jiti is.
 type cacheHarness struct {
-	home, script, report string
-	template             string // "npm", "native" or "fork"
-	inst                 packdecl.Install
+	home, script, report, captures, key string
+	template                            string // "npm", "native" or "fork"
+	inst                                packdecl.Install
 }
 
 func newCacheHarness(t *testing.T, template string, nodeFloor string, tempCaches ...string) *cacheHarness {
@@ -62,6 +62,9 @@ func newCacheHarness(t *testing.T, template string, nodeFloor string, tempCaches
     printf 'ARGS=%s\n' "$*"
 } > `+shellQuoteForTest(h.report)+`
 `, 0o755)
+	if template == "fork" {
+		h.captures, h.key = admitForkLauncherCapture(t, home, "tool", ".local/bin/tool", realBin)
+	}
 	return h
 }
 
@@ -81,15 +84,19 @@ func (h *cacheHarness) run(t *testing.T, tmp string, env ...string) map[string]s
 	case "native":
 		body = nativeAgentLauncher("probe", &h.inst, stamps, receipts, "", false, launcherServers{}, nil)
 	case "fork":
-		body = strings.Join(sourceAgentLauncherSegments(&h.inst, ForkDelivery{Key: "k"}, stamps,
-			filepath.Join(h.home, ".local", "state", "yolo", "fork-keys"), receipts, "", false,
+		body = strings.Join(sourceAgentLauncherSegments(&h.inst, ForkDelivery{Key: h.key}, stamps,
+			filepath.Join(h.home, ".local", "state", "yolo", "fork-keys"), receipts, h.captures, false,
 			launcherServers{}, nil), execPrefixFor(node))
 	}
 	mustWrite(t, h.script, body, 0o755)
 	_ = os.Remove(h.report)
 	cmd := exec.Command(h.script, "--a", "b c")
 	cmd.Dir = h.home
-	cmd.Env = append([]string{"HOME=" + h.home, "PATH=" + os.Getenv("PATH"), "TMPDIR=" + tmp}, env...)
+	path := os.Getenv("PATH")
+	if h.template == "fork" {
+		path = forkMaterializerPath(t) + ":" + path
+	}
+	cmd.Env = append([]string{"HOME=" + h.home, "PATH=" + path, "TMPDIR=" + tmp}, env...)
 	cmd.Stdin = strings.NewReader("")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

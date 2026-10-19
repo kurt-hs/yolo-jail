@@ -30,10 +30,10 @@ import (
 // probeHarness is one generated launcher whose every pre-exec step is due, and the fakes that
 // record which of them ran.
 type probeHarness struct {
-	home, script, realBin, fakeBin string
-	progLog, yoloLog, npmLog       string
-	template                       string // "npm", "native" or "fork"
-	inst                           packdecl.Install
+	home, script, realBin, fakeBin, captures, key string
+	progLog, yoloLog, npmLog                      string
+	template                                      string // "npm", "native" or "fork"
+	inst                                          packdecl.Install
 	// patch replaces baked literals in the rendered launcher (old → new).
 	patch map[string]string
 }
@@ -73,7 +73,7 @@ func newProbeHarness(t *testing.T, template string) *probeHarness {
 		h.inst.Kind, h.inst.ForkedBy = packdecl.InstallKindSource, "forkpack"
 		h.inst.Produces = []string{".local/bin/tool"}
 		h.realBin = filepath.Join(home, ".local", "bin", "tool")
-		// This home already holds the key's build, so the launch path, not a materialize, runs.
+		// The admitted capture is materialized by the production command before the probe runs.
 		keyDir := filepath.Join(home, ".local", "state", "yolo", "fork-keys")
 		mustMkdir(t, keyDir)
 		mustWrite(t, filepath.Join(keyDir, "tool"), "k\n", 0o644)
@@ -82,11 +82,15 @@ func newProbeHarness(t *testing.T, template string) *probeHarness {
 	mustMkdir(t, filepath.Dir(filepath.Join(home, probeLockRel))) // the refresh's store
 	mustMkdir(t, h.fakeBin)
 	mustWrite(t, h.realBin, fakeRefreshProgram(h.progLog, filepath.Join(home, probeLockRel)), 0o755)
+	if template == "fork" {
+		h.captures, h.key = admitForkLauncherCapture(t, home, "tool", ".local/bin/tool", h.realBin)
+	}
 	// `yolo internal no-terminal … -- CMD` runs CMD, as the real verb does once it has detached it;
 	// the receipt writer takes the real confined Go route, while other fake calls are observed.
 	realYolo := filepath.Join(testutil.YoloBinaryDir(t), "yolo")
 	mustWrite(t, filepath.Join(h.fakeBin, "yolo"), `#!/bin/bash
 if [ "${1:-} ${2:-}" = "internal log-append" ]; then exec `+shellQuoteForTest(realYolo)+` "$@"; fi
+if [ "${1:-} ${2:-}" = "internal capture-materialize" ]; then exec `+shellQuoteForTest(realYolo)+` "$@"; fi
 if [ "${1:-} ${2:-}" = "internal no-terminal" ]; then
     while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done
     shift
@@ -130,8 +134,8 @@ func (h *probeHarness) write(t *testing.T) {
 	case "native":
 		body = nativeAgentLauncher("probe", &h.inst, stamps, receipts, "", true, servers, nil)
 	case "fork":
-		body = strings.Join(sourceAgentLauncherSegments(&h.inst, ForkDelivery{Key: "k"}, stamps,
-			filepath.Join(h.home, ".local", "state", "yolo", "fork-keys"), receipts, "", true, servers, nil), "")
+		body = strings.Join(sourceAgentLauncherSegments(&h.inst, ForkDelivery{Key: h.key}, stamps,
+			filepath.Join(h.home, ".local", "state", "yolo", "fork-keys"), receipts, h.captures, true, servers, nil), "")
 	}
 	for from, to := range h.patch {
 		if !strings.Contains(body, from) {
