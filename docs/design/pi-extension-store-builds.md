@@ -555,6 +555,41 @@ its line names `yolo capture <pack>/<name>` as the step that builds it once the 
 the at-launch wait whenever a build happens at all; it saves only the checks. macos-user and a macOS
 host build nothing, so they start none.
 
+> [!WARNING]
+> **That liveness question answers "could not ask" on every Mac with a container running, so the
+> Apple arm builds nothing at all. MEASURED 2026-10-19** by feeding this machine's real
+> `container ls` into `appleContainerBuildDecision`
+> ([`internal/cli/applebuildcapability.go`](../../internal/cli/applebuildcapability.go)); the
+> symptom is one `⚠ … left it pending because `container ls` returned an unrecognized listing`
+> per fork and extension, then a launch refusing with *"no build on this machine"*.
+>
+> **Two independent causes, and the second outlives a fix to the first:**
+>
+> 1. **The listing parser requires `len(fields) == len(header)` over whitespace-split rows, and
+>    `MEMORY` renders as two tokens.** Real output here: header `ID IMAGE OS ARCH STATE IP CPUS
+>    MEMORY STARTED` is **9** fields, while every data row is **10** — `12288 MB`. So any
+>    non-empty listing is rejected. Header-only output (no containers at all) parses and returns
+>    safe, which is why no runner has ever seen this: a fresh runner has no containers, and the
+>    unit fixtures are a synthetic **5-column** table (`ID IMAGE OS ARCH STATE` /
+>    `yolo-live image linux arm64 running`, `preparationapple_test.go`) that the CLI never emits.
+>    ⚠ The sibling parser for the same command,
+>    [`runtime.ParseContainerLsLive`](../../internal/runtime/probe.go), takes `parts[0]` and
+>    checks no column count, so it reads the real table correctly — two parsers for one command,
+>    and only the strict one is wrong. Apple Container 1.1.0 already offers
+>    `container ls --format json` and `--quiet`, so neither parser needs to guess at columns.
+> 2. **The `yolo-` prefix counts yolo's own Linux image builder as a running jail.** With the
+>    space removed from the same row the decision becomes *"Apple Container has running yolo
+>    jail(s): yolo-ac-builder"* — still no build. That container is created by
+>    [`scripts/mac-ac-linux-builder.sh`](../../scripts/mac-ac-linux-builder.sh) as
+>    `${YOLO_AC_BUILDER_NAME:-yolo-ac-builder}` and is not a jail; nothing excludes it, in either
+>    parser. **So a Mac that builds yolo's own image the supported way can never build a patched
+>    fork on Apple Container**, whatever the listing parses to. Whether the builder is exempt by
+>    name, by label, or by being asked a different question is a ruling, not a repair.
+>
+> The gate is `if a.o.runtime == "container"`
+> ([`patchedadvance.go`](../../internal/cli/patchedadvance.go)), so **podman is unaffected** and
+> is the working path on such a host.
+
 Under (a) or (b), the same option is the held store's prefetch: a detached in-jail run that fetches,
 resolves and builds trees but never repoints, so the next pi exec repoints with no network
 ([§8](#8-if-the-held-store-lands-instead)).

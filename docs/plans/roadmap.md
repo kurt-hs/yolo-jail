@@ -102,6 +102,20 @@ and a pi-subagents registry several extensions can share stays in item 28.
    [the pack system's check/launch callout](../reference/pack-system.md#one-governance-reader).
    No ruling needed.
 
+7. **Apple Container builds no patched fork or extension on any Mac that has a container running**
+   — a verified live defect, measured 2026-10-19, with two independent causes and a ruling owed on
+   the second. The build-capability gate splits `container ls` on whitespace and demands the
+   header's column count, but `MEMORY` renders as two tokens (`12288 MB`), so a 9-field header
+   meets 10-field rows and every non-empty listing is *"an unrecognized listing"*; a launch then
+   refuses with "no build on this machine". Header-only output parses, which is why no runner has
+   caught it — and the unit fixtures are a synthetic 5-column table the CLI never emits, while the
+   sibling parser for the same command (`runtime.ParseContainerLsLive`) reads the real table fine.
+   ⚠ **Fixing the parse is not enough:** the `yolo-` prefix counts yolo's own
+   `yolo-ac-builder` image builder as a running jail, so the decision becomes "Apple Container has
+   running yolo jail(s)" and still refuses. Both are set out in
+   [the store-build design's Apple arm](../design/pi-extension-store-builds.md). podman is
+   unaffected (the gate is `runtime == "container"`).
+
 Native readiness and credential-store work retain their places below: assess
 [the privilege prerequisites](../research/sandvault-macos-privileges.md) without broad root
 cleanup, and rule [keychain scope/unlock/migration](../design/keychain-from-a-jail.md) without
