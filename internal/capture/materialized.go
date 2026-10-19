@@ -1,0 +1,227 @@
+package capture
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+// VerifyMaterialized checks that the declared outputs in home still match the admitted entry.
+// The content-addressed key authenticates the immutable source tree; the capture manifest names
+// the installed paths, and the file comparisons ensure a home's key stamp cannot vouch for stale
+// or missing bytes.
+func VerifyMaterialized(entry *Entry, home string, produces []string) error {
+	if entry == nil || home == "" || !filepath.IsAbs(home) {
+		return fmt.Errorf("capture verify: entry and absolute home are required")
+	}
+	if len(produces) == 0 {
+		return fmt.Errorf("capture verify: declared outputs are required")
+	}
+	key, err := KeyForTree(entry.Tree)
+	if err != nil {
+		return fmt.Errorf("capture verify: digesting admitted tree: %w", err)
+	}
+	if key != entry.Key {
+		return fmt.Errorf("capture verify: admitted tree digest does not match key %s", entry.Key)
+	}
+	m, err := ReadManifest(entry.Root)
+	if err != nil {
+		return fmt.Errorf("capture verify: reading admitted manifest: %w", err)
+	}
+	if got, _, err := describeTree(entry.Tree, m.Home); err != nil {
+		return fmt.Errorf("capture verify: describing admitted tree: %w", err)
+	} else if !sameManifestEntries(got, m.Entries) {
+		return fmt.Errorf("capture verify: admitted manifest does not describe key %s", entry.Key)
+	}
+	var relocation *relocation
+	if m.Home != "" && filepath.Clean(m.Home) != filepath.Clean(home) {
+		var reasons []string
+		relocation, reasons, err = planRelocation(m, entry.Tree, home)
+		if err != nil {
+			return fmt.Errorf("capture verify: planning relocation: %w", err)
+		}
+		if len(reasons) != 0 {
+			return fmt.Errorf("capture verify: entry cannot be relocated: %s", strings.Join(reasons, "; "))
+		}
+	}
+
+	entries := make(map[string]ManifestEntry, len(m.Entries))
+	for _, e := range m.Entries {
+		entries[e.Path] = e
+	}
+	checked := map[string]bool{}
+	for _, output := range produces {
+		if err := checkEntryPath(output); err != nil {
+			return fmt.Errorf("capture verify: invalid declared output %q: %w", output, err)
+		}
+		if checked[output] {
+			return fmt.Errorf("capture verify: duplicate declared output %q", output)
+		}
+		checked[output] = true
+		if _, ok := entries[output]; !ok {
+			return fmt.Errorf("capture verify: declared output %q is absent from the admitted manifest", output)
+		}
+		expected := map[string]bool{}
+		for path := range entries {
+			if path == output || strings.HasPrefix(path, output+"/") {
+				expected[path] = true
+			}
+		}
+		observed, err := materializedPaths(home, filepath.Join(home, filepath.FromSlash(output)))
+		if err != nil {
+			return fmt.Errorf("capture verify: walking declared output %q: %w", output, err)
+		}
+		if !samePaths(expected, observed) {
+			return fmt.Errorf("capture verify: installed output %q has paths different from the admitted manifest", output)
+		}
+		for path := range expected {
+			if err := verifyMaterializedEntry(entry, m, entries[path], filepath.Join(home, filepath.FromSlash(path)), relocation); err != nil {
+				return fmt.Errorf("capture verify: %s: %w", path, err)
+			}
+		}
+	}
+	return nil
+}
+
+func verifyMaterializedEntry(entry *Entry, m *Manifest, expected ManifestEntry, installed string, relocation *relocation) error {
+	source := filepath.Join(entry.Tree, filepath.FromSlash(expected.Path))
+	sourceInfo, err := os.Lstat(source)
+	if err != nil {
+		return err
+	}
+	installedInfo, err := os.Lstat(installed)
+	if err != nil {
+		return err
+	}
+	switch expected.Kind {
+	case KindDir:
+		if !sourceInfo.IsDir() || !installedInfo.IsDir() {
+			return fmt.Errorf("expected a directory")
+		}
+	case KindSymlink:
+		if sourceInfo.Mode()&fs.ModeSymlink == 0 || installedInfo.Mode()&fs.ModeSymlink == 0 {
+			return fmt.Errorf("expected a symlink")
+		}
+		want, err := os.Readlink(source)
+		if err != nil {
+			return err
+		}
+		if relocation != nil {
+			if rewritten, ok := relocation.links[expected.Path]; ok {
+				want = rewritten
+			}
+		}
+		got, err := os.Readlink(installed)
+		if err != nil {
+			return err
+		}
+		if got != want {
+			return fmt.Errorf("symlink target differs from admitted manifest")
+		}
+	case KindFile:
+		if !sourceInfo.Mode().IsRegular() || !installedInfo.Mode().IsRegular() {
+			return fmt.Errorf("expected a regular file")
+		}
+		mode, err := strconv.ParseUint(expected.Mode, 8, 32)
+		if err != nil {
+			return fmt.Errorf("invalid manifest mode %q", expected.Mode)
+		}
+		if installedInfo.Mode().Perm()&0o111 != fs.FileMode(mode)&0o111 {
+			return fmt.Errorf("executable mode differs from admitted manifest")
+		}
+		if err := sameMaterializedFile(source, installed, expected.Path, relocation); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unknown manifest entry kind %q", expected.Kind)
+	}
+	return nil
+}
+
+func sameMaterializedFile(source, installed, path string, relocation *relocation) error {
+	sourceFile, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+	installedFile, err := os.Open(installed)
+	if err != nil {
+		return err
+	}
+	defer installedFile.Close()
+	actual := sha256.New()
+	if relocation != nil && relocation.content[path] {
+		if _, err := rewriteStream(actual, sourceFile, []byte(relocation.from), []byte(relocation.to)); err != nil {
+			return err
+		}
+	} else if _, err := io.Copy(actual, sourceFile); err != nil {
+		return err
+	}
+	got := sha256.New()
+	if _, err := io.Copy(got, installedFile); err != nil {
+		return err
+	}
+	if !strings.EqualFold(hex.EncodeToString(actual.Sum(nil)), hex.EncodeToString(got.Sum(nil))) {
+		return fmt.Errorf("file bytes differ from admitted artifact")
+	}
+	return nil
+}
+
+func materializedPaths(home, root string) (map[string]bool, error) {
+	paths := map[string]bool{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(home, path)
+		if err != nil {
+			return err
+		}
+		paths[filepath.ToSlash(rel)] = true
+		return nil
+	})
+	return paths, err
+}
+
+func samePaths(a, b map[string]bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for path := range a {
+		if !b[path] {
+			return false
+		}
+	}
+	return true
+}
+
+func sameManifestEntries(actual, manifest []ManifestEntry) bool {
+	if len(actual) != len(manifest) {
+		return false
+	}
+	for i := range actual {
+		a, m := actual[i], manifest[i]
+		if a.Path != m.Path || a.Kind != m.Kind || a.Size != m.Size || a.Target != m.Target {
+			return false
+		}
+		switch m.Kind {
+		case KindDir:
+			if a.Mode != m.Mode {
+				return false
+			}
+		case KindFile:
+			actualMode, aerr := strconv.ParseUint(a.Mode, 8, 32)
+			manifestMode, merr := strconv.ParseUint(m.Mode, 8, 32)
+			if aerr != nil || merr != nil || actualMode&0o111 != manifestMode&0o111 {
+				return false
+			}
+		}
+	}
+	return true
+}

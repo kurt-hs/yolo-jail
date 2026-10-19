@@ -84,6 +84,52 @@ func entryFixture(t *testing.T, home, platform string, refs []AbsoluteRef) (*Sto
 	return store, entry
 }
 
+// VerifyMaterialized uses the admitted manifest and content address rather than a caller's key
+// stamp: matching paths alone are not enough if the files have changed since materialization.
+func TestVerifyMaterializedChecksTheAdmittedOutputTree(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(t *testing.T, home string)
+		wantOK bool
+	}{
+		{name: "valid", wantOK: true},
+		{name: "stale bytes", mutate: func(t *testing.T, home string) {
+			path := filepath.Join(home, ".local/share/vendor/1.0/vendor")
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("stale program\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}, wantOK: false},
+		{name: "missing output", mutate: func(t *testing.T, home string) {
+			if err := os.Remove(filepath.Join(home, ".local/share/vendor/1.0/vendor")); err != nil {
+				t.Fatal(err)
+			}
+		}, wantOK: false},
+		{name: "extra output", mutate: func(t *testing.T, home string) {
+			if err := os.WriteFile(filepath.Join(home, ".local/share/vendor/1.0/stale"), []byte("stale\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, wantOK: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			_, entry := entryFixture(t, home, Platform(), nil)
+			if _, err := Materialize(MaterializeOptions{Entry: entry, Home: home}); err != nil {
+				t.Fatal(err)
+			}
+			if tc.mutate != nil {
+				tc.mutate(t, home)
+			}
+			err := VerifyMaterialized(entry, home, []string{".local/share/vendor/1.0", ".local/bin/vendor"})
+			if (err == nil) != tc.wantOK {
+				t.Errorf("VerifyMaterialized() error = %v, want success %t", err, tc.wantOK)
+			}
+		})
+	}
+}
+
 // A materialize into a POPULATED home puts the vendor's files where the manifest says, with
 // the modes the INSTALLER made rather than the read-only modes admit froze the entry to.
 //

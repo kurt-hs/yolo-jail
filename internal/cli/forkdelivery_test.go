@@ -93,7 +93,11 @@ func TestCaptureMaterializeKeyChecksTheEntrysBuildRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(capture.TreeDir(staged), ".local", "bin", "pi"), "#!/bin/sh\n")
+	treeBin := filepath.Join(capture.TreeDir(staged), ".local", "bin", "pi")
+	writeFile(t, treeBin, "#!/bin/sh\n")
+	if err := os.Chmod(treeBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	home := filepath.Join(t.TempDir(), "home")
 	// Captured under the home it is materialized into, as a jail build is under /home/agent.
 	m := &capture.Manifest{Schema: capture.ManifestSchema, Home: home, Platform: capture.Platform(),
@@ -131,6 +135,22 @@ func TestCaptureMaterializeKeyChecksTheEntrysBuildRecord(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".local", "bin", "pi")); err != nil {
 		t.Errorf("the build is not in the home: %v", err)
+	}
+	errw.Reset()
+	verifyArgs := []string{"capture-materialize", "--verify-installed", "--store=" + store.Dir,
+		"--home=" + home, "--bin=pi", "--key=" + entry.Key, "--produces=.local/bin/pi"}
+	if rc := runInternal(verifyArgs); rc != 0 {
+		t.Fatalf("the generated launcher's verification command rejected a valid materialization: rc=%d", rc)
+	}
+	installed := filepath.Join(home, ".local", "bin", "pi")
+	if err := os.Remove(installed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installed, []byte("stale bytes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if rc := runInternal(verifyArgs); rc == 0 {
+		t.Error("the verification command accepted stale bytes under the matching key")
 	}
 	got, _ := entrypoint.ReadBuildReceipts(receipts)
 	if len(got) != 1 || got[0].Act != entrypoint.ReceiptActMaterialize || got[0].Revision != forkTestCommit {

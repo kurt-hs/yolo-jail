@@ -81,9 +81,20 @@ func forkLauncher(t *testing.T, deliveries string) (home, launcher, fakeBin, arg
 	fakeBin = filepath.Join(home, "fakebin")
 	argvLog = filepath.Join(home, "yolo-argv.log")
 	body := `#!/bin/bash
-printf '%s\n' "$*" >> ` + shq(argvLog) + `
 key=""
-for a in "$@"; do case "$a" in --key=*) key="${a#--key=}";; esac; done
+verify=0
+for a in "$@"; do
+    case "$a" in
+        --key=*) key="${a#--key=}" ;;
+        --verify-installed) verify=1 ;;
+    esac
+done
+if [ "$verify" = "1" ]; then
+    printf '%s\n' "$*" >> ` + shq(argvLog+".verify") + `
+    grep -Fq "FORK_BUILD_RAN $key" "$HOME/.local/bin/pi"
+    exit $?
+fi
+printf '%s\n' "$*" >> ` + shq(argvLog) + `
 mkdir -p "$HOME/.local/bin"
 printf '#!/bin/bash\necho FORK_BUILD_RAN %s\n' "$key" > "$HOME/.local/bin/pi"
 chmod +x "$HOME/.local/bin/pi"
@@ -197,6 +208,59 @@ func TestTheSourceLauncherKeysItsBuildToItsOwnHome(t *testing.T) {
 	}
 	if calls, _ := os.ReadFile(argvLog); strings.Count(string(calls), "capture-materialize") != 2 {
 		t.Errorf("want one materialize per home, got: %q", calls)
+	}
+}
+
+// TestTheSourceLauncherDoesNotTrustAKeyStampWhenTheInstalledTreeIsStale: a matching key stamp
+// is not evidence that the program still matches the admitted capture. The launcher must verify
+// the installed tree and rematerialize after a local/stale replacement.
+func TestTheSourceLauncherDoesNotTrustAKeyStampWhenTheInstalledTreeIsStale(t *testing.T) {
+	home, _, fakeBin, argvLog := forkLauncher(t, `{"pi":{"key":"k1"}}`)
+	stamp := filepath.Join(home, ".local", "state", "yolo", "fork-keys", "pi")
+	if err := os.MkdirAll(filepath.Dir(stamp), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stamp, []byte("k1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".local", "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".local", "bin", "pi"),
+		[]byte("#!/bin/bash\necho STALE_FORK_BUILD_RAN\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, launcher, _, _ := forkLauncherInHome(t, home, `{"pi":{"key":"k1"}}`)
+	out, rc := runForkLauncher(t, home, launcher, fakeBin)
+	if rc != 0 || strings.Contains(out, "STALE_FORK_BUILD_RAN") || !strings.Contains(out, "FORK_BUILD_RAN k1") {
+		t.Errorf("rc=%d, launcher trusted a stale tree under matching stamp; want k1 rematerialized:\n%s", rc, out)
+	}
+	if calls, _ := os.ReadFile(argvLog); strings.Count(string(calls), "capture-materialize") != 1 {
+		t.Errorf("stale materialized tree was not repaired: %q", calls)
+	}
+	verifyCalls, _ := os.ReadFile(argvLog + ".verify")
+	for _, arg := range []string{"--verify-installed", "--key=k1", "--produces=.local/bin/pi"} {
+		if !strings.Contains(string(verifyCalls), arg) {
+			t.Errorf("the generated launcher omitted verifier argument %q: %q", arg, verifyCalls)
+		}
+	}
+}
+
+func TestTheSourceLauncherDoesNotStampAKeyWithoutItsProgram(t *testing.T) {
+	home, launcher, fakeBin, argvLog := forkLauncher(t, `{"pi":{"key":"k1"}}`)
+	if err := os.WriteFile(filepath.Join(fakeBin, "yolo"), []byte(`#!/bin/bash
+printf '%s\\n' "$*" >> `+shq(argvLog)+`
+exit 0
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, rc := runForkLauncher(t, home, launcher, fakeBin); rc == 0 || !strings.Contains(out, "did not materialize as the admitted output tree") {
+		t.Errorf("rc=%d, success without the required program should fail verification:\n%s", rc, out)
+	}
+	stamp := filepath.Join(home, ".local", "state", "yolo", "fork-keys", "pi")
+	if _, err := os.Stat(stamp); !os.IsNotExist(err) {
+		t.Errorf("key stamp exists without a runnable materialized program: stat error = %v", err)
 	}
 }
 
