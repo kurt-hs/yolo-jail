@@ -183,19 +183,31 @@ the smaller change; neither is mine to pick.
 
 ## Not a yolo defect
 
-**Opus 5.5 missing from Claude Code's `/model` menu is not yolo's doing**, and nothing on the
-host is caching a model list. Checked 2026-10-19, four ways: `packs/bedrock/pack.json` carries
-**no model ids at all**, so yolo ships no Bedrock model list; `yolo config diff claude` shows the
+**Opus 5.5 missing from Claude Code's `/model` menu is not yolo's doing** — it is the user's own
+`model` pin, and ⚠ **an earlier version of this section got the reason wrong**: it claimed Claude
+Code 2.1.303 ships no Opus entry at all. **It does.** `claude --model opus -p …` resolves and
+answers on this host, on Bedrock. What a pin to a *custom* Opus id does is **replace** the
+built-in Opus row with a `Custom Opus model` row — so pinning `us.anthropic.claude-opus-5[1m]`
+hid the Opus 5.5 the menu would otherwise offer. The maintainer had already observed the
+converse and said so: *"rejecting pins makes it appear on linux."* A pin both freezes the
+version and hides its successor.
+
+Nothing on the host caches a model list, and that much was checked four ways and holds:
+`packs/bedrock/pack.json` carries **no model ids at all**; `yolo config diff claude` shows the
 only captured edit for `claude/settings` is `enabledPlugins {}`, itself flagged *"same as yolo's
-last render — redundant capture"*, with no `model` key; `~/.claude/settings.json` is a 48-byte
-regular file holding only `{"model": "us.anthropic.claude-opus-5[1m]"}`, which Claude Code wrote
-itself when a default was set and attributes on screen (*"from .claude/settings.json"*); and the
-one place yolo touches a Bedrock model value — `ANTHROPIC_MODEL`'s `matches` in
+last render — redundant capture"*, with no `model` key; both `claude` binaries on the machine are
+2.1.303 installed the same day, so the host floor's copy is not stale; and the one place yolo
+touches a Bedrock model value — `ANTHROPIC_MODEL`'s `matches` in
 [`packs/claude/pack.json`](../../packs/claude/pack.json) — is a prefix check on the
-inference-profile/ARN shape
-(`^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\.)?anthropic\.)`) that matches
-every Opus 5.5 id tested, so it filters no model family. The menu's contents are Claude Code
-v2.1.303's own Bedrock list plus that pinned custom entry.
+inference-profile/ARN shape that admits every Opus 5.5 id tested, filtering no family. Bedrock
+had the model all along (`us.anthropic.claude-opus-5-5`, `ACTIVE` in `us-east-1`); repinning to
+it gave `Opus 5.5 (1M context) · Amazon Bedrock` on the next launch.
+
+> [!NOTE]
+> **The lesson is about method, not models.** Two machine-side explanations were checked and
+> cleared before the user's own one-line observation settled it, and the guess offered in between
+> was wrong in a way the available evidence already contradicted. A menu is rendered from state
+> the user owns; read that state before theorising about the renderer.
 
 The mise stage's long stall — `github:pantsbuild/scie-pants@0.13.2` retrying
 `mise-versions.jdx.dev` and then `api.github.com` at 20 s a time for over two minutes — is **the
