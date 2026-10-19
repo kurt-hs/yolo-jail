@@ -9,11 +9,7 @@ tags: [plan, config, mounts, github, live-apply]
 
 # Live config apply: implementation plan
 
-**Status:** 2026-10-18. The implementation and review repairs are landed on main at
-`4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`; the serial landing retained the full history rather
-than cherry-picking the last repair. The final bounded closure review accepted the last mount-record
-repair. Rootless, real-broker and `CAP_SYS_ADMIN` remount obligations below remain outstanding; this
-status records landed implementation, not proof of those runtime cases.
+**Status:** 2026-10-18. Live-apply code and its review repairs entered the integrated history in merge `6f7c72a25`; the inspected-mount-record repair followed in `388ea8a1b`, retaining the full `e80f3a2ae` branch history. The later `4e7b9b92b` commit changes only a documentation heading. The final bounded closure review accepted the last mount-record repair. Rootless, real-broker and `CAP_SYS_ADMIN` remount obligations below remain outstanding; this status records landed implementation, not proof of those runtime cases.
 **Review disposition for candidate `286d051ef`:** Four P1 findings were repaired on the isolated
 current-main branch without changing the gate, consent store, attach prompt, or backend policy.
 The repair is bounded to four failure paths:

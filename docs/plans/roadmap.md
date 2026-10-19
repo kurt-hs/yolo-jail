@@ -68,8 +68,11 @@ and a pi-subagents registry several extensions can share stays in item 28.
    128 passed / 3 skipped / 12 failed, every failure reproducible). The four DM rulings are now
    compacted in the design's [Decision Ledger](../design/macos-user-suite-on-a-developer-mac.md#decision-ledger):
    no root `sudo`, honest counted skips for the host log policy, mise shims continue to win, and
-   local measurements count with provenance. Original commits `98715e67b` and `41dd11e3f` are
-   preserved in main at `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`; native-Mac execution remains unverified. The doorway and housekeeping test repairs are also in main at
+   local measurements count with provenance. Original Mac commits `98715e67b` and `41dd11e3f`,
+   and the doorway, housekeeping and floor-test repairs remain in current main ancestry. Portable
+   guard hardening followed in `cab34b522` and `201c4009e`; the `4e7b9b92b` commit itself changed
+   only a documentation heading. Native-Mac execution remains unverified. The doorway and
+   housekeeping test diagnoses remain in
    [§6.2](../design/macos-user-suite-on-a-developer-mac.md#62-another-sessions-doorway-was-read-as-this-sessions-survivor)
    and [§6.3](../design/macos-user-suite-on-a-developer-mac.md#63-the-housekeeping-tests-slot-was-not-due-because-its-stamp-is-the-machines),
    but still need their documented Mac re-runs. The floor test's changed diagnostic also needs its
@@ -366,7 +369,7 @@ classes, its sub-parts are named and the cross-cutting ones repeat in the two li
 |---|---|---|
 | IC1 — profile-served daemons on attach | D | [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1): activate late-selected profile daemons additively, or refuse conflicting late bridge plans in this slice? **Maintainer** (synthesis leaning: refuse). Today's restart prompt is the ruled [OQ-SK1](../reference/attach-skew.md#why-its-this-way) disposition, not a defect. |
 | IC2 — ongoing launch preparation and update-and-wait | A | Review the connected combined candidate and complete final runtime acceptance; reuse the admitted-build pipeline before optimizing isolated waits. |
-| IC5 — the macos-user suite on a developer Mac | A | The four rulings are compacted into the [Decision Ledger](../design/macos-user-suite-on-a-developer-mac.md#decision-ledger). The original test changes and the doorway, housekeeping and floor-test repairs are in main at `4e7b9b92bfc8d6dbd0e0b5190d0c73efeb6d96c1`; native-Mac reruns remain unverified. |
+| IC5 — the macos-user suite on a developer Mac | A | The four rulings are compacted into the [Decision Ledger](../design/macos-user-suite-on-a-developer-mac.md#decision-ledger). The original test changes and the doorway, housekeeping and floor-test repairs remain in main ancestry; portable root-sudo scanner fixes are in `cab34b522` and `201c4009e`. The earlier `4e7b9b92b` commit was documentation-only. Native-Mac reruns remain unverified. |
 
 The section's other pointers are not items of their own: Pi's profile-set extension call is item 28, native readiness
 and the credential store are items 11 and 20, and storage relocation and OrbStack are items 28 and 31.
