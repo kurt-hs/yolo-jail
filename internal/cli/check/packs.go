@@ -111,7 +111,11 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 	// packload.Pack.StagedSlug — the key the two halves mount a reads-host grant under.
 	tree, treeErr := os.MkdirTemp("", "yolo-check-pack-")
 	if treeErr == nil {
-		defer os.RemoveAll(tree)
+		if o.keepSelectedPackTree {
+			o.selectedPackTree = tree
+		} else {
+			defer os.RemoveAll(tree)
+		}
 	}
 	// The SELECTION CLOSURE (docs/reference/wire-bridge.md §3.1, WB-D10; the `via` half,
 	// docs/design/wire-bridge-gateway.md WG-I11), beside the pack list and before the

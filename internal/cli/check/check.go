@@ -36,6 +36,15 @@ func Check(opts Options) int {
 	defer nixchildren.StopOnSignal()()
 	fillDefaults(&opts)
 	o := &opts
+	// Selected packs are staged for this check. Later sections consume the selected declarations'
+	// staged roots, so they stay alive through Check's return and are then removed even on an early
+	// exit after sectionPacks.
+	o.keepSelectedPackTree = true
+	defer func() {
+		if o.selectedPackTree != "" {
+			_ = os.RemoveAll(o.selectedPackTree)
+		}
+	}()
 	// Gate color through the one gate (tty.Color): o.Color merely requests it,
 	// ANSI must never leak to a pipe/redirect (docs/reference/cli-color.md),
 	// and a non-empty NO_COLOR in o.Getenv's environment vetoes it. The
