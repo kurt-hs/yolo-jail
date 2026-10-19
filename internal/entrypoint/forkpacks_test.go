@@ -240,7 +240,7 @@ func TestTheSourceLauncherDoesNotTrustAKeyStampWhenTheInstalledTreeIsStale(t *te
 		t.Errorf("stale materialized tree was not repaired: %q", calls)
 	}
 	verifyCalls, _ := os.ReadFile(argvLog + ".verify")
-	for _, arg := range []string{"--verify-installed", "--key=k1", "--produces=.local/bin/pi"} {
+	for _, arg := range []string{"--verify-installed", "--program=.local/bin/pi", "--key=k1", "--produces=.local/bin/pi"} {
 		if !strings.Contains(string(verifyCalls), arg) {
 			t.Errorf("the generated launcher omitted verifier argument %q: %q", arg, verifyCalls)
 		}

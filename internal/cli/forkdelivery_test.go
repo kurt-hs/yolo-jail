@@ -138,7 +138,7 @@ func TestCaptureMaterializeKeyChecksTheEntrysBuildRecord(t *testing.T) {
 	}
 	errw.Reset()
 	verifyArgs := []string{"capture-materialize", "--verify-installed", "--store=" + store.Dir,
-		"--home=" + home, "--bin=pi", "--key=" + entry.Key, "--produces=.local/bin/pi"}
+		"--home=" + home, "--bin=pi", "--program=.local/bin/pi", "--key=" + entry.Key, "--produces=.local/bin/pi"}
 	if rc := runInternal(verifyArgs); rc != 0 {
 		t.Fatalf("the generated launcher's verification command rejected a valid materialization: rc=%d", rc)
 	}

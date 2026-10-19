@@ -177,6 +177,7 @@ const sourceLauncherTemplate = `#!/bin/bash
 # capture store entry the host built at the fork's pinned commit, never installed any other way.
 set -euo pipefail
 BIN=__YOLO_BIN__
+PROGRAM=__YOLO_PROGRAM_PATH__
 REAL_BIN="$HOME/"__YOLO_PROGRAM_PATH__
 # The host's decision for this launch (ForkBuildsEnv): the store key, or why there is none.
 KEY=__YOLO_FORK_KEY__
@@ -236,7 +237,7 @@ fi
 # what was requested; it does not prove the files still match that artifact.
 _yolo_verify_fork_tree() {
     local -a args=(internal capture-materialize --verify-installed --store="$CAPTURES_DIR" \
-        --home="$HOME" --bin="$BIN" --key="$KEY")
+        --home="$HOME" --bin="$BIN" --program="$PROGRAM" --key="$KEY")
     for p in "${PRODUCES[@]}"; do args+=(--produces="$p"); done
     YOLO_BYPASS_SHIMS=1 yolo "${args[@]}" >/dev/null 2>&1
 }
