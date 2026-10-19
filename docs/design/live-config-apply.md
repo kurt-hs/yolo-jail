@@ -54,10 +54,10 @@ discharge the rootless obligation.
 >   the measuring host answers `true`, so the inconclusive answer is the test environment's, not
 >   the machine's.)
 
-**Candidate status (2026-10-19):** candidate commits `3a96ed8b7` and `8e66a6dfe` pass the five focused Linux run tests
-and the production-callsite pack-root regression. Native Mac and actual-rootless Podman reruns
-remain owed.
->
+**Verification status (2026-10-19):** the run-fixture repairs and production-callsite
+pack-root regression pass focused Linux tests. Native Mac and actual-rootless Podman
+reruns remain owed.
+
 > **In short.** "Restart to apply" is wrong for the two changes people actually make mid-session,
 > a read-only mount and a GitHub repository: both can reach a running jail. So approval moves to a
 > host command that reuses the launch's gate unchanged, and so does any attach a human is at, and
