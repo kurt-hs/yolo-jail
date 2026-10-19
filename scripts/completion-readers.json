@@ -1945,7 +1945,6 @@
 "internal/wirebridged",
 "packs/**",
 "scripts",
-"scripts/__pycache__",
 "tools/**",
 "userguide/**"
 ]
@@ -3386,8 +3385,7 @@
 "internal/wirebridge",
 "internal/wirebridged",
 "packs/**",
-"scripts",
-"scripts/__pycache__"
+"scripts"
 ]
 },
 {
@@ -6232,6 +6230,7 @@
 "TestBootRunsTheWitnessAboveTheGateThatAbortsTheBoot": 4,
 "TestBootstrapInstallsNoLanguageServer": 3,
 "TestBothGoBuildPathsTrimPaths": 49,
+"TestCompileCachesSurviveARestart": 3,
 "TestEveryBuildableBinaryIsIgnoredAtTheRoot": 50,
 "TestEveryCmdBinaryIsShippedOrExempt": 51,
 "TestGeneratedReceiptRetentionAndConcurrentGoAppend": 3,
@@ -6264,6 +6263,7 @@
 "TestNativeLauncherRunsARealScript": 3,
 "TestNativeLauncherTreatsAMissingStoreDirAsAMiss": 3,
 "TestNativeLauncherWithNoCaptureStoreNeverAsks": 3,
+"TestNextLaunchRefreshRunsBehindTheLaunch": 3,
 "TestNixLdSearchesTheStoreFHSLib": 4,
 "TestNoGeneratedPythonClientsRemain": 4,
 "TestNoProgramReadinessInstallsNothingAndSaysWhatItLeft": 3,
