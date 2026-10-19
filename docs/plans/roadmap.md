@@ -116,6 +116,19 @@ and a pi-subagents registry several extensions can share stays in item 28.
    [the store-build design's Apple arm](../design/pi-extension-store-builds.md). podman is
    unaffected (the gate is `runtime == "container"`).
 
+8. **Two launch diagnostics that send a reader the wrong way** — both measured 2026-10-19 and
+   written up in [the lab report](../lab-reports/2026-10-19-launch-diagnostics-on-a-mac.md); each
+   cost a real wrong conclusion in that session, and each needs a small ruling rather than a
+   repair. **(a)** The runtime a launch chose reaches the launch log only (`logRecord` writes
+   `LaunchLogOnly`), and `YOLO_BACKEND` — not a yolo dial, the dial is `YOLO_RUNTIME` — is
+   accepted in silence, so two Apple Container launches were reported as podman and a
+   backend-specific defect (item 7) was attributed to both. ⚠ The screen line needs no registry;
+   warning on unknown `YOLO_*` would need one yolo deliberately does not keep. **(b)** A `Ctrl-C`
+   during provisioning prints *"Provisioning log could not be written … repair workspace .yolo
+   permissions or free disk space"* when neither holds: the writer was merely signalled
+   (`PIPESTATUS` `_plog`, setup `_prc` = 141 = SIGPIPE), and the same run then appended
+   `PROVISIONING FAILED (exit 141)` to the file it called unwritable.
+
 Native readiness and credential-store work retain their places below: assess
 [the privilege prerequisites](../research/sandvault-macos-privileges.md) without broad root
 cleanup, and rule [keychain scope/unlock/migration](../design/keychain-from-a-jail.md) without
