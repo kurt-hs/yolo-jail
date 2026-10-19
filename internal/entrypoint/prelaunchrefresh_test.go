@@ -75,10 +75,10 @@ fi
 // prelaunchProbe is one generated launcher, the fake program it manages, and the store its
 // refresh locks, which also holds the refresh's stamp and seen markers.
 type prelaunchProbe struct {
-	home, log, stamps, script, realBin, store string
-	native                                    bool
-	updates                                   bool
-	refresh                                   *packdecl.Refresh
+	home, log, stamps, script, realBin, store, captures, key string
+	native                                                   bool
+	updates                                                  bool
+	refresh                                                  *packdecl.Refresh
 	// heartbeat, when set, replaces the baked REFRESH_HEARTBEAT interval (seconds) in the
 	// rendered launcher, so a cell can watch the heartbeat without waiting a real minute.
 	heartbeat string
@@ -169,8 +169,8 @@ func (p *prelaunchProbe) write(t *testing.T) {
 		body = strings.Join(sourceAgentLauncherSegments(&packdecl.Install{Kind: packdecl.InstallKindSource,
 			Bin: "tool", ForkedBy: "forkpack", Produces: []string{".local/bin/tool"},
 			Refresh: p.refresh, RefreshTiming: p.timing},
-			ForkDelivery{Key: "k"}, p.stamps, keyDir, filepath.Join(p.home, "ws", ".yolo", "receipts.jsonl"),
-			"", p.updates, launcherServers{}, nil), "")
+			ForkDelivery{Key: p.key}, p.stamps, keyDir, filepath.Join(p.home, "ws", ".yolo", "receipts.jsonl"),
+			p.captures, p.updates, launcherServers{}, nil), "")
 	} else if p.native {
 		body = nativeAgentLauncher("probe",
 			&packdecl.Install{Kind: "native", Bin: "tool",

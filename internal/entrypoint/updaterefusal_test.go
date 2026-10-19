@@ -336,11 +336,13 @@ func TestALauncherPassesAServerRefusalOn(t *testing.T) {
 					t.Fatal(err)
 				}
 				yoloLog := filepath.Join(home, "yolo.log")
-				argvLogger(t, fakeBin, "yolo", yoloLog, `if [ "${2:-}" = refresh-servers ]; then exit `+rc+`; fi`)
+				if tpl != "source" {
+					argvLogger(t, fakeBin, "yolo", yoloLog, `if [ "${2:-}" = refresh-servers ]; then exit `+rc+`; fi`)
+				}
 				stamps := filepath.Join(home, "stamps")
 				receipts := filepath.Join(home, "ws", ".yolo", "receipts.jsonl")
 				servers := launcherServers{npm: "chrome-devtools-mcp"}
-				var body, realBin string
+				var body, realBin, sourceKeyDir string
 				switch tpl {
 				case "npm":
 					realBin = filepath.Join(home, ".npm-global", "bin", "tool")
@@ -352,14 +354,21 @@ func TestALauncherPassesAServerRefusalOn(t *testing.T) {
 						InstallerURL: "https://example.invalid/never-fetched.sh"}, stamps, receipts, "", true, servers, nil)
 				case "source":
 					realBin = filepath.Join(home, ".local", "bin", "tool")
-					keyDir := filepath.Join(home, ".local", "state", "yolo", "fork-keys")
-					writeTestFile(t, filepath.Join(keyDir, "tool"), "k\n")
-					body = strings.Join(sourceAgentLauncherSegments(&packdecl.Install{Kind: packdecl.InstallKindSource,
-						Bin: "tool", ForkedBy: "forkpack", Produces: []string{".local/bin/tool"}},
-						ForkDelivery{Key: "k"}, stamps, keyDir, receipts, "", true, servers, nil), "")
+					sourceKeyDir = filepath.Join(home, ".local", "state", "yolo", "fork-keys")
+					writeTestFile(t, filepath.Join(sourceKeyDir, "tool"), "old-key\n")
 				}
 				seedInstalled(t, filepath.Dir(realBin), "tool")
 				seedFreshStamp(t, stamps, "tool")
+				if tpl == "source" {
+					captures, key := admitForkLauncherCapture(t, home, "tool", ".local/bin/tool", realBin)
+					body = strings.Join(sourceAgentLauncherSegments(&packdecl.Install{Kind: packdecl.InstallKindSource,
+						Bin: "tool", ForkedBy: "forkpack", Produces: []string{".local/bin/tool"}},
+						ForkDelivery{Key: key}, stamps, sourceKeyDir, receipts, captures, true, servers, nil), "")
+					realYolo := filepath.Join(forkMaterializerPath(t), "yolo")
+					argvLogger(t, fakeBin, "yolo", yoloLog, `
+if [ "${2:-}" = capture-materialize ]; then exec `+shellSingleQuote(realYolo)+` "$@"; fi
+if [ "${2:-}" = refresh-servers ]; then exit `+rc+`; fi`)
+				}
 				out, code := runLauncher(t, home, "launch-tool", body, fakeBin)
 				if !hasExactArg(logLines(t, yoloLog), "--bin=tool") {
 					t.Errorf("the refresh call must name its agent:\n%s", strings.Join(logLines(t, yoloLog), "\n"))

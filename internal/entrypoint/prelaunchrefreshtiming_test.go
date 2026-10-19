@@ -38,6 +38,10 @@ func newTimingProbe(t *testing.T, native, fork bool) *prelaunchProbe {
 	p := newPrelaunchProbe(t, native)
 	p.fork, p.timing = fork, nextLaunch
 	p.path = yoloStandIn(t) + ":" + pathWithout(t, "yolo")
+	if fork {
+		p.captures, p.key = admitForkLauncherCapture(t, p.home, "tool", ".local/bin/tool", p.realBin)
+		p.path = forkMaterializerPath(t) + ":" + pathWithout(t, "yolo")
+	}
 	return p
 }
 
