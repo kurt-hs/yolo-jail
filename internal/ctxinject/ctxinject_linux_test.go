@@ -10,14 +10,38 @@ import (
 )
 
 func TestAttachRejectsAChangedProcessOrMountNamespaceBeforeSourceMutation(t *testing.T) {
-	identity, err := ReadProcessIdentity(os.Getpid())
-	if err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name   string
+		mutate func(*ProcessIdentity)
+	}{
+		{
+			name: "mount namespace inode",
+			mutate: func(identity *ProcessIdentity) {
+				identity.MountNSInode++
+			},
+		},
+		{
+			name: "process start time",
+			mutate: func(identity *ProcessIdentity) {
+				identity.StartTime++
+			},
+		},
 	}
-	identity.MountNSInode++
-	err = Attach(os.Getpid(), identity, "/does/not/exist", "/ctx/ctxinject-test", false)
-	if err == nil || !strings.Contains(err.Error(), "target process or mount namespace changed") {
-		t.Fatalf("Attach error = %v, want changed namespace refusal before opening the source", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			identity, err := ReadProcessIdentity(os.Getpid())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !identity.Valid() {
+				t.Fatalf("ReadProcessIdentity returned invalid identity: %+v", identity)
+			}
+			tt.mutate(&identity)
+			err = Attach(os.Getpid(), identity, "/does/not/exist", "/ctx/ctxinject-test", false)
+			if err == nil || !strings.Contains(err.Error(), "target process or mount namespace changed") {
+				t.Fatalf("Attach error = %v, want changed namespace refusal before opening the source", err)
+			}
+		})
 	}
 }
 
