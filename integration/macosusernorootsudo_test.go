@@ -168,13 +168,13 @@ func sudoRunsAsRoot(words []string, i int) bool {
 			break
 		}
 		if arg == "-u" || arg == "--user" {
-			return i+1 < len(words) && strings.Trim(words[i+1], "'\"") == "root"
+			return i+1 < len(words) && sudoUserIsRoot(words[i+1])
 		}
 		if strings.HasPrefix(arg, "--user=") {
-			return strings.TrimPrefix(arg, "--user=") == "root"
+			return sudoUserIsRoot(strings.TrimPrefix(arg, "--user="))
 		}
 		if strings.HasPrefix(arg, "-u") && len(arg) > 2 {
-			return strings.TrimPrefix(strings.TrimPrefix(arg, "-u"), "=") == "root"
+			return sudoUserIsRoot(strings.TrimPrefix(strings.TrimPrefix(arg, "-u"), "="))
 		}
 		switch arg {
 		case "-C", "--close-from", "-D", "--chdir", "-g", "--group", "-h", "--host",
@@ -208,6 +208,49 @@ func diagnostic() { t.Errorf("cleanup with ` + "`sudo rm -rf /tmp/fixture`" + `"
 	}
 	if len(found) != 3 {
 		t.Fatalf("root sudo commands = %v, want default-root and explicit -u/--user root commands, not the approved wrapper or diagnostic prose", found)
+	}
+}
+
+func sudoUserIsRoot(operand string) bool {
+	operand = strings.Trim(operand, "'\"")
+	return operand == "root" || operand == "#0"
+}
+
+func TestMacosUserRootSudoOperandSpellings(t *testing.T) {
+	cases := []struct {
+		name   string
+		script string
+		want   bool
+	}{
+		{name: "separated numeric UID zero", script: "sudo -n -u '#0' /bin/true", want: true},
+		{name: "separated numeric UID zero long option", script: "sudo --user '#0' /bin/true", want: true},
+		{name: "separated numeric UID zero after user", script: "sudo -u '#0' -n /bin/true", want: true},
+		{name: "attached numeric UID zero long option", script: "sudo --user='#0' /bin/true", want: true},
+		{name: "attached numeric UID zero short option", script: "sudo -u'#0' /bin/true", want: true},
+		{name: "attached numeric UID zero short option with equals", script: "sudo -u='#0' /bin/true", want: true},
+		{name: "attached single-quoted root long option", script: "sudo --user='root' /bin/true", want: true},
+		{name: "attached double-quoted root long option", script: `sudo --user="root" /bin/true`, want: true},
+		{name: "attached single-quoted root short option", script: "sudo -u'root' /bin/true", want: true},
+		{name: "attached double-quoted root short option", script: `sudo -u"root" /bin/true`, want: true},
+		{name: "separated quoted root operand", script: "sudo -n -u 'root' /bin/true", want: true},
+		{name: "sandbox user remains allowed", script: "sudo -n --user='_yolojail' /bin/true", want: false},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			source := "package integration\nimport \"os/exec\"\nfunc fixture() { exec.Command(\"sh\", \"-c\", " + strconv.Quote(tt.script) + ") }\n"
+			f, err := parser.ParseFile(token.NewFileSet(), "fixture.go", source, parser.SkipObjectResolution)
+			if err != nil {
+				t.Fatal(err)
+			}
+			scripts := macosUserShellScripts(f)
+			if len(scripts) != 1 || scripts[0] != tt.script {
+				t.Fatalf("executable shell literals = %q, want [%q]", scripts, tt.script)
+			}
+			found := rootSudoCommands(scripts[0])
+			if got := len(found) == 1; got != tt.want {
+				t.Fatalf("root sudo commands = %v, want root detection %t", found, tt.want)
+			}
+		})
 	}
 }
 
