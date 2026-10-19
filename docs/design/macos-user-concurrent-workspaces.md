@@ -1,7 +1,7 @@
 ---
 status: in-review
 stage: DESIGN
-next: "Owner discussion: rule OQ-MCW1 through OQ-MCW4; do not build before 0.15 releases"
+next: "Owner discussion: rule OQ-HT6 in the home-tier reference and OQ-MCW2 through OQ-MCW4 here; do not build before 0.15 releases"
 tags: [macos-user, workspaces, concurrency, seatbelt, home]
 vantage:
   status-chip: true
@@ -21,7 +21,9 @@ vantage:
 
 **Start at [the boundary](#the-boundary-that-must-hold).**
 
-**Needs your ruling:** [OQ-MCW1](#OQ-MCW1), [OQ-MCW2](#OQ-MCW2), [OQ-MCW3](#OQ-MCW3), [OQ-MCW4](#OQ-MCW4).
+**Needs your ruling:** [OQ-MCW2](#OQ-MCW2), [OQ-MCW3](#OQ-MCW3), [OQ-MCW4](#OQ-MCW4).
+
+**Prerequisite owner question:** [OQ-HT6](../reference/macos-user-home-tiers.md#oq-ht6) is the existing concurrent-workspace choice.
 
 **Reads with:** [the home tiers](../reference/macos-user-home-tiers.md#concurrent-workspace-choice-background-and-full-options) (prior ruling and still-open [OQ-HT6](../reference/macos-user-home-tiers.md#oq-ht6)), [native privilege lifecycle](macos-user-privilege-lifecycle.md#points-settled-in-the-walkthrough-2026-10-15) (one enrolled user and one run-as account), [native direction](../reference/macos-no-vm-direction.md) (native plus container fallback), [the implementation sketch](macos-user-concurrent-workspaces-plan.md) (not a build handoff).
 
@@ -33,7 +35,7 @@ The [home-tier ruling](../reference/macos-user-home-tiers.md#why-it-is-this-way)
 
 The [privilege ruling](macos-user-privilege-lifecycle.md#points-settled-in-the-walkthrough-2026-10-15) installed one narrow passwordless run-as grant for `_yolojail`, not a general root capability, a second account, or an admin-free account factory. The host-owned staging root, session-specific env/profile/CA files and account switch must remain narrow; environment secrets are in protected files, not argv. The [native process](../reference/macos-user-nix-and-features.md) uses a Seatbelt profile with a workspace and home write allow and a `/Users` read deny with selected re-allows; `sandbox-exec` evaluates resolved physical paths. The sandbox UID still owns the shared account home, so Seatbelt and DAC both matter.
 
-The [per-session profile design](per-session-profiles.md) addresses profile-dependent *agent* config for concurrent entries of a jail; it does not solve the native account-home link switch, and its host/jail implementation stages must not be assumed to be fully present on this backend. A native profile lane needs its own session-scoped environment and render, not a rewrite of another session's files. No Pi core, SDK or extension feature is required as a prerequisite.
+The [per-session profile design](per-session-profiles.md) addresses profile-dependent *agent* config for concurrent entries of a jail; it does not solve the native account-home link switch. Its native Pi session-home work is independently shippable for two sessions of the **same** workspace under the existing guard, so multi-project architecture must not block that lane. A native profile lane needs its own session-scoped environment and render, not a rewrite of another session's files. No Pi core, SDK or extension feature is required as a prerequisite.
 
 ## The boundary that must hold
 
@@ -64,14 +66,7 @@ The Mac-agent instrument may use **only** the already-supported narrow, no-passw
 
 ## Open questions — owner decisions, not recommendations
 
-- 💬 **OQ-MCW1: Which home/account shape may replace the hold?**
-
-  <!-- vantage: question id=OQ-MCW1 leaning="No selection: compare physical-path and UID boundary measurements before revisiting the one-HOME ruling." -->
-
-  _Leaning:_ No selection: compare physical-path and UID boundary measurements before revisiting the one-HOME ruling.
-
-  **Answer:**
-  > _(empty — owner discussion after 0.15)_
+The existing [OQ-HT6](../reference/macos-user-home-tiers.md#oq-ht6) is the **sole** authority for whether concurrent native projects are supported and which home/account alternative is selected. Its [OQ-HT4](../reference/macos-user-home-tiers.md#oq-ht4) constraint cannot be silently superseded: selecting another `HOME` requires an explicit owner amendment there. The following questions address separate boundary and lifecycle policies if concurrent use is selected; none answers the older question.
 
 - 💬 **OQ-MCW2: What is the accepted isolation boundary between projects of the same sandbox UID?**
 
