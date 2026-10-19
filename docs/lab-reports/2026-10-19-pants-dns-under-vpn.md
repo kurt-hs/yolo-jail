@@ -72,13 +72,21 @@ test, run on his Mac, separates the two: a musl failure there is outside yolo en
 
 ## Open: why only musl fails on the coworker's machine
 
-**The hypothesis.** musl's resolver sends each query to every listed nameserver at once and takes
-the first reply, a negative one included. glibc asks the nameservers in order. If either of the
-coworker's two servers answers `github.com` negatively, or wrongly, and fast, musl programs
-fail while glibc programs keep working. The jail's `curl` and `ping` are presumably glibc
-builds (unchecked), which would make them the programs that work. The VPN is the natural
-suspect for the bad answer: its search domains reach this machine's `resolv.conf` and not the
-maintainer's, so its DNS setup evidently reaches this VM differently.
+**Two hypotheses, both musl-only, which is why curl and ping are unaffected.** The jail's `curl`
+and `ping` are presumably glibc builds (unchecked).
+
+1. **A negative answer to the IPv6 query (the stronger one).** Every lookup sends an `A` and an
+   `AAAA` query together. glibc returns the `A` addresses when the `AAAA` query comes back
+   `NXDOMAIN`; musl fails the whole lookup on an `NXDOMAIN` to either one. A resolver that answers
+   `AAAA` for outside names with `NXDOMAIN` breaks only musl programs. Corporate and cloud
+   resolvers are where that behaviour is plausible, and `ec2.internal` hints at an AWS one. The
+   maintainer's servers answer `AAAA` correctly, which would explain why it does not reproduce.
+2. **A race between the two nameservers (weaker).** musl asks every listed server at once and
+   takes the first reply, a negative one included; glibc asks them in order. But both jail
+   servers are relays inside the podman VM (pasta's forwarder and gvproxy) that most likely end
+   at the same host resolver, so their answers should agree.
+
+The `nslookup -type=AAAA` lines in the container test below tell the two apart.
 
 **Not checked:** which of the two servers misbehaves, whether it is the A or the AAAA query, and
 whether `/ctx/workspace` means this was not the backend it was reported as.
