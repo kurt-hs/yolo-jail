@@ -318,7 +318,7 @@ func TestHostFloorRunsARealCaptureOfAnInstallerFixture(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(pack, "pack.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	packHome(t, `{"packs": [{"source": "file://`+pack+`", "name": "`+captureFixturePack+`"}]}`)
+	packHome(t, `{"packs": [{"source": "file://`+pack+`", "name": "`+captureFixturePack+`"}], "host_management": "own"}`)
 	home := os.Getenv("HOME")
 	floor := paths.HostFloorDirUnder(home)
 	store := paths.CapturesDirUnder(home)

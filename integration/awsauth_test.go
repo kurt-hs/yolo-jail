@@ -488,7 +488,7 @@ func TestAWSAuthServesAYoloHostAgentThroughItsDoorway(t *testing.T) {
 	// installing the real pi to do it, where this test needs the stand-in on PATH (and no
 	// automated test may run an agent CLI).
 	fx := newAWSAuthFixtureWith(t,
-		awsAuthUserConfig(`["bedrock", "pi"]`, "pi", `"host_floor": false, `), false, func(bin string) string {
+		awsAuthUserConfig(`["bedrock", "pi"]`, "pi", `"host_management": "own", "host_floor": false, `), false, func(bin string) string {
 			raw, err := json.Marshal(map[string]any{"Version": 1, "AccessKeyId": "ASIAYOLOHOSTDOORWAY",
 				"SecretAccessKey": "yolo-host-secret", "SessionToken": "yolo-host-session-token",
 				"Expiration": expires.Format(time.RFC3339)})

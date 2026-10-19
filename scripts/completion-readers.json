@@ -709,6 +709,7 @@
 {
 "read": [
 "go.mod",
+"internal/agentcfg/manifest/*.go",
 "internal/broker/*.go",
 "internal/brokeraudit/brokeraudit.go",
 "internal/brokerstore/*.go",
@@ -749,6 +750,7 @@
 "internal/updatehint/updatehint.go"
 ],
 "listed": [
+"internal/agentcfg/manifest",
 "internal/broker",
 "internal/brokeraudit",
 "internal/brokerstore",
@@ -792,6 +794,7 @@
 {
 "read": [
 "go.mod",
+"internal/agentcfg/manifest/*.go",
 "internal/broker/*.go",
 "internal/capture/*.go",
 "internal/claudeview/claudeview.go",
@@ -823,6 +826,7 @@
 "internal/shquote/*.go"
 ],
 "listed": [
+"internal/agentcfg/manifest",
 "internal/broker",
 "internal/capture",
 "internal/claudeview",
@@ -1941,6 +1945,7 @@
 "internal/wirebridged",
 "packs/**",
 "scripts",
+"scripts/__pycache__",
 "tools/**",
 "userguide/**"
 ]
@@ -3381,7 +3386,8 @@
 "internal/wirebridge",
 "internal/wirebridged",
 "packs/**",
-"scripts"
+"scripts",
+"scripts/__pycache__"
 ]
 },
 {
@@ -4915,6 +4921,7 @@
 "internal/cli/check/sections_macos_test.go",
 "internal/cli/check/sections_nix_test.go",
 "internal/cli/check/sectionwiring_test.go",
+"internal/cli/check/selectedpackroot_test.go",
 "internal/cli/check/selfchecklines_test.go",
 "internal/cli/check/served_test.go",
 "internal/cli/check/servedguest_test.go",
@@ -5749,7 +5756,6 @@
 "TestAHostLaunchStopsOnAnExtensionsFailedNewerBuild": 17,
 "TestAHostLaunchTheCapabilityGateRefusesBuildsNoTree": 26,
 "TestAHostLaunchTimesEveryStepOfItsExtensionsBuild": 17,
-"TestAHostLaunchUnderHostManagementNoneAdvancesNothing": 26,
 "TestAHostLaunchWithoutApplyOnLaunchStopsOnATreesRecordedPatchFailure": 17,
 "TestAHostThatBuildsNoTreeLaunchSaysTheOwnerStartsWithoutItsTree": 26,
 "TestALinuxHostLaunchWithNoGoodBuildSaysTheAgentInstallsTheFallback": 17,
@@ -6078,15 +6084,19 @@
 "TestHostManagementOwnApplies": 17,
 "TestHostManagementRetiredAssertIsRefusedByName": 17,
 "TestHostManagementUnsetIsNoneAndSaysSoOnlyAtTheAct": 17,
-"TestHostPiBareLaunchUnderNoneGetsNoSessionHome": 27,
 "TestHostPiChildPolicyLeavesTheUnmovedLaunchAlone": 25,
 "TestHostPiChildPolicyWaitsOnItsOptIn": 25,
 "TestHostPiCodexOverConfiguredOpenRouterHandsItsChildPolicy": 25,
+"TestHostPiFirstOwnedSessionCapturesUserEditWithoutDurableBaseline": 27,
+"TestHostPiFirstOwnedSessionWithApplyDisabledCapturesUserEditWithoutDurableBaseline": 27,
 "TestHostPiLaunchGetsItsOwnSessionHome": 27,
+"TestHostPiResidentSessionCapturesUserEditNormally": 27,
 "TestHostPiSameProviderProfilesHandTheirOwnRoles": 25,
+"TestHostPiSessionCaptureAccumulatesCurrentOverlayAndListRecords": 27,
 "TestHostPiSessionHomeCarriesTheProfilesChildPolicy": 27,
 "TestHostPiSessionHomeFoldsTheCapturedEditsUnderOwn": 27,
 "TestHostPiSessionHomeReapsADeadLaunch": 27,
+"TestHostPiSessionHomeUsesConfiguredOrExplicitProfile": 27,
 "TestHostPiSessionHomeYieldsToThePresetVariable": 27,
 "TestHostPreparationTimingEmptySelectionDoesNotClaimWork": 17,
 "TestHostPreparationTimingObserveDoesNotClaimWork": 17,
@@ -6108,6 +6118,8 @@
 "TestPreparationHostRejectsDiagnosticReadyWithoutGood": 17,
 "TestPreparationHostRejectsStaleRecipe": 17,
 "TestPreparationHostUnownedLaunchRegistersNothing": 17,
+"TestPruneRetainsHostSessionHomeWhenCaptureInventoryChanges": 27,
+"TestPruneRunRefusesRelocatedHostSessionHomeAndRetainsOriginalBytes": 25,
 "TestReadOnlySurfacesDoNotFetchPacks": 17,
 "TestResetDoesNotSpendTheAdoptionArchiveOnYolosOwnOutput": 17,
 "TestRetiredAcceptVariableDoesNotApproveAnApply": 17,
