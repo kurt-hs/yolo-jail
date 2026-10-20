@@ -21,7 +21,9 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/codec"
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/manifest"
+	"github.com/mschulkind-oss/yolo-jail/internal/nativehome"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/render"
 	"github.com/mschulkind-oss/yolo-jail/internal/sessionhome"
@@ -50,6 +52,9 @@ func prepareSessionHomesStep(b *bootRun) {
 		return
 	}
 	id := os.Getenv(SessionIDEnv)
+	if b.e.nativeSessionID != "" {
+		id = b.e.nativeSessionID
+	}
 	if !validSessionID(id) {
 		return
 	}
@@ -58,7 +63,22 @@ func prepareSessionHomesStep(b *bootRun) {
 	if err != nil {
 		return
 	}
-	genStep(b.e, "prepare_session_homes", func() error { return prepareSessionHomes(b.e, packs, id) })
+	genStep(b.e, "prepare_session_homes", func() error {
+		if b.e.nativeSessionID != "" {
+			if len(declaredSessionHomes(b.e, packs)) == 0 {
+				return nil
+			}
+			if _, err := nativehome.Prepare(b.e.Home, b.e.WorkspaceDir(), id); err != nil {
+				var skips []string
+				for _, d := range declaredSessionHomes(b.e, packs) {
+					skips = append(skips, d.shared)
+				}
+				b.e.session = &render.Session{Skips: skips}
+				return fmt.Errorf("cannot prepare native session config: %w; repair the path and retry yolo", err)
+			}
+		}
+		return prepareSessionHomes(b.e, packs, id)
+	})
 }
 
 // sessionDecl is one selected pack's session-home declaration resolved at this home: everything
@@ -69,7 +89,10 @@ type sessionDecl struct {
 	env  string
 	// shared is the declared directory, absolute.
 	shared string
-	names  []string
+	// nativeRoot is workspace-qualified; empty keeps the container layout.
+	nativeRoot string
+	nativeRel  string
+	names      []string
 	// prefer is the declaration's prefer map with each target expanded.
 	prefer map[string]string
 	// rendered are the files, relative to the directory and slash-separated, its surfaces render (sessionhome.Spec.Rendered).
@@ -84,6 +107,22 @@ type sessionDecl struct {
 func (d sessionDecl) spec(home string) sessionhome.Spec {
 	return sessionhome.Spec{Shared: d.shared, Home: home, Names: d.names, Prefer: d.prefer,
 		Rendered: d.rendered}
+}
+
+func (d sessionDecl) root() string {
+	if d.nativeRoot != "" {
+		return d.nativeRoot
+	}
+	return sessionhome.SessionsRoot(d.shared)
+}
+func (d sessionDecl) home(id string) (string, error) {
+	if d.nativeRoot != "" {
+		if !nativehome.ValidID(id) {
+			return "", fmt.Errorf("invalid native session ID %q", id)
+		}
+		return filepath.Join(d.nativeRoot, id, d.nativeRel), nil
+	}
+	return sessionhome.Home(d.shared, id)
 }
 
 // sessionHomePlan is one declaration with the home this session makes for it.
@@ -115,6 +154,10 @@ func declaredSessionHomes(e *Env, packs []*packload.Pack) []sessionDecl {
 				for name, target := range decl.Prefer {
 					d.prefer[name] = base.ExpandHome(target)
 				}
+			}
+			if e.nativeSessionID != "" {
+				d.nativeRoot = nativehome.Root(e.Home, e.WorkspaceDir())
+				d.nativeRel = filepath.FromSlash(strings.TrimSuffix(decl.Dir, "/"))
 			}
 			seen := map[string]bool{}
 			for _, s := range surfaces {
@@ -159,7 +202,7 @@ func prepareSessionHomes(e *Env, packs []*packload.Pack, id string) error {
 			skips = append(skips, d.shared)
 			continue
 		}
-		home, err := sessionhome.Home(d.shared, id)
+		home, err := d.home(id)
 		if err != nil {
 			return err
 		}
@@ -208,8 +251,17 @@ func prepareSessionHomes(e *Env, packs []*packload.Pack, id string) error {
 	}
 	// Under the render lock: a pass with no session id may be rewriting the shared baseline in
 	// place, and a torn copy would make this session's first render a first migration.
-	release := holdSessionRenderLock(e)
-	err := seedSessionBaselines(base, sess, surfaces)
+	var release func()
+	var err error
+	if e.nativeSessionID != "" {
+		release, err = takeSessionRenderLock(e)
+		if err != nil {
+			return refuse(err)
+		}
+	} else {
+		release = holdSessionRenderLock(e)
+	}
+	err = seedSessionBaselines(base, sess, surfaces, e.nativeSessionID != "")
 	release()
 	if err != nil {
 		return refuse(err)
@@ -228,7 +280,7 @@ func prepareSessionHomes(e *Env, packs []*packload.Pack, id string) error {
 // persisted overlay, which is shared (SP-D14), would be written back empty, discarding them for
 // every later render. With one, and no file yet in the home, the render is steady state with
 // nothing to capture: the shared overlay folds in whole. A session baseline already there is kept.
-func seedSessionBaselines(base render.Target, sess *render.Session, surfaces []manifest.Surface) error {
+func seedSessionBaselines(base render.Target, sess *render.Session, surfaces []manifest.Surface, native bool) error {
 	if sess.SidecarDir == "" {
 		return nil
 	}
@@ -243,7 +295,18 @@ func seedSessionBaselines(base render.Target, sess *render.Session, surfaces []m
 		}
 		data, err := os.ReadFile(base.LastRenderPath(s.Agent, s.Name))
 		if err != nil {
-			continue // no shared baseline: the shared copy was never rendered, so nothing was captured
+			if os.IsNotExist(err) && native {
+				c, ok := codec.LookupCodec(s.Codec)
+				if !ok {
+					continue
+				}
+				data, err = c.Encode(s.Kind().ZeroValue())
+				if err != nil {
+					return err
+				}
+			} else {
+				continue
+			}
 		}
 		if err := writeSidecar(at, to+seededBaselineSuffix, ""); err != nil {
 			return fmt.Errorf("cannot mark this session's seeded baseline %s: %w", to, err)
@@ -302,25 +365,51 @@ func sessionHomeRefusal(pl sessionHomePlan, err error) error {
 // (beginSessionCapture), and returns its release. A lock that cannot be taken is a warning, never
 // a refusal: it orders two passes, and each still renders only its own session's files.
 func holdSessionRenderLock(e *Env) func() {
+	release, err := takeSessionRenderLock(e)
+	if err != nil {
+		e.warn("warning: " + err.Error() + "; rendering this container session's files without it")
+	}
+	return release
+}
+
+// Native capture cannot proceed unordered: its shared overlay outlives this launch.
+func takeSessionRenderLock(e *Env) (func(), error) {
+	noop := func() {}
 	dir := e.sharedRenderTarget().SidecarDir()
 	if dir == "" {
-		return func() {}
+		return noop, nil
 	}
-	_ = os.MkdirAll(dir, e.sharedRenderTarget().SidecarDirMode())
-	f, err := os.OpenFile(filepath.Join(dir, sessionRenderLockName), os.O_CREATE|os.O_RDWR, 0o644)
+	err := os.MkdirAll(dir, e.sharedRenderTarget().SidecarDirMode())
+	var f *os.File
+	if err == nil {
+		f, err = os.OpenFile(filepath.Join(dir, sessionRenderLockName), os.O_CREATE|os.O_RDWR, 0644)
+	}
 	if err == nil {
 		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
 	}
 	if err != nil {
-		e.warn("warning: could not take the session render lock in " + dir + ": " + err.Error() +
-			"; rendering this session's files without it")
 		if f != nil {
 			_ = f.Close()
 		}
-		return func() {}
+		return noop, fmt.Errorf("cannot take the session render lock in %s: %w; repair the sidecar path and retry yolo", dir, err)
 	}
-	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-		_ = f.Close()
+	return func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); _ = f.Close() }, nil
+}
+
+// HasSessionHomesAt reads the selected staged tree through the same strict host-side
+// reader as DeclaredNodeFloorsAt. A nondeclaring launch needs no config-home wrapper.
+func HasSessionHomesAt(packRoot string) (bool, error) {
+	if packRoot == "" {
+		return false, nil
 	}
+	packs, err := loadPackRoot(&Env{}, packRoot)
+	if err != nil {
+		return false, err
+	}
+	for _, p := range packs {
+		if len(p.Decl.SessionHomes()) > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }

@@ -35,6 +35,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/codec"
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/manifest"
+	"github.com/mschulkind-oss/yolo-jail/internal/nativehome"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/render"
 	"github.com/mschulkind-oss/yolo-jail/internal/sessionhome"
@@ -42,9 +43,10 @@ import (
 
 // sessionCaptureHome is one session home found on disk for a pass to capture from.
 type sessionCaptureHome struct {
-	decl sessionDecl
-	id   string
-	home string
+	decl   sessionDecl
+	id     string
+	home   string
+	shared bool // native compatibility capture only; never retired
 }
 
 // findSessionHomes lists every session home of every declaration on disk, except own's (this
@@ -52,7 +54,7 @@ type sessionCaptureHome struct {
 func findSessionHomes(decls []sessionDecl, own string) []sessionCaptureHome {
 	var out []sessionCaptureHome
 	for _, d := range decls {
-		entries, err := os.ReadDir(sessionhome.SessionsRoot(d.shared))
+		entries, err := os.ReadDir(d.root())
 		if err != nil {
 			continue
 		}
@@ -61,7 +63,7 @@ func findSessionHomes(decls []sessionDecl, own string) []sessionCaptureHome {
 			if !ent.IsDir() || id == own || !validSessionID(id) {
 				continue
 			}
-			home, err := sessionhome.Home(d.shared, id)
+			home, err := d.home(id)
 			if err != nil {
 				continue
 			}
@@ -80,6 +82,9 @@ type sessionCapturePass struct {
 	decls   []sessionDecl
 	release func()
 	jail    bool
+	native  bool
+	claims  []func()
+	failed  bool
 }
 
 // beginSessionCapture opens a container pass's capture: it takes the render lock whenever a
@@ -91,13 +96,57 @@ func beginSessionCapture(e *Env, packs []*packload.Pack, sessionPass bool) *sess
 	if len(decls) == 0 {
 		return pass
 	}
+	pass.native = e.nativeSessionID != ""
 	pass.jail = !sessionPass && e.Getenv(JailMainEnv) == JailMainHold
-	pass.release = holdSessionRenderLock(e)
+	if pass.native {
+		var err error
+		pass.release, err = takeSessionRenderLock(e)
+		if err != nil {
+			pass.failed = true
+			genStep(e, "session_render_lock", func() error { return err })
+			return pass
+		}
+	} else {
+		pass.release = holdSessionRenderLock(e)
+	}
 	own := ""
 	if sessionPass {
 		own = os.Getenv(SessionIDEnv)
+		if pass.native {
+			own = e.nativeSessionID
+		}
 	}
 	e.captureHomes = findSessionHomes(decls, own)
+	if pass.native {
+		// No extra-FD lease alone can prove detached children gone. The account-only
+		// census is conservative: another session alive delays capture of all ended homes.
+		idle, err := nativeAccountIdle()
+		if err != nil || !idle {
+			e.captureHomes = nil
+		} else {
+			claimed := map[string]bool{}
+			var safe []sessionCaptureHome
+			for _, h := range e.captureHomes {
+				if _, seen := claimed[h.id]; !seen {
+					release, gone := nativehome.ClaimGone(filepath.Join(h.decl.nativeRoot, h.id))
+					claimed[h.id] = gone
+					if gone {
+						pass.claims = append(pass.claims, release)
+					}
+				}
+				if claimed[h.id] {
+					safe = append(safe, h)
+				}
+			}
+			// Legacy shared state is captured first, so ended private-session edits
+			// win later in ordinary capture order. Its bytes are never rendered or retired.
+			var legacy []sessionCaptureHome
+			for _, d := range decls {
+				legacy = append(legacy, sessionCaptureHome{decl: d, home: d.shared, shared: true})
+			}
+			e.captureHomes = append(legacy, safe...)
+		}
+	}
 	noteSessionHomeStrays(e, e.captureHomes)
 	return pass
 }
@@ -105,8 +154,36 @@ func beginSessionCapture(e *Env, packs []*packload.Pack, sessionPass bool) *sess
 // end closes the pass: the jail's own boot removes the homes it captured from, then the lock
 // goes.
 func (p *sessionCapturePass) end(e *Env) {
-	if p.jail {
-		retireSessionHomes(e, e.captureHomes)
+	if p.jail || (p.native && genFailuresError(e) == nil) {
+		var retired []sessionCaptureHome
+		for _, h := range e.captureHomes {
+			if !h.shared {
+				retired = append(retired, h)
+			}
+		}
+		retireSessionHomes(e, retired)
+		if p.native {
+			kept := map[string]bool{}
+			for _, h := range retired {
+				if _, err := os.Lstat(h.home); err == nil || !os.IsNotExist(err) {
+					kept[h.id] = true
+				}
+			}
+			done := map[string]bool{}
+			for _, h := range retired {
+				if !kept[h.id] && !done[h.id] {
+					done[h.id] = true
+					if err := nativehome.Retire(filepath.Join(h.decl.nativeRoot, h.id)); err != nil {
+						e.warn("warning: native session bookkeeping at " + filepath.Join(h.decl.nativeRoot, h.id) + " was kept: " + err.Error() + "; inspect the directory and move unshared entries before retrying yolo")
+					} else if sidecars := e.sharedRenderTarget().SidecarDir(); sidecars != "" {
+						_ = os.RemoveAll(filepath.Join(sidecars, sessionSidecarsDir, h.id))
+					}
+				}
+			}
+		}
+	}
+	for _, release := range p.claims {
+		release()
 	}
 	e.captureHomes = nil
 	p.release()
@@ -126,6 +203,9 @@ func noteSessionHomeStrays(e *Env, homes []sessionCaptureHome) {
 	var found []string
 	packs := map[string]bool{}
 	for _, h := range homes {
+		if h.shared {
+			continue
+		}
 		for _, name := range homeStrays(h) {
 			found = append(found, filepath.Join(h.home, name))
 			packs[h.decl.pack] = true
@@ -163,7 +243,8 @@ func retireSessionHomes(e *Env, homes []sessionCaptureHome) {
 	}
 	kept := map[string]bool{}
 	for _, h := range homes {
-		if len(homeStrays(h)) > 0 || e.keepHomes[h.id] {
+		strays, strayErr := sessionhome.Strays(h.decl.spec(h.home))
+		if strayErr != nil || len(strays) > 0 || e.keepHomes[h.id] {
 			kept[h.id] = true
 			continue
 		}
@@ -175,10 +256,10 @@ func retireSessionHomes(e *Env, homes []sessionCaptureHome) {
 		_ = os.Remove(filepath.Dir(h.home)) // the id directory, once no other declaration's home is in it
 	}
 	for _, h := range homes {
-		if !kept[h.id] && sidecars != "" {
+		if !kept[h.id] && sidecars != "" && h.decl.nativeRoot == "" {
 			_ = os.RemoveAll(filepath.Join(sidecars, h.id))
 		}
-		_ = os.Remove(sessionhome.SessionsRoot(h.decl.shared)) // only when empty
+		_ = os.Remove(h.decl.root()) // only when empty
 	}
 	if sidecars != "" {
 		_ = os.Remove(sidecars) // only when empty
@@ -208,10 +289,14 @@ func captureFromSessionHomes(e *Env, surface manifest.Surface, l surfaceLayers, 
 		file := filepath.Join(h.home, rel)
 		fi, err := os.Lstat(file)
 		if err != nil || !fi.Mode().IsRegular() {
+			if (err != nil && !os.IsNotExist(err)) || (err == nil && !fi.Mode().IsRegular()) {
+				e.keepSessionHome(h.id)
+			}
 			continue
 		}
 		data, err := os.ReadFile(file)
 		if err != nil {
+			e.keepSessionHome(h.id)
 			continue
 		}
 		if c, ok := codec.LookupCodec(surface.Codec); ok {
@@ -224,7 +309,7 @@ func captureFromSessionHomes(e *Env, surface manifest.Surface, l surfaceLayers, 
 		}
 		at := *e
 		at.captureHomes = nil
-		at.captureOnly = true
+		at.captureOnly = !h.shared
 		at.session = &render.Session{
 			Redirects:  []render.Redirect{{From: h.decl.shared, To: h.home}},
 			SidecarDir: filepath.Join(sidecars, sessionSidecarsDir, h.id),
@@ -233,12 +318,17 @@ func captureFromSessionHomes(e *Env, surface manifest.Surface, l surfaceLayers, 
 		for _, s := range h.decl.surfaces {
 			at.session.Surfaces[s.Key()] = true
 		}
+		if h.shared {
+			at.session = nil
+		}
 		t := at.renderTarget()
 		baseline := t.LastRenderPath(surface.Agent, surface.Name)
-		if _, err := os.Stat(baseline); err != nil {
+		if _, err := os.Stat(baseline); err != nil && !h.shared {
+			e.keepSessionHome(h.id)
 			continue
 		}
 		if _, err := os.Lstat(baseline + seededBaselineSuffix); err == nil {
+			e.keepSessionHome(h.id)
 			continue // the session's render never finished: its file is not the user's
 		}
 		r, err := composeStatefulSurface(&at, surface, l.hostBytes, l.computed, l.inFull, contribs)
@@ -249,19 +339,26 @@ func captureFromSessionHomes(e *Env, surface manifest.Surface, l surfaceLayers, 
 		}
 		if err := writeSidecar(t, prismOverlayPath(&at, surface.Agent, surface.Name),
 			string(r.out.OverlayJSON)+"\n"); err != nil {
-			e.warn("warning: capture from " + file + ": " + err.Error())
+			e.keepSessionHome(h.id)
+			e.warn("warning: capture from " + file + ": " + err.Error() + "; repair the sidecar path and retry yolo")
 			continue
 		}
 		if r.out.ListCaptureJSON != nil {
 			if err := writeSidecar(t, prismListCapturePath(&at, surface.Agent, surface.Name),
 				string(r.out.ListCaptureJSON)+"\n"); err != nil {
-				e.warn("warning: capture from " + file + ": " + err.Error())
+				e.keepSessionHome(h.id)
+				e.warn("warning: capture from " + file + ": " + err.Error() + "; repair the sidecar path and retry yolo")
+				continue
 			}
 		}
 		// Captured once: the session's baseline is now the file as it stands.
 		if err := writeSidecar(t, baseline, string(render.StripGeneratedHeader(data))); err != nil {
-			e.warn("warning: capture from " + file + ": " + err.Error())
+			e.keepSessionHome(h.id)
+			e.warn("warning: capture from " + file + ": " + err.Error() + "; repair the sidecar path and retry yolo")
 		}
 		e.note("capture: " + surface.Agent + "/" + surface.Name + " from the session home " + h.home)
 	}
 }
+
+// nativeAccountIdle is the account-only liveness witness; synthetic tests inject outcomes.
+var nativeAccountIdle = nativehome.AccountIdle

@@ -59,6 +59,8 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/nativehome"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
@@ -384,6 +386,27 @@ func sessionFileInvariants(plan RunPlan) []string {
 	if plan.SessionID == "" {
 		return append(problems, "the plan carries no session id; its env file, daemons env "+
 			"file and Seatbelt profile would be the workspace's, shared by every terminal in it")
+	}
+	if plan.SessionID != SessionPlaceholder {
+		if !nativehome.ValidID(plan.SessionID) {
+			problems = append(problems, "native session ID must be the existing 16-hex identity")
+		} else {
+			if !containsArg(plan.BootstrapArgv, entrypoint.SessionIDEnv+"="+plan.SessionID) || !containsArgRun(plan.BootstrapArgv, []string{nativehome.SessionFlag, plan.SessionID}) {
+				problems = append(problems, "native bootstrap does not carry its trusted session identity")
+			}
+			if !SandboxEnvFileSets(plan.EnvFileContent, entrypoint.SessionIDEnv, plan.SessionID) {
+				problems = append(problems, "native child env does not carry its session identity")
+			}
+			dir, _ := nativehome.Dir(SandboxHome(), plan.Workspace, plan.SessionID)
+			if plan.SessionHomeDir != "" && plan.SessionHomeDir != dir {
+				problems = append(problems, "native config home is not workspace/session qualified")
+			}
+			for _, argv := range [][]string{plan.LaunchArgv, plan.ProvisionArgv} {
+				if plan.SessionHomeDir != "" && len(argv) > 0 && !containsArgRun(argv, []string{plan.StagedYolo, "internal", nativehome.ExecVerb, dir}) {
+					problems = append(problems, "native command lacks its private config environment/lease reader")
+				}
+			}
+		}
 	}
 	key := SessionKey(plan.Cname, plan.SessionID)
 	for _, f := range []struct{ what, got, want string }{

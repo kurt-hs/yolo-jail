@@ -658,3 +658,42 @@ func TestRealDepsWireTheSessionRecordAndTheKeychain(t *testing.T) {
 		t.Errorf("the records live in %s, not beside the launch locks", SessionRecordsDir())
 	}
 }
+
+func TestNativeSessionPlanCarriesTrustedConfigIdentity(t *testing.T) {
+	p := sessionPlan(t, "0123456789abcdef")
+	if !containsArg(p.BootstrapArgv, "YOLO_SESSION_ID="+p.SessionID) {
+		t.Fatal("bootstrap lacks the existing native session identity")
+	}
+	if !SandboxEnvFileSets(p.EnvFileContent, "YOLO_SESSION_ID", p.SessionID) {
+		t.Fatal("children lack the same native session identity")
+	}
+}
+
+func TestNativeSessionPlanWrapsOnlyDeclaringPacks(t *testing.T) {
+	plain := sessionPlan(t, "0123456789abcdef")
+	if plain.SessionHomeDir != "" || containsArg(plain.LaunchArgv, "native-session-exec") {
+		t.Fatal("nondeclaring launch gained private config wrapper")
+	}
+	root := t.TempDir()
+	packDir := filepath.Join(root, "tool")
+	if err := os.Mkdir(packDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{"session_homes":[{"dir":".tool/agent","env":"TOOL_AGENT_DIR","shared":["auth.json"]}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p := BuildRunPlanWithDaemons("/Users/Shared/yolo/proj", provisionCfg(), []string{"codex"},
+		[]string{"codex"}, "/opt/yolo/bin/yolo", root, HomeOverlay{}, HostContext{}, jsonx.NewOrderedMap(),
+		mockDarwin(), nil, openAIAdapterDaemons("/src"), FloorStage{}, PlanSession{ID: "0123456789abcdef"})
+	if p.SessionHomeDir == "" || !containsArg(p.LaunchArgv, "native-session-exec") || !containsArg(p.ProvisionArgv, "native-session-exec") {
+		t.Fatal("declaring plan did not relocate launch/provisioning")
+	}
+	if problems := PlanInvariants(p); len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	// Invariants read the production wrapper, not only its builder.
+	p.LaunchArgv = plain.LaunchArgv
+	if problems := PlanInvariants(p); len(problems) == 0 {
+		t.Fatal("deleted command wrapper was not detected")
+	}
+}

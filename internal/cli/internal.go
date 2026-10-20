@@ -21,6 +21,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/modelmenu"
+	"github.com/mschulkind-oss/yolo-jail/internal/nativehome"
 	"github.com/mschulkind-oss/yolo-jail/internal/notty"
 	"github.com/mschulkind-oss/yolo-jail/internal/openaiauthhost"
 	"github.com/mschulkind-oss/yolo-jail/internal/openauthclient"
@@ -96,6 +97,8 @@ func runInternal(args []string) int {
 		return run.DiscardRemoverMain(args[1:])
 	case "daemon":
 		return runInternalDaemon(args[1:])
+	case nativehome.ExecVerb:
+		return runNativeSessionExec(args[1:])
 	case "darwin-bootstrap":
 		return runDarwinBootstrap(args[1:])
 	case "migrate-host":
@@ -331,6 +334,15 @@ func runBundleDir(args []string) int {
 // environment (entrypoint's hydrate_session_env step). The bootstrap writes
 // <workspace>/.yolo/boot.log as the container boot does.
 func runDarwinBootstrap(args []string) int {
+	sessionID := ""
+	if len(args) == 2 && args[0] == nativehome.SessionFlag {
+		sessionID = args[1]
+		if !nativehome.ValidID(sessionID) {
+			fmt.Fprintln(os.Stderr, "invalid native session identity; retry yolo")
+			return 2
+		}
+		args = nil
+	}
 	sealed, err := parseDarwinBootstrapArgs(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "yolo internal darwin-bootstrap:", err)
@@ -390,7 +402,8 @@ func runDarwinBootstrap(args []string) int {
 	opts := entrypoint.DarwinBootstrapOptions{
 		// The boot log's version line, from this binary's own stamp. NEVER relayed as
 		// YOLO_VERSION: that variable is the jail marker, and this process is not in one.
-		Version: version.Baked(),
+		Version:   version.Baked(),
+		SessionID: sessionID,
 		// The macos-user build act's bootstrap, told so on its argv (PPX-D48).
 		Sealed: sealed,
 	}
@@ -693,6 +706,26 @@ func runNodeFloorLaunchers(args []string, out io.Writer) int {
 	}
 	if err := entrypoint.RegenerateFloorLaunchers(pending, launch, bins, out); err != nil {
 		fmt.Fprintf(os.Stderr, "yolo internal node-floor-launchers: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// runNativeSessionExec runs inside the existing account/Seatbelt boundary. It changes
+// no HOME or credentials: only bootstrap-published identity/declared relocations.
+func runNativeSessionExec(args []string) int {
+	if len(args) < 3 || (args[1] != "launch" && args[1] != "provision") {
+		fmt.Fprintln(os.Stderr, "invalid native session exec; retry yolo")
+		return 2
+	}
+	lease, err := nativehome.Enter(args[0], args[1] == "launch")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "cannot enter native session:", err, "— repair the private session path and retry yolo")
+		return 1
+	}
+	defer lease.Close()
+	if err = syscall.Exec(args[2], args[2:], os.Environ()); err != nil {
+		fmt.Fprintln(os.Stderr, "cannot execute native session:", err, "— check the command path and retry yolo")
 		return 1
 	}
 	return 0

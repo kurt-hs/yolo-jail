@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/nativehome"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -30,6 +31,9 @@ import (
 // DarwinBootstrapOptions carries the sandbox-specific inputs the darwin
 // generation entry needs beyond what Env already holds.
 type DarwinBootstrapOptions struct {
+	// SessionID marks an ordinary native launch; capture/sealed bootstraps pass none.
+	SessionID string
+
 	// Version is this binary's own build stamp (version.Baked, "" when unstamped), for the
 	// boot log's header. The container's header reads YOLO_VERSION instead, and this
 	// bootstrap's environment must never carry that variable: it is the jail marker, so
@@ -96,6 +100,13 @@ func DarwinEnvFrom(vars map[string]string, home string) *Env {
 // alone, and the log's last line says whether the bootstrap refused. That is also what the
 // orphan catalog's one line points at for the names.
 func RunDarwinBootstrap(e *Env, opts DarwinBootstrapOptions) error {
+	if opts.SessionID != "" {
+		if opts.Sealed || !nativehome.ValidID(opts.SessionID) {
+			return fmt.Errorf("invalid native session bootstrap identity; retry yolo with a generated session")
+		}
+		e.nativeSessionID = opts.SessionID
+		setEnvBoth(e, SessionIDEnv, opts.SessionID)
+	}
 	stderr, logOnly := e.Stderr, e.LogOnly
 	blog := attachDarwinBootLog(e, opts.Version)
 	// THE STEPS ARE TIMED for the launcher (writeBootPerf), which records them as
@@ -104,9 +115,32 @@ func RunDarwinBootstrap(e *Env, opts DarwinBootstrapOptions) error {
 	if e.Getenv("YOLO_DARWIN_WORKSPACE") != "" {
 		p = newPerfLog()
 	}
-	runBootSteps(&bootRun{e: e, target: bootDarwin, darwin: opts, perf: p})
+	b := &bootRun{e: e, target: bootDarwin, darwin: opts, perf: p, sessionPass: opts.SessionID != ""}
+	runBootSteps(b)
 	writeBootPerf(e, p)
 	err := genFailuresError(e)
+	if err == nil && e.nativeSessionID != "" {
+		dir, derr := nativehome.Dir(e.Home, e.WorkspaceDir(), e.nativeSessionID)
+		if derr == nil {
+			vars := map[string]string{SessionIDEnv: e.nativeSessionID}
+			packs, perr := b.jailPacks()
+			if perr != nil {
+				derr = perr
+			} else {
+				for _, d := range declaredSessionHomes(e, packs) {
+					if v := e.Getenv(d.env); v != "" {
+						vars[d.env] = v
+					}
+				}
+				if len(declaredSessionHomes(e, packs)) > 0 {
+					derr = nativehome.Complete(dir, vars)
+				}
+			}
+		}
+		if derr != nil {
+			err = fmt.Errorf("cannot publish native session environment: %w; repair the session directory and retry yolo", derr)
+		}
+	}
 	blog.finish(err)
 	// The log is closed, so the writers it installed go back to the caller's: a MultiWriter
 	// over a closed file stops at the file, and a later write through this Env would reach
