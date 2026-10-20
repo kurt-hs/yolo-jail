@@ -10,6 +10,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/ioprio"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/nativehome"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/provision"
@@ -26,10 +27,12 @@ type RunPlan struct {
 	// (SessionPlaceholder in a plan no launch minted one for), and SessionKey(Cname, SessionID)
 	// names every staged file only this session writes: its profile, its env and daemons env
 	// files and its CA files (sessionfiles.go).
-	Cname       string
-	SessionID   string
-	ProfilePath string
-	Seatbelt    string
+	Cname     string
+	SessionID string
+	// SessionHomeDir is the account-owned config namespace, empty without declaring packs.
+	SessionHomeDir string
+	ProfilePath    string
+	Seatbelt       string
 	// ProfileRemoveCommands remove the session's Seatbelt profile when the session ends.
 	ProfileRemoveCommands [][]string
 	// StagedDir is the host-owned staging root; StagedYolo is the staged yolo
@@ -609,6 +612,11 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		homeOverlay, ctxRoot, capturesRoot, hostCtx, paths.WorkspaceHomeState(workspace), SandboxHome(),
 		darwinPrefix, blockedTools, launchMiseTools)
 	bootstrapEnv.Set(paths.ContextDirEnv, contextDir)
+	// Never take identity from env_sources, and never give install capture an ID.
+	if nativehome.ValidID(sessionID) {
+		bootstrapEnv.Set(entrypoint.SessionIDEnv, sessionID)
+		sandboxEnv = withEnvVar(sandboxEnv, entrypoint.SessionIDEnv, sessionID)
+	}
 	// THE COMPOSED MCP TABLE (packload.ComposeMCPServers): the staged packs' `mcp` entries joined
 	// to the sandbox account's home, under the config's own `mcp_servers` — what the container
 	// launch hands its jail as YOLO_MCP_SERVERS (docs/design/mcp-presets-removal.md OQ-MP4).
@@ -792,10 +800,26 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		envFileRemove = append(envFileRemove, SandboxEnvRemoveCommands(f)...)
 	}
 
+	bootstrapArgv := DarwinBootstrapArgv(stagedYolo, SandboxHome(), bootstrapEnv, "")
+	launchArgv := LaunchArgvWithGuard(agentArgv, profilePath, envFile, workspace, "", "", darwinPrefix, guard, stagedYolo)
+	sessionHomeDir := ""
+	if nativehome.ValidID(sessionID) {
+		bootstrapArgv = append(bootstrapArgv, nativehome.SessionFlag, sessionID)
+		declares, readErr := entrypoint.HasSessionHomesAt(hostPackRoot)
+		// A corrupt staged tree will refuse bootstrap; never infer no homes from a failed read.
+		if declares || readErr != nil {
+			sessionHomeDir, _ = nativehome.Dir(SandboxHome(), workspace, sessionID)
+			launchArgv = wrapNativeSession(launchArgv, envFile, stagedYolo, sessionHomeDir, "launch")
+			if len(provisionArgv) > 0 {
+				provisionArgv = wrapNativeSession(provisionArgv, envFile, stagedYolo, sessionHomeDir, "provision")
+			}
+		}
+	}
 	return RunPlan{
 		Workspace:             workspace,
 		Cname:                 cname,
 		SessionID:             sessionID,
+		SessionHomeDir:        sessionHomeDir,
 		ProfilePath:           profilePath,
 		ProfileRemoveCommands: [][]string{{rmBin, "-f", profilePath}},
 		// workspace_readonly and its config lock, each raw-path `devices` entry's ioctl
@@ -824,16 +848,15 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		CacheRelocations:         relocs,
 		CacheRelocationPreflight: CacheRelocationPreflight(relocs, ""),
 		CacheRelocationProbes:    relocationProbes,
-		BootstrapArgv:            DarwinBootstrapArgv(stagedYolo, SandboxHome(), bootstrapEnv, ""),
+		BootstrapArgv:            bootstrapArgv,
 		ProvisionArgv:            provisionArgv,
 		ProvisionScriptPath:      provisionScriptPath,
 		ProvisionFloors:          floors,
 		ProvisionPrograms:        programs,
-		LaunchArgv: LaunchArgvWithGuard(agentArgv, profilePath, envFile, workspace, "", "",
-			darwinPrefix, guard, stagedYolo),
-		IOPriority:      ioPriority,
-		SessionGuard:    guard,
-		CooperativeCPUs: cpus,
+		LaunchArgv:               launchArgv,
+		IOPriority:               ioPriority,
+		SessionGuard:             guard,
+		CooperativeCPUs:          cpus,
 
 		JailDaemonArgv:          jailDaemonArgv,
 		JailDaemonNames:         daemonNames,
@@ -2305,4 +2328,17 @@ func withEnvVar(env *jsonx.OrderedMap, key, value string) *jsonx.OrderedMap {
 	}
 	out.Set(key, value)
 	return out
+}
+
+// wrapNativeSession inserts the account-owned relocation/lease reader AFTER the
+// host-owned env reader and inside Seatbelt. The plan always carries an ID env file.
+func wrapNativeSession(argv []string, envFile, stagedYolo, dir, mode string) []string {
+	for i, a := range argv {
+		if a == sandboxEnvReaderName && i+1 < len(argv) && argv[i+1] == envFile {
+			prefix := append([]string(nil), argv[:i+2]...)
+			prefix = append(prefix, stagedYolo, "internal", nativehome.ExecVerb, dir, mode)
+			return append(prefix, argv[i+2:]...)
+		}
+	}
+	return argv
 }

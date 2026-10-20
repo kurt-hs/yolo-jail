@@ -25,6 +25,9 @@ import (
 // YOLO_MISE_TOOLS, YOLO_HOST_DIR, etc.). Getenv returns "" for an absent key;
 // Lookup reports presence.
 type Env struct {
+	// nativeSessionID is set only by the trusted ordinary Darwin bootstrap option.
+	nativeSessionID string
+
 	// Home is $JAIL_HOME (falling back to $HOME, then /home/agent) — the base
 	// of every path constant below.
 	Home string

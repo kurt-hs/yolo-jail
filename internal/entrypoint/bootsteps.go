@@ -125,7 +125,7 @@ func runBootSteps(b *bootRun) { runSteps(b, bootSteps()) }
 func runSteps(b *bootRun, steps []bootStep) {
 	b.sealed = b.e.launchedSealed(b.target) || (b.target == bootDarwin && b.darwin.Sealed)
 	for _, s := range steps {
-		if s.excludedFrom(b.target) != "" || (b.sessionPass && s.notSessionPass != "") {
+		if s.excludedFrom(b.target) != "" || (b.target == bootContainer && b.sessionPass && s.notSessionPass != "") {
 			continue
 		}
 		switch {
@@ -438,8 +438,6 @@ func bootSteps() []bootStep {
 			// step, and the boot refuses the session (SP-D6).
 			name: "prepare_session_homes",
 			run:  prepareSessionHomesStep,
-			notDarwin: "the macos-user launch carries no YOLO_SESSION_ID yet, so it has no session " +
-				"to key a home on (per-session-profiles.md §4.6, unmeasured without a Mac)",
 		},
 		{
 			// Render every PACK-DECLARED surface. One loop over declarations — no switch on
@@ -465,8 +463,12 @@ func bootSteps() []bootStep {
 				// captures every other session home's rendered files into the shared overlay
 				// before it renders, under the in-jail render lock, and the jail's own boot then
 				// removes the homes the previous container left.
-				if b.target == bootContainer {
+				if b.target == bootContainer || b.e.nativeSessionID != "" {
 					capture := beginSessionCapture(b.e, packs, b.sessionPass)
+					if capture.failed {
+						capture.end(b.e)
+						return
+					}
 					ConfigurePackSurfaces(b.e, packs)
 					capture.end(b.e)
 				} else {
