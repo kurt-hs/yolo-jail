@@ -3,7 +3,7 @@ title: "Release CI fixture diagnoses"
 date: 2026-10-20
 status: open
 tags: [lab-report, ci, testing]
-summary: "Separates confirmed fixture failures and launcher regression from cleanup evidence, the narrow exit-retention repair, and what the historical ARM failure cannot prove."
+summary: "Separates fixture failures and launcher regression from cleanup observations, including the current B7 late-HOME failure and what its diagnostics can and cannot establish."
 ---
 
 # Release CI fixture diagnoses, 2026-10-20
@@ -44,6 +44,16 @@ On the immutable `main` source SHA `1c14fbf6ba836064930241562d90f752c9ccfdb8`, G
 The archived CI output explicitly ends the integration step with `Process completed with exit code 1`; its package summary is `FAIL .../integration 808.741s`. Thus the original integration-step process exit was 1. This is distinct from the later evidence-capture commands: the saved job-metadata and job-log GETs each exited 0 (one-second retrievals at 17:04:09–10Z and 17:04:13–14Z). Their success describes retrieval only, not the original job. The public job page is the durable link; the saved sanitized capture was used to verify the diagnostic and exit line, while raw logs and local capture paths are not reproduced here.
 
 The job record and its sanitized log do not include process flags, a field-22 start-time bracket, or HOME observations for the reported Podman process. It does not identify whether `PF_EXITING`, PID reuse, HOME clearing, or another transition produced the empty argv, and it does not prove a Podman defect. The `1c14fbf..a81eb07` comparison likewise has no same-failure-class diagnostics, so repair coverage for that historical process state remains unknown. A separate owned-child experiment establishes only that the kernel can expose this transition; later process absence, passing local tests, and the full local suite cannot reconstruct this process's earlier state or its cause. No rootless-host or native-macOS conclusion follows from this ARM job.
+
+## Current B7 Ubuntu cleanup failure: late HOME read
+
+On exact B7 source [`b7a8511`](https://github.com/mschulkind-oss/yolo-jail/commit/b7a85116d9444f357e715c37e10d389848fe5ff5), [run 39470221544, Ubuntu shard 2 job 118800289951](https://github.com/mschulkind-oss/yolo-jail/actions/runs/39470221544/job/118800289951) failed only `TestAnAttachKeepsThePackTreeTheJailBootedWith`. At `2026-10-20T18:17:50Z`, detached-writer cleanup failed while re-reading Podman's HOME from `/proc/<pid>/environ`: permission denied. The test's attach assertions did not fail. The original integration command exited 1; its package summary was `FAIL .../integration 905.325s`. This is a cleanup-observation failure, distinct from the earlier ARM empty-argv report above.
+
+The sanitized CI record identifies Ubuntu 24.04 and rootless Podman 4.9.3, but does not identify the runner kernel release or the PID's later state. The observed permission failure is consistent with, but does not prove, one Linux procfs exit-path mechanism: upstream [v6.8](https://github.com/torvalds/linux/blob/v6.8/fs/proc/base.c), [v6.14](https://github.com/torvalds/linux/blob/v6.14/fs/proc/base.c), and [v7.0](https://github.com/torvalds/linux/blob/v7.0/fs/proc/base.c) can make a non-directory proc inode root-owned after the process releases its address space, while `environ` remains mode 0400. That can yield EACCES before the PID becomes a zombie. In [v7.2](https://github.com/torvalds/linux/blob/v7.2/fs/proc/base.c), the ownership check changed; [v7.2 fork.c](https://github.com/torvalds/linux/blob/v7.2/kernel/fork.c) returns ESRCH for a missing address space. EACCES also has other permission causes. The CI kernel and this process's cause and eventual fate therefore remain unknown.
+
+An owned local observation on Linux `7.2.9-zen1-1-zen` saw 32 same-UID children through natural exit: 2,567 same-start/live-PF_EXITING, empty-argv polls returned ESRCH, none returned EACCES, and later observations found 2,554 running-state and 13 zombie-state records. In a separate held-process control, a child made itself nondumpable while still live: four HOME reads returned EACCES with PF_EXITING clear. These are local samples, not independent 2,567 children, not a rootless-host reproduction, and not evidence of the CI process's cause.
+
+The narrow candidate adds a permanent fake-probe regression for this late HOME read and a bounded diagnostic made only from already observed identity, argv-following stat/flags/state, and the HOME error class. The test requires the existing fail-closed error and zero signals; wrapping preserves `errors.Is`. It adds no proc reads, retry, wait, or success path, and changes no identity, ownership, deadline, or signal rule. The diagnostic can expose what this failure omitted, but it cannot recover the kernel version or later PID fate from a historical log. A future behavior change still needs evidence that this same identity remains unreadable and what happens to it; EACCES and `PF_EXITING` alone do not prove exit completion. Nothing here claims a race repair, release eligibility, or publication readiness.
 
 ## Narrow Linux exit-retention repair
 

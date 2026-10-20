@@ -178,7 +178,7 @@ func processHomeObservation(pid int, home string) (bool, error) {
 	}
 	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", pid))
 	if err != nil {
-		return false, fmt.Errorf("%w: read /proc/%d/environ: %v", errHomeObservationUnknown, pid, err)
+		return false, fmt.Errorf("%w: read /proc/%d/environ: %w", errHomeObservationUnknown, pid, err)
 	}
 	if len(raw) == 0 {
 		return false, fmt.Errorf("%w: %w: pid %d has an empty environment", errHomeOwnershipChanged, errHomeEnvironmentCleared, pid)
@@ -383,7 +383,7 @@ func provenExitingStopTarget(home string, p homeProcess, snapshot stopProcessSna
 		if errors.Is(err, errHomeEnvironmentCleared) && !matches {
 			return true, "", nil
 		}
-		return false, "", fmt.Errorf("revalidating exiting %s HOME ownership: %w", p, err)
+		return false, "", fmt.Errorf("revalidating exiting %s HOME ownership: %w; %s", p, err, exitingHomeObservationDiagnostic(p, snapshot, err))
 	}
 	if !matches {
 		return false, "", fmt.Errorf("revalidating exiting %s: process no longer has HOME=%s", p, home)
@@ -507,16 +507,16 @@ func stopDiagnosticErrorClass(err error) string {
 		return "none"
 	case errors.Is(err, errProcessStatFlagsUnavailable):
 		return "unsupported"
+	case errors.Is(err, os.ErrPermission):
+		return "permission"
+	case errors.Is(err, os.ErrNotExist):
+		return "not-found"
+	case errors.Is(err, syscall.ESRCH):
+		return "no-such-process"
 	case errors.Is(err, errHomeObservationUnknown):
 		return "home-unreadable"
 	case errors.Is(err, errHomeOwnershipChanged):
 		return "home-changed"
-	case errors.Is(err, os.ErrNotExist):
-		return "not-found"
-	case errors.Is(err, os.ErrPermission):
-		return "permission"
-	case errors.Is(err, syscall.ESRCH):
-		return "no-such-process"
 	default:
 		return "other"
 	}
@@ -538,6 +538,55 @@ func stopDiagnosticState(snapshot stopProcessSnapshot) string {
 		}
 	}
 	return snapshot.state
+}
+
+func exitingHomeObservationDiagnostic(p homeProcess, snapshot stopProcessSnapshot, homeErr error) string {
+	start := func(value string) string {
+		if value == "" || len(value) > 20 {
+			return "unavailable"
+		}
+		for _, r := range value {
+			if r < '0' || r > '9' {
+				return "invalid"
+			}
+		}
+		return value
+	}
+	state := "unavailable"
+	switch {
+	case snapshot.stateErr != nil:
+		state = "unreadable"
+	case !snapshot.stateFound:
+		state = "not-found"
+	case snapshot.state == "":
+		state = "empty"
+	case len(snapshot.state) != 1:
+		state = "other"
+	default:
+		r := rune(snapshot.state[0])
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '+' || r == '-' {
+			state = snapshot.state
+		} else {
+			state = "other"
+		}
+	}
+	flags := "unavailable"
+	flagsError := stopDiagnosticErrorClass(snapshot.flagsErr)
+	if !snapshot.flagsFound && snapshot.flagsErr == nil {
+		flagsError = "unavailable"
+	}
+	pfExiting := "unknown"
+	if snapshot.flagsFound && snapshot.flagsErr == nil {
+		flags = strconv.FormatUint(snapshot.flags, 10)
+		if snapshot.flags&linuxPFExiting != 0 {
+			pfExiting = "true"
+		} else {
+			pfExiting = "false"
+		}
+	}
+	return fmt.Sprintf("exiting-home-observation{pid=%d,expected-start=%s,listed-start=%s,held=%t,before-start=%s,after-start=%s,home-owned-before=%t,home-error=%s,state=%s,state-error=%s,flags=%s,flags-error=%s,pf-exiting=%s}",
+		p.pid, start(p.startTime), start(p.startTime), p.exiting, start(snapshot.startTime), start(snapshot.lateStartTime),
+		p.homeMatched, stopDiagnosticErrorClass(homeErr), state, stopDiagnosticErrorClass(snapshot.stateErr), flags, flagsError, pfExiting)
 }
 
 func emptyArgStopDiagnostic(p homeProcess, snapshot stopProcessSnapshot) string {
@@ -1260,6 +1309,59 @@ func TestStopHomeProcessesDoesNotRetainInitiallyUnprovenHome(t *testing.T) {
 		len(stopped) != 0 || listCalls != 1 || inspectCalls != 1 || homeCalls != 0 || killCalls != 0 {
 		t.Fatalf("stop=%v, %v (lists=%d inspections=%d HOME=%d signals=%d); want immediate refusal without claiming ownership",
 			stopped, err, listCalls, inspectCalls, homeCalls, killCalls)
+	}
+}
+
+func TestStopHomeProcessesReportsLateExitingHOMEReadFailure(t *testing.T) {
+	const home = "/test/home"
+	const pid = 5150
+	const startTime = "876542"
+	listed := homeProcess{pid: pid, ppid: 1, startTime: startTime, homeMatched: true}
+	for _, tc := range []struct {
+		name      string
+		errno     syscall.Errno
+		wantClass string
+	}{
+		{name: "permission-denied", errno: syscall.EACCES, wantClass: "permission"},
+		{name: "process-disappeared", errno: syscall.ESRCH, wantClass: "no-such-process"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lateHomeErr := fmt.Errorf("%w: %w", errHomeObservationUnknown, tc.errno)
+			listCalls, inspectCalls, homeCalls, killCalls := 0, 0, 0, 0
+			probes := stopProcessProbes{
+				list: func(string) []homeProcess {
+					listCalls++
+					return []homeProcess{listed}
+				},
+				inspect: func(int) (stopProcessSnapshot, error) {
+					inspectCalls++
+					return exitingStopSnapshot(startTime), nil
+				},
+				home: func(int, string) (bool, error) {
+					homeCalls++
+					return false, lateHomeErr
+				},
+				kill: func(int, syscall.Signal) error { killCalls++; return nil },
+			}
+
+			stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+			if err == nil || len(stopped) != 0 || listCalls != 1 || inspectCalls != 1 || homeCalls != 1 || killCalls != 0 {
+				t.Fatalf("stop=%v, %v (lists=%d inspections=%d HOME=%d signals=%d); want one fail-closed HOME observation and no signal",
+					stopped, err, listCalls, inspectCalls, homeCalls, killCalls)
+			}
+			if !errors.Is(err, errHomeObservationUnknown) || !errors.Is(err, tc.errno) {
+				t.Fatalf("late HOME error %v does not preserve errHomeObservationUnknown and %v", err, tc.errno)
+			}
+			for _, fact := range []string{
+				"exiting-home-observation{", "expected-start=876542", "listed-start=876542", "held=false",
+				"before-start=876542", "after-start=876542", "home-owned-before=true", "home-error=" + tc.wantClass,
+				"state=R", "flags=4", "pf-exiting=true",
+			} {
+				if !strings.Contains(err.Error(), fact) {
+					t.Errorf("late HOME diagnostic %q missing %q", err, fact)
+				}
+			}
+		})
 	}
 }
 
