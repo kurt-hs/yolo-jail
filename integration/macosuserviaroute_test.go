@@ -2,10 +2,51 @@ package integration
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+func piViaRouteURLProbe() string {
+	return `: "${PI_CODING_AGENT_DIR:?PI_CODING_AGENT_DIR is required for the Pi session config}"
+pi_models_file="$PI_CODING_AGENT_DIR/models.json"
+url=$(sed -n 's|.*"baseUrl": *"\(http://[^"]*/agent/pi\)".*|\1|p' "$pi_models_file" | head -n 1)
+echo "URL=$url"`
+}
+
+func TestPiViaRouteURLProbeUsesPublishedSessionHome(t *testing.T) {
+	home := t.TempDir()
+	agentDir := filepath.Join(t.TempDir(), "pi session home")
+	for path, data := range map[string]string{
+		filepath.Join(home, ".pi", "agent", "models.json"): `{"providers":{"legacy":{"baseUrl":"http://127.0.0.1:12345/agent/pi"}}}`,
+		filepath.Join(agentDir, "models.json"):             `{"providers":{"session":{"baseUrl":"http://127.0.0.1:23456/agent/pi"}}}`,
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	run := func(agent string) ([]byte, error) {
+		cmd := exec.Command("/bin/bash", "-c", piViaRouteURLProbe())
+		cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
+		if agent != "" {
+			cmd.Env = append(cmd.Env, "PI_CODING_AGENT_DIR="+agent)
+		}
+		return cmd.CombinedOutput()
+	}
+	out, err := run(agentDir)
+	if err != nil || !strings.Contains(string(out), "URL=http://127.0.0.1:23456/agent/pi") {
+		t.Fatalf("route probe did not read the published session home's models.json: err=%v output=%s", err, out)
+	}
+	if out, err := run(""); err == nil {
+		t.Errorf("route probe silently read the legacy home without PI_CODING_AGENT_DIR: %s", out)
+	}
+}
 
 // TestMacosUserBridgesPiThroughTheHostHalfViaRoute is HS-D30 (docs/design/host-notch-services.md;
 // wire-bridge-gateway.md WG-I46) on the hardware. pi on the shipped bedrock-bridge routes through
@@ -42,8 +83,7 @@ func TestMacosUserBridgesPiThroughTheHostHalfViaRoute(t *testing.T) {
 	r := macosUserRunProbe(t, "via-route", ws, strings.Join([]string{
 		`echo "=== VIA ==="`,
 		`[ -r ~/.config/yolo-agent-env/pi.sh ] && . ~/.config/yolo-agent-env/pi.sh`,
-		`url=$(sed -n 's|.*"baseUrl": *"\(http://[^"]*/agent/pi\)".*|\1|p' "$HOME/.pi/agent/models.json" | head -n 1)`,
-		`echo "URL=$url"`,
+		piViaRouteURLProbe(),
 		`echo "NOTOKEN=$(` + curl("", "/dev/null") + `)"`,
 		`echo "TOKEN=$(` + curl(`-H "authorization: Bearer ${YOLO_SERVICE_WIRE_BRIDGE_TOKEN:-}"`, `"$HOME/via-route.json"`) + `)"`,
 		`echo "BODY=$(tr -d '\n' < "$HOME/via-route.json")"`,
