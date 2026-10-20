@@ -182,8 +182,8 @@ func macosUserFloorProbe(bins []string) string {
 	var probe strings.Builder
 	probe.WriteString(`echo "=== FLOOR ==="` + "\n")
 	fmt.Fprintf(&probe, "printf '%s=%%s\\n' \"$HOME\"\n", floorProbeHomeKey)
-	probe.WriteString(`floor_path=$(IFS=:; out=; for d in $PATH; do case "$d" in "$HOME"|"$HOME"/*) ;; ` +
-		`*) out="${out:+$out:}$d" ;; esac; done; printf '%s' "$out")` + "\n")
+	probe.WriteString(`floor_path=$(IFS=:; out=; for d in $PATH; do case "$d" in ("$HOME"|"$HOME"/*) ;; ` +
+		`(*) out="${out:+$out:}$d" ;; esac; done; printf '%s' "$out")` + "\n")
 	for _, b := range bins {
 		fmt.Fprintf(&probe, "printf '%s=%%s\\n' \"$(command -v %s || echo MISSING)\"\n", b, b)
 		fmt.Fprintf(&probe, "printf '%s%s=%%s\\n' \"$(PATH=$floor_path; command -v %s || echo MISSING)\"\n",
