@@ -3,12 +3,12 @@ title: "Release CI fixture diagnoses"
 date: 2026-10-20
 status: open
 tags: [lab-report, ci, testing]
-summary: "Records three CI test-fixture failures, their causes and narrow repairs without claiming a release outcome."
+summary: "Records CI test-fixture failures, their causes and narrow repairs without claiming a release outcome."
 ---
 
 # Release CI fixture diagnoses, 2026-10-20
 
-A [lab report](README.md). These are CI test failures and fixture repairs, not three production regressions. Each failure was reproduced in CI; the fixes below were verified against the committed source ranges.
+A [lab report](README.md). These failures exposed test-fixture problems, not demonstrated production regressions. Each failure was reproduced in CI; the fixes below were verified against the committed source ranges.
 
 ## Observed
 
