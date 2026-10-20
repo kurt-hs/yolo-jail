@@ -37,11 +37,13 @@ import (
 )
 
 type selectedPackTreeOwner struct {
-	mu      sync.Mutex
-	path    string
-	closing bool
-	active  int
-	drained chan struct{}
+	mu          sync.Mutex
+	path        string
+	closing     bool
+	active      int
+	drained     chan struct{}
+	cleanupDone chan struct{}
+	removeAll   func(string) error
 }
 
 var errSelectedPackTreeClosed = errors.New("selected pack tree owner is closed")
@@ -81,8 +83,16 @@ func (o *selectedPackTreeOwner) create(factory func() (string, error)) (string, 
 }
 
 // cleanup closes ownership, waits for in-flight staging to stop writing, then removes the root.
+// Concurrent callers wait for that removal to finish before returning.
 func (o *selectedPackTreeOwner) cleanup() {
 	o.mu.Lock()
+	if done := o.cleanupDone; done != nil {
+		o.mu.Unlock()
+		<-done
+		return
+	}
+	done := make(chan struct{})
+	o.cleanupDone = done
 	o.closing = true
 	for o.active != 0 {
 		drained := o.drained
@@ -94,8 +104,13 @@ func (o *selectedPackTreeOwner) cleanup() {
 	o.path = ""
 	o.mu.Unlock()
 	if path != "" {
-		_ = os.RemoveAll(path)
+		removeAll := o.removeAll
+		if removeAll == nil {
+			removeAll = os.RemoveAll
+		}
+		_ = removeAll(path)
 	}
+	close(done)
 }
 
 // sectionPacks validates the configured packs.

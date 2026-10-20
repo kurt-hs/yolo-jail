@@ -227,6 +227,9 @@ type Options struct {
 	// packTreeFactory injects creation of the empty staging root for deterministic ownership tests.
 	// Nil uses os.MkdirTemp in sectionPacks.
 	packTreeFactory func() (string, error)
+	// packTreeRemoveAll pauses cleanup in subprocess tests of signal/defer overlap.
+	// Nil uses os.RemoveAll.
+	packTreeRemoveAll func(string) error
 	// signalCleanupProbe is a subprocess-test seam that runs after Check's terminal pack-tree fence
 	// and before StopOnSignal calls os.Exit.
 	signalCleanupProbe func()

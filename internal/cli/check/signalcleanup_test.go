@@ -51,6 +51,90 @@ func TestSignalExitRemovesSelectedPackTree(t *testing.T) {
 	}{{"SIGINT", syscall.SIGINT, 130}, {"SIGHUP", syscall.SIGHUP, 129}, {"SIGTERM", syscall.SIGTERM, 143}} {
 		t.Run(tc.name, func(t *testing.T) { runSignalCleanupCase(t, root, home, tmp, tc.sig, tc.code) })
 	}
+	t.Run("normal-cleanup overlap", func(t *testing.T) { runSignalCleanupOverlapCase(t, root, home, tmp) })
+}
+
+func runSignalCleanupOverlapCase(t *testing.T, root, home, tmp string) {
+	t.Helper()
+	started := filepath.Join(root, "normal-cleanup-started")
+	release := filepath.Join(root, "release-normal-cleanup")
+	terminal := filepath.Join(root, "overlap-terminal")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSignalExitRemovesSelectedPackTree$", "-test.v")
+	cmd.Env = testEnv(map[string]string{
+		signalCleanupChildEnv:   "1",
+		"CHECK_SIGNAL_OVERLAP":  "1",
+		"HOME":                  home,
+		"TMPDIR":                tmp,
+		"CHECK_SIGNAL_MARKER":   filepath.Join(root, "overlap-staged"),
+		"CHECK_SIGNAL_TERMINAL": terminal,
+		"CHECK_SIGNAL_REMOVE":   started,
+		"CHECK_SIGNAL_RELEASE":  release,
+		"CHECK_SIGNAL_REPO":     root,
+	})
+	var output bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &output, &output
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = cmd.Process.Kill() }()
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	waitForFile(t, started, waited, &output, "normal cleanup did not enter its paused removal")
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-waited:
+		t.Fatalf("signal cleanup exited while normal removal was blocked (%v); output:\n%s", err, output.String())
+	case <-time.After(250 * time.Millisecond):
+	}
+	if _, err := os.Stat(terminal); !os.IsNotExist(err) {
+		t.Fatalf("signal cleanup returned before normal removal was released (terminal marker stat: %v)", err)
+	}
+	if err := os.WriteFile(release, []byte("release"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-waited:
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 143 {
+			t.Fatalf("child exit = %v, want status 143; output:\n%s", err, output.String())
+		}
+	case <-time.After(15 * time.Second):
+		_ = cmd.Process.Kill()
+		<-waited
+		t.Fatalf("child did not exit after cleanup release; output:\n%s", output.String())
+	}
+	staged, err := os.ReadFile(filepath.Join(root, "overlap-staged"))
+	if err != nil {
+		t.Fatalf("child did not record selected staging path: %v; output:\n%s", err, output.String())
+	}
+	if _, err := os.Lstat(strings.TrimSpace(string(staged))); !os.IsNotExist(err) {
+		t.Fatalf("overlapping cleanup left selected tree %q (stat error %v)", staged, err)
+	}
+	removals, err := os.ReadFile(started)
+	if err != nil || len(strings.Split(strings.TrimSpace(string(removals)), "\n")) != 1 {
+		t.Fatalf("removal callback ran more than once or was not recorded: %q (%v)", removals, err)
+	}
+	if _, err := os.Stat(terminal); err != nil {
+		t.Fatalf("signal callback did not finish after removal release: %v; output:\n%s", err, output.String())
+	}
+}
+
+func waitForFile(t *testing.T, path string, waited <-chan error, output *bytes.Buffer, failure string) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		select {
+		case err := <-waited:
+			t.Fatalf("child exited before expected cleanup marker (%v); %s; output:\n%s", err, failure, output.String())
+		default:
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("%s; output:\n%s", failure, output.String())
 }
 
 func runSignalCleanupCase(t *testing.T, root, home, tmp string, sig syscall.Signal, code int) {
@@ -159,22 +243,24 @@ func runSignalCleanupChild(t *testing.T) {
 	nixStarted := filepath.Join(os.TempDir(), "check-signal-nix-started")
 	_ = os.Remove(nixStopped)
 	_ = os.Remove(nixStarted)
-	nixCmd := exec.Command("/bin/sh", "-c", `trap 'touch "$1"; exit 0' INT; touch "$2"; while :; do sleep 1; done`, "signal-nix", nixStopped, nixStarted)
-	releaseNix, err := nixchildren.Start(nixCmd)
-	if err != nil {
-		t.Fatalf("starting tracked stand-in nix: %v", err)
-	}
-	go func() {
-		_ = nixCmd.Wait()
-		releaseNix()
-	}()
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
-		if _, err := os.Stat(nixStarted); err == nil {
-			break
+	if os.Getenv("CHECK_SIGNAL_OVERLAP") != "1" {
+		nixCmd := exec.Command("/bin/sh", "-c", `trap 'touch "$1"; exit 0' INT; touch "$2"; while :; do sleep 1; done`, "signal-nix", nixStopped, nixStarted)
+		releaseNix, err := nixchildren.Start(nixCmd)
+		if err != nil {
+			t.Fatalf("starting tracked stand-in nix: %v", err)
 		}
-	}
-	if _, err := os.Stat(nixStarted); err != nil {
-		t.Fatalf("tracked stand-in nix did not start: %v", err)
+		go func() {
+			_ = nixCmd.Wait()
+			releaseNix()
+		}()
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+			if _, err := os.Stat(nixStarted); err == nil {
+				break
+			}
+		}
+		if _, err := os.Stat(nixStarted); err != nil {
+			t.Fatalf("tracked stand-in nix did not start: %v", err)
+		}
 	}
 	var out bytes.Buffer
 	opts := baseOptions(t, &out)
@@ -207,6 +293,45 @@ func runSignalCleanupChild(t *testing.T) {
 	}
 	opts.RepoRoot = func() (reporoot.Resolution, bool) {
 		return reporoot.Resolution{Root: os.Getenv("CHECK_SIGNAL_REPO")}, true
+	}
+	if os.Getenv("CHECK_SIGNAL_OVERLAP") == "1" {
+		removeStarted := os.Getenv("CHECK_SIGNAL_REMOVE")
+		release := os.Getenv("CHECK_SIGNAL_RELEASE")
+		stagedMarker := os.Getenv("CHECK_SIGNAL_MARKER")
+		opts.signalCleanupProbe = func() {
+			_ = os.WriteFile(os.Getenv("CHECK_SIGNAL_TERMINAL"), []byte("signal cleanup returned"), 0o600)
+		}
+		opts.packTreeRemoveAll = func(path string) error {
+			file, err := os.OpenFile(removeStarted, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+			if err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintln(file, path); err != nil {
+				_ = file.Close()
+				return err
+			}
+			if err := file.Close(); err != nil {
+				return err
+			}
+			for !fileExists(release) {
+				time.Sleep(5 * time.Millisecond)
+			}
+			return os.RemoveAll(path)
+		}
+		opts.BuildImage = func(string, []any) (string, []string) {
+			trees, err := filepath.Glob(filepath.Join(os.TempDir(), "yolo-check-pack-*"))
+			if err != nil || len(trees) != 1 {
+				t.Fatalf("post-pack image build saw staging trees %q, glob error %v", trees, err)
+			}
+			if err := os.WriteFile(stagedMarker, []byte(trees[0]), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return "", []string{"fixture build failure"}
+		}
+		if rc := Check(opts); rc == 0 {
+			t.Fatal("overlap Check unexpectedly passed")
+		}
+		return
 	}
 	opts.signalCleanupProbe = func() {
 		packs := packload.Embedded()

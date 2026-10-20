@@ -29,7 +29,7 @@ import (
 // process exit code (0 = no failures, 1 = any fail). The whole section sequence
 // is driven off the injected seams so it is deterministic.
 func Check(opts Options) int {
-	selectedTree := &selectedPackTreeOwner{}
+	selectedTree := &selectedPackTreeOwner{removeAll: opts.packTreeRemoveAll}
 	// The signal arm exits the process rather than unwinding Check's defers. Stop nix first, then
 	// release this command's selected staging tree and embedded/process-pack leases before exit.
 	defer nixchildren.StopOnSignal(func() {
