@@ -383,6 +383,9 @@ func TestBuildSlotRefusesIntactELFForWrongTargetMachine(t *testing.T) {
 }
 
 func TestBuildSlotCachedGoodRunsThroughGeneratedLauncherAndCaptureMaterializer(t *testing.T) {
+	// Isolate the machine-wide capture store; this test corrupts its installed fixture and must
+	// never touch a developer's real capture store.
+	t.Setenv("HOME", t.TempDir())
 	// The second half runs the JAIL's side, the generated launcher's capture-materialize, which takes
 	// a container build only where it runs: inside a Linux jail. On a Mac this process's platform is
 	// darwin's, and the materializer rightly refuses the podman build's linux one.
@@ -490,11 +493,28 @@ func TestBuildSlotCachedGoodRunsThroughGeneratedLauncherAndCaptureMaterializer(t
 		t.Errorf("readiness ran the program (argv stat: %v)", err)
 	}
 
+	// The admitted entry is immutable; capture its bytes before corrupting only the installed
+	// fixture path so the store remains available to other workspaces.
+	storeEntry, err := (&capture.Store{Dir: paths.CapturesDir()}).Resolve(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	storeTarget := filepath.Join(storeEntry.Tree, ".local", "share", "vendor", "1.0", "vendor")
+	storeBefore, err := os.ReadFile(storeTarget)
+	if err != nil || !bytes.Equal(storeBefore, []byte(body)) {
+		t.Fatalf("capture store did not retain the original program: err=%v body=%q", err, storeBefore)
+	}
 	// Leave the program symlink and matching key stamp intact, but corrupt only its admitted
 	// target. The generated launcher must validate the closure and rematerialize the old entry.
 	target := filepath.Join(home, ".local", "share", "vendor", "1.0", "vendor")
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(target, []byte("#!/bin/sh"+"\n"+"echo stale-cached-good"+"\n"+"exit 99"+"\n"), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(storeTarget); err != nil || !bytes.Equal(got, storeBefore) {
+		t.Errorf("corrupting the installed fixture changed the captured store entry: err=%v body=%q", err, got)
 	}
 	command := exec.Command(launcher, "arg-one", "space argument")
 	command.Dir, command.Env = workspace, baseEnv
@@ -514,6 +534,9 @@ func TestBuildSlotCachedGoodRunsThroughGeneratedLauncherAndCaptureMaterializer(t
 	repaired, err := os.ReadFile(target)
 	if err != nil || string(repaired) != body {
 		t.Errorf("the stale symlink target was not rematerialized from the old admitted entry: err=%v body=%q", err, repaired)
+	}
+	if got, err := os.ReadFile(storeTarget); err != nil || !bytes.Equal(got, storeBefore) {
+		t.Errorf("launcher repair changed the captured store entry: err=%v body=%q", err, got)
 	}
 	argv, err := os.ReadFile(argvPath)
 	if err != nil || string(argv) != "arg-one\x00space argument\x00" {
