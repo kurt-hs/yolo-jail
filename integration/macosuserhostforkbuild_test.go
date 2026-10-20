@@ -14,6 +14,29 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
+func macosUserHostForkFixtureConfig(base, fork string) string {
+	return `{"packs": [{"source": "file://` + base + `", "name": "` + forkFixtureBasePack + `"}, ` +
+		`{"source": "file://` + fork + `", "name": "` + forkFixtureForkPack + `"}], "host_management": "own"}`
+}
+
+func TestMacosUserHostForkFixtureConfigOwnsHostFiles(t *testing.T) {
+	var got struct {
+		HostManagement string `json:"host_management"`
+		Packs          []struct {
+			Name string `json:"name"`
+		} `json:"packs"`
+	}
+	if err := json.Unmarshal([]byte(macosUserHostForkFixtureConfig(t.TempDir(), t.TempDir())), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.HostManagement != "own" {
+		t.Errorf("fixture host_management = %q, want own", got.HostManagement)
+	}
+	if len(got.Packs) != 2 || got.Packs[0].Name != forkFixtureBasePack || got.Packs[1].Name != forkFixtureForkPack {
+		t.Errorf("fixture packs = %+v, want base and fork", got.Packs)
+	}
+}
+
 // THE MAC'S HOST FLOOR, from a FORK'S BUILD (docs/design/forked-programs-as-packs.md FP-D24): on a
 // Mac `yolo host -- <forked bin>` builds the fork's pinned commit for darwin through the macos-user
 // fork-build act — the build line run once as the sandbox account under the sealed capture profile,
@@ -51,8 +74,7 @@ func TestMacosUserHostFloorBuildsAForkFixtureForTheMac(t *testing.T) {
 		`"produces":[".local/bin/`+forkFixtureBin+`",".local/share/`+forkFixtureBin+`/rev"]}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	packHome(t, `{"packs": [{"source": "file://`+base+`", "name": "`+forkFixtureBasePack+`"}, `+
-		`{"source": "file://`+fork+`", "name": "`+forkFixtureForkPack+`"}]}`)
+	packHome(t, macosUserHostForkFixtureConfig(base, fork))
 	home := os.Getenv("HOME")
 	store := paths.CapturesDirUnder(home)
 	before := captureEntryNames(t, store)

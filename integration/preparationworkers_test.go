@@ -980,6 +980,17 @@ func TestInspectStopProcessRecordsReadOrderForLiveProcess(t *testing.T) {
 		_ = cmd.Wait()
 	})
 
+	// Start can return before the kernel has published the new command line. Wait only for this
+	// owned fixture to be ready; the cleanup inspector itself remains a single immediate read.
+	const fixtureReadyBound = 5 * time.Second
+	deadline := time.Now().Add(fixtureReadyBound)
+	for !processHasArgs(cmd.Process.Pid, "sleep", "4987") {
+		if time.Now().After(deadline) {
+			t.Fatalf("sleep fixture did not publish its command line within %s", fixtureReadyBound)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	snapshot, err := inspectStopProcess(cmd.Process.Pid)
 	if err != nil {
 		t.Fatalf("inspect live process: %v", err)

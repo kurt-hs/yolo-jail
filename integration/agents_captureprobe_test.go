@@ -12,6 +12,52 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 )
 
+func TestPiPackConfigCheckReadsPublishedSessionHome(t *testing.T) {
+	var tc packCase
+	for _, candidate := range packMatrix {
+		if candidate.pack == "pi" {
+			tc = candidate
+			break
+		}
+	}
+	if tc.pack == "" {
+		t.Fatal("pi is missing from packMatrix")
+	}
+
+	home := t.TempDir()
+	agentDir := filepath.Join(t.TempDir(), "pi session home")
+	configPath := filepath.Join(agentDir, tc.configRel)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte(tc.marker), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	legacyPath := filepath.Join(home, ".pi", "agent", tc.configRel)
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacyPath, []byte("legacy home must not satisfy this probe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(agent string) ([]byte, error) {
+		cmd := exec.Command("/bin/bash", "-c", packConfigCheck(tc))
+		cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
+		if agent != "" {
+			cmd.Env = append(cmd.Env, tc.configDirEnv+"="+agent)
+		}
+		return cmd.CombinedOutput()
+	}
+	out, err := run(agentDir)
+	if err != nil {
+		t.Fatalf("Pi config probe did not read the published session home's settings.json: %v\n%s", err, out)
+	}
+	if out, err := run(""); err == nil {
+		t.Errorf("Pi config probe silently accepted the legacy home without PI_CODING_AGENT_DIR: %s", out)
+	}
+}
+
 func TestPackInstallProbePreparedCaptureEvidence(t *testing.T) {
 	const bin = "chrome-devtools-mcp"
 	tc := packCase{pack: "chrome-devtools", binary: bin, versionArg: "--version",
