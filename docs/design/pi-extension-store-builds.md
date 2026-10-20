@@ -589,6 +589,11 @@ host build nothing, so they start none.
 > The gate is `if a.o.runtime == "container"`
 > ([`patchedadvance.go`](../../internal/cli/patchedadvance.go)), so **podman is unaffected** and
 > is the working path on such a host.
+>
+> **Re-measured 2026-10-20 at `94989f129`**, after the parse fix: the same host's real listing
+> (Apple Container 1.1.0, with the `yolo-ac-builder` row and its `12288 MB`) now returns
+> `valid=true`, and the decision is *"Apple Container has running yolo jail(s):
+> yolo-ac-builder"*. Cause 1 is closed. Cause 2 is unchanged and still needs its ruling.
 
 Under (a) or (b), the same option is the held store's prefetch: a detached in-jail run that fetches,
 resolves and builds trees but never repoints, so the next pi exec repoints with no network

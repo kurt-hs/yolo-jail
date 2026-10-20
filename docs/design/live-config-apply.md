@@ -55,8 +55,12 @@ discharge the rootless obligation.
 >   the machine's.)
 
 **Verification status (2026-10-19):** the run-fixture repairs and production-callsite
-pack-root regression pass focused Linux tests. Native Mac and actual-rootless Podman
-reruns remain owed.
+pack-root regression pass focused Linux tests. Actual-rootless Podman reruns remain owed.
+
+**Native Mac rerun (2026-10-20, at `94989f129`):** `go test -short -count=1 ./internal/cli/run/`
+passes on an arm64 macOS 26.5 host with an unresolved `TMPDIR` (`/var/folders/…`), and `-v`
+shows all five tests the warning above names passing. The warning records the 2026-10-19
+measurement; it no longer describes the tree.
 
 > **In short.** "Restart to apply" is wrong for the two changes people actually make mid-session,
 > a read-only mount and a GitHub repository: both can reach a running jail. So approval moves to a

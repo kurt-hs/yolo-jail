@@ -56,7 +56,8 @@ and a pi-subagents registry several extensions can share stays in item 28.
    host podman's rootless answer and so assert `rc = 0` where an inconclusive probe gives
    restart-required `rc = 3` — which is also a live question about the feature, since an
    unprovable rootless fact is a real production state. Both are set out in
-   [the design's status block](../design/live-config-apply.md). Covers: read-only and read-write mounts, their removal,
+   [the design's status block](../design/live-config-apply.md). **All five pass on a Mac at
+   `94989f129`** (2026-10-20, unresolved `TMPDIR`), so the repairs are verified natively. Covers: read-only and read-write mounts, their removal,
    GitHub scope, and the same gate at an interactive attach. Its later slices are staged here,
    each built on its own after v1: [the next-session moves](../design/live-config-apply.md#LA-S4a),
    [Apple Container's briefing re-copy](../design/live-config-apply.md#LA-S4b),
@@ -94,8 +95,10 @@ and a pi-subagents registry several extensions can share stays in item 28.
 
 6. **Retain selected pack roots through `yolo check`'s host-floor read**
    **Linux verification (2026-10-19):** the production-callsite regression passes, and
-   disabling retention reproduces the historical warning. Native Mac `yolo check` has not been
-   rerun; this landing makes no native-Mac claim.
+   disabling retention reproduces the historical warning. **Native Mac (2026-10-20, `94989f129`
+   built from source):** `yolo check --no-build` on a host selecting `pi-fork` reports `pi` PASS
+   from the floor copy and leaves no new `$TMPDIR/yolo-*` entry. On the same machine the installed
+   `0.14.0+562` binary, which predates the fix, still prints the `root cannot be opened` warning.
 
    **Review note (P2):** a controlled signal during a later check section can call `os.Exit`
    before the cleanup defer runs, leaking the retained temporary pack tree. No credential
@@ -123,7 +126,9 @@ and a pi-subagents registry several extensions can share stays in item 28.
    `yolo-ac-builder` image builder as a running jail, so the decision becomes "Apple Container has
    running yolo jail(s)" and still refuses. Both are set out in
    [the store-build design's Apple arm](../design/pi-extension-store-builds.md). podman is
-   unaffected (the gate is `runtime == "container"`).
+   unaffected (the gate is `runtime == "container"`). **Cause 1 is fixed and verified (2026-10-20,
+   `94989f129`)**: a real Apple Container 1.1.0 listing now parses as valid. The verdict is still
+   *"running yolo jail(s): yolo-ac-builder"*, so only the cause-2 ruling remains.
 
 8. **Two launch diagnostics that send a reader the wrong way** — both measured 2026-10-19 and
    written up in [the lab report](../lab-reports/2026-10-19-launch-diagnostics-on-a-mac.md); each
