@@ -30,6 +30,6 @@ func warnUnknownYOLOEnv(known []string, environ []string, out io.Writer) {
 	}
 }
 
-func warnUnknownYOLOEnvFromProcess(known []string) {
-	warnUnknownYOLOEnv(known, os.Environ(), os.Stderr)
+func warnUnknownYOLOEnvFromProcess(known []string, out io.Writer) {
+	warnUnknownYOLOEnv(known, os.Environ(), out)
 }

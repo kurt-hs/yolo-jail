@@ -33,6 +33,7 @@ func knownLaunchYOLOEnvNames(packs []*packload.Pack, channel *packChannel) []str
 		patchrecovery.AllowOlderUpstreamEnv, patchrecovery.UseCachedGoodEnv,
 		patchrecovery.SkipPatchesEnv, patchrecovery.SkipExtensionsEnv,
 		"YOLO_NO_AUTO_CAPTURE", "YOLO_NO_AUTO_IMAGE_REAP", "YOLO_NO_BANNER",
+		"YOLO_NO_TMUX", herdrOptOutEnv, paths.JailBackendEnv, "YOLO_BLOCK_CONFIG",
 		"YOLO_BYPASS_SHIMS", "YOLO_TIMING", "YOLO_VERBOSE", "YOLO_DEBUG", "YOLO_VERSION",
 		"YOLO_TEST_REBUILD_IMAGE",
 	} {

@@ -437,7 +437,7 @@ func Run(opts Options) (rc int) {
 		return 1
 	}
 	if o.WarnUnknownYOLOEnv != nil {
-		o.WarnUnknownYOLOEnv(knownLaunchYOLOEnvNames(staged.packs, channel))
+		o.WarnUnknownYOLOEnv(knownLaunchYOLOEnvNames(staged.packs, channel), o.Stderr)
 	}
 	// THE ARCHAEOLOGY RECORDS (launchcontext.go), to launch.log alone: the jail, each agent's
 	// profile and where it came from, what changed since the previous launch, and the captured

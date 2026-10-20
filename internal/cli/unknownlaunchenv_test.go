@@ -36,7 +36,7 @@ func TestRunRunWiresUnknownYOLOEnvironmentWarning(t *testing.T) {
 			known = append(known, name)
 		}
 	}
-	seen.WarnUnknownYOLOEnv(known)
+	seen.WarnUnknownYOLOEnv(known, write)
 	os.Stderr = stderr
 	_ = write.Close()
 	printed, readErr := io.ReadAll(read)
@@ -68,9 +68,16 @@ func TestNonLaunchCommandsDoNotWarnAboutYOLOEnvironment(t *testing.T) {
 
 func TestWarnUnknownYOLOEnvKeepsRecognizedRuntimeQuiet(t *testing.T) {
 	var out strings.Builder
-	warnUnknownYOLOEnv([]string{"YOLO_RUNTIME"}, []string{"YOLO_RUNTIME=podman"}, &out)
+	known := []string{
+		"YOLO_RUNTIME", "YOLO_NO_TMUX", "YOLO_NO_HERDR", "YOLO_JAIL_BACKEND", "YOLO_BLOCK_CONFIG",
+	}
+	var environ []string
+	for _, name := range known {
+		environ = append(environ, name+"=secret-test-value")
+	}
+	warnUnknownYOLOEnv(known, environ, &out)
 	if out.Len() != 0 {
-		t.Fatalf("recognized YOLO_RUNTIME emitted warning:\n%s", out.String())
+		t.Fatalf("recognized launch names emitted warnings:\n%s", out.String())
 	}
 }
 
