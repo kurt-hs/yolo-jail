@@ -173,14 +173,19 @@ func awaitExit(t *testing.T, s *Set) int {
 func TestASignalStopsTheNixAndEndsTheProcess(t *testing.T) {
 	s := Isolate(t)
 	catchSignal(t, syscall.SIGTERM)
-	disarm := StopOnSignal()
-	defer disarm()
-	var stderr strings.Builder
-	returned := make(chan error, 1)
+	marker := filepath.Join(t.TempDir(), "interrupted")
 	started := startMark(t)
+	cleanupAfterNix := false
+	cleanupRan := make(chan struct{})
+	disarm := StopOnSignal(func() {
+		_, err := os.Stat(marker)
+		cleanupAfterNix = err == nil
+		close(cleanupRan)
+	})
+	defer disarm()
+	returned := make(chan error, 1)
 	go func() {
-		cmd := exec.Command("sh", "-c", trapsInterrupt(started))
-		cmd.Stderr = &stderr
+		cmd := exec.Command("sh", "-c", testsupport.UntilInterrupted("touch "+shquote.Quote(marker), started))
 		returned <- Run(cmd)
 	}()
 	awaitRunning(t, s, 1)
@@ -192,12 +197,28 @@ func TestASignalStopsTheNixAndEndsTheProcess(t *testing.T) {
 		t.Errorf("the process ended %d, want %d", code, 128+int(syscall.SIGTERM))
 	}
 	select {
-	case <-returned:
-		if !strings.Contains(stderr.String(), "interrupted") {
-			t.Errorf("the nix was not interrupted; its stderr: %q", stderr.String())
+	case <-cleanupRan:
+		if !cleanupAfterNix {
+			t.Fatal("signal cleanup ran before the tracked nix finished teardown")
 		}
+	default:
+		t.Fatal("signal cleanup did not run before the exit")
+	}
+	select {
+	case <-returned:
 	case <-time.After(10 * time.Second):
 		t.Fatal("the stopped nix's Run never returned")
+	}
+}
+
+func TestSignalStatusPreservesCommonExitCodes(t *testing.T) {
+	for _, tc := range []struct {
+		signal syscall.Signal
+		want   int
+	}{{syscall.SIGINT, 130}, {syscall.SIGHUP, 129}, {syscall.SIGTERM, 143}} {
+		if got := signalStatus(tc.signal); got != tc.want {
+			t.Errorf("signalStatus(%s) = %d, want %d", tc.signal, got, tc.want)
+		}
 	}
 }
 

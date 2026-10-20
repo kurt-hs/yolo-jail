@@ -36,6 +36,38 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
+type selectedPackTreeOwner struct {
+	mu      sync.Mutex
+	path    string
+	closing bool
+}
+
+// keep transfers ownership of a newly staged tree unless cleanup has already started. The
+// latter can happen when a signal lands after MkdirTemp but before sectionPacks records the path.
+func (o *selectedPackTreeOwner) keep(path string) {
+	o.mu.Lock()
+	if !o.closing {
+		o.path = path
+		o.mu.Unlock()
+		return
+	}
+	o.mu.Unlock()
+	_ = os.RemoveAll(path)
+}
+
+// cleanup closes ownership before removing the current tree, so a concurrent or later keep
+// cannot leave a fresh staging directory behind the process's signal exit.
+func (o *selectedPackTreeOwner) cleanup() {
+	o.mu.Lock()
+	o.closing = true
+	path := o.path
+	o.path = ""
+	o.mu.Unlock()
+	if path != "" {
+		_ = os.RemoveAll(path)
+	}
+}
+
 // sectionPacks validates the configured packs.
 //
 // Zero packs is the NOTABLE state, not the boring one: packs are how content —
@@ -111,8 +143,8 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 	// packload.Pack.StagedSlug — the key the two halves mount a reads-host grant under.
 	tree, treeErr := os.MkdirTemp("", "yolo-check-pack-")
 	if treeErr == nil {
-		if o.keepSelectedPackTree {
-			o.selectedPackTree = tree
+		if o.packTreeOwner != nil {
+			o.packTreeOwner.keep(tree)
 		} else {
 			defer os.RemoveAll(tree)
 		}

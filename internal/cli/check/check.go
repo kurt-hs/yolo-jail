@@ -15,6 +15,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/nixchildren"
 	"github.com/mschulkind-oss/yolo-jail/internal/nixdiag"
 	"github.com/mschulkind-oss/yolo-jail/internal/outfmt"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
@@ -28,23 +29,20 @@ import (
 // process exit code (0 = no failures, 1 = any fail). The whole section sequence
 // is driven off the injected seams so it is deterministic.
 func Check(opts Options) int {
-	// A SIGNAL SENT TO THE CHECK ALONE STOPS ITS NIX (internal/nixchildren). check has no signal
-	// teardown of its own, so the default action ended it at once and left the nix it had running
-	// — the image build, the dry-run, `nix config show` — with no parent; a Ctrl-C at a terminal
-	// never showed it, because the terminal signals nix too. Now the signal stops that nix and the
-	// check ends 128+N.
-	defer nixchildren.StopOnSignal()()
+	selectedTree := &selectedPackTreeOwner{}
+	// The signal arm exits the process rather than unwinding Check's defers. Stop nix first, then
+	// release this command's selected staging tree and embedded/process-pack leases before exit.
+	defer nixchildren.StopOnSignal(func() {
+		selectedTree.cleanup()
+		packload.ReleaseEmbedded()
+	})()
 	fillDefaults(&opts)
 	o := &opts
 	// Selected packs are staged for this check. Later sections consume the selected declarations'
 	// staged roots, so they stay alive through Check's return and are then removed even on an early
-	// exit after sectionPacks.
-	o.keepSelectedPackTree = true
-	defer func() {
-		if o.selectedPackTree != "" {
-			_ = os.RemoveAll(o.selectedPackTree)
-		}
-	}()
+	// exit after sectionPacks. The same owner is closed on a signal before StopOnSignal calls os.Exit.
+	o.packTreeOwner = selectedTree
+	defer selectedTree.cleanup()
 	// Gate color through the one gate (tty.Color): o.Color merely requests it,
 	// ANSI must never leak to a pipe/redirect (docs/reference/cli-color.md),
 	// and a non-empty NO_COLOR in o.Getenv's environment vetoes it. The
