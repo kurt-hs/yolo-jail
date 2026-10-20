@@ -224,6 +224,12 @@ type Options struct {
 	// packTreeOwner keeps Check's staged pack copy alive through later sections and closes
 	// ownership atomically on either normal return or the signal exit path.
 	packTreeOwner *selectedPackTreeOwner
+	// packTreeFactory injects creation of the empty staging root for deterministic ownership tests.
+	// Nil uses os.MkdirTemp in sectionPacks.
+	packTreeFactory func() (string, error)
+	// signalCleanupProbe is a subprocess-test seam that runs after Check's terminal pack-tree fence
+	// and before StopOnSignal calls os.Exit.
+	signalCleanupProbe func()
 	// loopholeRuntime is the runtime the next launch would use, as far as check resolved it, so
 	// the loopholes section skips the settings validator of a host service that backend does not
 	// start (run.HostServiceAdmittedOn). "" when unknown, which admits every service. Not a seam:

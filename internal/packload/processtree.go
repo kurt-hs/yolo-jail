@@ -56,6 +56,9 @@ var (
 func ProcessPackDir(name string) (string, error) {
 	embeddedMu.Lock()
 	defer embeddedMu.Unlock()
+	if embeddedExiting {
+		return "", ErrEmbeddedExiting
+	}
 	if processTreeRoot != "" {
 		if _, err := os.Stat(processTreeRoot); err != nil {
 			// Gone underneath us (a test's TMPDIR cleaned up, a manual rm): start a new tree

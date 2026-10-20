@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -21,6 +22,85 @@ func packsFixture(t *testing.T, cfgBody string) {
 	}
 	if err := os.WriteFile(filepath.Join(cfgDir, "config.jsonc"), []byte(cfgBody), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSectionPacksCreationAndCleanupAreAtomic(t *testing.T) {
+	pack := t.TempDir()
+	if err := os.WriteFile(filepath.Join(pack, "pack.json"), []byte(`{"name":"atomic-fixture","contributes":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	packsFixture(t, `{"packs":["file://`+pack+`"]}`)
+
+	owner := &selectedPackTreeOwner{}
+	created := make(chan string, 1)
+	continueFactory := make(chan struct{})
+	o := &Options{
+		packTreeOwner: owner,
+		packTreeFactory: func() (string, error) {
+			path, err := os.MkdirTemp("", "yolo-check-pack-race-")
+			if err != nil {
+				return "", err
+			}
+			created <- path
+			<-continueFactory
+			return path, nil
+		},
+	}
+	sectionDone := make(chan struct{})
+	go func() {
+		(&Options{packTreeOwner: owner, packTreeFactory: o.packTreeFactory}).sectionPacks(&reporter{w: &bytes.Buffer{}}, jsonx.NewOrderedMap())
+		close(sectionDone)
+	}()
+	var path string
+	select {
+	case path = <-created:
+	case <-time.After(5 * time.Second):
+		t.Fatal("sectionPacks did not use its owned staging-tree creation path")
+	}
+	cleanupDone := make(chan struct{})
+	go func() { owner.cleanup(); close(cleanupDone) }()
+	select {
+	case <-cleanupDone:
+		t.Fatal("cleanup completed while tree creation was in flight; a signal exit could leak it")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(continueFactory)
+	select {
+	case <-sectionDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("sectionPacks did not finish after tree creation")
+	}
+	select {
+	case <-cleanupDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cleanup remained blocked after tree registration")
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("cleanup left created staging tree %q (%v)", path, err)
+	}
+}
+
+func TestSectionPacksDoesNotCreateTreeAfterOwnerCloses(t *testing.T) {
+	pack := t.TempDir()
+	if err := os.WriteFile(filepath.Join(pack, "pack.json"), []byte(`{"name":"closed-fixture","contributes":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	packsFixture(t, `{"packs":["file://`+pack+`"]}`)
+	owner := &selectedPackTreeOwner{}
+	owner.cleanup()
+	created := false
+	var buf bytes.Buffer
+	r := &reporter{w: &buf}
+	(&Options{packTreeOwner: owner, packTreeFactory: func() (string, error) {
+		created = true
+		return os.MkdirTemp("", "yolo-check-pack-closed-")
+	}}).sectionPacks(r, jsonx.NewOrderedMap())
+	if created {
+		t.Fatal("closed owner invoked the staging-tree factory")
+	}
+	if r.failed == 0 {
+		t.Fatalf("closed owner should report inability to stage the configured pack:\n%s", buf.String())
 	}
 }
 

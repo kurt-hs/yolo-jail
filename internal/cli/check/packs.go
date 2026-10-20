@@ -40,26 +40,56 @@ type selectedPackTreeOwner struct {
 	mu      sync.Mutex
 	path    string
 	closing bool
+	active  int
+	drained chan struct{}
 }
 
-// keep transfers ownership of a newly staged tree unless cleanup has already started. The
-// latter can happen when a signal lands after MkdirTemp but before sectionPacks records the path.
-func (o *selectedPackTreeOwner) keep(path string) {
+var errSelectedPackTreeClosed = errors.New("selected pack tree owner is closed")
+
+// create makes and registers the selected-pack staging tree while cleanup is excluded. The
+// returned release keeps cleanup from removing the root while sectionPacks is still staging into it.
+func (o *selectedPackTreeOwner) create(factory func() (string, error)) (string, func(), error) {
 	o.mu.Lock()
-	if !o.closing {
-		o.path = path
+	if o.closing {
 		o.mu.Unlock()
-		return
+		return "", func() {}, errSelectedPackTreeClosed
+	}
+	path, err := factory()
+	if err != nil {
+		o.mu.Unlock()
+		return "", func() {}, err
+	}
+	o.path = path
+	o.active++
+	if o.active == 1 {
+		o.drained = make(chan struct{})
 	}
 	o.mu.Unlock()
-	_ = os.RemoveAll(path)
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			o.mu.Lock()
+			defer o.mu.Unlock()
+			o.active--
+			if o.active == 0 {
+				close(o.drained)
+				o.drained = nil
+			}
+		})
+	}
+	return path, release, nil
 }
 
-// cleanup closes ownership before removing the current tree, so a concurrent or later keep
-// cannot leave a fresh staging directory behind the process's signal exit.
+// cleanup closes ownership, waits for in-flight staging to stop writing, then removes the root.
 func (o *selectedPackTreeOwner) cleanup() {
 	o.mu.Lock()
 	o.closing = true
+	for o.active != 0 {
+		drained := o.drained
+		o.mu.Unlock()
+		<-drained
+		o.mu.Lock()
+	}
 	path := o.path
 	o.path = ""
 	o.mu.Unlock()
@@ -141,14 +171,17 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 	// <tree>/<slug>, the shape the launcher stages (stagePacks writes <staging root>/<Slug>), so
 	// a loaded pack's Root basename is the staged slug here too. That basename is
 	// packload.Pack.StagedSlug — the key the two halves mount a reads-host grant under.
-	tree, treeErr := os.MkdirTemp("", "yolo-check-pack-")
-	if treeErr == nil {
-		if o.packTreeOwner != nil {
-			o.packTreeOwner.keep(tree)
-		} else {
-			defer os.RemoveAll(tree)
-		}
+	sectionTreeOwner := o.packTreeOwner
+	if sectionTreeOwner == nil {
+		sectionTreeOwner = &selectedPackTreeOwner{}
+		defer sectionTreeOwner.cleanup()
 	}
+	factory := o.packTreeFactory
+	if factory == nil {
+		factory = func() (string, error) { return os.MkdirTemp("", "yolo-check-pack-") }
+	}
+	tree, releaseTreeUse, treeErr := sectionTreeOwner.create(factory)
+	defer releaseTreeUse()
 	// The SELECTION CLOSURE (docs/reference/wire-bridge.md §3.1, WB-D10; the `via` half,
 	// docs/design/wire-bridge-gateway.md WG-I11), beside the pack list and before the
 	// exclusivity checks below, for the reason those checks give: the launch runs them
