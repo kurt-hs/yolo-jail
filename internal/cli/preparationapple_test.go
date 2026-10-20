@@ -159,6 +159,29 @@ func TestAppleContainerFreshCheckRefusesPendingCandidateDespiteServingGood(t *te
 	}
 }
 
+func TestAppleProductionProbeParsesHumanMemoryTableBeforeStartingChild(t *testing.T) {
+	pf := newPoolFixture(t)
+	bin := t.TempDir()
+	writeFile(t, filepath.Join(bin, "container"), "#!/bin/sh\nprintf 'ID IMAGE OS ARCH STATE IP CPUS MEMORY STARTED\\nyolo-ac-builder image linux arm64 running - 4 12288 MB Tue\\n'\n")
+	if err := os.Chmod(filepath.Join(bin, "container"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	prevCapability := appleContainerBuildCapability
+	appleContainerBuildCapability = appleContainerCanBuildNow
+	t.Cleanup(func() { appleContainerBuildCapability = prevCapability })
+	var children atomic.Int32
+	pf.child = func(context.Context, forkBuild) int { children.Add(1); return 0 }
+
+	got, out := pf.launch(t, "container", &run.ActInterrupt{})
+	if children.Load() != 0 {
+		t.Fatalf("the production Apple probe started %d build children with a running yolo-ac-builder:\n%s", children.Load(), out)
+	}
+	if !strings.Contains(got[poolKeyA].Reason, "yolo-ac-builder") || strings.Contains(got[poolKeyA].Reason, "unrecognized listing") {
+		t.Fatalf("the production Apple probe did not parse the real table and retain its yolo- classification: delivery=%+v\n%s", got[poolKeyA], out)
+	}
+}
+
 func TestAppleProductionProbeRejectsLiveRowBeforeHeaderWithoutStartingChild(t *testing.T) {
 	pf := newPoolFixture(t)
 	bin := t.TempDir()
@@ -244,7 +267,10 @@ func TestAppleContainerRechecksLivenessAtEachActualChildStart(t *testing.T) {
 func TestAppleContainerCapabilityTreatsUnknownListingAsUnsafe(t *testing.T) {
 	for _, listing := range []string{"", "yolo-one image running", "yolo-live image linux arm64 running\nID IMAGE OS ARCH STATE\n",
 		"ID IMAGE OS ARCH STATE\nyolo-live image linux running\n", "ID IMAGE OS ARCH STATE\nID IMAGE OS ARCH STATE\n",
-		"ID IMAGE OS ARCH STATE\nyolo-live image linux arm64 stopped\n"} {
+		"ID IMAGE OS ARCH STATE\nyolo-live image linux arm64 stopped\n",
+		"ID IMAGE OS ARCH STATE IP CPUS MEMORY STARTED\nyolo-live image linux arm64 running - 4 twelve MB Tue\n",
+		"ID IMAGE OS ARCH STATE IP CPUS MEMORY STARTED\nyolo-live image linux arm64 running - 4 12288 WHAT Tue\n",
+		"ID IMAGE OS ARCH STATE IP CPUS MEMORY STARTED\nyolo-live image linux arm64 running - 4 12288 MB Tue extra\n"} {
 		if safe, reason := appleContainerBuildDecision(listing); safe || !strings.Contains(reason, "liveness is unknown") {
 			t.Errorf("unrecognized listing %q was treated as safe: safe=%v reason=%q", listing, safe, reason)
 		}

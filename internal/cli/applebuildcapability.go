@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,8 +52,10 @@ func appleContainerBuildDecision(output string) (bool, string) {
 }
 
 // appleContainerLiveListing validates and reads the same table: the header must be first and every
-// data row must have exactly its column count. The container CLI's parser skips line one, so a
-// header found later must never be used to authorize a build after that parser discards a live row.
+// data row must have its column count. Apple Container renders MEMORY as a quantity and a separate
+// unit token, so normalize that known two-token cell before checking the row width. The container
+// CLI's parser skips line one, so a header found later must never be used to authorize a build after
+// that parser discards a live row.
 func appleContainerLiveListing(output string) (map[string]struct{}, bool) {
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) == "" {
@@ -69,9 +72,23 @@ func appleContainerLiveListing(output string) (map[string]struct{}, bool) {
 		}
 	}
 	stateColumn := len(wantHeader) - 1
+	memoryColumn := -1
+	for i, field := range header {
+		if strings.EqualFold(field, "MEMORY") {
+			if memoryColumn >= 0 {
+				return nil, false
+			}
+			memoryColumn = i
+		}
+	}
 	live := map[string]struct{}{}
 	for _, line := range lines[1:] {
 		fields := strings.Fields(line)
+		if len(fields) == len(header)+1 && memoryColumn >= 0 &&
+			memoryColumn+1 < len(fields) && validAppleMemoryPair(fields[memoryColumn], fields[memoryColumn+1]) {
+			// The unit belongs to MEMORY, not to an additional table column.
+			fields = append(fields[:memoryColumn+1], fields[memoryColumn+2:]...)
+		}
 		if len(fields) != len(header) || strings.EqualFold(fields[0], "ID") ||
 			!strings.EqualFold(fields[stateColumn], "running") {
 			return nil, false
@@ -81,4 +98,13 @@ func appleContainerLiveListing(output string) (map[string]struct{}, bool) {
 		}
 	}
 	return live, true
+}
+
+func validAppleMemoryPair(value, unit string) bool {
+	if _, err := strconv.ParseUint(value, 10, 64); err != nil {
+		return false
+	}
+	// MB is the separated unit in the measured Apple Container listing; an
+	// unfamiliar unit keeps the listing unknown rather than shifting columns.
+	return strings.EqualFold(unit, "MB")
 }
