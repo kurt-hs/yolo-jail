@@ -59,11 +59,12 @@ func TestAgentToolsAvailableDirect(t *testing.T) {
 // declaration provides, that binary's version flag, the config file its `surfaces` render,
 // and an auto-approve marker expected inside that file.
 type packCase struct {
-	pack       string
-	binary     string
-	versionArg string
-	configRel  string
-	marker     string
+	pack         string
+	binary       string
+	versionArg   string
+	configRel    string
+	configDirEnv string
+	marker       string
 	// vendorSkipArch is the GOARCH the VENDOR does not publish this program for, with
 	// nothing yolo can do about it. Empty for every pack whose vendor ships both arches.
 	//
@@ -89,7 +90,7 @@ var packMatrix = []packCase{
 	{pack: "opencode", binary: "opencode", versionArg: "--version",
 		configRel: ".config/opencode/opencode.json", marker: "allow"},
 	{pack: "pi", binary: "pi", versionArg: "--version",
-		configRel: ".pi/agent/settings.json", marker: "defaultProjectTrust"},
+		configRel: "settings.json", configDirEnv: "PI_CODING_AGENT_DIR", marker: "defaultProjectTrust"},
 	{pack: "codex", binary: "codex", versionArg: "--version",
 		configRel: ".codex/config.toml", marker: "danger-full-access"},
 	{pack: "agy", binary: "agy", versionArg: "--version",
@@ -192,8 +193,8 @@ func TestPackRendersConfigAndLauncher(t *testing.T) {
 			}
 			dir := writeProjectWithPacks(t, `{}`, tc.pack)
 			cmd := fmt.Sprintf(
-				"grep -q '%s' \"$HOME/%s\" && test -x \"$HOME/.yolo/bin/launch/%s\"",
-				tc.marker, tc.configRel, tc.binary,
+				"%s && test -x \"$HOME/.yolo/bin/launch/%s\"",
+				packConfigCheck(tc), tc.binary,
 			)
 			r := runYolo(t, dir, cmd)
 			if r.rc != 0 {
@@ -276,9 +277,20 @@ fi`,
 	return fmt.Sprintf(`probe_fail() { echo "PROBE_FAIL: $1" >&2; exit 1; }
 %s%s%s %s || probe_fail 'version command failed'
 %s
-grep -q %s "$HOME/%s" || probe_fail 'rendered config marker is missing'`,
+%s || probe_fail 'rendered config marker is missing'`,
 		touchRefresh, seedRefreshSeen(t, tc.pack, tc.binary), tc.binary, tc.versionArg,
-		prepared, shquote.Quote(tc.marker), tc.configRel) + projectDirsProbe(t, tc.pack, tc.binary)
+		prepared, packConfigCheck(tc)) + projectDirsProbe(t, tc.pack, tc.binary)
+}
+
+// packConfigCheck reads the config destination the pack's program uses. A session-home pack must
+// publish its relocation variable; checking the shared path instead could pass while the launched
+// program reads a different file.
+func packConfigCheck(tc packCase) string {
+	if tc.configDirEnv == "" {
+		return fmt.Sprintf(`grep -q %s "$HOME/%s"`, shquote.Quote(tc.marker), tc.configRel)
+	}
+	return fmt.Sprintf(`: "${%s:?%s is required for the session config}" && grep -q %s "$%s/%s"`,
+		tc.configDirEnv, tc.configDirEnv, shquote.Quote(tc.marker), tc.configDirEnv, tc.configRel)
 }
 
 // packRefreshStamp is the pre-launch refresh's stamp packInstallProbe touches, quoted for the
