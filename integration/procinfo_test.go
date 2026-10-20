@@ -24,19 +24,34 @@ import (
 	"time"
 )
 
+type processLivenessObservation struct {
+	gone     bool
+	killErr  error
+	state    string
+	found    bool
+	stateErr error
+}
+
+func observeProcessLiveness(pid int) processLivenessObservation {
+	observation := processLivenessObservation{}
+	observation.killErr = syscall.Kill(pid, 0)
+	if errors.Is(observation.killErr, syscall.ESRCH) {
+		observation.gone = true
+		return observation
+	}
+	observation.state, observation.found, observation.stateErr = processState(pid)
+	if observation.stateErr == nil {
+		observation.gone = !observation.found || strings.HasPrefix(observation.state, "Z")
+	}
+	return observation
+}
+
 // processGone reports that pid is no longer a running process. A ZOMBIE counts as gone: the
 // singleton is spawned detached, so its reaper is whatever adopted it, and a container's PID 1
 // may never reap it — kill(pid, 0) alone would call it alive forever. A process whose state
 // cannot be read at all is NOT gone, so a wait on it runs out its bound rather than passing.
 func processGone(pid int) bool {
-	if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
-		return true
-	}
-	state, found, err := processState(pid)
-	if err != nil {
-		return false
-	}
-	return !found || strings.HasPrefix(state, "Z")
+	return observeProcessLiveness(pid).gone
 }
 
 // processHasArgs reports whether pid's command line holds want as consecutive arguments.

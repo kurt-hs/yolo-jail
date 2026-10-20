@@ -262,9 +262,15 @@ func stopHomeProcessesWithin(home string, bound, grace time.Duration) ([]string,
 }
 
 type stopProcessSnapshot struct {
-	gone      bool
-	args      []string
-	startTime string
+	gone       bool
+	args       []string
+	startTime  string
+	state      string
+	stateFound bool
+	killErr    error
+	stateErr   error
+	reads      []string
+	observedAt time.Time
 }
 
 var errHomeObservationUnknown = errors.New("HOME observation was unreadable")
@@ -285,27 +291,46 @@ type stopProcessProbes struct {
 }
 
 func inspectStopProcess(pid int) (stopProcessSnapshot, error) {
-	if processGone(pid) {
-		return stopProcessSnapshot{gone: true}, nil
+	var reads []string
+	observe := func(name string) processLivenessObservation {
+		reads = append(reads, name)
+		return observeProcessLiveness(pid)
 	}
+	result := func(gone bool, args []string, startTime string, live processLivenessObservation) stopProcessSnapshot {
+		return stopProcessSnapshot{
+			gone: gone, args: args, startTime: startTime,
+			state: live.state, stateFound: live.found, killErr: live.killErr, stateErr: live.stateErr,
+			reads: append([]string(nil), reads...), observedAt: time.Now(),
+		}
+	}
+
+	live := observe("gone-before")
+	if live.gone {
+		return result(true, nil, "", live), nil
+	}
+	reads = append(reads, "start-time")
 	startTime, err := processStartTime(pid)
 	if err != nil {
-		if processGone(pid) {
-			return stopProcessSnapshot{gone: true}, nil
+		live = observe("gone-after-start-error")
+		if live.gone {
+			return result(true, nil, "", live), nil
 		}
 		return stopProcessSnapshot{}, fmt.Errorf("read process identity: %w", err)
 	}
+	reads = append(reads, "cmdline")
 	args, err := processArgs(pid)
 	if err != nil {
-		if processGone(pid) {
-			return stopProcessSnapshot{gone: true}, nil
+		live = observe("gone-after-argument-error")
+		if live.gone {
+			return result(true, nil, startTime, live), nil
 		}
 		return stopProcessSnapshot{}, fmt.Errorf("read process arguments: %w", err)
 	}
-	if processGone(pid) {
-		return stopProcessSnapshot{gone: true}, nil
+	live = observe("gone-after")
+	if live.gone {
+		return result(true, nil, startTime, live), nil
 	}
-	return stopProcessSnapshot{args: args, startTime: startTime}, nil
+	return result(false, args, startTime, live), nil
 }
 
 func validateStopTarget(_ string, p homeProcess, probes stopProcessProbes) (stopProcessSnapshot, bool, error) {
@@ -404,6 +429,66 @@ func reobserveUncertainHome(home string, p homeProcess, deadline time.Time, prob
 	}
 }
 
+func stopDiagnosticErrorClass(err error) string {
+	switch {
+	case err == nil:
+		return "none"
+	case errors.Is(err, errHomeObservationUnknown):
+		return "home-unreadable"
+	case errors.Is(err, errHomeOwnershipChanged):
+		return "home-changed"
+	case errors.Is(err, os.ErrNotExist):
+		return "not-found"
+	case errors.Is(err, os.ErrPermission):
+		return "permission"
+	case errors.Is(err, syscall.ESRCH):
+		return "no-such-process"
+	default:
+		return "other"
+	}
+}
+
+func stopDiagnosticState(snapshot stopProcessSnapshot) string {
+	if snapshot.stateErr != nil {
+		return "unreadable"
+	}
+	if !snapshot.stateFound {
+		return "not-found"
+	}
+	if snapshot.state == "" {
+		return "empty"
+	}
+	for _, r := range snapshot.state {
+		if !(r >= 'A' && r <= 'Z') && !(r >= 'a' && r <= 'z') && r != '+' && r != '-' {
+			return "other"
+		}
+	}
+	return snapshot.state
+}
+
+func emptyArgStopDiagnostic(p homeProcess, snapshot stopProcessSnapshot) string {
+	homeClass := "matched"
+	if p.homeErr != nil {
+		homeClass = stopDiagnosticErrorClass(p.homeErr)
+	}
+	reads := snapshot.reads
+	if len(reads) > 8 {
+		reads = reads[:8]
+	}
+	readOrder := strings.Join(reads, ",")
+	if readOrder == "" {
+		readOrder = "unavailable"
+	}
+	observedAt := "unknown"
+	if !snapshot.observedAt.IsZero() {
+		observedAt = snapshot.observedAt.UTC().Format(time.RFC3339Nano)
+	}
+	return fmt.Sprintf("empty-argv-observation{pid=%d,start=%s,home=%s,listed-args=%d,listed-args-error=%s,args=%d,args-error=%s,state=%s,state-error=%s,kill-error=%s,reads=%s,observed=%s}",
+		p.pid, p.startTime, homeClass, len(p.args), stopDiagnosticErrorClass(p.argsErr),
+		len(snapshot.args), stopDiagnosticErrorClass(nil), stopDiagnosticState(snapshot),
+		stopDiagnosticErrorClass(snapshot.stateErr), stopDiagnosticErrorClass(snapshot.killErr), readOrder, observedAt)
+}
+
 func refreshStopListing(home string, procs []homeProcess, deadline time.Time, probes stopProcessProbes) ([]homeProcess, error) {
 	var current []homeProcess
 	for _, p := range procs {
@@ -428,7 +513,8 @@ func refreshStopListing(home string, procs []homeProcess, deadline time.Time, pr
 			continue
 		}
 		if len(snapshot.args) == 0 {
-			return nil, fmt.Errorf("revalidating %s before signalling: live process has no classifiable arguments", p)
+			original := fmt.Errorf("revalidating %s before signalling: live process has no classifiable arguments", p)
+			return nil, fmt.Errorf("%w; %s", original, emptyArgStopDiagnostic(p, snapshot))
 		}
 		p.args = snapshot.args
 		p.argsErr = nil
@@ -879,6 +965,76 @@ func TestStopHomeProcessesRetriesOnlyUncertainHomeObservation(t *testing.T) {
 			t.Fatalf("stop error %v, lists %d, signals %d; want immediate conservative error", err, listCalls, killCalls)
 		}
 	})
+}
+
+func TestInspectStopProcessRecordsReadOrderForLiveProcess(t *testing.T) {
+	if goruntime.GOOS != "linux" {
+		t.Skip("the cleanup identity probe reads /proc on Linux")
+	}
+	cmd := exec.Command("sleep", "4987")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start live probe process: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	snapshot, err := inspectStopProcess(cmd.Process.Pid)
+	if err != nil {
+		t.Fatalf("inspect live process: %v", err)
+	}
+	if snapshot.gone || snapshot.startTime == "" || len(snapshot.args) == 0 || !snapshot.stateFound {
+		t.Fatalf("live-process snapshot = %+v, want identity, arguments, and state", snapshot)
+	}
+	if got, want := strings.Join(snapshot.reads, ","), "gone-before,start-time,cmdline,gone-after"; got != want {
+		t.Errorf("probe read order = %q, want %q", got, want)
+	}
+	if snapshot.observedAt.IsZero() {
+		t.Error("live-process snapshot has no observation time")
+	}
+}
+
+func TestStopHomeProcessesLiveEmptyArgumentsIncludesBoundedDiagnostic(t *testing.T) {
+	const home = "/private/test-home"
+	const pid = 4242
+	const startTime = "987654"
+	listCalls, inspectCalls, killCalls := 0, 0, 0
+	probes := stopProcessProbes{
+		list: func(string) []homeProcess {
+			listCalls++
+			return []homeProcess{{pid: pid, startTime: startTime}}
+		},
+		inspect: func(int) (stopProcessSnapshot, error) {
+			inspectCalls++
+			return stopProcessSnapshot{
+				startTime: startTime, state: "S", stateFound: true,
+				reads: []string{"gone-before", "start-time", "cmdline", "gone-after"}, observedAt: time.Now(),
+			}, nil
+		},
+		home: func(int, string) (bool, error) { return true, nil },
+		kill: func(int, syscall.Signal) error { killCalls++; return nil },
+	}
+
+	stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+	if err == nil || !strings.Contains(err.Error(), "live process has no classifiable arguments") {
+		t.Fatalf("stop error = %v, want the original live-empty fatal error", err)
+	}
+	for _, evidence := range []string{
+		"empty-argv-observation{", "pid=4242", "start=987654", "home=matched",
+		"args=0", "state=S", "reads=gone-before,start-time,cmdline,gone-after", "observed=",
+	} {
+		if !strings.Contains(err.Error(), evidence) {
+			t.Errorf("diagnostic does not contain %q: %v", evidence, err)
+		}
+	}
+	if strings.Contains(err.Error(), home) || strings.Contains(err.Error(), "argument-content") {
+		t.Errorf("diagnostic exposed HOME or argument contents: %v", err)
+	}
+	if len(stopped) != 0 || listCalls != 1 || inspectCalls != 1 || killCalls != 0 {
+		t.Errorf("stop = %v, %v (lists %d, inspections %d, signals %d); want original fail-closed decision and no signal",
+			stopped, err, listCalls, inspectCalls, killCalls)
+	}
 }
 
 func TestStopHomeProcessesRevalidatesBeforeSignalling(t *testing.T) {
