@@ -40,11 +40,12 @@ package integration
 //
 // By HOME, read from /proc as homedaemons_test.go does: every process whose environment carries
 // HOME=<this test's temp home>. The HOME is unique to the test, so a match cannot be another
-// test's process or the machine's. Two kinds are left out: the test binary's own descendants,
-// which are the exec.Cmd children its own cleanups own (a stand-in, a session it still holds),
-// and a scratch remover (`internal scratch-rm`), which ends on its own within its bound and is
-// WAITED for, never stopped, since stopping it leaks the volumes it was removing. On a host
-// without /proc nothing is identified and nothing is stopped.
+// test's process or the machine's. The /proc start time ties the listed pid to the same process
+// before a signal, rather than trusting the pid alone. Two kinds are left out: the test binary's
+// own descendants, which are the exec.Cmd children its own cleanups own (a stand-in, a session it
+// still holds), and a scratch remover (`internal scratch-rm`), which ends on its own within its
+// bound and is WAITED for, never stopped, since stopping it leaks the volumes it was removing. On
+// a host without /proc nothing is identified and nothing is stopped.
 //
 // # The order, and why it repeats
 //
@@ -55,8 +56,10 @@ package integration
 // and so roots from the start, are signalled only once no yolo process is left. A child that
 // outlives its parent is a root in the next round. The rounds repeat until a listing comes back
 // empty, so a process spawned while the stop runs (the scheduler starting a worker as it winds
-// down) is stopped too, and the stop returns only once nothing under the HOME is alive. The
-// whole stop is bounded: what is still alive at the bound is killed and reported as an error.
+// down) is stopped too. Ordinarily the stop returns only once nothing under the HOME is alive;
+// if its bound expires or a live process cannot be classified safely, it returns an error instead.
+// The whole stop is bounded: anything still alive at the bound is reported as an error; only
+// targets safely classified for signalling are killed.
 //
 // The signal is SIGTERM, which every yolo background process takes as a request to wind down
 // (internal/cli's backgroundSignals), and SIGKILL only after a grace long enough for a worker
@@ -90,6 +93,10 @@ const homeProcessStopBound = 3 * time.Minute
 type homeProcess struct {
 	pid, ppid int
 	args      []string
+	argsErr   error
+	startTime string
+	statErr   error
+	homeErr   error
 }
 
 // yoloVerb is the verb of a yolo self-exec'd process (`<exe> internal <verb> …`), read the way
@@ -142,6 +149,24 @@ func processParent(pid int) int {
 	return ppid
 }
 
+// processStartTime is the starttime field in /proc/<pid>/stat, which distinguishes a live process
+// from a different process that later reused its pid.
+func processStartTime(pid int) (string, error) {
+	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return "", err
+	}
+	i := strings.LastIndexByte(string(stat), ')')
+	if i < 0 {
+		return "", fmt.Errorf("malformed /proc/%d/stat", pid)
+	}
+	fields := strings.Fields(string(stat)[i+1:])
+	if len(fields) <= 19 {
+		return "", fmt.Errorf("short /proc/%d/stat", pid)
+	}
+	return fields[19], nil
+}
+
 // homeProcesses lists the live processes running with HOME=home, other than this test binary
 // and its descendants.
 func homeProcesses(home string) []homeProcess {
@@ -178,40 +203,213 @@ func homeProcesses(home string) []homeProcess {
 		if ownDescendant(pid) {
 			continue
 		}
-		args, _ := processArgs(pid)
-		out = append(out, homeProcess{pid: pid, ppid: parent[pid], args: args})
+		args, argsErr := processArgs(pid)
+		startTime, statErr := processStartTime(pid)
+		homeErr := error(nil)
+		if !processRunsWithHome(pid, home) {
+			homeErr = fmt.Errorf("could not reverify HOME=%s during the process listing", home)
+		}
+		verifiedStartTime, verifiedStatErr := processStartTime(pid)
+		if statErr == nil && verifiedStatErr != nil {
+			statErr = verifiedStatErr
+		} else if statErr == nil && startTime != verifiedStartTime {
+			statErr = errors.New("process identity changed while reading its HOME and arguments")
+		}
+		if processGone(pid) {
+			continue
+		}
+		out = append(out, homeProcess{
+			pid: pid, ppid: parent[pid], args: args, argsErr: argsErr,
+			startTime: startTime, statErr: statErr, homeErr: homeErr,
+		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].pid < out[j].pid })
 	return out
 }
 
 // stopHomeProcesses stops every process left running under home (see the file header for which,
-// and in what order), waits for each to be gone, and names the ones it signalled. It returns only
-// once a listing finds nothing under home, or at homeProcessStopBound, when it kills what is left
-// and says so in its error.
+// names the ones it signalled. It returns once a listing finds nothing under home, or with an
+// error when a live process cannot be classified or survives the stop bound (killing only targets
+// it can safely signal).
 func stopHomeProcesses(home string) ([]string, error) {
 	return stopHomeProcessesWithin(home, homeProcessStopBound, preparationWorkerTermGrace)
 }
 
 func stopHomeProcessesWithin(home string, bound, grace time.Duration) ([]string, error) {
+	return stopHomeProcessesWithinWithProbes(home, bound, grace, stopProcessProbes{
+		list: homeProcesses, inspect: inspectStopProcess, kill: syscall.Kill,
+	})
+}
+
+type stopProcessSnapshot struct {
+	gone      bool
+	args      []string
+	startTime string
+}
+
+type stopProcessProbes struct {
+	list    func(string) []homeProcess
+	inspect func(int) (stopProcessSnapshot, error)
+	kill    func(int, syscall.Signal) error
+}
+
+func inspectStopProcess(pid int) (stopProcessSnapshot, error) {
+	if processGone(pid) {
+		return stopProcessSnapshot{gone: true}, nil
+	}
+	startTime, err := processStartTime(pid)
+	if err != nil {
+		if processGone(pid) {
+			return stopProcessSnapshot{gone: true}, nil
+		}
+		return stopProcessSnapshot{}, fmt.Errorf("read process identity: %w", err)
+	}
+	args, err := processArgs(pid)
+	if err != nil {
+		if processGone(pid) {
+			return stopProcessSnapshot{gone: true}, nil
+		}
+		return stopProcessSnapshot{}, fmt.Errorf("read process arguments: %w", err)
+	}
+	if processGone(pid) {
+		return stopProcessSnapshot{gone: true}, nil
+	}
+	return stopProcessSnapshot{args: args, startTime: startTime}, nil
+}
+
+func validateStopTarget(_ string, p homeProcess, probes stopProcessProbes) (stopProcessSnapshot, bool, error) {
+	snapshot, err := probes.inspect(p.pid)
+	if err != nil {
+		return stopProcessSnapshot{}, false, fmt.Errorf("revalidating %s before signalling: %w", p, err)
+	}
+	if snapshot.gone {
+		return snapshot, false, nil
+	}
+	if p.homeErr != nil {
+		return stopProcessSnapshot{}, false, fmt.Errorf("revalidating %s before signalling: %w", p, p.homeErr)
+	}
+	if p.statErr != nil || p.startTime == "" {
+		if p.statErr != nil {
+			return stopProcessSnapshot{}, false, fmt.Errorf("revalidating %s before signalling: original process identity was unreadable: %w", p, p.statErr)
+		}
+		return stopProcessSnapshot{}, false, fmt.Errorf("revalidating %s before signalling: original process identity was empty", p)
+	}
+	if snapshot.startTime != p.startTime {
+		return stopProcessSnapshot{}, false, fmt.Errorf("revalidating %s before signalling: pid now names a different process", p)
+	}
+	return snapshot, true, nil
+}
+
+func refreshStopListing(home string, procs []homeProcess, probes stopProcessProbes) ([]homeProcess, error) {
+	var current []homeProcess
+	for _, p := range procs {
+		snapshot, live, err := validateStopTarget(home, p, probes)
+		if err != nil {
+			if p.argsErr != nil {
+				return nil, fmt.Errorf("revalidating %s after its initial argument read failed: %w; revalidation: %v", p, p.argsErr, err)
+			}
+			return nil, err
+		}
+		if !live {
+			continue
+		}
+		if len(snapshot.args) == 0 {
+			return nil, fmt.Errorf("revalidating %s before signalling: live process has no classifiable arguments", p)
+		}
+		p.args = snapshot.args
+		p.argsErr = nil
+		current = append(current, p)
+	}
+	return current, nil
+}
+
+func signalStopTarget(home string, p homeProcess, signal syscall.Signal, probes stopProcessProbes) (bool, error) {
+	snapshot, live, err := validateStopTarget(home, p, probes)
+	if err != nil || !live {
+		return false, err
+	}
+	if len(snapshot.args) == 0 {
+		return false, fmt.Errorf("signalling %s with %s: live process has no readable arguments", p, signal)
+	}
+	if (homeProcess{args: snapshot.args}).waitOnly() {
+		return false, nil
+	}
+	if err := probes.kill(p.pid, signal); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return false, nil
+		}
+		return false, fmt.Errorf("signalling %s with %s: %w", p, signal, err)
+	}
+	return true, nil
+}
+
+func waitStopTargetGone(home string, p homeProcess, deadline time.Time, probes stopProcessProbes) (bool, error) {
+	for {
+		_, live, err := validateStopTarget(home, p, probes)
+		if err != nil || !live {
+			return !live && err == nil, err
+		}
+		if time.Now().After(deadline) {
+			return false, nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, probes stopProcessProbes) ([]string, error) {
 	var stopped []string
 	deadline := time.Now().Add(bound)
 	for {
-		procs := homeProcesses(home)
+		procs := probes.list(home)
+		if len(procs) == 0 {
+			return stopped, nil
+		}
+		var err error
+		procs, err = refreshStopListing(home, procs, probes)
+		if err != nil {
+			return stopped, err
+		}
 		if len(procs) == 0 {
 			return stopped, nil
 		}
 		if time.Now().After(deadline) {
-			var left []string
+			var left, notSignalled, failures []string
+			var signalled []homeProcess
 			for _, p := range procs {
-				_ = syscall.Kill(p.pid, syscall.SIGKILL)
-				left = append(left, p.String())
+				sent, err := signalStopTarget(home, p, syscall.SIGKILL, probes)
+				if err != nil {
+					failures = append(failures, err.Error())
+				} else if sent {
+					left = append(left, p.String())
+					signalled = append(signalled, p)
+				} else {
+					_, live, err := validateStopTarget(home, p, probes)
+					if err != nil {
+						failures = append(failures, err.Error())
+					} else if live {
+						notSignalled = append(notSignalled, p.String())
+					}
+				}
 			}
-			for _, p := range procs {
-				awaitProcessGone(p.pid, 2*time.Second)
+			for _, p := range signalled {
+				if _, err := waitStopTargetGone(home, p, time.Now().Add(2*time.Second), probes); err != nil {
+					failures = append(failures, err.Error())
+				}
 			}
-			return stopped, fmt.Errorf("still running under %s %s after the stop began, and killed: %s",
-				home, bound, strings.Join(left, ", "))
+			if len(left) > 0 || len(notSignalled) > 0 || len(failures) > 0 {
+				message := fmt.Sprintf("still running under %s %s after the stop began", home, bound)
+				if len(left) > 0 {
+					message += ", and killed: " + strings.Join(left, ", ")
+				}
+				if len(notSignalled) > 0 {
+					message += "; still alive, not signalled: " + strings.Join(notSignalled, ", ")
+				}
+				if len(failures) > 0 {
+					message += "; " + strings.Join(failures, "; ")
+				}
+				return stopped, errors.New(message)
+			}
+			return stopped, nil
 		}
 		targets := stopRound(procs)
 		if len(targets) == 0 {
@@ -219,20 +417,35 @@ func stopHomeProcessesWithin(home string, bound, grace time.Duration) ([]string,
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}
+		var signalled []homeProcess
 		for _, p := range targets {
-			_ = syscall.Kill(p.pid, syscall.SIGTERM)
-			stopped = append(stopped, p.String())
-		}
-		roundEnd := time.Now().Add(grace)
-		for _, p := range targets {
-			for !processGone(p.pid) && time.Now().Before(roundEnd) {
-				time.Sleep(50 * time.Millisecond)
+			sent, err := signalStopTarget(home, p, syscall.SIGTERM, probes)
+			if err != nil {
+				return stopped, err
+			}
+			if sent {
+				stopped = append(stopped, p.String())
+				signalled = append(signalled, p)
 			}
 		}
-		for _, p := range targets {
-			if !processGone(p.pid) {
-				_ = syscall.Kill(p.pid, syscall.SIGKILL)
-				awaitProcessGone(p.pid, 2*time.Second)
+		roundEnd := time.Now().Add(grace)
+		for _, p := range signalled {
+			if _, err := waitStopTargetGone(home, p, roundEnd, probes); err != nil {
+				return stopped, err
+			}
+		}
+		for _, p := range signalled {
+			_, live, err := validateStopTarget(home, p, probes)
+			if err != nil {
+				return stopped, err
+			}
+			if live {
+				if _, err := signalStopTarget(home, p, syscall.SIGKILL, probes); err != nil {
+					return stopped, err
+				}
+				if _, err := waitStopTargetGone(home, p, time.Now().Add(2*time.Second), probes); err != nil {
+					return stopped, err
+				}
 			}
 		}
 	}
@@ -385,6 +598,145 @@ func TestStopHomeProcessesWaitsForAScratchRemover(t *testing.T) {
 	}
 	if !processGone(remover) {
 		t.Error("the stop returned while the scratch remover was still running")
+	}
+}
+
+func TestStopHomeProcessesRevalidatesBeforeSignalling(t *testing.T) {
+	const home = "/test/home"
+	base := homeProcess{pid: 27182, ppid: 1, args: []string{"/bin/worker"}, startTime: "417"}
+	cases := []struct {
+		name             string
+		listed           homeProcess
+		inspect          func(int) (stopProcessSnapshot, error)
+		killErr          error
+		wantErr          bool
+		wantSignal       bool
+		zeroBound        bool
+		wantInspectCalls int
+	}{
+		{
+			name:    "gone after empty-argv listing",
+			listed:  homeProcess{pid: base.pid, ppid: base.ppid, startTime: base.startTime},
+			inspect: func(int) (stopProcessSnapshot, error) { return stopProcessSnapshot{gone: true}, nil },
+		},
+		{
+			name:   "known scratch remover now has empty live argv",
+			listed: homeProcess{pid: base.pid, ppid: base.ppid, args: []string{"yolo", "internal", "scratch-rm"}, startTime: base.startTime},
+			inspect: func(int) (stopProcessSnapshot, error) {
+				return stopProcessSnapshot{startTime: base.startTime}, nil
+			},
+			wantErr:          true,
+			zeroBound:        true,
+			wantInspectCalls: 1,
+		},
+		{
+			name:   "expired bound with live scratch remover",
+			listed: homeProcess{pid: base.pid, ppid: base.ppid, args: []string{"yolo", "internal", "scratch-rm"}, startTime: base.startTime},
+			inspect: func(int) (stopProcessSnapshot, error) {
+				return stopProcessSnapshot{args: []string{"yolo", "internal", "scratch-rm"}, startTime: base.startTime}, nil
+			},
+			wantErr:   true,
+			zeroBound: true,
+		},
+		{
+			name:    "empty argv while still live",
+			listed:  homeProcess{pid: base.pid, ppid: base.ppid, startTime: base.startTime},
+			inspect: func(int) (stopProcessSnapshot, error) { return stopProcessSnapshot{startTime: base.startTime}, nil },
+			wantErr: true,
+		},
+		{
+			name:   "gone at final signal validation",
+			listed: base,
+			inspect: func(call int) (stopProcessSnapshot, error) {
+				if call == 1 {
+					return stopProcessSnapshot{args: base.args, startTime: base.startTime}, nil
+				}
+				return stopProcessSnapshot{gone: true}, nil
+			},
+		},
+		{
+			name:   "empty argv at final signal validation",
+			listed: base,
+			inspect: func(call int) (stopProcessSnapshot, error) {
+				if call == 1 {
+					return stopProcessSnapshot{args: base.args, startTime: base.startTime}, nil
+				}
+				return stopProcessSnapshot{startTime: base.startTime}, nil
+			},
+			wantErr: true,
+		},
+		{
+			name:    "unreadable live identity",
+			listed:  base,
+			inspect: func(int) (stopProcessSnapshot, error) { return stopProcessSnapshot{}, errors.New("permission denied") },
+			wantErr: true,
+		},
+		{
+			name:   "pid reused",
+			listed: base,
+			inspect: func(int) (stopProcessSnapshot, error) {
+				return stopProcessSnapshot{args: []string{"/bin/other"}, startTime: "418"}, nil
+			},
+			wantErr: true,
+		},
+		{
+			name:   "signal permission error",
+			listed: base,
+			inspect: func(int) (stopProcessSnapshot, error) {
+				return stopProcessSnapshot{args: base.args, startTime: base.startTime}, nil
+			},
+			killErr:    syscall.EPERM,
+			wantErr:    true,
+			wantSignal: true,
+		},
+		{
+			name:   "gone at signal delivery",
+			listed: base,
+			inspect: func(int) (stopProcessSnapshot, error) {
+				return stopProcessSnapshot{args: base.args, startTime: base.startTime}, nil
+			},
+			killErr:    syscall.ESRCH,
+			wantSignal: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			listCalls, inspectCalls, killCalls := 0, 0, 0
+			probes := stopProcessProbes{
+				list: func(string) []homeProcess {
+					listCalls++
+					if listCalls == 1 {
+						return []homeProcess{tc.listed}
+					}
+					return nil
+				},
+				inspect: func(int) (stopProcessSnapshot, error) {
+					inspectCalls++
+					return tc.inspect(inspectCalls)
+				},
+				kill: func(int, syscall.Signal) error {
+					killCalls++
+					return tc.killErr
+				},
+			}
+			bound := time.Second
+			if tc.zeroBound {
+				bound = 0
+			}
+			stopped, err := stopHomeProcessesWithinWithProbes(home, bound, 0, probes)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("stop error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if (killCalls > 0) != tc.wantSignal {
+				t.Errorf("signal attempts = %d, wantSignal %v", killCalls, tc.wantSignal)
+			}
+			if tc.wantInspectCalls > 0 && inspectCalls != tc.wantInspectCalls {
+				t.Errorf("inspection calls = %d, want %d (reject current argv during listing refresh)", inspectCalls, tc.wantInspectCalls)
+			}
+			if len(stopped) != 0 {
+				t.Errorf("reported stopped %v, want none", stopped)
+			}
+		})
 	}
 }
 
