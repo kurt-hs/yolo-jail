@@ -269,6 +269,9 @@ type stopProcessSnapshot struct {
 	stateFound bool
 	killErr    error
 	stateErr   error
+	flags      uint64
+	flagsFound bool
+	flagsErr   error
 	reads      []string
 	observedAt time.Time
 }
@@ -300,6 +303,7 @@ func inspectStopProcess(pid int) (stopProcessSnapshot, error) {
 		return stopProcessSnapshot{
 			gone: gone, args: args, startTime: startTime,
 			state: live.state, stateFound: live.found, killErr: live.killErr, stateErr: live.stateErr,
+			flags: live.flags, flagsFound: live.flagsFound, flagsErr: live.flagsErr,
 			reads: append([]string(nil), reads...), observedAt: time.Now(),
 		}
 	}
@@ -433,6 +437,8 @@ func stopDiagnosticErrorClass(err error) string {
 	switch {
 	case err == nil:
 		return "none"
+	case errors.Is(err, errProcessStatFlagsUnavailable):
+		return "unsupported"
 	case errors.Is(err, errHomeObservationUnknown):
 		return "home-unreadable"
 	case errors.Is(err, errHomeOwnershipChanged):
@@ -483,10 +489,20 @@ func emptyArgStopDiagnostic(p homeProcess, snapshot stopProcessSnapshot) string 
 	if !snapshot.observedAt.IsZero() {
 		observedAt = snapshot.observedAt.UTC().Format(time.RFC3339Nano)
 	}
-	return fmt.Sprintf("empty-argv-observation{pid=%d,start=%s,home=%s,listed-args=%d,listed-args-error=%s,args=%d,args-error=%s,state=%s,state-error=%s,kill-error=%s,reads=%s,observed=%s}",
+	flags := "unavailable"
+	flagsError := "unavailable"
+	if snapshot.flagsErr != nil {
+		flagsError = stopDiagnosticErrorClass(snapshot.flagsErr)
+	}
+	if snapshot.flagsFound {
+		flags = strconv.FormatUint(snapshot.flags, 10)
+		flagsError = "none"
+	}
+	return fmt.Sprintf("empty-argv-observation{pid=%d,start=%s,home=%s,listed-args=%d,listed-args-error=%s,args=%d,args-error=%s,state=%s,state-error=%s,flags=%s,flags-error=%s,kill-error=%s,reads=%s,observed=%s}",
 		p.pid, p.startTime, homeClass, len(p.args), stopDiagnosticErrorClass(p.argsErr),
 		len(snapshot.args), stopDiagnosticErrorClass(nil), stopDiagnosticState(snapshot),
-		stopDiagnosticErrorClass(snapshot.stateErr), stopDiagnosticErrorClass(snapshot.killErr), readOrder, observedAt)
+		stopDiagnosticErrorClass(snapshot.stateErr), flags, flagsError,
+		stopDiagnosticErrorClass(snapshot.killErr), readOrder, observedAt)
 }
 
 func refreshStopListing(home string, procs []homeProcess, deadline time.Time, probes stopProcessProbes) ([]homeProcess, error) {
@@ -998,6 +1014,10 @@ func TestInspectStopProcessRecordsReadOrderForLiveProcess(t *testing.T) {
 	if snapshot.gone || snapshot.startTime == "" || len(snapshot.args) == 0 || !snapshot.stateFound {
 		t.Fatalf("live-process snapshot = %+v, want identity, arguments, and state", snapshot)
 	}
+	if goruntime.GOOS == "linux" && (!snapshot.flagsFound || snapshot.flagsErr != nil) {
+		t.Fatalf("live-process snapshot flags = %d, found %v, err %v; want numeric stat field 9 from the post-argv observation",
+			snapshot.flags, snapshot.flagsFound, snapshot.flagsErr)
+	}
 	if got, want := strings.Join(snapshot.reads, ","), "gone-before,start-time,cmdline,gone-after"; got != want {
 		t.Errorf("probe read order = %q, want %q", got, want)
 	}
@@ -1019,7 +1039,7 @@ func TestStopHomeProcessesLiveEmptyArgumentsIncludesBoundedDiagnostic(t *testing
 		inspect: func(int) (stopProcessSnapshot, error) {
 			inspectCalls++
 			return stopProcessSnapshot{
-				startTime: startTime, state: "S", stateFound: true,
+				startTime: startTime, state: "R", stateFound: true, flags: 4, flagsFound: true,
 				reads: []string{"gone-before", "start-time", "cmdline", "gone-after"}, observedAt: time.Now(),
 			}, nil
 		},
@@ -1033,7 +1053,8 @@ func TestStopHomeProcessesLiveEmptyArgumentsIncludesBoundedDiagnostic(t *testing
 	}
 	for _, evidence := range []string{
 		"empty-argv-observation{", "pid=4242", "start=987654", "home=matched",
-		"args=0", "state=S", "reads=gone-before,start-time,cmdline,gone-after", "observed=",
+		"args=0", "state=R", "flags=4", "flags-error=none",
+		"reads=gone-before,start-time,cmdline,gone-after", "observed=",
 	} {
 		if !strings.Contains(err.Error(), evidence) {
 			t.Errorf("diagnostic does not contain %q: %v", evidence, err)

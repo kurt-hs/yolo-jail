@@ -14,26 +14,104 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"testing"
 )
 
 // processState is pid's state letter ("S", "R", "Z", …) from /proc/<pid>/stat. found is false
 // when /proc has no such process; err is any other failure to read it.
 func processState(pid int) (state string, found bool, err error) {
-	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	observation := readProcessStateWithFlags(fmt.Sprintf("/proc/%d/stat", pid))
+	return observation.state, observation.found, observation.stateErr
+}
+
+// processStateWithFlags reads state and Linux stat field 9 from one /proc snapshot.
+func processStateWithFlags(pid int) processStateObservation {
+	return readProcessStateWithFlags(fmt.Sprintf("/proc/%d/stat", pid))
+}
+
+func readProcessStateWithFlags(path string) processStateObservation {
+	stat, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", false, nil
+		return processStateObservation{flagsErr: err}
 	}
 	if err != nil {
-		return "", false, err
+		return processStateObservation{stateErr: err, flagsErr: err}
 	}
-	// The state is the first field after the parenthesised command name, which may itself
-	// contain spaces or parentheses — hence the LAST ')'.
+	// State is the first field after the parenthesised command name, which may contain
+	// spaces or parentheses — hence the LAST ')'. Flags are field 9, six fields after state.
 	s := string(stat)
 	i := strings.LastIndexByte(s, ')')
 	if i < 0 || i+2 >= len(s) {
-		return "", false, fmt.Errorf("unparsable /proc/%d/stat: %q", pid, s)
+		parseErr := fmt.Errorf("unparsable %s: %q", path, s)
+		return processStateObservation{stateErr: parseErr, flagsErr: parseErr}
 	}
-	return s[i+2 : i+3], true, nil
+	observation := processStateObservation{state: s[i+2 : i+3], found: true}
+	fields := strings.Fields(s[i+1:])
+	if len(fields) <= 6 {
+		observation.flagsErr = fmt.Errorf("short %s: missing stat field 9 flags", path)
+		return observation
+	}
+	flags, err := strconv.ParseUint(fields[6], 10, 64)
+	if err != nil {
+		observation.flagsErr = fmt.Errorf("unparsable %s stat field 9 flags: %w", path, err)
+		return observation
+	}
+	observation.flags, observation.flagsFound = flags, true
+	return observation
+}
+
+func TestReadProcessStateWithFlagsFromProcFixture(t *testing.T) {
+	cases := []struct {
+		name         string
+		stat         string
+		state        string
+		flags        uint64
+		flagsFound   bool
+		wantStateErr bool
+		wantFlagsErr bool
+	}{
+		{name: "PF_EXITING value", stat: "123 (worker ) tricky) R 1 2 3 4 5 4 7 8 9 10", state: "R", flags: 4, flagsFound: true},
+		{name: "zero flags", stat: "124 (worker) S 1 2 3 4 5 0 7 8 9 10", state: "S", flagsFound: true},
+		{name: "invalid flags retain parsed state", stat: "125 (worker) R 1 2 3 4 5 nope 7 8 9 10", state: "R", wantFlagsErr: true},
+		{name: "short flags retain parsed state", stat: "126 (worker) R 1 2 3 4 5", state: "R", wantFlagsErr: true},
+		{name: "malformed stat", stat: "not a stat", wantStateErr: true, wantFlagsErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "stat")
+			if err := os.WriteFile(path, []byte(tc.stat), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			observation := readProcessStateWithFlags(path)
+			if got, want := observation.state, tc.state; got != want {
+				t.Errorf("state = %q, want %q", got, want)
+			}
+			if got, want := observation.found, !tc.wantStateErr; got != want {
+				t.Errorf("found = %v, want %v", got, want)
+			}
+			if got := observation.stateErr != nil; got != tc.wantStateErr {
+				t.Errorf("stateErr present = %v, want %v (%v)", got, tc.wantStateErr, observation.stateErr)
+			}
+			if got := observation.flagsFound; got != tc.flagsFound {
+				t.Errorf("flagsFound = %v, want %v", got, tc.flagsFound)
+			}
+			if got := observation.flags; observation.flagsFound && got != tc.flags {
+				t.Errorf("flags = %d, want %d", got, tc.flags)
+			}
+			if got := observation.flagsErr != nil; got != tc.wantFlagsErr {
+				t.Errorf("flagsErr present = %v, want %v (%v)", got, tc.wantFlagsErr, observation.flagsErr)
+			}
+		})
+	}
+
+	missing := readProcessStateWithFlags(filepath.Join(t.TempDir(), "missing-stat"))
+	if missing.found || missing.stateErr != nil || missing.flagsFound || !errors.Is(missing.flagsErr, fs.ErrNotExist) {
+		t.Errorf("missing stat observation = %+v, want not-found state and unavailable flags", missing)
+	}
+	readError := readProcessStateWithFlags(t.TempDir())
+	if readError.found || readError.stateErr == nil || readError.flagsFound || readError.flagsErr == nil {
+		t.Errorf("read-error observation = %+v, want independent state and flags read errors", readError)
+	}
 }
 
 // processArgs is pid's argv, from /proc/<pid>/cmdline, whose arguments are NUL-separated.
