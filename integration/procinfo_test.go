@@ -24,13 +24,27 @@ import (
 	"time"
 )
 
-type processLivenessObservation struct {
-	gone     bool
-	killErr  error
-	state    string
-	found    bool
-	stateErr error
+type processStateObservation struct {
+	state      string
+	found      bool
+	stateErr   error
+	flags      uint64
+	flagsFound bool
+	flagsErr   error
 }
+
+type processLivenessObservation struct {
+	gone       bool
+	killErr    error
+	state      string
+	found      bool
+	stateErr   error
+	flags      uint64
+	flagsFound bool
+	flagsErr   error
+}
+
+var errProcessStatFlagsUnavailable = errors.New("process stat flags are unavailable")
 
 func observeProcessLiveness(pid int) processLivenessObservation {
 	observation := processLivenessObservation{}
@@ -39,7 +53,9 @@ func observeProcessLiveness(pid int) processLivenessObservation {
 		observation.gone = true
 		return observation
 	}
-	observation.state, observation.found, observation.stateErr = processState(pid)
+	stat := processStateWithFlags(pid)
+	observation.state, observation.found, observation.stateErr = stat.state, stat.found, stat.stateErr
+	observation.flags, observation.flagsFound, observation.flagsErr = stat.flags, stat.flagsFound, stat.flagsErr
 	if observation.stateErr == nil {
 		observation.gone = !observation.found || strings.HasPrefix(observation.state, "Z")
 	}

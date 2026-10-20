@@ -32,6 +32,13 @@ func processState(pid int) (state string, found bool, err error) {
 	return s, true, nil
 }
 
+func processStateWithFlags(pid int) processStateObservation {
+	state, found, err := processState(pid)
+	return processStateObservation{
+		state: state, found: found, stateErr: err, flagsErr: errProcessStatFlagsUnavailable,
+	}
+}
+
 // processArgs is pid's command line as ps prints it, split at spaces. ps joins argv with
 // spaces, so an argument that itself holds one comes back as two; every caller here matches
 // arguments that hold none.
