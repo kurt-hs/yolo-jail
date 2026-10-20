@@ -36,6 +36,83 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
+type selectedPackTreeOwner struct {
+	mu          sync.Mutex
+	path        string
+	closing     bool
+	active      int
+	drained     chan struct{}
+	cleanupDone chan struct{}
+	removeAll   func(string) error
+}
+
+var errSelectedPackTreeClosed = errors.New("selected pack tree owner is closed")
+
+// create makes and registers the selected-pack staging tree while cleanup is excluded. The
+// returned release keeps cleanup from removing the root while sectionPacks is still staging into it.
+func (o *selectedPackTreeOwner) create(factory func() (string, error)) (string, func(), error) {
+	o.mu.Lock()
+	if o.closing {
+		o.mu.Unlock()
+		return "", func() {}, errSelectedPackTreeClosed
+	}
+	path, err := factory()
+	if err != nil {
+		o.mu.Unlock()
+		return "", func() {}, err
+	}
+	o.path = path
+	o.active++
+	if o.active == 1 {
+		o.drained = make(chan struct{})
+	}
+	o.mu.Unlock()
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			o.mu.Lock()
+			defer o.mu.Unlock()
+			o.active--
+			if o.active == 0 {
+				close(o.drained)
+				o.drained = nil
+			}
+		})
+	}
+	return path, release, nil
+}
+
+// cleanup closes ownership, waits for in-flight staging to stop writing, then removes the root.
+// Concurrent callers wait for that removal to finish before returning.
+func (o *selectedPackTreeOwner) cleanup() {
+	o.mu.Lock()
+	if done := o.cleanupDone; done != nil {
+		o.mu.Unlock()
+		<-done
+		return
+	}
+	done := make(chan struct{})
+	o.cleanupDone = done
+	o.closing = true
+	for o.active != 0 {
+		drained := o.drained
+		o.mu.Unlock()
+		<-drained
+		o.mu.Lock()
+	}
+	path := o.path
+	o.path = ""
+	o.mu.Unlock()
+	if path != "" {
+		removeAll := o.removeAll
+		if removeAll == nil {
+			removeAll = os.RemoveAll
+		}
+		_ = removeAll(path)
+	}
+	close(done)
+}
+
 // sectionPacks validates the configured packs.
 //
 // Zero packs is the NOTABLE state, not the boring one: packs are how content —
@@ -109,14 +186,17 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 	// <tree>/<slug>, the shape the launcher stages (stagePacks writes <staging root>/<Slug>), so
 	// a loaded pack's Root basename is the staged slug here too. That basename is
 	// packload.Pack.StagedSlug — the key the two halves mount a reads-host grant under.
-	tree, treeErr := os.MkdirTemp("", "yolo-check-pack-")
-	if treeErr == nil {
-		if o.keepSelectedPackTree {
-			o.selectedPackTree = tree
-		} else {
-			defer os.RemoveAll(tree)
-		}
+	sectionTreeOwner := o.packTreeOwner
+	if sectionTreeOwner == nil {
+		sectionTreeOwner = &selectedPackTreeOwner{}
+		defer sectionTreeOwner.cleanup()
 	}
+	factory := o.packTreeFactory
+	if factory == nil {
+		factory = func() (string, error) { return os.MkdirTemp("", "yolo-check-pack-") }
+	}
+	tree, releaseTreeUse, treeErr := sectionTreeOwner.create(factory)
+	defer releaseTreeUse()
 	// The SELECTION CLOSURE (docs/reference/wire-bridge.md §3.1, WB-D10; the `via` half,
 	// docs/design/wire-bridge-gateway.md WG-I11), beside the pack list and before the
 	// exclusivity checks below, for the reason those checks give: the launch runs them

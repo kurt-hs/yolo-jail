@@ -8,7 +8,7 @@ package check
 import (
 	"bytes"
 	"os"
-	"os/signal"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -64,15 +64,6 @@ func awaitStarted(t *testing.T, marks string) {
 	}
 }
 
-// catchSignal keeps sig from ending the test binary when no arm is installed to catch it, which is
-// the defect's own shape: without this a red run would kill the whole package's run.
-func catchSignal(t *testing.T, sig os.Signal) {
-	t.Helper()
-	catch := make(chan os.Signal, 4)
-	signal.Notify(catch, sig)
-	t.Cleanup(func() { signal.Stop(catch) })
-}
-
 // TestRealExecTracksItsNix: a nix check runs through its Exec seam — `nix --version`, the
 // dry-run, `nix config show` — is one a stop reaches.
 func TestRealExecTracksItsNix(t *testing.T) {
@@ -97,9 +88,52 @@ func TestRealExecTracksItsNix(t *testing.T) {
 // own `nix --version` (a stand-in that runs until interrupted) is running, interrupts that nix and
 // ends the check 143.
 func TestASignalToCheckStopsItsNix(t *testing.T) {
+	const childEnv, readyEnv = "YOLO_CHECK_NIX_SIGNAL_CHILD", "YOLO_CHECK_NIX_SIGNAL_READY"
+	if os.Getenv(childEnv) != "1" {
+		ready := filepath.Join(t.TempDir(), "ready")
+		cmd := exec.Command(os.Args[0], "-test.run=^TestASignalToCheckStopsItsNix$")
+		cmd.Env = append(os.Environ(), childEnv+"=1", readyEnv+"="+ready)
+		var out bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &out, &out
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = cmd.Process.Kill() }()
+		waited := make(chan error, 1)
+		go func() { waited <- cmd.Wait() }()
+		var marks string
+		for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+			if b, err := os.ReadFile(ready); err == nil {
+				marks = string(b)
+				break
+			}
+			select {
+			case err := <-waited:
+				t.Fatalf("signal child exited before readiness (%v): %s", err, out.String())
+			default:
+			}
+		}
+		if marks == "" {
+			t.Fatalf("signal child did not become ready: %s", out.String())
+		}
+		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case err := <-waited:
+			if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 128+int(syscall.SIGTERM) {
+				t.Fatalf("signal child exit = %v, want 143: %s", err, out.String())
+			}
+		case <-time.After(20 * time.Second):
+			t.Fatal("signal child did not exit after SIGTERM")
+		}
+		if _, err := os.Stat(filepath.Join(marks, "interrupted")); err != nil {
+			t.Fatalf("the check ended without interrupting its nix: %v", err)
+		}
+		return
+	}
+
 	t.Setenv("HOME", t.TempDir())
-	s := nixchildren.Isolate(t)
-	catchSignal(t, syscall.SIGTERM)
 	marks, nix := standInNix(t)
 	var out bytes.Buffer
 	opts := baseOptions(t, &out)
@@ -110,27 +144,10 @@ func TestASignalToCheckStopsItsNix(t *testing.T) {
 		}
 		return ExecResult{Ran: false}
 	}
-	returned := make(chan int, 1)
-	go func() { returned <- Check(opts) }()
-	awaitTracked(t, s, 1)
+	go Check(opts)
 	awaitStarted(t, marks)
-	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+	if err := os.WriteFile(os.Getenv(readyEnv), []byte(marks), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case code := <-s.Exited():
-		if code != 128+int(syscall.SIGTERM) {
-			t.Errorf("the signaled check ended %d, want %d", code, 128+int(syscall.SIGTERM))
-		}
-	case <-time.After(15 * time.Second):
-		t.Fatal("a SIGTERM sent to the check alone did not end it")
-	}
-	if _, err := os.Stat(filepath.Join(marks, "interrupted")); err != nil {
-		t.Error("the check ended without interrupting the nix it had running")
-	}
-	select {
-	case <-returned:
-	case <-time.After(30 * time.Second):
-		t.Fatal("Check never returned after its faked exit")
-	}
+	select {}
 }
