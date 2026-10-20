@@ -126,7 +126,7 @@ func TestRunInvokesUnknownYOLOEnvironmentWarningBeforeBackend(t *testing.T) {
 		// These observed names are produced, wrapped, or read across the host/entrypoint
 		// boundary rather than all appearing as literal os.Getenv calls in this package.
 		for _, name := range []string{
-			"YOLO_AGENT_UPDATES", "YOLO_CONTEXT_DIR", "YOLO_CONTRACT_TAGS", "YOLO_CTX_MOUNTS_TOKEN",
+			"YOLO_AGENT_UPDATES", "YOLO_CAPTURES_DIR", "YOLO_CONTEXT_DIR", "YOLO_CONTRACT_TAGS", "YOLO_CTX_MOUNTS_TOKEN",
 			"YOLO_FORK_BUILDS", "YOLO_HOST_DIR", "YOLO_HOST_LAYERS", "YOLO_HOST_LOOPBACK", "YOLO_HOST_PATH_MAP",
 			"YOLO_JAIL_DAEMONS", "YOLO_JAIL_DAEMON_READY_NAMES", "YOLO_JAIL_MAIN", "YOLO_LSP_SERVERS",
 			"YOLO_MCP_PRESETS", "YOLO_MISE_TOOLS", "YOLO_PATCHED_TREES", "YOLO_PROVIDERS", "YOLO_PROFILES",
