@@ -131,7 +131,7 @@ func TestTheMacosUserBootRunsItsStepsInOrder(t *testing.T) {
 		"deliver_launch_flags", "assert_required_bins",
 		"catalog_installed_orphans", "reconcile_installed_programs", "report_durable_dir",
 		"generate_bashrc", "generate_mise_config", "mcp_presets_declined", "configure_git",
-		"configure_pack_surfaces", "configure_host_files", "install_home_overlay",
+		"prepare_session_homes", "configure_pack_surfaces", "configure_host_files", "install_home_overlay",
 		"generate_darwin_bootstrap_script", "retire_yolo_log", "write_login_rc",
 		"report_egress",
 	}
@@ -228,31 +228,50 @@ func TestBothBootsRunTheTable(t *testing.T) {
 			t.Fatal(err)
 		}
 		var calls int
+		bootVars := map[string]bool{}
 		ast.Inspect(f, func(n ast.Node) bool {
 			fn, ok := n.(*ast.FuncDecl)
 			if !ok || fn.Name.Name != c.fn || fn.Recv != nil {
 				return true
 			}
+			// Record a local bootRun value when the call site prepares it before
+			// invoking the table; Main also passes its literal inline.
 			ast.Inspect(fn.Body, func(m ast.Node) bool {
-				call, ok := m.(*ast.CallExpr)
+				assign, ok := m.(*ast.AssignStmt)
+				if !ok || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+					return true
+				}
+				lhs, ok := assign.Lhs[0].(*ast.Ident)
 				if !ok {
 					return true
 				}
-				if id, ok := call.Fun.(*ast.Ident); !ok || id.Name != "runBootSteps" || len(call.Args) != 1 {
+				lit := bootRunLiteral(assign.Rhs[0])
+				if lit == nil || !bootLiteralHasTarget(lit, c.target) {
 					return true
 				}
-				ast.Inspect(call.Args[0], func(k ast.Node) bool {
-					kv, ok := k.(*ast.KeyValueExpr)
-					if !ok {
-						return true
-					}
-					key, _ := kv.Key.(*ast.Ident)
-					val, _ := kv.Value.(*ast.Ident)
-					if key != nil && val != nil && key.Name == "target" && val.Name == c.target {
-						calls++
-					}
+				bootVars[lhs.Name] = true
+				return true
+			})
+			ast.Inspect(fn.Body, func(m ast.Node) bool {
+				call, ok := m.(*ast.CallExpr)
+				if !ok || len(call.Args) != 1 {
 					return true
-				})
+				}
+				id, ok := call.Fun.(*ast.Ident)
+				if !ok || id.Name != "runBootSteps" {
+					return true
+				}
+				matchesTarget := false
+				switch arg := call.Args[0].(type) {
+				case *ast.Ident:
+					matchesTarget = bootVars[arg.Name]
+				default:
+					lit := bootRunLiteral(arg)
+					matchesTarget = lit != nil && bootLiteralHasTarget(lit, c.target)
+				}
+				if matchesTarget {
+					calls++
+				}
 				return true
 			})
 			return false
@@ -272,4 +291,34 @@ func TestBothBootsRunTheTable(t *testing.T) {
 		t.Errorf("Main must run the table, then the refusal gate, then the exec "+
 			"(table=%d, gate=%d, exec=%d)", run, gate, execCall)
 	}
+}
+
+func bootRunLiteral(expr ast.Expr) *ast.CompositeLit {
+	if unary, ok := expr.(*ast.UnaryExpr); ok && unary.Op == token.AND {
+		expr = unary.X
+	}
+	lit, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	typ, ok := lit.Type.(*ast.Ident)
+	if !ok || typ.Name != "bootRun" {
+		return nil
+	}
+	return lit
+}
+
+func bootLiteralHasTarget(lit *ast.CompositeLit, target string) bool {
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key, _ := kv.Key.(*ast.Ident)
+		val, _ := kv.Value.(*ast.Ident)
+		if key != nil && val != nil && key.Name == "target" && val.Name == target {
+			return true
+		}
+	}
+	return false
 }
