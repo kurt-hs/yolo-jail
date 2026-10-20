@@ -248,7 +248,8 @@ func homeProcesses(home string) []homeProcess {
 		}
 		out = append(out, homeProcess{
 			pid: pid, ppid: parent[pid], args: args, argsErr: argsErr,
-			startTime: startTime, statErr: statErr, homeErr: homeErr, homeMatched: true,
+			startTime: startTime, statErr: statErr, homeErr: homeErr,
+			homeMatched: bracketedHomeMatch(true, matchesHome, homeErr, statErr),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].pid < out[j].pid })
@@ -391,7 +392,7 @@ func provenExitingStopTarget(home string, p homeProcess, snapshot stopProcessSna
 }
 
 func validLiveLinuxProcessState(state string) bool {
-	return len(state) == 1 && strings.ContainsRune("RSDTtXxKWPIN", rune(state[0]))
+	return len(state) == 1 && strings.ContainsRune("RSDTtKWPIN", rune(state[0]))
 }
 
 func validateStopTarget(home string, p homeProcess, probes stopProcessProbes) (stopProcessSnapshot, bool, error) {
@@ -1176,6 +1177,89 @@ func exitingStopSnapshot(startTime string) stopProcessSnapshot {
 		startTime: startTime, state: "R", stateFound: true,
 		flags: linuxPFExiting, flagsFound: true,
 		lateStartTime: startTime, lateStartTimeFound: true,
+	}
+}
+
+// The first HOME read only finds candidates; ownership requires the bracketed read to match
+// between equal starttimes, so a PID reuse cannot inherit the earlier process's HOME.
+func bracketedHomeMatch(initialMatch, bracketedMatch bool, homeErr, statErr error) bool {
+	return initialMatch && bracketedMatch && homeErr == nil && statErr == nil
+}
+
+func TestBracketedHomeMatchRequiresTheIdentityBracket(t *testing.T) {
+	cleared := fmt.Errorf("%w: environment was cleared", errHomeEnvironmentCleared)
+	cases := []struct {
+		name           string
+		initialMatch   bool
+		bracketedMatch bool
+		homeErr        error
+		statErr        error
+		want           bool
+	}{
+		{name: "coherent match", initialMatch: true, bracketedMatch: true, want: true},
+		{name: "initial match then cleared bracket", initialMatch: true, homeErr: cleared},
+		{name: "initial match then mismatched bracket", initialMatch: true, statErr: errors.New("starttime changed")},
+		{name: "initial match then unreadable bracket", initialMatch: true, homeErr: errHomeObservationUnknown},
+		{name: "no initial match", bracketedMatch: true, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := bracketedHomeMatch(tc.initialMatch, tc.bracketedMatch, tc.homeErr, tc.statErr); got != tc.want {
+				t.Fatalf("bracketedHomeMatch() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidLiveLinuxProcessStateExcludesDeadStates(t *testing.T) {
+	for _, tc := range []struct {
+		state string
+		want  bool
+	}{
+		{state: "R", want: true},
+		{state: "S", want: true},
+		{state: "D", want: true},
+		{state: "T", want: true},
+		{state: "t", want: true},
+		{state: "Z", want: false},
+		{state: "X", want: false},
+		{state: "x", want: false},
+		{state: "?", want: false},
+		{state: "", want: false},
+		{state: "RR", want: false},
+	} {
+		t.Run(tc.state, func(t *testing.T) {
+			if got := validLiveLinuxProcessState(tc.state); got != tc.want {
+				t.Fatalf("validLiveLinuxProcessState(%q) = %v, want %v", tc.state, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStopHomeProcessesDoesNotRetainInitiallyUnprovenHome(t *testing.T) {
+	const home = "/test/home"
+	const startTime = "876542"
+	cleared := fmt.Errorf("%w: environment disappeared during exit", errHomeEnvironmentCleared)
+	listed := homeProcess{
+		pid: 5150, ppid: 1, args: []string{"/bin/worker"}, startTime: startTime,
+		homeErr:     cleared,
+		homeMatched: bracketedHomeMatch(true, false, cleared, nil),
+	}
+	listCalls, inspectCalls, homeCalls, killCalls := 0, 0, 0, 0
+	probes := stopProcessProbes{
+		list: func(string) []homeProcess { listCalls++; return []homeProcess{listed} },
+		inspect: func(int) (stopProcessSnapshot, error) {
+			inspectCalls++
+			return exitingStopSnapshot(startTime), nil
+		},
+		home: func(int, string) (bool, error) { homeCalls++; return false, cleared },
+		kill: func(int, syscall.Signal) error { killCalls++; return nil },
+	}
+	stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+	if err == nil || !strings.Contains(err.Error(), "HOME ownership was not previously confirmed") ||
+		len(stopped) != 0 || listCalls != 1 || inspectCalls != 1 || homeCalls != 0 || killCalls != 0 {
+		t.Fatalf("stop=%v, %v (lists=%d inspections=%d HOME=%d signals=%d); want immediate refusal without claiming ownership",
+			stopped, err, listCalls, inspectCalls, homeCalls, killCalls)
 	}
 }
 
