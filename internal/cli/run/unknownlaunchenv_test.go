@@ -21,7 +21,38 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-func TestLaunchYOLOEnvRecognitionCoversReaderCalls(t *testing.T) {
+func literalStringPrefix(expr ast.Expr) string {
+	switch value := expr.(type) {
+	case *ast.BasicLit:
+		if value.Kind == token.STRING {
+			text, err := strconv.Unquote(value.Value)
+			if err == nil {
+				return text
+			}
+		}
+	case *ast.BinaryExpr:
+		if value.Op == token.ADD {
+			return literalStringPrefix(value.X) + literalStringPrefix(value.Y)
+		}
+	case *ast.ParenExpr:
+		return literalStringPrefix(value.X)
+	}
+	return ""
+}
+
+func recordEmittedLaunchEnvNames(exprs []ast.Expr, emitted map[string]bool) {
+	for i := 0; i+1 < len(exprs); i++ {
+		if literalStringPrefix(exprs[i]) != "-e" {
+			continue
+		}
+		name, _, ok := strings.Cut(literalStringPrefix(exprs[i+1]), "=")
+		if ok && strings.HasPrefix(name, "YOLO_") {
+			emitted[name] = true
+		}
+	}
+}
+
+func TestLaunchYOLOEnvRecognitionCoversReadersAndInheritedProducers(t *testing.T) {
 	known := knownLaunchYOLOEnvNames(nil, nil)
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -29,6 +60,7 @@ func TestLaunchYOLOEnvRecognitionCoversReaderCalls(t *testing.T) {
 	}
 	fset := token.NewFileSet()
 	readers := 0
+	emitted := map[string]bool{}
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -39,6 +71,12 @@ func TestLaunchYOLOEnvRecognitionCoversReaderCalls(t *testing.T) {
 			t.Fatalf("parse %s: %v", name, err)
 		}
 		ast.Inspect(file, func(n ast.Node) bool {
+			switch value := n.(type) {
+			case *ast.CallExpr:
+				recordEmittedLaunchEnvNames(value.Args, emitted)
+			case *ast.CompositeLit:
+				recordEmittedLaunchEnvNames(value.Elts, emitted)
+			}
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
@@ -74,6 +112,14 @@ func TestLaunchYOLOEnvRecognitionCoversReaderCalls(t *testing.T) {
 	}
 	if readers == 0 {
 		t.Fatal("no direct or wrapped YOLO environment readers found; census no longer measures the package")
+	}
+	for _, name := range []string{"YOLO_PUBLISHED_PORTS", "YOLO_FORWARD_HOST_PORTS", "YOLO_PROGRAMS_AUTOPRUNE"} {
+		if !emitted[name] {
+			t.Errorf("source census did not find launch producer for %s", name)
+		}
+		if !slices.Contains(known, name) {
+			t.Errorf("source-backed launch producer %s is not recognized", name)
+		}
 	}
 }
 
@@ -127,6 +173,7 @@ func TestRunInvokesUnknownYOLOEnvironmentWarningBeforeBackend(t *testing.T) {
 		// boundary rather than all appearing as literal os.Getenv calls in this package.
 		for _, name := range []string{
 			"YOLO_AGENT_UPDATES", "YOLO_CAPTURES_DIR", "YOLO_CONTEXT_DIR", "YOLO_CONTRACT_TAGS", "YOLO_CTX_MOUNTS_TOKEN",
+			"YOLO_FORWARD_HOST_PORTS", "YOLO_PUBLISHED_PORTS", "YOLO_PROGRAMS_AUTOPRUNE",
 			"YOLO_FORK_BUILDS", "YOLO_HOST_DIR", "YOLO_HOST_LAYERS", "YOLO_HOST_LOOPBACK", "YOLO_HOST_PATH_MAP",
 			"YOLO_JAIL_DAEMONS", "YOLO_JAIL_DAEMON_READY_NAMES", "YOLO_JAIL_MAIN", "YOLO_LSP_SERVERS",
 			"YOLO_MCP_PRESETS", "YOLO_MISE_TOOLS", "YOLO_PATCHED_TREES", "YOLO_PROVIDERS", "YOLO_PROFILES",

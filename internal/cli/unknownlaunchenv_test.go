@@ -66,10 +66,11 @@ func TestNonLaunchCommandsDoNotWarnAboutYOLOEnvironment(t *testing.T) {
 	}
 }
 
-func TestWarnUnknownYOLOEnvKeepsRecognizedRuntimeQuiet(t *testing.T) {
+func TestWarnUnknownYOLOEnvKeepsRecognizedNamesQuiet(t *testing.T) {
 	var out strings.Builder
 	known := []string{
 		"YOLO_RUNTIME", "YOLO_NO_TMUX", "YOLO_NO_HERDR", "YOLO_JAIL_BACKEND", "YOLO_BLOCK_CONFIG",
+		"YOLO_PUBLISHED_PORTS", "YOLO_FORWARD_HOST_PORTS", "YOLO_PROGRAMS_AUTOPRUNE",
 	}
 	var environ []string
 	for _, name := range known {
