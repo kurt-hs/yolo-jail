@@ -1,6 +1,6 @@
 ---
 status: current
-next: "Rule OQ-HT5 (leaning (a): keep refusing a real home-root file where a host_files link belongs, with sudo rm of that file) and OQ-HT6 (leaning (a): keep refusing a second workspace's launch while a session holds the account home, HT-D15)"
+next: "Rule OQ-HT5 (leaning (a): keep refusing a real home-root file where a host_files link belongs, with sudo rm of that file)"
 verified: 2026-09-21
 verified_commit: 753bcb88
 covers:
@@ -29,7 +29,7 @@ covers:
 tags: [macos-user, jail-home, tiers, backend-parity, seatbelt, credentials]
 ---
 
-# The macos-user home has a workspace tier, and it is symlinks into the workspace's own sidecar
+# Today, macos-user's global home routes workspace state through sidecar symlinks
 
 **Status:** CURRENT as of 2026-09-21, verified against `753bcb88`. Built 2026-09-12; the layout,
 the mirror and the tier separation were exercised on real hardware the same day (Apple Silicon,
@@ -37,13 +37,14 @@ macOS 26.5 arm64) and run nightly in CI since. [What is measured, and by
 what](#what-is-measured-and-by-what) separates a hardware measurement from a Linux unit gate
 from a claim that is still an argument.
 
-> **In short.** `HOME` on `macos-user` is the constant `/Users/_yolojail`, and it is the
+> **In short.** Today, `HOME` on `macos-user` is the constant `/Users/_yolojail`, and it is the
 > **machine** tier. The **workspace** tier is inside it, as symlinks: every directory the podman
 > argv binds from `<workspace>/.yolo/home` is a symlink from the account home into that same
 > sidecar. Every directory a pack declared `scope: machine` stays real in the account home and
 > is **mirrored** into the sidecar, so the `shared_credentials` hook's deliberately *relative*
-> symlink keeps resolving. Nothing about credential sharing, and no Seatbelt rule, is
-> per-backend.
+> symlink keeps resolving. This is the current implementation, not the selected architecture
+> for concurrent workspaces; see [the concurrent-workspace ruling](#decision-ledger). Nothing
+> Credential sharing keeps the same pack-hook contract on every backend; the confinement primitive is backend-specific.
 
 | Component | Lives in |
 | :--- | :--- |
@@ -61,7 +62,8 @@ from a claim that is still an argument.
 | Content delivery over the layout | `internal/cli/run/macoshomeoverlay.go` (`buildMacosHomeOverlay`), `internal/entrypoint/darwin.go` (`InstallHomeOverlay`), `internal/entrypoint/darwinoverlay.go` (`WriteHomeOverlayManifest`, `overlayLinks.route`, `installOverlayDestination`) |
 
 **Reads with:** [`macos-user-nix-and-features.md`](macos-user-nix-and-features.md) (the backend,
-and the standing refusal of a per-workspace `HOME` this layout keeps true),
+and the current global-`HOME` implementation), [`../design/macos-user-concurrent-workspaces.md`](../design/macos-user-concurrent-workspaces.md)
+(the selected but unbuilt per-workspace-`HOME` architecture),
 [`jail-home.md`](jail-home.md) (the container home layout this converges on — its *Shared
 credentials* section is the relative-link fact the mirror exists for),
 [`agent-credentials.md`](agent-credentials.md) (what crosses the boundary, and the per-backend
@@ -94,8 +96,10 @@ below),
 
 ## The three tiers, and where each one lives
 
-`macosuser.SandboxHome()` is the constant `/Users/_yolojail`: no workspace component and no
-session component. The tiers are separated inside it rather than by it.
+In the shipped layout, `macosuser.SandboxHome()` is the constant `/Users/_yolojail`: no
+workspace component and no session component. The tiers are separated inside it rather than by
+it. The concurrent-workspace selection changes neither this description of current code nor the
+pack tier policy; its future private homes and explicit shared paths are in [the concurrent-workspace ruling](#decision-ledger).
 
 | Tier | Container backends (podman) | macos-user |
 | :--- | :--- | :--- |
@@ -109,10 +113,11 @@ one mount, which covers the workspace tier without naming a single directory, an
 bind per `scope: machine` dir inside it from `paths.GlobalHome()` (`appleContainerBaseMounts`, in
 the same file as `podmanBaseMounts`). The tiers are the same on both; the primitive count is not.
 
-The account home holding the machine tier is not an accident to be repaired: a single account
-holding one set of agent credentials is the point of a dedicated sandbox user, and it is why
-`shared_credentials` works here with no broker at all. What the account home does **not** hold
-is any directory the layout links.
+In today's implementation, the account home holds the machine tier: one set of agent credentials
+belongs to the dedicated sandbox user, and the `shared_credentials` hook works here with no
+broker. What the account home does **not** hold is any directory the current layout links. The
+selected concurrent-workspace design keeps that pack-sharing outcome while using an explicit
+shared backing; it does not require this global-home layout.
 
 > [!IMPORTANT]
 > **The machine tier is what the agent is told about, and the sentence names `SharedDirs`.**
@@ -231,9 +236,11 @@ reachable through either, so what crosses between workspaces is readable from th
 > constraint is therefore *"the mirror exists before anything resolves through the link"*, which
 > applying it with the `Links` satisfies.
 
-The rejected alternative is worth keeping because it is the obvious one: emit an **absolute**
-target from `linkSharedCredential` on this backend. That is a backend branch in the one hook every
-backend shares — see [OQ-HT4](#oq-ht4).
+For the current global-`HOME` layout, emitting an **absolute** target from
+`linkSharedCredential` would add a backend branch to the one hook every backend shares. The
+historical reason the implementation kept this layout is recorded under [OQ-HT4](#oq-ht4);
+[the concurrent-workspace ruling](#decision-ledger) selects private workspace homes while
+preserving pack-declared shared backing, not this global-home layout.
 
 ## Where the layout runs in the boot, and the order it must keep
 
@@ -438,10 +445,11 @@ live directory. The per-declaration census and its rulings are
 - **`writable_home_dirs`** — not a gap: the home is natively writable, so the knob has no target.
 - **No PID, network or mount namespace**, and every jail runs as the same `_yolojail` uid, so a
   host daemon cannot tell which jail is calling. Concurrent sessions under *different* profiles do
-  work — two sessions of one workspace each run under their own — but two WORKSPACES' sessions
-  at once are refused, for the account home's sake rather than the profile's
-  ([HT-D15](#ht-d15)); a macos-user jail launching another one does not work, which is an equality
-  constraint in `sandbox_apply` rather than a policy gap.
+  work — two sessions of one workspace each run under their own. The current implementation
+  refuses two WORKSPACES' sessions at once while the account home is held ([HT-D15](#ht-d15));
+  this guard protects today's mutable global-home layout and is not the selected product behavior
+  ([the concurrent-workspace ruling](#decision-ledger)). A macos-user jail launching another one
+  does not work, which is an equality constraint in `sandbox_apply` rather than a policy gap.
 
 ## The staged skills and briefings are write-protected, at the path the kernel sees
 
@@ -630,9 +638,10 @@ What is still one-per-machine, each deliberate or named:
   name a directory its own profile denies reading (reasoned). So such a launch is **refused** while
   the session runs, before its nix build and before any `sudo` (the hold is asked ahead of the
   context-mount preflight, whose probes may prompt), naming the live workspace and the
-  two ways forward: quit that session, or a container runtime for the project
-  ([HT-D15](#ht-d15)); whether two workspaces may ever run at once is [OQ-HT6](#oq-ht6). Two
-  sessions of ONE workspace are still admitted ([OQ-HT3](#oq-ht3)). The per-workspace launch lock
+  two ways forward today: quit that session, or use a container runtime for the project
+  ([HT-D15](#ht-d15)). This describes the current guard, not a product choice to refuse concurrent
+  workspaces; the selected architecture is recorded in [the decision ledger](#decision-ledger).
+  Two sessions of ONE workspace are still admitted ([OQ-HT3](#oq-ht3)). The per-workspace launch lock
   never covered this: `run.AcquireWorkspaceLockFor` is keyed per workspace and released before
   the agent starts. The hold's known limits: a SIGKILLed host `yolo` drops it while the session it
   started may run on, since nothing running as the sandbox account can hold a host lock; and it is
@@ -739,22 +748,33 @@ machine that develops this repo, and a skip reads as a pass.
 > test-fast` and `just done` red for the whole tree — which costs every unrelated commit the
 > ability to tell *"I broke something"* from *"the known red"*. Reverted in `efe7282c`.
 
-## Concurrent-workspace choice: background and full options
+## Concurrent-workspace ruling and current implementation
 
-Filed 2026-10-05 with [HT-D15](#ht-d15), which refuses today. The account home holds one
-workspace's links, and every session runs as the one account in it, so a second workspace's
-launch would repoint the first session's links under it.
+The selected architecture permits different workspaces to run at once under the **same
+`_yolojail` guest OS user**, each with its own private `HOME` and persistent workspace state.
+The Seatbelt profile must allow the selected workspace and explicitly selected shared machine
+paths while the kernel denies sibling workspace homes and state. Outcomes should match the
+container backends' private workspace state and declared machine sharing. This does not select
+per-workspace OS accounts or make waiting/refusing a product-level concurrency policy.
 
-- **(a) Keep refusing** while a session of another workspace holds the home (today), naming it,
-  with "quit that session, or use a container runtime for this project".
-- **(b) Wait instead of refusing**, as a second launch of one workspace waits for the workspace
-  lock, until the other session ends. Nothing is lost, but the second terminal hangs for as long
-  as the first session runs, which may be hours.
-- **(c) A home per workspace**: `HOME` under the account (say `/Users/_yolojail/w/<cname>`),
-  each holding its own links. It ends the contention; it reopens
-  [OQ-HT4](#oq-ht4)'s one-`HOME` ruling and the profile's home rules.
-- **(d) An account per workspace**, from a pool `yolo macos-setup` makes: the uid split per
-  workspace as well, at the cost of provisioning and of every grant naming one account.
+Selected workspace paths, their physical backing, and the relative-link geometry for pack hooks
+remain engineering design work. Preserve the existing pack scope and credential/config policies:
+only declared machine-scope paths and already configured shared grants remain shared. This
+architecture adds no credential source or permission to read the invoking user's home, other
+workspaces, or their sidecars. A same-UID process that runs outside the applicable Seatbelt
+profile can still access data allowed by that UID; the sandbox is not a boundary against such a
+process.
+
+**Current implementation, not final architecture.** `macosuser.SandboxHome()` remains
+`/Users/_yolojail`, with this document's symlink-and-sidecar workspace layout. HT-D15's
+account-home hold still refuses a different workspace while a session holds that home. The hold
+is a protective implementation guard until the selected workspace-home design and its native
+Seatbelt behavior are implemented and verified; it does not override the architecture above.
+Do not remove the guard before that replacement is verified.
+
+The original [OQ-HT4](#oq-ht4) ledger entry records the historical, audit-derived choice of a global `HOME`
+for the implementation then built; it is not a direct owner ruling against future workspace
+`HOME`s. See [OQ-HT4](#oq-ht4) for that distinction and the current [`macos-user-nix-and-features.md`](macos-user-nix-and-features.md) account of the shipped behavior.
 
 ## Open questions
 
@@ -782,24 +802,11 @@ launch would repoint the first session's links under it.
   **Answer:**
   > _(empty — fill in when decided)_
 
-- 💬 <a id="oq-ht6"></a>**[`OQ-HT6`](#oq-ht6) — may sessions of two workspaces run at once on
-  this backend?**
+## Decision ledger
 
-  <!-- vantage: question id=OQ-HT6 leaning="(a): keep refusing (HT-D15) until someone needs two at once; then (c), a home per workspace, which ends the contention instead of scheduling it." -->
-
-  Choose whether to retain the current refusal or permit concurrent workspaces; see the
-  [full unchanged options and trade-offs](#concurrent-workspace-choice-background-and-full-options).
-
-  - **(a) Keep refusing:** explicit remedy, no concurrent workspaces.
-  - **(b) Wait:** preserves state, but may hang for hours.
-  - **(c) A home per workspace:** ends contention, reopens the one-`HOME` ruling.
-  - **(d) An account per workspace:** uid isolation, provisioning and grant costs.
-
-  _Leaning:_ **(a)** until someone needs two at once, then **(c)**: it removes the shared state
-  rather than scheduling around it, where (b) turns a clear refusal into a silent hang.
-
-  **Answer:**
-  > _(empty — fill in when decided)_
+| ID | Ruling / Decision | Date | Settled in | Built |
+| :--- | :--- | :--- | :--- | :--- |
+| OQ-HT6 | Concurrent workspaces use private `HOME`s and persistent workspace state under one `_yolojail` UID. Seatbelt permits only the selected workspace and explicitly selected shared machine paths; per-workspace OS accounts and wait/refuse as product policy are not selected. | 2026-10-20 | [Concurrent-workspace ruling and current implementation](#concurrent-workspace-ruling-and-current-implementation) | — |
 
 ## Why it is this way
 
@@ -811,7 +818,7 @@ documents cite.
 | <a id="oq-ht1"></a>[**OQ-HT1**](#oq-ht1) — the pack's declared `scope` decides the tier, and this backend honors it rather than re-deciding it | `scope: machine` → `packload.SharedDirs`, `scope: workspace` → `packload.WritableDirs`, and the container mount assembler consumes exactly those two lists. So credentials are machine tier and history and transcripts are workspace tier because `packs/claude` says so, not because this backend chose. A backend that shared a `scope: workspace` dir, or split a `scope: machine` one, would be the feature-detection failure of [OQ-HT4](#oq-ht4) seen from the pack's side. Pinned by `TestTheHomeLayoutsTiersComeFromThePackDeclaration`, which drives the real boot entry with a synthetic pack no hardcoded list could contain — substituting literal slices for the two accessors left the suite fully green. |
 | <a id="oq-ht2"></a>[**OQ-HT2**](#oq-ht2) — **no migration; wiping `/Users/_yolojail` is a supported reset** | *"Nobody is using it. No transition needed. If I need to wipe it first, that's fine."* A real file or directory where a link belongs is never removed, renamed or copied: the launch names every offender and the remedy that reaches it. What is given up is real — the old shared home holds the workspace tier for every workspace that ever launched here, and transcripts are user work product where a re-fetchable token is not — and it was accepted on measured grounds: this backend's only session at the time was yolo-generated content. The precedent was already priced in `linkThroughShared`, which accepts losing one login on a layout change. What it buys is that the layout shipped with no one-shot mutation, no `.pre-tiers-<date>` directory and no first-launch copy path. ⚠ Do not reuse the ruling for a different home — for the podman base, which somebody IS using, [`jail-home.md`](jail-home.md#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches) leaves the legacy bytes in place, unmounted and unread, rather than discarding them ([here](jail-home.md#backend-differences)). |
 | <a id="oq-ht3"></a>[**OQ-HT3**](#oq-ht3) — per-workspace, not per-session | The same-workspace overwrite is **convergent**: two launches on one workspace compose identical content from identical config, packs and briefing, which is what the container's attach already relies on. A per-session tier is a mechanism no other backend has, buying nothing the workspace tier does not, and it would have multiplied [OQ-HT2](#oq-ht2)'s surface by every session ever run. The container's courtesy flock was a moved call rather than a design point, and it moved: `run.AcquireWorkspaceLockFor` exists for this one caller. |
-| <a id="oq-ht4"></a>[**OQ-HT4**](#oq-ht4) — `HOME` stays `/Users/_yolojail`; the workspace tier is a symlink layout into the sidecar, and `SharedDirs` stay put and are mirrored back | The constraint that outranks the layout choice is **one mechanism on every backend**: *"it's going to be just identical to how you share them in container jails … otherwise you're just fragmenting the utility of this tool and you can't really share things, because you'd have to detect features and stuff and it would be awful."* A per-workspace `HOME` (the recorded runner-up) reaches credentials some other way, which makes *"where are my credentials"* a per-backend question every pack touching them must feature-detect. What may differ between backends is only the **primitive that enforces the boundary** — a bind mount on podman, an SBPL rule here — because that is invisible to a pack and to a user. In [`backend-parity.md`](../design/backend-parity.md)'s vocabulary the target disposition is **HonoredBy**: the same outcome by a named different primitive, never a different mechanism. A per-workspace `HOME` would also have moved the install prefixes out of reach of the `agent_updates` lock the shared home provides, and overturned [`macos-user-nix-and-features.md`](macos-user-nix-and-features.md)'s standing refusal. |
+| <a id="oq-ht4"></a>[**OQ-HT4**](#oq-ht4) — the implementation then built kept `HOME` at `/Users/_yolojail` and represented workspace state with symlinks into the sidecar | The home-tier audit selected this layout to preserve the container-visible tier and pack-sharing outcomes with the hook and shared-directory mirror already in use. That was a choice about the implementation then built, not a direct owner prohibition on future per-workspace `HOME`s. The selected concurrent-workspace architecture is recorded in [OQ-HT6](#decision-ledger): one `_yolojail` UID, distinct private workspace homes and state, with explicitly selected shared machine paths. The exact backing and relative-link geometry remain design work. |
 | <a id="ht-d1"></a>[**HT-D1**](#ht-d1) — *Implementation decision.* The content rules name the PHYSICAL path, derived from the layout deriver, and never from an `EvalSymlinks` of the account home at plan time | The kernel judges the resolved path, and on every shipped pack `~/.<agent>` is a layout link into the sidecar. Resolving the live account home would read a directory the launcher cannot rely on reading, and on a first launch the links do not exist yet. The deriver is the one the bootstrap applies (`DeriveDarwinHomeLayout`), fed the same `packload.WritableDirs`, so the two agree about where each destination lands. They agree about the PATH the kernel reports only while nothing below the two resolved bases is a link the layout did not lay, which is not construction but enforcement: [HT-D5](#ht-d5) (corrected 2026-09-27, when a review showed the first wording claimed more than the code did). The account-home spelling rides along because it is the one that matches wherever no link stands (2026-09-27) |
 | <a id="ht-d2"></a>[**HT-D2**](#ht-d2) — *Implementation decision.* Every directory and layout link between a writable root and a destination is an anchor, denied `file-write-create` and `file-write-unlink` on its literal path; the workspace and the account home themselves are not | A path deny does not follow an inode, so without anchors the chain could be moved aside and replaced. `file-write*` would also have frozen the agent's own state directory (chmod, utimes, xattrs), which the container's `:ro` bind never did. The two roots need no anchor: the workspace's parent is outside the writable set, and `/Users` is root-owned (2026-09-27) |
 | <a id="ht-d3"></a>[**HT-D3**](#ht-d3) — *Implementation decision.* The protected set is what the overlay builder WROTE, carried with the tree and the layout dirs as one `macosuser.HomeOverlay` | The container binds what it stages. Deriving the rules from a second walk of the declarations would let a destination be protected and not delivered, or the reverse, silently. A launch that delivers nothing renders nothing, so its profile is byte-identical to the one it always got (2026-09-27) |
@@ -826,7 +833,7 @@ documents cite.
 | <a id="ht-d12"></a>[**HT-D12**](#ht-d12) — *Implementation decision, taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible.* No home-root `host_files` link is laid at a file the bootstrap writes by path on every launch, `WriteLoginRC`'s `.zprofile`, `.zshrc` and `.bash_profile` (`entrypoint.DarwinLoginRCFiles`); they stay real account-home files, as before [HT-D9](#ht-d9) | A link there, laid by the one workspace that declares the entry, is left by every other launch ([P2](#p2)), and `WriteLoginRC` followed it into the sidecar of whichever workspace launched next. There `.config/yolo-home` need not exist, so a workspace that declared nothing failed its launch at `write_login_rc` with `ENOENT` (found in review, 2026-10-04). It is the one home-root entry the two backends link differently; podman's skeleton still links it, since the container boot does not write the file. What the host_files step does with such an entry is [HT-D13](#ht-d13) (2026-10-04) |
 | <a id="ht-d13"></a>[**HT-D13**](#ht-d13) — *Implementation decision, taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible.* Where the layout is laid, the host_files step refuses an entry naming one of `DarwinLoginRCFiles`, fatally, with the next step: remove it from `host_files`, and for zsh declare `~/.zshenv`, which zsh reads first and yolo does not write | The entry cannot be delivered: `WriteLoginRC` replaces it later in the same boot, so it never reached a shell, and a `readonly` one left the shared file 0444, which would fail every workspace's `write_login_rc` on the Mac. A host_files entry that cannot be delivered is an error, not a warning, by the ruling that a failed config generator refuses the boot ([`A12` in `jail-home.md`](jail-home.md#why-its-this-way)). A refusal is the stopgap: sourcing a per-workspace copy from the rc file would deliver it ([what is still shared](#what-is-still-shared-and-what-that-costs)) and lift this. A launch that declared such an entry and came up with it silently replaced now stops (2026-10-04) |
 | <a id="ht-d14"></a>[**HT-D14**](#ht-d14) — *Implementation decision, taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible.* The host_files walk follows the links the selected packs' hooks lay — claude's shared credential and per-workspace history, agy's shared credential, pi's shared npm store — each only while it points at the target its hook computes (`packHookLinks`), and walks that target by the same rules, the sidecar's mirror included | [HT-D10](#ht-d10) refused them as links the layout did not lay, and named `sudo rm <link>`; the hook runs before the host_files step and laid the link again on every launch, so a valid config (validation reserves none of those paths) was refused forever, where podman, and this backend before HT-D10, wrote through the link. Following only the hook's own target keeps HT-D10's guarantee: a link at that path to anywhere else is still refused, and so is a mirror that is not the layout's link or a link in place of the account home's shared directory. The targets are restated in `darwinhomelayout.go` because the hooks' file was outside the change; `TestPackHookLinksAreTheLinksTheHooksLay` runs every shipped pack's hooks and fails when the two disagree. A `yolo check` finding for such an entry was the alternative, and is not needed once the entry works (found in review; decided 2026-10-05) |
-| <a id="ht-d15"></a>[**HT-D15**](#ht-d15) — *Implementation decision, taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible.* A macos-user launch takes a hold on the account home for its session, and one of ANOTHER workspace is refused while a session holds it: before the nix build and before any `sudo` (ahead of the context-mount preflight), naming the live workspace, with "quit that session" and "a container runtime for this project" as the next steps, and no override. The hold is a `LOCK_SH` per workspace under `<global storage>/locks/macos-user-home/`, taken under a bounded `.mutex` while the others are probed with `LOCK_EX|LOCK_NB`; an answer the probe cannot read counts as live, and no hold file is ever unlinked | In [OQ-JL7](../design/jail-lifetime-last-session-wins.md#OQ-JL7)'s direction — an arrival that cannot be served safely is refused — and for the reason the bullet under [What is still shared](#what-is-still-shared-and-what-that-costs) measures: the second layout repoints the running session's links. Shared per workspace because two sessions of one workspace lay identical links ([OQ-HT3](#oq-ht3)). "Could not count" counts as live and the files outlive their holders for the keeper's rules ([JL-P3](../design/jail-lifetime-last-session-wins.md#JL-P3), [JL-D28](../design/jail-lifetime-last-session-wins.md#JL-D28)). Asked before the build so a refusal costs seconds, not a half-hour build, and before the context preflight's `sudo -u _yolojail` probes so a refused launch never prompts for a password (the hold itself runs no `sudo`); held by host `yolo` because nothing running as the sandbox account can hold a host lock, which is also its first known limit (a SIGKILLed launcher drops it). The second: it is the invoking macOS user's, under that user's state dir as the session records are, so another macOS user's launch on the same Mac is not seen. Whether two workspaces may ever run at once is [OQ-HT6](#oq-ht6) |
+| <a id="ht-d15"></a>[**HT-D15**](#ht-d15) — *Current implementation decision, taken under the maintainer's 2026-10-04 delegation; reversible and retained only until the selected replacement is verified.* A macos-user launch takes a hold on the account home for its session, and one of ANOTHER workspace is refused while a session holds it: before the nix build and before any `sudo` (ahead of the context-mount preflight), naming the live workspace, with "quit that session" and "a container runtime for this project" as the next steps, and no override. The hold is a `LOCK_SH` per workspace under `<global storage>/locks/macos-user-home/`, taken under a bounded `.mutex` while the others are probed with `LOCK_EX|LOCK_NB`; an answer the probe cannot read counts as live, and no hold file is ever unlinked | This protects the mutable global-home layout that ships today, whose next workspace would otherwise repoint links used by a running session. Same-workspace sharing follows [OQ-HT3](#oq-ht3); an unreadable holder remains live. The hold is not the selected concurrency policy: [OQ-HT6](#decision-ledger) selects private workspace homes under one UID, and the hold stays until that replacement is implemented and verified. The host-user lock also cannot prove a sandbox child is gone after a SIGKILLed launcher, or coordinate launches by another macOS user. |
 | <a id="ht-d16"></a>[**HT-D16**](#ht-d16) — *Implementation decision, taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible.* A user-scope `cache_relocations` entry is a link at the account home's `~/.cache/<subdir>` to the resolved target, laid by the bootstrap in the layout's own step (`InstallDarwinCacheRelocations`, named by `YOLO_DARWIN_CACHE_RELOCATIONS`), never a name in the context dir. A real file or directory at the link's path refuses the launch, naming a copy into the target as you and `sudo rm -rf` of the old directory; a link there is replaced; `~/.cache` itself must be a real directory, and every write is beneath an `os.Root` on it. A launch that relocates nothing ignores a `~/.cache` that is not a real directory, laying, sweeping and reading nothing (found in review, 2026-10-05). `~/.cache/.yolo-cache-relocations.json` records what was laid, and a later launch removes a recorded link for a subdir no longer relocated only while it still points at the recorded target | The key is the user's, so its link is machine tier, beside the cache it replaces part of, and `~/.cache/<subdir>` is the path every tool already uses, which a `$YOLO_CONTEXT_DIR` name would not be. [OQ-HT2](#oq-ht2)'s no-migration rule decides the occupied case, as for every other layout path: what the sandbox cached there before the relocation was configured is the user's to move. Every session's sandbox may make `~/.cache` a link or a file, so refusing that on a launch with nothing to lay would stop every later launch of every workspace until somebody ran `sudo rm`; with a relocation configured the refusal stands, since laying through the link would put the relocations' links wherever it points. The record exists so a dropped relocation stops, as an unmounted bind does, without the step removing a link somebody else made; it sits in a directory every session's sandbox may write, so it can only make the step remove a link in `~/.cache`, which that sandbox could remove itself. The mechanism, the siting and the probes are [`cache-relocation.md`](../plans/cache-relocation.md#decision-ledger)'s (2026-10-05) |
 | <a id="p1"></a>[**P1**](#p1) — a split must restore every tier it breaks, **explicitly** | Colocation is not a mechanism. The machine tier's *backing* works here by accident — the shared dir is a plain directory because there is only one home to put it in — so any change separating the directories has to replace that accident with something stated. A fix that repairs the workspace tier and leaves the machine tier to luck has moved the bug. |
 | <a id="p2"></a>[**P2**](#p2) — the tier of a path is what the pack declares, and there is no second list of "which dirs are per-workspace" | The list is the podman mount table, and adding a directory to one without the other is the drift this layout exists to end. Applied to home-root files it also decides the redirect rule: the layout manages what THIS launch declares. |

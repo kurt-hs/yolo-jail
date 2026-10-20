@@ -14,7 +14,7 @@ covers:
   - internal/supervisor/supervisorcmd.go
   - integration/macosuserjaildaemon_test.go
 tags: [macos-user, seatbelt, nix, darwin, backend-parity, packages]
-summary: "The macos-user backend as built: nix materializing packages: natively into a buildEnv profile, the native bootstrap running the same pure generators the container boot runs, and the surface that is off — grouped by whether it is structurally impossible, absent-but-warned, or fixed. Includes the two permanent differences of a copied home overlay versus a bind mount, and the refusals (rlimits for `resources`, per-workspace homes) that are terminal answers rather than pending gaps."
+summary: "The macos-user backend as built: nix materializing packages: natively into a buildEnv profile, the native bootstrap running the same pure generators the container boot runs, and the surface that is off — grouped by whether it is structurally impossible, absent-but-warned, or fixed. Includes the copied home overlay versus a bind mount, the current global-home implementation and cross-workspace hold, and the terminal rlimits refusal for `resources`."
 ---
 
 # macos-user — native nix, and the surface a container would have given you
@@ -809,16 +809,17 @@ venv-precreate script is Linux-absolute.
 
 ## What this does not license
 
-- **Not** a per-workspace home. `HOME` is `/Users/_yolojail` on every launch, and the
-  per-workspace tier is reached by symlinking directories out of it rather than by moving it
-  ([`macos-user-home-tiers.md`](macos-user-home-tiers.md#oq-ht4) — a per-workspace home is the
-  recorded runner-up). ⚠ The reason given here until the split landed — *"the single home IS
-  this backend's shared-credentials mechanism"* — is **retracted**: the mechanism is the
-  `shared_credentials` hook, which runs on every backend, and the home only ever supplied the
-  backing of the directory a pack declared at `scope: machine`. What actually refuses a
-  per-workspace home is parity: no other backend puts a project's agent state under the
-  account home, and a home that reached credentials some other way would make "where are my
-  credentials" a question every pack had to feature-detect.
+- **A per-workspace home is not implemented yet.** Today `HOME` is `/Users/_yolojail` on every
+  launch, and the workspace tier is reached by symlinking directories out of it rather than by
+  moving it ([the current home layout](macos-user-home-tiers.md#oq-ht4)). The current
+  cross-workspace account-home hold remains in place until the selected replacement is
+  implemented and verified; it is not a permanent refusal of per-workspace homes. The selected
+  architecture is recorded in [the concurrent-workspace ruling](macos-user-home-tiers.md#decision-ledger).
+  The earlier explanation that the single home *"is this backend's shared-credentials mechanism"*
+  was retracted: `shared_credentials` is a pack hook used by every backend, while the home only
+  supplied the backing for pack-declared `scope: machine` directories. The selected design
+  preserves those sharing semantics without adding account-per-workspace, credential, or
+  provider permissions.
 - **Not** `resources` via rlimits. See the warning above; the semantics do not match the keys.
 - **Not** a relocatable shared root. `/Users/Shared` exists on every stock macOS and is the
   OS-blessed neutral location for cross-user data, so the default satisfies the real

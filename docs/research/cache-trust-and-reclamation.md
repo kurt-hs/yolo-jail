@@ -82,7 +82,7 @@ refuses another workspace while a host session holds the home; two same-workspac
 sessions share it. It explicitly loses the hold if host yolo dies while the guest
 survives, and it sees only the invoking host user's holds. Neither a free flock nor
 one shared symlink proves that two scopes can use that name safely. The existing
-[concurrent-workspace question](../reference/macos-user-home-tiers.md#oq-ht6) is not reopened here.
+[concurrent-workspace question](../reference/macos-user-home-tiers.md#decision-ledger) is not reopened here.
 
 **Preparation conclusion:** per-session env plus physical-path profile rules are useful
 seams, not a complete native delivery. Overriding known consumers and denying retained

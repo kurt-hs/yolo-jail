@@ -1,96 +1,80 @@
 ---
 status: in-review
 stage: DESIGN
-next: "Owner discussion: rule OQ-HT6 in the home-tier reference and OQ-MCW2 through OQ-MCW4 here; do not build before 0.15 releases"
+next: "Rule the narrowed same-UID threat and workspace-state lifetime questions, then complete shared-path design and native Seatbelt proof before any build handoff"
 tags: [macos-user, workspaces, concurrency, seatbelt, home]
 vantage:
   status-chip: true
 ---
 
-# Two native workspaces need two stable home views, not a faster link switch
+# Two native workspaces use private homes under one guest UID
 
-**Status:** 2026-10-19. Design only, against `23eb5097`; no implementation authorization and no simultaneous-project Mac measurement. The existing single-workspace refusal remains in force. Build discussion belongs **after 0.15 releases**.
+**Status:** 2026-10-20. The owner selected the architecture below. Implementation and native Mac verification remain incomplete; the current cross-workspace account-home hold remains in place. This is not a build handoff.
 
-> **In short.** The native environment yolo manages must give each running project an unchanging view of its own configuration, packages and state while preserving only deliberately machine-scoped sharing. An account-home link set that changes when another project starts cannot provide that view.
+> **In short.** Different workspaces run concurrently under one `_yolojail` guest OS user, each with a private `HOME` and persistent workspace state. Seatbelt preserves only explicitly selected shared machine paths; it does not grant access to sibling workspace homes.
 
-**Why it matters.** Today another project's launch must refuse before its nix build: otherwise it repoints the first session's `.config`, installed-program paths and pack state while that session still runs.
+**Why it matters.** The current global-home link layout cannot safely serve two workspaces at once: starting one can change paths used by the other. Independent workspace homes let both keep stable path views without adding OS accounts.
 
-**The shape.** Keep an immutable workspace-scoped path view for each active session and explicitly address the machine tier; choose its home/account mechanism only after the access and lifecycle measurements below.
+**The shape.** One guest UID, distinct private workspace homes and state, and Seatbelt access to the selected workspace plus existing, explicitly shared machine paths.
 
-**Cost.** A per-home scheme reopens the ruled constant `HOME`; a per-account scheme adds administrator provisioning and changes sharing. Neither is a one-line relaxation of the hold.
+**Cost.** The current HOME layout and hold remain until a replacement is designed, implemented, and verified on macOS. Exact physical paths and shared-link geometry are not selected here.
 
-**Start at [the boundary](#the-boundary-that-must-hold).**
+**Start at [the selected boundary](#selected-architecture-and-boundary).**
 
-**Needs your ruling:** [OQ-MCW2](#OQ-MCW2), [OQ-MCW3](#OQ-MCW3), [OQ-MCW4](#OQ-MCW4).
+**Needs your ruling:** [OQ-MCW2](#OQ-MCW2) (same-UID threat boundary), [OQ-MCW3](#OQ-MCW3) (workspace-state reclamation).
 
-**Prerequisite owner question:** [OQ-HT6](../reference/macos-user-home-tiers.md#oq-ht6) is the existing concurrent-workspace choice.
-
-**Reads with:** [the home tiers](../reference/macos-user-home-tiers.md#concurrent-workspace-choice-background-and-full-options) (prior ruling and still-open [OQ-HT6](../reference/macos-user-home-tiers.md#oq-ht6)), [native privilege lifecycle](macos-user-privilege-lifecycle.md#points-settled-in-the-walkthrough-2026-10-15) (one enrolled user and one run-as account), [native direction](../reference/macos-no-vm-direction.md) (native plus container fallback), [the implementation sketch](macos-user-concurrent-workspaces-plan.md) (not a build handoff).
+**Reads with:** [the home tiers](../reference/macos-user-home-tiers.md#decision-ledger) (selected architecture and current implementation), [native privilege lifecycle](macos-user-privilege-lifecycle.md#points-settled-in-the-walkthrough-2026-10-15) (one enrolled user and one run-as account), [native direction](../reference/macos-no-vm-direction.md) (native plus container fallback), [the implementation sketch](macos-user-concurrent-workspaces-plan.md) (incomplete, not a build handoff).
 
 ---
 
-## Existing contract, not a fresh decision
+## Selected architecture and boundary
 
-The [home-tier ruling](../reference/macos-user-home-tiers.md#why-it-is-this-way) keeps `HOME=/Users/_yolojail`: `scope: workspace` pack state and `.config`, `.local`, `.npm-global`, `go`, `.yolo/bin` point into `<workspace>/.yolo/home`; `scope: machine` state, `~/.cache` and `~/.yolo/mise` stay in the account home, mirrored into sidecars for relative pack credential links. [OQ-HT4](../reference/macos-user-home-tiers.md#oq-ht4) specifically declined a per-workspace `HOME` to avoid a different shared-credential mechanism on native. [OQ-HT3](../reference/macos-user-home-tiers.md#oq-ht3) admits simultaneous terminals **of one workspace**; it did not authorize concurrent *different* workspaces. [HT-D15](../reference/macos-user-home-tiers.md#ht-d15) implements the refusal through a host-user flock held for the session, before build and sudo, with unknown counted live; [OQ-HT6](../reference/macos-user-home-tiers.md#oq-ht6) remains open, with a leaning to refuse until needed, then consider a workspace home. This new request supplies that need, **not** a ruling overturning the earlier answer.
+Each project has its own private `HOME` and persistent workspace state under the single `_yolojail` guest OS user. A workspace's home and state do not change when another workspace starts; workspace state is not tied to an individual Pi session. Seatbelt must allow the selected workspace and explicitly selected shared machine paths while the kernel denies access to sibling workspace homes and state, including physical access through symlinks or `..`. The target access outcomes match the container backends: private workspace state and only the already-selected shared machine scope.
 
-The [privilege ruling](macos-user-privilege-lifecycle.md#points-settled-in-the-walkthrough-2026-10-15) installed one narrow passwordless run-as grant for `_yolojail`, not a general root capability, a second account, or an admin-free account factory. The host-owned staging root, session-specific env/profile/CA files and account switch must remain narrow; environment secrets are in protected files, not argv. The [native process](../reference/macos-user-nix-and-features.md) uses a Seatbelt profile with a workspace and home write allow and a `/Users` read deny with selected re-allows; `sandbox-exec` evaluates resolved physical paths. The sandbox UID still owns the shared account home, so Seatbelt and DAC both matter.
+Sharing remains constrained by selected pack declarations and existing user configuration. In particular, pack-declared machine-scope state, existing cache/mise/Nix paths, and configured grants keep their established policy; no new credential source, provider policy, MCP permission, host-file grant, or wider credential access is implied. Relative pack-hook links still need a deliberate shared backing under the new path layout, but the architecture does not choose exact backing paths or link geometry.
 
-The [per-session profile design](per-session-profiles.md) addresses profile-dependent *agent* config for concurrent entries of a jail; it does not solve the native account-home link switch. Its native Pi session-home work is independently shippable for two sessions of the **same** workspace under the existing guard, so multi-project architecture must not block that lane. A native profile lane needs its own session-scoped environment and render, not a rewrite of another session's files. No Pi core, SDK or extension feature is required as a prerequisite.
+The architecture does not use accounts-per-workspace and does not make waiting for or refusing a second workspace the product behavior. The security claim for a same-UID process running outside the applicable Seatbelt profile is not settled here: do not assume the selected layout isolates from it, weaken sibling-workspace denial, or add permissions to pursue a broader claim. See [OQ-MCW2](#OQ-MCW2).
 
-## The boundary that must hold
+## Current implementation and transition
 
-- **Workspace bytes:** each project sees its own declared workspace tier, home-root redirects, host-files copies, generated settings, pack hooks, program install prefix, briefings and agent history. Starting B never rewrites a pathname A may resolve later. A's process and its descendants keep A's view after B starts and after B exits. Nothing is implicitly shared because both run under one UID.
-- **Machine bytes:** only pack-declared `scope: machine` dirs, the existing shared cache/mise paths and expressly configured user-scope grants remain shared. Sharing is a policy decision already made in the relevant declarations, **not** a grant to read another workspace's sidecar. A machine-tier path must not become A's writable route into B's workspace via a mirror, redirect or hook. Cache relocation targets remain subject to the user's explicit config and Seatbelt grants; a shared cache is not an independent security boundary between mutually hostile same-UID sessions.
-- **Host boundary:** no new ability to traverse the invoking user's home, other users' homes, other projects or credential sources. A user-supplied context mount and `env_sources` retain their own declared authority; a per-workspace home is not permission to broaden either. The `host_files` case of a new top-level home dir and the shared login rc files must be accounted for, not waved away as already private ([home-tier gaps](../reference/macos-user-home-tiers.md#what-is-still-shared-and-what-that-costs)).
-- **Path reality:** the profile must permit the selected physical workspace/home and deny other physical workspace homes and sidecars, including access through symlinks, `..`, a tool's passwd-db home lookup and `TMPDIR`/`/private/tmp`. A test of rendered SBPL text alone does not prove the kernel verdict. Profile policy is path-based and the same UID can access its own directories outside that profile during yolo's bootstrap; a confined process's escape via a writable alias or its surviving child is the relevant test.
-- **No half-admission:** until these invariants are demonstrated on Mac hardware and the owner rules the open choices, leave the [account-home hold](../reference/macos-user-home-tiers.md#ht-d15) in place. A second project must still get its present actionable refusal, not a silent queue, guessed home path or blanket `sudo` workaround.
+The shipped implementation still sets `HOME` to `/Users/_yolojail` and uses a single account-home layout with per-workspace sidecars. The host-user account-home hold in [HT-D15](../reference/macos-user-home-tiers.md#ht-d15) still refuses a different workspace while a session holds that home, before the nix build and sudo. It is protection for this current mutable layout, not a final concurrency choice. Keep it until the replacement path and kernel behavior are implemented and verified.
 
-## Two plausible shapes, neither selected
+The historical [OQ-HT4 record](../reference/macos-user-home-tiers.md#oq-ht4) describes why the current layout was selected at the time; it is not a direct owner prohibition on per-workspace homes. The settled concurrency architecture is recorded under [OQ-HT6](../reference/macos-user-home-tiers.md#decision-ledger).
 
-| Shape | Advantage | Unresolved cost |
-| :--- | :--- | :--- |
-| **Several homes, one `_yolojail` UID**: distinct persistent home root per workspace, with a deliberately shared machine-tier backing and per-session path/environment | Preserves current narrow sudo grant and per-project sidecar layout; avoids a link set that B repoints under A | Explicitly reopens [OQ-HT4](../reference/macos-user-home-tiers.md#oq-ht4). The UID can read/write both homes outside a correctly scoped Seatbelt profile; profile must exclude sibling homes and sidecars at their physical paths. Pack shared-directory relative links need a shared backing and verified mirrors. `$HOME`, passwd home, rc files, cache/mise, captured installers and root-level host files must agree without recopying secrets or widening host paths. |
-| **Workspace-specific accounts**: each UID owns a distinct home | DAC provides stronger cross-project separation even outside Seatbelt | Setup/teardown, UID reservation, ACLs for each project, one-user sudo rule, credential sharing, machine caches and nix-daemon access all change. It cannot be inferred that the existing narrow run-as grant permits these switches or that administrative setup can be automated. Migration, account exhaustion and durable identity are owner policy, not implementation details. |
+The existing same-workspace admission and staging serialization remain in force. The [per-session profile design](per-session-profiles.md) covers profile-dependent agent configuration for concurrent sessions of one workspace; that work is distinct and does not implement multi-workspace homes. A native profile lane needs its own session-scoped environment and render, not a rewrite of another session's files.
 
-A per-process fake `HOME` within one mutable account home without moving *all* readers is not a third proven design: tools may consult `getpwuid`, `~`, absolute paths or relative pack links. Waiting for A to quit preserves safety but does **not** meet two projects at once. More sessions in the same project share that project's state by existing ruling, but profile A/B must remain session-scoped rather than last-writer-wins.
+## Remaining design and verification work
 
-## Coordination and lifetime to settle before construction
+A build handoff still needs the exact physical home/state layout and an inventory of all readers of `HOME` and its relatives, including passwd/home lookups, login rc files, root-level `host_files`, install prefixes, mise/cache paths, and relative pack hooks. That work must preserve the selected shared-path policy rather than turn one broad home ancestor into a Seatbelt re-allow. The project home and its ordinary state persist across Pi sessions; existing private state and unknown/live bytes are retained safely. No automatic deletion, TTL, cap, or migration behavior is selected. What operation, if any, permits reclaiming a workspace home after workspace removal remains [OQ-MCW3](#OQ-MCW3).
 
-The current [hold](../../internal/cli/run/accounthomehold.go) serializes claims under `.mutex`, keeps one shared lock per workspace and refuses another workspace; the [launch lock](../../internal/macosuser/orchestrator.go) covers sidecar staging, bootstrap and provisioning, then releases before the agent. Preserve that same-project admission and its staging serialization, while ensuring B's entry never edits A's home-root links, machine-tier aliases, credential files or profile lane. Per-session env/profile paths already have random session IDs and liveness records; a session's teardown removes only its own files and services. If a child survives its terminal/launcher, the home, pack tree and any link it needs must remain usable. A SIGKILL can drop the host hold while a sandbox child survives today; that known weakness cannot become the argument for reusing or deleting its home. An unknown live process or unreadable record retains bytes. Reboot recovery must recognize dead holders without mistaking a stale lock file for a live session; workspace removal, account deletion and GC must not erase another project's machine-tier or active data. `yolo stop` already sends SIGTERM to the addressed workspace's live `macos-user` sessions and keeper, and waits for teardown ([dispatch](../../internal/cli/stop.go#L188-L194), [native stop path](../../internal/cli/run/keeperspawn.go#L1750-L1777)); this workspace-scoped operation would not target another workspace's sessions if concurrent workspaces are later permitted. It does not decide whether ordinary persistent workspace-home bytes are retained or reclaimed.
+Native Seatbelt behavior is unproven by rendered-profile tests or Linux fixtures. Before a build handoff, prove on disposable Mac state that two simultaneous workspaces retain their own HOME/state view and the kernel denies sibling-home/state access while allowing only selected machine paths. The unproven same-UID threat boundary remains [OQ-MCW2](#OQ-MCW2). Native hardware trials needing guest/root/account setup or credential access require separate authorization; none is granted here.
 
-Install capture still uses a throwaway root with its own profile that explicitly denies reads of the shared sandbox home ([capture profile](../../internal/macosuser/seatbeltcapture.go)); it must not record or modify another project's home, machine credentials, or another capture's staging tree. The shared capture store is a content-addressed artifact store, not a license to share writable home state; its writer/claim and holder-lifetime proof are distinct from per-project home cleanup ([guest tree retention](../reference/macos-user-provisioning.md#the-guest-pack-tree--one-per-launch-never-replaced)). Machine-wide tool caches and a configured cache relocation likewise need intentional sharing and non-repointed targets, not a new per-project schema to unlock this feature.
+## Decision ledger
 
-## Proof before any build handoff
+| ID | Ruling / Decision | Date | Settled in | Built |
+| :--- | :--- | :--- | :--- | :--- |
+| OQ-MCW4 | Sharing remains limited to selected pack machine scope and existing configured shared paths. The exact backing and relative-link geometry are engineering design, not a new credential grant. | 2026-10-20 | [Selected architecture and boundary](#selected-architecture-and-boundary) | — |
 
-The Mac-agent instrument may use **only** the already-supported narrow, no-password jail entry, in two disposable projects under the neutral root. No interactive agent/API call, credential read, root request or account installation. First record the control: project A runs a noninteractive jail shell writing sentinels under workspace state, generated config, `$HOME`'s private surfaces and a child that waits; starting B is refused, A's child still sees A's sentinels. Then, once a design is built and separately authorized, keep both sessions live simultaneously; B writes *different* sentinels, changes profile lane without rewriting A, and A's child resolves each path again after B starts and after B quits. Reverse the order; run two terminals of A with distinct profiles and make a child survive one terminal's end. Inspect physical `realpath`, env, passwd-home view and Seatbelt allow/deny of A/B homes, sidecars, aliases, `/private/tmp`, `host_files` destinations, machine mirrors and configured cache targets. Avoid real credential contents: use synthetic pack fixtures and only absence/presence probes. Verify crash/unknown/reboot collection separately on disposable state, with no live work destroyed. Record commands, versions, profile paths and exit codes. A Linux fixture proves the call site and fallback, not the Mac kernel or a surviving daemon. **Measurements needing root** (creating accounts, changing sudoers/ACLs, inspecting protected account metadata) are separate, ungranted work: owner authorization and a managed Mac test are prerequisites, not presumed consequences of narrow jail entry.
+## Open questions
 
-## Open questions — owner decisions, not recommendations
+1. 💬 **OQ-MCW2: Is protection against arbitrary same-UID processes outside a workspace's Seatbelt profile part of the security claim?**
 
-The existing [OQ-HT6](../reference/macos-user-home-tiers.md#oq-ht6) is the **sole** authority for whether concurrent native projects are supported and which home/account alternative is selected. Its [OQ-HT4](../reference/macos-user-home-tiers.md#oq-ht4) constraint cannot be silently superseded: selecting another `HOME` requires an explicit owner amendment there. The following questions address separate boundary and lifecycle policies if concurrent use is selected; none answers the older question.
+   <!-- vantage: question id=OQ-MCW2 leaning="Limit the claim to sibling-workspace denial for processes confined by the applicable Seatbelt profile; do not imply outside-profile isolation or grant new permissions." -->
 
-- 💬 **OQ-MCW2: What is the accepted isolation boundary between projects of the same sandbox UID?**
+   The architecture already requires the kernel to deny sibling workspace HOME/state paths. The selected one-UID architecture does not establish isolation from an arbitrary same-UID process outside Seatbelt; no broader access or privilege follows from this question.
 
-  <!-- vantage: question id=OQ-MCW2 leaning="Keep the current host boundary and require kernel-tested sibling-home denial; decide whether same-UID access outside Seatbelt is acceptable." -->
+   _Leaning:_ Limit the claim to sibling-workspace denial for processes confined by the applicable Seatbelt profile. Do not imply outside-profile isolation or grant new permissions to pursue it.
 
-  _Leaning:_ Keep the current host boundary and require kernel-tested sibling-home denial; decide whether same-UID access outside Seatbelt is acceptable. Distinguish accidental config/auth/package leakage from isolation against hostile same-UID guest processes.
+   **Answer:**
+   > _(empty — fill in when decided)_
 
-  **Answer:**
-  > _(empty — owner discussion after 0.15)_
+2. 💬 **OQ-MCW3: What explicit event, if any, permits reclaiming persistent workspace HOME/state?**
 
-- 💬 **OQ-MCW3: Which state persists when a project is removed, a launcher dies or the Mac reboots?**
+   <!-- vantage: question id=OQ-MCW3 leaning="Retain workspace bytes by default, and never reclaim when any process or liveness state is unknown; do not invent automatic cleanup, a TTL or a cap." -->
 
-  <!-- vantage: question id=OQ-MCW3 leaning="Retain unknown or still-held homes and machine state; specify an explicit reclamation policy before deletion." -->
+   The HOME and ordinary workspace state persist across Pi sessions; existing private state and unknown/live bytes are retained safely. This question concerns only when, if ever, an explicit workspace-removal/reclaim operation may delete those persistent bytes.
 
-  _Leaning:_ Retain unknown or still-held homes and machine state; specify an explicit reclamation policy before deletion. This includes old constant-home bytes and the relationship between stopping current native sessions and retaining or reclaiming ordinary workspace-home state; the existing session stop is not itself a home-reclamation policy.
+   _Leaning:_ Retain workspace bytes by default, and never reclaim when any process or liveness state is unknown. Do not invent automatic cleanup, a TTL or a cap.
 
-  **Answer:**
-  > _(empty — owner discussion after 0.15)_
-
-- 💬 **OQ-MCW4: Which shared machine resources remain one copy under the selected shape?**
-
-  <!-- vantage: question id=OQ-MCW4 leaning="Preserve pack-declared machine scope and existing user-configured cache grants; rule per-account sharing, if that shape wins, explicitly." -->
-
-  _Leaning:_ Preserve pack-declared machine scope and existing user-configured cache grants; rule per-account sharing, if that shape wins, explicitly. Include nix client, shared credential hook, install capture and guest pack-tree lifetime; do not invent a schema prerequisite.
-
-  **Answer:**
-  > _(empty — owner discussion after 0.15)_
+   **Answer:**
+   > _(empty — fill in when decided)_
