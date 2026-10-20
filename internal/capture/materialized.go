@@ -82,7 +82,7 @@ func VerifyMaterialized(entry *Entry, home, programPath string, produces []strin
 				expected[path] = true
 			}
 		}
-		observed, err := materializedPaths(home, filepath.Join(home, filepath.FromSlash(output)))
+		observed, err := materializedPaths(home, filepath.Join(home, filepath.FromSlash(output)), entries)
 		if err != nil {
 			return fmt.Errorf("capture verify: walking declared output %q: %w", output, err)
 		}
@@ -130,7 +130,7 @@ func VerifyMaterialized(entry *Entry, home, programPath string, produces []strin
 				expected[path] = true
 			}
 		}
-		observed, err := materializedPaths(home, filepath.Join(home, filepath.FromSlash(target)))
+		observed, err := materializedPaths(home, filepath.Join(home, filepath.FromSlash(target)), entries)
 		if err != nil {
 			return fmt.Errorf("capture verify: walking admitted symlink target %q: %w", target, err)
 		}
@@ -260,7 +260,10 @@ func verifyMaterializedEntry(entry *Entry, m *Manifest, expected ManifestEntry, 
 	}
 	switch expected.Kind {
 	case KindDir:
-		if !sourceInfo.IsDir() || !installedInfo.IsDir() {
+		// Materialize leaves existing directory bindings (including macos-user's
+		// home-to-sidecar links) intact. Verify the directory they bind, not the
+		// binding's inode; files and captured symlinks remain Lstat-strict below.
+		if !sourceInfo.IsDir() || !dirExists(installed) {
 			return fmt.Errorf("expected a directory")
 		}
 	case KindSymlink:
@@ -332,9 +335,10 @@ func sameMaterializedFile(source, installed, path string, relocation *relocation
 	return nil
 }
 
-func materializedPaths(home, root string) (map[string]bool, error) {
+func materializedPaths(home, root string, entries map[string]ManifestEntry) (map[string]bool, error) {
 	paths := map[string]bool{}
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	var visit fs.WalkDirFunc
+	visit = func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -342,9 +346,18 @@ func materializedPaths(home, root string) (map[string]bool, error) {
 		if err != nil {
 			return err
 		}
-		paths[filepath.ToSlash(rel)] = true
+		rel = filepath.ToSlash(rel)
+		paths[rel] = true
+		// Materialize permits existing directory bindings, including nested ones.
+		// WalkDir does not follow links, so resolve only an admitted KindDir via
+		// a trailing dot. Captured symlinks and unadmitted links stay link entries;
+		// their targets are never traversed by this inventory walk.
+		if d.Type()&fs.ModeSymlink != 0 && entries[rel].Kind == KindDir {
+			return filepath.WalkDir(path+string(filepath.Separator)+".", visit)
+		}
 		return nil
-	})
+	}
+	err := filepath.WalkDir(root, visit)
 	return paths, err
 }
 

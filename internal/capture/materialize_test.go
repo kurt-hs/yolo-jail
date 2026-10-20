@@ -148,6 +148,15 @@ func TestVerifyMaterializedChecksTheAdmittedOutputTree(t *testing.T) {
 // The warm verifier follows that admitted closure, rather than trusting the first link's text.
 func TestVerifyMaterializedChecksTransitiveSymlinkTarget(t *testing.T) {
 	home := t.TempDir()
+	// A captured directory-link target may itself be a native directory binding.
+	bound := t.TempDir()
+	binding := filepath.Join(home, ".local", "share", "vendor", "1.0")
+	if err := os.MkdirAll(filepath.Dir(binding), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(bound, binding); err != nil {
+		t.Fatal(err)
+	}
 	store := &Store{Dir: t.TempDir()}
 	staged, err := store.Stage("transitive-link")
 	if err != nil {
@@ -184,6 +193,9 @@ func TestVerifyMaterializedChecksTransitiveSymlinkTarget(t *testing.T) {
 	}
 	if _, err := Materialize(MaterializeOptions{Entry: entry, Home: home}); err != nil {
 		t.Fatal(err)
+	}
+	if err := VerifyMaterialized(entry, home, ".local/bin/vendor", []string{".local/bin/vendor"}); err != nil {
+		t.Fatalf("valid bound directory target rejected: %v", err)
 	}
 	installed := filepath.Join(home, ".local", "share", "vendor", "1.0", "vendor")
 	if err := os.Remove(installed); err != nil {
