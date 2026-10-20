@@ -2,9 +2,11 @@ package run
 
 import (
 	"bytes"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -113,9 +115,12 @@ func TestRunInvokesUnknownYOLOEnvironmentWarningBeforeBackend(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, t.TempDir(), "macos-user", &stdout, &stderr, nil)
 	called := 0
-	o.WarnUnknownYOLOEnv = func(names []string) {
+	o.WarnUnknownYOLOEnv = func(names []string, _ io.Writer) {
 		called++
-		for _, name := range []string{"YOLO_RUNTIME", "YOLO_PACK_ROOT", "YOLO_CTX_ROOT", "YOLO_MCP_SERVERS", "YOLO_MODEL_FRONTIER"} {
+		for _, name := range []string{
+			"YOLO_RUNTIME", "YOLO_PACK_ROOT", "YOLO_CTX_ROOT", "YOLO_MCP_SERVERS", "YOLO_MODEL_FRONTIER",
+			"YOLO_NO_TMUX", "YOLO_NO_HERDR", "YOLO_JAIL_BACKEND", "YOLO_BLOCK_CONFIG",
+		} {
 			if !slices.Contains(names, name) {
 				t.Errorf("recognized name %s missing from callback input %v", name, names)
 			}
@@ -135,6 +140,33 @@ func TestRunInvokesUnknownYOLOEnvironmentWarningBeforeBackend(t *testing.T) {
 	}
 	if called != 1 {
 		t.Fatalf("warning callback calls = %d, want exactly one", called)
+	}
+}
+
+func TestUnknownYOLOEnvironmentWarningUsesLaunchLogWriter(t *testing.T) {
+	const unknown = "YOLO_ITEM98_LOG_UNKNOWN"
+	t.Setenv(unknown, "secret-item98-value")
+	ws := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
+	o.MacosUserRun = func(*jsonx.OrderedMap, string, []string, []string, string, string, macosuser.HomeOverlay, macosuser.HostContext, bool, *jsonx.OrderedMap, []packload.BlockedTool, macosuser.JailDaemons) int {
+		return 0
+	}
+	// Run must supply the current writer after attachLaunchLog installs its tee.
+	o.WarnUnknownYOLOEnv = func(names []string, out io.Writer) {
+		if !slices.Contains(names, unknown) {
+			fmt.Fprintf(out, "warning: %s is not recognized\n", unknown)
+		}
+	}
+	if rc := Run(*o); rc != 0 {
+		t.Fatalf("Run() = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
+	}
+	if strings.Count(stderr.String(), "warning: "+unknown) != 1 || strings.Contains(stderr.String(), "secret-item98-value") {
+		t.Fatalf("terminal must contain the warning once and omit its value:\n%s", stderr.String())
+	}
+	log := readLaunchLog(t, ws)
+	if strings.Count(log, "warning: "+unknown) != 1 || strings.Contains(log, "secret-item98-value") {
+		t.Fatalf("launch log must contain the warning once and omit its value:\n%s", log)
 	}
 }
 
