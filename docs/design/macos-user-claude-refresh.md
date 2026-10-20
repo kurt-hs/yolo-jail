@@ -1,13 +1,13 @@
 ---
-status: draft
-stage: SKETCH
-next: "Measure CL-D22 native vendor-lock behavior and the already-built credential view on a Mac, then seek owner discussion after 0.15; do not build from this sketch"
+status: accepted
+stage: DECIDED
+next: "Review the completed synthetic slice; native vendor and real-login measurements require separate explicit authorization"
 summary: "Native Claude measurements for the already-ruled refresh-token-free credential view"
 ---
 
 # Native Claude coordination: verify the bridge, then the ruled view
 
-**Status:** 2026-10-19. Scoped native measurement design against `23eb5097b`; no native Claude login or refresh run here. Not build-authorized; implementation belongs after 0.15 and owner discussion.
+**Status:** 2026-10-20. The owner authorized the synthetic-first contract, harness and runbook slice only. Synthetic tests built in `54038ec3f` pass on Linux/amd64 with btrfs scratch storage; existing launch wiring checked against `f8478d3b7`. No native Claude login or refresh run here. Release publication is unconfirmed and not a prerequisite for this bounded work.
 
 > **In short.** The existing native shared-file bridge may already coordinate Claude's direct refreshes through Claude's own machine-scoped file lock. Measure that first; separately, verify the existing broker-written credential view before proposing any native rollout.
 
@@ -17,7 +17,7 @@ summary: "Native Claude measurements for the already-ruled refresh-token-free cr
 
 **Needs your ruling:** None here. [The existing replacement ruling](claude-login-without-interception.md#11-decision-ledger) and [one-machine-login ruling](../reference/claude-oauth-interposition.md#OQ-CI1) already settle direction; hardware results may raise a *new* decision later.
 
-**Reads with:** [the companion sketch](macos-user-claude-refresh-plan.md) (measurement sequence, not a build handoff), [Claude login without interception](claude-login-without-interception.md) (owning design), [native home tiers](../reference/macos-user-home-tiers.md) (workspace boundary).
+**Reads with:** [the bounded implementation plan](macos-user-claude-refresh-plan.md) (synthetic slice only), [Claude login without interception](claude-login-without-interception.md) (owning design), [native home tiers](../reference/macos-user-home-tiers.md) (workspace boundary).
 
 ---
 
@@ -32,6 +32,8 @@ summary: "Native Claude measurements for the already-ruled refresh-token-free cr
 **The replacement is already ruled.** [OQ-CL1](claude-login-without-interception.md#11-decision-ledger) approves a broker-written access-token-only view replacing interception everywhere after the [existing measures](claude-login-without-interception.md#7-what-must-be-measured-before-building) and a day on a real rootless host, rather than keeping a permanent second path. [CL-D11](claude-login-without-interception.md#CL-D11) keeps it off by default everywhere until measured. Native [view registration](../../internal/cli/run/claudecredentialview.go) is already wired; the view and shared-store pointer are mutually exclusive. The broker owns the canonical refresh token under a host lock and writes each registered workspace an access token and real expiry **without a refresh token** ([view contract](claude-login-without-interception.md#51-one-writer-one-view-per-workspace)); this would remove direct refreshes *if* native Claude reliably reads that view. [OQ-CI1](../reference/claude-oauth-interposition.md#OQ-CI1) chose one machine login and [OQ-CL2](claude-login-without-interception.md#11-decision-ledger) chose jail `/login` enrollment, workspace `/logout` and host machine logout. Do not reopen either because a native experiment has not yet run.
 
 ## The native measurement contract
+
+**Phase S — synthetic contract only, authorized now.** Two fake participants use a fresh temporary directory named by `CLAUDE_SECURESTORAGE_CONFIG_DIR`, with the fake credential file, `.oauth_refresh.lock` and `.storage-write.lock` co-located. Check kernel directory-lock contention, rereading after a cooperating writer releases its storage lock, and the existing shared-file writer's atomic replacement. A killed fake storage-lock participant leaves a directory, not a kernel-held lock: check the existing writer's stale-directory recovery and bounded unlocked-write fallback, without claiming vendor recovery semantics. Preserve the refresh-lock directory across a storage write. All bytes are fixed fake literals; no real CLI, keychain, settings or login is consulted. A fixture success establishes only the participants' specified protocol and yolo's writer behavior on the tested filesystem. It cannot establish that Claude honors that protocol. See [the synthetic runbook](../plans/runbooks/macos-user-claude-synthetic-measures.md).
 
 **Phase A — establish the current bridge's behavior, without assuming a failure.** On a later owner-authorized disposable native workspace pair, record the CLI version and which store native Claude selects: the sandbox account's shared credential directory, its own Keychain or both. Observe whether two overlapping sessions' vendor lock acquisitions truly serialize, whether the second rereads the replaced file before it attempts a refresh, whether both show a valid login after a token rotation, and whether ordinary `/login` and `/logout` use the same selected store. This is a Mac hardware/vendor-behavior check, not a new architecture gate: a successful lock measurement establishes coordination on the *present* native path even while the replacement rollout remains pending. A failed measurement requires a redacted reproduction and owner discussion before any new mechanism is selected.
 
