@@ -444,6 +444,9 @@ _refresh_note_failed() {
 # the refresh again IN FRONT of the program, whatever the stamp and the timing say, and refuses if it
 # fails again with its upstream reachable (PD-NF1).
 _REFRESH_RETRY=0
+# _REFRESH_USE_INSTALLED is launch-scoped: the hatch runs the installed program without starting
+# another refresh later in this same invocation.
+_REFRESH_USE_INSTALLED=0
 
 # _refresh_report_last says, once, how the last background refresh this home started ended, when
 # it did not succeed. A success leaves nothing to say. A PROVISIONAL result is the job's own
@@ -479,6 +482,7 @@ _refresh_report_last() {
         fi
         if _yolo_use_installed; then
             echo "  $BIN: running what is installed, as ` + patchrecovery.UseInstalledEnv + ` asks." >&2
+            _REFRESH_USE_INSTALLED=1
             rm -f "$REFRESH_RESULT" 2>/dev/null || true
             return 0
         fi
@@ -610,6 +614,8 @@ _prelaunch_refresh() {
     [ "$HAS_REFRESH" = "1" ] || return 0
     [ -x "$REAL_BIN" ] || return 0
     _refresh_report_last
+    # The one-invocation hatch is for this program run, not a reason to retry in the background.
+    [ "$_REFRESH_USE_INSTALLED" = 1 ] && return 0
     if ! _refresh_worth; then
         # Nothing here is worth refreshing any more, so a failed result has nothing to retry.
         if [ "$_REFRESH_RETRY" = 1 ]; then rm -f "$REFRESH_RESULT" 2>/dev/null || true; fi
