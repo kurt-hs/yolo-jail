@@ -34,7 +34,10 @@ func Check(opts Options) int {
 	// release this command's selected staging tree and embedded/process-pack leases before exit.
 	defer nixchildren.StopOnSignal(func() {
 		selectedTree.cleanup()
-		packload.ReleaseEmbedded()
+		packload.ReleaseEmbeddedForExit()
+		if opts.signalCleanupProbe != nil {
+			opts.signalCleanupProbe()
+		}
 	})()
 	fillDefaults(&opts)
 	o := &opts

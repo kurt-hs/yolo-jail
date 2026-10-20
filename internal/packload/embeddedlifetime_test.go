@@ -16,6 +16,7 @@ package packload_test
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -106,9 +107,101 @@ func TestEmbeddedRootsAreReadableForTheProcess(t *testing.T) {
 	}
 }
 
-// TestReleaseEmbeddedKeepsTheSharedTreeAndReadopts: a release gives back this process's
-// LEASE, never the tree other processes of the build are using, and a later call re-adopts
-// the very same tree — released, not poisoned; idempotent.
+// TestReleaseEmbeddedForExitStopsReacquisition runs the terminal-fence race controls in a fresh
+// process so the terminal state cannot contaminate ordinary release/reload tests.
+func TestReleaseEmbeddedForExitStopsReacquisition(t *testing.T) {
+	const childEnv = "YOLO_PACKLOAD_TERMINAL_CHILD"
+	if os.Getenv(childEnv) == "1" {
+		tmp := os.TempDir()
+		blocker := filepath.Join(tmp, "embedded-cache-is-a-file")
+		if err := os.WriteFile(blocker, []byte("not a directory"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		packload.OverrideEmbeddedCacheDir(filepath.Join(blocker, "embedded-packs"))
+		if len(packload.Embedded()) == 0 {
+			t.Fatalf("fixture packs did not materialize: %v", packload.EmbeddedProblems())
+		}
+		fallbackRoot, fallback := packload.EmbeddedLocation()
+		if !fallback || fallbackRoot == "" {
+			t.Fatalf("expected fallback tree before terminal release, got %q fallback=%v", fallbackRoot, fallback)
+		}
+		if _, err := packload.ProcessPackDir("before-exit"); err != nil {
+			t.Fatalf("create process pack tree: %v", err)
+		}
+		processRoot := packload.ProcessTreeLocation()
+		if processRoot == "" || processRoot == fallbackRoot {
+			t.Fatalf("expected distinct process tree before terminal release, got %q", processRoot)
+		}
+		before, err := filepath.Glob(filepath.Join(tmp, packload.EmbeddedFallbackPrefix+"*"))
+		if err != nil || len(before) != 1 || before[0] != fallbackRoot {
+			t.Fatalf("before-release inventory = %q (%v), want the fallback tree containing the process tree", before, err)
+		}
+		start := make(chan struct{})
+		var workers sync.WaitGroup
+		failures := make(chan error, 16)
+		for i := 0; i < 8; i++ {
+			workers.Add(1)
+			go func(i int) {
+				defer workers.Done()
+				<-start
+				for n := 0; n < 20; n++ {
+					_ = packload.Embedded()
+					if _, err := packload.ProcessPackDir("concurrent"); err != nil && !errors.Is(err, packload.ErrEmbeddedExiting) {
+						failures <- err
+						return
+					}
+				}
+			}(i)
+		}
+		close(start)
+		packload.ReleaseEmbeddedForExit()
+		workers.Wait()
+		close(failures)
+		for err := range failures {
+			t.Errorf("concurrent process-tree allocation: %v", err)
+		}
+		for _, tree := range []string{fallbackRoot, processRoot} {
+			if _, err := os.Lstat(tree); !os.IsNotExist(err) {
+				t.Fatalf("terminal release left pre-existing tree %q (%v)", tree, err)
+			}
+		}
+		if packs := packload.Embedded(); len(packs) != 0 {
+			t.Fatalf("terminal release allowed embedded-pack reacquisition: %d pack(s)", len(packs))
+		}
+		if _, err := packload.ProcessPackDir("after-exit"); !errors.Is(err, packload.ErrEmbeddedExiting) {
+			t.Fatalf("terminal process-pack allocation error = %v, want ErrEmbeddedExiting", err)
+		}
+		if root, _ := packload.EmbeddedLocation(); root != "" {
+			t.Fatalf("terminal release recreated embedded tree %q", root)
+		}
+		if root := packload.ProcessTreeLocation(); root != "" {
+			t.Fatalf("terminal release recreated process tree %q", root)
+		}
+		if got, err := filepath.Glob(filepath.Join(tmp, packload.EmbeddedFallbackPrefix+"*")); err != nil || len(got) != 0 {
+			t.Fatalf("terminal release left or recreated per-process trees %q (%v)", got, err)
+		}
+		return
+	}
+
+	tmp := t.TempDir()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestReleaseEmbeddedForExitStopsReacquisition$")
+	var env []string
+	for _, item := range os.Environ() {
+		key, _, _ := strings.Cut(item, "=")
+		if key != childEnv && key != "TMPDIR" {
+			env = append(env, item)
+		}
+	}
+	cmd.Env = append(env, childEnv+"=1", "TMPDIR="+tmp)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("terminal pack-tree child failed: %v\n%s", err, output)
+	}
+}
+
+// TestReleaseEmbeddedKeepsTheSharedTreeAndReadopts: a release gives back this process's lease,
+// never the tree other processes of the build are using, and a later call re-adopts it.
+// The lifecycle remains ordinary and repeatable unless the exit-only API is used.
 func TestReleaseEmbeddedKeepsTheSharedTreeAndReadopts(t *testing.T) {
 	base, _ := isolated(t)
 	first := mustEmbedded(t)

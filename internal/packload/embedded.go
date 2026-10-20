@@ -26,6 +26,7 @@ package packload
 // configured packs included, from the pack store (internal/config/selectedpacks.go).
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"sort"
@@ -38,6 +39,7 @@ var (
 	embeddedPacks    []*Pack
 	embeddedProblems []string
 	embeddedFS       fs.FS
+	embeddedExiting  bool
 
 	// embeddedRoot is the tree the packs were loaded from: <base>/<hash> in the cache, or a
 	// per-process TMPDIR dir when embeddedFallback. Only a fallback tree is ever deleted by
@@ -99,6 +101,9 @@ func SetEmbeddedFS(f fs.FS) {
 func Embedded() []*Pack {
 	embeddedMu.Lock()
 	defer embeddedMu.Unlock()
+	if embeddedExiting {
+		return nil
+	}
 	loadEmbeddedLocked()
 	return embeddedPacks
 }
@@ -113,6 +118,9 @@ func Embedded() []*Pack {
 func EmbeddedProblems() []string {
 	embeddedMu.Lock()
 	defer embeddedMu.Unlock()
+	if embeddedExiting {
+		return nil
+	}
 	loadEmbeddedLocked()
 	return embeddedProblems
 }
@@ -157,6 +165,20 @@ func ReleaseEmbedded() {
 	releaseEmbeddedLocked()
 }
 
+// ReleaseEmbeddedForExit permanently closes pack-tree allocation for this process, then releases
+// its current embedded and process-pack trees. Use only immediately before a terminal process exit;
+// unlike ReleaseEmbedded, this does not permit later calls to materialize or stage packs again.
+func ReleaseEmbeddedForExit() {
+	embeddedMu.Lock()
+	defer embeddedMu.Unlock()
+	embeddedExiting = true
+	releaseEmbeddedLocked()
+}
+
+// ErrEmbeddedExiting reports that the process is terminating and cannot allocate another pack tree.
+var ErrEmbeddedExiting = errors.New("pack trees unavailable while process is exiting")
+
+// releaseEmbeddedLocked releases current process pack trees and forgets the loaded state. Caller holds embeddedMu.
 func releaseEmbeddedLocked() {
 	// The process pack tree (processtree.go) goes with the embedded packs: it is released at
 	// the same exits, for the same reason, and a Pack staged into it is as dead as one

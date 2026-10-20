@@ -2,6 +2,7 @@ package check
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/nixchildren"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/reporoot"
 )
@@ -42,14 +44,28 @@ func TestSignalExitRemovesSelectedPackTree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, ".config", "yolo-jail", "config.jsonc"), []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	marker := filepath.Join(root, "staged-path")
+	for _, tc := range []struct {
+		name string
+		sig  syscall.Signal
+		code int
+	}{{"SIGINT", syscall.SIGINT, 130}, {"SIGHUP", syscall.SIGHUP, 129}, {"SIGTERM", syscall.SIGTERM, 143}} {
+		t.Run(tc.name, func(t *testing.T) { runSignalCleanupCase(t, root, home, tmp, tc.sig, tc.code) })
+	}
+}
+
+func runSignalCleanupCase(t *testing.T, root, home, tmp string, sig syscall.Signal, code int) {
+	t.Helper()
+	name := sig.String()
+	marker := filepath.Join(root, "staged-"+name)
+	terminalMarker := filepath.Join(root, "terminal-fence-"+name)
 	cmd := exec.Command(os.Args[0], "-test.run=^TestSignalExitRemovesSelectedPackTree$", "-test.v")
 	cmd.Env = testEnv(map[string]string{
-		signalCleanupChildEnv: "1",
-		"HOME":                home,
-		"TMPDIR":              tmp,
-		"CHECK_SIGNAL_MARKER": marker,
-		"CHECK_SIGNAL_REPO":   root,
+		signalCleanupChildEnv:   "1",
+		"HOME":                  home,
+		"TMPDIR":                tmp,
+		"CHECK_SIGNAL_MARKER":   marker,
+		"CHECK_SIGNAL_TERMINAL": terminalMarker,
+		"CHECK_SIGNAL_REPO":     root,
 	})
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
@@ -81,9 +97,9 @@ func TestSignalExitRemovesSelectedPackTree(t *testing.T) {
 	if filepath.Dir(staged) != tmp || !strings.HasPrefix(filepath.Base(staged), "yolo-check-pack-") {
 		t.Fatalf("captured staging path %q is not a yolo-check-pack-* tree in TMPDIR %q", staged, tmp)
 	}
-	for _, root := range []string{fallbackRoot, processRoot} {
-		if !strings.HasPrefix(filepath.Base(root), packload.EmbeddedFallbackPrefix) {
-			t.Fatalf("captured packload tree %q does not use the leased fallback naming", root)
+	for _, tree := range []string{fallbackRoot, processRoot} {
+		if !strings.HasPrefix(filepath.Base(tree), packload.EmbeddedFallbackPrefix) {
+			t.Fatalf("captured packload tree %q does not use the leased fallback naming", tree)
 		}
 	}
 	if fallbackRoot == processRoot {
@@ -92,27 +108,32 @@ func TestSignalExitRemovesSelectedPackTree(t *testing.T) {
 	if manifests, err := filepath.Glob(filepath.Join(staged, "*", "pack.json")); err != nil || len(manifests) != 1 {
 		t.Fatalf("captured selected tree does not contain one staged synthetic pack: manifests=%q error=%v", manifests, err)
 	}
-	for _, dir := range []string{staged, fallbackRoot, processRoot} {
-		if _, err := os.Stat(dir); err != nil {
-			t.Fatalf("process-owned tree %q absent before signal: %v", dir, err)
+	for _, tree := range []string{staged, fallbackRoot, processRoot} {
+		if _, err := os.Stat(tree); err != nil {
+			t.Fatalf("process-owned tree %q absent before signal: %v", tree, err)
 		}
 	}
-	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+	if err := cmd.Process.Signal(sig); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case err := <-waited:
-		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 128+int(syscall.SIGTERM) {
-			t.Fatalf("child exit = %v, want exit status 143; output:\n%s", err, output.String())
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != code {
+			t.Fatalf("child exit = %v, want status %d; output:\n%s", err, code, output.String())
 		}
 	case <-time.After(15 * time.Second):
 		_ = cmd.Process.Kill()
 		<-waited
-		t.Fatalf("child did not exit after SIGTERM; output:\n%s", output.String())
+		t.Fatalf("child did not exit after %s; output:\n%s", sig, output.String())
 	}
-	for _, dir := range []string{staged, fallbackRoot, processRoot} {
-		if _, err := os.Lstat(dir); !os.IsNotExist(err) {
-			t.Errorf("SIGTERM exit left process-owned tree %q (stat error %v)", dir, err)
+	if b, err := os.ReadFile(terminalMarker); err != nil {
+		t.Fatalf("Check signal callback did not reach its terminal-fence probe: %v; output:\n%s", err, output.String())
+	} else if got, want := strings.TrimSpace(string(b)), `embedded=0 process-error=true fallback="" process="" nix-stopped=true`; got != want {
+		t.Fatalf("post-fence allocation/ordering probe = %q, want %q", got, want)
+	}
+	for _, tree := range []string{staged, fallbackRoot, processRoot} {
+		if _, err := os.Lstat(tree); !os.IsNotExist(err) {
+			t.Errorf("%s exit left process-owned tree %q (stat error %v)", sig, tree, err)
 		}
 	}
 }
@@ -134,6 +155,27 @@ func runSignalCleanupChild(t *testing.T) {
 		t.Fatalf("creating process pack tree: %v", err)
 	}
 	processRoot := packload.ProcessTreeLocation()
+	nixStopped := filepath.Join(os.TempDir(), "check-signal-nix-stopped")
+	nixStarted := filepath.Join(os.TempDir(), "check-signal-nix-started")
+	_ = os.Remove(nixStopped)
+	_ = os.Remove(nixStarted)
+	nixCmd := exec.Command("/bin/sh", "-c", `trap 'touch "$1"; exit 0' INT; touch "$2"; while :; do sleep 1; done`, "signal-nix", nixStopped, nixStarted)
+	releaseNix, err := nixchildren.Start(nixCmd)
+	if err != nil {
+		t.Fatalf("starting tracked stand-in nix: %v", err)
+	}
+	go func() {
+		_ = nixCmd.Wait()
+		releaseNix()
+	}()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if _, err := os.Stat(nixStarted); err == nil {
+			break
+		}
+	}
+	if _, err := os.Stat(nixStarted); err != nil {
+		t.Fatalf("tracked stand-in nix did not start: %v", err)
+	}
 	var out bytes.Buffer
 	opts := baseOptions(t, &out)
 	opts.Build = true
@@ -165,6 +207,14 @@ func runSignalCleanupChild(t *testing.T) {
 	}
 	opts.RepoRoot = func() (reporoot.Resolution, bool) {
 		return reporoot.Resolution{Root: os.Getenv("CHECK_SIGNAL_REPO")}, true
+	}
+	opts.signalCleanupProbe = func() {
+		packs := packload.Embedded()
+		_, processErr := packload.ProcessPackDir("after-signal")
+		root, _ := packload.EmbeddedLocation()
+		processRoot := packload.ProcessTreeLocation()
+		result := fmt.Sprintf(`embedded=%d process-error=%t fallback=%q process=%q nix-stopped=%t`, len(packs), errors.Is(processErr, packload.ErrEmbeddedExiting), root, processRoot, fileExists(nixStopped))
+		_ = os.WriteFile(os.Getenv("CHECK_SIGNAL_TERMINAL"), []byte(result), 0o600)
 	}
 	opts.BuildImage = func(string, []any) (string, []string) {
 		trees, err := filepath.Glob(filepath.Join(os.TempDir(), "yolo-check-pack-*"))
