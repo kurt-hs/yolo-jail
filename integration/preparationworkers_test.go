@@ -89,14 +89,19 @@ const preparationWorkerTermGrace = 30 * time.Second
 // remover's own minute (detachedWriterWait).
 const homeProcessStopBound = 3 * time.Minute
 
+// PF_EXITING is Linux stat field 9 bit 0x4 (include/linux/sched.h).
+const linuxPFExiting uint64 = 0x4
+
 // homeProcess is one live process running under the test's HOME.
 type homeProcess struct {
-	pid, ppid int
-	args      []string
-	argsErr   error
-	startTime string
-	statErr   error
-	homeErr   error
+	pid, ppid   int
+	args        []string
+	argsErr     error
+	startTime   string
+	statErr     error
+	homeErr     error
+	homeMatched bool
+	exiting     bool
 }
 
 // yoloVerb is the verb of a yolo self-exec'd process (`<exe> internal <verb> …`), read the way
@@ -175,6 +180,9 @@ func processHomeObservation(pid int, home string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("%w: read /proc/%d/environ: %v", errHomeObservationUnknown, pid, err)
 	}
+	if len(raw) == 0 {
+		return false, fmt.Errorf("%w: %w: pid %d has an empty environment", errHomeOwnershipChanged, errHomeEnvironmentCleared, pid)
+	}
 	want := "HOME=" + filepath.Clean(home)
 	for _, kv := range strings.Split(string(raw), "\x00") {
 		if strings.HasPrefix(kv, "HOME=") {
@@ -240,7 +248,7 @@ func homeProcesses(home string) []homeProcess {
 		}
 		out = append(out, homeProcess{
 			pid: pid, ppid: parent[pid], args: args, argsErr: argsErr,
-			startTime: startTime, statErr: statErr, homeErr: homeErr,
+			startTime: startTime, statErr: statErr, homeErr: homeErr, homeMatched: true,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].pid < out[j].pid })
@@ -262,22 +270,27 @@ func stopHomeProcessesWithin(home string, bound, grace time.Duration) ([]string,
 }
 
 type stopProcessSnapshot struct {
-	gone       bool
-	args       []string
-	startTime  string
-	state      string
-	stateFound bool
-	killErr    error
-	stateErr   error
-	flags      uint64
-	flagsFound bool
-	flagsErr   error
-	reads      []string
-	observedAt time.Time
+	gone               bool
+	args               []string
+	startTime          string
+	state              string
+	stateFound         bool
+	killErr            error
+	stateErr           error
+	flags              uint64
+	flagsFound         bool
+	flagsErr           error
+	lateStartTime      string
+	lateStartTimeFound bool
+	lateStartTimeErr   error
+	exiting            bool
+	reads              []string
+	observedAt         time.Time
 }
 
 var errHomeObservationUnknown = errors.New("HOME observation was unreadable")
 var errHomeOwnershipChanged = errors.New("process no longer has the listed HOME")
+var errHomeEnvironmentCleared = errors.New("process environment was cleared")
 
 type uncertainHomeObservationError struct {
 	err error
@@ -304,6 +317,7 @@ func inspectStopProcess(pid int) (stopProcessSnapshot, error) {
 			gone: gone, args: args, startTime: startTime,
 			state: live.state, stateFound: live.found, killErr: live.killErr, stateErr: live.stateErr,
 			flags: live.flags, flagsFound: live.flagsFound, flagsErr: live.flagsErr,
+			lateStartTime: live.startTime, lateStartTimeFound: live.startTimeFound, lateStartTimeErr: live.startTimeErr,
 			reads: append([]string(nil), reads...), observedAt: time.Now(),
 		}
 	}
@@ -337,7 +351,50 @@ func inspectStopProcess(pid int) (stopProcessSnapshot, error) {
 	return result(false, args, startTime, live), nil
 }
 
-func validateStopTarget(_ string, p homeProcess, probes stopProcessProbes) (stopProcessSnapshot, bool, error) {
+// provenExitingStopTarget recognizes only an already-owned process whose same post-argv stat
+// ties PF_EXITING, a valid live state, and field-22 starttime to the listed identity.
+func provenExitingStopTarget(home string, p homeProcess, snapshot stopProcessSnapshot, probes stopProcessProbes) (bool, string, error) {
+	switch {
+	case !p.homeMatched:
+		return false, "HOME ownership was not previously confirmed", nil
+	case p.homeErr != nil && !errors.Is(p.homeErr, errHomeEnvironmentCleared):
+		return false, "prior HOME observation was not coherent", nil
+	case p.statErr != nil || p.startTime == "":
+		return false, "listed process identity was unavailable", nil
+	case snapshot.startTime != p.startTime:
+		return false, "pre-argv process identity changed", nil
+	case snapshot.lateStartTimeErr != nil || !snapshot.lateStartTimeFound:
+		return false, "post-argv process starttime is unavailable", nil
+	case snapshot.lateStartTime != p.startTime:
+		return false, "post-argv process identity changed", nil
+	case len(snapshot.args) != 0:
+		return false, "process arguments are no longer empty", nil
+	case snapshot.stateErr != nil || !snapshot.stateFound || !validLiveLinuxProcessState(snapshot.state):
+		return false, "post-argv process state is not a valid live Linux state", nil
+	case !snapshot.flagsFound || snapshot.flagsErr != nil || snapshot.flags&linuxPFExiting == 0:
+		return false, "post-argv Linux stat does not prove PF_EXITING", nil
+	case probes.home == nil:
+		return false, "HOME observation probe is unavailable", errors.New("HOME observation probe is unavailable")
+	}
+
+	matches, err := probes.home(p.pid, home)
+	if err != nil {
+		if errors.Is(err, errHomeEnvironmentCleared) && !matches {
+			return true, "", nil
+		}
+		return false, "", fmt.Errorf("revalidating exiting %s HOME ownership: %w", p, err)
+	}
+	if !matches {
+		return false, "", fmt.Errorf("revalidating exiting %s: process no longer has HOME=%s", p, home)
+	}
+	return true, "", nil
+}
+
+func validLiveLinuxProcessState(state string) bool {
+	return len(state) == 1 && strings.ContainsRune("RSDTtXxKWPIN", rune(state[0]))
+}
+
+func validateStopTarget(home string, p homeProcess, probes stopProcessProbes) (stopProcessSnapshot, bool, error) {
 	snapshot, err := probes.inspect(p.pid)
 	if err != nil {
 		return stopProcessSnapshot{}, false, fmt.Errorf("revalidating %s before signalling: %w", p, err)
@@ -345,7 +402,7 @@ func validateStopTarget(_ string, p homeProcess, probes stopProcessProbes) (stop
 	if snapshot.gone {
 		return snapshot, false, nil
 	}
-	if p.homeErr != nil {
+	if p.homeErr != nil && !errors.Is(p.homeErr, errHomeEnvironmentCleared) {
 		if errors.Is(p.homeErr, errHomeObservationUnknown) {
 			return stopProcessSnapshot{}, false, fmt.Errorf("revalidating %s before signalling: %w", p, &uncertainHomeObservationError{err: p.homeErr})
 		}
@@ -359,6 +416,16 @@ func validateStopTarget(_ string, p homeProcess, probes stopProcessProbes) (stop
 	}
 	if snapshot.startTime != p.startTime {
 		return stopProcessSnapshot{}, false, fmt.Errorf("revalidating %s before signalling: pid now names a different process", p)
+	}
+	if p.exiting || p.homeErr != nil {
+		exiting, reason, err := provenExitingStopTarget(home, p, snapshot, probes)
+		if err != nil {
+			return stopProcessSnapshot{}, false, err
+		}
+		if !exiting {
+			return stopProcessSnapshot{}, false, fmt.Errorf("revalidating exiting process identity for %s: %s", p, reason)
+		}
+		snapshot.exiting = true
 	}
 	return snapshot, true, nil
 }
@@ -529,6 +596,21 @@ func refreshStopListing(home string, procs []homeProcess, deadline time.Time, pr
 			continue
 		}
 		if len(snapshot.args) == 0 {
+			if !snapshot.exiting {
+				exiting, _, err := provenExitingStopTarget(home, p, snapshot, probes)
+				if err != nil {
+					return nil, err
+				}
+				snapshot.exiting = exiting
+			}
+			if snapshot.exiting && !time.Now().Before(deadline) {
+				snapshot.exiting = false
+			}
+			if snapshot.exiting {
+				p.exiting = true
+				current = append(current, p)
+				continue
+			}
 			original := fmt.Errorf("revalidating %s before signalling: live process has no classifiable arguments", p)
 			return nil, fmt.Errorf("%w; %s", original, emptyArgStopDiagnostic(p, snapshot))
 		}
@@ -574,20 +656,77 @@ func waitStopTargetGone(home string, p homeProcess, deadline time.Time, probes s
 
 func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, probes stopProcessProbes) ([]string, error) {
 	var stopped []string
+	var exiting []homeProcess
 	deadline := time.Now().Add(bound)
 	for {
-		procs := probes.list(home)
-		if len(procs) == 0 {
+		listed := probes.list(home)
+		var retained []homeProcess
+		heldPIDs := map[int]bool{}
+		for _, p := range exiting {
+			snapshot, live, err := validateStopTarget(home, p, probes)
+			if err != nil {
+				return stopped, err
+			}
+			if !live {
+				continue
+			}
+			if !snapshot.exiting {
+				return stopped, fmt.Errorf("revalidating exiting process identity for %s: PF_EXITING evidence was lost", p)
+			}
+			retained = append(retained, p)
+			heldPIDs[p.pid] = true
+		}
+		if len(heldPIDs) > 0 {
+			current := listed[:0]
+			for _, p := range listed {
+				if !heldPIDs[p.pid] {
+					current = append(current, p)
+				}
+			}
+			listed = current
+		}
+		if len(listed) == 0 && len(retained) == 0 {
 			return stopped, nil
 		}
-		var err error
-		procs, err = refreshStopListing(home, procs, deadline, probes)
+
+		procs, err := refreshStopListing(home, listed, deadline, probes)
 		if err != nil {
 			return stopped, err
 		}
-		if len(procs) == 0 {
-			return stopped, nil
+		var targets []homeProcess
+		exitingByPID := make(map[int]homeProcess, len(retained)+len(procs))
+		for _, p := range retained {
+			exitingByPID[p.pid] = p
 		}
+		for _, p := range procs {
+			if p.exiting {
+				exitingByPID[p.pid] = p
+			} else {
+				targets = append(targets, p)
+			}
+		}
+		exiting = exiting[:0]
+		for _, p := range exitingByPID {
+			exiting = append(exiting, p)
+		}
+		sort.Slice(exiting, func(i, j int) bool { return exiting[i].pid < exiting[j].pid })
+		procs = targets
+
+		if len(procs) == 0 {
+			if len(exiting) == 0 {
+				return stopped, nil
+			}
+			if !time.Now().Before(deadline) {
+				return stopped, fmt.Errorf("known exiting process identity %s is still live after the stop bound %s; it was not signalled", exiting[0], bound)
+			}
+			pause := time.Until(deadline)
+			if pause > 10*time.Millisecond {
+				pause = 10 * time.Millisecond
+			}
+			time.Sleep(pause)
+			continue
+		}
+
 		if time.Now().After(deadline) {
 			var left, notSignalled, failures []string
 			var signalled []homeProcess
@@ -612,6 +751,9 @@ func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, 
 					failures = append(failures, err.Error())
 				}
 			}
+			for _, p := range exiting {
+				failures = append(failures, fmt.Sprintf("known exiting process identity %s is still live and was not signalled", p))
+			}
 			if len(left) > 0 || len(notSignalled) > 0 || len(failures) > 0 {
 				message := fmt.Sprintf("still running under %s %s after the stop began", home, bound)
 				if len(left) > 0 {
@@ -627,7 +769,7 @@ func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, 
 			}
 			return stopped, nil
 		}
-		targets := stopRound(procs)
+		targets = stopRound(procs)
 		if len(targets) == 0 {
 			// Only scratch removers are left: they end on their own.
 			time.Sleep(50 * time.Millisecond)
@@ -1018,11 +1160,235 @@ func TestInspectStopProcessRecordsReadOrderForLiveProcess(t *testing.T) {
 		t.Fatalf("live-process snapshot flags = %d, found %v, err %v; want numeric stat field 9 from the post-argv observation",
 			snapshot.flags, snapshot.flagsFound, snapshot.flagsErr)
 	}
+	if goruntime.GOOS == "linux" && (!snapshot.lateStartTimeFound || snapshot.lateStartTimeErr != nil || snapshot.lateStartTime != snapshot.startTime) {
+		t.Fatalf("live-process late starttime = %q, found %v, err %v; want the same identity from the post-argv stat", snapshot.lateStartTime, snapshot.lateStartTimeFound, snapshot.lateStartTimeErr)
+	}
 	if got, want := strings.Join(snapshot.reads, ","), "gone-before,start-time,cmdline,gone-after"; got != want {
 		t.Errorf("probe read order = %q, want %q", got, want)
 	}
 	if snapshot.observedAt.IsZero() {
 		t.Error("live-process snapshot has no observation time")
+	}
+}
+
+func exitingStopSnapshot(startTime string) stopProcessSnapshot {
+	return stopProcessSnapshot{
+		startTime: startTime, state: "R", stateFound: true,
+		flags: linuxPFExiting, flagsFound: true,
+		lateStartTime: startTime, lateStartTimeFound: true,
+	}
+}
+
+func TestStopHomeProcessesRetainsKernelProvenExitingIdentity(t *testing.T) {
+	const home = "/test/home"
+	const pid = 5151
+	const startTime = "876543"
+	listed := homeProcess{pid: pid, ppid: 1, startTime: startTime, homeMatched: true}
+	listCalls, inspectCalls, homeCalls, killCalls := 0, 0, 0, 0
+	probes := stopProcessProbes{
+		list: func(string) []homeProcess {
+			listCalls++
+			if listCalls == 1 {
+				return []homeProcess{listed}
+			}
+			return nil
+		},
+		inspect: func(int) (stopProcessSnapshot, error) {
+			inspectCalls++
+			if inspectCalls == 3 {
+				return stopProcessSnapshot{gone: true}, nil
+			}
+			return exitingStopSnapshot(startTime), nil
+		},
+		home: func(int, string) (bool, error) {
+			homeCalls++
+			return false, fmt.Errorf("%w: environment disappeared during exit", errHomeEnvironmentCleared)
+		},
+		kill: func(int, syscall.Signal) error { killCalls++; return nil },
+	}
+
+	stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+	if err != nil || len(stopped) != 0 || killCalls != 0 {
+		t.Fatalf("stop = %v, %v, signals=%d; want held identity retained until explicit gone without signal", stopped, err, killCalls)
+	}
+	if listCalls != 3 || inspectCalls != 3 || homeCalls != 2 {
+		t.Errorf("lists=%d inspections=%d HOME observations=%d; want census omission to trigger identity checks through explicit gone", listCalls, inspectCalls, homeCalls)
+	}
+}
+
+func TestStopHomeProcessesReportsExitingIdentityAtBound(t *testing.T) {
+	const home = "/test/home"
+	const pid = 5152
+	const startTime = "876544"
+	listed := homeProcess{pid: pid, ppid: 1, startTime: startTime, homeMatched: true}
+	listCalls, inspectCalls, killCalls := 0, 0, 0
+	probes := stopProcessProbes{
+		list: func(string) []homeProcess {
+			listCalls++
+			if listCalls == 1 {
+				return []homeProcess{listed}
+			}
+			return nil
+		},
+		inspect: func(int) (stopProcessSnapshot, error) {
+			inspectCalls++
+			return exitingStopSnapshot(startTime), nil
+		},
+		home: func(int, string) (bool, error) {
+			return false, fmt.Errorf("%w: environment disappeared during exit", errHomeEnvironmentCleared)
+		},
+		kill: func(int, syscall.Signal) error { killCalls++; return nil },
+	}
+	started := time.Now()
+	stopped, err := stopHomeProcessesWithinWithProbes(home, 30*time.Millisecond, 0, probes)
+	elapsed := time.Since(started)
+	if err == nil || !strings.Contains(err.Error(), "exiting") || !strings.Contains(err.Error(), "still live") {
+		t.Fatalf("stop = %v, %v; want visible bounded exiting-process failure", stopped, err)
+	}
+	if len(stopped) != 0 || killCalls != 0 || inspectCalls < 2 || listCalls < 2 {
+		t.Errorf("stop = %v, %v (lists %d inspections %d signals %d); want retained identity, no signal, and bounded reinspection", stopped, err, listCalls, inspectCalls, killCalls)
+	}
+	if elapsed < 30*time.Millisecond || elapsed > time.Second {
+		t.Errorf("bounded wait took %s; want about 30ms and under 1s", elapsed)
+	}
+}
+
+func TestStopHomeProcessesDoesNotClassifyUncertainExitEvidence(t *testing.T) {
+	const home = "/test/home"
+	const startTime = "876545"
+	base := homeProcess{pid: 5153, ppid: 1, startTime: startTime, homeMatched: true}
+	cases := []struct {
+		name     string
+		snapshot stopProcessSnapshot
+		home     func(int, string) (bool, error)
+	}{
+		{name: "late stat belongs to reused pid", snapshot: func() stopProcessSnapshot { s := exitingStopSnapshot(startTime); s.lateStartTime = "876546"; return s }(), home: func(int, string) (bool, error) { return true, nil }},
+		{name: "flags unavailable", snapshot: func() stopProcessSnapshot {
+			s := exitingStopSnapshot(startTime)
+			s.flagsFound = false
+			s.flagsErr = errors.New("malformed flags")
+			return s
+		}(), home: func(int, string) (bool, error) { return true, nil }},
+		{name: "flags clear", snapshot: func() stopProcessSnapshot { s := exitingStopSnapshot(startTime); s.flags = 0; return s }(), home: func(int, string) (bool, error) { return true, nil }},
+		{name: "invalid process state", snapshot: func() stopProcessSnapshot { s := exitingStopSnapshot(startTime); s.state = "?"; return s }(), home: func(int, string) (bool, error) { return true, nil }},
+		{name: "HOME changed", snapshot: exitingStopSnapshot(startTime), home: func(int, string) (bool, error) { return false, errHomeOwnershipChanged }},
+		{name: "HOME read error", snapshot: exitingStopSnapshot(startTime), home: func(int, string) (bool, error) { return false, errors.New("environ I/O error") }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			listCalls, inspectCalls, killCalls := 0, 0, 0
+			probes := stopProcessProbes{
+				list:    func(string) []homeProcess { listCalls++; return []homeProcess{base} },
+				inspect: func(int) (stopProcessSnapshot, error) { inspectCalls++; return tc.snapshot, nil },
+				home:    tc.home,
+				kill:    func(int, syscall.Signal) error { killCalls++; return nil },
+			}
+			_, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+			if err == nil || inspectCalls != 1 || listCalls != 1 || killCalls != 0 {
+				t.Fatalf("stop error=%v, lists=%d inspections=%d signals=%d; want one fatal observation and no signal", err, listCalls, inspectCalls, killCalls)
+			}
+		})
+	}
+}
+
+func TestStopHomeProcessesRetainedExitMustKeepKernelEvidence(t *testing.T) {
+	const home = "/test/home"
+	const startTime = "876547"
+	listed := homeProcess{pid: 5154, ppid: 1, startTime: startTime, homeMatched: true}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*stopProcessSnapshot)
+	}{
+		{name: "flags disappear", mutate: func(s *stopProcessSnapshot) { s.flags = 0 }},
+		{name: "late identity unavailable", mutate: func(s *stopProcessSnapshot) {
+			s.lateStartTimeFound = false
+			s.lateStartTimeErr = errors.New("missing starttime")
+		}},
+		{name: "late identity changes", mutate: func(s *stopProcessSnapshot) { s.lateStartTime = "other" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listCalls, inspectCalls, homeCalls, killCalls := 0, 0, 0, 0
+			probes := stopProcessProbes{
+				list: func(string) []homeProcess {
+					listCalls++
+					if listCalls == 1 {
+						return []homeProcess{listed}
+					}
+					return nil
+				},
+				inspect: func(int) (stopProcessSnapshot, error) {
+					inspectCalls++
+					s := exitingStopSnapshot(startTime)
+					if inspectCalls > 1 {
+						tc.mutate(&s)
+					}
+					return s, nil
+				},
+				home: func(int, string) (bool, error) { homeCalls++; return false, errHomeEnvironmentCleared },
+				kill: func(int, syscall.Signal) error { killCalls++; return nil },
+			}
+			_, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+			if err == nil || !strings.Contains(err.Error(), "exiting process identity") || killCalls != 0 || inspectCalls != 2 {
+				t.Fatalf("stop error=%v (inspections=%d HOME=%d signals=%d); want fail-closed held-identity error", err, inspectCalls, homeCalls, killCalls)
+			}
+		})
+	}
+}
+
+func TestStopHomeProcessesZeroBoundKeepsLiveEmptyFatal(t *testing.T) {
+	const home = "/test/home"
+	const startTime = "876548"
+	listed := homeProcess{pid: 5155, ppid: 1, startTime: startTime, homeMatched: true}
+	listCalls, inspectCalls, killCalls := 0, 0, 0
+	probes := stopProcessProbes{
+		list:    func(string) []homeProcess { listCalls++; return []homeProcess{listed} },
+		inspect: func(int) (stopProcessSnapshot, error) { inspectCalls++; return exitingStopSnapshot(startTime), nil },
+		home:    func(int, string) (bool, error) { return true, nil },
+		kill:    func(int, syscall.Signal) error { killCalls++; return nil },
+	}
+	stopped, err := stopHomeProcessesWithinWithProbes(home, 0, 0, probes)
+	if err == nil || !strings.Contains(err.Error(), "live process has no classifiable arguments") ||
+		!strings.Contains(err.Error(), "flags=4") || len(stopped) != 0 || listCalls != 1 || inspectCalls != 1 || killCalls != 0 {
+		t.Fatalf("stop=%v, %v (lists=%d inspections=%d signals=%d); want one original fatal observation and no signal", stopped, err, listCalls, inspectCalls, killCalls)
+	}
+}
+
+func TestStopHomeProcessesRetainedExitRejectsHOMEChangeAndReadError(t *testing.T) {
+	const home = "/test/home"
+	const startTime = "876549"
+	listed := homeProcess{pid: 5156, ppid: 1, startTime: startTime, homeMatched: true}
+	for _, tc := range []struct {
+		name   string
+		second error
+	}{
+		{name: "HOME changed", second: errHomeOwnershipChanged},
+		{name: "HOME read failed", second: errors.New("environ I/O error")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listCalls, inspectCalls, homeCalls, killCalls := 0, 0, 0, 0
+			probes := stopProcessProbes{
+				list: func(string) []homeProcess {
+					listCalls++
+					if listCalls == 1 {
+						return []homeProcess{listed}
+					}
+					return nil
+				},
+				inspect: func(int) (stopProcessSnapshot, error) { inspectCalls++; return exitingStopSnapshot(startTime), nil },
+				home: func(int, string) (bool, error) {
+					homeCalls++
+					if homeCalls == 1 {
+						return false, errHomeEnvironmentCleared
+					}
+					return false, tc.second
+				},
+				kill: func(int, syscall.Signal) error { killCalls++; return nil },
+			}
+			_, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+			if err == nil || inspectCalls != 2 || homeCalls != 2 || killCalls != 0 {
+				t.Fatalf("stop error=%v (lists=%d inspections=%d HOME=%d signals=%d); want fatal held-identity HOME failure", err, listCalls, inspectCalls, homeCalls, killCalls)
+			}
+		})
 	}
 }
 
