@@ -472,7 +472,7 @@ func TestHostFloorInstallsTheVendorsRelease(t *testing.T) {
 				t.Skipf("%s is not installable on %s: %s", tc.binary, runtime.GOARCH, tc.vendorSkipReason)
 			}
 			kind := shippedInstallKind(t, tc.pack, tc.binary)
-			packHome(t, `{"packs": ["`+tc.pack+`"], "agent_updates": false}`)
+			packHome(t, `{"packs": ["`+tc.pack+`"], "agent_updates": false, "host_management": "own"}`)
 			home := os.Getenv("HOME")
 			floor := paths.HostFloorDirUnder(home)
 			privateStateEntries(t, home, filepath.Base(floor))
