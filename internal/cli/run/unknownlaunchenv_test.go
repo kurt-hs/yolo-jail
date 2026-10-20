@@ -21,7 +21,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-func TestLaunchYOLOEnvRecognitionCoversDirectReaders(t *testing.T) {
+func TestLaunchYOLOEnvRecognitionCoversReaderCalls(t *testing.T) {
 	known := knownLaunchYOLOEnvNames(nil, nil)
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -40,18 +40,24 @@ func TestLaunchYOLOEnvRecognitionCoversDirectReaders(t *testing.T) {
 		}
 		ast.Inspect(file, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
-			if !ok || len(call.Args) != 1 {
+			if !ok {
 				return true
 			}
-			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || selector.Sel.Name != "Getenv" {
+			keyIndex := -1
+			if selector, ok := call.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "Getenv" {
+				base, ok := selector.X.(*ast.Ident)
+				if ok && (base.Name == "o" || base.Name == "os") && len(call.Args) == 1 {
+					keyIndex = 0
+				}
+			} else if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "envLineValue" && len(call.Args) == 2 {
+				// envLineValue reads values from the same host-generated environment contract
+				// after a launcher attach; these calls are not literal os.Getenv readers.
+				keyIndex = 1
+			}
+			if keyIndex < 0 {
 				return true
 			}
-			base, ok := selector.X.(*ast.Ident)
-			if !ok || base.Name != "o" && base.Name != "os" {
-				return true
-			}
-			literal, ok := call.Args[0].(*ast.BasicLit)
+			literal, ok := call.Args[keyIndex].(*ast.BasicLit)
 			if !ok || literal.Kind != token.STRING {
 				return true
 			}
@@ -61,13 +67,13 @@ func TestLaunchYOLOEnvRecognitionCoversDirectReaders(t *testing.T) {
 			}
 			readers++
 			if !slices.Contains(known, key) {
-				t.Errorf("direct environment reader in %s uses unrecognized %s", name, key)
+				t.Errorf("environment reader in %s uses unrecognized %s", name, key)
 			}
 			return true
 		})
 	}
 	if readers == 0 {
-		t.Fatal("no direct YOLO environment readers found; census no longer measures the package")
+		t.Fatal("no direct or wrapped YOLO environment readers found; census no longer measures the package")
 	}
 }
 
@@ -92,7 +98,7 @@ func TestKnownLaunchYOLOEnvNamesUseSelectedDeclarations(t *testing.T) {
 			t.Errorf("selected declaration name %s not recognized", name)
 		}
 	}
-	for _, name := range []string{"YOLO_BACKEND", "YOLO_SELECTED_OTHER_PACK_SETTING", "YOLO_AUTH_PRELAUNCH_UNSELECTED_TOOL_FLAG"} {
+	for _, name := range []string{"YOLO_BACKEND", "YOLO_JAIL", "YOLO_SELECTED_OTHER_PACK_SETTING", "YOLO_AUTH_PRELAUNCH_UNSELECTED_TOOL_FLAG"} {
 		if slices.Contains(known, name) {
 			t.Errorf("unselected or unrecognized name %s was accepted", name)
 		}
@@ -117,6 +123,23 @@ func TestRunInvokesUnknownYOLOEnvironmentWarningBeforeBackend(t *testing.T) {
 	called := 0
 	o.WarnUnknownYOLOEnv = func(names []string, _ io.Writer) {
 		called++
+		// These observed names are produced, wrapped, or read across the host/entrypoint
+		// boundary rather than all appearing as literal os.Getenv calls in this package.
+		for _, name := range []string{
+			"YOLO_AGENT_UPDATES", "YOLO_CONTEXT_DIR", "YOLO_CONTRACT_TAGS", "YOLO_CTX_MOUNTS_TOKEN",
+			"YOLO_FORK_BUILDS", "YOLO_HOST_DIR", "YOLO_HOST_LAYERS", "YOLO_HOST_LOOPBACK", "YOLO_HOST_PATH_MAP",
+			"YOLO_JAIL_DAEMONS", "YOLO_JAIL_DAEMON_READY_NAMES", "YOLO_JAIL_MAIN", "YOLO_LSP_SERVERS",
+			"YOLO_MCP_PRESETS", "YOLO_MISE_TOOLS", "YOLO_PATCHED_TREES", "YOLO_PROVIDERS", "YOLO_PROFILES",
+			"YOLO_USE_PROFILES", "YOLO_PROVISION_MS", "YOLO_SESSION_ID", "YOLO_USER_LAYER",
+			"YOLO_SERVICE_AWS_AUTH_ENDPOINT", "YOLO_SERVICE_CLAUDE_OAUTH_BROKER_ENDPOINT",
+			"YOLO_SERVICE_GITHUB_BROKER_ENDPOINT", "YOLO_SERVICE_WIRE_BRIDGE_ENDPOINT",
+			"YOLO_SERVICE_WIRE_BRIDGE_TOKEN", "YOLO_AUTH_PRELAUNCH_CODEX_FLAG", "YOLO_AUTH_PRELAUNCH_CODEX_PATH",
+			"YOLO_PI_PROVIDER_POLICY",
+		} {
+			if !slices.Contains(names, name) {
+				t.Errorf("recognized source-backed name %s missing from callback input %v", name, names)
+			}
+		}
 		for _, name := range []string{
 			"YOLO_RUNTIME", "YOLO_PACK_ROOT", "YOLO_CTX_ROOT", "YOLO_MCP_SERVERS", "YOLO_MODEL_FRONTIER",
 			"YOLO_NO_TMUX", "YOLO_NO_HERDR", "YOLO_JAIL_BACKEND", "YOLO_BLOCK_CONFIG",
@@ -125,8 +148,10 @@ func TestRunInvokesUnknownYOLOEnvironmentWarningBeforeBackend(t *testing.T) {
 				t.Errorf("recognized name %s missing from callback input %v", name, names)
 			}
 		}
-		if slices.Contains(names, "YOLO_BACKEND") {
-			t.Error("YOLO_BACKEND must remain unrecognized")
+		for _, name := range []string{"YOLO_BACKEND", "YOLO_JAIL", "YOLO_ITEM100_INVENTED_UNKNOWN"} {
+			if slices.Contains(names, name) {
+				t.Errorf("unrecognized name %s accepted in callback input %v", name, names)
+			}
 		}
 	}
 	o.MacosUserRun = func(*jsonx.OrderedMap, string, []string, []string, string, string, macosuser.HomeOverlay, macosuser.HostContext, bool, *jsonx.OrderedMap, []packload.BlockedTool, macosuser.JailDaemons) int {
