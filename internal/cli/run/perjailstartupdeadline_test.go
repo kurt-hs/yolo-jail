@@ -61,6 +61,24 @@ func TestPerJailReasonChild(t *testing.T) {
 	time.Sleep(time.Hour)
 }
 
+func TestWaitServiceReadyUntilExpiredDeadlineDoesNotAcceptRefusalOrRepoll(t *testing.T) {
+	const timeout = 180 * time.Millisecond
+	o := &Options{ServiceReadyTimeout: timeout}
+	refused := make(chan struct{})
+	close(refused)
+	probes := 0
+	failure := o.waitServiceReadyUntil(time.Now().Add(-time.Millisecond), func() bool {
+		probes++
+		return false
+	}, nil, refused, nil)
+	if want := "did not become reachable within " + timeout.String(); failure != want {
+		t.Fatalf("expired deadline failure = %q, want %q", failure, want)
+	}
+	if probes != 1 {
+		t.Fatalf("expired deadline performed %d reachability probes, want exactly one before returning", probes)
+	}
+}
+
 func TestWaitServiceReadyCompatibilityWrapperKeepsConfiguredTimeout(t *testing.T) {
 	const timeout = 20 * time.Millisecond
 	o := &Options{ServiceReadyTimeout: timeout}
@@ -112,15 +130,26 @@ func TestPerJailStartupReasonAfterReadinessDeadlineIsNotAccepted(t *testing.T) {
 	}
 	const timeout = 180 * time.Millisecond
 	const afterDeadline = 80 * time.Millisecond
-	started := time.Now()
 	o, handles, refusal, output := runPerJailReasonFixture(t, "reason", timeout, false, timeout+afterDeadline)
-	elapsed := time.Since(started)
 	if len(handles) != 0 || refusal != nil || o.startupRefusal != nil {
-		t.Fatalf("a reason sent after the readiness deadline was accepted: elapsed=%s bound=%s handles=%d refusal=%+v startup=%+v output=%s",
-			elapsed, timeout, len(handles), refusal, o.startupRefusal, output)
+		t.Fatalf("a reason sent after the readiness deadline was accepted: bound=%s handles=%d refusal=%+v startup=%+v output=%s",
+			timeout, len(handles), refusal, o.startupRefusal, output)
 	}
-	if elapsed > timeout+70*time.Millisecond {
-		t.Fatalf("per-jail start waited beyond its readiness bound: elapsed=%s bound=%s", elapsed, timeout)
+	if len(o.startupOutcomes) != 1 {
+		t.Fatalf("per-jail start collected %d outcomes, want one readiness result: %s", len(o.startupOutcomes), output)
+	}
+	got := o.startupOutcomes[0]
+	reasonRead := got.ReasonRead
+	noRecordBeforeDeadline := reasonRead.Kind == hostservice.StartupReasonReadNoRecord &&
+		reasonRead.Phase == hostservice.StartupReasonReadPhasePrefix && reasonRead.Fault == hostservice.StartupReasonFaultNone &&
+		reasonRead.Cause == hostservice.StartupReasonReadCauseDeadline && reasonRead.Bytes == 0
+	ownerCancelledBeforeRecord := reasonRead.Kind == hostservice.StartupReasonReadCancelled &&
+		reasonRead.Phase == hostservice.StartupReasonReadPhasePrefix && reasonRead.Fault == hostservice.StartupReasonFaultNone &&
+		reasonRead.Cause == hostservice.StartupReasonReadCauseNone && reasonRead.Bytes == 0
+	if got.Kind != hostservice.StartupKindReadinessTimedOut || got.Readiness != hostservice.StartupReadinessNotReady ||
+		(!noRecordBeforeDeadline && !ownerCancelledBeforeRecord) || got.ReasonClass != "" || got.Reason != "" || got.Remedy != "" ||
+		reasonRead.ReasonClass != "" || reasonRead.Reason != "" || reasonRead.Remedy != "" {
+		t.Fatalf("late-reason fixture outcome = %+v, want readiness-timed-out with no accepted reason or bytes", got)
 	}
 	if !strings.Contains(output, "did not become reachable") {
 		t.Fatalf("ordinary readiness failure was not retained after the late reason was rejected: handles=%d refusal=%+v startup=%+v output=%s", len(handles), refusal, o.startupRefusal, output)
