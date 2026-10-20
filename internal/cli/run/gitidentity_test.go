@@ -1,10 +1,17 @@
 package run
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/image"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
 // TestComposeGitconfig pins the rendered INI: [user] with name/email (each
@@ -70,6 +77,166 @@ func gitIdentityTestOpts(t *testing.T, probes map[string]string) (*Options, stri
 	return o, wsState
 }
 
+func TestAssembleGitIdentityWriteFailureDoesNotEmitMount(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, tc := range []struct {
+		rt       string
+		rel      string
+		mountSrc string
+	}{
+		{rt: "podman", rel: "yolo-gitconfig", mountSrc: "yolo-gitconfig"},
+		{rt: "container", rel: filepath.Join(".config", "git", "config")},
+	} {
+		t.Run(tc.rt, func(t *testing.T) {
+			wsState := t.TempDir()
+			target := filepath.Join(wsState, tc.rel)
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(target, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			// writeFileBeneath safely replaces an empty non-regular target. Keep a
+			// child here so removing this conflicting directory fails deterministically.
+			if err := os.WriteFile(filepath.Join(target, "keep"), []byte("not empty"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			o := goldenOptions("/ws", t.TempDir())
+			o.Exec = func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {
+				switch strings.Join(argv, " ") {
+				case "git config --get user.name":
+					return ExecResult{Stdout: "Ada Lovelace\n", Ran: true, RC: 0}
+				case "git config --get user.email":
+					return ExecResult{Stdout: "ada@example.com\n", Ran: true, RC: 0}
+				default:
+					return ExecResult{Ran: false}
+				}
+			}
+			in := relocationInput(t, tc.rt, wsState, nil)
+			argv := o.assembleRunCmd(in)
+
+			if in.assemblyErr == nil {
+				t.Fatal("assembly did not propagate the failed Git identity write")
+			}
+			for i := 0; i+1 < len(argv); i++ {
+				failedGitConfigMount := tc.mountSrc != "" && argv[i] == "-v" &&
+					strings.HasPrefix(argv[i+1], filepath.Join(wsState, tc.mountSrc)+":")
+				if failedGitConfigMount {
+					t.Fatalf("assembly emitted a mount for the failed gitconfig write: %v", argv)
+				}
+			}
+			for _, want := range []string{target, "writable", "not a directory", "rerun `yolo`"} {
+				if !strings.Contains(in.assemblyErr.Error(), want) {
+					t.Errorf("assembly error %q does not name %q", in.assemblyErr, want)
+				}
+			}
+			if fi, err := os.Stat(target); err != nil || !fi.IsDir() {
+				t.Errorf("the conflicting directory must remain untouched: stat=%v err=%v", fi, err)
+			}
+			if data, err := os.ReadFile(filepath.Join(target, "keep")); err != nil || string(data) != "not empty" {
+				t.Errorf("the existing child must remain untouched: data=%q err=%v", data, err)
+			}
+		})
+	}
+}
+
+// TestRunRefusesFailedGitIdentityStaging pins the production caller of argv
+// assembly: an identity the host supplied cannot silently disappear when the
+// overlay's staging path is a directory. The fake keeper spawner is an assertion
+// boundary; reaching it means Run tried to start a backend, but it cannot start
+// a service or invoke a runtime.
+func TestRunRefusesFailedGitIdentityStaging(t *testing.T) {
+	for _, rt := range []string{"podman", "container"} {
+		t.Run(rt, func(t *testing.T) {
+			home := packHome(t)
+			writeUserPacks(t, home, `[]`)
+			ws := t.TempDir()
+			cname := yoloruntime.FromWorkspace(ws)
+			wsState := paths.WorkspaceHomeState(ws)
+			staged := "yolo-gitconfig"
+			if rt == "container" {
+				staged = filepath.Join(".config", "git", "config")
+			}
+			target := filepath.Join(wsState, staged)
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(target, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			const sentinel = "existing data stays intact"
+			if err := os.WriteFile(filepath.Join(target, "keep"), []byte(sentinel), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			var stdout, stderr bytes.Buffer
+			o := dispatchOptions(t, ws, rt, &stdout, &stderr, nil)
+			o.AcceptConfigChanges = true
+			o.NeverAttach = true
+			if rt == "container" {
+				o.IsMacOS, o.IsLinux = true, false
+			}
+			repo, _ := o.RepoRoot()
+			o.PathExists = func(p string) bool {
+				return p == filepath.Join(prebuiltBinDir(repo.Root), "yolo-entrypoint")
+			}
+			o.Exec = func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {
+				switch strings.Join(argv, " ") {
+				case "git config --get user.name":
+					return ExecResult{Stdout: "Ada Lovelace\n", Ran: true, RC: 0}
+				case "git config --get user.email":
+					return ExecResult{Stdout: "ada@example.com\n", Ran: true, RC: 0}
+				case "container --version":
+					return ExecResult{Stdout: "Apple container CLI version 1.1.0", Ran: true, RC: 0}
+				case "container system status":
+					return ExecResult{Stdout: "running", Ran: true, RC: 0}
+				default:
+					return ExecResult{Ran: true, RC: 0}
+				}
+			}
+			var starts int
+			previousSpawner := defaultKeeperSpawner
+			defaultKeeperSpawner = func(*Options, string, *os.File, *os.File, *os.File, []*os.File) (func() int, error) {
+				starts++
+				return nil, errors.New("unexpected backend start in git identity refusal test")
+			}
+			t.Cleanup(func() { defaultKeeperSpawner = previousSpawner })
+			o.autoLoad = func(image.AutoLoadOptions) image.LoadResult {
+				return image.LoadResult{OK: true, Ref: goldenImageRef}
+			}
+
+			rc := Run(*o)
+			output := stdout.String() + stderr.String()
+			if rc == 0 {
+				t.Errorf("Run() = 0, want refusal for failed identity staging:\n%s", output)
+			}
+			for _, want := range []string{target, "writable", "not a directory", "rerun `yolo`"} {
+				if !strings.Contains(output, want) {
+					t.Errorf("Run output does not name %q:\n%s", want, output)
+				}
+			}
+			if starts != 0 {
+				t.Errorf("Run attempted %d backend start(s) after the staging failure", starts)
+			}
+			if !launchLockFree(t, launchLockPath(cname)) {
+				t.Error("Run did not release the workspace launch lock after refusing")
+			}
+			if rt == "podman" {
+				entries, err := os.ReadDir(paths.HomeSkeletonRoot(cname))
+				if err != nil || len(entries) != 0 {
+					t.Errorf("Run did not clean up the unheld home skeleton: entries=%v err=%v", entries, err)
+				}
+			}
+			if fi, err := os.Stat(target); err != nil || !fi.IsDir() {
+				t.Errorf("the conflicting directory was changed: stat=%v err=%v", fi, err)
+			}
+			if got, err := os.ReadFile(filepath.Join(target, "keep")); err != nil || string(got) != sentinel {
+				t.Errorf("the conflicting directory's child changed: got=%q err=%v", got, err)
+			}
+		})
+	}
+}
+
 // TestGitIdentityMountComposesAndMounts: with a host name+email, the composed
 // gitconfig is written into wsState and mounted :ro at the jail path.
 func TestGitIdentityMountComposesAndMounts(t *testing.T) {
@@ -80,7 +247,10 @@ func TestGitIdentityMountComposesAndMounts(t *testing.T) {
 		"git config --get user.name":  "Ada Lovelace\n",
 		"git config --get user.email": "ada@example.com\n",
 	})
-	args := o.gitIdentityMountArgs("podman", wsState, map[string]struct{}{})
+	args, err := o.gitIdentityMountArgs("podman", wsState, map[string]struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	staged := filepath.Join(wsState, "yolo-gitconfig")
 	data, err := os.ReadFile(staged)
@@ -101,7 +271,10 @@ func TestGitIdentityMountComposesAndMounts(t *testing.T) {
 func TestGitIdentityMountEmptyEmitsNothing(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	o, wsState := gitIdentityTestOpts(t, map[string]string{}) // all probes miss → ""
-	args := o.gitIdentityMountArgs("podman", wsState, map[string]struct{}{})
+	args, err := o.gitIdentityMountArgs("podman", wsState, map[string]struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(args) != 0 {
 		t.Errorf("bare jail must emit no git-identity args, got %v", args)
 	}
@@ -120,14 +293,18 @@ func TestGitIdentityMountStaleClearedEmail(t *testing.T) {
 		"git config --get user.name":  "Ada\n",
 		"git config --get user.email": "ada@example.com\n",
 	})
-	o1.gitIdentityMountArgs("podman", wsState, map[string]struct{}{})
+	if _, err := o1.gitIdentityMountArgs("podman", wsState, map[string]struct{}{}); err != nil {
+		t.Fatal(err)
+	}
 
 	// Run 2 (same wsState): host has cleared email; name remains.
 	o2 := &Options{Exec: fakeExec(map[string]ExecResult{
 		"git config --get user.name": {Stdout: "Ada\n", Ran: true, RC: 0},
 		// user.email probe misses → "" (cleared on host).
 	})}
-	o2.gitIdentityMountArgs("podman", wsState, map[string]struct{}{})
+	if _, err := o2.gitIdentityMountArgs("podman", wsState, map[string]struct{}{}); err != nil {
+		t.Fatal(err)
+	}
 
 	data, err := os.ReadFile(filepath.Join(wsState, "yolo-gitconfig"))
 	if err != nil {

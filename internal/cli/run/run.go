@@ -2191,6 +2191,12 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	sp = o.Perf.Span("launch.assemble_argv")
 	runCmd := o.assembleRunCmd(in)
 	sp.End()
+	if in.assemblyErr != nil {
+		out.printf("[bold red]%s[/bold red]", richtext.Escape(in.assemblyErr.Error()))
+		discardUnheldSkeleton(cname, in.homeSkeleton)
+		lock.Close()
+		return 1
+	}
 	if err := o.recordLaunchCtxMounts(in); err != nil {
 		out.printf("[yellow]Warning: live context mounts are off for this jail: %s. A `mounts` change "+
 			"will need `yolo stop`, then `yolo`.[/yellow]", richtext.Escape(err.Error()))
