@@ -365,6 +365,9 @@ func TestAFailedBackgroundRefreshRefusesWhenTheRetryFails(t *testing.T) {
 	if n := countLine(p.logLines(t), "REFRESH"); n != refreshes {
 		t.Errorf("the hatch must not retry the refresh (ran %d more)", n-refreshes)
 	}
+	if strings.Contains(stderr, "refreshing in the background") {
+		t.Errorf("the hatch must not schedule a replacement background refresh this launch:\n%s", stderr)
+	}
 	if _, err := os.Stat(p.jobResult()); !os.IsNotExist(err) {
 		t.Errorf("a launch the hatch covers must clear the failed result (err=%v)", err)
 	}
