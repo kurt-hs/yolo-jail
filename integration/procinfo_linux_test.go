@@ -24,7 +24,7 @@ func processState(pid int) (state string, found bool, err error) {
 	return observation.state, observation.found, observation.stateErr
 }
 
-// processStateWithFlags reads state and Linux stat field 9 from one /proc snapshot.
+// processStateWithFlags reads state, Linux stat field 9 flags, and field 22 starttime from one /proc snapshot.
 func processStateWithFlags(pid int) processStateObservation {
 	return readProcessStateWithFlags(fmt.Sprintf("/proc/%d/stat", pid))
 }
@@ -32,32 +32,66 @@ func processStateWithFlags(pid int) processStateObservation {
 func readProcessStateWithFlags(path string) processStateObservation {
 	stat, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return processStateObservation{flagsErr: err}
+		return processStateObservation{flagsErr: err, startTimeErr: err}
 	}
 	if err != nil {
-		return processStateObservation{stateErr: err, flagsErr: err}
+		return processStateObservation{stateErr: err, flagsErr: err, startTimeErr: err}
 	}
 	// State is the first field after the parenthesised command name, which may contain
-	// spaces or parentheses — hence the LAST ')'. Flags are field 9, six fields after state.
+	// spaces or parentheses — hence the LAST ')'. Flags are field 9 and starttime field 22.
 	s := string(stat)
 	i := strings.LastIndexByte(s, ')')
 	if i < 0 || i+2 >= len(s) {
 		parseErr := fmt.Errorf("unparsable %s: %q", path, s)
-		return processStateObservation{stateErr: parseErr, flagsErr: parseErr}
+		return processStateObservation{stateErr: parseErr, flagsErr: parseErr, startTimeErr: parseErr}
 	}
 	observation := processStateObservation{state: s[i+2 : i+3], found: true}
 	fields := strings.Fields(s[i+1:])
 	if len(fields) <= 6 {
 		observation.flagsErr = fmt.Errorf("short %s: missing stat field 9 flags", path)
-		return observation
+	} else {
+		flags, err := strconv.ParseUint(fields[6], 10, 64)
+		if err != nil {
+			observation.flagsErr = fmt.Errorf("unparsable %s stat field 9 flags: %w", path, err)
+		} else {
+			observation.flags, observation.flagsFound = flags, true
+		}
 	}
-	flags, err := strconv.ParseUint(fields[6], 10, 64)
-	if err != nil {
-		observation.flagsErr = fmt.Errorf("unparsable %s stat field 9 flags: %w", path, err)
-		return observation
+	if len(fields) <= 19 {
+		observation.startTimeErr = fmt.Errorf("short %s: missing stat field 22 starttime", path)
+	} else {
+		if _, err := strconv.ParseUint(fields[19], 10, 64); err != nil {
+			observation.startTimeErr = fmt.Errorf("unparsable %s stat field 22 starttime: %w", path, err)
+		} else {
+			observation.startTime, observation.startTimeFound = fields[19], true
+		}
 	}
-	observation.flags, observation.flagsFound = flags, true
 	return observation
+}
+
+func TestReadProcessStateWithFlagsReadsStarttimeFromSameStat(t *testing.T) {
+	fields := []string{"1", "2", "3", "4", "5", "4", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "876543"}
+	path := filepath.Join(t.TempDir(), "stat")
+	if err := os.WriteFile(path, []byte("123 (worker ) tricky) R "+strings.Join(fields, " ")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	observation := readProcessStateWithFlags(path)
+	if observation.state != "R" || !observation.found || observation.stateErr != nil ||
+		observation.flags != 4 || !observation.flagsFound || observation.flagsErr != nil ||
+		observation.startTime != "876543" || !observation.startTimeFound || observation.startTimeErr != nil {
+		t.Fatalf("same-stat observation = %+v; want state, flags, and field-22 starttime", observation)
+	}
+
+	fields[18] = "not-a-starttime"
+	if err := os.WriteFile(path, []byte("124 (worker) R "+strings.Join(fields, " ")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	observation = readProcessStateWithFlags(path)
+	if observation.state != "R" || !observation.found || observation.stateErr != nil ||
+		observation.flags != 4 || !observation.flagsFound || observation.flagsErr != nil ||
+		observation.startTimeFound || observation.startTimeErr == nil {
+		t.Fatalf("malformed supplemental starttime changed state/flags: %+v", observation)
+	}
 }
 
 func TestReadProcessStateWithFlagsFromProcFixture(t *testing.T) {

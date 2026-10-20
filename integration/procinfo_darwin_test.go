@@ -36,6 +36,7 @@ func processStateWithFlags(pid int) processStateObservation {
 	state, found, err := processState(pid)
 	return processStateObservation{
 		state: state, found: found, stateErr: err, flagsErr: errProcessStatFlagsUnavailable,
+		startTimeErr: errProcessStatFlagsUnavailable,
 	}
 }
 
