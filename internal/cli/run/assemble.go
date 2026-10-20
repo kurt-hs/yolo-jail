@@ -129,6 +129,7 @@ type assembleInput struct {
 	// ctxMountsBound is OUTPUT: the config `mounts` elements the argv bound, as configCtxMounts
 	// returned them, for the live-mounts record (recordLaunchCtxMounts). Set by assembleRunCmd.
 	ctxMountsBound []configCtxMount
+	assemblyErr    error  // a fatal error while composing argv, returned to the launch lifecycle.
 	hostTZ         string // "" => no TZ
 	yoloVersion    string // _git_describe_version() or "unknown"
 	mountTargets   map[string]struct{}
@@ -266,6 +267,7 @@ func (in *assembleInput) storePruneEnv() []string {
 // final_internal_cmd is appended after inserting host-service env at
 // index(image); see runContainer for that tail.
 func (o *Options) assembleRunCmd(in *assembleInput) []string {
+	in.assemblyErr = nil
 	cfg := in.cfg
 	rt := in.rt
 	// STDERR, like every other launch notice (warnIfNoPacks states the rule):
@@ -724,7 +726,11 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 	runCmd = append(runCmd, o.programReadinessArgs()...)
 
 	// --- git identity + global gitignore (host-composed, :ro-mounted) ---
-	runCmd = append(runCmd, o.gitIdentityMountArgs(rt, in.wsState, in.mountTargets)...)
+	if gitArgs, err := o.gitIdentityMountArgs(rt, in.wsState, in.mountTargets); err != nil {
+		in.assemblyErr = err
+	} else {
+		runCmd = append(runCmd, gitArgs...)
+	}
 
 	// --- publish + extra mounts ---
 	runCmd = append(runCmd, publishArgs...)

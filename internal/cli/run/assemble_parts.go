@@ -1,6 +1,7 @@
 package run
 
 import (
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -310,7 +311,7 @@ func (o *Options) podmanNestingArgs(inContainer, gpuEnabled bool, gpuVendor stri
 // resolves to a real file, and the composed config's core.excludesFile points at
 // that in-jail path. With no identity AND no gitignore, nothing is emitted (a
 // bare, identity-less jail — preserving the golden argv).
-func (o *Options) gitIdentityMountArgs(rt, wsState string, mountTargets map[string]struct{}) []string {
+func (o *Options) gitIdentityMountArgs(rt, wsState string, mountTargets map[string]struct{}) ([]string, error) {
 	// Identity uses `--get` (effective config for the host CWD, i.e. repo-local
 	// wins) to match the old collectIdentityEnv; the gitignore path stays
 	// `--global --get` as before.
@@ -325,7 +326,7 @@ func (o *Options) gitIdentityMountArgs(rt, wsState string, mountTargets map[stri
 	haveIgnore := excludesPath != ""
 
 	if name == "" && email == "" && !haveIgnore {
-		return nil
+		return nil, nil
 	}
 
 	const jailIgnore = "/home/agent/.config/git/ignore"
@@ -351,13 +352,25 @@ func (o *Options) gitIdentityMountArgs(rt, wsState string, mountTargets map[stri
 		// Apple Container mounts the whole wsState at /home/agent, so write the
 		// composed file straight into the materialize location (parallels
 		// acMaterialize, which copies into <wsState>/<rel>).
-		_ = writeFileBeneath(wsState, filepath.Join(".config", "git", "config"), []byte(content), 0o644)
+		rel := filepath.Join(".config", "git", "config")
+		if err := writeFileBeneath(wsState, rel, []byte(content), 0o644); err != nil {
+			return nil, gitIdentityStageError(filepath.Join(wsState, rel), err)
+		}
 	} else {
 		staged := filepath.Join(wsState, "yolo-gitconfig")
-		_ = writeFileBeneath(wsState, "yolo-gitconfig", []byte(content), 0o644)
+		if err := writeFileBeneath(wsState, "yolo-gitconfig", []byte(content), 0o644); err != nil {
+			return nil, gitIdentityStageError(staged, err)
+		}
 		args = append(args, "-v", staged+":/home/agent/.config/git/config:ro")
 	}
-	return args
+	return args, nil
+}
+
+func gitIdentityStageError(path string, err error) error {
+	return fmt.Errorf(
+		"cannot stage host Git identity at %s: %w. Make the path writable and ensure it is not a directory, then rerun `yolo`",
+		path, err,
+	)
 }
 
 // hostGlobalGitignore is the host's global gitignore when this launch delivers one, or "": git's
