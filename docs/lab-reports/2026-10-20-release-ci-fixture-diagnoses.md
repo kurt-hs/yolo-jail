@@ -3,7 +3,7 @@ title: "Release CI fixture diagnoses"
 date: 2026-10-20
 status: open
 tags: [lab-report, ci, testing]
-summary: "Separates fixture failures and launcher regression from cleanup observations, including the current B7 late-HOME failure and what its diagnostics can and cannot establish."
+summary: "Separates fixture failures, the current E46 cleanup failure, and bounded exit-retention evidence without claiming release readiness or native-platform certification."
 ---
 
 # Release CI fixture diagnoses, 2026-10-20
@@ -85,7 +85,25 @@ The test-first follow-up on E46 extends the existing ESRCH retention to EACCES o
 
 The permanent call-site tests first failed against the E46 helper, then `go test -count=1 -timeout 0 -run '^TestStopHomeProcesses' ./integration` passed on the candidate; a Darwin/arm64 test-binary compile also passed. The exact attach test `TestAnAttachKeepsThePackTreeTheJailBootedWith` passed locally, so this attempt did not reproduce the historical cleanup failure. These focused results do not establish a hosted/rootless result, diagnose the historical CI process, or replace the pending independent review and full verification.
 
-Commit `b807913a8f9f5ea49e169f9f2385bfd13527f242` landed this repair. Its focused regression tests failed before and passed after the change; the short integration suite and Darwin/arm64 integration compilation also passed. On that exact source, `just check-ci` passed in 251.130 seconds and the full local integration suite passed in 765.320 seconds. These results validate the local source gates, not the state of PID 13064 in the old ARM run, ARM-hosted CI, rootless Podman, or native macOS. The earlier 934.621-second pass, 760.438-second `cd8b2fe` full run, and 745-second `6ae4053` failure remain historical evidence with the same causal limits.
+Commit `b807913a8f9f5ea49e169f9f2385bfd13527f242` addressed the earlier exit-retention ownership/state gate: it required a coherent HOME bracket and same-identity live `PF_EXITING` evidence before retaining an empty-argv process. It did **not** admit a late HOME `EACCES`; E46 still refused that error. On the exact `b807913` source, its focused regression tests failed before and passed after the change; the short integration suite and Darwin/arm64 integration compilation also passed. `just check-ci` passed in 251.130 seconds and the full local integration suite passed in 765.320 seconds. These local results do not establish the old ARM process state, hosted ARM behavior, rootless Podman, or native macOS. The earlier 934.621-second pass, 760.438-second `cd8b2fe` full run, and 745-second `6ae4053` failure remain historical evidence with the same causal limits.
+
+### Current E46 cleanup run: what B01 covers
+
+On exact E46 [`e46da57`](https://github.com/mschulkind-oss/yolo-jail/commit/e46da57d8f02c9d608670963560dff5d907b2ddf), [run 39496889541, Ubuntu shard 2 job 118892405153](https://github.com/mschulkind-oss/yolo-jail/actions/runs/39496889541/job/118892405153) failed in integration cleanup. The original log records `TestPackDeliversSkillAndBriefing` failing at `2026-10-20T21:34:34.2823809Z` and `TestTwoJailsOnOneLoopbackServeOnTheirOwnPorts` at `2026-10-20T21:35:35.3771408Z`; each failed while reading `/proc/<pid>/environ` with `permission denied`. In both diagnostics, the earlier HOME ownership was true, listed/before/after start times agreed, the observed task state was `R`, flags included `PF_EXITING`, and the post-argv path had empty arguments. The integration process exited 1 at `21:36:28.4634275Z`. These records establish the observed cleanup failures, not their kernel cause, later process fate, or a failure of the tests' main assertions.
+
+The direct child of E46, [`b01c111`](https://github.com/mschulkind-oss/yolo-jail/commit/b01c1110e84b3900af88c0b39b156a512c7c0130), adds typed `EACCES` alongside `ESRCH` only after the existing positive ownership, same-start, live-state, empty-argv, and `PF_EXITING` proof. The same-identity held-census case remains separate: it cannot create ownership, and positive HOME/start-time contradictions are checked before filtering. A retained identity is never signalled; its first HOME cause and the original stop bound remain visible, and only independent gone/zombie observation completes cleanup. The two CI diagnostics match this admission predicate. They do **not** prove that B01 later observed either PID gone or that hosted CI passed on B01. Initial unreadability, PF-clear errors, identity/HOME drift, other errno, malformed state/flags, and an expired bound remain refusals.
+
+On exact B01, the recorded local `just check-ci` passed in 242 seconds (`21:27:49–21:31:51Z`) and `go test -count=1 -timeout 0 ./integration` passed in 745 seconds (`21:31:59–21:44:24Z`). This local full-suite result is not a new hosted result. No publication or release-readiness claim follows from these results.
+
+The compliant eight-child capture above supports the narrow retention rule, not an additional EACCES-cause or missing-address-space gate: held-live PF-clear EACCES remains rejected, while late EACCES is eligible only after the existing positive exit proof. Neither the capture nor this source comparison identifies why procfs returned EACCES in CI.
+
+### Remaining native-platform scope, not a release checklist
+
+The current source and linked records separate already-landed mechanisms from native evidence that is still missing. The [per-session profile design](../design/per-session-profiles.md) and [Pi pack declaration](../../packs/pi/pack.json) already contain session-scoped configuration; Linux fixtures and compilation do not establish real macOS account/Seatbelt behavior or Pi foreground/detached child lifecycles. The [native session batch report](./2026-10-20-native-session-batch-verification.md) likewise leaves those Mac observations unmeasured.
+
+Claude's shared-file/lock bridge and optional token-only view are already implemented; the view remains off by default. The [native Claude measurement design](../design/macos-user-claude-refresh.md) distinguishes the existing synthetic harness from the missing vendor lock/re-read behavior, file-versus-Keychain choice, and owner-authorized disposable-login checks for refresh, logout, 401 recovery, and concurrent workspaces. Synthetic results are not native certification, and no credential or API use is authorized by this inventory.
+
+Concurrent native macOS workspaces remain design-only: the current single-workspace refusal stays in place, while [OQ-HT6](../reference/macos-user-home-tiers.md#oq-ht6) and the [open questions in the concurrency design](../design/macos-user-concurrent-workspaces.md#open-questions--owner-decisions-not-recommendations) remain owner decisions. No implementation is authorized by this report. The Mac fork-verifier `.local` sidecar issue remains explicitly deferred and unverified in the [fork-materialization report](./2026-10-19-linux-fork-materialization-verification.md); it is not promoted into a release blocker here. These bounded gaps do not justify turning the already-landed implementation into an open-ended release backlog.
 
 ## Limits
 
