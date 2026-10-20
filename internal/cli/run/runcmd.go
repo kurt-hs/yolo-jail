@@ -423,6 +423,10 @@ type Options struct {
 	ServiceTermGrace time.Duration
 	// Getenv reads environment variables. nil => os.Getenv.
 	Getenv func(string) string
+	// WarnUnknownYOLOEnv receives the exact launch environment names the selected
+	// packs and composed channel recognize. The front door uses them to warn about
+	// unrecognized inherited YOLO_* names; nil keeps non-CLI Run callers silent.
+	WarnUnknownYOLOEnv func([]string)
 	// FetchModelList asks a platform's credential service for a region's model list, where no
 	// selected pack and no user config gives a provider one (bedrockmodels.go,
 	// docs/design/model-lists-and-pickers.md OQ-MM6). nil fetches nothing and so refuses nothing
