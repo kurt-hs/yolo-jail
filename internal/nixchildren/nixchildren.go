@@ -191,6 +191,10 @@ var exit = os.Exit
 // launch's own arm ends with. Without it, the signal's default action ended yolo at once and its
 // nix ran on with no parent.
 //
+// Whatever cleanup that command needs for an exit that skips defers may be supplied as its
+// per-invocation callback; it runs after tracked nix has stopped and before the process exit.
+// With no callback, existing callers keep their zero-argument behavior.
+//
 // A SIGHUP or SIGINT this process started with ignored is not armed, and stays ignored: `nohup`
 // ignores SIGHUP, and a shell without job control starts a background job with SIGINT ignored.
 // Notify would turn either back on, so `nohup yolo check` ended 129 on a hangup and stopped its
@@ -205,8 +209,12 @@ var exit = os.Exit
 // exit instead of returning, so the caller never races it to the end of the process with a status
 // of its own. A signal already delivered to the arm as it is disarmed is raised again, to take
 // whatever action it has without the arm.
-func StopOnSignal() (disarm func()) {
+func StopOnSignal(cleanup ...func()) (disarm func()) {
 	s, end := current, exit
+	var onSignal func()
+	if len(cleanup) > 0 {
+		onSignal = cleanup[0]
+	}
 	var armed []os.Signal
 	for _, sig := range []os.Signal{syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM} {
 		if !signal.Ignored(sig) {
@@ -244,6 +252,9 @@ func StopOnSignal() (disarm func()) {
 		ending = true
 		mu.Unlock()
 		s.stop(stopGrace, func() { <-exited })
+		if onSignal != nil {
+			onSignal()
+		}
 		end(signalStatus(sig))
 		// Reached only where the exit is faked (Isolate): the process has ended otherwise.
 		close(exited)

@@ -436,6 +436,9 @@ func Run(opts Options) (rc int) {
 		o.printProviderRefusal([]string{"Refusing to launch: " + err.Error()})
 		return 1
 	}
+	if o.WarnUnknownYOLOEnv != nil {
+		o.WarnUnknownYOLOEnv(knownLaunchYOLOEnvNames(staged.packs, channel), o.Stderr)
+	}
 	// THE ARCHAEOLOGY RECORDS (launchcontext.go), to launch.log alone: the jail, each agent's
 	// profile and where it came from, what changed since the previous launch, and the captured
 	// edits the boot re-applies. Here, once the channel has composed from the same fold, and on
