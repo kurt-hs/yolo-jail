@@ -294,7 +294,7 @@ func TestWaitForJailContainerGoneBoundsExistenceProbe(t *testing.T) {
 	stopGoneWait, stopGonePoll, stopRuntimeCommandTimeout = 40*time.Millisecond, time.Millisecond, 400*time.Millisecond
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "inspect-called")
-	script := "#!/bin/sh\nif [ \"$1\" = inspect ]; then\n  touch '" + marker + "'\n  exec sleep 1\nfi\nexec sleep 0.03\n"
+	script := "#!/bin/sh\nif [ \"$1\" = inspect ]; then\n  touch '" + marker + "'\n  exec sleep 1\nfi\nexec sleep 1\n"
 	if err := os.WriteFile(filepath.Join(dir, "podman"), []byte(script), 0755); err != nil {
 		t.Fatal(err)
 	}
