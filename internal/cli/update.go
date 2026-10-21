@@ -37,8 +37,8 @@ install it through the same channel:
   Homebrew                    brew upgrade yolo-jail, keeping the old version
                               installed for the jails already running it
   go install / pipx / uv      check only: these install the host binary without
-                              the jail bundle, so update the binary and the
-                              YOLO_REPO_ROOT checkout together
+                              the jail bundle, so update the host and separately
+                              packaged jail bundle together
   release archive             not updatable in place: prints the download link
 
 A from-source install counts new commits on the checkout's upstream branch that
@@ -65,14 +65,14 @@ Options:
                       so the next build records the new one; when no upstream can
                       be checked, it deploys the named checkout without pulling.
 
-For release-based installs, host commands check in the background normally once
-a day, after a terminal has disclosed the network request. Source installs are
-checked only when you run ` + "`yolo update --check`" + ` or ` + "`yolo update`" + `, because their
-checkout may be writable from a jail. When a cached update exists, one line is
-printed under the banner on a terminal; a safe, self-contained interactive
-launch (` + "`yolo`" + `, ` + "`yolo -- <cmd>`" + `, ` + "`yolo host -- <cmd>`" + `) offers to update and relaunch.
-An explicit YOLO_REPO_ROOT naming another checkout suppresses that offer and
-must be updated together with the host binary.
+Development bundles are not automatically checked, disclosed or prompted;
+run ` + "`yolo update --check`" + ` explicitly to inspect release status. Other
+release-based installs check in the background normally once a day, after a
+terminal has disclosed the network request. Source installs are checked only
+when you run ` + "`yolo update --check`" + ` or ` + "`yolo update`" + `, because their checkout may
+be writable from a jail. When a cached update exists, one line is printed under
+the banner on a terminal; a safe, self-contained interactive launch offers to
+update and relaunch.
 
 To turn the background check, notice and offer off: "update_check": false in
 ~/.config/yolo-jail/config.jsonc, or YOLO_NO_UPDATE_CHECK=1 for one shell. They
@@ -190,7 +190,7 @@ func maybeNotifyUpdate(sub string, args []string, d updateDeps) (int, bool) {
 		return 0, false
 	}
 	ch := d.current()
-	if ch.Kind == selfupdate.KindUnknown {
+	if ch.Kind == selfupdate.KindUnknown || ch.Kind == selfupdate.KindDevelopment {
 		return 0, false
 	}
 	now := d.now()
@@ -357,7 +357,7 @@ func updateRootConflict(ch selfupdate.Channel, root string) error {
 	if ch.Kind == selfupdate.KindSource && abs == ch.SourceDir {
 		return nil
 	}
-	return fmt.Errorf("YOLO_REPO_ROOT=%s overrides this install's bundle; update that checkout together with the host binary, or unset YOLO_REPO_ROOT to use the installation's own bundle", root)
+	return fmt.Errorf("YOLO_REPO_ROOT=%s is obsolete and does not select launch sources. Build a matched development bundle with `just build-dev-bundle` and invoke its printed launcher path, or unset YOLO_REPO_ROOT and use `just install`", root)
 }
 
 func runUpdate(args []string) int {
@@ -560,6 +560,7 @@ func runInternalUpdateCheck(args []string) int {
 	defer os.Remove(selfupdate.LockPath(statePath))
 	ch := internalCheckChannel()
 	if ch.Kind == selfupdate.KindUnknown || ch.Kind == selfupdate.KindSource ||
+		ch.Kind == selfupdate.KindDevelopment ||
 		!selfupdate.Enabled(os.Getenv) || !config.UpdateCheckEnabled() {
 		return 0
 	}

@@ -30,29 +30,30 @@ func stampVars(t *testing.T, rel string) []string {
 	return out
 }
 
-// TestTheFlakeStampsWhatBuildGoStamps pins the owner's 2026-10-16 ruling (every build's
-// version string carries the git hash, nix builds included; docs/plans/downstream-asks.md
-// OQ-DA2) at the one place it can rot silently in a short test: flake.nix's
-// goStampLdflags must set the same version variables scripts/build-go.sh sets, and both
-// compiling derivations (goBinaries, guestPrefix) must pass it. A variable renamed in
-// this package and in build-go.sh but not in the flake would leave every nix-built binary
-// unstamped with the build green. The end-to-end check is the integration suite's
-// TestTheJailsYoloCarriesTheCheckoutsCommit.
-func TestTheFlakeStampsWhatBuildGoStamps(t *testing.T) {
+// TestTheFlakeAndBuildGoShareReleaseMetadata pins the version and commit stamps
+// shared by source flake builds and the local bundle compiler. Matched snapshot
+// metadata belongs to the local bundle pipeline, not the nix image build.
+func TestTheFlakeAndBuildGoShareReleaseMetadata(t *testing.T) {
 	flakeVars := stampVars(t, "flake.nix")
 	goVars := stampVars(t, "scripts/build-go.sh")
 	if len(goVars) == 0 {
 		t.Fatal("parsed no -X stamp from scripts/build-go.sh; fix the pattern rather than the test")
 	}
-	if strings.Join(flakeVars, ",") != strings.Join(goVars, ",") {
-		t.Errorf("flake.nix stamps %v, scripts/build-go.sh stamps %v: a nix build and a Go build "+
-			"must carry the same version and commit", flakeVars, goVars)
+	for _, v := range []string{"buildVersion", "GitCommit"} {
+		if !containsStampVar(flakeVars, v) || !containsStampVar(goVars, v) {
+			t.Errorf("flake.nix stamps %v and scripts/build-go.sh stamps %v; both must stamp %s", flakeVars, goVars, v)
+		}
 	}
 	for _, v := range goVars {
 		switch v {
-		case "buildVersion", "GitCommit":
+		case "buildVersion", "GitCommit", "SnapshotIdentity", "BuildKind":
 		default:
 			t.Errorf("build-go.sh stamps %s, which this test does not know to exist", v)
+		}
+	}
+	for _, v := range flakeVars {
+		if v != "buildVersion" && v != "GitCommit" {
+			t.Errorf("flake.nix stamps %s, which is not part of the source-flake stamp contract", v)
 		}
 	}
 
@@ -71,4 +72,13 @@ func TestTheFlakeStampsWhatBuildGoStamps(t *testing.T) {
 				strings.TrimSpace(line))
 		}
 	}
+}
+
+func containsStampVar(vars []string, want string) bool {
+	for _, got := range vars {
+		if got == want {
+			return true
+		}
+	}
+	return false
 }

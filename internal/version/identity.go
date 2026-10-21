@@ -43,7 +43,16 @@ func FullLines() []string {
 		"build stamp: " + StampLabel(),
 		"commit: " + CommitLabel(),
 		binaryLine(ExecutablePath, HashFile),
+		"snapshot identity: " + metadataLabel(SnapshotIdentity),
+		"build kind: " + metadataLabel(BuildKind),
 	}
+}
+
+func metadataLabel(value string) string {
+	if value == "" {
+		return "unstamped"
+	}
+	return value
 }
 
 // binaryLine is the `binary sha256:` line: the digest of the running executable, or the reason

@@ -389,10 +389,8 @@ func inStrSlice(list []string, s string) bool {
 }
 
 // resolveRepoRoot delegates to the single shared resolver (internal/reporoot) so
-// check and run agree on where the repo is — same method, same paths, inside and
-// outside the jail, and in every directory. Returns (resolution, ok); ok=false
-// means the repo could not be located. The resolution carries what selected the
-// root so check can report it the way a launch does.
+// check and run use the same matched source. Returns (resolution, ok); on false,
+// resolution.Error carries the resolver's actionable refusal for the finding.
 func resolveRepoRoot(getenv func(string) string) (reporoot.Resolution, bool) {
 	return reporoot.Resolve(getenv)
 }

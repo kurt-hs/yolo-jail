@@ -41,6 +41,14 @@ var SourceDir = ""
 // a checkout that has since switched branches rather than deploy that branch.
 var SourceBranch = ""
 
+// SnapshotIdentity is the lowercase SHA-256 identity of the frozen source snapshot
+// used to build a matched launcher bundle. Empty for legacy distribution builds.
+var SnapshotIdentity = ""
+
+// BuildKind classifies the launcher bundle as development or installed. Empty
+// identifies older distribution builds that predate matched-bundle metadata.
+var BuildKind = ""
+
 // Baked returns the -ldflags-stamped version, normalized, or "" for an
 // unstamped `go build`/`go install` binary. Unlike Get it never consults
 // YOLO_VERSION or git: it answers what THIS binary was built as, which is the

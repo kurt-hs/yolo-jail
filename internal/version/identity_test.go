@@ -58,13 +58,15 @@ func TestBinaryLineIsTheDigestWhenItIsAvailable(t *testing.T) {
 // TestFullLinesNameTheCommitAndADigestOfTheRunningBinary checks the real path end to end: the
 // test binary is the running executable, so its digest must be a real 64-hex value.
 func TestFullLinesNameTheCommitAndADigestOfTheRunningBinary(t *testing.T) {
-	origCommit, origBuild := GitCommit, buildVersion
-	t.Cleanup(func() { GitCommit, buildVersion = origCommit, origBuild })
+	origCommit, origBuild, origIdentity, origKind := GitCommit, buildVersion, SnapshotIdentity, BuildKind
+	t.Cleanup(func() {
+		GitCommit, buildVersion, SnapshotIdentity, BuildKind = origCommit, origBuild, origIdentity, origKind
+	})
 
-	GitCommit, buildVersion = "ab9cf2f90", "0.13.0-40-gab9cf2f90"
+	GitCommit, buildVersion, SnapshotIdentity, BuildKind = "ab9cf2f90", "0.13.0-40-gab9cf2f90", "", ""
 	lines := FullLines()
-	if len(lines) != 3 {
-		t.Fatalf("FullLines = %q, want 3 lines", lines)
+	if len(lines) != 5 {
+		t.Fatalf("FullLines = %q, want 5 lines", lines)
 	}
 	if lines[0] != "build stamp: 0.13.0-40-gab9cf2f90" {
 		t.Errorf("build stamp line = %q", lines[0])
@@ -72,9 +74,25 @@ func TestFullLinesNameTheCommitAndADigestOfTheRunningBinary(t *testing.T) {
 	if lines[1] != "commit: ab9cf2f90" {
 		t.Errorf("commit line = %q", lines[1])
 	}
+	if lines[3] != "snapshot identity: unstamped" || lines[4] != "build kind: unstamped" {
+		t.Errorf("bundle metadata lines = %q, want unstamped values", lines[3:5])
+	}
 	sha, ok := strings.CutPrefix(lines[2], "binary sha256: ")
 	if !ok || !hex64.MatchString(sha) {
 		t.Fatalf("binary sha256 line = %q, want 64 hex digits", lines[2])
+	}
+}
+
+func TestFullLinesExposeMatchedBundleMetadata(t *testing.T) {
+	origIdentity, origKind := SnapshotIdentity, BuildKind
+	t.Cleanup(func() { SnapshotIdentity, BuildKind = origIdentity, origKind })
+	SnapshotIdentity, BuildKind = strings.Repeat("a", 64), "development"
+	lines := FullLines()
+	if lines[3] != "snapshot identity: "+SnapshotIdentity {
+		t.Errorf("snapshot identity line = %q", lines[3])
+	}
+	if lines[4] != "build kind: development" {
+		t.Errorf("build kind line = %q", lines[4])
 	}
 }
 

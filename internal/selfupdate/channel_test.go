@@ -3,6 +3,7 @@ package selfupdate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/version"
@@ -89,6 +90,17 @@ func TestDetect(t *testing.T) {
 			want: Channel{Kind: KindUnknown, Exe: "/tmp/go-build123/b001/cli.test"},
 		},
 		{
+			name: "development artifact is classified before its adjacent bundle looks like an archive",
+			in: DetectInput{Exe: "/home/u/.local/share/yolo-jail/dev-bundles/dirty/bin/yolo", Baked: "0.10.0+gabc", BuildKind: "development",
+				HasBundleBeside: func(string) bool { return true }},
+			want: Channel{Kind: KindDevelopment, Exe: "/home/u/.local/share/yolo-jail/dev-bundles/dirty/bin/yolo", Version: "0.10.0+gabc"},
+		},
+		{
+			name: "development marker remains explicit without a release version",
+			in:   DetectInput{Exe: "/tmp/dev/bin/yolo", BuildKind: "development", SnapshotIdentity: strings.Repeat("a", 64)},
+			want: Channel{Kind: KindDevelopment, Exe: "/tmp/dev/bin/yolo", SnapshotIdentity: strings.Repeat("a", 64)},
+		},
+		{
 			name: "release archive",
 			in:   DetectInput{Exe: "/opt/yolo/yolo", Baked: "0.10.0", HasBundleBeside: bundleIn("/opt/yolo")},
 			want: Channel{Kind: KindArchive, Exe: "/opt/yolo/yolo", Version: "0.10.0"},
@@ -106,6 +118,14 @@ func TestDetect(t *testing.T) {
 				t.Errorf("Detect() = %+v, want %+v", got, c.want)
 			}
 		})
+	}
+}
+
+func TestDevelopmentIdentityIncludesSnapshotIdentity(t *testing.T) {
+	one := Channel{Kind: KindDevelopment, Version: "0.10.0", SnapshotIdentity: strings.Repeat("a", 64)}
+	two := Channel{Kind: KindDevelopment, Version: "0.10.0", SnapshotIdentity: strings.Repeat("b", 64)}
+	if one.Identity() == two.Identity() {
+		t.Fatalf("different dirty snapshot identities share an update cache key: %q", one.Identity())
 	}
 }
 

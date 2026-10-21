@@ -254,13 +254,11 @@ func Run(opts Options) (rc int) {
 		// bundle all missed), so print the same actionable fix the resolver would
 		// and exit.
 		if !repoRootOK {
-			o.pr(o.Stderr).print("[bold red]Cannot find yolo-jail repo root.[/bold red]\n" +
-				"The yolo CLI needs the repo (a flake) to build the jail image, and refuses to\n" +
-				"launch on a possibly-stale cached image instead.\n\n" +
-				"Fix: reinstall so the flake bundle ships with the binary (`just install`), or\n" +
-				"point yolo at a checkout with [bold]YOLO_REPO_ROOT[/bold]. The working directory\n" +
-				"is never consulted, so standing in a checkout is not enough:\n" +
-				"  YOLO_REPO_ROOT=~/code/yolo-jail yolo …")
+			reason := "No complete executable-relative yolo-jail bundle was found. Build one with `just build-dev-bundle` and invoke its printed launcher path, or run `just install`."
+			if repoRes.Error != nil {
+				reason = repoRes.Error.Error()
+			}
+			o.pr(o.Stderr).print("[bold red]Cannot find yolo-jail repo root.[/bold red]\n" + reason)
 			return 1
 		}
 		// Having found the flake, say WHICH one and what selected it, before
@@ -295,14 +293,14 @@ func Run(opts Options) (rc int) {
 		// --dry-run stays exempt because it materializes nothing (RunMacosUser
 		// returns before the nix build, with darwin=nil), and refusing a plan render
 		// would hide the very plan a user asked to inspect.
+		reason := "No complete executable-relative yolo-jail bundle was found. Build one with `just build-dev-bundle` and invoke its printed launcher path, or run `just install`."
+		if repoRes.Error != nil {
+			reason = repoRes.Error.Error()
+		}
 		o.pr(o.Stderr).print("[bold red]Cannot find yolo-jail repo root.[/bold red]\n" +
 			"The macos-user backend builds its tools from the yolo-jail flake with native\n" +
 			"nix — the core set every jail gets (git, node, mise, ripgrep, …) as well as\n" +
-			"anything in [bold]packages:[/bold] — so it needs the flake even when you declare nothing.\n\n" +
-			"Fix: reinstall so the flake bundle ships with the binary (`just install`), or\n" +
-			"point yolo at a checkout with [bold]YOLO_REPO_ROOT[/bold]. The working directory\n" +
-			"is never consulted, so standing in a checkout is not enough:\n" +
-			"  YOLO_REPO_ROOT=~/code/yolo-jail yolo …\n\n" +
+			"anything in [bold]packages:[/bold] — so it needs the flake even when you declare nothing.\n\n" + reason + "\n\n" +
 			"[dim]`yolo run --dry-run` still works with no repo: it prints the plan and builds\n" +
 			"nothing.[/dim]")
 		return 1

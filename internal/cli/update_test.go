@@ -175,6 +175,40 @@ func TestStaleCachedUpdateIsNotOfferedBeforeRefresh(t *testing.T) {
 	}
 }
 
+func TestDevelopmentBundleSkipsAutomaticUpdateChecksNoticesAndPrompts(t *testing.T) {
+	ch := selfupdate.Channel{Kind: selfupdate.KindDevelopment, Exe: "/home/u/dev-bundles/dirty/bin/yolo", Version: "0.10.0"}
+	h := newUpdateHarness(t, ch)
+	h.d.stdin = strings.NewReader("y\n")
+	h.notify("run")
+	if h.spawned != 0 || h.applied != 0 {
+		t.Errorf("automatic update path spawned=%d applied=%d, want 0/0", h.spawned, h.applied)
+	}
+	if h.stderr.Len() != 0 {
+		t.Errorf("automatic update path disclosed, noticed, or prompted: %q", h.stderr.String())
+	}
+
+	h.seed(t, ch, nil)
+	h.stderr.Reset()
+	h.notify("run")
+	if h.spawned != 0 || h.applied != 0 || h.stderr.Len() != 0 {
+		t.Errorf("fresh automatic cache caused side effects: spawned=%d applied=%d stderr=%q", h.spawned, h.applied, h.stderr.String())
+	}
+}
+
+func TestExplicitUpdateCheckStillRunsForDevelopmentBundle(t *testing.T) {
+	ch := selfupdate.Channel{Kind: selfupdate.KindDevelopment, Exe: "/home/u/dev-bundles/dirty/bin/yolo", Version: "0.10.0"}
+	h := newUpdateHarness(t, ch)
+	h.d.check = func(_ context.Context, got selfupdate.Channel, _ selfupdate.State) selfupdate.State {
+		return selfupdate.State{Identity: got.Identity(), Kind: got.Kind, Current: got.Version, Latest: "0.11.0", Available: true, CheckedAt: time.Now()}
+	}
+	if rc := updateMain([]string{"update", "--check"}, h.d); rc != 0 {
+		t.Fatalf("explicit development update --check exit = %d, want 0: %s", rc, h.stderr.String())
+	}
+	if !strings.Contains(h.stdout.String(), "0.11.0 is available") {
+		t.Errorf("explicit update check did not run: %q", h.stdout.String())
+	}
+}
+
 // The notice's gate: a stderr that is a contract (a wrapper, a harness, an
 // editor) is not a terminal, and it gets no notice — while YOLO_NO_BANNER stays
 // the version line and nothing else.
@@ -656,8 +690,8 @@ func TestUpdateCommand(t *testing.T) {
 		if rc := updateMain([]string{"update"}, h.d); rc != 1 || h.applied != 0 {
 			t.Errorf("exit %d, applied %d; want 1, 0", rc, h.applied)
 		}
-		if !strings.Contains(h.stderr.String(), "overrides this install's bundle") {
-			t.Errorf("missing override explanation: %q", h.stderr.String())
+		if !strings.Contains(h.stderr.String(), "is obsolete and does not select launch sources") {
+			t.Errorf("missing obsolete-variable explanation: %q", h.stderr.String())
 		}
 	})
 	t.Run("the config opt-out does not disable the command", func(t *testing.T) {

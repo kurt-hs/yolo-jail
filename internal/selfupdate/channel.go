@@ -55,13 +55,14 @@ const (
 type Kind string
 
 const (
-	KindSource    Kind = "source"     // `just install` / `just deploy` from a checkout
-	KindHomebrew  Kind = "homebrew"   // brew install mschulkind-oss/tap/yolo-jail
-	KindGoInstall Kind = "go-install" // go install …/cmd/yolo@<version>
-	KindPipx      Kind = "pipx"       // pipx install yolo-jail
-	KindUV        Kind = "uv"         // uv tool install yolo-jail
-	KindArchive   Kind = "archive"    // a release archive unpacked by hand
-	KindUnknown   Kind = "unknown"    // nothing identifies it: no checks at all
+	KindSource      Kind = "source"      // `just install` / `just deploy` from a checkout
+	KindHomebrew    Kind = "homebrew"    // brew install mschulkind-oss/tap/yolo-jail
+	KindGoInstall   Kind = "go-install"  // go install …/cmd/yolo@<version>
+	KindPipx        Kind = "pipx"        // pipx install yolo-jail
+	KindUV          Kind = "uv"          // uv tool install yolo-jail
+	KindArchive     Kind = "archive"     // a release archive unpacked by hand
+	KindDevelopment Kind = "development" // a build-only matched development bundle
+	KindUnknown     Kind = "unknown"     // nothing identifies it: no checks at all
 )
 
 // envRootDepth bounds Detect's walk from the binary up to a pipx/uv
@@ -89,6 +90,8 @@ type Channel struct {
 	// KindSource (its updates are commits, not releases), the release version
 	// for every other kind.
 	Version string
+	// SnapshotIdentity distinguishes dirty development outputs from the same commit.
+	SnapshotIdentity string
 }
 
 // Identity is the value a cached check is keyed to. A source check depends on
@@ -97,6 +100,9 @@ type Channel struct {
 func (c Channel) Identity() string {
 	if c.Kind == KindSource {
 		return strings.Join([]string{string(c.Kind), c.Version, c.SourceDir, c.Branch}, "\x00")
+	}
+	if c.Kind == KindDevelopment {
+		return strings.Join([]string{string(c.Kind), c.Version, c.SnapshotIdentity}, "\x00")
 	}
 	return string(c.Kind) + ":" + c.Version
 }
@@ -115,12 +121,14 @@ func (c Channel) CanApply() bool {
 // DetectInput is everything Detect decides from, so every channel is testable
 // without an installed binary.
 type DetectInput struct {
-	Exe           string // the running binary, symlinks resolved
-	SourceDir     string // version.SourceDir
-	SourceBranch  string // version.SourceBranch
-	GitCommit     string // version.GitCommit
-	Baked         string // version.Baked()
-	ModuleVersion string // debug.BuildInfo.Main.Version
+	Exe              string // the running binary, symlinks resolved
+	SourceDir        string // version.SourceDir
+	SourceBranch     string // version.SourceBranch
+	GitCommit        string // version.GitCommit
+	Baked            string // version.Baked()
+	SnapshotIdentity string // version.SnapshotIdentity
+	BuildKind        string // version.BuildKind
+	ModuleVersion    string // debug.BuildInfo.Main.Version
 	// BuiltFromVCS reports a vcs.revision build setting: the binary was built
 	// inside a checkout, not fetched from the module proxy.
 	BuiltFromVCS bool
@@ -132,10 +140,10 @@ type DetectInput struct {
 	FileExists func(path string) bool
 }
 
-// Detect names the channel that installed the binary described by in. Order
-// matters: a source stamp is the most specific evidence there is, and the
-// package-manager paths are checked before the bundle test because Homebrew
-// ALSO ships a bundle beside its binary.
+// Detect names the channel that installed the binary described by in. An
+// explicit development marker is checked first, before an adjacent bundle could
+// otherwise make a development launcher look like an archive. Source stamps then
+// precede package-manager and bundle evidence.
 //
 // pipx and uv are recognised by the metadata file each writes at the root of
 // the environment it installs into, not by a path spelling: both tools let a
@@ -168,6 +176,8 @@ func Detect(in DetectInput) Channel {
 	}
 	stamped := in.SourceDir != "" && in.GitCommit != "" && in.GitCommit != "unknown"
 	switch {
+	case in.BuildKind == "development":
+		ch.Kind, ch.Version, ch.SnapshotIdentity = KindDevelopment, in.Baked, in.SnapshotIdentity
 	case stamped && in.IsSourceCheckout != nil && in.IsSourceCheckout(in.SourceDir):
 		ch.Kind, ch.SourceDir, ch.Branch, ch.Version = KindSource, in.SourceDir, in.SourceBranch, in.GitCommit
 	case stamped:
@@ -192,7 +202,7 @@ func Detect(in DetectInput) Channel {
 	}
 	// A release channel with no version has nothing to compare, so it is
 	// treated as unidentified rather than as permanently out of date.
-	if ch.Kind != KindUnknown && ch.Version == "" {
+	if ch.Kind != KindUnknown && ch.Version == "" && ch.Kind != KindDevelopment {
 		return Channel{Kind: KindUnknown, Exe: in.Exe}
 	}
 	return ch
@@ -223,6 +233,8 @@ func Current() Channel {
 		SourceBranch:     version.SourceBranch,
 		GitCommit:        version.GitCommit,
 		Baked:            version.Baked(),
+		SnapshotIdentity: version.SnapshotIdentity,
+		BuildKind:        version.BuildKind,
 		ModuleVersion:    modVersion,
 		BuiltFromVCS:     fromVCS,
 		IsSourceCheckout: IsSourceCheckout,

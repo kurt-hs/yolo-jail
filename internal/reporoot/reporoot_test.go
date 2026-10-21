@@ -3,6 +3,7 @@ package reporoot
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -17,71 +18,48 @@ func mustAbs(t *testing.T, p string) string {
 	return a
 }
 
-// BundledSourceDirFrom must find the flake bundle at each of the three shipping
-// layouts, and return ok=false when no bundle is present.
+// BundledSourceDirFrom must find complete executable-relative bundles at each
+// supported shipping layout and return false when no complete bundle is present.
 func TestBundledSourceDirFrom(t *testing.T) {
-	// Homebrew layout: <prefix>/bin/yolo, <prefix>/share/yolo-jail/flake.nix.
 	prefix := t.TempDir()
 	binDir := filepath.Join(prefix, "bin")
 	share := filepath.Join(prefix, "share", "yolo-jail")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(share, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(share, "flake.nix"), []byte("{}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeMatchedBundle(t, share, "", "")
 	if got, ok := BundledSourceDirFrom(binDir); !ok || got != mustAbs(t, share) {
-		t.Errorf("homebrew: got (%q,%v), want (%q,true)", got, ok, mustAbs(t, share))
+		t.Errorf("system bundle: got (%q,%v), want (%q,true)", got, ok, mustAbs(t, share))
 	}
 
-	// Release-archive layout: <root>/yolo, <root>/share/yolo-jail/flake.nix.
-	arch := t.TempDir()
-	archShare := filepath.Join(arch, "share", "yolo-jail")
-	if err := os.MkdirAll(archShare, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(archShare, "flake.nix"), []byte("{}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got, ok := BundledSourceDirFrom(arch); !ok || got != mustAbs(t, archShare) {
-		t.Errorf("archive: got (%q,%v), want (%q,true)", got, ok, mustAbs(t, archShare))
+	archive := t.TempDir()
+	archiveShare := filepath.Join(archive, "share", "yolo-jail")
+	writeMatchedBundle(t, archiveShare, "", "")
+	if got, ok := BundledSourceDirFrom(archive); !ok || got != mustAbs(t, archiveShare) {
+		t.Errorf("archive bundle: got (%q,%v), want (%q,true)", got, ok, mustAbs(t, archiveShare))
 	}
 
-	// Bundle unpacked directly beside the binary.
 	beside := t.TempDir()
-	if err := os.WriteFile(filepath.Join(beside, "flake.nix"), []byte("{}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeMatchedBundle(t, beside, "", "")
 	if got, ok := BundledSourceDirFrom(beside); !ok || got != mustAbs(t, beside) {
-		t.Errorf("beside: got (%q,%v), want (%q,true)", got, ok, mustAbs(t, beside))
+		t.Errorf("beside bundle: got (%q,%v), want (%q,true)", got, ok, mustAbs(t, beside))
 	}
-
-	// No bundle anywhere → not found.
 	if _, ok := BundledSourceDirFrom(t.TempDir()); ok {
 		t.Error("empty dir wrongly reported a bundle")
 	}
 }
 
-// Resolve step 3: a from-source `just install` stages the flake bundle under
-// paths.FlakeBundleDir (GlobalStorage/flake-bundle), and Resolve finds it with no
-// YOLO_REPO_ROOT set — the self-contained-install guarantee. HOME is redirected
-// to a temp dir so FlakeBundleDir resolves there.
-func TestResolveFindsStateDirBundle(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	bundle := paths.FlakeBundleDir()
-	if err := os.MkdirAll(bundle, 0o755); err != nil {
+func TestResolveFindsMatchingInstalledBundle(t *testing.T) {
+	base := t.TempDir()
+	exeDir := filepath.Join(base, "bare-bin")
+	if err := os.MkdirAll(exeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bundle, "flake.nix"), []byte("{}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, ok := Resolve(func(string) string { return "" })
-	if !ok || got.Root != mustAbs(t, bundle) {
-		t.Fatalf("Resolve() = (%q,%v), want (%q,true) — the staged bundle", got.Root, ok, mustAbs(t, bundle))
+	bundle := filepath.Join(base, "flake-bundle")
+	writeMatchedBundle(t, bundle, snapshotA, "installed")
+	got := resolveWith(filepath.Join(exeDir, "yolo"), bundle, func(string) string { return "" }, snapshotA, "installed")
+	if got.Error != nil || got.Root != mustAbs(t, bundle) {
+		t.Fatalf("resolve() = %+v, want matching installed bundle", got)
 	}
 	if got.Source != FromInstalledBundle {
 		t.Errorf("Source = %q, want %q", got.Source, FromInstalledBundle)
@@ -104,24 +82,24 @@ func TestFlakeBundleDirIsNotStateDir(t *testing.T) {
 	}
 }
 
-// Resolve step 1: a YOLO_REPO_ROOT that actually contains source wins.
-func TestResolveEnvWins(t *testing.T) {
+// The retired source selector is rejected rather than silently pairing the
+// running launcher with another checkout or bundle.
+func TestResolveRejectsObsoleteEnv(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "flake.nix"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	getenv := func(k string) string {
+	got := resolveWith(filepath.Join(t.TempDir(), "yolo"), "", func(k string) string {
 		if k == "YOLO_REPO_ROOT" {
 			return dir
 		}
 		return ""
+	}, "", "")
+	if got.Error == nil || got.Root != "" {
+		t.Fatalf("Resolve() selected obsolete env source: %+v", got)
 	}
-	got, ok := Resolve(getenv)
-	if !ok || got.Root != mustAbs(t, dir) {
-		t.Fatalf("Resolve() = (%q,%v), want (%q,true)", got.Root, ok, mustAbs(t, dir))
-	}
-	if got.Source != FromEnv {
-		t.Errorf("Source = %q, want %q", got.Source, FromEnv)
+	if !strings.Contains(got.Error.Error(), "YOLO_REPO_ROOT") || !strings.Contains(got.Error.Error(), "just build-dev-bundle") {
+		t.Errorf("error lacks actionable obsolete-selector guidance: %v", got.Error)
 	}
 }
 
