@@ -30,9 +30,9 @@ func stampVars(t *testing.T, rel string) []string {
 	return out
 }
 
-// TestTheFlakeAndBuildGoShareReleaseMetadata pins the version and commit stamps
-// shared by source flake builds and the local bundle compiler. Matched snapshot
-// metadata belongs to the local bundle pipeline, not the nix image build.
+// TestTheFlakeAndBuildGoShareReleaseMetadata pins the release stamps shared by
+// source flake builds and the local bundle compiler. Optional matched-bundle
+// metadata is carried through the standalone flake build as well.
 func TestTheFlakeAndBuildGoShareReleaseMetadata(t *testing.T) {
 	flakeVars := stampVars(t, "flake.nix")
 	goVars := stampVars(t, "scripts/build-go.sh")
@@ -52,7 +52,9 @@ func TestTheFlakeAndBuildGoShareReleaseMetadata(t *testing.T) {
 		}
 	}
 	for _, v := range flakeVars {
-		if v != "buildVersion" && v != "GitCommit" {
+		switch v {
+		case "buildVersion", "GitCommit", "SnapshotIdentity", "BuildKind":
+		default:
 			t.Errorf("flake.nix stamps %s, which is not part of the source-flake stamp contract", v)
 		}
 	}
@@ -61,7 +63,19 @@ func TestTheFlakeAndBuildGoShareReleaseMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	builds := regexp.MustCompile(`(?m)^\s*go build .*$`).FindAllString(string(flake), -1)
+	flakeText := string(flake)
+	for _, want := range []string{
+		`SnapshotIdentity=${buildStamp.snapshotIdentity}`,
+		`BuildKind=${buildStamp.buildKind}`,
+		` snapshotIdentity = fromFile.snapshotIdentity or "";`,
+		` buildKind = fromFile.buildKind or "";`,
+	} {
+		if !strings.Contains(flakeText, want) {
+			t.Errorf("flake.nix does not propagate optional matched-bundle metadata: missing %q", want)
+		}
+	}
+
+	builds := regexp.MustCompile(`(?m)^\s*go build .*$`).FindAllString(flakeText, -1)
 	if len(builds) != 1 {
 		t.Fatalf("flake.nix has %d `go build` lines, want 1 standalone installPrefix build: %q",
 			len(builds), builds)
