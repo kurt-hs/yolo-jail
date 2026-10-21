@@ -52,6 +52,23 @@ dependencies, and authorization boundaries.
   [`TestCheckKeepsSelectedForkRootThroughTheHostFloor`](../../internal/cli/check/selectedpackroot_test.go)
   exercises the production `Check` order and verifies cleanup afterwards. These source and test
   files are unchanged from the tag.
+- **Per-session profile isolation and owned-host capture are built for the container and
+  owned-host paths.** The [settled profile design](../design/per-session-profiles.md)
+  records per-session entry snapshots and rendered homes, with host boundary and capture
+  outcomes; those fixtures do not prove a real agent's subagent behavior.
+- **The native Pi per-session adaptation is implemented, with native runtime still unmeasured.**
+  The [macos-user profile record](../design/macos-user-session-profiles.md) reports synthetic
+  bootstrap, capture and child-inheritance fixtures plus Darwin cross-builds; it does not
+  establish Seatbelt behavior on a Mac or real Pi descendants.
+- **Synthetic Claude coordination is completed within its authorized boundary.** The
+  [native Claude record](../design/macos-user-claude-refresh.md#the-native-measurement-contract)
+  documents the synthetic-first contract and passing Linux fixture slice. It is not a real
+  Claude login, refresh, Keychain or vendor-lock measurement.
+- **Developer-Mac suite repairs have a recorded native run.** The
+  [suite record](../design/macos-user-suite-on-a-developer-mac.md#12-what-done-looks-like)
+  reports `TestMacosUser` passing on the host of record (150 passed, 4 skipped, 0 failed)
+  with the narrow-sudo cell passing. This is that dated suite evidence, not a run performed
+  for this follow-up.
 - **The repaired developer-Mac live-config unit cases are recorded as passing** at `94989f1`:
   the [live-config design](../design/live-config-apply.md) and
   [canonical roadmap](../plans/roadmap.md#immediate-continuation) retain the still-owed rootless,
@@ -86,6 +103,11 @@ These are follow-ups with their stated dependencies, not newly declared release 
   host or a real broker request. Live-config's current-source/native result is not the same as
   hosted landed-evidence transport; preserve the Mac result with its source identity and durable
   acceptance evidence rather than treating a local note as the hosted witness.
+- **External GitHub broker fixture authorization is separate and still owed.** Before an
+  external fixture is run, obtain explicit approval for scope A/B and evidence of the broker's
+  lifetime, current-authority checks and capability witness, as described by the
+  [broker handler contract](../design/boundary-broker.md#L1264-L1270). A live-config request
+  after widening does not authorize or discharge this distinct fixture and witness.
 - **Rootless delivery and loopback reachability:** use the
   [image delivery reference](../reference/image-staging-vs-baking.md) and
   [reachability reference](../reference/loopback-tls-reachability.md). A nested jail's forced
@@ -126,6 +148,39 @@ These are follow-ups with their stated dependencies, not newly declared release 
   an old-session-only promise is insufficient. Keep this criterion with the
   [agent-event watcher design](../design/agent-event-watchers.md), not as an implementation
   claim in this release report.
+
+## Fresh observer verification (2026-10-21 03:00–03:08 UTC)
+
+This later read-only observation supersedes the current-status snapshot above. At
+03:04 UTC, fresh local probes and a separate remote ref read both identified main
+as `31d61546ccf7aa5ae763f4e5541011e007e5cb10`.
+
+The matching-SHA [regular CI run](https://github.com/mschulkind-oss/yolo-jail/actions/runs/39529735230)
+failed in `check-go` at “Quality gate (vet + staticcheck + gofmt + short tests)”
+and in `check-macos` at “Unit tests (macOS)”; `integration-complete` also failed
+its “Every integration shard succeeded” aggregate. `secrets-scan` passed. These
+are observed job/step outcomes, not diagnoses: no failure cause is inferred here.
+The matching-SHA [Apple Container parity run](https://github.com/mschulkind-oss/yolo-jail/actions/runs/39530138735)
+passed, including its parity and archive-delivery checks. Earlier test-name and
+cause details above were not re-established by these fresh reports and should
+not be treated as a current diagnosis.
+
+The parent session's native schedule history independently records five
+completed natural observer fires at 03:00:44, 03:02:44, 03:04:44, 03:06:44,
+and 03:08:44 UTC; each generated an automatic completion notification in the
+owning parent session. The first three fires correspond to separate
+timestamped read-only GitHub observations summarized here. The observer was
+configured every two minutes, bound to its creating session, non-quiet, with
+overlap skipped and no catch-up. Its prior-generation schedule was paused with
+its definition and history retained. These are schedule-history fire times,
+not claimed workflow-completion times; this records event delivery, not a
+promise that a process survives restart.
+
+The observations used read-only local Git probes and authenticated GitHub reads
+through the existing broker. No token or credential was read, copied, or
+logged; no GitHub write, retry, cancellation, dispatch, or release action was
+performed. The immutable v0.15.0 publication at `b01c111` remains distinct
+from current-main CI, as recorded above.
 
 ## Limits
 
