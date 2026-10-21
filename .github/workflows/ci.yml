@@ -46,15 +46,17 @@ jobs:
   check-go:
     runs-on: ubuntu-latest
     steps:
-      # Full history AND TAGS, which the short suite reads: packs'
-      # TestShippedPacksDecodeUnderTheLastRelease builds the last release tag's
-      # in-jail pack reader from git and runs this tree's shipped packs through
-      # that release's boot-time decode passes (manifests, surfaces, overlays),
-      # so a manifest change any of them would refuse fails here. And
-      # tools/tap-install-check's TestTheJudgeAcceptsWhatTheLastReleaseReportsOnABareMac
-      # builds the last release's `yolo check`, the one the tap carries, and runs
-      # it through the tap-install job's judge.
-      # Under GitHub Actions a missing tag is a failure, not a skip.
+      # Full history AND TAGS, which the short suite reads: release compatibility probes use
+      # valid local version tags ordered independently of commit ancestry. The attach and packs'
+      # previous-release checks exclude a tag on candidate HEAD; tap-install-check includes it
+      # because it models the version carried after Release updates the formula. In particular,
+      # packs' TestShippedPacksDecodeUnderTheLastRelease builds the selected release tag's
+      # in-jail pack reader from git and runs this tree's shipped packs through that reader's
+      # boot-time decode passes (manifests, surfaces, overlays), so a manifest change any of
+      # them would refuse fails here. tools/tap-install-check's
+      # TestTheJudgeAcceptsWhatTheLastReleaseReportsOnABareMac builds the selected release's
+      # `yolo check`, the one the tap carries, and runs it through the tap-install job's judge.
+      # Under GitHub Actions a missing valid local tag is a failure, not a skip.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0

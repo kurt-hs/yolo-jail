@@ -18,10 +18,10 @@ package main
 // fails here. An entry only the release prints is kept, and logged as removable once the
 // tap carries a release that no longer prints it.
 //
-// WHICH RELEASE. The newest v* tag reachable from HEAD: the version the tap carries once
-// that tag's Release run has pushed its formula (release.yml). On a release commit that is
-// the commit itself, so the pin compares this tree with itself, which is what the tap is
-// about to carry.
+// WHICH RELEASE. The highest valid local vX.Y.Z[-prerelease] tag, including a tag on HEAD: this
+// probe models the binary carried by the tap after its Release run. The tap workflow's optional
+// exact-version input (including Homebrew-only backfills) verifies the installed formula version;
+// that workflow payload is not available to this hermetic short-suite compatibility probe.
 //
 // WHERE IT RUNS. In the short suite, so `just check-ci` (CI's check-go) and check-macos
 // run it; both check out full history and tags. Outside CI, a clone without tags or git
@@ -39,6 +39,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/testsupport/releasebaseline"
 )
 
 // bareMacProbeDir is where the probe's main package is written inside the release's tree:
@@ -102,7 +104,7 @@ func TestTheJudgeAcceptsWhatTheLastReleaseReportsOnABareMac(t *testing.T) {
 	}
 }
 
-// lastReleaseTag finds the module root and the newest release tag reachable from HEAD.
+// lastReleaseTag finds the module root and the highest valid locally available release tag.
 func lastReleaseTag(t *testing.T) (root, tag string) {
 	t.Helper()
 	inCI := os.Getenv("GITHUB_ACTIONS") == "true"
@@ -118,9 +120,8 @@ func lastReleaseTag(t *testing.T) (root, tag string) {
 	if err != nil {
 		unavailable("no git on PATH to read the last release from")
 	}
-	// The MODULE root, from this package's directory, which is where `go test` runs it —
-	// not `git rev-parse --show-toplevel`, which a git hook's exported GIT_DIR misleads
-	// (packs/releasedecode_test.go's lastRelease records the case).
+	// The MODULE root, from this package's directory; --show-toplevel is misleading when a
+	// git hook exports GIT_DIR without GIT_WORK_TREE.
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -132,13 +133,9 @@ func lastReleaseTag(t *testing.T) (root, tag string) {
 	if err := exec.Command(git, "-C", root, "rev-parse", "--git-dir").Run(); err != nil {
 		unavailable("not a git checkout, so there is no last release to read")
 	}
-	out, err := exec.Command(git, "-C", root, "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*", "HEAD").Output()
+	tag, err = releasebaseline.Latest(root)
 	if err != nil {
-		unavailable("no release tag is reachable from HEAD (a shallow clone, or no tags fetched)")
-	}
-	tag = strings.TrimSpace(string(out))
-	if _, err := normalizeExpect(tag); err != nil {
-		t.Fatalf("the newest release tag %q is not a release version: %v", tag, err)
+		unavailable("no valid local release tag: %v", err)
 	}
 	return root, tag
 }

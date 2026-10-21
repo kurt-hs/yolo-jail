@@ -23,6 +23,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
+	"github.com/mschulkind-oss/yolo-jail/internal/testsupport/releasebaseline"
 )
 
 // packSkewRun is one Run into a workspace whose jail is running, driven by a skewRuntime (which a
@@ -409,9 +410,9 @@ func TestAnAttachToAJailTheLastReleaseLaunchedNeverRidesAlong(t *testing.T) {
 	}
 }
 
-// lastReleaseTag finds the module root and the newest release tag before this commit, as
-// packs/releasedecode_test.go does, and skips outside a git checkout with tags. Under GitHub
-// Actions a missing tag fails instead, as it does there.
+// lastReleaseTag finds the module root and newest valid release tag other than one on the
+// candidate HEAD. Outside a GitHub Actions checkout, missing tags still skip this compatibility
+// probe; CI treats them as a broken checkout.
 func lastReleaseTag(t *testing.T) (root, tag string) {
 	t.Helper()
 	unavailable := func(format string, args ...any) {
@@ -430,11 +431,14 @@ func lastReleaseTag(t *testing.T) (root, tag string) {
 		t.Fatal(err)
 	}
 	root = filepath.Join(wd, "..", "..", "..")
-	out, err := exec.Command(git, "-C", root, "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*", "HEAD^").Output()
-	if err != nil {
-		unavailable("no release tag is reachable from HEAD^ (a shallow clone, or no tags fetched)")
+	if err := exec.Command(git, "-C", root, "rev-parse", "--git-dir").Run(); err != nil {
+		unavailable("not a git checkout, so there is no last release to read")
 	}
-	return root, strings.TrimSpace(string(out))
+	tag, err = releasebaseline.LatestBefore(root, "HEAD")
+	if err != nil {
+		unavailable("no valid local release tag other than the candidate HEAD: %v", err)
+	}
+	return root, tag
 }
 
 // archiveReleasePacks writes each pack directory of the release's packs/ into dest/<name>: the

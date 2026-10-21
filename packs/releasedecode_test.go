@@ -53,6 +53,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/json5"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/testsupport/releasebaseline"
 	"github.com/mschulkind-oss/yolo-jail/packs"
 )
 
@@ -591,10 +592,8 @@ func repairManifest(t *testing.T, dir string, repair func(any) any) {
 	}
 }
 
-// lastRelease finds the repository root and the newest release tag before this commit: the
-// release a jail still running on this machine was most plausibly launched by. HEAD^, not HEAD,
-// so the release commit itself is compared against the release before it rather than against
-// its own reader, which would compare nothing.
+// lastRelease finds the repository root and highest valid release tag not pointing at this
+// candidate commit. Excluding the candidate preserves the previous-reader compatibility check.
 func lastRelease(t *testing.T) (root, tag string) {
 	t.Helper()
 	inCI := os.Getenv("GITHUB_ACTIONS") == "true"
@@ -610,10 +609,6 @@ func lastRelease(t *testing.T) (root, tag string) {
 	if err != nil {
 		unavailable("no git on PATH to read the last release from")
 	}
-	// The MODULE root, found from this package's directory, which is where `go test` runs it —
-	// not `git rev-parse --show-toplevel`. Inside a git hook (a hook that runs this test)
-	// git exports GIT_DIR without GIT_WORK_TREE, and --show-toplevel then answers the current
-	// directory, packs/, so every pinnedBy lookup below searched packs/internal and found nothing.
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -625,11 +620,11 @@ func lastRelease(t *testing.T) (root, tag string) {
 	if err := exec.Command(git, "-C", root, "rev-parse", "--git-dir").Run(); err != nil {
 		unavailable("not a git checkout, so there is no last release to read")
 	}
-	out, err := exec.Command(git, "-C", root, "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*", "HEAD^").Output()
+	tag, err = releasebaseline.LatestBefore(root, "HEAD")
 	if err != nil {
-		unavailable("no release tag is reachable from HEAD^ (a shallow clone, or no tags fetched)")
+		unavailable("no valid local release tag other than the candidate HEAD: %v", err)
 	}
-	return root, strings.TrimSpace(string(out))
+	return root, tag
 }
 
 // extractRelease writes the tree at tag into dest, streaming `git archive` through archive/tar
