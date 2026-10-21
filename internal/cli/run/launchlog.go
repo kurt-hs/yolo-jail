@@ -181,7 +181,6 @@ func (l *launchLog) writeHeader(o *Options) {
 // that explains --net=host, --userns=host and every carve-out that follows from them.
 var launchLogFacts = []string{
 	"YOLO_VERSION",
-	"YOLO_REPO_ROOT",
 	"YOLO_RUNTIME",
 	"YOLO_ALLOW_STALE_IMAGE",
 	"YOLO_ALLOW_SOURCE_SKEW",

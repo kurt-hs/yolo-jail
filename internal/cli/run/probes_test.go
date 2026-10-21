@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mschulkind-oss/yolo-jail/internal/reporoot"
 	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
@@ -25,7 +24,7 @@ func fakeExec(cases map[string]ExecResult) func([]string, string, []string, time
 	}
 }
 
-func TestResolveRepoRootEnvVar(t *testing.T) {
+func TestResolveRepoRootRefusesRetiredEnvSelector(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "flake.nix"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
@@ -36,43 +35,14 @@ func TestResolveRepoRootEnvVar(t *testing.T) {
 		}
 		return ""
 	}
-	root, ok := resolveRepoRoot(getenv, discardBuf(), false)
-	if !ok {
-		t.Fatal("expected ok=true for valid YOLO_REPO_ROOT")
+	var stderr bytes.Buffer
+	root, ok := resolveRepoRoot(getenv, &stderr, false)
+	if ok || root.Error == nil {
+		t.Fatalf("obsolete selector selected a source: %+v", root)
 	}
-	// Resolve both through EvalSymlinks-agnostic abs for comparison.
-	wantAbs, _ := filepath.Abs(dir)
-	if root.Root != wantAbs {
-		t.Errorf("root = %q, want %q", root.Root, wantAbs)
-	}
-	if root.Source != reporoot.FromEnv {
-		t.Errorf("source = %q, want %q — the report line would name the wrong origin",
-			root.Source, reporoot.FromEnv)
-	}
-}
-
-func TestResolveRepoRootEnvVarEmptyDirRejected(t *testing.T) {
-	// YOLO_REPO_ROOT set but the dir has neither flake.nix nor go.mod: the env
-	// branch must NOT accept it. With no cwd flake.nix and no bundled dir /
-	// user config, it falls through to the error.
-	empty := t.TempDir()
-	// Point HOME at an isolated dir so the staged-bundle branch can't hit a real
-	// install.
-	t.Setenv("HOME", t.TempDir())
-	getenv := func(k string) string {
-		if k == "YOLO_REPO_ROOT" {
-			return empty
-		}
-		return os.Getenv(k)
-	}
-	// A bundle beside the test binary could still resolve, so this asserts only
-	// that the env branch was skipped: the returned root, if ok, must NOT be the
-	// empty dir.
-	root, ok := resolveRepoRoot(getenv, discardBuf(), false)
-	if ok {
-		abs, _ := filepath.Abs(empty)
-		if root.Root == abs {
-			t.Errorf("empty YOLO_REPO_ROOT dir was wrongly accepted: %q", root.Root)
+	for _, want := range []string{"YOLO_REPO_ROOT", "just build-dev-bundle", "printed launcher path"} {
+		if !strings.Contains(root.Error.Error(), want) || !strings.Contains(stderr.String(), want) {
+			t.Errorf("resolver/refusal does not name %q: error=%v stderr=%s", want, root.Error, stderr.String())
 		}
 	}
 }

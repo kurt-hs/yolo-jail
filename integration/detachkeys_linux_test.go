@@ -50,7 +50,6 @@ func TestTheDetachSequenceNeverLeavesAnAttachedSessionHeadless(t *testing.T) {
 		`echo DK-READY-$((40+2)); exec cat -v`)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "TERM=dumb")
-	cmd.Env = append(cmd.Env, childRepoRootEnv()...)
 	cmd.Env = append(cmd.Env, autoCaptureEnvForSuite()...)
 	cmd.Env = append(cmd.Env, readinessEnvForSuite()...)
 	awaitDetachedWriters(t, dir, launchHome(cmd.Env))

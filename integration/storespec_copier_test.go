@@ -230,13 +230,10 @@ func buildImageCopier(t *testing.T) string {
 	if goruntime.GOOS != "linux" {
 		t.Skip("the copier writes containers-storage on Linux only")
 	}
-	root := repoRoot
-	if root == "" {
-		var err error
-		if root, err = moduleRoot(); err != nil {
-			t.Fatal(err)
-		}
+	if bundleRoot == "" {
+		t.Fatal("matched bundle root unresolved; runtime helper builds must use the adjacent bundle")
 	}
+	root := bundleRoot
 	outLink := filepath.Join(t.TempDir(), "copier")
 	build := exec.Command("nix", "--extra-experimental-features", "nix-command flakes",
 		"build", image.ImageCopierAttr, "--out-link", outLink)

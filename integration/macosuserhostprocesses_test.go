@@ -7,8 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 )
 
 // TestMacosUserYoloPsListsAnAllowlistedHostProcess is the host-processes loophole on macos-user,
@@ -54,10 +52,10 @@ func TestMacosUserYoloPsListsAnAllowlistedHostProcess(t *testing.T) {
 		return fmt.Sprintf("\n--- launch stdout:\n%s\n--- launch stderr:\n%s", r.stdout, r.stderr)
 	}
 
-	if client := strings.TrimSpace(section(r.stdout, "=== CLIENT ===", "=== PS ===")); client !=
-		macosuser.GuestBinaryPath("yolo-ps", "") {
-		t.Errorf("yolo-ps resolves to %q in the sandbox, want the staged guest binary %s%s",
-			client, macosuser.GuestBinaryPath("yolo-ps", ""), diag())
+	wantClient := sessionGuestBinaryPath(t, r.stdout, "yolo-ps")
+	if client := strings.TrimSpace(section(r.stdout, "=== CLIENT ===", "=== PS ===")); client != wantClient {
+		t.Errorf("yolo-ps resolves to %q in the sandbox, want this session's staged guest binary %s%s",
+			client, wantClient, diag())
 	}
 	ps := section(r.stdout, "=== PS ===", "=== END ===")
 	if !strings.Contains(ps, "PS_RC=0") {

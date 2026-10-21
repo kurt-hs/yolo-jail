@@ -96,5 +96,15 @@ run_script || rc=$?
 check "e: exits 0" "$rc"
 check "e: says nothing to undeploy" "$(grep -q 'Nothing to undeploy' "$tmp/out" && echo 0 || echo 1)"
 
+# (f) the obsolete selector is disclosed without its value
+fixture
+rc=0
+env -u YOLO_VERSION YOLO_REPO_ROOT=/private/checkout HOME="$home" GOBIN="$gobin" PATH=/usr/bin:/bin sh "$script" \
+    >"$tmp/out" 2>"$tmp/err" || rc=$?
+check "f: exits 0" "$rc"
+check "f: names obsolete selector" "$(grep -q 'YOLO_REPO_ROOT is obsolete' "$tmp/err" && echo 0 || echo 1)"
+check "f: does not disclose selector value" "$(! grep -q '/private/checkout' "$tmp/err" && echo 0 || echo 1)"
+check "f: offers matched build by path" "$(grep -q 'just build-dev-bundle' "$tmp/err" && grep -q 'printed launcher path' "$tmp/err" && echo 0 || echo 1)"
+
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

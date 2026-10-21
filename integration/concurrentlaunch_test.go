@@ -114,7 +114,6 @@ func startYoloBackgroundWith(t *testing.T, name, dir string, flags []string, scr
 	cmd := exec.CommandContext(ctx, yoloBin, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "TERM=dumb")
-	cmd.Env = append(cmd.Env, childRepoRootEnv()...)
 	cmd.Env = append(cmd.Env, autoCaptureEnvForSuite()...)
 	cmd.Env = append(cmd.Env, readinessEnvForSuite()...)
 	cmd.Env = append(cmd.Env, env...)

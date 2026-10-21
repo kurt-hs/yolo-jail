@@ -413,7 +413,7 @@ func nixBuildWouldBuild(t *testing.T, installable string) []string {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "nix", "--extra-experimental-features", "nix-command flakes",
 		"build", "--dry-run", "--json", "--no-link", "--option", "substitute", "false",
-		"--inputs-from", repoRoot, imageInstallable(installable))
+		"--inputs-from", bundleRoot, imageInstallable(installable))
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -442,7 +442,7 @@ func nixGetLib(t *testing.T, attrPath string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), nixEvalTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "nix", "--extra-experimental-features", "nix-command flakes",
-		"eval", "--raw", "--inputs-from", repoRoot,
+		"eval", "--raw", "--inputs-from", bundleRoot,
 		nixpkgsAbsolute("legacyPackages."+imageNixSystem(nixSystem())),
 		"--apply", "p: (p.lib.getLib p."+attrPath+").outPath")
 	var stderr strings.Builder
@@ -468,7 +468,7 @@ func nixEvalDrvPath(t *testing.T, attr, spec string, env ...string) (string, str
 
 func nixEvalDrvPathForSystem(t *testing.T, system, attr, spec string, env ...string) (string, string, error) {
 	t.Helper()
-	if repoRoot == "" {
+	if bundleRoot == "" {
 		t.Skip("module root unresolved")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), nixEvalTimeout)
@@ -477,7 +477,7 @@ func nixEvalDrvPathForSystem(t *testing.T, system, attr, spec string, env ...str
 		"--extra-experimental-features", "nix-command flakes",
 		"eval", "--impure", "--raw",
 		fmt.Sprintf(".#packages.%s.%s.drvPath", system, attr))
-	cmd.Dir = repoRoot
+	cmd.Dir = bundleRoot
 	cmd.Env = append(append(cmd.Environ(), "YOLO_EXTRA_PACKAGES="+spec), env...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
@@ -587,7 +587,7 @@ func TestTheNixpkgsOracleSurvivesAnIntelMacHost(t *testing.T) {
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "nix", "--extra-experimental-features", "nix-command flakes",
 			"build", "--dry-run", "--json", "--no-link", "--option", "substitute", "false",
-			"--system", "x86_64-darwin", "--inputs-from", repoRoot, installable)
+			"--system", "x86_64-darwin", "--inputs-from", bundleRoot, installable)
 		var stderr strings.Builder
 		cmd.Stderr = &stderr
 		_, err := cmd.Output()

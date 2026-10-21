@@ -96,7 +96,7 @@ func RunStep(ctx context.Context, s Step, stdout, stderr io.Writer) error {
 }
 
 func binaryOnlyUpdateError(kind Kind, command string) error {
-	return fmt.Errorf("%s installs only the host binary and resolves the jail build separately (normally through YOLO_REPO_ROOT); updating one half would create a version skew. Update the checkout and binary together (%s), or reinstall with Homebrew or from source", kind, command)
+	return fmt.Errorf("%s installs only the host binary and has no matched flake/helper bundle; YOLO_REPO_ROOT is obsolete and cannot supply the missing runtime pair. Updating one half would make launches incomplete. Build a matched development bundle with `just build-dev-bundle` and invoke its printed launcher path, or install both halves together with `just install` (%s)", kind, command)
 }
 
 // ApplyOptions are the choices `yolo update` passes through.

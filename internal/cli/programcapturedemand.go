@@ -25,6 +25,12 @@ import (
 
 const preparationOrdinaryProgramKind = "ordinary-program"
 
+// resolvePreparationBundle is the launch-source dependency used by ordinary preparation.
+// Tests with tiny source fixtures replace this seam instead of reviving a runtime selector.
+var resolvePreparationBundle = func() (reporoot.Resolution, bool) {
+	return reporoot.Resolve(os.Getenv)
+}
+
 // ':' is forbidden in pack names, so an ordinary key cannot collide with a source program/tree key.
 func ordinaryProgramKey(in npmCaptureInput) string { return "ordinary:" + in.Owner + "/" + in.Bin }
 func ordinaryProgramIdentity(in npmCaptureInput, fingerprint, rt, platform string) string {
@@ -110,8 +116,11 @@ func resolveOrdinaryPreparation(ctx context.Context, d preparationDemand) (*npmC
 	if run.OrdinaryRuntimeUnsupported(cfg, os.Getenv("YOLO_STORE_PACKAGES") == "1") != "" {
 		return nil, "", release, errSharedPreparationForegroundOnly
 	}
-	root, ok := reporoot.Resolve(os.Getenv)
+	root, ok := resolvePreparationBundle()
 	if !ok {
+		if root.Error != nil {
+			return nil, "", release, fmt.Errorf("ordinary runtime source is unavailable: %w", root.Error)
+		}
 		return nil, "", release, fmt.Errorf("ordinary runtime source is unavailable — run yolo check to repair its flake source")
 	}
 	fingerprint, err := run.ProgramRuntimeFingerprint(root.Root, cfg)

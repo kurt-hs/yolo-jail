@@ -266,7 +266,7 @@ func TestEveryForkCaptureStopNamesItsNextStep(t *testing.T) {
 	t.Run("a build jail that refused before its build line", func(t *testing.T) {
 		forkBuildHome(t)
 		withFakeCaptureJail(t, func(o run.Options) int {
-			fmt.Fprintln(o.Stderr, "Flake source: /nix/fixture (YOLO_REPO_ROOT)") // the stream a launch prints it on
+			fmt.Fprintln(o.Stderr, "Flake source: /nix/fixture (executable-relative bundle)") // the stream a launch prints it on
 			fmt.Fprintln(o.Stdout, "packs: pack forkpack: briefing `agents` names \"nope\", which no pack in `packs` provides")
 			return 1
 		})

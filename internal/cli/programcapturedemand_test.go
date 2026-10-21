@@ -14,13 +14,18 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/reporoot"
 )
 
 func selectedNPMUser(t *testing.T, f *selectedNPMFixture, updates bool) run.ProgramCaptureRequest {
 	t.Helper()
 	t.Setenv("YOLO_VERSION", "")
 	t.Setenv("YOLO_RUNTIME", "podman")
-	t.Setenv("YOLO_REPO_ROOT", f.root)
+	oldResolver := resolvePreparationBundle
+	resolvePreparationBundle = func() (reporoot.Resolution, bool) {
+		return reporoot.Resolution{Root: f.root}, true
+	}
+	t.Cleanup(func() { resolvePreparationBundle = oldResolver })
 	writeFile(t, filepath.Join(f.root, "flake.nix"), "{}")
 	writeFile(t, filepath.Join(f.root, "flake.lock"), "{}")
 	pack := t.TempDir()

@@ -54,7 +54,6 @@ func TestPreparationSchedulerRealWorkerLifecycle(t *testing.T) {
 	userConfig := `{"packs":[{"source":"file://` + packDir + `","name":"synthetic"}],"agent_updates":{"synthetic":"next-launch"}}`
 	packHome(t, userConfig)
 	home := withPrivateFixtureYoloStore(t)
-	t.Setenv("YOLO_REPO_ROOT", repoRoot)
 	work := writeProject(t, `{}`)
 	awaitDetachedWriters(t, work, home)
 	statePath := filepath.Join(paths.BackgroundAdvanceDir(), "scheduler.json")
@@ -197,7 +196,7 @@ func TestPreparationSchedulerRealWorkerLifecycle(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	replacementStart := exec.CommandContext(ctx, copyBinary, "pack", "prepare", "start")
-	replacementStart.Dir, replacementStart.Env = repoRoot, preparationCLIEnv(home)
+	replacementStart.Dir, replacementStart.Env = bundleRoot, preparationCLIEnv(home)
 	replacementOutput, replacementErr := replacementStart.CombinedOutput()
 	cancel()
 	if replacementErr == nil || !strings.Contains(string(replacementOutput), "teardown still owns its lease") {
@@ -353,14 +352,14 @@ func preparationCLIEnv(home string) []string {
 func preparationEnv(home string, withoutProxy bool) []string {
 	var env []string
 	for _, entry := range os.Environ() {
-		if strings.HasPrefix(entry, "YOLO_VERSION=") || strings.HasPrefix(entry, "HOME=") || strings.HasPrefix(entry, "YOLO_REPO_ROOT=") ||
+		if strings.HasPrefix(entry, "YOLO_VERSION=") || strings.HasPrefix(entry, "HOME=") ||
 			(withoutProxy && (strings.HasPrefix(entry, "HTTP_PROXY=") || strings.HasPrefix(entry, "HTTPS_PROXY=") ||
 				strings.HasPrefix(entry, "ALL_PROXY=") || strings.HasPrefix(entry, "NO_PROXY="))) {
 			continue
 		}
 		env = append(env, entry)
 	}
-	return append(env, "HOME="+home, "YOLO_REPO_ROOT="+repoRoot)
+	return append(env, "HOME="+home)
 }
 
 func prepCLI(t *testing.T, binary, home string, args ...string) string {
@@ -368,7 +367,7 @@ func prepCLI(t *testing.T, binary, home string, args ...string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, args...)
-	cmd.Dir = repoRoot
+	cmd.Dir = bundleRoot
 	cmd.Env = preparationCLIEnv(home)
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {

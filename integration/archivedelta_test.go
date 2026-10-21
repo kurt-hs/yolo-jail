@@ -58,7 +58,7 @@ func buildDeltaFixture(t *testing.T) deltaFixture {
 	outLink := filepath.Join(t.TempDir(), "r")
 	build := exec.Command("nix", "--extra-experimental-features", "nix-command flakes",
 		"build", ".#ociImage", ".#imageCopier", "--impure", "--out-link", outLink)
-	build.Dir = repoRoot
+	build.Dir = bundleRoot
 	// The image must be the harness's own: an inherited `packages:` list would
 	// build a different one.
 	build.Env = append(os.Environ(), "YOLO_EXTRA_PACKAGES=")
@@ -95,7 +95,7 @@ func buildDeltaFixture(t *testing.T) deltaFixture {
 func (f deltaFixture) macPodmanOptions(out *bytes.Buffer) image.AutoLoadOptions {
 	return image.AutoLoadOptions{
 		Runtime:        "podman",
-		RepoRoot:       repoRoot,
+		RepoRoot:       bundleRoot,
 		IsMacOS:        true,
 		Out:            out,
 		BuildStorePath: func(string, []any, string) (string, []string) { return f.manifest, nil },

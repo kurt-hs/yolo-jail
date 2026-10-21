@@ -25,7 +25,7 @@ const sealRefusal = "packs: pack treepack: briefing `agents` names \"pi\", which
 // refusingBuildJail is a build jail that prints what a launch prints before its staging, then the
 // refusal, and exits 1 without writing the toolchain record: its build line never ran.
 func refusingBuildJail(o run.Options) int {
-	fmt.Fprintln(o.Stderr, "Flake source: /nix/fixture (YOLO_REPO_ROOT)")
+	fmt.Fprintln(o.Stderr, "Flake source: /nix/fixture (executable-relative bundle)")
 	fmt.Fprintln(o.Stdout, sealRefusal)
 	return 1
 }

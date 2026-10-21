@@ -212,14 +212,8 @@ type macArchiveImages struct {
 	realizeAttr func(label, attr, pkgs string) string
 }
 
-// macArchiveFlakeRoot is the flake a launch resolves: YOLO_REPO_ROOT when the job names one
-// (apple-container.yml's staged bundle), else this checkout (childRepoRootEnv's answer).
-func macArchiveFlakeRoot() string {
-	if r := os.Getenv("YOLO_REPO_ROOT"); r != "" {
-		return r
-	}
-	return repoRoot
-}
+// macArchiveFlakeRoot is the immutable runtime flake paired with TestMain's matched launcher.
+func macArchiveFlakeRoot() string { return bundleRoot }
 
 // nix's own summary of a build plan: "these 12 paths will be fetched (…)" / "this path will be
 // fetched (…)", and the same two shapes for derivations "will be built".

@@ -14,8 +14,8 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/reporoot"
 )
 
-// stageBundle writes a flake bundle at root: flake.nix plus, when withBinaries,
-// the prebuilt bin/linux-<arch>/ every SHIPPED bundle carries. It is the exact
+// stageBundle writes a complete flake bundle at root: flake.nix, flake.lock and, when
+// withBinaries, the prebuilt bin/linux-<arch>/ every SHIPPED bundle carries. It is the exact
 // shape scripts/stage-source-bundle.sh produces, which is what makes the
 // prebuilt branch below a test of the real layout rather than of a stub.
 func stageBundle(t *testing.T, withBinaries bool) string {
@@ -32,6 +32,9 @@ func stageBundleAt(t *testing.T, root string, withBinaries bool) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "flake.nix"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "flake.lock"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if !withBinaries {
@@ -213,14 +216,10 @@ func TestMountDestinationsSatisfyTheExeRelativeResolver(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
 	share := filepath.Join(root, "share", "yolo-jail")
-	for _, d := range []string{binDir, share} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(share, "flake.nix"), []byte("{}"), 0o644); err != nil {
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	stageBundleAt(t, share, true)
 	if got, ok := reporoot.BundledSourceDirFrom(binDir); !ok || got != share {
 		t.Errorf("BundledSourceDirFrom(%q) = (%q, %v), want (%q, true)", binDir, got, ok, share)
 	}

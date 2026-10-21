@@ -177,16 +177,15 @@ func TestRepoRootFailureNamesTheLaunchsFix(t *testing.T) {
 	if !ok {
 		t.Fatalf("no repo-root finding:\n%s", got)
 	}
-	for _, want := range []string{"just install", "YOLO_REPO_ROOT=~/code/yolo-jail yolo check"} {
+	for _, want := range []string{"just install", "just build-dev-bundle", "printed launcher path"} {
 		if !strings.Contains(after, want) {
 			t.Errorf("the repo-root finding does not name %q:\n%s", want, got)
 		}
 	}
 }
 
-// A root YOLO_REPO_ROOT names but that holds no flake.nix (reporoot accepts a go.mod) is told
-// to point the variable at a checkout.
-func TestFlakeMissingAtTheRootNamesTheFix(t *testing.T) {
+// A resolved but incomplete executable-relative bundle names the matched build/install repair.
+func TestIncompleteFlakeBundleNamesTheMatchedBuildRemedy(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	var out bytes.Buffer
 	opts := baseOptions(t, &out)
@@ -199,8 +198,8 @@ func TestFlakeMissingAtTheRootNamesTheFix(t *testing.T) {
 	if !ok {
 		t.Fatalf("no flake.nix finding:\n%s", got)
 	}
-	if !strings.Contains(after, "YOLO_REPO_ROOT=~/code/yolo-jail yolo check") {
-		t.Errorf("the flake.nix finding names no fix:\n%s", got)
+	if !strings.Contains(after, "just build-dev-bundle") || !strings.Contains(after, "just install") {
+		t.Errorf("the incomplete flake bundle does not name build/install repairs:\n%s", got)
 	}
 }
 

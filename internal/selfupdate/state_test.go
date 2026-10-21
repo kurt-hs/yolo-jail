@@ -139,8 +139,8 @@ func TestPlan(t *testing.T) {
 	}
 	for _, k := range []Kind{KindGoInstall, KindPipx, KindUV} {
 		if _, err := Plan(Channel{Kind: k}); err == nil ||
-			!strings.Contains(err.Error(), "YOLO_REPO_ROOT") ||
-			!strings.Contains(err.Error(), "version skew") {
+			!strings.Contains(err.Error(), "just build-dev-bundle") ||
+			!strings.Contains(err.Error(), "just install") {
 			t.Errorf("%s: want a coordinated-update refusal, got %v", k, err)
 		}
 	}

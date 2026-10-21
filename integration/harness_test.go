@@ -31,6 +31,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	goruntime "runtime"
 	"slices"
 	"strconv"
@@ -42,6 +43,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/execx"
 	"github.com/mschulkind-oss/yolo-jail/internal/image"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/prune"
 	naming "github.com/mschulkind-oss/yolo-jail/internal/runtime"
@@ -61,12 +63,13 @@ const (
 	jailImageRepo = "yolo-jail"
 )
 
-// yoloBin is the `yolo` binary built once by TestMain; repoRoot is the module
-// root. Both stay empty under `go test -short`, where no container test runs and
-// nothing needs them.
+// yoloBin is the matched `yolo` launcher built once by TestMain; repoRoot is the
+// module root used only as build input, and bundleRoot is the adjacent runtime
+// flake/helper bundle. All three stay empty under `go test -short`.
 var (
-	yoloBin  string
-	repoRoot string
+	yoloBin    string
+	repoRoot   string
+	bundleRoot string
 )
 
 // THE SUITE HAS EXACTLY ONE EXIT, and it goes through macosUserExitCode — which turns
@@ -126,16 +129,26 @@ func runSuite(m *testing.M) int {
 	}
 	repoRoot = root
 
-	binDir, err := os.MkdirTemp("", "yolo-integration-")
+	// An inherited selector is obsolete and must never redirect tests to another
+	// checkout. The launcher is paired with its adjacent bundle by executable path.
+	_ = os.Unsetenv("YOLO_REPO_ROOT")
+	build := exec.Command("just", "build-dev-bundle")
+	build.Dir = repoRoot // source/build input only; never passed to yolo at runtime
+	build.Env = envWithoutRepoRoot(os.Environ())
+	out, err := build.CombinedOutput()
 	if err != nil {
-		log.Fatalf("integration: creating temp bin dir: %v", err)
+		log.Fatalf("integration: building matched yolo bundle: %v\n%s", err, out)
 	}
-	yoloBin = filepath.Join(binDir, "yolo")
-	build := exec.Command("go", "build", "-o", yoloBin, "./cmd/yolo")
-	build.Dir = repoRoot
-	if out, err := build.CombinedOutput(); err != nil {
-		os.RemoveAll(binDir)
-		log.Fatalf("integration: building yolo CLI under test: %v\n%s", err, out)
+	yoloBin = strings.TrimSpace(string(out))
+	if !filepath.IsAbs(yoloBin) {
+		log.Fatalf("integration: build-dev-bundle did not print an absolute launcher path: %q", yoloBin)
+	}
+	if info, err := os.Stat(yoloBin); err != nil || info.Mode()&0o111 == 0 {
+		log.Fatalf("integration: matched launcher is missing or not executable: %s (%v)", yoloBin, err)
+	}
+	bundleRoot = matchedBundleFlakeRoot(yoloBin)
+	if _, err := os.Stat(filepath.Join(bundleRoot, "flake.nix")); err != nil {
+		log.Fatalf("integration: matched launcher's adjacent flake bundle is unavailable: %v", err)
 	}
 
 	// Before the warmup, which is the run's first launch: it seeds its home through
@@ -149,7 +162,6 @@ func runSuite(m *testing.M) int {
 
 	code := m.Run()
 	tearDownRunStore()
-	os.RemoveAll(binDir)
 	return code
 }
 
@@ -280,7 +292,6 @@ func warmJail() {
 	// m.Run() and a process-wide HOME would silently redirect every test that expects the
 	// ambient one.
 	cmd.Env = append(os.Environ(), "TERM=dumb", "HOME="+home)
-	cmd.Env = append(cmd.Env, childRepoRootEnv()...)
 	// Inert for THIS launch — the warmup home carries an empty user config, so it
 	// selects no packs and has nothing to capture — but set anyway, so "every launch
 	// this suite makes" stays one rule with one exception list rather than three sites
@@ -542,7 +553,12 @@ func ensureJailImage() {
 	}
 
 	log.Printf("[integration] delivering %s into inner %s (this may take a minute)...", jailImage, rt)
-	outLink := filepath.Join(repoRoot, ".run-result")
+	outDir, err := os.MkdirTemp("", "yolo-integration-image-")
+	if err != nil {
+		log.Fatalf("integration: creating image build output dir: %v", err)
+	}
+	defer os.RemoveAll(outDir)
+	outLink := filepath.Join(outDir, "image")
 	// TWO ATTRS IN ONE BUILD (C9): the image is a nix2container manifest now, and
 	// the thing that reads it is a skopeo carrying the `nix:` transport, which no
 	// public cache serves. The harness IS a delivery path — it used to execute the
@@ -554,7 +570,7 @@ func ensureJailImage() {
 	// own GC root, so all of them are removed on the way out.
 	build := exec.Command("nix", "--extra-experimental-features", "nix-command flakes",
 		"build", ".#ociImage", ".#imageCopier", "--impure", "--out-link", outLink)
-	build.Dir = repoRoot
+	build.Dir = bundleRoot
 	if out, err := build.CombinedOutput(); err != nil {
 		log.Fatalf("integration: nix build failed inside jail — cannot deliver %s: %v\n%s\n"+
 			"Ensure the host nix daemon socket is mounted (/nix/var/nix/daemon-socket) "+
@@ -680,35 +696,45 @@ func jailTimeout() time.Duration {
 	return defaultJailTimeoutSeconds * time.Second
 }
 
-// childRepoRootEnv tells the spawned CLI where the yolo-jail repo is.
-//
-// The CLI needs a flake source for nix image builds, and this harness gives it one
-// explicitly because it can satisfy none of the CLI's own three sources by accident:
-// the binary is built into an os.MkdirTemp dir (so no `share/yolo-jail` bundle sits
-// beside it) and a developer's `just install` bundle, if any, is not this checkout.
-//
-// ⚠ THE ORIGINAL REASON HERE WAS THE cwd WALK, AND THAT WALK NO LONGER EXISTS.
-// This comment used to say the CLI "resolves it by walking UP from its working
-// directory looking for a dir with both flake.nix and go.mod", and that the harness
-// "deliberately defeats that walk" by running from a t.TempDir() — which is how the
-// entire Linux integration job once died on "Cannot find yolo-jail repo root"
-// (`yolo check` reported it as a failed check too; the Python suite never hit it
-// because it invoked the CLI from the repo). The cwd stopped selecting the flake on
-// 2026-08-31 precisely because it made one binary build from a live checkout in one
-// directory and from a staged snapshot in the next. So the DEFECT is gone; setting
-// this is now about NAMING which flake the child should use, not about defeating a
-// search — and it is still required, because without it the CLI would resolve a
-// bundle that has nothing to do with this test run.
-//
-// TestMain already knows the answer — moduleRoot() derives it from
-// runtime.Caller, independent of any cwd — so hand it to the child. A real
-// YOLO_REPO_ROOT in the environment (set by CI) wins: it is the CLI's own
-// first-choice source and may legitimately differ from this checkout.
-func childRepoRootEnv() []string {
-	if repoRoot == "" || os.Getenv("YOLO_REPO_ROOT") != "" {
-		return nil
+// matchedBundleFlakeRoot returns the runtime input paired with yoloBin. repoRoot
+// is deliberately not a fallback: it is the source tree passed to build operations.
+func matchedBundleFlakeRoot(launcher string) string {
+	return filepath.Join(filepath.Dir(filepath.Dir(launcher)), "share", "yolo-jail")
+}
+
+var launchANSI = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func sessionGuestBinFromOutput(t *testing.T, output string) string {
+	t.Helper()
+	for _, line := range strings.Split(launchANSI.ReplaceAllString(output, ""), "\n") {
+		if _, rest, ok := strings.Cut(line, "guest bins:"); ok {
+			if _, child, ok := strings.Cut(rest, " → "); ok {
+				path := strings.Fields(child)
+				if len(path) > 0 && filepath.IsAbs(path[0]) && strings.HasPrefix(path[0], macosuser.GuestBinDir("")+string(os.PathSeparator)) {
+					return path[0]
+				}
+			}
+		}
 	}
-	return []string{"YOLO_REPO_ROOT=" + repoRoot}
+	t.Fatalf("launch output did not disclose a session guest-bin child:\n%s", output)
+	return ""
+}
+
+func sessionGuestBinaryPath(t *testing.T, output, name string) string {
+	t.Helper()
+	return filepath.Join(sessionGuestBinFromOutput(t, output), name)
+}
+
+// envWithoutRepoRoot removes the retired runtime selector from child processes.
+func envWithoutRepoRoot(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "YOLO_REPO_ROOT=") {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 // result is the outcome of a yolo invocation.
@@ -895,7 +921,6 @@ func launchEnvironment(cfg runConfig) []string {
 		}
 	}
 	env = append(env, "TERM=dumb")
-	env = append(env, childRepoRootEnv()...)
 	env = append(env, autoCaptureEnvForSuite()...)
 	env = append(env, readinessEnvForSuite()...)
 	return append(env, cfg.env...)

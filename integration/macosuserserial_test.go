@@ -13,8 +13,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-
-	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 )
 
 // TestMacosUserSerialClientDrivesAHostPtyFromTheSandbox is the serial loophole on macos-user,
@@ -67,10 +65,10 @@ func TestMacosUserSerialClientDrivesAHostPtyFromTheSandbox(t *testing.T) {
 		return fmt.Sprintf("\n--- launch stdout:\n%s\n--- launch stderr:\n%s", r.stdout, r.stderr)
 	}
 
-	if client := strings.TrimSpace(section(r.stdout, "=== CLIENT ===", "=== LIST ===")); client !=
-		macosuser.GuestBinaryPath("yolo-serial", "") {
-		t.Errorf("yolo-serial resolves to %q in the sandbox, want the staged guest binary %s%s",
-			client, macosuser.GuestBinaryPath("yolo-serial", ""), diag())
+	wantClient := sessionGuestBinaryPath(t, r.stdout, "yolo-serial")
+	if client := strings.TrimSpace(section(r.stdout, "=== CLIENT ===", "=== LIST ===")); client != wantClient {
+		t.Errorf("yolo-serial resolves to %q in the sandbox, want this session's staged guest binary %s%s",
+			client, wantClient, diag())
 	}
 	if list := section(r.stdout, "=== LIST ===", "=== WRITE ==="); !strings.Contains(list, "LIST_RC=0") ||
 		!strings.Contains(list, slave) {

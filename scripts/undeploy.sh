@@ -106,8 +106,9 @@ if [ "$dry_run" = 1 ]; then
 fi
 
 if [ -n "${YOLO_REPO_ROOT:-}" ]; then
-    echo "⚠ YOLO_REPO_ROOT is set ($YOLO_REPO_ROOT), so every yolo will still build from that" >&2
-    echo "  checkout. Unset it, and remove it from your shell rc, to use a packaged install." >&2
+    echo "⚠ YOLO_REPO_ROOT is obsolete and does not select runtime sources." >&2
+    echo "  Unset it and remove the export from your shell rc; for development, build a matched bundle" >&2
+    echo "  with 'just build-dev-bundle' and invoke its printed launcher path." >&2
 fi
 
 resolved="$(command -v yolo 2>/dev/null || true)"

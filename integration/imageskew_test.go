@@ -262,8 +262,8 @@ func evalImageIdentity(extraFlags ...string) (string, error) {
 	if _, err := exec.LookPath("nix"); err != nil {
 		return "", fmt.Errorf("nix is not on PATH")
 	}
-	if repoRoot == "" {
-		return "", fmt.Errorf("module root unresolved")
+	if bundleRoot == "" {
+		return "", fmt.Errorf("matched bundle root unresolved")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -271,7 +271,7 @@ func evalImageIdentity(extraFlags ...string) (string, error) {
 	argv = append(argv, extraFlags...)
 	argv = append(argv, "eval", "--impure", "--raw", ".#imageIdentity")
 	cmd := exec.CommandContext(ctx, "nix", argv...)
-	cmd.Dir = repoRoot
+	cmd.Dir = bundleRoot
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("nix %s failed: %w", strings.Join(argv, " "), err)
@@ -458,7 +458,7 @@ func TestTheLauncherAndTheHarnessAgreeOnTheIdentity(t *testing.T) {
 	if err != nil {
 		t.Skipf("this file's own oracle is unavailable (%v); nothing to compare", err)
 	}
-	got, ok := image.EvalImageIdentity(repoRoot)
+	got, ok := image.EvalImageIdentity(bundleRoot)
 	if !ok {
 		t.Fatalf("image.EvalImageIdentity(%q) could not answer, but this file's eval "+
 			"of the same attribute returned %s.\nThe launcher will now rebuild the "+

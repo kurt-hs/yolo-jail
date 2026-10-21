@@ -17,6 +17,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/outfmt"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/reporoot"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/storage"
@@ -135,8 +136,10 @@ func Check(opts Options) int {
 	merged, mergedSrc = config.WithWorkspaceFile(merged, mergedSrc, workspace)
 	src.merged = mergedSrc
 	var repoRoot string
+	var repoResolution reporoot.Resolution
 	repoRootOK := false
 	if rr, ok := o.RepoRoot(); ok {
+		repoResolution = rr
 		repoRoot = rr.Root
 		repoRootOK = true
 		// Name what SELECTED the root, not just the path: `yolo check` is the
@@ -150,7 +153,7 @@ func Check(opts Options) int {
 			r.warn("flake.nix not found at "+filepath.Join(rr.Root, "flake.nix")+via, flakeMissingNote(rr))
 		}
 	} else {
-		r.fail("Could not resolve the yolo-jail repo root", repoRootFix)
+		r.fail("Could not resolve the yolo-jail repo root", repoRootFailureFix(repoResolution))
 	}
 
 	// --- Merged Configuration ---

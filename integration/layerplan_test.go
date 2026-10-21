@@ -64,7 +64,7 @@ func layerPlanFlake(t *testing.T, edit string) string {
 	t.Helper()
 	dir := t.TempDir()
 	for _, name := range []string{"flake.nix", "flake.lock"} {
-		data, err := os.ReadFile(filepath.Join(repoRoot, name))
+		data, err := os.ReadFile(filepath.Join(bundleRoot, name))
 		if err != nil {
 			t.Fatal(err)
 		}

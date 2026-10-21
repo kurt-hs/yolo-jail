@@ -144,7 +144,7 @@ func TestKnownLaunchYOLOEnvNamesUseSelectedDeclarations(t *testing.T) {
 			t.Errorf("selected declaration name %s not recognized", name)
 		}
 	}
-	for _, name := range []string{"YOLO_BACKEND", "YOLO_JAIL", "YOLO_SELECTED_OTHER_PACK_SETTING", "YOLO_AUTH_PRELAUNCH_UNSELECTED_TOOL_FLAG"} {
+	for _, name := range []string{"YOLO_BACKEND", "YOLO_JAIL", "YOLO_REPO_ROOT", "YOLO_SELECTED_OTHER_PACK_SETTING", "YOLO_AUTH_PRELAUNCH_UNSELECTED_TOOL_FLAG"} {
 		if slices.Contains(known, name) {
 			t.Errorf("unselected or unrecognized name %s was accepted", name)
 		}

@@ -14,7 +14,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -137,8 +136,8 @@ func auditSealedSemverResolution(raw []byte) error {
 	return nil
 }
 
-// Explicit opt-in only, never under -short. Requires Linux Podman, an absolute
-// freshly built candidate launcher and its exact source root. Each child is owned
+// Explicit opt-in only, never under -short. Requires Linux Podman and a matched
+// candidate launcher paired with its flake/helper bundle. Each child is owned
 // and bounded by the existing lifecycle; the whole test requires a <=5m deadline.
 // Uses anonymous verified TLS with only the immutable image CA bundle. No agents,
 // models, host services or fetched hooks run. The launch callback is the existing
@@ -154,9 +153,9 @@ func TestAuditedRegistrySealedPublicColdWarmAndFreshRefusal(t *testing.T) {
 	if !ok || time.Until(deadline) > 5*time.Minute {
 		t.Fatal("run with -timeout <=5m")
 	}
-	root := os.Getenv("YOLO_REPO_ROOT")
+	root := os.Getenv("YOLO_TEST_SOURCE_ROOT")
 	if !filepath.IsAbs(root) {
-		t.Fatal("absolute committed source root required")
+		t.Fatal("absolute committed build-input source root required in YOLO_TEST_SOURCE_ROOT")
 	}
 	if _, err := exec.LookPath("podman"); err != nil {
 		t.Skip("Podman unavailable")
@@ -169,6 +168,7 @@ func TestAuditedRegistrySealedPublicColdWarmAndFreshRefusal(t *testing.T) {
 	}
 	t.Log("retained owned evidence", owned)
 	exe := buildAuditedSealedCandidate(t, ctx, root, owned)
+	bundleRoot := filepath.Join(filepath.Dir(filepath.Dir(exe)), "share", "yolo-jail")
 	for key, sub := range map[string]string{"HOME": "home", "XDG_CONFIG_HOME": "config", "XDG_DATA_HOME": "data", "XDG_CACHE_HOME": "cache", "XDG_RUNTIME_DIR": "runtime"} {
 		dir := filepath.Join(owned, sub)
 		if err := os.MkdirAll(dir, 0700); err != nil {
@@ -184,7 +184,6 @@ func TestAuditedRegistrySealedPublicColdWarmAndFreshRefusal(t *testing.T) {
 			t.Setenv(key, "")
 		}
 	}
-	t.Setenv("YOLO_REPO_ROOT", root)
 	t.Setenv("YOLO_RUNTIME", "podman")
 	t.Setenv("NO_COLOR", "1")
 	// Discard caller trust/proxy/credential knobs, not the shared Go build cache.
@@ -245,11 +244,11 @@ func TestAuditedRegistrySealedPublicColdWarmAndFreshRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fingerprint, err := run.ProgramRuntimeFingerprint(root, cfg)
+	fingerprint, err := run.ProgramRuntimeFingerprint(bundleRoot, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := run.ProgramCaptureRequest{Packs: selected.packs, Env: ordinarySelectionEnvironment(cfg, selected.packs), Runtime: "podman", Platform: captureJailPlatform(), Fingerprint: fingerprint, RepoRoot: root, Workspace: workspace}
+	req := run.ProgramCaptureRequest{Packs: selected.packs, Env: ordinarySelectionEnvironment(cfg, selected.packs), Runtime: "podman", Platform: captureJailPlatform(), Fingerprint: fingerprint, RepoRoot: bundleRoot, Workspace: workspace}
 	store := &capture.Store{Dir: paths.CapturesDir()}
 	in := npmCaptureInput{Owner: "audited-semver", Bin: "semver", Package: "semver@7.7.2"}
 	originalChild, originalCommand, originalSpawn, originalLaunch := programCaptureChild, forkBuildChildCommand, sharedPreparationSpawn, launchRunPipeline
@@ -603,46 +602,68 @@ func buildAuditedSealedCandidate(t *testing.T, ctx context.Context, root, owned 
 	head := git("rev-parse", "HEAD")
 	git("diff", "--quiet", "HEAD", "--", ".")
 	git("ls-files", "--error-unmatch", "internal/cli/programcapturesealedintegration_test.go")
-	exe := filepath.Join(owned, "candidate-yolo")
-	// Existing yolo source-build stamps establish the owned candidate. Go 1.26
-	// overlooks worktree .git FILES; its outer-repo VCS revision is only logged.
-	cmd := exec.CommandContext(ctx, "go", "build", "-mod=vendor", "-buildvcs=true", "-ldflags="+auditedSealedBuildFlags(head, root), "-o", exe, "./cmd/yolo")
-	cmd.Dir = root
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("owned candidate build: %v\n%s", err, out)
+	home := filepath.Join(owned, "matched-home")
+	if err := os.Mkdir(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(ctx, "just", "build-dev-bundle")
+	cmd.Dir = root // build input only; runtime root comes from the emitted launcher's adjacency
+	cmd.Env = envWithoutName(os.Environ(), "YOLO_REPO_ROOT")
+	cmd.Env = append(envWithoutName(cmd.Env, "HOME"), "HOME="+home)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("shared matched-bundle build (within the existing <=5m proof bound): %v\n%s", err, out)
+	}
+	exe := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(exe) {
+		t.Fatalf("matched build did not print an absolute launcher path: %q", exe)
 	}
 	info, err := buildinfo.ReadFile(exe)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := auditSealedBuildInfo(info, head, root); err != nil {
+	stampBytes, err := os.ReadFile(filepath.Join(filepath.Dir(filepath.Dir(exe)), "share", "yolo-jail", "yolo-build-stamp.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stamp struct {
+		SnapshotIdentity string `json:"snapshotIdentity"`
+		BuildKind        string `json:"buildKind"`
+	}
+	if err := json.Unmarshal(stampBytes, &stamp); err != nil || stamp.SnapshotIdentity == "" || stamp.BuildKind != "development" {
+		t.Fatalf("invalid matched candidate stamp: %+v (%v)", stamp, err)
+	}
+	if err := auditSealedBuildInfo(info, stamp.SnapshotIdentity); err != nil {
 		t.Fatal(err)
 	}
 	git("diff", "--quiet", "HEAD", "--", ".")
-	t.Logf("owned CLI source=%s commit=%s path=%s", root, head, exe)
-	for _, setting := range info.Settings {
-		if setting.Key == "vcs.revision" {
-			t.Logf("Go observed vcs.revision=%s (not candidate identity)", setting.Value)
-		}
-	}
+	t.Logf("owned matched candidate source=%s commit=%s identity=%s path=%s", root, head, stamp.SnapshotIdentity, exe)
 	return exe
 }
 
-func auditedSealedBuildFlags(head, root string) string {
-	const prefix = "github.com/mschulkind-oss/yolo-jail/internal/version."
-	return "-X=" + prefix + "GitCommit=" + head + " " + strconv.Quote("-X="+prefix+"SourceDir="+root)
+func envWithoutName(env []string, name string) []string {
+	out := make([]string, 0, len(env))
+	for _, item := range env {
+		key, _, _ := strings.Cut(item, "=")
+		if key != name {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
-func auditSealedBuildInfo(info *debug.BuildInfo, head, root string) error {
+func auditSealedBuildInfo(info *debug.BuildInfo, snapshotIdentity string) error {
 	settings := map[string]string{}
 	for _, s := range info.Settings {
 		settings[s.Key] = s.Value
 	}
-	if info.Path != "github.com/mschulkind-oss/yolo-jail/cmd/yolo" || info.Main.Path != "github.com/mschulkind-oss/yolo-jail" || settings["vcs"] != "git" || settings["-ldflags"] != auditedSealedBuildFlags(head, root) || head == "" || !filepath.IsAbs(root) {
-		return fmt.Errorf("owned CLI build/VCS identity differs from committed candidate")
+	ldflags := settings["-ldflags"]
+	if info.Path != "github.com/mschulkind-oss/yolo-jail/cmd/yolo" || info.Main.Path != "github.com/mschulkind-oss/yolo-jail" ||
+		!strings.Contains(ldflags, "github.com/mschulkind-oss/yolo-jail/internal/version.SnapshotIdentity="+snapshotIdentity) ||
+		!strings.Contains(ldflags, "github.com/mschulkind-oss/yolo-jail/internal/version.BuildKind=development") ||
+		snapshotIdentity == "" {
+		return fmt.Errorf("owned CLI build does not match the matched-bundle snapshot identity")
 	}
-	// vcs.modified may describe inherited untracked node_modules. The owned build
-	// and explicit tracked-source diff, not that coarse flag, establish the source.
 	return nil
 }
 
@@ -666,18 +687,25 @@ func TestAuditedRegistryConsumerRefusesLegacyBeforeExecution(t *testing.T) {
 }
 
 func TestAuditedRegistryBuildIdentityRejectsUnrelatedCLI(t *testing.T) {
-	good := debug.BuildInfo{Path: "github.com/mschulkind-oss/yolo-jail/cmd/yolo", Main: debug.Module{Path: "github.com/mschulkind-oss/yolo-jail"}, Settings: []debug.BuildSetting{{Key: "vcs", Value: "git"}, {Key: "vcs.revision", Value: "outer-repo-observation"}, {Key: "-ldflags", Value: auditedSealedBuildFlags("candidate", "/owned/source")}, {Key: "vcs.modified", Value: "true"}}}
-	if err := auditSealedBuildInfo(&good, "candidate", "/owned/source"); err != nil {
+	identity := strings.Repeat("a", 64)
+	good := debug.BuildInfo{Path: "github.com/mschulkind-oss/yolo-jail/cmd/yolo", Main: debug.Module{Path: "github.com/mschulkind-oss/yolo-jail"}, Settings: []debug.BuildSetting{{Key: "-ldflags", Value: "-X github.com/mschulkind-oss/yolo-jail/internal/version.SnapshotIdentity=" + identity + " -X github.com/mschulkind-oss/yolo-jail/internal/version.BuildKind=development"}}}
+	if err := auditSealedBuildInfo(&good, identity); err != nil {
 		t.Fatal(err)
 	}
-	if err := auditSealedBuildInfo(&good, "other", "/owned/source"); err == nil {
-		t.Fatal("accepted different source revision")
+	if err := auditSealedBuildInfo(&good, strings.Repeat("b", 64)); err == nil {
+		t.Fatal("accepted different matched snapshot identity")
 	}
-	if err := auditSealedBuildInfo(&good, "candidate", "/other/source"); err == nil {
-		t.Fatal("accepted different source directory")
+	good.Settings[0].Value = strings.Replace(good.Settings[0].Value, "BuildKind=development", "BuildKind=installed", 1)
+	if err := auditSealedBuildInfo(&good, identity); err == nil {
+		t.Fatal("accepted non-development launcher")
+	}
+	good.Settings[0].Value = "-X SnapshotIdentity=" + identity + " -X BuildKind=development"
+	if err := auditSealedBuildInfo(&good, identity); err == nil {
+		t.Fatal("accepted launcher without full version package identity")
 	}
 	good.Path = "unrelated"
-	if err := auditSealedBuildInfo(&good, "candidate", "/owned/source"); err == nil {
+	good.Settings[0].Value = "-X github.com/mschulkind-oss/yolo-jail/internal/version.SnapshotIdentity=" + identity + " -X github.com/mschulkind-oss/yolo-jail/internal/version.BuildKind=development"
+	if err := auditSealedBuildInfo(&good, identity); err == nil {
 		t.Fatal("accepted unrelated executable")
 	}
 }

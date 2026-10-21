@@ -159,7 +159,8 @@ func materializeWithArgv(repoRoot string, packages []any, system string, argv []
 	if repoRoot == "" {
 		return nil, &MaterializeError{msg: "no yolo-jail repo root: native `packages:` are built " +
 			"from the yolo-jail flake, and nix would otherwise evaluate whatever flake is in the " +
-			"current directory. Set YOLO_REPO_ROOT or reinstall so the flake bundle ships with the binary"}
+			"current directory. Build a matched development bundle with `just build-dev-bundle` and invoke its printed launcher path, " +
+			"or install the launcher and flake bundle together with `just install`"}
 	}
 	if errStderr == nil {
 		errStderr = os.Stderr

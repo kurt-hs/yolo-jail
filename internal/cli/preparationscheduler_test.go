@@ -341,18 +341,18 @@ func TestPreparationEnvironmentUsesDeclaredProviderExclusionsAndBoundedAllowlist
 		name, value, _ := strings.Cut(item, "=")
 		got[name] = value
 	}
-	for _, name := range []string{"HOME", "PATH", "LANG", "SSH_AUTH_SOCK", "GIT_SSH_COMMAND", "YOLO_REPO_ROOT", "YOLO_RUNTIME", "HTTPS_PROXY"} {
+	for _, name := range []string{"HOME", "PATH", "LANG", "SSH_AUTH_SOCK", "GIT_SSH_COMMAND", "YOLO_RUNTIME", "HTTPS_PROXY"} {
 		if got[name] == "" {
 			t.Errorf("required worker environment %s was removed: %v", name, env)
 		}
 	}
-	for _, name := range []string{"YOLO_ALLOW_PATCH_FAILURES", "YOLO_WORKSPACE", "GIT_DIR", "UNKNOWN_AGENT_TOKEN", "SYNTHETIC_PROVIDER_KEY"} {
+	for _, name := range []string{"YOLO_REPO_ROOT", "YOLO_ALLOW_PATCH_FAILURES", "YOLO_WORKSPACE", "GIT_DIR", "UNKNOWN_AGENT_TOKEN", "SYNTHETIC_PROVIDER_KEY"} {
 		if _, ok := got[name]; ok {
 			t.Errorf("unbounded or credential variable %s crossed into worker environment", name)
 		}
 	}
 	if !reflect.DeepEqual(env, legacyPreparationEnvironment([]string{
-		"HTTPS_PROXY=https://proxy", "SYNTHETIC_PROVIDER_KEY=secret", "YOLO_RUNTIME=podman", "YOLO_REPO_ROOT=/src",
+		"HTTPS_PROXY=https://proxy", "SYNTHETIC_PROVIDER_KEY=secret", "YOLO_RUNTIME=podman",
 		"GIT_SSH_COMMAND=ssh -F /home/user/.ssh/config", "SSH_AUTH_SOCK=/run/ssh.sock", "LANG=C.UTF-8", "PATH=/usr/bin", "HOME=/home/user",
 	}, []string{"SYNTHETIC_PROVIDER_KEY"})) {
 		t.Error("bounded environment should be deterministic independent of inherited ordering")

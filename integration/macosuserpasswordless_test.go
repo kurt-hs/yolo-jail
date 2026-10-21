@@ -83,15 +83,28 @@ func TestMacosUserTheGuestCannotWriteTheStagingRoot(t *testing.T) {
 	ws := macosUserWorkspace(t, `{}`)
 	sync := macosUserSyncDir(t, ws, ".yolo-it-staging-root")
 	root := macosuser.StateDir()
+	guestRoot := macosuser.GuestBinDir("")
+	binsBefore, _ := os.ReadDir(guestRoot)
 	profilesBefore, _ := filepath.Glob(filepath.Join(root, "profile-*.sb"))
 	session := holdSession(t, ws, sync, heldSessionScript(sync, "", ""))
 	session.awaitUp(t)
 
 	profilesAfter, _ := filepath.Glob(filepath.Join(root, "profile-*.sb"))
-	var profile string
+	var profile, staged string
 	for _, p := range profilesAfter {
 		if !slices.Contains(profilesBefore, p) {
 			profile = p
+			break
+		}
+	}
+	binsAfter, _ := os.ReadDir(guestRoot)
+	for _, entry := range binsAfter {
+		if slices.ContainsFunc(binsBefore, func(before os.DirEntry) bool { return before.Name() == entry.Name() }) {
+			continue
+		}
+		candidate := filepath.Join(guestRoot, entry.Name(), "yolo")
+		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
+			staged = candidate
 			break
 		}
 	}
@@ -99,13 +112,15 @@ func TestMacosUserTheGuestCannotWriteTheStagingRoot(t *testing.T) {
 		t.Fatalf("the session staged no new profile-*.sb under %s (before %v, after %v)",
 			root, profilesBefore, profilesAfter)
 	}
+	if staged == "" {
+		t.Fatalf("the live session staged no private yolo under %s (before %v, after %v)", guestRoot, binsBefore, binsAfter)
+	}
 
 	// THE POSITIVE CONTROLS, first: what the guest must be able to do through the same rule.
 	if out, err := runAsSandboxAccount(t, "/bin/cat", profile); err != nil || !strings.Contains(out, "(version 1)") {
 		t.Errorf("as %s, `cat %s` failed (%v), so the refusals below could be a rule that does "+
 			"not run at all:\n%s", macosuser.SandboxUser, profile, err, out)
 	}
-	staged := macosuser.StagedYoloPath("")
 	if out, err := runAsSandboxAccount(t, staged, "--version"); err != nil {
 		t.Errorf("as %s, `%s --version` failed (%v): the guest cannot run its own staged yolo:\n%s",
 			macosuser.SandboxUser, staged, err, out)

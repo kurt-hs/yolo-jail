@@ -141,7 +141,6 @@ func startYoloAtTerminal(t *testing.T, name, dir, script string) *bgRun {
 	cmd := exec.CommandContext(ctx, yoloBin, append(jailRunArgs(), "--", "bash", "-lc", script)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "TERM=dumb")
-	cmd.Env = append(cmd.Env, childRepoRootEnv()...)
 	cmd.Env = append(cmd.Env, autoCaptureEnvForSuite()...)
 	cmd.Env = append(cmd.Env, readinessEnvForSuite()...)
 	awaitDetachedWriters(t, dir, launchHome(cmd.Env))

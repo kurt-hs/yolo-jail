@@ -17,19 +17,21 @@ import (
 // every directory — so run and check never drift. This wrapper adds only the
 // run-side error banner (reporoot.Resolve is pure and never prints).
 func resolveRepoRoot(getenv func(string) string, stderr io.Writer, color bool) (reporoot.Resolution, bool) {
-	if res, ok := reporoot.Resolve(getenv); ok {
+	res, ok := reporoot.Resolve(getenv)
+	if ok {
 		return res, true
 	}
 	if stderr != nil {
+		message := "The yolo CLI needs a complete matched flake/helper bundle for jail image builds.\n" +
+			"Fix: build one with `just build-dev-bundle` and invoke its printed launcher path, or\n" +
+			"install a self-contained launcher and bundle together with `just install`."
+		if res.Error != nil {
+			message = res.Error.Error()
+		}
 		pr := printer{rt: richtext.Printer{W: stderr}}
-		pr.print("[bold red]Cannot find yolo-jail repo root.[/bold red]\n" +
-			"The yolo CLI needs the repo for nix image builds.\n\n" +
-			"Fix: install so the flake bundle ships with the binary (`just install`), or\n" +
-			"point yolo at a checkout with [bold]YOLO_REPO_ROOT[/bold] — the cwd is never\n" +
-			"consulted:\n" +
-			`  YOLO_REPO_ROOT=~/code/yolo-jail yolo …`)
+		pr.print("[bold red]Cannot find yolo-jail repo root.[/bold red]\n" + message)
 	}
-	return reporoot.Resolution{}, false
+	return res, false
 }
 
 // reportFlakeSource announces WHICH flake this launch will build the jail image

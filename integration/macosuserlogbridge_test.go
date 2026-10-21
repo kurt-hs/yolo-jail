@@ -74,10 +74,10 @@ func TestMacosUserMacosLogBridgeScopesToTheSandbox(t *testing.T) {
 	diag := func() string {
 		return fmt.Sprintf("\n--- launch stdout:\n%s\n--- launch stderr:\n%s", r.stdout, r.stderr)
 	}
-	if client := strings.TrimSpace(section(r.stdout, "=== CLIENT ===", "=== SHOW ===")); client !=
-		macosuser.GuestBinaryPath("yolo-log", "") {
-		t.Errorf("yolo-log resolves to %q in the sandbox, want the staged guest binary %s%s",
-			client, macosuser.GuestBinaryPath("yolo-log", ""), diag())
+	wantClient := sessionGuestBinaryPath(t, r.stdout, "yolo-log")
+	if client := strings.TrimSpace(section(r.stdout, "=== CLIENT ===", "=== SHOW ===")); client != wantClient {
+		t.Errorf("yolo-log resolves to %q in the sandbox, want this session's staged guest binary %s%s",
+			client, wantClient, diag())
 	}
 	show := section(r.stdout, "=== SHOW ===", "=== STREAM ===")
 	hasUserID := strings.Contains(show, `"userID"`)

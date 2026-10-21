@@ -18,7 +18,6 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
-	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/testsupport"
 	"github.com/mschulkind-oss/yolo-jail/internal/version"
 )
@@ -114,35 +113,29 @@ func TestHostLaunchAcceptsAMatchedSupersession(t *testing.T) {
 	}
 }
 
-// TestHostLaunchRefusalNamesProvenSkew is RM-D2 at the host notch: when the running yolo is
-// provably older than the source tree it resolves, the refusal says so and names
-// `just install`, as the jail's and `yolo check`'s do. The packs a host yolo ships are the ones
-// compiled into it at this notch too.
-func TestHostLaunchRefusalNamesProvenSkew(t *testing.T) {
-	root, installed, head := hostSkewRepo(t)
+// TestHostLaunchIgnoresObsoleteRootSelectorOnSupersessionRefusal verifies that an inherited
+// retired selector cannot make an otherwise ordinary host refusal select an unmatched source
+// tree. The supersession admission refusal remains authoritative either way.
+func TestHostLaunchIgnoresObsoleteRootSelectorOnSupersessionRefusal(t *testing.T) {
+	root := staleSelectorCheckout(t)
 	cfg := supersedingHostPack(t, "claude-bedrock", "claude-oauth-refersh")
 	rc, env, errs := hostGateRun(t, cfg, map[string]string{"YOLO_REPO_ROOT": root}, nil, "claude")
 	if rc == 0 || env != nil {
 		t.Fatalf("the launch must refuse: rc=%d\n%s", rc, errs)
 	}
-	for _, want := range []string{
-		"This yolo is older than the source tree it builds from",
-		"yolo: " + installed[:8],
-		"tree: " + head[:8],
-		"(cd " + shquote.Quote(root) + " && just install)",
-	} {
-		if !strings.Contains(errs, want) {
-			t.Errorf("the host refusal is missing %q:\n%s", want, errs)
-		}
+	if !strings.Contains(errs, "supersedes capability 'claude-oauth-refersh'") || !strings.Contains(errs, loopholes.UnmatchedSupersessionRemedy) {
+		t.Fatalf("the supersession admission refusal was lost:\n%s", errs)
+	}
+	if strings.Contains(errs, "This yolo is older than the source tree it builds from") || strings.Contains(errs, root) {
+		t.Fatalf("the retired selector affected runtime resolution:\n%s", errs)
 	}
 }
 
-// hostSkewRepo builds a checkout reporoot.Resolve accepts (a go.mod) whose HEAD has moved past
-// the commit this binary is stamped with, through internal/ (a path version.SourceSkew
-// compares), and returns its root and both full commits. The stamp is restored at cleanup.
-func hostSkewRepo(t *testing.T) (root, installed, head string) {
+// staleSelectorCheckout builds a moved yolo-jail checkout that an old selector implementation
+// would accept, making any accidental source selection visible as a skew refusal.
+func staleSelectorCheckout(t *testing.T) string {
 	t.Helper()
-	root = t.TempDir()
+	root := t.TempDir()
 	git := func(args ...string) string {
 		t.Helper()
 		full := append([]string{"-c", "user.email=test@example.com", "-c", "user.name=test"}, args...)
@@ -171,14 +164,13 @@ func hostSkewRepo(t *testing.T) (root, installed, head string) {
 	write("internal/x/x.go", "package x // installed\n")
 	git("add", "-A")
 	git("commit", "-q", "-m", "installed")
-	installed = git("rev-parse", "HEAD")
+	installed := git("rev-parse", "HEAD")
 	write("internal/x/x.go", "package x // moved on\n")
 	git("add", "-A")
 	git("commit", "-q", "-m", "moved on")
-	head = git("rev-parse", "HEAD")
 
 	orig := version.GitCommit
 	t.Cleanup(func() { version.GitCommit = orig })
 	version.GitCommit = installed
-	return root, installed, head
+	return root
 }

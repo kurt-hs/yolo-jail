@@ -413,7 +413,6 @@ func (r hd10Result) combined() string { return r.stdout + r.stderr }
 // selection, computed once on the test goroutine.
 func hd10LaunchEnv() []string {
 	env := append(os.Environ(), "TERM=dumb")
-	env = append(env, childRepoRootEnv()...)
 	env = append(env, autoCaptureEnvForSuite()...)
 	env = append(env, readinessEnvForSuite()...)
 	return append(env, "YOLO_RUNTIME=macos-user")

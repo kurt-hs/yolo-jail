@@ -38,11 +38,10 @@ Config Files
   [PASS] No workspace yolo-jail.jsonc found
 
   [FAIL] Could not resolve the yolo-jail repo root
-       -> The yolo CLI needs the repo (a flake) to build the jail image.
-          Fix: reinstall so the flake bundle ships with the binary (` + "`just install`" + `), or
-          point yolo at a checkout with YOLO_REPO_ROOT. The working directory is never
-          consulted, so standing in a checkout is not enough:
-            YOLO_REPO_ROOT=~/code/yolo-jail yolo check
+       -> The yolo CLI needs a complete matched flake/helper bundle for jail image builds.
+          Fix: build one with ` + "`just build-dev-bundle`" + ` and invoke its printed launcher path, or
+          install a self-contained launcher and bundle together with ` + "`just install`" + `, then
+          run ` + "`yolo check`" + ` again.
 Merged Configuration
   - No runtime available — see Container Runtime above
 

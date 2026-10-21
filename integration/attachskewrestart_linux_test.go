@@ -86,7 +86,6 @@ func TestAttachRestartsAnOlderJailAtATerminal(t *testing.T) {
 		`echo FRESH-TAGS-"$YOLO_CONTRACT_TAGS"`)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "TERM=dumb")
-	cmd.Env = append(cmd.Env, childRepoRootEnv()...)
 	cmd.Env = append(cmd.Env, autoCaptureEnvForSuite()...)
 	cmd.Env = append(cmd.Env, readinessEnvForSuite()...)
 	awaitDetachedWriters(t, dir, launchHome(cmd.Env))

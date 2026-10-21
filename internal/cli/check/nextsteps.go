@@ -37,24 +37,21 @@ func yoloBugNote(what string) string {
 		" with the output of `yolo --version`."
 }
 
-// repoRootFix is the fix for a repo root reporoot.Resolve cannot find, as the launch's refusal
-// for the same fault words it (internal/cli/run/run.go, "Cannot find yolo-jail repo root"),
-// ending on the re-check rather than a launch.
-const repoRootFix = "The yolo CLI needs the repo (a flake) to build the jail image.\n" +
-	"Fix: reinstall so the flake bundle ships with the binary (`just install`), or\n" +
-	"point yolo at a checkout with YOLO_REPO_ROOT. The working directory is never\n" +
-	"consulted, so standing in a checkout is not enough:\n" +
-	"  YOLO_REPO_ROOT=~/code/yolo-jail yolo check"
+// repoRootFix is the next step when no executable-relative or installed matched bundle resolves.
+const repoRootFix = "The yolo CLI needs a complete matched flake/helper bundle for jail image builds.\n" +
+	"Fix: build one with `just build-dev-bundle` and invoke its printed launcher path, or\n" +
+	"install a self-contained launcher and bundle together with `just install`, then\n" +
+	"run `yolo check` again."
 
-// flakeMissingNote is the fix for a resolved root that holds no flake.nix. Only YOLO_REPO_ROOT
-// can name one (reporoot accepts a go.mod there); a bundle missing its flake was damaged after
-// it resolved.
-func flakeMissingNote(rr reporoot.Resolution) string {
-	if rr.Source == reporoot.FromEnv {
-		return "YOLO_REPO_ROOT names " + rr.Root + ", which is not a yolo-jail checkout.\n" +
-			"Point it at one, or unset it to use the flake bundle installed with yolo:\n" +
-			"  YOLO_REPO_ROOT=~/code/yolo-jail yolo check"
+func repoRootFailureFix(rr reporoot.Resolution) string {
+	if rr.Error != nil {
+		return rr.Error.Error()
 	}
+	return repoRootFix
+}
+
+// flakeMissingNote is the next step for an incomplete resolved executable-relative bundle.
+func flakeMissingNote(rr reporoot.Resolution) string {
 	return "The flake bundle at " + rr.Root + " is incomplete.\n" + repoRootFix
 }
 

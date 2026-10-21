@@ -42,12 +42,12 @@ func TestPreparationEnvironmentBoundsInheritedInputs(t *testing.T) {
 	original := append([]string(nil), in...)
 	got := preparationEnvMap(preparationEnvironment(in, providers, nil))
 	for _, k := range []string{"HOME", "PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "SSL_CERT_FILE", "NIX_REMOTE",
-		"YOLO_REPO_ROOT", "YOLO_RUNTIME", "SSH_AUTH_SOCK", "GIT_SSH_COMMAND", "GIT_CONFIG_GLOBAL", "CONTAINER_HOST"} {
+		"YOLO_RUNTIME", "SSH_AUTH_SOCK", "GIT_SSH_COMMAND", "GIT_CONFIG_GLOBAL", "CONTAINER_HOST"} {
 		if _, ok := got[k]; !ok {
 			t.Errorf("required transport/runtime input %s removed", k)
 		}
 	}
-	for _, k := range []string{"HTTPS_PROXY", "SYNTHETIC_SECRET", "UNKNOWN_SECRET", "GIT_DIR", "GIT_INDEX_FILE",
+	for _, k := range []string{"YOLO_REPO_ROOT", "HTTPS_PROXY", "SYNTHETIC_SECRET", "UNKNOWN_SECRET", "GIT_DIR", "GIT_INDEX_FILE",
 		"GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "YOLO_ALLOW_PATCH_FAILURES", "YOLO_ALLOW_SOURCE_SKEW",
 		"YOLO_USER_LAYER", "YOLO_JAIL", "YOLO_SERVICE_FAKE_TOKEN", "SSH_ASKPASS", "GIT_ASKPASS", "DISPLAY"} {
 		if _, ok := got[k]; ok {

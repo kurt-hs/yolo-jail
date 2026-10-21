@@ -89,7 +89,8 @@ func TestMacosUserJailDaemonRunsConfinedInTheGuest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the probe's output does not parse: %v%s", err, diag())
 	}
-	if want := "JAILD=" + macosuser.GuestBinaryPath(macosuser.JaildName, ""); !strings.Contains(probe.probe, want) {
+	sessionJaild := filepath.Join(sessionGuestBinFromOutput(t, r.stdout), macosuser.JaildName)
+	if want := "JAILD=" + sessionJaild; !strings.Contains(probe.probe, want) {
 		t.Errorf("the sandbox does not resolve yolo-jaild to the staged guest prefix (want %q):\n%s%s",
 			want, probe.probe, diag())
 	}
@@ -111,9 +112,9 @@ func TestMacosUserJailDaemonRunsConfinedInTheGuest(t *testing.T) {
 	if hostSaw == "" {
 		t.Errorf("the host saw no `%s supervise` run as %s (uid %s) during the session. The "+
 			"probe waited for the host's answer and got: %q%s",
-			macosuser.GuestBinaryPath(macosuser.JaildName, ""), macosuser.SandboxUser, uid,
+			sessionJaild, macosuser.SandboxUser, uid,
 			strings.TrimSpace(probe.seen), diag())
-	} else if !strings.Contains(probe.seen, macosuser.GuestBinaryPath(macosuser.JaildName, "")+" supervise") {
+	} else if !strings.Contains(probe.seen, sessionJaild+" supervise") {
 		t.Errorf("the host saw the supervisor (%s) but the probe finished before the answer "+
 			"reached it (it read %q), so the session's own timing is off%s",
 			hostSaw, strings.TrimSpace(probe.seen), diag())
@@ -379,14 +380,14 @@ func parseJailDaemonProbe(stdout string) (jailDaemonProbe, error) {
 // argv names the same words further along — is never mistaken for it; the `env`,
 // `sandbox-exec` and env-file reader between them exec in place and leave no line.
 func guestSupervisorLine(listing, uid string) string {
-	want := macosuser.GuestBinaryPath(macosuser.JaildName, "") + " supervise"
+	guestPrefix := macosuser.GuestBinDir("") + "/"
 	for _, line := range strings.Split(listing, "\n") {
 		f := strings.Fields(line)
 		if len(f) < 3 || f[0] != uid {
 			continue
 		}
 		cmd := strings.Join(f[2:], " ")
-		if cmd == want || strings.HasPrefix(cmd, want+" ") {
+		if strings.HasPrefix(cmd, guestPrefix) && strings.Contains(cmd, "/yolo-jaild supervise") {
 			return strings.TrimSpace(line)
 		}
 	}

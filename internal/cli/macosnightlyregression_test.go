@@ -18,6 +18,7 @@ func TestProgramCaptureEnvironmentKeepsTheVMShareFacts(t *testing.T) {
 	for _, item := range programCaptureEnvironment([]string{
 		"YOLO_NIX_HOST_DAEMON=1",
 		"YOLO_NIX_HOST_STORE_LINUX=1",
+		"YOLO_REPO_ROOT=/must-not-select-runtime-source",
 		"NPM_CONFIG_REGISTRY=https://example.invalid",
 	}) {
 		got[item] = true
@@ -26,6 +27,9 @@ func TestProgramCaptureEnvironmentKeepsTheVMShareFacts(t *testing.T) {
 		if !got[want] {
 			t.Errorf("the sealed producer's environment dropped %s", want)
 		}
+	}
+	if got["YOLO_REPO_ROOT=/must-not-select-runtime-source"] {
+		t.Error("the sealed producer inherited the obsolete runtime source selector")
 	}
 	if got["NPM_CONFIG_REGISTRY=https://example.invalid"] {
 		t.Error("the sealed producer's environment kept npm configuration")
