@@ -156,9 +156,17 @@ func TestPreparationSchedulerRealWorkerLifecycle(t *testing.T) {
 		t.Fatalf("SIGTERM phase=%q, want interrupted", got)
 	}
 
-	// The mismatch reproduction replaces only a private copy of the test binary. The installed or
-	// host yolo binary is never modified.
+	// The mismatch reproduction replaces only a private copy of the test binary. Keep its
+	// unchanged matched helper/flake bundle adjacent: a bare development binary correctly
+	// refuses a build jail. The original bundle and host yolo binary are never modified.
 	copyDir := t.TempDir()
+	shareDir := filepath.Join(copyDir, "share")
+	if err := os.MkdirAll(shareDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(bundleRoot, filepath.Join(shareDir, "yolo-jail")); err != nil {
+		t.Fatal(err)
+	}
 	copyBinary := filepath.Join(copyDir, "yolo")
 	binaryBytes, err := os.ReadFile(yoloBin)
 	if err != nil {
@@ -441,7 +449,7 @@ func waitPreparationPausedChild(t *testing.T, statePath string, bound time.Durat
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	logPath := filepath.Join(paths.BackgroundAdvanceDir(), "logs", "background-advance.log")
+	logPath := filepath.Join(paths.GlobalStorage(), "logs", "background-advance.log")
 	logTail, _ := os.ReadFile(logPath)
 	if len(logTail) > 8000 {
 		logTail = logTail[len(logTail)-8000:]
