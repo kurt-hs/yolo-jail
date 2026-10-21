@@ -1,15 +1,15 @@
 ---
 title: "Explicit jail inheritance exclusions keep user host bytes separate from managed state"
-status: in-review
-stage: DESIGN
-next: "Rule OQ-IH2 and OQ-IH3 — target availability and unmatched pointers remain open"
+status: accepted
+stage: DECIDED
+next: "Build the completed plan's user-scope validation and exact-member filter, then wire launch and preview"
 tags: [config, inheritance, host, packs]
 summary: "A user-only, subtractive control over exact members of imported host config bytes, without changing pack, computed, captured, or managed layers."
 ---
 
 # Explicit jail inheritance exclusions keep user host bytes separate from managed state
 
-**Status:** 2026-10-21. Nothing built. Existing-code claims checked at `bd86fc29d69e5043706170e33bb111f4a8fb13e4`.
+**Status:** 2026-10-21. Owner rulings recorded; nothing built. Existing-code claims checked at `e7b52b944d369432a4a19aff303b0b8dd68860dd`.
 
 > **In short.** A user may omit exact members of a host config file from a jail's imported host layer without changing the host file. The filter runs on that input alone; composition and capture continue to own every other layer.
 
@@ -21,9 +21,9 @@ summary: "A user-only, subtractive control over exact members of imported host c
 
 **Start at [§1](#1-the-boundary-is-the-feature)** — the input boundary is the security and behavior contract.
 
-**Needs your ruling:** [OQ-IH2](#OQ-IH2), [OQ-IH3](#OQ-IH3).
+**Needs your ruling:** None.
 
-**Reads with:** [`config-ownership.md`](../reference/config-ownership.md) (user-only host ownership and capture), [`config-target-resolution.md`](../reference/config-target-resolution.md) (host-render provenance), [`pack-system.md`](../reference/pack-system.md) (surface composition), [`config-migration-to-prism.md`](../reference/config-migration-to-prism.md) (existing captured edits), [`jail-inheritance-exclusions-plan.md`](jail-inheritance-exclusions-plan.md) (provisional tree-survey notes for discussion; not a build brief, and requires planner completion after design acceptance).
+**Reads with:** [`config-ownership.md`](../reference/config-ownership.md) (user-only host ownership and capture), [`config-target-resolution.md`](../reference/config-target-resolution.md) (host-render provenance), [`pack-system.md`](../reference/pack-system.md) (surface composition), [`config-migration-to-prism.md`](../reference/config-migration-to-prism.md) (existing captured edits), [`jail-inheritance-exclusions-plan.md`](jail-inheritance-exclusions-plan.md) (completed implementation hand-off; design wins on behavior).
 
 ---
 
@@ -36,9 +36,13 @@ The settled owner constraints are:
 - **Imports are unchanged by default.** An absent key, an empty map, or an empty pointer list preserves today's host import.
 - **The declaration is user-scope only.** Workspace config cannot set, replace, or extend it. Resolve it from user scope directly, never from the merged workspace config. The same rule holds when a jail passes user settings to a nested jail: an inherited user snapshot may carry the user declaration, but a workspace snapshot is never its source.
 - **Only effective user `host_management: none` or unset (`none`) permits a non-empty exclusion.** Under `own`, refuse the explicit exclusion and name the surface and pointers. Explain that host-owned values must be configured through the pack contribution's existing host-versus-jail targeting, or the exclusion removed. Do not infer ownership from the confinement backend.
+- **Known unselected surfaces stay dormant.** Validate every configured target against the shipped surface vocabulary and its ability to read an object host layer. An unknown or incapable target is a configuration error even when its pack is not selected. A known capable target whose pack is not selected has no effect until selected; do not apply it to a similarly named surface.
+- **Missing members are quiet no-ops.** A syntactically valid pointer that encounters a missing member or non-object intermediate changes nothing and emits no warning or summary. The pointer is an exact filter, not a schema assertion; it never guesses another path.
 - **Filter only imported user host bytes.** Do not filter a pack/default/computed/managed/captured layer, a host-render baseline, or in-jail session-home bytes. Do not clear captures or provenance marks.
 - **The host source is read-only input.** Filtering must not write the original host file or copy filtered bytes back to it.
 - **Core knows no vendor setting names.** A pointer expresses the user's choice; `/hooks` has no special meaning to core.
+
+The owner's rationale for the second ruling: “These are just filters acting like filters. If the thing to be filtered out doesn't exist, it won't get filtered out because it's not there anyway.”
 
 The ownership rule already has a security seam: [`HostManagementDeclared`](../../internal/config/hostmanagement.go#L86-L109) reads user scope directly. Workspace config is merged later by [`LoadConfig`](../../internal/config/workspacefile.go), so reading the merged map for this policy would violate the boundary. Host bytes reach composition in [`renderPlannedSurface`](../../internal/entrypoint/packsurfaces.go#L704-L737), after the launcher labels yolo-rendered baselines in [`packhostgrants.go`](../../internal/cli/run/packhostgrants.go#L213-L253). Preserve those boundaries.
 
@@ -60,7 +64,7 @@ The proposed removal behavior is deliberately literal:
 
 - Resolve pointer tokens through objects only. A numeric token is an ordinary object key; array indices and `-` are never traversed.
 - Remove the final object member and its whole value, including null, array, object, or scalar values. Preserve now-empty parent objects.
-- A missing member or non-object intermediate does not trigger a heuristic or a schema-based substitute. Whether that no-match is silent or summarized is [OQ-IH3](#OQ-IH3).
+- A missing member or non-object intermediate is a quiet no-op: no warning, summary, heuristic, or schema-based substitute.
 - Duplicate pointers are one request. An ancestor removal makes its descendants no-ops; declaration order does not affect the result.
 - Malformed pointers and the empty root pointer are configuration errors. An invalid declaration never degrades to an unfiltered import.
 - If active exclusions cannot decode the host bytes as an object, or cannot encode the filtered object using the surface codec, fail closed for that surface/preview. Never pass the unfiltered bytes through after an exclusion was requested.
@@ -70,9 +74,7 @@ The existing [`DropHostProviderKeys`](../../internal/agentcfg/providerkeys.go#L5
 
 ## 3. Target scope and launch flow
 
-Policy resolution uses the user's effective user-scope config, including its user-scope includes and inherited user scope, never the merged workspace map. The workspace declaration is a validation error with a repair pointing to `~/.config/yolo-jail/config.jsonc`. Under `own`, any configured non-empty exclusion refuses before reading host bytes; unset is the same effective `none` value as explicitly setting `none`.
-
-The selected-target rule remains open: [OQ-IH2](#OQ-IH2) asks how to handle a valid surface that is known but not selected, separately from an unknown or incapable target. Do not treat an unavailable target as a successful exclusion or silently apply it to a similarly named surface.
+Targets are checked against the shipped surface vocabulary, including surfaces from unselected packs. Unknown targets and known surfaces that cannot receive an object host layer are configuration errors; a known capable target is dormant when its pack is not selected and applies only when that pack is selected. Never substitute a similarly named surface. The workspace declaration is a validation error with a repair pointing to `~/.config/yolo-jail/config.jsonc`. Under `own`, any configured non-empty exclusion refuses before reading host bytes; unset is the same effective `none` value as explicitly setting `none`.
 
 At launch, deliver only the normalized per-surface exclusion policy needed by this render; never pass `host_management` into the jail. The jail must first honor the existing host-layer delivery report and host-render provenance label. Apply the shared filter only when those bytes are a user host layer, before provider-key filtering and before `captureFromSessionHomes`/the writer. Unsupported delivery and a missing file remain no-host-layer cases. A delivered-but-unreadable source or a filter codec failure remains fail-closed.
 
@@ -108,40 +110,10 @@ Success means an exact user member is absent from both boot composition and a ma
 
 Hook-body copying must not delay or condition the filter. A later bounded assessment may consider only finite explicit source/destination pairs below already-authorized roots, with capped no-follow regular-file reads. It must establish containment, symlink/special-file rejection, file/count/total caps, collision behavior, and a failure remedy. No shell parsing, implicit reads, recursive discovery, new grants, home mounts, or command rewriting; copied scripts are not thereby portable or runnable.
 
-## Open Questions
-
-1. 💬 **OQ-IH2: How should an exclusion target that is not currently selected be handled?**
-
-   The declaration is user-wide, while only selected packs contribute surfaces to this launch. A typo or incapable target must not silently become a different exclusion.
-
-   - **A — Reject every unavailable target.** Require a selected surface that reads an object host layer; fix the selected pack or remove the entry.
-   - **B — Keep known unselected surfaces dormant.** Validate against the shipped surface vocabulary, reject unknown/incapable targets, and activate a known target only when its pack is selected.
-
-   <!-- vantage: question id=OQ-IH2 leaning="B — keep known unselected targets dormant: a user-wide setting can be prepared before selecting that pack, while unknown targets still fail validation." -->
-
-   _Leaning:_ B — keep known unselected targets dormant: a user-wide setting can be prepared before selecting that pack, while unknown targets still fail validation.
-
-   **Answer:**
-
-   > _(empty — fill in when decided)_
-
-2. 💬 **OQ-IH3: How should a syntactically valid pointer that matches no member be reported?**
-
-   Provider versions may omit or rename a key. Filtering must remain exact and must never guess another path.
-
-   - **A — Silent no-op.** Keep imports robust across schema changes, at the cost of making a typo less visible.
-   - **B — Non-fatal summary.** Name the surface and unmatched pointer/count, never host values; keep the launch running.
-
-   <!-- vantage: question id=OQ-IH3 leaning="B — summarize unmatched pointers without values: schema drift stays non-fatal, while a misspelled request is visible." -->
-
-   _Leaning:_ B — summarize unmatched pointers without values: schema drift stays non-fatal, while a misspelled request is visible.
-
-   **Answer:**
-
-   > _(empty — fill in when decided)_
-
 ## Decision Ledger
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | OQ-IH1 | **User config only.** Workspace configuration cannot declare, replace, or extend host-import exclusions. The host-management gate remains a direct read of user scope. | 2026-10-21 | [§1](#1-the-boundary-is-the-feature) | — |
+| OQ-IH2 | **Keep it dormant.** Validate targets against shipped capable surfaces; a known target for an unselected pack remains dormant. Unknown and incapable targets remain validation errors. | 2026-10-21 | [§3](#3-target-scope-and-launch-flow) | — |
+| OQ-IH3 | **Quietly do nothing.** A valid pointer missing a member or crossing a non-object intermediate changes nothing and emits no diagnostic. | 2026-10-21 | [§2](#2-proposed-declaration-and-exact-pointer-contract) | — |

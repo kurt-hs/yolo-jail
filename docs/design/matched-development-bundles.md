@@ -9,7 +9,7 @@ summary: "A build-only development artifact pairs the host launcher with every h
 
 # Build a matched launcher bundle without changing the install
 
-**Status:** 2026-10-21. Owner direction accepted and grounded against `e355367`; implementation remains unbuilt.
+**Status:** 2026-10-21. Owner direction accepted and grounded against `e7b52b944d369432a4a19aff303b0b8dd68860dd`; implementation remains unbuilt.
 
 > **In short.** A launcher and the jail helpers it starts are one build artifact. Developers need a build-only path that produces that pair from one source snapshot and can be invoked directly, without changing the installed launcher, `PATH`, or the source selected by any other launcher.
 
@@ -72,15 +72,28 @@ Development artifacts also carry an explicit development classification in build
 
 ## 3. Build and use sequence
 
-The build-only counterpart to `just install` shares the same source snapshot, stamp calculation, binary ship sets, cross-compilation, completeness checks and bundle assembly. It differs only at publication: it prints the generated launcher's full path and neither installs it nor activates a state-directory bundle. A proposed command is:
+`just build-dev-bundle` is the build-only counterpart to `just install`: it shares the same source snapshot, stamp calculation, binary ship sets, cross-compilation, completeness checks and bundle assembly, then prints the generated launcher's absolute path without installing it or activating a state-directory bundle. The developer may invoke that exact artifact directly:
 
 ```bash
 just build-dev-bundle
-# Run the exact path printed by the build:
-~/.local/share/yolo-jail/dev-bundles/<generation>/bin/yolo -- bash
+/path/printed/by/the/build/bin/yolo -- bash
 ```
 
-The ordinary workflow remains: an installed launcher starts the outer jail; an agent edits the live checkout, builds a matched development bundle, then explicitly invokes that bundle's launcher for nested tests. The checkout itself is never selected by an older installed launcher. `yolo -- bash` against the installed launcher continues to use the installed generation.
+The checkout-resident wrapper is the everyday PATH entry, without requiring that artifact to be an installed `yolo`:
+
+```bash
+# After symlinking scripts/dev-wrapper.sh under a chosen PATH name:
+yolo-dev -- bash
+just dev -- bash
+```
+
+A separate explicit development wrapper lives in the checkout as an executable script. The user places a symlink to it under any chosen name and anywhere on `PATH`, including `yolo-dev` or deliberately `yolo`; no wrapper generator, installed `yolo`, or automatic PATH edit is required. The script follows relative, absolute and multi-hop symlinks to discover its real checkout, independent of the current working directory. It uses that resolved checkout as the build source while preserving the caller's original cwd as the launch workspace; source discovery must never change which workspace the jail runs in.
+
+At each invocation, the wrapper computes the identity of the current bounded intended-source snapshot. If a complete bundle with that identity exists, it reuses it; otherwise it builds one, then `exec`s that bundle's launcher by absolute path with the caller's arguments. Freshness is measured at source capture; there is no promise of an instantaneous snapshot across concurrent edits to multiple files. A failed build never runs an older bundle. Concurrent wrappers serialize publication or reserve distinct immutable outputs, so neither can overwrite a bundle that may be running.
+
+The wrapper never treats `YOLO_REPO_ROOT` as source selection and does not alter the caller's shell or global config. When the variable is present, it removes the selector only from its metadata/build/exec child environments and prints one concise notice that the wrapper ignores the export and it may be removed; it does not disclose the value or host path, and it is silent when the variable is absent. Normal installed and directly invoked bundle launchers retain the actionable refusal for the obsolete selector. The wrapper never starts an installed or stale launcher to build helper halves, invokes no second Go compiler, and performs no recursive host-source reads. When the running wrapper encounters a broken/cyclic link during self-resolution, it reports the failure and repair step where it can. A PATH alias whose chain is already dangling or cyclic cannot start the script at all: the OS reports the pre-execution `ENOENT`/`ELOOP`, so no custom wrapper message is promised. Repair it by replacing the alias with a link to the checkout script, for example `ln -sfn /absolute/path/to/checkout/scripts/dev-wrapper.sh /path/to/yolo-dev` (substitute the chosen checkout and PATH alias). Symlink resolution must work on Linux and macOS without assuming `readlink -f`.
+
+The ordinary workflow remains: an installed launcher starts the outer jail; an agent edits the live checkout and either directly builds/invokes its matched bundle or invokes the checkout-resident wrapper. The wrapper always execs the exact matched launcher by absolute path, so even when the symlink is named `yolo` it cannot recursively select itself. The caller's cwd remains the workspace. `yolo -- bash` against the installed launcher continues to use the installed generation.
 
 Build/package publication happens only after every required binary and flake file is present and validated. For `just install`, prepare the complete matching generation before making it active and install/activate the corresponding launcher-bundle pair with a verifiable identity. Resolve the active installed symlink once to its canonical generation and pin that root for the full launch; no helper or flake consumer resolves the mutable active link again. A launch that races publication must see one complete old pair or one complete new pair, or refuse clearly; it must never mutate bytes mounted by an existing jail. This pairing check also makes a partially failed install detectable on the next invocation.
 
@@ -106,7 +119,8 @@ The design is built when all of the following hold:
 4. The complete artifact works when invoked by path, including nested container launches on a default Mac Podman VM without `/nix` sharing or VM reconfiguration. Container helper mounts remain read-only; macos-user delivery remains scoped and sealed.
 5. Two macos-user launches using bundles A and B in the same workspace retain distinct, immutable guest-bin paths for their full lifetimes; ending either session does not alter or remove the other's staged executables, and no Seatbelt root, grant, account, home or workspace boundary expands.
 6. A later build cannot change an output a running jail has mounted. Failed and concurrent builds cannot expose a partial or cross-paired generation.
-7. `just install`, release packaging, image realization/load, and `packages:` delivery still provide their existing supported behavior using the shared package machinery. The standalone `installPrefix` package remains available for mounted-prefix packaging; removing `guestPrefix` changes the content hash input `imageIdentity` derives from `flake.nix`, but does not change the identity mechanism or image/load path.
+7. A checkout-resident executable script discovers its checkout by resolving its complete symlink chain; users may symlink it to PATH under any name, with no generator, installed launcher, or automatic PATH edit. It uses the real checkout as build source but preserves the caller's cwd as workspace. Linux/macOS resolution handles relative, absolute and multi-hop links portably without `readlink -f`; if named `yolo`, it execs the absolute matched launcher to avoid recursion. `just dev` delegates to the same script/build core. Each invocation reuses only a complete bundle matching the bounded source-capture identity or builds one, then execs with arguments, signals and exit status preserved. Failed builds never run stale output. The wrapper child-scrubs obsolete `YOLO_REPO_ROOT`, only notifying when present without revealing its value; a normal direct launcher still refuses it. A dangling/cyclic PATH alias is rejected by the OS before the wrapper can run; tests assert nonzero with no build/launch, while resolver failures observed after start get custom repair guidance where possible. Document the explicit `ln -sfn /absolute/path/to/checkout/scripts/dev-wrapper.sh /path/to/yolo-dev` repair form.
+8. `just install`, release packaging, image realization/load, and `packages:` delivery still provide their existing supported behavior using the shared package machinery. The standalone `installPrefix` package remains available for mounted-prefix packaging; removing `guestPrefix` changes the content hash input `imageIdentity` derives from `flake.nix`, but does not change the identity mechanism or image/load path.
 
 ## 6. Owner rulings (2026-10-21)
 
@@ -115,6 +129,7 @@ The design is built when all of the following hold:
 | Remove launch-time helper compilation | Container and macos-user launch paths consume prebuilt target helpers; missing helpers refuse instead of invoking a helper build. |
 | Add a build-only counterpart to install | It emits a matched native launcher, target helpers and flake bundle from one source snapshot, including dirty development edits. |
 | Keep installed use and development use separate | The normal installed launcher and PATH remain unchanged; developers invoke the generated launcher explicitly. |
+| Add a checkout-resident PATH-ready development wrapper | Its executable resolves its real path through symlinks, uses that checkout as build source, preserves the caller's cwd for launch, and execs the absolute matched launcher. Users symlink it under any name; `just dev` delegates to the same script. |
 | Make default Mac Podman viable | Deliver the artifact in the VM-shared home path; do not require `/nix` sharing, VM setup, or an installed replacement. |
 | Preserve trust and runtime boundaries | No broader credential/home grants, workspace mutation, writable helper injection, alternate Go implementation, or image/load/package redesign. Keep the standalone mounted-prefix `installPrefix` package; `imageIdentity` continues to hash `flake.nix` and `flake.lock`, so its value naturally follows a flake edit without changing that mechanism. |
 
