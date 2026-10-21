@@ -1,10 +1,18 @@
 package integration
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 )
@@ -54,8 +62,16 @@ func TestTheJailsYoloCarriesItsMatchedBundleStamp(t *testing.T) {
 	if !strings.Contains(hostVersion, "+") || !strings.HasSuffix(hostVersion, ".g"+wantCommit) {
 		t.Errorf("matched version %q does not encode stamped commit %q in its build metadata", hostVersion, wantCommit)
 	}
-	if hostHash, guestHash := versionField(t, hostOutput, "binary sha256: "), versionField(t, r.stdout, "binary sha256: "); hostHash != guestHash {
-		t.Errorf("guest binary sha256 %q does not match paired host binary sha256 %q", guestHash, hostHash)
+	hostHash := versionField(t, hostOutput, "binary sha256: ")
+	wantHostHash, err := binaryFileHash(yoloBin)
+	if err != nil {
+		t.Errorf("hash matched host yolo binary %s: %v", yoloBin, err)
+	} else if hostHash != wantHostHash {
+		t.Errorf("matched host binary sha256 %q does not match host executable %s sha256 %q", hostHash, yoloBin, wantHostHash)
+	}
+	guestHash := versionField(t, r.stdout, "binary sha256: ")
+	if err := matchedGuestBinaryHashError(guestHash, bundleRoot, goruntime.GOARCH); err != nil {
+		t.Error(err)
 	}
 	for _, output := range []struct {
 		name string
@@ -68,6 +84,120 @@ func TestTheJailsYoloCarriesItsMatchedBundleStamp(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestMatchedBundleStampTestUsesPairedLinuxHashAtCallsite(t *testing.T) {
+	_, source, _, ok := goruntime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate versionstamp_test.go to verify the matched-stamp callsite")
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), source, nil, 0)
+	if err != nil {
+		t.Fatalf("parse versionstamp test source: %v", err)
+	}
+	var matchedTest *ast.FuncDecl
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Name.Name == "TestTheJailsYoloCarriesItsMatchedBundleStamp" {
+			matchedTest = function
+			break
+		}
+	}
+	if matchedTest == nil {
+		t.Fatal("matched-stamp integration test is missing")
+	}
+	found := false
+	ast.Inspect(matchedTest.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || len(call.Args) != 3 {
+			return true
+		}
+		function, ok := call.Fun.(*ast.Ident)
+		if !ok || function.Name != "matchedGuestBinaryHashError" {
+			return true
+		}
+		guestHash, guestOK := call.Args[0].(*ast.Ident)
+		bundleRoot, bundleOK := call.Args[1].(*ast.Ident)
+		arch, archOK := call.Args[2].(*ast.SelectorExpr)
+		if !guestOK || guestHash.Name != "guestHash" || !bundleOK || bundleRoot.Name != "bundleRoot" || !archOK {
+			return true
+		}
+		archPackage, packageOK := arch.X.(*ast.Ident)
+		found = packageOK && archPackage.Name == "goruntime" && arch.Sel.Name == "GOARCH"
+		return true
+	})
+	if !found {
+		t.Fatal("matched-stamp integration test must compare the guest hash with bundleRoot/bin/linux-<runtime.GOARCH>/yolo")
+	}
+}
+
+func TestMatchedGuestBinaryHashUsesPairedLinuxHelper(t *testing.T) {
+	root := t.TempDir()
+	hostPath := filepath.Join(root, "bin", "yolo")
+	if err := os.MkdirAll(filepath.Dir(hostPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hostPath, []byte("native host executable A"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hostHash, err := binaryFileHash(hostPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongGuestHash := fmt.Sprintf("%x", sha256.Sum256([]byte("wrong guest executable C")))
+
+	for arch, helperBytes := range map[string]string{
+		"amd64": "paired Linux helper B",
+		"arm64": "paired Linux helper B2",
+	} {
+		t.Run(arch, func(t *testing.T) {
+			pairedPath := filepath.Join(root, "bin", "linux-"+arch, "yolo")
+			if err := os.MkdirAll(filepath.Dir(pairedPath), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(pairedPath, []byte(helperBytes), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			pairedHash, err := binaryFileHash(pairedPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pairedHash == hostHash || pairedHash == wrongGuestHash || hostHash == wrongGuestHash {
+				t.Fatalf("fixture hashes must be distinct: host=%s paired=%s wrong guest=%s", hostHash, pairedHash, wrongGuestHash)
+			}
+			if err := matchedGuestBinaryHashError(pairedHash, root, arch); err != nil {
+				t.Fatalf("paired helper hash rejected: %v", err)
+			}
+			if err := matchedGuestBinaryHashError(wrongGuestHash, root, arch); err == nil || !strings.Contains(err.Error(), pairedPath) {
+				t.Fatalf("wrong guest hash error = %v, want rejection naming paired helper %s", err, pairedPath)
+			}
+		})
+	}
+}
+
+func matchedGuestBinaryHashError(guestHash, bundleRoot, arch string) error {
+	pairedYolo := filepath.Join(bundleRoot, "bin", "linux-"+arch, "yolo")
+	wantHash, err := binaryFileHash(pairedYolo)
+	if err != nil {
+		return fmt.Errorf("hash paired Linux yolo %s: %w", pairedYolo, err)
+	}
+	if guestHash != wantHash {
+		return fmt.Errorf("guest binary sha256 %q does not match paired Linux yolo %s sha256 %q", guestHash, pairedYolo, wantHash)
+	}
+	return nil
+}
+
+func binaryFileHash(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	digest := sha256.New()
+	if _, err := io.Copy(digest, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
 }
 
 func versionField(t *testing.T, output, label string) string {
