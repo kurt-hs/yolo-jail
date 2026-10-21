@@ -120,45 +120,33 @@
           + "flake.lock ${builtins.hashFile "sha256" ./flake.lock}\n"
         );
 
-      # ── The build stamp: the version and commit every Go build carries ───
-      # The owner's ruling (2026-10-16, OQ-DA2 in docs/plans/downstream-asks.md):
-      # every build's version string carries the git hash, nix builds included.
-      # scripts/build-go.sh and `just install` stamp
-      # `internal/version.buildVersion` (raw `git describe`) and `GitCommit` via
-      # -ldflags; the derivations below stamp the SAME two variables from this
-      # one value, so a nix-built yolo no longer reports `commit: unknown`.
+      # ── The build stamp carried into source-built Go binaries ────────────
+      # `scripts/build-go.sh` and `just install` stamp the same fields through
+      # linker flags, and staged bundles carry them in yolo-build-stamp.json.
+      # Version/commit describe the source revision; snapshotIdentity/buildKind
+      # distinguish a frozen development build from other binaries without
+      # changing image identity or the image/load/package boundaries.
       #
       # Two sources, first match wins:
       #
-      #   1. A STAMP FILE, `yolo-build-stamp.json` ({"version", "commit"}) at
-      #      the flake root. scripts/stage-source-bundle.sh writes it into every
-      #      bundle it stages (`just install`, goreleaser, the Homebrew formula),
-      #      and installPrefix copies it into the prefix's own bundle, because a
-      #      bundle is a `path:` flake with no git metadata. It is the same
-      #      VERSION/COMMIT the bundle's prebuilt binaries were stamped with, so
-      #      the flake states what it ships. Never commit one at the repo root:
-      #      a git flake sees tracked files only, and a tracked stamp would name
-      #      a commit that is not the one being built (.gitignore lists it).
+      #   1. A STAMP FILE, `yolo-build-stamp.json` at the flake root. The shared
+      #      bundle pipeline writes its version/commit and, when present, its
+      #      snapshotIdentity/buildKind. A copied bundle is a `path:` flake with
+      #      no git metadata, so this is how its binaries and flake stay paired.
+      #      Never commit one at the repo root: a git flake sees tracked files
+      #      only, and a tracked stamp would name a different build.
       #   2. THE FLAKE'S OWN GIT METADATA, when the source is a git checkout
       #      (`self.rev`, or `self.dirtyRev` for uncommitted work). Nix has the
       #      commit but not the tags, so the version cannot be `git describe`'s
       #      `<tag>+<n>.g<hash>`: it is `<release>+g<hash>[.dirty]`, the release
-      #      being the newest `## [x.y.z]` heading in CHANGELOG.md (which
-      #      `just release` writes before it tags) and the distance `<n>` left
-      #      out because nothing nix can read knows it. The hash is 12 hex
-      #      digits: long enough that version.SourceSkew's `git rev-parse` of
-      #      GitCommit never hits an ambiguous prefix.
+      #      being the newest `## [x.y.z]` heading in CHANGELOG.md and the
+      #      distance `<n>` left out because nix cannot read it. The hash is 12
+      #      hex digits, long enough that version.SourceSkew's `git rev-parse`
+      #      of GitCommit never hits an ambiguous prefix.
       #
-      # Neither source applies (a `path:` flake of a checkout copy with no
-      # stamp): both strings are empty, the binary is unstamped, as before.
-      #
-      # THE COST, chosen deliberately: the stamp is per commit, so `goBinaries`
-      # (and guestPrefix) rebuild on EVERY commit, docs-only ones included,
-      # where they used to rebuild only when `goSrc` moved. A dirty tree keeps
-      # one stamp (`dirtyRev` is HEAD's), so edit-and-rebuild loops cost what
-      # they did. The IMAGE does not read this value — only the Go binaries'
-      # derivations do, and `imageIdentity` above hashes flake.nix and
-      # flake.lock alone — so no commit gains an image rebuild or reload.
+      # Neither source applies (a `path:` flake with no stamp): metadata fields
+      # are empty, as before. Snapshot identity and build kind are optional for
+      # ordinary Nix builds.
       buildStamp =
         let
           stampFile = ./. + "/yolo-build-stamp.json";
@@ -179,12 +167,16 @@
         if builtins.pathExists stampFile then {
           version = fromFile.version or "";
           commit = fromFile.commit or "";
+          snapshotIdentity = fromFile.snapshotIdentity or "";
+          buildKind = fromFile.buildKind or "";
         }
         else if rev != "" then {
           version = "${release}+g${hash}" + (if dirty then ".dirty" else "");
           commit = hash;
+          snapshotIdentity = "";
+          buildKind = "";
         }
-        else { version = ""; commit = ""; };
+        else { version = ""; commit = ""; snapshotIdentity = ""; buildKind = ""; };
     in
     flake-utils.lib.eachDefaultSystem (system:
       let
@@ -286,12 +278,13 @@
         # method, two outcomes decided purely by what is on disk — this is what
         # makes "two files and a binary" build the same image the source tree
         # does.
-        # The -ldflags both compiling derivations stamp: buildStamp (top of this
-        # file) into the same two variables scripts/build-go.sh sets, shell-quoted
-        # because a bundle's stamp file is data, not code.
+        # The -ldflags stamp the normalized buildStamp fields into the Go
+        # binaries, including optional snapshot identity and build kind.
         goStampLdflags = pkgs.lib.escapeShellArg (
           "-X github.com/mschulkind-oss/yolo-jail/internal/version.buildVersion=${buildStamp.version}"
-          + " -X github.com/mschulkind-oss/yolo-jail/internal/version.GitCommit=${buildStamp.commit}");
+          + " -X github.com/mschulkind-oss/yolo-jail/internal/version.GitCommit=${buildStamp.commit}"
+          + " -X github.com/mschulkind-oss/yolo-jail/internal/version.SnapshotIdentity=${buildStamp.snapshotIdentity}"
+          + " -X github.com/mschulkind-oss/yolo-jail/internal/version.BuildKind=${buildStamp.buildKind}");
         # The derivation's own `version`, which lands in its store name: the
         # stamp, or 0-dev when it is empty or holds a character a store name
         # refuses (a stamp file is free text).
@@ -1335,10 +1328,10 @@
         # `goSrc` OUT of the image derivation: a commit touching only cmd/ or
         # internal/ no longer moves .#ociImage's store path, so it costs no image
         # rebuild and no `podman load` (docs/reference/image-staging-vs-baking.md §5).
-        # This attr stays because it is still the thing that gets mounted whenever
-        # the resolved flake source has no prebuilt bin/linux-<arch> of its own —
-        # a live checkout — where the launcher realizes it with
-        # `nix build .#installPrefix` (image.BuildJailPrefix).
+        # This attr stays as the standalone mounted-prefix package for packaging
+        # and validation. Runtime launchers consume the complete helper bundle
+        # paired with themselves; they never build this attr to fill a missing
+        # helper set.
         #
         # THE SECURITY DELTA, stated rather than slid past: what executes in the
         # jail — pid1 included — used to be immutable image content addressed by
@@ -1385,19 +1378,16 @@
           mkdir -p $out/opt/yolo-jail/bin \
                    $out/opt/yolo-jail/share/yolo-jail/bin/linux-${goArch}
 
-          # The self-contained flake bundle — "two files and a binary" — that
-          # a nested `yolo` rebuilds into the very image it is running from.
-          # flake.nix hits its own prebuilt short-circuit
-          # (builtins.pathExists ./bin/linux-<arch>), so this bundle reproduces
-          # THIS image without a Go toolchain — and, since the prefix is mounted,
-          # it also gives a nested launch a bin/linux-<arch> to mount straight
-          # through, so no nested jail ever compiles Go to get its own prefix.
+          # The self-contained flake bundle — "two files and a binary" — lets
+          # a nested yolo rebuild the image that its mounted prefix runs. The
+          # prebuilt short-circuit copies the helpers in this bundle, so the
+          # nested launch uses its paired binaries rather than compiling them.
           cp ${./flake.nix} $out/opt/yolo-jail/share/yolo-jail/flake.nix
           cp ${./flake.lock} $out/opt/yolo-jail/share/yolo-jail/flake.lock
           # The bundle's build stamp (buildStamp at the top of this file): the
           # copied bundle is a `path:` flake with no git metadata, so this file
-          # is how it keeps knowing the version and commit its binaries carry.
-          ${pkgs.lib.optionalString (buildStamp.version != "" || buildStamp.commit != "") ''
+          # carries the version, commit, and optional snapshot/build identity.
+          ${pkgs.lib.optionalString (buildStamp.version != "" || buildStamp.commit != "" || buildStamp.snapshotIdentity != "" || buildStamp.buildKind != "") ''
             cp ${builtins.toFile "yolo-build-stamp.json" (builtins.toJSON buildStamp)} \
               $out/opt/yolo-jail/share/yolo-jail/yolo-build-stamp.json
           ''}
@@ -1412,73 +1402,14 @@
           done
         '';
 
-        # ── The macos-user GUEST's in-jail binaries (OQ-DP8) ────────────────
-        # docs/design/declaration-parity.md OQ-DP8, ruled 2026-09-28: "if you
-        # would have run it in the jail container, you run it on the guest." A
-        # macos-user launch has no image, so the in-jail binaries a declared
-        # `jail_daemon.cmd` names are built for DARWIN and staged into the
-        # sandbox's root-owned prefix (internal/macosuser.GuestBinDir) beside the
-        # `yolo` that backend already stages for its bootstrap. They never reach
-        # a host PATH, so the host ship set stays {yolo}.
-        #
-        # guestBinaries IS THE GUEST SUBSET, and it is a subset of shippedBinaries
-        # on purpose: only what a guest actually RUNS. yolo-jaild (the supervisor
-        # and every in-jail daemon), and the three loophole clients whose
-        # loopholes run on a Mac: yolo-serial (the serial loophole), yolo-ps
-        # (host-processes) and yolo-log (macos-log). `yolo` is not here — the sandbox self-execs the host's
-        # own darwin yolo, staged by the backend — and neither is yolo-entrypoint
-        # (the guest bootstrap is `yolo internal darwin-bootstrap`) nor
-        # yolo-cglimit and yolo-journalctl, whose loopholes declare
-        # `platforms: ["linux"]`. Pinned against scripts/stage-source-bundle.sh's
-        # GUEST_BINARIES and macosuser.GuestBinaries by
-        # internal/macosuser/guestbundle_test.go.
-        #
-        # guestPrefix has the same prebuilt short-circuit as goBinaries: a bundle
-        # that ships ./bin/darwin-<arch> (stage-source-bundle.sh, Homebrew, the
-        # release archive) is copied, and a live checkout compiles the subset from
-        # goSrc with GOOS=darwin. The macos-user launch builds this only when it
-        # has a jail daemon to run, or carries the endpoint of a client above, and
-        # the resolved flake source ships no prebuilt dir holding every name here
-        # (image.BuildGuestPrefix). The prebuilt branch asks only whether the dir
-        # EXISTS, so a bundle whose dir lacks a name would fail at that name's cp:
-        # the launch refuses such a bundle before building (internal/cli's
-        # resolveGuestBinaries), naming the restage. goArch is the jail's arch,
-        # which the darwin→linux mapping above preserves, so it is also the Mac's.
+        # The macos-user GUEST's in-jail binaries (OQ-DP8) are a subset of the
+        # Linux ship set: only what a guest actually RUNS. `yolo-jaild` is the
+        # supervisor and every in-jail daemon; the Mac loophole clients are
+        # `yolo-serial`, `yolo-ps` and `yolo-log`. `yolo` is staged from the
+        # running host binary, and neither the Linux entrypoint nor Linux-only
+        # loophole clients belong in the guest set. The canonical list remains
+        # pinned against scripts/stage-source-bundle.sh and macosuser.GuestBinaries.
         guestBinaries = [ "yolo-jaild" "yolo-serial" "yolo-ps" "yolo-log" ];
-        guestPrebuiltDir = ./. + "/bin/darwin-${goArch}";
-        guestPrefix =
-          if builtins.pathExists guestPrebuiltDir then
-            pkgs.runCommand "yolo-jail-guest-prebuilt" { } ''
-              mkdir -p $out/bin
-              for name in ${builtins.concatStringsSep " " guestBinaries}; do
-                cp ${guestPrebuiltDir}/$name $out/bin/$name
-                chmod +x $out/bin/$name
-              done
-            ''
-          else pkgs.stdenv.mkDerivation {
-            pname = "yolo-jail-guest";
-            version = goDrvVersion;
-            src = goSrc;
-            nativeBuildInputs = [ pkgs.go ];
-            buildPhase = ''
-              runHook preBuild
-              export HOME=$TMPDIR
-              export GOCACHE=$TMPDIR/go-cache
-              export GOFLAGS=''${GOFLAGS:-}
-              export CGO_ENABLED=0
-              export GOOS=darwin
-              export GOARCH=${goArch}
-              [ -d vendor ] && export GOFLAGS="-mod=vendor $GOFLAGS" || export GOPROXY=off
-              mkdir -p $out/bin
-              for name in ${builtins.concatStringsSep " " guestBinaries}; do
-                echo "go build $name -> $out/bin/$name (darwin/${goArch})"
-                go build -trimpath -ldflags ${goStampLdflags} -o "$out/bin/$name" "./cmd/$name"
-              done
-              runHook postBuild
-            '';
-            dontInstall = true;
-            dontFixup = true;
-          };
 
         # ── What the IMAGE bakes for the mounted prefix: NAMES ONLY ────────
         # /bin/<name> → /opt/yolo-jail/bin/<name>, one symlink per shipped
@@ -2173,19 +2104,10 @@
         # cross-compiled with no Linux builder. Buildable in-jail today to
         # prove the channel; baked into the image at Stage 10/11.
         packages.goBinaries = goBinaries;
-        # The install prefix (/opt/yolo-jail bin + share bundle) as a standalone
-        # package: builds in seconds off cached goBinaries, so tests and humans
-        # can assert the exe-relative layout (real-file bin/,
-        # share/yolo-jail/flake.nix, bin/linux-<arch>/) without streaming a full
-        # image. Since the prefix is MOUNTED rather than baked, this is also what
-        # the run path realizes (image.BuildJailPrefix → `nix build
-        # .#installPrefix`) whenever the resolved flake source ships no prebuilt
-        # bin/linux-<arch> of its own — i.e. a live checkout.
+        # The install prefix is a standalone mounted-prefix package, separate
+        # from the OCI image. It preserves the executable-relative flake bundle
+        # and Linux helper layout for packaging and validation.
         packages.installPrefix = installPrefix;
-        # The macos-user guest's darwin in-jail binaries (guestBinaries above), as
-        # $out/bin/<name>. Realized by image.BuildGuestPrefix only when the
-        # resolved flake source ships no prebuilt bin/darwin-<arch> of its own.
-        packages.guestPrefix = guestPrefix;
         # The /lib symlink farm alone — buildable in seconds, so tests and
         # humans can assert lib discovery (e.g. that a "foo.dev" package
         # spec still lands libfoo.so in /lib) without building an image.

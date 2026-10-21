@@ -64,9 +64,13 @@ the other ways to install yolo, and the first launch.
 yolo builds each jail from its *flake bundle* — [`flake.nix`](flake.nix), its lockfile and the
 prebuilt in-jail binaries — which it finds beside its own binary, never in your working directory.
 Homebrew, a [release archive](https://github.com/mschulkind-oss/yolo-jail/releases) and the
-from-source install ship one. `go install` and `pipx install yolo-jail` (or
-`uvx yolo-jail`) ship the binary alone, so they need a checkout named by
-`YOLO_REPO_ROOT`: [details](userguide/getting-started.md#other-ways-to-install).
+from-source install ship a complete bundle. `go install` and `pipx install yolo-jail` (or
+`uvx yolo-jail`) ship only the binary and are not standalone jail-launch channels.
+For checkout development, `just dev` builds and runs a matched launcher without changing the
+installed command. You can also symlink [`scripts/dev-wrapper.sh`](scripts/dev-wrapper.sh) under
+any name on your PATH, including `yolo`; it always execs the matching launcher by absolute path
+and keeps your current directory as the workspace. Remove `YOLO_REPO_ROOT` from your shell
+configuration: it no longer selects a launch source. See [development from source](userguide/getting-started.md#from-source).
 
 ### From source
 

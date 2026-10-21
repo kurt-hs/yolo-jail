@@ -14,18 +14,18 @@ self-update; replacing only the host executable is not a complete update.
 |---|---|---|
 | From source (`just deploy`) | Explicit Git check | `git pull --ff-only`, then `just deploy` |
 | Homebrew | Background or explicit GitHub release check | `HOMEBREW_NO_INSTALL_CLEANUP=1 brew upgrade yolo-jail`, followed by version verification |
-| `go install` | Background or explicit GitHub release check | Refused: update the binary and `YOLO_REPO_ROOT` checkout together |
-| pipx / uv tool | Background or explicit GitHub release check | Refused for the same binary/bundle split |
+| `go install` | Background or explicit GitHub release check | Refused: binary-only install has no jail bundle; install a complete bundle instead |
+| pipx / uv tool | Background or explicit GitHub release check | Refused for the same missing-bundle reason |
 | Release archive | Background or explicit GitHub release check | Prints the release download link |
 
 Homebrew and from-source installs are self-contained: their update path replaces
 both the host launcher and the flake bundle that supplies the jail binaries.
-The Go and Python package channels contain only the host binary. Their launches
-therefore depend on a separate checkout selected by `YOLO_REPO_ROOT`; replacing
-only the binary can pair a new launcher with an old entrypoint and is refused.
-For the same reason, a Homebrew or source update is not offered when an explicit
-`YOLO_REPO_ROOT` selects a different checkout. Update that checkout and binary
-together, or unset the override to use the installation's own bundle.
+The Go and Python package channels contain only the host binary, so they cannot
+launch a jail by themselves. Install a complete bundle through Homebrew, a release
+archive, or `just install`; `YOLO_REPO_ROOT` no longer supplies the missing launch
+source. Remove it from your shell configuration. Checkout development instead uses
+`just dev` or a PATH symlink to `scripts/dev-wrapper.sh`, which builds and invokes
+a matched launcher without changing the installed command.
 
 Neither complete update deletes what running jails use. A launch bind-mounts
 its jail binaries and flake bundle from the installation it ran from: for

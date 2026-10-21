@@ -400,12 +400,14 @@ export PATH="$HOME/.local/opt/yolo-jail:$PATH"   # add this line to your shell p
 The archive holds `yolo` and a `share/` folder beside it. Keep them together: move the whole folder,
 never `yolo` alone.
 
-**Binary-only channels.** With `go install`, pipx or uvx, the first launch stops with
-"Cannot find yolo-jail repo root". Either switch to a channel marked Yes, or clone the repository and
-point yolo at the clone with `export YOLO_REPO_ROOT=/path/to/yolo-jail`, in your shell profile to keep
-it. Running `yolo` from inside the clone is not enough on its own. On a Mac with Podman, a clone named
-this way is also refused unless the Podman Machine was created sharing `/nix`; see
-[the live-checkout rule](guides/macos.md#running-a-live-checkout-on-podman).
+**Binary-only channels.** `go install`, pipx and uvx contain no jail bundle, so they are not standalone
+launch channels; install from Homebrew or a release archive, or use the complete bundle produced by
+`just install`. For yolo development, clone the repository and run `just dev`; it builds and execs a
+matched launcher from that checkout. You may symlink `scripts/dev-wrapper.sh` to any name on your
+PATH instead. `YOLO_REPO_ROOT` no longer selects a launch source, so remove it from your shell
+configuration. A wrapper alias whose link is dangling or cyclic fails before its script can run;
+replace it with `ln -sfn /absolute/path/to/yolo-jail/scripts/dev-wrapper.sh /path/to/yolo-dev`, using
+your checkout and chosen PATH name.
 
 ## Step 4: First launch
 
@@ -564,8 +566,8 @@ yolo update             # install it the same way yolo was installed
 `yolo update` runs `brew upgrade yolo-jail` for a Homebrew install. For a from-source install it
 pulls the clone yolo was built from and runs `just deploy` there. For a release archive it prints the
 download link: unpack the new archive over the old folder, after exiting your running jails, because
-that replaces the programs they were started from. With `go install`, pipx or uvx, update the binary
-and the clone `YOLO_REPO_ROOT` names together.
+that replaces the programs they were started from. Binary-only channels do not carry the jail bundle;
+replace them with a complete installation rather than pairing them with a checkout override.
 
 From source, `yolo update --autostash` sets aside changes you have not committed and puts them back
 afterwards. If you moved or re-cloned the repository, `yolo update --from <clone>` updates from the

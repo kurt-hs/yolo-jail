@@ -1,6 +1,7 @@
 package entrypoint
 
 import (
+	"os"
 	"path/filepath"
 	"regexp"
 	"testing"
@@ -15,14 +16,13 @@ var (
 
 // TestGuestSetAgreesAcrossFlakeAndBundleAndIsASubsetOfTheShipSet pins the darwin in-jail set a
 // macos-user guest runs (bin/darwin-<arch>, docs/design/declaration-parity.md OQ-DP8) across the
-// two files that build it: flake.nix's guestPrefix (a checkout) and the bundle script (Homebrew,
-// the release archive, `just install` on a Mac). A name in one and not the other is a guest
-// that has its daemon binary from one install path and not the other. Every guest name must
+// two shared binary lists: flake.nix's guestBinaries and the bundle script's GUEST_BINARIES. A
+// name in one and not the other is a guest that a shipped bundle cannot run. Every guest name must
 // also be a SHIPPED name — the guest runs the same program a container does, built for another
 // OS — and `yolo` must never be in it: the sandbox self-execs the host's own darwin yolo, and a
 // second copy in the guest dir would be two answers to "which yolo". The Go spelling,
-// macosuser.GuestBinaries, is pinned to these in internal/macosuser (guestbundle_test.go),
-// which this package cannot import.
+// macosuser.GuestBinaries, is pinned to these in internal/macosuser (guestbundle_test.go), which
+// this package cannot import.
 func TestGuestSetAgreesAcrossFlakeAndBundleAndIsASubsetOfTheShipSet(t *testing.T) {
 	root := repoRoot(t)
 	flakeGuest := parseShipList(t, filepath.Join(root, "flake.nix"), guestNixListRe)
@@ -40,7 +40,7 @@ func TestGuestSetAgreesAcrossFlakeAndBundleAndIsASubsetOfTheShipSet(t *testing.T
 	for name := range bundleGuest {
 		if !flakeGuest[name] {
 			t.Errorf("%q is staged into bin/darwin-<arch> but not in flake.nix's guestBinaries, "+
-				"so a checkout's guestPrefix would lack it", name)
+				"so the flake's guest set and shipped bundle would disagree", name)
 		}
 	}
 	if flakeGuest["yolo"] || bundleGuest["yolo"] {
@@ -48,5 +48,15 @@ func TestGuestSetAgreesAcrossFlakeAndBundleAndIsASubsetOfTheShipSet(t *testing.T
 	}
 	if !flakeGuest["yolo-jaild"] {
 		t.Error("yolo-jaild is not in the guest set, so no jail daemon can run on macos-user")
+	}
+}
+
+func TestFlakeDoesNotExportAGuestBuildFallback(t *testing.T) {
+	flake, err := os.ReadFile(filepath.Join(repoRoot(t), "flake.nix"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if regexp.MustCompile(`(?m)^\s*packages\.guestPrefix\s*=`).Match(flake) {
+		t.Fatal("flake.nix exports guestPrefix; macos-user must use the paired Darwin binaries in its selected bundle")
 	}
 }

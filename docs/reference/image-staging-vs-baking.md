@@ -25,16 +25,9 @@ summary: "How a jail gets its image and its own binaries: the image bakes nixpkg
 
 # Image delivery — what the image bakes, and what a launch mounts in
 
-**Status:** verified 2026-10-01 against `d4e435a3`, the whole doc. The two macOS delivery
-arms were **measured at their launch call site on 2026-09-25**, both passing at `22011184` (Apple
-Container on an arm64 Mac, Podman Machine on an Intel runner) — see
-[Archive destinations](#archive-destinations). The rootless store naming of issue #47 is
-measured by CI's rootless runners only, which a nested jail cannot stand in for
-([the store the copy writes](#the-store-the-copy-writes)). The sections on [what a `packages` entry names](#what-a-packages-entry-names),
-[when no flake is found](#when-no-flake-is-found), [which channels ship a
-flake](#which-channels-ship-a-flake) and [the first load](#the-first-load) were added on
-2026-10-16, checked against `8e65f3444`. UNMEASURED: a dotted `packages` entry on a `macos-user`
-launch.
+**Status:** historical image-delivery measurements below retain their original dates and
+receipts. The launcher-source and helper-delivery guidance was migrated on 2026-10-21 against
+the matched-bundle candidate; this edit does not claim a runtime or native-macOS verification.
 
 A container jail runs on two things a launch assembles separately. The **image** is a nix-built
 OCI image holding nixpkgs tools, the FHS link farm and `/etc` — and, of yolo's own code, nothing
@@ -51,7 +44,7 @@ it builds contains none of them.
 | Component | Lives in |
 | :--- | :--- |
 | Image derivations, the install prefix, the name-only links, the image identity | `flake.nix` (`mkOciImage`, `installPrefix`, `jailPrefixLinks`, `imageIdentity`, `goSrc`, `shippedBinaries`) |
-| Build, failure report, content ref, GC roots | `internal/image` (`AutoLoadImage`, `buildFailureReport`, `JailImageRef`, `BuildJailPrefix`, `RegisterImageRoot`, `RegisterPrefixRoot`) |
+| Image build, failure report, content ref, GC roots | `internal/image` (`AutoLoadImage`, `buildFailureReport`, `JailImageRef`, `RegisterImageRoot`) |
 | Layer-aware delivery: the copier, the copy, its retry and report | `internal/image` (`BuildImageCopier`, `copyArgv`, `copyImageWithRetry`, `retryWouldHelp`, `ReadLayerInventory`, `ReportFor`, `PresentLayerDigests`) |
 | Destinations, and the namespace a store write runs in | `internal/image` (`ContainersStorageDest`, `OCILayoutDest`, `deliverViaArchive`, `StoreWritePrefix`, `ReadPodmanStoreFacts`, `StoreWriteNote`) |
 | The delta archive and Apple Container's delivery record | `internal/image` (`newDeliveryWorkDir`, `seedPlaceholders`, `removePlaceholders`, `tarLayoutConsuming`, `presentInImage`, `writeDeliveryRecord`, `recordedPresentDigests` in `deltaarchive.go`); `internal/paths` (`ImageDeliveryDir`); `internal/prune` (`PruneImageDelivery`) |
@@ -134,15 +127,15 @@ every declared package is baked into the image, or the image is built with none 
 the jail links them from the mounted nix store. Never a mixture: a package both baked and
 staged silently runs the baked copy, so the unit of the choice is the launch.
 
-**The flake is chosen by name, never by the working directory.** Three sources, in order:
-`YOLO_REPO_ROOT`, a bundle beside the running binary, the bundle `just install` staged. Every
-container launch prints which one it took before anything expensive runs.
+**The flake is selected by the running launcher, never by the working directory.** A complete
+adjacent bundle is authoritative; a binary-only installed launcher can use only an identity-matched
+installed generation. `YOLO_REPO_ROOT` is retired, and the launcher refuses it. Every container
+launch prints the selected bundle before staging.
 
-**The two halves deploy on different cadences, and a launch refuses when they provably
-disagree.** The jail's `yolo-entrypoint` is built and mounted from the resolved flake source on
-every launch; the host `yolo` changes only when a human reinstalls it. A commit that moves a
-host↔jail contract therefore skews the machine by default, and the launch refuses before the
-build rather than failing three boot steps deep.
+**Development launchers and helpers come from one snapshot.** `just build-dev-bundle` emits a
+matched launcher and complete helper bundle; `just dev` reuses a matching complete bundle or builds
+one, then invokes it by absolute path. Normal installed `yolo` remains unchanged, and a failed
+development build never runs stale output.
 
 ## The mounted prefix
 
@@ -176,10 +169,11 @@ alone, and the in-jail result is identical because the resolver only ever looks 
 `<exeDir>/../share/yolo-jail`. Both are emitted `:ro`, which Apple Container honors from
 `container` 1.1.0 and ignored below it ([`backend-parity.md` §5.3](../design/backend-parity.md#53-the-premise-under-defects-11-and-13-was-measured-and-inverted)).
 
-The prefix is resolved **before** the image build. A live checkout has to compile it, and
-discovering that after streaming a multi-gigabyte image would put the cheap failure behind the
-expensive success; and a launch that cannot produce the mount has no pid1 to run, so it refuses
-before making a container at all.
+The selected helper bundle is resolved **before** the image build. A launch uses the complete
+prebuilt set paired with its running launcher; it never compiles missing Linux helpers as part of
+launch orchestration. If the bundle is incomplete, the launch refuses before creating a container.
+Checkout development builds a matched artifact first with `just build-dev-bundle`, or invokes the
+same build-and-exec path through `just dev`.
 
 ### Where the binaries come from
 
@@ -190,89 +184,44 @@ under `bin/darwin-<arch>/` (below). `scripts/stage-source-bundle.sh` produces on
 the binary, and `installPrefix` bakes one *into* the mounted prefix. Not a checkout: a checkout
 has the flake files and no `bin/`.
 
-`resolveJailPrefix` has two arms and no policy beyond them:
+`resolveJailPrefix` uses the complete Linux helper set in the selected launcher bundle. It checks
+the expected executables before staging and refuses an incomplete set with the build/install next
+step; it does not run a Nix helper build during a jail launch. Normal installed commands use their
+complete adjacent or identity-matched installed bundle. Developers use `just build-dev-bundle` and
+invoke the printed absolute launcher path, or use `just dev`, which builds or reuses the current
+matched artifact and execs it from the caller's workspace.
 
-- **Prebuilt.** The resolved flake source carries `bin/linux-<arch>/yolo-entrypoint`. The mount
-  sources are that directory and the source itself. Every installed bundle takes this arm, and so
-  does a nested jail — its flake source is the prefix mounted at `/opt/yolo-jail/share/yolo-jail`,
-  which carries prebuilt binaries by construction, so a nested jail never compiles Go for this.
-  The existence check is on `yolo-entrypoint` specifically, not on the directory: an empty or
-  half-staged `bin/linux-<arch>` is the failure that would otherwise mount cleanly and die at exec.
-- **Built.** A live checkout ships none, so the launch runs `nix build .#installPrefix`
-  (`BuildJailPrefix`) with a durable out-link keyed by the *source tree*, so rebuilding the same
-  checkout replaces one link rather than accumulating one per build. A failed build refuses the
-  launch — the image no longer carries a `yolo-entrypoint`, so there is nothing to fall back on.
-  The prefix closure is then GC-rooted host-side under its own roots directory
-  (`RegisterPrefixRoot`): held by *liveness* — is a container executing from it — and deliberately
-  not under the image roots, which are reaped on age unless a container is running on their image
-  ([`OQ-LS4`](image-retention.md#why-its-this-way)). The one test that decides which policy a root
-  gets is whether losing it can cost only a rebuild; a running jail losing the file behind its own
-  pid1 cannot.
+The `installPrefix` flake package remains a standalone mounted-prefix package. It copies shipped
+binaries and the flake files into the executable-relative layout for packaging and validation; it
+is not a launch-time fallback. Its `goBinaries` input may still compile source when explicitly
+building a source flake without prebuilt binaries, but the runtime launcher consumes a complete
+paired bundle.
 
-The launch prints which arm it took, beside the flake-source line:
+The `macos-user` guest similarly stages only the needed Darwin binaries from the selected bundle.
+The `guestBinaries` list remains the canonical subset shared with bundle packaging and
+`macosuser.GuestBinaries`; the flake no longer exports a `guestPrefix` build fallback. A missing
+guest member refuses before privileged staging instead of compiling it during launch. The host
+ship set remains `{yolo}` because guest binaries stay inside the selected bundle and the scoped
+guest staging directory.
 
-```console
-Flake source: /home/me/.local/share/yolo-jail/flake-bundle (flake bundle staged by `just install`)
-Jail binaries: /home/me/.local/share/yolo-jail/flake-bundle/bin/linux-amd64 (prebuilt, from the flake bundle)
-```
-
-In the flake, `goBinaries` is the same two-way switch: when `./bin/linux-<arch>` exists in the
-flake source it copies those binaries; otherwise it compiles every `cmd/*` from the `goSrc`
-fileset with the host Go toolchain, `CGO_ENABLED=0 GOOS=linux`, `-trimpath`, and no version
-stamp. That cross-compile is why the prefix build needs no macOS offload: on darwin
-`installPrefix` is a darwin derivation producing Linux binaries, unlike `.#ociImage`, which is a
-Linux image and does have a builder-container path. `installPrefix` then *copies* the shipped
-binaries into `opt/yolo-jail/bin/` — not symlinks, because `os.Executable` would resolve a
-symlink through to `goBinaries`' own store path, which has no `share/yolo-jail` sibling and would
-make the bundle undiscoverable — and copies them a second time into
-`share/yolo-jail/bin/linux-<arch>/`, which is what gives a nested jail its prebuilt arm.
-
-**The `macos-user` guest's binaries take the same two-way switch.** That backend has no image and
-no container, but it runs a declared jail daemon in its Seatbelt guest, and its agent runs the
-clients of the loopholes that work on a Mac, so the flake's `guestPrefix` holds `guestBinaries`
-(`yolo-jaild`, `yolo-serial` and `yolo-ps`) built for darwin: copied from a bundle's
-`bin/darwin-<arch>/` when one ships it, compiled from `goSrc` with `GOOS=darwin` otherwise. The
-script's `GUEST_BINARIES` stages that set for both Mac arches into every release and Homebrew
-bundle, `just install` stages it only on a Mac, and the launch stages it into the sandbox's
-root-owned prefix, never onto a host `PATH`, so the host ship set stays `{yolo}`. A test pins the
-flake's list, the script's and `macosuser.GuestBinaries` together.
-
-The launch stages the whole set, or none of it. It stages it when the launch runs a jail daemon,
-or when the session env carries an endpoint variable one of the two clients reads
-(`YOLO_SERVICE_SERIAL_ENDPOINT`, `YOLO_SERVICE_HOST_PROCESSES_ENDPOINT`: `macosuser.GuestClients`,
-keyed on each client's own variable, `paths.SerialEndpointEnv` and `paths.HostProcessesEndpointEnv`).
-A launch with neither stages nothing, so a launch from a checkout runs no `.#guestPrefix` build
-for nothing. A prebuilt `bin/darwin-<arch>/` is used only when it holds every member. A bundle
-whose directory is short of one (staged before the set grew, or only half staged) is refused
-before any build, naming what is missing and how to restage it (`just install`, or reinstalling
-yolo-jail): a bundle ships no Go sources, and the flake's prebuilt branch asks only whether the
-directory exists, so a build there could only fail at the missing name or succeed without it. A
-checkout builds past a partial directory, which a git flake does not see, and a build whose output
-lacks a member is refused the same way.
-
-The share half is **never the checkout itself**, even though a checkout would satisfy the
-resolver. Mounting it would put the whole working tree inside the jail at a second path and let
-the in-jail `yolo` build an image from source newer than the binaries it is running — the exact
-skew [the gate below](#two-halves-two-cadences) exists to refuse. The built bundle matches the
-binaries beside it by construction; an agent that wants the live tree in a nested jail names it
-the way the outer launch did, with `YOLO_REPO_ROOT`.
+The selected share half is **never the checkout itself**. A matched bundle contains only the
+launcher, flake and declared helper binaries. It cannot expose a changing checkout inside the jail
+or let the live source move independently of mounted binaries. `YOLO_REPO_ROOT` is retired as a
+runtime source selector; remove any old export. To develop against a checkout, run its wrapper or
+use its emitted matched launcher path.
 
 > [!WARNING]
-> **The `goSrc` fileset is the filter, one layer over from where it used to bite.** The hermetic
-> Go build sees only `go.mod`, `go.sum`, `vendor/`, `cmd/`, `internal/` and `packs/`. A top-level
-> Go package outside that set vanishes from the **mounted prefix** while `go build ./...` stays
-> green, and the moment anything under `cmd/` imports it the nix build fails with "cannot find
-> module providing package". Add it to the fileset by hand. `packs/` is the live example of an
-> explicit entry.
+> **The `goSrc` fileset remains a Nix source-build boundary.** The hermetic Go build sees only
+> [`go.mod`](../../go.mod), [`go.sum`](../../go.sum), `vendor/`, `cmd/`, `internal/` and `packs/`. A Go package
+> outside that set vanishes from a flake's source build while `go build ./...` stays green, and an
+> import from `cmd/` or `internal/` then fails in Nix. Add it to the fileset by hand. `tools/` and
+> `integration/` are excluded on purpose.
 
 > [!WARNING]
-> **`shippedBinaries` is a second filter of the same silent class.** `goBinaries` compiles every
-> `cmd/*` directory; only the names in that list are copied into the prefix, and only those names
-> get a `/bin/<name>` link. A new `cmd/` binary missing from it — or from
-> `scripts/stage-source-bundle.sh`'s `SHIPPED_BINARIES` — vanishes from the jail or from a shipped
-> bundle with no build error. `goprobe` is the one deliberate omission, which is exactly why an
-> accidental one looks identical to it; `internal/entrypoint/shippedclients_test.go` pins the
-> spellings together.
+> **`shippedBinaries` remains a runtime filter.** Only names in the flake's canonical list and
+> `scripts/stage-source-bundle.sh`'s `SHIPPED_BINARIES` reach a shipped helper bundle or image
+> symlink. A new binary missing from either list vanishes without a build error; the cross-language
+> ship-set tests pin those names together.
 
 ### The security delta
 
@@ -300,26 +249,21 @@ directory it took, so the choice is visible without inspecting the argv.
 ### macOS and the runtime VM
 
 Podman on macOS runs containers in a VM that shares the user's home and `/private`, and not
-`/nix`. yolo has always known this — `shouldMountHostNix` skips the nix store and daemon-socket
-mounts on macOS for exactly that reason, unless `YOLO_NIX_HOST_DAEMON` says the VM does share
-`/nix`. The mounted prefix made yolo's own binaries a bind mount too, and a **live checkout's**
-prefix is a nix build, so it lives in `/nix/store` — the one tree the VM cannot see. Measured on
-hardware: podman failed every such launch before pid1 ran, as
+`/nix`. `shouldMountHostNix` skips host store and daemon-socket mounts unless the VM is known to
+share `/nix`. The earlier checkout-launch path built `installPrefix` in the Nix store, which the
+default VM could not see; the measured failure receipt below documents that retired path. Checkout
+development now builds its matched helper bundle under the user home, so helper delivery does not
+require a `/nix` VM share. The ordinary image build still follows the Nix/image pipeline.
 
 ```text
 Error: statfs /nix/store/…-yolo-jail-install-prefix/opt/yolo-jail/bin: no such file or directory
 ```
 
-with exit status 125. `prefixUnreachableFromVM` now refuses that launch on darwin, on the
-*result* of prefix resolution and regardless of which arm produced it, when either mount source
-is under `/nix/store` and `YOLO_NIX_HOST_DAEMON` is not truthy — naming both fixes: share `/nix`
-with the VM (`podman machine init -v /nix:/nix`, a fresh machine) and set the variable, or
-launch from an installed bundle, which stages prebuilt binaries under `$HOME` and builds nothing
-in the store. The variable is reused rather than a new dial added because it already means
-precisely "my runtime VM shares `/nix`". The macOS nightly initialises its machine with
-`-v /nix:/nix` and sets the variable, so CI exercises the documented fix rather than routing
-around it. That refusal never fires for an installed bundle, which ships prebuilt binaries and
-builds nothing in the store.
+with exit status 125. `prefixUnreachableFromVM` retains a guard for a selected bind source under `/nix/store` when
+`YOLO_NIX_HOST_DAEMON` does not establish VM visibility. That is separate from checkout development:
+a home-located matched bundle supplies its helpers without the `/nix` share. The historical nightly
+configuration with an explicit `/nix` share remains a measured CI setup, not evidence for the
+default-VM development workflow.
 
 An installed bundle is not therefore always reachable. The launch binds the prefix at its
 *resolved* path, and a Homebrew install resolves into `$(brew --prefix)/Cellar`, which a default
@@ -356,12 +300,10 @@ only with both claims above; the route that would make it work is recorded as a 
 built. The `macos-user` path, which runs the Mac's own nix client, is in
 [`macos-user-nix-and-features.md`](macos-user-nix-and-features.md#nix-inside-the-sandbox).
 
-The refusal is keyed on darwin, not on the runtime, so Apple Container gets it too. That
-backend's prefix mount ran on hardware in the 2026-09-25 delivery runs, from a staged bundle, whose
-launches ran a command in the jail ([Archive destinations](#archive-destinations)); the refusal
-itself has not been watched firing there. Podman on Linux (including the nested jail this repo
-develops in) and macOS podman with `/nix` shared are the other measured arms. `macos-user` needed nothing: it runs no container, loads no image, and its `yolo` is the
-host's own binary. See [`../guides/macos.md`](../../userguide/guides/macos.md#running-a-live-checkout-on-podman).
+The store-source guard remains distinct from the bundle workflow. The historical archive and
+launch measurements below do not prove default-Mac matched-bundle behavior; that still requires
+the native instrument described in the development workflow contract. `macos-user` runs no image
+and uses the host's own binary. See the [macOS guide](../../userguide/guides/macos.md#developing-on-a-checkout-with-podman).
 
 ### The macOS Linux builder, for a Linux reader
 
@@ -388,52 +330,36 @@ nix plus sshd; a builder image must contain nix, so nix's own closure is its siz
 `macos-user` needs no Linux builder: it builds natively for the Mac
 ([what nix produces there](macos-user-nix-and-features.md#what-nix-produces)).
 
-### Two halves, two cadences
+### Launcher and bundle identity
 
-`reporoot.Resolve` picks the flake source without reading the working directory: the
-`YOLO_REPO_ROOT` override (validated to hold `flake.nix` or `go.mod`), then a `share/yolo-jail`
-bundle beside the running executable (Homebrew, the release archive, and the in-jail mounted
-prefix — one exe-relative method serving every checkout-less channel), then the bundle
-`just install` staged under yolo's state dir. Each launch reports the result as
-`Flake source: <path> (<what selected it>)` in its first phase, before staging and the nix
-build, so there is still time to interrupt. The cwd used to outrank every bundle, which meant
-one `yolo` built the image from a live tree in one directory and from an install-time snapshot
-in the next, and the banner could not tell you which; it was also the only way the two halves
-below could disagree by accident. A from-source developer therefore gets the **staged bundle**
-even when standing inside the checkout — `just install` is how an image or Go change is
-delivered, and `YOLO_REPO_ROOT` is how a live tree is asked for by name.
+`reporoot.Resolve` does not inspect the working directory or honor `YOLO_REPO_ROOT`. A complete
+bundle beside the running executable is authoritative. A binary-only installed launcher can use
+installed state only when its embedded identity matches one canonical active generation, pinned
+for the full launch. An incomplete adjacent bundle refuses instead of falling through. Every
+launch reports the selected `Flake source:` and helper directory before staging.
 
-The two halves: the jail's `yolo-entrypoint` and image are produced from the resolved flake
-source on every launch; the host `yolo` changes only at `just install`. Only `YOLO_REPO_ROOT` can
-name a live checkout, so it is the only resolution that can skew at all — both bundles ship
-*with* the binary and can never be older than it. `version.SourceSkew` compares the binary's
-build-time commit stamp against the tree's HEAD, through `ImageSourcePaths` only — the `goSrc`
-fileset plus the two flake files, pinned to the flake's own fileset by a test — and
-`refuseOnSourceSkew` stops a container launch before the build, naming `just install` and the
-path of the binary that refused (a reinstall that landed somewhere PATH does not reach first is
-the other cause, and only the path tells them apart). It is silent by design for a docs-only
-commit (HEAD moved, no image input did), for uncommitted work (HEAD has not moved, and the
-by-path verification build stamps the fresh binary with the same HEAD), and for anything it
-cannot prove — an unstamped binary, a stamp naming a commit this repo lacks, no git. A skew it
-cannot prove is not one it reports. `macos-user` is exempt: no image, no second binary, nothing
-to skew.
+Development uses a matched launcher, helpers and flake captured from one bounded source snapshot.
+The wrapper rebuilds when the current snapshot identity differs, reuses only a complete matching
+bundle, and invokes the exact launcher by absolute path; a failed build never runs stale output. The
+wrapper follows its symlink to find the checkout while preserving the caller's cwd as the jail
+workspace. It does not change the installed command or active installed bundle. The normal
+installed/default workflow remains `yolo` from its complete installed bundle.
 
-The stamp comes from `scripts/build-go.sh`, `just install` and every flake build (`-ldflags -X`
-into `internal/version`; the flake's `buildStamp`, from its git metadata or a bundle's
-`yolo-build-stamp.json`). So the in-jail `yolo` of a live-checkout jail is stamped with the
-commit its jail was built from, and trips the gate once the tree's HEAD moves through an image
-path: inside a jail, launch a nested jail with the by-path binary `just build-go` writes,
-`/workspace/dist-go/linux-<arch>/yolo`, which is stamped with the current HEAD.
+`YOLO_REPO_ROOT` is retired. Remove it from shell configuration; direct launchers refuse it with a
+next step naming `just build-dev-bundle` or `just install`. A wrapper alias with a dangling or cyclic
+symlink fails in the operating system before its script can run. Repair it with
+`ln -sfn /absolute/path/to/checkout/scripts/dev-wrapper.sh /path/to/yolo-dev`, substituting the
+chosen checkout and PATH alias.
 
 ### When no flake is found
 
-**A missing flake source refuses the launch**, on every backend. `reporoot.Resolve` is one pure
-resolver that `yolo run` and `yolo check` both call, so they agree on where the flake is, inside
-and outside a jail and in every directory. When all three sources miss, a container launch exits 1
-with `Cannot find yolo-jail repo root.`, saying it will not launch on a possibly-stale cached
-image and naming the two fixes: reinstall so the bundle ships with the binary (`just install`), or
-set `YOLO_REPO_ROOT`. The message says the working directory is never consulted, because standing
-in a checkout is the fix a user would otherwise try. `macos-user` refuses the same way in its own
+**A missing flake bundle refuses the launch**, on every backend. `reporoot.Resolve` is one pure
+resolver that `yolo run` and `yolo check` both call, so they agree on the complete executable-relative
+or installed bundle. When no authorized bundle is available, a container launch exits 1 because the
+launcher has no complete pair, saying it will not launch on a possibly-stale cached image and naming
+the fixes: install a complete bundle (`just install`) or build a matched development
+bundle and invoke its printed launcher path (`just build-dev-bundle`). The working directory is never
+consulted; remove any obsolete `YOLO_REPO_ROOT` export. `macos-user` refuses the same way in its own
 arm, because every launch there builds the non-container floor from this flake, even with an
 empty `packages:`. `--dry-run` alone is exempt: it materializes nothing.
 
@@ -449,24 +375,23 @@ empty `packages:`. `--dry-run` alone is exempt: it materializes nothing.
 > live tree in one directory and an install-time snapshot in the next, with a banner that could
 > not tell them apart, and was the one way the two halves above could disagree by accident.
 > `repo_path`, a user-config pointer at a checkout, is retired: `validateRepoPath` still accepts
-> the key, so an old config launches, and warns that it is ignored. A developer who wants live
-> source says so with `YOLO_REPO_ROOT`.
+> the key, so an old config launches, and warns that it is ignored. Checkout development uses the
+> wrapper or its printed matched-launcher path, never a runtime source selector.
 
 ### Which channels ship a flake
 
-Every supported install resolves a buildable flake with no checkout, because the bundle is only
-the two flake files and prebuilt binaries, and the flake's prebuilt short-circuit builds from it
-with no Go toolchain and no source. A git flake sees tracked files only and the repository never
-commits `bin/`, so an in-repo build always compiles from `goSrc`, while a `path:` flake, a bundle,
-sees `bin/linux-<arch>/` and copies.
+Complete installed channels resolve their own adjacent or installed bundle without a checkout.
+The flake's prebuilt short-circuit consumes the bundled Linux binaries; the `goSrc` fallback remains
+for an explicitly built source flake, not as a launch-time helper compiler.
 
-| Channel | Where its bundle sits | Resolved by |
+| Channel | Where its bundle sits | Launch behavior |
 | :--- | :--- | :--- |
-| Homebrew tap | `prefix/share/yolo-jail`, staged by the formula running `scripts/stage-source-bundle.sh`; `tap-install.yml` checks the published formula finds it | the bundle beside the binary (`<exe>/../share/yolo-jail`) |
-| GitHub release archive | `share/yolo-jail/` beside `yolo`, staged by goreleaser's before-hook | the bundle beside the binary (`<exe>/share/yolo-jail`) |
-| From source, `just install` | a new generation under the state dir, with the stable `flake-bundle` link swapped to it ([`storage-and-config.md`](storage-and-config.md)) | the staged bundle, in every directory, the checkout included |
-| Inside a jail | the [mounted prefix](#the-mounted-prefix), `/opt/yolo-jail/share/yolo-jail` | the bundle beside the binary, exactly as on a host |
-| PyPI wheel | none: `tools/build-wheels` wraps the `yolo` binary alone | nothing, so a wheel-only install needs `YOLO_REPO_ROOT` or another channel |
+| Homebrew tap | `prefix/share/yolo-jail`, staged by the formula | complete bundle beside the binary |
+| GitHub release archive | `share/yolo-jail/` beside `yolo` | complete bundle beside the binary |
+| From source, `just install` | a new generation under the state dir ([`storage-and-config.md`](storage-and-config.md)) | identity-matched installed bundle |
+| Checkout development | under the user's home in a unique matched generation | emitted launcher path or `just dev` |
+| Inside a jail | the [mounted prefix](#the-mounted-prefix), `/opt/yolo-jail/share/yolo-jail` | complete bundle beside the binary |
+| Binary-only tools (`go install`, pipx, uvx) | no bundle | not a standalone jail-launch channel; install a complete bundle |
 
 **`just install` asks the binary where to stage**, `yolo internal bundle-dir`, rather than
 computing a path from `$GOBIN`. The staging script `rm -rf`s its destination, and the arithmetic
@@ -530,8 +455,8 @@ describes.
 flowchart TD
     resolve["reporoot.Resolve — prints Flake source"] --> skew{"version.SourceSkew?"}
     skew -->|"host yolo older than the tree"| refuse1["refuse — YOLO_ALLOW_SOURCE_SKEW=1 overrules"]
-    skew -->|"no provable skew"| prefix["resolveJailPrefix — prebuilt bin/linux-arch, else nix build .#installPrefix"]
-    prefix -->|"build failed, or unreachable from the macOS VM"| refuse2["refuse"]
+    skew -->|"no provable skew"| prefix["resolveJailPrefix — complete paired bin/linux-arch or refuse"]
+    prefix -->|"incomplete bundle or unreachable mount"| refuse2["refuse"]
     prefix -->|"prints Jail binaries"| stock{"stock launch? nix eval .#imageIdentity,<br/>image inspect yolo-jail:stock-hex"}
     stock -->|"present, with a valid store-path record"| runstock["Image build skipped — root the recorded path, run it"]
     stock -->|"present, no valid record, jail reads the host store"| plan
@@ -1736,8 +1661,8 @@ runners push. To use a cache name other than `yolo-jail`, change the `nixConfig`
 
 | Backend | Image | yolo's binaries | `packages:` |
 | :--- | :--- | :--- | :--- |
-| podman on Linux | `skopeo copy nix:… containers-storage:…`, layer-negotiated, no archive; on a rootless store inside `podman unshare` and into the store podman reports, named | two `:ro` mounts; prebuilt or `nix build .#installPrefix` | baked, or store-delivered on opt-in |
-| podman on macOS | a [delta archive](#the-delta-archive) — `skopeo copy nix:… oci:…`, tarred, then `podman load -i`, then both are removed; the archive leaves out the layers podman already holds, because the store is inside the Podman Machine VM, which does not share `/nix`, so there is no local store to negotiate with; [measured on an Intel Podman Machine](#archive-destinations) on 2026-09-25. The nix build may offload to a builder container | same mounts; a built (store-path) prefix is refused unless the VM shares `/nix` and `YOLO_NIX_HOST_DAEMON` says so | baked (no shared store) |
+| podman on Linux | `skopeo copy nix:… containers-storage:…`, layer-negotiated, no archive; on a rootless store inside `podman unshare` and into the store podman reports, named | two `:ro` mounts from the selected complete bundle | baked, or store-delivered on opt-in |
+| podman on macOS | a [delta archive](#the-delta-archive) — `skopeo copy nix:… oci:…`, tarred, then `podman load -i`, then both are removed; the archive leaves out the layers podman already holds; [measured on an Intel Podman Machine](#archive-destinations) on 2026-09-25 | two `:ro` mounts from the selected complete bundle; a development bundle under the shared user home does not require `/nix` sharing for helper delivery | baked (no shared store) |
 | Apple Container | a [delta archive](#the-delta-archive) — `skopeo copy nix:… oci:…`, tarred, then `container image load -i`, then both are removed; the present set is yolo's own delivery record; [measured on an arm64 Mac](#archive-destinations) on 2026-09-25 | same mounts, `:ro` honored from `container` 1.1.0 and ignored below it; run on hardware from a staged bundle on 2026-09-25 | baked (cannot bind-mount the store) |
 | `macos-user` | none | the host's own binary | a `buildEnv` profile on PATH, and no `/lib` farm, since it composes no filesystem — [`macos-user-nix-and-features.md`](macos-user-nix-and-features.md#how-nix-works-here) |
 
@@ -1836,7 +1761,7 @@ values themselves are stated.
 | Guest binary set | `yolo-jaild`, `yolo-serial`, `yolo-ps` | `guestBinaries` (`flake.nix`); `GUEST_BINARIES` (`scripts/stage-source-bundle.sh`); `macosuser.GuestBinaries` |
 | Shipped binary set | 7 names; `goprobe` excluded | `shippedBinaries` (`flake.nix`); `SHIPPED_BINARIES` (`scripts/stage-source-bundle.sh`) |
 | Go fileset the image build sees | `go.mod`, `go.sum`, `vendor/`, `cmd/`, `internal/`, `packs/` | `goSrc` (`flake.nix`); `version.ImageSourcePaths` adds `flake.nix`, `flake.lock` |
-| Flake source order | `YOLO_REPO_ROOT` → bundle beside the binary → `~/.local/share/yolo-jail/flake-bundle` | `reporoot.Resolve`; `paths.FlakeBundleDir` |
+| Flake source selection | complete adjacent bundle → identity-matched installed generation; no cwd or environment selector | `reporoot.Resolve`; `paths.FlakeBundleDir` |
 | Skew gate opt-out | `YOLO_ALLOW_SOURCE_SKEW=1` | `AllowSourceSkewEnv` (`internal/cli/run/srcskew.go`) |
 | Stale-image opt-out | `YOLO_ALLOW_STALE_IMAGE` (any non-empty value) | `image.StaleImageEnv` |
 | Failed-build headline | `IMAGE BUILD FAILED` | `image.BuildFailedMarker` (the integration harness greps for it) |

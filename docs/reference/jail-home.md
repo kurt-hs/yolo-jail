@@ -354,7 +354,7 @@ orientation, not an inventory.
   delete ([why](perf-logging.md#the-linger-was-the-scratch-volumes)).
 - **The in-jail CLI and its flake bundle** — two `:ro` mounts making up the same install
   prefix a host install has, `bin/` beside `share/yolo-jail/`, so the in-jail CLI finds its
-  repo root exactly the way a host install does with no `YOLO_REPO_ROOT` set. The image
+  complete bundle exactly the way a host install resolves it. The image
   bakes only the mountpoints (a read-only rootfs cannot grow one) and the `/bin/<name>`
   symlinks that point into them.
 - **The mise store at `/mise`** — a host bind on Linux, one named volume on a Podman Machine.

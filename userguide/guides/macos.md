@@ -162,22 +162,26 @@ with `podman machine stop`, then `podman machine set --memory 8192 --cpus 4`.
 - `resources.io`, the disk-priority setting, has no effect, and the launch says so.
 - The first launch copies the jail image into the machine, which can take many minutes.
 
-### Running a live checkout on Podman
+### Developing on a checkout with Podman
 
-This is for working on yolo itself. When you run yolo from a clone of its repository, named with
-`YOLO_REPO_ROOT`, the Linux programs a jail needs are built into your Nix store, `/nix/store`, which
-the Podman Machine does not share by default. yolo refuses that launch and names the fix: create the
-machine sharing `/nix` as well, and say so with `YOLO_NIX_HOST_DAEMON=1`:
+For work on yolo itself, run the checkout's matched development launcher rather than asking the
+installed command to select a different flake. From the checkout:
 
 ```bash
-podman machine init --cpus 4 --memory 8192 -v /nix:/nix \
-  -v /Users:/Users -v /private:/private -v /var/folders:/var/folders
-podman machine start
-export YOLO_NIX_HOST_DAEMON=1
-YOLO_REPO_ROOT=~/code/yolo-jail yolo
+just dev -- bash
 ```
 
-An installed yolo, from Homebrew, a release archive or `just deploy`, needs none of this.
+To use a PATH command, symlink `scripts/dev-wrapper.sh` from the checkout under any chosen name,
+including `yolo-dev` or `yolo`. The wrapper builds from the symlink's checkout, preserves your
+current directory as the jail workspace, and execs the matched launcher by absolute path. It does
+not replace the installed command, and the development bundle lives under your home directory, so
+default Podman Machine setup does not need to share `/nix` for these helpers. The regular image
+build still uses Nix as usual.
+
+`YOLO_REPO_ROOT` no longer selects a launch source. Remove an old export from your shell profile.
+If a PATH alias has a dangling or cyclic symlink, the operating system rejects it before the wrapper
+starts; replace it with `ln -sfn /absolute/path/to/yolo-jail/scripts/dev-wrapper.sh /path/to/yolo-dev`,
+substituting your checkout and alias paths.
 
 ## The macos-user backend
 
