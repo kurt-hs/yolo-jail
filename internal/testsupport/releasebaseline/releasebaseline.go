@@ -97,10 +97,15 @@ func parseVersion(tag string) (version, bool) {
 		return version{}, false
 	}
 	v := version{major: m[1], minor: m[2], patch: m[3]}
+	for _, component := range []string{v.major, v.minor, v.patch} {
+		if hasLeadingZero(component) {
+			return version{}, false
+		}
+	}
 	if m[4] != "" {
 		v.pre = strings.Split(m[4], ".")
 		for _, id := range v.pre {
-			if id == "" {
+			if id == "" || (isNumeric(id) && hasLeadingZero(id)) {
 				return version{}, false
 			}
 		}
@@ -150,6 +155,10 @@ func compare(a, b version) int {
 		return 1
 	}
 	return 0
+}
+
+func hasLeadingZero(s string) bool {
+	return len(s) > 1 && s[0] == '0'
 }
 
 func isNumeric(s string) bool {

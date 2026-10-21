@@ -93,6 +93,31 @@ func TestLatestOrdersVersionsAndIgnoresMalformedTags(t *testing.T) {
 	}
 }
 
+func TestLatestIgnoresLeadingZeroSemVerComponents(t *testing.T) {
+	repo := releaseRepo(t)
+	for _, tag := range []string{
+		"v2.0.0-rc.1", "v2.0.0",
+		"v099.0.0", "v99.0.0-rc.01",
+	} {
+		gitTest(t, repo, "tag", tag)
+	}
+	got, err := Latest(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "v2.0.0" {
+		t.Fatalf("Latest() = %s, want valid stable v2.0.0; invalid leading-zero tags must not win", got)
+	}
+}
+
+func TestParseVersionAcceptsZeroAndTextPrereleaseIdentifiers(t *testing.T) {
+	for _, tag := range []string{"v0.0.0", "v1.0.0-rc.0", "v1.0.0-rc.foo", "v1.0.0-rc01"} {
+		if _, ok := parseVersion(tag); !ok {
+			t.Errorf("parseVersion(%q) rejected a valid SemVer tag", tag)
+		}
+	}
+}
+
 func TestLatestRequiresAValidLocalReleaseTag(t *testing.T) {
 	repo := releaseRepo(t)
 	for _, tag := range []string{"v1.0", "v1.0.0-", "not-a-release"} {
