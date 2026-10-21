@@ -3,6 +3,7 @@ package integration
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,17 +34,61 @@ func TestTheJailsYoloCarriesItsMatchedBundleStamp(t *testing.T) {
 	}
 
 	dir := writeProject(t, "{}")
-	r := runYoloDirect(t, dir, "yolo", "--version", "--full")
+	args := append(append(jailRunArgs(), "--"), "yolo", "--version", "--full")
+	r := runCommand(t, dir, args, withHostSemantics())
 	if r.rc != 0 {
 		t.Fatalf("yolo --version --full in the jail: rc=%d\n%s", r.rc, r.combined())
 	}
-	for _, want := range []string{"\ncommit: " + wantCommit + "\n",
-		"\nsnapshot identity: " + stamp.SnapshotIdentity + "\n", "\nbuild kind: development\n"} {
-		if !strings.Contains(r.stdout, want) {
-			t.Errorf("the jail's /bin/yolo does not carry matched launcher field %q:\n%s", strings.Trim(want, "\n"), r.stdout)
+	hostCmd := exec.Command(yoloBin, "--version", "--full")
+	hostCmd.Env = envWithout("YOLO_VERSION")
+	hostVersionOutput, err := hostCmd.Output()
+	if err != nil {
+		t.Fatalf("matched host yolo --version --full: %v", err)
+	}
+	hostOutput := string(hostVersionOutput)
+	hostVersion := versionToken(t, hostOutput)
+	guestVersion := versionToken(t, r.stdout)
+	if guestVersion != hostVersion {
+		t.Errorf("the jail's matched yolo version = %q, want host bundle version %q", guestVersion, hostVersion)
+	}
+	if !strings.Contains(hostVersion, "+") || !strings.HasSuffix(hostVersion, ".g"+wantCommit) {
+		t.Errorf("matched version %q does not encode stamped commit %q in its build metadata", hostVersion, wantCommit)
+	}
+	if hostHash, guestHash := versionField(t, hostOutput, "binary sha256: "), versionField(t, r.stdout, "binary sha256: "); hostHash != guestHash {
+		t.Errorf("guest binary sha256 %q does not match paired host binary sha256 %q", guestHash, hostHash)
+	}
+	for _, output := range []struct {
+		name string
+		text string
+	}{{"host", hostOutput}, {"guest", r.stdout}} {
+		for _, want := range []string{"\ncommit: " + wantCommit + "\n",
+			"\nsnapshot identity: " + stamp.SnapshotIdentity + "\n", "\nbuild kind: development\n"} {
+			if !strings.Contains(output.text, want) {
+				t.Errorf("the %s yolo does not carry matched bundle field %q:\n%s", output.name, strings.Trim(want, "\n"), output.text)
+			}
 		}
 	}
-	if !strings.Contains(r.stdout, "+g"+wantCommit) {
-		t.Errorf("the jail's build stamp does not carry +g%s:\n%s", wantCommit, r.stdout)
+}
+
+func versionField(t *testing.T, output, label string) string {
+	t.Helper()
+	for _, line := range strings.Split(output, "\n") {
+		if strings.HasPrefix(line, label) {
+			return strings.TrimSpace(strings.TrimPrefix(line, label))
+		}
 	}
+	t.Fatalf("version output has no %q field:\n%s", label, output)
+	return ""
+}
+
+func versionToken(t *testing.T, output string) string {
+	t.Helper()
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "yolo-jail" {
+			return fields[1]
+		}
+	}
+	t.Fatalf("version output has no yolo-jail version line:\n%s", output)
+	return ""
 }

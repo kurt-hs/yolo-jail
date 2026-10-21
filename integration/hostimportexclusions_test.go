@@ -39,7 +39,7 @@ func TestHostImportExclusions(t *testing.T) {
 	}
 
 	t.Run("excludes only requested host members and keeps pack contribution", func(t *testing.T) {
-		packHome(t, `{"packs":["claude"],"host_import_exclusions":{"claude/settings":["/hooks","/permissions/defaultMode"],"pi/agent/settings":["/dormant"]}}`)
+		packHome(t, `{"packs":["claude"],"host_import_exclusions":{"claude/settings":["/hooks","/permissions/defaultMode"],"pi/settings":["/dormant"]}}`)
 		hostBefore := writeHostSettings(t)
 		dir := writeProject(t, `{}`)
 		result := runYoloDirect(t, dir, "bash", "-lc", "true")

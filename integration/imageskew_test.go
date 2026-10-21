@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -40,7 +41,8 @@ import (
 //
 // THE CHECK. Ask the two sides what the IMAGE was built from and compare:
 //
-//   - what the SOURCE wants — `nix eval --raw .#imageIdentity`. imageIdentity is
+//   - what the SOURCE wants — `nix eval --raw path:<paired-bundle>#imageIdentity`.
+//     imageIdentity is
 //     a sha256 over flake.nix + flake.lock and nothing else, which is exactly the
 //     image's input set now that the Go build is not in it. It is an EVAL, not a
 //     build — and not even a nixpkgs eval, so ~0.1s — which is what lets it run
@@ -239,10 +241,82 @@ func parseImageIdentity(raw string) (string, error) {
 	return id, nil
 }
 
+func TestCheckImageSkewUsesAdjacentBundleForImageIdentity(t *testing.T) {
+	root := filepath.Join(resolvedTempDir(t), "git fixture with spaces")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "init", root).CombinedOutput(); err != nil {
+		t.Fatalf("initialize Git fixture: %v\n%s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("/adjacent bundle/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(root, "adjacent bundle")
+	if err := os.MkdirAll(bundle, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "flake.nix"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ignored := exec.Command("git", "check-ignore", "-q", "--", "adjacent bundle")
+	ignored.Dir = root
+	if err := ignored.Run(); err != nil {
+		t.Fatalf("fixture bundle is not ignored by its Git root: %v", err)
+	}
+
+	bin := filepath.Join(root, "fake nix")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	callLog := filepath.Join(root, "nix call.txt")
+	podmanLog := filepath.Join(root, "podman call.txt")
+	const identity = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	fakeNix := "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$YOLO_NIX_CALL_LOG\"\nprintf '%s\\n' '" + identity + "'\n"
+	if err := os.WriteFile(filepath.Join(bin, "nix"), []byte(fakeNix), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakePodman := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$YOLO_PODMAN_CALL_LOG\"\nprintf '%s\\n' '" + identity + "'\n"
+	if err := os.WriteFile(filepath.Join(bin, "podman"), []byte(fakePodman), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldBundle := bundleRoot
+	bundleRoot = bundle
+	t.Cleanup(func() { bundleRoot = oldBundle })
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("YOLO_NIX_CALL_LOG", callLog)
+	t.Setenv("YOLO_PODMAN_CALL_LOG", podmanLog)
+
+	checkImageSkew("podman", "yolo-jail:fixture")
+	call, err := os.ReadFile(callLog)
+	if err != nil {
+		t.Fatalf("fake Nix was not reached by the production probe: %v", err)
+	}
+	args := strings.Split(strings.TrimSuffix(string(call), "\n"), "\n")
+	if len(args) < 2 || args[0] != bundle {
+		t.Fatalf("production Nix probe cwd does not name paired bundle %q (argv log %q)", bundle, call)
+	}
+	wantRef := "path:" + bundle + "#imageIdentity"
+	if gotRef := args[len(args)-1]; gotRef != wantRef {
+		t.Fatalf("production Nix flake reference = %q, want explicit paired-bundle reference %q; argv=%q", gotRef, wantRef, call)
+	}
+	podmanCall, err := os.ReadFile(podmanLog)
+	if err != nil {
+		t.Fatalf("fake Podman was not reached by the production skew check: %v", err)
+	}
+	if !strings.HasPrefix(string(podmanCall), "run\n") {
+		t.Fatalf("production image probe argv = %q, want podman run", podmanCall)
+	}
+}
+
 // expectedImageIdentity evaluates (never builds) the identity this source tree
 // would bake into the image.
 //
-// `.#imageIdentity` is a bare flake attribute, not `packages.<system>.…`, which
+// Use an explicit path flake reference: the adjacent bundle can be ignored by a
+// Git ancestor, so a cwd-relative `.#imageIdentity` may select that ancestor's
+// tracked tree rather than the matched bundle TestMain built.
+//
+// `#imageIdentity` selects a bare flake attribute, not `packages.<system>.…`, which
 // is how it carries no system; nix falls back to a bare attribute after trying
 // both per-system prefixes, so the spelling is the same on every host.
 //
@@ -269,7 +343,7 @@ func evalImageIdentity(extraFlags ...string) (string, error) {
 	defer cancel()
 	argv := []string{"--extra-experimental-features", "nix-command flakes"}
 	argv = append(argv, extraFlags...)
-	argv = append(argv, "eval", "--impure", "--raw", ".#imageIdentity")
+	argv = append(argv, "eval", "--impure", "--raw", "path:"+bundleRoot+"#imageIdentity")
 	cmd := exec.CommandContext(ctx, "nix", argv...)
 	cmd.Dir = bundleRoot
 	out, err := cmd.Output()
