@@ -766,15 +766,15 @@ func hostLayerFor(t configTarget, s manifest.Surface) ([]byte, string, error) {
 	pointers := entrypoint.HostImportExclusionsIn(os.Getenv(packload.HostLayerEnvVar), s)
 	data, err := os.ReadFile(staged)
 	if err != nil {
+		if len(pointers) > 0 {
+			return nil, "", fmt.Errorf("surface %s/%s: read delivered host layer for active host import exclusions: %w",
+				s.Agent, s.Name, err)
+		}
 		if os.IsNotExist(err) {
 			// The overwhelmingly common case: the user has no such file, so the surface
 			// composes from its lower layers and nothing is wrong. Silent, as the boot
 			// render is.
 			return nil, "", nil
-		}
-		if len(pointers) > 0 {
-			return nil, "", fmt.Errorf("surface %s/%s: read delivered host layer for active host import exclusions: %w",
-				s.Agent, s.Name, err)
 		}
 		return nil, "the `host` layer could not be read at " + staged + ": " + err.Error(), nil
 	}

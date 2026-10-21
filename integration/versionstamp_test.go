@@ -42,6 +42,7 @@ func TestTheJailsYoloCarriesItsMatchedBundleStamp(t *testing.T) {
 	}
 
 	dir := writeProject(t, "{}")
+	awaitDetachedWriters(t, dir, launchHome(launchEnvironment(runConfig{})))
 	args := append(append(jailRunArgs(), "--"), "yolo", "--version", "--full")
 	r := runCommand(t, dir, args, withHostSemantics())
 	if r.rc != 0 {
