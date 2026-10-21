@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -330,55 +331,94 @@ class PackageTests(unittest.TestCase):
             self.assertNotIn(secret,stderr.getvalue())
 
     def test_install_command_runs_shared_activation_workflow(self):
-        from unittest import mock
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); repo=repo_fixture(root, real_scripts=True); home=root/"home"
-            install_bin=root/"gobin"; events=[]
-            real_run=subprocess.run
-            # Pin the production Justfile call site as well as driving its exact CLI
-            # arguments through matched-bundle.py's main dispatch below.
-            justfile=(HERE.parent/"Justfile").read_text()
-            install_recipe=justfile.split("\ninstall:\n",1)[1].split("\n# Build and print a matched development launcher",1)[0]
-            invocation='python3 scripts/matched-bundle.py install --repo "$(pwd -P)" --home "$HOME"'
-            self.assertIn(invocation,install_recipe)
+            home.mkdir(); gobin=root/"gobin"; generation=root/"generation"
+            shutil.copy2(HERE.parent/"Justfile", repo/"Justfile")
+            fakebin=root/"fakebin"; fakebin.mkdir()
+            driver=root/"install-driver.py"
+            driver.write_text(r'''import importlib.util, json, os, subprocess, sys
+from pathlib import Path
+from types import SimpleNamespace
 
-            def runner(argv, **kw):
-                if argv and argv[0] == "git":
-                    return real_run(argv, **kw)
-                if "--version" in argv or argv and argv[0] == "readlink":
-                    return real_run(argv, **kw)
-                if "--stage" in argv:
-                    generation=root/"generation"
-                    generation.mkdir()
-                    events.append(("stage", str(generation)))
-                    return SimpleNamespace(stdout=str(generation))
-                if "--activate" in argv:
-                    events.append(("activate", argv[-1]))
-                    return SimpleNamespace(stdout="")
-                if "migrate-host" in argv:
-                    events.append(("migrate-host", argv[0]))
-                    return SimpleNamespace(stdout="")
-                raise AssertionError(f"unexpected install runner call: {argv}")
+script = Path(sys.argv[1]).resolve()
+spec = importlib.util.spec_from_file_location("install_under_test", script)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+real_run = subprocess.run
+events = []
 
-            production_command=mb.command
-            def command_from_justfile(repo_arg, mode, *, home, gobin=None, args=None, execer=None):
-                return production_command(repo_arg,mode,home=home,gobin=install_bin,args=args,
-                                          execer=execer or os.execvpe,runner=runner)
+def runner(argv, **kwargs):
+    if argv and (argv[0] in ("git", "go", "readlink") or "--version" in argv):
+        return real_run(argv, **kwargs)
+    if "migrate-host" in argv:
+        events.append(("migrate-host", argv[0]))
+        return SimpleNamespace(stdout="")
+    if "--stage" in argv:
+        generation = Path(os.environ["YOLO_TEST_GENERATION"])
+        generation.mkdir()
+        events.append(("stage", str(generation)))
+        return SimpleNamespace(stdout=str(generation))
+    if "--activate" in argv:
+        events.append(("activate", argv[-1]))
+        return SimpleNamespace(stdout="")
+    raise AssertionError(f"unexpected install subprocess: {argv}")
 
-            host_platform=mb._platform(repo)
-            with mock.patch.object(mb, "_source_stamps", return_value=("v", "c", str(repo), "topic")), \
-                 mock.patch.object(mb, "_platform", return_value=host_platform), \
-                 mock.patch.object(mb, "assemble", side_effect=fake_assembler), \
-                 mock.patch.object(mb, "command", side_effect=command_from_justfile), \
-                 mock.patch.object(mb.subprocess, "run", side_effect=runner), \
-                 mock.patch.dict(os.environ, {"YOLO_VERSION":""}), \
-                 mock.patch.object(mb.sys, "argv", ["scripts/matched-bundle.py", "install", "--repo", str(repo), "--home", str(home)]):
-                self.assertEqual(mb.main(), 0)
-            installed=install_bin/"yolo"
-            self.assertTrue(installed.is_file(), "the Justfile install flow did not install its launcher")
-            self.assertEqual([event[0] for event in events], ["migrate-host", "stage", "activate"])
-            self.assertEqual(events[2][1], events[1][1])
-            self.assertEqual(Path(events[1][1]), root/"generation")
+def assemble(snapshot, output, *, identity, build_kind, **kwargs):
+    output.mkdir()
+    (output / "bin").mkdir()
+    launcher = output / "bin/yolo"
+    launcher.write_text("#!/bin/sh\nprintf '%s\\n' 'snapshot identity: " + identity + "' 'build kind: " + build_kind + "'\n")
+    launcher.chmod(0o755)
+    bundle = output / "share/yolo-jail"
+    bundle.mkdir(parents=True)
+    for name in ("flake.nix", "flake.lock"):
+        (bundle / name).write_text(name)
+    (bundle / "yolo-build-stamp.json").write_text(json.dumps({"snapshotIdentity": identity, "buildKind": build_kind}))
+    shipped, guest = module._binary_lists(snapshot / "scripts/stage-source-bundle.sh")
+    host_os, host_arch = module._platform(snapshot)
+    targets = {f"linux-{host_arch}": shipped}
+    if host_os == "darwin":
+        targets[f"darwin-{host_arch}"] = guest
+    for dirname, names in targets.items():
+        directory = bundle / "bin" / dirname
+        directory.mkdir(parents=True)
+        for name in names:
+            binary = directory / name
+            binary.write_bytes(b"helper")
+            binary.chmod(0o755)
+
+def command(*args, **kwargs):
+    kwargs["runner"] = runner
+    return original_command(*args, **kwargs)
+
+original_command = module.command
+module._source_stamps = lambda repo: ("v", "c", str(repo), "topic")
+module.assemble = assemble
+module.command = command
+module.subprocess.run = runner
+sys.argv = [str(script), *sys.argv[2:]]
+code = module.main()
+Path(os.environ["YOLO_TEST_EVENTS"]).write_text(json.dumps(events))
+raise SystemExit(code)
+''')
+            shim=fakebin/"python3"
+            shim.write_text("#!/bin/sh\nexec "+sys.executable+" "+str(driver)+" \"$@\"\n")
+            shim.chmod(0o755)
+            env=os.environ.copy()
+            env.update({"PATH":str(fakebin)+os.pathsep+env.get("PATH",""), "HOME":str(home),
+                        "GOBIN":str(gobin), "YOLO_VERSION":"", "YOLO_TEST_GENERATION":str(generation),
+                        "YOLO_TEST_EVENTS":str(root/"events.json")})
+            result=subprocess.run(["just", "install"], cwd=repo, env=env, text=True, capture_output=True)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertTrue((gobin/"yolo").is_file(),"the production Justfile install flow did not install its launcher")
+            events=json.loads((root/"events.json").read_text())
+            self.assertEqual([event[0] for event in events],["migrate-host","stage","activate"])
+            self.assertEqual(events[2][1],events[1][1])
+            self.assertEqual(events[1][1],str(generation))
+            self.assertTrue((generation/"flake.nix").is_file(),"install did not stage the matched flake")
+            self.assertTrue((generation/"yolo-build-stamp.json").is_file(),"install did not stage matched identity metadata")
+            self.assertEqual(result.stdout.count("Installed to "),1)
 
     def test_install_generation_activates_only_identity_match(self):
         with tempfile.TemporaryDirectory() as td:
