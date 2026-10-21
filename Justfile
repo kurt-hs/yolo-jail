@@ -312,6 +312,9 @@ lint-ci: lint
     scripts/vantage-check.sh userguide/
     # `just done`'s change-aware front door: its routes, and that `done` still calls it.
     python3 scripts/test-completion-check.py
+    # The matched launcher snapshot, install-publication and wrapper regressions are permanent
+    # lint-ci coverage, and therefore run under check-ci too.
+    python3 scripts/test_matched_bundle.py
     # An answered question left in question form still reads as a decision to make, and only
     # `vantage-check index` lists it, so check the index (the design-doc skill's compaction rule).
     python3 scripts/test-check-answered-questions.py

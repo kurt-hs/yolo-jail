@@ -333,8 +333,20 @@ class PackageTests(unittest.TestCase):
         from unittest import mock
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); repo=repo_fixture(root, real_scripts=True); home=root/"home"
-            gobin=root/"gobin"; events=[]
+            install_bin=root/"gobin"; events=[]
+            real_run=subprocess.run
+            # Pin the production Justfile call site as well as driving its exact CLI
+            # arguments through matched-bundle.py's main dispatch below.
+            justfile=(HERE.parent/"Justfile").read_text()
+            install_recipe=justfile.split("\ninstall:\n",1)[1].split("\n# Build and print a matched development launcher",1)[0]
+            invocation='python3 scripts/matched-bundle.py install --repo "$(pwd -P)" --home "$HOME"'
+            self.assertIn(invocation,install_recipe)
+
             def runner(argv, **kw):
+                if argv and argv[0] == "git":
+                    return real_run(argv, **kw)
+                if "--version" in argv or argv and argv[0] == "readlink":
+                    return real_run(argv, **kw)
                 if "--stage" in argv:
                     generation=root/"generation"
                     generation.mkdir()
@@ -343,14 +355,30 @@ class PackageTests(unittest.TestCase):
                 if "--activate" in argv:
                     events.append(("activate", argv[-1]))
                     return SimpleNamespace(stdout="")
+                if "migrate-host" in argv:
+                    events.append(("migrate-host", argv[0]))
+                    return SimpleNamespace(stdout="")
                 raise AssertionError(f"unexpected install runner call: {argv}")
+
+            production_command=mb.command
+            def command_from_justfile(repo_arg, mode, *, home, gobin=None, args=None, execer=None):
+                return production_command(repo_arg,mode,home=home,gobin=install_bin,args=args,
+                                          execer=execer or os.execvpe,runner=runner)
+
+            host_platform=mb._platform(repo)
             with mock.patch.object(mb, "_source_stamps", return_value=("v", "c", str(repo), "topic")), \
+                 mock.patch.object(mb, "_platform", return_value=host_platform), \
                  mock.patch.object(mb, "assemble", side_effect=fake_assembler), \
-                 mock.patch.dict(os.environ, {"YOLO_VERSION":""}):
-                installed=mb.command(repo, "install", home=home, gobin=gobin, runner=runner)
-            self.assertEqual(Path(installed), gobin/"yolo")
-            self.assertEqual([event[0] for event in events], ["stage", "activate"])
-            self.assertEqual(events[1][1], events[0][1])
+                 mock.patch.object(mb, "command", side_effect=command_from_justfile), \
+                 mock.patch.object(mb.subprocess, "run", side_effect=runner), \
+                 mock.patch.dict(os.environ, {"YOLO_VERSION":""}), \
+                 mock.patch.object(mb.sys, "argv", ["scripts/matched-bundle.py", "install", "--repo", str(repo), "--home", str(home)]):
+                self.assertEqual(mb.main(), 0)
+            installed=install_bin/"yolo"
+            self.assertTrue(installed.is_file(), "the Justfile install flow did not install its launcher")
+            self.assertEqual([event[0] for event in events], ["migrate-host", "stage", "activate"])
+            self.assertEqual(events[2][1], events[1][1])
+            self.assertEqual(Path(events[1][1]), root/"generation")
 
     def test_install_generation_activates_only_identity_match(self):
         with tempfile.TemporaryDirectory() as td:
