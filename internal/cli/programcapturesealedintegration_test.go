@@ -614,7 +614,8 @@ func buildAuditedSealedCandidate(t *testing.T, ctx context.Context, root, owned 
 	if err != nil {
 		t.Fatalf("shared matched-bundle build (within the existing <=5m proof bound): %v\n%s", err, out)
 	}
-	exe := strings.TrimSpace(string(out))
+	buildLines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	exe := strings.TrimSpace(buildLines[len(buildLines)-1])
 	if !filepath.IsAbs(exe) {
 		t.Fatalf("matched build did not print an absolute launcher path: %q", exe)
 	}

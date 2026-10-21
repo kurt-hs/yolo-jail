@@ -139,7 +139,7 @@ func runSuite(m *testing.M) int {
 	if err != nil {
 		log.Fatalf("integration: building matched yolo bundle: %v\n%s", err, out)
 	}
-	yoloBin = strings.TrimSpace(string(out))
+	yoloBin = matchedLauncherFromBuildOutput(string(out))
 	if !filepath.IsAbs(yoloBin) {
 		log.Fatalf("integration: build-dev-bundle did not print an absolute launcher path: %q", yoloBin)
 	}
@@ -700,6 +700,14 @@ func jailTimeout() time.Duration {
 // is deliberately not a fallback: it is the source tree passed to build operations.
 func matchedBundleFlakeRoot(launcher string) string {
 	return filepath.Join(filepath.Dir(filepath.Dir(launcher)), "share", "yolo-jail")
+}
+
+func matchedLauncherFromBuildOutput(output string) string {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return ""
+	}
+	return strings.TrimSpace(lines[len(lines)-1])
 }
 
 var launchANSI = regexp.MustCompile(`\x1b\[[0-9;]*m`)

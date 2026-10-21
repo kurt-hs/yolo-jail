@@ -14,6 +14,11 @@ func TestMatchedHarnessUsesAdjacentBundleAndScrubsObsoleteSelector(t *testing.T)
 	if got := matchedBundleFlakeRoot(launcher); got != wantBundle {
 		t.Fatalf("matchedBundleFlakeRoot(%q) = %q, want %q", launcher, got, wantBundle)
 	}
+	buildOutput := "build-go: yolo -> dist-go/linux-amd64/yolo\n" +
+		"stage-source-bundle: staged 100M bundle\n" + launcher + "\n"
+	if got := matchedLauncherFromBuildOutput(buildOutput); got != launcher {
+		t.Fatalf("matchedLauncherFromBuildOutput() = %q, want final absolute launcher path %q", got, launcher)
+	}
 
 	env := []string{"PATH=/bin", "YOLO_REPO_ROOT=/other/checkout", "HOME=/home/test"}
 	got := envWithoutRepoRoot(env)
