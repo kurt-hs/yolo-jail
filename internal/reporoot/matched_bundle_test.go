@@ -120,6 +120,25 @@ func TestResolveMatchedAdjacentBundlesAreAuthoritativeAcrossLayouts(t *testing.T
 	}
 }
 
+func TestResolveInstalledGOBINDoesNotTreatStateDirectoryAsAdjacentBundle(t *testing.T) {
+	home := t.TempDir()
+	binDir := filepath.Join(home, ".local", "bin")
+	stateDir := filepath.Join(home, ".local", "share", "yolo-jail")
+	generation := filepath.Join(stateDir, "flake-bundles", "generation")
+	active := filepath.Join(stateDir, "flake-bundle")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeMatchedBundle(t, generation, snapshotA, "installed")
+	if err := os.Symlink(generation, active); err != nil {
+		t.Fatal(err)
+	}
+	got := resolveWith(filepath.Join(binDir, "yolo"), active, func(string) string { return "" }, snapshotA, "installed")
+	if got.Error != nil || got.Source != FromInstalledBundle || got.Root != mustAbs(t, generation) {
+		t.Fatalf("resolution from installed GOBIN = %+v, want the active installed generation %s", got, generation)
+	}
+}
+
 func TestResolveRejectsIncompleteAdjacentInsteadOfInstalledFallback(t *testing.T) {
 	base := t.TempDir()
 	exeDir := filepath.Join(base, "prefix", "bin")

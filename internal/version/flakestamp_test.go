@@ -46,7 +46,7 @@ func TestTheFlakeAndBuildGoShareReleaseMetadata(t *testing.T) {
 	}
 	for _, v := range goVars {
 		switch v {
-		case "buildVersion", "GitCommit", "SnapshotIdentity", "BuildKind":
+		case "buildVersion", "GitCommit", "SnapshotIdentity", "BuildKind", "SourceDir", "SourceBranch":
 		default:
 			t.Errorf("build-go.sh stamps %s, which this test does not know to exist", v)
 		}
@@ -62,8 +62,8 @@ func TestTheFlakeAndBuildGoShareReleaseMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	builds := regexp.MustCompile(`(?m)^\s*go build .*$`).FindAllString(string(flake), -1)
-	if len(builds) != 2 {
-		t.Fatalf("flake.nix has %d `go build` lines, want 2 (goBinaries, guestPrefix): %q",
+	if len(builds) != 1 {
+		t.Fatalf("flake.nix has %d `go build` lines, want 1 standalone installPrefix build: %q",
 			len(builds), builds)
 	}
 	for _, line := range builds {
@@ -71,6 +71,31 @@ func TestTheFlakeAndBuildGoShareReleaseMetadata(t *testing.T) {
 			t.Errorf("a flake.nix `go build` does not stamp the version and commit: %s",
 				strings.TrimSpace(line))
 		}
+	}
+}
+
+// TestSourceDirectoryStampsRemainInstallOnly keeps checkout provenance distinct
+// from release/image metadata after local bundles gained snapshot identity.
+func TestSourceDirectoryStampsRemainInstallOnly(t *testing.T) {
+	flakeVars := stampVars(t, "flake.nix")
+	goVars := stampVars(t, "scripts/build-go.sh")
+	for _, name := range []string{"SourceDir", "SourceBranch"} {
+		if !containsStampVar(goVars, name) {
+			t.Errorf("scripts/build-go.sh no longer stamps install source field %s", name)
+		}
+		if containsStampVar(flakeVars, name) {
+			t.Errorf("flake.nix must not stamp install-only source field %s", name)
+		}
+	}
+
+	matched, err := os.ReadFile(filepath.Join("..", "..", "scripts", "matched-bundle.py"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assembly := string(matched)
+	if !strings.Contains(assembly, "if build_kind == \"installed\":") ||
+		!strings.Contains(assembly, `env.update({"SOURCE_DIR": source_dir, "SOURCE_BRANCH": source_branch})`) {
+		t.Fatal("matched-bundle assembly no longer passes SourceDir/SourceBranch only for installed builds")
 	}
 }
 

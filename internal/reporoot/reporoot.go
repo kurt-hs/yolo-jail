@@ -94,6 +94,9 @@ func resolveWith(executable, installedPath string, getenv func(string) string, i
 	}
 	exeDir := filepath.Dir(executable)
 	for _, candidate := range adjacentCandidates(exeDir) {
+		if isInstalledStateDirectory(candidate.path, installedPath) {
+			continue
+		}
 		if !isBundleCandidate(candidate) {
 			continue
 		}
@@ -135,6 +138,14 @@ func adjacentCandidates(exeDir string) []adjacentCandidate {
 		{path: filepath.Join(exeDir, "share", "yolo-jail"), existenceIsProof: true},
 		{path: exeDir},
 	}
+}
+
+func isInstalledStateDirectory(candidate, installedPath string) bool {
+	if installedPath == "" {
+		return false
+	}
+	stateDir := canonicalRoot(filepath.Dir(installedPath))
+	return stateDir != "" && canonicalRoot(candidate) == stateDir
 }
 
 // A share/yolo-jail path is recognized by its existence, even when empty; the

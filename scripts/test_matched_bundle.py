@@ -105,6 +105,29 @@ class SnapshotTests(unittest.TestCase):
             self.assertFalse((snapshot / ".git").exists())
             self.assertEqual(identity, mb.snapshot_identity(snapshot))
 
+    def test_subprocess_environment_scrubs_repo_root_without_changing_parent(self):
+        from unittest import mock
+        calls=[]
+        def check_output(argv, **kw):
+            calls.append((argv, kw.get("env")))
+            if argv[0] == "go":
+                return "linux\n" if argv[-1] == "GOOS" else "amd64\n"
+            return "" if kw.get("text") else b""
+        def run(argv, **kw):
+            calls.append((argv, kw.get("env")))
+            return SimpleNamespace(stdout=b"")
+        with mock.patch.dict(os.environ, {"YOLO_REPO_ROOT":"/not-a-child-path"}):
+            with mock.patch.object(mb.subprocess, "check_output", side_effect=check_output), \
+                 mock.patch.object(mb.subprocess, "run", side_effect=run):
+                self.assertEqual(mb._platform(self.repo), ("linux", "amd64"))
+                mb._source_stamps(self.repo)
+                mb._git_paths(self.repo)
+            self.assertEqual(os.environ["YOLO_REPO_ROOT"], "/not-a-child-path")
+        self.assertGreater(len(calls), 0)
+        for argv, env in calls:
+            self.assertIsNotNone(env, f"{argv} inherited the parent environment directly")
+            self.assertNotIn("YOLO_REPO_ROOT", env, f"{argv} received the obsolete selector")
+
     def test_git_state_env_cannot_redirect_the_manifest(self):
         other = self.root / "other"
         other.mkdir()
@@ -147,6 +170,7 @@ class SnapshotTests(unittest.TestCase):
             seen = []
             def run(argv, *, cwd, env, check):
                 seen.append(Path(argv[0]))
+                self.assertNotIn("YOLO_REPO_ROOT", env)
                 self.assertEqual(cwd, snapshot)
                 self.assertTrue(Path(argv[0]).is_relative_to(snapshot))
                 if str(argv[0]).endswith("build-go.sh"):
@@ -166,6 +190,39 @@ class SnapshotTests(unittest.TestCase):
             mb.assemble(snapshot, output, identity=identity, build_kind="development",
                         version="v", commit="c", runner=run)
             self.assertEqual(len(seen), 2)
+
+    def test_assemble_passes_source_stamps_only_to_installed_builds(self):
+        with tempfile.TemporaryDirectory() as td:
+            snapshot=Path(td)/"snapshot"
+            mb.freeze_snapshot(self.repo, snapshot)
+            host_os,host_arch=mb._platform(snapshot)
+            shipped,guest=mb._binary_lists(snapshot/"scripts/stage-source-bundle.sh")
+            observed=[]
+            def runner(argv, *, cwd, env, check):
+                self.assertEqual(cwd, snapshot)
+                observed.append((argv[0], env.copy()))
+                if str(argv[0]).endswith("build-go.sh"):
+                    binary=snapshot/"dist-go"/f"{host_os}-{host_arch}"/"yolo"
+                    binary.parent.mkdir(parents=True,exist_ok=True)
+                    binary.write_text("#!/bin/sh\nprintf '%s\\n' 'snapshot identity: "+env["SNAPSHOT_IDENTITY"]+"' 'build kind: "+env["BUILD_KIND"]+"'\n")
+                    binary.chmod(0o755)
+                else:
+                    bundle=Path(argv[1]); bundle.mkdir(parents=True)
+                    (bundle/"flake.nix").write_text("flake")
+                    (bundle/"flake.lock").write_text("lock")
+                    _fake_helper_dirs(bundle,snapshot)
+                    (bundle/"yolo-build-stamp.json").write_text(json.dumps({"snapshotIdentity":env["SNAPSHOT_IDENTITY"],"buildKind":env["BUILD_KIND"]}))
+                return SimpleNamespace(returncode=0)
+            for kind in ("installed","development"):
+                identity=("c" if kind=="installed" else "d")*64
+                out=Path(td)/kind
+                mb.assemble(snapshot,out,identity=identity,build_kind=kind,version="v",commit="c",
+                            source_dir="/checkout",source_branch="topic",runner=runner)
+            build_envs=[env for command,env in observed if str(command).endswith("build-go.sh")]
+            self.assertEqual(build_envs[0]["SOURCE_DIR"],"/checkout")
+            self.assertEqual(build_envs[0]["SOURCE_BRANCH"],"topic")
+            self.assertNotIn("SOURCE_DIR",build_envs[1])
+            self.assertNotIn("SOURCE_BRANCH",build_envs[1])
 
     def test_build_go_omits_whitespace_source_dir_but_stamps_identity(self):
         root = self.root / "build"
@@ -229,6 +286,71 @@ class PackageTests(unittest.TestCase):
                 paths=list(pool.map(lambda _: mb.publish_dev_bundle(home,payload,identity="x"),range(4)))
             self.assertEqual(len({str(p) for p in paths}),4)
             self.assertTrue(all(not p.stat().st_mode & 0o222 for p in paths))
+
+    def test_invalid_cached_launcher_is_a_miss_and_is_never_executed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root); home=root/"home"; builds=[]; executed=[]
+            first=mb.build_dev_bundle(repo, home, builder=lambda snapshot, output, **kw:
+                fake_assembler(snapshot, output, **kw))
+            failed_generation=first.parent.parent
+            first.chmod(0o755)
+            first.write_text("#!/bin/sh\nexit 7\n")
+            first.chmod(0o755)
+
+            def builder(snapshot, output, *, identity, build_kind, **kw):
+                builds.append(identity)
+                fake_assembler(snapshot, output, identity=identity, build_kind=build_kind)
+
+            mb.command(repo, "dev", home=home, builder=builder,
+                       execer=lambda path, argv, env: executed.append((path, argv, env)))
+            self.assertEqual(len(builds), 1)
+            self.assertEqual(len(executed), 1)
+            self.assertNotEqual(Path(executed[0][0]), first)
+            self.assertEqual(Path(executed[0][0]).read_text().splitlines()[1],
+                             "printf '%s\\n' 'snapshot identity: " + builds[0] + "' 'build kind: development'")
+            self.assertTrue(failed_generation.is_dir())
+            self.assertEqual(first.read_text(), "#!/bin/sh\nexit 7\n")
+
+    def test_dev_command_notices_without_value_and_preserves_parent_selector(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as td:
+            repo=repo_fixture(Path(td)); home=Path(td)/"home"; launcher=Path(td)/"matched/yolo"
+            launcher.parent.mkdir(); launcher.write_text("launcher")
+            executed=[]; stderr=StringIO(); secret="/private/source/checkout"
+            with mock.patch.dict(os.environ,{"YOLO_REPO_ROOT":secret}), \
+                 mock.patch.object(mb,"build_dev_bundle",return_value=launcher), \
+                 redirect_stderr(stderr):
+                mb.command(repo,"dev",home=home,execer=lambda path,argv,env: executed.append((path,argv,env)))
+                self.assertEqual(os.environ["YOLO_REPO_ROOT"],secret)
+            self.assertEqual(executed[0][0],str(launcher))
+            self.assertNotIn("YOLO_REPO_ROOT",executed[0][2])
+            self.assertIn("Ignoring obsolete YOLO_REPO_ROOT",stderr.getvalue())
+            self.assertNotIn(secret,stderr.getvalue())
+
+    def test_install_command_runs_shared_activation_workflow(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root, real_scripts=True); home=root/"home"
+            gobin=root/"gobin"; events=[]
+            def runner(argv, **kw):
+                if "--stage" in argv:
+                    generation=root/"generation"
+                    generation.mkdir()
+                    events.append(("stage", str(generation)))
+                    return SimpleNamespace(stdout=str(generation))
+                if "--activate" in argv:
+                    events.append(("activate", argv[-1]))
+                    return SimpleNamespace(stdout="")
+                raise AssertionError(f"unexpected install runner call: {argv}")
+            with mock.patch.object(mb, "_source_stamps", return_value=("v", "c", str(repo), "topic")), \
+                 mock.patch.object(mb, "assemble", side_effect=fake_assembler), \
+                 mock.patch.dict(os.environ, {"YOLO_VERSION":""}):
+                installed=mb.command(repo, "install", home=home, gobin=gobin, runner=runner)
+            self.assertEqual(Path(installed), gobin/"yolo")
+            self.assertEqual([event[0] for event in events], ["stage", "activate"])
+            self.assertEqual(events[1][1], events[0][1])
 
     def test_install_generation_activates_only_identity_match(self):
         with tempfile.TemporaryDirectory() as td:

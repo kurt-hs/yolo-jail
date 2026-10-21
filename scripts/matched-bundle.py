@@ -40,8 +40,8 @@ def _binary_lists(script: Path) -> tuple[list[str], list[str]]:
 
 
 def _platform(root: Path) -> tuple[str, str]:
-    goos = subprocess.check_output(["go", "env", "GOOS"], cwd=root, text=True).strip()
-    goarch = subprocess.check_output(["go", "env", "GOARCH"], cwd=root, text=True).strip()
+    goos = subprocess.check_output(["go", "env", "GOOS"], cwd=root, env=_git_env(), text=True).strip()
+    goarch = subprocess.check_output(["go", "env", "GOARCH"], cwd=root, env=_git_env(), text=True).strip()
     if goos not in ("linux", "darwin"):
         raise RuntimeError(f"matched bundles are supported on Linux and macOS, not {goos}")
     return goos, goarch
@@ -74,9 +74,10 @@ def _validate_bundle_contents(bundle: Path, shipped: list[str], guest: list[str]
 
 
 def _git_env() -> dict[str, str]:
-    # Explicit cwd is not enough for linked worktrees: inherited GIT_DIR,
-    # GIT_INDEX_FILE and related state can redirect manifest reads elsewhere.
-    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    # Child probes must not inherit checkout selection or Git redirection state.
+    # The parent shell remains untouched; only explicit child environments use this.
+    return {key: value for key, value in os.environ.items()
+            if not key.startswith("GIT_") and key != "YOLO_REPO_ROOT"}
 
 
 def _git_paths(repo: Path) -> set[str]:
@@ -330,7 +331,8 @@ def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subproc
                 validate_bundle(candidate, identity, "development", shipped=shipped, guest=guest,
                                 host_os=host_os, host_arch=host_arch)
                 return candidate / "bin/yolo"
-            except (OSError, ValueError, RuntimeError, json.JSONDecodeError):
+            except (OSError, ValueError, RuntimeError, json.JSONDecodeError,
+                    subprocess.CalledProcessError):
                 continue
         output = Path(td) / "bundle"
         builder(snapshot, output, identity=identity, build_kind="development",
@@ -388,7 +390,7 @@ def _atomic_install_launcher(source: Path, gobin: Path) -> Path:
 def _resolved_path(path: str | Path) -> str:
     try:
         return subprocess.check_output(["readlink", "-f", str(path)], text=True,
-                                       stderr=subprocess.DEVNULL).strip()
+                                       stderr=subprocess.DEVNULL, env=_git_env()).strip()
     except (OSError, subprocess.CalledProcessError):
         return str(path)
 
@@ -433,10 +435,13 @@ def command(repo: Path, mode: str, *, home: Path, gobin: Path | None = None,
         launcher = output / "bin/yolo"
         subprocess.run([str(launcher), "internal", "migrate-host"], env=env, check=True)
         publish_install_generation(launcher, output / "share/yolo-jail", identity, env,
-                                   shipped=shipped, guest=guest, host_os=host_os, host_arch=host_arch)
+                                   runner=runner, shipped=shipped, guest=guest,
+                                   host_os=host_os, host_arch=host_arch)
         if gobin is None:
-            raw = subprocess.check_output(["go", "env", "GOBIN"], cwd=snapshot, text=True).strip()
-            gobin = Path(raw) if raw else Path(subprocess.check_output(["go", "env", "GOPATH"], cwd=snapshot, text=True).strip()) / "bin"
+            raw = subprocess.check_output(["go", "env", "GOBIN"], cwd=snapshot,
+                                          env=_git_env(), text=True).strip()
+            gobin = Path(raw) if raw else Path(subprocess.check_output(
+                ["go", "env", "GOPATH"], cwd=snapshot, env=_git_env(), text=True).strip()) / "bin"
         installed = _atomic_install_launcher(launcher, gobin)
         print(f"Installed to {gobin}")
         resolved = shutil.which("yolo")
