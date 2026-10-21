@@ -160,8 +160,17 @@ json_string() {
   local s="${1//\\/\\\\}"
   printf '"%s"' "${s//\"/\\\"}"
 }
-printf '{"version":%s,"commit":%s}\n' "$(json_string "$VERSION")" "$(json_string "$COMMIT")" \
+printf '{"version":%s,"commit":%s' "$(json_string "$VERSION")" "$(json_string "$COMMIT")" \
   > "$DEST/yolo-build-stamp.json"
+if [ -n "${SNAPSHOT_IDENTITY:-}" ]; then
+  printf ',"snapshotIdentity":%s' "$(json_string "$SNAPSHOT_IDENTITY")" \
+    >> "$DEST/yolo-build-stamp.json"
+fi
+if [ -n "${BUILD_KIND:-}" ]; then
+  printf ',"buildKind":%s' "$(json_string "$BUILD_KIND")" \
+    >> "$DEST/yolo-build-stamp.json"
+fi
+printf '}\n' >> "$DEST/yolo-build-stamp.json"
 
 # Cross-compile each Linux arch into dist-go/linux-<arch>/, then copy just the
 # ship set into the bundle. build-go.sh builds every cmd/ (goprobe included);

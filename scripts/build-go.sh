@@ -79,11 +79,33 @@ COMMIT="${COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || true)}"
 # With the flag both counts are zero and the paths read as
 # github.com/mschulkind-oss/yolo-jail/internal/..., which is also what makes a
 # shipped bundle reproducible between the host build and the jail build.
+LDFLAGS="-X github.com/mschulkind-oss/yolo-jail/internal/version.buildVersion=${VERSION} -X github.com/mschulkind-oss/yolo-jail/internal/version.GitCommit=${COMMIT}"
+# Matched local bundles carry dirty-snapshot identity and an explicit channel;
+# release builds leave both strings empty, preserving existing metadata.
+if [ -n "${SNAPSHOT_IDENTITY:-}" ]; then
+    LDFLAGS="$LDFLAGS -X github.com/mschulkind-oss/yolo-jail/internal/version.SnapshotIdentity=${SNAPSHOT_IDENTITY}"
+fi
+if [ -n "${BUILD_KIND:-}" ]; then
+    LDFLAGS="$LDFLAGS -X github.com/mschulkind-oss/yolo-jail/internal/version.BuildKind=${BUILD_KIND}"
+fi
+# Preserve the previous behavior for whitespace-bearing install paths: omitting
+# SourceDir is safer than splitting its value into linker arguments.
+if [ -n "${SOURCE_DIR:-}" ]; then
+    case "$SOURCE_DIR" in
+        *[[:space:]]*) echo "⚠ checkout path has whitespace — 'yolo update' will not be able to find it" >&2 ;;
+        *) LDFLAGS="$LDFLAGS -X github.com/mschulkind-oss/yolo-jail/internal/version.SourceDir=${SOURCE_DIR}" ;;
+    esac
+fi
+if [ -n "${SOURCE_BRANCH:-}" ]; then
+    case "$SOURCE_BRANCH" in
+        *[[:space:]]*) ;;
+        *) LDFLAGS="$LDFLAGS -X github.com/mschulkind-oss/yolo-jail/internal/version.SourceBranch=${SOURCE_BRANCH}" ;;
+    esac
+fi
 for cmd in "${CMDS[@]}"; do
     echo "build-go: ${cmd} -> ${OUTDIR}/${cmd} (${GOOS}/${GOARCH})"
     CGO_ENABLED="${CGO_ENABLED:-0}" GOOS="$GOOS" GOARCH="$GOARCH" \
-        go build -trimpath \
-        -ldflags "-X github.com/mschulkind-oss/yolo-jail/internal/version.buildVersion=${VERSION} -X github.com/mschulkind-oss/yolo-jail/internal/version.GitCommit=${COMMIT}" \
+        go build -trimpath -ldflags "$LDFLAGS" \
         -o "${OUTDIR}/${cmd}" "./cmd/${cmd}"
 done
 

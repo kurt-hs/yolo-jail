@@ -1,6 +1,9 @@
 # Container runtime (podman or container)
 runtime := env("YOLO_RUNTIME", "podman")
 
+# Preserve argument boundaries in recipes that forward variadic arguments.
+set positional-arguments
+
 default:
     @just --list
 
@@ -45,122 +48,21 @@ install:
         echo "✗ 'just install' is host-only — refusing inside a jail (YOLO_VERSION set)." >&2
         echo "  It would go-install a copy into \$GOBIN that shadows the baked /bin/yolo" >&2
         echo "  on PATH with a stale binary. To test Go changes here:" >&2
-        echo "    just build-go && ./dist-go/linux-\$(go env GOARCH)/yolo -- bash" >&2
-        echo "  (run the freshly-built binary BY PATH — not the installed one)." >&2
+        echo "    just dev -- -- bash" >&2
+        echo "  (the wrapper builds and invokes a matched launcher by path)." >&2
         echo "  To ship to the host, run 'just install' / 'just deploy' on the host." >&2
         exit 1
     fi
 
-    VERSION="$(git describe --tags --always --dirty --long --abbrev=12 2>/dev/null || echo unknown)"
-    COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
-    # SourceDir records THIS checkout so `yolo update` knows what to pull and
-    # redeploy (internal/selfupdate). Only this recipe stamps it: a release
-    # build's checkout path means nothing on the machine the binary lands on.
-    # A path with whitespace cannot ride an unquoted -X, so it goes unstamped and
-    # `yolo update` reports the install as one it cannot update.
-    SOURCE_DIR="$(pwd -P)"
-    LDFLAGS="-X github.com/mschulkind-oss/yolo-jail/internal/version.buildVersion=${VERSION} -X github.com/mschulkind-oss/yolo-jail/internal/version.GitCommit=${COMMIT}"
-    case "$SOURCE_DIR" in
-        *[[:space:]]*) echo "⚠ checkout path has whitespace — 'yolo update' will not be able to find it" >&2 ;;
-        *) LDFLAGS="$LDFLAGS -X github.com/mschulkind-oss/yolo-jail/internal/version.SourceDir=${SOURCE_DIR}" ;;
-    esac
-    # The branch, so `yolo update` can refuse a checkout that has since switched
-    # branches instead of deploying that one. Empty on a detached HEAD.
-    SOURCE_BRANCH="$(git symbolic-ref --short -q HEAD 2>/dev/null || true)"
-    case "$SOURCE_BRANCH" in
-        ""|*[[:space:]]*) ;;
-        *) LDFLAGS="$LDFLAGS -X github.com/mschulkind-oss/yolo-jail/internal/version.SourceBranch=${SOURCE_BRANCH}" ;;
-    esac
+    python3 scripts/matched-bundle.py install --repo "$(pwd -P)" --home "$HOME"
 
-    # --- Retire the pre-Go (Python) install ---
-    # Upgrading from the uv-installed Python distribution leaves console-script
-    # symlinks in GOBIN. `go install` refuses to overwrite the one named `yolo`
-    # ("already exists and is not an object file"), so clear them first. Runs
-    # via `go run` because it has to happen before the install it unblocks.
-    go run ./cmd/yolo internal migrate-host
+# Build and print a matched development launcher without activating/installing it.
+build-dev-bundle:
+    python3 scripts/matched-bundle.py build-dev --repo "$(pwd -P)" --home "$HOME"
 
-    go install -ldflags "$LDFLAGS" ./cmd/yolo
-    GOBIN_DIR="$(go env GOBIN 2>/dev/null || true)"
-    [ -n "$GOBIN_DIR" ] || GOBIN_DIR="$(go env GOPATH)/bin"
-    echo "Installed to $GOBIN_DIR"
-
-    # AN INSTALL PATH NOBODY RUNS IS NOT AN INSTALL. `go install` writes to GOBIN and
-    # says nothing about what `yolo` RESOLVES to: an older copy earlier on PATH (a
-    # package-manager one, a stray ~/.local/bin/yolo) silently keeps winning, so every
-    # `just deploy` looks like it worked while the launcher on the machine never moves.
-    # That is invisible until a host<->jail contract changes and the boot dies naming
-    # neither half — see version.SourceSkew, which catches the SYMPTOM at launch; this
-    # catches the CAUSE at install. Warn rather than fail: a machine with no `yolo` on
-    # PATH yet is a first install, not a mistake.
-    RESOLVED="$(command -v yolo 2>/dev/null || true)"
-    if [ -n "$RESOLVED" ] && [ "$(readlink -f "$RESOLVED" 2>/dev/null || echo "$RESOLVED")" != "$(readlink -f "$GOBIN_DIR/yolo" 2>/dev/null || echo "$GOBIN_DIR/yolo")" ]; then
-        echo >&2
-        echo "⚠ WARNING: this install is NOT the yolo your shell runs." >&2
-        echo "    installed:  $GOBIN_DIR/yolo" >&2
-        echo "    resolves:   $RESOLVED" >&2
-        echo "  Every launch will keep using the older one. Put $GOBIN_DIR ahead of it on" >&2
-        echo "  PATH (or remove $RESOLVED), then run 'hash -r'." >&2
-        echo >&2
-    fi
-
-    # Stage a SELF-CONTAINED flake bundle so an installed `yolo` builds the jail
-    # image from ANY directory — no source checkout, no YOLO_REPO_ROOT, ever.
-    # This is the "two files and a binary" prebuilt bundle (flake.nix +
-    # flake.lock + bin/linux-<arch>/) that the flake's prebuilt short-circuit
-    # consumes with no toolchain — the same bundle Homebrew and the release
-    # archive ship. reporoot.Resolve step 4 finds it.
-    #
-    # THE PATH COMES FROM THE BINARY, not from $GOBIN arithmetic. `yolo internal
-    # bundle-dir` prints paths.FlakeBundleDir() — a dedicated leaf UNDER the
-    # state dir ($HOME/.local/share/yolo-jail/flake-bundle). The first cut
-    # computed $(dirname $GOBIN)/share/yolo-jail, which for GOBIN=~/.local/bin
-    # collapsed onto $HOME/.local/share/yolo-jail — the whole state dir — and the
-    # staging script's `rm -rf $DEST` deleted it. Asking the binary for the one
-    # path it actually resolves removes both the arithmetic and the drift.
-    #
-    # NATIVE ARCH ONLY. The shipped bundle (goreleaser/brew) is arch-agnostic and
-    # builds both amd64+arm64, but a LOCAL install runs on one host — building the
-    # foreign arch is a cold cross-compile of the whole module graph. Narrow to
-    # this host's arch, reusing the warm cache from the `go install` just above.
-    #
-    # STAGE INTO A FRESH GENERATION, THEN SWAP — never over the live path. A
-    # launch mounts <bundle>/bin/linux-<arch> into the jail as its yolo binaries,
-    # and a bind mount pins an inode rather than a path, so the staging script's
-    # `rm -rf $DEST` used to delete pid1 out from under every RUNNING jail:
-    # measured 2026-09-09, a jail up since +1114 was bricked by the install that
-    # took the host to +1160, and stayed bricked. `--stage` prints a new
-    # generation dir, `--activate` points the stable path at it atomically, and
-    # jails still mounting an older generation keep working until they exit
-    # (internal/flakebundle; the housekeeping slot collects the rest).
-    YOLO_BIN="$GOBIN_DIR/yolo"
-    BUNDLE_GEN="$("$YOLO_BIN" internal bundle-dir --stage)"
-    echo "Staging flake bundle (linux/$(go env GOARCH)) → $BUNDLE_GEN"
-    # The macos-user GUEST dir (bin/darwin-<arch>, the sandbox's in-jail binaries) only on a
-    # Mac: a Linux host never launches macos-user, so building it there is a darwin
-    # cross-compile for nothing. Staged into the bundle's share dir, never onto a PATH.
-    GUEST_OSES=""
-    if [ "$(go env GOOS)" = "darwin" ]; then GUEST_OSES="darwin"; fi
-    YOLO_BUNDLE_ARCHES="$(go env GOARCH)" YOLO_BUNDLE_GUEST_OSES="$GUEST_OSES" \
-        ./scripts/stage-source-bundle.sh "$BUNDLE_GEN"
-    "$YOLO_BIN" internal bundle-dir --activate "$BUNDLE_GEN"
-
-    # Warn if PATH resolves `yolo` to some other install (a Homebrew copy, say)
-    # — go install would have succeeded while the old binary still wins.
-    RESOLVED="$(command -v yolo 2>/dev/null || true)"
-    if [ -n "$RESOLVED" ] && [ "$RESOLVED" != "$GOBIN_DIR/yolo" ]; then
-        echo "⚠ PATH resolves yolo to $RESOLVED, not the copy just installed at $GOBIN_DIR/yolo." >&2
-        echo "  Remove the other install, or put $GOBIN_DIR earlier in PATH." >&2
-    fi
-
-    # NOTE: install no longer records repo_path in the user config (that key was
-    # retired 2026-07-23), and the cwd stopped selecting the repo on 2026-08-31.
-    # The staged bundle above is what an installed `yolo` builds from, in EVERY
-    # directory including a checkout; YOLO_REPO_ROOT is the only way to point it
-    # at live source. So this staging step is not a convenience for the
-    # checkout-less case any more — it is the from-source developer's only
-    # delivery path, and the reason `just install` has to be re-run after a commit
-    # that changes the image (version.SourceSkew refuses the mismatch). See
-    # internal/reporoot.Resolve and docs/reference/image-staging-vs-baking.md.
+# Reuse/build the current matched artifact, then exec it with exactly these args.
+dev *args:
+    ./scripts/dev-wrapper.sh "$@"
 
 # Install yolo CLI and prime the Claude OAuth broker state. Safe to re-run.
 deploy: install
