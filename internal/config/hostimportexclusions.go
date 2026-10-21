@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg"
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/codec"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonptr"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -101,6 +102,11 @@ func checkHostImportExclusions(config *jsonx.OrderedMap) (map[string][]string, [
 
 func shippedHostImportSurfaces() map[string]bool {
 	out := make(map[string]bool)
+	for _, surface := range agentcfg.BuiltinManifest().Surfaces() {
+		address := surface.Agent + "/" + surface.Name
+		codecImpl, codecKnown := codec.LookupCodec(surface.Codec)
+		out[address] = surface.HasHostLayer() && codecKnown && codecImpl != nil && surface.Kind() == codec.KindObject
+	}
 	for _, pack := range packload.Embedded() {
 		surfaces, _ := pack.Surfaces()
 		for _, surface := range surfaces {

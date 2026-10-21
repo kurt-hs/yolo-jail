@@ -94,6 +94,20 @@ func TestHostImportExclusionsValidateShippedTargetsEvenWhenUnselected(t *testing
 	}
 }
 
+func TestHostImportExclusionsClassifiesCoreMiseSurfaceAsIncapable(t *testing.T) {
+	capabilities := shippedHostImportSurfaces()
+	capable, known := capabilities["mise/config"]
+	if !known || capable {
+		t.Fatalf("mise/config capability = %v, known=%v; want known and incapable", capable, known)
+	}
+	_, problems := checkHostImportExclusions(decode(t,
+		`{"host_import_exclusions":{"mise/config":["/tools"]}}`))
+	joined := strings.Join(problems, "\n")
+	if !strings.Contains(joined, "cannot receive an object host layer") || strings.Contains(joined, "unknown shipped config surface") {
+		t.Fatalf("mise/config problems = %v; want known-incapable error, not unknown-target error", problems)
+	}
+}
+
 func TestHostImportExclusionsEmptyPolicyDoesNotChangeOwnership(t *testing.T) {
 	for _, body := range []string{
 		`{}`,
