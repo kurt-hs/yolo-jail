@@ -21,7 +21,7 @@ func mustAbs(t *testing.T, p string) string {
 // BundledSourceDirFrom must find complete executable-relative bundles at each
 // supported shipping layout and return false when no complete bundle is present.
 func TestBundledSourceDirFrom(t *testing.T) {
-	prefix := t.TempDir()
+	prefix := canonicalTempDir(t)
 	binDir := filepath.Join(prefix, "bin")
 	share := filepath.Join(prefix, "share", "yolo-jail")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
@@ -32,25 +32,25 @@ func TestBundledSourceDirFrom(t *testing.T) {
 		t.Errorf("system bundle: got (%q,%v), want (%q,true)", got, ok, mustAbs(t, share))
 	}
 
-	archive := t.TempDir()
+	archive := canonicalTempDir(t)
 	archiveShare := filepath.Join(archive, "share", "yolo-jail")
 	writeMatchedBundle(t, archiveShare, "", "")
 	if got, ok := BundledSourceDirFrom(archive); !ok || got != mustAbs(t, archiveShare) {
 		t.Errorf("archive bundle: got (%q,%v), want (%q,true)", got, ok, mustAbs(t, archiveShare))
 	}
 
-	beside := t.TempDir()
+	beside := canonicalTempDir(t)
 	writeMatchedBundle(t, beside, "", "")
 	if got, ok := BundledSourceDirFrom(beside); !ok || got != mustAbs(t, beside) {
 		t.Errorf("beside bundle: got (%q,%v), want (%q,true)", got, ok, mustAbs(t, beside))
 	}
-	if _, ok := BundledSourceDirFrom(t.TempDir()); ok {
+	if _, ok := BundledSourceDirFrom(canonicalTempDir(t)); ok {
 		t.Error("empty dir wrongly reported a bundle")
 	}
 }
 
 func TestResolveFindsMatchingInstalledBundle(t *testing.T) {
-	base := t.TempDir()
+	base := canonicalTempDir(t)
 	exeDir := filepath.Join(base, "bare-bin")
 	if err := os.MkdirAll(exeDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestResolveFindsMatchingInstalledBundle(t *testing.T) {
 // wiped, GlobalStorage (auth, caches, per-workspace overlays) is its parent, not
 // the target. Pins the collision that deleted a real state dir from recurring.
 func TestFlakeBundleDirIsNotStateDir(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv("HOME", canonicalTempDir(t))
 	if paths.FlakeBundleDir() == paths.GlobalStorage() {
 		t.Fatal("FlakeBundleDir equals GlobalStorage — staging rm -rf would delete the state dir")
 	}
@@ -85,11 +85,11 @@ func TestFlakeBundleDirIsNotStateDir(t *testing.T) {
 // The retired source selector is rejected rather than silently pairing the
 // running launcher with another checkout or bundle.
 func TestResolveRejectsObsoleteEnv(t *testing.T) {
-	dir := t.TempDir()
+	dir := canonicalTempDir(t)
 	if err := os.WriteFile(filepath.Join(dir, "flake.nix"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := resolveWith(filepath.Join(t.TempDir(), "yolo"), "", func(k string) string {
+	got := resolveWith(filepath.Join(canonicalTempDir(t), "yolo"), "", func(k string) string {
 		if k == "YOLO_REPO_ROOT" {
 			return dir
 		}
@@ -113,11 +113,11 @@ func TestResolveRejectsObsoleteEnv(t *testing.T) {
 // bundle (step 2) misses because the test binary has no share/yolo-jail beside
 // it. Nothing left can reach repoDir — so a pass proves the key is gone.
 func TestResolveIgnoresUserConfigRepoPath(t *testing.T) {
-	repoDir := t.TempDir()
+	repoDir := canonicalTempDir(t)
 	if err := os.WriteFile(filepath.Join(repoDir, "flake.nix"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	home := t.TempDir()
+	home := canonicalTempDir(t)
 	t.Setenv("HOME", home)
 	cfgDir := filepath.Join(home, ".config", "yolo-jail")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
@@ -136,7 +136,7 @@ func TestResolveIgnoresUserConfigRepoPath(t *testing.T) {
 // Resolve step 1 rejects an env pointing at a dir with neither flake.nix nor
 // go.mod (an empty/foreign mount must not be trusted as the repo).
 func TestResolveEnvEmptyDirRejected(t *testing.T) {
-	empty := t.TempDir()
+	empty := canonicalTempDir(t)
 	getenv := func(k string) string {
 		if k == "YOLO_REPO_ROOT" {
 			return empty
@@ -161,13 +161,13 @@ func TestResolveEnvEmptyDirRejected(t *testing.T) {
 // HOME is a temp dir so the staged bundle (step 3) misses too, leaving nothing
 // that could legitimately return the checkout.
 func TestResolveIgnoresCheckoutInCwd(t *testing.T) {
-	checkout := t.TempDir()
+	checkout := canonicalTempDir(t)
 	for _, name := range []string{"flake.nix", "go.mod"} { // the old step-2 marker pair
 		if err := os.WriteFile(filepath.Join(checkout, name), []byte("{}"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv("HOME", canonicalTempDir(t))
 	t.Chdir(checkout)
 
 	if got, ok := Resolve(func(string) string { return "" }); ok && got.Root == mustAbs(t, checkout) {
@@ -180,7 +180,7 @@ func TestResolveIgnoresCheckoutInCwd(t *testing.T) {
 // climbed to the root from any depth, so pinning only the root would leave half
 // the behaviour unpinned.
 func TestResolveIgnoresCheckoutAboveCwd(t *testing.T) {
-	checkout := t.TempDir()
+	checkout := canonicalTempDir(t)
 	for _, name := range []string{"flake.nix", "go.mod"} {
 		if err := os.WriteFile(filepath.Join(checkout, name), []byte("{}"), 0o644); err != nil {
 			t.Fatal(err)
@@ -190,7 +190,7 @@ func TestResolveIgnoresCheckoutAboveCwd(t *testing.T) {
 	if err := os.MkdirAll(deep, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv("HOME", canonicalTempDir(t))
 	t.Chdir(deep)
 
 	if got, ok := Resolve(func(string) string { return "" }); ok && got.Root == mustAbs(t, checkout) {

@@ -62,6 +62,31 @@ func TestRenderFailsClosedOnActiveHostImportCodecError(t *testing.T) {
 	}
 }
 
+func TestRenderFailsClosedWhenDeliveredHostImportSourceCannotBeRead(t *testing.T) {
+	withHomeAndCwd(t)
+	tgt := withStagedHostLayer(t, "pi", "settings", `{"x_host_import_exclusion":"remove"}`, usersOwnBytes)
+	s, _ := surfaceManifest().Lookup("pi", "settings")
+	staged, disposition := entrypoint.StagedHostLayer(s)
+	if disposition != packload.HostLayerDelivered {
+		t.Fatalf("staged host disposition = %v, want delivered", disposition)
+	}
+	if err := os.Remove(staged); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(staged, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pinHostImportPolicy(t, s, []string{"/x_host_import_exclusion"}, false)
+
+	var out, errw bytes.Buffer
+	if rc := configRender(tgt, []string{"pi/settings"}, &out, &errw, false); rc == 0 {
+		t.Fatalf("preview silently omitted an unreadable delivered host layer with active exclusions:\n%s", out.String())
+	}
+	if !strings.Contains(errw.String(), "host import exclusions") {
+		t.Fatalf("preview error does not identify the active host import filter: %s", errw.String())
+	}
+}
+
 func TestConfigResetRefusesHostImportCodecErrorBeforeMutatingSidecars(t *testing.T) {
 	home := withScratchHome(t)
 	tgt, sidecars := withLocalSidecarDir(t)

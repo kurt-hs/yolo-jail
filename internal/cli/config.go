@@ -763,6 +763,7 @@ func hostLayerFor(t configTarget, s manifest.Surface) ([]byte, string, error) {
 			"baseline and not a layer — this surface composes from its packs and its " +
 			"capture alone", nil
 	}
+	pointers := entrypoint.HostImportExclusionsIn(os.Getenv(packload.HostLayerEnvVar), s)
 	data, err := os.ReadFile(staged)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -771,9 +772,13 @@ func hostLayerFor(t configTarget, s manifest.Surface) ([]byte, string, error) {
 			// render is.
 			return nil, "", nil
 		}
+		if len(pointers) > 0 {
+			return nil, "", fmt.Errorf("surface %s/%s: read delivered host layer for active host import exclusions: %w",
+				s.Agent, s.Name, err)
+		}
 		return nil, "the `host` layer could not be read at " + staged + ": " + err.Error(), nil
 	}
-	if pointers := entrypoint.HostImportExclusionsIn(os.Getenv(packload.HostLayerEnvVar), s); len(pointers) > 0 {
+	if len(pointers) > 0 {
 		filtered, filterErr := agentcfg.FilterHostImportExclusions(s.Codec, data, pointers)
 		if filterErr != nil {
 			return nil, "", fmt.Errorf("surface %s/%s: apply staged host import exclusions: %w",

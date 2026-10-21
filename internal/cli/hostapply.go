@@ -127,6 +127,10 @@ func hostApplyRevert(out, errw io.Writer, color, write bool) int {
 // stdout still carries one document and nothing else, then the render, each spanned. deferred is
 // hostApplyDeferring's: "" for the apply that advances patched extensions, else why this one does not.
 func hostApplyRefreshAndRender(out, errw io.Writer, color, write bool, stdin io.Reader, format, deferred string) int {
+	if _, err := config.LoadHostImportExclusions(); err != nil {
+		fmt.Fprintf(errw, "yolo host apply: %v\n", err)
+		return 1
+	}
 	sp := hostApplySpan("host_apply.pack_refresh")
 	refreshHostPacks(errw)
 	sp.End()

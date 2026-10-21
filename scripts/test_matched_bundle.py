@@ -84,7 +84,7 @@ def fake_assembler(snapshot, output, *, identity, build_kind, **_):
 class SnapshotTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
+        self.root = Path(self.tmp.name).resolve()
         self.repo = repo_fixture(self.root)
 
     def tearDown(self):
@@ -106,13 +106,28 @@ class SnapshotTests(unittest.TestCase):
             self.assertFalse((snapshot / ".git").exists())
             self.assertEqual(identity, mb.snapshot_identity(snapshot))
 
+    def test_platform_uses_native_host_despite_target_overrides(self):
+        from unittest import mock
+        calls = []
+        native = tuple(subprocess.check_output(["go", "env", key], text=True).strip()
+                       for key in ("GOHOSTOS", "GOHOSTARCH"))
+
+        def check_output(argv, **_):
+            calls.append(argv)
+            return native[0 if argv[-1] == "GOHOSTOS" else 1] + "\n"
+
+        with mock.patch.dict(os.environ, {"GOOS": "darwin", "GOARCH": "arm64"}), \
+             mock.patch.object(mb.subprocess, "check_output", side_effect=check_output):
+            self.assertEqual(mb._platform(self.repo), native)
+        self.assertEqual(calls, [["go", "env", "GOHOSTOS"], ["go", "env", "GOHOSTARCH"]])
+
     def test_subprocess_environment_scrubs_repo_root_without_changing_parent(self):
         from unittest import mock
         calls=[]
         def check_output(argv, **kw):
             calls.append((argv, kw.get("env")))
             if argv[0] == "go":
-                return "linux\n" if argv[-1] == "GOOS" else "amd64\n"
+                return "linux\n" if argv[-1] == "GOHOSTOS" else "amd64\n"
             return "" if kw.get("text") else b""
         def run(argv, **kw):
             calls.append((argv, kw.get("env")))
@@ -163,11 +178,11 @@ class SnapshotTests(unittest.TestCase):
     def test_copied_build_scripts_run_from_frozen_tree_after_live_edit(self):
         self.repo = repo_fixture(self.root / "second")
         with tempfile.TemporaryDirectory() as td:
-            snapshot = Path(td) / "snapshot"
+            snapshot = Path(td).resolve() / "snapshot"
             identity = mb.freeze_snapshot(self.repo, snapshot)
             (self.repo / "scripts/build-go.sh").write_text("changed live script\n")
-            goos = subprocess.check_output(["go", "env", "GOOS"], text=True).strip()
-            goarch = subprocess.check_output(["go", "env", "GOARCH"], text=True).strip()
+            goos = subprocess.check_output(["go", "env", "GOHOSTOS"], text=True).strip()
+            goarch = subprocess.check_output(["go", "env", "GOHOSTARCH"], text=True).strip()
             seen = []
             def run(argv, *, cwd, env, check):
                 seen.append(Path(argv[0]))
@@ -194,7 +209,7 @@ class SnapshotTests(unittest.TestCase):
 
     def test_assemble_passes_source_stamps_only_to_installed_builds(self):
         with tempfile.TemporaryDirectory() as td:
-            snapshot=Path(td)/"snapshot"
+            snapshot=Path(td).resolve()/"snapshot"
             mb.freeze_snapshot(self.repo, snapshot)
             host_os,host_arch=mb._platform(snapshot)
             shipped,guest=mb._binary_lists(snapshot/"scripts/stage-source-bundle.sh")
@@ -453,9 +468,9 @@ class WrapperTests(unittest.TestCase):
 
 class StandaloneWrapperTests(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)
+        self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name).resolve()
         self.repo=repo_fixture(self.root,real_scripts=True)
-        with tempfile.TemporaryDirectory() as td: self.identity=mb.freeze_snapshot(self.repo,Path(td)/"snapshot")
+        with tempfile.TemporaryDirectory() as td: self.identity=mb.freeze_snapshot(self.repo,Path(td).resolve()/"snapshot")
         self.home=self.root/"home"; self.log=self.root/"launcher.json"; self.stale_marker=self.root/"stale"
         installed=self.root/"installed-generation"; installed.mkdir()
         self.active=self.home/".local/share/yolo-jail/flake-bundle"

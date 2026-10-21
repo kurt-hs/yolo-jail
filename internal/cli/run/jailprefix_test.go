@@ -213,7 +213,7 @@ func TestMountDestinationsSatisfyTheExeRelativeResolver(t *testing.T) {
 	// And the resolver really does accept the layout, run against a real tree
 	// laid out at those relative offsets (the constants are absolute in-jail
 	// paths, so the test builds the same SHAPE under a temp root).
-	root := t.TempDir()
+	root := resolveSymlinks(t.TempDir())
 	binDir := filepath.Join(root, "bin")
 	share := filepath.Join(root, "share", "yolo-jail")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {

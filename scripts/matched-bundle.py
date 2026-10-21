@@ -40,8 +40,8 @@ def _binary_lists(script: Path) -> tuple[list[str], list[str]]:
 
 
 def _platform(root: Path) -> tuple[str, str]:
-    goos = subprocess.check_output(["go", "env", "GOOS"], cwd=root, env=_git_env(), text=True).strip()
-    goarch = subprocess.check_output(["go", "env", "GOARCH"], cwd=root, env=_git_env(), text=True).strip()
+    goos = subprocess.check_output(["go", "env", "GOHOSTOS"], cwd=root, env=_git_env(), text=True).strip()
+    goarch = subprocess.check_output(["go", "env", "GOHOSTARCH"], cwd=root, env=_git_env(), text=True).strip()
     if goos not in ("linux", "darwin"):
         raise RuntimeError(f"matched bundles are supported on Linux and macOS, not {goos}")
     return goos, goarch

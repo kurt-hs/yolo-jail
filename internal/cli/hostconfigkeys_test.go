@@ -10,11 +10,14 @@ package cli
 // the unset key is `none` since OQ-CO14, and `none` refuses the apply before any report.
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/render"
 )
 
@@ -23,22 +26,23 @@ import (
 // when a key is classified not-applicable or unbuilt and has no sample here, so the next such
 // key is driven through the report rather than assumed to reach it.
 var undoneKeySamples = map[string]string{
-	"brokered":           `{"github": {"repos": ["org/lib"]}}`,
-	"cache_relocations":  `{"npm": "/srv/cache/npm"}`,
-	"devices":            `[{"usb": "0403:6001"}]`,
-	"ephemeral_storage":  `"tmpfs"`,
-	"gpu":                `{"enabled": true}`,
-	"kvm":                `true`,
-	"mcp_presets":        `["sequential-thinking"]`,
-	"mise_tools":         `{"node": "22"}`,
-	"mounts":             `["~/data"]`,
-	"network":            `{"mode": "bridge", "ports": ["3000:3000"]}`,
-	"packages":           `["ripgrep"]`,
-	"per_side_paths":     `[".cargo"]`,
-	"programs":           `{"autoprune": true}`,
-	"resources":          `{"memory": "4g"}`,
-	"workspace_readonly": `["src"]`,
-	"writable_home_dirs": `[".pi-lens"]`,
+	"brokered":               `{"github": {"repos": ["org/lib"]}}`,
+	"cache_relocations":      `{"npm": "/srv/cache/npm"}`,
+	"devices":                `[{"usb": "0403:6001"}]`,
+	"ephemeral_storage":      `"tmpfs"`,
+	"gpu":                    `{"enabled": true}`,
+	"host_import_exclusions": `{}`,
+	"kvm":                    `true`,
+	"mcp_presets":            `["sequential-thinking"]`,
+	"mise_tools":             `{"node": "22"}`,
+	"mounts":                 `["~/data"]`,
+	"network":                `{"mode": "bridge", "ports": ["3000:3000"]}`,
+	"packages":               `["ripgrep"]`,
+	"per_side_paths":         `[".cargo"]`,
+	"programs":               `{"autoprune": true}`,
+	"resources":              `{"memory": "4g"}`,
+	"workspace_readonly":     `["src"]`,
+	"writable_home_dirs":     `[".pi-lens"]`,
 }
 
 // undoneHostKeys is every live key the host census leaves undone, sorted.
@@ -99,6 +103,15 @@ func TestHostApplyNamesEveryConfigKeyTheHostLeavesUndone(t *testing.T) {
 					t.Fatalf("no notch line names config keys:\n%s", report)
 				}
 				for _, k := range keys {
+					if k == "host_import_exclusions" {
+						// This user-only import policy cannot be active under the OWN
+						// posture required by this host-apply report. Its empty fixture
+						// is accepted but is not an actionable host-side omission.
+						if countWord(line, k) != 0 {
+							t.Errorf("empty host-only import policy was reported as an active host omission: %q", line)
+						}
+						continue
+					}
 					if n := countWord(line, k); n != 1 {
 						t.Errorf("%q appears %d times on the notch line, want exactly 1: %q", k, n, line)
 					}
@@ -175,6 +188,38 @@ func isNameByte(b byte) bool {
 // named nowhere in `yolo host apply`'s report. Through both branches of applyHostSurveyed (an
 // empty `packs`, which returns early, and a selected pack) and both postures, so deleting
 // either call site fails a subtest.
+func TestHostApplyRejectsActiveHostImportExclusionsBeforeWriting(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		apply func() (int, string)
+	}{
+		{"host apply", func() (int, string) { return hostApplyRun(t, true) }},
+		{"apply at host", func() (int, string) {
+			var out, errw strings.Builder
+			rc := applyMain([]string{"--at", "host", "--assert"}, &out, &errw, false, strings.NewReader("y\n"))
+			return rc, out.String() + errw.String()
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := hostComputedHome(t, `{"packs": ["pi"], "host_management": "own", `+
+				`"host_import_exclusions": {"pi/settings": ["/hooks"]}}`)
+			rc, report := tc.apply()
+			if rc == 0 || !strings.Contains(report, "cannot be used with host_management: own") {
+				t.Fatalf("host apply did not refuse an active jail-only exclusion before writing: rc=%d\n%s", rc, report)
+			}
+			for _, path := range []string{
+				filepath.Join(home, ".pi", "agent", "settings.json"),
+				paths.WrapDirUnder(home),
+				filepath.Join(paths.GlobalStorageUnder(home), "host-provenance"),
+			} {
+				if _, err := os.Lstat(path); !os.IsNotExist(err) {
+					t.Errorf("refused host apply left a host output %s (stat err %v)", path, err)
+				}
+			}
+		})
+	}
+}
+
 func TestHostApplyNamesAnInlineLoopholeByEntry(t *testing.T) {
 	const cfg = `{"packs": %s, "host_management": "own", "loopholes": {
 		"mydaemon": {"command": ["mydaemon", "--socket", "{socket}"]},

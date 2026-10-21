@@ -18,6 +18,15 @@ var matchedDarwinBinaries = []string{"yolo-jaild", "yolo-serial", "yolo-ps", "yo
 const snapshotA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const snapshotB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
+func canonicalTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 type matchedStamp struct {
 	Version          string `json:"version"`
 	Commit           string `json:"commit"`
@@ -65,10 +74,10 @@ func writeBundleFile(t *testing.T, dir, name string) {
 }
 
 func TestResolveCallsProductionResolverForMatchingInstalledBundle(t *testing.T) {
-	home := t.TempDir()
+	home := canonicalTempDir(t)
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
-	exe := filepath.Join(t.TempDir(), "bin", "yolo")
+	exe := filepath.Join(canonicalTempDir(t), "bin", "yolo")
 	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +102,7 @@ func TestResolveCallsProductionResolverForMatchingInstalledBundle(t *testing.T) 
 func TestResolveMatchedAdjacentBundlesAreAuthoritativeAcrossLayouts(t *testing.T) {
 	for _, layout := range []string{"system", "release", "sealed"} {
 		t.Run(layout, func(t *testing.T) {
-			base := t.TempDir()
+			base := canonicalTempDir(t)
 			exeDir, bundle := "", ""
 			switch layout {
 			case "system":
@@ -121,7 +130,7 @@ func TestResolveMatchedAdjacentBundlesAreAuthoritativeAcrossLayouts(t *testing.T
 }
 
 func TestResolveInstalledGOBINDoesNotTreatStateDirectoryAsAdjacentBundle(t *testing.T) {
-	home := t.TempDir()
+	home := canonicalTempDir(t)
 	binDir := filepath.Join(home, ".local", "bin")
 	stateDir := filepath.Join(home, ".local", "share", "yolo-jail")
 	generation := filepath.Join(stateDir, "flake-bundles", "generation")
@@ -140,7 +149,7 @@ func TestResolveInstalledGOBINDoesNotTreatStateDirectoryAsAdjacentBundle(t *test
 }
 
 func TestResolveRejectsIncompleteAdjacentInsteadOfInstalledFallback(t *testing.T) {
-	base := t.TempDir()
+	base := canonicalTempDir(t)
 	exeDir := filepath.Join(base, "prefix", "bin")
 	bundle := filepath.Join(base, "prefix", "share", "yolo-jail")
 	if err := os.MkdirAll(exeDir, 0o755); err != nil {
@@ -164,7 +173,7 @@ func TestResolveRejectsIncompleteAdjacentInsteadOfInstalledFallback(t *testing.T
 }
 
 func TestResolveRejectsEmptyRecognizedAdjacentBeforeInstalledFallback(t *testing.T) {
-	base := t.TempDir()
+	base := canonicalTempDir(t)
 	exeDir := filepath.Join(base, "prefix", "bin")
 	bundle := filepath.Join(base, "prefix", "share", "yolo-jail")
 	if err := os.MkdirAll(exeDir, 0o755); err != nil {
@@ -185,7 +194,7 @@ func TestResolveRejectsEmptyRecognizedAdjacentBeforeInstalledFallback(t *testing
 }
 
 func TestResolveRejectsNonExecutableLinuxHelperInAdjacentBundle(t *testing.T) {
-	base := t.TempDir()
+	base := canonicalTempDir(t)
 	exeDir := filepath.Join(base, "prefix", "bin")
 	bundle := filepath.Join(base, "prefix", "share", "yolo-jail")
 	if err := os.MkdirAll(exeDir, 0o755); err != nil {
@@ -205,7 +214,7 @@ func TestResolveRejectsNonExecutableLinuxHelperInAdjacentBundle(t *testing.T) {
 }
 
 func TestResolveRejectsAdjacentIdentityCrossPair(t *testing.T) {
-	base := t.TempDir()
+	base := canonicalTempDir(t)
 	exeDir := filepath.Join(base, "bin")
 	bundle := filepath.Join(base, "share", "yolo-jail")
 	if err := os.MkdirAll(exeDir, 0o755); err != nil {
@@ -224,7 +233,7 @@ func TestResolveRejectsAdjacentIdentityCrossPair(t *testing.T) {
 }
 
 func TestResolveLegacyCompleteAdjacentBundleNeedsNoLocalIdentity(t *testing.T) {
-	base := t.TempDir()
+	base := canonicalTempDir(t)
 	exeDir := filepath.Join(base, "bin")
 	bundle := filepath.Join(base, "share", "yolo-jail")
 	if err := os.MkdirAll(exeDir, 0o755); err != nil {
@@ -241,7 +250,7 @@ func TestResolveLegacyCompleteAdjacentBundleNeedsNoLocalIdentity(t *testing.T) {
 }
 
 func TestResolveInheritedObsoleteRepoRootRefusesWithoutSelectingSource(t *testing.T) {
-	base := t.TempDir()
+	base := canonicalTempDir(t)
 	exeDir := filepath.Join(base, "bin")
 	bundle := filepath.Join(base, "share", "yolo-jail")
 	if err := os.MkdirAll(exeDir, 0o755); err != nil {
@@ -263,7 +272,7 @@ func TestResolveInheritedObsoleteRepoRootRefusesWithoutSelectingSource(t *testin
 }
 
 func TestResolveBareFallbackRequiresInstalledMatchingIdentityAndPinsRoot(t *testing.T) {
-	base := t.TempDir()
+	base := canonicalTempDir(t)
 	exeDir := filepath.Join(base, "bare-bin")
 	if err := os.MkdirAll(exeDir, 0o755); err != nil {
 		t.Fatal(err)
