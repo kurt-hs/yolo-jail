@@ -34,10 +34,7 @@ dependencies, and authorization boundaries.
   Release, Publish, and Homebrew jobs ran from workflow HEAD `94989f1` while explicitly targeting
   that tag/request. A separate request, [39504109994](https://github.com/mschulkind-oss/yolo-jail/actions/runs/39504109994),
   failed eligibility for target `94989f1`; it was not a failed publication of v0.15.0.
-- **Current source is later, but runtime and test inputs match the published tag.** The checkout
-  starts at `31d61546ccf7aa5ae763f4e5541011e007e5cb10`. `git diff v0.15.0 -- cmd internal integration
-  packs go.mod go.sum vendor flake.nix flake.lock` is empty; the complete diff from the tag is
-  documentation-only. This is a tree comparison, not an ancestry inference.
+- **The original release-follow-up snapshot was later source, but runtime and test inputs matched the published tag.** At that initial snapshot, checkout HEAD was `31d61546ccf7aa5ae763f4e5541011e007e5cb10`. `git diff v0.15.0 -- cmd internal integration packs go.mod go.sum vendor flake.nix flake.lock` was empty; the complete diff from the tag was documentation-only. This tree comparison is not an ancestry inference, and it describes the pre-repair snapshot rather than the current main HEAD.
 - **The refresh-fallback sequencing repair is already shipped.** Commit
   [`6ddb485`](https://github.com/mschulkind-oss/yolo-jail/commit/6ddb485188c638a9586469ae023f9e5a6e2cc0cc)
   is in v0.15.0. The generated-launcher regression
@@ -74,23 +71,43 @@ dependencies, and authorization boundaries.
   [canonical roadmap](../plans/roadmap.md#immediate-continuation) retain the still-owed rootless,
   real-broker, and parity evidence. Native unit success does not discharge those separate checks.
 
-## Current CI finding
+## Historical baseline failure and repair evidence
 
-CI run [39529735230](https://github.com/mschulkind-oss/yolo-jail/actions/runs/39529735230) targets
-current main `31d61546ccf7aa5ae763f4e5541011e007e5cb10` and failed. The Go and macOS unit jobs
-show the same four distinct failures, each reproduced in both jobs: `TestAnAttachToAJailTheLastReleaseLaunchedNeverRidesAlong`,
-`TestShippedPacksDecodeUnderTheLastRelease`,
-`TestModelListCheckPackWideMetadataPreservesTheLastReleasesProgram`, and
-`TestTheJudgeAcceptsWhatTheLastReleaseReportsOnABareMac`. Their release-decoder fixtures attempt
-to build or archive the ancestral v0.2.0 tree, which predates the required `go.mod` and `packs/`
-inputs; the recorded diagnostics are missing-module and missing-pack-tree errors. This is a
-historical-baseline fixture incompatibility, not evidence that the v0.15.0 publication failed.
+The pre-repair CI failure is historical, not current status. Run [39529735230](https://github.com/mschulkind-oss/yolo-jail/actions/runs/39529735230) targeted baseline SHA `31d61546ccf7aa5ae763f4e5541011e007e5cb10`. The Go and macOS unit jobs each reported the same four distinct failing tests: `TestAnAttachToAJailTheLastReleaseLaunchedNeverRidesAlong`, `TestShippedPacksDecodeUnderTheLastRelease`, `TestModelListCheckPackWideMetadataPreservesTheLastReleasesProgram`, and `TestTheJudgeAcceptsWhatTheLastReleaseReportsOnABareMac`. The release fixtures selected ancestral v0.2.0, which has neither the required `go.mod` nor `packs/` tree; failures were missing-module/build and missing-pack-archive inputs. The integration aggregate failed because its required shard set was incomplete, not because a full integration run completed and failed. This is a real baseline CI RED, but it is not proof the v0.15.0 publication failed.
 
-A separate code writer is repairing those fixtures. At this report's snapshot, that repair has not
-landed or passed the gate: do not claim CI is green, the repair is complete, or landing is done.
-The run's integration summary failed because its required shard set was incomplete; it is not a
-completed integration result on current source. The [CI run record](https://github.com/mschulkind-oss/yolo-jail/actions/runs/39529735230)
-is the evidence to recheck after the repair.
+Do not recast the initial repair's fixture/implementation REDs as an intentional old-algorithm demonstration. The separately reported permanent witness is the green synthetic ancestry test: a fixture with ancestral `v0.2.0` and disconnected `v0.15.0` proves `git describe HEAD` selects the old tag while the local-tag resolver selects the newer one, with no `go.mod` in the fixture. It is a durable assertion, not evidence that an original implementation was first run and intentionally failed. The first reported intentional test-first RED is separate: `TestLatestIgnoresLeadingZeroSemVerComponents` selected invalid `v099.0.0` over valid `v2.0.0` before the numeric-component parser fix and passed afterward. That red is recorded by the integration evidence report; its standalone raw red command is not among the retained gate logs. See the [permanent resolver tests](../../internal/testsupport/releasebaseline/releasebaseline_test.go#L11-L69) and [SemVer cases](../../internal/testsupport/releasebaseline/releasebaseline_test.go#L96-L119).
+
+The four production-caller test bodies were compared across baseline `31d61546`, source-review candidate `44c73a75db21bb5df84e356c83751d03d1ff88b2`, and final source `ae25d96a68abefe1c8bc47b0e7c3329503fa869b`: all four bodies were identical in all three revisions. The candidate changes how each caller resolves the historical tag; it does not delete the existing compatibility assertions.
+
+| Existing caller / assertion | Release-specific resolver path |
+| :--- | :--- |
+| [`TestAnAttachToAJailTheLastReleaseLaunchedNeverRidesAlong`](../../internal/cli/run/packskew_test.go#L372-L411) checks the legacy shared pack tree remains unchanged and no longer-composable state is refused; it does not require every old tree to decode. | Its `lastReleaseTag` helper calls `releasebaseline.LatestBefore(root, "HEAD")` ([helper](../../internal/cli/run/packskew_test.go#L416-L441)); all tags peeling to the candidate commit are excluded. |
+| [`TestShippedPacksDecodeUnderTheLastRelease`](../../packs/releasedecode_test.go#L270-L467) checks current shipped packs against release-specific decode allowances and verifies unaffected declared program identities remain checked. | Its `lastRelease` helper calls `LatestBefore(root, "HEAD")` ([helper](../../packs/releasedecode_test.go#L597-L627)). |
+| [`TestModelListCheckPackWideMetadataPreservesTheLastReleasesProgram`](../../packs/releasedecode_test.go#L472-L519) keeps the synthetic safe/unsafe metadata contrast: safe metadata retains `synthetic`; unsafe program-field metadata retains none, including with v0.15.0. | Uses the same `lastRelease` → `LatestBefore(root, "HEAD")` helper. |
+| [`TestTheJudgeAcceptsWhatTheLastReleaseReportsOnABareMac`](../../tools/tap-install-check/release_test.go#L73-L104) requires the current judge accept the real release-generated bare-Mac report and keeps unreported allowlist failures visible; this is a hermetic report fixture, not a real installed-formula or native-Mac trial. | Its local helper calls `releasebaseline.Latest(root)` ([helper](../../tools/tap-install-check/release_test.go#L108-L140)), intentionally including tags on HEAD. |
+
+The shared [`releasebaseline` resolver](../../internal/testsupport/releasebaseline/releasebaseline.go#L25-L79) reads local `refs/tags`, parses version-shaped names, peels tags to commits, optionally excludes the resolved candidate commit, and sorts by version. It does not traverse ancestry or query publication status. Its parser and comparator are in the same file ([version parsing](../../internal/testsupport/releasebaseline/releasebaseline.go#L94-L194)). The CI workflow keeps full tag history with `fetch-depth: 0` and documents local-skip versus CI-fail behavior ([workflow](../../.github/workflows/ci.yml#L49-L62)); absent local tags skip locally but fail on GitHub Actions. Release tag immutability remains governed by the separate [release preflight](../../tools/release-wiring/preflight.sh#L46-L76), not by local-tag resolution.
+
+### Exact final-source gates and nested attempt
+
+The source-review candidate `44c73a75db21bb5df84e356c83751d03d1ff88b2` received a saved independent source-review **PASS / SOURCE_REVIEW_OK — OK with notes**. That verdict is scoped to that exact seven-file source candidate, not a full second review of final main. Final integrated source was `ae25d96a68abefe1c8bc47b0e7c3329503fa869b`, tree `f9810c6571af59c21bccbdf91414ecf2b739fb8e`; the baseline-to-final diff was nine files, 870 insertions and 66 deletions, with no production runtime implementation change. The final source differs from the reviewed candidate by the HOME-reader sketch completion and resolver leading-zero fix. The exact source-review candidate's review verdict is not silently widened to cover those follow-ups.
+
+For the exact final source SHA, the recorded commands were:
+
+| Command | Candidate working directory and result | Bound |
+| :--- | :--- | :--- |
+| `just build-go` | `/workspace/.yolo/durable/worktrees/pi-subagents/workspace/pi-worktree-2b3a67bc-cf85-4e5d-b91d-09b31125434d-s0-0`; exit `0`, built `dist-go/linux-amd64`. | Shipping build only. |
+| `just check-ci` | Same candidate cwd, clean status; exit `0`. Linux/Darwin vet and staticcheck, short tests and repository checks passed. | Not the slow integration suite, a remote CI run, or native/rootless certification. |
+| `just done` | Same candidate cwd, clean status; exit `0`, selectively verified `ae25d96a` since `44c73a75`. | Included changed-document checks; explicitly excluded integration, nested-jail and native execution. |
+| Candidate nested launch without hatch | From the same candidate cwd, throwaway workspace `/tmp/yolo-nested-recovered-stack-ae25d96a`, binary `/workspace/.yolo/durable/worktrees/pi-subagents/workspace/pi-worktree-2b3a67bc-cf85-4e5d-b91d-09b31125434d-s0-0/dist-go/linux-amd64/yolo`, `YOLO_REPO_ROOT` set to that candidate. The launcher printed that same path as `Flake source: … (YOLO_REPO_ROOT)`. | Selected `pi` program was unavailable: provisioning refusal was exit `78`; outer launcher/log wrapper returned `79`. This was not a successful nested bash launch. |
+| Candidate nested launch with `YOLO_ALLOW_MISSING_PROGRAMS=1` | Same binary and `YOLO_REPO_ROOT`, throwaway cwd `/tmp/yolo-nested-recovered-stack-ae25d96a-allow-missing`; exit `0` after `candidate nested bash ready: HOME=/home/agent`. | Missing `pi` remained disclosed. This proves only bash startup with the documented hatch, not readiness or an agent trial. |
+| Primary checkout `just done` before this report update | `/workspace`, HEAD `ae25d96a68abefe1c8bc47b0e7c3329503fa869b`, tree `f9810c6571af59c21bccbdf91414ecf2b739fb8e`, clean index/worktree; exit `0`, already selectively verified with nothing changed. | Not a second `just check-ci`; does not include integration, nested, or native execution. |
+
+The two nested rows use the exact recorded candidate binary, cwd, and flake root; they should not be rewritten as a generic “nested smoke passed.” Their output also records shared host networking and does not certify rootless delivery/loopback paths. The `just check-ci` and `just done` results above were already green on `ae25d96a`; this documentation repair does not rerun either full source gate or the full integration suite.
+
+## Prior-session inventory
+
+The earlier roll-up was too coarse to verify. The [recovered prior-session inventory](2026-10-21-prior-session-inventory.md) now records each of the 59 snapshot rows—45 completed, 14 unfinished—with its original ID, title and status, completed outcome or unfinished disposition, recovered dependencies, and source/session locator. The row list keeps historical status separate from present-day interpretation; it does not authorize unfinished trials or treat a completed review action as an approval. Current-session rows 123/124/125 remain outside that historical denominator.
 
 ## Open work and disposition
 
@@ -125,8 +142,8 @@ These are follow-ups with their stated dependencies, not newly declared release 
   off by default until its measures and the independent real-rootless-host day are satisfied.
   This report performed no agent/API call and read no credentials.
 - **Concurrent macOS workspaces:** the architecture is already selected: one guest user, distinct
-  persistent private workspace homes/state, and only the selected shared machine paths. That
-  decision and its boundaries live in the
+  persistent private workspace homes/state, and only selected pack machine-scope paths plus
+  existing configured shared paths. That decision and its boundaries live in the
   [concurrent-workspace design](../design/macos-user-concurrent-workspaces.md#selected-architecture-and-boundary)
   and [home-tier ledger](../reference/macos-user-home-tiers.md#decision-ledger). MCW4's sharing
   policy is settled; the physical backing and relative-link geometry remain engineering work, not
