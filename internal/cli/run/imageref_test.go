@@ -2,6 +2,7 @@ package run
 
 import (
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -154,7 +155,7 @@ func TestHostServiceEnvIsInsertedAtTheThreadedImageRef(t *testing.T) {
 // is not in the argv and drops every loophole endpoint variable.
 func TestRunNormalThreadsTheLoadedRefIntoAssembly(t *testing.T) {
 	src := runSource(t)
-	if !strings.Contains(src, "imageRef:         loadedImage.Ref,") {
+	if !regexp.MustCompile(`imageRef\s*:\s*loadedImage\.Ref,`).MatchString(src) {
 		t.Error("runNormal no longer threads AutoLoadImage's ref into assembleInput. " +
 			"Assembly has no other source for it, so the argv would name the " +
 			"unresolvable placeholder (TestUnthreadedImageRefDoesNotFallBackToALegacyTag)")

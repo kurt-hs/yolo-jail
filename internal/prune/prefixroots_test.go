@@ -3,6 +3,7 @@ package prune
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -109,11 +110,9 @@ func TestPrefixBinMountDestMatchesTheLauncher(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read jailprefix.go: %v", err)
 	}
-	want := `JailPrefixBinDir = JailPrefixDir + "/bin"`
-	if !strings.Contains(string(src), want) || prefixBinMountDest != "/opt/yolo-jail/bin" {
-		t.Fatalf("the prefix bin mount destination moved: prune has %q and jailprefix.go no longer "+
-			"spells %s. These are two copies of one path; a silent divergence makes every prefix "+
-			"root look orphaned.", prefixBinMountDest, want)
+	want := regexp.MustCompile(`JailPrefixBinDir\s*=\s*JailPrefixDir\s*\+\s*"/bin"`)
+	if !want.Match(src) || prefixBinMountDest != "/opt/yolo-jail/bin" {
+		t.Fatalf("the prefix bin mount destination moved: prune has %q and jailprefix.go no longer defines JailPrefixBinDir from JailPrefixDir + /bin. These are two copies of one path; a silent divergence makes every prefix root look orphaned.", prefixBinMountDest)
 	}
 }
 

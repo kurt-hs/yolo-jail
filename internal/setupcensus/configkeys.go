@@ -198,6 +198,8 @@ var configKeys = map[string]Entry{
 			},
 		},
 	},
+	"host_import_exclusions": everywhere(honoredBy("LoadHostImportExclusions (config hostimportexclusions.go) reads only user scope and carries its policy through HostLayerWire (entrypoint hostlayerlabel.go); renderPlannedSurface (entrypoint packsurfaces.go) applies FilterHostImportExclusions (agentcfg hostimportexclusions.go) only to delivered user host bytes"),
+		"`host_import_exclusions` — filter imported user host config"),
 	"host_management":      hostSideKey("`yolo host apply` (render's hostOwnership)"),
 	"host_wrappers":        hostSideKey("`yolo host apply`, which writes the wrappers"),
 	"host_apply_on_launch": hostSideKey("a wrapped `yolo host -- <agent>` (hostapplygate.go)"),

@@ -8,6 +8,7 @@ package render
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
@@ -84,6 +85,16 @@ func TestLeftUndoneIsTheTwoDeclines(t *testing.T) {
 		if got := d.LeftUndone(); got != want {
 			t.Errorf("%v.LeftUndone() = %v, want %v", d, got, want)
 		}
+	}
+}
+
+func TestHostImportExclusionsAreNotApplicableAtTheHost(t *testing.T) {
+	d, reason := HostFields().ConfigKey("host_import_exclusions")
+	if d != KeyNotApplicable {
+		t.Fatalf("HostFields().ConfigKey(host_import_exclusions) = %v, want KeyNotApplicable", d)
+	}
+	if !strings.Contains(reason, "imported into a jail") || !strings.Contains(reason, "`yolo host apply` does not read it") {
+		t.Errorf("host_import_exclusions reason = %q, want jail-import-only behavior and explicit host apply exclusion", reason)
 	}
 }
 

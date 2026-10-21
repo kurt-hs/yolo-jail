@@ -203,6 +203,10 @@ var hostConfigKeys = map[string]keyCensusEntry{
 		"boot-written store farm; at the host yolo never provisions it (HP-DIR3), and the tools " +
 		"there are the ones on your own PATH"},
 
+	// Exclusions filter user host bytes only when they are imported into a jail; no host-notch
+	// verb applies them to host configuration.
+	"host_import_exclusions": {KeyNotApplicable, "filters user host config bytes imported into a jail; `yolo host apply` does not read it"},
+
 	// ---- Unbuilt: the key applies at the host and nothing honors it yet ---------------
 	// None, since 2026-10-04: `required_capabilities`, the last, gained its host reader.
 	// KeyUnbuilt stays the disposition for the next key that applies here before its reader

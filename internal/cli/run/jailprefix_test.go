@@ -243,24 +243,10 @@ func flakeSource(t *testing.T) string {
 	return string(body)
 }
 
-// THE CROSS-LANGUAGE PIN, and the reason this test exists at all: the install
-// prefix is now split across two files that cannot see each other. flake.nix
-// bakes /bin/<name> symlinks pointing at a hardcoded directory and pre-creates
-// the mountpoints; this package mounts the host content there and names the
-// entrypoint by absolute path. Nothing but agreement on that ONE string makes
-// the jail bootable, and every way of breaking it is silent at build time:
-//
-//   - a flake that links /bin/<name> somewhere else leaves the jail's `yolo`
-//     dangling while pid1 (named absolutely) still works — so the jail boots and
-//     the CLI inside it is simply missing;
-//   - a flake that pre-creates the wrong mountpoints leaves the runtime to
-//     invent them, which podman does and Apple Container is not verified to;
-//   - a Go constant that moves leaves both.
-//
-// This is the guarantee that replaced "shippedBinaries decides what the image
-// contains" (internal/entrypoint/shippedclients_test.go still pins the NAME set
-// across the flake and the bundle script; what moved is that the names now
-// describe a mount, not image content).
+// TestFlakeAndLauncherAgreeOnThePrefixLayout pins the container prefix mountpoints. The
+// macos-user guest bundle's contents are pinned against its actual staging manifest by
+// internal/macosuser.TestGuestBinariesMatchTheFlakeAndTheBundleScript; this test pins the
+// current production resolver to that shared prebuilt bundle directory.
 func TestFlakeAndLauncherAgreeOnThePrefixLayout(t *testing.T) {
 	flake := flakeSource(t)
 
@@ -297,14 +283,15 @@ func TestFlakeAndLauncherAgreeOnThePrefixLayout(t *testing.T) {
 			"again, so every cmd/ or internal/ commit costs an image rebuild and a load")
 	}
 
-	// macos-user's bundle uses the same bin/darwin-<arch> spelling as its
-	// prebuilt manifest and scripts/stage-source-bundle.sh.
-	if !strings.Contains(flake, `guestPrebuiltDir = ./. + "/bin/darwin-${goArch}";`) {
-		t.Error("flake.nix no longer short-circuits the guest set to ./bin/darwin-<arch>, the " +
-			"directory macosuser.PrebuiltGuestBinDir and stage-source-bundle.sh name")
+	guestResolver, err := os.ReadFile("../commands.go")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got, want := macosuser.PrebuiltGuestBinDir("/b"), filepath.Join("/b", "bin", "darwin-"+goruntime.GOARCH); got != want {
-		t.Errorf("macosuser.PrebuiltGuestBinDir = %q, want %q", got, want)
+	if !regexp.MustCompile(`prebuilt\s*:=\s*macosuser\.PrebuiltGuestBinDir\(repoRoot\)`).Match(guestResolver) {
+		t.Error("resolveGuestBinaries no longer selects the per-arch prebuilt guest set from the resolved bundle")
+	}
+	if got, want := macosuser.PrebuiltGuestBinDir("/bundle"), filepath.Join("/bundle", "bin", "darwin-"+goruntime.GOARCH); got != want {
+		t.Errorf("macosuser.PrebuiltGuestBinDir = %q, want the bundle's current darwin-<arch> staging path %q", got, want)
 	}
 }
 
@@ -352,11 +339,11 @@ func TestPrebuiltBinDirIsAlwaysTheLinuxArchDir(t *testing.T) {
 // suite would catch it (nothing boots), but only after a full image build.
 func TestRunNormalResolvesAndThreadsTheJailPrefix(t *testing.T) {
 	src := runSource(t)
-	if !strings.Contains(src, "jailPrefix, prefixOK := o.resolveJailPrefix(repoRoot, rt)") {
+	if !regexp.MustCompile(`jailPrefix\s*,\s*prefixOK\s*:=\s*o\.resolveJailPrefix\(repoRoot,\s*rt\)`).MatchString(src) {
 		t.Error("runNormal no longer resolves the jail prefix. The install prefix is " +
 			"MOUNTED, not baked, so nothing else produces the binaries the container argv names")
 	}
-	if !strings.Contains(src, "jailPrefix:       jailPrefix,") {
+	if !regexp.MustCompile(`jailPrefix\s*:\s*jailPrefix,`).MatchString(src) {
 		t.Error("runNormal no longer threads the resolved prefix into assembleInput, so the " +
 			"argv would carry an empty mount source and the jail would have no pid1")
 	}
