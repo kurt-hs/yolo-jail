@@ -239,9 +239,14 @@ func TestTheSweepRemovesOnlyAnEndedSessionsFiles(t *testing.T) {
 	var out bytes.Buffer
 	sweepGoneSessions(d, printer{w: &out}, dir)
 
-	want := "run:" + rmBin + " -f " + strings.Join(SessionFilePaths(gone, ""), " ")
-	if len(rec) != 1 || rec[0] != want {
-		t.Fatalf("the sweep ran %q, want exactly %q", rec, want)
+	want := SessionCleanupCommands(gone, "")
+	if len(rec) != len(want) {
+		t.Fatalf("the sweep ran %q, want cleanup commands %q", rec, want)
+	}
+	for i, cmd := range want {
+		if rec[i] != "run:"+strings.Join(cmd, " ") {
+			t.Fatalf("the sweep command %d is %q, want %q", i, rec[i], "run:"+strings.Join(cmd, " "))
+		}
 	}
 	for _, f := range []string{SandboxEnvFile(gone, ""), SandboxDaemonEnvFile(gone, ""),
 		CABundleFile(gone, ""), CAExtrasFile(gone, ""), SessionProfilePath(gone, "")} {
@@ -305,9 +310,15 @@ func TestTheSweepKeepsALegacySessionsRecordAndWarnsOnce(t *testing.T) {
 	var out bytes.Buffer
 	sweepGoneSessions(d, printer{w: &out}, dir)
 
-	want := "run:" + rmBin + " -f " + strings.Join(SessionFilePaths(ordinary, ""), " ")
-	if len(rec) != 1 || rec[0] != want {
-		t.Errorf("the sweep ran %q, want only the ordinary session's host removal %q", rec, want)
+	want := SessionCleanupCommands(ordinary, "")
+	if len(rec) != len(want) {
+		t.Errorf("the sweep ran %q, want only the ordinary session's cleanup %q", rec, want)
+	} else {
+		for i, cmd := range want {
+			if rec[i] != "run:"+strings.Join(cmd, " ") {
+				t.Errorf("the sweep command %d is %q, want %q", i, rec[i], "run:"+strings.Join(cmd, " "))
+			}
+		}
 	}
 	if len(asked) != 3 {
 		t.Errorf("the sweep asked about %q, want one legacy profile per ended session", asked)
@@ -545,8 +556,15 @@ func TestATeardownWhoseRemovalFailsKeepsTheRecordForTheNextSweep(t *testing.T) {
 			// The next launch's sweep takes the record and removes the files.
 			var next []string
 			sweepGoneSessions(mockDeps(&next), printer{w: &bytes.Buffer{}}, dir)
-			if len(next) != 1 || next[0] != "run:"+want {
-				t.Errorf("the next sweep ran %q, want %q", next, "run:"+want)
+			expected := SessionCleanupCommands(key, "")
+			if len(next) != len(expected) {
+				t.Errorf("the next sweep ran %q, want cleanup commands %q", next, expected)
+			} else {
+				for i, cmd := range expected {
+					if next[i] != "run:"+strings.Join(cmd, " ") {
+						t.Errorf("the next sweep command %d is %q, want %q", i, next[i], "run:"+strings.Join(cmd, " "))
+					}
+				}
 			}
 			if _, err := os.Lstat(record); !os.IsNotExist(err) {
 				t.Errorf("the next sweep left the record behind: %v", err)

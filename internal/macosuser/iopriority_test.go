@@ -232,7 +232,8 @@ func launchPlan(t *testing.T, res *jsonx.OrderedMap) RunPlan {
 // plan's invariants hold — and fire when the guard is lost.
 func TestTheMemoryGuardRunsInsideTheSessionAndOnlyWhenDeclared(t *testing.T) {
 	plain := launchPlan(t, resourcesOf("cpus", 2))
-	direct := LaunchArgv([]string{"claude"}, plain.ProfilePath, plain.EnvFile, plain.Workspace, "", "", plain.DarwinPathPrefix)
+	direct := LaunchArgvWithGuard([]string{"claude"}, plain.ProfilePath, plain.EnvFile,
+		plain.Workspace, "", "", plain.DarwinPathPrefix, plain.SessionGuard, plain.StagedYolo)
 	if !slices.Equal(plain.LaunchArgv, direct) {
 		t.Errorf("with no resources.memory the launch argv moved:\n got %q\nwant %q", plain.LaunchArgv, direct)
 	}
@@ -389,23 +390,23 @@ func TestAFailedDiskPolicyWarnsAndLaunches(t *testing.T) {
 // TestThePlanNamesTheDeclaredResources: the dry run says what each declared key becomes, and
 // says nothing for an undeclared one.
 func TestThePlanNamesTheDeclaredResources(t *testing.T) {
-	render := func(res *jsonx.OrderedMap) string {
+	render := func(res *jsonx.OrderedMap) (string, RunPlan) {
 		var buf bytes.Buffer
 		plan := launchPlan(t, res)
 		PrintPlan(&buf, plan, nil)
-		return buf.String()
+		return buf.String(), plan
 	}
-	out := render(resourcesOf("io", "idle", "cpus", 3, "memory", "1g"))
+	out, plan := render(resourcesOf("io", "idle", "cpus", 3, "memory", "1g"))
 	for _, want := range []string{
 		`disk I/O:    IOPOL_THROTTLE (resources.io "idle"; set on the launcher by setiopolicy_np`,
 		"cpus:        3, cooperatively (GOMAXPROCS=3, CARGO_BUILD_JOBS=3, RAYON_NUM_THREADS=3, OMP_NUM_THREADS=3",
-		"memory:      1g, sampled every 2s by `" + StagedYoloPath("") + " internal session-guard`",
+		"memory:      1g, sampled every 2s by `" + plan.StagedYolo + " internal session-guard`",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the plan lacks %q:\n%s", want, out)
 		}
 	}
-	plain := render(resourcesOf("io", "normal"))
+	plain, _ := render(resourcesOf("io", "normal"))
 	for _, never := range []string{"disk I/O:", "cpus:  ", "memory:  "} {
 		if strings.Contains(plain, never) {
 			t.Errorf("an undeclared key got a plan line %q:\n%s", never, plain)

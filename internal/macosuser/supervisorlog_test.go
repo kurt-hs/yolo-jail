@@ -85,7 +85,7 @@ func TestTheSupervisorArgvSendsItsOutputToTheWorkspaceLog(t *testing.T) {
 	confined := strings.Index(argv, "/usr/bin/sandbox-exec\x00-f\x00"+plan.ProfilePath)
 	logged := strings.Index(argv, wrap)
 	reader := strings.Index(argv, sandboxEnvReader)
-	jaild := strings.Index(argv, GuestBinaryPath(JaildName, "")+"\x00supervise")
+	jaild := strings.Index(argv, filepath.Join(plan.SessionGuestBinDir, JaildName)+"\x00supervise")
 	if confined < 0 || logged < 0 || reader < 0 || jaild < 0 || !(confined < logged && logged < reader && reader < jaild) {
 		t.Fatalf("want sandbox-exec < log wrapper < env reader < supervise; got %d %d %d %d:\n%s",
 			confined, logged, reader, jaild, strings.Join(plan.JailDaemonArgv, " "))
@@ -132,7 +132,7 @@ func TestTheLogWrapperAppendsStdoutAndStderrToTheLog(t *testing.T) {
 		switch a {
 		case plan.DaemonEnvFile:
 			a = envFile
-		case GuestBinaryPath(JaildName, ""):
+		case filepath.Join(plan.SessionGuestBinDir, JaildName):
 			argv = append(argv, "/bin/sh", "-c", `echo "out $FROM_ENV_FILE"; echo err >&2`)
 			continue
 		case "supervise":

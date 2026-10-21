@@ -1,6 +1,7 @@
 package macosuser
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -33,7 +34,7 @@ func TestAMacosLogEndpointStagesTheYoloLogClient(t *testing.T) {
 	}
 	staged := false
 	for _, c := range plan.StageCommands {
-		if len(c) == 4 && c[0] == mvBin && c[3] == GuestBinaryPath("yolo-log", "") {
+		if argvMentions(c, filepath.Join(plan.SessionGuestBinDir+".new", "yolo-log")) {
 			staged = true
 		}
 	}

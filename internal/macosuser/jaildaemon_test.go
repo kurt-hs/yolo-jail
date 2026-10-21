@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -58,7 +59,7 @@ func TestTheGuestPlanStartsTheDeclaredDaemonVerbatimInsideTheSeatbeltProfile(t *
 	}
 	argv := strings.Join(plan.JailDaemonArgv, " ")
 	confined := "/usr/bin/sandbox-exec -f " + plan.ProfilePath + " -- "
-	supervise := GuestBinaryPath(JaildName, "") + " supervise"
+	supervise := filepath.Join(plan.SessionGuestBinDir, JaildName) + " supervise"
 	ci, si := strings.Index(argv, confined), strings.Index(argv, supervise)
 	if ci < 0 || si < 0 || si < ci {
 		t.Fatalf("the supervisor is not started under the session's Seatbelt profile "+
@@ -72,7 +73,7 @@ func TestTheGuestPlanStartsTheDeclaredDaemonVerbatimInsideTheSeatbeltProfile(t *
 	for _, w := range plan.JailDaemonArgv {
 		if v, ok := strings.CutPrefix(w, "PATH="); ok {
 			for _, dir := range strings.Split(v, ":") {
-				onPath = onPath || dir == GuestBinDir("")
+				onPath = onPath || dir == plan.SessionGuestBinDir
 			}
 		}
 	}
@@ -92,9 +93,8 @@ func TestTheGuestPlanStartsTheDeclaredDaemonVerbatimInsideTheSeatbeltProfile(t *
 	}
 }
 
-// A LAUNCH WITH NO DAEMON AND NO GUEST CLIENT'S ENDPOINT PAYS NOTHING: no binary staged, no
-// file, no supervisor. Neither trigger fires, so not one guest binary is copied, a guest
-// source that happens to be named included.
+// A LAUNCH WITH NO DAEMON AND NO GUEST CLIENT'S ENDPOINT STAGES ONLY ITS SESSION Yolo: no guest
+// helper is copied, no supervisor is started and the plan carries no guest-helper source.
 func TestAGuestPlanWithNoDaemonStagesAndStartsNothing(t *testing.T) {
 	for _, jd := range []JailDaemons{{}, {GuestBinSource: "/src"}} {
 		plan := guestPlan(t, jd)
@@ -105,7 +105,7 @@ func TestAGuestPlanWithNoDaemonStagesAndStartsNothing(t *testing.T) {
 		}
 		for _, c := range plan.StageCommands {
 			for _, name := range GuestBinaries {
-				if len(c) == 4 && c[0] == mvBin && c[3] == GuestBinaryPath(name, "") {
+				if argvMentions(c, filepath.Join(plan.SessionGuestBinDir+".new", name)) {
 					t.Errorf("a plan with no daemon and no client endpoint stages %s", name)
 				}
 			}
@@ -121,11 +121,84 @@ func serialEndpointEnv() *jsonx.OrderedMap {
 	return env
 }
 
-// A GUEST CLIENT'S ENDPOINT ALONE STAGES THE WHOLE GUEST SET, AND STARTS NO SUPERVISOR. The
-// serial loophole runs no jail daemon, so before the guest clients a macos-user sandbox was
-// told where the serial bridge is and had no yolo-serial to dial it with. Every guest binary is
-// copied to a temp name in GuestBinDir and renamed into place; the supervisor, its env file and
-// its log stay the daemons' alone.
+// Same-workspace sessions from different matched bundles keep their own guest executable paths.
+// The paths include each session's existing ID under the existing scoped guest-bin root; neither
+// session may replace the other's yolo or guest daemon while both are alive.
+func TestSameWorkspaceGuestBundlesUseDistinctSessionPaths(t *testing.T) {
+	workspace := "/Users/Shared/yolo/proj"
+	makePlan := func(id, source string) RunPlan {
+		env := jsonx.NewOrderedMap()
+		env.Set(jailDaemonsEnv, `[{"name":"openai-auth-broker","cmd":["yolo-jaild","openai-auth-adapter"],"restart":"on-failure"}]`)
+		return BuildRunPlanWithDaemons(workspace, jsonx.NewOrderedMap(), []string{"codex"},
+			[]string{"codex"}, "/opt/yolo/bin/yolo", "", HomeOverlay{}, HostContext{}, jsonx.NewOrderedMap(),
+			mockDarwin(), nil, JailDaemons{Env: env, GuestBinSource: source}, FloorStage{}, PlanSession{ID: id})
+	}
+	a := makePlan("aaaaaaaaaaaaaaaa", "/bundles/A/bin/darwin-arm64")
+	b := makePlan("bbbbbbbbbbbbbbbb", "/bundles/B/bin/darwin-arm64")
+	if a.Cname != b.Cname {
+		t.Fatalf("fixture must be same-workspace, got cname %q and %q", a.Cname, b.Cname)
+	}
+	for _, name := range append([]string{"yolo"}, GuestBinaries...) {
+		pathA, pathB := filepath.Join(a.SessionGuestBinDir, name), filepath.Join(b.SessionGuestBinDir, name)
+		if pathA == pathB {
+			t.Errorf("session A and B share %s at %s", name, pathA)
+		}
+		root := GuestBinDir(a.StagedDir) + "/"
+		if !strings.HasPrefix(pathA, root) || !strings.HasPrefix(pathB, root) {
+			t.Errorf("session binaries escaped the existing guest-bin root: %s / %s", pathA, pathB)
+		}
+	}
+	if !validGuestBundleIdentity(a.GuestBundleIdentity) || !validGuestBundleIdentity(b.GuestBundleIdentity) ||
+		a.GuestBundleIdentity == b.GuestBundleIdentity {
+		t.Errorf("distinct selected bundle source keys did not produce distinct valid identities: %q / %q",
+			a.GuestBundleIdentity, b.GuestBundleIdentity)
+	}
+	for _, plan := range []RunPlan{a, b} {
+		pathValue, ok := argvEnvValue(plan.LaunchArgv, "PATH")
+		if !ok || !strings.Contains(":"+pathValue+":", ":"+plan.SessionGuestBinDir+":") {
+			t.Errorf("the session launch PATH does not use its child %s: %s", plan.SessionGuestBinDir, pathValue)
+		}
+		if !containsArg(plan.BootstrapArgv, plan.StagedYolo) || filepath.Dir(plan.StagedYolo) != plan.SessionGuestBinDir {
+			t.Errorf("bootstrap yolo is outside its own child: %+v", plan)
+		}
+	}
+	if filepath.Dir(a.StagedYolo) == filepath.Dir(b.StagedYolo) {
+		t.Errorf("the two agent PATH entries share a guest-bin child: %s", filepath.Dir(a.StagedYolo))
+	}
+}
+
+func TestGuestBundleIdentityReadsSnapshotStampAndSupportsLegacySources(t *testing.T) {
+	rootA, rootB := t.TempDir(), t.TempDir()
+	stampID := strings.Repeat("c", 64)
+	if err := os.WriteFile(filepath.Join(rootA, "yolo-build-stamp.json"),
+		[]byte(`{"version":"dev","commit":"abc","snapshotIdentity":"`+stampID+`"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := GuestBundleIdentity(rootA)
+	if err != nil || got != stampID {
+		t.Fatalf("GuestBundleIdentity returned %q, %v; want stamp identity %q", got, err, stampID)
+	}
+	legacyA, err := GuestBundleIdentity(rootB)
+	if err != nil || !validGuestBundleIdentity(legacyA) || legacyA == stampID {
+		t.Errorf("legacy bundle did not get a safe source-key digest: %q, %v", legacyA, err)
+	}
+	legacyB, err := GuestBundleIdentity(t.TempDir())
+	if err != nil || legacyA == legacyB {
+		t.Errorf("distinct legacy source keys reused identity %q: %v", legacyA, err)
+	}
+	if err := os.WriteFile(filepath.Join(rootB, "yolo-build-stamp.json"), []byte(`{"snapshotIdentity":"broken"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := GuestBundleIdentity(rootB); err == nil {
+		t.Error("an invalid stamped identity silently fell back to the legacy source key")
+	}
+}
+
+// The guest client's endpoint alone stages the whole guest set, and starts no supervisor. The
+// serial loophole runs no jail daemon, so before the guest clients a macos-user sandbox was told
+// where the serial bridge is and had no yolo-serial to dial it with. Every guest binary is copied
+// to a temp name in GuestBinDir and renamed into place; the supervisor, its env file and its log
+// stay the daemons' alone.
 func TestASerialEndpointWithNoDaemonStagesEveryGuestBinaryAndNoSupervisor(t *testing.T) {
 	src := "/opt/homebrew/Cellar/yolo-jail/1.0/share/yolo-jail/bin/darwin-arm64"
 	plan := BuildRunPlanWithDaemons(probeWS, jsonx.NewOrderedMap(), []string{"claude"},
@@ -142,21 +215,93 @@ func TestASerialEndpointWithNoDaemonStagesEveryGuestBinaryAndNoSupervisor(t *tes
 		t.Errorf("GuestClients = %q, GuestBinSource = %q", got, plan.GuestBinSource)
 	}
 	for _, name := range GuestBinaries {
-		dst := GuestBinaryPath(name, "")
+		tmp := filepath.Join(plan.SessionGuestBinDir+".new", name)
 		copied, renamed := -1, -1
 		for i, c := range plan.StageCommands {
-			if len(c) == 4 && c[0] == cpBin && c[2] == src+"/"+name && c[3] == dst+".new" {
+			if len(c) == 4 && c[0] == cpBin && c[2] == src+"/"+name && c[3] == tmp {
 				copied = i
 			}
-			if len(c) == 4 && c[0] == mvBin && c[2] == dst+".new" && c[3] == dst {
+			if len(c) == 4 && c[0] == mvBin && c[2] == plan.SessionGuestBinDir+".new" && c[3] == plan.SessionGuestBinDir {
 				renamed = i
 			}
 		}
 		if copied < 0 || renamed < 0 || renamed < copied {
-			t.Errorf("%s is not staged copy-then-rename into %s (copy %d, rename %d)",
-				name, GuestBinDir(""), copied, renamed)
+			t.Errorf("%s is not composed into the private session child before its atomic publish (copy %d, rename %d)",
+				name, copied, renamed)
 		}
 	}
+}
+
+func TestSameWorkspaceGuestBundleStagingKeepsBothSessionChildrenImmutable(t *testing.T) {
+	root := t.TempDir()
+	sourceA, sourceB := t.TempDir(), t.TempDir()
+	writeBundle := func(dir, tag string) {
+		t.Helper()
+		for _, name := range append([]string{"yolo"}, GuestBinaries...) {
+			content := []byte("#!/bin/sh\nprintf '%s\\n' '" + tag + "/" + name + "'\n")
+			if err := os.WriteFile(filepath.Join(dir, name), content, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	writeBundle(sourceA, "A")
+	writeBundle(sourceB, "B")
+	idA, idB := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	sessionA, sessionB := "aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"
+	runCommands := func(commands [][]string) {
+		t.Helper()
+		for _, command := range commands {
+			if out, err := exec.Command(command[0], command[1:]...).CombinedOutput(); err != nil {
+				t.Fatalf("stage failed: %v: %v\n%s", err, command, out)
+			}
+		}
+	}
+	runCommands(StageGuestSessionCommands(filepath.Join(sourceA, "yolo"), sourceA, idA, sessionA, root))
+	pathA := GuestSessionBinDir(idA, sessionA, root)
+	if !strings.HasPrefix(pathA, GuestBinDir(root)+"/") {
+		t.Fatalf("A escaped existing scoped root: %s", pathA)
+	}
+	bytesA := map[string][]byte{}
+	inodesA := map[string]os.FileInfo{}
+	for _, name := range append([]string{"yolo"}, GuestBinaries...) {
+		path := filepath.Join(pathA, name)
+		bytesA[name], _ = os.ReadFile(path)
+		inodesA[name], _ = os.Stat(path)
+		if inodesA[name] == nil || inodesA[name].Mode().Perm() != 0o555 {
+			t.Fatalf("A/%s is not sealed 0555: %v", name, inodesA[name])
+		}
+		if out, err := exec.Command(path).Output(); err != nil || strings.TrimSpace(string(out)) != "A/"+name {
+			t.Fatalf("A/%s did not execute its own bytes: %q, %v", name, out, err)
+		}
+	}
+	if info, err := os.Stat(pathA); err != nil || info.Mode().Perm() != 0o555 {
+		t.Fatalf("A child is not sealed: %v, %v", info, err)
+	}
+	runCommands(StageGuestSessionCommands(filepath.Join(sourceB, "yolo"), sourceB, idB, sessionB, root))
+	pathB := GuestSessionBinDir(idB, sessionB, root)
+	if pathA == pathB {
+		t.Fatal("different bundle identities and session tokens reused one child")
+	}
+	for _, name := range append([]string{"yolo"}, GuestBinaries...) {
+		path := filepath.Join(pathA, name)
+		got, err := os.ReadFile(path)
+		info, statErr := os.Stat(path)
+		if err != nil || statErr != nil || string(got) != string(bytesA[name]) || !os.SameFile(inodesA[name], info) {
+			t.Errorf("staging B changed A/%s bytes or inode: %q, %v / %v", name, got, err, statErr)
+		}
+		if out, err := exec.Command(filepath.Join(pathB, name)).Output(); err != nil ||
+			strings.TrimSpace(string(out)) != "B/"+name {
+			t.Errorf("B/%s did not execute its own bytes: %q, %v", name, out, err)
+		}
+	}
+	runCommands(GuestSessionRemoveCommands(sessionA, root))
+	if _, err := os.Stat(pathA); !os.IsNotExist(err) {
+		t.Errorf("ending A did not remove only A's child: %v", err)
+	}
+	if _, err := os.Stat(pathB); err != nil {
+		t.Errorf("ending A removed B's still-live child: %v", err)
+	}
+	runCommands(GuestSessionRemoveCommands(sessionB, root))
 }
 
 // guestClientInvariants fails a plan whose session env carries a client's endpoint and stages
@@ -168,7 +313,7 @@ func TestPlanInvariantsCatchAGuestClientEndpointWithNoClient(t *testing.T) {
 	p := good
 	p.StageCommands = nil
 	for _, c := range good.StageCommands {
-		if len(c) == 4 && c[0] == mvBin && c[3] == GuestBinaryPath("yolo-serial", "") {
+		if argvMentions(c, filepath.Join(good.SessionGuestBinDir+".new", "yolo-serial")) {
 			continue
 		}
 		p.StageCommands = append(p.StageCommands, c)
@@ -207,9 +352,10 @@ func TestTheOrchestratorResolvesTheGuestSetForAClientAlone(t *testing.T) {
 	if asked != 1 {
 		t.Errorf("Deps.GuestBinaries was asked %d times for a launch carrying the serial endpoint", asked)
 	}
-	if !strings.Contains(strings.Join(rec, "\n"), "run:"+mvBin+" -f "+GuestBinaryPath("yolo-serial", "")+".new "+
-		GuestBinaryPath("yolo-serial", "")) {
-		t.Errorf("the launch did not stage yolo-serial:\n%s", strings.Join(rec, "\n"))
+	joined := strings.Join(rec, "\n")
+	if !strings.Contains(joined, "cp -f /opt/yolo/bin/darwin-arm64/yolo-serial "+GuestBinDir("")+"/") ||
+		!strings.Contains(joined, "mv -f "+GuestBinDir("")+"/") {
+		t.Errorf("the launch did not stage yolo-serial into and publish its private guest-bin child:\n%s", joined)
 	}
 
 	rec = nil
@@ -262,27 +408,27 @@ func TestGuestBinariesAreStagedIntoTheRootOwnedPrefixOnly(t *testing.T) {
 	if !strings.HasPrefix(GuestBinDir(""), stateDir+"/") {
 		t.Fatalf("GuestBinDir %s is not under the root-owned state dir", GuestBinDir(""))
 	}
-	if StagedYoloPath("") != GuestBinaryPath("yolo", "") {
-		t.Errorf("the staged yolo %s is not in the guest prefix beside the in-jail binaries", StagedYoloPath(""))
+	if len(plan.StageCommands) > 0 && filepath.Dir(plan.StagedYolo) != plan.SessionGuestBinDir {
+		t.Errorf("staged yolo %s is outside the session guest child %s", plan.StagedYolo, plan.SessionGuestBinDir)
 	}
 	for _, name := range GuestBinaries {
-		dst := GuestBinaryPath(name, "")
-		var copied, renamed bool
+		tmp := filepath.Join(plan.SessionGuestBinDir+".new", name)
+		var copied, published bool
 		for _, c := range plan.StageCommands {
-			if len(c) == 4 && c[0] == cpBin && c[2] == src+"/"+name && c[3] == dst+".new" {
+			if len(c) == 4 && c[0] == cpBin && c[2] == src+"/"+name && c[3] == tmp {
 				copied = true
 			}
-			if len(c) == 4 && c[0] == mvBin && c[2] == dst+".new" && c[3] == dst {
-				renamed = true
+			if len(c) == 4 && c[0] == mvBin && c[2] == plan.SessionGuestBinDir+".new" && c[3] == plan.SessionGuestBinDir {
+				published = true
 			}
-			if len(c) > 0 && (c[0] == cpBin || c[0] == mvBin) && strings.HasSuffix(c[len(c)-1], "/"+name) &&
+			if len(c) > 0 && (c[0] == cpBin || c[0] == mvBin) && strings.Contains(c[len(c)-1], "/"+name) &&
 				!strings.HasPrefix(c[len(c)-1], GuestBinDir("")+"/") {
-				t.Errorf("a stage command writes %s outside the guest prefix: %v", name, c)
+				t.Errorf("a stage command writes %s outside the scoped guest-bin root: %v", name, c)
 			}
 		}
-		if !copied || !renamed {
-			t.Errorf("%s is not staged copy-to-temp-then-rename into %s (copied %v, renamed %v)",
-				name, dst, copied, renamed)
+		if !copied || !published {
+			t.Errorf("%s is not composed into the sealed session child %s (copied %v, published %v)",
+				name, plan.SessionGuestBinDir, copied, published)
 		}
 	}
 }
@@ -376,11 +522,22 @@ func TestTheOrchestratorStartsTheSupervisorBeforeTheAgentAndStopsItAfter(t *test
 			boot, start, proxy, stop, strings.Join(rec, "\n"))
 	}
 	if !strings.Contains(rec[start], "/usr/bin/sandbox-exec -f ") ||
-		!strings.Contains(rec[start], GuestBinaryPath(JaildName, "")+" supervise") {
+		!strings.Contains(rec[start], GuestBinDir("")+"/") || !strings.Contains(rec[start], "/yolo-jaild supervise") {
 		t.Errorf("the started argv is not the confined supervisor: %s", rec[start])
 	}
 	if !strings.Contains(buf.String(), "Started openai-auth-broker inside the sandbox") {
 		t.Errorf("the launch does not disclose the daemons it started:\n%s", buf.String())
+	}
+	key := launchedSessionKey(t, rec, o.Workspace)
+	_, sessionID, ok := parseSessionKey(key)
+	if !ok {
+		t.Fatalf("invalid launched session key %q", key)
+	}
+	cleanup := GuestSessionRemoveCommands(sessionID, "")
+	cleanupAt := recAt(rec, "run:"+strings.Join(cleanup[0], " "))
+	if cleanupAt <= stop {
+		t.Errorf("the session's own guest child was not removed after its supervisor stopped (cleanup %d, stop %d):\n%s",
+			cleanupAt, stop, strings.Join(rec, "\n"))
 	}
 }
 
@@ -430,14 +587,25 @@ func TestPlanInvariantsCatchAnUnconfinedOrMissingSupervisor(t *testing.T) {
 		"binary not staged": func(p *RunPlan) {
 			var keep [][]string
 			for _, c := range p.StageCommands {
-				if len(c) == 4 && c[0] == mvBin && c[3] == GuestBinaryPath(JaildName, "") {
+				if len(c) == 4 && c[0] == cpBin && c[2] == "/src/"+JaildName &&
+					c[3] == filepath.Join(p.SessionGuestBinDir+".new", JaildName) {
 					continue
 				}
 				keep = append(keep, c)
 			}
 			p.StageCommands = keep
 		},
-		"no payload in the file": func(p *RunPlan) { p.DaemonEnvFileContent = "export X='y'\n" },
+		"no payload in the file":      func(p *RunPlan) { p.DaemonEnvFileContent = "export X='y'\n" },
+		"missing session-bin cleanup": func(p *RunPlan) { p.SessionGuestBinRemoveCommands = nil },
+		"session PATH omitted": func(p *RunPlan) {
+			for i, arg := range p.LaunchArgv {
+				if strings.HasPrefix(arg, "PATH=") {
+					p.LaunchArgv[i] = "PATH=/usr/bin:/bin"
+					return
+				}
+			}
+			p.LaunchArgv = append(p.LaunchArgv, "PATH=/usr/bin:/bin")
+		},
 		"no log redirect": func(p *RunPlan) {
 			var out []string
 			for i := 0; i < len(p.JailDaemonArgv); i++ {
@@ -543,12 +711,18 @@ func TestTheDryRunNamesTheGuestSetStagedForAClient(t *testing.T) {
 		t.Fatalf("dry run rc = %d\n%s", rc, buf.String())
 	}
 	out := buf.String()
-	want := "  guest bins: " + PrebuiltGuestBinDir(o.RepoRoot) + " → " + GuestBinDir("") + " (for yolo-serial)"
+	identity, err := GuestBundleIdentity(o.RepoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := GuestSessionBinDir(identity, SessionPlaceholder, "")
+	want := "  guest bins: " + PrebuiltGuestBinDir(o.RepoRoot) + " → " + child + " (for yolo-serial)"
 	if !strings.Contains(out, "jail daemons: none run in the sandbox for this launch") || !strings.Contains(out, want) {
 		t.Errorf("the dry run does not name the guest set staged for yolo-serial (want %q):\n%s", want, out)
 	}
-	if !strings.Contains(out, mvBin+" -f "+GuestBinaryPath("yolo-serial", "")+".new "+GuestBinaryPath("yolo-serial", "")) {
-		t.Errorf("the dry run's privileged commands do not stage yolo-serial:\n%s", out)
+	if !strings.Contains(out, cpBin+" -f "+PrebuiltGuestBinDir(o.RepoRoot)+"/yolo-serial "+child+".new/yolo-serial") ||
+		!strings.Contains(out, mvBin+" -f "+child+".new "+child) {
+		t.Errorf("the dry run's privileged commands do not stage and publish yolo-serial in its private child:\n%s", out)
 	}
 }
 

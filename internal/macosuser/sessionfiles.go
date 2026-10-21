@@ -117,6 +117,17 @@ func SessionFilePaths(key, sd string) []string {
 	}
 }
 
+// SessionCleanupCommands remove a known-ended session's files and its bundle+token guest-bin
+// child. The latter is token-scoped so the liveness record need not guess the bundle identity.
+func SessionCleanupCommands(key, sd string) [][]string {
+	_, id, ok := parseSessionKey(key)
+	if !ok {
+		return nil
+	}
+	cmds := [][]string{append([]string{rmBin, "-f"}, SessionFilePaths(key, sd)...)}
+	return append(cmds, GuestSessionRemoveCommands(id, sd)...)
+}
+
 // sessionRecordLeaf is the records' directory under locks/.
 const sessionRecordLeaf = "macos-user-sessions"
 
@@ -230,10 +241,14 @@ func (t *sessionTeardown) finish(out printer, rec *sessionRecord, key, sd string
 	if rec == nil {
 		then = "No record of this session was kept, so no launch removes them"
 	}
-	argv := append([]string{rmBin, "-f"}, SessionFilePaths(key, sd)...)
+	cmds := SessionCleanupCommands(key, sd)
+	var displayed []string
+	for _, cmd := range cmds {
+		displayed = append(displayed, shquote.JoinDisplay(cmd))
+	}
 	out.printf("[yellow]Warning: this session could not remove its own files from %s[/yellow] "+
 		"(`%s` failed), and one may hold this launch's credentials. %s; to remove them now, run "+
-		"`%s`.", stateDirOr(sd), strings.Join(t.failed, "`, `"), then, shquote.JoinDisplay(argv))
+		"`%s`.", stateDirOr(sd), strings.Join(t.failed, "`, `"), then, strings.Join(displayed, " && "))
 }
 
 // stateDirOr is sd, or the state dir when sd is empty, as the path helpers read it.
@@ -340,12 +355,18 @@ func sweepGoneSessions(deps Deps, out printer, dir string) {
 			_ = f.Close()
 			continue
 		}
-		argv := append([]string{rmBin, "-f"}, SessionFilePaths(key, "")...)
-		if deps.Run(argv) != 0 {
+		cleanup := SessionCleanupCommands(key, "")
+		failed := ""
+		for _, cmd := range cleanup {
+			if deps.Run(cmd) != 0 {
+				failed = shquote.JoinDisplay(cmd)
+				break
+			}
+		}
+		if failed != "" {
 			out.printf("[yellow]Warning: could not remove the files a macos-user session that has "+
 				"ended left in %s[/yellow] (`%s` failed). The next macos-user launch by this "+
-				"macOS user tries again; to remove them now, run that command.", stateDir,
-				shquote.JoinDisplay(argv))
+				"macOS user tries again; to remove them now, run that command.", stateDir, failed)
 			_ = f.Close()
 			continue
 		}
@@ -368,10 +389,14 @@ func openSessionRecordOrWarn(deps Deps, out printer, key string) *sessionRecord 
 	}
 	rec, err := openSessionRecord(dir, key)
 	if err != nil {
-		argv := append([]string{rmBin, "-f"}, SessionFilePaths(key, "")...)
+		cmds := SessionCleanupCommands(key, "")
+		var displayed []string
+		for _, cmd := range cmds {
+			displayed = append(displayed, shquote.JoinDisplay(cmd))
+		}
 		out.printf("[yellow]Warning: could not record this session in %s (%v).[/yellow] It runs "+
-			"anyway, and removes its own files when it ends; if it is killed first, `%s` removes "+
-			"what it left in %s.", dir, err, shquote.JoinDisplay(argv), stateDir)
+			"anyway, and removes its own files when it ends; if it is killed first, run `%s` to "+
+			"remove what it left in %s.", dir, err, strings.Join(displayed, " && "), stateDir)
 		return nil
 	}
 	return rec

@@ -1,6 +1,7 @@
 package macosuser
 
 import (
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -104,10 +105,14 @@ type RunPlan struct {
 	// to (SupervisorLogPath), and the one the launch reads its readiness line from. "" with
 	// no daemon.
 	SupervisorLog string
+	// SessionGuestBinDir is the immutable child under the existing scoped guest-bin root for this
+	// session's selected bundle; SessionGuestBinRemoveCommands run only after its session exits.
+	SessionGuestBinDir            string
+	SessionGuestBinRemoveCommands [][]string
+	// GuestBundleIdentity is this plan's selected matched-bundle snapshot identity, or legacy source-key digest.
+	GuestBundleIdentity string
 	// GuestBinSource is where the darwin guest binaries are copied from ("" with no daemon
-	// and no guest client's endpoint), and StageCommands carries the copies into GuestBinDir.
-	// GuestClients names the clients (GuestClients' binaries) whose endpoint the session env
-	// carries, each of which is then staged with the set, so the agent can run it.
+	// and no guest client's endpoint).
 	GuestBinSource string
 	GuestClients   []string
 	// ProbeArgv is the CONFINED host-service witness (serviceprobe.go): `yolo internal
@@ -412,8 +417,9 @@ func BuildRunPlan(workspace string, cfg *jsonx.OrderedMap, agents, agentArgv []s
 // workspace's inputs: its id (sessionfiles.go; "" is SessionPlaceholder) and its TLS trust
 // (cabundle.go; the zero value composes none).
 type PlanSession struct {
-	ID      string
-	CATrust CATrust
+	ID             string
+	BundleIdentity string
+	CATrust        CATrust
 }
 
 // sandboxPathPrefix is the store bin dirs this launch puts on the sandbox PATH, in order: the
@@ -515,6 +521,16 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	}
 	sessionKey := SessionKey(cname, sessionID)
 	profilePath := SessionProfilePath(sessionKey, "")
+	bundleIdentity := session.BundleIdentity
+	if !validGuestBundleIdentity(bundleIdentity) {
+		sourceRoot := ""
+		if jailDaemons.GuestBinSource != "" {
+			sourceRoot = filepath.Dir(filepath.Dir(jailDaemons.GuestBinSource))
+		}
+		bundleIdentity = legacyGuestBundleIdentity(sourceRoot)
+	}
+	sessionGuestBinDir := GuestSessionBinDir(bundleIdentity, sessionID, "")
+	stagedYolo := filepath.Join(sessionGuestBinDir, "yolo")
 
 	// Git identity = the sandbox-env keys prefixed YOLO_GIT.
 	gitIdentity := jsonx.NewOrderedMap()
@@ -611,6 +627,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	bootstrapEnv := buildBootstrapEnv(workspace, cfg, gitIdentity, sandboxEnv, packRoot,
 		homeOverlay, ctxRoot, capturesRoot, hostCtx, paths.WorkspaceHomeState(workspace), SandboxHome(),
 		darwinPrefix, blockedTools, launchMiseTools)
+	bootstrapEnv.Set(entrypoint.DarwinLoginPathEnv, SandboxPathForGuestBin(SandboxHome(), darwinPrefix, sessionGuestBinDir))
 	bootstrapEnv.Set(paths.ContextDirEnv, contextDir)
 	// Never take identity from env_sources, and never give install capture an ID.
 	if nativehome.ValidID(sessionID) {
@@ -656,7 +673,6 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		bootstrapEnv.Set(entrypoint.DarwinCacheRelocationsEnv, entrypoint.DarwinCacheRelocationsWire(wire))
 	}
 
-	stagedYolo := StagedYoloPath("")
 	offendingHome, offendingSet := HomeContaining(workspace)
 
 	// THE PROVISIONING STAGE (docs/reference/macos-user-provisioning.md, "The stage"), composed
@@ -714,7 +730,16 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 			return asStr(v)
 		})
 		provisionArgv = ProvisionArgv(ProvisionScript(workspace, provisionScriptPath, scriptColor),
-			profilePath, envFile, workspace, "", "", darwinPrefix)
+			profilePath, envFile, workspace, "", "", darwinPrefix, sessionGuestBinDir)
+	}
+
+	// THE GUEST'S BINARIES (OQ-DP8; jaildaemon.go), staged as one sealed session child. A launch
+	// always stages yolo; guest helpers join the same private child only for a daemon or endpoint.
+	daemonNames := jailDaemons.Names()
+	guestClients := GuestClientsIn(sandboxEnv)
+	guestSource := ""
+	if len(daemonNames) > 0 || len(guestClients) > 0 {
+		guestSource = jailDaemons.GuestBinSource
 	}
 
 	// Each group is named for the stage's timing spans (RunPlan.StageCommandSteps) as it is
@@ -727,7 +752,9 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		}
 		stageCommands = append(stageCommands, cmds...)
 	}
-	stageStep("binary", StageBinaryCommands(selfExe, ""))
+	prepareGuest, publishGuest := guestSessionStageCommands(selfExe, guestSource, bundleIdentity, sessionID, "")
+	stageStep("binary", prepareGuest)
+	stageStep("guest_binaries", publishGuest)
 	stageStep("pack_tree", StagePackCommands(hostPackRoot, cname, ""))
 	// An overlay whose sealed staged copy is already this one (HomeOverlay.StagedCurrent) stages
 	// nothing: the copy, seal and swap of an unchanged tree were most of an unchanged relaunch.
@@ -741,20 +768,6 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	stageStep("context_dir", StageContextDirCommands(hostCtx.Tree, ctxLinks, cname, ""))
 	stageStep("endpoint_grants", endpointGrantCommands(sandboxEnv))
 
-	// THE GUEST'S BINARIES (OQ-DP8; jaildaemon.go), staged as ONE SET when the launch runs a
-	// jail daemon OR its session env carries an endpoint a guest client reads (GuestClientsIn,
-	// keyed on each client's own variable) — so a launch with neither stages nothing and a
-	// checkout launch builds no `.#guestPrefix` for nothing.
-	daemonNames := jailDaemons.Names()
-	guestClients := GuestClientsIn(sandboxEnv)
-	guestSource := ""
-	if len(daemonNames) > 0 || len(guestClients) > 0 {
-		guestSource = jailDaemons.GuestBinSource
-		// The binaries the supervisor, the payload's argvs and the agent's clients name, beside
-		// the staged yolo.
-		stageStep("guest_binaries", StageGuestBinaryCommands(guestSource, ""))
-	}
-
 	// THE GUEST'S JAIL DAEMONS (OQ-DP8, OQ-DP9; jaildaemon.go), composed only when the
 	// launch handed this backend a payload naming at least one — so every artifact below is
 	// absent, not empty, on a launch that runs none. The supervisor, its env file and its log
@@ -765,7 +778,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		daemonEnvFile = SandboxDaemonEnvFile(sessionKey, "")
 		daemonEnvContent = SandboxEnvFileContent(jailDaemons.Env)
 		supervisorLog = SupervisorLogPath(workspace)
-		jailDaemonArgv = JailDaemonArgv(profilePath, daemonEnvFile, supervisorLog, "", "", darwinPrefix)
+		jailDaemonArgv = JailDaemonArgv(profilePath, daemonEnvFile, supervisorLog, "", "", darwinPrefix, stagedYolo)
 		// Every endpoint the DAEMONS dial is granted too — the same grant the agent's
 		// endpoints get, read off the daemon env for endpointGrantCommands' reason (the env
 		// is the manifest), deduped against the ones already granted.
@@ -858,15 +871,18 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		SessionGuard:             guard,
 		CooperativeCPUs:          cpus,
 
-		JailDaemonArgv:          jailDaemonArgv,
-		JailDaemonNames:         daemonNames,
-		SupervisorLog:           supervisorLog,
-		GuestBinSource:          guestSource,
-		GuestClients:            guestClientNames(guestClients),
-		ProbeArgv:               probeArgv,
-		DaemonEnvFile:           daemonEnvFile,
-		DaemonEnvFileContent:    daemonEnvContent,
-		DaemonEnvRemoveCommands: SandboxEnvRemoveCommands(daemonEnvFile),
+		JailDaemonArgv:                jailDaemonArgv,
+		JailDaemonNames:               daemonNames,
+		SupervisorLog:                 supervisorLog,
+		SessionGuestBinDir:            sessionGuestBinDir,
+		SessionGuestBinRemoveCommands: GuestSessionRemoveCommands(sessionID, ""),
+		GuestBinSource:                guestSource,
+		GuestBundleIdentity:           bundleIdentity,
+		GuestClients:                  guestClientNames(guestClients),
+		ProbeArgv:                     probeArgv,
+		DaemonEnvFile:                 daemonEnvFile,
+		DaemonEnvFileContent:          daemonEnvContent,
+		DaemonEnvRemoveCommands:       SandboxEnvRemoveCommands(daemonEnvFile),
 
 		EnvFile:               envFile,
 		EnvFileContent:        envFileContent,
@@ -1276,10 +1292,9 @@ func PlanInvariants(plan RunPlan) []string {
 	}
 	// The stage step must have a real source binary to copy — an empty selfExe
 	// (os.Executable failed) would stage nothing and the self-exec would fail.
-	if stageCopySourceEmpty(plan.StageCommands) {
+	if !hasGuestSessionYoloCopy(plan) {
 		problems = append(problems,
-			"no source yolo binary resolved to stage (os.Executable failed); "+
-				"the sandbox would have no bootstrap binary to exec")
+			"no source yolo binary resolved to stage (os.Executable failed); the sandbox would have no bootstrap binary to exec")
 	}
 
 	// B3 (Go): the stage commands must produce a FRESH inode (copy-to-temp + mv),
@@ -1750,6 +1765,7 @@ func PlanInvariants(plan RunPlan) []string {
 				"on one would be dropped from every agent config")
 	}
 
+	problems = append(problems, sessionGuestBinInvariants(plan)...)
 	problems = append(problems, jailDaemonInvariants(plan)...)
 	problems = append(problems, guestClientInvariants(plan)...)
 	problems = append(problems, serviceProbeInvariants(plan)...)
@@ -1855,6 +1871,57 @@ func containsCommand(cmds [][]string, want []string) bool {
 	return false
 }
 
+func sessionGuestBinInvariants(plan RunPlan) []string {
+	var problems []string
+	root := GuestBinDir(plan.StagedDir)
+	if !strings.HasPrefix(plan.SessionGuestBinDir, root+"/") {
+		problems = append(problems, "the session guest-bin child is not under the existing host-owned staging root")
+	}
+	if !validGuestBundleIdentity(plan.GuestBundleIdentity) ||
+		plan.SessionGuestBinDir != GuestSessionBinDir(plan.GuestBundleIdentity, plan.SessionID, plan.StagedDir) {
+		problems = append(problems, "the guest-bin child is not keyed by this bundle identity and session token")
+	}
+	if len(plan.SessionGuestBinRemoveCommands) == 0 {
+		problems = append(problems, "nothing removes this session's guest-bin child after it exits")
+	}
+	if !hasGuestSessionBinaryCopy(plan, "yolo") {
+		problems = append(problems, "the session does not stage yolo into its private guest-bin child")
+	}
+	tmp := plan.SessionGuestBinDir + ".new"
+	sealed, published := false, false
+	for i, cmd := range plan.StageCommands {
+		if len(cmd) == 3 && cmd[0] == chmodBin && cmd[1] == sealedBinaryMode && cmd[2] == tmp {
+			sealed = true
+			if i+1 < len(plan.StageCommands) {
+				next := plan.StageCommands[i+1]
+				published = len(next) == 4 && next[0] == mvBin && next[2] == tmp &&
+					next[3] == plan.SessionGuestBinDir
+			}
+		}
+	}
+	if !sealed || !published {
+		problems = append(problems, "the private guest-bin child is not sealed before atomic publication")
+	}
+	for _, item := range []struct {
+		name string
+		argv []string
+	}{{"bootstrap", plan.BootstrapArgv}, {"provisioning", plan.ProvisionArgv},
+		{"service probe", plan.ProbeArgv}, {"guest supervisor", plan.JailDaemonArgv}} {
+		if len(item.argv) == 0 {
+			continue
+		}
+		pathValue, ok := argvEnvValue(item.argv, entrypoint.DarwinLoginPathEnv)
+		if !ok || !strings.Contains(":"+pathValue+":", ":"+plan.SessionGuestBinDir+":") {
+			problems = append(problems, item.name+" PATH does not use this session's guest-bin child")
+		}
+	}
+	if pathValue, ok := argvEnvValue(plan.LaunchArgv, "PATH"); !ok ||
+		!strings.Contains(":"+pathValue+":", ":"+plan.SessionGuestBinDir+":") {
+		problems = append(problems, "the agent PATH does not use this session's guest-bin child")
+	}
+	return problems
+}
+
 // jailDaemonInvariants is PlanInvariants' rule for the guest's jail daemons (jaildaemon.go),
 // the plan's "a plan carrying a payload must carry a daemon argv" in full: the supervisor
 // exists exactly when the payload names a daemon, it runs UNDER THE SESSION'S SEATBELT
@@ -1884,7 +1951,7 @@ func jailDaemonInvariants(plan RunPlan) []string {
 			break
 		}
 	}
-	jaild := GuestBinaryPath(JaildName, plan.StagedDir)
+	jaild := filepath.Join(plan.SessionGuestBinDir, JaildName)
 	jaildAt := -1
 	for i, a := range argv {
 		if a == jaild && i+1 < len(argv) && argv[i+1] == "supervise" {
@@ -1938,19 +2005,9 @@ func jailDaemonInvariants(plan RunPlan) []string {
 		problems = append(problems, "the jail-daemon env file does not set "+jailDaemonsEnv+
 			"; the supervisor would exit with nothing to supervise")
 	}
-	if !strings.HasPrefix(GuestBinDir(plan.StagedDir), plan.StagedDir+"/") {
-		problems = append(problems, "the guest bin dir is not under the host-owned staging root")
-	}
-	staged := false
-	for _, c := range plan.StageCommands {
-		if len(c) == 4 && c[0] == mvBin && c[3] == jaild {
-			staged = true
-		}
-	}
-	if !staged {
+	if !hasGuestSessionBinaryCopy(plan, JaildName) {
 		problems = append(problems, "the plan stages no "+JaildName+" into "+
-			GuestBinDir(plan.StagedDir)+"; the supervisor argv names a binary that would not "+
-			"exist (OQ-DP8)")
+			plan.SessionGuestBinDir+"; the supervisor argv names a binary that would not exist (OQ-DP8)")
 	}
 	return problems
 }
@@ -2100,6 +2157,10 @@ func stageCommandsUseFreshInode(cmds [][]string) bool {
 		}
 	}
 	return false
+}
+
+func hasGuestSessionYoloCopy(plan RunPlan) bool {
+	return hasGuestSessionBinaryCopy(plan, "yolo")
 }
 
 // stageCopySourceEmpty reports whether the cp stage command has an empty source

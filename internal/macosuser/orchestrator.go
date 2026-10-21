@@ -251,10 +251,10 @@ type Options struct {
 	// launch that carried no host bytes.
 	HostCtx HostContext
 
-	// RepoRoot is the yolo-jail checkout root — passed to MaterializeDarwin as
-	// the nix build root when `packages:` is non-empty. The native bootstrap
-	// needs no source tree, only the flake root for darwin packages.
+	// RepoRoot is the selected matched-bundle root used for its snapshot identity and darwin packages.
 	RepoRoot string
+	// BundleIdentity is the selected bundle's snapshot identity, or legacy source-key digest.
+	BundleIdentity string
 	// HostPackRoot is the host-side staged pack tree (the run pipeline's stagePacks
 	// root), copied into the host-owned staging root by the plan's stage commands and
 	// named to the bootstrap as YOLO_PACK_ROOT. Empty means this launch staged no
@@ -652,8 +652,18 @@ func buildPlan(deps Deps, opts Options, darwin *Darwin) RunPlan {
 	// nodes the sandbox's resolution reads first are the same files on the sandbox's PATH that
 	// this process can read now. A dry run asks too, against a PATH with no floor materialized,
 	// so its plan shows the stage for any declared floor, which is the direction the rule fails.
+	identity := opts.BundleIdentity
+	if !validGuestBundleIdentity(identity) {
+		root := opts.RepoRoot
+		if opts.JailDaemons.GuestBinSource != "" {
+			root = filepath.Dir(filepath.Dir(opts.JailDaemons.GuestBinSource))
+		}
+		identity = legacyGuestBundleIdentity(root)
+	}
+	opts.BundleIdentity = identity
 	home := SandboxHome()
-	loginPath := SandboxPath(home, sandboxPathPrefix(darwin))
+	loginPath := SandboxPathForGuestBin(home, sandboxPathPrefix(darwin),
+		GuestSessionBinDir(opts.BundleIdentity, opts.SessionID, ""))
 	var met func(string) bool
 	if deps.NodeFloorMet != nil {
 		met = func(floor string) bool { return deps.NodeFloorMet(floor, loginPath, home) }
@@ -669,7 +679,7 @@ func buildPlan(deps Deps, opts Options, darwin *Darwin) RunPlan {
 	return BuildRunPlanWithStages(opts.Workspace, opts.Config, opts.Agents, opts.AgentArgv,
 		selfExe, opts.HostPackRoot, overlay, opts.HostCtx, env, darwin,
 		opts.BlockedTools, opts.JailDaemons, floors, programs,
-		PlanSession{ID: opts.SessionID, CATrust: opts.CATrust})
+		PlanSession{ID: opts.SessionID, BundleIdentity: opts.BundleIdentity, CATrust: opts.CATrust})
 }
 
 // programReadinessStageFor is JR-D2's host-side stage-admission check. The same staged pack
@@ -879,6 +889,13 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// already been bitten by twice. See BuildRunPlan for the measurement and for the policy
 	// bypass the same resolution closes.
 	opts.Workspace = resolvePathAbs(opts.Workspace)
+	identity, identityErr := GuestBundleIdentity(opts.RepoRoot)
+	if identityErr != nil {
+		out.print("[bold red]Refusing the macos-user launch:[/bold red] " + identityErr.Error() +
+			". Rebuild the matched bundle with `just build-dev-bundle` and invoke its printed launcher by path, or run `just install`.")
+		return 1
+	}
+	opts.BundleIdentity = identity
 
 	// 0. Dry-run: build the plan, print it + invariants, execute nothing. Pure
 	// (darwin=nil → no nix build), so CI and a Mac agent can both inspect it.
@@ -889,13 +906,9 @@ func RunMacosUser(deps Deps, opts Options) int {
 	if opts.DryRun {
 		plainDeps := deps
 		plainDeps.Color = false
-		// A plan render builds nothing, so the guest binaries are named at the prebuilt
-		// spelling; a launch whose flake source ships none builds `.#guestPrefix` instead.
-		// Asked under the live launch's condition (guestBinariesWanted), over what a render
-		// carries: the daemons, which it knows, and only the endpoints the run pipeline's dry run
-		// can name, which is the credential service's alone (it starts no host service). So a
-		// render whose launch would stage the set for yolo-serial or yolo-ps alone names none,
-		// and PrintPlan says that is what it cannot see rather than that nothing is staged.
+		// A plan render builds nothing, so the guest-helper source is named at the selected
+		// bundle's prebuilt spelling. A live launch resolves that complete set before the plan;
+		// either way, BuildRunPlan stages yolo and every selected helper into this session's child.
 		if daemons, clients := guestBinariesWanted(opts); (len(daemons) > 0 || len(clients) > 0) &&
 			opts.JailDaemons.GuestBinSource == "" {
 			opts.JailDaemons.GuestBinSource = PrebuiltGuestBinDir(opts.RepoRoot)
@@ -1215,6 +1228,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 	record := openSessionRecordOrWarn(deps, out, sessionKey)
 	teardown := &sessionTeardown{deps: deps}
 	defer teardown.finish(out, record, sessionKey, plan.StagedDir)
+	defer teardown.remove(plan.SessionGuestBinRemoveCommands)
 	if deps.SessionRecordDir != nil {
 		sweepGoneSessions(deps, out, deps.SessionRecordDir())
 	}
@@ -1941,7 +1955,7 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 		// it renders, and "no guest bins" here is not "no guest bins at launch".
 		if len(plan.GuestClients) > 0 {
 			p.printf("  guest bins: %s → %s [dim](for %s)[/dim]", plan.GuestBinSource,
-				GuestBinDir(plan.StagedDir), strings.Join(plan.GuestClients, ", "))
+				plan.SessionGuestBinDir, strings.Join(plan.GuestClients, ", "))
 		} else {
 			var each []string
 			for _, c := range GuestClients {
@@ -1950,12 +1964,12 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 			p.printf("  guest bins: [dim]none in this render — a dry run starts no host service, so "+
 				"it cannot see whether %s will have an endpoint to dial; a live launch stages the "+
 				"guest set into %s when one of those loopholes publishes[/dim]",
-				strings.Join(each, " or "), GuestBinDir(plan.StagedDir))
+				strings.Join(each, " or "), plan.SessionGuestBinDir)
 		}
 	} else {
 		p.printf("jail daemons: %s [dim](confined; %s supervise, as %s)[/dim]",
 			strings.Join(plan.JailDaemonNames, ", "), JaildName, SandboxUser)
-		p.printf("  guest bins: %s → %s", plan.GuestBinSource, GuestBinDir(plan.StagedDir))
+		p.printf("  guest bins: %s → %s", plan.GuestBinSource, plan.SessionGuestBinDir)
 		if len(plan.GuestClients) > 0 {
 			p.printf("  [dim]and for the agent's %s[/dim]", strings.Join(plan.GuestClients, ", "))
 		}
@@ -2064,8 +2078,8 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 	// WHAT THE SESSION REMOVES WHEN IT ENDS, its own files only (sessionfiles.go): a session
 	// killed before this leaves them to the next launch's sweep.
 	p.print("[bold]── when the session ends (as you, no sudo) ──[/bold]")
-	for _, cmd := range append(append(append([][]string{}, plan.DaemonEnvRemoveCommands...),
-		plan.EnvFileRemoveCommands...), plan.ProfileRemoveCommands...) {
+	for _, cmd := range append(append(append(append([][]string{}, plan.DaemonEnvRemoveCommands...),
+		plan.EnvFileRemoveCommands...), plan.ProfileRemoveCommands...), plan.SessionGuestBinRemoveCommands...) {
 		p.print("  " + shquote.JoinDisplay(cmd))
 	}
 	p.print("")

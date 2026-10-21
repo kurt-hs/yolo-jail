@@ -12,13 +12,12 @@ package macosuser
 // the guest."
 //
 //   - OQ-DP8 — the in-jail binaries are built for darwin into the flake bundle as
-//     `bin/darwin-<arch>` (flake.nix guestBinaries, scripts/stage-source-bundle.sh
-//     GUEST_BINARIES) and staged here into GuestBinDir, beside the `yolo` this backend already
-//     stages for its bootstrap. That directory is the guest's counterpart of a container's
-//     /opt/yolo-jail/bin, and it is on no host PATH, so the host ship set stays {yolo}. A
-//     declared `cmd` runs exactly as declared: the supervisor resolves `yolo-jaild` on the
-//     sandbox PATH (SandboxPath carries GuestBinDir), with no argv[0] rewrite and no
-//     generated shim.
+//     bin/darwin-<arch> (flake.nix guestBinaries, scripts/stage-source-bundle.sh
+//     GUEST_BINARIES) and staged by StageGuestSessionCommands into this session's immutable child
+//     under the existing scoped GuestBinDir root. The child is the guest counterpart of a
+//     container's /opt/yolo-jail/bin and is on no host PATH. A declared `cmd` runs exactly as
+//     declared: the supervisor resolves `yolo-jaild` on this session's PATH, with no argv[0]
+//     rewrite and no generated shim.
 //   - OQ-DP9 — the daemons run CONFINED: the supervisor's argv is the run-as rule → env -i →
 //     sandbox-exec -f <the session profile> → the env-file reader → `yolo-jaild supervise`,
 //     the same four layers the agent and the provisioning stage run under, as the sandbox
@@ -29,11 +28,11 @@ package macosuser
 // # The loophole clients the agent runs (the same ruling, one step over)
 //
 // OQ-DP8's principle covers the CLIENTS too: `yolo-serial`, `yolo-ps` and `yolo-log` would have
-// run in the jail container, so they run on the guest. They are staged into GuestBinDir with yolo-jaild,
-// as one set (GuestBinaries), whenever the session env carries an endpoint one of them reads
-// (GuestClients), and they resolve on the agent's PATH, which SandboxPath gives GuestBinDir.
-// A launch with neither a daemon nor such an endpoint stages none of it, so a checkout launch
-// never builds `.#guestPrefix` for nothing.
+// run in the jail container, so they run on the guest. They are staged with yolo-jaild in the
+// session's immutable child (GuestBinaries), whenever the session env carries an endpoint one
+// of them reads (GuestClients), and resolve on the agent's PATH, which the launch derives from
+// that child. A launch with neither a daemon nor such an endpoint stages no guest helpers, so a
+// checkout launch never builds `.#guestPrefix` for nothing.
 //
 // # What a guest does NOT run
 //
@@ -43,7 +42,11 @@ package macosuser
 // this runs cannot be two different selections.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	goruntime "runtime"
 	"sort"
@@ -51,6 +54,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/nativehome"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/supervisor"
 )
@@ -96,15 +100,13 @@ var GuestClients = []GuestClient{
 // (flake.nix guestBinaries, stage-source-bundle.sh GUEST_BINARIES), pinned together by
 // guestbundle_test.go.
 //
-// yolo-jaild, the supervisor and every in-jail daemon, then each GuestClients binary. `yolo` is
-// staged separately (StageBinaryCommands, from the running host binary, which is already
-// darwin), and yolo-entrypoint is not needed (the guest bootstrap is `yolo internal
-// darwin-bootstrap`).
+// yolo-jaild, the supervisor and every in-jail daemon, then each GuestClients binary. `yolo`
+// is staged in the same child from the running host binary by StageGuestSessionCommands, and
+// yolo-entrypoint is not needed (the guest bootstrap is `yolo internal darwin-bootstrap`).
 //
-// ONE SET, STAGED WHOLE. A launch that needs any of it stages all of it (StageGuestBinaryCommands),
-// because the members come from one source directory and cost one copy each; splitting the
-// staging per member would buy a few kilobytes of copy for a second selector that could
-// disagree with the first.
+// ONE SET, STAGED WHOLE. A launch that needs any of it stages all of it in its session child
+// (StageGuestSessionCommands), because the members come from one source directory and cost one
+// copy each; splitting the staging per member could let a child contain a mixed bundle.
 var GuestBinaries = func() []string {
 	out := []string{JaildName}
 	for _, c := range GuestClients {
@@ -151,9 +153,8 @@ func guestClientPhrase(clients []GuestClient) string {
 	return strings.Join(parts, ", ")
 }
 
-// GuestBinDir is the staging-root directory holding every binary the sandbox runs of yolo's
-// own: <stateDir>/bin. StagedYoloPath is in it too, so the one PATH entry SandboxPath derives
-// from StagedYoloPath resolves both `yolo` and `yolo-jaild`.
+// GuestBinDir is the existing scoped root for guest executables. Each live session receives a
+// private child keyed by the bundle identity and session token; GuestSessionBinDir names it.
 func GuestBinDir(sd string) string {
 	if sd == "" {
 		sd = stateDir
@@ -161,7 +162,7 @@ func GuestBinDir(sd string) string {
 	return filepath.Join(sd, guestBinLeaf)
 }
 
-// GuestBinaryPath is where one guest binary is staged.
+// GuestBinaryPath is a path under the scoped guest-bin root, used by non-session staging helpers.
 func GuestBinaryPath(name, sd string) string { return filepath.Join(GuestBinDir(sd), name) }
 
 // PrebuiltGuestBinDir is the per-arch guest directory a flake bundle ships, if the resolved
@@ -174,28 +175,135 @@ func PrebuiltGuestBinDir(root string) string {
 	return filepath.Join(root, "bin", "darwin-"+goruntime.GOARCH)
 }
 
-// StageGuestBinaryCommands returns the argv, run as the host user, that stage each GuestBinaries
-// member from srcDir into GuestBinDir, the StageBinaryCommands shape per binary: copy to a temp
-// name, seal it 0555, then an atomic rename — a FRESH INODE, because macOS caches Mach-O code
-// signatures per vnode and an in-place overwrite gets the next exec SIGKILLed. Sealed and the
-// host user's, so the sandbox can execute and cannot rewrite what its supervisor or its agent
-// runs. nil for an empty srcDir, which is a launch with no jail daemon to run and no guest
-// client's endpoint.
-func StageGuestBinaryCommands(srcDir, sd string) [][]string {
-	if srcDir == "" {
+// GuestSessionBinDir is this launch's private guest executable directory. Its direct-child name
+// carries both the selected bundle identity and this launch's token, while remaining under the
+// existing scoped GuestBinDir root.
+func GuestSessionBinDir(bundleIdentity, sessionID, sd string) string {
+	if sd == "" {
+		sd = stateDir
+	}
+	return filepath.Join(GuestBinDir(sd), sessionBinLeaf(bundleIdentity, sessionID))
+}
+
+func sessionBinLeaf(bundleIdentity, sessionID string) string {
+	if sessionID == "" {
+		sessionID = SessionPlaceholder
+	}
+	if !nativehome.ValidID(sessionID) {
+		if sessionID == SessionPlaceholder {
+			sessionID = "session"
+		} else {
+			sum := sha256.Sum256([]byte(sessionID))
+			sessionID = hex.EncodeToString(sum[:8])
+		}
+	}
+	if !validGuestBundleIdentity(bundleIdentity) {
+		sum := sha256.Sum256([]byte(bundleIdentity))
+		bundleIdentity = hex.EncodeToString(sum[:])
+	}
+	return sessionID + "-" + bundleIdentity
+}
+
+// GuestBundleIdentity reads the matched bundle's snapshot identity. Legacy bundles without one
+// use a digest of their canonical source key, never a mutable shared destination.
+func GuestBundleIdentity(root string) (string, error) {
+	stampPath := filepath.Join(root, "yolo-build-stamp.json")
+	data, err := os.ReadFile(stampPath)
+	if err == nil {
+		var stamp struct {
+			SnapshotIdentity string `json:"snapshotIdentity"`
+		}
+		if err := json.Unmarshal(data, &stamp); err != nil {
+			return "", fmt.Errorf("read guest bundle stamp %s: %w", stampPath, err)
+		}
+		if stamp.SnapshotIdentity != "" {
+			if !validGuestBundleIdentity(stamp.SnapshotIdentity) {
+				return "", fmt.Errorf("guest bundle stamp %s has an invalid snapshotIdentity", stampPath)
+			}
+			return stamp.SnapshotIdentity, nil
+		}
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("read guest bundle stamp %s: %w", stampPath, err)
+	}
+	return legacyGuestBundleIdentity(root), nil
+}
+
+func legacyGuestBundleIdentity(root string) string {
+	key := filepath.Clean(root)
+	if abs, absErr := filepath.Abs(key); absErr == nil {
+		key = abs
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(key); resolveErr == nil {
+		key = resolved
+	}
+	sum := sha256.Sum256([]byte("legacy-guest-source:" + key))
+	return hex.EncodeToString(sum[:])
+}
+
+func validGuestBundleIdentity(identity string) bool {
+	if len(identity) != sha256.Size*2 || strings.ToLower(identity) != identity {
+		return false
+	}
+	decoded, err := hex.DecodeString(identity)
+	return err == nil && len(decoded) == sha256.Size
+}
+
+// GuestSessionRemoveCommands remove only children carrying this session's existing token. The
+// session ID is validated before it is embedded in the private-root glob, and a non-directory or
+// symlink match fails closed rather than following a path outside GuestBinDir.
+func GuestSessionRemoveCommands(sessionID, sd string) [][]string {
+	if !nativehome.ValidID(sessionID) && sessionID != SessionPlaceholder {
 		return nil
 	}
-	cmds := categoryDirCommands(GuestBinDir(sd))
-	for _, name := range GuestBinaries {
-		dst := GuestBinaryPath(name, sd)
-		tmp := dst + ".new"
-		cmds = append(cmds,
-			[]string{cpBin, "-f", filepath.Join(srcDir, name), tmp},
-			[]string{chmodBin, sealedBinaryMode, tmp},
-			[]string{mvBin, "-f", tmp, dst},
-		)
+	root := GuestBinDir(sd)
+	script := `for p in "$1"/"$2"-*; do [ -e "$p" ] || [ -L "$p" ] || continue; [ -d "$p" ] && [ ! -L "$p" ] || exit 1; ` +
+		chmodBin + ` -R -- u+w "$p" || exit 1; ` + rmBin + ` -rf -- "$p" || exit 1; done`
+	return [][]string{{shBin, "-c", script, "yolo-remove-guest-session", root, sessionID}}
+}
+
+// StageGuestSessionCommands privately composes yolo and the optional guest helper set, seals the
+// whole child, and publishes it with one fresh-inode atomic directory rename. No running session
+// destination is replaced.
+func StageGuestSessionCommands(selfExe, srcDir, bundleIdentity, sessionID, sd string) [][]string {
+	prepare, publish := guestSessionStageCommands(selfExe, srcDir, bundleIdentity, sessionID, sd)
+	return append(prepare, publish...)
+}
+
+func guestSessionStageCommands(selfExe, srcDir, bundleIdentity, sessionID, sd string) ([][]string, [][]string) {
+	if selfExe == "" || (!nativehome.ValidID(sessionID) && sessionID != SessionPlaceholder) ||
+		!validGuestBundleIdentity(bundleIdentity) {
+		return nil, nil
 	}
-	return cmds
+	root := GuestBinDir(sd)
+	leaf := sessionBinLeaf(bundleIdentity, sessionID)
+	final := filepath.Join(root, leaf)
+	tmp := final + ".new"
+	prepare := categoryDirCommands(root)
+	prepare = append(prepare,
+		[]string{shBin, "-c", `[ ! -e "$1" ] && [ ! -L "$1" ] || exit 1`, "yolo-guest-bin-unique", final},
+		[]string{mkdirBin, "-m", "0700", tmp},
+		[]string{cpBin, "-f", selfExe, filepath.Join(tmp, "yolo")},
+		[]string{chmodBin, sealedBinaryMode, filepath.Join(tmp, "yolo")})
+	publish := [][]string{}
+	if srcDir != "" {
+		for _, name := range GuestBinaries {
+			dst := filepath.Join(tmp, name)
+			publish = append(publish, []string{cpBin, "-f", filepath.Join(srcDir, name), dst},
+				[]string{chmodBin, sealedBinaryMode, dst})
+		}
+	}
+	publish = append(publish, []string{chmodBin, sealedBinaryMode, tmp}, []string{mvBin, "-f", tmp, final})
+	return prepare, publish
+}
+
+func hasGuestSessionBinaryCopy(plan RunPlan, name string) bool {
+	want := filepath.Join(plan.SessionGuestBinDir+".new", name)
+	for _, cmd := range plan.StageCommands {
+		if len(cmd) == 4 && cmd[0] == cpBin && cmd[2] != "" && cmd[3] == want {
+			return true
+		}
+	}
+	return false
 }
 
 // guestClientInvariants is PlanInvariants' rule for the guest clients: every GuestClients
@@ -209,28 +317,21 @@ func guestClientInvariants(plan RunPlan) []string {
 		if v, ok := sandboxEnvFileValue(plan.EnvFileContent, c.EndpointEnv); !ok || v == "" {
 			continue
 		}
-		dst := GuestBinaryPath(c.Binary, plan.StagedDir)
-		staged := false
-		for _, cmd := range plan.StageCommands {
-			if len(cmd) == 4 && cmd[0] == mvBin && cmd[2] == dst+".new" && cmd[3] == dst {
-				staged = true
-			}
-		}
-		if !staged {
+		if !hasGuestSessionBinaryCopy(plan, c.Binary) {
 			problems = append(problems, "the session env carries "+c.EndpointEnv+" and the plan "+
-				"stages no "+c.Binary+" into "+GuestBinDir(plan.StagedDir)+"; the agent would be "+
+				"stages no "+c.Binary+" into "+plan.SessionGuestBinDir+"; the agent would be "+
 				"told where the "+c.Loophole+" loophole's daemon is and have no client to dial it")
 		}
 		if len(plan.LaunchArgv) > 0 {
 			onPath := false
 			if v, ok := argvEnvValue(plan.LaunchArgv, "PATH"); ok {
 				for _, dir := range strings.Split(v, ":") {
-					onPath = onPath || dir == GuestBinDir(plan.StagedDir)
+					onPath = onPath || dir == plan.SessionGuestBinDir
 				}
 			}
 			if !onPath {
 				problems = append(problems, "the agent's PATH does not carry "+
-					GuestBinDir(plan.StagedDir)+", so a staged "+c.Binary+" would not resolve")
+					plan.SessionGuestBinDir+", so a staged "+c.Binary+" would not resolve")
 			}
 		}
 	}
@@ -257,7 +358,9 @@ type JailDaemons struct {
 	// launch that runs no daemon and carries a client's endpoint too, and the plan stages from
 	// it when either is true. It stays on this struct, beside the payload it began with, because
 	// both triggers are one directory resolved once per launch (resolveGuestBinSource).
-	GuestBinSource string
+	// GuestBundleIdentity is the selected helper bundle's snapshot identity, or the legacy source-key digest.
+	GuestBundleIdentity string
+	GuestBinSource      string
 	// OnLaunch, when set, runs once, immediately before the session's command starts: after every
 	// step that can refuse the launch (the preconditions, the nix builds, the bootstrap, the
 	// provisioning stage, this supervisor's start and the host-service witness) has passed and
@@ -357,7 +460,7 @@ func WithSupervisorLog(logPath string, argv []string) []string {
 //
 // The supervisor is named by ABSOLUTE path, the one word of this argv yolo decides; the
 // daemons it starts are the payload's argvs verbatim, resolved on the PATH this argv sets.
-func JailDaemonArgv(profilePath, envFile, logPath, user, home string, pathPrefix []string) []string {
+func JailDaemonArgv(profilePath, envFile, logPath, user, home string, pathPrefix []string, stagedYolo string) []string {
 	if user == "" {
 		user = SandboxUser
 	}
@@ -365,10 +468,11 @@ func JailDaemonArgv(profilePath, envFile, logPath, user, home string, pathPrefix
 		home = SandboxHome()
 	}
 	out := RunAsSandboxArgv([]string{"--set-home"}, "-i")
-	out = append(out, sandboxEnvPairs(home, user, SandboxPath(home, pathPrefix), envFile)...)
+	out = append(out, sandboxEnvPairs(home, user, SandboxPathForYolo(home, pathPrefix, stagedYolo), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
+	jaild := filepath.Join(filepath.Dir(stagedYolo), JaildName)
 	out = append(out, WithSupervisorLog(logPath,
-		ExecWithEnvFile(envFile, []string{GuestBinaryPath(JaildName, ""), "supervise"}))...)
+		ExecWithEnvFile(envFile, []string{jaild, "supervise"}))...)
 	return out
 }
 

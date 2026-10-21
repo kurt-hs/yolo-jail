@@ -80,7 +80,7 @@ func trustedHomebrewFormula(t *testing.T) string {
 }
 
 // THE GO SPELLING AGREES WITH THE TWO THAT BUILD THE BINARIES. GuestBinaries decides what a
-// launch stages (StageGuestBinaryCommands); a name the bundle lacks would stage a missing file,
+// launch stages (StageGuestSessionCommands); a name the bundle lacks would stage a missing file,
 // and one the bundle has that this lacks would never reach the guest.
 func TestGuestBinariesMatchTheFlakeAndTheBundleScript(t *testing.T) {
 	want := append([]string{}, GuestBinaries...)

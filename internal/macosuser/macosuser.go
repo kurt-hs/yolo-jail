@@ -1305,8 +1305,17 @@ func WorkspaceACLStripScript(workspace string) string {
 // prefix `packages:` materializes into, ahead of the system dirs. So nothing already on
 // this PATH moves relative to anything else, and a `packages:` entry still outranks it.
 func SandboxPath(home string, prefix []string) string {
+	return SandboxPathForGuestBin(home, prefix, filepath.Dir(StagedYoloPath("")))
+}
+
+// SandboxPathForGuestBin is SandboxPath with this session's sealed guest-bin child in place of
+// the legacy shared prefix.
+func SandboxPathForGuestBin(home string, prefix []string, guestBinDir string) string {
 	if home == "" {
 		home = SandboxHome()
+	}
+	if guestBinDir == "" {
+		guestBinDir = filepath.Dir(StagedYoloPath(""))
 	}
 	// The Env the bootstrap generates against resolves these the same way: its MISE_DATA_DIR
 	// is SandboxMiseData (buildBootstrapEnv), and the npm prefix and GOPATH are the home's
@@ -1318,9 +1327,18 @@ func SandboxPath(home string, prefix []string) string {
 	parts = append(parts, prefix...)
 	// Derived from StagedYoloPath rather than spelled, so the directory holding the
 	// staged binary and the directory on PATH cannot become two different answers.
-	parts = append(parts, filepath.Dir(StagedYoloPath("")))
+	parts = append(parts, guestBinDir)
 	parts = append(parts, "/usr/bin", "/bin", "/usr/sbin", "/sbin")
 	return strings.Join(parts, ":")
+}
+
+// SandboxPathForYolo derives the guest-bin PATH entry from the exact staged yolo binary a
+// session's confined argv will execute.
+func SandboxPathForYolo(home string, prefix []string, stagedYolo string) string {
+	if stagedYolo == "" {
+		return SandboxPath(home, prefix)
+	}
+	return SandboxPathForGuestBin(home, prefix, filepath.Dir(stagedYolo))
 }
 
 // LaunchArgv builds the `/usr/bin/sudo -n --set-home --user=_yolojail /usr/bin/env -i …
@@ -1361,7 +1379,7 @@ func LaunchArgvWithGuard(agentArgv []string, profilePath, envFile string, worksp
 	if home == "" {
 		home = SandboxHome()
 	}
-	envPairs := sandboxEnvPairs(home, user, SandboxPath(home, pathPrefix), envFile)
+	envPairs := sandboxEnvPairs(home, user, SandboxPathForYolo(home, pathPrefix, stagedYolo), envFile)
 	// Run the agent from the workspace: a zsh cd's in, then execs the agent so it inherits
 	// the TTY and PID.
 	quotedAgent := make([]string, len(agentArgv))

@@ -146,7 +146,7 @@ func ProvisionScript(workspace, bootstrapScript string, color bool) string {
 // process, does not; and the script is free to embed an absolute path without nesting
 // quotes inside a single-quoted `sh -c`.
 func ProvisionArgv(script, profilePath, envFile string,
-	workspace, user, home string, pathPrefix []string) []string {
+	workspace, user, home string, pathPrefix []string, guestBinDir string) []string {
 	if user == "" {
 		user = SandboxUser
 	}
@@ -165,7 +165,7 @@ func ProvisionArgv(script, profilePath, envFile string,
 	// the bootstrap script read registry tokens and proxy settings out of env_sources, so
 	// wrapping it in the env-file reader is not belt-and-braces — a stage that skipped the
 	// wrap would install against a different environment than the agent then runs in.
-	out = append(out, sandboxEnvPairs(home, user, SandboxPath(home, pathPrefix), envFile)...)
+	out = append(out, sandboxEnvPairs(home, user, SandboxPathForGuestBin(home, pathPrefix, guestBinDir), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
 	out = append(out, ExecWithEnvFile(envFile, []string{"/bin/bash", "-c", provisionInWorkspace(workspace, script)})...)
 	return out

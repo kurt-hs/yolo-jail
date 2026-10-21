@@ -82,6 +82,14 @@ func TestASignalDuringTheBootstrapEndsTheLaunchThroughItsTeardown(t *testing.T) 
 			t.Errorf("the teardown did not remove %s as the host:\n%s", file, strings.Join(rec, "\n"))
 		}
 	}
+	_, sessionID, ok := parseSessionKey(key)
+	if !ok {
+		t.Fatalf("invalid launched session key %q", key)
+	}
+	cleanup := GuestSessionRemoveCommands(sessionID, "")
+	if recAt(rec, "run:"+strings.Join(cleanup[0], " ")) < 0 {
+		t.Errorf("the failed session did not clean only its own guest child:\n%s", strings.Join(rec, "\n"))
+	}
 	if strings.Contains(buf.String(), "entrypoint bootstrap failed") {
 		t.Errorf("a bootstrap the signal ended was reported as failed:\n%s", buf.String())
 	}
@@ -447,7 +455,7 @@ func TestAStepTheSignalMadeFailReturnsTheSignalsStatus(t *testing.T) {
 		ca    bool   // the fixture with a keychain CA, so the CA files are written
 	}{
 		{"profile", failAt{install: func(p string) bool { return strings.HasSuffix(p, ".sb") }}, "Could not write Seatbelt profile", false},
-		{"stage", failAt{run: joined("/Users/Shared/yolo-staged/bin/yolo.new")}, "Could not stage entrypoint", false},
+		{"stage", failAt{run: joined(".new/yolo")}, "Could not stage entrypoint", false},
 		{"env dir", failAt{run: joined("/bin/chmod 0700 /Users/Shared/yolo-staged/env")}, "Could not prepare the session environment directory", false},
 		{"env file", failAt{install: envFile}, "Could not write the session environment file", false},
 		{"env grant", failAt{run: func(argv []string) bool {
