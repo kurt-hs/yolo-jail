@@ -198,7 +198,9 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
    with [autoprune's `$GOBIN` class](../design/program-delivery.md#OQ-PD20) and [a pack's agent-CLI pin](../design/program-delivery.md#OQ-PD21);
    [how a host daemon hands the terminal a line](../design/boundary-broker.md#OQ-BB10), which the
    broker's no-notifier notice waits on; [whether a pack service's in-jail daemon is disclosed](../design/trust-paths.md#OQ-TP11),
-   as no launch line names the wire bridge; and [whether copilot and oh-omp alone get `-p bedrock`](../design/bedrock-plumbing.md#OQ-BR24).
+   as no launch line names the wire bridge; [whether copilot and oh-omp alone get `-p bedrock`](../design/bedrock-plumbing.md#OQ-BR24);
+   and [user-only jail inheritance exclusions](../design/jail-inheritance-exclusions.md), with the
+   [provisional plan sketch](../design/jail-inheritance-exclusions-plan.md) — implementation waits for the design rulings and a completed plan.
 4. Rulings that hold a defect's fix: [the Kilo special-casing](../design/gateway-provider-packs.md) (its 1M-window defect is fixed); [`--no-daemon` for in-jail `codex`](../research/codex-background-service.md#OQ-CDX3),
    since `codex agents` starts the daemon yolo turns off; [whose OpenAI login host pi uses](../design/pi-host-openai-auth.md),
    since its first refresh replaces yours, with its catalog-refresh question; and [a leftover `mcp-adapter.json` at the
@@ -213,6 +215,9 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
    [ongoing preparation](../design/launch-update-preparation.md) — the Podman built-tree detached
    slice is in main; host delivery/reporting, Apple Container check-only, fork/capture timing and
    native/performance acceptance retain their scope rather than disappearing into a tree-only fix.
+   The [matched development-bundle design](../design/matched-development-bundles.md) and its
+   [completed implementation plan](../design/matched-development-bundles-plan.md) add the paired,
+   build-only launcher path for this launch work without changing normal installation.
 7. [Rule how the Claude footer moves into a Claude Code plugin](../research/claude-code-extensions-footer.md), with [how
    yolo manages Claude Code mods](../research/claude-code-mods-management.md) — the plugin ends a process per refresh,
    and the mods rulings rest on that route.
