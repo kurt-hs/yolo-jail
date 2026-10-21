@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -413,7 +415,7 @@ func nixBuildWouldBuild(t *testing.T, installable string) []string {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "nix", "--extra-experimental-features", "nix-command flakes",
 		"build", "--dry-run", "--json", "--no-link", "--option", "substitute", "false",
-		"--inputs-from", bundleRoot, imageInstallable(installable))
+		"--inputs-from", matchedBundleFlakeURL(), imageInstallable(installable))
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -442,7 +444,7 @@ func nixGetLib(t *testing.T, attrPath string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), nixEvalTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "nix", "--extra-experimental-features", "nix-command flakes",
-		"eval", "--raw", "--inputs-from", bundleRoot,
+		"eval", "--raw", "--inputs-from", matchedBundleFlakeURL(),
 		nixpkgsAbsolute("legacyPackages."+imageNixSystem(nixSystem())),
 		"--apply", "p: (p.lib.getLib p."+attrPath+").outPath")
 	var stderr strings.Builder
@@ -476,7 +478,7 @@ func nixEvalDrvPathForSystem(t *testing.T, system, attr, spec string, env ...str
 	cmd := exec.CommandContext(ctx, "nix",
 		"--extra-experimental-features", "nix-command flakes",
 		"eval", "--impure", "--raw",
-		fmt.Sprintf(".#packages.%s.%s.drvPath", system, attr))
+		matchedBundleFlakeRef(fmt.Sprintf("packages.%s.%s.drvPath", system, attr)))
 	cmd.Dir = bundleRoot
 	cmd.Env = append(append(cmd.Environ(), "YOLO_EXTRA_PACKAGES="+spec), env...)
 	var stderr strings.Builder
@@ -489,6 +491,101 @@ func nixEvalDrvPathForSystem(t *testing.T, system, attr, spec string, env ...str
 		return strings.TrimSpace(string(out)), stderr.String() + "\n(nix eval timed out)\n" + hang.String(), err
 	}
 	return strings.TrimSpace(string(out)), stderr.String(), err
+}
+
+// matchedBundleFlakeRef pins an installable to the flake TestMain paired with yolo.
+// A cwd-relative .# reference can walk up from an ignored adjacent bundle and use
+// the tracked checkout's flake instead.
+func matchedBundleFlakeURL() string {
+	return "path:" + bundleRoot
+}
+
+func matchedBundleFlakeRef(attr string) string {
+	return matchedBundleFlakeURL() + "#" + strings.TrimPrefix(attr, ".#")
+}
+
+func TestNixInstallablesUseTheMatchedBundleAsTheirFlake(t *testing.T) {
+	root := filepath.Join(resolvedTempDir(t), "git fixture with spaces")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "init", root).CombinedOutput(); err != nil {
+		t.Fatalf("initialize Git fixture: %v\n%s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("/adjacent bundle/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(root, "adjacent bundle")
+	if err := os.MkdirAll(bundle, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "flake.nix"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ignored := exec.Command("git", "check-ignore", "-q", "--", "adjacent bundle")
+	ignored.Dir = root
+	if err := ignored.Run(); err != nil {
+		t.Fatalf("fixture bundle is not ignored by its Git root: %v", err)
+	}
+
+	bin := filepath.Join(root, "fake nix")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	callLog := filepath.Join(root, "nix call.txt")
+	fakeNix := "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$YOLO_NIX_CALL_LOG\"\n" +
+		"case \" $* \" in *\" --dry-run \"*) printf '%s\\n' '[{\"outputs\":{\"out\":\"/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-hello\"}}]' ;; " +
+		"*) printf '%s\\n' '/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-drv.drv' ;; esac\n"
+	if err := os.WriteFile(filepath.Join(bin, "nix"), []byte(fakeNix), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldBundle := bundleRoot
+	bundleRoot = bundle
+	t.Cleanup(func() { bundleRoot = oldBundle })
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("YOLO_NIX_CALL_LOG", callLog)
+
+	if _, _, err := nixEvalDrvPathForSystem(t, "x86_64-linux", "imageClosureRoot", `[]`); err != nil {
+		t.Fatalf("production Nix eval call failed: %v", err)
+	}
+	call, err := os.ReadFile(callLog)
+	if err != nil {
+		t.Fatalf("fake Nix was not reached by the production eval: %v", err)
+	}
+	args := strings.Split(strings.TrimSuffix(string(call), "\n"), "\n")
+	if len(args) < 2 || args[0] != bundle {
+		t.Fatalf("production Nix eval cwd = %q, want paired bundle %q (argv %q)", args[0], bundle, call)
+	}
+	wantRef := "path:" + bundle + "#packages.x86_64-linux.imageClosureRoot.drvPath"
+	if got := args[len(args)-1]; got != wantRef {
+		t.Fatalf("production Nix flake reference = %q, want explicit paired-bundle reference %q; argv=%q",
+			got, wantRef, call)
+	}
+
+	if got := nixBuildWouldBuild(t, "nixpkgs#hello"); len(got) != 1 || got[0] != "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-hello" {
+		t.Fatalf("production dry-run oracle returned %q, want fake output", got)
+	}
+	call, err = os.ReadFile(callLog)
+	if err != nil {
+		t.Fatalf("fake Nix was not reached by the production dry-run oracle: %v", err)
+	}
+	args = strings.Split(strings.TrimSuffix(string(call), "\n"), "\n")
+	if len(args) < 2 || args[0] == bundle {
+		t.Fatalf("dry-run oracle cwd unexpectedly names or omits the paired bundle: %q", call)
+	}
+	foundInputsFrom := false
+	for i, arg := range args[:len(args)-1] {
+		if arg == "--inputs-from" {
+			foundInputsFrom = i+1 < len(args) && args[i+1] == "path:"+bundle
+			break
+		}
+	}
+	if !foundInputsFrom {
+		t.Fatalf("production --inputs-from does not name the exact paired bundle path:%s; argv=%q", bundle, call)
+	}
+	if got := args[len(args)-1]; !strings.HasPrefix(got, "nixpkgs#.") {
+		t.Fatalf("dry-run oracle changed its intentional nixpkgs installable: %q", got)
+	}
 }
 
 // nixEvalTimeout bounds one nixEvalDrvPath. A variable so TestANixEvalThatOverrunsSaysWhatItWaitedOn
@@ -587,7 +684,7 @@ func TestTheNixpkgsOracleSurvivesAnIntelMacHost(t *testing.T) {
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "nix", "--extra-experimental-features", "nix-command flakes",
 			"build", "--dry-run", "--json", "--no-link", "--option", "substitute", "false",
-			"--system", "x86_64-darwin", "--inputs-from", bundleRoot, installable)
+			"--system", "x86_64-darwin", "--inputs-from", matchedBundleFlakeURL(), installable)
 		var stderr strings.Builder
 		cmd.Stderr = &stderr
 		_, err := cmd.Output()

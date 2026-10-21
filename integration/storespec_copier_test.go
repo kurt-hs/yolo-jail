@@ -236,10 +236,10 @@ func buildImageCopier(t *testing.T) string {
 	root := bundleRoot
 	outLink := filepath.Join(t.TempDir(), "copier")
 	build := exec.Command("nix", "--extra-experimental-features", "nix-command flakes",
-		"build", image.ImageCopierAttr, "--out-link", outLink)
+		"build", matchedBundleFlakeRef(image.ImageCopierAttr), "--out-link", outLink)
 	build.Dir = root
 	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("nix build %s: %v\n%s", image.ImageCopierAttr, err, out)
+		t.Fatalf("nix build %s: %v\n%s", matchedBundleFlakeRef(image.ImageCopierAttr), err, out)
 	}
 	target, err := filepath.EvalSymlinks(outLink)
 	if err != nil {

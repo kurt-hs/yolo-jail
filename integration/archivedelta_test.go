@@ -57,13 +57,14 @@ func buildDeltaFixture(t *testing.T) deltaFixture {
 	}
 	outLink := filepath.Join(t.TempDir(), "r")
 	build := exec.Command("nix", "--extra-experimental-features", "nix-command flakes",
-		"build", ".#ociImage", ".#imageCopier", "--impure", "--out-link", outLink)
+		"build", matchedBundleFlakeRef("ociImage"), matchedBundleFlakeRef("imageCopier"),
+		"--impure", "--out-link", outLink)
 	build.Dir = bundleRoot
 	// The image must be the harness's own: an inherited `packages:` list would
 	// build a different one.
 	build.Env = append(os.Environ(), "YOLO_EXTRA_PACKAGES=")
 	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("nix build .#ociImage .#imageCopier: %v\n%s", err, out)
+		t.Fatalf("nix build paired-bundle ociImage/imageCopier: %v\n%s", err, out)
 	}
 	manifest, err := filepath.EvalSymlinks(outLink)
 	if err != nil {
