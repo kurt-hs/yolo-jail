@@ -45,6 +45,7 @@ func dispatchOptions(t *testing.T, workspace, ytoRuntime string, stdout, stderr 
 	// spelled but the root resolved, and on darwin, whose t.TempDir() is under a /var symlink, the
 	// two would then name different trees.
 	repoRoot := floortest.ResolvedTemp(t)
+	stageBundleAt(t, repoRoot, true)
 	// A launch these options drive past the jail's start leaves its housekeeping slot running:
 	// wait for it before the HOME and repo root made so far are removed, and before the next test
 	// sets its own HOME (TestNoLaunchTestOutlivesItsHousekeepingSlot).
@@ -79,12 +80,6 @@ func dispatchOptions(t *testing.T, workspace, ytoRuntime string, stdout, stderr 
 			*execRec = append(*execRec, argv)
 		}
 		return ExecResult{Ran: false}
-	}
-	// The prefix build fails the way the real one does over this empty repo root, without
-	// running the machine's nix: PathExists answers false, so a launch that gets this far
-	// always takes the build arm, and the real `nix build` there asks the machine's daemon.
-	o.BuildJailPrefix = func(string) (string, []string) {
-		return "", []string{"test guard: dispatchOptions builds no prefix"}
 	}
 	// podman answers the readiness gate at once, so resolveRuntime accepts the explicit choice.
 	answeringPodman(o, minimalPodmanInfo)

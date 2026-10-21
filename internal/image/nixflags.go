@@ -105,18 +105,7 @@ const (
 	// launch runs THIS store path and never a `PATH` lookup (image-staging-vs-baking.md#delivering-into-the-runtime, the fourth
 	// property; layercopy.go's BuildImageCopier is the one caller).
 	//
-	// EXPORTED, unlike installPrefixAttr, because `yolo check`'s dry-run probe
-	// names it too: without it the preflight reports "nothing will build" while
-	// the next launch compiles skopeo from source for minutes.
+	// EXPORTED because `yolo check`'s dry-run probe names it too: without it the
+	// preflight reports "nothing will build" while the next launch compiles skopeo from source for minutes.
 	ImageCopierAttr = ".#imageCopier"
-	// installPrefixAttr is the /opt/yolo-jail install prefix the launch
-	// BIND-MOUNTS into the jail — bin/<binary> plus the share/yolo-jail flake
-	// bundle. It is no longer part of the image (that is what keeps `goSrc` out
-	// of the image derivation), so the run path realizes it separately whenever
-	// the resolved flake source ships no prebuilt binaries of its own.
-	installPrefixAttr = ".#installPrefix"
-	// guestPrefixAttr is the macos-user guest's darwin in-jail binaries (flake.nix
-	// guestBinaries), realized only when a macos-user launch has a jail daemon to run and the
-	// resolved flake source ships no prebuilt bin/darwin-<arch> (BuildGuestPrefix).
-	guestPrefixAttr = ".#guestPrefix"
 )

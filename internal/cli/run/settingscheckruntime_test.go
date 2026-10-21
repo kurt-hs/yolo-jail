@@ -830,13 +830,6 @@ func TestRunAppleContainerExcludesUnsupportedSettingsValidator(t *testing.T) {
 	o.IsMacOS, o.IsLinux = true, false
 	o.NeverAttach = true
 	o.AcceptConfigChanges = true
-	repo, ok := o.RepoRoot()
-	if !ok {
-		t.Fatal("dispatch fixture has no repository root")
-	}
-	entrypointPath := filepath.Join(prebuiltBinDir(repo.Root), "yolo-entrypoint")
-	o.PathExists = func(path string) bool { return path == entrypointPath }
-	o.BuildJailPrefix = func(string) (string, []string) { return "/opt/yolo-jail", nil }
 	o.autoLoad = func(image.AutoLoadOptions) image.LoadResult { return image.LoadResult{OK: true, Ref: goldenImageRef} }
 	o.CapturesDir = func() string { return t.TempDir() }
 	defaultLookPath := o.LookPath

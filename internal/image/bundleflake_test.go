@@ -22,7 +22,7 @@ func imageBundleFixture(t *testing.T) string {
 }
 
 func TestPackagedFlakeBuildCallersUsePathReferences(t *testing.T) {
-	for _, name := range []string{"run", "preflight", "install-prefix", "guest-prefix", "copier"} {
+	for _, name := range []string{"run", "preflight", "copier"} {
 		t.Run(name, func(t *testing.T) {
 			root := imageBundleFixture(t)
 			freshNixChildren(t)
@@ -37,13 +37,6 @@ exit 0`)
 			switch name {
 			case "run":
 				path, tail = buildImageStorePath(ImageAttrDefault, root, nil, filepath.Join(t.TempDir(), "result"), io.Discard)
-			case "install-prefix", "guest-prefix":
-				t.Setenv("HOME", t.TempDir())
-				if name == "install-prefix" {
-					path, tail = BuildJailPrefix(root, io.Discard)
-				} else {
-					path, tail = BuildGuestPrefix(root, io.Discard)
-				}
 			case "copier":
 				path, tail = runNixBuild(flakeBuildArgv(ImageCopierAttr, filepath.Join(t.TempDir(), "result"), nil), root, os.Environ(), "result", io.Discard)
 			default:

@@ -126,10 +126,7 @@ func TestResolveJailPrefixConsultsTheMachineShares(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			o, _ := prefixOptions(t, func(string) (string, []string) {
-				t.Fatal("a prebuilt bundle must not build")
-				return "", nil
-			})
+			o := prefixOptions(t)
 			o.IsMacOS = true
 			probes := 0
 			fakePodmanMachine(t, o, tc.shares, &probes)

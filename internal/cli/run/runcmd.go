@@ -556,15 +556,6 @@ type Options struct {
 	// look under), and the two protections are deliberate: one keeps the
 	// DECISION host-independent, the other keeps the FIXTURES so.
 	HostCASProbe func(string) hostcas.Presence
-	// BuildJailPrefix realizes the /opt/yolo-jail install prefix the launch
-	// mounts into the jail, for a flake source that ships no prebuilt binaries
-	// (a live checkout). Returns (storePath, nixStderrTail); "" is failure and
-	// refuses the launch. nil => image.BuildJailPrefix.
-	//
-	// A seam because it is a multi-second subprocess on the ONE path the unit
-	// tests cover densely (argv assembly): the golden argv has to be able to say
-	// where the prefix came from without a nix build having run.
-	BuildJailPrefix func(repoRoot string) (string, []string)
 	// Getpid returns the current PID (owner-PID file, out-link name). nil =>
 	// os.Getpid.
 	Getpid func() int
@@ -1150,11 +1141,6 @@ func fillDefaults(o *Options) {
 	}
 	if o.HostCASProbe == nil {
 		o.HostCASProbe = hostcas.DefaultProbe
-	}
-	if o.BuildJailPrefix == nil {
-		o.BuildJailPrefix = func(repoRoot string) (string, []string) {
-			return image.BuildJailPrefix(repoRoot, o.Stderr)
-		}
 	}
 	if o.RepoRoot == nil {
 		// stderr is nil so the resolver stays silent: repo-root resolution IS

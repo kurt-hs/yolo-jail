@@ -1,14 +1,10 @@
 package run
 
 import (
-	"bytes"
-	"errors"
-	"io"
 	"os"
 	"path/filepath"
-	"reflect"
+	"regexp"
 	goruntime "runtime"
-	"slices"
 	"strings"
 	"testing"
 
@@ -24,110 +20,102 @@ import (
 // prebuilt branch below a test of the real layout rather than of a stub.
 func stageBundle(t *testing.T, withBinaries bool) string {
 	t.Helper()
-	// RESOLVED, because resolveJailPrefix resolves symlinks (resolveSymlinks in
-	// jailprefix.go) and the caller compares its output to this path. On macOS
-	// t.TempDir() hands back /var/folders/..., which IS a symlink to
-	// /private/var/folders/..., so the unresolved form fails every comparison here
-	// while passing on Linux — a darwin-only break the in-jail gate cannot see.
+	// Resolve where the fixture is minted, because macOS temp roots can be symlinks.
 	root := resolveSymlinks(t.TempDir())
-	if err := os.WriteFile(filepath.Join(root, "flake.nix"), []byte("{}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if withBinaries {
-		binDir := prebuiltBinDir(root)
-		if err := os.MkdirAll(binDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(binDir, "yolo-entrypoint"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
+	stageBundleAt(t, root, withBinaries)
 	return root
 }
 
-// prefixOptions is an Options whose only live seam is the prefix build, so a
-// test can tell "took the prebuilt branch" from "ran a build" by whether the
-// stub fired.
-//
-// ITS ENVIRONMENT IS EMPTY. resolveJailPrefix reads YOLO_NIX_HOST_DAEMON, which the
-// macOS guide has a developer pointed at a live checkout export, and the Podman
-// Machine share read reads CONTAINER_HOST and CONTAINER_CONNECTION. Read from the
-// test process, the first turned TestDarwinRefusesAStorePrefix into an acceptance on
-// exactly that developer's Mac.
-func prefixOptions(t *testing.T, build func(string) (string, []string)) (*Options, *int) {
+func stageBundleAt(t *testing.T, root string, withBinaries bool) {
 	t.Helper()
-	calls := 0
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "flake.nix"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !withBinaries {
+		return
+	}
+	binDir := prebuiltBinDir(root)
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range requiredJailBinaries {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte("binary"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestRequiredJailBinariesMatchPublishedSets(t *testing.T) {
+	_, file, _, ok := goruntime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller gave no source path")
+	}
+	root := filepath.Join(filepath.Dir(file), "..", "..", "..")
+	flake, err := os.ReadFile(filepath.Join(root, "flake.nix"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundleScript, err := os.ReadFile(filepath.Join(root, "scripts", "stage-source-bundle.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	flakeList := regexp.MustCompile(`(?m)^\s*shippedBinaries\s*=\s*\[([^\]]*)\]\s*;`).FindSubmatch(flake)
+	bundleList := regexp.MustCompile(`(?m)^SHIPPED_BINARIES=\(([^)]*)\)`).FindSubmatch(bundleScript)
+	if flakeList == nil || bundleList == nil {
+		t.Fatal("could not locate shipped helper sets in flake.nix and stage-source-bundle.sh")
+	}
+	set := func(names []string) map[string]bool {
+		out := make(map[string]bool, len(names))
+		for _, name := range names {
+			out[strings.Trim(name, `"`)] = true
+		}
+		return out
+	}
+	want := set(requiredJailBinaries)
+	for label, names := range map[string][]string{
+		"flake.nix":              strings.Fields(string(flakeList[1])),
+		"stage-source-bundle.sh": strings.Fields(string(bundleList[1])),
+	} {
+		got := set(names)
+		if len(got) != len(want) {
+			t.Errorf("required helper set has %d names, %s has %d", len(want), label, len(got))
+		}
+		for name := range want {
+			if !got[name] {
+				t.Errorf("required helper %q is absent from %s", name, label)
+			}
+		}
+		for name := range got {
+			if !want[name] {
+				t.Errorf("%s helper %q is not checked by the launch resolver", label, name)
+			}
+		}
+	}
+}
+
+// prefixOptions supplies deterministic host probes for prefix resolution.
+func prefixOptions(t *testing.T) *Options {
+	t.Helper()
 	o := &Options{
 		Stdout: os.Stderr,
 		Stderr: os.Stderr,
 		Getenv: func(string) string { return "" },
-		BuildJailPrefix: func(root string) (string, []string) {
-			calls++
-			return build(root)
-		},
 	}
-	// fillDefaults supplies PathExists (the prebuilt probe) and leaves an
-	// already-set BuildJailPrefix alone — the seam under test stays ours.
 	fillDefaults(o)
-	return o, &calls
+	return o
 }
 
-// productionRegisterPrefixRoot is registerPrefixRoot as the package initialized it, which
-// TestMain saves before it puts unregisteredPrefixRoot in its place.
-var productionRegisterPrefixRoot func(string, image.Rooter, io.Writer) (string, error)
-
-// The seam must default to the real registration. The GC-root check in
-// TestLiveCheckoutBuildsThePrefix pins that a host launch calls the seam, and every test here
-// runs with TestMain's stand-in in it, so without this a seam bound to a no-op would leave
-// every built prefix unrooted with the suite green.
-func TestRegisterPrefixRootDefaultsToTheImageRegistration(t *testing.T) {
-	if productionRegisterPrefixRoot == nil ||
-		reflect.ValueOf(productionRegisterPrefixRoot).Pointer() != reflect.ValueOf(image.RegisterPrefixRoot).Pointer() {
-		t.Error("registerPrefixRoot does not default to image.RegisterPrefixRoot")
-	}
-}
-
-// unregisteredPrefixRoot is TestMain's registerPrefixRoot: it runs no nix-store and
-// fails the way a launch already tolerates, since the root is best-effort.
-func unregisteredPrefixRoot(string, image.Rooter, io.Writer) (string, error) {
-	return "", errors.New("test guard: this package's tests register no nix GC root")
-}
-
-// recordPrefixRoots replaces registerPrefixRoot for the rest of t with one that records
-// the store paths a launch asked to root, and asserts each was handed the host's Rooter.
-func recordPrefixRoots(t *testing.T) *[]string {
-	t.Helper()
-	var rooted []string
-	prev := registerPrefixRoot
-	registerPrefixRoot = func(storePath string, root image.Rooter, _ io.Writer) (string, error) {
-		if reflect.ValueOf(root).Pointer() != reflect.ValueOf(image.AddRoot).Pointer() {
-			t.Errorf("the prefix root for %s was not handed image.AddRoot, the host's Rooter", storePath)
-		}
-		rooted = append(rooted, storePath)
-		return "", nil
-	}
-	t.Cleanup(func() { registerPrefixRoot = prev })
-	return &rooted
-}
-
-// A flake source that SHIPS prebuilt binaries — every installed bundle, and the
-// mounted prefix a nested jail inherits — is mounted straight through. This is
-// the branch that must never build: it is the default on every real user's
-// machine, and a `nix build` there would put a Go toolchain on the launch path
-// of a checkout-less install.
+// A flake bundle with the complete shipped Linux helper set is mounted directly.
 func TestPrebuiltBundleIsMountedWithoutBuilding(t *testing.T) {
 	root := stageBundle(t, true)
-	o, calls := prefixOptions(t, func(string) (string, []string) {
-		t.Fatal("a bundle with prebuilt binaries must not trigger a build")
-		return "", nil
-	})
+	o := prefixOptions(t)
 
 	p, ok := o.resolveJailPrefix(root, "podman")
 	if !ok {
-		t.Fatal("resolveJailPrefix refused a bundle that ships binaries")
-	}
-	if *calls != 0 {
-		t.Errorf("the prefix build ran %d times for a prebuilt bundle", *calls)
+		t.Fatal("resolveJailPrefix refused a bundle that ships the complete helper set")
 	}
 	if p.binDir != prebuiltBinDir(root) {
 		t.Errorf("binDir = %q, want the bundle's own %q", p.binDir, prebuiltBinDir(root))
@@ -135,109 +123,52 @@ func TestPrebuiltBundleIsMountedWithoutBuilding(t *testing.T) {
 	if p.shareDir != root {
 		t.Errorf("shareDir = %q, want the flake source %q", p.shareDir, root)
 	}
-	if p.built {
-		t.Error("built=true for a prefix nothing built")
+}
+
+func TestJailPrefixRejectsNonExecutableHelper(t *testing.T) {
+	root := stageBundle(t, true)
+	entrypoint := filepath.Join(prebuiltBinDir(root), "yolo-entrypoint")
+	if err := os.Chmod(entrypoint, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stderr strings.Builder
+	o := prefixOptions(t)
+	o.Stderr = &stderr
+	if _, ok := o.resolveJailPrefix(root, "podman"); ok {
+		t.Fatal("a bundle with a non-executable pid1 helper was accepted")
+	}
+	for _, want := range []string{"yolo-entrypoint", "just build-dev-bundle", "just install"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("non-executable helper refusal lacks %q:\n%s", want, stderr.String())
+		}
 	}
 }
 
-// A LIVE CHECKOUT ships no bin/linux-<arch> (the repo never commits one, and nix
-// only ever sees tracked files anyway), so the binaries have to be built. This
-// is the developer loop — `YOLO_REPO_ROOT=/workspace yolo` — and the one path
-// where the image no longer carrying the Go build means someone else must.
+// A checkout without a complete paired helper bundle refuses. It may not compile a
+// replacement during launch: development goes through a printed build-only artifact, or the
+// complete installed bundle.
 func TestLiveCheckoutBuildsThePrefix(t *testing.T) {
 	root := stageBundle(t, false)
-	store := t.TempDir()
-	o, calls := prefixOptions(t, func(got string) (string, []string) {
-		if got != root {
-			t.Errorf("built the prefix from %q, want the resolved flake source %q", got, root)
+	var stdout, stderr strings.Builder
+	o := prefixOptions(t)
+	o.Stdout = &stdout
+	o.Stderr = &stderr
+
+	if _, ok := o.resolveJailPrefix(root, "podman"); ok {
+		t.Fatal("resolveJailPrefix accepted a source tree without paired helper binaries")
+	}
+	message := stderr.String()
+	for _, want := range []string{"just build-dev-bundle", "printed", "launcher", "by path", "just install"} {
+		if !strings.Contains(message, want) {
+			t.Errorf("refusal lacks actionable %q:\n%s", want, message)
 		}
-		return store, nil
-	})
-	rooted := recordPrefixRoots(t)
-
-	p, ok := o.resolveJailPrefix(root, "podman")
-	if !ok {
-		t.Fatal("resolveJailPrefix refused a checkout whose build succeeded")
 	}
-	if *calls != 1 {
-		t.Errorf("the prefix build ran %d times, want exactly 1", *calls)
-	}
-	// ROOTED, on the host (OQ-BF4): the built prefix is pinned with a GC root, or a
-	// collection could take pid1 out from under a jail running from it.
-	if !slices.Equal(*rooted, []string{store}) {
-		t.Errorf("GC roots registered = %q, want one for the built prefix %q", *rooted, store)
-	}
-	wantBin := filepath.Join(store, image.JailPrefixSubdir, "bin")
-	if p.binDir != wantBin {
-		t.Errorf("binDir = %q, want %q — the bin/ inside the built prefix", p.binDir, wantBin)
-	}
-	// THE SHARE HALF IS THE BUILT BUNDLE, NOT THE CHECKOUT. Mounting the checkout
-	// would resolve too (it has a flake.nix), which is why this is asserted rather
-	// than left to the reader: it would put the whole working tree inside the jail
-	// at a second path, and hand the in-jail yolo a flake whose Go code can already
-	// be newer than the binaries beside it.
-	wantShare := filepath.Join(store, image.JailPrefixSubdir, "share", "yolo-jail")
-	if p.shareDir != wantShare {
-		t.Errorf("shareDir = %q, want the built bundle %q (never the checkout %q)",
-			p.shareDir, wantShare, root)
-	}
-	if !p.built {
-		t.Error("built=false for a prefix that was built — the launch would report the wrong provenance")
+	if stdout.Len() != 0 {
+		t.Errorf("helper refusal reached stdout, which belongs to the jailed command:\n%s", stdout.String())
 	}
 }
 
-// A JAIL ROOTS ITS PREFIX AS A TRANSLATED ROOT (in-jail-nix-roots.md NR-D2): the link is made
-// under the jail's build dir and the host daemon is sent the host's spelling of it, so a nested
-// jail's binaries are pinned between nested launches. Through the production registration, the
-// call site's and image.RegisterPrefixRoot's both, against a fake daemon.
-func TestAJailRootsItsPrefixUnderTheHostsSpelling(t *testing.T) {
-	f := newJailRootFixture(t)
-	root := stageBundle(t, false)
-	o, _ := prefixOptions(t, func(string) (string, []string) { return f.storePath, nil })
-	o.Getenv = f.getenv
-	prev := registerPrefixRoot
-	registerPrefixRoot = productionRegisterPrefixRoot
-	t.Cleanup(func() { registerPrefixRoot = prev })
-
-	if _, ok := o.resolveJailPrefix(root, "podman"); !ok {
-		t.Fatal("resolveJailPrefix refused a checkout whose build succeeded")
-	}
-	link := image.PrefixRootLink(f.storePath)
-	f.assertRooted(t, link)
-}
-
-// A JAIL WHOSE LAUNCHER STATED NO MAP REGISTERS NO PREFIX ROOT, as every jail did before: its
-// own `nix-store --add-root` would send the jail's spelling, which the host daemon prunes as
-// stale, so there is nothing honest to register.
-func TestAJailWithNoHostPathMapRegistersNoPrefixRoot(t *testing.T) {
-	root := stageBundle(t, false)
-	o, _ := prefixOptions(t, func(string) (string, []string) { return t.TempDir(), nil })
-	o.Getenv = func(k string) string {
-		if k == "YOLO_VERSION" {
-			return "1.2.3"
-		}
-		return ""
-	}
-	prev := registerPrefixRoot
-	var rooted []string
-	registerPrefixRoot = func(storePath string, _ image.Rooter, _ io.Writer) (string, error) {
-		rooted = append(rooted, storePath)
-		return "", nil
-	}
-	t.Cleanup(func() { registerPrefixRoot = prev })
-	if _, ok := o.resolveJailPrefix(root, "podman"); !ok {
-		t.Fatal("resolveJailPrefix refused a checkout whose build succeeded")
-	}
-	if len(rooted) != 0 {
-		t.Errorf("a jail with no host path map registered GC roots %q", rooted)
-	}
-}
-
-// A HALF-STAGED bundle — the directory exists but yolo-entrypoint does not — must
-// take the build branch, not mount an empty dir. Mounting it would produce a
-// container that starts and dies at exec, which is the failure mode the whole
-// "name the entrypoint absolutely" decision exists to make legible; catching it
-// here is better still.
+// A partial adjacent helper set is refused rather than compiled or mounted.
 func TestBinDirWithoutTheEntrypointIsNotUsed(t *testing.T) {
 	root := stageBundle(t, false)
 	if err := os.MkdirAll(prebuiltBinDir(root), 0o755); err != nil {
@@ -246,37 +177,16 @@ func TestBinDirWithoutTheEntrypointIsNotUsed(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(prebuiltBinDir(root), "yolo"), []byte("x"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	store := t.TempDir()
-	o, calls := prefixOptions(t, func(string) (string, []string) { return store, nil })
-
-	if _, ok := o.resolveJailPrefix(root, "podman"); !ok {
-		t.Fatal("resolveJailPrefix refused")
-	}
-	if *calls != 1 {
-		t.Errorf("a bin dir with no yolo-entrypoint was mounted as-is (build ran %d times)", *calls)
-	}
-}
-
-// A FAILED prefix build REFUSES the launch. There is nothing to fall back on:
-// the image no longer carries a yolo-entrypoint, so "proceed anyway" means a
-// container with no pid1. This is the same ruling OQ-2 made for the image build
-// (a build that ran and failed is fatal), applied to the half that moved out.
-func TestFailedPrefixBuildRefusesTheLaunch(t *testing.T) {
-	root := stageBundle(t, false)
 	var stderr strings.Builder
-	o, _ := prefixOptions(t, func(string) (string, []string) {
-		return "", []string{"error: builder for '/nix/store/…-yolo-jail-go.drv' failed"}
-	})
+	o := prefixOptions(t)
 	o.Stderr = &stderr
-
 	if _, ok := o.resolveJailPrefix(root, "podman"); ok {
-		t.Fatal("a failed prefix build let the launch continue — the jail would have no yolo-entrypoint")
+		t.Fatal("a partial helper directory was mounted")
 	}
-	if !strings.Contains(stderr.String(), "installPrefix") {
-		t.Errorf("the refusal does not name what failed:\n%s", stderr.String())
-	}
-	if !strings.Contains(stderr.String(), "yolo-jail-go.drv") {
-		t.Errorf("nix's own stderr was dropped, so the reader has no cause:\n%s", stderr.String())
+	for _, want := range []string{"yolo-entrypoint", "just build-dev-bundle", "printed launcher by path", "just install"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("partial-bundle refusal lacks %q:\n%s", want, stderr.String())
+		}
 	}
 }
 
@@ -388,21 +298,14 @@ func TestFlakeAndLauncherAgreeOnThePrefixLayout(t *testing.T) {
 			"again, so every cmd/ or internal/ commit costs an image rebuild and a load")
 	}
 
-	// THE macos-user GUEST'S HALF (OQ-DP8): the bundle's bin/darwin-<arch> is the same
-	// bundle-format spelling in three places — flake.nix's guestPrebuiltDir short-circuit,
-	// stage-source-bundle.sh's layout, and macosuser.PrebuiltGuestBinDir, which the launch's
-	// guest-binary resolver stats. A flake looking elsewhere would rebuild from goSrc (a
-	// bundle has none) and fail; a launcher looking elsewhere would build on every launch.
+	// macos-user's bundle uses the same bin/darwin-<arch> spelling as its
+	// prebuilt manifest and scripts/stage-source-bundle.sh.
 	if !strings.Contains(flake, `guestPrebuiltDir = ./. + "/bin/darwin-${goArch}";`) {
 		t.Error("flake.nix no longer short-circuits the guest set to ./bin/darwin-<arch>, the " +
 			"directory macosuser.PrebuiltGuestBinDir and stage-source-bundle.sh name")
 	}
 	if got, want := macosuser.PrebuiltGuestBinDir("/b"), filepath.Join("/b", "bin", "darwin-"+goruntime.GOARCH); got != want {
 		t.Errorf("macosuser.PrebuiltGuestBinDir = %q, want %q", got, want)
-	}
-	if !strings.Contains(flake, "packages.guestPrefix = guestPrefix;") {
-		t.Error("flake.nix does not export .#guestPrefix, which image.BuildGuestPrefix builds for " +
-			"a flake source with no prebuilt guest dir")
 	}
 }
 
@@ -522,100 +425,6 @@ func TestAppleContainerAlsoMountsTheJailPrefix(t *testing.T) {
 	}
 }
 
-// TestPrefixBuildNoticeGoesToStderr pins the STREAM of the one notice the prefix
-// step prints, for the reason TestAssembleNoticesGoToStderr states in full:
-// stdout belongs to the jailed command, so a launch notice printed there is
-// swallowed by the user's redirect or corrupts what they pipe.
-//
-// THIS IS THE SECOND TIME THIS EXACT OUTAGE SHIPPED, through a different door.
-// 6580186c moved assembleRunCmd's notices to stderr on 2026-09-06, after the
-// host-loopback note had spent two days prepending itself to every integration
-// test that asserts a jailed command's exact output. C8 then reintroduced it:
-// image.BuildJailPrefix printed "Building yolo's own binaries…" to whatever
-// writer the run path handed it, and the run path handed it o.Stdout — so
-// TestHostComposedBriefingIsNotDeliveredTwice read its count "1" back as
-// "Building yolo's own binaries… 1", and TestProvidersRenderInTheAgentsOwn-
-// Vocabulary declared a byte-correct provider env wrong, on both architectures
-// (CI run 34079261711 — the same two tests as the first time).
-//
-// A unit test is the only cheap proof. The leak needs a flake source with no
-// prebuilt binaries — a live checkout, which is every CI runner and no user with
-// an installed bundle — and it only becomes visible in tests that assert a
-// jailed command's stdout, i.e. after a full image build.
-//
-// All three halves matter. Delete the print and the stderr half fails; move it
-// back to o.Stdout and the stdout half fails; hoist it above the prebuilt probe
-// and the silence half fails.
-func TestPrefixBuildNoticeGoesToStderr(t *testing.T) {
-	// A LIVE CHECKOUT ships no bin/linux-<arch>, so this is the branch that builds.
-	root := stageBundle(t, false)
-	store := t.TempDir()
-	var stdout, stderr bytes.Buffer
-	o := &Options{
-		Stdout:          &stdout,
-		Stderr:          &stderr,
-		BuildJailPrefix: func(string) (string, []string) { return store, nil },
-	}
-	fillDefaults(o)
-
-	if _, ok := o.resolveJailPrefix(root, "podman"); !ok {
-		t.Fatal("resolveJailPrefix refused a checkout whose build succeeded")
-	}
-	if stdout.Len() != 0 {
-		t.Errorf("the prefix build notice reached STDOUT, which belongs to the jailed "+
-			"command — every integration test that asserts exact command output breaks "+
-			"on every runner that has to build the prefix:\n%s", stdout.String())
-	}
-	if !strings.Contains(stderr.String(), "Building yolo's own binaries") {
-		t.Errorf("the build notice was not printed at all. A launch that stops to run "+
-			"`nix build .#installPrefix` must say why it paused; stderr was:\n%s",
-			stderr.String())
-	}
-
-	// AND THE PREBUILT BRANCH SAYS NOTHING, on either stream. That is the default
-	// on every installed machine and it builds nothing, so announcing a build here
-	// would be false — and it is exactly what hoisting the print to the top of
-	// resolveJailPrefix would do.
-	var quietOut, quietErr bytes.Buffer
-	q := &Options{
-		Stdout: &quietOut,
-		Stderr: &quietErr,
-		BuildJailPrefix: func(string) (string, []string) {
-			t.Fatal("a bundle with prebuilt binaries must not trigger a build")
-			return "", nil
-		},
-	}
-	fillDefaults(q)
-	if _, ok := q.resolveJailPrefix(stageBundle(t, true), "podman"); !ok {
-		t.Fatal("resolveJailPrefix refused a prebuilt bundle")
-	}
-	if quietOut.Len() != 0 || quietErr.Len() != 0 {
-		t.Errorf("mounting prebuilt binaries announced a build it never ran:\n%s%s",
-			quietOut.String(), quietErr.String())
-	}
-}
-
-// TestPrefixNixProgressGoesToStderr pins the OTHER writer in the same decision:
-// image.BuildJailPrefix streams nix's own progress summaries to the writer it is
-// given, so handing it o.Stdout leaks build chatter onto the jailed command's
-// stream even now that the notice sentence has moved out.
-//
-// An EXPRESSION assertion, in the shape TestPrefixIsResolvedBeforeTheImageLoad
-// and TestRunNormalResolvesAndThreadsTheJailPrefix already use, and for the same
-// reason: the wiring is inside fillDefaults' closure, and driving it runs a real
-// `nix build`. Weaker than driving it, and the strongest thing available here.
-func TestPrefixNixProgressGoesToStderr(t *testing.T) {
-	body, err := os.ReadFile("runcmd.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(body), "image.BuildJailPrefix(repoRoot, o.Stderr)") {
-		t.Error("fillDefaults no longer hands image.BuildJailPrefix o.Stderr. Nix's " +
-			"progress summaries would land on stdout, which belongs to the jailed " +
-			"command — the leak CI run 34079261711 was made of")
-	}
-}
-
 // TestPrefixUnreachableFromVMTable is the darwin gate's decision, arm by arm.
 // The store paths are spelled with hostNixStore rather than a literal so the two
 // cannot drift apart — the whole predicate is "is this the tree the VM does not
@@ -691,47 +500,33 @@ func TestPrefixUnreachableFromVMTable(t *testing.T) {
 	}
 }
 
-// TestDarwinRefusesAStorePrefix is the CALL-SITE pin: it fails if the gate stops
-// being consulted by resolveJailPrefix, which is the only way the check can be
-// switched off wholesale with the table above still green (AGENTS.md names that
-// shape). It drives the LIVE-CHECKOUT arm, because building is what puts the
-// prefix in the store in the first place.
+// TestDarwinRefusesAStorePrefix pins the production resolver's use of the
+// tested macOS Podman Machine visibility guard. Complete bundles are the only
+// accepted source, so this assertion covers a store-backed adjacent bundle too.
 func TestDarwinRefusesAStorePrefix(t *testing.T) {
-	root := stageBundle(t, false)
-	store := filepath.Join(hostNixStore, "abc-yolo-jail-install-prefix")
-	o, calls := prefixOptions(t, func(string) (string, []string) { return store, nil })
-	o.IsMacOS = true
-	var buf bytes.Buffer
-	o.Stderr = &buf
-
-	if _, ok := o.resolveJailPrefix(root, "podman"); ok {
-		t.Fatal("a darwin launch accepted a /nix/store prefix its VM cannot see — " +
-			"podman fails that with `statfs …: no such file or directory` and rc 125, " +
-			"which is the 2026-09-07 nightly (run 34117863296) in full")
+	source, err := os.ReadFile("jailprefix.go")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if *calls != 1 {
-		t.Errorf("the prefix build ran %d times, want 1 — the refusal is about where the "+
-			"result LANDED, so it must come after the build, not instead of it", *calls)
+	body := string(source)
+	start := strings.Index(body, "func (o *Options) resolveJailPrefix(")
+	if start < 0 {
+		t.Fatal("could not locate the production jail-prefix resolver")
 	}
-	if !strings.Contains(buf.String(), "runtime VM does not share") {
-		t.Errorf("refusal did not reach stderr:\n%s", buf.String())
+	end := strings.Index(body[start:], "func missingJailBinaries(")
+	if end < 0 {
+		t.Fatal("could not locate the end of the production jail-prefix resolver")
+	}
+	if !strings.Contains(body[start:start+end], "prefixUnreachableFromVM(p, rt, o.IsMacOS") {
+		t.Error("resolveJailPrefix no longer checks whether the selected store bundle is visible to the runtime VM")
 	}
 }
 
-// TestDarwinAcceptsAPrefixTheVMCanSee is the other half of the pin: the gate must
-// not refuse the arm every Homebrew and `just install` user is on. A bundle under
-// $HOME ships prebuilt binaries and never touches the store, and a darwin launch
-// that refused it would be a total outage rather than a diagnosis.
-//
-// The Podman Machine is the test's, sharing the bundle's folder as the default
-// /Users share does for a bundle under $HOME. Read from the machine running the
-// test, a Mac whose machine shares no folder holding t.TempDir() refused here.
+// A complete bundle under the VM's default home share is accepted, and the
+// machine's actual share list remains part of launch resolution.
 func TestDarwinAcceptsAPrefixTheVMCanSee(t *testing.T) {
 	root := stageBundle(t, true)
-	o, _ := prefixOptions(t, func(string) (string, []string) {
-		t.Fatal("a prebuilt bundle must not build")
-		return "", nil
-	})
+	o := prefixOptions(t)
 	o.IsMacOS = true
 	probes := 0
 	fakePodmanMachine(t, o, append(append([]string{}, defaultMacShares...), filepath.Dir(root)), &probes)
@@ -742,7 +537,6 @@ func TestDarwinAcceptsAPrefixTheVMCanSee(t *testing.T) {
 	}()
 
 	if _, ok := o.resolveJailPrefix(root, "podman"); !ok {
-		t.Fatal("a darwin launch refused a prefix under $HOME (a t.TempDir(), which is " +
-			"not in the nix store) — the gate is meant to catch the store, not macOS")
+		t.Fatal("a darwin launch refused a complete prebuilt bundle under $HOME")
 	}
 }

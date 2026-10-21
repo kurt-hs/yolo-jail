@@ -34,7 +34,6 @@ type packSkewRun struct {
 	stdout, stderr string
 	execed         bool
 	envFile        string
-	built          bool
 }
 
 // runPackSkew drives Run's attach against ws's running jail, whose frozen environment is env.
@@ -51,6 +50,11 @@ func runPackSkew(t *testing.T, ws, env string, tty bool, stdin string, getenv ma
 	r := packSkewRun{rt: &skewRuntime{env: env, execIDs: "1"}}
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, ws, "podman", &stdout, &stderr, nil)
+	if repo, ok := o.RepoRoot(); ok {
+		if err := os.RemoveAll(prebuiltBinDir(repo.Root)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	o.Exec = func(argv []string, dir string, e []string, d time.Duration) ExecResult {
 		return r.rt.exec(argv, dir, e, d)
 	}
@@ -63,10 +67,9 @@ func runPackSkew(t *testing.T, ws, env string, tty bool, stdin string, getenv ma
 		}
 		return getenv[k]
 	}
-	// A restart continues into the fresh launch, which stops at the jail prefix: far enough to
-	// prove it began, and no nix build.
+	// A restart continues into the fresh launch, which refuses at the paired-helper check;
+	// no build callback exists on the launch path.
 	o.AcceptConfigChanges = true
-	o.BuildJailPrefix = func(string) (string, []string) { r.built = true; return "", nil }
 	if mutate != nil {
 		mutate(o)
 	}
@@ -204,9 +207,9 @@ func TestAnAttachWhoseJailLacksTheSelectedPackTakesTheDisposition(t *testing.T) 
 				if !slices.Equal(r.rt.stops, []string{cname}) {
 					t.Fatalf("a yes did not stop the jail: stops=%v\nstdout:\n%s\nstderr:\n%s", r.rt.stops, r.stdout, r.stderr)
 				}
-				if !r.built || r.execed || strings.Contains(r.stdout, "Attaching to existing jail") {
-					t.Errorf("a restart must continue into the fresh launch (built=%v), not attach (execed=%v):\n%s",
-						r.built, r.execed, r.stdout)
+				if !strings.Contains(r.stderr, "just build-dev-bundle") || r.execed || strings.Contains(r.stdout, "Attaching to existing jail") {
+					t.Errorf("a restart must continue into the fresh launch's helper refusal, not attach (execed=%v):\n%s\n%s",
+						r.execed, r.stdout, r.stderr)
 				}
 			}
 			if _, err := os.Stat(r.envFile); !os.IsNotExist(err) {

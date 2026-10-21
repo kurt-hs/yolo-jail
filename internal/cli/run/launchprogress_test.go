@@ -2,7 +2,6 @@ package run
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,30 +91,25 @@ func TestTheImageLoadIsHandedTheLaunchRendering(t *testing.T) {
 	}
 }
 
-// The source build of yolo's own binaries narrates itself, and nix's summaries —
-// which the build writes to o.Stderr — pass THROUGH the line rather than across it.
-func TestThePrefixBuildIsNarrated(t *testing.T) {
+// Missing paired helpers are refused without launching a build or narrating build progress.
+func TestMissingPrefixIsRefusedWithoutBuildProgress(t *testing.T) {
 	root := stageBundle(t, false)
-	store := t.TempDir()
 	var stdout, stderr bytes.Buffer
 	o := &Options{Stdout: &stdout, Stderr: &stderr, Progress: immediate}
-	o.BuildJailPrefix = func(string) (string, []string) {
-		fmt.Fprintln(o.Stderr, "Building yolo-jail-go")
-		return store, nil
-	}
 	fillDefaults(o)
-	if _, ok := o.resolveJailPrefix(root, "podman"); !ok {
-		t.Fatal("resolveJailPrefix refused a checkout whose build succeeded")
-	}
-	s := stderr.String()
-	start := strings.Index(s, "Building yolo's own binaries with nix…\n")
-	summary := strings.Index(s, "Building yolo-jail-go\n")
-	done := strings.Index(s, "Building yolo's own binaries with nix: done (")
-	if start < 0 || summary < start || done < summary {
-		t.Errorf("want start, nix summary, result in that order on stderr:\n%s", s)
+	if _, ok := o.resolveJailPrefix(root, "podman"); ok {
+		t.Fatal("resolveJailPrefix accepted a checkout without its paired helpers")
 	}
 	if stdout.Len() != 0 {
-		t.Errorf("progress reached stdout, the jailed command's stream: %q", stdout.String())
+		t.Errorf("helper refusal reached stdout, which belongs to the jailed command: %q", stdout.String())
+	}
+	for _, want := range []string{"missing Linux helper binaries", "just build-dev-bundle", "just install"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("stderr lacks %q:\n%s", want, stderr.String())
+		}
+	}
+	if strings.Contains(stderr.String(), "Building yolo's own binaries") || strings.Contains(stderr.String(), "nix: done") {
+		t.Errorf("a helper build was still narrated:\n%s", stderr.String())
 	}
 }
 

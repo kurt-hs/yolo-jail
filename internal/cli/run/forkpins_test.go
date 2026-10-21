@@ -115,11 +115,6 @@ func TestInJailFreshUpdateRefusesMutableForkBeforeProgramPreparation(t *testing.
 	o.Exec = func([]string, string, []string, time.Duration) ExecResult {
 		return ExecResult{Ran: true, RC: 0} // runtime answers that no jail is running
 	}
-	prefixBuilt := false
-	o.BuildJailPrefix = func(string) (string, []string) {
-		prefixBuilt = true
-		return "/test/prefix", nil
-	}
 	buildSlotCalled := false
 	o.BuildSlot = func(BuildSlotRequest) (map[string]entrypoint.ForkDelivery, map[string]TreeDelivery) {
 		buildSlotCalled = true
@@ -135,8 +130,8 @@ func TestInJailFreshUpdateRefusesMutableForkBeforeProgramPreparation(t *testing.
 		!strings.Contains(refusal, "from the host workspace") {
 		t.Fatalf("the production launch path did not name its narrow in-jail refusal (rc=%d):\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
 	}
-	if prefixBuilt || buildSlotCalled {
-		t.Fatalf("in-jail refusal came after launch/program preparation effects: prefix=%t build-slot=%t", prefixBuilt, buildSlotCalled)
+	if buildSlotCalled {
+		t.Fatalf("in-jail refusal came after launch/program preparation effects: build-slot=%t", buildSlotCalled)
 	}
 	if _, err := os.Stat(packsrc.ForkLockPath(paths.UserConfigPath())); !os.IsNotExist(err) {
 		t.Fatalf("in-jail refusal wrote or changed the host fork lock: %v", err)

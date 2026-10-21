@@ -481,18 +481,16 @@ func TestARestartThatCannotStopTheJailRefuses(t *testing.T) {
 func TestARestartedAttachContinuesAsAFreshLaunch(t *testing.T) {
 	s := newSkewAttach(t, true, true, "y\n", nil)
 	s.o.AcceptConfigChanges = true
-	built := false
-	s.o.BuildJailPrefix = func(string) (string, []string) { built = true; return "", nil }
 	rc := s.o.runContainer(s.cfg, "podman", t.TempDir(), "yolo-ws-abcd1234",
 		stagedPacks{root: "/ctx/packs", packs: s.packs}, nil, s.channel, nil)
 	if rc != 1 {
-		t.Fatalf("the fixture's fresh launch must stop at the prefix build: rc=%d\n%s", rc, s.stderr)
+		t.Fatalf("the fixture's fresh launch must stop at the missing paired helper bundle: rc=%d\n%s", rc, s.stderr)
 	}
 	if !slices.Equal(s.rt.stops, []string{"yolo-ws-abcd1234"}) {
 		t.Fatalf("the attach never restarted the jail: stops=%v\nstdout:\n%s", s.rt.stops, s.stdout)
 	}
-	if !built {
-		t.Fatalf("the restart returned instead of continuing into the fresh launch\nstdout:\n%s\nstderr:\n%s",
+	if !strings.Contains(s.stderr.String(), "just build-dev-bundle") || !strings.Contains(s.stderr.String(), "just install") {
+		t.Fatalf("the restarted fresh launch did not reach the paired-helper refusal\nstdout:\n%s\nstderr:\n%s",
 			s.stdout, s.stderr)
 	}
 	if strings.Contains(s.stdout.String(), "Attaching to existing jail") || s.didExec() {

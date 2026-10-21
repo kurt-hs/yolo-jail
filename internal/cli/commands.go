@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,7 +20,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/darwinpkg"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
-	"github.com/mschulkind-oss/yolo-jail/internal/image"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
@@ -1488,73 +1486,24 @@ func macosUserSessionDeps(arm *run.MacosUserArm, log *perf.Log,
 	return deps
 }
 
-// guestBinariesSeam is the macos-user launch's Deps.GuestBinaries: the directory holding the
-// darwin in-jail binaries its guest runs (docs/design/declaration-parity.md OQ-DP8) for the
-// resolved flake source — the bundle's own bin/darwin-<arch> when it ships one (Homebrew, the
-// release archive, `just install` on a Mac), else a `nix build .#guestPrefix` of that source
-// (a checkout named by YOLO_REPO_ROOT). Named, not inline, for workspaceLockSeam's reason: a
-// test can invoke the wiring.
-//
-// The same two arms as the container's resolveJailPrefix, and a stricter version of its
-// presence check: EVERY macosuser.GuestBinaries member present as a regular file, not merely the
-// directory or one binary, because the launch stages the whole set (StageGuestBinaryCommands).
-//
-// A PREBUILT DIR SHORT OF A MEMBER CANNOT BE BUILT PAST in a bundle, so it is refused before any
-// build, naming what is missing and how to restage. A bundle ships no Go sources
-// (stage-source-bundle.sh: THE BUNDLE IS PREBUILT, NOT SOURCE), and the flake's prebuilt branch
-// asks only whether the directory exists: with this flake the build fails at the copy of the
-// missing name, and with the older flake such a bundle carries it succeeds without it. Only a
-// source with a go.mod — a checkout, whose /bin/ is untracked and so invisible to a git flake —
-// builds past a partial dir. And a build's output is held to the same rule, since a flake source
-// older than this yolo's guest set builds a prefix without the clients; either way the launch
-// would otherwise fail at the stage copy, after its privileged steps began, naming no next step.
+// guestBinariesSeam selects the complete Darwin helper set paired with the
+// resolved flake bundle. Launches never build guest helpers.
 func guestBinariesSeam(repoRoot string) (string, error) {
-	return resolveGuestBinaries(repoRoot, image.BuildGuestPrefix, os.Stderr)
+	return resolveGuestBinaries(repoRoot)
 }
 
-// resolveGuestBinaries is guestBinariesSeam over an injectable build.
-func resolveGuestBinaries(repoRoot string, build func(string, io.Writer) (string, []string),
-	stderr io.Writer) (string, error) {
+func resolveGuestBinaries(repoRoot string) (string, error) {
 	prebuilt := macosuser.PrebuiltGuestBinDir(repoRoot)
-	shipsDir := false
-	if info, err := os.Stat(prebuilt); err == nil && info.IsDir() {
-		shipsDir = true
-		missing := missingGuestBinaries(prebuilt)
-		if len(missing) == 0 {
-			return prebuilt, nil
-		}
-		if _, err := os.Stat(filepath.Join(repoRoot, "go.mod")); err != nil {
-			return "", fmt.Errorf("the flake bundle at %s ships %s without %s, and a bundle carries "+
-				"no Go sources to build them from: it was staged before this yolo's guest set held "+
-				"them, or only half staged. Restage it: `just install` from a yolo-jail checkout, "+
-				"or reinstall yolo-jail (for Homebrew, `brew reinstall yolo-jail`)",
-				repoRoot, prebuilt, strings.Join(missing, ", "))
-		}
+	missing := missingGuestBinaries(prebuilt)
+	if len(missing) != 0 {
+		return "", fmt.Errorf("the selected bundle at %s is missing Darwin guest binaries: %s. Launches do not build helpers; run `just build-dev-bundle`, then invoke the printed launcher by path, or run `just install` for the installed bundle",
+			repoRoot, strings.Join(missing, ", "))
 	}
-	why := "the flake source ships no " + filepath.Base(prebuilt) + " of its own"
-	if shipsDir {
-		why = "the checkout's " + filepath.Base(prebuilt) + " is not the whole set"
-	}
-	fmt.Fprintln(stderr, "Building the sandbox's in-jail binaries (.#guestPrefix) — "+why+"…")
-	store, tail := build(repoRoot, stderr)
-	if store == "" {
-		msg := "`nix build .#guestPrefix` failed"
-		if len(tail) > 0 {
-			msg += ":\n  " + strings.Join(tail, "\n  ")
-		}
-		return "", errors.New(msg + "\nFix the build above and launch again.")
-	}
-	bin := filepath.Join(store, "bin")
-	if missing := missingGuestBinaries(bin); len(missing) > 0 {
-		return "", fmt.Errorf("the `.#guestPrefix` build of %s holds no %s: that flake source predates "+
-			"this yolo's guest set. Point YOLO_REPO_ROOT at a current yolo-jail checkout, or unset it "+
-			"to build from the installed bundle", repoRoot, strings.Join(missing, ", "))
-	}
-	return bin, nil
+	return prebuilt, nil
 }
 
-// missingGuestBinaries is the macosuser.GuestBinaries members dir does not hold as a regular file,
-// in the set's order.
+// missingGuestBinaries returns the macosuser.GuestBinaries members that are not
+// regular files, in the set's declared order.
 func missingGuestBinaries(dir string) []string {
 	var missing []string
 	for _, name := range macosuser.GuestBinaries {

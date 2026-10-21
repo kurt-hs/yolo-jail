@@ -1,147 +1,56 @@
 package run
 
 import (
+	"os"
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
-
-	"github.com/mschulkind-oss/yolo-jail/internal/image"
 )
 
-// jailprefix.go decides WHERE the jail's own copy of yolo comes from, and emits
-// the two mounts that put it there. Architecture and invariants:
-// docs/reference/image-staging-vs-baking.md ("The mounted prefix").
-//
-// The image used to bake it: `installPrefix` laid down /opt/yolo-jail/bin/<name>
-// (real files) plus the share/yolo-jail flake bundle, and /bin/<name> pointed at
-// the absolute store path. That made the ~3 % of the image that is our own Go
-// build responsible for ~100 % of its rebuilds — every commit under cmd/ or
-// internal/ minted a new image store path, re-stored ~2.7 GB of podman layers
-// and paid a `podman load` (docs/reference/image-staging-vs-baking.md, "Cost model"). The
-// image now carries only the NAMES (flake.nix: jailPrefixLinks, /bin/<name> →
-// /opt/yolo-jail/bin/<name>) and the launch supplies the content.
-//
-// THE PREFIX IS TWO DIRECTORIES:
-//
-//	bin/              the Linux binaries this jail will run (pid1 included)
-//	share/yolo-jail/  the flake bundle the IN-JAIL yolo resolves exe-relative
-//	                  (internal/reporoot.BundledSourceDirFrom: <exeDir>/../share/yolo-jail)
-//
-// and BOTH come from one place — a BUNDLE and the binaries it ships. There are
-// two kinds of bundle and that is the whole of the branching:
-//
-//   - The resolved flake source, when it carries prebuilt binaries. Every
-//     installed bundle does (`bin/linux-<arch>/`, staged by
-//     scripts/stage-source-bundle.sh), and installPrefix bakes one INTO the
-//     mounted prefix — so a nested jail inherits prebuilt binaries and never
-//     compiles Go for this. Nothing to build.
-//   - Otherwise — a LIVE CHECKOUT, which ships none — the bundle
-//     `nix build .#installPrefix` produces, whose share/yolo-jail is a
-//     self-contained flake.nix + flake.lock + bin/linux-<arch> built from that
-//     very checkout.
-//
-// THE SHARE HALF IS NEVER THE CHECKOUT ITSELF, even though a checkout has a
-// flake.nix and would satisfy reporoot. Mounting it would put the whole
-// yolo-jail working tree — every file, tracked or not — inside the jail at a
-// second path, and buy nothing: the in-jail `yolo` would then build its image
-// from a tree whose Go code may already be newer than the binaries it is running
-// (which is exactly the skew version.SourceSkew exists to refuse). The built
-// bundle matches the binaries beside it by construction. An agent that wants the
-// live tree in a nested jail names it the way this launch did: YOLO_REPO_ROOT.
-//
-// WHY NOT ONE MOUNT. A single `-v <dir>:/opt/yolo-jail:ro` would need the host to
-// hold a directory in exactly the prefix shape, which no existing host layout
-// has: `just install` stages bin/linux-<arch>/ beside the flake files
-// (scripts/stage-source-bundle.sh), not bin/ beside share/yolo-jail/. Reconciling
-// by RESTAGING would mean copying ~200 MB of binaries per launch (or a cache with
-// its own staleness rule); reconciling by two mounts costs one extra `-v` and
-// leaves the host layout alone. The in-jail result is identical, because
-// BundledSourceDirFrom only ever looks at <exeDir>/../share/yolo-jail.
-
+// jailprefix.go selects the paired Linux helper bundle mounted into the jail.
+// The source bundle and helpers are two read-only mounts so the in-jail yolo
+// resolves the flake exe-relative from /opt/yolo-jail/bin.
 const (
-	// JailPrefixDir is where the install prefix lands in the jail. The image
-	// pre-creates it and its two subdirs (flake.nix fakeRootCommands) because a
-	// --read-only rootfs cannot grow a mountpoint, and /bin/<name> targets it.
-	JailPrefixDir = "/opt/yolo-jail"
-	// JailPrefixBinDir holds the binaries. /bin/<name> symlinks point here.
-	JailPrefixBinDir = JailPrefixDir + "/bin"
-	// JailPrefixShareDir is the flake bundle the in-jail yolo resolves
-	// exe-relative from JailPrefixBinDir. The two paths MUST stay siblings under
-	// one parent with `share/yolo-jail` spelled in full, or
-	// reporoot.BundledSourceDirFrom stops finding it.
+	JailPrefixDir      = "/opt/yolo-jail"
+	JailPrefixBinDir   = JailPrefixDir + "/bin"
 	JailPrefixShareDir = JailPrefixDir + "/share/yolo-jail"
-	// JailEntrypointPath is the absolute argv the container command names.
-	//
-	// ABSOLUTE, not the bare "yolo-entrypoint" it used to be. A bare name is
-	// resolved on the IMAGE's PATH (/bin:/usr/bin) and reaches the binary through
-	// the /bin/<name> symlink — which now hops through the mountpoint, so a launch
-	// that failed to mount would exec a dangling link and brick pid1 with
-	// "failed to exec pid1" and no mention of the cause. Naming the real path
-	// makes that failure say which path is missing.
 	JailEntrypointPath = JailPrefixBinDir + "/yolo-entrypoint"
 )
 
-// jailPrefix is the host side of the mount: the two directories that become
-// JailPrefixBinDir and JailPrefixShareDir.
 type jailPrefix struct {
-	// binDir holds the linux/<arch> binaries — the shipped set, by bare name.
-	binDir string
-	// shareDir holds flake.nix + flake.lock (a flake bundle or a checkout).
+	binDir   string
 	shareDir string
-	// built records that binDir came from a nix build rather than from prebuilt
-	// bundle artifacts. Reported, not branched on: the launch says where the
-	// binaries it is about to run came from.
-	built bool
 }
 
-// registerPrefixRoot is image.RegisterPrefixRoot, which pins a built prefix with a nix GC root
-// through the Rooter it is handed (gcRooter: `nix-store --add-root` on the host, a translated
-// root in a jail). A package variable only so this package's TestMain can replace it: a unit
-// test that reached a build would otherwise run the machine's nix-store against the machine's
-// nix daemon, and hang wherever that daemon does.
-var registerPrefixRoot = image.RegisterPrefixRoot
+// This is the existing helper set shared by flake.nix and
+// scripts/stage-source-bundle.sh. Refuse partial bundles before mounting them.
+var requiredJailBinaries = []string{
+	"yolo", "yolo-entrypoint", "yolo-jaild", "yolo-ps", "yolo-cglimit",
+	"yolo-journalctl", "yolo-serial", "yolo-log",
+}
 
-// prebuiltBinDir is the per-arch prebuilt directory a flake bundle ships, if the
-// resolved source has one. The name matches flake.nix's own prebuilt
-// short-circuit (`./bin/linux-${goArch}`) and stage-source-bundle.sh's layout —
-// three spellings of one path, and the reason they agree is that they all
-// describe the bundle format, not a private convention of this file.
-//
-// goruntime.GOARCH, not a probe: the jail image is Linux for THIS machine's arch
-// (containerJailPlatform says the same thing for the capture manifest), so the
-// binaries a launch needs are linux/<GOARCH> whatever the host OS is. A darwin
-// host is the case that makes this worth stating — its bundle carries Linux
-// binaries precisely because the jail is Linux.
+// prebuiltBinDir is the per-arch Linux helper directory in a bundle. A Darwin
+// host still needs Linux helpers because its container jail is Linux.
 func prebuiltBinDir(root string) string {
 	return filepath.Join(root, "bin", "linux-"+goruntime.GOARCH)
 }
 
-// resolveJailPrefix decides where the jail's yolo binaries and flake bundle come
-// from, given the flake source reporoot.Resolve picked, building them if that
-// source ships none. Returns ok=false when
-// the binaries could not be produced — the caller must refuse the launch, since
-// the container argv names a yolo-entrypoint that would not exist.
-//
-// The exists check is on yolo-entrypoint specifically, not on the directory: an
-// empty or half-staged bin/linux-<arch> is the failure mode that would otherwise
-// mount cleanly and die at exec, and yolo-entrypoint is the one member whose
-// absence is fatal rather than degrading.
+// resolveJailPrefix accepts only the complete Linux helper set paired with root.
+// Launches never compile helpers: an incomplete bundle refuses with the build-only
+// or install remedy, before a jail can start with missing binaries.
 func (o *Options) resolveJailPrefix(root, rt string) (jailPrefix, bool) {
 	p, ok := o.jailPrefixSource(root)
 	if !ok {
+		missing := missingJailBinaries(prebuiltBinDir(root))
+		o.pr(o.Stderr).printf("[bold red]Cannot start jail: the selected bundle at %s is missing Linux helper binaries: %s.[/bold red]\n"+
+			"Launches do not build helpers. Run `just build-dev-bundle`, then invoke the printed launcher by path, or run `just install` for the installed bundle.",
+			root, strings.Join(missing, ", "))
 		return jailPrefix{}, false
 	}
-	// The darwin VM-visibility gate goes HERE, on the RESULT, and not inside
-	// either arm: the one mount whose absence means "no pid1" must not be
-	// reachable-or-not depending on which arm produced it. Inert off darwin.
 	if msg := prefixUnreachableFromVM(p, rt, o.IsMacOS, o.Getenv("YOLO_NIX_HOST_DAEMON")); msg != "" {
 		o.pr(o.Stderr).print(msg)
 		return jailPrefix{}, false
 	}
-	// The general form of the same question, against the machine's REAL share list:
-	// a Homebrew prefix under $(brew --prefix)/Cellar is refused here when the machine
-	// does not share it, and accepted when the user created the machine the way the
-	// guide says. Silent when the list cannot be read (machineshares.go).
 	if msg := o.unsharedBindSources(rt, []string{p.binDir, p.shareDir}); msg != "" {
 		o.pr(o.Stderr).print(msg)
 		return jailPrefix{}, false
@@ -149,78 +58,29 @@ func (o *Options) resolveJailPrefix(root, rt string) (jailPrefix, bool) {
 	return p, true
 }
 
-// jailPrefixSource is resolveJailPrefix's two arms — the prebuilt bundle and the
-// built checkout — with no policy on top of them.
-func (o *Options) jailPrefixSource(root string) (jailPrefix, bool) {
-	if prebuilt := prebuiltBinDir(root); o.PathExists(filepath.Join(prebuilt, "yolo-entrypoint")) {
-		// RESOLVED, not the path as spelled. paths.FlakeBundleDir is a SYMLINK to
-		// the generation `just install` last staged (internal/flakebundle), so the
-		// literal path names "whatever the newest install is" while the mount has
-		// to name one immutable directory. Two things follow from resolving here.
-		// The reap that decides which generations are still in use compares mount
-		// sources to generation directories, and a mount recorded through the
-		// symlink would read as "not in use" the moment the next install swapped
-		// it — the generation a jail is running from, selected for deletion. And
-		// the launch's own `Jail binaries:` line then names the generation, which
-		// is the thing that will still be true tomorrow.
-		return jailPrefix{binDir: resolveSymlinks(prebuilt), shareDir: resolveSymlinks(root)}, true
-	}
-	// STDERR, like every other launch notice and like the refusal just below
-	// (warnIfNoPacks states the rule): stdout belongs to the jailed command, so
-	// a notice printed there is swallowed by the user's redirect or corrupts
-	// what they pipe. This sentence used to be printed by image.BuildJailPrefix
-	// onto o.Stdout, and it broke CI on every runner that has to build the
-	// prefix — TestBuildNoticeGoesToStderr is the regression.
-	o.pr(o.Stderr).print("[dim]Building yolo's own binaries (.#installPrefix) — " +
-		"they are mounted into the jail, not baked into the image…[/dim]")
-	var storePath string
-	var tail []string
-	o.withStderrProgress("Building yolo's own binaries with nix", func() bool {
-		storePath, tail = o.BuildJailPrefix(root)
-		return storePath != ""
-	})
-	if storePath == "" {
-		o.pr(o.Stderr).print("[bold red]Cannot start jail: could not build yolo's own " +
-			"binaries (`nix build .#installPrefix`).[/bold red]\n" +
-			"They are mounted into the jail rather than baked into the image, so there is\n" +
-			"nothing to fall back on — a jail without them has no yolo-entrypoint to run.")
-		for _, line := range tail {
-			o.pr(o.Stderr).printf("[dim]  %s[/dim]", line)
+func missingJailBinaries(dir string) []string {
+	var missing []string
+	for _, name := range requiredJailBinaries {
+		info, err := os.Lstat(filepath.Join(dir, name))
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+			missing = append(missing, name)
 		}
-		return jailPrefix{}, false
 	}
-	// ROOT IT (OQ-BF4). Until this existed, the ONLY thing pinning the prefix a
-	// jail executes from was one out-link per checkout, pointed at the NEWEST
-	// build — so a jail that had been running across a rebuild was executing pid1
-	// out of a store path nothing rooted. Nothing collects the store today, which
-	// is the only reason it never bit; the day anything does (this doc's own L3,
-	// a nix-collect-garbage, the daemon's min-free) that jail loses the binary
-	// under its own pid1.
-	//
-	// Its own directory, NOT build/roots: those reap on age (OQ-LS1) except for a
-	// running IMAGE's root (OQ-LS4), and no image ref names a prefix — so there
-	// the longer a jail runs, the more certainly its binaries would be reaped.
-	// See image.RegisterPrefixRoot.
-	//
-	// Through gcRooter, as the image root is (imageload.go's rootImageFn): in a jail
-	// that is a translated root, so a nested jail's prefix is pinned between nested
-	// launches too (in-jail-nix-roots.md NR-D2), and nothing at all when the jail's
-	// launcher stated no host path map — a jail's own nix-store root would be pruned
-	// as stale by the host daemon.
-	if root := o.gcRooter(); root != nil {
-		_, _ = registerPrefixRoot(storePath, root, o.Stderr)
-	}
-	prefix := filepath.Join(storePath, image.JailPrefixSubdir)
-	return jailPrefix{
-		binDir:   filepath.Join(prefix, "bin"),
-		shareDir: filepath.Join(prefix, "share", "yolo-jail"),
-		built:    true,
-	}, true
+	return missing
 }
 
-// resolveSymlinks is filepath.EvalSymlinks with the path itself as the fallback:
-// a path that cannot be resolved is reported as given, because this is a naming
-// improvement and must never turn into a way for a launch to fail.
+// jailPrefixSource selects only the complete prebuilt set next to the flake.
+// An incomplete adjacent bundle cannot fall through to source compilation.
+func (o *Options) jailPrefixSource(root string) (jailPrefix, bool) {
+	prebuilt := prebuiltBinDir(root)
+	if len(missingJailBinaries(prebuilt)) != 0 {
+		return jailPrefix{}, false
+	}
+	return jailPrefix{binDir: resolveSymlinks(prebuilt), shareDir: resolveSymlinks(root)}, true
+}
+
+// resolveSymlinks names immutable generation paths rather than a mutable active
+// bundle symlink; failure to resolve only affects the disclosure path.
 func resolveSymlinks(p string) string {
 	if r, err := filepath.EvalSymlinks(p); err == nil {
 		return r
@@ -228,11 +88,7 @@ func resolveSymlinks(p string) string {
 	return p
 }
 
-// jailPrefixMountArgs emits the two `-v` pairs. Read-only on purpose: nothing in
-// the jail writes to its own install prefix, and Apple Container silently
-// ignored `:ro` below acROBindsFloor (apple/container#889) exactly as it did for every other mount
-// here — the flag states the intent for the backends that honor it rather than
-// pretending the guarantee is universal.
+// jailPrefixMountArgs keeps the helper and flake bundle mounts read-only.
 func jailPrefixMountArgs(p jailPrefix) []string {
 	return []string{
 		"-v", p.binDir + ":" + JailPrefixBinDir + ":ro",
@@ -240,105 +96,24 @@ func jailPrefixMountArgs(p jailPrefix) []string {
 	}
 }
 
-// describeJailPrefix is the launch's one line about where the binaries it is
-// about to run came from — the companion to "Flake source:", and for the same
-// reason: what executes in the jail is now selected at launch time rather than
-// fixed by the image's content hash, so it has to be visible without inspecting
-// the argv.
 func describeJailPrefix(p jailPrefix) string {
-	if p.built {
-		return p.binDir + " (built from the flake source)"
-	}
 	return p.binDir + " (prebuilt, from the flake bundle)"
 }
 
-// prefixUnreachableFromVM is the darwin pre-flight on the two mount sources: it
-// returns the refusal text when this launch would bind a path the runtime VM
-// cannot see, and "" when it would not.
-//
-// THE RULE IT ENFORCES IS NOT NEW. macOS runs containers in a VM, and that VM
-// shares the user's home and /private — not /nix. yolo has always known this:
-// shouldMountHostNix (hostprobes.go) SKIPS the nix store + daemon socket on
-// macOS for exactly this reason, and userguide/guides/macos.md states the failure it
-// avoids by name — "the bind mount would fail with a statfs error at startup".
-//
-// C8 then made yolo's own binaries a bind mount too (2026-09-06), and a LIVE
-// CHECKOUT has to build them, which puts them in /nix/store — the one tree the
-// rule says is not there. Measured on the 2026-09-07 nightly (run 34117863296):
-// every launch died as
-//
-//	Error: statfs /nix/store/…-yolo-jail-install-prefix/opt/yolo-jail/bin: no such file or directory
-//
-// with rc 125, taking ~30 tests down at ~30s each. The design doc had said this
-// arm was unverified on hardware; this is what the hardware said, and the
-// reference (docs/reference/image-staging-vs-baking.md, "macOS and the runtime
-// VM") now records it.
-//
-// WHY A REFUSAL AND NOT A COPY. Mirroring the prefix under $HOME would work
-// without asking anyone, at ~66 MB per build plus a lifecycle to reap — a second
-// delivery mechanism for the binaries, in a file whose whole subject is that
-// there is exactly one. The population that hits this is a macOS developer
-// pointed at a live checkout, and for them one line of machine setup is cheaper
-// than a mechanism. An INSTALLED bundle ships prebuilt binaries, so it is never
-// in /nix/store and this refusal never fires for it, but that does not make every
-// installed bundle reachable. A `just install` bundle stages under $HOME, which
-// the VM shares by default. A Homebrew bundle does NOT: jailPrefixSource resolves
-// symlinks, so the sources are under $(brew --prefix)/Cellar (/opt/homebrew or
-// /usr/local), which is outside Podman Machine's default share set. The user
-// guide has the user share it at `podman machine init`
-// (userguide/getting-started.md#macos-podman). This function does not check that
-// it did, because whether the VM shares an arbitrary path is a fact about that
-// machine's mount list, not about the path: unsharedBindSources (machineshares.go)
-// reads that list and asks, right after this returns "".
-//
-// IT REUSES YOLO_NIX_HOST_DAEMON RATHER THAN ADDING A DIAL, because that
-// variable already means precisely "my runtime VM does share /nix into the
-// container" (hostprobes.go, userguide/guides/macos.md). A second dial for one fact
-// is the shape shouldMountHostNix warns about: two dials that disagree about
-// what counts as true turn "I set the variable and nothing happened" into a
-// legitimate bug report.
-//
-// ⚠ THAT PARAGRAPH USED TO END "Setting it here also turns the nix delegation
-// mounts on, which is not a side effect — it is the same claim about the same
-// VM." IT WAS FALSE, and it cost the 2026-09-13 macOS nightly (run 34778464086)
-// every one of its launches. Reachability and delegation are two facts, not one:
-// "the VM can see /nix" is about whether a bind SOURCE resolves, while "mount the
-// host store AT /nix/store in the jail" replaces the view where every baked
-// /bin/* symlink points — so it needs the host store to hold the jail's LINUX
-// closure, which a Mac's darwin store generally does not. The delegation half now
-// takes its own claim (hostprobes.go, YOLO_NIX_HOST_STORE_LINUX); the reachability
-// half read here is unchanged, and is still the only thing this refusal asks about.
+// prefixUnreachableFromVM preserves the macOS Podman Machine guard for a
+// bundle stored under /nix, which the default VM does not share. Apple Container
+// has no fixed machine share list; explicit YOLO_NIX_HOST_DAEMON remains the
+// operator's assertion that the Podman VM shares /nix.
 func prefixUnreachableFromVM(p jailPrefix, rt string, isMacOS bool, nixOptIn string) string {
 	if !isMacOS {
 		return ""
 	}
-	// ⚠ APPLE CONTAINER IS NOT SUBJECT TO THIS, AND REFUSING IT WAS A MEASURED DEFECT.
-	//
-	// The rule is about podman's machine VM, which has ONE share set fixed at
-	// `podman machine init` and does not include /nix. Apple Container has no such
-	// machine: it gives every container its own VM and binds the host paths that launch
-	// names, so a /nix/store source is just another host path to it.
-	//
-	// Refusing here anyway blocked EVERY Apple Container launch from a live checkout —
-	// which is every launch the parity job makes — and the refusal even offered a
-	// `podman machine init` remedy that means nothing on this backend. Found by the first
-	// CI run that ever exercised it (2026-09-14, run 34871200672, three tests) and
-	// disproved directly: with the refusal bypassed, a launch whose prefix was
-	// /nix/store/…-yolo-jail-install-prefix/opt/yolo-jail/bin ran its command and exited 0.
-	//
-	// So the gate is on the RUNTIME as well as the platform, and the message below is now
-	// only ever read by a podman launch — which is what makes its podman-specific advice
-	// correct rather than confusing.
-	if rt == "container" { // parity: NotApplicable — AC has no machine VM with a fixed share set; it binds arbitrary host paths, so a store prefix is reachable (measured 2026-09-14)
+	if rt == "container" { // parity: NotApplicable — Apple Container has no fixed machine VM share set and binds the named host path
 		return ""
 	}
 	if envTruthy(nixOptIn) {
 		return ""
 	}
-	// BOTH sources, not just the one a caller happens to think of first: the
-	// share half is what the in-jail yolo resolves its flake bundle from, and a
-	// launch that mounted one and not the other would boot and then fail
-	// somewhere with no mention of the VM.
 	var unreachable []string
 	for _, dir := range []string{p.binDir, p.shareDir} {
 		if underDir(dir, hostNixStore) {
@@ -348,25 +123,17 @@ func prefixUnreachableFromVM(p jailPrefix, rt string, isMacOS bool, nixOptIn str
 	if len(unreachable) == 0 {
 		return ""
 	}
-	return "[bold red]Cannot start jail: the install prefix is in the nix store, " +
-		"which this Mac's runtime VM does not share.[/bold red]\n" +
+	return "[bold red]Cannot start jail: the selected helper bundle is in the nix store, which this Mac's runtime VM does not share.[/bold red]\n" +
 		"  " + strings.Join(unreachable, "\n  ") + "\n" +
-		"They are BIND-MOUNTED into the jail (they are not baked into the image any\n" +
-		"more), so podman would fail with `statfs …: no such file or directory` and\n" +
-		"rc 125 before pid1 ran. Two ways forward:\n" +
+		"Two ways forward:\n" +
 		"  • Share /nix with the VM and say so — `podman machine init -v /nix:/nix`\n" +
-		"    (a fresh machine; `-v` is set at init) and export YOLO_NIX_HOST_DAEMON=1,\n" +
-		"    which is yolo's one spelling of \"my VM shares /nix\".\n" +
-		"  • Or launch from an INSTALLED bundle instead of a live checkout: `just\n" +
-		"    install` stages one under $HOME, which the VM does share, and it ships\n" +
-		"    prebuilt binaries so nothing is built in the store at all. Unset\n" +
-		"    YOLO_REPO_ROOT to select it.\n" +
-		"userguide/guides/macos.md — Nix daemon and /nix sharing"
+		"    and export YOLO_NIX_HOST_DAEMON=1.\n" +
+		"  • Build a matched bundle with `just build-dev-bundle` and invoke the printed\n" +
+		"    launcher by path, or use `just install` for a bundle under $HOME."
 }
 
-// underDir reports whether path is dir itself or anything beneath it. Spelled as
-// a path-segment test rather than a string prefix so /nix/store-of-my-own is not
-// mistaken for a path inside /nix/store.
+// underDir compares path segments, so /nix/store-of-my-own is not mistaken for
+// a location inside /nix/store.
 func underDir(path, dir string) bool {
 	if path == dir {
 		return true
