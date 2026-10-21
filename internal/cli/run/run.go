@@ -206,6 +206,14 @@ func Run(opts Options) (rc int) {
 	if !ok {
 		return 1
 	}
+	// Load the exclusion policy directly from user scope before either backend stages or
+	// reads host configuration bytes. The merged launch config is not an authority for it.
+	hostImportExclusions, err := config.LoadHostImportExclusions()
+	if err != nil {
+		o.pr(o.Stderr).printf("[bold red]Refusing host import exclusions: %s[/bold red]", err)
+		o.pr(o.Stderr).print("Fix the user-scope `host_import_exclusions` setting in ~/.config/yolo-jail/config.jsonc, or remove it.")
+		return 1
+	}
 	// THE NOTCH GATE, above the backend dispatch and above the repo-root gate, because
 	// which notch this is decides whether there is a launch at all — before which
 	// mechanism would run it, and before anything is built for it.
@@ -345,6 +353,7 @@ func Run(opts Options) (rc int) {
 	if !stagedOK {
 		return 1
 	}
+	staged.hostImportExclusions = selectedHostImportExclusions(hostImportExclusions, staged.packs)
 	// THE LAUNCH GUARD (launchguard.go, JL-D75), from the moment there is a pack tree to lose: a
 	// signal before the keeper's spawn ends the launch through it, which discards what no container
 	// holds and gives the terminal back, where the default action ran no cleanup at all. The
@@ -1102,6 +1111,7 @@ func Run(opts Options) (rc int) {
 			o.pr(o.Stderr).printf("[bold red]%s[/bold red]", err.Error())
 			return 1
 		}
+		ctxDelivery.ctx.HostImportExclusions = staged.hostImportExclusions
 		// AND THE DISCLOSURE THAT MUST TRAVEL WITH THEM. Until DP-L1 nothing crossed
 		// here, so nothing had to be disclosed; now a pack reads the human's home on
 		// this backend exactly as it does on every other one, and the banner is the
@@ -1208,9 +1218,33 @@ func Run(opts Options) (rc int) {
 // briefing prose) and returning them as one value is what let staging move above the
 // dispatch without every arm growing a four-value signature.
 type stagedPacks struct {
-	root      string
-	packs     []*packload.Pack
-	briefings []jailcontent.PackBriefing
+	root                 string
+	packs                []*packload.Pack
+	briefings            []jailcontent.PackBriefing
+	hostImportExclusions map[string][]string
+}
+
+func selectedHostImportExclusions(policy map[string][]string, packs []*packload.Pack) map[string][]string {
+	if len(policy) == 0 {
+		return nil
+	}
+	selected := make(map[string][]string)
+	for _, pack := range packs {
+		if pack == nil {
+			continue
+		}
+		surfaces, _ := pack.Surfaces()
+		for _, surface := range surfaces {
+			address := surface.Agent + "/" + surface.Name
+			if pointers, ok := policy[address]; ok {
+				selected[address] = pointers
+			}
+		}
+	}
+	if len(selected) == 0 {
+		return nil
+	}
+	return selected
 }
 
 // stageRunPacks stages this run's packs and reports the failure itself, so the caller's
@@ -2112,38 +2146,39 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 		o.scratchRemovalOnce = &sync.Once{}
 	}
 	in := &assembleInput{
-		cfg:              cfg,
-		rt:               rt,
-		cname:            cname,
-		scratchID:        scratchID,
-		imageRef:         loadedImage.Ref,
-		jailPrefix:       jailPrefix,
-		packs:            loadedPacks,
-		jailDaemons:      jailDaemons,
-		agentsPath:       agentsPath,
-		packStaging:      packStaging,
-		capturesDir:      o.CapturesDir(),
-		forkDeliveries:   o.forkDelivered,
-		patchedTrees:     o.patchedTreesWire(rt),
-		treeDirs:         o.patchedTreeDirs(),
-		wsState:          wsState,
-		durableDir:       o.durableJailPath(),
-		miseStore:        miseStore,
-		cacheDir:         cacheDir,
-		sealed:           o.Sealed,
-		captureJail:      o.captureJail(),
-		sealedTree:       o.SealedTree,
-		hostTZ:           detectHostTZ(),
-		yoloVersion:      o.yoloVersion(repoRoot),
-		mountTargets:     BindMountTargets(),
-		storePruneOK:     storePruneOK,
-		storePackages:    storePkgs,
-		cacheRelocations: relocations,
-		hostCASAlias:     hostCAS,
-		writableHomeDirs: config.WritableHomeDirs(cfg, loadedPacks),
-		hostFiles:        hostFiles,
-		userEnv:          userEnv,
-		channel:          channel,
+		cfg:                  cfg,
+		rt:                   rt,
+		cname:                cname,
+		scratchID:            scratchID,
+		imageRef:             loadedImage.Ref,
+		jailPrefix:           jailPrefix,
+		packs:                loadedPacks,
+		jailDaemons:          jailDaemons,
+		agentsPath:           agentsPath,
+		packStaging:          packStaging,
+		capturesDir:          o.CapturesDir(),
+		forkDeliveries:       o.forkDelivered,
+		patchedTrees:         o.patchedTreesWire(rt),
+		treeDirs:             o.patchedTreeDirs(),
+		wsState:              wsState,
+		durableDir:           o.durableJailPath(),
+		miseStore:            miseStore,
+		cacheDir:             cacheDir,
+		sealed:               o.Sealed,
+		captureJail:          o.captureJail(),
+		sealedTree:           o.SealedTree,
+		hostTZ:               detectHostTZ(),
+		yoloVersion:          o.yoloVersion(repoRoot),
+		mountTargets:         BindMountTargets(),
+		storePruneOK:         storePruneOK,
+		storePackages:        storePkgs,
+		cacheRelocations:     relocations,
+		hostCASAlias:         hostCAS,
+		writableHomeDirs:     config.WritableHomeDirs(cfg, loadedPacks),
+		hostFiles:            hostFiles,
+		hostImportExclusions: staged.hostImportExclusions,
+		userEnv:              userEnv,
+		channel:              channel,
 	}
 	// THE HOME SKELETON (homeskeleton.go): a NEW per-jail directory, bound :ro at
 	// /home/agent, holding only the mountpoints and links this launch's binds need. Here,

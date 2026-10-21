@@ -580,6 +580,14 @@ func configReset(t configTarget, args []string, out, errw io.Writer, color bool)
 				return 1
 			}
 		}
+		// Filtering is fail-closed. Resolve it before removing capture sidecars so a
+		// malformed staged document cannot partially reset the surface.
+		if !t.hostOwned() {
+			if _, _, err := hostLayerFor(t, s); err != nil {
+				fmt.Fprintf(errw, "yolo config reset: %s/%s: %v\n", s.Agent, s.Name, err)
+				return 1
+			}
+		}
 		overlayFile, lastRenderFile := t.overlayFile(s.Agent, s.Name), t.lastRenderFile(s.Agent, s.Name)
 		listCaptureFile := t.listCaptureFile(s.Agent, s.Name)
 		had, hadList := overlayKeyCountAt(overlayFile), listCaptureCountAt(listCaptureFile)
@@ -1157,7 +1165,10 @@ func truncateSurfaceToPureRender(t configTarget, s manifest.Surface, owned *owne
 	// the copy the LAUNCH staged instead, so an in-jail reset keeps the user's own host keys
 	// and discards only the capture — and host-side, where that copy is out of reach, it
 	// says so and composes without, which the next launch re-renders correctly.
-	hostBytes, note := hostLayerFor(t, s)
+	hostBytes, note, err := hostLayerFor(t, s)
+	if err != nil {
+		return nil, "", err
+	}
 	// The jail notch's own Target does the ${workspace} substitution and the fold — the
 	// same render.Target.Compose the boot render calls, which is what makes "the pure
 	// render" one definition rather than this file's opinion of one.

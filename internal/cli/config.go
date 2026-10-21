@@ -21,6 +21,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonptr"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packoverlay"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/render"
@@ -541,7 +542,10 @@ func renderSurface(t configTarget, s manifest.Surface, contribs *packoverlay.Ove
 
 	// A7: read a `host` layer ONLY for the surfaces that actually get one at boot — and,
 	// since [OQ-CR6], out of the bytes the boot render actually composes. See hostLayerFor.
-	hostBytes, note := hostLayerFor(t, s)
+	hostBytes, note, err := hostLayerFor(t, s)
+	if err != nil {
+		return err
+	}
 
 	s, res, err := ct.Compose(s, render.Layers{
 		HostBytes: hostBytes,
@@ -733,17 +737,18 @@ func listReplacer(layer string) string {
 // back indistinguishable from the user's ([P6]). The preview composes what the boot render
 // composes, so it drops that layer too — and says so, because the difference is otherwise
 // invisible in output that looks exactly as correct either way.
-func hostLayerFor(t configTarget, s manifest.Surface) ([]byte, string) {
+func hostLayerFor(t configTarget, s manifest.Surface) ([]byte, string, error) {
 	if s.Agent == userSurfaceAgent {
-		return userHostLayerFor(t, s)
+		b, note := userHostLayerFor(t, s)
+		return b, note, nil
 	}
 	if !s.HasHostLayer() {
-		return nil, ""
+		return nil, "", nil
 	}
 	staged, disposition := entrypoint.StagedHostLayer(s)
 	if staged == "" {
 		return nil, "no `host` layer: this surface declares one and no /ctx source was " +
-			"derived for it"
+			"derived for it", nil
 	}
 	// THE STAGED TREE IS THIS PROCESS'S JAIL'S. A host-side invocation has none, and a jail
 	// asked about a DIFFERENT workspace has one that belongs to itself — neither is the
@@ -751,12 +756,12 @@ func hostLayerFor(t configTarget, s manifest.Surface) ([]byte, string) {
 	if t.notch != render.KindJail || !t.local {
 		return nil, "the `host` layer is unavailable here: a launch stages the user's own " +
 			"copy at " + s.HostSource + ", which exists only inside the jail it launches — " +
-			"this preview composes without it"
+			"this preview composes without it", nil
 	}
 	if disposition == entrypoint.HostLayerRender {
 		return nil, "the host's copy of " + s.Path + " is yolo's own render, so it is a " +
 			"baseline and not a layer — this surface composes from its packs and its " +
-			"capture alone"
+			"capture alone", nil
 	}
 	data, err := os.ReadFile(staged)
 	if err != nil {
@@ -764,11 +769,19 @@ func hostLayerFor(t configTarget, s manifest.Surface) ([]byte, string) {
 			// The overwhelmingly common case: the user has no such file, so the surface
 			// composes from its lower layers and nothing is wrong. Silent, as the boot
 			// render is.
-			return nil, ""
+			return nil, "", nil
 		}
-		return nil, "the `host` layer could not be read at " + staged + ": " + err.Error()
+		return nil, "the `host` layer could not be read at " + staged + ": " + err.Error(), nil
 	}
-	return data, ""
+	if pointers := entrypoint.HostImportExclusionsIn(os.Getenv(packload.HostLayerEnvVar), s); len(pointers) > 0 {
+		filtered, filterErr := agentcfg.FilterHostImportExclusions(s.Codec, data, pointers)
+		if filterErr != nil {
+			return nil, "", fmt.Errorf("surface %s/%s: apply staged host import exclusions: %w",
+				s.Agent, s.Name, filterErr)
+		}
+		data = filtered
+	}
+	return data, "", nil
 }
 
 // colorLayer wraps a provenance layer name in its distinct hue so --explain

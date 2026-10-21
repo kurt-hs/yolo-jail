@@ -842,6 +842,18 @@
           "managed":  { "telemetry": false } }
       ]
 
+  [bold]host_import_exclusions[/bold] (map of surface address to JSON Pointer array): Omit exact
+    object members from imported user host config bytes for the selected surface. This is a
+    user-scope-only, subtractive filter; workspace config cannot set or extend it. A target
+    must name a known object-codec surface, and a non-empty policy is allowed only when
+    host_management is unset or "none". Missing members do nothing. It does not filter pack,
+    default, computed, managed, captured, session-home, or yolo-rendered baseline bytes, and
+    it never edits the host file. It applies on the next launch that stages and renders the
+    policy. Example (~/.config/yolo-jail/config.jsonc):
+      "host_import_exclusions": {
+        "claude/settings": ["/hooks", "/statusLine"]
+      }
+
   [bold]host_wrappers[/bold] (boolean): Generate launch wrappers for host agents.
     [bold]Default: ON when host_management is "own", otherwise off.[/bold]  You usually
     do not write this key at all — `own` means yolo composes an agent's config file
@@ -1282,12 +1294,10 @@
     When an update exists, one line under the startup banner says so -- only on
     a terminal -- and a safe, self-contained interactive launch offers to
     update and relaunch.  Homebrew and from-source installs are self-contained.
-    `go install`, pipx and uv install only the host binary while the jail build
-    comes from YOLO_REPO_ROOT, so `yolo update` refuses to replace just one half
-    and explains the coordinated manual update.  A release archive gets a
-    download link.  A YOLO_REPO_ROOT override that differs from a
-    self-contained install's own source is the same split and suppresses the
-    launch offer.
+    Development runs use a matched bundle: run `just build-dev-bundle` and invoke its
+    printed launcher path, or use `just install` for the installed bundle. An exported
+    YOLO_REPO_ROOT no longer selects launch sources; unset it before invoking a normal
+    launcher.
 
     `false` turns off the background check, the notice and the offer; explicit
     `yolo update` commands still work.  YOLO_NO_UPDATE_CHECK=1 is the per-shell

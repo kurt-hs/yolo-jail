@@ -194,6 +194,8 @@ func TestRenderComposesTheStagedHostCopyNotTheDestination(t *testing.T) {
 // belongs to this jail rather than to that workspace.
 func TestRenderReportsAnUnavailableHostLayerRatherThanSubstituting(t *testing.T) {
 	home, _ := withHomeAndCwd(t)
+	surface, _ := surfaceManifest().Lookup("pi", "settings")
+	pinHostImportPolicy(t, surface, []string{"/theme"}, false)
 	// The invoking human's own file: present, and not this preview's business.
 	writeFile(t, filepath.Join(home, ".pi/agent/settings.json"), `{"theme":"the humans own"}`)
 

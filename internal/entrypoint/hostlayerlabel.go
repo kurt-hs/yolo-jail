@@ -84,6 +84,9 @@ type HostLayerWire struct {
 	// Delivered: a labelled path is still delivered, because the label says what arrived
 	// rather than whether anything did.
 	Rendered []string `json:"rendered,omitempty"`
+	// HostImportExclusions is the launch's normalized, user-scope policy, keyed by the exact
+	// agent/name surface address. Consumers apply it only to delivered user host bytes.
+	HostImportExclusions map[string][]string `json:"host_import_exclusions,omitempty"`
 }
 
 // Marshal renders the wire for the environment. Deterministic, for the reason packload's
@@ -136,6 +139,18 @@ func HostLayerDispositionIn(wire, ctxPath string) packload.HostLayerDisposition 
 		return packload.HostLayerUnknown
 	}
 	return w.DispositionFor(ctxPath)
+}
+
+// HostImportExclusionsIn returns a surface's policy only when the same launch wire says
+// its staged /ctx bytes were delivered as user input. Render baselines and unknown or
+// unsupported delivery are never filtered.
+func HostImportExclusionsIn(wire string, surface manifest.Surface) []string {
+	w, ok := ParseHostLayerWire(wire)
+	if !ok || surface.HostSource == "" ||
+		w.DispositionFor(surface.HostSource) != packload.HostLayerDelivered {
+		return nil
+	}
+	return w.HostImportExclusions[surface.Agent+"/"+surface.Name]
 }
 
 // StagedHostLayer is what THIS process can say about a surface's host bytes: where they are

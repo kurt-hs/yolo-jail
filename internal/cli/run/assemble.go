@@ -192,6 +192,9 @@ type assembleInput struct {
 	// a backend that rejects a duplicate flag.
 	acCtxMaterialized bool
 
+	// hostImportExclusions is the normalized user policy retained by Run and serialized
+	// on the existing host-layer wire; argv assembly never reads config itself.
+	hostImportExclusions map[string][]string
 	// hostLayersDelivered is where hostFileArgs records the /ctx destination of every
 	// pack-declared host file it actually put in the jail, for the report the entrypoint's
 	// fail-closed host-layer read witnesses against (packload.HostLayerReport). Written by

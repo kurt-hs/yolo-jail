@@ -711,6 +711,18 @@ func renderPlannedSurface(e *Env, pl surfacePlan, src jailLayerSource) error {
 		if layers.hostBytes, err = hostSurfaceBytes(e, surface); err != nil {
 			return err
 		}
+		// Exclusions are a future-import filter only. Apply them after delivery and render
+		// provenance have selected user bytes, and before provider ownership or capture layers.
+		if layers.hostBytes != nil {
+			if pointers := HostImportExclusionsIn(e.Getenv(packload.HostLayerEnvVar), surface); len(pointers) > 0 {
+				layers.hostBytes, err = agentcfg.FilterHostImportExclusions(surface.Codec,
+					layers.hostBytes, pointers)
+				if err != nil {
+					return fmt.Errorf("surface %s/%s: apply host import exclusions: %w",
+						surface.Agent, surface.Name, err)
+				}
+			}
+		}
 	}
 
 	// THE PROVIDER KEYS (providerkeys.go): the settings this surface's agent's provider

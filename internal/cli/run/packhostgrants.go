@@ -155,7 +155,8 @@ func (o *Options) hostLayerEnv(in *assembleInput) []string {
 			Delivery:  packload.HostLayersSupported,
 			Delivered: in.hostLayersDelivered,
 		},
-		Rendered: in.hostLayersRendered,
+		Rendered:             in.hostLayersRendered,
+		HostImportExclusions: in.hostImportExclusions,
 	}.Marshal()
 	if err != nil {
 		// Unreachable for a []string, and silence would be the wrong failure anyway: no

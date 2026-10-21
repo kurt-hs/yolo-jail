@@ -251,6 +251,9 @@ type HostContext struct {
 	// launcher computes the same label with the same call (hostFileArgs), which is what keeps
 	// the two backends' readings of one home identical.
 	Rendered []string
+	// HostImportExclusions is the normalized user policy retained by the host launch.
+	// The pure plan builder only serializes it on the existing host-layer wire.
+	HostImportExclusions map[string][]string
 	// HostFiles are the user's SOURCE-BEARING `host_files` entries this launch RESOLVED —
 	// additive to the source-less ones the plan builder reads from the merged config,
 	// which is the only half a pure function may see.
@@ -2338,7 +2341,8 @@ func hostLayerWire(ctxRoot string, hostCtx HostContext) string {
 			Delivery:  packload.HostLayersSupported,
 			Delivered: hostCtx.Delivered,
 		},
-		Rendered: hostCtx.Rendered,
+		Rendered:             hostCtx.Rendered,
+		HostImportExclusions: hostCtx.HostImportExclusions,
 	}.Marshal()
 	return wire
 }
