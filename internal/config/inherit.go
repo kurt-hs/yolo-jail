@@ -116,6 +116,9 @@ var inheritCensus = map[string]keyDisposition{
 	// directly), so it can only ever arrive through this file. Both consumers need it:
 	// `yolo pack ls/status` reports it, and an inner launcher stages from it.
 	"packs": {preflight: true, nested: true, reason: "reported by `yolo pack ls/status` and staged by an inner launcher"},
+	// The declaration is user-scope-only and must cross as user scope in either consumer;
+	// FilterInherit replaces any merged-map copy with the strict direct user read.
+	"host_import_exclusions": {preflight: true, nested: true, reason: "filters user host config imports for this jail and a nested launcher"},
 	// `agent_updates` is user-scope-only for `packs`' reason and one step sharper (a
 	// workspace value would let the agent freeze its own updates), so this file is its only
 	// route in. Both consumers have a real referent here: the in-jail `yolo check` dry-run
@@ -380,7 +383,9 @@ func InheritKeys(scope InheritScope) []string {
 	return out
 }
 
-// FilterInherit projects an effective config down to one scope's keys.
+// FilterInherit projects an effective config down to one scope's keys. The one user-only
+// exception, host_import_exclusions, is taken from a strict direct user-scope read rather
+// than the merged input; FilterInheritErr returns any read or validation failure.
 //
 // It takes the ALREADY-COMPOSED effective config — the same value `yolo config dump`
 // renders (config.LoadConfig → SnapshotJSON) — rather than composing its own, which is
@@ -394,21 +399,9 @@ func InheritKeys(scope InheritScope) []string {
 // them would look for host-relative siblings of a generated file. The composed config it
 // receives already has the includes merged in.
 func FilterInherit(effective *jsonx.OrderedMap, scope InheritScope) (out *jsonx.OrderedMap, unknown []string) {
-	out = jsonx.NewOrderedMap()
-	if effective == nil {
-		return out, nil
-	}
-	for _, k := range effective.Keys() {
-		d, ok := inheritCensus[k]
-		if !ok {
-			unknown = append(unknown, k)
-			continue
-		}
-		if (scope == InheritPreflight && !d.preflight) || (scope == InheritNested && !d.nested) {
-			continue
-		}
-		v, _ := effective.Get(k)
-		out.Set(k, v)
+	out, unknown, err := FilterInheritErr(effective, scope)
+	if err != nil {
+		return filterInheritMap(effective, scope, nil)
 	}
 	return out, unknown
 }
@@ -469,13 +462,46 @@ func InheritHeader(scope InheritScope, launchedAt string) string {
 	return b.String()
 }
 
-// FilterInheritErr is FilterInherit with an error return, for callers that want the
-// filtered map itself (e.g. to ask whether it is empty before rendering a file for it).
-// The error is always nil today and exists so a future filter that can fail — a value-level
-// rewrite rather than a key-level projection — does not change every call site.
+// FilterInheritErr projects an effective map while resolving host_import_exclusions from
+// strict user scope. A malformed or unreadable user policy is returned as an error rather
+// than copied from the merged map or silently allowed to cross the boundary.
 func FilterInheritErr(effective *jsonx.OrderedMap, scope InheritScope) (*jsonx.OrderedMap, []string, error) {
-	out, unknown := FilterInherit(effective, scope)
+	if effective == nil {
+		return jsonx.NewOrderedMap(), nil, nil
+	}
+	policy, err := LoadHostImportExclusions()
+	if err != nil {
+		return nil, nil, err
+	}
+	out, unknown := filterInheritMap(effective, scope, policy)
 	return out, unknown, nil
+}
+
+func filterInheritMap(effective *jsonx.OrderedMap, scope InheritScope, policy map[string][]string) (*jsonx.OrderedMap, []string) {
+	out := jsonx.NewOrderedMap()
+	if effective == nil {
+		return out, nil
+	}
+	var unknown []string
+	for _, k := range effective.Keys() {
+		if k == hostImportExclusionsKey {
+			continue
+		}
+		d, ok := inheritCensus[k]
+		if !ok {
+			unknown = append(unknown, k)
+			continue
+		}
+		if (scope == InheritPreflight && !d.preflight) || (scope == InheritNested && !d.nested) {
+			continue
+		}
+		v, _ := effective.Get(k)
+		out.Set(k, v)
+	}
+	if policy != nil {
+		out.Set(hostImportExclusionsKey, hostImportExclusionsOrderedMap(policy))
+	}
+	return out, unknown
 }
 
 // RenderFiltered renders an ALREADY-FILTERED map as a generated inner-scope file: the
@@ -510,7 +536,10 @@ func RenderFilteredWithOrigins(filtered *jsonx.OrderedMap, src *Sources, scope I
 // RenderInherit filters and renders in one step — the whole-file form, for callers with no
 // reason to inspect the filtered map.
 func RenderInherit(effective *jsonx.OrderedMap, scope InheritScope, launchedAt string) (string, []string, error) {
-	filtered, unknown := FilterInherit(effective, scope)
+	filtered, unknown, err := FilterInheritErr(effective, scope)
+	if err != nil {
+		return "", nil, err
+	}
 	out, err := RenderFiltered(filtered, scope, launchedAt)
 	return out, unknown, err
 }
