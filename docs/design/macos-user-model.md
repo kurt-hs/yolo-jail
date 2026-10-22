@@ -3,23 +3,20 @@ title: "macos-user's model: a second account, or a sandbox that starts from noth
 date: 2026-10-22
 status: in-review
 stage: DESIGN
-next: "Prototype a run-as-you, deny-by-default profile on a Mac (keychain, ssh agent, Apple Events, signals and loopback denied; one agent session works), then rule OQ-MM1"
+next: "Prototype the deny-by-default profile on a Mac in both modes (§6), rule OQ-MM2 to OQ-MM5, then seed the plan"
 tags: [macos-user, seatbelt, design, isolation, parity, safehouse, sandvault]
-summary: "Today macos-user runs the agent as a second Mac account under a Seatbelt profile that allows everything and denies a short list (SandVault's model). The maintainer's 2026-10-22 direction is Safehouse's model instead: the agent runs as you under a profile that denies everything and allows a list, which is the closest macOS gets to podman's start-from-nothing container. This doc lays the three models side by side, maps podman's pieces onto the Safehouse model, and names what the second account actually buys and costs."
+summary: "Today macos-user runs the agent as a second Mac account under a Seatbelt profile that allows everything and denies a short list (SandVault's model). Ruled 2026-10-22: macos-user moves to Safehouse's model, the agent running as you under a profile that denies everything and allows a list, the closest macOS gets to podman's start-from-nothing container; the second account is kept from day one as an optional mode, off by default, on the same profile. This doc lays the models side by side, maps podman's pieces onto the Safehouse model, and names what the second account buys and costs."
 vantage:
   status-chip: true
 ---
 
 # macos-user's model: a second account, or a sandbox that starts from nothing
 
-**Status:** 2026-10-22 — written for the maintainer to weigh the models. Nothing here is built.
-The maintainer's direction, in his words: the Safehouse model *"seems like … the right direction"*,
-*"the separate user causes issues and doesn't actually solve much in the way of any security
-concerns, except for user readable files"*, and the parity model with podman is *"the right model in
-general"*. The prototype in [§6](#6-what-a-prototype-must-show) is what turns that direction into a
-ruling.
+**Status:** 2026-10-22 — the model is ruled ([§7](#7-the-ruled-model-two-modes-one-profile)); nothing
+is built. The [§6](#6-what-a-prototype-must-show) prototype is the check before building, not a
+reopening of the ruling. Four questions remain, none of which changes the model.
 
-**Needs your ruling:** [OQ-MM1](#OQ-MM1), [OQ-MM2](#OQ-MM2), [OQ-MM3](#OQ-MM3), [OQ-MM4](#OQ-MM4), [OQ-MM5](#OQ-MM5).
+**Needs your ruling:** [OQ-MM2](#OQ-MM2), [OQ-MM3](#OQ-MM3), [OQ-MM4](#OQ-MM4), [OQ-MM5](#OQ-MM5).
 
 **Reads with:** [Agent Safehouse research](../research/agent-safehouse.md) (the evidence for every
 Safehouse claim here), [SandVault and Safehouse compatibility](sandvault-safehouse-compat.md), and
@@ -144,28 +141,46 @@ On a Mac, with a hand-written profile and no yolo changes:
    all fail.
 3. `/opt/src/clientX` is unreadable; `/opt/homebrew` and the nix store are readable.
 4. With Full Disk Access granted to the terminal, a file the profile denies is still unreadable.
+5. Nothing escapes through a service running as you: `open -a Terminal`, `osascript -e 'do shell
+   script …'` and `launchctl submit` all fail from inside.
+6. Claude logs in and stays logged in with the keychain denied to the sandbox.
+7. Steps 1 to 3 pass again with the same profile run as the second account.
 
-That run decides [OQ-MM1](#OQ-MM1). The existing macos-user policy suite
+That run is the gate before building. The existing macos-user policy suite
 ([§8.1](../research/agent-safehouse.md#81-a-policy-assertion-suite-for-macos-user--highest-value-moderate-cost))
 is where its checks become permanent tests.
 
-## 7. Open questions
+## 7. The ruled model: two modes, one profile
 
-1. <a id="OQ-MM1"></a>💬 **[`OQ-MM1`](#OQ-MM1) — Does macos-user move to the Safehouse model and retire the second account?**
+Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
 
-   <!-- vantage: question id=OQ-MM1 leaning="Yes, once the prototype shows the keychain, ssh agent, Apple Events, clipboard and signals stay out; the hybrid is the fallback if they don't." -->
+- **One profile, deny by default.** Every macos-user launch runs under a deny-by-default Seatbelt
+  profile covering files, system services, signals and process inspection, built as
+  [§3](#3-podman-mapped-onto-the-safehouse-model) maps podman's pieces. Which user runs it is a
+  parameter of the profile, not a second profile.
+- **Default mode: the agent runs as you.** No account, admin setup, access grants or projects
+  folder. A workspace may be anywhere, including your home folder. Everything [§5](#5-what-the-safehouse-model-must-deny-explicitly)
+  lists is denied.
+- **Optional mode: the second account, off by default, built from day one.** The same profile run
+  as `_yolojail`. The mode alone brings the account's setup and switching, and the access grants
+  that let the account read and write the workspace, because Unix permissions still decide file
+  access under a different user. The maintainer's reason for building it now: *"we already have a
+  lot of this machinery built, and I think it's going to help us smooth out the rest of it."*
+- **Shared by both modes:** a per-launch `HOME` under the workspace's `.yolo/home`, so two
+  workspaces run at once in either mode without a shared account home; mounts at their original
+  path with a context-dir link; the host keychain reached only through the loophole the
+  [keychain design](keychain-from-a-jail.md#41-macos-user-no-seam-and-probably-no-keychain) rules
+  ([OQ-KC4](keychain-from-a-jail.md#8-decision-ledger): *"always the host's keychain"*), never by the sandbox.
+- **Selecting the mode** is a user-scope setting; a workspace config cannot choose it. Its name and
+  spelling are the plan's to choose.
+- **What done looks like:** with no setting, `yolo -- claude` in `~/code/alpha` launches with no
+  admin step, and the agent cannot read `/opt/src/clientX`, `~/.ssh` or the keychain; with the
+  optional mode set on a Mac where setup ran, the same launch runs as `_yolojail` with the same
+  denies; two workspaces launch at once in either mode.
 
-   It deletes the setup, access grants, projects folder, cross-account credential bridges and most
-   of the two-workspace plan, and gives the podman mental model. It gives up the Unix-permission
-   backstop under the profile.
+## 8. Open questions
 
-   _Leaning:_ yes, after the [§6](#6-what-a-prototype-must-show) prototype passes; the hybrid if it
-   does not.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-2. <a id="OQ-MM2"></a>💬 **[`OQ-MM2`](#OQ-MM2) — Borrow Safehouse's profiles, or write our own allow list?**
+1. <a id="OQ-MM2"></a>💬 **[`OQ-MM2`](#OQ-MM2) — Borrow Safehouse's profiles, or write our own allow list?**
 
    <!-- vantage: question id=OQ-MM2 leaning="Start from Safehouse's layered profiles (Apache-2.0, with attribution), adapted for nix and narrowed where they read wider than yolo wants, such as all of /opt." -->
 
@@ -178,7 +193,7 @@ is where its checks become permanent tests.
    **Answer:**
    > _(empty — fill in when decided)_
 
-3. <a id="OQ-MM3"></a>💬 **[`OQ-MM3`](#OQ-MM3) — Can the agent reach services on your loopback?**
+2. <a id="OQ-MM3"></a>💬 **[`OQ-MM3`](#OQ-MM3) — Can the agent reach services on your loopback?**
 
    <!-- vantage: question id=OQ-MM3 leaning="Deny loopback by default and allow the ports yolo's own services use, matching podman, where the jail has its own loopback." -->
 
@@ -191,19 +206,21 @@ is where its checks become permanent tests.
    **Answer:**
    > _(empty — fill in when decided)_
 
-4. <a id="OQ-MM4"></a>💬 **[`OQ-MM4`](#OQ-MM4) — What happens to a Mac already set up for the second account?**
+3. <a id="OQ-MM4"></a>💬 **[`OQ-MM4`](#OQ-MM4) — What happens to a Mac already set up for the second account?**
 
-   <!-- vantage: question id=OQ-MM4 leaning="Launches stop using the account at once; yolo macos-setup gains a removal step that deletes the account and its grants on request, and a launch names that command once." -->
+   <!-- vantage: question id=OQ-MM4 leaning="Launches switch to the default mode; the existing account, its grants and its state stay, and opting into the second-account mode uses them; yolo names the opt-in once at the first launch after upgrading and deletes nothing." -->
 
    Existing users have the `_yolojail` account, its passwordless switching, access grants on
-   `/Users/Shared/yolo` and workspace state under it. This is a breaking change by design.
+   `/Users/Shared/yolo` and workspace state under it. Under [§7](#7-the-ruled-model-two-modes-one-profile)
+   the default becomes running as you, and the account becomes the optional mode.
 
-   _Leaning:_ stop using it at once, offer a removal command, and say so once at launch.
+   _Leaning:_ switch to the default, keep the account and its state for the opt-in, say so once,
+   delete nothing.
 
    **Answer:**
    > _(empty — fill in when decided)_
 
-5. <a id="OQ-MM5"></a>💬 **[`OQ-MM5`](#OQ-MM5) — Should container jails also bind each `mounts` entry at its original host path?**
+4. <a id="OQ-MM5"></a>💬 **[`OQ-MM5`](#OQ-MM5) — Should container jails also bind each `mounts` entry at its original host path?**
 
    <!-- vantage: question id=OQ-MM5 leaning="Yes, in addition to /ctx/<name>, with the same read-only or read-write mode, refusing an original path that collides with a path the jail itself uses." -->
 
@@ -222,3 +239,5 @@ is where its checks become permanent tests.
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | MM-R1 | The risk that an access grant on a home folder exposes `~/.ssh` is acceptable, not a blocker. | 2026-10-22 | [§4](#4-what-the-second-account-buys-and-what-it-costs) | — |
+| <a id="OQ-MM1"></a>[OQ-MM1](#OQ-MM1) | macos-user moves to Safehouse's model: a deny-by-default profile, the agent running as you by default. The [§6](#6-what-a-prototype-must-show) prototype is the gate before building. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
+| MM-R2 | The second account is kept from day one as an optional mode, off by default, running the same profile; it alone carries account setup and workspace access grants. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |

@@ -9,6 +9,9 @@ vantage:
 
 # Two native workspaces use private homes under one guest UID
 
+> [!WARNING]
+> **Do not build from this doc or its plan yet.** On 2026-10-22 [macos-user's model](macos-user-model.md#7-the-ruled-model-two-modes-one-profile) was ruled: the agent runs as you by default, the second account is an optional mode, and both use a per-launch home, which removes the shared account home this design works around. Re-plan from that ruling first.
+
 **Status:** 2026-10-22. All owner rulings are recorded; the architecture and threat boundary below are accepted. Nothing is built, and native enforcement is unmeasured; the current cross-workspace account-home hold remains in place. The companion plan is the build handoff.
 
 > **In short.** Different workspaces run concurrently under one `_yolojail` guest OS user, each with a private `HOME` and persistent workspace state. Seatbelt preserves only explicitly selected shared machine paths; it does not grant access to sibling workspace homes.

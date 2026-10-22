@@ -12,6 +12,9 @@ vantage:
 
 # The configurable workspace root, and why the root is a deny prefix
 
+> [!WARNING]
+> **On hold.** Under [macos-user's ruled model](macos-user-model.md#7-the-ruled-model-two-modes-one-profile) (2026-10-22) the default mode has no projects folder and allows a workspace anywhere; these questions apply only to the optional second-account mode and wait on its plan.
+
 **Status:** 2026-09-16 — four questions open, all in [§8](#8-open-questions). The finding in
 [§3](#3-the-finding-reads-are-allow-default) is what makes this a design rather than a config-key
 ticket, and it is verified against the profile generator rather than reasoned from the docs.
