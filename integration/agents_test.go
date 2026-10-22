@@ -2,6 +2,9 @@ package integration
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -389,18 +392,7 @@ func TestJailConfigsPresent(t *testing.T) {
 // "" when the pack declares nothing checkable.
 func projectDirsProbe(t *testing.T, pack, bin string) string {
 	t.Helper()
-	var checks []string
-	for _, d := range declaredProjectDirs(pack) {
-		if why, ok := projectDirsNotText[pack][d]; ok {
-			t.Logf("%s's project_dirs row %s is not witnessed by the installed bundle: %s", pack, d, why)
-			continue
-		}
-		pattern := `(^|[^/~A-Za-z0-9_])` + regexp.QuoteMeta(d)
-		checks = append(checks, fmt.Sprintf(
-			`{ grep -rqaE -- %s "$root" || { echo %s; false; }; }`,
-			shquote.Quote(pattern),
-			shquote.Quote("PROJECT_DIRS: "+pack+" declares "+d+" but the installed bundle never names it at project scope")))
-	}
+	checks := projectDirsChecks(t, pack)
 	if len(checks) == 0 {
 		return ""
 	}
@@ -409,6 +401,54 @@ func projectDirsProbe(t *testing.T, pack, bin string) string {
 		`for i in 1 2 3 4; do if [ -f "$d/package.json" ]; then root=$d; break; fi; d=$(dirname "$d"); done && `+
 		`%s`, bin, bin, strings.Join(checks, " && "))
 }
+
+// projectDirsChecks is one shell check per witnessed project_dirs row of pack, each grepping the
+// installed tree at "$root" and echoing a PROJECT_DIRS line before failing. A row in
+// projectDirsFromSegments passes on either form: the path as text at project scope, or every one
+// of its segment literals somewhere in the tree.
+func projectDirsChecks(t *testing.T, pack string) []string {
+	t.Helper()
+	var checks []string
+	for _, d := range declaredProjectDirs(pack) {
+		if why, ok := projectDirsNotText[pack][d]; ok {
+			t.Logf("%s's project_dirs row %s is not witnessed by the installed bundle: %s", pack, d, why)
+			continue
+		}
+		pattern := `(^|[^/~A-Za-z0-9_])` + regexp.QuoteMeta(d)
+		alt := ""
+		if segs, ok := projectDirsFromSegments[pack][d]; ok {
+			var all []string
+			for _, lit := range segs.literals {
+				all = append(all, fmt.Sprintf(`grep -rqaF -- %s "$root"`, shquote.Quote(lit)))
+			}
+			alt = " || { " + strings.Join(all, " && ") + "; }"
+		}
+		checks = append(checks, fmt.Sprintf(
+			`{ grep -rqaE -- %s "$root"%s || { echo %s; false; }; }`,
+			shquote.Quote(pattern), alt,
+			shquote.Quote("PROJECT_DIRS: "+pack+" declares "+d+" but the installed bundle never names it at project scope")))
+	}
+	return checks
+}
+
+// projectDirsFromSegments is, per pack, each declared project_dirs row its installed bundle
+// builds from segments rather than spelling as one path, with the literals that together ARE
+// that search. Unlike projectDirsNotText this still checks: every literal must be in the
+// bundle, so the row fails when the search it names is gone. Each literal is one minification
+// keeps — a string constant or a property name, never a mangled identifier.
+var projectDirsFromSegments = map[string]map[string]segmentWitness{
+	"opencode": {
+		// opencode 1.19.4, measured 2026-10-22 from the opencode-linux-x64 binary's strings, never
+		// run: ConfigPaths.directories walks up from the project for `.opencode` dirs
+		// (`up({targets:[".opencode"],start:…,stop:…})`) and the skill scan globs each one with
+		// `{skill,skills}/**/SKILL.md`. 1.18.34 searched the same way; its only `.opencode/skills`
+		// literal was a config example in its embedded docs, which 1.19.4 dropped.
+		".opencode/skills": {literals: []string{`targets:[".opencode"]`, `"{skill,skills}/**/SKILL.md"`}},
+	},
+}
+
+// segmentWitness is the literals that, all present, witness a row built from segments.
+type segmentWitness struct{ literals []string }
 
 // declaredProjectDirs is what the shipped pack declares, from its own pack.json.
 func declaredProjectDirs(pack string) []string {
@@ -449,6 +489,20 @@ var projectDirsNotText = map[string]map[string]string{
 // declares, or the table goes on excusing a row that is gone — or one that was corrected into
 // a different path and now goes unchecked.
 func TestProjectDirsNotTextNamesDeclaredRows(t *testing.T) {
+	for pack, rows := range projectDirsFromSegments {
+		declared := map[string]bool{}
+		for _, d := range declaredProjectDirs(pack) {
+			declared[d] = true
+		}
+		for d := range rows {
+			if !declared[d] {
+				t.Errorf("projectDirsFromSegments[%q] names %s, which pack %s does not declare", pack, d, pack)
+			}
+			if _, both := projectDirsNotText[pack][d]; both {
+				t.Errorf("%s's row %s is in both projectDirsNotText and projectDirsFromSegments; the exemption hides the segment check", pack, d)
+			}
+		}
+	}
 	for pack, rows := range projectDirsNotText {
 		declared := map[string]bool{}
 		for _, d := range declaredProjectDirs(pack) {
@@ -459,6 +513,44 @@ func TestProjectDirsNotTextNamesDeclaredRows(t *testing.T) {
 				t.Errorf("projectDirsNotText[%q] exempts %s, which pack %s does not declare", pack, d, pack)
 			}
 		}
+	}
+}
+
+// TestProjectDirsWitnessReadsSegments runs opencode's generated checks under -short against
+// fixture bundles: the segment form of `.opencode/skills` passes, as does the path spelled at
+// project scope, and a bundle missing either segment — the search gone — still fails.
+func TestProjectDirsWitnessReadsSegments(t *testing.T) {
+	checks := projectDirsChecks(t, "opencode")
+	if len(checks) == 0 {
+		t.Fatal("opencode has no witnessed project_dirs row; the .opencode/skills check vanished")
+	}
+	const glob, walk = `ie="{skill,skills}/**/SKILL.md"`, `e.up({targets:[".opencode"],start:r,stop:t})`
+	for _, tc := range []struct {
+		name, bundle string
+		pass         bool
+	}{
+		{"segments, as 1.19.4 ships", walk + ";" + glob, true},
+		{"path as text at project scope", `"paths": [".opencode/skills", "/abs"]`, true},
+		{"glob without the .opencode walk", glob + `;"~/.opencode/skills"`, false},
+		{"walk without the skills glob", walk, false},
+		{"neither", `nothing here`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "bundle.js"), []byte(tc.bundle), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("bash", "-c", strings.Join(checks, " && "))
+			// YOLO_BYPASS_SHIMS: a jail's guardrails pack refuses `grep -r` by PATH.
+			cmd.Env = append(os.Environ(), "root="+root, "YOLO_BYPASS_SHIMS=1")
+			out, err := cmd.CombinedOutput()
+			if tc.pass && err != nil {
+				t.Errorf("want pass, got %v:\n%s", err, out)
+			}
+			if !tc.pass && (err == nil || !strings.Contains(string(out), "PROJECT_DIRS: opencode declares .opencode/skills")) {
+				t.Errorf("want a PROJECT_DIRS failure, got err=%v:\n%s", err, out)
+			}
+		})
 	}
 }
 
