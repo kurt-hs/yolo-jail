@@ -1,7 +1,7 @@
 ---
 status: accepted
 stage: DECIDED
-next: "Refresh the engineering sketch against current source, close layout details and obtain authorized native Seatbelt evidence before a build handoff"
+next: "Build the plan's slices in order; the account-home hold goes only after the native concurrent-workspace verification passes"
 tags: [macos-user, workspaces, concurrency, seatbelt, home]
 vantage:
   status-chip: true
@@ -9,7 +9,7 @@ vantage:
 
 # Two native workspaces use private homes under one guest UID
 
-**Status:** 2026-10-22. All owner rulings are recorded; the architecture and threat boundary below are accepted. Implementation and native Mac verification remain incomplete; the current cross-workspace account-home hold remains in place. This is not a build handoff.
+**Status:** 2026-10-22. All owner rulings are recorded; the architecture and threat boundary below are accepted. Nothing is built, and native enforcement is unmeasured; the current cross-workspace account-home hold remains in place. The companion plan is the build handoff.
 
 > **In short.** Different workspaces run concurrently under one `_yolojail` guest OS user, each with a private `HOME` and persistent workspace state. Seatbelt preserves only explicitly selected shared machine paths; it does not grant access to sibling workspace homes.
 
@@ -23,7 +23,7 @@ vantage:
 
 **Needs your ruling:** None.
 
-**Reads with:** [the home tiers](../reference/macos-user-home-tiers.md#decision-ledger) (selected architecture and current implementation), [native privilege lifecycle](macos-user-privilege-lifecycle.md#points-settled-in-the-walkthrough-2026-10-15) (one enrolled user and one run-as account), [native direction](../reference/macos-no-vm-direction.md) (native plus container fallback), [the implementation sketch](macos-user-concurrent-workspaces-plan.md) (incomplete, not a build handoff).
+**Reads with:** [the home tiers](../reference/macos-user-home-tiers.md#decision-ledger) (selected architecture and current implementation), [native privilege lifecycle](macos-user-privilege-lifecycle.md#points-settled-in-the-walkthrough-2026-10-15) (one enrolled user and one run-as account), [native direction](../reference/macos-no-vm-direction.md) (native plus container fallback), [the implementation plan](macos-user-concurrent-workspaces-plan.md) (the build handoff: layout, slices and native verification steps).
 
 ---
 
@@ -47,11 +47,11 @@ The existing same-workspace admission and staging serialization remain in force.
 
 ## Remaining design and verification work
 
-A build handoff still needs the exact physical home/state layout and an inventory of all readers of `HOME` and its relatives, including passwd/home lookups, login rc files, root-level `host_files`, install prefixes, mise/cache paths, and relative pack hooks. That work must preserve the selected shared-path policy rather than turn one broad home ancestor into a Seatbelt re-allow.
+The exact physical home/state layout and the treatment of every reader of `HOME` and its relatives (passwd/home lookups, login rc files, root-level `host_files`, install prefixes, mise/cache paths, relative pack hooks) are engineering decisions recorded in [the implementation plan](macos-user-concurrent-workspaces-plan.md#implementation-decisions). They preserve the selected shared-path policy rather than turn one broad home ancestor into a Seatbelt re-allow.
 
 The project home and its ordinary state persist across Pi sessions, retained by default like a container workspace's `.yolo` state. Session exit or workspace removal does not authorize deletion. There is no automatic deletion, expiry or size cap. Any future explicit cleanup requires separate authorization and must refuse deletion while state is live or liveness is unknown; this design adds no cleanup operation. Exact migration mechanics remain engineering work under that retention rule. See [OQ-MCW3](#OQ-MCW3).
 
-Native Seatbelt behavior is unproven by rendered-profile tests or Linux fixtures. Before a build handoff, prove on disposable Mac state that two simultaneous workspaces retain their own HOME/state view and the kernel denies sibling-home/state access while allowing only selected machine paths. The boundary is settled; its native enforcement remains unmeasured. Native hardware trials needing guest/root/account setup or credential access require separate authorization; none is granted here.
+Native Seatbelt behavior is unproven by rendered-profile tests or Linux fixtures. Before the account-home hold is removed, prove on disposable Mac state that two simultaneous workspaces retain their own HOME/state view and the kernel denies sibling-home/state access while allowing only selected machine paths; the plan stages a kernel feasibility run before the bootstrap work and gates the HOME switch and the hold removal on native runs. The boundary is settled; its native enforcement remains unmeasured. Native hardware trials needing guest/root/account setup or credential access require separate authorization; none is granted here.
 
 ## Decision ledger
 
