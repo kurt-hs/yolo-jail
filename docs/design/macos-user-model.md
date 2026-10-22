@@ -19,7 +19,7 @@ concerns, except for user readable files"*, and the parity model with podman is 
 general"*. The prototype in [§6](#6-what-a-prototype-must-show) is what turns that direction into a
 ruling.
 
-**Needs your ruling:** [OQ-MM1](#OQ-MM1), [OQ-MM2](#OQ-MM2), [OQ-MM3](#OQ-MM3), [OQ-MM4](#OQ-MM4).
+**Needs your ruling:** [OQ-MM1](#OQ-MM1), [OQ-MM2](#OQ-MM2), [OQ-MM3](#OQ-MM3), [OQ-MM4](#OQ-MM4), [OQ-MM5](#OQ-MM5).
 
 **Reads with:** [Agent Safehouse research](../research/agent-safehouse.md) (the evidence for every
 Safehouse claim here), [SandVault and Safehouse compatibility](sandvault-safehouse-compat.md), and
@@ -69,7 +69,7 @@ is none the doc says so.
 | The image's `/usr`, `/bin`, `/nix/store`, read-only | read allowed on the system and nix paths tools need | yes |
 | Workspace bound read-write at `/workspace` | read-write allowed on the workspace **at its real path** | **no path relocation** |
 | `/home/agent`, backed by `.yolo/home` | `HOME` set to `<workspace>/.yolo/home`, read-write allowed | yes, at a real path |
-| `mounts` (read-only or read-write) | read, or read-write, allowed on each listed path | yes |
+| `mounts` (read-only or read-write), bound at `/ctx/<name>` | read, or read-write, allowed on each listed path **at its original path**, with a link at `$YOLO_CONTEXT_DIR/<name>` to it (what macos-user already does, [context mounts](../reference/context-mounts.md)) | yes; containers could also bind at the original path, [OQ-MM5](#OQ-MM5) |
 | `host_files` copied into the home | rendered into that `HOME` the same way | yes |
 | Shared caches (mise, tool caches) | read-write allowed on the machine cache directories | yes |
 | PID namespace: no host processes visible | cross-process inspection denied (built today); signals to processes outside the sandbox denied | yes |
@@ -91,10 +91,13 @@ is none the doc says so.
 **What it buys.** Three things. Only the first is lost by moving to the Safehouse model; a
 deny-by-default profile replaces the other two, so they are no reason to keep the account:
 
-1. **A backstop under the profile — lost.** If the profile wrongly allows a read, Unix permissions
-   still protect your owner-only files. Under the Safehouse model a missed rule exposes them. This
-   is the one benefit nothing replaces, and it is the maintainer's *"except for user readable
-   files"*.
+1. **A backstop under the profile — lost, and small.** Under deny-by-default a *missing* rule fails
+   closed: a tool that needs a path breaks, and nothing is exposed. Exposure needs an allow rule
+   that is too broad (a parent folder instead of the one subfolder a tool needs, such as all of
+   `/opt` instead of `/opt/homebrew`) or a Seatbelt bug. Only then would Unix permissions on your
+   owner-only files still have stopped the read under a second account. Both are reviewable: the
+   allow list is short and each allow is tested ([§6](#6-what-a-prototype-must-show)). This is the
+   one benefit nothing replaces, and it is the maintainer's *"except for user readable files"*.
 2. **Separate per-user services — replaced.** As a different user, the agent can't reach your
    keychain, clipboard or Apple Events (which can drive your other apps). Running as you, a
    deny-by-default service list does the same; Safehouse denies the keychain unless asked.
@@ -196,6 +199,20 @@ is where its checks become permanent tests.
    `/Users/Shared/yolo` and workspace state under it. This is a breaking change by design.
 
    _Leaning:_ stop using it at once, offer a removal command, and say so once at launch.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
+5. <a id="OQ-MM5"></a>💬 **[`OQ-MM5`](#OQ-MM5) — Should container jails also bind each `mounts` entry at its original host path?**
+
+   <!-- vantage: question id=OQ-MM5 leaning="Yes, in addition to /ctx/<name>, with the same read-only or read-write mode, refusing an original path that collides with a path the jail itself uses." -->
+
+   On macOS an agent sees a mount at its real path and through `$YOLO_CONTEXT_DIR/<name>`.
+   Containers bind it at `/ctx/<name>` only, so a path written in a prompt, a config or a script
+   means one thing on macOS and nothing in a container. Binding it at both places makes the two
+   agree. An original path can collide with one the jail owns (`/home/agent`, `/nix`, `/workspace`).
+
+   _Leaning:_ bind at both, same mode; refuse a colliding original path, naming it.
 
    **Answer:**
    > _(empty — fill in when decided)_
