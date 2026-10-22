@@ -10,9 +10,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-22
+
+You can keep chosen host settings out of your jails, and run a yolo checkout without replacing your installed command.
+
 ### Added
 
-**Run a checkout without replacing your installed command.** Use `just dev` or link the checkout's development launcher to any PATH name, including `yolo`. Remove `YOLO_REPO_ROOT` from your shell configuration; it no longer selects launch sources.
+**Keep chosen host settings out of the jail.** With `host_management` unset or `"none"`, list exact settings in your user config under `host_import_exclusions`, such as Claude's `/hooks`, and yolo drops them from what it imports. Your host files are never edited. See `yolo config-ref`.
+
+**Run a checkout without replacing your installed command.** Use `just dev`, or link the checkout's development launcher to any name on your PATH, including `yolo`. Each launch uses the build that matches the checkout.
+
+### Changed
+
+- **`YOLO_REPO_ROOT` no longer selects launch sources**, and a launch refuses it. Remove it from your shell configuration; to run a checkout, use `just dev` or its development launcher.
+
+### Fixed
+
+- On macOS (`macos-user`), patched forks and extensions launch again instead of refusing with "did not materialize as the admitted output tree".
 
 ## [0.15.0] - 2026-10-19
 
