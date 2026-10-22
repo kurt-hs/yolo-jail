@@ -10,7 +10,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.16.0] - 2026-10-22
+## [0.15.1] - 2026-10-22
 
 You can keep chosen host settings out of your jails, and run a yolo checkout without replacing your installed command.
 
