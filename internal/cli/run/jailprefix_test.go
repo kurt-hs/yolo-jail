@@ -15,8 +15,8 @@ import (
 )
 
 // stageBundle writes a complete flake bundle at root: flake.nix, flake.lock and, when
-// withBinaries, the prebuilt bin/linux-<arch>/ every SHIPPED bundle carries. It is the exact
-// shape scripts/stage-source-bundle.sh produces, which is what makes the
+// withBinaries, the prebuilt bin/linux-<arch>/ helper set plus the bin/darwin-<arch>/ guest
+// set. It is the exact shape scripts/stage-source-bundle.sh produces, which is what makes the
 // prebuilt branch below a test of the real layout rather than of a stub.
 func stageBundle(t *testing.T, withBinaries bool) string {
 	t.Helper()
@@ -46,6 +46,15 @@ func stageBundleAt(t *testing.T, root string, withBinaries bool) {
 	}
 	for _, name := range requiredJailBinaries {
 		if err := os.WriteFile(filepath.Join(binDir, name), []byte("binary"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	guestBinDir := macosuser.PrebuiltGuestBinDir(root)
+	if err := os.MkdirAll(guestBinDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range macosuser.GuestBinaries {
+		if err := os.WriteFile(filepath.Join(guestBinDir, name), []byte("binary"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -220,6 +229,20 @@ func TestMountDestinationsSatisfyTheExeRelativeResolver(t *testing.T) {
 		t.Fatal(err)
 	}
 	stageBundleAt(t, share, true)
+	// The resolver validates Darwin guest helpers on macOS as well as the Linux
+	// helper set used by the jail. Keep both shipped platform sets in this fixture
+	// so this test exercises the same complete bundle on every host OS.
+	for _, name := range macosuser.GuestBinaries {
+		path := filepath.Join(macosuser.PrebuiltGuestBinDir(share), name)
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Errorf("Darwin guest helper %q is missing from the complete bundle fixture: %v", name, err)
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			t.Errorf("Darwin guest helper %q in the complete bundle fixture is not a regular file", name)
+		}
+	}
 	if got, ok := reporoot.BundledSourceDirFrom(binDir); !ok || got != share {
 		t.Errorf("BundledSourceDirFrom(%q) = (%q, %v), want (%q, true)", binDir, got, ok, share)
 	}
