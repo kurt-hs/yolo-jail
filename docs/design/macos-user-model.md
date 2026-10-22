@@ -3,7 +3,7 @@ title: "macos-user's model: a second account, or a sandbox that starts from noth
 date: 2026-10-22
 status: in-review
 stage: DESIGN
-next: "Prototype the deny-by-default profile on a Mac in both modes (§6), rule OQ-MM2 to OQ-MM5, then seed the plan"
+next: "Prototype the deny-by-default profile on a Mac in both modes (§6), rule OQ-MM6, then seed the plan"
 tags: [macos-user, seatbelt, design, isolation, parity, safehouse, sandvault]
 summary: "Today macos-user runs the agent as a second Mac account under a Seatbelt profile that allows everything and denies a short list (SandVault's model). Ruled 2026-10-22: macos-user moves to Safehouse's model, the agent running as you under a profile that denies everything and allows a list, the closest macOS gets to podman's start-from-nothing container; the second account is kept from day one as an optional mode, off by default, on the same profile. This doc lays the models side by side, maps podman's pieces onto the Safehouse model, and names what the second account buys and costs."
 vantage:
@@ -14,9 +14,9 @@ vantage:
 
 **Status:** 2026-10-22 — the model is ruled ([§7](#7-the-ruled-model-two-modes-one-profile)); nothing
 is built. The [§6](#6-what-a-prototype-must-show) prototype is the check before building, not a
-reopening of the ruling. Four questions remain, none of which changes the model.
+reopening of the ruling. One small question remains.
 
-**Needs your ruling:** [OQ-MM2](#OQ-MM2), [OQ-MM3](#OQ-MM3), [OQ-MM4](#OQ-MM4), [OQ-MM5](#OQ-MM5).
+**Needs your ruling:** [OQ-MM6](#OQ-MM6).
 
 **Reads with:** [Agent Safehouse research](../research/agent-safehouse.md) (the evidence for every
 Safehouse claim here), [SandVault and Safehouse compatibility](sandvault-safehouse-compat.md), and
@@ -66,11 +66,11 @@ is none the doc says so.
 | The image's `/usr`, `/bin`, `/nix/store`, read-only | read allowed on the system and nix paths tools need | yes |
 | Workspace bound read-write at `/workspace` | read-write allowed on the workspace **at its real path** | **no path relocation** |
 | `/home/agent`, backed by `.yolo/home` | `HOME` set to `<workspace>/.yolo/home`, read-write allowed | yes, at a real path |
-| `mounts` (read-only or read-write), bound at `/ctx/<name>` | read, or read-write, allowed on each listed path **at its original path**, with a link at `$YOLO_CONTEXT_DIR/<name>` to it (what macos-user already does, [context mounts](../reference/context-mounts.md)) | yes; containers could also bind at the original path, [OQ-MM5](#OQ-MM5) |
+| `mounts` (read-only or read-write), bound at `/ctx/<name>` | a link at `$YOLO_CONTEXT_DIR/<name>`, with read, or read-write, allowed on the original path because the link needs it (what macos-user already does, [context mounts](../reference/context-mounts.md)) | yes: `$YOLO_CONTEXT_DIR/<name>` is the one supported path on every backend ([OQ-MM5](#OQ-MM5)) |
 | `host_files` copied into the home | rendered into that `HOME` the same way | yes |
 | Shared caches (mise, tool caches) | read-write allowed on the machine cache directories | yes |
 | PID namespace: no host processes visible | cross-process inspection denied (built today); signals to processes outside the sandbox denied | yes |
-| Network bridge with its own loopback | network open, and **the host's loopback is shared** | **gap**, see [OQ-MM3](#OQ-MM3) |
+| Network bridge with its own loopback | network open; **the host's loopback denied** except yolo's own service ports and ports the workspace config allows ([OQ-MM3](#OQ-MM3)) | yes |
 | An environment yolo builds from scratch | the same: the launcher builds the environment | yes |
 | A user that is not you | **you** | **the trade, see [§4](#4-what-the-second-account-buys-and-what-it-costs)** |
 | No host services | system services denied by default, allowing a short list (Safehouse allows 16) | yes |
@@ -129,7 +129,7 @@ Running as you, everything the second account used to keep out must be named in 
   this);
 - Apple Events, the clipboard, accessibility and notification services;
 - signals to your processes, and inspecting them;
-- your loopback services, depending on [OQ-MM3](#OQ-MM3).
+- your loopback services, except yolo's own and the ports the workspace allows ([OQ-MM3](#OQ-MM3)).
 
 ## 6. What a prototype must show
 
@@ -171,6 +171,22 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
   path with a context-dir link; the host keychain reached only through the loophole the
   [keychain design](keychain-from-a-jail.md#41-macos-user-no-seam-and-probably-no-keychain) rules
   ([OQ-KC4](keychain-from-a-jail.md#8-decision-ledger): *"always the host's keychain"*), never by the sandbox.
+- **The profile starts from Safehouse's** layered profiles (Apache-2.0, credited), adapted to nix
+  and narrowed wherever they read wider than yolo wants: install trees such as `/opt/homebrew`,
+  never a parent such as `/opt` ([OQ-MM2](#OQ-MM2)).
+- **Loopback is denied by default**, as podman's own loopback keeps your local services out of
+  reach. yolo's own service ports are allowed. A workspace may allow more ports in its config; a
+  change to that list goes through the same config-change approval as any other workspace config
+  edit ([config safety](../reference/config-safety.md)). The key's name is the plan's to choose
+  ([OQ-MM3](#OQ-MM3)).
+- **Mounts are reached at `$YOLO_CONTEXT_DIR/<name>`** on every backend. Containers do not also bind
+  them at the original host path. On macOS the profile allows the original path only because the
+  link resolves there; a script that uses the original path directly works on macOS by accident,
+  and nothing promises it ([OQ-MM5](#OQ-MM5)).
+- **No transition for Macs already set up for the second account.** Launches move to the default
+  mode, and nothing migrates, cleans up or announces the old account. Reusing an existing account
+  for the optional mode is welcome if it falls out of the build, but is not required
+  ([OQ-MM4](#OQ-MM4)).
 - **Selecting the mode** is a user-scope setting; a workspace config cannot choose it. Its name and
   spelling are the plan's to choose.
 - **What done looks like:** with no setting, `yolo -- claude` in `~/code/alpha` launches with no
@@ -180,56 +196,16 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
 
 ## 8. Open questions
 
-1. <a id="OQ-MM2"></a>💬 **[`OQ-MM2`](#OQ-MM2) — Borrow Safehouse's profiles, or write our own allow list?**
+1. <a id="OQ-MM6"></a>💬 **[`OQ-MM6`](#OQ-MM6) — Should every backend also show the context dir from the agent's home?**
 
-   <!-- vantage: question id=OQ-MM2 leaning="Start from Safehouse's layered profiles (Apache-2.0, with attribution), adapted for nix and narrowed where they read wider than yolo wants, such as all of /opt." -->
+   <!-- vantage: question id=OQ-MM6 leaning="Yes: a ~/ctx link to $YOLO_CONTEXT_DIR in the agent's home on every backend, so mounts are browsable from the home the agent starts in; $YOLO_CONTEXT_DIR stays the documented path." -->
 
-   Their profiles are Apache-2.0 and split by layer (base, system runtime, network, toolchains,
-   agents). They assume Homebrew rather than nix, and their system layer reads all of `/opt`, which
-   would leave `/opt/src/clientX` readable.
+   Mounts live under `$YOLO_CONTEXT_DIR` (`/ctx` in a container, a folder yolo picks on macOS). The
+   maintainer would like them *"always visible in the home directory version"*: a `ctx` link in the
+   agent's home pointing there, on every backend. It costs one link per launch and changes no
+   access, since the link points at what the profile or the binds already allow.
 
-   _Leaning:_ start from theirs, narrowed, with attribution.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-2. <a id="OQ-MM3"></a>💬 **[`OQ-MM3`](#OQ-MM3) — Can the agent reach services on your loopback?**
-
-   <!-- vantage: question id=OQ-MM3 leaning="Deny loopback by default and allow the ports yolo's own services use, matching podman, where the jail has its own loopback." -->
-
-   On podman the jail has its own loopback, so your local database or dev server is out of reach
-   unless yolo forwards it. On macOS the agent shares yours today, in every model. Seatbelt can deny
-   outbound connections to loopback and allow named ports.
-
-   _Leaning:_ deny by default, allow yolo's own service ports.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-3. <a id="OQ-MM4"></a>💬 **[`OQ-MM4`](#OQ-MM4) — What happens to a Mac already set up for the second account?**
-
-   <!-- vantage: question id=OQ-MM4 leaning="Launches switch to the default mode; the existing account, its grants and its state stay, and opting into the second-account mode uses them; yolo names the opt-in once at the first launch after upgrading and deletes nothing." -->
-
-   Existing users have the `_yolojail` account, its passwordless switching, access grants on
-   `/Users/Shared/yolo` and workspace state under it. Under [§7](#7-the-ruled-model-two-modes-one-profile)
-   the default becomes running as you, and the account becomes the optional mode.
-
-   _Leaning:_ switch to the default, keep the account and its state for the opt-in, say so once,
-   delete nothing.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-4. <a id="OQ-MM5"></a>💬 **[`OQ-MM5`](#OQ-MM5) — Should container jails also bind each `mounts` entry at its original host path?**
-
-   <!-- vantage: question id=OQ-MM5 leaning="Yes, in addition to /ctx/<name>, with the same read-only or read-write mode, refusing an original path that collides with a path the jail itself uses." -->
-
-   On macOS an agent sees a mount at its real path and through `$YOLO_CONTEXT_DIR/<name>`.
-   Containers bind it at `/ctx/<name>` only, so a path written in a prompt, a config or a script
-   means one thing on macOS and nothing in a container. Binding it at both places makes the two
-   agree. An original path can collide with one the jail owns (`/home/agent`, `/nix`, `/workspace`).
-
-   _Leaning:_ bind at both, same mode; refuse a colliding original path, naming it.
+   _Leaning:_ add `~/ctx` on every backend; keep `$YOLO_CONTEXT_DIR` as the documented path.
 
    **Answer:**
    > _(empty — fill in when decided)_
@@ -241,3 +217,7 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
 | MM-R1 | The risk that an access grant on a home folder exposes `~/.ssh` is acceptable, not a blocker. | 2026-10-22 | [§4](#4-what-the-second-account-buys-and-what-it-costs) | — |
 | <a id="OQ-MM1"></a>[OQ-MM1](#OQ-MM1) | macos-user moves to Safehouse's model: a deny-by-default profile, the agent running as you by default. The [§6](#6-what-a-prototype-must-show) prototype is the gate before building. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
 | MM-R2 | The second account is kept from day one as an optional mode, off by default, running the same profile; it alone carries account setup and workspace access grants. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
+| <a id="OQ-MM2"></a>[OQ-MM2](#OQ-MM2) | Start from Safehouse's layered profiles (Apache-2.0, credited), adapted for nix and narrowed where they read wider than yolo wants, such as all of `/opt`. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
+| <a id="OQ-MM3"></a>[OQ-MM3](#OQ-MM3) | Deny loopback by default and allow yolo's own service ports, matching podman; a workspace config may allow more ports, through the config-change approval. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
+| <a id="OQ-MM4"></a>[OQ-MM4](#OQ-MM4) | No transition for Macs already set up for the second account; reusing the account for the optional mode is welcome, not required. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
+| <a id="OQ-MM5"></a>[OQ-MM5](#OQ-MM5) | Containers do not also bind mounts at their original host path; `$YOLO_CONTEXT_DIR/<name>` is the one supported path, and macOS allows the original path only for the link. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | — |
