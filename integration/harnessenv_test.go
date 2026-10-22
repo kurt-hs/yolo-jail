@@ -85,6 +85,29 @@ sys.exit(17)
 	}
 }
 
+// The suite's own YOLO_TEST_* dials (set by the workflows: YOLO_TEST_MACOS_USER and friends) are
+// read by this test process, never by yolo. Inherited by a launch, each draws yolo's unknown-
+// variable warning, whose `YOLO_RUNTIME=podman yolo` hint then satisfied or broke assertions about
+// what a REFUSAL offers (TestMacosUserPatchedExtensionConflictRefusesAndSkipStartsWithoutIt failed
+// on the macos-user job that way). A call's own withEnv pair still reaches the child.
+func TestLaunchEnvironmentDropsTheSuitesOwnDials(t *testing.T) {
+	t.Setenv("YOLO_TEST_MACOS_USER", "1")
+	t.Setenv("YOLO_TEST_MACOS_USER_RELOCATION_VOLUMES", "1")
+	t.Setenv("YOLO_NO_BANNER", "1")
+	env := launchEnvironment(runConfig{env: []string{"YOLO_TEST_EXPLICIT=1"}})
+	for _, kv := range env {
+		name, _, _ := strings.Cut(kv, "=")
+		if strings.HasPrefix(name, "YOLO_TEST_") && name != "YOLO_TEST_EXPLICIT" {
+			t.Errorf("launch environment inherits the suite's dial %s", kv)
+		}
+	}
+	for _, want := range []string{"YOLO_NO_BANNER=1", "YOLO_TEST_EXPLICIT=1"} {
+		if !slices.Contains(env, want) {
+			t.Errorf("launch environment lacks %s, which yolo reads or the call asked for", want)
+		}
+	}
+}
+
 func TestMatchedHarnessUsesAdjacentBundleAndScrubsObsoleteSelector(t *testing.T) {
 	launcher := filepath.Join("/tmp", "dev generation", "bin", "yolo")
 	wantBundle := filepath.Join("/tmp", "dev generation", "share", "yolo-jail")

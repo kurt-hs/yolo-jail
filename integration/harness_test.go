@@ -922,12 +922,14 @@ func runLaunch(t *testing.T, dir string, args []string, opts ...runOption) (resu
 
 // launchEnvironment is the child environment every harness launch gets: the suite's own, then
 // the run's repo root, auto-capture and readiness dials, then the call's withEnv pairs, so a
-// later entry for a name wins.
+// later entry for a name wins. The suite's own YOLO_TEST_* dials are dropped from what it
+// inherits: this process reads them and yolo reads none, so passed on, each would only add
+// yolo's unknown-variable warning to the output every test asserts on.
 func launchEnvironment(cfg runConfig) []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
-		if !slices.Contains(cfg.unset, name) {
+		if !slices.Contains(cfg.unset, name) && !strings.HasPrefix(name, "YOLO_TEST_") {
 			env = append(env, kv)
 		}
 	}
