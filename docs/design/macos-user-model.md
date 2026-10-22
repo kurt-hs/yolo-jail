@@ -1,9 +1,9 @@
 ---
 title: "macos-user's model: a second account, or a sandbox that starts from nothing"
 date: 2026-10-22
-status: in-review
-stage: DESIGN
-next: "Prototype the deny-by-default profile on a Mac in both modes (§6), rule OQ-MM6, then seed the plan"
+status: accepted
+stage: DECIDED
+next: "Prototype the deny-by-default profile on a Mac in both modes (§6), then seed the plan"
 tags: [macos-user, seatbelt, design, isolation, parity, safehouse, sandvault]
 summary: "Today macos-user runs the agent as a second Mac account under a Seatbelt profile that allows everything and denies a short list (SandVault's model). Ruled 2026-10-22: macos-user moves to Safehouse's model, the agent running as you under a profile that denies everything and allows a list, the closest macOS gets to podman's start-from-nothing container; the second account is kept from day one as an optional mode, off by default, on the same profile. This doc lays the models side by side, maps podman's pieces onto the Safehouse model, and names what the second account buys and costs."
 vantage:
@@ -14,9 +14,9 @@ vantage:
 
 **Status:** 2026-10-22 — the model is ruled ([§7](#7-the-ruled-model-two-modes-one-profile)); nothing
 is built. The [§6](#6-what-a-prototype-must-show) prototype is the check before building, not a
-reopening of the ruling. One small question remains.
+reopening of the ruling. No question remains.
 
-**Needs your ruling:** [OQ-MM6](#OQ-MM6).
+**Needs your ruling:** none.
 
 **Reads with:** [Agent Safehouse research](../research/agent-safehouse.md) (the evidence for every
 Safehouse claim here), [SandVault and Safehouse compatibility](sandvault-safehouse-compat.md), and
@@ -182,7 +182,9 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
 - **Mounts are reached at `$YOLO_CONTEXT_DIR/<name>`** on every backend. Containers do not also bind
   them at the original host path. On macOS the profile allows the original path only because the
   link resolves there; a script that uses the original path directly works on macOS by accident,
-  and nothing promises it ([OQ-MM5](#OQ-MM5)).
+  and nothing promises it ([OQ-MM5](#OQ-MM5)). Every backend also puts a `ctx` link in the agent's
+  home pointing at `$YOLO_CONTEXT_DIR`, so mounts are browsable from where the agent starts;
+  `$YOLO_CONTEXT_DIR` stays the documented path ([OQ-MM6](#OQ-MM6)).
 - **No transition for Macs already set up for the second account.** Launches move to the default
   mode, and nothing migrates, cleans up or announces the old account. Reusing an existing account
   for the optional mode is welcome if it falls out of the build, but is not required
@@ -196,19 +198,7 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
 
 ## 8. Open questions
 
-1. <a id="OQ-MM6"></a>💬 **[`OQ-MM6`](#OQ-MM6) — Should every backend also show the context dir from the agent's home?**
-
-   <!-- vantage: question id=OQ-MM6 leaning="Yes: a ~/ctx link to $YOLO_CONTEXT_DIR in the agent's home on every backend, so mounts are browsable from the home the agent starts in; $YOLO_CONTEXT_DIR stays the documented path." -->
-
-   Mounts live under `$YOLO_CONTEXT_DIR` (`/ctx` in a container, a folder yolo picks on macOS). The
-   maintainer would like them *"always visible in the home directory version"*: a `ctx` link in the
-   agent's home pointing there, on every backend. It costs one link per launch and changes no
-   access, since the link points at what the profile or the binds already allow.
-
-   _Leaning:_ add `~/ctx` on every backend; keep `$YOLO_CONTEXT_DIR` as the documented path.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+None. Every question this doc raised is ruled; see the [Decision Ledger](#decision-ledger).
 
 ## Decision Ledger
 
@@ -220,4 +210,5 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
 | <a id="OQ-MM2"></a>[OQ-MM2](#OQ-MM2) | Start from Safehouse's layered profiles (Apache-2.0, credited), adapted for nix and narrowed where they read wider than yolo wants, such as all of `/opt`. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
 | <a id="OQ-MM3"></a>[OQ-MM3](#OQ-MM3) | Deny loopback by default and allow yolo's own service ports, matching podman; a workspace config may allow more ports, through the config-change approval. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
 | <a id="OQ-MM4"></a>[OQ-MM4](#OQ-MM4) | No transition for Macs already set up for the second account; reusing the account for the optional mode is welcome, not required. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
+| <a id="OQ-MM6"></a>[OQ-MM6](#OQ-MM6) | A `~/ctx` link to `$YOLO_CONTEXT_DIR` in the agent's home on every backend; `$YOLO_CONTEXT_DIR` stays the documented path. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
 | <a id="OQ-MM5"></a>[OQ-MM5](#OQ-MM5) | Containers do not also bind mounts at their original host path; `$YOLO_CONTEXT_DIR/<name>` is the one supported path, and macOS allows the original path only for the link. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | — |
