@@ -215,15 +215,23 @@ func awaitLaunchLockReleased(t *testing.T, dir string, first *bgRun) {
 	}
 }
 
-// TestConcurrentLaunchesInOneWorkspace: two launches, one workspace. The second must say
-// it is waiting, wait, and then attach to the container the first created.
+// TestConcurrentLaunchesInOneWorkspace: launches of one workspace that find its launch lock
+// held must say they are waiting, wait, and then resolve to ONE jail: one launch creates it and
+// the other attaches to it, reporting the attach as a raced one.
 //
-// The sequencing is what makes the assertion deterministic rather than hopeful. The second
-// launch is started only once the lock is observably HELD, which is a window the first
-// launch keeps open for its whole image-load-and-create phase (the lock is released from
-// on_started, after the container is running). Starting both at once instead would leave
-// the notice to a coin flip: a second launch that arrives after the container exists never
-// contends at all, it just attaches.
+// THE TEST HOLDS THE LOCK ITSELF, and that is what makes it deterministic. It used to start a
+// first launch, poll until that launch held the lock, and only then start the second, on the
+// assumption that the first kept the lock through a long image-load-and-create phase. It does
+// not any more: the launch lock opens just above the attach decision (holdLaunchLock), and with
+// the matched bundle the image load is skipped, so the first launch's hold is brief. CI run
+// 39800498108 lost that race: the second launch reached its probe after the first had released,
+// found the container, and printed "Attaching to existing jail" without ever contending.
+//
+// Holding the lock from this process removes the window. Both launches are certain to find it
+// held, both print the notice, and neither can proceed until the test lets go. Then exactly one
+// wins the lock, finds no jail and creates it, releasing the lock once its container is running
+// (onStarted); the other takes the lock, finds that container, and attaches through the raced
+// arm, because it waited for the lock (runContainer hands launchLockWaited to attachExisting).
 func TestConcurrentLaunchesInOneWorkspace(t *testing.T) {
 	requireJail(t)
 
@@ -234,80 +242,125 @@ func TestConcurrentLaunchesInOneWorkspace(t *testing.T) {
 	cname := naming.FromWorkspace(dir)
 	lockPath := filepath.Join(paths.GlobalStorage(), "locks", cname+".lock")
 
-	// The first launch holds its container open until the test releases it, via the live
-	// /workspace bind — the same directory this process writes the sentinel into.
-	const releaseName = "release-first-launch"
-	first := startYoloBackground(t, "first", dir,
-		`echo FIRST-JAIL-UP; `+
-			`for _ in $(seq 1 600); do [ -f /workspace/`+releaseName+` ] && break; sleep 0.5; done; `+
-			`echo FIRST-JAIL-DONE`)
+	// Take the workspace launch lock from THIS process before either launch starts. The locks
+	// directory is otherwise created by a launch, so a fresh storage may not have it yet.
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		t.Fatalf("creating the lock directory: %v", err)
+	}
+	lockFile, err := flockWait(lockPath, syscall.LOCK_EX, time.Now().Add(jailTimeout()))
+	if err != nil {
+		t.Fatalf("could not take the workspace lock %s: %v", lockPath, err)
+	}
+	var unlockOnce sync.Once
+	unlock := func() { unlockOnce.Do(func() { _ = lockFile.Close() }) } // closing drops the flock
+	t.Cleanup(unlock)
+
+	// Both launches run the same command: say it ran, then hold the session open until the test
+	// writes the sentinel into the live /workspace bind. The hold matters for whichever launch
+	// creates the jail: its command is the container's, and the jail ending under the attached
+	// session would fail the other launch for a reason that is not under test.
+	const ranMarker = "JAIL-COMMAND-RAN"
+	const doneMarker = "JAIL-COMMAND-DONE"
+	const releaseName = "release-launches"
+	script := `echo ` + ranMarker + `; ` +
+		`for _ in $(seq 1 600); do [ -f /workspace/` + releaseName + ` ] && break; sleep 0.5; done; ` +
+		`echo ` + doneMarker
 	release := func() { _ = os.WriteFile(filepath.Join(dir, releaseName), []byte("go\n"), 0o644) }
 	t.Cleanup(release)
 
-	// Wait for the first launch to own the lock.
-	deadline := time.Now().Add(jailTimeout())
-	for !lockIsHeld(t, lockPath) {
-		select {
-		case err := <-first.done:
-			t.Fatalf("first launch exited (%v) before taking the workspace lock:\n%s",
-				err, first.combined())
-		default:
+	launches := []*bgRun{
+		startYoloBackground(t, "launch-a", dir, script),
+		startYoloBackground(t, "launch-b", dir, script),
+	}
+	allOutput := func() string {
+		var b strings.Builder
+		for _, l := range launches {
+			fmt.Fprintf(&b, "--- %s ---\n%s\n", l.name, l.combined())
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("first launch never took the workspace lock %s within %s:\n%s",
-				lockPath, jailTimeout(), first.combined())
+		return b.String()
+	}
+
+	// awaitAll polls until every launch's output contains want, failing if one exits first.
+	awaitAll := func(want, what string) {
+		t.Helper()
+		deadline := time.Now().Add(jailTimeout())
+		for {
+			pending := 0
+			for _, l := range launches {
+				if strings.Contains(l.combined(), want) {
+					continue
+				}
+				pending++
+				select {
+				case <-l.exited:
+					t.Fatalf("%s exited before it %s:\n%s", l.name, what, allOutput())
+				default:
+				}
+			}
+			if pending == 0 {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("not every launch %s within %s:\n%s", what, jailTimeout(), allOutput())
+			}
+			time.Sleep(50 * time.Millisecond)
 		}
-		time.Sleep(50 * time.Millisecond)
 	}
 
-	// Second launch, into the same workspace, while the lock is held.
-	second := startYoloBackground(t, "second", dir, `echo SECOND-JAIL-COMMAND-RAN`)
-	rc := second.wait(t, jailTimeout())
-	got := second.combined()
-
-	// (1) The waiting notice — the defect this test exists for. Before the non-blocking
-	// probe went in, the second launch printed NOTHING here and read as a hang.
-	var missing []string
-	for _, want := range []string{
-		"Waiting for concurrent jail launch",
-		dir,             // which workspace is ahead of you
-		cname + ".lock", // and which lock file to look at
-	} {
-		if !strings.Contains(got, want) {
-			missing = append(missing, want)
+	// (1) The waiting notice — the defect this test exists for. Before the non-blocking probe
+	// went in, a launch blocked on the workspace flock printed NOTHING and read as a hang.
+	awaitAll("Waiting for concurrent jail launch", "printed the waiting notice")
+	for _, l := range launches {
+		got := l.combined()
+		var missing []string
+		for _, want := range []string{
+			dir,             // which workspace is ahead of you
+			cname + ".lock", // and which lock file to look at
+		} {
+			if !strings.Contains(got, want) {
+				missing = append(missing, want)
+			}
+		}
+		if len(missing) > 0 {
+			t.Errorf("%s's waiting notice is missing %q:\n%s", l.name, missing, got)
 		}
 	}
-	if len(missing) > 0 {
-		t.Errorf("second launch's waiting notice is missing %q (the silent-wait defect: "+
-			"it blocked on the workspace flock and said nothing):\n%s", missing, got)
-	}
 
-	// (2) Race resolution + graceful attachment: the loser reports the attach rather than
-	// doing it silently, and its command actually runs in the winner's container.
-	if !strings.Contains(got, "Attaching to jail started by another process") {
-		t.Errorf("second launch did not report attaching to the first launch's jail:\n%s", got)
-	}
-	if !strings.Contains(got, "SECOND-JAIL-COMMAND-RAN") {
-		t.Errorf("second launch's command did not run in the attached jail:\n%s", got)
-	}
-	if rc != 0 {
-		t.Errorf("second launch rc = %d, want 0:\n%s", rc, got)
-	}
+	// Let them go: one creates the jail, the other attaches to it.
+	unlock()
+	awaitAll(ranMarker, "ran its command")
 
-	// (3) One workspace, one container: the second launch must not have created a rival.
+	// (2) One workspace, one container, counted while both sessions are still in it: the race
+	// guard exists to keep two launches from creating two jails.
 	if n := runningContainers(t, cname); n != 1 {
-		t.Errorf("%d containers named %s are running, want exactly 1 (the race guard "+
-			"exists to keep two launches from creating two jails)", n, cname)
+		t.Errorf("%d containers named %s are running, want exactly 1:\n%s", n, cname, allOutput())
+	}
+	release()
+
+	attached := 0
+	for _, l := range launches {
+		rc := l.wait(t, jailTimeout())
+		got := l.combined()
+		if rc != 0 {
+			t.Errorf("%s rc = %d, want 0:\n%s", l.name, rc, got)
+		}
+		if !strings.Contains(got, doneMarker) {
+			t.Errorf("%s's command did not run to completion:\n%s", l.name, got)
+		}
+		if strings.Contains(got, "Attaching to jail started by another process") {
+			attached++
+		}
+		if strings.Contains(got, "Attaching to existing jail") {
+			t.Errorf("%s reported a plain attach, but it waited for the lock and so should have "+
+				"reported the raced one:\n%s", l.name, got)
+		}
 	}
 
-	// (4) The first launch is unharmed by having been attached to.
-	release()
-	if rc := first.wait(t, jailTimeout()); rc != 0 {
-		t.Errorf("first launch rc = %d, want 0:\n%s", rc, first.combined())
-	}
-	if out := first.combined(); !strings.Contains(out, "FIRST-JAIL-UP") ||
-		!strings.Contains(out, "FIRST-JAIL-DONE") {
-		t.Errorf("first launch did not run its command to completion:\n%s", out)
+	// (3) Race resolution + graceful attachment: exactly one launch created the jail, and the
+	// other reported attaching to it rather than doing so silently or creating a rival.
+	if attached != 1 {
+		t.Errorf("%d launches reported \"Attaching to jail started by another process\", want "+
+			"exactly 1 (one creates the jail, the other attaches to it):\n%s", attached, allOutput())
 	}
 }
 
