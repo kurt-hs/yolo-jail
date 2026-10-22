@@ -418,7 +418,10 @@ func TestAMacosUserDoorwaysPickedPortIsStillItsOwnWhenAnotherListenerAsksFirst(t
 func postRefresh(t *testing.T, url, refreshToken string) int {
 	t.Helper()
 	body, _ := json.Marshal(map[string]string{"grant_type": "refresh_token", "refresh_token": refreshToken})
-	client := http.Client{Timeout: 10 * time.Second}
+	// A fresh connection per request: through the shared default pool, a refresh after a doorway is
+	// killed can reuse the dead process's kept-alive connection, and a POST is never retried, so it
+	// reads EOF instead of reaching the restarted process on the same address.
+	client := http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{DisableKeepAlives: true}}
 	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Logf("POST %s: %v", url, err)
