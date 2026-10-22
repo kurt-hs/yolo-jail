@@ -1,12 +1,89 @@
 package integration
 
 import (
+	"context"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
+
+// Exercise TestMain itself: a helper-only test would stay green if runSuite
+// stopped calling the common matched-bundle builder. The Python probe stops
+// before any compilation or jail setup, keeping this regression in the short gate.
+func TestMatchedHarnessBuildDoesNotRequireJust(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatal("the matched-bundle build requires python3; provide it on PATH to run this regression")
+	}
+	pythonPath, err := exec.Command(python, "-c", "import sys; print(sys.executable)").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	python = strings.TrimSpace(string(pythonPath))
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := moduleRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := resolvedTempDir(t)
+	capture := filepath.Join(dir, "build-call.json")
+	// Only python3 is on this child's PATH: the recipe runner is absent even
+	// on developer machines that have just installed. Use the real interpreter
+	// to record the build call's arguments and environment without building.
+	probe := "#!" + python + "\n" + `import json, os, sys
+with open(os.environ["MATCHED_BUILD_CAPTURE"], "w") as out:
+    json.dump({"args": sys.argv[1:], "cwd": os.getcwd(), "home": os.environ["HOME"],
+               "selector": os.environ.get("YOLO_REPO_ROOT")}, out)
+print("matched build probe reached", flush=True)
+sys.exit(17)
+`
+	if err := os.WriteFile(filepath.Join(dir, "python3"), []byte(probe), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, self, "-test.run=^$")
+	cmd.Dir = dir // TestMain must use the source root, not the caller's cwd.
+	var env []string
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if !slices.Contains([]string{"PATH", "HOME", "YOLO_REPO_ROOT", "MATCHED_BUILD_CAPTURE"}, key) {
+			env = append(env, entry)
+		}
+	}
+	cmd.Env = append(env,
+		"PATH="+dir, "HOME="+dir, "YOLO_REPO_ROOT=/obsolete/checkout", "MATCHED_BUILD_CAPTURE="+capture)
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "building matched yolo bundle: exit status 17") ||
+		!strings.Contains(string(out), "matched build probe reached") {
+		t.Fatalf("TestMain must reach the common builder without just, then report the probe's failure: %v\n%s", err, out)
+	}
+	data, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var call struct {
+		Args     []string `json:"args"`
+		Cwd      string   `json:"cwd"`
+		Home     string   `json:"home"`
+		Selector *string  `json:"selector"`
+	}
+	if err := json.Unmarshal(data, &call); err != nil {
+		t.Fatal(err)
+	}
+	wantArgs := []string{"scripts/matched-bundle.py", "build-dev", "--repo", root, "--home", dir}
+	if !slices.Equal(call.Args, wantArgs) || call.Cwd != root || call.Home != dir || call.Selector != nil {
+		t.Fatalf("build call = %+v, want args %v, source cwd, inherited HOME, and no obsolete selector", call, wantArgs)
+	}
+}
 
 func TestMatchedHarnessUsesAdjacentBundleAndScrubsObsoleteSelector(t *testing.T) {
 	launcher := filepath.Join("/tmp", "dev generation", "bin", "yolo")

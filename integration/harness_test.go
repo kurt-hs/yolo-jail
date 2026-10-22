@@ -132,7 +132,10 @@ func runSuite(m *testing.M) int {
 	// An inherited selector is obsolete and must never redirect tests to another
 	// checkout. The launcher is paired with its adjacent bundle by executable path.
 	_ = os.Unsetenv("YOLO_REPO_ROOT")
-	build := exec.Command("just", "build-dev-bundle")
+	// Use the same build core as `just build-dev-bundle` without requiring the
+	// recipe runner on every CI job's PATH. The core freezes its own source
+	// snapshot and publishes the launcher and helpers as one matched artifact.
+	build := exec.Command("python3", "scripts/matched-bundle.py", "build-dev", "--repo", repoRoot, "--home", os.Getenv("HOME"))
 	build.Dir = repoRoot // source/build input only; never passed to yolo at runtime
 	build.Env = envWithoutRepoRoot(os.Environ())
 	out, err := build.CombinedOutput()
