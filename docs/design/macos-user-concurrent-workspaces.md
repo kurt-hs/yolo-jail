@@ -1,7 +1,7 @@
 ---
-status: in-review
-stage: DESIGN
-next: "Rule the narrowed same-UID threat and workspace-state lifetime questions, then complete shared-path design and native Seatbelt proof before any build handoff"
+status: accepted
+stage: DECIDED
+next: "Refresh the engineering sketch against current source, close layout details and obtain authorized native Seatbelt evidence before a build handoff"
 tags: [macos-user, workspaces, concurrency, seatbelt, home]
 vantage:
   status-chip: true
@@ -9,7 +9,7 @@ vantage:
 
 # Two native workspaces use private homes under one guest UID
 
-**Status:** 2026-10-20. The owner selected the architecture below. Implementation and native Mac verification remain incomplete; the current cross-workspace account-home hold remains in place. This is not a build handoff.
+**Status:** 2026-10-22. All owner rulings are recorded; the architecture and threat boundary below are accepted. Implementation and native Mac verification remain incomplete; the current cross-workspace account-home hold remains in place. This is not a build handoff.
 
 > **In short.** Different workspaces run concurrently under one `_yolojail` guest OS user, each with a private `HOME` and persistent workspace state. Seatbelt preserves only explicitly selected shared machine paths; it does not grant access to sibling workspace homes.
 
@@ -21,7 +21,7 @@ vantage:
 
 **Start at [the selected boundary](#selected-architecture-and-boundary).**
 
-**Needs your ruling:** [OQ-MCW2](#OQ-MCW2) (same-UID threat boundary), [OQ-MCW3](#OQ-MCW3) (workspace-state reclamation).
+**Needs your ruling:** None.
 
 **Reads with:** [the home tiers](../reference/macos-user-home-tiers.md#decision-ledger) (selected architecture and current implementation), [native privilege lifecycle](macos-user-privilege-lifecycle.md#points-settled-in-the-walkthrough-2026-10-15) (one enrolled user and one run-as account), [native direction](../reference/macos-no-vm-direction.md) (native plus container fallback), [the implementation sketch](macos-user-concurrent-workspaces-plan.md) (incomplete, not a build handoff).
 
@@ -33,7 +33,9 @@ Each project has its own private `HOME` and persistent workspace state under the
 
 Sharing remains constrained by selected pack declarations and existing user configuration. In particular, pack-declared machine-scope state, existing cache/mise/Nix paths, and configured grants keep their established policy; no new credential source, provider policy, MCP permission, host-file grant, or wider credential access is implied. Relative pack-hook links still need a deliberate shared backing under the new path layout, but the architecture does not choose exact backing paths or link geometry.
 
-The architecture does not use accounts-per-workspace and does not make waiting for or refusing a second workspace the product behavior. The security claim for a same-UID process running outside the applicable Seatbelt profile is not settled here: do not assume the selected layout isolates from it, weaken sibling-workspace denial, or add permissions to pursue a broader claim. See [OQ-MCW2](#OQ-MCW2).
+The trusted launcher enters Seatbelt confinement before running the workspace command. That voluntary privilege drop cannot be reversed from inside the confined process, and descendants inherit it. The kernel must deny sibling-home/state access to those confined processes. The host user and administrator retain control of the guest account; unrelated host-controlled, unconfined processes under that same UID are trusted and outside this claim. This is not isolation from arbitrary unconfined same-UID processes. No new privilege or credential grant follows from [OQ-MCW2](#OQ-MCW2).
+
+The architecture does not use accounts-per-workspace and does not make waiting for or refusing a second workspace the product behavior.
 
 ## Current implementation and transition
 
@@ -45,36 +47,16 @@ The existing same-workspace admission and staging serialization remain in force.
 
 ## Remaining design and verification work
 
-A build handoff still needs the exact physical home/state layout and an inventory of all readers of `HOME` and its relatives, including passwd/home lookups, login rc files, root-level `host_files`, install prefixes, mise/cache paths, and relative pack hooks. That work must preserve the selected shared-path policy rather than turn one broad home ancestor into a Seatbelt re-allow. The project home and its ordinary state persist across Pi sessions; existing private state and unknown/live bytes are retained safely. No automatic deletion, TTL, cap, or migration behavior is selected. What operation, if any, permits reclaiming a workspace home after workspace removal remains [OQ-MCW3](#OQ-MCW3).
+A build handoff still needs the exact physical home/state layout and an inventory of all readers of `HOME` and its relatives, including passwd/home lookups, login rc files, root-level `host_files`, install prefixes, mise/cache paths, and relative pack hooks. That work must preserve the selected shared-path policy rather than turn one broad home ancestor into a Seatbelt re-allow.
 
-Native Seatbelt behavior is unproven by rendered-profile tests or Linux fixtures. Before a build handoff, prove on disposable Mac state that two simultaneous workspaces retain their own HOME/state view and the kernel denies sibling-home/state access while allowing only selected machine paths. The unproven same-UID threat boundary remains [OQ-MCW2](#OQ-MCW2). Native hardware trials needing guest/root/account setup or credential access require separate authorization; none is granted here.
+The project home and its ordinary state persist across Pi sessions, retained by default like a container workspace's `.yolo` state. Session exit or workspace removal does not authorize deletion. There is no automatic deletion, expiry or size cap. Any future explicit cleanup requires separate authorization and must refuse deletion while state is live or liveness is unknown; this design adds no cleanup operation. Exact migration mechanics remain engineering work under that retention rule. See [OQ-MCW3](#OQ-MCW3).
+
+Native Seatbelt behavior is unproven by rendered-profile tests or Linux fixtures. Before a build handoff, prove on disposable Mac state that two simultaneous workspaces retain their own HOME/state view and the kernel denies sibling-home/state access while allowing only selected machine paths. The boundary is settled; its native enforcement remains unmeasured. Native hardware trials needing guest/root/account setup or credential access require separate authorization; none is granted here.
 
 ## Decision ledger
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | OQ-MCW4 | Sharing remains limited to selected pack machine scope and existing configured shared paths. The exact backing and relative-link geometry are engineering design, not a new credential grant. | 2026-10-20 | [Selected architecture and boundary](#selected-architecture-and-boundary) | — |
-
-## Open questions
-
-1. 💬 **OQ-MCW2: Is protection against arbitrary same-UID processes outside a workspace's Seatbelt profile part of the security claim?**
-
-   <!-- vantage: question id=OQ-MCW2 leaning="Limit the claim to sibling-workspace denial for processes confined by the applicable Seatbelt profile; do not imply outside-profile isolation or grant new permissions." -->
-
-   The architecture already requires the kernel to deny sibling workspace HOME/state paths. The selected one-UID architecture does not establish isolation from an arbitrary same-UID process outside Seatbelt; no broader access or privilege follows from this question.
-
-   _Leaning:_ Limit the claim to sibling-workspace denial for processes confined by the applicable Seatbelt profile. Do not imply outside-profile isolation or grant new permissions to pursue it.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-2. 💬 **OQ-MCW3: What explicit event, if any, permits reclaiming persistent workspace HOME/state?**
-
-   <!-- vantage: question id=OQ-MCW3 leaning="Retain workspace bytes by default, and never reclaim when any process or liveness state is unknown; do not invent automatic cleanup, a TTL or a cap." -->
-
-   The HOME and ordinary workspace state persist across Pi sessions; existing private state and unknown/live bytes are retained safely. This question concerns only when, if ever, an explicit workspace-removal/reclaim operation may delete those persistent bytes.
-
-   _Leaning:_ Retain workspace bytes by default, and never reclaim when any process or liveness state is unknown. Do not invent automatic cleanup, a TTL or a cap.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+| <a id="OQ-MCW2"></a>[OQ-MCW2](#OQ-MCW2) | Protect Seatbelt-confined processes and their descendants against sibling HOME/state access; confinement is irreversible from inside. Host/admin control and trusted unconfined same-UID processes are outside the claim. | 2026-10-22 | [Selected architecture and boundary](#selected-architecture-and-boundary) | — |
+| <a id="OQ-MCW3"></a>[OQ-MCW3](#OQ-MCW3) | Retain persistent workspace HOME/state by default, like container workspace state. No automatic deletion, expiry or cap; any future separately authorized explicit cleanup must refuse live or unknown state. | 2026-10-22 | [Remaining design and verification work](#remaining-design-and-verification-work) | — |

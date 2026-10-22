@@ -1,10 +1,7 @@
 ---
 status: draft
 stage: SKETCH
-next: "Resolve the design's MCW2/MCW3 questions and obtain disposable native layout/Seatbelt evidence; then rebase this engineering sketch before a build handoff"
-depends-on:
-  - macos-user-concurrent-workspaces.md#OQ-MCW2
-  - macos-user-concurrent-workspaces.md#OQ-MCW3
+next: "Refresh this sketch against current source, close physical layout and shared-write details, then obtain authorized native feasibility evidence before a build handoff"
 tags: [macos-user, workspaces, sketch]
 vantage:
   status-chip: true
@@ -12,7 +9,7 @@ vantage:
 
 # Concurrent native workspaces — engineering sketch, not a build handoff
 
-**Status:** 2026-10-21 — UNBUILT / NOT A BUILD HANDOFF. The initial reader inventory was checked against
+**Status:** 2026-10-22 — seeded during design; unbuilt and not a build handoff. Owner questions are closed; completion against current source and native feasibility evidence remain engineering work. The initial reader inventory was checked against
 `31d61546ccf7aa5ae763f4e5541011e007e5cb10`; the focused follow-up below adds three omitted HOME consumers identified in review and checked
 against the source candidate `44c73a75db21bb5df84e356c83751d03d1ff88b2`. No macOS runtime trial was
 performed. This bounded engineering investigation advances the selected architecture without completing the implementation
@@ -29,9 +26,8 @@ is settled, not an additional owner gate.
 > state; kernel denial of sibling home/state for confined processes; only selected pack machine
 > scope and existing configured sharing. Accounts per workspace and waiting/refusal as the final
 > concurrency policy are not alternatives. Keep today's account-home hold until its replacement
-> is implemented and kernel-verified. This sketch answers neither
-> [OQ-MCW2](macos-user-concurrent-workspaces.md#OQ-MCW2) nor
-> [OQ-MCW3](macos-user-concurrent-workspaces.md#OQ-MCW3).
+> is implemented and kernel-verified. The threat boundary and default retention are settled in
+> [the decision ledger](macos-user-concurrent-workspaces.md#decision-ledger); no owner ruling is pending.
 
 ## Reader inventory at the checked tree
 
@@ -113,6 +109,30 @@ A disposable Linux VFS probe on 2026-10-21 confirmed that two synthetic private 
 distinct canaries while a nested `../../.synthetic-shared` hook reaches the same backing through
 the sidecar mirror. This validates link resolution only, not Seatbelt or macOS compatibility.
 
+### Same file layout without redirecting the whole workspace state root
+
+**Yes, symbolic links can present a familiar HOME over stable per-workspace backing.** The
+owner's 2026-10-22 preference is to reuse the container-like file layout, not a selected link
+direction or pathname. The candidate above already keeps the common physical `.yolo/home`
+sidecar and supplies a separate real HOME with named links. Checked at `deee93314`:
+[the Darwin deriver](../../internal/entrypoint/darwinhomelayout.go#L163-L218) maps `.config` to
+`config`, selected `.claude` to `claude`, and HOME `.yolo/bin` to `yolo-bin`; the sidecar itself
+is not a Unix HOME. [Podman's mounts](../../internal/cli/run/assemble_parts.go#L146-L169) expose
+the workspace at `/workspace`, plus separate home-surface binds, not the whole workspace
+`.yolo` as HOME `.yolo`.
+
+**Not a drop-in whole-root symlink.** [Host state writes](../../internal/paths/statefile.go#L12-L67)
+currently refuse a linked workspace `.yolo`. That root also holds launch metadata, logs,
+locks and durable scratch, not just HOME state. Making HOME equal `.yolo/home` and linking
+its `.yolo` back to the workspace `.yolo` creates a recursive `.yolo/home` path; raw sidecar
+names also fail the `.config`/`.claude` redirects. Prefer the named-link candidate, retaining
+real guarded roots and canonical physical Seatbelt denial, without broadening guest write
+permissions or treating metadata as automatically allowed home content. Exact geometry remains
+engineering work. Sequential backend use must preserve the existing overlay protocol; common
+backing is not proof that containers and native sessions can simultaneously render into one
+mutable HOME. Keep private session/profile directories and prove render-conflict safety before
+making that claim. This note authorizes no source, permission or runtime change.
+
 ### Profile and bootstrap implications
 
 - **Constraint:** allow the current workspace/private HOME and the *physical* selected machine
@@ -171,8 +191,9 @@ This is transition safety advice, **not** a new migration command or reclamation
    native config leases and guest pack-tree claims have different owners/lifetimes. Tree-holder
    ancestry/start-time evidence conservatively retains unknown detached processes; it is not a
    workspace deletion authorization. Session cleanup may conservatively retain config while any
-   guest is running; that need not block concurrent launches. Persistent HOME/state removal remains
-   [OQ-MCW3](macos-user-concurrent-workspaces.md#OQ-MCW3), regardless of free leases or absent host PID.
+   guest is running; that need not block concurrent launches. Persistent HOME/state is retained by
+   default under [OQ-MCW3](macos-user-concurrent-workspaces.md#decision-ledger), regardless of free
+   leases or absent host PID; this sketch introduces no cleanup operation.
 
 ## Disposable native verification handoff — not executed
 
@@ -213,14 +234,11 @@ change account permissions/credentials from this sketch. If a host cannot create
 real HOME with its existing workspace crossing, record the failed operation and missing ownership/
 ACL fact; do not experiment with root or add a setup grant.
 
-## What remains a ruling, what remains engineering
+## Remaining engineering and native evidence
 
-- **Owner:** [OQ-MCW2](macos-user-concurrent-workspaces.md#OQ-MCW2) asks whether the security claim
-  includes arbitrary same-UID processes outside Seatbelt. The geometry supplies no such isolation.
-  A broader ruling requires the boundary to be reconciled before a build handoff, not silently
-  weakened or implemented by more OS users/privileges.
-- **Owner:** [OQ-MCW3](macos-user-concurrent-workspaces.md#OQ-MCW3) asks which explicit event, if any,
-  permits persistent workspace reclamation. This sketch retains bytes and supplies no cleanup event.
+- **Settled:** [the owner rulings](macos-user-concurrent-workspaces.md#decision-ledger) cover
+  confined processes and inherited descendants, not trusted unconfined same-UID processes.
+  Persistent workspace bytes remain by default; no automatic expiry or cleanup is introduced.
 - **Engineering:** backing/link construction, shared cache-update serialization, physical path
   derivation, HOME propagation, non-destructive publication and reader tests can be specified
   against this proposal without another owner schema/framework decision. Exact leaf/helper naming
@@ -229,7 +247,7 @@ ACL fact; do not experiment with root or add a setup grant.
   symlink/physical denial and simultaneous launch stability need authorized native evidence.
   Prior Apple Container success and Linux rendered-profile tests do not settle these facts.
 
-**First small build slice after the rulings and native feasibility evidence:** complete the plan
+**Candidate first small build slice after plan completion and native feasibility evidence:** complete the plan
 against then-current HEAD, starting with a pure workspace-HOME/explicit-machine-backing derivation
 and geometry fixtures covering core dirs, selected/unselected shared dirs, nested hooks, root files
 and physical read-only anchors. Keep production launch dispatch and `HoldAccountHome` unchanged
