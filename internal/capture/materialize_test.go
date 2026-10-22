@@ -209,6 +209,47 @@ func TestVerifyMaterializedChecksTransitiveSymlinkTarget(t *testing.T) {
 	}
 }
 
+// A macos-user launch verifies a fork build against a SEALED COPY of its store entry: the stage
+// script runs `chmod -R a-w,a+rX,ug-s` over the copy, so every directory's mode differs from the
+// one the manifest recorded at capture. The content address never covered directory modes
+// (treedigest hashes names, link targets, bytes and exec bits only), so verification must not
+// reject an entry over one. Seen on the macos-user CI job: every patched-fork launch refused
+// with "did not materialize as the admitted output tree".
+func TestVerifyMaterializedAcceptsASealedStagedEntry(t *testing.T) {
+	home := t.TempDir()
+	_, entry := entryFixture(t, home, Platform(), nil)
+	if _, err := Materialize(MaterializeOptions{Entry: entry, Home: home}); err != nil {
+		t.Fatal(err)
+	}
+	var dirs []string
+	if err := filepath.WalkDir(entry.Tree, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			dirs = append(dirs, path)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Seal deepest first, as the stage script leaves them; restore for t.TempDir's cleanup.
+	for i := len(dirs) - 1; i >= 0; i-- {
+		if err := os.Chmod(dirs[i], 0o555); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		for _, dir := range dirs {
+			_ = os.Chmod(dir, 0o755)
+		}
+	})
+	if err := VerifyMaterialized(entry, home, ".local/bin/vendor",
+		[]string{".local/share/vendor/1.0", ".local/bin/vendor"}); err != nil {
+		t.Fatalf("VerifyMaterialized() over a sealed staged entry = %v, want success", err)
+	}
+}
+
 // An admitted symlink to a path outside the capture is validated by its target text only. The
 // verifier must not turn it into an arbitrary host-file read or invalidate this captured shape.
 func TestVerifyMaterializedDoesNotReadExternalSymlinkTargets(t *testing.T) {

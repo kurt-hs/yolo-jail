@@ -373,6 +373,11 @@ func samePaths(a, b map[string]bool) bool {
 	return true
 }
 
+// sameManifestEntries reports whether manifest describes the tree actual was read from, in the
+// terms the entry's content address covers: names, kinds, sizes, link targets and a file's exec
+// bits. A directory's mode is not among them (treedigest hashes none), and a macos-user launch
+// verifies against a sealed copy whose directories are all a-w,a+rX (macosuser's stage script),
+// so comparing it would refuse every staged entry while authenticating nothing.
 func sameManifestEntries(actual, manifest []ManifestEntry) bool {
 	if len(actual) != len(manifest) {
 		return false
@@ -382,12 +387,7 @@ func sameManifestEntries(actual, manifest []ManifestEntry) bool {
 		if a.Path != m.Path || a.Kind != m.Kind || a.Size != m.Size || a.Target != m.Target {
 			return false
 		}
-		switch m.Kind {
-		case KindDir:
-			if a.Mode != m.Mode {
-				return false
-			}
-		case KindFile:
+		if m.Kind == KindFile {
 			actualMode, aerr := strconv.ParseUint(a.Mode, 8, 32)
 			manifestMode, merr := strconv.ParseUint(m.Mode, 8, 32)
 			if aerr != nil || merr != nil || actualMode&0o111 != manifestMode&0o111 {
