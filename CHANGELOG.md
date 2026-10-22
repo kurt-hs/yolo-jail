@@ -18,11 +18,11 @@ You can keep chosen host settings out of your jails, and run a yolo checkout wit
 
 **Keep chosen host settings out of the jail.** With `host_management` unset or `"none"`, list exact settings in your user config under `host_import_exclusions`, such as Claude's `/hooks`, and yolo drops them from what it imports. Your host files are never edited. See `yolo config-ref`.
 
-**Run a checkout without replacing your installed command.** Use `just dev`, or symlink the checkout's development launcher, `scripts/dev-wrapper.sh`, to any name on your PATH, including `yolo`. Each launch uses the build that matches the checkout. See [development from a checkout](userguide/getting-started.md#other-ways-to-install).
+**Run a checkout without replacing your installed command.** Use `just dev`, or symlink the checkout's development launcher, [`scripts/dev-wrapper.sh`](scripts/dev-wrapper.sh), to any name on your PATH, including `yolo`. Each launch uses the build that matches the checkout. See [development from a checkout](userguide/getting-started.md#other-ways-to-install).
 
 ### Changed
 
-- **`YOLO_REPO_ROOT` no longer selects launch sources**, and a launch refuses it. Remove it from your shell configuration; to run a checkout, use `just dev` or `scripts/dev-wrapper.sh`.
+- **`YOLO_REPO_ROOT` no longer selects launch sources**, and a launch refuses it. Remove it from your shell configuration; to run a checkout, use `just dev` or [`scripts/dev-wrapper.sh`](scripts/dev-wrapper.sh).
 
 ### Fixed
 
