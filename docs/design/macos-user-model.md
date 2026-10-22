@@ -88,22 +88,32 @@ is none the doc says so.
 
 ## 4. What the second account buys, and what it costs
 
-**What it buys.** Three things, and under a deny-by-default profile, policy replaces two of them:
+**What it buys.** Three things. Only the first is lost by moving to the Safehouse model; a
+deny-by-default profile replaces the other two, so they are no reason to keep the account:
 
-1. **A backstop under the profile.** If the profile wrongly allows a read, Unix permissions still
-   protect your owner-only files. Under the Safehouse model a missed rule exposes them. This is the
-   one benefit nothing replaces, and it is the maintainer's *"except for user readable files"*.
-2. **Separate per-user services.** As a different user, the agent can't reach your keychain,
-   clipboard or Apple Events (which can drive your other apps). Running as you, a deny-by-default
-   service list does the same; Safehouse denies the keychain unless asked.
-3. **Separate privacy grants.** The second account has none of your Terminal's privacy grants. A
-   Seatbelt deny holds regardless of those grants, so the profile covers this too.
+1. **A backstop under the profile — lost.** If the profile wrongly allows a read, Unix permissions
+   still protect your owner-only files. Under the Safehouse model a missed rule exposes them. This
+   is the one benefit nothing replaces, and it is the maintainer's *"except for user readable
+   files"*.
+2. **Separate per-user services — replaced.** As a different user, the agent can't reach your
+   keychain, clipboard or Apple Events (which can drive your other apps). Running as you, a
+   deny-by-default service list does the same; Safehouse denies the keychain unless asked.
+3. **Separate privacy grants — replaced.** Running as you, the agent would inherit macOS privacy
+   grants you gave your terminal, such as Full Disk Access, which a second account does not have.
+   That should not matter: macOS checks a Seatbelt deny separately from those grants, so a file the
+   profile denies stays denied even under Full Disk Access. This is expected, not measured;
+   [§6](#6-what-a-prototype-must-show) checks it.
 
 **What it costs.** Every row of [§2](#2-the-three-models) marked "yes" in the SandVault column: the
 admin setup, access grants, the projects folder and its open questions, the shared account home that
 the two-workspace plan exists to work around, the credential bridges across accounts, and the
 root-owned pack trees ([JD-10](../reference/macos-user-provisioning.md#JD-10)). It also refuses the
 most natural place to put a project: your home folder.
+
+It costs every user a second mental model on top of the sandbox: two accounts, access grants
+(ACLs) that let the agent's account reach a folder, and which folders are shared between the two.
+Podman has none of that, and neither does the Safehouse model, where the files are simply yours
+and the profile is the only thing to understand.
 
 **The stray-grant risk is not a blocker.** The maintainer ruled on 2026-10-22 that the risk of an
 access grant on a home folder exposing `~/.ssh` is *"manageable, acceptable, not a blocker"*. Under
@@ -130,6 +140,7 @@ On a Mac, with a hand-written profile and no yolo changes:
    agent, `osascript` driving another app, the clipboard, and `kill` against one of your processes
    all fail.
 3. `/opt/src/clientX` is unreadable; `/opt/homebrew` and the nix store are readable.
+4. With Full Disk Access granted to the terminal, a file the profile denies is still unreadable.
 
 That run decides [OQ-MM1](#OQ-MM1). The existing macos-user policy suite
 ([§8.1](../research/agent-safehouse.md#81-a-policy-assertion-suite-for-macos-user--highest-value-moderate-cost))
