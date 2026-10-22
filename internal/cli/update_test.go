@@ -434,18 +434,23 @@ func TestUpdateSaysWhatHappensToRunningJailsPerChannel(t *testing.T) {
 }
 
 // A from-source check or update runs the checkout's own git config, hooks and
-// Justfile on the host. `yolo update --help` and the source launch prompt say
-// so, and name workspace_readonly; a Homebrew prompt runs none of it and must
-// not claim to.
-func TestUpdateSaysASourceUpdateRunsTheCheckoutsGitConfigAndJustfile(t *testing.T) {
+// Justfile on the host. `yolo update --help` says what it runs and stops there:
+// building a checkout runs what is in it, which is the point of a source install
+// (docs/reference/host-execution-from-the-workspace.md, "the product cell"), so
+// neither the help nor the launch prompt advises locking those files from a jail,
+// which would stop the jail developing them.
+func TestUpdateSaysWhatASourceUpdateRunsWithoutAdvisingALock(t *testing.T) {
 	var help bytes.Buffer
 	if !answerHelp("update", []string{"update", "--help"}, &help) {
 		t.Fatal("`yolo update --help` printed no help")
 	}
-	for _, want := range []string{"own git config and hooks", "runs its Justfile", "workspace_readonly"} {
+	for _, want := range []string{"own git config and hooks", "runs its Justfile"} {
 		if !strings.Contains(help.String(), want) {
 			t.Errorf("`yolo update --help` does not say %q:\n%s", want, help.String())
 		}
+	}
+	if strings.Contains(help.String(), "workspace_readonly") {
+		t.Errorf("`yolo update --help` advises locking the checkout from a jail:\n%s", help.String())
 	}
 
 	h := newUpdateHarness(t, sourceTestChannel)
@@ -453,18 +458,13 @@ func TestUpdateSaysASourceUpdateRunsTheCheckoutsGitConfigAndJustfile(t *testing.
 	h.d.stdin = strings.NewReader("n\n")
 	h.notify("run")
 	out := h.stderr.String()
-	for _, want := range []string{"this checkout's own git config and hooks", "runs its Justfile", "workspace_readonly"} {
-		if !strings.Contains(out, want) || strings.Index(out, want) > strings.Index(out, "relaunch?") {
-			t.Errorf("the source launch prompt does not say %q before asking:\n%s", want, out)
-		}
+	if !strings.Contains(out, "Source checkout:") {
+		t.Fatalf("the source launch prompt was not shown:\n%s", out)
 	}
-
-	h = newUpdateHarness(t, testChannel)
-	h.seed(t, testChannel, nil)
-	h.d.stdin = strings.NewReader("n\n")
-	h.notify("run")
-	if strings.Contains(h.stderr.String(), "workspace_readonly") {
-		t.Errorf("a Homebrew prompt runs no checkout code:\n%s", h.stderr.String())
+	for _, unwanted := range []string{"workspace_readonly", "git config and hooks"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("the source launch prompt warns about %q:\n%s", unwanted, out)
+		}
 	}
 }
 

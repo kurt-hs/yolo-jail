@@ -87,11 +87,9 @@ upstream whose name starts with `-`, and never lets Git prompt, but a
 repository's configuration can still name programs Git runs, such as a hook or
 `remote.<name>.uploadpack`.
 
-When a jail uses the checkout as its workspace, the agent in it can write
-those files. List `.git/config`, `.git/hooks`, `.git/info` and `Justfile` in
-that checkout's `workspace_readonly` to make them read-only in the jail; see
-[locking the blind cell](host-execution-from-the-workspace.md#locking-the-blind-cell-workspace_readonly)
-for why the Git control plane has to be locked as a unit.
+Developing yolo in a jail and updating from that checkout runs what the jail
+wrote, by design: building a checkout runs its contents, and yolo adds no
+guard there ([the product cell](host-execution-from-the-workspace.md#the-two-axes)).
 
 ## State and controls
 
