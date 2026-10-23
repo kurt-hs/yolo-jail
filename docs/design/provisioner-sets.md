@@ -118,7 +118,7 @@ The survey that forced all of it — the inventory, the coverage matrix, the nix
 [`provisioner-evidence.md`](provisioner-evidence.md), and you need it to **check** the argument
 rather than to follow it.
 
-**Needs your ruling:** [`OQ-PS5`](#OQ-PS5) (live, since [`OQ-PS11`](#OQ-PS11) was ruled (a)). **Ruled 2026-10-23:** [`OQ-NX8`](#OQ-NX8) (`packages:` reported inert at the host, by design), [`OQ-NX9`](#OQ-NX9) (a font-sharing opt-in, built now), [`OQ-NX4`](#OQ-NX4) (core locator rows only), [`OQ-PS14`](#OQ-PS14) and [`OQ-PS15`](#OQ-PS15) (import the host's trust, the login keychain's included, into every jail), [`OQ-PS16`](#OQ-PS16) (the separate account's Go programs trust it too).
+**Needs your ruling:** nothing open. **Ruled 2026-10-23:** [`OQ-PS11`](#OQ-PS11) and [`OQ-PS5`](#OQ-PS5) (one kind, named `program`, a need any selected pack may fill), [`OQ-NX8`](#OQ-NX8) (`packages:` reported inert at the host, by design), [`OQ-NX9`](#OQ-NX9) (a font-sharing opt-in, built now), [`OQ-NX4`](#OQ-NX4) (core locator rows only), [`OQ-PS14`](#OQ-PS14) and [`OQ-PS15`](#OQ-PS15) (import the host's trust, the login keychain's included, into every jail), [`OQ-PS16`](#OQ-PS16) (the separate account's Go programs trust it too).
 
 > [!NOTE]
 > **Scope note — this doc absorbed
@@ -1883,7 +1883,7 @@ and what its background established is in
 that is what the carve was for — with stakes and a leaning; the leaning is mine and is not a
 recommendation the doc rests on.
 
-1. 💬 <a id="OQ-PS5"></a>**OQ-PS5: Does the kind get renamed to `package`?**
+1. ✅ <a id="OQ-PS5"></a>**OQ-PS5: Does the kind get renamed to `package`?**
 
    **Asked only if [`OQ-PS11`](#OQ-PS11) is ruled (a).** [`OQ-PS3`](#decision-ledger)'s ruling took
    *"rename while `via` still selects"* off the table, so what is left is naming whatever kind the
@@ -1899,10 +1899,16 @@ recommendation the doc rests on.
    name and *"the capture is the package"* becomes literal; it does not earn it as a re-spelling of
    one half of a surviving pair.
 
-   <!-- vantage: oq id=OQ-PS5 leaning="(a): rename to package, and only if OQ-PS11 collapses program and requires into one kind; otherwise keep both names. The rename earns its blast radius when there is one declaration to name and 'the capture is the package' becomes literal, not as a re-spelling of one half of a surviving pair." -->
-
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, against the leaning, (b): keep `program`.** *"program can be
+   > provided by a package, I guess … It does have to be separate from Nix packages. It has to be
+   > separate from everything."* With it, a requirement on how the need is met: *"if one pack has a
+   > program that's required through this way … another pack can fill that need so that you could
+   > have, say, one pack, pack A, that needs a program, and you could have both pack B and C that
+   > the user could choose on their own, which fills in that program need through whatever way
+   > pack B and C want."* So a `program` entry with no recipe is satisfied by any other selected
+   > pack whose `program` entry for the same name carries a recipe, whichever recipe kind that is.
+   > How two selected providers of one name combine is decided as [`PS-D18`](#PS-D18).
 
 2. ✅ <a id="OQ-PS11"></a>**OQ-PS11: Do `program` and `requires` collapse into one kind?**
 
@@ -2387,6 +2393,9 @@ this doc already had, per the rule that one subject gets one question.
 | [`OQ-4`](#decision-ledger) | [`OQ-NX4`](#OQ-NX4) | live |
 | [`OQ-PS16`](#OQ-PS16) | In the separate-account mode, programs that ask macOS for trust (Go's) trust the login keychain's CAs too, as the CA-file tools already do: *"if there's a cert in my trusted cert store, it's the machine."* | 2026-10-23 | [§16.3](#163-the-corporate-certificate-trap) | pending |
 | [`OQ-NX8`](#OQ-NX8) | At the host, `packages:` is reported as inert by design, at info level, whatever the runtime setting is: one rule, the host never applies the workspace's jail-only keys ([`HP-DIR3`](../reference/host-agent-environment.md#HP-DIR3)). | 2026-10-23 | [§16](#16-locator-variables-on-a-non-container-notch-researched-2026-09-29) | pending |
+| [`OQ-PS11`](#OQ-PS11) | `program` and `requires` collapse into one kind; the old kind names are refused, not migrated, and shipped manifests change in the same build. | 2026-10-23 | [§7](#7-reframing-program-as-a-package) | pending |
+| [`OQ-PS5`](#OQ-PS5) | The one kind is named `program`, distinct from nix packages and every other term. A recipe-less `program` entry in one pack is satisfied by another selected pack's `program` entry for the same name, by whatever recipe that pack carries, so the user picks the provider by picking the pack. | 2026-10-23 | [§7](#7-reframing-program-as-a-package) | pending |
+| <a id="PS-D18"></a>PS-D18 | *Implementation decision, reversible, inside [`OQ-PS5`](#OQ-PS5):* **one provider per program name in a launch.** When two selected packs both carry a recipe for the same name, the launch refuses, naming both packs and saying to drop one from `packs` (the user chose the provider by choosing the pack, so yolo does not pick for them). A recipe-less entry no selected pack provides keeps today's `requires` behavior. | 2026-10-23 | [§7.1](#71-tested-against-the-mechanical-differences) | pending |
 | [`OQ-5`](#decision-ledger) | [`OQ-NX5`](#decision-ledger) | ruled 2026-09-29 — [Decision Ledger](#decision-ledger) |
 | [`OQ-6`](#decision-ledger) | [`OQ-NX6`](#decision-ledger) | settled 2026-08-02 — [Decision Ledger](#decision-ledger); the three traps are preserved in [coverage, freshness and the traps](provisioner-evidence.md#37-macos-vs-linux-coverage-freshness-and-the-traps) |
 | [`OQ-7`](#decision-ledger) | **folded into [`OQ-PS6`](#decision-ledger)** | it is that question's jail row; [§10](#10-alternatives-each-with-a-verdict) alternative F |
