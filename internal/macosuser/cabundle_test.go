@@ -452,6 +452,11 @@ func TestACaptureActComposesAndNamesTheLaunchsTrust(t *testing.T) {
 	if !strings.Contains(c.out.String(), want) {
 		t.Errorf("the capture does not say %q:\n%s", want, c.out.String())
 	}
+	// THE CAPTURE'S MODE WIRING (PS-D17): an account-mode capture marks the trust as the separate
+	// account's, so its Go programs are told to verify against the bundle.
+	if want := "separate account, so GODEBUG sets " + goCAFileSetting + "=1"; !strings.Contains(c.out.String(), want) {
+		t.Errorf("the account-mode capture does not say %q:\n%s", want, c.out.String())
+	}
 }
 
 // corpBundle is a bundle the user's own env layers name, in the workspace.

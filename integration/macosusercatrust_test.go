@@ -18,7 +18,7 @@ import (
 
 // TestMacosUserTrustsSystemKeychainCA: A CERTIFICATE AUTHORITY THE MAC'S SYSTEM OR LOGIN KEYCHAIN TRUSTS
 // FOR TLS IS TRUSTED INSIDE THE SANDBOX, and the launch names it (internal/macosuser/cabundle.go;
-// docs/design/provisioner-sets.md PS-D10, PS-D14).
+// docs/design/provisioner-sets.md PS-D10, PS-D14, PS-D17).
 //
 // THE CA IS ONE THIS MAC ALREADY TRUSTS. The test never writes a keychain: the suite takes no
 // privilege `yolo macos-setup` does not install, and adding a trusted root to the System keychain
@@ -59,19 +59,19 @@ func TestMacosUserTrustsSystemKeychainCA(t *testing.T) {
 	for _, mode := range []string{"account", "self"} {
 		t.Run(mode, func(t *testing.T) {
 			packHome(t, `{"macos_user_mode": "`+mode+`"}`)
-			macosUserCATrustLaunch(t, kept, leftOut)
+			macosUserCATrustLaunch(t, mode, kept, leftOut)
 		})
 	}
 }
 
 // macosUserCATrustLaunch is one launch of TestMacosUserTrustsSystemKeychainCA, in the mode the
 // isolated user config names.
-func macosUserCATrustLaunch(t *testing.T, kept []macosuser.TrustedCA, leftOut []string) {
+func macosUserCATrustLaunch(t *testing.T, mode string, kept []macosuser.TrustedCA, leftOut []string) {
 	t.Helper()
 	ws := macosUserWorkspace(t, `{}`)
 	r := runMacosUser(t, ws, `echo "=== VARS ==="; `+
 		`echo "NIX=${NIX_SSL_CERT_FILE-}"; echo "SSL=${SSL_CERT_FILE-}"; echo "REQ=${REQUESTS_CA_BUNDLE-}"; `+
-		`echo "CURLCA=${CURL_CA_BUNDLE-}"; echo "GIT=${GIT_SSL_CAINFO-}"; echo "NODE=${NODE_EXTRA_CA_CERTS-}"; `+
+		`echo "CURLCA=${CURL_CA_BUNDLE-}"; echo "GIT=${GIT_SSL_CAINFO-}"; echo "NODE=${NODE_EXTRA_CA_CERTS-}"; echo "GODEBUG=${GODEBUG-}"; `+
 		`echo "=== BUNDLE ==="; cat "$CURL_CA_BUNDLE"; echo "BUNDLE_RC=$?"; `+
 		`echo "=== EXTRAS ==="; cat "$NODE_EXTRA_CA_CERTS"; echo "EXTRAS_RC=$?"; echo "=== END ==="`)
 	if r.rc != 0 {
@@ -85,6 +85,18 @@ func macosUserCATrustLaunch(t *testing.T, kept []macosuser.TrustedCA, leftOut []
 	}
 	if !strings.HasPrefix(vars["NODE"], macosuser.StateDir()+"/env/") || !strings.HasSuffix(vars["NODE"], ".extra-ca.pem") {
 		t.Errorf("NODE_EXTRA_CA_CERTS names %q, not the session's extra-CA file", vars["NODE"])
+	}
+	// THE SEPARATE ACCOUNT'S GO PROGRAMS (PS-D17): told to verify against the bundle there, and
+	// never in run-as-you mode, which asks macOS as you. What a Go 1.27+ client then does with the
+	// setting needs a server signed by a kept CA, which this test cannot have (see above).
+	hasGo := strings.Contains(","+vars["GODEBUG"]+",", ",x509sslcertoverrideplatform=1,")
+	if mode == "account" && !hasGo {
+		t.Errorf("the separate-account sandbox's GODEBUG is %q, without x509sslcertoverrideplatform=1",
+			vars["GODEBUG"])
+	}
+	if mode == "self" && hasGo {
+		t.Errorf("the run-as-you sandbox's GODEBUG is %q, which names a setting only the separate "+
+			"account needs", vars["GODEBUG"])
 	}
 	for _, f := range []struct{ name, start, end, rc string }{
 		{"the CA bundle", "=== BUNDLE ===", "=== EXTRAS ===", "BUNDLE_RC=0"},

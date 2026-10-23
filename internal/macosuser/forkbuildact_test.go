@@ -97,6 +97,10 @@ func TestAForkBuildActComposesTheLaunchsTrust(t *testing.T) {
 	if want := "Trusting 2 certificate authorities from this Mac's System keychain"; !strings.Contains(c.out.String(), want) {
 		t.Errorf("the build does not say %q:\n%s", want, c.out.String())
 	}
+	// THE BUILD'S MODE WIRING (PS-D17): an account-mode build's Go programs verify against the bundle.
+	if want := "separate account, so GODEBUG sets " + goCAFileSetting + "=1"; !strings.Contains(c.out.String(), want) {
+		t.Errorf("the account-mode build does not say %q:\n%s", want, c.out.String())
+	}
 }
 
 // NO FLAKE, NO TOOLCHAIN: a build with no repo root refuses before any nix runs, naming where a
