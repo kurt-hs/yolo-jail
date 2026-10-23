@@ -85,9 +85,8 @@ background wait ([OQ-BB17](#OQ-BB17)).
 
 **Start at [§3](#3-the-flow)**, the flow. Everything else is what one step of it needs.
 
-**Needs your ruling:** [OQ-BB10](#OQ-BB10), [OQ-BB15](#OQ-BB15),
-[OQ-BB19](#OQ-BB19), [OQ-BB20](#OQ-BB20) and [OQ-BB21](#OQ-BB21).
-[OQ-BB14](#OQ-BB14) (no for now), [OQ-BB16](#OQ-BB16), [OQ-BB17](#OQ-BB17), [OQ-BB18](#OQ-BB18), the grant model
+**Needs your ruling:** [OQ-BB10](#OQ-BB10), [OQ-BB19](#OQ-BB19), [OQ-BB21](#OQ-BB21) and
+[OQ-BB22](#OQ-BB22). [OQ-BB14](#OQ-BB14) (no for now), [OQ-BB15](#OQ-BB15), [OQ-BB20](#OQ-BB20), [OQ-BB16](#OQ-BB16), [OQ-BB17](#OQ-BB17), [OQ-BB18](#OQ-BB18), the grant model
 ([BB-D76](#BB-D76) to [BB-D78](#BB-D78)), and the git source's
 [OQ-GB1](git-broker.md#OQ-GB1) and [OQ-GB2](git-broker.md#OQ-GB2), were ruled 2026-10-23.
 [OQ-BB3](#15-decision-ledger), [OQ-BB4](#15-decision-ledger), [OQ-BB6](#15-decision-ledger),
@@ -223,7 +222,7 @@ Every term here is coined in this doc unless it says otherwise.
 | **permission set** | A named group of commands a source defines, such as GitHub's **read-only** and **read-write**. Since [BB-D79](#BB-D79) a set is the vocabulary a grant's coverage is written in, not the thing a grant hands over ([§5.7](#57-permission-sets)) | Not a scope: which repositories a command may touch is the repository scope's question, and no set widens it |
 | **standing set** | Coined here: a permission set every jail always holds, such as read-only. Its commands run with no human | Not a grant: nothing is recorded, and it cannot be revoked per jail |
 | **windowed set** | Coined here, 2026-09-29: a permission set a human handed over whole for a window and a use count. **Retired** by [BB-D79](#BB-D79); the built store still holds such grants until the resource model replaces them | Not a term for new design text: write **resource grant** instead |
-| **resource** | Coined here: the one thing a write acts on, as the broker names it from its own parse: a pull request (`o/r#32`), an issue, a branch or tag ref, or a repository's ability to create something, such as PRs in `o/r` ([§5.7](#57-permission-sets)). What a repository-level write's resource is, such as a release, is [OQ-BB20](#OQ-BB20) | Not a command: a grant on PR `o/r#32` covers every write of its kind to that PR, not one argv |
+| **resource** | Coined here: the one thing a write acts on, as the broker names it from its own parse: a pull request (`o/r#32`), an issue, a branch or tag ref, or a repository's ability to create something, such as PRs in `o/r` ([§5.7](#57-permission-sets)). A repository-level write, such as a release, has no resource the working set can hold ([BB-D93](#BB-D93)) | Not a command: a grant on PR `o/r#32` covers every write of its kind to that PR, not one argv |
 | **write kind** | Coined here: the class a write falls in, which fixes its resource: a PR write, a PR merge, an issue write, a branch push, and so on ([§5.7](#57-permission-sets)) | Not a grant: it says what a write is, not whether it may run |
 | **user grant** | Coined here: a named permission the user gives one workspace in the user's own config, such as creating PRs. Which ones exist is [OQ-BB19](#OQ-BB19) ([§5.8](#58-long-lived-access-and-temporary-access)) | Not something a workspace config, an agent or a notification can set ([BB-D74](#BB-D74)) |
 | **working set** | Coined in [`git-broker.md`](git-broker.md#51-the-working-set-of-pushable-branches) for branches, and widened here to every resource: the resources a workspace may write to with no further asking, because the agent created them under a user grant or a human added them. Kept per workspace until the resource is gone or the entry is revoked ([OQ-BB21](#OQ-BB21)) | Not per launch or per session, and not in any config file: it lives in the source's store ([BB-D85](#BB-D85)) |
@@ -1114,7 +1113,7 @@ The classifier names each write's kind and resource from its own parse:
 | branch creation | a git push creating a branch under `refs/heads/` ([`git-broker.md` §5](git-broker.md#5-the-git-sources-sets)) | The repository's ability to create branches |
 | branch push | a git push updating, force-updating or deleting an existing branch | The branch, `o/r` `refs/heads/x` |
 | tag push | a git push creating, moving or deleting a tag | The tag |
-| repository-level write | every other write the classifier admits: releases, labels, workflow runs, repository settings, any other `gh api` write | The repository, until [OQ-BB20](#OQ-BB20) is ruled |
+| repository-level write | every other write the classifier admits: releases, labels, workflow runs, repository settings, any other `gh api` write | The repository; never a working-set entry ([BB-D93](#BB-D93)) |
 
 - **A command the table does not name is a repository-level write.** The lists above are the
   design's; completing them against the measured grammar ([BB-D39](#BB-D39)) is the
@@ -1153,17 +1152,16 @@ any PR, issue or branch outside the working set.
 The built `brokered.<source>.sets` key declares standing and windowed sets, with `window`,
 `max_window` and `uses` ([§7](#7-grants-and-the-request-store)):
 
-- **A standing set stays.** It is what runs with no human. A user may still add a write to
-  `read-only`, which then runs on every resource in scope, as before; the launch discloses it.
+- **A standing set stays, reads only.** It is what runs with no human. A write is never added
+  to it; a write is its own grant naming its resource ([BB-D92](#BB-D92)).
 - **Windowed sets, and their `window`, `max_window` and `uses`, are retired** ([BB-D79](#BB-D79),
   [BB-D83](#BB-D83), [BB-D89](#BB-D89)). Once the resource model is built, `yolo check` refuses
   them, naming the user-grant key that replaces them. Nothing has shipped in a release that a
   migration would have to carry, so none is written.
 - **A custom set such as a `review` set** becomes a custom user grant if [OQ-BB19](#OQ-BB19)
-  lets users define their own: a named command list that runs on working-set resources. Then
-  [OQ-BB15](#OQ-BB15) applies unchanged to that list: does an explicit `admit` replace or augment
-  the grant's default commands. If users may not define grants, the `admit` key survives only on
-  the standing set.
+  lets users define their own: a named command list that runs on working-set resources. Either
+  way the `admit` key is retired: a write is its own grant naming its resource, never an addition
+  to a set ([BB-D92](#BB-D92)).
 
 **Configuration is user-scope only.** Which user grants a workspace holds lives in the user's own
 config for that workspace ([§5.8](#58-long-lived-access-and-temporary-access)); the buttons a
@@ -1618,7 +1616,7 @@ stands.
 **Built policy boundary:** the default named sets without explicit `admit`, including configured
 mode/window/ceiling/use bounds, which [BB-D79](#BB-D79) and [BB-D83](#BB-D83) retire. Every
 explicit `admit` (even empty), custom set and unsupported rule refuses the policy as a whole.
-[OQ-BB15](#OQ-BB15) asks whether explicit rules replace or augment defaults; flag-condition and
+[OQ-BB15](#OQ-BB15) retired `admit` in favor of grants naming their resource ([BB-D92](#BB-D92)); flag-condition and
 API-pattern syntax is not invented here.
 
 **Implementation interpretation, as built:** Allow once lasts `min(15m, max_window)`, one use, so a
@@ -2094,10 +2092,9 @@ tree. Step 5 is a conversation about bringing one in.
 ### 11.5 What still waits on a ruling
 
 - [OQ-BB10](#OQ-BB10), the no-notifier notice, holds writes on a host with no notifier.
-- [OQ-BB15](#OQ-BB15) holds its own feature, nothing else.
+- [OQ-BB22](#OQ-BB22), which file holds a write grant, holds the grant config.
 - [OQ-BB19](#OQ-BB19), the list of user grants, holds the user-grant key and the git source's
   sets in step 1; the factoring does not wait on it.
-- [OQ-BB20](#OQ-BB20) holds what Add does for a repository-level write, in step 3.
 - [OQ-BB21](#OQ-BB21) holds when a PR or issue entry ends, in step 1; until it is ruled, an entry
   ends only by revocation.
 - [OQ-BB14](#OQ-BB14) holds nothing here; it decides host-run's future.
@@ -2276,7 +2273,7 @@ covered:
     > now."* The paste-back half (the command's output returning to the jail after the paste) is
     > [`host-run-mailbox.md`](host-run-mailbox.md)'s own design and is not affected.
 
-3. 💬 <a id="OQ-BB15"></a>**[OQ-BB15](#OQ-BB15): Does explicit `admit` replace or augment a default set's rules?**
+3. ✅ <a id="OQ-BB15"></a>**[OQ-BB15](#OQ-BB15): Does explicit `admit` replace or augment a default set's rules?**
     [§5.7](#57-permission-sets) says a same-named default with no `admit` keeps its rules,
     and says the user may add a write to read-only, but does not settle the explicit-list case.
     This decides what an existing default set retains when a user writes `admit`.
@@ -2284,14 +2281,20 @@ covered:
     - **A — Replace:** the explicit list is the complete set; omitted default reads disappear.
     - **B — Augment:** the explicit list adds to the named default; a custom set has no base rules.
 
-    <!-- vantage: oq id=OQ-BB15 leaning="B: augment. The launch disclosure already reads read-only (+ pr comment), a user adding one write means to add, and replace would drop every default read on a short list." -->
-
     _Leaning:_ B: augment. The launch disclosure already reads `read-only (+ pr comment)`, a user adding one write means to add, and replace would drop every default read on a short list.
 
-    Until it is ruled, every explicit list fails closed ([§7](#7-grants-and-the-request-store)).
-
     **Answer:**
-    > _(empty — fill in when decided)_
+    > **Ruled in review 2026-10-23, none of the options as written:** a write is never added to
+    > the read grant; it is a grant of its own, and a grant names what it grants: the
+    > repository, the PR, and so on. A wildcard is a special case that may still be written.
+    > The grant goes through config approval. *"PR comment is not a read operation, so it's not
+    > adding to the read grant, it's adding to the set of grants … by default, a grant should
+    > have to specify what it's granting, the repository PR, whatever. Wildcard should be a
+    > special case, but wildcard, I guess, should still be specifiable. It will be in the
+    > workspace config. It will have to go through config approval."* So `admit` on `read` is
+    > retired with the windowed sets ([BB-D92](#BB-D92)). Which config file holds such a grant,
+    > given [OQ-BB16](#OQ-BB16)'s rule that a workspace config never widens access, is
+    > [OQ-BB22](#OQ-BB22).
 
 4. ✅ <a id="OQ-BB16"></a>**[OQ-BB16](#OQ-BB16): Which sets may a workspace hold as long-lived
     access?** An agent adds `read-write` to its workspace's `brokered.github.hold`; at the next
@@ -2384,7 +2387,7 @@ covered:
     **Answer:**
     > _(empty — fill in when decided)_
 
-8. 💬 <a id="OQ-BB20"></a>**[OQ-BB20](#OQ-BB20): What does Add to the working set allow for a
+8. ✅ <a id="OQ-BB20"></a>**[OQ-BB20](#OQ-BB20): What does Add to the working set allow for a
     write that names no PR, issue or branch?** The agent runs `gh release create v1.2 -R o/r`.
     The notification asks, and you press **Add to the working set**. This decides what runs
     unasked from then on ([§5.7](#57-permission-sets)'s repository-level writes).
@@ -2396,14 +2399,20 @@ covered:
     - **C — No Add for these writes**: the notification shows only Allow once and Allow for
       15 minutes, so every release asks.
 
-    <!-- vantage: oq id=OQ-BB20 leaning="A, except that groups changing the repository itself (repo, secret, variable, ruleset) and raw gh api writes get no Add, as in C. A group is the nearest thing to a resource these writes have; B makes one press a repository-wide write grant." -->
-
     _Leaning:_ **A**, except that groups changing the repository itself (`repo`, `secret`,
     `variable`, `ruleset`) and raw `gh api` writes get no Add, as in C. A command group is the
     nearest thing to a resource these writes have; B makes one press a repository-wide write grant.
 
     **Answer:**
-    > _(empty — fill in when decided)_
+    > **Ruled in review 2026-10-23, against the leaning, closest to C:** a repository-level
+    > write never joins the working set. Running one unasked takes an additional user grant
+    > type; otherwise it asks per request, answered Allow once or Allow for 15 minutes, as
+    > distinct buttons that say clearly what each does, as far as the notifier allows.
+    > *"the answer is we can't add it to the working set. We also need, if we're going to
+    > allow commands like that, I guess it's an additional grant type, but also will have to
+    > use either the single approval model if that's appropriate or the approve for 15 minutes
+    > and I guess they should be different buttons and clear when you're clicking on although
+    > that's up to whoever forms the notification and we can only do so much"* ([BB-D93](#BB-D93))
 
 9. 💬 <a id="OQ-BB21"></a>**[OQ-BB21](#OQ-BB21): When does a PR or issue leave the working
     set?** The agent opened PR #40 under your grant, and it merged last week. Today the agent runs
@@ -2420,6 +2429,28 @@ covered:
     _Leaning:_ **A**: it is the PR's equivalent of a deleted branch, and it keeps the working set
     to live work. The broker reads the state on the host when a write arrives and when
     `yolo approve` lists entries.
+
+    **Answer:**
+    > _(empty — fill in when decided)_
+
+10. 💬 <a id="OQ-BB22"></a>**[OQ-BB22](#OQ-BB22): Which config file holds a write grant?**
+    You ruled that a write grant names its resource and goes through config approval
+    ([OQ-BB15](#OQ-BB15)), saying *"It will be in the workspace config."* Earlier the same day
+    you ruled that long-lived access lives only in the user's own config, scoped to workspaces,
+    and that *"there is no way that the workspace should be able to override that scoping. It
+    can't widen"* ([OQ-BB16](#OQ-BB16)). This decides whether a repository's own
+    `yolo-jail.jsonc`, which the agent can edit, may carry a write grant.
+
+    - **A — The user's per-workspace file only** (`~/.config/yolo-jail/workspaces/…`), shown
+      in the launch's config-change diff. The repository's config never grants a write.
+    - **B — The repository's `yolo-jail.jsonc` may request one**, which takes effect only at the
+      human's y in the config-change diff, as `brokered.github.repos` does
+      ([OQ-BB18](#OQ-BB18)).
+
+    <!-- vantage: oq id=OQ-BB22 leaning="A: OQ-BB16 already ruled that a workspace never widens access, and an agent-edited file asking for write grants makes the y the only safeguard." -->
+
+    _Leaning:_ **A.** [OQ-BB16](#OQ-BB16) already ruled that a workspace never widens access, and
+    a file the agent edits that asks for write grants leaves the y as the only safeguard.
 
     **Answer:**
     > _(empty — fill in when decided)_
@@ -2538,6 +2569,8 @@ covered:
 | <a id="BB-D89"></a>[`BB-D89`](#15-decision-ledger) | *Implementation decision.* No grant carries a use cap: a timed grant is bounded by its clock and a working-set entry by its resource. Drops [BB-D21](#BB-D21)'s use cap, which was never the maintainer's words | 2026-10-23 | [§7](#7-grants-and-the-request-store) | pending |
 | <a id="BB-D90"></a>[`BB-D90`](#15-decision-ledger) | *Implementation decision.* A creation the workspace holds no user grant for rings like any write and offers Allow once and Allow for 15 minutes, never Add; what either creates joins the working set; the notification names the host command that gives the user grant | 2026-10-23 | [§5.8](#58-long-lived-access-and-temporary-access), [§6.4](#64-choosing-a-duration) | pending |
 | <a id="BB-D91"></a>[`BB-D91`](#15-decision-ledger) | **Ruled 2026-10-23 ([OQ-BB14](#OQ-BB14)), for now:** no notification approves an arbitrary host command; host-run stays paste-only. *"the answer is no for now"* | 2026-10-23 | [§14](#14-open-questions) | — |
+| <a id="BB-D92"></a>[`BB-D92`](#15-decision-ledger) | **Ruled 2026-10-23 ([OQ-BB15](#OQ-BB15)):** no write is added to `read`; each write is its own grant naming its resource (a repository, a PR, …), a wildcard being an explicit special case, and it goes through config approval. The `admit` key on a standing set is retired with the windowed sets; once built, `yolo check` refuses it and names the grant that replaces it. Which file holds a grant is [OQ-BB22](#OQ-BB22) | 2026-10-23 | [§5.7](#57-permission-sets) | pending |
+| <a id="BB-D93"></a>[`BB-D93`](#15-decision-ledger) | **Ruled 2026-10-23 ([OQ-BB20](#OQ-BB20)):** a repository-level write (releases, labels, workflow runs, settings, other `gh api` writes) never joins the working set and its notification offers no Add. It runs unasked only under an additional user grant type naming it; otherwise it asks per request, answered Allow once or Allow for 15 minutes, as distinct, clearly labelled buttons as far as the notifier allows | 2026-10-23 | [§5.7](#57-permission-sets), [§6.4](#64-choosing-a-duration) | pending |
 
 ## Appendix A — prior art: unYOLO, re-analyzed from source (2026-08-12)
 

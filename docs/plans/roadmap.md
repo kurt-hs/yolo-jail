@@ -311,7 +311,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     whose git source is ruled (a brokered transport, created branches persisted, long-lived access on the user's side only);
     [whether writes ship on the agent's own background wait](../design/boundary-broker.md#OQ-BB17) holds writes.
     [Whether a workspace's own `repos` list may still widen a source's scope](../design/boundary-broker.md#OQ-BB18)
-    and [explicit set rules](../design/boundary-broker.md#OQ-BB15) each hold only their own feature. Beside it,
+    holds only its own feature, and [which config file holds a write grant](../design/boundary-broker.md#OQ-BB22) holds the grant config. Beside it,
     [workspace widening](../design/workspace-widening.md) graduates once [OQ-WW1](../design/workspace-widening.md#OQ-WW1) is ruled.
     Also beside it, asked for by the maintainer on 2026-10-09 and ruled to build on 2026-10-23: [the paste-to-host
     stopgap](../design/host-run-mailbox.md), whose [first slice](../design/host-run-mailbox-plan.md) is ready to build.
