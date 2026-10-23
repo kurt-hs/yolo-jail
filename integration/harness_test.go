@@ -922,16 +922,27 @@ func runLaunch(t *testing.T, dir string, args []string, opts ...runOption) (resu
 	return res, nil
 }
 
+// staleInheritedLaunchEnv are names an OLDER yolo exported into the environment of what it ran,
+// which current yolo deliberately does not recognize: run from such an agent (an old host notch
+// exported YOLO_JAIL=1), the suite would hand each to every launch, and each draws yolo's
+// unknown-variable warning, whose runtime hint broke a refusal's assertions
+// (TestMacosUserPatchedExtensionConflictRefusesAndSkipStartsWithoutIt, on a Mac, 2026-10-23). A
+// call's own withEnv pair naming one still reaches the child. YOLO_REPO_ROOT, the other retired
+// name, is unset by TestMain before anything reads the environment.
+var staleInheritedLaunchEnv = []string{"YOLO_JAIL"}
+
 // launchEnvironment is the child environment every harness launch gets: the suite's own, then
 // the run's repo root, auto-capture and readiness dials, then the call's withEnv pairs, so a
 // later entry for a name wins. The suite's own YOLO_TEST_* dials are dropped from what it
 // inherits: this process reads them and yolo reads none, so passed on, each would only add
-// yolo's unknown-variable warning to the output every test asserts on.
+// yolo's unknown-variable warning to the output every test asserts on. So is every name in
+// staleInheritedLaunchEnv, for the same warning.
 func launchEnvironment(cfg runConfig) []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
-		if !slices.Contains(cfg.unset, name) && !strings.HasPrefix(name, "YOLO_TEST_") {
+		if !slices.Contains(cfg.unset, name) && !strings.HasPrefix(name, "YOLO_TEST_") &&
+			!slices.Contains(staleInheritedLaunchEnv, name) {
 			env = append(env, kv)
 		}
 	}

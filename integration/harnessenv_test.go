@@ -108,6 +108,19 @@ func TestLaunchEnvironmentDropsTheSuitesOwnDials(t *testing.T) {
 	}
 }
 
+// An older yolo's export that current yolo does not recognize (YOLO_JAIL=1, from an old host notch)
+// is not handed to a launch either: it drew the same unknown-variable warning and broke the same
+// refusal's assertions on a Mac. A call's own withEnv pair naming it still reaches the child.
+func TestLaunchEnvironmentDropsAnOlderYolosExports(t *testing.T) {
+	t.Setenv("YOLO_JAIL", "1")
+	if got := launchEnvValue(launchEnvironment(runConfig{}), "YOLO_JAIL"); got != "<unset>" {
+		t.Errorf("launch environment inherits YOLO_JAIL=%s from an older yolo", got)
+	}
+	if got := launchEnvValue(launchEnvironment(runConfig{env: []string{"YOLO_JAIL=asked"}}), "YOLO_JAIL"); got != "asked" {
+		t.Errorf("a call's own YOLO_JAIL pair did not reach the launch: %q", got)
+	}
+}
+
 func TestMatchedHarnessUsesAdjacentBundleAndScrubsObsoleteSelector(t *testing.T) {
 	launcher := filepath.Join("/tmp", "dev generation", "bin", "yolo")
 	wantBundle := filepath.Join("/tmp", "dev generation", "share", "yolo-jail")
