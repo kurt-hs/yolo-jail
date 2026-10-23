@@ -82,14 +82,17 @@ func withGoCAFileTrust(env *jsonx.OrderedMap, ca CATrust, bundleFile string) *js
 	return withEnvVar(env, godebugVar, value)
 }
 
-// godebugValue is the last value GODEBUG gives name (Go reads the settings in order, so a later
-// one wins), and whether it names it at all.
+// godebugValue is the value GODEBUG gives name, read exactly as Go's runtime reads it
+// (internal/godebug's parse): entries split on ',' with nothing trimmed, so " name=1" names a
+// different setting; the name runs to the entry's first '='; a later entry wins; and a value's
+// text ends at its first '#', the rest being a bisect pattern. found says it names it at all.
 func godebugValue(godebug, name string) (string, bool) {
 	value, found := "", false
 	for _, kv := range strings.Split(godebug, ",") {
-		k, v, ok := strings.Cut(strings.TrimSpace(kv), "=")
+		k, v, ok := strings.Cut(kv, "=")
 		if ok && k == name {
-			value, found = v, true
+			value, _, _ = strings.Cut(v, "#")
+			found = true
 		}
 	}
 	return value, found
@@ -129,7 +132,10 @@ func goCAFileLine(state goCAFileState, n int, fromLogin []string) string {
 			line += " One built with an older Go still asks macOS, as that account, and does not trust " +
 				"the " + plural(len(fromLogin), "one", "ones") + " from your login keychain (" + login +
 				"); `go version <path to the program>` names the Go that built it, and a release built " +
-				"with Go " + goCAFileMinVersion + " or later trusts " + plural(len(fromLogin), "it", "them") + "."
+				"with Go " + goCAFileMinVersion + " or later trusts " + plural(len(fromLogin), "it", "them") + "." +
+				" Any other program that asks macOS for trust instead of reading a CA file misses " +
+				plural(len(fromLogin), "it", "them") + " too; point it at the bundle SSL_CERT_FILE names " +
+				"if it can read one."
 		}
 		return line + "[/dim]"
 	case goCAFilePinnedOff:
@@ -137,7 +143,8 @@ func goCAFileLine(state goCAFileState, n int, fromLogin []string) string {
 			return ""
 		}
 		return "[yellow]Note: your configured environment sets " + godebugVar + " " + goCAFileSetting +
-			" to something other than 1[/yellow], so Go programs, such as gh, ask macOS as the " +
+			" to something other than 1[/yellow], so Go programs, such as gh, and any other program " +
+			"that asks macOS for trust, ask it as the " +
 			"sandbox account and do not trust the " +
 			plural(len(fromLogin), "certificate authority", "certificate authorities") +
 			" from your login keychain (" + login + "); tools that read a CA file, such as curl, git, " +

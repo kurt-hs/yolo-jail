@@ -64,6 +64,11 @@ func TestAnAccountLaunchHasGoProgramsVerifyAgainstTheBundle(t *testing.T) {
 	if !strings.Contains(out, "`go version <path to the program>`") {
 		t.Errorf("the launch does not name the check for an older Go:\n%s", out)
 	}
+	// PS-D14's warning about every other program that asks macOS stays, with its next step.
+	if want := "Any other program that asks macOS for trust instead of reading a CA file misses it " +
+		"too; point it at the bundle SSL_CERT_FILE names if it can read one."; !strings.Contains(out, want) {
+		t.Errorf("the launch does not say %q:\n%s", want, out)
+	}
 	if strings.Contains(out, "do not trust it.") {
 		t.Errorf("the launch still prints PS-D14's limit line:\n%s", out)
 	}
@@ -136,7 +141,13 @@ func TestGodebugValueReadsTheLastMention(t *testing.T) {
 		{"", "", false},
 		{"http2debug=1", "", false},
 		{goCAFileSetting + "=0", "0", true},
-		{goCAFileSetting + "=0, " + goCAFileSetting + "=1", "1", true},
+		{goCAFileSetting + "=0," + goCAFileSetting + "=1", "1", true},
+		{goCAFileSetting + "=1," + goCAFileSetting + "=0", "0", true},
+		// Go trims nothing: the spaced entry names " x509…", a different setting.
+		{"a=1, " + goCAFileSetting + "=1", "", false},
+		{goCAFileSetting + "=0, " + goCAFileSetting + "=1", "0", true},
+		// A value's text ends at '#', the rest being a bisect pattern.
+		{goCAFileSetting + "=1#y", "1", true},
 	} {
 		v, named := godebugValue(tc.in, goCAFileSetting)
 		if v != tc.want || named != tc.named {
@@ -152,5 +163,16 @@ func TestNoBundleSetsNoGodebug(t *testing.T) {
 	got := withGoCAFileTrust(env, CATrust{SeparateAccount: true}, "")
 	if _, set := got.Get(godebugVar); set {
 		t.Error("GODEBUG set with no session bundle")
+	}
+}
+
+// A SPACED ENTRY DOES NOT COUNT: Go reads "a=1, x509…=1" as naming " x509…", so the setting is
+// still off for it, and the launch adds its own after the caller's.
+func TestASpacedSettingIsNotTakenAsSet(t *testing.T) {
+	const bundle = "/Users/Shared/yolo-staged/env/k.ca-bundle.crt"
+	env := userCAEnv("SSL_CERT_FILE", bundle, godebugVar, "a=1, "+goCAFileOn)
+	got := withGoCAFileTrust(env, CATrust{SeparateAccount: true}, bundle)
+	if v, _ := got.Get(godebugVar); asStr(v) != "a=1, "+goCAFileOn+","+goCAFileOn {
+		t.Errorf("GODEBUG = %q, want the caller's then ours", asStr(v))
 	}
 }
