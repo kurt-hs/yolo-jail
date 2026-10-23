@@ -1,0 +1,578 @@
+#!/usr/bin/env bash
+# run-checks.sh: run the macos-user model prototype checks on a Mac.
+#
+# Loads profile.sb (beside this script) with sandbox-exec and runs each check of
+# docs/design/macos-user-model.md section 6 under it, printing PASS/FAIL with the
+# command and its output. Exits non-zero if any check FAILs.
+#
+#   ./run-checks.sh --mode self
+#   ./run-checks.sh --mode account --account _yolojail
+#
+# Options:
+#   --mode self|account     who runs the sandbox: you, or the second account (via sudo -u)
+#   --account NAME          the account for --mode account (default _yolojail)
+#   --allow-port PORT       add a loopback port to the profile's allow list (repeatable, max 3;
+#                           the loopback check uses the fourth slot itself)
+#   --with-claude           also install Claude Code into the sandbox's own HOME and run
+#                           `claude --version` (network; no login, no API call)
+#   --keep                  keep the temp dirs and print the command for a manual sandboxed shell
+#
+# It creates only its own temp dirs, a decoy file in your home, a decoy directory
+# (/opt/src/... if creatable, else /Library/Caches/...), and two short-lived
+# processes; it removes all of them on exit. Written without a Mac.
+
+# Single-quoted check scripts are expanded by the bash inside the sandbox, on purpose.
+# shellcheck disable=SC2016
+
+set -u
+
+MODE=""
+ACCOUNT="_yolojail"
+WITH_CLAUDE=0
+KEEP=0
+EXTRA_PORTS=()
+
+usage() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; }
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--mode) MODE="${2:-}"; shift 2 ;;
+	--account) ACCOUNT="${2:-}"; shift 2 ;;
+	--allow-port) EXTRA_PORTS+=("${2:-}"); shift 2 ;;
+	--with-claude) WITH_CLAUDE=1; shift ;;
+	--keep) KEEP=1; shift ;;
+	-h | --help) usage; exit 0 ;;
+	*) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
+	esac
+done
+
+case "$MODE" in
+self | account) ;;
+*) echo "--mode self or --mode account is required (try --help)" >&2; exit 2 ;;
+esac
+
+if [ "$(uname -s)" != "Darwin" ]; then
+	echo "This prototype needs macOS (sandbox-exec). Run it on a Mac." >&2
+	exit 2
+fi
+if [ ! -x /usr/bin/sandbox-exec ]; then
+	echo "/usr/bin/sandbox-exec is missing; this macOS cannot run the prototype." >&2
+	exit 2
+fi
+if [ "${#EXTRA_PORTS[@]}" -gt 3 ]; then
+	echo "--allow-port takes at most 3 ports (the profile has 4 slots; the loopback check uses one)." >&2
+	exit 2
+fi
+for p in "${EXTRA_PORTS[@]+"${EXTRA_PORTS[@]}"}"; do
+	case "$p" in
+	'' | *[!0-9]*) echo "--allow-port needs a number, got '$p'" >&2; exit 2 ;;
+	esac
+done
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+SRC_PROFILE="$SCRIPT_DIR/profile.sb"
+[ -r "$SRC_PROFILE" ] || { echo "profile.sb not found beside this script ($SRC_PROFILE)" >&2; exit 2; }
+
+HOST_HOME="$(cd "$HOME" && pwd -P)"
+MADE_SHARED=0
+NONCE="$$${RANDOM}"
+AS=()
+
+if [ "$MODE" = account ]; then
+	if ! id -u "$ACCOUNT" >/dev/null 2>&1; then
+		echo "SKIP: account '$ACCOUNT' does not exist on this Mac."
+		echo "      Account mode needs a Mac where yolo's macos-setup already created it;"
+		echo "      run '--mode self' here instead, or run account mode on a Mac that has it."
+		exit 0
+	fi
+	echo "Account mode runs commands as '$ACCOUNT' through sudo; you may be asked for your password."
+	sudo -v || { echo "sudo failed; account mode needs sudo. Run '--mode self' instead." >&2; exit 2; }
+	AS=(sudo -n -u "$ACCOUNT")
+	if [ ! -d /Users/Shared/yolo ]; then
+		MADE_SHARED=1
+		mkdir -p /Users/Shared/yolo 2>/dev/null || sudo mkdir -p /Users/Shared/yolo
+	fi
+	ROOT="/Users/Shared/yolo/prototype-$NONCE"
+	if ! mkdir "$ROOT" 2>/dev/null; then
+		sudo mkdir "$ROOT" && sudo chown "$(id -un)" "$ROOT"
+	fi
+else
+	# The ruled model allows a workspace in your home, so self mode puts it there.
+	ROOT="$HOST_HOME/yolo-prototype-$NONCE"
+fi
+
+mkdir -p "$ROOT" || { echo "cannot create $ROOT" >&2; exit 2; }
+ROOT="$(cd "$ROOT" && pwd -P)"
+WORKSPACE="$ROOT/workspace"
+AGENT_HOME="$WORKSPACE/.yolo/home"
+SANDBOX_TMP="$ROOT/tmp"
+mkdir -p "$WORKSPACE" "$AGENT_HOME" "$SANDBOX_TMP"
+PROFILE="$ROOT/profile.sb"
+cp "$SRC_PROFILE" "$PROFILE"
+chmod 0644 "$PROFILE"
+chmod 0755 "$ROOT"
+
+DECOY_SECRET="$HOST_HOME/yolo-prototype-decoy-$NONCE.txt"
+printf 'yolo-prototype decoy secret %s\n' "$NONCE" >"$DECOY_SECRET"
+chmod 0600 "$DECOY_SECRET"
+
+# A decoy project outside /Users, like /opt/src/clientX.
+DECOY_PROJECT=""
+DECOY_PROJECT_MADE_PARENT=""
+for cand in "/opt/src/yolo-prototype-clientX-$NONCE" "/Library/Caches/yolo-prototype-clientX-$NONCE"; do
+	parent="$(dirname "$cand")"
+	if [ ! -d "$parent" ] && mkdir "$parent" 2>/dev/null; then
+		DECOY_PROJECT_MADE_PARENT="$parent"
+	fi
+	if mkdir "$cand" 2>/dev/null; then
+		DECOY_PROJECT="$cand"
+		break
+	fi
+	[ -n "$DECOY_PROJECT_MADE_PARENT" ] && rmdir "$DECOY_PROJECT_MADE_PARENT" 2>/dev/null && DECOY_PROJECT_MADE_PARENT=""
+done
+if [ -n "$DECOY_PROJECT" ]; then
+	printf 'client source %s\n' "$NONCE" >"$DECOY_PROJECT/main.c"
+	chmod 0755 "$DECOY_PROJECT"
+	chmod 0644 "$DECOY_PROJECT/main.c"
+fi
+
+# A /tmp file of yours, to show what the shared /tmp still exposes (INFO only).
+TMP_DECOY="/private/tmp/yolo-prototype-tmpdecoy-$NONCE"
+printf 'tmp decoy %s\n' "$NONCE" >"$TMP_DECOY"
+chmod 0600 "$TMP_DECOY"
+
+# A process of yours outside the sandbox, with a distinctive argv.
+DECOY_SLEEP_ARG="86$NONCE"
+/bin/sleep "$DECOY_SLEEP_ARG" &
+DECOY_PID=$!
+
+LISTENER_PID=""
+CLAUDE_LABEL="yolo.prototype.$NONCE"
+
+if [ "$MODE" = account ]; then
+	sudo chown -R "$ACCOUNT" "$WORKSPACE" "$SANDBOX_TMP"
+	DARWIN_TMP="$("${AS[@]}" /usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null)"
+else
+	DARWIN_TMP="$(/usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null)"
+fi
+DARWIN_TMP="${DARWIN_TMP%/}"
+if [ -n "$DARWIN_TMP" ] && [ -d "$DARWIN_TMP" ]; then
+	DARWIN_TMP="$(cd "$DARWIN_TMP" 2>/dev/null && pwd -P || echo "$DARWIN_TMP")"
+else
+	# The account's temp dir may be unreadable to you; fall back to its unresolved form.
+	DARWIN_TMP="${DARWIN_TMP:-$SANDBOX_TMP}"
+	case "$DARWIN_TMP" in /var/*) DARWIN_TMP="/private$DARWIN_TMP" ;; esac
+fi
+
+# shellcheck disable=SC2329  # invoked by the EXIT trap
+cleanup() {
+	[ -n "$LISTENER_PID" ] && kill "$LISTENER_PID" 2>/dev/null
+	kill "$DECOY_PID" 2>/dev/null
+	launchctl remove "$CLAUDE_LABEL" 2>/dev/null
+	rm -f "$DECOY_SECRET" "$TMP_DECOY"
+	if [ -n "$DECOY_PROJECT" ]; then
+		rm -rf "$DECOY_PROJECT"
+		[ -n "$DECOY_PROJECT_MADE_PARENT" ] && rmdir "$DECOY_PROJECT_MADE_PARENT" 2>/dev/null
+	fi
+	if [ "$KEEP" = 1 ]; then
+		echo
+		echo "Kept $ROOT (--keep). Remove it with: ${AS[*]:+sudo }rm -rf '$ROOT'"
+		return
+	fi
+	if [ "$MODE" = account ]; then
+		sudo rm -rf "$ROOT"
+		[ "$MADE_SHARED" = 1 ] && { rmdir /Users/Shared/yolo 2>/dev/null || sudo rmdir /Users/Shared/yolo 2>/dev/null; }
+	else
+		rm -rf "$ROOT"
+	fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+# Ancestors of ROOT (everything above the workspace, home and temp dir).
+ANCESTORS=()
+d="$ROOT"
+while [ "$d" != "/" ]; do
+	ANCESTORS=("$d" "${ANCESTORS[@]+"${ANCESTORS[@]}"}")
+	d="$(dirname "$d")"
+done
+if [ "${#ANCESTORS[@]}" -gt 8 ]; then
+	echo "The temp root $ROOT is more than 8 directories deep; the profile has 8 ancestor slots." >&2
+	exit 2
+fi
+
+# A free loopback port for check (d), and one for the in-sandbox listener (INFO).
+port_free() { ! (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+pick_port() {
+	local p i
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		p=$((20000 + RANDOM % 20000))
+		if port_free "$p"; then echo "$p"; return 0; fi
+	done
+	return 1
+}
+LOOP_PORT="$(pick_port)" || { echo "could not find a free loopback port" >&2; exit 2; }
+INNER_PORT="$(pick_port)" || { echo "could not find a free loopback port" >&2; exit 2; }
+
+SB_PATH="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin"
+
+# params PORT1 PORT2 PORT3 PORT4 -> fills PARAMS
+build_params() {
+	local i
+	PARAMS=(-D "WORKSPACE=$WORKSPACE" -D "AGENT_HOME=$AGENT_HOME" -D "HOST_HOME=$HOST_HOME"
+		-D "SANDBOX_TMP=$SANDBOX_TMP" -D "DARWIN_USER_TEMP_DIR=$DARWIN_TMP")
+	for i in 1 2 3 4 5 6 7 8; do
+		PARAMS+=(-D "ANCESTOR_$i=${ANCESTORS[$((i - 1))]:-/}")
+	done
+	PARAMS+=(-D "LOOPBACK_PORT_1=$1" -D "LOOPBACK_PORT_2=$2" -D "LOOPBACK_PORT_3=$3" -D "LOOPBACK_PORT_4=$4")
+}
+BASE_PORTS=("${EXTRA_PORTS[0]:-none}" "${EXTRA_PORTS[1]:-none}" "${EXTRA_PORTS[2]:-none}")
+build_params "${BASE_PORTS[@]}" none
+DEFAULT_PARAMS=("${PARAMS[@]}")
+
+# Env for every inside (and control) run: a clean environment, HOME = the agent's.
+SB_USER="$(id -un)"
+[ "$MODE" = account ] && SB_USER="$ACCOUNT"
+SB_ENV=(HOME="$AGENT_HOME" PATH="$SB_PATH" TMPDIR="$SANDBOX_TMP/" USER="$SB_USER" LOGNAME="$SB_USER"
+	LANG="${LANG:-en_US.UTF-8}" TERM="${TERM:-xterm-256color}"
+	HOST_HOME="$HOST_HOME" WORKSPACE="$WORKSPACE" NONCE="$NONCE")
+
+# inside SCRIPT [extra env...]: run SCRIPT with bash under the profile, as the mode's user.
+inside() {
+	local script="$1"
+	shift
+	[ "$MODE" = account ] && sudo -v
+	(cd "$WORKSPACE" && "${AS[@]+"${AS[@]}"}" /usr/bin/env -i "${SB_ENV[@]}" "$@" \
+		/usr/bin/sandbox-exec -f "$PROFILE" "${PARAMS[@]}" /bin/bash -c "$script") 2>&1
+}
+
+# control SCRIPT [extra env...]: the same, without the profile (same user).
+control() {
+	local script="$1"
+	shift
+	[ "$MODE" = account ] && sudo -v
+	(cd "$WORKSPACE" && "${AS[@]+"${AS[@]}"}" /usr/bin/env -i "${SB_ENV[@]}" "$@" \
+		/bin/bash -c "$script") 2>&1
+}
+
+FAILS=0
+PASSES=0
+SKIPS=0
+FAILED_IDS=()
+
+show() { # show OUTPUT: indent captured output
+	if [ -n "$1" ]; then printf '%s\n' "$1" | sed 's/^/    | /'; fi
+}
+
+result() { # result PASS|FAIL|SKIP|INFO ID DESC
+	case "$1" in
+	PASS) PASSES=$((PASSES + 1)) ;;
+	FAIL) FAILS=$((FAILS + 1)); FAILED_IDS+=("$2") ;;
+	SKIP) SKIPS=$((SKIPS + 1)) ;;
+	esac
+	printf '%-4s %-4s %s\n' "$1" "$2" "$3"
+}
+
+# expect_allow ID DESC SCRIPT [env...]: PASS if SCRIPT exits 0 inside the sandbox.
+expect_allow() {
+	local id="$1" desc="$2" script="$3" out rc
+	shift 3
+	PARAMS=("${DEFAULT_PARAMS[@]}")
+	out="$(inside "$script" "$@")"
+	rc=$?
+	if [ $rc -eq 0 ]; then result PASS "$id" "$desc"; else result FAIL "$id" "$desc (exit $rc)"; fi
+	printf '    $ %s\n' "$script"
+	show "$out"
+}
+
+# expect_deny ID DESC SCRIPT CONTROL(yes|no) [env...]: SCRIPT exits 0 only when the access WORKED.
+# PASS if it fails inside. With CONTROL=yes the same script runs first without the profile, so a
+# refusal can be attributed to the profile; a control that also fails is reported, not counted.
+expect_deny() {
+	local id="$1" desc="$2" script="$3" ctl="$4" out rc cout crc note=""
+	shift 4
+	PARAMS=("${DEFAULT_PARAMS[@]}")
+	if [ "$ctl" = yes ]; then
+		cout="$(control "$script" "$@")"
+		crc=$?
+		if [ $crc -eq 0 ]; then
+			note="control without the profile: allowed, so a refusal is the profile's"
+		else
+			note="control without the profile: ALSO denied (exit $crc), so a refusal here is not the profile's alone"
+		fi
+	else
+		note="no control run (running it outside the sandbox would act on your session)"
+	fi
+	out="$(inside "$script" "$@")"
+	rc=$?
+	if [ $rc -ne 0 ]; then result PASS "$id" "$desc"; else result FAIL "$id" "$desc (the access WORKED inside the sandbox)"; fi
+	printf '    $ %s\n' "$script"
+	show "$out"
+	printf '    (%s)\n' "$note"
+	[ "$ctl" = yes ] && [ $crc -ne 0 ] && show "$cout"
+}
+
+info() { # info ID DESC SCRIPT: run inside, report the outcome without counting it
+	local id="$1" desc="$2" script="$3" out rc
+	PARAMS=("${DEFAULT_PARAMS[@]}")
+	out="$(inside "$script")"
+	rc=$?
+	result INFO "$id" "$desc: $([ $rc -eq 0 ] && echo "worked" || echo "refused (exit $rc)")"
+	printf '    $ %s\n' "$script"
+	show "$out"
+}
+
+skip() { result SKIP "$1" "$2"; }
+
+echo "== macos-user model prototype: mode=$MODE${AS[*]:+ account=$ACCOUNT}"
+echo "   macOS $(sw_vers -productVersion 2>/dev/null) ($(uname -m)); nonce $NONCE"
+echo "   WORKSPACE=$WORKSPACE"
+echo "   AGENT_HOME=$AGENT_HOME"
+echo "   SANDBOX_TMP=$SANDBOX_TMP  DARWIN_USER_TEMP_DIR=$DARWIN_TMP"
+echo "   decoy secret: $DECOY_SECRET"
+echo "   decoy project: ${DECOY_PROJECT:-none (neither /opt/src nor /Library/Caches was writable)}"
+echo "   allowed loopback ports: ${EXTRA_PORTS[*]:-none}"
+echo
+
+# --- 0: the profile loads at all -------------------------------------------
+PARAMS=("${DEFAULT_PARAMS[@]}")
+out="$(inside 'echo loaded')"
+rc=$?
+if [ $rc -ne 0 ] || [ "$out" != "loaded" ]; then
+	result FAIL 0 "profile loads and runs /bin/bash (exit $rc)"
+	show "$out"
+	echo
+	echo "The profile did not load or bash could not start under it; no further check is meaningful."
+	echo "Paste the output above back. The sandbox log names the denied operation:"
+	echo "  log show --last 2m --style compact --predicate 'sender == \"Sandbox\"' | tail -50"
+	exit 1
+fi
+result PASS 0 "profile loads and runs /bin/bash"
+echo
+
+# --- (a) the agent's own files and tools -------------------------------------
+echo "-- (a) workspace, home, tools"
+expect_allow a1 "read and write the workspace" \
+	'echo hi >"$WORKSPACE/a1.txt" && cat "$WORKSPACE/a1.txt" && rm "$WORKSPACE/a1.txt"'
+expect_allow a2 "read and write AGENT_HOME (\$HOME)" \
+	'mkdir -p "$HOME/.config/x" && echo hi >"$HOME/.config/x/f" && cat "$HOME/.config/x/f"'
+expect_allow a3 "write TMPDIR and /tmp" \
+	'f=$(mktemp) && echo hi >"$f" && cat "$f" && rm "$f" && echo hi >/tmp/yolo-prototype-a3-$NONCE && rm /tmp/yolo-prototype-a3-$NONCE'
+expect_allow a4 "signal a process inside the sandbox" \
+	'sleep 30 & p=$!; kill $p || exit 1; wait $p; rc=$?; echo "child ended with $rc"; [ $rc -eq 143 ]'
+
+GIT=""
+for g in /opt/homebrew/bin/git /usr/local/bin/git /run/current-system/sw/bin/git /nix/var/nix/profiles/default/bin/git; do
+	[ -x "$g" ] && { GIT="$g"; break; }
+done
+if [ -z "$GIT" ] && /usr/bin/xcode-select -p >/dev/null 2>&1; then GIT=/usr/bin/git; fi
+if [ -n "$GIT" ]; then
+	expect_allow a5 "git init and commit in the workspace ($GIT)" \
+		"cd \"\$WORKSPACE\" && mkdir -p repo && cd repo && $GIT init -q && echo x >f && $GIT add f && $GIT -c user.name=p -c user.email=p@example.com commit -qm init && $GIT log --oneline"
+else
+	skip a5 "git: none found (no Homebrew/nix git, no Command Line Tools)"
+fi
+
+if /usr/bin/xcode-select -p >/dev/null 2>&1; then
+	expect_allow a6 "a build: compile and run C with the Command Line Tools" \
+		'cd "$WORKSPACE" && printf "int main(void){return 0;}\n" >m.c && cc -o m m.c && ./m && echo built'
+else
+	skip a6 "build: Command Line Tools not installed (xcode-select -p failed)"
+fi
+
+BREW_BIN=""
+for b in jq rg fd wget gh git curl python3 node; do
+	[ -x "/opt/homebrew/bin/$b" ] && { BREW_BIN="/opt/homebrew/bin/$b"; break; }
+done
+if [ -n "$BREW_BIN" ]; then
+	expect_allow a7 "run a Homebrew binary ($BREW_BIN --version)" "$BREW_BIN --version"
+else
+	skip a7 "Homebrew binary: none of the probed tools under /opt/homebrew/bin"
+fi
+
+if [ -x /nix/var/nix/profiles/default/bin/nix ]; then
+	expect_allow a8 "run a nix-store binary (nix --version)" '/nix/var/nix/profiles/default/bin/nix --version'
+else
+	skip a8 "nix: /nix/var/nix/profiles/default/bin/nix not present"
+fi
+
+expect_allow a9 "HTTPS with certificate trust (curl -sI https://github.com)" \
+	'curl -sSI --max-time 20 https://github.com | head -1'
+if [ -x /opt/homebrew/bin/gh ] || [ -x /run/current-system/sw/bin/gh ] || [ -x /nix/var/nix/profiles/default/bin/gh ]; then
+	expect_allow a10 "gh runs (gh --version)" 'gh --version'
+else
+	skip a10 "gh: not installed under Homebrew or nix"
+fi
+if [ -n "$GIT" ]; then
+	expect_allow a11 "git over HTTPS (git ls-remote https://github.com/git/git HEAD)" \
+		"$GIT ls-remote https://github.com/git/git HEAD"
+else
+	skip a11 "git ls-remote: no git"
+fi
+expect_allow a12 "read the system fonts (/System/Library/Fonts, /Library/Fonts)" \
+	'ls /System/Library/Fonts | head -3 && ls /Library/Fonts >/dev/null'
+echo
+
+# --- (b) your secrets and your session ----------------------------------------
+echo "-- (b) host home, keychain, ssh agent, clipboard, Apple Events, launchd, signals"
+expect_deny b1 "read the decoy secret in your home" 'cat "'"$DECOY_SECRET"'"' yes
+if [ -d "$HOST_HOME/.ssh" ]; then
+	expect_deny b2 "list ~/.ssh" 'ls -la "$HOST_HOME/.ssh"' yes
+else
+	skip b2 "$HOST_HOME/.ssh does not exist"
+fi
+expect_deny b3 "write a file in your home" 'touch "$HOST_HOME/yolo-prototype-write-$NONCE" && rm -f "$HOST_HOME/yolo-prototype-write-$NONCE"' yes
+# security: exit 0 (found) or 44 (searched, not found) means the keychain was reachable.
+expect_deny b4 "search the keychain (security find-generic-password)" \
+	'security find-generic-password -s yolo-prototype-nonexistent-$NONCE; rc=$?; echo "security exit $rc"; [ $rc -eq 0 ] || [ $rc -eq 44 ]' yes
+expect_deny b5 "read the login keychain file" 'head -c 16 "$HOST_HOME/Library/Keychains/login.keychain-db" >/dev/null' yes
+if [ -n "${SSH_AUTH_SOCK:-}" ]; then
+	# ssh-add -l: 0 = keys listed, 1 = agent reached but empty, 2 = could not connect.
+	expect_deny b6 "reach the ssh agent (\$SSH_AUTH_SOCK)" \
+		'ssh-add -l; rc=$?; echo "ssh-add exit $rc"; [ $rc -eq 0 ] || [ $rc -eq 1 ]' yes SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
+else
+	skip b6 "SSH_AUTH_SOCK is not set in this terminal"
+fi
+CLIP="$(pbpaste 2>/dev/null | head -c 200)"
+if [ -n "$CLIP" ] && [ "$MODE" = self ]; then
+	export CLIP
+	expect_deny b7 "read your clipboard (pbpaste)" \
+		'out="$(pbpaste 2>&1 | head -c 200)"; echo "pbpaste printed ${#out} bytes"; [ -n "$out" ] && [ "$out" = "$CLIP" ]' no CLIP="$CLIP"
+elif [ "$MODE" = account ]; then
+	expect_deny b7 "read a clipboard (pbpaste, as the account)" \
+		'out="$(pbpaste 2>&1)"; rc=$?; echo "pbpaste exit $rc, ${#out} bytes"; [ $rc -eq 0 ] && [ -n "$out" ]' yes
+else
+	skip b7 "clipboard holds no text: copy any text, then rerun to cover pbpaste"
+fi
+expect_deny b8 "drive Finder with Apple Events (osascript)" \
+	"osascript -e 'tell application \"Finder\" to get name'" no
+expect_deny b9 "run a shell through System Events (osascript do shell script)" \
+	"osascript -e 'tell application \"System Events\" to do shell script \"id\"'" no
+expect_deny b10 "open an app through LaunchServices (open -g -a TextEdit)" 'open -g -a TextEdit' no
+# launchctl submit: the job is visible from outside only if the submit escaped.
+PARAMS=("${DEFAULT_PARAMS[@]}")
+out="$(inside "launchctl submit -l $CLAUDE_LABEL -- /usr/bin/true; echo \"launchctl exit \$?\"")"
+if "${AS[@]+"${AS[@]}"}" launchctl list "$CLAUDE_LABEL" >/dev/null 2>&1; then
+	result FAIL b11 "submit a launchd job (launchctl submit): the job exists outside the sandbox"
+else
+	result PASS b11 "submit a launchd job (launchctl submit)"
+fi
+printf '    $ launchctl submit -l %s -- /usr/bin/true\n' "$CLAUDE_LABEL"
+show "$out"
+"${AS[@]+"${AS[@]}"}" launchctl remove "$CLAUDE_LABEL" 2>/dev/null
+expect_deny b12 "signal one of your processes (kill -0 $DECOY_PID)" "kill -0 $DECOY_PID" yes
+expect_deny b13 "read another process's argv (ps of pid $DECOY_PID)" \
+	"ps -ww -o command= -p $DECOY_PID | tee /dev/stderr | grep -q $DECOY_SLEEP_ARG" yes
+info b14 "residual: a 0600 file of yours in the shared /tmp" "cat $TMP_DECOY"
+echo
+
+# --- (c) outside /Users ---------------------------------------------------------
+echo "-- (c) a project outside /Users, and the software trees"
+if [ -n "$DECOY_PROJECT" ]; then
+	expect_deny c1 "read the decoy project ($DECOY_PROJECT)" "cat '$DECOY_PROJECT/main.c'" yes
+	expect_deny c2 "list the decoy project's parent ($(dirname "$DECOY_PROJECT"))" "ls '$(dirname "$DECOY_PROJECT")'" yes
+else
+	skip c1 "decoy project: neither /opt/src nor /Library/Caches is writable without root"
+fi
+if [ -d /opt/homebrew ]; then
+	expect_allow c3 "read /opt/homebrew" 'ls /opt/homebrew/bin >/dev/null && echo ok'
+else
+	skip c3 "/opt/homebrew not present"
+fi
+STORE_PATH="$(cd /nix/var/nix/profiles/default 2>/dev/null && pwd -P)"
+case "$STORE_PATH" in
+/nix/store/*) expect_allow c4 "read /nix/store ($STORE_PATH)" "ls '$STORE_PATH' && echo ok" ;;
+*) skip c4 "/nix/store: no default nix profile to find a store path from" ;;
+esac
+echo
+
+# --- (d) loopback ------------------------------------------------------------------
+echo "-- (d) loopback"
+/usr/bin/nc -lk 127.0.0.1 "$LOOP_PORT" >/dev/null 2>&1 &
+LISTENER_PID=$!
+sleep 1
+if port_free "$LOOP_PORT" && /usr/bin/xcode-select -p >/dev/null 2>&1; then
+	# This nc may not take a bind address; fall back to Python's server.
+	kill "$LISTENER_PID" 2>/dev/null
+	(cd "$SANDBOX_TMP" && exec /usr/bin/python3 -m http.server --bind 127.0.0.1 "$LOOP_PORT") >/dev/null 2>&1 &
+	LISTENER_PID=$!
+	sleep 2
+fi
+if port_free "$LOOP_PORT"; then
+	skip d1 "could not start a loopback listener on $LOOP_PORT (nc -lk)"
+	skip d2 "loopback allow (no listener)"
+else
+	PROBE="(exec 3<>/dev/tcp/127.0.0.1/$LOOP_PORT) && echo connected"
+	PARAMS=("${DEFAULT_PARAMS[@]}")
+	out="$(inside "$PROBE")"
+	rc=$?
+	if [ $rc -ne 0 ]; then result PASS d1 "your loopback listener on $LOOP_PORT is unreachable (port not listed)"
+	else result FAIL d1 "your loopback listener on $LOOP_PORT is reachable though not listed"; fi
+	printf '    $ %s\n' "$PROBE"
+	show "$out"
+	build_params "${BASE_PORTS[@]}" "$LOOP_PORT"
+	out="$(inside "$PROBE")"
+	rc=$?
+	if [ $rc -eq 0 ]; then result PASS d2 "the same listener is reachable once $LOOP_PORT is listed"
+	else result FAIL d2 "the listener stays unreachable with $LOOP_PORT listed (exit $rc)"; fi
+	printf '    $ %s   (with LOOPBACK_PORT_4=%s)\n' "$PROBE" "$LOOP_PORT"
+	show "$out"
+fi
+kill "$LISTENER_PID" 2>/dev/null
+LISTENER_PID=""
+info d3 "an agent's own loopback server (listen and connect inside, port not listed)" \
+	"/usr/bin/nc -lk 127.0.0.1 $INNER_PORT >/dev/null 2>&1 & p=\$!; sleep 1; (exec 3<>/dev/tcp/127.0.0.1/$INNER_PORT) && echo connected; rc=\$?; kill \$p; exit \$rc"
+echo
+
+# --- (e) Full Disk Access ------------------------------------------------------------
+echo "-- (e) Full Disk Access"
+TCC_DB="$HOST_HOME/Library/Application Support/com.apple.TCC/TCC.db"
+if [ "$MODE" = account ]; then
+	skip e1 "Full Disk Access check runs in self mode only"
+elif head -c 16 "$TCC_DB" >/dev/null 2>&1; then
+	echo "    Full Disk Access APPEARS GRANTED to this terminal (it can read TCC.db). Confirm in"
+	echo "    System Settings > Privacy & Security > Full Disk Access."
+	expect_deny e1 "with Full Disk Access, a profile-denied file stays unreadable (TCC.db)" \
+		'head -c 16 "$HOST_HOME/Library/Application Support/com.apple.TCC/TCC.db" >/dev/null' yes
+	expect_deny e2 "with Full Disk Access, the decoy secret stays unreadable" 'cat "'"$DECOY_SECRET"'"' yes
+else
+	echo "    Full Disk Access appears NOT granted to this terminal (TCC.db is unreadable)."
+	skip e1 "grant this terminal Full Disk Access, restart it, and rerun to cover (e)"
+fi
+echo
+
+# --- (f) Claude, optional -------------------------------------------------------------
+echo "-- (f) Claude Code (optional)"
+if [ "$WITH_CLAUDE" = 1 ]; then
+	expect_allow f1 "install Claude Code into the sandbox's own HOME and run claude --version" \
+		'curl -fsSL https://claude.ai/install.sh | bash >"$TMPDIR/claude-install.log" 2>&1; tail -3 "$TMPDIR/claude-install.log"; "$HOME/.local/bin/claude" --version'
+	echo "    Manual: Claude login with the keychain denied. Rerun with --with-claude --keep, then run the"
+	echo "    printed sandboxed shell, start 'claude', log in, quit, start it again: it must not ask"
+	echo "    to log in again, and ~/.claude/.credentials.json must exist under AGENT_HOME. Paste"
+	echo "    whether it stayed logged in; never paste the credentials file."
+else
+	skip f1 "pass --with-claude to cover claude --version (no login, no API call)"
+fi
+echo
+
+if [ "$KEEP" = 1 ]; then
+	echo "Manual sandboxed shell (the same profile and parameters as the checks):"
+	printf '  cd %q && %s /usr/bin/env -i' "$WORKSPACE" "${AS[*]:-}"
+	printf ' %q' "${SB_ENV[@]}"
+	printf ' /usr/bin/sandbox-exec -f %q' "$PROFILE"
+	printf ' %q' "${DEFAULT_PARAMS[@]}"
+	printf ' /bin/bash -l\n'
+	echo "  (the decoys are removed when this script exits; the workspace and home are kept)"
+	echo
+fi
+
+echo "== summary: $PASSES PASS, $FAILS FAIL, $SKIPS SKIP (mode=$MODE)"
+if [ "$FAILS" -gt 0 ]; then
+	echo "   failed: ${FAILED_IDS[*]}"
+	echo "   For each FAIL that is a broken tool (not an escape), the sandbox log names the denied operation:"
+	echo "     log show --last 5m --style compact --predicate 'sender == \"Sandbox\"' | grep -i deny | tail -50"
+	echo "   Paste this whole output and that log excerpt back."
+	exit 1
+fi
+echo "   Paste this whole output back."
+exit 0

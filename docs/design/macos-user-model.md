@@ -146,7 +146,8 @@ On a Mac, with a hand-written profile and no yolo changes:
 6. Claude logs in and stays logged in with the keychain denied to the sandbox.
 7. Steps 1 to 3 pass again with the same profile run as the second account.
 
-That run is the gate before building. The existing macos-user policy suite
+The [prototype runbook](../plans/runbooks/macos-user-model-prototype/README.md) is that profile
+and a script that runs these checks in both modes. That run is the gate before building. The existing macos-user policy suite
 ([§8.1](../research/agent-safehouse.md#81-a-policy-assertion-suite-for-macos-user--highest-value-moderate-cost))
 is where its checks become permanent tests.
 

@@ -1,0 +1,406 @@
+(version 1)
+
+;; ===========================================================================
+;; yolo-jail macos-user model PROTOTYPE profile: deny by default, allow a list.
+;;
+;; The prototype for docs/design/macos-user-model.md section 6. Hand-written and
+;; never loaded by yolo; run-checks.sh in this directory loads it with
+;; `sandbox-exec -f profile.sb -D KEY=VALUE ...`. Written without a Mac: the first
+;; run on one is expected to need allow-list adjustments.
+;;
+;; ---------------------------------------------------------------------------
+;; ATTRIBUTION AND LICENSE
+;;
+;; Most rules below are adapted from Agent Safehouse's layered profiles,
+;; https://github.com/eugene1g/agent-safehouse (main branch, read 2026-10-22),
+;; Copyright the Agent Safehouse authors, licensed under the Apache License,
+;; Version 2.0. You may not use those portions except in compliance with the
+;; License. You may obtain a copy of the License at
+;;
+;;     http://www.apache.org/licenses/LICENSE-2.0
+;;
+;; Unless required by applicable law or agreed to in writing, software
+;; distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+;; WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+;; License for the specific language governing permissions and limitations
+;; under the License.
+;;
+;; Modified by yolo-jail. Each block names the Safehouse file it comes from:
+;;   [00-base]     profiles/00-base.sb
+;;   [10-runtime]  profiles/10-system-runtime.sb
+;;   [20-network]  profiles/20-network.sb
+;;   [30-apple]    profiles/30-toolchains/apple-toolchain-core.sb
+;;   [50-ssh]      profiles/50-integrations-core/ssh-agent-default-deny.sb
+;;   [50-container] profiles/50-integrations-core/container-runtime-default-deny.sb
+;;   [render]      bin/lib/policy/render.sh (the generated ancestor literals)
+;;   [yolo]        written for this prototype; not in Safehouse
+;; The changes, all from the design's section 7 rulings: no per-language home
+;; grants (~/.nvm, ~/.npm, ~/.cargo, ~/.pyenv, ~/.local/bin and the rest are
+;; gone: the agent has its own HOME); /opt narrowed to /opt/homebrew; read-write
+;; only on WORKSPACE, AGENT_HOME and temp dirs; launchservicesd dropped from the
+;; service list; loopback denied except listed ports; a closing block of
+;; explicit denies.
+;;
+;; ---------------------------------------------------------------------------
+;; PARAMETERS (every one is required; run-checks.sh passes them all)
+;;
+;;   WORKSPACE          physical path of the workspace, read-write
+;;   AGENT_HOME         physical path of the agent's own HOME, read-write
+;;   HOST_HOME          the human's home: named only to deny parts of it
+;;   SANDBOX_TMP        physical path of the launch's own TMPDIR, read-write
+;;   DARWIN_USER_TEMP_DIR  `getconf DARWIN_USER_TEMP_DIR` of the running user,
+;;                      physical, no trailing slash, read-write
+;;   ANCESTOR_1..8      every directory above WORKSPACE, AGENT_HOME and
+;;                      SANDBOX_TMP; unused slots are "/"
+;;   LOOPBACK_PORT_1..4 loopback TCP/UDP ports the sandbox may connect to;
+;;                      unused slots are "none"
+;;
+;; SBPL is last-match-wins: an allow re-opens what an earlier deny closed, and
+;; the explicit denies at the end beat every allow above them.
+;; ===========================================================================
+
+(define WORKSPACE (param "WORKSPACE"))
+(define AGENT_HOME (param "AGENT_HOME"))
+(define HOST_HOME (param "HOST_HOME"))
+(define SANDBOX_TMP (param "SANDBOX_TMP"))
+(define DARWIN_USER_TEMP_DIR (param "DARWIN_USER_TEMP_DIR"))
+
+(define (host-home-subpath rel) (subpath (string-append HOST_HOME rel)))   ;; [00-base] home-subpath, renamed
+(define (host-home-literal rel) (literal (string-append HOST_HOME rel)))   ;; [00-base] home-literal, renamed
+(define (host-home-prefix rel) (prefix (string-append HOST_HOME rel)))     ;; [00-base] home-prefix, renamed
+
+;; [00-base] The whole posture: nothing is allowed until a rule below says so.
+(deny default)
+
+;; ---------------------------------------------------------------------------
+;; System and software read roots: the podman image's /usr, /bin, /nix/store.
+;; ---------------------------------------------------------------------------
+
+;; [10-runtime], with /opt narrowed and /Applications added (design section 7).
+(allow file-read*
+    (subpath "/usr")                                                  ;; Core system binaries and libraries; includes /usr/local (Intel Homebrew).
+    (subpath "/bin")                                                  ;; POSIX userland binaries used by shells.
+    (subpath "/sbin")                                                 ;; System utilities some build/test flows invoke.
+    (subpath "/opt/homebrew")                                         ;; [yolo] Homebrew's install tree only, never all of /opt (OQ-MM2).
+    (subpath "/Applications")                                         ;; [yolo] App bundles some CLIs ship inside (Xcode's developer dir); reading them is not launching them.
+    (subpath "/nix/store")                                            ;; Nix store: every nix-installed tool.
+    (subpath "/nix/var/nix/profiles")                                 ;; Nix profile symlinks into the store.
+    (subpath "/System/Library")                                       ;; macOS frameworks and resources; includes /System/Library/Fonts.
+    (subpath "/System/Volumes/Preboot")                               ;; dyld/framework lookups resolve through Preboot (cryptexes) on modern macOS.
+    (subpath "/Library/Apple")                                        ;; Apple private frameworks touched by native toolchains.
+    (subpath "/Library/Frameworks")                                   ;; Global framework lookup path for language runtimes.
+    (subpath "/Library/Fonts")                                        ;; System-wide fonts named by yolo's generated fonts.conf; ~/Library/Fonts stays denied.
+    (subpath "/Library/Filesystems/NetFSPlugins")                     ;; Path resolution may load NetFS plugins.
+    (subpath "/Library/Preferences/Logging")                          ;; Logging stack reads these prefs at process start.
+    (literal "/Library/Preferences/.GlobalPreferences.plist")         ;; Locale/time defaults queried by runtimes.
+    (literal "/Library/Preferences/com.apple.networkd.plist")         ;; DNS/network bootstrap reads networkd config.
+    (literal "/dev")                                                  ;; /dev listing; shells enumerate it during start.
+)
+
+;; [yolo] Metadata only, so realpath() can lstat the parent of /opt/homebrew
+;; without listing /opt (where /opt/src/clientX lives).
+(allow file-read-metadata
+    (literal "/opt")                                                  ;; stat of /opt itself; its children stay denied.
+)
+
+;; [yolo] nix-darwin puts tools behind /run/current-system and /etc/profiles,
+;; symlinks into the store; resolving a symlink needs metadata on the link.
+(allow file-read-metadata
+    (literal "/run")                                                  ;; nix-darwin's synthetic /run symlink.
+    (subpath "/private/etc/profiles")                                 ;; nix-darwin per-user profile links (targets are in /nix/store).
+)
+
+;; [10-runtime] Metadata-only traversal on system roots for loader/framework resolution.
+(allow file-read-metadata
+    (subpath "/System")                                               ;; stat/readdir traversal across /System during framework resolution.
+    (subpath "/private/var/run")                                      ;; Metadata traversal of /private/var/run (socket namespace; connects are separate).
+    (literal "/pkg/env/global")                                       ;; macOS 27 PATH entry; a denied stat aborts Node's PATH search.
+)
+
+;; [10-runtime] /etc and /var are symlinks into /private; only the files runtimes need.
+(allow file-read*
+    (literal "/private")                                              ;; Symlink traversal under /private.
+    (literal "/private/var")                                          ;; Symlink traversal to /var-backed paths.
+    (subpath "/private/var/db/timezone")                              ;; Timezone database for date/time formatting.
+    (literal "/private/var/select/sh")                                ;; /bin/sh selector.
+    (literal "/private/var/select/developer_dir")                     ;; xcode-select developer dir pointer.
+    (literal "/var/select/developer_dir")                             ;; Compatibility alias of the same.
+    (literal "/private/var/db/xcode_select_link")                     ;; xcode-select link used by toolchain discovery.
+    (literal "/var/db/xcode_select_link")                             ;; Compatibility alias of the same.
+    (literal "/private/etc/hosts")                                    ;; Resolver host overrides.
+    (literal "/private/etc/resolv.conf")                              ;; DNS resolver configuration.
+    (literal "/private/etc/services")                                 ;; Service name-to-port mappings.
+    (literal "/private/etc/protocols")                                ;; Protocol metadata for socket helpers.
+    (literal "/private/etc/shells")                                   ;; Valid shell list.
+    (subpath "/private/etc/ssl")                                      ;; TLS CA bundles used by curl, git and package clients.
+    (literal "/private/etc/localtime")                                ;; Localtime symlink.
+    (literal "/etc")                                                  ;; Compatibility symlink root.
+    (literal "/var")                                                  ;; Compatibility symlink root.
+)
+
+;; [10-runtime] Metadata-only probes some runtimes make during start.
+(allow file-read-metadata
+    (literal "/home")                                                 ;; Probed during path resolution by some runtimes.
+    (literal "/private/etc")                                          ;; Directory traversal for /etc paths.
+    (literal "/nix")                                                  ;; Directory traversal for /nix/store paths.
+    (subpath "/dev")                                                  ;; stat on /dev entries; readdir of /dev stats every node.
+)
+
+;; [10-runtime] The human's locale preferences, read-only. Safehouse grants
+;; these on HOME; here HOME is the agent's, but CoreFoundation finds
+;; preferences through the account's home, not $HOME. Locale only, no secrets.
+(allow file-read*
+    (host-home-prefix "/Library/Preferences/.GlobalPreferences")      ;; User locale/defaults plist variants.
+    (host-home-prefix "/Library/Preferences/com.apple.GlobalPreferences") ;; Apple-namespaced variant of the same.
+    (host-home-literal "/.CFUserTextEncoding")                        ;; Text encoding preference read by many processes.
+)
+
+;; [30-apple] Apple Command Line Tools: the curated shim targets (git, make,
+;; clang and friends) and their support files. Debuggers stay out, as in Safehouse.
+(allow file-read*
+    (literal "/Library")                                              ;; Ancestor traversal for the CLT whitelist.
+    (literal "/Library/Developer")                                    ;; Ancestor traversal.
+    (literal "/Library/Developer/CommandLineTools")                   ;; Ancestor traversal.
+    (literal "/Library/Developer/CommandLineTools/usr")               ;; Ancestor traversal.
+    (literal "/Library/Developer/CommandLineTools/usr/bin")           ;; Ancestor traversal.
+    (literal "/Library/Developer/CommandLineTools/usr/libexec")       ;; Ancestor traversal.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/git")       ;; SCM entrypoint behind /usr/bin/git.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/make")      ;; Build entrypoint.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/gnumake")   ;; Build entrypoint.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/c++")       ;; Compiler driver.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/cc")        ;; Compiler driver.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/clang")     ;; Compiler.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/clang++")   ;; [yolo] C++ compiler driver behind /usr/bin/clang++.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/gcc")       ;; Compiler driver alias.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/g++")       ;; Compiler driver alias.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/cpp")       ;; Preprocessor.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/ar")        ;; Archiver.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/ranlib")    ;; Archive indexer.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/as")        ;; Assembler.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/ld")        ;; Linker.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/libtool")   ;; Library tool.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/lipo")      ;; Universal binary tool.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/strip")     ;; Symbol stripper.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/nm")        ;; Symbol lister.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/otool")     ;; Object inspector.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/codesign_allocate") ;; Used by the linker when signing.
+    (literal "/Library/Developer/CommandLineTools/usr/bin/install_name_tool") ;; dylib path rewriting in builds.
+    (subpath "/Library/Developer/CommandLineTools/usr/libexec/git-core") ;; git's helper programs.
+    (subpath "/Library/Developer/CommandLineTools/usr/include")       ;; C headers.
+    (subpath "/Library/Developer/CommandLineTools/usr/lib")           ;; Toolchain libraries.
+    (subpath "/Library/Developer/CommandLineTools/usr/share")         ;; git templates, man data.
+    (subpath "/Library/Developer/CommandLineTools/SDKs")              ;; macOS SDK headers and stubs for linking.
+)
+
+;; ---------------------------------------------------------------------------
+;; The agent's own files: workspace, home and temp, the only writable places.
+;; ---------------------------------------------------------------------------
+
+;; [render] Every directory above the workspace, home and temp dir, as literals:
+;; Claude Code and git readdir()/stat each ancestor at start. A literal grants
+;; that one directory's entry and listing, never what is below it, so a sibling
+;; of the workspace (or a file in your home, when the workspace is in it) stays
+;; unreadable even though its NAME is listed.
+(allow file-read*
+    (literal "/")                                                     ;; Root listing; every path walk starts here.
+    (literal (param "ANCESTOR_1"))                                    ;; Ancestor slot (run-checks.sh fills; unused = "/").
+    (literal (param "ANCESTOR_2"))                                    ;; Ancestor slot.
+    (literal (param "ANCESTOR_3"))                                    ;; Ancestor slot.
+    (literal (param "ANCESTOR_4"))                                    ;; Ancestor slot.
+    (literal (param "ANCESTOR_5"))                                    ;; Ancestor slot.
+    (literal (param "ANCESTOR_6"))                                    ;; Ancestor slot.
+    (literal (param "ANCESTOR_7"))                                    ;; Ancestor slot.
+    (literal (param "ANCESTOR_8"))                                    ;; Ancestor slot.
+)
+
+;; [yolo] The read-write set (design sections 3 and 7).
+(allow file-read* file-write*
+    (subpath WORKSPACE)                                               ;; The workspace, at its real path (no relocation on macOS).
+    (subpath AGENT_HOME)                                              ;; The agent's own HOME (<workspace>/.yolo/home in the ruled model).
+    (subpath SANDBOX_TMP)                                             ;; The launch's own TMPDIR.
+    (subpath DARWIN_USER_TEMP_DIR)                                    ;; Frameworks write here regardless of TMPDIR (confstr); the user's .../C cache dir is NOT granted.
+)
+
+;; [10-runtime] /tmp is shared by every process on the Mac; tools hardcode it.
+;; Narrower than Safehouse, which grants all of /var/folders.
+(allow file-read* file-write*
+    (subpath "/private/tmp")                                          ;; Real /tmp; many tools hardcode /tmp for files and sockets.
+    (subpath "/tmp")                                                  ;; The /tmp symlink spelling of the same.
+)
+
+;; [10-runtime] Device nodes for shell I/O, PTYs and descriptor plumbing.
+(allow file-read* file-write*
+    (subpath "/dev/fd")                                               ;; Process substitution and /dev/fd/N.
+    (literal "/dev/stdout")                                           ;; Standard output device.
+    (literal "/dev/stderr")                                           ;; Standard error device.
+    (literal "/dev/null")                                             ;; Null sink/source.
+    (literal "/dev/tty")                                              ;; Controlling terminal.
+    (literal "/dev/ptmx")                                             ;; PTY multiplexer for pseudo-terminal allocation.
+    (literal "/dev/dtracehelper")                                     ;; dyld startup probe on some binaries.
+    (regex #"^/dev/ttys")                                             ;; macOS pseudo-terminal slaves.
+    (regex #"^/dev/tty")                                              ;; Dynamic tty names.
+    (regex #"^/dev/pty")                                              ;; Legacy PTY names.
+)
+
+;; [10-runtime] Read-only entropy and probe devices.
+(allow file-read*
+    (literal "/dev/zero")                                             ;; Zero source.
+    (literal "/dev/autofs_nowait")                                    ;; Automount readiness probe made by most CLIs.
+    (literal "/dev/urandom")                                          ;; Non-blocking entropy for crypto.
+    (literal "/dev/random")                                           ;; Blocking entropy.
+)
+
+;; [10-runtime] ioctl only on terminals (raw mode, window size) and dtracehelper.
+(allow file-ioctl
+    (literal "/dev/dtracehelper")                                     ;; dyld startup ioctl probe.
+    (literal "/dev/tty")                                              ;; Controlling-terminal ioctls.
+    (literal "/dev/ptmx")                                             ;; grantpt/unlockpt/ptsname on the PTY master.
+    (regex #"^/dev/ttys")                                             ;; tcsetattr/window size on slave ttys.
+    (regex #"^/dev/tty")                                              ;; Dynamic tty names.
+    (regex #"^/dev/pty")                                              ;; Legacy PTY names.
+)
+
+;; ---------------------------------------------------------------------------
+;; Processes: run anything, see and signal only the sandbox's own.
+;; ---------------------------------------------------------------------------
+
+;; [10-runtime] The podman PID namespace, as near as Seatbelt gets.
+(allow process-exec)                                                  ;; Run toolchain binaries, shells and repo tools.
+(allow process-fork)                                                  ;; Normal child-process trees.
+(allow sysctl-read)                                                   ;; Runtime introspection at start (cpu count, os version).
+(allow process-info* (target same-sandbox))                           ;; Inspect only processes inside this sandbox.
+(allow signal (target same-sandbox))                                  ;; Signal only processes inside this sandbox; your processes are out of reach.
+(allow mach-priv-task-port (target same-sandbox))                     ;; Same-sandbox task ports some runtimes need.
+(allow pseudo-tty)                                                    ;; PTY allocation for interactive sessions.
+
+;; [10-runtime] Another process's argv and environment: either channel alone
+;; serves the read (measured by Safehouse on macOS 26), so both are denied.
+(deny sysctl-read (sysctl-name-regex #"procargs"))                    ;; kern.procargs/procargs2 of any process.
+(deny process-info-pidinfo)                                           ;; pidinfo is not covered by (deny default), per Safehouse.
+(allow process-info-pidinfo (target same-sandbox))                    ;; ...except the sandbox's own processes.
+
+;; ---------------------------------------------------------------------------
+;; System services: an allowlist. Keychain (securityd), pasteboard, Apple
+;; Events and LaunchServices are absent, so they are unreachable.
+;; ---------------------------------------------------------------------------
+
+;; [10-runtime] minus com.apple.coreservices.launchservicesd, which `open` uses.
+(allow mach-lookup
+    (global-name "com.apple.system.notification_center")              ;; libnotify (notifyd) darwin notifications, not the user Notification Center.
+    (global-name "com.apple.system.opendirectoryd.libinfo")           ;; User/group resolution (getpwuid).
+    (global-name "com.apple.logd")                                    ;; Unified logging writes.
+    (global-name "com.apple.FSEvents")                                ;; File event streams for watchers.
+    (global-name "com.apple.SystemConfiguration.configd")             ;; Network configuration queries for resolver bootstrap.
+    (global-name "com.apple.SystemConfiguration.DNSConfiguration")    ;; DNS configuration (Node/c-ares).
+    (global-name "com.apple.trustd.agent")                            ;; Certificate trust evaluation: every HTTPS client (gh, mise, curl) asks it.
+    (global-name "com.apple.diagnosticd")                             ;; Unified logging backend used by frameworks.
+    (global-name "com.apple.analyticsd")                              ;; Analytics subsystem probed at framework start.
+    (global-name "com.apple.dnssd.service")                           ;; DNS-SD used for name resolution by ssh, curl.
+    (global-name "com.apple.CoreServices.coreservicesd")              ;; UTI/file type resolution. If `open -a` still works, this is the next to drop.
+    (global-name "com.apple.DiskArbitration.diskarbitrationd")        ;; Disk metadata probed by some frameworks at start.
+    (global-name "com.apple.analyticsd.messagetracer")                ;; Analytics message tracer probed at start.
+    (global-name "com.apple.system.logger")                           ;; Legacy syslog endpoint.
+)
+
+(allow system-socket)                                                 ;; [10-runtime] AF_SYSTEM sockets for kernel network event monitoring.
+
+(allow ipc-posix-shm-read-data                                        ;; [10-runtime]
+    (ipc-posix-name "apple.shm.notification_center")                  ;; Shared memory read by libnotify.
+)
+
+;; ---------------------------------------------------------------------------
+;; Network: open, except the host's loopback (design OQ-MM3).
+;; ---------------------------------------------------------------------------
+
+;; [20-network] Outbound TCP/UDP to anywhere: package installs, API calls.
+(allow network-outbound (remote ip))
+;; [20-network] DNS through mDNSResponder's socket.
+(allow network-outbound (literal "/private/var/run/mDNSResponder"))
+;; [20-network] Listening, for dev servers the agent starts.
+(allow network-bind (local ip))
+(allow network-inbound (local ip))
+
+;; [yolo] Your loopback services are out of reach, as podman's own loopback
+;; keeps them. Seatbelt cannot tell which process listens, so this also refuses
+;; a connect to a server the agent itself started on loopback (a known
+;; difference from podman; run-checks.sh measures it as INFO).
+(deny network-outbound (remote ip "localhost:*"))
+
+;; [yolo] ...except the listed ports: yolo's own services and what the workspace
+;; config allows. An unused slot is "none" and renders no rule.
+(if (not (string=? (param "LOOPBACK_PORT_1") "none"))
+    (allow network-outbound (remote ip (string-append "localhost:" (param "LOOPBACK_PORT_1")))))
+(if (not (string=? (param "LOOPBACK_PORT_2") "none"))
+    (allow network-outbound (remote ip (string-append "localhost:" (param "LOOPBACK_PORT_2")))))
+(if (not (string=? (param "LOOPBACK_PORT_3") "none"))
+    (allow network-outbound (remote ip (string-append "localhost:" (param "LOOPBACK_PORT_3")))))
+(if (not (string=? (param "LOOPBACK_PORT_4") "none"))
+    (allow network-outbound (remote ip (string-append "localhost:" (param "LOOPBACK_PORT_4")))))
+
+;; ---------------------------------------------------------------------------
+;; Explicit denies. (deny default) already covers each; naming them here, last,
+;; means no allow above can re-open them by being written too wide.
+;; ---------------------------------------------------------------------------
+
+;; [yolo] The human's secrets in their home.
+(deny file-read* file-write*
+    (host-home-subpath "/.ssh")                                       ;; ssh keys and config.
+    (host-home-subpath "/Library/Keychains")                          ;; Login keychain files.
+    (host-home-subpath "/Library/Application Support/com.apple.TCC")  ;; Privacy grant database (the Full Disk Access check reads it).
+)
+
+;; [yolo] System keychain files. /System/Library/Keychains sits under the
+;; /System/Library allow above; trust evaluation goes through trustd, not these files.
+(deny file-read* file-write*
+    (subpath "/Library/Keychains")                                    ;; System.keychain is world-readable on stock macOS.
+    (subpath "/System/Library/Keychains")                             ;; System root keychains, re-closed after the /System/Library allow.
+)
+
+;; [10-runtime] launchd's per-user listener sockets (ssh agent, pasteboard and others).
+(deny file-read* file-write* file-read-metadata
+    (regex #"^/private/tmp/com\.apple\.launchd\.[^/]+/Listeners$")     ;; Listener sockets, macOS 26.3 and earlier.
+    (regex #"^/tmp/com\.apple\.launchd\.[^/]+/Listeners$")             ;; The /tmp spelling of the same.
+    (regex #"^/private/var/run/com\.apple\.launchd\.[^/]+/Listeners$") ;; Listener sockets, macOS 26.4 and later.
+    (regex #"^/var/run/com\.apple\.launchd\.[^/]+/Listeners$")         ;; The /var/run spelling of the same.
+)
+
+;; [50-ssh] The ssh agent, by its network spelling: connect() on a unix socket
+;; is network-outbound, not a file read.
+(deny network-outbound
+    (remote unix-socket (path-regex #"^/private/tmp/com\.apple\.launchd\.[^/]+/Listeners$"))
+    (remote unix-socket (path-regex #"^/tmp/com\.apple\.launchd\.[^/]+/Listeners$"))
+    (remote unix-socket (path-regex #"^/private/var/run/com\.apple\.launchd\.[^/]+/Listeners$"))
+    (remote unix-socket (path-regex #"^/var/run/com\.apple\.launchd\.[^/]+/Listeners$"))
+    (remote unix-socket (path-regex (string-append "^" HOST_HOME "/\\.ssh/agent(/.*)?$")))
+)
+
+;; [50-container] Container daemon sockets: a container runtime is a way out.
+(deny file-read* file-write*
+    (literal "/var/run/docker.sock")
+    (literal "/private/var/run/docker.sock")
+    (literal "/var/run/podman/podman.sock")
+    (literal "/private/var/run/podman/podman.sock")
+    (host-home-literal "/.docker/run/docker.sock")
+    (host-home-literal "/.rd/docker.sock")
+    (host-home-literal "/.orbstack/run/docker.sock")
+)
+(deny network-outbound
+    (remote unix-socket (path-literal "/var/run/docker.sock"))
+    (remote unix-socket (path-literal "/private/var/run/docker.sock"))
+    (remote unix-socket (path-literal "/var/run/podman/podman.sock"))
+    (remote unix-socket (path-literal "/private/var/run/podman/podman.sock"))
+    (remote unix-socket (path-regex (string-append "^" HOST_HOME "/\\.docker/run/docker\\.sock$")))
+    (remote unix-socket (path-regex (string-append "^" HOST_HOME "/\\.rd/docker\\.sock$")))
+    (remote unix-socket (path-regex (string-append "^" HOST_HOME "/\\.orbstack/run/docker\\.sock$")))
+    (remote unix-socket (path-regex (string-append "^" HOST_HOME "/\\.local/share/containers/podman/machine/.*\\.sock$")))
+)
+
+;; [yolo] The services section 5 names, by name, after the allowlist.
+(deny mach-lookup
+    (global-name "com.apple.SecurityServer")                          ;; securityd: the login keychain.
+    (global-name "com.apple.securityd.xpc")                           ;; securityd's XPC endpoint.
+    (global-name "com.apple.secd")                                    ;; Data-protection keychain (iCloud Keychain items).
+    (global-name "com.apple.pasteboard.1")                            ;; The clipboard.
+    (global-name "com.apple.coreservices.appleevents")                ;; Apple Events: driving your other apps (osascript).
+    (global-name "com.apple.coreservices.launchservicesd")            ;; LaunchServices: `open -a`, opening files in your apps.
+)
