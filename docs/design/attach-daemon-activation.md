@@ -222,14 +222,14 @@ I would first settle the bridge scope, then make the generic addition and snapsh
 
 ## 10. Open questions
 
-1. 💬 **OQ-AD1: Should this first slice also serve a new wire-bridge plan beside one already serving?**
+1. 💬 <a id="OQ-AD1"></a>**OQ-AD1: Should this first slice also serve a new wire-bridge plan beside one already serving?**
 
    Existing routes must stay immutable. The request establishes late daemon startup, but not whether a conflicting late bridge profile must work too; see [§7](#7-an-existing-wire-bridge-route-is-immutable).
 
    - **A — Refuse conflicting late plans in this slice.** Fix the direct Pi/Bedrock adapter case on supported container backends and idle-bridge first activation without multiplying listeners.
    - **B — Add independent listeners for later plans.** Cover more profile switches, but require per-plan address composition, identity and lifetime rules before implementation.
 
-   <!-- vantage: question id=OQ-AD1 leaning="A — refuse conflicting late plans in this slice; it solves eligible container adapter startup without expanding bridge routing ownership." -->
+   <!-- vantage: oq id=OQ-AD1 leaning="A — refuse conflicting late plans in this slice; it solves eligible container adapter startup without expanding bridge routing ownership." -->
 
    _Leaning:_ A — refuse conflicting late plans in this slice; it solves eligible container adapter startup without expanding bridge routing ownership.
 

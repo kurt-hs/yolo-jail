@@ -2,7 +2,8 @@ package hostfloor
 
 // packtree.go is the floor's arm for a PACK-TREE PROGRAM (docs/design/pack-buildable-programs.md, a
 // `program` delivered `via: "pack"`): its host copy is the capture store's build of the pack's own
-// source directory — or, where the pack ships no source, its verified prebuilt artifact — relocated
+// source directory — or, where the pack ships no source or the user opted into it (BG-D18), its
+// verified prebuilt artifact — relocated
 // into the floor exactly as a fork's build is (FP-D16; §9's `yolo host` rows: Linux, and macOS,
 // whose build is the macos-user sealed act and whose blockers are that act's, BuildActUnavailable).
 //
@@ -54,6 +55,11 @@ type PackTreeDelivery struct {
 	Disclosure string
 	// Reason is why this program has no delivery here, "" when it has one.
 	Reason string
+	// PrebuiltOptInStep is the clause every refusal of this build adds — one that cannot run here, and
+	// one that ran and failed (BG-D21): the explicit opt-in to the pack's prebuilt artifact for this
+	// platform (packdecl.PrebuiltOptInStep, OQ-BG2), "" when the pack declares none or the build is a
+	// dev override's checkout. Never a substitution: the floor refuses either way.
+	PrebuiltOptInStep string
 	// Hit is the store's entry under this key, the hit a jail launch asks for; an error when there is
 	// none.
 	Hit func() (*capture.Entry, error)
@@ -62,6 +68,16 @@ type PackTreeDelivery struct {
 	// returns the entry it admitted (never a second lookup: selection is newest-wins on a one-second
 	// stamp). Its error names the build's log and the retry.
 	Build func() (*capture.Entry, error)
+}
+
+// cannotBuildReason is the refusal of a build of bin that cannot run on this machine (why, with its
+// setup step), and the prebuilt opt-in when the pack declares one here.
+func (d PackTreeDelivery) cannotBuildReason(bin, why string) string {
+	r := "there is no build of " + bin + " from " + d.What + " on this machine, and " + why
+	if d.PrebuiltOptInStep != "" {
+		r += "; " + d.PrebuiltOptInStep
+	}
+	return r
 }
 
 // resolvePackTree is PackTree's answer for p, asked once per Floor and kept for every later status.
@@ -177,7 +193,7 @@ func (f *Floor) packTreeProvisionable(st Status) Status {
 	}
 	if d.Jail {
 		if why := f.cannotBuild(p.Bin(), "builds it"); why != "" {
-			st.Disposition, st.Reason = NoEntry, "there is no build of "+p.Bin()+" from "+d.What+" on this machine, and "+why
+			st.Disposition, st.Reason = NoEntry, d.cannotBuildReason(p.Bin(), why)
 		}
 	}
 	return st
@@ -231,11 +247,15 @@ func (f *Floor) installFromPackTree(ctx context.Context, p Program, dir string) 
 	if err != nil {
 		if d.Jail {
 			if why := f.cannotBuild(bin, "builds it"); why != "" {
-				return nil, &noEntryError{reason: "there is no build of " + bin + " from " + d.What + " on this machine, and " + why}
+				return nil, &noEntryError{reason: d.cannotBuildReason(bin, why)}
 			}
 			f.say("no build of %s from %s on this machine yet; building it %s", bin, d.What, f.buildHowPer("tree digest"))
 		}
 		if entry, err = d.Build(); err != nil {
+			// Every refusal of a pack-tree build names the prebuilt opt-in where one is declared (BG-D21).
+			if d.Jail && d.PrebuiltOptInStep != "" {
+				return nil, fmt.Errorf("%w; %s", err, d.PrebuiltOptInStep)
+			}
 			return nil, err
 		}
 		if entry == nil {

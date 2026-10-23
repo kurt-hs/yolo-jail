@@ -375,10 +375,11 @@ func Run(opts Options) (rc int) {
 	// THE PACK-TREE PROGRAMS are pinned on the fresh-launch path alone, just before the slot
 	// (addPackTreePins, packtreepins.go): their digest reads each source directory whole, which an
 	// attach and a dry run never do (docs/design/pack-buildable-programs.md §10).
-	// THE DEV OVERRIDES (programoverrides.go): a program the user's programs.overrides points at a
-	// checkout runs that checkout, so its pack's build is not this launch's to run.
-	o.programOverridden = o.programOverridePlans(rt, staged.packs)
-	o.forkPinned = dropOverriddenPins(o.forkPinned, o.programOverridden)
+	// THE DEV OVERRIDES (programoverrides.go) build a pack-tree program from the user's checkout, with
+	// those pins; one naming any other program is refused here, before anything is built (BG-D19).
+	if o.refuseNonPackTreeOverrides(staged.packs) {
+		return 1
+	}
 	// THE PATCHED EXTENSIONS' block, above the dispatch beside the forks', and for its reason: every
 	// backend and an attach say what each one is at (docs/reference/pi-extensions.md §10).
 	o.patchedTrees = o.notePatchedTrees(staged.packs)
@@ -945,14 +946,6 @@ func Run(opts Options) (rc int) {
 		if wire := entrypoint.ForkBuildsWire(o.forkDelivered); wire != "" {
 			launchEnv.Set(entrypoint.ForkBuildsEnv, wire)
 		}
-		// AND THE DEV OVERRIDES (programoverrides.go, BG-D9), handed over as a container's jail is
-		// handed them (entrypoint.ProgramOverridesEnv) and named, one line each, on every launch —
-		// this backend has no attach, so every invocation is the fresh launch that says which bytes
-		// run. A checkout outside the workspace crosses as a context link below (ctx.Links).
-		o.noteProgramOverrides(o.programOverridden)
-		if wire := entrypoint.ProgramOverridesWire(programOverridesWire(o.programOverridden)); wire != "" {
-			launchEnv.Set(entrypoint.ProgramOverridesEnv, wire)
-		}
 		// AND THE PATCHED EXTENSIONS the slot decided, as a container's jail is handed them
 		// (entrypoint.PatchedTreesEnv, PPX-D8): each delivered tree's build and label — its copy reaches
 		// the sandbox home through the overlay below (buildMacosHomeOverlayWith) — or why there is none,
@@ -1154,10 +1147,7 @@ func Run(opts Options) (rc int) {
 		o.notePackHostAccess(staged.packs, channel, nil)
 		// THE CONTEXT MOUNTS cross inside the host context, and each read-write one is
 		// disclosed at the same point (§2.4), so the backend is never handed one unsaid.
-		// A dev override's checkout outside the workspace crosses with them, as a read-only link the
-		// profile opens for read and exec (macosUserOverrideLinks): sited when it was decided, so a
-		// checkout the sandbox cannot reach refused that program, never the launch.
-		ctxDelivery.ctx.Links = append(ctxLinks, macosUserOverrideLinks(o.programOverridden)...)
+		ctxDelivery.ctx.Links = ctxLinks
 		// AND THE INSTALL-CAPTURE STORE'S ENTRIES (H4; macosctxtree.go's macosUserCaptures): each
 		// selected installer program's darwin entry, after the auto-capture above may have made it,
 		// for the backend to stage root-owned and name to its launchers.
@@ -2188,7 +2178,6 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 		packStaging:          packStaging,
 		capturesDir:          o.CapturesDir(),
 		forkDeliveries:       o.forkDelivered,
-		programOverrides:     o.programOverridden,
 		patchedTrees:         o.patchedTreesWire(rt),
 		treeDirs:             o.patchedTreeDirs(),
 		wsState:              wsState,
@@ -2932,8 +2921,6 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 	// is visible at a glance (audit §B#4.
 	baked, _ := runtime.BakedYoloVersionFromInspectEnv(envLines)
 	o.emitLaunchBanner(rt, cname, nil, baked)
-	// Which bytes each overridden program runs, as the running jail's own launch decided (BG-D10).
-	o.noteAttachProgramOverrides(envLines)
 	// THE JAIL'S GRANT IS THE ONE IT WAS LAUNCHED WITH (jailgrant.go, ES-D33): this session holds
 	// it, and asks for no other. A request the running jail does not hold is refused before anything
 	// is written, naming the fresh launch; a subset of it, or the same set, or none, goes ahead.

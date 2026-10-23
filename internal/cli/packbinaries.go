@@ -26,6 +26,7 @@ import (
 	"io"
 	"runtime"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/packbin"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -113,30 +114,27 @@ func fetchPackBinaries(packs []*packload.Pack, f packbin.Fetcher, goos, goarch s
 // fetchPackTreePrebuilts is the same download step for every PREBUILT artifact a launch on this
 // machine would take for a selected pack-tree program (docs/design/pack-buildable-programs.md §7,
 // BG-D7): resolved as the launch resolves it (packload.PackTreeResolve) for a container jail's
-// linux/<goarch>, and on a Mac for the macos-user sandbox's darwin/<goarch>, whose darwin act builds
-// a pack's tree unless it can never run on this Mac (darwinPackTreeBuildable). A program whose
-// source directory is present and buildable fetches nothing (P5). The launch then finds the artifact in the cache, offline included.
+// linux/<goarch>, and on a Mac for the macos-user sandbox's darwin/<goarch> too. Only a program whose
+// pack ships no source directory, or one the user opted into its prebuilt
+// (`programs.overrides.<bin>: {"prebuilt": true}`, BG-D18), fetches anything; a present source is
+// built, never answered with the artifact (P5, OQ-BG2). The launch then finds the artifact in the
+// cache, offline included.
 func fetchPackTreePrebuilts(packs []*packload.Pack, f packbin.Fetcher, goos, goarch string,
 	pr richtext.Printer, errw io.Writer) int {
 	rc := 0
-	notches := []struct {
-		platform  string
-		buildable bool
-	}{{"linux/" + goarch, true}}
-	if goos == "darwin" { // parity: HonoredBy — the macos-user sandbox runs darwin programs, which its darwin act builds from a pack's tree wherever it can ever run (darwinPackTreeBuildable); a Mac where it never can takes the darwin prebuilt
-		notches = append(notches, struct {
-			platform  string
-			buildable bool
-		}{"darwin/" + goarch, darwinPackTreeBuildable(hostFloorMacProbes())})
+	platforms := []string{"linux/" + goarch}
+	if goos == "darwin" { // parity: HonoredBy — the macos-user sandbox runs darwin programs, so a Mac prefetches the darwin artifact a launch there would take
+		platforms = append(platforms, "darwin/"+goarch)
 	}
+	optIn := config.ProgramPrebuiltOptIns(nil)
 	for _, prog := range packload.PackTreePrograms(packs) {
-		for _, n := range notches {
-			pin := packload.PackTreeResolve(prog, n.platform, n.buildable)
+		for _, platform := range platforms {
+			pin := packload.PackTreeResolve(prog, platform, optIn[prog.Bin])
 			if !pin.Fork.IsPrebuilt() {
 				continue
 			}
 			pb := *pin.Fork.Prebuilt
-			label := fmt.Sprintf("%s: program %s: prebuilt artifact for %s", prog.Pack, prog.Bin, n.platform)
+			label := fmt.Sprintf("%s: program %s: prebuilt artifact for %s", prog.Pack, prog.Bin, platform)
 			_, outcome, err := f.Ensure(context.Background(), packbin.Want{Name: prog.Bin, URL: pb.URL, SHA256: pb.SHA256})
 			if err != nil {
 				fmt.Fprintf(errw, "yolo pack install: %s: %v\n", label, err)

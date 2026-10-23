@@ -194,7 +194,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
    ([OQ-HD5](../design/host-daemon-ownership.md#OQ-HD5)) and the jail-daemon requirement
    ([OQ-HD4](../design/host-daemon-ownership.md#OQ-HD4)). Next because it retires the machine-wide credential daemons;
    after the merge, only a real host and CI can check what item 42 lists.
-3. **Implement user-only jail inheritance exclusions first** — [the settled design](../design/jail-inheritance-exclusions.md) and [completed build plan](../design/jail-inheritance-exclusions-plan.md) now define dormant known targets, quiet no-ops for missing members, and exact build gates. Then address rulings holding other builds: [whether a project's mise pin of `pnpm` stays hidden](../design/program-delivery.md#OQ-PD19), with [autoprune's `$GOBIN` class](../design/program-delivery.md#OQ-PD20) and [a pack's agent-CLI pin](../design/program-delivery.md#OQ-PD21); [how a host daemon hands the terminal a line](../design/boundary-broker.md#OQ-BB10), which the broker's no-notifier notice waits on; [whether a pack service's in-jail daemon is disclosed](../design/trust-paths.md#OQ-TP11), as no launch line names the wire bridge; [whether copilot and oh-omp alone get `-p bedrock`](../design/bedrock-plumbing.md#OQ-BR24).
+3. **Implement user-only jail inheritance exclusions first** — [the settled design](../design/jail-inheritance-exclusions.md) and [completed build plan](../design/jail-inheritance-exclusions-plan.md) now define dormant known targets, quiet no-ops for missing members, and exact build gates. Then address rulings holding other builds: [whether a project's mise pin of `pnpm` stays hidden](../design/program-delivery.md#oq-pd19), with [autoprune's `$GOBIN` class](../design/program-delivery.md#oq-pd20) and [a pack's agent-CLI pin](../design/program-delivery.md#oq-pd21); [how a host daemon hands the terminal a line](../design/boundary-broker.md#OQ-BB10), which the broker's no-notifier notice waits on; [whether a pack service's in-jail daemon is disclosed](../design/trust-paths.md#OQ-TP11), as no launch line names the wire bridge; [whether copilot and oh-omp alone get `-p bedrock`](../design/bedrock-plumbing.md#OQ-BR24).
 4. Rulings that hold a defect's fix: [the Kilo special-casing](../design/gateway-provider-packs.md) (its 1M-window defect is fixed); [`--no-daemon` for in-jail `codex`](../research/codex-background-service.md#OQ-CDX3),
    since `codex agents` starts the daemon yolo turns off; [whose OpenAI login host pi uses](../design/pi-host-openai-auth.md),
    since its first refresh replaces yours, with its catalog-refresh question; and [a leftover `mcp-adapter.json` at the
@@ -262,8 +262,8 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 17. [Notch convergence's held items](notch-convergence.md) — `env_sources` waits on item 13, the one `rmw` rule on [a
     table not declared in full](../reference/config-ownership.md#OQ-CO15) (rule [OQ-CO16](../reference/config-ownership.md#OQ-CO16)
     with it), and `yolo host -- claude` joining the shared login on the credential view's measures, below.
-18. [Rule the provisioner's remaining calls](../design/provisioner-sets.md), corporate-CA trust first — it shipped on its
-    leanings under delegation (PS-D10, reversible), so a ruling confirms or undoes what every macos-user launch now does.
+18. [The provisioner's calls](../design/provisioner-sets.md) are all ruled (2026-10-23); what remains is building
+    the one `program` kind that any selected pack may fill, and the separate account's Go trust.
 19. [Rule what the environment manager promises at each notch](../design/environment-manager-user-stories.md) — Q1b
     decides [`yolo check --at`](../reference/what-yolo-is.md#check-at-a-notch) and Q7 [the Linux guest notch](environment-manager-plan.md).
 20. [Rule the keychain from a jail](../design/keychain-from-a-jail.md), which settles [Copilot's machine-wide
@@ -304,8 +304,14 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     then [which backend a SandVault setup gets](../design/sandvault-safehouse-compat.md#OQ-NB2) and
     its two scope calls, [credentials](../design/sandvault-safehouse-compat.md#OQ-NB3) and [the trial's `.yolo/`](../design/sandvault-safehouse-compat.md#OQ-NB5) — the first decides the command
     surface the import and trial build on.
-30. [Build the rest of the broker's step 2](../design/boundary-broker.md#11-recommendation-and-the-first-build-slice) —
-    first among the builds, as the maintainer put the broker on the plate for the week of 2026-09-28. Beside it,
+30. [Build agent access approvals in the maintainer's five steps](../design/boundary-broker.md#11-the-build-in-the-maintainers-five-steps) —
+    he set the order on 2026-10-23: brokered sources with read and write sets, actionable toasts, a host CLI to
+    view and approve, a web UI out of tree on that CLI, then a talk about merging it. First is
+    [the broker-core factoring and the git source](../design/git-broker.md), whose factoring waits on nothing;
+    [how git crosses](../design/git-broker.md#OQ-GB1) holds the git source, and
+    [whether writes ship on the agent's own background wait](../design/boundary-broker.md#OQ-BB17) holds writes.
+    [Created-branch grant lifetime](../design/git-broker.md#OQ-GB2), [which sets a workspace may hold long-lived](../design/boundary-broker.md#OQ-BB16)
+    and [explicit set rules](../design/boundary-broker.md#OQ-BB15) each hold only their own feature. Beside it,
     [workspace widening](../design/workspace-widening.md) graduates once [OQ-WW1](../design/workspace-widening.md#OQ-WW1) is ruled.
     Also beside it, asked for by the maintainer on 2026-10-09: [rule the paste-to-host stopgap](../design/host-run-mailbox.md#OQ-HX1),
     which removes the copy-back of a host command's output until the broker's store and doorbell exist; that one
@@ -449,7 +455,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 - **With no id at all:** [Go comments citing sections by number](README.md#the-dangling-n-citations-in-go-comments),
   [check 2's two marker conventions](README.md#check-2-has-two-known-errors-and-a-convention-question-under-each),
   [the storage lifecycle's `min-free` values](../reference/image-retention.md#owed-host-steps), the unruled half of
-  [OQ-ST2](../reference/pack-system.md#OQ-ST2) on user-reserved skill children, and whether a bare `-p` whose
+  [OQ-ST2](../reference/pack-system.md#oq-st2) on user-reserved skill children, and whether a bare `-p` whose
   packs install no CLI should say it selects nothing (`checkProfileTargets`, `internal/cli/run/packs.go`).
 
 ## Disposition of open items (2026-10-13)
@@ -484,7 +490,7 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 |---|---|---|
 | 1 — finish the patched-fork mode's verification | X / D | W9 #2's Linux nested-jail checks pass, and the build-line digest disclosure was already built and is now reverified through its production call-site tests ([evidence](../reference/patched-forks.md#7-the-build-and-the-launch)); no listed Linux-local build remains. Remaining: #3 is X (a real rootless host or CI), #8–10 are X (a Mac), the migration-kit measurement needs the maintainer's real series, and [OQ-FP11](../design/forked-programs-as-packs.md#OQ-FP11) is D; [OQ-PPX3](../reference/pi-extensions.md#OQ-PPX3) was ruled and built 2026-10-16. [OQ-PFK5](../reference/patched-forks.md#why-its-this-way) was ruled (defer macos-user delivery), [OQ-PFK6](../reference/patched-forks.md#why-its-this-way) ruled 2026-10-15 and built 2026-10-16, and [OQ-PFK7](../reference/patched-forks.md#why-its-this-way) settled 2026-10-15 by [PF-D85](../reference/patched-forks.md#PF-D85). |
 | 2 — per-jail host daemons (HD-R1) | A | Coexistence answered 2026-10-16 ([HD-D26](../design/host-daemon-ownership.md#HD-D26)); [OQ-HD9](../design/host-daemon-ownership.md#11-decision-ledger), [OQ-HD5](../design/host-daemon-ownership.md#11-decision-ledger) and [OQ-HD4](../design/host-daemon-ownership.md#11-decision-ledger) built on `hd-r1-land`. **Maintainer** merges; the real-host and macos-user checks in item 42 and the design's `next` are X. |
-| 3 — settled jail inheritance build, then other build rulings | A / D | Implement [the completed host-import-exclusions plan](../design/jail-inheritance-exclusions-plan.md) first: the design's owner rulings are compacted and the plan is ready to build. Then the maintainer's remaining rulings are [OQ-PD19](../design/program-delivery.md#OQ-PD19)–[OQ-PD23](../design/program-delivery.md#decision-ledger) (project mise pin of pnpm; autoprune's `$GOBIN` class; a pack's agent-CLI pin; whether an agent CLI updates once per machine), [OQ-BB10](../design/boundary-broker.md#OQ-BB10), [OQ-TP11](../design/trust-paths.md#OQ-TP11) and [OQ-BR24](../design/bedrock-plumbing.md#OQ-BR24). **Maintainer** for those rulings. |
+| 3 — settled jail inheritance build, then other build rulings | A / D | Implement [the completed host-import-exclusions plan](../design/jail-inheritance-exclusions-plan.md) first: the design's owner rulings are compacted and the plan is ready to build. Then the maintainer's remaining rulings are [OQ-PD19](../design/program-delivery.md#oq-pd19)–[OQ-PD23](../design/program-delivery.md#decision-ledger) (project mise pin of pnpm; autoprune's `$GOBIN` class; a pack's agent-CLI pin; whether an agent CLI updates once per machine), [OQ-BB10](../design/boundary-broker.md#OQ-BB10), [OQ-TP11](../design/trust-paths.md#OQ-TP11) and [OQ-BR24](../design/bedrock-plumbing.md#OQ-BR24). **Maintainer** for those rulings. |
 | 4 — rulings that hold a defect's fix | D | The Kilo special-casing, [OQ-CDX3](../research/codex-background-service.md#OQ-CDX3) (`--no-daemon` for in-jail codex), whose OpenAI login host pi uses, and the leftover `mcp-adapter.json` ([OQ-MC1](../reference/mcp-configuration.md#OQ-MC1)/[OQ-MC2](../reference/mcp-configuration.md#OQ-MC2)). **Maintainer**. |
 | 5 — `yolo host apply --assert`'s next command and the dry run's exit | D | May a successful `--assert` name a next command (happy-path rule 2), and does the dry run exit 0 or 1 ([OQ-RO8](../reference/report-tiers.md#OQ-RO8))? **Maintainer**. |
 | 6 — remaining build-update slices | A | The candidate connects host delivery/reporting, Apple check-only and fork/capture timing. Combined review and final runtime acceptance remain; native/performance acceptance is X (a Mac). |
@@ -503,7 +509,7 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 | 19 — what the environment manager promises at each notch | D | Q1b (`yolo check --at`) and Q7 (the Linux guest notch). **Maintainer**. |
 | 20 — the keychain from a jail | D | Keychain scope, unlock and migration, which settles Copilot's machine-wide login. **Maintainer**. |
 | 21 — the starting tab's Ctrl-C in a shared jail | D | [OQ-JL10](../design/jail-lifetime-last-session-wins.md#OQ-JL10); its build then waits on the sidecars and doorbell. **Maintainer**. |
-| 22 — boot snapshot and diagnostic dial | D | [OQ-DB2](../design/diagnostics-past-the-boundary.md#OQ-DB2): is the boot snapshot always-on (leaning: on give-up paths only)? **Maintainer**. The [§4.6](../design/diagnostics-past-the-boundary.md#46-retention-and-size-decided) byte-cap adoption on the eight unbounded sinks is a separate A fragment. |
+| 22 — boot snapshot and diagnostic dial | D | [OQ-DB2](../design/diagnostics-past-the-boundary.md#oq-db2): is the boot snapshot always-on (leaning: on give-up paths only)? **Maintainer**. The [§4.6](../design/diagnostics-past-the-boundary.md#46-retention-and-size-decided) byte-cap adoption on the eight unbounded sinks is a separate A fragment. |
 | 23 — add-only model lists and Bedrock web search | D | Rule the model lists and web search on Bedrock. **Maintainer**. |
 | 24 — pack-declared traps vs the agent directory map | D | Does the map supersede the traps design? Rule before building either. **Maintainer**. |
 | 25 — in-jail nix root watcher measurement | A | Running-jail watcher observation is recorded; host resolution remains open. Use a safe host-side observation: the attempted shared-store `nix-store --query --roots` pruned stale entries, so do not repeat without isolation. |
@@ -511,7 +517,7 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 | 27 — how a jail reaches a worktree's `.git` | D | Read-only refuses every commit, read-write lets a jail prune the worktree. **Maintainer**. |
 | 28 — calls left at one decision each | D | The `:ro` degradation rows, message URLs ([OQ-DW3](../design/docs-website.md#OQ-DW3)), the macOS nix build sandbox, array-append pinning (E5), the pack system's other calls, relocating `.yolo` by a link ([OQ-JH1](../reference/jail-home.md#OQ-JH1)), a pi-subagents shared registry, the shared tool store's relocation contract, storage tiers, and cache isolation. **Maintainer**. |
 | 29 — editor preference and SandVault/Safehouse compat | D | May yolo hold an editor preference, and how a SandVault/Safehouse user tries yolo ([OQ-NB1](../design/sandvault-safehouse-compat.md#OQ-NB1), then [OQ-NB2](../design/sandvault-safehouse-compat.md#OQ-NB2)/[OQ-NB3](../design/sandvault-safehouse-compat.md#OQ-NB3)/[OQ-NB5](../design/sandvault-safehouse-compat.md#OQ-NB5))? **Maintainer**. |
-| 30 — the rest of the broker's step 2 | A | Next is broker integration of the host store ([§7](../design/boundary-broker.md#7-grants-and-the-request-store)): resolved policies, enqueue/consume/teardown, bounded wait/status, shared scope locking and audit. The store/`yolo approve` slice does not execute writes. [OQ-BB10](../design/boundary-broker.md#OQ-BB10) remains D; notification delivery needs platform verification and the answer ping waits on `yolo notify`. |
+| 30 — agent access approvals, five steps | A / D | Step 1 next: factor the broker core out of the github-broker (no behavior change, waits on nothing), then the git source's reads and own-branch pushes ([first slice](../design/git-broker.md#9-the-first-slice)), held by [OQ-GB1](../design/git-broker.md#OQ-GB1). Steps 2 and 3 (toast notifier, `yolo approve --json`/`--watch`, the answer path) turn writes on; [OQ-BB17](../design/boundary-broker.md#OQ-BB17) and, on a host with no notifier, [OQ-BB10](../design/boundary-broker.md#OQ-BB10) hold that. Notification delivery needs platform verification. **Maintainer** for the rulings. |
 | 31 — speed builds the maintainer asked for | A / X | Part B's config-declared, ambient-only and lean-attribute launch records are implemented and runtime-tested in an isolated Linux environment. Part A's tag dispatch and native runtime validation require a Mac. See [launch records](../reference/image-staging-vs-baking.md#packages-launch-records--first-slice-2026-10-13). |
 | 32 — builds no ruling holds | D | The W1(e) `yolo run` progress golden sign-off (human approval of the frozen `testdata`). **Maintainer**. Sub-parts already closed: the startup banner (`d8f26fc72`), the unit-suite seams (`1382499b0`) and the pi-guide line (`a1c876717`); (b)/(c)/(g) are built with stale lines. The host-file 0644 regression is authored in `integration/macosuserread0644_test.go`; Linux checks its unsandboxed fixture/probe only. Still X: native Mac execution of the denial twin, the Mac readiness run and the quiet-host re-measure. |
 | 33 — the exact-commit release gate | X | Live GitHub Actions and publisher permissions (offline fixtures cannot prove them), plus the first scheduled macos-user nightly on a Mac runner. |
@@ -544,8 +550,10 @@ All of 38–50 are X; each names the resource that unblocks it.
 
 The ruling set, in the order it unblocks work:
 
-- [OQ-DB2](../design/diagnostics-past-the-boundary.md#OQ-DB2) — is the boot snapshot always-on? (item 22)
+- [OQ-DB2](../design/diagnostics-past-the-boundary.md#oq-db2) — is the boot snapshot always-on? (item 22)
 - [OQ-BB10](../design/boundary-broker.md#OQ-BB10) — how a host daemon hands the launching terminal a line (items 3, 30)
+- [OQ-GB1](../design/git-broker.md#OQ-GB1) — does git cross as a proxied CLI or a brokered transport? (item 30)
+- [OQ-BB17](../design/boundary-broker.md#OQ-BB17) — may writes ship on the agent's own background wait? (item 30)
 - [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1) — activate late profile daemons additively, or refuse conflicting late bridge plans? (IC1)
 - The motivating fork's name — its source, build line and `produces` list (item 26)
 - [OQ-FP11](../design/forked-programs-as-packs.md#OQ-FP11) — the open patched-fork ruling (item 1); [OQ-PFK5](../reference/patched-forks.md#why-its-this-way), [OQ-PFK6](../reference/patched-forks.md#why-its-this-way) and [OQ-PFK7](../reference/patched-forks.md#why-its-this-way) are ruled

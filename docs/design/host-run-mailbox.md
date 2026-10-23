@@ -646,7 +646,7 @@ instead of minting a line that cannot deliver.
 
 ## 8. How the gateway absorbs it
 
-[`boundary-broker.md` §6.6](boundary-broker.md#66-one-store-several-front-ends) puts every
+[`boundary-broker.md` §6.6](boundary-broker.md#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship) puts every
 front-end on one store. Host-run is planned to become one more front-end of it, so each gateway
 step adds and nothing is deleted but polling:
 
@@ -741,7 +741,7 @@ No `cmd/` binary, no `flake.nix`, no pack manifest and no mount changes.
 
 ## 13. Open questions
 
-1. 💬 **OQ-HX1: Does a human-run host-exec tier exist alongside the broker?**
+1. 💬 <a id="OQ-HX1"></a>**OQ-HX1: Does a human-run host-exec tier exist alongside the broker?**
 
    Host-run is general host execution, which the broker forbids itself
    ([BB-P6](boundary-broker.md#BB-P6)); its only authority is a human pasting a line they can
@@ -751,7 +751,7 @@ No `cmd/` binary, no `flake.nix`, no pack manifest and no mount changes.
    - **A — Yes, a separate tier.** Build this design; BB-P6 keeps governing the broker.
    - **B — No.** Wait for the gateway, and keep the copy-paste loop until then.
 
-   <!-- vantage: question id=OQ-HX1 leaning="A — the brief asks for exactly this, and Test 1 says the paste already carries the authority." -->
+   <!-- vantage: oq id=OQ-HX1 leaning="A — the brief asks for exactly this, and Test 1 says the paste already carries the authority." -->
 
    _Leaning:_ A — the brief asks for exactly this, and Test 1 says the paste already carries the authority.
 

@@ -292,7 +292,7 @@ different disks.
 
 ## Open Questions
 
-1. 💬 **OQ-VL1: On which VM backends are side disks the default for every per-side path?**
+1. 💬 <a id="OQ-VL1"></a>**OQ-VL1: On which VM backends are side disks the default for every per-side path?**
 
    Decides whether existing Mac users' next launch moves their jail copies unasked, and partly
    supersedes [SS-3](../reference/jail-state-separation-design.md#ss-3) there.
@@ -304,7 +304,7 @@ different disks.
    - **C — Default on Apple Container only.** Podman Machine has no Mac CI job and needs a
      reaper of its own ([§3.4](#34-podman-machines-lifecycle)); it follows later.
 
-   <!-- vantage: question id=OQ-VL1 leaning="A, default on both: the host never reads these copies, and the backend that gains most is Podman Machine on libkrun." -->
+   <!-- vantage: oq id=OQ-VL1 leaning="A, default on both: the host never reads these copies, and the backend that gains most is Podman Machine on libkrun." -->
 
    _Leaning:_ A, default on both: the host never reads these copies, and the backend that gains
    most is Podman Machine on libkrun.
@@ -312,7 +312,7 @@ different disks.
    **Answer:**
    > _(empty — fill in when decided)_
 
-2. 💬 **OQ-VL2: Does an Apple Container jail's `~/.cache` move to a disk of its own?**
+2. 💬 <a id="OQ-VL2"></a>**OQ-VL2: Does an Apple Container jail's `~/.cache` move to a disk of its own?**
 
    `~/.cache` is the machine's one cache, shared into every jail over virtiofs; pip, uv, npm and
    Pants read it on every install. [OQ-MB1](../research/macos-backend-performance.md#10-decision-ledger)
@@ -325,7 +325,7 @@ different disks.
    - **B — Keep the machine's shared cache.** One download per machine; every cache read pays
      the shared-folder cost.
 
-   <!-- vantage: question id=OQ-VL2 leaning="Undecided between A and B: A is faster, but it takes the jail's cache out of reach of the host-side tools that manage the machine cache, and nobody has measured how much an install's time is cache reads." -->
+   <!-- vantage: oq id=OQ-VL2 leaning="Undecided between A and B: A is faster, but it takes the jail's cache out of reach of the host-side tools that manage the machine cache, and nobody has measured how much an install's time is cache reads." -->
 
    _Leaning:_ Undecided between A and B: A is faster, but it takes the jail's cache out of reach
    of the host-side tools that manage the machine cache, and nobody has measured how much an
@@ -334,7 +334,7 @@ different disks.
    **Answer:**
    > _(empty — fill in when decided)_
 
-3. 💬 **OQ-VL3: How does a database's data folder get a side disk?**
+3. 💬 <a id="OQ-VL3"></a>**OQ-VL3: How does a database's data folder get a side disk?**
 
    Postgres on a VM-local disk ran its `pgbench` load in 1.27 s against 11.36 s on a shared
    folder, and yolo cannot guess where a project keeps its data.
@@ -345,7 +345,7 @@ different disks.
      second list.
    - **C — Nothing.** Databases in the workspace stay slow; users run them outside the jail.
 
-   <!-- vantage: question id=OQ-VL3 leaning="A: a database folder the jail writes is the jail's own on every backend that can shadow it, so per-side is already its meaning, and it needs no new key." -->
+   <!-- vantage: oq id=OQ-VL3 leaning="A: a database folder the jail writes is the jail's own on every backend that can shadow it, so per-side is already its meaning, and it needs no new key." -->
 
    _Leaning:_ A: a database folder the jail writes is the jail's own on every backend that can
    shadow it, so per-side is already its meaning, and it needs no new key.
@@ -353,7 +353,7 @@ different disks.
    **Answer:**
    > _(empty — fill in when decided)_
 
-4. 💬 **OQ-VL4: Does a new side disk start empty, or with the jail's old copy?**
+4. 💬 <a id="OQ-VL4"></a>**OQ-VL4: Does a new side disk start empty, or with the jail's old copy?**
 
    Decides whether the first launch after the change reinstalls every virtualenv and
    `node_modules`.
@@ -364,7 +364,7 @@ different disks.
      that launch (on Apple Container the jail already sees the folder at `~/venv-shadows`; Podman
      Machine needs it mounted for the copy).
 
-   <!-- vantage: question id=OQ-VL4 leaning="A: a reinstall from a lockfile is the per-side rule's normal recovery, and a copy adds a slow first launch and a second code path for one use." -->
+   <!-- vantage: oq id=OQ-VL4 leaning="A: a reinstall from a lockfile is the per-side rule's normal recovery, and a copy adds a slow first launch and a second code path for one use." -->
 
    _Leaning:_ A: a reinstall from a lockfile is the per-side rule's normal recovery, and a copy
    adds a slow first launch and a second code path for one use.

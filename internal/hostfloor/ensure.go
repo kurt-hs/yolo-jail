@@ -18,6 +18,11 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
+// viaRetiredOverride is Record.Via of the floor entry an older yolo wrote for a DEV OVERRIDE, when an
+// override ran a checkout in place (docs/design/pack-buildable-programs.md, before OQ-BG3's ruling):
+// not a manifest word, so such a record is never current, and never a near miss's copy to keep.
+const viaRetiredOverride = "override"
+
 // ensure.go puts one program in place: the first install, a reinstall when the pack's
 // declaration moved, and the throttled evergreen refresh — the three things a jail's generated
 // launcher does at the agent's own invocation (host-agent-environment.md, "The host prefix" and "When the floor installs").
@@ -64,10 +69,6 @@ const (
 // refusal, installing nothing; a first install that fails returns its error.
 func (f *Floor) Ensure(ctx context.Context, p Program) (Status, Outcome, error) {
 	delete(f.preparedNPM, p.Bin())
-	if _, ok := f.override(p); ok {
-		// A DEV OVERRIDE wins over every rung its pack delivers (override.go): its own arm.
-		return f.ensureOverride(p)
-	}
 	if p.Install.IsPackTree() {
 		// A PACK-TREE program's key is resolved by its install, once, before its status is read
 		// (packtree.go): never for one the floor leaves out, whose resolution would digest for nothing.
@@ -198,9 +199,10 @@ func (f *Floor) ensure(ctx context.Context, p Program) (Status, Outcome, error) 
 // from when a fork delivered it. A fork's build at the pin that is pending only for a raised
 // node_floor is the build the lock names, and keeps serving as an npm program's version does.
 func (f *Floor) servesANearMiss(p Program, rec *Record) bool {
-	if rec.Via == ViaOverride {
-		// A DEV OVERRIDE's entry is the checkout, never the pack's copy: once the override is gone it
-		// does not serve in the copy's place (§10: no fallback across a chosen source).
+	if rec.Via == viaRetiredOverride {
+		// A RETIRED DEV OVERRIDE's entry, which an older yolo wrote to run a checkout in place: never
+		// the pack's copy, so it never serves in the copy's place (§10: no fallback across a chosen
+		// source). A checkout is now built like the pack's tree (packtree.go), with its own record.
 		return true
 	}
 	if p.Install.IsPatchedFork() {

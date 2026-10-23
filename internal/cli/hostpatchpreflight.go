@@ -61,9 +61,7 @@ func hostPatchPreflight(errw io.Writer, packs []*packload.Pack, verb, command, t
 	var stopped []string
 	series := false // one of them is a series that does not apply, not only a newer build that failed
 	for _, p := range progs {
-		if !p.Install.IsPatchedFork() || floor.OutsideTheFloor(p) || floor.HasOverride(p) {
-			// A DEV OVERRIDE runs the checkout in the fork's place (docs/design/pack-buildable-programs.md
-			// §5), so a recorded failure of the fork's series has no bearing on this launch.
+		if !p.Install.IsPatchedFork() || floor.OutsideTheFloor(p) {
 			continue
 		}
 		_, err := floor.PreparePatched(ctx, p, false)

@@ -296,3 +296,144 @@ func TestTheLaunchSlotBuildsAPackTreeProgramOnceThenHits(t *testing.T) {
 		t.Errorf("a hit printed a build line:\n%s", out2)
 	}
 }
+
+// THE BUILD'S COPY FOLLOWS NO SYMLINK (copySourceTreeSkipping, over internal/nofollow): a link in a
+// checkout an agent can write — to a directory or a file outside it, ~/.ssh say — is copied AS A
+// LINK, with its target, and none of the bytes behind it reach the build's staged tree. A regular
+// file keeps its bytes and its exec bit.
+func TestTheBuildsCopyCopiesASymlinkAsALinkAndNeverFollowsIt(t *testing.T) {
+	base := t.TempDir()
+	src, outside, dst := filepath.Join(base, "checkout"), filepath.Join(base, "ssh"), filepath.Join(base, "staged")
+	for _, d := range []string{src, outside, dst} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	key := filepath.Join(outside, "id_ed25519")
+	if err := os.WriteFile(key, []byte("SECRET-HOST-BYTES"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "build.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(src, "dirlink")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(key, filepath.Join(src, "keylink")); err != nil {
+		t.Fatal(err)
+	}
+	if err := copySourceTreeSkipping(src, dst, packload.PackTreeDigestSkip()); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"dirlink": outside, "keylink": key} {
+		fi, err := os.Lstat(filepath.Join(dst, name))
+		if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("%s in the staged tree = %v (%v), want a symlink", name, fi, err)
+		}
+		if got, _ := os.Readlink(filepath.Join(dst, name)); got != want {
+			t.Errorf("%s points at %q, want %q", name, got, want)
+		}
+	}
+	if fi, err := os.Stat(filepath.Join(dst, "build.sh")); err != nil || fi.Mode().Perm()&0o100 == 0 {
+		t.Errorf("build.sh = %v (%v), want it copied with its exec bit", fi, err)
+	}
+	_ = filepath.WalkDir(dst, func(p string, d os.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if b, _ := os.ReadFile(p); strings.Contains(string(b), "SECRET-HOST-BYTES") {
+				t.Errorf("the staged tree holds the host's bytes at %s", p)
+			}
+		}
+		return nil
+	})
+}
+
+// A source whose ROOT is a symlink is refused before anything is copied (stagePackTreeSource's Lstat;
+// PackTreeDigest refuses one the same way).
+func TestASymlinkedSourceRootIsRefused(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := packload.PackTreeDigest(link); err == nil {
+		t.Errorf("PackTreeDigest of a symlinked root succeeded, want a refusal")
+	}
+	f := packload.Fork{Pack: "board", Bin: "board", Run: "make", Checkout: link}
+	if err := stagePackTreeSource(f, "digest", filepath.Join(base, "dst")); err == nil ||
+		!strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("staging a symlinked checkout = %v, want a not-a-directory refusal", err)
+	}
+}
+
+// THE BUILD'S COPY FOLLOWS NO LINK ABOVE ITS ROOT THAT ROOT DID NOT PLACE (BG-D22): the checkout is
+// proj/vendor/tool, and vendor is a user's link — swapped in after the override was checked — to a
+// host directory that also holds a tool/ with a key in it. The copy refuses and the staging holds
+// none of the host's bytes. Red if copySourceTreeSkipping goes back to a path-based walk.
+func TestTheBuildsCopyRefusesAnUntrustedLinkAboveItsRoot(t *testing.T) {
+	base := t.TempDir()
+	proj, host, dst := filepath.Join(base, "proj"), filepath.Join(base, "host"), filepath.Join(base, "staged")
+	for _, d := range []string{proj, filepath.Join(host, "tool")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(host, "tool", "id_ed25519"), []byte("SECRET-HOST-BYTES"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(proj, "vendor")
+	if err := os.Symlink(host, link); err != nil {
+		t.Fatal(err)
+	}
+	if os.Geteuid() == 0 {
+		if err := os.Lchown(link, 65534, 65534); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := copySourceTreeSkipping(filepath.Join(link, "tool"), dst, nil); err == nil {
+		t.Errorf("the copy read through a user's link above its root")
+	}
+	if _, err := os.Stat(filepath.Join(dst, "id_ed25519")); err == nil {
+		t.Errorf("the staging holds the host's key")
+	}
+}
+
+// THE COPY WRITES NOTHING THROUGH A LINK: a destination entry that already exists — here a link
+// standing where the source's directory goes, as `Lib` meets `lib` on a case-insensitive volume —
+// fails the copy, and nothing is written where the link points.
+func TestTheBuildsCopyNeverWritesThroughAnExistingEntry(t *testing.T) {
+	base := t.TempDir()
+	src, dst, elsewhere := filepath.Join(base, "src"), filepath.Join(base, "dst"), filepath.Join(base, "elsewhere")
+	for _, d := range []string{filepath.Join(src, "lib"), dst, elsewhere} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(src, "lib", "x"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(dst, "lib")); err != nil {
+		t.Fatal(err)
+	}
+	if err := copySourceTreeSkipping(src, dst, nil); err == nil {
+		t.Errorf("the copy went on past an existing destination entry")
+	}
+	if _, err := os.Lstat(filepath.Join(elsewhere, "x")); err == nil {
+		t.Errorf("the copy wrote through the link")
+	}
+	if err := os.WriteFile(filepath.Join(dst, "f"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "f"), []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dst, "lib")); err != nil {
+		t.Fatal(err)
+	}
+	if err := copySourceTreeSkipping(src, dst, nil); err == nil {
+		t.Errorf("the copy overwrote an existing destination file")
+	}
+}

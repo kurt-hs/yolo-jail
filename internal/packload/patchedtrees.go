@@ -42,6 +42,9 @@ func (f Fork) Label() string {
 	if f.IsTree() {
 		return "extension " + f.SeriesKey() + suffix
 	}
+	if f.IsPackTree() && f.Checkout != "" {
+		return "program " + f.SeriesKey() + " (built from your checkout " + f.Checkout + ")"
+	}
 	if f.IsPackTree() {
 		return "program " + f.SeriesKey() + " (built from its pack's tree)"
 	}
