@@ -171,10 +171,10 @@ func TestMissingRootIsAnError(t *testing.T) {
 	}
 }
 
-// THE DIGEST FOLLOWS NO LINK ABOVE ITS ROOT THAT ROOT DID NOT PLACE (internal/nofollow, BG-D22): the
-// root is proj/vendor/tool, and vendor is a user's link to a host directory that also holds a tool/
-// with a key in it. A path-based reader digests the host's bytes; this one refuses. Red if OfSkipping
-// goes back to filepath.WalkDir.
+// A CHECKOUT'S DIGEST FOLLOWS NO LINK ABOVE ITS ROOT THAT ROOT DID NOT PLACE (internal/nofollow,
+// BG-D22): the root is proj/vendor/tool, and vendor is a user's link to a host directory that also
+// holds a tool/ with a key in it. A path-based reader digests the host's bytes; OfCheckout refuses.
+// Red if OfCheckout goes back to filepath.WalkDir or to the caller's-own reach of Of.
 func TestTheDigestRefusesAnUntrustedLinkAboveItsRoot(t *testing.T) {
 	base := t.TempDir()
 	proj, host := filepath.Join(base, "proj"), filepath.Join(base, "host")
@@ -186,7 +186,43 @@ func TestTheDigestRefusesAnUntrustedLinkAboveItsRoot(t *testing.T) {
 	if os.Geteuid() == 0 {
 		must(t, os.Lchown(link, 65534, 65534))
 	}
-	if d, err := Of(filepath.Join(link, "tool")); err == nil {
+	if d, err := OfCheckout(filepath.Join(link, "tool"), nil); err == nil {
 		t.Errorf("the digest read through a user's link above its root: %s", d)
+	}
+}
+
+// THE CALLER'S OWN ANCESTORS ARE FOLLOWED, AND NOTHING BELOW THE BASE IS (BG-D22's trust root): a
+// user's link above the root (a state directory moved to another disk) is followed by Of and by
+// OfBelow above its base, while OfBelow refuses a link between its base and the root, where an agent
+// may write.
+func TestOfFollowsTheCallersOwnLinksAndOfBelowNoneUnderItsBase(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	must(t, os.MkdirAll(filepath.Join(real, "work", "tree"), 0o755))
+	must(t, os.WriteFile(filepath.Join(real, "work", "tree", "f"), []byte("x"), 0o644))
+	state := filepath.Join(base, "state")
+	userOwnedLink(t, real, state)
+	want, err := Of(filepath.Join(real, "work", "tree"))
+	must(t, err)
+	if got, err := Of(filepath.Join(state, "work", "tree")); err != nil || got != want {
+		t.Errorf("Of through the user's own link = %q, %v; want %q", got, err, want)
+	}
+	if got, err := OfBelow(state, filepath.Join(state, "work", "tree"), nil); err != nil || got != want {
+		t.Errorf("OfBelow through a link above its base = %q, %v; want %q", got, err, want)
+	}
+	host := filepath.Join(base, "host")
+	must(t, os.MkdirAll(filepath.Join(host, "tree"), 0o755))
+	must(t, os.WriteFile(filepath.Join(host, "tree", "id_ed25519"), []byte("SECRET"), 0o600))
+	userOwnedLink(t, host, filepath.Join(real, "planted"))
+	if d, err := OfBelow(state, filepath.Join(state, "planted", "tree"), nil); err == nil {
+		t.Errorf("OfBelow read through a link below its base: %s", d)
+	}
+}
+
+func userOwnedLink(t *testing.T, target, link string) {
+	t.Helper()
+	must(t, os.Symlink(target, link))
+	if os.Geteuid() == 0 {
+		must(t, os.Lchown(link, 65534, 65534))
 	}
 }

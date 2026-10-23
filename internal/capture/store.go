@@ -285,7 +285,10 @@ func (s *Store) admit(ctx context.Context, staged, digestOf string, whole bool, 
 	} else if !fi.IsDir() {
 		return nil, fmt.Errorf("capture admit: staged tree %s is not a directory", digestOf)
 	}
-	digest, err := treedigest.Of(digestOf)
+	// The staging root is yolo's own, reached as the OS does, so a user's link to the store or the
+	// state directory is followed; below it is the capture jail's workspace, where no link is
+	// (BG-D22).
+	digest, err := treedigest.OfBelow(stagingRoot, digestOf, nil)
 	if err != nil {
 		return nil, fmt.Errorf("capture admit: digesting %s: %w", digestOf, err)
 	}
