@@ -866,6 +866,39 @@
         noncontainerFloorExcluded =
           noncontainerFloorUnbuildable ++ noncontainerFloorPolicy;
 
+        # SUBSTITUTES: a floor name built differently for the non-container
+        # floor, under the SAME name, so the names list and its Go drift gate
+        # (internal/darwinpkg/floor.go) do not move.
+        #
+        # mise on darwin is built with its `rustls` feature, not its default
+        # `native-tls`.  Under the run-as-you Seatbelt profile, the native-tls
+        # build fails every download with "client error (Connect): bad
+        # certificate format", whatever SSL_CERT_FILE names, because it needs
+        # securityd (com.apple.SecurityServer), which the profile denies by
+        # name: securityd is also the way into the keychain.  Measured
+        # 2026-10-23 on macOS 26, each run with a fresh mise cache: dropping
+        # that one name from the deny made the native-tls build work, and the
+        # rustls build lists versions and installs node under the UNCHANGED
+        # profile, with or without SSL_CERT_FILE, so the keychain deny stays.
+        # Every crate behind mise's TLS features is declared
+        # default-features = false, so the build below selects rustls for all
+        # of them; the rest of mise's default features are kept.  Linux is
+        # untouched: its native-tls is OpenSSL, which reads the CA bundle.
+        noncontainerFloorSubstitutes = pkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
+          # ⚠ The cargo* names, not buildFeatures/buildNoDefaultFeatures:
+          # buildRustPackage turns those into the cargo* variables once, when
+          # the package is defined, so overrideAttrs on them changes nothing
+          # cargo sees (measured: the derivation kept cargoBuildFeatures = "").
+          mise = pkgs.mise.overrideAttrs (_: let
+            features = [ "rustls" "vfox/vendored-lua" "self_update" ];
+          in {
+            cargoBuildNoDefaultFeatures = true;
+            cargoBuildFeatures = features;
+            cargoCheckNoDefaultFeatures = true;
+            cargoCheckFeatures = features;
+          });
+        };
+
         # The floor's names for THIS system: the image core minus both kinds of
         # exclusion, minus anything the user declared in `packages:`.
         #
@@ -901,7 +934,7 @@
         noncontainerFloorPackages = map (n:
           let
             present = pkgs ? ${n};
-            drv = if present then pkgs.${n} else null;
+            drv = if present then noncontainerFloorSubstitutes.${n} or pkgs.${n} else null;
             okAttempt =
               if !present then { success = true; value = false; }
               else builtins.tryEval
