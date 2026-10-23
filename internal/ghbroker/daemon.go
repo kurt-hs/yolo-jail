@@ -175,7 +175,14 @@ func (b *Broker) startOnRequest(ctx context.Context, command string) <-chan stru
 	// The hook runs in the user's home: this daemon has moved into the store's directory,
 	// which is no place for a user's command to start.
 	home, _ := os.UserHomeDir()
-	r := &brokerhook.Runner{Store: b.store, Start: b.startID, Command: command, Dir: home, Log: b.log}
+	// This daemon is `yolo internal daemon github-broker`, so its own executable is the yolo
+	// the hook calls to decide.
+	bin, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(b.log, "github-broker: on_request gets no YOLO_BIN:", err, "; its `yolo approve` must be on PATH")
+		bin = ""
+	}
+	r := &brokerhook.Runner{Store: b.store, Start: b.startID, Command: command, Bin: bin, Dir: home, Log: b.log}
 	fmt.Fprintln(b.log, "github-broker: running your on_request for each request this jail files")
 	go func() {
 		defer close(done)

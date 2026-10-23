@@ -16,12 +16,17 @@ import (
 // The broker's own process runs the user's on_request (BB-D75): with the key in the user
 // config, a request this broker lifetime holds is answered by a hook that prints `approve`,
 // with no `yolo approve` and no watch kept open. Deleting startOnRequest's call in Main
-// fails this test.
+// The broker's own process runs the user's on_request (BB-D75): with the key in the user
+// config, a request this broker lifetime files runs the hook with the request on stdin and
+// YOLO_BIN naming the broker's own executable, with no watch kept open. The hook only
+// notifies, so the request is still pending after it ran. Deleting startOnRequest's call in
+// Main fails this test.
 func TestTheBrokerRunsTheUsersOnRequest(t *testing.T) {
 	dir := resolvedDir(t)
 	stdin := filepath.Join(dir, "stdin.json")
+	binFile := filepath.Join(dir, "bin")
 	hook := filepath.Join(dir, "hook")
-	if err := os.WriteFile(hook, []byte("#!/bin/sh\ncat >'"+stdin+"'\necho approve\n"), 0o755); err != nil {
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\nprintf '%s' \"$YOLO_BIN\" >'"+binFile+"'\ncat >'"+stdin+"'\necho approve\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	p := startBrokerProcessWith(t, `{"on_request": `+strconv.Quote(hook)+`}`)
@@ -45,17 +50,20 @@ func TestTheBrokerRunsTheUsersOnRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "the hook to approve the request", 20*time.Second, func() bool {
-		got, err := s.Status(q.Jail, q.Start, q.ID)
-		return err == nil && got.State == "allowed"
+	waitFor(t, "the hook to run", 20*time.Second, func() bool {
+		b, err := os.ReadFile(stdin)
+		return err == nil && bytes.Contains(b, []byte(q.ID))
 	})
-	b, err := os.ReadFile(stdin)
-	if err != nil || !bytes.Contains(b, []byte(`"event":"request-filed"`)) || !bytes.Contains(b, []byte(q.ID)) {
-		t.Fatalf("the hook's stdin: %q %v", b, err)
+	if b, _ := os.ReadFile(stdin); !bytes.Contains(b, []byte(`"event":"request-filed"`)) {
+		t.Fatalf("the hook's stdin: %q", b)
 	}
-	audit, err := os.ReadFile(paths.BrokerAuditLog())
-	if err != nil || !bytes.Contains(audit, []byte(`"event":"hook-decision"`)) || !bytes.Contains(audit, []byte(`"outcome":"allowed"`)) {
-		t.Fatalf("the audit has no hook decision: %s %v", audit, err)
+	exe, _ := os.Executable()
+	if b, _ := os.ReadFile(binFile); string(b) != exe {
+		t.Fatalf("YOLO_BIN = %q, want the broker's own executable %q", b, exe)
+	}
+	time.Sleep(1500 * time.Millisecond) // past a poll, in case anything read the hook's output
+	if got, err := s.Status(q.Jail, q.Start, q.ID); err != nil || got.State != "pending" {
+		t.Fatalf("the hook's output decided the request: %+v %v", got, err)
 	}
 }
 

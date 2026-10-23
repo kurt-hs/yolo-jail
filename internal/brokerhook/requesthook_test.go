@@ -47,7 +47,7 @@ func readPid(t *testing.T, path string) int {
 // A hook still waiting when its request leaves pending some other way is killed with its
 // whole process group, child included: decided with `yolo approve`, or refused because its
 // jail stopped.
-func TestAHookIsKilledWhenItsRequestLeavesPendingElsewhere(t *testing.T) {
+func TestAHookIsKilledWhenItsRequestLeavesPending(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		leave func(f *fixture, q brokerstore.Request) error
@@ -76,7 +76,7 @@ func TestAHookIsKilledWhenItsRequestLeavesPendingElsewhere(t *testing.T) {
 				t.Fatal(err)
 			}
 			waitFor(t, "the hook to be stopped", func() bool {
-				return strings.Contains(log.String(), "stopped because its request was decided, expired or refused elsewhere")
+				return strings.Contains(log.String(), "stopped because its request is no longer pending")
 			})
 			waitFor(t, "the hook's child to die", func() bool { return !alive(pid) })
 			if got := f.state(t, q.ID); got == "allowed" || got == "pending" {
@@ -146,6 +146,63 @@ func TestAnUnreadableStoreIsRetriedAndLoggedOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the hook to run once the store reads", func() bool { _, err := os.Stat(marker); return err == nil })
+}
+
+// The hook only notifies: nothing it prints, an old `approve` answer included, decides its
+// request, and the store records no decision.
+func TestTheHookDecidesNothingByItself(t *testing.T) {
+	for _, body := range []string{"echo approve\n", "echo deny\n", "echo 'approve please'\n", "echo approve\nexit 3\n"} {
+		f := newFixture(t)
+		marker := filepath.Join(f.dir, "ran")
+		stop := f.run(t, f.script(t, "hook", "cat >/dev/null\ntouch '"+marker+"'\n"+body), &syncBuffer{})
+		q, err := f.store.File(f.filing)
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, "the hook to run", func() bool { _, err := os.Stat(marker); return err == nil })
+		time.Sleep(50 * time.Millisecond) // ten ticks
+		stop()
+		if got := f.state(t, q.ID); got != "pending" {
+			t.Fatalf("%q left the request %s", body, got)
+		}
+		f.mu.Lock()
+		kinds := strings.Join(f.kinds, ",")
+		f.mu.Unlock()
+		if strings.Contains(kinds, "decision") {
+			t.Fatalf("%q was audited as a decision: %s", body, kinds)
+		}
+	}
+}
+
+// YOLO_BIN names the yolo to call, so `"$YOLO_BIN" approve` resolves even when the hook's
+// PATH has no yolo.
+func TestTheHookGetsYoloBin(t *testing.T) {
+	f := newFixture(t)
+	binDir := filepath.Join(f.dir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	calls := filepath.Join(f.dir, "calls")
+	bin := filepath.Join(binDir, "yolo")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho \"$*\" >>'"+calls+"'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", "/usr/bin:/bin")
+	hook := f.script(t, "hook", "cat >/dev/null\n[ \"$YOLO_BIN\" = '"+bin+"' ] || exit 9\n\"$YOLO_BIN\" approve \"$YOLO_REQUEST_ID\"\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	r := &Runner{Store: f.store, Start: "start", Command: hook, Bin: bin, Interval: 5 * time.Millisecond}
+	done := make(chan struct{})
+	go func() { r.Run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+	time.Sleep(50 * time.Millisecond)
+	q, err := f.store.File(f.filing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the hook to call yolo", func() bool { b, _ := os.ReadFile(calls); return len(b) > 0 })
+	if b, _ := os.ReadFile(calls); string(b) != "approve "+q.ID+"\n" {
+		t.Fatalf("yolo was called with %q", b)
+	}
 }
 
 // The hook starts in the given directory, not wherever the broker runs.

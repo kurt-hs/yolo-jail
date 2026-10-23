@@ -114,8 +114,6 @@ type Decision struct {
 	For     time.Duration
 	Session bool
 	Uses    int
-	// Hook marks a decision the user's on_request made; it is audited as such.
-	Hook bool
 }
 type Store struct {
 	Dir string
@@ -464,9 +462,6 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 				return refusal(ErrNotConfirmed, "%v", err)
 			}
 			kind := "decision"
-			if d.Hook {
-				kind = "hook-decision"
-			}
 			if d.Deny {
 				if d.For != 0 || d.Session || d.Uses != 0 {
 					return errors.New("deny cannot also grant")

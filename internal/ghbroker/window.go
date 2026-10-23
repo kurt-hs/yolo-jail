@@ -26,7 +26,7 @@ type RequiredDelivery interface {
 func StoreAudit(log *brokeraudit.Log) func(context.Context, string, brokerstore.Request, brokerstore.Grant) error {
 	return func(ctx context.Context, kind string, q brokerstore.Request, g brokerstore.Grant) error {
 		outcome := "pending"
-		if kind == "decision" || kind == "hook-decision" {
+		if kind == "decision" {
 			outcome = "denied"
 			if g.ID != "" {
 				outcome = "allowed"

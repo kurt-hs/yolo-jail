@@ -106,57 +106,6 @@ func (f *fixture) state(t *testing.T, id string) string {
 	return ""
 }
 
-// A hook that prints `approve` allows the request once, and the audit records a hook decision.
-func TestAHookThatPrintsApproveAllowsOnce(t *testing.T) {
-	f := newFixture(t)
-	var log syncBuffer
-	stop := f.run(t, f.script(t, "hook", "cat >/dev/null\necho approve\n"), &log)
-	defer stop()
-	q, err := f.store.File(f.filing)
-	if err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "the hook's approval", func() bool { return f.state(t, q.ID) == "allowed" })
-	_, gs, _ := f.store.List()
-	if len(gs) != 1 || gs[0].Uses != 1 || gs[0].Digest != q.Digest {
-		t.Fatalf("approve is not Allow once: %+v", gs)
-	}
-	f.mu.Lock()
-	kinds := strings.Join(f.kinds, ",")
-	f.mu.Unlock()
-	if !strings.Contains(kinds, "hook-decision") {
-		t.Fatalf("audited %s, want a hook-decision", kinds)
-	}
-	waitFor(t, "the log line", func() bool { return strings.Contains(log.String(), "approved "+q.ID) })
-}
-
-// `deny` denies; any other answer, or a failing hook, decides nothing.
-func TestOnlyAnExactAnswerDecides(t *testing.T) {
-	for _, c := range []struct{ name, body, want string }{
-		{"deny", "echo '  deny  '\n", "denied"},
-		{"garbage", "echo 'approve please'\n", "pending"},
-		{"failing", "echo approve\nexit 3\n", "pending"},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			f := newFixture(t)
-			marker := filepath.Join(f.dir, "ran")
-			stop := f.run(t, f.script(t, "hook", "cat >/dev/null\ntouch '"+marker+"'\n"+c.body), &syncBuffer{})
-			q, err := f.store.File(f.filing)
-			if err != nil {
-				t.Fatal(err)
-			}
-			waitFor(t, "the hook to run", func() bool { _, err := os.Stat(marker); return err == nil })
-			if c.want == "denied" {
-				waitFor(t, "the denial", func() bool { return f.state(t, q.ID) == "denied" })
-			}
-			stop() // waits for every hook to finish
-			if got := f.state(t, q.ID); got != c.want {
-				t.Fatalf("state %s, want %s", got, c.want)
-			}
-		})
-	}
-}
-
 // The hook gets the event's JSON on stdin and its fields in the environment, and fires only
 // for its own broker lifetime's records.
 func TestTheHookGetsTheEventAndOnlyItsOwnLifetime(t *testing.T) {
