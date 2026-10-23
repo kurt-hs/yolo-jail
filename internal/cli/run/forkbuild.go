@@ -132,9 +132,10 @@ func (o *Options) forkBuildPlan(rt string) (map[string]entrypoint.ForkDelivery, 
 			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: p.Reason}
 			continue
 		}
-		if p.Fork.IsPackTree() && rt == "macos-user" { // parity: Warned — the darwin sealed act does not stage a pack's tree yet (docs/design/pack-buildable-programs-plan.md Task 10), so no build is tried and the program's launcher prints this reason
+		if p.Fork.IsPackTree() && !p.Fork.IsPrebuilt() && rt == "macos-user" { // parity: Warned — the darwin sealed act does not stage a pack's tree yet (docs/design/pack-buildable-programs-plan.md Task 10), so no build is tried and the program's launcher prints this reason
 			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: "a program built from pack " + p.Fork.Pack +
-				"'s own tree (" + p.Fork.From + ") is not built for macOS by this yolo yet"}
+				"'s own tree (" + p.Fork.From + ") is not built for macOS by this yolo yet, and the pack declares no " +
+				"`prebuilt` artifact for " + platform + " to stand in"}
 			continue
 		}
 		if why := forkUnpublishedHere(p.Fork, rt); why != "" {

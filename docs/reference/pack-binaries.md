@@ -54,7 +54,9 @@ the commit pins the manifest, and the manifest pins the bytes.
 
 **Fetch at install, never at launch.** A launch-time fetch would make no network mean no jail,
 and would move the moment of trust from installing a pack to every start. A build cached by
-digest makes a reinstall of the same pin offline.
+digest makes a reinstall of the same pin offline. A pack-tree program's `prebuilt` artifact shares
+this cache and its checks but is the one exception: a launch fetches it, because a program is
+installed at launch ([BG-D7](../design/pack-buildable-programs.md#BG-D7)).
 
 **A digest mismatch is an integrity failure, not a fetch failure.** It refuses the install,
 names both digests, caches nothing, and never falls back to a cached copy, since the bytes are

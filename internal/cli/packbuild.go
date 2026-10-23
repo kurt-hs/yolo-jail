@@ -220,23 +220,24 @@ func packBuildOne(pr richtext.Printer, f packload.Fork, rt string, opts packBuil
 		pr.Printf("[red]failed[/red]     %s  [dim]%s — then run `%s`[/dim]", label, richtext.Escape(why), richtext.Escape(retry))
 		return false
 	}
-	if rt == "macos-user" {
-		// parity: Warned — the darwin sealed act does not stage a pack's tree yet (pack-buildable-programs-plan.md Task 10); a launch on macos-user says the same
-		return fail("a program built from its pack's own tree is not built for macOS by this yolo yet")
-	}
 	platform := forkBuildPlatform(rt)
 	goos, arch, _ := strings.Cut(platform, "/")
 	if why := (packdecl.Install{Platforms: f.Platforms}).UnpublishedReason(goos, arch); why != "" {
 		pr.Printf("[dim]skipped[/dim]    %s  [dim]%s[/dim]", label, richtext.Escape(why))
 		return true
 	}
-	digest, err := f.Digest()
+	// WHICH BYTES, as a launch resolves them (packload.PackTreeResolve): the build of the pack's tree,
+	// or its prebuilt artifact where the tree is absent or no build can run for this notch.
+	buildable := rt != "macos-user" // parity: Warned — the darwin sealed act does not stage a pack's tree yet (pack-buildable-programs-plan.md Task 10); a declared darwin prebuilt stands in, as at a launch on macos-user
+	pin := packload.PackTreeResolve(f, platform, buildable)
 	switch {
-	case err != nil:
-		return fail(fmt.Sprintf("its source directory %s could not be read (%v)", f.From, err))
-	case digest == "":
-		return fail(fmt.Sprintf("pack %s ships no %s to build it from", f.Pack, f.From))
+	case pin.Reason != "":
+		return fail(pin.Reason)
+	case !buildable && !pin.Fork.IsPrebuilt():
+		return fail("a program built from its pack's own tree is not built for macOS by this yolo yet, and the " +
+			"pack declares no `prebuilt` artifact for " + platform + " to stand in")
 	}
+	f, digest := pin.Fork, pin.Commit
 	b := forkBuild{Fork: f, Commit: digest, Platform: platform}
 	store := &capture.Store{Dir: paths.CapturesDir()}
 	hit := false
@@ -273,6 +274,16 @@ func packBuildOne(pr richtext.Printer, f packload.Fork, rt string, opts packBuil
 			fmt.Fprintln(errw, l)
 		}
 		return ok
+	}
+	if f.IsPrebuilt() {
+		// A PREBUILT is fetched, never built: its line names the sha256 that was verified and the URL.
+		what := "fetched"
+		if hit {
+			what = "up to date"
+		}
+		pr.Printf("[green]%-10s[/green] %s  [dim]prebuilt artifact (%s), sha256 %s verified, %s, %s[/dim]  [cyan]%s[/cyan]",
+			what, label, richtext.Escape(f.PrebuiltWhy), shortSHA(digest), richtext.Escape(f.Prebuilt.URL), platform, entry.Key)
+		return true
 	}
 	if hit {
 		pr.Printf("[green]up to date[/green] %s  [dim]tree digest %s, %s[/dim]  [cyan]%s[/cyan]",

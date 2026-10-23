@@ -851,6 +851,10 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 			return entry, nil
 		}
 	}
+	if f.IsPrebuilt() {
+		// THE PREBUILT ARTIFACT (§7): fetched, verified and admitted by the host, under this lock.
+		return admitPackTreePrebuiltUnderLock(b, mode, store)
+	}
 	if f.IsPackTree() && strings.TrimSpace(f.Build) == "" {
 		// NO BUILD LINE, NO JAIL (BG-D5): the host lays out and admits the copy, under this lock.
 		return admitPackTreeCopyUnderLock(b, mode, store, pr)

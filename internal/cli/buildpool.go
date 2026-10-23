@@ -594,6 +594,14 @@ func addForkKeys(pool *buildPool, req run.ForkBuildRequest, color bool, answer f
 			answer(p.Fork.Bin, entrypoint.ForkDelivery{Key: entry.Key})
 			continue
 		}
+		if p.Fork.IsPrebuilt() {
+			// THE PREBUILT ARTIFACT (§7): fetched and verified by the host, with no jail and no build
+			// slot; the launch's disclosure line says it once the slot has answered.
+			pool.add(p.Fork.Label(), func(it *poolItem) {
+				answer(p.Fork.Bin, fetchPrebuiltForLaunch(b, req.Runtime, it, color))
+			})
+			continue
+		}
 		if p.Fork.IsPackTree() {
 			packTrees++
 			if strings.TrimSpace(p.Fork.Build) == "" {

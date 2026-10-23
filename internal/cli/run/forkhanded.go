@@ -57,6 +57,13 @@ type HandedFork struct {
 	Tag     string `json:"tag,omitempty"`
 	Patches int    `json:"patches,omitempty"`
 	Series  string `json:"series,omitempty"`
+	// PrebuiltPack, PrebuiltWhy, PrebuiltSHA256 and PrebuiltURL are a pack-tree program delivered
+	// from its PREBUILT artifact (prebuiltline.go): what an attach's line names. Additive, so an
+	// older record reads with none.
+	PrebuiltPack   string `json:"prebuilt_pack,omitempty"`
+	PrebuiltWhy    string `json:"prebuilt_why,omitempty"`
+	PrebuiltSHA256 string `json:"prebuilt_sha256,omitempty"`
+	PrebuiltURL    string `json:"prebuilt_url,omitempty"`
 }
 
 type handedForksFile struct {
@@ -201,7 +208,7 @@ func (o *Options) recordHandedForks(out map[string]entrypoint.ForkDelivery) {
 			continue
 		}
 		d := out[bin]
-		if err := recordHandedFork(o.packTree, bin, HandedFork{Key: d.Key, Reason: d.Reason}); err != nil {
+		if err := recordHandedFork(o.packTree, bin, o.handedPrebuilt(bin, HandedFork{Key: d.Key, Reason: d.Reason})); err != nil {
 			// What it costs: an attach to this jail cannot say what it was handed for these bins. No
 			// move reaps a plain fork's build, and a patched fork's advance records its own bin.
 			o.pr(o.Stderr).printf("[yellow]Warning: could not record what this launch hands its jail for %s "+

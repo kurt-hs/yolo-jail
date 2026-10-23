@@ -180,11 +180,11 @@ func packTreeAdmitProblem(m *capture.Manifest, f packload.Fork, workspace string
 	if e, ok := byPath[dir]; !ok || e.Kind != capture.KindDir {
 		return fmt.Sprintf("the build left no program directory at ~/%s", dir)
 	}
-	want := packdecl.PackTreeLinkTarget(f.Bin, f.Run)
+	want := packdecl.PackTreeLinkTarget(f.Bin, f.ProgramRun())
 	if e, ok := byPath[link]; !ok || e.Kind != capture.KindSymlink || e.Target != want {
 		return fmt.Sprintf("the build left no link at ~/%s to %s", link, want)
 	}
-	if e, ok := byPath[dir+"/"+f.Run]; !ok || e.Kind == capture.KindDir {
+	if e, ok := byPath[dir+"/"+f.ProgramRun()]; !ok || e.Kind == capture.KindDir {
 		return fmt.Sprintf("the build exited 0 but produced no %s in %s's tree (its `run`)", f.Run, f.From)
 	}
 	return linksIntoTheBuild(m, workspace)
@@ -304,6 +304,9 @@ const packTreeNoBuildToolchain = "none: no build line, the tree copied as shippe
 // packTreeWhat is a pack-tree build's subject for its start line and its log: the pack's source
 // directory at its tree digest.
 func packTreeWhat(b forkBuild) string {
+	if b.Fork.IsPrebuilt() {
+		return "pack " + b.Fork.Pack + "'s prebuilt artifact for " + b.Platform + " (sha256 " + shortSHA(b.Commit) + ")"
+	}
 	return "pack " + b.Fork.Pack + "'s " + b.Fork.From + " at tree digest " + shortSHA(b.Commit)
 }
 
@@ -311,6 +314,9 @@ func packTreeWhat(b forkBuild) string {
 // jail prints when it has no key: a fork's build of its pinned commit, or a pack-tree program's build
 // from its pack's own tree at its digest — never a fork for a program no fork pack declares.
 func buildOf(b forkBuild) string {
+	if b.Fork.IsPrebuilt() {
+		return packTreeWhat(b) + " of " + b.Fork.Bin
+	}
 	if b.Fork.IsPackTree() {
 		return "pack " + b.Fork.Pack + "'s build of " + b.Fork.Bin + " from " + b.Fork.From + " (tree digest " +
 			shortSHA(b.Commit) + ")"

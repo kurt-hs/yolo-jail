@@ -276,3 +276,23 @@ func (in Install) PackTreeRecipe() string {
 	}
 	return PackTreeRecipe(in.PackFrom, in.Build, in.PackRun)
 }
+
+// packTreePrebuiltRecipeTag opens a PREBUILT artifact's recipe, so it never equals a build's
+// (PackTreeRecipe) for the same program: the two are different bytes for one bin, and a hit on one
+// must never serve the other.
+const packTreePrebuiltRecipeTag = "pack-tree-prebuilt"
+
+// PackTreePrebuiltRecipe is the RECIPE HASH of a pack-tree program delivered from its `prebuilt`
+// artifact (docs/design/pack-buildable-programs.md §7): the sha256, in hex, of the JSON array
+// ["pack-tree-prebuilt", layout version, bin]. The artifact's own sha256 is the entry's revision,
+// so the recipe carries only what lays the file out: it lands as PackTreePrebuiltRun(bin) inside
+// the program's directory, linked the way a build's `run` is.
+func PackTreePrebuiltRecipe(bin string) string {
+	canonical, _ := json.Marshal([]any{packTreePrebuiltRecipeTag, PackTreeLayoutVersion, bin})
+	sum := sha256.Sum256(canonical)
+	return hex.EncodeToString(sum[:])
+}
+
+// PackTreePrebuiltRun is where a prebuilt artifact lands inside its program's directory, relative
+// to it: the file under the program's own name, ~/.local/lib/yolo-programs/<bin>/<bin> (§7).
+func PackTreePrebuiltRun(bin string) string { return bin }

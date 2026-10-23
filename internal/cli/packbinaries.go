@@ -5,9 +5,10 @@ package cli
 // verified against the sha256 its manifest pins, and cached by digest with its exec bit set
 // (internal/packbin; docs/reference/pack-binaries.md BP-D1).
 //
-// THIS IS THE ONLY FETCH. A launch reads the cache and never downloads (§3.1: "at `pack
-// install`, never at launch"), and says `yolo pack install` when a build it needs is missing
-// (loopholes.BinaryInertNotes). `yolo pack update` runs install first, so it fetches too.
+// THIS IS THE ONLY FETCH OF A LOOPHOLE'S BINARY. A launch reads the cache and never downloads one
+// (§3.1: "at `pack install`, never at launch"), and says `yolo pack install` when a build it needs
+// is missing (loopholes.BinaryInertNotes). A pack-tree program's prebuilt artifact is the exception
+// (packtreeprebuilt.go, BG-D7): a launch fetches it too, and this step prefetches it. `yolo pack update` runs install first, so it fetches too.
 // Nothing else fills the cache: yolo's own build seeds no pack program, since no official pack
 // declares one (docs/reference/pack-binaries.md OQ-BP8).
 //
@@ -100,6 +101,53 @@ func fetchPackBinaries(packs []*packload.Pack, f packbin.Fetcher, goos, goarch s
 					pr.Printf("[green]%s: fetched and verified (sha256 %s)[/green]", label,
 						shortSHA(n.Build.SHA256))
 				}
+			}
+		}
+	}
+	if fetchPackTreePrebuilts(packs, f, goos, goarch, pr, errw) != 0 {
+		rc = 1
+	}
+	return rc
+}
+
+// fetchPackTreePrebuilts is the same download step for every PREBUILT artifact a launch on this
+// machine would take for a selected pack-tree program (docs/design/pack-buildable-programs.md §7,
+// BG-D7): resolved as the launch resolves it (packload.PackTreeResolve) for a container jail's
+// linux/<goarch>, and on a Mac for the macos-user sandbox's darwin/<goarch>, where no build of a
+// pack's tree runs yet. A program whose source directory is present and buildable fetches nothing
+// (P5). The launch then finds the artifact in the cache, offline included.
+func fetchPackTreePrebuilts(packs []*packload.Pack, f packbin.Fetcher, goos, goarch string,
+	pr richtext.Printer, errw io.Writer) int {
+	rc := 0
+	notches := []struct {
+		platform  string
+		buildable bool
+	}{{"linux/" + goarch, true}}
+	if goos == "darwin" { // parity: HonoredBy — the macos-user sandbox runs darwin programs, and its darwin act builds no pack tree yet (Task 10), so its prebuilt is the one it takes
+		notches = append(notches, struct {
+			platform  string
+			buildable bool
+		}{"darwin/" + goarch, false})
+	}
+	for _, prog := range packload.PackTreePrograms(packs) {
+		for _, n := range notches {
+			pin := packload.PackTreeResolve(prog, n.platform, n.buildable)
+			if !pin.Fork.IsPrebuilt() {
+				continue
+			}
+			pb := *pin.Fork.Prebuilt
+			label := fmt.Sprintf("%s: program %s: prebuilt artifact for %s", prog.Pack, prog.Bin, n.platform)
+			_, outcome, err := f.Ensure(context.Background(), packbin.Want{Name: prog.Bin, URL: pb.URL, SHA256: pb.SHA256})
+			if err != nil {
+				fmt.Fprintf(errw, "yolo pack install: %s: %v\n", label, err)
+				rc = 1
+				continue
+			}
+			switch outcome {
+			case packbin.Cached:
+				pr.Printf("[dim]%s: already fetched (sha256 %s)[/dim]", label, shortSHA(pb.SHA256))
+			default:
+				pr.Printf("[green]%s: fetched and verified (sha256 %s)[/green]", label, shortSHA(pb.SHA256))
 			}
 		}
 	}

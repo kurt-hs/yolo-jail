@@ -139,6 +139,16 @@ type Fork struct {
 	// packdecl.PackTreeProduces, and its build's identity is BuildSource, its tree digest and
 	// PackTreeRecipe (packtree.go).
 	From, Run string
+	// Prebuilts is a pack-tree program's declared `prebuilt` map, by "<goos>/<goarch>", nil when it
+	// declares none (packdecl.PrebuiltBuild).
+	Prebuilts map[string]packdecl.PrebuiltBuild
+	// Prebuilt is the artifact THIS delivery takes (packtree.go, PackTreeResolve): set when the
+	// resolver chose the prebuilt rung for a platform, so the build act fetches and verifies it in
+	// place of building From. nil for a build, and for every fork.
+	Prebuilt *packdecl.PrebuiltBuild
+	// PrebuiltWhy is why the prebuilt rung was chosen, for the disclosure line: its pack ships no
+	// From, or no build can run here. "" unless Prebuilt is set.
+	PrebuiltWhy string
 	// Upstream marks the UPSTREAM BUILD of a patched fork or patched extension
 	// (docs/reference/patched-forks.md §8.5, "Skip the patches", YOLO_SKIP_PATCHES): the upstream's newest list entry
 	// built under the fork's own build recipe with no series applied. Its Patches and PatchBranch are

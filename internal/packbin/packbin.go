@@ -22,7 +22,9 @@
 // A launch reads the cache through Path and Present and NEVER FETCHES — pack-binaries.md
 // (Principles): "at `pack install`, never at launch" — so an offline launch of a pack whose builds are
 // cached is an ordinary launch, and one whose builds are not reports the loophole inert and
-// names the command.
+// names the command. The one exception is a pack-tree program's PREBUILT artifact
+// (docs/design/pack-buildable-programs.md BG-D7): a launch's build slot fetches it through Ensure,
+// because a program is installed at launch, and `yolo pack install` prefetches it.
 //
 // # What a digest mismatch is
 //

@@ -1069,8 +1069,8 @@ Unlike a fork, it names no other repository and no base pack:
 - **`build`** is optional, one command line with no newline, run by bash in the `from` directory.
   Absent means the tree runs as shipped.
 - **`run`** is required: the file the program is, relative to `from`, cleaned, with no `..`.
-- **`prebuilt`** is optional: a map from a `<goos>/<goarch>` key to `{url, sha256}`, used only when
-  `from` is absent. It follows `binaries`' rules: https only, no credentials in the URL, a 64-hex
+- **`prebuilt`** is optional: a map from a `<goos>/<goarch>` key to `{url, sha256}`, used when
+  `from` is absent, or where no build of a pack's tree runs (macos-user, for now). It follows `binaries`' rules: https only, no credentials in the URL, a 64-hex
   sha256. An official pack may not declare it.
 - **`platforms`** and **`node_floor`** are allowed, as on any program, and so is every behavior
   field. The delivery fields of other vias (`package`, `url`, `flags`, `update`, `versions_dir`,
@@ -1089,16 +1089,30 @@ readiness act then stops the launch, as for any program a launch cannot install,
 `YOLO_ALLOW_MISSING_PROGRAMS=1` starts the jail without it
 ([OQ-BG1](../design/pack-buildable-programs.md#OQ-BG1)'s leaning). A launch waiting on another
 launch's build of the same tree takes its result, a failure included; a launch that starts after the
-failure builds again. Fetching `prebuilt` and the dev override are later steps of the design.
+failure builds again.
+
+**With no `from` in the pack, a launch takes the `prebuilt` artifact** for the jail's platform
+([§7](../design/pack-buildable-programs.md#7-the-prebuilt-artifact)): the host fetches it over https
+into the pack-binary cache, checks its sha256 before anything runs, and admits it with no jail as
+`~/.local/lib/yolo-programs/<bin>/<bin>` and its link, keyed on that sha256, so a later launch is a
+store hit, offline included. Every fresh launch and attach prints one line naming the program, its
+pack, why the artifact stands in, the verified sha256 and the URL. A fetch failure or a digest
+mismatch stores nothing and refuses the program like a failed build, naming the URL, both digests
+for a mismatch, and the next step. A present `from` never fetches. The same artifact stands in on
+macos-user, whose sandbox builds no pack tree yet ([OQ-BG2](../design/pack-buildable-programs.md#OQ-BG2)'s
+leaning: a builder that can never run here, never one that is busy). `yolo pack install` prefetches
+it, and `yolo pack build` fetches it and reports it up to date. The dev override is a later step of
+the design.
 
 **`yolo pack build [<pack>...] [--force] [--at jail|host]`** runs the build a launch would run for
 each such program, outside a launch, for CI or a first install
 ([BG-D11](../design/pack-buildable-programs.md#BG-D11)). It goes through the launch's own build act
 and key, so the next launch finds the build and builds nothing, and it waits for a launch building
 the same key. No argument means every selected pack. It prints one line per program: up to date,
-built, or failed with the build's log and the command to retry. It exits 1 when any program failed.
+built, fetched for a prebuilt (with the sha256 it verified), or failed with the build's log and the
+command to retry. It exits 1 when any program failed.
 `--force` rebuilds even when the store holds the build. `--at host` builds for the host notch, which
-on Linux is the jail's build and on a Mac is not built by this yolo yet. A fork is skipped with a
+on Linux is the jail's build and on a Mac is not built by this yolo yet, unless a darwin `prebuilt` stands in. A fork is skipped with a
 line naming `yolo capture <bin>`, its explicit rebuild, and a dev override is noted without stopping
 the build. It runs on the host only and refuses in a jail with exit 2, as it does for a pack name
 the config does not select.

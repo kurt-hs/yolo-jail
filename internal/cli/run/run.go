@@ -375,7 +375,7 @@ func Run(opts Options) (rc int) {
 	// THE PACK-TREE PROGRAMS (packtreepins.go): keyed on their staged tree's digest, they ride the
 	// forks' trigger and slot from here, and say nothing above the dispatch — a hit is silent, and a
 	// build says its own lines (docs/design/pack-buildable-programs.md BG-D10).
-	o.forkPinned = append(o.forkPinned, o.packTreePins(staged.packs)...)
+	o.forkPinned = append(o.forkPinned, o.packTreePins(staged.packs, rt)...)
 	// THE PATCHED EXTENSIONS' block, above the dispatch beside the forks', and for its reason: every
 	// backend and an attach say what each one is at (docs/reference/pi-extensions.md §10).
 	o.patchedTrees = o.notePatchedTrees(staged.packs)

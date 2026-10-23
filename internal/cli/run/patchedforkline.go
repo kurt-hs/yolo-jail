@@ -292,6 +292,11 @@ func (o *Options) noteAttachForkBuilds(handed map[string]HandedFork) {
 	out := o.pr(o.Stderr)
 	for _, bin := range bins {
 		h := handed[bin]
+		if h.PrebuiltURL != "" && h.Key != "" {
+			// A PACK-TREE PROGRAM FROM ITS PREBUILT: the fresh launch's line again (BG-D10).
+			out.printf("%s", richtext.Escape(PrebuiltLine(bin, h.PrebuiltPack, h.PrebuiltWhy, h.PrebuiltSHA256, h.PrebuiltURL)))
+			continue
+		}
 		if h.Fork == "" {
 			continue // a plain fork's program: its pin, in the fork block above, is what it runs
 		}

@@ -1,9 +1,16 @@
 package integration
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/pem"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -172,5 +179,90 @@ func TestPackTreeProgramBuildFailureRefusesOnlyIt(t *testing.T) {
 	}
 	if !strings.Contains(all, "program "+brokenBin+" (pack "+failPack+")") {
 		t.Errorf("the hatch's launch does not list the program it starts without")
+	}
+}
+
+// TestPackTreeProgramUsesThePrebuiltWithoutSources is the design's done step 5 ("Remove the pack's
+// sources: it uses the declared fallback artifact and reports the checksum it verified"): a pack
+// whose manifest names tools/x but ships no such directory, with a `prebuilt` for this jail's
+// platform served over TLS by a server inside this test (trusted through SSL_CERT_FILE, so no
+// network and Linux only). The launch fetches it, verifies it, delivers it, and prints one line
+// with the first 12 hex digits of its sha256; the next launch is a store hit that sends no request
+// and still says the line. The readiness act is on, so an undelivered program would refuse.
+func TestPackTreeProgramUsesThePrebuiltWithoutSources(t *testing.T) {
+	requireJail(t)
+	if runtime.GOOS != "linux" {
+		t.Skip("the artifact's TLS server is trusted through SSL_CERT_FILE, which darwin's root pool ignores")
+	}
+	const (
+		pbPack = "packtreepb"
+		pbBin  = "packtreepb-x"
+	)
+	script := []byte("#!/bin/sh\necho prebuilt-ran\n")
+	sum := sha256.Sum256(script)
+	digest := hex.EncodeToString(sum[:])
+	var hits atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		_, _ = w.Write(script)
+	}))
+	t.Cleanup(srv.Close)
+	certFile := filepath.Join(t.TempDir(), "server.pem")
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE",
+		Bytes: srv.Certificate().Raw}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	url := srv.URL + "/" + pbBin
+
+	pack := t.TempDir() // no tools/x: the pack ships no source for the program
+	if err := os.WriteFile(filepath.Join(pack, "pack.json"), []byte(`{"name":"`+pbPack+`","contributes":[`+
+		`{"kind":"program","bin":"`+pbBin+`","via":"pack","from":"tools/x","build":"make","run":"x",`+
+		`"prebuilt":{"linux/`+runtime.GOARCH+`":{"url":"`+url+`","sha256":"`+digest+`"}}}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	packHome(t, `{"packs": [{"source": "file://`+pack+`", "name": "`+pbPack+`"}]}`)
+	withPrivateFixtureYoloStore(t)
+	t.Setenv(paths.AllowMissingProgramsEnv, "")
+	store := filepath.Join(os.Getenv("HOME"), ".local", "share", "yolo-jail", "captures")
+	before := captureEntryNames(t, store)
+	t.Cleanup(func() { removeNewCaptureEntries(t, store, before, pbBin) })
+	dir := t.TempDir()
+	line := pbBin + ": prebuilt artifact from pack " + pbPack + " (no tools/x in the pack) — sha256 " + digest[:12]
+
+	launch := func(what string) string {
+		t.Helper()
+		r := runCommand(t, dir, append(jailRunArgs(), "--", pbBin), withHostSemantics(), withReadiness(),
+			withEnv("SSL_CERT_FILE="+certFile))
+		out := r.combined()
+		t.Logf("%s:\n%s", what, out)
+		if r.rc != 0 {
+			t.Fatalf("%s: rc %d", what, r.rc)
+		}
+		return out
+	}
+
+	out := launch("the first launch")
+	if !strings.Contains(out, "prebuilt-ran") {
+		t.Errorf("the jail did not run the prebuilt artifact")
+	}
+	if strings.Count(out, line) != 1 || !strings.Contains(out, "verified, "+url) {
+		t.Errorf("the launch did not say once that it used the prebuilt and the sha256 it verified (%q)", line)
+	}
+	if strings.Contains(out, "program builds") || strings.Contains(out, "built program") {
+		t.Errorf("the launch announced a build for a program it fetched")
+	}
+	if n := hits.Load(); n != 1 {
+		t.Errorf("%d requests for the artifact on the first launch, want 1", n)
+	}
+	if added := newCaptureEntries(t, store, before, pbBin); len(added) != 1 {
+		t.Errorf("the first launch added %d store entries, want 1: %v", len(added), added)
+	}
+
+	out = launch("the second launch")
+	if !strings.Contains(out, "prebuilt-ran") || strings.Count(out, line) != 1 {
+		t.Errorf("the second launch did not run the prebuilt and say its line")
+	}
+	if n := hits.Load(); n != 1 {
+		t.Errorf("%d requests after the second launch, want 1: a stored artifact is a hit", n)
 	}
 }

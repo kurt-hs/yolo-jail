@@ -71,6 +71,8 @@ var handedForksMu sync.Mutex
 // sandbox's darwin platform (jailPlatform), and a delivered extension's per-launch copy reaches the
 // sandbox home through the home overlay (buildMacosHomeOverlayWith) rather than a mount.
 func (o *Options) runForkBuildSlot(cfg *jsonx.OrderedMap, rt, repoRoot string) {
+	// Every pack-tree program delivered from a prebuilt artifact is said, once the slot has answered.
+	defer o.notePrebuiltDeliveries()
 	if o.BuildSlot == nil {
 		o.forkDelivered = o.forkDeliveriesFor(rt)
 		o.treeDelivered = o.treeDeliveriesFor(rt)
