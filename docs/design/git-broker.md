@@ -1,28 +1,30 @@
 ---
 title: "Git through the host's login, one ref at a time: the second brokered source"
 date: 2026-10-23
-status: in-review
-stage: DESIGN
-next: "Build the broker-core factoring in §3, which waits on nothing; then the git source's read set over the brokered transport. Branch creation is the create-branch user grant, as boundary-broker.md's OQ-BB19 ruled."
-depends-on: [boundary-broker.md#OQ-BB19]
+status: accepted
+stage: DECIDED
+next: "Build step 1 from git-broker-plan.md, starting with its task 1, the broker-core factoring, which waits on nothing."
+depends-on: []
 tags: [design, credentials, git, github, broker, approvals, loopholes, audit]
-summary: "The second source behind the boundary broker, after gh: git fetch and push from a jail that holds no credential. Fetching is standing; read-only allows no push of any kind (ruled 2026-10-23). Creating a branch is a user grant in the user's own config for that workspace; a branch created under it joins the workspace's working set, where the agent then pushes freely. A push to any other ref asks a human per ref: Allow once, Allow push for 15 minutes, Add the ref to the working set, or Deny. Step 1 of the maintainer's 2026-10-23 path: it first factors the source-neutral broker core out of the github-broker, then adds git as a second source on it. Ruled 2026-10-23: git crosses as a brokered transport, every remote form rewritten to the host broker, which connects upstream the way the host already does (SSH keys or agent, or git's credential helper), for any git server; a working-set branch stays until it is deleted or revoked; the source is off until the user includes it. Open, in the broker's doc: which user grants exist (OQ-BB19)."
+summary: "The second source behind the boundary broker, after gh: git fetch and push from a jail that holds no credential. Fetching is standing; read-only allows no push of any kind (ruled 2026-10-23). Creating a branch takes a create-branch grant: the user's own config allows the kind, the workspace config names the repository, and the grant joins at the config-change approval; a branch created under it joins the workspace's working set, where the agent then pushes freely. A push to any other ref asks a human per ref: Allow once, Allow push for 15 minutes, Add the ref to the working set, or Deny. Step 1 of the maintainer's 2026-10-23 path: it first factors the source-neutral broker core out of the github-broker, then adds git as a second source on it. Ruled 2026-10-23: git crosses as a brokered transport, every remote form rewritten to the host broker, which connects upstream the way the host already does (SSH keys or agent, or git's credential helper), for any git server; a working-set branch stays until it is deleted or revoked; the source is off until the user includes it. Nothing is open; the step-1 build is git-broker-plan.md."
 vantage:
   status-chip: true
 ---
 
 # Git through the host's login, one ref at a time: the second brokered source
 
-**Status:** 2026-10-23. Nothing built; both questions here were ruled in review the same day,
+**Status:** 2026-10-23. Nothing built. Both questions here were ruled in review the same day,
 and the broker's grant model was re-ruled later that day around resources
-([BB-D76](boundary-broker.md#BB-D76)), which this doc now follows.
+([BB-D76](boundary-broker.md#BB-D76)), down to which file holds a grant
+([BB-D96](boundary-broker.md#BB-D96)); this doc follows all of it, and the build is
+[`git-broker-plan.md`](git-broker-plan.md).
 Split out of [`boundary-broker.md`](boundary-broker.md) the day the maintainer laid out his
 five-step path ([§1.5 there](boundary-broker.md#15-the-maintainers-path-2026-10-23)), whose step 1
-this doc designs. Evidence verified against `f9fcd599a`.
+this doc designs. Evidence verified against `9f77afa19`.
 
 > **In short.** A jail's git should fetch and push the way a person's does, through the host's
 > own keys or credential helper, without the credential ever entering the jail. Fetching is free;
-> pushing is never free: creating a branch takes a grant the user gives, what the agent creates
+> pushing is never free: creating a branch takes a grant the user approves, what the agent creates
 > under it is then its to push, and anything else is one ref, shown to a human.
 
 **Why it matters.** A jail has no git credential, so today `git fetch` and `git push` against a
@@ -43,15 +45,19 @@ and a host-side record of the branches a workspace created.
 
 **Start at [§4](#4-how-git-crosses)**: the one architecture choice. The rest follows from it.
 
-**Needs your ruling:** nothing. [OQ-GB1](#OQ-GB1) and [OQ-GB2](#OQ-GB2) were ruled 2026-10-23,
-as were a workspace requesting remotes ([OQ-BB18](boundary-broker.md#OQ-BB18)) and the user
+**Needs your ruling:** None. [OQ-GB1](#OQ-GB1) and [OQ-GB2](#OQ-GB2) were ruled 2026-10-23,
+as were a workspace requesting remotes ([OQ-BB18](boundary-broker.md#OQ-BB18)), the user
 grants, git's `create-branch` among them and no `push-branch`
-([OQ-BB19](boundary-broker.md#OQ-BB19)).
+([OQ-BB19](boundary-broker.md#OQ-BB19)), which file holds a grant
+([OQ-BB22](boundary-broker.md#OQ-BB22)) and a host with no notifier
+([OQ-BB10](boundary-broker.md#OQ-BB10)).
 
 **Reads with:** [`boundary-broker.md`](boundary-broker.md) (the design this extends: the request
 store, grants, the notification, `yolo approve`, the audit log and where long-lived access lives
-are all its), and [`workspace-widening.md`](workspace-widening.md) (how the GitHub source's scope
-is widened today, which [OQ-BB18](boundary-broker.md#OQ-BB18) asks about).
+are all its), [`workspace-widening.md`](workspace-widening.md) (how the GitHub source's scope
+is widened today, which [OQ-BB18](boundary-broker.md#OQ-BB18) kept), and
+[`git-broker-plan.md`](git-broker-plan.md) (the implementation plan for step 1; this doc wins on
+behavior).
 
 ---
 
@@ -90,12 +96,24 @@ and two of those rulings reach git directly:
 | *"Pushing to a branch it didn't create, I think is the same thing: it asks for access to that branch, and if it gets that access, it has that access. These should be able to be time-limited as well"* | Any other ref is asked for per ref, and can be added to the working set or granted for a time ([BB-D76](boundary-broker.md#BB-D76)) | [§5](#5-the-git-sources-sets) |
 | *"Maybe we don't want to have read-only versus read-write. We just want to have these specific grants. You can tell me how many there are."* | Four user grants exist, git's `create-branch` among them ([OQ-BB19](boundary-broker.md#OQ-BB19)) | [§5](#5-the-git-sources-sets) |
 
+Three more of that day's broker rulings reach git:
+
+- **Where a grant lives** ([BB-D96](boundary-broker.md#BB-D96)): the user's own config lists
+  which kinds of grant may be held, and the workspace config holds the specific grants, each
+  naming its resource, joining only at the config-change approval. For git that is a
+  `create-branch` grant naming a repository ([§5](#5-the-git-sources-sets), [GB-D9](#GB-D9)).
+- **A PR leaving the working set on merge** ([BB-D97](boundary-broker.md#BB-D97)) is the
+  GitHub source's rule; git's working set holds only branches ([GB-D11](#GB-D11)).
+- **No notifier, no affordance** ([BB-D98](boundary-broker.md#BB-D98)): a per-ref request on a
+  host with no notifier and no `on_request` hook is only logged ([§6](#6-failure-paths),
+  [GB-D10](#GB-D10)).
+
 The standing rule is unchanged: the credential never crosses
 ([BB-P1](boundary-broker.md#BB-P1)).
 
 ## 2. What exists today
 
-Verified against `f9fcd599a` on 2026-10-23.
+Verified against `9f77afa19` on 2026-10-23.
 
 | Piece | Where | State |
 | :--- | :--- | :--- |
@@ -105,7 +123,7 @@ Verified against `f9fcd599a` on 2026-10-23.
 | The approved repository scope | the config-change gate's approval record plus the per-launch scope file, re-read per request, widened live by `yolo config apply` ([`live-config-apply.md`](live-config-apply.md)) | **shipped** |
 | The per-workspace file, user scope for one workspace | `~/.config/yolo-jail/workspaces/`, written on the host by `yolo loopholes enable` ([`storage-and-config.md`](../reference/storage-and-config.md#the-per-workspace-file)) | **shipped**; holds only loophole switches today |
 | A request store with grants | `internal/brokerstore`, one directory per source (`paths.BrokerSourceDir`) | **built**; production files no request yet ([§7 there](boundary-broker.md#7-grants-and-the-request-store)) |
-| An audit log with a `service` field | `internal/brokeraudit` | **shipped**; only `github` writes it |
+| An audit log with a `service` field | `internal/brokeraudit`, filtered by `yolo audit --service` | **shipped**; only `github` writes it |
 | Jail-side interception of a command name | the `intercept` contribution kind (`packdecl.KindIntercept`) | **shipped**, used for `gh` |
 | Anything for git | — | **missing**: no git source, transport or upstream connector in `internal/` or `packs/` |
 
@@ -123,10 +141,10 @@ source sits on it.
 | The classifier contract: an action goes in; out come refused, out of scope, or a set, plus the repositories it touches, a canonical rendering for the human, and a digest for Allow once | The classifier itself |
 | Set resolution, user grants, the working set, timed grants, Allow once and its broker-lifetime binding, revocation ([§7 there](boundary-broker.md#7-grants-and-the-request-store)) | The executor, and each write's kind and resource: for git, a ref |
 | The repository-scope check against the approved scope | Which scope it reads: gh reads the workspace's GitHub remotes; git reads every remote of the workspace, on any host, as host and path |
-| User grants, read from the user's own config for this workspace ([§5.8 there](boundary-broker.md#58-long-lived-access-and-temporary-access)) | Which user grants the source defines |
+| User grants in two layers ([BB-D96](boundary-broker.md#BB-D96)): the kinds the user's own config allows, and the specific grants the workspace config names, approved at the config-change gate and handed to the broker in the launch's scope file | Which grant kinds the source defines, and what resource each names |
 | Request filing, duplicate joining, the bounded wait, status and wait | The exit codes or protocol errors the jail sees |
 | Audit events, with `service` set to the source | Source-specific audit fields |
-| The approval front-ends: notification text from the classifier's rendering, `yolo approve` across every source, the CLI surface ([§6.6 there](boundary-broker.md#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship)), and a `--service` filter on `yolo audit`, which has none today | — |
+| The approval front-ends: notification text from the classifier's rendering, `yolo approve` across every source, the CLI surface ([§6.6 there](boundary-broker.md#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship)); `yolo audit --service` already filters by source | — |
 
 **Done looks like:** the github-broker's tests pass unchanged on the core plus a gh source, and a
 second, fake source in a test files, grants and audits through the same core.
@@ -198,7 +216,7 @@ to create branches. **Read-only is read-only** ([GB-D7](#GB-D7)): it fetches and
 | Write kind | Admits | Runs unasked when |
 | :--- | :--- | :--- |
 | read (standing) | fetch, `ls-remote`, the fetch half of `pull`, on any repository in scope | always, once the source is included |
-| branch creation | creating a branch under `refs/heads/` | the workspace holds the `create-branch` user grant; the new branch joins the working set ([§5.1](#51-the-working-set-of-pushable-branches)) |
+| branch creation | creating a branch under `refs/heads/` | the workspace holds an approved `create-branch` grant naming the repository, or a wildcard; the new branch joins the working set ([§5.1](#51-the-working-set-of-pushable-branches)) |
 | branch push | updating, force-updating or deleting an existing branch | the branch is in the working set: created under `create-branch`, or someone else's branch a human added ([OQ-BB19](boundary-broker.md#OQ-BB19), [BB-D92](boundary-broker.md#BB-D92)); no separate push grant |
 | tag push, and a branch push outside the working set | any creation, update or deletion under `refs/tags/`; any branch push not covered above | never: asked for per ref |
 
@@ -222,11 +240,22 @@ offers Allow once and 15 minutes but not Add, and a branch created under either 
 set ([BB-D90](boundary-broker.md#BB-D90)).
 
 **Long-lived access**, such as an agent that always pushes to `main` of its own fork, is that
-ref added to the working set, or a user grant in the user's own config for that workspace, never
-in the workspace config ([§5.8 there](boundary-broker.md#58-long-lived-access-and-temporary-access)).
+ref added to the working set. **Creating branches is a user grant in two layers**
+([BB-D96](boundary-broker.md#BB-D96), [GB-D9](#GB-D9)):
+
+1. **The user's own config allows the kind.** Without `create-branch` listed there, no
+   workspace can hold it, and `yolo check` refuses a workspace grant of that kind, naming the
+   user-config key that would allow it.
+2. **The workspace config names the grant and its repository**: `create-branch` on one
+   repository, or a wildcard written out as one.
+3. **The grant joins only at the config-change approval**, the same human y that admits a
+   repository to the scope ([OQ-BB18](boundary-broker.md#OQ-BB18)). The workspace requests; the
+   user gates. A workspace config alone holds nothing.
+
 The levels `read-only` and `read-write` that [GB-D6](#GB-D6) mapped onto git are superseded by
 specific user grants, `read`, `create-branch`, `create-pr` and `create-issue`
-([OQ-BB19](boundary-broker.md#OQ-BB19)). A workspace config can never give one.
+([OQ-BB19](boundary-broker.md#OQ-BB19)); git defines `read` and `create-branch`. `read` needs no
+grant entry: it is what including the source means.
 
 ### 5.1 The working set of pushable branches
 
@@ -264,7 +293,8 @@ should be persisted because it's a property of the workspace."*
 | The repository is out of scope | Refused at once, naming the scope, as for gh ([§5.6 there](boundary-broker.md#56-the-repository-scope)); audited, no request |
 | The host has no credential for the remote (no SSH key or agent, or `git credential fill` returns nothing) | Refused naming what the host lacks and the host command that fixes it; the broker never starts a login and never prompts for a username or password |
 | An SSH key needs a touch or passphrase and nobody answers on the host | The upstream connection times out; the agent sees git's own error, and an Allow once covering the push is not spent |
-| A push needs a ref the jail does not hold | A request is filed; the bounded wait and the answer path are the store's ([§3.2 there](boundary-broker.md#32-a-write-and-the-bounded-wait)) |
+| A push needs a ref the jail does not hold | Until writes are turned on (step 3 of [the path](boundary-broker.md#11-the-build-in-the-maintainers-five-steps)), refused at once with "needs approval, which this version cannot ask for". After it, a request is filed; the bounded wait and the answer path are the store's ([§3.2 there](boundary-broker.md#32-a-write-and-the-bounded-wait)) |
+| A per-ref request on a host with no notifier and no `on_request` hook | No affordance ([BB-D98](boundary-broker.md#BB-D98), [GB-D10](#GB-D10)): the request goes only to the broker's background log, and the agent's own pending line and wait timeout are its only messages. Creating and working its own branches under `create-branch` needs no notifier |
 | The upstream rejects a forwarded push (a protected branch, a non-fast-forward) | The upstream's own report reaches the agent unchanged; an Allow once covering it is spent, as for any call that ran |
 | A fetch exceeds the transfer cap | Not capped: a fetch is as large as the repository. The broker streams and holds no copy |
 
@@ -301,14 +331,17 @@ should be persisted because it's a property of the workspace."*
    through the brokered transport and the host's own SSH or credential helper, audited. Every
    push the working set does not cover answers "needs approval, which this version cannot ask
    for", as gh's writes do today.
-3. **The `create-branch` user grant**: creating a branch and pushing to it again, with the
-   working set persisted per workspace, so an agent whose user gave the grant can publish its own
-   branch with no human and no notifier ([OQ-BB19](boundary-broker.md#OQ-BB19)).
+3. **The `create-branch` user grant**, in its two layers ([§5](#5-the-git-sources-sets)):
+   creating a branch and pushing to it again, with the working set persisted per workspace and
+   listed and revoked through `yolo approve`, so an agent whose workspace holds an approved grant
+   can publish its own branch with no human at push time and no notifier
+   ([OQ-BB19](boundary-broker.md#OQ-BB19), [BB-D96](boundary-broker.md#BB-D96)).
 
 Per-ref requests need the request path, which waits on the notifier and the CLI (steps 2
 and 3 of [the path](boundary-broker.md#11-the-build-in-the-maintainers-five-steps)).
-[OQ-BB18](boundary-broker.md#OQ-BB18) may narrow which remotes the scope admits; the slice reads
-the approved remotes, as gh does today.
+The slice reads the workspace's remotes and puts them in front of the human at the
+config-change gate, as gh's scope does today; a workspace may request more, and they join only
+at that y ([OQ-BB18](boundary-broker.md#OQ-BB18)).
 
 ## 10. What done looks like
 
@@ -317,7 +350,7 @@ the approved remotes, as gh does today.
    `yolo audit --service git` shows one `read` line for each.
 2. A user who has only ever used SSH, with no `gh` login, fetches and pushes with no change on
    the host.
-3. In a workspace holding the `create-branch` user grant,
+3. In a workspace holding an approved `create-branch` grant on the repository,
    `git push origin HEAD:refs/heads/agent/x`, a new branch, succeeds with no human; a second push
    and a force-push to it succeed too, each audited with the grant or the working-set entry that
    covered it, and still do after the jail restarts.
@@ -326,47 +359,18 @@ the approved remotes, as gh does today.
 5. `git push origin main` prints `! [remote rejected]` naming the request path, exits 1, and the
    upstream receives nothing.
 6. A workspace the user did not include gets a refusal naming the switch, whatever its own
-   config says.
+   config says; and a workspace config naming `create-branch` when the user's config does not
+   allow the kind fails `yolo check`, naming the user-config key.
 7. A fetch from a repository outside the scope is refused naming the scope.
 8. `git status`, `git commit`, pre-push hooks and every other local command behave exactly as
    without the broker.
 
 ## 11. Open questions
 
-1. ✅ <a id="OQ-GB1"></a>**[OQ-GB1](#OQ-GB1): Does git cross as a proxied CLI, or through a
-    brokered transport?** The maintainer framed it as *"proxying the git CLI"*. This decides
-    what the jail runs, whether the host keeps a mirror, and whether a refusal is an exit code.
-    The design as ruled: [§4](#4-how-git-crosses).
-
-    - **A — Proxy the CLI.** A forwarder before every `git`, a host mirror per repository;
-      gh's exit codes.
-    - **B — Broker the transport.** The real git with URL rewrites; the broker reads each
-      push's ref commands and connects upstream with the host's own credentials; git's own
-      error lines.
-
-    **Answer:**
-    > **Ruled in review 2026-10-23, B, broker the transport, refined:** *"sounds great. I guess
-    > I don't need to know how this works if it works … This seems just like the right answer."*
-    > He accepted the refinement as presented: every remote form goes to the broker; the broker
-    > connects upstream with the host's SSH keys or agent, or `git credential fill`, needing no
-    > `gh` login; any git server; pre-push hooks in the jail; refusals as git's
-    > `! [remote rejected]` line, exit 1; key prompts on the host; forge extras stay the gh
-    > broker's.
-
-2. ✅ <a id="OQ-GB2"></a>**[OQ-GB2](#OQ-GB2): How long may a workspace push to a branch it
-    created?** An agent creates `agent/x` today; the jail restarts tomorrow. This decides
-    whether its next push asks.
-
-    - **A — For the launch.** Narrowest; a restart makes every push to its own branch ask once.
-    - **B — Until the branch is deleted or the grant revoked**, across launches of that
-      workspace. No re-asking; a branch abandoned for months stays pushable.
-    - **C — B, with an age cap** (30 days since the last push through the broker).
-
-    **Answer:**
-    > **Ruled in review 2026-10-23, B, as leaned, and persisted:** *"if it creates a branch and
-    > pushes it, it should have permissions to it, just like if it was added through any other
-    > method that we can add it to this working set, and it should be persisted because it's a
-    > property of the workspace."* Settled in [§5.1](#51-the-working-set-of-pushable-branches).
+None open. [OQ-GB1](#OQ-GB1) (how git crosses: the brokered transport, over a proxied CLI with
+a host mirror) and [OQ-GB2](#OQ-GB2) (how long a created branch stays pushable: until deleted or
+revoked, over the launch or an age cap) are ruled and recorded in the
+[Decision Ledger](#12-decision-ledger).
 
 ## 12. Decision Ledger
 
@@ -376,9 +380,12 @@ the approved remotes, as gh does today.
 | <a id="GB-D2"></a>GB-D2 | *Implementation decision.* The git source is a second service of the github pack's broker: the same enablement, scope file and login, and its own store directory under the source name `git`. **Superseded in part 2026-10-23** by [OQ-GB1](#OQ-GB1) (no `gh` login; any git server) and [GB-D5](#GB-D5) (its own switch, off by default); its own store directory under `git` stands | 2026-10-23 | [§3](#3-the-broker-core-what-step-1-factors-out) | — |
 | <a id="GB-D3"></a>GB-D3 | *Implementation decision.* Under either option the host never runs git with the workspace as its repository; a jail-writable checkout's config can run code | 2026-10-23 | [§4](#4-how-git-crosses) | — |
 | <a id="GB-D4"></a>GB-D4 | *Implementation decision.* A push changing several refs files one request naming the refs not held; a grant covers what its request named | 2026-10-23 | [§5](#5-the-git-sources-sets) | — |
-| OQ-GB1 | **Maintainer ruling, B, broker the transport, refined:** every remote form (scp-style, `ssh://`, `https://`) is rewritten by `url.<broker>.insteadOf` to the host broker over a leg with no credential; the broker connects upstream with the host's SSH keys or agent (the launching session's `SSH_AUTH_SOCK`) or the host's `git credential fill`, needing no `gh` login; any git server, since policy reads git's protocol ref commands; pre-push hooks run in the jail; a refusal or pending request is `! [remote rejected] <ref> (<reason>)`, exit 1; a key needing a touch or passphrase prompts on the host. The broker speaks upstream over SSH as well as smart HTTP. Forge extras stay the gh broker's. *"This seems just like the right answer."* | 2026-10-23 | [§4](#4-how-git-crosses) | pending |
-| OQ-GB2 | **Maintainer ruling, B, persisted:** a branch the agent creates joins the workspace's working set of pushable branches, with the same standing as one granted any other way, across launches, until the branch is deleted or the grant is revoked through `yolo approve`; no age cap. *"it should be persisted because it's a property of the workspace"*. **Revised in part 2026-10-23 by [GB-D7](#GB-D7):** creating a branch is no longer standing; it takes a user grant, and the working set and its persistence stand | 2026-10-23 | [§5.1](#51-the-working-set-of-pushable-branches) | pending |
+| <a id="OQ-GB1"></a>[OQ-GB1](#OQ-GB1) | **Maintainer ruling, B, broker the transport, refined:** every remote form (scp-style, `ssh://`, `https://`) is rewritten by `url.<broker>.insteadOf` to the host broker over a leg with no credential; the broker connects upstream with the host's SSH keys or agent (the launching session's `SSH_AUTH_SOCK`) or the host's `git credential fill`, needing no `gh` login; any git server, since policy reads git's protocol ref commands; pre-push hooks run in the jail; a refusal or pending request is `! [remote rejected] <ref> (<reason>)`, exit 1; a key needing a touch or passphrase prompts on the host. The broker speaks upstream over SSH as well as smart HTTP. Forge extras stay the gh broker's. *"This seems just like the right answer."* | 2026-10-23 | [§4](#4-how-git-crosses) | pending |
+| <a id="OQ-GB2"></a>[OQ-GB2](#OQ-GB2) | **Maintainer ruling, B, persisted:** a branch the agent creates joins the workspace's working set of pushable branches, with the same standing as one granted any other way, across launches, until the branch is deleted or the grant is revoked through `yolo approve`; no age cap. *"it should be persisted because it's a property of the workspace"*. **Revised in part 2026-10-23 by [GB-D7](#GB-D7):** creating a branch is no longer standing; it takes a user grant, and the working set and its persistence stand | 2026-10-23 | [§5.1](#51-the-working-set-of-pushable-branches) | pending |
 | <a id="GB-D5"></a>GB-D5 | *Implementation decision,* forced by [OQ-BB16](boundary-broker.md#OQ-BB16)'s ruling. The git source has its own switch, off by default, set only on the user's side for one workspace (the per-workspace file, as for every brokered loophole); enabling the github-broker does not include it, and a workspace config's switch for it is refused. Which pack ships the git source is the implementer's choice | 2026-10-23 | [§5](#5-the-git-sources-sets) | pending |
 | <a id="GB-D6"></a>GB-D6 | *Implementation decision,* reading [OQ-BB16](boundary-broker.md#OQ-BB16)'s *"read-only or read-write"* onto the git source's sets: `read-only` holds `read` and `push-own`, the standing sets [GB-D1](#GB-D1) made free, and `read-write` adds `push` on every ref in scope. Reversible: if the maintainer meant `read-only` to forbid every push, `push-own` moves to `read-write`. **Superseded 2026-10-23 by [GB-D7](#GB-D7):** he did | 2026-10-23 | [§5](#5-the-git-sources-sets) | — |
 | <a id="GB-D7"></a>GB-D7 | **Maintainer ruling, superseding [GB-D6](#GB-D6) and the standing half of [OQ-GB2](#OQ-GB2):** git read-only allows no push of any kind; an agent pushes even its own branches only under a grant that allows it, and creating a branch is a user grant whose created branches join the working set ([BB-D76](boundary-broker.md#BB-D76), [BB-D78](boundary-broker.md#BB-D78)). *"Read-only mode is read-only mode. It cannot create branches push... well, it can create branches in the local git repo. It cannot push them, that's for sure."* | 2026-10-23 | [§5](#5-the-git-sources-sets), [§5.1](#51-the-working-set-of-pushable-branches) | pending |
 | <a id="GB-D8"></a>GB-D8 | *Implementation decision,* carrying [BB-D76](boundary-broker.md#BB-D76), [BB-D77](boundary-broker.md#BB-D77) and [BB-D80](boundary-broker.md#BB-D80) to git: a per-ref request is answered Allow once (the exact push), Allow push to `<ref>` for 15 minutes, Add `<ref>` to the working set, or Deny, from the user's buttons list; a ref push's resource is the ref, and a creation's is the repository's ability to create branches. Replaces the windowed per-ref `push` set | 2026-10-23 | [§5](#5-the-git-sources-sets) | pending |
+| <a id="GB-D9"></a>GB-D9 | *Reconciliation,* carrying [BB-D96](boundary-broker.md#BB-D96) to git and replacing this doc's earlier "a user grant in the user's own config for that workspace": the user's own config lists the grant kinds a workspace may hold (`create-branch` for git); the workspace config holds each `create-branch` grant naming its repository, or a wildcard written out as one; a grant joins only at the config-change approval and within the user's kinds, and `yolo check` refuses one outside them, naming the user-config key. `read` needs no entry. The loophole switch of [GB-D5](#GB-D5) stays in the per-workspace file | 2026-10-23 | [§3](#3-the-broker-core-what-step-1-factors-out), [§5](#5-the-git-sources-sets) | pending |
+| <a id="GB-D10"></a>GB-D10 | *Reconciliation,* carrying [BB-D98](boundary-broker.md#BB-D98) to git: a per-ref request on a host with no notifier and no `on_request` hook gets no terminal line and no notice file; it is written to the broker's background log, and the agent's pending line and wait timeout stay its only messages | 2026-10-23 | [§6](#6-failure-paths) | pending |
+| <a id="GB-D11"></a>GB-D11 | *Reconciliation:* [BB-D97](boundary-broker.md#BB-D97)'s merge rule is the GitHub source's; the git source's working set holds only branches, which leave it on deletion or revocation ([OQ-GB2](#OQ-GB2)) | 2026-10-23 | [§5.1](#51-the-working-set-of-pushable-branches) | — |
