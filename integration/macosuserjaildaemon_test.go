@@ -89,11 +89,14 @@ func TestMacosUserJailDaemonRunsConfinedInTheGuest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the probe's output does not parse: %v%s", err, diag())
 	}
-	sessionJaild := filepath.Join(sessionGuestBinFromOutput(t, r.stdout), macosuser.JaildName)
-	if want := "JAILD=" + sessionJaild; !strings.Contains(probe.probe, want) {
-		t.Errorf("the sandbox does not resolve yolo-jaild to the staged guest prefix (want %q):\n%s%s",
-			want, probe.probe, diag())
+	var resolved string
+	for _, line := range strings.Split(probe.probe, "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "JAILD="); ok {
+			resolved = v
+		}
 	}
+	sessionJaild := filepath.Join(requireSessionGuestBinary(t, resolved, macosuser.JaildName, diag),
+		macosuser.JaildName)
 	if !strings.Contains(r.combined(), "Started openai-auth-broker inside the sandbox") {
 		t.Errorf("the launch did not disclose the guest's jail daemon%s", diag())
 	}

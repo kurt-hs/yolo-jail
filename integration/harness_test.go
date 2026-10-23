@@ -31,7 +31,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	goruntime "runtime"
 	"slices"
 	"strconv"
@@ -713,27 +712,30 @@ func matchedLauncherFromBuildOutput(output string) string {
 	return strings.TrimSpace(lines[len(lines)-1])
 }
 
-var launchANSI = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+// seenGuestSessionChildren records every session guest-bin child a macos-user test in this run
+// has observed. The package runs serially, so a plain map is enough.
+var seenGuestSessionChildren = map[string]string{}
 
-func sessionGuestBinFromOutput(t *testing.T, output string) string {
+// requireSessionGuestBinary checks that the sandbox resolved the guest binary `name` to
+// `resolved`, a path inside THIS session's private child of macosuser.GuestBinDir(""), and
+// returns that child. The path is what the sandbox reports (`command -v`); a live launch does
+// not print the child, only a dry run's plan does (PrintPlan), so the in-sandbox resolution is
+// the observable. It fails for the pre-isolation shared layout (<root>/<name>), for any path
+// that is not a direct `<session>-<identity>` child (macosuser.SessionGuestBinOf), and for a
+// child an earlier launch in this run already used, so two sessions sharing one fails too.
+func requireSessionGuestBinary(t *testing.T, resolved, name string, diag func() string) string {
 	t.Helper()
-	for _, line := range strings.Split(launchANSI.ReplaceAllString(output, ""), "\n") {
-		if _, rest, ok := strings.Cut(line, "guest bins:"); ok {
-			if _, child, ok := strings.Cut(rest, " → "); ok {
-				path := strings.Fields(child)
-				if len(path) > 0 && filepath.IsAbs(path[0]) && strings.HasPrefix(path[0], macosuser.GuestBinDir("")+string(os.PathSeparator)) {
-					return path[0]
-				}
-			}
-		}
+	child, err := macosuser.SessionGuestBinOf(resolved, name, "")
+	if err != nil {
+		t.Fatalf("%s resolves to %q in the sandbox, which is not in this session's private "+
+			"guest-bin child under %s: %v%s", name, resolved, macosuser.GuestBinDir(""), err, diag())
 	}
-	t.Fatalf("launch output did not disclose a session guest-bin child:\n%s", output)
-	return ""
-}
-
-func sessionGuestBinaryPath(t *testing.T, output, name string) string {
-	t.Helper()
-	return filepath.Join(sessionGuestBinFromOutput(t, output), name)
+	if prev, ok := seenGuestSessionChildren[child]; ok && prev != t.Name() {
+		t.Errorf("this session's guest-bin child %s is the one %s's launch used; each session "+
+			"must get its own%s", child, prev, diag())
+	}
+	seenGuestSessionChildren[child] = t.Name()
+	return child
 }
 
 // envWithoutRepoRoot removes the retired runtime selector from child processes.

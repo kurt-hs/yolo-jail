@@ -52,11 +52,8 @@ func TestMacosUserYoloPsListsAnAllowlistedHostProcess(t *testing.T) {
 		return fmt.Sprintf("\n--- launch stdout:\n%s\n--- launch stderr:\n%s", r.stdout, r.stderr)
 	}
 
-	wantClient := sessionGuestBinaryPath(t, r.stdout, "yolo-ps")
-	if client := strings.TrimSpace(section(r.stdout, "=== CLIENT ===", "=== PS ===")); client != wantClient {
-		t.Errorf("yolo-ps resolves to %q in the sandbox, want this session's staged guest binary %s%s",
-			client, wantClient, diag())
-	}
+	requireSessionGuestBinary(t, strings.TrimSpace(section(r.stdout, "=== CLIENT ===", "=== PS ===")),
+		"yolo-ps", diag)
 	ps := section(r.stdout, "=== PS ===", "=== END ===")
 	if !strings.Contains(ps, "PS_RC=0") {
 		t.Fatalf("`yolo-ps` failed in the sandbox:\n%s%s", ps, diag())

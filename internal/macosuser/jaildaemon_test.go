@@ -749,3 +749,43 @@ func TestTheDryRunSaysItCannotSeeAGuestClientsEndpoint(t *testing.T) {
 		}
 	}
 }
+
+// TestSessionGuestBinOfAcceptsOnlyASessionChild pins the parser the darwin integration tests use
+// to read this session's guest-bin child off the path the sandbox resolved a client to: it
+// round-trips GuestSessionBinDir, accepts the spelling a Mac run printed, and refuses every
+// layout that is not one session's private child, the pre-isolation shared root first.
+func TestSessionGuestBinOfAcceptsOnlyASessionChild(t *testing.T) {
+	identity := strings.Repeat("cd51f15c", 8)
+	child := GuestSessionBinDir(identity, "6028c3c06fbe2e9c", "")
+	got, err := SessionGuestBinOf(filepath.Join(child, JaildName), JaildName, "")
+	if err != nil || got != child {
+		t.Fatalf("SessionGuestBinOf(%s) = %q, %v; want %s", filepath.Join(child, JaildName), got, err, child)
+	}
+	observed := GuestBinDir("") + "/d472112004b95a18-" + identity + "/yolo-serial"
+	if got, err := SessionGuestBinOf(observed, "yolo-serial", ""); err != nil || got != filepath.Dir(observed) {
+		t.Errorf("the observed in-sandbox path %s did not parse: %q, %v", observed, got, err)
+	}
+	sd := t.TempDir()
+	if got, err := SessionGuestBinOf(filepath.Join(GuestSessionBinDir(identity, "0f83b8180063257e", sd), "yolo-log"),
+		"yolo-log", sd); err != nil || filepath.Dir(got) != GuestBinDir(sd) {
+		t.Errorf("a session child under another state dir did not parse: %q, %v", got, err)
+	}
+	for _, bad := range []struct{ path, name string }{
+		{GuestBinaryPath("yolo-serial", ""), "yolo-serial"}, // the shared root, the pre-isolation layout
+		{filepath.Join(GuestSessionBinDir(identity, SessionPlaceholder, ""), "yolo-ps"), "yolo-ps"},
+		{filepath.Join(child+".new", "yolo-ps"), "yolo-ps"}, // the unpublished temp
+		{filepath.Join(child, "sub", "yolo-ps"), "yolo-ps"},
+		{filepath.Join(child, "yolo-ps"), "yolo-log"},
+		{filepath.Join(GuestBinDir(""), "6028c3c06fbe2e9c", "yolo-ps"), "yolo-ps"},
+		{filepath.Join(GuestBinDir(""), "6028c3c06fbe2e9c-"+strings.ToUpper(identity), "yolo-ps"), "yolo-ps"},
+		{"/usr/local/bin/yolo-ps", "yolo-ps"},
+		{"bin/" + filepath.Base(child) + "/yolo-ps", "yolo-ps"},
+		{GuestBinDir("") + "/x/../" + filepath.Base(child) + "/yolo-ps", "yolo-ps"},
+		{"MISSING", "yolo-ps"},
+		{"", "yolo-ps"},
+	} {
+		if got, err := SessionGuestBinOf(bad.path, bad.name, ""); err == nil {
+			t.Errorf("SessionGuestBinOf(%q, %q) accepted %q; want a refusal", bad.path, bad.name, got)
+		}
+	}
+}

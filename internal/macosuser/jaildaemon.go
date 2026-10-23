@@ -204,6 +204,31 @@ func sessionBinLeaf(bundleIdentity, sessionID string) string {
 	return sessionID + "-" + bundleIdentity
 }
 
+// SessionGuestBinOf is the inverse of GuestSessionBinDir for a binary the sandbox resolved: it
+// returns the session child holding binaryPath, which must be exactly
+// <GuestBinDir(sd)>/<session>-<identity>/<name>, with a real 16-hex session token (never the
+// placeholder's spelling) and a 64-hex bundle identity. A binary in the shared root itself, in a
+// deeper or sibling directory, or under any other name is refused, so a caller asserting "this
+// session's isolated child" cannot be satisfied by the pre-isolation shared layout.
+func SessionGuestBinOf(binaryPath, name, sd string) (string, error) {
+	root := GuestBinDir(sd)
+	if binaryPath == "" || filepath.Clean(binaryPath) != binaryPath || !filepath.IsAbs(binaryPath) {
+		return "", fmt.Errorf("%q is not a clean absolute path", binaryPath)
+	}
+	if filepath.Base(binaryPath) != name {
+		return "", fmt.Errorf("%s is not named %s", binaryPath, name)
+	}
+	child := filepath.Dir(binaryPath)
+	if filepath.Dir(child) != root {
+		return "", fmt.Errorf("%s is not in a direct child of the guest-bin root %s", binaryPath, root)
+	}
+	session, identity, ok := strings.Cut(filepath.Base(child), "-")
+	if !ok || !nativehome.ValidID(session) || !validGuestBundleIdentity(identity) {
+		return "", fmt.Errorf("%s is not a session child (<16-hex session>-<64-hex bundle identity>)", child)
+	}
+	return child, nil
+}
+
 // GuestBundleIdentity reads the matched bundle's snapshot identity. Legacy bundles without one
 // use a digest of their canonical source key, never a mutable shared destination.
 func GuestBundleIdentity(root string) (string, error) {

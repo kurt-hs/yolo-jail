@@ -74,11 +74,8 @@ func TestMacosUserMacosLogBridgeScopesToTheSandbox(t *testing.T) {
 	diag := func() string {
 		return fmt.Sprintf("\n--- launch stdout:\n%s\n--- launch stderr:\n%s", r.stdout, r.stderr)
 	}
-	wantClient := sessionGuestBinaryPath(t, r.stdout, "yolo-log")
-	if client := strings.TrimSpace(section(r.stdout, "=== CLIENT ===", "=== SHOW ===")); client != wantClient {
-		t.Errorf("yolo-log resolves to %q in the sandbox, want this session's staged guest binary %s%s",
-			client, wantClient, diag())
-	}
+	requireSessionGuestBinary(t, strings.TrimSpace(section(r.stdout, "=== CLIENT ===", "=== SHOW ===")),
+		"yolo-log", diag)
 	show := section(r.stdout, "=== SHOW ===", "=== STREAM ===")
 	hasUserID := strings.Contains(show, `"userID"`)
 	t.Logf("MEASUREMENT (macos-log), the user scope's `show` returned entries carrying `userID`: %v "+

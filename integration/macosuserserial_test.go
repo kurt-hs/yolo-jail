@@ -65,11 +65,8 @@ func TestMacosUserSerialClientDrivesAHostPtyFromTheSandbox(t *testing.T) {
 		return fmt.Sprintf("\n--- launch stdout:\n%s\n--- launch stderr:\n%s", r.stdout, r.stderr)
 	}
 
-	wantClient := sessionGuestBinaryPath(t, r.stdout, "yolo-serial")
-	if client := strings.TrimSpace(section(r.stdout, "=== CLIENT ===", "=== LIST ===")); client != wantClient {
-		t.Errorf("yolo-serial resolves to %q in the sandbox, want this session's staged guest binary %s%s",
-			client, wantClient, diag())
-	}
+	requireSessionGuestBinary(t, strings.TrimSpace(section(r.stdout, "=== CLIENT ===", "=== LIST ===")),
+		"yolo-serial", diag)
 	if list := section(r.stdout, "=== LIST ===", "=== WRITE ==="); !strings.Contains(list, "LIST_RC=0") ||
 		!strings.Contains(list, slave) {
 		t.Errorf("`yolo-serial list --json` does not list the allowed device %s:\n%s%s", slave, list, diag())
