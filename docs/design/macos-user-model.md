@@ -16,8 +16,8 @@ vantage:
 is built. The [§6](#6-what-a-prototype-must-show) prototype is the check before building, not a
 reopening of the ruling. Its [first Mac run](#first-mac-run-2026-10-22) raised two questions.
 
-**Needs your ruling:** [OQ-MM7](#OQ-MM7), [OQ-MM8](#OQ-MM8), raised by the
-[first Mac run](#first-mac-run-2026-10-22). **Ruled:** [OQ-MM9](#OQ-MM9) (2026-10-23).
+**Needs your ruling:** [OQ-MM8](#OQ-MM8), raised by the
+[first Mac run](#first-mac-run-2026-10-22). **Ruled:** [OQ-MM7](#OQ-MM7), [OQ-MM9](#OQ-MM9) (2026-10-23).
 
 **Reads with:** [Agent Safehouse research](../research/agent-safehouse.md) (the evidence for every
 Safehouse claim here), [SandVault and Safehouse compatibility](sandvault-safehouse-compat.md), and
@@ -251,9 +251,8 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
 
 ## 8. Open questions
 
-1. <a id="OQ-MM7"></a>💬 **[`OQ-MM7`](#OQ-MM7) — On macOS, does loopback stay denied, now that it blocks the agent's own servers?**
+1. <a id="OQ-MM7"></a>✅ **[`OQ-MM7`](#OQ-MM7) — On macOS, does loopback stay denied, now that it blocks the agent's own servers?**
 
-   <!-- vantage: oq id=OQ-MM7 leaning="Allow loopback on macOS: Seatbelt cannot tell whose server holds a port, so a deny breaks random-port test servers (Go httptest, pytest fixtures, dev servers); podman keeps its private loopback." -->
 
    [OQ-MM3](#OQ-MM3) ruled loopback denied except listed ports, matching podman. The first Mac
    run (check d3) showed the cost: Seatbelt filters by port, not by process, so a server the agent
@@ -264,7 +263,14 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
    _Leaning:_ allow loopback on macOS; podman keeps its private loopback.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, as leaned:** allow all loopback on macOS. *"Let's just allow it
+   > access to the loopback. I don't see any other solution. ... if you have loopback services that
+   > are sensitive and relies on this I think you also get what you deserve here because that's poor
+   > security practice. The random port thing is like a weird thing that's going to break mental
+   > models ... We're basically just in network mode host. So we'll note that wherever it's needed
+   > to be noted, ... and note that there is no other choice."* macos-user shares the Mac's loopback
+   > as podman's host network mode does; a sandbox without a VM has no private one. This replaces
+   > [OQ-MM3](#OQ-MM3)'s port list on macOS. Podman jails keep their private loopback.
 
 2. <a id="OQ-MM8"></a>💬 **[`OQ-MM8`](#OQ-MM8) — In the run-as-you mode, may the agent read your files in the shared `/tmp`?**
 
@@ -305,4 +311,5 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
 | <a id="OQ-MM4"></a>[OQ-MM4](#OQ-MM4) | No transition for Macs already set up for the second account; reusing the account for the optional mode is welcome, not required. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
 | <a id="OQ-MM6"></a>[OQ-MM6](#OQ-MM6) | A `~/ctx` link to `$YOLO_CONTEXT_DIR` in the agent's home on every backend; `$YOLO_CONTEXT_DIR` stays the documented path. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | built: podman via the home skeleton (skipped when a config entry claims `ctx`); Apple Container and macos-user via the `link_context_dir` boot step (macos-user retargets its own link per workspace); macos-user is unit-tested only, not yet run on a Mac; Apple Container is untested |
 | <a id="OQ-MM5"></a>[OQ-MM5](#OQ-MM5) | Containers do not also bind mounts at their original host path; `$YOLO_CONTEXT_DIR/<name>` is the one supported path, and macOS allows the original path only for the link. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | — |
+| [OQ-MM7](#OQ-MM7) | macos-user allows all loopback, like podman's host network mode: Seatbelt filters by port, not by process, so a jail's own random-port servers cannot be told from host services, and there is no private loopback without a VM. Replaces [OQ-MM3](#OQ-MM3) on macOS. | 2026-10-23 | [§8](#8-open-questions) | pending |
 | [OQ-MM9](#OQ-MM9) | Host software is visible to the agent, read-only and runnable: `/opt/homebrew`, `/usr/local` and `/Applications`, never a parent such as `/opt`; declared packages come first on `PATH`. | 2026-10-23 | [§8](#8-open-questions) | built in the run-as-you mode, opt-in; not yet run on a Mac |
