@@ -307,10 +307,10 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 30. [Build agent access approvals in the maintainer's five steps](../design/boundary-broker.md#11-the-build-in-the-maintainers-five-steps) —
     he set the order on 2026-10-23: brokered sources with read and write sets, actionable toasts, a host CLI to
     view and approve, a web UI out of tree on that CLI, then a talk about merging it. First is
-    [the broker-core factoring and the git source](../design/git-broker.md), whose factoring waits on nothing;
-    [how git crosses](../design/git-broker.md#OQ-GB1) holds the git source, and
+    [the broker-core factoring and the git source](../design/git-broker.md), whose factoring waits on nothing and
+    whose git source is ruled (a brokered transport, created branches persisted, long-lived access on the user's side only);
     [whether writes ship on the agent's own background wait](../design/boundary-broker.md#OQ-BB17) holds writes.
-    [Created-branch grant lifetime](../design/git-broker.md#OQ-GB2), [which sets a workspace may hold long-lived](../design/boundary-broker.md#OQ-BB16)
+    [Whether a workspace's own `repos` list may still widen a source's scope](../design/boundary-broker.md#OQ-BB18)
     and [explicit set rules](../design/boundary-broker.md#OQ-BB15) each hold only their own feature. Beside it,
     [workspace widening](../design/workspace-widening.md) graduates once [OQ-WW1](../design/workspace-widening.md#OQ-WW1) is ruled.
     Also beside it, asked for by the maintainer on 2026-10-09: [rule the paste-to-host stopgap](../design/host-run-mailbox.md#OQ-HX1),
@@ -517,7 +517,7 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 | 27 — how a jail reaches a worktree's `.git` | D | Read-only refuses every commit, read-write lets a jail prune the worktree. **Maintainer**. |
 | 28 — calls left at one decision each | D | The `:ro` degradation rows, message URLs ([OQ-DW3](../design/docs-website.md#OQ-DW3)), the macOS nix build sandbox, array-append pinning (E5), the pack system's other calls, relocating `.yolo` by a link ([OQ-JH1](../reference/jail-home.md#OQ-JH1)), a pi-subagents shared registry, the shared tool store's relocation contract, storage tiers, and cache isolation. **Maintainer**. |
 | 29 — editor preference and SandVault/Safehouse compat | D | May yolo hold an editor preference, and how a SandVault/Safehouse user tries yolo ([OQ-NB1](../design/sandvault-safehouse-compat.md#OQ-NB1), then [OQ-NB2](../design/sandvault-safehouse-compat.md#OQ-NB2)/[OQ-NB3](../design/sandvault-safehouse-compat.md#OQ-NB3)/[OQ-NB5](../design/sandvault-safehouse-compat.md#OQ-NB5))? **Maintainer**. |
-| 30 — agent access approvals, five steps | A / D | Step 1 next: factor the broker core out of the github-broker (no behavior change, waits on nothing), then the git source's reads and own-branch pushes ([first slice](../design/git-broker.md#9-the-first-slice)), held by [OQ-GB1](../design/git-broker.md#OQ-GB1). Steps 2 and 3 (toast notifier, `yolo approve --json`/`--watch`, the answer path) turn writes on; [OQ-BB17](../design/boundary-broker.md#OQ-BB17) and, on a host with no notifier, [OQ-BB10](../design/boundary-broker.md#OQ-BB10) hold that. Notification delivery needs platform verification. **Maintainer** for the rulings. |
+| 30 — agent access approvals, five steps | A / D | Step 1 next: factor the broker core out of the github-broker (no behavior change, waits on nothing), then the git source's reads and own-branch pushes ([first slice](../design/git-broker.md#9-the-first-slice)), whose transport was ruled 2026-10-23. Steps 2 and 3 (toast notifier, `yolo approve --json`/`--watch`, the answer path) turn writes on; [OQ-BB17](../design/boundary-broker.md#OQ-BB17) and, on a host with no notifier, [OQ-BB10](../design/boundary-broker.md#OQ-BB10) hold that. Notification delivery needs platform verification. **Maintainer** for the rulings. |
 | 31 — speed builds the maintainer asked for | A / X | Part B's config-declared, ambient-only and lean-attribute launch records are implemented and runtime-tested in an isolated Linux environment. Part A's tag dispatch and native runtime validation require a Mac. See [launch records](../reference/image-staging-vs-baking.md#packages-launch-records--first-slice-2026-10-13). |
 | 32 — builds no ruling holds | D | The W1(e) `yolo run` progress golden sign-off (human approval of the frozen `testdata`). **Maintainer**. Sub-parts already closed: the startup banner (`d8f26fc72`), the unit-suite seams (`1382499b0`) and the pi-guide line (`a1c876717`); (b)/(c)/(g) are built with stale lines. The host-file 0644 regression is authored in `integration/macosuserread0644_test.go`; Linux checks its unsandboxed fixture/probe only. Still X: native Mac execution of the denial twin, the Mac readiness run and the quiet-host re-measure. |
 | 33 — the exact-commit release gate | X | Live GitHub Actions and publisher permissions (offline fixtures cannot prove them), plus the first scheduled macos-user nightly on a Mac runner. |
@@ -552,7 +552,7 @@ The ruling set, in the order it unblocks work:
 
 - [OQ-DB2](../design/diagnostics-past-the-boundary.md#oq-db2) — is the boot snapshot always-on? (item 22)
 - [OQ-BB10](../design/boundary-broker.md#OQ-BB10) — how a host daemon hands the launching terminal a line (items 3, 30)
-- [OQ-GB1](../design/git-broker.md#OQ-GB1) — does git cross as a proxied CLI or a brokered transport? (item 30)
+- [OQ-BB18](../design/boundary-broker.md#OQ-BB18) — does "a workspace can't widen" reach the GitHub `repos` list too? (item 30)
 - [OQ-BB17](../design/boundary-broker.md#OQ-BB17) — may writes ship on the agent's own background wait? (item 30)
 - [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1) — activate late profile daemons additively, or refuse conflicting late bridge plans? (IC1)
 - The motivating fork's name — its source, build line and `produces` list (item 26)
