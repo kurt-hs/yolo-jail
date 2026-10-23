@@ -883,9 +883,11 @@ question and should not wait on one.
    *"a launch or `yolo apply` materializes it"* at every notch, so the `materializes` flag
    `check` invented for itself moved into the shared renderer, and `yolo apply` stopped being
    named as a remedy it performs at NO notch (`darwinpkg.Materialize`'s one caller is the
-   macos-user run seam). And the flag had to be DERIVED in `apply` too, not passed as a constant
-   false — a `confinement: host` workspace whose runtime is macos-user does have a provisioner,
-   so a constant would have re-opened the disagreement on exactly those configs.
+   macos-user run seam). ⚠ This step first derived the flag from the runtime in `apply`, on
+   the premise that a `confinement: host` workspace whose runtime is macos-user has a
+   provisioner. [`OQ-NX8`](#OQ-NX8) corrected that: a macos-user profile serves that backend's
+   own launches, never `yolo host`, so at the host all three commands print the one inert line
+   whatever the runtime, a resolved profile root included.
 4. **Then the precedence order, PRINT-ONLY** — written as the first increment of both rulings and the
    smallest thing that changes user-visible behaviour. ⚠ *"Print-only" no longer describes a
    first step:* the host already drives an install at `--assert` (step 5's note), so this increment
@@ -2396,8 +2398,8 @@ this doc already had, per the rule that one subject gets one question.
 | [`OQ-2`](#decision-ledger), also cited as `N1` | [`OQ-NX2`](#decision-ledger) | settled 2026-08-05 — [Decision Ledger](#decision-ledger); the four traps are preserved in [the no-nix section](provisioner-evidence.md#38-what-if-the-user-has-no-nix) |
 | [`OQ-3`](#decision-ledger) | **folded into [`OQ-PS1`](#decision-ledger)(c)** | the mechanism is worked through in [the evidence doc](provisioner-evidence.md#33-nix-profile---profile-dir-the-only-candidate-that-reaches-a-users-own-path) |
 | [`OQ-4`](#decision-ledger) | [`OQ-NX4`](#OQ-NX4) | live |
+| [`OQ-NX8`](#OQ-NX8) | At the host, `packages:` is reported as inert by design, at info level, whatever the runtime setting is: one rule, the host never applies the workspace's jail-only keys ([`HP-DIR3`](../reference/host-agent-environment.md#HP-DIR3)). | 2026-10-23 | [§16](#16-locator-variables-on-a-non-container-notch-researched-2026-09-29) | ✅ `check` prints the inert line at the host, whatever the runtime, and keeps the WARN for a Linux `guest` (`internal/cli/check/section_packageprofile.go`); `describe` and `yolo host apply` say inert there too (`internal/cli/describe.go`, `internal/cli/apply.go`) |
 | [`OQ-PS16`](#OQ-PS16) | In the separate-account mode, programs that ask macOS for trust (Go's) trust the login keychain's CAs too, as the CA-file tools already do: *"if there's a cert in my trusted cert store, it's the machine."* | 2026-10-23 | [§16.3](#163-the-corporate-certificate-trap) | ✅ built as [`PS-D17`](#PS-D17), for Go programs built with Go 1.27 or later: `internal/macosuser/cagodebug.go`, called from `applyCATrust` and `printCATrust` in `cabundle.go`; pinned by `internal/macosuser/cagodebug_test.go` and the account half of `TestMacosUserTrustsSystemKeychainCA` |
-| [`OQ-NX8`](#OQ-NX8) | At the host, `packages:` is reported as inert by design, at info level, whatever the runtime setting is: one rule, the host never applies the workspace's jail-only keys ([`HP-DIR3`](../reference/host-agent-environment.md#HP-DIR3)). | 2026-10-23 | [§16](#16-locator-variables-on-a-non-container-notch-researched-2026-09-29) | pending |
 | [`OQ-PS11`](#OQ-PS11) | `program` and `requires` collapse into one kind; the old kind names are refused, not migrated, and shipped manifests change in the same build. | 2026-10-23 | [§7](#7-reframing-program-as-a-package) | pending |
 | [`OQ-PS5`](#OQ-PS5) | The one kind is named `program`, distinct from nix packages and every other term. A recipe-less `program` entry in one pack is satisfied by another selected pack's `program` entry for the same name, by whatever recipe that pack carries, so the user picks the provider by picking the pack. | 2026-10-23 | [§7](#7-reframing-program-as-a-package) | pending |
 | <a id="PS-D18"></a>PS-D18 | *Implementation decision, reversible, inside [`OQ-PS5`](#OQ-PS5):* **one provider per program name in a launch.** When two selected packs both carry a recipe for the same name, the launch refuses, naming both packs and saying to drop one from `packs` (the user chose the provider by choosing the pack, so yolo does not pick for them). A recipe-less entry no selected pack provides keeps today's `requires` behavior. | 2026-10-23 | [§7.1](#71-tested-against-the-mechanical-differences) | pending |

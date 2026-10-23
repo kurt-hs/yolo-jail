@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -102,7 +103,12 @@ func applyPackagesBlock(t *testing.T) []string {
 // dropped from the count on every platform but darwin, so a second renderer reading the raw
 // `packages` list instead of config.EffectivePackages would agree on the store path and
 // disagree on the number — the exact half-agreement an equality assertion is for.
+//
+// A resolved GC root is in place and must NOT be named: the host never applies `packages:`
+// (OQ-NX8, HP-DIR3), so both commands print the inert-by-design line. --verbose, because the
+// apply's default view folds that line into its tier-1 summary.
 func TestHostApplyAndDescribeAgreeAboutPackages(t *testing.T) {
+	t.Setenv("YOLO_VERBOSE", "1")
 	home := hostPackagesFixture(t, `{"confinement":"host","packs":["claude"],
 	  "packages":["ripgrep",{"name":"mesa","platforms":["darwin"]},"fd"]}`)
 	target := resolveProfileRoot(t, home)
@@ -112,12 +118,17 @@ func TestHostApplyAndDescribeAgreeAboutPackages(t *testing.T) {
 		t.Fatal("describe said nothing about `packages:` — the fixture no longer reaches the " +
 			"report this test is about")
 	}
-	// The resolved store path, as evidence that the block compared below is the RESOLVED
-	// report and not the declared-but-unresolved one. Without it a fixture whose GC root
-	// stopped resolving would still compare two equal strings and prove nothing.
-	if !strings.Contains(strings.Join(want, "\n"), target) {
-		t.Fatalf("describe did not name the resolved profile %s:\n%s", target,
-			strings.Join(want, "\n"))
+	joined := strings.Join(want, "\n")
+	wantCount := "2 declared"
+	if runtime.GOOS == "darwin" {
+		wantCount = "3 declared"
+	}
+	if !strings.Contains(joined, wantCount) || !strings.Contains(joined, "inert at the `host` notch by design") {
+		t.Fatalf("describe must report %s, inert by design:\n%s", wantCount, joined)
+	}
+	if strings.Contains(joined, target) {
+		t.Fatalf("describe named the profile root %s at the host, which never applies it:\n%s",
+			target, joined)
 	}
 
 	got := applyPackagesBlock(t)
@@ -137,6 +148,7 @@ func TestHostApplyAndDescribeAgreeAboutPackages(t *testing.T) {
 // only into the main path is silent for exactly the config where `packages:` is the only thing
 // left to say anything about.
 func TestHostApplyReportsPackagesWithNoPacksConfigured(t *testing.T) {
+	t.Setenv("YOLO_VERBOSE", "1") // the inert line folds into the tier-1 line otherwise
 	home := hostPackagesFixture(t, `{"confinement":"host","packages":["ripgrep"]}`)
 	resolveProfileRoot(t, home)
 
@@ -161,5 +173,33 @@ func TestHostApplySaysNothingAboutPackagesWhenNoneAreDeclared(t *testing.T) {
 	}
 	if block := applyPackagesBlock(t); len(block) != 0 {
 		t.Fatalf("host apply reported `packages:` for a config that declares none: %q", block)
+	}
+}
+
+// OQ-NX8 at the APPLY call site: the host never applies `packages:` (HP-DIR3), whatever the
+// runtime and whether or not a profile root resolves under this home. `runtime: macos-user`
+// provisions a profile for that backend's own launches, which once made this line say "a run
+// materializes it"; a resolved root once made it name the store path and "add to PATH". Both
+// commands must print the one inert-by-design line instead, with no store path. Fails if
+// reportHostPackages stops passing the host notch or derives materializes from the runtime alone.
+func TestHostApplyReportsPackagesAsInertWhateverTheRuntime(t *testing.T) {
+	t.Setenv("YOLO_VERBOSE", "1") // the inert line folds into the tier-1 line otherwise
+	t.Setenv("YOLO_RUNTIME", "macos-user")
+	for _, rooted := range []bool{false, true} {
+		home := hostPackagesFixture(t, `{"confinement":"host","packages":["ripgrep"]}`)
+		target := ""
+		if rooted {
+			target = resolveProfileRoot(t, home)
+		}
+		got := strings.Join(applyPackagesBlock(t), "\n")
+		if !strings.Contains(got, "1 declared") || !strings.Contains(got, "inert at the `host` notch by design") {
+			t.Errorf("rooted=%v: host apply must say inert by design:\n%s", rooted, got)
+		}
+		if strings.Contains(got, "a run materializes it") || (rooted && strings.Contains(got, target)) {
+			t.Errorf("rooted=%v: the host has no package layer to name:\n%s", rooted, got)
+		}
+		if want := strings.Join(describePackagesBlock(t), "\n"); got != want {
+			t.Errorf("rooted=%v: apply and describe disagree\ndescribe: %q\napply:    %q", rooted, want, got)
+		}
 	}
 }
