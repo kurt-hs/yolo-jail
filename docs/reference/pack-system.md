@@ -1052,6 +1052,34 @@ A fork's own contribution installs nothing: `InstallContributions` skips it, and
 name. Its footprint claim is `<bin> (fork of <base>)`, review-worthy, and names the source and the
 build.
 
+<a id="program-via-pack"></a>**`via: "pack"` is a program built from its own pack's tree**: the
+pack ships the program's source, an optional one-line build runs in it, and the program is the file
+`run` names afterwards ([`pack-buildable-programs.md`](../design/pack-buildable-programs.md), BG-D1).
+Unlike a fork, it names no other repository and no base pack:
+
+```json
+{ "kind": "program", "bin": "board", "via": "pack",
+  "from": "tools/board-cli", "build": "npm ci && npm run bundle", "run": "dist/board.js",
+  "prebuilt": { "linux/amd64": { "url": "https://example.invalid/board-linux-amd64", "sha256": "<64 hex>" } } }
+```
+
+- **`from`** is the pack-relative directory holding the source (`"."` is the pack root). Required,
+  relative and cleaned, with no `..`. `yolo pack lint` warns when the directory holds no file and no
+  `prebuilt` is declared.
+- **`build`** is optional, one command line with no newline, run by bash in the `from` directory.
+  Absent means the tree runs as shipped.
+- **`run`** is required: the file the program is, relative to `from`, cleaned, with no `..`.
+- **`prebuilt`** is optional: a map from a `<goos>/<goarch>` key to `{url, sha256}`, used only when
+  `from` is absent. It follows `binaries`' rules: https only, no credentials in the URL, a 64-hex
+  sha256. An official pack may not declare it.
+- **`platforms`** and **`node_floor`** are allowed, as on any program, and so is every behavior
+  field. The delivery fields of other vias (`package`, `url`, `flags`, `update`, `versions_dir`,
+  `installer_env`) and the fork fields are refused by name.
+
+`from` is refused on a program delivered any other way, and `run` and `prebuilt` on every other
+program and kind, because no other reader consumes them. This build validates the declaration and
+lints it. It does not yet build, fetch or launch the program: those are later steps of the design.
+
 **The selection rewrites the base.** Where the selected set is final, a copy of the base pack's
 program is rewritten with the fork's delivery (`packload.ApplyForks`), so every reader of the base's
 programs, the launcher generator and the host floor included, sees the fork's. It runs in the one

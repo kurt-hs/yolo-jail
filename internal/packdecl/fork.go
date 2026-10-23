@@ -126,17 +126,26 @@ func forkFieldPlacementProblems(label string, c Contribution) []string {
 		if !f.set {
 			continue
 		}
+		// `build` is a PACK-TREE program's field too (packtree.go): a pack-tree program runs its
+		// one build line in its own source directory, so no fork field is refused on it but these.
+		readers := fmt.Sprintf("via %q", ViaSource)
+		if f.name == "build" {
+			readers = fmt.Sprintf("via %q or %q", ViaSource, ViaPack)
+			if c.Kind == KindProgram && c.Via == ViaPack {
+				continue
+			}
+		}
 		if c.Kind == KindProgram {
 			problems = append(problems, fmt.Sprintf(
-				"%s: only a \"program\" with via %q takes %q — it is part of a FORK's delivery "+
+				"%s: only a \"program\" with %s takes %q — it is part of a FORK's delivery "+
 					"(a pinned source address built in a capture jail); this program is delivered "+
-					"via %q, which reads none of it", label, ViaSource, f.name, c.Via))
+					"via %q, which reads none of it", label, readers, f.name, c.Via))
 			continue
 		}
 		problems = append(problems, fmt.Sprintf(
 			"%s: kind %q does not take %q — it is part of a FORK's delivery, which only a "+
-				"\"program\" with via %q declares; no consumer reads it on this kind",
-			label, c.Kind, f.name, ViaSource))
+				"\"program\" with %s declares; no consumer reads it on this kind",
+			label, c.Kind, f.name, readers))
 	}
 	return problems
 }

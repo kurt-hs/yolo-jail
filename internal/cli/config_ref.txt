@@ -1606,7 +1606,7 @@
     yolo reads, such as patch-series, patched-extensions, kind:<kind> and via:<via>.
     A pack.json declares effects as a "contributes" list, one entry per effect with a
     "kind" from the closed set:
-      program       a tool on PATH: {bin, via:"npm"|"installer"|"source", package|url, flags}
+      program       a tool on PATH: {bin, via:"npm"|"installer"|"source"|"pack", package|url, flags}
                     yolo INSTALLS it, via a lazy launcher in ~/.yolo/bin/launch (last on
                     PATH, so it never shadows a baked binary).  Sole-owned by `bin`, so a
                     pack may declare SEVERAL programs (different bins) and each gets its
@@ -1643,6 +1643,14 @@
                     fork supplies only the bytes, and may add `platforms` and
                     `node_floor` but no other program field.  `source` is a git address
                     (file:// is refused: a directory has no revision).
+                    via:"pack" is a program built from the pack's OWN tree: {bin,
+                    via:"pack", from:"<pack dir>", run:"<file, relative to from>",
+                    build:"<one command line>" (optional), prebuilt:{"<goos>/<goarch>":
+                    {url, sha256}} (optional, used only when from is absent)}.  `from`
+                    and `run` are required; `from` and `run` are refused on any other
+                    program.  `yolo pack lint` warns when the source directory is empty.
+                    This build validates the declaration; it does not build, fetch or
+                    launch the program yet.
                     A PATCHED fork adds `patches:"<pack dir>"`, a `git format-patch --base`
                     series yolo replays onto the UPSTREAM that `source` then names, so
                     what runs follows that upstream while the series applies and builds;

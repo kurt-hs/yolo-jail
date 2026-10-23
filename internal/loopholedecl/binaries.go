@@ -103,6 +103,36 @@ var binaryNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
 // sha256RE is a sha256 digest as `sha256sum` prints it.
 var sha256RE = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+// IsSHA256Digest reports whether s is a sha256 digest as `sha256sum` prints it: 64 lowercase hex
+// digits. The pin a downloaded build is verified against, shared by `binaries` and a pack
+// program's `prebuilt` (packdecl's prebuilt rules).
+func IsSHA256Digest(s string) bool { return sha256RE.MatchString(s) }
+
+// The reasons DownloadURLRefusal names. A download is refused for one of them, or accepted with
+// URLOK.
+const (
+	URLOK          = ""
+	URLNotAbsolute = "not an absolute URL"
+	URLNotHTTPS    = "not https"
+	URLCredentials = "carries credentials"
+)
+
+// DownloadURLRefusal says why raw cannot be a download the sha256 pins, or URLOK. The rule is
+// the one `binaries` applies to every build: an absolute https URL with no credentials in it,
+// because every footprint of a pack prints the URL.
+func DownloadURLRefusal(raw string) string {
+	u, err := url.Parse(raw)
+	switch {
+	case err != nil || u.Host == "":
+		return URLNotAbsolute
+	case u.Scheme != "https":
+		return URLNotHTTPS
+	case u.User != nil:
+		return URLCredentials
+	}
+	return URLOK
+}
+
 // Binary is one `binaries` entry: an executable, and the build of it for each platform it has
 // one for.
 type Binary struct {
@@ -286,12 +316,12 @@ func parseBinaryBuild(manifestPath, field, platform string, raw any) (BinaryBuil
 		return BinaryBuild{}, Errorf("%s: '%s': a build's platform is '<goos>/<goarch>', both "+
 			"halves — a compiled file runs on one architecture", manifestPath, field)
 	}
-	if !inList(goos, knownGOOS) {
+	if !IsKnownGOOS(goos) {
 		return BinaryBuild{}, Errorf("%s: '%s' names %s, which is not a known GOOS — spell it "+
 			"as Go does, one of %s", manifestPath, field, pytext.Repr(goos),
 			sortedListRepr(knownGOOS))
 	}
-	if !inList(goarch, knownGOARCH) {
+	if !IsKnownGOARCH(goarch) {
 		return BinaryBuild{}, Errorf("%s: '%s' names %s, which is not a known GOARCH — spell it "+
 			"as Go does, one of %s", manifestPath, field, pytext.Repr(goarch),
 			sortedListRepr(knownGOARCH))
@@ -308,16 +338,15 @@ func parseBinaryBuild(manifestPath, field, platform string, raw any) (BinaryBuil
 	if err := refuseControlChars(manifestPath, "'"+field+".url'", rawURL); err != nil {
 		return BinaryBuild{}, err
 	}
-	u, err := url.Parse(rawURL)
-	switch {
-	case err != nil || u.Host == "":
+	switch DownloadURLRefusal(rawURL) {
+	case URLNotAbsolute:
 		return BinaryBuild{}, Errorf("%s: '%s.url' %s is not an absolute URL", manifestPath,
 			field, pytext.Repr(rawURL))
-	case u.Scheme != "https":
+	case URLNotHTTPS:
 		return BinaryBuild{}, Errorf("%s: '%s.url' %s must be https — the sha256 pins the "+
 			"bytes, and https keeps what was asked for private on the way", manifestPath, field,
 			pytext.Repr(rawURL))
-	case u.User != nil:
+	case URLCredentials:
 		return BinaryBuild{}, Errorf("%s: '%s.url' carries credentials — every footprint of "+
 			"this pack prints the URL, so a credential in it is published; serve the file "+
 			"without one", manifestPath, field)
@@ -328,7 +357,7 @@ func parseBinaryBuild(manifestPath, field, platform string, raw any) (BinaryBuil
 			"digest leaves the pack pinned and the program it runs unpinned (a release asset "+
 			"can be re-uploaded under the same URL); write the file's sha256", manifestPath, field)
 	}
-	if !sha256RE.MatchString(sum) {
+	if !IsSHA256Digest(sum) {
 		return BinaryBuild{}, Errorf("%s: '%s.sha256' %s is not a sha256 digest — 64 lowercase "+
 			"hex digits, as `sha256sum` prints it", manifestPath, field, pytext.Repr(sum))
 	}

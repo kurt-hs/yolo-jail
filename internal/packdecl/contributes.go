@@ -37,7 +37,7 @@ type Contribution struct {
 
 	// --- program (install) / requires (assertion) ---
 	Bin     string   `json:"bin,omitempty"`     // program/requires: the binary name; mcp: the program the server runs
-	Via     string   `json:"via,omitempty"`     // program: "npm" | "installer" | "source"; profile: a service pack name (OQ-WG6)
+	Via     string   `json:"via,omitempty"`     // program: "npm" | "installer" | "source" | "pack"; profile: a service pack name (OQ-WG6)
 	Package string   `json:"package,omitempty"` // program via npm: the npm package
 	URL     string   `json:"url,omitempty"`     // program via installer: the curl-to-shell URL
 	Flags   []string `json:"flags,omitempty"`   // program: extra install flags
@@ -138,6 +138,20 @@ type Contribution struct {
 	// that failed with nothing serving. Optional, on a `files` contribution with `source` and no
 	// `patches` alone: the upstream unpatched is not what a series asks for.
 	Fallback string `json:"fallback,omitempty"`
+
+	// --- program via pack: BUILT FROM THE PACK'S OWN TREE (packtree.go, docs/design/pack-buildable-programs.md) ---
+	// A program delivered `via: "pack"` ships its source in the pack. `from` is the pack-relative
+	// directory holding that source (`"."` is the pack root), REQUIRED on it and refused on every
+	// other program; `from` is also the field the content kinds read, which is why the refusal is
+	// per program and not per field. `build` is the ONE command line that runs in that directory
+	// before the program exists, optional: absent means the tree runs as shipped. `run` is the file
+	// the program is, relative to `from`, after the build, REQUIRED on it and refused elsewhere.
+	// `prebuilt`, optional, maps a `<goos>/<goarch>` key to a {url, sha256} download used only when
+	// `from` is absent; it is refused in an official pack, by census (officialpacks_test.go).
+	// Beside these, `platforms` and `node_floor` and every behavior field are allowed.
+	// (`run` and `prebuilt` are read by nothing but a pack-tree program; packTreeFieldPlacementProblems.)
+	Run      string                   `json:"run,omitempty"`
+	Prebuilt map[string]PrebuiltBuild `json:"prebuilt,omitempty"`
 	// ForkedBy is NOT a manifest field, and no manifest can set it: the fork rewrite
 	// (packload.ApplyForks) sets it on the copy of the BASE's program it rewrites, naming the
 	// fork pack, so a reader of the base's program can say whose bytes it runs.
@@ -1235,6 +1249,9 @@ var knownVias = []viaDelivery{
 	// A FORK (fork.go): three names for one mechanism, `via: "source"` → Install.Kind
 	// "source" → receipt `kind: "build"` (entrypoint.ReceiptKindBuild).
 	{name: ViaSource, installKind: InstallKindSource},
+	// A program built from its pack's own tree (packtree.go, BG-D1): the source launcher delivers
+	// it as it delivers a fork, but its bytes are the pack's, not a pinned address's.
+	{name: ViaPack, installKind: InstallKindSource},
 }
 
 // KnownVia reports whether v names a delivery mechanism this build knows. An empty
@@ -4089,6 +4106,7 @@ func validateContribution(label string, c Contribution) []string {
 	// fork_of, source, build and produces are a fork's alone (fork.go): refused on every other
 	// kind and every other via, in `update`'s position and for its reason.
 	problems = append(problems, forkFieldPlacementProblems(label, c)...)
+	problems = append(problems, packTreeFieldPlacementProblems(label, c)...)
 	problems = append(problems, fallbackPlacementProblems(label, c)...)
 	problems = append(problems, platformsProblems(label, c)...)
 	problems = append(problems, capabilitiesProblems(label, c)...)
@@ -4240,6 +4258,11 @@ func validateContribution(label string, c Contribution) []string {
 			// A FORK: its four fields required, and the program fields that are its base's
 			// refused (fork.go says which, and why).
 			problems = append(problems, forkProblems(label, c)...)
+		case c.Via == ViaPack:
+			// A PROGRAM BUILT FROM THE PACK'S OWN TREE: `from` and `run` required, `build` and
+			// `prebuilt` checked when present, and the other vias' delivery fields refused
+			// (packtree.go says which, and why).
+			problems = append(problems, packTreeProblems(label, c)...)
 		}
 	case KindRequires:
 		req("bin", c.Bin)

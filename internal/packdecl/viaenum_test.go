@@ -90,7 +90,7 @@ func TestKnownViasCoversTheShippedMechanisms(t *testing.T) {
 	}
 	// The diagnostics quote the set; a validator naming values it no longer accepts is
 	// the drift in the other direction.
-	if viaList() != "npm, installer or source" {
+	if viaList() != "npm, installer, source or pack" {
 		t.Errorf("viaList() = %q, want the set as the error messages name it", viaList())
 	}
 }
@@ -109,6 +109,12 @@ func viaProbe(via string) (declared, projected Contribution) {
 		projected = declared
 		projected.ForkOf, projected.ForkedBy = "", "fork"
 		return declared, projected
+	}
+	if via == ViaPack {
+		// A pack-tree program takes its own payload (from, run) and refuses the npm and installer
+		// fields, so it gets its own probe, as a fork does.
+		declared = Contribution{Kind: KindProgram, Bin: "x", Via: via, From: "tool", Run: "dist/x.js"}
+		return declared, declared
 	}
 	declared = Contribution{
 		Kind: KindProgram, Bin: "x", Via: via,

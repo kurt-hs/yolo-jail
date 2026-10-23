@@ -811,6 +811,12 @@ func packLint(args []string, out, errw io.Writer, color bool) int {
 	for _, w := range packload.LintDuplicateLoads(pack) {
 		pr.Printf("[yellow]⚠[/yellow] %s", richtext.Escape(w))
 	}
+	// A program built from its pack's own tree whose source directory holds nothing (BG-D16).
+	for _, w := range packdecl.PackTreeWarnings(pack.Decl.Contributions(), func(dir string) bool {
+		return stagedUnder(res.Staged, dir)
+	}) {
+		pr.Printf("[yellow]⚠[/yellow] %s", richtext.Escape(w))
+	}
 	printExpectsNotes(pr, []*packload.Pack{pack})
 	// A tree shipping skills/ for one agent: a note, lint's alone (docs/reference/pack-system.md, pi packages), since
 	// giving skills to one agent is a choice and the route to every agent is the author's to take.
@@ -1069,6 +1075,12 @@ func stagedContent(staged []string, pack *packload.Pack, delivered []string) (cl
 		// `from` that delivers nothing (absent, blank) is not "claimed" by being named.
 		case packdecl.KindFiles, packdecl.KindLoophole:
 			if c.From != "" {
+				sources = append(sources, c.From)
+			}
+		case packdecl.KindProgram:
+			// A program built from its pack's own tree (packtree.go): its `from` directory is the
+			// source its build reads, so that content is shipped for a reason, not unread.
+			if c.Via == packdecl.ViaPack && c.From != "" {
 				sources = append(sources, c.From)
 			}
 		}

@@ -72,6 +72,12 @@ func KnownGOOS() []string { return copyOf(knownGOOS) }
 // KnownGOARCH returns the accepted `platforms[]` architectures, sorted.
 func KnownGOARCH() []string { return copyOf(knownGOARCH) }
 
+// IsKnownGOOS reports whether s is a GOOS spelled as Go spells it.
+func IsKnownGOOS(s string) bool { return inList(s, knownGOOS) }
+
+// IsKnownGOARCH reports whether s is a GOARCH spelled as Go spells it.
+func IsKnownGOARCH(s string) bool { return inList(s, knownGOARCH) }
+
 // parsePlatforms validates the optional `platforms` list.
 //
 // Absent means EVERY platform — the back-compatible reading, and the one that
