@@ -7,15 +7,21 @@
 #
 #   ./run-checks.sh --mode self
 #   ./run-checks.sh --mode account --account _yolojail
+#   ./run-checks.sh --mode self --profile-from-yolo /path/to/yolo
 #
 # Options:
 #   --mode self|account     who runs the sandbox: you, or the second account (via sudo -u)
 #   --account NAME          the account for --mode account (default _yolojail)
-#   --allow-port PORT       add a loopback port to the profile's allow list (repeatable, max 3;
-#                           the loopback check uses the fourth slot itself)
+#   --allow-port PORT       add a loopback port to the profile's allow list (repeatable; max 3
+#                           with profile.sb, whose fourth slot the loopback check uses itself)
 #   --with-claude           also install Claude Code into the sandbox's own HOME and run
 #                           `claude --version` (network; no login, no API call)
 #   --keep                  keep the temp dirs and print the command for a manual sandboxed shell
+#   --profile-from-yolo YOLO
+#                           run every check against the profile yolo generates instead of
+#                           profile.sb: YOLO is a yolo binary, and the script renders the profile
+#                           with `YOLO internal macos-user-profile` for its own workspace, home and
+#                           temp dirs (re-rendered with the extra port for check d2)
 #
 # It creates only its own temp dirs, a decoy file in your home, a decoy directory
 # (/opt/src/... if creatable, else /Library/Caches/...), one throwaway generic
@@ -31,9 +37,10 @@ MODE=""
 ACCOUNT="_yolojail"
 WITH_CLAUDE=0
 KEEP=0
+YOLO_BIN=""
 EXTRA_PORTS=()
 
-usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -42,6 +49,7 @@ while [ $# -gt 0 ]; do
 	--allow-port) EXTRA_PORTS+=("${2:-}"); shift 2 ;;
 	--with-claude) WITH_CLAUDE=1; shift ;;
 	--keep) KEEP=1; shift ;;
+	--profile-from-yolo) YOLO_BIN="${2:-}"; shift 2 ;;
 	-h | --help) usage; exit 0 ;;
 	*) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
 	esac
@@ -60,8 +68,9 @@ if [ ! -x /usr/bin/sandbox-exec ]; then
 	echo "/usr/bin/sandbox-exec is missing; this macOS cannot run the prototype." >&2
 	exit 2
 fi
-if [ "${#EXTRA_PORTS[@]}" -gt 3 ]; then
-	echo "--allow-port takes at most 3 ports (the profile has 4 slots; the loopback check uses one)." >&2
+if [ -z "$YOLO_BIN" ] && [ "${#EXTRA_PORTS[@]}" -gt 3 ]; then
+	echo "--allow-port takes at most 3 ports with profile.sb (it has 4 slots; the loopback check uses one)." >&2
+	echo "The generated profile has no such limit: add --profile-from-yolo <yolo>." >&2
 	exit 2
 fi
 for p in "${EXTRA_PORTS[@]+"${EXTRA_PORTS[@]}"}"; do
@@ -72,7 +81,23 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 SRC_PROFILE="$SCRIPT_DIR/profile.sb"
-[ -r "$SRC_PROFILE" ] || { echo "profile.sb not found beside this script ($SRC_PROFILE)" >&2; exit 2; }
+if [ -n "$YOLO_BIN" ]; then
+	# The generated profile: YOLO_BIN renders it once the workspace and temp dirs exist.
+	case "$YOLO_BIN" in */*) ;; *) YOLO_BIN="$(command -v "$YOLO_BIN" || echo "$YOLO_BIN")" ;; esac
+	if [ ! -x "$YOLO_BIN" ]; then
+		echo "--profile-from-yolo needs a yolo binary, and '$YOLO_BIN' is not executable." >&2
+		echo "Build one from the checkout with 'go build -o /tmp/yolo ./cmd/yolo' and pass /tmp/yolo." >&2
+		exit 2
+	fi
+	if ! "$YOLO_BIN" internal macos-user-profile --help >/dev/null 2>&1; then
+		echo "'$YOLO_BIN' has no 'internal macos-user-profile' verb (a yolo older than the plan's slice 10)." >&2
+		echo "Build one from a current checkout with 'go build -o /tmp/yolo ./cmd/yolo' and pass that." >&2
+		exit 2
+	fi
+	SRC_PROFILE=""
+else
+	[ -r "$SRC_PROFILE" ] || { echo "profile.sb not found beside this script ($SRC_PROFILE)" >&2; exit 2; }
+fi
 
 HOST_HOME="$(cd "$HOME" && pwd -P)"
 MADE_SHARED=0
@@ -109,8 +134,10 @@ AGENT_HOME="$WORKSPACE/.yolo/home"
 SANDBOX_TMP="$ROOT/tmp"
 mkdir -p "$WORKSPACE" "$AGENT_HOME" "$SANDBOX_TMP"
 PROFILE="$ROOT/profile.sb"
-cp "$SRC_PROFILE" "$PROFILE"
-chmod 0644 "$PROFILE"
+if [ -n "$SRC_PROFILE" ]; then
+	cp "$SRC_PROFILE" "$PROFILE"
+	chmod 0644 "$PROFILE"
+fi
 chmod 0755 "$ROOT"
 
 DECOY_SECRET="$HOST_HOME/yolo-prototype-decoy-$NONCE.txt"
@@ -228,7 +255,7 @@ while [ "$d" != "/" ]; do
 	ANCESTORS=("$d" "${ANCESTORS[@]+"${ANCESTORS[@]}"}")
 	d="$(dirname "$d")"
 done
-if [ "${#ANCESTORS[@]}" -gt 8 ]; then
+if [ -z "$YOLO_BIN" ] && [ "${#ANCESTORS[@]}" -gt 8 ]; then
 	echo "The temp root $ROOT is more than 8 directories deep; the profile has 8 ancestor slots." >&2
 	exit 2
 fi
@@ -248,9 +275,37 @@ INNER_PORT="$(pick_port)" || { echo "could not find a free loopback port" >&2; e
 
 SB_PATH="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin"
 
-# params PORT1 PORT2 PORT3 PORT4 -> fills PARAMS
+# render_profile PORT...: with --profile-from-yolo, render the generated profile for this
+# run's workspace, home and temp dirs, with each PORT that is not "none" allowed on loopback,
+# into its own file, and point PROFILE at it. The generated profile takes no -D parameters:
+# its paths are rendered into the text (MMP-D1).
+render_profile() {
+	local p name="profile-yolo"
+	local args=(internal macos-user-profile --mode "$MODE" --workspace "$WORKSPACE" --home "$AGENT_HOME"
+		--host-home "$HOST_HOME" --tmp "$SANDBOX_TMP" --darwin-tmp "$DARWIN_TMP")
+	[ "$MODE" = account ] && args+=(--account "$ACCOUNT")
+	for p in "$@"; do
+		[ "$p" = none ] && continue
+		args+=(--allow-port "$p")
+		name="$name-$p"
+	done
+	PROFILE="$ROOT/$name.sb"
+	if ! "$YOLO_BIN" "${args[@]}" >"$PROFILE"; then
+		echo "rendering the profile failed: $YOLO_BIN ${args[*]}" >&2
+		exit 2
+	fi
+	chmod 0644 "$PROFILE"
+}
+
+# build_params PORT1 PORT2 PORT3 PORT4 -> fills PARAMS for profile.sb, or renders the generated
+# profile (PARAMS empty) with --profile-from-yolo.
 build_params() {
 	local i
+	if [ -n "$YOLO_BIN" ]; then
+		render_profile "$@"
+		PARAMS=()
+		return
+	fi
 	PARAMS=(-D "WORKSPACE=$WORKSPACE" -D "AGENT_HOME=$AGENT_HOME" -D "HOST_HOME=$HOST_HOME"
 		-D "SANDBOX_TMP=$SANDBOX_TMP" -D "DARWIN_USER_TEMP_DIR=$DARWIN_TMP")
 	for i in 1 2 3 4 5 6 7 8; do
@@ -258,9 +313,21 @@ build_params() {
 	done
 	PARAMS+=(-D "LOOPBACK_PORT_1=$1" -D "LOOPBACK_PORT_2=$2" -D "LOOPBACK_PORT_3=$3" -D "LOOPBACK_PORT_4=$4")
 }
-BASE_PORTS=("${EXTRA_PORTS[0]:-none}" "${EXTRA_PORTS[1]:-none}" "${EXTRA_PORTS[2]:-none}")
+if [ -n "$YOLO_BIN" ]; then
+	# Any number of ports; the trailing "none" keeps the array non-empty for bash 3.2's set -u.
+	BASE_PORTS=(${EXTRA_PORTS[@]+"${EXTRA_PORTS[@]}"} none)
+else
+	BASE_PORTS=("${EXTRA_PORTS[0]:-none}" "${EXTRA_PORTS[1]:-none}" "${EXTRA_PORTS[2]:-none}")
+fi
 build_params "${BASE_PORTS[@]}" none
-DEFAULT_PARAMS=("${PARAMS[@]}")
+DEFAULT_PARAMS=(${PARAMS[@]+"${PARAMS[@]}"})
+DEFAULT_PROFILE="$PROFILE"
+
+# use_default: the profile and parameters every check runs under unless it says otherwise.
+use_default() {
+	PARAMS=(${DEFAULT_PARAMS[@]+"${DEFAULT_PARAMS[@]}"})
+	PROFILE="$DEFAULT_PROFILE"
+}
 
 # Env for every inside (and control) run: a clean environment, HOME = the agent's.
 SB_USER="$(id -un)"
@@ -275,7 +342,7 @@ inside() {
 	shift
 	[ "$MODE" = account ] && sudo -v
 	(cd "$WORKSPACE" && "${AS[@]+"${AS[@]}"}" /usr/bin/env -i "${SB_ENV[@]}" "$@" \
-		/usr/bin/sandbox-exec -f "$PROFILE" "${PARAMS[@]}" /bin/bash -c "$script") 2>&1
+		/usr/bin/sandbox-exec -f "$PROFILE" ${PARAMS[@]+"${PARAMS[@]}"} /bin/bash -c "$script") 2>&1
 }
 
 # control SCRIPT [extra env...]: the same, without the profile (same user).
@@ -309,7 +376,7 @@ result() { # result PASS|FAIL|SKIP|INFO ID DESC
 expect_allow() {
 	local id="$1" desc="$2" script="$3" out rc
 	shift 3
-	PARAMS=("${DEFAULT_PARAMS[@]}")
+	use_default
 	out="$(inside "$script" "$@")"
 	rc=$?
 	if [ $rc -eq 0 ]; then result PASS "$id" "$desc"; else result FAIL "$id" "$desc (exit $rc)"; fi
@@ -323,7 +390,7 @@ expect_allow() {
 expect_deny() {
 	local id="$1" desc="$2" script="$3" ctl="$4" out rc cout crc note=""
 	shift 4
-	PARAMS=("${DEFAULT_PARAMS[@]}")
+	use_default
 	if [ "$ctl" = yes ]; then
 		cout="$(control "$script" "$@")"
 		crc=$?
@@ -346,7 +413,7 @@ expect_deny() {
 
 info() { # info ID DESC SCRIPT: run inside, report the outcome without counting it
 	local id="$1" desc="$2" script="$3" out rc
-	PARAMS=("${DEFAULT_PARAMS[@]}")
+	use_default
 	out="$(inside "$script")"
 	rc=$?
 	result INFO "$id" "$desc: $([ $rc -eq 0 ] && echo "worked" || echo "refused (exit $rc)")"
@@ -364,10 +431,15 @@ echo "   SANDBOX_TMP=$SANDBOX_TMP  DARWIN_USER_TEMP_DIR=$DARWIN_TMP"
 echo "   decoy secret: $DECOY_SECRET"
 echo "   decoy project: ${DECOY_PROJECT:-none (neither /opt/src nor /Library/Caches was writable)}"
 echo "   allowed loopback ports: ${EXTRA_PORTS[*]:-none}"
+if [ -n "$YOLO_BIN" ]; then
+	echo "   profile: generated by $YOLO_BIN internal macos-user-profile ($DEFAULT_PROFILE)"
+else
+	echo "   profile: profile.sb (beside this script)"
+fi
 echo
 
 # --- 0: the profile loads at all -------------------------------------------
-PARAMS=("${DEFAULT_PARAMS[@]}")
+use_default
 out="$(inside 'echo loaded')"
 rc=$?
 if [ $rc -ne 0 ] || [ "$out" != "loaded" ]; then
@@ -460,7 +532,7 @@ expect_deny b3 "write a file in your home" 'touch "$HOST_HOME/yolo-prototype-wri
 # list and by the login keychain's path; in account mode the read runs as the account.
 if [ "$KC_ADDED" = 1 ]; then
 	KC_READ='security find-generic-password -s "yolo-prototype-$NONCE" -w; security find-generic-password -s "yolo-prototype-$NONCE" -w "$HOST_HOME/Library/Keychains/login.keychain-db"'
-	PARAMS=("${DEFAULT_PARAMS[@]}")
+	use_default
 	cout="$(control "$KC_READ")"
 	out="$(inside "$KC_READ")"
 	case "$out" in
@@ -504,7 +576,7 @@ expect_deny b9 "run a shell through System Events (osascript do shell script)" \
 	"osascript -e 'tell application \"System Events\" to do shell script \"id\"'" no
 expect_deny b10 "open an app through LaunchServices (open -g -a TextEdit)" 'open -g -a TextEdit' no
 # launchctl submit: the job is visible from outside only if the submit escaped.
-PARAMS=("${DEFAULT_PARAMS[@]}")
+use_default
 out="$(inside "launchctl submit -l $CLAUDE_LABEL -- /usr/bin/true; echo \"launchctl exit \$?\"")"
 if "${AS[@]+"${AS[@]}"}" launchctl list "$CLAUDE_LABEL" >/dev/null 2>&1; then
 	result FAIL b11 "submit a launchd job (launchctl submit): the job exists outside the sandbox"
@@ -561,7 +633,7 @@ if port_free "$LOOP_PORT"; then
 	skip d2 "loopback allow (no listener)"
 else
 	PROBE="(exec 3<>/dev/tcp/127.0.0.1/$LOOP_PORT) && echo connected"
-	PARAMS=("${DEFAULT_PARAMS[@]}")
+	use_default
 	out="$(inside "$PROBE")"
 	rc=$?
 	if [ $rc -ne 0 ]; then result PASS d1 "your loopback listener on $LOOP_PORT is unreachable (port not listed)"
@@ -573,7 +645,7 @@ else
 	rc=$?
 	if [ $rc -eq 0 ]; then result PASS d2 "the same listener is reachable once $LOOP_PORT is listed"
 	else result FAIL d2 "the listener stays unreachable with $LOOP_PORT listed (exit $rc)"; fi
-	printf '    $ %s   (with LOOPBACK_PORT_4=%s)\n' "$PROBE" "$LOOP_PORT"
+	printf '    $ %s   (with port %s listed in %s)\n' "$PROBE" "$LOOP_PORT" "$(basename "$PROFILE")"
 	show "$out"
 fi
 kill "$LISTENER_PID" 2>/dev/null
@@ -617,8 +689,8 @@ if [ "$KEEP" = 1 ]; then
 	echo "Manual sandboxed shell (the same profile and parameters as the checks):"
 	printf '  cd %q && %s /usr/bin/env -i' "$WORKSPACE" "${AS[*]:-}"
 	printf ' %q' "${SB_ENV[@]}"
-	printf ' /usr/bin/sandbox-exec -f %q' "$PROFILE"
-	printf ' %q' "${DEFAULT_PARAMS[@]}"
+	printf ' /usr/bin/sandbox-exec -f %q' "$DEFAULT_PROFILE"
+	if [ "${#DEFAULT_PARAMS[@]}" -gt 0 ]; then printf ' %q' "${DEFAULT_PARAMS[@]}"; fi
 	printf ' /bin/bash -l\n'
 	echo "  (the decoys are removed when this script exits; the workspace and home are kept)"
 	echo

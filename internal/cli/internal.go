@@ -38,7 +38,7 @@ import (
 // rewrite semantics.
 func runInternal(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|ctx-attach|daemon|darwin-bootstrap|discard-rm|fork-build-jail|footer|image-copy|installer-check|log-append|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|pack-tree-reap|probe-services|refresh-programs|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
+		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|ctx-attach|daemon|darwin-bootstrap|discard-rm|fork-build-jail|footer|image-copy|installer-check|log-append|macos-user-profile|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|pack-tree-reap|probe-services|refresh-programs|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
 		return 2
 	}
 	switch args[0] {
@@ -192,6 +192,11 @@ func runInternal(args []string) int {
 		// launch whose guest left processes running hands it the guest pack tree and its claim
 		// (fd 3), and it removes the tree once they exit. Hidden: its caller is that launch.
 		return macosuser.PackTreeReapMain(args[1:])
+	case macosUserProfileVerb:
+		// The deny-by-default macos-user profile, printed for given inputs
+		// (macosuserprofile.go; docs/design/macos-user-model-plan.md slice 10). Hidden: its
+		// callers are the prototype's run-checks.sh and a human diffing against profile.sb.
+		return runMacosUserProfile(args[1:])
 	case macosuser.ProbeServicesVerb:
 		// The macos-user launch's host-service witness (internal/macosuser/serviceprobe.go),
 		// the container boot's last step run as a confined stage of its own. Hidden: its caller
