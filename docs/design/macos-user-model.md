@@ -16,8 +16,7 @@ vantage:
 is built. The [§6](#6-what-a-prototype-must-show) prototype is the check before building, not a
 reopening of the ruling. Its [first Mac run](#first-mac-run-2026-10-22) raised two questions.
 
-**Needs your ruling:** [OQ-MM8](#OQ-MM8), raised by the
-[first Mac run](#first-mac-run-2026-10-22). **Ruled:** [OQ-MM7](#OQ-MM7), [OQ-MM9](#OQ-MM9) (2026-10-23).
+**Needs your ruling:** nothing open. **Ruled 2026-10-23:** [OQ-MM7](#OQ-MM7), [OQ-MM8](#OQ-MM8) (a trial), [OQ-MM9](#OQ-MM9), raised by the [first Mac run](#first-mac-run-2026-10-22).
 
 **Reads with:** [Agent Safehouse research](../research/agent-safehouse.md) (the evidence for every
 Safehouse claim here), [SandVault and Safehouse compatibility](sandvault-safehouse-compat.md), and
@@ -272,9 +271,8 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
    > as podman's host network mode does; a sandbox without a VM has no private one. This replaces
    > [OQ-MM3](#OQ-MM3)'s port list on macOS. Podman jails keep their private loopback.
 
-2. <a id="OQ-MM8"></a>💬 **[`OQ-MM8`](#OQ-MM8) — In the run-as-you mode, may the agent read your files in the shared `/tmp`?**
+2. <a id="OQ-MM8"></a>✅ **[`OQ-MM8`](#OQ-MM8) — In the run-as-you mode, may the agent read your files in the shared `/tmp`?**
 
-   <!-- vantage: oq id=OQ-MM8 leaning="Leave /tmp readable and document it: tools write there constantly, and under the misguided-agent principle an eager agent rarely goes looking there." -->
 
    Check b14: running as you, the agent reads your owner-only files in `/tmp`; the account mode is
    protected by Unix permissions. The shared `/tmp` also holds yolo's own per-session endpoint
@@ -284,7 +282,13 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
    _Leaning:_ leave it readable; document it.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, against the leaning, as a trial:** deny the shared `/tmp` by
+   > default, with a user-scope setting that allows it again. *"Let's try B. Let's see how it
+   > works, and if it's terrible we'll change it, and yes we'll have the hatch."* The sandbox's own
+   > `TMPDIR` and this session's service files stay reachable; the per-user temp folder under
+   > `/var/folders` stays allowed, because Apple's `mktemp`, Java and Chrome use it and ignore
+   > `TMPDIR`; zsh and tmux are pointed at `TMPDIR`; and the briefing tells the agent to use
+   > `$TMPDIR`, since Seatbelt's refusal cannot name a next step.
 
 3. <a id="OQ-MM9"></a>✅ **[`OQ-MM9`](#OQ-MM9) — Is host software (Homebrew) visible to the agent?**
 
@@ -312,4 +316,5 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
 | <a id="OQ-MM6"></a>[OQ-MM6](#OQ-MM6) | A `~/ctx` link to `$YOLO_CONTEXT_DIR` in the agent's home on every backend; `$YOLO_CONTEXT_DIR` stays the documented path. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | built: podman via the home skeleton (skipped when a config entry claims `ctx`); Apple Container and macos-user via the `link_context_dir` boot step (macos-user retargets its own link per workspace); macos-user is unit-tested only, not yet run on a Mac; Apple Container is untested |
 | <a id="OQ-MM5"></a>[OQ-MM5](#OQ-MM5) | Containers do not also bind mounts at their original host path; `$YOLO_CONTEXT_DIR/<name>` is the one supported path, and macOS allows the original path only for the link. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | — |
 | [OQ-MM7](#OQ-MM7) | macos-user allows all loopback, like podman's host network mode: Seatbelt filters by port, not by process, so a jail's own random-port servers cannot be told from host services, and there is no private loopback without a VM. Replaces [OQ-MM3](#OQ-MM3) on macOS. | 2026-10-23 | [§8](#8-open-questions) | pending |
+| [OQ-MM8](#OQ-MM8) | Trial: the shared `/tmp` is denied by default in the deny-by-default profile, with a user-scope setting to allow it; the sandbox `TMPDIR`, the session's service files and the per-user temp folder stay allowed. Revisit if it proves painful. | 2026-10-23 | [§8](#8-open-questions) | pending |
 | [OQ-MM9](#OQ-MM9) | Host software is visible to the agent, read-only and runnable: `/opt/homebrew`, `/usr/local` and `/Applications`, never a parent such as `/opt`; declared packages come first on `PATH`. | 2026-10-23 | [§8](#8-open-questions) | built in the run-as-you mode, opt-in; not yet run on a Mac |
