@@ -209,11 +209,6 @@ func ReadHostKeychainTrust(r KeychainReaders, now time.Time) KeychainTrust {
 	return kt
 }
 
-// keychainCACandidates is catrust.ParseCAs over a System keychain export.
-func keychainCACandidates(pemOut string, now time.Time) ([]TrustedCA, int) {
-	return catrust.ParseCAs(pemOut, catrust.SourceSystemKeychain, now)
-}
-
 // ComposeCATrust composes this launch's trust from the materialized tool profile and the host's
 // keychains (ReadHostKeychainTrust). A READ OF THE HOST, so it runs in the orchestrator, never in
 // the pure plan builder.

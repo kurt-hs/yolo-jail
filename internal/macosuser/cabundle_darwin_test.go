@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/catrust"
 )
 
 // cabundle_darwin_test.go RUNS THE REAL KEYCHAIN READ a launch makes (cabundle.go), on whatever
@@ -27,7 +29,7 @@ func TestTheSystemKeychainIsReadableWithoutSudo(t *testing.T) {
 		t.Fatalf("reading the System keychain as this user failed: %v", err)
 	}
 	blocks := strings.Count(out, "-----BEGIN CERTIFICATE-----")
-	candidates, left := keychainCACandidates(out, time.Now())
+	candidates, left := catrust.ParseCAs(out, catrust.SourceSystemKeychain, time.Now())
 	if len(candidates)+left > blocks {
 		t.Errorf("%d candidates and %d left out from %d certificate blocks", len(candidates), left, blocks)
 	}
@@ -59,7 +61,7 @@ func TestTheLoginKeychainReadNeverWaitsOnAPrompt(t *testing.T) {
 		t.Logf("login keychain not read (%s): %v", took.Round(time.Millisecond), err)
 		return
 	}
-	candidates, left := keychainCACandidates(out, time.Now())
+	candidates, left := catrust.ParseCAs(out, catrust.SourceSystemKeychain, time.Now())
 	t.Logf("login keychain: %d certificate block(s) in %s; %d TLS CA candidate(s), %d left out",
 		strings.Count(out, "-----BEGIN CERTIFICATE-----"), took.Round(time.Millisecond), len(candidates), left)
 }
