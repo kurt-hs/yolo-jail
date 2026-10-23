@@ -168,6 +168,10 @@ type Hook struct {
 	// SharedDir is a home-relative directory from the pack's own sharedDirs, for a hook
 	// that links into the machine-global tier. Spelled `at` in a manifest.
 	SharedDir string `json:"sharedDir,omitempty"`
+	// Args are the arguments boot_check passes its script, after the script's path. Spelled
+	// `flags` in a manifest, the field `program` and `blocked-tool` already use for a list of
+	// argv words; boot_check is the one hook that takes it.
+	Args []string `json:"args,omitempty"`
 }
 
 // KnownHooks is the closed set of hook names, so a manifest can be validated on the HOST
@@ -175,7 +179,13 @@ type Hook struct {
 //
 // Duplicating the names is the lesser evil versus a package dependency from the host CLI
 // into the entrypoint; HookSetsAgree pins them together so the duplicate cannot drift.
-var KnownHooks = []string{"shared_credentials", "shared_directory", "unshare_directory", "per_jail_history"}
+var KnownHooks = []string{"shared_credentials", "shared_directory", "unshare_directory", "per_jail_history", HookBootCheck}
+
+// HookBootCheck is the hook that runs a check script the pack delivers, once at boot, and
+// prints what it says as a warning (docs/design/mcp-presets-removal.md, OQ-MP9): `from` is the
+// script's home-relative path, run as `/bin/sh <home>/<from> <flags...>`. Spelled here as well
+// as in the entrypoint because the host validates the one field only this hook takes (`flags`).
+const HookBootCheck = "boot_check"
 
 // hookRequiredFields is what each hook cannot run without, in MANIFEST spelling — the
 // contribution keys an author writes, not Hook's field names.
@@ -193,6 +203,7 @@ var hookRequiredFields = map[string][]string{
 	"shared_directory":   {"from", "at"},
 	"unshare_directory":  {"from", "at"},
 	"per_jail_history":   {"from"},
+	HookBootCheck:        {"from"},
 }
 
 // retiredHooks names a hook this build has REMOVED, and what an author writes instead.

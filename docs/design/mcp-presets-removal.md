@@ -3,7 +3,7 @@ title: "Two presets, seven hardcodings, and a backend that can have neither"
 date: 2026-09-12
 status: accepted
 stage: DESIGN
-next: "Rule OQ-MP9 (the browser report the build moved into the wrapper); every step of §13 is built, step 3 (retiring mcp_presets) on 2026-10-23 (MP-D10), so what is left is graduating the built design into mcp-configuration.md"
+next: "Every step of §13 is built, step 3 (retiring mcp_presets) and OQ-MP9's boot check on 2026-10-23 (MP-D10, MP-D11), so what is left is graduating the built design into mcp-configuration.md"
 depends-on:
   - ../reference/pack-system.md#OQ-PK1
 tags: [design, mcp, packs, config, removal, chrome-devtools, macos-user]
@@ -14,8 +14,9 @@ vantage:
 
 # Two presets, seven hardcodings, and a backend that can have neither
 
-**Status:** 2026-10-23 — every question settled but [`OQ-MP9`](#OQ-MP9), which the build
-opened, and every step of [§13](#13-what-i-would-build-in-order) is built: the chromium-path fix,
+**Status:** 2026-10-23 — every question settled, the last, [`OQ-MP9`](#OQ-MP9), ruled and built
+the same day as a pack-declared `boot_check` hook ([MP-D11](#MP-D11)), and every step of
+[§13](#13-what-i-would-build-in-order) is built: the chromium-path fix,
 the `mcp` kind (`packdecl.KindMCP`, composed by `packload.ComposeMCPServers`),
 `packs/chrome-devtools`, delivered in a container jail, on macos-user and at `yolo host`, and on
 2026-10-23 step 3, the retirement of `mcp_presets` ([MP-D10](#MP-D10)). It waited on
@@ -51,9 +52,10 @@ construction ([§8](#8-the-scope-demotion-nobody-asked-for)).
 the dependency inventory. It is the whole reason `chrome-devtools` is a pack and not a deletion,
 and [§6](#6-there-is-no-mcp-contribution-kind)'s question falls out of it.
 
-**Needs your ruling:** **One, [`OQ-MP9`](#OQ-MP9), opened by the build.** [MP-D5](#MP-D5)
-reports the browser from the pack's wrapper and declares no `requires`, which departs from half
-of [`OQ-MP5`](#decision-ledger)'s answer; it is flagged rather than taken as settled. The six questions
+**Needs your ruling:** **Nothing open.** [`OQ-MP9`](#OQ-MP9), opened by the build when
+[MP-D5](#MP-D5) reported the browser from the pack's wrapper and declared no `requires`, was
+ruled 2026-10-23 (the pack's own check, run at boot, a warning only) and built as
+[MP-D11](#MP-D11). The six questions
 before it were settled 2026-09-20 ([§Decision Ledger](#decision-ledger)): five were ruled, and
 [`OQ-MP4`](#decision-ledger) was **dissolved** against the tree, its premise being false. One other build
 decision is flagged for your review rather than ruled: [MP-D4](#MP-D4), which leaves a fetched
@@ -407,8 +409,8 @@ backend bakes no image, so on macOS all three paths are simply absent (verified 
 tidiness. The refusal exists because *core* pinned Linux paths in a Go string. A pack that
 declares `kind: "requires"` for its browser and resolves the executable at run time is refused
 for a reason a user can act on — *install a browser* — on a machine that may well already have
-one. (As built, the report is the wrapper's and there is no `requires`: [MP-D5](#MP-D5), open at
-[`OQ-MP9`](#OQ-MP9).) Nothing here promises chrome-devtools works on macOS; it promises the
+one. (As built, the report is the wrapper's and there is no `requires`: [MP-D5](#MP-D5), ruled
+at [`OQ-MP9`](#OQ-MP9) and printed at boot by the pack's `boot_check`, [MP-D11](#MP-D11).) Nothing here promises chrome-devtools works on macOS; it promises the
 reason it does not is no longer "yolo hardcoded a Linux path".
 
 > [!IMPORTANT]
@@ -587,7 +589,8 @@ to fold pack entries under user entries, and wire the composed table into whiche
 list — `packs/` is already a `goSrc` fileset entry, so the directory needs no flake change, only
 the embed one. It carries the `program`, the `requires`, the MCP entry, the wrapper, and prose
 saying what a jail needs for it to work. (As built it carries no `requires`, the wrapper reporting
-the browser instead: [MP-D5](#MP-D5), open at [`OQ-MP9`](#OQ-MP9).)
+the browser instead: [MP-D5](#MP-D5), ruled at [`OQ-MP9`](#OQ-MP9); its boot check is
+[MP-D11](#MP-D11).)
 
 **Step 3 — the retirement. BUILT 2026-10-23** ([MP-D10](#MP-D10)). Delete the seven hardcodings,
 retire the key, delete `Env.SkipMCPPresets` and the three macos-user carve-outs, and land the docs
@@ -635,10 +638,11 @@ Observable outcomes a human can check, not test names:
 - `"mcp_servers": {"chrome-devtools": null}` with the pack selected yields no entry in any of the
   three files.
 - On macos-user, selecting the pack produces a named missing-binary report rather than a blanket
-  *"not delivered on this backend"*. ⚠ **Amended under [`OQ-MP9`](#OQ-MP9), pending your
-  ruling:** as built the report is the wrapper's own — a stderr line at every server start, on
-  the MCP client's side, and `--check` on demand — and no launch prints one; the blanket line is
-  gone ([MP-D5](#MP-D5)).
+  *"not delivered on this backend"*. **Amended under [`OQ-MP9`](#OQ-MP9), ruled 2026-10-23:**
+  the report is the wrapper's own — a stderr line at every server start, `--check` on demand,
+  and, once at boot in a container jail, one warning line from its `--boot-check` when
+  no browser is found (on macos-user the server start's line is the report), which never stops the launch; the blanket line is gone
+  ([MP-D5](#MP-D5), [MP-D11](#MP-D11)).
 - No non-test source under `internal/` names `sequential-thinking`.
 - The boot catalog reports no orphan in a jail where the pack is the only thing installing
   anything.
@@ -689,7 +693,7 @@ folded into the sections each row names.
 | OQ-MP2 | `chrome-devtools` becomes a **builtin pack**, *"because that has hairy config to get right"* | 2026-09-12 | [§5](#5-the-chrome-devtools-inventory--what-the-pack-carries-what-the-image-keeps) |
 | OQ-MP3 | A new **`mcp` kind**, composed into `mcp_servers` the way `provider` composes into `providers`; exclusive by server name, never review-worthy | 2026-09-20 | [§6.1](#61-the-three-candidate-shapes) |
 | OQ-MP4 | **Dissolved**, its premise false: compose host-side, through `paths.JailPathHomeDirs` | 2026-09-20 | [§6.3](#63-where-it-composes-on-the-host) |
-| OQ-MP5 | `requires` plus run-time resolution in the pack's own wrapper, which hands back an absolute path. Core resolving a candidate list would put browser-finding back in core; a bare binary name loses to environment sanitization. ⚠ The build kept the run-time half and not the `requires` half ([MP-D5](#MP-D5)); open at [`OQ-MP9`](#OQ-MP9) | 2026-09-20 | [§5](#5-the-chrome-devtools-inventory--what-the-pack-carries-what-the-image-keeps) |
+| OQ-MP5 | `requires` plus run-time resolution in the pack's own wrapper, which hands back an absolute path. Core resolving a candidate list would put browser-finding back in core; a bare binary name loses to environment sanitization. The build kept the run-time half and not the `requires` half ([MP-D5](#MP-D5)), ruled at [`OQ-MP9`](#OQ-MP9) and built as [MP-D11](#MP-D11) | 2026-09-20 | [§5](#5-the-chrome-devtools-inventory--what-the-pack-carries-what-the-image-keeps) |
 | OQ-MP6 | Full retirement of both names, with a targeted message naming the packs to add and an `mcp_servers` snippet to paste; no warn-and-ignore release | 2026-09-20 | [§9](#9-the-day-this-ships--pre-existing-state) |
 | OQ-MP7 | **No** to the scope demotion: define a safe subset of packs a workspace may declare. The subset itself is not ruled | 2026-09-20 | [§8](#8-the-scope-demotion-nobody-asked-for) |
 | OQ-MP8 | An executable path: one plain wrapper script, not a service and not a daemon; never always-running, never orphaned. The `service` conversion is not taken now | 2026-09-20 | [§3](#3-the-two-scripts-and-the-one-that-is-never-spawned) |
@@ -697,9 +701,10 @@ folded into the sections each row names.
 | <a id="MP-D2"></a>MP-D2 | *Implementation decision, as MP-D1.* (b) **The jail-only chrome flags are the autonomy kind's AUTONOMOUS launch flags for `chrome-devtools-mcp`**: `--headless`, `--isolated`, and [§5.1](#51-the-three-sandbox-flags-are-the-packs-and-they-are-not-tuning)'s three `--chrome-arg=` flags. A jail's and macos-user's launcher bakes them in, so every start gets them however the client reached the program; the GUARDED posture, the host's, declares none, so Chrome keeps its own sandbox there, opens a window, and keeps chrome-devtools-mcp's own profile. Never decided from the environment at run time: an MCP client scrubs what a detection would read | 2026-10-05 | [§5.1](#51-the-three-sandbox-flags-are-the-packs-and-they-are-not-tuning) |
 | <a id="MP-D3"></a>MP-D3 | *Implementation decision, as MP-D1.* (c) **`yolo host -- <agent>` also installs into yolo's floor the program each composed entry's `bin` names**, after the agent's own: the host has no lazy launcher to install it on first use. A failure, or a program the floor may not hold, is one line naming `yolo host apply --assert` or the PATH lookup, and costs that server, never the agent ([§9.1](#91-the-degenerate-cases-named)). `bin` is a field of the kind rather than an inference from the pack, so an entry names the program it needs. Recorded for the host as [HC-D28](../reference/host-agent-environment.md#HC-D28) | 2026-10-05 | [§9.1](#91-the-degenerate-cases-named) |
 | <a id="MP-D4"></a>MP-D4 | *Implementation decision, as MP-D1; ⚠ possibly the maintainer's call.* (d) **At the host an entry composes only from a pack yolo ships or one at a path on this machine** (`Pack.MayRunHostHalf`, the predicate a launch asks before it runs a pack's host code); a FETCHED pack's entry is left out and named, with the step that runs it (write it under `mcp_servers` yourself). At the host the entry's command runs unconfined as you whenever the agent starts, which is host code, and [`OQ-HS4`](host-notch-services.md#11-decision-ledger) refuses a fetched pack's host code by name until a trust ruling exists; in a jail every pack's entry composes. Recorded for the host as [HC-D26](../reference/host-agent-environment.md#HC-D26) | 2026-10-05 | [§6.3](#63-where-it-composes-on-the-host) |
-| <a id="MP-D5"></a>MP-D5 | *Implementation decision, as MP-D1; ⚠ departs from half of [`OQ-MP5`](#decision-ledger)'s answer, which was "`requires` plus run-time resolution in the pack's own wrapper", and is open for your ruling at [`OQ-MP9`](#OQ-MP9).* (e) **The wrapper resolves the browser at run time** ([`OQ-MP5`](#decision-ledger)): `chromium`, `chromium-browser`, `google-chrome` or `google-chrome-stable` on PATH, then the standard install paths (`/usr/bin/chromium`, `/opt/google/chrome/chrome`, the store-delivered farm, `/Applications/Google Chrome.app`, `Chromium.app`, the same under `~/Applications`), passed as `--executablePath`; with none, nothing is passed and chrome-devtools-mcp detects Chrome itself. A browser the caller's own arguments name is never overridden. **The browser-presence report is the wrapper's own** — a stderr line at every start, and `--check` — not a `requires` contribution, which names one binary on PATH and cannot see an app bundle or a set of alternatives, so it would report a missing browser on every Mac with Chrome | 2026-10-05 | [§7](#7-macos-user-the-backend-that-can-have-neither) |
+| <a id="MP-D5"></a>MP-D5 | *Implementation decision, as MP-D1; departs from half of [`OQ-MP5`](#decision-ledger)'s answer, which was "`requires` plus run-time resolution in the pack's own wrapper", and was ruled at [`OQ-MP9`](#OQ-MP9) (2026-10-23: the pack's own check at boot, a warning only; built as [MP-D11](#MP-D11)).* (e) **The wrapper resolves the browser at run time** ([`OQ-MP5`](#decision-ledger)): `chromium`, `chromium-browser`, `google-chrome` or `google-chrome-stable` on PATH, then the standard install paths (`/usr/bin/chromium`, `/opt/google/chrome/chrome`, the store-delivered farm, `/Applications/Google Chrome.app`, `Chromium.app`, the same under `~/Applications`), passed as `--executablePath`; with none, nothing is passed and chrome-devtools-mcp detects Chrome itself. A browser the caller's own arguments name is never overridden. **The browser-presence report is the wrapper's own** — a stderr line at every start, and `--check` — not a `requires` contribution, which names one binary on PATH and cannot see an app bundle or a set of alternatives, so it would report a missing browser on every Mac with Chrome | 2026-10-05 | [§7](#7-macos-user-the-backend-that-can-have-neither) |
 | <a id="MP-D6"></a>MP-D6 | *Implementation decision, as MP-D1.* **The kind's shape is `{name, bin, config: <entry>}`.** The entry rides the contribution's `config` payload in exactly mcp_servers' shape, its keys pinned to the config's `knownMCPServerKeys` by test ([§6.2](#62-what-the-kind-must-be-able-to-carry-at-minimum), risk R2); top-level fields would have collided with the retired `env` tombstone. Its path vocabulary is one prefix, `~/` at the start of a `command` or `args` word, joined by the composer to the notch's home ([`OQ-MP4`](#decision-ledger): the composing side decides the home) | 2026-10-05 | [§6.2](#62-what-the-kind-must-be-able-to-carry-at-minimum) |
 | <a id="MP-D7"></a>MP-D7 | *Implementation decision, as MP-D1.* **Composition follows the provider precedent's shape**: the selected packs' entries in pack order, a name two declarations ship held by the later (NC-D59) and refused before any launch by validation (`config.validatePackMCPServers`) and in `yolo pack footprint` (`Collisions`); the user's entry merges over the pack's per field, `env` per variable; a user `null` removes the pack's and stays in the table as a removal, so a jail's preset of that name goes too | 2026-10-05 | [§6.1](#61-the-three-candidate-shapes) |
 | <a id="MP-D8"></a>MP-D8 | *Implementation decision, as MP-D1, amending [§13](#13-what-i-would-build-in-order)'s "Steps 1–3 do not ship separately".* **Steps 1 and 2 ship before step 3**, which waits on [`OQ-PK1`](../reference/pack-system.md#oq-pk1): a key a workspace can write cannot retire into a selection only user scope can make until [`OQ-MP7`](#decision-ledger)'s demotion is ruled. The cost is two mechanisms at once, bounded by the pack's entry replacing a same-named preset, and the build answers the maintainer's request for the server at `yolo host` ([roadmap](../plans/roadmap.md) item 44: "the maintainer wants it") | 2026-10-05 | [§13](#13-what-i-would-build-in-order) |
 | <a id="MP-D9"></a>MP-D9 | *Implementation decision, as MP-D1; fixes a defect review found in the jail half.* **A jail's and macos-user's agent launchers install and refresh a pack server's program before they exec the agent**, as they do a preset's package: a server takes the trigger of the agent that connects to it, and nothing may move at connect time ([program-delivery.md §3.5](program-delivery.md#35-the-second-axis-who-the-dependency-serves-amendment-2026-09-03), [`OQ-PD12a`](program-delivery.md#decision-ledger)). The npm `program` an `mcp` entry's `bin` names joins the transitive refresh set while the composed table holds that server, and the program's own launcher, which the server runs through for the posture's flags, bakes no update and no server refresh of its own; its cold install stays, for a server no agent's launcher started. **Every launcher's install writes to stderr**: npm's and an installer's output went to stdout, the server's JSON-RPC channel, ahead of its `initialize` response. An installer program, and an npm one whose pack declares install flags, keep their own launcher's trigger, since the refresh hands npm a spec alone; a pinned one is installed again once at its first start, the refresh writing no record of the declaration its launcher compares | 2026-10-05 | [§13](#13-what-i-would-build-in-order) |
 | <a id="MP-D10"></a>MP-D10 | *Implementation decision, building step 3 after [`OQ-PK1`](../reference/pack-system.md#oq-pk1) was ruled on 2026-10-23 ("no workspace packs for now, retire mcp_presets").* **The key is refused at either scope with every value, `[]` and `null` included**, as the other retired keys are: an error on the host, a warning inside a jail. The refusal names `chrome-devtools` as a `packs` entry "beside your agents" rather than spelling a whole `"packs": [...]` list, because a pasted list would replace the user's agents. `yolo host apply` names the key in its report, since the host notch runs only the providers' validation. | 2026-10-23 | [§13](#13-what-i-would-build-in-order) |
+| <a id="MP-D11"></a>MP-D11 | *Implementation decision, building [`OQ-MP9`](#OQ-MP9) (ruled 2026-10-23, D in the pack's own terms); **built 2026-10-23**.* **A fifth hook, `boot_check` (`from`, plus `flags` as its arguments), and the wrapper's `--boot-check`.** A container jail's boot runs `/bin/sh ~/<from> <flags...>` once, in its own `run_pack_boot_checks` step, and prints each line it says as `⚠ <pack>: <line>`; never on a session's attach, in a sealed build jail or at `yolo host`. **Not on macos-user** (amended on review, 2026-10-23): that bootstrap runs outside the agent's Seatbelt profile and may run only yolo's own code (P4 in [`macos-user-provisioning.md`](../reference/macos-user-provisioning.md)), so the boot log records the skip and the server start's line is the report there; confining the check would need a Seatbelt launch the bootstrap does not have in the account mode. A stopped check's process group is killed and its output held to 64 KiB. It never stops a launch: a silent non-zero exit, a check that cannot run, one still running after 5 seconds (stopped), and a script the home does not hold each cost one line naming the next step. A hook rather than a new kind because a hook is already a named capability core runs at boot with home-relative `from`; `flags` is the field `program` and `blocked-tool` already use for argv words, refused on every other hook. The wrapper's `--boot-check` is `--check`'s browser half by the same search a server start runs, silent with a browser and one line naming what to install without one; it leaves out the server, which the boot checks before its first install. Core names no pack and no browser | 2026-10-23 | [§14](#14-what-done-looks-like) |

@@ -2218,6 +2218,25 @@ says nothing. Nothing deletes it for you, and the base-home sweep `yolo check` r
 SHIPPED pack's old `at` alone; a configured pack's reads there as an unknown directory, as any
 directory no shipped pack declares does.
 
+<a id="the-boot-check-hook"></a>`boot_check` (`from`, and optionally `flags`) runs a check the
+pack ships, once at boot, and prints what it says as a warning: `/bin/sh ~/<from> <flags...>`,
+where `from` is the home-relative path the pack's own `files` contribution delivers the script
+to, and `flags` are its arguments (no other hook takes `flags`). It runs in a container jail
+only, never on a session's attach or in a sealed build jail. It does not run on macos-user, where
+the boot log records the skip: that bootstrap runs outside the agent's Seatbelt profile and may
+run only yolo's own code ([P4](macos-user-provisioning.md)), and a check is a pack's script in an
+agent-writable home. Nor does it run at `yolo host`. Each line it prints reaches the terminal and the boot log as
+`⚠ <pack>: <line>`, at most four of them, and a check with nothing to report prints nothing. **It
+never stops a launch**, by the maintainer's ruling
+([`OQ-MP9`](../design/mcp-presets-removal.md#OQ-MP9), 2026-10-23: *"it is just a warning"*): a
+check that exits non-zero without output, cannot run, or is still running after 5 seconds costs
+one line naming the command that shows its answer, and a script the home does not hold is named
+too. Core knows nothing about what a check looks for. The one shipped user is `chrome-devtools`,
+whose wrapper's `--boot-check` runs the same browser search as each server start. Unlike the
+other hooks it runs pack code, which is why it runs only where the whole boot is inside the
+jail's confinement; a stopped check's whole process group is killed, so nothing it started
+outlives it.
+
 The copy-if-empty branch is not a freshness rule — it is what makes a first login in a fresh
 install survive. There is deliberately no freshness comparison in any schema: a
 schema-specific merge is what made a generically-named hook claude-shaped, and the second
@@ -4616,7 +4635,7 @@ only place the values themselves are stated.
 | Branch refresh interval | one hour: a branch-pinned git pack is re-fetched at launch when its last successful fetch is older ([`OQ-PF1`](#oq-pf1)) | `packsrc.BranchRefreshInterval` |
 | Launch-time fetch timeout | 60 seconds per repository fetch, shared by its clone, fetch and checkouts, against the store's 2-minute default for `install` and `update` | `packsrc.LaunchFetchTimeout`, `packsrc.Store.Timeout` |
 | Kind set | the `footprints` map key, from which `KnownKinds()` derives (sorted alphabetically) | `packdecl.footprints`, count-pinned by `packdecl.TestKnownKindsCoverEveryConstant` |
-| Hook set | `shared_credentials`, `shared_directory`, `unshare_directory`, `per_jail_history`. `claude_plugins` was a member until it was retired ([`OQ-2`](../design/pi-pack-extensions.md#10-decision-ledger), 2026-09-19 — retire it and add nothing like it, no agent-named hook); the name is not unknown but REFUSED, with a migration message | `packdecl.KnownHooks`, drift-pinned by `entrypoint.TestHookSetsAgree`; the refusal is `packdecl.RetiredHook` |
+| Hook set | `shared_credentials`, `shared_directory`, `unshare_directory`, `per_jail_history`, `boot_check` (see [the boot check](#the-boot-check-hook)). `claude_plugins` was a member until it was retired ([`OQ-2`](../design/pi-pack-extensions.md#10-decision-ledger), 2026-09-19 — retire it and add nothing like it, no agent-named hook); the name is not unknown but REFUSED, with a migration message | `packdecl.KnownHooks`, drift-pinned by `entrypoint.TestHookSetsAgree`; the refusal is `packdecl.RetiredHook` |
 | Manifest top-level keys | `name`, `description`, `contributes`, `skills_tier`, `supersedes`, `needs` | `packdecl.Manifest` |
 | Conventional briefing source | every `*.md` directly inside `briefing/` | `packdecl.DefaultBriefingDir`, `packdecl.ConventionalBriefingFile` |
 | Never a briefing source | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, at any depth | `packdecl.RepositoryInstructionFile` |
