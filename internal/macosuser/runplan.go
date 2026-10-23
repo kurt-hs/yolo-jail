@@ -46,6 +46,9 @@ type RunPlan struct {
 	// bootstrap, and SessionTmpRemoveCommands remove it when the session ends.
 	SessionTmpDir            string
 	SessionTmpRemoveCommands [][]string
+	// TmpdirProblem is the refusal for a TMPDIR the user's env composed outside every root the
+	// run-as-you profile grants (composedTmpdirProblem, MMP-D20), "" when there is none.
+	TmpdirProblem string
 	// SharedTmp is true when the run-as-you profile grants the shared /tmp (the
 	// `macos_user_shared_tmp` hatch, MMP-D18), which the launch discloses.
 	SharedTmp bool
@@ -743,8 +746,13 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	// and zsh's own variables, which ignore it, pointed into it, so their files and sockets land
 	// in a place of this session's that the profile lets the sandbox bind sockets under (MMP-D16)
 	// rather than in the /tmp every process of yours shares. The account mode is today's plan.
-	sessionTmp := ""
+	sessionTmp, composedTmp := "", ""
 	if self {
+		if sandboxEnv != nil {
+			if v, ok := sandboxEnv.Get("TMPDIR"); ok {
+				composedTmp = asStr(v)
+			}
+		}
 		sessionTmp = SessionTmpDir(session.DarwinUserTempDir, sessionID)
 		sandboxEnv = withSessionTmpEnv(sandboxEnv, sessionTmp)
 	}
@@ -789,6 +797,12 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		bootstrapEnv.Set(entrypoint.DarwinMachineHomeEnv, homes.Machine)
 		bootstrapEnv.Set(entrypoint.DarwinSharedHomeEnv, homes.Shared)
 		bootstrapEnv.Set(paths.DarwinRealHomeEnv, homes.Real)
+		// THE SESSION'S TMPDIR, to the bootstrap too (MMP-D21): its env is `env -i`'s closed list,
+		// so without it the bootstrap's children (the npm refresh, the nix root watcher, the identity
+		// step) would fall back to the shared /tmp the profile closes.
+		if v, ok := sandboxEnv.Get("TMPDIR"); ok && sessionTmp != "" {
+			bootstrapEnv.Set("TMPDIR", asStr(v))
+		}
 		if len(hostCtx.CacheAliases) > 0 {
 			wire := map[string]string{}
 			for _, a := range hostCtx.CacheAliases {
@@ -1055,8 +1069,10 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		ProfileRemoveCommands: [][]string{{rmBin, "-f", profilePath}},
 		// workspace_readonly and its config lock, each raw-path `devices` entry's ioctl
 		// carve-out (devices.go), and macos_log, whose "off" is a deny (SeatbeltProfile).
-		Seatbelt:                 seatbelt,
-		SessionTmpDir:            sessionTmp,
+		Seatbelt:      seatbelt,
+		SessionTmpDir: sessionTmp,
+		TmpdirProblem: composedTmpdirProblem(composedTmp, []string{workspace, homes.Home,
+			session.DarwinUserTempDir}, session.SharedTmp && self),
 		SharedTmp:                self && session.SharedTmp,
 		SessionTmpRemoveCommands: SessionTmpRemoveCommands(sessionTmp),
 		StagedDir:                stateDir,
@@ -1516,6 +1532,9 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 // ordering.
 func PlanInvariants(plan RunPlan) []string {
 	var problems []string
+	if plan.TmpdirProblem != "" {
+		problems = append(problems, plan.TmpdirProblem)
+	}
 
 	// B2 (Go): the staged yolo binary must live under the host-owned staging root,
 	// and the bootstrap argv must self-exec THAT staged path — never the host

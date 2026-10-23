@@ -100,6 +100,9 @@ const (
 	// depending on where either one happens to sit.
 	captureHomeLeaf = "home"
 	captureOutLeaf  = "out"
+	// captureTmpLeaf is a run-as-you capture's TMPDIR (CaptureStagingTmp), a sibling of the two
+	// above, so nothing in it is under a capture surface of the staging home.
+	captureTmpLeaf = "tmp"
 
 	// captureScanFlag asks the driver for the FULL absolute-reference scan. It is not
 	// optional on this backend: the staging path is not the final home path, so a capture
@@ -138,6 +141,14 @@ func CaptureStagingRoot(captureRoot, bin string) string {
 // CaptureStagingHome is the throwaway HOME an install capture runs against.
 func CaptureStagingHome(stagingRoot string) string {
 	return filepath.Join(stagingRoot, captureHomeLeaf)
+}
+
+// CaptureStagingTmp is a run-as-you capture's or build's own TMPDIR (MMP-D21): inside the staging
+// tree, which its profile makes writable, because the deny-by-default profile closes the shared
+// /tmp (OQ-MM8) that `go build`, `mktemp -d` and installers fall back to when TMPDIR is unset. It
+// is made with the tree and removed with it.
+func CaptureStagingTmp(stagingRoot string) string {
+	return filepath.Join(stagingRoot, captureTmpLeaf)
 }
 
 // CaptureStagingOut is the ENTRY-SHAPED directory the driver fills: <out>/tree plus the manifest
@@ -201,6 +212,10 @@ type CaptureOptions struct {
 	Mode              Mode
 	HostHome          string
 	DarwinUserTempDir string
+	// SharedTmp is the user-scope `macos_user_shared_tmp` hatch (OQ-MM8, MMP-D18), read by cli as a
+	// launch reads it: the run-as-you capture profile then grants the shared /tmp. The account mode
+	// ignores it.
+	SharedTmp bool
 }
 
 // captureRunAs is a capture's crossing (mode.go, MMP-D4) and the homes its profile is built from.
@@ -328,6 +343,15 @@ func buildCapturePlanAt(opts CaptureOptions, stagingRoot string) CapturePlan {
 	if captureEnv == nil {
 		captureEnv = jsonx.NewOrderedMap()
 	}
+	// THE RUN-AS-YOU CAPTURE'S OWN TMPDIR (MMP-D21), over any composed one: its profile closes the
+	// shared /tmp, and a TMPDIR from the user's env would point outside the staging tree, where
+	// the installer cannot write either. It rides the env file to the driver and the bootstrap's
+	// own env (below), so the installer, the build line and the bootstrap all use it.
+	captureTmp := ""
+	if self {
+		captureTmp = CaptureStagingTmp(stagingRoot)
+		captureEnv = withEnvVar(captureEnv, "TMPDIR", captureTmp)
+	}
 	// THE STAGING HOME, NOT SandboxHome(). This is the one argument that makes the whole
 	// slice work: the bootstrap generates ~/.yolo/bin/launch/<bin> into the home the capture
 	// will run in, so the installer the driver runs is the launcher a launch would have run.
@@ -361,6 +385,9 @@ func buildCapturePlanAt(opts CaptureOptions, stagingRoot string) CapturePlan {
 	captureMiseTools, _ := config.JailMiseTools(opts.Config, true)
 	bootstrapEnv := buildBootstrapEnv(stagingRoot, opts.Config, gitIdentity, captureEnv,
 		packRoot, "", "", "", HostContext{}, "", stagingHome, darwinPrefix, opts.BlockedTools, captureMiseTools)
+	if captureTmp != "" {
+		bootstrapEnv.Set("TMPDIR", captureTmp)
+	}
 	stagedYolo := StagedYoloPath("")
 	offendingHome, offendingSet := HomeContaining(stagingRoot)
 
@@ -397,7 +424,8 @@ func buildCapturePlanAt(opts CaptureOptions, stagingRoot string) CapturePlan {
 	envGrantCommands := SandboxEnvGrantCommands(envFile, "")
 	bootstrapArgv := DarwinBootstrapArgv(runAs, stagedYolo, stagingHome, bootstrapEnv, "")
 	if self {
-		seatbelt = SeatbeltSelfCaptureProfile(stagingRoot, runAs.Homes, opts.HostUser, opts.DarwinUserTempDir)
+		seatbelt = SeatbeltSelfCaptureProfile(stagingRoot, runAs.Homes, opts.HostUser, opts.DarwinUserTempDir,
+			opts.SharedTmp)
 		prepare = SelfCaptureStagingCommands(stagingRoot)
 		envDirCommands, _ = withoutAccessGrants(envDirCommands, nil)
 		envGrantCommands = nil
@@ -474,7 +502,8 @@ func CaptureStagingCommands(stagingRoot, hostUser string) [][]string {
 func SelfCaptureStagingCommands(stagingRoot string) [][]string {
 	cmds := [][]string{{rmBin, "-rf", stagingRoot}}
 	cmds = append(cmds, categoryDirCommands(filepath.Dir(stagingRoot))...)
-	for _, dir := range []string{stagingRoot, CaptureStagingHome(stagingRoot), CaptureStagingOut(stagingRoot)} {
+	for _, dir := range []string{stagingRoot, CaptureStagingHome(stagingRoot), CaptureStagingOut(stagingRoot),
+		CaptureStagingTmp(stagingRoot)} {
 		cmds = append(cmds, selfCaptureLeafCommands(dir)...)
 	}
 	return cmds
@@ -1530,7 +1559,7 @@ func BuildForkBuildPlan(opts ForkBuildOptions) ForkBuildPlan {
 		// The run-as-you build (slice 9 of docs/design/macos-user-model-plan.md): the sealed
 		// deny-by-default capture profile, and a staging tree that is yours alone.
 		plan.Seatbelt = SeatbeltSealedSelfCaptureProfile(stagingRoot, plan.RunAs.Homes, inner.HostUser,
-			inner.DarwinUserTempDir)
+			inner.DarwinUserTempDir, inner.SharedTmp)
 		plan.PrepareCommands = append(SelfCaptureStagingCommands(stagingRoot),
 			selfCaptureLeafCommands(ForkBuildSourceDir(stagingRoot))...)
 	}

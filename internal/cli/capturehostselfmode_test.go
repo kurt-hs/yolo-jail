@@ -139,3 +139,39 @@ func TestAMacFloorInSelfModeAsksNoSandboxAccount(t *testing.T) {
 		t.Errorf("a run-as-you Mac with a foreign staging root says %q", got)
 	}
 }
+
+// THE CAPTURE ARM PASSES THE SHARED-/tmp HATCH (OQ-MM8, MMP-D21): with `"macos_user_shared_tmp":
+// true` beside the run-as-you mode, the act is handed SharedTmp, so the capture profile opens /tmp
+// as a launch's does. Fails if the closure stops reading the hatch or drops it on the way.
+func TestCaptureHandsTheMacosUserActTheSharedTmpHatch(t *testing.T) {
+	captureFixtureHome(t, captureFixtureInstaller)
+	withSelfModeUserConfig(t)
+	p := paths.UserConfigPath()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(strings.Replace(string(b), "{", `{"macos_user_shared_tmp": true, `, 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var seen run.Options
+	withFakeCaptureJail(t, fakeCaptureJail(t, &seen, []capture.ManifestEntry{
+		{Path: ".local", Kind: capture.KindDir, Mode: "0755"},
+	}))
+	var got []macosuser.CaptureOptions
+	orig := macCaptureAct
+	macCaptureAct = func(_ macosuser.Deps, o macosuser.CaptureOptions, _ string, _ bool) int {
+		got = append(got, o)
+		return 0
+	}
+	t.Cleanup(func() { macCaptureAct = orig })
+	var out, errw bytes.Buffer
+	if rc := captureHost([]string{"probetool"}, &out, &errw, false); rc != 0 {
+		t.Fatalf("captureHost rc = %d, stderr = %s", rc, errw.String())
+	}
+	_ = seen.MacosUserRun(jsonx.NewOrderedMap(), "", nil, nil, "", "", macosuser.HomeOverlay{},
+		macosuser.HostContext{}, true, jsonx.NewOrderedMap(), nil, macosuser.JailDaemons{})
+	if len(got) != 1 || got[0].Mode != macosuser.ModeSelf || !got[0].SharedTmp {
+		t.Errorf("the capture was handed %+v; want the run-as-you mode with SharedTmp", got)
+	}
+}

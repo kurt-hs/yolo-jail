@@ -220,3 +220,58 @@ func TestAccountModeHasNoSessionTmpdirOrServicesGrant(t *testing.T) {
 		t.Error("the account mode's profile carries the services grant")
 	}
 }
+
+// MMP-D21: the self-mode bootstrap is told the session's TMPDIR, since its env is `env -i`'s
+// closed list and the profile closes the shared /tmp. The account mode's bootstrap is today's.
+func TestSelfModeBootstrapGetsTheSessionTmpdir(t *testing.T) {
+	if plan := sessionTmpPlan(t, ModeSelf, nil); !containsArg(plan.BootstrapArgv, "TMPDIR="+testSessionTmp) {
+		t.Errorf("the self-mode bootstrap is not given TMPDIR=%s: %v", testSessionTmp, plan.BootstrapArgv)
+	}
+	if plan := sessionTmpPlan(t, ModeAccount, nil); slices.ContainsFunc(plan.BootstrapArgv,
+		func(w string) bool { return strings.HasPrefix(w, "TMPDIR=") }) {
+		t.Error("the account-mode bootstrap was given a TMPDIR")
+	}
+}
+
+// MMP-D20: a TMPDIR the user's env composes outside every root the run-as-you profile grants
+// refuses the launch, naming the fix; one inside a root, or under /tmp with the hatch, does not.
+// Deleting the refusal from PlanInvariants fails this.
+func TestSelfModeRefusesAComposedTmpdirTheProfileDoesNotGrant(t *testing.T) {
+	plan := func(tmpdir string, hatch bool) RunPlan {
+		env := jsonx.NewOrderedMap()
+		env.Set("TMPDIR", tmpdir)
+		return sessionTmpPlanWith(t, ModeSelf, env, func(s *PlanSession) { s.SharedTmp = hatch })
+	}
+	refused := func(p RunPlan) string {
+		for _, msg := range PlanInvariants(p) {
+			if strings.Contains(msg, "TMPDIR=") {
+				return msg
+			}
+		}
+		return ""
+	}
+	for _, tc := range []struct {
+		tmpdir string
+		hatch  bool
+		want   string // a fragment of the refusal, or "" for none
+	}{
+		{"/Users/you/code/alpha/.tmp", false, ""},
+		{testUserTmp + "/mine", false, ""},
+		{"/var/folders/ab/xyz/T/mine", false, ""},
+		{"/tmp/mine", true, ""},
+		{"/Users/you/tmp", false, "Remove the TMPDIR override"},
+		{"/tmp/mine", false, `"macos_user_shared_tmp": true`},
+		{"relative/tmp", false, "Remove the TMPDIR override"},
+	} {
+		got := refused(plan(tc.tmpdir, tc.hatch))
+		if (tc.want == "") != (got == "") || !strings.Contains(got, tc.want) {
+			t.Errorf("TMPDIR=%s hatch %v: refusal %q, want one containing %q", tc.tmpdir, tc.hatch, got, tc.want)
+		}
+	}
+	// The account mode composes no session TMPDIR and checks none.
+	env := jsonx.NewOrderedMap()
+	env.Set("TMPDIR", "/Users/you/tmp")
+	if p := sessionTmpPlan(t, ModeAccount, env); p.TmpdirProblem != "" {
+		t.Errorf("the account mode refused a TMPDIR: %q", p.TmpdirProblem)
+	}
+}

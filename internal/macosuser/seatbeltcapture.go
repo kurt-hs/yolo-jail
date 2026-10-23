@@ -253,16 +253,18 @@ func sealedProfileProblems(profile string) []string {
 // profile a self-mode launch runs under (DenyDefaultProfile, seatbeltdeny.go), with the capture's
 // inputs in place of a launch's:
 //
-//   - the staging tree is the one writable root, in the workspace slot (the staging home and the
-//     out dir are both inside it), beside the temp dirs the production /tmp ruling grants;
+//   - the staging tree is the one writable root, in the workspace slot (the staging home, the
+//     out dir and the capture's own TMPDIR, CaptureStagingTmp, are all inside it), beside your
+//     DARWIN_USER_TEMP_DIR. The shared /tmp is closed (OQ-MM8) unless the user's
+//     `macos_user_shared_tmp` hatch opens it, as for a launch;
 //   - the staging root (stateDir) is readable, for the staged yolo, the env and CA files and the
 //     pack tree, as for a launch;
 //   - NO machine dir is granted. The machine root and the shared store (LaunchHomes' Machine and
 //     Shared, MMP-D6) are where your agents' logins live, the credential store a capture must
 //     never reach. They are also denied by name, last, as the account capture profile denies the
 //     shared home after its allow list: the statement of intent a human reads, which a test pins;
-//   - the network stays open, as for every capture, less your loopback (the production loopback
-//     ruling, with no port listed: a capture talks to no yolo service).
+//   - the network stays open, as for every capture, your loopback included (OQ-MM7, MMP-D14: the
+//     deny-default profile allows the whole loopback).
 //
 // NOT YET MEASURED: that an installer gets through it. The deny-default profile was measured on a
 // Mac for a session (seatbeltdeny.go's header); an installer reads and writes where an agent may
@@ -275,11 +277,11 @@ const captureStoreDenyID = "capture-store-deny"
 // SeatbeltSelfCaptureProfile is the run-as-you install capture's profile: DenyDefaultProfile over
 // the staging tree, homes.Machine and homes.Shared granted nowhere and denied by name last. user
 // is the invoking user, named in the header comment only; userTmp is their DARWIN_USER_TEMP_DIR,
-// physical, or "".
+// physical, or ""; sharedTmp is the `macos_user_shared_tmp` hatch, which grants the shared /tmp.
 //
 // An empty stagingRoot renders no writable root but the temp dirs: the fail-closed direction, as
 // for SeatbeltCaptureProfile.
-func SeatbeltSelfCaptureProfile(stagingRoot string, homes Homes, user, userTmp string) string {
+func SeatbeltSelfCaptureProfile(stagingRoot string, homes Homes, user, userTmp string, sharedTmp bool) string {
 	p := ProfileParams{
 		Workspace:         stagingRoot,
 		HostHome:          homes.Real,
@@ -287,6 +289,9 @@ func SeatbeltSelfCaptureProfile(stagingRoot string, homes Homes, user, userTmp s
 		StagingRoot:       stateDir,
 		RunAsUser:         user,
 	}.WithProductionRulings()
+	if sharedTmp {
+		p.Tmp = TmpShared // the user's hatch (OQ-MM8, MMP-D18)
+	}
 	return DenyDefaultProfile(p) + captureStoreDeny(homes)
 }
 
@@ -308,8 +313,8 @@ func captureStoreDeny(homes Homes) string {
 // SeatbeltSealedSelfCaptureProfile is a fork's build's profile in the run-as-you mode: the
 // run-as-you capture profile, then the seal's denies. The production ruling denies the loopback
 // already; the seal repeats it and closes the nix daemon, which the deny-default profile opens.
-func SeatbeltSealedSelfCaptureProfile(stagingRoot string, homes Homes, user, userTmp string) string {
-	return SeatbeltSelfCaptureProfile(stagingRoot, homes, user, userTmp) + sealDenies()
+func SeatbeltSealedSelfCaptureProfile(stagingRoot string, homes Homes, user, userTmp string, sharedTmp bool) string {
+	return SeatbeltSelfCaptureProfile(stagingRoot, homes, user, userTmp, sharedTmp) + sealDenies()
 }
 
 // selfCaptureProfileProblems checks a run-as-you capture profile: deny-by-default, never `(allow

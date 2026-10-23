@@ -201,6 +201,7 @@ PY
 chmod 0644 "$PROCARGS_PY"
 
 LISTENER_PID=""
+G7_PID=""
 CLAUDE_LABEL="yolo.prototype.$NONCE"
 
 if [ "$MODE" = account ]; then
@@ -221,6 +222,7 @@ fi
 # shellcheck disable=SC2329  # invoked by the EXIT trap
 cleanup() {
 	[ -n "$LISTENER_PID" ] && kill "$LISTENER_PID" 2>/dev/null
+	[ -n "$G7_PID" ] && kill "$G7_PID" 2>/dev/null
 	kill "$DECOY_PID" 2>/dev/null
 	[ "$KC_ADDED" = 1 ] && security delete-generic-password -s "$KC_SERVICE" -a yolo "$LOGIN_KC" >/dev/null 2>&1
 	launchctl remove "$CLAUDE_LABEL" 2>/dev/null
@@ -654,6 +656,33 @@ expect_allow g1 "bind and connect a unix socket under \$TMPDIR (MMP-D16)" \
 	"set -- \"\$TMPDIR\"g1.sock; $UNIX_PROBE"
 expect_allow g2 "bind and connect a unix socket in the workspace by a relative path" \
 	"set -- .g2.sock; $UNIX_PROBE"
+# g7, g8: a symlink in the workspace to a socket OUTSIDE the roots must not connect (MMP-D16):
+# Seatbelt matches the socket's resolved path, so the link does not carry the unix-socket allow
+# out of the workspace. g7 uses a listener of this run's beside the workspace; g8 a real
+# container socket (colima, Docker Desktop) when this Mac has one.
+CONNECT_PROBE='/usr/bin/perl -MIO::Socket::UNIX -e '"'"'IO::Socket::UNIX->new(Peer => $ARGV[0]) or die "connect: $!\n"; print "connected\n"'"'"' "$1"'
+G7_SOCK="$ROOT/outside-g7.sock"
+/usr/bin/perl -MIO::Socket::UNIX -e '$l = IO::Socket::UNIX->new(Local => $ARGV[0], Listen => 5) or die "bind: $!\n"; while (my $c = $l->accept) { close $c }' "$G7_SOCK" &
+G7_PID=$!
+sleep 1
+ln -sfn "$G7_SOCK" "$WORKSPACE/g7.sock"
+expect_deny g7 "a workspace symlink to a socket outside the roots does not connect ($G7_SOCK)" \
+	"set -- g7.sock; $CONNECT_PROBE" yes
+kill "$G7_PID" 2>/dev/null
+G7_PID=""
+rm -f "$WORKSPACE/g7.sock" "$G7_SOCK"
+G8_SOCK=""
+for s in "$HOST_HOME/.colima/default/docker.sock" "$HOST_HOME/.docker/run/docker.sock"; do
+	[ -S "$s" ] && { G8_SOCK="$s"; break; }
+done
+if [ -n "$G8_SOCK" ]; then
+	ln -sfn "$G8_SOCK" "$WORKSPACE/g8.sock"
+	expect_deny g8 "a workspace symlink to your container socket does not connect ($G8_SOCK)" \
+		"set -- g8.sock; $CONNECT_PROBE" yes
+	rm -f "$WORKSPACE/g8.sock"
+else
+	skip g8 "no colima or Docker Desktop socket on this Mac"
+fi
 if [ -n "$YOLO_BIN" ]; then
 	expect_deny g3 "the session's liveness lock is refused ($SERVICES_DIR/.session.lock)" \
 		"cat '$SERVICES_DIR/.session.lock'" yes

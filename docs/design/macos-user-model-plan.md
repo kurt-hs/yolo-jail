@@ -105,7 +105,9 @@ These are mechanism choices made under the rulings above, not owner rulings. The
 | <a id="MMP-D15"></a>MMP-D15 | **This session's host-services dir gets its own read-only grant, by exact path, and stays in `/private/tmp`.** `ProfileParams.ServicesDirs` renders `services-dir-read-allow`: `file-read-metadata` on the parent (a stat, never a listing) and `file-read*` on the dir. `services-lock-deny` then denies `.session.lock` and `.session.lock.pending`, because a read-only descriptor can `flock` and would hold the session alive. The dirs come from the session env's and the jail-daemon env's `YOLO_SERVICE_*_ENDPOINT` values, and only a name `paths.IsHostServicesSessionDirName` accepts is granted. The cleanup glob is unchanged. | Moving the dir would touch prune, `yolo ps`, the keeper record, the session listing and the front-socket hashing, for no gain over an exact grant. Under the sandbox's writable HOME or TMPDIR the agent could forge its own endpoints. Reading the dirs from the env covers a keeper join and a dry run's placeholder with no new crossing. [MMP-D18](#MMP-D18) has since closed the shared `/tmp`, so the grant is what remains. |
 | <a id="MMP-D16"></a>MMP-D16 | **Unix sockets bind and connect only under the sandbox's own writable roots**: the workspace, HOME and the sandbox TMPDIR, id `unix-socket-allow`, as `(local unix-socket (subpath …))` for `network-bind` and `(remote unix-socket (subpath …))` for `network-outbound`. That is Codex's form; Safehouse has no unix-socket allow. There is no `network-inbound` for unix sockets. The closing launchd-listener, ssh-agent and container-socket denies follow it and still win. | tmux, overmind and Python's multiprocessing put their sockets under TMPDIR or the workspace. A connect is `network-outbound`, so without this the agent cannot reach a socket it made itself. |
 | <a id="MMP-D17"></a>MMP-D17 | **A self-mode session gets its own TMPDIR**, `<DARWIN_USER_TEMP_DIR>/yolo-<first 8 of the session id>` (`SessionTmpDir`, new `internal/macosuser/sessiontmp.go`). A host stage step makes it with `mkdir -m 0700`, without `-p`, so an existing path fails the stage. Teardown removes it with `rm -rf`, and macOS sweeps whatever a killed launch leaves in that dir. The session env file sets `TMPDIR`, `TMUX_TMPDIR=$TMPDIR` and `TMPPREFIX=$TMPDIR/zsh`. A TMPDIR an env layer composed is kept, and tmux and zsh follow it. `OVERMIND_SOCKET` was then set only on containers; [MMP-D18](#MMP-D18) adds `$TMPDIR/overmind.sock` in self mode. Account mode is unchanged. | Before this the launch's `env -i` left TMPDIR unset, so tools fell back to the shared `/tmp`. A short path keeps tmux's and Python's sockets under the 104-byte `sun_path` cap, and Python falls back to `/tmp` past it. The dir is the profile's `SandboxTmp`, so it is writable and a unix-socket root. |
-| <a id="MMP-D18"></a>MMP-D18 | **The shared `/tmp` is closed in the deny-by-default profile, with a user-scope hatch** ([OQ-MM8](macos-user-model.md#OQ-MM8), ruled 2026-10-23 as a trial). `productionTmp = TmpPrivate`: no rule grants `/private/tmp` or `/tmp`, so `(deny default)` closes both, read and write; there is no named `/tmp` deny, which would also beat the services-dir grant ([MMP-D15](#MMP-D15)). The running user's `DARWIN_USER_TEMP_DIR` gets its own always-on grant, id `user-tmp-allow`, and the session TMPDIR ([MMP-D17](#MMP-D17)) lives under it at about 65 bytes, not in `/tmp`. The hatch is the boolean `macos_user_shared_tmp`, read only from the user config (`config.MacosUserSharedTmp`; a workspace value is refused by `validateMacosUserSharedTmp`) and handed from one read to the profile (`macosuser.Options.SharedTmp` to `PlanSession.SharedTmp`, which selects `TmpShared`, id `shared-tmp-allow`) and to the briefing (`run.Options.MacosUserSharedTmp`). A launch with the hatch prints one disclosure line. A self-mode briefing without the hatch gains one line saying `/tmp` is closed and to use `$TMPDIR` (`macosUserTmpLimit`). The self-mode session env also sets `OVERMIND_SOCKET=$TMPDIR/overmind.sock` unless a layer set it. Account mode still runs the old profile and is unchanged. | The ruling. A user-scope key, like `macos_user_mode`, keeps a cloned workspace from reopening `/tmp` for itself. Seatbelt's refusal is a bare "Operation not permitted", so the briefing line is the agent's only next step. overmind's default socket is in the workspace, but a user who sets it under `/tmp` would now fail. A TMPDIR an env layer composes as `/tmp` would now be unwritable; nothing shipped does that. |
+| <a id="MMP-D18"></a>MMP-D18 | **The shared `/tmp` is closed in the deny-by-default profile, with a user-scope hatch** ([OQ-MM8](macos-user-model.md#OQ-MM8), ruled 2026-10-23 as a trial). `productionTmp = TmpPrivate`: no rule grants `/private/tmp` or `/tmp`, so `(deny default)` closes both, read and write; there is no named `/tmp` deny, which would also beat the services-dir grant ([MMP-D15](#MMP-D15)). The running user's `DARWIN_USER_TEMP_DIR` gets its own always-on grant, id `user-tmp-allow`, and the session TMPDIR ([MMP-D17](#MMP-D17)) lives under it at about 68 bytes (measured: the physical user temp dir is about 54), not in `/tmp`. The hatch is the boolean `macos_user_shared_tmp`, read only from the user config (`config.MacosUserSharedTmp`; a workspace value is refused by `validateMacosUserSharedTmp`) and handed from one read to the profile (`macosuser.Options.SharedTmp` to `PlanSession.SharedTmp`, which selects `TmpShared`, id `shared-tmp-allow`) and to the briefing (`run.Options.MacosUserSharedTmp`). A launch with the hatch prints one disclosure line. A self-mode briefing without the hatch gains one line saying `/tmp` is closed and to use `$TMPDIR` (`macosUserTmpLimit`). The self-mode session env also sets `OVERMIND_SOCKET=$TMPDIR/overmind.sock` unless a layer set it. Account mode still runs the old profile and is unchanged. | The ruling. A user-scope key, like `macos_user_mode`, keeps a cloned workspace from reopening `/tmp` for itself. Seatbelt's refusal is a bare "Operation not permitted", so the briefing line is the agent's only next step. overmind's default socket is in the workspace, but a user who sets it under `/tmp` would now fail. A TMPDIR an env layer composes outside the granted roots is refused ([MMP-D20](#MMP-D20)). |
+| <a id="MMP-D20"></a>MMP-D20 | **A TMPDIR the user's env composes outside what the run-as-you profile grants refuses the launch**, naming the fix: remove the override, point it inside the workspace, or, for `/tmp`, set the hatch (`composedTmpdirProblem`, read by `PlanInvariants`). The granted roots are the workspace, the agent's home, the user's `DARWIN_USER_TEMP_DIR` (which holds the session's own) and, with the hatch, `/private/tmp`, compared lexically with `/tmp`, `/var` and `/etc` in their `/private` spelling. One inside a root is kept, and tmux and zsh follow it. | Granting an arbitrary user path would widen the profile from config; refusing names the one-line fix, and every value that works today inside the workspace keeps working. |
+| <a id="MMP-D21"></a>MMP-D21 | **Run-as-you captures and builds get a TMPDIR of their own, and the self-mode bootstrap is told the session's.** A capture or a fork/dev-override build sets `TMPDIR=<staging tree>/tmp` (`CaptureStagingTmp`), made with the tree and removed with it, in its env file (the driver, the installer, the build line) and its bootstrap's env, over any composed one; both capture profiles take the hatch (`CaptureOptions.SharedTmp`, read by cli). A self-mode launch's bootstrap gets `TMPDIR` too. | All three run under `env -i`, so with no TMPDIR `go build`, `mktemp -d`, installers and the bootstrap's children fell back to the `/tmp` [MMP-D18](#MMP-D18) closed. The staging tree is already the capture profile's one writable root, and a sibling of the home and out dirs, so nothing in it is captured. |
 | <a id="MMP-D19"></a>MMP-D19 | **The per-user cache dir (`<DARWIN_USER_CACHE_DIR>`, the `.../C` beside `.../T`) and `/private/var/tmp` are not granted.** No tool was verified to need either, so both are in [Open items](#open-items) until a Mac run shows one does. | OQ-MM8's instruction: grant them only on a verified need. Each grant is one line in `DenyDefaultProfile` when it comes. |
 
 ## Map
@@ -563,7 +565,6 @@ runs it after landing, as a backstop.
   		DarwinUserTempDir: "/private/var/folders/ab/xyz/T",
   		StagingRoot:       StagingRoot(),
   		MachineDirs:       []string{"/Users/you/.local/share/yolo-jail/macos-user/.cache"},
-  		Loopback:          LoopbackPolicy{Ports: []int{31053}},
   		Tmp:               TmpShared,
   		HostSoftware:      []string{"/opt/homebrew", "/usr/local"},
   	}
@@ -610,17 +611,6 @@ runs it after landing, as a backstop.
   	deny := strings.Index(p, "#seatbelt-test-id:host-secrets-deny#")
   	if allow < 0 || deny < allow {
   		t.Errorf("host-secrets-deny (%d) must follow context-read-allow (%d)", deny, allow)
-  	}
-  }
-
-  func TestDenyDefaultProfileLoopbackPolicy(t *testing.T) {
-  	pp := testProfileParams()
-  	if p := DenyDefaultProfile(pp); !strings.Contains(p, `(deny network-outbound (remote ip "localhost:*"))`) {
-  		t.Error("a denying policy renders no loopback deny")
-  	}
-  	pp.Loopback = LoopbackPolicy{AllowAll: true}
-  	if p := DenyDefaultProfile(pp); strings.Contains(p, `"localhost:*"`) {
-  		t.Error("AllowAll still denies loopback")
   	}
   }
 
@@ -846,25 +836,8 @@ runs it after landing, as a backstop.
 
 ### Slice 7 — loopback ports (after 6; build only if loopback stays denied)
 
-**Superseded.** OQ-MM7 allowed the loopback, so [MMP-D14](#MMP-D14) deleted what this slice built.
-The text below is the slice as planned.
-
-- **Settled:** [MMP-D10](#MMP-D10). Skip this slice entirely if the maintainer rules that loopback is
-  allowed on macOS.
-- **Tests first.** New `internal/macosuser/loopbackports_test.go`, with
-  `TestLoopbackPortsReadsEveryPublishedEndpoint`. Publish two endpoints with `svcendpoint.Publish`
-  into temp files, with `HostPort` set to `127.0.0.1:40001` and `127.0.0.1:40002`. Put their paths
-  under `YOLO_SERVICE_A_ENDPOINT` and `YOLO_SERVICE_B_ENDPOINT` in a sandbox env, add served ports
-  `{8214: 51000}` and a `forward_host_ports` entry `"11434:11435"`, and assert
-  `LoopbackPorts(...) == []int{11434, 40001, 40002, 51000}` (sorted, unique). Add
-  `TestLoopbackPortsNamesAMissingEndpoint`: a variable naming a missing file returns an error that
-  contains the variable's name.
-  Red: `go test -short -run LoopbackPorts ./internal/macosuser`.
-- **Change:** `loopbackports.go`. `BuildRunPlanWithStages`' self branch fills
-  `ProfileParams.Loopback.Ports`. A missing endpoint becomes a plan problem naming the service and
-  "run `yolo` again" (the [Traps](#traps) entry on ephemeral ports).
-- **Gates:** red green; `go test -short ./internal/macosuser`; `just format`.
-- **Commit:** `feat(macos-user): allow yolo's own loopback ports through the profile`
+**Superseded.** OQ-MM7 allowed the loopback, so [MMP-D14](#MMP-D14) deleted what this slice built,
+and its plan with it; git history keeps both.
 
 ### Slice 8 — package caches shared in self mode (after 6)
 
@@ -976,8 +949,8 @@ The text below is the slice as planned.
      ran at once. A `pip download` inside wrote into the host's `~/Library/Caches/pip`, and each
      slice 8 row was confirmed or dropped.
 - **Change:**
-  - set `productionLoopback`, `productionTmp` and `productionHostSoftware` to the rulings (if
-    loopback is allowed, revert slice 7's wiring, or never land it);
+  - set `productionHostSoftware` to its ruling (loopback and `/tmp` are already set:
+    [MMP-D14](#MMP-D14), [MMP-D18](#MMP-D18));
   - make `MacosUserMode`'s absent value resolve to `self` in `commands.go`;
   - flip the setupcensus cell and `config_ref.txt` default;
   - update the docs under [Ships with](#ships-with).

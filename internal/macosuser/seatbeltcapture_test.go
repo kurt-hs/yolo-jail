@@ -221,7 +221,7 @@ func TestSelfModeCaptureProfileDeniesTheMachineRootAndSharedDirs(t *testing.T) {
 	if h.Machine == "" || h.Shared == "" || h.Machine == SandboxHome() || h.Shared == SandboxHome() {
 		t.Fatalf("the fixture's homes are not the run-as-you ones: %+v", h)
 	}
-	p := SeatbeltSelfCaptureProfile(testStagingRoot, h, "you", "/private/var/folders/ab/xyz/T/")
+	p := SeatbeltSelfCaptureProfile(testStagingRoot, h, "you", "/private/var/folders/ab/xyz/T/", false)
 	if !contains(p, "\n(deny default)\n") || contains(p, "(allow default)") {
 		t.Fatalf("the run-as-you capture profile is not deny-by-default:\n%s", p)
 	}
@@ -269,7 +269,7 @@ func TestSelfModeCaptureProfileProblemsCatchAReachableStore(t *testing.T) {
 		"account profile":  {SeatbeltCaptureProfile(testStagingRoot), h, "deny-by-default"},
 		"store as a grant": {launchLike, h, "before its closing deny"},
 		"no closing deny":  {DenyDefaultProfile(ProfileParams{Workspace: testStagingRoot}.WithProductionRulings()), h, "last"},
-		"no machine root":  {SeatbeltSelfCaptureProfile(testStagingRoot, h, "you", ""), Homes{Shared: h.Shared}, "no absolute machine root"},
+		"no machine root":  {SeatbeltSelfCaptureProfile(testStagingRoot, h, "you", "", false), Homes{Shared: h.Shared}, "no absolute machine root"},
 	} {
 		problems := strings.Join(selfCaptureProfileProblems(tc.profile, tc.homes), "\n")
 		if !strings.Contains(problems, tc.want) {
@@ -282,7 +282,7 @@ func TestSelfModeCaptureProfileProblemsCatchAReachableStore(t *testing.T) {
 // nix-daemon allow, which it narrows, and the store deny too.
 func TestSealedSelfCaptureProfileClosesTheNixDaemonAfterItsAllow(t *testing.T) {
 	h := testSelfHomes()
-	p := SeatbeltSealedSelfCaptureProfile(testStagingRoot, h, "you", "")
+	p := SeatbeltSealedSelfCaptureProfile(testStagingRoot, h, "you", "", false)
 	if problems := append(sealedProfileProblems(p), selfCaptureProfileProblems(p, h)...); len(problems) > 0 {
 		t.Errorf("the sealed run-as-you profile fails its checks: %v", problems)
 	}
@@ -290,7 +290,7 @@ func TestSealedSelfCaptureProfileClosesTheNixDaemonAfterItsAllow(t *testing.T) {
 		t.Error("the seal's nix deny precedes the nix-daemon allow it must narrow")
 	}
 	// Unsealed, the nix allow stands, and the seal's check says so.
-	if len(sealedProfileProblems(SeatbeltSelfCaptureProfile(testStagingRoot, h, "you", ""))) == 0 {
+	if len(sealedProfileProblems(SeatbeltSelfCaptureProfile(testStagingRoot, h, "you", "", false))) == 0 {
 		t.Error("the unsealed run-as-you capture profile passes the seal check")
 	}
 }

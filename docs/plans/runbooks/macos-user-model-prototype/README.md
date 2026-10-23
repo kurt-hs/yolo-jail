@@ -51,7 +51,7 @@ The checks, keyed to [§6](../../../design/macos-user-model.md#6-what-a-prototyp
 | c1–c4 | A decoy project at `/opt/src/...` (or `/Library/Caches/...` where `/opt` is not writable) is unreadable; `/opt/homebrew` and the nix store are readable. |
 | d1, d3 | A loopback listener of yours is reachable from inside, and so is a loopback server the agent starts itself: OQ-MM7 (ruled 2026-10-23) allows the whole loopback. |
 | e1–e2 | With Full Disk Access granted to the terminal, profile-denied files stay unreadable. |
-| g1–g6 | A unix socket binds and connects under `$TMPDIR` and in the workspace. With `--profile-from-yolo`: the session's host-services liveness lock is refused; with the shared `/tmp` closed, the session's own endpoint file is readable, a sibling session's is not, and `/private/tmp` cannot be listed. |
+| g1–g8 | A unix socket binds and connects under `$TMPDIR` and in the workspace, and a workspace symlink to a socket outside those roots (one of the script's, g7; your colima or Docker Desktop socket when there is one, g8) does not connect. With `--profile-from-yolo`: the session's host-services liveness lock is refused; with the shared `/tmp` closed, the session's own endpoint file is readable, a sibling session's is not, and `/private/tmp` cannot be listed. |
 | f1 | Optional: Claude Code installs into the sandbox's own home and `claude --version` runs. |
 
 b14 was an `INFO` line until OQ-MM8 closed the shared `/tmp`: the first run read that file in self
@@ -130,7 +130,7 @@ PASS b1   read the decoy secret in your home
 - **`PASS`** means the expected thing happened: an allow worked, or a deny held.
 - **`FAIL` on an a (other than a3t), c3–c4, d or g1–g2, g4 check** means the allow list is too narrow: a tool broke. That is
   expected on a first run, and it is a fix to [`profile.sb`](./profile.sb).
-- **`FAIL` on a3t, a b, c1–c2, e, g3 or g5–g6 check** means something the model must deny got through. That is
+- **`FAIL` on a3t, a b, c1–c2, e, g3 or g5–g8 check** means something the model must deny got through. That is
   the finding that matters most.
 - **`SKIP`** means the check could not run here (no Homebrew, no nix, no Command Line Tools, empty
   clipboard), and says what would let it run.

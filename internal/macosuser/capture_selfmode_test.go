@@ -122,7 +122,7 @@ func TestSelfModeCapturePlanInvariantsRefuseEachAccountPiece(t *testing.T) {
 		"env grant":     {func(p *CapturePlan) { p.EnvFileGrantCommands = account.EnvFileGrantCommands }, "grants access"},
 		"no home": {func(p *CapturePlan) {
 			p.RunAs.Homes = Homes{Home: p.StagingHome}
-			p.Seatbelt = SeatbeltSelfCaptureProfile(p.StagingRoot, p.RunAs.Homes, "you", "")
+			p.Seatbelt = SeatbeltSelfCaptureProfile(p.StagingRoot, p.RunAs.Homes, "you", "", false)
 		}, "no absolute home for you"},
 	} {
 		p := base
@@ -295,5 +295,55 @@ func TestSelfModeCaptureDryRunSaysItRunsAsYou(t *testing.T) {
 	if !strings.Contains(out, "as you, inside the capture profile") || strings.Contains(out, "sudo rule") ||
 		!strings.Contains(out, "all capture plan invariants hold") {
 		t.Errorf("the run-as-you dry run does not say so:\n%s", out)
+	}
+}
+
+// MMP-D21: a run-as-you capture and a run-as-you build each get a TMPDIR of their own inside the
+// staging tree, which their profile makes writable, because that profile closes the shared /tmp
+// their `env -i` children would otherwise fall back to. It reaches the driver (the env file) and
+// the bootstrap (its env -i list), the prepare step makes it, and the account mode sets none.
+// The user's hatch reaches both profiles. Deleting the TMPDIR call site, the bootstrap relay, the
+// leaf, or the hatch's plumbing fails this.
+func TestSelfModeCaptureAndBuildGetTheirOwnTmpdir(t *testing.T) {
+	capOpts := testSelfCaptureOptions()
+	buildOpts := testSelfForkBuildOptions()
+	plans := map[string]CapturePlan{
+		"capture": BuildCapturePlan(capOpts),
+		"build":   BuildForkBuildPlan(buildOpts).CapturePlan,
+	}
+	for name, plan := range plans {
+		tmp := CaptureStagingTmp(plan.StagingRoot)
+		if v, ok := sandboxEnvFileValue(plan.EnvFileContent, "TMPDIR"); !ok || v != tmp {
+			t.Errorf("%s: the env file sets TMPDIR=%q (present %v), want %q", name, v, ok, tmp)
+		}
+		if !containsArg(plan.BootstrapArgv, "TMPDIR="+tmp) {
+			t.Errorf("%s: the bootstrap is not given TMPDIR=%s: %v", name, tmp, plan.BootstrapArgv)
+		}
+		if !slices.ContainsFunc(plan.PrepareCommands, func(c []string) bool {
+			return slices.Equal(c, []string{mkdirBin, "-p", tmp})
+		}) {
+			t.Errorf("%s: no prepare command makes %s: %v", name, tmp, plan.PrepareCommands)
+		}
+		if !strings.HasPrefix(tmp, plan.StagingRoot+"/") ||
+			!strings.Contains(plan.Seatbelt, `(subpath "`+plan.StagingRoot+`")`) {
+			t.Errorf("%s: the TMPDIR %s is not inside the profile's writable staging tree", name, tmp)
+		}
+		if strings.Contains(plan.Seatbelt, "#seatbelt-test-id:"+SharedTmpAllowID+"#") {
+			t.Errorf("%s: the shared /tmp is open with no hatch", name)
+		}
+	}
+	capOpts.SharedTmp, buildOpts.SharedTmp = true, true
+	for name, plan := range map[string]CapturePlan{
+		"capture": BuildCapturePlan(capOpts),
+		"build":   BuildForkBuildPlan(buildOpts).CapturePlan,
+	} {
+		if !strings.Contains(plan.Seatbelt, "#seatbelt-test-id:"+SharedTmpAllowID+"#") {
+			t.Errorf("%s: the hatch did not open the shared /tmp", name)
+		}
+	}
+	account := BuildCapturePlan(testCaptureOptions())
+	if _, ok := sandboxEnvFileValue(account.EnvFileContent, "TMPDIR"); ok ||
+		slices.ContainsFunc(account.BootstrapArgv, func(w string) bool { return strings.HasPrefix(w, "TMPDIR=") }) {
+		t.Error("the account-mode capture was given a TMPDIR")
 	}
 }

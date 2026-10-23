@@ -910,6 +910,7 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 		who := macosuser.CaptureOptions{Mode: mode}
 		if mode == macosuser.ModeSelf {
 			who.HostHome, who.HostUser = macosUserHostIdentity()
+			who.SharedTmp = config.MacosUserSharedTmp() // the shared-/tmp hatch, as a launch reads it
 		}
 		deps := macosuser.RealDeps(nil, nil, color)
 		deps.Out = out
@@ -932,7 +933,7 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 			return macForkBuildAct(deps, macosuser.ForkBuildOptions{
 				CaptureOptions: macosuser.CaptureOptions{Bin: bin, Config: cfg, HostPackRoot: packRoot,
 					SandboxEnv: packEnv, BlockedTools: blocked,
-					Mode: who.Mode, HostHome: who.HostHome, HostUser: who.HostUser},
+					Mode: who.Mode, HostHome: who.HostHome, HostUser: who.HostUser, SharedTmp: who.SharedTmp},
 				BuildID: seal.id, Build: seal.build, Source: filepath.Join(workspace, forkSourceLeaf),
 				RepoRoot: repoRoot, Toolchain: forkBuildToolchainHead(), TreeDir: sealTreeDir(seal),
 				LineStatusDest: filepath.Join(workspace, capture.InstallerStatusLeaf),
@@ -942,6 +943,7 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 			Bin: bin, Config: cfg, HostPackRoot: packRoot, SandboxEnv: packEnv,
 			BlockedTools: blocked,
 			Mode:         who.Mode, HostHome: who.HostHome, HostUser: who.HostUser,
+			SharedTmp: who.SharedTmp,
 		}, filepath.Join(workspace, captureOutLeaf), dryRun)
 	}
 	rc := captureRunPipeline(opts)
