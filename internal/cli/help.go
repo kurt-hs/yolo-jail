@@ -62,6 +62,7 @@ var commandHelp = []struct{ name, blurb string }{
 	{"gh", "In a jail: run gh through the github-broker, with the host's login (read-only for now)"},
 	{"audit", "List every brokered call (e.g. the jail's gh commands) and what became of it"},
 	{"approve", "Host request/grant store decisions (broker writes not wired yet)"},
+	{"host-run", "Run one command on the host for this workspace's agent, and deliver its output to the jail ('wait', 'show' in the jail)"},
 	{"init", "Scaffold yolo-jail.jsonc in the current workspace"},
 	{"init-user-config", "Write user-level defaults at ~/.config/yolo-jail/config.jsonc"},
 	{"config", "Inspect generated config: 'config ls' (every composed file), 'render', 'diff', 'reset'"},

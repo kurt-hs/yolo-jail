@@ -105,6 +105,7 @@ var subcommandUsage = map[string]subUsage{
 	"update":      {text: updateUsage, valueFlags: []string{"--from"}},
 	"approve":     {text: approveUsage, valueFlags: []string{"--for", "--revoke"}},
 	"gh":          {text: ghUsage},
+	"host-run":    {text: hostRunUsage, valueFlags: []string{"-C", "--name", "--timeout"}},
 	"audit":       {text: auditUsage, valueFlags: []string{"--since", "--service", "--jail", "--workspace", "--set", "--grant"}},
 	"loopholes":   {text: loopholesUsage, valueFlags: []string{"--format"}},
 	"host-daemon": {text: hostDaemonUsage, valueFlags: []string{"-n", "--lines", "--format"}},

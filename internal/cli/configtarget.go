@@ -279,7 +279,15 @@ func resolveWorkspaceRoot() (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	for dir := wd; ; {
+	return resolveWorkspaceRootFrom(wd)
+}
+
+// resolveWorkspaceRootFrom is the marker walk from start rather than the cwd, for
+// `yolo host-run`, whose start directory may be its -C (docs/design/host-run-mailbox.md,
+// HX-D36). It has no bare-start fallback, which is the point: workspaceRoot's would deliver a
+// host command's output into whatever directory the terminal happened to be in.
+func resolveWorkspaceRootFrom(start string) (string, bool) {
+	for dir := start; ; {
 		if paths.WorkspaceScopeBreach(dir) != nil {
 			break
 		}

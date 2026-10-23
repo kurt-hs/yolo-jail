@@ -84,6 +84,10 @@ func Main(argv []string) int {
 	if len(args) >= 1 && args[0] == "gh" {
 		return runGH(args[1:])
 	}
+	// `yolo host-run` too (HX-D15): its host form's terminal shows another program's output.
+	if len(args) >= 1 && args[0] == "host-run" {
+		return hostRunMain(args[1:])
+	}
 
 	if len(args) >= 1 && args[0] == "--version" {
 		// Resolve the repo root the SAME way run/check do (the shared method), so

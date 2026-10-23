@@ -61,6 +61,8 @@ var registry = map[string]func(args []string) int{
 	"gh":      runGHVerb,
 	"audit":   runAudit,
 	"approve": runApprove,
+	// A host command a human runs, delivered to the jail (hostrun.go); Main routes it early too.
+	"host-run": runHostRunVerb,
 }
 
 // valueTakingFlags are the flags whose value is the NEXT argv token rather than being
