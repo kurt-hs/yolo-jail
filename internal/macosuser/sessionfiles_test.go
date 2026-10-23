@@ -716,3 +716,28 @@ func TestNativeSessionPlanWrapsOnlyDeclaringPacks(t *testing.T) {
 		t.Fatal("deleted command wrapper was not detected")
 	}
 }
+
+// A run-as-you plan's private config home is under the launch's own HOME (<ws>/.yolo/home), not
+// the account's, and PlanInvariants must judge it there: measured on a Mac on 2026-10-23, every
+// self-mode launch selecting a session_homes pack (codex) was refused as "not viable".
+func TestNativeSessionSelfModePlanPassesItsInvariants(t *testing.T) {
+	root := t.TempDir()
+	packDir := filepath.Join(root, "tool")
+	if err := os.Mkdir(packDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{"session_homes":[{"dir":".tool/agent","env":"TOOL_AGENT_DIR","shared":["auth.json"]}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ws := "/Users/you/code/alpha"
+	p := BuildRunPlanWithDaemons(ws, provisionCfg(), []string{"codex"},
+		[]string{"codex"}, "/opt/yolo/bin/yolo", root, HomeOverlay{}, HostContext{}, jsonx.NewOrderedMap(),
+		mockDarwin(), nil, openAIAdapterDaemons("/src"), FloorStage{},
+		PlanSession{ID: "0123456789abcdef", Mode: ModeSelf, HostHome: "/Users/you", HostUser: "you"})
+	if p.SessionHomeDir == "" || !strings.HasPrefix(p.SessionHomeDir, ws+"/.yolo/home/") {
+		t.Fatalf("self-mode session home %q is not under the workspace's HOME", p.SessionHomeDir)
+	}
+	if problems := PlanInvariants(p); len(problems) > 0 {
+		t.Fatal(problems)
+	}
+}
