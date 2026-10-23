@@ -783,10 +783,15 @@ environment and the notch is not something it may guess from one:
 It says which on stderr each time it starts the server, and **`sh
 ~/.local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper --check`** prints both finds
 and starts nothing — the browser-presence report, since a `requires` contribution can name one
-binary on PATH and not an app bundle or a set of alternatives. That departs from half of the
-ruling it implements, and is open for the maintainer at
-[`OQ-MP9`](../design/mcp-presets-removal.md#OQ-MP9). With no server it exits 127 and
+binary on PATH and not an app bundle or a set of alternatives. With no server it exits 127 and
 names the step for each notch.
+
+**At boot**, in a jail and on macos-user, the pack's `boot_check` hook runs the same wrapper
+with `--boot-check`: the browser search alone, silent when it finds one and one warning line,
+naming what to install, when it does not
+([`OQ-MP9`](../design/mcp-presets-removal.md#OQ-MP9)). It never stops a launch, since a browser
+installed later is used at the server's next start. yolo runs the check because the pack
+declares it, and knows nothing about browsers.
 
 **What each notch needs**: a container jail has the image's chromium, or the store-delivered one
 on a `YOLO_STORE_PACKAGES=1` launch. macos-user and the host need a Chrome or Chromium the machine

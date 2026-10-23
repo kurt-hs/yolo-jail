@@ -27,7 +27,7 @@ var kinds = map[packdecl.Kind]Entry{
 	packdecl.KindAutonomy: renderedEverywhere("the jail notch's posture folds into the pack's " +
 		"surfaces and launch flags (configure_pack_surfaces, deliver_launch_flags)"),
 	packdecl.KindHook: renderedEverywhere("RunPackHooks runs each named hook inside " +
-		"configure_pack_surfaces"),
+		"configure_pack_surfaces, and run_pack_boot_checks each boot_check after the home overlay"),
 	packdecl.KindModels: renderedEverywhere("each consumer's model list is rendered by " +
 		"configure_pack_surfaces from the provider's one list (surfaceloop.go)"),
 	packdecl.KindRequires: renderedEverywhere("assert_required_bins checks each declared " +

@@ -40,7 +40,7 @@ type Contribution struct {
 	Via     string   `json:"via,omitempty"`     // program: "npm" | "installer" | "source" | "pack"; profile: a service pack name (OQ-WG6)
 	Package string   `json:"package,omitempty"` // program via npm: the npm package
 	URL     string   `json:"url,omitempty"`     // program via installer: the curl-to-shell URL
-	Flags   []string `json:"flags,omitempty"`   // program: extra install flags
+	Flags   []string `json:"flags,omitempty"`   // program: extra install flags; hook boot_check: the check's arguments
 	// `platforms` is a program field too — WHERE THE VENDOR PUBLISHES A BUILD. It is
 	// declared once, in the service block below, because the two kinds ask one question
 	// of one grammar; read its doc there rather than adding a second spelling here.
@@ -2972,7 +2972,8 @@ func (m *Manifest) HookContributions() []Hook {
 	var out []Hook
 	for _, c := range m.Contributions() {
 		if c.Kind == KindHook {
-			out = append(out, Hook{Name: c.Hook, File: c.From, SharedDir: c.At})
+			out = append(out, Hook{Name: c.Hook, File: c.From, SharedDir: c.At,
+				Args: append([]string(nil), c.Flags...)})
 		}
 	}
 	return out
@@ -4503,6 +4504,7 @@ func validateContribution(label string, c Contribution) []string {
 					}
 				}
 			}
+			problems = append(problems, hookFlagsProblems(label, c)...)
 		}
 	case KindAutonomy:
 		if c.Autonomous == nil && c.Guarded == nil {

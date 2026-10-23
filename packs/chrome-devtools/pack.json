@@ -28,6 +28,15 @@
       "from": "bin/chrome-devtools-mcp-wrapper",
       "into": ".local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper"
     },
+    // Once at boot, in a jail and on macos-user, the wrapper's own browser search: one warning
+    // line when it finds no browser, nothing when it does (mcp-presets-removal.md OQ-MP9). Only a
+    // warning: a browser installed after boot is used at the server's next start.
+    {
+      "kind": "hook",
+      "hook": "boot_check",
+      "from": ".local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper",
+      "flags": ["--boot-check"]
+    },
     // The entry every agent's MCP file renders. `~/` is the home of the notch it renders for.
     // Your own `mcp_servers.chrome-devtools` merges over it; `null` there removes it.
     {
