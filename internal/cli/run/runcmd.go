@@ -137,6 +137,10 @@ type Options struct {
 	// (TestTeardownChainSilentWhenOff) start failing on their machine and
 	// nowhere else. goldenOptions pins it false.
 	PerfLoggingConfig func() bool
+	// ShareHostFontsConfig reads the user-scope `share_host_fonts` opt-in (hostfonts.go).
+	// nil => config.ShareHostFonts. A seam for PerfLoggingConfig's reason: a maintainer who
+	// opted in would otherwise see every argv fixture gain a font bind. goldenOptions pins it.
+	ShareHostFontsConfig func() bool
 	// perfLoggingOn is PerfLoggingConfig()'s answer, read ONCE by fillDefaults,
 	// single-threaded, before any span exists — so timingRecording() stays a field
 	// read rather than a read of a file on every call site. Unexported because it
@@ -1107,6 +1111,9 @@ func fillDefaults(o *Options) {
 	}
 	if o.PerfLoggingConfig == nil {
 		o.PerfLoggingConfig = config.PerfLoggingEnabled
+	}
+	if o.ShareHostFontsConfig == nil {
+		o.ShareHostFontsConfig = config.ShareHostFonts
 	}
 	// The persistent opt-in is read HERE, once, single-threaded, before any span
 	// exists — so the gate call sites downstream stay a field read rather than a

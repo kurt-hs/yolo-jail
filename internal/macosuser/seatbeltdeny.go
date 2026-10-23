@@ -101,6 +101,10 @@ type ProfileParams struct {
 	// copy. The directories above them get metadata alone, which lists nothing. Empty reads the
 	// whole root.
 	StagedReads []string
+	// FontReads are the font folders the session's fonts.conf lists beyond the system read
+	// roots, opened read-only (fontsconf.go's userFontsReadAllow): ~/Library/Fonts, and a
+	// MobileAsset folder's real path outside /System/Library.
+	FontReads []string
 	// ServicesDirs are this session's own host-services dirs (internal/cli/run's
 	// servicessession.go), read only, each by its exact path (MMP-D15): the endpoint files the
 	// sandbox is told about live there, and the shared-/tmp allow must not be what reaches them,
@@ -342,6 +346,7 @@ func DenyDefaultProfile(p ProfileParams) string {
 	b.WriteString(contextReadAllow(p.Context))
 	b.WriteString(programOverrideReadAllow(p.Context))
 	b.WriteString(relocationReadAllow(p.Relocations))
+	b.WriteString(userFontsReadAllow(p.FontReads))
 
 	b.WriteString(processBlocks())
 	b.WriteString(serviceBlocks())
@@ -467,7 +472,7 @@ func systemReadBlocks(hostSoftware []string, hostHome string) string {
 		"    (subpath \"/System/Volumes/Preboot\")                               ;; dyld/framework lookups resolve through Preboot (cryptexes) on modern macOS.\n" +
 		"    (subpath \"/Library/Apple\")                                        ;; Apple private frameworks touched by native toolchains.\n" +
 		"    (subpath \"/Library/Frameworks\")                                   ;; Global framework lookup path for language runtimes.\n" +
-		"    (subpath \"/Library/Fonts\")                                        ;; System-wide fonts named by yolo's generated fonts.conf; ~/Library/Fonts stays denied.\n" +
+		"    (subpath \"/Library/Fonts\")                                        ;; System-wide fonts named by yolo's generated fonts.conf; ~/Library/Fonts: the font block.\n" +
 		"    (subpath \"/Library/Filesystems/NetFSPlugins\")                     ;; Path resolution may load NetFS plugins.\n" +
 		"    (subpath \"/Library/Preferences/Logging\")                          ;; Logging stack reads these prefs at process start.\n" +
 		"    (literal \"/Library/Preferences/.GlobalPreferences.plist\")         ;; Locale/time defaults queried by runtimes.\n" +

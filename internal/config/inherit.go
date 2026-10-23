@@ -260,6 +260,10 @@ var inheritCensus = map[string]keyDisposition{
 	// have in here, over programs the jail runs through its own launchers instead. Neither
 	// half of the key has a referent in a container.
 	"host_wrappers": {reason: "enables wrappers on the host's PATH, which a jail has neither of"},
+	// `share_host_fonts`: a grant of the HOST user's font folder. Inherited, a nested launcher
+	// would share the jail's own home's font folder instead, the same words naming a different
+	// object (host_files' class).
+	"share_host_fonts": {reason: "shares the host user's font folder, which a jail's own home is not"},
 	// `host_floor`: which selected packs' programs yolo installs into the HOST's own prefix for
 	// `yolo host` to run. A jail provisions its agents through its own launchers and has no
 	// host prefix, so the key has no referent in a container.

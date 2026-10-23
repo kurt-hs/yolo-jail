@@ -264,6 +264,14 @@ put a certificate bundle holding it and the public roots in the project, and in 
 `SSL_CERT_FILE` is enough for curl, git, Python and the other tools: yolo points their own
 variables at the same file.
 
+**Fonts.** Tools in the sandbox that draw text, such as a PDF or chart renderer, find your Mac's
+fonts in `/System/Library/Fonts` and `/Library/Fonts`, the fonts macOS downloads on demand, and
+any font package in your `packages`. A jail running as you also finds the fonts you installed for
+yourself in `~/Library/Fonts`. For the separate sandbox user, add `"share_host_fonts": true` to
+your user config: the sandbox can then read `~/Library/Fonts`, and every launch says so. The same
+setting shares your fonts, read-only, with a container jail on any host. A project's config cannot
+set it.
+
 **Remove it.**
 
 ```bash

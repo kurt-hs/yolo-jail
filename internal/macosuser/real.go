@@ -304,6 +304,18 @@ func setRandomPasswordReal(user string) bool {
 	return cmd.Run() == nil
 }
 
+// globReal is filepath.Glob, a bad pattern matching nothing.
+func globReal(pattern string) []string {
+	m, _ := filepath.Glob(pattern)
+	return m
+}
+
+// evalSymlinksReal is filepath.EvalSymlinks, ok false on any failure.
+func evalSymlinksReal(p string) (string, bool) {
+	r, err := filepath.EvalSymlinks(p)
+	return r, err == nil
+}
+
 func pathIsDirReal(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && info.IsDir()

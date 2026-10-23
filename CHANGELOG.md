@@ -20,6 +20,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Packs can build their own tools.** A launch, in a jail, on `macos-user` or with `yolo host`, builds a pack's tool from its source once, in a sealed build (for macOS on a Mac), and again only when the source changes; `yolo pack build` builds it ahead of time, and a pack without the source can name a checksum-verified prebuilt download. `programs.overrides` in your user config runs a pack's program from your own checkout instead. See [programs built from a pack's tree](docs/reference/pack-system.md#program-via-pack).
 
+**Your fonts in the jail.** On `macos-user`, tools find the Mac's fonts and your packages' fonts, and a jail running as you finds your own too. Add `"share_host_fonts": true` to your user config to share your font folder read-only with a container jail or the separate sandbox user; each launch names it. See [the macos-user backend](userguide/guides/macos.md#the-macos-user-backend).
+
 ### Fixed
 
 - `yolo host apply` and `yolo host -- <agent>` now remove a file a pack stopped shipping or moved, and say so, instead of leaving the old copy to break launches; a copy from an earlier version is archived, and one you changed is kept and named with the command to remove it. See [the host copy converges](docs/reference/pack-system.md#host-files-converge).

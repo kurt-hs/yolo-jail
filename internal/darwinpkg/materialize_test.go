@@ -31,7 +31,7 @@ func TestProfilePathsFromStdout(t *testing.T) {
 	// pkgconfig dir present → PKG_CONFIG_PATH exposed.
 	yesPkg := func(string) bool { return true }
 	got = ProfilePathsFromStdout("/nix/store/ccc\n", nil, yesPkg)
-	if got == nil || got.Env["PKG_CONFIG_PATH"] != "/nix/store/ccc/lib/pkgconfig" {
+	if got == nil || got.Env["PKG_CONFIG_PATH"] != "/nix/store/ccc/lib/pkgconfig:/nix/store/ccc/share/pkgconfig" {
 		t.Errorf("expected PKG_CONFIG_PATH, got %+v", got)
 	}
 

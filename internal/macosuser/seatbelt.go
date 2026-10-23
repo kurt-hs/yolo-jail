@@ -141,7 +141,7 @@ const bootVolume = "/Volumes/Macintosh HD"
 // It renders no config TARGET outside the workspace: that is read off the workspace on disk,
 // so BuildRunPlan, which reads it (workspaceReadonlyRels), calls seatbeltProfile itself.
 func SeatbeltProfileWithContext(workspace, sandboxHome string, readonlyRels []string, homeReadonly HomeReadonly, ctx []ContextLink, devices []string) string {
-	return seatbeltProfile(workspace, sandboxHome, readonlyRels, nil, homeReadonly, ctx, nil, devices)
+	return seatbeltProfile(workspace, sandboxHome, readonlyRels, nil, homeReadonly, ctx, nil, devices, nil)
 }
 
 // SeatbeltProfileWithRelocations is SeatbeltProfileWithContext plus the user's CACHE RELOCATIONS
@@ -151,13 +151,15 @@ func SeatbeltProfileWithContext(workspace, sandboxHome string, readonlyRels []st
 // (`#seatbelt-test-id:cache-relocation-write-allow#`, `#seatbelt-test-id:cache-relocation-read-allow#`).
 // With none it is byte-identical to SeatbeltProfileWithContext.
 func SeatbeltProfileWithRelocations(workspace, sandboxHome string, readonlyRels []string, homeReadonly HomeReadonly, ctx []ContextLink, relocs []CacheRelocation, devices []string) string {
-	return seatbeltProfile(workspace, sandboxHome, readonlyRels, nil, homeReadonly, ctx, relocs, devices)
+	return seatbeltProfile(workspace, sandboxHome, readonlyRels, nil, homeReadonly, ctx, relocs, devices, nil)
 }
 
 // seatbeltProfile is the one profile builder. readonlyTargets is the absolute half of
 // workspace_readonly's lock, a symlinked config's target outside the workspace
 // (workspaceReadonlyRels), rendered into the same deny form as readonlyRels (readonlyDenies).
-func seatbeltProfile(workspace, sandboxHome string, readonlyRels, readonlyTargets []string, homeReadonly HomeReadonly, ctx []ContextLink, relocs []CacheRelocation, devices []string) string {
+// fontReads are the font folders the session's fonts.conf lists that the /Users read deny would
+// close, your ~/Library/Fonts under share_host_fonts (fontsconf.go), re-opened read-only after it.
+func seatbeltProfile(workspace, sandboxHome string, readonlyRels, readonlyTargets []string, homeReadonly HomeReadonly, ctx []ContextLink, relocs []CacheRelocation, devices []string, fontReads []string) string {
 	if sandboxHome == "" {
 		sandboxHome = SandboxHome()
 	}
@@ -221,6 +223,7 @@ func seatbeltProfile(workspace, sandboxHome string, readonlyRels, readonlyTarget
 		contextReadAllow(ctx) +
 		programOverrideReadAllow(ctx) +
 		relocationReadAllow(relocs) +
+		userFontsReadAllow(fontReads) +
 		"\n" +
 		";; --- Keychains: System.keychain is world-readable (0644) on stock\n" +
 		";;     macOS, so this deny is load-bearing ---\n" +

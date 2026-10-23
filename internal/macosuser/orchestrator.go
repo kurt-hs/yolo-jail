@@ -193,6 +193,10 @@ type Deps struct {
 	// trusts nothing beyond the public roots.
 	ReadSystemKeychain func() (string, error)
 	VerifyCA           func(pem string) bool
+	// Glob and EvalSymlinks are the two host reads the launch's fonts make (fontsconf.go): the
+	// MobileAsset font folders, and a listed folder's real path. nil finds none.
+	Glob         func(pattern string) []string
+	EvalSymlinks func(string) (string, bool)
 	// StartBackground starts argv in the background, in a process group of its own, with
 	// no terminal, and returns its handle: the stop that ends it (idempotent, never nil on
 	// success), a channel closed when it exits, and what it wrote on its own stdout and
@@ -322,6 +326,12 @@ type Options struct {
 	// SharedTmp is the user-scope `macos_user_shared_tmp` hatch (OQ-MM8, MMP-D18), read by cli;
 	// the run-as-you profile then grants the shared /tmp. The account mode ignores it.
 	SharedTmp bool
+	// ShareHostFonts is the user-scope `share_host_fonts` opt-in (OQ-NX9), read by cli: in the
+	// account mode it lists your ~/Library/Fonts in the session's fonts.conf and grants the
+	// sandbox account read on it (fontsconf.go). The run-as-you mode lists it always.
+	ShareHostFonts bool
+	// Fonts is what RunMacosUser composed for fonts (ComposeFonts); not the caller's to set.
+	Fonts FontSetup
 }
 
 // SelfModeDisclosure is the line a run-as-you launch prints first (macos_user_mode "self"): who
@@ -721,7 +731,7 @@ func buildPlan(deps Deps, opts Options, darwin *Darwin) RunPlan {
 		selfExe, opts.HostPackRoot, overlay, opts.HostCtx, env, darwin,
 		opts.BlockedTools, opts.JailDaemons, floors, programs,
 		PlanSession{ID: opts.SessionID, BundleIdentity: opts.BundleIdentity, CATrust: opts.CATrust,
-			Mode: opts.Mode, HostHome: opts.HostHome, HostUser: opts.HostUser,
+			Fonts: opts.Fonts, Mode: opts.Mode, HostHome: opts.HostHome, HostUser: opts.HostUser,
 			DarwinUserTempDir: deps.darwinUserTempDir(opts.Mode), SharedTmp: opts.SharedTmp})
 }
 
@@ -1221,6 +1231,9 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// which variables it set.
 	steps.begin("ca_trust")
 	opts.CATrust = ComposeCATrust(deps, darwin)
+	// AND ITS FONTS (fontsconf.go): the Mac's font folders, and yours in the run-as-you mode or
+	// under share_host_fonts, read here for the same reason.
+	opts.Fonts = ComposeFonts(deps, darwin, opts.HostHome, opts.Mode == ModeSelf, opts.ShareHostFonts)
 
 	steps.begin("build_plan")
 	plan := buildPlan(deps, opts, darwin)
@@ -1236,6 +1249,8 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// A DISCLOSURE, every launch: which certificate authorities the sandbox trusts, and which
 	// variables say so.
 	printCATrust(out, plan.CATrust, plan.EnvFileContent, plan.CABundleFile, plan.CAExtrasFile, plan.CAFollows)
+	// And the fonts it lists, with your font folder named whenever share_host_fonts shares it.
+	printFonts(out, plan.Fonts, plan.FontsConfFile, paths.UserConfigPath())
 	// AND THAT YOUR WHOLE LOOPBACK IS OPEN TO IT (OQ-MM7, MMP-D14), whenever the deny-by-default
 	// profile runs: every service of yours listening there is reachable.
 	if line := loopbackDisclosure(plan); line != "" {
@@ -1388,6 +1403,12 @@ func RunMacosUser(deps Deps, opts Options) int {
 	caOK := installCATrustFiles(deps, out, plan.caTrustFilePlans())
 	caSpan.End()
 	if !caOK {
+		return deps.endingOr(1)
+	}
+	fontsSpan := deps.Perf.Span("macos_user.env_file.fonts_conf")
+	fontsOK := installFontsFiles(deps, out, plan.fontsFilePlans())
+	fontsSpan.End()
+	if !fontsOK {
 		return deps.endingOr(1)
 	}
 
@@ -2060,6 +2081,12 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 		p.print("ca trust:    [dim]composed at launch, from the tool profile's public roots and " +
 			"this Mac's System keychain (a dry run reads neither)[/dim]")
 	}
+	if plan.FontsConfFile != "" {
+		p.printf("fonts:       %s [dim](%s; the Mac's font folders and the tool profile's share/fonts)[/dim]",
+			plan.FontsConfFile, FontconfigFileVar)
+	} else {
+		p.print("fonts:       [dim]composed at launch: a fonts.conf listing the Mac's font folders (a dry run reads none)[/dim]")
+	}
 	// THE GUEST'S JAIL DAEMONS, named even when there are none, on the pack line's rule:
 	// "this launch runs no jail daemon" and "this backend runs none" were the same statement
 	// until OQ-DP8, and a dry run is how a user tells them apart.
@@ -2152,7 +2179,7 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 	for _, cmd := range plan.EnvFileGrantCommands {
 		p.print("  " + shquote.JoinDisplay(cmd))
 	}
-	for _, f := range plan.caTrustFilePlans() {
+	for _, f := range append(plan.caTrustFilePlans(), plan.fontsFilePlans()...) {
 		for _, cmd := range f.dir {
 			p.print("  " + shquote.JoinDisplay(cmd))
 		}
@@ -2399,6 +2426,8 @@ func RealDeps(runProxy func(argv []string) int, materialize func(repoRoot string
 		StartPackTreeReaper: startPackTreeReaperReal,
 		ReadSystemKeychain:  readSystemKeychainReal,
 		VerifyCA:            verifyCAReal,
+		Glob:                globReal,
+		EvalSymlinks:        evalSymlinksReal,
 		SetDiskIOPolicy:     ioprio.SetProcessDiskPolicy,
 		DiskIOPolicy:        ioprio.GetProcessDiskPolicy,
 		HostCPUs:            runtime.NumCPU,

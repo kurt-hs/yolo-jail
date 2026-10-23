@@ -155,3 +155,18 @@ func TestPruneHandsTheGuestPackTreeSweepTheUserMode(t *testing.T) {
 		}
 	}
 }
+
+// TestMacosLaunchPassesShareHostFontsToTheBackend: the user-scope `share_host_fonts` opt-in
+// (OQ-NX9) reaches the backend, which grants the separate account the user's font folder only
+// with it. Fails if the front door stops reading it.
+func TestMacosLaunchPassesShareHostFontsToTheBackend(t *testing.T) {
+	_, backend, called, _ := macosModeLaunch(t, `{"share_host_fonts": true}`)
+	if !called || !backend.ShareHostFonts {
+		t.Errorf("share_host_fonts true: called %v, backend.ShareHostFonts %v; want true", called,
+			backend.ShareHostFonts)
+	}
+	_, backend, _, _ = macosModeLaunch(t, "")
+	if backend.ShareHostFonts {
+		t.Error("no share_host_fonts in the user config, and the backend was told to share fonts")
+	}
+}

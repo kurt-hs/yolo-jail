@@ -602,4 +602,19 @@ var configKeys = map[string]Entry{
 			"the shared /tmp (TmpShared)"),
 		Guide: []string{"`macos_user_shared_tmp`"},
 	},
+	"share_host_fonts": {
+		PodmanLinux: honored("assembleRunCmd binds ~/.local/share/fonts (or $XDG_DATA_HOME/fonts) " +
+			"and ~/.fonts read-only under the jail's ~/.local/share/fonts, each with its disclosure " +
+			"line (run hostfonts.go), read from the user config alone (config.ShareHostFonts)"),
+		PodmanMac: honored("~/Library/Fonts is bound the same way (hostfonts.go); a folder the Podman " +
+			"Machine does not share is skipped with a line rather than refusing the launch; " +
+			"unverified on a Mac"),
+		AppleContainer: honored("~/Library/Fonts is bound the same way (hostfonts.go), refused with a " +
+			"line below the read-only bind floor (roBindsUnsupported); unverified on a Mac"),
+		MacosUser: honoredBy("the separate-account mode lists ~/Library/Fonts in the session's " +
+			"generated fonts.conf, grants _yolojail read on it and opens it in the profile " +
+			"(macosuser fontsconf.go, ComposeFonts); the run-as-you mode reads it always, so the " +
+			"key changes nothing there; unverified on a Mac"),
+		Guide: []string{"`share_host_fonts`"},
+	},
 }
