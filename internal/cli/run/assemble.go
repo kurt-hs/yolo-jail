@@ -91,10 +91,6 @@ type assembleInput struct {
 	// (Options.forkDeliveriesFor, forkbuild.go): the store key its jail materializes, or why there
 	// is none. Emitted beside the store mount as entrypoint.ForkBuildsEnv; nil emits nothing.
 	forkDeliveries map[string]entrypoint.ForkDelivery
-	// programOverrides is this launch's dev-override decisions (Options.programOverridePlans,
-	// programoverrides.go): bound, handed to the jail as entrypoint.ProgramOverridesEnv, and
-	// disclosed where they are bound. nil emits nothing.
-	programOverrides []programOverridePlan
 	// patchedTrees is the host's decision per patched extension for this launch
 	// (Options.patchedTreesWire, patchedtrees.go), emitted as YOLO_PATCHED_TREES; treeDirs is the
 	// per-launch copy the `files` emitter mounts for each one delivered, by extension key.
@@ -394,13 +390,6 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 			if m.rw {
 				out.print(rwMountDisclosure(m, rootful))
 			}
-		}
-		// THE DEV OVERRIDES' checkouts outside the workspace, read-only, with the line naming
-		// which bytes each overridden program runs, printed where the bind is emitted
-		// (programoverrides.go, BG-D10).
-		mountArgs = append(mountArgs, programOverrideBindArgs(in.programOverrides)...)
-		for _, line := range programOverrideLines(programOverridesWire(in.programOverrides)) {
-			out.print(line)
 		}
 	}
 
@@ -1026,12 +1015,6 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 	// can read, so the host decides the entry and hands the jail its key, or why it has none (FP-D8).
 	if wire := entrypoint.ForkBuildsWire(in.forkDeliveries); wire != "" {
 		runCmd = append(runCmd, "-e", entrypoint.ForkBuildsEnv+"="+wire)
-	}
-	// --- DEV OVERRIDES: where each overridden program's checkout is, or why it was refused ---
-	if !in.sealed {
-		if wire := entrypoint.ProgramOverridesWire(programOverridesWire(in.programOverrides)); wire != "" {
-			runCmd = append(runCmd, "-e", entrypoint.ProgramOverridesEnv+"="+wire)
-		}
 	}
 	// --- PATCHED EXTENSIONS: what each one was handed, and whether its agent's launchers stop ---
 	// (patchedtrees.go, docs/reference/pi-extensions.md PPX-D8, PPX-D18).

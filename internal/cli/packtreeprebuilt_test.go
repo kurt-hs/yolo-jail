@@ -91,7 +91,7 @@ func TestTheLaunchSlotFetchesAPrebuiltOnceThenHits(t *testing.T) {
 		t.Error("a prebuilt started a build jail")
 		return 1
 	})
-	pin := packload.PackTreeResolve(f, prebuiltPlatform, true)
+	pin := packload.PackTreeResolve(f, prebuiltPlatform, false)
 	if !pin.Fork.IsPrebuilt() {
 		t.Fatalf("the fixture did not resolve to its prebuilt: %+v", pin)
 	}
@@ -138,7 +138,7 @@ func TestAPrebuiltDigestMismatchStoresNothingAndNamesBothDigests(t *testing.T) {
 	pinned := sha256Hex([]byte("#!/bin/sh\necho the real one\n"))
 	url, _, cache := servePrebuilt(t, served)
 	f := prebuiltFixture(t, url, pinned, false)
-	pin := packload.PackTreeResolve(f, prebuiltPlatform, true)
+	pin := packload.PackTreeResolve(f, prebuiltPlatform, false)
 	key, reason, out := slotOnce(t, pin)
 	if key != "" {
 		t.Fatalf("a mismatched artifact was delivered: %s\n%s", key, out)
@@ -166,7 +166,7 @@ func TestAPresentSourceNeverFetchesThePrebuilt(t *testing.T) {
 	body := []byte("#!/bin/sh\necho prebuilt-x\n")
 	url, hits, _ := servePrebuilt(t, body)
 	f := prebuiltFixture(t, url, sha256Hex(body), true)
-	pin := packload.PackTreeResolve(f, prebuiltPlatform, true)
+	pin := packload.PackTreeResolve(f, prebuiltPlatform, false)
 	if pin.Fork.IsPrebuilt() {
 		t.Fatalf("a present source resolved to the prebuilt: %+v", pin)
 	}

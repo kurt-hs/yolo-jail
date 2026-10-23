@@ -14,7 +14,7 @@ import (
 // (docs/design/pack-buildable-programs.md §9's `yolo host`, Linux row; the plan's Task 9): `yolo host
 // -- <bin>` on the machine the suite runs on builds the program from its pack's own tree in a real
 // sealed build jail, materializes it into yolo's floor, follows an edit to the tree once, builds
-// nothing when the tree has not changed, runs a dev override's checkout in its place, and refuses a
+// nothing when the tree has not changed, builds a dev override's checkout in its place, and refuses a
 // launch whose build fails, naming the build's log and the retry.
 //
 // HERMETIC: packtreeprogram_test.go's fixture shape — a `file://` pack whose tools/x holds a VERSION
@@ -93,27 +93,36 @@ func TestHostFloorBuildsAPackTreeProgramFromItsTree(t *testing.T) {
 		t.Errorf("the launch with no change built or installed again")
 	}
 
-	// 4. A DEV OVERRIDE runs the checkout in place of the pack's build, says so, and serves an edit
-	// there.
-	dev := t.TempDir()
-	devX := filepath.Join(dev, "x")
-	if err := os.WriteFile(devX, []byte("#!/bin/sh\necho dev-1\n"), 0o755); err != nil {
+	// 4. A DEV OVERRIDE builds the checkout in place of the pack's tree, with the pack's own build
+	// line, says so, and builds an edit there at the next launch (OQ-BG3's ruling).
+	dev, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
+	setDev := func(v string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dev, "VERSION"), []byte(v+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setDev("dev1")
 	cfg := filepath.Join(home, ".config", "yolo-jail", "config.jsonc")
 	if err := os.WriteFile(cfg, []byte(`{`+packEntry+`, "programs": {"overrides": {"`+hostPackTreeBin+
 		`": {"path": "`+dev+`"}}}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if r = launch("the launch with an override", hostPackTreeBin); r.rc != 0 || strings.TrimSpace(r.stdout) != "dev-1" ||
-		!strings.Contains(r.stderr, hostPackTreeBin+": dev override — runs "+devX) {
-		t.Fatalf("the launch with an override did not run the checkout and say so")
+	named := hostPackTreeBin + ": built from your checkout " + dev
+	if r = launch("the launch with an override", hostPackTreeBin); r.rc != 0 || strings.TrimSpace(r.stdout) != "x-dev1" ||
+		!strings.Contains(r.stderr, named) {
+		t.Fatalf("the launch with an override did not build the checkout and say so (want x-dev1 and %q)", named)
 	}
-	if err := os.WriteFile(devX, []byte("#!/bin/sh\necho dev-2\n"), 0o755); err != nil {
-		t.Fatal(err)
+	if r = launch("the launch with an unchanged checkout", hostPackTreeBin); r.rc != 0 || strings.TrimSpace(r.stdout) != "x-dev1" ||
+		strings.Contains(r.stderr, "no build of") {
+		t.Errorf("the launch with an unchanged checkout built again")
 	}
-	if r = launch("the launch after an edit in the checkout", hostPackTreeBin); r.rc != 0 || strings.TrimSpace(r.stdout) != "dev-2" {
-		t.Errorf("the override did not serve the checkout's edit")
+	setDev("dev2")
+	if r = launch("the launch after an edit in the checkout", hostPackTreeBin); r.rc != 0 || strings.TrimSpace(r.stdout) != "x-dev2" {
+		t.Errorf("the override did not build the checkout's edit at the next launch")
 	}
 
 	// 5. A BROKEN BUILD refuses a launch of another command through the readiness act, naming the

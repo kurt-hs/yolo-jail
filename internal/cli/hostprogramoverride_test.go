@@ -2,47 +2,33 @@ package cli
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// `yolo host` APPLIES A DEV OVERRIDE OF ANY PROGRAM (docs/design/pack-buildable-programs.md §5,
-// BG-D8; the plan's Task 9), an npm agent's included: `yolo host --` and `yolo host env` say which file
-// runs, in the jail's words, and the launch execs the floor's entry for it, which runs that file. An
-// override naming no selected program says nothing. Red if the line leaves selectionLines.
-func TestYoloHostAppliesAProgramOverrideOfAnNpmAgent(t *testing.T) {
-	// Resolved where it is minted: on macOS t.TempDir() is under the /var -> /private/var link, and
-	// the floor records the override's resolved path.
-	ws, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	file := filepath.Join(ws, "cli.js")
-	writeFile(t, file, "#!/bin/sh\necho dev\n")
-	if err := os.Chmod(file, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	line := "claude: dev override — runs " + file + " (programs.overrides in ~/.config/yolo-jail/config.jsonc)"
-	hostGateHome(t, `{"packs": ["claude"], "programs": {"overrides": {"claude": {"path": "`+ws+`", "run": "cli.js"}}}}`, nil)
+// `yolo host` REFUSES A DEV OVERRIDE OF A PROGRAM NO PACK BUILDS FROM ITS TREE
+// (docs/design/pack-buildable-programs.md §5, BG-D19): an override builds its checkout in place of a
+// pack's tree, so one naming an npm agent can do nothing, and the refusal names the next step — a fork
+// pack. Nothing is exec'd. An override naming no selected program is not this refusal. Red if the
+// NonPackTreeOverrideLines check leaves hostMain.
+func TestYoloHostRefusesAProgramOverrideOfAnNpmAgent(t *testing.T) {
+	ws := t.TempDir()
+	hostGateHome(t, `{"packs": ["claude"], "programs": {"overrides": {"claude": {"path": "`+ws+`"}}}}`, nil)
 	got := captureHostExec(t)
 	var out, errw bytes.Buffer
-	if rc := hostMain([]string{"--", "claude"}, &out, &errw, false, nil); rc != 0 || !got.execed ||
-		!strings.Contains(errw.String(), "yolo host: "+line) || strings.Contains(errw.String(), "not applied") {
-		t.Errorf("yolo host -- claude with an override: rc=%d execed=%v, want the line %q\n%s", rc, got.execed, line, errw.String())
+	rc := hostMain([]string{"--", "claude"}, &out, &errw, false, nil)
+	if rc == 0 || got.execed {
+		t.Fatalf("yolo host -- claude with an override of an npm agent: rc=%d execed=%v, want a refusal\n%s",
+			rc, got.execed, errw.String())
 	}
-	if rec := floorRecord(t, "claude"); rec.Via != "override" || rec.Entry != file {
-		t.Errorf("the floor's claude is %+v, want the override's file", rec)
-	}
-	var envOut, envErr bytes.Buffer
-	if rc := hostMain([]string{"env", "--agent", "claude"}, &envOut, &envErr, false, nil); rc != 0 ||
-		!strings.Contains(envErr.String(), line) {
-		t.Errorf("yolo host env with an override: rc=%d, want the line\n%s", rc, envErr.String())
+	for _, want := range []string{"yolo host: refusing to launch", "programs.overrides.claude", `"via": "source"`, `"fork_of"`} {
+		if !strings.Contains(errw.String(), want) {
+			t.Errorf("the refusal does not name %q:\n%s", want, errw.String())
+		}
 	}
 
-	hostGateHome(t, `{"packs": ["claude"], "programs": {"overrides": {"nosuchbin": {"path": "`+ws+`", "run": "x"}}}}`, nil)
-	if _, _, errw := hostExecRun(t, "claude"); strings.Contains(errw, "programs.overrides") {
-		t.Errorf("an override naming no selected program was named:\n%s", errw)
+	hostGateHome(t, `{"packs": ["claude"], "programs": {"overrides": {"nosuchbin": {"path": "`+ws+`"}}}}`, nil)
+	if _, _, errw := hostExecRun(t, "claude"); strings.Contains(errw, "refusing to launch") {
+		t.Errorf("an override naming no selected program refused the launch:\n%s", errw)
 	}
 }

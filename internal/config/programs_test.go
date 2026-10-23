@@ -140,15 +140,14 @@ func anyContains(list []string, sub string) bool {
 // programs.overrides (docs/design/pack-buildable-programs.md §5, BG-D8) is the user's dev
 // checkout for one program. It shares the autoprune key's scope rule and its failure rule:
 // a user file this cannot read applies NO override, and a workspace file cannot set one.
-// Its launch wiring is a later slice; these tests pin the reader and the validator.
+// These tests pin the reader and the validator; the launch's use is run's programoverrides.go.
 
-// TestProgramOverridesReadsTheUserConfig: path is ~-expanded and cleaned, run is kept
-// relative, and run is optional.
+// TestProgramOverridesReadsTheUserConfig: path is ~-expanded and cleaned.
 func TestProgramOverridesReadsTheUserConfig(t *testing.T) {
 	home := programsHome(t)
 	userConfigWith(t, home, `{"programs": {"overrides": {
 		"board": {"path": "~/x"},
-		"pi":    {"path": "/srv/pi", "run": "dist/cli.js"}
+		"pi":    {"path": "/srv/pi/"}
 	}}}`)
 	got := ProgramOverrides(nil)
 	if len(got) != 2 {
@@ -157,11 +156,8 @@ func TestProgramOverridesReadsTheUserConfig(t *testing.T) {
 	if want := filepath.Join(home, "x"); got["board"].Path != want {
 		t.Errorf("board.Path = %q, want %q (~ expanded)", got["board"].Path, want)
 	}
-	if got["board"].Run != "" {
-		t.Errorf("board.Run = %q, want empty: run is optional", got["board"].Run)
-	}
-	if got["pi"].Path != "/srv/pi" || got["pi"].Run != "dist/cli.js" {
-		t.Errorf("pi = %+v, want path /srv/pi and run dist/cli.js", got["pi"])
+	if got["pi"].Path != "/srv/pi" {
+		t.Errorf("pi = %+v, want path /srv/pi (cleaned)", got["pi"])
 	}
 }
 
@@ -179,11 +175,8 @@ func TestProgramOverridesShapeIsValidated(t *testing.T) {
 		{`{"programs": {"overrides": {"board": {"path": 7}}}}`, "config.programs.overrides.board.path"},
 		{`{"programs": {"overrides": {"board": {"path": "rel/x"}}}}`, "config.programs.overrides.board.path"},
 		{`{"programs": {"overrides": {"board": {"path": "~bob/x"}}}}`, "config.programs.overrides.board.path"},
-		{`{"programs": {"overrides": {"board": {"path": "/x", "run": "../y"}}}}`, "config.programs.overrides.board.run"},
-		{`{"programs": {"overrides": {"board": {"path": "/x", "run": "a/../../y"}}}}`, "config.programs.overrides.board.run"},
-		{`{"programs": {"overrides": {"board": {"path": "/x", "run": "/abs/y"}}}}`, "config.programs.overrides.board.run"},
-		{`{"programs": {"overrides": {"board": {"path": "/x", "run": ""}}}}`, "config.programs.overrides.board.run"},
-		{`{"programs": {"overrides": {"board": {"path": "/x", "run": 3}}}}`, "config.programs.overrides.board.run"},
+		// THE RETIRED `run` (OQ-BG3, BG-D19): named with what replaced it, never as an unknown key.
+		{`{"programs": {"overrides": {"board": {"path": "/x", "run": "dist/y"}}}}`, "config.programs.overrides.board.run: no longer read"},
 		{`{"programs": {"overrides": {"board": {"path": "/x", "color": "red"}}}}`, "config.programs.overrides.board.color: unknown key"},
 		{`{"programs": {"overrides": {"a/b": {"path": "/x"}}}}`, "config.programs.overrides.a/b: program name"},
 		{`{"programs": {"overrides": {"board": "/x"}}}`, "config.programs.overrides.board: expected an object"},
@@ -196,7 +189,7 @@ func TestProgramOverridesShapeIsValidated(t *testing.T) {
 		}
 	}
 	// The documented spelling validates clean.
-	errs, _ := ValidateConfig(decode(t, `{"programs": {"overrides": {"pi": {"path": "~/code/pi", "run": "packages/coding-agent/dist/cli.js"}}}}`), ws, nil)
+	errs, _ := ValidateConfig(decode(t, `{"programs": {"overrides": {"board": {"path": "~/code/board"}}}}`), ws, nil)
 	for _, e := range errs {
 		if strings.HasPrefix(e, "config.programs") {
 			t.Errorf("the documented override spelling must validate: %s", e)
@@ -267,5 +260,61 @@ func TestProgramOverridesAreNotInherited(t *testing.T) {
 		if _, ok := out.Get("programs"); ok {
 			t.Errorf("scope %v inherited programs (overrides must never cross a jail boundary)", scope)
 		}
+	}
+}
+
+// THE PREBUILT OPT-IN (BG-D18, OQ-BG2): `programs.overrides.<bin>: {"prebuilt": true}` is read by
+// ProgramPrebuiltOptIns and never by ProgramOverrides, since it names no checkout to run; it is
+// user scope only, like every `programs` key; and it cannot sit beside `path` in one
+// entry, the validation error naming both fields.
+//
+// MUTATION: drop prebuiltKey from parseProgramOverride, or have ProgramOverrides keep a Prebuilt
+// entry, and this goes red.
+func TestProgramPrebuiltOptInIsReadValidatedAndExclusive(t *testing.T) {
+	home := programsHome(t)
+	userConfigWith(t, home, `{"programs": {"overrides": {
+		"chart": {"prebuilt": true},
+		"board": {"path": "/srv/board"}
+	}}}`)
+	if got := ProgramPrebuiltOptIns(nil); len(got) != 1 || !got["chart"] {
+		t.Errorf("ProgramPrebuiltOptIns = %v, want chart alone", got)
+	}
+	if got := ProgramOverrides(nil); len(got) != 1 || got["board"].Path != "/srv/board" {
+		t.Errorf("ProgramOverrides = %+v, want board alone: a prebuilt opt-in is no dev override", got)
+	}
+
+	ws := t.TempDir()
+	for body, want := range map[string]string{
+		`{"programs": {"overrides": {"chart": {"prebuilt": true, "path": "/x"}}}}`: `"prebuilt" and "path" cannot both be set`,
+		`{"programs": {"overrides": {"chart": {"prebuilt": "yes"}}}}`:              "config.programs.overrides.chart.prebuilt: expected true or false",
+	} {
+		errs, _ := ValidateConfig(decode(t, body), ws, nil)
+		if !anyContains(errs, want) {
+			t.Errorf("%s should report %q, got %v", body, want, errs)
+		}
+	}
+	errs, _ := ValidateConfig(decode(t, `{"programs": {"overrides": {"chart": {"prebuilt": true}}}}`), ws, nil)
+	for _, e := range errs {
+		if strings.HasPrefix(e, "config.programs") {
+			t.Errorf("the documented opt-in spelling must validate: %s", e)
+		}
+	}
+
+	// Both forms in one entry are dropped from both readers, with a warning.
+	userConfigWith(t, home, `{"programs": {"overrides": {"chart": {"prebuilt": true, "path": "/x"}}}}`)
+	var warned []string
+	if got := ProgramPrebuiltOptIns(func(m string) { warned = append(warned, m) }); len(got) != 0 {
+		t.Errorf("an entry with both prebuilt and path opted in: %v", got)
+	}
+	if !anyContains(warned, "programs.overrides.chart") {
+		t.Errorf("the dropped entry must be named in a warning, got %v", warned)
+	}
+
+	// A workspace config is never read.
+	userConfigWith(t, home, `{}`)
+	writeConfigAt(t, filepath.Join(ws, "yolo-jail.jsonc"), `{"programs": {"overrides": {"chart": {"prebuilt": true}}}}`)
+	t.Chdir(ws)
+	if got := ProgramPrebuiltOptIns(nil); len(got) != 0 {
+		t.Errorf("a WORKSPACE CONFIG opted a program into its prebuilt: %v", got)
 	}
 }

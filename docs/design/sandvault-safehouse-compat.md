@@ -521,9 +521,9 @@ This table lists only what that comparison and the SandVault privileges note do 
 
 ## 10. Open questions
 
-1. 💬 **OQ-NB1: How does a trial start?**
+1. 💬 <a id="OQ-NB1"></a>**OQ-NB1: How does a trial start?**
 
-   <!-- vantage: question id=OQ-NB1 leaning="B — `yolo try <tool>`, and the empty-packs notice names it when a setup is detected." -->
+   <!-- vantage: oq id=OQ-NB1 leaning="B — `yolo try <tool>`, and the empty-packs notice names it when a setup is detected." -->
 
    This decides the command surface. Starting a trial automatically on a bare launch is ruled
    out: *nothing is active by default* (AGENTS.md).
@@ -540,7 +540,7 @@ This table lists only what that comparison and the SandVault privileges note do 
    **Answer:**
    > _(empty — fill in when decided)_
 
-2. 💬 **OQ-NB2: Which backend does a SandVault setup get?**
+2. 💬 <a id="OQ-NB2"></a>**OQ-NB2: Which backend does a SandVault setup get?**
 
    SandVault's guest match has two gates: missing denies and a provenance-preserving migration
    ([§7](#7-per-backend-support)). Today's translator cannot offer it.
@@ -551,7 +551,7 @@ This table lists only what that comparison and the SandVault privileges note do 
    - **C — Reuse SandVault's account.** Not viable under P2/P3: rendering into its home and
      installing yolo's profile would modify the source setup.
 
-   <!-- vantage: question id=OQ-NB2 leaning="B — container for both; guest compatibility waits for separately proven denies and a provenance-preserving migration." -->
+   <!-- vantage: oq id=OQ-NB2 leaning="B — container for both; guest compatibility waits for separately proven denies and a provenance-preserving migration." -->
 
    _Leaning:_ B — container for both; guest compatibility waits for separately proven denies
    and a provenance-preserving migration.
@@ -559,9 +559,9 @@ This table lists only what that comparison and the SandVault privileges note do 
    **Answer:**
    > _(empty — fill in when decided)_
 
-3. 💬 **OQ-NB3: Which of the other tool's credentials reach the jail?**
+3. 💬 <a id="OQ-NB3"></a>**OQ-NB3: Which of the other tool's credentials reach the jail?**
 
-   <!-- vantage: question id=OQ-NB3 leaning="C — never a login; --env-pass names pass for the trial only, disclosed by name; an --env=FILE is imported as env_sources, as any dotenv the user names is today." -->
+   <!-- vantage: oq id=OQ-NB3 leaning="C — never a login; --env-pass names pass for the trial only, disclosed by name; an --env=FILE is imported as env_sources, as any dotenv the user names is today." -->
 
    A Safehouse agent uses the real `~/.claude` login; `--env-pass` forwards named variables, and
    `--env=FILE` often holds API keys. yolo's boundary is that host credentials are absent unless
@@ -580,9 +580,9 @@ This table lists only what that comparison and the SandVault privileges note do 
    **Answer:**
    > _(empty — fill in when decided)_
 
-4. 💬 **OQ-NB5: May a trial create `.yolo/` in the project?**
+4. 💬 <a id="OQ-NB5"></a>**OQ-NB5: May a trial create `.yolo/` in the project?**
 
-   <!-- vantage: question id=OQ-NB5 leaning="A — keep .yolo/ in the project, name it and its rm undo on the first trial; one home layout, and the trial's login survives import." -->
+   <!-- vantage: oq id=OQ-NB5 leaning="A — keep .yolo/ in the project, name it and its rm undo on the first trial; one home layout, and the trial's login survives import." -->
 
    Every launch keeps the jail's home and logs in `<workspace>/.yolo/`. In a git project it shows
    up as an untracked directory.

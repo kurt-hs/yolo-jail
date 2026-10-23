@@ -219,7 +219,6 @@ func seatbeltProfile(workspace, sandboxHome string, readonlyRels, readonlyTarget
 		"    ;; #seatbelt-test-id:staging-root-read-allow#\n" +
 		stagingRootReadClause() + ")\n" +
 		contextReadAllow(ctx) +
-		programOverrideReadAllow(ctx) +
 		relocationReadAllow(relocs) +
 		"\n" +
 		";; --- Keychains: System.keychain is world-readable (0644) on stock\n" +

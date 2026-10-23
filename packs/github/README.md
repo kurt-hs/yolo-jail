@@ -7,7 +7,7 @@ the broker is sent is recorded on the host, and `yolo audit` lists them.
 
 Design: [`boundary-broker.md`](../../docs/design/boundary-broker.md), and for the repositories a
 project lists, [`workspace-widening.md`](../../docs/design/workspace-widening.md). This is step 1 of its
-[§11](../../docs/design/boundary-broker.md#11-recommendation-and-the-first-build-slice): **read-only**. A write (`gh pr comment`, `gh issue edit`, `gh api -X POST …`) exits 77
+[§11](../../docs/design/boundary-broker.md#11-the-build-in-the-maintainers-five-steps): **read-only**. A write (`gh pr comment`, `gh issue edit`, `gh api -X POST …`) exits 77
 at once: writes need an approval step that is not built yet, so nothing runs and nothing waits,
 and the message says to run the command on the host.
 

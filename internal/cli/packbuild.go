@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
@@ -46,6 +47,12 @@ type packBuildOptions struct {
 	packs []string
 	force bool
 	at    string // "jail" or "host"
+	// prebuiltOptIn is the user's `programs.overrides.<bin>: {"prebuilt": true}` (BG-D18), read once
+	// per run (config.ProgramPrebuiltOptIns).
+	prebuiltOptIn map[string]bool
+	// overrides are the user's dev overrides (config.ProgramOverrides), read once per run: a program
+	// one names is built from that checkout in place of its pack's tree (BG-D19).
+	overrides map[string]config.ProgramOverride
 }
 
 // parsePackBuildArgs reads `[<pack>...] [--force] [--at jail|host]`; the error is a usage refusal.
@@ -131,7 +138,8 @@ func packBuild(args []string, out, errw io.Writer, color bool) int {
 		}
 	}
 	rt := packBuildRuntime(opts.at)
-	overrides := config.ProgramOverrides(func(msg string) { fmt.Fprintf(errw, "Warning: %s\n", msg) })
+	opts.overrides = config.ProgramOverrides(func(msg string) { fmt.Fprintf(errw, "Warning: %s\n", msg) })
+	opts.prebuiltOptIn = config.ProgramPrebuiltOptIns(nil)
 	programs := packload.PackTreePrograms(packs)
 	forks := append(packload.Forks(packs), packload.PatchedTrees(packs)...)
 	for _, p := range packs {
@@ -148,11 +156,6 @@ func packBuild(args []string, out, errw io.Writer, color bool) int {
 				continue
 			}
 			said = true
-			if ov, ok := overrides[f.Bin]; ok {
-				pr.Printf("[dim]note[/dim]       %s  [dim]a dev override (programs.overrides) runs %s in its place; "+
-					"this builds the pack's copy, which serves once the override is removed[/dim]",
-					richtext.Escape(f.Label()), richtext.Escape(ov.Path))
-			}
 			if !packBuildOne(pr, f, rt, opts, errw, color) {
 				failed = true
 			}
@@ -250,13 +253,22 @@ func packBuildOne(pr richtext.Printer, f packload.Fork, rt string, opts packBuil
 		return true
 	}
 	// WHICH BYTES, as a launch resolves them (packload.PackTreeResolve): the build of the pack's tree,
-	// or its prebuilt artifact where the tree is absent or no build can run for this notch.
-	buildable := rt != "macos-user" || darwinPackTreeBuildable(hostFloorMacProbes())
-	pin := packload.PackTreeResolve(f, platform, buildable)
+	// or its prebuilt artifact where the tree is absent or the user opted into it (BG-D18). Never a
+	// prebuilt in place of a build that cannot run here (OQ-BG2).
+	//
+	// A DEV OVERRIDE builds the user's checkout in place of the pack's tree, as a launch does
+	// (run.ResolvePackTreeProgram, BG-D19), and the result line names the checkout.
+	pin := run.ResolvePackTreeProgram(f, platform, opts.prebuiltOptIn[f.Bin], opts.overrides)
+	label = richtext.Escape(pin.Fork.Label())
 	if pin.Reason != "" {
 		return fail(pin.Reason)
 	}
 	f, digest := pin.Fork, pin.Commit
+	if !f.IsPrebuilt() && rt == "macos-user" && !darwinPackTreeBuildable(hostFloorMacProbes()) {
+		// A BUILD ENVIRONMENT NEVER SET UP is a fatal refusal naming the setup step and, when the pack
+		// declares one for this platform, the explicit opt-in to its prebuilt — never the prebuilt.
+		return fail(darwinPackTreeUnbuildableReason(f, platform))
+	}
 	b := forkBuild{Fork: f, Commit: digest, Platform: platform}
 	store := &capture.Store{Dir: paths.CapturesDir()}
 	hit := false
@@ -284,10 +296,13 @@ func packBuildOne(pr richtext.Printer, f packload.Fork, rt string, opts packBuil
 	start := time.Now()
 	entry, err := buildFork(b, mode, errw, errw, color)
 	if err != nil {
+		// Every refusal of a pack-tree build names the prebuilt opt-in where one is declared (BG-D21):
+		// no runtime, a build jail that did not start, a build that failed.
 		why := err.Error()
 		if log := buildJailLogPath(store.StagingDir("fork-" + b.id())); fileExists(log) {
 			why += withBuildLog(log)
 		}
+		why += f.PrebuiltOptInClause(platform)
 		ok := fail(why)
 		for _, l := range notStartedLines(err, sealPacks(f), "  ", "`"+retry+"`") {
 			fmt.Fprintln(errw, l)
@@ -316,15 +331,27 @@ func packBuildOne(pr richtext.Printer, f packload.Fork, rt string, opts packBuil
 
 // darwinPackTreeBuildable reports whether the darwin sealed act (macosuser.RunForkBuildAct, FP-D24)
 // can EVER build a pack's tree on this Mac: always in the run-as-you mode, which needs no account,
-// and in the account mode only once the sandbox account exists. A Mac with no sandbox account is the
-// design's "permanently unavailable" builder (pack-buildable-programs.md §9, the `yolo host` macOS
-// row), so a declared darwin `prebuilt` stands in (OQ-BG2's leaning); with none declared the build
-// pin comes back and the act's own refusal names `yolo macos-setup`. Every other refusal of the act
-// (root, no sandbox-exec, an unusable staging root) is a state the next run may not have, never a
-// reason to change which bytes run. A Mac's `yolo host` floor asks the same question
-// (pack-buildable-programs-plan.md Task 9's floor arm takes it as its buildable flag).
+// and in the account mode only once the sandbox account exists. A Mac with no sandbox account has
+// never set up its build environment (pack-buildable-programs.md §9, the `yolo host` macOS row): by
+// OQ-BG2's ruling a build there is a fatal refusal naming `yolo macos-setup` and, when the pack
+// declares a darwin prebuilt, the explicit opt-in to it (darwinPackTreeUnbuildableReason) — never
+// the prebuilt on yolo's own.
 func darwinPackTreeBuildable(p macCaptureProbes) bool {
 	return p.Mode == macosuser.ModeSelf || (p.SandboxUserExists != nil && p.SandboxUserExists())
+}
+
+// darwinPackTreeUnbuildableReason is the refusal of f's build on a Mac whose darwin act can never run
+// (darwinPackTreeBuildable false): the setup step, and the prebuilt opt-in when f declares an
+// artifact for platform (OQ-BG2).
+func darwinPackTreeUnbuildableReason(f packload.Fork, platform string) string {
+	src := "pack " + f.Pack + "'s " + f.From
+	if f.Checkout != "" {
+		src = f.SourceSaid()
+	}
+	why := "the sandbox account " + macosuser.SandboxUser + ", which a pack's build on a Mac runs as, does not " +
+		"exist, so " + f.Bin + " cannot be built from " + src + " — run the one-time " +
+		"setup, `yolo macos-setup`"
+	return why + f.PrebuiltOptInClause(platform)
 }
 
 // fileExists reports whether path names an existing file.

@@ -120,11 +120,6 @@ const (
 // no-entry program a launch refuses (HNR-D2). The first two are the user's own decisions; the last is
 // the jail's own rule, which writes no launcher for an unpublished program.
 func (f *Floor) OutsideTheFloor(p Program) bool {
-	if f.HasOverride(p) {
-		// A DEV OVERRIDE is the user's own choice of copy, and the floor's entry runs it (override.go):
-		// it wins over `host_floor`, the provisioner order and the platform, as over every rung.
-		return false
-	}
 	if f.Include != nil && !f.Include(p.Pack) {
 		return true
 	}
@@ -358,10 +353,6 @@ type Floor struct {
 	PackTree func(p Program) PackTreeDelivery
 	// packTrees is this Floor's own PackTree answers, by bin, which every later status reads.
 	packTrees map[string]PackTreeDelivery
-	// Overrides are the user's DEV OVERRIDES (override.go) of programs this floor serves, by bin,
-	// resolved: such a program's floor entry runs the checkout, whatever its pack delivers. nil =>
-	// none.
-	Overrides map[string]Override
 	// Environ is the environment the installers are derived from (installerEnv strips the
 	// parts that would steer where an install lands). nil => os.Environ().
 	Environ []string
@@ -603,9 +594,6 @@ var ErrNoEntry = errors.New("no floor entry")
 // So a copy whose loader went away has no floor entry, and `yolo host apply --assert` removes it
 // (Reconcile) as it does any other the floor can no longer hold.
 func (f *Floor) noEntryReason(p Program) string {
-	if o, ok := f.override(p); ok {
-		return overrideNoEntry(p.Bin(), o)
-	}
 	if why := f.recipeNoEntryReason(p); why != "" {
 		return why
 	}
@@ -721,10 +709,6 @@ func (f *Floor) recipeNoEntryReason(p Program) string {
 // does not hold, the capture store and whether a capture could run — and nothing else: no
 // network, no install, so `yolo check` and the launch gate can ask it freely.
 func (f *Floor) Status(p Program) Status {
-	if o, ok := f.override(p); ok {
-		// A DEV OVERRIDE's entry is the checkout's (override.go), whatever the pack delivers.
-		return f.overrideStatus(p, o)
-	}
 	if p.Install.IsPatchedFork() {
 		return f.patchedStatus(p)
 	}

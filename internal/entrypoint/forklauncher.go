@@ -73,6 +73,10 @@ type ForkDelivery struct {
 	// PACK-TREE program's launcher names as the source of its bytes, and its receipt's declared
 	// source (packdecl.PackTreeBuildSource). Never on the wire: the jail reads it from its own packs.
 	Pack string `json:"-"`
+	// Reused says the host's slot answered Key from a build the store already held, with no build
+	// this launch: what a checkout build's disclosure says (run's noteCheckoutDeliveries). The host's
+	// alone: never on the wire.
+	Reused bool `json:"-"`
 }
 
 // ForkBuildsWire renders the decisions for the environment, "" for none.

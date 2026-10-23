@@ -1,8 +1,9 @@
 package cli
 
 // packtreeprebuilt.go is a pack-tree program's PREBUILT ARTIFACT (docs/design/pack-buildable-programs.md
-// §7, BG-D7): where the pack ships no source directory, or no build of its tree can ever run here
-// (OQ-BG2's leaning; packload.PackTreeResolve decides), the program's `prebuilt` entry for the
+// §7, BG-D7): where the pack ships no source directory, or the user opted that program into it
+// (`programs.overrides.<bin>: {"prebuilt": true}`, BG-D18) — never in place of a build that cannot
+// run (OQ-BG2; packload.PackTreeResolve decides) — the program's `prebuilt` entry for the
 // platform is fetched through the pack-binary download cache (packbin.Fetcher.Ensure: https at every
 // hop, a size bound, the sha256 checked after the last byte, admission only by verified rename),
 // verified AGAIN as it is copied into the store's staging, and admitted by the host with no jail

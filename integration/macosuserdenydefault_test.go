@@ -91,8 +91,6 @@ var denyDefaultRules = []seatbeltRule{
 	// This session's host-services dir, by exact path (MMP-D15), and its liveness lock.
 	{id: "services-dir-read-allow"},
 	{id: "services-lock-deny"},
-	// A dev override's checkout (programs.overrides, pack-buildable-programs-plan.md Task 10).
-	{id: "program-override-read-allow"},
 	{id: "cache-relocation-read-allow"},
 	// Processes, services, network.
 	{id: "process-allow"},
@@ -156,7 +154,6 @@ type denyDefaultFixtures struct {
 	ctxRO    string // <root>/ctx/ro              — read-only context source
 	ctxRW    string // <root>/ctx/rw              — read-write context source
 	ctxROWS  string // <ws>/ctxro                 — a read-only source inside the workspace (variant)
-	override string // <root>/dev/x               — a dev override's checkout, holding an executable run
 	reloc    string // <root>/caches/hf           — a cache relocation target
 	// fakeHome is a stand-in for the human's home, under the fixture root. The closing denies
 	// name paths under the HostHome input; a variant that names fakeHome as HostHome AND grants
@@ -607,26 +604,6 @@ func denyDefaultCases() []denyDefaultCase {
 			},
 			script: func(f denyDefaultFixtures) string {
 				p := sh(f.ctxROWS + "/probe")
-				return "touch " + p + " && rm -f " + p
-			},
-			want:    wantRefused,
-			refusal: "Operation not permitted",
-		},
-		{
-			name: "program_override_checkout_runs",
-			id:   "program-override-read-allow",
-			why: "a dev override's checkout beside the workspace (programs.overrides, the plan's Task 10) is " +
-				"opened by its own read and exec grant and nothing else, so its launcher can run the file.",
-			script: func(f denyDefaultFixtures) string { return sh(f.override + "/run") },
-			want:   wantAllowed,
-		},
-		{
-			name: "program_override_checkout_write_refused",
-			id:   "deny-default",
-			why: "the checkout is read-only, as a container binds it: no write allow covers it, and " +
-				"context-readonly-deny names it as well.",
-			script: func(f denyDefaultFixtures) string {
-				p := sh(f.override + "/probe")
 				return "touch " + p + " && rm -f " + p
 			},
 			want:    wantRefused,
@@ -1274,7 +1251,6 @@ func denyDefaultParams(f denyDefaultFixtures) macosuser.ProfileParams {
 		Context: []macosuser.ContextLink{
 			{Dest: "/ctx/ro", Source: f.ctxRO, Dir: true},
 			{Dest: "/ctx/rw", Source: f.ctxRW, RW: true, Dir: true},
-			{Dest: "/ctx/program-overrides/x", Source: f.override, Dir: true, Override: "x"},
 		},
 		Relocations:  []macosuser.CacheRelocation{{Subdir: "huggingface", Target: f.reloc}},
 		ReadonlyRels: []string{"vendored"},
@@ -1357,7 +1333,6 @@ func denyDefaultFixture(t *testing.T) denyDefaultFixtures {
 		machine:  filepath.Join(resolved, "machine", ".cache"),
 		ctxRO:    filepath.Join(resolved, "ctx", "ro"),
 		ctxRW:    filepath.Join(resolved, "ctx", "rw"),
-		override: filepath.Join(resolved, "dev", "x"),
 		reloc:    filepath.Join(resolved, "caches", "hf"),
 		fakeHome: filepath.Join(resolved, "fakehome"),
 		nonce:    fmt.Sprintf("%d%d", os.Getpid(), time.Now().UnixNano()%1000000),
@@ -1368,7 +1343,7 @@ func denyDefaultFixture(t *testing.T) denyDefaultFixtures {
 	f.stateDir = filepath.Join(f.home, ".claude")
 	f.skills = filepath.Join(f.stateDir, "skills")
 	for _, d := range []string{f.ws, f.home, f.tmp, f.outside, f.readonly, f.machine, f.ctxRO, f.ctxRW,
-		f.ctxROWS, f.override, f.reloc, filepath.Join(f.skills, "demo"), filepath.Join(f.stateDir, "projects"),
+		f.ctxROWS, f.reloc, filepath.Join(f.skills, "demo"), filepath.Join(f.stateDir, "projects"),
 		filepath.Join(f.fakeHome, ".ssh", "agent"), filepath.Join(f.fakeHome, "Library", "Keychains"),
 		filepath.Join(f.fakeHome, ".docker", "run")} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -1391,10 +1366,6 @@ func denyDefaultFixture(t *testing.T) denyDefaultFixtures {
 		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 			t.Fatalf("writing %s: %v", p, err)
 		}
-	}
-	// The dev override's file, run as its launcher runs it: executable, by its path.
-	if err := os.WriteFile(filepath.Join(f.override, "run"), []byte("#!/bin/sh\necho "+seatbeltOK+"\n"), 0o755); err != nil {
-		t.Fatalf("writing the override's run: %v", err)
 	}
 
 	if u, err := user.Current(); err == nil {
@@ -1534,7 +1505,6 @@ func denyDefaultFixtureParams() macosuser.ProfileParams {
 		Context: []macosuser.ContextLink{
 			{Dest: "/ctx/lib", Source: "/Users/Shared/ci/lib", Dir: true},
 			{Dest: "/ctx/data", Source: "/Users/Shared/yolo/data", RW: true, Dir: true},
-			{Dest: "/ctx/program-overrides/x", Source: "/Users/Shared/dev/x", Dir: true, Override: "x"},
 		},
 		Relocations: []macosuser.CacheRelocation{{Subdir: "huggingface", Target: "/Volumes/Data/hf"}},
 		CacheAliases: []macosuser.CacheAlias{{Tool: "pip", Link: home + "/Library/Caches/pip",
