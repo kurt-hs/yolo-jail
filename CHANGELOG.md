@@ -20,8 +20,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Packs can build their own tools.** A launch, in a jail, on `macos-user` or with `yolo host`, builds a pack's tool from its source once, in a sealed build (for macOS on a Mac), and again only when the source changes; `yolo pack build` builds it ahead of time, and a pack without the source can name a checksum-verified prebuilt download. `programs.overrides` in your user config runs a pack's program from your own checkout instead. See [programs built from a pack's tree](docs/reference/pack-system.md#program-via-pack).
 
+**Jails trust what your machine trusts.** Every jail now trusts the certificate authorities your host trusts for TLS, including a corporate or inspecting-proxy CA, and on macOS the ones in your login keychain too. The launch names each one and where it came from. See [the corporate certificate trap](docs/design/provisioner-sets.md#163-the-corporate-certificate-trap).
+
 ### Fixed
 
+- In a container jail, an `SSL_CERT_FILE` you set in your config now applies to every TLS tool instead of losing to the jail's own bundle.
 - `yolo host apply` and `yolo host -- <agent>` now remove a file a pack stopped shipping or moved, and say so, instead of leaving the old copy to break launches; a copy from an earlier version is archived, and one you changed is kept and named with the command to remove it. See [the host copy converges](docs/reference/pack-system.md#host-files-converge).
 - On macOS (`macos-user`), a pack's skills, briefing and files now leave the agent's home at the next launch after you drop the pack; any you edited stay, and the launch names each with the command that removes it.
 
