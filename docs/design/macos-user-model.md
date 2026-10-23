@@ -1,8 +1,8 @@
 ---
 title: "macos-user's model: a second account, or a sandbox that starts from nothing"
 date: 2026-10-22
-status: accepted
-stage: DECIDED
+status: in-review
+stage: DESIGN
 next: "Rerun the revised prototype on a Mac in both modes (§6), rule loopback and the shared /tmp, then seed the plan"
 tags: [macos-user, seatbelt, design, isolation, parity, safehouse, sandvault]
 summary: "Today macos-user runs the agent as a second Mac account under a Seatbelt profile that allows everything and denies a short list (SandVault's model). Ruled 2026-10-22: macos-user moves to Safehouse's model, the agent running as you under a profile that denies everything and allows a list, the closest macOS gets to podman's start-from-nothing container; the second account is kept from day one as an optional mode, off by default, on the same profile. This doc lays the models side by side, maps podman's pieces onto the Safehouse model, and names what the second account buys and costs."
@@ -16,7 +16,7 @@ vantage:
 is built. The [§6](#6-what-a-prototype-must-show) prototype is the check before building, not a
 reopening of the ruling. Its [first Mac run](#first-mac-run-2026-10-22) raised two questions.
 
-**Needs your ruling:** loopback and the shared `/tmp`, from the
+**Needs your ruling:** [OQ-MM7](#OQ-MM7), [OQ-MM8](#OQ-MM8), [OQ-MM9](#OQ-MM9), raised by the
 [first Mac run](#first-mac-run-2026-10-22).
 
 **Reads with:** [Agent Safehouse research](../research/agent-safehouse.md) (the evidence for every
@@ -251,7 +251,46 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
 
 ## 8. Open questions
 
-None. Every question this doc raised is ruled; see the [Decision Ledger](#decision-ledger).
+1. <a id="OQ-MM7"></a>💬 **[`OQ-MM7`](#OQ-MM7) — On macOS, does loopback stay denied, now that it blocks the agent's own servers?**
+
+   <!-- vantage: question id=OQ-MM7 leaning="Allow loopback on macOS: Seatbelt cannot tell whose server holds a port, so a deny breaks random-port test servers (Go httptest, pytest fixtures, dev servers); podman keeps its private loopback." -->
+
+   [OQ-MM3](#OQ-MM3) ruled loopback denied except listed ports, matching podman. The first Mac
+   run (check d3) showed the cost: Seatbelt filters by port, not by process, so a server the agent
+   starts on a random port and connects to itself is blocked too. Podman avoids this only because a
+   jail has its own network namespace, which macOS cannot give without a VM. Allowing loopback
+   leaves your local services (a dev database, say) reachable from the jail, as macos-user is today.
+
+   _Leaning:_ allow loopback on macOS; podman keeps its private loopback.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
+2. <a id="OQ-MM8"></a>💬 **[`OQ-MM8`](#OQ-MM8) — In the run-as-you mode, may the agent read your files in the shared `/tmp`?**
+
+   <!-- vantage: question id=OQ-MM8 leaning="Leave /tmp readable and document it: tools write there constantly, and under the misguided-agent principle an eager agent rarely goes looking there." -->
+
+   Check b14: running as you, the agent reads your owner-only files in `/tmp`; the account mode is
+   protected by Unix permissions. Denying `/tmp` reads would need tools pointed at the sandbox's own
+   temp dir, and breaks the ones that hardcode `/tmp`.
+
+   _Leaning:_ leave it readable; document it.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
+3. <a id="OQ-MM9"></a>💬 **[`OQ-MM9`](#OQ-MM9) — Is host software (Homebrew) visible to the agent?**
+
+   <!-- vantage: question id=OQ-MM9 leaning="Yes, read-only and runnable: install trees (/opt/homebrew, /usr/local, /Applications) hold software, not secrets; your home's toolchain folders stay hidden; declared packages come first on PATH so a shared config behaves the same everywhere." -->
+
+   The prototype already allows `/opt/homebrew`, `/usr/local` and `/Applications` read-only. The
+   alternative is nix-only tools, matching the container exactly. Either way your home's toolchain
+   folders (and the tokens in their configs) stay hidden.
+
+   _Leaning:_ visible read-only, declared packages first on `PATH`.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
 
 ## Decision Ledger
 
