@@ -87,11 +87,11 @@ Options:
 - `--allow-port PORT` adds a loopback port to the profile's allow list. Repeat it for up to three
   (any number with `--profile-from-yolo`).
 - `--profile-from-yolo YOLO` runs every check against the profile yolo generates instead of
-  `profile.sb`. `YOLO` is a yolo binary, for example one built from a checkout with
+  [`profile.sb`](./profile.sb). `YOLO` is a yolo binary, for example one built from a checkout with
   `go build -o /tmp/yolo ./cmd/yolo`. The script renders the profile for its own workspace, home and
   temp dirs with `YOLO internal macos-user-profile`, and renders it again with the extra port for
   check d2. To compare the two profiles by eye, run that command yourself with `--mode`,
-  `--workspace` and `--tmp` (`--help` lists the rest) and diff its output against `profile.sb`.
+  `--workspace` and `--tmp` (`--help` lists the rest) and diff its output against [`profile.sb`](./profile.sb).
 - `--with-claude` runs the native Claude Code installer inside the sandbox, into its own home, then
   `claude --version`. It makes network calls to download the installer, but never logs in and never
   calls the API.
