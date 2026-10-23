@@ -569,7 +569,7 @@ Columns are the four options in [§6](#6-alternatives-considered). Recommended i
 
 ## Open Questions
 
-1. 💬 **OQ-PT1: Is a tap program declared in a pack, or in a config key?**
+1. 💬 <a id="OQ-PT1"></a>**OQ-PT1: Is a tap program declared in a pack, or in a config key?**
 
    Settles where the user writes `org/tap/tool`.
 
@@ -579,14 +579,14 @@ Columns are the four options in [§6](#6-alternatives-considered). Recommended i
    - **A user-scope key, for example `brew_programs: ["org/tap/tool"]`.** One line per tool, like
      `mise_tools`. Needs its own plumbing for each notch, and puts a tool vocabulary into core.
 
-   <!-- vantage: question id=OQ-PT1 leaning="Pack program — everything a program needs already exists for packs, and the local pack makes it nearly one line." -->
+   <!-- vantage: oq id=OQ-PT1 leaning="Pack program — everything a program needs already exists for packs, and the local pack makes it nearly one line." -->
 
    _Leaning:_ Pack program — everything a program needs already exists for packs, and the local pack makes it nearly one line.
 
    **Answer:**
    > _(empty — fill in when decided)_
 
-2. 💬 **OQ-PT2: At the host, does a tap program run brew's copy or a yolo floor copy?**
+2. 💬 <a id="OQ-PT2"></a>**OQ-PT2: At the host, does a tap program run brew's copy or a yolo floor copy?**
 
    Settles who owns the host's copy, and whether `brew upgrade` updates it.
 
@@ -597,14 +597,14 @@ Columns are the four options in [§6](#6-alternatives-considered). Recommended i
      versions are identical by construction. A brew-installed copy, if the user has one, becomes a
      second copy.
 
-   <!-- vantage: question id=OQ-PT2 leaning="brew's copy — the host is where this tap already works, and a second copy beside the user's Homebrew helps nobody." -->
+   <!-- vantage: oq id=OQ-PT2 leaning="brew's copy — the host is where this tap already works, and a second copy beside the user's Homebrew helps nobody." -->
 
    _Leaning:_ brew's copy — the host is where this tap already works, and a second copy beside the user's Homebrew helps nobody.
 
    **Answer:**
    > _(empty — fill in when decided)_
 
-3. 💬 **OQ-PT3: Which version does a launch deliver, and who refreshes the tap?**
+3. 💬 <a id="OQ-PT3"></a>**OQ-PT3: Which version does a launch deliver, and who refreshes the tap?**
 
    Settles evergreen versus reproducible, and whether yolo runs `brew update`, which updates
    every tap and homebrew/core, not only this one.
@@ -617,14 +617,14 @@ Columns are the four options in [§6](#6-alternatives-considered). Recommended i
      when the user runs brew.
    - **Pinned in the pack.** Reproducible, but every release needs a pack edit.
 
-   <!-- vantage: question id=OQ-PT3 leaning="Evergreen — these are the user's own tools, like agent CLIs, and brew's auto-update already makes the same change." -->
+   <!-- vantage: oq id=OQ-PT3 leaning="Evergreen — these are the user's own tools, like agent CLIs, and brew's auto-update already makes the same change." -->
 
    _Leaning:_ Evergreen — these are the user's own tools, like agent CLIs, and brew's auto-update already makes the same change.
 
    **Answer:**
    > _(empty — fill in when decided)_
 
-4. 💬 **OQ-PT4: Does yolo ever run `brew tap` itself?**
+4. 💬 <a id="OQ-PT4"></a>**OQ-PT4: Does yolo ever run `brew tap` itself?**
 
    Settles whether a pack can bring a new tap's Ruby onto the host.
 
@@ -633,14 +633,14 @@ Columns are the four options in [§6](#6-alternatives-considered). Recommended i
    - **Tap on first use.** No manual step, but selecting a pack becomes enough to run a new
      repository's code on the host with the user's credentials.
 
-   <!-- vantage: question id=OQ-PT4 leaning="Never — one command per machine buys the rule that a pack cannot introduce host code the user never tapped." -->
+   <!-- vantage: oq id=OQ-PT4 leaning="Never — one command per machine buys the rule that a pack cannot introduce host code the user never tapped." -->
 
    _Leaning:_ Never — one command per machine buys the rule that a pack cannot introduce host code the user never tapped.
 
    **Answer:**
    > _(empty — fill in when decided)_
 
-5. 💬 **OQ-PT5: When the launch environment lacks `HOMEBREW_GITHUB_API_TOKEN`, does yolo supply one?**
+5. 💬 <a id="OQ-PT5"></a>**OQ-PT5: When the launch environment lacks `HOMEBREW_GITHUB_API_TOKEN`, does yolo supply one?**
 
    A tap strategy reads only that variable, so a launch from a desktop launcher fails where a
    terminal launch works.
@@ -650,7 +650,7 @@ Columns are the four options in [§6](#6-alternatives-considered). Recommended i
    - **Yes, from the host's `gh auth token` or keychain.** The fetch always works, but yolo becomes a
      host-side credential handler, which it is nowhere else.
 
-   <!-- vantage: question id=OQ-PT5 leaning="No — the last good build covers most launches, and yolo staying out of the credential is the property this design rests on." -->
+   <!-- vantage: oq id=OQ-PT5 leaning="No — the last good build covers most launches, and yolo staying out of the credential is the property this design rests on." -->
 
    _Leaning:_ No — the last good build covers most launches, and yolo staying out of the credential is the property this design rests on.
 
