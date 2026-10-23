@@ -400,8 +400,10 @@ live, so edits are visible on the host instantly — there is no sync step.
   fails an entry that crosses that line. A path-keyed store also needs **rootless podman**, read tri-state
   from the launch's `podman info` (rootful and "could not ask" both decline), so jail-written files are the
   user's; a nested jail's podman reports rootful, so in-jail runs only ever show the decline and the
-  rootless path is CI's to verify. Every store is also gated on podman, **never macOS** (macos-user waits
-  for its run-as-you mode), matching host OS+arch, a writable existing source, a non-empty source over a
+  rootless path is CI's to verify. Every store is also gated on podman, **never macOS** — except
+  macos-user's run-as-you mode, which takes each store's macOS row as a HOME link plus a profile allow
+  and is dormant until that mode is selectable (`hostcas.Facts.MacosUserSelf`,
+  [MMP-D12](docs/design/macos-user-model-plan.md#MMP-D12)) — matching host OS+arch, a writable existing source, a non-empty source over a
   warm private copy, and **never a segment the user relocated**. Every failure degrades to the private
   copy; none can refuse a launch. The launch discloses each alias by name and `yolo stores` lists it as
   `not yolo's`, so no reclaimer offers to delete host bytes.

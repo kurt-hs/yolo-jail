@@ -31,8 +31,8 @@ func facts(t *testing.T) (Facts, string, string) {
 		IsMacOS:      false,
 		HostPlatform: "linux/amd64",
 		JailPlatform: "linux/amd64",
-		// INJECTED, because DefaultProbe is deliberately a stub off Linux
-		// (probe_other.go returns the zero Presence — the feature is never-macOS).
+		// INJECTED, because DefaultProbe differs by platform (access(2) on Linux and
+		// darwin, the zero Presence elsewhere — probe_other.go).
 		// Plan's gate logic is pure and platform-independent, so it should be tested
 		// on every platform; leaving this nil made every store read "absent" on
 		// darwin and turned four gate tests into check-macos failures.
@@ -379,6 +379,8 @@ func TestNoStoreNamesAConfigOrCredentialPath(t *testing.T) {
 		"credentials": true, "credentials.toml": true, "config": true, "config.toml": true,
 		".config": true, "pip.conf": true, "uv.toml": true, "env": true, ".ssh": true,
 		".gitconfig": true, "auth.json": true, ".docker": true,
+		// macOS keeps config and secrets under ~/Library beside its caches.
+		"Preferences": true, "Application Support": true, "Keychains": true,
 	}
 	// Directories that hold config or credentials beside a cache: aliasing one of
 	// these — or anything above one — would carry them across.
@@ -389,7 +391,29 @@ func TestNoStoreNamesAConfigOrCredentialPath(t *testing.T) {
 			home + "/.cache", "/o/cargo", "/o/mise", "/o/pnpm", "/o/npm", "/x/cache", "/x/data",
 			"/home/agent", "/home/agent/.cache", "/home/agent/.local", "/home/agent/.local/share",
 			"/home/agent/go", "/mise", "/mise/cargo", "/home/agent/.config",
+			// The macOS rows (DarwinHost, and DarwinRel under a sandbox HOME of /sandbox):
+			// ~/Library and its Caches hold every application's state, ~/Library/pnpm also
+			// holds pnpm's global installs, and the sandbox's ~/.yolo/mise its installed tools.
+			home + "/Library", home + "/Library/Caches", home + "/Library/pnpm",
+			"/sandbox", "/sandbox/.cache", "/sandbox/.cache/npm", "/sandbox/Library",
+			"/sandbox/Library/Caches", "/sandbox/Library/pnpm", "/sandbox/go", "/sandbox/.cargo",
+			"/sandbox/.yolo", "/sandbox/.yolo/mise",
 		}
+	}
+	// Both rows of every store: the Linux host path and jail path, and the macOS host path and
+	// sandbox path (macos-user's run-as-you mode, MMP-D12).
+	type resolver struct {
+		host func(Store, HostEnv) string
+		dest func(Store) string
+	}
+	resolvers := []resolver{
+		{func(s Store, e HostEnv) string { return s.Host(e) }, func(s Store) string { return s.Dest() }},
+		{func(s Store, e HostEnv) string {
+			if s.DarwinHost == nil {
+				return ""
+			}
+			return s.DarwinHost(e)
+		}, func(s Store) string { return "/sandbox/" + s.DarwinRel }},
 	}
 	envs := []HostEnv{
 		{CacheRoot: "/h/.cache", Getenv: envOf(map[string]string{"HOME": "/h"})},
@@ -401,10 +425,12 @@ func TestNoStoreNamesAConfigOrCredentialPath(t *testing.T) {
 	}
 	for _, s := range Stores {
 		var paths []string
-		for _, e := range envs {
-			paths = append(paths, s.Host(e))
+		for _, r := range resolvers {
+			for _, e := range envs {
+				paths = append(paths, r.host(s, e))
+			}
+			paths = append(paths, r.dest(s))
 		}
-		paths = append(paths, s.Dest())
 		for _, p := range paths {
 			if p == "" {
 				t.Errorf("%s: resolved no path under a complete environment", s.Name)

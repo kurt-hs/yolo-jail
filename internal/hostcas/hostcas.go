@@ -37,10 +37,15 @@
 //   - ONLY ON A MATCHING OPERATING SYSTEM AND ARCHITECTURE, the gate the CAS store
 //     already had.
 //
-// macos-user and Apple Container stay out for now: Apple Container cannot be
-// relied on to honor a nested bind's options, and macos-user's run-as-you mode —
-// the one where a jail-written file would be the user's — is not built yet
-// (docs/design/macos-user-model.md). The backend gate below refuses both.
+// Apple Container stays out: it cannot be relied on to honor a nested bind's
+// options. macos-user is admitted ONLY in its run-as-you ("self") mode
+// (docs/design/macos-user-model-plan.md MMP-D12), where the agent IS the user, so
+// a jail-written file is the user's by construction and the alias is a HOME link
+// at the path the sandbox's own copy of the tool uses on macOS ([Store.DarwinRel])
+// to the host cache ([Store.DarwinHost]). Its account mode runs as a second
+// account, whose files would not be the user's, and is refused by the backend gate
+// like Apple Container. Self mode is not selectable in production until its launch
+// is built (the plan's slice 6), so today every macos-user launch declines.
 //
 // # THE TRUST STEP
 //
@@ -54,9 +59,12 @@
 //
 // # THE GATES
 //
-// Aliased if and only if: the runtime is podman; the host is not macOS; the host
-// and the jail build for the same platform; for a path-keyed store, podman
-// ANSWERED that it is rootless; the host store's path resolves; it is not yolo's
+// Aliased if and only if: the runtime is podman and the host is not macOS, or the
+// runtime is macos-user in its run-as-you mode; the host and the jail build for the
+// same platform; for a path-keyed store, podman ANSWERED that it is rootless (or
+// the launch runs as you); the host store's path resolves; it is not the home, an
+// ancestor of it, or config (on macOS also ~/Library, its Caches root, and its
+// Preferences, Application Support and Keychains); it is not yolo's
 // own tree; its cache segment was not relocated by the user; it exists, is a
 // directory and is writable; and aliasing would not replace a warm private copy
 // with an empty one. Every failure DEGRADES TO THE STATUS QUO — the jail keeps its
@@ -91,6 +99,12 @@ func HostPlatform() string { return goruntime.GOOS + "/" + goruntime.GOARCH }
 // consumers, and TestJailPlatformMatchesTheCaptureManifestsPlatform pins them
 // together so neither can drift alone.
 func JailPlatform() string { return "linux/" + goruntime.GOARCH }
+
+// DarwinJailPlatform is what macos-user's sandbox builds for: the sandbox is a
+// process on THIS Mac, so its platform is darwin and this machine's architecture,
+// known without asking anything (JailPlatform's reasoning, for the backend with no
+// VM).
+func DarwinJailPlatform() string { return "darwin/" + goruntime.GOARCH }
 
 // jailCacheDir is the container-side XDG cache root — the destination
 // `podmanBaseMounts` binds paths.GlobalCache() at.
@@ -253,6 +267,18 @@ type Store struct {
 	// private copy rather than beside it.
 	Root    JailRoot
 	JailRel string
+	// DarwinHost resolves the host-side source ON macOS, from the same environment
+	// variables the tool honors on Linux, falling back to the tool's documented
+	// macOS default. Each row's comment names its source. ⚠ These are DOCUMENTED
+	// defaults, not measured ones: the plan's slice 11 confirms each on a Mac, and a
+	// row the Mac shows unused is dropped rather than guessed again.
+	DarwinHost func(HostEnv) string
+	// DarwinRel is the destination on macos-user: the path, relative to the
+	// sandbox's HOME, its own copy of the tool uses — the tool's macOS default
+	// unless the sandbox env overrides it (macos-user sets NPM_CONFIG_CACHE,
+	// GOPATH and MISE_DATA_DIR under HOME and nothing else these tools read). The
+	// alias is a HOME link at this path to the DarwinHost source.
+	DarwinRel string
 	// Evidence is why this directory is a cache and nothing else (and, for the
 	// content-addressed store, why it passes the CAS test). Printed by `yolo
 	// stores`, so a reader can check the claim against their own disk.
@@ -280,6 +306,24 @@ func (s Store) CacheSegment() string {
 		return ""
 	}
 	return firstSegment(s.JailRel)
+}
+
+// DarwinCacheSegment is CacheSegment for the macos-user row: the top-level subdir
+// of the sandbox's ~/.cache the store lives under (where a macos-user
+// `cache_relocations` link sits), or "" for a store elsewhere in HOME — a
+// ~/Library/Caches store is out of every relocation's reach.
+func (s Store) DarwinCacheSegment() string {
+	rest, ok := strings.CutPrefix(s.DarwinRel, ".cache/")
+	if !ok {
+		return ""
+	}
+	return firstSegment(rest)
+}
+
+// libraryCaches is ~/Library/Caches, macOS's per-user cache root
+// (os.UserCacheDir on darwin, and platformdirs' user_cache_dir).
+func (e HostEnv) libraryCaches(rel ...string) string {
+	return joinIf(e.home(), append([]string{"Library", "Caches"}, rel...)...)
 }
 
 // Stranded is the HOST side of the jail's own private copy — the bytes the alias
@@ -315,6 +359,11 @@ func (s Store) Stranded(rootHost string) string {
 //     has no jail-side cache to alias over. Yarn classic's ~/.cache/yarn is here.
 //   - mise's cache dir — the jail sets MISE_CACHE_DIR to a per-launch /tmp
 //     directory; mise's downloaded archives live in its DATA dir, which is here.
+//
+// THE macOS ROWS (DarwinHost, DarwinRel) are for macos-user's run-as-you mode
+// only. Each DarwinHost honors the same variables as Host and falls back to the
+// tool's documented macOS default, cited per row; slice 11 of
+// docs/design/macos-user-model-plan.md confirms each on a Mac.
 var Stores = []Store{{
 	Name:    "pants-lmdb-store",
 	Tool:    "pants",
@@ -322,6 +371,11 @@ var Stores = []Store{{
 	Host:    func(e HostEnv) string { return e.underCache("pants/lmdb_store") },
 	Root:    RootCache,
 	JailRel: "pants/lmdb_store",
+	// macOS: pants' cache dir is $XDG_CACHE_HOME/pants else ~/.cache/pants on every
+	// OS (pants' get_pants_cachedir; its global option docs name
+	// ~/.cache/pants/lmdb_store), so the Linux resolver is the macOS one.
+	DarwinHost: func(e HostEnv) string { return e.underCache("pants/lmdb_store") },
+	DarwinRel:  ".cache/pants/lmdb_store",
 	Evidence: "digest-named blobs, verified: immutable/files/<2-hex>/<64-hex> and the 64-hex name " +
 		"IS the sha256 of the file's contents (MEASURED 2026-09-09 on a 232 MB blob); the blobs are " +
 		"mode r-xr-xr-x. pants' own default is ONE per-user store shared by every repo on the machine, " +
@@ -329,20 +383,19 @@ var Stores = []Store{{
 }, {
 	// npm's cache dir is ~/.npm (npm does not follow XDG), overridable by
 	// npm_config_cache. It also holds _logs and _npx; only _cacache is the cache.
-	Name:   "npm-cacache",
-	Tool:   "npm",
-	Keying: KeyPath,
-	Host: func(e HostEnv) string {
-		for _, k := range []string{"npm_config_cache", "NPM_CONFIG_CACHE"} {
-			if v := e.abs(k); v != "" {
-				return filepath.Join(v, "_cacache")
-			}
-		}
-		return joinIf(e.home(), ".npm", "_cacache")
-	},
-	Root:     RootCache,
-	JailRel:  "npm/_cacache",
-	Evidence: "npm's package cache (content-v2 blobs, index-v5 URL index); _logs and _npx beside it are not aliased, and .npmrc lives elsewhere",
+	Name:    "npm-cacache",
+	Tool:    "npm",
+	Keying:  KeyPath,
+	Host:    npmCacache,
+	Root:    RootCache,
+	JailRel: "npm/_cacache",
+	// macOS: npm's `cache` config defaults to ~/.npm on every POSIX system (npm docs,
+	// config "cache"), so the Linux resolver is the macOS one. The sandbox exports
+	// NPM_CONFIG_CACHE=$HOME/.cache/npm (internal/entrypoint/shell.go), so its own
+	// copy is under ~/.cache/npm.
+	DarwinHost: npmCacache,
+	DarwinRel:  ".cache/npm/_cacache",
+	Evidence:   "npm's package cache (content-v2 blobs, index-v5 URL index); _logs and _npx beside it are not aliased, and .npmrc lives elsewhere",
 }, {
 	// pnpm's content store: $PNPM_HOME/store, else $XDG_DATA_HOME/pnpm/store, else
 	// ~/.local/share/pnpm/store. ~/.local/share/pnpm itself also holds global
@@ -356,102 +409,198 @@ var Stores = []Store{{
 		}
 		return joinIf(e.dataRoot(), "pnpm", "store")
 	},
-	Root:     RootLocal,
-	JailRel:  "share/pnpm/store",
-	Evidence: "pnpm's package store (files/ by integrity hash, index/ by package); the global-install bin dir beside it is not aliased",
+	Root:    RootLocal,
+	JailRel: "share/pnpm/store",
+	// macOS: pnpm's store-dir is $PNPM_HOME/store, else $XDG_DATA_HOME/pnpm/store,
+	// else ~/Library/pnpm/store on macOS (pnpm docs, settings "store-dir").
+	DarwinHost: func(e HostEnv) string {
+		if v := e.abs("PNPM_HOME"); v != "" {
+			return filepath.Join(v, "store")
+		}
+		if v := e.abs("XDG_DATA_HOME"); v != "" {
+			return filepath.Join(v, "pnpm", "store")
+		}
+		return joinIf(e.home(), "Library", "pnpm", "store")
+	},
+	DarwinRel: "Library/pnpm/store",
+	Evidence:  "pnpm's package store (files/ by integrity hash, index/ by package); the global-install bin dir beside it is not aliased",
 }, {
-	Name:     "pnpm-cache",
-	Tool:     "pnpm",
-	Keying:   KeyPath,
-	Host:     func(e HostEnv) string { return e.underCache("pnpm") },
-	Root:     RootCache,
-	JailRel:  "pnpm",
-	Evidence: "pnpm's registry metadata cache ($XDG_CACHE_HOME/pnpm); pnpm's config is under ~/.config/pnpm",
+	Name:    "pnpm-cache",
+	Tool:    "pnpm",
+	Keying:  KeyPath,
+	Host:    func(e HostEnv) string { return e.underCache("pnpm") },
+	Root:    RootCache,
+	JailRel: "pnpm",
+	// macOS: pnpm's cache-dir is $XDG_CACHE_HOME/pnpm, else ~/Library/Caches/pnpm on
+	// macOS (pnpm docs, settings "cache-dir").
+	DarwinHost: func(e HostEnv) string {
+		if v := e.abs("XDG_CACHE_HOME"); v != "" {
+			return filepath.Join(v, "pnpm")
+		}
+		return e.libraryCaches("pnpm")
+	},
+	DarwinRel: "Library/Caches/pnpm",
+	Evidence:  "pnpm's registry metadata cache ($XDG_CACHE_HOME/pnpm); pnpm's config is under ~/.config/pnpm",
 }, {
 	// Yarn classic on Linux: YARN_CACHE_FOLDER, else $XDG_CACHE_HOME/yarn.
-	Name:     "yarn-cache",
-	Tool:     "yarn",
-	Keying:   KeyPath,
-	Host:     func(e HostEnv) string { return e.orCache("YARN_CACHE_FOLDER", "yarn") },
-	Root:     RootCache,
-	JailRel:  "yarn",
-	Evidence: "yarn classic's package cache (v6/ tarball checkouts); .yarnrc is elsewhere",
+	Name:    "yarn-cache",
+	Tool:    "yarn",
+	Keying:  KeyPath,
+	Host:    func(e HostEnv) string { return e.orCache("YARN_CACHE_FOLDER", "yarn") },
+	Root:    RootCache,
+	JailRel: "yarn",
+	// macOS: yarn classic takes YARN_CACHE_FOLDER, else $XDG_CACHE_HOME/yarn, else
+	// ~/Library/Caches/Yarn on darwin (yarn 1.x src/constants.js getCacheDir; the
+	// `yarn cache dir` docs name the macOS path). The sandbox sets no
+	// YARN_CACHE_FOLDER.
+	DarwinHost: func(e HostEnv) string {
+		if v := e.abs("YARN_CACHE_FOLDER"); v != "" {
+			return v
+		}
+		if v := e.abs("XDG_CACHE_HOME"); v != "" {
+			return filepath.Join(v, "yarn")
+		}
+		return e.libraryCaches("Yarn")
+	},
+	DarwinRel: "Library/Caches/Yarn",
+	Evidence:  "yarn classic's package cache (v6/ tarball checkouts); .yarnrc is elsewhere",
 }, {
-	Name:     "pip-cache",
-	Tool:     "pip",
-	Keying:   KeyPath,
-	Host:     func(e HostEnv) string { return e.orCache("PIP_CACHE_DIR", "pip") },
-	Root:     RootCache,
-	JailRel:  "pip",
-	Evidence: "pip's HTTP and wheel cache (http-v2/, wheels/); pip.conf and .pypirc are elsewhere",
+	Name:    "pip-cache",
+	Tool:    "pip",
+	Keying:  KeyPath,
+	Host:    func(e HostEnv) string { return e.orCache("PIP_CACHE_DIR", "pip") },
+	Root:    RootCache,
+	JailRel: "pip",
+	// macOS: PIP_CACHE_DIR, else platformdirs' user_cache_dir, ~/Library/Caches/pip
+	// (pip docs, "Caching": "macOS ~/Library/Caches/pip"); pip ignores
+	// XDG_CACHE_HOME on macOS.
+	DarwinHost: func(e HostEnv) string {
+		if v := e.abs("PIP_CACHE_DIR"); v != "" {
+			return v
+		}
+		return e.libraryCaches("pip")
+	},
+	DarwinRel: "Library/Caches/pip",
+	Evidence:  "pip's HTTP and wheel cache (http-v2/, wheels/); pip.conf and .pypirc are elsewhere",
 }, {
-	Name:     "uv-cache",
-	Tool:     "uv",
-	Keying:   KeyPath,
-	Host:     func(e HostEnv) string { return e.orCache("UV_CACHE_DIR", "uv") },
-	Root:     RootCache,
-	JailRel:  "uv",
-	Evidence: "uv's cache (archives, wheels, index metadata); uv.toml is under ~/.config/uv",
+	Name:    "uv-cache",
+	Tool:    "uv",
+	Keying:  KeyPath,
+	Host:    func(e HostEnv) string { return e.orCache("UV_CACHE_DIR", "uv") },
+	Root:    RootCache,
+	JailRel: "uv",
+	// macOS: UV_CACHE_DIR, else $XDG_CACHE_HOME/uv, else ~/.cache/uv on macOS as on
+	// Linux (uv docs, "Caching", cache directory), so the Linux resolver is the
+	// macOS one.
+	DarwinHost: func(e HostEnv) string { return e.orCache("UV_CACHE_DIR", "uv") },
+	DarwinRel:  ".cache/uv",
+	Evidence:   "uv's cache (archives, wheels, index metadata); uv.toml is under ~/.config/uv",
 }, {
 	// Go's build cache: GOCACHE (absolute; "off" disables it), else
 	// os.UserCacheDir()/go-build.
-	Name:     "go-build-cache",
-	Tool:     "go",
-	Keying:   KeyPath,
-	Host:     func(e HostEnv) string { return e.orCache("GOCACHE", "go-build") },
-	Root:     RootCache,
-	JailRel:  "go-build",
-	Evidence: "Go's build cache (action and output entries; Go trims it itself); go's env file is under ~/.config/go",
+	Name:    "go-build-cache",
+	Tool:    "go",
+	Keying:  KeyPath,
+	Host:    func(e HostEnv) string { return e.orCache("GOCACHE", "go-build") },
+	Root:    RootCache,
+	JailRel: "go-build",
+	// macOS: GOCACHE, else os.UserCacheDir()/go-build, and os.UserCacheDir on darwin
+	// is $HOME/Library/Caches whatever XDG_CACHE_HOME says (`go help cache`; the os
+	// package's UserCacheDir docs).
+	DarwinHost: func(e HostEnv) string {
+		if v := e.abs("GOCACHE"); v != "" {
+			return v
+		}
+		return e.libraryCaches("go-build")
+	},
+	DarwinRel: "Library/Caches/go-build",
+	Evidence:  "Go's build cache (action and output entries; Go trims it itself); go's env file is under ~/.config/go",
 }, {
 	// Go's module cache: GOMODCACHE, else the first GOPATH entry's pkg/mod, else
 	// ~/go/pkg/mod. The jail's GOPATH is ~/go, so its copy is ~/go/pkg/mod.
-	Name:   "go-mod-cache",
-	Tool:   "go",
-	Keying: KeyPath,
-	Host: func(e HostEnv) string {
-		if v := e.abs("GOMODCACHE"); v != "" {
-			return v
-		}
-		if gp := e.get("GOPATH"); gp != "" {
-			first := filepath.SplitList(gp)[0]
-			if !filepath.IsAbs(first) {
-				return ""
-			}
-			return filepath.Join(first, "pkg", "mod")
-		}
-		return joinIf(e.home(), "go", "pkg", "mod")
-	},
-	Root:     RootGoPath,
-	JailRel:  "pkg/mod",
-	Evidence: "Go's module cache (extracted modules and cache/download zips, read-only by design); GOPATH/bin beside it is not aliased",
+	Name:    "go-mod-cache",
+	Tool:    "go",
+	Keying:  KeyPath,
+	Host:    goModCache,
+	Root:    RootGoPath,
+	JailRel: "pkg/mod",
+	// macOS: the same rule on every OS (`go help gopath`, `go help modules`), so the
+	// Linux resolver is the macOS one. The sandbox's GOPATH is $HOME/go
+	// (internal/entrypoint/shell.go).
+	DarwinHost: goModCache,
+	DarwinRel:  "go/pkg/mod",
+	Evidence:   "Go's module cache (extracted modules and cache/download zips, read-only by design); GOPATH/bin beside it is not aliased",
 }, {
 	// cargo keeps credentials.toml and config.toml in CARGO_HOME itself, so only
 	// the registry/ subdirectory is aliased (OQ-BF11 names the registry; git/
 	// checkouts are not on the list).
-	Name:     "cargo-registry",
-	Tool:     "cargo",
-	Keying:   KeyPath,
-	Host:     func(e HostEnv) string { return joinIf(cargoHome(e), "registry") },
-	Root:     RootMise,
-	JailRel:  "cargo/registry",
-	Evidence: "cargo's registry index, crate archives and extracted sources; credentials.toml and config.toml in the same CARGO_HOME are not aliased",
+	Name:    "cargo-registry",
+	Tool:    "cargo",
+	Keying:  KeyPath,
+	Host:    func(e HostEnv) string { return joinIf(cargoHome(e), "registry") },
+	Root:    RootMise,
+	JailRel: "cargo/registry",
+	// macOS: CARGO_HOME, else ~/.cargo on every OS (the cargo book, "Cargo Home").
+	// The sandbox sets no CARGO_HOME, so its own copy is ~/.cargo/registry.
+	DarwinHost: func(e HostEnv) string { return joinIf(cargoHome(e), "registry") },
+	DarwinRel:  ".cargo/registry",
+	Evidence:   "cargo's registry index, crate archives and extracted sources; credentials.toml and config.toml in the same CARGO_HOME are not aliased",
 }, {
 	// mise's DATA dir: MISE_DATA_DIR, else $XDG_DATA_HOME/mise. Only downloads/ —
 	// installs/ beside it is the installed tools, and mise's config is under
 	// ~/.config/mise.
-	Name:   "mise-downloads",
-	Tool:   "mise",
-	Keying: KeyPath,
-	Host: func(e HostEnv) string {
-		if v := e.abs("MISE_DATA_DIR"); v != "" {
-			return filepath.Join(v, "downloads")
-		}
-		return joinIf(e.dataRoot(), "mise", "downloads")
-	},
-	Root:     RootMise,
-	JailRel:  "downloads",
-	Evidence: "mise's downloaded tool archives; installs/ and mise's config are not aliased",
+	Name:    "mise-downloads",
+	Tool:    "mise",
+	Keying:  KeyPath,
+	Host:    miseDownloads,
+	Root:    RootMise,
+	JailRel: "downloads",
+	// macOS: mise uses the XDG layout on macOS too — MISE_DATA_DIR, else
+	// $XDG_DATA_HOME/mise, else ~/.local/share/mise (mise docs, "Directory
+	// Structure"), so the Linux resolver is the macOS one. The sandbox's
+	// MISE_DATA_DIR is $HOME/.yolo/mise (macosuser.SandboxMiseData, pinned against
+	// this row in internal/cli/run). ⚠ MMP-D6 moves self mode's MISE_DATA_DIR to the
+	// machine root, outside HOME: slice 6 must move this row with it.
+	DarwinHost: miseDownloads,
+	DarwinRel:  ".yolo/mise/downloads",
+	Evidence:   "mise's downloaded tool archives; installs/ and mise's config are not aliased",
 }}
+
+// npmCacache is npm_config_cache (either case)/_cacache, else ~/.npm/_cacache — npm's
+// rule on every POSIX system.
+func npmCacache(e HostEnv) string {
+	for _, k := range []string{"npm_config_cache", "NPM_CONFIG_CACHE"} {
+		if v := e.abs(k); v != "" {
+			return filepath.Join(v, "_cacache")
+		}
+	}
+	return joinIf(e.home(), ".npm", "_cacache")
+}
+
+// goModCache is GOMODCACHE, else the first GOPATH entry's pkg/mod, else
+// ~/go/pkg/mod — go's rule on every OS.
+func goModCache(e HostEnv) string {
+	if v := e.abs("GOMODCACHE"); v != "" {
+		return v
+	}
+	if gp := e.get("GOPATH"); gp != "" {
+		first := filepath.SplitList(gp)[0]
+		if !filepath.IsAbs(first) {
+			return ""
+		}
+		return filepath.Join(first, "pkg", "mod")
+	}
+	return joinIf(e.home(), "go", "pkg", "mod")
+}
+
+// miseDownloads is MISE_DATA_DIR/downloads, else $XDG_DATA_HOME/mise/downloads,
+// else ~/.local/share/mise/downloads — mise's rule on Linux and macOS alike.
+func miseDownloads(e HostEnv) string {
+	if v := e.abs("MISE_DATA_DIR"); v != "" {
+		return filepath.Join(v, "downloads")
+	}
+	return joinIf(e.dataRoot(), "mise", "downloads")
+}
 
 func cargoHome(e HostEnv) string {
 	if v := e.abs("CARGO_HOME"); v != "" {
@@ -469,7 +618,8 @@ const (
 	// OwnershipUnknown — podman was not asked, or its answer did not say. The zero
 	// value, so a caller that forgets the fact declines.
 	OwnershipUnknown Ownership = iota
-	// OwnershipYours — rootless podman: the jail's root is the launching user.
+	// OwnershipYours — rootless podman: the jail's root is the launching user; or
+	// macos-user's run-as-you mode, where the sandbox IS the launching user.
 	OwnershipYours
 	// OwnershipNotYours — rootful podman: a jail-written file is host root's.
 	OwnershipNotYours
@@ -482,7 +632,8 @@ type Code string
 const (
 	// CodeAliased — the mount is emitted.
 	CodeAliased Code = "aliased"
-	// CodeBackend — not podman. Apple Container and macos-user both land here.
+	// CodeBackend — not podman, nor macos-user in its run-as-you mode. Apple
+	// Container and macos-user's account mode land here.
 	CodeBackend Code = "backend"
 	// CodeMacOS — a macOS host, refused as its own rule rather than as a side
 	// effect of the platform comparison below.
@@ -595,6 +746,17 @@ type Facts struct {
 	ScopeBreach func(string) bool
 	// Probe gathers a Presence. nil => DefaultProbe.
 	Probe func(string) Presence
+	// MacosUserSelf says a macos-user launch runs the sandbox as the invoking user
+	// (macosuser.ModeSelf, MMP-D12). It is the ONLY way macos-user passes the
+	// backend gate, and it is ignored on every other runtime. The zero value — the
+	// account mode production runs today — declines every store.
+	MacosUserSelf bool
+	// MacosUserHome is the sandbox's HOME on the host (macos-user runs no
+	// container, so the two are one path): the destination and the stranded
+	// private copy of a macOS row are <MacosUserHome>/<DarwinRel>. Empty when the
+	// caller has no workspace, in which case the stranded path is unknown and the
+	// cold-start gate is skipped.
+	MacosUserHome string
 }
 
 // rootHost is the host side of a jail root.
@@ -645,12 +807,29 @@ func Aliased(ds []Disposition) []Disposition {
 }
 
 func decide(s Store, f Facts, probe func(string) Presence) Disposition {
+	env := HostEnv{CacheRoot: f.HostCacheRoot, Getenv: f.HostGetenv}
+	// macos-user's run-as-you mode takes the macOS row: a HOME link rather than a
+	// bind, so the destination, the stranded copy and the same-tree root are all
+	// the sandbox HOME's. Every other launch keeps the Linux row unchanged.
+	darwin := f.Runtime == "macos-user" && f.MacosUserSelf
 	rootHost := f.rootHost(s.Root)
 	d := Disposition{
 		Store:    s,
-		Source:   s.Host(HostEnv{CacheRoot: f.HostCacheRoot, Getenv: f.HostGetenv}),
+		Source:   s.Host(env),
 		Dest:     s.Dest(),
 		Stranded: s.Stranded(rootHost),
+	}
+	if darwin {
+		rootHost = f.MacosUserHome
+		d.Source = ""
+		if s.DarwinHost != nil {
+			d.Source = s.DarwinHost(env)
+		}
+		d.Dest, d.Stranded = "~/"+s.DarwinRel, ""
+		if f.MacosUserHome != "" {
+			d.Dest = filepath.Join(f.MacosUserHome, s.DarwinRel)
+			d.Stranded = d.Dest
+		}
 	}
 
 	// The backend gate is first, and it is storePackagesEligible's first clause
@@ -658,14 +837,27 @@ func decide(s Store, f Facts, probe func(string) Presence) Disposition {
 	// bind's options, and macos-user has no container to mount into at all — and
 	// its run-as-you mode, the one where a jail-written cache file would be the
 	// user's, is not built yet (docs/design/macos-user-model.md).
-	if f.Runtime != "podman" {
+	//
+	// macos-user passes only in its run-as-you mode (MMP-D12); its account mode runs
+	// as a second account, so a file it wrote into your cache would not be yours.
+	switch {
+	case f.Runtime == "macos-user" && !darwin:
+		d.Code, d.Reason = CodeBackend, "on macos-user it needs the run-as-you mode, and this "+
+			"launch runs as the separate sandbox account, whose files in your cache would not be yours"
+		return d
+	case f.Runtime != "podman" && !darwin:
 		d.Code, d.Reason = CodeBackend, "it needs podman, and this launch uses the "+
 			f.Runtime+" runtime"
 		return d
+	case darwin && (s.DarwinHost == nil || s.DarwinRel == ""):
+		d.Code, d.Reason = CodeBackend, "yolo knows no macOS location for the "+s.Tool+" cache"
+		return d
 	}
-	// NEVER ON macOS. Stated as its own refusal rather than left to fall out of
-	// the platform comparison below.
-	if f.IsMacOS {
+	// NEVER ON macOS — for podman, whose jail is Linux in a VM. Stated as its own
+	// refusal rather than left to fall out of the platform comparison below.
+	// macos-user's sandbox is a darwin process on this Mac, so it is exempt, and the
+	// platform comparison still holds it to this machine's architecture.
+	if f.IsMacOS && !darwin {
 		d.Code, d.Reason = CodeMacOS, "it is never done on macOS: the jail is Linux in a VM, "+
 			"so the host's build artifacts and the jail's are not interchangeable"
 		return d
@@ -684,10 +876,20 @@ func decide(s Store, f Facts, probe func(string) Presence) Disposition {
 		switch f.Ownership {
 		case OwnershipYours:
 		case OwnershipNotYours:
+			if darwin {
+				d.Code, d.Reason = CodeNotYours, "files the sandbox writes into the host's "+s.Tool+
+					" cache would not be owned by you"
+				return d
+			}
 			d.Code, d.Reason = CodeNotYours, "this podman is rootful, so files the jail writes "+
 				"into the host's "+s.Tool+" cache would be owned by root rather than by you"
 			return d
 		default:
+			if darwin {
+				d.Code, d.Reason = CodeOwnershipUnknown, "the launch did not say who the sandbox runs as, "+
+					"so yolo cannot tell who would own the files it writes into the host's "+s.Tool+" cache"
+				return d
+			}
 			d.Code, d.Reason = CodeOwnershipUnknown, "podman did not say whether it is rootless, "+
 				"so yolo cannot tell who would own the files the jail writes into the host's "+
 				s.Tool+" cache"
@@ -703,7 +905,7 @@ func decide(s Store, f Facts, probe func(string) Presence) Disposition {
 	// so a variable pointing at the home itself, at an ancestor of it, at the
 	// user's config directory, or at yolo's own boundary directories would make
 	// the alias a writable bind of exactly what OQ-BF11 says never crosses.
-	if reason := unsafeSource(d.Source, f); reason != "" {
+	if reason := unsafeSource(d.Source, f, darwin); reason != "" {
 		d.Code, d.Reason = CodeUnsafeSource, "the host "+s.Tool+" cache path "+d.Source+" "+reason+
 			", so it is not shared"
 		return d
@@ -720,13 +922,17 @@ func decide(s Store, f Facts, probe func(string) Presence) Disposition {
 	// AN EXPLICIT CONFIG DECISION OUTRANKS AN AUTOMATIC OPTIMISATION: a user who
 	// relocated `pants` to get 40 G off the disk $HOME is on must not have the
 	// alias put `pants/lmdb_store` straight back onto that disk.
-	if seg := s.CacheSegment(); seg != "" {
+	seg := s.CacheSegment()
+	if darwin {
+		seg = s.DarwinCacheSegment()
+	}
+	if seg != "" {
 		for _, r := range f.RelocatedSegments {
 			if r == "" || r != seg {
 				continue
 			}
 			d.Code, d.Reason = CodeRelocated, "cache_relocations moves "+seg+
-				" to storage you chose, and aliasing the host's copy of "+s.JailRel+
+				" to storage you chose, and aliasing the host's copy of "+relOf(s, darwin)+
 				" would put those bytes back under your home cache"
 			return d
 		}
@@ -761,6 +967,14 @@ func decide(s Store, f Facts, probe func(string) Presence) Disposition {
 
 	d.Aliased, d.Code = true, CodeAliased
 	return d
+}
+
+// relOf is the store's destination relative to its root, in the row the launch uses.
+func relOf(s Store, darwin bool) string {
+	if darwin {
+		return s.DarwinRel
+	}
+	return s.JailRel
 }
 
 // firstSegment is a relative path's top-level directory.
@@ -809,7 +1023,12 @@ func OwnershipOf(rootless *bool) Ownership {
 // unsafeSource is why a resolved host path may not be bound writable into a jail,
 // or "" when it may. It is the boundary OQ-BF11 draws (caches, never config or
 // credentials) applied to a path that came from the user's environment.
-func unsafeSource(src string, f Facts) string {
+//
+// darwin adds macOS's own config and credential homes, for the macos-user row
+// only, so a Linux decision is exactly what it was: ~/Library and its Caches root
+// hold every application's state, and Preferences, Application Support and
+// Keychains are where macOS applications keep settings, tokens and keychains.
+func unsafeSource(src string, f Facts, darwin bool) string {
 	env := HostEnv{Getenv: f.HostGetenv}
 	if home := env.home(); home != "" {
 		if under(home, src) {
@@ -817,6 +1036,16 @@ func unsafeSource(src string, f Facts) string {
 		}
 		if under(src, filepath.Join(home, ".config")) {
 			return "is inside ~/.config, where tools keep config and credentials"
+		}
+		if darwin {
+			if under(env.libraryCaches(), src) {
+				return "is ~/Library or ~/Library/Caches, or contains them, which hold every application's state"
+			}
+			for _, d := range []string{"Preferences", "Application Support", "Keychains"} {
+				if under(src, filepath.Join(home, "Library", d)) {
+					return "is inside ~/Library/" + d + ", where applications keep config and credentials"
+				}
+			}
 		}
 	}
 	if xdg := env.abs("XDG_CONFIG_HOME"); xdg != "" && under(src, xdg) {

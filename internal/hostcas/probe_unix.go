@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || darwin
 
 package hostcas
 
@@ -16,7 +16,12 @@ import (
 // REAL uid/gid, which under rootless podman is exactly the identity the
 // container's root maps to — so "can the launching user write this?" and "can
 // the jail write this?" are the same question, answered by the kernel including
-// ACLs and read-only mounts. Reading st_mode instead would get ACLs and a `:ro`
+// ACLs and read-only mounts. On darwin it serves macos-user's run-as-you mode
+// (MMP-D12), where the host CLI and the sandbox are the same user, so the same
+// identity argument holds without a user namespace; the plan's slice 8 names this
+// as the darwin probe, and it is this one file rather than a copy of it. (Seatbelt
+// can still deny what DAC allows, which is why the alias is paired with the
+// profile's `cache-alias-allow`.) Reading st_mode instead would get ACLs and a `:ro`
 // filesystem wrong, and it would get them wrong in the DANGEROUS direction:
 // aliasing a store the jail then cannot write, which surfaces inside the jail as
 // the tool's own error rather than as a launch notice.

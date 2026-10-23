@@ -523,6 +523,11 @@ func Run(opts Options) (rc int) {
 		if !ok {
 			return 1
 		}
+		// THE PACKAGE-CACHE ALIAS on this arm (hostcasalias.go's planMacosUserHostCAS; OQ-BF11,
+		// MMP-D12), decided after the relocations it must not undo. The MODE is its input: only
+		// the run-as-you mode shares a host cache, and the account mode every launch runs today
+		// declines each store. Never a refusal — a decline leaves the sandbox its own copy.
+		hostCAS := resolveMacosUserHostCAS(o.planMacosUserHostCAS(o.MacosUserMode, cacheRelocs))
 		// (a bare `yolo` opens an interactive login zsh in the sandbox).
 		agentArgv := injectedArgs
 		if len(agentArgv) == 0 {
@@ -1141,6 +1146,10 @@ func Run(opts Options) (rc int) {
 		// And the cache relocations, which the backend discloses by link and target
 		// (macosuser.printCacheRelocations) and stages, probes and opens in the profile.
 		ctxDelivery.ctx.Relocations = cacheRelocs
+		// And the package-cache aliases, disclosed here as the container arm discloses its own
+		// (noteHostCASAlias): a writable link into your own cache is host access.
+		ctxDelivery.ctx.CacheAliases = macosUserCacheAliases(hostCAS)
+		o.noteHostCASAlias(hostCAS)
 		// EVERY PROFILED AGENT'S OWN ENV FILE, on this backend too (providers.md
 		// OQ-CN9, ruled 2026-09-28): the container vehicle's writer, into the sidecar directory
 		// the bootstrap's home layout links the sandbox's ~/.config to, so an agent started from

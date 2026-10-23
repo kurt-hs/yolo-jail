@@ -283,14 +283,13 @@ func TestFillDefaultsWiresTheRealProbe(t *testing.T) {
 	dir := t.TempDir()
 	p := o.HostCASProbe(dir)
 
-	// TWO PLATFORMS, ONE CONTRACT. This used to assert only the Linux answer and so
-	// failed check-macos: hostcas.DefaultProbe is deliberately a stub off Linux
-	// (probe_other.go returns the zero Presence) because the whole feature is
-	// never-macOS. Asserting BOTH halves is better than skipping — the darwin half
-	// pins the never-macOS guarantee at the one place it is implemented, so a probe
-	// that started answering there would be caught rather than silently enabling an
-	// alias on a backend that must not have one.
-	if runtime.GOOS == "linux" {
+	// TWO PLATFORMS, ONE PROBE. Linux and darwin share hostcas' access(2) probe
+	// (probe_unix.go): darwin serves macos-user's run-as-you mode (MMP-D12), so the
+	// probe answers there too. podman on macOS stays never-aliased, and that
+	// guarantee lives in hostcas' macOS gate (CodeMacOS, pinned in TestPlanGates and
+	// TestMacosUserSelfIsIgnoredOffMacosUser), not in a probe that answers nothing.
+	// Any other GOOS answers nothing (probe_other.go).
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
 		if !p.Exists || !p.IsDir {
 			t.Errorf("default probe on a real temp dir = %+v, want an existing directory", p)
 		}
@@ -301,9 +300,7 @@ func TestFillDefaultsWiresTheRealProbe(t *testing.T) {
 		return
 	}
 	if p != (hostcas.Presence{}) {
-		t.Errorf("off Linux the default probe must answer nothing (%+v) — the alias is "+
-			"never-macOS, and a probe that reports presence there would let the gate fire "+
-			"on a platform the design refuses", p)
+		t.Errorf("off Linux and darwin the default probe must answer nothing (%+v)", p)
 	}
 }
 

@@ -477,8 +477,13 @@ and the host share one store. pants' content-addressed `lmdb_store` came first
   relocated with `cache_relocations`; and not an empty host store over a warm private copy.
   **A path-keyed store also needs rootless podman**, read from the launch's `podman info`, so that
   files the jail writes end up owned by you. Rootful declines, and so does a podman that did not
-  answer. Apple Container and macos-user decline every store for now: macos-user's run-as-you
-  mode is not built yet ([the macos-user model](../design/macos-user-model.md)).
+  answer. Apple Container declines every store. macos-user is admitted only in its run-as-you
+  mode, where the sandbox runs as you, so its files are yours: there each store has a macOS row
+  (the tool's documented macOS default, honoring the same variables, still to be confirmed on a
+  Mac) and the alias is a link in the sandbox's home plus a profile allow, never a bind
+  ([MMP-D12](../design/macos-user-model-plan.md#MMP-D12)). That mode is not selectable yet, so
+  every macos-user launch declines today
+  ([the macos-user model](../design/macos-user-model.md)).
 - **Disclosed.** Each active alias prints at launch with both paths (a writable bind of the host
   user's cache is host access); several print under one heading. A decline the user could act on
   prints too; a structural decline (no store, rootful podman, another backend) prints nothing.

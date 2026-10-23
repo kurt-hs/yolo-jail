@@ -87,7 +87,10 @@ type RunPlan struct {
 	CacheRelocations         []CacheRelocation
 	CacheRelocationPreflight []CacheRelocationProbe
 	CacheRelocationProbes    []CacheRelocationProbe
-	BootstrapArgv            []string
+	// CacheAliases are the host package caches shared in the run-as-you mode
+	// (HostContext.CacheAliases, cachealias.go). Empty in the account mode.
+	CacheAliases  []CacheAlias
+	BootstrapArgv []string
 	// ProvisionArgv is the CONFINED provisioning stage, run between the bootstrap and
 	// the agent — nil when this config gives it nothing to do (ProvisionNeeded), which
 	// is what makes `yolo -- bash` in a tool-less workspace pay nothing for it.
@@ -301,6 +304,10 @@ type HostContext struct {
 	// same reason as the rest of this struct: reading the user's config and making a directory
 	// in their filesystem are host acts, and the plan builder is pure.
 	Relocations []CacheRelocation
+	// CacheAliases are the host package caches this launch shares in the run-as-you mode
+	// (cachealias.go; MMP-D12), decided by internal/hostcas and resolved on the host by the
+	// caller. Always empty in the account mode, which PlanInvariants refuses to carry one.
+	CacheAliases []CacheAlias
 	// Captures are the install-capture store entries this launch stages for its launchers
 	// (CaptureEntry; docs/reference/install-capture.md hand-off H4): for each selected pack's
 	// `via: "installer"` program, the entry the materialize path's own resolver chooses at this
@@ -882,6 +889,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		CacheRelocations:         relocs,
 		CacheRelocationPreflight: CacheRelocationPreflight(runAs, relocs),
 		CacheRelocationProbes:    relocationProbes,
+		CacheAliases:             append([]CacheAlias(nil), hostCtx.CacheAliases...),
 		BootstrapArgv:            bootstrapArgv,
 		ProvisionArgv:            provisionArgv,
 		ProvisionScriptPath:      provisionScriptPath,
@@ -1461,6 +1469,7 @@ func PlanInvariants(plan RunPlan) []string {
 
 	problems = append(problems, contextLinkProblems(plan)...)
 	problems = append(problems, cacheRelocationProblems(plan)...)
+	problems = append(problems, cacheAliasProblems(plan)...)
 
 	// THE REPORT AND THE TREE ARE ONE FACT, checked against each other rather than each
 	// against itself. The jail's read fails CLOSED (OQ-CO10), so a report claiming

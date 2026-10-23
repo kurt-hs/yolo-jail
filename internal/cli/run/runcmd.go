@@ -494,6 +494,16 @@ type Options struct {
 	// (macosuser.DarwinContextSiting); a test sets it to state the facts a Linux machine cannot
 	// produce, such as a source outside every writable place.
 	macosCtxSiting *macosuser.ContextSiting
+	// MacosUserMode is who a macos-user launch's sandbox runs as (macosuser.Mode, MMP-D2). The
+	// zero value is the second account, which every launch runs today: nothing in production
+	// sets it until the run-as-you launch is built (docs/design/macos-user-model-plan.md slice
+	// 6), and cli refuses `macos_user_mode: "self"` until then. Read by the package-cache
+	// alias (planMacosUserHostCAS), which only the run-as-you mode passes.
+	MacosUserMode macosuser.Mode
+	// macosHostCASPlatform overrides the host platform the macos-user package-cache alias
+	// compares against the sandbox's ("" = hostcas.HostPlatform()), so a Linux test can state
+	// the Mac a macos-user launch runs on.
+	macosHostCASPlatform string
 	// Stdout/Stderr receive the human output (console.print goes to stderr in
 	// rich by default for status; run() uses console (stdout) for most lines).
 	// nil => os.Stdout / os.Stderr.

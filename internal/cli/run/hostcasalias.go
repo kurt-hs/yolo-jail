@@ -24,6 +24,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostcas"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -75,6 +76,84 @@ func (o *Options) planHostCASAlias(rt string, relocations []config.CacheRelocati
 	})
 }
 
+// planMacosUserHostCAS is planHostCASAlias for the macos-user arm (MMP-D12): the same
+// hostcas.Plan, over the macOS rows, with the MODE as its input. Only the run-as-you mode
+// passes hostcas' backend gate, and only it states the ownership fact — the sandbox IS the
+// invoking user, so a file it writes into the host's cache is the user's by construction.
+// The account mode (the zero value, every launch today) leaves both unset, and every store
+// declines with CodeBackend.
+//
+// The destination is the sandbox's HOME on the host — the workspace's home state in the
+// run-as-you mode (MMP-D5) — and the platform pair is this Mac's against the sandbox's,
+// darwin on this machine's architecture. relocations are the user's `cache_relocations` the
+// arm already planned (planMacosUserCacheRelocations), so an alias never puts a relocated
+// ~/.cache segment back under the home. Under the seal there are none: the arm returns before
+// this is called.
+func (o *Options) planMacosUserHostCAS(mode macosuser.Mode, relocations []macosuser.CacheRelocation) []hostcas.Disposition {
+	relocated := make([]string, 0, len(relocations))
+	for _, r := range relocations {
+		relocated = append(relocated, r.Subdir)
+	}
+	self := mode == macosuser.ModeSelf
+	ownership := hostcas.OwnershipUnknown
+	sandboxHome := macosuser.SandboxHome()
+	if self {
+		ownership = hostcas.OwnershipYours
+		sandboxHome = paths.WorkspaceHomeState(o.Workspace)
+	}
+	hostPlatform := o.macosHostCASPlatform
+	if hostPlatform == "" {
+		hostPlatform = hostcas.HostPlatform()
+	}
+	return hostcas.Plan(hostcas.Facts{
+		Runtime:           "macos-user",
+		MacosUserSelf:     self,
+		IsMacOS:           o.IsMacOS,
+		HostPlatform:      hostPlatform,
+		JailPlatform:      hostcas.DarwinJailPlatform(),
+		Ownership:         ownership,
+		HostCacheRoot:     hostcas.CacheRoot(o.Getenv),
+		HostGetenv:        o.Getenv,
+		MacosUserHome:     sandboxHome,
+		RelocatedSegments: relocated,
+		Probe:             o.HostCASProbe,
+		ScopeBreach:       scopeBreached,
+	})
+}
+
+// resolveMacosUserHostCAS resolves every aliased source through its symlinks, as the host
+// sees it, because the profile's `cache-alias-allow` names the target verbatim and Seatbelt
+// judges the resolved path. A source that cannot be resolved (it went away after the probe) is
+// DOWNGRADED to absent rather than handed over unresolved, the direction every failure here
+// takes: the sandbox keeps its own copy.
+func resolveMacosUserHostCAS(ds []hostcas.Disposition) []hostcas.Disposition {
+	out := make([]hostcas.Disposition, 0, len(ds))
+	for _, d := range ds {
+		if d.Aliased {
+			if resolved, err := filepath.EvalSymlinks(d.Source); err == nil {
+				d.Source = resolved
+			} else {
+				d.Aliased = false
+				d.Code = hostcas.CodeAbsent
+				d.Reason = "the host " + d.Store.Tool + " store at " + d.Source +
+					" could not be resolved: " + err.Error()
+			}
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+// macosUserCacheAliases is what the macos-user backend is handed for this launch's aliased
+// stores (HostContext.CacheAliases): a link at the destination to the resolved source.
+func macosUserCacheAliases(ds []hostcas.Disposition) []macosuser.CacheAlias {
+	var out []macosuser.CacheAlias
+	for _, d := range hostcas.Aliased(ds) {
+		out = append(out, macosuser.CacheAlias{Tool: d.Store.Tool, Link: d.Dest, Target: d.Source})
+	}
+	return out
+}
+
 // scopeBreached is the credential-boundary rule a read-write `mounts` source runs
 // (paths.WritableSourceScopeBreach), handed to hostcas for env-derived host paths.
 func scopeBreached(p string) bool { return paths.WritableSourceScopeBreach(p) != nil }
@@ -82,7 +161,7 @@ func scopeBreached(p string) bool { return paths.WritableSourceScopeBreach(p) !=
 // hostCASOwnership is podman's rootless answer as an ownership fact: only a
 // podman launch whose readiness gate parsed an answer naming rootless can say.
 func (o *Options) hostCASOwnership(rt string) hostcas.Ownership {
-	if rt != "podman" || o.podmanFacts == nil || !o.podmanFacts.parsed { // parity: NotApplicable — rootless is a podman fact; hostcas declines every other backend before ownership is read (macos-user run-as-you is unbuilt, docs/design/macos-user-model.md)
+	if rt != "podman" || o.podmanFacts == nil || !o.podmanFacts.parsed { // parity: NotApplicable — rootless is a podman fact; macos-user states its own ownership from its mode (planMacosUserHostCAS), and hostcas declines every other backend before ownership is read
 		return hostcas.OwnershipUnknown
 	}
 	return hostcas.OwnershipOf(o.podmanFacts.info.Host.Security.Rootless)

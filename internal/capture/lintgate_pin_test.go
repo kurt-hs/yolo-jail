@@ -49,6 +49,9 @@ var unanalyzedFiles = map[string]string{
 		"serialdaemon's constraint set, not a target: the tree does not compile under " +
 		"GOOS=windows at all, so a third lint pass would report a broken build rather than a " +
 		"finding. Adding a GOOS that DOES compile is the way to retire this entry.",
+	"internal/hostcas/probe_other.go": "`!linux && !darwin` since darwin shares the access(2) " +
+		"probe (probe_unix.go) for macos-user's run-as-you mode: the completeness arm of its " +
+		"constraint set, for serialdaemon's reason above.",
 }
 
 // repoRootDir locates the checkout from this test file's compile-time path.
