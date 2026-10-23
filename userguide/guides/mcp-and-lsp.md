@@ -29,31 +29,37 @@ for yolo's servers before, remove it: with both, pi can start a server twice, on
 subagent that lists `mcp:` tools needs `pi-subagents` 0.74.0 or later to run them without the
 adapter, so update `pi-subagents` first.
 
-## MCP Presets
+## MCP Servers
 
-yolo ships two MCP servers you can turn on by name:
+### The browser: the `chrome-devtools` pack
 
-### Available Presets
-
-| Preset | Description |
-|--------|-------------|
-| `chrome-devtools` | Lets the agent drive a headless Chromium browser, which is built into the jail |
-| `sequential-thinking` | Gives the agent a step-by-step reasoning tool |
-
-### Enable Presets
+The `chrome-devtools` pack lets the agent drive a headless Chromium browser, which is built into
+the jail. Turn it on by adding `chrome-devtools` to `packs` in your user config,
+`~/.config/yolo-jail/config.jsonc`, beside your agents:
 
 ```jsonc
 {
-  "mcp_presets": ["chrome-devtools", "sequential-thinking"]
+  "packs": ["claude", "chrome-devtools"]
 }
 ```
 
-yolo installs a preset's server when the jail starts, and keeps it current
-along with the agent. On `macos-user`, presets are not delivered yet.
+A project's `yolo-jail.jsonc` cannot select a pack. yolo installs the server when an agent starts
+and keeps it current along with the agent. On `macos-user` the pack uses the Chrome or Chromium
+your Mac already has.
 
-### Custom MCP Servers
+To turn the server off in one project without dropping the pack, set it to `null`:
 
-Add your own MCP servers alongside or instead of presets. The `command` must exist inside the jail:
+```jsonc
+{
+  "mcp_servers": {
+    "chrome-devtools": null
+  }
+}
+```
+
+### Your own MCP servers
+
+Add your own MCP servers under `mcp_servers`. The `command` must exist inside the jail:
 
 ```jsonc
 {
@@ -66,18 +72,27 @@ Add your own MCP servers alongside or instead of presets. The `command` must exi
 }
 ```
 
-### Disable a Preset
+### `mcp_presets` is gone
 
-Set a preset server to `null` in `mcp_servers` to disable it even when listed in `mcp_presets`:
+The `mcp_presets` key was removed, and a config that still has it is refused until you delete
+it. Its two servers each have a replacement:
 
-```jsonc
-{
-  "mcp_presets": ["chrome-devtools", "sequential-thinking"],
-  "mcp_servers": {
-    "sequential-thinking": null
+- `chrome-devtools`: add the `chrome-devtools` pack, as above.
+- `sequential-thinking` was deleted. To keep it, write the server yourself:
+
+  ```jsonc
+  {
+    "mcp_servers": {
+      "sequential-thinking": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+      }
+    }
   }
-}
-```
+  ```
+
+  yolo does not install or update a server you write yourself; `npx -y` fetches it when the agent
+  starts it.
 
 ---
 

@@ -25,9 +25,6 @@ package config
 //     BUILT-IN login's: the `capabilities` on its pack's `program`, found by bin ownership
 //     through packload.NativeCapabilities (§6.1 clause 1).
 //
-// `mcp_presets` contributes nothing on purpose: a preset is a baked command list
-// (internal/entrypoint/mcp.go), and neither shipped preset declares a `provides`.
-//
 // A PACK'S PROVIDER COUNTS ONLY WHERE A PROFILE MAKES IT AN AGENT'S SOURCE, and an agent's
 // built-in login only where no profile replaces it. A provider rides into a launch whether or
 // not anything runs on it: openai-auth's `openai-codex`, which declares web_search, joins every

@@ -129,25 +129,15 @@ func TestANullInYourMCPServersRemovesThePacksServerAtTheHost(t *testing.T) {
 	}
 }
 
-// The preset's omission line names the pack as its next step, and says the pack's server is what
-// is written when it is selected.
-func TestThePresetLineNamesTheChromeDevtoolsPack(t *testing.T) {
+// `yolo host apply` names the retired `mcp_presets` key and its next step, the pack: the host
+// notch runs no full validation, so this line is the only place it would be said.
+func TestHostApplyNamesTheRetiredMCPPresetsKey(t *testing.T) {
 	hostComputedHome(t, `{"packs":["claude"],"host_management":"own","host_floor":false,"mcp_presets":["chrome-devtools"]}`)
 	var out, errw bytes.Buffer
 	hostMain([]string{"apply"}, &out, &errw, false, strings.NewReader(""))
 	if report := out.String() + errw.String(); !strings.Contains(report,
-		"mcp_presets chrome-devtools is not written at the host: its command is a wrapper only a jail "+
-			"writes — pack chrome-devtools ships that server for the host too: add \"chrome-devtools\" to `packs`") {
-		t.Errorf("the preset line does not name the pack:\n%s", report)
-	}
-
-	hostComputedHome(t, `{"packs":["claude","chrome-devtools"],"host_management":"own","host_floor":false,"mcp_presets":["chrome-devtools"]}`)
-	out.Reset()
-	errw.Reset()
-	hostMain([]string{"apply"}, &out, &errw, false, strings.NewReader(""))
-	if report := out.String() + errw.String(); !strings.Contains(report,
-		"pack chrome-devtools's chrome-devtools server is written there instead") {
-		t.Errorf("with the pack selected the preset line does not say its server is written:\n%s", report)
+		"config.mcp_presets: REMOVED") || !strings.Contains(report, "add `chrome-devtools` to `packs`") {
+		t.Errorf("host apply does not name the retired key and the pack:\n%s", report)
 	}
 }
 

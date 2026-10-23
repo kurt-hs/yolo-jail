@@ -31,7 +31,6 @@ func gatedServerBootstrap(t *testing.T, sessionEnv string) (claudeJSON, term str
 		"JAIL_HOME":             home,
 		"YOLO_PACK_ROOT":        stageShippedPacks(t),
 		"YOLO_MCP_SERVERS":      `{"gh":{"command":"gh-mcp","requires_env":["GITHUB_TOKEN"]}}`,
-		"YOLO_MCP_PRESETS":      `[]`,
 		"YOLO_DARWIN_WORKSPACE": ws,
 	}
 	if sessionEnv != "" {

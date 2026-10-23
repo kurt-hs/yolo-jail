@@ -74,42 +74,6 @@ func TestNeitherBackendsScriptInstallsALanguageServer(t *testing.T) {
 	}
 }
 
-// MCP PRESET PACKAGES follow the WRAPPERS. macos-user does not generate the preset
-// wrappers (their bodies are Linux-absolute), so installing the npm packages behind them
-// would be a download for an executable this backend never writes — and would make the
-// launch's own "mcp_presets are not delivered" warning a half-truth.
-func TestNoMCPPresetInstallsWhereThereAreNoWrappers(t *testing.T) {
-	vars := map[string]string{
-		"HOME":              "/home/agent",
-		"YOLO_MCP_PRESETS":  `["chrome-devtools"]`,
-		"YOLO_BLOCK_CONFIG": `[]`,
-	}
-	// The assertion is on the INSTALL LIST, not on the package name appearing anywhere:
-	// the script's `case` arm mentions chrome-devtools-mcp unconditionally, so a naive
-	// substring test passes on both backends and proves nothing.
-	container := NewEnv(vars)
-	if want := `YOLO_MCP_NPM="chrome-devtools-mcp"`; !strings.Contains(BootstrapScript(container), want) {
-		t.Fatalf("the container stopped installing an enabled preset's npm package (%s); "+
-			"this test's premise is that the two backends differ, not that neither installs",
-			mcpNpmLine(BootstrapScript(container)))
-	}
-	darwin := DarwinEnvFrom(vars, "/Users/_yolojail")
-	if got := mcpNpmLine(BootstrapScript(darwin)); got != `YOLO_MCP_NPM=""` {
-		t.Errorf("macos-user installs the npm package behind an MCP preset whose wrapper it "+
-			"never generates; nothing can ever exec it: %s", got)
-	}
-}
-
-// mcpNpmLine pulls the YOLO_MCP_NPM assignment out of a script for a readable failure.
-func mcpNpmLine(body string) string {
-	for _, l := range strings.Split(body, "\n") {
-		if strings.HasPrefix(l, "YOLO_MCP_NPM=") {
-			return l
-		}
-	}
-	return "(no YOLO_MCP_NPM= line at all)"
-}
-
 // The bootstrap refreshes the font cache without -f: a forced rebuild makes fc-cache
 // sleep 2 s on every launch (measured), and an unforced one still rebuilds any cache
 // that is out of date.

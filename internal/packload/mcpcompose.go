@@ -100,14 +100,9 @@ func MCPNameCollisions(packs []*Pack) []string {
 
 // ComposeMCPServers is the `mcp_servers` table a notch renders: every held `mcp` declaration of
 // packs, its `~/` words joined to home, then the user's table over it — a `null` removes the
-// pack's entry and stays in the table as a removal (so the jail's preset expansion loses that
-// name too, as it always has), and an object merges over the pack's entry per field, `env` per
-// variable. A user entry no pack ships is copied as written. The result holds nothing the caller
-// owns, so a consumer may edit it. Never nil.
-//
-// Interim coexistence with `mcp_presets` needs no rule here: a jail expands its presets first and
-// lets this table override them by name (entrypoint's mcpServersWith), so a pack's entry replaces
-// a preset of the same name.
+// pack's entry and stays in the table as a removal, and an object merges over the pack's entry
+// per field, `env` per variable. A user entry no pack ships is copied as written. The result
+// holds nothing the caller owns, so a consumer may edit it. Never nil.
 func ComposeMCPServers(user *jsonx.OrderedMap, packs []*Pack, home string) *jsonx.OrderedMap {
 	out := jsonx.NewOrderedMap()
 	for _, held := range HeldMCPServers(packs) {

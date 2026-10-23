@@ -44,8 +44,8 @@ func buildJailLines(t *testing.T, ws, key string) []string {
 func noAgentSessionLines(t *testing.T, lines []string) {
 	t.Helper()
 	for _, l := range lines {
-		for _, bad := range []string{"has no owner", "mcp_presets are not delivered",
-			"shares the host's network", "Kept guest pack tree"} {
+		for _, bad := range []string{"has no owner", "shares the host's network",
+			"Kept guest pack tree"} {
 			if strings.Contains(l, bad) {
 				t.Errorf("the build jail printed %q: %s", bad, l)
 			}

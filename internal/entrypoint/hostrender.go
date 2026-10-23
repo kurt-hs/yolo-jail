@@ -35,8 +35,8 @@ package entrypoint
 //     derive.lua a jail runs, over the wire tables the caller composed at user scope
 //     (HostInputs, hostinputs.go): the provider table, the user's own mcp_servers and
 //     lsp_servers, and the profile selection. It was empty here until then, on the stated
-//     reason that the live tables embed jail-absolute paths; only the MCP presets do, and they
-//     are never an input at this notch. The output lands per key (hostcomputed.go, HC-D10) and a
+//     reason that the live tables embed jail-absolute paths; only the retired MCP presets did,
+//     and they were never an input at this notch. The output lands per key (hostcomputed.go, HC-D10) and a
 //     surface whose output still names a jail-only path is refused, never written (HC-D14). A
 //     ${workspace}-derived value has no referent off-container (OQ-2/§6.6), and such a branch is
 //     pruned, not bound.

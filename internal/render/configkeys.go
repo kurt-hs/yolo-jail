@@ -183,9 +183,6 @@ var hostConfigKeys = map[string]keyCensusEntry{
 	"kvm": {KeyNotApplicable, "passes /dev/kvm into a container; at the host it is already yours"},
 	"mise_tools": {KeyNotApplicable, "a jail composes mise's config from it, and nothing at the " +
 		"host manages your own mise"},
-	"mcp_presets": {KeyNotApplicable, "a preset's command is a wrapper only a jail's boot writes " +
-		"(HC-D27), so `yolo host apply` writes none and names each one it leaves out; the " +
-		"chrome-devtools pack carries that server to the host, in a jail and on macos-user"},
 	// `brokered` is a workspace's own key, read only by a jail launch's config-change gate, which
 	// approves its `brokered.<source>.repos` entry and hands the result to the GitHub broker's
 	// scope file (run's writeScopeFiles), and by `yolo check`'s report of that gate; no host-notch

@@ -161,9 +161,8 @@ func chromeServerEnv(t *testing.T, user string, wire bool) *Env {
 	return NewEnv(vars)
 }
 
-// THE SET: a pack server's npm program joins the presets' packages when the composed table holds
-// the server, and not when your null removed it or no table names it; a preset and a pack naming
-// one package install it once.
+// THE SET: a pack server's npm program joins it when the composed table holds the server, and not
+// when your null removed it or no table names it.
 func TestTheServerSetCarriesAPackServersNpmProgram(t *testing.T) {
 	jailPacks := func(t *testing.T, e *Env) []*packload.Pack {
 		t.Helper()
@@ -193,13 +192,6 @@ func TestTheServerSetCarriesAPackServersNpmProgram(t *testing.T) {
 			}
 		})
 	}
-	t.Run("a preset of the same package", func(t *testing.T) {
-		e := chromeServerEnv(t, "", true)
-		e.Vars["YOLO_MCP_PRESETS"] = `["chrome-devtools"]`
-		if got := ServerRefreshSpecs(e, jailPacks(t, e)).npm; got != "chrome-devtools-mcp" {
-			t.Errorf("the refresh set = %q, want the one package once", got)
-		}
-	})
 }
 
 // Only an npm program with no install flags is the refresh's: the baked list carries a spec and

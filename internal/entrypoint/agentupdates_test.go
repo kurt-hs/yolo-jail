@@ -122,7 +122,6 @@ func TestGeneratedLaunchersCarryTheRefreshTiming(t *testing.T) {
 		"YOLO_BLOCK_CONFIG": `[]`,
 		"YOLO_LSP_SERVERS":  `{}`,
 		"YOLO_MCP_SERVERS":  `{}`,
-		"YOLO_MCP_PRESETS":  `[]`,
 	})
 	if err := GenerateAgentLaunchers(e); err != nil {
 		t.Fatal(err)
@@ -173,7 +172,6 @@ func TestGeneratedLaunchersCarryThePolicy(t *testing.T) {
 		"YOLO_BLOCK_CONFIG": `[]`,
 		"YOLO_LSP_SERVERS":  `{}`,
 		"YOLO_MCP_SERVERS":  `{}`,
-		"YOLO_MCP_PRESETS":  `[]`,
 	})
 	if err := GenerateAgentLaunchers(e); err != nil {
 		t.Fatal(err)

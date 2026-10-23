@@ -29,7 +29,9 @@ import (
 // --- the call site ---------------------------------------------------------------------
 
 // writePackWithServerAgent stages a one-pack YOLO_PACK_ROOT declaring `program <bin>` with
-// the given `via`.
+// the given `via`, and an `mcp` server `acme` whose npm program is `acme-mcp-pkg`: a launch whose
+// composed table holds `acme` (acmeServerWire) has one yolo-installed server, and one whose table
+// does not has none.
 //
 // writePackWithProgram (launchercollision_test.go) hardcodes `via: npm`, which reaches ONE of
 // the two launcher templates. That is the gap this exists to close: deleting the refresh call
@@ -47,12 +49,17 @@ func writePackWithServerAgent(t *testing.T, via, bin string) string {
 		entry = `{"kind":"program","bin":"` + bin +
 			`","via":"installer","url":"https://example.invalid/i.sh"}`
 	}
-	manifest := `{"name":"srvpack","contributes":[` + entry + `]}`
+	server := `{"kind":"program","bin":"acme-mcp","via":"npm","package":"acme-mcp-pkg"},` +
+		`{"kind":"mcp","name":"acme","bin":"acme-mcp","config":{"command":"acme-mcp"}}`
+	manifest := `{"name":"srvpack","contributes":[` + entry + `,` + server + `]}`
 	if err := os.WriteFile(filepath.Join(dir, "pack.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return root
 }
+
+// acmeServerWire is the composed YOLO_MCP_SERVERS holding writePackWithServerAgent's server.
+const acmeServerWire = `{"acme":{"command":"acme-mcp"}}`
 
 // TestGeneratedLauncherCallsTheServerRefresh is the load-bearing cell. Delete the refresh
 // block from EITHER template, or the splice that fills it, and the servers stop moving with
@@ -68,7 +75,7 @@ func TestGeneratedLauncherCallsTheServerRefresh(t *testing.T) {
 			e := NewEnv(map[string]string{
 				"JAIL_HOME":        home,
 				"YOLO_PACK_ROOT":   writePackWithServerAgent(t, via, bin),
-				"YOLO_MCP_PRESETS": `["sequential-thinking"]`,
+				"YOLO_MCP_SERVERS": acmeServerWire,
 				// The deleted LSP recipe's two lists, as an older host launcher would still
 				// send them. Nothing may bake them: yolo installs no language server now
 				// (docs/reference/mcp-configuration.md#oq-lsp1).
@@ -95,7 +102,7 @@ func TestGeneratedLauncherCallsTheServerRefresh(t *testing.T) {
 				// macos-user `env -i` defect capturesDir and receiptsFile are baked to
 				// avoid, so the values have to be IN the script.
 				"\nSERVERS_ENABLED=1\n",
-				"@modelcontextprotocol/server-sequential-thinking",
+				"acme-mcp-pkg",
 			} {
 				if !strings.Contains(got, want) {
 					t.Errorf("the %s launcher is missing %q — the transitive refresh is "+
@@ -630,19 +637,19 @@ func TestTheRefreshReleasesThePrefixLock(t *testing.T) {
 // `npx -y <pkg>@latest` resolves on every spawn and is already current (§6.1's UNMANAGED
 // tier); refreshing it would be inventing management the design declines.
 func TestTheServerSetIgnoresTheMCPServerTable(t *testing.T) {
-	e := NewEnv(map[string]string{
-		"JAIL_HOME": t.TempDir(),
-		"YOLO_MCP_SERVERS": `{"tavily":{"command":"npx","args":["-y","tavily-mcp@latest"]},` +
-			`"local":{"command":"/workspace/mine.py"}}`,
-		"YOLO_MCP_PRESETS": `["chrome-devtools"]`,
-	})
-	got := ServerRefreshSpecs(e, nil)
+	e := chromeServerEnv(t, `{"tavily":{"command":"npx","args":["-y","tavily-mcp@latest"]},`+
+		`"local":{"command":"/workspace/mine.py"}}`, true)
+	packs, err := LoadJailPacks(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ServerRefreshSpecs(e, packs)
 	if strings.Contains(got.npm, "tavily") || strings.Contains(got.npm, "mine.py") {
 		t.Errorf("the refresh set reached into mcp_servers (%q). Those entries are the "+
 			"UNMANAGED tier — an `npx -y pkg@latest` argv is current every spawn", got.npm)
 	}
 	if !strings.Contains(got.npm, "chrome-devtools-mcp") {
-		t.Errorf("the ENABLED preset's package is missing from the set (%q), so the one "+
+		t.Errorf("the selected pack server's program is missing from the set (%q), so the one "+
 			"thing that does freeze is the one thing not refreshed", got.npm)
 	}
 }
@@ -665,7 +672,7 @@ func TestTheServerSetIgnoresTheRetiredLSPInputs(t *testing.T) {
 		"YOLO_LSP_GO_INSTALL":  "golang.org/x/tools/gopls@latest",
 	})
 	if got := ServerRefreshSpecs(e, nil); !got.empty() {
-		t.Errorf("the refresh set carries %q with no MCP preset enabled; a retired LSP "+
+		t.Errorf("the refresh set carries %q with no pack server held; a retired LSP "+
 			"input reached it", got.npm)
 	}
 }

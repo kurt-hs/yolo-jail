@@ -1262,7 +1262,7 @@ func (o *Options) commonEnvBlock(in *assembleInput, blockedConfigJSON, netMode s
 	cfg := in.cfg
 	// None under the seal (seal.go): a server's literal env is a credential, and a build runs no
 	// agent to start one.
-	lspServers, mcpServers, mcpPresets := agentServerTables(cfg, in.sealed, in.packs)
+	lspServers, mcpServers := agentServerTables(cfg, in.sealed, in.packs)
 	// None of the user's in any capture jail (seal.go): the jail's mise install installs this.
 	miseTools, _ := in.jailMiseTools()
 	env := []string{
@@ -1317,9 +1317,8 @@ func (o *Options) commonEnvBlock(in *assembleInput, blockedConfigJSON, netMode s
 		// THE COMPOSED TABLE (packload.ComposeMCPServers, through agentServerTables): each selected
 		// pack's `mcp` entries joined to the jail's home, your mcp_servers merged over them. Composed
 		// here, on the host, for this backend's home (docs/design/mcp-presets-removal.md OQ-MP4); the
-		// jail reads it as it always read your table, over its presets. None under the seal.
+		// jail reads it as it always read your table. None under the seal.
 		"-e", "YOLO_MCP_SERVERS="+jsonDumpsOrEmptyObj(mcpServers),
-		"-e", "YOLO_MCP_PRESETS="+jsonDumpsOrEmptyList(mcpPresets),
 		// The `agent_updates` policy, read from USER scope directly rather than from the
 		// merged config: /workspace is bind-mounted rw, so a workspace value would let an
 		// agent freeze its own updates (config.AgentUpdatesWire). Emitted on EVERY launch,

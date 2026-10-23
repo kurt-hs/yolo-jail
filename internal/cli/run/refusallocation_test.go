@@ -163,19 +163,34 @@ func TestLaunchWarningNamesTheFileAndLine(t *testing.T) {
 	}
 }
 
-// The same-file preset/null contradiction, which the gate checks per file rather than over the
-// merged config, leads with where the null entry is written.
-func TestLaunchPresetNullRefusalNamesTheNullsLine(t *testing.T) {
-	refusalHome(t)
-	ws := t.TempDir()
-	writeAt(t, filepath.Join(ws, "yolo-jail.jsonc"),
-		"{\n  \"mcp_presets\": [\"chrome-devtools\"],\n  \"mcp_servers\": {\"chrome-devtools\": null}\n}\n")
-	var stdout, stderr bytes.Buffer
-	if rc := Run(*capabilityGateOptions(t, ws, nil, &stdout, &stderr)); rc == 0 {
-		t.Fatalf("the launch accepted a preset the same file null-removes:\n%s%s", stdout.String(), stderr.String())
-	}
-	want := filepath.Join(ws, "yolo-jail.jsonc") + ":3:38: preset 'chrome-devtools' is enabled"
-	if out := stdout.String() + stderr.String(); !strings.Contains(out, want) {
-		t.Errorf("the refusal does not lead with where the null is written (want %q):\n%s", want, out)
+// The retired `mcp_presets` key is refused by the LAUNCH at either scope, naming the file and
+// line it is written at and the replacement (docs/design/mcp-presets-removal.md §13 step 3). A
+// value of [] is refused too: the key itself is the thing to delete.
+func TestALaunchRefusesTheRetiredMCPPresetsKeyAtEitherScope(t *testing.T) {
+	for _, scope := range []string{"user", "workspace"} {
+		t.Run(scope, func(t *testing.T) {
+			_, cfgDir := refusalHome(t)
+			ws := t.TempDir()
+			path, shown := filepath.Join(cfgDir, "config.jsonc"), "~/.config/yolo-jail/config.jsonc"
+			if scope == "workspace" {
+				path = filepath.Join(ws, "yolo-jail.jsonc")
+				shown = path
+			}
+			writeAt(t, path, "{\n  \"mcp_presets\": []\n}\n")
+			var stdout, stderr bytes.Buffer
+			if rc := Run(*capabilityGateOptions(t, ws, nil, &stdout, &stderr)); rc == 0 {
+				t.Fatalf("the launch accepted a config carrying mcp_presets:\n%s%s", stdout.String(), stderr.String())
+			}
+			out := stdout.String() + stderr.String()
+			for _, want := range []string{
+				shown + ":2:18: config.mcp_presets: REMOVED",
+				"add `chrome-devtools` to `packs` in ~/.config/yolo-jail/config.jsonc",
+				`"sequential-thinking": {"command": "npx"`,
+			} {
+				if !strings.Contains(out, want) {
+					t.Errorf("the refusal does not carry %q:\n%s", want, out)
+				}
+			}
+		})
 	}
 }

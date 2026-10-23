@@ -52,18 +52,6 @@ type Env struct {
 	// BSD flags (`-f`, macOS). Generated launcher templates branch on this.
 	// Defaults to true (the container) via the zero value + StatIsGNU().
 	GNUStat bool
-	// SkipMCPPresets reports that this environment does NOT generate the MCP preset
-	// wrappers, so nothing may point at them or install what they spawn: no preset server
-	// entry reaches any agent's MCP table (mcpServersWith), and the bootstrap script installs
-	// none of the npm packages behind them (mcpPresetNpmPackages).
-	//
-	// Spelled as the NEGATIVE so the zero value is the container, like every other seam
-	// here. macos-user sets it: the wrapper bodies are Linux-absolute (/usr/bin/chromium,
-	// /bin/node, /etc/fonts) and RunDarwinBootstrap skips them and says so. Without the
-	// first half every agent config named a `node` wrapper that does not exist; without the
-	// second the bootstrap script would still `npm install -g chrome-devtools-mcp` — a
-	// download for an executable this backend never writes.
-	SkipMCPPresets bool
 	// Vars is the environment-variable matrix the generators consult.
 	Vars map[string]string
 	// Stderr receives the warning/notice lines the generators emit
@@ -406,7 +394,7 @@ func EnvFromOS() *Env {
 // In a container that is EnvFromOS. In a macos-user session the boot was the darwin bootstrap,
 // whose Env is DarwinEnvFrom's translation — the real workspace (the receipts and the sidecar
 // live under its .yolo, and /workspace does not exist there), the macOS shim dir and BSD stat,
-// and no MCP presets — and the session says which by naming the workspace as
+// — and the session says which by naming the workspace as
 // YOLO_DARWIN_WORKSPACE, beside the staged pack tree (macosuser.BuildRunPlanWithDaemons).
 //
 // YOLO_WORKSPACE is deliberately not the signal: NewEnv already honors it, and it says

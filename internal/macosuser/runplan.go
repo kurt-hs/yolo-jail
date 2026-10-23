@@ -1304,8 +1304,6 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 	bootstrapEnv.Set("YOLO_LSP_SERVERS", lspJSON)
 	mcpSrvJSON := jsonx.MustDumpsCompact(getSectionOrEmptyMap(cfg, "mcp_servers"))
 	bootstrapEnv.Set("YOLO_MCP_SERVERS", mcpSrvJSON)
-	mcpPresetsJSON := jsonx.MustDumpsCompact(getSectionOrEmptyList(cfg, "mcp_presets"))
-	bootstrapEnv.Set("YOLO_MCP_PRESETS", mcpPresetsJSON)
 	// The `agent_updates` policy. macos-user is the backend where missing this hides
 	// least: it bakes no image, so the launchers ARE the delivery.
 	//
@@ -2553,18 +2551,6 @@ func getSectionOrEmptyMap(cfg *jsonx.OrderedMap, key string) any {
 		}
 	}
 	return jsonx.NewOrderedMap()
-}
-
-// getSectionOrEmptyList returns config[key] as a list, or an empty list.
-func getSectionOrEmptyList(cfg *jsonx.OrderedMap, key string) any {
-	if cfg != nil {
-		if v, ok := cfg.Get(key); ok {
-			if _, isList := v.([]any); isList {
-				return v
-			}
-		}
-	}
-	return []any{}
 }
 
 // orderedMapToAny returns the OrderedMap as an `any` so jsonx.DumpsCompact

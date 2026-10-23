@@ -241,7 +241,6 @@ func TestTheDarwinBootstrapKeepsAServerGatedOnASharedNameAProfileComposes(t *tes
 		"JAIL_HOME":             home,
 		"YOLO_PACK_ROOT":        stageShippedPacks(t),
 		"YOLO_MCP_SERVERS":      `{"aws":{"command":"aws-mcp","requires_env":["AWS_REGION"]}}`,
-		"YOLO_MCP_PRESETS":      `[]`,
 		"YOLO_DARWIN_WORKSPACE": ws,
 		DarwinSessionEnvFileEnv: writeSessionEnvFile(t, "export AWS_REGION='us-east-1'\n"),
 	}, home)

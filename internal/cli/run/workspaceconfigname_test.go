@@ -128,21 +128,20 @@ func TestBriefingNamesTheWorkspaceConfigTheLoaderReads(t *testing.T) {
 	}
 }
 
-// The same-file preset/null refusal reads the workspace config the loader read: a
-// `yolo-jail.json` that enables a preset and null-removes it is refused, at its own line.
-func TestLaunchPresetNullRefusalReadsTheJSONWorkspaceConfig(t *testing.T) {
+// The retired-key refusal reads the workspace config the loader read: a `yolo-jail.json`
+// carrying `mcp_presets` is refused, at its own line.
+func TestLaunchRetiredMCPPresetsRefusalReadsTheJSONWorkspaceConfig(t *testing.T) {
 	refusalHome(t)
 	ws, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeAt(t, filepath.Join(ws, "yolo-jail.json"),
-		"{\n  \"mcp_presets\": [\"chrome-devtools\"],\n  \"mcp_servers\": {\"chrome-devtools\": null}\n}\n")
+	writeAt(t, filepath.Join(ws, "yolo-jail.json"), "{\n  \"mcp_presets\": [\"chrome-devtools\"]\n}\n")
 	var stdout, stderr bytes.Buffer
 	Run(*capabilityGateOptions(t, ws, nil, &stdout, &stderr))
-	want := filepath.Join(ws, "yolo-jail.json") + ":3:38: preset 'chrome-devtools' is enabled"
+	want := filepath.Join(ws, "yolo-jail.json") + ":2:18: config.mcp_presets: REMOVED"
 	if out := stdout.String() + stderr.String(); !strings.Contains(out, want) {
-		t.Errorf("a preset yolo-jail.json null-removes was not refused at its line (want %q):\n%s",
+		t.Errorf("a yolo-jail.json carrying mcp_presets was not refused at its line (want %q):\n%s",
 			want, out)
 	}
 }

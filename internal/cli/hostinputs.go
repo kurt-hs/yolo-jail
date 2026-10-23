@@ -216,21 +216,10 @@ func composeHostInputs(cfg *jsonx.OrderedMap, packs []*packload.Pack, home strin
 	vars[entrypoint.LSPServersWireEnv] = wireJSON(lsp)
 	c.lsp = lsp
 
-	// THE PRESETS NEVER EXPAND HERE (HC-D6, HC-D27): each command names the node wrapper a jail's
-	// boot writes and the jail's npm prefix, neither of which a real home has, and composing them
-	// for the host instead is what mcp-presets-removal.md retires them rather than do. Where a
-	// pack ships a server of the preset's name, the line names that pack: it is how the server
-	// reaches the host.
-	if v, ok := cfg.Get("mcp_presets"); ok {
-		if list, isList := v.([]any); isList {
-			for _, p := range list {
-				if name, isStr := p.(string); isStr && name != "" {
-					c.omitted = append(c.omitted, fmt.Sprintf("mcp_presets %s is not written at "+
-						"the host: its command is a wrapper only a jail writes — %s", name,
-						presetHostRemedy(name, servers, packs)))
-				}
-			}
-		}
+	// The retired key does nothing at the host either; the host notch runs no full validation,
+	// so the report names it here.
+	if _, ok := cfg.Get("mcp_presets"); ok {
+		c.omitted = append(c.omitted, config.MCPPresetsRetiredMessage)
 	}
 
 	c.inputs = &entrypoint.HostInputs{Vars: vars, Packs: packs,
@@ -327,36 +316,6 @@ func hostMCPPacks(packs []*packload.Pack) (composed []*packload.Pack, omitted []
 		}
 	}
 	return composed, omitted
-}
-
-// presetHostRemedy is the next step the preset omission line names for the preset name: the
-// selected pack whose server of that name the host table already carries, a shipped pack that
-// ships one, or the generic one — declare it under `mcp_servers` with a command this machine has.
-func presetHostRemedy(name string, servers *jsonx.OrderedMap, packs []*packload.Pack) string {
-	for _, p := range packs {
-		if p == nil || p.Decl == nil {
-			continue
-		}
-		for _, s := range p.Decl.MCPContributions() {
-			if s.Name != name {
-				continue
-			}
-			if _, carried := servers.Get(name); carried {
-				return fmt.Sprintf("pack %s's %s server is written there instead", p.Name, name)
-			}
-			return fmt.Sprintf("pack %s's %s server is not written either: your mcp_servers removes "+
-				"it, or another line here says why it is left out", p.Name, name)
-		}
-	}
-	for _, p := range packload.Embedded() {
-		for _, s := range p.Decl.MCPContributions() {
-			if s.Name == name {
-				return fmt.Sprintf("pack %s ships that server for the host too: add %q to `packs` in "+
-					"~/.config/yolo-jail/config.jsonc", p.Name, p.Name)
-			}
-		}
-	}
-	return "declare the server under `mcp_servers` with a command this machine has"
 }
 
 // hostAgentLookup answers a server's requires_env for ONE agent, the way that agent's process

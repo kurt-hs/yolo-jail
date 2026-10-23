@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
-	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
 	"github.com/mschulkind-oss/yolo-jail/internal/image"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
@@ -47,7 +46,7 @@ var sealedEnvAllowlist = map[string]bool{
 	"OVERMIND_SOCKET": true, "PAGER": true, "RUSTUP_HOME": true, "TZ": true,
 	"VISUAL": true, "YOLO_AGENT_UPDATES": true, "YOLO_BLOCK_CONFIG": true, "YOLO_CONTEXT_DIR": true,
 	"YOLO_CONTRACT_TAGS": true, "YOLO_DURABLE_DIR": true, "YOLO_HOST_CA_FILE": true, "YOLO_HOST_DIR": true, "YOLO_HOST_LAYERS": true,
-	"YOLO_HOST_LOOPBACK": true, "YOLO_JAIL_BACKEND": true, "YOLO_JAIL_MAIN": true, "YOLO_LSP_SERVERS": true, "YOLO_MCP_PRESETS": true,
+	"YOLO_HOST_LOOPBACK": true, "YOLO_JAIL_BACKEND": true, "YOLO_JAIL_MAIN": true, "YOLO_LSP_SERVERS": true,
 	"YOLO_MCP_SERVERS": true, "YOLO_MISE_TOOLS": true, "YOLO_PACK_ROOT": true, "YOLO_RUNTIME": true,
 	"YOLO_SEALED_BUILD": true, "YOLO_VERSION": true,
 }
@@ -197,8 +196,7 @@ var sealCrossingsFixture = sealFixture{
   "kvm": true,
   "mcp_servers": {"sealtest": {"command": "sealtest-mcp", "env": {"SEALTEST_MCP_KEY": "sealtest-mcp-secret"}}},
   "lsp_servers": {"sealtest": {"command": "sealtest-lsp", "args": ["--token=sealtest-lsp-secret"],
-    "fileExtensions": {".sealtest": "sealtest"}}},
-  "mcp_presets": ["sequential-thinking"]
+    "fileExtensions": {".sealtest": "sealtest"}}}
 }
 `,
 	hostPaths: []string{hostNixSocket, hostNixStore, sealTestDevice, "/dev/kvm"},
@@ -280,20 +278,6 @@ func argvCarrying(argv []string, needles ...string) []string {
 		}
 	}
 	return hits
-}
-
-// bootstrapMCPInstall is the MCP preset npm install the jail's bootstrap would run for argv's
-// environment: the script entrypoint.BootstrapScript generates from it, reduced to its install
-// list.
-func bootstrapMCPInstall(t *testing.T, argv []string) string {
-	t.Helper()
-	script := entrypoint.BootstrapScript(&entrypoint.Env{Home: t.TempDir(), Vars: envPairs(argv)})
-	_, rest, ok := strings.Cut(script, `YOLO_MCP_NPM="`)
-	if !ok {
-		t.Fatalf("the bootstrap names no MCP install list:\n%s", script)
-	}
-	list, _, _ := strings.Cut(rest, `"`)
-	return list
 }
 
 // sealTestDevice is the device node the seal fixture's config passes through.
@@ -451,15 +435,11 @@ func TestASealedLaunchHandsTheJailNoCrossing(t *testing.T) {
 	if body, err := os.ReadFile(config.WorkspaceAssembledConfigPath(ws)); err != nil || strings.TrimSpace(string(body)) != "{}" {
 		t.Errorf("a sealed launch's assembled config copy (err %v) is not the empty object:\n%s", err, body)
 	}
-	// No MCP or LSP server and no preset (agentServerTables): a build runs no agent, so the jail's
-	// bootstrap installs no preset's npm package either.
-	for name, want := range map[string]string{"YOLO_MCP_SERVERS": "{}", "YOLO_LSP_SERVERS": "{}", "YOLO_MCP_PRESETS": "[]"} {
+	// No MCP or LSP server (agentServerTables): a build runs no agent.
+	for name, want := range map[string]string{"YOLO_MCP_SERVERS": "{}", "YOLO_LSP_SERVERS": "{}"} {
 		if v, _ := envValue(argv, name); v != want {
 			t.Errorf("a sealed launch hands the jail %s=%s, want %s", name, v, want)
 		}
-	}
-	if list := bootstrapMCPInstall(t, argv); list != "" {
-		t.Errorf("a sealed jail's bootstrap installs MCP preset packages: %q", list)
 	}
 }
 
@@ -530,7 +510,7 @@ func TestTheSealFixtureCrossesUnsealed(t *testing.T) {
 	if stagedBriefingsHold(t, yoloruntime.FromWorkspace(ws), sealedNetworkLine) {
 		t.Error("the unsealed fixture's briefing calls its jail sealed")
 	}
-	// The assembled config copy, the MCP and LSP tables, the LSP plugin and the presets cross
+	// The assembled config copy, the MCP and LSP tables and the LSP plugin cross
 	// unsealed, so a sealed launch's withholding each is the seal's doing.
 	if body, _ := os.ReadFile(config.WorkspaceAssembledConfigPath(ws)); !strings.Contains(string(body), "sealtest-secret-value") {
 		t.Errorf("the unsealed fixture's assembled config copy carries no env_sources value:\n%s", body)
@@ -542,9 +522,6 @@ func TestTheSealFixtureCrossesUnsealed(t *testing.T) {
 	}
 	if hits := grepTree(t, filepath.Join(paths.AgentsDir(), yoloruntime.FromWorkspace(ws)), "sealtest-lsp-secret"); len(hits) == 0 {
 		t.Error("the unsealed fixture renders no LSP plugin from lsp_servers, so that site is unexercised")
-	}
-	if list := bootstrapMCPInstall(t, argv); !strings.Contains(list, "server-sequential-thinking") {
-		t.Errorf("the unsealed fixture's bootstrap installs %q, not the preset's package", list)
 	}
 }
 

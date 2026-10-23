@@ -315,10 +315,12 @@ func GenerateBootstrapScript(e *Env) error {
 
 func bootstrapPath(e *Env) string { return e.Home + "/.yolo-bootstrap.sh" }
 
-// interpolation is the mise_shims path in the PATH export line, the preset-gated MCP npm
-// package list, and the receipt sentinels (a baked path plus the constant JSON head of the
-// MCP loop's receipts — its declared package comes from the loop at run time, so only the
-// kind can be rendered here; see receiptPrefix).
+// interpolation is the mise_shims path in the PATH export line and the baked receipts path.
+//
+// It installs NO MCP server package. The preset-gated `npm install -g` that used to open the
+// script (chrome-devtools-mcp, @modelcontextprotocol/server-sequential-thinking) went with the
+// `mcp_presets` key (docs/design/mcp-presets-removal.md §13 step 3): a pack's server program is
+// installed by the readiness act and its launcher, like every other program.
 //
 // It installs NO language server. The LSP install loop that used to follow the MCP one — fed
 // by YOLO_LSP_NPM_INSTALL / YOLO_LSP_GO_INSTALL from a three-entry recipe table, tracked by
@@ -329,8 +331,6 @@ func bootstrapPath(e *Env) string { return e.Home + "/.yolo-bootstrap.sh" }
 func BootstrapScript(e *Env) string {
 	r := strings.NewReplacer(
 		"__YOLO_MISE_SHIMS__", e.MiseShims(),
-		"__YOLO_MCP_NPM_PACKAGES__", mcpPresetLegacyNpmPackages(e),
-		"__YOLO_MCP_CAPTURE_CHECKS__", e.programCapturePresetChecks(),
 		// One check per distinct Node floor the selected packs' programs declare, each naming
 		// the programs and packs that declare it. Baked for macos-user's `env -i`, per the
 		// comment at the consuming site.
@@ -349,43 +349,8 @@ func BootstrapScript(e *Env) string {
 		// provision, the package that tests for it, and never here.
 		"__YOLO_REFUSED_STATUS__", strconv.Itoa(provision.RefusedStatus),
 		"__YOLO_RECEIPTS_FILE__", shquote.Quote(receiptsFile(e)),
-		"__YOLO_RECEIPT_MCP_NPM__", shquote.Quote(receiptPrefix("mcp-npm", "", "")),
 	)
 	return r.Replace(bootstrapTemplate)
-}
-
-// mcpPresetNpmPackages returns the npm packages the ENABLED MCP presets need, space
-// separated, or "" when none are enabled (D6).
-//
-// This used to be an unconditional `npm install -g chrome-devtools-mcp
-// @modelcontextprotocol/server-sequential-thinking`, which ran in EVERY jail whether
-// anything wanted those servers or not. Probed on an empty-agent jail: 112 npm
-// packages installed for zero agents and zero configured presets.
-//
-// Gating on the presets that actually asked for them is the whole fix: an MCP preset
-// is already config data (YOLO_MCP_PRESETS), so the install should follow the same
-// declaration the server table does rather than being hardcoded beside it. That also
-// makes the eventual move to a pack contribution a change of SOURCE rather than a
-// change of mechanism.
-func mcpPresetNpmPackages(e *Env) string {
-	// An environment that does not generate the preset WRAPPERS installs nothing for
-	// them either (Env.SkipMCPPresets). The wrapper is the executable an MCP client
-	// spawns; the npm package is only what it spawns INTO. Installing the second
-	// without the first is a download nothing can ever exec, and on macos-user it would
-	// also make the launch's own "mcp_presets are not delivered" warning a half-truth.
-	if e.SkipMCPPresets {
-		return ""
-	}
-	var pkgs []string
-	for _, preset := range e.LoadMCPPresetNames() {
-		switch preset {
-		case "chrome-devtools":
-			pkgs = append(pkgs, "chrome-devtools-mcp")
-		case "sequential-thinking":
-			pkgs = append(pkgs, "@modelcontextprotocol/server-sequential-thinking")
-		}
-	}
-	return strings.Join(pkgs, " ")
 }
 
 // bootstrapTemplate is the body of the bootstrap script.
@@ -399,16 +364,6 @@ export PATH="$HOME/.local/bin:$NPM_CONFIG_PREFIX/bin:__YOLO_MISE_SHIMS__:$GOBIN:
 # Baked, never read from the environment: see receiptsFile.
 _YOLO_RECEIPTS=__YOLO_RECEIPTS_FILE__
 ` + receiptShellFns + `
-# The npm resolver's "resolved identity" reader. It may come back empty — a missing jq, an
-# unreadable package.json — and an empty answer omits the field rather than inventing one.
-_yolo_npm_version() {
-    local v
-    v=$(jq -r '.version' "$NPM_CONFIG_PREFIX/lib/node_modules/$1/package.json" 2>/dev/null) || return 0
-    # jq prints "null" for an absent key, which is not a version.
-    if [ "$v" != "null" ]; then printf '%s\n' "$v"; fi
-    return 0
-}
-
 # Initialize the font cache (once per launch, not per shell session). NOT -f: forcing
 # a rebuild marks every cache dir changed, and fc-cache then sleeps 2 s so later mtimes
 # are distinguishable (fc-cache.c) -- 2.0 s of wall time and ~0 CPU on every launch,
@@ -422,48 +377,6 @@ fc-cache >/dev/null 2>&1
 # invocation, at most once per UPDATE_INTERVAL, and still install one that a failed or
 # skipped readiness left absent.  Never a language server: a configured lsp_servers command
 # must already be on PATH.
-
-# --- MCP preset tools (gated on the ENABLED presets, D6) ----------------
-# Empty when no preset needs an npm package, so a jail that wants none installs
-# nothing.  This was previously unconditional: 112 npm packages in every jail,
-# including one with no agents and no presets at all.
-__YOLO_MCP_CAPTURE_CHECKS__
-YOLO_MCP_NPM="__YOLO_MCP_NPM_PACKAGES__"
-if [ -n "$YOLO_MCP_NPM" ]; then
-    # Reinstall only when something is actually missing, so a warm jail is fast.
-    missing=""
-    for pkg in $YOLO_MCP_NPM; do
-        case "$pkg" in
-            chrome-devtools-mcp) bin=chrome-devtools-mcp ;;
-            *server-sequential-thinking) bin=mcp-server-sequential-thinking ;;
-            *) bin="" ;;
-        esac
-        if [ -n "$bin" ] && ! command -v "$bin" >/dev/null; then missing="yes"; fi
-    done
-    if [ -n "$missing" ]; then
-        echo "  Installing MCP tools..." >&2
-        # Clean stale npm temp directories that cause ENOTEMPTY on rename.
-        # maxdepth 2 catches both top-level and scoped (@org/) packages.
-        find "$NPM_CONFIG_PREFIX/lib/node_modules" -maxdepth 2 -name '.*' -type d 2>/dev/null | xargs rm -rf
-        # The status is CAPTURED, never dropped with "|| true": this is one of the installs
-        # §10 step one's "every install yolo itself runs" covers, and a receipt appended
-        # after an unconditional success records installs that never happened — an offline
-        # boot fails here routinely and simply retries next launch.
-        mcp_rc=0
-        YOLO_BYPASS_SHIMS=1 npm install -g $YOLO_MCP_NPM || mcp_rc=$?
-        if [ "$mcp_rc" = 0 ]; then
-            # ONE LINE PER PACKAGE, not one per npm invocation. The install is a single
-            # command over the whole list because that is what npm is good at, but the
-            # receipt's unit is a package: a reader asking "where did
-            # @modelcontextprotocol/server-sequential-thinking come from" must find a line
-            # naming it, not a line naming a set it happens to be in.
-            for pkg in $YOLO_MCP_NPM; do
-                _yolo_receipt "$(_yolo_head __YOLO_RECEIPT_MCP_NPM__ '' "$pkg")" \
-                    "" "$(_yolo_npm_version "$pkg")" "" install
-            done
-        fi
-    fi
-fi
 
 # --- Node floors: install what a declared program needs, then REFUSE if it is absent ----
 # OQ-AR2's eager half and OQ-AR3's refusal (docs/reference/agent-program-runtimes.md).
@@ -656,7 +569,7 @@ fi
 
 # NOTE: an unconditional 'pip install showboat' used to live here. It is GONE, deliberately —
 # do not add another ungated tool install to this script. Every other install above is
-# config-gated (mcp presets) or pack-declared, probes for what it needs, and either
+# pack-declared, probes for what it needs, and either
 # tolerates failure or — the Node floor alone — refuses the launch by exit status;
 # showboat was the only one that did none of that, and being the LAST
 # command it turned a missing 'pip' into "PROVISIONING FAILED" on every boot (PR #29).

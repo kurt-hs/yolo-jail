@@ -412,9 +412,8 @@ live, so edits are visible on the host instantly — there is no sync step.
 - **Claude YOLO** is `--dangerously-skip-permissions` + `IS_SANDBOX=1` (the env var bypasses the UID-0
   refusal). `settings.json` sets `permissions.allow` to **`[]`** and `defaultMode: acceptEdits` — it is not
   an allowlist mechanism.
-- **Bootstrap installs only** a Node floor a selected pack declares, the npm package behind each
-  ENABLED MCP preset (`chrome-devtools-mcp`, `@modelcontextprotocol/server-sequential-thinking`), and
-  — LAST, the READINESS ACT — every program a selected pack declares, each through its own launcher
+- **Bootstrap installs only** a Node floor a selected pack declares and — LAST, the READINESS ACT —
+  every program a selected pack declares, each through its own launcher
   in `~/.yolo/bin/launch/` run install-only, so agent CLIs are installed before the command runs.
   **A program it cannot install STOPS the launch**, offline included; `YOLO_ALLOW_MISSING_PROGRAMS=1`
   on the host is the hatch the refusal names, and the integration suite turns the act off with

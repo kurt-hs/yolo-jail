@@ -2093,10 +2093,8 @@
     names.  So the provider facts reach `pi/models`, `pi/codex-models`,
     `codex/config`, `opencode/config` and `oh-omp/models` at the host too, pi
     registers the declared openai-codex list, and every agent's MCP and LSP files
-    carry those servers.  Never an MCP preset (its command is a wrapper only a jail
-    writes; the `chrome-devtools` pack carries that server to the host), a fetched
-    pack's `mcp` entry (its command would run unconfined as you), a workspace's
-    config, or a value naming a path only a jail has: each is left out and named.  A table a derive declares in
+    carry those servers.  Never a fetched pack's `mcp` entry (its command would
+    run unconfined as you), a workspace's config, or a value naming a path only a jail has: each is left out and named.  A table a derive declares in
     full is yolo's there, as in a jail, so an entry you added by hand to one is
     dropped — confirmed first, the first time — unless your config declares it.
     That selection is applied edge-triggered: written when the chosen profile
@@ -2501,20 +2499,19 @@
     Example: {"rust": {"command": "rust-analyzer", "args": [],
               "fileExtensions": {".rs": "rust"}}}
 
-  [bold]mcp_presets[/bold] (array of strings): Enable built-in MCP server presets by name.
-    No presets are enabled by default. Available presets:
-      • chrome-devtools: Headless Chromium automation via Chrome DevTools Protocol.
-      • sequential-thinking: Chain-of-thought reasoning via MCP.
-    Invalid: enabling a preset here and null-removing it in the same config file.
-    Jail only: a preset's command is a wrapper a jail's boot writes, so `yolo host
-    apply` writes no preset into your real home and names each one it leaves out.
-    For chrome-devtools add "chrome-devtools" to `packs` instead: the pack gives the
-    same server at the host, in a jail and on macos-user, and where both are on its
-    entry replaces the preset's.
-    Example: ["chrome-devtools", "sequential-thinking"]
+  [bold]mcp_presets[/bold] (array of strings): REMOVED — a config carrying it is REFUSED,
+    in either file.  yolo no longer keeps its own list of MCP servers:
+      • chrome-devtools — add "chrome-devtools" to `packs` in
+        ~/.config/yolo-jail/config.jsonc, beside your agents.  The pack gives the
+        server in a jail, on macos-user and at the host.  A workspace file cannot
+        select it.
+      • sequential-thinking — deleted.  Write it yourself under `mcp_servers`:
+          "sequential-thinking": {"command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]}
+    Delete the key, then run [cyan]yolo check[/cyan].
 
   [bold]mcp_servers[/bold] (object): Custom MCP servers for Copilot, Claude, and Codex.
-    Add custom servers, or set a preset/inherited server to [bold]null[/bold] to disable it.
+    Add custom servers, or set a pack's or an inherited server to [bold]null[/bold] to disable it.
     A selected pack's `mcp` entry (the `chrome-devtools` pack's, say) is composed
     under this table: an entry of yours with its name merges over it per field, and
     [bold]null[/bold] removes it.
@@ -2671,7 +2668,7 @@
     programs nothing declares any more.
     • [bold]autoprune[/bold] (boolean, [bold]default false[/bold]): Remove orphans at boot.
       An ORPHAN is something installed in this jail's per-workspace home that no
-      selected pack or MCP preset declares — what a dropped pack left behind.
+      selected pack declares — what a dropped pack left behind.
       Every boot already NAMES them ("boot catalog: ..." lines, with sizes);
       nothing removes them unless you set this.
       With it on, each launch removes what it cataloged, printing every path first.
@@ -2827,7 +2824,6 @@
   {
     "runtime": "podman",
     "mise_tools": {"neovim": "nightly"},
-    "mcp_presets": ["chrome-devtools"],
     "lsp_servers": {
       "rust": {"command": "rust-analyzer", "args": [],
                "fileExtensions": {".rs": "rust"}}

@@ -43,11 +43,8 @@ func ordinaryProgramIdentity(in npmCaptureInput, fingerprint, rt, platform strin
 
 func ordinarySelectionEnvironment(cfg *jsonx.OrderedMap, packs []*packload.Pack) *entrypoint.Env {
 	vars := map[string]string{}
-	for key, env := range map[string]string{"mcp_presets": "YOLO_MCP_PRESETS", "mise_tools": "YOLO_MISE_TOOLS"} {
-		v, ok := cfg.Get(key)
-		if ok {
-			vars[env] = jsonx.MustDumpsCompact(v)
-		}
+	if v, ok := cfg.Get("mise_tools"); ok {
+		vars["YOLO_MISE_TOOLS"] = jsonx.MustDumpsCompact(v)
 	}
 	raw, _ := cfg.Get("mcp_servers")
 	table, _ := raw.(*jsonx.OrderedMap)

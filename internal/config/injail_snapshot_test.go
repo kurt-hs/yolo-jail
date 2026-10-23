@@ -35,7 +35,7 @@ func TestLoadConfigInJailReadsSnapshot(t *testing.T) {
 	// overrides.jsonc that does NOT exist in the jail (it's host-only). A
 	// re-assemble would therefore drop mcp_servers.
 	mustWrite(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
-		`{ "include_if_found": ["overrides.jsonc"], "mcp_presets": ["chrome-devtools"] }`)
+		`{ "include_if_found": ["overrides.jsonc"], "mise_tools": {"neovim": "nightly"} }`)
 	mustWrite(t, filepath.Join(ws, "yolo-jail.jsonc"), `{ "packages": ["ripgrep"] }`)
 	// The host wrote a snapshot WITH the assembled mcp_servers.
 	mustWrite(t, WorkspaceAssembledConfigPath(ws), `{
@@ -64,7 +64,7 @@ func TestLoadConfigHostStillAssembles(t *testing.T) {
 	t.Setenv("YOLO_VERSION", "") // host: explicitly empty
 
 	mustWrite(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
-		`{ "mcp_presets": ["chrome-devtools"] }`)
+		`{ "mise_tools": {"neovim": "nightly"} }`)
 	mustWrite(t, filepath.Join(ws, "yolo-jail.jsonc"), `{ "packages": ["ripgrep"] }`)
 	// A stale snapshot with a DIFFERENT value must be ignored on the host.
 	mustWrite(t, WorkspaceAssembledConfigPath(ws), `{ "packages": ["stale-should-be-ignored"] }`)
@@ -90,7 +90,7 @@ func TestLoadConfigInJailFallsBackWhenNoSnapshot(t *testing.T) {
 	t.Setenv("YOLO_VERSION", "9.9.9-test")
 
 	mustWrite(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
-		`{ "mcp_presets": ["chrome-devtools"] }`)
+		`{ "mise_tools": {"neovim": "nightly"} }`)
 	mustWrite(t, filepath.Join(ws, "yolo-jail.jsonc"), `{ "packages": ["ripgrep"] }`)
 	// No snapshot file written.
 

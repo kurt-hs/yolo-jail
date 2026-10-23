@@ -102,10 +102,9 @@ exit 0
 	}
 	vars := map[string]string{
 		"JAIL_HOME": home,
-		// A temp workspace, never the default: the MCP block writes receipts under
+		// A temp workspace, never the default: an install writes receipts under
 		// <workspace>/.yolo, and inside a jail /workspace/.yolo is the live session's.
-		"YOLO_WORKSPACE":   filepath.Join(home, "ws"),
-		"YOLO_MCP_PRESETS": `["sequential-thinking"]`,
+		"YOLO_WORKSPACE": filepath.Join(home, "ws"),
 	}
 	if manifests != nil {
 		vars["YOLO_PACK_ROOT"] = stageFloorPacks(t, manifests)
@@ -174,9 +173,6 @@ func TestTheBootstrapRefusesAnUnsatisfiableFloor(t *testing.T) {
 	}
 	if !strings.Contains(calls, "mise install node@99") {
 		t.Errorf("the bootstrap refused without trying to install the floor (OQ-AR2's eager half):\n%s", calls)
-	}
-	if !strings.Contains(calls, "npm install -g @modelcontextprotocol/server-sequential-thinking") {
-		t.Errorf("a refused floor skipped the MCP install, which is another program's step:\n%s", calls)
 	}
 }
 

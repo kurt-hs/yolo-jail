@@ -71,11 +71,6 @@ func DarwinEnvFrom(vars map[string]string, home string) *Env {
 	}
 	e.ShimBinDir = "/usr/bin"
 	e.GNUStat = false
-	// The MCP preset WRAPPERS are not generated on this backend (see RunDarwinBootstrap),
-	// so nothing installs the npm packages behind them either. Set here, with the other
-	// two platform seams, because it is the same kind of fact: what this environment can
-	// actually provide, decided once at the translation rather than at each consumer.
-	e.SkipMCPPresets = true
 	// Program readiness is rendered into the same bootstrap on macos-user; the host admits
 	// the confined stage when it cannot prove every selected program is already present.
 	return e

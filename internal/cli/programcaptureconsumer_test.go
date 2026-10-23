@@ -194,46 +194,6 @@ func TestSelectedNPMEnabledMCPRefreshConsumesExactDecision(t *testing.T) {
 	}
 }
 
-func TestSelectedNPMEnabledPresetBootstrapConsumesActualMaterializerWithoutNPM(t *testing.T) {
-	f := newSelectedNPMFixture(t)
-	home := t.TempDir()
-	e := entrypoint.NewEnv(map[string]string{"JAIL_HOME": home, "YOLO_WORKSPACE": filepath.Join(home, "ws"), "YOLO_MCP_PRESETS": `["sequential-thinking"]`, entrypoint.CapturesDirEnv: f.store.Dir})
-	vector := entrypoint.SelectedServerPreparations(e, nil, entrypoint.ProgramInstallOnly)
-	if len(vector) != 1 {
-		t.Fatalf("actual enabled preset vector: %+v", vector)
-	}
-	var ok bool
-	f.in, ok = npmCaptureInputFor(vector[0].Pack, vector[0].Install)
-	if !ok {
-		t.Fatal("actual preset has no selected npm input")
-	}
-	record := f.advance(t, false)
-	delivery, err := ordinaryCaptureDelivery(record)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wire, err := json.Marshal(map[string]entrypoint.ProgramCaptureDelivery{f.in.Bin: delivery})
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.Vars[entrypoint.ProgramCapturesEnv] = string(wire)
-	for n := 0; n < 2; n++ {
-		cmd := exec.Command("/bin/bash")
-		cmd.Stdin = strings.NewReader(entrypoint.BootstrapScript(e))
-		cmd.Env = append(os.Environ(), "HOME="+home, "GOPATH="+filepath.Join(home, "go"), "NPM_CONFIG_PREFIX="+filepath.Join(home, ".npm-global"), "NPM_CONFIG_CACHE="+filepath.Join(home, ".cache/npm"), "PATH="+f.tools+":/bin:/usr/bin")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("real generated preset bootstrap: %v\n%s", err, out)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(home, ".npm-global/bin", f.in.Bin)); err != nil {
-		t.Fatal("bootstrap omitted exact preset materialization", err)
-	}
-	counts, _ := os.ReadFile(filepath.Join(f.root, "counts"))
-	if strings.Count(string(counts), "install\n") != 1 || strings.Count(string(counts), "resolve\n") != 1 {
-		t.Fatalf("preset bootstrap ran mutable npm: %s", counts)
-	}
-}
-
 func TestSelectedNPMWarmGeneratedConsumersRejectChangedRuntime(t *testing.T) {
 	for _, mode := range []string{entrypoint.InstallOnlyEnv, entrypoint.FreshRefreshEnv, "execute", "reentry"} {
 		t.Run(mode, func(t *testing.T) {

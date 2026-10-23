@@ -2,9 +2,9 @@
   "_comment": "Env matrix for the entrypoint's generated-script tests in bashn_test.go: TestGeneratedShellSyntax runs `bash -n` over every shell script the boot generates for each scenario, and TestMatrixCoversAgentLaunchersAndTheZeroAgentCase keeps the matrix exercising agent launchers. @HOME@ is the fake-HOME token, substituted with the test's temp dir in env values and seed-file bodies. A scenario gets agent launchers only from the packs it seeds under YOLO_PACK_ROOT: there is no default agent set, and `no_agents` pins the zero-agent boot deliberately. Add a scenario here and both tests pick it up.",
   "home_token": "@HOME@",
   "scenarios": {
-    "all_agents_presets_lsp": {
+    "all_agents_mcp_lsp": {
       "env": {
-        "YOLO_MCP_PRESETS": "[\"chrome-devtools\",\"sequential-thinking\"]",
+        "YOLO_MCP_SERVERS": "{\"acme\":{\"command\":\"/x/acme-mcp\",\"args\":[\"--stdio\"]}}",
         "YOLO_LSP_SERVERS": "{\"python\":{\"command\":\"/x/pyright-langserver\",\"args\":[\"--stdio\"],\"fileExtensions\":{\".py\":\"python\",\".pyi\":\"python\"}},\"go\":{\"command\":\"/x/gopls\",\"args\":[],\"fileExtensions\":{\".go\":\"go\"}}}",
         "YOLO_HOST_DIR": "/home/user/kitchen",
         "YOLO_MISE_TOOLS": "{\"typst\":\"latest\"}"

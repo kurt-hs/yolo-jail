@@ -13,10 +13,8 @@ package entrypoint
 // LoadUseProfiles, mcpServersWith and LoadLSPServers read them exactly as a jail's boot does
 // (HC-D13). The CLI composes them at user scope (internal/cli's composeHostInputs).
 //
-// What the inputs never hold: an MCP preset (its command is a jail-only wrapper), a pack's `mcp`
-// declaration (OQ-MP3: "reaches only the jail"), a workspace's config, or a via address (no
-// jail daemon serves one here). YOLO_MCP_PRESETS is deleted from the Vars even when a caller
-// sets it, so the preset expansion cannot run at this notch whatever the caller hands in.
+// What the inputs never hold: a pack's `mcp` declaration (OQ-MP3: "reaches only the jail"), a
+// workspace's config, or a via address (no jail daemon serves one here).
 
 import (
 	"fmt"
@@ -36,7 +34,6 @@ import (
 const (
 	MCPServersWireEnv = "YOLO_MCP_SERVERS"
 	LSPServersWireEnv = "YOLO_LSP_SERVERS"
-	mcpPresetsWireEnv = "YOLO_MCP_PRESETS"
 )
 
 // HostInputs are the derive inputs of one host render, composed ONCE per invocation by the
@@ -61,8 +58,7 @@ type HostInputs struct {
 	AgentLookup func(agent string) func(string) (string, bool)
 }
 
-// vars is the Env's variable matrix for a host render: the wire tables, and never the preset
-// list.
+// vars is the Env's variable matrix for a host render: the wire tables.
 func (in *HostInputs) vars() map[string]string {
 	out := map[string]string{}
 	if in == nil {
@@ -71,7 +67,6 @@ func (in *HostInputs) vars() map[string]string {
 	for k, v := range in.Vars {
 		out[k] = v
 	}
-	delete(out, mcpPresetsWireEnv)
 	return out
 }
 

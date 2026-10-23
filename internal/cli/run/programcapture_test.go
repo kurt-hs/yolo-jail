@@ -46,9 +46,6 @@ func TestSelectedOrdinaryEmptyPackSealActualRuntimeInputs(t *testing.T) {
 	if got, _ := envValue(argv, "YOLO_MCP_SERVERS"); got != "{}" {
 		t.Fatalf("MCP table crossed: %s", got)
 	}
-	if got, _ := envValue(argv, "YOLO_MCP_PRESETS"); got != "[]" {
-		t.Fatalf("MCP presets crossed: %s", got)
-	}
 	if got, _ := envValue(argv, entrypoint.SealedBuildEnv); got != "1" {
 		t.Fatal("actual runtime not told seal")
 	}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
@@ -122,33 +121,6 @@ func (e *Env) ProgramCaptureForSpec(spec string) (string, string) {
 		}
 	}
 	return "", ""
-}
-
-func (e *Env) programCapturePresetChecks() string {
-	var lines []string
-	for _, spec := range strings.Fields(mcpPresetNpmPackages(e)) {
-		bin, id := e.ProgramCaptureForSpec(spec)
-		if id == "" {
-			continue
-		}
-		argv := []string{"yolo", "internal", "capture-materialize", "--store=" + capturesDir(e), "--bin=" + bin, "--declared=" + spec, "--compatibility=" + id, "--receipts=" + receiptsFile(e)}
-		d := e.ProgramCaptureDeliveries()[bin]
-		if d.Runtime != "" {
-			argv = append(argv, "--runtime="+d.Runtime, "--node-floor="+d.NodeFloor)
-		}
-		lines = append(lines, shquote.Join(argv)+" || exit 1")
-	}
-	return strings.Join(lines, "\n")
-}
-
-func mcpPresetLegacyNpmPackages(e *Env) string {
-	var specs []string
-	for _, spec := range strings.Fields(mcpPresetNpmPackages(e)) {
-		if _, id := e.ProgramCaptureForSpec(spec); id == "" {
-			specs = append(specs, spec)
-		}
-	}
-	return strings.Join(specs, " ")
 }
 
 // ProgramCaptureMarker names only this home's materialized decision, never admission authority.

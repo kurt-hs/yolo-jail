@@ -59,7 +59,6 @@ func bootstrapEnv(t *testing.T, home string, extra map[string]string) *Env {
 		"YOLO_MISE_TOOLS":        `{}`,
 		"YOLO_LSP_SERVERS":       `{}`,
 		"YOLO_MCP_SERVERS":       `{}`,
-		"YOLO_MCP_PRESETS":       `[]`,
 		"YOLO_DARWIN_WORKSPACE":  ws,
 		"YOLO_DARWIN_MACOS_LOG":  "off",
 		"YOLO_DARWIN_LOGIN_PATH": "/usr/bin:/bin",

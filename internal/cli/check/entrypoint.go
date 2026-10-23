@@ -25,7 +25,6 @@ func (o *Options) runEntrypointPreflight(r *reporter, _, workspace string, merge
 	miseJSON := jsonDump(config.MergeMiseTools(merged))
 	lspJSON := jsonDumpOrEmptyObj(mapOrNil(merged, "lsp_servers"))
 	mcpJSON := jsonDumpOrEmptyObj(mapOrNil(merged, "mcp_servers"))
-	presetsJSON := jsonDumpOrEmptyList(listOrNil(merged, "mcp_presets"))
 
 	workspaceResolved := workspace
 	if r, e := filepath.Abs(workspace); e == nil {
@@ -43,7 +42,6 @@ func (o *Options) runEntrypointPreflight(r *reporter, _, workspace string, merge
 		"YOLO_MISE_TOOLS":   miseJSON,
 		"YOLO_LSP_SERVERS":  lspJSON,
 		"YOLO_MCP_SERVERS":  mcpJSON,
-		"YOLO_MCP_PRESETS":  presetsJSON,
 		// The same `agent_updates` policy the run pipeline emits. Without it the preflight
 		// renders launchers under a policy the boot does not have — every one of them with
 		// its update branch enabled, on a machine that froze them.
@@ -161,16 +159,7 @@ func mapOrNil(m *jsonx.OrderedMap, key string) *jsonx.OrderedMap {
 	return nil
 }
 
-func listOrNil(m *jsonx.OrderedMap, key string) []any {
-	if v, _ := m.Get(key); v != nil {
-		if l, ok := v.([]any); ok {
-			return l
-		}
-	}
-	return nil
-}
-
-// jsonDump and its two wrappers render the preflight's env wires, which are built from
+// jsonDump and its wrapper render the preflight's env wires, which are built from
 // types jsonx encodes: an encode error is a bug, so they panic rather than return "".
 func jsonDump(v any) string { return jsonx.MustDumpsCompact(v) }
 
@@ -179,13 +168,6 @@ func jsonDumpOrEmptyObj(m *jsonx.OrderedMap) string {
 		return "{}"
 	}
 	return jsonx.MustDumpsCompact(m)
-}
-
-func jsonDumpOrEmptyList(l []any) string {
-	if l == nil {
-		return "[]"
-	}
-	return jsonx.MustDumpsCompact(l)
 }
 
 // parseToml is a minimal TOML validity check — the codex config.toml is simple

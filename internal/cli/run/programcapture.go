@@ -92,8 +92,8 @@ func (o *Options) prepareOrdinaryPrograms(cfg *jsonx.OrderedMap, rt, repoRoot st
 		}
 		return 0
 	}
-	_, servers, presets := agentServerTables(cfg, false, packs)
-	e := entrypoint.NewEnv(map[string]string{"YOLO_MISE_TOOLS": jsonDumpsOrEmptyObj(cfgMap(cfg, "mise_tools")), "YOLO_MCP_SERVERS": jsonDumpsOrEmptyObj(servers), "YOLO_MCP_PRESETS": jsonDumpsOrEmptyList(presets)})
+	_, servers := agentServerTables(cfg, false, packs)
+	e := entrypoint.NewEnv(map[string]string{"YOLO_MISE_TOOLS": jsonDumpsOrEmptyObj(cfgMap(cfg, "mise_tools")), "YOLO_MCP_SERVERS": jsonDumpsOrEmptyObj(servers)})
 	reason := OrdinaryRuntimeUnsupported(cfg, o.Getenv("YOLO_STORE_PACKAGES") == "1")
 	if channel != nil {
 		compositions := []packload.EnvComposition{channel.scope.SharedEnv()}

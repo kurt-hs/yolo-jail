@@ -224,25 +224,6 @@ func TestAnIncludeProblemNamesItsLine(t *testing.T) {
 	}
 }
 
-// The workspace's preset/null conflict leads with where the null was written.
-func TestPresetNullConflictLeadsWithTheNullsLine(t *testing.T) {
-	ws := t.TempDir()
-	p := filepath.Join(ws, WorkspaceConfigName)
-	write(t, p, "{\"mcp_presets\": [\"chrome-devtools\"],\n \"mcp_servers\": {\"chrome-devtools\": null}}")
-	cfg, src, err := LoadJSONCFileWithSources(p, WorkspaceConfigName, false, discard)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := PresetNullConflicts(cfg, WorkspaceConfigName, src)
-	if len(got) != 1 || !strings.HasPrefix(got[0], p+":2:37: preset 'chrome-devtools'") {
-		t.Errorf("got %q", got)
-	}
-	if got := PresetNullConflicts(cfg, WorkspaceConfigName, nil); len(got) != 1 ||
-		!strings.HasPrefix(got[0], WorkspaceConfigName+": preset") {
-		t.Errorf("with no record the label leads: %q", got)
-	}
-}
-
 // `packs` problems reach verbs that run no validation (`yolo host`, `yolo pack`): LoadPacks'
 // warning names where the skipped entry was written, and LoadPackEntries' problem keeps the
 // `config.packs[i]: …` shape its callers split, with the user scope's record saying where.

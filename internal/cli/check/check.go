@@ -659,11 +659,6 @@ func (o *Options) sectionMergedConfig(r *reporter, merged *jsonx.OrderedMap, wor
 		r.ok("Runtime available: " + runtimeSel)
 	}
 
-	// Same-file preset+null contradictions, each located in its own scope's record.
-	errors = append(errors, config.PresetNullConflicts(userConfig, paths.UserConfigPath(), located.user)...)
-	_, wsName := config.ResolveWorkspaceConfigPath(workspace, config.WorkspaceConfigName)
-	errors = append(errors, config.PresetNullConflicts(workspaceConfig, wsName, located.workspace)...)
-
 	// The launch's capability gate, predicted here through the launch's own census, over the
 	// launch this config describes: the user scope's pack selection under the `profile` key
 	// (capabilities.go states why that, and not a launch's `-p`).

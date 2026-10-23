@@ -119,7 +119,7 @@ func (o *Options) refreshJailBriefings(cname string, cfg *jsonx.OrderedMap, rt s
 	// docs/reference/mcp-configuration.md#oq-lsp1. Injected rather than read inside jailcontent for the
 	// same reason the two setters above are: that package is called from here and does not read
 	// config itself. None under the seal (agentServerTables, seal.go): a build runs no agent.
-	lspServers, _, _ := agentServerTables(cfg, o.Sealed, nil)
+	lspServers, _ := agentServerTables(cfg, o.Sealed, nil)
 	jailcontent.SetLSPServers(lspServers)
 
 	// Skills staging — with the WORKSPACE as the lowest layer (docs/reference/agent-briefings.md),

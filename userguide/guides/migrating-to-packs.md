@@ -196,10 +196,10 @@ and warns before changing a value you set yourself.
 Your own config reaches those files too, as it reaches a jail's. The MCP servers under
 `mcp_servers`, the language servers under `lsp_servers`, the model providers your packs and
 `providers` declare, and the model your `profile` key selects are written into each agent's settings on
-your machine. Pi, for example, gets the same `openai-codex` model list a jail's pi has. Three
-things stay behind, and the report names each one: an MCP preset, a server whose command is a path
-that exists only inside a jail (such as `/workspace/...`), and a profile that needs a jail's
-service, such as claude's `codex` profile.
+your machine. Pi, for example, gets the same `openai-codex` model list a jail's pi has. Two
+things stay behind, and the report names each one: a server whose command is a path that exists
+only inside a jail (such as `/workspace/...`), and a profile that needs a jail's service, such as
+claude's `codex` profile.
 
 **First, let yolo write there.** Your real home is yours until you say otherwise:
 `host_management` is `"none"` by default, and `yolo host apply` refuses. Set it in your user config,

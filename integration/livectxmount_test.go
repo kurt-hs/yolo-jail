@@ -340,7 +340,7 @@ func main() {
 		}
 	}
 	packHome(t, `{"packs": []}`)
-	dir := writeProject(t, `{"mcp_servers": {}, "mcp_presets": [], "mounts": ["`+
+	dir := writeProject(t, `{"mcp_servers": {}, "mounts": ["`+
 		launchSource+`:/ctx/launch-ro"]}`)
 	cname := naming.FromWorkspace(dir)
 

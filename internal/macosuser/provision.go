@@ -203,13 +203,6 @@ func ProvisionBootstrapScript(workspace string) string {
 // Copilot's projection — so starting a privileged stage for it would be one that does
 // nothing.
 //
-// `mcp_presets` is NOT one of them, and that is the design's list minus one entry rather
-// than an oversight: the preset WRAPPERS are not generated on this backend at all
-// (entrypoint.RunDarwinBootstrap warns and says why), so the npm packages behind them
-// have nothing to be spawned by — Env.SkipMCPPresets empties that arm of the generated
-// script too. Counting presets here would start a stage whose only work is a download
-// nothing can exec.
-//
 // A DECLARED NODE FLOOR THE HOST CANNOT SHOW MET IS ONE (docs/reference/agent-program-runtimes.md
 // AR-L3), which floors carries. The floor's eager install and its refusal live in the generated
 // bootstrap, so before AR-L3 they ran here only when `mise_tools` happened to start a stage: a

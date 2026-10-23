@@ -24,8 +24,7 @@ import (
 // policy, a sampled memory guard, parallelism defaults) is a standing fact, so the
 // briefing's packages section says it, not a note here; and `cache_relocations` is
 // delivered (a link in the sandbox home the launch prints), which changes nothing an agent
-// reasons from. `mcp_presets` are absent, and the absence shows up as a server that is
-// simply not in its config. Those stay human-only.
+// reasons from. Those stay human-only.
 //
 // ONE SOURCE, TWO RENDERINGS. The facts come from the same predicates the note*
 // printers use, so a limit cannot be reported to one audience and not the other. The

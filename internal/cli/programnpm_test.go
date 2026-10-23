@@ -154,7 +154,6 @@ if [ "$phase" = install ] && [[ " $* " == *' -g '* ]]; then
  [ ! -f "$ROOT/legacy-fail" ] || exit 39
  package=${!#}; bin=probe
  if [[ "$package" == @*/*@* ]] || [[ "$package" != @* && "$package" == *@* ]]; then package=${package%@*}; fi
- if [ "$package" = @modelcontextprotocol/server-sequential-thinking ]; then bin=mcp-server-sequential-thinking; fi
  prefix=$NPM_CONFIG_PREFIX;version=$(cat "$ROOT/version")
  mkdir -p "$prefix/bin" "$prefix/lib/node_modules/$package/bin"
  printf '{"version":"%s"}\n' "$version" > "$prefix/lib/node_modules/$package/package.json"

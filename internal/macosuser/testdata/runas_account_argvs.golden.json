@@ -424,7 +424,6 @@
     "YOLO_MISE_TOOLS={\"neovim\": \"nightly\"}",
     "YOLO_LSP_SERVERS={}",
     "YOLO_MCP_SERVERS={}",
-    "YOLO_MCP_PRESETS=[]",
     "YOLO_AGENT_UPDATES=",
     "YOLO_HOST_LAYERS={\"delivery\":\"unsupported\"}",
     "YOLO_DARWIN_HOME_SIDECAR=/Users/Shared/yolo/proj/.yolo/home",

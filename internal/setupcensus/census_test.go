@@ -359,7 +359,7 @@ func setupConst(s Setup) string {
 // censusReads parses one package's non-test sources and lists every setupcensus.Warning call it
 // makes, as "<enclosing printer> <Setup> <path>". The enclosing printer is the function the call
 // sits in, or, for a call inside a composite literal carrying `name: "<step>"` (a boot step),
-// that step's name, so the darwin boot's mcp_presets_declined step is a printer by its own name.
+// that step's name, so a boot step is a printer by its own name.
 func censusReads(dir string) (map[string]bool, error) {
 	fset := token.NewFileSet()
 	entries, err := os.ReadDir(dir)

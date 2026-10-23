@@ -130,7 +130,7 @@ func TestTheMacosUserBootRunsItsStepsInOrder(t *testing.T) {
 		"generate_shims", "generate_agent_launchers", "generate_package_manager_launchers",
 		"deliver_launch_flags", "assert_required_bins",
 		"catalog_installed_orphans", "reconcile_installed_programs", "report_durable_dir",
-		"generate_bashrc", "generate_mise_config", "mcp_presets_declined", "configure_git",
+		"generate_bashrc", "generate_mise_config", "configure_git",
 		"prepare_session_homes", "configure_pack_surfaces", "configure_host_files", "install_home_overlay",
 		"link_context_dir", "generate_darwin_bootstrap_script", "retire_yolo_log", "write_login_rc",
 		"report_egress",

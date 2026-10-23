@@ -88,18 +88,16 @@ func runCatalogSplit(t *testing.T, vars map[string]string) (string, string) {
 func TestCatalogNamesNpmOrphansAndSparesEveryDeclaredSource(t *testing.T) {
 	home, packRoot := catalogHome(t)
 	seedNpm(t, home,
-		"@scope/declared", // the pack's npm program (NAME half of a pinned spec)
-		"pnpm",            // GeneratePackageManagerLaunchers
-		"@modelcontextprotocol/server-sequential-thinking", // an enabled MCP preset
+		"@scope/declared",            // the pack's npm program (NAME half of a pinned spec)
+		"pnpm",                       // GeneratePackageManagerLaunchers
 		"leftover-agent",             // an orphan
 		"@dropped/scoped-orphan",     // an orphan, two levels down
 		".bin", ".package-lock.json", // npm's own bookkeeping, never packages
 	)
 
 	got := runCatalog(t, map[string]string{
-		"JAIL_HOME":        home,
-		"YOLO_PACK_ROOT":   packRoot,
-		"YOLO_MCP_PRESETS": `["sequential-thinking"]`,
+		"JAIL_HOME":      home,
+		"YOLO_PACK_ROOT": packRoot,
 	})
 
 	for _, want := range []string{"leftover-agent", "@dropped/scoped-orphan"} {
@@ -108,7 +106,7 @@ func TestCatalogNamesNpmOrphansAndSparesEveryDeclaredSource(t *testing.T) {
 		}
 	}
 	for _, spared := range []string{
-		"@scope/declared", "pnpm", "@modelcontextprotocol/server-sequential-thinking",
+		"@scope/declared", "pnpm",
 		".bin", ".package-lock.json",
 	} {
 		if strings.Contains(got, spared) {
@@ -246,8 +244,7 @@ func TestCatalogSizeScalesItsUnit(t *testing.T) {
 func TestCatalogNamesLocalBinOrphansWithTheirSize(t *testing.T) {
 	home, packRoot := catalogHome(t)
 	seedLocalBin(t, home, 3*1024*1024, "huge-orphan")
-	seedLocalBin(t, home, 16, "declared-native", "yolo-log", "chrome-devtools-mcp-wrapper",
-		"yolo-cglimit")
+	seedLocalBin(t, home, 16, "declared-native", "yolo-log", "yolo-cglimit")
 	if err := os.MkdirAll(filepath.Join(home, ".local", "bin", "mcp-wrappers"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -268,11 +265,10 @@ func TestCatalogNamesLocalBinOrphansWithTheirSize(t *testing.T) {
 		t.Errorf("a small orphan must not render as a rounded zero:\n%s", got)
 	}
 	for _, spared := range []string{
-		"declared-native",             // the pack's native program
-		"yolo-log",                    // RetireYoloLog
-		"chrome-devtools-mcp-wrapper", // GenerateMCPWrappers
-		"mcp-wrappers",                // its sibling directory
-		"yolo-cglimit",                // staleGeneratedClients — this boot is already unlinking it
+		"declared-native", // the pack's native program
+		"yolo-log",        // RetireYoloLog
+		"mcp-wrappers",    // GenerateMCPWrappers
+		"yolo-cglimit",    // staleGeneratedClients — this boot is already unlinking it
 	} {
 		if strings.Contains(got, spared) {
 			t.Errorf("%q has an owner and must not be cataloged:\n%s", spared, got)
@@ -531,7 +527,7 @@ func TestTheDarwinBootstrapCatalogsOrphansIntoItsBootLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the macos-user bootstrap kept no boot log for the names: %v\n%s", err, term.String())
 	}
-	line := catalogPrefix + "npm package installed but not declared by any selected pack or preset: leftover-agent"
+	line := catalogPrefix + "npm package installed but not declared by any selected pack: leftover-agent"
 	if !strings.Contains(string(log), line) {
 		t.Errorf("boot.log does not name the orphan the terminal line counted:\n%s", log)
 	}

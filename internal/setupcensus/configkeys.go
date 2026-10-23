@@ -436,23 +436,6 @@ var configKeys = map[string]Entry{
 			"the whole machine"),
 		Guide: []string{"`mise_tools`"},
 	},
-	"mcp_presets": {
-		PodmanLinux: honored("the boot's generate_mcp_wrappers step writes each enabled " +
-			"preset's wrapper (bootsteps.go), and the bootstrap installs its npm package"),
-		PodmanMac:      honored("the same boot step (bootsteps.go)"),
-		AppleContainer: honored("the same boot step (bootsteps.go)"),
-		MacosUser: warnedSaying("DarwinEnvFrom sets SkipMCPPresets and the darwin boot's "+
-			"mcp_presets_declined step (entrypoint bootsteps.go) prints the notice naming each "+
-			"preset; SkipMCPPresets also keeps each preset's entry out of every agent's MCP table "+
-			"(entrypoint mcpServersWith)", Notice{
-			Says: "mcp_presets are not delivered on macos-user",
-			Then: "Left out of every agent's MCP config: the preset wrappers hardcode Linux paths (/usr/bin/chromium, /bin/node, " +
-				"/etc/fonts) that this backend does not provision. Configure the MCP server " +
-				"directly in `mcp_servers` if you need it here.",
-			By: "entrypoint.mcp_presets_declined",
-		}),
-		Guide: []string{"`mcp_presets`"},
-	},
 	"mcp_servers": {
 		PodmanLinux: honored("LoadMCPServers (entrypoint mcp.go) composes them per agent at " +
 			"boot from the launch's payload (assembleRunCmd), and loadMCPTables (entrypoint " +

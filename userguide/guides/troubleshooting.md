@@ -125,8 +125,8 @@ in again when it happens, or use Podman for several Claude jails at once.
 **`codex` or `pi` says `OpenAI login is required.` on Apple Container.** The shared ChatGPT login
 cannot be reached from Apple Container yet. Use an API key, or Podman.
 
-**An MCP server does not appear.** Check it is listed in `mcp_presets` or `mcp_servers`, and that
-you restarted the jail after adding it. Agent logs are in `~/.claude/` and `~/.copilot/logs/` inside
+**An MCP server does not appear.** Check it is listed in `mcp_servers`, or that the pack that ships
+it (such as `chrome-devtools`) is in `packs`, and that you restarted the jail after adding it. Agent logs are in `~/.claude/` and `~/.copilot/logs/` inside
 the jail, for example `tail -100 ~/.copilot/logs/$(ls -1t ~/.copilot/logs | head -1)`.
 
 **A language server does not respond.** yolo installs none: the server's program must be on the

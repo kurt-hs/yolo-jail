@@ -14,7 +14,7 @@ import (
 )
 
 // AgentUpdatesEnv carries the policy from the host into the jail. It is a host↔jail
-// contract in the class of YOLO_MCP_PRESETS: emitted by the run pipeline's `-e` list, by
+// contract in the class of YOLO_MCP_SERVERS: emitted by the run pipeline's `-e` list, by
 // `yolo check`'s preflight env, and by macos-user's bootstrap env.
 const AgentUpdatesEnv = "YOLO_AGENT_UPDATES"
 
