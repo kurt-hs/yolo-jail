@@ -5,8 +5,8 @@
 ;;
 ;; The prototype for docs/design/macos-user-model.md section 6. Hand-written and
 ;; never loaded by yolo; run-checks.sh in this directory loads it with
-;; `sandbox-exec -f profile.sb -D KEY=VALUE ...`. Written without a Mac: the first
-;; run on one is expected to need allow-list adjustments.
+;; `sandbox-exec -f profile.sb -D KEY=VALUE ...`. Written without a Mac, then
+;; revised from its first run on macOS 26.5 (2026-10-22): Apple Events, keychain.
 ;;
 ;; ---------------------------------------------------------------------------
 ;; ATTRIBUTION AND LICENSE
@@ -281,7 +281,8 @@
 
 ;; ---------------------------------------------------------------------------
 ;; System services: an allowlist. Keychain (securityd), pasteboard, Apple
-;; Events and LaunchServices are absent, so they are unreachable.
+;; Events and LaunchServices are absent from it, and the closing block denies
+;; them by name too (Apple Events by their own operation, appleevent-send).
 ;; ---------------------------------------------------------------------------
 
 ;; [10-runtime] minus com.apple.coreservices.launchservicesd, which `open` uses.
@@ -398,9 +399,15 @@
 ;; [yolo] The services section 5 names, by name, after the allowlist.
 (deny mach-lookup
     (global-name "com.apple.SecurityServer")                          ;; securityd: the login keychain.
+    (global-name "com.apple.securityd")                               ;; securityd under its other registered name (first Mac run; b4 proves the pair).
     (global-name "com.apple.securityd.xpc")                           ;; securityd's XPC endpoint.
     (global-name "com.apple.secd")                                    ;; Data-protection keychain (iCloud Keychain items).
     (global-name "com.apple.pasteboard.1")                            ;; The clipboard.
     (global-name "com.apple.coreservices.appleevents")                ;; Apple Events: driving your other apps (osascript).
     (global-name "com.apple.coreservices.launchservicesd")            ;; LaunchServices: `open -a`, opening files in your apps.
 )
+
+;; [yolo] Apple Events by their own operation, last so nothing re-allows it.
+;; The first Mac run (macOS 26.5) showed osascript driving Finder with
+;; (deny default) and the appleevents mach-lookup deny both in place.
+(deny appleevent-send)

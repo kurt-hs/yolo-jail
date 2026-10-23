@@ -3,7 +3,7 @@ title: "macos-user's model: a second account, or a sandbox that starts from noth
 date: 2026-10-22
 status: accepted
 stage: DECIDED
-next: "Prototype the deny-by-default profile on a Mac in both modes (§6), then seed the plan"
+next: "Rerun the revised prototype on a Mac in both modes (§6), rule loopback and the shared /tmp, then seed the plan"
 tags: [macos-user, seatbelt, design, isolation, parity, safehouse, sandvault]
 summary: "Today macos-user runs the agent as a second Mac account under a Seatbelt profile that allows everything and denies a short list (SandVault's model). Ruled 2026-10-22: macos-user moves to Safehouse's model, the agent running as you under a profile that denies everything and allows a list, the closest macOS gets to podman's start-from-nothing container; the second account is kept from day one as an optional mode, off by default, on the same profile. This doc lays the models side by side, maps podman's pieces onto the Safehouse model, and names what the second account buys and costs."
 vantage:
@@ -14,9 +14,10 @@ vantage:
 
 **Status:** 2026-10-22 — the model is ruled ([§7](#7-the-ruled-model-two-modes-one-profile)); nothing
 is built. The [§6](#6-what-a-prototype-must-show) prototype is the check before building, not a
-reopening of the ruling. No question remains.
+reopening of the ruling. Its [first Mac run](#first-mac-run-2026-10-22) raised two questions.
 
-**Needs your ruling:** none.
+**Needs your ruling:** loopback and the shared `/tmp`, from the
+[first Mac run](#first-mac-run-2026-10-22).
 
 **Reads with:** [Agent Safehouse research](../research/agent-safehouse.md) (the evidence for every
 Safehouse claim here), [SandVault and Safehouse compatibility](sandvault-safehouse-compat.md), and
@@ -150,6 +151,52 @@ The [prototype runbook](../plans/runbooks/macos-user-model-prototype/README.md) 
 and a script that runs these checks in both modes. That run is the gate before building. The existing macos-user policy suite
 ([§8.1](../research/agent-safehouse.md#81-a-policy-assertion-suite-for-macos-user--highest-value-moderate-cost))
 is where its checks become permanent tests.
+
+### First Mac run (2026-10-22)
+
+The maintainer ran the prototype on macOS 26.5 (arm64), as you and as `_yolojail`. Each mode had 30
+passes (29 as the account, which skips the Full Disk Access check) and the same two failures.
+
+**What passed, in both modes unless noted:**
+
+- **The agent's own work:** the profile loads; the workspace, home and temp dirs are writable;
+  signals reach processes inside; git init and commit, a C build, a Homebrew binary and a nix binary
+  all run; HTTPS works with certificate trust (`curl`, `gh`, `git ls-remote`); the system fonts read.
+- **Your files:** the decoy secret, `~/.ssh`, writing in your home and the login keychain file are
+  all refused. As the account, Unix permissions refused these even without the profile, so there
+  they test the backstop rather than the profile.
+- **Your session:** `do shell script` through System Events, `open -a TextEdit` and
+  `launchctl submit` all fail.
+- **Outside `/Users`:** the decoy project and its parent are unreadable; `/opt/homebrew` and the nix
+  store are readable.
+- **Loopback:** a listener of yours is unreachable until its port is listed, then reachable.
+- **Full Disk Access** (self mode, granted): profile-denied files, `TCC.db` included, stay unreadable.
+
+The ssh agent and self-mode clipboard checks were skipped (no `SSH_AUTH_SOCK`, empty clipboard), and
+the optional Claude check was not run.
+
+**The two failures, and what changed:**
+
+- **Apple Events reached Finder.** `osascript -e 'tell application "Finder" to get name'` printed
+  `Finder` inside the sandbox, with `(deny default)` and the Apple Events service denied by name. The
+  profile now ends with `(deny appleevent-send)`, Seatbelt's own operation for it.
+- **The keychain check was inconclusive.** Searching for an item that does not exist returns the
+  same exit code whether or not the keychain service was reached. It now adds a throwaway item to
+  your login keychain outside the sandbox and passes only if its secret does not come out inside.
+  The profile also denies the keychain service's real names, `com.apple.SecurityServer` and
+  `com.apple.securityd`; the rerun is what proves them.
+
+**Fixed in the script, not the profile:** the process the signal and command-line checks target had
+already exited, because macOS `sleep` rejected its argument, so those two passes proved nothing. They
+now target a long-lived process. `/bin/ps` would not run inside the sandbox at all, being setuid root,
+so the command-line check also reads `kern.procargs2` directly.
+
+**Awaiting rulings, rules unchanged:**
+
+- **Loopback (d3).** Denying the host's loopback also blocks the agent's own servers, including
+  test servers on random ports, because Seatbelt cannot tell who is listening.
+- **The shared `/tmp` (b14).** In self mode a 0600 file of yours in `/tmp` is readable from inside;
+  as the account, Unix permissions refuse it.
 
 ## 7. The ruled model: two modes, one profile
 

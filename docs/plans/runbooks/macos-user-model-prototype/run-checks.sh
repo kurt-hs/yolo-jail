@@ -18,8 +18,9 @@
 #   --keep                  keep the temp dirs and print the command for a manual sandboxed shell
 #
 # It creates only its own temp dirs, a decoy file in your home, a decoy directory
-# (/opt/src/... if creatable, else /Library/Caches/...), and two short-lived
-# processes; it removes all of them on exit. Written without a Mac.
+# (/opt/src/... if creatable, else /Library/Caches/...), one throwaway generic
+# password in your login keychain (for the keychain check), and a few processes;
+# it removes all of them on exit. First run on a Mac: macOS 26.5, 2026-10-22.
 
 # Single-quoted check scripts are expanded by the bash inside the sandbox, on purpose.
 # shellcheck disable=SC2016
@@ -32,7 +33,7 @@ WITH_CLAUDE=0
 KEEP=0
 EXTRA_PORTS=()
 
-usage() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -141,10 +142,40 @@ TMP_DECOY="/private/tmp/yolo-prototype-tmpdecoy-$NONCE"
 printf 'tmp decoy %s\n' "$NONCE" >"$TMP_DECOY"
 chmod 0600 "$TMP_DECOY"
 
-# A process of yours outside the sandbox, with a distinctive argv.
-DECOY_SLEEP_ARG="86$NONCE"
+# A long-lived process of yours outside the sandbox (b12, b13), with a distinctive
+# argv: 600.<nonce> seconds is a number macOS sleep accepts. The first Mac run's
+# 86<nonce> was not, so sleep printed its usage and exited before b12 and b13 ran.
+DECOY_SLEEP_ARG="600.$NONCE"
 /bin/sleep "$DECOY_SLEEP_ARG" &
 DECOY_PID=$!
+
+# A throwaway generic password in your login keychain, added and deleted as you in
+# both modes, for the keychain check (b4). -T lets /usr/bin/security read it with
+# no prompt, so only the sandbox stands between the check and the secret.
+LOGIN_KC="$HOST_HOME/Library/Keychains/login.keychain-db"
+KC_SERVICE="yolo-prototype-$NONCE"
+KC_SECRET="yolo-prototype-secret-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+KC_ADDED=0
+if KC_ADD_ERR="$(security add-generic-password -s "$KC_SERVICE" -a yolo -w "$KC_SECRET" -T /usr/bin/security "$LOGIN_KC" 2>&1)"; then
+	KC_ADDED=1
+fi
+
+# A reader of another process's argv that needs no setuid binary: kern.procargs2
+# through sysctl(3), for b13 next to ps (/bin/ps is setuid root).
+PROCARGS_PY="$WORKSPACE/.procargs.py"
+cat >"$PROCARGS_PY" <<'PY'
+import ctypes, sys
+libc = ctypes.CDLL(None, use_errno=True)
+mib = (ctypes.c_int * 3)(1, 49, int(sys.argv[1]))  # CTL_KERN, KERN_PROCARGS2, pid
+size = ctypes.c_size_t(0)
+if libc.sysctl(mib, 3, None, ctypes.byref(size), None, 0) != 0:
+    sys.exit("sysctl kern.procargs2: errno %d" % ctypes.get_errno())
+buf = ctypes.create_string_buffer(size.value)
+if libc.sysctl(mib, 3, buf, ctypes.byref(size), None, 0) != 0:
+    sys.exit("sysctl kern.procargs2: errno %d" % ctypes.get_errno())
+print(buf.raw[4:size.value].replace(b"\0", b" ").decode(errors="replace"))
+PY
+chmod 0644 "$PROCARGS_PY"
 
 LISTENER_PID=""
 CLAUDE_LABEL="yolo.prototype.$NONCE"
@@ -168,6 +199,7 @@ fi
 cleanup() {
 	[ -n "$LISTENER_PID" ] && kill "$LISTENER_PID" 2>/dev/null
 	kill "$DECOY_PID" 2>/dev/null
+	[ "$KC_ADDED" = 1 ] && security delete-generic-password -s "$KC_SERVICE" -a yolo "$LOGIN_KC" >/dev/null 2>&1
 	launchctl remove "$CLAUDE_LABEL" 2>/dev/null
 	rm -f "$DECOY_SECRET" "$TMP_DECOY"
 	if [ -n "$DECOY_PROJECT" ]; then
@@ -422,9 +454,31 @@ else
 	skip b2 "$HOST_HOME/.ssh does not exist"
 fi
 expect_deny b3 "write a file in your home" 'touch "$HOST_HOME/yolo-prototype-write-$NONCE" && rm -f "$HOST_HOME/yolo-prototype-write-$NONCE"' yes
-# security: exit 0 (found) or 44 (searched, not found) means the keychain was reachable.
-expect_deny b4 "search the keychain (security find-generic-password)" \
-	'security find-generic-password -s yolo-prototype-nonexistent-$NONCE; rc=$?; echo "security exit $rc"; [ $rc -eq 0 ] || [ $rc -eq 44 ]' yes
+# b4: read the throwaway item added to your login keychain above. An exit code cannot
+# tell a refusal from "not found" (the first Mac run got 44 either way), so the only
+# verdict is whether the secret itself comes out. Tried through the keychain search
+# list and by the login keychain's path; in account mode the read runs as the account.
+if [ "$KC_ADDED" = 1 ]; then
+	KC_READ='security find-generic-password -s "yolo-prototype-$NONCE" -w; security find-generic-password -s "yolo-prototype-$NONCE" -w "$HOST_HOME/Library/Keychains/login.keychain-db"'
+	PARAMS=("${DEFAULT_PARAMS[@]}")
+	cout="$(control "$KC_READ")"
+	out="$(inside "$KC_READ")"
+	case "$out" in
+	*"$KC_SECRET"*) result FAIL b4 "read a login-keychain item (security find-generic-password -w): the secret was PRINTED" ;;
+	*) result PASS b4 "read a login-keychain item (security find-generic-password -w)" ;;
+	esac
+	printf '    $ %s\n' "$KC_READ"
+	show "${out//"$KC_SECRET"/<the secret>}"
+	case "$cout" in
+	*"$KC_SECRET"*) echo "    (control without the profile: printed the secret, so a refusal is the profile's)" ;;
+	*)
+		echo "    (control without the profile: did NOT print the secret either, so a refusal here is not the profile's alone)"
+		show "$cout"
+		;;
+	esac
+else
+	skip b4 "could not add a throwaway item to your login keychain (locked?): $KC_ADD_ERR"
+fi
 expect_deny b5 "read the login keychain file" 'head -c 16 "$HOST_HOME/Library/Keychains/login.keychain-db" >/dev/null' yes
 if [ -n "${SSH_AUTH_SOCK:-}" ]; then
 	# ssh-add -l: 0 = keys listed, 1 = agent reached but empty, 2 = could not connect.
@@ -461,8 +515,12 @@ printf '    $ launchctl submit -l %s -- /usr/bin/true\n' "$CLAUDE_LABEL"
 show "$out"
 "${AS[@]+"${AS[@]}"}" launchctl remove "$CLAUDE_LABEL" 2>/dev/null
 expect_deny b12 "signal one of your processes (kill -0 $DECOY_PID)" "kill -0 $DECOY_PID" yes
-expect_deny b13 "read another process's argv (ps of pid $DECOY_PID)" \
-	"ps -ww -o command= -p $DECOY_PID | tee /dev/stderr | grep -q $DECOY_SLEEP_ARG" yes
+# b13: ps, then kern.procargs2 directly. /bin/ps is setuid root and the first Mac run
+# showed the sandbox refusing to exec it at all, which proves nothing about procargs.
+B13_PY=""
+/usr/bin/xcode-select -p >/dev/null 2>&1 && B13_PY="; /usr/bin/python3 \"\$WORKSPACE/.procargs.py\" $DECOY_PID"
+expect_deny b13 "read another process's argv (ps, then sysctl kern.procargs2, of pid $DECOY_PID)" \
+	"out=\$( { ps -o command= -p $DECOY_PID$B13_PY; } 2>&1 ); printf '%s\n' \"\$out\"; case \"\$out\" in *$DECOY_SLEEP_ARG*) exit 0 ;; esac; exit 1" yes
 info b14 "residual: a 0600 file of yours in the shared /tmp" "cat $TMP_DECOY"
 echo
 

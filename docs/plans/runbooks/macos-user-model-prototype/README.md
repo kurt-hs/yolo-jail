@@ -2,16 +2,18 @@
 title: "The macos-user model prototype"
 status: accepted
 stage: CURRENT
-next: "A human runs both modes on a Mac and pastes the output back; adjust profile.sb from what it reports"
+next: "A human reruns both modes on a Mac with the revised b4, b8, b12 and b13, and pastes the output back"
 tags: [runbook, macos-user, seatbelt, safehouse, prototype]
 summary: "A hand-written deny-by-default Seatbelt profile and a check script that prove or disprove the ruled macos-user model on a Mac, with no yolo code involved"
 ---
 
 # The macos-user model prototype
 
-**Status:** written 2026-10-22 without a Mac and never run. The profile has not been loaded by a
-kernel yet, so the first run is expected to need changes to its allow list. That is the point of
-running it.
+**Status:** written 2026-10-22 without a Mac, then first run the same day on macOS 26.5 (arm64) in
+both modes: every tool check passed and two deny checks failed. Apple Events reached Finder (b8), and
+the keychain check could not tell a refusal from "not found" (b4). The profile and script are revised
+for both, and for b12 and b13, which had targeted a process that had already exited. The results are
+recorded in the design's [first Mac run](../../../design/macos-user-model.md#first-mac-run-2026-10-22) section.
 
 ## What this proves
 
@@ -29,7 +31,14 @@ names what a prototype must show before anything is built. This directory is tha
 
 No yolo binary or config is involved, and the script changes nothing on the Mac beyond what it
 creates and removes again: its temp directory, a decoy file in your home, a decoy project directory,
-a loopback listener and a sleeping process.
+a loopback listener, a sleeping process, and one throwaway item in your login keychain.
+
+**The keychain check briefly adds and removes one item in your login keychain.** Before the checks
+run, the script adds a generic password named `yolo-prototype-<nonce>` with a random value, readable
+by `/usr/bin/security` without a prompt, and it deletes that item when it exits, on any exit path
+that runs its cleanup. In account mode the item is added and deleted as you, and only the read runs
+as the account. If the script is killed outright, delete it by hand with
+`security delete-generic-password -s yolo-prototype-<nonce>`.
 
 The checks, keyed to [§6](../../../design/macos-user-model.md#6-what-a-prototype-must-show):
 
@@ -37,17 +46,20 @@ The checks, keyed to [§6](../../../design/macos-user-model.md#6-what-a-prototyp
 | :--- | :--- |
 | 0 | The profile loads and `/bin/bash` starts under it. If not, nothing else runs. |
 | a1–a12 | The workspace, `$HOME` and temp dirs are writable; git init and commit work; a C build runs; a Homebrew and a nix binary run; HTTPS works, certificate trust included (`curl`, `gh`, `git ls-remote`); the system fonts are readable. |
-| b1–b13 | Each fails: reading a decoy secret in your home and `~/.ssh`, writing in your home, the keychain (`security`, and its file), the ssh agent, the clipboard, Apple Events to Finder and System Events, `open -a TextEdit`, `launchctl submit`, `kill -0` on one of your processes, and reading that process's command line. |
+| b1–b13 | Each fails: reading a decoy secret in your home and `~/.ssh`, writing in your home, reading the throwaway login-keychain item's secret (b4) and the keychain file, the ssh agent, the clipboard, Apple Events to Finder and System Events, `open -a TextEdit`, `launchctl submit`, `kill -0` on a long-lived process of yours, and reading that process's command line through `ps` and through `sysctl kern.procargs2`. |
 | c1–c4 | A decoy project at `/opt/src/...` (or `/Library/Caches/...` where `/opt` is not writable) is unreadable; `/opt/homebrew` and the nix store are readable. |
 | d1–d2 | A loopback listener the script starts is unreachable from inside, and reachable once its port is passed to the profile. |
 | e1–e2 | With Full Disk Access granted to the terminal, profile-denied files stay unreadable. |
 | f1 | Optional: Claude Code installs into the sandbox's own home and `claude --version` runs. |
 
-Two `INFO` lines report what the model knowingly leaves open, without counting it:
+Two `INFO` lines report what the model knowingly leaves open, without counting it. Both await a
+maintainer ruling, so the profile's rules for them are unchanged:
 
-- **b14:** the shared `/tmp`, where a file of yours is still readable.
+- **b14:** the shared `/tmp`, where a file of yours is still readable. The first run read it in self
+  mode; in account mode Unix permissions refused it.
 - **d3:** a loopback server the agent itself starts is also refused, because Seatbelt cannot tell
-  which process is listening. Podman's private loopback has no such limit.
+  which process is listening. That blocks the agent's own servers, random-port test servers
+  included. Podman's private loopback has no such limit.
 
 ## How to run it
 
@@ -155,7 +167,12 @@ The decisions, each traced to a design ruling. The file comments every allow on 
   `~/.cargo` and the rest) is granted: the agent has its own `HOME`.
 - **System services:** Safehouse's list minus LaunchServices, which `open` uses. Trust evaluation
   (`com.apple.trustd.agent`) stays, so HTTPS clients work. The keychain, clipboard, Apple Events
-  and LaunchServices are also denied by name at the end.
+  and LaunchServices are also denied by name at the end. The keychain's services are denied under
+  their real names, `com.apple.SecurityServer` and `com.apple.securityd`, beside the earlier
+  guesses, which do no harm if wrong. Check b4 is what proves the keychain closed, not those names.
+- **Apple Events:** denied by Seatbelt's own operation, `(deny appleevent-send)`, as the last rule
+  in the file so nothing re-allows it. The first run showed Finder answering `osascript` with
+  `(deny default)` and the Apple Events service denied by name both in place.
 - **Processes:** any program may run; signals and process inspection reach only processes inside
   the sandbox; another process's command line and environment are denied on both channels.
 - **Network:** open, except loopback, which is refused except the listed ports. Unix sockets are
@@ -178,7 +195,10 @@ These are the parts written blind, most likely first:
   the first.
 - **Whether `launchctl submit` is refused by Seatbelt or by launchd.** Check b11 judges by whether the
   job appears outside, either way.
-- **The `security` exit codes.** Check b4 counts exit 0 (found) or 44 (searched and not found) as
-  "reached the keychain". Any other refusal code reads as a pass, so read its output.
+- **The b13 readers.** `/bin/ps` is setuid root, and the first run showed the sandbox refusing to
+  run it at all, so b13 also reads `kern.procargs2` through a few lines of Python using `sysctl(3)`,
+  where the Command Line Tools are installed. Its control proves that reader works outside.
+- **The b12 and b13 controls in account mode.** The long-lived process is yours, so the account
+  cannot signal it or read its command line even without the profile; the control says so.
 - **`osascript -e 'do shell script …'`** with no target application runs inside the sandbox and
   escapes nothing, so check b9 sends it to System Events instead.
