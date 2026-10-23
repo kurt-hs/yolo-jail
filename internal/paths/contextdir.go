@@ -23,6 +23,11 @@ const ContextDirEnv = "YOLO_CONTEXT_DIR"
 // Container): every context mount's default destination is a child of it.
 const ContainerContextDir = "/ctx"
 
+// ContextLinkName is the name, directly under the agent's home, of the link to the context
+// dir (OQ-MM6, docs/reference/context-mounts.md#the-context-dir). It points at
+// $YOLO_CONTEXT_DIR on every backend.
+const ContextLinkName = "ctx"
+
 // YOLO'S OWN CHILDREN OF THE CONTEXT DIR, on the container backends. Each is a bind the
 // launch makes itself, so a context mount the user declares shares a namespace with them
 // (docs/reference/context-mounts.md#where-the-bytes-are-named), and the `yolo check` duplicate-destination error

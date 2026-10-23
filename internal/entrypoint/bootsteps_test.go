@@ -108,7 +108,7 @@ func TestTheContainerBootRunsItsStepsInOrder(t *testing.T) {
 		"generate_venv_precreate_script", "generate_mise_config", "mise_uninstall_retired",
 		"nvim_config", "generate_mcp_wrappers", "skills_skipped",
 		"prepare_session_homes", "configure_pack_surfaces", "configure_host_files",
-		"cgroup_delegation", "cleanup_stale_wrappers",
+		"link_context_dir", "cgroup_delegation", "cleanup_stale_wrappers",
 		"published_port_localnet", "port_forwarding",
 		"note_service_caller_auth", "write_caller_token_files", "start_jail_daemon_supervisor",
 		"start_nix_root_watcher", "report_egress", "probe_service_reachability",
@@ -132,7 +132,7 @@ func TestTheMacosUserBootRunsItsStepsInOrder(t *testing.T) {
 		"catalog_installed_orphans", "reconcile_installed_programs", "report_durable_dir",
 		"generate_bashrc", "generate_mise_config", "mcp_presets_declined", "configure_git",
 		"prepare_session_homes", "configure_pack_surfaces", "configure_host_files", "install_home_overlay",
-		"generate_darwin_bootstrap_script", "retire_yolo_log", "write_login_rc",
+		"link_context_dir", "generate_darwin_bootstrap_script", "retire_yolo_log", "write_login_rc",
 		"report_egress",
 	}
 	if got := bootStepNames(bootDarwin); !slices.Equal(got, want) {
@@ -162,7 +162,7 @@ func TestTheContainerPerfLogKeepsItsLabels(t *testing.T) {
 		"reconcile_installed_programs", "report_durable_dir", "generate_ca_bundle", "generate_bashrc",
 		"generate_bootstrap_script", "generate_venv_precreate_script", "generate_mise_config",
 		"nvim_config", "generate_mcp_wrappers", "skills_skipped", "prepare_session_homes", "configure_pack_surfaces",
-		"configure_host_files", "cgroup_delegation", "cleanup_stale_wrappers",
+		"configure_host_files", "link_context_dir", "cgroup_delegation", "cleanup_stale_wrappers",
 		"published_port_localnet", "port_forwarding", "jail_daemon_supervisor",
 		"report_egress", "probe_service_reachability",
 	}

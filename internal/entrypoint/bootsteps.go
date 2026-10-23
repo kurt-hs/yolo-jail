@@ -501,6 +501,13 @@ func bootSteps() []bootStep {
 			notContainer: "skills, briefings and pack files are bind-mounted read-only by the launcher",
 		},
 		{
+			// The agent's ~/ctx link to $YOLO_CONTEXT_DIR (OQ-MM6), on both boots: the link is
+			// a name for what the launch already mounts or stages, and it goes after the home
+			// overlay so a pack file that happens to be named ctx is seen first and left alone.
+			name: "link_context_dir",
+			gen:  LinkContextDir,
+		},
+		{
 			// THE PROVISIONING STAGE'S SCRIPT ("The stage" of macos-user-provisioning.md).
 			// Written LAST among the generators that produce content, because it is the only one
 			// nothing here consumes: the stage is a separate, Seatbelt-confined process the

@@ -133,6 +133,14 @@ func buildHomeSkeleton(root string, packs []*packload.Pack, cfg *jsonx.OrderedMa
 			return fail(err)
 		}
 	}
+	// The agent's ~/ctx link to the context dir (OQ-MM6). The home root is read-only in this
+	// jail, so the link is laid here from the host side, the same way as the redirects. Its
+	// target is the container's context dir, the string YOLO_CONTEXT_DIR names on podman, and
+	// it is absolute on purpose: the entrypoint's boot step compares the raw link string with
+	// that variable, and finds this link already correct, so it does nothing.
+	if err := b.symlink(paths.ContextLinkName, paths.ContainerContextDir); err != nil {
+		return fail(err)
+	}
 
 	// --- BEST-EFFORT: the config- and pack-driven mountpoints ---
 	sk := homeSkeleton{dir: dir}

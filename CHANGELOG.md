@@ -10,6 +10,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+**Browse mounted folders from home.** Every jail links `~/ctx` to its mounted folders.
+
 ## [0.15.1] - 2026-10-22
 
 You can keep chosen host settings out of your jails, and run a yolo checkout without replacing your installed command.

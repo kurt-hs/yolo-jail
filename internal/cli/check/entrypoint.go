@@ -88,6 +88,7 @@ func (o *Options) runEntrypointPreflight(r *reporter, _, workspace string, merge
 		entrypoint.GenerateVenvPrecreateScript,
 		entrypoint.ConfigureMisePrism,
 		entrypoint.GenerateMCPWrappers,
+		entrypoint.LinkContextDir,
 	}
 	for _, gen := range generators {
 		if err := gen(e); err != nil {

@@ -312,6 +312,8 @@ func TestTheSkeletonsHostFileLinksAreTheMacosUserLayouts(t *testing.T) {
 	for _, r := range paths.HomeFileRedirects() {
 		core[r.Name] = true
 	}
+	// The ~/ctx link is not a host_files destination, and macos-user lays it in the boot step.
+	core[paths.ContextLinkName] = true
 	skeleton := map[string]string{}
 	top, err := os.ReadDir(dir)
 	if err != nil {
@@ -1259,5 +1261,22 @@ func TestAFreshLaunchLeavesTheMachineStoreByteIdentical(t *testing.T) {
 	seed, _ := os.ReadFile(filepath.Join(store, ".claude", "claude.json"))
 	if !strings.Contains(string(seed), "oauthAccount") {
 		t.Errorf("the logged-in workspace's login did not back-propagate into the seed: %s", seed)
+	}
+}
+
+// The skeleton carries the agent's ~/ctx link (OQ-MM6) pointing at the container's context
+// dir, the same string YOLO_CONTEXT_DIR names on podman. The home root is read-only in the
+// jail, so the link has to be laid here. Fails if the link is removed from buildHomeSkeleton.
+func TestTheSkeletonLinksCtxToTheContextDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := buildSkeletonForTest(t, "yolo-ctx-link", nil, nil, nil)
+	link := filepath.Join(dir, paths.ContextLinkName)
+	got, err := os.Readlink(link)
+	if err != nil {
+		t.Fatalf("the skeleton has no ~/%s link: %v", paths.ContextLinkName, err)
+	}
+	if got != paths.ContainerContextDir {
+		t.Errorf("~/%s -> %q, want %q (the value YOLO_CONTEXT_DIR names on podman)",
+			paths.ContextLinkName, got, paths.ContainerContextDir)
 	}
 }

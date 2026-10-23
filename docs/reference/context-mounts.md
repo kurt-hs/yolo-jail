@@ -345,6 +345,12 @@ the honest signal: this directory always exists and the briefing lists what is i
 empty one says "no context mounts", which is true. `YOLO_CTX_ROOT` keeps its own meaning and its
 set-only-when-staged rule.
 
+Every backend also links `~/ctx` in the agent's home to `$YOLO_CONTEXT_DIR`, so the mounts are
+browsable from home ([OQ-MM6](../design/macos-user-model.md#OQ-MM6)). On podman the link is laid in
+the host-built home skeleton, because the home root is read-only in the jail; on Apple Container and
+macos-user the boot step `link_context_dir` lays it. The boot step never replaces anything already at
+that path: it says so in one line and leaves it.
+
 On macos-user the empty tree is staged by `macosuser.StageEmptyCtxCommands` with the same
 rm-then-mv shape as its siblings, and the variable rides both the bootstrap env and the agent's
 session env file, since the launch argv's `env -i` list is closed; so every macos-user launch
