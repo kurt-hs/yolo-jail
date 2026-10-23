@@ -49,6 +49,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/perf"
@@ -184,6 +185,10 @@ func (r *buildReport) begin(s buildStart, it *poolItem) *buildRun {
 // of the version it builds, into the tree, with no checkout (XB-D6).
 func buildRuns(f packload.Fork, line string) string {
 	switch {
+	case f.IsPackTree():
+		// line is the pack's own `build`, which the placement script runs in the program's directory.
+		return "it copies " + f.From + " into ~/" + packdecl.PackTreeProgramDir(f.Bin) + ", runs there: " + line +
+			", and links ~/" + packdecl.PackTreeProgramLink(f.Bin) + " to " + f.Run
 	case f.IsTree() && f.Npm():
 		return "it runs npm's own install of the package: " + line
 	case f.IsTree() && strings.TrimSpace(line) == "":

@@ -320,3 +320,51 @@ func underPrefix(prefix, ref string) bool {
 	clean := filepath.Clean(ref)
 	return clean == prefix || strings.HasPrefix(clean, prefix+string(filepath.Separator))
 }
+
+// ManifestForTree is the manifest of a tree yolo laid out or trimmed itself, rather than one a
+// capture driver walked as a delta: a pack-tree program's copied layout, which the host admits with
+// no build jail (docs/design/pack-buildable-programs.md §6.4), and a pack-tree build's output once
+// everything outside its two paths is dropped (§6.2). It describes tree as it is on disk, with the
+// FULL reference scan, so the entry is relocatable exactly when every reference into home is a
+// plain prefix substitution away from correct — the decision a capture with
+// Options.ScanContentRefs makes. Surfaces are the top-level home-relative roots the tree holds,
+// since nothing here walked a surface; Excluded is empty for the same reason.
+func ManifestForTree(tree, home, platform string) (*Manifest, error) {
+	entries, refs, err := describeTree(tree, home)
+	if err != nil {
+		return nil, fmt.Errorf("capture manifest: %w", err)
+	}
+	contentRefs, blockers, err := scanContentRefs(tree, home)
+	if err != nil {
+		return nil, fmt.Errorf("capture absolute references: %w", err)
+	}
+	refs = append(refs, contentRefs...)
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i].Path != refs[j].Path {
+			return refs[i].Path < refs[j].Path
+		}
+		return refs[i].Kind < refs[j].Kind
+	})
+	relocatable, why := decideRelocatable(RefScanFull, blockers)
+	surfaces := []string{}
+	seen := map[string]bool{}
+	for _, e := range entries {
+		top, _, _ := strings.Cut(e.Path, "/")
+		if !seen[top] {
+			seen[top] = true
+			surfaces = append(surfaces, top)
+		}
+	}
+	m := &Manifest{
+		Schema: ManifestSchema, Home: home, Platform: platform, Surfaces: surfaces,
+		Excluded: []string{}, Entries: entries, AbsoluteRefs: refs, RefScan: RefScanFull,
+		Relocatable: relocatable, NotRelocatable: why,
+	}
+	if m.Entries == nil {
+		m.Entries = []ManifestEntry{}
+	}
+	if m.AbsoluteRefs == nil {
+		m.AbsoluteRefs = []AbsoluteRef{}
+	}
+	return m, nil
+}

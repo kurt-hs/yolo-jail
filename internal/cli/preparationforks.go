@@ -88,7 +88,9 @@ func registerForkPreparation(pins []packload.ForkPin, req run.ForkBuildRequest, 
 	selected := make(map[string]packload.ForkPin, len(pins))
 	ordered := make([]packload.ForkPin, 0, len(pins))
 	for _, pin := range pins {
-		if pin.Fork.IsTree() {
+		if pin.Fork.IsTree() || pin.Fork.IsPackTree() {
+			// A pack-tree program has no upstream for a next-launch preparation to follow: its
+			// revision is the launch's staged tree, which only a launch reads.
 			continue
 		}
 		if _, exists := selected[pin.Fork.Key()]; exists {

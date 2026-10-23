@@ -445,6 +445,9 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 			if fr := req.Forks; fr != nil && fr.FreshUpdate {
 				for _, pin := range fr.Pins {
 					f := pin.Fork
+					if f.IsPackTree() {
+						continue // nothing upstream to re-resolve: its revision is the staged tree's digest
+					}
 					registerFreshPreparation(ctx, store, f, fr.Platform, fr.FreshIdentity, fr.FreshBoundary, fr.FreshBoundaryErr)
 				}
 			}
@@ -550,7 +553,7 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 // selected subscription is recorded by runBuildSlot after the pool completes.
 func addForkKeys(pool *buildPool, req run.ForkBuildRequest, color bool, answer func(string, entrypoint.ForkDelivery)) {
 	store := &capture.Store{Dir: paths.CapturesDir()}
-	missing := 0
+	missing, packTrees := 0, 0
 	for _, p := range req.Pins {
 		if p.Fork.Patched() {
 			pool.add(p.Fork.Label(), func(it *poolItem) {
@@ -576,7 +579,9 @@ func addForkKeys(pool *buildPool, req run.ForkBuildRequest, color bool, answer f
 			})
 			continue
 		}
-		if req.FreshUpdate {
+		if req.FreshUpdate && !p.Fork.IsPackTree() {
+			// A pack-tree program has no upstream to re-resolve: its revision is its staged tree's
+			// digest, so --update builds it as any launch does.
 			pool.add(p.Fork.Label(), func(it *poolItem) {
 				delivery := freshPlainPreparationForLaunch(it.pool.ctx, p.Fork, req, it.stream())
 				answer(p.Fork.Bin, delivery)
@@ -584,8 +589,24 @@ func addForkKeys(pool *buildPool, req run.ForkBuildRequest, color bool, answer f
 			continue
 		}
 		b := forkBuild{Fork: p.Fork, Commit: p.Commit, Platform: req.Platform}
-		if entry, _, err := resolveForkBuild(store, p.Fork.Bin, req.Platform, p.Fork.Source, p.Commit, b.recipe()); err == nil {
+		if entry, _, err := resolveForkBuild(store, p.Fork.Bin, req.Platform, b.selectSource(), p.Commit, b.recipe()); err == nil {
+			// A HIT PRINTS NOTHING (BG-D10), a pack-tree program's as a fork's.
 			answer(p.Fork.Bin, entrypoint.ForkDelivery{Key: entry.Key})
+			continue
+		}
+		if p.Fork.IsPackTree() {
+			packTrees++
+			if strings.TrimSpace(p.Fork.Build) == "" {
+				// NO BUILD LINE (BG-D5): the host's copy, admitted under the build's lock, with no jail
+				// and no build slot.
+				pool.add(p.Fork.Label(), func(it *poolItem) {
+					answer(p.Fork.Bin, copyPackTreeForLaunch(b, req.Runtime, it, color))
+				})
+				continue
+			}
+			pool.add(p.Fork.Label(), func(it *poolItem) {
+				answer(p.Fork.Bin, buildPlainForkForLaunch(b, req.Runtime, pool.report, it, color))
+			})
 			continue
 		}
 		missing++
@@ -601,5 +622,10 @@ func addForkKeys(pool *buildPool, req run.ForkBuildRequest, color bool, answer f
 		pool.say(fmt.Sprintf("[bold]fork builds[/bold]  %d %s never built at %s on this machine[dim] — each is built "+
 			"once now, from its pinned commit, and every later launch materializes it[/dim]", missing,
 			plural(missing, "fork", "forks"), plural(missing, "its pin", "their pins")))
+	}
+	if packTrees > 0 && !req.Interrupt.Interrupted() {
+		pool.say(fmt.Sprintf("[bold]program builds[/bold]  %d %s from a pack's own tree, never built from this "+
+			"content on this machine[dim] — each is built once now, and every later launch with the same "+
+			"tree materializes it[/dim]", packTrees, plural(packTrees, "program", "programs")))
 	}
 }

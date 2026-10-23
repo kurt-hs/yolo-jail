@@ -132,6 +132,11 @@ func (o *Options) forkBuildPlan(rt string) (map[string]entrypoint.ForkDelivery, 
 			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: p.Reason}
 			continue
 		}
+		if p.Fork.IsPackTree() && rt == "macos-user" { // parity: Warned — the darwin sealed act does not stage a pack's tree yet (docs/design/pack-buildable-programs-plan.md Task 10), so no build is tried and the program's launcher prints this reason
+			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: "a program built from pack " + p.Fork.Pack +
+				"'s own tree (" + p.Fork.From + ") is not built for macOS by this yolo yet"}
+			continue
+		}
 		if why := forkUnpublishedHere(p.Fork, rt); why != "" {
 			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: "fork " + p.Fork.Pack + " builds for none of this jail's platform: " + why}
 			continue

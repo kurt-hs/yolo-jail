@@ -313,6 +313,16 @@ func (b forkBuild) buildSource() string {
 	return b.Fork.Source
 }
 
+// selectSource is the source a plain build's hit check selects store entries by
+// (resolveForkBuild): the source as written for a plain fork, "pack:<pack>/<from>" for a pack-tree
+// program, the source its receipt records.
+func (b forkBuild) selectSource() string {
+	if b.Fork.IsPackTree() {
+		return b.buildSource()
+	}
+	return b.Fork.Source
+}
+
 // patchedBuildSource is a patched fork's source with no ref: `git+<repository>`, then `//<subdir>`
 // for a subdirectory source. It is a record, not an address (packsrc.Parse refuses it, as it
 // refuses any git source with no `?ref=`), so no plain fork's query, which is the source as written
@@ -334,6 +344,11 @@ func (b forkBuild) id() string {
 // version this build is of (packdecl.NpmTreeInstall), which the recipe leaves out so one recipe
 // serves every version.
 func (b forkBuild) buildLine() string {
+	if b.Fork.IsPackTree() {
+		// A PACK-TREE program's: its `build` run inside the placement script, which builds in the
+		// program's own directory and links it (packTreePlacementScript, BG-D4).
+		return packTreePlacementScript(b.Fork.Bin, b.Fork.Run, b.Fork.Build)
+	}
 	if b.Fork.IsTree() && b.Fork.Npm() {
 		if n, err := packsrc.ParseNpm(b.Fork.Source); err == nil {
 			return packdecl.NpmTreeInstall(n.Name, b.Commit)
@@ -766,11 +781,10 @@ func buildFork(b forkBuild, mode buildMode, out, errw io.Writer, color bool) (*c
 	pr := richtext.Printer{W: out, Color: color}
 	store := &capture.Store{Dir: paths.CapturesDir()}
 	f := b.Fork
-	if f.IsPackTree() {
-		// A PACK-TREE PROGRAM's source is its pack's own tree, which this act does not stage yet: a
-		// build here would check out an empty source address. Refused, never a fork's checkout.
-		return nil, fmt.Errorf("%s is built from pack %s's own tree (%s), which this yolo's build act "+
-			"does not stage", f.Bin, f.Pack, f.From)
+	if f.IsPackTree() && b.Commit == "" {
+		// A PACK-TREE PROGRAM WITH NO DIGEST: its pack ships no source directory, so there is nothing
+		// to stage and no revision to key a build on.
+		return nil, fmt.Errorf("%s is built from pack %s's own tree, and the pack ships no %s", f.Bin, f.Pack, f.From)
 	}
 	if b.recipe() == "" {
 		// A PATCHED FORK WITH NO SERIES READ, or anything else with no recipe: a build here would
@@ -823,9 +837,13 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 			return entry, err
 		}
 	case !mode.force:
-		if entry, _, err := resolveForkBuild(store, f.Bin, b.Platform, f.Source, b.Commit, b.recipe()); err == nil {
+		if entry, _, err := resolveForkBuild(store, f.Bin, b.Platform, b.selectSource(), b.Commit, b.recipe()); err == nil {
 			return entry, nil
 		}
+	}
+	if f.IsPackTree() && strings.TrimSpace(f.Build) == "" {
+		// NO BUILD LINE, NO JAIL (BG-D5): the host lays out and admits the copy, under this lock.
+		return admitPackTreeCopyUnderLock(b, mode, store, pr)
 	}
 	stagingID := "fork-" + b.id()
 	staging := store.StagingDir(stagingID)
@@ -968,6 +986,17 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 			}
 			pr.Printf("[dim]  %s[/dim]", richtext.Escape(sealDisclosure(mode.runtime)+"; "+buildRuns(f, b.buildLine())))
 		}
+	} else if f.IsPackTree() {
+		// A PACK-TREE PROGRAM: its pack's staged source directory, minus `.git`, in place of a
+		// checkout (BG-D2), checked against the digest the build is keyed on.
+		mode.run.phase("copying its pack's source")
+		if err := stagePackTreeSource(f, b.Commit, src); err != nil {
+			return nil, forkSourceError{err}
+		}
+		if mode.run == nil {
+			pr.Printf("[bold]build[/bold] [cyan]%s[/cyan]  [dim]%s, in a sealed jail[/dim]", f.Label(), richtext.Escape(packTreeWhat(b)))
+			pr.Printf("[dim]  %s[/dim]", richtext.Escape(sealDisclosure(mode.runtime)+"; "+buildRuns(f, f.Build)))
+		}
 	} else {
 		mode.run.phase("checking out its source")
 		var checkoutErr error
@@ -1071,12 +1100,34 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 			if f.IsTree() {
 				return fmt.Sprintf("%s's build left no tree at ~/%s", f.Label(), packdecl.TreeReservedDir(f.Bin))
 			}
+			if f.IsPackTree() {
+				return fmt.Sprintf("%s's build left nothing in the home (no ~/%s)", f.Label(), packdecl.PackTreeProgramDir(f.Bin))
+			}
 			return fmt.Sprintf("%s's build left nothing in the program surfaces (%s)", f.Key(),
 				strings.Join(m.Surfaces, ", "))
 		},
 		func(m *capture.Manifest) string {
 			if f.IsTree() {
 				return treeAdmitProblem(m, f, workspace)
+			}
+			if f.IsPackTree() {
+				// THE ENTRY HOLDS THE PROGRAM'S TWO PATHS AND NOTHING ELSE (BG-D4): anything else the build
+				// wrote into the home is dropped here, and named in its log.
+				dropped, err := prunePackTreeOutput(filepath.Join(staging, captureOutLeaf), m, f.Bin)
+				if err != nil {
+					return err.Error()
+				}
+				if len(dropped) > 0 {
+					note := fmt.Sprintf("dropped %d %s the build wrote outside ~/%s and ~/%s, which the program's "+
+						"entry does not carry: %s", len(dropped), plural(len(dropped), "path", "paths"),
+						packdecl.PackTreeProgramDir(f.Bin), packdecl.PackTreeProgramLink(f.Bin), strings.Join(dropped, ", "))
+					if mode.run != nil {
+						mode.run.phase(note)
+					} else {
+						pr.Printf("[dim]  %s[/dim]", richtext.Escape(note))
+					}
+				}
+				return packTreeAdmitProblem(m, f, workspace)
 			}
 			if why := missingProduces(m, f.Produces); why != "" {
 				return why
@@ -1188,7 +1239,13 @@ func buildPlainForkForLaunch(b forkBuild, rt string, report *buildReport, it *po
 			Cause: refused.cause}
 	}
 	ctx := it.context()
-	r := report.begin(buildStart{fork: b.Fork, what: b.Fork.Source + " at " + shortSHA(b.Commit), line: b.buildLine()}, it)
+	start := buildStart{fork: b.Fork, what: b.Fork.Source + " at " + shortSHA(b.Commit), line: b.buildLine()}
+	if b.Fork.IsPackTree() {
+		// Its subject is its pack's tree at its digest, and the line disclosed is the pack's own
+		// `build`, which buildRuns says the placement around (BG-D4).
+		start.what, start.line = packTreeWhat(b), b.Fork.Build
+	}
+	r := report.begin(start, it)
 	bound := false
 	entry, err := buildFork(b, buildMode{lock: pidlock.Mode{Wait: true, Bound: forkBuildWaitBound, Cancel: ctx.Done()},
 		run: r, runJail: childJail(ctx, color, &bound), runtime: rt, admitCtx: ctx}, it.stream(), it.stream(), color)
@@ -1422,29 +1479,40 @@ func copySourceTree(src, dst string) error {
 		if rel == ".yolo-pack-complete" {
 			return nil
 		}
-		target := filepath.Join(dst, rel)
-		info, err := d.Info()
+		return copySourceEntry(p, filepath.Join(dst, rel), d)
+	})
+}
+
+// copySourceEntry copies one walked entry p to target: a directory made, a symlink copied as a
+// link and never followed, a regular file with its permission bits. A device, socket or pipe is not
+// source, and is left out.
+func copySourceEntry(p, target string, d fs.DirEntry) error {
+	info, err := d.Info()
+	if err != nil {
+		return err
+	}
+	switch {
+	case d.IsDir():
+		return os.MkdirAll(target, info.Mode().Perm()|0o700)
+	case d.Type()&fs.ModeSymlink != 0:
+		link, err := os.Readlink(p)
 		if err != nil {
 			return err
 		}
-		switch {
-		case d.IsDir():
-			return os.MkdirAll(target, info.Mode().Perm()|0o700)
-		case d.Type()&fs.ModeSymlink != 0:
-			link, err := os.Readlink(p)
-			if err != nil {
-				return err
-			}
-			return os.Symlink(link, target)
-		case d.Type().IsRegular():
-			data, err := os.ReadFile(p)
-			if err != nil {
-				return err
-			}
-			return os.WriteFile(target, data, info.Mode().Perm()|0o600)
+		return os.Symlink(link, target)
+	case d.Type().IsRegular():
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
 		}
-		return nil // a device, socket or pipe in a repository is not source
-	})
+		if err := os.WriteFile(target, data, info.Mode().Perm()|0o600); err != nil {
+			return err
+		}
+		// The umask does not get a say: the exec bits are part of a tree's digest (treedigest), and a
+		// pack-tree build checks its staged copy against the digest it was keyed on.
+		return os.Chmod(target, info.Mode().Perm()|0o600)
+	}
+	return nil
 }
 
 // forkBuildJailArgv is the build jail's command: capture-run around the fork's build command line,
@@ -1488,7 +1556,7 @@ func forkBuildRunJail(workspace string, b forkBuild, s captureStreams, color boo
 // a narrowed selection (run's selectionNarrowed), so nothing more is carried for those.
 func sealPacks(f packload.Fork) []string {
 	out := []string{f.Pack}
-	if !f.IsTree() {
+	if !f.IsTree() && f.Base != "" { // a pack-tree program forks nothing: its own pack alone (BG-D2)
 		out = append(out, f.Base)
 	}
 	for _, b := range f.PackBases {

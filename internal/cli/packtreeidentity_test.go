@@ -71,17 +71,17 @@ func TestAPackTreeBuildIsKeyedOnItsTreeRecipeAndPlatform(t *testing.T) {
 	}
 }
 
-// TestTheBuildActRefusesAPackTreeProgramBeforeAnyCheckout: buildFork, the one build function, must
-// never check out a pack-tree program's empty source address as a fork's. It refuses before the
-// lock, so no lock file is made either.
-func TestTheBuildActRefusesAPackTreeProgramBeforeAnyCheckout(t *testing.T) {
+// TestTheBuildActRefusesAPackTreeProgramWithNoTree: buildFork, the one build function, never
+// builds a pack-tree program whose pack ships no source directory (no digest): there is nothing to
+// stage and no revision to key on. It refuses before the lock, so no lock file is made either.
+func TestTheBuildActRefusesAPackTreeProgramWithNoTree(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_DATA_HOME", "")
-	b := forkBuild{Fork: packTreeForkValue(), Commit: strings.Repeat("d", 64), Platform: "linux/amd64"}
+	b := forkBuild{Fork: packTreeForkValue(), Commit: "", Platform: "linux/amd64"}
 	var out bytes.Buffer
 	entry, err := buildFork(b, buildMode{lock: pidlock.Mode{}}, &out, io.Discard, false)
-	if entry != nil || err == nil || !strings.Contains(err.Error(), "pack fx's own tree (tools/x)") {
-		t.Fatalf("buildFork = %v, %v; want a refusal naming the pack's tree", entry, err)
+	if entry != nil || err == nil || !strings.Contains(err.Error(), "the pack ships no tools/x") {
+		t.Fatalf("buildFork = %v, %v; want a refusal naming the missing tree", entry, err)
 	}
 	if matches, _ := filepath.Glob(filepath.Join(paths.GlobalStorage(), "locks", "fork-build-*")); len(matches) != 0 {
 		t.Errorf("the refused build took a lock: %v", matches)
