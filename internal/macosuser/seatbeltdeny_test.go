@@ -39,8 +39,60 @@ func fullProfileParams() ProfileParams {
 	pp.HomeReadonly = ResolveHomeReadonly(pp.Home, pp.Workspace, []string{".claude"},
 		[]string{".claude/skills", ".claude/CLAUDE.md"})
 	pp.Devices = []string{"/dev/cu.usbserial-1"}
+	pp.CacheAliases = []CacheAlias{{Tool: "pip", Link: pp.Home + "/Library/Caches/pip",
+		Target: "/Users/you/Library/Caches/pip"}}
 	pp.RunAsUser = "you"
 	return pp
+}
+
+// The shared package caches (MMP-D12) are opened by the profile the run-as-you launch installs:
+// the cache-alias-allow block names each RESOLVED target, sits after every write carve-out, and
+// before the closing denies, which still beat it. Without it the HOME link resolves into a path
+// the profile refuses, and the alias is a dead link.
+func TestDenyDefaultProfileOpensEachCacheAlias(t *testing.T) {
+	p := DenyDefaultProfile(fullProfileParams())
+	at := strings.Index(p, "#seatbelt-test-id:"+CacheAliasAllowID+"#")
+	if at < 0 {
+		t.Fatal("the deny-default profile does not splice cache-alias-allow")
+	}
+	if !strings.Contains(p[at:], `(subpath "/Users/you/Library/Caches/pip")`) {
+		t.Error("cache-alias-allow does not name the alias's resolved target")
+	}
+	for _, after := range []string{"home-content-write-deny", "context-readonly-deny", "workspace-readonly-deny"} {
+		if i := strings.Index(p, "#seatbelt-test-id:"+after+"#"); i < at {
+			t.Errorf("%s (%d) must follow cache-alias-allow (%d): a write allow after a carve-out re-opens it", after, i, at)
+		}
+	}
+	if deny := strings.Index(p, "#seatbelt-test-id:host-secrets-deny#"); deny < at {
+		t.Errorf("host-secrets-deny (%d) must follow cache-alias-allow (%d)", deny, at)
+	}
+	if !strings.Contains(p, `(literal "/Users/you/Library/Caches")`) {
+		t.Error("the alias target's ancestors are not listed, so realpath() of the link fails")
+	}
+	if strings.Contains(DenyDefaultProfile(testProfileParams()), CacheAliasAllowID) {
+		t.Error("a profile with no alias renders cache-alias-allow")
+	}
+}
+
+// The sandbox's nix client reaches the host daemon: macos-user's acceptance bar is carrying the
+// nix layer, and the deny-default network section allows no unix-socket connect but
+// mDNSResponder's. The allow precedes the closing denies, and is the socket alone, not a
+// wildcard over every socket.
+func TestDenyDefaultProfileLetsNixReachTheDaemon(t *testing.T) {
+	p := DenyDefaultProfile(testProfileParams())
+	at := strings.Index(p, "#seatbelt-test-id:nix-daemon-allow#")
+	if at < 0 {
+		t.Fatal("the deny-default profile carries no nix-daemon-allow")
+	}
+	if !strings.Contains(p[at:], `(allow network-outbound (remote unix-socket (path-literal "`+NixDaemonSocket+`")))`) {
+		t.Error("nix-daemon-allow does not allow a connect to the daemon socket")
+	}
+	if !strings.Contains(p[at:], `(subpath "/private/etc/nix")`) {
+		t.Error("nix-daemon-allow does not let the client read the system nix.conf")
+	}
+	if strings.Index(p, "#seatbelt-test-id:host-secrets-deny#") < at {
+		t.Error("nix-daemon-allow sits after the closing denies")
+	}
 }
 
 func TestDenyDefaultProfileStartsFromNothing(t *testing.T) {
@@ -298,18 +350,24 @@ func TestDenyDefaultProfileDeviceGetsFileAccessAndIoctl(t *testing.T) {
 
 // TestDenyDefaultProfileHasNoPerLanguageHomeGrant: the ruling is no per-language home grants
 // (design §7), so no allow names a folder of the human's home but the locale preferences,
-// the ancestors of a granted root, and paths under one.
+// the ancestors of a granted root, and paths under one. A shared package cache (OQ-BF11) is
+// the one named exception: a granted root, and only when the launch aliased it.
 func TestDenyDefaultProfileHasNoPerLanguageHomeGrant(t *testing.T) {
 	pp := fullProfileParams()
 	p := DenyDefaultProfile(pp)
+	unaliased := pp
+	unaliased.CacheAliases = nil
 	for _, dir := range []string{".nvm", ".npm", ".cargo", ".rustup", ".pyenv", ".rbenv", ".local/bin",
 		".bun", ".deno", ".gradle", ".m2", ".gem", ".config", ".gitconfig", ".npmrc", "go", "Library/Caches"} {
-		if strings.Contains(p, `"/Users/you/`+dir) {
+		if strings.Contains(DenyDefaultProfile(unaliased), `"/Users/you/`+dir) {
 			t.Errorf("the profile names ~/%s", dir)
 		}
 	}
 	granted := []string{pp.Workspace, pp.Home}
 	granted = append(granted, pp.MachineDirs...)
+	for _, a := range pp.CacheAliases {
+		granted = append(granted, a.Target)
+	}
 	for _, f := range allowForms(p) {
 		for _, q := range quoted(f) {
 			if !strings.HasPrefix(q, "/Users/you/") {

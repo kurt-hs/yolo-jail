@@ -895,7 +895,203 @@ func InstallDarwinHomeLayout(e *Env, packs []*packload.Pack) error {
 	if !ok {
 		return nil
 	}
-	return errors.Join(l.Apply(), InstallDarwinCacheRelocations(e))
+	err := errors.Join(l.Apply(), InstallDarwinCacheRelocations(e))
+	// The shared package caches' links, after the layout made the directories they sit in. Never
+	// a refusal: an alias that cannot be laid leaves the sandbox its own copy (OQ-BF11).
+	InstallDarwinCacheAliases(e)
+	return err
+}
+
+// --- package-cache aliases in the run-as-you mode (MMP-D12, OQ-BF11) -------------------------
+
+// DarwinCacheAliasesEnv names a run-as-you session's shared package caches to the native
+// bootstrap: a JSON object of link path to resolved host cache (DarwinCacheAliasesWire), each of
+// which the bootstrap lays as a link (InstallDarwinCacheAliases). The launcher decided each one
+// (internal/hostcas) and the session profile opens each target (macosuser.CacheAliasAllow).
+// ABSENT MEANS NONE: a launch that aliases nothing removes every alias link an earlier one laid.
+const DarwinCacheAliasesEnv = "YOLO_DARWIN_CACHE_ALIASES"
+
+// darwinCacheAliasManifest is the file in each root (HOME, the machine root) recording the alias
+// links the bootstrap laid there, root-relative link to target.
+const darwinCacheAliasManifest = ".yolo-cache-aliases.json"
+
+// DarwinCacheAliasesWire is the variable's value for m, link to target: JSON, keys sorted.
+func DarwinCacheAliasesWire(m map[string]string) string {
+	b, _ := json.Marshal(m) // a map[string]string always marshals; encoding/json sorts the keys
+	return string(b)
+}
+
+// InstallDarwinCacheAliases lays each alias DarwinCacheAliasesEnv names and removes each one an
+// earlier launch laid that this one does not, in a run-as-you session only (HOME is the sidecar).
+//
+// A link may sit only under HOME or the machine root: a machine-tier store's copy is physically
+// in the machine root, because ~/.cache and ~/Library/Caches link there (hostcas.Store's
+// DarwinMachineTier). Every write is made beneath an os.Root on that root, so a link planted in
+// the agent-writable tree is never followed out of it. An existing link is replaced, an EMPTY
+// directory is replaced by the link, and anything else (a warm private copy that appeared after
+// the launcher looked) is left alone and named.
+//
+// BEST EFFORT, never a refusal: each failure is a warning and leaves the sandbox its own copy,
+// which is OQ-BF11's direction for every alias failure.
+func InstallDarwinCacheAliases(e *Env) {
+	if !darwinHomeIsSidecar(e) {
+		return
+	}
+	want := map[string]string{}
+	if wire := strings.TrimSpace(e.Getenv(DarwinCacheAliasesEnv)); wire != "" {
+		if err := json.Unmarshal([]byte(wire), &want); err != nil {
+			e.warn(fmt.Sprintf("package caches: %s is not a JSON object of link to target (%v); "+
+				"no host cache is shared this launch, and the sandbox keeps its own", DarwinCacheAliasesEnv, err))
+			return
+		}
+	}
+	roots := []string{filepath.Clean(e.Home)}
+	if machine := e.Getenv(DarwinMachineHomeEnv); machine != "" {
+		roots = append(roots, filepath.Clean(machine))
+	}
+	byRoot := map[string]map[string]string{}
+	for link, target := range want {
+		root, rel := aliasRoot(roots, link)
+		if root == "" || !filepath.IsAbs(target) || filepath.Clean(target) != target {
+			e.warn(fmt.Sprintf("package caches: the alias %s -> %s is not a link under the sandbox's "+
+				"HOME or machine root to an absolute target; it was not laid", link, target))
+			continue
+		}
+		if byRoot[root] == nil {
+			byRoot[root] = map[string]string{}
+		}
+		byRoot[root][rel] = target
+	}
+	for _, root := range roots {
+		for _, w := range layCacheAliasesUnder(root, byRoot[root]) {
+			e.warn("package caches: " + w + "; the sandbox keeps its own copy")
+		}
+	}
+}
+
+// aliasRoot is the root of roots that link is strictly under, and link relative to it.
+func aliasRoot(roots []string, link string) (string, string) {
+	if !filepath.IsAbs(link) || filepath.Clean(link) != link {
+		return "", ""
+	}
+	for _, r := range roots {
+		if rel, ok := strings.CutPrefix(link, r+string(filepath.Separator)); ok && rel != darwinCacheAliasManifest {
+			return r, rel
+		}
+	}
+	return "", ""
+}
+
+// layCacheAliasesUnder lays want (root-relative link to target) beneath root and sweeps what the
+// root's manifest records and want lacks, returning one warning per alias it could not handle.
+func layCacheAliasesUnder(root string, want map[string]string) []string {
+	var warns []string
+	fi, err := os.Lstat(root)
+	if err != nil || !fi.IsDir() {
+		if len(want) > 0 {
+			warns = append(warns, fmt.Sprintf("%s is not a directory, so no alias was laid in it", root))
+		}
+		return warns
+	}
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		return append(warns, fmt.Sprintf("opening %s: %v", root, err))
+	}
+	defer r.Close()
+	for rel, target := range readAliasManifest(r) {
+		if _, still := want[rel]; still {
+			continue
+		}
+		if got, err := r.Readlink(rel); err == nil && got == target {
+			if err := r.Remove(rel); err != nil {
+				warns = append(warns, fmt.Sprintf("removing the alias %s: %v", filepath.Join(root, rel), err))
+			}
+		}
+	}
+	laid := map[string]string{}
+	rels := make([]string, 0, len(want))
+	for rel := range want {
+		rels = append(rels, rel)
+	}
+	sort.Strings(rels)
+	for _, rel := range rels {
+		target := want[rel]
+		p := filepath.Join(root, rel)
+		if err := r.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
+			warns = append(warns, fmt.Sprintf("making the directory for %s: %v", p, err))
+			continue
+		}
+		if got, err := r.Readlink(rel); err == nil {
+			if got != target {
+				if err := r.Remove(rel); err != nil {
+					warns = append(warns, fmt.Sprintf("replacing the link %s: %v", p, err))
+					continue
+				}
+				if err := r.Symlink(target, rel); err != nil {
+					warns = append(warns, fmt.Sprintf("linking %s to %s: %v", p, target, err))
+					continue
+				}
+			}
+			laid[rel] = target
+			continue
+		}
+		if st, err := r.Lstat(rel); err == nil {
+			// An empty directory is the sandbox's own copy with nothing in it: the link replaces
+			// it. Anything else holds bytes yolo does not move (OQ-HT2).
+			if !st.IsDir() || r.Remove(rel) != nil {
+				warns = append(warns, fmt.Sprintf("%s already holds the sandbox's own %s copy, so it was "+
+					"not replaced by a link to %s; move what you want to keep and remove it to share the host's", p,
+					filepath.Base(rel), target))
+				continue
+			}
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			warns = append(warns, fmt.Sprintf("reading %s: %v", p, err))
+			continue
+		}
+		if err := r.Symlink(target, rel); err != nil {
+			warns = append(warns, fmt.Sprintf("linking %s to %s: %v", p, target, err))
+			continue
+		}
+		laid[rel] = target
+	}
+	if err := writeAliasManifest(r, laid); err != nil {
+		warns = append(warns, fmt.Sprintf("recording the aliases laid in %s: %v", root, err))
+	}
+	return warns
+}
+
+// readAliasManifest reads the alias links an earlier launch laid under r, or none, the way
+// readCacheRelocationManifest reads its own: never through a link, size-capped.
+func readAliasManifest(r *os.Root) map[string]string {
+	f, err := r.OpenFile(darwinCacheAliasManifest, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() || fi.Size() > 1<<20 {
+		return nil
+	}
+	var m map[string]string
+	if err := json.NewDecoder(f).Decode(&m); err != nil {
+		return nil
+	}
+	return m
+}
+
+// writeAliasManifest records laid by rename, or removes the manifest when nothing is laid.
+func writeAliasManifest(r *os.Root, laid map[string]string) error {
+	if len(laid) == 0 {
+		if err := r.Remove(darwinCacheAliasManifest); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	tmp := darwinCacheAliasManifest + ".new"
+	_ = r.Remove(tmp)
+	if err := r.WriteFile(tmp, []byte(DarwinCacheAliasesWire(laid)+"\n"), 0o644); err != nil {
+		return err
+	}
+	return r.Rename(tmp, darwinCacheAliasManifest)
 }
 
 // --- cache_relocations (docs/plans/cache-relocation.md) ------------------------------------
@@ -964,7 +1160,7 @@ func InstallDarwinCacheRelocations(e *Env) error {
 	if err != nil {
 		return err
 	}
-	cache := filepath.Join(e.Home, ".cache")
+	cache, self := darwinRelocationCacheDir(e)
 	fi, err := os.Lstat(cache)
 	// NOTHING TO LAY, NO OPINION ABOUT ~/.cache: a launch that relocates nothing is never refused
 	// for what ~/.cache is, since any session's sandbox may make it a link or a file, and a
@@ -983,12 +1179,12 @@ func InstallDarwinCacheRelocations(e *Env) error {
 	case fi.Mode()&os.ModeSymlink != 0:
 		target, _ := os.Readlink(cache)
 		return fmt.Errorf("cache_relocations: %s -> %s is a symbolic link yolo did not lay, where the "+
-			"account home's own cache directory belongs; no relocation is laid through it, because "+
+			"sandbox's own cache directory belongs; no relocation is laid through it, because "+
 			"the links would land wherever it points. Remove the LINK (what it points at is left "+
-			"alone):\n  sudo rm %s", cache, target, shquote.Quote(cache))
+			"alone):\n  %s%s", cache, target, sudoUnless(self), shquote.Quote(cache))
 	case !fi.IsDir():
 		return fmt.Errorf("cache_relocations: %s is not a directory. Move what you want to keep, "+
-			"then remove it:\n  sudo rm %s", cache, shquote.Quote(cache))
+			"then remove it:\n  %s%s", cache, sudoUnless(self), shquote.Quote(cache))
 	}
 	root, err := os.OpenRoot(cache)
 	if err != nil {
@@ -1052,9 +1248,33 @@ func InstallDarwinCacheRelocations(e *Env) error {
 		return fmt.Errorf("cache_relocations: recording the links laid in ~/.cache: %w", err)
 	}
 	if len(occupied) > 0 {
-		return occupiedCacheError(cache, want, occupied)
+		return occupiedCacheError(cache, want, occupied, self)
 	}
 	return nil
+}
+
+// darwinRelocationCacheDir is the REAL directory the relocations' links are laid in, and whether
+// the session runs as you. The account layout's is the account home's own ~/.cache. The
+// run-as-you layout's ~/.cache is itself a link into the machine root (DeriveDarwinWorkspaceHome),
+// so its relocations are laid in the directory that link names, <machine root>/.cache: one per
+// Mac, as the account home's is, and the place every workspace's ~/.cache resolves to. Laid
+// through HOME instead, the step would refuse the layout's own link as one "yolo did not lay".
+func darwinRelocationCacheDir(e *Env) (string, bool) {
+	if darwinHomeIsSidecar(e) {
+		if machine := e.Getenv(DarwinMachineHomeEnv); machine != "" {
+			return filepath.Join(machine, ".cache"), true
+		}
+	}
+	return filepath.Join(e.Home, ".cache"), false
+}
+
+// sudoUnless is the removal prefix a remedy names: "sudo rm " for a path the sandbox account
+// owns, "rm " for one a run-as-you session made, which is yours.
+func sudoUnless(self bool) string {
+	if self {
+		return "rm "
+	}
+	return "sudo rm "
 }
 
 // readCacheRelocationManifest reads the links an earlier launch laid, or none: a manifest that is
@@ -1104,12 +1324,12 @@ func writeCacheRelocationManifest(root *os.Root, laid map[string]string) error {
 // belongs: what an earlier launch's agent cached there before the relocation was configured.
 // Nothing is moved for the user (OQ-HT2); the remedy copies what they want to keep into the
 // target, as THEM, so every copy inherits the target's access entries, then removes the old
-// directory, which only sudo can, since it is the sandbox account's.
-func occupiedCacheError(cache string, want map[string]string, occupied []string) error {
+// directory, which only sudo can when it is the sandbox account's (a run-as-you session's is yours).
+func occupiedCacheError(cache string, want map[string]string, occupied []string, self bool) error {
 	var b strings.Builder
 	n := len(occupied)
 	fmt.Fprintf(&b, "cache_relocations: %d %s real, where the relocation's link belongs.\n",
-		n, plural(n, "path in the sandbox account's cache is", "paths in the sandbox account's cache are"))
+		n, plural(n, "path in the sandbox's cache is", "paths in the sandbox's cache are"))
 	b.WriteString("There is no migration (macos-user-home-tiers.md OQ-HT2) — nothing here is " +
 		"copied, renamed or deleted for you. Each holds what the sandbox cached there before the " +
 		"relocation was configured.\n")
@@ -1122,7 +1342,7 @@ func occupiedCacheError(cache string, want map[string]string, occupied []string)
 	for _, sub := range occupied {
 		p := filepath.Join(cache, sub)
 		fmt.Fprintf(&b, "  cp -R %s %s\n", shquote.Quote(p+"/."), shquote.Quote(want[sub]+"/"))
-		fmt.Fprintf(&b, "  sudo rm -rf %s\n", shquote.Quote(p))
+		fmt.Fprintf(&b, "  %s-rf %s\n", sudoUnless(self), shquote.Quote(p))
 	}
 	return errors.New(strings.TrimRight(b.String(), "\n"))
 }

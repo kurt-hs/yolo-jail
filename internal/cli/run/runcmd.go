@@ -495,11 +495,13 @@ type Options struct {
 	// produce, such as a source outside every writable place.
 	macosCtxSiting *macosuser.ContextSiting
 	// MacosUserMode is who a macos-user launch's sandbox runs as (macosuser.Mode, MMP-D2). The
-	// zero value is the second account, which every launch runs today: nothing in production
-	// sets it until the run-as-you launch is built (docs/design/macos-user-model-plan.md slice
-	// 6), and cli refuses `macos_user_mode: "self"` until then. Read by the package-cache
-	// alias (planMacosUserHostCAS), which only the run-as-you mode passes.
-	MacosUserMode macosuser.Mode
+	// zero value is the second account, the default; cli sets it from the user-scope
+	// `macos_user_mode` (docs/design/macos-user-model-plan.md slice 6). Read by the
+	// package-cache alias (planMacosUserHostCAS), which only the run-as-you mode passes.
+	// MacosUserHostHome is the invoking user's resolved home, which places a run-as-you
+	// sandbox's machine root (macosuser.LaunchHomes); "" reads this process's home.
+	MacosUserMode     macosuser.Mode
+	MacosUserHostHome string
 	// macosHostCASPlatform overrides the host platform the macos-user package-cache alias
 	// compares against the sandbox's ("" = hostcas.HostPlatform()), so a Linux test can state
 	// the Mac a macos-user launch runs on.

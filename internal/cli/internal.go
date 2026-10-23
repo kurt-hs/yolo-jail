@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -353,16 +354,22 @@ func runDarwinBootstrap(args []string) int {
 		fmt.Fprintln(os.Stderr, "yolo internal darwin-bootstrap:", err)
 		return 2
 	}
-	// ONLY AS THE SANDBOX ACCOUNT. A launch and a capture both run this through
+	// ONLY AS THE SANDBOX'S USER. An account-mode launch and a capture run this through
 	// `sudo --user=_yolojail`; a human hand-running it would generate the sandbox layout into
-	// their OWN home, and the scope check below guards the account's home, not theirs.
+	// their OWN home, and the scope check below guards the account's home, not theirs. A
+	// run-as-you launch runs it as you, and is admitted only into the workspace's own HOME
+	// (darwinBootstrapSelfHomeRefusal), never into the home the identity check reads.
 	if err := darwinBootstrapIdentityRefusal(); err != nil {
+		fmt.Fprintln(os.Stderr, "yolo internal darwin-bootstrap:", err)
+		return 1
+	}
+	if err := darwinBootstrapSelfHomeRefusal(); err != nil {
 		fmt.Fprintln(os.Stderr, "yolo internal darwin-bootstrap:", err)
 		return 1
 	}
 	// Every creator of <workspace>/.yolo in this process (the boot log, the boot refusal record)
 	// judges by the same boundary as the check below, not by the rebound HOME's layout.
-	defer paths.GuardScopeUnder(darwinBootstrapScopeHome())()
+	defer paths.GuardScopeUnder(darwinBootstrapBoundaryHome())()
 
 	home := firstNonEmptyEnv("JAIL_HOME", "HOME")
 	if home == "" {
@@ -435,18 +442,65 @@ func parseDarwinBootstrapArgs(args []string) (sealed bool, err error) {
 	return sealed, nil
 }
 
-// darwinBootstrapScopeHome is the home whose boundary runDarwinBootstrap guards: the sandbox
-// account's. A var so a test can stand a temporary directory in for /Users/_yolojail.
+// darwinBootstrapScopeHome is the sandbox account's home, whose boundary runDarwinBootstrap
+// guards in the account mode. A var so a test can stand a temporary directory in for
+// /Users/_yolojail.
 var darwinBootstrapScopeHome = macosuser.SandboxHome
+
+// darwinBootstrapRealHome is the run-as-you session's real home, paths.GuestRealHome: the
+// launcher's YOLO_DARWIN_REAL_HOME when it names a directory this process's euid owns, else "".
+// A var so a test can name one.
+var darwinBootstrapRealHome = paths.GuestRealHome
+
+// darwinBootstrapBoundaryHome is the home whose boundary this process judges workspace scope by,
+// and whose owner the identity check requires it to run as (MMP-D7): a run-as-you session's real
+// home when the launcher named one, else the sandbox account's.
+func darwinBootstrapBoundaryHome() string {
+	if h := darwinBootstrapRealHome(); h != "" {
+		return h
+	}
+	return darwinBootstrapScopeHome()
+}
+
+// darwinBootstrapSelfHomeRefusal is the run-as-you bootstrap's own guard, nil in the account
+// mode: run as you, it may generate only into the workspace's HOME, <workspace>/.yolo/home, which
+// the launcher names three ways (HOME, the sidecar, the workspace). A hand-run with HOME at your
+// real home is refused before anything is created, which is what the account mode's identity
+// check promised and the run-as-you identity (you) cannot.
+func darwinBootstrapSelfHomeRefusal() error {
+	if darwinBootstrapRealHome() == "" {
+		return nil
+	}
+	home := firstNonEmptyEnv("JAIL_HOME", "HOME")
+	sidecar := os.Getenv(entrypoint.DarwinHomeSidecarEnv)
+	want := ""
+	if ws := os.Getenv("YOLO_DARWIN_WORKSPACE"); ws != "" {
+		want = paths.WorkspaceHomeState(ws)
+	}
+	if home == "" || want == "" || filepath.Clean(home) != want || filepath.Clean(sidecar) != want {
+		if home == "" {
+			home = "an unnamed HOME"
+		}
+		if want == "" {
+			want = "<workspace>/.yolo/home"
+		}
+		return fmt.Errorf("refusing to generate into %s: as you, this command writes only into the "+
+			"workspace's own home (%s), which a macos-user launch names for you — run `yolo` in the "+
+			"workspace instead", home, want)
+	}
+	return nil
+}
 
 // darwinBootstrapEuid is os.Geteuid, a var so a test can stand in another identity.
 var darwinBootstrapEuid = os.Geteuid
 
 // darwinBootstrapIdentityRefusal refuses unless this process runs as the account that owns the
-// sandbox home: the uid is read off the home itself, because os/user falls back to $HOME in this
-// cgo-free build. A home that cannot be read is refused too.
+// boundary home (darwinBootstrapBoundaryHome): the sandbox account's in the account mode, yours
+// in the run-as-you mode, so a run-as-you session needs no /Users/_yolojail at all. The uid is
+// read off the home itself, because os/user falls back to $HOME in this cgo-free build. A home
+// that cannot be read is refused too.
 func darwinBootstrapIdentityRefusal() error {
-	home := darwinBootstrapScopeHome()
+	home := darwinBootstrapBoundaryHome()
 	fi, err := os.Stat(home)
 	if err != nil {
 		return fmt.Errorf("cannot read the sandbox account's home %s (%v); this command runs only "+
@@ -468,7 +522,7 @@ func darwinBootstrapIdentityRefusal() error {
 // darwinBootstrapScopeBreach is runDarwinBootstrap's refusal: why this workspace may not take a
 // .yolo, judged against the sandbox account's boundary, or nil.
 func darwinBootstrapScopeBreach(workspace string) *paths.ScopeBreach {
-	return paths.WorkspaceScopeBreachUnder(workspace, darwinBootstrapScopeHome())
+	return paths.WorkspaceScopeBreachUnder(workspace, darwinBootstrapBoundaryHome())
 }
 
 // firstNonEmptyEnv returns the first environment variable in keys with a

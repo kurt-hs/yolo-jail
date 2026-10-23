@@ -468,7 +468,7 @@ func JailDaemonArgv(runAs RunAs, profilePath, envFile, logPath, user, home strin
 		home = SandboxHome()
 	}
 	out := runAs.Argv(true, "-i")
-	out = append(out, sandboxEnvPairs(accountHomes(home), user, SandboxPathForYolo(home, pathPrefix, stagedYolo), envFile)...)
+	out = append(out, sandboxEnvPairs(runAs.homes(home), runAs.user(user), sandboxPathForYoloHomes(runAs.homes(home), pathPrefix, stagedYolo), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
 	jaild := filepath.Join(filepath.Dir(stagedYolo), JaildName)
 	out = append(out, WithSupervisorLog(logPath,

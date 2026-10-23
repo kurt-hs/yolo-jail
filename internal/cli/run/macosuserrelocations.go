@@ -77,10 +77,7 @@ func (o *Options) planMacosUserCacheRelocations(links []macosuser.ContextLink) (
 		}
 		relocs = append(relocs, macosuser.CacheRelocation{Subdir: e.Subdir, Target: target, Named: e.Target})
 	}
-	siting := macosuser.DarwinContextSiting()
-	if o.macosCtxSiting != nil {
-		siting = *o.macosCtxSiting
-	}
+	siting := o.macosSiting()
 	refused := macosuser.SiteCacheRelocations(siting, resolvePath(o.Workspace), relocs, links)
 	if len(unresolved) > 0 || len(refused) > 0 {
 		out.print("[bold red]Refusing the macos-user launch: this backend cannot deliver every " +
@@ -118,6 +115,12 @@ func (o *Options) planMacosUserCacheRelocations(links []macosuser.ContextLink) (
 		}
 		relocs[i].Created = true
 		where := "~/.cache/" + relocs[i].Subdir + " (cache_relocations." + relocs[i].Subdir + ")"
+		// THE RUN-AS-YOU MODE GRANTS NOTHING: the sandbox is you, so the folder you just made is
+		// already the sandbox's to write, and there is no second account to open it to.
+		if o.MacosUserMode == macosuser.ModeSelf {
+			out.print("[bold]Cache relocation:[/bold] created " + relocs[i].Target + " for " + where + ".")
+			continue
+		}
 		// A GRANT THAT FAILS IS SAID, NOT FATAL (CR-D4's gates are the DAC preflight and the write
 		// probe). The usual cause is a volume that takes no access entries, an exFAT or FAT
 		// drive, and such a volume usually ignores ownership as well, so the sandbox can write

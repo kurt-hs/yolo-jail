@@ -567,7 +567,8 @@ var configKeys = map[string]Entry{
 		PodmanMac:      notApplicable("ignored: not this backend; only the macos-user backend reads it"),
 		AppleContainer: notApplicable("ignored: not this backend; only the macos-user backend reads it"),
 		MacosUser: honored("macosUserRun (cli/commands.go) reads it from the user config (config.MacosUserMode) " +
-			"before it builds the sandbox, and refuses \"self\" until that mode is built"),
+			"and hands the mode to the backend (macosuser.Options.Mode), which runs \"self\" as the invoking " +
+			"user under the deny-by-default profile"),
 		Guide: []string{"`macos_user_mode`"},
 	},
 }

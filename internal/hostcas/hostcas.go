@@ -275,9 +275,11 @@ type Store struct {
 	DarwinHost func(HostEnv) string
 	// DarwinRel is the destination on macos-user: the path, relative to the
 	// sandbox's HOME, its own copy of the tool uses — the tool's macOS default
-	// unless the sandbox env overrides it (macos-user sets NPM_CONFIG_CACHE,
-	// GOPATH and MISE_DATA_DIR under HOME and nothing else these tools read). The
-	// alias is a HOME link at this path to the DarwinHost source.
+	// unless the sandbox env overrides it (macos-user sets NPM_CONFIG_CACHE and
+	// GOPATH under HOME, MISE_DATA_DIR to ~/.yolo/mise's place, and nothing else
+	// these tools read). The alias is a link at this path to the DarwinHost source.
+	// A machine-tier row (DarwinMachineTier) sits where the run-as-you layout puts
+	// that part of HOME: under the machine root, not the workspace's HOME.
 	DarwinRel string
 	// Evidence is why this directory is a cache and nothing else (and, for the
 	// content-addressed store, why it passes the CAS test). Printed by `yolo
@@ -318,6 +320,23 @@ func (s Store) DarwinCacheSegment() string {
 		return ""
 	}
 	return firstSegment(rest)
+}
+
+// darwinMachineTierPrefixes are the parts of a run-as-you sandbox's HOME that live in the
+// machine root rather than the workspace's HOME (MMP-D6): ~/.cache and ~/Library/Caches are
+// links into it (entrypoint.DeriveDarwinWorkspaceHome), and MISE_DATA_DIR names its .yolo/mise
+// absolutely (macosuser.sandboxEnvPairs), so a store under one of them is physically there.
+var darwinMachineTierPrefixes = []string{".cache/", "Library/Caches/", ".yolo/mise/"}
+
+// DarwinMachineTier reports whether the store's macOS destination is in the machine root of a
+// run-as-you sandbox (Facts.MacosUserMachine) rather than in its HOME.
+func (s Store) DarwinMachineTier() bool {
+	for _, p := range darwinMachineTierPrefixes {
+		if strings.HasPrefix(s.DarwinRel, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // libraryCaches is ~/Library/Caches, macOS's per-user cache root
@@ -558,9 +577,9 @@ var Stores = []Store{{
 	// macOS: mise uses the XDG layout on macOS too — MISE_DATA_DIR, else
 	// $XDG_DATA_HOME/mise, else ~/.local/share/mise (mise docs, "Directory
 	// Structure"), so the Linux resolver is the macOS one. The sandbox's
-	// MISE_DATA_DIR is $HOME/.yolo/mise (macosuser.SandboxMiseData, pinned against
-	// this row in internal/cli/run). ⚠ MMP-D6 moves self mode's MISE_DATA_DIR to the
-	// machine root, outside HOME: slice 6 must move this row with it.
+	// MISE_DATA_DIR is <machine root>/.yolo/mise in the run-as-you mode
+	// (macosuser.SandboxMiseData of the machine root, MMP-D6; pinned against this row in
+	// internal/cli/run), so this row is machine tier (DarwinMachineTier) and lands there.
 	DarwinHost: miseDownloads,
 	DarwinRel:  ".yolo/mise/downloads",
 	Evidence:   "mise's downloaded tool archives; installs/ and mise's config are not aliased",
@@ -757,6 +776,11 @@ type Facts struct {
 	// caller has no workspace, in which case the stranded path is unknown and the
 	// cold-start gate is skipped.
 	MacosUserHome string
+	// MacosUserMachine is the run-as-you sandbox's machine root (MMP-D6): a
+	// machine-tier row (Store.DarwinMachineTier) lands at <MacosUserMachine>/<DarwinRel>
+	// instead, where the layout's ~/.cache and ~/Library/Caches links and MISE_DATA_DIR
+	// put it physically. Empty falls back to MacosUserHome.
+	MacosUserMachine string
 }
 
 // rootHost is the host side of a jail root.
@@ -821,22 +845,23 @@ func decide(s Store, f Facts, probe func(string) Presence) Disposition {
 	}
 	if darwin {
 		rootHost = f.MacosUserHome
+		if s.DarwinMachineTier() && f.MacosUserMachine != "" {
+			rootHost = f.MacosUserMachine
+		}
 		d.Source = ""
 		if s.DarwinHost != nil {
 			d.Source = s.DarwinHost(env)
 		}
 		d.Dest, d.Stranded = "~/"+s.DarwinRel, ""
-		if f.MacosUserHome != "" {
-			d.Dest = filepath.Join(f.MacosUserHome, s.DarwinRel)
+		if rootHost != "" {
+			d.Dest = filepath.Join(rootHost, s.DarwinRel)
 			d.Stranded = d.Dest
 		}
 	}
 
 	// The backend gate is first, and it is storePackagesEligible's first clause
 	// for the same reason: Apple Container cannot be relied on to honor a nested
-	// bind's options, and macos-user has no container to mount into at all — and
-	// its run-as-you mode, the one where a jail-written cache file would be the
-	// user's, is not built yet (docs/design/macos-user-model.md).
+	// bind's options, and macos-user has no container to mount into at all.
 	//
 	// macos-user passes only in its run-as-you mode (MMP-D12); its account mode runs
 	// as a second account, so a file it wrote into your cache would not be yours.

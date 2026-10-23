@@ -10,7 +10,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/hostcas"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
-	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // hostcasmacosuser_test.go pins the macos-user binding of package-cache aliasing
@@ -69,16 +68,17 @@ func TestMacosUserAccountModeAliasesNoHostCache(t *testing.T) {
 	}
 }
 
-// THE RUN-AS-YOU MODE aliases the host cache through the sandbox HOME, which is the
-// workspace's home state (MMP-D5), and hands the backend a link and a resolved target.
+// THE RUN-AS-YOU MODE aliases the host cache where the sandbox's own copy physically sits:
+// ~/Library/Caches is a link into the machine root (MMP-D6), so the link goes there, and the
+// backend is handed it and a resolved target.
 func TestMacosUserSelfModeAliasesThroughTheSandboxHome(t *testing.T) {
-	o, _, pip := macosHostCASOptions(t)
+	o, home, pip := macosHostCASOptions(t)
 	ds := resolveMacosUserHostCAS(o.planMacosUserHostCAS(macosuser.ModeSelf, nil))
 	d := dispositionNamed(t, ds, "pip-cache")
 	if !d.Aliased {
 		t.Fatalf("pip-cache not aliased in self mode: %s (%s)", d.Code, d.Reason)
 	}
-	link := filepath.Join(paths.WorkspaceHomeState(o.Workspace), "Library", "Caches", "pip")
+	link := filepath.Join(macosuser.LaunchHomes(macosuser.ModeSelf, o.Workspace, home).Machine, "Library", "Caches", "pip")
 	if d.Source != pip || d.Dest != link {
 		t.Errorf("source %q dest %q, want %q and %q", d.Source, d.Dest, pip, link)
 	}
@@ -131,12 +131,25 @@ func TestAnUnresolvableMacosUserAliasIsDowngraded(t *testing.T) {
 	}
 }
 
-// The sandbox's mise data dir and the mise row's macOS destination are one path.
+// The sandbox's mise data dir and the mise row's macOS destination are one path. In the
+// run-as-you mode MISE_DATA_DIR is the MACHINE ROOT's (MMP-D6), outside HOME, so the row is
+// machine tier and lands there — the plan the launch makes says so, not just the table.
 func TestTheMiseRowFollowsTheSandboxMiseDataDir(t *testing.T) {
-	home := "/Users/Shared/yolo/ws/.yolo/home"
+	homes := macosuser.LaunchHomes(macosuser.ModeSelf, "/Users/you/code/alpha", "/Users/you")
 	s := hostcasStoreNamed(t, "mise-downloads")
-	if got, want := filepath.Join(home, s.DarwinRel), filepath.Join(macosuser.SandboxMiseData(home), "downloads"); got != want {
+	if !s.DarwinMachineTier() {
+		t.Fatal("mise-downloads is not machine tier")
+	}
+	want := filepath.Join(macosuser.SandboxMiseData(homes.Machine), "downloads")
+	if got := filepath.Join(homes.Machine, s.DarwinRel); got != want {
 		t.Errorf("mise-downloads lands at %q, the sandbox's mise downloads are %q", got, want)
+	}
+	o := &Options{Workspace: "/Users/you/code/alpha", MacosUserHostHome: "/Users/you",
+		Getenv: func(string) string { return "" }}
+	for _, d := range o.planMacosUserHostCAS(macosuser.ModeSelf, nil) {
+		if d.Store.Name == "mise-downloads" && d.Dest != want {
+			t.Errorf("the launch's plan puts mise-downloads at %q, want %q", d.Dest, want)
+		}
 	}
 }
 
@@ -190,7 +203,7 @@ func TestTheMacosUserArmHandsCacheAliasesOnlyInSelfMode(t *testing.T) {
 		withHome(o)
 		o.MacosUserMode = macosuser.ModeSelf
 	})
-	link := filepath.Join(paths.WorkspaceHomeState(ws), "Library", "Caches", "pip")
+	link := filepath.Join(macosuser.LaunchHomes(macosuser.ModeSelf, ws, seamHome).Machine, "Library", "Caches", "pip")
 	found := false
 	for _, a := range ctx.CacheAliases {
 		if a.Tool == "pip" && a.Target == pip && a.Link == link {

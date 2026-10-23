@@ -165,7 +165,7 @@ func ProvisionArgv(runAs RunAs, script, profilePath, envFile string,
 	// the bootstrap script read registry tokens and proxy settings out of env_sources, so
 	// wrapping it in the env-file reader is not belt-and-braces — a stage that skipped the
 	// wrap would install against a different environment than the agent then runs in.
-	out = append(out, sandboxEnvPairs(accountHomes(home), user, SandboxPathForGuestBin(home, pathPrefix, guestBinDir), envFile)...)
+	out = append(out, sandboxEnvPairs(runAs.homes(home), runAs.user(user), sandboxPathForHomes(runAs.homes(home), pathPrefix, guestBinDir), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
 	out = append(out, ExecWithEnvFile(envFile, []string{"/bin/bash", "-c", provisionInWorkspace(workspace, script)})...)
 	return out

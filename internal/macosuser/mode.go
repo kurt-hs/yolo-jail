@@ -98,6 +98,33 @@ func accountHomes(home string) Homes {
 // crossing any other way.
 type RunAs struct {
 	Mode Mode
+	// Homes and User are a run-as-you crossing's environment: the homes LaunchHomes derived for
+	// the launch and the invoking user's name, which every argv builder renders in place of the
+	// account's (sandboxEnvPairs). Read only in self mode; the account mode's are SandboxHome()
+	// and SandboxUser, as before, so its argvs stay byte for byte what they were.
+	Homes Homes
+	User  string
+}
+
+// homes is the Homes an argv builder renders with: the launch's, in self mode, else the
+// account's for home ("" meaning SandboxHome()).
+func (r RunAs) homes(home string) Homes {
+	if r.Mode == ModeSelf && r.Homes.Home != "" {
+		return r.Homes
+	}
+	return accountHomes(home)
+}
+
+// user is the USER an argv builder renders: the invoking user in self mode, else user, which ""
+// makes SandboxUser.
+func (r RunAs) user(user string) string {
+	if r.Mode == ModeSelf && r.User != "" {
+		return r.User
+	}
+	if user == "" {
+		return SandboxUser
+	}
+	return user
 }
 
 // Argv prefixes argv with the crossing. Account mode is RunAsSandboxArgv byte for byte —

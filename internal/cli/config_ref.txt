@@ -1283,10 +1283,14 @@
       "perf_logging": true
 
   [bold]macos_user_mode[/bold] ("self" | "account"): Which account a macos-user jail runs as.  Default "account".
-    "account" is the setup yolo runs today: the agent runs as the sandbox account
-    yolo provisions for it.  "self" is not available yet; a launch that finds it
-    refuses and names this key, so the refusal is not mistaken for protection.
-    Only the macos-user setup reads it; podman and Apple Container ignore it.
+    "account" is the default: the agent runs as the sandbox account `yolo
+    macos-setup` provisions for it.  "self" (experimental) runs the agent as you,
+    with no account, admin setup or access grants, under a deny-by-default Seatbelt
+    profile that opens the workspace, the agent's own home in .yolo/home and the
+    tools, and denies the rest of your files, your keychain and your other
+    processes.  A workspace may then sit anywhere, your home included.  Every such
+    launch says so first.  Only the macos-user setup reads it; podman and Apple
+    Container ignore it.
 
     USER SCOPE ONLY.  It is read from your user config alone, so a workspace value is
     a `yolo check` error and is never consulted -- and /workspace is writable by

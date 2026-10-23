@@ -61,7 +61,7 @@ func runCaptureMaterialize(args []string) int {
 	// "yolo's own state directory" inside the workspace and refused every materialize receipt.
 	// Judge by the account's boundary, as `yolo internal log-append` does (logsink.go).
 	if darwinBootstrapIdentityRefusal() == nil {
-		defer paths.GuardScopeUnder(darwinBootstrapScopeHome())()
+		defer paths.GuardScopeUnder(darwinBootstrapBoundaryHome())()
 	}
 	var opts materializeArgs
 	opts.home = os.Getenv("HOME")

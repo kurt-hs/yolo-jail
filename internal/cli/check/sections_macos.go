@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 )
 
@@ -83,7 +84,15 @@ func (o *Options) checkMacosUserBackend(r *reporter) {
 		r.skip("Inside jail — macos-user checks skipped", "That backend runs on the host with no container at all; run `yolo check` there.")
 		return
 	}
-	for _, res := range macosuser.CheckLaunchPreconditions(o.macosLaunchProbes(), o.Workspace) {
+	// The rows the configured mode's launch asks (macos_user_mode, user scope): the run-as-you
+	// mode needs no account, setup or shared workspace, so it is not graded on them. A value no
+	// launch can run reads as the default here; config validation reports it.
+	v, _ := config.MacosUserMode()
+	mode, _ := macosuser.ParseMode(v)
+	if mode == macosuser.ModeSelf {
+		r.ok("macos_user_mode is \"self\": the agent runs as you, under the deny-by-default profile")
+	}
+	for _, res := range macosuser.CheckLaunchPreconditionsFor(mode, o.macosLaunchProbes(), o.Workspace) {
 		switch {
 		case !res.Checked:
 			r.skip("Not checked: "+res.Name,

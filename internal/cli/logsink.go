@@ -24,7 +24,7 @@ func runInternalLogAppend(args []string, input io.Reader) int {
 	// provisioning log (macos-user.yml run 38733308150). Judge by the account's boundary
 	// instead, the rule `yolo internal darwin-bootstrap` already applies to the same layout.
 	if darwinBootstrapIdentityRefusal() == nil {
-		defer paths.GuardScopeUnder(darwinBootstrapScopeHome())()
+		defer paths.GuardScopeUnder(darwinBootstrapBoundaryHome())()
 	}
 	open := func(name string, flag int, perm os.FileMode) (*os.File, error) {
 		return paths.OpenWorkspaceStateFile(args[0], name, flag, perm)

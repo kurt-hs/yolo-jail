@@ -286,3 +286,35 @@ func TestDarwinJailPlatform(t *testing.T) {
 		t.Errorf("DarwinJailPlatform() = %q, want darwin/<arch>", p)
 	}
 }
+
+// A MACHINE-TIER ROW LANDS IN THE MACHINE ROOT. In the run-as-you layout ~/.cache and
+// ~/Library/Caches are links into the machine root and MISE_DATA_DIR names its .yolo/mise
+// (MMP-D6), so a link laid at HOME/<DarwinRel> for one of those rows would land, physically,
+// in the machine root anyway: the destination says so, and the stranded copy is there too. A
+// row elsewhere in HOME (go/pkg/mod) keeps the workspace HOME.
+func TestMacosUserSelfModeMachineTierRowsLandInTheMachineRoot(t *testing.T) {
+	f, _, sandboxHome := selfFacts(t)
+	machine := filepath.Join(filepath.Dir(sandboxHome), "machine")
+	f.MacosUserMachine = machine
+	for name, wantRoot := range map[string]string{
+		"pip-cache":      machine,
+		"uv-cache":       machine,
+		"mise-downloads": machine,
+		"go-mod-cache":   sandboxHome,
+		"cargo-registry": sandboxHome,
+	} {
+		s := storeNamed(t, name)
+		d := dispositionOf(t, Plan(f), name)
+		if want := filepath.Join(wantRoot, s.DarwinRel); d.Dest != want {
+			t.Errorf("%s: dest = %q, want %q", name, d.Dest, want)
+		}
+	}
+	if !storeNamed(t, "mise-downloads").DarwinMachineTier() {
+		t.Error("mise-downloads is not machine tier, but MISE_DATA_DIR is the machine root's")
+	}
+	// Without a machine root (an inventory, a test) the HOME spelling stands.
+	f.MacosUserMachine = ""
+	if d := dispositionOf(t, Plan(f), "pip-cache"); d.Dest != filepath.Join(sandboxHome, "Library", "Caches", "pip") {
+		t.Errorf("no machine root: dest = %q", d.Dest)
+	}
+}

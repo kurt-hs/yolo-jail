@@ -77,6 +77,7 @@ var denyDefaultRules = []seatbeltRule{
 	{id: "device-ioctl-allow"},
 	{id: "context-write-allow"},
 	{id: "cache-relocation-write-allow"},
+	{id: "cache-alias-allow"},
 	// The write carve-outs, after every write allow.
 	{id: "workspace-readonly-deny"},
 	{id: "home-content-write-deny"},
@@ -97,6 +98,7 @@ var denyDefaultRules = []seatbeltRule{
 	{id: "network-allow"},
 	{id: "loopback-deny"},
 	{id: "loopback-port-allow"},
+	{id: "nix-daemon-allow"},
 	// The closing block of explicit denies.
 	{id: "host-secrets-deny"},
 	{id: "library-keychains-deny"},
@@ -448,6 +450,31 @@ func denyDefaultCases() []denyDefaultCase {
 			script: func(f denyDefaultFixtures) string {
 				p := sh(f.machine + "/probe")
 				return "touch " + p + " && rm " + p + " && echo " + seatbeltOK
+			},
+			want: wantAllowed,
+		},
+		{
+			name: "cache_alias_target_writable",
+			id:   "cache-alias-allow",
+			why: "a shared package cache (MMP-D12) is a host directory outside the workspace and HOME; " +
+				"the run-as-you launch's alias opens it, and the sibling case above shows nothing else does.",
+			variant: func(f denyDefaultFixtures, p *macosuser.ProfileParams) {
+				p.CacheAliases = []macosuser.CacheAlias{{Tool: "pip", Link: f.home + "/Library/Caches/pip", Target: f.outside}}
+			},
+			script: func(f denyDefaultFixtures) string {
+				p := sh(f.outside + "/alias-probe")
+				return "touch " + p + " && rm " + p + " && echo " + seatbeltOK
+			},
+			want: wantAllowed,
+		},
+		{
+			name: "nix_daemon_socket_reachable",
+			id:   "nix-daemon-allow",
+			why: "the sandbox's nix is a client of the host daemon (NIX_REMOTE=daemon); the network " +
+				"section allows no other unix-socket connect but mDNSResponder's.",
+			needs: needsPath(macosuser.NixDaemonSocket, "the host nix daemon"),
+			script: func(denyDefaultFixtures) string {
+				return unixConnectProbe(macosuser.NixDaemonSocket) + " && echo " + seatbeltOK
 			},
 			want: wantAllowed,
 		},
@@ -1334,7 +1361,9 @@ func denyDefaultFixtureParams() macosuser.ProfileParams {
 			{Dest: "/ctx/lib", Source: "/Users/Shared/ci/lib", Dir: true},
 			{Dest: "/ctx/data", Source: "/Users/Shared/yolo/data", RW: true, Dir: true},
 		},
-		Relocations:  []macosuser.CacheRelocation{{Subdir: "huggingface", Target: "/Volumes/Data/hf"}},
+		Relocations: []macosuser.CacheRelocation{{Subdir: "huggingface", Target: "/Volumes/Data/hf"}},
+		CacheAliases: []macosuser.CacheAlias{{Tool: "pip", Link: home + "/Library/Caches/pip",
+			Target: "/Users/you/Library/Caches/pip"}},
 		ReadonlyRels: []string{"vendored"},
 		HomeReadonly: macosuser.ResolveHomeReadonly(home, ws,
 			[]string{".claude"}, []string{".claude/skills", ".claude/CLAUDE.md"}),

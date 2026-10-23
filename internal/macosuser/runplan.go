@@ -2,6 +2,7 @@ package macosuser
 
 import (
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -434,12 +435,91 @@ type PlanSession struct {
 	ID             string
 	BundleIdentity string
 	CATrust        CATrust
-	// Mode is who the sandbox runs as (mode.go, MMP-D2); the zero value is the second account.
-	// It reaches the plan as RunAs{Mode: Mode}, the crossing every argv is built through, and
-	// nothing else branches on it yet. HostHome is the invoking user's resolved home, which
-	// self mode will need; nothing reads it yet.
-	Mode     Mode
-	HostHome string
+	// Mode is who the sandbox runs as (mode.go, MMP-D2); the zero value is the second account,
+	// whose plan reads none of the fields below. It reaches the plan as RunAs, the crossing every
+	// argv is built through. The run-as-you mode also reads:
+	//
+	//   - HostHome, the invoking user's home, which places the machine root and the shared store
+	//     (LaunchHomes) and names what the profile denies in it;
+	//   - HostUser, the invoking user's name, the sandbox's USER;
+	//   - DarwinUserTempDir, `getconf DARWIN_USER_TEMP_DIR` of the invoking user, which the profile
+	//     opens under the shared-/tmp ruling (frameworks write there whatever TMPDIR says).
+	Mode              Mode
+	HostHome          string
+	HostUser          string
+	DarwinUserTempDir string
+}
+
+// darwinBootstrapArgvUnder is DarwinBootstrapArgv, confined under profilePath when it is not ""
+// (`/usr/bin/sandbox-exec -f <profile>` before the staged yolo, after the environment), the
+// run-as-you mode's bootstrap (MMP-D9). An empty profilePath is DarwinBootstrapArgv byte for byte.
+func darwinBootstrapArgvUnder(runAs RunAs, stagedYolo, home string, bootstrapEnv *jsonx.OrderedMap, profilePath string) []string {
+	argv := DarwinBootstrapArgv(runAs, stagedYolo, home, bootstrapEnv, "")
+	if profilePath == "" {
+		return argv
+	}
+	for i := len(argv) - 1; i >= 0; i-- {
+		if argv[i] == stagedYolo {
+			out := append([]string(nil), argv[:i]...)
+			out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath)
+			return append(out, argv[i:]...)
+		}
+	}
+	return argv
+}
+
+// selfProfileParams is the deny-by-default profile's inputs for a run-as-you launch: the
+// workspace, HOME, the invoking user's home (named to deny parts of it), the machine root and
+// each selected `scope: machine` dir in the shared store as the writable places beyond them
+// (MMP-D6; never the whole store, which holds every other agent's login), the context mounts,
+// relocations, workspace_readonly, the staged home content, devices and the shared caches, with
+// the three pending rulings at their production values (MMP-D13). No loopback port is listed
+// until slice 7 collects yolo's own (MMP-D10).
+func selfProfileParams(workspace string, homes Homes, hostPackRoot string, session PlanSession,
+	readonlyRels, readonlyTargets []string, homeReadonly HomeReadonly, ctxLinks []ContextLink,
+	relocs []CacheRelocation, aliases []CacheAlias, devices []string) ProfileParams {
+	machineDirs := []string{homes.Machine}
+	// A staged tree that cannot be read lists no shared dir: the bootstrap reads the same tree
+	// and refuses the launch for it.
+	shared, _ := entrypoint.SharedDirsAt(hostPackRoot)
+	for _, d := range shared {
+		machineDirs = append(machineDirs, filepath.Join(homes.Shared, d))
+	}
+	userTmp := strings.TrimRight(session.DarwinUserTempDir, "/")
+	return ProfileParams{
+		Workspace:         workspace,
+		Home:              homes.Home,
+		HostHome:          homes.Real,
+		DarwinUserTempDir: userTmp,
+		StagingRoot:       stateDir,
+		MachineDirs:       machineDirs,
+		Context:           ctxLinks,
+		Relocations:       relocs,
+		CacheAliases:      aliases,
+		ReadonlyRels:      readonlyRels,
+		ReadonlyTargets:   readonlyTargets,
+		HomeReadonly:      homeReadonly,
+		Devices:           devices,
+		RunAsUser:         session.HostUser,
+	}.WithProductionRulings()
+}
+
+// withoutAccessGrants drops every `chmod +a` from cmds, and the matching entry of steps when
+// steps is the per-command step list (nil otherwise): the run-as-you mode grants no access
+// (BuildRunPlanWithStages says why).
+func withoutAccessGrants(cmds [][]string, steps []string) ([][]string, []string) {
+	var out [][]string
+	var outSteps []string
+	for i, c := range cmds {
+		if len(c) >= 2 && c[0] == chmodBin && c[1] == "+a" {
+			continue
+		}
+		out = append(out, c)
+		if i < len(steps) {
+			outSteps = append(outSteps, steps[i])
+		}
+	}
+	return out, outSteps
 }
 
 // sandboxPathPrefix is the store bin dirs this launch puts on the sandbox PATH, in order: the
@@ -495,6 +575,25 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	// receive a shell's logical spelling — this is reachable from an ordinary `cd`, not only
 	// from an argument somebody constructed.
 	workspace = resolvePathAbs(workspace)
+	// THE ONE CROSSING (mode.go, MMP-D4) AND THE HOMES IT RENDERS, decided once from the
+	// session's mode. The account mode is today's plan byte for byte: SandboxHome() in every home
+	// role and the second account's sudo crossing. The run-as-you mode (macos_user_mode "self",
+	// slice 6) runs as you: HOME is <workspace>/.yolo/home, the machine tier and the shared store
+	// are under your state dir (LaunchHomes), and every argv crosses through /usr/bin/env alone.
+	runAs := RunAs{Mode: session.Mode}
+	homes := accountHomes("")
+	self := session.Mode == ModeSelf
+	if self {
+		// An unnamed home stays unnamed (resolvePathAbs would make "" the cwd), and
+		// PlanInvariants refuses the plan for it.
+		hostHome := session.HostHome
+		if hostHome != "" {
+			hostHome = resolvePathAbs(hostHome)
+		}
+		homes = LaunchHomes(ModeSelf, workspace, hostHome)
+		runAs.Homes, runAs.User = homes, session.HostUser
+	}
+	sandboxHome := homes.Home
 	darwinPrefix := sandboxPathPrefix(darwin)
 	darwinEnv := jsonx.NewOrderedMap()
 	darwinSkipped := []string{}
@@ -582,7 +681,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	var homeReadonly HomeReadonly
 	if hostHomeOverlay.Tree != "" {
 		homeOverlay = StagedHomeOverlay(cname, "")
-		homeReadonly = ResolveHomeReadonly(SandboxHome(), workspace,
+		homeReadonly = ResolveHomeReadonly(sandboxHome, workspace,
 			hostHomeOverlay.WorkspaceDirs, hostHomeOverlay.Dests)
 	}
 	// AND THE THIRD, on the same rule: the CONTEXT tree (DP-L1). The host CLI composed it
@@ -645,14 +744,32 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	// (entrypoint.InstallDarwinHomeLayout). A capture passes none — see the parameter.
 	launchMiseTools, _ := config.JailMiseTools(cfg, false)
 	bootstrapEnv := buildBootstrapEnv(workspace, cfg, gitIdentity, sandboxEnv, packRoot,
-		homeOverlay, ctxRoot, capturesRoot, hostCtx, paths.WorkspaceHomeState(workspace), SandboxHome(),
+		homeOverlay, ctxRoot, capturesRoot, hostCtx, paths.WorkspaceHomeState(workspace), sandboxHome,
 		darwinPrefix, blockedTools, launchMiseTools)
-	bootstrapEnv.Set(entrypoint.DarwinLoginPathEnv, SandboxPathForGuestBin(SandboxHome(), darwinPrefix, sessionGuestBinDir))
+	bootstrapEnv.Set(entrypoint.DarwinLoginPathEnv, sandboxPathForHomes(homes, darwinPrefix, sessionGuestBinDir))
 	bootstrapEnv.Set(paths.ContextDirEnv, contextDir)
 	// The one tree yolo's own ~/ctx link may point into (entrypoint.ContextLinkOwnerEnv): the
 	// sandbox home is shared by every workspace, and each workspace's context dir is a child of
 	// this one.
 	bootstrapEnv.Set(entrypoint.ContextLinkOwnerEnv, StagedCtxParent(""))
+	// THE RUN-AS-YOU HOMES, told to the bootstrap: HOME is the sidecar itself, so it lays the
+	// workspace-home layout (entrypoint.DeriveDarwinWorkspaceHome), which needs the machine root
+	// and the shared store; the mise store is the machine root's, never HOME's (MMP-D6); and the
+	// real home is the boundary its scope check and identity check read (MMP-D7). The shared
+	// package caches' links ride beside them (MMP-D12), named only when there is one.
+	if self {
+		bootstrapEnv.Set("MISE_DATA_DIR", SandboxMiseData(homes.Machine))
+		bootstrapEnv.Set(entrypoint.DarwinMachineHomeEnv, homes.Machine)
+		bootstrapEnv.Set(entrypoint.DarwinSharedHomeEnv, homes.Shared)
+		bootstrapEnv.Set(paths.DarwinRealHomeEnv, homes.Real)
+		if len(hostCtx.CacheAliases) > 0 {
+			wire := map[string]string{}
+			for _, a := range hostCtx.CacheAliases {
+				wire[a.Link] = a.Target
+			}
+			bootstrapEnv.Set(entrypoint.DarwinCacheAliasesEnv, entrypoint.DarwinCacheAliasesWire(wire))
+		}
+	}
 	// Never take identity from env_sources, and never give install capture an ID.
 	if nativehome.ValidID(sessionID) {
 		bootstrapEnv.Set(entrypoint.SessionIDEnv, sessionID)
@@ -666,7 +783,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	// whose throwaway home renders no agent. A tree that cannot be read leaves the config's own
 	// table here, and the bootstrap, which reads the copy of that tree, fails the launch for it.
 	userServers, _ := getSectionOrEmptyMap(cfg, "mcp_servers").(*jsonx.OrderedMap)
-	if servers, err := entrypoint.MCPServersAt(hostPackRoot, userServers, SandboxHome()); err == nil {
+	if servers, err := entrypoint.MCPServersAt(hostPackRoot, userServers, sandboxHome); err == nil {
 		if wire, err := jsonx.DumpsCompact(servers); err == nil {
 			bootstrapEnv.Set("YOLO_MCP_SERVERS", wire)
 		}
@@ -697,7 +814,13 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		bootstrapEnv.Set(entrypoint.DarwinCacheRelocationsEnv, entrypoint.DarwinCacheRelocationsWire(wire))
 	}
 
-	offendingHome, offendingSet := HomeContaining(workspace)
+	// THE IN-HOME REFUSAL IS THE ACCOUNT MODE'S: the second account reaches nothing inside a
+	// home. The run-as-you mode is you, so a workspace may be anywhere (design §7), and the
+	// deny-by-default profile, not the workspace's place, keeps the rest of your home out.
+	offendingHome, offendingSet := "", false
+	if !self {
+		offendingHome, offendingSet = HomeContaining(workspace)
+	}
 
 	// THE PROVISIONING STAGE (docs/reference/macos-user-provisioning.md, "The stage"), composed
 	// here so the dry-run plan shows it and PlanInvariants can check it — the two things
@@ -738,9 +861,8 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	guard := SessionGuardFor(resCfg)
 	cpus, _ := CooperativeCPUs(resCfg)
 
-	// THE ONE CROSSING (mode.go, MMP-D4): every argv below that starts a process as the sandbox's
-	// user is built through it. Threaded from the session's mode and not branched on yet.
-	runAs := RunAs{Mode: session.Mode}
+	// Every argv below that starts a process as the sandbox's user is built through runAs, the
+	// crossing decided at the top of this function.
 	var provisionArgv []string
 	provisionScriptPath := ""
 	if ProvisionNeeded(cfg, floors) || programs.Needed() {
@@ -830,6 +952,15 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		relocationProbes = append(relocationProbes, CacheRelocationWriteProbe(runAs, r, profilePath, sessionID, ""))
 	}
 
+	// NO ACCESS GRANTS IN THE RUN-AS-YOU MODE (design §7: "no account, admin setup, access
+	// grants"). Every `chmod +a` a stage command carries — the endpoint files' read grants, the
+	// context tree root's — opens a file of yours to the second account, which self mode does not
+	// have, and an ACE naming an account that does not exist fails the stage. The files are yours,
+	// and so is the sandbox.
+	if self {
+		stageCommands, stageSteps = withoutAccessGrants(stageCommands, stageSteps)
+	}
+
 	// workspace_readonly with the config self-lock the container backends perform, a symlinked
 	// config's target included wherever it sits (workspacereadonly.go).
 	readonlyRels, readonlyTargets := workspaceReadonlyRels(workspace, cfg)
@@ -840,7 +971,31 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		envFileRemove = append(envFileRemove, SandboxEnvRemoveCommands(f)...)
 	}
 
-	bootstrapArgv := DarwinBootstrapArgv(runAs, stagedYolo, SandboxHome(), bootstrapEnv, "")
+	// THE BOOTSTRAP IS CONFINED IN THE RUN-AS-YOU MODE (MMP-D9), under the session's own profile:
+	// run unconfined as you, a link the agent planted in its own writable HOME would carry a
+	// bootstrap write into your real home. Confined, it can write only what the agent can. The
+	// account mode's stays unconfined until slice 12, so its argv is today's byte for byte.
+	bootstrapProfile := ""
+	if self {
+		bootstrapProfile = profilePath
+	}
+	bootstrapArgv := darwinBootstrapArgvUnder(runAs, stagedYolo, sandboxHome, bootstrapEnv, bootstrapProfile)
+	// THE PROFILE: the deny-by-default one in the run-as-you mode, with the pending rulings at
+	// their production values (MMP-D13) and no loopback port yet (slice 7); today's in the
+	// account mode, until slice 12 moves it onto the same profile.
+	seatbelt := seatbeltProfile(workspace, SandboxHome(), readonlyRels, readonlyTargets,
+		homeReadonly, ctxLinks, relocs, cfgStrList(cfg, "devices"))
+	if self {
+		seatbelt = DenyDefaultProfile(selfProfileParams(workspace, homes, hostPackRoot, session,
+			readonlyRels, readonlyTargets, homeReadonly, ctxLinks, relocs, hostCtx.CacheAliases,
+			cfgStrList(cfg, "devices")))
+	}
+	envDirCommands := SandboxEnvDirCommands(envFile, "")
+	envGrantCommands := SandboxEnvGrantCommands(envFile, "")
+	if self {
+		envDirCommands, _ = withoutAccessGrants(envDirCommands, nil)
+		envGrantCommands = nil
+	}
 	launchArgv := LaunchArgvWithGuard(runAs, agentArgv, profilePath, envFile, workspace, "", "", darwinPrefix, guard, stagedYolo)
 	sessionHomeDir := ""
 	if nativehome.ValidID(sessionID) {
@@ -848,7 +1003,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		declares, readErr := entrypoint.HasSessionHomesAt(hostPackRoot)
 		// A corrupt staged tree will refuse bootstrap; never infer no homes from a failed read.
 		if declares || readErr != nil {
-			sessionHomeDir, _ = nativehome.Dir(SandboxHome(), workspace, sessionID)
+			sessionHomeDir, _ = nativehome.Dir(sandboxHome, workspace, sessionID)
 			launchArgv = wrapNativeSession(launchArgv, envFile, stagedYolo, sessionHomeDir, "launch")
 			if len(provisionArgv) > 0 {
 				provisionArgv = wrapNativeSession(provisionArgv, envFile, stagedYolo, sessionHomeDir, "provision")
@@ -865,8 +1020,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		ProfileRemoveCommands: [][]string{{rmBin, "-f", profilePath}},
 		// workspace_readonly and its config lock, each raw-path `devices` entry's ioctl
 		// carve-out (devices.go), and macos_log, whose "off" is a deny (SeatbeltProfile).
-		Seatbelt: seatbeltProfile(workspace, SandboxHome(), readonlyRels, readonlyTargets,
-			homeReadonly, ctxLinks, relocs, cfgStrList(cfg, "devices")),
+		Seatbelt:   seatbelt,
 		StagedDir:  stateDir,
 		StagedYolo: stagedYolo,
 		// Binary first, then the pack trees, then the content overlay, then the context
@@ -915,8 +1069,8 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 
 		EnvFile:               envFile,
 		EnvFileContent:        envFileContent,
-		EnvFileCommands:       SandboxEnvDirCommands(envFile, ""),
-		EnvFileGrantCommands:  SandboxEnvGrantCommands(envFile, ""),
+		EnvFileCommands:       envDirCommands,
+		EnvFileGrantCommands:  envGrantCommands,
 		EnvFileRemoveCommands: envFileRemove,
 
 		CATrust:         session.CATrust,
@@ -1360,6 +1514,7 @@ func PlanInvariants(plan RunPlan) []string {
 	// --user=_yolojail /usr/bin/env …`. Any other shape prompts for a password, runs as root, or
 	// fails under the rule setup installs (RunAsArgvProblems says which).
 	problems = append(problems, crossingArgvProblems(plan)...)
+	problems = append(problems, selfModeProblems(plan)...)
 
 	// Git identity must reach the BOOTSTRAP env (baked onto the self-exec argv).
 	bootStr := strings.Join(plan.BootstrapArgv, " ")
@@ -1564,8 +1719,11 @@ func PlanInvariants(plan RunPlan) []string {
 	// ASKED THROUGH THE RENDERED FILE (SandboxEnvFileSets), never by parsing a value out of
 	// it: each staged ARGUMENT is offered back to the writer's own renderer, so this and the
 	// env file cannot disagree about quoting rather than about the value.
+	//
+	// NOT IN THE RUN-AS-YOU MODE, which grants nothing: the endpoint file is yours, and so is the
+	// sandbox reading it (selfModeProblems checks that no grant was staged).
 	for _, key := range SandboxEnvFileKeys(plan.EnvFileContent) {
-		if !isServiceEndpointVar(key) {
+		if !isServiceEndpointVar(key) || plan.RunAs.Mode == ModeSelf {
 			continue
 		}
 		if !stageCommandsNameEnvValue(plan.StageCommands, plan.EnvFileContent, key) {
@@ -1855,6 +2013,54 @@ func captureStoreInvariants(plan RunPlan) []string {
 	return problems
 }
 
+// selfModeProblems is PlanInvariants' half for a run-as-you plan (slice 6 of
+// docs/design/macos-user-model-plan.md), silent for an account-mode plan. Each rule is the
+// mode's promise read back off the plan:
+//
+//   - the launch named the invoking user's home, which places every home but HOME;
+//   - the profile is the deny-by-default one, never today's `(allow default)`;
+//   - the bootstrap runs under the session's profile (MMP-D9);
+//   - nothing grants an access entry, and nothing names the second account.
+func selfModeProblems(plan RunPlan) []string {
+	if plan.RunAs.Mode != ModeSelf {
+		return nil
+	}
+	var problems []string
+	if real := plan.RunAs.Homes.Real; !filepath.IsAbs(real) {
+		problems = append(problems, "the run-as-you plan was given no absolute home for you ("+
+			quoteOrNone(real)+"); its machine root and shared store would be relative paths")
+	}
+	if !strings.Contains(plan.Seatbelt, "\n(deny default)\n") || strings.Contains(plan.Seatbelt, "(allow default)") {
+		problems = append(problems, "the run-as-you plan does not install the deny-by-default "+
+			"Seatbelt profile; the agent would run as you under a profile that allows by default")
+	}
+	if len(plan.BootstrapArgv) > 0 &&
+		!containsArgPair(plan.BootstrapArgv, "/usr/bin/sandbox-exec", "-f", plan.ProfilePath) {
+		problems = append(problems, "the run-as-you bootstrap does not run under `sandbox-exec -f "+
+			plan.ProfilePath+"`; unconfined as you, a link the agent planted in its HOME would "+
+			"carry a bootstrap write into your real home (MMP-D9)")
+	}
+	all := append(append(append([][]string(nil), plan.StageCommands...), plan.EnvFileCommands...),
+		plan.EnvFileGrantCommands...)
+	for _, f := range plan.caTrustFilePlans() {
+		all = append(append(all, f.dir...), f.grant...)
+	}
+	for _, c := range all {
+		if len(c) >= 2 && c[0] == chmodBin && c[1] == "+a" {
+			problems = append(problems, "the run-as-you plan grants an access entry ("+
+				strings.Join(c, " ")+"); self mode has no second account to open a file to")
+		}
+	}
+	for _, argv := range [][]string{plan.LaunchArgv, plan.BootstrapArgv, plan.ProvisionArgv,
+		plan.JailDaemonArgv, plan.ProbeArgv} {
+		if slices.ContainsFunc(argv, func(w string) bool { return strings.Contains(w, SandboxUser) }) {
+			problems = append(problems, "a run-as-you argv names the second account "+SandboxUser+
+				": "+strings.Join(argv, " "))
+		}
+	}
+	return problems
+}
+
 // crossingArgvProblems checks every argv the plan runs as the sandbox account against the run-as
 // rule's shape: the bootstrap, the provisioning stage, the agent, the supervisor, the service
 // witness, and each context and cache-relocation probe. An empty argv is a stage this plan does
@@ -1883,6 +2089,15 @@ func crossingArgvProblems(plan RunPlan) []string {
 	var problems []string
 	for _, c := range crossings {
 		if len(c.argv) == 0 {
+			continue
+		}
+		// THE RUN-AS-YOU MODE CROSSES INTO NO ACCOUNT: every argv starts with the crossing's
+		// own first word, /usr/bin/env, and none runs sudo (RunAs.Argv).
+		if plan.RunAs.Mode == ModeSelf {
+			if c.argv[0] != envBin || slices.ContainsFunc(c.argv, func(w string) bool { return w == sudoBin }) {
+				problems = append(problems, "the "+c.label+" argv of a run-as-you plan does not cross "+
+					"through "+envBin+" alone: "+strings.Join(c.argv, " "))
+			}
 			continue
 		}
 		if c.argv[0] != sudoBin {
@@ -2402,7 +2617,15 @@ func cfgStrList(cfg *jsonx.OrderedMap, key string) []string {
 
 // caTrustFilePlans are the plan's CA files as installable files (cabundle.go).
 func (p RunPlan) caTrustFilePlans() []sessionFilePlan {
-	return caTrustFiles(p.EnvFile, p.CABundleFile, p.CABundleContent, p.CAExtrasFile, p.CAExtrasContent)
+	files := caTrustFiles(p.EnvFile, p.CABundleFile, p.CABundleContent, p.CAExtrasFile, p.CAExtrasContent)
+	// The run-as-you mode grants no access: the files are yours, and so is the sandbox.
+	if p.RunAs.Mode == ModeSelf {
+		for i := range files {
+			files[i].dir, _ = withoutAccessGrants(files[i].dir, nil)
+			files[i].grant = nil
+		}
+	}
+	return files
 }
 
 // envFile and envFileCommands make a RunPlan a sandboxEnvPlan (envfile.go).

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -209,5 +210,56 @@ func TestTheDarwinBootstrapTakesTheSealedBuildWordFromItsArgv(t *testing.T) {
 	}
 	if rc := runDarwinBootstrap([]string{"--sealed"}); rc != 2 {
 		t.Errorf("an unknown argument ran the bootstrap (rc %d)", rc)
+	}
+}
+
+// THE RUN-AS-YOU BOOTSTRAP RUNS AS YOU, on a Mac with no /Users/_yolojail at all: its identity
+// check reads the real home the launcher named (YOLO_DARWIN_REAL_HOME, which you own), not the
+// account's. Run as you it may generate only into the workspace's own HOME: a hand-run whose HOME
+// is your real home is refused before anything is created, the promise the account mode's
+// identity check made. Fails if the identity check goes back to requiring the account's home, or
+// if the self-mode HOME guard is deleted.
+func TestDarwinBootstrapRunsAsYouOnlyIntoTheWorkspaceHome(t *testing.T) {
+	saved := darwinBootstrapScopeHome
+	darwinBootstrapScopeHome = func() string { return filepath.Join(resolvedDir(t), "no-account") }
+	t.Cleanup(func() { darwinBootstrapScopeHome = saved })
+	real := resolvedDir(t)
+	ws := filepath.Join(real, "code", "alpha")
+	if err := os.MkdirAll(ws, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(paths.DarwinRealHomeEnv, "")
+	if darwinBootstrapIdentityRefusal() == nil {
+		t.Fatal("with no account home and no real home named, the identity check passed")
+	}
+	t.Setenv(paths.DarwinRealHomeEnv, real)
+	if err := darwinBootstrapIdentityRefusal(); err != nil {
+		t.Fatalf("the run-as-you bootstrap was refused as you: %v", err)
+	}
+	if b := darwinBootstrapScopeBreach(ws); b != nil {
+		t.Errorf("a workspace inside your home was refused in the run-as-you mode: %v", b)
+	}
+	if darwinBootstrapScopeBreach(real) == nil {
+		t.Error("your real home itself was admitted as a workspace")
+	}
+
+	// A hand-run with HOME at the real home: refused, nothing created.
+	t.Setenv("JAIL_HOME", "")
+	t.Setenv("HOME", real)
+	t.Setenv(entrypoint.DarwinHomeSidecarEnv, "")
+	t.Setenv("YOLO_DARWIN_WORKSPACE", ws)
+	if rc := runDarwinBootstrap(nil); rc != 1 {
+		t.Errorf("a run-as-you bootstrap with HOME at your real home returned %d, want 1", rc)
+	}
+	if _, err := os.Stat(paths.WorkspaceStateDir(ws)); !os.IsNotExist(err) {
+		t.Errorf("the refused bootstrap created %s (%v)", paths.WorkspaceStateDir(ws), err)
+	}
+
+	// The launch's own shape: HOME is the sidecar, named as such, under the workspace.
+	sidecar := paths.WorkspaceHomeState(ws)
+	t.Setenv("HOME", sidecar)
+	t.Setenv(entrypoint.DarwinHomeSidecarEnv, sidecar)
+	if err := darwinBootstrapSelfHomeRefusal(); err != nil {
+		t.Errorf("the launch's own HOME was refused: %v", err)
 	}
 }

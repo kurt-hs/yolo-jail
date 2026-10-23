@@ -93,7 +93,7 @@ func selfCrossingArgvs(t *testing.T) map[string][]string {
 		HostContext{Links: links, Relocations: relocs}, brokerEndpointEnv(), mockDarwin(), nil,
 		openAIAdapterDaemons("/opt/yolo/share/yolo-jail/bin/darwin-arm64"), FloorStage{},
 		PlanSession{ID: "self", Mode: ModeSelf})
-	if plan.RunAs != self {
+	if plan.RunAs.Mode != ModeSelf {
 		t.Fatalf("PlanSession.Mode did not reach the plan's crossing: %+v", plan.RunAs)
 	}
 	for name, argv := range map[string][]string{

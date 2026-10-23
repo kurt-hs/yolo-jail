@@ -60,7 +60,7 @@ func ProbeServicesArgv(runAs RunAs, stagedYolo, profilePath, envFile, user, home
 		home = SandboxHome()
 	}
 	out := runAs.Argv(false, "-i")
-	out = append(out, sandboxEnvPairs(accountHomes(home), user, SandboxPathForYolo(home, pathPrefix, stagedYolo), envFile)...)
+	out = append(out, sandboxEnvPairs(runAs.homes(home), runAs.user(user), sandboxPathForYoloHomes(runAs.homes(home), pathPrefix, stagedYolo), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
 	out = append(out, ExecWithEnvFile(envFile, []string{stagedYolo, "internal", ProbeServicesVerb})...)
 	return out

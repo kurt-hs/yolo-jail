@@ -16,8 +16,9 @@ import (
 // 2026-10-22) ported block by block, in its order, with its `[source]` tags and its
 // Apache-2.0 header, which ships inside every rendered profile.
 //
-// It sits BESIDE seatbeltProfile (seatbelt.go), which every launch still installs. Nothing in
-// production calls this yet; slice 6 of docs/design/macos-user-model-plan.md does.
+// It sits BESIDE seatbeltProfile (seatbelt.go), which every account-mode launch still installs.
+// The run-as-you mode (macos_user_mode "self", slice 6 of docs/design/macos-user-model-plan.md)
+// installs this one (BuildRunPlanWithStages).
 //
 // Values are rendered as literal text, escaped with sbplStr, never as `sandbox-exec -D`
 // parameters (MMP-D1): the prototype's eight ancestor slots and four port slots were a
@@ -108,6 +109,9 @@ type ProfileParams struct {
 	Context []ContextLink
 	// Relocations are the user's cache relocations, read-write at their resolved targets.
 	Relocations []CacheRelocation
+	// CacheAliases are the host package caches shared in the run-as-you mode (cachealias.go,
+	// MMP-D12), read-write at their resolved targets. Always empty in the account mode.
+	CacheAliases []CacheAlias
 	// ReadonlyRels and ReadonlyTargets are workspace_readonly's two halves (readonlyDenies).
 	ReadonlyRels    []string
 	ReadonlyTargets []string
@@ -243,6 +247,9 @@ func DenyDefaultProfile(p ProfileParams) string {
 	}
 	ancestorInputs = append(ancestorInputs, contextSources(p.Context, func(ContextLink) bool { return true })...)
 	ancestorInputs = append(ancestorInputs, relocationTargets(p.Relocations)...)
+	for _, a := range p.CacheAliases {
+		ancestorInputs = append(ancestorInputs, a.Target)
+	}
 	b.WriteString("\n;; [render] Every directory above the workspace, home, temp dir and every other\n" +
 		";; granted root, as literals: Claude Code and git readdir()/stat each ancestor at\n" +
 		";; start. A literal grants that one directory's entry and listing, never what is\n" +
@@ -306,6 +313,9 @@ func DenyDefaultProfile(p ProfileParams) string {
 	// The other write allows, then every write carve-out after all of them (last match wins).
 	b.WriteString(contextWriteAllow(p.Context))
 	b.WriteString(relocationWriteAllow(p.Relocations))
+	// The shared package caches (MMP-D12), read-write: with the other write allows, so the
+	// write carve-outs below stay terminal, and before the closing denies, which still beat it.
+	b.WriteString(CacheAliasAllow(p.CacheAliases))
 	if ws != "" {
 		b.WriteString(readonlyDenies(ws, p.ReadonlyRels, p.ReadonlyTargets))
 	}
@@ -340,6 +350,7 @@ func DenyDefaultProfile(p ProfileParams) string {
 	b.WriteString(processBlocks())
 	b.WriteString(serviceBlocks())
 	b.WriteString(networkBlocks(p.Loopback))
+	b.WriteString(nixDaemonBlocks())
 	b.WriteString(closingDenies(hostHome))
 	return b.String()
 }
@@ -647,6 +658,34 @@ func networkBlocks(lp LoopbackPolicy) string {
 		";; config allows (MMP-D10).\n" +
 		";; #seatbelt-test-id:loopback-port-allow#\n" +
 		form("allow network-outbound", clauses.String())
+}
+
+// NixDaemonSocket is the host nix daemon's socket, which every nix client in the sandbox
+// connects to (hostnix.go sets NIX_REMOTE=daemon): the store is the host's, and only the daemon
+// writes it.
+const NixDaemonSocket = "/nix/var/nix/daemon-socket/socket"
+
+// nixDaemonBlocks lets the sandbox's nix client reach the host daemon: a connect to its socket,
+// which the deny-default network section otherwise refuses (only mDNSResponder's socket is
+// allowed there), and the reads the client makes before it connects — the daemon socket's
+// directory and the system nix.conf, which nix-darwin links through /etc/static into the store.
+// The store itself and the profiles are system read roots already. macos-user's acceptance bar
+// is carrying the nix layer, so a profile that refused this would ship a sandbox whose `nix`
+// cannot build anything.
+func nixDaemonBlocks() string {
+	return "\n;; [yolo] The host nix daemon: its socket (a connect is network-outbound, not a\n" +
+		";; file read), the socket's directory, and the system nix.conf (nix-darwin links it\n" +
+		";; through /etc/static into the store). The client builds nothing itself; the\n" +
+		";; daemon, outside the sandbox, writes the store.\n" +
+		";; #seatbelt-test-id:nix-daemon-allow#\n" +
+		"(allow network-outbound (remote unix-socket (path-literal " + sbplStr(NixDaemonSocket) + ")))\n" +
+		"(allow file-read*\n" +
+		"    (subpath \"/nix/var/nix/daemon-socket\")                          ;; The socket and its directory.\n" +
+		"    (subpath \"/private/etc/nix\")                                    ;; nix.conf and its includes.\n" +
+		"    (literal \"/private/etc/static\"))                                ;; nix-darwin's link into the store.\n" +
+		"(allow file-read-metadata\n" +
+		"    (literal \"/nix/var\")\n" +
+		"    (literal \"/nix/var/nix\"))                                       ;; Traversal to the socket.\n"
 }
 
 // regexPathStr renders a path-regex string matching rest under the literal prefix p, as an

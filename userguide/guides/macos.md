@@ -224,6 +224,24 @@ A launch from a project inside your home stops before it builds anything, and pr
 commands that move the project under `/Users/Shared/yolo` and share it there. A fresh clone or a
 copy made there is shared as it is created.
 
+**Run the agent as you (experimental).** Add one line to your user config,
+`~/.config/yolo-jail/config.jsonc`:
+
+```jsonc
+"macos_user_mode": "self"
+```
+
+The agent then runs as you rather than as `_yolojail`, so it needs no `yolo macos-setup`, no sudo
+rule and no sharing, and a project can be anywhere, your home folder included. A stricter Seatbelt
+profile takes the second account's place: it opens the project, the agent's own home in the
+project's `.yolo/home` and the tools, and denies the rest of your files, your keychain and your
+other processes. Every launch says so first. A project's config cannot choose this mode; only your
+user config can. Remove the line, or set it to `"account"`, to go back.
+
+It is experimental: yolo's own host services are not reachable from it yet, so a launch that
+starts one (the Claude login service, for one) stops at its reachability check. That check names
+`YOLO_ALLOW_UNREACHABLE_SERVICES=1`, which starts the agent anyway without the service.
+
 **Check without changing anything.** Run `yolo check` from the project. It checks each thing a
 launch refuses to start without: that you are on macOS and not running as root, Seatbelt, the
 sandbox user and its home folder, that `/Users/Shared/yolo-staged` is yours and safe, that the sudo

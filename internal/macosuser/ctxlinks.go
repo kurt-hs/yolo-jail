@@ -169,6 +169,31 @@ type ContextSiting struct {
 	// PrivacyDirs are the home-relative directories macOS's privacy controls (TCC) guard, named
 	// in a refusal so a reader knows a second wall stands behind the first.
 	PrivacyDirs []string
+	// RunsAsYou is the run-as-you mode's siting (macos_user_mode "self", DarwinContextSitingFor):
+	// the sandbox is the invoking user, so a source or target inside a real home is reachable and
+	// rule 5's home clause does not apply. There is no account home either (SandboxHome is "").
+	RunsAsYou bool
+}
+
+// DarwinContextSitingFor is DarwinContextSiting for a launch's mode. The account mode's is
+// DarwinContextSiting unchanged. The run-as-you mode's (slice 6 of
+// docs/design/macos-user-model-plan.md) drops the account's home rules — the sandbox runs as you
+// and reaches your home like you do, and the deny-by-default profile names each source — and
+// adds yolo's own state and config directories under hostHome to StateDirs, which the account
+// mode kept out by the home rule: a context source there would hand the agent every
+// workspace's state and the config deciding the next launch.
+func DarwinContextSitingFor(mode Mode, hostHome string) ContextSiting {
+	s := DarwinContextSiting()
+	if mode != ModeSelf {
+		return s
+	}
+	s.RunsAsYou = true
+	s.SandboxHome = ""
+	if hostHome != "" {
+		s.StateDirs = append(s.StateDirs, paths.GlobalStorageUnder(hostHome),
+			path.Join(hostHome, ".config", "yolo-jail"))
+	}
+	return s
 }
 
 // DarwinContextSiting is the layout of a default macOS install.
@@ -342,7 +367,7 @@ func (s ContextSiting) siteOne(workspace string, l ContextLink) siteVerdict {
 		return siteVerdict{reason: "its source " + src + " is inside the sandbox account's own home " +
 			s.SandboxHome, brief: "it is inside the sandbox account's own home", unsafe: true}
 	}
-	if home, in := s.homes().containing(src); in {
+	if home, in := s.homes().containing(src); in && !s.RunsAsYou {
 		msg := "its source " + src + " is inside the home folder " + home
 		if dir := s.privacyDir(src, home); dir != "" {
 			msg += ", in " + dir + ", which macOS's privacy controls guard as well"
@@ -651,7 +676,7 @@ func (s ContextSiting) siteRelocation(workspace string, r CacheRelocation, links
 		return "its target " + t + " is inside the sandbox account's own home " + s.SandboxHome +
 			", where the relocation's link itself lives"
 	}
-	if home, in := s.homes().containing(t); in {
+	if home, in := s.homes().containing(t); in && !s.RunsAsYou {
 		msg := "its target " + t + " is inside the home folder " + home
 		if dir := s.privacyDir(t, home); dir != "" {
 			msg += ", in " + dir + ", which macOS's privacy controls guard as well"
@@ -740,10 +765,8 @@ func CacheRelocationProbeFile(target, sessionID string) string {
 // the agent rather than by the agent's first cache write. The file is handed to the shell as
 // "$1", so no path is ever spliced into the script.
 func CacheRelocationWriteProbe(runAs RunAs, r CacheRelocation, profilePath, sessionID, user string) CacheRelocationProbe {
-	if user == "" {
-		user = SandboxUser
-	}
-	home := SandboxHome()
+	user = runAs.user(user)
+	home := runAs.homes("").Home
 	return CacheRelocationProbe{Relocation: r, Access: cacheRelocationProfileAccess, Argv: runAs.Argv(false,
 		"-i", "HOME="+home, "USER="+user,
 		"PATH=/usr/bin:/bin", "/usr/bin/sandbox-exec", "-f", profilePath, "--",
@@ -820,7 +843,7 @@ func cacheRelocationProblems(plan RunPlan) []string {
 		return nil
 	}
 	var problems []string
-	for _, r := range SiteCacheRelocations(DarwinContextSiting(), plan.Workspace, plan.CacheRelocations, plan.ContextLinks) {
+	for _, r := range SiteCacheRelocations(DarwinContextSitingFor(plan.RunAs.Mode, plan.RunAs.Homes.Real), plan.Workspace, plan.CacheRelocations, plan.ContextLinks) {
 		problems = append(problems, "the cache relocation ~/.cache/"+r.Relocation.Subdir+
 			" cannot be delivered on this backend: "+r.Reason)
 	}
@@ -1072,7 +1095,7 @@ func contextLinkProblems(plan RunPlan) []string {
 		return nil
 	}
 	var problems []string
-	for _, r := range SiteContextLinks(DarwinContextSiting(), plan.Workspace, plan.ContextLinks, plan.ContextOccupied) {
+	for _, r := range SiteContextLinks(DarwinContextSitingFor(plan.RunAs.Mode, plan.RunAs.Homes.Real), plan.Workspace, plan.ContextLinks, plan.ContextOccupied) {
 		problems = append(problems, "the context mount at "+r.Link.Dest+" ("+r.Link.Origin()+
 			") cannot be delivered on this backend: "+r.Reason)
 	}

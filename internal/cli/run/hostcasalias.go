@@ -96,10 +96,11 @@ func (o *Options) planMacosUserHostCAS(mode macosuser.Mode, relocations []macosu
 	}
 	self := mode == macosuser.ModeSelf
 	ownership := hostcas.OwnershipUnknown
-	sandboxHome := macosuser.SandboxHome()
+	sandboxHome, machine := macosuser.SandboxHome(), ""
 	if self {
 		ownership = hostcas.OwnershipYours
-		sandboxHome = paths.WorkspaceHomeState(o.Workspace)
+		homes := macosuser.LaunchHomes(mode, o.Workspace, o.macosUserHostHome())
+		sandboxHome, machine = homes.Home, homes.Machine
 	}
 	hostPlatform := o.macosHostCASPlatform
 	if hostPlatform == "" {
@@ -115,10 +116,37 @@ func (o *Options) planMacosUserHostCAS(mode macosuser.Mode, relocations []macosu
 		HostCacheRoot:     hostcas.CacheRoot(o.Getenv),
 		HostGetenv:        o.Getenv,
 		MacosUserHome:     sandboxHome,
+		MacosUserMachine:  machine,
 		RelocatedSegments: relocated,
 		Probe:             o.HostCASProbe,
 		ScopeBreach:       scopeBreached,
 	})
+}
+
+// macosUserHostHome is the invoking user's home a run-as-you macos-user launch places its homes
+// under: the one cli resolved (MacosUserHostHome), else HOME as Options reads it, else this
+// process's.
+func (o *Options) macosUserHostHome() string {
+	if o.MacosUserHostHome != "" {
+		return o.MacosUserHostHome
+	}
+	if o.Getenv != nil {
+		if h := o.Getenv("HOME"); h != "" {
+			return h
+		}
+	}
+	return paths.Home()
+}
+
+// macosSiting is the macOS layout the macos-user context-mount and cache-relocation siting read:
+// o.macosCtxSiting when a test set it, else a default macOS install's for this launch's mode
+// (macosuser.DarwinContextSitingFor: the run-as-you mode reaches your home, the account mode does
+// not).
+func (o *Options) macosSiting() macosuser.ContextSiting {
+	if o.macosCtxSiting != nil {
+		return *o.macosCtxSiting
+	}
+	return macosuser.DarwinContextSitingFor(o.MacosUserMode, o.macosUserHostHome())
 }
 
 // resolveMacosUserHostCAS resolves every aliased source through its symlinks, as the host

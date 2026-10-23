@@ -1229,11 +1229,23 @@ func runRun(args []string) int {
 	// session-start hook; and the collector, so the backend's steps are spanned on it.
 	arm := run.NewMacosUserArm()
 	opts.MacosUserArm = arm
+	// THE macos-user MODE, read ONCE from the user config (MMP-D3) and handed to both readers: the
+	// pipeline (its package-cache alias and siting, run.Options.MacosUserMode) and the backend (the
+	// whole launch, macosuser.Options.Mode), so the two cannot disagree about who the sandbox runs
+	// as. A value no launch can run refuses inside the macos-user arm only.
+	macosMode, macosModeRefusal := macosUserLaunchMode()
+	hostHome, hostUser := macosUserHostIdentity()
+	opts.MacosUserMode, opts.MacosUserHostHome = macosMode, hostHome
 	opts.MacosUserRun = func(cfg *jsonx.OrderedMap, workspace string, agents, agentArgv []string,
 		repoRoot, packRoot string, homeOverlay macosuser.HomeOverlay, hostCtx macosuser.HostContext, dryRun bool,
 		packEnv *jsonx.OrderedMap, blocked []packload.BlockedTool, jailDaemons macosuser.JailDaemons) int {
+		if macosModeRefusal != "" {
+			fmt.Fprintln(os.Stderr, macosModeRefusal)
+			return 1
+		}
 		return macosUserRun(cfg, workspace, agents, agentArgv, repoRoot, packRoot, homeOverlay,
-			hostCtx, dryRun, packEnv, blocked, jailDaemons, arm, ref.Log)
+			hostCtx, dryRun, packEnv, blocked, jailDaemons, arm, ref.Log,
+			macosUserIdentity{Mode: macosMode, HostHome: hostHome, HostUser: hostUser})
 	}
 	// Wire the fetched model list (docs/design/model-lists-and-pickers.md OQ-MM6): a provider no
 	// pack or config gives a list gets the region's from its platform's credential service. A
@@ -1354,16 +1366,50 @@ func runRun(args []string) int {
 // a refusal closure is non-nil too.
 var launchRunPipeline = run.Run
 
-// macosUserModeRefusal is the launch's reading of the user-scope `macos_user_mode`
-// (MMP-D3). It returns the refusal line for a mode this build cannot run, or "" when
-// the launch may proceed. `self` is refused until its slice builds it, and the line
-// names the one next step: remove the key, which launches as today.
-func macosUserModeRefusal() string {
-	if v, set := config.MacosUserMode(); set && v == "self" {
-		return `macos_user_mode "self" is not built yet; remove it from ` + paths.UserConfigPath() +
-			` to launch as today`
+// macosUserLaunchMode is the launch's reading of the user-scope `macos_user_mode`
+// (MMP-D3): the mode, or a refusal line naming the next step for a value no launch can run.
+// An absent key is the account mode, still the default; "self" runs the agent as you
+// (slice 6 of docs/design/macos-user-model-plan.md). Config validation refuses any other
+// value earlier; this is what keeps a value that slipped past it from silently choosing.
+func macosUserLaunchMode() (macosuser.Mode, string) {
+	v, _ := config.MacosUserMode()
+	mode, err := macosuser.ParseMode(v)
+	if err != nil {
+		return macosuser.ModeAccount, err.Error() + `; set macos_user_mode to "self" or "account" in ` +
+			paths.UserConfigPath() + `, or remove it to launch as the separate sandbox account`
 	}
-	return ""
+	return mode, ""
+}
+
+// macosUserIdentity is who a macos-user launch's sandbox runs as: the mode, and the invoking
+// user's home and name, which the run-as-you mode runs with.
+type macosUserIdentity struct {
+	Mode     macosuser.Mode
+	HostHome string
+	HostUser string
+}
+
+// runMacosUserBackend is macosuser.RunMacosUser behind a package var, for launchRunPipeline's
+// reason: a test can read the Options the handler hands the backend (its mode above all)
+// without running a launch.
+var runMacosUserBackend = macosuser.RunMacosUser
+
+// macosUserHostIdentity is the invoking user's resolved home and name, which a run-as-you
+// launch runs with (macosuser.Options.HostHome, HostUser). The home is resolved through its
+// symlinks, since the profile names it verbatim. The name is $USER, else the home's last
+// element; yolo is built without cgo, and without cgo os/user on darwin answers from $HOME.
+func macosUserHostIdentity() (home, user string) {
+	home, _ = os.UserHomeDir()
+	if home != "" {
+		if resolved, err := filepath.EvalSymlinks(home); err == nil {
+			home = resolved
+		}
+	}
+	user = os.Getenv("USER")
+	if user == "" && home != "" {
+		user = filepath.Base(home)
+	}
+	return home, user
 }
 
 // macosUserRun is the run.Options.MacosUserRun seam impl: it assembles the
@@ -1379,11 +1425,7 @@ func macosUserModeRefusal() string {
 func macosUserRun(cfg *jsonx.OrderedMap, workspace string, agents, agentArgv []string,
 	repoRoot, packRoot string, homeOverlay macosuser.HomeOverlay, hostCtx macosuser.HostContext, dryRun bool,
 	packEnv *jsonx.OrderedMap, blocked []packload.BlockedTool, jailDaemons macosuser.JailDaemons,
-	arm *run.MacosUserArm, log *perf.Log) int {
-	if msg := macosUserModeRefusal(); msg != "" {
-		fmt.Fprintln(os.Stderr, msg)
-		return 1
-	}
+	arm *run.MacosUserArm, log *perf.Log, who macosUserIdentity) int {
 	materialize := func(nixRoot string, packages []any) (*macosuser.Darwin, bool, error) {
 		// system "" → darwinpkg.NativeSystem(), the running platform. NOT a
 		// hardcoded aarch64-darwin: this backend is macOS-only but Macs are not
@@ -1412,8 +1454,13 @@ func macosUserRun(cfg *jsonx.OrderedMap, workspace string, agents, agentArgv []s
 			ProfilePath: pkgs.ProfilePath,
 		}, true, nil
 	}
-	return macosuser.RunMacosUser(macosUserSessionDeps(arm, log, materialize),
+	return runMacosUserBackend(macosUserSessionDeps(arm, log, materialize),
 		macosuser.Options{
+			// Who the sandbox runs as (macos_user_mode), and the invoking user the run-as-you mode
+			// runs with; the account mode reads neither of the last two.
+			Mode:     who.Mode,
+			HostHome: who.HostHome,
+			HostUser: who.HostUser,
 			// The session-start hook the run pipeline registered on its arm, run by the backend
 			// just before the session's command and on no other path.
 			OnAgentStart: arm.AgentStarting,

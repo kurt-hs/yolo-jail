@@ -123,12 +123,27 @@ func runCaptureReal(argv []string) (string, int) {
 // provisioning stage (provisionInWorkspace) and the session (LaunchArgv's inner `cd`; it runs
 // through RunWithProxy, not here). The bootstrap, the capture driver and the jail daemons name
 // every path they use. Every other command keeps the caller's cwd.
+//
+// A RUN-AS-YOU CROSSING STARTS IN `/` TOO (isSelfCrossingArgv), for the same guarantee in the
+// other mode: no crossing inherits the caller's cwd. As you, the caller's cwd is traversable, but
+// the crossing runs under the deny-by-default profile (the bootstrap confined, MMP-D9), which
+// opens `/` and the granted roots and not the directory `yolo` happened to be typed in, so
+// inheriting it would fail getcwd in one launch and not another, and a relative path would
+// resolve against a directory the profile refuses. Starting both modes in `/` keeps every
+// crossing's cwd one fact, the one the workspace `cd`s depend on.
 func commandFor(argv []string) *exec.Cmd {
 	cmd := exec.Command(argv[0], argv[1:]...)
-	if isRunAsSandboxArgv(argv) {
+	if isRunAsSandboxArgv(argv) || isSelfCrossingArgv(argv) {
 		cmd.Dir = sandboxCwd
 	}
 	return cmd
+}
+
+// isSelfCrossingArgv reports whether argv is a run-as-you crossing (RunAs.Argv in self mode):
+// /usr/bin/env as its first word. Nothing else this package runs starts with it — every host
+// command names its own binary (cp, mkdir, chmod, …), and the account crossing starts with sudo.
+func isSelfCrossingArgv(argv []string) bool {
+	return len(argv) > 0 && argv[0] == envBin
 }
 
 // sandboxCwd is where a crossing into the sandbox account starts: a directory every account
@@ -588,6 +603,16 @@ func runAsGrantReal() bool {
 	cmd := commandFor(RunAsGrantProbeArgv())
 	cmd.Stdin = nil
 	return runWithTimeout(cmd, 10*time.Second) == 0
+}
+
+// darwinUserTempDirReal is Deps.DarwinUserTempDir: `/usr/bin/getconf DARWIN_USER_TEMP_DIR`, which
+// prints the invoking user's per-user temp dir with a trailing slash, or "" when it cannot.
+func darwinUserTempDirReal() string {
+	out, rc := outputWithTimeout(exec.Command("/usr/bin/getconf", "DARWIN_USER_TEMP_DIR"), 10*time.Second)
+	if rc != 0 {
+		return ""
+	}
+	return strings.TrimSpace(out)
 }
 
 // accountNameOfUIDReal names the account uid belongs to through `/usr/bin/id -un <uid>`, which asks

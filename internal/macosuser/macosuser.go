@@ -1321,9 +1321,15 @@ func SandboxPath(home string, prefix []string) string {
 // SandboxPathForGuestBin is SandboxPath with this session's sealed guest-bin child in place of
 // the legacy shared prefix.
 func SandboxPathForGuestBin(home string, prefix []string, guestBinDir string) string {
-	if home == "" {
-		home = SandboxHome()
-	}
+	return sandboxPathForHomes(accountHomes(home), prefix, guestBinDir)
+}
+
+// sandboxPathForHomes is SandboxPathForGuestBin for a launch's Homes: the home-derived entries
+// from h.Home, the mise shims from the machine home's store (SandboxMiseData(h.Machine)), which in
+// self mode is outside HOME (MMP-D6). Account mode's Homes are one home in every role, so its PATH
+// is SandboxPathForGuestBin's byte for byte.
+func sandboxPathForHomes(h Homes, prefix []string, guestBinDir string) string {
+	home := h.Home
 	if guestBinDir == "" {
 		guestBinDir = filepath.Dir(StagedYoloPath(""))
 	}
@@ -1332,7 +1338,7 @@ func SandboxPathForGuestBin(home string, prefix []string, guestBinDir string) st
 	// defaults on both sides.
 	parts := entrypoint.HomePathDirs(entrypoint.NewEnv(map[string]string{
 		"JAIL_HOME":     home,
-		"MISE_DATA_DIR": SandboxMiseData(home),
+		"MISE_DATA_DIR": SandboxMiseData(h.Machine),
 	}))
 	parts = append(parts, prefix...)
 	// Derived from StagedYoloPath rather than spelled, so the directory holding the
@@ -1345,10 +1351,15 @@ func SandboxPathForGuestBin(home string, prefix []string, guestBinDir string) st
 // SandboxPathForYolo derives the guest-bin PATH entry from the exact staged yolo binary a
 // session's confined argv will execute.
 func SandboxPathForYolo(home string, prefix []string, stagedYolo string) string {
+	return sandboxPathForYoloHomes(accountHomes(home), prefix, stagedYolo)
+}
+
+// sandboxPathForYoloHomes is SandboxPathForYolo for a launch's Homes (sandboxPathForHomes).
+func sandboxPathForYoloHomes(h Homes, prefix []string, stagedYolo string) string {
 	if stagedYolo == "" {
-		return SandboxPath(home, prefix)
+		return sandboxPathForHomes(h, prefix, filepath.Dir(StagedYoloPath("")))
 	}
-	return SandboxPathForGuestBin(home, prefix, filepath.Dir(stagedYolo))
+	return sandboxPathForHomes(h, prefix, filepath.Dir(stagedYolo))
 }
 
 // LaunchArgv builds the `/usr/bin/sudo -n --set-home --user=_yolojail /usr/bin/env -i …
@@ -1389,7 +1400,7 @@ func LaunchArgvWithGuard(runAs RunAs, agentArgv []string, profilePath, envFile s
 	if home == "" {
 		home = SandboxHome()
 	}
-	envPairs := sandboxEnvPairs(accountHomes(home), user, SandboxPathForYolo(home, pathPrefix, stagedYolo), envFile)
+	envPairs := sandboxEnvPairs(runAs.homes(home), runAs.user(user), sandboxPathForYoloHomes(runAs.homes(home), pathPrefix, stagedYolo), envFile)
 	// Run the agent from the workspace: a zsh cd's in, then execs the agent so it inherits
 	// the TTY and PID.
 	quotedAgent := make([]string, len(agentArgv))

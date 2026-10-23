@@ -58,3 +58,20 @@ func TestRealRunnersBuildCommandsThroughCommandFor(t *testing.T) {
 		}
 	}
 }
+
+// A RUN-AS-YOU CROSSING STARTS IN `/` as well, the account mode's guarantee kept in the other
+// mode: the crossing runs under the deny-by-default profile, which opens `/` and the granted roots
+// and not wherever `yolo` was typed. Each self-mode crossing the plan carries is checked, built
+// through the real builders, so a self argv that stopped starting with /usr/bin/env, or a
+// commandFor that stopped recognizing it, fails here.
+func TestCommandForStartsASelfCrossingInRoot(t *testing.T) {
+	plan := selfRunPlan(t, "/Users/you/code/alpha")
+	for name, argv := range map[string][]string{
+		"launch": plan.LaunchArgv, "bootstrap": plan.BootstrapArgv,
+		"context preflight": RunAs{Mode: ModeSelf}.Argv(false, testBin, "-r", "/Users/Shared/data"),
+	} {
+		if got := commandFor(argv).Dir; got != "/" {
+			t.Errorf("%s: a self-mode crossing starts in %q, want / (argv %v)", name, got, argv)
+		}
+	}
+}

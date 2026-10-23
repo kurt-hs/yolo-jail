@@ -364,3 +364,27 @@ func TestASealedMacosUserLaunchRelocatesNothing(t *testing.T) {
 		t.Errorf("a sealed launch made the target %s", target)
 	}
 }
+
+// IN THE RUN-AS-YOU MODE A CREATED TARGET IS GRANTED NOTHING (the sandbox is you; there is no
+// second account to open it to), and the disclosure says so by not naming one. Fails if the arm
+// stops reading the mode: it would run the two access-entry commands naming an account that may
+// not exist.
+func TestTheRunAsYouArmGrantsACreatedTargetNothing(t *testing.T) {
+	target := filepath.Join(floortest.ResolvedTemp(t), "hf")
+	relocLaunchHome(t, target)
+	var grants *[][]string
+	ctx, out := runMacosUserCapturingCtx(t, floortest.ResolvedTemp(t), func(o *Options) {
+		grants = grantRecorder(o, 0, "")
+		o.MacosUserMode = macosuser.ModeSelf
+	})
+	if len(ctx.Relocations) != 1 || !ctx.Relocations[0].Created {
+		t.Fatalf("the backend was handed %+v\n%s", ctx.Relocations, out)
+	}
+	if len(*grants) != 0 {
+		t.Errorf("the run-as-you arm granted access entries: %v", *grants)
+	}
+	if !strings.Contains(out, "Cache relocation: created "+target+" for ~/.cache/huggingface") ||
+		strings.Contains(out, "opened it to") {
+		t.Errorf("the run-as-you disclosure is wrong:\n%s", out)
+	}
+}

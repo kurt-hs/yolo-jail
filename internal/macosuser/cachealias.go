@@ -1,7 +1,11 @@
 package macosuser
 
 import (
+	"encoding/json"
 	"path/filepath"
+	"strings"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 )
 
 // cachealias.go is the macos-user half of package-cache aliasing in the run-as-you mode
@@ -12,14 +16,14 @@ import (
 // cache, plus a profile block opening that cache read and write — the link-plus-allow shape
 // `cache_relocations` already has on this backend, never a bind.
 //
-// ⚠ DORMANT UNTIL SLICE 6. Production runs the account mode, which hostcas declines for every
-// store and PlanInvariants refuses here too, so no plan carries an alias today. Two halves are
-// left for the self-mode launch to wire, because their files belong to other slices:
+// LIVE IN THE RUN-AS-YOU MODE ONLY (macos_user_mode "self", slice 6). The account mode, still
+// the default, is declined for every store by hostcas, and PlanInvariants refuses an alias on
+// it here too. The two halves a self-mode plan carries:
 //
-//   - the PROFILE: CacheAliasAllow renders the block, and DenyDefaultProfile
-//     (seatbeltdeny.go) must splice it after the home read and write denies it re-opens;
-//   - the LINK: the bootstrap's home layout (entrypoint's darwinhomelayout.go) must lay
-//     Link → Target for each alias, as it lays a relocation's link.
+//   - the PROFILE: DenyDefaultProfile (seatbeltdeny.go) splices CacheAliasAllow among its write
+//     allows, so the write carve-outs after it stay terminal and the closing denies beat it;
+//   - the LINK: the bootstrap's home layout (entrypoint's darwinhomelayout.go) lays
+//     Link → Target for each alias, named to it as entrypoint.DarwinCacheAliasesEnv.
 
 // CacheAliasAllowID is the profile id of the block CacheAliasAllow renders.
 const CacheAliasAllowID = "cache-alias-allow"
@@ -75,6 +79,27 @@ func cacheAliasProblems(plan RunPlan) []string {
 				", not a resolved absolute path; the profile's rule on it would match nothing")
 		case a.Link == a.Target:
 			problems = append(problems, "cache alias for "+a.Tool+" links "+a.Link+" to itself")
+		}
+	}
+	if plan.RunAs.Mode != ModeSelf {
+		return problems
+	}
+	// BOTH HALVES, read off the plan: the profile opens each target, and the bootstrap is told to
+	// lay each link. Either alone is a dead alias — a link into a refused path, or an allow on a
+	// cache nothing points at.
+	allow := profileBlock(plan.Seatbelt, CacheAliasAllowID)
+	links := map[string]string{}
+	if wire, ok := argvEnvValue(plan.BootstrapArgv, entrypoint.DarwinCacheAliasesEnv); ok {
+		_ = json.Unmarshal([]byte(wire), &links)
+	}
+	for _, a := range plan.CacheAliases {
+		if !strings.Contains(allow, "(subpath "+sbplStr(a.Target)+")") {
+			problems = append(problems, "cache alias for "+a.Tool+": the Seatbelt profile does not open "+
+				a.Target+"; the link would lead into a refused path")
+		}
+		if links[a.Link] != a.Target {
+			problems = append(problems, "cache alias for "+a.Tool+" is not named to the bootstrap ("+
+				entrypoint.DarwinCacheAliasesEnv+"); no link would be laid at "+a.Link)
 		}
 	}
 	return problems

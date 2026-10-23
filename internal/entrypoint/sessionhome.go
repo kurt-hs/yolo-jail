@@ -396,6 +396,21 @@ func takeSessionRenderLock(e *Env) (func(), error) {
 	return func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); _ = f.Close() }, nil
 }
 
+// SharedDirsAt is the `scope: machine` dirs (packload.SharedDirs) of the packs staged at
+// packRoot, read through the same strict host-side reader as HasSessionHomesAt. The macos-user
+// plan builder asks it for a run-as-you session's profile, which opens each selected one in the
+// shared store and no other (MMP-D6). An empty packRoot is a launch that staged no packs: none.
+func SharedDirsAt(packRoot string) ([]string, error) {
+	if packRoot == "" {
+		return nil, nil
+	}
+	packs, err := loadPackRoot(&Env{}, packRoot)
+	if err != nil {
+		return nil, err
+	}
+	return packload.SharedDirs(packs), nil
+}
+
 // HasSessionHomesAt reads the selected staged tree through the same strict host-side
 // reader as DeclaredNodeFloorsAt. A nondeclaring launch needs no config-home wrapper.
 func HasSessionHomesAt(packRoot string) (bool, error) {

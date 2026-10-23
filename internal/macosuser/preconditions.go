@@ -2,6 +2,7 @@ package macosuser
 
 import (
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
@@ -409,6 +410,42 @@ func unmetLaunchPrecondition(p LaunchProbes, workspace string) (Precondition, bo
 	return Precondition{}, false
 }
 
+// selfModePreconditionIDs are the preconditions a run-as-you launch asks (slice 6 of
+// docs/design/macos-user-model-plan.md): the machine (macOS, not root, Seatbelt) and the staging
+// root it stages into. None of the account's: no sandbox user or home, no run-as rule, no
+// neutral-ground rule (a workspace may be anywhere, design §7) and no workspace sharing (the
+// sandbox is you, so Unix permissions already let it write your workspace).
+var selfModePreconditionIDs = []string{
+	PreconditionMacOS, PreconditionNotRoot, PreconditionSeatbelt,
+	PreconditionStagingRoot, PreconditionStagingRootOwner, PreconditionStagingRootSafe,
+}
+
+// unmetSelfModePrecondition is the run-as-you launch's walk over selfModePreconditionIDs, in the
+// launch's order, and the refusal for the first that does not hold. An ABSENT staging root is
+// created first (MMP-D8): `/Users/Shared` is 1777, so making it needs no root and no setup, and it
+// is made through the setup's own step (ensureHostOwnedRoot's mkdir branch), mode 0755, yours,
+// with no access list. A root that is foreign, a link or unsafe stays a refusal.
+func unmetSelfModePrecondition(deps Deps, out printer, workspace string) (refusal string, unmet bool) {
+	p := deps.launchProbes()
+	for _, c := range LaunchPreconditions() {
+		if !slices.Contains(selfModePreconditionIDs, c.ID) {
+			continue
+		}
+		if c.ID == PreconditionStagingRoot && p.stagingRootVerdict() == StagingRootAbsent {
+			if ensureHostOwnedRoot(deps, out, StagingRoot(), "", false) != 0 {
+				return "[bold red]Could not create the macos-user staging directory " + StagingRoot() +
+					".[/bold red] The run-as-you mode makes it itself, as you, with no admin step; the " +
+					"step that failed is above. Create it yourself and launch again:\n" +
+					"  [bold]mkdir -m 0755 " + StagingRoot() + "[/bold]", true
+			}
+		}
+		if !c.Holds(p, workspace) {
+			return c.Refusal(workspace), true
+		}
+	}
+	return "", false
+}
+
 // privilegePreconditions are the setup's privilege facts: the staging root's three and the run-as
 // rule. PrivilegeUnmet asks them and what they require.
 var privilegePreconditions = []string{
@@ -465,10 +502,33 @@ type PreconditionResult struct {
 // its answer would be meaningless (no account to name) or its remedy wrong (the ACL fix under
 // a home). `workspace` is resolved here, the way the launch resolves it.
 func CheckLaunchPreconditions(p LaunchProbes, workspace string) []PreconditionResult {
+	return CheckLaunchPreconditionsFor(ModeAccount, p, workspace)
+}
+
+// CheckLaunchPreconditionsFor is CheckLaunchPreconditions for a launch's mode. The run-as-you
+// mode's report holds the rows its launch asks and no others (selfModePreconditionIDs), and an
+// absent staging root holds there, since the launch makes it (unmetSelfModePrecondition).
+func CheckLaunchPreconditionsFor(mode Mode, p LaunchProbes, workspace string) []PreconditionResult {
 	ws := resolvePathAbs(workspace)
 	var out []PreconditionResult
 	byID := map[string]PreconditionResult{}
 	for _, c := range LaunchPreconditions() {
+		if mode == ModeSelf {
+			if !slices.Contains(selfModePreconditionIDs, c.ID) {
+				continue
+			}
+			if p.stagingRootVerdict() == StagingRootAbsent {
+				switch c.ID {
+				case PreconditionStagingRoot:
+					c.holds = func(LaunchProbes, string) bool { return true }
+					c.Ready = func(string) string {
+						return "Staging directory " + StagingRoot() + " is absent; the launch creates it, as you"
+					}
+				case PreconditionStagingRootOwner, PreconditionStagingRootSafe:
+					continue // nothing there yet to own or to be unsafe; the launch makes it right
+				}
+			}
+		}
 		r := PreconditionResult{Precondition: c, Workspace: ws, Checked: true}
 		for _, req := range c.Requires {
 			got := byID[req]

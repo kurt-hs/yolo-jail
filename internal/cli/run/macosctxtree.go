@@ -460,10 +460,7 @@ func (o *Options) macosCtxLinks(cfg *jsonx.OrderedMap, packs []*packload.Pack,
 	if len(links) == 0 && len(copies) == 0 {
 		return nil, nil, nil
 	}
-	siting := macosuser.DarwinContextSiting()
-	if o.macosCtxSiting != nil {
-		siting = *o.macosCtxSiting
-	}
+	siting := o.macosSiting()
 	declared := macosDeclaredHostFileDests(packs)
 	forLinks := append([]string(nil), declared...)
 	for _, c := range copies {

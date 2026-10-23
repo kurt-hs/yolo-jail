@@ -111,6 +111,10 @@ type Deps struct {
 	// internal/cli/run (run.HoldAccountHome), which imports this package. nil takes no hold, which
 	// is what the four `yolo macos-*` commands get (RealDeps): none of them lays the links.
 	HoldAccountHome func(workspace, cname, step string) (release func(), refusal string)
+	// DarwinUserTempDir is `getconf DARWIN_USER_TEMP_DIR` of the invoking user, or "" when it
+	// cannot be read. Asked only in the run-as-you mode, whose profile opens that directory under
+	// the shared-/tmp ruling (ProfileParams.DarwinUserTempDir). nil reads "".
+	DarwinUserTempDir func() string
 	// Ending reports that a signal has begun ending this launch, with the status it ends with
 	// (128+N): the launch's signal arm's answer (internal/cli/run's macosuserarm.go). RunMacosUser
 	// asks it at each step boundary and returns that status, so every deferred teardown runs. nil
@@ -307,12 +311,39 @@ type Options struct {
 	// nil: a launch with no keeper grants every one, as before.
 	SkipGrant func(path string) bool
 	OnStaged  func(paths []string)
+	// Mode is who the sandbox runs as (mode.go), read by cli from the user-scope
+	// `macos_user_mode`; the zero value is the second account, the default. HostHome and HostUser
+	// are the invoking user's resolved home and name, which the run-as-you mode runs with
+	// (PlanSession); the account mode reads neither.
+	Mode     Mode
+	HostHome string
+	HostUser string
 }
+
+// SelfModeDisclosure is the line a run-as-you launch prints first (macos_user_mode "self"): who
+// the agent runs as, and what confines it instead of a second account.
+const SelfModeDisclosure = "[bold]macos-user runs the agent as you[/bold] (macos_user_mode \"self\", " +
+	"experimental), with no second account, under the deny-by-default Seatbelt profile: it opens " +
+	"this workspace, the agent's own home in .yolo/home and the tools, and denies the rest of your " +
+	"files, your keychain and your other processes."
 
 // runAs is the launch's one crossing into the sandbox (mode.go, MMP-D4): the preflights the
 // orchestrator asks before the plan exists and the plan itself (PlanSession.Mode) both take it from
-// here. Always the second account until the plan's slice 6 reads macos_user_mode.
-func (o Options) runAs() RunAs { return RunAs{} }
+// here.
+func (o Options) runAs() RunAs {
+	if o.Mode != ModeSelf {
+		return RunAs{}
+	}
+	return RunAs{Mode: ModeSelf, Homes: o.homes(), User: o.HostUser}
+}
+
+// homes is the launch's Homes (LaunchHomes): SandboxHome() in every role in the account mode.
+func (o Options) homes() Homes {
+	if o.Mode != ModeSelf {
+		return accountHomes("")
+	}
+	return LaunchHomes(ModeSelf, resolvePathAbs(o.Workspace), o.HostHome)
+}
 
 // grantTarget is the path a stage command grants the sandbox account an ACE on (`chmod +a <ace>
 // <path>`), and whether it is such a grant.
@@ -666,8 +697,9 @@ func buildPlan(deps Deps, opts Options, darwin *Darwin) RunPlan {
 		identity = legacyGuestBundleIdentity(root)
 	}
 	opts.BundleIdentity = identity
-	home := SandboxHome()
-	loginPath := SandboxPathForGuestBin(home, sandboxPathPrefix(darwin),
+	homes := opts.homes()
+	home := homes.Home
+	loginPath := sandboxPathForHomes(homes, sandboxPathPrefix(darwin),
 		GuestSessionBinDir(opts.BundleIdentity, opts.SessionID, ""))
 	var met func(string) bool
 	if deps.NodeFloorMet != nil {
@@ -685,7 +717,8 @@ func buildPlan(deps Deps, opts Options, darwin *Darwin) RunPlan {
 		selfExe, opts.HostPackRoot, overlay, opts.HostCtx, env, darwin,
 		opts.BlockedTools, opts.JailDaemons, floors, programs,
 		PlanSession{ID: opts.SessionID, BundleIdentity: opts.BundleIdentity, CATrust: opts.CATrust,
-			Mode: opts.runAs().Mode})
+			Mode: opts.Mode, HostHome: opts.HostHome, HostUser: opts.HostUser,
+			DarwinUserTempDir: deps.darwinUserTempDir(opts.Mode)})
 }
 
 // programReadinessStageFor is JR-D2's host-side stage-admission check. The same staged pack
@@ -903,6 +936,13 @@ func RunMacosUser(deps Deps, opts Options) int {
 	}
 	opts.BundleIdentity = identity
 
+	// THE RUN-AS-YOU MODE IS SAID, every launch and every dry run, before anything else is asked:
+	// the agent is you, so what keeps your files from it is the profile alone (OQ-RO3: a
+	// disclosure is never suppressible).
+	if opts.Mode == ModeSelf {
+		out.print(SelfModeDisclosure)
+	}
+
 	// 0. Dry-run: build the plan, print it + invariants, execute nothing. Pure
 	// (darwin=nil → no nix build), so CI and a Mac agent can both inspect it.
 	// The plan (and the env-source warnings intermixed with it) stays plain text,
@@ -944,7 +984,15 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// `yolo check` reports from the same list. The first one that does not hold refuses the
 	// launch with its own message; nothing after it is asked.
 	steps.begin("preconditions")
-	if c, unmet := unmetLaunchPrecondition(deps.launchProbes(), opts.Workspace); unmet {
+	if opts.Mode == ModeSelf {
+		// THE RUN-AS-YOU MODE asks the machine's and the staging root's alone, and makes an absent
+		// staging root itself (unmetSelfModePrecondition): no account, admin setup, access grants
+		// or projects folder (design §7).
+		if refusal, unmet := unmetSelfModePrecondition(deps, out, opts.Workspace); unmet {
+			out.print(refusal)
+			return 1
+		}
+	} else if c, unmet := unmetLaunchPrecondition(deps.launchProbes(), opts.Workspace); unmet {
 		out.print(c.Refusal(opts.Workspace))
 		return 1
 	}
@@ -955,8 +1003,11 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// half-hour build. And before the context preflight, the first step that crosses into the
 	// sandbox account: the hold runs none. Held until this function returns — after the session
 	// and after every teardown deferred below, which run first.
+	//
+	// NOT IN THE RUN-AS-YOU MODE, which has no account home: each workspace's HOME is its own
+	// .yolo/home, so two workspaces launch at once with nothing shared to hold.
 	steps.begin("account_home")
-	if deps.HoldAccountHome != nil {
+	if deps.HoldAccountHome != nil && opts.Mode != ModeSelf {
 		releaseHome, refusal := deps.HoldAccountHome(opts.Workspace, cnameFor(opts.Workspace),
 			containerStep(opts.PackEnv))
 		if refusal != "" {
@@ -1428,6 +1479,20 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// Ended here, not by the defer, so the teardown's own spans come after the session's.
 	steps.end()
 	return rc
+}
+
+// darwinUserTempDir is the invoking user's DARWIN_USER_TEMP_DIR, physical and with no trailing
+// slash (a profile rule on the /var spelling matches nothing), asked only in the run-as-you mode;
+// "" otherwise or when it cannot be read.
+func (d Deps) darwinUserTempDir(mode Mode) string {
+	if mode != ModeSelf || d.DarwinUserTempDir == nil {
+		return ""
+	}
+	p := strings.TrimRight(strings.TrimSpace(d.DarwinUserTempDir()), "/")
+	if p == "" || !filepath.IsAbs(p) {
+		return ""
+	}
+	return resolvePathAbs(p)
 }
 
 // ending is Deps.Ending, false when no arm is wired.
@@ -2301,6 +2366,7 @@ func RealDeps(runProxy func(argv []string) int, materialize func(repoRoot string
 		RemoveFile:          removeFileReal,
 		StagingRootFacts:    stagingRootFactsReal,
 		RunAsGrant:          runAsGrantReal,
+		DarwinUserTempDir:   darwinUserTempDirReal,
 		Out:                 LaunchWriter(),
 		Color:               color,
 	}
