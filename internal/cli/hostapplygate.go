@@ -489,6 +489,9 @@ func hostApplyGateApply(errw io.Writer, bin, home string) bool {
 			return true
 		}
 		if len(related) > 0 && !wrote.unattributedFailure() {
+			// The apply already retired files and saved the record; this refused launch is the
+			// only one that can say so.
+			reportGateFilesRetires(errw, home, wrote)
 			refuseLaunchOverFailures(errw, home, bin, related)
 			return false
 		}

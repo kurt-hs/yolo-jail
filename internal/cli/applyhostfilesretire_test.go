@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -189,5 +190,35 @@ func TestHostApplyNamesAReplacedPathOfAPackWithNoFilesLeft(t *testing.T) {
 	}
 	if fi, err := os.Lstat(a); err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		t.Errorf("the user's link was touched: %v", err)
+	}
+}
+
+// A launch the gate refuses over a write-time failure in the program's own configuration still
+// discloses what the apply's files retire already did: the files are gone and the record is
+// saved, so this is the only launch that can say so.
+func TestHostApplyGateRefusalStillShowsTheFilesRetire(t *testing.T) {
+	ext, declare := filesRetireFixture(t)
+	declare(`{"kind":"files","from":"files/a.ts","into":".scratch/ext/a.ts"},` +
+		`{"kind":"files","from":"files/b.ts","into":".scratch/ext/b.ts"}`)
+	if rc, report := applyWith(t, true, nil); rc != 0 {
+		t.Fatalf("assert apply rc=%d\n%s", rc, report)
+	}
+	declare(`{"kind":"files","from":"files/b.ts","into":".scratch/ext/b.ts"}`)
+	prev := hostApplyGateWrite
+	hostApplyGateWrite = func(out, errw io.Writer, color, write bool, stdin io.Reader, s *hostApplySurvey) int {
+		applyHostSurveyed(out, errw, color, write, stdin, s)
+		s.failures = append(s.failures, hostFailure{What: "boom"})
+		return 1
+	}
+	t.Cleanup(func() { hostApplyGateWrite = prev })
+	var errw bytes.Buffer
+	if hostApplyGate(&errw, nil, "pi") {
+		t.Fatalf("the gate launched over a failure in pi's own configuration:\n%s", errw.String())
+	}
+	if _, err := os.Lstat(filepath.Join(ext, "a.ts")); !os.IsNotExist(err) {
+		t.Fatalf("the gate's apply did not retire a.ts (%v):\n%s", err, errw.String())
+	}
+	if want := "yolo host: lp/files ~/.scratch/ext/a.ts: removed"; !strings.Contains(errw.String(), want) {
+		t.Errorf("the refusal must still disclose the removal (%q):\n%s", want, errw.String())
 	}
 }
