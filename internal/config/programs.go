@@ -1,9 +1,16 @@
 package config
 
-// programs.go is the `programs` key: today it carries exactly one option, and that option
-// deletes files.
+// programs.go is the `programs` key. Two options, both USER SCOPE ONLY.
 //
-//	"programs": { "autoprune": true }
+//	"programs": {
+//	  "autoprune": true,
+//	  "overrides": { "board": { "path": "~/code/board", "run": "dist/cli.js" } }
+//	}
+//
+// `autoprune` deletes files. `overrides` (docs/design/pack-buildable-programs.md §5, BG-D8)
+// points one program at a host checkout the user is developing, so the bytes that run are
+// the user's own: choosing a program's bytes is the same grant as deleting one, so it is
+// user scope too. Its launch wiring is a later slice; ProgramOverrides is the one reader.
 //
 // It is OQ-PD4's third clause (docs/design/program-delivery.md §10 step four): "removal
 // happens only on an explicit act; autoprune exists as an option, DEFAULT OFF". Turning it on
@@ -26,18 +33,155 @@ package config
 // prunes nothing costs a user nothing, and one that prunes on a guess costs them a binary.
 
 import (
+	"path/filepath"
+	"strings"
+
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// programsKey is the top-level key, and autopruneKey its one option.
+// programsKey is the top-level key, autopruneKey and overridesKey its two options. The
+// override's own fields are pathKey and runKey.
 const (
 	programsKey  = "programs"
 	autopruneKey = "autoprune"
+	overridesKey = "overrides"
+	pathKey      = "path"
+	runKey       = "run"
 )
 
 // knownProgramsKeys is the key census for the `programs` object.
-var knownProgramsKeys = set(autopruneKey)
+var knownProgramsKeys = set(autopruneKey, overridesKey)
+
+// knownProgramOverrideKeys is the census for one `programs.overrides.<bin>` entry.
+var knownProgramOverrideKeys = set(pathKey, runKey)
+
+// ProgramOverride is one `programs.overrides.<bin>` entry as the user's config states it,
+// after validation. Path is ~-expanded and cleaned; it must be absolute. Run is relative
+// and cleaned, or "" when the entry names none (a pack-tree program then runs its own).
+//
+// The directory's existence and its symlink resolution are NOT checked here: they are
+// checked at each fresh launch, on the host, where the bytes are read (BG-D9).
+type ProgramOverride struct {
+	Path string
+	Run  string
+}
+
+// ProgramOverrides returns the user's dev overrides, keyed by program bin. It is the one
+// reader of programs.overrides, and it reads the USER file directly, never the merged or
+// workspace config: a repo-committed file cannot choose a program's bytes.
+//
+// FAILS CLOSED. A user file this cannot read, or a `programs` value that is not an object,
+// yields an empty map, so no override applies. An entry that does not validate is dropped
+// alone, with a warning naming it: its valid siblings still apply. ValidateConfig reports
+// the same entry as an error, so `yolo check` is where the user learns why.
+func ProgramOverrides(warn Warn) map[string]ProgramOverride {
+	out := map[string]ProgramOverride{}
+	if warn == nil {
+		warn = func(string) {}
+	}
+	userPath := paths.UserConfigPath()
+	cfg, err := loadUserScopeConfig(userPath, userPath, false, warn)
+	if err != nil || cfg == nil {
+		return out
+	}
+	v, present := cfg.Get(programsKey)
+	if !present || v == nil {
+		return out
+	}
+	programs, ok := asMap(v)
+	if !ok {
+		return out
+	}
+	ov, present := programs.Get(overridesKey)
+	if !present || ov == nil {
+		return out
+	}
+	entries, ok := asMap(ov)
+	if !ok {
+		return out
+	}
+	for _, bin := range entries.Keys() {
+		raw, _ := entries.Get(bin)
+		var problems []string
+		o, ok := parseProgramOverride(bin, raw, &problems)
+		if !ok || len(problems) > 0 {
+			for _, p := range problems {
+				warn(p + " — this override is ignored")
+			}
+			continue
+		}
+		out[bin] = o
+	}
+	return out
+}
+
+// parseProgramOverride validates one entry and reports every problem as "<field>: <what to
+// do>", the field spelled as the config path a user would edit. It returns ok only when
+// nothing was reported.
+func parseProgramOverride(bin string, v any, errs *[]string) (ProgramOverride, bool) {
+	field := programsKey + "." + overridesKey + "." + bin
+	before := len(*errs)
+	if bin == "" || bin == "." || bin == ".." || strings.ContainsAny(bin, "/\\") {
+		add(errs, "config."+programsKey+"."+overridesKey+"."+bin+": program name must be a "+
+			"single file name, the bin a pack declares (no slash)")
+		return ProgramOverride{}, false
+	}
+	m, ok := asMap(v)
+	if !ok {
+		add(errs, "config."+field+": expected an object with a \"path\" to the program's directory")
+		return ProgramOverride{}, false
+	}
+	reportUnknownKeys(m, knownProgramOverrideKeys, "config."+field, errs)
+
+	var o ProgramOverride
+	pv, present := m.Get(pathKey)
+	switch {
+	case !present || pv == nil:
+		add(errs, "config."+field+"."+pathKey+": required — the directory the program runs "+
+			"from, an absolute path or one starting with ~/")
+	default:
+		p, isStr := pv.(string)
+		switch {
+		case !isStr:
+			add(errs, "config."+field+"."+pathKey+": expected a string")
+		case p == "":
+			add(errs, "config."+field+"."+pathKey+": empty — give the directory the program runs from")
+		case p == "~" || strings.HasPrefix(p, "~/"):
+			o.Path = filepath.Clean(filepath.Join(paths.Home(), p[1:]))
+		case strings.HasPrefix(p, "~"):
+			add(errs, "config."+field+"."+pathKey+": "+p+" names another user's home; write the "+
+				"absolute path, or ~/ for your own home")
+		case !filepath.IsAbs(p):
+			add(errs, "config."+field+"."+pathKey+": "+p+" is not absolute; write the absolute "+
+				"path, or one starting with ~/")
+		default:
+			o.Path = filepath.Clean(p)
+		}
+	}
+
+	if rv, present := m.Get(runKey); present && rv != nil {
+		r, isStr := rv.(string)
+		c := filepath.Clean(r)
+		switch {
+		case !isStr:
+			add(errs, "config."+field+"."+runKey+": expected a string")
+		case r == "":
+			add(errs, "config."+field+"."+runKey+": empty — remove the key to run the program's own file")
+		case filepath.IsAbs(r):
+			add(errs, "config."+field+"."+runKey+": "+r+" is absolute; give the file relative to "+
+				"\"path\"")
+		case containsDotDot(r):
+			add(errs, "config."+field+"."+runKey+": "+r+" contains \"..\"; the file must sit "+
+				"inside \"path\"")
+		case c == ".":
+			add(errs, "config."+field+"."+runKey+": names the directory itself; give the file")
+		default:
+			o.Run = c
+		}
+	}
+	return o, len(*errs) == before
+}
 
 // ProgramsAutoprune reports whether the USER's config turns the boot's orphan autoprune on.
 //
@@ -86,7 +230,8 @@ func validatePrograms(config *jsonx.OrderedMap, workspace string, errs *[]string
 			add(errs, "config."+programsKey+": user-scope only — move it to "+
 				"~/.config/yolo-jail/config.jsonc. A workspace config travels with the "+
 				"repo and is agent-editable, so it cannot authorise deleting programs "+
-				"out of the jail's home.")
+				"out of the jail's home, nor choose which bytes a program runs "+
+				"(programs.overrides).")
 		}
 	}
 	if v == nil {
@@ -101,6 +246,17 @@ func validatePrograms(config *jsonx.OrderedMap, workspace string, errs *[]string
 	if on, present := programs.Get(autopruneKey); present && on != nil {
 		if _, ok := on.(bool); !ok {
 			add(errs, "config."+programsKey+"."+autopruneKey+": expected true or false")
+		}
+	}
+	if ov, present := programs.Get(overridesKey); present && ov != nil {
+		entries, ok := asMap(ov)
+		if !ok {
+			add(errs, "config."+programsKey+"."+overridesKey+": expected an object keyed by program bin")
+			return
+		}
+		for _, bin := range entries.Keys() {
+			raw, _ := entries.Get(bin)
+			parseProgramOverride(bin, raw, errs)
 		}
 	}
 }

@@ -307,7 +307,10 @@ var inheritCensus = map[string]keyDisposition{
 	// decision rather than an omission — an inner launcher inheriting it would hand a
 	// nested jail's own home a standing licence to delete, which the human who set the
 	// option for their machine never granted for a container's throwaway one.
-	"programs": {reason: "host-read via ProgramsAutoprune and delivered as an env var; no in-jail reader, and a nested launch must not inherit a destructive option"},
+	// `programs.overrides` (BG-D15) takes the same line for a second reason: it points a
+	// program at a host checkout, so inheriting it would hand an inner launch the outer
+	// user's bytes. An inner launch reads its own user config, which decides its own.
+	"programs": {reason: "host-read via ProgramsAutoprune and delivered as an env var; no in-jail reader, and a nested launch must not inherit a destructive option or an outer user's program overrides"},
 	// `mounts`: host paths again. Measured to warn "host path does not exist and will be
 	// skipped" for every host path in an in-jail check.
 	"mounts": {reason: "host paths absent in the container; validation warns on every one"},

@@ -196,7 +196,8 @@ var hostConfigKeys = map[string]keyCensusEntry{
 	"programs": {KeyNotApplicable, "`programs.autoprune` lets a jail's boot delete the orphaned " +
 		"agent binaries in its home; the host floor removes a deselected program on an owned " +
 		"host's `yolo host apply --assert` whatever this key says (HP-D8), and under \"none\" " +
-		"`yolo check` names the removal by hand"},
+		"`yolo check` names the removal by hand. `programs.overrides` (a dev checkout for one " +
+		"program) is user scope and no `yolo host apply` file renders it yet"},
 	// Not unbuilt: host-agent-environment.md's HP-DIR3 (2026-09-29) rules that at the host yolo
 	// manages the agent's environment and never the workspace's runtime, which is what
 	// `packages:` declares, so provisioner-sets.md's OQ-PS1 gives darwinpkg.MaterializeAt no host

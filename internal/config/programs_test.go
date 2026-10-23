@@ -136,3 +136,136 @@ func anyContains(list []string, sub string) bool {
 	}
 	return false
 }
+
+// programs.overrides (docs/design/pack-buildable-programs.md §5, BG-D8) is the user's dev
+// checkout for one program. It shares the autoprune key's scope rule and its failure rule:
+// a user file this cannot read applies NO override, and a workspace file cannot set one.
+// Its launch wiring is a later slice; these tests pin the reader and the validator.
+
+// TestProgramOverridesReadsTheUserConfig: path is ~-expanded and cleaned, run is kept
+// relative, and run is optional.
+func TestProgramOverridesReadsTheUserConfig(t *testing.T) {
+	home := programsHome(t)
+	userConfigWith(t, home, `{"programs": {"overrides": {
+		"board": {"path": "~/x"},
+		"pi":    {"path": "/srv/pi", "run": "dist/cli.js"}
+	}}}`)
+	got := ProgramOverrides(nil)
+	if len(got) != 2 {
+		t.Fatalf("want two overrides, got %d: %+v", len(got), got)
+	}
+	if want := filepath.Join(home, "x"); got["board"].Path != want {
+		t.Errorf("board.Path = %q, want %q (~ expanded)", got["board"].Path, want)
+	}
+	if got["board"].Run != "" {
+		t.Errorf("board.Run = %q, want empty: run is optional", got["board"].Run)
+	}
+	if got["pi"].Path != "/srv/pi" || got["pi"].Run != "dist/cli.js" {
+		t.Errorf("pi = %+v, want path /srv/pi and run dist/cli.js", got["pi"])
+	}
+}
+
+// TestProgramOverridesShapeIsValidated: every malformed shape is an error NAMING the field
+// (and so the fix), reached through ValidateConfig, which is what `yolo check` and the
+// launch preflight both call.
+//
+// MUTATION: delete the overrides branch from validatePrograms and every row goes red.
+func TestProgramOverridesShapeIsValidated(t *testing.T) {
+	programsHome(t)
+	ws := t.TempDir()
+	cases := []struct{ body, want string }{
+		{`{"programs": {"overrides": {"board": {"path": ""}}}}`, "config.programs.overrides.board.path"},
+		{`{"programs": {"overrides": {"board": {}}}}`, "config.programs.overrides.board.path"},
+		{`{"programs": {"overrides": {"board": {"path": 7}}}}`, "config.programs.overrides.board.path"},
+		{`{"programs": {"overrides": {"board": {"path": "rel/x"}}}}`, "config.programs.overrides.board.path"},
+		{`{"programs": {"overrides": {"board": {"path": "~bob/x"}}}}`, "config.programs.overrides.board.path"},
+		{`{"programs": {"overrides": {"board": {"path": "/x", "run": "../y"}}}}`, "config.programs.overrides.board.run"},
+		{`{"programs": {"overrides": {"board": {"path": "/x", "run": "a/../../y"}}}}`, "config.programs.overrides.board.run"},
+		{`{"programs": {"overrides": {"board": {"path": "/x", "run": "/abs/y"}}}}`, "config.programs.overrides.board.run"},
+		{`{"programs": {"overrides": {"board": {"path": "/x", "run": ""}}}}`, "config.programs.overrides.board.run"},
+		{`{"programs": {"overrides": {"board": {"path": "/x", "run": 3}}}}`, "config.programs.overrides.board.run"},
+		{`{"programs": {"overrides": {"board": {"path": "/x", "color": "red"}}}}`, "config.programs.overrides.board.color: unknown key"},
+		{`{"programs": {"overrides": {"a/b": {"path": "/x"}}}}`, "config.programs.overrides.a/b: program name"},
+		{`{"programs": {"overrides": {"board": "/x"}}}`, "config.programs.overrides.board: expected an object"},
+		{`{"programs": {"overrides": ["board"]}}`, "config.programs.overrides: expected an object"},
+	}
+	for _, c := range cases {
+		errs, _ := ValidateConfig(decode(t, c.body), ws, nil)
+		if !anyContains(errs, c.want) {
+			t.Errorf("%s should report %q, got %v", c.body, c.want, errs)
+		}
+	}
+	// The documented spelling validates clean.
+	errs, _ := ValidateConfig(decode(t, `{"programs": {"overrides": {"pi": {"path": "~/code/pi", "run": "packages/coding-agent/dist/cli.js"}}}}`), ws, nil)
+	for _, e := range errs {
+		if strings.HasPrefix(e, "config.programs") {
+			t.Errorf("the documented override spelling must validate: %s", e)
+		}
+	}
+}
+
+// TestProgramOverridesFailsClosed: a user file this cannot read applies no override at all,
+// and one bad entry drops only itself (with a warning), never its valid siblings. A launch
+// never runs a checkout the user did not, in full, ask for.
+//
+// MUTATION: make ProgramOverrides return the entries it could parse from a malformed file,
+// or keep an entry it warned about, and this goes red.
+func TestProgramOverridesFailsClosed(t *testing.T) {
+	home := programsHome(t)
+	userConfigWith(t, home, `{"programs": {"overrides": {"board": {"path": `)
+	if got := ProgramOverrides(nil); len(got) != 0 {
+		t.Errorf("a malformed user file must apply no override, got %+v", got)
+	}
+
+	userConfigWith(t, home, `{"programs": {"overrides": {
+		"bad":  {"path": "rel/x"},
+		"good": {"path": "/srv/good"}
+	}}}`)
+	var warned []string
+	got := ProgramOverrides(func(m string) { warned = append(warned, m) })
+	if _, ok := got["bad"]; ok {
+		t.Errorf("an invalid entry must not apply: %+v", got["bad"])
+	}
+	if got["good"].Path != "/srv/good" {
+		t.Errorf("a valid sibling must still apply: %+v", got)
+	}
+	if !anyContains(warned, "programs.overrides.bad") {
+		t.Errorf("the dropped entry must be named in a warning, got %v", warned)
+	}
+}
+
+// TestProgramOverridesIsUserScopeOnly: a workspace config setting overrides is a validation
+// error that names the user file, and the reader never consults the workspace.
+//
+// MUTATION: point ProgramOverrides at the merged config, or delete the `programs` workspace
+// check, and the assertions go red.
+func TestProgramOverridesIsUserScopeOnly(t *testing.T) {
+	programsHome(t)
+	ws := t.TempDir()
+	writeConfigAt(t, filepath.Join(ws, "yolo-jail.jsonc"),
+		`{"programs": {"overrides": {"board": {"path": "/srv/board"}}}}`)
+	t.Chdir(ws)
+
+	if got := ProgramOverrides(nil); len(got) != 0 {
+		t.Errorf("a WORKSPACE CONFIG applied an override: %+v", got)
+	}
+	cfg := decode(t, `{"programs": {"overrides": {"board": {"path": "/srv/board"}}}}`)
+	errs, _ := ValidateConfig(cfg, ws, nil)
+	if !anyContains(errs, "user-scope only") || !anyContains(errs, "config.jsonc") {
+		t.Errorf("a workspace override must be an ERROR naming the user config file: %v", errs)
+	}
+}
+
+// TestProgramOverridesAreNotInherited: a nested jail's generated user files carry no
+// programs key, so an inner launch cannot inherit an outer checkout (BG-D15).
+//
+// MUTATION: classify `programs` as inherited in inherit.go and this goes red.
+func TestProgramOverridesAreNotInherited(t *testing.T) {
+	effective := decode(t, `{"programs": {"autoprune": true, "overrides": {"board": {"path": "/srv/board"}}}}`)
+	for _, scope := range []InheritScope{InheritPreflight, InheritNested} {
+		out, _ := FilterInherit(effective, scope)
+		if _, ok := out.Get("programs"); ok {
+			t.Errorf("scope %v inherited programs (overrides must never cross a jail boundary)", scope)
+		}
+	}
+}
