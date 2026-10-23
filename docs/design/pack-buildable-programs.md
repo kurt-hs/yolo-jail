@@ -2,7 +2,7 @@
 title: "A pack's own tool, built from its own tree: one more source for the fork route's build act"
 status: in-review
 stage: DESIGN
-next: "Morning review: rule OQ-BG3 and review the BG-D decisions; builders proceed on the leanings meanwhile, slice by slice in the plan"
+next: "Morning review: the BG-D decisions; builders proceed on the leanings meanwhile, slice by slice in the plan"
 tags: [design, packs, programs, build, capture, overrides, notches]
 summary: "A pack cannot deliver a tool that needs a build from its own tree, point a tool at the checkout being developed, or fetch a verified prebuilt artifact. One new program delivery, `via: \"pack\"`, answers all three with one precedence — a user-scope dev override, then a build of the pack's tree, then a declared prebuilt artifact, then a refusal that names the missing piece. The build is the fork route's sealed build act with a different source, keyed by the tree's content, so nothing new builds, caches, locks or delivers."
 ---
@@ -36,7 +36,7 @@ store mounted on Apple Container below its read-only bind floor.
 **Start at [§4](#4-precedence-one-resolver-four-rungs)**, the precedence. Everything else is how
 each rung gets its bytes.
 
-**Needs your ruling:** [OQ-BG3](#OQ-BG3). **Ruled:** [OQ-BG1](#OQ-BG1), [OQ-BG2](#OQ-BG2) (2026-10-23).
+**Needs your ruling:** nothing open. **Ruled 2026-10-23:** [OQ-BG1](#OQ-BG1), [OQ-BG2](#OQ-BG2), [OQ-BG3](#OQ-BG3).
 
 **Reads with:** [`pack-buildable-programs-plan.md`](pack-buildable-programs-plan.md) (the
 implementation plan, written against the tree tonight on the leanings, by the maintainer's
@@ -60,7 +60,7 @@ ruling says otherwise.
 - [OQ-BG2](#OQ-BG2): ✅ ruled 2026-10-23: never substituted automatically; always available by explicit choice. Original question: may the prebuilt artifact stand in where no build can run on this machine,
   or only where the pack carries no source? I lean towards also allowing it where the builder is
   permanently unavailable, but never where it is only busy.
-- [OQ-BG3](#OQ-BG3): does yolo build a dev override, or run the checkout as it finds it?
+- [OQ-BG3](#OQ-BG3): ✅ ruled 2026-10-23: an override is built at launch from the checkout on disk, like a fork; nothing is picked up inside a running jail.
   I lean towards running it as found.
 
 **Implementation decisions**, each recorded as *decided under the 2026-10-22 overnight
@@ -593,7 +593,7 @@ needs a build. The plan gives each an integration test.
    > with `"prebuilt": true`), and the refusal names that choice. A pack that ships no source uses
    > its prebuilt, since nothing is substituted.
 
-3. 💬 **OQ-BG3: Does yolo build a dev override, or run the checkout as it finds it?**
+3. <a id="OQ-BG3"></a>✅ **OQ-BG3: Does yolo build a dev override, or run the checkout as it finds it?**
 
    The override's purpose is to pick up changes "without a launch". For a compiled tool, someone
    has to rebuild after an edit.
@@ -604,12 +604,19 @@ needs a build. The plan gives each an integration test.
      session's authority on every changed invocation. On `yolo host` it would build on the host.
    - **C — Build at launch, in the sealed jail.** Changes are then picked up only at a launch.
 
-   <!-- vantage: oq id=OQ-BG3 leaning="A — run as found: it is the only option that keeps both 'no launch needed' and 'never build on the host', and the refusal names the build line." -->
 
    _Leaning:_ A — run as found: it is the only option that keeps both "no launch needed" and "never build on the host", and the refusal names the build line.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, against the leaning (C, built the fork way):** *"I don't want
+   > these builds to like automatically be building in the jail. I want them to be like pi
+   > extensions or the pi fork. Like you start the jail, it gets built and that's it. ... I want
+   > workspace B upon launch to recompile from what is sitting on disk at its launch, just like the
+   > forks work. I don't want special behavior here. ... If you're developing board in Jail
+   > Workspace A, you will build it and point to it yourself. You don't need any help from YOLO."*
+   > An override builds the program at each launch from the checkout as it sits on disk, through
+   > the same sealed build act and cache as a pack-tree build; nothing is picked up inside a
+   > running jail.
 
 ## Decision Ledger
 
@@ -620,6 +627,7 @@ reversible until it is built.
 | :--- | :--- | :--- | :--- | :--- |
 | [OQ-BG1](#OQ-BG1) | A pack build that fails is handled identically to a fork build: the same fatal refusal, the same next steps, the same `YOLO_ALLOW_MISSING_PROGRAMS=1` bypass. | 2026-10-23 | [§11](#11-what-done-looks-like) | built: the fork route's missing-build refusal |
 | [OQ-BG2](#OQ-BG2) | A present source is built or the launch stops; a prebuilt is never substituted for it automatically. The user may always choose the prebuilt explicitly at user scope, and a pack shipping no source uses its prebuilt. | 2026-10-23 | [§7](#7-the-prebuilt-artifact) | pending |
+| [OQ-BG3](#OQ-BG3) | A dev override is built at each launch from the checkout as it sits on disk, through the pack-tree build act and its cache; no live mount and no build at run time. | 2026-10-23 | [§5](#5-the-dev-override) | pending |
 | <a id="BG-D1"></a>BG-D1 | **The new delivery is `via: "pack"`**, a fourth value in the closed set, delivered by the source launcher. It is not a relaxed `via: "source"`, which keeps its fork meaning. An older yolo skips the new value with a skew note instead of refusing it as a malformed fork. | 2026-10-22 | [§3](#3-the-declaration), [§12](#12-alternatives-with-verdicts) | — |
 | <a id="BG-D2"></a>BG-D2 | **The build is the fork route's build act**, sealed and never on the host. The pack-tree source is staged by copying the staged pack's `from` minus `.git`, in place of a git checkout. | 2026-10-22 | [§6.3](#63-the-build-act-reused-unchanged) | — |
 | <a id="BG-D3"></a>BG-D3 | **Identity**: source `pack:<pack>/<from>`; revision is the tree digest of `from` with `.git` skipped; recipe is a tagged hash of `build`, `run` and the layout version; platform. The toolchain is recorded, not keyed. | 2026-10-22 | [§6.1](#61-the-source-and-what-keys-it) | — |
