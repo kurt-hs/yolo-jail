@@ -32,9 +32,34 @@ func TestMain(m *testing.M) {
 	// tripwire makes one that does fail here and on CI, not only on a machine that signs.
 	testsupport.ArmGitConfigTripwire()
 	release := testsupport.IsolateHostSingletons()
+	// AN EMPTY HOME OF ITS OWN: Check() reads the user-scope config and global storage under
+	// $HOME, so without this a developer's own config decided what these tests saw. On a Mac
+	// on 2026-10-23 a refused key in the maintainer's config ended the merged section early and
+	// TestCheckReportsAnOptionalMountItWillSkipAsInformation failed; CI's empty home hid it.
+	// A re-exec'd child of a test keeps the HOME its parent chose for it.
+	home := ""
+	if os.Getenv(signalCleanupChildEnv) != "1" {
+		var err error
+		if home, err = os.MkdirTemp("", "yolo-check-home-"); err != nil {
+			panic("isolate HOME: " + err.Error())
+		}
+		_ = os.Setenv("HOME", home)
+		_ = os.Unsetenv("XDG_CONFIG_HOME")
+	}
 	code := m.Run()
 	release()
+	if home != "" {
+		_ = os.RemoveAll(home)
+	}
 	os.Exit(code)
+}
+
+// TestHomeIsIsolatedHere pins TestMain's HOME: no test here reads the developer's own config.
+func TestHomeIsIsolatedHere(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	if !strings.HasPrefix(filepath.Base(home), "yolo-check-home-") {
+		t.Fatalf("HOME is %q, not this package's own; TestMain must isolate it", home)
+	}
 }
 
 // TestGitConfigTripwireIsArmedHere pins TestMain's testsupport.ArmGitConfigTripwire call:
