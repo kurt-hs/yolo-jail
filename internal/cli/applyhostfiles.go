@@ -35,7 +35,7 @@ func applyHostFiles(pr richtext.Printer, errw io.Writer, p *packload.Pack, packs
 	write bool, survey *hostApplySurvey) int {
 	manPath := hostSkillsManifestPath()
 	man, err := hostskills.LoadManifest(manPath)
-	if !declaresKind(p, packdecl.KindFiles) && (err != nil || !ownsRegularFile(man, p.Name)) {
+	if !declaresKind(p, packdecl.KindFiles) && (err != nil || !ownsFilesEntry(man, p.Name)) {
 		// Nothing to render, and nothing an earlier render of this pack wrote that the retire
 		// (entrypoint.RenderHostFiles) could act on: a pack that STOPPED declaring `files`
 		// still gets its old output retired, which is why this is not a bare declaresKind
@@ -67,7 +67,17 @@ func applyHostFiles(pr richtext.Printer, errw io.Writer, p *packload.Pack, packs
 		// tierRun: a `files` render only writes paths this kind's ownership record says are
 		// yolo's, and archives the previous copy of one before replacing it — so nothing of
 		// the user's leaves the home at a destination this loop reports.
-		survey.note(tierRun, string(packdecl.KindFiles), r.Surface, r.Path, r.WouldChange)
+		if r.Retire {
+			// A path the pack NO LONGER ships. The launch gate shows these lines itself, since
+			// its apply's report is buffered (reportGateFilesRetires); and one the retire did
+			// NOT change (left in place, refused) is not "in sync", so it skips the count.
+			survey.noteFilesRetire(r)
+			if r.WouldChange {
+				survey.note(tierRun, string(packdecl.KindFiles), r.Surface, r.Path, true)
+			}
+		} else {
+			survey.note(tierRun, string(packdecl.KindFiles), r.Surface, r.Path, r.WouldChange)
+		}
 		// An UNCHANGED file is detail (report-tiers.md's tier 2): the verdict counts it, and
 		// --verbose lists it. A change prints, and so does a refusal, which no count states.
 		// A FALLBACK TAKEN prints too (pi-extension-store-builds.md XB-D7: "each fallback taken is
@@ -93,12 +103,18 @@ func applyHostFiles(pr richtext.Printer, errw io.Writer, p *packload.Pack, packs
 	return 0
 }
 
-// ownsRegularFile reports whether the ownership record names a regular file as pack's — the
-// shape every `files` render writes, as opposed to a patched extension's link or a
-// pre-composition skill directory.
-func ownsRegularFile(man *hostskills.Manifest, pack string) bool {
+// ownsFilesEntry reports whether the ownership record names a path of pack's that a `files`
+// render wrote and that is still there: a regular file (the shape every render writes), or any
+// path with a content digest (only the `files` render keeps one), so a recorded file the user
+// replaced with a link or a directory still reaches the retire and its left-in-place line. A
+// patched extension's link or a pre-composition skill directory, with no digest, does not.
+func ownsFilesEntry(man *hostskills.Manifest, pack string) bool {
 	for _, dest := range man.EntriesOwnedBy(pack) {
-		if fi, err := os.Lstat(dest); err == nil && fi.Mode().IsRegular() {
+		fi, err := os.Lstat(dest)
+		if err != nil {
+			continue
+		}
+		if _, digest := man.Digest(dest); digest || fi.Mode().IsRegular() {
 			return true
 		}
 	}

@@ -271,6 +271,160 @@ func TestHostFilesRetireCoversAPackWithNoFilesLeft(t *testing.T) {
 	mustRender(t, p, home, req, false)
 	assertGone(t, filepath.Join(home, filepath.FromSlash(extDir), "a.ts"), "the pack ships no files")
 	assertGone(t, filepath.Join(home, filepath.FromSlash(extDir), "old"), "the pack ships no files")
+	// The sweep stops at the directory contribution's old root: the directories above it were
+	// there before yolo (or are the agent's), however empty the retire left them.
+	for _, dir := range []string{extDir, ".pi/agent", ".pi"} {
+		if fi, err := os.Lstat(filepath.Join(home, filepath.FromSlash(dir))); err != nil || !fi.IsDir() {
+			t.Errorf("~/%s was swept, but it is above every retired directory root: %v", dir, err)
+		}
+	}
+}
+
+// A single-file contribution's parent is never swept, even when the retire empties it: yolo
+// cannot prove it created that directory (a user's ~/.config/userdir, here).
+func TestHostFilesRetireNeverSweepsASingleFilesParent(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	req := filesReq(t)
+	userDir := filepath.Join(home, ".config", "userdir")
+	if err := os.MkdirAll(userDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := filesPackOf(t, root, "matt", map[string]string{"files/x.conf": "x\n"},
+		[][2]string{{"files/x.conf", ".config/userdir/x.conf"}})
+	mustRender(t, p, home, req, false)
+
+	mustRender(t, filesPackOf(t, root, "matt", nil, nil), home, req, false)
+	assertGone(t, filepath.Join(userDir, "x.conf"), "the pack stopped shipping it")
+	if fi, err := os.Lstat(userDir); err != nil || !fi.IsDir() {
+		t.Errorf("the user's empty directory was swept: %v", err)
+	}
+}
+
+// A directory contribution that becomes a FILE at the same `into` converges: the old tree and
+// its now-empty directory go, and the file renders in their place.
+func TestHostFilesRetireDirectoryBecomingAFile(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	req := filesReq(t)
+	into := ".x/board"
+	mustRender(t, filesPackOf(t, root, "matt", map[string]string{"files/board/client.ts": "c\n"},
+		[][2]string{{"files/board", into}}), home, req, false)
+
+	p := filesPackOf(t, root, "matt", map[string]string{"files/board.ts": "file\n"},
+		[][2]string{{"files/board.ts", into}})
+	results := mustRender(t, p, home, req, false)
+	assertBody(t, filepath.Join(home, filepath.FromSlash(into)), "file\n")
+	if r, ok := filesResultFor(results, filepath.Join(home, filepath.FromSlash(into))); !ok || r.Action != "rendered" {
+		t.Errorf("the file must render in the directory's place, got %+v", r)
+	}
+}
+
+// The sweep never follows a link: a directory contribution whose old root the user made a
+// symbolic link (into a dotfiles checkout) keeps the link after the retire empties its target.
+func TestHostFilesRetireSweepNeverFollowsALink(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	req := filesReq(t)
+	target := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(home, ".x", "old")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	mustRender(t, filesPackOf(t, root, "matt", map[string]string{"files/board/client.ts": "c\n"},
+		[][2]string{{"files/board", ".x/old"}}), home, req, false)
+	assertBody(t, filepath.Join(target, "client.ts"), "c\n")
+
+	mustRender(t, filesPackOf(t, root, "matt", nil, [][2]string{{"files/board", ".x/new"}}), home, req, false)
+	assertGone(t, filepath.Join(target, "client.ts"), "yolo's unchanged file is retired through the link")
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the user's link was swept: %v", err)
+	}
+}
+
+// The sweep never removes a directory directly under the home, even when it is the retired
+// directory contribution's own root.
+func TestHostFilesRetireSweepStopsAtTheHomesChildren(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	req := filesReq(t)
+	mustRender(t, filesPackOf(t, root, "matt", map[string]string{"files/board/client.ts": "c\n"},
+		[][2]string{{"files/board", ".tooldir"}}), home, req, false)
+
+	mustRender(t, filesPackOf(t, root, "matt", nil, nil), home, req, false)
+	assertGone(t, filepath.Join(home, ".tooldir", "client.ts"), "retired")
+	if fi, err := os.Lstat(filepath.Join(home, ".tooldir")); err != nil || !fi.IsDir() {
+		t.Errorf("a directory directly under the home was swept: %v", err)
+	}
+}
+
+// An entry of the pack's under its SKILLS destination is not this kind's: a pre-composition
+// skill shares the record, and the retire leaves it alone.
+func TestHostFilesRetireSparesTheSkillsDestination(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	req := filesReq(t)
+	skill := filepath.Join(home, ".pi", "agent", "skills", "legacy.md")
+	if err := os.MkdirAll(filepath.Dir(skill), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skill, []byte("skill\n"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	req.Manifest.Record(skill, "matt")
+	p := filesPackOf(t, root, "matt", nil, nil)
+	p.Decl.Contributes = append(p.Decl.Contributes,
+		packdecl.Contribution{Kind: packdecl.KindSkills, From: "skills", Into: ".pi/agent/skills"})
+
+	mustRender(t, p, home, req, false)
+	assertBody(t, skill, "skill\n")
+}
+
+// An unchanged path an older yolo recorded without a digest gets one on the next apply, so a
+// later retire REMOVES it as provably unchanged rather than archiving it as unprovable.
+func TestHostFilesBackfillsTheDigestOfAnUnchangedPath(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	req := filesReq(t)
+	a := filepath.Join(home, filepath.FromSlash(extDir), "a.ts")
+	client := filepath.Join(home, filepath.FromSlash(extDir), "old", "client.ts")
+	mustRender(t, retireV1(t, root), home, req, false)
+	req.Manifest.Digests, req.Manifest.Roots = nil, nil // the record an older yolo wrote
+
+	mustRender(t, retireV1(t, root), home, req, false)
+	if _, ok := req.Manifest.Digest(a); !ok {
+		t.Fatal("an unchanged recorded path did not get its digest backfilled")
+	}
+	if _, ok := req.Manifest.Root(client); !ok {
+		t.Fatal("an unchanged directory-contribution path did not get its root backfilled")
+	}
+	results := mustRender(t, retireV2(t, root), home, req, false)
+	if r, _ := filesResultFor(results, a); r.Action != "removed (the pack no longer ships it)" {
+		t.Errorf("with a backfilled digest the orphan is removed, not archived; got %q", r.Action)
+	}
+	assertGone(t, filepath.Join(home, filepath.FromSlash(extDir), "old"), "the backfilled root bounds the sweep")
+}
+
+// A recorded path the user replaced with something other than a regular file (a link, a
+// directory) is theirs: left in place, and named with its rm command.
+func TestHostFilesRetireLeavesAPathThatIsNoLongerAFile(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	req := filesReq(t)
+	a := filepath.Join(home, filepath.FromSlash(extDir), "a.ts")
+	mustRender(t, retireV1(t, root), home, req, false)
+	if err := os.Remove(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/dev/null", a); err != nil {
+		t.Fatal(err)
+	}
+
+	results := mustRender(t, retireV2(t, root), home, req, false)
+	if fi, err := os.Lstat(a); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the user's link was touched: %v", err)
+	}
+	r, ok := filesResultFor(results, a)
+	if !ok || !strings.HasPrefix(r.Action, HostFilesLeftAction) || !strings.Contains(r.Action, "rm "+shquote.Quote(a)) ||
+		!r.Retire || r.WouldChange {
+		t.Errorf("a replaced path must be left and named, got %+v", r)
+	}
 }
 
 // Another pack's recorded path is not this pack's to retire.

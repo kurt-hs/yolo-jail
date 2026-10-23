@@ -27,8 +27,8 @@ package entrypoint
 //   - its bytes differ from the digest, or the path is no longer a regular file: the user
 //     changed it, which makes it the user's. LEFT IN PLACE, and the line names it, the pack
 //     that used to ship it, and the `rm` that removes it. The record keeps naming it, so every
-//     apply says it again until the user decides — the launch gate's auto-apply is buffered,
-//     and a line said once there would be said to nobody.
+//     apply — and every launch gate, which prints the results itself (Retire marks them, and
+//     cli.reportGateFilesRetires prints them) — says it again until the user decides.
 //   - no digest (recorded by a yolo older than the digest — the upgrade case, which is exactly
 //     the field host's): the record proves yolo wrote it, but not that it is unchanged. While
 //     it still carries the read-only mode the render gives every file (hostFileTreeMode) it is
@@ -39,7 +39,8 @@ package entrypoint
 // whose source is missing this run (the render reports that as a pack problem), and so is
 // every path under the pack's skills destinations (per-entry skill delivery shared this record
 // before composition, and a skill is not this kind's). A record whose path is already gone is
-// forgotten, with no line: nothing was lost.
+// forgotten, with no line: nothing was lost. Directories are removed only inside a retired
+// directory contribution's recorded old root (sweepEmptyParents).
 //
 // Retirement never fails an apply. Every error here degrades to a "left in place" or
 // "refused" line naming the path.
@@ -83,17 +84,19 @@ func (s hostFilesShip) shipped(dest string) bool {
 	return false
 }
 
-// keeps reports whether dir must survive an empty-directory sweep: it holds, or is, something
-// the pack still delivers.
+// keeps reports whether dir must survive an empty-directory sweep: a delivered file lies BELOW
+// it, or it is or holds a declared root. A directory whose path is itself a delivered FILE is
+// not kept — that is a directory contribution turned into a file at the same `into`, and the
+// directory has to go for the file to render.
 func (s hostFilesShip) keeps(dir string) bool {
-	under := func(p string) bool { return p == dir || strings.HasPrefix(p, dir+string(filepath.Separator)) }
+	below := func(p string) bool { return strings.HasPrefix(p, dir+string(filepath.Separator)) }
 	for p := range s.paths {
-		if under(p) {
+		if below(p) {
 			return true
 		}
 	}
 	for _, r := range s.roots {
-		if under(r) {
+		if r == dir || below(r) {
 			return true
 		}
 	}
@@ -120,8 +123,9 @@ func retireHostFiles(pack, homeDir string, req HostFilesRequest, ship hostFilesS
 			continue
 		}
 		digest, hasDigest := req.Manifest.Digest(dest)
+		root, _ := req.Manifest.Root(dest) // read before Forget drops it
 		left := func(why string) {
-			out = append(out, HostRenderResult{Surface: id, Path: dest, Action: fmt.Sprintf(
+			out = append(out, HostRenderResult{Surface: id, Path: dest, Retire: true, Action: fmt.Sprintf(
 				"%spack %q no longer ships it, but %s — remove it with `rm %s` if you do not want it",
 				HostFilesLeftAction, pack, why, shquote.Quote(dest))})
 		}
@@ -139,7 +143,7 @@ func retireHostFiles(pack, homeDir string, req HostFilesRequest, ship hostFilesS
 				left("it changed since yolo wrote it")
 				continue
 			}
-			res := HostRenderResult{Surface: id, Path: dest, WouldChange: true}
+			res := HostRenderResult{Surface: id, Path: dest, Retire: true, WouldChange: true}
 			if observe {
 				res.Action = "would remove (the pack no longer ships it)"
 				out = append(out, res)
@@ -155,7 +159,7 @@ func retireHostFiles(pack, homeDir string, req HostFilesRequest, ship hostFilesS
 			req.Manifest.Forget(dest)
 			res.Action = "removed (the pack no longer ships it)"
 			out = append(out, res)
-			sweepEmptyParents(filepath.Dir(dest), homeDir, ship)
+			sweepEmptyParents(filepath.Dir(dest), root, homeDir, ship)
 		default:
 			// Recorded before the record kept digests. The read-only mode the render set is
 			// the one trace of "untouched since" there is; a changed mode means someone did.
@@ -163,7 +167,7 @@ func retireHostFiles(pack, homeDir string, req HostFilesRequest, ship hostFilesS
 				left("yolo wrote it before it recorded file contents, and its mode has changed since")
 				continue
 			}
-			res := HostRenderResult{Surface: id, Path: dest, WouldChange: true}
+			res := HostRenderResult{Surface: id, Path: dest, Retire: true, WouldChange: true}
 			if observe {
 				res.Action = "would remove (the pack no longer ships it; it moves to the archive)"
 				out = append(out, res)
@@ -179,28 +183,36 @@ func retireHostFiles(pack, homeDir string, req HostFilesRequest, ship hostFilesS
 			res.Action = "removed (the pack no longer ships it; yolo wrote it before it recorded " +
 				"file contents, so it was archived to " + at + " — `mv` it back if it was yours)"
 			out = append(out, res)
-			sweepEmptyParents(filepath.Dir(dest), homeDir, ship)
+			sweepEmptyParents(filepath.Dir(dest), root, homeDir, ship)
 		}
 	}
 	return out
 }
 
-// sweepEmptyParents removes dir and each ancestor while it is empty, so a directory
-// contribution whose `into` moved does not leave its old location behind as an empty
-// directory. It stops at the first directory that is not empty (os.Remove refuses one), at a
-// directory the pack still delivers into, and at a symbolic link, and it never removes the home
-// or a directory directly under it — a dotdir such as ~/.pi is the agent's, whatever yolo put in
-// it.
-func sweepEmptyParents(dir, homeDir string, ship hostFilesShip) {
-	home := filepath.Clean(homeDir)
+// sweepEmptyParents removes dir and each ancestor while it is empty, up to and including root —
+// the old `into` of the DIRECTORY contribution the retired file came from — so a moved
+// directory contribution does not leave its old location behind. Nothing above root is ever
+// touched, and with no root (a single-file contribution, or a record older than roots) nothing
+// is swept at all: an empty directory yolo cannot prove it created is the user's.
+//
+// It also stops at the first directory that is not empty (os.Remove refuses one), at one the
+// pack still delivers into, at a symbolic link (os.Remove would unlink it whatever its target
+// holds), and it never removes the home or a directory directly under it — a dotdir such as
+// ~/.pi is the agent's, whatever yolo put in it.
+func sweepEmptyParents(dir, root, homeDir string, ship hostFilesShip) {
+	if root == "" {
+		return
+	}
+	home, root := filepath.Clean(homeDir), filepath.Clean(root)
 	for {
 		dir = filepath.Clean(dir)
 		parent := filepath.Dir(dir)
+		if dir != root && !pathStrictlyUnder(dir, root) {
+			return
+		}
 		if dir == home || parent == home || !pathStrictlyUnder(dir, home) || ship.keeps(dir) {
 			return
 		}
-		// A link is never swept: os.Remove unlinks one whatever its target holds, and a
-		// directory the user linked in (a dotfiles checkout) is theirs.
 		if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() {
 			return
 		}

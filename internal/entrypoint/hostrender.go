@@ -68,7 +68,11 @@ import (
 type HostRenderResult struct {
 	Surface string // "agent/name"
 	Path    string // resolved real-home path
-	Action  string // "rendered" | "would render" | "refused: <reason>"
+	// Retire marks a `files` result about a path the pack NO LONGER ships (hostfilesretire.go):
+	// removed, archived, left in place, or refused. Such a line is a disclosure the launch gate
+	// repeats, and one that did not change the path is not "in sync".
+	Retire bool
+	Action string // "rendered" | "would render" | "refused: <reason>"
 	// BrokenLink is set when this destination was refused because a symlink on its path leads
 	// into a directory that does not exist (hostbrokenlink.go). A BLOCKER the user has to act
 	// on, unlike the policy refusals `Action` also carries, so the report itemizes it and the

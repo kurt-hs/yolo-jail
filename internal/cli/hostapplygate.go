@@ -257,6 +257,9 @@ func hostApplyGate(errw io.Writer, stdin io.Reader, bin string) bool {
 		// (host-agent-environment.md's miss line: it prints on every miss).
 		reportGateMisses(errw, survey, bin)
 		reportUnrelatedLaunchFailures(errw, home, bin, unrelated)
+		// A file a pack no longer ships that the user changed: left in place, and said here
+		// with its rm on every launch, since no change means no apply to say it.
+		reportGateFilesRetires(errw, home, survey)
 		return true
 	}
 
@@ -481,6 +484,7 @@ func hostApplyGateApply(errw io.Writer, bin, home string) bool {
 		related, unrelated, blocking := splitLaunchFailures(wrote, bin)
 		if !blocking {
 			reportHostApplyGateSynchronized(errw, home, wrote)
+			reportGateFilesRetires(errw, home, wrote)
 			reportUnrelatedLaunchFailures(errw, home, bin, unrelated)
 			return true
 		}
@@ -496,7 +500,20 @@ func hostApplyGateApply(errw io.Writer, bin, home string) bool {
 		return false
 	}
 	reportHostApplyGateSynchronized(errw, home, wrote)
+	reportGateFilesRetires(errw, home, wrote)
 	return true
+}
+
+// reportGateFilesRetires prints, one line each, what the `files` retire did or declined to do
+// to a path a pack no longer ships: removed, archived (with where to `mv` it back), left in
+// place (with the `rm` that removes it), or refused. These are disclosures — a file left the
+// home, or a file of the user's blocks a convergence — and the gate's apply report that carries
+// them is buffered, so without this a launch removed or archived files and said only
+// "synchronized".
+func reportGateFilesRetires(errw io.Writer, home string, survey *hostApplySurvey) {
+	for _, r := range survey.FilesRetires() {
+		fmt.Fprintf(errw, "yolo host: %s %s: %s\n", r.Surface, prettyHomePath(home, r.Path), r.Action)
+	}
 }
 
 // hostApplyGateWrite is the gate's writing apply, behind a seam for hostApplyGateSurvey's

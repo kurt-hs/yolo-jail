@@ -1821,22 +1821,35 @@ pass: it binds only the current set, and the workspace-overlay mountpoints a dro
 contribution leaves are retired by their own record (`preparePackFiles`). The evidence is the
 same ownership record, which now also keeps the digest of the bytes each render wrote:
 
-- **Unchanged since yolo wrote it**: removed, with one `removed` line.
-- **Changed by the user, or no longer a regular file**: left in place, with one line naming the
-  path, the pack that used to ship it, and the `rm` that removes it. The line repeats on every
-  apply until the user decides, since the launch gate's own apply is not shown.
+- **Unchanged since yolo wrote it**: removed.
+- **Changed by the user, or no longer a regular file**: left in place, and named with the pack
+  that used to ship it and the `rm` that removes it. It is named again on every apply and every
+  launch until the user decides.
 - **Recorded before the record kept digests** (any path an apply from an earlier version
   wrote): yolo wrote it, but cannot prove it unchanged. It is archived into the kind's archive
   bucket while it still has the read-only mode the render gives every file, and the line says
   where to `mv` it back. Once its mode has changed it is left in place and named, as above.
 
+**What each entry point prints.** `yolo host apply` prints one line per retired path under the
+pack's `<pack>/files` heading: `removed (the pack no longer ships it)`, `removed (… archived to
+<path> — mv it back if it was yours)`, or `left in place: … remove it with rm <path> …`. A dry
+run prints `would remove (…)`. A path left in place is not counted as in sync; the verdict names
+it instead (`N files a pack no longer ships are still in your home, not removed (above)`). The
+launch gate of `yolo host -- <agent>` prints the same results as
+`yolo host: <pack>/files ~/<path>: <action>` lines: after `synchronized host configuration` when
+its apply ran, and on their own when there was nothing to apply but a path was left in place.
+
 A path the pack still declares is never retired, including everything under a contribution whose
-source is missing this run, and nothing under the pack's `skills` destinations is touched. An
-old directory location emptied by the retire is removed too, up to the first directory that is
-not empty, one the pack still delivers into, or one directly under the home. A file yolo has no
-record of writing is never touched. A pack removed from `packs` is the other axis, and keeps its
-confirmed pass ([retiring a dropped pack's host output](#retiring-a-dropped-packs-host-output)).
-A host session home links the agent's directories from the real home, so the session sees the
+source is missing this run, and nothing under the pack's `skills` destinations is touched. A file
+yolo has no record of writing is never touched. An emptied directory is removed only inside a
+retired DIRECTORY contribution's old `into` (that root included, nothing above it), stopping at
+a directory that is not empty, one the pack still delivers into, a symbolic link, or one directly
+under the home. A single-file contribution's parent is never removed, and neither is a directory
+whose record predates the field that bounds the sweep. A directory contribution that becomes a
+file at the same `into` converges: the old tree and its directory go, and the file renders. A
+pack removed from `packs` is the other axis, and keeps its confirmed pass
+([retiring a dropped pack's host output](#retiring-a-dropped-packs-host-output)). A host
+session home links the agent's directories from the real home, so the session sees the
 converged home.
 
 ##### <a id="pi-packages"></a>pi packages: the one registering slot

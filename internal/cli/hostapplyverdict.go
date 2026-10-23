@@ -172,7 +172,7 @@ func hostApplyVerdict(s *hostApplySurvey, write bool) string {
 		n += paths
 		// And, in an --assert answered `n`, what that retire kept, which the line above the
 		// verdict says is still in the home: "nothing left to retire" contradicted it.
-		kept := declinedRetireClause(s)
+		kept := keptClause(s)
 		if n == 0 && keys == 0 {
 			if kept != "" {
 				return "No packs configured — nothing to apply; " + kept + "."
@@ -252,7 +252,7 @@ func hostApplyVerdict(s *hostApplySurvey, write bool) string {
 				rest = "applied the rest: " + work
 			}
 			// A retire answered `n` is something that needed changing and was kept.
-			if kept := declinedRetireClause(s); kept != "" {
+			if kept := keptClause(s); kept != "" {
 				if rest == "nothing else needed changing" {
 					rest = kept
 				} else {
@@ -272,12 +272,15 @@ func hostApplyVerdict(s *hostApplySurvey, write bool) string {
 			strings.Join(missing, ", "))
 	case outcomeNothingToDo:
 		if !write {
+			if left := filesLeftClause(s); left != "" {
+				return "Nothing to do — " + left + "."
+			}
 			return "Nothing to do — this home is up to date."
 		}
 		// An --assert answered `n` at the retire has nothing left to do, and is not up to date:
 		// what it kept is named instead (declinedRetireClause).
 		state := "this home is up to date"
-		if kept := declinedRetireClause(s); kept != "" {
+		if kept := keptClause(s); kept != "" {
 			state = kept
 		}
 		if p := installedPrefix(s); p != "" {
@@ -286,7 +289,7 @@ func hostApplyVerdict(s *hostApplySurvey, write bool) string {
 		return "Nothing to apply — " + state + "."
 	case outcomeApplied:
 		work := hostApplyWork(s, true)
-		if kept := declinedRetireClause(s); kept != "" {
+		if kept := keptClause(s); kept != "" {
 			work += "; " + kept
 		}
 		if p := installedPrefix(s); p != "" {
@@ -296,6 +299,37 @@ func hostApplyVerdict(s *hostApplySurvey, write bool) string {
 	default:
 		return "An --assert would complete."
 	}
+}
+
+// keptClause is what the run left in the home that it could not, or was told not to, retire:
+// the declined dropped-pack retire (declinedRetireClause) and the files a pack no longer ships
+// that the `files` retire left in place (filesLeftClause), joined. Empty when neither.
+func keptClause(s *hostApplySurvey) string {
+	var parts []string
+	for _, c := range []string{declinedRetireClause(s), filesLeftClause(s)} {
+		if c != "" {
+			parts = append(parts, c)
+		}
+	}
+	return strings.Join(parts, "; ")
+}
+
+// filesLeftClause is the verdict's clause for the `files` retire results that did NOT change
+// their path — left in place because the user changed it, or refused — each named above with
+// its remedy. They are counted nowhere else: not as changes, and not as in sync, since a path
+// the pack no longer ships is not what the pack says it should be.
+func filesLeftClause(s *hostApplySurvey) string {
+	n := 0
+	for _, r := range s.FilesRetires() {
+		if !r.WouldChange {
+			n++
+		}
+	}
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d %s a pack no longer ships %s still in your home, not removed (above)",
+		n, plural(n, "file", "files"), plural(n, "is", "are"))
 }
 
 // declinedRetireClause is the verdict's clause for a dropped-pack retire an --assert was answered

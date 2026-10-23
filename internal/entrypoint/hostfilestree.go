@@ -58,7 +58,7 @@ type HostFilesRequest struct {
 // about.
 func RenderHostFiles(p *packload.Pack, homeDir string, req HostFilesRequest, observe bool) ([]HostRenderResult, error) {
 	var out []HostRenderResult
-	type job struct{ src, dest string }
+	type job struct{ src, dest, root string }
 	var jobs []job
 	// ship is what this pack delivers now: every destination path, plus every destination ROOT
 	// whose contribution is declared but whose tree this run could not read. The retire below
@@ -99,7 +99,11 @@ func RenderHostFiles(p *packload.Pack, homeDir string, req HostFilesRequest, obs
 			// different paths at each notch.
 			dest := filepath.Join(destRoot, rel)
 			ship.paths[dest] = true
-			jobs = append(jobs, job{filepath.Join(src, rel), dest})
+			root := ""
+			if rel != "" {
+				root = destRoot // a DIRECTORY contribution: its root bounds a later sweep
+			}
+			jobs = append(jobs, job{filepath.Join(src, rel), dest, root})
 		}
 	}
 	for _, c := range p.Decl.Contributions() {
@@ -113,13 +117,13 @@ func RenderHostFiles(p *packload.Pack, homeDir string, req HostFilesRequest, obs
 	// same name) is cleared before the render below needs the path.
 	out = append(out, retireHostFiles(p.Name, homeDir, req, ship, observe)...)
 	for _, j := range jobs {
-		out = append(out, renderOneHostFile(p.Name, j.src, j.dest, req, observe))
+		out = append(out, renderOneHostFile(p.Name, j.src, j.dest, j.root, req, observe))
 	}
 	return out, nil
 }
 
 // renderOneHostFile is the per-path ownership decision plus the write.
-func renderOneHostFile(pack, srcPath, dest string, req HostFilesRequest, observe bool) HostRenderResult {
+func renderOneHostFile(pack, srcPath, dest, root string, req HostFilesRequest, observe bool) HostRenderResult {
 	id := pack + "/files"
 	res := HostRenderResult{Surface: id, Path: dest}
 
@@ -157,6 +161,9 @@ func renderOneHostFile(pack, srcPath, dest string, req HostFilesRequest, observe
 			if d, err := fileDigest(dest); err == nil {
 				req.Manifest.RecordDigest(dest, d)
 			}
+		}
+		if _, has := req.Manifest.Root(dest); !has && root != "" && !observe {
+			req.Manifest.RecordRoot(dest, root) // the same backfill, for the sweep's bound
 		}
 		return res
 	}
@@ -228,6 +235,11 @@ func renderOneHostFile(pack, srcPath, dest string, req HostFilesRequest, observe
 		// What makes a later retire safe: the bytes yolo wrote, so "still exactly that" can be
 		// told from "the user changed it" once the pack stops shipping the path.
 		req.Manifest.RecordDigest(dest, bytesDigest(data))
+		if root != "" {
+			req.Manifest.RecordRoot(dest, root)
+		} else {
+			delete(req.Manifest.Roots, dest) // now a single-file contribution: no sweep bound
+		}
 	}
 	if res.Action == "" {
 		res.Action = "rendered"

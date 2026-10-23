@@ -227,6 +227,10 @@ type hostApplySurvey struct {
 	// (pruneDroppedPackOutput). Apart from retirePaths because the sentence differs (kept, not
 	// "would be archived"), and from Changed for the reason retirePaths is.
 	declinedPaths, declinedKeys int
+	// filesRetires are the `files` results about paths a pack no longer ships
+	// (entrypoint.HostRenderResult.Retire): removed, archived, left in place, refused. The launch
+	// gate prints them (reportGateFilesRetires), because its apply's own report is buffered.
+	filesRetires []entrypoint.HostRenderResult
 
 	// home is the home THIS apply rendered into, and zeroPacks whether it took the
 	// no-packs-configured branch. Both are RECORDED rather than re-derived, because both
@@ -728,6 +732,22 @@ func (s *hostApplySurvey) noteDroppedRetire(paths, keys int) {
 	}
 	s.retirePaths += paths
 	s.retireKeys += keys
+}
+
+// noteFilesRetire records one `files` retire result (see the filesRetires field).
+func (s *hostApplySurvey) noteFilesRetire(r entrypoint.HostRenderResult) {
+	if s == nil {
+		return
+	}
+	s.filesRetires = append(s.filesRetires, r)
+}
+
+// FilesRetires are the `files` retire results this run produced, in report order.
+func (s *hostApplySurvey) FilesRetires() []entrypoint.HostRenderResult {
+	if s == nil {
+		return nil
+	}
+	return s.filesRetires
 }
 
 // DroppedRetires is the dropped-pack retire a dry run found waiting: how many paths an --assert

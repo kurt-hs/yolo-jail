@@ -36,6 +36,12 @@ type Manifest struct {
 	// per-entry: a record written before this field existed, or an entry another kind wrote,
 	// has none, and the reader treats that as "cannot prove it is unchanged".
 	Digests map[string]string `json:"digests,omitempty"`
+	// Roots maps a destination the `files` render wrote from a DIRECTORY contribution to that
+	// contribution's destination root (its `into`), so a later retire knows which emptied
+	// directories it created and may remove: those from the file's parent up to the root,
+	// nothing above. A single-file contribution has no entry, and neither does a record older
+	// than the field; neither sweeps any directory.
+	Roots map[string]string `json:"roots,omitempty"`
 }
 
 // LoadManifest reads the record at path. A missing file is an EMPTY manifest, not an error:
@@ -106,6 +112,21 @@ func (m *Manifest) Record(dest, pack string) {
 func (m *Manifest) Forget(dest string) {
 	delete(m.Entries, dest)
 	delete(m.Digests, dest)
+	delete(m.Roots, dest)
+}
+
+// RecordRoot stores the directory contribution root dest was written under. See Roots.
+func (m *Manifest) RecordRoot(dest, root string) {
+	if m.Roots == nil {
+		m.Roots = map[string]string{}
+	}
+	m.Roots[dest] = root
+}
+
+// Root returns the directory contribution root recorded for dest, and false when none was.
+func (m *Manifest) Root(dest string) (string, bool) {
+	r, ok := m.Roots[dest]
+	return r, ok && r != ""
 }
 
 // RecordDigest stores the SHA-256 (hex) of the bytes yolo wrote at dest. See Digests.
