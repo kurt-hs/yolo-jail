@@ -356,6 +356,13 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     design](../reference/patched-forks.md) and [the model-list design](../design/model-lists-and-pickers.md), three
     by [the tracker's own questions](downstream-asks.md#open-questions) (one of them a small diagnostics build,
     two awaiting ratification of what was built 2026-10-15), and the rest are answered, declined or built.
+    Beside it, the same consumer's 2026-10-22 ask, which it filed as parked: [a pack's own tool, built from its own
+    tree](../design/pack-buildable-programs.md), with a dev override and a verified prebuilt download. It was
+    designed overnight, and building it was authorized the same night, so its [plan](../design/pack-buildable-programs-plan.md)
+    proceeds on the leanings. Three rulings are owed at the morning review:
+    [whether an undeliverable program stops the launch](../design/pack-buildable-programs.md#OQ-BG1),
+    [whether the prebuilt stands in where no build can run](../design/pack-buildable-programs.md#OQ-BG2), and
+    [whether yolo builds a dev override](../design/pack-buildable-programs.md#OQ-BG3).
 
 ## External waits
 
