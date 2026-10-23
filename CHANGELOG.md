@@ -22,11 +22,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Jails trust your host's certificate authorities.** A corporate or inspecting-proxy CA your host trusts is now trusted in every jail, and the launch names each one and where it came from. On macOS your login keychain's count too, including for Go programs such as `gh` under `macos-user`'s separate account when they were built with Go 1.27 or later. See [the corporate certificate trap](docs/design/provisioner-sets.md#163-the-corporate-certificate-trap).
 
-**Build your own approval front end.** `yolo approve --json` lists pending requests and live grants, and `yolo approve --watch --json` follows them one event per line, with fixed exit codes. Or set `approval_hook` in your user config to a command, such as a `notify-send` with Approve and Deny buttons, and yolo runs it for each event and acts on its answer. See [the approval surface](docs/design/boundary-broker.md#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship).
+**The browser pack warns when there is no browser.** With `chrome-devtools` selected, a jail launch that finds no Chrome or Chromium prints one line saying what to install; the launch goes on, and a browser installed later just works. See [the chrome-devtools pack](docs/reference/mcp-configuration.md#the-chrome-devtools-pack).
 
 ### Changed
 
 - `mcp_presets` is removed, and a config that still has it stops the launch: delete the key, add `chrome-devtools` to `packs` in your user config for the browser, and write `sequential-thinking` under `mcp_servers` yourself if you want it. See [MCP and LSP](userguide/guides/mcp-and-lsp.md#mcp_presets-is-gone).
+- A from-source install no longer follows its checkout. `yolo update` there changes nothing; to update, run `just install` in your checkout or `yolo update --from <checkout>`. See [from-source installs](docs/reference/self-update.md#from-source-installs).
+
+**Your fonts in the jail.** On `macos-user`, tools find the Mac's fonts and your packages' fonts, and a jail running as you finds your own too. Add `"share_host_fonts": true` to your user config to share your font folder read-only with a container jail or the separate sandbox user; each launch names it. See [the macos-user backend](userguide/guides/macos.md#the-macos-user-backend).
 
 ### Fixed
 

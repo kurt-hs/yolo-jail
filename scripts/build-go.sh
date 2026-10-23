@@ -88,20 +88,6 @@ fi
 if [ -n "${BUILD_KIND:-}" ]; then
     LDFLAGS="$LDFLAGS -X github.com/mschulkind-oss/yolo-jail/internal/version.BuildKind=${BUILD_KIND}"
 fi
-# Preserve the previous behavior for whitespace-bearing install paths: omitting
-# SourceDir is safer than splitting its value into linker arguments.
-if [ -n "${SOURCE_DIR:-}" ]; then
-    case "$SOURCE_DIR" in
-        *[[:space:]]*) echo "⚠ checkout path has whitespace — 'yolo update' will not be able to find it" >&2 ;;
-        *) LDFLAGS="$LDFLAGS -X github.com/mschulkind-oss/yolo-jail/internal/version.SourceDir=${SOURCE_DIR}" ;;
-    esac
-fi
-if [ -n "${SOURCE_BRANCH:-}" ]; then
-    case "$SOURCE_BRANCH" in
-        *[[:space:]]*) ;;
-        *) LDFLAGS="$LDFLAGS -X github.com/mschulkind-oss/yolo-jail/internal/version.SourceBranch=${SOURCE_BRANCH}" ;;
-    esac
-fi
 for cmd in "${CMDS[@]}"; do
     echo "build-go: ${cmd} -> ${OUTDIR}/${cmd} (${GOOS}/${GOARCH})"
     CGO_ENABLED="${CGO_ENABLED:-0}" GOOS="$GOOS" GOARCH="$GOARCH" \

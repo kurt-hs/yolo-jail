@@ -36,6 +36,7 @@ var undoneKeySamples = map[string]string{
 	"kvm":                    `true`,
 	"macos_user_mode":        `"account"`,
 	"macos_user_shared_tmp":  `true`,
+	"share_host_fonts":       `true`,
 	"mise_tools":             `{"node": "22"}`,
 	"mounts":                 `["~/data"]`,
 	"network":                `{"mode": "bridge", "ports": ["3000:3000"]}`,

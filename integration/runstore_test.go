@@ -108,7 +108,7 @@ func makeRunStore(machineHome string) (string, error) {
 			_ = os.RemoveAll(parent)
 			return "", fmt.Errorf("creating the machine store's %s: %w", name, err)
 		}
-		if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+		if err := userSymlink(target, filepath.Join(dir, name)); err != nil {
 			_ = os.RemoveAll(parent)
 			return "", err
 		}

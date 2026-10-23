@@ -10,25 +10,24 @@ import (
 
 // sectionUpdates reports the last update check's cached answer: whether this
 // yolo is current, or why nobody knows. It never checks itself — the dispatch
-// hook may start a release-channel background check, while source checks run
-// only through `yolo update --check` — so a report can be up to a day old, and
-// it says how old.
+// hook may start a background release check — so a report can be up to a day
+// old, and it says how old.
 //
 // It is also where a cached failure stays visible after the check that produced
-// it. A detached release check has no terminal to report to, while an explicit
-// source check reports immediately but should remain diagnosable afterwards.
+// it, since a detached release check has no terminal to report to.
 func (o *Options) sectionUpdates(r *reporter) {
 	if o.inJail() {
 		return // the jail's yolo is the host's; the host checks it
 	}
 	ch := o.UpdateChannel()
-	if ch.Kind == selfupdate.KindUnknown && ch.MissingSourceDir == "" {
+	if ch.Kind == selfupdate.KindUnknown {
 		return // nothing identifies the install, so there is nothing to check
 	}
 	r.sectionHeader("Updates")
-	if ch.Kind == selfupdate.KindUnknown {
-		r.warn("this yolo was built from "+ch.MissingSourceDir+", which no longer contains the yolo-jail checkout, so it cannot be updated",
-			"If you moved or re-cloned it: yolo update --from <checkout>")
+	if ch.Kind == selfupdate.KindSnapshot {
+		// A snapshot of a checkout has no release to compare against
+		// (docs/design/installed-launcher-provenance.md, OQ-IP1).
+		r.skip(selfupdate.SnapshotSummary, selfupdate.SnapshotSteps)
 		return
 	}
 	if !selfupdate.Enabled(o.Getenv) || !o.UpdateCheckEnabled() {
@@ -38,11 +37,6 @@ func (o *Options) sectionUpdates(r *reporter) {
 	}
 	st := selfupdate.LoadState(o.UpdateStatePath)
 	if st.Identity != ch.Identity() || st.CheckedAt.IsZero() {
-		if ch.Kind == selfupdate.KindSource {
-			r.skip("source update checks run only on request",
-				"`yolo update --check` checks the checkout now without making a remote source check part of every host command.")
-			return
-		}
 		r.skip("no update check has run for this build yet", "`yolo update --check` runs one now.")
 		return
 	}

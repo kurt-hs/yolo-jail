@@ -14,7 +14,8 @@
 #      /Applications/Google Chrome.app among them. With none found it passes no path and
 #      chrome-devtools-mcp looks for Chrome itself.
 #
-# `--check` prints what it found, and exits 0 when chrome-devtools-mcp is there.
+# `--check` prints what it found, and exits 0 when chrome-devtools-mcp is there. `--boot-check`,
+# which the pack's boot_check hook runs at boot, prints one line only when no browser is found.
 # YOLO_CHROME_DEVTOOLS_ROOT, a test seam, is a directory the standard paths (the browser's, and
 # /etc/fonts) are looked up under instead of /.
 
@@ -70,8 +71,26 @@ itself on first use once \"chrome-devtools\" is in your packs; at the host run \
 \`yolo host apply --assert\`, or start the agent with \`yolo host -- <agent>\`, which installs \
 it into yolo's floor"
 
-server=$(find_server)
+missing_browser="none found (no chromium or google-chrome on PATH or at a standard install \
+path), so unless chrome-devtools-mcp finds a Chrome of its own it cannot start a browser — \
+install Chrome or Chromium where the agent runs (in a container jail, add \"chromium\" to \
+\`packages\` in your yolo config); the server picks it up at its next start"
+
 browser=$(find_browser)
+
+# --boot-check is what the pack's boot_check hook runs, once at boot (OQ-MP9): the browser half of
+# --check alone, by the same search a server start runs, silent when one is found and one line
+# when none is. Not the server half: the boot runs it before the server's first install, which
+# is not a problem to report.
+if [ "${1:-}" = "--boot-check" ]; then
+    if [ -n "$browser" ]; then
+        exit 0
+    fi
+    printf 'browser: %s\n' "$missing_browser"
+    exit 1
+fi
+
+server=$(find_server)
 
 if [ "${1:-}" = "--check" ]; then
     status=0
@@ -84,7 +103,7 @@ if [ "${1:-}" = "--check" ]; then
     if [ -n "$browser" ]; then
         printf 'browser: %s\n' "$browser"
     else
-        printf 'browser: none found (no chromium or google-chrome on PATH or at a standard install path); chrome-devtools-mcp looks for Chrome itself, and with none it cannot start one — install Chrome or Chromium\n'
+        printf 'browser: %s\n' "$missing_browser"
     fi
     exit "$status"
 fi

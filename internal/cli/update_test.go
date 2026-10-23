@@ -14,6 +14,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/selfupdate"
 	"github.com/mschulkind-oss/yolo-jail/internal/updatehint"
+	"github.com/mschulkind-oss/yolo-jail/internal/version"
 )
 
 // The CALL SITE, pinned: deleting the hook from dispatchNative fails this, which
@@ -44,7 +45,7 @@ func TestDispatchRunsTheUpdateHook(t *testing.T) {
 }
 
 var testChannel = selfupdate.Channel{Kind: selfupdate.KindHomebrew, Exe: "/opt/homebrew/Cellar/yolo-jail/0.10.0/bin/yolo", Version: "0.10.0"}
-var sourceTestChannel = selfupdate.Channel{Kind: selfupdate.KindSource, Exe: "/home/u/.local/bin/yolo", SourceDir: "/src/yolo-jail", Branch: "main", Version: "cfefa8bf"}
+var snapshotTestChannel = selfupdate.Channel{Kind: selfupdate.KindSnapshot, Exe: "/home/u/go/bin/yolo", Version: "0.10.0+510.gcfefa8bf"}
 
 type updateHarness struct {
 	d          updateDeps
@@ -53,8 +54,12 @@ type updateHarness struct {
 	stdout     bytes.Buffer
 	spawned    int
 	applied    int
-	applyOpts  selfupdate.ApplyOptions
 	applyErr   error
+	deployed   int
+	deployExe  string
+	deployDir  string
+	deployOpts selfupdate.CheckoutOptions
+	deployErr  error
 	version    string
 	versionErr error
 	execPath   string
@@ -82,10 +87,14 @@ func newUpdateHarness(t *testing.T, ch selfupdate.Channel) *updateHarness {
 		check: func(_ context.Context, ch selfupdate.Channel, _ selfupdate.State) selfupdate.State {
 			return selfupdate.State{Identity: ch.Identity(), Kind: ch.Kind, Current: ch.Version, CheckedAt: time.Now()}
 		},
-		apply: func(_ context.Context, _ selfupdate.Channel, opts selfupdate.ApplyOptions, _, _ io.Writer) error {
+		apply: func(_ context.Context, _ selfupdate.Channel, _, _ io.Writer) error {
 			h.applied++
-			h.applyOpts = opts
 			return h.applyErr
+		},
+		deploy: func(_ context.Context, exe, dir string, opts selfupdate.CheckoutOptions, _, _ io.Writer) error {
+			h.deployed++
+			h.deployExe, h.deployDir, h.deployOpts = exe, dir, opts
+			return h.deployErr
 		},
 		versionAt: func(string) (string, error) {
 			return h.version, h.versionErr
@@ -106,9 +115,6 @@ func (h *updateHarness) seed(t *testing.T, ch selfupdate.Channel, mutate func(*s
 	st := selfupdate.State{
 		CheckedAt: h.d.now().Add(-time.Hour), Identity: ch.Identity(), Kind: ch.Kind,
 		Current: ch.Version, Latest: "0.11.0", Available: true, Disclosed: true,
-	}
-	if ch.Kind == selfupdate.KindSource {
-		st.Latest, st.Upstream, st.Behind = "abc1234d", "origin/main", 12
 	}
 	if mutate != nil {
 		mutate(&st)
@@ -234,27 +240,22 @@ func TestUpdateNoticeOnlyOnATerminal(t *testing.T) {
 	}
 }
 
-func TestSourceUpdateChecksOnlyOnRequest(t *testing.T) {
-	h := newUpdateHarness(t, sourceTestChannel)
+// A snapshot of an arbitrary commit has no release to compare against, so it
+// gets no background check, no disclosure, no notice and no prompt — not even
+// from a cached answer an earlier channel left behind.
+func TestSnapshotGetsNoAutomaticChecksNoticesOrPrompts(t *testing.T) {
+	h := newUpdateHarness(t, snapshotTestChannel)
+	h.d.stdin = strings.NewReader("y\n")
 	h.notify("run")
 	if h.spawned != 0 || h.stderr.Len() != 0 {
-		t.Errorf("an automatic source check ran: spawned=%d stderr=%q", h.spawned, h.stderr.String())
+		t.Errorf("an automatic snapshot check ran: spawned=%d stderr=%q", h.spawned, h.stderr.String())
 	}
 
-	h.seed(t, sourceTestChannel, func(s *selfupdate.State) {
-		s.CheckedAt = h.d.now().Add(-25 * time.Hour)
-	})
+	h.seed(t, snapshotTestChannel, nil)
 	h.notify("run")
-	if h.spawned != 0 || h.stderr.Len() != 0 {
-		t.Errorf("a stale source answer triggered automatic work: spawned=%d stderr=%q", h.spawned, h.stderr.String())
-	}
-
-	h.seed(t, sourceTestChannel, nil)
-	h.d.stdin = strings.NewReader("n\n")
-	h.notify("run")
-	if !strings.Contains(h.stderr.String(), "new commits") ||
-		!strings.Contains(h.stderr.String(), "relaunch?") {
-		t.Errorf("a fresh explicit source answer must still drive the notice and prompt:\n%s", h.stderr.String())
+	if h.spawned != 0 || h.applied != 0 || h.deployed != 0 || h.stderr.Len() != 0 {
+		t.Errorf("a cached answer drove a snapshot notice or prompt: spawned=%d applied=%d deployed=%d stderr=%q",
+			h.spawned, h.applied, h.deployed, h.stderr.String())
 	}
 }
 
@@ -324,9 +325,6 @@ func TestUpdatePromptYesUpdatesAndRelaunchesTheSameCommand(t *testing.T) {
 	if h.applied != 1 {
 		t.Fatalf("applied %d times, want 1", h.applied)
 	}
-	if h.applyOpts.Autostash {
-		t.Error("the launch prompt must never autostash a checkout behind the user's back")
-	}
 	if h.execPath != "/opt/homebrew/bin/yolo" {
 		t.Errorf("relaunched %q, want the PATH lookup of argv[0] (the Cellar path still holds the old version after an upgrade)", h.execPath)
 	}
@@ -372,43 +370,31 @@ func TestUpdatePromptOnAHostLaunchButNotOtherHostVerbs(t *testing.T) {
 	}
 }
 
-func TestUpdatePromptSaysWhatASourceUpdateCosts(t *testing.T) {
-	h := newUpdateHarness(t, sourceTestChannel)
-	h.seed(t, sourceTestChannel, nil)
+func TestUpdatePromptSaysWhatAnUpdateCosts(t *testing.T) {
+	h := newUpdateHarness(t, testChannel)
+	h.seed(t, testChannel, nil)
 	h.d.stdin = strings.NewReader("n\n")
 	h.notify("run")
 	out := h.stderr.String()
-	if !strings.Contains(out, "Source checkout: /src/yolo-jail") {
-		t.Errorf("the source path is not disclosed before consent:\n%s", out)
-	}
-	if !strings.Contains(out, "any jail using it loses it briefly") {
-		t.Errorf("the broker impact is not stated conditionally:\n%s", out)
-	}
 	if !strings.Contains(out, "rebuilds the jail image") {
 		t.Errorf("the rebuild cost is not stated:\n%s", out)
 	}
 	if strings.Index(out, "relaunch?") < strings.Index(out, "rebuilds") {
 		t.Error("the cost must be stated BEFORE the question")
 	}
-
-	h = newUpdateHarness(t, testChannel)
-	h.seed(t, testChannel, nil)
-	h.d.stdin = strings.NewReader("n\n")
-	h.notify("run")
-	if strings.Contains(h.stderr.String(), "OAuth broker") {
-		t.Errorf("a Homebrew update does not run just deploy:\n%s", h.stderr.String())
+	if strings.Contains(out, "OAuth broker") {
+		t.Errorf("a Homebrew update does not run just deploy:\n%s", out)
 	}
 }
 
-// What an update does to jails already running differs by channel, and both
-// the launch prompt and `yolo update`'s success line must say which.
+// What an update does to jails already running must be said by both the launch
+// prompt and `yolo update`'s success line.
 func TestUpdateSaysWhatHappensToRunningJailsPerChannel(t *testing.T) {
 	for _, c := range []struct {
 		ch   selfupdate.Channel
 		want string
 	}{
 		{testChannel, "The previous version stays installed, so running jails keep their binaries until you restart them; `brew cleanup yolo-jail` removes it after that."},
-		{sourceTestChannel, "`just deploy` installs a new bundle beside the one they use"},
 	} {
 		t.Run(string(c.ch.Kind), func(t *testing.T) {
 			h := newUpdateHarness(t, c.ch)
@@ -421,7 +407,7 @@ func TestUpdateSaysWhatHappensToRunningJailsPerChannel(t *testing.T) {
 
 			h = newUpdateHarness(t, c.ch)
 			h.d.check = func(_ context.Context, ch selfupdate.Channel, _ selfupdate.State) selfupdate.State {
-				return selfupdate.State{Identity: ch.Identity(), Kind: ch.Kind, Current: ch.Version, Latest: "0.11.0", Behind: 1, Available: true}
+				return selfupdate.State{Identity: ch.Identity(), Kind: ch.Kind, Current: ch.Version, Latest: "0.11.0", Available: true}
 			}
 			if rc := updateMain([]string{"update"}, h.d); rc != 0 {
 				t.Fatalf("exit %d: %s", rc, h.stderr.String())
@@ -433,12 +419,12 @@ func TestUpdateSaysWhatHappensToRunningJailsPerChannel(t *testing.T) {
 	}
 }
 
-// A from-source check or update runs the checkout's own git config, hooks and
-// Justfile on the host. `yolo update --help` says what it runs and stops there:
-// building a checkout runs what is in it, which is the point of a source install
+// `yolo update --from` runs the checkout's own git config, hooks and Justfile on
+// the host. `yolo update --help` says what it runs and stops there: building a
+// checkout runs what is in it, which is the point of naming it
 // (docs/reference/host-execution-from-the-workspace.md, "the product cell"), so
-// neither the help nor the launch prompt advises locking those files from a jail,
-// which would stop the jail developing them.
+// the help does not advise locking those files from a jail, which would stop the
+// jail developing them.
 func TestUpdateSaysWhatASourceUpdateRunsWithoutAdvisingALock(t *testing.T) {
 	var help bytes.Buffer
 	if !answerHelp("update", []string{"update", "--help"}, &help) {
@@ -451,20 +437,6 @@ func TestUpdateSaysWhatASourceUpdateRunsWithoutAdvisingALock(t *testing.T) {
 	}
 	if strings.Contains(help.String(), "workspace_readonly") {
 		t.Errorf("`yolo update --help` advises locking the checkout from a jail:\n%s", help.String())
-	}
-
-	h := newUpdateHarness(t, sourceTestChannel)
-	h.seed(t, sourceTestChannel, nil)
-	h.d.stdin = strings.NewReader("n\n")
-	h.notify("run")
-	out := h.stderr.String()
-	if !strings.Contains(out, "Source checkout:") {
-		t.Fatalf("the source launch prompt was not shown:\n%s", out)
-	}
-	for _, unwanted := range []string{"workspace_readonly", "git config and hooks"} {
-		if strings.Contains(out, unwanted) {
-			t.Errorf("the source launch prompt warns about %q:\n%s", unwanted, out)
-		}
 	}
 }
 
@@ -582,17 +554,16 @@ func TestUpdatePromptNotOfferedWhenItCannotOrShouldNot(t *testing.T) {
 	})
 }
 
-func TestUpdateRootConflictAllowsTheSourceCheckoutItself(t *testing.T) {
+func TestUpdateRootConflictAllowsTheNamedCheckoutItself(t *testing.T) {
 	root := fakeCheckout(t, selfupdate.Module)
 	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ch := selfupdate.Channel{Kind: selfupdate.KindSource, SourceDir: resolved}
-	if err := updateRootConflict(ch, root); err != nil {
-		t.Errorf("matching source override was refused: %v", err)
+	if err := updateRootConflict(resolved, root); err != nil {
+		t.Errorf("an override naming the --from checkout was refused: %v", err)
 	}
-	if err := updateRootConflict(testChannel, root); err == nil {
+	if err := updateRootConflict("", root); err == nil {
 		t.Error("a Homebrew update must refuse a live-source override it cannot update")
 	}
 }
@@ -624,11 +595,7 @@ func TestInstalledVersionIgnoresYOLOVersion(t *testing.T) {
 
 func TestUpdateCommand(t *testing.T) {
 	available := func(_ context.Context, ch selfupdate.Channel, _ selfupdate.State) selfupdate.State {
-		st := selfupdate.State{Identity: ch.Identity(), Kind: ch.Kind, Current: ch.Version, Latest: "0.11.0", Available: true, CheckedAt: time.Now()}
-		if ch.Kind == selfupdate.KindSource {
-			st.Latest, st.Upstream, st.Behind = "abc1234d", "origin/main", 2
-		}
-		return st
+		return selfupdate.State{Identity: ch.Identity(), Kind: ch.Kind, Current: ch.Version, Latest: "0.11.0", Available: true, CheckedAt: time.Now()}
 	}
 
 	t.Run("--check reports without applying", func(t *testing.T) {
@@ -645,16 +612,6 @@ func TestUpdateCommand(t *testing.T) {
 		}
 		if !selfupdate.LoadState(h.d.statePath).Available {
 			t.Error("--check must refresh the cache")
-		}
-	})
-	t.Run("an available update is applied, and --autostash reaches it", func(t *testing.T) {
-		h := newUpdateHarness(t, sourceTestChannel)
-		h.d.check = available
-		if rc := updateMain([]string{"update", "--autostash"}, h.d); rc != 0 || h.applied != 1 {
-			t.Errorf("exit %d, applied %d; want 0, 1", rc, h.applied)
-		}
-		if !h.applyOpts.Autostash {
-			t.Error("--autostash was parsed but not passed on")
 		}
 	})
 	t.Run("binary-only channels refuse a partial update", func(t *testing.T) {
@@ -737,25 +694,196 @@ func TestUpdateCommand(t *testing.T) {
 			t.Errorf("want the releases page and no --from, which is only for a binary built from source: %q", h.stderr.String())
 		}
 	})
-	t.Run("a moved checkout names --from", func(t *testing.T) {
-		h := newUpdateHarness(t, selfupdate.Channel{Kind: selfupdate.KindUnknown, Exe: "/home/u/.local/bin/yolo", MissingSourceDir: "/src/gone"})
-		if rc := updateMain([]string{"update"}, h.d); rc != 1 {
-			t.Errorf("exit %d, want 1", rc)
-		}
-		if !strings.Contains(h.stderr.String(), "/src/gone, which no longer contains the yolo-jail checkout") || !strings.Contains(h.stderr.String(), "--from") {
-			t.Errorf("stderr: %q", h.stderr.String())
-		}
-	})
 	t.Run("unknown argument", func(t *testing.T) {
 		h := newUpdateHarness(t, testChannel)
 		if rc := updateMain([]string{"update", "--yes"}, h.d); rc != 2 {
 			t.Errorf("exit %d, want 2", rc)
 		}
 	})
-	t.Run("--autostash is source-only", func(t *testing.T) {
+	t.Run("--autostash needs --from", func(t *testing.T) {
+		for _, ch := range []selfupdate.Channel{testChannel, snapshotTestChannel} {
+			h := newUpdateHarness(t, ch)
+			if rc := updateMain([]string{"update", "--autostash"}, h.d); rc != 2 || h.applied != 0 || h.deployed != 0 {
+				t.Errorf("%s: exit %d, applied %d, deployed %d; want 2, 0, 0", ch.Kind, rc, h.applied, h.deployed)
+			}
+			if !strings.Contains(h.stderr.String(), "yolo update --from <checkout> --autostash") {
+				t.Errorf("%s: the refusal does not name the form that works: %q", ch.Kind, h.stderr.String())
+			}
+		}
+	})
+}
+
+// A snapshot install has no release to compare against: `yolo update` and its
+// --check change nothing — no check, no state write, no install — and print the
+// two ways to update it. --check succeeds (it answered the question); a plain
+// update exits 1, because it installed nothing it was asked to.
+func TestUpdateOnASnapshotChangesNothingAndNamesTheNextSteps(t *testing.T) {
+	for _, c := range []struct {
+		args   []string
+		wantRC int
+	}{
+		{[]string{"update", "--check"}, 0},
+		{[]string{"update"}, 1},
+		{[]string{"update", "--force"}, 1},
+	} {
+		t.Run(strings.Join(c.args, " "), func(t *testing.T) {
+			h := newUpdateHarness(t, snapshotTestChannel)
+			checked := 0
+			h.d.check = func(_ context.Context, ch selfupdate.Channel, _ selfupdate.State) selfupdate.State {
+				checked++
+				return selfupdate.State{Identity: ch.Identity(), Kind: ch.Kind, Latest: "0.11.0", Available: true}
+			}
+			if rc := updateMain(c.args, h.d); rc != c.wantRC {
+				t.Errorf("exit %d, want %d: %s", rc, c.wantRC, h.stderr.String())
+			}
+			if checked != 0 || h.applied != 0 || h.deployed != 0 {
+				t.Errorf("checked %d, applied %d, deployed %d; a snapshot update changes nothing", checked, h.applied, h.deployed)
+			}
+			if _, err := os.Stat(h.d.statePath); !os.IsNotExist(err) {
+				t.Errorf("a snapshot update wrote the update cache (%v)", err)
+			}
+			out := h.stdout.String()
+			for _, want := range []string{"Installed via: snapshot (/home/u/go/bin/yolo)", "just install", "yolo update --from <checkout>"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("missing %q in:\n%s", want, out)
+				}
+			}
+			for _, unwanted := range []string{"go install", "cannot tell how this yolo", "release archive", selfupdate.ReleasesPage} {
+				if strings.Contains(out+h.stderr.String(), unwanted) {
+					t.Errorf("a snapshot was described as another channel (%q):\n%s%s", unwanted, out, h.stderr.String())
+				}
+			}
+		})
+	}
+}
+
+// The real command path: `yolo update` dispatched as a user runs it, by a binary
+// stamped BuildKind=installed with no other channel marker. Deleting the snapshot
+// case from Detect, or BuildKind from selfupdate.Current, or the snapshot branch
+// from updateMain, fails this.
+func TestUpdateCommandOnAnInstalledBuildPrintsTheSnapshotSteps(t *testing.T) {
+	origKind := version.BuildKind
+	t.Cleanup(func() { version.BuildKind = origKind })
+	version.BuildKind = "installed"
+	t.Setenv("YOLO_VERSION", "")
+	t.Setenv("YOLO_NO_BANNER", "1")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", "")
+	t.Setenv("XDG_CACHE_HOME", "")
+
+	for _, c := range []struct {
+		args   []string
+		wantRC int
+	}{
+		{[]string{"update", "--check"}, 0},
+		{[]string{"update"}, 1},
+	} {
+		t.Run(strings.Join(c.args, " "), func(t *testing.T) {
+			var rc int
+			out := captureStdout(t, func() { rc = dispatchNative("update", c.args) })
+			if rc != c.wantRC {
+				t.Errorf("exit %d, want %d:\n%s", rc, c.wantRC, out)
+			}
+			for _, want := range []string{"Installed via: snapshot", selfupdate.SnapshotSummary, selfupdate.SnapshotSteps} {
+				if !strings.Contains(out, want) {
+					t.Errorf("missing %q in:\n%s", want, out)
+				}
+			}
+		})
+	}
+}
+
+func TestUpdateFrom(t *testing.T) {
+	good := fakeCheckout(t, selfupdate.Module)
+	resolvedGood, err := filepath.EvalSymlinks(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("deploys the named checkout beside the running binary, with no check", func(t *testing.T) {
+		h := newUpdateHarness(t, snapshotTestChannel)
+		checked := 0
+		h.d.check = func(context.Context, selfupdate.Channel, selfupdate.State) selfupdate.State {
+			checked++
+			return selfupdate.State{}
+		}
+		if rc := updateMain([]string{"update", "--from", good}, h.d); rc != 0 {
+			t.Fatalf("exit %d: %s", rc, h.stderr.String())
+		}
+		if h.deployed != 1 || h.deployDir != resolvedGood || h.deployExe != snapshotTestChannel.Exe {
+			t.Errorf("deployed %d times, %q beside %q; want once, %q beside %q", h.deployed, h.deployDir, h.deployExe, resolvedGood, snapshotTestChannel.Exe)
+		}
+		if checked != 0 || h.applied != 0 {
+			t.Errorf("checked %d, applied %d; --from deploys the checkout as it stands", checked, h.applied)
+		}
+		if h.deployOpts.Autostash {
+			t.Error("autostash without --autostash")
+		}
+		if !strings.Contains(h.stdout.String(), "just deploy") || !strings.Contains(h.stdout.String(), "✓ deployed.") {
+			t.Errorf("the deploy is not stated: %q", h.stdout.String())
+		}
+		if !strings.Contains(h.stderr.String(), "any jail using it loses it briefly") {
+			t.Errorf("the broker impact is not stated: %q", h.stderr.String())
+		}
+	})
+	t.Run("--autostash reaches the deploy", func(t *testing.T) {
+		h := newUpdateHarness(t, snapshotTestChannel)
+		if rc := updateMain([]string{"update", "--from", good, "--autostash"}, h.d); rc != 0 || !h.deployOpts.Autostash {
+			t.Errorf("exit %d, autostash %v; want 0, true", rc, h.deployOpts.Autostash)
+		}
+	})
+	t.Run("--check prints the deploy and changes nothing", func(t *testing.T) {
+		h := newUpdateHarness(t, snapshotTestChannel)
+		if rc := updateMain([]string{"update", "--check", "--from=" + good}, h.d); rc != 0 || h.deployed != 0 {
+			t.Errorf("exit %d, deployed %d; want 0, 0: %s", rc, h.deployed, h.stderr.String())
+		}
+		if !strings.Contains(h.stdout.String(), "GOBIN=/home/u/go/bin just deploy") {
+			t.Errorf("the planned deploy is not printed: %q", h.stdout.String())
+		}
+	})
+	t.Run("a failed deploy is reported", func(t *testing.T) {
+		h := newUpdateHarness(t, snapshotTestChannel)
+		h.deployErr = errors.New("uncommitted changes")
+		if rc := updateMain([]string{"update", "--from", good}, h.d); rc != 1 || !strings.Contains(h.stderr.String(), "uncommitted changes") {
+			t.Errorf("exit %d, stderr %q", rc, h.stderr.String())
+		}
+	})
+	t.Run("refused for an install nothing shows was built from source", func(t *testing.T) {
+		h := newUpdateHarness(t, selfupdate.Channel{Kind: selfupdate.KindUnknown, Exe: "/usr/local/bin/yolo"})
+		if rc := updateMain([]string{"update", "--from", good}, h.d); rc != 1 || h.deployed != 0 {
+			t.Errorf("exit %d, deployed %d; want 1, 0", rc, h.deployed)
+		}
+		if !strings.Contains(h.stderr.String(), "nothing shows this yolo") || !strings.Contains(h.stderr.String(), "just install") {
+			t.Errorf("stderr %q", h.stderr.String())
+		}
+	})
+	t.Run("refused for a package-manager install", func(t *testing.T) {
 		h := newUpdateHarness(t, testChannel)
-		if rc := updateMain([]string{"update", "--autostash"}, h.d); rc != 2 || h.applied != 0 {
-			t.Errorf("exit %d, applied %d; want 2, 0", rc, h.applied)
+		if rc := updateMain([]string{"update", "--from", good}, h.d); rc != 1 || !strings.Contains(h.stderr.String(), "managed by homebrew") || h.deployed != 0 {
+			t.Errorf("exit %d, deployed %d, stderr %q", rc, h.deployed, h.stderr.String())
+		}
+	})
+	t.Run("refused for something that is not a yolo-jail checkout", func(t *testing.T) {
+		h := newUpdateHarness(t, snapshotTestChannel)
+		other := fakeCheckout(t, "example.com/other")
+		if rc := updateMain([]string{"update", "--from", other}, h.d); rc != 1 || !strings.Contains(h.stderr.String(), "not a yolo-jail checkout") {
+			t.Errorf("exit %d, stderr %q", rc, h.stderr.String())
+		}
+		if rc := updateMain([]string{"update", "--from", t.TempDir()}, h.d); rc != 1 || !strings.Contains(h.stderr.String(), "not a git checkout") {
+			t.Errorf("exit %d, stderr %q", rc, h.stderr.String())
+		}
+		if h.deployed != 0 {
+			t.Errorf("deployed %d", h.deployed)
+		}
+	})
+	t.Run("--from with no value", func(t *testing.T) {
+		h := newUpdateHarness(t, snapshotTestChannel)
+		if rc := updateMain([]string{"update", "--from"}, h.d); rc != 2 {
+			t.Errorf("exit %d, want 2", rc)
+		}
+		h = newUpdateHarness(t, snapshotTestChannel)
+		if rc := updateMain([]string{"update", "--from="}, h.d); rc != 2 {
+			t.Errorf("--from=: exit %d, want 2", rc)
 		}
 	})
 }
@@ -770,89 +898,4 @@ func fakeCheckout(t *testing.T, module string) string {
 		t.Fatal(err)
 	}
 	return dir
-}
-
-func TestUpdateFrom(t *testing.T) {
-	good := fakeCheckout(t, selfupdate.Module)
-	resolvedGood, err := filepath.EvalSymlinks(good)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Run("repoints a moved checkout", func(t *testing.T) {
-		h := newUpdateHarness(t, selfupdate.Channel{Kind: selfupdate.KindUnknown, Exe: "/home/u/.local/bin/yolo", MissingSourceDir: "/src/gone"})
-		var checked selfupdate.Channel
-		h.d.check = func(_ context.Context, ch selfupdate.Channel, _ selfupdate.State) selfupdate.State {
-			checked = ch
-			return selfupdate.State{Identity: ch.Identity(), Kind: ch.Kind, Current: ch.Version}
-		}
-		if rc := updateMain([]string{"update", "--from", good}, h.d); rc != 0 {
-			t.Fatalf("exit %d: %s", rc, h.stderr.String())
-		}
-		if checked.Kind != selfupdate.KindSource || checked.SourceDir != resolvedGood || checked.Exe != "/home/u/.local/bin/yolo" {
-			t.Errorf("checked %+v, want a source channel at %s deploying beside the running binary", checked, resolvedGood)
-		}
-		if checked.Branch != "" {
-			t.Error("naming the checkout names what to deploy; no branch may be enforced")
-		}
-		if h.applied != 1 {
-			t.Errorf("applied %d, want 1", h.applied)
-		}
-	})
-	t.Run("--from=<dir> spelling", func(t *testing.T) {
-		h := newUpdateHarness(t, sourceTestChannel)
-		if rc := updateMain([]string{"update", "--check", "--from=" + good}, h.d); rc != 0 {
-			t.Errorf("exit %d: %s", rc, h.stderr.String())
-		}
-	})
-	t.Run("a checkout with no usable upstream is deployed as named", func(t *testing.T) {
-		h := newUpdateHarness(t, selfupdate.Channel{Kind: selfupdate.KindUnknown, Exe: "/home/u/.local/bin/yolo", MissingSourceDir: "/src/gone"})
-		h.d.check = func(_ context.Context, ch selfupdate.Channel, _ selfupdate.State) selfupdate.State {
-			return selfupdate.State{Identity: ch.Identity(), Kind: ch.Kind, Current: ch.Version, Error: "branch has no upstream"}
-		}
-		if rc := updateMain([]string{"update", "--from", good}, h.d); rc != 0 {
-			t.Fatalf("exit %d: %s", rc, h.stderr.String())
-		}
-		if !h.applyOpts.SkipPull {
-			t.Error("--from must deploy the named checkout when no upstream can be checked")
-		}
-		if !strings.Contains(h.stdout.String(), "no pull will run") {
-			t.Errorf("the skip-pull behavior was not disclosed: %q", h.stdout.String())
-		}
-	})
-	t.Run("refused for an install nothing shows was built from source", func(t *testing.T) {
-		h := newUpdateHarness(t, selfupdate.Channel{Kind: selfupdate.KindUnknown, Exe: "/usr/local/bin/yolo"})
-		if rc := updateMain([]string{"update", "--from", good}, h.d); rc != 1 || h.applied != 0 {
-			t.Errorf("exit %d, applied %d; want 1, 0", rc, h.applied)
-		}
-		if !strings.Contains(h.stderr.String(), "nothing shows this yolo") {
-			t.Errorf("stderr %q", h.stderr.String())
-		}
-	})
-	t.Run("refused for a package-manager install", func(t *testing.T) {
-		h := newUpdateHarness(t, testChannel)
-		if rc := updateMain([]string{"update", "--from", good}, h.d); rc != 1 || !strings.Contains(h.stderr.String(), "managed by homebrew") {
-			t.Errorf("exit %d, stderr %q", rc, h.stderr.String())
-		}
-	})
-	t.Run("refused for something that is not a yolo-jail checkout", func(t *testing.T) {
-		h := newUpdateHarness(t, sourceTestChannel)
-		other := fakeCheckout(t, "example.com/other")
-		if rc := updateMain([]string{"update", "--from", other}, h.d); rc != 1 || !strings.Contains(h.stderr.String(), "not a yolo-jail checkout") {
-			t.Errorf("exit %d, stderr %q", rc, h.stderr.String())
-		}
-		if rc := updateMain([]string{"update", "--from", t.TempDir()}, h.d); rc != 1 || !strings.Contains(h.stderr.String(), "not a git checkout") {
-			t.Errorf("exit %d, stderr %q", rc, h.stderr.String())
-		}
-	})
-	t.Run("--from with no value", func(t *testing.T) {
-		h := newUpdateHarness(t, sourceTestChannel)
-		if rc := updateMain([]string{"update", "--from"}, h.d); rc != 2 {
-			t.Errorf("exit %d, want 2", rc)
-		}
-		h = newUpdateHarness(t, sourceTestChannel)
-		if rc := updateMain([]string{"update", "--from="}, h.d); rc != 2 {
-			t.Errorf("--from=: exit %d, want 2", rc)
-		}
-	})
 }

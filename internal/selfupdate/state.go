@@ -31,13 +31,8 @@ type State struct {
 	Identity string `json:"identity"`
 	Kind     Kind   `json:"kind"`
 	Current  string `json:"current"`
-	// Latest is the newest release version, or for KindSource the upstream's
-	// short commit.
-	Latest string `json:"latest,omitempty"`
-	// Upstream and Behind are KindSource only: the tracked branch, and how many
-	// of its commits the binary was not built from.
-	Upstream  string `json:"upstream,omitempty"`
-	Behind    int    `json:"behind,omitempty"`
+	// Latest is the newest release version.
+	Latest    string `json:"latest,omitempty"`
 	Available bool   `json:"available"`
 	Error     string `json:"error,omitempty"`
 	// Disclosed records that this machine has been told, once, that yolo checks
@@ -49,11 +44,10 @@ type State struct {
 }
 
 // sanitized returns s with control characters removed from the fields that
-// carry text from outside yolo: the upstream's name and the tip or tag it
-// reported, and an error that may quote git's stderr or a server's reply. They
-// are printed to a terminal, where an escape sequence would be obeyed.
+// carry text from outside yolo: the tag a server reported, and an error that
+// may quote a server's reply. They are printed to a terminal, where an escape
+// sequence would be obeyed.
 func (s State) sanitized() State {
-	s.Upstream = StripControl(s.Upstream)
 	s.Latest = StripControl(s.Latest)
 	s.Error = StripControl(s.Error)
 	return s
@@ -187,9 +181,10 @@ func BackgroundCheckArgs(statePath string) []string {
 
 // SpawnBackgroundCheck starts `<exe> internal update-check` detached — its own
 // session, no inherited stdio — so the command that noticed a stale release
-// cache finishes at full speed and the next one reads the answer. Source
-// channels never call it. The lock is taken HERE, before the spawn, so a burst
-// of commands starts one check rather than one each; the child releases it.
+// cache finishes at full speed and the next one reads the answer. Snapshot and
+// development installs never call it. The lock is taken HERE, before the
+// spawn, so a burst of commands starts one check rather than one each; the
+// child releases it.
 func SpawnBackgroundCheck(exe, statePath string, now time.Time) error {
 	lock := LockPath(statePath)
 	if !AcquireLock(lock, now) {

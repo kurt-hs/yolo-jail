@@ -1538,7 +1538,11 @@ var forkCheckout = func(store *packsrc.Store, a packsrc.Addr, commit string) (st
 // copySourceTree copies src to dst: directories, regular files with their permission bits, and
 // symlinks as links. The pack store's completion marker at the tree's root is not the fork's.
 func copySourceTree(src, dst string) error {
-	return copySourceTreeSkipping(src, dst, map[string]bool{".yolo-pack-complete": true})
+	abs, err := filepath.Abs(src)
+	if err != nil {
+		return err
+	}
+	return copySourceTreeSkipping(src, dst, map[string]bool{".yolo-pack-complete": true}, filepath.Dir(abs))
 }
 
 // copySourceTreeSkipping copies src to dst leaving out skip, a set of slash-separated paths relative
@@ -1556,8 +1560,20 @@ func copySourceTree(src, dst string) error {
 // volume a source holding both `Lib` (a link to /etc) and `lib/x` would otherwise write x through the
 // link; here `lib` meets the link as an existing entry and the copy stops. Only the root may exist
 // already, as a real directory.
-func copySourceTreeSkipping(src, dst string, skip map[string]bool) error {
-	return nofollow.Walk(src, skip, func(e nofollow.Entry) error {
+//
+// HOW src IS REACHED is base's (BG-D23): base and its ancestors are yolo's or the user's own (a
+// pack's root, the pack store's checkout's parent), whose links, a user's included, are followed as
+// the OS does, and nothing from base down to src and below is followed (nofollow.WalkBelow). An empty
+// base is a dev override's checkout, any of whose ancestors an agent may write, reached from /
+// following only root's links (nofollow.Walk, BG-D22); packload.Fork.SourceBase says which.
+func copySourceTreeSkipping(src, dst string, skip map[string]bool, base string) error {
+	walk := func(visit func(nofollow.Entry) error) error {
+		if base == "" {
+			return nofollow.Walk(src, skip, visit)
+		}
+		return nofollow.WalkBelow(base, src, skip, visit)
+	}
+	return walk(func(e nofollow.Entry) error {
 		target := filepath.Join(dst, e.Rel)
 		switch e.Kind {
 		case nofollow.Dir:

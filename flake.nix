@@ -880,6 +880,18 @@
               && !(builtins.elem n noncontainerDeclaredNames))
           coreFloorNames;
 
+        # FONTCONFIG'S RULE SET (docs/design/provisioner-sets.md §16.4): the macos-user
+        # launch's generated fonts.conf includes <profile>/etc/fonts/conf.d by its absolute
+        # path, because nixpkgs builds fontconfig with --sysconfdir=/etc and the upstream
+        # fonts.conf's own include names /etc/fonts/conf.d, which a Mac does not have.  The
+        # `out` output is named EXPLICITLY, the trap yoloImageExtras documents: fontconfig's
+        # default output is `bin`, and etc/fonts lives in `out`.  Filtered like the floor
+        # (noncontainerFloorNames), so a user who pins their own fontconfig in `packages:`
+        # gets theirs rather than a buildEnv collision.
+        noncontainerFontRules =
+          if builtins.elem "fontconfig" noncontainerDeclaredNames then [ ]
+          else [ pkgs.fontconfig.out ];
+
         # The floor, resolved against `pkgs` — and THE FATAL.
         #
         # Each element is lazy, so reading `noncontainerFloorNames` never
@@ -2173,7 +2185,7 @@
         # the user declared, so the two halves cannot collide inside it.
         packages.yoloNoncontainerProfile = pkgs.buildEnv {
           name = "yolo-noncontainer-profile";
-          paths = noncontainerFloorPackages ++ noncontainerPackages;
+          paths = noncontainerFloorPackages ++ noncontainerFontRules ++ noncontainerPackages;
           extraOutputsToInstall = [ "bin" "lib" "dev" ];
         };
         yoloUnavailablePackages = noncontainerSkippedNames;

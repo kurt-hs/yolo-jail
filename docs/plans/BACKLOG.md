@@ -801,6 +801,41 @@ writer to matter; `yolo config apply` closes the same gap for the running case. 
 repository listed under `widened` and removed from the config is never narrowed live. Such a file
 belongs to a broker that cannot take live scope anyway. Found 2026-10-18.
 
+### <a id="font-copy-gaps"></a>🔧 **The macos-user font copy: four gaps the lane's review left**
+
+The opt-in font copy (`share_host_fonts`, [PS-D19](../design/provisioner-sets.md#decision-ledger))
+landed with these open. A dry run returns before the copy is built, so it neither shows the copy
+nor its grant. Pruning can delete a copy a launch that lost the rename race is about to use, and
+turning the opt-in off removes the copy under a running session. The file copy re-opens each
+source by path after listing it, so a folder swapped for a link in that gap is followed. A launch
+killed while building the copy root leaves a `.fonts.new-*` folder nothing sweeps. Found by the
+lane's review, 2026-10-23.
+
+### <a id="self-mode-tmpdir-trees"></a>🔧 **Trust-bearing trees sit in a `$TMPDIR` that macos-user's run-as-you mode can write**
+
+`yolo pack build`, `yolo host` and background preparation stage packs into the process pack tree
+under `os.TempDir()`, as do the embedded fallback and the patched-replay scratch repository. On a
+Mac that is `DARWIN_USER_TEMP_DIR`, which the run-as-you Seatbelt profile grants read and write. An
+agent in a concurrent run-as-you jail that swaps a staged directory for a link can redirect the
+host-side digest and copy, since BG-D23 follows links above a tree's root. It takes a deliberate
+race, out of scope under the misguided-agent principle, and no path was found for the redirected
+bytes to reach a jail. The fix is to keep these trees out of a jail-writable `$TMPDIR`, or to treat
+the tree root yolo made as the base. Found by the capture-symlink fix's review, 2026-10-23.
+
+### <a id="concurrent-integration-suites"></a>🔧 **Two integration suites on one podman break each other without saying why**
+
+Both use fixed-name volumes and the one `yolo-jail:latest` tag, and each reloads that tag from its
+own tree. Two run at once on 2026-10-23 failed with "volume already exists" and a process-cleanup
+error, neither naming the other run. The cross-run lock should cover the image load and the
+fixed-name volumes, or a run should refuse while another holds the machine.
+
+### <a id="timing-flakes-under-load"></a>🔧 **Two short deadlines fail `just check-ci` on a loaded machine**
+
+`TestAHealthyMintPrintsNoLaunchCheckLine` (a 2-second mint deadline) and
+`TestLargePasteDeadlockPinsNonblockingMasterForwarding` (a 3-second ttyproxy deadline) each failed
+once during a 2026-10-23 landing gate with other agents' builds running, and passed alone. Each
+deadline should measure what it pins without a wall-clock bound the machine's load can cross.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |

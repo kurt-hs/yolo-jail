@@ -266,6 +266,16 @@ project, and in `env_sources` set `SSL_CERT_FILE` to that file, and `NODE_EXTRA_
 you use Node. Setting `SSL_CERT_FILE` is enough for curl, git, Python and the other tools: yolo
 points their own variables at the same file.
 
+**Fonts.** Tools in the sandbox that draw text, such as a PDF or chart renderer, find your Mac's
+fonts in `/System/Library/Fonts` and `/Library/Fonts`, the fonts macOS downloads on demand, and
+any font package in your `packages`. A jail running as you also finds the fonts you installed for
+yourself in `~/Library/Fonts`. For the separate sandbox user, add `"share_host_fonts": true` to
+your user config: each launch gives the sandbox a copy of the fonts in `~/Library/Fonts`, refreshed
+when they change, and says so. The sandbox user is given no access to your home itself, and the copy
+is removed when you turn the setting off. The same
+setting shares your fonts, read-only, with a container jail on any host. A project's config cannot
+set it.
+
 **Remove it.**
 
 ```bash

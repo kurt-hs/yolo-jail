@@ -39,7 +39,7 @@ def repo_fixture(root: Path, *, real_scripts=False):
         if real_scripts:
             shutil.copy2(HERE / name, scripts / name)
         elif name == "stage-source-bundle.sh":
-            (scripts / name).write_text("SHIPPED_BINARIES=(yolo-helper)\nGUEST_BINARIES=(guest-helper)\n")
+            (scripts / name).write_text("SHIPPED_BINARIES=(yolo yolo-helper)\nGUEST_BINARIES=(guest-helper)\n")
         else:
             (scripts / name).write_text(f"fixture {name}\n")
     env = clean_git_env()
@@ -185,6 +185,7 @@ class SnapshotTests(unittest.TestCase):
             (self.repo / "scripts/build-go.sh").write_text("changed live script\n")
             goos = subprocess.check_output(["go", "env", "GOHOSTOS"], text=True).strip()
             goarch = subprocess.check_output(["go", "env", "GOHOSTARCH"], text=True).strip()
+            launcher = "#!/bin/sh\nprintf '%s\\n' 'snapshot identity: " + identity + "' 'build kind: development'\n"
             seen = []
             def run(argv, *, cwd, env, check):
                 seen.append(Path(argv[0]))
@@ -195,54 +196,102 @@ class SnapshotTests(unittest.TestCase):
                     self.assertEqual(Path(argv[0]).read_text(), "fixture build-go.sh\n")
                     binary = snapshot / "dist-go" / f"{goos}-{goarch}" / "yolo"
                     binary.parent.mkdir(parents=True)
-                    binary.write_text("#!/bin/sh\nprintf '%s\\n' 'snapshot identity: " + identity + "' 'build kind: development'\n")
+                    binary.write_text(launcher)
                     binary.chmod(0o755)
                 else:
+                    self.assertEqual(Path(argv[0]).read_text(), (snapshot / "scripts/stage-source-bundle.sh").read_text())
                     dest = Path(argv[1]); dest.mkdir(parents=True)
                     (dest / "flake.nix").write_text("flake")
                     (dest / "flake.lock").write_text("lock")
                     _fake_helper_dirs(dest, snapshot)
+                    (dest / "bin" / f"linux-{goarch}" / "yolo").write_text(launcher)
                     (dest / "yolo-build-stamp.json").write_text(json.dumps({"snapshotIdentity": identity, "buildKind": "development"}))
                 return SimpleNamespace(returncode=0)
             output = Path(td) / "bundle"
             mb.assemble(snapshot, output, identity=identity, build_kind="development",
                         version="v", commit="c", runner=run)
-            self.assertEqual(len(seen), 2)
+            # Linux: the stage alone, whose linux yolo IS the launcher. macOS: the stage, then
+            # the one darwin build of yolo, which the bundle's guest set does not include.
+            self.assertEqual(len(seen), 1 if goos == "linux" else 2)
 
-    def test_assemble_passes_source_stamps_only_to_installed_builds(self):
-        with tempfile.TemporaryDirectory() as td:
-            snapshot=Path(td).resolve()/"snapshot"
-            mb.freeze_snapshot(self.repo, snapshot)
-            host_os,host_arch=mb._platform(snapshot)
-            shipped,guest=mb._binary_lists(snapshot/"scripts/stage-source-bundle.sh")
-            observed=[]
-            def runner(argv, *, cwd, env, check):
-                self.assertEqual(cwd, snapshot)
-                observed.append((argv[0], env.copy()))
-                if str(argv[0]).endswith("build-go.sh"):
-                    binary=snapshot/"dist-go"/f"{host_os}-{host_arch}"/"yolo"
-                    binary.parent.mkdir(parents=True,exist_ok=True)
-                    binary.write_text("#!/bin/sh\nprintf '%s\\n' 'snapshot identity: "+env["SNAPSHOT_IDENTITY"]+"' 'build kind: "+env["BUILD_KIND"]+"'\n")
-                    binary.chmod(0o755)
-                else:
-                    bundle=Path(argv[1]); bundle.mkdir(parents=True)
-                    (bundle/"flake.nix").write_text("flake")
-                    (bundle/"flake.lock").write_text("lock")
-                    _fake_helper_dirs(bundle,snapshot)
-                    (bundle/"yolo-build-stamp.json").write_text(json.dumps({"snapshotIdentity":env["SNAPSHOT_IDENTITY"],"buildKind":env["BUILD_KIND"]}))
-                return SimpleNamespace(returncode=0)
-            for kind in ("installed","development"):
-                identity=("c" if kind=="installed" else "d")*64
-                out=Path(td)/kind
-                mb.assemble(snapshot,out,identity=identity,build_kind=kind,version="v",commit="c",
-                            source_dir="/checkout",source_branch="topic",runner=runner)
-            build_envs=[env for command,env in observed if str(command).endswith("build-go.sh")]
-            self.assertEqual(build_envs[0]["SOURCE_DIR"],"/checkout")
-            self.assertEqual(build_envs[0]["SOURCE_BRANCH"],"topic")
-            self.assertNotIn("SOURCE_DIR",build_envs[1])
-            self.assertNotIn("SOURCE_BRANCH",build_envs[1])
+    def test_assemble_builds_yolo_once_and_the_launcher_is_the_bundles_copy(self):
+        """The real build-go.sh and stage-source-bundle.sh, with a fake go that records every
+        build: an assemble compiles cmd/yolo exactly once for the host platform, and on Linux
+        bin/yolo is byte-identical to the bundle's bin/linux-<arch>/yolo. The fake go reports
+        the host, so every case runs on every machine: the real host, and forced Linux and
+        macOS hosts (a Mac host's stage also builds the jail's linux yolo, a different
+        program by nature, which must not count as a second build of the launcher)."""
+        real_os = subprocess.check_output(["go", "env", "GOHOSTOS"], text=True).strip()
+        real_arch = subprocess.check_output(["go", "env", "GOHOSTARCH"], text=True).strip()
+        for host_os, host_arch in [(real_os, real_arch), ("linux", "amd64"), ("darwin", "arm64")]:
+            with self.subTest(host=f"{host_os}/{host_arch}"):
+                self._assert_one_yolo_build(host_os, host_arch)
 
-    def test_build_go_omits_whitespace_source_dir_but_stamps_identity(self):
+    def _assert_one_yolo_build(self, host_os: str, host_arch: str):
+        root = self.root / f"one-build-{host_os}-{host_arch}"
+        if root.exists():
+            shutil.rmtree(root)
+        repo = repo_fixture(root, real_scripts=True)
+        shipped, guest = mb._binary_lists(repo / "scripts/stage-source-bundle.sh")
+        for name in {*shipped, *guest, "goprobe"}:
+            (repo / "cmd" / name).mkdir(parents=True, exist_ok=True)
+            (repo / "cmd" / name / "main.go").write_text("package main\n")
+        env = clean_git_env()
+        subprocess.run(["git", "add", "cmd"], cwd=repo, env=env, check=True)
+        subprocess.run(["git", "-c", "user.name=test", "-c", "user.email=test@example.invalid",
+                        "commit", "-qm", "cmds"], cwd=repo, env=env, check=True)
+        fakebin = root / "fakebin"; fakebin.mkdir()
+        log = root / "builds.log"
+        fake = fakebin / "go"
+        fake.write_text(f"""#!{sys.executable}
+import os, pathlib, re, sys
+args = sys.argv[1:]
+if args[:1] == ['env']:
+    values = {{'GOHOSTOS': {host_os!r}, 'GOHOSTARCH': {host_arch!r}, 'GOOS': os.environ.get('GOOS', {host_os!r}),
+              'GOARCH': os.environ.get('GOARCH', {host_arch!r})}}
+    print('\\n'.join(values.get(k, '') for k in args[1:])); raise SystemExit(0)
+if args[:1] != ['build']:
+    raise SystemExit('fake go: unexpected ' + ' '.join(args))
+pkg = args[-1]; out = pathlib.Path(args[args.index('-o') + 1])
+ldflags = args[args.index('-ldflags') + 1]
+stamp = dict(re.findall(r'internal/version\\.(\\w+)=(\\S*)', ldflags))
+with open(os.environ['YOLO_TEST_BUILDS'], 'a') as f:
+    f.write(f"{{os.environ['GOOS']}}/{{os.environ['GOARCH']}} {{pkg}}\\n")
+out.parent.mkdir(parents=True, exist_ok=True)
+out.write_text("#!/bin/sh\\nprintf '%s\\\\n' 'snapshot identity: " + stamp.get('SnapshotIdentity', '') + "' 'build kind: "
+               + stamp.get('BuildKind', '') + "' 'built for: " + os.environ['GOOS'] + "/" + os.environ['GOARCH'] + "'\\n")
+out.chmod(0o755)
+""")
+        fake.chmod(0o755)
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.dict(os.environ, {"PATH": str(fakebin) + os.pathsep + os.environ["PATH"],
+                                          "YOLO_TEST_BUILDS": str(log)}):
+            snapshot = Path(td).resolve() / "snapshot"
+            identity = mb.freeze_snapshot(repo, snapshot)
+            output = Path(td) / "bundle"
+            mb.assemble(snapshot, output, identity=identity, build_kind="installed",
+                        version="v1", commit="c1")
+            builds = log.read_text().splitlines()
+            yolo_builds = [b for b in builds if b.endswith(" ./cmd/yolo")]
+            host_build = f"{host_os}/{host_arch} ./cmd/yolo"
+            self.assertEqual(yolo_builds.count(host_build), 1,
+                             f"cmd/yolo must be compiled exactly once for the host platform: {builds}")
+            self.assertEqual(len(yolo_builds), len(set(yolo_builds)),
+                             f"a platform's yolo was compiled twice: {builds}")
+            self.assertTrue(all(b == host_build or b.startswith("linux/") for b in yolo_builds),
+                            f"cmd/yolo was built for a platform that is neither the host nor the jail: {builds}")
+            launcher = (output / "bin/yolo").read_bytes()
+            share = output / "share/yolo-jail/bin"
+            if host_os == "linux":
+                self.assertEqual(launcher, (share / f"linux-{host_arch}/yolo").read_bytes(),
+                                 "the installed launcher is not the bundle's own linux yolo")
+            else:
+                self.assertFalse((share / f"darwin-{host_arch}/yolo").exists(),
+                                 "the darwin guest set gained a yolo; the launcher must then be that file")
+                self.assertIn(f"built for: darwin/{host_arch}", launcher.decode())
+
+    def test_build_go_stamps_identity_and_no_checkout_path(self):
         root = self.root / "build"
         (root / "cmd/yolo").mkdir(parents=True); (root / "scripts").mkdir()
         shutil.copy2(HERE / "build-go.sh", root / "scripts/build-go.sh")
@@ -259,12 +308,13 @@ if args[0]=='build':
         env = os.environ.copy(); env.update({"PATH": str(fakebin)+os.pathsep+env["PATH"], "LOG": str(log),
             "GOOS":"linux", "GOARCH":"amd64", "SOURCE_DIR":"/tmp/space path", "SOURCE_BRANCH":"topic",
             "SNAPSHOT_IDENTITY":"a"*64, "BUILD_KIND":"installed"})
-        result = subprocess.run([str(root/"scripts/build-go.sh")], cwd=root, env=env,
-                                text=True, capture_output=True, check=True)
+        subprocess.run([str(root/"scripts/build-go.sh")], cwd=root, env=env,
+                       text=True, capture_output=True, check=True)
         args = log.read_text()
         self.assertIn("SnapshotIdentity="+"a"*64, args); self.assertIn("BuildKind=installed", args)
-        self.assertNotIn("version.SourceDir=", args); self.assertIn("version.SourceBranch=topic", args)
-        self.assertIn("whitespace", result.stderr)
+        # An install is a snapshot: a stale SOURCE_DIR/SOURCE_BRANCH in the environment
+        # stamps nothing about the checkout (OQ-IP1).
+        self.assertNotIn("SourceDir", args); self.assertNotIn("SourceBranch", args)
 
 
 class PackageTests(unittest.TestCase):
@@ -451,7 +501,7 @@ def command(*args, **kwargs):
     return original_command(*args, **kwargs)
 
 original_command = module.command
-module._source_stamps = lambda repo: ("v", "c", str(repo), "topic")
+module._source_stamps = lambda repo: ("v", "c")
 module.assemble = assemble
 module.command = command
 module.subprocess.run = runner
@@ -514,7 +564,7 @@ class StandaloneWrapperTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name).resolve()
         self.repo=repo_fixture(self.root,real_scripts=True)
         with tempfile.TemporaryDirectory() as td: self.identity=mb.freeze_snapshot(self.repo,Path(td).resolve()/"snapshot")
-        version,commit,_,_=mb._source_stamps(self.repo)
+        version,commit=mb._source_stamps(self.repo)
         self.home=self.root/"home"; self.log=self.root/"launcher.json"; self.stale_marker=self.root/"stale"
         installed=self.root/"installed-generation"; installed.mkdir()
         self.active=self.home/".local/share/yolo-jail/flake-bundle"

@@ -191,7 +191,8 @@ def baked(name, var):
 print('AGENT_REFRESHES=' + str('chrome-devtools-mcp' in baked('claude', 'SERVERS_NPM')))
 print('SERVER_UPDATES=' + baked('chrome-devtools-mcp', 'UPDATES_ENABLED'))
 PY
-/bin/sh /home/agent/.local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper --check || true`
+/bin/sh /home/agent/.local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper --check || true
+/bin/sh /home/agent/.local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper --boot-check; echo BOOT_CHECK_RC=$?`
 
 	dir := writeProjectWithPacks(t, mcpConfigWithAgents(`"mcp_servers": {}`),
 		"copilot", "codex", "claude", "chrome-devtools")
@@ -201,10 +202,21 @@ PY
 	}
 	for _, want := range []string{"COPILOT=True", "CLAUDE=True", "CODEX=True",
 		"AGENT_REFRESHES=True", "SERVER_UPDATES=0",
-		"chrome-devtools-mcp: /home/agent/.yolo/bin/launch/chrome-devtools-mcp", "browser: /"} {
+		"chrome-devtools-mcp: /home/agent/.yolo/bin/launch/chrome-devtools-mcp", "browser: /",
+		"BOOT_CHECK_RC=0"} {
 		if !strings.Contains(r.stdout, want) {
 			t.Errorf("selected: no %q\nstdout=%q\nstderr=%q", want, r.stdout, r.stderr)
 		}
+	}
+	// The pack's boot_check (mcp-presets-removal.md OQ-MP9) ran at boot and, with the image's
+	// chromium there, said nothing.
+	if strings.Contains(r.stderr, "chrome-devtools: browser: none found") || strings.Contains(r.stderr, "its boot check") {
+		t.Errorf("the boot warned about the browser with the image's chromium present:\n%s", r.stderr)
+	}
+	if bootLog, err := os.ReadFile(filepath.Join(dir, ".yolo", "boot.log")); err != nil {
+		t.Errorf("reading the boot log: %v", err)
+	} else if !strings.Contains(string(bootLog), "boot check chrome-devtools") {
+		t.Errorf("the boot log does not record the pack's boot check running:\n%s", bootLog)
 	}
 
 	dir = writeProjectWithPacks(t, mcpConfigWithAgents(`"mcp_servers": {"chrome-devtools": null}`),

@@ -279,7 +279,7 @@ func privateMachineStoreHome(t *testing.T) string {
 		if e.Name() == "home" {
 			continue
 		}
-		if err := os.Symlink(filepath.Join(real, e.Name()), filepath.Join(state, e.Name())); err != nil {
+		if err := userSymlink(filepath.Join(real, e.Name()), filepath.Join(state, e.Name())); err != nil {
 			t.Fatal(err)
 		}
 	}

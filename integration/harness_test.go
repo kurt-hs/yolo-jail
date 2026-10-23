@@ -975,7 +975,7 @@ func withPrivateFixtureYoloStore(t *testing.T) string {
 		if _, err := os.Stat(target); err != nil {
 			t.Fatalf("the run store's shared %s is unavailable: %v", name, err)
 		}
-		if err := os.Symlink(target, filepath.Join(state, name)); err != nil {
+		if err := userSymlink(target, filepath.Join(state, name)); err != nil {
 			t.Fatalf("linking the private fixture store's shared %s: %v", name, err)
 		}
 	}

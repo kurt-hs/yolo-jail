@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // Step is one command an update runs.
@@ -41,35 +42,38 @@ func (s Step) String() string {
 // the old keg stays until a `brew cleanup` removes it.
 const BrewKeepOldKegEnv = "HOMEBREW_NO_INSTALL_CLEANUP=1"
 
+// SnapshotSummary and SnapshotSteps are what every surface says about a
+// snapshot install (KindSnapshot): `yolo update`, `yolo update --check` and
+// `yolo check` share them word for word. A snapshot of an arbitrary commit has
+// no release to compare against and no checkout it may follow, so the steps are
+// the two ways its owner deploys a checkout: by running the install there, or
+// by naming it (docs/design/installed-launcher-provenance.md, OQ-IP1).
+const (
+	SnapshotSummary = "this yolo is a snapshot of a checkout, installed by `just install`, so there is no release to compare it against and `yolo update` changes nothing"
+	SnapshotSteps   = "To update it, run `just install` in your yolo-jail checkout, or `yolo update --from <checkout>`."
+)
+
+// CheckoutRunningJailsNote says what `yolo update --from` does to jails that
+// are already running.
+const CheckoutRunningJailsNote = "Running jails keep their binaries until you restart them: `just deploy` installs a new bundle beside the one they use."
+
 // RunningJailsNote says what an update through ch does to jails that are
 // already running, for the channels `yolo update` installs. It is "" for the
 // rest.
 func RunningJailsNote(ch Channel) string {
-	switch ch.Kind {
-	case KindHomebrew:
+	if ch.Kind == KindHomebrew {
 		return "The previous version stays installed, so running jails keep their binaries until you restart them; `brew cleanup yolo-jail` removes it after that."
-	case KindSource:
-		return "Running jails keep their binaries until you restart them: `just deploy` installs a new bundle beside the one they use."
 	}
 	return ""
 }
 
 // Plan returns the commands that update ch, in order.
-//
-// A from-source deploy is pinned to the directory the running binary is in.
-// Without that it follows whatever GOBIN the toolchain manager exports — a
-// per-Go-version directory under mise, which is not on PATH — and the update
-// "succeeds" into a binary nothing runs.
 func Plan(ch Channel) ([]Step, error) {
-	gobin := "GOBIN=" + filepath.Dir(ch.Exe)
 	switch ch.Kind {
-	case KindSource:
-		return []Step{
-			{Argv: []string{"git", "pull", "--ff-only"}, Dir: ch.SourceDir},
-			{Argv: []string{"just", "deploy"}, Dir: ch.SourceDir, Env: []string{gobin}},
-		}, nil
 	case KindHomebrew:
 		return []Step{{Argv: []string{"brew", "upgrade", "yolo-jail"}, Env: []string{BrewKeepOldKegEnv}}}, nil
+	case KindSnapshot:
+		return nil, fmt.Errorf("%s. %s", SnapshotSummary, SnapshotSteps)
 	case KindGoInstall:
 		return nil, binaryOnlyUpdateError(ch.Kind, "go install "+Module+"/cmd/yolo@latest")
 	case KindPipx:
@@ -99,71 +103,70 @@ func binaryOnlyUpdateError(kind Kind, command string) error {
 	return fmt.Errorf("%s installs only the host binary and has no matched flake/helper bundle; YOLO_REPO_ROOT is obsolete and cannot supply the missing runtime pair. Updating one half would make launches incomplete. Build a matched development bundle with `just build-dev-bundle` and invoke its printed launcher path, or install both halves together with `just install` (%s)", kind, command)
 }
 
-// ApplyOptions are the choices `yolo update` passes through.
-type ApplyOptions struct {
-	// Autostash lets a source update proceed over uncommitted changes: they are
-	// stashed first, the update pulls and deploys a CLEAN build, and they are
-	// restored afterwards — also when the update fails.
-	Autostash bool
-	// SkipPull deploys the checkout exactly as named. `--from` uses it when the
-	// checkout has no usable upstream (or the check is offline), because naming
-	// a replacement checkout must still be able to repair the binary's stamp.
-	SkipPull bool
-}
-
-// AutostashMessage names the stash an autostash update makes, so a person can
-// find it in `git stash list` if restoring it fails.
-const AutostashMessage = "yolo update autostash"
-
 // Apply updates ch by running Plan's steps, stopping at the first failure.
-//
-// A source checkout is checked first. One that has left the branch the binary
-// was built from is refused, as the explicit update check refuses it. One with
-// uncommitted changes is refused unless opts.Autostash: `just install` stamps a
-// dirty tree into the binary, so updating over the edits would ship them as if
-// they were upstream's.
-func Apply(ctx context.Context, ch Channel, opts ApplyOptions, git GitRunner, run Runner, stdout, stderr io.Writer) (retErr error) {
+func Apply(ctx context.Context, ch Channel, run Runner, stdout, stderr io.Writer) error {
 	steps, err := Plan(ch)
 	if err != nil {
 		return err
 	}
-	if ch.Kind == KindSource {
-		if opts.SkipPull {
-			steps = steps[1:]
-		}
-		if ch.Branch != "" {
-			current, err := git(ctx, ch.SourceDir, "symbolic-ref", "--short", "-q", "HEAD")
-			if err != nil || current == "" {
-				return fmt.Errorf("the checkout at %s has a detached HEAD, so there is no branch to update from", ch.SourceDir)
-			}
-			if current != ch.Branch {
-				return SourceBranchMismatch(ch, current)
-			}
-		}
-		dirty, err := git(ctx, ch.SourceDir, "status", "--porcelain")
-		if err != nil {
-			return fmt.Errorf("git status in %s: %w", ch.SourceDir, err)
-		}
-		if dirty != "" {
-			if !opts.Autostash {
-				return fmt.Errorf("the checkout at %s has uncommitted changes; commit or stash them, or run `yolo update --autostash` to set them aside for the update and restore them after", ch.SourceDir)
-			}
-			stash := Step{Argv: []string{"git", "stash", "push", "--include-untracked", "-m", AutostashMessage}, Dir: ch.SourceDir}
-			if err := runStep(ctx, run, stash, stdout, stderr); err != nil {
-				return err
-			}
-			defer func() {
-				pop := Step{Argv: []string{"git", "stash", "pop"}, Dir: ch.SourceDir}
-				if perr := runStep(ctx, run, pop, stdout, stderr); perr != nil {
-					perr = fmt.Errorf("%w — your changes are safe in `git stash list` as %q", perr, AutostashMessage)
-					// retErr, not err: the block above shadows err, and a pop
-					// failure written there would be silently dropped.
-					retErr = errors.Join(retErr, perr)
-				}
-			}()
+	for _, s := range steps {
+		if err := runStep(ctx, run, s, stdout, stderr); err != nil {
+			return err
 		}
 	}
-	for _, s := range steps {
+	return nil
+}
+
+// CheckoutOptions are the choices `yolo update --from` passes through.
+type CheckoutOptions struct {
+	// Autostash lets the deploy proceed over uncommitted changes: they are
+	// stashed first, `just deploy` builds the checkout's committed HEAD, and
+	// they are restored afterwards — also when the deploy fails.
+	Autostash bool
+}
+
+// AutostashMessage names the stash an autostash deploy makes, so a person can
+// find it in `git stash list` if restoring it fails.
+const AutostashMessage = "yolo update autostash"
+
+// PlanCheckout returns the commands `yolo update --from dir` runs: `just
+// deploy` in the named checkout, exactly as it stands — no fetch, no pull, no
+// branch check, because naming the checkout is naming what to deploy.
+//
+// The deploy is pinned to the directory the running binary is in. Without that
+// it follows whatever GOBIN the toolchain manager exports — a per-Go-version
+// directory under mise, which is not on PATH — and the update "succeeds" into a
+// binary nothing runs.
+func PlanCheckout(exe, dir string) []Step {
+	return []Step{{Argv: []string{"just", "deploy"}, Dir: dir, Env: []string{"GOBIN=" + filepath.Dir(exe)}}}
+}
+
+// DeployCheckout runs PlanCheckout's steps for `yolo update --from dir`. A
+// checkout with uncommitted changes is refused unless opts.Autostash: the
+// install snapshots the working tree, so a deploy over half-finished edits
+// would install them, and naming a checkout is not the same as asking for that.
+func DeployCheckout(ctx context.Context, exe, dir string, opts CheckoutOptions, git GitRunner, run Runner, stdout, stderr io.Writer) (retErr error) {
+	dirty, err := git(ctx, dir, "status", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("git status in %s: %w", dir, err)
+	}
+	if dirty != "" {
+		if !opts.Autostash {
+			return fmt.Errorf("the checkout at %s has uncommitted changes; commit or stash them, run `yolo update --from %s --autostash` to set them aside for the deploy and restore them after, or run `just install` there to install them as they are", dir, shquote.Quote(dir))
+		}
+		stash := Step{Argv: []string{"git", "stash", "push", "--include-untracked", "-m", AutostashMessage}, Dir: dir}
+		if err := runStep(ctx, run, stash, stdout, stderr); err != nil {
+			return err
+		}
+		defer func() {
+			pop := Step{Argv: []string{"git", "stash", "pop"}, Dir: dir}
+			if perr := runStep(ctx, run, pop, stdout, stderr); perr != nil {
+				perr = fmt.Errorf("%w — your changes are safe in `git stash list` as %q", perr, AutostashMessage)
+				retErr = errors.Join(retErr, perr)
+			}
+		}()
+	}
+	for _, s := range PlanCheckout(exe, dir) {
 		if err := runStep(ctx, run, s, stdout, stderr); err != nil {
 			return err
 		}
@@ -182,12 +185,6 @@ func runStep(ctx context.Context, run Runner, s Step, stdout, stderr io.Writer) 
 // Notice is the one line a command prints when s says an update exists.
 func Notice(s State) string {
 	switch s.Kind {
-	case KindSource:
-		plural := "s"
-		if s.Behind == 1 {
-			plural = ""
-		}
-		return fmt.Sprintf("⬆ yolo-jail: %d new commit%s on %s since this build — run `yolo update`", s.Behind, plural, s.Upstream)
 	case KindArchive:
 		return fmt.Sprintf("⬆ yolo-jail %s is available (this is %s) — download it from %s", s.Latest, s.Current, ReleasesPage)
 	case KindGoInstall, KindPipx, KindUV:

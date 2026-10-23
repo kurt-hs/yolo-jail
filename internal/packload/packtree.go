@@ -250,8 +250,21 @@ func PackTreeDigestSkip() map[string]bool {
 // the manifest may name one the pack does not ship, and the resolver then turns to the prebuilt
 // artifact (docs/design/pack-buildable-programs.md §4). A path that exists and is not a directory
 // is an error, since nothing could be built from it, and so is a symlink: the walk follows no link
-// (treedigest, internal/nofollow), the root included.
+// (treedigest, internal/nofollow), the root included. dir's ancestors are yolo's or the user's own
+// (a pack's staged tree, a build's staging) and are followed as the OS does; a dev override's
+// checkout, whose ancestors an agent may write, is digested by Fork.Digest from / instead, and a
+// pack's own source below the pack's root (BG-D23).
 func PackTreeDigest(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	return packTreeDigest(filepath.Dir(abs), abs)
+}
+
+// packTreeDigest is PackTreeDigest reached as SourceBase says: base's ancestors and base are followed
+// as the OS does and nothing from base down to dir; an empty base is a checkout, reached from /.
+func packTreeDigest(base, dir string) (string, error) {
 	fi, err := os.Lstat(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", nil
@@ -262,13 +275,29 @@ func PackTreeDigest(dir string) (string, error) {
 	if !fi.IsDir() {
 		return "", fmt.Errorf("the source directory %s is not a directory", dir)
 	}
-	return treedigest.OfSkipping(dir, packTreeDigestSkip)
+	if base == "" {
+		return treedigest.OfCheckout(dir, packTreeDigestSkip)
+	}
+	return treedigest.OfBelow(base, dir, packTreeDigestSkip)
 }
 
-// Digest is PackTreeDigest of f's source directory, "" and no error for a fork.
+// Digest is PackTreeDigest of f's source directory reached from SourceBase, "" and no error for a
+// fork.
 func (f Fork) Digest() (string, error) {
 	if !f.IsPackTree() {
 		return "", nil
 	}
-	return PackTreeDigest(f.SourceDir())
+	return packTreeDigest(f.SourceBase(), f.SourceDir())
+}
+
+// SourceBase is where SourceDir's path stops being the user's own, the TRUST ROOT its readers
+// (Digest, the build's copy) reach it from (BG-D23): the pack's root, so a link inside the pack
+// between its root and `from` is refused while the user's links above it (a moved state
+// directory) are followed; "" for a dev override's checkout, any of whose ancestors an agent may
+// write, which is reached from / following only root's links (BG-D22).
+func (f Fork) SourceBase() string {
+	if f.Checkout != "" {
+		return ""
+	}
+	return f.Root
 }

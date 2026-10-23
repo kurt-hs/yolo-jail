@@ -181,9 +181,29 @@ func TestProfilePaths(t *testing.T) {
 	if len(env) != 0 {
 		t.Errorf("no pkgconfig => empty env, got %v", env)
 	}
-	_, env = ProfilePaths("/nix/store/abc-prof", func(p string) bool { return true })
+	_, env = ProfilePaths("/nix/store/abc-prof", func(p string) bool { return strings.HasSuffix(p, "/lib/pkgconfig") })
 	if env["PKG_CONFIG_PATH"] != "/nix/store/abc-prof/lib/pkgconfig" {
 		t.Errorf("PKG_CONFIG_PATH = %q", env["PKG_CONFIG_PATH"])
+	}
+}
+
+// OQ-NX4 (ruled 2026-10-23, core rows only): PKG_CONFIG_PATH names share/pkgconfig too, where
+// zlib keeps its .pc file, each half only when that directory exists, lib first.
+func TestProfilePathsSharePkgConfig(t *testing.T) {
+	only := func(want string) func(string) bool {
+		return func(p string) bool { return p == want }
+	}
+	_, env := ProfilePaths("/nix/store/abc-prof", func(string) bool { return true })
+	if got, want := env["PKG_CONFIG_PATH"], "/nix/store/abc-prof/lib/pkgconfig:/nix/store/abc-prof/share/pkgconfig"; got != want {
+		t.Errorf("both dirs: PKG_CONFIG_PATH = %q, want %q", got, want)
+	}
+	_, env = ProfilePaths("/nix/store/abc-prof", only("/nix/store/abc-prof/share/pkgconfig"))
+	if got, want := env["PKG_CONFIG_PATH"], "/nix/store/abc-prof/share/pkgconfig"; got != want {
+		t.Errorf("share only: PKG_CONFIG_PATH = %q, want %q", got, want)
+	}
+	_, env = ProfilePaths("/nix/store/abc-prof", only("/nix/store/abc-prof/lib/pkgconfig"))
+	if got, want := env["PKG_CONFIG_PATH"], "/nix/store/abc-prof/lib/pkgconfig"; got != want {
+		t.Errorf("lib only: PKG_CONFIG_PATH = %q, want %q", got, want)
 	}
 }
 

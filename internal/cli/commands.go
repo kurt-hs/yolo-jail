@@ -1249,7 +1249,8 @@ func runRun(args []string) int {
 		}
 		return macosUserRun(cfg, workspace, agents, agentArgv, repoRoot, packRoot, homeOverlay,
 			hostCtx, dryRun, packEnv, blocked, jailDaemons, arm, ref.Log,
-			macosUserIdentity{Mode: macosMode, HostHome: hostHome, HostUser: hostUser, SharedTmp: sharedTmp})
+			macosUserIdentity{Mode: macosMode, HostHome: hostHome, HostUser: hostUser, SharedTmp: sharedTmp,
+				ShareHostFonts: config.ShareHostFonts()})
 	}
 	// Wire the fetched model list (docs/design/model-lists-and-pickers.md OQ-MM6): a provider no
 	// pack or config gives a list gets the region's from its platform's credential service. A
@@ -1393,6 +1394,8 @@ type macosUserIdentity struct {
 	HostUser string
 	// SharedTmp is the user-scope `macos_user_shared_tmp` hatch (OQ-MM8, MMP-D18).
 	SharedTmp bool
+	// ShareHostFonts is the user-scope `share_host_fonts` opt-in (OQ-NX9).
+	ShareHostFonts bool
 }
 
 // runMacosUserBackend is macosuser.RunMacosUser behind a package var, for launchRunPipeline's
@@ -1464,10 +1467,11 @@ func macosUserRun(cfg *jsonx.OrderedMap, workspace string, agents, agentArgv []s
 		macosuser.Options{
 			// Who the sandbox runs as (macos_user_mode), and the invoking user the run-as-you mode
 			// runs with; the account mode reads neither of the last two.
-			Mode:      who.Mode,
-			HostHome:  who.HostHome,
-			HostUser:  who.HostUser,
-			SharedTmp: who.SharedTmp,
+			Mode:           who.Mode,
+			HostHome:       who.HostHome,
+			HostUser:       who.HostUser,
+			SharedTmp:      who.SharedTmp,
+			ShareHostFonts: who.ShareHostFonts,
 			// The session-start hook the run pipeline registered on its arm, run by the backend
 			// just before the session's command and on no other path.
 			OnAgentStart: arm.AgentStarting,

@@ -24,16 +24,16 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/selfupdate"
 	"github.com/mschulkind-oss/yolo-jail/internal/updatehint"
-	"github.com/mschulkind-oss/yolo-jail/internal/version"
 )
 
-const updateUsage = `Usage: yolo update [--check] [--force] [--autostash] [--from <checkout>]
+const updateUsage = `Usage: yolo update [--check] [--force] [--from <checkout> [--autostash]]
 
 Check for a newer yolo-jail and, where the installation is self-contained,
 install it through the same channel:
 
-  from source (just deploy)   git pull --ff-only && just deploy, in the checkout
-                              this binary was built from, installing beside it
+  from source (just install)  a snapshot of the checkout it was built from, with
+                              no release to compare against: changes nothing,
+                              and names the two ways to update it
   Homebrew                    brew upgrade yolo-jail, keeping the old version
                               installed for the jails already running it
   go install / pipx / uv      check only: these install the host binary without
@@ -41,11 +41,12 @@ install it through the same channel:
                               packaged jail bundle together
   release archive             not updatable in place: prints the download link
 
-A from-source install counts new commits on the checkout's upstream branch that
-touch the binary, jail image, or deploy/bundle scripts (documentation-only
-commits do not count); every other channel counts a newer published release.
-A from-source update refuses a checkout that has left the branch the binary
-was built from, and one with uncommitted changes unless --autostash. Its
+Every channel but a from-source install counts a newer published release.
+
+A from-source install records nothing about its checkout. To update it, run
+` + "`just install`" + ` in your checkout, or name the checkout with --from: that runs
+` + "`just deploy`" + ` there exactly as it stands (no fetch, no pull), installing beside
+this binary. It refuses a checkout with uncommitted changes unless --autostash.
 ` + "`just deploy`" + ` restarts the Claude OAuth broker, so any jail using that broker
 loses it briefly.
 
@@ -53,26 +54,20 @@ loses it briefly.
 
 Options:
   --check             Only check, and report what an update would install.
-                      Does not install; a source check may fetch commit objects
-                      without moving a ref or changing ` + "`git status`" + `.
+                      Does not install. With --from, prints the deploy it
+                      would run.
   --force             Run the update even when the check finds nothing newer
                       (or fails).
-  --autostash         From source: stash uncommitted changes, deploy a clean
-                      build, then restore them — also when the update fails.
-  --from <checkout>   From source: update from this checkout instead of the one
-                      the binary recorded, e.g. after moving or re-cloning it.
-                      A non-check invocation redeploys even when already current,
-                      so the next build records the new one; when no upstream can
-                      be checked, it deploys the named checkout without pulling.
+  --from <checkout>   From source: deploy this yolo-jail checkout, as it
+                      stands, beside this binary.
+  --autostash         With --from: stash uncommitted changes, deploy a clean
+                      build, then restore them — also when the deploy fails.
 
-Development bundles are not automatically checked, disclosed or prompted;
-run ` + "`yolo update --check`" + ` explicitly to inspect release status. Other
-release-based installs check in the background normally once a day, after a
-terminal has disclosed the network request. Source installs are checked only
-when you run ` + "`yolo update --check`" + ` or ` + "`yolo update`" + `, because their checkout may
-be writable from a jail. When a cached update exists, one line is printed under
-the banner on a terminal; a safe, self-contained interactive launch offers to
-update and relaunch.
+Development bundles and from-source installs are not automatically checked,
+disclosed or prompted. Other release-based installs check in the background
+normally once a day, after a terminal has disclosed the network request. When a
+cached update exists, one line is printed under the banner on a terminal; a
+safe, self-contained interactive launch offers to update and relaunch.
 
 To turn the background check, notice and offer off: "update_check": false in
 ~/.config/yolo-jail/config.jsonc, or YOLO_NO_UPDATE_CHECK=1 for one shell. They
@@ -81,15 +76,15 @@ never run in a jail or in CI. ` + "`yolo check`" + ` reports the last answer.
 Examples:
   yolo update --check                 # check now; do not install
   yolo update                         # apply when this install is self-contained
-  yolo update --autostash             # from source, with local edits set aside`
+  yolo update --from ~/src/yolo-jail  # deploy a checkout as it stands
+  yolo update --from ~/src/yolo-jail --autostash   # with local edits set aside`
 
-// sourceTrustHelp says what a from-source check or update executes. Building a
-// checkout runs what is in it, which is the point of a source install, so it
-// states that and advises nothing (docs/reference/host-execution-from-the-workspace.md,
-// "the product cell").
-const sourceTrustHelp = `On a from-source install, both the check and the update run git in the
-checkout with that checkout's own git config and hooks, and the update also
-runs its Justfile.`
+// sourceTrustHelp says what `yolo update --from` executes. Building a checkout
+// runs what is in it, which is the point of naming it, so it states that and
+// advises nothing (docs/reference/host-execution-from-the-workspace.md, "the
+// product cell").
+const sourceTrustHelp = `--from runs git in the named checkout, with that checkout's
+own git config and hooks, and runs its Justfile.`
 
 // updateDeps are the update surface's side effects, injected for tests.
 type updateDeps struct {
@@ -109,11 +104,14 @@ type updateDeps struct {
 	stdout      io.Writer
 	stderr      io.Writer
 	check       func(ctx context.Context, ch selfupdate.Channel, prev selfupdate.State) selfupdate.State
-	apply       func(ctx context.Context, ch selfupdate.Channel, opts selfupdate.ApplyOptions, stdout, stderr io.Writer) error
-	versionAt   func(path string) (string, error)
-	exec        func(path string, argv, env []string) error
-	lookPath    func(string) (string, error)
-	argv        []string
+	apply       func(ctx context.Context, ch selfupdate.Channel, stdout, stderr io.Writer) error
+	// deploy is `yolo update --from`: just deploy in the named checkout,
+	// installing beside exe.
+	deploy    func(ctx context.Context, exe, dir string, opts selfupdate.CheckoutOptions, stdout, stderr io.Writer) error
+	versionAt func(path string) (string, error)
+	exec      func(path string, argv, env []string) error
+	lookPath  func(string) (string, error)
+	argv      []string
 }
 
 func defaultUpdateDeps() updateDeps {
@@ -134,8 +132,11 @@ func defaultUpdateDeps() updateDeps {
 		check: func(ctx context.Context, ch selfupdate.Channel, prev selfupdate.State) selfupdate.State {
 			return selfupdate.Check(ctx, ch, prev, selfupdate.DefaultCheckDeps())
 		},
-		apply: func(ctx context.Context, ch selfupdate.Channel, opts selfupdate.ApplyOptions, stdout, stderr io.Writer) error {
-			return selfupdate.Apply(ctx, ch, opts, selfupdate.DefaultCheckDeps().Git, selfupdate.RunStep, stdout, stderr)
+		apply: func(ctx context.Context, ch selfupdate.Channel, stdout, stderr io.Writer) error {
+			return selfupdate.Apply(ctx, ch, selfupdate.RunStep, stdout, stderr)
+		},
+		deploy: func(ctx context.Context, exe, dir string, opts selfupdate.CheckoutOptions, stdout, stderr io.Writer) error {
+			return selfupdate.DeployCheckout(ctx, exe, dir, opts, selfupdate.RunGit, selfupdate.RunStep, stdout, stderr)
 		},
 		versionAt: installedVersion,
 		exec:      syscall.Exec,
@@ -184,19 +185,15 @@ func maybeNotifyUpdate(sub string, args []string, d updateDeps) (int, bool) {
 		return 0, false
 	}
 	ch := d.current()
-	if ch.Kind == selfupdate.KindUnknown || ch.Kind == selfupdate.KindDevelopment {
+	// A snapshot of a checkout has no release to compare against, so nothing is
+	// checked or offered for it (docs/design/installed-launcher-provenance.md).
+	if ch.Kind == selfupdate.KindUnknown || ch.Kind == selfupdate.KindDevelopment || ch.Kind == selfupdate.KindSnapshot {
 		return 0, false
 	}
 	now := d.now()
 	st := selfupdate.LoadState(d.statePath)
 	tty := d.stderrTTY()
 	if !st.Fresh(ch, now) {
-		// A source checkout can be writable from a jail, including its untracked
-		// .git/config. Never execute the updater's remote Git check against it
-		// merely because another host command ran; source checks are explicit-only.
-		if ch.Kind == selfupdate.KindSource {
-			return 0, false
-		}
 		// The first automatic network request waits until its disclosure has a
 		// terminal to land on. Once disclosed, later checks may run from scripts.
 		if !st.Disclosed {
@@ -220,15 +217,11 @@ func maybeNotifyUpdate(sub string, args []string, d updateDeps) (int, bool) {
 	if !launch || reexeced || !ch.CanApply() || !st.ShouldPrompt() || !d.interactive() {
 		return 0, false
 	}
-	if err := updateRootConflict(ch, d.getenv("YOLO_REPO_ROOT")); err != nil {
+	if err := updateRootConflict("", d.getenv("YOLO_REPO_ROOT")); err != nil {
 		fmt.Fprintf(d.stderr, "  Update not offered: %v\n", err)
 		return 0, false
 	}
 	// Say what "yes" costs before asking, not after.
-	if ch.Kind == selfupdate.KindSource {
-		fmt.Fprintf(d.stderr, "  Source checkout: %s\n", ch.SourceDir)
-		fmt.Fprintln(d.stderr, "  `just deploy` restarts the Claude OAuth broker; any jail using it loses it briefly.")
-	}
 	fmt.Fprintln(d.stderr, "  "+selfupdate.RunningJailsNote(ch))
 	fmt.Fprintln(d.stderr, "  The relaunch rebuilds the jail image first if the update changed it.")
 	fmt.Fprint(d.stderr, "  Update now and relaunch? [y/N] ")
@@ -238,7 +231,7 @@ func maybeNotifyUpdate(sub string, args []string, d updateDeps) (int, bool) {
 		fmt.Fprintln(d.stderr, "  Not now — `yolo update` installs it whenever you're ready.")
 		return 0, false
 	}
-	if err := d.apply(context.Background(), ch, selfupdate.ApplyOptions{}, d.stderr, d.stderr); err != nil {
+	if err := d.apply(context.Background(), ch, d.stderr, d.stderr); err != nil {
 		fmt.Fprintf(d.stderr, "✗ update failed: %v\n  Continuing with this version.\n", err)
 		return 0, false
 	}
@@ -331,7 +324,9 @@ type installUnchangedError struct{ msg string }
 
 func (e installUnchangedError) Error() string { return e.msg }
 
-func updateRootConflict(ch selfupdate.Channel, root string) error {
+// updateRootConflict refuses an update while YOLO_REPO_ROOT names a checkout,
+// unless it names allowedDir — the checkout `yolo update --from` deploys.
+func updateRootConflict(allowedDir, root string) error {
 	if root == "" {
 		return nil
 	}
@@ -347,7 +342,7 @@ func updateRootConflict(ch selfupdate.Channel, root string) error {
 	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
 		abs = resolved
 	}
-	if ch.Kind == selfupdate.KindSource && abs == ch.SourceDir {
+	if allowedDir != "" && abs == allowedDir {
 		return nil
 	}
 	return fmt.Errorf("YOLO_REPO_ROOT=%s is obsolete and does not select launch sources. Build a matched development bundle with `just build-dev-bundle` and invoke its printed launcher path, or unset YOLO_REPO_ROOT and use `just install`", root)
@@ -365,7 +360,7 @@ func runUpdate(args []string) int {
 // update_check silences unasked-for checks and notices, not this command.
 func updateMain(args []string, d updateDeps) int {
 	checkOnly, force := false, false
-	var opts selfupdate.ApplyOptions
+	var opts selfupdate.CheckoutOptions
 	var from string
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
@@ -402,48 +397,38 @@ func updateMain(args []string, d updateDeps) int {
 			"until it is relaunched; "+updatehint.InJailStep)
 		return 1
 	}
+	if opts.Autostash && from == "" {
+		fmt.Fprintln(d.stderr, "yolo update: --autostash only applies to a deploy from a named checkout: yolo update --from <checkout> --autostash")
+		return 2
+	}
 	ch := d.current()
 	if from != "" {
-		var err error
-		if ch, err = fromCheckout(ch, from); err != nil {
-			fmt.Fprintf(d.stderr, "yolo update: %v\n", err)
-			return 1
+		return deployFrom(ch, from, checkOnly, opts, d)
+	}
+	if ch.Kind == selfupdate.KindSnapshot {
+		// A snapshot of a checkout has no release to compare against and no
+		// checkout it follows, so there is nothing to check and nothing to
+		// install: say so, and name the two ways to update it. Plain `yolo
+		// update` exits non-zero because it installed nothing it was asked to.
+		fmt.Fprintf(d.stdout, "Installed via: %s (%s)\n", ch.Kind, ch.Exe)
+		fmt.Fprintf(d.stdout, "ℹ %s.\n  %s\n", selfupdate.SnapshotSummary, selfupdate.SnapshotSteps)
+		if checkOnly {
+			return 0
 		}
-		if !checkOnly {
-			// --from is also the recovery for a moved/re-cloned checkout. It
-			// must redeploy even when that checkout is already at this binary's
-			// commit, or the binary never records the new path.
-			force = true
-		}
+		return 1
 	}
 	if ch.Kind == selfupdate.KindUnknown {
-		if ch.MissingSourceDir != "" {
-			fmt.Fprintf(d.stderr, "yolo update: this yolo was built from %s, which no longer contains the yolo-jail checkout.\n"+
-				"  If you moved or re-cloned it: yolo update --from <checkout>\n", ch.MissingSourceDir)
-			return 1
-		}
 		fmt.Fprintf(d.stderr, "yolo update: cannot tell how this yolo (%s) was installed, so it cannot update itself.\n"+
 			"  Reinstall it from %s\n", ch.Exe, selfupdate.ReleasesPage)
 		return 1
-	}
-	if opts.Autostash && ch.Kind != selfupdate.KindSource {
-		fmt.Fprintf(d.stderr, "yolo update: --autostash is only valid for a from-source install (this yolo is %s)\n", ch.Kind)
-		return 2
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	st := d.check(ctx, ch, selfupdate.LoadState(d.statePath))
 	cancel()
 	_ = selfupdate.SaveState(d.statePath, st)
-	if from != "" && st.Error != "" {
-		opts.SkipPull = true
-	}
 
-	where := ch.Exe
-	if ch.Kind == selfupdate.KindSource {
-		where = ch.SourceDir + " → " + ch.Exe
-	}
-	fmt.Fprintf(d.stdout, "Installed via: %s (%s)\n", ch.Kind, where)
+	fmt.Fprintf(d.stdout, "Installed via: %s (%s)\n", ch.Kind, ch.Exe)
 	switch {
 	case st.Error != "":
 		fmt.Fprintf(d.stdout, "⚠ could not check for updates: %s\n", st.Error)
@@ -465,19 +450,16 @@ func updateMain(args []string, d updateDeps) int {
 		}
 		return 0
 	}
-	if opts.SkipPull {
-		fmt.Fprintln(d.stdout, "  Deploying the named checkout as-is; no pull will run.")
-	}
 	if !ch.CanApply() {
 		_, err := selfupdate.Plan(ch)
 		fmt.Fprintf(d.stderr, "yolo update: %v\n", err)
 		return 1
 	}
-	if err := updateRootConflict(ch, d.getenv("YOLO_REPO_ROOT")); err != nil {
+	if err := updateRootConflict("", d.getenv("YOLO_REPO_ROOT")); err != nil {
 		fmt.Fprintf(d.stderr, "yolo update: %v\n", err)
 		return 1
 	}
-	if err := d.apply(context.Background(), ch, opts, d.stderr, d.stderr); err != nil {
+	if err := d.apply(context.Background(), ch, d.stderr, d.stderr); err != nil {
 		fmt.Fprintf(d.stderr, "✗ update failed: %v\n", err)
 		return 1
 	}
@@ -497,38 +479,70 @@ func updateMain(args []string, d updateDeps) int {
 	return 0
 }
 
-// fromCheckout turns `--from <dir>` into the source channel to update through.
-// It is refused for a package-manager install, whose binary is that manager's
-// to replace: a source deploy "beside" it would write into the manager's tree.
-// An unidentified install is refused for the same reason unless its binary
-// records that it was built from source (MissingSourceDir): nothing else says
-// the directory it runs from is one a source deploy may write into.
-func fromCheckout(ch selfupdate.Channel, dir string) (selfupdate.Channel, error) {
-	switch {
-	case ch.Kind == selfupdate.KindSource:
-	case ch.Kind == selfupdate.KindUnknown && ch.MissingSourceDir != "":
-	case ch.Kind == selfupdate.KindUnknown:
-		return ch, fmt.Errorf("--from is for from-source installs, and nothing shows this yolo (%s) was built from source; reinstall it from %s", ch.Exe, selfupdate.ReleasesPage)
+// deployFrom is `yolo update --from <checkout>`: `just deploy` in the named
+// checkout, exactly as it stands, installing beside the running binary. It is
+// the explicit way to put a checkout on the host once an install is a snapshot
+// (docs/design/installed-launcher-provenance.md, OQ-IP1). It runs no release
+// check, since naming the checkout is naming what to deploy; with --check it
+// prints the deploy and changes nothing.
+func deployFrom(ch selfupdate.Channel, from string, checkOnly bool, opts selfupdate.CheckoutOptions, d updateDeps) int {
+	dir, err := fromCheckout(ch, from)
+	if err != nil {
+		fmt.Fprintf(d.stderr, "yolo update: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(d.stdout, "Installed via: %s (%s)\n", ch.Kind, ch.Exe)
+	fmt.Fprintf(d.stdout, "Deploying the checkout at %s as it stands, beside this binary:\n", dir)
+	for _, s := range selfupdate.PlanCheckout(ch.Exe, dir) {
+		fmt.Fprintf(d.stdout, "  %s\n", s)
+	}
+	if checkOnly {
+		fmt.Fprintln(d.stdout, "  Run it without --check to deploy.")
+		return 0
+	}
+	if err := updateRootConflict(dir, d.getenv("YOLO_REPO_ROOT")); err != nil {
+		fmt.Fprintf(d.stderr, "yolo update: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(d.stderr, "  `just deploy` restarts the Claude OAuth broker; any jail using it loses it briefly.")
+	if err := d.deploy(context.Background(), ch.Exe, dir, opts, d.stderr, d.stderr); err != nil {
+		fmt.Fprintf(d.stderr, "✗ deploy failed: %v\n", err)
+		return 1
+	}
+	_ = selfupdate.InvalidateState(d.statePath)
+	fmt.Fprintln(d.stdout, "✓ deployed. "+selfupdate.CheckoutRunningJailsNote)
+	return 0
+}
+
+// fromCheckout validates `--from <dir>` and returns the checkout's resolved
+// path. Only a snapshot install may deploy a checkout beside itself: a
+// package-manager install's binary is that manager's to replace, so a deploy
+// "beside" it would write into the manager's tree, and nothing shows that an
+// unidentified install's directory is one a deploy may write into.
+func fromCheckout(ch selfupdate.Channel, dir string) (string, error) {
+	switch ch.Kind {
+	case selfupdate.KindSnapshot:
+	case selfupdate.KindUnknown:
+		return "", fmt.Errorf("--from is for from-source installs, and nothing shows this yolo (%s) was installed from source; run `just install` in the checkout to install it, or reinstall a release from %s", ch.Exe, selfupdate.ReleasesPage)
+	case selfupdate.KindDevelopment:
+		return "", fmt.Errorf("--from is for from-source installs; this yolo is a development bundle, which `just build-dev-bundle` rebuilds from its checkout")
 	default:
-		return ch, fmt.Errorf("--from is for from-source installs; this yolo is managed by %s (see `yolo update --help` for that channel's safe update path)", ch.Kind)
+		return "", fmt.Errorf("--from is for from-source installs; this yolo is managed by %s (see `yolo update --help` for that channel's safe update path)", ch.Kind)
 	}
 	abs, err := filepath.Abs(dir)
 	if err != nil {
-		return ch, err
+		return "", err
 	}
 	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
 		abs = resolved
 	}
 	if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
-		return ch, fmt.Errorf("--from %s: not a git checkout", dir)
+		return "", fmt.Errorf("--from %s: not a git checkout; name your yolo-jail checkout", dir)
 	}
 	if !selfupdate.IsSourceCheckout(abs) {
-		return ch, fmt.Errorf("--from %s: not a yolo-jail checkout (no `module %s` in go.mod)", dir, selfupdate.Module)
+		return "", fmt.Errorf("--from %s: not a yolo-jail checkout (no `module %s` in go.mod); name your yolo-jail checkout", dir, selfupdate.Module)
 	}
-	// The stamped commit still counts from the right place if the new checkout
-	// shares history; checkSource falls back to HEAD when it does not. No branch
-	// is enforced: naming the checkout is naming what to deploy.
-	return selfupdate.Channel{Kind: selfupdate.KindSource, Exe: ch.Exe, SourceDir: abs, Version: version.GitCommit}, nil
+	return abs, nil
 }
 
 // internalCheckChannel and internalCheckReleaseURL are runInternalUpdateCheck's
@@ -552,7 +566,7 @@ func runInternalUpdateCheck(args []string) int {
 	}
 	defer os.Remove(selfupdate.LockPath(statePath))
 	ch := internalCheckChannel()
-	if ch.Kind == selfupdate.KindUnknown || ch.Kind == selfupdate.KindSource ||
+	if ch.Kind == selfupdate.KindUnknown || ch.Kind == selfupdate.KindSnapshot ||
 		ch.Kind == selfupdate.KindDevelopment ||
 		!selfupdate.Enabled(os.Getenv) || !config.UpdateCheckEnabled() {
 		return 0

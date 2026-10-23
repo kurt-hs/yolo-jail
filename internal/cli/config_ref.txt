@@ -1347,6 +1347,24 @@
     Example (~/.config/yolo-jail/config.jsonc):
       "macos_user_shared_tmp": true
 
+  [bold]share_host_fonts[/bold] (boolean): Share your own font folder, read-only, with a jail that does not run as you.  Default FALSE.
+    A container jail gets ~/.local/share/fonts and ~/.fonts from a Linux host, or
+    ~/Library/Fonts from a Mac, mounted read-only under the jail's
+    ~/.local/share/fonts, where its fontconfig finds them; a folder that resolves
+    outside your home or into a credential folder is not shared.  A macos-user
+    jail in the separate-account mode reads a copy yolo keeps of the readable
+    files in ~/Library/Fonts, refreshed when they change and removed when you
+    turn this off; the sandbox user is given no access to your home.  Every such
+    launch names each folder it shares; a folder that does not exist is skipped
+    with a line.  The run-as-you mode reads ~/Library/Fonts always, and
+    `yolo host` is you, so neither needs it.
+
+    USER SCOPE ONLY.  It is read from your user config alone, so a workspace value is
+    a `yolo check` error and is never consulted -- and /workspace is writable by
+    whatever runs in the jail.
+    Example (~/.config/yolo-jail/config.jsonc):
+      "share_host_fonts": true
+
   [bold]update_check[/bold] (boolean): Enable update checks and notices.  Default TRUE.
     Every ordinary host command reads the cached answer.  For a release-based install,
     normally once a day it starts a detached request to GitHub's releases API;
@@ -1884,7 +1902,8 @@
                     (aws-auth's `profile`): an agent it reaches takes its region from
                     that profile's section of the platform's `region_file`.
       hook          {hook:"shared_credentials"|"shared_directory"|"unshare_directory"|
-                    "per_jail_history", from (~-relative path the hook acts on), at (a
+                    "per_jail_history"|"boot_check", from (~-relative path the hook
+                    acts on), flags (boot_check only), at (a
                     machine-scope state dir THIS pack declares; the two shared_* hooks
                     only)} — the shared pair replaces `from` with a symlink into `at`, a
                     FILE for shared_credentials and a whole DIRECTORY for
@@ -1892,7 +1911,13 @@
                     workspace on the machine. unshare_directory undoes a
                     shared_directory the pack no longer declares: the link at `from` to
                     `at` becomes an empty directory; anything else there is left alone.
-      autonomy      {autonomous:{...}, guarded:{...}} — the agent's two permission
+                    boot_check runs `/bin/sh ~/<from> <flags...>` once at boot in a
+                    container jail (never on macos-user, whose bootstrap runs no pack
+                    script, nor at the host), and prints what it says as a warning; a
+                    check that is satisfied prints nothing.  It never
+                    stops a launch: a failing check costs a line, and one still running
+                    after 5 s is stopped.
+      autonomy     {autonomous:{...}, guarded:{...}} — the agent's two permission
                     postures; the confinement notch selects one (autonomous at
                     jail/guest, guarded at host), so a jail-bypass key never reaches
                     your real home via `yolo host apply`.  Each posture takes
