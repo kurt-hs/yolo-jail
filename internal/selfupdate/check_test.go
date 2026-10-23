@@ -137,8 +137,6 @@ func (f *fakeGit) run(_ context.Context, dir string, args ...string) (string, er
 	return f.answers[key], nil
 }
 
-const testTip = "abc1234def5678"
-
 func TestUnattendedGitEnvCannotAsk(t *testing.T) {
 	env := unattendedGitEnv([]string{
 		"HOME=/home/u", "SSH_AUTH_SOCK=/tmp/agent", "GIT_ASKPASS=/usr/bin/ksshaskpass",
