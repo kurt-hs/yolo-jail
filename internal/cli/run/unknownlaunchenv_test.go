@@ -176,7 +176,7 @@ func TestRunInvokesUnknownYOLOEnvironmentWarningBeforeBackend(t *testing.T) {
 			"YOLO_FORWARD_HOST_PORTS", "YOLO_PUBLISHED_PORTS", "YOLO_PROGRAMS_AUTOPRUNE",
 			"YOLO_FORK_BUILDS", "YOLO_HOST_DIR", "YOLO_HOST_LAYERS", "YOLO_HOST_LOOPBACK", "YOLO_HOST_PATH_MAP",
 			"YOLO_JAIL_DAEMONS", "YOLO_JAIL_DAEMON_READY_NAMES", "YOLO_JAIL_MAIN", "YOLO_LSP_SERVERS",
-			"YOLO_MISE_TOOLS", "YOLO_PATCHED_TREES", "YOLO_PROVIDERS", "YOLO_PROFILES",
+			"YOLO_MCP_PRESETS", "YOLO_MISE_TOOLS", "YOLO_PATCHED_TREES", "YOLO_PROVIDERS", "YOLO_PROFILES",
 			"YOLO_USE_PROFILES", "YOLO_PROVISION_MS", "YOLO_SESSION_ID", "YOLO_USER_LAYER",
 			"YOLO_SERVICE_AWS_AUTH_ENDPOINT", "YOLO_SERVICE_CLAUDE_OAUTH_BROKER_ENDPOINT",
 			"YOLO_SERVICE_GITHUB_BROKER_ENDPOINT", "YOLO_SERVICE_WIRE_BRIDGE_ENDPOINT",
@@ -212,6 +212,17 @@ func TestRunInvokesUnknownYOLOEnvironmentWarningBeforeBackend(t *testing.T) {
 	}
 	if called != 1 {
 		t.Fatalf("warning callback calls = %d, want exactly one", called)
+	}
+}
+
+// YOLO_MCP_PRESETS retired with the `mcp_presets` key on 2026-10-23, but a jail an older yolo
+// started still exports it, so a nested or integration launch from one inherits it. Its user
+// cannot unset it in an environment yolo set up, so the launch must recognize it rather than
+// warn about it on every nested launch.
+func TestARetiredMCPPresetsWireFromAnOlderOuterJailIsRecognized(t *testing.T) {
+	if !slices.Contains(knownLaunchYOLOEnvNames(nil, nil), "YOLO_MCP_PRESETS") {
+		t.Fatal("YOLO_MCP_PRESETS is not a recognized launch name, so every launch from a jail an " +
+			"older yolo started warns about a variable its user cannot act on")
 	}
 }
 

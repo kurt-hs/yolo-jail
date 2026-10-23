@@ -51,6 +51,9 @@ func knownLaunchYOLOEnvNames(packs []*packload.Pack, channel *packChannel) []str
 		// These two fixed names are shipped-pack facts with runtime readers. Do not derive or
 		// hydrate an unselected pack merely to recognize its inherited diagnostic name.
 		"YOLO_AUTH_PRELAUNCH_CODEX_FLAG", "YOLO_AUTH_PRELAUNCH_CODEX_PATH", "YOLO_PI_PROVIDER_POLICY",
+		// Retired 2026-10-23; jails started by an older yolo still export it, so a nested launch
+		// from one must not warn about a name its user cannot unset.
+		"YOLO_MCP_PRESETS",
 	} {
 		add(name)
 	}
