@@ -227,7 +227,22 @@ def assemble(snapshot: Path, destination: Path, *, identity: str, build_kind: st
     return destination
 
 
-def validate_pair(launcher: Path, bundle: Path, identity: str, build_kind: str) -> None:
+def _stamp_lines(version: str, commit: str) -> set[str]:
+    """The `--version --full` lines a launcher linked with these ldflags stamps prints."""
+    # Mirrors internal/version: StampLabel and CommitLabel.
+    stamp = version if version not in ("", "unknown") else "unstamped"
+    label = commit if commit not in ("", "unknown") else "unknown"
+    return {f"build stamp: {stamp}", f"commit: {label}"}
+
+
+def validate_pair(launcher: Path, bundle: Path, identity: str, build_kind: str, *,
+                  stamps: tuple[str, str] | None = None) -> None:
+    """Check a launcher/bundle pair; with stamps, also require that exact version and commit.
+
+    Snapshot identity hashes source content only, so one identity can be built from a dirty
+    tree at one commit and a clean tree at the next. The version/commit ldflags stamp is not
+    part of it, and a reused bundle must still name the tree being built.
+    """
     for path in (launcher, bundle / "flake.nix", bundle / "flake.lock", bundle / "yolo-build-stamp.json"):
         try:
             mode = path.lstat().st_mode
@@ -240,6 +255,8 @@ def validate_pair(launcher: Path, bundle: Path, identity: str, build_kind: str) 
     stamp = json.loads((bundle / "yolo-build-stamp.json").read_text())
     if stamp.get("snapshotIdentity") != identity or stamp.get("buildKind") != build_kind:
         raise RuntimeError("incomplete matched bundle: launcher and bundle identity metadata differ")
+    if stamps is not None and (stamp.get("version"), stamp.get("commit")) != stamps:
+        raise RuntimeError("matched bundle is stamped for a different commit or dirtiness")
     env = _git_env()
     env.pop("YOLO_REPO_ROOT", None)
     result = subprocess.run([str(launcher), "--version", "--full"], check=True,
@@ -247,18 +264,21 @@ def validate_pair(launcher: Path, bundle: Path, identity: str, build_kind: str) 
     fields = set(result.stdout.splitlines())
     if f"snapshot identity: {identity}" not in fields or f"build kind: {build_kind}" not in fields:
         raise RuntimeError("incomplete matched bundle: native launcher identity does not match bundle metadata")
+    if stamps is not None and not _stamp_lines(*stamps) <= fields:
+        raise RuntimeError("matched bundle launcher is stamped for a different commit or dirtiness")
 
 
 def validate_bundle(root: Path, identity: str, build_kind: str, *,
                     shipped: list[str] | None = None, guest: list[str] | None = None,
-                    host_os: str | None = None, host_arch: str | None = None) -> None:
+                    host_os: str | None = None, host_arch: str | None = None,
+                    stamps: tuple[str, str] | None = None) -> None:
     if not stat.S_ISDIR(root.lstat().st_mode) or {p.name for p in root.iterdir()} != {"bin", "share"}:
         raise RuntimeError("incomplete matched bundle: output root must contain only bin and share")
     launcher_dir = root / "bin"
     if not stat.S_ISDIR(launcher_dir.lstat().st_mode) or {p.name for p in launcher_dir.iterdir()} != {"yolo"}:
         raise RuntimeError("incomplete matched bundle: native bin must contain only yolo")
     bundle = root / "share/yolo-jail"
-    validate_pair(root / "bin/yolo", bundle, identity, build_kind)
+    validate_pair(root / "bin/yolo", bundle, identity, build_kind, stamps=stamps)
     if shipped is not None and guest is not None and host_os and host_arch:
         _validate_bundle_contents(bundle, shipped, guest, host_os, host_arch)
 
@@ -297,14 +317,15 @@ def publish_dev_bundle(home: Path, payload: dict[str, tuple[bytes, int]], *, ide
 
 
 def _publish_assembled_bundle(home: Path, assembled: Path, identity: str,
-                              shipped: list[str], guest: list[str], host_os: str, host_arch: str) -> Path:
+                              shipped: list[str], guest: list[str], host_os: str, host_arch: str,
+                              stamps: tuple[str, str]) -> Path:
     root = home / ".local/share/yolo-jail/dev-bundles"
     root.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".building-", dir=root))
     try:
         shutil.copytree(assembled, staging, dirs_exist_ok=True)
         validate_bundle(staging, identity, "development", shipped=shipped, guest=guest,
-                        host_os=host_os, host_arch=host_arch)
+                        host_os=host_os, host_arch=host_arch, stamps=stamps)
         _make_readonly(staging)
         final = root / f"{identity[:16]}-{uuid.uuid4().hex}"
         os.rename(staging, final)
@@ -315,10 +336,15 @@ def _publish_assembled_bundle(home: Path, assembled: Path, identity: str,
 
 
 def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subprocess.run) -> Path:
-    """Reuse a complete current identity, otherwise publish a fresh immutable build."""
+    """Reuse a complete bundle of this identity and stamp, otherwise publish a fresh immutable build.
+
+    A candidate must match the snapshot identity AND the version/commit the ldflags embed, so
+    the same content built at another commit or dirtiness is a miss, never a stale stamp.
+    """
     repo = repo.resolve()
     home = home.resolve()
     version, commit, source_dir, source_branch = _source_stamps(repo)
+    stamps = (version, commit)
     root = home / ".local/share/yolo-jail/dev-bundles"
     root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="yolo-matched-") as td:
@@ -329,7 +355,7 @@ def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subproc
         for candidate in sorted(root.glob(f"{identity[:16]}-*")):
             try:
                 validate_bundle(candidate, identity, "development", shipped=shipped, guest=guest,
-                                host_os=host_os, host_arch=host_arch)
+                                host_os=host_os, host_arch=host_arch, stamps=stamps)
                 return candidate / "bin/yolo"
             except (OSError, ValueError, RuntimeError, json.JSONDecodeError,
                     subprocess.CalledProcessError):
@@ -337,7 +363,8 @@ def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subproc
         output = Path(td) / "bundle"
         builder(snapshot, output, identity=identity, build_kind="development",
                 version=version, commit=commit, runner=runner)
-        published = _publish_assembled_bundle(home, output, identity, shipped, guest, host_os, host_arch)
+        published = _publish_assembled_bundle(home, output, identity, shipped, guest, host_os, host_arch,
+                                              stamps)
         return published / "bin/yolo"
 
 

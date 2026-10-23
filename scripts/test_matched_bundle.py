@@ -67,18 +67,20 @@ def _fake_helper_dirs(bundle: Path, snapshot: Path):
             binary.chmod(0o755)
 
 
-def fake_assembler(snapshot, output, *, identity, build_kind, **_):
+def fake_assembler(snapshot, output, *, identity, build_kind, version="", commit="", **_):
     output.mkdir()
     (output / "bin").mkdir()
     launcher = output / "bin/yolo"
-    launcher.write_text("#!/bin/sh\nprintf '%s\\n' 'snapshot identity: " + identity + "' 'build kind: " + build_kind + "'\n")
+    launcher.write_text("#!/bin/sh\nprintf '%s\\n' 'snapshot identity: " + identity + "' 'build kind: " + build_kind
+                        + "' 'build stamp: " + (version or "unstamped") + "' 'commit: " + (commit or "unknown") + "'\n")
     launcher.chmod(0o755)
     bundle = output / "share/yolo-jail"
     bundle.mkdir(parents=True)
     _fake_helper_dirs(bundle, snapshot)
     (bundle / "flake.nix").write_text("flake")
     (bundle / "flake.lock").write_text("lock")
-    (bundle / "yolo-build-stamp.json").write_text(json.dumps({"snapshotIdentity": identity, "buildKind": build_kind}))
+    (bundle / "yolo-build-stamp.json").write_text(json.dumps({"version": version, "commit": commit,
+                                                              "snapshotIdentity": identity, "buildKind": build_kind}))
 
 
 class SnapshotTests(unittest.TestCase):
@@ -270,7 +272,7 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); repo=repo_fixture(root); home=root/"home"; calls=[]
             def builder(snapshot, output, *, identity, build_kind, **kw):
-                calls.append(identity); fake_assembler(snapshot, output, identity=identity, build_kind=build_kind)
+                calls.append(identity); fake_assembler(snapshot, output, identity=identity, build_kind=build_kind, **kw)
             first=mb.build_dev_bundle(repo, home, builder=builder)
             self.assertEqual(first, mb.build_dev_bundle(repo, home, builder=builder))
             self.assertEqual(len(calls), 1)
@@ -286,6 +288,47 @@ class PackageTests(unittest.TestCase):
             helper.chmod(0o644); helper.unlink()
             rebuilt=mb.build_dev_bundle(repo, home, builder=builder)
             self.assertNotEqual(dirty, rebuilt); self.assertEqual(len(calls), 3)
+
+    def test_build_cache_never_reuses_a_bundle_stamped_for_another_commit_or_dirtiness(self):
+        # The same frozen content can be built from a dirty tree at the parent commit and then
+        # from the clean commit that records it; the cached bundle must not carry the first stamp.
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root); home=root/"home"; calls=[]; env=clean_git_env()
+            def builder(snapshot, output, **kw):
+                calls.append((kw["version"], kw["commit"])); fake_assembler(snapshot, output, **kw)
+            def stamp(launcher):
+                return json.loads((launcher.parent.parent/"share/yolo-jail/yolo-build-stamp.json").read_text())
+            def head():
+                return subprocess.check_output(["git","rev-parse","--short=12","HEAD"],cwd=repo,env=env,text=True).strip()
+            (repo/"cmd/yolo/main.go").write_text("package main // change\n")
+            parent=head()
+            dirty=mb.build_dev_bundle(repo, home, builder=builder)
+            self.assertEqual(stamp(dirty)["commit"], parent)
+            self.assertTrue(stamp(dirty)["version"].endswith("-dirty"))
+            subprocess.run(["git","-c","user.name=test","-c","user.email=test@example.invalid",
+                            "commit","-qam","record change"],cwd=repo,env=env,check=True)
+            child=head()
+            clean=mb.build_dev_bundle(repo, home, builder=builder)
+            self.assertNotEqual(dirty, clean)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(stamp(clean)["commit"], child)
+            self.assertFalse(stamp(clean)["version"].endswith("-dirty"))
+            fields=subprocess.run([str(clean)],capture_output=True,text=True,check=True).stdout.splitlines()
+            self.assertIn("commit: "+child, fields)
+            # An identical clean tree at the same commit still reuses its bundle.
+            self.assertEqual(clean, mb.build_dev_bundle(repo, home, builder=builder))
+            self.assertEqual(len(calls), 2)
+
+    def test_cached_launcher_stamped_unlike_its_bundle_metadata_is_a_miss(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root); home=root/"home"; calls=[]
+            def builder(snapshot, output, **kw):
+                calls.append(kw["identity"]); fake_assembler(snapshot, output, **kw)
+            first=mb.build_dev_bundle(repo, home, builder=builder)
+            first.parent.chmod(0o755); first.chmod(0o755)
+            first.write_text(first.read_text().replace("'commit: ", "'commit: 0000"))
+            second=mb.build_dev_bundle(repo, home, builder=builder)
+            self.assertNotEqual(first, second); self.assertEqual(len(calls), 2)
 
     def test_failed_and_concurrent_publication_is_atomic_and_unique(self):
         from concurrent.futures import ThreadPoolExecutor
@@ -315,15 +358,15 @@ class PackageTests(unittest.TestCase):
 
             def builder(snapshot, output, *, identity, build_kind, **kw):
                 builds.append(identity)
-                fake_assembler(snapshot, output, identity=identity, build_kind=build_kind)
+                fake_assembler(snapshot, output, identity=identity, build_kind=build_kind, **kw)
 
             mb.command(repo, "dev", home=home, builder=builder,
                        execer=lambda path, argv, env: executed.append((path, argv, env)))
             self.assertEqual(len(builds), 1)
             self.assertEqual(len(executed), 1)
             self.assertNotEqual(Path(executed[0][0]), first)
-            self.assertEqual(Path(executed[0][0]).read_text().splitlines()[1],
-                             "printf '%s\\n' 'snapshot identity: " + builds[0] + "' 'build kind: development'")
+            self.assertTrue(Path(executed[0][0]).read_text().splitlines()[1].startswith(
+                "printf '%s\\n' 'snapshot identity: " + builds[0] + "' 'build kind: development'"))
             self.assertTrue(failed_generation.is_dir())
             self.assertEqual(first.read_text(), "#!/bin/sh\nexit 7\n")
 
@@ -471,6 +514,7 @@ class StandaloneWrapperTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name).resolve()
         self.repo=repo_fixture(self.root,real_scripts=True)
         with tempfile.TemporaryDirectory() as td: self.identity=mb.freeze_snapshot(self.repo,Path(td).resolve()/"snapshot")
+        version,commit,_,_=mb._source_stamps(self.repo)
         self.home=self.root/"home"; self.log=self.root/"launcher.json"; self.stale_marker=self.root/"stale"
         installed=self.root/"installed-generation"; installed.mkdir()
         self.active=self.home/".local/share/yolo-jail/flake-bundle"
@@ -480,14 +524,16 @@ class StandaloneWrapperTests(unittest.TestCase):
 import json, os, signal, sys
 identity={self.identity!r}
 if sys.argv[1:]==["--version","--full"]:
- print("snapshot identity: "+identity); print("build kind: development"); raise SystemExit(0)
+ print("snapshot identity: "+identity); print("build kind: development")
+ print("build stamp: "+{version!r}); print("commit: "+{commit!r}); raise SystemExit(0)
 with open(os.environ["YOLO_TEST_LOG"],"w") as f: json.dump({{"args":sys.argv[1:],"cwd":os.getcwd(),"hasRepoRoot":"YOLO_REPO_ROOT" in os.environ,"path":os.environ.get("PATH")}},f)
 if os.environ.get("YOLO_TEST_SIGNAL"): os.kill(os.getpid(),getattr(signal,"SIG"+os.environ["YOLO_TEST_SIGNAL"]))
 raise SystemExit(23)
 '''
         payload={"bin/yolo":(source.encode(),0o755),"share/yolo-jail/flake.nix":(b"f",0o444),
             "share/yolo-jail/flake.lock":(b"l",0o444),"share/yolo-jail/yolo-build-stamp.json":
-            (json.dumps({"snapshotIdentity":self.identity,"buildKind":"development"}).encode(),0o444)}
+            (json.dumps({"version":version,"commit":commit,"snapshotIdentity":self.identity,
+                         "buildKind":"development"}).encode(),0o444)}
         shipped,guest=mb._binary_lists(self.repo/"scripts/stage-source-bundle.sh")
         host_os,host_arch=mb._platform(self.repo)
         targets={f"linux-{host_arch}":shipped}
