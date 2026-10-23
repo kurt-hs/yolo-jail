@@ -3,15 +3,16 @@ title: "mise cannot reach HTTPS inside macos-user, and the keychain deny is why"
 date: 2026-10-23
 status: in-review
 stage: DESIGN
-next: "Run the witnesses in §5 on the maintainer's Mac, then rule OQ-MT1 and OQ-MT2"
+next: "Rule OQ-MT1 (witness C passed on the maintainer's Mac 2026-10-23, so A is available) and OQ-MT2"
 tags: [design, macos, macos-user, seatbelt, tls, mise, ca-trust]
 summary: "Inside the macos-user Seatbelt profile, yolo's nixpkgs mise fails every HTTPS call with 'bad certificate format'. It is built with native-tls, whose SecureTransport handshake reads the server key through Apple's old CDSA code, which checks in with securityd (com.apple.SecurityServer). The profile denies that service on purpose because it fronts the login keychain. The proposal keeps the deny and ships a mise build that verifies through rustls-platform-verifier, which talks to trustd only. Unmeasured: the witnesses in §5 settle it on a Mac."
 ---
 
 # mise cannot reach HTTPS inside macos-user, and the keychain deny is why
 
-**Status:** 2026-10-23. Nothing built. Cause traced from source, not yet measured on a Mac; evidence
-read against main at `7a056ac5e`.
+**Status:** 2026-10-23. Nothing built. The cause is traced from source and **measured on the
+maintainer's Mac** ([the Mac run](#measured-on-the-maintainers-mac-2026-10-23)): every witness came out as
+expected, and witness C passes, so option A works.
 
 > **In short.** Keep securityd denied and change mise, the same way the Go fix changed Go: ship
 > a mise build whose TLS verifies through the trust daemon the profile already allows, so
@@ -128,6 +129,30 @@ echo | openssl s_client -connect nodejs.org:443 -servername nodejs.org 2>/dev/nu
 | **D**: as B, with `SSL_CERT_FILE` unset | Same as B | A version means the bundle path is involved after all, and [§2](#2-the-cause) step 5 is wrong |
 | **issuer** | The issuer the Mac sees | If it names the corporate CA and C passed, the platform verifier trusts the MDM CA with no bundle |
 
+### Measured on the maintainer's Mac, 2026-10-23
+
+macOS 26.5 (25F71), arm64; nixpkgs mise `/nix/store/nf7990y6…-mise-2026.10.3`, release mise
+`v2026.10.3` (`macos-arm64`, sha256 `0999bd4943523ccd…` of `bin/mise`). Every line came out as
+expected, so [§2](#2-the-cause) holds and option A works:
+
+| Line | Result |
+| :--- | :--- |
+| **A** | `26.12.1` |
+| **B** | `bad certificate format` (after `error sending request`, `client error (Connect)`) |
+| **C** | `26.12.1` |
+| **D** | Same as B. The session already had `SSL_CERT_FILE` unset, so D also ran with it **set** to `/etc/ssl/cert.pem`: still `bad certificate format`, which confirms step 5 more directly |
+| **issuer** | `C=US, O=Google Trust Services, CN=WE1`: this network does not intercept TLS, so the corporate CA was not in the path and the platform verifier's MDM trust is **not** exercised here |
+
+**Under yolo's own profile too**, not only the one-deny witness: the profile
+`yolo internal macos-user-profile --mode self` renders at `3c35c9f87` (which keeps the
+`com.apple.SecurityServer` deny), with `env -i` and fresh mise dirs in its workspace. nixpkgs mise fails
+the same way. Release mise lists `26.12.1` and `mise install node@22` installs `22.23.4`. So option A
+needs no profile change. The run-as-you launch that hit this (with `mise_tools` from the user config)
+failed in provisioning with the same error for `pipx:swarf` and the neovim plugin.
+
+Still unmeasured: a host behind a TLS-intercepting proxy whose CA only the MDM installed, which is what
+the issuer line would show.
+
 **Then, once a build delivers option A:** a real run-as-you launch with the shipped profile, running
 `mise ls-remote node` and `mise install` in a repo with a `mise.toml`. Expected: versions listed and
 tools installed, with no profile change.
@@ -141,11 +166,12 @@ tools installed, with no profile change.
 
 ## 7. Open questions
 
-1. 🔒 <a id="OQ-MT1"></a>**[OQ-MT1](#OQ-MT1): How does mise get TLS inside macos-user?**
+1. 💬 <a id="OQ-MT1"></a>**[OQ-MT1](#OQ-MT1): How does mise get TLS inside macos-user?**
 
-   <!-- vantage: oq id=OQ-MT1 -->
+   <!-- vantage: oq id=OQ-MT1 leaning="A: witness C passed on the maintainer's Mac, under yolo's own profile too, so release mise on darwin keeps the keychain deny; dropped once option F lands in nixpkgs." -->
 
-   Waits on witness C in [§5](#5-witnesses-for-the-mac). The options and their costs are in
+   Witness C passed on 2026-10-23 ([the Mac run](#measured-on-the-maintainers-mac-2026-10-23)), under yolo's
+   own profile as well, so option A is available. The options and their costs are in
    [§4](#4-alternatives).
 
    - **A — Release mise on darwin**, mise's own official binary, hash-pinned, keychain deny kept;
@@ -153,7 +179,7 @@ tools installed, with no profile change.
    - **B — Rebuild nixpkgs mise with rustls**, keychain deny kept, compiled on each Mac.
    - **C — Allow securityd**, which ends run-as-you's keychain promise.
 
-   _Leaning:_ A if witness C passes; B if a second pin is unwanted; C only if both fail.
+   _Leaning:_ A, now that witness C passed; B if a second pin is unwanted; C only if both fail.
 
    **Answer:**
    > _(empty — fill in when decided)_
