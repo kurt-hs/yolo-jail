@@ -1902,7 +1902,7 @@ recommendation the doc rests on.
    **Answer:**
    > _(empty — fill in when decided)_
 
-2. 💬 <a id="OQ-PS11"></a>**OQ-PS11: Do `program` and `requires` collapse into one kind?**
+2. ✅ <a id="OQ-PS11"></a>**OQ-PS11: Do `program` and `requires` collapse into one kind?**
 
    Under [`OQ-PS3`](#decision-ledger)'s ruling a `requires` already **is** a need whose recipe list is
    empty, so what is still open is whether the manifest keeps two kind names for one declaration.
@@ -1918,10 +1918,13 @@ recommendation the doc rests on.
    host in the first place. The honest cost is the blast radius
    ([§7.3](#73-naming-is-downstream)) and a migration for every shipped manifest declaring either kind.
 
-   <!-- vantage: oq id=OQ-PS11 leaning="(a): collapse them. Under OQ-PS3's ruling a requires is already a need with an empty recipe list, so two names for one declaration is a distinction the resolver never reads, and F3's nine jail-side differences are better predicted by 'has a recipe here' than by the kind label. The cost is the blast radius and a migration for every shipped manifest declaring either kind." -->
-
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, as leaned, (a), with no transition:** one kind, an entry with
+   > a recipe getting what a `program` gets and one without getting what a `requires` gets. *"We
+   > don't need a transition. We don't have to support the old thing. I'm sure I'm the only one
+   > with packs. I can change my packs. This is the time for changes like this."* The old kind
+   > names are refused, not migrated; shipped manifests change in the same build. The name is
+   > [`OQ-PS5`](#OQ-PS5).
 
 3. ✅ <a id="OQ-NX4"></a>**OQ-NX4: Should a non-container notch get its locator variables from a
     declared table, and who may add a row?**
