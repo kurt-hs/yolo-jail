@@ -7,11 +7,100 @@ package integration
 // install ships at /bin/ps.
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
+	"testing"
+	"time"
+
+	"golang.org/x/sys/unix"
 )
+
+// processPIDs is every pid the kernel's process table (kern.proc.all) lists.
+func processPIDs() ([]int, error) {
+	procs, err := unix.SysctlKinfoProcSlice("kern.proc.all")
+	if err != nil {
+		return nil, err
+	}
+	pids := make([]int, 0, len(procs))
+	for _, p := range procs {
+		pids = append(pids, int(p.Proc.P_pid))
+	}
+	return pids, nil
+}
+
+// processParent is pid's parent, from kern.proc.pid; 0 when unreadable.
+func processParent(pid int) int {
+	k, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+	if err != nil {
+		return 0
+	}
+	return int(k.Eproc.Ppid)
+}
+
+// processStartTime is pid's start time from kern.proc.pid, to the microsecond, which
+// distinguishes a live process from a different process that later reused its pid.
+func processStartTime(pid int) (string, error) {
+	k, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+	if err != nil {
+		return "", fmt.Errorf("sysctl kern.proc.pid %d: %w", pid, err)
+	}
+	return fmt.Sprintf("%d.%06d", k.Proc.P_starttime.Sec, k.Proc.P_starttime.Usec), nil
+}
+
+// processEnviron is pid's environment as the kernel recorded it at exec (kern.procargs2, the
+// source `ps -E` reads). The kernel answers it for this user's own processes only, which is all
+// the harness asks about; any other is an error, so it is never taken for this test's.
+func processEnviron(pid int) ([]string, error) {
+	buf, err := unix.SysctlRaw("kern.procargs2", pid)
+	if err != nil {
+		return nil, fmt.Errorf("sysctl kern.procargs2 %d: %w", pid, err)
+	}
+	_, env, err := parseProcargs2(buf)
+	return env, err
+}
+
+// parseProcargs2 reads the arguments and the environment out of a kern.procargs2 buffer: a native
+// int32 argc, the executable path, NUL padding, argc NUL-terminated arguments, then
+// NUL-terminated environment entries up to the first empty one.
+func parseProcargs2(buf []byte) (args, env []string, err error) {
+	if len(buf) < 4 {
+		return nil, nil, fmt.Errorf("short kern.procargs2: %d bytes", len(buf))
+	}
+	argc := int(binary.NativeEndian.Uint32(buf[:4]))
+	rest := buf[4:]
+	i := bytes.IndexByte(rest, 0)
+	if i < 0 {
+		return nil, nil, errors.New("kern.procargs2: unterminated executable path")
+	}
+	rest = rest[i:]
+	for len(rest) > 0 && rest[0] == 0 {
+		rest = rest[1:]
+	}
+	for n := 0; n < argc; n++ {
+		i := bytes.IndexByte(rest, 0)
+		if i < 0 {
+			return nil, nil, fmt.Errorf("kern.procargs2: %d of %d arguments terminated", n, argc)
+		}
+		args = append(args, string(rest[:i]))
+		rest = rest[i+1:]
+	}
+	for len(rest) > 0 {
+		i := bytes.IndexByte(rest, 0)
+		if i <= 0 {
+			break
+		}
+		env = append(env, string(rest[:i]))
+		rest = rest[i+1:]
+	}
+	return args, env, nil
+}
 
 // processState is pid's state as ps prints it ("S", "R+", "Z", …). found is false when ps
 // matched no process, which it reports by exiting 1 with nothing printed; err is any other
@@ -40,10 +129,17 @@ func processStateWithFlags(pid int) processStateObservation {
 	}
 }
 
-// processArgs is pid's command line as ps prints it, split at spaces. ps joins argv with
-// spaces, so an argument that itself holds one comes back as two; every caller here matches
-// arguments that hold none.
+// processArgs is pid's argv, read exactly from kern.procargs2 (the buffer ps itself reads) for
+// this user's processes. For any other, which the kernel does not answer, it is the command line
+// as ps prints it, split at spaces: ps joins argv with spaces, so an argument that itself holds
+// one comes back as two. The exact read matters to the harness's stop (preparationworkers_test.go),
+// whose stand-ins carry `internal <verb>` inside a script argument as well as after it.
 func processArgs(pid int) ([]string, error) {
+	if buf, err := unix.SysctlRaw("kern.procargs2", pid); err == nil {
+		if args, _, err := parseProcargs2(buf); err == nil && len(args) > 0 {
+			return args, nil
+		}
+	}
 	out, err := exec.Command("ps", "-ww", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
 	if err != nil {
 		return nil, err
@@ -101,4 +197,54 @@ func processDetail(pid int) string {
 		return "pid ppid stat elapsed wchan command: " + s
 	}
 	return "pid " + strconv.Itoa(pid) + ": gone before it could be read"
+}
+
+// parseProcargs2 skips the executable path and its padding, reads every argument, an empty one
+// included, and stops at the first empty environment entry.
+func TestParseProcargs2ReadsTheEnvironmentAfterTheArguments(t *testing.T) {
+	buf := binary.NativeEndian.AppendUint32(nil, 3)
+	buf = append(buf, "/bin/sh\x00\x00\x00\x00sh\x00\x00HOME=decoy\x00HOME=/h\x00PATH=/bin\x00\x00junk\x00"...)
+	args, env, err := parseProcargs2(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(args, ","), "sh,,HOME=decoy"; got != want {
+		t.Errorf("arguments = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(env, ","), "HOME=/h,PATH=/bin"; got != want {
+		t.Errorf("environment = %q, want %q", got, want)
+	}
+	if _, _, err := parseProcargs2(buf[:2]); err == nil {
+		t.Error("a buffer shorter than argc parsed")
+	}
+}
+
+// processEnviron reads a live child's environment, and its start time and parent come from the
+// same kernel table the listing reads.
+func TestProcessEnvironReadsALiveChildsHome(t *testing.T) {
+	home := t.TempDir()
+	cmd := exec.Command("sleep", "4986")
+	cmd.Env = append(os.Environ(), "HOME="+home)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	deadline := time.Now().Add(5 * time.Second)
+	for !processRunsWithHome(cmd.Process.Pid, home) {
+		if time.Now().After(deadline) {
+			env, err := processEnviron(cmd.Process.Pid)
+			t.Fatalf("the child never showed HOME=%s: environment %q, %v", home, env, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := processParent(cmd.Process.Pid); got != os.Getpid() {
+		t.Errorf("parent = %d, want this test binary %d", got, os.Getpid())
+	}
+	if start, err := processStartTime(cmd.Process.Pid); err != nil || start == "" {
+		t.Errorf("start time = %q, %v", start, err)
+	}
+	pids, err := processPIDs()
+	if err != nil || !slices.Contains(pids, cmd.Process.Pid) {
+		t.Errorf("the process table (%d pids, %v) does not list the child %d", len(pids), err, cmd.Process.Pid)
+	}
 }

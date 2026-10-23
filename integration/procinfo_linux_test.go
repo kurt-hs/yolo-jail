@@ -319,3 +319,69 @@ func openFiles(pid int) string {
 	}
 	return fmt.Sprintf("%d socket(s), %d pipe(s), files [%s]", sockets, pipes, strings.Join(files, " "))
 }
+
+// processPIDs is every pid /proc lists.
+func processPIDs() ([]int, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil, err
+	}
+	var pids []int
+	for _, e := range entries {
+		if pid, err := strconv.Atoi(e.Name()); err == nil {
+			pids = append(pids, pid)
+		}
+	}
+	return pids, nil
+}
+
+// processParent is pid's parent, from the fourth field of /proc/<pid>/stat; 0 when unreadable.
+func processParent(pid int) int {
+	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return 0
+	}
+	s := string(stat)
+	i := strings.LastIndexByte(s, ')')
+	if i < 0 {
+		return 0
+	}
+	fields := strings.Fields(s[i+1:])
+	if len(fields) < 2 {
+		return 0
+	}
+	ppid, _ := strconv.Atoi(fields[1])
+	return ppid
+}
+
+// processStartTime is the starttime field in /proc/<pid>/stat, which distinguishes a live process
+// from a different process that later reused its pid.
+func processStartTime(pid int) (string, error) {
+	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return "", err
+	}
+	i := strings.LastIndexByte(string(stat), ')')
+	if i < 0 {
+		return "", fmt.Errorf("malformed /proc/%d/stat", pid)
+	}
+	fields := strings.Fields(string(stat)[i+1:])
+	if len(fields) <= 19 {
+		return "", fmt.Errorf("short /proc/%d/stat", pid)
+	}
+	return fields[19], nil
+}
+
+// processEnviron is pid's environment, from /proc/<pid>/environ, whose entries are
+// NUL-separated. Empty (nil, nil) when the kernel shows none, as it does for a moment after an
+// exec and once an exiting process has released its memory.
+func processEnviron(pid int) ([]string, error) {
+	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", pid))
+	if err != nil {
+		return nil, fmt.Errorf("read /proc/%d/environ: %w", pid, err)
+	}
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	return strings.Split(string(raw), "\x00"), nil
+}

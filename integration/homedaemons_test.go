@@ -106,15 +106,12 @@ func awaitHomeHostDaemons(home string, bound time.Duration) []string {
 // processRunsWithHome reports that pid's environment carries HOME=home. False whenever that
 // cannot be read, which is the direction that waits for nothing.
 func processRunsWithHome(pid int, home string) bool {
-	if goruntime.GOOS != "linux" {
-		return false // no /proc: see the file header
-	}
-	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", pid))
+	env, err := processEnviron(pid)
 	if err != nil {
 		return false
 	}
 	want := "HOME=" + filepath.Clean(home)
-	for _, kv := range strings.Split(string(raw), "\x00") {
+	for _, kv := range env {
 		if strings.HasPrefix(kv, "HOME=") {
 			return "HOME="+filepath.Clean(strings.TrimPrefix(kv, "HOME=")) == want
 		}
@@ -158,13 +155,9 @@ func fakeHomeDaemon(t *testing.T, name, home string, life time.Duration) *exec.C
 }
 
 // fakeHostDaemonProcess starts the stand-in process alone: `sleep`, running with HOME=home,
-// killed at the test's end, and returned only once /proc shows that HOME.
+// killed at the test's end, and returned only once its environment shows that HOME.
 func fakeHostDaemonProcess(t *testing.T, name, home string) *exec.Cmd {
 	t.Helper()
-	if goruntime.GOOS != "linux" {
-		t.Skip("the harness identifies a daemon's HOME through /proc, which this host lacks " +
-			"(homedaemons_test.go's header); it stops nothing here, so there is nothing to test")
-	}
 	cmd := exec.Command("sleep", "600")
 	cmd.Env = append(os.Environ(), "HOME="+home)
 	if err := cmd.Start(); err != nil {

@@ -38,17 +38,25 @@ package integration
 //
 // # How a process is identified as this test's
 //
-// By HOME, read from /proc as homedaemons_test.go does: every process whose environment carries
-// HOME=<this test's temp home>. The HOME is unique to the test, so a match cannot be another
-// test's process or the machine's. The /proc start time ties the listed pid to the same process
-// before a signal, rather than trusting the pid alone. A process first seen while already
+// By HOME, read from the process's environment as homedaemons_test.go does: every process whose
+// environment carries HOME=<this test's temp home>. The HOME is unique to the test, so a match
+// cannot be another test's process or the machine's. The process's start time ties the listed pid
+// to the same process before a signal, rather than trusting the pid alone. Linux reads all three
+// (environment, parent, start time) from /proc; darwin, which has no /proc, from the kernel's
+// process table (procinfo_darwin_test.go: kern.proc and kern.procargs2). A process first seen while already
 // exiting, its environment released between the two HOME reads (CI run 39886931703: a late
 // podman), is never confirmed as this test's; it is waited for, never signalled, once the kernel
 // proves it exiting, and anything else unconfirmed is refused. Two kinds are left out: the test binary's
 // own descendants, which are the exec.Cmd children its own cleanups own (a stand-in, a session it
 // still holds), and a scratch remover (`internal scratch-rm`), which ends on its own within its
-// bound and is WAITED for, never stopped, since stopping it leaks the volumes it was removing. On
-// a host without /proc nothing is identified and nothing is stopped.
+// bound and is WAITED for, never stopped, since stopping it leaks the volumes it was removing.
+//
+// DARWIN USED TO BE LEFT OUT, and failed the same way: with only /proc to read, a Mac identified
+// nothing and stopped nothing, so the scheduler and its workers outlived the test there, and the
+// macOS nightly's run 39943557792 failed TestAnUnsatisfiableNodeFloorRefusesTheLaunch with
+// `TempDir RemoveAll cleanup: unlinkat <tempdir>/004/.local/share: directory not empty`. The
+// proof that runs on a Mac is the stand-in tests below, which startStandIn no longer skips there
+// and ci.yml's check-macos job runs under -short.
 //
 // # The order, and why it repeats
 //
@@ -148,56 +156,18 @@ func (p homeProcess) String() string {
 	return fmt.Sprintf("pid %d (%s)", p.pid, what)
 }
 
-// processParent is pid's parent, from the fourth field of /proc/<pid>/stat; 0 when unreadable.
-func processParent(pid int) int {
-	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-	if err != nil {
-		return 0
-	}
-	s := string(stat)
-	i := strings.LastIndexByte(s, ')')
-	if i < 0 {
-		return 0
-	}
-	fields := strings.Fields(s[i+1:])
-	if len(fields) < 2 {
-		return 0
-	}
-	ppid, _ := strconv.Atoi(fields[1])
-	return ppid
-}
-
-// processStartTime is the starttime field in /proc/<pid>/stat, which distinguishes a live process
-// from a different process that later reused its pid.
-func processStartTime(pid int) (string, error) {
-	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-	if err != nil {
-		return "", err
-	}
-	i := strings.LastIndexByte(string(stat), ')')
-	if i < 0 {
-		return "", fmt.Errorf("malformed /proc/%d/stat", pid)
-	}
-	fields := strings.Fields(string(stat)[i+1:])
-	if len(fields) <= 19 {
-		return "", fmt.Errorf("short /proc/%d/stat", pid)
-	}
-	return fields[19], nil
-}
-
+// processHomeObservation reads pid's HOME from its environment (processEnviron: /proc on Linux,
+// kern.procargs2 on darwin) and reports whether it is home.
 func processHomeObservation(pid int, home string) (bool, error) {
-	if goruntime.GOOS != "linux" {
-		return false, fmt.Errorf("%w: /proc is unavailable", errHomeObservationUnknown)
-	}
-	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", pid))
+	env, err := processEnviron(pid)
 	if err != nil {
-		return false, fmt.Errorf("%w: read /proc/%d/environ: %w", errHomeObservationUnknown, pid, err)
+		return false, fmt.Errorf("%w: %w", errHomeObservationUnknown, err)
 	}
-	if len(raw) == 0 {
+	if len(env) == 0 {
 		return false, fmt.Errorf("%w: %w: pid %d has an empty environment", errHomeOwnershipChanged, errHomeEnvironmentCleared, pid)
 	}
 	want := "HOME=" + filepath.Clean(home)
-	for _, kv := range strings.Split(string(raw), "\x00") {
+	for _, kv := range env {
 		if strings.HasPrefix(kv, "HOME=") {
 			if "HOME="+filepath.Clean(strings.TrimPrefix(kv, "HOME=")) == want {
 				return true, nil
@@ -211,22 +181,19 @@ func processHomeObservation(pid int, home string) (bool, error) {
 // homeProcesses lists the live processes running with HOME=home, other than this test binary
 // and its descendants.
 func homeProcesses(home string) []homeProcess {
-	if home == "" || goruntime.GOOS != "linux" {
+	if home == "" {
 		return nil
 	}
-	entries, err := os.ReadDir("/proc")
+	pids, err := processPIDs()
 	if err != nil {
 		return nil
 	}
 	parent := map[int]int{}
 	var mine []int
-	for _, e := range entries {
-		pid, err := strconv.Atoi(e.Name())
-		if err != nil {
-			continue
-		}
+	for _, pid := range pids {
 		parent[pid] = processParent(pid)
-		if pid != os.Getpid() && !processGone(pid) && processRunsWithHome(pid, home) {
+		// The HOME read first: it is one kernel read, where processGone execs ps per pid on darwin.
+		if pid != os.Getpid() && processRunsWithHome(pid, home) && !processGone(pid) {
 			mine = append(mine, pid)
 		}
 	}
@@ -957,13 +924,9 @@ const standInScript = `trap 'kill $!; exit 143' TERM; sleep 600 & wait`
 // startStandIn starts `sh -c script args...` with argv[0] argv0 and HOME=home (plus env),
 // DETACHED — the shell that starts it exits at once, so it is no child of this test binary, as a
 // real worker is not once the launch that spawned it has returned — and returns its pid once
-// /proc shows that HOME. The test's end stops it if the code under test did not.
+// its environment shows that HOME. The test's end stops it if the code under test did not.
 func startStandIn(t *testing.T, home string, env []string, argv0, script string, args ...string) int {
 	t.Helper()
-	if goruntime.GOOS != "linux" {
-		t.Skip("the harness identifies a process's HOME through /proc, which this host lacks " +
-			"(preparationworkers_test.go's header); it stops nothing here, so there is nothing to test")
-	}
 	outer := `a0=$1; s=$2; shift 2; (exec -a "$a0" sh -c "$s" "$@" </dev/null >/dev/null 2>&1) & echo $!`
 	out, err := runEnvCommand(append([]string{"HOME=" + home}, env...),
 		append([]string{"bash", "-c", outer, "_", argv0, script}, args...)...)
@@ -1241,9 +1204,6 @@ func TestStopHomeProcessesRetriesOnlyUncertainHomeObservation(t *testing.T) {
 }
 
 func TestInspectStopProcessRecordsReadOrderForLiveProcess(t *testing.T) {
-	if goruntime.GOOS != "linux" {
-		t.Skip("the cleanup identity probe reads /proc on Linux")
-	}
 	cmd := exec.Command("sleep", "4987")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start live probe process: %v", err)
