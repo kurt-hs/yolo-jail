@@ -1092,6 +1092,7 @@ func WorkspaceACLAces(group string) map[string]string {
 // permitted". Those files were created under the inheriting entries and already carry the
 // grant, so leaving them out loses nothing. The exclusion is built only when the account exists:
 // BSD find refuses `-user` naming an unknown user, and with no account no file can be its.
+// find is spelled /usr/bin/find, as id is: a guardrails `find` blocker first on PATH refuses it.
 // `${skip[@]+...}` because bash 3.2, macOS's, calls an empty array unbound under `set -u`.
 //
 // NO `set -e`, so one path chmod refuses does not end the script before the later walks: each
@@ -1109,7 +1110,7 @@ func FixPermissionsScript(root, group, failedList string) string {
 		shQuote(SandboxUser) + "); fi\n" +
 		"grant() {\n" +
 		"  local ace=$1; shift\n" +
-		"  find \"$root\" " + skip + " \"$@\" -exec /bin/sh -c " + shQuote(grantBatch) +
+		"  /usr/bin/find \"$root\" " + skip + " \"$@\" -exec /bin/sh -c " + shQuote(grantBatch) +
 		" sh \"$ace\" \"$failed\" {} +\n" +
 		"}\n" +
 		"echo \"Applying shared-group ACLs under $root (this can take a moment on a large tree)…\"\n" +
@@ -1262,7 +1263,7 @@ func UngrantedChildrenScript(root, group string) string {
 func WorkspaceACLStripScript(workspace string) string {
 	return "set -euo pipefail\n" +
 		"ws=" + shQuote(workspace) + "\n" +
-		"find \"$ws\" -exec chmod -h -N {} +\n"
+		"/usr/bin/find \"$ws\" -exec chmod -h -N {} +\n"
 }
 
 // ---------------------------------------------------------------------------

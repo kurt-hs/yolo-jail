@@ -181,3 +181,46 @@ func uniqueLines(s string) []string {
 	}
 	return out
 }
+
+// A `find` blocker first on PATH (the guardrails pack's, in a `yolo host --` session that runs
+// yolo) must not refuse the walk: both scripts run the system find by its path. Measured on a Mac
+// on 2026-10-23, where every launch fixture's macos-fix-permissions failed on the blocker.
+func TestThePermissionScriptsRunUnderAFindBlocker(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash")
+	}
+	if _, err := os.Stat("/usr/bin/find"); err != nil {
+		t.Skip("no /usr/bin/find")
+	}
+	tmp, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(tmp, "shared")
+	if err := os.MkdirAll(filepath.Join(root, "d"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(tmp, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blocker := "#!/bin/sh\necho 'find is blocked' >&2\nexit 127\n"
+	if err := os.WriteFile(filepath.Join(bin, "find"), []byte(blocker), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// chmod is stubbed so the test changes no real access list.
+	if err := os.WriteFile(filepath.Join(bin, "chmod"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, script := range map[string]string{
+		"fix":   FixPermissionsScript(root, "", filepath.Join(tmp, "failed")),
+		"strip": WorkspaceACLStripScript(root),
+	} {
+		cmd := exec.Command(bash, "-c", script)
+		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+		if out, err := cmd.CombinedOutput(); err != nil || strings.Contains(string(out), "blocked") {
+			t.Errorf("%s: the script met the find blocker (%v):\n%s", name, err, out)
+		}
+	}
+}
