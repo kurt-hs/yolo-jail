@@ -36,7 +36,16 @@ func (s *Store) withCheckStart(owner string, fn func(*CheckStart) error) error {
 	if s.Ctx != nil {
 		mode.Cancel = s.Ctx.Done()
 	}
-	lock, err := pidlock.Acquire(filepath.Join(s.Dir, "locks", "check-start-"+mirrorSlug(owner)+".lock"), mode, nil)
+	var onWait func(int)
+	if s.checkStartWaiting != nil {
+		onWait = func(int) { s.checkStartWaiting() }
+	}
+	lock, err := pidlock.Acquire(filepath.Join(s.Dir, "locks", "check-start-"+mirrorSlug(owner)+".lock"), mode, onWait)
+	if errors.Is(err, pidlock.ErrCanceled) && s.Ctx != nil && s.Ctx.Err() != nil {
+		// A cancelled wait reports the context's error, as the check before the wait does: a
+		// caller asks errors.Is(err, context.Canceled), not which side of the lock it was on.
+		return fmt.Errorf("%w: %w", s.Ctx.Err(), err)
+	}
 	if err != nil {
 		return err
 	}

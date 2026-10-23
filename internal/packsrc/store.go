@@ -99,6 +99,9 @@ type Store struct {
 	// holder never waits. Its compare-and-swap of a record waits all the same (rule 1), through a
 	// copy of the store with NoWait unset.
 	NoWait bool
+	// checkStartWaiting, when non-nil, is called once a check-start transaction finds its lock
+	// held and is about to wait: a test's seam for cancelling a request that is really waiting.
+	checkStartWaiting func()
 }
 
 // ErrLockHeld is a lock a NoWait store found held by another process: nothing ran under it.

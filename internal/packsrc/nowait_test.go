@@ -78,8 +78,13 @@ func TestFreshCheckBoundaryWaitsForStartTransactionAndCancellationIsLocal(t *tes
 	defer cancel()
 	local := *s
 	local.Ctx = ctx
+	// Cancel only once the request is WAITING on the start transaction: cancelled any earlier, it
+	// fails at withCheckStart's pre-wait check and the wait's cancellation goes untested.
+	waiting := make(chan struct{})
+	local.checkStartWaiting = func() { close(waiting) }
 	canceled := make(chan error, 1)
 	go func() { _, err := local.CheckBoundary(owner); canceled <- err }()
+	<-waiting
 	other := make(chan struct {
 		start CheckStart
 		err   error
