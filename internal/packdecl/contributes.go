@@ -3795,32 +3795,81 @@ func knownRestart(v string) bool {
 	return false
 }
 
-// validateProgramBins refuses one program BIN declared twice by ONE pack.
+// validateProgramBins refuses, within ONE pack, the two ways of declaring a program BIN twice
+// that cannot mean anything (PS-D19, docs/design/provisioner-sets.md):
 //
-// Cross-pack, two recipes for one bin are PS-D18's refusal (packload.ProgramProviderCollisions)
-// and a need beside a recipe is the normal case. Within one pack neither makes sense: a need
-// beside the pack's own recipe needs nothing, and two entries for one bin leave every
-// first-match-wins reader keyed by bin (NativeCapabilities, SpokenProtocols, …) answering from
-// whichever came first. A fork is skipped — its bin is its base's by design (FP-D5). Strict path
-// only, for validateServiceNames' reason.
+//   - a NEED beside a RECIPE for the same bin: the pack's own recipe already provides it, so the
+//     need asks for nothing;
+//   - two RECIPES whose `platforms` overlap: on a machine both are published for, two
+//     recipes compete for one launcher, and every first-match-wins reader keyed by bin
+//     (NativeCapabilities, SpokenProtocols, ...) answers from whichever came first.
+//
+// Two recipes whose platforms do NOT overlap are allowed, as they were before needs existed:
+// an installer published for darwin beside an npm package published for linux is one program
+// with a recipe per machine, and only one of them is ever live. Two needs for one bin are
+// left alone too — redundant, never wrong. Cross-pack, two recipes for one bin are PS-D18's
+// refusal (packload.ProgramProviderCollisions) and a need beside a recipe is the normal case.
+// A fork is skipped — its bin is its base's by design (FP-D5). Strict path only, for
+// validateServiceNames' reason.
 func (m *Manifest) validateProgramBins() []string {
 	var problems []string
-	seen := map[string]int{}
+	needAt := map[string]int{}
+	recipesAt := map[string][]int{}
 	for i, c := range m.Contributes {
 		if c.Kind != KindProgram || c.Bin == "" || c.IsFork() {
 			continue
 		}
-		if first, dup := seen[c.Bin]; dup {
-			problems = append(problems, fmt.Sprintf(
-				"contributes[%d]: program %q is declared again (first at contributes[%d]) — one "+
-					"pack declares a program once: with a recipe if it installs it, or with none "+
-					"if it needs it from another pack or from PATH; delete one of the two",
-				i, c.Bin, first))
+		if c.IsNeed() {
+			if r := recipesAt[c.Bin]; len(r) > 0 {
+				problems = append(problems, needBesideRecipe(i, r[0], c.Bin))
+			} else if _, seen := needAt[c.Bin]; !seen {
+				needAt[c.Bin] = i
+			}
 			continue
 		}
-		seen[c.Bin] = i
+		if n, seen := needAt[c.Bin]; seen {
+			problems = append(problems, needBesideRecipe(n, i, c.Bin))
+			delete(needAt, c.Bin)
+		}
+		for _, j := range recipesAt[c.Bin] {
+			if platformsOverlap(m.Contributes[j].Platforms, c.Platforms) {
+				problems = append(problems, fmt.Sprintf(
+					"contributes[%d]: program %q has a second recipe (first at contributes[%d]) "+
+						"for a platform the first also covers — one pack carries one recipe per "+
+						"machine. Give each recipe `platforms` that do not overlap, or delete one",
+					i, c.Bin, j))
+				break
+			}
+		}
+		recipesAt[c.Bin] = append(recipesAt[c.Bin], i)
 	}
 	return problems
+}
+
+func needBesideRecipe(need, recipe int, bin string) string {
+	return fmt.Sprintf(
+		"contributes[%d]: program %q is declared with no recipe beside this pack's own recipe "+
+			"for it at contributes[%d] — the recipe already provides it, so delete the entry "+
+			"with no \"via\"", need, bin, recipe)
+}
+
+// platformsOverlap reports whether two `platforms` lists share a machine. An empty list means
+// every platform; an entry naming only a GOOS covers every architecture on it, as
+// publishedFor reads it.
+func platformsOverlap(a, b []string) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return true
+	}
+	for _, x := range a {
+		xos, xarch, _ := strings.Cut(x, "/")
+		for _, y := range b {
+			yos, yarch, _ := strings.Cut(y, "/")
+			if xos == yos && (xarch == "" || yarch == "" || xarch == yarch) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // validateServiceNames refuses a service NAME declared twice by ONE pack.

@@ -344,15 +344,15 @@ func TestInstallContributionsReturnsEveryProgram(t *testing.T) {
 	}
 }
 
-// A `requires` contribution asserts presence: it feeds the host dep probe exactly as a
-// program does (DepRequirements folds both in) but generates no install of any kind, so it
-// carries no SelfInstall and is the only kind RequiredBins reports.
-func TestRequiresAssertsPresenceAndInstallsNothing(t *testing.T) {
+// A need (a `program` with no `via`) asserts presence: it feeds the host dep probe exactly as a
+// recipe does (DepRequirements folds both in) but generates no install of any kind, so it
+// carries no SelfInstall and is the only shape RequiredBins reports.
+func TestANeedAssertsPresenceAndInstallsNothing(t *testing.T) {
 	m, probs := Decode([]byte(`{"name":"x","contributes":[
 	  {"kind":"program","bin":"fzf","install_hints":{"brew":"fzf","apt":"fzf"}},
 	  {"kind":"program","bin":"claude","via":"installer","url":"https://claude.ai/install.sh"}]}`))
 	if len(probs) != 0 {
-		t.Fatalf("a requires contribution should decode cleanly, got: %v", probs)
+		t.Fatalf("a need should decode cleanly, got: %v", probs)
 	}
 
 	// Both kinds reach the HOST probe: below jail there is no image, so "must exist" and

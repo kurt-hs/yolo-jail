@@ -35,7 +35,7 @@ func TestANeedIsSatisfiedByAnotherSelectedPacksRecipe(t *testing.T) {
 	if got, want := n.ProvidedLine(), "program xtool, needed by pack alpha, is provided by pack bravo"; got != want {
 		t.Errorf("ProvidedLine = %q, want %q", got, want)
 	}
-	if got := ProvidedNeeds([]*Pack{a, b}); got["alpha\x00xtool"] != "bravo" {
+	if got := ProvidedNeeds([]*Pack{a, b}, "linux", "amd64"); got["alpha\x00xtool"] != "bravo" {
 		t.Errorf("ProvidedNeeds = %v, want alpha/xtool → bravo", got)
 	}
 	if cols := ProgramProviderCollisions([]*Pack{a, b}); len(cols) != 0 {
@@ -108,7 +108,7 @@ func TestAnUnprovidedNeedHasNoProvider(t *testing.T) {
 	if len(n) != 1 || len(n[0].Providers) != 0 || n[0].ProvidedLine() != "" {
 		t.Fatalf("need = %+v, want unprovided", n)
 	}
-	if len(ProvidedNeeds([]*Pack{a, other})) != 0 {
+	if len(ProvidedNeeds([]*Pack{a, other}, "linux", "amd64")) != 0 {
 		t.Error("an unprovided need must not be skipped by the boot assertion")
 	}
 }

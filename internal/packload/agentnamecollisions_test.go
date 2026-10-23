@@ -97,12 +97,13 @@ func TestOnePackClaimingItsOwnNameInEveryKindIsLegal(t *testing.T) {
 	}
 }
 
-// `requires` IS NOT A CLAIM, and this is the reductio that decided it against §4.2's literal
-// list of five kinds: docs/examples/claude-fzf-pack declares `requires fzf`, so counting it
-// would refuse a launch for two packs that merely need the same tool — and refuse the most
-// ordinary shape there is, a content pack asserting `claude` beside the pack that provides it.
-// `requires` is CombineShared for exactly this reason.
-func TestRequiresIsNotAnAgentNameClaim(t *testing.T) {
+// A NEED IS NOT A CLAIM, and this is the reductio that decided it against §4.2's literal list
+// of five kinds: docs/examples/claude-fzf-pack needs `fzf` (a `program` with no `via`, the
+// `requires` kind until OQ-PS11), so counting it would refuse a launch for two packs that
+// merely need the same tool — and refuse the most ordinary shape there is, a content pack
+// asserting `claude` beside the pack that provides it. A need combines as Shared for exactly
+// this reason.
+func TestANeedIsNotAnAgentNameClaim(t *testing.T) {
 	fzfA := claimPack(t, "fzf-pack-a",
 		packdecl.Contribution{Kind: packdecl.KindProgram, Bin: "fzf"})
 	fzfB := claimPack(t, "fzf-pack-b",

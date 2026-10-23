@@ -1324,8 +1324,10 @@ never polled for an update.
 
 `{"kind": "program", "bin": "fzf"}`, with no `via`, says the pack needs `fzf` on PATH and
 installs nothing for it. It takes `bin` and `install_hints` and nothing else; any other field
-is refused by name, with the two fixes (add a `via`, or delete the field). One pack declares a
-bin once, so a need beside the same pack's own recipe for that bin is refused too.
+is refused by name, with the two fixes (add a `via`, or delete the field). A need beside the
+same pack's own recipe for that bin is refused, and so are two recipes in one pack whose
+`platforms` overlap; recipes for platforms that do not overlap are one program with a recipe per
+machine ([PS-D19](../design/provisioner-sets.md#PS-D19)).
 
 What satisfies a need is decided across the **selected** packs only, by the
 [OQ-BH14](jail-home.md#reserving-a-name-is-not-creating-a-directory) selection rule: an
@@ -1333,13 +1335,14 @@ unselected pack is treated as if it does not exist.
 
 | Selected packs carrying a recipe for the bin | What happens |
 | :--- | :--- |
-| exactly one | **Satisfied by that pack**, whatever its recipe: npm, an installer, a fork, its own tree. The launch prints `program <bin>, needed by pack <A>, is provided by pack <B>`, `yolo check` passes with the same line, and the jail's boot log records it. The provider's launcher installs the program. |
+| exactly one | **Satisfied by that pack**, whatever its recipe: npm, an installer, a fork, its own tree. In the jail, a provider whose recipe is not published for that machine's platform does not count, so the need is checked as if no pack provided it. The launch prints `program <bin>, needed by pack <A>, is provided by pack <B>`, `yolo check` passes with the same line, and the jail's boot log records it. The provider's launcher installs the program. |
 | two or more | **Refused** at launch, at `yolo host apply` and at `yolo check`, naming every provider and saying to drop all but one from `packs` ([PS-D18](../design/provisioner-sets.md#PS-D18)). The user chooses the provider by choosing the pack, so yolo does not pick. |
 | none | The binary must **already exist**. In a jail or guest a missing bin is a **warning naming the bin**, never a boot failure: the pack's other contributions are fine, and a fatal here would stop the jail you need in order to fix the pack. At the host it feeds `check-deps` and `host apply` exactly as a recipe's hints do, which is what lets a content-only pack carry a remedy, and it is never offered an install. |
 
 A need generates nothing, so it cannot shadow the binary it names, and many packs may need one
 bin. This is what the retired `requires` kind declared. That kind is refused, not migrated:
-write `{"kind": "requires", "bin": "rg"}` as `{"kind": "program", "bin": "rg"}`.
+write `{"kind": "requires", "bin": "rg"}` as `{"kind": "program", "bin": "rg"}`. A jail started
+before the upgrade keeps the pack tree it booted with, and its next attach offers a restart.
 
 #### `skills`
 

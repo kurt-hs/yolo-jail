@@ -17,6 +17,7 @@ package entrypoint
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -46,7 +47,9 @@ func AssertRequiredBins(e *Env) {
 		// to add here.
 		return
 	}
-	provided := packload.ProvidedNeeds(packs)
+	// Only a provider published for THIS machine counts: one whose recipe is for another
+	// platform gets no launcher here, so its need is probed and warned about like any other.
+	provided := packload.ProvidedNeeds(packs, runtime.GOOS, runtime.GOARCH)
 	// THE PATH A need's PROBE MUST SEARCH IS THE ONE THE AGENT WILL HAVE, and on
 	// macos-user that is not BootPath. BootPath is the container's shape — the two
 	// generated script dirs around $HOME/.local/bin, /bin and /usr/bin — and it has no

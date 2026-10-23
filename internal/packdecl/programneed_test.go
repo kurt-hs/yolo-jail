@@ -56,10 +56,39 @@ func TestANeedRefusesRecipeAndAgentFieldsByName(t *testing.T) {
 	}
 }
 
-func TestOnePackDeclaresAProgramOnce(t *testing.T) {
-	_, problems := Decode([]byte(`{"name":"p","contributes":[` +
-		`{"kind":"program","bin":"tool"},{"kind":"program","bin":"tool","via":"npm","package":"tool"}]}`))
-	if !strings.Contains(strings.Join(problems, "\n"), `program "tool" is declared again`) {
-		t.Fatalf("a need beside its own pack's recipe must be refused: %v", problems)
+// PS-D19: within one pack, a need beside the pack's own recipe for the bin is refused, and so
+// are two recipes whose platforms overlap; recipes whose platforms do not overlap are one
+// program with a recipe per machine, which main accepted and this still does.
+func TestOnePackDeclaresAProgramOncePerMachine(t *testing.T) {
+	decode := func(entries string) string {
+		_, problems := Decode([]byte(`{"name":"p","contributes":[` + entries + `]}`))
+		return strings.Join(problems, "\n")
+	}
+	const npm = `{"kind":"program","bin":"tool","via":"npm","package":"tool"`
+	const inst = `{"kind":"program","bin":"tool","via":"installer","url":"https://example.com/i.sh"`
+	for _, tc := range []struct {
+		name, entries, want string
+	}{
+		{"need then recipe", `{"kind":"program","bin":"tool"},` + npm + `}`, `declared with no recipe beside this pack's own recipe`},
+		{"recipe then need", npm + `},{"kind":"program","bin":"tool"}`, `declared with no recipe beside this pack's own recipe`},
+		{"two recipes, no platforms", npm + `},` + inst + `}`, `has a second recipe`},
+		{"two recipes, one everywhere", npm + `,"platforms":["linux"]},` + inst + `}`, `has a second recipe`},
+		{"two recipes, os vs os/arch", npm + `,"platforms":["linux"]},` + inst + `,"platforms":["linux/arm64"]}`, `has a second recipe`},
+		{"two recipes, disjoint", inst + `,"platforms":["darwin"]},` + npm + `,"platforms":["linux"]}`, ``},
+		{"two recipes, disjoint arches", inst + `,"platforms":["linux/amd64"]},` + npm + `,"platforms":["linux/arm64"]}`, ``},
+		{"two needs", `{"kind":"program","bin":"tool"},{"kind":"program","bin":"tool"}`, ``},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := decode(tc.entries)
+			if tc.want == "" {
+				if got != "" {
+					t.Fatalf("must decode clean: %s", got)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.want) {
+				t.Fatalf("want %q, got: %s", tc.want, got)
+			}
+		})
 	}
 }

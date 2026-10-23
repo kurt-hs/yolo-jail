@@ -11,7 +11,7 @@ import (
 func TestKnownKindsCoverEveryConstant(t *testing.T) {
 	// Every declared Kind constant must be registered.
 	for _, k := range []Kind{
-		KindProgram, KindProgram, KindSkills, KindBriefing, KindFiles, KindConfig,
+		KindProgram, KindSkills, KindBriefing, KindFiles, KindConfig,
 		KindConfigOverlay, KindState, KindReadsHost, KindMount, KindEnv,
 		KindHook, KindAutonomy, KindProfile, KindProvider, KindLoophole,
 		KindService, KindAdapter, KindConfigList, KindModels, KindMCP,

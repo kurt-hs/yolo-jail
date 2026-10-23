@@ -27,7 +27,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - `mcp_presets` is removed, and a config that still has it stops the launch: delete the key, add `chrome-devtools` to `packs` in your user config for the browser, and write `sequential-thinking` under `mcp_servers` yourself if you want it. See [MCP and LSP](userguide/guides/mcp-and-lsp.md#mcp_presets-is-gone).
-- A pack's `requires` entry is now refused: write it as a `program` with no `via`, keeping its `install_hints`. Such a need is now met by any selected pack that installs that program, and two selected packs installing one program stop the launch until you drop one from `packs`. See [a program with no recipe](docs/reference/pack-system.md#program-needs).
+- A pack's `requires` entry is now refused: change it to `"kind": "program"`, keeping its `bin` and `install_hints`. Any selected pack that installs that program now meets it. A running jail that selects such a pack is offered a restart on its next attach after you upgrade. One pack may no longer declare a program both with and without a `via`, or with two recipes for the same platform. See [a program with no recipe](docs/reference/pack-system.md#program-needs).
 
 ### Fixed
 

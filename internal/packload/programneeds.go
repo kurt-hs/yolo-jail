@@ -62,7 +62,12 @@ func (n ProgramNeed) ProvidedLine() string {
 // for it, through InstallContributions — the same projection the launchers are written from, so
 // a fork's rewritten base program counts once, under its base pack, and a fork pack provides
 // nothing of its own (FP-D5).
-func programProviders(packs []*Pack) map[string][]string {
+//
+// published, when non-nil, keeps only the recipes it accepts: the boot passes "its vendor
+// publishes a build for this machine", so a provider whose only recipe is for another platform
+// meets no need there — no launcher is written for it (GenerateAgentLaunchers' decline), and
+// skipping the need's presence probe would leave a missing tool unreported.
+func programProviders(packs []*Pack, published func(packdecl.Install) bool) map[string][]string {
 	out := map[string][]string{}
 	for _, p := range packs {
 		if p == nil || p.Decl == nil {
@@ -70,6 +75,9 @@ func programProviders(packs []*Pack) map[string][]string {
 		}
 		for _, in := range p.Decl.InstallContributions() {
 			if in.Bin == "" || containsString(out[in.Bin], p.Name) {
+				continue
+			}
+			if published != nil && !published(in) {
 				continue
 			}
 			out[in.Bin] = append(out[in.Bin], p.Name)
@@ -82,9 +90,21 @@ func programProviders(packs []*Pack) map[string][]string {
 }
 
 // ResolveProgramNeeds resolves every need of every selected pack against the others' recipes,
-// in pack order then declaration order.
+// in pack order then declaration order, whatever platforms those recipes are published for.
 func ResolveProgramNeeds(packs []*Pack) []ProgramNeed {
-	providers := programProviders(packs)
+	return resolveProgramNeeds(packs, programProviders(packs, nil))
+}
+
+// ResolveProgramNeedsOn is ResolveProgramNeeds counting only the recipes published for
+// goos/goarch (packdecl.Install.SupportsPlatform), for the reader that runs on the machine the
+// program would run on: the jail's boot.
+func ResolveProgramNeedsOn(packs []*Pack, goos, goarch string) []ProgramNeed {
+	return resolveProgramNeeds(packs, programProviders(packs, func(in packdecl.Install) bool {
+		return in.SupportsPlatform(goos, goarch)
+	}))
+}
+
+func resolveProgramNeeds(packs []*Pack, providers map[string][]string) []ProgramNeed {
 	var out []ProgramNeed
 	for _, p := range packs {
 		if p == nil || p.Decl == nil {
@@ -93,7 +113,7 @@ func ResolveProgramNeeds(packs []*Pack) []ProgramNeed {
 		for _, req := range p.Decl.RequiredBins() {
 			n := ProgramNeed{Pack: p.Name, Bin: req.Bin, Hints: req.Hints}
 			for _, prov := range providers[req.Bin] {
-				// A pack does not provide its own need: one manifest declaring a program twice is
+				// A pack does not provide its own need: a need beside the same pack's recipe is
 				// refused at load (packdecl's validateProgramBins), so this is only belt-and-braces.
 				if prov != p.Name {
 					n.Providers = append(n.Providers, prov)
@@ -105,11 +125,13 @@ func ResolveProgramNeeds(packs []*Pack) []ProgramNeed {
 	return out
 }
 
-// ProvidedNeeds is the selected packs' needs some other selected pack satisfies, keyed
-// "<pack>\x00<bin>", for a reader that skips the presence assertion for them.
-func ProvidedNeeds(packs []*Pack) map[string]string {
+// ProvidedNeeds is the selected packs' needs some other selected pack satisfies ON goos/goarch,
+// keyed "<pack>\x00<bin>", for a reader that skips the presence assertion for them. A provider
+// whose recipe is not published for that platform does not count, so the need is probed and
+// warned about as an unprovided one.
+func ProvidedNeeds(packs []*Pack, goos, goarch string) map[string]string {
 	out := map[string]string{}
-	for _, n := range ResolveProgramNeeds(packs) {
+	for _, n := range ResolveProgramNeedsOn(packs, goos, goarch) {
 		if prov := n.Provider(); prov != "" {
 			out[n.Pack+"\x00"+n.Bin] = prov
 		}
@@ -127,7 +149,7 @@ func ProvidedNeeds(packs []*Pack) map[string]string {
 // AgentNameCollisions skips a name whose every claim is a `program`, so one clash is reported
 // once, here, with this remedy.
 func ProgramProviderCollisions(packs []*Pack) []Collision {
-	providers := programProviders(packs)
+	providers := programProviders(packs, nil)
 	needers := map[string][]string{}
 	for _, n := range ResolveProgramNeeds(packs) {
 		needers[n.Bin] = append(needers[n.Bin], n.Pack)
