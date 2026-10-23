@@ -282,7 +282,10 @@ func TestASignalDuringTheSpawnEndsTheJailThroughItsKeeper(t *testing.T) {
 	f := newGuardFixture(t, "yolo-guard-mid-spawn")
 	spawning, release := make(chan struct{}), make(chan struct{})
 	saved := defaultKeeperSpawner
-	defaultKeeperSpawner = func(_ *Options, _ string, _, lifeline, _ *os.File, _ []*os.File) (func() int, error) {
+	defaultKeeperSpawner = func(_ *Options, planPath string, _, lifeline, _ *os.File, _ []*os.File) (func() int, error) {
+		// The real keeper removes its plan on reading it (readKeeperPlan); a fake that never reads
+		// it must, or every run leaves a yolo-keeper-plan-* directory in the machine's TMPDIR.
+		removeKeeperPlan(planPath)
 		fd, err := syscall.Dup(int(lifeline.Fd()))
 		if err != nil {
 			return nil, err
