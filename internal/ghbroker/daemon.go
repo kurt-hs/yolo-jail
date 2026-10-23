@@ -10,6 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostrun"
 	"io"
 	"os"
 	"os/signal"
@@ -540,7 +541,7 @@ func (b *Broker) ServeContext(ctx context.Context, req Request, jail string, std
 		say("`gh " + d.Path + "` is a write (the " + d.Set + " set), and no write runs from a jail yet: " +
 			"a write acts on GitHub with the host user's login, so it needs that user's approval on the " +
 			"host, and that approval step is not built yet. Nothing ran and nothing is waiting (exit " +
-			"77). To make the change, ask the user to run it on the host; `yolo audit --set read-write` " +
+			"77). " + hostRunHandoff(b.workspace, d.Argv, req.StdinSent) + " `yolo audit --set read-write` " +
 			"there shows the exact command.")
 		return finish(ExitNoPerm)
 	}
@@ -665,4 +666,27 @@ func agentName(s string) string {
 		}
 	}
 	return s
+}
+
+// hostRunHandoff is the write's next step: a `yolo host-run` line for the user to run on the
+// host, which sends the output back to this workspace (docs/design/host-run-mailbox.md,
+// HX-D48), with the old instruction as the fallback. A call that sent standard input, or holds
+// a word the host form's rune check refuses, gets no line: the line could not carry it.
+func hostRunHandoff(workspace string, argv []string, stdinSent bool) string {
+	const fallback = "If their yolo has no `host-run`, ask them to run the `gh` command there and paste the output;"
+	if stdinSent {
+		return "To make the change, ask the user to run it on the host: this call sent standard input, " +
+			"which a `yolo host-run` line cannot carry, so put that text in a file in the workspace, pass " +
+			"`--body-file <a file in the workspace>` instead, and give the user that `yolo host-run` line " +
+			"(`yolo host-run --help`). " + fallback
+	}
+	l := hostrun.Line{Dir: workspace, Argv: append([]string{"gh"}, argv...)}
+	if hostrun.CheckLine(l) != nil {
+		return "To make the change, ask the user to run it on the host: a word of this command holds a " +
+			"character a `yolo host-run` line refuses, so move that text to a file in the workspace the " +
+			"command reads, and give the user the line then. " + fallback
+	}
+	return "To make the change, give the user this line to run in a terminal on the host; its output " +
+		"comes back to this workspace (`yolo host-run wait` waits for it): `" + hostrun.FormatLine(l) +
+		"`. " + fallback
 }

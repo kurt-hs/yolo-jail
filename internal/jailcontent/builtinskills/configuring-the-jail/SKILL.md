@@ -58,8 +58,12 @@ a host `just load`.
 One loophole kind is not yours to switch: one whose manifest declares
 `brokered` (the github pack's `github-broker`) is turned on per project, by the
 human, on the host. Its `enabled` in `yolo-jail.jsonc` is only a `[WARN]` in
-here but refuses the next host launch, so don't write it; ask the human to run
-`yolo loopholes enable <name>` on the host, in this project.
+here but refuses the next host launch, so don't write it: the human enables it
+on the host. Give them
+`yolo host-run -C <value of $YOLO_HOST_DIR> -- yolo loopholes enable <name>` to
+run there, so its output comes back to you (`yolo host-run wait`); if their
+yolo has no `host-run`, ask them to run `yolo loopholes enable <name>` on the
+host, in this project.
 
 Its repository list is the other way round: `brokered.<source>.repos`
 (`brokered.github.repos` for the github pack) is a workspace key you may write,

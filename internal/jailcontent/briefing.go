@@ -914,6 +914,7 @@ func BriefingContent(in BriefingInput) string {
 		noSudoLine,
 		"",
 	)
+	lines = append(lines, hostRunSection...)
 	lines = append(lines, packagesSection(in.Mechanism, in.configName(), in.ConfigLocked)...)
 	lines = append(lines,
 		"## Skills",
@@ -994,6 +995,26 @@ func packagesSection(mechanism, configName string, locked bool) []string {
 	return append(append([]string{"## Packages & Resource Limits", ""}, request...), "")
 }
 
+// hostRunSection teaches the agent `yolo host-run` (docs/design/host-run-mailbox.md §4.1,
+// HX-D41): one line a human runs on the host, whose output comes back here. It is a jail
+// section; the host notch's briefing returns before it.
+var hostRunSection = []string{
+	"## Running a command on the host",
+	"",
+	"When you need something only the host can do, write ONE line for the human to run in a host",
+	"terminal, and the output comes back to you; nothing needs to run here first:",
+	"",
+	"    yolo host-run -C <value of $YOLO_HOST_DIR> --name <fresh-label> -- <command>",
+	"",
+	"Then start `yolo host-run wait --name <fresh-label>` as a background task (run it again if it",
+	"exits 75), or ask the human to say \"done\" and run `yolo host-run show --name <fresh-label>`.",
+	"Start the line with bare `yolo host-run`; no `;`, `&&`, `|`, `>` or `$(`; single-quote words",
+	"with shell characters; keep it under 300 characters (long text goes in a workspace file the",
+	"command reads). Typing the line here prints it ready to paste. If the host's yolo has no",
+	"`host-run`, ask the human to run the command and paste the output.",
+	"",
+}
+
 // lockedConfigRequest is the request paragraph for a jail whose workspace config is read-only
 // (BriefingInput.ConfigLocked). It names no way round the lock — `yolo-jail.local.jsonc` is not
 // locked, and the config-change approval at the next launch is what catches an edit there — because
@@ -1004,6 +1025,7 @@ func lockedConfigRequest(configName, what, keys string) []string {
 		"here (`workspace_readonly` locks it, so you cannot edit your own sandbox). Write",
 		"out the edit (" + keys + ") and ask the human to apply it on the host, run",
 		"`yolo check` there, and restart the jail. Reference: `yolo config-ref`.",
+		"`yolo host-run -C <value of $YOLO_HOST_DIR> -- yolo check` sends that check's output back here.",
 	}
 }
 

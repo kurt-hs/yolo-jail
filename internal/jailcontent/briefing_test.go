@@ -297,3 +297,23 @@ func TestPrependHostBriefingReportsAReadFailureButNotAbsence(t *testing.T) {
 		t.Errorf("readable host briefing: got (%q, %v), want (%q, nil)", got, err, want)
 	}
 }
+
+// The jail briefing teaches `yolo host-run` (docs/design/host-run-mailbox.md §4.1); the host
+// notch's base does not, since there is no jail to deliver to. A locked config's request names
+// the host-run line for the check's output.
+func TestTheJailBriefingTeachesHostRun(t *testing.T) {
+	jail := BriefingContent(BriefingInput{Workspace: "/w"})
+	for _, want := range []string{"## Running a command on the host", "yolo host-run wait --name",
+		"yolo host-run -C <value of $YOLO_HOST_DIR> --name <fresh-label> -- <command>"} {
+		if !strings.Contains(jail, want) {
+			t.Errorf("the jail briefing lacks %q", want)
+		}
+	}
+	if host := HostBriefingBase("", false); strings.Contains(host, "## Running a command on the host") {
+		t.Error("the host notch's briefing teaches host-run")
+	}
+	locked := BriefingContent(BriefingInput{Workspace: "/w", ConfigLocked: true})
+	if !strings.Contains(locked, "`yolo host-run -C <value of $YOLO_HOST_DIR> -- yolo check` sends that check's output back here.") {
+		t.Error("the locked-config request lacks the host-run line")
+	}
+}

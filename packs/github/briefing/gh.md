@@ -7,8 +7,9 @@ GitHub repositories. The jail holds no GitHub token; `gh auth status` names the 
 - Reads run, and their output and exit codes are `gh`'s own. `--jq` and `--template` work as in
   `gh`, and so does piping `--json` output into `jq`.
 - A write (`gh pr comment`, `gh issue edit`, `gh api -X POST …`) runs nothing and exits 77 at
-  once: writes from a jail need an approval step that is not built yet. Ask the user to run it
-  on the host.
+  once: writes from a jail need an approval step that is not built yet. The refusal prints a
+  `yolo host-run` line for the user to run on the host, which sends the output back here; if
+  their yolo has no `host-run`, ask the user to run it on the host.
 - Exit 64 is a refusal, and its message says why and what to do instead. Refused: anything that
   could print the credential or reach the host, a repository outside this workspace's scope, and
   every call across the account. Raw `gh api graphql` is always refused; `gh`'s own commands

@@ -81,10 +81,15 @@ func TestServeAnswersEveryWrite77AndRunsNothing(t *testing.T) {
 	}
 	for _, want := range []string{"`gh pr comment` is a write", "no write runs from a jail yet",
 		"with the host user's login", "approval step is not built yet", "Nothing ran and nothing is waiting (exit 77)",
-		"ask the user to run it on the host", "`yolo audit --set read-write`"} {
+		"ask the user to run it on the host", "this call sent standard input", "`--body-file <a file in the workspace>`",
+		"If their yolo has no `host-run`, ask them to run the `gh` command there and paste the output;",
+		"`yolo audit --set read-write`"} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("the write's answer lacks %q:\n%s", want, errOut)
 		}
+	}
+	if strings.Contains(errOut, "yolo host-run -C") {
+		t.Errorf("a call that sent stdin got a host-run line it cannot carry:\n%s", errOut)
 	}
 	if entries, _ := os.ReadDir(filepath.Join(f.fakeDir, "calls")); len(entries) != 0 {
 		t.Fatalf("a write ran gh")
@@ -93,6 +98,32 @@ func TestServeAnswersEveryWrite77AndRunsNothing(t *testing.T) {
 	if ev.Set != SetReadWrite || ev.Outcome != "denied" || *ev.Exit != ExitNoPerm || ev.Stdin == nil ||
 		ev.Stdin.Bytes != 2 {
 		t.Fatalf("audit line %+v", ev)
+	}
+}
+
+// HX-D48: a write with no stdin prints the ready `yolo host-run` line from the workspace and
+// the canonical argv, keeping the old instruction as the fallback; a word the rune check
+// refuses gets no line.
+func TestServeWrite77PrintsAHostRunLine(t *testing.T) {
+	f := newBrokerFixture(t, "2.101.0")
+	code, _, errOut := f.serve(t, Request{Argv: []string{"pr", "merge", "42", "-R", "o/r"}})
+	if code != ExitNoPerm {
+		t.Fatalf("code %d err %q", code, errOut)
+	}
+	flat := strings.Join(strings.Fields(errOut), " ")
+	for _, want := range []string{
+		"give the user this line to run in a terminal on the host; its output comes back to this workspace (`yolo host-run wait` waits for it):",
+		"`yolo host-run -C /home/u/code/app -- gh pr merge --repo=o/r 42`",
+		"If their yolo has no `host-run`, ask them to run the `gh` command there and paste the output;",
+		"`yolo audit --set read-write`",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("the write's answer lacks %q:\n%s", want, errOut)
+		}
+	}
+	code, _, errOut = f.serve(t, Request{Argv: []string{"pr", "comment", "42", "-R", "o/r", "--body", "a\u202eb"}})
+	if code != ExitNoPerm || strings.Contains(errOut, "yolo host-run -C") || !strings.Contains(errOut, "move that text to a file") {
+		t.Fatalf("code %d err %q", code, errOut)
 	}
 }
 

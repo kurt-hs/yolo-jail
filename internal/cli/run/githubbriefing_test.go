@@ -27,7 +27,7 @@ func TestTheGitHubPackBriefsEveryAgentOnGHInTheJail(t *testing.T) {
 		"`gh` here is `~/.yolo/bin/block/gh`, the github pack's forwarder, not a blocker.",
 		"`--jq` and `--template` work as in `gh`",
 		"exits 77 at once",
-		"Ask the user to run it on the host.",
+		"The refusal prints a `yolo host-run` line for the user to run on the host, which sends the output back here; if their yolo has no `host-run`, ask the user to run it on the host.",
 		"Raw `gh api graphql` is always refused; `gh`'s own commands",
 		"`repos/OWNER/REPO/branches/MS%2Fmain`",
 		"`gh auth status` names the login",
