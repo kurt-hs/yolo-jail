@@ -32,7 +32,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostpath"
-	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -587,8 +586,9 @@ func (s *hostApplySurvey) noteLaunchPath(lp *hostpath.Launch) {
 	s.launchPath = lp
 }
 
-// noteDepDeclarer records that pack declares bin as a dependency of kind k.
-func (s *hostApplySurvey) noteDepDeclarer(bin, pack string, k packdecl.Kind) {
+// noteDepDeclarer records that pack declares bin as a dependency: a need (a `program` with no
+// recipe) when need is true, a program it installs otherwise.
+func (s *hostApplySurvey) noteDepDeclarer(bin, pack string, need bool) {
 	if s == nil || bin == "" {
 		return
 	}
@@ -600,7 +600,7 @@ func (s *hostApplySurvey) noteDepDeclarer(bin, pack string, k packdecl.Kind) {
 		d = &depDeclarers{}
 		s.declarers[bin] = d
 	}
-	d.note(pack, k)
+	d.note(pack, need)
 }
 
 // launchPATH is the launch PATH this run read: the one the pre-flight recorded, or — for a run

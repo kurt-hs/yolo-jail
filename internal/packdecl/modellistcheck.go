@@ -76,7 +76,7 @@ func (m *Manifest) validateModelListChecks() []string {
 		label := fmt.Sprintf("model_list_check[%q]", bin)
 		owned := false
 		for _, c := range m.Contributions() {
-			if bin != "" && c.Kind == KindProgram && c.Bin == bin && !c.IsFork() {
+			if bin != "" && c.Provides() && c.Bin == bin && !c.IsFork() {
 				owned = true
 				break
 			}
@@ -104,7 +104,7 @@ func (m *Manifest) ProgramModelListCheck(bin string) (*ModelListCheck, bool) {
 		return nil, false
 	}
 	for _, c := range m.Contributions() {
-		if c.Kind == KindProgram && c.Bin == bin && !c.IsFork() {
+		if c.Provides() && c.Bin == bin && !c.IsFork() {
 			check := m.ModelListChecks[bin]
 			return check, check != nil
 		}

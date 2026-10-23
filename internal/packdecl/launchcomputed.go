@@ -156,7 +156,7 @@ func (m *Manifest) validateLaunchComputed() []string {
 		var ls *LaunchSelection
 		owned, forked := false, false
 		for _, c := range m.Contributions() {
-			if bin == "" || c.Kind != KindProgram || c.Bin != bin {
+			if bin == "" || !c.Provides() || c.Bin != bin {
 				continue
 			}
 			if c.IsFork() {

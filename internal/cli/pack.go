@@ -81,14 +81,15 @@ broadcast, to every agent. Each entry governs only the files its "from" names (a
 omitted briefing "from" names every briefing/*.md no other entry names), so declaring
 one file's audience never stops another file from shipping:
 
-  program          install a tool onto PATH ("protocols" names the wire protocols
-                   that tool can be pointed at, in preference order)
+  program          a tool on PATH: with a "via" recipe yolo installs it ("protocols"
+                   names the wire protocols it can be pointed at, in preference
+                   order); with none it is a need another selected pack's program
+                   provides, or that must already exist
   blocked-tool     refuse a tool in the jail, printing an alternative
                    (flags/allow_flags scope it; replacement gates it on the
                    alternative actually being present)
   intercept        route a command name in the jail to a forwarder the pack declares
                    ({bin, forward}), ahead of the installed tool on PATH
-  requires         a tool that must already exist
   skills           merge a skills tree (optionally addressed: "agents")
   briefing         prose for the briefing (optionally addressed: "agents")
   files            own a file tree, bind-mounted :ro in the jail; each file keeps
@@ -141,11 +142,14 @@ list the loopholes use. Its host daemon half runs at the host and on macos-user 
 of the one launch that needs it, for a pack yolo ships or a local one: a fetched pack's
 host daemon is refused by name.
 
-program vs requires is install-vs-presence: program means yolo installs the tool (a lazy
-launcher near the head of PATH, which also keeps it up to date), requires means it must
-already be there and yolo installs
-nothing — which is what a pack needing a baked or user-provided tool wants, and the only
-way for a content-only pack to carry install_hints for the host notch.
+A program with a recipe is an install: yolo installs the tool (a lazy launcher near the
+head of PATH, which also keeps it up to date). A program with no "via" is a need: another
+selected pack's program for the same bin provides it, whatever its recipe, and the launch
+names that pack; with no provider it must already be there and yolo installs nothing —
+which is what a pack needing a baked or user-provided tool wants, and the way for a
+content-only pack to carry install_hints for the host notch. Two selected packs with a
+recipe for one bin refuse the launch: drop one from "packs". The old kind "requires" is
+refused; write it as a program with no "via".
 
 Examples:
   yolo pack ls                        # what packs are selected, and what they ship

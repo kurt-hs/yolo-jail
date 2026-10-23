@@ -27,7 +27,7 @@ func agentPacks(t *testing.T) []*packload.Pack {
 			servers[s.Bin] = true
 		}
 		for _, c := range p.Decl.Contributions() {
-			if c.Kind == packdecl.KindProgram && !servers[c.Bin] {
+			if c.Provides() && !servers[c.Bin] {
 				out = append(out, p)
 				break
 			}
@@ -89,11 +89,11 @@ func TestEveryAgentPackDeliversBothSurfaces(t *testing.T) {
 	}
 }
 
-// binsOf is the CLI names a pack owns — the `program` it installs or the `requires` it asserts.
+// binsOf is the CLI names a pack names — the `program` it installs or the one it needs.
 func binsOf(p *packload.Pack) []string {
 	var out []string
 	for _, c := range p.Decl.Contributions() {
-		if c.Kind == packdecl.KindProgram || c.Kind == packdecl.KindRequires {
+		if c.Kind == packdecl.KindProgram {
 			out = append(out, c.Bin)
 		}
 	}

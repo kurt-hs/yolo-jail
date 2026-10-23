@@ -48,8 +48,8 @@ func runCheckDepsWritingTheBundle(t *testing.T) (int, string) {
 func TestCheckDepsNamesTheBundleCommand(t *testing.T) {
 	pack := filepath.Join(floortest.ResolvedTemp(t), "needpack")
 	writeFile(t, filepath.Join(pack, "pack.json"), `{"name":"needpack","contributes":[`+
-		`{"kind":"requires","bin":"yolo-cd-one","install_hints":{"apt":"yolo-cd-one-pkg"}},`+
-		`{"kind":"requires","bin":"yolo-cd-two","install_hints":{"apt":"yolo-cd-two-pkg"}}]}`)
+		`{"kind":"program","bin":"yolo-cd-one","install_hints":{"apt":"yolo-cd-one-pkg"}},`+
+		`{"kind":"program","bin":"yolo-cd-two","install_hints":{"apt":"yolo-cd-two-pkg"}}]}`)
 	home := checkDepsHome(t, `{"packs":[{"source":"file://`+pack+`","name":"needpack"}]}`, "apt")
 
 	rc, report := runCheckDepsWritingTheBundle(t)
@@ -138,7 +138,7 @@ func selfInstallPack(t *testing.T) string {
 	writeFile(t, filepath.Join(pack, "pack.json"), `{"name":"selfpack","contributes":[`+
 		`{"kind":"program","bin":"yolo-cd-self","via":"npm","package":"yolo-cd-self-pkg",`+
 		`"install_hints":{"apt":"yolo-cd-self-apt"}},`+
-		`{"kind":"requires","bin":"yolo-cd-plain","install_hints":{"apt":"yolo-cd-plain-pkg"}}]}`)
+		`{"kind":"program","bin":"yolo-cd-plain","install_hints":{"apt":"yolo-cd-plain-pkg"}}]}`)
 	return pack
 }
 
@@ -188,15 +188,15 @@ func TestCheckDepsEndsWithTheRecheckWithoutABundle(t *testing.T) {
 		want                        string
 	}{
 		{"no manifest", "needpack",
-			`{"kind":"requires","bin":"yolo-cd-one","install_hints":{"apt":"yolo-cd-one-pkg"}},` +
-				`{"kind":"requires","bin":"yolo-cd-two"}`,
+			`{"kind":"program","bin":"yolo-cd-one","install_hints":{"apt":"yolo-cd-one-pkg"}},` +
+				`{"kind":"program","bin":"yolo-cd-two"}`,
 			[]string{"--no-manifest"},
 			"\nTo install what is missing, run:\n  sudo apt install -y yolo-cd-one-pkg  # yolo-cd-one\n"},
 		{"nothing fits a bundle", "solo",
 			`{"kind":"program","bin":"yolo-cd-solo","via":"npm","package":"yolo-cd-solo-pkg"}`,
 			nil,
 			"\nTo install what is missing, run:\n  npm install -g yolo-cd-solo-pkg  # yolo-cd-solo\n"},
-		{"no remedy at all", "bare", `{"kind":"requires","bin":"yolo-cd-bare"}`, nil, ""},
+		{"no remedy at all", "bare", `{"kind":"program","bin":"yolo-cd-bare"}`, nil, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := checkDepsHome(t, pack(t, tc.packName, tc.contributes), "apt")
@@ -232,7 +232,7 @@ func TestCheckDepsNamesTheFixForAnUnresolvedPack(t *testing.T) {
 	gone := `{"source":"file://` + missing + `","name":"gonepack"}`
 	need := filepath.Join(floortest.ResolvedTemp(t), "needpack")
 	writeFile(t, filepath.Join(need, "pack.json"), `{"name":"needpack","contributes":[`+
-		`{"kind":"requires","bin":"yolo-cd-one","install_hints":{"apt":"yolo-cd-one-pkg"}}]}`)
+		`{"kind":"program","bin":"yolo-cd-one","install_hints":{"apt":"yolo-cd-one-pkg"}}]}`)
 	for _, tc := range []struct {
 		name, packs string
 		want        []string

@@ -65,6 +65,13 @@ func TestViaVocabularyIsOneSet(t *testing.T) {
 			// base), so the projection is asked of the shape the fork rewrite gives the BASE's
 			// program — `via: "source"` with no fork_of — which is the one a jail installs.
 			installs := (&Manifest{Contributes: []Contribution{projected}}).InstallContributions()
+			if via == "" {
+				// No via is a NEED (OQ-PS11): it installs nothing, so it projects to nothing.
+				if len(installs) != 0 {
+					t.Fatalf("a need must project to no Install, got %+v", installs)
+				}
+				return
+			}
 			if len(installs) != 1 {
 				t.Fatalf("a program contribution must project to exactly one Install, got %+v", installs)
 			}

@@ -116,8 +116,8 @@ func TestForkFieldsOffAForkAreRefused(t *testing.T) {
 			Package: "pi", ForkOf: "pi"}, `only a "program" with via "source" takes "fork_of"`},
 		{"source on an installer program", Contribution{Kind: KindProgram, Bin: "x", Via: "installer",
 			URL: "https://x/i.sh", Source: "git+https://h/r?ref=main"}, `takes "source"`},
-		{"produces on requires", Contribution{Kind: KindRequires, Bin: "x",
-			Produces: []string{".local/bin/x"}}, `kind "requires" does not take "produces"`},
+		{"produces on requires", Contribution{Kind: KindProgram, Bin: "x",
+			Produces: []string{".local/bin/x"}}, `a program with no "via" does not take "produces"`},
 		{"build on env", Contribution{Kind: KindEnv, Vars: map[string]string{"A": "1"},
 			Build: "make"}, `kind "env" does not take "build"`},
 	}

@@ -782,7 +782,7 @@ environment and the notch is not something it may guess from one:
 
 It says which on stderr each time it starts the server, and **`sh
 ~/.local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper --check`** prints both finds
-and starts nothing — the browser-presence report, since a `requires` contribution can name one
+and starts nothing — the browser-presence report, since a need (a `program` with no `via`) can name one
 binary on PATH and not an app bundle or a set of alternatives. With no server it exits 127 and
 names the step for each notch.
 

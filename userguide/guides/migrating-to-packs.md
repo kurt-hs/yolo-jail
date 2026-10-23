@@ -65,8 +65,7 @@ list: one entry per effect, each with a `kind`. The kinds you are most likely to
 | `config` | a settings file yolo composes, such as `~/.claude/settings.json` |
 | `config-overlay` | keys set on a settings file another pack owns |
 | `env` | fixed environment variables |
-| `program` | a tool yolo installs and keeps on the jail's PATH |
-| `requires` | a tool that must already be there; yolo installs nothing |
+| `program` | with a `via`, a tool yolo installs and keeps on the jail's PATH; with no `via`, a tool that must already be there or that another selected pack installs |
 | `skills`, `briefing` | skills and house rules addressed to particular agents |
 | `files` | a folder of files the pack owns, placed read-only in the agent's home |
 | `reads-host`, `mount` | a host file or folder, read-only in the jail |

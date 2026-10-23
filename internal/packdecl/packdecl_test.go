@@ -224,7 +224,7 @@ func TestSkewSkipKeepsOriginalIndicesInProblems(t *testing.T) {
 	manifest := []byte(`{"name":"acme","contributes":[
 		{"kind":"future-kind"},
 		{"kind":"skills","from":"skills","into":".acme/skills"},
-		{"kind":"requires"}]}`)
+		{"kind":"program"}]}`)
 	_, problems, skipped := DecodeTolerant(manifest)
 	if len(skipped) != 1 || !strings.Contains(skipped[0], "contributes[0]") {
 		t.Fatalf("want one skip note for contributes[0], got %v", skipped)

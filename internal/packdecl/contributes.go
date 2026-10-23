@@ -35,9 +35,13 @@ type Contribution struct {
 	// Kind selects from the closed set (KindProgram, KindSkills, …). Required.
 	Kind Kind `json:"kind"`
 
-	// --- program (install) / requires (assertion) ---
-	Bin     string   `json:"bin,omitempty"`     // program/requires: the binary name; mcp: the program the server runs
-	Via     string   `json:"via,omitempty"`     // program: "npm" | "installer" | "source" | "pack"; profile: a service pack name (OQ-WG6)
+	// --- program: a recipe (installed) or a need (asserted) ---
+	// A `program` WITH a `via` carries a recipe and yolo installs it; one WITHOUT is a NEED,
+	// satisfied by another selected pack's recipe for the same bin or else asserted present on
+	// PATH (KindProgram's doc, Provides, IsNeed; provisioner-sets.md OQ-PS11, OQ-PS5). A need
+	// takes `bin` and `install_hints` and nothing else (needFieldProblems).
+	Bin     string   `json:"bin,omitempty"`     // program: the binary name; mcp: the program the server runs
+	Via     string   `json:"via,omitempty"`     // program: "npm" | "installer" | "source" | "pack", or absent for a need; profile: a service pack name (OQ-WG6)
 	Package string   `json:"package,omitempty"` // program via npm: the npm package
 	URL     string   `json:"url,omitempty"`     // program via installer: the curl-to-shell URL
 	Flags   []string `json:"flags,omitempty"`   // program: extra install flags; hook boot_check: the check's arguments
@@ -1387,7 +1391,9 @@ func (m *Manifest) Contributions() []Contribution {
 func (m *Manifest) InstallContributions() []Install {
 	var out []Install
 	for _, c := range m.Contributions() {
-		if c.Kind != KindProgram {
+		// A NEED installs nothing (OQ-PS11): another selected pack's recipe provides it, or
+		// the binary is already on PATH, and either way no launcher is this pack's to write.
+		if !c.Provides() {
 			continue
 		}
 		// A FORK INSTALLS NOTHING OF ITS OWN (FP-D5): its program is the base's, and it reaches
@@ -1538,8 +1544,8 @@ type DepRequirement struct {
 	Hints map[string]string
 	// SelfInstall is the command the PACK ITSELF declares for this binary, derived from a
 	// `program` contribution's via/url/package — `npm install -g <pkg>`, or for an installer
-	// URL the download-check-run command InstallerRemedy spells. Empty for a `requires`
-	// contribution, which by definition installs nothing, and for a program with no recognized
+	// URL the download-check-run command InstallerRemedy spells. Empty for a need (a
+	// `program` with no recipe), which by definition installs nothing, and for a program with no recognized
 	// `via`.
 	//
 	// It exists because routing a tool with a FIRST-PARTY installer through a distro
@@ -1560,13 +1566,17 @@ type DepRequirement struct {
 	// command string must not be parsed to recover.
 	SelfInstallVia string
 	// Platforms is a `program` contribution's `platforms` — where its vendor publishes a build
-	// — and empty for a `requires`, which installs nothing and so has no vendor to ask.
+	// — and empty for a need, which installs nothing and so has no vendor to ask.
 	// UnpublishedReason is the only reader.
 	Platforms []string
+	// Need is true for a `program` entry with no recipe (Contribution.IsNeed): the binary must
+	// already be on PATH, or come from another selected pack's recipe. The host notches read it
+	// where `requires` used to be the kind they keyed on — a need gets no install offer of its own.
+	Need bool
 }
 
 // UnpublishedReason is Install.UnpublishedReason for this requirement: why its program cannot be
-// installed on goos/goarch, or "" when it can (or it is a `requires`). The one installable-
+// installed on goos/goarch, or "" when it can (or it is a need). The one installable-
 // program predicate, asked of the host dep probe's projection of the same contribution.
 func (d DepRequirement) UnpublishedReason(goos, goarch string) string {
 	return unpublishedReason(d.Platforms, goos, goarch)
@@ -1576,8 +1586,8 @@ func (d DepRequirement) UnpublishedReason(goos, goarch string) string {
 // "" when the kind/via carries none. Kept beside the via/url/package field docs because
 // that is where a reader looks for what those fields mean.
 func selfInstallCommand(c Contribution) string {
-	if c.Kind != KindProgram {
-		return "" // `requires` installs nothing; that is the whole difference
+	if !c.Provides() {
+		return "" // a need installs nothing; that is the whole difference
 	}
 	switch c.Via {
 	case "npm":
@@ -1631,20 +1641,20 @@ func InstallerRemedy(url string) string {
 		InstallerCheckVerb + ` ` + u + ` "$f" && bash "$f" </dev/null)`
 }
 
-// DepRequirements returns every program AND requires contribution as the host-dep
+// DepRequirements returns every program contribution, recipe and need alike, as the host-dep
 // requirements the dep checker probes. A contribution with no hints still needs its bin,
 // but yolo has no remedy to offer, so it is reported as unprobeable-remedy rather than
 // omitted — the caller decides. Only contributions with a Bin are returned.
 //
-// `requires` is here for the reason the kind exists: below the jail notch yolo bakes no
-// image, so "this binary must exist" is the same host question as "yolo would install
-// this", and answering it through a second probe would let the two disagree. The kinds
-// differ in what they do to a JAIL (a program gets a launcher, a requires gets an
-// assertion), not in what they ask of a host.
+// A need is here for the reason it exists: below the jail notch yolo bakes no image, so
+// "this binary must exist" is the same host question as "yolo would install this", and
+// answering it through a second probe would let the two disagree. The two shapes differ in
+// what they do to a JAIL (a recipe gets a launcher, a need gets an assertion), not in what
+// they ask of a host.
 func (m *Manifest) DepRequirements() []DepRequirement {
 	var out []DepRequirement
 	for _, c := range m.Contributions() {
-		if c.Kind != KindProgram && c.Kind != KindRequires {
+		if c.Kind != KindProgram {
 			continue
 		}
 		// A fork's bin is its base's, and the base pack's program (rewritten with the fork's
@@ -1657,25 +1667,25 @@ func (m *Manifest) DepRequirements() []DepRequirement {
 		if d.SelfInstall != "" {
 			d.SelfInstallVia = c.Via
 		}
-		if c.Kind == KindProgram {
-			d.Platforms = c.Platforms
-		}
+		d.Platforms = c.Platforms // nil on a need, which takes no platforms
+		d.Need = c.IsNeed()
 		out = append(out, d)
 	}
 	return out
 }
 
-// RequiredBins returns the binaries this pack ASSERTS must exist — the `requires`
-// contributions — in declaration order. Distinct from DepRequirements (which folds these
-// in with `program` for the host probe) because the JAIL asserts only these: a `program`
-// bin that is absent is normal, since its launcher installs it on first use.
+// RequiredBins returns this pack's NEEDS — its `program` entries with no recipe — in
+// declaration order. Distinct from DepRequirements (which folds these in with the recipes
+// for the host probe) because the JAIL asserts only these: a recipe's bin that is absent is
+// normal, since its launcher installs it on first use. Whether another selected pack
+// provides a need is packload.ResolveProgramNeeds' question, not this manifest's.
 func (m *Manifest) RequiredBins() []DepRequirement {
 	var out []DepRequirement
 	for _, c := range m.Contributions() {
-		if c.Kind != KindRequires || c.Bin == "" {
+		if !c.IsNeed() || c.Bin == "" {
 			continue
 		}
-		out = append(out, DepRequirement{Bin: c.Bin, Hints: c.InstallHints})
+		out = append(out, DepRequirement{Bin: c.Bin, Hints: c.InstallHints, Need: true})
 	}
 	return out
 }
@@ -2034,7 +2044,7 @@ func (m *Manifest) NativeCapabilities(bin string) []string {
 		return nil
 	}
 	for _, c := range m.Contributions() {
-		if c.Kind == KindProgram && c.Bin == bin {
+		if c.Provides() && c.Bin == bin {
 			return c.Capabilities
 		}
 	}
@@ -2049,7 +2059,7 @@ func (m *Manifest) HoldsProviderSets(bin string) bool {
 		return false
 	}
 	for _, c := range m.Contributions() {
-		if c.Kind == KindProgram && c.Bin == bin {
+		if c.Provides() && c.Bin == bin {
 			return c.ProviderSets
 		}
 	}
@@ -2134,7 +2144,7 @@ func (m *Manifest) SpokenProtocols(bin string) []string {
 		return nil
 	}
 	for _, c := range m.Contributions() {
-		if c.Kind == KindProgram && c.Bin == bin {
+		if c.Provides() && c.Bin == bin {
 			return c.Protocols
 		}
 	}
@@ -3015,6 +3025,7 @@ func (m *Manifest) validateContributions() []string {
 	problems = append(problems, m.validateProviderNames()...)
 	problems = append(problems, m.validateProfileNames()...)
 	problems = append(problems, m.validateServiceNames()...)
+	problems = append(problems, m.validateProgramBins()...)
 	problems = append(problems, m.validateAdapterPairs()...)
 	problems = append(problems, m.validateFilesDestinations()...)
 	problems = append(problems, m.validateAddressedFiles()...)
@@ -3784,6 +3795,83 @@ func knownRestart(v string) bool {
 	return false
 }
 
+// validateProgramBins refuses, within ONE pack, the two ways of declaring a program BIN twice
+// that cannot mean anything (PS-D20, docs/design/provisioner-sets.md):
+//
+//   - a NEED beside a RECIPE for the same bin: the pack's own recipe already provides it, so the
+//     need asks for nothing;
+//   - two RECIPES whose `platforms` overlap: on a machine both are published for, two
+//     recipes compete for one launcher, and every first-match-wins reader keyed by bin
+//     (NativeCapabilities, SpokenProtocols, ...) answers from whichever came first.
+//
+// Two recipes whose platforms do NOT overlap are allowed, as they were before needs existed:
+// an installer published for darwin beside an npm package published for linux is one program
+// with a recipe per machine, and only one of them is ever live. Two needs for one bin are
+// left alone too — redundant, never wrong. Cross-pack, two recipes for one bin are PS-D18's
+// refusal (packload.ProgramProviderCollisions) and a need beside a recipe is the normal case.
+// A fork is skipped — its bin is its base's by design (FP-D5). Strict path only, for
+// validateServiceNames' reason.
+func (m *Manifest) validateProgramBins() []string {
+	var problems []string
+	needAt := map[string]int{}
+	recipesAt := map[string][]int{}
+	for i, c := range m.Contributes {
+		if c.Kind != KindProgram || c.Bin == "" || c.IsFork() {
+			continue
+		}
+		if c.IsNeed() {
+			if r := recipesAt[c.Bin]; len(r) > 0 {
+				problems = append(problems, needBesideRecipe(i, r[0], c.Bin))
+			} else if _, seen := needAt[c.Bin]; !seen {
+				needAt[c.Bin] = i
+			}
+			continue
+		}
+		if n, seen := needAt[c.Bin]; seen {
+			problems = append(problems, needBesideRecipe(n, i, c.Bin))
+			delete(needAt, c.Bin)
+		}
+		for _, j := range recipesAt[c.Bin] {
+			if platformsOverlap(m.Contributes[j].Platforms, c.Platforms) {
+				problems = append(problems, fmt.Sprintf(
+					"contributes[%d]: program %q has a second recipe (first at contributes[%d]) "+
+						"for a platform the first also covers — one pack carries one recipe per "+
+						"machine. Give each recipe `platforms` that do not overlap, or delete one",
+					i, c.Bin, j))
+				break
+			}
+		}
+		recipesAt[c.Bin] = append(recipesAt[c.Bin], i)
+	}
+	return problems
+}
+
+func needBesideRecipe(need, recipe int, bin string) string {
+	return fmt.Sprintf(
+		"contributes[%d]: program %q is declared with no recipe beside this pack's own recipe "+
+			"for it at contributes[%d] — the recipe already provides it, so delete the entry "+
+			"with no \"via\"", need, bin, recipe)
+}
+
+// platformsOverlap reports whether two `platforms` lists share a machine. An empty list means
+// every platform; an entry naming only a GOOS covers every architecture on it, as
+// publishedFor reads it.
+func platformsOverlap(a, b []string) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return true
+	}
+	for _, x := range a {
+		xos, xarch, _ := strings.Cut(x, "/")
+		for _, y := range b {
+			yos, yarch, _ := strings.Cut(y, "/")
+			if xos == yos && (xarch == "" || yarch == "" || xarch == yarch) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // validateServiceNames refuses a service NAME declared twice by ONE pack.
 //
 // Cross-pack, the name is sole-owned and packload.Collisions' exclusive loop is the
@@ -4252,7 +4340,10 @@ func validateContribution(label string, c Contribution) []string {
 		// business — the switch below adds no member and can subtract none.
 		switch {
 		case c.Via == "":
-			problems = append(problems, label+": program needs \"via\" ("+viaList()+")")
+			// NO RECIPE: a need (OQ-PS11). What a `requires` was, and held to what a
+			// `requires` accepted — every other field is a recipe's or an agent's, and on a
+			// need no consumer would read it.
+			problems = append(problems, needFieldProblems(label, c)...)
 		case !KnownVia(c.Via):
 			problems = append(problems, fmt.Sprintf("%s: unknown via %q (%s)", label, c.Via, viaList()))
 		case c.Via == "npm":
@@ -4277,22 +4368,6 @@ func validateContribution(label string, c Contribution) []string {
 			// `prebuilt` checked when present, and the other vias' delivery fields refused
 			// (packtree.go says which, and why).
 			problems = append(problems, packTreeProblems(label, c)...)
-		}
-	case KindRequires:
-		req("bin", c.Bin)
-		problems = binProblem(problems, label+".bin", c.Bin)
-		// `via`/`package`/`url` belong to program, and a `requires` carrying one is the
-		// author confusing the two kinds — which is worth saying, because the mistake is
-		// silent otherwise (the fields are simply never read, and the tool never installs).
-		for _, f := range []struct{ name, val string }{
-			{"via", c.Via}, {"package", c.Package}, {"url", c.URL},
-		} {
-			if f.val != "" {
-				problems = append(problems, fmt.Sprintf(
-					"%s: requires does not take %q — it ASSERTS a binary is present and "+
-						"installs nothing; use kind \"program\" to have yolo install it",
-					label, f.name))
-			}
 		}
 	case KindSkills, KindBriefing, KindFiles:
 		// A contribution of these three kinds is ONE OF TWO THINGS, and which one is decided by

@@ -6,7 +6,7 @@ package packdecl
 // (docs/design/wire-bridge-gateway.md WG-I41). False when the manifest installs no such program.
 func (m *Manifest) SendsUnlistedModels(bin string) bool {
 	for _, c := range m.Contributions() {
-		if c.Kind == KindProgram && c.Bin == bin {
+		if c.Provides() && c.Bin == bin {
 			return c.UnlistedBackgroundModels
 		}
 	}

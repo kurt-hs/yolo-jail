@@ -62,7 +62,7 @@ func TestApplyHostReportsPresentDep(t *testing.T) {
 // installs nothing by definition, which makes it the kind whose hints are load-bearing.
 func TestApplyHostReportsMissingDepWithRemedy(t *testing.T) {
 	fakeBinDir(t, "apt") // the detected manager; the declared bin is deliberately absent
-	report := runApplyHostForDeps(t, `{"kind":"requires","bin":"missingbin",`+
+	report := runApplyHostForDeps(t, `{"kind":"program","bin":"missingbin",`+
 		`"install_hints":{"apt":"missing-apt-pkg","brew":"missing-brew-pkg"}}`)
 
 	// The remedy must be the shared checker's own, not a second rendering of it — compare
@@ -154,7 +154,7 @@ func TestApplyHostPrefersThePacksOwnInstaller(t *testing.T) {
 // via/package instead. `requires` installs nothing, so hints are its only remedy source.
 func TestApplyHostReportsMissingDepWithoutRemedy(t *testing.T) {
 	fakeBinDir(t) // nothing on PATH: no manager, no bin
-	report := runApplyHostForDeps(t, `{"kind":"requires","bin":"nohintbin"}`)
+	report := runApplyHostForDeps(t, `{"kind":"program","bin":"nohintbin"}`)
 
 	if !strings.Contains(report, "nohintbin") {
 		t.Fatalf("a hint-less dep must still be reported by name:\n%s", report)
@@ -167,8 +167,8 @@ func TestApplyHostReportsMissingDepWithoutRemedy(t *testing.T) {
 	}
 	// And say the thing that is specific to this kind: yolo will never install it, so the
 	// user is the only actor. A program's line says the opposite (here is the command).
-	if !strings.Contains(report, "never installed by yolo") {
-		t.Errorf("a `requires` with no remedy should say yolo installs it never:\n%s", report)
+	if !strings.Contains(report, "which yolo never installs") {
+		t.Errorf("a need with no remedy should say yolo installs it never:\n%s", report)
 	}
 }
 
@@ -180,7 +180,7 @@ func TestApplyHostReportsMissingDepWithoutRemedy(t *testing.T) {
 // has a remedy of its own, so it cannot reach the no-remedy branch this covers.
 func TestApplyHostReportsHintsForAnotherManager(t *testing.T) {
 	fakeBinDir(t, "apt")
-	report := runApplyHostForDeps(t, `{"kind":"requires","bin":"wrongmgr",`+
+	report := runApplyHostForDeps(t, `{"kind":"program","bin":"wrongmgr",`+
 		`"install_hints":{"brew":"w-brew","dnf":"w-dnf"}}`)
 
 	if !strings.Contains(report, "wrongmgr") || !strings.Contains(report, "MISSING") {
@@ -199,9 +199,9 @@ func TestApplyHostReportsHintsForAnotherManager(t *testing.T) {
 // either. With nix on the PATH the same hint is the remedy. Put nix back as the manager reached by
 // elimination, and the first half fails.
 func TestApplyHostOffersNoManagerThePathLacks(t *testing.T) {
-	nixOnly := `{"kind":"requires","bin":"nixonlybin","install_hints":{"nix":"nixonly-pkg"}}`
+	nixOnly := `{"kind":"program","bin":"nixonlybin","install_hints":{"nix":"nixonly-pkg"}}`
 	fakeBinDir(t) // nothing on PATH: no manager, no bin
-	report := runApplyHostForDeps(t, nixOnly, `{"kind":"requires","bin":"bareneed"}`)
+	report := runApplyHostForDeps(t, nixOnly, `{"kind":"program","bin":"bareneed"}`)
 
 	if !strings.Contains(report, "nixonlybin") || !strings.Contains(report, "MISSING") {
 		t.Fatalf("the bin must be named as missing:\n%s", report)
@@ -228,8 +228,8 @@ func TestApplyHostOffersNoManagerThePathLacks(t *testing.T) {
 // at all keeps the no-hint line, as `yolo host apply` does: no manager could install it, so blaming
 // the missing manager would send the user to install one for nothing.
 func TestCheckDepsOffersNoManagerThePathLacks(t *testing.T) {
-	launchPathFixture(t, "", `{"kind":"requires","bin":"nixonlybin","install_hints":{"nix":"nixonly-pkg"}}`,
-		`{"kind":"requires","bin":"bareneed"}`)
+	launchPathFixture(t, "", `{"kind":"program","bin":"nixonlybin","install_hints":{"nix":"nixonly-pkg"}}`,
+		`{"kind":"program","bin":"bareneed"}`)
 	fakeBinDir(t) // a PATH with no manager at all
 	rc, report := runCheckDepsT(t)
 	if rc != 1 {
@@ -251,23 +251,20 @@ func TestCheckDepsOffersNoManagerThePathLacks(t *testing.T) {
 	}
 }
 
-// TestApplyHostNamesTheRequiresKindNotProgram: `requires` and `program` share the dep probe
-// but are different claims, and the report has to say which one asked. Otherwise a user
-// reading "program fzf MISSING" would look for the install yolo was going to do, and there
-// isn't one.
-func TestApplyHostNamesTheRequiresKindNotProgram(t *testing.T) {
+// TestApplyHostNamesANeedNotARecipe: a `program` with a recipe and one without (a need,
+// OQ-PS11) share the dep probe but are different claims, and the report has to say which one
+// asked. Otherwise a user reading "program fzf MISSING" would look for the install yolo was
+// going to do, and there isn't one.
+func TestApplyHostNamesANeedNotARecipe(t *testing.T) {
 	fakeBinDir(t, "apt")
 	report := runApplyHostForDeps(t,
-		`{"kind":"requires","bin":"reqbin","install_hints":{"apt":"reqbin-pkg"}}`)
+		`{"kind":"program","bin":"reqbin","install_hints":{"apt":"reqbin-pkg"}}`)
 
-	if !strings.Contains(report, "requires") {
-		t.Errorf("the line must name the `requires` kind:\n%s", report)
-	}
-	if strings.Contains(report, "program") {
-		t.Errorf("a pack declaring no `program` must not have one reported:\n%s", report)
+	if !strings.Contains(report, "(program, no recipe)") {
+		t.Errorf("the line must say the program has no recipe:\n%s", report)
 	}
 	if !strings.Contains(report, "sudo apt install -y reqbin-pkg") {
-		t.Errorf("a requires' hints feed the remedy exactly as program's do:\n%s", report)
+		t.Errorf("a need's hints feed the remedy exactly as program's do:\n%s", report)
 	}
 }
 

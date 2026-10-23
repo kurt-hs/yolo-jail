@@ -352,7 +352,7 @@ func TestRefreshRunsEveryPackDeclaredLauncher(t *testing.T) {
 	e := stageNpmPackRoot(t, `{"name":"acme","contributes":[`+
 		`{"kind":"program","bin":"npmtool","via":"npm","package":"npmtool"},`+
 		`{"kind":"program","bin":"nativetool","via":"installer","url":"https://example/i.sh"},`+
-		`{"kind":"requires","bin":"jq"}]}`,
+		`{"kind":"program","bin":"jq"}]}`,
 		"npmtool", "nativetool", "pnpm", "jq")
 
 	var ran []string

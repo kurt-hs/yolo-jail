@@ -715,6 +715,17 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 	// position (docs/reference/agent-briefings.md#oq-ba6, #oq-ba7). It matters most at THIS notch: the render
 	// below routes an addressed contribution to "where <name> reads", so with two owners the
 	// prose lands wherever the resolution loop saw first — in a real home, with nothing said.
+	// And one program NAME with a recipe in two selected packs (PS-D18), for the same reason:
+	// the user chose the provider by choosing the pack, and yolo does not pick for them.
+	if cols := packload.ProgramProviderCollisions(loaded); len(cols) > 0 {
+		for _, c := range cols {
+			pr.Printf("  [red]program    refused[/red] — %s provided by %s: %s",
+				c.Target, strings.Join(c.Packs, ", "), c.Reason)
+		}
+		pr.Printf("[bold red]host apply: refused — %d program(s) with more than one "+
+			"provider. Nothing was written.[/bold red]", len(cols))
+		return 1
+	}
 	if cols := packload.AgentNameCollisions(loaded); len(cols) > 0 {
 		for _, c := range cols {
 			pr.Printf("  [red]agent      refused[/red] — name %s claimed by %s: %s",
@@ -867,8 +878,8 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 			}
 			// program AND requires: resolved dep state, not a static "confirm-gated" line —
 			// which kind asked, which bin, present or missing
-			// (pack-host-management-plan.md Phase 8). `requires` shares this path because
-			// below the jail notch the two kinds ask the host the same question.
+			// (pack-host-management-plan.md Phase 8). A need (a `program` with no recipe)
+			// shares this path because below the jail notch the two shapes ask the host the same question.
 			//
 			// The SURVEY is not fed here any more: the pre-flight above records every finding, because
 			// the gate needs the merged answer before this loop runs at all. What is left here is the

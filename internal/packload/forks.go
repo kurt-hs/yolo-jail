@@ -381,7 +381,7 @@ func baseProgramNodeFloor(packs []*Pack, base, bin string) string {
 			continue
 		}
 		for _, c := range p.Decl.Contributions() {
-			if c.Kind == packdecl.KindProgram && c.Bin == bin {
+			if c.Provides() && c.Bin == bin {
 				return c.NodeFloor
 			}
 		}
@@ -535,7 +535,7 @@ func baseProgram(p *Pack, bin string) int {
 		return -1
 	}
 	for i, c := range p.Decl.Contributes {
-		if c.Kind == packdecl.KindProgram && c.Bin == bin && !c.IsFork() {
+		if c.Provides() && c.Bin == bin && !c.IsFork() {
 			return i
 		}
 	}

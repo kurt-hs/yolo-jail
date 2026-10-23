@@ -56,14 +56,14 @@ func TestProbeArgsAndTempCachesRefusals(t *testing.T) {
 		want string
 	}{
 		{"probe on a non-program", func(c *Contribution) {
-			*c = Contribution{Kind: KindRequires, Bin: "pi", ProbeArgs: []string{"--version"}}
+			*c = Contribution{Kind: KindProgram, Bin: "pi", ProbeArgs: []string{"--version"}}
 		}, `does not take "probe_args"`},
 		{"empty probe list", func(c *Contribution) { c.ProbeArgs = []string{} }, "makes nothing a version probe"},
 		{"empty probe word", func(c *Contribution) { c.ProbeArgs = []string{""} }, "is not a word"},
 		{"padded probe word", func(c *Contribution) { c.ProbeArgs = []string{" --version"} }, "is not a word"},
 		{"duplicate probe", func(c *Contribution) { c.ProbeArgs = []string{"-v", "-v"} }, "is listed twice"},
 		{"caches on a non-program", func(c *Contribution) {
-			*c = Contribution{Kind: KindRequires, Bin: "pi", TempCaches: []string{"jiti"}}
+			*c = Contribution{Kind: KindProgram, Bin: "pi", TempCaches: []string{"jiti"}}
 		}, `does not take "temp_caches"`},
 		{"empty cache list", func(c *Contribution) { c.TempCaches = []string{} }, "an empty list keeps nothing"},
 		{"a cache path", func(c *Contribution) { c.TempCaches = []string{"jiti/x"} }, "one bare directory name"},
