@@ -2,7 +2,7 @@
 title: "Plan: rebuild macos-user on one deny-by-default profile, run as you by default"
 status: accepted
 stage: DECIDED
-next: "Build slices 1 to 5 on the Linux gates; production behavior changes only at slice 11, after a human reruns the prototype checks against the generated profile on a Mac"
+next: "Slice 11: a human reruns the prototype checks against the generated profile on a Mac, then the default flips; slices 12 and 13 follow"
 depends-on:
   - macos-user-model.md
 tags: [macos-user, seatbelt, plan, safehouse, home, parity]
@@ -12,9 +12,9 @@ vantage:
 
 # Plan: rebuild macos-user on one deny-by-default profile, run as you by default
 
-**Status:** 2026-10-22. Completed against the tree, written against `319b6ab64`. Nothing is
-built. Two maintainer rulings from the prototype's first Mac run are still pending (loopback and
-the shared `/tmp`), and Homebrew's visibility is unconfirmed. The plan treats all three as
+**Status:** 2026-10-23. Slices 1 to 10 are built; slices 11 to 13 remain. Two maintainer rulings
+from the prototype's first Mac run are still pending (loopback and the shared `/tmp`), and
+Homebrew's visibility is unconfirmed. The plan treats all three as
 parameters of the profile, and only slice 11 sets their production values
 ([Blockers](#blockers)). Slices 1 to 10 leave the production default as it is today: the second
 account under the `(allow default)` profile.
@@ -1093,3 +1093,14 @@ parameter ([MMP-D13](#MMP-D13)).
 - **Host software (Homebrew) visibility**: the prototype allows `/opt/homebrew` read-only (and
   `/usr/local`, through `/usr`), and the first run passed with it. This plan keeps that as
   `productionHostSoftware` and marks it pending. It is not filed in the design.
+
+## Open items
+
+Found by the review of the built slices; neither blocks a slice, and neither is fixed yet.
+
+- **Nix builds run outside Seatbelt.** A `nix build` in the sandbox hands the build to the host's
+  nix daemon, which runs it as the daemon's build users under no session profile, so a derivation
+  the agent writes can read what those users can.
+- **One workspace can sweep another's alias links.** The cache-alias manifest sits in the shared
+  machine root, so a launch of one workspace reads and may remove alias links another workspace
+  laid there.

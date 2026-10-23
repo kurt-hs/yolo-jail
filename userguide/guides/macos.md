@@ -242,7 +242,9 @@ It is experimental. The agent cannot reach the services on your Mac's loopback (
 except yolo's own, such as the Claude login service, and the ports your project lists in
 `network.forward_host_ports`. Every launch lists the ports it opens. A server the agent starts on
 `localhost` is closed to the agent too, so a test that starts one and connects to it fails; to
-reach one on a fixed port, add that port to `network.forward_host_ports`.
+reach one on a fixed port, add that port to `network.forward_host_ports`. The shared `/tmp` and
+your own temporary folder (`getconf DARWIN_USER_TEMP_DIR`) stay readable, as tools expect, so
+the agent can read a file another program of yours left there.
 
 **Check without changing anything.** Run `yolo check` from the project. It checks each thing a
 launch refuses to start without: that you are on macOS and not running as root, Seatbelt, the

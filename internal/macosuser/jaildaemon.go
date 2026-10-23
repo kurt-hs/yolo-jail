@@ -502,11 +502,19 @@ func (p RunPlan) daemonEnvFilePlan() sessionFilePlan {
 	if p.EnvFile != "" && pathParent(p.EnvFile) == pathParent(p.DaemonEnvFile) {
 		dir = nil
 	}
+	grant := SandboxEnvGrantCommands(p.DaemonEnvFile, "")
+	// The run-as-you mode grants no access, as caTrustFilePlans: the file is yours, and so is
+	// the supervisor that reads it. On a Mac without the second account the ACE would name a
+	// user that does not exist, and chmod +a would refuse the launch.
+	if p.RunAs.Mode == ModeSelf {
+		dir, _ = withoutAccessGrants(dir, nil)
+		grant = nil
+	}
 	return sessionFilePlan{
 		path:    p.DaemonEnvFile,
 		content: p.DaemonEnvFileContent,
 		dir:     dir,
-		grant:   SandboxEnvGrantCommands(p.DaemonEnvFile, ""),
+		grant:   grant,
 	}
 }
 

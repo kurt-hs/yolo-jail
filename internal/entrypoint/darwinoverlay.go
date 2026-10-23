@@ -226,6 +226,18 @@ func cleanOverlayDest(d string) (string, error) {
 // real file where the next launch's layout needs its link, which OQ-HT2 then refuses forever.
 type overlayLinks struct {
 	follow map[string]string
+	// yours is set when the home is the invoking user's own (the run-as-you layout, HOME the
+	// workspace sidecar): a remedy that removes something there needs no sudo.
+	yours bool
+}
+
+// rm is the removal command a remedy names: plain rm in a home that is yours, sudo rm in the
+// sandbox account's.
+func (l overlayLinks) rm() string {
+	if l.yours {
+		return "rm"
+	}
+	return "sudo rm"
 }
 
 func overlayLinksOf(l DarwinHomeLayout) overlayLinks {
@@ -299,8 +311,8 @@ func (l overlayLinks) route(home, dest string) (pastLink bool, err error) {
 				"account home that is not one of this launch's layout links to a directory — "+
 				"typically another workspace's, for a pack this launch does not select — and "+
 				"delivering through it would land where the session's sandbox profile does not "+
-				"protect. Remove the link (what it points at is left alone):\n  sudo rm %s", cur,
-				shquote.Quote(cur))
+				"protect. Remove the link (what it points at is left alone):\n  %s %s", cur,
+				l.rm(), shquote.Quote(cur))
 		}
 		if last {
 			return true, nil
@@ -308,8 +320,8 @@ func (l overlayLinks) route(home, dest string) (pastLink bool, err error) {
 		return true, fmt.Errorf("nothing was delivered at ~/%s: %s, on its way through the "+
 			"workspace sidecar, is a symbolic link the layout did not lay, and delivering "+
 			"through it would land where the session's sandbox profile does not protect. "+
-			"Remove the link (what it points at is left alone):\n  sudo rm %s", dest, cur,
-			shquote.Quote(cur))
+			"Remove the link (what it points at is left alone):\n  %s %s", dest, cur,
+			l.rm(), shquote.Quote(cur))
 	}
 	return pastLink, nil
 }
@@ -539,8 +551,8 @@ func retireOverlayDestinations(home string, roots []overlayRoot, links overlayLi
 		leave := func(why string) {
 			left[r] = recorded
 			warn(fmt.Sprintf("%s~/%s: no pack this launch selects delivers it any more, but %s — "+
-				"remove it with `sudo rm -r %s` if you do not want it", OverlayLeftAction, r, why,
-				shquote.Quote(filepath.Join(home, filepath.FromSlash(r)))))
+				"remove it with `%s -r %s` if you do not want it", OverlayLeftAction, r, why,
+				links.rm(), shquote.Quote(filepath.Join(home, filepath.FromSlash(r)))))
 		}
 		dir, base, gone, err := openOverlayDestination(home, roots, links, r)
 		if gone {

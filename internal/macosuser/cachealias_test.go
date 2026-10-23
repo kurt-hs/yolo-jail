@@ -82,3 +82,24 @@ func TestPlanInvariantsRefuseAMalformedCacheAlias(t *testing.T) {
 		})
 	}
 }
+
+// A TARGET THAT IS OR CONTAINS YOUR HOME IS REFUSED: the profile opens a target read-write
+// whole, so a cache path whose link resolved to the home (or above it) would open every file
+// you have. Fails if cacheAliasProblems stops reading the home.
+func TestPlanInvariantsRefuseACacheAliasTargetingTheHome(t *testing.T) {
+	plan := func(a CacheAlias) RunPlan {
+		return BuildRunPlanWithDaemons(relocWS, jsonx.NewOrderedMap(), []string{"claude"},
+			[]string{"/bin/zsh", "-l"}, "/usr/local/bin/yolo", hostStaged, HomeOverlay{},
+			HostContext{CacheAliases: []CacheAlias{a}}, jsonx.NewOrderedMap(), nil, nil,
+			JailDaemons{}, FloorStage{}, PlanSession{Mode: ModeSelf, HostHome: "/Users/you", HostUser: "you"})
+	}
+	for _, target := range []string{"/Users/you", "/Users", "/"} {
+		a := CacheAlias{Tool: "pip", Link: pipAlias.Link, Target: target}
+		if probs := strings.Join(PlanInvariants(plan(a)), "\n"); !strings.Contains(probs, "is or contains your home") {
+			t.Errorf("PlanInvariants accepted target %s:\n%s", target, probs)
+		}
+	}
+	if probs := strings.Join(PlanInvariants(plan(pipAlias)), "\n"); strings.Contains(probs, "your home") {
+		t.Errorf("a cache under the home was refused as the home:\n%s", probs)
+	}
+}

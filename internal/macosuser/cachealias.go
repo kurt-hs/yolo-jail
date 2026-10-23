@@ -79,6 +79,12 @@ func cacheAliasProblems(plan RunPlan) []string {
 				", not a resolved absolute path; the profile's rule on it would match nothing")
 		case a.Link == a.Target:
 			problems = append(problems, "cache alias for "+a.Tool+" links "+a.Link+" to itself")
+		case plan.RunAs.Homes.Real != "" && within(filepath.Clean(plan.RunAs.Homes.Real), a.Target):
+			// The profile opens the target read-write whole: a target that is the home, or an
+			// ancestor of it, opens every file you have (a planted link resolves anywhere).
+			problems = append(problems, "cache alias for "+a.Tool+" has target "+a.Target+
+				", which is or contains your home "+plan.RunAs.Homes.Real+
+				"; the profile would open all of it read-write")
 		}
 	}
 	if plan.RunAs.Mode != ModeSelf {

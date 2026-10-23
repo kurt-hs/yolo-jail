@@ -304,3 +304,100 @@ func TestSelfModeCheckReportsOnlyItsOwnPreconditions(t *testing.T) {
 		t.Error("the account report lost its account rows")
 	}
 }
+
+// A RUN-AS-YOU LAUNCH WITH A JAIL DAEMON STARTS IT ON A MAC WITHOUT THE ACCOUNT: the daemon env
+// file is written as you and granted to nobody. Every claude launch brings the wire bridge, a
+// jail daemon, so a grant naming the second account here stopped `yolo -- claude` at "Could not
+// grant _yolojail read on …daemons.env". Run refuses every `chmod +a` the way a Mac without the
+// account does. Fails if daemonEnvFilePlan stops stripping its grants in self mode.
+func TestSelfModeStartsJailDaemonsWithoutTheAccount(t *testing.T) {
+	ws := "/Users/you/code/alpha"
+	var rec []string
+	d := selfModeDeps(&rec)
+	run := d.Run
+	d.Run = func(argv []string) int {
+		if len(argv) >= 2 && argv[0] == chmodBin && argv[1] == "+a" {
+			rec = append(rec, "refused:"+strings.Join(argv, " "))
+			return 1
+		}
+		return run(argv)
+	}
+	fakeSupervisor(&d, &rec, ws, "", readyLine, "", false)
+	d.GuestBinaries = func(string) (string, error) { return "/opt/yolo/bin/darwin-arm64", nil }
+	var out bytes.Buffer
+	d.Out = &out
+	o := selfModeOpts(ws)
+	o.JailDaemons = selfModeWireBridgeDaemons("")
+	if rc := RunMacosUser(d, o); rc != 42 {
+		t.Fatalf("rc = %d, want the session's 42\n%s", rc, out.String())
+	}
+	started := false
+	for _, r := range rec {
+		started = started || strings.HasPrefix(r, "start:")
+		if strings.Contains(r, "chmod +a") || strings.Contains(r, SandboxUser) {
+			t.Errorf("the run-as-you daemon start ran %s", r)
+		}
+	}
+	if !started {
+		t.Errorf("the supervisor was not started:\n%s", strings.Join(rec, "\n"))
+	}
+}
+
+// AND THE PLAN SAYS SO: a self-mode plan carrying a daemon env file grants it nothing, and the
+// invariants read the daemon file's commands too.
+func TestSelfModeInvariantsCatchADaemonEnvFileGrant(t *testing.T) {
+	ws := "/Users/you/code/alpha"
+	plan := BuildRunPlanWithDaemons(ws, jsonx.NewOrderedMap(), nil, []string{"claude"},
+		"/usr/local/bin/yolo", "", HomeOverlay{}, HostContext{}, jsonx.NewOrderedMap(), nil, nil,
+		selfModeWireBridgeDaemons("/opt/yolo/bin/darwin-arm64"), FloorStage{},
+		PlanSession{Mode: ModeSelf, HostHome: "/Users/you", HostUser: "you",
+			DarwinUserTempDir: "/private/var/folders/ab/xyz/T/"})
+	if plan.DaemonEnvFile == "" {
+		t.Fatal("fixture plan has no daemon env file")
+	}
+	if g := plan.daemonEnvFilePlan(); len(g.grant) != 0 {
+		t.Errorf("the self-mode daemon env file is granted: %v", g.grant)
+	}
+	if problems := selfModeProblems(plan); len(problems) != 0 {
+		t.Errorf("a self-mode plan with a daemon has problems:\n  %s", strings.Join(problems, "\n  "))
+	}
+}
+
+// THE SELF-MODE PROFILE READS ONLY THIS SESSION'S STAGED PATHS: its env file, its guest bin,
+// its context copy, and never the staging root whole, which holds every other session's env
+// file and every other workspace's context copy. Fails if the plan stops naming StagedReads.
+func TestSelfModeProfileReadsOnlyThisSessionsStagedPaths(t *testing.T) {
+	plan := BuildRunPlanWithDaemons("/Users/you/code/alpha", jsonx.NewOrderedMap(), nil, []string{"claude"},
+		"/usr/local/bin/yolo", "", HomeOverlay{}, HostContext{}, jsonx.NewOrderedMap(), nil, nil,
+		selfModeWireBridgeDaemons("/opt/yolo/bin/darwin-arm64"), FloorStage{},
+		PlanSession{Mode: ModeSelf, HostHome: "/Users/you", HostUser: "you",
+			DarwinUserTempDir: "/private/var/folders/ab/xyz/T/"})
+	block := profileBlock(plan.Seatbelt, "staging-root-read-allow")
+	if strings.Contains(block, "(subpath "+sbplStr(plan.StagedDir)+")") {
+		t.Errorf("the self-mode profile reads the whole staging root:\n%s", block)
+	}
+	for _, own := range []string{plan.EnvFile, plan.DaemonEnvFile, plan.SessionGuestBinDir, plan.ContextDir} {
+		if own == "" {
+			t.Fatalf("fixture plan lacks a staged path (%q)", own)
+		}
+		if !strings.Contains(block, "(subpath "+sbplStr(own)+")") {
+			t.Errorf("the self-mode profile does not read %s:\n%s", own, block)
+		}
+	}
+	for _, other := range []string{SandboxEnvFile("yolo-other-1.x", ""), StagedCtxParent("")} {
+		if strings.Contains(block, "(subpath "+sbplStr(other)+")") {
+			t.Errorf("the self-mode profile reads %s:\n%s", other, block)
+		}
+	}
+	if !strings.Contains(block, "(literal "+sbplStr(pathParent(plan.EnvFile))+")") {
+		t.Errorf("the env dir above the session's file gets no metadata:\n%s", block)
+	}
+}
+
+// selfModeWireBridgeDaemons is a daemon payload with no host endpoint beside it, the wire
+// bridge's shape: a run-as-you plan reads every endpoint's port, which a fixture path has not.
+func selfModeWireBridgeDaemons(src string) JailDaemons {
+	env := jsonx.NewOrderedMap()
+	env.Set(jailDaemonsEnv, `[{"name":"wire-bridge","cmd":["yolo-jaild","wire-bridge"],"restart":"on-failure"}]`)
+	return JailDaemons{Env: env, GuestBinSource: src}
+}

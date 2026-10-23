@@ -102,7 +102,9 @@ func runPackTreeLaunch(t *testing.T, agentRC int, table func() ([]GuestProc, err
 	claims = t.TempDir()
 	d := fixtureStateDeps(t, state, nil, nil)
 	d.PackTreeClaimDir = func() string { return claims }
-	d.GuestProcesses = table
+	if table != nil {
+		d.GuestProcesses = func(Mode) ([]GuestProc, error) { return table() }
+	}
 	production := StagedPackTreeRoot(cname, host, "")
 	d.RunWithProxy = func([]string) int {
 		// The tree is claimed for the whole launch, by this process.
@@ -198,7 +200,7 @@ func TestALiveGuestKeepsTheTreeInOneLine(t *testing.T) {
 		if _, err := os.Stat(tree); err != nil {
 			t.Errorf("a tree was removed with no proof its guest ended: %v", err)
 		}
-		assertOneKeptLine(t, out.String(), "could not list the sandbox account's processes")
+		assertOneKeptLine(t, out.String(), "could not list the sandbox's processes")
 	})
 }
 
@@ -324,7 +326,7 @@ func TestCaptureActsRemoveTheirGuestPackTreeOnceTheGuestExited(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := &captureDeps{}
 			d := c.deps()
-			d.GuestProcesses = func() ([]GuestProc, error) { return hostTable(), nil }
+			d.GuestProcesses = func(Mode) ([]GuestProc, error) { return hostTable(), nil }
 			root, rc := tc.run(d)
 			if rc != 0 {
 				t.Fatalf("capture act = %d, want 0\n%s", rc, c.out.String())

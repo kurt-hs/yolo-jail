@@ -1008,6 +1008,10 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 			collected := session.Loopback
 			loopback = &collected
 		}
+		// THIS SESSION'S STAGED PATHS ALONE, not the whole staging root: the root also holds
+		// every other session's env file and every other workspace's context copy.
+		params.StagedReads = []string{sessionGuestBinDir, packRoot, homeOverlay, ctxRoot, contextDir,
+			capturesRoot, envFile, daemonEnvFile, caBundleFile, caExtrasFile}
 		seatbelt = DenyDefaultProfile(params)
 	}
 	envDirCommands := SandboxEnvDirCommands(envFile, "")
@@ -2071,6 +2075,10 @@ func selfModeProblems(plan RunPlan) []string {
 		plan.EnvFileGrantCommands...)
 	for _, f := range plan.caTrustFilePlans() {
 		all = append(append(all, f.dir...), f.grant...)
+	}
+	if plan.DaemonEnvFile != "" {
+		d := plan.daemonEnvFilePlan()
+		all = append(append(all, d.dir...), d.grant...)
 	}
 	for _, c := range all {
 		if len(c) >= 2 && c[0] == chmodBin && c[1] == "+a" {

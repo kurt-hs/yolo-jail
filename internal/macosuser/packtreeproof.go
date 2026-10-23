@@ -223,13 +223,15 @@ type packTreeUse struct {
 	anchor time.Time
 	// claim is the launch's claim on root, nil when it could not be made.
 	claim *sessionRecord
+	// mode is the launch's, which decides whose processes are the sandbox's (guestprocs.go).
+	mode Mode
 }
 
 // beginPackTree claims the tree at root before anything reserves it. A claim that cannot be made
 // is said in one line and the launch goes on: its own end still removes the tree, but a `yolo
 // prune` running meanwhile cannot tell the tree is in use.
-func beginPackTree(deps Deps, out printer, root string) *packTreeUse {
-	u := &packTreeUse{root: root, anchor: time.Now().Add(-packTreeAnchorSlack)}
+func beginPackTree(deps Deps, out printer, root string, mode Mode) *packTreeUse {
+	u := &packTreeUse{root: root, anchor: time.Now().Add(-packTreeAnchorSlack), mode: mode}
 	if root == "" || deps.PackTreeClaimDir == nil {
 		return u
 	}
@@ -265,7 +267,7 @@ func finishPackTree(deps Deps, out printer, u *packTreeUse) {
 	if u.consumerDispatched {
 		holders, err := awaitNoPackTreeHolders(deps, u)
 		if err != nil {
-			out.printf("[yellow]Kept guest pack tree %s:[/yellow] could not list the sandbox account's "+
+			out.printf("[yellow]Kept guest pack tree %s:[/yellow] could not list the sandbox's "+
 				"processes (%v); `yolo prune --apply` removes it once none may read it.", path, err)
 			return
 		}
@@ -307,7 +309,7 @@ func awaitNoPackTreeHolders(deps Deps, u *packTreeUse) ([]GuestProc, error) {
 	delete(others, self)
 	deadline := time.Now().Add(packTreeSettleBound)
 	for {
-		procs, err := deps.GuestProcesses()
+		procs, err := deps.GuestProcesses(u.mode)
 		if err != nil {
 			return nil, err
 		}
@@ -409,10 +411,11 @@ func (r PackTreeReap) Bytes() int64 {
 
 // PrunePackTrees is `yolo prune`'s sweep of the per-launch guest pack trees in the staging root:
 // every one this macOS user staged that no running launch claims and no sandbox process may
-// still read. apply false removes nothing.
-func PrunePackTrees(apply bool) PackTreeReap {
-	return reapPackTrees(stateDir, PackTreeClaimsDir(), SessionRecordsDir(), guestProcessesReal, runReal,
-		os.Geteuid(), apply)
+// still read. mode is the user's `macos_user_mode`, which decides whose processes are the
+// sandbox's (guestprocs.go). apply false removes nothing.
+func PrunePackTrees(mode Mode, apply bool) PackTreeReap {
+	return reapPackTrees(stateDir, PackTreeClaimsDir(), SessionRecordsDir(),
+		func() ([]GuestProc, error) { return guestProcessesReal(mode) }, runReal, os.Geteuid(), apply)
 }
 
 // liveSessionCnames is the container name of every session whose liveness record (sessionfiles.go)
@@ -503,7 +506,7 @@ func reapPackTrees(sd, claimDir, sessionDir string, procs func() ([]GuestProc, e
 	}
 	table, err := procs()
 	if err != nil {
-		r.Declined = "the sandbox account's processes could not be listed (" + err.Error() + ")"
+		r.Declined = "the sandbox's processes could not be listed (" + err.Error() + ")"
 		return r
 	}
 	for _, t := range trees {

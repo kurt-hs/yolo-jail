@@ -1054,7 +1054,38 @@ func OwnershipOf(rootless *bool) Ownership {
 // hold every application's state, and Preferences, Application Support and
 // Keychains are where macOS applications keep settings, tokens and keychains.
 func unsafeSource(src string, f Facts, darwin bool) string {
-	env := HostEnv{Getenv: f.HostGetenv}
+	return unsafeSourceUnder(src, f, darwin, HostEnv{Getenv: f.HostGetenv}.home())
+}
+
+// ResolvedSourceProblem re-runs the source rule (unsafeSource, with the credential-boundary
+// check f.ScopeBreach) on a macOS alias source AFTER the caller resolved its symlinks: Plan
+// judged the path as the environment spelled it, and the profile opens the resolved target, so
+// a cache directory that is a planted link to the home would pass the first check and open the
+// home. It judges against the home as spelled and as resolved. "" means the target is safe.
+func ResolvedSourceProblem(resolved string, f Facts) string {
+	home := HostEnv{Getenv: f.HostGetenv}.home()
+	if r := unsafeSourceUnder(resolved, f, true, home); r != "" {
+		return r
+	}
+	if home == "" {
+		return ""
+	}
+	if real, err := filepath.EvalSymlinks(home); err == nil && real != home {
+		return unsafeSourceUnder(resolved, f, true, real)
+	}
+	return ""
+}
+
+func unsafeSourceUnder(src string, f Facts, darwin bool, home string) string {
+	env := HostEnv{Getenv: func(k string) string {
+		if k == "HOME" {
+			return home
+		}
+		if f.HostGetenv == nil {
+			return ""
+		}
+		return f.HostGetenv(k)
+	}}
 	if home := env.home(); home != "" {
 		if under(home, src) {
 			return "is the home directory or contains it"

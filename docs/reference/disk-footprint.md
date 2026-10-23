@@ -481,8 +481,9 @@ and the host share one store. pants' content-addressed `lmdb_store` came first
   mode, where the sandbox runs as you, so its files are yours: there each store has a macOS row
   (the tool's documented macOS default, honoring the same variables, still to be confirmed on a
   Mac) and the alias is a link in the sandbox's home plus a profile allow, never a bind
-  ([MMP-D12](../design/macos-user-model-plan.md#MMP-D12)). That mode is not selectable yet, so
-  every macos-user launch declines today
+  ([MMP-D12](../design/macos-user-model-plan.md#MMP-D12)). That mode is opt-in, with
+  `"macos_user_mode": "self"` in the user config, so a macos-user launch in the default account
+  mode declines every store
   ([the macos-user model](../design/macos-user-model.md)).
 - **Disclosed.** Each active alias prints at launch with both paths (a writable bind of the host
   user's cache is host access); several print under one heading. A decline the user could act on

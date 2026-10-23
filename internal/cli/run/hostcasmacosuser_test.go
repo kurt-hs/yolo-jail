@@ -73,7 +73,7 @@ func TestMacosUserAccountModeAliasesNoHostCache(t *testing.T) {
 // backend is handed it and a resolved target.
 func TestMacosUserSelfModeAliasesThroughTheSandboxHome(t *testing.T) {
 	o, home, pip := macosHostCASOptions(t)
-	ds := resolveMacosUserHostCAS(o.planMacosUserHostCAS(macosuser.ModeSelf, nil))
+	ds := resolveMacosUserHostCAS(o.planMacosUserHostCAS(macosuser.ModeSelf, nil), o.macosUserHostCASFacts(macosuser.ModeSelf, nil))
 	d := dispositionNamed(t, ds, "pip-cache")
 	if !d.Aliased {
 		t.Fatalf("pip-cache not aliased in self mode: %s (%s)", d.Code, d.Reason)
@@ -115,6 +115,43 @@ func TestMacosUserHostCASPassesTheRelocationsThrough(t *testing.T) {
 	}
 }
 
+// A PLANTED LINK IS JUDGED BY WHERE IT LEADS: a cache directory replaced by a link to the home
+// passes the source rule as spelled, and the profile would open its resolved target, the
+// whole home, read-write. The resolution re-runs the rule and declines it. Fails if
+// resolveMacosUserHostCAS stops re-checking the resolved target.
+func TestAMacosUserAliasResolvingToTheHomeIsDeclined(t *testing.T) {
+	o, home, pip := macosHostCASOptions(t)
+	if err := os.WriteFile(filepath.Join(home, "notes"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(home, ".config")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg, "token"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{home, cfg} {
+		if err := os.RemoveAll(pip); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, pip); err != nil {
+			t.Fatal(err)
+		}
+		ds := resolveMacosUserHostCAS(o.planMacosUserHostCAS(macosuser.ModeSelf, nil),
+			o.macosUserHostCASFacts(macosuser.ModeSelf, nil))
+		d := dispositionNamed(t, ds, "pip-cache")
+		if d.Aliased || d.Code != hostcas.CodeUnsafeSource || !strings.Contains(d.Reason, "resolves to "+target) {
+			t.Errorf("pip cache linked to %s: aliased=%v code=%s (%s)", target, d.Aliased, d.Code, d.Reason)
+		}
+		for _, a := range macosUserCacheAliases(ds) {
+			if a.Tool == "pip" {
+				t.Errorf("handed the backend %+v", a)
+			}
+		}
+	}
+}
+
 // A source that vanishes between the decision and the resolution is downgraded, not handed to
 // the backend unresolved: the profile names a target verbatim.
 func TestAnUnresolvableMacosUserAliasIsDowngraded(t *testing.T) {
@@ -122,7 +159,7 @@ func TestAnUnresolvableMacosUserAliasIsDowngraded(t *testing.T) {
 	ds := resolveMacosUserHostCAS([]hostcas.Disposition{{
 		Store: hostcas.Stores[5], Aliased: true, Source: gone, Dest: "/ws/.yolo/home/Library/Caches/pip",
 		Code: hostcas.CodeAliased,
-	}})
+	}}, hostcas.Facts{})
 	if ds[0].Aliased || ds[0].Code != hostcas.CodeAbsent || ds[0].Reason == "" {
 		t.Errorf("unresolvable source: %+v", ds[0])
 	}

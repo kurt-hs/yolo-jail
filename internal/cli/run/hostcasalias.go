@@ -90,6 +90,12 @@ func (o *Options) planHostCASAlias(rt string, relocations []config.CacheRelocati
 // ~/.cache segment back under the home. Under the seal there are none: the arm returns before
 // this is called.
 func (o *Options) planMacosUserHostCAS(mode macosuser.Mode, relocations []macosuser.CacheRelocation) []hostcas.Disposition {
+	return hostcas.Plan(o.macosUserHostCASFacts(mode, relocations))
+}
+
+// macosUserHostCASFacts are the facts planMacosUserHostCAS plans from, which
+// resolveMacosUserHostCAS judges each resolved source against again.
+func (o *Options) macosUserHostCASFacts(mode macosuser.Mode, relocations []macosuser.CacheRelocation) hostcas.Facts {
 	relocated := make([]string, 0, len(relocations))
 	for _, r := range relocations {
 		relocated = append(relocated, r.Subdir)
@@ -106,7 +112,7 @@ func (o *Options) planMacosUserHostCAS(mode macosuser.Mode, relocations []macosu
 	if hostPlatform == "" {
 		hostPlatform = hostcas.HostPlatform()
 	}
-	return hostcas.Plan(hostcas.Facts{
+	return hostcas.Facts{
 		Runtime:           "macos-user",
 		MacosUserSelf:     self,
 		IsMacOS:           o.IsMacOS,
@@ -120,7 +126,7 @@ func (o *Options) planMacosUserHostCAS(mode macosuser.Mode, relocations []macosu
 		RelocatedSegments: relocated,
 		Probe:             o.HostCASProbe,
 		ScopeBreach:       scopeBreached,
-	})
+	}
 }
 
 // macosUserHostHome is the invoking user's home a run-as-you macos-user launch places its homes
@@ -154,12 +160,24 @@ func (o *Options) macosSiting() macosuser.ContextSiting {
 // judges the resolved path. A source that cannot be resolved (it went away after the probe) is
 // DOWNGRADED to absent rather than handed over unresolved, the direction every failure here
 // takes: the sandbox keeps its own copy.
-func resolveMacosUserHostCAS(ds []hostcas.Disposition) []hostcas.Disposition {
+//
+// AND THE RESOLVED TARGET IS JUDGED AGAIN (hostcas.ResolvedSourceProblem against f, the facts
+// the plan was made from): Plan read the path as spelled, so a cache directory replaced by a
+// link to the home, ~/.config or a boundary directory would otherwise be opened read-write
+// under its resolved name. Such a source is declined as unsafe.
+func resolveMacosUserHostCAS(ds []hostcas.Disposition, f hostcas.Facts) []hostcas.Disposition {
 	out := make([]hostcas.Disposition, 0, len(ds))
 	for _, d := range ds {
 		if d.Aliased {
 			if resolved, err := filepath.EvalSymlinks(d.Source); err == nil {
-				d.Source = resolved
+				if why := hostcas.ResolvedSourceProblem(resolved, f); why != "" {
+					d.Aliased = false
+					d.Code = hostcas.CodeUnsafeSource
+					d.Reason = "the host " + d.Store.Tool + " cache path " + d.Source + " resolves to " +
+						resolved + ", which " + why + ", so it is not shared"
+				} else {
+					d.Source = resolved
+				}
 			} else {
 				d.Aliased = false
 				d.Code = hostcas.CodeAbsent

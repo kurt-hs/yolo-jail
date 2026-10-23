@@ -281,7 +281,7 @@ func TestRunMacosUserPackTreeOwnershipBoundaries(t *testing.T) {
 		shortSettle(t)
 		hostD := writeFixturePackTree(t, "#!/bin/sh\necho D\n")
 		d := fixtureStateDeps(t, state, nil, nil)
-		d.GuestProcesses = func() ([]GuestProc, error) { return hostTable(), nil }
+		d.GuestProcesses = func(Mode) ([]GuestProc, error) { return hostTable(), nil }
 		d.RunWithProxy = func([]string) int { return 0 }
 		opts := newOpts(workspace)
 		opts.HostPackRoot = hostD

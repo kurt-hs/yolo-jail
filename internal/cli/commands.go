@@ -1626,11 +1626,18 @@ func runCheck(args []string) int {
 }
 
 // guestPackTreeSweep is prune.Options.GuestPackTrees: macosuser.PrunePackTrees in prune's own
-// reap shape, and whether the staging root has a packs directory at all.
+// reap shape, and whether the staging root has a packs directory at all. The user's
+// `macos_user_mode` decides whose processes are the sandbox's; a value no launch can run reads
+// as the account mode, whose reader declines rather than guesses when the account is absent.
 func guestPackTreeSweep(apply bool) (prune.EmbeddedReap, bool) {
-	r := macosuser.PrunePackTrees(apply)
+	mode, _ := macosUserLaunchMode()
+	r := prunePackTrees(mode, apply)
 	return guestPackTreeReap(r), r.Applicable
 }
+
+// prunePackTrees is macosuser.PrunePackTrees behind a package var, so a test can read the mode
+// the sweep is handed.
+var prunePackTrees = macosuser.PrunePackTrees
 
 // guestPackTreeReap converts one macos-user sweep to prune's reap shape.
 func guestPackTreeReap(r macosuser.PackTreeReap) prune.EmbeddedReap {

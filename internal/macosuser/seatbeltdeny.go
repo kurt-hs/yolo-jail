@@ -101,6 +101,12 @@ type ProfileParams struct {
 	DarwinUserTempDir string
 	// StagingRoot is the host-owned staging tree (StagingRoot()), read only (MMP-D8).
 	StagingRoot string
+	// StagedReads, when set, narrow that read to the paths under StagingRoot this session's
+	// sandbox reads — its guest bin, pack tree, context tree, capture store and its own env and
+	// CA files — so it cannot read another session's env file or another workspace's context
+	// copy. The directories above them get metadata alone, which lists nothing. Empty reads the
+	// whole root.
+	StagedReads []string
 	// MachineDirs are the writable roots outside the workspace and HOME: the machine root's
 	// shared dirs (MMP-D6). Read-write.
 	MachineDirs []string
@@ -339,10 +345,7 @@ func DenyDefaultProfile(p ProfileParams) string {
 		"    (regex #\"^/dev/pty\"))                                             ;; Legacy PTY names.\n")
 
 	if staging != "" {
-		b.WriteString("\n;; [yolo] The host-owned staging root (MMP-D8): the staged yolo, env files and\n" +
-			";; per-launch trees. READ only: no write allow names it.\n" +
-			";; #seatbelt-test-id:staging-root-read-allow#\n" +
-			"(allow file-read* (subpath " + sbplStr(staging) + "))\n")
+		b.WriteString(stagingReadAllow(staging, p.StagedReads))
 	}
 	b.WriteString(contextReadAllow(p.Context))
 	b.WriteString(relocationReadAllow(p.Relocations))
@@ -352,6 +355,51 @@ func DenyDefaultProfile(p ProfileParams) string {
 	b.WriteString(networkBlocks(p.Loopback))
 	b.WriteString(nixDaemonBlocks())
 	b.WriteString(closingDenies(hostHome))
+	return b.String()
+}
+
+// stagingReadAllow is the profile's read on the host-owned staging root: the whole root, or,
+// with reads, each of those paths under it and metadata on the directories between.
+func stagingReadAllow(staging string, reads []string) string {
+	head := "\n;; [yolo] The host-owned staging root (MMP-D8): the staged yolo, env files and\n" +
+		";; per-launch trees. READ only: no write allow names it.\n" +
+		";; #seatbelt-test-id:staging-root-read-allow#\n"
+	var own []string
+	for _, r := range absCleanAll(reads...) {
+		if r != staging && within(r, staging) {
+			own = append(own, r)
+		}
+	}
+	if len(own) == 0 {
+		return head + "(allow file-read* (subpath " + sbplStr(staging) + "))\n"
+	}
+	slices.Sort(own)
+	var dirs []string
+	for _, r := range own {
+		for d := path.Dir(r); within(d, staging); d = path.Dir(d) {
+			if !slices.Contains(dirs, d) {
+				dirs = append(dirs, d)
+			}
+			if d == staging {
+				break
+			}
+		}
+	}
+	slices.Sort(dirs)
+	var b strings.Builder
+	b.WriteString("\n;; [yolo] The host-owned staging root (MMP-D8), this session's own paths alone: another\n" +
+		";; session's env file, or another workspace's context copy, beside them stays unreadable.\n" +
+		";; The directories above them get metadata only. READ only: no write allow names it.\n" +
+		";; #seatbelt-test-id:staging-root-read-allow#\n")
+	b.WriteString("(allow file-read-metadata\n")
+	for _, d := range dirs {
+		b.WriteString("    (literal " + sbplStr(d) + ")\n")
+	}
+	b.WriteString(")\n(allow file-read*\n")
+	for _, r := range own {
+		b.WriteString("    (subpath " + sbplStr(r) + ")\n")
+	}
+	b.WriteString(")\n")
 	return b.String()
 }
 

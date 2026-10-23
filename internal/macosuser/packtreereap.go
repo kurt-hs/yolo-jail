@@ -69,10 +69,16 @@ func PackTreeReapLog() string {
 }
 
 // PackTreeReaperArgv is the reaper's argv: self, the verb, the tree, and the anchor its proof
-// counts from (the launch's packTreeUse.anchor, in Unix nanoseconds).
-func PackTreeReaperArgv(self, root string, anchor time.Time) []string {
-	return []string{self, "internal", PackTreeReapVerb,
+// counts from (the launch's packTreeUse.anchor, in Unix nanoseconds), and, for a run-as-you
+// launch alone, `--mode self`, which decides whose processes are the sandbox's (guestprocs.go).
+// An account-mode argv is what it was before the mode existed.
+func PackTreeReaperArgv(self, root string, anchor time.Time, mode Mode) []string {
+	argv := []string{self, "internal", PackTreeReapVerb,
 		"--root", root, "--anchor", strconv.FormatInt(anchor.UnixNano(), 10)}
+	if mode == ModeSelf {
+		argv = append(argv, "--mode", ModeSelf.String())
+	}
+	return argv
 }
 
 // handOffPackTree starts the reaper for u's tree with u's claim, and on success lets the launch's
@@ -83,7 +89,7 @@ func handOffPackTree(deps Deps, out printer, u *packTreeUse, holders []GuestProc
 	if deps.StartPackTreeReaper == nil || deps.SelfExe == nil || u.claim == nil || u.claim.lock == nil {
 		return false, nil
 	}
-	argv := PackTreeReaperArgv(deps.SelfExe(), u.root, u.anchor)
+	argv := PackTreeReaperArgv(deps.SelfExe(), u.root, u.anchor, u.mode)
 	if err := deps.StartPackTreeReaper(argv, u.claim.lock); err != nil {
 		return false, err
 	}
@@ -150,10 +156,10 @@ type packTreeReaper struct {
 // PackTreeReapMain is `yolo internal pack-tree-reap --root <tree> --anchor <unix ns>`, with the
 // launch's claim on fd 3. Its exit status says only whether it ran: what it did is in its log.
 func PackTreeReapMain(args []string) int {
-	root, anchor, err := parsePackTreeReapArgs(args)
+	root, anchor, mode, err := parsePackTreeReapArgs(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "yolo internal "+PackTreeReapVerb+": "+err.Error())
-		fmt.Fprintln(os.Stderr, "usage: yolo internal "+PackTreeReapVerb+" --root <guest pack tree> --anchor <unix ns>  (claim on fd 3)")
+		fmt.Fprintln(os.Stderr, "usage: yolo internal "+PackTreeReapVerb+" --root <guest pack tree> --anchor <unix ns> [--mode self]  (claim on fd 3)")
 		return 2
 	}
 	closeInheritedFiles()
@@ -163,7 +169,7 @@ func PackTreeReapMain(args []string) int {
 		claim:    os.NewFile(packTreeReapClaimFD, "pack-tree claim"),
 		packsDir: filepath.Join(stateDir, packsLeaf),
 		claimDir: PackTreeClaimsDir(),
-		procs:    guestProcessesReal,
+		procs:    func() ([]GuestProc, error) { return guestProcessesReal(mode) },
 		run:      runReal,
 		out:      os.Stdout,
 		now:      time.Now,
@@ -178,13 +184,13 @@ func closeInheritedFiles() {
 	syscall.CloseOnExec(packTreeReapClaimFD)
 }
 
-func parsePackTreeReapArgs(args []string) (string, time.Time, error) {
-	var root, anchor string
+func parsePackTreeReapArgs(args []string) (string, time.Time, Mode, error) {
+	var root, anchor, mode string
 	for i := 0; i < len(args); i++ {
 		name, val, hasVal := strings.Cut(args[i], "=")
 		if !hasVal {
 			if i+1 >= len(args) {
-				return "", time.Time{}, fmt.Errorf("%s needs a value", args[i])
+				return "", time.Time{}, ModeAccount, fmt.Errorf("%s needs a value", args[i])
 			}
 			i++
 			val = args[i]
@@ -194,18 +200,24 @@ func parsePackTreeReapArgs(args []string) (string, time.Time, error) {
 			root = val
 		case "--anchor":
 			anchor = val
+		case "--mode":
+			mode = val
 		default:
-			return "", time.Time{}, fmt.Errorf("unknown flag %q", name)
+			return "", time.Time{}, ModeAccount, fmt.Errorf("unknown flag %q", name)
 		}
 	}
 	if root == "" || anchor == "" {
-		return "", time.Time{}, errors.New("--root and --anchor are both required")
+		return "", time.Time{}, ModeAccount, errors.New("--root and --anchor are both required")
 	}
 	ns, err := strconv.ParseInt(anchor, 10, 64)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("--anchor %q is not Unix nanoseconds", anchor)
+		return "", time.Time{}, ModeAccount, fmt.Errorf("--anchor %q is not Unix nanoseconds", anchor)
 	}
-	return root, time.Unix(0, ns), nil
+	m, err := ParseMode(mode)
+	if err != nil {
+		return "", time.Time{}, ModeAccount, err
+	}
+	return root, time.Unix(0, ns), m, nil
 }
 
 // reapHandedPackTree is the reaper's whole run. It touches only a per-launch tree directly in
@@ -239,7 +251,7 @@ func reapHandedPackTree(r packTreeReaper) int {
 		}
 		procs, err := r.procs()
 		if err != nil {
-			say("kept: could not list the sandbox account's processes (%v); `yolo prune --apply` removes it once none may read it", err)
+			say("kept: could not list the sandbox's processes (%v); `yolo prune --apply` removes it once none may read it", err)
 			return 0
 		}
 		others := readPackTreeClaims(r.claimDir).pids

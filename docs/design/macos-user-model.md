@@ -271,7 +271,8 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
    <!-- vantage: question id=OQ-MM8 leaning="Leave /tmp readable and document it: tools write there constantly, and under the misguided-agent principle an eager agent rarely goes looking there." -->
 
    Check b14: running as you, the agent reads your owner-only files in `/tmp`; the account mode is
-   protected by Unix permissions. Denying `/tmp` reads would need tools pointed at the sandbox's own
+   protected by Unix permissions. The shared `/tmp` also holds yolo's own per-session endpoint
+   directories for its host services, so an agent of one session can read another session's. Denying `/tmp` reads would need tools pointed at the sandbox's own
    temp dir, and breaks the ones that hardcode `/tmp`.
 
    _Leaning:_ leave it readable; document it.
@@ -297,10 +298,10 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | MM-R1 | The risk that an access grant on a home folder exposes `~/.ssh` is acceptable, not a blocker. | 2026-10-22 | [§4](#4-what-the-second-account-buys-and-what-it-costs) | — |
-| <a id="OQ-MM1"></a>[OQ-MM1](#OQ-MM1) | macos-user moves to Safehouse's model: a deny-by-default profile, the agent running as you by default. The [§6](#6-what-a-prototype-must-show) prototype is the gate before building. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
-| MM-R2 | The second account is kept from day one as an optional mode, off by default, running the same profile; it alone carries account setup and workspace access grants. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
-| <a id="OQ-MM2"></a>[OQ-MM2](#OQ-MM2) | Start from Safehouse's layered profiles (Apache-2.0, credited), adapted for nix and narrowed where they read wider than yolo wants, such as all of `/opt`. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
-| <a id="OQ-MM3"></a>[OQ-MM3](#OQ-MM3) | Deny loopback by default and allow yolo's own service ports, matching podman; a workspace config may allow more ports, through the config-change approval. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
+| <a id="OQ-MM1"></a>[OQ-MM1](#OQ-MM1) | macos-user moves to Safehouse's model: a deny-by-default profile, the agent running as you by default. The [§6](#6-what-a-prototype-must-show) prototype is the gate before building. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | built in the run-as-you mode, opt-in; the production default is unchanged |
+| MM-R2 | The second account is kept from day one as an optional mode, off by default, running the same profile; it alone carries account setup and workspace access grants. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | built in the run-as-you mode, opt-in; the production default is unchanged |
+| <a id="OQ-MM2"></a>[OQ-MM2](#OQ-MM2) | Start from Safehouse's layered profiles (Apache-2.0, credited), adapted for nix and narrowed where they read wider than yolo wants, such as all of `/opt`. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | built in the run-as-you mode, opt-in; the production default is unchanged |
+| <a id="OQ-MM3"></a>[OQ-MM3](#OQ-MM3) | Deny loopback by default and allow yolo's own service ports, matching podman; a workspace config may allow more ports, through the config-change approval. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | built in the run-as-you mode, opt-in; the production default is unchanged |
 | <a id="OQ-MM4"></a>[OQ-MM4](#OQ-MM4) | No transition for Macs already set up for the second account; reusing the account for the optional mode is welcome, not required. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
 | <a id="OQ-MM6"></a>[OQ-MM6](#OQ-MM6) | A `~/ctx` link to `$YOLO_CONTEXT_DIR` in the agent's home on every backend; `$YOLO_CONTEXT_DIR` stays the documented path. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | built: podman via the home skeleton (skipped when a config entry claims `ctx`); Apple Container and macos-user via the `link_context_dir` boot step (macos-user retargets its own link per workspace); macos-user is unit-tested only, not yet run on a Mac; Apple Container is untested |
 | <a id="OQ-MM5"></a>[OQ-MM5](#OQ-MM5) | Containers do not also bind mounts at their original host path; `$YOLO_CONTEXT_DIR/<name>` is the one supported path, and macOS allows the original path only for the link. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | — |

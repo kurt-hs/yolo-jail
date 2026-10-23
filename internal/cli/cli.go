@@ -18,6 +18,7 @@ import (
 	"os"
 	"slices"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/crossaudit"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -25,6 +26,17 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/version"
 )
+
+// guestScopeGuard is paths.GuardGuestScope inside a jail alone (config.InJail: the marker the
+// macos-user launcher sets on every sandbox process it starts, as a container launch does). On
+// the host the variable it reads means nothing, so a YOLO_DARWIN_REAL_HOME left in a host shell
+// cannot move the host's own workspace-scope judgment off its real home.
+func guestScopeGuard() (restore func()) {
+	if !config.InJail() {
+		return func() {}
+	}
+	return paths.GuardGuestScope()
+}
 
 // Main is the `yolo` entry point. argv is the full os.Args (argv[0] is the
 // program name). It returns the process exit code.
@@ -56,7 +68,7 @@ func Main(argv []string) int {
 	// In a run-as-you macos-user session HOME is <workspace>/.yolo/home, inside the workspace,
 	// so every verb that creates the workspace's .yolo judges scope against the real home the
 	// launcher named instead (paths.GuardGuestScope, MMP-D7). Anywhere else it changes nothing.
-	defer paths.GuardGuestScope()()
+	defer guestScopeGuard()()
 
 	if cwd := InvocationCWD(); cwd != "" {
 		_ = os.Chdir(cwd)

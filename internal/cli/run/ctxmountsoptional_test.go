@@ -176,6 +176,31 @@ func TestMacosUserStillRefusesAnOptionalMountInYolosStateDir(t *testing.T) {
 	}
 }
 
+// IN THE RUN-AS-YOU MODE A MOUNT IS JUDGED BY WHERE IT RESOLVES: a source that is a link to your
+// home is delivered as the home, which the profile would then open whole, so it refuses, marked
+// optional or not. Fails if the siting stops applying its home rule to the resolved source.
+func TestMacosUserSelfModeRefusesAMountResolvingToTheHome(t *testing.T) {
+	users := floortest.ResolvedTemp(t)
+	home := filepath.Join(users, "you")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(floortest.ResolvedTemp(t), "notes")
+	if err := os.Symlink(home, link); err != nil {
+		t.Fatal(err)
+	}
+	ctxLaunchHome(t, `, "mounts": [{"host": "`+link+`", "at": "/ctx/notes", "mode": "ro", "optional": true}]`)
+
+	out := runMacosUserExpectingRefusal(t, t.TempDir(), func(o *Options) {
+		s := macosuser.DarwinContextSitingFor(macosuser.ModeSelf, home)
+		s.UsersRoot, s.UsersRootAliases, s.WritableRoots = users, nil, nil
+		o.macosCtxSiting = &s
+	})
+	if !strings.Contains(out, link+" → /ctx/notes (read-only, `mounts`): it is or contains your home") {
+		t.Errorf("the refusal did not name the home:\n%s", out)
+	}
+}
+
 // THE REFUSAL'S SHAPE: one headline, a blank line, the mounts, a blank line, then the fixes,
 // "mark it optional" with the exact JSON to paste for the element as written.
 func TestMacosUserRefusalOffersTheOptionalSpelling(t *testing.T) {

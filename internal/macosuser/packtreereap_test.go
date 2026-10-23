@@ -91,7 +91,7 @@ func TestALingeringGuestHandsTheTreeToTheReaperWhichRemovesItOnceItExits(t *test
 	}
 
 	// The reaper, on the descriptor it was handed: the holder is there once, then gone.
-	_, anchor, err := parsePackTreeReapArgs(handed.argv[3:])
+	_, anchor, _, err := parsePackTreeReapArgs(handed.argv[3:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,13 +242,13 @@ func TestTheReaperRemovesNothingItWasNotHanded(t *testing.T) {
 
 func TestParsePackTreeReapArgsRoundTripsTheArgv(t *testing.T) {
 	anchor := time.Unix(1760740184, 123456789)
-	argv := PackTreeReaperArgv("/usr/local/bin/yolo", "/Users/Shared/yolo-staged/packs/a.b", anchor)
-	root, got, err := parsePackTreeReapArgs(argv[3:])
-	if err != nil || root != "/Users/Shared/yolo-staged/packs/a.b" || !got.Equal(anchor) {
+	argv := PackTreeReaperArgv("/usr/local/bin/yolo", "/Users/Shared/yolo-staged/packs/a.b", anchor, ModeAccount)
+	root, got, mode, err := parsePackTreeReapArgs(argv[3:])
+	if err != nil || root != "/Users/Shared/yolo-staged/packs/a.b" || !got.Equal(anchor) || mode != ModeAccount {
 		t.Errorf("parse(%q) = %q, %v, %v", argv, root, got, err)
 	}
 	for _, bad := range [][]string{nil, {"--root", "x"}, {"--anchor", "1"}, {"--root", "x", "--anchor", "soon"}, {"--bogus=1"}} {
-		if _, _, err := parsePackTreeReapArgs(bad); err == nil {
+		if _, _, _, err := parsePackTreeReapArgs(bad); err == nil {
 			t.Errorf("parse(%q) accepted", bad)
 		}
 	}

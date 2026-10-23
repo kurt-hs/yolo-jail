@@ -970,7 +970,7 @@ func runCaptureSteps(deps Deps, plan CapturePlan, problems []string, asUser [][]
 		return 1
 	}
 
-	packTree := beginPackTree(deps, out, plan.PackRoot)
+	packTree := beginPackTree(deps, out, plan.PackRoot, plan.RunAs.Mode)
 	defer finishPackTree(deps, out, packTree)
 	out.printf("[dim]Preparing the capture sandbox at %s.[/dim]", plan.StagingRoot)
 	for _, group := range [][2]any{

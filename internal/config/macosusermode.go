@@ -9,8 +9,8 @@ import (
 
 // macosusermode.go is the config half of the macos-user mode setting
 // (docs/design/macos-user-model-plan.md, slice 2, MMP-D3): which account a
-// macos-user jail's session runs as. It is slice 2 only. No launch reads
-// "self" yet, and a launch that would use it is refused.
+// macos-user jail's session runs as. "account", or no value, is the default;
+// "self" is the opt-in run-as-you mode a launch runs since slice 6.
 
 // macosUserModeKey is the top-level key naming the macos-user mode.
 const macosUserModeKey = "macos_user_mode"

@@ -531,7 +531,8 @@ func Run(opts Options) (rc int) {
 		// MMP-D12), decided after the relocations it must not undo. The MODE is its input: only
 		// the run-as-you mode shares a host cache, and the account mode every launch runs today
 		// declines each store. Never a refusal — a decline leaves the sandbox its own copy.
-		hostCAS := resolveMacosUserHostCAS(o.planMacosUserHostCAS(o.MacosUserMode, cacheRelocs))
+		hostCAS := resolveMacosUserHostCAS(o.planMacosUserHostCAS(o.MacosUserMode, cacheRelocs),
+			o.macosUserHostCASFacts(o.MacosUserMode, cacheRelocs))
 		// (a bare `yolo` opens an interactive login zsh in the sandbox).
 		agentArgv := injectedArgs
 		if len(agentArgv) == 0 {

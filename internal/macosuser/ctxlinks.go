@@ -173,6 +173,9 @@ type ContextSiting struct {
 	// the sandbox is the invoking user, so a source or target inside a real home is reachable and
 	// rule 5's home clause does not apply. There is no account home either (SandboxHome is "").
 	RunsAsYou bool
+	// RealHome is the invoking user's home in the run-as-you mode, "" otherwise: a source that
+	// is or contains it is refused, since the profile would open the whole home to the agent.
+	RealHome string
 }
 
 // DarwinContextSitingFor is DarwinContextSiting for a launch's mode. The account mode's is
@@ -189,6 +192,7 @@ func DarwinContextSitingFor(mode Mode, hostHome string) ContextSiting {
 	}
 	s.RunsAsYou = true
 	s.SandboxHome = ""
+	s.RealHome = hostHome
 	if hostHome != "" {
 		s.StateDirs = append(s.StateDirs, paths.GlobalStorageUnder(hostHome),
 			path.Join(hostHome, ".config", "yolo-jail"))
@@ -366,6 +370,14 @@ func (s ContextSiting) siteOne(workspace string, l ContextLink) siteVerdict {
 	if s.SandboxHome != "" && pathWithin(src, s.SandboxHome, s.FoldCase) {
 		return siteVerdict{reason: "its source " + src + " is inside the sandbox account's own home " +
 			s.SandboxHome, brief: "it is inside the sandbox account's own home", unsafe: true}
+	}
+	// THE RUN-AS-YOU MODE'S HOME RULE, on the resolved source (rule 2 is the caller's contract):
+	// a mount, or a link someone planted where one points, that resolves to your home or above
+	// it would open every file you have, the credentials the profile otherwise denies included.
+	if s.RunsAsYou && s.RealHome != "" && pathWithin(path.Clean(s.RealHome), src, s.FoldCase) {
+		return siteVerdict{reason: "its source " + src + " is or contains your home " + s.RealHome +
+			": the sandbox profile would open all of it, the credentials it otherwise denies included",
+			brief: "it is or contains your home", unsafe: true}
 	}
 	if home, in := s.homes().containing(src); in && !s.RunsAsYou {
 		msg := "its source " + src + " is inside the home folder " + home

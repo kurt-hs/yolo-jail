@@ -104,3 +104,38 @@ func TestMacosLaunchRefusesAnUnknownMode(t *testing.T) {
 		t.Errorf("macosUserLaunchMode() = %v, %q", mode, refusal)
 	}
 }
+
+// TestPruneHandsTheGuestPackTreeSweepTheUserMode: `yolo prune` in the run-as-you mode looks for
+// the sandbox among your own processes, not the second account's, so on a Mac without the
+// account it can still remove a tree. Fails if guestPackTreeSweep stops reading the mode.
+func TestPruneHandsTheGuestPackTreeSweepTheUserMode(t *testing.T) {
+	for cfg, want := range map[string]macosuser.Mode{
+		`{"macos_user_mode": "self"}`: macosuser.ModeSelf,
+		``:                            macosuser.ModeAccount,
+	} {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+		t.Setenv("YOLO_VERSION", "")
+		if cfg != "" {
+			p := paths.UserConfigPath()
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, []byte(cfg), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var got macosuser.Mode = -1
+		prev := prunePackTrees
+		prunePackTrees = func(m macosuser.Mode, apply bool) macosuser.PackTreeReap {
+			got = m
+			return macosuser.PackTreeReap{}
+		}
+		guestPackTreeSweep(false)
+		prunePackTrees = prev
+		if got != want {
+			t.Errorf("config %q: the sweep was handed mode %v, want %v", cfg, got, want)
+		}
+	}
+}

@@ -177,9 +177,10 @@ type Deps struct {
 	// claims nothing, which is a test's launch.
 	PackTreeClaimDir func() string
 	// GuestProcesses lists every process on the machine with its parent, start time and whether
-	// it runs as the sandbox account (packtreeproof.go), without privilege. nil, or an error,
-	// means the launch cannot prove its guest has stopped, so it keeps its pack tree.
-	GuestProcesses func() ([]GuestProc, error)
+	// it is the sandbox's in the launch's mode (guestprocs.go: the account's uid, or your own
+	// processes carrying the sandbox marker), without privilege. nil, or an error, means the
+	// launch cannot prove its guest has stopped, so it keeps its pack tree.
+	GuestProcesses func(Mode) ([]GuestProc, error)
 	// StartPackTreeReaper starts argv (PackTreeReaperArgv: this yolo's pack-tree reaper) detached,
 	// in a session of its own, with claim, the launch's held claim on its guest pack tree, as the
 	// child's fd 3, and does not wait for it (packtreereap.go). nil, or an error, means the launch
@@ -1335,7 +1336,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// successful exclusive mkdir, and removed on every return once nothing this launch started
 	// may still read it. Bootstrap is its first guest consumer.
 	claimSpan := deps.Perf.Span("macos_user.stage.claim_pack_tree")
-	packTree := beginPackTree(deps, out, plan.PackRoot)
+	packTree := beginPackTree(deps, out, plan.PackRoot, plan.RunAs.Mode)
 	claimSpan.End()
 	defer func() {
 		steps.end() // a refused stage's span ends before the release's

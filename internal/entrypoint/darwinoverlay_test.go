@@ -778,6 +778,31 @@ func TestOverlayInstallLeavesAChangedDroppedDestinationAndNamesIt(t *testing.T) 
 	}
 }
 
+// IN THE RUN-AS-YOU LAYOUT (HOME is the workspace sidecar, yours) the leftover's remedy is a
+// plain rm: sudo would ask for a password to remove a file you own. Fails if the line names sudo
+// whatever the layout.
+func TestOverlayInstallNamesAPlainRmInAHomeThatIsYours(t *testing.T) {
+	base := newOverlayFixture(t)
+	f := overlayFixture{home: base.sidecar, sidecar: base.sidecar, overlay: base.overlay}
+	f.stage(t)
+	if err := f.install(t); err != nil {
+		t.Fatal(err)
+	}
+	briefing := filepath.Join(f.home, ".pi", "agent", "AGENTS.md")
+	if err := os.Remove(briefing); err != nil {
+		t.Fatal(err)
+	}
+	writeTreeFile(t, briefing, "my own notes")
+	f.restageSkillsOnly(t)
+	out, err := f.installReporting(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "`rm -r "+briefing+"`") || strings.Contains(out, "sudo") {
+		t.Errorf("the leftover's remedy in your own home is not a plain rm:\n%s", out)
+	}
+}
+
 // A destination yolo never recorded is never removed, whatever the overlay lists: with no
 // record (the first launch of a yolo that keeps one) there is nothing yolo can prove it installed.
 func TestOverlayInstallRemovesNothingItHasNoRecordOf(t *testing.T) {
