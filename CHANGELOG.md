@@ -19,7 +19,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - `yolo host apply` and `yolo host -- <agent>` now remove a file a pack stopped shipping or moved, and say so, instead of leaving the old copy to break launches; a copy from an earlier version is archived, and one you changed is kept and named with the command to remove it. See [the host copy converges](docs/reference/pack-system.md#host-files-converge).
-
 - On macOS (`macos-user`), a pack's skills, briefing and files now leave the agent's home at the next launch after you drop the pack; any you edited stay, and the launch names each with the command that removes it.
 
 ## [0.15.1] - 2026-10-22
