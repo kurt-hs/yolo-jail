@@ -592,6 +592,8 @@ needs a build. The plan gives each an integration test.
    > may always choose the pack's prebuilt explicitly, at user scope (`programs.overrides.<bin>`
    > with `"prebuilt": true`), and the refusal names that choice. A pack that ships no source uses
    > its prebuilt, since nothing is substituted.
+   > Confirmed for that case 2026-10-23: *"adding the pack is your acknowledgement that you trust
+   > this pack and you will then run whatever the pack runs."*
 
 3. <a id="OQ-BG3"></a>✅ **OQ-BG3: Does yolo build a dev override, or run the checkout as it finds it?**
 
