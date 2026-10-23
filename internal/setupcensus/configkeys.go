@@ -562,4 +562,12 @@ var configKeys = map[string]Entry{
 		"`include_if_found`"),
 	"update_check": everywhere(honored("gates this machine's own update check "+
 		"(config.UpdateCheckEnabled); no jail reads it"), "`include_if_found`"),
+	"macos_user_mode": {
+		PodmanLinux:    notApplicable("ignored: not this backend; only the macos-user backend reads it"),
+		PodmanMac:      notApplicable("ignored: not this backend; only the macos-user backend reads it"),
+		AppleContainer: notApplicable("ignored: not this backend; only the macos-user backend reads it"),
+		MacosUser: honored("macosUserRun (cli/commands.go) reads it from the user config (config.MacosUserMode) " +
+			"before it builds the sandbox, and refuses \"self\" until that mode is built"),
+		Guide: []string{"`macos_user_mode`"},
+	},
 }

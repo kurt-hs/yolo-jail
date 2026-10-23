@@ -141,6 +141,8 @@ var hostConfigKeys = map[string]keyCensusEntry{
 		"captured settings"},
 	"prune": {KeyHonored, "the free-disk threshold `yolo check`'s disk section warns at, on this " +
 		"machine"},
+	"macos_user_mode": {KeyNotApplicable, "selects the account a macos-user launch runs as; `yolo host` " +
+		"runs no jail, so the key has no meaning at the host notch"},
 	"perf_logging": {KeyHonored, "`yolo host --` and `yolo host apply` record their spans when it " +
 		"is on, silently, into the machine-wide host-notch-perf.log (run.HostNotchTimingLog, " +
 		"reading config.PerfLoggingEnabled), as a jail launch records into its workspace's file"},

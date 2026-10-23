@@ -487,6 +487,7 @@ The keys the tables above leave out. Most of them do the same thing on every set
 | `brokered` — more repositories for the GitHub host service in one project | works | works | absent, warns — the GitHub host service does not start here, and the launch names it[^lh-ac] | works |
 | `agents_md_extra`, `briefing_provenance` — your text in the agent's briefing | works | works | works — a running jail keeps the briefing it started with | works |
 | `include_if_found`, `prune`, `perf_logging`, `update_check` | works | works | works | works |
+| `macos_user_mode` — which account a macos-user jail runs as | `n/a` — ignored: only the macos-user setup reads it | `n/a` — ignored: only the macos-user setup reads it | `n/a` — ignored: only the macos-user setup reads it | works — `"account"`, the default; `"self"` is refused at launch until it is built |
 
 ## What a running jail picks up when you run `yolo` again
 

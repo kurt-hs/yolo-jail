@@ -33,6 +33,7 @@ var undoneKeySamples = map[string]string{
 	"gpu":                    `{"enabled": true}`,
 	"host_import_exclusions": `{}`,
 	"kvm":                    `true`,
+	"macos_user_mode":        `"account"`,
 	"mcp_presets":            `["sequential-thinking"]`,
 	"mise_tools":             `{"node": "22"}`,
 	"mounts":                 `["~/data"]`,

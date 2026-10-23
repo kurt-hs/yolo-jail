@@ -71,7 +71,7 @@ var knownTopLevelConfigKeys = set(
 	"kvm", "prune", "programs", "ephemeral_storage", "macos_log", "include_if_found", "agents_md_extra",
 	"briefing_provenance",
 	"cache_relocations", "writable_home_dirs", "host_files", "host_wrappers",
-	"host_apply_on_launch", "host_management", "host_import_exclusions", "agent_updates", "host_floor", "host_path", "provisioners", "packs", "perf_logging",
+	"host_apply_on_launch", "host_management", "host_import_exclusions", "agent_updates", "host_floor", "host_path", "provisioners", "packs", "perf_logging", "macos_user_mode",
 	"update_check", "promotion_target",
 	"providers", "model_facts", "profiles", "profile", "required_capabilities", "adapters",
 	// `agent_profiles` retired 2026-09-01, renamed to `pack_profiles` (the keys were

@@ -124,6 +124,7 @@ func ValidateConfig(config *jsonx.OrderedMap, workspace string, resolver Loophol
 	validateHostPath(config, workspace, errs)
 	validateProvisioners(config, workspace, errs, warns)
 	validatePerfLogging(config, workspace, errs)
+	validateMacosUserMode(config, workspace, errs)
 	validateUpdateCheck(config, workspace, errs)
 	validatePromotionTarget(config, workspace, errs)
 	validatePacks(workspace, errs)

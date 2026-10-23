@@ -223,7 +223,10 @@ var inheritCensus = map[string]keyDisposition{
 	// redeploy on different cadences; this file is a generated config an inner
 	// launcher reads as its own user scope, and it re-derives its own gate from it.
 	"perf_logging": {nested: true, reason: "an inner launcher times the launches it makes"},
-	"network":      {nested: true, reason: "the network mode an inner launcher gives its container"},
+	// `macos_user_mode` is the macos-user backend's account choice, read from the user config on
+	// a macOS host only. A nested jail is Linux and has no macos-user backend, so it is not inherited.
+	"macos_user_mode": {reason: "chooses the account a macos-user launch runs as on a macOS host; a nested jail is Linux and has no macos-user backend"},
+	"network":         {nested: true, reason: "the network mode an inner launcher gives its container"},
 	// `env_sources` is nested-only for a measured reason, not a judgement: its string
 	// entries are HOST FILE PATHS, and resolving them in-jail emits "env_sources file not
 	// found, skipping" on every in-jail check (measured 2026-08-14). An inner launcher

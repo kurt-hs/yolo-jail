@@ -1282,6 +1282,18 @@
     Example (~/.config/yolo-jail/config.jsonc):
       "perf_logging": true
 
+  [bold]macos_user_mode[/bold] ("self" | "account"): Which account a macos-user jail runs as.  Default "account".
+    "account" is the setup yolo runs today: the agent runs as the sandbox account
+    yolo provisions for it.  "self" is not available yet; a launch that finds it
+    refuses and names this key, so the refusal is not mistaken for protection.
+    Only the macos-user setup reads it; podman and Apple Container ignore it.
+
+    USER SCOPE ONLY.  It is read from your user config alone, so a workspace value is
+    a `yolo check` error and is never consulted -- and /workspace is writable by
+    whatever runs in the jail.
+    Example (~/.config/yolo-jail/config.jsonc):
+      "macos_user_mode": "account"
+
   [bold]update_check[/bold] (boolean): Enable update checks and notices.  Default TRUE.
     Every ordinary host command reads the cached answer.  For a release-based install,
     normally once a day it starts a detached request to GitHub's releases API;

@@ -1354,6 +1354,18 @@ func runRun(args []string) int {
 // a refusal closure is non-nil too.
 var launchRunPipeline = run.Run
 
+// macosUserModeRefusal is the launch's reading of the user-scope `macos_user_mode`
+// (MMP-D3). It returns the refusal line for a mode this build cannot run, or "" when
+// the launch may proceed. `self` is refused until its slice builds it, and the line
+// names the one next step: remove the key, which launches as today.
+func macosUserModeRefusal() string {
+	if v, set := config.MacosUserMode(); set && v == "self" {
+		return `macos_user_mode "self" is not built yet; remove it from ` + paths.UserConfigPath() +
+			` to launch as today`
+	}
+	return ""
+}
+
 // macosUserRun is the run.Options.MacosUserRun seam impl: it assembles the
 // real macosuser deps (the session runner of the launch's signal arm, and the
 // native darwin nix materialize) and runs the Seatbelt-sandboxed launch. repoRoot is the yolo-jail checkout root (the nix
@@ -1368,6 +1380,10 @@ func macosUserRun(cfg *jsonx.OrderedMap, workspace string, agents, agentArgv []s
 	repoRoot, packRoot string, homeOverlay macosuser.HomeOverlay, hostCtx macosuser.HostContext, dryRun bool,
 	packEnv *jsonx.OrderedMap, blocked []packload.BlockedTool, jailDaemons macosuser.JailDaemons,
 	arm *run.MacosUserArm, log *perf.Log) int {
+	if msg := macosUserModeRefusal(); msg != "" {
+		fmt.Fprintln(os.Stderr, msg)
+		return 1
+	}
 	materialize := func(nixRoot string, packages []any) (*macosuser.Darwin, bool, error) {
 		// system "" → darwinpkg.NativeSystem(), the running platform. NOT a
 		// hardcoded aarch64-darwin: this backend is macOS-only but Macs are not
