@@ -140,7 +140,7 @@ func TestAudienceFieldsRefusedOnOtherKinds(t *testing.T) {
 	refused := []struct{ raw, field string }{
 		{`{"kind":"program","bin":"claude","via":"npm","package":"c","agent":"claude"}`, "agent"},
 		{`{"kind":"program","bin":"claude","via":"npm","package":"c","agents":["claude"]}`, "agents"},
-		{`{"kind":"requires","bin":"claude","agent":"claude"}`, "agent"},
+		{`{"kind":"program","bin":"claude","agent":"claude"}`, "agent"},
 		{`{"kind":"state","at":".acme","agents":["claude"]}`, "agents"},
 		{`{"kind":"env","vars":{"A":"1"},"agent":"claude"}`, "agent"},
 	}

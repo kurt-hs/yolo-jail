@@ -116,7 +116,7 @@ func TestInstallHintsRefuseShellInThePackagePart(t *testing.T) {
 		{"NUL in the step", "fd-find && echo \x00", []string{`"\x00"`}},
 		{"lookalike letter in the step", "fd-find && \u0455udo ln -sf a b", []string{"\"\u0455\""}},
 	}
-	for _, kind := range []Kind{KindRequires, KindProgram} {
+	for _, kind := range []Kind{KindProgram, KindProgram} {
 		for _, tc := range cases {
 			t.Run(string(kind)+"/"+tc.name, func(t *testing.T) {
 				strict, tolerant := hintProblems(t, kind, tc.value)
@@ -166,7 +166,7 @@ func TestInstallHintsConventionalFormsDecode(t *testing.T) {
 		"fd-find && sudo ln -sf a b && hash -r",        // a step may chain like any shell; it is printed whole
 		"  fd-find  ",                                  // surrounding spaces are not a problem
 	} {
-		for _, kind := range []Kind{KindRequires, KindProgram} {
+		for _, kind := range []Kind{KindProgram, KindProgram} {
 			strict, tolerant := hintProblems(t, kind, value)
 			if len(strict) != 0 || len(tolerant) != 0 {
 				t.Errorf("%s hint %q refused: strict %v, tolerant %v", kind, value, strict, tolerant)

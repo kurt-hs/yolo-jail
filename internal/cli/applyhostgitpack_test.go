@@ -357,7 +357,7 @@ func TestHostExecReportsAnIncompletePackSetAndRefuses(t *testing.T) {
 func TestCheckDepsProbesAnInstalledGitPack(t *testing.T) {
 	repo := gitPackRepoWith(t, map[string]string{
 		"tools/agent-pack/pack.json": `{"name":"gp","contributes":[
-		  {"kind":"requires","bin":"yolo-test-git-pack-dep","install_hints":{"brew":"x","apt":"x"}}]}`,
+		  {"kind":"program","bin":"yolo-test-git-pack-dep","install_hints":{"brew":"x","apt":"x"}}]}`,
 	})
 	gitPackHome(t, "git+file://"+repo+"//tools/agent-pack?ref=main", "")
 	installGitPack(t)

@@ -1891,7 +1891,7 @@ func PlanInvariants(plan RunPlan) []string {
 	//   • launchercollision's imageProbePath — a pack's `program` launcher is
 	//     suppressed for a name the environment already provides, so a floor
 	//     missing from it lets a pack shadow git or node;
-	//   • AssertRequiredBins — a pack's `requires` entry warns as absent.
+	//   • AssertRequiredBins — a pack's recipe-less `program` entry warns as absent.
 	//
 	// All three answer WRONG rather than failing, and all three run in the
 	// bootstrap, which the launch argv's PATH never reaches. So the launch guard

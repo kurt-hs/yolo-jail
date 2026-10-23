@@ -104,7 +104,9 @@ func TestValidateContributes(t *testing.T) {
 	}{
 		{"good program", Contribution{Kind: KindProgram, Bin: "x", Via: "npm", Package: "p"}, ""},
 		{"unknown kind", Contribution{Kind: "mcp-server", Bin: "x"}, "unknown kind"},
-		{"program no via", Contribution{Kind: KindProgram, Bin: "x"}, "needs \"via\""},
+		// No via is a NEED (OQ-PS11), valid on its own; a recipe field beside it is refused.
+		{"program no via with a recipe field", Contribution{Kind: KindProgram, Bin: "x", Package: "x"},
+			`a program with no "via" does not take "package"`},
 		// `bin` is a bare program name, not a path: a host launch wrapper and a jail lazy
 		// launcher are both FILED at filepath.Join(dir, bin), so a bin carrying path
 		// structure writes an executable outside the generated dir (the wrap dir is
@@ -119,7 +121,7 @@ func TestValidateContributes(t *testing.T) {
 			"bare program name"},
 		{"program colon bin", Contribution{Kind: KindProgram, Bin: "a:b", Via: "npm", Package: "p"},
 			"bare program name"},
-		{"requires escaping bin", Contribution{Kind: KindRequires, Bin: "../x"}, "bare program name"},
+		{"requires escaping bin", Contribution{Kind: KindProgram, Bin: "../x"}, "bare program name"},
 		{"autonomy escaping launch bin", Contribution{Kind: KindAutonomy,
 			Autonomous: &AutonomyPosture{Launch: []AutonomyLaunch{{Bin: "../x"}}}},
 			"bare program name"},
@@ -347,7 +349,7 @@ func TestInstallContributionsReturnsEveryProgram(t *testing.T) {
 // carries no SelfInstall and is the only kind RequiredBins reports.
 func TestRequiresAssertsPresenceAndInstallsNothing(t *testing.T) {
 	m, probs := Decode([]byte(`{"name":"x","contributes":[
-	  {"kind":"requires","bin":"fzf","install_hints":{"brew":"fzf","apt":"fzf"}},
+	  {"kind":"program","bin":"fzf","install_hints":{"brew":"fzf","apt":"fzf"}},
 	  {"kind":"program","bin":"claude","via":"installer","url":"https://claude.ai/install.sh"}]}`))
 	if len(probs) != 0 {
 		t.Fatalf("a requires contribution should decode cleanly, got: %v", probs)
@@ -410,7 +412,7 @@ func TestSelfInstallCommandDerivation(t *testing.T) {
 				`yolo internal installer-check https://h/i.sh "$f" && bash "$f" </dev/null)`},
 		{"npm with no package", Contribution{Kind: KindProgram, Bin: "x", Via: "npm"}, ""},
 		{"installer with no url", Contribution{Kind: KindProgram, Bin: "x", Via: "installer"}, ""},
-		{"requires", Contribution{Kind: KindRequires, Bin: "x"}, ""},
+		{"requires", Contribution{Kind: KindProgram, Bin: "x"}, ""},
 	}
 	for _, tc := range cases {
 		if got := selfInstallCommand(tc.c); got != tc.want {
@@ -538,21 +540,21 @@ func TestTheInstallerRemedyRunsABashOnlyInstallerWhereShIsNotBash(t *testing.T) 
 // A `requires` carrying a program's install fields is the author confusing the two kinds,
 // and it is silent otherwise — the fields are simply never read, so the tool never installs
 // and nothing says why. Loud instead.
-func TestRequiresRejectsProgramInstallFields(t *testing.T) {
+func TestANeedRejectsProgramInstallFields(t *testing.T) {
 	_, probs := Decode([]byte(`{"name":"x","contributes":[
-	  {"kind":"requires","bin":"fzf","via":"npm","package":"fzf"}]}`))
+	  {"kind":"program","bin":"fzf","package":"fzf","url":"https://x"}]}`))
 	joined := strings.Join(probs, "\n")
-	for _, want := range []string{`does not take "via"`, `does not take "package"`} {
+	for _, want := range []string{`does not take "package"`, `does not take "url"`} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("problems should name the misplaced field (%s):\n%s", want, joined)
 		}
 	}
-	if !strings.Contains(joined, `kind "program"`) {
-		t.Errorf("the diagnostic should point at the kind that DOES install:\n%s", joined)
+	if !strings.Contains(joined, `Add a "via"`) {
+		t.Errorf("the diagnostic should name the fix that makes it install:\n%s", joined)
 	}
 
 	// And `bin` is still required.
-	_, noBin := Decode([]byte(`{"name":"x","contributes":[{"kind":"requires"}]}`))
+	_, noBin := Decode([]byte(`{"name":"x","contributes":[{"kind":"program"}]}`))
 	if !strings.Contains(strings.Join(noBin, "\n"), `needs "bin"`) {
 		t.Errorf("a requires with no bin must be a problem: %v", noBin)
 	}

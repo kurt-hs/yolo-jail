@@ -73,7 +73,7 @@ func detailFixture(t *testing.T) string {
 	writeFile(t, filepath.Join(packDir, "pack.json"),
 		`{"name":"detailpack","description":"d","contributes":[`+
 			`{"kind":"skills","from":"skills","into":".detail/skills"},`+
-			`{"kind":"requires","bin":"detailbin","install_hints":{"apt":"detailbin-pkg"}},`+
+			`{"kind":"program","bin":"detailbin","install_hints":{"apt":"detailbin-pkg"}},`+
 			`{"kind":"config","config":[{"agent":"dp","name":"settings","codec":"json",`+
 			`"path":"~/.dp/settings.json","mode":"rmw","managed":{"detailKey":"detailValue"}}]},`+
 			`{"kind":"briefing","from":"briefing/prose.md","into":".detail/AGENTS.md"}]}`)

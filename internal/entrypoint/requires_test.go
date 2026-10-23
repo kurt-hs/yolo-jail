@@ -22,7 +22,7 @@ func writeRequiresPack(t *testing.T, hints string, bins ...string) string {
 	}
 	var entries []string
 	for _, b := range bins {
-		e := `{"kind":"requires","bin":"` + b + `"`
+		e := `{"kind":"program","bin":"` + b + `"`
 		if hints != "" {
 			e += `,"install_hints":` + hints
 		}

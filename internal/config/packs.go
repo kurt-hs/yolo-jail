@@ -618,7 +618,7 @@ func validatePacks(workspace string, errs *[]string) {
 // whether a key names a real CLI is answered against the universe, always, and
 // selection only decides whether the chosen profile renders.
 //
-// `program` contributions only. A `requires` entry ASSERTS a binary exists and
+// `program` contributions with a recipe only. One with no recipe ASSERTS a binary exists and
 // installs nothing, so it puts no name in the namespace a user can select a profile
 // by — and a bin yolo does not install is not a bin a profile can gate.
 //

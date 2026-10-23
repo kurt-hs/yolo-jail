@@ -447,7 +447,7 @@ func TestPackLintValidatesManifest(t *testing.T) {
 	packMain([]string{"init", dir}, &out, &errw, false) // valid skeleton (skills + briefing/)
 
 	// A manifest with an unknown kind AND a missing required field.
-	manifest := `{"contributes":[{"kind":"nonsense"},{"kind":"program","bin":"x"}]}`
+	manifest := `{"contributes":[{"kind":"nonsense"},{"kind":"program","bin":"x","via":"npm"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "pack.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -461,7 +461,7 @@ func TestPackLintValidatesManifest(t *testing.T) {
 		t.Errorf("lint did not report the unknown kind:\n%s", got)
 	}
 	// It must report EVERY problem, not stop at the first — the whole reason to lint.
-	if !strings.Contains(got, "via") {
+	if !strings.Contains(got, "package") {
 		t.Errorf("lint did not also report the missing program field (should report all):\n%s", got)
 	}
 }

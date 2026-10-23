@@ -27,7 +27,7 @@ func TestInterceptRefusesWhatNoShimCouldRun(t *testing.T) {
 		"forwards itself": {`{"kind":"intercept","bin":"gh","forward":["gh","x"]}`, "exec itself"},
 		"empty word":      {`{"kind":"intercept","bin":"gh","forward":["yolo",""]}`, "empty word"},
 		"a refusal field": {`{"kind":"intercept","bin":"gh","forward":["yolo"],"message":"no"}`, `does not take "message"`},
-		"forward elsewhere": {`{"kind":"requires","bin":"gh","forward":["yolo"]}`,
+		"forward elsewhere": {`{"kind":"program","bin":"gh","forward":["yolo"]}`,
 			`does not take "forward"`},
 	} {
 		t.Run(name, func(t *testing.T) {

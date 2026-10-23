@@ -197,7 +197,7 @@ func TestApplyHostAssertRefusesAnUnattendedInstall(t *testing.T) {
 // yolo never installs a `requires`. The remedy is still NAMED — the user is the actor.
 func TestApplyHostAssertRefusesAMissingRequiresWithoutOfferingAnInstall(t *testing.T) {
 	home, briefing, cfgDest, _ := depGateFixtureWithConfig(t,
-		`{"kind":"requires","bin":"reqbin","install_hints":{"apt":"reqbin-pkg"}}`)
+		`{"kind":"program","bin":"reqbin","install_hints":{"apt":"reqbin-pkg"}}`)
 	ran := watchInstalls(t, nil)
 
 	var out, errw bytes.Buffer

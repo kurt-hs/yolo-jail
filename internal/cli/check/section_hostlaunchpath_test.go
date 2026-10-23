@@ -81,8 +81,8 @@ func runLaunchPathSection(o *Options) (string, *reporter) {
 // this fails.
 func TestCheckHostLaunchPathSaysWhichPathItRead(t *testing.T) {
 	o, home, pathDir := launchPathCheckFixture(t, `{"host_path": ["~/tools/bin", "~/absent/bin"]}`,
-		`{"kind":"requires","bin":"yolo-hp-tool"}`,
-		`{"kind":"requires","bin":"yolo-hp-missing"}`,
+		`{"kind":"program","bin":"yolo-hp-tool"}`,
+		`{"kind":"program","bin":"yolo-hp-missing"}`,
 		`{"kind":"program","bin":"floorcli","via":"npm","package":"floorcli-pkg"}`)
 	tool := filepath.Join(home, "tools", "bin", "yolo-hp-tool")
 	writeCheckFile(t, tool, "#!/bin/sh\n", 0o755)
@@ -163,7 +163,7 @@ func TestCheckHostLaunchPathIsSilentWithNothingToSay(t *testing.T) {
 	if out, _ := runLaunchPathSection(o); out != "" {
 		t.Errorf("section printed with nothing to say:\n%s", out)
 	}
-	o, _, _ = launchPathCheckFixture(t, `{"host_path": ["/opt/x/bin"]}`, `{"kind":"requires","bin":"rg"}`)
+	o, _, _ = launchPathCheckFixture(t, `{"host_path": ["/opt/x/bin"]}`, `{"kind":"program","bin":"rg"}`)
 	get := o.Getenv
 	o.Getenv = func(k string) string {
 		if k == "YOLO_VERSION" {

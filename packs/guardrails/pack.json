@@ -25,7 +25,7 @@
     //   dnf: https://packages.fedoraproject.org/pkgs/rust-ripgrep/ripgrep/fedora-rawhide.html#files
     //   nix: https://raw.githubusercontent.com/NixOS/nixpkgs/nixos-unstable/pkgs/by-name/ri/ripgrep/package.nix
     //   pacman: https://archlinux.org/packages/extra/x86_64/ripgrep/files/
-    { "kind": "requires", "bin": "rg", "install_hints": {"brew": "ripgrep", "apt": "ripgrep", "dnf": "ripgrep", "nix": "ripgrep", "pacman": "ripgrep"} },
+    { "kind": "program", "bin": "rg", "install_hints": {"brew": "ripgrep", "apt": "ripgrep", "dnf": "ripgrep", "nix": "ripgrep", "pacman": "ripgrep"} },
     // Where each package name came from, one line per manager, checked 2026-10-02. Each package
     // installs `fd` on PATH (/usr/bin/fd in the file lists, bin/fd in Homebrew's formula source,
     // mainProgram "fd" in nixpkgs) except apt's, below.
@@ -42,7 +42,7 @@
     // https://sources.debian.org/src/rust-fd-find/10.2.0-1/debian/README.Debian/
     // A bundle file cannot hold the step, so `yolo check-deps` leaves fd out of it and prints
     // this command beside the bundle's (internal/depcheck bundleToken).
-    { "kind": "requires", "bin": "fd", "install_hints": {"brew": "fd", "apt": "fd-find && sudo ln -sf /usr/lib/cargo/bin/fd /usr/local/bin/fd", "dnf": "fd-find", "nix": "fd", "pacman": "fd"} },
+    { "kind": "program", "bin": "fd", "install_hints": {"brew": "fd", "apt": "fd-find && sudo ln -sf /usr/lib/cargo/bin/fd /usr/local/bin/fd", "dnf": "fd-find", "nix": "fd", "pacman": "fd"} },
     { "kind": "env", "vars": {"GIT_OPTIONAL_LOCKS": "0"} }
   ]
 }

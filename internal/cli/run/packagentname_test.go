@@ -90,7 +90,7 @@ func TestLaunchAcceptsAContentPackRequiringTheAgentsBinary(t *testing.T) {
 			{"kind":"program","bin":"claude","via":"npm","package":"@anthropic-ai/claude-code"},
 			{"kind":"briefing","into":".claude/CLAUDE.md","agent":"claude"}]}`,
 		"house-rules", `{"contributes":[
-			{"kind":"requires","bin":"claude"},
+			{"kind":"program","bin":"claude"},
 			{"kind":"briefing","from":"prose/claude.md","agents":["claude"]}]}`)
 
 	if _, _, _, err := o.stagePacks("yolo-test-agentname-requires"); err != nil {

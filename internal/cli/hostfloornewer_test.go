@@ -129,8 +129,8 @@ func TestCheckDepsFailsOverANewerYolosFloorRecord(t *testing.T) {
 	const recheck = "\n  yolo check-deps  # check again\n"
 	for _, tc := range []struct{ name, others string }{
 		{"the floor's program alone", ""},
-		{"a dep present too", `,{"kind":"requires","bin":"sh"}`},
-		{"a dep missing too", `,{"kind":"requires","bin":"yolo-cd-absent"}`},
+		{"a dep present too", `,{"kind":"program","bin":"sh"}`},
+		{"a dep missing too", `,{"kind":"program","bin":"yolo-cd-absent"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			floorHostFixtureWith(t,

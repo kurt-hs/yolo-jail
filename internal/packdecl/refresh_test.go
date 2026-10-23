@@ -62,7 +62,7 @@ func TestRefreshSurvivesDecodeAndProjection(t *testing.T) {
 // have no program, so a refresh on any of them is read by no consumer.
 func TestRefreshIsRefusedOnKindsWithNoLauncher(t *testing.T) {
 	for _, entry := range []string{
-		`{"kind":"requires","bin":"fzf","refresh":{"argv":["x"],"lock":"a/b"}}`,
+		`{"kind":"program","bin":"fzf","refresh":{"argv":["x"],"lock":"a/b"}}`,
 		`{"kind":"skills","into":".claude/skills","refresh":{"argv":["x"],"lock":"a/b"}}`,
 	} {
 		_, probs := Decode([]byte(`{"name":"x","contributes":[` + entry + `]}`))
@@ -220,7 +220,7 @@ func TestProbeRefusesMalformedArguments(t *testing.T) {
 		t.Errorf("the probe did not survive the projection: %q", got)
 	}
 	for _, tc := range []struct{ name, entry, want string }{
-		{"on a non-program", `{"kind":"requires","bin":"fzf","probe_args":["--version"]}`, `does not take "probe_args"`},
+		{"on a non-program", `{"kind":"program","bin":"fzf","probe_args":["--version"]}`, `does not take "probe_args"`},
 		{"an empty list", `{"kind":"program","bin":"t","via":"npm","package":"t","probe_args":[]}`, "probe_args: an empty list makes nothing a version probe"},
 		{"an empty argument", `{"kind":"program","bin":"t","via":"npm","package":"t","probe_args":["--version",""]}`, "probe_args[1]"},
 		{"a spaced argument", `{"kind":"program","bin":"t","via":"npm","package":"t","probe_args":["--ver sion"]}`, "probe_args[0]"},

@@ -11,7 +11,7 @@ import (
 func TestKnownKindsCoverEveryConstant(t *testing.T) {
 	// Every declared Kind constant must be registered.
 	for _, k := range []Kind{
-		KindProgram, KindRequires, KindSkills, KindBriefing, KindFiles, KindConfig,
+		KindProgram, KindProgram, KindSkills, KindBriefing, KindFiles, KindConfig,
 		KindConfigOverlay, KindState, KindReadsHost, KindMount, KindEnv,
 		KindHook, KindAutonomy, KindProfile, KindProvider, KindLoophole,
 		KindService, KindAdapter, KindConfigList, KindModels, KindMCP,
@@ -28,8 +28,8 @@ func TestKnownKindsCoverEveryConstant(t *testing.T) {
 			t.Errorf("kind %q has an empty Claims description", k)
 		}
 	}
-	if got := len(KnownKinds()); got != 23 {
-		t.Errorf("KnownKinds() has %d entries, want 23 — a kind was added/removed without updating the test", got)
+	if got := len(KnownKinds()); got != 22 {
+		t.Errorf("KnownKinds() has %d entries, want 22 — a kind was added/removed without updating the test", got)
 	}
 }
 
@@ -82,13 +82,9 @@ func TestCombineRulesMatchDesign(t *testing.T) {
 		KindConfigList: CombineOverlay,
 		KindReadsHost:  CombineShared,
 		KindMount:      CombineShared,
-		// requires is SHARED, not exclusive: many packs may require one binary, and none
-		// owns a path for it. That is the difference from program, which is exclusive
-		// precisely because it owns a launcher filename.
-		KindRequires: CombineShared,
-		KindEnv:      CombineMerge,
-		KindState:    CombineScoped,
-		KindHook:     CombinePerHook,
+		KindEnv:        CombineMerge,
+		KindState:      CombineScoped,
+		KindHook:       CombinePerHook,
 		// loophole is EXCLUSIVE by loophole NAME (the module dir's basename), the same rule
 		// program has per bin — so one pack shipping three loopholes is ordinary and two
 		// packs shipping one name is not. Name-keyed exclusivity needs its own pass

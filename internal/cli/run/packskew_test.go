@@ -235,7 +235,7 @@ func legacyTreeThisBuildRefuses(t *testing.T, cname string) string {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writePack(t, dir, `{"name":"claude","contributes":[{"kind":"program","bin":"claude"}]}`)
+	writePack(t, dir, `{"name":"claude","contributes":[{"kind":"program","bin":"claude","via":"npm"}]}`)
 	if _, err := loadUnrecordedPackTree(legacy); err == nil {
 		t.Fatal("this build reads the fixture's manifest, so it no longer stands for one it refuses")
 	}

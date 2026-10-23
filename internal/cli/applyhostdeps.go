@@ -1,6 +1,6 @@
 package cli
 
-// applyhostdeps.go resolves a pack's `program` AND `requires` contributions into the invoking
+// applyhostdeps.go resolves a pack's `program` contributions, with a recipe and without one, into the invoking
 // host's REAL dep state for `yolo host apply` (pack-host-management-plan.md Phase 8). It
 // replaces a static line — "install below jail is confirm-gated; not run by apply --host yet" —
 // which was true and useless: the gate is real, but the line never said WHICH binary was
@@ -8,8 +8,8 @@ package cli
 //
 // Both kinds share this path because below the jail notch they ask the host the same question
 // (yolo bakes no image there, so every dep is the host's); they differ in what they do to a
-// JAIL, where `program` gets a launcher and `requires` gets an assertion. The report names
-// which kind asked, since "yolo would install this" and "this must already exist" send the
+// JAIL, where a recipe gets a launcher and a need gets an assertion. The report names
+// which shape asked, since "yolo would install this" and "this must already exist" send the
 // reader to different places.
 //
 // The probe is internal/depcheck, the same checker `yolo check-deps` calls, over the same
@@ -98,14 +98,13 @@ func (h *hostDeps) state(c packdecl.Contribution) hostDepState {
 	}
 }
 
-// isDepKind reports whether a contribution feeds the host dep probe. Both `program` and
-// `requires` do, and deliberately: below the jail notch yolo bakes no image, so "yolo would
-// install this" and "this must already exist" are the same question about the host. They
-// differ in what they do to a JAIL, not in what they ask of a host — which is why
-// DepRequirements folds them together and this predicate has to as well, or a `requires`
-// would be counted for the report and not probed (or vice versa).
+// isDepKind reports whether a contribution feeds the host dep probe: every `program`, with a
+// recipe or without one (a need), and deliberately: below the jail notch yolo bakes no image,
+// so "yolo would install this" and "this must already exist" are the same question about the
+// host. The two shapes differ in what they do to a JAIL, not in what they ask of a host —
+// which is why DepRequirements folds them together and this predicate has to as well.
 func isDepKind(k packdecl.Kind) bool {
-	return k == packdecl.KindProgram || k == packdecl.KindRequires
+	return k == packdecl.KindProgram
 }
 
 // resolveHostDeps probes the host for every binary this pack's program/requires
@@ -200,7 +199,7 @@ func probeHostDeps(loaded []*packload.Pack, fields render.FieldSet,
 				continue
 			}
 			survey.noteDep(c.Bin, h.finding(c))
-			survey.noteDepDeclarer(c.Bin, p.Name, c.Kind)
+			survey.noteDepDeclarer(c.Bin, p.Name, c.IsNeed())
 		}
 	}
 	return pf
@@ -290,14 +289,14 @@ func packDepRequirements(p *packload.Pack) []depcheck.Requirement {
 type hostDepFinding struct {
 	// State is the three-way answer (see hostDepState).
 	State hostDepState
-	// Kind is which of the two dep kinds asked — and it is carried for the OFFER, not for
-	// the probe. OQ-RO7 splits them at exactly that point: both kinds are FATAL when the
-	// binary is missing, and only `program` is offered an install, because offering to
-	// install a `requires` would contradict the kind's own definition (it asserts a binary
-	// must ALREADY exist; yolo never installs one). isDepKind stays folded because the
-	// question asked of the HOST is identical; this field is what the answer is acted on
-	// with. See applyhostdepgate.go.
-	Kind packdecl.Kind
+	// Need is whether the declaring `program` carries no recipe — and it is carried for the
+	// OFFER, not for the probe. OQ-RO7 splits the shapes at exactly that point: both are FATAL
+	// when the binary is missing, and only a recipe is offered an install, because offering to
+	// install a need would contradict its definition (it asserts a binary must ALREADY exist;
+	// yolo never installs one for it). isDepKind stays folded because the question asked of the
+	// HOST is identical; this field is what the answer is acted on with. See
+	// applyhostdepgate.go.
+	Need bool
 	// Remedy is the install command depcheck resolved for the detected manager, or "" when
 	// nothing covers it. Empty for a present or unprobed dep, which need no remedy.
 	Remedy string
@@ -323,7 +322,7 @@ type hostDepFinding struct {
 // answer becomes report material, so the line, the survey's counts and the group's remedy are
 // three renderings of one fact rather than three readings of the probe.
 func (h *hostDeps) finding(c packdecl.Contribution) hostDepFinding {
-	f := hostDepFinding{State: h.state(c), Kind: c.Kind}
+	f := hostDepFinding{State: h.state(c), Need: c.IsNeed()}
 	if f.State == depUnpublished {
 		f.Unpublished = h.byBin[c.Bin].Unpublished
 	}
@@ -360,8 +359,8 @@ func rankedNote(r depcheck.Result) string {
 // malformed cases report why they could not be probed rather than going quiet, which is the G1
 // failure mode the caller's kind census exists to prevent.
 //
-// The kind is printed from the contribution rather than hardcoded, because `program` and
-// `requires` share this reporting path and the difference matters to the reader: one means
+// The kind is printed from the contribution rather than hardcoded, because a recipe and
+// a need share this reporting path and the difference matters to the reader: one means
 // "yolo would install this into a jail", the other "this must already exist". Same probe,
 // different claim.
 func (h *hostDeps) depLine(c packdecl.Contribution) string {
@@ -408,8 +407,8 @@ func (h *hostDeps) depLine(c packdecl.Contribution) string {
 // declared a via and no matching hint. It is GONE from this path because it no longer
 // reaches it: a well-formed `program` now derives its remedy FROM that very via (the tool's
 // own installer, preferred over a package-manager hint — see depcheck's selfInstallFlavor),
-// so having a via means having a remedy. What is left here is a `requires` (which installs
-// nothing by definition) or a program whose via/package is malformed, and `pack lint` is the
+// so having a via means having a remedy. What is left here is a need (a `program` with no
+// recipe, which installs nothing by definition) or a program whose via/package is malformed, and `pack lint` is the
 // verb for the second.
 //
 // mgr is "" when the launch PATH holds no package manager depcheck knows. Then no hint can be the
@@ -426,9 +425,9 @@ func noRemedyReason(c packdecl.Contribution, mgr string) string {
 	if mgr != "" {
 		forMgr = " for " + mgr
 	}
-	if c.Kind == packdecl.KindRequires {
-		return "the pack declares no install_hints for it, and a `requires` " +
-			"binary is never installed by yolo — install it yourself" + forMgr
+	if c.IsNeed() {
+		return "the pack declares no install_hints for it, and it is a `program` with no " +
+			"recipe, which yolo never installs — install it yourself" + forMgr
 	}
 	return "the pack declares no install_hints, so there is nothing to run" + forMgr
 }

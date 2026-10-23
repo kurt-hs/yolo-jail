@@ -336,7 +336,7 @@ func TestConfigRenderReportsAMalformedPackAndFoldsNothingFromIt(t *testing.T) {
 // `yolo check-deps` probes nothing a malformed pack declares, names the pack with its problem,
 // and exits non-zero: an unprobed pack is not a clean bill of health.
 func TestCheckDepsNamesAMalformedPackAndProbesNothingFromIt(t *testing.T) {
-	const dep = `{"kind":"requires","bin":"yolo-test-malformed-pack-dep"},`
+	const dep = `{"kind":"program","bin":"yolo-test-malformed-pack-dep"},`
 	for _, malformed := range []bool{true, false} {
 		malformedPackHome(t, dep, malformed, "")
 		var out, errw bytes.Buffer

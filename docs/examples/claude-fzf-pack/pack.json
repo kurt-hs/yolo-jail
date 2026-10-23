@@ -13,7 +13,7 @@
     //   pacman: https://archlinux.org/packages/extra/x86_64/fd/files/
     //   nix: https://raw.githubusercontent.com/NixOS/nixpkgs/nixos-unstable/pkgs/by-name/fd/fd/package.nix
     {
-      "kind": "requires",
+      "kind": "program",
       "bin": "fd",
       "install_hints": { "brew": "fd", "apt": "fd-find && sudo ln -sf /usr/lib/cargo/bin/fd /usr/local/bin/fd", "dnf": "fd-find", "pacman": "fd", "nix": "fd" }
     },
@@ -26,7 +26,7 @@
     //   pacman: https://archlinux.org/packages/extra/x86_64/fzf/files/
     //   nix: https://raw.githubusercontent.com/NixOS/nixpkgs/nixos-unstable/pkgs/by-name/fz/fzf/package.nix
     {
-      "kind": "requires",
+      "kind": "program",
       "bin": "fzf",
       "install_hints": { "brew": "fzf", "apt": "fzf", "dnf": "fzf", "pacman": "fzf", "nix": "fzf" }
     },

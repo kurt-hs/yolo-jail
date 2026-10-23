@@ -72,7 +72,7 @@ func (m *Manifest) ProviderKeys(bin string) []ProviderKey {
 		return nil
 	}
 	for _, c := range m.Contributions() {
-		if c.Kind != KindProgram || c.Bin != bin {
+		if !c.Provides() || c.Bin != bin {
 			continue
 		}
 		var out []ProviderKey
@@ -96,7 +96,7 @@ func (m *Manifest) ProviderKeysFor(surface string) []ProviderKey {
 	var out []ProviderKey
 	seen := map[string]bool{}
 	for _, c := range m.Contributions() {
-		if c.Kind != KindProgram || seen[c.Bin] {
+		if !c.Provides() || seen[c.Bin] {
 			continue
 		}
 		seen[c.Bin] = true
@@ -122,7 +122,7 @@ func (m *Manifest) validateProviderKeys() []string {
 		label := fmt.Sprintf("provider_keys[%q]", bin)
 		owned := false
 		for _, c := range m.Contributions() {
-			if bin != "" && c.Kind == KindProgram && c.Bin == bin && !c.IsFork() {
+			if bin != "" && c.Provides() && c.Bin == bin && !c.IsFork() {
 				owned = true
 				break
 			}

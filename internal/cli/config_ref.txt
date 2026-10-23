@@ -1182,7 +1182,7 @@
   [bold]host_path[/bold] (list of folders): Folders `yolo host` searches after the PATH it was
     started with.  Default: none.
     yolo looks for the programs your packs need (`rg` for the guardrails pack, a
-    pack's `requires`, an agent outside the floor -- see [bold]host_floor[/bold]) and
+    pack's recipe-less `program`, an agent outside the floor -- see [bold]host_floor[/bold]) and
     for the command you name with `yolo host --` on the PATH it was started
     with -- it cannot know where you keep your tools any other way.  A
     terminal's PATH usually has them; a Waybar button, a cron job or a hotkey
@@ -1238,7 +1238,7 @@
     under "own" the next `yolo host apply --assert` removes the floor's copy.
     nix is the exception for now: the floor keeps an agent ranked to nix on its
     own recipe, and `yolo check` warns, so nix supplies only what the floor does
-    not hold, such as a pack's `requires`.
+    not hold, such as a pack's recipe-less `program`.
     "per_package" gives one program its own order, replacing "host" for it;
     an order naming a provisioner no selected pack has a recipe for is a
     `yolo check` error.
@@ -1627,6 +1627,7 @@
     A pack.json declares effects as a "contributes" list, one entry per effect with a
     "kind" from the closed set:
       program       a tool on PATH: {bin, via:"npm"|"installer"|"source"|"pack", package|url, flags}
+                    — or {bin} with NO via, a NEED (see below the intercept entry).
                     yolo INSTALLS it, via a lazy launcher in ~/.yolo/bin/launch (last on
                     PATH, so it never shadows a baked binary).  Sole-owned by `bin`, so a
                     pack may declare SEVERAL programs (different bins) and each gets its
@@ -1705,12 +1706,16 @@
                     permissions over an existing CLI: the `github` pack routes `gh` to
                     a host broker.  forward[0] is a bare program name on the jail's PATH
                     and never <bin> itself.  A blocked-tool for the same name wins.
-      requires      {bin} — a binary that must ALREADY exist.  Asserts presence and
-                    installs nothing: no launcher, nothing on PATH, so it cannot shadow
-                    anything.  In a jail an absent bin is reported by name at boot (a
-                    warning, not a boot failure).  Many packs may require one binary —
-                    unlike program it owns no path, so it never collides.
-                    Both program and requires take optional
+                    A program with NO via is a NEED: {bin}, optionally install_hints,
+                    and nothing else.  Another SELECTED pack's program for the same bin
+                    satisfies it, whatever recipe that pack carries, and the launch
+                    names the provider; with no provider it must ALREADY exist —
+                    asserted at boot, reported by name when absent (a warning, not a
+                    boot failure), never installed.  A need owns no path, so many
+                    packs may need one bin.  Two selected packs carrying a recipe for
+                    one bin refuse the launch, naming both: drop one from `packs`.
+                    The old kind "requires" is refused; write it as a program with no
+                    via.  Every program takes optional
                       install_hints {"brew"|"brew-cask"|"apt"|"dnf"|"pacman"|"nix": pkg}
                     naming the package that provides `bin` on a host package manager,
                     which `yolo check-deps` / `yolo host apply` print as the remedy for
@@ -1719,7 +1724,7 @@
                     a program, the pack's OWN installer (its via/url/package) is
                     preferred over a hint — a tool shipping its own installer ships its
                     own updater, while a distro package pins whatever that repo has.
-                    So hints matter most on `requires`, where yolo installs nothing.
+                    So hints matter most on a need, where yolo installs nothing.
       skills        {from (pack dir), into (~ dir)} — merged (built-in < pack < yours).
                     `from` IS honored, at both notches and by wrapped-plugin discovery; it
                     defaults to skills/.  A `from` naming a dir the pack lacks delivers

@@ -640,7 +640,7 @@ func TestHostApplyVerdictNamesAMissingDependency(t *testing.T) {
 	packDir := filepath.Join(t.TempDir(), "needy")
 	writeFile(t, filepath.Join(packDir, "pack.json"),
 		`{"name":"needy","description":"d","contributes":[`+
-			`{"kind":"requires","bin":"yolo-absent-probe-bin"}]}`)
+			`{"kind":"program","bin":"yolo-absent-probe-bin"}]}`)
 	selectPacksWith(t, home, `"claude",{"source":"file://`+packDir+`","name":"needy"}`, `,"host_management":"own"`)
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))

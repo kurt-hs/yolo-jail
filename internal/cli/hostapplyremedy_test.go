@@ -235,7 +235,7 @@ func twoPacksOneMissingBinFixture(t *testing.T) string {
 	for _, name := range []string{"deponeA", "deponeB"} {
 		dir := filepath.Join(t.TempDir(), name)
 		writeFile(t, filepath.Join(dir, "pack.json"), `{"name":"`+name+`","contributes":[`+
-			`{"kind":"requires","bin":"sharedbin","install_hints":{"apt":"shared-pkg"}}]}`)
+			`{"kind":"program","bin":"sharedbin","install_hints":{"apt":"shared-pkg"}}]}`)
 		sources = append(sources, `"file://`+dir+`"`)
 	}
 	selectPacksWith(t, home, strings.Join(sources, ","), `,"host_management":"own"`)

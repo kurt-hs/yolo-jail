@@ -7,7 +7,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostpath"
-	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -62,10 +61,11 @@ func hostChildLaunch(lp *hostpath.Launch) *hostpath.Launch { return lp.Child() }
 // puts beside a program.
 type depDeclarers struct{ requires, programs []string }
 
-// note records one declaration. A pack is recorded once per kind.
-func (d *depDeclarers) note(pack string, k packdecl.Kind) {
+// note records one declaration: a need (a `program` with no recipe) or a program the pack
+// installs. A pack is recorded once per shape.
+func (d *depDeclarers) note(pack string, need bool) {
 	list := &d.programs
-	if k == packdecl.KindRequires {
+	if need {
 		list = &d.requires
 	}
 	for _, p := range *list {
@@ -88,8 +88,8 @@ func (d *depDeclarers) miss(bin string, launch bool) hostpath.Miss {
 	return m
 }
 
-// declarersOf is every binary the packs' `program` and `requires` contributions declare, with the
-// packs that declare it.
+// declarersOf is every binary the packs' `program` contributions declare, with a recipe or as a
+// need (no recipe), with the packs that declare it.
 func declarersOf(packs []*packload.Pack) map[string]*depDeclarers {
 	out := map[string]*depDeclarers{}
 	for _, p := range packs {
@@ -107,7 +107,7 @@ func declarersOf(packs []*packload.Pack) map[string]*depDeclarers {
 				d = &depDeclarers{}
 				out[c.Bin] = d
 			}
-			d.note(p.Name, c.Kind)
+			d.note(p.Name, c.IsNeed())
 		}
 	}
 	return out

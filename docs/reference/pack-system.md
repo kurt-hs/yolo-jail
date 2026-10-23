@@ -515,8 +515,8 @@ the semantic axis, and it is short:
 
 | Combine | Meaning | Kinds that use it |
 | :--- | :--- | :--- |
-| **Exclusive** | one owner per target; a second claim is an error | `program` (by bin) · `files` (by path) · `config` (by surface identity) · `autonomy` · `loophole` (by loophole name) · `service` (by service name) · `provider` (by provider name) · `mcp` (by server name) · `adapter` (by `from → to` pair) · `blocked-tool` (by bin) · `intercept` (by bin) · `profile` (by pack + name) |
-| **Shared** | many independent claimants are the ordinary case | `requires` · `reads-host` · `mount` |
+| **Exclusive** | one owner per target; a second claim is an error | `program` with a recipe (by bin) · `files` (by path) · `config` (by surface identity) · `autonomy` · `loophole` (by loophole name) · `service` (by service name) · `provider` (by provider name) · `mcp` (by server name) · `adapter` (by `from → to` pair) · `blocked-tool` (by bin) · `intercept` (by bin) · `profile` (by pack + name) |
+| **Shared** | many independent claimants are the ordinary case | `program` with no recipe ([a need](#program-needs)) · `reads-host` · `mount` |
 | **Merge** | many inputs into one target is the feature | `skills` · `env` (a key claimed twice collides) |
 | **Concat** | ordered concatenation | `briefing` |
 | **Overlay** | ordered after the target's owner, never a collision | `config-overlay` (later wins, per-key provenance) · [`config-list`](#adding-entries-to-an-array-config-list) (entries appended, first occurrence wins) · `models` (a provider's model list: every `add` appended, then every `only` intersected, the user's own `providers.<name>.models` last; [providers.md](providers.md#model-lists-shaped-by-packs)) |
@@ -548,9 +548,14 @@ because they do not fit that shape, and all four live in `internal/packload/foot
   only namespace that is. A pack claims one by installing its launcher (`program`) or by
   declaring where that agent reads (`briefing`/`skills` `agent`). Two packs claiming one
   name is fatal at launch, at `yolo host apply` and at `yolo check` — and two of the three
-  claiming kinds merge by design, so the generic loop cannot express it. `requires` is deliberately **not** a claim on the
-  name: it is Shared for a reason, and a content pack asserting `claude` beside the pack
-  that provides it is an ordinary dependency.
+  claiming kinds merge by design, so the generic loop cannot express it. A `program` with
+  no recipe is deliberately **not** a claim on the name: it is Shared for a reason, and a
+  content pack needing `claude` beside the pack that provides it is an ordinary dependency.
+- **`ProgramProviderCollisions`** — two selected packs carrying a recipe for one `program`
+  bin ([PS-D18](../design/provisioner-sets.md#PS-D18)). Fatal at launch, at `yolo host
+  apply` and at `yolo check`, naming every provider and saying to drop all but one from
+  `packs`. A clash made only of `program` claims is reported here and not again as an
+  agent-name collision.
 - **`ConfigSurfaceCollisions`** — see [config surfaces](#config-surfaces-and-the-compose-engine);
   a pack can commit this against *itself*, which the generic loop skips.
 - **`LoopholeNameCollisions`** — the claims come from a file outside `pack.json`.
@@ -563,7 +568,13 @@ rule is not derivable from the field name — and the traps.
 
 #### `program`
 
-Installs a tool and puts it on PATH via a launcher that installs on first invocation — and
+One kind with two shapes, told apart by whether the entry carries a **recipe**: a `via` and
+the fields that value needs ([OQ-PS11](../design/provisioner-sets.md#OQ-PS11) and
+[OQ-PS5](../design/provisioner-sets.md#OQ-PS5), ruled 2026-10-23). With a recipe, yolo
+installs the program, as the rest of this section describes. With none, the entry is a
+[need](#program-needs).
+
+A `program` with a recipe installs a tool and puts it on PATH via a launcher that installs on first invocation — and
 thereafter mediates **every** invocation, which is what keeps an agent dependency current.
 The launcher goes in `~/.yolo/bin/launch/<bin>`, which is **second** on PATH: immediately
 after the blocked-tool shims (which stay first, because interception must outrank
@@ -1307,22 +1318,28 @@ is dropped. A fork whose pin is
 gone keeps its floor copy, unrun, until the next `yolo host apply --assert` removes it. A fork is
 never polled for an update.
 
-#### `requires`
+<a id="program-needs"></a>
 
-A binary that must **already exist**. Asserts presence and installs nothing — no launcher,
-nothing on PATH — so unlike `program` it cannot shadow the very binary it asserts.
+#### A `program` with no recipe: a need
 
-`program` and `requires` are *install* vs *presence*, and conflating them was a real defect:
-a pack needing a tool the image already bakes, or the user already has, had only `program`,
-so it either lied — declaring an npm install for a baked binary, which then shadowed it — or
-declared nothing and lost `install_hints` entirely.
+`{"kind": "program", "bin": "fzf"}`, with no `via`, says the pack needs `fzf` on PATH and
+installs nothing for it. It takes `bin` and `install_hints` and nothing else; any other field
+is refused by name, with the two fixes (add a `via`, or delete the field). One pack declares a
+bin once, so a need beside the same pack's own recipe for that bin is refused too.
 
-`via`/`package`/`url`/`update`/`refresh` are **refused by name**: those belong to `program`, and a
-`requires` carrying one is the author reaching for the other kind. At the jail and guest
-notches a missing bin is a **warning naming the bin**, never a boot failure — the pack's
-other contributions are fine, and a fatal here would stop the jail you need in order to fix
-the pack. At the host notch it feeds `check-deps` / `apply` exactly as `program`'s hints do,
-which is what lets a content-only pack carry a remedy.
+What satisfies a need is decided across the **selected** packs only, by the
+[OQ-BH14](jail-home.md#reserving-a-name-is-not-creating-a-directory) selection rule: an
+unselected pack is treated as if it does not exist.
+
+| Selected packs carrying a recipe for the bin | What happens |
+| :--- | :--- |
+| exactly one | **Satisfied by that pack**, whatever its recipe: npm, an installer, a fork, its own tree. The launch prints `program <bin>, needed by pack <A>, is provided by pack <B>`, `yolo check` passes with the same line, and the jail's boot log records it. The provider's launcher installs the program. |
+| two or more | **Refused** at launch, at `yolo host apply` and at `yolo check`, naming every provider and saying to drop all but one from `packs` ([PS-D18](../design/provisioner-sets.md#PS-D18)). The user chooses the provider by choosing the pack, so yolo does not pick. |
+| none | The binary must **already exist**. In a jail or guest a missing bin is a **warning naming the bin**, never a boot failure: the pack's other contributions are fine, and a fatal here would stop the jail you need in order to fix the pack. At the host it feeds `check-deps` and `host apply` exactly as a recipe's hints do, which is what lets a content-only pack carry a remedy, and it is never offered an install. |
+
+A need generates nothing, so it cannot shadow the binary it names, and many packs may need one
+bin. This is what the retired `requires` kind declared. That kind is refused, not migrated:
+write `{"kind": "requires", "bin": "rg"}` as `{"kind": "program", "bin": "rg"}`.
 
 #### `skills`
 
@@ -1623,7 +1640,7 @@ A contribution is one of two things, decided by `agent` alone:
 
 `agent` is the IDENTITY a destination declares for itself (the launcher command whose agent
 reads it), declared by the pack that OWNS that name; nothing is derived from the pack's
-`program`/`requires` bins — the string is declared, carried, and compared literally. A
+`program` bins — the string is declared, carried, and compared literally. A
 destination needs `into`. An `agent` beside `agents` with no `into` is refused with both readings
 spelled — drop `agent` for content, or give it `into` for a destination — because P5 makes
 `agent` mean "destination".
@@ -3741,7 +3758,7 @@ The options:
 - **(a) Content packs only, from the packs yolo ships.** A workspace may name a shipped pack by
   bare name when every contribution is one that runs nothing and reaches nothing outside the
   jail: `skills`, `briefing`, `files`, `config`, `config-overlay`, `config-list`, `env`,
-  `models`, `requires` and `blocked-tool`. Any other kind refuses the entry and names the kind,
+  `models`, a `program` with no recipe, and `blocked-tool`. Any other kind refuses the entry and names the kind,
   and the executable kinds wait for a second ruling. *You see:* a repository that commits
   `"packs": ["guardrails"]` gets it for every collaborator. *You lose:* [OQ-MP7](../design/mcp-presets-removal.md#decision-ledger)'s own case. A
   `chrome-devtools` pack carries an MCP entry, so the scope demotion that ruling rejected stands
@@ -4542,7 +4559,7 @@ in the config-overlay comments (R2, R3) it means the R1–R5 table below, never
 | <a id="oq-pf1"></a>[**OQ-PF1**](#oq-pf1) — a launch fetches and refreshes git packs itself, and the ref decides what moves: a pack not in the store is fetched, a commit or tag is never re-fetched, a branch is re-fetched at most hourly, and every move is disclosed ([fetch, refresh, lock](#fetch-refresh-lock)). Maintainer ruling, 2026-09-25: *"yes, I want this"* | Both reasons for keeping the fetch in `yolo pack install` were gone. The approval prompt that had to run there was deleted by [`OQ-TP9`](../design/trust-paths.md#decision-ledger). The claim that a launch is offline was false: every launch already reaches the network for the nix build, the bootstrap npm installs and the agent launchers' evergreen updates. What the old rule really protected is that host-side content (loophole daemons, `reads-host` reads, `yolo host apply` renders into the real home) never moves silently. The ref rule keeps that: a tag or commit pin still does not move until an explicit `yolo pack install` or `yolo pack update`. The `Fetched pack` and `Updated pack` lines say when anything did. |
 | **[OQ-1](providers.md#pv-oq-1)** (profiles) — `autonomy` and `profile` stay two kinds | The confinement-conditional keys live in `autonomy` "and nowhere else", and the selectors are asymmetric: autonomy keys off the constructor-only fail-closed notch, profile names arrive through a merge an agent can edit. |
 | **[OQ-16](providers.md#pv-oq-16)/[OQ-17](providers.md#pv-oq-17)** (profiles) — the `profile` gate on `config-overlay` reads user-scope config at the HOST notch | A gated overlay rewrites real-home keys and a workspace config is agent-editable; inside a jail the blast radius is the disposable home, so the jail notch uses the full effective table. |
-| <a id="q1-3"></a>**Q1.3** — `requires` is its own kind, CombineShared | Install and presence are different claims; conflating them made a pack either lie about a baked binary or lose its `install_hints` entirely. `requires` owns no path, so many packs requiring one binary is not a collision. |
+| <a id="q1-3"></a>**Q1.3** — presence is its own claim, CombineShared. **Superseded in form by [OQ-PS11](../design/provisioner-sets.md#OQ-PS11)** (2026-10-23): the claim is now a `program` with no recipe, and the `requires` kind is refused | Install and presence are different claims; conflating them made a pack either lie about a baked binary or lose its `install_hints` entirely. A need owns no path, so many packs needing one binary is not a collision. |
 | <a id="q2-1"></a>**Q2.1** — several `program` contributions per pack, each with its own launcher | Exclusivity is per `bin`; `shellcheck` + `shfmt` in one pack is ordinary, and there is no case for constricting packs. |
 | <a id="q3-1"></a>**Q3.1** — prune only unconfigured slugs, contents-only; keep the unresolvable. **Superseded by [OQ-PK2](#oq-pk2)**: each launch stages a tree of its own, so there is no shared tree to prune | Clear-then-restage would discard a pack the user still wants because it could not be fetched; the staging root's inode is captured by a live jail's bind. Both still hold, and per-launch trees meet them by construction: no launch writes another's tree. |
 | <a id="two-provenance-derivations-row"></a>[**Two provenance derivations**](#two-provenance-derivations) (findings index #8, ruled 2026-08-02) — `agentcfg.Compose`'s fold and `entrypoint.rmwProvenance`'s write-order replay both answer "which layer won", and stay two until a third derivation exists | They answer one question about different mechanisms: a fold has every layer in hand, and an `rmw` write has no fold, its precedence being write order. One implementation would need a synthetic layer stack for `rmw` or a simulated write order for the fold. Maintainer ruling: *"yes, wait for 3 to unify."* The shared-corpus parity table is what holds the two to one answer meanwhile. |

@@ -149,7 +149,7 @@ func TestPlatformsEntryShapeIsChecked(t *testing.T) {
 func TestPlatformsIsRefusedOnAKindThatReadsIt(t *testing.T) {
 	for _, decl := range []string{
 		`{"kind":"state","at":".omp","scope":"workspace","platforms":["linux"]}`,
-		`{"kind":"requires","bin":"jq","platforms":["linux"]}`,
+		`{"kind":"program","bin":"jq","platforms":["linux"]}`,
 		`{"kind":"skills","into":".omp/skills","platforms":["linux"]}`,
 	} {
 		_, problems := Decode([]byte(`{"contributes":[` + decl + `]}`))

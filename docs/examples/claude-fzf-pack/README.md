@@ -25,7 +25,7 @@ this pack is caught here first.
 
 | File | Role |
 |---|---|
-| [`pack.json`](pack.json) | the manifest: five contributions (two `requires`, `files`, `config-overlay`, `briefing`) |
+| [`pack.json`](pack.json) | the manifest: five contributions (two `program` needs, `files`, `config-overlay`, `briefing`) |
 | [`bin/file-suggestion.sh`](bin/file-suggestion.sh) | the finder itself — **a reference implementation to replace** |
 | [`briefing/claude-fzf.md`](briefing/claude-fzf.md) | briefing prose telling the agent the finder exists and not to edit it in place |
 
@@ -118,23 +118,25 @@ $ yolo -- claude                                       # or just launch a jail
 
 ## How the contributions work
 
-### `requires` → the two host tools (`fd`, `fzf`)
+### `program` with no `via` → the two host tools (`fd`, `fzf`)
 
 ```jsonc
-{ "kind": "requires", "bin": "fzf",
+{ "kind": "program", "bin": "fzf",
   "install_hints": { "brew": "fzf", "apt": "fzf", "dnf": "fzf", "pacman": "fzf", "nix": "fzf" } }
 ```
 
 The finder shells out to `fd | fzf --filter`, so the pack needs both to **exist**. It does
 not want yolo to install them — they are baked into the jail image, and on a host they are
-the user's own package manager's business. That is exactly what `requires` says, and it is
-the reason the kind exists (see the section further down for what this pack did before it).
+the user's own package manager's business. That is exactly what a `program` with no `via`
+says: a NEED, not a recipe (see the section further down for what this pack did before it).
+If another selected pack installs the same binary with a recipe, that pack provides it and
+the launch names the provider.
 
-`requires` **generates nothing**: no launcher, nothing on PATH, so it cannot shadow the very
+A need **generates nothing**: no launcher, nothing on PATH, so it cannot shadow the very
 binaries it asserts. What it buys is the two things silence cost:
 
-- **in a jail**, an absent tool is named at boot — `pack claude-fzf requires fzf, which is
-  not on PATH in this jail` — instead of the finder quietly returning no matches;
+- **in a jail**, an absent tool is named at boot — `pack claude-fzf needs program fzf, which is
+  not on PATH in this jail and no selected pack provides it` — instead of the finder quietly returning no matches;
 - **at the host**, the hints reach `yolo check-deps` and `yolo host apply`, which was the
   capability the old no-declaration workaround gave up:
 
@@ -255,10 +257,11 @@ three lines, and pack prose is attributed to its source, so it stays traceable.
 
 ---
 
-## Host deps (`fd`, `fzf`): now declared as `requires` — and why they were not
+## Host deps (`fd`, `fzf`): now declared as needs — and why they were not
 
-> **RESOLVED 2026-08-03.** The pack declares `requires` for both tools, with
-> `install_hints`. Three separate defects had to be fixed first, and each one is
+> **RESOLVED 2026-08-03.** The pack declares both tools as needs, with
+> `install_hints`. They were the `requires` kind until 2026-10-23, when that kind became a
+> `program` with no `via` ([OQ-PS11](../../design/provisioner-sets.md#OQ-PS11)). Three separate defects had to be fixed first, and each one is
 > why the obvious declaration was wrong at the time:
 
 **1. A `program` launcher shadowed the image's real binary** (fixed 2026-08-02 by
@@ -358,7 +361,7 @@ Reported, not fixed (they live in files under concurrent development):
    `~/.yolo-launchers`, ordered after `/bin`, so an installer was unreachable while
    a real binary of that name existed (they have since moved to `~/.yolo/bin/launch`,
    with the same protection made when a launcher is generated; see
-   [Host deps](#host-deps-fd-fzf-now-declared-as-requires--and-why-they-were-not)
+   [Host deps](#host-deps-fd-fzf-now-declared-as-needs--and-why-they-were-not)
    above). Neither candidate fix was needed (fall
    through on failure / skip generation) — removing the shadowing removed the
    cause. The launcher's exit-1 tail is unchanged and still right for a genuinely

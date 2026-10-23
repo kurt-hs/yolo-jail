@@ -112,9 +112,7 @@ func writeCensusPack(t *testing.T, dir string) {
 	// One contribution per kind. The bodies are minimal-but-valid: what matters is that
 	// each kind is DECLARED, so `yolo host apply` has to account for it.
 	byKind := map[packdecl.Kind]string{
-		packdecl.KindProgram: `{"kind":"program","bin":"censusbin","via":"npm","package":"census-pkg"}`,
-		packdecl.KindRequires: `{"kind":"requires","bin":"censusreq",` +
-			`"install_hints":{"brew":"census-req","apt":"census-req"}}`,
+		packdecl.KindProgram:  `{"kind":"program","bin":"censusbin","via":"npm","package":"census-pkg"}`,
 		packdecl.KindSkills:   `{"kind":"skills","from":"skills","into":".census/skills"}`,
 		packdecl.KindBriefing: `{"kind":"briefing","from":"briefing/prose.md","into":".census/AGENTS.md"}`,
 		packdecl.KindFiles:    `{"kind":"files","from":"files","into":".census/files"}`,
@@ -182,5 +180,9 @@ func writeCensusPack(t *testing.T, dir string) {
 		}
 		entries = append(entries, body)
 	}
+	// A `program` with no recipe — a NEED, which was the `requires` kind — is the second shape
+	// of `program`, so it is declared beside the recipe, not under a kind of its own.
+	entries = append(entries, `{"kind":"program","bin":"censusreq",`+
+		`"install_hints":{"brew":"census-req","apt":"census-req"}}`)
 	write("pack.json", `{"name":"census","contributes":[`+strings.Join(entries, ",")+`]}`)
 }

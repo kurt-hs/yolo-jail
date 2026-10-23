@@ -25,8 +25,8 @@ func isHintPackageChar(r rune) bool {
 		strings.ContainsRune(hintPackageChars, r)
 }
 
-// installHintProblems checks the install_hints of every `program` and `requires`, the two
-// kinds that read the field (DepRequirements).
+// installHintProblems checks the install_hints of every `program`, recipe and need alike, the
+// one kind that reads the field (DepRequirements).
 //
 // AUTHORING-ONLY, like retiredFieldProblems, and so not part of Validate: Decode runs it and
 // DecodeTolerant does not. A hint is only ever printed (check-deps, host apply) or written into
@@ -35,7 +35,7 @@ func isHintPackageChar(r rune) bool {
 func (m *Manifest) installHintProblems() []string {
 	var problems []string
 	for i, c := range m.Contributes {
-		if c.Kind == KindProgram || c.Kind == KindRequires {
+		if c.Kind == KindProgram {
 			problems = append(problems, installHintsProblems(fmt.Sprintf("contributes[%d]", i), c)...)
 		}
 	}

@@ -104,15 +104,15 @@ func TestOnePackClaimingItsOwnNameInEveryKindIsLegal(t *testing.T) {
 // `requires` is CombineShared for exactly this reason.
 func TestRequiresIsNotAnAgentNameClaim(t *testing.T) {
 	fzfA := claimPack(t, "fzf-pack-a",
-		packdecl.Contribution{Kind: packdecl.KindRequires, Bin: "fzf"})
+		packdecl.Contribution{Kind: packdecl.KindProgram, Bin: "fzf"})
 	fzfB := claimPack(t, "fzf-pack-b",
-		packdecl.Contribution{Kind: packdecl.KindRequires, Bin: "fzf"})
+		packdecl.Contribution{Kind: packdecl.KindProgram, Bin: "fzf"})
 	if cols := AgentNameCollisions([]*Pack{fzfA, fzfB}); len(cols) != 0 {
 		t.Errorf("two packs requiring one tool is what CombineShared MEANS; got %+v", cols)
 	}
 
 	needsClaude := claimPack(t, "house-rules",
-		packdecl.Contribution{Kind: packdecl.KindRequires, Bin: "claude"})
+		packdecl.Contribution{Kind: packdecl.KindProgram, Bin: "claude"})
 	claude := claimPack(t, "claude",
 		packdecl.Contribution{Kind: packdecl.KindProgram, Bin: "claude", Via: "npm", Package: "x"})
 	if cols := AgentNameCollisions([]*Pack{needsClaude, claude}); len(cols) != 0 {
@@ -123,7 +123,7 @@ func TestRequiresIsNotAnAgentNameClaim(t *testing.T) {
 	// And the case P5's "whether it `program`s the binary or `requires` it" is actually about
 	// still collides — through the identity it declares, which is where ownership lives.
 	fork := claimPack(t, "claude-fork",
-		packdecl.Contribution{Kind: packdecl.KindRequires, Bin: "claude"},
+		packdecl.Contribution{Kind: packdecl.KindProgram, Bin: "claude"},
 		packdecl.Contribution{Kind: packdecl.KindBriefing, Into: ".claude/CLAUDE.md", Agent: "claude"})
 	if cols := AgentNameCollisions([]*Pack{fork, claude}); len(cols) != 1 {
 		t.Fatalf("a pack that ASSERTS claude's binary and declares where claude reads is a "+

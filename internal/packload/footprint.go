@@ -311,6 +311,17 @@ const SupersedesClaimKind = packdecl.Kind("supersedes")
 // deliberately inspecting a pack: `yolo pack footprint` and `yolo pack lint`.
 const ExecutablesClaimKind = packdecl.Kind("executables")
 
+// ProgramNeedClaimKind is the Claim.Kind a NEED — a `program` with no recipe
+// (docs/design/provisioner-sets.md OQ-PS11) — is reported under.
+//
+// A DISPLAY LABEL, not a packdecl.Kind in the closed registry — the same shape and for the
+// same three reasons as SupersedesClaimKind above: a manifest spells it `kind: "program"`, so
+// `kind: "needs-program"` stays an unknown kind; Collisions' generic loop skips the label,
+// because many packs needing one binary — and one pack needing what another provides — is the
+// normal case rather than a collision; and the per-kind exhaustiveness tests that walk
+// packdecl.KnownKinds() need no entry for it.
+const ProgramNeedClaimKind = packdecl.Kind("needs-program")
+
 // AgentNameClaimKind is the Claim.Kind an AGENT-NAME collision is reported under.
 //
 // A DISPLAY LABEL, not a packdecl.Kind in the closed registry — the same shape and for the
@@ -484,6 +495,20 @@ func FootprintOf(p *Pack) Footprint {
 	for _, c := range p.Decl.Contributions() {
 		switch c.Kind {
 		case packdecl.KindProgram:
+			// A NEED (a program with no recipe, OQ-PS11) is a claim but never a collision: many
+			// packs may need one binary, and a need owns no path — so it is reported under the
+			// ProgramNeedClaimKind label, which the exclusive loop skips, rather than under
+			// `program`, where it would collide with the very pack that provides it. Not
+			// review-worthy either: asserting a tool must exist widens no trust surface.
+			if c.IsNeed() {
+				detail := "needed on PATH: from another selected pack's program, or already " +
+					"installed (this pack installs nothing for it)"
+				if len(c.InstallHints) > 0 {
+					detail += "; hints: " + strings.Join(sortedMapKeys(c.InstallHints), "/")
+				}
+				add(ProgramNeedClaimKind, c.Bin, detail, false)
+				continue
+			}
 			// A FORK claims no name (FP-D5): its target is the bin qualified by the base it
 			// forks, so the exclusive `program` loop keys it apart from the base's own claim
 			// on the bin, and review-worthy, because what the jail runs is built from code the
@@ -528,15 +553,6 @@ func FootprintOf(p *Pack) Footprint {
 			// forwarder reaches is reviewed where it is declared. The Detail carries the argv
 			// so a reader sees what `<bin>` will run without opening the manifest.
 			add(packdecl.KindIntercept, c.Bin, "forwards to "+strings.Join(c.Forward, " "), false)
-		case packdecl.KindRequires:
-			// A claim, but never a collision (CombineShared): many packs may require one
-			// binary, and none owns a path for it. Not review-worthy either — asserting a
-			// tool must exist widens no trust surface, unlike an installer URL.
-			detail := "must already be on PATH (yolo installs nothing)"
-			if len(c.InstallHints) > 0 {
-				detail += "; hints: " + strings.Join(sortedMapKeys(c.InstallHints), "/")
-			}
-			add(packdecl.KindRequires, c.Bin, detail, false)
 		case packdecl.KindSkills:
 			// Name the SOURCE, not just the merge rule. `from` was accepted and ignored on
 			// this kind, and a footprint that said only "merged" was one of the reports that
@@ -1062,12 +1078,20 @@ func Collisions(packs []*Pack) []Collision {
 		if k.kind == packdecl.KindConfig {
 			continue
 		}
+		reason := fmt.Sprintf("%s is sole-owned; two packs claim it — one would shadow the other",
+			k.kind)
+		// Two recipes for one bin is PS-D18's provider collision, and its reason is the one the
+		// launch refuses with (ProgramProviderCollisions), so `pack lint`, `yolo check` and the
+		// launch name the same remedy. A fork's claim target is qualified by its base, so two
+		// packs forking one base keep the generic wording.
+		if k.kind == packdecl.KindProgram && !strings.Contains(k.target, " ") {
+			reason = programProviderReason(k.target, sortedPackNames(packSet), nil)
+		}
 		out = append(out, Collision{
 			Kind:   k.kind,
 			Target: k.target,
 			Packs:  sortedPackNames(packSet),
-			Reason: fmt.Sprintf("%s is sole-owned; two packs claim it — one would shadow the other",
-				k.kind),
+			Reason: reason,
 		})
 	}
 
@@ -1276,8 +1300,9 @@ func agentNameClaims(packs []*Pack) (map[string][]agentNameClaim, []string) {
 			case packdecl.KindProgram:
 				// A fork claims no name: its bin is its base's, and the base keeps the claim
 				// (OQ-FP5). Counted here, base and fork would collide on every fork's own
-				// reason for existing.
-				if c.IsFork() {
+				// reason for existing. A NEED claims none either — AgentNameCollisions'
+				// docstring says why.
+				if c.IsFork() || c.IsNeed() {
 					continue
 				}
 				claim(c.Bin, p.Name, string(c.Kind))
@@ -1367,6 +1392,17 @@ func AgentNameCollisions(packs []*Pack) []Collision {
 			packSet[cl.pack] = struct{}{}
 		}
 		if len(packSet) < 2 {
+			continue
+		}
+		// Every claim through `program` alone is two packs carrying a recipe for one bin:
+		// PS-D18's provider collision (ProgramProviderCollisions), refused by the same three
+		// callers with the remedy that fits it. Reporting it here too would print one clash
+		// twice, under two rules.
+		onlyPrograms := true
+		for _, cl := range claims {
+			onlyPrograms = onlyPrograms && cl.through == string(packdecl.KindProgram)
+		}
+		if onlyPrograms {
 			continue
 		}
 		sort.SliceStable(claims, func(i, j int) bool {
