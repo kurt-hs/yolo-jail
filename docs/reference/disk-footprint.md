@@ -501,11 +501,20 @@ and the host share one store. pants' content-addressed `lmdb_store` came first
 | uv | `$XDG_CACHE_HOME/uv` (`UV_CACHE_DIR`) | `~/.cache/uv` |
 | Go build cache | `$XDG_CACHE_HOME/go-build` (`GOCACHE`) | `~/.cache/go-build` |
 | Go module cache | `~/go/pkg/mod` (`GOMODCACHE`, `GOPATH`) | `~/go/pkg/mod` |
-| cargo registry, git | `~/.cargo/registry`, `~/.cargo/git` (`CARGO_HOME`) | `/mise/cargo/registry`, `/mise/cargo/git` |
+| cargo registry | `~/.cargo/registry` (`CARGO_HOME`) | `/mise/cargo/registry` |
 | mise downloads | `~/.local/share/mise/downloads` (`MISE_DATA_DIR`, `XDG_DATA_HOME`) | `/mise/downloads` |
 
-`$XDG_CACHE_HOME` falls back to `~/.cache`. Yarn berry's `~/.yarn/berry/cache` is not on the
-list: `~/.yarn` is not writable in a jail, so there is no jail-side cache to share.
+`$XDG_CACHE_HOME` falls back to `~/.cache`. The jail sets `YARN_CACHE_FOLDER` to
+`~/.cache/yarn`, because yarn classic running as root would otherwise use `/usr/local/share`.
+Yarn berry's `~/.yarn/berry/cache` is not on the list: `~/.yarn` is not writable in a jail, so
+there is no jail-side cache to share. cargo's `git/` checkouts are not on the list either. A
+host path taken from an environment variable is not shared when it is the home, an ancestor of
+it, inside `~/.config` or `$XDG_CONFIG_HOME`, or a directory yolo keeps out of every jail.
+
+A shared cache is one cache: an agent that clears it inside a jail (`go clean -modcache`,
+`uv cache clean`, `npm cache clean --force`) clears the host's too. pnpm may keep a separate
+store on the mount of a project under `/workspace` instead of the shared one, so its sharing
+can be partial.
 
 Concurrent writers across PID namespaces were already the status quo for the pooled store.
 UNMEASURED: whether LMDB's process-shared robust write mutex recovers a dead owner whose thread
@@ -706,7 +715,7 @@ only place the values themselves are stated.
 | Prefix roots | `build/prefix-roots/<sha16>` | `image.PrefixRootsDir` |
 | Housekeeping locks | `locks/housekeeping.lock` (per deletion), `locks/housekeeping-pass.lock` (per pass) | `HousekeepingLockPath`, `HousekeepingPassLockPath` |
 | Housekeeping record | `<workspace>/.yolo/housekeeping.log` | `housekeepingLogName` |
-| Aliased host stores | pants `lmdb_store`; npm, pnpm (store and metadata), yarn, pip, uv, Go build and module caches, cargo registry and git, mise downloads ([paths](#aliased-host-stores)) | `hostcas.Stores` |
+| Aliased host stores | pants `lmdb_store`; npm, pnpm (store and metadata), yarn, pip, uv, Go build and module caches, cargo registry, mise downloads ([paths](#aliased-host-stores)) | `hostcas.Stores` |
 | Mise use window, refresh, record expiry | 30 days, 24 h, window + 7 days | `miseuse.Window`, `miseuse.Refresh`, `expireAfter` |
 | Mise offer threshold | 1 GiB, through the cache's offer | `internal/prune/miseversions.go` |
 | `yolo stores` sample ledger | `<state>/stores/<store>.samples`, last 30 per store | `internal/cli/stores` (`ledger.go`) |

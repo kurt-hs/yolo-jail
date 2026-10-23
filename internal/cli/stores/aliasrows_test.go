@@ -321,7 +321,11 @@ func TestDefaultHostCASReaderPassesTheOwnershipFact(t *testing.T) {
 	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("XDG_CACHE_HOME", "")
+	// Every variable the npm store's host path or the scope guard reads, cleared so
+	// the developer's own environment cannot move the store.
+	for _, k := range []string{"XDG_CACHE_HOME", "XDG_CONFIG_HOME", "npm_config_cache", "NPM_CONFIG_CACHE"} {
+		t.Setenv(k, "")
+	}
 	writeFile(t, filepath.Join(home, ".npm", "_cacache", "index"), 10)
 	o := &Options{
 		DetectRuntime: func() string { return "podman" },
@@ -340,4 +344,17 @@ func TestDefaultHostCASReaderPassesTheOwnershipFact(t *testing.T) {
 		}
 	}
 	t.Fatal("no npm-cacache disposition")
+}
+
+// A per-workspace store's private copy is named through paths.HomeSurfaces: the
+// jail's ~/.local is the overlay's `local`, not `.local`.
+func TestPerWorkspaceStrandedUsesTheOverlayMapping(t *testing.T) {
+	for dest, want := range map[string]string{
+		"/home/agent/.local/share/pnpm/store": "each workspace's .yolo/home/local/share/pnpm/store",
+		"/home/agent/go/pkg/mod":              "each workspace's .yolo/home/go/pkg/mod",
+	} {
+		if got := perWorkspaceStranded(dest); got != want {
+			t.Errorf("perWorkspaceStranded(%q) = %q, want %q", dest, got, want)
+		}
+	}
 }

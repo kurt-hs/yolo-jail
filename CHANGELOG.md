@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Browse mounted folders from home.** Every jail links `~/ctx` to its mounted folders, unless your config already uses the name `ctx`.
 
-**Jails share your package caches.** On rootless podman, your npm, pnpm, yarn, pip, uv, Go, cargo and mise download caches are shared with the jail instead of downloaded a second time, and each one is named at launch. Config files and credentials are never shared. See [host-cache aliasing](docs/reference/disk-footprint.md#host-cas-aliasing).
+**Jails share your package caches.** With rootless podman on Linux, your npm, pnpm, yarn, pip, uv, Go, cargo registry and mise download caches are shared with the jail instead of downloaded a second time, and each one is named at launch. Config files and credentials are never shared. See [host-cache aliasing](docs/reference/disk-footprint.md#host-cas-aliasing).
 
 ## [0.15.1] - 2026-10-22
 

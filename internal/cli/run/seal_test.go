@@ -42,7 +42,7 @@ var sealedEnvAllowlist = map[string]bool{
 	"HOME": true, "IS_SANDBOX": true, "JAIL_HOME": true, "LD_LIBRARY_PATH": true, "MISE_CACHE_DIR": true,
 	"MISE_DATA_DIR": true, "MISE_DISABLE_TOOLS": true, "MISE_ENV": true,
 	"MISE_PYTHON_GITHUB_ATTESTATIONS": true, "MISE_PYTHON_PRECOMPILED_FLAVOR": true,
-	"MISE_TRUSTED_CONFIG_PATHS": true, "MISE_YES": true, "NPM_CONFIG_CACHE": true, "NPM_CONFIG_PREFIX": true,
+	"MISE_TRUSTED_CONFIG_PATHS": true, "MISE_YES": true, "NPM_CONFIG_CACHE": true, "NPM_CONFIG_PREFIX": true, "YARN_CACHE_FOLDER": true,
 	"NPM_CONFIG_FUND": true, "NPM_CONFIG_UPDATE_NOTIFIER": true,
 	"OVERMIND_SOCKET": true, "PAGER": true, "RUSTUP_HOME": true, "TZ": true,
 	"VISUAL": true, "YOLO_AGENT_UPDATES": true, "YOLO_BLOCK_CONFIG": true, "YOLO_CONTEXT_DIR": true,

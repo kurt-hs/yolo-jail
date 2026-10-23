@@ -288,7 +288,7 @@ single-use refresh token.
 
 More writable binds are shared, and they are not yolo's storage at all: a fixed list of
 recognized host caches (`hostcas.Stores`: pants' content-addressed `lmdb_store`, and the npm,
-pnpm, yarn, pip, uv, Go, cargo and mise download caches) is aliased into the jail at the path
+pnpm, yarn, pip, uv, Go, cargo registry and mise download caches) is aliased into the jail at the path
 the jail's own copy of each tool uses. Caches cross, never a tool's config or credentials, and a package cache
 only on rootless podman. The gates and the reasoning are in
 [`disk-footprint.md`](disk-footprint.md#host-cas-aliasing).

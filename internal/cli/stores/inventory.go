@@ -243,7 +243,7 @@ func aliasStores(o Options) []Store {
 		if stranded == "" {
 			// A per-workspace root (~/.local, ~/go): this command is machine-wide, so
 			// there is no one private copy to name.
-			stranded = "each workspace's .yolo/home" + strings.TrimPrefix(d.Dest, "/home/agent")
+			stranded = perWorkspaceStranded(d.Dest)
 		}
 		if d.Aliased {
 			s.Note = "ALIASED (writable) at " + d.Dest + " — this jail shares these host bytes " +
@@ -260,6 +260,20 @@ func aliasStores(o Options) []Store {
 		out = append(out, s)
 	}
 	return out
+}
+
+// perWorkspaceStranded names a per-workspace store's private copy by its overlay
+// path: the jail's ~/<HomeRel> is backed by <workspace>/.yolo/home/<Subtree>
+// (paths.HomeSurfaces — ~/.local is `local`, ~/go is `go`), so the
+// path is spelled through that mapping rather than by stripping /home/agent.
+func perWorkspaceStranded(dest string) string {
+	rel := strings.TrimPrefix(dest, "/home/agent/")
+	for _, s := range paths.HomeSurfaces() {
+		if rel == s.HomeRel || strings.HasPrefix(rel, s.HomeRel+"/") {
+			return "each workspace's .yolo/home/" + s.Subtree + strings.TrimPrefix(rel, s.HomeRel)
+		}
+	}
+	return "each workspace's own copy of " + dest
 }
 
 // strandedReclaimer names what reclaims an aliased store's stranded private copy.

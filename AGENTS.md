@@ -392,7 +392,7 @@ live, so edits are visible on the host instantly — there is no sync step.
   existing twice (`internal/hostcas`, [`hostcasalias.go`](internal/cli/run/hostcasalias.go);
   [the alias](docs/reference/disk-footprint.md#host-cas-aliasing)): pants' content-addressed `lmdb_store`
   ([`OQ-BF10`](docs/reference/disk-footprint.md#why-its-this-way)) and the npm, pnpm, yarn, pip, uv, Go
-  build and module, cargo registry and git, and mise download caches
+  build and module, cargo registry, and mise download caches
   ([OQ-BF11](docs/reference/disk-footprint.md#OQ-BF11)). Poisoning a path-keyed cache takes intent, which
   [the misguided-agent principle](docs/reference/misguided-agent-principle.md) puts out of scope; a config
   file holds tokens a helpful agent would use. So **alias the cache SUBDIRECTORY only** where a tool keeps

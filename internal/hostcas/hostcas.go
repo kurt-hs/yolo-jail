@@ -303,7 +303,8 @@ func (s Store) Stranded(rootHost string) string {
 // to /home/agent and leaves XDG_CACHE_HOME and XDG_DATA_HOME unset (so ~/.cache
 // and ~/.local/share), exports NPM_CONFIG_CACHE=$HOME/.cache/npm and
 // GOPATH=$HOME/go (internal/entrypoint/shell.go), and sets CARGO_HOME=/mise/cargo
-// and MISE_DATA_DIR=/mise (internal/cli/run/assemble.go).
+// and MISE_DATA_DIR=/mise, and YARN_CACHE_FOLDER=$HOME/.cache/yarn because yarn
+// classic takes /usr/local/share as root's home (internal/cli/run/assemble.go).
 //
 // NOT HERE, and why:
 //   - pants' `named_caches` and `nce` — not package caches; `named_caches`'
@@ -425,7 +426,8 @@ var Stores = []Store{{
 	Evidence: "Go's module cache (extracted modules and cache/download zips, read-only by design); GOPATH/bin beside it is not aliased",
 }, {
 	// cargo keeps credentials.toml and config.toml in CARGO_HOME itself, so only
-	// the registry/ and git/ subdirectories are aliased.
+	// the registry/ subdirectory is aliased (OQ-BF11 names the registry; git/
+	// checkouts are not on the list).
 	Name:     "cargo-registry",
 	Tool:     "cargo",
 	Keying:   KeyPath,
@@ -433,14 +435,6 @@ var Stores = []Store{{
 	Root:     RootMise,
 	JailRel:  "cargo/registry",
 	Evidence: "cargo's registry index, crate archives and extracted sources; credentials.toml and config.toml in the same CARGO_HOME are not aliased",
-}, {
-	Name:     "cargo-git",
-	Tool:     "cargo",
-	Keying:   KeyPath,
-	Host:     func(e HostEnv) string { return joinIf(cargoHome(e), "git") },
-	Root:     RootMise,
-	JailRel:  "cargo/git",
-	Evidence: "cargo's git dependency databases and checkouts; credentials.toml and config.toml in the same CARGO_HOME are not aliased",
 }, {
 	// mise's DATA dir: MISE_DATA_DIR, else $XDG_DATA_HOME/mise. Only downloads/ —
 	// installs/ beside it is the installed tools, and mise's config is under
@@ -522,6 +516,11 @@ const (
 	// `cache_relocations`, which is an EXPLICIT decision about where these bytes
 	// live. An automatic optimisation does not overrule one.
 	CodeRelocated Code = "relocated-by-config"
+	// CodeUnsafeSource — the host path (usually from an environment variable) is the
+	// home, an ancestor of it, inside the config directory, or one of yolo's own
+	// boundary directories, so binding it writable would carry config or
+	// credentials across. Structural: not printed at launch.
+	CodeUnsafeSource Code = "unsafe-host-path"
 )
 
 // Disposition is what one launch — or one inventory run — decided about one
@@ -590,6 +589,10 @@ type Facts struct {
 	// with `cache_relocations`. A store under one of them is NOT aliased — see
 	// CodeRelocated.
 	RelocatedSegments []string
+	// ScopeBreach reports a host path that is or contains a directory yolo keeps
+	// out of every jail (paths.WritableSourceScopeBreach on the launch). nil skips
+	// that one check.
+	ScopeBreach func(string) bool
 	// Probe gathers a Presence. nil => DefaultProbe.
 	Probe func(string) Presence
 }
@@ -696,6 +699,15 @@ func decide(s Store, f Facts, probe func(string) Presence) Disposition {
 			"not be resolved, so there is nowhere to look for a host store"
 		return d
 	}
+	// AN ENVIRONMENT-DERIVED PATH IS USED AS GIVEN (PIP_CACHE_DIR, CARGO_HOME, …),
+	// so a variable pointing at the home itself, at an ancestor of it, at the
+	// user's config directory, or at yolo's own boundary directories would make
+	// the alias a writable bind of exactly what OQ-BF11 says never crosses.
+	if reason := unsafeSource(d.Source, f); reason != "" {
+		d.Code, d.Reason = CodeUnsafeSource, "the host "+s.Tool+" cache path "+d.Source+" "+reason+
+			", so it is not shared"
+		return d
+	}
 	// SAME TREE means there is no second copy to alias away — the source and the
 	// destination's own backing are one directory. Reachable when XDG_CACHE_HOME
 	// (or CARGO_HOME, …) points into yolo's state dir.
@@ -792,4 +804,26 @@ func OwnershipOf(rootless *bool) Ownership {
 		return OwnershipYours
 	}
 	return OwnershipNotYours
+}
+
+// unsafeSource is why a resolved host path may not be bound writable into a jail,
+// or "" when it may. It is the boundary OQ-BF11 draws (caches, never config or
+// credentials) applied to a path that came from the user's environment.
+func unsafeSource(src string, f Facts) string {
+	env := HostEnv{Getenv: f.HostGetenv}
+	if home := env.home(); home != "" {
+		if under(home, src) {
+			return "is the home directory or contains it"
+		}
+		if under(src, filepath.Join(home, ".config")) {
+			return "is inside ~/.config, where tools keep config and credentials"
+		}
+	}
+	if xdg := env.abs("XDG_CONFIG_HOME"); xdg != "" && under(src, xdg) {
+		return "is inside $XDG_CONFIG_HOME, where tools keep config and credentials"
+	}
+	if f.ScopeBreach != nil && f.ScopeBreach(src) {
+		return "is or contains a directory yolo keeps out of every jail"
+	}
+	return ""
 }

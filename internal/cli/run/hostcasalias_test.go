@@ -770,10 +770,39 @@ func TestNoteHostCASAliasDisclosesEveryActiveAlias(t *testing.T) {
 	}
 }
 
-// The two ownership declines are structural (a nested jail's podman always
-// reports rootful), so neither prints at launch; `yolo stores` explains them.
+// The jail runs as uid 0 and yarn classic takes /usr/local/share as root's home,
+// so without YARN_CACHE_FOLDER its cache would land outside ~/.cache and the yarn
+// alias would mount over a directory yarn never reads. The env value must be the
+// yarn store's own destination.
+func TestAssemblePinsTheYarnCacheUnderTheCacheMount(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	emptyLoopholeDirs(t)
+	o := goldenOptions("/ws", home)
+	argv := o.assembleRunCmd(aliasInput(t, "podman", nil))
+	var yarn hostcas.Store
+	for _, s := range hostcas.Stores {
+		if s.Name == "yarn-cache" {
+			yarn = s
+		}
+	}
+	if yarn.Name == "" {
+		t.Fatal("no yarn-cache store")
+	}
+	want := "YARN_CACHE_FOLDER=" + yarn.Dest()
+	for i := 0; i+1 < len(argv); i++ {
+		if argv[i] == "-e" && argv[i+1] == want {
+			return
+		}
+	}
+	t.Errorf("the podman argv carries no -e %s", want)
+}
+
+// The ownership declines and the unsafe-path decline are structural (a nested
+// jail's podman always reports rootful), so none prints at launch; `yolo stores`
+// explains them.
 func TestOwnershipDeclinesAreSilentAtLaunch(t *testing.T) {
-	for _, code := range []hostcas.Code{hostcas.CodeNotYours, hostcas.CodeOwnershipUnknown} {
+	for _, code := range []hostcas.Code{hostcas.CodeNotYours, hostcas.CodeOwnershipUnknown, hostcas.CodeUnsafeSource} {
 		d := hostcas.Disposition{Store: hostcas.Stores[1], Code: code, Reason: "podman is rootful"}
 		var buf bytes.Buffer
 		o := &Options{Stderr: &buf}

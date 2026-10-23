@@ -331,7 +331,6 @@ func TestStorePaths(t *testing.T) {
 		{"go-build-cache", "/h/.cache/go-build", "/o/gocache", "/home/agent/.cache/go-build"},
 		{"go-mod-cache", "/h/go/pkg/mod", "/o/gomod", "/home/agent/go/pkg/mod"},
 		{"cargo-registry", "/h/.cargo/registry", "/o/cargo/registry", "/mise/cargo/registry"},
-		{"cargo-git", "/h/.cargo/git", "/o/cargo/git", "/mise/cargo/git"},
 		{"mise-downloads", "/h/.local/share/mise/downloads", "/o/mise/downloads", "/mise/downloads"},
 	} {
 		s := storeNamed(t, tc.name)
@@ -345,8 +344,8 @@ func TestStorePaths(t *testing.T) {
 			t.Errorf("%s: jail path = %q, want %q", tc.name, got, tc.dest)
 		}
 	}
-	if len(Stores) != 12 {
-		t.Errorf("Stores has %d entries and this table pins 12 — pin the new entry's paths here", len(Stores))
+	if len(Stores) != 11 {
+		t.Errorf("Stores has %d entries and this table pins 11 — pin the new entry's paths here", len(Stores))
 	}
 	// A GOPATH list takes its first entry, as go does; a relative one resolves nothing.
 	gm := storeNamed(t, "go-mod-cache")
@@ -565,6 +564,79 @@ func TestPathKeyedStoresKeepEveryExistingGate(t *testing.T) {
 }
 
 // Each jail root's stranded copy is under the host side of that root.
+// NEVER RECOGNISED, by name: pants' named_caches records interpreters under the
+// jail's home and nce is the download store those records point into, so sharing
+// either breaks the host's pants (OQ-BF10, kept by OQ-BF11). An entry whose host
+// or jail path reaches them fails here.
+func TestNamedCachesAndNceAreNeverRecognised(t *testing.T) {
+	e := HostEnv{CacheRoot: "/h/.cache", Getenv: envOf(map[string]string{"HOME": "/h"})}
+	for _, s := range Stores {
+		for _, p := range []string{s.Host(e), s.Dest()} {
+			for _, bad := range []string{"pants/named_caches", "nce"} {
+				for _, root := range []string{"/h/.cache/", "/home/agent/.cache/"} {
+					if under(p, root+bad) || under(root+bad, p) {
+						t.Errorf("%s: path %q reaches %s, which is excluded by name", s.Name, p, bad)
+					}
+				}
+			}
+		}
+	}
+}
+
+// AN ENVIRONMENT-DERIVED HOST PATH IS GUARDED: a variable pointing a store at the
+// home, an ancestor of it, the config directory, or a directory yolo keeps out of
+// every jail declines structurally (silent at launch), and a normal override still
+// aliases.
+func TestEnvDerivedHostPathsAreGuarded(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		pip    func(home string) string
+		breach bool
+		want   Code
+	}{
+		{"the home itself", func(h string) string { return h }, false, CodeUnsafeSource},
+		{"an ancestor of the home", func(h string) string { return filepath.Dir(h) }, false, CodeUnsafeSource},
+		{"under ~/.config", func(h string) string { return filepath.Join(h, ".config", "npm") }, false, CodeUnsafeSource},
+		{"under $XDG_CONFIG_HOME", func(h string) string { return filepath.Join(filepath.Dir(h), "xdgconf", "npm") }, false, CodeUnsafeSource},
+		{"a scope breach", func(h string) string { return filepath.Join(filepath.Dir(h), "elsewhere") }, true, CodeUnsafeSource},
+		{"an ordinary override", func(h string) string { return filepath.Join(filepath.Dir(h), "elsewhere") }, false, CodeAliased},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, _ := pathKeyedFacts(t)
+			home := f.HostGetenv("HOME")
+			pipCache := tc.pip(home)
+			if err := os.MkdirAll(pipCache, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(pipCache, "x"), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			xdgConf := filepath.Join(filepath.Dir(home), "xdgconf")
+			f.HostGetenv = envOf(map[string]string{"HOME": home, "PIP_CACHE_DIR": pipCache, "XDG_CONFIG_HOME": xdgConf})
+			var asked []string
+			f.ScopeBreach = func(p string) bool { asked = append(asked, p); return tc.breach }
+			d := dispositionOf(t, Plan(f), "pip-cache")
+			if d.Code != tc.want {
+				t.Errorf("code = %q (%s), want %q", d.Code, d.Reason, tc.want)
+			}
+			if tc.want == CodeUnsafeSource && (d.Aliased || strings.TrimSpace(d.Reason) == "") {
+				t.Errorf("aliased=%v reason=%q", d.Aliased, d.Reason)
+			}
+			if tc.breach && len(asked) == 0 {
+				t.Error("the scope-breach predicate was never consulted")
+			}
+		})
+	}
+	// The guard reads each store's resolved path, so it covers every store that
+	// takes its variable whole — GOMODCACHE=$HOME here.
+	f, _ := pathKeyedFacts(t)
+	home := f.HostGetenv("HOME")
+	f.HostGetenv = envOf(map[string]string{"HOME": home, "GOMODCACHE": home})
+	if d := dispositionOf(t, Plan(f), "go-mod-cache"); d.Code != CodeUnsafeSource {
+		t.Errorf("GOMODCACHE=$HOME: code %q, want %q", d.Code, CodeUnsafeSource)
+	}
+}
+
 func TestStrandedFollowsTheJailRoot(t *testing.T) {
 	f := Facts{JailCacheHost: "/s/cache", JailLocalHost: "/w/local", JailGoPathHost: "/w/go", JailMiseHost: "/s/mise"}
 	for name, want := range map[string]string{

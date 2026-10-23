@@ -501,6 +501,7 @@ func podmanLinuxGolden(home string) []string {
 		"-e", "JAIL_HOME=/home/agent",
 		"-e", "NPM_CONFIG_PREFIX=/home/agent/.npm-global",
 		"-e", "NPM_CONFIG_CACHE=/home/agent/.cache/npm",
+		"-e", "YARN_CACHE_FOLDER=/home/agent/.cache/yarn",
 		"-e", "NPM_CONFIG_UPDATE_NOTIFIER=false",
 		"-e", "NPM_CONFIG_FUND=false",
 		"-e", "GOPATH=/home/agent/go",

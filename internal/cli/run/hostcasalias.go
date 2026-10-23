@@ -71,8 +71,13 @@ func (o *Options) planHostCASAlias(rt string, relocations []config.CacheRelocati
 		JailMiseHost:      jailMiseStoreDir(o.inJail()),
 		RelocatedSegments: relocated,
 		Probe:             o.HostCASProbe,
+		ScopeBreach:       scopeBreached,
 	})
 }
+
+// scopeBreached is the credential-boundary rule a read-write `mounts` source runs
+// (paths.WritableSourceScopeBreach), handed to hostcas for env-derived host paths.
+func scopeBreached(p string) bool { return paths.WritableSourceScopeBreach(p) != nil }
 
 // hostCASOwnership is podman's rootless answer as an ownership fact: only a
 // podman launch whose readiness gate parsed an answer naming rootless can say.

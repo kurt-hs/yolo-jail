@@ -349,6 +349,7 @@ func fillDefaults(o *Options) {
 				// what makes the two answers comparable at all.
 				JailCacheHost:     o.GlobalCache(),
 				RelocatedSegments: relocated,
+				ScopeBreach:       func(p string) bool { return paths.WritableSourceScopeBreach(p) != nil },
 			})
 		}
 	}

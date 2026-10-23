@@ -1244,6 +1244,10 @@ func (o *Options) commonEnvBlock(in *assembleInput, blockedConfigJSON, netMode s
 		"-e", "JAIL_HOME=/home/agent",
 		"-e", "NPM_CONFIG_PREFIX=/home/agent/.npm-global",
 		"-e", "NPM_CONFIG_CACHE=/home/agent/.cache/npm",
+		// Yarn classic takes /usr/local/share as root's home, and the jail runs as uid 0, so without
+		// this its cache lands outside ~/.cache and the yarn host-cache alias (OQ-BF11) is inert
+		// (TestAssemblePinsTheYarnCacheUnderTheCacheMount).
+		"-e", "YARN_CACHE_FOLDER=/home/agent/.cache/yarn",
 		// Env hygiene, as the host floor's npm has it (hostfloor.Floor.npmEnv): no "new
 		// version of npm available" box and no funding line on an install that succeeded,
 		// two notices an agent reads as output (TestAssembleSilencesNpmNotices).
