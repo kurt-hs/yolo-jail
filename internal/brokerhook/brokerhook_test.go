@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +23,8 @@ type fixture struct {
 	kinds  []string
 	dir    string
 	filing brokerstore.Request
+	// skew moves the store's clock forward, so a test can expire a request.
+	skew atomic.Int64
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -34,7 +37,8 @@ func newFixture(t *testing.T) *fixture {
 			defer f.mu.Unlock()
 			f.kinds = append(f.kinds, kind)
 			return nil
-		}}
+		},
+		Now: func() time.Time { return time.Now().Add(time.Duration(f.skew.Load())) }}
 	f.filing = brokerstore.Request{Jail: "jail", Start: "start", Workspace: "/project", Argv: []string{"pr", "comment", "1", "--body", "hi"},
 		Repo: "o/r", StdinDigest: "digest", Set: "read-write",
 		Policy: brokerstore.Policy{Window: 15 * time.Minute, MaxWindow: time.Hour, Uses: 25}}
@@ -57,8 +61,14 @@ func (f *fixture) script(t *testing.T, name, body string) string {
 // run starts a runner for lifetime "start" and returns its stop.
 func (f *fixture) run(t *testing.T, command string, log *syncBuffer) func() {
 	t.Helper()
+	return f.runFor(t, command, log, 0, 5*time.Millisecond)
+}
+
+// runFor is run with a hook timeout and a poll interval.
+func (f *fixture) runFor(t *testing.T, command string, log *syncBuffer, timeout, interval time.Duration) func() {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &Runner{Store: f.store, Start: "start", Command: command, Interval: 5 * time.Millisecond, Log: log}
+	r := &Runner{Store: f.store, Start: "start", Command: command, Interval: interval, Timeout: timeout, Log: log}
 	done := make(chan struct{})
 	go func() { r.Run(ctx); close(done) }()
 	// Run reads the store once before it watches; a request filed after that is an event.
@@ -111,7 +121,7 @@ func (f *fixture) state(t *testing.T, id string) string {
 func TestTheHookGetsTheEventAndOnlyItsOwnLifetime(t *testing.T) {
 	f := newFixture(t)
 	out := filepath.Join(f.dir, "events")
-	stop := f.run(t, f.script(t, "hook", `{ cat; printf '%s|%s|%s|%s|%s\n' "$YOLO_EVENT" "$YOLO_REQUEST_ID" "$YOLO_SOURCE" "$YOLO_WORKSPACE" "$YOLO_REQUEST_SUMMARY"; } >>'`+out+`'`+"\n"), &syncBuffer{})
+	stop := f.run(t, f.script(t, "hook", `{ cat; printf '%s|%s|%s|%s|%s\n' "$YOLO_EVENT" "$YOLO_REQUEST_ID" "$YOLO_SOURCE" "$YOLO_REQUEST_WORKSPACE" "$YOLO_REQUEST_SUMMARY"; } >>'`+out+`'`+"\n"), &syncBuffer{})
 	other := f.filing
 	other.Start, other.Argv = "another-lifetime", []string{"pr", "comment", "2"}
 	if _, err := f.store.File(other); err != nil {

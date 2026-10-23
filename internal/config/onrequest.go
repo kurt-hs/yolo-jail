@@ -12,7 +12,7 @@ import (
 // command, named in the USER config alone, that each host broker runs once per request its
 // jail files, with the request-filed event's JSON on stdin. It is off unless set, and a workspace
 // config naming it is refused, as for long-lived access (§5.8): the command runs on the host
-// as the user, and its answer can approve a request.
+// as the user, and the command it runs can call `yolo approve`.
 
 // OnRequestKey is the top-level key naming the hook command.
 const OnRequestKey = "on_request"
@@ -51,7 +51,7 @@ func validateOnRequest(config *jsonx.OrderedMap, workspace string, errs *[]strin
 	}
 	if _, atWorkspace := wsCfg.Get(OnRequestKey); atWorkspace {
 		add(errs, "config."+OnRequestKey+": user-scope only — it names a command yolo runs on the host, "+
-			"as you, for every request a jail files, and its answer can approve a request, so a workspace "+
+			"as you, for every request a jail files, and the command it runs can call `yolo approve`, so a workspace "+
 			"config, which the agent can edit, may not name one. Put it in "+paths.UserConfigPath()+
 			" and remove it from this workspace's config.")
 	}

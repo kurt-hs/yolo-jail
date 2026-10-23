@@ -47,7 +47,8 @@ allowed. A request whose jail stopped normally is already refused, which is 3.
 
 The host store is built, but the GitHub broker does not file requests or execute
 writes yet. Its writes still refuse immediately; nothing waits for approval.
-The notification and answer ping are not built either.
+The answer ping is not built either; a desktop notification is the user's own
+on_request command (see yolo config-ref).
 
 Examples:
   yolo approve

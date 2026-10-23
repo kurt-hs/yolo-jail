@@ -458,8 +458,9 @@
     object, the same one `yolo approve --watch --json` prints, is on its stdin,
     and its fields are in the environment: YOLO_EVENT (request-filed),
     YOLO_SOURCE, YOLO_REQUEST_ID, YOLO_REQUEST_SUMMARY, YOLO_REQUEST_EXPIRES,
-    YOLO_WORKSPACE, YOLO_JAIL, YOLO_SET and YOLO_REPO, and YOLO_BIN, the full
-    path of the yolo that runs it, so it needs no yolo on its PATH.
+    YOLO_REQUEST_WORKSPACE, YOLO_REQUEST_JAIL, YOLO_REQUEST_SET and
+    YOLO_REQUEST_REPO, and YOLO_BIN, the full path of the yolo that runs it,
+    so it needs no yolo on its PATH.
     YOLO_REQUEST_SUMMARY is one line of at most 2048 bytes: the request id, the
     set, the repository and the jail first, then the command, each value over
     60 characters cut to its first 40 with its length and a short hash.

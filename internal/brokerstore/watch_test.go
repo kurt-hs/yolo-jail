@@ -140,6 +140,10 @@ func TestDiffSplitsAFilingDecidedBetweenReads(t *testing.T) {
 	if evs[0].Request.State != "pending" || evs[1].Request.State != "denied" {
 		t.Fatal(evs[0].Request.State, evs[1].Request.State)
 	}
+	// The filing still carries the state it is already in, so a request hook asks nothing.
+	if evs[0].Current != "denied" {
+		t.Fatalf("the filing's current state is %q, want denied", evs[0].Current)
+	}
 }
 
 // The four refusals a front end gives its own exit code are distinguishable.

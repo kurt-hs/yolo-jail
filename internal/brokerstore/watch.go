@@ -65,6 +65,10 @@ type Event struct {
 	Kind    string
 	Request *Request
 	Grant   *Grant
+	// Current is, for a request-filed event, the request's state in the snapshot that
+	// reported its filing: "pending", or its later state when it was filed and decided
+	// between two polls (Request then reads "pending", as filed). It is not in the JSON view.
+	Current string
 }
 
 // Diff is the events that turn prev into cur, requests first. A record that disappears
@@ -94,7 +98,7 @@ func Diff(prev, cur Snapshot) []Event {
 		if !seen {
 			filed := q
 			filed.State, filed.Decided = "pending", time.Time{}
-			out = append(out, Event{Kind: EventRequestFiled, Request: &filed})
+			out = append(out, Event{Kind: EventRequestFiled, Request: &filed, Current: q.State})
 		}
 		if q.State != "pending" && (!seen || old.State == "pending") {
 			q := q

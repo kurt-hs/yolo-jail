@@ -118,6 +118,10 @@ func (r *Runner) event(ctx context.Context, ev brokerstore.Event) {
 	}
 	switch ev.Kind {
 	case brokerstore.EventRequestFiled:
+		// Filed and decided between two polls: there is no question left to ask.
+		if ev.Current != "" && ev.Current != "pending" {
+			return
+		}
 		r.launch(ctx, *q)
 	case brokerstore.EventRequestDecided, brokerstore.EventRequestExpired:
 		r.mu.Lock()
@@ -198,10 +202,12 @@ func Env(s *brokerstore.Store, q brokerstore.Request, bin string) []string {
 	add("YOLO_REQUEST_ID", q.ID)
 	add("YOLO_REQUEST_SUMMARY", s.RequestSummary(q))
 	add("YOLO_REQUEST_EXPIRES", q.Expires().Format(time.RFC3339))
-	add("YOLO_WORKSPACE", q.Workspace)
-	add("YOLO_JAIL", q.Jail)
-	add("YOLO_SET", q.Set)
-	add("YOLO_REPO", q.Repo)
+	// YOLO_REQUEST_*, never yolo's own names: YOLO_WORKSPACE, for one, is read by the
+	// `yolo approve` the hook runs.
+	add("YOLO_REQUEST_WORKSPACE", q.Workspace)
+	add("YOLO_REQUEST_JAIL", q.Jail)
+	add("YOLO_REQUEST_SET", q.Set)
+	add("YOLO_REQUEST_REPO", q.Repo)
 	return env
 }
 
@@ -238,23 +244,48 @@ func (r *Runner) fire(ctx context.Context, q brokerstore.Request) {
 	}
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
-	select {
-	case err = <-waited:
-	case <-ctx.Done():
-		// Its own process group, so this ends whatever it started too.
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		<-waited
+	// The process group is the hook's own, so killing it ends whatever it started too. It
+	// is killed when its request leaves pending, its run times out or the broker stops,
+	// whether or not the shell has already exited: a notifier it backgrounded is still
+	// asking a question that has been answered.
+	pgid := cmd.Process.Pid
+	stop := func() bool {
 		why := context.Cause(ctx)
 		if errors.Is(why, context.Canceled) {
 			why = errors.New("the broker stopped")
 		}
-		r.logf("the hook for %s was stopped because %v", q.ID, why)
+		if syscall.Kill(-pgid, syscall.SIGKILL) == nil {
+			r.logf("the hook for %s was stopped because %v", q.ID, why)
+			return true
+		}
+		return false
+	}
+	select {
+	case err = <-waited:
+	case <-ctx.Done():
+		stop()
+		<-waited
 		return
 	}
 	if err != nil {
 		r.logf("the hook for %s failed (%v); run the command by hand to see why", q.ID, err)
 	}
+	// The shell is reaped. While anything it started still holds its group, keep that
+	// group to kill; once the group is empty its id is free for reuse, so stop watching.
+	tick := time.NewTicker(groupPoll)
+	defer tick.Stop()
+	for syscall.Kill(-pgid, 0) == nil {
+		select {
+		case <-ctx.Done():
+			stop()
+			return
+		case <-tick.C:
+		}
+	}
 }
+
+// groupPoll is how often an exited hook's process group is checked for members left behind.
+const groupPoll = 100 * time.Millisecond
 
 // KillWait bounds the wait on a hook's output once it exits or is killed. A broker
 // stopping waits at least this long for its runner.

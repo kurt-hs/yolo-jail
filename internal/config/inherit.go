@@ -280,7 +280,7 @@ var inheritCensus = map[string]keyDisposition{
 	// scope it would apply to every workspace a launch inside the jail opens, and user scope now
 	// refuses it; a nested workspace's own config carries its own.
 	// `on_request` is a command the HOST's brokers run as the user; an inner launcher's
-	// brokers would run it inside the jail, where its answer could approve the inner jail's
+	// brokers would run it inside the jail, where the command it runs could call `yolo approve` on the inner jail's
 	// requests with no human at the host seeing them.
 	"on_request": {reason: "names a command the host's brokers run per filed request; inside a jail it would run with no human at the host to answer"},
 	"brokered":   {reason: "one workspace's own key, approved at its gate; in an inherited user scope it would apply to every workspace an inner launch opens, and user scope refuses it"},

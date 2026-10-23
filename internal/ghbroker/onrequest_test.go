@@ -14,9 +14,6 @@ import (
 )
 
 // The broker's own process runs the user's on_request (BB-D75): with the key in the user
-// config, a request this broker lifetime holds is answered by a hook that prints `approve`,
-// with no `yolo approve` and no watch kept open. Deleting startOnRequest's call in Main
-// The broker's own process runs the user's on_request (BB-D75): with the key in the user
 // config, a request this broker lifetime files runs the hook with the request on stdin and
 // YOLO_BIN naming the broker's own executable, with no watch kept open. The hook only
 // notifies, so the request is still pending after it ran. Deleting startOnRequest's call in

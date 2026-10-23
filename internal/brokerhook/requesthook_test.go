@@ -44,45 +44,81 @@ func readPid(t *testing.T, path string) int {
 	return pid
 }
 
-// A hook still waiting when its request leaves pending some other way is killed with its
-// whole process group, child included: decided with `yolo approve`, or refused because its
-// jail stopped.
+// A hook is killed with its whole process group, child included, when its request leaves
+// pending (decided with `yolo approve`, refused because its jail stopped, or expired) or its
+// run times out: both while its shell still waits, and after its shell has exited leaving a
+// backgrounded child, such as a notifier, still asking.
 func TestAHookIsKilledWhenItsRequestLeavesPending(t *testing.T) {
 	for _, c := range []struct {
-		name  string
-		leave func(f *fixture, q brokerstore.Request) error
+		name    string
+		timeout time.Duration
+		leave   func(f *fixture, q brokerstore.Request) error
+		logged  string
 	}{
-		{"decided", func(f *fixture, q brokerstore.Request) error {
+		{"decided", 0, func(f *fixture, q brokerstore.Request) error {
 			_, err := f.store.Decide(q.ID, "pending", brokerstore.Decision{Deny: true})
 			return err
-		}},
-		{"jail stopped", func(f *fixture, q brokerstore.Request) error {
+		}, "stopped because its request is no longer pending"},
+		{"jail stopped", 0, func(f *fixture, q brokerstore.Request) error {
 			_, err := f.store.End(q.Jail, q.Start)
 			return err
-		}},
+		}, "stopped because its request is no longer pending"},
+		{"expired", 0, func(f *fixture, q brokerstore.Request) error {
+			f.skew.Store(int64(brokerstore.PendingLife + time.Minute))
+			return nil
+		}, "stopped because its request is no longer pending"},
+		{"timed out", 300 * time.Millisecond, func(*fixture, brokerstore.Request) error { return nil },
+			"stopped because it ran until its request expired"},
 	} {
-		t.Run(c.name, func(t *testing.T) {
-			f := newFixture(t)
-			var log syncBuffer
-			child := filepath.Join(f.dir, "child")
-			stop := f.run(t, f.script(t, "hook", "cat >/dev/null\nsleep 300 &\necho $! >'"+child+"'\nwait\necho approve\n"), &log)
-			defer stop()
-			q, err := f.store.File(f.filing)
-			if err != nil {
-				t.Fatal(err)
-			}
-			pid := readPid(t, child)
-			if err := c.leave(f, q); err != nil {
-				t.Fatal(err)
-			}
-			waitFor(t, "the hook to be stopped", func() bool {
-				return strings.Contains(log.String(), "stopped because its request is no longer pending")
+		for _, shape := range []struct{ name, tail string }{
+			{"shell waiting", "wait\n"},
+			{"shell exited", "exit 0\n"},
+		} {
+			t.Run(c.name+"/"+shape.name, func(t *testing.T) {
+				f := newFixture(t)
+				var log syncBuffer
+				child := filepath.Join(f.dir, "child")
+				hook := f.script(t, "hook", "cat >/dev/null\nsleep 300 >/dev/null 2>&1 &\necho $! >'"+child+"'\n"+shape.tail)
+				stop := f.runFor(t, hook, &log, c.timeout, 5*time.Millisecond)
+				defer stop()
+				q, err := f.store.File(f.filing)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pid := readPid(t, child)
+				if err := c.leave(f, q); err != nil {
+					t.Fatal(err)
+				}
+				waitFor(t, "the hook to be stopped", func() bool { return strings.Contains(log.String(), c.logged) })
+				waitFor(t, "the hook's child to die", func() bool { return !alive(pid) })
+				if got := f.state(t, q.ID); got == "allowed" {
+					t.Fatalf("state %s after the hook was stopped", got)
+				}
 			})
-			waitFor(t, "the hook's child to die", func() bool { return !alive(pid) })
-			if got := f.state(t, q.ID); got == "allowed" || got == "pending" {
-				t.Fatalf("state %s after the hook was stopped", got)
-			}
-		})
+		}
+	}
+}
+
+// A request filed and decided between two polls has no question left to ask: its filing
+// event carries its current state (brokerstore.Diff, pinned there), and the hook never
+// starts for it. The event is handed over alone, with no decision after it to stop a hook
+// that started anyway.
+func TestARequestDecidedBeforeItsFilingIsSeenRunsNoHook(t *testing.T) {
+	f := newFixture(t)
+	marker := filepath.Join(f.dir, "ran")
+	r := &Runner{Store: f.store, Start: "start", Command: f.script(t, "hook", "touch '"+marker+"'\n")}
+	q := f.filing
+	q.ID, q.State = "r-decided", "pending"
+	r.event(context.Background(), brokerstore.Event{Kind: brokerstore.EventRequestFiled, Request: &q, Current: "denied"})
+	r.wg.Wait()
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("the hook ran for a request already decided")
+	}
+	// The same filing, still pending, does run it: the test above is not vacuous.
+	r.event(context.Background(), brokerstore.Event{Kind: brokerstore.EventRequestFiled, Request: &q, Current: "pending"})
+	r.wg.Wait()
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatal("the hook did not run for a pending filing")
 	}
 }
 
