@@ -219,10 +219,24 @@ func attachDarwinBootLog(e *Env, version string) *bootLog {
 // passes through no link but the layout's own (overlayLinks.route).
 func InstallHomeOverlay(e *Env, packs []*packload.Pack) error {
 	src := e.Vars["YOLO_DARWIN_HOME_OVERLAY"]
+	layout, _ := darwinHomeLayoutFor(e, packs)
 	if src == "" {
+		// Nothing to deliver, but what an earlier launch delivered still has to leave (MMP-D11).
+		// Never a boot failure: a linked sidecar is the layout step's to report, and a root
+		// that will not open is a line.
+		if e.DarwinSidecar() == "" || len(layout.linkedSidecarPaths()) > 0 {
+			return nil
+		}
+		roots, err := openOverlayInstallRoots(e.Home, e.DarwinSidecar())
+		if err != nil {
+			e.warn("skills, briefings and pack files an earlier launch delivered were not checked " +
+				"for removal: " + err.Error() + "; the next launch checks again")
+			return nil
+		}
+		defer closeOverlayRoots(roots)
+		retireUndeliveredOverlay(e.Home, roots, overlayLinksOf(layout), e.warn)
 		return nil
 	}
-	layout, _ := darwinHomeLayoutFor(e, packs)
 	if linked := layout.linkedSidecarPaths(); len(linked) > 0 {
 		return fmt.Errorf("skills, briefings and pack files were not delivered: %w", &LinkedSidecarError{Links: linked})
 	}
@@ -241,7 +255,7 @@ func InstallHomeOverlay(e *Env, packs []*packload.Pack) error {
 		return err
 	}
 	defer closeOverlayRoots(roots)
-	return installHomeOverlayDestinations(src, e.Home, roots, overlayLinksOf(layout))
+	return installHomeOverlayDestinations(src, e.Home, roots, overlayLinksOf(layout), e.warn)
 }
 
 // RetireYoloLog removes the `yolo-log` wrapper an older bootstrap wrote to ~/.local/bin.

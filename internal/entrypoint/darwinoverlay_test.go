@@ -678,3 +678,173 @@ func TestOverlayInstallKeepsTheOwnerWriteBitOnASealedTreesDirectories(t *testing
 		}
 	}
 }
+
+// installReporting is install, returning what the boot printed as well.
+func (f overlayFixture) installReporting(t *testing.T) (string, error) {
+	t.Helper()
+	e := DarwinEnvFrom(map[string]string{
+		"HOME":                     f.home,
+		"JAIL_HOME":                f.home,
+		DarwinHomeSidecarEnv:       f.sidecar,
+		"YOLO_DARWIN_HOME_OVERLAY": f.overlay,
+	}, f.home)
+	var out strings.Builder
+	e.Stderr = &out
+	pi, err := embeddedPack("pi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = InstallHomeOverlay(e, []*packload.Pack{pi})
+	return out.String(), err
+}
+
+// restageSkillsOnly replaces the overlay with one listing only the skills destination, as a
+// later launch whose packs stopped shipping the briefing stages it.
+func (f overlayFixture) restageSkillsOnly(t *testing.T) {
+	t.Helper()
+	if err := os.RemoveAll(f.overlay); err != nil {
+		t.Fatal(err)
+	}
+	writeTreeFile(t, filepath.Join(f.overlay, ".pi", "agent", "skills", "demo", "SKILL.md"), "next skill")
+	if _, err := WriteHomeOverlayManifest(f.overlay, []string{".pi/agent/skills"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A destination the next overlay stops listing is REMOVED, the way a dropped bind
+// vanishes on podman; the one still listed is replaced and the agent's state stays.
+func TestOverlayInstallRemovesADestinationTheNextOverlayNoLongerLists(t *testing.T) {
+	f := newOverlayFixture(t)
+	f.stage(t) // lists .pi/agent/skills and .pi/agent/AGENTS.md
+	if err := f.install(t); err != nil {
+		t.Fatal(err)
+	}
+	state := f.agentState(t)
+
+	f.restageSkillsOnly(t)
+	if err := f.install(t); err != nil {
+		t.Fatal(err)
+	}
+	requireAbsent(t, filepath.Join(f.home, ".pi", "agent", "AGENTS.md"),
+		"a destination the overlay stopped listing lingered")
+	requireFile(t, filepath.Join(f.home, ".pi", "agent", "skills", "demo", "SKILL.md"), "next skill")
+	requireFile(t, state, "pi's sign-in")
+}
+
+// The record is in the agent-writable sidecar, so an entry naming a path outside the
+// home is ignored, never followed.
+func TestOverlayInstallIgnoresARecordEntryOutsideTheHome(t *testing.T) {
+	f := newOverlayFixture(t)
+	f.stage(t)
+	if err := f.install(t); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(filepath.Dir(f.home), "outside.txt")
+	writeTreeFile(t, outside, "not yolo's")
+	writeTreeFile(t, filepath.Join(f.sidecar, ".yolo-home-overlay-installed.json"),
+		`{"destinations": ["../outside.txt", "/etc/passwd", ".pi/agent/AGENTS.md"]}`)
+	if err := f.install(t); err != nil {
+		t.Fatal(err)
+	}
+	requireFile(t, outside, "not yolo's")
+	requireFile(t, filepath.Join(f.home, ".pi", "agent", "AGENTS.md"), "new briefing")
+}
+
+// ONLY WHAT YOLO INSTALLED, UNCHANGED, IS REMOVED. A dropped destination the agent or the user
+// edited since is theirs: it stays, the boot names it and the rm that removes it, the boot does
+// not fail, and every later launch says it again until someone decides.
+func TestOverlayInstallLeavesAChangedDroppedDestinationAndNamesIt(t *testing.T) {
+	f := newOverlayFixture(t)
+	f.stage(t)
+	if err := f.install(t); err != nil {
+		t.Fatal(err)
+	}
+	briefing := filepath.Join(f.home, ".pi", "agent", "AGENTS.md")
+	if err := os.Remove(briefing); err != nil { // a hard link of the sealed staged file
+		t.Fatal(err)
+	}
+	writeTreeFile(t, briefing, "my own notes")
+
+	f.restageSkillsOnly(t)
+	for launch := 1; launch <= 2; launch++ {
+		out, err := f.installReporting(t)
+		if err != nil {
+			t.Fatalf("launch %d: a changed leftover failed the boot: %v", launch, err)
+		}
+		requireFile(t, briefing, "my own notes")
+		if !strings.Contains(out, "~/.pi/agent/AGENTS.md") || !strings.Contains(out, "rm ") {
+			t.Errorf("launch %d: the boot did not name the leftover and its rm:\n%s", launch, out)
+		}
+	}
+}
+
+// A destination yolo never recorded is never removed, whatever the overlay lists: with no
+// record (the first launch of a yolo that keeps one) there is nothing yolo can prove it installed.
+func TestOverlayInstallRemovesNothingItHasNoRecordOf(t *testing.T) {
+	f := newOverlayFixture(t)
+	mine := filepath.Join(f.home, ".pi", "agent", "AGENTS.md")
+	writeTreeFile(t, mine, "written before any record")
+	f.restageSkillsOnly(t)
+	out, err := f.installReporting(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireFile(t, mine, "written before any record")
+	if strings.Contains(out, "AGENTS.md") {
+		t.Errorf("the boot reported a path yolo never recorded:\n%s", out)
+	}
+}
+
+// A launch that delivers NOTHING — its packs ship no skill, briefing or file, so the launcher
+// stages no overlay and sets no YOLO_DARWIN_HOME_OVERLAY — still removes what the last launch
+// delivered: dropping the last pack must not leave its content behind.
+func TestOverlayInstallWithNoOverlayRemovesTheLastDelivery(t *testing.T) {
+	f := newOverlayFixture(t)
+	f.stage(t)
+	if err := f.install(t); err != nil {
+		t.Fatal(err)
+	}
+	state := f.agentState(t)
+	e := DarwinEnvFrom(map[string]string{
+		"HOME":               f.home,
+		"JAIL_HOME":          f.home,
+		DarwinHomeSidecarEnv: f.sidecar,
+	}, f.home)
+	e.Stderr = &strings.Builder{}
+	pi, err := embeddedPack("pi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallHomeOverlay(e, []*packload.Pack{pi}); err != nil {
+		t.Fatal(err)
+	}
+	requireAbsent(t, filepath.Join(f.home, ".pi", "agent", "AGENTS.md"), "the last delivery's briefing lingered")
+	requireAbsent(t, filepath.Join(f.home, ".pi", "agent", "skills"), "the last delivery's skills lingered")
+	requireFile(t, state, "pi's sign-in")
+	requireAbsent(t, filepath.Join(f.sidecar, HomeOverlayInstalledName), "an empty record was kept")
+}
+
+// A dropped DIRECTORY destination goes whole, and a relaunch with the same list finds the
+// record converged: nothing is reported.
+func TestOverlayInstallRemovesADroppedDirectoryDestination(t *testing.T) {
+	f := newOverlayFixture(t)
+	f.stage(t)
+	if err := f.install(t); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(f.overlay); err != nil {
+		t.Fatal(err)
+	}
+	writeTreeFile(t, filepath.Join(f.overlay, ".pi", "agent", "AGENTS.md"), "new briefing")
+	if _, err := WriteHomeOverlayManifest(f.overlay, []string{".pi/agent/AGENTS.md"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.installReporting(t); err != nil {
+		t.Fatal(err)
+	}
+	requireAbsent(t, filepath.Join(f.home, ".pi", "agent", "skills"), "a dropped skills tree lingered")
+	requireFile(t, filepath.Join(f.home, ".pi", "agent", "AGENTS.md"), "new briefing")
+	if out, err := f.installReporting(t); err != nil || strings.TrimSpace(out) != "" {
+		t.Errorf("a converged relaunch reported %q (err %v)", out, err)
+	}
+}

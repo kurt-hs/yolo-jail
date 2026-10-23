@@ -1,10 +1,13 @@
 package entrypoint
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -339,18 +342,328 @@ type overlayRoot struct {
 // home and, when the layout laid one, the workspace sidecar its links point into. `links` are
 // the layout's own links, the only ones a destination's route may pass through
 // (overlayLinks.route).
-func installHomeOverlayDestinations(overlay, home string, roots []overlayRoot, links overlayLinks) error {
+//
+// It then removes what an earlier install delivered and this overlay no longer lists
+// (retireOverlayDestinations), and records what it delivered for the next install to do the
+// same (HomeOverlayInstalledName). Neither ever fails the boot: what they could not do is a
+// line through warn. With no sidecar root there is nowhere to keep the record, so neither runs.
+func installHomeOverlayDestinations(overlay, home string, roots []overlayRoot, links overlayLinks, warn func(string)) error {
 	dests, err := readHomeOverlayManifest(overlay)
 	if err != nil {
 		return err
 	}
+	sidecar := sidecarOverlayRoot(roots)
+	var prev overlayInstallRecord
+	if sidecar != nil {
+		prev = readOverlayInstallRecord(sidecar.root)
+	}
+	src, srcErr := os.OpenRoot(overlay)
+	if srcErr == nil {
+		defer src.Close()
+	}
+	installed := map[string]string{}
 	var errs []error
 	for _, d := range dests {
 		if err := installOverlayDestination(overlay, home, roots, links, d); err != nil {
 			errs = append(errs, err)
+			// The home still holds the previous delivery, if any: keep what proves it yolo's.
+			if dg, ok := prev.Digests[d]; ok {
+				installed[d] = dg
+			}
+			continue
+		}
+		if srcErr == nil {
+			if dg, err := overlayTreeDigest(src, filepath.FromSlash(d)); err == nil {
+				installed[d] = dg
+			}
 		}
 	}
+	if sidecar != nil {
+		settleOverlayRecord(home, roots, links, *sidecar, dests, installed, prev, warn)
+	}
 	return errors.Join(errs...)
+}
+
+// retireUndeliveredOverlay is the install of a launch that delivers NOTHING — no pack it selects
+// ships a skill, briefing or file, so the launcher staged no overlay — run for its other half:
+// every destination an earlier launch recorded is no longer listed, and leaves the home as
+// retireOverlayDestinations decides. With no sidecar root, or nothing recorded, it does nothing.
+func retireUndeliveredOverlay(home string, roots []overlayRoot, links overlayLinks, warn func(string)) {
+	sidecar := sidecarOverlayRoot(roots)
+	if sidecar == nil {
+		return
+	}
+	prev := readOverlayInstallRecord(sidecar.root)
+	if len(prev.Destinations) == 0 {
+		return
+	}
+	settleOverlayRecord(home, roots, links, *sidecar, nil, nil, prev, warn)
+}
+
+// settleOverlayRecord retires what prev records and dests no longer lists, then records dests
+// with the digests in installed, plus whatever the retire left.
+func settleOverlayRecord(home string, roots []overlayRoot, links overlayLinks, sidecar overlayRoot,
+	dests []string, installed map[string]string, prev overlayInstallRecord, warn func(string)) {
+	left := retireOverlayDestinations(home, roots, links, dests, prev, warn)
+	if err := writeOverlayInstallRecord(sidecar.root, dests, installed, left); err != nil {
+		warn(fmt.Sprintf("the home overlay's install record (%s in %s) was not saved: %v. A "+
+			"destination a later launch stops delivering may then stay in the home unnamed; "+
+			"launch again to retry", HomeOverlayInstalledName, sidecar.path, err))
+	}
+}
+
+// HomeOverlayInstalledName is the INSTALL RECORD (MMP-D11): the file in the workspace sidecar
+// listing the destinations the last overlay install delivered, each with the digest of the tree
+// it delivered there (overlayTreeDigest). It is how a destination a later launch no longer lists
+// leaves the home, the way an unmounted bind vanishes on podman: without it the install knew
+// only what the overlay lists NOW, and every destination any pack ever shipped stayed.
+//
+// It lives in the sidecar because the account home is shared by every workspace. The sidecar is
+// agent-writable, so nothing in the record is trusted: an entry that is not a path below the home
+// is ignored, a removal goes through the same route and roots as an install, and only a tree
+// whose digest still matches is removed — so a forged entry can at most remove a tree identical
+// to one yolo delivered, or put a path in a line.
+const HomeOverlayInstalledName = ".yolo-home-overlay-installed.json"
+
+// overlayInstallRecord is the install record's wire shape. Destinations keeps the overlay
+// list's field name; Digests maps a destination to the tree yolo delivered there.
+type overlayInstallRecord struct {
+	Destinations []string          `json:"destinations"`
+	Digests      map[string]string `json:"digests,omitempty"`
+}
+
+// OverlayLeftAction prefixes the line for a dropped destination the install leaves because yolo
+// cannot prove it is still what yolo delivered — the overlay's twin of HostFilesLeftAction.
+const OverlayLeftAction = "left in place: "
+
+func sidecarOverlayRoot(roots []overlayRoot) *overlayRoot {
+	for i := range roots {
+		if roots[i].sidecar {
+			return &roots[i]
+		}
+	}
+	return nil
+}
+
+// readOverlayInstallRecord reads the record from the sidecar root, or an empty one: a record
+// that is absent, a link, not a regular file, over the size cap or not JSON is read as empty.
+// Each entry is checked on its own (cleanOverlayDest), so one bad entry drops only itself.
+func readOverlayInstallRecord(root *os.Root) overlayInstallRecord {
+	f, err := root.OpenFile(HomeOverlayInstalledName, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return overlayInstallRecord{}
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return overlayInstallRecord{}
+	}
+	var raw overlayInstallRecord
+	if err := json.NewDecoder(io.LimitReader(f, 1<<20)).Decode(&raw); err != nil {
+		return overlayInstallRecord{}
+	}
+	var clean []string
+	digests := map[string]string{}
+	for _, d := range raw.Destinations {
+		c, err := cleanOverlayDest(d)
+		if err != nil {
+			continue
+		}
+		clean = append(clean, c)
+		if dg := raw.Digests[d]; dg != "" {
+			digests[c] = dg
+		}
+	}
+	out, _ := normalizeOverlayDests(clean) // cannot fail: every entry is clean already
+	return overlayInstallRecord{Destinations: out, Digests: digests}
+}
+
+// writeOverlayInstallRecord records the destinations this install delivered, and the dropped
+// ones it left so the next launch names them again, by rename over the old record — or removes
+// the record when there is nothing to record.
+func writeOverlayInstallRecord(root *os.Root, dests []string, installed, left map[string]string) error {
+	if len(dests) == 0 && len(left) == 0 {
+		if err := root.Remove(HomeOverlayInstalledName); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	rec := overlayInstallRecord{Destinations: append([]string(nil), dests...), Digests: map[string]string{}}
+	for d, dg := range installed {
+		rec.Digests[d] = dg
+	}
+	for d, dg := range left {
+		rec.Destinations = append(rec.Destinations, d)
+		if dg != "" {
+			rec.Digests[d] = dg
+		}
+	}
+	sort.Strings(rec.Destinations)
+	body, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := HomeOverlayInstalledName + ".new"
+	_ = root.Remove(tmp)
+	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(append(body, '\n')); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return root.Rename(tmp, HomeOverlayInstalledName)
+}
+
+// retireOverlayDestinations removes each destination the record names that dests no longer
+// lists or covers, and returns the ones it left, with their recorded digests, for the record to
+// keep naming.
+//
+// ONLY A TREE YOLO CAN PROVE IS ITS OWN DELIVERY IS REMOVED: one whose digest still matches the
+// one recorded when it was delivered. Anything else — changed since, no digest recorded, or a
+// path the install could not reach safely — is the user's or the agent's: it stays, and one line
+// names it and the rm that removes it, on every launch until someone decides. A recorded path
+// already gone is forgotten silently. A recorded destination that is now the PARENT of a listed
+// one is forgotten without a removal, because removing it would delete the new delivery and the
+// agent state beside it.
+func retireOverlayDestinations(home string, roots []overlayRoot, links overlayLinks, dests []string, prev overlayInstallRecord, warn func(string)) map[string]string {
+	left := map[string]string{}
+	for _, r := range prev.Destinations {
+		if overlayDestCovered(r, dests) {
+			continue
+		}
+		recorded, hasDigest := prev.Digests[r]
+		leave := func(why string) {
+			left[r] = recorded
+			warn(fmt.Sprintf("%s~/%s: no pack this launch selects delivers it any more, but %s — "+
+				"remove it with `sudo rm -r %s` if you do not want it", OverlayLeftAction, r, why,
+				shquote.Quote(filepath.Join(home, filepath.FromSlash(r)))))
+		}
+		dir, base, gone, err := openOverlayDestination(home, roots, links, r)
+		if gone {
+			continue
+		}
+		if err != nil {
+			leave("yolo could not reach it safely to remove it (" + err.Error() + ")")
+			continue
+		}
+		now, derr := overlayTreeDigest(dir, base)
+		switch {
+		case derr != nil:
+			leave("yolo could not read it to check it is what yolo delivered (" + derr.Error() + ")")
+		case !hasDigest:
+			leave("yolo has no record of what it delivered there")
+		case now != recorded:
+			leave("it changed since yolo delivered it")
+		default:
+			if rerr := dir.RemoveAll(base); rerr != nil {
+				leave("removing it failed (" + rerr.Error() + ")")
+			} else {
+				warn(fmt.Sprintf("removed ~/%s: no pack this launch selects delivers it any more", r))
+			}
+		}
+		dir.Close()
+	}
+	return left
+}
+
+// overlayDestCovered reports whether the recorded destination is still delivered by dests, or
+// must not be removed for their sake: equal to a listed destination, inside one, or above one.
+func overlayDestCovered(recorded string, dests []string) bool {
+	for _, d := range dests {
+		if recorded == d || strings.HasPrefix(recorded, d+"/") || strings.HasPrefix(d, recorded+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// openOverlayDestination returns a handle on the directory holding dest and dest's name in it,
+// reached exactly as an install reaches it (overlayLinks.route, openOverlayParentIn) but
+// creating nothing. gone reports that dest, or a directory above it, does not exist.
+func openOverlayDestination(home string, roots []overlayRoot, links overlayLinks, dest string) (dir *os.Root, base string, gone bool, err error) {
+	if _, err := links.route(home, dest); err != nil {
+		return nil, "", false, err
+	}
+	rel := filepath.FromSlash(dest)
+	dir, _, err = openOverlayParentIn(filepath.Dir(filepath.Join(home, rel)), roots, dest, false)
+	if errors.Is(err, errOverlayParentMissing) {
+		return nil, "", true, nil
+	}
+	if err != nil {
+		return nil, "", false, err
+	}
+	base = filepath.Base(rel)
+	if _, err := dir.Lstat(base); err != nil {
+		dir.Close()
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, "", true, nil
+		}
+		return nil, "", false, err
+	}
+	return dir, base, false, nil
+}
+
+// overlayTreeDigest is the content identity of the file or tree at name beneath r: every entry's
+// path relative to name, its kind, a file's content digest and a link's target, walked without
+// following a link. Modes are not part of it, so it is the same for the sealed staged tree and
+// the hard links (or copies) an install made of it.
+func overlayTreeDigest(r *os.Root, name string) (string, error) {
+	h := sha256.New()
+	var walk func(at, rel string) error
+	walk = func(at, rel string) error {
+		fi, err := r.Lstat(at)
+		if err != nil {
+			return err
+		}
+		switch {
+		case fi.Mode()&os.ModeSymlink != 0:
+			target, err := r.Readlink(at)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(h, "l %q %q\n", rel, target)
+		case fi.IsDir():
+			fmt.Fprintf(h, "d %q\n", rel)
+			f, err := r.OpenFile(at, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_DIRECTORY, 0)
+			if err != nil {
+				return err
+			}
+			names, err := f.Readdirnames(-1)
+			f.Close()
+			if err != nil {
+				return err
+			}
+			sort.Strings(names)
+			for _, n := range names {
+				if err := walk(filepath.Join(at, n), path.Join(rel, n)); err != nil {
+					return err
+				}
+			}
+		case fi.Mode().IsRegular():
+			f, err := r.OpenFile(at, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+			if err != nil {
+				return err
+			}
+			fh := sha256.New()
+			_, err = io.Copy(fh, f)
+			f.Close()
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(h, "f %q %x\n", rel, fh.Sum(nil))
+		default:
+			fmt.Fprintf(h, "o %q %v\n", rel, fi.Mode().Type())
+		}
+		return nil
+	}
+	if err := walk(name, "."); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // openOverlayInstallRoots opens the directories an overlay install may write beneath: the
@@ -557,6 +870,16 @@ func installOverlayDestination(overlay, home string, roots []overlayRoot, links 
 // resolved path relative to the root: os.Root resolves every component itself and refuses
 // one that leaves the root, including a component swapped for a link after the check.
 func openOverlayParent(parent string, roots []overlayRoot, dest string) (*os.Root, bool, error) {
+	return openOverlayParentIn(parent, roots, dest, true)
+}
+
+// errOverlayParentMissing is openOverlayParentIn's answer, with create false, for a directory
+// that does not exist.
+var errOverlayParentMissing = errors.New("the directory does not exist")
+
+// openOverlayParentIn is openOverlayParent, creating the missing directories only when create
+// is set; otherwise a missing one is errOverlayParentMissing, and nothing is created.
+func openOverlayParentIn(parent string, roots []overlayRoot, dest string, create bool) (*os.Root, bool, error) {
 	existing, missing := parent, ""
 	for {
 		if _, err := os.Lstat(existing); err == nil {
@@ -568,6 +891,9 @@ func openOverlayParent(parent string, roots []overlayRoot, dest string) (*os.Roo
 		}
 		missing = filepath.Join(filepath.Base(existing), missing)
 		existing = up
+	}
+	if missing != "" && !create {
+		return nil, false, errOverlayParentMissing
 	}
 	resolved, err := filepath.EvalSymlinks(existing)
 	if err != nil {
