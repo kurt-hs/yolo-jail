@@ -14,6 +14,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // --boot-check is the browser half of --check alone: silent with a browser, one line naming the
@@ -119,7 +120,7 @@ func TestTheBootPrintsTheChromeDevtoolsPacksMissingBrowserLine(t *testing.T) {
 	if _, err := os.Stat("/bin/sh"); err != nil {
 		t.Skip("no /bin/sh")
 	}
-	for _, target := range []bootTarget{bootContainer, bootDarwin} {
+	for _, target := range []bootTarget{bootContainer} {
 		t.Run(target.String(), func(t *testing.T) {
 			t.Setenv("YOLO_CHROME_DEVTOOLS_ROOT", resolvedDir(t))
 			e, term, _, path := bootCheckEnv(t)
@@ -229,6 +230,68 @@ func TestABrokenBootCheckNeverFailsTheBoot(t *testing.T) {
 				t.Errorf("the boot failed: %v", err)
 			}
 		})
+	}
+}
+
+// A MACOS-USER BOOT RUNS NO PACK'S CHECK. Its bootstrap is outside the agent's Seatbelt profile
+// (the account mode's is unconfined), and P4 lets it run only yolo's own code; a check is a
+// pack's script in an agent-writable home. So the script never executes there, the terminal gets
+// nothing, and the boot log names the skip.
+func TestAMacosUserBootNeverRunsABootCheck(t *testing.T) {
+	e, term, log, _ := bootCheckEnv(t)
+	marker := filepath.Join(e.Home, "ran")
+	packs := []*packload.Pack{checkPack(t, e, "planted", "echo said; : > "+shquote.Quote(marker)+"\n")}
+
+	runBootCheckStep(t, e, bootDarwin, packs)
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("a macos-user boot executed a pack's boot check outside the agent's sandbox")
+	}
+	if term.Len() != 0 {
+		t.Errorf("a macos-user boot printed:\n%s", term.String())
+	}
+	if !strings.Contains(log.String(), "boot check planted (~/.local/share/planted/check): skipped on macos-user") {
+		t.Errorf("the boot log does not record the skip:\n%s", log.String())
+	}
+
+	// The same pack on a container boot does run, so the marker's absence above is the skip.
+	runBootCheckStep(t, e, bootContainer, packs)
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("the container boot did not run the check: %v", err)
+	}
+}
+
+// A TIMED-OUT CHECK TAKES ITS WHOLE PROCESS GROUP WITH IT: a background child it started does not
+// outlive the bound to act later.
+func TestATimedOutBootCheckLeavesNoGrandchild(t *testing.T) {
+	sleep, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skip("no sleep on PATH")
+	}
+	saved := bootCheckTimeout
+	bootCheckTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { bootCheckTimeout = saved })
+
+	e, _, _, _ := bootCheckEnv(t)
+	late := filepath.Join(e.Home, "late")
+	body := "( " + sleep + " 1; : > " + shquote.Quote(late) + " ) </dev/null >/dev/null 2>&1 &\n" + sleep + " 30\n"
+	runBootCheckStep(t, e, bootContainer, []*packload.Pack{checkPack(t, e, "spawner", body)})
+	time.Sleep(1500 * time.Millisecond)
+	if _, err := os.Stat(late); err == nil {
+		t.Error("a grandchild of a timed-out check survived and acted after the boot moved on")
+	}
+}
+
+// One check's output is held to bootCheckMaxBytes, however much it writes.
+func TestABootChecksOutputIsCapped(t *testing.T) {
+	var c cappedBuffer
+	chunk := strings.Repeat("x", 1000)
+	for range 2 * bootCheckMaxBytes / len(chunk) {
+		if n, err := c.Write([]byte(chunk)); n != len(chunk) || err != nil {
+			t.Fatalf("Write = %d, %v; a capped write must still report success", n, err)
+		}
+	}
+	if got := len(c.String()); got != bootCheckMaxBytes {
+		t.Errorf("held %d bytes, want %d", got, bootCheckMaxBytes)
 	}
 }
 

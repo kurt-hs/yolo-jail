@@ -22,7 +22,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Jails trust your host's certificate authorities.** A corporate or inspecting-proxy CA your host trusts is now trusted in every jail, and the launch names each one and where it came from. On macOS your login keychain's count too, though with `macos-user`'s separate account only tools that read a CA file (curl, git, Node, Python) trust those, not `gh` or `mise`. See [the corporate certificate trap](docs/design/provisioner-sets.md#163-the-corporate-certificate-trap).
 
-**The browser pack warns when there is no browser.** With `chrome-devtools` selected, a jail or `macos-user` launch that finds no Chrome or Chromium prints one line saying what to install; the launch goes on, and a browser installed later just works. See [the chrome-devtools pack](docs/reference/mcp-configuration.md#the-chrome-devtools-pack).
+**The browser pack warns when there is no browser.** With `chrome-devtools` selected, a jail launch that finds no Chrome or Chromium prints one line saying what to install; the launch goes on, and a browser installed later just works. See [the chrome-devtools pack](docs/reference/mcp-configuration.md#the-chrome-devtools-pack).
 
 ### Changed
 

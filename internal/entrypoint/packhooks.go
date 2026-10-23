@@ -40,9 +40,10 @@ package entrypoint
 // ONE HOOK DOES RUN PACK CODE, by the maintainer's ruling: boot_check
 // (docs/design/mcp-presets-removal.md, OQ-MP9, 2026-10-23 — "if the pack discovers at boot …
 // that it's not there, then it should print it … it is just a warning"). It runs a script the
-// pack delivers inside the jail or the macos-user sandbox, as that boot's user, under the same
-// confinement as every command an agent runs there, so it grants nothing the agent's own shell
-// lacks; it never runs at `yolo host`. Its output is printed and nothing else is done with it:
+// pack delivers, as the boot's user, in a CONTAINER jail only, where the whole boot is inside the
+// jail's confinement. It runs neither on macos-user, whose bootstrap is outside the agent's
+// Seatbelt profile and may run only yolo's own code (P4), nor at `yolo host`; there the pack's
+// program reports the same thing at its own start. Its output is printed and nothing else is done with it:
 // it cannot stop a launch, and a check that fails or hangs costs one line (packbootchecks.go).
 // It still takes no side effect off the list above; what it may print is all it does.
 
@@ -116,8 +117,8 @@ func runPackHook(e *Env, p *packload.Pack, h packdecl.Hook) error {
 	case HookPerJailHistory:
 		return e.isolateHistoryFile(h)
 	case HookBootCheck:
-		// Run by the run_pack_boot_checks step (packbootchecks.go), not here: on macos-user the
-		// script it runs is not in the home until install_home_overlay, which follows this step.
+		// Run by the run_pack_boot_checks step (packbootchecks.go), not here, which runs it in a
+		// container jail and records its skip on macos-user.
 		return nil
 	default:
 		// Unknown hook names are rejected at manifest decode, so reaching here means the

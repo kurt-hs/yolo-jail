@@ -19,6 +19,13 @@ package entrypoint
 //
 // A check that is satisfied prints nothing and so does this: a healthy launch gets no line, and
 // the boot log records that each check ran.
+//
+// A CHECK RUNS IN A CONTAINER JAIL ONLY. There the whole boot is inside the jail, so a check has
+// the jail's confinement and nothing more. A macos-user bootstrap is not reliably inside the
+// agent's Seatbelt profile (the account mode's runs unconfined, MMP-D9), and its rule is that it
+// runs only yolo's own code (P4, docs/reference/macos-user-provisioning.md); a check is a pack's
+// script in an agent-writable home, so there it is skipped and the boot log says so. The pack's
+// program says the same thing at its own start, which runs confined.
 
 import (
 	"bytes"
@@ -29,6 +36,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
@@ -46,19 +55,53 @@ var bootCheckTimeout = 5 * time.Second
 // shows it.
 const bootCheckMaxLines = 4
 
+// bootCheckMaxBytes caps what one check's output may hold in memory; past it the bytes are
+// dropped, which bootCheckMaxLines would have hidden anyway.
+const bootCheckMaxBytes = 64 << 10
+
 // RunPackBootChecks runs each selected pack's boot_check hooks in pack order and prints what
-// each says. It never fails the boot.
-func RunPackBootChecks(e *Env, packs []*packload.Pack) {
+// each says. It never fails the boot. On a macos-user boot it runs none and notes each skip to
+// the boot log (the file comment says why).
+func RunPackBootChecks(e *Env, target bootTarget, packs []*packload.Pack) {
 	for _, p := range packs {
 		if p == nil || p.Decl == nil {
 			continue
 		}
 		for _, h := range p.Decl.HookContributions() {
-			if h.Name == HookBootCheck {
-				runPackBootCheck(e, p.Name, h)
+			if h.Name != HookBootCheck {
+				continue
 			}
+			if target != bootContainer {
+				e.note(fmt.Sprintf("boot check %s (~/%s): skipped on macos-user, whose bootstrap "+
+					"runs outside the agent's sandbox and so runs no pack script (P4)",
+					p.Name, filepath.ToSlash(h.File)))
+				continue
+			}
+			runPackBootCheck(e, p.Name, h)
 		}
 	}
+}
+
+// cappedBuffer keeps the first bootCheckMaxBytes written to it and drops the rest. Stdout and
+// stderr write it from two goroutines, so it locks.
+type cappedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if room := bootCheckMaxBytes - c.buf.Len(); room > 0 {
+		c.buf.Write(p[:min(len(p), room)])
+	}
+	return len(p), nil
+}
+
+func (c *cappedBuffer) String() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.buf.String()
 }
 
 func runPackBootCheck(e *Env, pack string, h packdecl.Hook) {
@@ -85,9 +128,17 @@ func runPackBootCheck(e *Env, pack string, h packdecl.Hook) {
 	env := envWith(os.Environ(), "HOME", e.Home)
 	env = envWith(env, "PATH", agentPath(e))
 	cmd.Env = envWith(env, "YOLO_BYPASS_SHIMS", "1")
-	var out bytes.Buffer
+	var out cappedBuffer
 	cmd.Stdout, cmd.Stderr = &out, &out
-	// A grandchild that keeps the output pipe open must not hold the boot past the bound.
+	// The check leads its own process group and the timeout kills the group, so no grandchild
+	// it started outlives it; WaitDelay bounds one that left the group and holds the pipe.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
 	cmd.WaitDelay = time.Second
 	err := cmd.Run()
 

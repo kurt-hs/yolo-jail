@@ -786,12 +786,13 @@ and starts nothing — the browser-presence report, since a `requires` contribut
 binary on PATH and not an app bundle or a set of alternatives. With no server it exits 127 and
 names the step for each notch.
 
-**At boot**, in a jail and on macos-user, the pack's `boot_check` hook runs the same wrapper
+**At boot**, in a container jail, the pack's `boot_check` hook runs the same wrapper
 with `--boot-check`: the browser search alone, silent when it finds one and one warning line,
 naming what to install, when it does not
 ([`OQ-MP9`](../design/mcp-presets-removal.md#OQ-MP9)). It never stops a launch, since a browser
 installed later is used at the server's next start. yolo runs the check because the pack
-declares it, and knows nothing about browsers.
+declares it, and knows nothing about browsers. On macos-user the boot runs no pack script, its
+bootstrap being outside the agent's sandbox, so the report there is the server start's line.
 
 **What each notch needs**: a container jail has the image's chromium, or the store-delivered one
 on a `YOLO_STORE_PACKAGES=1` launch. macos-user and the host need a Chrome or Chromium the machine

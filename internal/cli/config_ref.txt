@@ -1860,9 +1860,10 @@
                     workspace on the machine. unshare_directory undoes a
                     shared_directory the pack no longer declares: the link at `from` to
                     `at` becomes an empty directory; anything else there is left alone.
-                    boot_check runs `/bin/sh ~/<from> <flags...>` once at boot, in a
-                    jail and on macos-user (never at the host), and prints what it says
-                    as a warning; a check that is satisfied prints nothing.  It never
+                    boot_check runs `/bin/sh ~/<from> <flags...>` once at boot in a
+                    container jail (never on macos-user, whose bootstrap runs no pack
+                    script, nor at the host), and prints what it says as a warning; a
+                    check that is satisfied prints nothing.  It never
                     stops a launch: a failing check costs a line, and one still running
                     after 5 s is stopped.
       autonomy     {autonomous:{...}, guarded:{...}} — the agent's two permission

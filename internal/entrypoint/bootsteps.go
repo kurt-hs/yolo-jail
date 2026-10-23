@@ -486,7 +486,7 @@ func bootSteps() []bootStep {
 				if err != nil {
 					return // configure_pack_surfaces has already failed the boot on it
 				}
-				RunPackBootChecks(b.e, packs)
+				RunPackBootChecks(b.e, b.target, packs)
 			},
 			notSessionPass: "the jail's own boot ran each check once; a session's pass would print " +
 				"the same warning again on every attach",
