@@ -1,11 +1,12 @@
 package macosuser
 
 import (
-	"fmt"
 	"path"
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // THE DENY-BY-DEFAULT PROFILE (docs/design/macos-user-model.md §7, plan slice 4).
@@ -38,18 +39,6 @@ import (
 // profile"). ProfileParams.RunAsUser is rendered into the header comment only, so a human
 // reading an installed profile can tell which mode wrote it.
 
-// LoopbackPolicy is the pending loopback ruling (OQ-MM7). The zero value denies loopback
-// with no port allowed, the prototype's posture.
-type LoopbackPolicy struct {
-	// AllowAll renders no loopback rule: every loopback port is reachable, as on macos-user
-	// today. Ports is ignored.
-	AllowAll bool
-	// Ports are the loopback ports the sandbox may connect to while loopback is denied:
-	// yolo's own service ports and what the workspace allows (MMP-D10). A port outside
-	// 1..65535 is dropped.
-	Ports []int
-}
-
 // TmpPolicy is the pending shared-/tmp ruling (OQ-MM8). It governs /tmp AND the running
 // user's DARWIN_USER_TEMP_DIR together, since in self mode both are shared with every
 // process of yours.
@@ -63,11 +52,11 @@ const (
 	TmpPrivate
 )
 
-// The production values of the three pending rulings (MMP-D13), set to the prototype's
-// choices until slice 11 records the maintainer's answers. Each ruling is a one-line edit.
+// The production values of the two rulings still pending (MMP-D13), set to the prototype's
+// choices until slice 11 records the maintainer's answers. Each ruling is a one-line edit. The
+// third, loopback (OQ-MM7), is ruled: the whole loopback is allowed, and is no parameter
+// (networkBlocks, MMP-D14).
 var (
-	// productionLoopback (OQ-MM7): denied, ports filled per launch by the caller.
-	productionLoopback = LoopbackPolicy{}
 	// productionTmp (OQ-MM8): shared, readable.
 	productionTmp = TmpShared
 	// productionHostSoftware (OQ-MM9): the install trees the prototype left readable.
@@ -94,7 +83,8 @@ type ProfileParams struct {
 	// HostHome is the invoking human's home. It is named only to deny parts of it, and to
 	// read its locale preferences (CoreFoundation finds them through the account's home).
 	HostHome string
-	// SandboxTmp is the launch's own TMPDIR, read-write under every TmpPolicy.
+	// SandboxTmp is the launch's own TMPDIR, read-write under every TmpPolicy, and one of the
+	// roots the sandbox may bind and connect unix sockets under.
 	SandboxTmp string
 	// DarwinUserTempDir is `getconf DARWIN_USER_TEMP_DIR` of the running user, read-write
 	// only under TmpShared.
@@ -107,6 +97,11 @@ type ProfileParams struct {
 	// copy. The directories above them get metadata alone, which lists nothing. Empty reads the
 	// whole root.
 	StagedReads []string
+	// ServicesDirs are this session's own host-services dirs (internal/cli/run's
+	// servicessession.go), read only, each by its exact path (MMP-D15): the endpoint files the
+	// sandbox is told about live there, and the shared-/tmp allow must not be what reaches them,
+	// since it reaches every other session's too. The dir's liveness lock is denied.
+	ServicesDirs []string
 	// MachineDirs are the writable roots outside the workspace and HOME: the machine root's
 	// shared dirs (MMP-D6). Read-write.
 	MachineDirs []string
@@ -130,24 +125,18 @@ type ProfileParams struct {
 	// only: it changes no rule.
 	RunAsUser string
 
-	// Loopback, Tmp and HostSoftware are the three pending rulings (MMP-D13). Their zero
-	// values are the prototype's posture except HostSoftware, whose nil hides every host
-	// software tree; WithProductionRulings fills all three with the production values.
-	Loopback LoopbackPolicy
-	Tmp      TmpPolicy
+	// Tmp and HostSoftware are the two pending rulings (MMP-D13). Tmp's zero value is the
+	// prototype's posture; HostSoftware's nil hides every host software tree.
+	// WithProductionRulings fills both with the production values.
+	Tmp TmpPolicy
 	// HostSoftware are the host install trees the sandbox may read (and so run from):
 	// install trees such as /opt/homebrew, never a parent such as /opt (OQ-MM2).
 	HostSoftware []string
 }
 
-// WithProductionRulings returns p with the three pending rulings set to their production
-// values (productionLoopback with p's own ports kept, productionTmp, productionHostSoftware).
+// WithProductionRulings returns p with the two pending rulings set to their production values
+// (productionTmp, productionHostSoftware).
 func (p ProfileParams) WithProductionRulings() ProfileParams {
-	ports := p.Loopback.Ports
-	p.Loopback = productionLoopback
-	if !p.Loopback.AllowAll {
-		p.Loopback.Ports = slices.Clone(ports)
-	}
 	p.Tmp = productionTmp
 	p.HostSoftware = slices.Clone(productionHostSoftware)
 	return p
@@ -347,13 +336,14 @@ func DenyDefaultProfile(p ProfileParams) string {
 	if staging != "" {
 		b.WriteString(stagingReadAllow(staging, p.StagedReads))
 	}
+	b.WriteString(servicesDirReadAllow(p.ServicesDirs))
 	b.WriteString(contextReadAllow(p.Context))
 	b.WriteString(programOverrideReadAllow(p.Context))
 	b.WriteString(relocationReadAllow(p.Relocations))
 
 	b.WriteString(processBlocks())
 	b.WriteString(serviceBlocks())
-	b.WriteString(networkBlocks(p.Loopback))
+	b.WriteString(networkBlocks(absCleanAll(ws, home, sandboxTmp)))
 	b.WriteString(nixDaemonBlocks())
 	b.WriteString(closingDenies(hostHome))
 	return b.String()
@@ -667,11 +657,22 @@ func serviceBlocks() string {
 		"    (ipc-posix-name \"apple.shm.notification_center\"))                 ;; Shared memory read by libnotify.\n"
 }
 
-// networkBlocks is the prototype's network section, with loopback rendered from the policy
-// (OQ-MM7): denied with the listed ports re-allowed, or no loopback rule at all.
-func networkBlocks(lp LoopbackPolicy) string {
+// LoopbackAllowID is the test id of the profile's loopback allow (OQ-MM7, ruled 2026-10-23).
+const LoopbackAllowID = "loopback-allow"
+
+// UnixSocketAllowID is the test id of the profile's unix-socket allow on the sandbox's own
+// writable roots (MMP-D16).
+const UnixSocketAllowID = "unix-socket-allow"
+
+// networkBlocks is the prototype's network section, with the WHOLE LOOPBACK allowed (OQ-MM7,
+// ruled 2026-10-23: the sandbox is an ordinary process on the Mac's own network stack, "network
+// mode host", and Seatbelt cannot tell which process listens, so no narrower rule keeps the
+// agent's own servers working; MMP-D14), and unix sockets allowed under socketRoots alone, the
+// sandbox's own writable places (MMP-D16).
+func networkBlocks(socketRoots []string) string {
 	out := "\n;; ---------------------------------------------------------------------------\n" +
-		";; Network: open, except the host's loopback when the policy denies it.\n" +
+		";; Network: open, the host's loopback included (OQ-MM7); unix sockets only under\n" +
+		";; the sandbox's own writable roots.\n" +
 		";; ---------------------------------------------------------------------------\n" +
 		"\n;; [20-network] Outbound TCP/UDP to anywhere: package installs, API calls; DNS\n" +
 		";; through mDNSResponder's socket; listening, for dev servers the agent starts.\n" +
@@ -679,34 +680,74 @@ func networkBlocks(lp LoopbackPolicy) string {
 		"(allow network-outbound (remote ip))\n" +
 		"(allow network-outbound (literal \"/private/var/run/mDNSResponder\"))\n" +
 		"(allow network-bind (local ip))\n" +
-		"(allow network-inbound (local ip))\n"
-	if lp.AllowAll {
-		return out + "\n;; [yolo] Loopback is not denied (OQ-MM7: allowed): your loopback services are\n" +
-			";; reachable, and so are servers the agent starts itself.\n"
-	}
-	out += "\n;; [yolo] Your loopback services are out of reach, as podman's own loopback\n" +
-		";; keeps them (OQ-MM7: denied). Seatbelt cannot tell which process listens, so\n" +
-		";; this also refuses a connect to a server the agent itself started on loopback.\n" +
-		";; #seatbelt-test-id:loopback-deny#\n" +
-		"(deny network-outbound (remote ip \"localhost:*\"))\n"
-	var ports []int
-	for _, port := range lp.Ports {
-		if port >= 1 && port <= 65535 && !slices.Contains(ports, port) {
-			ports = append(ports, port)
-		}
-	}
-	slices.Sort(ports)
-	if len(ports) == 0 {
+		"(allow network-inbound (local ip))\n" +
+		"\n;; [yolo] The whole loopback, every port (OQ-MM7: allowed). The sandbox shares the\n" +
+		";; Mac's network stack, as a container on --net=host shares the host's: your\n" +
+		";; loopback services are reachable, and so are servers the agent starts itself.\n" +
+		";; Named although the allow above covers it, so no later edit can quietly drop it.\n" +
+		";; #seatbelt-test-id:" + LoopbackAllowID + "#\n" +
+		"(allow network-outbound (remote ip \"localhost:*\"))\n" +
+		"(allow network-bind network-inbound (local ip \"localhost:*\"))\n"
+	if len(socketRoots) == 0 {
 		return out
 	}
-	var clauses strings.Builder
-	for _, port := range ports {
-		fmt.Fprintf(&clauses, "    (remote ip \"localhost:%d\")\n", port)
+	var bind, connect strings.Builder
+	for _, r := range socketRoots {
+		bind.WriteString("    (local unix-socket (subpath " + sbplStr(r) + "))\n")
+		connect.WriteString("    (remote unix-socket (subpath " + sbplStr(r) + "))\n")
 	}
-	return out + "\n;; [yolo] ...except the listed ports: yolo's own services and what the workspace\n" +
-		";; config allows (MMP-D10).\n" +
-		";; #seatbelt-test-id:loopback-port-allow#\n" +
-		form("allow network-outbound", clauses.String())
+	return out + "\n;; [yolo] Unix sockets the sandbox creates in its own writable places: the workspace,\n" +
+		";; its HOME and its TMPDIR (tmux, overmind, Python multiprocessing, ssh ControlMaster,\n" +
+		";; a local database). bind() and connect() on a unix socket are network operations,\n" +
+		";; not file ones, so the write allows above do not cover them. The subpath form is\n" +
+		";; Codex's (codex-rs/sandboxing/src/seatbelt.rs). Never your launchd or ssh-agent\n" +
+		";; sockets: they are outside these roots, and the closing block denies them by name.\n" +
+		";; #seatbelt-test-id:" + UnixSocketAllowID + "#\n" +
+		form("allow network-bind", bind.String()) +
+		form("allow network-outbound", connect.String())
+}
+
+// ServicesDirReadAllowID is the test id of the read allow on this session's own host-services
+// dirs (MMP-D15), and ServicesLockDenyID of the deny of the liveness lock inside each.
+const (
+	ServicesDirReadAllowID = "services-dir-read-allow"
+	ServicesLockDenyID     = "services-lock-deny"
+)
+
+// servicesDirReadAllow is the read allow on this session's own host-services dirs, each by its
+// exact path, with metadata only on each one's parent (a stat for path resolution, never a
+// listing, which would name every other session's dir), and the dir's host-only liveness lock
+// denied after it: a read-only descriptor can still take a flock, and a sandbox holding a shared
+// lock would keep a dead session's dir from ever being collected.
+func servicesDirReadAllow(dirs []string) string {
+	clean := absCleanAll(dirs...)
+	if len(clean) == 0 {
+		return ""
+	}
+	var parents []string
+	for _, d := range clean {
+		if p := path.Dir(d); p != "/" && !slices.Contains(parents, p) {
+			parents = append(parents, p)
+		}
+	}
+	var meta, locks strings.Builder
+	for _, p := range parents {
+		meta.WriteString("    (literal " + sbplStr(p) + ")\n")
+	}
+	for _, d := range clean {
+		for _, name := range []string{paths.HostServicesSessionLockName, paths.HostServicesSessionLockName + ".pending"} {
+			locks.WriteString("    (literal " + sbplStr(d+"/"+name) + ")\n")
+		}
+	}
+	return "\n;; [yolo] This session's own host-services dir (MMP-D15): the endpoint files the\n" +
+		";; sandbox is told about, READ only, by exact path, so it reaches them whatever the\n" +
+		";; /tmp ruling (OQ-MM8) decides. Another session's dir beside it gets nothing here.\n" +
+		";; #seatbelt-test-id:" + ServicesDirReadAllowID + "#\n" +
+		form("allow file-read-metadata", meta.String()) +
+		form("allow file-read*", subpathLines(clean)) +
+		";; [yolo] ...but never the session's liveness lock, which only the host holds.\n" +
+		";; #seatbelt-test-id:" + ServicesLockDenyID + "#\n" +
+		form("deny file-read* file-write*", locks.String())
 }
 
 // NixDaemonSocket is the host nix daemon's socket, which every nix client in the sandbox

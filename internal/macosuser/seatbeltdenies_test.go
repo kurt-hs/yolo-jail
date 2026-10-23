@@ -43,7 +43,7 @@ func TestEverySeatbeltDenyCarriesATestID(t *testing.T) {
 	// values of each pending ruling, so every conditional deny is in one of the two texts.
 	requireEveryDenyCarriesATestID(t, "the deny-default profile", DenyDefaultProfile(fullProfileParams()))
 	alt := fullProfileParams()
-	alt.Loopback, alt.Tmp, alt.HostSoftware = LoopbackPolicy{AllowAll: true}, TmpPrivate, nil
+	alt.Tmp, alt.HostSoftware = TmpPrivate, nil
 	requireEveryDenyCarriesATestID(t, "the deny-default profile, alternate rulings", DenyDefaultProfile(alt))
 }
 

@@ -48,18 +48,16 @@ The checks, keyed to [§6](../../../design/macos-user-model.md#6-what-a-prototyp
 | a1–a12 | The workspace, `$HOME` and temp dirs are writable; git init and commit work; a C build runs; a Homebrew and a nix binary run; HTTPS works, certificate trust included (`curl`, `gh`, `git ls-remote`); the system fonts are readable. |
 | b1–b13 | Each fails: reading a decoy secret in your home and `~/.ssh`, writing in your home, reading the throwaway login-keychain item's secret (b4) and the keychain file, the ssh agent, the clipboard, Apple Events to Finder and System Events, `open -a TextEdit`, `launchctl submit`, `kill -0` on a long-lived process of yours, and reading that process's command line through `ps` and through `sysctl kern.procargs2`. |
 | c1–c4 | A decoy project at `/opt/src/...` (or `/Library/Caches/...` where `/opt` is not writable) is unreadable; `/opt/homebrew` and the nix store are readable. |
-| d1–d2 | A loopback listener the script starts is unreachable from inside, and reachable once its port is passed to the profile. |
+| d1, d3 | A loopback listener of yours is reachable from inside, and so is a loopback server the agent starts itself: OQ-MM7 (ruled 2026-10-23) allows the whole loopback. |
 | e1–e2 | With Full Disk Access granted to the terminal, profile-denied files stay unreadable. |
+| g1–g6 | A unix socket binds and connects under `$TMPDIR` and in the workspace. With `--profile-from-yolo`: the session's host-services liveness lock is refused; without the shared `/tmp`, the session's own endpoint file is readable, a sibling session's is not, and `/private/tmp` cannot be listed. |
 | f1 | Optional: Claude Code installs into the sandbox's own home and `claude --version` runs. |
 
-Two `INFO` lines report what the model knowingly leaves open, without counting it. Both await a
-maintainer ruling, so the profile's rules for them are unchanged:
+One `INFO` line reports what the model knowingly leaves open, without counting it. It awaits a
+maintainer ruling, so the profile's rules for it are unchanged:
 
 - **b14:** the shared `/tmp`, where a file of yours is still readable. The first run read it in self
   mode; in account mode Unix permissions refused it.
-- **d3:** a loopback server the agent itself starts is also refused, because Seatbelt cannot tell
-  which process is listening. That blocks the agent's own servers, random-port test servers
-  included. Podman's private loopback has no such limit.
 
 ## How to run it
 
@@ -84,13 +82,11 @@ Its workspace is under `/Users/Shared/yolo/prototype-<nonce>`. It asks for your 
 
 Options:
 
-- `--allow-port PORT` adds a loopback port to the profile's allow list. Repeat it for up to three
-  (any number with `--profile-from-yolo`).
 - `--profile-from-yolo YOLO` runs every check against the profile yolo generates instead of
   [`profile.sb`](./profile.sb). `YOLO` is a yolo binary, for example one built from a checkout with
   `go build -o /tmp/yolo ./cmd/yolo`. The script renders the profile for its own workspace, home and
-  temp dirs with `YOLO internal macos-user-profile`, and renders it again with the extra port for
-  check d2. To compare the two profiles by eye, run that command yourself with `--mode`,
+  temp dirs and a fake host-services dir with `YOLO internal macos-user-profile`, and renders it
+  again without the shared `/tmp` for checks g4–g6. To compare the two profiles by eye, run that command yourself with `--mode`,
   `--workspace` and `--tmp` (`--help` lists the rest) and diff its output against [`profile.sb`](./profile.sb).
 - `--with-claude` runs the native Claude Code installer inside the sandbox, into its own home, then
   `claude --version`. It makes network calls to download the installer, but never logs in and never
@@ -134,9 +130,9 @@ PASS b1   read the decoy secret in your home
 ```
 
 - **`PASS`** means the expected thing happened: an allow worked, or a deny held.
-- **`FAIL` on an a, c3–c4 or d2 check** means the allow list is too narrow: a tool broke. That is
+- **`FAIL` on an a, c3–c4, d or g1–g2, g4 check** means the allow list is too narrow: a tool broke. That is
   expected on a first run, and it is a fix to [`profile.sb`](./profile.sb).
-- **`FAIL` on a b, c1–c2, d1 or e check** means something the model must deny got through. That is
+- **`FAIL` on a b, c1–c2, e, g3 or g5–g6 check** means something the model must deny got through. That is
   the finding that matters most.
 - **`SKIP`** means the check could not run here (no Homebrew, no nix, no Command Line Tools, empty
   clipboard), and says what would let it run.
@@ -182,8 +178,9 @@ The decisions, each traced to a design ruling. The file comments every allow on 
   `(deny default)` and the Apple Events service denied by name both in place.
 - **Processes:** any program may run; signals and process inspection reach only processes inside
   the sandbox; another process's command line and environment are denied on both channels.
-- **Network:** open, except loopback, which is refused except the listed ports. Unix sockets are
-  refused, with the ssh agent and container runtime sockets also denied by name.
+- **Network:** open, the whole loopback included (OQ-MM7). Unix sockets bind and connect only under
+  the workspace, the agent's home and the launch's temp dir; the ssh agent and container runtime
+  sockets are also denied by name.
 
 ## What may need adjusting
 
@@ -194,12 +191,13 @@ These are the parts written blind, most likely first:
   yolo's tools differ. The `log show` excerpt names the path.
 - **The `-D` parameter forms.** The profile builds rules from parameters with `(param …)`,
   `string-append` and `if`. Safehouse's profiles use `define` and `string-append`; `param` and a
-  top-level `if` are recalled from Chromium's profiles, not checked here. A loopback allow
-  built as `(remote ip (string-append "localhost:" …))` is the least certain. If the profile fails
-  to load on one of those lines, replace the expression with a literal `"localhost:<port>"` and
-  report it.
+  top-level `if` are recalled from Chromium's profiles, not checked here. If the profile fails to
+  load on one of those lines, report it.
+- **The unix-socket filters.** `(local unix-socket (subpath …))` and `(remote unix-socket (subpath …))`
+  are Codex's form, not Safehouse's. Checks g1 and g2 show whether they load and match, a relative
+  socket path included.
 - **Whether `localhost` in a network rule covers both `127.0.0.1` and `::1`.** Check d1 tests only
-  the first.
+  the first; the integration suite's d2 case tests `::1`.
 - **Whether `launchctl submit` is refused by Seatbelt or by launchd.** Check b11 judges by whether the
   job appears outside, either way.
 - **The b13 readers.** `/bin/ps` is setuid root, and the first run showed the sandbox refusing to

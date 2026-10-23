@@ -45,12 +45,15 @@ func profileTestParams() macosuser.ProfileParams {
 		DarwinUserTempDir: profileTestDarwin,
 		StagingRoot:       macosuser.StagingRoot(),
 		RunAsUser:         "you",
-		Loopback:          macosuser.LoopbackPolicy{Ports: []int{31053, 8080}},
+		ServicesDirs:      []string{profileTestServices},
 	}.WithProductionRulings()
 }
 
 var profileTestArgs = []string{"--mode", "self", "--workspace", profileTestWS, "--tmp", profileTestTmp,
-	"--allow-port", "31053", "--allow-port", "8080"}
+	"--services-dir", profileTestServices}
+
+// profileTestServices is a session's host-services dir, granted read-only by --services-dir.
+const profileTestServices = "/private/tmp/yolo-host-services-1a2b3c4d-987654"
 
 func TestMacosUserProfileVerbPrintsTheGeneratedProfile(t *testing.T) {
 	out, errOut, rc := runProfileVerb(t, profileTestArgs...)
@@ -78,14 +81,13 @@ func TestMacosUserProfileVerbAccountModeNamesTheAccountOnly(t *testing.T) {
 
 func TestMacosUserProfileVerbOverridesEachPendingRuling(t *testing.T) {
 	args := append(append([]string{}, profileTestArgs...),
-		"--loopback", "allow", "--shared-tmp", "private", "--host-software", "/opt/homebrew",
+		"--shared-tmp", "private", "--host-software", "/opt/homebrew",
 		"--home", "/Users/you/agent-home", "--host-home", "/Users/other", "--darwin-tmp", "/private/var/folders/cd/T")
 	out, errOut, rc := runProfileVerb(t, args...)
 	if rc != 0 {
 		t.Fatalf("exit %d: %s", rc, errOut)
 	}
 	pp := profileTestParams()
-	pp.Loopback = macosuser.LoopbackPolicy{AllowAll: true}
 	pp.Tmp = macosuser.TmpPrivate
 	pp.HostSoftware = []string{"/opt/homebrew"}
 	pp.Home = "/Users/you/agent-home"
@@ -95,7 +97,7 @@ func TestMacosUserProfileVerbOverridesEachPendingRuling(t *testing.T) {
 		t.Errorf("the overrides did not reach the profile.\n--- got\n%s\n--- want\n%s", out, want)
 	}
 
-	out, _, rc = runProfileVerb(t, append(append([]string{}, profileTestArgs...), "--no-host-software", "--loopback", "deny")...)
+	out, _, rc = runProfileVerb(t, append(append([]string{}, profileTestArgs...), "--no-host-software")...)
 	if rc != 0 {
 		t.Fatalf("exit %d", rc)
 	}
@@ -108,13 +110,12 @@ func TestMacosUserProfileVerbOverridesEachPendingRuling(t *testing.T) {
 
 func TestMacosUserProfileVerbRefusesMisuseNamingTheFix(t *testing.T) {
 	for name, args := range map[string][]string{
-		"no mode":      {"--workspace", profileTestWS, "--tmp", profileTestTmp},
-		"bad mode":     {"--mode", "guest", "--workspace", profileTestWS, "--tmp", profileTestTmp},
-		"no workspace": {"--mode", "self", "--tmp", profileTestTmp},
-		"no tmp":       {"--mode", "self", "--workspace", profileTestWS},
-		"bad port":     append(append([]string{}, profileTestArgs...), "--allow-port", "70000"),
-		"bad loopback": append(append([]string{}, profileTestArgs...), "--loopback", "maybe"),
-		"bad tmp":      append(append([]string{}, profileTestArgs...), "--shared-tmp", "public"),
+		"no mode":               {"--workspace", profileTestWS, "--tmp", profileTestTmp},
+		"bad mode":              {"--mode", "guest", "--workspace", profileTestWS, "--tmp", profileTestTmp},
+		"no workspace":          {"--mode", "self", "--tmp", profileTestTmp},
+		"no tmp":                {"--mode", "self", "--workspace", profileTestWS},
+		"retired loopback flag": append(append([]string{}, profileTestArgs...), "--loopback", "deny"),
+		"bad tmp":               append(append([]string{}, profileTestArgs...), "--shared-tmp", "public"),
 		"contradiction": append(append([]string{}, profileTestArgs...),
 			"--no-host-software", "--host-software", "/opt/homebrew"),
 		"stray argument": append(append([]string{}, profileTestArgs...), "extra"),

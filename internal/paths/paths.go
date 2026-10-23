@@ -10,6 +10,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // Platform predicates (IS_LINUX / IS_MACOS in Python).
@@ -555,6 +556,19 @@ func HostServicesSessionPrefix(cname string) string {
 // every workspace: the prefix, any 8-hex key, a dash, any suffix.
 func HostServicesSessionGlob(base string) string {
 	return filepath.Join(base, hostServicesDirPrefix+"*-*")
+}
+
+// IsHostServicesSessionDirName reports whether name is a macos-user SESSION's host-services
+// dir's base name: the prefix, exactly 8 lowercase hex digits, a dash, and a non-empty suffix
+// with no slash. A container jail's dir (nothing after the hash) is not one. The deny-by-default
+// profile grants such a dir by exact path when an endpoint variable names a file in it
+// (macosuser's sessionServicesDirs).
+func IsHostServicesSessionDirName(name string) bool {
+	rest, ok := strings.CutPrefix(name, hostServicesDirPrefix)
+	if !ok || len(rest) < 10 || rest[8] != '-' || strings.Contains(rest, "/") {
+		return false
+	}
+	return strings.Trim(rest[:8], "0123456789abcdef") == ""
 }
 
 // HostServicesSessionLockName is the file inside a session's host-services dir that its yolo

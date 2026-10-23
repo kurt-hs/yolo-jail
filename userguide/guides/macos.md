@@ -238,11 +238,11 @@ project's `.yolo/home` and the tools, and denies the rest of your files, your ke
 other processes. Every launch says so first. A project's config cannot choose this mode; only your
 user config can. Remove the line, or set it to `"account"`, to go back.
 
-It is experimental. The agent cannot reach the services on your Mac's loopback (`localhost`)
-except yolo's own, such as the Claude login service, and the ports your project lists in
-`network.forward_host_ports`. Every launch lists the ports it opens. A server the agent starts on
-`localhost` is closed to the agent too, so a test that starts one and connects to it fails; to
-reach one on a fixed port, add that port to `network.forward_host_ports`. The shared `/tmp` and
+It is experimental. The agent reaches every service on your Mac's loopback (`localhost`), as a
+jail on the host network would, and every launch says so. Servers the agent starts on `localhost`
+work too, test servers on random ports included. Each launch gets its own temporary folder for
+tools such as tmux, and the agent can use sockets it makes there or in the project. It cannot
+use your ssh agent's socket. The shared `/tmp` and
 your own temporary folder (`getconf DARWIN_USER_TEMP_DIR`) stay readable, as tools expect, so
 the agent can read a file another program of yours left there.
 

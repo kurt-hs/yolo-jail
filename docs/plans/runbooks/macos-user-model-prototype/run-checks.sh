@@ -12,8 +12,6 @@
 # Options:
 #   --mode self|account     who runs the sandbox: you, or the second account (via sudo -u)
 #   --account NAME          the account for --mode account (default _yolojail)
-#   --allow-port PORT       add a loopback port to the profile's allow list (repeatable; max 3
-#                           with profile.sb, whose fourth slot the loopback check uses itself)
 #   --with-claude           also install Claude Code into the sandbox's own HOME and run
 #                           `claude --version` (network; no login, no API call)
 #   --keep                  keep the temp dirs and print the command for a manual sandboxed shell
@@ -21,7 +19,7 @@
 #                           run every check against the profile yolo generates instead of
 #                           profile.sb: YOLO is a yolo binary, and the script renders the profile
 #                           with `YOLO internal macos-user-profile` for its own workspace, home and
-#                           temp dirs (re-rendered with the extra port for check d2)
+#                           temp dirs and its fake host-services dir (check g)
 #
 # It creates only its own temp dirs, a decoy file in your home, a decoy directory
 # (/opt/src/... if creatable, else /Library/Caches/...), one throwaway generic
@@ -38,15 +36,13 @@ ACCOUNT="_yolojail"
 WITH_CLAUDE=0
 KEEP=0
 YOLO_BIN=""
-EXTRA_PORTS=()
 
-usage() { sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--mode) MODE="${2:-}"; shift 2 ;;
 	--account) ACCOUNT="${2:-}"; shift 2 ;;
-	--allow-port) EXTRA_PORTS+=("${2:-}"); shift 2 ;;
 	--with-claude) WITH_CLAUDE=1; shift ;;
 	--keep) KEEP=1; shift ;;
 	--profile-from-yolo) YOLO_BIN="${2:-}"; shift 2 ;;
@@ -68,16 +64,6 @@ if [ ! -x /usr/bin/sandbox-exec ]; then
 	echo "/usr/bin/sandbox-exec is missing; this macOS cannot run the prototype." >&2
 	exit 2
 fi
-if [ -z "$YOLO_BIN" ] && [ "${#EXTRA_PORTS[@]}" -gt 3 ]; then
-	echo "--allow-port takes at most 3 ports with profile.sb (it has 4 slots; the loopback check uses one)." >&2
-	echo "The generated profile has no such limit: add --profile-from-yolo <yolo>." >&2
-	exit 2
-fi
-for p in "${EXTRA_PORTS[@]+"${EXTRA_PORTS[@]}"}"; do
-	case "$p" in
-	'' | *[!0-9]*) echo "--allow-port needs a number, got '$p'" >&2; exit 2 ;;
-	esac
-done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 SRC_PROFILE="$SCRIPT_DIR/profile.sb"
@@ -164,6 +150,16 @@ if [ -n "$DECOY_PROJECT" ]; then
 	chmod 0644 "$DECOY_PROJECT/main.c"
 fi
 
+# Two fake host-services session dirs, shaped as a launch names them (MMP-D15): this
+# session's, which the generated profile grants by exact path, and a sibling session's, which
+# nothing grants once the shared-/tmp allow is gone. Readable by the account too.
+SERVICES_DIR="/private/tmp/yolo-host-services-$(printf '%08x' "$$")-rc$NONCE"
+SIBLING_DIR="/private/tmp/yolo-host-services-$(printf '%08x' "$$")-rcsib$NONCE"
+for d in "$SERVICES_DIR" "$SIBLING_DIR"; do
+	mkdir -m 0755 "$d" && printf 'ok\n' >"$d/demo.endpoint" && : >"$d/.session.lock" &&
+		chmod 0644 "$d/demo.endpoint" "$d/.session.lock" || { echo "cannot create $d" >&2; exit 2; }
+done
+
 # A /tmp file of yours, to show what the shared /tmp still exposes (INFO only).
 TMP_DECOY="/private/tmp/yolo-prototype-tmpdecoy-$NONCE"
 printf 'tmp decoy %s\n' "$NONCE" >"$TMP_DECOY"
@@ -229,6 +225,7 @@ cleanup() {
 	[ "$KC_ADDED" = 1 ] && security delete-generic-password -s "$KC_SERVICE" -a yolo "$LOGIN_KC" >/dev/null 2>&1
 	launchctl remove "$CLAUDE_LABEL" 2>/dev/null
 	rm -f "$DECOY_SECRET" "$TMP_DECOY"
+	rm -rf "$SERVICES_DIR" "$SIBLING_DIR"
 	if [ -n "$DECOY_PROJECT" ]; then
 		rm -rf "$DECOY_PROJECT"
 		[ -n "$DECOY_PROJECT_MADE_PARENT" ] && rmdir "$DECOY_PROJECT_MADE_PARENT" 2>/dev/null
@@ -275,20 +272,20 @@ INNER_PORT="$(pick_port)" || { echo "could not find a free loopback port" >&2; e
 
 SB_PATH="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin"
 
-# render_profile PORT...: with --profile-from-yolo, render the generated profile for this
-# run's workspace, home and temp dirs, with each PORT that is not "none" allowed on loopback,
-# into its own file, and point PROFILE at it. The generated profile takes no -D parameters:
-# its paths are rendered into the text (MMP-D1).
+# render_profile [FLAG...]: with --profile-from-yolo, render the generated profile for this
+# run's workspace, home, temp dirs and services dir, with each extra FLAG of the verb (for
+# example --shared-tmp private), into its own file, and point PROFILE at it. The generated
+# profile takes no -D parameters: its paths are rendered into the text (MMP-D1).
 render_profile() {
-	local p name="profile-yolo"
+	local name="profile-yolo"
 	local args=(internal macos-user-profile --mode "$MODE" --workspace "$WORKSPACE" --home "$AGENT_HOME"
-		--host-home "$HOST_HOME" --tmp "$SANDBOX_TMP" --darwin-tmp "$DARWIN_TMP")
+		--host-home "$HOST_HOME" --tmp "$SANDBOX_TMP" --darwin-tmp "$DARWIN_TMP"
+		--services-dir "$SERVICES_DIR")
 	[ "$MODE" = account ] && args+=(--account "$ACCOUNT")
-	for p in "$@"; do
-		[ "$p" = none ] && continue
-		args+=(--allow-port "$p")
-		name="$name-$p"
-	done
+	if [ $# -gt 0 ]; then
+		args+=("$@")
+		name="$name$(printf -- '-%s' "$@" | tr -c 'A-Za-z0-9.\n-' '-')"
+	fi
 	PROFILE="$ROOT/$name.sb"
 	if ! "$YOLO_BIN" "${args[@]}" >"$PROFILE"; then
 		echo "rendering the profile failed: $YOLO_BIN ${args[*]}" >&2
@@ -297,8 +294,8 @@ render_profile() {
 	chmod 0644 "$PROFILE"
 }
 
-# build_params PORT1 PORT2 PORT3 PORT4 -> fills PARAMS for profile.sb, or renders the generated
-# profile (PARAMS empty) with --profile-from-yolo.
+# build_params [FLAG...] -> fills PARAMS for profile.sb, or renders the generated profile
+# (PARAMS empty) with --profile-from-yolo, passing each FLAG to the verb.
 build_params() {
 	local i
 	if [ -n "$YOLO_BIN" ]; then
@@ -311,15 +308,8 @@ build_params() {
 	for i in 1 2 3 4 5 6 7 8; do
 		PARAMS+=(-D "ANCESTOR_$i=${ANCESTORS[$((i - 1))]:-/}")
 	done
-	PARAMS+=(-D "LOOPBACK_PORT_1=$1" -D "LOOPBACK_PORT_2=$2" -D "LOOPBACK_PORT_3=$3" -D "LOOPBACK_PORT_4=$4")
 }
-if [ -n "$YOLO_BIN" ]; then
-	# Any number of ports; the trailing "none" keeps the array non-empty for bash 3.2's set -u.
-	BASE_PORTS=(${EXTRA_PORTS[@]+"${EXTRA_PORTS[@]}"} none)
-else
-	BASE_PORTS=("${EXTRA_PORTS[0]:-none}" "${EXTRA_PORTS[1]:-none}" "${EXTRA_PORTS[2]:-none}")
-fi
-build_params "${BASE_PORTS[@]}" none
+build_params
 DEFAULT_PARAMS=(${PARAMS[@]+"${PARAMS[@]}"})
 DEFAULT_PROFILE="$PROFILE"
 
@@ -430,7 +420,7 @@ echo "   AGENT_HOME=$AGENT_HOME"
 echo "   SANDBOX_TMP=$SANDBOX_TMP  DARWIN_USER_TEMP_DIR=$DARWIN_TMP"
 echo "   decoy secret: $DECOY_SECRET"
 echo "   decoy project: ${DECOY_PROJECT:-none (neither /opt/src nor /Library/Caches was writable)}"
-echo "   allowed loopback ports: ${EXTRA_PORTS[*]:-none}"
+echo "   host-services dir: $SERVICES_DIR (sibling $SIBLING_DIR)"
 if [ -n "$YOLO_BIN" ]; then
 	echo "   profile: generated by $YOLO_BIN internal macos-user-profile ($DEFAULT_PROFILE)"
 else
@@ -628,30 +618,51 @@ if port_free "$LOOP_PORT" && /usr/bin/xcode-select -p >/dev/null 2>&1; then
 	LISTENER_PID=$!
 	sleep 2
 fi
+# OQ-MM7 (ruled 2026-10-23) allows the whole loopback: no port is listed anywhere.
 if port_free "$LOOP_PORT"; then
 	skip d1 "could not start a loopback listener on $LOOP_PORT (nc -lk)"
-	skip d2 "loopback allow (no listener)"
 else
-	PROBE="(exec 3<>/dev/tcp/127.0.0.1/$LOOP_PORT) && echo connected"
-	use_default
-	out="$(inside "$PROBE")"
-	rc=$?
-	if [ $rc -ne 0 ]; then result PASS d1 "your loopback listener on $LOOP_PORT is unreachable (port not listed)"
-	else result FAIL d1 "your loopback listener on $LOOP_PORT is reachable though not listed"; fi
-	printf '    $ %s\n' "$PROBE"
-	show "$out"
-	build_params "${BASE_PORTS[@]}" "$LOOP_PORT"
-	out="$(inside "$PROBE")"
-	rc=$?
-	if [ $rc -eq 0 ]; then result PASS d2 "the same listener is reachable once $LOOP_PORT is listed"
-	else result FAIL d2 "the listener stays unreachable with $LOOP_PORT listed (exit $rc)"; fi
-	printf '    $ %s   (with port %s listed in %s)\n' "$PROBE" "$LOOP_PORT" "$(basename "$PROFILE")"
-	show "$out"
+	expect_allow d1 "your loopback listener on $LOOP_PORT is reachable (OQ-MM7)" \
+		"(exec 3<>/dev/tcp/127.0.0.1/$LOOP_PORT) && echo connected"
 fi
 kill "$LISTENER_PID" 2>/dev/null
 LISTENER_PID=""
-info d3 "an agent's own loopback server (listen and connect inside, port not listed)" \
+expect_allow d3 "an agent's own loopback server (listen and connect inside)" \
 	"/usr/bin/nc -lk 127.0.0.1 $INNER_PORT >/dev/null 2>&1 & p=\$!; sleep 1; (exec 3<>/dev/tcp/127.0.0.1/$INNER_PORT) && echo connected; rc=\$?; kill \$p; exit \$rc"
+echo
+
+# --- (g) unix sockets and the session's host-services dir ----------------------------
+echo "-- (g) unix sockets, host-services dir"
+UNIX_PROBE='rm -f "$1"; /usr/bin/perl -MIO::Socket::UNIX -e '"'"'$l = IO::Socket::UNIX->new(Local => $ARGV[0], Listen => 1) or die "bind: $!\n"; IO::Socket::UNIX->new(Peer => $ARGV[0]) or die "connect: $!\n"; $l->accept or die "accept: $!\n"; print "connected\n"'"'"' "$1"; rc=$?; rm -f "$1"; exit $rc'
+expect_allow g1 "bind and connect a unix socket under \$TMPDIR (MMP-D16)" \
+	"set -- \"\$TMPDIR\"g1.sock; $UNIX_PROBE"
+expect_allow g2 "bind and connect a unix socket in the workspace by a relative path" \
+	"set -- .g2.sock; $UNIX_PROBE"
+if [ -n "$YOLO_BIN" ]; then
+	expect_deny g3 "the session's liveness lock is refused ($SERVICES_DIR/.session.lock)" \
+		"cat '$SERVICES_DIR/.session.lock'" yes
+	# The rest without the shared-/tmp allow, so the exact-path grant stands alone (MMP-D15).
+	build_params --shared-tmp private
+	PRIVATE_TMP_PROFILE="$PROFILE"
+	use_private_tmp() { PROFILE="$PRIVATE_TMP_PROFILE"; PARAMS=(); }
+	for chk in "g4|allow|read this session's endpoint file without the shared /tmp|cat '$SERVICES_DIR/demo.endpoint'" \
+		"g5|deny|a sibling session's endpoint file is unreadable|cat '$SIBLING_DIR/demo.endpoint'" \
+		"g6|deny|/private/tmp cannot be listed (that would name every session's dir)|ls /private/tmp >/dev/null"; do
+		IFS='|' read -r id want desc script <<<"$chk"
+		use_private_tmp
+		out="$(inside "$script")"
+		rc=$?
+		if { [ "$want" = allow ] && [ $rc -eq 0 ]; } || { [ "$want" = deny ] && [ $rc -ne 0 ]; }; then
+			result PASS "$id" "$desc"
+		else
+			result FAIL "$id" "$desc (exit $rc)"
+		fi
+		printf '    $ %s   (under %s)\n' "$script" "$(basename "$PROFILE")"
+		show "$out"
+	done
+else
+	skip g3 "the host-services grant is the generated profile's: add --profile-from-yolo <yolo>"
+fi
 echo
 
 # --- (e) Full Disk Access ------------------------------------------------------------

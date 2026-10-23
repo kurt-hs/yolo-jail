@@ -9,9 +9,8 @@ import (
 )
 
 // portforwards.go is the one reader of `network.forward_host_ports` entries. It lives here,
-// below both of its consumers, so the container path's socat forwards (internal/cli/run) and the
-// macos-user profile's loopback allow list (internal/macosuser's loopbackports.go) read one
-// grammar rather than two.
+// below its consumers, so the container path's socat forwards and the macos-user port relay
+// (both internal/cli/run) read one grammar rather than two.
 
 // PortForward is one parsed forward: the port inside the jail (LocalPort) and the host
 // 127.0.0.1 port it bridges to (HostPort).

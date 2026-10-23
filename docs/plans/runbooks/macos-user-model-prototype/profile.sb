@@ -38,7 +38,8 @@
 ;; grants (~/.nvm, ~/.npm, ~/.cargo, ~/.pyenv, ~/.local/bin and the rest are
 ;; gone: the agent has its own HOME); /opt narrowed to /opt/homebrew; read-write
 ;; only on WORKSPACE, AGENT_HOME and temp dirs; launchservicesd dropped from the
-;; service list; loopback denied except listed ports; a closing block of
+;; service list; the whole loopback allowed (OQ-MM7, ruled 2026-10-23); unix
+;; sockets only under WORKSPACE, AGENT_HOME and SANDBOX_TMP; a closing block of
 ;; explicit denies.
 ;;
 ;; ---------------------------------------------------------------------------
@@ -52,8 +53,6 @@
 ;;                      physical, no trailing slash, read-write
 ;;   ANCESTOR_1..8      every directory above WORKSPACE, AGENT_HOME and
 ;;                      SANDBOX_TMP; unused slots are "/"
-;;   LOOPBACK_PORT_1..4 loopback TCP/UDP ports the sandbox may connect to;
-;;                      unused slots are "none"
 ;;
 ;; SBPL is last-match-wins: an allow re-opens what an earlier deny closed, and
 ;; the explicit denies at the end beat every allow above them.
@@ -310,7 +309,7 @@
 )
 
 ;; ---------------------------------------------------------------------------
-;; Network: open, except the host's loopback (design OQ-MM3).
+;; Network: open, loopback included (design OQ-MM7).
 ;; ---------------------------------------------------------------------------
 
 ;; [20-network] Outbound TCP/UDP to anywhere: package installs, API calls.
@@ -321,22 +320,23 @@
 (allow network-bind (local ip))
 (allow network-inbound (local ip))
 
-;; [yolo] Your loopback services are out of reach, as podman's own loopback
-;; keeps them. Seatbelt cannot tell which process listens, so this also refuses
-;; a connect to a server the agent itself started on loopback (a known
-;; difference from podman; run-checks.sh measures it as INFO).
-(deny network-outbound (remote ip "localhost:*"))
+;; [yolo] Your loopback, every port, bind and connect (OQ-MM7, ruled
+;; 2026-10-23): a jail on the host network reaches it the same way, and
+;; Seatbelt cannot tell your servers from the agent's own.
+(allow network-outbound (remote ip "localhost:*"))
+(allow network-bind network-inbound (local ip "localhost:*"))
 
-;; [yolo] ...except the listed ports: yolo's own services and what the workspace
-;; config allows. An unused slot is "none" and renders no rule.
-(if (not (string=? (param "LOOPBACK_PORT_1") "none"))
-    (allow network-outbound (remote ip (string-append "localhost:" (param "LOOPBACK_PORT_1")))))
-(if (not (string=? (param "LOOPBACK_PORT_2") "none"))
-    (allow network-outbound (remote ip (string-append "localhost:" (param "LOOPBACK_PORT_2")))))
-(if (not (string=? (param "LOOPBACK_PORT_3") "none"))
-    (allow network-outbound (remote ip (string-append "localhost:" (param "LOOPBACK_PORT_3")))))
-(if (not (string=? (param "LOOPBACK_PORT_4") "none"))
-    (allow network-outbound (remote ip (string-append "localhost:" (param "LOOPBACK_PORT_4")))))
+;; [yolo] Unix sockets under the sandbox's own writable roots only: tmux,
+;; overmind and Python's multiprocessing bind one under TMPDIR or the workspace.
+;; The ssh-agent and container-socket denies below still win.
+(allow network-bind
+    (local unix-socket (subpath WORKSPACE))
+    (local unix-socket (subpath AGENT_HOME))
+    (local unix-socket (subpath SANDBOX_TMP)))
+(allow network-outbound
+    (remote unix-socket (subpath WORKSPACE))
+    (remote unix-socket (subpath AGENT_HOME))
+    (remote unix-socket (subpath SANDBOX_TMP)))
 
 ;; ---------------------------------------------------------------------------
 ;; Explicit denies. (deny default) already covers each; naming them here, last,

@@ -9,14 +9,13 @@ import (
 	"os/user"
 	"path/filepath"
 	goruntime "runtime"
-	"strconv"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 )
 
 // macosUserProfileVerb is `yolo internal macos-user-profile`: it prints the deny-by-default
-// Seatbelt profile (macosuser.DenyDefaultProfile) for the inputs it is given, with the three
+// Seatbelt profile (macosuser.DenyDefaultProfile) for the inputs it is given, with the two
 // pending rulings at their production values unless a flag overrides one
 // (docs/design/macos-user-model-plan.md slice 10). Hidden because its callers are the
 // prototype's check script (run-checks.sh --profile-from-yolo) and a human diffing the
@@ -25,7 +24,8 @@ import (
 // nothing but stdout.
 //
 // It renders what the prototype has: a workspace, the agent's HOME, the launch's own temp
-// dir, the user's temp dir, the human's home and loopback ports. A launch's other inputs
+// dir, the user's temp dir, the human's home, and the session's host-services dirs. A launch's
+// other inputs
 // (machine dirs, context mounts, cache relocations, workspace_readonly, staged home content,
 // devices) are left empty, as profile.sb has none of them; the staging root is the
 // production one.
@@ -34,14 +34,14 @@ const macosUserProfileVerb = "macos-user-profile"
 // macosUserProfileUsage is the verb's whole usage, printed on misuse.
 const macosUserProfileUsage = "usage: yolo internal " + macosUserProfileVerb +
 	" --mode self|account --workspace W --tmp T\n" +
-	"         [--home H] [--host-home H] [--darwin-tmp D] [--account NAME] [--allow-port P]...\n" +
-	"         [--loopback deny|allow] [--shared-tmp shared|private]\n" +
-	"         [--host-software PATH]... [--no-host-software]\n" +
+	"         [--home H] [--host-home H] [--darwin-tmp D] [--account NAME] [--services-dir D]...\n" +
+	"         [--shared-tmp shared|private] [--host-software PATH]... [--no-host-software]\n" +
 	"Prints the deny-by-default macos-user Seatbelt profile for these inputs. Paths are made\n" +
 	"absolute and resolved through symlinks when they exist. --home defaults to W/.yolo/home,\n" +
-	"--host-home to $HOME, --darwin-tmp to `getconf DARWIN_USER_TEMP_DIR` on macOS. The last\n" +
-	"four flags override the pending rulings' production values (loopback, the shared /tmp,\n" +
-	"the visible host software trees); without them the profile is the one a launch renders."
+	"--host-home to $HOME, --darwin-tmp to `getconf DARWIN_USER_TEMP_DIR` on macOS.\n" +
+	"--services-dir grants a session's host-services dir read-only by exact path. The last\n" +
+	"three flags override the pending rulings' production values (the shared /tmp, the\n" +
+	"visible host software trees); without them the profile is the one a launch renders."
 
 // macosUserProfileEnv is what the verb reads besides its flags, injected so the test needs
 // no Mac and no particular user.
@@ -106,11 +106,10 @@ func macosUserProfileMain(args []string, stdout, stderr io.Writer, env macosUser
 	tmp := fs.String("tmp", "", "the launch's own TMPDIR, read-write")
 	darwinTmp := fs.String("darwin-tmp", "", "the running user's DARWIN_USER_TEMP_DIR")
 	account := fs.String("account", macosuser.SandboxUser, "the account --mode account runs as")
-	loopback := fs.String("loopback", "", "deny or allow (default: the production ruling)")
 	sharedTmp := fs.String("shared-tmp", "", "shared or private (default: the production ruling)")
 	noHostSoftware := fs.Bool("no-host-software", false, "hide every host software tree")
-	var ports, hostSoftware repeatedFlag
-	fs.Var(&ports, "allow-port", "a loopback port the sandbox may connect to (repeatable)")
+	var servicesDirs, hostSoftware repeatedFlag
+	fs.Var(&servicesDirs, "services-dir", "a session's host-services dir, read only (repeatable)")
 	fs.Var(&hostSoftware, "host-software", "a host install tree the sandbox may read (repeatable)")
 
 	misuse := func(why string) int {
@@ -159,26 +158,12 @@ func macosUserProfileMain(args []string, stdout, stderr io.Writer, env macosUser
 	} else {
 		p.RunAsUser = *account
 	}
-	for _, s := range ports {
-		port, err := strconv.Atoi(s)
-		if err != nil || port < 1 || port > 65535 {
-			return misuse(fmt.Sprintf("--allow-port needs a port number from 1 to 65535, got %q", s))
-		}
-		p.Loopback.Ports = append(p.Loopback.Ports, port)
+	for _, d := range servicesDirs {
+		p.ServicesDirs = append(p.ServicesDirs, physicalPath(d))
 	}
-	listed := p.Loopback.Ports
 
 	// The production rulings first, then each flag the caller set.
 	p = p.WithProductionRulings()
-	switch *loopback {
-	case "":
-	case "deny":
-		p.Loopback = macosuser.LoopbackPolicy{Ports: listed}
-	case "allow":
-		p.Loopback = macosuser.LoopbackPolicy{AllowAll: true}
-	default:
-		return misuse(fmt.Sprintf("--loopback must be deny or allow, got %q", *loopback))
-	}
 	switch *sharedTmp {
 	case "":
 	case "shared":

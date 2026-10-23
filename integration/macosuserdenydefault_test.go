@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // THE DENY-BY-DEFAULT PROFILE'S REGISTRY AND POLICY SUITE (docs/design/macos-user-model-plan.md
@@ -86,6 +87,9 @@ var denyDefaultRules = []seatbeltRule{
 	{id: "file-ioctl-tty-allow"},
 	{id: "staging-root-read-allow"},
 	{id: "context-read-allow"},
+	// This session's host-services dir, by exact path (MMP-D15), and its liveness lock.
+	{id: "services-dir-read-allow"},
+	{id: "services-lock-deny"},
 	// A dev override's checkout (programs.overrides, pack-buildable-programs-plan.md Task 10).
 	{id: "program-override-read-allow"},
 	{id: "cache-relocation-read-allow"},
@@ -98,8 +102,8 @@ var denyDefaultRules = []seatbeltRule{
 	{id: "same-sandbox-pidinfo-allow"},
 	{id: "mach-lookup-allow"},
 	{id: "network-allow"},
-	{id: "loopback-deny"},
-	{id: "loopback-port-allow"},
+	{id: "loopback-allow"},
+	{id: "unix-socket-allow"},
 	{id: "nix-daemon-allow"},
 	// The closing block of explicit denies.
 	{id: "host-secrets-deny"},
@@ -110,12 +114,14 @@ var denyDefaultRules = []seatbeltRule{
 		"no allow names the unified log's stores under /private/var/db", "macos_log_store_read_refused")},
 	{id: "launchd-listener-deny"},
 	{id: "ssh-agent-socket-deny", unproven: denyDefaultBeltAndBraces(
-		"no allow admits a unix-socket connect but mDNSResponder's (network-allow names IP "+
-			"remotes only)", "ssh_agent_socket_connect_refused")},
+		"no allow admits a unix-socket connect but mDNSResponder's and the sandbox's own "+
+			"roots' (workspace, HOME, TMPDIR), and no input makes ~/.ssh one of those",
+		"ssh_agent_socket_connect_refused")},
 	{id: "container-socket-deny"},
 	{id: "container-socket-connect-deny", unproven: denyDefaultBeltAndBraces(
-		"no allow admits a unix-socket connect but mDNSResponder's (network-allow names IP "+
-			"remotes only)", "container_socket_connect_refused")},
+		"no allow admits a unix-socket connect but mDNSResponder's and the sandbox's own "+
+			"roots' (workspace, HOME, TMPDIR), and no input makes ~/.docker one of those",
+		"container_socket_connect_refused")},
 	{id: "service-deny", unproven: denyDefaultBeltAndBraces(
 		"mach-lookup-allow lists none of securityd, the pasteboard, Apple Events or "+
 			"LaunchServices", "b4_keychain_item_unreadable")},
@@ -167,7 +173,11 @@ type denyDefaultFixtures struct {
 	staged, stagedWhy string
 	canaryPID         int    // a process of yours OUTSIDE the sandbox (b12, b13)
 	canaryWord        string // a word on its command line
-	loopPort          int    // a TCP listener of yours on 127.0.0.1, outside the sandbox (d1, d2)
+	loopPort          int    // a TCP listener of yours on 127.0.0.1, outside the sandbox (d1)
+	loopPort6         int    // the same on [::1], or 0 when this Mac has no IPv6 loopback (d2)
+	// services is this session's host-services dir, /private/tmp/yolo-host-services-<8hex>-<n>,
+	// holding an endpoint file; sibling is another session's, granted by nothing (MMP-D15).
+	services, sibling string
 	python            string // a python3 the profile lets run (Homebrew or nix), or ""
 	listener          string // a launchd Listeners socket path, or "" when none exists
 	keychainService   string // the throwaway login-keychain item (b4), "" when not added
@@ -270,6 +280,19 @@ func needsPython(f denyDefaultFixtures) string {
 	}
 	return ""
 }
+
+// unixBindConnectProbe exits 0 only when a unix socket bound at p (a shell word, expanded)
+// accepted a connect to it.
+func unixBindConnectProbe(p string) string {
+	return "p=" + p + `; rm -f "$p"; /usr/bin/perl -MIO::Socket::UNIX -e '` +
+		`$l = IO::Socket::UNIX->new(Local => $ARGV[0], Listen => 1) or die "bind: $!\n"; ` +
+		`$c = IO::Socket::UNIX->new(Peer => $ARGV[0]) or die "connect: $!\n"; ` +
+		`$l->accept or die "accept: $!\n"; print "connected\n"' "$p" && rm -f "$p" && echo ` + seatbeltOK
+}
+
+// privateTmp is the variant without the shared-/tmp allow, so a services-dir case measures the
+// exact-path grant alone (the shared allow awaits its ruling).
+func privateTmp(_ denyDefaultFixtures, p *macosuser.ProfileParams) { p.Tmp = macosuser.TmpPrivate }
 
 // grantFakeHome is the closing-deny variant: the stand-in home is the profile's HostHome and is
 // granted whole, read-write, as a machine dir.
@@ -825,23 +848,93 @@ func denyDefaultCases() []denyDefaultCase {
 			},
 			want: wantAllowed,
 		},
-		// --- (d) loopback.
+		// --- (d) loopback: OQ-MM7, ruled 2026-10-23, allows all of it (MMP-D14).
 		{
-			name:   "d1_loopback_listener_unreachable",
-			id:     "loopback-deny",
-			why:    "OQ-MM7's production value: your loopback services are unreachable unless listed; network-allow above would admit them.",
-			script: func(f denyDefaultFixtures) string { return tcpConnectProbe(f.loopPort) },
-			want:   wantRefused,
-		},
-		{
-			name: "d2_listed_loopback_port_reachable",
-			id:   "loopback-port-allow",
-			why:  "the same listener, reachable once its port is listed (MMP-D10).",
-			variant: func(f denyDefaultFixtures, p *macosuser.ProfileParams) {
-				p.Loopback.Ports = append(p.Loopback.Ports, f.loopPort)
-			},
+			name:   "d1_loopback_listener_reachable",
+			id:     "loopback-allow",
+			why:    "OQ-MM7: every port of your loopback is reachable, as a jail on the host network would reach it; no port is listed anywhere.",
 			script: func(f denyDefaultFixtures) string { return tcpConnectProbe(f.loopPort) + " && echo " + seatbeltOK },
 			want:   wantAllowed,
+		},
+		{
+			name: "d2_ipv6_loopback_listener_reachable",
+			id:   "loopback-allow",
+			why:  `the same on ::1: "localhost:*" must cover the IPv6 loopback too.`,
+			needs: func(f denyDefaultFixtures) string {
+				if f.loopPort6 == 0 {
+					return "this Mac has no IPv6 loopback to listen on"
+				}
+				return ""
+			},
+			script: func(f denyDefaultFixtures) string {
+				return `/usr/bin/perl -MIO::Socket::IP -e 'IO::Socket::IP->new(PeerHost => "::1", PeerPort => $ARGV[0]) or ` +
+					`die "connect: $!\n"; print "connected\n"' ` + strconv.Itoa(f.loopPort6) + " && echo " + seatbeltOK
+			},
+			want: wantAllowed,
+		},
+		{
+			name: "d3_loopback_bind_and_accept",
+			id:   "loopback-allow",
+			why:  "a dev server in the sandbox binds a loopback port and accepts a connection to it.",
+			script: func(denyDefaultFixtures) string {
+				return `/usr/bin/perl -MIO::Socket::INET -e '` +
+					`$l = IO::Socket::INET->new(LocalAddr => "127.0.0.1", LocalPort => 0, Listen => 1, ReuseAddr => 1) or die "bind: $!\n"; ` +
+					`$c = IO::Socket::INET->new(PeerAddr => "127.0.0.1", PeerPort => $l->sockport) or die "connect: $!\n"; ` +
+					`$l->accept or die "accept: $!\n"; print "connected\n"' && echo ` + seatbeltOK
+			},
+			want: wantAllowed,
+		},
+		// --- Unix sockets under the sandbox's own roots (MMP-D16).
+		{
+			name: "unix_socket_under_tmpdir_bind_and_connect",
+			id:   "unix-socket-allow",
+			why: "tmux, overmind and Python's multiprocessing bind a unix socket under $TMPDIR and " +
+				"connect to it; under (deny default) both need the unix-socket allow.",
+			script: func(denyDefaultFixtures) string { return unixBindConnectProbe(`"$TMPDIR"dd.sock`) },
+			want:   wantAllowed,
+		},
+		{
+			name:   "unix_socket_in_workspace_bind_and_connect",
+			id:     "unix-socket-allow",
+			why:    "overmind's ./.overmind.sock: a socket in the workspace, named by a relative path.",
+			script: func(denyDefaultFixtures) string { return unixBindConnectProbe(".dd.sock") },
+			want:   wantAllowed,
+		},
+		// --- This session's host-services dir (MMP-D15).
+		{
+			name: "own_session_endpoint_readable_without_shared_tmp",
+			id:   "services-dir-read-allow",
+			why: "the agent's clients read their endpoint files in this session's services dir; the " +
+				"grant must stand without the shared-/tmp allow, so the variant drops that.",
+			variant: privateTmp,
+			script: func(f denyDefaultFixtures) string {
+				return "cat " + sh(f.services+"/demo.endpoint") + " && echo " + seatbeltOK
+			},
+			want: wantAllowed,
+		},
+		{
+			name:    "sibling_session_endpoint_unreadable",
+			id:      "deny-default",
+			why:     "another session's services dir is granted by nothing once the shared-/tmp allow is gone.",
+			variant: privateTmp,
+			script:  func(f denyDefaultFixtures) string { return "cat " + sh(f.sibling+"/demo.endpoint") },
+			want:    wantRefused,
+		},
+		{
+			name:    "services_dir_parent_unlistable",
+			id:      "deny-default",
+			why:     "the grant is a stat of /private/tmp, never a listing that names every other session's dir.",
+			variant: privateTmp,
+			script:  func(denyDefaultFixtures) string { return "ls /private/tmp >/dev/null" },
+			want:    wantRefused,
+		},
+		{
+			name: "services_liveness_lock_refused",
+			id:   "services-lock-deny",
+			why: "a read-only fd can flock: the session's liveness lock is denied after the grant and " +
+				"the shared-/tmp allow, so the agent cannot hold its session alive.",
+			script: func(f denyDefaultFixtures) string { return "cat " + sh(f.services+"/.session.lock") },
+			want:   wantRefused,
 		},
 		// --- (e) Full Disk Access.
 		{
@@ -1168,7 +1261,8 @@ func denyDefaultParams(f denyDefaultFixtures) macosuser.ProfileParams {
 			Paths:   []string{f.skills, f.stateDir + "/CLAUDE.md"},
 			Anchors: []string{f.stateDir},
 		},
-		RunAsUser: f.user,
+		RunAsUser:    f.user,
+		ServicesDirs: []string{f.services},
 	}.WithProductionRulings()
 }
 
@@ -1325,10 +1419,38 @@ func denyDefaultFixture(t *testing.T) denyDefaultFixtures {
 	f.staged, f.stagedWhy = seatbeltStagingFixture(t)
 	f.canaryPID, f.canaryWord = startSeatbeltCanary(t)
 	f.loopPort = listenAccepting(t, "tcp", "127.0.0.1:0")
+	if l, err := net.Listen("tcp", "[::1]:0"); err == nil {
+		_ = l.Close()
+		f.loopPort6 = listenAccepting(t, "tcp", "[::1]:0")
+	}
+	f.services, f.sibling = denyDefaultServicesDirs(t, f.nonce)
 	listenAccepting(t, "unix", filepath.Join(f.fakeHome, ".docker", "run", "docker.sock"))
 	listenAccepting(t, "unix", filepath.Join(f.fakeHome, ".ssh", "agent", "s"))
 	f.keychainService, f.keychainSecret, f.keychainWhy = addThrowawayKeychainItem(t, f)
 	return f
+}
+
+// denyDefaultServicesDirs makes two session-shaped host-services dirs under /private/tmp, each
+// holding an endpoint file and a liveness lock: this session's and a sibling's.
+func denyDefaultServicesDirs(t *testing.T, nonce string) (own, sibling string) {
+	t.Helper()
+	for i, dst := range []*string{&own, &sibling} {
+		d := fmt.Sprintf("/private/tmp/yolo-host-services-dd%06x-%s%d", os.Getpid()%0xffffff, nonce, i)
+		if !paths.IsHostServicesSessionDirName(filepath.Base(d)) {
+			t.Fatalf("%s is not session-shaped", d)
+		}
+		if err := os.Mkdir(d, 0o700); err != nil {
+			t.Fatalf("creating the fake services dir %s: %v", d, err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(d) })
+		for name, content := range map[string]string{"demo.endpoint": seatbeltOK + "\n", ".session.lock": ""} {
+			if err := os.WriteFile(filepath.Join(d, name), []byte(content), 0o600); err != nil {
+				t.Fatalf("writing %s: %v", name, err)
+			}
+		}
+		*dst = d
+	}
+	return own, sibling
 }
 
 // listenAccepting listens on network/address, accepts and closes every connection until
@@ -1399,7 +1521,7 @@ func denyDefaultFixtureParams() macosuser.ProfileParams {
 			[]string{".claude"}, []string{".claude/skills", ".claude/CLAUDE.md"}),
 		Devices:      seatbeltFixtureDevices,
 		RunAsUser:    "you",
-		Loopback:     macosuser.LoopbackPolicy{Ports: []int{31053}},
+		ServicesDirs: []string{"/private/tmp/yolo-host-services-1a2b3c4d-987654"},
 		Tmp:          macosuser.TmpShared,
 		HostSoftware: []string{"/opt/homebrew", "/usr/local"},
 	}
@@ -1408,13 +1530,12 @@ func denyDefaultFixtureParams() macosuser.ProfileParams {
 // TestMacosUserDenyDefaultRegistryMatchesTheProfile mirrors
 // TestMacosUserSeatbeltRegistryMatchesTheProfile for the deny-default profile, in both
 // directions, on Linux under -short. It renders the profile twice, once under each value of
-// every pending ruling (loopback denied and allowed, /tmp shared and private, host software
+// every pending ruling (/tmp shared and private, host software
 // visible and hidden), and takes the union of the ids, since each ruling renders rules the
 // other omits.
 func TestMacosUserDenyDefaultRegistryMatchesTheProfile(t *testing.T) {
 	prototype := denyDefaultFixtureParams()
 	alternate := denyDefaultFixtureParams()
-	alternate.Loopback = macosuser.LoopbackPolicy{AllowAll: true}
 	alternate.Tmp = macosuser.TmpPrivate
 	alternate.HostSoftware = nil
 

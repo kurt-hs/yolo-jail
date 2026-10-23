@@ -714,20 +714,12 @@ func buildPlan(deps Deps, opts Options, darwin *Darwin) RunPlan {
 	// spelling (cnameFor of the resolved workspace).
 	overlay := opts.HostHomeOverlay
 	overlay.StagedCurrent = homeOverlayStagedCurrent(overlay.Tree, cnameFor(resolvePathAbs(opts.Workspace)), "")
-	// THE LOOPBACK ALLOW LIST (loopbackports.go, MMP-D10), collected here for floorStageFor's
-	// reason: it reads each published endpoint file, and the plan builder below is pure. The
-	// endpoints the session env and the jail daemons' env name, the launch's served addresses and
-	// the workspace's forward_host_ports. A dry run's endpoint paths are placeholders, so its
-	// unread ones are named as read at launch rather than refused.
-	loopback := CollectLoopback(opts.JailDaemons.Served, configForwardHostPorts(opts.Config),
-		env, opts.JailDaemons.Env)
-	loopback.AtLaunch = opts.DryRun
 	return BuildRunPlanWithStages(opts.Workspace, opts.Config, opts.Agents, opts.AgentArgv,
 		selfExe, opts.HostPackRoot, overlay, opts.HostCtx, env, darwin,
 		opts.BlockedTools, opts.JailDaemons, floors, programs,
 		PlanSession{ID: opts.SessionID, BundleIdentity: opts.BundleIdentity, CATrust: opts.CATrust,
 			Mode: opts.Mode, HostHome: opts.HostHome, HostUser: opts.HostUser,
-			DarwinUserTempDir: deps.darwinUserTempDir(opts.Mode), Loopback: loopback})
+			DarwinUserTempDir: deps.darwinUserTempDir(opts.Mode)})
 }
 
 // programReadinessStageFor is JR-D2's host-side stage-admission check. The same staged pack
@@ -1241,12 +1233,10 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// A DISCLOSURE, every launch: which certificate authorities the sandbox trusts, and which
 	// variables say so.
 	printCATrust(out, plan.CATrust, plan.EnvFileContent, plan.CABundleFile, plan.CAExtrasFile, plan.CAFollows)
-	// AND WHICH PORTS OF YOUR LOOPBACK THE PROFILE OPENS (loopbackports.go, MMP-D10), each with
-	// why, whenever the profile denies loopback: an open port is access to a service of yours.
-	if plan.Loopback != nil {
-		for _, line := range loopbackDisclosure(*plan.Loopback) {
-			out.print(line)
-		}
+	// AND THAT YOUR WHOLE LOOPBACK IS OPEN TO IT (OQ-MM7, MMP-D14), whenever the deny-by-default
+	// profile runs: every service of yours listening there is reachable.
+	if line := loopbackDisclosure(plan); line != "" {
+		out.print(line)
 	}
 
 	// THE DISK I/O POLICY (docs/design/io-priority.md §5.5, IO-D7), set on THIS process before
@@ -1375,6 +1365,9 @@ func RunMacosUser(deps Deps, opts Options) int {
 		steps.end() // a refused step's span ends before the teardown's
 		sp := deps.Perf.Span("macos_user.remove_env_file")
 		teardown.remove(plan.EnvFileRemoveCommands)
+		// The session's own temp dir (MMP-D17) goes on the same terms: best-effort, every exit
+		// path, and one a killed session leaves is macOS's to sweep from the user's temp dir.
+		teardown.remove(plan.SessionTmpRemoveCommands)
 		sp.End()
 	}()
 	steps.begin("env_file")
@@ -1495,6 +1488,17 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// Ended here, not by the defer, so the teardown's own spans come after the session's.
 	steps.end()
 	return rc
+}
+
+// loopbackDisclosure is the line a launch prints for the open loopback (OQ-MM7, ruled 2026-10-23;
+// MMP-D14) when it runs the deny-by-default profile, the run-as-you mode's: every service of yours
+// on loopback is reachable from the sandbox, which is access worth naming. "" otherwise.
+func loopbackDisclosure(plan RunPlan) string {
+	if plan.RunAs.Mode != ModeSelf {
+		return ""
+	}
+	return "loopback: the sandbox reaches every port of your loopback, as a jail on the host " +
+		"network would [dim](OQ-MM7)[/dim]"
 }
 
 // darwinUserTempDir is the invoking user's DARWIN_USER_TEMP_DIR, physical and with no trailing
@@ -1988,12 +1992,9 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 		p.printf("cache:       %s → %s [dim](read-write, cache_relocations; a link the bootstrap "+
 			"lays, and the profile opens the target)[/dim]", r.LinkPath(""), r.Target)
 	}
-	// THE LOOPBACK ALLOW LIST (MMP-D10), named whenever the profile denies loopback, each port
-	// with why; a dry run names the ports its placeholder endpoints would publish as read at launch.
-	if plan.Loopback != nil {
-		for _, line := range loopbackDisclosure(*plan.Loopback) {
-			p.print(line)
-		}
+	// THE OPEN LOOPBACK (OQ-MM7, MMP-D14), named whenever the deny-by-default profile runs.
+	if line := loopbackDisclosure(plan); line != "" {
+		p.print(line)
 	}
 	// THE INSTALL-CAPTURE STORE (H4), named either way on the same rule: "nothing captured yet"
 	// and "this backend cannot materialize a capture" were one statement until it landed.
@@ -2172,8 +2173,9 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 	// WHAT THE SESSION REMOVES WHEN IT ENDS, its own files only (sessionfiles.go): a session
 	// killed before this leaves them to the next launch's sweep.
 	p.print("[bold]── when the session ends (as you, no sudo) ──[/bold]")
-	for _, cmd := range append(append(append(append([][]string{}, plan.DaemonEnvRemoveCommands...),
-		plan.EnvFileRemoveCommands...), plan.ProfileRemoveCommands...), plan.SessionGuestBinRemoveCommands...) {
+	for _, cmd := range append(append(append(append(append([][]string{}, plan.DaemonEnvRemoveCommands...),
+		plan.EnvFileRemoveCommands...), plan.SessionTmpRemoveCommands...), plan.ProfileRemoveCommands...),
+		plan.SessionGuestBinRemoveCommands...) {
 		p.print("  " + shquote.JoinDisplay(cmd))
 	}
 	p.print("")

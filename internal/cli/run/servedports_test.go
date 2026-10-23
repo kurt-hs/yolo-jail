@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
-	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -316,22 +315,5 @@ func TestParseServedAddressesKeepsOnlyLoopbackPairs(t *testing.T) {
 	}
 	if parseServedAddresses("not json") != nil || parseServedAddresses("") != nil {
 		t.Error("a malformed or empty line yielded a map")
-	}
-}
-
-// EVERY ADDRESS THE LAUNCH SERVES, for the macos-user profile's loopback allow list: a declared
-// address that did not move is served where it is declared, a moved one at its pick, and each
-// launch-owned service's or doorway's plan at its own; sorted, so the profile is deterministic.
-func TestServedLoopbackAddressesNamesEveryServedAddress(t *testing.T) {
-	o := &Options{}
-	o.served = servedAddressState{
-		declared: map[string]bool{"127.0.0.1:8214": true, "127.0.0.1:1461": true},
-		moved:    map[string]string{"127.0.0.1:8214": "127.0.0.1:51000"},
-	}
-	o.launchServices = []*launchservice.Plan{{Moved: map[string]string{"127.0.0.1:8216": "127.0.0.1:52000"}}}
-	o.launchDoorways = []*launchservice.Plan{{Moved: map[string]string{"127.0.0.1:53000": "127.0.0.1:53000"}}}
-	got := strings.Join(o.servedLoopbackAddresses(), " ")
-	if want := "127.0.0.1:1461 127.0.0.1:51000 127.0.0.1:52000 127.0.0.1:53000"; got != want {
-		t.Errorf("servedLoopbackAddresses = %s, want %s", got, want)
 	}
 }

@@ -20,7 +20,6 @@ func testProfileParams() ProfileParams {
 		DarwinUserTempDir: "/private/var/folders/ab/xyz/T",
 		StagingRoot:       StagingRoot(),
 		MachineDirs:       []string{"/Users/you/.local/share/yolo-jail/macos-user/.cache"},
-		Loopback:          LoopbackPolicy{Ports: []int{31053}},
 		Tmp:               TmpShared,
 		HostSoftware:      []string{"/opt/homebrew", "/usr/local"},
 	}
@@ -42,8 +41,12 @@ func fullProfileParams() ProfileParams {
 	pp.CacheAliases = []CacheAlias{{Tool: "pip", Link: pp.Home + "/Library/Caches/pip",
 		Target: "/Users/you/Library/Caches/pip"}}
 	pp.RunAsUser = "you"
+	pp.ServicesDirs = []string{testServicesDir}
 	return pp
 }
+
+// testServicesDir is a session's host-services dir, as servicessession.go names one.
+const testServicesDir = "/private/tmp/yolo-host-services-1a2b3c4d-987654" // a session dir
 
 // The shared package caches (MMP-D12) are opened by the profile the run-as-you launch installs:
 // the cache-alias-allow block names each RESOLVED target, sits after every write carve-out, and
@@ -108,7 +111,7 @@ func TestDenyDefaultProfileStartsFromNothing(t *testing.T) {
 		`(subpath "/Users/you/code/alpha")`,
 		`(literal "/Users")`, `(literal "/Users/you")`, `(literal "/Users/you/code")`,
 		`(subpath "/opt/homebrew")`, `(literal "/opt")`,
-		`(remote ip "localhost:31053")`,
+		`(allow network-outbound (remote ip "localhost:*"))`,
 	} {
 		if !strings.Contains(p, want) {
 			t.Errorf("profile lacks %s", want)
@@ -158,7 +161,7 @@ func TestDenyDefaultProfileClosingBlockFollowsEveryAllow(t *testing.T) {
 		"container-socket-deny", "container-socket-connect-deny", "service-deny", "appleevent-send-deny"} {
 		for _, allow := range []string{"context-read-allow", "context-write-allow", "cache-relocation-read-allow",
 			"cache-relocation-write-allow", "device-ioctl-allow", "staging-root-read-allow", "machine-dir-allow",
-			"host-software-read-allow", "loopback-port-allow"} {
+			"host-software-read-allow"} {
 			mustPrecede(t, p, "#seatbelt-test-id:"+allow+"#", "#seatbelt-test-id:"+id+"#",
 				"an allow after a closing deny re-opens it (last match wins)")
 		}
@@ -187,34 +190,115 @@ func TestDenyDefaultProfileWriteCarveOutsFollowEveryWriteAllow(t *testing.T) {
 	}
 }
 
-func TestDenyDefaultProfileLoopbackPolicy(t *testing.T) {
-	pp := testProfileParams()
-	if p := DenyDefaultProfile(pp); !strings.Contains(p, `(deny network-outbound (remote ip "localhost:*"))`) {
-		t.Error("a denying policy renders no loopback deny")
-	}
-	pp.Loopback = LoopbackPolicy{AllowAll: true, Ports: []int{31053}}
-	if p := DenyDefaultProfile(pp); strings.Contains(p, `"localhost:`) ||
-		strings.Contains(p, "loopback-deny") || strings.Contains(p, "loopback-port-allow") {
-		t.Error("AllowAll still renders a loopback rule")
+// OQ-MM7, ruled 2026-10-23 (MMP-D14): the whole loopback is allowed, every port, bind and
+// connect, and nothing in the profile denies any of it. Removing the loopback allow, or bringing
+// back a loopback deny, fails this.
+func TestDenyDefaultProfileAllowsTheWholeLoopback(t *testing.T) {
+	for name, pp := range map[string]ProfileParams{"minimal": testProfileParams(), "full": fullProfileParams(),
+		"empty": {}} {
+		p := DenyDefaultProfile(pp)
+		at := strings.Index(p, "#seatbelt-test-id:"+LoopbackAllowID+"#")
+		if at < 0 {
+			t.Fatalf("%s: the profile renders no loopback allow", name)
+		}
+		for _, want := range []string{`(allow network-outbound (remote ip "localhost:*"))`,
+			`(allow network-bind network-inbound (local ip "localhost:*"))`} {
+			if !strings.Contains(p[at:], want) {
+				t.Errorf("%s: the loopback allow lacks %s", name, want)
+			}
+		}
+		for _, never := range []string{"loopback-deny", "loopback-port-allow", `(remote ip "localhost:` + "1"} {
+			if strings.Contains(p, never) {
+				t.Errorf("%s: the profile still narrows the loopback (%s)", name, never)
+			}
+		}
+		for _, ln := range strings.Split(p, "\n") {
+			if strings.HasPrefix(ln, "(deny network") && strings.Contains(ln, "(remote ip") {
+				t.Errorf("%s: an IP network deny is back: %s", name, ln)
+			}
+		}
 	}
 }
 
-func TestDenyDefaultProfileLoopbackPortsFollowTheDeny(t *testing.T) {
+// MMP-D16: unix sockets may be bound and connected under the sandbox's own writable roots, the
+// workspace, its HOME and its TMPDIR, and nowhere else; the closing ssh-agent and launchd
+// listener denies still follow and beat it. Removing the allow, or widening it to every unix
+// socket, fails this.
+func TestDenyDefaultProfileAllowsUnixSocketsUnderItsOwnRootsOnly(t *testing.T) {
 	pp := testProfileParams()
-	pp.Loopback = LoopbackPolicy{Ports: []int{8080, 0, 31053, 70000, 8080, -1}}
 	p := DenyDefaultProfile(pp)
-	want := ";; #seatbelt-test-id:loopback-port-allow#\n(allow network-outbound\n" +
-		"    (remote ip \"localhost:8080\")\n    (remote ip \"localhost:31053\"))\n"
-	if !strings.Contains(p, want) {
-		t.Errorf("the port allow is not the sorted, de-duplicated valid ports:\n%s", p)
+	at := strings.Index(p, "#seatbelt-test-id:"+UnixSocketAllowID+"#")
+	if at < 0 {
+		t.Fatal("the profile renders no unix-socket allow")
 	}
-	mustPrecede(t, p, "#seatbelt-test-id:loopback-deny#", "#seatbelt-test-id:loopback-port-allow#",
-		"a port allow above the loopback deny is inert")
+	for _, root := range []string{pp.Workspace, pp.Home, pp.SandboxTmp} {
+		for _, want := range []string{`(local unix-socket (subpath "` + root + `"))`,
+			`(remote unix-socket (subpath "` + root + `"))`} {
+			if !strings.Contains(p[at:], want) {
+				t.Errorf("the unix-socket allow lacks %s", want)
+			}
+		}
+	}
+	for _, want := range []string{"(allow network-bind\n    (local unix-socket",
+		"(allow network-outbound\n    (remote unix-socket"} {
+		if !strings.Contains(p[at:], want) {
+			t.Errorf("the unix-socket allow lacks the form %q", want)
+		}
+	}
+	for _, never := range []string{"(local unix-socket))", "(remote unix-socket))",
+		`(subpath "/private/tmp"))` + "\n    (remote", `unix-socket (subpath "/Users/you"))`,
+		`unix-socket (subpath "/private/var/folders/ab/xyz/T"))`} {
+		if strings.Contains(p, never) {
+			t.Errorf("the unix-socket allow reaches beyond the sandbox's own roots: %s", never)
+		}
+	}
+	mustPrecede(t, p, "#seatbelt-test-id:"+UnixSocketAllowID+"#", "#seatbelt-test-id:ssh-agent-socket-deny#",
+		"the ssh-agent deny must follow the unix-socket allow, or the allow could re-open it")
+	mustPrecede(t, p, "#seatbelt-test-id:"+UnixSocketAllowID+"#", "#seatbelt-test-id:container-socket-connect-deny#",
+		"the container-socket deny must follow the unix-socket allow")
+	// A profile with no writable root renders no unix-socket rule at all: an empty form would
+	// read as "every socket".
+	if strings.Contains(DenyDefaultProfile(ProfileParams{}), UnixSocketAllowID) {
+		t.Error("a profile with no roots renders a unix-socket allow")
+	}
+}
 
-	pp.Loopback = LoopbackPolicy{}
-	p = DenyDefaultProfile(pp)
-	if !strings.Contains(p, "#seatbelt-test-id:loopback-deny#") || strings.Contains(p, "loopback-port-allow") {
-		t.Error("a deny with no ports must render the deny and no port allow")
+// MMP-D15: this session's host-services dir is granted read-only by its exact path, with a stat
+// of its parent and never a listing, and its liveness lock denied after the allow. Removing the
+// grant fails this; so does granting a write, or a listing of /private/tmp.
+func TestDenyDefaultProfileGrantsTheSessionServicesDirReadOnly(t *testing.T) {
+	pp := testProfileParams()
+	pp.ServicesDirs = []string{testServicesDir}
+	pp.Tmp = TmpPrivate // the grant must stand on its own, without the shared-/tmp allow
+	p := DenyDefaultProfile(pp)
+	at := strings.Index(p, "#seatbelt-test-id:"+ServicesDirReadAllowID+"#")
+	if at < 0 {
+		t.Fatal("the profile renders no grant on the session's host-services dir")
+	}
+	want := "(allow file-read-metadata\n    (literal \"/private/tmp\"))\n" +
+		"(allow file-read*\n    (subpath \"" + testServicesDir + "\"))\n"
+	if !strings.Contains(p[at:], want) {
+		t.Errorf("the services-dir grant is not metadata on the parent and a read of the dir:\n%s", p[at:at+600])
+	}
+	for _, ln := range strings.Split(p, "\n") {
+		if strings.Contains(ln, "file-write") && strings.Contains(ln, testServicesDir) && !strings.HasPrefix(ln, "(deny") {
+			t.Errorf("the services dir is writable: %s", ln)
+		}
+	}
+	if strings.Contains(p, `(allow file-read* (literal "/private/tmp"))`) ||
+		strings.Contains(p, "    (literal \"/private/tmp\")\n    (literal") {
+		t.Error("the parent /private/tmp is listable, which names every other session's dir")
+	}
+	lockAt := strings.Index(p, "#seatbelt-test-id:"+ServicesLockDenyID+"#")
+	if lockAt < at {
+		t.Fatalf("the liveness-lock deny (%d) must follow the services-dir grant (%d)", lockAt, at)
+	}
+	if !strings.Contains(p[lockAt:], `(literal "`+testServicesDir+`/.session.lock")`) {
+		t.Error("the liveness lock is not denied")
+	}
+	pp.ServicesDirs = nil
+	if strings.Contains(DenyDefaultProfile(pp), ServicesDirReadAllowID) {
+		t.Error("a profile with no services dir renders a grant")
 	}
 }
 
@@ -390,7 +474,7 @@ func TestDenyDefaultProfileHasNoPerLanguageHomeGrant(t *testing.T) {
 func TestDenyDefaultProfileParensBalance(t *testing.T) {
 	variants := map[string]ProfileParams{"minimal": testProfileParams(), "full": fullProfileParams()}
 	alt := fullProfileParams()
-	alt.Loopback, alt.Tmp, alt.HostSoftware = LoopbackPolicy{AllowAll: true}, TmpPrivate, nil
+	alt.Tmp, alt.HostSoftware = TmpPrivate, nil
 	variants["alternate rulings"] = alt
 	variants["empty"] = ProfileParams{}
 	odd := fullProfileParams()
@@ -431,20 +515,16 @@ func TestDenyDefaultProfileCarriesTheSafehouseAttribution(t *testing.T) {
 }
 
 func TestWithProductionRulingsSetsThePrototypeValues(t *testing.T) {
-	pp := ProfileParams{Loopback: LoopbackPolicy{AllowAll: true, Ports: []int{4000}}, Tmp: TmpPrivate}.WithProductionRulings()
-	if pp.Loopback.AllowAll != productionLoopback.AllowAll || pp.Tmp != productionTmp ||
-		!slices.Equal(pp.HostSoftware, productionHostSoftware) {
+	pp := ProfileParams{Tmp: TmpPrivate}.WithProductionRulings()
+	if pp.Tmp != productionTmp || !slices.Equal(pp.HostSoftware, productionHostSoftware) {
 		t.Errorf("WithProductionRulings did not set the production values: %+v", pp)
-	}
-	if !slices.Equal(pp.Loopback.Ports, []int{4000}) {
-		t.Errorf("the caller's ports were lost: %v", pp.Loopback.Ports)
 	}
 	pp.HostSoftware[0] = "/mutated"
 	if productionHostSoftware[0] == "/mutated" {
 		t.Error("WithProductionRulings shares the production slice")
 	}
 	// The prototype's choices, until slice 11 records the rulings.
-	if productionLoopback.AllowAll || productionTmp != TmpShared ||
+	if productionTmp != TmpShared ||
 		!slices.Equal(productionHostSoftware, []string{"/opt/homebrew", "/usr/local", "/Applications"}) {
 		t.Error("a production ruling moved off the prototype's value before slice 11")
 	}
