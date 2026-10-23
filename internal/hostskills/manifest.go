@@ -30,6 +30,12 @@ type Manifest struct {
 	// because one pack may deliver to several tools' skills dirs, and a bare skill name
 	// would collide across them.
 	Entries map[string]string `json:"entries"`
+	// Digests maps a destination the `files` render wrote to the SHA-256 of the bytes it wrote
+	// there, so a later apply can tell "still exactly what yolo wrote" from "the user changed it"
+	// before retiring a path the pack no longer ships (entrypoint.RenderHostFiles). Optional and
+	// per-entry: a record written before this field existed, or an entry another kind wrote,
+	// has none, and the reader treats that as "cannot prove it is unchanged".
+	Digests map[string]string `json:"digests,omitempty"`
 }
 
 // LoadManifest reads the record at path. A missing file is an EMPTY manifest, not an error:
@@ -95,8 +101,40 @@ func (m *Manifest) Record(dest, pack string) {
 	m.Entries[dest] = pack
 }
 
-// Forget drops dest from the record, after its content has been archived or removed.
-func (m *Manifest) Forget(dest string) { delete(m.Entries, dest) }
+// Forget drops dest from the record, after its content has been archived or removed. Its
+// content digest goes with it, so a later write to the same path starts from no evidence.
+func (m *Manifest) Forget(dest string) {
+	delete(m.Entries, dest)
+	delete(m.Digests, dest)
+}
+
+// RecordDigest stores the SHA-256 (hex) of the bytes yolo wrote at dest. See Digests.
+func (m *Manifest) RecordDigest(dest, digest string) {
+	if m.Digests == nil {
+		m.Digests = map[string]string{}
+	}
+	m.Digests[dest] = digest
+}
+
+// Digest returns the content digest recorded for dest, and false when none was (a record
+// older than the field, or an entry a kind that keeps none wrote).
+func (m *Manifest) Digest(dest string) (string, bool) {
+	d, ok := m.Digests[dest]
+	return d, ok && d != ""
+}
+
+// EntriesOwnedBy returns every recorded destination whose owner is pack, sorted — what a
+// pack's previous renders wrote, for the `files` render to compare with what it ships now.
+func (m *Manifest) EntriesOwnedBy(pack string) []string {
+	var out []string
+	for dest, owner := range m.Entries {
+		if owner == pack {
+			out = append(out, dest)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
 
 // EntriesUnder returns every recorded destination that lives directly under dir, sorted for
 // deterministic output. This is how a COMPOSITION finds its stale entries: what the record says yolo

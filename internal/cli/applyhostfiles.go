@@ -11,6 +11,7 @@ package cli
 
 import (
 	"io"
+	"os"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
@@ -32,11 +33,15 @@ import (
 // is renderHostTrees (hosttrees.go), since the plain render skips a contribution with no `from`.
 func applyHostFiles(pr richtext.Printer, errw io.Writer, p *packload.Pack, packs []*packload.Pack, home, stamp string,
 	write bool, survey *hostApplySurvey) int {
-	if !declaresKind(p, packdecl.KindFiles) {
-		return 0
-	}
 	manPath := hostSkillsManifestPath()
 	man, err := hostskills.LoadManifest(manPath)
+	if !declaresKind(p, packdecl.KindFiles) && (err != nil || !ownsRegularFile(man, p.Name)) {
+		// Nothing to render, and nothing an earlier render of this pack wrote that the retire
+		// (entrypoint.RenderHostFiles) could act on: a pack that STOPPED declaring `files`
+		// still gets its old output retired, which is why this is not a bare declaresKind
+		// check. Quiet on an unreadable record, which a pack that renders files reports.
+		return 0
+	}
 	if err != nil {
 		pr.Printf("  [yellow]⚠ files: %v — treating every existing path as yours[/yellow]", err)
 	}
@@ -68,7 +73,10 @@ func applyHostFiles(pr richtext.Printer, errw io.Writer, p *packload.Pack, packs
 		// A FALLBACK TAKEN prints too (pi-extension-store-builds.md XB-D7: "each fallback taken is
 		// said"): the agent installs an extension itself where yolo renders no tree.
 		tier := tierRun
+		// An orphan the retire LEFT because the user changed it prints too: it is the user's to
+		// remove, and the line carries the command.
 		if strings.HasPrefix(r.Action, "refused") || strings.HasPrefix(r.Action, hostFallbackAction) ||
+			strings.HasPrefix(r.Action, entrypoint.HostFilesLeftAction) ||
 			strings.HasPrefix(r.Action, hostSkippedAction) {
 			tier = tierLoss
 		}
@@ -83,6 +91,18 @@ func applyHostFiles(pr richtext.Printer, errw io.Writer, p *packload.Pack, packs
 		}
 	}
 	return 0
+}
+
+// ownsRegularFile reports whether the ownership record names a regular file as pack's — the
+// shape every `files` render writes, as opposed to a patched extension's link or a
+// pre-composition skill directory.
+func ownsRegularFile(man *hostskills.Manifest, pack string) bool {
+	for _, dest := range man.EntriesOwnedBy(pack) {
+		if fi, err := os.Lstat(dest); err == nil && fi.Mode().IsRegular() {
+			return true
+		}
+	}
+	return false
 }
 
 // declaresKind reports whether the pack declares at least one contribution of this kind.

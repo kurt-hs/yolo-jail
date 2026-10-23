@@ -1812,6 +1812,33 @@ intent, since a pack that owns `~/.claude/file-suggestion.sh` means *this file i
 maintain*. That changed on 2026-08-02; **ownership does not carry over**, which is the one
 asymmetry the host copy keeps.
 
+<a id="host-files-converge"></a>**The host copy converges.** A path a pack's render wrote on an
+earlier apply, and which the pack no longer ships (a removed or renamed file, or every file under
+a directory contribution whose `into` moved), leaves the home on the next apply of that pack,
+whether an explicit `yolo host apply --assert` or the apply gate of `yolo host -- <agent>`
+([`hostfilesretire.go`](../../internal/entrypoint/hostfilesretire.go)). The jail needs no such
+pass: it binds only the current set, and the workspace-overlay mountpoints a dropped
+contribution leaves are retired by their own record (`preparePackFiles`). The evidence is the
+same ownership record, which now also keeps the digest of the bytes each render wrote:
+
+- **Unchanged since yolo wrote it**: removed, with one `removed` line.
+- **Changed by the user, or no longer a regular file**: left in place, with one line naming the
+  path, the pack that used to ship it, and the `rm` that removes it. The line repeats on every
+  apply until the user decides, since the launch gate's own apply is not shown.
+- **Recorded before the record kept digests** (any path an apply from an earlier version
+  wrote): yolo wrote it, but cannot prove it unchanged. It is archived into the kind's archive
+  bucket while it still has the read-only mode the render gives every file, and the line says
+  where to `mv` it back. Once its mode has changed it is left in place and named, as above.
+
+A path the pack still declares is never retired, including everything under a contribution whose
+source is missing this run, and nothing under the pack's `skills` destinations is touched. An
+old directory location emptied by the retire is removed too, up to the first directory that is
+not empty, one the pack still delivers into, or one directly under the home. A file yolo has no
+record of writing is never touched. A pack removed from `packs` is the other axis, and keeps its
+confirmed pass ([retiring a dropped pack's host output](#retiring-a-dropped-packs-host-output)).
+A host session home links the agent's directories from the real home, so the session sees the
+converged home.
+
 ##### <a id="pi-packages"></a>pi packages: the one registering slot
 
 A content pack reaches pi with one entry and no pi path:

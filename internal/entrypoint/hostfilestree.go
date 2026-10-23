@@ -58,8 +58,22 @@ type HostFilesRequest struct {
 // about.
 func RenderHostFiles(p *packload.Pack, homeDir string, req HostFilesRequest, observe bool) ([]HostRenderResult, error) {
 	var out []HostRenderResult
+	type job struct{ src, dest string }
+	var jobs []job
+	// ship is what this pack delivers now: every destination path, plus every destination ROOT
+	// whose contribution is declared but whose tree this run could not read. The retire below
+	// consults it before anything else, so a path the pack still declares is never retired — a
+	// missing source is a pack-authoring slip the render reports, not the pack ceasing to ship.
+	ship := hostFilesShip{paths: map[string]bool{}}
 	for _, c := range p.Decl.Contributions() {
-		if c.Kind != packdecl.KindFiles || c.From == "" || c.Into == "" {
+		if c.Kind != packdecl.KindFiles || c.Into == "" {
+			continue
+		}
+		destRoot := filepath.Join(homeDir, filepath.FromSlash(c.Into))
+		if c.From == "" {
+			// A slot or a patched extension: not this function's to render (hosttrees.go), and
+			// not its to retire either.
+			ship.roots = append(ship.roots, destRoot)
 			continue
 		}
 		src := filepath.Join(p.Root, filepath.FromSlash(c.From))
@@ -67,13 +81,13 @@ func RenderHostFiles(p *packload.Pack, homeDir string, req HostFilesRequest, obs
 			// A missing source is a pack-authoring problem (an `only`/`exclude` filter that
 			// removed the tree, a typo'd `from`), not grounds to fail the whole apply. Warn
 			// by name — the jail path treats this the same way.
+			ship.roots = append(ship.roots, destRoot)
 			out = append(out, HostRenderResult{
 				Surface: p.Name + "/files", Path: src,
 				Action: "refused: source is missing from the pack (check `from` and any only/exclude filters)",
 			})
 			continue
 		}
-		destRoot := filepath.Join(homeDir, filepath.FromSlash(c.Into))
 		files, err := relFilesUnder(src)
 		if err != nil {
 			return out, err
@@ -83,9 +97,23 @@ func RenderHostFiles(p *packload.Pack, homeDir string, req HostFilesRequest, obs
 			// itself — matching the jail path, where packFilesMountArgs binds src onto
 			// /home/agent/<into> directly. Diverging would make one pack.json deliver to
 			// different paths at each notch.
-			out = append(out, renderOneHostFile(p.Name,
-				filepath.Join(src, rel), filepath.Join(destRoot, rel), req, observe))
+			dest := filepath.Join(destRoot, rel)
+			ship.paths[dest] = true
+			jobs = append(jobs, job{filepath.Join(src, rel), dest})
 		}
+	}
+	for _, c := range p.Decl.Contributions() {
+		if c.Kind == packdecl.KindSkills && c.Into != "" {
+			// Per-entry skill delivery shared this record before composition, so an entry of
+			// this pack's under its skills destination may be a skill, which is not ours.
+			ship.roots = append(ship.roots, filepath.Join(homeDir, filepath.FromSlash(c.Into)))
+		}
+	}
+	// RETIRE FIRST, so a destination that changed shape (a file that became a directory of the
+	// same name) is cleared before the render below needs the path.
+	out = append(out, retireHostFiles(p.Name, homeDir, req, ship, observe)...)
+	for _, j := range jobs {
+		out = append(out, renderOneHostFile(p.Name, j.src, j.dest, req, observe))
 	}
 	return out, nil
 }
@@ -123,6 +151,13 @@ func renderOneHostFile(pack, srcPath, dest string, req HostFilesRequest, observe
 	// dry-run predicts the same no-op rather than promising a render it would not do.
 	if occupied && owned && !hostskills.Changed(srcPath, dest) {
 		res.Action = "unchanged"
+		if _, has := req.Manifest.Digest(dest); !has && !observe {
+			// A path an older yolo recorded without a digest: it matches the pack's source now,
+			// so its bytes are yolo's, and recording them is what lets a later retire prove it.
+			if d, err := fileDigest(dest); err == nil {
+				req.Manifest.RecordDigest(dest, d)
+			}
+		}
 		return res
 	}
 
@@ -190,6 +225,9 @@ func renderOneHostFile(pack, srcPath, dest string, req HostFilesRequest, observe
 	}
 	if req.Manifest != nil {
 		req.Manifest.Record(dest, pack)
+		// What makes a later retire safe: the bytes yolo wrote, so "still exactly that" can be
+		// told from "the user changed it" once the pack stops shipping the path.
+		req.Manifest.RecordDigest(dest, bytesDigest(data))
 	}
 	if res.Action == "" {
 		res.Action = "rendered"
