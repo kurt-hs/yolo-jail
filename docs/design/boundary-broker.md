@@ -7,7 +7,7 @@ next: "Build step 1's broker-core factoring in git-broker.md, then the four user
 depends-on:
   - agent-event-watchers.md
 tags: [design, credentials, github, gh, git, approvals, notifications, loopholes, audit, broker]
-summary: "Revised around the maintainer's 2026-09-28 brief and his 2026-09-29 rulings. A host daemon runs the host's own `gh` login on the jail's behalf, only against the workspace's own GitHub repositories. Reads always run. Since the maintainer's 2026-10-23 ruling a write is granted per resource, not per command or per set: a PR, an issue, a branch, or a repository's ability to create PRs. Creating a PR or a branch is a user grant in the user's own config for that workspace; what the agent creates under it joins the workspace's working set, where the agent then writes freely. Anything else is asked for per resource from a persistent desktop notification on Linux and macOS, answered Allow once, Allow for 15 minutes, Add to the working set, or Deny; no grant is scoped to a session. The request outlives its connection, the answer reaches the agent later through the `yolo notify` ping channel, and the agent re-issues its command under the grant. Credential-printing and host-reaching commands are refused outright, whatever is granted. Every brokered call is appended to a host audit log that yolo mounts into no jail. The scope is re-read from the workspace's remotes at every fresh launch and approved in that launch's config-change diff; an out-of-scope command is refused, and the only widening is a `brokered.github.repos` list in the workspace's own config, approved at that same gate (re-ruled 2026-10-05 and built that day, in workspace-widening.md; the user-scope entry keyed by workspace is retired). On macOS the notifier is terminal-notifier, a dependency of the Homebrew formula on Apple silicon running macOS 14 or later, where a prebuilt bottle exists. Step 1 (reads, the scope, the audit log, the mount fence) is built; a pack intercepts `gh` through a generic contribution kind. The workspace entry is built: a listed repository joins the scope for every set. On 2026-10-23 the maintainer laid out the build in five steps: brokered sources with read and write sets (git next, after factoring out the source-neutral core), generic actionable toasts on Linux and macOS, a host CLI that views and approves requests, a web UI built out of tree on that CLI, and only then a talk about merging it. He asked that the answer wake the agent, and ruled in review the same day that long-lived access is granted only in the user's own config, scoped to workspaces, which a workspace config can never widen; the git source is off until the user includes it, and git read-only means no push of any kind. The user grants are four, read, create-branch, create-pr and create-issue, and a working set also takes a resource someone else made at a human's Add (ruled 2026-10-23). A write is its own grant naming its resource, never an addition to read, and a repository-level write never joins the working set (ruled 2026-10-23). A grant's kinds are allowed in the user's config and the grants themselves sit in the workspace config behind the config-change approval; a PR leaves the working set on merge (ruled 2026-10-23). Open: how a host daemon hands the launch a line to print; the answer path ships before the doorbell, and a workspace never grants itself access though it still requests repositories (ruled 2026-10-23)."
+summary: "Revised around the maintainer's 2026-09-28 brief and his 2026-09-29 rulings. A host daemon runs the host's own `gh` login on the jail's behalf, only against the workspace's own GitHub repositories. Reads always run. Since the maintainer's 2026-10-23 ruling a write is granted per resource, not per command or per set: a PR, an issue, a branch, or a repository's ability to create PRs. Creating a PR or a branch is a user grant in the user's own config for that workspace; what the agent creates under it joins the workspace's working set, where the agent then writes freely. Anything else is asked for per resource from a persistent desktop notification on Linux and macOS, answered Allow once, Allow for 15 minutes, Add to the working set, or Deny; no grant is scoped to a session. The request outlives its connection, the answer reaches the agent later through the `yolo notify` ping channel, and the agent re-issues its command under the grant. Credential-printing and host-reaching commands are refused outright, whatever is granted. Every brokered call is appended to a host audit log that yolo mounts into no jail. The scope is re-read from the workspace's remotes at every fresh launch and approved in that launch's config-change diff; an out-of-scope command is refused, and the only widening is a `brokered.github.repos` list in the workspace's own config, approved at that same gate (re-ruled 2026-10-05 and built that day, in workspace-widening.md; the user-scope entry keyed by workspace is retired). On macOS the notifier is terminal-notifier, a dependency of the Homebrew formula on Apple silicon running macOS 14 or later, where a prebuilt bottle exists. Step 1 (reads, the scope, the audit log, the mount fence) is built; a pack intercepts `gh` through a generic contribution kind. The workspace entry is built: a listed repository joins the scope for every set. On 2026-10-23 the maintainer laid out the build in five steps: brokered sources with read and write sets (git next, after factoring out the source-neutral core), generic actionable toasts on Linux and macOS, a host CLI that views and approves requests, a web UI built out of tree on that CLI, and only then a talk about merging it. He asked that the answer wake the agent, and ruled in review the same day that long-lived access is granted only in the user's own config, scoped to workspaces, which a workspace config can never widen; the git source is off until the user includes it, and git read-only means no push of any kind. The user grants are four, read, create-branch, create-pr and create-issue, and a working set also takes a resource someone else made at a human's Add (ruled 2026-10-23). A write is its own grant naming its resource, never an addition to read, and a repository-level write never joins the working set (ruled 2026-10-23). A grant's kinds are allowed in the user's config and the grants themselves sit in the workspace config behind the config-change approval; a PR leaves the working set on merge (ruled 2026-10-23). A host with no notifier gets no affordance beyond the background log (ruled 2026-10-23). Nothing is open; the answer path ships before the doorbell, and a workspace never grants itself access though it still requests repositories (ruled 2026-10-23)."
 vantage:
   status-chip: true
 ---
@@ -32,7 +32,7 @@ around the maintainer's brief of that day; first sketched
 2026-08-05. [OQ-BB1](#15-decision-ledger), [OQ-BB2](#15-decision-ledger), [OQ-BB3](#15-decision-ledger), [OQ-BB4](#15-decision-ledger),
 [OQ-BB6](#15-decision-ledger), [OQ-BB7](#15-decision-ledger), [OQ-BB8](#15-decision-ledger), [OQ-BB9](#15-decision-ledger) and OQ-C were ruled on
 2026-09-29, and the body now follows those rulings ([§1.2](#12-what-it-rules));
-[OQ-BB10](#OQ-BB10) is open. **On 2026-10-05 the maintainer re-ruled [OQ-BB6](#15-decision-ledger) to
+[OQ-BB10](#OQ-BB10) was ruled 2026-10-23 ([BB-D98](#BB-D98)). **On 2026-10-05 the maintainer re-ruled [OQ-BB6](#15-decision-ledger) to
 its option (d):** the widening entry moves into the workspace config, is approved at the
 config-change gate like a remote, and the user-scope form is deleted. That design is
 [`workspace-widening.md`](workspace-widening.md), built 2026-10-05; the body below describes the
@@ -85,8 +85,8 @@ background wait ([OQ-BB17](#OQ-BB17)).
 
 **Start at [§3](#3-the-flow)**, the flow. Everything else is what one step of it needs.
 
-**Needs your ruling:** [OQ-BB10](#OQ-BB10).
-[OQ-BB14](#OQ-BB14) (no for now), [OQ-BB15](#OQ-BB15), [OQ-BB16](#OQ-BB16), [OQ-BB19](#OQ-BB19) (four grants), [OQ-BB20](#OQ-BB20), [OQ-BB21](#OQ-BB21), [OQ-BB22](#OQ-BB22), [OQ-BB17](#OQ-BB17), [OQ-BB18](#OQ-BB18), the grant model
+**Needs your ruling:** none.
+[OQ-BB10](#OQ-BB10), [OQ-BB14](#OQ-BB14) (no for now), [OQ-BB15](#OQ-BB15), [OQ-BB16](#OQ-BB16), [OQ-BB19](#OQ-BB19) (four grants), [OQ-BB20](#OQ-BB20), [OQ-BB21](#OQ-BB21), [OQ-BB22](#OQ-BB22), [OQ-BB17](#OQ-BB17), [OQ-BB18](#OQ-BB18), the grant model
 ([BB-D76](#BB-D76) to [BB-D78](#BB-D78)), and the git source's
 [OQ-GB1](git-broker.md#OQ-GB1) and [OQ-GB2](git-broker.md#OQ-GB2), were ruled 2026-10-23.
 [OQ-BB3](#15-decision-ledger), [OQ-BB4](#15-decision-ledger), [OQ-BB6](#15-decision-ledger),
@@ -1386,8 +1386,8 @@ path, and yolo's own helper app later. Never a modal dialog.
   terminal-notifier and alerter lineage, unverified for 3.x), and one that exits with no output
   other than exit 3 or 4. Each leaves the request pending with nothing on screen, so the broker
   re-shows it once. A second such outcome for the same request falls back to the no-notifier path
-  of [§6.5](#65-when-there-is-no-notifier-or-nobody-answers): the request stays filed, the
-  launch's terminal gets its notice line, and `yolo approve` answers.
+  of [§6.5](#65-when-there-is-no-notifier-or-nobody-answers): the request stays filed, is
+  written to the broker's log, and `yolo approve` answers ([BB-D98](#BB-D98)).
 - **Withdrawing.** When a request is decided elsewhere, the broker ends the child and withdraws
   the notification. How 3.x withdraws one is the first thing the macOS build measures.
 - **The first notification asks for Alerts.** The first notification the broker posts through a
@@ -1461,10 +1461,13 @@ exit 3 or 4, or no terminal-notifier 3.0 or later on a Mac, where `yolo check` n
 ([§6.2](#62-macos)). Then:
 
 1. **The request is filed anyway.** It waits for `yolo approve` exactly as for a button.
-2. **The launch's terminal gets one notice line**, printed by the launching `yolo` process above
-   the agent: `github-broker: r-3f9a0c21 waits for approval: yolo approve r-3f9a0c21`. The
-   terminal is **never** an answer channel: the agent owns its keystrokes and its screen, and a
-   prompt drawn into its TUI could be answered by the agent's own output.
+2. **Nothing is printed at the launch's terminal** ([BB-D98](#BB-D98)): the request is written
+   to the broker's background log, and the agent's own pending status and wait timeout tell it to
+   ask the user to run `yolo approve`. A user with no notifier wires an `on_request` hook
+   ([§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship))
+   or does not turn writes on. The terminal is **never** an answer channel either: the agent owns
+   its keystrokes and its screen, and a prompt drawn into its TUI could be answered by the agent's
+   own output.
 3. **`yolo approve`** on the host, from any terminal including one over SSH:
 
    ```console
@@ -1659,9 +1662,9 @@ cancellation, and the host connection's write sinks carry that deadline. No exec
 ordering exists. User policy is sampled at authorization: ordinary out-of-band user config edits
 do not acquire this broker lock, and serialization with those edits is not promised. Callbacks must never nest a same-source lock-taking operation.
 
-**Production fence:** request delivery (including the no-notifier terminal notice) and later
-answer delivery must be ready, with no environment/config bypass. Manual discovery through
-`yolo approve` does not waive [OQ-BB10](#OQ-BB10). Answer ping remains `yolo notify` work; status
+**Production fence:** request delivery (the toast notifier or an `on_request` hook; with neither,
+the broker log alone, [BB-D98](#BB-D98)) and later answer delivery must be ready, with no
+environment/config bypass. Answer ping remains `yolo notify` work; status
 and wait are already wired as its interim inspection path ([§3.3](#33-the-answer-comes-back-through-the-doorbell)).
 Notification withdrawal/expiry delivery remains unbuilt. Pending limits, denial cooldown and
 known inert lifetime-lease collection are built; see [§9.2](#92-prompt-fatigue).
@@ -2096,7 +2099,8 @@ terminal-notifier later, once the macOS release signs ([OQ-BB4](#15-decision-led
    ([`agent-event-watchers.md` §10](agent-event-watchers.md#10-what-i-would-build-in-order)).
 3. **Writes turned on**: the production delivery dependency
    ([§7](#7-grants-and-the-request-store)) is satisfied when a request can reach a human (the
-   toast notifier is running, or the no-notifier notice of [OQ-BB10](#OQ-BB10) is printed) and
+   toast notifier is running or an `on_request` hook is set; with neither, the request is only
+   logged, [BB-D98](#BB-D98)) and
    its answer can reach the agent (step 2 of this list). Then every write no user grant or
    working-set entry covers, GitHub's and git's per-ref pushes alike, files a request on its
    resource instead of answering 77, answered by the buttons of [§6.4](#64-choosing-a-duration).
@@ -2111,7 +2115,6 @@ tree. Step 5 is a conversation about bringing one in.
 
 ### 11.5 What still waits on a ruling
 
-- [OQ-BB10](#OQ-BB10), the no-notifier notice, holds writes on a host with no notifier.
 - [OQ-BB14](#OQ-BB14) holds nothing here; it decides host-run's future.
 
 ### 11.6 Testing constraints
@@ -2248,7 +2251,7 @@ covered:
 
 ## 14. Open questions
 
-1. 💬 <a id="OQ-BB10"></a>**[OQ-BB10](#OQ-BB10): How does a host daemon hand the launching
+1. ✅ <a id="OQ-BB10"></a>**[OQ-BB10](#OQ-BB10): How does a host daemon hand the launching
     terminal a line to print?** This decides whether the no-notifier path, which turning writes on needs, says anything at
     the terminal. The line
     in question, and each option's cost:
@@ -2260,13 +2263,17 @@ covered:
       line.**
     - **C — Only where the broker already speaks:** the refusal text, `yolo check` and the log.
 
-    <!-- vantage: oq id=OQ-BB10 leaning="A: a notice file beside the daemon's socket, printed at readiness and tailed for the jail's life, because the later request notices need it and B is a subset of it." -->
-
     _Leaning:_ **A.** It is the only option that serves [§6.5](#65-when-there-is-no-notifier-or-nobody-answers)'s notices after the launch, which
     the no-notifier path depends on, and B's start-up case is a special case of it.
 
     **Answer:**
-    > _(empty — fill in when decided)_
+    > **Ruled in review 2026-10-23, C, narrower:** nothing new at the terminal, and no affordance
+    > for a host with no notifier: the request is recorded in yolo's background log, and that is
+    > all. *"we do nothing. If you don't have a way to get those notifications it's your fault. Of
+    > course it should go to some background YOLO log so it's not just in the ether, but no there's
+    > no affordance for the user if you don't have notify like don't turn on the feature."* So
+    > [§6.5](#65-when-there-is-no-notifier-or-nobody-answers)'s terminal notice line is dropped, and
+    > no daemon-to-launcher channel is built ([BB-D98](#BB-D98)).
 
 2. ✅ <a id="OQ-BB14"></a>**[OQ-BB14](#OQ-BB14): Once the doorbell exists, may a notification
     approve an arbitrary host command filed through host-run?** Raised 2026-10-09 by
@@ -2604,6 +2611,7 @@ covered:
 | <a id="BB-D95"></a>[`BB-D95`](#15-decision-ledger) | **Ruled 2026-10-23 ([OQ-BB20](#OQ-BB20)):** a repository-level write (releases, labels, workflow runs, settings, other `gh api` writes) never joins the working set and its notification offers no Add. It runs unasked only under an additional user grant type naming it; otherwise it asks per request, answered Allow once or Allow for 15 minutes, as distinct, clearly labelled buttons as far as the notifier allows | 2026-10-23 | [§5.7](#57-permission-sets), [§6.4](#64-choosing-a-duration) | pending |
 | <a id="BB-D96"></a>[`BB-D96`](#15-decision-ledger) | **Ruled 2026-10-23 ([OQ-BB22](#OQ-BB22)):** the user's own config lists which kinds of grant may be held; the workspace config holds the specific grants, each naming its resource (a wildcard written out as one), and each joins only at the config-change approval and only within the kinds the user's config allows. A grant of a kind the user's config does not allow is refused by `yolo check`, naming the user-config key that would allow it | 2026-10-23 | [§5.8](#58-long-lived-access-and-temporary-access) | pending |
 | <a id="BB-D97"></a>[`BB-D97`](#15-decision-ledger) | **Ruled 2026-10-23 ([OQ-BB21](#OQ-BB21)), C:** a PR leaves the working set on merge; a closed-unmerged PR and an issue stay until revoked. *Implementation decision:* nothing tracks a PR's life; the merge is read lazily at each write from the `pull_request.merged_at` field of the one `issues/{n}` host read the broker already makes, and a write to a merged PR asks and drops the entry. A failed read makes the write ask, as for any unclassified write | 2026-10-23 | [§5.7](#57-permission-sets), [§7](#7-grants-and-the-request-store) | pending |
+| <a id="BB-D98"></a>[`BB-D98`](#15-decision-ledger) | **Ruled 2026-10-23 ([OQ-BB10](#OQ-BB10)):** a host with no notifier gets no affordance: no terminal notice line, no notice file, no start-up line. A filed request is written to the broker's background log, as every request is; the agent's own messages (the pending status and the wait timeout) stay as built. A user without a notifier or an `on_request` hook should not turn writes on | 2026-10-23 | [§6.5](#65-when-there-is-no-notifier-or-nobody-answers) | pending |
 
 ## Appendix A — prior art: unYOLO, re-analyzed from source (2026-08-12)
 
