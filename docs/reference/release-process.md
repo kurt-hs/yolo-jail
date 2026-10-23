@@ -19,6 +19,36 @@ Each refusal names the step that fixes it, and none dispatches anything:
 
 The version is read by [`scripts/release-version.sh`](../../scripts/release-version.sh); `scripts/test-changelog-section.sh` runs it over fixture changelogs, including every heading refusal, and runs the recipe in a scratch repository for the argument, the missing dated section, the future date, an origin that lacks `HEAD`, both tagged-elsewhere rows, a rejected section, the resume and a dispatch failure. A version already tagged **at `HEAD`** is not refused: the request goes on, for the [tag-only resume](#resuming-a-tag-only-release), which the workflow verifies.
 
+## Writing a changelog section
+
+CHANGELOG.md's section for a version is its GitHub release body, word for word.
+[`scripts/changelog-section.sh`](../../scripts/changelog-section.sh) is the gate everywhere — `just release`, `release.yml` and `publish.yml` all run it, and `just check-ci` runs its tests — and it refuses a missing, empty or placeholder section, filler ("various improvements", "under the hood") and a list of commit subjects. There is no hatch, because a tag is never moved: a bad release is fixed by the next one. What the script cannot judge is who the section is written for:
+
+- **A line needs two yeses**: could a reader who never opens the repository notice it, and did what it
+  fixes ship in a published version? A fix to something added in the same cycle folds into that
+  feature's paragraph. Refactors, tests, dependency bumps, CI and internal docs never get a line.
+- **Write to the user, in their terms**: what they can now do, see or stop working around. No commit
+  hashes, PR numbers, package names or file paths; a repository-relative doc link is fine, since
+  `release.yml` pins it to the tag.
+- **Short, by the maintainer's ruling (2026-10-01: ours had grown "nigh unreadable", ten times
+  Vantage's).** The standard is the `open-source-project` skill's `references/changelog.md`, kept
+  tighter than its ceilings:
+  - a release opens with ONE sentence naming its two or three biggest changes;
+  - a feature is one `**Bold lead.**` paragraph of at most two or three short sentences, then
+    `See [doc](link)`;
+  - a fix is one bullet line;
+  - a section stays at or under about 650 words.
+
+  Never say how a change works, why, or how it was found. `### Changed` keeps every upgrade-breaking
+  change, each with the one action the user takes. When you land other work, rewrite its lines to
+  this shape: a union merge keeps every rewording.
+- `### Added`, `### Changed`, `### Fixed`, then `### Contributors`, thanking each outside
+  contributor by public GitHub name and linked handle (never an email). A feature an outside
+  contributor built also names them inline on its own entry ("Contributed by …"). A number goes in
+  only where a test or a constant pins it.
+- An old minor line's retrospective section is headed `## 0.9.x`. A heading that spells a full version
+  is one the extractor will publish.
+
 ## Trusted source and capability boundaries
 
 Each workflow checks out its own main dispatch SHA for orchestration, with checkout credentials unpersisted. `preflight.sh` requires a main branch context, exact commit identity, refreshed main ancestry and the regular `ci.yml` main/push run for the exact repository/SHA. The CI gate checks workflow identity, attempt-specific required jobs and architectures/shards, and refreshes its proof. Missing, failed, cancelled or timed-out proof refuses.
