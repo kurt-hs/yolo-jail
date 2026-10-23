@@ -615,12 +615,15 @@ an agent-writable target — including the ones no rule can see, like a Python d
   declare itself on"* survives a second reading: a declaration about a default cannot widen
   what a pack may **do**, and a pack cannot be **selected** without a human editing user-scope
   config, so declaring yourself default-on changes nothing until someone installs you.
-- **A jail-side daemon, `state_files` and `requires` get no crossing claim.** A jail daemon is
+- **A jail-side daemon, `state_files` and a loophole manifest's `requires` get no crossing
+  claim.** (That `requires` is the loophole field, `command_on_path` and `file_exists`; the pack
+  contribution kind of the same name is retired, by
+  [`OQ-PS11`](../design/provisioner-sets.md#OQ-PS11).) A jail daemon is
   a process inside the container, the one place a pack's code was always allowed to run;
   `state_files` resolves inside yolo's own state tree rather than a path the user would
   recognize as theirs; and a `requires` probe is a `stat` that crosses nothing, so a disclosure
   line for it would dilute a surface whose whole value is that every line is a real capability.
-  `requires` is **path-scoped** instead, because the answer is readable even though nothing
+  The loophole `requires` is **path-scoped** instead, because the answer is readable even though nothing
   crosses. A jail daemon is still **named at launch**: each one the launch's jail runs appears on
   its pack's line in the block for pack code that runs inside the jail
   ([`OQ-TP10`](../design/trust-paths.md#decision-ledger)),

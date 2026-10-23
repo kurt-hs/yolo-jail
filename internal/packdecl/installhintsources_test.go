@@ -70,15 +70,15 @@ func TestInstallHintSourceProblems(t *testing.T) {
     // Sources, checked 2026-10-02:
     //   brew: https://formulae.brew.sh/api/formula/fd.json
     //   apt: https://packages.debian.org/trixie/amd64/fd-find/filelist
-    { "kind": "requires", "bin": "fd", "install_hints": {"brew": "fd", "apt": "fd-find && sudo ln -sf /usr/lib/cargo/bin/fd /usr/local/bin/fd"} },
-    { "kind": "requires", "bin": "rg" },
+    { "kind": "program", "bin": "fd", "install_hints": {"brew": "fd", "apt": "fd-find && sudo ln -sf /usr/lib/cargo/bin/fd /usr/local/bin/fd"} },
+    { "kind": "program", "bin": "rg" },
     // brew-cask: https://formulae.brew.sh/api/cask/claude-code.json
     {
       "bin": "claude",
       "install_hints": {
         "brew-cask": "claude-code"
       },
-      "kind": "requires"
+      "kind": "program"
     }
   ]
 }`

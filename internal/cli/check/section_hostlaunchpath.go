@@ -143,7 +143,7 @@ func addPackDeps(byBin map[string]*launchPathDep, p *packload.Pack, floorAnswers
 	for _, c := range p.Decl.Contributions() {
 		// A fork's own contribution declares its base's bin and installs nothing itself
 		// (packdecl.Contribution.IsFork): the base's program is the one declarer.
-		if (c.Kind != packdecl.KindRequires && c.Kind != packdecl.KindProgram) || c.Bin == "" ||
+		if c.Kind != packdecl.KindProgram || c.Bin == "" ||
 			c.IsFork() || floorAnswers[c.Bin] {
 			continue
 		}
@@ -152,7 +152,7 @@ func addPackDeps(byBin map[string]*launchPathDep, p *packload.Pack, floorAnswers
 			d = &launchPathDep{miss: hostpath.Miss{Bin: c.Bin}}
 			byBin[c.Bin] = d
 		}
-		if c.Kind == packdecl.KindRequires {
+		if c.IsNeed() {
 			d.miss.Requires = appendOnce(d.miss.Requires, p.Name)
 		} else {
 			d.miss.Programs = appendOnce(d.miss.Programs, p.Name)

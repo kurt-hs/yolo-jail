@@ -122,7 +122,7 @@ so a slow start is visibly the agent's.
 ### Where `yolo host` looks for your tools, and `host_path`
 
 Everything yolo does not keep a copy of, `yolo host` looks for on the PATH it was started with: a
-tool a pack needs (`rg` and `fd` for the guardrails pack, anything a pack lists under `requires`),
+tool a pack needs (`rg` and `fd` for the guardrails pack, anything a pack declares as a `program` with no `via`),
 an agent yolo keeps no copy of because you left its pack out of `host_floor`, gave it to a package
 manager or its vendor publishes no build for your machine, and any other command you run with `yolo host -- <command>`. yolo
 has no other way to know where you keep your tools. A terminal's PATH usually has them. A Waybar

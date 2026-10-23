@@ -63,7 +63,7 @@ func OverrideImageProbeBase(dirs string) (restore func()) {
 // On macos-user there is no image, and $YOLO_DARWIN_LOGIN_PATH is the honest stand-in: the
 // native nix store prefix `packages:` materializes into, plus the system dirs. Filtering it
 // by the same home rule leaves exactly that and drops the sandbox's own prefixes — the same
-// reasoning agentPath uses to decide which PATH a `requires` probe counts.
+// reasoning agentPath uses to decide which PATH a need's probe counts.
 func imageProbePath(e *Env) string {
 	base := imageProbeBase
 	if p := e.Vars[DarwinLoginPathEnv]; p != "" {

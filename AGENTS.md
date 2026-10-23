@@ -555,46 +555,13 @@ in the workspace's own overlay, `<workspace>/.yolo/home/`, under `copilot/` and 
 the leading dot stripped) and on macos-user (the account home's links point there), and under `.copilot/` and
 `.claude/` on Apple Container, which binds that directory whole at `/home/agent`.
 
-## The changelog is the release
+## The changelog is written at release time
 
-**[`CHANGELOG.md`](CHANGELOG.md)'s section for a version IS its GitHub release body, word for word**,
-and `just release` is the one path to a tag: rename `[Unreleased]` to
-`[<version>] - <YYYY-MM-DD>` and commit it first. **It takes no version**: it releases the newest dated
-section, read by [`scripts/release-version.sh`](scripts/release-version.sh), prints the version it chose,
-and refuses an argument, naming that version
-([PTG-D3](docs/reference/release-process.md#PTG-D3)). The recipe refuses a heading that is not
-`X.Y.Z[-pre]` or is dated after today, a dirty tree, a HEAD origin cannot see, a version already tagged at
-another commit (one tagged at HEAD goes on, for a [tag-only resume](docs/reference/release-process.md#resuming-a-tag-only-release)),
-or a section [`scripts/changelog-section.sh`](scripts/changelog-section.sh) rejects. That script is the gate
-everywhere — `just release`, `release.yml` and `publish.yml` all run it, and `just check-ci` runs its
-tests — and it refuses a missing, empty or placeholder section, filler ("various improvements",
-"under the hood") and a list of commit subjects. There is no hatch, because a tag is never moved: a bad
-release is fixed by the next one. What the script cannot judge is who the section is written for:
-
-- **A line needs two yeses**: could a reader who never opens the repository notice it, and did what it
-  fixes ship in a published version? A fix to something added in the same cycle folds into that
-  feature's paragraph. Refactors, tests, dependency bumps, CI and internal docs never get a line.
-- **Write to the user, in their terms**: what they can now do, see or stop working around. No commit
-  hashes, PR numbers, package names or file paths; a repository-relative doc link is fine, since
-  `release.yml` pins it to the tag.
-- **Short, by the maintainer's ruling (2026-10-01: ours had grown "nigh unreadable", ten times
-  Vantage's).** The standard is the `open-source-project` skill's `references/changelog.md`, kept
-  tighter than its ceilings:
-  - a release opens with ONE sentence naming its two or three biggest changes;
-  - a feature is one `**Bold lead.**` paragraph of at most two or three short sentences, then
-    `See [doc](link)`;
-  - a fix is one bullet line;
-  - a section stays at or under about 650 words.
-
-  Never say how a change works, why, or how it was found. `### Changed` keeps every upgrade-breaking
-  change, each with the one action the user takes. When you land other work, rewrite its lines to
-  this shape: a union merge keeps every rewording.
-- `### Added`, `### Changed`, `### Fixed`, then `### Contributors`, thanking each outside
-  contributor by public GitHub name and linked handle (never an email). A feature an outside
-  contributor built also names them inline on its own entry ("Contributed by …"). A number goes in
-  only where a test or a constant pins it.
-- An old minor line's retrospective section is headed `## 0.9.x`. A heading that spells a full version
-  is one the extractor will publish.
+**Landing work adds no [`CHANGELOG.md`](CHANGELOG.md) entry.** The section for a version is written
+once, when the release is cut, from the commits since the last tag, and it IS the GitHub release
+body. How to write it, and the gates `just release` runs, are in the
+[`cutting-releases`](.pi/skills/cutting-releases/SKILL.md) skill (the maintainer's ruling,
+2026-10-23: *"We don't have to have an ongoing changelog maintained."*).
 
 ## Workflow
 

@@ -102,7 +102,7 @@ func (m *Manifest) validateProviderEnv() []string {
 		src := m.ProviderEnvByBin[bin]
 		owned := false
 		for _, c := range m.Contributions() {
-			if bin != "" && c.Kind == KindProgram && c.Bin == bin && !c.IsFork() {
+			if bin != "" && c.Provides() && c.Bin == bin && !c.IsFork() {
 				owned = true
 				break
 			}

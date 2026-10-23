@@ -47,7 +47,7 @@ func TestInstallerEnvSurvivesDecodeAndProjection(t *testing.T) {
 func TestInstallerEnvIsRefusedWhereNoInstallerRuns(t *testing.T) {
 	for _, entry := range []string{
 		`{"kind":"program","bin":"pi","via":"npm","package":"pi","installer_env":{"PREFIX":"~/.local"}}`,
-		`{"kind":"requires","bin":"fzf","installer_env":{"PREFIX":"~/.local"}}`,
+		`{"kind":"program","bin":"fzf","installer_env":{"PREFIX":"~/.local"}}`,
 		`{"kind":"skills","into":".claude/skills","installer_env":{"PREFIX":"~/.local"}}`,
 	} {
 		_, probs := Decode([]byte(`{"name":"x","contributes":[` + entry + `]}`))

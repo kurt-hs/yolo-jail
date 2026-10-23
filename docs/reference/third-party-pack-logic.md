@@ -85,7 +85,7 @@ The fetch is legal inside the hermetic build because these are fixed-output deri
 `loopholedecl.Requires` supports `command_on_path` and `file_exists`, and the gate is
 **degrade-to-inactive, not crash**: if something pathological has the binary missing, the loophole
 goes inactive rather than failing the boot. That is exactly the semantics a pack's capability
-requirement wants. The pack-manifest twin is the `requires` contribution kind, which carries
+requirement wants. The pack-manifest twin is a `program` with no `via` (a need), which carries
 `install_hints` for the dependency checker.
 
 ### A protocol — `internal/frameproto`, already frozen

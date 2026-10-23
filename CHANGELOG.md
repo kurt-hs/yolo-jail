@@ -26,12 +26,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **The browser pack warns when there is no browser.** With `chrome-devtools` selected, a jail launch that finds no Chrome or Chromium prints one line saying what to install; the launch goes on, and a browser installed later just works. See [the chrome-devtools pack](docs/reference/mcp-configuration.md#the-chrome-devtools-pack).
 
+**Your fonts in the jail.** On `macos-user`, tools find the Mac's fonts and your packages' fonts, and a jail running as you finds your own too. Add `"share_host_fonts": true` to your user config to share your font folder read-only with a container jail or the separate sandbox user; each launch names it. See [the macos-user backend](userguide/guides/macos.md#the-macos-user-backend).
+
 ### Changed
 
 - `mcp_presets` is removed, and a config that still has it stops the launch: delete the key, add `chrome-devtools` to `packs` in your user config for the browser, and write `sequential-thinking` under `mcp_servers` yourself if you want it. See [MCP and LSP](userguide/guides/mcp-and-lsp.md#mcp_presets-is-gone).
+- A pack's `requires` entry is now refused: change it to `"kind": "program"`, keeping its `bin` and `install_hints`. Any selected pack that installs that program now meets it. A running jail that selects such a pack is offered a restart on its next attach after you upgrade. One pack may no longer declare a program both with and without a `via`, or with two recipes for the same platform. See [a program with no recipe](docs/reference/pack-system.md#program-needs).
 - A from-source install no longer follows its checkout. `yolo update` there changes nothing; to update, run `just install` in your checkout or `yolo update --from <checkout>`. See [from-source installs](docs/reference/self-update.md#from-source-installs).
-
-**Your fonts in the jail.** On `macos-user`, tools find the Mac's fonts and your packages' fonts, and a jail running as you finds your own too. Add `"share_host_fonts": true` to your user config to share your font folder read-only with a container jail or the separate sandbox user; each launch names it. See [the macos-user backend](userguide/guides/macos.md#the-macos-user-backend).
 
 ### Fixed
 

@@ -74,22 +74,20 @@ func TestUnknownViaIsAuthoringFatalAndSkewSkipped(t *testing.T) {
 	}
 }
 
-// TestEmptyViaStaysFatalOnBothPaths: the boundary of the tolerance. A program with NO via
-// names no mechanism at all, so it installs nothing — malformed in a way both ends of the
-// version boundary understand, and therefore never skew. Widening the skip to cover it
-// would turn a broken pack into a silently-degraded jail.
-func TestEmptyViaStaysFatalOnBothPaths(t *testing.T) {
+// TestEmptyViaIsANeedOnBothPaths: the boundary of the tolerance. A program with NO via is a
+// NEED (OQ-PS11) — valid, and the same shape at both ends of the version boundary — so it is
+// never skipped as skew, and it installs nothing.
+func TestEmptyViaIsANeedOnBothPaths(t *testing.T) {
 	for name, manifest := range map[string]string{
 		"absent via": `{"name":"a","contributes":[{"kind":"program","bin":"ruff"}]}`,
 		"empty via":  `{"name":"a","contributes":[{"kind":"program","bin":"ruff","via":""}]}`,
 	} {
-		if _, problems := Decode([]byte(manifest)); len(problems) == 0 {
-			t.Errorf("%s: Decode must refuse a program with no via", name)
+		if _, problems := Decode([]byte(manifest)); len(problems) != 0 {
+			t.Errorf("%s: Decode must accept a need: %v", name, problems)
 		}
 		m, problems, skipped := DecodeTolerant([]byte(manifest))
-		if len(problems) == 0 {
-			t.Errorf("%s: DecodeTolerant must still report a program with no via — it is "+
-				"structure, not skew", name)
+		if len(problems) != 0 {
+			t.Errorf("%s: DecodeTolerant must accept a need: %v", name, problems)
 		}
 		if len(skipped) != 0 {
 			t.Errorf("%s: an empty via must not be skipped as skew: %v", name, skipped)

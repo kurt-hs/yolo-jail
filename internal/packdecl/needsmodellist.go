@@ -16,7 +16,7 @@ func (m *Manifest) NeedsModelList(bin, platform string) bool {
 		return false
 	}
 	for _, c := range m.Contributions() {
-		if c.Kind == KindProgram && c.Bin == bin {
+		if c.Provides() && c.Bin == bin {
 			return slices.Contains(c.NeedsModelList, platform)
 		}
 	}

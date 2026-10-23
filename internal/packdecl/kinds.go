@@ -39,30 +39,27 @@ type Kind string
 // effect, never a tool — `config`, not `claude/settings` (§0 principle 2: core
 // knows the domain, not the tool).
 const (
-	// KindProgram: a program the jail should have on PATH (with a lazy installer/updater
-	// in ~/.yolo/bin/launch/, which is ordered SECOND on PATH since B2 — ahead of the
-	// install prefixes, so the launcher mediates every invocation and not just the first.
-	// No launcher is written for a name the image already provides). Sole-owned by bin name.
+	// KindProgram: a program the pack needs on PATH. ONE kind with two shapes, told apart by
+	// whether the entry carries a RECIPE (`via` and the fields that value requires) —
+	// docs/design/provisioner-sets.md OQ-PS11 and OQ-PS5, ruled 2026-10-23:
+	//
+	//   - WITH a recipe (Contribution.Provides) yolo installs it: a lazy installer/updater in
+	//     ~/.yolo/bin/launch/, ordered SECOND on PATH since B2 — ahead of the install
+	//     prefixes, so the launcher mediates every invocation and not just the first. No
+	//     launcher is written for a name the image already provides. Sole-owned by bin name:
+	//     two selected packs carrying a recipe for one name refuse the launch (PS-D18,
+	//     packload.ProgramProviderCollisions), because the user chooses the provider by
+	//     choosing the pack and yolo does not pick for them.
+	//   - WITHOUT a recipe (Contribution.IsNeed) it is a NEED, and installs nothing itself. A
+	//     need is SATISFIED by another SELECTED pack's recipe for the same name, whichever
+	//     recipe that is (packload.ResolveProgramNeeds), and the launch names the provider.
+	//     One no selected pack provides must already be on PATH: the jail asserts it at boot
+	//     and warns BY NAME, generating no launcher, and at the host it feeds check-deps /
+	//     host apply through install_hints exactly as a recipe does. A need takes only `bin`
+	//     and `install_hints`. Many packs may need one name; a need owns no path.
+	//
+	// The kind `requires` that a need used to be is RETIRED, not migrated (retiredKinds).
 	KindProgram Kind = "program"
-	// KindRequires: a binary the pack needs to EXIST, which it does not install.
-	//
-	// The distinction from KindProgram is presence-vs-install, and it is not cosmetic.
-	// `program` means "yolo installs this, and owns a launcher path for it"; `requires`
-	// means "this must be on PATH, from wherever your environment gets it". A pack wanting
-	// a tool the image already bakes (fd, fzf) or the user already has (jq, psql) had only
-	// `program`, so it either lied — declaring an npm install for a baked binary — or said
-	// nothing and lost the host-notch hints entirely.
-	//
-	// In a jail it asserts presence at boot and reports a missing bin BY NAME; it generates
-	// NO launcher, so nothing it declares can shadow anything. At the host it feeds
-	// check-deps / host apply through exactly the same install_hints plumbing `program`
-	// does — which is its whole host-side purpose, and what lets a CONTENT-only pack carry
-	// remedies.
-	//
-	// NOT CombineExclusive, unlike program: many packs may require one binary (that is the
-	// normal case for a common tool), and no pack owns a path for it. program is exclusive
-	// precisely because it owns a launcher filename.
-	KindRequires Kind = "requires"
 	// KindSkills: a skills tree merged into an agent's skills dir. Multiple packs
 	// into one dir is the feature, not a conflict (ordered merge).
 	//
@@ -438,8 +435,8 @@ type Footprint struct {
 var footprints = map[Kind]Footprint{
 	KindBlockedTool: {
 		// EXCLUSIVE: the blocker is a FILE at ~/.yolo/bin/block/<bin>, so two packs
-		// blocking the same tool would fight over one path — the same reason `program`
-		// is exclusive. (`requires` is shared because it generates nothing.)
+		// blocking the same tool would fight over one path — the same reason a `program`
+		// with a recipe is exclusive. (A recipe-less `program` is shared: it generates nothing.)
 		// NOT review-worthy: the install prompt asks "what does this pack reach on your
 		// machine", and a blocker reaches nothing — it writes a refusing shim INSIDE the
 		// jail and crosses no boundary. A fetched pack blocking a tool can make a jail
@@ -457,16 +454,12 @@ var footprints = map[Kind]Footprint{
 		Claims: "a forwarding shim at ~/.yolo/bin/block/<bin>, ahead of the real tool on PATH",
 	},
 	KindProgram: {
+		// EXCLUSIVE for an entry with a recipe, which owns a launcher filename. A recipe-less
+		// entry (a need) owns nothing and is claimed under packload.ProgramNeedClaimKind, a
+		// display label the exclusive loop skips, so a need beside its provider never collides.
 		Kind: KindProgram, Combine: CombineExclusive, MayBeReviewWorthy: true,
-		Claims: "a name on PATH and a launcher in ~/.yolo/bin/launch/",
-	},
-	KindRequires: {
-		// CombineShared, not Exclusive: a required binary is an independent ASSERTION by
-		// each pack, not a path any of them owns, so two packs requiring `jq` is the
-		// ordinary case rather than a collision. (program is exclusive because it owns a
-		// launcher filename; requires generates nothing.)
-		Kind: KindRequires, Combine: CombineShared,
-		Claims: "a binary that must already be on PATH (asserted, never installed)",
+		Claims: "with a recipe, a name on PATH and a launcher in ~/.yolo/bin/launch/; " +
+			"without one, a name another selected pack provides or that is already on PATH",
 	},
 	KindSkills: {
 		Kind: KindSkills, Combine: CombineMerge,
@@ -639,6 +632,13 @@ func KnownKinds() []Kind {
 //
 // An entry stays here until no manifest anyone could stage still carries the kind.
 var retiredKinds = map[Kind]string{
+	// docs/design/provisioner-sets.md OQ-PS11, ruled 2026-10-23 with no transition: "We don't
+	// have to support the old thing." A need is a `program` with no recipe now.
+	"requires": `kind "requires" has been REMOVED — write it as a "program" with no ` +
+		`recipe: {"kind": "program", "bin": "<bin>"} (no "via"), keeping any ` +
+		`"install_hints". It means what "requires" meant — the binary must be on PATH and ` +
+		`yolo installs nothing for it — and another selected pack's "program" for the same ` +
+		`name now satisfies it`,
 	"launch": `kind "launch" has been REMOVED — its flags now live in the ` +
 		`"autonomy" kind's postures, where the confinement notch can withhold them: ` +
 		`{"kind": "autonomy", "autonomous": {"launch": [{"bin": "<bin>", ` +

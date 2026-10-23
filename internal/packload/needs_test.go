@@ -20,7 +20,7 @@ func binPack(name string, bins ...string) *Pack {
 	var contributes []packdecl.Contribution
 	for _, bin := range bins {
 		contributes = append(contributes, packdecl.Contribution{
-			Kind: packdecl.KindProgram, Bin: bin,
+			Kind: packdecl.KindProgram, Bin: bin, Via: "npm", Package: bin,
 		})
 	}
 	return &Pack{Name: name, Decl: &packdecl.Manifest{Contributes: contributes}}

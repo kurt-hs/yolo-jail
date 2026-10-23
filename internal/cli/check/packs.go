@@ -347,6 +347,18 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 	// reporting it as a warning would mean `yolo check` passing on a config that cannot start
 	// a jail. Over `loaded` rather than Embedded() because the interesting case is a user's
 	// own agent pack against a shipped one — two packs that both want to be `claude`.
+	// Program-PROVIDER exclusivity over the same selected set (PS-D18), fatal for the same
+	// reason: the launch refuses it beside the agent-name pre-flight.
+	for _, c := range packload.ProgramProviderCollisions(loaded) {
+		r.fail("program "+c.Target+" has more than one provider",
+			"packs "+strings.Join(c.Packs, ", ")+" — "+c.Reason)
+	}
+	// And each need another selected pack satisfies, in the launch's own words (OQ-PS5).
+	for _, n := range packload.ResolveProgramNeeds(loaded) {
+		if line := n.ProvidedLine(); line != "" {
+			r.ok(line)
+		}
+	}
 	for _, c := range packload.AgentNameCollisions(loaded) {
 		r.fail("agent name "+c.Target+" has more than one owning pack",
 			"packs "+strings.Join(c.Packs, ", ")+" — "+c.Reason+"\n"+keepOneNote())

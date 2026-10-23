@@ -299,8 +299,8 @@ func (l *Launch) Searched() string {
 type Miss struct {
 	// Bin is the program that was not found.
 	Bin string
-	// Requires are the packs that list Bin under `requires`; Programs, the packs that declare it as
-	// a program. Either may be empty, and both are for a program no pack names.
+	// Requires are the packs that declare Bin as a need (a `program` with no recipe); Programs, the
+	// packs that declare it with a recipe. Either may be empty, and both are for a program no pack names.
 	Requires, Programs []string
 	// Launch is whether the line is a launch's — the gate's or the exec's — whose PATH is "this
 	// launch's"; a verb that only checks (`yolo host apply`, `check-deps`) says the PATH yolo searched,

@@ -32,8 +32,8 @@ package cli
 //     answered.
 //   - AN INSTALL THAT RUNS AND LEAVES THE BINARY MISSING IS A DECLINE. Re-probe after each
 //     install; still-missing is the same fatal, named in the refusal.
-//   - ONLY `program` IS OFFERED AN INSTALL (OQ-RO7). Both kinds are fatal — a missing
-//     `requires` is the more clear-cut blocker, since `guardrails` removes `grep`/`find` in
+//   - ONLY `program` IS OFFERED AN INSTALL (OQ-RO7). Both shapes are fatal — a missing
+//     need (a `program` with no recipe) is the more clear-cut blocker, since `guardrails` removes `grep`/`find` in
 //     favour of binaries that must be present — but offering to install one would contradict
 //     the kind's own definition, so it refuses with the remedy named. isDepKind stays folded
 //     for the PROBE (below the jail notch both kinds ask the host the same question); the
@@ -55,7 +55,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/depcheck"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostpath"
 	"github.com/mschulkind-oss/yolo-jail/internal/notty"
-	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
@@ -78,11 +77,11 @@ type hostDepBlocker struct {
 // split, and the only place the two dep kinds are told apart.
 //
 // Two conditions, and both are the offer's rather than the blocker's: the kind must be
-// `program` (a `requires` asserts a binary must ALREADY exist, so offering to install it
+// a recipe (a `program` with none asserts a binary must ALREADY exist, so offering to install it
 // contradicts its definition), and there must be a command to run (a program whose manifest
 // carries neither a via nor a usable hint is just as fatal, with nothing to propose).
 func (f hostDepFinding) installable() bool {
-	return f.Kind == packdecl.KindProgram && f.Remedy != ""
+	return !f.Need && f.Remedy != ""
 }
 
 // hostDepBlockers is every missing declared dependency this run found, in sorted order, read
@@ -186,8 +185,8 @@ func gateHostDeps(pr richtext.Printer, out io.Writer, stdin io.Reader,
 		// OQ-RO7: fatal, and never offered. Refused for the WHOLE set rather than prompting
 		// for the installable half first — the run cannot complete either way, so an install
 		// prompt here would spend the user's `y` on a host this run has already refused.
-		pr.Printf("[bold red]host apply: refused — %s, and yolo installs neither a `requires` "+
-			"nor a dependency it has no command for. Nothing was written.[/bold red]",
+		pr.Printf("[bold red]host apply: refused — %s, and yolo installs neither a `program` with "+
+			"no recipe nor a dependency it has no command for. Nothing was written.[/bold red]",
 			depBlockerPhrase(unoffered))
 		return 1
 	}

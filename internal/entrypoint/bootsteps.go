@@ -259,17 +259,17 @@ func bootSteps() []bootStep {
 			gen:  DeliverLaunchFlags,
 		},
 		{
-			// `requires` asserts presence and generates nothing, so it is not a generator: an
-			// absent required binary is a WARNING naming the bin, not a boot failure (see
-			// AssertRequiredBins). After the launchers, so a `program` the same set of packs
-			// installs is already represented on the PATH. It matters MORE on macos-user than in
+			// A `program` need (no recipe) asserts presence and generates nothing, so it is not
+			// a generator: an absent needed binary is a WARNING naming the bin, not a boot
+			// failure (see AssertRequiredBins). After the launchers, so a recipe another selected
+			// pack carries is already represented on the PATH. It matters MORE on macos-user than in
 			// a container: that backend bakes no image at all, so a required tool comes from
 			// the user's own machine or not at all.
 			name: "assert_required_bins",
 			run:  func(b *bootRun) { AssertRequiredBins(b.e) },
 		},
 		{
-			// The orphan catalog is informational too, and for the same reason `requires` is:
+			// The orphan catalog is informational too, and for the same reason the need probe is:
 			// nothing is half-written — a package is installed that this launch's declarations
 			// do not account for. OQ-PD4 ruled that dropping a pack does not delete its
 			// program, so this NAMES orphans and removes nothing unless the user turned on

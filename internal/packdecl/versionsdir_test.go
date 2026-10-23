@@ -38,7 +38,7 @@ func TestVersionsDirSurvivesDecodeAndProjection(t *testing.T) {
 func TestVersionsDirIsRefusedWhereNoLauncherPrunes(t *testing.T) {
 	for _, entry := range []string{
 		`{"kind":"program","bin":"pi","via":"npm","package":"pi","versions_dir":"a/b"}`,
-		`{"kind":"requires","bin":"fzf","versions_dir":"a/b"}`,
+		`{"kind":"program","bin":"fzf","versions_dir":"a/b"}`,
 		`{"kind":"skills","into":".claude/skills","versions_dir":"a/b"}`,
 	} {
 		_, probs := Decode([]byte(`{"name":"x","contributes":[` + entry + `]}`))

@@ -127,7 +127,7 @@ func TestKnownLaunchYOLOEnvNamesUseSelectedDeclarations(t *testing.T) {
 	selected := &packload.Pack{Name: "selected", Decl: &packdecl.Manifest{Contributes: []packdecl.Contribution{
 		{Kind: packdecl.KindEnv, Vars: map[string]string{"YOLO_SELECTED_PACK_SETTING": "not-used"}},
 		{Kind: packdecl.KindService, Name: "selected-service"},
-		{Kind: packdecl.KindProgram, Bin: "selected-tool"},
+		{Kind: packdecl.KindProgram, Bin: "selected-tool", Via: "npm", Package: "selected-tool"},
 	}}}
 	known := knownLaunchYOLOEnvNames([]*packload.Pack{selected}, &packChannel{
 		callerTokens: map[string]string{"YOLO_SERVICE_SELECTED_SERVICE_TOKEN": "secret-not-read"},

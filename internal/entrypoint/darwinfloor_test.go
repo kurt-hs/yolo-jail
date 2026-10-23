@@ -200,12 +200,12 @@ func TestImageProbePathKeepsTheFloorAndDropsThePrefixes(t *testing.T) {
 	}
 }
 
-// TestTheFloorSatisfiesAPacksRequires — the third arm. A `requires` entry is a
+// TestTheFloorSatisfiesAPacksNeed — the third arm. A need (a `program` with no `via`) is a
 // warning, not a refusal, so this one fails SILENTLY in the direction that matters
 // least and is therefore the easiest of the three to leave broken.
-func TestTheFloorSatisfiesAPacksRequires(t *testing.T) {
+func TestTheFloorSatisfiesAPacksNeed(t *testing.T) {
 	home := t.TempDir()
-	packRoot := writeRequiresPack(t, "", "rg")
+	packRoot := writeNeedPack(t, "", "rg")
 
 	var withFloor strings.Builder
 	e := NewEnv(map[string]string{

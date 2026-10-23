@@ -189,15 +189,15 @@ func TestApplyHostAssertRefusesAnUnattendedInstall(t *testing.T) {
 	wroteNothing(t, home, briefing, cfgDest, report)
 }
 
-// A MISSING `requires` IS FATAL AND IS NEVER OFFERED AN INSTALL — OQ-RO7, the one place the two
-// dep kinds are told apart.
+// A MISSING NEED (a `program` with no `via`) IS FATAL AND IS NEVER OFFERED AN INSTALL — OQ-RO7,
+// the one place the two dep shapes are told apart.
 //
 // The stdin is `y`, deliberately: there must be no prompt for that answer to be read by. A gate
 // that offered the install would consume it and run something, and the kind's definition says
-// yolo never installs a `requires`. The remedy is still NAMED — the user is the actor.
-func TestApplyHostAssertRefusesAMissingRequiresWithoutOfferingAnInstall(t *testing.T) {
+// yolo never installs a need. The remedy is still NAMED — the user is the actor.
+func TestApplyHostAssertRefusesAMissingNeedWithoutOfferingAnInstall(t *testing.T) {
 	home, briefing, cfgDest, _ := depGateFixtureWithConfig(t,
-		`{"kind":"requires","bin":"reqbin","install_hints":{"apt":"reqbin-pkg"}}`)
+		`{"kind":"program","bin":"reqbin","install_hints":{"apt":"reqbin-pkg"}}`)
 	ran := watchInstalls(t, nil)
 
 	var out, errw bytes.Buffer

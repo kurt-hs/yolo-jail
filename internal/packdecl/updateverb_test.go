@@ -60,7 +60,7 @@ func TestUpdateVerbSurvivesDecodeAndProjection(t *testing.T) {
 // accepted and ignored is the defect `requires does not take "via"` already refuses.
 func TestUpdateVerbIsRefusedOnKindsThatCannotRunIt(t *testing.T) {
 	for _, entry := range []string{
-		`{"kind":"requires","bin":"fzf","update":["update"]}`,
+		`{"kind":"program","bin":"fzf","update":["update"]}`,
 		`{"kind":"skills","into":".claude/skills","update":["update"]}`,
 	} {
 		_, probs := Decode([]byte(`{"name":"x","contributes":[` + entry + `]}`))

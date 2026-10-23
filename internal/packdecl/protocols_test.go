@@ -38,7 +38,7 @@ func TestProtocolsValidateOnProgram(t *testing.T) {
 func TestProtocolsRefusedOnEveryOtherKind(t *testing.T) {
 	for _, raw := range []string{
 		`{"kind":"provider","name":"zai","protocols":["anthropic"]}`,
-		`{"kind":"requires","bin":"jq","protocols":["openai"]}`,
+		`{"kind":"program","bin":"jq","protocols":["openai"]}`,
 		`{"kind":"service","name":"wire-bridge","jail_daemon":{"cmd":["yolo-jaild","wire-bridge"]},"protocols":["openai"]}`,
 		`{"kind":"skills","into":".claude/skills","protocols":["openai"]}`,
 	} {

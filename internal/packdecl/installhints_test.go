@@ -8,14 +8,14 @@ import (
 	"testing"
 )
 
-// hintManifest is a one-contribution manifest whose `apt` install hint is value, on a
-// `requires` (the kind with the most use for a remedy) or an npm `program`, built through
+// hintManifest is a one-contribution manifest whose `apt` install hint is value, on a `program`
+// NEED (no `via`: the shape with the most use for a remedy) or an npm recipe, built through
 // json.Marshal so a test value carrying a quote or a newline is the value under test rather
 // than a broken fixture.
-func hintManifest(t *testing.T, kind Kind, value string) []byte {
+func hintManifest(t *testing.T, shape string, value string) []byte {
 	t.Helper()
-	c := map[string]any{"kind": string(kind), "bin": "fd", "install_hints": map[string]string{"apt": value}}
-	if kind == KindProgram {
+	c := map[string]any{"kind": string(KindProgram), "bin": "fd", "install_hints": map[string]string{"apt": value}}
+	if shape == recipeShape {
 		c["via"], c["package"] = "npm", "fd-npm"
 	}
 	data, err := json.Marshal(map[string]any{"name": "hints", "contributes": []any{c}})
@@ -30,9 +30,17 @@ func hintManifest(t *testing.T, kind Kind, value string) []byte {
 // rule is AUTHORING-ONLY, like retiredFieldProblems: the jail never prints or runs a hint, so a
 // check there protects nothing, and a host that later widens the allowlist must not stop an
 // older jail from booting. So the strict read refuses and the tolerant read stays silent.
-func hintProblems(t *testing.T, kind Kind, value string) (strict, tolerant []string) {
+// The two `program` shapes a hint rides on: a need (no `via`) and a recipe.
+const (
+	needShape   = "need"
+	recipeShape = "recipe"
+)
+
+var programShapes = []string{needShape, recipeShape}
+
+func hintProblems(t *testing.T, shape string, value string) (strict, tolerant []string) {
 	t.Helper()
-	data := hintManifest(t, kind, value)
+	data := hintManifest(t, shape, value)
 	m, probs := Decode(data)
 	if m == nil {
 		t.Fatalf("Decode(%q) did not parse: %v", value, probs)
@@ -116,10 +124,10 @@ func TestInstallHintsRefuseShellInThePackagePart(t *testing.T) {
 		{"NUL in the step", "fd-find && echo \x00", []string{`"\x00"`}},
 		{"lookalike letter in the step", "fd-find && \u0455udo ln -sf a b", []string{"\"\u0455\""}},
 	}
-	for _, kind := range []Kind{KindRequires, KindProgram} {
+	for _, shape := range programShapes {
 		for _, tc := range cases {
-			t.Run(string(kind)+"/"+tc.name, func(t *testing.T) {
-				strict, tolerant := hintProblems(t, kind, tc.value)
+			t.Run(shape+"/"+tc.name, func(t *testing.T) {
+				strict, tolerant := hintProblems(t, shape, tc.value)
 				if len(tolerant) != 0 {
 					t.Errorf("DecodeTolerant: hint %q: the jail's read must not refuse a hint, got %v", tc.value, tolerant)
 				}
@@ -166,10 +174,10 @@ func TestInstallHintsConventionalFormsDecode(t *testing.T) {
 		"fd-find && sudo ln -sf a b && hash -r",        // a step may chain like any shell; it is printed whole
 		"  fd-find  ",                                  // surrounding spaces are not a problem
 	} {
-		for _, kind := range []Kind{KindRequires, KindProgram} {
-			strict, tolerant := hintProblems(t, kind, value)
+		for _, shape := range programShapes {
+			strict, tolerant := hintProblems(t, shape, value)
 			if len(strict) != 0 || len(tolerant) != 0 {
-				t.Errorf("%s hint %q refused: strict %v, tolerant %v", kind, value, strict, tolerant)
+				t.Errorf("%s hint %q refused: strict %v, tolerant %v", shape, value, strict, tolerant)
 			}
 		}
 	}

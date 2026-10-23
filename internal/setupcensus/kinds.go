@@ -31,8 +31,6 @@ var kinds = map[packdecl.Kind]Entry{
 		"(on macos-user it records the skip, the bootstrap running no pack script)"),
 	packdecl.KindModels: renderedEverywhere("each consumer's model list is rendered by " +
 		"configure_pack_surfaces from the provider's one list (surfaceloop.go)"),
-	packdecl.KindRequires: renderedEverywhere("assert_required_bins checks each declared " +
-		"binary"),
 	packdecl.KindBlockedTool: renderedEverywhere("GenerateShims writes the refusal into the " +
 		"block dir when the replacement is on the agent's PATH (shims.go)"),
 	packdecl.KindIntercept: renderedEverywhere("GenerateIntercepts, called from GenerateShims, " +
