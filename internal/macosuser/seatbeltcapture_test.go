@@ -201,3 +201,96 @@ func TestTheInstallerCaptureProfileIsNotSealed(t *testing.T) {
 		t.Errorf("the installer's capture profile reads as sealed: %v", problems)
 	}
 }
+
+// testSelfHomes is a run-as-you capture's homes for the invoking user /Users/you: the machine root
+// and the shared store LaunchHomes places under that home, HOME the staging home.
+func testSelfHomes() Homes {
+	h := LaunchHomes(ModeSelf, testStagingRoot, "/Users/you")
+	h.Home = CaptureStagingHome(testStagingRoot)
+	return h
+}
+
+// THE RUN-AS-YOU CAPTURE'S "SHARED HOME" IS THE MACHINE ROOT AND THE SHARED STORE (slice 9 of
+// docs/design/macos-user-model-plan.md): the sibling of TestCaptureProfileDeniesWritesToTheSharedHome
+// for a capture that runs as you. Deny-by-default, so no allow grants either; and each is denied by
+// name, for reads and writes, AFTER every allow, the statement of intent that survives a later edit
+// widening the allow list. Fails if the builder takes its denied roots from SandboxHome() again, or
+// grants the store as a machine dir the way a launch does.
+func TestSelfModeCaptureProfileDeniesTheMachineRootAndSharedDirs(t *testing.T) {
+	h := testSelfHomes()
+	if h.Machine == "" || h.Shared == "" || h.Machine == SandboxHome() || h.Shared == SandboxHome() {
+		t.Fatalf("the fixture's homes are not the run-as-you ones: %+v", h)
+	}
+	p := SeatbeltSelfCaptureProfile(testStagingRoot, h, "you", "/private/var/folders/ab/xyz/T/")
+	if !contains(p, "\n(deny default)\n") || contains(p, "(allow default)") {
+		t.Fatalf("the run-as-you capture profile is not deny-by-default:\n%s", p)
+	}
+	deny := "(deny file-read* file-write*\n" +
+		"    (subpath " + sbplStr(h.Machine) + ")\n" +
+		"    (subpath " + sbplStr(h.Shared) + "))\n"
+	if !contains(p, deny) {
+		t.Fatalf("the run-as-you capture profile does not deny the machine root and shared store:\n%s", p)
+	}
+	at := idx(p, deny)
+	if last := strings.LastIndex(p, "(allow "); last > at {
+		t.Errorf("an allow follows the store deny; SBPL is last-match-wins, so it could re-open it:\n%s", p[last:])
+	}
+	for _, root := range []string{h.Machine, h.Shared} {
+		if n := strings.Count(p, sbplStr(root)); n != 1 {
+			t.Errorf("%s is named %d times; the closing deny must be the only rule naming it:\n%s", root, n, p)
+		}
+	}
+	if problems := selfCaptureProfileProblems(p, h); len(problems) > 0 {
+		t.Errorf("the run-as-you capture profile fails its own check: %v", problems)
+	}
+	// The staging tree is the writable root; the account's home is no part of this profile.
+	if !contains(p, `(allow file-write* (subpath "`+testStagingRoot+`"))`) {
+		t.Errorf("the staging tree is not writable:\n%s", p)
+	}
+	if contains(p, SandboxHome()) {
+		t.Errorf("the run-as-you capture profile names the account's home %s:\n%s", SandboxHome(), p)
+	}
+	// The deny carries its id, as every deny of the generated profiles does.
+	requireEveryDenyCarriesATestID(t, "the run-as-you capture profile", p)
+}
+
+// The check fails for each way the store could be reachable: the account's profile, a profile that
+// grants the store as a launch grants its machine dirs, a profile with no closing deny, and homes
+// with no machine root.
+func TestSelfModeCaptureProfileProblemsCatchAReachableStore(t *testing.T) {
+	h := testSelfHomes()
+	launchLike := DenyDefaultProfile(ProfileParams{Workspace: testStagingRoot,
+		MachineDirs: []string{h.Machine, h.Shared}}.WithProductionRulings()) + captureStoreDeny(h)
+	for name, tc := range map[string]struct {
+		profile string
+		homes   Homes
+		want    string
+	}{
+		"account profile":  {SeatbeltCaptureProfile(testStagingRoot), h, "deny-by-default"},
+		"store as a grant": {launchLike, h, "before its closing deny"},
+		"no closing deny":  {DenyDefaultProfile(ProfileParams{Workspace: testStagingRoot}.WithProductionRulings()), h, "last"},
+		"no machine root":  {SeatbeltSelfCaptureProfile(testStagingRoot, h, "you", ""), Homes{Shared: h.Shared}, "no absolute machine root"},
+	} {
+		problems := strings.Join(selfCaptureProfileProblems(tc.profile, tc.homes), "\n")
+		if !strings.Contains(problems, tc.want) {
+			t.Errorf("%s: no problem names %q: %s", name, tc.want, problems)
+		}
+	}
+}
+
+// A fork's build in the run-as-you mode carries the seal after the deny-default profile's own
+// nix-daemon allow, which it narrows, and the store deny too.
+func TestSealedSelfCaptureProfileClosesTheNixDaemonAfterItsAllow(t *testing.T) {
+	h := testSelfHomes()
+	p := SeatbeltSealedSelfCaptureProfile(testStagingRoot, h, "you", "")
+	if problems := append(sealedProfileProblems(p), selfCaptureProfileProblems(p, h)...); len(problems) > 0 {
+		t.Errorf("the sealed run-as-you profile fails its checks: %v", problems)
+	}
+	if strings.LastIndex(p, sealedBuildNixSocketDeny) < strings.LastIndex(p, "#seatbelt-test-id:nix-daemon-allow#") {
+		t.Error("the seal's nix deny precedes the nix-daemon allow it must narrow")
+	}
+	// Unsealed, the nix allow stands, and the seal's check says so.
+	if len(sealedProfileProblems(SeatbeltSelfCaptureProfile(testStagingRoot, h, "you", ""))) == 0 {
+		t.Error("the unsealed run-as-you capture profile passes the seal check")
+	}
+}

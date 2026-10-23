@@ -31,6 +31,16 @@ package macosuser
 // bootstrap has generated into. So `buildBootstrapEnv` takes the home as a parameter and this
 // path passes the staging home where a launch passes SandboxHome().
 //
+// # THE RUN-AS-YOU MODE (macos_user_mode "self", slice 9 of docs/design/macos-user-model-plan.md)
+//
+// The same five steps, run as the invoking user: every crossing is /usr/bin/env alone (RunAs), the
+// staging tree is yours, 0700, with no group or access list (SelfCaptureStagingCommands), the env
+// and CA files get no grant, the bootstrap is confined under the capture's profile, and that profile
+// is the deny-by-default one with the machine root and the shared store — your agents' logins —
+// denied (SeatbeltSelfCaptureProfile). The gates ask no account and no run-as rule. A fork's build
+// takes the same mode, under the sealed variant. NOT MEASURED on a Mac: macOS CI loads the account
+// capture profile only (integration/macosusercaptureseatbelt_test.go).
+//
 // # MEASURED vs. DESIGNED-AGAINST-READ-CODE
 //
 // MEASURED, by the tests beside this file, on any OS: every artifact below is a pure function
@@ -182,13 +192,46 @@ type CaptureOptions struct {
 	// launch's own tools do. RunCaptureAct composes it when the capture has a tool profile
 	// (Darwin), which `yolo capture` does not pass today; the zero value composes none.
 	CATrust CATrust
+	// Mode is who the capture runs as (mode.go), read by cli from the user-scope
+	// `macos_user_mode` as a launch reads it; the zero value is the second account. HostHome is
+	// the invoking user's resolved home, which places the machine root and the shared store the
+	// run-as-you capture keeps the installer out of (LaunchHomes); DarwinUserTempDir is their
+	// DARWIN_USER_TEMP_DIR, which its profile grants under the shared-/tmp ruling. The account
+	// mode reads neither. (slice 9 of docs/design/macos-user-model-plan.md)
+	Mode              Mode
+	HostHome          string
+	DarwinUserTempDir string
+}
+
+// captureRunAs is a capture's crossing (mode.go, MMP-D4) and the homes its profile is built from.
+// The account mode's is RunAs{}, today's byte for byte. The run-as-you mode's crosses through
+// /usr/bin/env alone, as the invoking user, with HOME the staging home and the machine root, the
+// shared store and the real home LaunchHomes places for that user — never a workspace's, since a
+// capture has none.
+func captureRunAs(opts CaptureOptions, stagingHome string) RunAs {
+	if opts.Mode != ModeSelf {
+		return RunAs{}
+	}
+	// An unnamed home stays unnamed (resolvePathAbs would make "" the cwd), and
+	// capturePlanProblems refuses the plan for it.
+	hostHome := opts.HostHome
+	if hostHome != "" {
+		hostHome = resolvePathAbs(hostHome)
+	}
+	homes := LaunchHomes(ModeSelf, filepath.Dir(stagingHome), hostHome)
+	homes.Home = stagingHome
+	if hostHome == "" {
+		homes.Machine, homes.Shared = "", ""
+	}
+	return RunAs{Mode: ModeSelf, Homes: homes, User: opts.HostUser}
 }
 
 // CapturePlan is the fully-resolved, ordered artifacts + commands for one install capture — the
 // analogue of RunPlan, and a real gate rather than a pretty-printer (CapturePlanInvariants).
 type CapturePlan struct {
-	// RunAs is the capture's crossing into the sandbox (mode.go, MMP-D4). A capture runs as the
-	// second account until self-mode capture is built (the plan's slice 9).
+	// RunAs is the capture's crossing into the sandbox (mode.go, MMP-D4): the second account, or
+	// in the run-as-you mode you, with the homes its profile keeps the installer out of
+	// (captureRunAs).
 	RunAs RunAs
 	Bin   string
 	Cname string
@@ -251,13 +294,14 @@ func BuildCapturePlan(opts CaptureOptions) CapturePlan {
 // buildCapturePlanAt is BuildCapturePlan over a staging tree its caller names: an installer's,
 // keyed by its bin, or a fork's build's, keyed by the build (ForkBuildStagingRoot).
 func buildCapturePlanAt(opts CaptureOptions, stagingRoot string) CapturePlan {
-	// The second account, the only capture mode until the plan's slice 9 builds self-mode capture.
-	runAs := RunAs{}
 	darwinPrefix := []string{}
 	if opts.Darwin != nil {
 		darwinPrefix = append(darwinPrefix, opts.Darwin.PathPrefix...)
 	}
 	stagingHome := CaptureStagingHome(stagingRoot)
+	// THE CROSSING (captureRunAs): the second account, or, in the run-as-you mode, you.
+	runAs := captureRunAs(opts, stagingHome)
+	self := runAs.Mode == ModeSelf
 	outDir := CaptureStagingOut(stagingRoot)
 	cname := cnameFor(stagingRoot)
 	profilePath := SessionProfilePath(cname, "")
@@ -342,6 +386,24 @@ func buildCapturePlanAt(opts CaptureOptions, stagingRoot string) CapturePlan {
 		bootstrapEnv.Set(SandboxEnvFileEnv, envFile)
 	}
 
+	// THE RUN-AS-YOU MODE (slice 9 of docs/design/macos-user-model-plan.md): the deny-by-default
+	// capture profile, which keeps the machine root and the shared store out of reach where the
+	// account's keeps out the account's home; a staging tree that is yours alone; no access grant
+	// on the env file, since the sandbox is you; and the bootstrap confined under the capture's
+	// profile, as a run-as-you launch confines its own (MMP-D9). The account mode's are today's.
+	seatbelt := SeatbeltCaptureProfile(stagingRoot)
+	prepare := CaptureStagingCommands(stagingRoot, opts.HostUser)
+	envDirCommands := SandboxEnvDirCommands(envFile, "")
+	envGrantCommands := SandboxEnvGrantCommands(envFile, "")
+	bootstrapArgv := DarwinBootstrapArgv(runAs, stagedYolo, stagingHome, bootstrapEnv, "")
+	if self {
+		seatbelt = SeatbeltSelfCaptureProfile(stagingRoot, runAs.Homes, opts.HostUser, opts.DarwinUserTempDir)
+		prepare = SelfCaptureStagingCommands(stagingRoot)
+		envDirCommands, _ = withoutAccessGrants(envDirCommands, nil)
+		envGrantCommands = nil
+		bootstrapArgv = darwinBootstrapArgvUnder(runAs, stagedYolo, stagingHome, bootstrapEnv, profilePath)
+	}
+
 	return CapturePlan{
 		RunAs:           runAs,
 		Bin:             opts.Bin,
@@ -350,24 +412,24 @@ func buildCapturePlanAt(opts CaptureOptions, stagingRoot string) CapturePlan {
 		StagingHome:     stagingHome,
 		OutDir:          outDir,
 		ProfilePath:     profilePath,
-		Seatbelt:        SeatbeltCaptureProfile(stagingRoot),
+		Seatbelt:        seatbelt,
 		StagedDir:       stateDir,
 		StagedYolo:      stagedYolo,
 		PackRoot:        packRoot,
-		PrepareCommands: CaptureStagingCommands(stagingRoot, opts.HostUser),
+		PrepareCommands: prepare,
 		StageCommands: append(StageBinaryCommands(opts.SelfExe, ""),
 			StagePackCommands(opts.HostPackRoot, cname, "")...),
 		CleanupCommands: append(append(append(CaptureCleanupCommands(stagingRoot, profilePath),
 			SandboxEnvRemoveCommands(envFile)...), SandboxEnvRemoveCommands(caBundleFile)...),
 			SandboxEnvRemoveCommands(caExtrasFile)...),
 		ScratchGuestCommands: CaptureScratchGuestCommands(runAs, stagingRoot),
-		BootstrapArgv:        DarwinBootstrapArgv(runAs, stagedYolo, stagingHome, bootstrapEnv, ""),
+		BootstrapArgv:        bootstrapArgv,
 		DriverArgv: CaptureDriverArgv(runAs, stagedYolo, stagingHome, outDir, opts.Bin, profilePath,
 			envFile, darwinPrefix),
 		EnvFile:              envFile,
 		EnvFileContent:       envFileContent,
-		EnvFileCommands:      SandboxEnvDirCommands(envFile, ""),
-		EnvFileGrantCommands: SandboxEnvGrantCommands(envFile, ""),
+		EnvFileCommands:      envDirCommands,
+		EnvFileGrantCommands: envGrantCommands,
 		CATrust:              opts.CATrust,
 		CABundleFile:         caBundleFile,
 		CABundleContent:      caBundleContent,
@@ -403,6 +465,24 @@ func CaptureStagingCommands(stagingRoot, hostUser string) [][]string {
 		cmds = append(cmds, captureLeafCommands(leaf)...)
 	}
 	return cmds
+}
+
+// SelfCaptureStagingCommands are CaptureStagingCommands in the run-as-you mode: the same clear,
+// capture root and leaves, but the tree is yours alone, 0700, with no group, no setgid and no
+// access list. The installer runs as you, so nothing else needs to write it, and no other
+// account may read what it writes. (slice 9 of docs/design/macos-user-model-plan.md)
+func SelfCaptureStagingCommands(stagingRoot string) [][]string {
+	cmds := [][]string{{rmBin, "-rf", stagingRoot}}
+	cmds = append(cmds, categoryDirCommands(filepath.Dir(stagingRoot))...)
+	for _, dir := range []string{stagingRoot, CaptureStagingHome(stagingRoot), CaptureStagingOut(stagingRoot)} {
+		cmds = append(cmds, selfCaptureLeafCommands(dir)...)
+	}
+	return cmds
+}
+
+// selfCaptureLeafCommands make one directory of a run-as-you staging tree: yours, 0700.
+func selfCaptureLeafCommands(dir string) [][]string {
+	return [][]string{{mkdirBin, "-p", dir}, {chmodBin, "0700", dir}}
 }
 
 // chgrpBin puts a staging leaf in the sandbox group. A non-root `chown user:group` does the same
@@ -509,9 +589,11 @@ func (p CapturePlan) staleCaptureFileCommands() [][]string {
 // against macOS path_helper, because path_helper never runs on this argv.
 func CaptureDriverArgv(runAs RunAs, stagedYolo, stagingHome, outDir, bin, profilePath, envFile string,
 	pathPrefix []string) []string {
-	// The crossing is the one run-as rule (RunAsSandboxArgv): `-n`, so it never prompts.
+	// The crossing is the one run-as rule (RunAsSandboxArgv): `-n`, so it never prompts. In the
+	// run-as-you mode it is /usr/bin/env alone and USER is yours; HOME is the staging home in both,
+	// which holds every tier, so the installer's mise store is the throwaway home's too.
 	out := runAs.Argv(false, "-i")
-	out = append(out, sandboxEnvPairs(accountHomes(stagingHome), SandboxUser,
+	out = append(out, sandboxEnvPairs(accountHomes(stagingHome), runAs.user(""),
 		SandboxPath(stagingHome, pathPrefix), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
 	out = append(out, ExecWithEnvFile(envFile, []string{
@@ -591,12 +673,21 @@ func capturePlanProblems(plan CapturePlan) []string {
 	// passes for a profile that is wrong in the other way: the shared home must not appear in
 	// the write-allow block, and it must be denied AFTER that block (SBPL is last-match-wins,
 	// so a deny before the allow is no deny at all).
-	problems = append(problems, captureProfileProblems(plan.Seatbelt)...)
+	// In the run-as-you mode the profile is the deny-by-default capture profile instead, and what
+	// it must keep out is the machine root and the shared store (selfCaptureProfileProblems).
+	if plan.RunAs.Mode == ModeSelf {
+		problems = append(problems, selfCaptureProfileProblems(plan.Seatbelt, plan.RunAs.Homes)...)
+		problems = append(problems, selfCapturePlanProblems(plan)...)
+	} else {
+		problems = append(problems, captureProfileProblems(plan.Seatbelt)...)
+	}
 
 	// THE ONE RUN-AS RULE (docs/design/macos-user-privilege-lifecycle-plan.md, task 6): every
 	// crossing into the sandbox account is the rule's shape, and nothing the host runs (prepare,
 	// stage, cleanup) is a sudo at all. A crossing off the shape prompts or fails under the
-	// narrowed grant; a host step under sudo is a root act the ruling removed.
+	// narrowed grant; a host step under sudo is a root act the ruling removed. (The run-as-you
+	// mode's crossings are checked by selfCapturePlanProblems: RunAsArgvProblems passes a non-sudo
+	// argv.)
 	for _, c := range []struct {
 		name string
 		argv []string
@@ -775,6 +866,61 @@ func captureProfileProblems(profile string) []string {
 	return problems
 }
 
+// selfCapturePlanProblems is capturePlanProblems' half for a run-as-you capture (slice 9 of
+// docs/design/macos-user-model-plan.md), each rule the mode's promise read back off the plan:
+//
+//   - the plan was given the invoking user's absolute home, which places what the profile denies;
+//   - every crossing — bootstrap, driver, scratch pass — is /usr/bin/env alone: no sudo, and no
+//     argv names the second account;
+//   - the bootstrap runs under the capture's profile (MMP-D9: unconfined as you, it could write
+//     anywhere you can);
+//   - nothing the host runs grants an access entry or hands a file to the sandbox group: there is
+//     no second account to open anything to.
+func selfCapturePlanProblems(plan CapturePlan) []string {
+	var problems []string
+	if real := plan.RunAs.Homes.Real; !filepath.IsAbs(real) {
+		problems = append(problems, "the run-as-you capture was given no absolute home for you ("+
+			quoteOrNone(real)+"); the machine root and shared store it must keep out would be unknown")
+	}
+	crossings := [][]string{plan.BootstrapArgv, plan.DriverArgv}
+	crossings = append(crossings, plan.ScratchGuestCommands...)
+	for _, argv := range crossings {
+		if len(argv) == 0 {
+			continue
+		}
+		if argv[0] != envBin || slices.Contains(argv, sudoBin) {
+			problems = append(problems, "a run-as-you capture argv does not cross through "+envBin+
+				" alone: "+shquote.JoinDisplay(argv))
+		}
+		if slices.ContainsFunc(argv, func(w string) bool { return strings.Contains(w, SandboxUser) }) {
+			problems = append(problems, "a run-as-you capture argv names the second account "+SandboxUser+
+				": "+shquote.JoinDisplay(argv))
+		}
+	}
+	if len(plan.BootstrapArgv) > 0 &&
+		!containsArgPair(plan.BootstrapArgv, "/usr/bin/sandbox-exec", "-f", plan.ProfilePath) {
+		problems = append(problems, "the run-as-you capture bootstrap does not run under `sandbox-exec -f "+
+			plan.ProfilePath+"`; unconfined as you, it could write anywhere you can (MMP-D9)")
+	}
+	host := append(append(append([][]string(nil), plan.PrepareCommands...), plan.StageCommands...),
+		plan.EnvFileCommands...)
+	host = append(host, plan.EnvFileGrantCommands...)
+	for _, f := range plan.caTrustFilePlans() {
+		host = append(append(host, f.dir...), f.grant...)
+	}
+	for _, c := range host {
+		grant := len(c) >= 2 && c[0] == chmodBin && c[1] == "+a"
+		group := slices.Contains(c, SandboxGroup) || slices.ContainsFunc(c, func(w string) bool {
+			return strings.HasSuffix(w, ":"+SandboxGroup)
+		})
+		if grant || group {
+			problems = append(problems, "the run-as-you capture grants access to another account ("+
+				shquote.JoinDisplay(c)+"); the sandbox is you, so the staging tree and its files are yours alone")
+		}
+	}
+	return problems
+}
+
 // containsArgPair reports whether argv contains the three given args CONSECUTIVELY — the shape
 // `sandbox-exec -f <profile>` has, where three separate membership tests would pass for an argv
 // that mentioned all three in unrelated places.
@@ -813,7 +959,7 @@ func RunCapturePlan(deps Deps, plan CapturePlan) int {
 // the bootstrap and the driver cross into the sandbox account, through the one run-as rule.
 func runCaptureSteps(deps Deps, plan CapturePlan, problems []string, asUser [][]string) int {
 	out := printer{w: deps.Out, color: deps.Color}
-	if !captureGatesPass(deps, out, filepath.Dir(plan.StagingRoot)) {
+	if !captureGatesPass(deps, out, plan.RunAs.Mode, filepath.Dir(plan.StagingRoot)) {
 		return 1
 	}
 	if len(problems) > 0 {
@@ -837,9 +983,13 @@ func runCaptureSteps(deps Deps, plan CapturePlan, problems []string, asUser [][]
 			// later capture of the program.
 			if isCaptureScratchClear(cmd, plan.StagingRoot) {
 				if !removeCaptureScratch(deps, plan) {
+					who := "Neither you nor " + SandboxUser + " could"
+					if plan.RunAs.Mode == ModeSelf {
+						who = "You could not"
+					}
 					out.printf("[bold red]Could not clear the capture staging tree %s[/bold red], left by an "+
-						"earlier capture. Neither you nor %s could remove it; remove it as an administrator "+
-						"(`sudo rm -rf -- %s`), then run the capture again.", plan.StagingRoot, SandboxUser,
+						"earlier capture. %s remove it; remove it as an administrator "+
+						"(`sudo rm -rf -- %s`), then run the capture again.", plan.StagingRoot, who,
 						shquote.QuoteDisplay(plan.StagingRoot))
 					return 1
 				}
@@ -912,23 +1062,50 @@ func runCaptureSteps(deps Deps, plan CapturePlan, problems []string, asUser [][]
 // run-as rule every crossing goes through and the staging root the binary and files are written
 // to. Then captureRoot, the directory the staging tree is made in, which the host creates when it
 // is absent and must otherwise own.
-func captureGatesPass(deps Deps, out printer, captureRoot string) bool {
+//
+// THE RUN-AS-YOU MODE (slice 9 of docs/design/macos-user-model-plan.md) asks no account and no
+// run-as rule: its privilege facts reduce to the staging root and the capture root
+// (PrivilegeUnmetFor), and an absent staging root is made here, as you, as a run-as-you launch
+// makes it (unmetSelfModePrecondition).
+func captureGatesPass(deps Deps, out printer, mode Mode, captureRoot string) bool {
 	if !deps.IsMacOS() {
 		out.print("[bold red]`yolo capture` on the macos-user backend requires macOS.[/bold red] " +
 			"Capture on a container backend instead.")
 		return false
 	}
 	if deps.Geteuid() == 0 {
+		how := "It runs as you and crosses into the sandbox account through the one-time setup's rule; " +
+			"running as root would own the staging tree as root and the sandbox user could not write it."
+		if mode == ModeSelf {
+			how = "It runs the installer as you (macos_user_mode \"self\"); running as root would run it " +
+				"as root and own the staging tree as root."
+		}
 		out.print("[bold red]Don't run `yolo capture` under sudo for the macos-user " +
-			"backend.[/bold red]  It runs as you and crosses into the sandbox account through the " +
-			"one-time setup's rule; running as root would own the staging tree as root and the " +
-			"sandbox user could not write it.")
+			"backend.[/bold red]  " + how)
 		return false
 	}
 	if !deps.Which("sandbox-exec") {
 		out.print("[bold red]sandbox-exec not found[/bold red] — a capture is only contained " +
 			"because Apple Seatbelt confines it, so there is no unsandboxed fallback.")
 		return false
+	}
+	if mode == ModeSelf {
+		p := deps.launchProbes()
+		if p.stagingRootVerdict() == StagingRootAbsent {
+			if ensureHostOwnedRoot(deps, out, StagingRoot(), "", false) != 0 {
+				out.print("[bold red]Could not create the macos-user staging directory " + StagingRoot() +
+					".[/bold red] The run-as-you mode makes it itself, as you, with no admin step; the step " +
+					"that failed is above. Create it yourself and capture again:\n" +
+					"  [bold]mkdir -m 0755 " + StagingRoot() + "[/bold]")
+				return false
+			}
+			p = deps.launchProbes()
+		}
+		if c, unmet := PrivilegeUnmetFor(ModeSelf, p); unmet {
+			out.print(c.Refusal(""))
+			return false
+		}
+		return captureRootUsable(deps, out, captureRoot)
 	}
 	if !deps.SandboxUserExists() {
 		out.printf("[bold red]Sandbox user '%s' does not exist.[/bold red]\n"+
@@ -1033,6 +1210,10 @@ func PrintCapturePlan(w io.Writer, plan CapturePlan, problems []string) {
 	// checking when they read this plan before letting it run.
 	if plan.EnvFile == "" {
 		p.print("env file:    [dim]none — this capture composed no environment[/dim]")
+	} else if plan.RunAs.Mode == ModeSelf {
+		p.printf("env file:    %s [dim](0600, yours, read by you only)[/dim]", plan.EnvFile)
+		p.printf("  [dim]sets, values not shown:[/dim] %s",
+			strings.Join(SandboxEnvFileKeys(plan.EnvFileContent), ", "))
 	} else {
 		p.printf("env file:    %s [dim](0600, yours, read by %s only)[/dim]",
 			plan.EnvFile, SandboxUser)
@@ -1076,7 +1257,11 @@ func PrintCapturePlan(w io.Writer, plan CapturePlan, problems []string) {
 	p.print("")
 	// THE CROSSINGS, each the whole argv: the one-time setup's rule (RunAsSandboxArgv), `-n`
 	// included, so none prompts.
-	p.printf("[bold]── as %s (the one-time setup's sudo rule, no password) ──[/bold]", SandboxUser)
+	if plan.RunAs.Mode == ModeSelf {
+		p.print("[bold]── as you, inside the capture profile (macos_user_mode \"self\": no second account, no sudo) ──[/bold]")
+	} else {
+		p.printf("[bold]── as %s (the one-time setup's sudo rule, no password) ──[/bold]", SandboxUser)
+	}
 	p.print("  [dim]bootstrap (staging home):[/dim]")
 	p.print("  " + shquote.JoinDisplay(plan.BootstrapArgv))
 	p.print("  [dim]capture driver:[/dim]")
@@ -1088,7 +1273,11 @@ func PrintCapturePlan(w io.Writer, plan CapturePlan, problems []string) {
 	for _, cmd := range plan.CleanupCommands {
 		p.print("  " + shquote.JoinDisplay(cmd))
 	}
-	p.printf("  [dim]if the staging tree resists, as %s, then as you again:[/dim]", SandboxUser)
+	if plan.RunAs.Mode == ModeSelf {
+		p.print("  [dim]if the staging tree resists, made writable and removed, then removed again:[/dim]")
+	} else {
+		p.printf("  [dim]if the staging tree resists, as %s, then as you again:[/dim]", SandboxUser)
+	}
 	for _, cmd := range plan.ScratchGuestCommands {
 		p.print("  " + shquote.JoinDisplay(cmd))
 	}
@@ -1140,10 +1329,15 @@ func RunCaptureAct(deps Deps, opts CaptureOptions, dest string, dryRun bool) int
 	// build asks them before its toolchain: a Mac whose setup would refuse the capture refuses it
 	// before any work.
 	if !dryRun {
-		if !captureGatesPass(deps, out, captureRootOf(opts.CaptureRoot)) {
+		if !captureGatesPass(deps, out, opts.Mode, captureRootOf(opts.CaptureRoot)) {
 			return 1
 		}
 		opts.CATrust = ComposeCATrust(deps, opts.Darwin)
+		// The run-as-you profile grants your DARWIN_USER_TEMP_DIR under the shared-/tmp ruling, as a
+		// run-as-you launch's does; a read of the host, so never in a dry run.
+		if opts.DarwinUserTempDir == "" {
+			opts.DarwinUserTempDir = deps.darwinUserTempDir(opts.Mode)
+		}
 	}
 	plan := BuildCapturePlan(opts)
 	if dryRun {
@@ -1195,7 +1389,15 @@ func moveCaptureOut(src, dest string) error {
 
 // caTrustFilePlans are the capture's CA files as installable files (cabundle.go).
 func (p CapturePlan) caTrustFilePlans() []sessionFilePlan {
-	return caTrustFiles(p.EnvFile, p.CABundleFile, p.CABundleContent, p.CAExtrasFile, p.CAExtrasContent)
+	files := caTrustFiles(p.EnvFile, p.CABundleFile, p.CABundleContent, p.CAExtrasFile, p.CAExtrasContent)
+	// The run-as-you mode grants no access: the files are yours, and so is the sandbox.
+	if p.RunAs.Mode == ModeSelf {
+		for i := range files {
+			files[i].dir, _ = withoutAccessGrants(files[i].dir, nil)
+			files[i].grant = nil
+		}
+	}
+	return files
 }
 
 // envFile and envFileCommands make a CapturePlan a sandboxEnvPlan (envfile.go).
@@ -1324,6 +1526,14 @@ func BuildForkBuildPlan(opts ForkBuildOptions) ForkBuildPlan {
 	plan := buildCapturePlanAt(inner, stagingRoot)
 	plan.Seatbelt = SeatbeltSealedCaptureProfile(stagingRoot)
 	plan.PrepareCommands = ForkBuildStagingCommands(stagingRoot, inner.HostUser)
+	if plan.RunAs.Mode == ModeSelf {
+		// The run-as-you build (slice 9 of docs/design/macos-user-model-plan.md): the sealed
+		// deny-by-default capture profile, and a staging tree that is yours alone.
+		plan.Seatbelt = SeatbeltSealedSelfCaptureProfile(stagingRoot, plan.RunAs.Homes, inner.HostUser,
+			inner.DarwinUserTempDir)
+		plan.PrepareCommands = append(SelfCaptureStagingCommands(stagingRoot),
+			selfCaptureLeafCommands(ForkBuildSourceDir(stagingRoot))...)
+	}
 	// A SEALED BUILD'S BOOT: the staging home gets no agent's config and the build's output no line
 	// about one (PPX-D48), as a container build jail's boot (YOLO_SEALED_BUILD).
 	plan.BootstrapArgv = append(slices.Clone(plan.BootstrapArgv), DarwinBootstrapSealedFlag)
@@ -1411,9 +1621,10 @@ func TreeBuildDriverArgv(runAs RunAs, stagedYolo, stagingHome, outDir, srcDir, t
 // there (pi-extensions.md PPX-D46).
 func buildDriverArgv(runAs RunAs, stagedYolo, stagingHome, outDir, lineStatus, script, profilePath, envFile string,
 	pathPrefix []string) []string {
-	// The crossing is the one run-as rule (RunAsSandboxArgv): `-n`, so it never prompts.
+	// The crossing is the one run-as rule (RunAsSandboxArgv), or /usr/bin/env alone as you in the
+	// run-as-you mode (CaptureDriverArgv).
 	out := runAs.Argv(false, "-i")
-	out = append(out, sandboxEnvPairs(accountHomes(stagingHome), SandboxUser,
+	out = append(out, sandboxEnvPairs(accountHomes(stagingHome), runAs.user(""),
 		SandboxPath(stagingHome, pathPrefix), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
 	out = append(out, ExecWithEnvFile(envFile, []string{
@@ -1620,7 +1831,7 @@ func RunForkBuildAct(deps Deps, opts ForkBuildOptions, dest, toolchainDest strin
 	if !dryRun {
 		// The gates before the toolchain: its nix build can take half an hour on a machine where no
 		// launch has built the floor yet, and a machine with no sandbox account would refuse after it.
-		if !captureGatesPass(deps, out, captureRootOf(opts.CaptureRoot)) {
+		if !captureGatesPass(deps, out, opts.Mode, captureRootOf(opts.CaptureRoot)) {
 			return 1
 		}
 		d, rc := materializeForkToolchain(deps, out, opts)
@@ -1629,6 +1840,11 @@ func RunForkBuildAct(deps Deps, opts ForkBuildOptions, dest, toolchainDest strin
 		}
 		opts.Darwin = d
 		opts.CATrust = ComposeCATrust(deps, opts.Darwin)
+		// The run-as-you profile grants your DARWIN_USER_TEMP_DIR under the shared-/tmp ruling, as a
+		// run-as-you launch's does; a read of the host, so never in a dry run.
+		if opts.DarwinUserTempDir == "" {
+			opts.DarwinUserTempDir = deps.darwinUserTempDir(opts.Mode)
+		}
 	}
 	plan := BuildForkBuildPlan(opts)
 	if dryRun {

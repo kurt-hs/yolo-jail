@@ -897,6 +897,20 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 				"YOLO_RUNTIME=podman yolo -- %s\n", bin)
 			return 1
 		}
+		// WHO THE CAPTURE RUNS AS (macos_user_mode, slice 9 of docs/design/macos-user-model-plan.md),
+		// read as a launch reads it: the second account, or in the run-as-you mode you, under the
+		// deny-by-default capture profile. A value no act can run refuses here, as a launch refuses.
+		mode, modeRefusal := macosUserLaunchMode()
+		if modeRefusal != "" {
+			fmt.Fprintln(errw, modeRefusal)
+			return 1
+		}
+		// The identity only in the run-as-you mode, the launch's own reading of it: the account mode's
+		// HostUser stays the act's (Deps.HostUser), so its plan is today's.
+		who := macosuser.CaptureOptions{Mode: mode}
+		if mode == macosuser.ModeSelf {
+			who.HostHome, who.HostUser = macosUserHostIdentity()
+		}
 		deps := macosuser.RealDeps(nil, nil, color)
 		deps.Out = out
 		// The act's commands — the account's setup, the bootstrap, the driver and the installer it
@@ -917,7 +931,8 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 			deps.MaterializeDarwin = materializeDarwinNativeAt(filepath.Join(workspace, forkToolchainRootLeaf))
 			return macForkBuildAct(deps, macosuser.ForkBuildOptions{
 				CaptureOptions: macosuser.CaptureOptions{Bin: bin, Config: cfg, HostPackRoot: packRoot,
-					SandboxEnv: packEnv, BlockedTools: blocked},
+					SandboxEnv: packEnv, BlockedTools: blocked,
+					Mode: who.Mode, HostHome: who.HostHome, HostUser: who.HostUser},
 				BuildID: seal.id, Build: seal.build, Source: filepath.Join(workspace, forkSourceLeaf),
 				RepoRoot: repoRoot, Toolchain: forkBuildToolchainHead(), TreeDir: sealTreeDir(seal),
 				LineStatusDest: filepath.Join(workspace, capture.InstallerStatusLeaf),
@@ -926,6 +941,7 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 		return macCaptureAct(deps, macosuser.CaptureOptions{
 			Bin: bin, Config: cfg, HostPackRoot: packRoot, SandboxEnv: packEnv,
 			BlockedTools: blocked,
+			Mode:         who.Mode, HostHome: who.HostHome, HostUser: who.HostUser,
 		}, filepath.Join(workspace, captureOutLeaf), dryRun)
 	}
 	rc := captureRunPipeline(opts)

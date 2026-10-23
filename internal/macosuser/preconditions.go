@@ -458,6 +458,28 @@ var privilegePreconditions = []string{
 // capture and fork-build acts and the host floor that asks for them — so it refuses for the same
 // reasons as the launch, in the launch's words.
 func PrivilegeUnmet(p LaunchProbes) (Precondition, bool) {
+	return PrivilegeUnmetFor(ModeAccount, p)
+}
+
+// selfModePrivilegePreconditions are the run-as-you mode's privilege facts (slice 9 of
+// docs/design/macos-user-model-plan.md): the staging root's three alone. There is no account to
+// cross into and so no run-as rule; the capture root, the other root an act stages in, is judged
+// by the act itself (captureRootUsable).
+var selfModePrivilegePreconditions = []string{
+	PreconditionStagingRoot, PreconditionStagingRootOwner, PreconditionStagingRootSafe,
+}
+
+// PrivilegeUnmetFor is PrivilegeUnmet for an act's mode. In the run-as-you mode it asks the staging
+// root's three only, and an ABSENT staging root holds, since the act makes it itself, as you, as a
+// run-as-you launch does (unmetSelfModePrecondition).
+func PrivilegeUnmetFor(mode Mode, p LaunchProbes) (Precondition, bool) {
+	ids := privilegePreconditions
+	if mode == ModeSelf {
+		if p.stagingRootVerdict() == StagingRootAbsent {
+			return Precondition{}, false
+		}
+		ids = selfModePrivilegePreconditions
+	}
 	all := LaunchPreconditions()
 	byID := map[string]Precondition{}
 	for _, c := range all {
@@ -474,7 +496,7 @@ func PrivilegeUnmet(p LaunchProbes) (Precondition, bool) {
 			want(req)
 		}
 	}
-	for _, id := range privilegePreconditions {
+	for _, id := range ids {
 		want(id)
 	}
 	for _, c := range all {

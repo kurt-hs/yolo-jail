@@ -79,7 +79,10 @@ package macosuser
 //     /Users/Shared for exactly this reason. The case's capture root is under /Users/Shared too,
 //     so a green run answers this for that siting.
 
-import "strings"
+import (
+	"path/filepath"
+	"strings"
+)
 
 // SeatbeltCaptureProfile generates the SBPL profile for one install capture: deny writes
 // everywhere, then re-allow ONLY the capture's own staging root plus the OS scratch dirs.
@@ -193,8 +196,13 @@ const (
 // SeatbeltSealedCaptureProfile is the profile a fork's build runs under: the capture profile over
 // stagingRoot, then the seal's denies.
 func SeatbeltSealedCaptureProfile(stagingRoot string) string {
-	return SeatbeltCaptureProfile(stagingRoot) +
-		"\n" +
+	return SeatbeltCaptureProfile(stagingRoot) + sealDenies()
+}
+
+// sealDenies is the seal's block, appended after a capture profile: the account mode's
+// (SeatbeltSealedCaptureProfile) and the run-as-you mode's (SeatbeltSealedSelfCaptureProfile).
+func sealDenies() string {
+	return "\n" +
 		";; --- THE SEAL (forked-programs-as-packs.md FP-D24): a fork's build is code from a\n" +
 		";;     repository a pack named, and this account shares the host's network stack.  The\n" +
 		";;     host's loopback (every service it binds there, every jail's loophole daemons\n" +
@@ -209,6 +217,12 @@ func SeatbeltSealedCaptureProfile(stagingRoot string) string {
 // `(allow default)` it narrows, since a deny before it would be no deny at all.
 func sealedProfileProblems(profile string) []string {
 	allowAt := strings.Index(profile, "(allow default)")
+	narrowed := "`(allow default)`"
+	// The run-as-you profile has no `(allow default)`; what the seal narrows there is the
+	// deny-default profile's own nix-daemon allow (nixDaemonBlocks), so the denies must follow it.
+	if at := strings.LastIndex(profile, "#seatbelt-test-id:nix-daemon-allow#"); at > allowAt {
+		allowAt, narrowed = at, "the nix-daemon allow"
+	}
 	var problems []string
 	for _, d := range []struct{ deny, what string }{
 		{sealedBuildLoopbackDeny, "the host's loopback, where every service the host binds and every jail's " +
@@ -224,7 +238,108 @@ func sealedProfileProblems(profile string) []string {
 				" — it is not sealed (SeatbeltSealedCaptureProfile is the one to use)")
 		case at < allowAt:
 			problems = append(problems, "the fork build's Seatbelt profile denies "+d.what+" BEFORE "+
-				"`(allow default)`; SBPL is last-match-wins, so that deny does nothing")
+				narrowed+"; SBPL is last-match-wins, so that deny does nothing")
+		}
+	}
+	return problems
+}
+
+// THE RUN-AS-YOU CAPTURE PROFILE (slice 9 of docs/design/macos-user-model-plan.md).
+//
+// In self mode a capture runs as the invoking user, not the second account, so no uid separation
+// keeps a vendor installer out of anything: under SeatbeltCaptureProfile's `(allow default)` it
+// could reach your keychain through securityd, signal your processes, drive your apps with Apple
+// Events and connect to every loopback service you run. So it runs under the DENY-BY-DEFAULT
+// profile a self-mode launch runs under (DenyDefaultProfile, seatbeltdeny.go), with the capture's
+// inputs in place of a launch's:
+//
+//   - the staging tree is the one writable root, in the workspace slot (the staging home and the
+//     out dir are both inside it), beside the temp dirs the production /tmp ruling grants;
+//   - the staging root (stateDir) is readable, for the staged yolo, the env and CA files and the
+//     pack tree, as for a launch;
+//   - NO machine dir is granted. The machine root and the shared store (LaunchHomes' Machine and
+//     Shared, MMP-D6) are where your agents' logins live, the credential store a capture must
+//     never reach. They are also denied by name, last, as the account capture profile denies the
+//     shared home after its allow list: the statement of intent a human reads, which a test pins;
+//   - the network stays open, as for every capture, less your loopback (the production loopback
+//     ruling, with no port listed: a capture talks to no yolo service).
+//
+// NOT YET MEASURED: that an installer gets through it. The deny-default profile was measured on a
+// Mac for a session (seatbeltdeny.go's header); an installer reads and writes where an agent may
+// not, and only a Mac run of `yolo capture` in self mode settles it.
+
+// captureStoreDenyID is the test id of the run-as-you capture profile's closing deny of the
+// machine root and the shared store.
+const captureStoreDenyID = "capture-store-deny"
+
+// SeatbeltSelfCaptureProfile is the run-as-you install capture's profile: DenyDefaultProfile over
+// the staging tree, homes.Machine and homes.Shared granted nowhere and denied by name last. user
+// is the invoking user, named in the header comment only; userTmp is their DARWIN_USER_TEMP_DIR,
+// physical, or "".
+//
+// An empty stagingRoot renders no writable root but the temp dirs: the fail-closed direction, as
+// for SeatbeltCaptureProfile.
+func SeatbeltSelfCaptureProfile(stagingRoot string, homes Homes, user, userTmp string) string {
+	p := ProfileParams{
+		Workspace:         stagingRoot,
+		HostHome:          homes.Real,
+		DarwinUserTempDir: strings.TrimRight(userTmp, "/"),
+		StagingRoot:       stateDir,
+		RunAsUser:         user,
+	}.WithProductionRulings()
+	return DenyDefaultProfile(p) + captureStoreDeny(homes)
+}
+
+// captureStoreDeny is the run-as-you capture profile's last block: the machine root and the shared
+// store, denied for reads and writes by name. "" when neither is an absolute path, which
+// capturePlanProblems refuses.
+func captureStoreDeny(homes Homes) string {
+	roots := absCleanAll(homes.Machine, homes.Shared)
+	if len(roots) == 0 {
+		return ""
+	}
+	return "\n;; [yolo] INSTALL CAPTURE: the machine root and the shared store, where your agents'\n" +
+		";; logins live, denied by name. (deny default) already covers both; a capture records\n" +
+		";; what a vendor installer leaves behind, and must never read or write either.\n" +
+		";; #seatbelt-test-id:" + captureStoreDenyID + "#\n" +
+		form("deny file-read* file-write*", subpathLines(roots))
+}
+
+// SeatbeltSealedSelfCaptureProfile is a fork's build's profile in the run-as-you mode: the
+// run-as-you capture profile, then the seal's denies. The production ruling denies the loopback
+// already; the seal repeats it and closes the nix daemon, which the deny-default profile opens.
+func SeatbeltSealedSelfCaptureProfile(stagingRoot string, homes Homes, user, userTmp string) string {
+	return SeatbeltSelfCaptureProfile(stagingRoot, homes, user, userTmp) + sealDenies()
+}
+
+// selfCaptureProfileProblems checks a run-as-you capture profile: deny-by-default, never `(allow
+// default)`, and the machine root and the shared store each named by nothing but the closing deny.
+func selfCaptureProfileProblems(profile string, homes Homes) []string {
+	var problems []string
+	if !strings.Contains(profile, "\n(deny default)\n") || strings.Contains(profile, "(allow default)") {
+		problems = append(problems, "the run-as-you capture does not install the deny-by-default Seatbelt "+
+			"profile; a vendor installer would run as you under a profile that allows by default "+
+			"(SeatbeltSelfCaptureProfile is the one to use)")
+	}
+	denyAt := strings.LastIndex(profile, "#seatbelt-test-id:"+captureStoreDenyID+"#")
+	for _, r := range []struct{ name, path string }{{"machine root", homes.Machine}, {"shared store", homes.Shared}} {
+		if !filepath.IsAbs(r.path) {
+			problems = append(problems, "the run-as-you capture was given no absolute "+r.name+" ("+
+				quoteOrNone(r.path)+") to keep the installer out of")
+			continue
+		}
+		quoted := sbplStr(filepath.Clean(r.path))
+		if denyAt < 0 || !strings.Contains(profile[denyAt:], "(subpath "+quoted+")") {
+			problems = append(problems, "the run-as-you capture profile does not deny the "+r.name+" "+r.path+
+				" last; it holds your agents' logins, which a capture must never reach")
+			continue
+		}
+		for _, ln := range strings.Split(profile[:denyAt], "\n") {
+			if strings.Contains(ln, quoted) {
+				problems = append(problems, "the run-as-you capture profile names the "+r.name+" "+r.path+
+					" before its closing deny (`"+strings.TrimSpace(ln)+"`); no rule may open it to a capture")
+				break
+			}
 		}
 	}
 	return problems

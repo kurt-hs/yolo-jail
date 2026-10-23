@@ -273,18 +273,28 @@ type macCaptureProbes struct {
 	// when all do (macosuser.PrivilegeUnmet). The rule asks for no password, so whether this launch
 	// has a terminal is no part of it.
 	Privilege func() (macosuser.Precondition, bool)
+	// Mode is who the act runs as (macos_user_mode). The run-as-you mode asks no sandbox account,
+	// and its Privilege is the staging root's alone (macosuser.PrivilegeUnmetFor).
+	Mode macosuser.Mode
 }
 
 // hostFloorMacProbes is the machine's answers. A var so a test can stand a Mac in on any OS.
-var hostFloorMacProbes = func() macCaptureProbes {
+var hostFloorMacProbes = realHostFloorMacProbes
+
+// realHostFloorMacProbes is hostFloorMacProbes' production answer.
+func realHostFloorMacProbes() macCaptureProbes {
 	d := macosuser.RealDeps(nil, nil, false)
+	// A value no act can run is the act's to refuse, with its own line; the floor reads it as the
+	// account mode, today's default.
+	mode, _ := macosUserLaunchMode()
 	return macCaptureProbes{
 		Geteuid:           d.Geteuid,
 		Which:             d.Which,
 		SandboxUserExists: d.SandboxUserExists,
 		Privilege: func() (macosuser.Precondition, bool) {
-			return macosuser.PrivilegeUnmet(macosuser.RealLaunchProbes())
+			return macosuser.PrivilegeUnmetFor(mode, macosuser.RealLaunchProbes())
 		},
+		Mode: mode,
 	}
 }
 
@@ -318,11 +328,15 @@ func macActBlocked(p macCaptureProbes, w macActWords, does string) string {
 	case !p.Which("sandbox-exec"):
 		return "sandbox-exec (Apple Seatbelt), which confines " + w.confines + " on a Mac, is not on PATH " +
 			"— put /usr/bin back on it, and the next `yolo host` launch " + does
-	case !p.SandboxUserExists():
+	case p.Mode != macosuser.ModeSelf && !p.SandboxUserExists():
 		return "the sandbox account " + macosuser.SandboxUser + ", which " + w.runsAs + ", does not exist " +
 			"— run the one-time setup, `yolo macos-setup`, and the next `yolo host` launch " + does
 	}
-	if c, unmet := p.Privilege(); unmet {
+	if c, unmet := p.Privilege(); unmet && p.Mode == macosuser.ModeSelf {
+		return w.act + " on a Mac runs as you (macos_user_mode \"self\") and stages its binary in the staging " +
+			"directory, which is not usable (" + c.Unmet("") + ") — " + clauseOf(c.Fix("")) + ", and the next " +
+			"`yolo host` launch " + does
+	} else if unmet {
 		return w.act + " on a Mac runs as the sandbox account through the one-time setup's sudo rule, which " +
 			"this Mac does not have (" + c.Unmet("") + ") — " + clauseOf(c.Fix("")) + ", and the next `yolo host` " +
 			"launch " + does

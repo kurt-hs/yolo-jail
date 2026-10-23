@@ -339,3 +339,238 @@ func TestMacosUserCaptureSeatbeltControlsRunUnsandboxed(t *testing.T) {
 		}
 	}
 }
+
+// THE RUN-AS-YOU CAPTURE PROFILE'S DENIAL PROBE (slice 9 of docs/design/macos-user-model-plan.md):
+// in self mode a capture runs its installer as YOU, under macosuser.SeatbeltSelfCaptureProfile, the
+// deny-by-default profile with the machine root and the shared store — where your agents' logins
+// live — denied by name. This loads that profile as the invoking user and asks the kernel about each
+// path, each case bare first, as above.
+//
+// THE HOMES ARE STAND-INS. The plan is built with a host home of the test's own under the capture
+// root, so the machine root and shared store it denies are directories the test made and can fill;
+// the real home case uses your real home, which the profile must refuse as well.
+
+// selfCaptureSeatbeltFixture is the tree the run-as-you capture cases are written against.
+type selfCaptureSeatbeltFixture struct {
+	plan macosuser.CapturePlan
+	// machine and shared are the plan's machine root and shared store, each holding a file.
+	machine, shared string
+	// realHome is the invoking user's real home, readable bare and refused under the profile.
+	realHome string
+	// neutral is a path outside every writable root, writable bare.
+	neutral string
+	probe   string
+}
+
+// selfCaptureSeatbeltTree builds a run-as-you plan over root, with a stand-in host home under it,
+// and fills the stand-in machine root and shared store. Like captureSeatbeltTree it does not make
+// the staging tree.
+func selfCaptureSeatbeltTree(t *testing.T, root, realHome, neutralDir string) selfCaptureSeatbeltFixture {
+	t.Helper()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostUser := os.Getenv("USER")
+	if me, err := user.Current(); err == nil {
+		hostUser = me.Username
+	}
+	if hostUser == "" {
+		hostUser = "you"
+	}
+	plan := macosuser.BuildCapturePlan(macosuser.CaptureOptions{
+		Bin: "probetool", Config: jsonx.NewOrderedMap(), SandboxEnv: jsonx.NewOrderedMap(),
+		SelfExe: self, HostUser: hostUser, CaptureRoot: root,
+		Mode: macosuser.ModeSelf, HostHome: filepath.Join(root, "standin-home"),
+	})
+	if problems := macosuser.CapturePlanInvariants(plan); len(problems) > 0 {
+		t.Fatalf("the run-as-you capture plan over %s is not viable:\n  %s", root, strings.Join(problems, "\n  "))
+	}
+	stamp := fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
+	f := selfCaptureSeatbeltFixture{
+		plan:     plan,
+		machine:  plan.RunAs.Homes.Machine,
+		shared:   plan.RunAs.Homes.Shared,
+		realHome: realHome,
+		neutral:  filepath.Join(neutralDir, "yolo-capsb-self-write-"+stamp),
+		probe:    ".yolo-capsb-self-probe-" + stamp,
+	}
+	for _, d := range []string{f.machine, f.shared} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "secret"), []byte("an agent's login\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return f
+}
+
+type selfCaptureSeatbeltCase struct {
+	name    string
+	why     string
+	want    seatbeltWant
+	refusal string
+	script  func(selfCaptureSeatbeltFixture) string
+}
+
+func selfCaptureSeatbeltCases() []selfCaptureSeatbeltCase {
+	return []selfCaptureSeatbeltCase{
+		{
+			name: "machine_root_read_refused",
+			why:  "the machine root holds every workspace's machine tier; a capture must not read it",
+			want: wantRefused,
+			script: func(f selfCaptureSeatbeltFixture) string {
+				return "cat " + sh(filepath.Join(f.machine, "secret"))
+			},
+		},
+		{
+			name: "shared_store_read_refused",
+			why:  "the shared store is where your agents' logins live; an installer that read it could ship it",
+			want: wantRefused,
+			script: func(f selfCaptureSeatbeltFixture) string {
+				return "cat " + sh(filepath.Join(f.shared, "secret"))
+			},
+		},
+		{
+			name: "shared_store_write_refused",
+			why:  "a capture records what a vendor installer leaves behind, never what it did to your logins",
+			want: wantRefused, refusal: "Operation not permitted",
+			script: func(f selfCaptureSeatbeltFixture) string {
+				p := sh(filepath.Join(f.shared, f.probe))
+				return "touch " + p + " && rm -f " + p
+			},
+		},
+		{
+			name: "real_home_read_refused",
+			why:  "the installer runs as you, so only the profile keeps it out of your home",
+			want: wantRefused,
+			script: func(f selfCaptureSeatbeltFixture) string {
+				return "ls " + sh(f.realHome)
+			},
+		},
+		{
+			name: "staging_home_and_out_writable",
+			why:  "the staging tree is the one writable root: the installer's home and the out dir",
+			want: wantAllowed,
+			script: func(f selfCaptureSeatbeltFixture) string {
+				h, o := sh(filepath.Join(f.plan.StagingHome, f.probe)), sh(filepath.Join(f.plan.OutDir, f.probe))
+				return "touch " + h + " && rm -f " + h + " && touch " + o + " && rm -f " + o + " && echo " + seatbeltOK
+			},
+		},
+		{
+			name: "neutral_write_refused",
+			why:  "deny-by-default: nothing outside the staging tree and the temp dirs is writable",
+			want: wantRefused,
+			script: func(f selfCaptureSeatbeltFixture) string {
+				p := sh(f.neutral)
+				return "touch " + p + " && rm -f " + p
+			},
+		},
+	}
+}
+
+// TestMacosUserCaptureSeatbeltSelfProfileDeniesTheMachineStore loads the run-as-you capture profile
+// with sandbox-exec as the invoking user and asks the kernel about every case above.
+func TestMacosUserCaptureSeatbeltSelfProfileDeniesTheMachineStore(t *testing.T) {
+	requireMacosUserSeatbelt(t)
+	dir, err := os.MkdirTemp(sharedUsersDir, "yolo-capsb-")
+	if err != nil {
+		t.Fatalf("creating the capture root under %s: %v", sharedUsersDir, err)
+	}
+	root, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	realHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved, err := filepath.EvalSymlinks(realHome); err == nil {
+		realHome = resolved
+	}
+	f := selfCaptureSeatbeltTree(t, root, realHome, "/private/var/tmp")
+	t.Cleanup(func() { _ = os.Remove(f.neutral) })
+	for _, cmd := range f.plan.PrepareCommands {
+		if out, err := exec.Command(cmd[0], cmd[1:]...).CombinedOutput(); err != nil {
+			t.Fatalf("the run-as-you capture plan's prepare step `%s` failed as you: %v\n%s",
+				strings.Join(cmd, " "), err, out)
+		}
+	}
+	profile := filepath.Join(root, "capture-self.sb")
+	if err := os.WriteFile(profile, []byte(f.plan.Seatbelt), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("run-as-you capture Seatbelt profile under test (%s):\n%s", profile, f.plan.Seatbelt)
+
+	bare := []string{"/usr/bin/env", "-i", "HOME=" + f.plan.StagingHome, "PATH=/usr/bin:/bin"}
+	sandboxed := append(append([]string{}, bare...), "/usr/bin/sandbox-exec", "-f", profile, "--")
+	for _, tc := range selfCaptureSeatbeltCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			script := tc.script(f)
+			bareOut, bareRC := runScript(t, script, bare)
+			if bareRC != 0 || (tc.want == wantAllowed && !strings.Contains(bareOut, seatbeltOK)) {
+				t.Fatalf("the CONTROL failed: `%s` exits %d as you without the profile.\nwhy: %s\noutput:\n%s",
+					script, bareRC, tc.why, bareOut)
+			}
+			sbOut, sbRC := runScript(t, script, sandboxed)
+			switch tc.want {
+			case wantRefused:
+				if sbRC == 0 {
+					t.Errorf("NOT REFUSED. `%s` succeeded under the run-as-you capture profile.\nwhy: %s\noutput:\n%s",
+						script, tc.why, sbOut)
+				} else if tc.refusal != "" && !strings.Contains(sbOut, tc.refusal) {
+					t.Errorf("REFUSED, but not with %q.\nwhy: %s\noutput:\n%s", tc.refusal, tc.why, sbOut)
+				}
+			case wantAllowed:
+				if !strings.Contains(sbOut, seatbeltOK) {
+					t.Errorf("REFUSED, and should not have been: `%s` (rc %d).\nwhy: %s\noutput:\n%s",
+						script, sbRC, tc.why, sbOut)
+				}
+			}
+		})
+	}
+	if t.Failed() {
+		logSandboxDenials(t)
+	}
+}
+
+// TestMacosUserCaptureSeatbeltSelfControlsRunUnsandboxed is the run-as-you cases' bare controls on
+// any machine, as TestMacosUserCaptureSeatbeltControlsRunUnsandboxed is the account cases': the
+// plan viable, each control succeeding and leaving nothing behind. It asserts nothing about Seatbelt.
+func TestMacosUserCaptureSeatbeltSelfControlsRunUnsandboxed(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh on PATH")
+	}
+	root := resolvedTempDir(t)
+	f := selfCaptureSeatbeltTree(t, root, resolvedTempDir(t), resolvedTempDir(t))
+	for _, d := range []string{f.plan.StagingHome, f.plan.OutDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !strings.Contains(f.plan.Seatbelt, `(subpath "`+f.plan.StagingRoot+`")`) ||
+		!strings.Contains(f.plan.Seatbelt, "(deny default)") {
+		t.Fatalf("the run-as-you plan's profile is not deny-default over its staging tree %s:\n%s",
+			f.plan.StagingRoot, f.plan.Seatbelt)
+	}
+	for _, tc := range selfCaptureSeatbeltCases() {
+		out, rc := runScript(t, tc.script(f), nil)
+		if rc != 0 {
+			t.Errorf("%s: the bare control exits %d:\n%s", tc.name, rc, out)
+		}
+		if tc.want == wantAllowed && !strings.Contains(out, seatbeltOK) {
+			t.Errorf("%s: the bare control does not print %s:\n%s", tc.name, seatbeltOK, out)
+		}
+		for _, p := range []string{filepath.Join(f.shared, f.probe), filepath.Join(f.plan.StagingHome, f.probe),
+			filepath.Join(f.plan.OutDir, f.probe), f.neutral} {
+			if _, err := os.Lstat(p); err == nil {
+				t.Errorf("after %s's control, %s is left behind", tc.name, p)
+			}
+		}
+	}
+}
