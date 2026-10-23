@@ -646,7 +646,7 @@ instead of minting a line that cannot deliver.
 
 ## 8. How the gateway absorbs it
 
-[`boundary-broker.md` §6.6](boundary-broker.md#66-one-store-several-front-ends) puts every
+[`boundary-broker.md` §6.6](boundary-broker.md#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship) puts every
 front-end on one store. Host-run is planned to become one more front-end of it, so each gateway
 step adds and nothing is deleted but polling:
 
