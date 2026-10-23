@@ -3787,7 +3787,8 @@ Whichever is ruled, R5's *"install is user-scope"* in
   > is getting deleted that way we can take the design doc and implementation in time."* This
   > releases [`mcp-presets-removal.md`](../design/mcp-presets-removal.md)'s step 3 and narrows
   > [OQ-MP7](../design/mcp-presets-removal.md#decision-ledger)'s "do not just lose it" to
-  > "lose it until the workspace-packs design lands".
+  > "lose it until the workspace-packs design lands". That design is
+  > [`workspace-packs.md`](../design/workspace-packs.md).
 
 - 💬 <a id="oq-acp4"></a>**[`OQ-ACP4`](#oq-acp4) — does pruning a shared pack need usage data to be anybody's job?**
   A shared corpus of skills rots: it accumulates, quality drops, and people go back to their own

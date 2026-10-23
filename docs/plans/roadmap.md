@@ -250,8 +250,9 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     first — a `/var/root` home passes until it replaces the blacklist, and tightening later withdraws what users rely on.
 13. [Decide whether a workspace config may feed host dotenvs and mounts into a jail](../research/agent-safehouse.md#OQ-AS3)
     — a committed config still can, and notch convergence's `env_sources` item waits on it.
-14. [Rule which packs a workspace config may declare](../reference/pack-system.md#OQ-PK1), then [retire `mcp_presets`](../design/mcp-presets-removal.md)
-    — the retirement rests on that boundary and on the wrapper's browser report, and ends macos-user's refusal of presets.
+14. [Rule which packs a workspace config may select](../design/workspace-packs.md), and [retire `mcp_presets`](../design/mcp-presets-removal.md)
+    — [OQ-PK1](../reference/pack-system.md#oq-pk1)'s 2026-10-23 ruling deletes the key outright and asked for that design first; until it
+    lands, a repository cannot give its collaborators the browser, which the presets did.
 15. [Rule the slot split's migration window](../design/slots-and-contributions.md#OQ-D6), then [the manifest
     language](../design/manifest-language.md) with [the slots' other calls](../design/slots-and-contributions.md) —
     `exposes` and [the pi extension-tree rework](../design/pi-pack-extensions.md) wait on the first.
@@ -494,7 +495,7 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 | 11 — record the Mac runs of 2026-10-02/03 | X | A Mac (and the named live-session checks). Reviewing the bounded privilege lifecycle with native readiness is D. |
 | 12 — macos-user workspace root | D | [OQ-CW2](../design/configurable-workspace-root.md#OQ-CW2), the whitelist, before it replaces the blacklist. **Maintainer**. |
 | 13 — workspace config feeding host dotenvs and mounts | D | [OQ-AS3](../research/agent-safehouse.md#OQ-AS3): do `mounts` and `env_sources` become user-scope-only? **Maintainer**. |
-| 14 — which packs a workspace config may declare | D | [OQ-PK1](../reference/pack-system.md#OQ-PK1); the `mcp_presets` retirement follows it. **Maintainer**. |
+| 14 — which packs a workspace config may select | D / A | [OQ-WP1](../design/workspace-packs.md#OQ-WP1)–[OQ-WP5](../design/workspace-packs.md#OQ-WP5) in [the workspace-packs design](../design/workspace-packs.md), which [OQ-PK1](../reference/pack-system.md#oq-pk1) asked for on 2026-10-23. **Maintainer**. The `mcp_presets` retirement that ruling released is A. |
 | 15 — the slot split's migration window | D | [OQ-D6](../design/slots-and-contributions.md#OQ-D6), then the manifest language and the slots' other calls. **Maintainer**. |
 | 16 — provider rulings | D | Does the natively-implements rule reach a pack-declared list ([OQ-4](../design/pi-codex-provider-shadowing.md#OQ-4)), and what does `-p` name? **Maintainer**. |
 | 17 — notch convergence's held items | D | The one `rmw` rule ([OQ-CO15](../reference/config-ownership.md#OQ-CO15)/[OQ-CO16](../reference/config-ownership.md#OQ-CO16)). **Maintainer**. `env_sources` waits on item 13; the shared-login credential view is X (a human session). |
