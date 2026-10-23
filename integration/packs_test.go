@@ -477,9 +477,24 @@ func seedPackHome(home, realHome, userConfig string) error {
 		if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 			return err
 		}
-		if err := os.Symlink(target, link); err != nil {
+		if err := userSymlink(target, link); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// userSymlink is os.Symlink with the owner a CI runner's links have: the invoking user's, not root's.
+// Under root (this jail) a link is root's, and yolo trusts a link root placed where it trusts no
+// other (internal/nofollow), so a suite run here would pass a refusal of the user's own links that
+// fails every CI run (Pack Installs run 39991091730). Chowning the link to nobody gives it the
+// runner's shape; a link's owner decides nothing else here.
+func userSymlink(target, link string) error {
+	if err := os.Symlink(target, link); err != nil {
+		return err
+	}
+	if os.Geteuid() == 0 {
+		return os.Lchown(link, 65534, 65534)
 	}
 	return nil
 }

@@ -1,16 +1,16 @@
 ---
 title: "Installed-launcher provenance — implementation sketch"
-stage: SKETCH
-status: draft
+stage: BUILT
+status: superseded
 depends-on: [installed-launcher-provenance.md#OQ-IP1]
-next: "Complete this map once OQ-IP1 and OQ-IP2 are ruled"
+next: "Delete when the design graduates into self-update.md"
 tags: [install, self-update, builds]
 summary: "Parking lot for the mechanics of the install-provenance design: where the two builds are made, where an assertion would go, and what has to be re-read against the tree."
 ---
 
 # Installed-launcher provenance — implementation sketch
 
-**Status:** 2026-10-23 — incomplete, and unstable while questions are open.
+**Status:** 2026-10-23, built. Every question is ruled, and the build is recorded in [the design's decision ledger](installed-launcher-provenance.md#9-decision-ledger). The anchors below name the tree before the build, and many no longer exist.
 
 > [!IMPORTANT]
 > **This is a sketch, not a build hand-off.** An agent must not build from it. It exists so implementation-level material has somewhere to go while the design is argued; the design wins on behavior, and [`installed-launcher-provenance.md`](installed-launcher-provenance.md) is the design. No decision is made here — anything that chooses behavior is an `OQ-IP` question over there.

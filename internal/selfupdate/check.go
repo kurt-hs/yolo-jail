@@ -13,14 +13,6 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
-	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
-	"github.com/mschulkind-oss/yolo-jail/internal/version"
-)
-
-var sourceUpdatePaths = append(append([]string{}, version.ImageSourcePaths...),
-	"Justfile",
-	"scripts/build-go.sh",
-	"scripts/stage-source-bundle.sh",
 )
 
 // GitRunner runs git in dir and returns its trimmed stdout.
@@ -30,16 +22,14 @@ type GitRunner func(ctx context.Context, dir string, args ...string) (string, er
 type CheckDeps struct {
 	HTTP       *http.Client
 	ReleaseURL string // LatestReleaseAPI unless a test points it elsewhere
-	Git        GitRunner
 	Now        func() time.Time
 }
 
-// DefaultCheckDeps are the real network, git and clock.
+// DefaultCheckDeps are the real network and clock.
 func DefaultCheckDeps() CheckDeps {
 	return CheckDeps{
 		HTTP:       &http.Client{Timeout: 15 * time.Second},
 		ReleaseURL: LatestReleaseAPI,
-		Git:        runGit,
 		Now:        time.Now,
 	}
 }
@@ -64,9 +54,11 @@ func Check(ctx context.Context, ch Channel, prev State, deps CheckDeps) State {
 	st.Disclosed = prev.Disclosed
 	var err error
 	switch ch.Kind {
-	case KindSource:
-		st.Upstream, st.Latest, st.Behind, err = checkSource(ctx, deps.Git, ch)
-		st.Available = err == nil && st.Behind > 0
+	case KindSnapshot:
+		// No caller asks: `yolo update` and `yolo check` stop before a check,
+		// and no automatic check runs for a snapshot. Answering here keeps a
+		// future caller from comparing a snapshot against a release.
+		err = fmt.Errorf("%s", SnapshotSummary)
 	case KindUnknown:
 		err = fmt.Errorf("cannot tell how this yolo was installed")
 	default:
@@ -77,92 +69,6 @@ func Check(ctx context.Context, ch Channel, prev State, deps CheckDeps) State {
 		st.Error = err.Error()
 	}
 	return st.sanitized()
-}
-
-// SourceBranchMismatch is the refusal for a checkout that has left the branch
-// the binary was built from. Check and Apply share it word for word.
-func SourceBranchMismatch(ch Channel, current string) error {
-	return fmt.Errorf("the checkout at %s is on %q, but this yolo was built from %q; switch back (or run `yolo update --from %s` to deploy %q deliberately)",
-		ch.SourceDir, current, ch.Branch, shquote.Quote(ch.SourceDir), current)
-}
-
-// sourceUpstream resolves the checkout's branch and what it tracks, refusing a
-// checkout that has left the branch the binary was built from.
-func sourceUpstream(ctx context.Context, git GitRunner, ch Channel) (branch, remote, mergeRef, display string, err error) {
-	branch, err = git(ctx, ch.SourceDir, "symbolic-ref", "--short", "-q", "HEAD")
-	if err != nil || branch == "" {
-		return "", "", "", "", fmt.Errorf("the checkout at %s has a detached HEAD, so there is no branch to update from", ch.SourceDir)
-	}
-	if ch.Branch != "" && branch != ch.Branch {
-		return "", "", "", "", SourceBranchMismatch(ch, branch)
-	}
-	remote, rerr := git(ctx, ch.SourceDir, "config", "--get", "branch."+branch+".remote")
-	mergeRef, merr := git(ctx, ch.SourceDir, "config", "--get", "branch."+branch+".merge")
-	if rerr != nil || merr != nil || remote == "" || mergeRef == "" {
-		return "", "", "", "", fmt.Errorf("the checkout at %s: branch %q has no upstream branch to update from", ch.SourceDir, branch)
-	}
-	// Both values come from the checkout's own git config, which whatever can
-	// write the checkout controls. The `--` before them in checkSource's git
-	// calls already stops git reading one as an option (`--upload-pack=<cmd>`
-	// runs <cmd>); refusing the spelling as well means no git command ever
-	// receives it.
-	if strings.HasPrefix(remote, "-") || strings.HasPrefix(mergeRef, "-") {
-		return "", "", "", "", fmt.Errorf("the checkout at %s: branch %q has an upstream that starts with \"-\" (remote %q, merge %q), which yolo refuses to pass to git", ch.SourceDir, branch, remote, mergeRef)
-	}
-	display = remote + "/" + strings.TrimPrefix(mergeRef, "refs/heads/")
-	return branch, remote, mergeRef, display, nil
-}
-
-// checkSource asks the checkout's upstream for its tip and counts the commits
-// the binary was not built from, among those that can change the binary, the
-// jail image, or the source install/bundle path. A docs-only commit is not an
-// update.
-//
-// It runs only for an explicit `yolo update` request and never prompts for
-// credentials. `git ls-remote` reads the tip; the fetch that makes the tip's
-// commits countable writes no ref at all — not the remote-tracking branch
-// (`--refmap=` turns off git's opportunistic update of it), not FETCH_HEAD
-// (`--no-write-fetch-head`), no tags. It does write commit objects into the
-// checkout; git's own gc collects them. The fetch is skipped entirely when the
-// tip is already present. It compares against the binary's stamped commit, not
-// HEAD: a `git pull` without a redeploy leaves the binary exactly as out of date
-// as before.
-func checkSource(ctx context.Context, git GitRunner, ch Channel) (upstream, latest string, behind int, err error) {
-	_, remote, mergeRef, upstream, err := sourceUpstream(ctx, git, ch)
-	if err != nil {
-		return "", "", 0, err
-	}
-	out, err := git(ctx, ch.SourceDir, "ls-remote", "--exit-code", "--", remote, mergeRef)
-	if err != nil {
-		return "", "", 0, fmt.Errorf("git ls-remote %s %s: %w", remote, mergeRef, err)
-	}
-	tip, _, _ := strings.Cut(out, "\t")
-	if tip == "" {
-		return "", "", 0, fmt.Errorf("git ls-remote %s %s: unexpected output %q", remote, mergeRef, out)
-	}
-	if _, err := git(ctx, ch.SourceDir, "cat-file", "-e", tip+"^{commit}"); err != nil {
-		if _, err := git(ctx, ch.SourceDir, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--refmap=", "--", remote, mergeRef); err != nil {
-			return "", "", 0, fmt.Errorf("git fetch %s %s: %w", remote, mergeRef, err)
-		}
-	}
-	base := ch.Version
-	if _, err := git(ctx, ch.SourceDir, "cat-file", "-e", base+"^{commit}"); base == "" || err != nil {
-		base = "HEAD" // no stamp (--from), or the stamped commit is gone: the tree is the best evidence left
-	}
-	args := append([]string{"rev-list", "--count", base + ".." + tip, "--"}, sourceUpdatePaths...)
-	out, err = git(ctx, ch.SourceDir, args...)
-	if err != nil {
-		return "", "", 0, err
-	}
-	behind, err = strconv.Atoi(out)
-	if err != nil {
-		return "", "", 0, fmt.Errorf("git rev-list --count: unexpected output %q", out)
-	}
-	short := tip
-	if len(short) > 8 {
-		short = short[:8]
-	}
-	return upstream, short, behind, nil
 }
 
 // latestRelease returns the newest published release's version, without the
@@ -194,10 +100,11 @@ func latestRelease(ctx context.Context, client *http.Client, url string) (string
 	return strings.TrimPrefix(body.TagName, "v"), nil
 }
 
-// runGit is the real GitRunner. It describes dir and nothing else — a git
+// RunGit is the real GitRunner, which `yolo update --from` reads the named
+// checkout with (DeployCheckout). It describes dir and nothing else — a git
 // hook's GIT_DIR must not redirect it (packsrc.CleanGitEnv) — and never prompts,
-// so an explicit check fails cleanly instead of opening a GUI helper.
-func runGit(ctx context.Context, dir string, args ...string) (string, error) {
+// so it fails cleanly instead of opening a GUI helper.
+func RunGit(ctx context.Context, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	out, err := gitCommand(ctx, dir, args...).Output()
@@ -213,12 +120,10 @@ func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// gitCommand builds the command runGit runs, split out so its hygiene is
+// gitCommand builds the command RunGit runs, split out so its hygiene is
 // testable as a property of the command. packsrc.DetachGit runs it in a new
 // session whose whole process group dies with ctx, with a bounded wait on the
-// output pipe: without it a remote that accepts the connection and never
-// answers hangs `yolo update --check` past its timeout, because git's
-// transport helper keeps the pipe open after git itself is killed.
+// output pipe, so nothing git starts can outlive the deadline.
 func gitCommand(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "git", append([]string{
 		"-C", dir,
@@ -242,7 +147,7 @@ func firstArg(args []string) string {
 // (GIT_TERMINAL_PROMPT), an askpass helper that would pop a GUI dialog
 // (GIT_ASKPASS and SSH_ASKPASS forced empty, core.askPass overridden above,
 // SSH_ASKPASS_REQUIRE=never for ssh
-// itself), and Git Credential Manager's own UI (GCM_INTERACTIVE). The check is
+// itself), and Git Credential Manager's own UI (GCM_INTERACTIVE). RunGit is
 // deliberately non-interactive even when its caller has a terminal. A key
 // already loaded in an ssh agent, or a stored credential, still works: only
 // asking is refused.

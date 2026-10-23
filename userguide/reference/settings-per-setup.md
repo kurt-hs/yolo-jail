@@ -489,6 +489,7 @@ The keys the tables above leave out. Most of them do the same thing on every set
 | `include_if_found`, `prune`, `perf_logging`, `update_check` | works | works | works | works |
 | `macos_user_mode` — which account a macos-user jail runs as | `n/a` — ignored: only the macos-user setup reads it | `n/a` — ignored: only the macos-user setup reads it | `n/a` — ignored: only the macos-user setup reads it | works — `"account"`, the default; `"self"` runs the agent as you under a stricter profile (experimental) |
 | `macos_user_shared_tmp` — open the shared `/tmp` to a run-as-you macos-user jail | `n/a` — ignored: only the macos-user setup reads it | `n/a` — ignored: only the macos-user setup reads it | `n/a` — ignored: only the macos-user setup reads it | works — with `"macos_user_mode": "self"`, `true` opens `/tmp` read and write; the launch says so |
+| `share_host_fonts` — share your own font folder read-only with the jail | works — `~/.local/share/fonts` and `~/.fonts`, read-only; the launch names each | works — `~/Library/Fonts`, read-only; the launch names it | works — the same, on a version that honors read-only mounts | works — the separate account reads a copy of `~/Library/Fonts`; a run-as-you jail reads the folder without this key |
 
 ## What a running jail picks up when you run `yolo` again
 

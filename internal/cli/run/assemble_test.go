@@ -85,7 +85,8 @@ func goldenOptions(workspace, home string) *Options {
 		// ~/.config/yolo-jail/config.jsonc would flip every fixture here to a
 		// timing launch — failing the off-path assertions on their machine and
 		// nowhere else. Pinned for the same reason Getenv and PathExists are.
-		PerfLoggingConfig: func() bool { return false },
+		PerfLoggingConfig:    func() bool { return false },
+		ShareHostFontsConfig: func() bool { return false },
 	}
 	fillDefaults(o)
 	// fillDefaults would set real Getenv etc.; re-apply the deterministic stubs.

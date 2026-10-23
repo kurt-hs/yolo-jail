@@ -192,36 +192,49 @@ def _run(command, *, cwd: Path, env: dict[str, str], runner=subprocess.run):
 
 
 def assemble(snapshot: Path, destination: Path, *, identity: str, build_kind: str,
-             version: str, commit: str, source_dir: str = "", source_branch: str = "",
-             runner=subprocess.run) -> Path:
-    """Build from the frozen tree into an unpublished, private output directory."""
+             version: str, commit: str, runner=subprocess.run) -> Path:
+    """Build from the frozen tree into an unpublished, private output directory.
+
+    `yolo` is built once for the host's platform, and the launcher in bin/ IS that build:
+    on Linux it is the bundle's own bin/linux-<arch>/yolo, copied out of the staged tree;
+    on macOS, where the bundle ships only the guest set for darwin, it is the one darwin
+    build of yolo, which the macos-user guest also stages from the running launcher.
+    Nothing compiles yolo a second time, so the launcher and the bundle's same-platform
+    copy cannot differ (docs/design/installed-launcher-provenance.md, OQ-IP2). A Linux
+    jail on a Mac runs a different program by nature: the bundle's linux build.
+    """
     snapshot = snapshot.resolve()
     destination.mkdir(parents=True, exist_ok=False)
     host_os, host_arch = _platform(snapshot)
     shipped, guest = _binary_lists(snapshot / "scripts/stage-source-bundle.sh")
+    if "yolo" not in shipped:
+        raise ValueError("stage script's SHIPPED_BINARIES has no yolo, so the bundle cannot supply the launcher")
     env = _git_env()
     env.pop("YOLO_REPO_ROOT", None)
+    env.pop("BUILD_GO_CMDS", None)
     env.update({"VERSION": version, "COMMIT": commit, "SNAPSHOT_IDENTITY": identity,
                 "BUILD_KIND": build_kind})
-    if build_kind == "installed":
-        env.update({"SOURCE_DIR": source_dir, "SOURCE_BRANCH": source_branch})
-    env.update({"BUILD_GO_CMDS": "yolo", "GOOS": host_os, "GOARCH": host_arch})
-    _run([str(snapshot / "scripts/build-go.sh")], cwd=snapshot, env=env, runner=runner)
-    launcher = snapshot / "dist-go" / f"{host_os}-{host_arch}" / "yolo"
+    share = destination / "share" / "yolo-jail"
+    stage_env = env.copy()
+    stage_env["YOLO_BUNDLE_ARCHES"] = host_arch
+    stage_env["YOLO_BUNDLE_GUEST_OSES"] = "darwin" if host_os == "darwin" else ""
+    _run([str(snapshot / "scripts/stage-source-bundle.sh"), str(share)],
+         cwd=snapshot, env=stage_env, runner=runner)
+    if host_os == "linux":
+        launcher = share / "bin" / f"linux-{host_arch}" / "yolo"
+    else:
+        if "yolo" in guest:
+            launcher = share / "bin" / f"{host_os}-{host_arch}" / "yolo"
+        else:
+            launcher_env = env.copy()
+            launcher_env.update({"BUILD_GO_CMDS": "yolo", "GOOS": host_os, "GOARCH": host_arch})
+            _run([str(snapshot / "scripts/build-go.sh")], cwd=snapshot, env=launcher_env, runner=runner)
+            launcher = snapshot / "dist-go" / f"{host_os}-{host_arch}" / "yolo"
     if not launcher.is_file():
         raise RuntimeError(f"native launcher build missing: {launcher}")
     bin_dir = destination / "bin"
     bin_dir.mkdir()
     shutil.copy2(launcher, bin_dir / "yolo")
-    share = destination / "share" / "yolo-jail"
-    stage_env = env.copy()
-    stage_env.pop("BUILD_GO_CMDS", None)
-    stage_env.pop("SOURCE_DIR", None)
-    stage_env.pop("SOURCE_BRANCH", None)
-    stage_env["YOLO_BUNDLE_ARCHES"] = host_arch
-    stage_env["YOLO_BUNDLE_GUEST_OSES"] = "darwin" if host_os == "darwin" else ""
-    _run([str(snapshot / "scripts/stage-source-bundle.sh"), str(share)],
-         cwd=snapshot, env=stage_env, runner=runner)
     validate_bundle(destination, identity, build_kind, shipped=shipped, guest=guest,
                     host_os=host_os, host_arch=host_arch)
     return destination
@@ -343,7 +356,7 @@ def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subproc
     """
     repo = repo.resolve()
     home = home.resolve()
-    version, commit, source_dir, source_branch = _source_stamps(repo)
+    version, commit = _source_stamps(repo)
     stamps = (version, commit)
     root = home / ".local/share/yolo-jail/dev-bundles"
     root.mkdir(parents=True, exist_ok=True)
@@ -389,7 +402,9 @@ def publish_install_generation(launcher: Path, bundle: Path, identity: str,
     return staged
 
 
-def _source_stamps(repo: Path) -> tuple[str, str, str, str]:
+def _source_stamps(repo: Path) -> tuple[str, str]:
+    """The version and commit a build of repo stamps. Nothing about where the checkout is:
+    an install is a snapshot (docs/design/installed-launcher-provenance.md, OQ-IP1)."""
     def git(*args):
         try:
             return subprocess.check_output(["git", *args], cwd=repo, env=_git_env(), text=True,
@@ -397,8 +412,7 @@ def _source_stamps(repo: Path) -> tuple[str, str, str, str]:
         except subprocess.CalledProcessError:
             return ""
     return (git("describe", "--tags", "--dirty", "--always", "--long", "--abbrev=12"),
-            git("rev-parse", "--short=12", "HEAD"), str(repo.resolve()),
-            git("symbolic-ref", "--short", "-q", "HEAD"))
+            git("rev-parse", "--short=12", "HEAD"))
 
 
 def _install_guard(env: dict[str, str]) -> None:
@@ -440,10 +454,7 @@ def command(repo: Path, mode: str, *, home: Path, gobin: Path | None = None,
     if mode != "install":
         raise ValueError(f"unknown matched bundle mode: {mode}")
     _install_guard(os.environ)
-    version, commit, source_dir, source_branch = _source_stamps(repo)
-    if any(ch.isspace() for ch in source_dir):
-        print("⚠ checkout path has whitespace — 'yolo update' will not be able to find it", file=sys.stderr)
-        source_dir = ""
+    version, commit = _source_stamps(repo)
     state = home / ".local/share/yolo-jail"
     state.mkdir(parents=True, exist_ok=True)
     env = _git_env()
@@ -457,8 +468,7 @@ def command(repo: Path, mode: str, *, home: Path, gobin: Path | None = None,
         host_os, host_arch = _platform(snapshot)
         output = work / "bundle"
         assemble(snapshot, output, identity=identity, build_kind="installed",
-                 version=version, commit=commit, source_dir=source_dir,
-                 source_branch=source_branch, runner=runner)
+                 version=version, commit=commit, runner=runner)
         launcher = output / "bin/yolo"
         subprocess.run([str(launcher), "internal", "migrate-host"], env=env, check=True)
         publish_install_generation(launcher, output / "share/yolo-jail", identity, env,

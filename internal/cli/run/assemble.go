@@ -391,6 +391,12 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 				out.print(rwMountDisclosure(m, rootful))
 			}
 		}
+		// THE USER'S FONT FOLDERS, read-only, with their disclosure line, when the user scope
+		// opts in (share_host_fonts, hostfonts.go).
+		for _, b := range o.hostFontBinds(rt, paths.Home(), out.print) {
+			mountArgs = append(mountArgs, "-v", b.bindArg())
+			out.print(hostFontDisclosure(b))
+		}
 	}
 
 	// --- run_flags ---

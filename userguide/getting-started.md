@@ -563,15 +563,16 @@ yolo update --check     # is a newer yolo out?
 yolo update             # install it the same way yolo was installed
 ```
 
-`yolo update` runs `brew upgrade yolo-jail` for a Homebrew install. For a from-source install it
-pulls the clone yolo was built from and runs `just deploy` there. For a release archive it prints the
+`yolo update` runs `brew upgrade yolo-jail` for a Homebrew install. A from-source install is a
+snapshot of your clone, so `yolo update` changes nothing there and names the two ways to update it:
+run `just install` in your clone, or `yolo update --from <clone>`. For a release archive it prints the
 download link: unpack the new archive over the old folder, after exiting your running jails, because
 that replaces the programs they were started from. Binary-only channels do not carry the jail bundle;
 replace them with a complete installation rather than pairing them with a checkout override.
 
-From source, `yolo update --autostash` sets aside changes you have not committed and puts them back
-afterwards. If you moved or re-cloned the repository, `yolo update --from <clone>` updates from the
-new place. Both work only for a from-source install.
+`yolo update --from <clone>` runs `just deploy` in that clone as it stands, with no pull. It refuses
+changes you have not committed; add `--autostash` to set them aside and put them back afterwards.
+It works only for a from-source install.
 
 A jail that is already running keeps working through a Homebrew or from-source update, and uses the
 new version once you exit it and start it again. Each jail runs its own login services and keeps the
@@ -583,7 +584,7 @@ service with `yolo host-daemon stop --host-wide <name>`, which leaves each jail'
 reboot ends it too. `yolo host-daemon status` lists it as host-wide.
 
 yolo checks for a new release once a day and prints one line when there is one, and it tells you the
-first time, before it checks. A from-source install is checked only when you run `yolo update`. When
+first time, before it checks. A from-source install is never checked. When
 an update is waiting and you start a jail, yolo offers to install it and start again. To turn the
 check, the line and the offer off, add `"update_check": false` to `~/.config/yolo-jail/config.jsonc`.
 

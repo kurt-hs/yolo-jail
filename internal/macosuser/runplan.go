@@ -167,12 +167,18 @@ type RunPlan struct {
 	// profile's own bundle, the launch's env layers named a bundle of their own, or nothing was
 	// composed. EnvFileRemoveCommands sweep both. CAFollows is the bundle variable those layers
 	// set, which the other four then name too (applyCATrust), or "".
-	CATrust            CATrust
-	CABundleFile       string
-	CABundleContent    string
-	CAExtrasFile       string
-	CAExtrasContent    string
-	CAFollows          string
+	CATrust         CATrust
+	CABundleFile    string
+	CABundleContent string
+	CAExtrasFile    string
+	CAExtrasContent string
+	CAFollows       string
+	// Fonts is what this launch composed for fonts (fontsconf.go): the zero value composed none.
+	// FontsConfFile is the session's fonts.conf beside the env file, with what to write into it,
+	// both "" when no variable names it. EnvFileRemoveCommands sweep it.
+	Fonts              FontSetup
+	FontsConfFile      string
+	FontsConfContent   string
 	GitIdentity        *jsonx.OrderedMap
 	OffendingHome      string // "" when on neutral ground
 	OffendingHomeSet   bool   // true when a home contains the workspace
@@ -446,6 +452,8 @@ type PlanSession struct {
 	ID             string
 	BundleIdentity string
 	CATrust        CATrust
+	// Fonts is the session's composed fonts (fontsconf.go; the zero value composes none).
+	Fonts FontSetup
 	// Mode is who the sandbox runs as (mode.go, MMP-D2); the zero value is the second account,
 	// whose plan reads none of the fields below. It reaches the plan as RunAs, the crossing every
 	// argv is built through. The run-as-you mode also reads:
@@ -879,6 +887,8 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	// THE TLS VARIABLES first (cabundle.go), each a default under the caller's layers, so the file
 	// carries them and names the session's own CA files.
 	sandboxEnv, caBundleFile, caExtrasFile, caFollows := applyCATrust(sandboxEnv, session.CATrust, sessionKey)
+	// AND THE FONTS ROW (fontsconf.go, OQ-NX4): FONTCONFIG_FILE names the session's fonts.conf.
+	sandboxEnv, fontsFile := applyFonts(sandboxEnv, session.Fonts, sessionKey)
 	envFile := ""
 	envFileContent := SandboxEnvFileContent(sandboxEnv)
 	if envFileContent != "" {
@@ -1009,7 +1019,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 
 	caBundleContent, caExtrasContent := caTrustContents(session.CATrust, caBundleFile, caExtrasFile)
 	envFileRemove := SandboxEnvRemoveCommands(envFile)
-	for _, f := range []string{caBundleFile, caExtrasFile} {
+	for _, f := range []string{caBundleFile, caExtrasFile, fontsFile} {
 		envFileRemove = append(envFileRemove, SandboxEnvRemoveCommands(f)...)
 	}
 
@@ -1026,7 +1036,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	// their production values (MMP-D13) and the collected loopback ports (slice 7); today's in the
 	// account mode, until slice 12 moves it onto the same profile.
 	seatbelt := seatbeltProfile(workspace, SandboxHome(), readonlyRels, readonlyTargets,
-		homeReadonly, ctxLinks, relocs, cfgStrList(cfg, "devices"))
+		homeReadonly, ctxLinks, relocs, cfgStrList(cfg, "devices"), session.Fonts.SeatbeltReads())
 	if self {
 		// THE SESSION'S HOST-SERVICES DIRS, read off the endpoint variables the sandbox and its
 		// jail daemons are told (sessionServicesDirs), each granted by exact path (MMP-D15).
@@ -1036,7 +1046,8 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		// THIS SESSION'S STAGED PATHS ALONE, not the whole staging root: the root also holds
 		// every other session's env file and every other workspace's context copy.
 		params.StagedReads = []string{sessionGuestBinDir, packRoot, homeOverlay, ctxRoot, contextDir,
-			capturesRoot, envFile, daemonEnvFile, caBundleFile, caExtrasFile}
+			capturesRoot, envFile, daemonEnvFile, caBundleFile, caExtrasFile, fontsFile}
+		params.FontReads = session.Fonts.SeatbeltReads()
 		seatbelt = DenyDefaultProfile(params)
 	}
 	envDirCommands := SandboxEnvDirCommands(envFile, "")
@@ -1133,6 +1144,10 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		CAExtrasFile:    caExtrasFile,
 		CAExtrasContent: caExtrasContent,
 		CAFollows:       caFollows,
+
+		Fonts:            session.Fonts,
+		FontsConfFile:    fontsFile,
+		FontsConfContent: fontsConfContentFor(session.Fonts, fontsFile),
 
 		GitIdentity:        gitIdentity,
 		OffendingHome:      offendingHome,
@@ -2109,7 +2124,7 @@ func selfModeProblems(plan RunPlan) []string {
 	}
 	all := append(append(append([][]string(nil), plan.StageCommands...), plan.EnvFileCommands...),
 		plan.EnvFileGrantCommands...)
-	for _, f := range plan.caTrustFilePlans() {
+	for _, f := range append(plan.caTrustFilePlans(), plan.fontsFilePlans()...) {
 		all = append(append(all, f.dir...), f.grant...)
 	}
 	if plan.DaemonEnvFile != "" {
@@ -2685,6 +2700,27 @@ func (p RunPlan) caTrustFilePlans() []sessionFilePlan {
 		}
 	}
 	return files
+}
+
+// fontsFilePlans are the plan's fonts.conf as an installable file (fontsconf.go); the run-as-you
+// mode grants no access, as caTrustFilePlans.
+func (p RunPlan) fontsFilePlans() []sessionFilePlan {
+	files := fontsFiles(p.EnvFile, p.FontsConfFile, p.FontsConfContent)
+	if p.RunAs.Mode == ModeSelf {
+		for i := range files {
+			files[i].dir, _ = withoutAccessGrants(files[i].dir, nil)
+			files[i].grant = nil
+		}
+	}
+	return files
+}
+
+// fontsConfContentFor is the fonts.conf to write, or "" when no variable names the file.
+func fontsConfContentFor(f FontSetup, file string) string {
+	if file == "" {
+		return ""
+	}
+	return fontsConfContent(f)
 }
 
 // envFile and envFileCommands make a RunPlan a sandboxEnvPlan (envfile.go).

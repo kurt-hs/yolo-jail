@@ -203,9 +203,9 @@ func UnavailableEvalArgv(system string) []string {
 }
 
 // ProfilePaths derives (PATH prefix, non-PATH env) from the buildEnv store out
-// path. The profile's bin is the only PATH entry contributed; if lib/pkgconfig
-// exists, PKG_CONFIG_PATH is exposed.
-// results). checkPkgConfigDir reports whether <out>/lib/pkgconfig is a dir; pass
+// path. The profile's bin is the only PATH entry contributed; PKG_CONFIG_PATH names
+// lib/pkgconfig and share/pkgconfig, each when it exists.
+// results). checkPkgConfigDir reports whether a pkgconfig dir under <out> is a dir; pass
 // nil to use the real filesystem.
 func ProfilePaths(outPath string, checkPkgConfigDir func(string) bool) ([]string, map[string]string) {
 	out := strings.TrimSpace(outPath)
@@ -222,8 +222,16 @@ func ProfilePaths(outPath string, checkPkgConfigDir func(string) bool) ([]string
 			return err == nil && info.IsDir()
 		}
 	}
-	if isDir(pc) {
-		env["PKG_CONFIG_PATH"] = pc
+	// Both pkg-config dirs, lib first, each only when it exists: zlib keeps its .pc file in
+	// share/pkgconfig (OQ-NX4, docs/design/provisioner-sets.md §16.5).
+	var pcDirs []string
+	for _, d := range []string{pc, filepath.Join(out, "share", "pkgconfig")} {
+		if isDir(d) {
+			pcDirs = append(pcDirs, d)
+		}
+	}
+	if len(pcDirs) > 0 {
+		env["PKG_CONFIG_PATH"] = strings.Join(pcDirs, ":")
 	}
 	return pathPrefix, env
 }

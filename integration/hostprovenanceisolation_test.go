@@ -83,7 +83,7 @@ func privateStateEntries(t *testing.T, home string, hidden ...string) {
 		if slices.Contains(hidden, e.Name()) {
 			continue
 		}
-		if err := os.Symlink(filepath.Join(linked, e.Name()), filepath.Join(store, e.Name())); err != nil {
+		if err := userSymlink(filepath.Join(linked, e.Name()), filepath.Join(store, e.Name())); err != nil {
 			t.Fatal(err)
 		}
 	}

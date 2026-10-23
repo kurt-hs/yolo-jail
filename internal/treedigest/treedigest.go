@@ -25,6 +25,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/nofollow"
 )
@@ -44,13 +45,40 @@ func Of(root string) (string, error) { return OfSkipping(root, nil) }
 // entirely — not just their content, but their names, matching hostskills' copyTreeExcept,
 // which returns before it so much as creates an excluded directory. See hostskills'
 // changedExcept for the one caller that passes a set and why omitting content is honest there.
+//
+// The root's ancestors are the caller's own, followed as the OS resolves them (a user's link to a
+// moved home or state directory included); the root and everything under it follow no link
+// (nofollow.WalkBelow from the root's parent). A tree whose ancestors an agent may write takes
+// OfBelow, naming the base where the caller's own path ends, or OfCheckout.
 func OfSkipping(root string, skip map[string]bool) (string, error) {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	return OfBelow(filepath.Dir(abs), abs, skip)
+}
+
+// OfBelow is OfSkipping with the trust root named: base and its ancestors are the caller's own and
+// followed as the OS does; from base down to root no link is followed (nofollow.WalkBelow). Capture
+// admission digests a staged tree below the store's staging root this way, the capture jail's
+// workspace being staging/<id> (BG-D22).
+func OfBelow(base, root string, skip map[string]bool) (string, error) {
+	return digest(func(visit func(nofollow.Entry) error) error { return nofollow.WalkBelow(base, root, skip, visit) })
+}
+
+// OfCheckout is OfSkipping for a tree ANY of whose ancestors an agent may write, a dev override's
+// checkout: its root is reached from / following only root's links (nofollow.Walk, BG-D22).
+func OfCheckout(root string, skip map[string]bool) (string, error) {
+	return digest(func(visit func(nofollow.Entry) error) error { return nofollow.Walk(root, skip, visit) })
+}
+
+func digest(walk func(func(nofollow.Entry) error) error) (string, error) {
 	h := sha256.New()
 	// THE WALK FOLLOWS NO LINK, NOT EVEN A RACING ONE (internal/nofollow): every entry is opened from
 	// its parent's descriptor with O_NOFOLLOW and classified by what was opened, so a directory or
 	// file an agent swaps for a symlink mid-walk fails the digest instead of hashing what the link
 	// names. A device, socket or pipe has no content form here, and is an error rather than a hang.
-	err := nofollow.Walk(root, skip, func(e nofollow.Entry) error {
+	err := walk(func(e nofollow.Entry) error {
 		switch e.Kind {
 		case nofollow.Symlink:
 			fmt.Fprintf(h, "l %s %s\n", e.Rel, e.Target)
