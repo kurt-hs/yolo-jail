@@ -2,7 +2,7 @@
 title: "Plan: rebuild macos-user on one deny-by-default profile, run as you by default"
 status: accepted
 stage: DECIDED
-next: "Slice 11: a human reruns the prototype checks against the generated profile on a Mac, then the default flips; slices 12 and 13 follow"
+next: "Slice 11: preconditions 1 and 2 met on 2026-10-23 (docs/lab-reports/2026-10-23-native-mac-verification.md); precondition 3, a real self-mode launch, then the default flips"
 depends-on:
   - macos-user-model.md
 tags: [macos-user, seatbelt, plan, safehouse, home, parity]

@@ -3,7 +3,7 @@ title: "macos-user's model: a second account, or a sandbox that starts from noth
 date: 2026-10-22
 status: in-review
 stage: DESIGN
-next: "Rerun the prototype in account mode (self mode passed 2026-10-23), then rule loopback and the shared /tmp"
+next: "Slice 11's last precondition: a real self-mode `yolo -- claude` on a Mac (both prototype modes passed 2026-10-23)"
 tags: [macos-user, seatbelt, design, isolation, parity, safehouse, sandvault]
 summary: "Today macos-user runs the agent as a second Mac account under a Seatbelt profile that allows everything and denies a short list (SandVault's model). Ruled 2026-10-22: macos-user moves to Safehouse's model, the agent running as you under a profile that denies everything and allows a list, the closest macOS gets to podman's start-from-nothing container; the second account is kept from day one as an optional mode, off by default, on the same profile. This doc lays the models side by side, maps podman's pieces onto the Safehouse model, and names what the second account buys and costs."
 vantage:
@@ -219,6 +219,11 @@ yet rerun.
   succeeded. The deny now names `file-read-metadata` too. The same gap leaves the
   metadata (not the contents) of `/System/Library/Keychains` visible, which holds Apple's public
   root certificates; left as is.
+
+**Both modes after the rulings (2026-10-23, later the same day).** With loopback open and the shared
+`/tmp` closed as built, `--profile-from-yolo` passed with no FAIL in self mode (43 PASS) and in account
+mode (42 PASS), the account crossing through yolo's own run-as rule with no password. Details and the
+skips are in [the lab report](../lab-reports/2026-10-23-native-mac-verification.md#1-the-prototype-both-modes-against-the-generated-profile).
 
 ## 7. The ruled model: two modes, one profile
 
