@@ -15,6 +15,10 @@ summary: "The live workspace bind is bidirectional: a jail session can write fil
 
 **Status:** CURRENT as of 2026-09-09, verified against `40915b60`.
 
+**Conclusion drawn from this audit:** [the misguided-agent principle](misguided-agent-principle.md)
+(2026-10-22). yolo defends against an over-helpful agent, not an adversary; this inventory is why
+an adversary cannot be defended against while yolo stays a development tool.
+
 `/workspace` is a live bind of a host directory, and it is the product. The consequence nobody
 writes down is that it points **both ways**: a jail session writes a file there, and some *host*
 program later reads that file and executes what it says, as you — with your SSH keys, your `gh`

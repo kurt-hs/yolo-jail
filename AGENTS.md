@@ -397,7 +397,10 @@ live, so edits are visible on the host instantly — there is no sync step.
   build cache look like candidates and are NOT** — npm's index maps a request URL to an integrity digest and
   Go's maps a writer-chosen action ID to an output ID, so both are exactly that injection channel, inside a
   store whose *content* half really is content-addressed. Do not add a store to `hostcas.Stores` without
-  checking which half its index keys on. Also gated on matching host OS+arch, a writable non-empty source,
+  checking which half its index keys on. ⚠ **Ruled 2026-10-22, not built** ([OQ-BF11](docs/reference/disk-footprint.md#OQ-BF11), under
+  [the misguided-agent principle](docs/reference/misguided-agent-principle.md)): package caches join
+  the alias, never a tool's config or credentials, only where jail-written files end up owned by
+  the user and the platforms match. Until that lands, this paragraph describes the code. Also gated on matching host OS+arch, a writable non-empty source,
   **never macOS**, and **never a segment the user relocated**. Every failure degrades to the private copy;
   none can refuse a launch. The launch discloses the alias by name and `yolo stores` lists it as `not yolo's`,
   so no reclaimer offers to delete host bytes.

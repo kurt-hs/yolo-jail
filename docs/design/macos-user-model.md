@@ -189,6 +189,11 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
   mode, and nothing migrates, cleans up or announces the old account. Reusing an existing account
   for the optional mode is welcome if it falls out of the build, but is not required
   ([OQ-MM4](#OQ-MM4)).
+- **No per-language home grants.** Unlike Safehouse's toolchain files, the profile does not open
+  your home's toolchain folders: tools run with the agent's own home. Package caches are shared
+  with your real caches by the general rule for every backend
+  ([OQ-BF11](../reference/disk-footprint.md#OQ-BF11)), which needs the default mode's
+  ownership; their config files, which hold registry tokens, never are.
 - **Selecting the mode** is a user-scope setting; a workspace config cannot choose it. Its name and
   spelling are the plan's to choose.
 - **What done looks like:** with no setting, `yolo -- claude` in `~/code/alpha` launches with no

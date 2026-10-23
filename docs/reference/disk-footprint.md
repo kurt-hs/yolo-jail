@@ -455,6 +455,18 @@ A third disposition beside backfill and retention: make a store **not exist twic
 content-addressed host cache is bind-mounted writable at the path the jail's own copy of the tool
 uses, so the jail and the host share one store ([OQ-BF10](#why-its-this-way)).
 
+> [!IMPORTANT]
+> **Ruled 2026-10-22, not built: package caches are bridged too** ([OQ-BF11](#OQ-BF11)).
+> Under [the misguided-agent principle](misguided-agent-principle.md), the injection reason below
+> guards against a deliberate act, not a mistake a helpful agent makes. A fixed list in code of
+> package caches (npm, pnpm, yarn, pip, uv, Go's build and module caches, cargo's registry, mise's
+> downloads) joins the alias, under three lines: **caches only, never a tool's config or
+> credentials** (`.npmrc`, `.pypirc`, cargo credentials, `~/.config/<tool>`); **only where the files
+> the jail writes end up owned by you** (rootless podman, and macos-user running as you; not rootful
+> podman, not macos-user's second-account mode); and **only where the host and the jail share an
+> operating system and architecture**. Each alias is announced at launch, as today's is. Until the
+> build lands, the content-addressed rule below is what the code does.
+
 - **Content-addressed only, because of injection.** A content-addressed store's keys are digests
   of their contents, so a jail can add a wrong blob only under a name the reading tool rejects. A
   path-keyed store lets a jail write content the host tool later reads because of where it sits.
@@ -648,7 +660,8 @@ record](#the-mise-use-record).
 | OQ-BF7 | **The macOS prefix outage is fixed by a refusal, not by staging or baking.** | One measured cause; one line of machine setup is cheaper than a second delivery mechanism. |
 | OQ-BF8 | **Dissolved**: liveness moved to the runtime, so the load sentinel's size needs no derivation. | The sentinel keeps only its diagnostic role ([`image-retention.md`](image-retention.md#the-load-sentinel-and-what-it-may-be-cited-for)). |
 | OQ-BF9 | **`yolo stores` records one dated sample per store per run, bounded, default on, `--no-record` to opt out.** | A read-only command could never report a rate. |
-| OQ-BF10 | **Host-cache aliasing is for content-addressed stores only, and the reason is injection, not size.** Scope stops at pants' `lmdb_store` pending a post-implementation measurement. | A path-keyed store is a write channel from jail to host. |
+| OQ-BF10 | **Host-cache aliasing is for content-addressed stores only, and the reason is injection, not size.** Scope stops at pants' `lmdb_store` pending a post-implementation measurement. **Superseded by [OQ-BF11](#OQ-BF11) once built.** | A path-keyed store is a write channel from jail to host. |
+| <a id="OQ-BF11"></a>[OQ-BF11](#OQ-BF11) | **Package caches are aliased too: a fixed list in code, caches never configs or credentials, only where jail-written files are owned by the user, only on a matching OS and architecture, each alias announced.** Ruled 2026-10-22, not built. | Poisoning a path-keyed cache takes intent; [the misguided-agent principle](misguided-agent-principle.md) puts that out of scope, and Safehouse shares the same caches read-write. A config file holds tokens a helpful agent would use, so it never crosses. |
 | A6 | **No background or periodic reclaim: no daemon, timer or cron.** Reaffirmed as [OQ-YW1](../research/central-yolo-watcher.md#11-decision-ledger). | It adds a lifecycle yolo does not have and maximizes P7 exposure; the launch fires at least as often as the artifacts are made. |
 | <a id="BF-D1"></a>BF-D1 | **The vendor version prune runs once per launcher invocation, after the install-or-update branch, under a frozen update policy too; it yields silently to a writer holding the install lock, pays no subprocess in the steady state, and never fails the command.** | A prune moves no version, so a frozen launcher still needs it; a delete that cannot be made must not stop the program under `set -e`. |
 | <a id="BF-D2"></a>BF-D2 | **On `macos-user`, `yolo prune` asks no container runtime and `yolo stores` lists the backend's own storage.** Its running jails are its host-services sessions, read from the locks each session holds; container-only prune sections print one not-applicable line and exit 0; every staging sweep keeps live sessions' staging and declines when sessions cannot be listed; no `sudo`; only this user's sessions are read. | The backend runs no container, so both commands used to fail asking a runtime named `macos-user`. |
