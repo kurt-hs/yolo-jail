@@ -117,7 +117,7 @@ The survey that forced all of it — the inventory, the coverage matrix, the nix
 [`provisioner-evidence.md`](provisioner-evidence.md), and you need it to **check** the argument
 rather than to follow it.
 
-**Needs your ruling:** [`OQ-PS5`](#OQ-PS5) (asked only if [`OQ-PS11`](#OQ-PS11) is ruled (a)), [`OQ-PS11`](#OQ-PS11), [`OQ-NX8`](#OQ-NX8), [`OQ-NX9`](#OQ-NX9). **Ruled 2026-10-23:** [`OQ-NX4`](#OQ-NX4) (core locator rows only), [`OQ-PS14`](#OQ-PS14) and [`OQ-PS15`](#OQ-PS15) (import the host's trust, the login keychain's included, into every jail).
+**Needs your ruling:** [`OQ-PS5`](#OQ-PS5) (asked only if [`OQ-PS11`](#OQ-PS11) is ruled (a)), [`OQ-PS11`](#OQ-PS11), [`OQ-NX8`](#OQ-NX8). **Ruled 2026-10-23:** [`OQ-NX9`](#OQ-NX9) (a font-sharing opt-in, built now), [`OQ-NX4`](#OQ-NX4) (core locator rows only), [`OQ-PS14`](#OQ-PS14) and [`OQ-PS15`](#OQ-PS15) (import the host's trust, the login keychain's included, into every jail).
 
 > [!NOTE]
 > **Scope note — this doc absorbed
@@ -2045,7 +2045,7 @@ recommendation the doc rests on.
     > be trusted in the jail, regardless of how that trust got there."* The bundle also carries the
     > CAs the user's login keychain trusts for TLS, listed at launch as coming from it.
 
-7. 💬 <a id="OQ-NX9"></a>**OQ-NX9: Should there be an opt-in that shares your own fonts into a
+7. ✅ <a id="OQ-NX9"></a>**OQ-NX9: Should there be an opt-in that shares your own fonts into a
     separate-account or container jail?**
 
     Priya's colleague Dev uses the separate-account mode, and his teammate Ana a container jail on
@@ -2061,13 +2061,15 @@ recommendation the doc rests on.
     - **(b) Not until someone asks:** the launch says "your own fonts aren't shared in this mode;
       add a font package", and the opt-in is built when a real user needs it.
 
-    <!-- vantage: oq id=OQ-NX9 leaning="(b): not until someone asks. A font package covers the need, the same evidence bar as OQ-NX4's core-rows-only ruling, and the launch line names the step." -->
-
     _Leaning:_ **(b).** A font package already covers the need, and it is the same evidence bar
     [`OQ-NX4`](#OQ-NX4) was ruled on: build when a real case shows up.
 
     **Answer:**
-    > _(empty — fill in when decided)_
+    > **Ruled in review 2026-10-23, against the leaning, (a): build it now.** *"let's build it now.
+    > Because I've actually hit this issue with fonts not being available in the jail already.
+    > Because it's nice if the jail can know what my host fonts are like and poke at them."* One
+    > user-scope opt-in shares the user's own font folder read-only into the separate-account mode
+    > and container jails alike, named at each launch; run-as-you mode reads it always.
 
 ### Background to the open questions
 
