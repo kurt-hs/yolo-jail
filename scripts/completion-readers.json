@@ -2981,6 +2981,7 @@
 "docs/design/host-notch-services.md",
 "docs/design/host-render-target.md",
 "docs/design/image-paste.md",
+"docs/design/installed-launcher-provenance.md",
 "docs/design/io-priority.md",
 "docs/design/jail-lifetime-last-session-wins.md",
 "docs/design/keychain-from-a-jail.md",
@@ -4727,14 +4728,6 @@
 "internal/wirebridge",
 "internal/wirebridged"
 ]
-},
-{
-"read": [
-"flake.nix",
-"scripts/build-go.sh",
-"scripts/matched-bundle.py"
-],
-"listed": []
 },
 {
 "read": [
@@ -6676,62 +6669,61 @@
 "TestBuildVersionPrecedence": 3,
 "TestBuildVersionPrecedenceStartsNoFsmonitorDaemon": 3,
 "TestImageSourcePathsMatchTheFlake": 4,
-"TestSourceDirectoryStampsRemainInstallOnly": 83,
 "TestTheFlakeAndBuildGoShareReleaseMetadata": 51
 },
 "internal/wirebridged": {
-"TestTheAdapterFrontsExactlyThePlatformsTheDaemonReaches": 84
+"TestTheAdapterFrontsExactlyThePlatformsTheDaemonReaches": 83
 },
 "packs": {
 "TestModelListCheckPackWideMetadataPreservesTheLastReleasesProgram": 30,
-"TestShippedPacksDecodeUnderTheLastRelease": 85
+"TestShippedPacksDecodeUnderTheLastRelease": 84
 },
 "tools/build-wheels": {
-"TestPublishRequiresTrustedPublishing": 86,
-"TestTheRealReadmeKeepsNoRelativeLink": 87
+"TestPublishRequiresTrustedPublishing": 85,
+"TestTheRealReadmeKeepsNoRelativeLink": 86
 },
 "tools/release-wiring": {
-"TestAReleaseBuildPrintsItsVersionAndCommit": 89,
-"TestActualPublisherCallerRefusesDuplicatePartialOldAndFailedOriginalState": 93,
+"TestAReleaseBuildPrintsItsVersionAndCommit": 88,
+"TestActualPublisherCallerRefusesDuplicatePartialOldAndFailedOriginalState": 92,
 "TestActualTrustedUploadCallerPreservesAllAssetsNotesPrereleaseAndPartialState": 3,
-"TestClaimPublicationDependencyAndPyPIOIDCSourceCaller": 86,
+"TestClaimPublicationDependencyAndPyPIOIDCSourceCaller": 85,
 "TestConcurrentActualRequestCallersHaveOneCreateOnlyTagWinner": 3,
-"TestFailedJobsOnlyPublisherRerunRefusesAtEachActualMutationJobEntry": 86,
-"TestGoReleaserPackagingScriptAcceptsOnlyItsDeclaredInertOutputSet": 91,
-"TestHomebrewBackfillIsExplicitAndRequiresThePublishedImmutableTag": 90,
-"TestHomebrewFormulaHeredocNeverExecutesLiteralYoloForNormalOrBackfill": 91,
+"TestFailedJobsOnlyPublisherRerunRefusesAtEachActualMutationJobEntry": 85,
+"TestGoReleaserPackagingScriptAcceptsOnlyItsDeclaredInertOutputSet": 90,
+"TestHomebrewBackfillIsExplicitAndRequiresThePublishedImmutableTag": 89,
+"TestHomebrewFormulaHeredocNeverExecutesLiteralYoloForNormalOrBackfill": 90,
 "TestHomebrewReleasePresenceGateRefusesDraftOrUnknown": 3,
 "TestHostJustReleaseRefusesAVersionArgument": 3,
 "TestHostJustReleaseSubmitsOnlyFrozenSHAAfterLocalChangelogCheck": 3,
-"TestImageCacheBuildRefusesAnUnexpectedOutputBeforeAnyCopy": 86,
-"TestImageCacheBuildUploadsExactlyTheImagesAndBothCopierOutputs": 86,
-"TestImageCacheImportAcceptsUnsignedRunnerBuiltPaths": 86,
-"TestMainBackfillCallerUsesTrustedToolsWhenOldTagHasNone": 91,
-"TestMainScopedReleaseCallerUsesAnchoredRunNamesAndTrustedMainInputs": 88,
-"TestOtherNormalPublicationJobsGuardBeforeCredentialSteps": 94,
+"TestImageCacheBuildRefusesAnUnexpectedOutputBeforeAnyCopy": 85,
+"TestImageCacheBuildUploadsExactlyTheImagesAndBothCopierOutputs": 85,
+"TestImageCacheImportAcceptsUnsignedRunnerBuiltPaths": 85,
+"TestMainBackfillCallerUsesTrustedToolsWhenOldTagHasNone": 90,
+"TestMainScopedReleaseCallerUsesAnchoredRunNamesAndTrustedMainInputs": 87,
+"TestOtherNormalPublicationJobsGuardBeforeCredentialSteps": 93,
 "TestReleaseArtifactHandoffFailsClosedOnUnexpectedPathsTypesAndDigests": 3,
-"TestReleaseRequestEligibilityAllowsAResumeToReachTheWriteJob": 92,
-"TestReleaseWorkflowsAreMainDispatchedAndKeepWritesOffTargetSource": 88,
+"TestReleaseRequestEligibilityAllowsAResumeToReachTheWriteJob": 91,
+"TestReleaseWorkflowsAreMainDispatchedAndKeepWritesOffTargetSource": 87,
 "TestRequestCallerRejectsWrongRefAndRerunBeforeAnyWrite": 3,
 "TestRequestHostRecipeDoesNotTagLocally": 28,
-"TestRequestJobTimeoutExceedsItsWaits": 92,
+"TestRequestJobTimeoutExceedsItsWaits": 91,
 "TestRequestMainCallerWaitsForExactOriginalReleaseSuccessBeforePublishDispatch": 3,
 "TestRequestResumesATagOnlyReleaseWithoutTouchingTheTag": 3,
 "TestRequestTapDispatchFailureLeavesTheRequestGreen": 3,
-"TestShellHelpersFailClosedAndAllWorkflowCommandsParse": 88,
+"TestShellHelpersFailClosedAndAllWorkflowCommandsParse": 87,
 "TestStandaloneCLIHasNoFixtureTrustHook": 3,
-"TestTrustedEligibilityRejectsUnmergedSourceBeforeHostileTargetCanRun": 92,
+"TestTrustedEligibilityRejectsUnmergedSourceBeforeHostileTargetCanRun": 91,
 "TestTrustedHelperCLIUsesOnlyExplicitFixtureRoots": 3,
 "TestValidateReleaseAssetDirectoryAgainstPinnedGoreleaserContract": 3,
-"TestWorkflowHelperCallsAreExecutableAndTargetCheckoutCannotPersistCredentials": 88
+"TestWorkflowHelperCallsAreExecutableAndTargetCheckoutCannotPersistCredentials": 87
 },
 "tools/tap-install-check": {
-"TestReleasePushesTheFormulaTheDocsInstall": 99,
-"TestReleaseRunNameTransportReachesTheProductionTapCaller": 91,
-"TestTheJudgeAcceptsWhatTheLastReleaseReportsOnABareMac": 95,
-"TestTheWorkflowCarriesNoSecrets": 98,
-"TestTheWorkflowInstallsWhatTheDocsSay": 96,
-"TestTheWorkflowRunsAfterEachReleaseWeeklyAndByHand": 97
+"TestReleasePushesTheFormulaTheDocsInstall": 98,
+"TestReleaseRunNameTransportReachesTheProductionTapCaller": 90,
+"TestTheJudgeAcceptsWhatTheLastReleaseReportsOnABareMac": 94,
+"TestTheWorkflowCarriesNoSecrets": 97,
+"TestTheWorkflowInstallsWhatTheDocsSay": 95,
+"TestTheWorkflowRunsAfterEachReleaseWeeklyAndByHand": 96
 }
 }
 }
