@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
@@ -49,6 +50,9 @@ type packBuildOptions struct {
 	// prebuiltOptIn is the user's `programs.overrides.<bin>: {"prebuilt": true}` (BG-D18), read once
 	// per run (config.ProgramPrebuiltOptIns).
 	prebuiltOptIn map[string]bool
+	// overrides are the user's dev overrides (config.ProgramOverrides), read once per run: a program
+	// one names is built from that checkout in place of its pack's tree (BG-D19).
+	overrides map[string]config.ProgramOverride
 }
 
 // parsePackBuildArgs reads `[<pack>...] [--force] [--at jail|host]`; the error is a usage refusal.
@@ -134,7 +138,7 @@ func packBuild(args []string, out, errw io.Writer, color bool) int {
 		}
 	}
 	rt := packBuildRuntime(opts.at)
-	overrides := config.ProgramOverrides(func(msg string) { fmt.Fprintf(errw, "Warning: %s\n", msg) })
+	opts.overrides = config.ProgramOverrides(func(msg string) { fmt.Fprintf(errw, "Warning: %s\n", msg) })
 	opts.prebuiltOptIn = config.ProgramPrebuiltOptIns(nil)
 	programs := packload.PackTreePrograms(packs)
 	forks := append(packload.Forks(packs), packload.PatchedTrees(packs)...)
@@ -152,11 +156,6 @@ func packBuild(args []string, out, errw io.Writer, color bool) int {
 				continue
 			}
 			said = true
-			if ov, ok := overrides[f.Bin]; ok {
-				pr.Printf("[dim]note[/dim]       %s  [dim]a dev override (programs.overrides) runs %s in its place; "+
-					"this builds the pack's copy, which serves once the override is removed[/dim]",
-					richtext.Escape(f.Label()), richtext.Escape(ov.Path))
-			}
 			if !packBuildOne(pr, f, rt, opts, errw, color) {
 				failed = true
 			}
@@ -256,7 +255,11 @@ func packBuildOne(pr richtext.Printer, f packload.Fork, rt string, opts packBuil
 	// WHICH BYTES, as a launch resolves them (packload.PackTreeResolve): the build of the pack's tree,
 	// or its prebuilt artifact where the tree is absent or the user opted into it (BG-D18). Never a
 	// prebuilt in place of a build that cannot run here (OQ-BG2).
-	pin := packload.PackTreeResolve(f, platform, opts.prebuiltOptIn[f.Bin])
+	//
+	// A DEV OVERRIDE builds the user's checkout in place of the pack's tree, as a launch does
+	// (run.ResolvePackTreeProgram, BG-D19), and the result line names the checkout.
+	pin := run.ResolvePackTreeProgram(f, platform, opts.prebuiltOptIn[f.Bin], opts.overrides)
+	label = richtext.Escape(pin.Fork.Label())
 	if pin.Reason != "" {
 		return fail(pin.Reason)
 	}

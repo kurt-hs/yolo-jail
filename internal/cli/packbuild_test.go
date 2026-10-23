@@ -189,16 +189,22 @@ func TestPackBuildNamesYoloCaptureForAFork(t *testing.T) {
 	}
 }
 
-// A dev override is noted and does not stop the build.
-func TestPackBuildNotesADevOverrideAndStillBuilds(t *testing.T) {
+// A DEV OVERRIDE IS WHAT `yolo pack build` BUILDS (OQ-BG3's ruling): the program is built from the
+// checkout, as a launch builds it, and the line names the checkout; a second run is up to date. Red if
+// packBuildOne stops passing the overrides to ResolvePackTreeProgram (it then builds the pack's tree).
+func TestPackBuildBuildsADevOverridesCheckout(t *testing.T) {
 	override := floortest.ResolvedTemp(t)
+	writeFile(t, filepath.Join(override, "VERSION"), "dev\n")
 	packBuildHome(t, packBuildFixtureBuild, `"programs":{"overrides":{"x":{"path":"`+override+`"}}},`)
 	runs := 0
 	withFakeCaptureJail(t, fakePackBuildJail(t, &runs, 0))
 	rc, out, errw := packBuildRun(t, "fx")
-	if rc != 0 || runs != 1 || !strings.Contains(out, "dev override") || !strings.Contains(out, override) ||
-		!strings.Contains(out, "built") {
-		t.Fatalf("rc %d, %d runs, want the override noted and a build\nout:\n%s\nerr:\n%s", rc, runs, out, errw)
+	if rc != 0 || runs != 1 || !strings.Contains(out, "built from your checkout "+override) ||
+		!strings.Contains(errw, "your checkout "+override+" at tree digest") {
+		t.Fatalf("rc %d, %d runs, want one build of the checkout\nout:\n%s\nerr:\n%s", rc, runs, out, errw)
+	}
+	if rc, out, _ := packBuildRun(t, "fx"); rc != 0 || runs != 1 || !strings.Contains(out, "up to date") {
+		t.Errorf("a second run: rc %d, %d runs, want up to date\n%s", rc, runs, out)
 	}
 }
 

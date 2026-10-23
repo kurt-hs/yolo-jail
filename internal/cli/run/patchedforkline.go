@@ -297,6 +297,12 @@ func (o *Options) noteAttachForkBuilds(handed map[string]HandedFork) {
 			out.printf("%s", richtext.Escape(PrebuiltLine(bin, h.PrebuiltPack, h.PrebuiltWhy, h.PrebuiltSHA256, h.PrebuiltURL)))
 			continue
 		}
+		if h.Checkout != "" && h.Key != "" {
+			// A PACK-TREE PROGRAM FROM THE USER'S CHECKOUT: the build the fresh launch made or reused.
+			out.printf("%s", richtext.Escape(CheckoutLine(bin, h.Checkout, "the build at tree digest "+
+				shortDigest(h.CheckoutDigest)+" this jail's launch made; an edit since is built at the next fresh launch")))
+			continue
+		}
 		if h.Fork == "" {
 			continue // a plain fork's program: its pin, in the fork block above, is what it runs
 		}

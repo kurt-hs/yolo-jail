@@ -228,6 +228,14 @@ func PackTreeBuildSource(pack, from string) string {
 	return "pack:" + pack + "/" + from
 }
 
+// PackTreeCheckoutBuildSource is the SOURCE string of a pack-tree program built from the user's own
+// checkout at dir in place of its pack's `from` (`programs.overrides.<bin>.path`, BG-D19):
+// "checkout:<pack>:<dir>". It never equals a pack's own build source ("pack:…") nor a fork's (a
+// packsrc address), so a checkout's builds are kept, selected and reused apart from the pack's.
+func PackTreeCheckoutBuildSource(pack, dir string) string {
+	return "checkout:" + pack + ":" + dir
+}
+
 // PackTreeProgramDir is the home-relative directory a pack-tree program lives in: its source
 // directory copied there and built in place (BG-D4), so every path the build embeds is under the
 // home, where the capture's relocation records it.

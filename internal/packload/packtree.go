@@ -34,7 +34,19 @@ func (f Fork) BuildSource() string {
 	if !f.IsPackTree() {
 		return ""
 	}
+	if f.Checkout != "" {
+		return packdecl.PackTreeCheckoutBuildSource(f.Pack, f.Checkout)
+	}
 	return packdecl.PackTreeBuildSource(f.Pack, f.From)
+}
+
+// SourceSaid is the source a pack-tree build's lines name: "your checkout <dir>" when it builds the
+// user's checkout (Checkout), else the pack's `from`.
+func (f Fork) SourceSaid() string {
+	if f.Checkout != "" {
+		return "your checkout " + f.Checkout
+	}
+	return f.From
 }
 
 // PackTreeRecipe is packdecl.PackTreeRecipe for f's declaration, "" for a fork.
@@ -89,9 +101,28 @@ func (f Fork) PrebuiltOptInStep(platform string) string {
 //     the artifact's sha256 — the only bytes the pack offers, so nothing is substituted; otherwise
 //     a reason naming the pack, `from`, the platform and the platforms `prebuilt` does declare.
 //
+// A CHECKOUT (Checkout set: the user's `programs.overrides.<bin>.path`, BG-D19) is always the
+// BUILD, its revision the checkout's tree digest; an absent or unreadable checkout is a reason,
+// never the prebuilt. Validation keeps `path` and `prebuilt` apart, so usePrebuilt is never set
+// beside it.
+//
 // A prebuilt pin's Fork carries the artifact (Prebuilt) and why it was chosen (PrebuiltWhy).
 func PackTreeResolve(f Fork, platform string, usePrebuilt bool) ForkPin {
 	p := ForkPin{Fork: f}
+	if f.Checkout != "" {
+		digest, err := f.Digest()
+		switch {
+		case err != nil:
+			p.Reason = "your checkout " + f.Checkout + " could not be read (" + err.Error() + ") — fix it, or remove " +
+				"programs.overrides." + f.Bin + " from ~/.config/yolo-jail/config.jsonc to build pack " + f.Pack + "'s own " + f.From
+		case digest == "":
+			p.Reason = "your checkout " + f.Checkout + " is gone — restore it, or remove programs.overrides." + f.Bin +
+				" from ~/.config/yolo-jail/config.jsonc to build pack " + f.Pack + "'s own " + f.From
+		default:
+			p.Commit = digest
+		}
+		return p
+	}
 	pb, declared := f.Prebuilts[platform]
 	have := "none"
 	if ps := f.PrebuiltPlatforms(); len(ps) > 0 {
@@ -144,11 +175,14 @@ func clonePrebuilts(in map[string]packdecl.PrebuiltBuild) map[string]packdecl.Pr
 	return out
 }
 
-// SourceDir is the absolute source directory a pack-tree build copies and digests: From under
-// the pack's root. "" for a fork.
+// SourceDir is the absolute source directory a pack-tree build copies and digests: the user's
+// checkout when one replaces From (Checkout), else From under the pack's root. "" for a fork.
 func (f Fork) SourceDir() string {
 	if !f.IsPackTree() {
 		return ""
+	}
+	if f.Checkout != "" {
+		return f.Checkout
 	}
 	return filepath.Join(f.Root, filepath.FromSlash(f.From))
 }

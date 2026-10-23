@@ -12,6 +12,10 @@ package run
 // {"prebuilt": true}`, BG-D18) — never substituted for a present source on yolo's own (OQ-BG2, §7,
 // packload.PackTreeResolve): its sha256 is the pin, the build slot fetches and verifies it, and the
 // launch discloses it with that sha256 on every fresh launch and attach (prebuiltline.go).
+//
+// The user's DEV OVERRIDE (`programs.overrides.<bin>: {"path": …}`, programoverrides.go) replaces the
+// staged `from` with their checkout, digested where it sits on disk at this launch: built when it
+// changed, reused when it did not, and named on every fresh launch and attach (OQ-BG3, BG-D19).
 
 import (
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
@@ -38,6 +42,12 @@ func (o *Options) packTreePins(packs []*packload.Pack, rt string) []packload.For
 	// THE USER'S OPT-IN, read from the user file alone: the one way a present source gives way to
 	// the prebuilt (BG-D18).
 	optIn := config.ProgramPrebuiltOptIns(nil)
+	// AND THE USER'S CHECKOUTS (programs.overrides.<bin>.path), from the same file. Never under the
+	// seal, whose launch builds what the packs declare and nothing the user develops.
+	var overrides map[string]config.ProgramOverride
+	if !o.Sealed {
+		overrides = config.ProgramOverrides(nil)
+	}
 	for _, f := range progs {
 		// EVERY BACKEND BUILDS A PACK'S TREE: a container backend in its sealed build jail, and
 		// macos-user in the darwin sealed act (FP-D24's path), in either mode. A launch never meets the
@@ -45,13 +55,13 @@ func (o *Options) packTreePins(packs []*packload.Pack, rt string) []packload.For
 		// backend's preflight refuses that launch, naming the setup, before any build is pinned
 		// (Run's macosUserPreflight). A build that cannot run is refused, never answered with the
 		// prebuilt (OQ-BG2).
-		out = append(out, packload.PackTreeResolve(f, platform, optIn[f.Bin]))
+		out = append(out, ResolvePackTreeProgram(f, platform, optIn[f.Bin], overrides))
 	}
 	return out
 }
 
-// addPackTreePins joins this launch's pack-tree pins to the fork pins the slot reads, the dev
-// overrides dropped as they are from the forks: keyed on their staged tree's digest, they ride the
+// addPackTreePins joins this launch's pack-tree pins to the fork pins the slot reads: keyed on their
+// staged tree's (or the user's checkout's) digest, they ride the
 // forks' trigger and slot from here, and say nothing above the dispatch — a hit is silent, and a
 // build says its own lines (BG-D10). Called on the FRESH-LAUNCH path alone, just before the slot,
 // on both arms: the digest reads each source directory whole, which an attach and a dry run never
@@ -63,5 +73,5 @@ func (o *Options) addPackTreePins(packs []*packload.Pack, rt string) {
 			kept = append(kept, p)
 		}
 	}
-	o.forkPinned = dropOverriddenPins(append(kept, o.packTreePins(packs, rt)...), o.programOverridden)
+	o.forkPinned = append(kept, o.packTreePins(packs, rt)...)
 }

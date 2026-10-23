@@ -1117,29 +1117,26 @@ the setting chose it. Where the pack declares no artifact for the platform, the 
 program, naming the platforms it does declare. It cannot sit beside `path` in the same entry, and a
 workspace config cannot set it.
 
-**A dev override runs your own checkout instead** (*dev override* is the design's coined term, its
-[§5](../design/pack-buildable-programs.md#5-the-dev-override)): `programs.overrides.<bin>` =
-`{path, run?}` in the user config, never a workspace's (`yolo config-ref` has the key). It applies
-to any program a selected pack declares, whatever its `via`, and wins over the pack's build and
-`prebuilt`: that program's build is not run, and its launcher runs `<path>/<run>` as found, with no
-install and no build ([OQ-BG3](../design/pack-buildable-programs.md#OQ-BG3)'s leaning). `run`
-defaults to the program's own, which only a `via: "pack"` program has. On podman and Apple
-Container a path inside the workspace runs from `/workspace/<rel>` and any other is bound read-only
-at `/ctx/program-overrides/<bin>`, so an edit there shows at the next invocation with no relaunch.
-Every fresh launch and attach prints one line naming the file that runs. The host refuses the
+**A dev override builds the program from your own checkout instead** (*dev override* is the
+design's coined term, its [§5](../design/pack-buildable-programs.md#5-the-dev-override)):
+`programs.overrides.<bin>` = `{path}` in the user config, never a workspace's (`yolo config-ref` has
+the key). The checkout takes the place of the pack's `from` and nothing else changes: at each fresh
+launch, `yolo host` launch and `yolo pack build`, the program is built from the checkout with the
+pack's own `build` and `run`, in the same sealed build, store and lock, keyed by the checkout's tree
+digest as it sits on disk (uncommitted edits included, `.git` skipped, git-ignored files included,
+[BG-D20](../design/pack-buildable-programs.md#BG-D20)). An unchanged checkout reuses its build; an
+edit is built at the next fresh launch, never in a running jail
+([OQ-BG3](../design/pack-buildable-programs.md#OQ-BG3)). Every fresh launch prints one line naming
+the checkout and whether it was rebuilt or reused; an attach names the build its launch made. A
+build that fails is the same fatal refusal as the pack's own, naming the log, the retry and
+`YOLO_ALLOW_MISSING_PROGRAMS=1`, and never falls back to the pack's copy. The host refuses the
 program, naming the path and the key, when the path does not resolve (symlinks first) to a
-directory, sits at the credential boundary (`paths.WorkspaceScopeBreach`), or names no file to run;
-the launcher refuses when the file is missing (naming the pack's `build` line) or not executable.
-Either refusal stops the launch through the readiness act, with `YOLO_ALLOW_MISSING_PROGRAMS=1` as
-the hatch, and never falls back to the pack's copy. On macos-user the program runs the checkout at
-its own path: one outside the workspace is also linked read-only at
-`$YOLO_CONTEXT_DIR/program-overrides/<bin>`, and the sandbox profile lets the agent read and run it
-but not write it. The siting rules of a `mounts` entry apply, so a checkout inside a home folder is
-refused in the account mode, where the sandbox account cannot reach it, and not in the run-as-you
-mode. At `yolo host` the same checks apply, and the floor's entry for the program runs the file from
-the host path itself, so an edit there shows at the next invocation; `yolo host --` and `yolo host
-env` print the same line, and a missing file refuses the program, naming the file, the key and the
-pack's build line.
+directory or sits at the credential boundary (`paths.WorkspaceScopeBreach`). **It applies to a
+`via: "pack"` program only** ([BG-D19](../design/pack-buildable-programs.md#BG-D19)): an override
+naming any other program a selected pack declares refuses the launch, `yolo host` and `yolo check`,
+naming a fork pack (`via: "source"`, `fork_of`, a `git+file://` source) as the way to build that
+program from a checkout. An override naming no selected program does nothing, and `yolo check` lists
+it.
 
 **`yolo host` delivers it from yolo's floor**
 ([§9](../design/pack-buildable-programs.md#9-notch-and-backend-coverage)). The floor stages the pack
@@ -1165,8 +1162,8 @@ command to retry. It exits 1 when any program failed.
 on Linux is the jail's build and on a Mac the sandbox's sealed macOS build. With no sandbox account in
 the account mode it refuses, naming `yolo macos-setup` and, where a darwin `prebuilt` is declared, the
 opt-in. A fork is skipped with a
-line naming `yolo capture <bin>`, its explicit rebuild, and a dev override is noted without stopping
-the build. It runs on the host only and refuses in a jail with exit 2, as it does for a pack name
+line naming `yolo capture <bin>`, its explicit rebuild, and a program with a dev override is built
+from its checkout, as a launch builds it. It runs on the host only and refuses in a jail with exit 2, as it does for a pack name
 the config does not select.
 
 **The selection rewrites the base.** Where the selected set is final, a copy of the base pack's

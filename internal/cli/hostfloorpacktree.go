@@ -15,6 +15,10 @@ package cli
 //     (`programs.overrides.<bin>: {"prebuilt": true}`, BG-D18). An artifact never stands in for a
 //     present source on yolo's own (OQ-BG2): a build that cannot run here — no runtime on Linux, no
 //     sandbox account on a Mac — is the floor's refusal, which names the setup step and the opt-in.
+//   - THE USER'S CHECKOUT (`programs.overrides.<bin>: {"path": …}`, §5, BG-D19) replaces the staged
+//     `from` exactly as at a jail launch (run.ResolvePackTreeProgram): digested where it sits on disk
+//     at this resolution, built when it changed and reused when it did not, with a line naming it on
+//     every launch while it serves.
 //   - THE ACT is buildFork, the one every launch runs: the sealed build jail, the host's copy of a tree
 //     with no build line, or the verified fetch, under the build's lock. Its failure names the build's
 //     log and the retry, `yolo pack build <pack> --at host` (§8).
@@ -99,7 +103,7 @@ func floorPackTree(p hostfloor.Program, pack *packload.Pack, store *capture.Stor
 	// never substituted for a present source (OQ-BG2): only the user's opt-in (BG-D18) or an absent
 	// source takes it.
 	onMac := strings.HasPrefix(platform, "darwin/")
-	pin := packload.PackTreeResolve(*fork, platform, config.ProgramPrebuiltOptIns(nil)[fork.Bin])
+	pin := run.ResolvePackTreeProgram(*fork, platform, config.ProgramPrebuiltOptIns(nil)[fork.Bin], config.ProgramOverrides(nil))
 	if pin.Reason != "" {
 		return hostfloor.PackTreeDelivery{Reason: pin.Reason}
 	}
@@ -118,6 +122,11 @@ func floorPackTree(p hostfloor.Program, pack *packload.Pack, store *capture.Stor
 	if f.IsPrebuilt() {
 		d.Version = "prebuilt sha256 " + shortSHA(b.Commit)
 		d.Disclosure = run.PrebuiltLine(f.Bin, f.Pack, f.PrebuiltWhy, f.Prebuilt.SHA256, f.Prebuilt.URL)
+	}
+	if f.Checkout != "" {
+		d.Version = "checkout tree " + shortSHA(b.Commit)
+		d.Disclosure = run.CheckoutLine(f.Bin, f.Checkout, "at tree digest "+shortSHA(b.Commit)+
+			"; an edit there is built at the next `yolo host` launch")
 	}
 	d.Hit = func() (*capture.Entry, error) {
 		entry, _, err := resolveForkBuild(store, f.Bin, b.Platform, b.selectSource(), b.Commit, b.recipe())

@@ -13,7 +13,8 @@ summary: "Build hand-off for the pack-buildable-programs design: via \"pack\" de
 authorization to build tonight on the design's leanings. [OQ-BG1](pack-buildable-programs.md#OQ-BG1)
 (Tasks 5 and 8) and [OQ-BG2](pack-buildable-programs.md#OQ-BG2) (Tasks 2, 7 and 10) were ruled on
 2026-10-23, and the tasks below carry the rulings. [OQ-BG3](pack-buildable-programs.md#OQ-BG3)
-(Task 8) is open.
+(Tasks 8 to 10) was ruled the same day against its leaning: a dev override is built from its
+checkout at each launch, and the tasks carry that too.
 
 **Design:** [`pack-buildable-programs.md`](pack-buildable-programs.md).
 
@@ -65,14 +66,10 @@ Never `--no-verify`; never `just install` in the jail.
 | `internal/cli/pack.go` | `packMain` dispatch `case "build"` (~`:294`); help text | 6 |
 | `internal/cli/packtreeprebuilt.go` | **new** — prebuilt fetch and host admission | 7 |
 | `internal/cli/packbinaries.go` | `installPackBinaries` (~`:41`) also prefetches selected programs' `prebuilt` | 7 |
-| `internal/entrypoint/overridelauncher.go` | **new** — override launcher template and generator | 8 |
-| `internal/entrypoint/shims.go` | `GenerateAgentLaunchers` (~`:471`): an override wins over the via's template | 8 |
-| `internal/cli/run/ctxmounts.go` | override context mounts (`/ctx/program-overrides/<bin>`) folded into the one reading (~`:55`) | 8 |
-| `internal/cli/run/assemble.go` | pass `YOLO_PROGRAM_OVERRIDES` (JSON bin → `{dir, run, host, build}`) | 8 |
+| `internal/cli/run/programoverrides.go` | the override puts its checkout in place of `from` (`ResolvePackTreeProgram`), its line, and the refusal of a non-pack-tree program | 8 |
 | `internal/cli/run/programlines.go` | **new** — override and prebuilt disclosure lines, fresh launch and attach | 7, 8 |
-| `internal/hostfloor/floor.go`, `ensure.go`, `built.go` | pack-tree arm (no pin); override arm writes `<floor>/bin/<bin>` exec'ing the host path | 9 |
+| `internal/hostfloor/floor.go`, `ensure.go`, `built.go` | pack-tree arm (no pin), which builds an override's checkout the same way | 9 |
 | `internal/cli/hostfloor.go` | `wireFloorBuild` (~`:176`) resolves pack-tree builds by digest | 9 |
-| `internal/macosuser/seatbelt.go`, `seatbeltdeny.go` | read and exec grant for override context links | 10 |
 | `integration/packtreeprogram_test.go` | **new** — the design's six done steps | 4, 5, 7, 8 |
 | `docs/reference/pack-system.md` | program schema: `via: "pack"`, `from`, `build`, `run`, `prebuilt` | 1 |
 | `CHANGELOG.md` | `[Unreleased]` → `### Added`, one bold-lead paragraph | 6 |
@@ -386,7 +383,7 @@ printf '#!/bin/sh\necho x-%s\n' "$(cat VERSION)" > x
   - No argument means every selected pack.
   - Each program prints one line: up to date, built (with digest and time), or failed (with its
     log).
-  - A fork prints `yolo capture <bin>`, and an override is noted.
+  - A fork prints `yolo capture <bin>`, and an override's checkout is what it builds.
   - Exit 0, or 1 on any failure. In a jail it refuses with exit 2, naming the host command.
 - **Tests first:** `internal/cli/packbuild_test.go`, against a fake build seam:
   - two calls build once and then report "up to date";
@@ -421,39 +418,44 @@ printf '#!/bin/sh\necho x-%s\n' "$(cat VERSION)" > x
     the launch prints a line containing the first 12 hex digits of its sha256 (done step 5).
 - **Commit:** `feat(build): fall back to a pack's verified prebuilt artifact when it has no source`
 
-### Task 8 — the dev override on container backends (after 2 and 5)
+### Task 8 — the dev override builds its checkout (after 2 and 5)
+
+Rewritten to [OQ-BG3](pack-buildable-programs.md#OQ-BG3)'s ruling (2026-10-23) and
+[BG-D19](pack-buildable-programs.md#BG-D19); the live delivery this task first built is deleted.
 
 - **Settled:**
-  - an override wins over every rung, for any program, keyed by `bin`;
-  - `path` inside the workspace runs from `/workspace/<rel>`; otherwise from a read-only
-    `/ctx/program-overrides/<bin>`;
-  - a path at the credential boundary is refused;
-  - the launcher execs `<dir>/<run>` and never builds or falls through
-    ([OQ-BG3](pack-buildable-programs.md#OQ-BG3) leaning);
-  - install-only checks that the file exists, and a missing one refuses the launch
-    ([OQ-BG1](pack-buildable-programs.md#OQ-BG1) leaning), naming the build line;
-  - disclosed on every fresh launch and attach.
+  - an override applies to a pack-tree program only, keyed by `bin`; one naming any other declared
+    program refuses the launch, `yolo host` and `yolo check`, naming a fork pack as the next step;
+  - the checkout replaces `from` in the fork route's build act: the same seal, the pack's own
+    `build` and `run`, the same store, lock and fatal refusal, keyed by the checkout's tree digest
+    (`.git` skipped, git-ignored files included, [BG-D20](pack-buildable-programs.md#BG-D20)) under
+    the build source `checkout:<pack>:<path>`;
+  - a path at the credential boundary is refused; the override's `run` is retired;
+  - no mount, link, host-path run or run-time build; an edit is built at the next fresh launch;
+  - every fresh launch names the checkout and whether its build was rebuilt or reused; an attach
+    names the build its launch made.
 - **Tests first:**
-  - unit: the override launcher's text for `{dir:/ctx/program-overrides/board, run:dist/board.js}`
-    execs exactly that path with `"$@"`;
-  - an override for an npm program without `run` refuses it, naming `programs.overrides.<bin>.run`;
-  - `path: "$HOME"` is refused through `WorkspaceScopeBreach`;
-  - a symlinked path is resolved before the check;
-  - integration `TestPackTreeProgramOverrideRunsTheCheckout`: user config
-    `programs.overrides.x.path` = `<workspace>/dev/x`, with `run` = `x`, a script printing
-    `dev-1`; the launch prints the override line and `yolo -- x` prints `dev-1`;
-  - rewrite the script to print `dev-2` and run `yolo -- x` again on the same jail via attach:
-    `dev-2` with no fresh launch (done step 4).
+  - unit (`internal/cli/run/programoverrides_test.go`): the path is resolved and a credential
+    boundary refused; the checkout's digest keys the build; a launch through the fake podman
+    builds from the checkout and names it, rebuilt then reused; an override of an npm program
+    refuses the launch with no argv; an attach names the checkout;
+  - `yolo check` (`internal/cli/check/programoverride_test.go`) fails an override of a non-pack-tree
+    program;
+  - integration `TestPackTreeProgramOverrideBuildsTheCheckout` (done step 4): set the override and
+    launch, and it builds from the checkout and the launch names it; relaunch unchanged, and
+    nothing is rebuilt; edit the checkout and relaunch, and it rebuilds;
+    `TestPackTreeProgramOverrideBuildFailureRefusesTheLaunch` covers a checkout the build fails on.
 - **Fences:** `internal/macosuser` (Task 10), `internal/hostfloor` (Task 9).
-- **Commit:** `feat(launch): run a program from a user-scope dev override`
+- **Commit:** `feat(build): build a dev override's checkout like its pack's tree at each launch`
 
 ### Task 9 — `yolo host` on Linux (after 5 and 8)
 
 - **Settled:** the floor builds a pack-tree program through the same act, resolved by digest with
-  no pin, and materializes it relocated as for a fork (FP-D16). An override writes
-  `<floor>/bin/<bin>` to exec the host path.
+  no pin, and materializes it relocated as for a fork (FP-D16). An override builds its checkout
+  the same way, at each `yolo host` launch.
 - **Tests first:** `internal/hostfloor/built_test.go` gains a pack-tree program that needs no pin
-  and resolves by digest; `internal/cli/hostfloorfork_test.go` gains an override arm.
+  and resolves by digest; `internal/cli/hostfloorpacktree_test.go` gains an override arm that
+  builds the checkout, reuses it unchanged and rebuilds an edit at the next launch.
 - **Gates:** `go test ./internal/hostfloor/... ./internal/cli/ -run HostFloor`; on a Linux host
   (not nested), done steps 1–6 with `yolo host -- x`.
 - **Commit:** `feat(host): deliver pack-tree programs and dev overrides on the host floor`
@@ -465,10 +467,8 @@ printf '#!/bin/sh\necho x-%s\n' "$(cat VERSION)" > x
   - the prebuilt takes its darwin entry where the source is absent or the user opted in. With
     no sandbox account a present source is refused, naming `yolo macos-setup` and the opt-in
     ([OQ-BG2](pack-buildable-programs.md#OQ-BG2), ruled);
-  - an override is a `ContextLink` that the profile grants read and exec under.
-- **Tests first:** on Linux, the rendered profile for a launch with one override contains the read
-  and exec rules under the resolved path, in both profiles; extend
-  `TestEverySeatbeltDenyCarriesATestID` if a rule id is added. On a Mac,
+  - an override's checkout is built by the same darwin act; the profile grants it nothing.
+- **Tests first:** on Linux, the darwin act's staging of a checkout. On a Mac,
   `integration/macosuserprograms_test.go` gains the six done steps under `macos-user`.
 - **Gates:** Linux unit tests. The native evidence is a Mac run of `-run '^TestMacosUser.*PackTree'`,
   or a `macos-user.yml` dispatch, recorded with host and date.
@@ -485,7 +485,8 @@ real-Mac run of the integration tests under `YOLO_RUNTIME=container`, which is o
   - `run` naming a directory;
   - an empty `prebuilt`;
   - a platform `prebuilt` lacks;
-  - an override for an undeclared `bin`, reported by `yolo check` as information.
+  - an override for an undeclared `bin`, reported by `yolo check` as information;
+  - an override for a declared program that is not a pack-tree program, failed by `yolo check`.
 - **Integration:** `integration/packtreeprogram_test.go` covers done steps 1–6. It is the test
   that catches a regression end to end; the unit tests do not.
 - **Tests that must change, and be rewritten to the new behavior:** `TestKnownViasCoversTheShippedMechanisms`'s
@@ -504,7 +505,7 @@ real-Mac run of the integration tests under `YOLO_RUNTIME=container`, which is o
 - **Error text** is the implementer's to word. The facts each refusal carries are fixed in the
   design's [precedence table](pack-buildable-programs.md#4-precedence-one-resolver-four-rungs).
 - **Cheap, and the implementer's choice:** map types; whether `PackTreePrograms` lives in a new
-  file; the override env var's JSON field names.
+  file.
 - **Stop and ask:** anything that would change a fork's recipe or id, so that existing store
   entries stop hitting, or that would let a launch build inside a jail.
 
@@ -518,4 +519,5 @@ real-Mac run of the integration tests under `YOLO_RUNTIME=container`, which is o
   for a build that cannot run ([P5](pack-buildable-programs.md#P5),
   [OQ-BG2](pack-buildable-programs.md#OQ-BG2)).
 - Don't add a stat cache for the digest before a measurement asks for one.
-- Don't build an override ([OQ-BG3](pack-buildable-programs.md#OQ-BG3)).
+- Don't deliver an override live, or build one anywhere but the build act
+  ([OQ-BG3](pack-buildable-programs.md#OQ-BG3)).

@@ -64,6 +64,11 @@ type HandedFork struct {
 	PrebuiltWhy    string `json:"prebuilt_why,omitempty"`
 	PrebuiltSHA256 string `json:"prebuilt_sha256,omitempty"`
 	PrebuiltURL    string `json:"prebuilt_url,omitempty"`
+	// Checkout and CheckoutDigest are a pack-tree program built from the user's own checkout
+	// (programoverrides.go): the checkout and the tree digest the handed build is at, what an
+	// attach's line names. Additive, so an older record reads with none.
+	Checkout       string `json:"checkout,omitempty"`
+	CheckoutDigest string `json:"checkout_digest,omitempty"`
 }
 
 type handedForksFile struct {
@@ -208,7 +213,7 @@ func (o *Options) recordHandedForks(out map[string]entrypoint.ForkDelivery) {
 			continue
 		}
 		d := out[bin]
-		if err := recordHandedFork(o.packTree, bin, o.handedPrebuilt(bin, HandedFork{Key: d.Key, Reason: d.Reason})); err != nil {
+		if err := recordHandedFork(o.packTree, bin, o.handedCheckout(bin, o.handedPrebuilt(bin, HandedFork{Key: d.Key, Reason: d.Reason}))); err != nil {
 			// What it costs: an attach to this jail cannot say what it was handed for these bins. No
 			// move reaps a plain fork's build, and a patched fork's advance records its own bin.
 			o.pr(o.Stderr).printf("[yellow]Warning: could not record what this launch hands its jail for %s "+

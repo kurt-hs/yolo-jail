@@ -73,6 +73,8 @@ var handedForksMu sync.Mutex
 func (o *Options) runForkBuildSlot(cfg *jsonx.OrderedMap, rt, repoRoot string) {
 	// Every pack-tree program delivered from a prebuilt artifact is said, once the slot has answered.
 	defer o.notePrebuiltDeliveries()
+	// And every one built, or reused, from the user's checkout (programoverrides.go, OQ-BG3).
+	defer o.noteCheckoutDeliveries()
 	if o.BuildSlot == nil {
 		o.forkDelivered = o.forkDeliveriesFor(rt)
 		o.treeDelivered = o.treeDeliveriesFor(rt)

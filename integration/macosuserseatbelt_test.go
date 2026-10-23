@@ -129,10 +129,6 @@ var seatbeltRules = []seatbeltRule{
 	// read-write context sources.
 	{id: "cache-relocation-read-allow"},
 	{id: "cache-relocation-write-allow"},
-	// A DEV OVERRIDE's checkout (programs.overrides, pack-buildable-programs-plan.md Task 10): read
-	// and run past the /Users deny, never written (program_override_checkout_write_refused, under
-	// write-outside-deny).
-	{id: "program-override-read-allow"},
 }
 
 // ---------------------------------------------------------------------------
@@ -196,7 +192,6 @@ type seatbeltFixtures struct {
 	ctxRO      string // <root>/ctx/ro            — read-only context mount, holds a git repo
 	ctxRW      string // <root>/ctx/rw            — read-write context mount
 	ctxSibling string // <root>/ctx/other         — granted by nothing
-	override   string // <root>/ctx/override      — a dev override's checkout, holding an executable run
 	linkDir    string // /private/var/tmp/yolo-sb-ctx-…   — the links
 	ctxLinks   []macosuser.ContextLink
 	// THE CACHE RELOCATION, laid out as a launch delivers one: a target under a traversal-only
@@ -556,25 +551,6 @@ func seatbeltCases() []seatbeltCase {
 				"workspace under the /Users read deny, so nothing else in the profile re-allows it.",
 			script: func(f seatbeltFixtures) string { return "cat " + sh(f.ctxRO+"/seed") },
 			want:   wantAllowed,
-		},
-		{
-			name: "program_override_checkout_runs",
-			id:   "program-override-read-allow",
-			why: "a dev override's checkout sits beside the workspace under the /Users read deny, so its " +
-				"own read and exec grant is what lets its launcher run the file.",
-			script: func(f seatbeltFixtures) string { return sh(f.override + "/run") },
-			want:   wantAllowed,
-		},
-		{
-			name: "program_override_checkout_write_refused",
-			id:   "write-outside-deny",
-			why: "the checkout is read-only, as a container binds it: outside the writable set, so the root " +
-				"write deny refuses a write there with EPERM. Self-cleaning.",
-			script: func(f seatbeltFixtures) string {
-				return "touch " + sh(f.override+"/probe") + " && rm -f " + sh(f.override+"/probe")
-			},
-			want:    wantRefused,
-			refusal: "Operation not permitted",
 		},
 		{
 			name: "context_read_through_the_link",
@@ -971,7 +947,6 @@ func TestMacosUserSeatbeltRegistryMatchesTheProfile(t *testing.T) {
 		[]macosuser.ContextLink{
 			{Dest: "/ctx/lib", Source: "/Users/Shared/ci/lib", Dir: true},
 			{Dest: "/ctx/data", Source: "/Users/Shared/yolo/data", RW: true, Dir: true},
-			{Dest: "/ctx/program-overrides/x", Source: "/Users/Shared/dev/x", Dir: true, Override: "x"},
 		}, []macosuser.CacheRelocation{{Subdir: "huggingface", Target: "/Volumes/Data/hf"}},
 		seatbeltFixtureDevices)
 
@@ -1309,7 +1284,6 @@ func seatbeltTree(t *testing.T, root string) seatbeltFixtures {
 	f.ctxRO = filepath.Join(f.ctxRoot, "ro")
 	f.ctxRW = filepath.Join(f.ctxRoot, "rw")
 	f.ctxSibling = filepath.Join(f.ctxRoot, "other")
-	f.override = filepath.Join(f.ctxRoot, "override")
 	// On a Mac the links sit where the base policy reads and the root write deny refuses, as
 	// macosuser.StateDir() does. Anywhere else this tree exists only to run the bare controls, and a
 	// path under / would be one more directory a Linux test run leaves on the machine.
@@ -1323,7 +1297,6 @@ func seatbeltTree(t *testing.T, root string) seatbeltFixtures {
 	f.ctxLinks = []macosuser.ContextLink{
 		{Dest: "/ctx/ro", Source: f.ctxRO, Dir: true},
 		{Dest: "/ctx/rw", Source: f.ctxRW, RW: true, Dir: true},
-		{Dest: "/ctx/program-overrides/x", Source: f.override, Dir: true, Override: "x"},
 	}
 	f.relocRoot = filepath.Join(resolved, "caches")
 	f.relocTarget = filepath.Join(f.relocRoot, "hf")
@@ -1332,7 +1305,7 @@ func seatbeltTree(t *testing.T, root string) seatbeltFixtures {
 	for _, d := range []string{f.ws, f.readonly, f.outside,
 		filepath.Join(f.skills, "demo"), filepath.Join(f.stateDir, "projects"),
 		filepath.Join(f.ctxRO, "sub"), filepath.Join(f.ctxRO, ".git", "objects"),
-		filepath.Join(f.ctxRO, ".git", "refs"), f.ctxRW, f.ctxSibling, f.override, f.linkDir,
+		filepath.Join(f.ctxRO, ".git", "refs"), f.ctxRW, f.ctxSibling, f.linkDir,
 		f.relocTarget, f.relocSibling} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatalf("creating %s: %v", d, err)
@@ -1354,10 +1327,6 @@ func seatbeltTree(t *testing.T, root string) seatbeltFixtures {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			t.Fatalf("writing %s: %v", path, err)
 		}
-	}
-	// The dev override's file, run as its launcher runs it: executable, by its path.
-	if err := os.WriteFile(filepath.Join(f.override, "run"), []byte("#!/bin/sh\necho "+seatbeltOK+"\n"), 0o755); err != nil {
-		t.Fatalf("writing the override's run: %v", err)
 	}
 	for name, target := range map[string]string{"data": f.ctxRO, "other": f.ctxSibling, "cache": f.relocTarget} {
 		if err := os.Symlink(target, filepath.Join(f.linkDir, name)); err != nil {

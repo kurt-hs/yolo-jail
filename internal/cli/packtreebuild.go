@@ -108,9 +108,9 @@ func copySourceTreeSkipping(src, dst string, skip map[string]bool) error {
 func stagePackTreeSource(f packload.Fork, digest, dst string) error {
 	src := f.SourceDir()
 	if fi, err := os.Stat(src); err != nil {
-		return fmt.Errorf("pack %s's source directory %s: %w", f.Pack, f.From, err)
+		return fmt.Errorf("pack %s's source %s: %w", f.Pack, f.SourceSaid(), err)
 	} else if !fi.IsDir() {
-		return fmt.Errorf("pack %s's source %s is not a directory", f.Pack, f.From)
+		return fmt.Errorf("pack %s's source %s is not a directory", f.Pack, f.SourceSaid())
 	}
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return err
@@ -124,7 +124,7 @@ func stagePackTreeSource(f packload.Fork, digest, dst string) error {
 	}
 	if got != digest {
 		return fmt.Errorf("pack %s's %s changed while it was staged (digest %s, the launch read %s) — "+
-			"launch again to build what it holds now", f.Pack, f.From, shortSHA(got), shortSHA(digest))
+			"launch again to build what it holds now", f.Pack, f.SourceSaid(), shortSHA(got), shortSHA(digest))
 	}
 	return nil
 }
@@ -204,11 +204,11 @@ func packTreeAdmitProblem(m *capture.Manifest, f packload.Fork, workspace string
 		return fmt.Sprintf("the build left no link at ~/%s to %s", link, want)
 	}
 	if e, ok := byPath[dir+"/"+f.ProgramRun()]; !ok || e.Kind == capture.KindDir {
-		return fmt.Sprintf("the build exited 0 but produced no %s in %s's tree (its `run`)", f.Run, f.From)
+		return fmt.Sprintf("the build exited 0 but produced no %s in %s's tree (its `run`)", f.Run, f.SourceSaid())
 	}
 	if why := packTreeRunLinkProblem(byPath, m.Home, dir, dir+"/"+f.ProgramRun()); why != "" {
 		return fmt.Sprintf("pack %s's `run` (%s) %s — point `run` at the file itself, or make the link "+
-			"relative and keep its target inside %s", f.Pack, f.Run, why, f.From)
+			"relative and keep its target inside %s", f.Pack, f.Run, why, f.SourceSaid())
 	}
 	return linksIntoTheBuild(m, workspace)
 }
@@ -271,7 +271,7 @@ func admitPackTreeCopy(store *capture.Store, b forkBuild) (*capture.Entry, *capt
 	}
 	runPath := filepath.Join(dir, filepath.FromSlash(f.Run))
 	if _, err := os.Lstat(runPath); err != nil {
-		return nil, nil, fmt.Errorf("pack %s's %s holds no %s (its `run`): %w", f.Pack, f.From, f.Run, err)
+		return nil, nil, fmt.Errorf("%s holds no %s (pack %s's `run`): %w", f.SourceSaid(), f.Run, f.Pack, err)
 	}
 	// THE EXEC BIT GOES ON A FILE INSIDE THE COPY, never through a link to one outside it: a `run`
 	// that is a symlink is resolved and must land inside the program's directory (§3) before
@@ -283,19 +283,19 @@ func admitPackTreeCopy(store *capture.Store, b forkBuild) (*capture.Entry, *capt
 	resolved, err := filepath.EvalSymlinks(runPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("pack %s's %s/%s (its `run`) is a symlink that resolves to nothing: %w — "+
-			"point `run` at the file itself", f.Pack, f.From, f.Run, err)
+			"point `run` at the file itself", f.Pack, f.SourceSaid(), f.Run, err)
 	}
 	if !strings.HasPrefix(resolved, realDir+string(filepath.Separator)) {
 		return nil, nil, fmt.Errorf("pack %s's %s/%s (its `run`) is a symlink that resolves outside %s — "+
 			"point `run` at the file itself, or make the link relative and keep its target inside %s",
-			f.Pack, f.From, f.Run, f.From, f.From)
+			f.Pack, f.SourceSaid(), f.Run, f.SourceSaid(), f.SourceSaid())
 	}
 	fi, err := os.Stat(resolved)
 	switch {
 	case err != nil:
 		return nil, nil, err
 	case !fi.Mode().IsRegular():
-		return nil, nil, fmt.Errorf("pack %s's %s/%s (its `run`) is not a file", f.Pack, f.From, f.Run)
+		return nil, nil, fmt.Errorf("pack %s's %s/%s (its `run`) is not a file", f.Pack, f.SourceSaid(), f.Run)
 	}
 	if err := os.Chmod(resolved, fi.Mode().Perm()|0o111); err != nil {
 		return nil, nil, err
@@ -386,6 +386,9 @@ func packTreeWhat(b forkBuild) string {
 	if b.Fork.IsPrebuilt() {
 		return "pack " + b.Fork.Pack + "'s prebuilt artifact for " + b.Platform + " (sha256 " + shortSHA(b.Commit) + ")"
 	}
+	if b.Fork.Checkout != "" {
+		return "your checkout " + b.Fork.Checkout + " at tree digest " + shortSHA(b.Commit)
+	}
 	return "pack " + b.Fork.Pack + "'s " + b.Fork.From + " at tree digest " + shortSHA(b.Commit)
 }
 
@@ -397,7 +400,7 @@ func buildOf(b forkBuild) string {
 		return packTreeWhat(b) + " of " + b.Fork.Bin
 	}
 	if b.Fork.IsPackTree() {
-		return "pack " + b.Fork.Pack + "'s build of " + b.Fork.Bin + " from " + b.Fork.From + " (tree digest " +
+		return "pack " + b.Fork.Pack + "'s build of " + b.Fork.Bin + " from " + b.Fork.SourceSaid() + " (tree digest " +
 			shortSHA(b.Commit) + ")"
 	}
 	return "fork " + b.Fork.Pack + "'s build of commit " + shortSHA(b.Commit)

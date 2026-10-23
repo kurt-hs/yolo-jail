@@ -326,6 +326,11 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 	for _, line := range run.UndeclaredProgramOverrideLines(loaded) {
 		r.dim(line)
 	}
+	// A DEV OVERRIDE of a program no pack builds from its own tree refuses the launch (BG-D19), so it
+	// fails here too, with the same next step: a fork pack.
+	for _, line := range run.NonPackTreeOverrideLines(loaded, config.ProgramOverrides(nil)) {
+		r.fail("a dev override names a program no pack builds from its tree", line)
+	}
 
 	// Config-surface exclusivity over the SELECTED set — the check that would otherwise be
 	// learned at launch. FATAL here for the same reason the footprint collision below is: the
