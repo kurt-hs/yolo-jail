@@ -51,7 +51,7 @@ func TestHostRunInJailWithoutHostDir(t *testing.T) {
 func TestHostRunInJailPrintsNoLineFailingTheRuneCheck(t *testing.T) {
 	t.Setenv("YOLO_VERSION", "test")
 	t.Setenv("YOLO_HOST_DIR", "/h")
-	rc, _, errOut := runMainCaptured(t, "host-run", "--", "echo", "a‮b")
+	rc, _, errOut := runMainCaptured(t, "host-run", "--", "echo", "a\u202eb")
 	if rc != 64 || strings.Contains(errOut, "yolo host-run -C") || !strings.Contains(errOut, "U+202E") {
 		t.Fatalf("rc %d %s", rc, errOut)
 	}

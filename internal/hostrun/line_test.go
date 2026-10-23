@@ -45,7 +45,7 @@ func TestCheckLabel(t *testing.T) {
 }
 
 func TestCheckWordsNamesPositionAndCodePoint(t *testing.T) {
-	for _, w := range []string{"a\nb", "a‮b", "a​b", "a­b", "a b", "a b", "a\xffb"} {
+	for _, w := range []string{"a\nb", "a\u202eb", "a\u200bb", "a\u00adb", "a\u2028b", "a\u2029b", "a\xffb"} {
 		err := CheckWords([]string{"ok", w})
 		var re *RuneError
 		if !errors.As(err, &re) || re.Index != 1 {
