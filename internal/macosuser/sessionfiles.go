@@ -105,7 +105,7 @@ func parseSessionKey(key string) (cname, sessionID string, ok bool) {
 
 // SessionFilePaths are every file a session with this key can leave in the staging root (sd, ""
 // for the default), in the order a sweep removes them: the session env file, the daemons env
-// file, the CA bundle and the extra-CA file beside them, and the Seatbelt profile. A sweep names
+// file, the CA bundle, the extra-CA file and the fonts.conf beside them, and the Seatbelt profile. A sweep names
 // each one rather than listing env/, which only its owner and the sandbox's search reach.
 func SessionFilePaths(key, sd string) []string {
 	return []string{
@@ -113,6 +113,7 @@ func SessionFilePaths(key, sd string) []string {
 		SandboxDaemonEnvFile(key, sd),
 		CABundleFile(key, sd),
 		CAExtrasFile(key, sd),
+		FontsConfFile(key, sd),
 		SessionProfilePath(key, sd),
 	}
 }
@@ -440,6 +441,7 @@ func sessionFileInvariants(plan RunPlan) []string {
 		{"daemons env file", plan.DaemonEnvFile, SandboxDaemonEnvFile(key, plan.StagedDir)},
 		{"CA bundle", plan.CABundleFile, CABundleFile(key, plan.StagedDir)},
 		{"extra-CA file", plan.CAExtrasFile, CAExtrasFile(key, plan.StagedDir)},
+		{"fonts.conf", plan.FontsConfFile, FontsConfFile(key, plan.StagedDir)},
 	} {
 		if f.got != "" && f.got != f.want {
 			problems = append(problems, "the "+f.what+" is "+f.got+", not "+f.want+
@@ -451,7 +453,7 @@ func sessionFileInvariants(plan RunPlan) []string {
 		problems = append(problems, "nothing removes the session's Seatbelt profile "+
 			plan.ProfilePath+" when the session ends; every launch would leave one behind")
 	}
-	for _, f := range []string{plan.EnvFile, plan.CABundleFile, plan.CAExtrasFile} {
+	for _, f := range []string{plan.EnvFile, plan.CABundleFile, plan.CAExtrasFile, plan.FontsConfFile} {
 		if f != "" && !removesFile(plan.EnvFileRemoveCommands, f) {
 			problems = append(problems, "nothing removes "+f+" when the session ends")
 		}

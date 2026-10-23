@@ -29,6 +29,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `mcp_presets` is removed, and a config that still has it stops the launch: delete the key, add `chrome-devtools` to `packs` in your user config for the browser, and write `sequential-thinking` under `mcp_servers` yourself if you want it. See [MCP and LSP](userguide/guides/mcp-and-lsp.md#mcp_presets-is-gone).
 - A from-source install no longer follows its checkout. `yolo update` there changes nothing; to update, run `just install` in your checkout or `yolo update --from <checkout>`. See [from-source installs](docs/reference/self-update.md#from-source-installs).
 
+**Your fonts in the jail.** On `macos-user`, tools find the Mac's fonts and your packages' fonts, and a jail running as you finds your own too. Add `"share_host_fonts": true` to your user config to share your font folder read-only with a container jail or the separate sandbox user; each launch names it. See [the macos-user backend](userguide/guides/macos.md#the-macos-user-backend).
+
 ### Fixed
 
 - In a container jail, an `SSL_CERT_FILE` you set in your config now applies to every TLS tool instead of losing to the jail's own bundle.
