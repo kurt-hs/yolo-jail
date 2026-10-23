@@ -1469,7 +1469,8 @@ local function piSettingsFor(ctx)
       table.insert(enabled, piBedrockProvider .. "/" .. id)
     end
     if #enabled == 0 then
-      enabled = { piBedrockProvider .. "/*" }
+      -- `/**`, the whole provider under pi's minimatch, as for piOwn below.
+      enabled = { piBedrockProvider .. "/**" }
     end
     sel.enabledModels = enabled
     -- The children's scope is the list only under an `only` (OQ-MM3); else all of the provider.
@@ -1494,8 +1495,14 @@ local function piSettingsFor(ctx)
   --     starts on the first provider it finds a login for, which may not be this one. A provider
   --     that declares no models (pi's own catalog) has nothing to resolve against, so the value
   --     passes through as pi's own id;
-  --   - enabledModels is `<id>/*`, the provider and every model pi has for it, so pi's scoped
-  --     picker is pi's own list and a fresh session that names no model starts on it;
+  --   - enabledModels is `<id>/**`, the provider and every model pi has for it, so pi's scoped
+  --     picker is pi's own list and a fresh session that names no model starts on it. The
+  --     GLOBSTAR is load-bearing: pi matches enabledModels with minimatch (pi 1.0.1
+  --     dist/core/model-resolver.js), whose `*` stops at `/`, and OpenRouter's ids (like
+  --     nvidia's, groq's, huggingface's) are `vendor/model`, so `openrouter/*` matched none of
+  --     them and pi warned `No models match pattern` on every invocation. `**` crosses the
+  --     slash and still never another provider's prefix. pi-subagents' allow (piSubagents)
+  --     keeps the single star, which its globToRegExp already turns into `.*`;
   --   - pi-subagents' scope is the same provider, whole (piSubagents with no ids).
   --
   -- UNDER AN `only` (a `models` contribution narrowing the list, packload's `models_only`) the
@@ -1532,7 +1539,7 @@ local function piSettingsFor(ctx)
     end
     local sel = { defaultProvider = id, defaultModel = start }
     if not narrowed then
-      sel.enabledModels = { id .. "/*" }
+      sel.enabledModels = { id .. "/**" }
     end
     return {
       subagents = piSubagents(ctx, id, start, listed),
@@ -1634,7 +1641,9 @@ local function piSettingsFor(ctx)
   elseif sel.defaultModel then
     table.insert(enabled, ctx.selected_provider .. "/" .. sel.defaultModel)
   else
-    table.insert(enabled, ctx.selected_provider .. "/*")
+    -- The whole provider, `/**` because pi's minimatch `*` stops at `/` (piOwn above), and a
+    -- provider with no list may serve slashed ids, as kilo does (`deepseek/deepseek-v4.1-flash`).
+    table.insert(enabled, ctx.selected_provider .. "/**")
   end
   -- enabledModels travels under the selection, not the computed layer. pi's own /model
   -- scoping writes the same key, and a computed key is re-asserted every boot, which would

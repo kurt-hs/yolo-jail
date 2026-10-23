@@ -238,7 +238,7 @@ func TestHostLaunchSelectionHandsPiItsFlagsAndItsLists(t *testing.T) {
 		t.Fatalf("pi on [zai, openrouter] is handed %q, want --provider zai --model <id> --models <scope>", argv)
 	}
 	scope := strings.Split(argv[5], ",")
-	if !strings.HasPrefix(scope[0], "zai/") || !slices.Contains(scope, "openrouter/*") {
+	if !strings.HasPrefix(scope[0], "zai/") || !slices.Contains(scope, "openrouter/**") {
 		t.Errorf("--models %q must lead with zai's run and span openrouter", argv[5])
 	}
 	vars, err := sel.Vars(func(string) (string, bool) { return "", false })

@@ -1840,7 +1840,7 @@ Pi declares:
 - `enabledModels` as `--models {value}`.
 
 Therefore a provider-only selection such as `defaultProvider=deepseek` with
-`enabledModels=["deepseek/*"]` hands only `--models deepseek/*`. When `defaultModel` is explicit,
+`enabledModels=["deepseek/**"]` hands only `--models deepseek/**`. When `defaultModel` is explicit,
 pi still receives the provider-qualified pair `--provider <provider> --model <id>`. Keeping the
 provider on that explicit path matters when providers expose the same model ID: the list scope does
 not qualify pi's explicit `--model` lookup. The other declared list flags and variables are
