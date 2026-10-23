@@ -12,7 +12,15 @@
 // IT ONLY NOTIFIES. The runner reads nothing back from the hook. A decision is the user's
 // command running `yolo approve` itself (the maintainer's ruling: a button click does exactly
 // what the CLI does, because it IS the CLI), so it gets the CLI's own checks, refusals and
-// audit. YOLO_BIN names the running yolo, so the call needs no yolo on the hook's PATH.
+// audit. A private directory holding exactly one entry, a link named `yolo` to the running
+// yolo, leads the hook's PATH, so a plain `yolo approve` works wherever the broker was started
+// (the maintainer's ruling, Q43); YOLO_BIN names the same binary absolutely.
+//
+// ITS FAILURES ARE VISIBLE (Q42). A hook that exits non-zero or runs into its timeout has its
+// exit and the last of its output recorded on its request in the host store, which every
+// listing of the request shows (`yolo approve`, `--json`, `--watch --json`); a `yolo approve`
+// the hook ran that refused is part of that output. The broker's log gets one line naming
+// the request and the exit, never the output: that log is shared by every jail.
 //
 // WHEN IT IS STOPPED. A hook runs until its request leaves `pending`, whichever way (decided
 // with `yolo approve`, the hook's own call included, expired, or refused because its jail
@@ -30,10 +38,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
@@ -45,7 +56,8 @@ type Runner struct {
 	Start   string // the broker lifetime whose requests fire the hook
 	Command string // run as `sh -c Command`
 	// Bin is the absolute path of the yolo the hook calls to decide, handed over as
-	// YOLO_BIN; empty hands over none.
+	// YOLO_BIN and linked as `yolo` in a private directory leading its PATH; empty hands
+	// over neither.
 	Bin string
 	// Dir is the hook's working directory; empty means the user's home, never the
 	// broker's own store directory, which is where the daemon itself runs.
@@ -57,13 +69,16 @@ type Runner struct {
 	// notification can still be answered until its request expires.
 	Timeout time.Duration
 	// Log takes one line per hook that fails or is stopped. It names no workspace, repository or
-	// command, because a broker's log is shared by every jail on the machine.
+	// command, and carries none of the hook's output, because a broker's log is shared by
+	// every jail on the machine; the output goes on the request's record instead.
 	Log io.Writer
 
 	wg       sync.WaitGroup
 	mu       sync.Mutex
 	running  map[string]context.CancelCauseFunc // by request id
 	lastWarn string
+	// pathDir is the private directory holding the `yolo` link, once made (linkDir).
+	pathDir string
 }
 
 var (
@@ -97,6 +112,84 @@ func (r *Runner) Run(ctx context.Context) {
 		}
 	}
 	r.wg.Wait()
+	r.removeLinkDir()
+}
+
+// linkDirName is the directory, inside the store's own directory, that holds this lifetime's
+// `yolo` link. The lifetime id makes it one per broker, as several brokers share a store.
+func (r *Runner) linkDirName() string { return "on-request-path-" + r.Start }
+
+// linkDir makes, once, the private directory holding exactly one entry, a link named `yolo`
+// to Bin, and returns it; "" when there is no Bin or it cannot be made, and the hook then
+// has YOLO_BIN alone. It is made through an os.Root on the store's directory, so no link
+// already in its place is followed.
+func (r *Runner) linkDir() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.pathDir != "" || r.Bin == "" || r.Store == nil || r.Store.Dir == "" {
+		return r.pathDir
+	}
+	if err := os.MkdirAll(r.Store.Dir, 0o700); err != nil {
+		r.logf("could not make the directory for plain `yolo` (%v); hooks get YOLO_BIN alone", err)
+		return ""
+	}
+	root, err := os.OpenRoot(r.Store.Dir)
+	if err != nil {
+		r.logf("could not make the directory for plain `yolo` (%v); hooks get YOLO_BIN alone", err)
+		return ""
+	}
+	defer root.Close()
+	name := r.linkDirName()
+	_ = root.RemoveAll(name) // a broker killed outright left its own; the id is this lifetime's
+	if err := root.Mkdir(name, 0o700); err != nil {
+		r.logf("could not make the directory for plain `yolo` (%v); hooks get YOLO_BIN alone", err)
+		return ""
+	}
+	if err := root.Symlink(r.Bin, filepath.Join(name, "yolo")); err != nil {
+		_ = root.RemoveAll(name)
+		r.logf("could not link plain `yolo` (%v); hooks get YOLO_BIN alone", err)
+		return ""
+	}
+	r.pathDir = filepath.Join(r.Store.Dir, name)
+	return r.pathDir
+}
+
+// removeLinkDir removes the `yolo` link's directory once every hook has stopped.
+func (r *Runner) removeLinkDir() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.pathDir == "" {
+		return
+	}
+	if root, err := os.OpenRoot(r.Store.Dir); err == nil {
+		_ = root.RemoveAll(r.linkDirName())
+		root.Close()
+	}
+	r.pathDir = ""
+}
+
+// hookEnv is base with dir first on PATH, then the request's fields.
+func hookEnv(base []string, dir string, fields []string) []string {
+	env := make([]string, 0, len(base)+len(fields)+1)
+	path := ""
+	for _, kv := range base {
+		if v, ok := strings.CutPrefix(kv, "PATH="); ok {
+			path = v
+			continue
+		}
+		env = append(env, kv)
+	}
+	if dir != "" {
+		if path == "" {
+			path = dir
+		} else {
+			path = dir + string(os.PathListSeparator) + path
+		}
+	}
+	if path != "" {
+		env = append(env, "PATH="+path)
+	}
+	return append(env, fields...)
 }
 
 // opened fires for this lifetime's requests already pending when the watch opens: those
@@ -159,10 +252,7 @@ func (r *Runner) logf(format string, args ...any) {
 
 // launch starts the hook for q, once per request; parent ending stops it.
 func (r *Runner) launch(parent context.Context, q brokerstore.Request) {
-	timeout := r.Timeout
-	if timeout <= 0 {
-		timeout = brokerstore.PendingLife
-	}
+	timeout := r.timeout()
 	ctx, cancel := context.WithCancelCause(parent)
 	r.mu.Lock()
 	if r.running == nil {
@@ -222,12 +312,15 @@ func (r *Runner) fire(ctx context.Context, q brokerstore.Request) {
 	}
 	cmd := exec.Command("/bin/sh", "-c", r.Command)
 	cmd.Stdin = bytes.NewReader(append(body, '\n'))
-	cmd.Env = append(os.Environ(), Env(r.Store, q, r.Bin)...)
+	cmd.Env = hookEnv(os.Environ(), r.linkDir(), Env(r.Store, q, r.Bin))
 	cmd.Dir = r.Dir
 	if cmd.Dir == "" {
 		cmd.Dir, _ = os.UserHomeDir()
 	}
-	// Its output goes nowhere: the broker's log is shared by every jail on the machine.
+	// Its output is kept, the last OutputMax bytes, for the request's record should it fail.
+	var out tailBuffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	// A child that outlives the shell can hold the output open; stop waiting after KillWait.
 	cmd.WaitDelay = KillWait
 	cmd.SysProcAttr = hookProcAttr()
 	// On Linux the hook dies with the broker (hookProcAttr's Pdeathsig), which the kernel
@@ -240,6 +333,7 @@ func (r *Runner) fire(ctx context.Context, q brokerstore.Request) {
 	}
 	if err := cmd.Start(); err != nil {
 		r.logf("the hook for %s could not start (%v)", q.ID, err)
+		r.noteFailure(q.ID, "hook could not start: "+err.Error(), "")
 		return
 	}
 	waited := make(chan error, 1)
@@ -265,10 +359,28 @@ func (r *Runner) fire(ctx context.Context, q brokerstore.Request) {
 	case <-ctx.Done():
 		stop()
 		<-waited
+		// Stopped because its request left pending, or the broker stopped, is no failure;
+		// running into its timeout is: the request may never have been seen.
+		if errors.Is(context.Cause(ctx), errTimedOut) {
+			r.noteFailure(q.ID, failureLine(fmt.Sprintf("hook timed out after %s", r.timeout()), out.String()), out.String())
+		}
 		return
 	}
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil // the shell succeeded; a child it left running held its output open
+	}
 	if err != nil {
-		r.logf("the hook for %s failed (%v); run the command by hand to see why", q.ID, err)
+		what := "hook failed: " + err.Error()
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			if code := exit.ExitCode(); code >= 0 {
+				what = fmt.Sprintf("hook exited %d", code)
+			} else {
+				what = "hook was killed: " + exit.String()
+			}
+		}
+		r.logf("the hook for %s failed (%s); `yolo approve` shows its output", q.ID, what)
+		r.noteFailure(q.ID, failureLine(what, out.String()), out.String())
 	}
 	// The shell is reaped. While anything it started still holds its group, keep that
 	// group to kill; once the group is empty its id is free for reuse, so stop watching.
@@ -282,6 +394,73 @@ func (r *Runner) fire(ctx context.Context, q brokerstore.Request) {
 		case <-tick.C:
 		}
 	}
+}
+
+// noteFailure records a failed hook on its request, where every listing shows it.
+func (r *Runner) noteFailure(id, failure, output string) {
+	if err := r.Store.NoteHookFailure(id, failure, termsafe.VisibleLines(output)); err != nil {
+		r.logf("could not record the failed hook on %s: %s", id, termsafe.Visible(err.Error()))
+	}
+}
+
+func (r *Runner) timeout() time.Duration {
+	if r.Timeout > 0 {
+		return r.Timeout
+	}
+	return brokerstore.PendingLife
+}
+
+// failureLine is what, then the hook's last non-empty output line, cut to FailureLineMax
+// bytes: "hook exited 127: sh: notify-send: not found".
+func failureLine(what, output string) string {
+	last := ""
+	for _, l := range strings.Split(output, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			last = l
+		}
+	}
+	line := what
+	if last != "" {
+		line += ": " + last
+	}
+	line = termsafe.Visible(line)
+	if len(line) > FailureLineMax {
+		cut := FailureLineMax - len("…")
+		for cut > 0 && !utf8.RuneStart(line[cut]) {
+			cut--
+		}
+		line = line[:cut] + "…"
+	}
+	return line
+}
+
+// OutputMax bounds the hook output kept for a failed hook's record; FailureLineMax bounds
+// its one-line failure.
+const (
+	OutputMax      = 4096
+	FailureLineMax = 240
+)
+
+// tailBuffer keeps the last OutputMax bytes written to it.
+type tailBuffer struct {
+	mu sync.Mutex
+	b  []byte
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.b = append(t.b, p...)
+	if over := len(t.b) - OutputMax; over > 0 {
+		t.b = append(t.b[:0:0], t.b[over:]...)
+	}
+	return len(p), nil
+}
+
+func (t *tailBuffer) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return string(t.b)
 }
 
 // groupPoll is how often an exited hook's process group is checked for members left behind.

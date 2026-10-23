@@ -176,7 +176,7 @@ func (b *Broker) startOnRequest(ctx context.Context, command string) <-chan stru
 	// which is no place for a user's command to start.
 	home, _ := os.UserHomeDir()
 	// This daemon is `yolo internal daemon github-broker`, so its own executable is the yolo
-	// the hook calls to decide.
+	// the hook calls to decide: YOLO_BIN, and the `yolo` the runner links first on its PATH.
 	bin, err := os.Executable()
 	if err != nil {
 		fmt.Fprintln(b.log, "github-broker: on_request gets no YOLO_BIN:", err, "; its `yolo approve` must be on PATH")

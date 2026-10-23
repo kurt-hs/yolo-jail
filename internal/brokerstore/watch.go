@@ -183,6 +183,10 @@ type RequestView struct {
 	Expires   time.Time  `json:"expires"`
 	Decided   *time.Time `json:"decided,omitempty"`
 	State     string     `json:"state"` // pending, allowed, denied, expired, refused
+	// HookFailure and HookOutput say the user's on_request failed for this request
+	// (Request.HookFailure); absent when it did not.
+	HookFailure string `json:"hook_failure,omitempty"`
+	HookOutput  string `json:"hook_output,omitempty"`
 }
 
 // GrantView is a grant as the surface shows it.
@@ -223,7 +227,7 @@ type EventView struct {
 func (s *Store) RequestView(q Request) RequestView {
 	v := RequestView{Schema: Schema, ID: q.ID, Source: s.SourceName(), Jail: q.Jail, Workspace: q.Workspace,
 		Set: q.Set, Argv: q.Argv, Command: shquote.JoinDisplay(q.Argv), Repo: q.Repo, Filed: q.Filed,
-		Expires: q.Expires(), State: q.State}
+		Expires: q.Expires(), State: q.State, HookFailure: q.HookFailure, HookOutput: q.HookOutput}
 	if v.Argv == nil {
 		v.Argv = []string{}
 	}

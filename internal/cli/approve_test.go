@@ -140,3 +140,23 @@ func TestApproveRegistryUsesCurrentHostAuthorityAndRequiredAudit(t *testing.T) {
 		t.Fatal("approved dead lifetime")
 	}
 }
+
+// A request whose on_request failed says so wherever it is listed: the plain listing, with
+// the one line, and the JSON, with the line and the output.
+func TestAFailedHookIsListedWithItsRequest(t *testing.T) {
+	s, r := approvalFixture(t)
+	if err := s.NoteHookFailure(r.ID, "hook exited 127: sh: notify-send: not found", "sh: notify-send: not found\n"); err != nil {
+		t.Fatal(err)
+	}
+	var out, errs bytes.Buffer
+	if rc := approveMain(context.Background(), nil, false, s, &out, &errs); rc != 0 ||
+		!strings.Contains(out.String(), "your on_request failed, so you may not have been notified: hook exited 127: sh: notify-send: not found") {
+		t.Fatalf("list %d %q %q", rc, out.String(), errs.String())
+	}
+	out.Reset()
+	if rc := approveMain(context.Background(), []string{"--json"}, false, s, &out, &errs); rc != 0 ||
+		!strings.Contains(out.String(), `"hook_failure":"hook exited 127: sh: notify-send: not found"`) ||
+		!strings.Contains(out.String(), `"hook_output":"sh: notify-send: not found\n"`) {
+		t.Fatalf("json %d %q %q", rc, out.String(), errs.String())
+	}
+}
