@@ -347,8 +347,8 @@ What you give up:
   opened to the sandbox as it is created, and one that already holds files needs
   `yolo macos-fix-permissions <folder>` first (the launch says so). A Mac tool that caches under
   `~/Library/Caches`, such as Go's build cache, is not moved. Not yet tried on a Mac.
-- **MCP presets are not delivered**, although your own `mcp_servers` work if their commands exist on
-  your Mac. For Chrome DevTools, add `"chrome-devtools"` to `packs` instead: it uses the Chrome or
+- **MCP servers**: your own `mcp_servers` work if their commands exist on your Mac. For Chrome
+  DevTools, add `"chrome-devtools"` to `packs`: it uses the Chrome or
   Chromium your Mac already has, and `sh ~/.local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper --check`
   inside the sandbox says which it found. Not yet tried on a Mac.
 - **Language servers**: as on every setup, you bring the server program yourself.

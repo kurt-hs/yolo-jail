@@ -202,6 +202,11 @@ type Deps struct {
 	// nil stages nothing and removes nothing.
 	StageFontCopy  func(src, root string) FontCopy
 	RemoveFontCopy func(root string)
+	// ReadLoginKeychain exports every certificate in the launching user's login keychain as PEM,
+	// as that user (`security find-certificate -a -p <home>/Library/Keychains/login.keychain-db`,
+	// no sudo, no unlock). nil reads no login keychain; an error is one note at launch, and the
+	// launch trusts the System keychain's CAs alone (OQ-PS15 as ruled, PS-D14).
+	ReadLoginKeychain func() (string, error)
 	// StartBackground starts argv in the background, in a process group of its own, with
 	// no terminal, and returns its handle: the stop that ends it (idempotent, never nil on
 	// success), a channel closed when it exits, and what it wrote on its own stdout and
@@ -1239,6 +1244,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// AND ITS FONTS (fontsconf.go): the Mac's font folders, and yours in the run-as-you mode or,
 	// under share_host_fonts, a refreshed copy of them for the separate account (fontcopy.go).
 	opts.Fonts = ComposeFonts(deps, darwin, opts.HostHome, opts.Mode == ModeSelf, opts.ShareHostFonts)
+	opts.CATrust.SeparateAccount = opts.Mode != ModeSelf
 
 	steps.begin("build_plan")
 	plan := buildPlan(deps, opts, darwin)
@@ -2430,6 +2436,7 @@ func RealDeps(runProxy func(argv []string) int, materialize func(repoRoot string
 		GuestProcesses:      guestProcessesReal,
 		StartPackTreeReaper: startPackTreeReaperReal,
 		ReadSystemKeychain:  readSystemKeychainReal,
+		ReadLoginKeychain:   readLoginKeychainReal,
 		VerifyCA:            verifyCAReal,
 		Glob:                globReal,
 		EvalSymlinks:        evalSymlinksReal,

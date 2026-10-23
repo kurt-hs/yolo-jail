@@ -69,63 +69,25 @@ PY`)
 	}
 }
 
-// TestMcpPresetCanBeEnabled confirms MCP presets from yolo-jail.jsonc enable the
-// built-in servers in both agent configs.
-func TestMcpPresetCanBeEnabled(t *testing.T) {
+// TestRetiredMcpPresetsKeyIsRefused confirms the retired `mcp_presets` key refuses the launch
+// before any container starts, naming both next steps (docs/design/mcp-presets-removal.md §13
+// step 3): the chrome-devtools pack and the user's own sequential-thinking entry.
+func TestRetiredMcpPresetsKeyIsRefused(t *testing.T) {
 	requireJail(t)
-	dir := writeProjectWithPacks(t, mcpConfigWithAgents(
-		`"mcp_presets": ["chrome-devtools", "sequential-thinking"]`),
-		"copilot", "codex", "claude")
+	// No pack selection needed: the validator refuses this before a container starts.
+	dir := writeProject(t, mcpConfigWithAgents(`"mcp_presets": ["chrome-devtools", "sequential-thinking"]`))
 
-	r := runYolo(t, dir, `python - <<'PY'
-import json
-from pathlib import Path
-copilot = json.loads(Path('/home/agent/.copilot/mcp-config.json').read_text())
-codex = Path('/home/agent/.codex/config.toml').read_text()
-print('chrome-devtools' in copilot['mcpServers'])
-print('chrome-devtools' in codex)
-print('sequential-thinking' in copilot['mcpServers'])
-print('sequential-thinking' in codex)
-PY`)
-	if r.rc != 0 {
-		t.Fatalf("expected rc 0, got %d\n%s", r.rc, r.stderr)
-	}
-	// The four probe lines are the payload; ignore any leading CLI notices (e.g.
-	// an env_sources "file not found" warning from the host user config) that
-	// print to stdout ahead of the script output.
-	var payload []string
-	for _, ln := range strings.Split(r.stdout, "\n") {
-		ln = strings.TrimSpace(ln)
-		if ln == "True" || ln == "False" {
-			payload = append(payload, ln)
-		}
-	}
-	want := []string{"True", "True", "True", "True"}
-	if strings.Join(payload, ",") != strings.Join(want, ",") {
-		t.Fatalf("expected preset servers in both agent configs, got payload %v\nstdout=%q", payload, r.stdout)
-	}
-}
-
-// TestSameFilePresetAndNullOverrideIsRejected confirms one config file cannot
-// both enable a preset (mcp_presets) and null-remove it (mcp_servers) — the
-// preflight validator rejects it before any container starts.
-func TestSameFilePresetAndNullOverrideIsRejected(t *testing.T) {
-	requireJail(t)
-	// No pack selection needed: the validator rejects this before a container starts, so
-	// what the jail would have contained never matters.
-	dir := writeProject(t, mcpConfigWithAgents(
-		`"mcp_presets": ["chrome-devtools", "sequential-thinking"],
-  "mcp_servers": {"chrome-devtools": null}`))
-
-	r := runYoloCLI(t, dir, "run", "--", "bash", "-lc", "true")
+	// Host semantics: inside a jail the config is the host's snapshot, and the key only warns there.
+	r := runCommand(t, dir, append(jailRunArgs(), "--", "bash", "-lc", "true"), withHostSemantics())
 	out := r.combined()
 	if r.rc != 1 {
 		t.Fatalf("expected rc 1, got %d\n%s", r.rc, out)
 	}
 	for _, want := range []string{
 		"Invalid jail config",
-		"preset 'chrome-devtools' is enabled in mcp_presets",
-		"within the same config file",
+		"config.mcp_presets: REMOVED",
+		"add `chrome-devtools` to `packs` in ~/.config/yolo-jail/config.jsonc",
+		"@modelcontextprotocol/server-sequential-thinking",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected %q in output, got:\n%s", want, out)
@@ -147,9 +109,9 @@ func TestWorkspaceMcpConfigsAreIsolated(t *testing.T) {
 	// necessarily share a selection. That is fine for what this test isolates — MCP servers
 	// come from the WORKSPACE config, which is exactly the split being verified.
 	packHome(t, `{"packs": ["copilot", "codex"]}`)
-	projectA := writeProject(t, base+`"mcp_presets": ["chrome-devtools", "sequential-thinking"]
+	projectA := writeProject(t, base+`"mcp_servers": {"probe-mcp": {"command": "/workspace/probe-mcp.py"}}
 }`)
-	projectB := writeProject(t, base+`"mcp_servers": {"chrome-devtools": null}
+	projectB := writeProject(t, base+`"mcp_servers": {}
 }`)
 
 	if r := runYolo(t, projectA, "true"); r.rc != 0 {
@@ -162,7 +124,7 @@ func TestWorkspaceMcpConfigsAreIsolated(t *testing.T) {
 	// Codec-aware: copilot's surface is JSON, codex's is TOML. A JSON parse of the
 	// TOML file fails on its leading comment, so the check is per-codec rather than
 	// one shape for both.
-	hasChromeDevtools := func(dir, agent, file string) bool {
+	hasProbe := func(dir, agent, file string) bool {
 		t.Helper()
 		p := filepath.Join(dir, ".yolo", "home", agent, file)
 		data, err := os.ReadFile(p)
@@ -170,9 +132,9 @@ func TestWorkspaceMcpConfigsAreIsolated(t *testing.T) {
 			t.Fatalf("reading %s: %v", p, err)
 		}
 		if strings.HasSuffix(file, ".toml") {
-			// The TOML surface spells it [mcp_servers.chrome-devtools]; a substring
+			// The TOML surface spells it [mcp_servers.probe-mcp]; a substring
 			// check is enough here and avoids a TOML dependency in the test.
-			return strings.Contains(string(data), "chrome-devtools")
+			return strings.Contains(string(data), "probe-mcp")
 		}
 		var cfg struct {
 			McpServers map[string]json.RawMessage `json:"mcpServers"`
@@ -180,21 +142,21 @@ func TestWorkspaceMcpConfigsAreIsolated(t *testing.T) {
 		if err := json.Unmarshal(data, &cfg); err != nil {
 			t.Fatalf("parsing %s: %v", p, err)
 		}
-		_, ok := cfg.McpServers["chrome-devtools"]
+		_, ok := cfg.McpServers["probe-mcp"]
 		return ok
 	}
 
-	if !hasChromeDevtools(projectA, "copilot", "mcp-config.json") {
-		t.Fatalf("project_a copilot config missing chrome-devtools")
+	if !hasProbe(projectA, "copilot", "mcp-config.json") {
+		t.Fatalf("project_a copilot config missing probe-mcp")
 	}
-	if !hasChromeDevtools(projectA, "codex", "config.toml") {
-		t.Fatalf("project_a codex config missing chrome-devtools")
+	if !hasProbe(projectA, "codex", "config.toml") {
+		t.Fatalf("project_a codex config missing probe-mcp")
 	}
-	if hasChromeDevtools(projectB, "copilot", "mcp-config.json") {
-		t.Fatalf("project_b copilot config should not have chrome-devtools (project_a leaked in)")
+	if hasProbe(projectB, "copilot", "mcp-config.json") {
+		t.Fatalf("project_b copilot config should not have probe-mcp (project_a leaked in)")
 	}
-	if hasChromeDevtools(projectB, "codex", "config.toml") {
-		t.Fatalf("project_b codex config should not have chrome-devtools")
+	if hasProbe(projectB, "codex", "config.toml") {
+		t.Fatalf("project_b codex config should not have probe-mcp")
 	}
 }
 

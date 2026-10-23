@@ -54,7 +54,8 @@ func readJSONAt(t *testing.T, home, rel string) map[string]any {
 
 // THE REAL `yolo host apply --assert`, end to end: pi with a user MCP server, an LSP server and
 // `profile` selecting the codex profile. Every derived pi surface gets its computed layer,
-// and the inputs the host does not carry — a preset, an entry naming a jail path — are named.
+// and the inputs the host does not carry — the retired preset key, an entry naming a jail path —
+// are named.
 func TestYoloHostApplyAssertWritesTheComputedLayer(t *testing.T) {
 	home := hostComputedHome(t, `{"packs":["pi","openai-auth"],"host_management":"own",
 		"mcp_servers":{"tavily":{"command":"npx","args":["-y","tavily-mcp"]},
@@ -86,7 +87,7 @@ func TestYoloHostApplyAssertWritesTheComputedLayer(t *testing.T) {
 		}
 	}
 	if !strings.Contains(report, "mcp_servers jailed is not written at the host") ||
-		!strings.Contains(report, "mcp_presets sequential-thinking is not written at the host") {
+		!strings.Contains(report, "config.mcp_presets: REMOVED") {
 		t.Errorf("the omitted inputs are not named in the report:\n%s", report)
 	}
 	settings := readJSONAt(t, home, ".pi/agent/settings.json")

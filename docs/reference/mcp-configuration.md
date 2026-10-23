@@ -23,7 +23,7 @@ covers:
   - packs/agy/derive.lua
   - packs/pi/derive.lua
 tags: [mcp, lsp, packs, prism, config, wrappers]
-summary: "How MCP and LSP server config reaches an agent: one canonical server table built from config and each selected pack's `mcp` entries (composed on the host for the notch's home, then presets expanded in-jail, null removes, requires_env gates, no ${VAR} interpolation), filtered by the active source's capabilities, and published as a source that each pack's derive.lua projects into its own tool's dialect — except Claude's LSP, which core renders host-side as one generated yolo-lsp plugin in every skills destination, at every launch and by `yolo host apply`. Plus the node/npx wrappers, what is left of their job now that nix-ld covers the loader, and the gap where a custom server bypasses them."
+summary: "How MCP and LSP server config reaches an agent: one canonical server table built from config and each selected pack's `mcp` entries (composed on the host for the notch's home; null removes, requires_env gates, no ${VAR} interpolation), filtered by the active source's capabilities, and published as a source that each pack's derive.lua projects into its own tool's dialect — except Claude's LSP, which core renders host-side as one generated yolo-lsp plugin in every skills destination, at every launch and by `yolo host apply`. Plus the node/npx wrappers, what is left of their job now that nix-ld covers the loader, and the gap where a custom server bypasses them."
 ---
 
 # MCP and LSP configuration — one table, projected per tool
@@ -57,10 +57,14 @@ posture's flags by hand (no launcher in that home), and the server answered `ini
 `list_pages` call with `about:blank`. UNMEASURED: no agent has been started against an entry the
 pack composed, at any notch, and nothing has run on a Mac; unit tests run the wrapper against
 stand-ins and `yolo host apply --assert` against a fake Node distribution.
+The `mcp_presets` key was retired on 2026-10-23
+([§13](../design/mcp-presets-removal.md#13-what-i-would-build-in-order) step 3): a config
+carrying it is refused, `sequential-thinking` was deleted, and the `chrome-devtools` pack is
+the browser's only route.
 
 MCP config is **pack-declarative**. Core builds **one** canonical server table from the
-user's config and the selected packs' `mcp` entries — pack entries under the user's, presets
-expanded, custom entries merged, `requires_env` gates applied — and publishes it as a named
+user's config and the selected packs' `mcp` entries — pack entries under the user's, custom
+entries merged, `requires_env` gates applied — and publishes it as a named
 source. Each pack's `derive.lua` then *projects* that one table
 into its own tool's dialect. Core knows the domain (`mcp_servers`); it never knows the tool.
 
@@ -71,24 +75,23 @@ from a **plugin**, so core renders one plugin of its own, `yolo-lsp`, from the u
 than a pack
 ([below](#lsp-claudes-route-is-a-generated-plugin)).
 
-Alongside that, three tiny wrapper scripts sit in front of `node` and `npx` for the servers
-yolo itself declares.
+Alongside that, two tiny wrapper scripts sit in front of `node` and `npx`.
 
 | Component | Lives in |
 | :--- | :--- |
-| Building the canonical table, and the LSP table beside it | `internal/entrypoint` (`Env.LoadMCPServers`, `LoadLSPServers`, `Env.LoadMCPPresetNames`) |
+| Building the canonical table, and the LSP table beside it | `internal/entrypoint` (`Env.LoadMCPServers`, `LoadLSPServers`) |
 | Publishing it as a composition source | `internal/entrypoint` (`packsurfaces.go`), `internal/agentcfg/manifest` (`SourceMCPServers`, `SourceLSPServers`) |
 | Capability-driven MCP filtering at the derive boundary | `internal/agentcfg/luahook` (`eligibleMCPServers`, `withoutProvidesKey`, `sourceCapabilities`) |
 | The per-tool projection | each pack's `derive.lua`, run in `internal/agentcfg/luahook` |
 | Claude's generated LSP plugin | `internal/jailcontent` (`RenderLSPPlugin`, `writeLSPPlugin`, `IsLSPPlugin`, `SetLSPServers`, `LSPPluginDir`), called from `PrepareSkills`; the table is injected by `internal/cli/run` (`refreshJailBriefings`, `prepare.go`). At the host, `internal/cli` (`applyHostLSPPlugin`, called from `applyHostSkills`) |
-| The wrapper scripts | `internal/entrypoint` (`GenerateMCPWrappers`, `nodeWrapper`, `npxWrapper`, `chromeWrapper`) |
+| The wrapper scripts | `internal/entrypoint` (`GenerateMCPWrappers`, `nodeWrapper`, `npxWrapper`) |
 | Host-side validation of the two config keys | `internal/config` (`validate.go`) |
 
 **Reads with:** [`pack-system.md`](pack-system.md) (surfaces, layers, `derive.lua`, and the
 principle that core knows the domain and never the tool),
 [`mise-node-dynamic-linking.md`](mise-node-dynamic-linking.md) (the loader story the wrappers
-used to carry), `yolo config-ref` (the authority for `mcp_servers`, `mcp_presets` and
-`lsp_servers`). A pack-shipped AgentCore web-search entry for every Bedrock profile is proposed,
+used to carry), `yolo config-ref` (the authority for `mcp_servers` and `lsp_servers`, and
+for the retired `mcp_presets` key's refusal). A pack-shipped AgentCore web-search entry for every Bedrock profile is proposed,
 unbuilt, in [`bedrock-web-search.md`](../design/bedrock-web-search.md).
 
 ---
@@ -96,7 +99,7 @@ unbuilt, in [`bedrock-web-search.md`](../design/bedrock-web-search.md).
 ## The pipeline
 
 ```
-yolo-jail.jsonc: mcp_servers, mcp_presets, lsp_servers
+yolo-jail.jsonc: mcp_servers, lsp_servers
   → validated host-side
   ├─ HOST, every launch: each selected pack's `mcp` entries, `~/` joined to the
   │     notch's home, with mcp_servers merged over them
@@ -109,8 +112,7 @@ yolo-jail.jsonc: mcp_servers, mcp_presets, lsp_servers
   │     → the same bytes (jailcontent.RenderLSPPlugin) in every skills
   │     destination of the real home
   → shipped into the jail as JSON env vars
-  → in-jail LoadMCPServers(): expand presets → merge custom entries
-      (override / add / null-remove) → apply the requires_env gate
+  → in-jail LoadMCPServers(): the composed table → apply the requires_env gate
       [NO ${VAR} interpolation, at any notch]
   → published once as the canonical source tables (SourceMCPServers, SourceLSPServers)
   → at the derive boundary: drop MCP servers whose `provides` the active
@@ -129,13 +131,11 @@ destination rather than asking which one is Claude's.
 derive boundary on, with the same derives
 ([OQ-HC1](host-agent-environment.md#oq-hc1)). The tables come from the USER config alone,
 composed in `internal/cli`'s `composeHostInputs` and handed to the render as the same wire
-variables a launch exports ([HC-D13](host-agent-environment.md#HC-D13)). Three things
+variables a launch exports ([HC-D13](host-agent-environment.md#HC-D13)). These things
 differ, each named in the report:
 
-- **No preset is expanded.** Its command is a wrapper only a jail's boot writes
-  ([HC-D16](host-agent-environment.md#HC-D16)), and the line names the pack that ships
-  a server of that name, the `chrome-devtools` pack for that preset
-  ([HC-D27](host-agent-environment.md#HC-D27)).
+- **A retired `mcp_presets` key is named**, with the refusal's text: the host runs no full
+  config validation, so the report is where it is said.
 - **A pack's `mcp` entry composes, joined to your real home**, under your own `mcp_servers`,
   when the pack is one yolo ships or one at a path on this machine. A fetched pack's entry is
   left out and named: its command would run unconfined as you whenever the agent starts
@@ -181,8 +181,7 @@ user writes one under `mcp_servers`:
   for the sandbox home and bakes it into the bootstrap, and `yolo host apply` composes it for
   your home. The jail reads it as it read your table before.
 - **Your entry of the same name merges over the pack's per field**, `env` per variable, and
-  `null` removes it — at every notch, and in a jail the `null` also removes a preset of that
-  name, as it always did. Your entry is written as you wrote it: a `~/` in it is not joined, so
+  `null` removes it — at every notch. Your entry is written as you wrote it: a `~/` in it is not joined, so
   an `args` of yours, which replaces the pack's whole, names the wrapper by its absolute path.
 - **A server name is sole-owned.** Two selected packs shipping one are refused by config
   validation, which a jail launch and `yolo check` run, and reported by `yolo pack footprint`; the
@@ -196,14 +195,9 @@ user writes one under `mcp_servers`:
 Because every projection reads the same table, these apply **identically** to every
 MCP-enabled tool.
 
-- **Presets are opt-in and expanded in-jail**, not on the host. Their `command` is the wrapper
-  path, baked in — so the servers yolo ships are wrapper-routed by construction. **`macos-user`
-  expands none**: it generates no wrappers (their bodies are Linux paths), so a preset entry
-  would point every agent at a file that does not exist. The bootstrap writes no entry for a
-  preset (`Env.SkipMCPPresets`) and its launch warning names each preset it left out.
-- **`null` removes** a server or a preset. Same-file "enabled *and* null-removed" is a
-  validation error; across scopes (a user config enables, a workspace nulls) it is intentional
-  and allowed.
+- **Core names no server of its own.** Every entry is the user's or a selected pack's; the
+  `mcp_presets` list that was core's went on 2026-10-23, and a config carrying it is refused.
+- **`null` removes** a server, your own from another scope or a pack's.
 - **`requires_env` gates** a server: if any listed variable is unset or empty in the jail the
   server is dropped with a notice (and a copy an earlier launch wrote is named as gated, with the
   variable and where to set it, [below](#a-launch-with-a-provides-server-recorded-2026-10-01)), and otherwise the `requires_env` key itself is **stripped**
@@ -225,12 +219,8 @@ MCP-enabled tool.
   shared value when two or more profiles set the variable to that value itself, and the server
   is then configured only for the agents whose file sets it. No `YOLO_` name is taken from the
   file: those are the launcher's.
-- **A pack's entry replaces a same-named preset.** The composed table rides in the variable the
-  user's own table always did, and that variable overrides the presets by name, so while both are
-  on (the key retires in [step 3](../design/mcp-presets-removal.md#13-what-i-would-build-in-order))
-  the `chrome-devtools` pack's entry is the one every agent gets.
-- **Key order is insertion order** — presets in the order the config listed them, then the
-  composed entries, each pack's in pack order and then the user's own — so a projection's output
+- **Key order is insertion order** — the composed entries, each pack's in pack order and then
+  the user's own — so a projection's output
   is byte-stable across boots.
 
 > [!WARNING]
@@ -805,9 +795,10 @@ pack, write `"mcp_servers": {"chrome-devtools": null}`.
 
 ## The node/npx wrapper
 
-`GenerateMCPWrappers` writes three scripts at boot: `node` and `npx` into a `mcp-wrappers`
-subdirectory of the local bin dir, and a fatter `chrome-devtools-mcp-wrapper` one level up
-beside it.
+`GenerateMCPWrappers` writes two scripts at a container boot: `node` and `npx`, into a
+`mcp-wrappers` subdirectory of the local bin dir. The fatter `chrome-devtools-mcp-wrapper` it
+also wrote, which nothing spawned, went with `mcp_presets`; the browser's wrapper is the
+`chrome-devtools` pack's ([above](#the-chrome-devtools-pack)).
 
 The `node` and `npx` wrappers now do exactly two things: export the fontconfig variables, and
 `exec` the **nix** binary directly.
@@ -829,42 +820,6 @@ The `node` and `npx` wrappers now do exactly two things: export the fontconfig v
 A wrapper is **self-contained on purpose** — it sets its environment from `$HOME`-relative
 constants and `exec`s. It must never call out to `npm config get` or shell out for a path:
 that is what makes it robust to being handed a sanitized environment.
-
-The chrome wrapper additionally starts headless chromium if it is not already answering, and
-**resolves chromium rather than assuming a path**: a baked image has it at a known
-`/usr/bin` symlink, while a launch that delivers the image's bulk extras from the mounted nix
-store has no such symlink and a `chromium` on PATH instead. The baked path is tried first so a
-jail that bakes behaves exactly as it always did.
-
-> [!NOTE]
-> **The chrome wrapper is generated on every container boot and nothing yolo generates spawns
-> it.** No preset's `command` names it; its only other references in the tree are the boot
-> catalog's declared-orphan entry — which is what stops `catalogLocalBinOrphans` reporting it
-> as an unowned file in `~/.local/bin` — and tests. The `chrome-devtools` preset spawns `mcp-wrappers/node`
-> directly and lets the MCP server start chromium itself.
-
-### Where the wired preset finds chromium
-
-Because the preset does not go through the fat wrapper, the resolution the wrapper does has to
-happen again in the argv the preset emits: `chrome-devtools-mcp` is passed
-`--executablePath`, and that value is **resolved when the entry is generated, not written into
-the source**. A baked image answers with its `/usr/bin` symlink; a store-delivered launch
-answers with the `/run/yolo/packages` farm, which is where `.#yoloImageExtras` puts chromium
-once `.#ociImageLean` has stopped baking it. With nothing to resolve the value falls back to
-the baked path, so a jail with no chromium fails the way it always did.
-
-The search is the **launcher-collision check's probe path** (`imageProbePath`) rather than a
-second search order of its own — one answer to *what does this launch provide*, which already
-counts the store farm and excludes the per-home install prefixes. That exclusion is also what
-makes the answer available this early: the farm is built by the **first** generator in the
-boot, while the install prefixes are still being filled in when config is rendered.
-
-> [!WARNING]
-> **Pinning `/usr/bin/chromium` here is a real outage, not a tidiness point.** That symlink is
-> created only inside `mkBinPathLinks`' `withChromium` block, and `.#ociImageLean` — the image
-> a `YOLO_STORE_PACKAGES=1` launch builds — turns that block off. A pinned argv therefore names
-> a path that does not exist on exactly the launches that do have a chromium. See
-> [`image-staging-vs-baking.md`](image-staging-vs-baking.md#store-delivered-packages).
 
 ### The gap: a custom server bypasses the wrapper
 
@@ -888,9 +843,9 @@ resolves `npx` through PATH to the mise shim, not to the wrapper.
 problem. The crash class is gone: nix-ld resolves the FHS node's libraries env-free, so a
 scrubbed-environment spawn no longer dies. What a bypassing server misses is the fontconfig
 export (which matters only if it drives chromium) and the mise-shim resolution cost on cold
-start. The mitigation, if it is ever wanted, is to generalize the preset pattern — rewrite a
-bare `node`/`npx` command to the wrapper path inside the one shared loader — which is one
-change in one place rather than a call-site hunt.
+start. The mitigation, if it is ever wanted, is to rewrite a bare `node`/`npx` command to the
+wrapper path inside the one shared loader — one change in one place rather than a call-site
+hunt.
 
 ## What this does not license
 
@@ -921,11 +876,6 @@ change in one place rather than a call-site hunt.
 **LSP producers for opencode and Pi.** opencode's config file is already a pack surface with no
 `lsp` producer in its derive; Pi's `pi-lens` extension reads `lsp.servers` from
 `~/.pi-lens/config.json`, which no pack writes.
-
-**Removing the `sequential-thinking` preset**, and retiring `mcp_presets` whole, is ruled and
-not built: [§13](../design/mcp-presets-removal.md#13-what-i-would-build-in-order) step 3, parked
-on [`OQ-PK1`](pack-system.md#oq-pk1). Until it ships both mechanisms are live, and the pack's
-entry replaces a same-named preset.
 
 **Two readers do not see a pack's entry yet.** `yolo check`'s dry-run render composes its
 `YOLO_MCP_SERVERS` from your config alone (`internal/cli/check/entrypoint.go`), so its preview of
@@ -991,21 +941,18 @@ are stated.
 
 | Value | Setting | Defined in |
 | :--- | :--- | :--- |
-| Config keys | `mcp_servers`, `mcp_presets`, `lsp_servers` | `yolo config-ref` |
+| Config keys | `mcp_servers`, `lsp_servers`; `mcp_presets` is refused | `yolo config-ref`, `config.MCPPresetsRetiredMessage` |
 | Wire form into the jail | one JSON env var per key | `internal/cli/run/assemble.go` |
 | Canonical source names | `mcp_servers`, `lsp_servers` | `manifest.SourceMCPServers`, `SourceLSPServers` |
-| Available presets | `chrome-devtools`, `sequential-thinking` | `Env.LoadMCPServers` |
 | Pack-shipped servers | the `mcp` kind; `chrome-devtools` is the shipped one | `packload.ComposeMCPServers`, `packs/chrome-devtools/pack.json` |
 | The home word in an `mcp` entry | `~/` at the start of a `command` or `args` word | `packdecl.MCPHomePrefix` |
 | Where the composition is delivered | `YOLO_MCP_SERVERS` on the container argv; the macos-user bootstrap env; the host's derive inputs | `run.jailMCPServers`, `macosuser.BuildRunPlanWithDaemons` (`entrypoint.MCPServersAt`), `cli.composeHostInputs` |
 | Where the chrome-devtools wrapper lands | `~/.local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper` | `packs/chrome-devtools/pack.json` |
-| Wrapper locations | `~/.local/bin/mcp-wrappers/{node,npx}`; `~/.local/bin/chrome-devtools-mcp-wrapper` | `Env.McpWrappersBin`, `GenerateMCPWrappers` |
+| Wrapper locations | `~/.local/bin/mcp-wrappers/{node,npx}` | `Env.McpWrappersBin`, `GenerateMCPWrappers` |
 | What a wrapper exports | `FONTCONFIG_FILE`, `FONTCONFIG_PATH` — and nothing else | `internal/entrypoint/mcp_wrappers.go` |
 | What a wrapper execs | the nix `/bin/node` / `/bin/npx` | `internal/entrypoint/mcp_wrappers.go` |
-| Chrome debug endpoint defaults | overridable by `CHROME_DEBUG_PORT` / `CHROME_DEBUG_ADDR` | `chromeWrapper` |
-| Where the wired `chrome-devtools` argv gets chromium | resolved against what the launch provides, falling back to the baked `/usr/bin` path | `chromiumExecutablePath` |
 | Retired sidecar name | `yolo-managed-mcp-servers.json`, deleted on first composed render | each pack's `retireOnFirstRender` |
-| Bootstrap-installed MCP packages | gated on the same preset declaration that builds the table | `Env.LoadMCPPresetNames` |
+| Bootstrap-installed MCP packages | none: a pack server's program is installed by the agents' launchers | `BootstrapScript` |
 | MCP entry key the capability filter reads, then strips | `provides` | `luahook.eligibleMCPServers`, `withoutProvidesKey` |
 | Where a source's capabilities are declared | `providers.<name>.capabilities` for a selected provider (a pack default under the user's override); `capabilities` on a `kind: "program"` contribution for an agent's built-in login | `packdecl.Contribution.Capabilities`, `packdecl.Manifest.NativeCapabilities`; resolved by `luahook.sourceCapabilities` |
 | Where capability-driven delivery is pinned | the acceptance cells, each driving `ConfigurePackSurfaces` over the shipped packs and the launcher's composed wire tables | `internal/entrypoint/capabilitymcp_test.go` (re-checked at `ca86d945`) |
@@ -1025,7 +972,6 @@ for the host half of Claude's plugin.
 
 | ID | Ruling | Why it stays |
 | :--- | :--- | :--- |
-| `D6` | The bootstrap's npm install for a preset is gated on the **same declaration** that builds the server table | Hardcoding a package list beside the preset table lets the two drift, and the failure is a preset that is configured and whose package was never installed. |
 | Capability-driven delivery ([above](#capability-driven-mcp-delivery)) | The filter sits at the derive **context boundary**, never in an agent's `derive.lua`, and keys on the selected **source**, never on the agent | The per-agent `provides == "web_search"` branches it replaced were opt-in, and one had drifted: claude's suppressed web search for every profile that was not bedrock or codex, so a Kilo launch, a source with no native search, lost its search MCP because of the agent it ran under. |
 | Principle 2 of [`pack-system.md`](pack-system.md) | Core publishes the **domain** (`mcp_servers`); the pack owns the **tool's dialect** | A per-tool branch in core is the agent registry coming back through a different door. The projection changes when the tool changes, which is the pack's business. |
 | <a id="oq-cap1"></a>[`OQ-CAP1`](#oq-cap1) | Two `mcp_servers` entries declaring the same `provides` refuse the launch | Which server does a job is never chosen silently. |

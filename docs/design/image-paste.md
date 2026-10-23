@@ -502,7 +502,7 @@ Mechanism choices made in this design, under the 2026-09-25 delegation of implem
 
 ## 12. Open questions
 
-1. 💬 **OQ-PA1: If M1 finds the macos-user pasteboard open, is it closed at once, or together with the darwin paste arm?**
+1. 💬 <a id="OQ-PA1"></a>**OQ-PA1: If M1 finds the macos-user pasteboard open, is it closed at once, or together with the darwin paste arm?**
 
    Closing it stops agents reading the user's whole clipboard, text included, and also stops
    native image paste on macos-user until the ported arm ships; `yolo paste` covers the gap.
@@ -511,14 +511,14 @@ Mechanism choices made in this design, under the 2026-09-25 delegation of implem
      images through `yolo paste` for a while.
    - **B — Close with the arm.** No interim regression; the hole stays open until the port lands.
 
-   <!-- vantage: question id=OQ-PA1 leaning="Close at once: an open pasteboard is a standing read of copied passwords, and yolo paste covers images meanwhile." -->
+   <!-- vantage: oq id=OQ-PA1 leaning="Close at once: an open pasteboard is a standing read of copied passwords, and yolo paste covers images meanwhile." -->
 
    _Leaning:_ Close at once: an open pasteboard is a standing read of copied passwords, and yolo paste covers images meanwhile.
 
    **Answer:**
    > _(empty — fill in when decided)_
 
-2. 💬 **OQ-PA2: Is consuming Ctrl+V in bash and vim, while an image is on the clipboard, acceptable?**
+2. 💬 <a id="OQ-PA2"></a>**OQ-PA2: Is consuming Ctrl+V in bash and vim, while an image is on the clipboard, acceptable?**
 
    The bracketed-paste gate cannot tell an agent from bash or vim, which also turn bracketed paste
    on ([§4](#4-the-chord-consumed-only-when-it-can-be-honored)).
@@ -530,14 +530,14 @@ Mechanism choices made in this design, under the 2026-09-25 delegation of implem
      terminals bind it to text paste themselves.
    - **C — Both keys.** Ctrl+V as in A, plus a second chord; more surface for little gain.
 
-   <!-- vantage: question id=OQ-PA2 leaning="A: the key every agent documents is the feature, and the cost needs an image on the clipboard and is undone in one keystroke." -->
+   <!-- vantage: oq id=OQ-PA2 leaning="A: the key every agent documents is the feature, and the cost needs an image on the clipboard and is undone in one keystroke." -->
 
    _Leaning:_ A: the key every agent documents is the feature, and the cost needs an image on the clipboard and is undone in one keystroke.
 
    **Answer:**
    > _(empty — fill in when decided)_
 
-3. 💬 **OQ-PA3: Is the paste arm on by default, with a config key to turn it off?**
+3. 💬 <a id="OQ-PA3"></a>**OQ-PA3: Is the paste arm on by default, with a config key to turn it off?**
 
    Core activates nothing by default for packs; this is not a pack, and it adds no capability the
    user's keypress does not request.
@@ -547,7 +547,7 @@ Mechanism choices made in this design, under the 2026-09-25 delegation of implem
    - **B — Off by default**, opted into with `image_paste: true`. Most users would never learn it
      exists, since Ctrl+V on an image would still silently fail.
 
-   <!-- vantage: question id=OQ-PA3 leaning="A: the keypress is the consent and the launch line discloses it; off by default leaves the broken behavior in place for everyone." -->
+   <!-- vantage: oq id=OQ-PA3 leaning="A: the keypress is the consent and the launch line discloses it; off by default leaves the broken behavior in place for everyone." -->
 
    _Leaning:_ A: the keypress is the consent and the launch line discloses it; off by default leaves the broken behavior in place for everyone.
 

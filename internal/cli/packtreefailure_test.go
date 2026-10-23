@@ -18,6 +18,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 )
@@ -131,5 +132,101 @@ func TestAPackTreeWaiterTakesTheWinnersFailure(t *testing.T) {
 	// A launch that STARTS after the failure takes the lock at once, and builds again.
 	if _, err := buildFork(b, mode, io.Discard, io.Discard, false); err == nil || errors.As(err, &adopted) || runs != 1 {
 		t.Errorf("a launch after the failure: %v, %d jail runs, want its own build", err, runs)
+	}
+}
+
+// BG-D21 AT A LAUNCH: where the pack declares a prebuilt for the launch's platform, the slot's
+// refusal of a pack-tree build names the explicit opt-in — a build that ran and failed, and a build
+// jail that stopped before its build line — and never takes the prebuilt. A dev override's checkout
+// names none (its `path` cannot be combined with `prebuilt`). Red if buildPlainForkForLaunch stops
+// appending Fork.PrebuiltOptInClause to either reason.
+func TestALaunchsPackTreeBuildRefusalNamesThePrebuiltOptIn(t *testing.T) {
+	prev := forkBuildChild
+	forkBuildChild = func(_ context.Context, _ time.Duration, staging string, b forkBuild, s captureStreams,
+		color bool) (int, bool) {
+		return forkBuildRunJail(staging, b, s, color), false
+	}
+	t.Cleanup(func() { forkBuildChild = prev })
+	notStarted := func(t *testing.T, runs *int) func(run.Options) int {
+		return func(run.Options) int { *runs++; return 125 }
+	}
+	for _, tc := range []struct {
+		name     string
+		jail     func(*testing.T, *int) func(run.Options) int
+		checkout bool
+		said     string
+	}{
+		{"failed", failingPackTreeJail, false, "failed on the host"},
+		{"not started", notStarted, false, "was not started"},
+		{"failed checkout", failingPackTreeJail, true, "failed on the host"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, digest := packTreeBuildFixture(t, "exit 3")
+			f.Prebuilts = map[string]packdecl.PrebuiltBuild{"linux/amd64": {URL: "https://example.invalid/x",
+				SHA256: strings.Repeat("c", 64)}}
+			if tc.checkout {
+				f.Checkout = f.SourceDir()
+			}
+			runs := 0
+			withFakeCaptureJail(t, tc.jail(t, &runs))
+			var stream syncBuffer
+			req := run.ForkBuildRequest{Pins: []packload.ForkPin{{Fork: f, Commit: digest}}, Platform: "linux/amd64",
+				Runtime: "podman", Workspace: floortest.ResolvedTemp(t), Interrupt: &run.ActInterrupt{}}
+			forks, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxChecks: 1, MaxBuilds: 1}, &stream, false)
+			d := forks["x"]
+			if d.Key != "" || runs != 1 || !strings.Contains(d.Reason, tc.said) {
+				t.Fatalf("%d runs, delivery %+v, want one run and a reason saying %q\n%s", runs, d, tc.said, stream.String())
+			}
+			named := strings.Contains(d.Reason, `"x": {"prebuilt": true}`) && strings.Contains(d.Reason, "linux/amd64")
+			if named == tc.checkout {
+				t.Errorf("the reason names the opt-in = %v, want %v:\n%s", named, !tc.checkout, d.Reason)
+			}
+		})
+	}
+}
+
+// BG-D21 ON THE PRE-FLIGHT SKIP: two pack-tree programs of one pack share a build jail's seal; the
+// first's jail refuses its own config, so the second is not started ("its build jail would refuse to
+// start"), and that refusal names the prebuilt opt-in too. Red if buildPlainForkForLaunch's
+// refusedSeal arm stops appending Fork.PrebuiltOptInClause.
+func TestAPackTreeBuildSkippedForARefusedSealNamesThePrebuiltOptIn(t *testing.T) {
+	x, _ := packTreeBuildFixture(t, "exit 3")
+	writeFile(t, filepath.Join(x.Root, "tools", "y", "VERSION"), "1\n")
+	pre := map[string]packdecl.PrebuiltBuild{"linux/amd64": {URL: "https://example.invalid/p", SHA256: strings.Repeat("c", 64)}}
+	p := &packload.Pack{Name: "fx", Root: x.Root, Decl: &packdecl.Manifest{Contributes: []packdecl.Contribution{
+		{Kind: packdecl.KindProgram, Bin: "x", Via: packdecl.ViaPack, From: "tools/x", Build: "exit 3", Run: "x", Prebuilt: pre},
+		{Kind: packdecl.KindProgram, Bin: "y", Via: packdecl.ViaPack, From: "tools/y", Build: "exit 3", Run: "y", Prebuilt: pre},
+	}}}
+	var pins []packload.ForkPin
+	for _, f := range packload.PackTreePrograms([]*packload.Pack{p}) {
+		digest, err := f.Digest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		pins = append(pins, packload.ForkPin{Fork: f, Commit: digest})
+	}
+	runs := 0
+	withFakeCaptureJail(t, bootRefusingJail(t, &runs, true, automodeFailure()))
+	prev := forkBuildChild
+	forkBuildChild = func(_ context.Context, _ time.Duration, staging string, b forkBuild, s captureStreams,
+		color bool) (int, bool) {
+		return forkBuildRunJail(staging, b, s, color), false
+	}
+	t.Cleanup(func() { forkBuildChild = prev })
+	var stream syncBuffer
+	req := run.ForkBuildRequest{Pins: pins, Platform: "linux/amd64", Runtime: "podman",
+		Workspace: floortest.ResolvedTemp(t), Interrupt: &run.ActInterrupt{}}
+	forks, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxChecks: 1, MaxBuilds: 1}, &stream, false)
+	skipped := ""
+	for _, d := range forks {
+		if strings.Contains(d.Reason, "would refuse to start on the host") {
+			skipped = d.Reason
+		}
+	}
+	if runs != 1 || skipped == "" {
+		t.Fatalf("%d build jails, deliveries %+v; want one jail and the other build skipped\n%s", runs, forks, stream.String())
+	}
+	if !strings.Contains(skipped, `{"prebuilt": true}`) || !strings.Contains(skipped, "linux/amd64") {
+		t.Errorf("the skipped build's refusal does not name the prebuilt opt-in:\n%s", skipped)
 	}
 }

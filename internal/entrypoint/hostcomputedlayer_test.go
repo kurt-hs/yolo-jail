@@ -298,23 +298,6 @@ func TestTheHostRefusesAComputedLayerThatNamesAJailPath(t *testing.T) {
 	}
 }
 
-// PRESETS NEVER EXPAND AT THE HOST (HC-D6), even when a caller hands the list in: their commands
-// are a wrapper only a jail's boot writes. A preset let through would also trip the jail-path
-// check, so this pins the input rule on its own: the surface renders, without the preset.
-func TestTheHostNeverExpandsAnMCPPreset(t *testing.T) {
-	t.Setenv("YOLO_CTX_ROOT", t.TempDir())
-	home := t.TempDir()
-	in := hostTestInputs(t, testPacksForAgent(t, "pi"), nil, tavily(), nil)
-	in.Vars[mcpPresetsWireEnv] = `["chrome-devtools","sequential-thinking"]`
-	if r := hostRenderWith(t, home, render.OwnershipOwn, in, "pi", "pi/mcp"); r.Action != "rendered" {
-		t.Fatalf("pi/mcp: %q", r.Action)
-	}
-	servers := jsonAt(t, home, ".pi/agent/mcp.json", "mcpServers").(map[string]any)
-	if _, has := servers["chrome-devtools"]; has || len(servers) != 1 {
-		t.Errorf("the host expanded a preset: %v", servers)
-	}
-}
-
 // JailPathsIn's token rule: a root counts only as a whole path token, and a root the rendered
 // home lies under is not a jail path there (HC-D15).
 func TestJailPathsInMatchesWholePathTokensOnly(t *testing.T) {

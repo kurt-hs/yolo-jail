@@ -10,7 +10,7 @@ covers:
   - internal/broker/brokerlifecycle.go
   - internal/cli/check/reporter.go
   - internal/loopholes/runtime.go
-  - internal/entrypoint/system.go
+  - internal/entrypoint/catrust.go
   - internal/entrypoint/packhooks.go
   - internal/cli/run/loopholesruntime.go
   - internal/cli/run/jaildaemondecline.go
@@ -71,7 +71,7 @@ long answer that lives in the vendor binary, not in this tree.
 | The failed-spawn warning | `internal/broker` (`BrokerSpawn`, `reportFailedSpawn`, `brokerWaitForSocketUntil`) |
 | `yolo check`'s `[SKIP]` level | `internal/cli/check` (`reporter.skip`, `reporter.hostFact`) |
 | The shared-credentials symlink | `internal/entrypoint/packhooks.go` (`linkSharedCredential`); `packs/claude/pack.json` |
-| The OpenSSL-family CA bundle | `internal/entrypoint/system.go` (`GenerateCABundle`), `boot.go`, `shell.go` |
+| The OpenSSL-family CA bundle | `internal/entrypoint/catrust.go` (`applyCATrust`), `shell.go`; the host half in `internal/cli/run/hostcatrust.go` |
 | Backend scope | `internal/loopholes/runtime.go` (`admitsJailSideEffects`); `internal/cli/run` (`startLoopholes`, `promisedEndpointIsUnpublishable`, `jaildaemondecline.go`) |
 
 **Reads with:** [`agent-credentials.md`](agent-credentials.md) — the enumeration of every credential
@@ -232,24 +232,23 @@ independent paths.
   22158845) does `if (process.env.NODE_EXTRA_CA_CERTS) { let extra = cacheExtraCACertificates(); … }`
   and pushes the result onto its bundled roots — which is why `axios/1.15.2` completes a handshake
   against a self-signed leaf.
-- **The OpenSSL family** gets a concatenated bundle. `GenerateCABundle`
-  ([`system.go:16-62`](../../internal/entrypoint/system.go)) joins the image baseline `$SSL_CERT_FILE`
-  ([`flake.nix:1542`](../../flake.nix), nixpkgs cacert) with every de-duplicated
-  `NODE_EXTRA_CA_CERTS` path into `$HOME/.yolo-ca-bundle.crt`; `boot.go:606-609` exports
-  `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` and `GIT_SSL_CAINFO` at it before any child
-  spawns, and `shell.go:234-238` re-exports the same four from `.bashrc`. The file is per-workspace
-  state, bound from the workspace ([`assemble_parts.go:154`](../../internal/cli/run/assemble_parts.go)).
+- **The OpenSSL family** gets a concatenated bundle. The `generate_ca_bundle` boot step
+  ([`catrust.go`](../../internal/entrypoint/catrust.go), `applyCATrust`) joins the image baseline
+  `$SSL_CERT_FILE` (nixpkgs cacert), the host's CAs the launcher handed over, and every
+  de-duplicated `NODE_EXTRA_CA_CERTS` path into `$HOME/.yolo-ca-bundle.crt`, and exports the five
+  bundle variables at it before any child spawns, unless the user's env layers name a bundle of
+  their own; `.bashrc` sources the same decision. The file is per-workspace state, bound from the
+  workspace ([`assemble_parts.go`](../../internal/cli/run/assemble_parts.go)). See
+  [PS-D16](../design/provisioner-sets.md#PS-D16).
 
-> [!WARNING]
-> **`NODE_EXTRA_CA_CERTS` is a single path, not a list — and yolo joins it like a list.**
-> `runtime.go:420` joins multiple CA paths with `os.PathListSeparator`, but the consumer treats the
-> whole value as one filename: 2.1.278's `maybeWarnAboutExtraCACerts` (offset 22159500) calls
-> `accessSync(extraPath)` on the raw variable and, on failure, prints
-> ``Warning: Ignoring extra certs from `${extraPath}`, load failed: …``. The moment a second selected
-> loophole declares a `ca_cert`, the joined value becomes unopenable and **both** CAs are silently
-> dropped for every Node/Bun client, leaving only the OpenSSL-family bundle (which does concatenate
-> correctly) working. Only one shipped manifest declares a `ca_cert` today, so the bug is unreachable
-> and untested.
+> [!NOTE]
+> **`NODE_EXTRA_CA_CERTS` is a single path, not a list.** The loophole launcher still joins several
+> CA paths with `os.PathListSeparator` (`internal/loopholes/runtime.go`), and Claude Code treats the
+> whole value as one filename (2.1.278's `maybeWarnAboutExtraCACerts`, offset 22159500). Since
+> [PS-D16](../design/provisioner-sets.md#PS-D16) the jail's boot reads that list as input and points
+> `NODE_EXTRA_CA_CERTS` at ONE file, `~/.config/yolo-extra-ca.pem`, holding every CA beyond the
+> public roots, so a second loophole CA no longer drops both. A file the user's own
+> `NODE_EXTRA_CA_CERTS` names is appended to it, never put in place of the loophole CAs.
 
 Two further notes for a threat model. The anchor is read **once per process** —
 `NODE_EXTRA_CA_CERTS` is in 2.1.278's startup-env list and `cacheExtraCACertificates` memoizes — so a
@@ -1284,8 +1283,8 @@ offset for re-measurement.
 | Swept legacy artifacts | `ca.key`, `ca.srl`, `leaf.cnf`, `server.csr`; a surviving `ca.key` forces a re-mint | `internal/oauthbroker/cert.go` (`legacyOpensslArtifacts`, `caAndLeafAreCurrent`) |
 | Mint entry points | a launch, before its argv names the mounts (`mintBrokerCertificates`); daemon start; `--init-ca` (idempotent), `--force-init-ca` (rotates both halves) | `internal/cli/run/brokercerts.go`; `internal/oauthbroker/oauthbrokercmd.go` |
 | Spawn deadline | 5s for a jail's just-spawned broker to bind its socket, then the failed-spawn warning (it was a host-wide singleton's until [`HD-R1`](../design/host-daemon-ownership.md#HD-R1)) | `internal/cli/run/loopholesruntime.go` (`serviceReadyTimeoutDefault`) |
-| Node/Bun trust var | `NODE_EXTRA_CA_CERTS`, one path — ⚠ joined as a list by yolo, read as a single filename by the consumer ([why that matters](#how-the-handshake-is-trusted)) | `internal/loopholes/runtime.go`; Claude Code 2.1.278 (`node:tls` compat, offset 22158845) |
-| OpenSSL-family trust vars | `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO` → `$HOME/.yolo-ca-bundle.crt` | `internal/entrypoint/system.go` (`GenerateCABundle`), `boot.go`, `shell.go`; bound from the workspace in `internal/cli/run/assemble_parts.go` |
+| Node/Bun trust var | `NODE_EXTRA_CA_CERTS`, one path — joined as a list by the loophole launcher, then replaced by the boot with one file ([why that matters](#how-the-handshake-is-trusted)) | `internal/loopholes/runtime.go`, `internal/entrypoint/catrust.go`; Claude Code 2.1.278 (`node:tls` compat, offset 22158845) |
+| OpenSSL-family trust vars | `NIX_SSL_CERT_FILE`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO` → `$HOME/.yolo-ca-bundle.crt`, unless the user names their own | `internal/entrypoint/catrust.go` (`applyCATrust`), `shell.go`; bound from the workspace in `internal/cli/run/assemble_parts.go` |
 | Vendor credential path | `CLAUDE_SECURESTORAGE_CONFIG_DIR ?? CLAUDE_CONFIG_DIR ?? ~/.claude` + `.credentials.json`; yolo sets `CLAUDE_SECURESTORAGE_CONFIG_DIR` to the machine-scope directory on every jail launch but a view launch, and never `CLAUDE_CONFIG_DIR` | Claude Code 2.1.278 (`Wb()`, offset 191037919), 2.1.284 (`ev()`); `packs/claude/pack.json`, `internal/cli/run/claudesecurestorage.go` |
 | Shared-credentials join | relative symlink from `.claude/.credentials.json` into the `scope: machine` `.claude-shared-credentials`; still written, and outside Claude's store path since [CL-D22](../design/claude-login-without-interception.md#CL-D22) ([CL-D24](../design/claude-login-without-interception.md#CL-D24)) | `packs/claude/pack.json`; `internal/entrypoint/packhooks.go` (`linkSharedCredential`) |
 | Vendor refresh lock | `<storage dir>/.oauth_refresh.lock`, the storage dir being the credential path's directory above; `realpath:false`, stale `60000`, update `5000`. **In the machine-scope directory** since CL-D22, on every jail launch but a view launch, whose lock stays in the workspace's `~/.claude`; whether it contends across Apple Container VMs is unmeasured | Claude Code 2.1.278 (offset 192117058), 2.1.284 (called with `ev()`) |

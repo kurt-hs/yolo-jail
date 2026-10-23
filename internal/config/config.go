@@ -101,7 +101,7 @@ var knownTopLevelConfigKeys = set(
 // drifts from this list.
 var retiredTopLevelConfigKeys = set(
 	"repo_path", "agents", "host_processes", "journal", "agent_profiles", "use_profiles",
-	"macos_log",
+	"macos_log", "mcp_presets",
 )
 
 // TopLevelConfigKeys returns the LIVE top-level config keys — everything
@@ -316,8 +316,6 @@ var (
 )
 
 var vaapiPackages = []string{"mesa", "libva-utils"}
-
-var validMCPPresets = set("chrome-devtools", "sequential-thinking")
 
 // Default mise tools, merged under any user overrides.
 //

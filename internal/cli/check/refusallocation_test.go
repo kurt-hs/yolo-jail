@@ -118,15 +118,22 @@ func TestCheckWarningNamesTheFileAndLine(t *testing.T) {
 	}
 }
 
-// The same-file preset/null contradiction, checked per scope, leads with where the null entry
-// is written — here in the user scope's include, which `yolo check` reads with the rest of it.
-func TestCheckPresetNullRefusalNamesTheNullsLine(t *testing.T) {
-	got := locatedCheck(t, map[string]string{
-		"config.jsonc": `{"include_if_found": ["mcp.jsonc"]}`,
-		"mcp.jsonc":    "{\n  \"mcp_presets\": [\"chrome-devtools\"],\n  \"mcp_servers\": {\"chrome-devtools\": null}\n}\n",
-	}, "")
-	want := "~/.config/yolo-jail/mcp.jsonc:3:38: preset 'chrome-devtools' is enabled"
-	if !strings.Contains(got, want) {
-		t.Errorf("check's refusal does not lead with where the null is written (want %q):\n%s", want, got)
+// `yolo check` refuses the retired `mcp_presets` key at either scope, at the line it is written
+// (docs/design/mcp-presets-removal.md §13 step 3).
+func TestCheckRefusesTheRetiredMCPPresetsKeyAtEitherScope(t *testing.T) {
+	for scope, want := range map[string]string{
+		"user":      "~/.config/yolo-jail/config.jsonc:2:18: config.mcp_presets: REMOVED",
+		"workspace": "yolo-jail.jsonc:2:18: config.mcp_presets: REMOVED",
+	} {
+		t.Run(scope, func(t *testing.T) {
+			const body = "{\n  \"mcp_presets\": [\"chrome-devtools\"]\n}\n"
+			user, ws := map[string]string{"config.jsonc": body}, ""
+			if scope == "workspace" {
+				user, ws = nil, body
+			}
+			if got := locatedCheck(t, user, ws); !strings.Contains(got, want) {
+				t.Errorf("check does not refuse mcp_presets where it is written (want %q):\n%s", want, got)
+			}
+		})
 	}
 }

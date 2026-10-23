@@ -46,10 +46,10 @@ package run
 //	the workspace's assembled config copy  an empty object (assembledConfigFor, FP-D20):
 //	(writeLaunchConfigArtifacts)           the merged config holds inline env_sources, and
 //	                                       the build's workspace is bound read-write
-//	the MCP and LSP tables and the MCP     empty (agentServerTables, FP-D20): a server's
-//	presets (commonEnvBlock), and the LSP  literal env or args is a credential, and a build
-//	plugin from lsp_servers                runs no agent; so the jail's bootstrap installs
-//	(refreshJailBriefings)                 no preset's npm package either
+//	the MCP and LSP tables                 empty (agentServerTables, FP-D20): a server's
+//	(commonEnvBlock), and the LSP plugin   literal env or args is a credential, and a build
+//	from lsp_servers                       runs no agent
+//	(refreshJailBriefings)
 //	env_sources' MISE_DISABLE_TOOLS        not hydrated
 //	the user config's `mise_tools`         none, in EVERY capture jail, sealed or not
 //	(YOLO_MISE_TOOLS, and MISE_DISABLE_    (jailMiseTools, FP-D19): only yolo's defaults
@@ -61,6 +61,14 @@ package run
 //	                                       nix daemon or forwarded host loopback, and no
 //	                                       machine-wide store; and no `agents_md_extra`,
 //	                                       which is the user's own text
+//	the host's CA trust (prepareHostCATrust CROSSES, by decision (PS-D16): one composed file
+//	and hostCAArgs)                        of the CAs the host trusts, bound read-only, and
+//	                                       YOLO_HOST_CA_FILE naming it. A CA certificate is
+//	                                       public, not a credential, and the maintainer ruled
+//	                                       "every jail"; a fork build behind an inspecting
+//	                                       proxy fetches nothing without it. The macos-user
+//	                                       sealed capture composes the same trust
+//	                                       (ComposeCATrust), so the backends agree
 //	the whole macos-user arm (Run)         left above its first crossing site
 //	                                       (runSealedMacosUser): no context mount, relocation,
 //	                                       host service, keeper, doorway, credential view, host
@@ -247,16 +255,15 @@ func (o *Options) assembledSourcesFor() *config.Sources {
 	return o.configSources
 }
 
-// agentServerTables is the `lsp_servers` and `mcp_servers` tables and the `mcp_presets` list
-// this launch hands its jail: cfg's, or under the seal none. An MCP server's `env` and an LSP
-// server's `args` are literal strings the user writes, an API key among them, and a build runs
-// no agent to start a server for. An empty preset list is also what keeps the jail's bootstrap
-// from installing a preset's npm package (entrypoint.BootstrapScript).
-func agentServerTables(cfg *jsonx.OrderedMap, sealed bool, packs []*packload.Pack) (lsp, mcp *jsonx.OrderedMap, presets []any) {
+// agentServerTables is the `lsp_servers` and `mcp_servers` tables this launch hands its jail:
+// cfg's, or under the seal none. An MCP server's `env` and an LSP server's `args` are literal
+// strings the user writes, an API key among them, and a build runs no agent to start a server
+// for.
+func agentServerTables(cfg *jsonx.OrderedMap, sealed bool, packs []*packload.Pack) (lsp, mcp *jsonx.OrderedMap) {
 	if sealed {
-		return nil, nil, nil
+		return nil, nil
 	}
-	return cfgMap(cfg, "lsp_servers"), jailMCPServers(cfg, packs), cfgList(cfg, "mcp_presets")
+	return cfgMap(cfg, "lsp_servers"), jailMCPServers(cfg, packs)
 }
 
 // sealedBriefingInput is in with every description of a crossing the seal withholds taken out

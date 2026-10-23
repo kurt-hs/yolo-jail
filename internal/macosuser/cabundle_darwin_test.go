@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/catrust"
 )
 
 // cabundle_darwin_test.go RUNS THE REAL KEYCHAIN READ a launch makes (cabundle.go), on whatever
@@ -27,7 +29,7 @@ func TestTheSystemKeychainIsReadableWithoutSudo(t *testing.T) {
 		t.Fatalf("reading the System keychain as this user failed: %v", err)
 	}
 	blocks := strings.Count(out, "-----BEGIN CERTIFICATE-----")
-	candidates, left := keychainCACandidates(out, time.Now())
+	candidates, left := catrust.ParseCAs(out, catrust.SourceSystemKeychain, time.Now())
 	if len(candidates)+left > blocks {
 		t.Errorf("%d candidates and %d left out from %d certificate blocks", len(candidates), left, blocks)
 	}
@@ -42,4 +44,24 @@ func TestTheSystemKeychainIsReadableWithoutSudo(t *testing.T) {
 		"out by the filter; macOS trusts %d of the candidates for TLS (verify-cert took %s)",
 		blocks, read.Round(time.Millisecond), len(candidates), left, trusted,
 		time.Since(start).Round(time.Millisecond))
+}
+
+// THE REAL LOGIN KEYCHAIN READ (OQ-PS15, PS-D14), as this user and with no prompt to wait on: it
+// either returns certificates or fails within its deadline, and a failure is logged, never fatal,
+// since a CI runner's login keychain may be absent or locked; the launch then trusts the System
+// keychain's CAs alone. The time it took is logged, the measurement PS-D14 leaves to a Mac.
+func TestTheLoginKeychainReadNeverWaitsOnAPrompt(t *testing.T) {
+	start := time.Now()
+	out, err := readLoginKeychainReal()
+	took := time.Since(start)
+	if took > 20*time.Second {
+		t.Errorf("the login keychain read took %s, past its deadline", took)
+	}
+	if err != nil {
+		t.Logf("login keychain not read (%s): %v", took.Round(time.Millisecond), err)
+		return
+	}
+	candidates, left := catrust.ParseCAs(out, catrust.SourceSystemKeychain, time.Now())
+	t.Logf("login keychain: %d certificate block(s) in %s; %d TLS CA candidate(s), %d left out",
+		strings.Count(out, "-----BEGIN CERTIFICATE-----"), took.Round(time.Millisecond), len(candidates), left)
 }

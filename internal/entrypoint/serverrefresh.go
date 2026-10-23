@@ -39,10 +39,11 @@ import (
 // Only the servers YOLO INSTALLS. An `mcp_servers` entry whose argv is `npx -y <pkg>@latest`
 // resolves on every spawn and is already current — §6.1's *unmanaged* tier, where refreshing
 // would be inventing management this design declines. What actually freezes is the set yolo
-// installs: the npm packages the enabled MCP presets need (`mcpPresetNpmPackages`, which the
-// bootstrap installs), and the npm `program` each selected pack's `mcp` server runs
-// (`packMCPServerPrograms`, which nothing installs at boot: absent until an agent's launcher
-// installs it here, before that agent execs and spawns the server). `serverRefreshSet` is the
+// installs: the npm `program` each selected pack's `mcp` server runs (`packMCPServerPrograms`,
+// which nothing installs at boot: absent until an agent's launcher installs it here, before
+// that agent execs and spawns the server). The MCP presets' npm packages were the other half
+// until the `mcp_presets` key retired (docs/design/mcp-presets-removal.md §13 step 3).
+// `serverRefreshSet` is the
 // one place that set is derived, from the declarations those installs read.
 //
 // A PACK SERVER'S PROGRAM HAS A LAUNCHER OF ITS OWN, and the server reaches the program
@@ -62,9 +63,9 @@ import (
 //
 // §3.5 says the refresh happens for *"an agent whose config names that server"*, and notes
 // that the set is a rendered per-agent fact rather than something to infer. In this tree it
-// is the same set for every agent: `YOLO_MCP_PRESETS` is a jail-global key, a pack's `mcp`
-// entry is composed into the one `YOLO_MCP_SERVERS` table the host hands the jail, and
-// `Env.LoadMCPServers` builds one table from both that every agent's surface renders from. So
+// is the same set for every agent: a pack's `mcp` entry is composed into the one
+// `YOLO_MCP_SERVERS` table the host hands the jail, and `Env.LoadMCPServers` builds one table
+// from it that every agent's surface renders from. So
 // every launcher is handed the same list, and the narrowing costs nothing because there is
 // nothing to narrow. If that table ever becomes per-agent, `serverRefreshSet` grows an agent
 // argument and nothing else here changes.
@@ -135,9 +136,7 @@ type serverPkg struct {
 	installedPath string
 	// pinned is true when the declaration names a version, in which case there is nothing
 	// for a refresh to resolve: the declaration already IS the answer, exactly as the npm
-	// launcher's PINNED branch says of a pack's `package`. No shipped preset is pinned today
-	// (`chrome-devtools-mcp`, `@modelcontextprotocol/server-sequential-thinking`), so this is
-	// for a preset that grows one.
+	// launcher's PINNED branch says of a pack's `package`.
 	pinned bool
 }
 
@@ -145,8 +144,8 @@ type serverPkg struct {
 //
 // PER PACKAGE, not per agent (§3.5): two agents that both connect to one server must not
 // both pay for it — the first invocation refreshes it and the second sees a fresh stamp. The
-// sanitizer exists because a spec is a scope-shaped string
-// (`@modelcontextprotocol/server-sequential-thinking`) and this is a filename. Two specs that
+// sanitizer exists because a spec can be a scope-shaped string (`@scope/name`) and this is
+// a filename. Two specs that
 // differ only in a sanitized character would share a stamp; npm package names cannot differ
 // that way, and a shared stamp would cost a missed refresh rather than a wrong install.
 func (p serverPkg) stampName() string {
@@ -173,13 +172,12 @@ func (p serverPkg) installArgv() []string {
 	return []string{"npm", "install", "-g", "--prefer-online", p.spec}
 }
 
-// serverRefreshSet derives the yolo-INSTALLED server set for this jail: the MCP presets' npm
-// packages, then the npm program each of packs' held `mcp` servers runs, deduplicated by
-// declaration in that order (a preset and the pack replacing it name one package).
+// serverRefreshSet derives the yolo-INSTALLED server set for this jail: the npm program each
+// of packs' held `mcp` servers runs, deduplicated by declaration.
 func serverRefreshSet(e *Env, packs []*packload.Pack) []serverPkg {
 	nodeModules := filepath.Join(e.NpmPrefix, "lib", "node_modules")
 
-	specs := strings.Fields(mcpPresetNpmPackages(e))
+	var specs []string
 	for _, inst := range packMCPServerPrograms(e, packs) {
 		specs = append(specs, inst.Package)
 	}
@@ -278,7 +276,7 @@ func composedMCPServerNames(e *Env) map[string]bool {
 // every test but the refresh ones wants. It carried a second, go-module list until the LSP
 // recipe that was that list's only source was deleted.
 type launcherServers struct {
-	// npm is the npm package declarations — the MCP presets' packages.
+	// npm is the npm package declarations — the pack servers' programs.
 	npm string
 }
 
@@ -290,15 +288,15 @@ func (s launcherServers) empty() bool { return s.npm == "" }
 // WHITESPACE-SEPARATED SCALARS rather than bash arrays, and BAKED rather than read from the
 // environment. Both halves are the same lesson written down twice already in this package.
 //
-// Baked, because macos-user execs its launchers under `env -i`: a `${YOLO_MCP_PRESETS:-}` in
+// Baked, because macos-user execs its launchers under `env -i`: a `${YOLO_MCP_SERVERS:-}` in
 // a launcher template reads populated on the container backends and empty on the one backend
 // with no image to hide it — see capturesDir and receiptsFile, which are baked for exactly
 // this.
 //
 // Scalars, because an empty bash array under `set -u` is unbound on the bash 3.2 macos-user
 // runs against, which is why UPDATE_VERB needs a HAS_UPDATE_VERB gate beside it. A scalar
-// that may be empty needs no gate. Splitting on whitespace loses nothing: the bootstrap
-// already word-splits the list unquoted (`for pkg in $YOLO_MCP_NPM`), so a package name
+// that may be empty needs no gate. Splitting on whitespace loses nothing: `npm install -g`
+// takes the list as separate words anyway, so a package name
 // containing a space has never been installable by yolo in the first place.
 func ServerRefreshSpecs(e *Env, packs []*packload.Pack) launcherServers {
 	var npmList []string

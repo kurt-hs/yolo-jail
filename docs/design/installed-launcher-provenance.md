@@ -2,7 +2,7 @@
 title: "One program, two builds — should the installed launcher and the jail's copy be the same bytes?"
 stage: DESIGN
 status: in-review
-next: "Rule OQ-IP1 — whether a from-source install keeps a pointer to its checkout, and where that pointer lives"
+next: "Build the rulings: one build per install, the source channel and its stamps deleted"
 tags: [install, self-update, builds, provenance]
 summary: "The installed launcher and the copy a jail runs come from one frozen snapshot but differ by two linker stamps, and only the from-source update channel reads them."
 ---
@@ -21,7 +21,7 @@ summary: "The installed launcher and the copy a jail runs come from one frozen s
 
 **Start at [§4](#4-the-collision)** — the collision between "an install is a snapshot" and "a from-source install tracks a checkout". Every option in [§6](#6-options) is an answer to it.
 
-**Needs your ruling:** [OQ-IP1](#OQ-IP1), [OQ-IP2](#OQ-IP2), [OQ-IP3](#OQ-IP3).
+**Needs your ruling:** nothing open. **Ruled 2026-10-23:** [OQ-IP1](#OQ-IP1), [OQ-IP2](#OQ-IP2), [OQ-IP3](#OQ-IP3).
 
 **Reads with:** [`matched-development-bundles.md`](matched-development-bundles.md) (owns the matched-artifact contract and the development wrapper), [`installed-launcher-provenance-plan.md`](installed-launcher-provenance-plan.md) (the implementation sketch — incomplete while [OQ-IP1](#OQ-IP1) is open), [`self-update.md`](../reference/self-update.md) (owns the install channels and the source check), [`host-execution-from-the-workspace.md`](../reference/host-execution-from-the-workspace.md) (rules what a checkout a jail can write may do on the host), [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md) (owns the mounted prefix).
 
@@ -139,7 +139,7 @@ The digest's own documented purpose is the last row: it "tells two binaries apar
 
 ## 8. Open Questions
 
-1. 💬 **OQ-IP1: Does a from-source install keep a pointer to its checkout, and may it live inside the executable?**
+1. <a id="OQ-IP1"></a>✅ **[`OQ-IP1`](#OQ-IP1): Does a from-source install keep a pointer to its checkout, and may it live inside the executable?**
 
    This decides whether the two copies are one build, and so whether a digest can check an install.
 
@@ -147,14 +147,17 @@ The digest's own documented purpose is the last row: it "tells two binaries apar
    - **B — Move the pointer into the installation.** One build for both destinations; the channel resolves provenance through the install. A binary copied out of it can no longer name its checkout.
    - **C — Drop the pointer.** A from-source install is a snapshot: no automatic source check or apply, and `--from` names a checkout explicitly.
 
-   <!-- vantage: question id=OQ-IP1 leaning="B — it makes the owner's principle true without deleting the channel, and the only thing lost is a binary's self-description outside its installation, which already has a defined degraded message." -->
-
    _Leaning:_ B — it makes the owner's principle true without deleting the channel, and the only thing lost is a binary's self-description outside its installation, which already has a defined degraded message.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23: C.** *"There's absolutely no way yolo update should do something
+   > special if it was installed from a checkout and you use the just install command."* `just
+   > install` installs a snapshot, the same as a release downloaded at that commit. Behavior that
+   > follows a checkout belongs to the development wrapper, which knows its checkout because it is
+   > symlinked there. `SourceDir` and `SourceBranch` are deleted with the source channel; `yolo
+   > update --from <checkout>` stays as the explicit way to name one.
 
-2. 💬 **OQ-IP2: Is byte equality between the two copies a checked invariant, or only an outcome?**
+2. <a id="OQ-IP2"></a>✅ **[`OQ-IP2`](#OQ-IP2): Is byte equality between the two copies a checked invariant, or only an outcome?**
 
    If it is checked, a future build step that reintroduces a divergence fails at install time instead of surfacing as a mysterious digest mismatch months later. If it is not, the property holds only as long as nobody adds a stamp.
 
@@ -162,14 +165,19 @@ The digest's own documented purpose is the last row: it "tells two binaries apar
    - **B — Assert it in the test suite only.** The integration suite pins it; an install does not pay for the check.
    - **C — Do not check it.** Document the property and rely on review.
 
-   <!-- vantage: question id=OQ-IP2 leaning="A — the property is the entire point of the change, and an unasserted invariant is the one that silently stops holding." -->
-
    _Leaning:_ A — the property is the entire point of the change, and an unasserted invariant is the one that silently stops holding.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, none of the options:** *"I don't think it should be checked,
+   > because it should be structurally in such a way that it can never be false. Like, you would
+   > only ever be checking the same inode against the same inode."* So an install builds `yolo`
+   > once for the host's platform, and the installed launcher is that one artifact, the same file
+   > the bundle ships for that platform. There is no second build to diverge, so there is nothing to
+   > compare. Where the host and the jail differ in platform (a Mac host and a Linux container),
+   > the two are different programs by construction, and no digest comparison between them means
+   > anything.
 
-3. 💬 **OQ-IP3: Does code keep honoring the stamps baked into already-installed binaries?**
+3. <a id="OQ-IP3"></a>✅ **[`OQ-IP3`](#OQ-IP3): Does code keep honoring the stamps baked into already-installed binaries?**
 
    Installs in the field carry `SourceDir` today. A runnable answer is needed for the day the writer stops setting it, or the first such binary gets classified by whatever the reader happens to do with a value it can no longer see.
 
@@ -177,12 +185,12 @@ The digest's own documented purpose is the last row: it "tells two binaries apar
    - **B — Read them only when the install has no provenance record.** A new record wins; the baked value is a legacy fallback.
    - **C — Ignore them.** Every existing from-source install loses its source channel at the next update.
 
-   <!-- vantage: question id=OQ-IP3 leaning="A — the value costs nothing to read, and dropping it would silently strand the installs in the field." -->
-
    _Leaning:_ A — the value costs nothing to read, and dropping it would silently strand the installs in the field.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23: moot, closed.** *"I can't identify any reason why this needs to
+   > be there."* No new binary carries the stamps, and an old binary runs its own old code, whose
+   > update installs the new build. The stamp reader is deleted with no transition.
 
 ## 9. Terms
 

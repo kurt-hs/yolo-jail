@@ -219,25 +219,23 @@ var configKeys = map[string]Entry{
 			"on a Mac"),
 		Guide: []string{"`programs: { autoprune: true }`"},
 		Aspects: map[string]Entry{
-			// programs.overrides (docs/design/pack-buildable-programs.md §5): one program run from a
-			// host checkout the user is developing.
+			// programs.overrides (docs/design/pack-buildable-programs.md §5): a program a pack builds
+			// from its own tree, built from a host checkout the user is developing instead.
 			"overrides": {
-				PodmanLinux: honored("programOverridePlans (programoverrides.go) decides each override at " +
-					"a fresh launch; assembleRunCmd binds a checkout outside the workspace read-only at " +
-					"/ctx/program-overrides/<bin> and passes YOLO_PROGRAM_OVERRIDES, and the boot writes " +
-					"the override launcher in place of the via's (entrypoint overridelauncher.go)"),
-				PodmanMac: honored("the same bind and env, made inside the Podman Machine VM; a checkout " +
-					"outside the machine's share set refuses the launch before the container starts " +
-					"(machineshares.go)"),
-				AppleContainer: honored("the same bind and env; below Apple Container 1.1.0 " +
-					"roBindsUnsupported (backendcaps.go) makes programOverridePlansFor refuse a checkout " +
-					"outside the workspace rather than bind it writable"),
-				MacosUser: honoredBy("programOverridePlansFor's macos-user arm (macosUserOverridePlace) runs " +
-					"the checkout at its own host path; one outside the workspace is a read-only context " +
-					"link sited by macosuser.SiteContextLinks, which the Seatbelt profile opens for read and " +
-					"exec (program-override-read-allow), and the decision reaches the darwin bootstrap as " +
-					"YOLO_PROGRAM_OVERRIDES (buildBootstrapEnv); unmeasured on a Mac"),
-				Guide: []string{"`programs: { overrides: … }` — run a program from your own checkout"},
+				PodmanLinux: honored("packTreePins (packtreepins.go) resolves each pack-tree program " +
+					"through ResolvePackTreeProgram (programoverrides.go), which puts the checkout in place " +
+					"of the staged `from`; the fork route's slot builds it in the sealed build jail keyed " +
+					"on the checkout's tree digest, and noteCheckoutDeliveries names it on every fresh " +
+					"launch; an override of any other program refuses the launch " +
+					"(refuseNonPackTreeOverrides)"),
+				PodmanMac: honored("the same resolution and build, the build jail running inside the " +
+					"Podman Machine VM from the host's staged copy of the checkout"),
+				AppleContainer: honored("the same resolution and build, through the same build slot; " +
+					"unmeasured on a Mac"),
+				MacosUser: honoredBy("the same resolution, the build the darwin sealed act " +
+					"(forkbuild.go's macos-user arm, which copies the checkout as it copies a pack's tree); " +
+					"unmeasured on a Mac"),
+				Guide: []string{"`programs: { overrides: … }` — build a program from your own checkout"},
 			},
 		},
 	},
@@ -435,23 +433,6 @@ var configKeys = map[string]Entry{
 			"provisioning stage runs `mise install` (macosuser provision.go); one store for " +
 			"the whole machine"),
 		Guide: []string{"`mise_tools`"},
-	},
-	"mcp_presets": {
-		PodmanLinux: honored("the boot's generate_mcp_wrappers step writes each enabled " +
-			"preset's wrapper (bootsteps.go), and the bootstrap installs its npm package"),
-		PodmanMac:      honored("the same boot step (bootsteps.go)"),
-		AppleContainer: honored("the same boot step (bootsteps.go)"),
-		MacosUser: warnedSaying("DarwinEnvFrom sets SkipMCPPresets and the darwin boot's "+
-			"mcp_presets_declined step (entrypoint bootsteps.go) prints the notice naming each "+
-			"preset; SkipMCPPresets also keeps each preset's entry out of every agent's MCP table "+
-			"(entrypoint mcpServersWith)", Notice{
-			Says: "mcp_presets are not delivered on macos-user",
-			Then: "Left out of every agent's MCP config: the preset wrappers hardcode Linux paths (/usr/bin/chromium, /bin/node, " +
-				"/etc/fonts) that this backend does not provision. Configure the MCP server " +
-				"directly in `mcp_servers` if you need it here.",
-			By: "entrypoint.mcp_presets_declined",
-		}),
-		Guide: []string{"`mcp_presets`"},
 	},
 	"mcp_servers": {
 		PodmanLinux: honored("LoadMCPServers (entrypoint mcp.go) composes them per agent at " +

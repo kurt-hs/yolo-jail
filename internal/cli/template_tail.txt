@@ -24,13 +24,9 @@
   //   }
   // }
   //
-  // Enable built-in MCP server presets by name.
-  // Available presets: chrome-devtools, sequential-thinking
-  // "mcp_presets": ["chrome-devtools", "sequential-thinking"]
-
   // Additional custom MCP servers, wired into every selected agent that
   // supports MCP.
-  // Add custom servers or set a preset/inherited server to null to disable it.
+  // Add custom servers or set a pack's or an inherited server to null to disable it.
   // Binary must be on PATH or absolute.
   // "mcp_servers": {
   //   "my-custom": {

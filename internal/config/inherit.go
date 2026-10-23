@@ -130,11 +130,11 @@ var inheritCensus = map[string]keyDisposition{
 	// resolved BEFORE the render — see FilterInherit, which consumes it exactly as
 	// LoadJSONCWithIncludes does. Listed for the census, never emitted.
 	"include_if_found": {reason: "already resolved into the rendered config; emitting it would re-resolve host-relative paths against the jail"},
-	// THE IN-JAIL-PROVISIONING KEYS, all five in BOTH — and the preflight half is MEASURED,
+	// THE IN-JAIL-PROVISIONING KEYS, all four in BOTH — and the preflight half is MEASURED,
 	// not judged. `yolo check`'s entrypoint dry-run (check/entrypoint.go) feeds exactly
 	// these into a temp home as YOLO_BLOCK_CONFIG / YOLO_MISE_TOOLS / YOLO_LSP_SERVERS /
-	// YOLO_MCP_SERVERS / YOLO_MCP_PRESETS and runs the real generators over them, so an
-	// in-jail check genuinely evaluates each; and the run pipeline feeds the same five to a
+	// YOLO_MCP_SERVERS and runs the real generators over them, so an in-jail check
+	// genuinely evaluates each; and the run pipeline feeds the same four to a
 	// real container. One consumer VALIDATES, the other COMPOSES — which is why "in one
 	// file" must not be allowed to mean "in both" by default: these earn both memberships.
 	//
@@ -143,7 +143,6 @@ var inheritCensus = map[string]keyDisposition{
 	"security":    {preflight: true, nested: true, reason: "blocked_tools decides this jail's shims; the check dry-run generates them and a launcher passes them on"},
 	"mise_tools":  {preflight: true, nested: true, reason: "the check dry-run runs ConfigureMisePrism over it; an inner launcher installs from it"},
 	"mcp_servers": {preflight: true, nested: true, reason: "MCP processes run in the jail; the check dry-run renders their wrappers and a launcher passes them on"},
-	"mcp_presets": {preflight: true, nested: true, reason: "MCP presets the check dry-run resolves and an inner launcher passes on"},
 	"lsp_servers": {preflight: true, nested: true, reason: "LSP servers the jail's agents spawn; the check dry-run renders their config"},
 	// `providers` is merged-scope EXCEPT for its credential-routing half: `endpoints` in any
 	// form, `api_key_env_name`, and a null provider are user-scope only (OQ-LM3 for the
@@ -359,6 +358,9 @@ var inheritCensus = map[string]keyDisposition{
 	// `macos_log` joined them on 2026-10-09, for the same reason: the unified log is the
 	// `macos-log` loophole's now (packs/macos-log/README.md).
 	"macos_log": {reason: "RETIRED — the log moved to the macos-log loophole; emitting it would re-trigger the retirement error"},
+	// `mcp_presets` joined them on 2026-10-23 (docs/design/mcp-presets-removal.md §13 step 3):
+	// the browser is the chrome-devtools pack, and sequential-thinking is deleted.
+	"mcp_presets": {reason: "RETIRED — the browser is the chrome-devtools pack; emitting it would re-trigger the retirement error"},
 	// `agent_profiles` joined them on 2026-09-01, renamed to `pack_profiles` — the
 	// keys were always CLI names and core knows packs, not agents — which was itself
 	// renamed to `use_profiles` on 2026-09-02 (docs/reference/providers.md — Profiles and options:

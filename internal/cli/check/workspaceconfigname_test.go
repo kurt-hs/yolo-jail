@@ -43,27 +43,6 @@ func TestCheckNamesTheJSONWorkspaceConfigsItParsed(t *testing.T) {
 	}
 }
 
-// The same-file preset/null finding, when no source location is recorded for it, falls back to
-// the name of the workspace config the loader read.
-func TestMergedConfigPresetNullFindingNamesTheJSONWorkspaceConfig(t *testing.T) {
-	ws := t.TempDir()
-	const body = `{"mcp_presets": ["chrome-devtools"], "mcp_servers": {"chrome-devtools": null}}`
-	if err := os.WriteFile(filepath.Join(ws, "yolo-jail.json"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	var buf bytes.Buffer
-	r := newReporter(&buf, false)
-	o := &Options{
-		Getenv:   func(string) string { return "" },
-		LookPath: func(string) (string, bool) { return "", false },
-	}
-	o.sectionMergedConfig(r, capCfg(t, `{}`), ws, capCfg(t, `{}`), capCfg(t, body), nil, false)
-	got := stripANSI(buf.String())
-	if want := "yolo-jail.json: preset 'chrome-devtools' is enabled"; !strings.Contains(got, want) {
-		t.Errorf("the finding does not name the workspace's yolo-jail.json (want %q):\n%s", want, got)
-	}
-}
-
 // In a jail, a refusal about a key the host's config set names that host file and the relaunch,
 // and `yolo check`'s next step under it says the same: edit the host file, then relaunch — not
 // the jail's read-only copy of the user config.

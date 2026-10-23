@@ -298,7 +298,7 @@ does **not** project those files into `/home/agent/` inside the jail.
 ## Don't guess at keys — the schema lives in the CLI
 
 This skill shows two shapes on purpose. For **every** other key — `resources`,
-`network`/`ports`/`forward_host_ports`, `mounts`, `mcp_servers`/`mcp_presets`,
+`network`/`ports`/`forward_host_ports`, `mounts`, `mcp_servers`,
 `lsp_servers`, `env_sources`, `loopholes`, and their exact fields, allowed
 values, and defaults — run the authoritative, always-current reference:
 

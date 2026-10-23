@@ -533,7 +533,6 @@ func podmanLinuxGolden(home string) []string {
 		"-e", "YOLO_MISE_TOOLS={}",
 		"-e", "YOLO_LSP_SERVERS={}",
 		"-e", "YOLO_MCP_SERVERS={}",
-		"-e", "YOLO_MCP_PRESETS=[]",
 		// Empty because no user config declares `agent_updates`; the jail defaults OPEN.
 		"-e", "YOLO_AGENT_UPDATES=",
 		// The contract tags a later attach reads to know what this jail can receive

@@ -69,9 +69,6 @@ func (r hostReadiness) done(bin string) bool { return r.settled[bin] }
 type hostReadinessFailure struct {
 	who, pack string
 	err       error
-	// override is set for a program a dev override serves: `host_floor` does not take it out of the
-	// floor (the override wins over it), so the refusal does not offer that way out for it.
-	override bool
 }
 
 // hostFreshProgramSet is the owner-scoped host part of --update: the requested declared program
@@ -272,7 +269,7 @@ func hostReadinessAct(packs []*packload.Pack, cmd []string, errw io.Writer, act 
 				}
 			}
 			failed = append(failed, hostReadinessFailure{who: "program " + p.Bin() + " (pack " + p.Pack + ")",
-				pack: p.Pack, err: err, override: floor.HasOverride(p)})
+				pack: p.Pack, err: err})
 		}
 	}
 	if len(failed) == 0 {
@@ -289,7 +286,7 @@ func hostReadinessAct(packs []*packload.Pack, cmd []string, errw io.Writer, act 
 		} else {
 			fmt.Fprintf(&list, "      %s: %v\n", f.who, f.err)
 		}
-		if !seenPack[f.pack] && !f.override {
+		if !seenPack[f.pack] {
 			seenPack[f.pack] = true
 			leaveOut = append(leaveOut, fmt.Sprintf("%q: false", f.pack))
 		}

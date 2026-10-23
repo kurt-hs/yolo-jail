@@ -389,6 +389,9 @@ func TestEveryConfigWarnSinkIsGraded(t *testing.T) {
 		"LoadJSONCWithIncludes":          true,
 		"LoadWorkspaceConfig":            true,
 		"LoadWorkspaceConfigWithSources": true,
+		// A bad programs.overrides entry is a validation error of the user config
+		// (config.validatePrograms), which check's config section already grades.
+		"ProgramOverrides": true,
 	}
 
 	fset := token.NewFileSet()

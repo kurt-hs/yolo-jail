@@ -221,7 +221,6 @@ func seatbeltProfile(workspace, sandboxHome string, readonlyRels, readonlyTarget
 		"    ;; #seatbelt-test-id:staging-root-read-allow#\n" +
 		stagingRootReadClause() + ")\n" +
 		contextReadAllow(ctx) +
-		programOverrideReadAllow(ctx) +
 		relocationReadAllow(relocs) +
 		userFontsReadAllow(fontReads) +
 		"\n" +

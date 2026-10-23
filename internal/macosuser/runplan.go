@@ -1255,14 +1255,13 @@ func stageCommandsNameEnvValue(cmds [][]string, content, key string) bool {
 }
 
 // LauncherOwnedEnvNames are the launcher's contract names that reach the darwin bootstrap from
-// the session's launch env (buildBootstrapEnv's relay), plus the dev-override decisions, which the
-// container boot reads the same way: each is the launcher's to set or leave unset, and none may come
+// the session's launch env (buildBootstrapEnv's relay): each is the launcher's to set or leave unset, and none may come
 // from the composed env — an env_sources entry naming YOLO_FORK_BUILDS would otherwise decide what a
 // source-built program's launcher runs. The run pipeline drops them from the composition
 // (packChannel.launchEnv); the session env file's YOLO_ lines never reach the bootstrap at all.
 func LauncherOwnedEnvNames() []string {
 	return []string{durable.EnvVar, paths.AllowMissingProgramsEnv, paths.NoProgramReadinessEnv,
-		entrypoint.ForkBuildsEnv, entrypoint.PatchedTreesEnv, entrypoint.ProgramOverridesEnv}
+		entrypoint.ForkBuildsEnv, entrypoint.PatchedTreesEnv}
 }
 
 // buildBootstrapEnv composes the env baked onto the `yolo internal darwin-bootstrap` self-exec
@@ -1319,8 +1318,6 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 	bootstrapEnv.Set("YOLO_LSP_SERVERS", lspJSON)
 	mcpSrvJSON := jsonx.MustDumpsCompact(getSectionOrEmptyMap(cfg, "mcp_servers"))
 	bootstrapEnv.Set("YOLO_MCP_SERVERS", mcpSrvJSON)
-	mcpPresetsJSON := jsonx.MustDumpsCompact(getSectionOrEmptyList(cfg, "mcp_presets"))
-	bootstrapEnv.Set("YOLO_MCP_PRESETS", mcpPresetsJSON)
 	// The `agent_updates` policy. macos-user is the backend where missing this hides
 	// least: it bakes no image, so the launchers ARE the delivery.
 	//
@@ -1371,12 +1368,6 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 		// and its launcher generation (the gate), as the container boot reads them.
 		if v, ok := sandboxEnv.Get(entrypoint.PatchedTreesEnv); ok {
 			bootstrapEnv.Set(entrypoint.PatchedTreesEnv, v)
-		}
-		// THE DEV-OVERRIDE DECISIONS (entrypoint.ProgramOverridesEnv; pack-buildable-programs.md §5),
-		// relayed the same way and for the same reason: the bootstrap's launcher generation writes an
-		// overridden program's launcher from them, in place of its via's, as the container boot does.
-		if v, ok := sandboxEnv.Get(entrypoint.ProgramOverridesEnv); ok {
-			bootstrapEnv.Set(entrypoint.ProgramOverridesEnv, v)
 		}
 		// Every name relayed above is in LauncherOwnedEnvNames, which the run pipeline keeps out of
 		// the composed env (packChannel.launchEnv), so what crosses is the launcher's own value.
@@ -2568,18 +2559,6 @@ func getSectionOrEmptyMap(cfg *jsonx.OrderedMap, key string) any {
 		}
 	}
 	return jsonx.NewOrderedMap()
-}
-
-// getSectionOrEmptyList returns config[key] as a list, or an empty list.
-func getSectionOrEmptyList(cfg *jsonx.OrderedMap, key string) any {
-	if cfg != nil {
-		if v, ok := cfg.Get(key); ok {
-			if _, isList := v.([]any); isList {
-				return v
-			}
-		}
-	}
-	return []any{}
 }
 
 // orderedMapToAny returns the OrderedMap as an `any` so jsonx.DumpsCompact

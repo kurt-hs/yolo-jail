@@ -518,15 +518,42 @@ func SessionRecordsDir() string {
 // it reads, never writes. A failure names the command, so the launch's warning gives the user
 // the one line that reproduces it.
 func readSystemKeychainReal() (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	return runKeychainExport(systemKeychainExportArgv(), 30*time.Second)
+}
+
+// readLoginKeychainReal exports every certificate in the invoking user's own login keychain as PEM
+// (loginKeychainExportArgv), as that user: their keychain, so no sudo, and it reads, never writes.
+// NEVER A PROMPT TO WAIT ON: stdin is closed and the read has a short deadline, so a keychain that
+// wanted an unlock or a dialog fails the read instead, which the launch reports as one note and
+// trusts the System keychain's CAs alone (UNMEASURED on a Mac: whether a locked keychain prompts
+// for a certificate read at all; certificates are not secret items).
+func readLoginKeychainReal() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", errors.New("no home directory to find your login keychain in")
+	}
+	path := filepath.Join(home, loginKeychainRel)
+	if _, err := os.Stat(path); err != nil {
+		return "", errors.New("no login keychain at " + path)
+	}
+	return runKeychainExport(loginKeychainExportArgv(path), 15*time.Second)
+}
+
+// runKeychainExport runs one `security find-certificate` export with stdin closed and a deadline.
+// A failure names the command, so the launch's warning gives the user the one line that
+// reproduces it.
+func runKeychainExport(argv []string, deadline time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), deadline)
 	defer cancel()
 	var stdout, stderr bytes.Buffer
-	argv := systemKeychainExportArgv()
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Stdin = nil
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
+		if ctx.Err() != nil {
+			msg = "no answer within " + deadline.String()
+		} else if msg == "" {
 			msg = err.Error()
 		}
 		return "", errors.New("`" + shquote.JoinDisplay(argv) + "`: " + msg)

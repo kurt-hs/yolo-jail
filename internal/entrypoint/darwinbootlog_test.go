@@ -27,6 +27,14 @@ func resolvedDir(t *testing.T) string {
 	return d
 }
 
+// missingOverlay names a staged home overlay that is not there, which the bootstrap reports with
+// a terminal warning (overlayMissingWarning) and boots on: the one warning these tests need.
+func missingOverlay(home string) map[string]string {
+	return map[string]string{"YOLO_DARWIN_HOME_OVERLAY": filepath.Join(home, "no-such-overlay")}
+}
+
+const overlayMissingWarning = "is not present; skills, briefings and pack files were not delivered"
+
 // darwinBootEnv is the bootstrap Env a launch builds for workspace ws, plus extra variables.
 func darwinBootEnv(t *testing.T, home, ws string, extra map[string]string) *Env {
 	t.Helper()
@@ -45,7 +53,7 @@ func darwinBootEnv(t *testing.T, home, ws string, extra map[string]string) *Env 
 // read of boot.log.
 func TestTheDarwinBootstrapKeepsABootLog(t *testing.T) {
 	home, ws := resolvedDir(t), resolvedDir(t)
-	e := darwinBootEnv(t, home, ws, map[string]string{"YOLO_MCP_PRESETS": `["chrome-devtools"]`})
+	e := darwinBootEnv(t, home, ws, missingOverlay(home))
 	var term strings.Builder
 	e.Stderr = &term
 
@@ -61,7 +69,7 @@ func TestTheDarwinBootstrapKeepsABootLog(t *testing.T) {
 		!strings.Contains(log, "\n  macos-user bootstrap, yolo 0.12.0+3.gabc\n") {
 		t.Errorf("boot.log's header does not say what booted:\n%s", log)
 	}
-	const warning = "mcp_presets are not delivered on macos-user"
+	const warning = overlayMissingWarning
 	if !strings.Contains(log, warning) || !strings.Contains(term.String(), warning) {
 		t.Errorf("a terminal warning must reach both sinks\nterminal:\n%s\nlog:\n%s", term.String(), log)
 	}
@@ -190,7 +198,7 @@ func TestTheDarwinBootLogRefusesALinkedStateDir(t *testing.T) {
 	if err := os.Symlink(elsewhere, paths.WorkspaceStateDir(ws)); err != nil {
 		t.Fatal(err)
 	}
-	e := darwinBootEnv(t, home, ws, map[string]string{"YOLO_MCP_PRESETS": `["chrome-devtools"]`})
+	e := darwinBootEnv(t, home, ws, missingOverlay(home))
 	var term strings.Builder
 	e.Stderr = &term
 	_ = RunDarwinBootstrap(e, DarwinBootstrapOptions{})
@@ -199,7 +207,7 @@ func TestTheDarwinBootLogRefusesALinkedStateDir(t *testing.T) {
 			t.Errorf("%s was written through a linked .yolo into %s", name, elsewhere)
 		}
 	}
-	if !strings.Contains(term.String(), "mcp_presets are not delivered on macos-user") {
+	if !strings.Contains(term.String(), overlayMissingWarning) {
 		t.Errorf("with no log to write, the terminal lost the bootstrap's lines:\n%s", term.String())
 	}
 }

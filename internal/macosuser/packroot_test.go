@@ -242,9 +242,8 @@ func TestTheSessionEnvReadsBackAsTheBootstrapsEnv(t *testing.T) {
 	if e.Getenv("YOLO_PACK_ROOT") != plan.PackRoot {
 		t.Errorf("an in-sandbox verb reads the pack root %q, want %q", e.Getenv("YOLO_PACK_ROOT"), plan.PackRoot)
 	}
-	if !e.SkipMCPPresets || e.ShimBinPath() != "/usr/bin" {
-		t.Errorf("the in-sandbox Env is not the darwin translation (SkipMCPPresets=%v, shim bin %q)",
-			e.SkipMCPPresets, e.ShimBinPath())
+	if e.ShimBinPath() != "/usr/bin" {
+		t.Errorf("the in-sandbox Env is not the darwin translation (shim bin %q)", e.ShimBinPath())
 	}
 }
 

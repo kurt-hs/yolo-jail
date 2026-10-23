@@ -1,9 +1,8 @@
 package entrypoint
 
 // chromedevtoolsmcp_test.go pins the jail half of the chrome-devtools pack
-// (docs/design/mcp-presets-removal.md §13 steps 1-2): the composed table the host hands a jail
-// replaces a same-named preset (the interim coexistence that needs no rule), the staged-tree
-// composer the macos-user plan asks, claude's real render of the entry, the jail launcher that
+// (docs/design/mcp-presets-removal.md §13): the composed table the host hands a jail is the
+// jail's chrome-devtools server, the staged-tree composer the macos-user plan asks, claude's real render of the entry, the jail launcher that
 // carries the posture's chrome flags, and the wrapper's run-time resolution of the server and the
 // browser — run as the entry runs it, `/bin/sh <file>`, against stand-ins that log their argv.
 
@@ -22,6 +21,23 @@ import (
 
 const chromeWrapperRel = ".local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper"
 
+// materializedPack is the shipped pack of that name, materialized into a temp dir of the
+// test's own.
+func materializedPack(t *testing.T, name string) *packload.Pack {
+	t.Helper()
+	all, problems := packload.MaterializeEmbedded(officialpacks.FS, resolvedDir(t))
+	if len(problems) != 0 {
+		t.Fatalf("materializing the shipped packs: %v", problems)
+	}
+	for _, p := range all {
+		if p.Name == name {
+			return p
+		}
+	}
+	t.Fatalf("no shipped pack named %q", name)
+	return nil
+}
+
 // composedChromeWire is the YOLO_MCP_SERVERS a launch hands a jail at home with the pack selected.
 func composedChromeWire(t *testing.T, home string, user *jsonx.OrderedMap) string {
 	t.Helper()
@@ -33,11 +49,14 @@ func composedChromeWire(t *testing.T, home string, user *jsonx.OrderedMap) strin
 	return wire
 }
 
-// INTERIM COEXISTENCE: presets expand first and the composed table overrides by name, so the
-// pack's entry replaces the preset's while both are on (mcpServersWith's merge order).
-func TestAPackMCPEntryReplacesASameNamedPreset(t *testing.T) {
+// The composed table is the jail's chrome-devtools server: core names no server of its own since
+// the `mcp_presets` key retired, so the pack's entry is the one every agent's config renders.
+func TestThePackMCPEntryIsTheJailsChromeDevtoolsServer(t *testing.T) {
 	home := resolvedDir(t)
-	e := NewEnv(map[string]string{"JAIL_HOME": home, "YOLO_MCP_PRESETS": `["chrome-devtools"]`,
+	if _, has := NewEnv(map[string]string{"JAIL_HOME": home}).LoadMCPServers().Get("chrome-devtools"); has {
+		t.Fatal("premise: a jail with no composed table still has a chrome-devtools server")
+	}
+	e := NewEnv(map[string]string{"JAIL_HOME": home,
 		"YOLO_MCP_SERVERS": composedChromeWire(t, home, nil)})
 	servers := e.LoadMCPServers()
 	v, ok := servers.Get("chrome-devtools")
@@ -46,7 +65,7 @@ func TestAPackMCPEntryReplacesASameNamedPreset(t *testing.T) {
 	}
 	entry := v.(*jsonx.OrderedMap)
 	if cmd, _ := entry.Get("command"); cmd != "/bin/sh" {
-		t.Errorf("command = %v: the preset's mcp-wrappers node won over the pack's entry", cmd)
+		t.Errorf("command = %v, want the pack's /bin/sh", cmd)
 	}
 	args, _ := entry.Get("args")
 	if list, _ := args.([]any); len(list) != 1 || list[0] != filepath.Join(home, chromeWrapperRel) {
@@ -385,5 +404,37 @@ func TestTheWrapperHandsChromiumTheImagesFonts(t *testing.T) {
 	}
 	if got, want := seen(t, w, "FONTCONFIG_FILE=/mine/fonts.conf"), "FILE=/mine/fonts.conf PATH="+fonts; got != want {
 		t.Errorf("with your own FONTCONFIG_FILE the server saw %q, want %q", got, want)
+	}
+}
+
+// The chromium flags the pack hands chrome-devtools-mcp, and the wrapper it runs, keep the two
+// properties the retired preset argv was pinned for.
+//
+// A SOFTWARE RENDERER: headless Chromium can run without a hardware GPU, but
+// Page.captureScreenshot still needs SwiftShader, its software rasterizer, so
+// --disable-software-rasterizer beside --disable-gpu starts a browser whose every screenshot
+// fails with "Page.captureScreenshot: Internal error".
+//
+// NO --disable-dev-shm-usage: a jail mounts a 2 GB tmpfs at /dev/shm and Linux Chromium uses
+// memfd_create for anonymous shared memory, while the flag forces temp shared-memory files into
+// /tmp, which fails where /tmp is read-only for capability-dropped child processes.
+func TestTheChromeDevtoolsPackKeepsChromiumsRendererAndSharedMemory(t *testing.T) {
+	manifest, err := officialpacks.FS.ReadFile("chrome-devtools/pack.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapper, err := officialpacks.FS.ReadFile("chrome-devtools/bin/chrome-devtools-mcp-wrapper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(manifest), "--chrome-arg=--disable-gpu") {
+		t.Fatal("premise: the pack no longer passes chromium its flags through --chrome-arg")
+	}
+	for _, flag := range []string{"--disable-software-rasterizer", "--disable-dev-shm-usage"} {
+		for name, body := range map[string][]byte{"pack.json": manifest, "the wrapper": wrapper} {
+			if strings.Contains(string(body), flag) {
+				t.Errorf("%s passes chromium %s", name, flag)
+			}
+		}
 	}
 }

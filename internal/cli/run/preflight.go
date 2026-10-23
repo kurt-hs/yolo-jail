@@ -40,22 +40,6 @@ func (o *Options) loadAndValidateConfig() (*jsonx.OrderedMap, bool) {
 	configErrors = src.Annotate(configErrors)
 	configWarnings = src.Annotate(configWarnings)
 
-	// Cross-hierarchy overrides are valid, but same-file contradictions are not.
-	userPath := paths.UserConfigPath()
-	userRaw, userSrc, err := config.LoadJSONCFileWithSources(userPath, userPath, false, func(string) {})
-	if err != nil || userRaw == nil {
-		userRaw = jsonx.NewOrderedMap()
-	}
-	// The workspace config the loader READ (config.ResolveWorkspaceConfigPath): a `yolo-jail.json`
-	// went unchecked here while its keys were honored.
-	wsPath, wsName := config.ResolveWorkspaceConfigPath(o.Workspace, config.WorkspaceConfigName)
-	wsRaw, wsSrc, err := config.LoadJSONCFileWithSources(wsPath, wsName, false, func(string) {})
-	if err != nil || wsRaw == nil {
-		wsRaw = jsonx.NewOrderedMap()
-	}
-	configErrors = append(configErrors, config.PresetNullConflicts(userRaw, userPath, userSrc)...)
-	configErrors = append(configErrors, config.PresetNullConflicts(wsRaw, wsName, wsSrc)...)
-
 	for _, msg := range configWarnings {
 		out.printf("  [yellow]⚠ %s[/yellow]", configMessageText(msg))
 	}

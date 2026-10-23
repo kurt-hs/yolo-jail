@@ -73,12 +73,6 @@ type ContextLink struct {
 	Dir bool
 	// Pack names the pack whose `mount` grant this is; "" for a config `mounts` element.
 	Pack string
-	// Override names the program whose DEV OVERRIDE this is (programs.overrides.<bin>,
-	// docs/design/pack-buildable-programs.md §5, BG-D9): the checkout that program's launcher runs
-	// from, delivered read-only like a pack grant. "" for every other link. The profile opens it
-	// in a block of its own (programOverrideReadAllow), so the grant that lets a checkout run is
-	// named, and proved, apart from a mount the agent only reads.
-	Override string
 }
 
 // Rel is the link's path under the context dir, or "" when Dest is not under /ctx — which
@@ -94,9 +88,6 @@ func (l ContextLink) Rel() string {
 
 // Origin names the declaration a link came from, for messages.
 func (l ContextLink) Origin() string {
-	if l.Override != "" {
-		return "programs.overrides." + l.Override
-	}
 	if l.Pack != "" {
 		return "pack " + l.Pack + "'s `mount`"
 	}
@@ -1121,7 +1112,6 @@ func contextLinkProblems(plan RunPlan) []string {
 			") cannot be delivered on this backend: "+r.Reason)
 	}
 	read := profileBlock(plan.Seatbelt, "context-read-allow")
-	overrideRead := profileBlock(plan.Seatbelt, ProgramOverrideReadAllowID)
 	write := profileBlock(plan.Seatbelt, "context-write-allow")
 	deny := profileBlock(plan.Seatbelt, "context-readonly-deny")
 	asked := map[string]bool{}
@@ -1131,14 +1121,7 @@ func contextLinkProblems(plan RunPlan) []string {
 	for _, l := range plan.ContextLinks {
 		name := "the context mount at " + l.Dest + " (" + l.Source + ")"
 		clause := "(subpath " + sbplStr(l.Source) + ")"
-		if l.Override != "" {
-			// A DEV OVERRIDE's checkout is opened by its own block, never the mounts' read allow.
-			name = "the dev override of " + l.Override + " (" + l.Source + ")"
-			if !strings.Contains(overrideRead, clause) {
-				problems = append(problems, name+" has no read allow in the Seatbelt profile ("+
-					ProgramOverrideReadAllowID+"); its launcher would be refused the file it runs")
-			}
-		} else if !strings.Contains(read, clause) {
+		if !strings.Contains(read, clause) {
 			problems = append(problems, name+" has no read allow in the Seatbelt profile; the "+
 				"agent would see the link and be refused everything behind it")
 		}
@@ -1233,7 +1216,7 @@ func contextReadonlyDeny(links []ContextLink) string {
 // re-opens, and BEFORE the keychain denies, so a source that holds a keychain (a mount of
 // /Library) still cannot read it: §3.4's step 2, ahead of step 4.
 func contextReadAllow(links []ContextLink) string {
-	src := contextSources(links, func(l ContextLink) bool { return l.Override == "" })
+	src := contextSources(links, func(ContextLink) bool { return true })
 	if len(src) == 0 {
 		return ""
 	}
@@ -1243,30 +1226,6 @@ func contextReadAllow(links []ContextLink) string {
 		";;     so this allow is what opens it.  Before every read deny that must win. ---\n" +
 		";; #seatbelt-test-id:context-read-allow#\n" +
 		"(allow file-read*\n" + subpathClauses(src) + ")\n"
-}
-
-// ProgramOverrideReadAllowID is the test id of the dev overrides' grant (programOverrideReadAllow).
-const ProgramOverrideReadAllowID = "program-override-read-allow"
-
-// programOverrideReadAllow opens every DEV OVERRIDE's checkout (ContextLink.Override;
-// docs/design/pack-buildable-programs.md §5, BG-D9) at its RESOLVED path: read, which is what
-// running a script or a binary from it needs, and exec, stated beside it so the grant says what it
-// is for even though both profiles allow process-exec everywhere today. Placed where
-// contextReadAllow is, for its reasons: after the /Users read deny it re-opens, and before the
-// keychain and host-secret denies, which still win. Never a write: the checkout is read-only like a
-// pack grant, and contextReadonlyDeny, which lists every source that is not read-write, denies its
-// writes after every write allow.
-func programOverrideReadAllow(links []ContextLink) string {
-	src := contextSources(links, func(l ContextLink) bool { return l.Override != "" })
-	if len(src) == 0 {
-		return ""
-	}
-	return "\n" +
-		";; --- Dev overrides (programs.overrides): each checkout a program runs from, by its\n" +
-		";;     RESOLVED path, read and run, never written.  Before every read deny that must win. ---\n" +
-		";; #seatbelt-test-id:" + ProgramOverrideReadAllowID + "#\n" +
-		"(allow file-read*\n" + subpathClauses(src) + ")\n" +
-		"(allow process-exec\n" + subpathClauses(src) + ")\n"
 }
 
 // profileBlock returns the SBPL form that follows `;; #seatbelt-test-id:<id>#` in a profile, up

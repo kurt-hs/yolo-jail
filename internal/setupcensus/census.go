@@ -159,7 +159,7 @@ type Notice struct {
 	// Then is the rest of the line, after the entries when the printer names any.
 	Then string
 	// By is the printer that reads this notice, as package.Identifier: a function, or a
-	// darwin boot step's name (`entrypoint.mcp_presets_declined`). The package's own tests
+	// darwin boot step's name (`entrypoint.<step>`). The package's own tests
 	// drive every notice it owns through that printer's call site.
 	By string
 }

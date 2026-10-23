@@ -17,10 +17,7 @@ package entrypoint
 // of which only a container boot has, and which bracket the table rather than sit in it.
 
 import (
-	"strings"
-
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
-	"github.com/mschulkind-oss/yolo-jail/internal/setupcensus"
 )
 
 // bootTarget names which boot a step table run is: the container entrypoint or the
@@ -325,23 +322,22 @@ func bootSteps() []bootStep {
 		},
 		{
 			// Build the combined CA bundle BEFORE bashrc and before any child spawn, so the env
-			// vars exported here propagate to every child the entrypoint spawns.
+			// vars exported here propagate to every child the entrypoint spawns. AFTER
+			// hydrate_user_env, whose file it reads for the user's own CA variables: the
+			// host's CAs join the bundle, and a bundle the user named wins for all five
+			// (catrust.go, PS-D16).
 			name: "generate_ca_bundle",
 			run: func(b *bootRun) {
 				e := b.e
-				if bundle, err := GenerateCABundle(e); err != nil {
-					e.warn("Warning: generate_ca_bundle: " + err.Error())
-				} else {
-					setEnvBoth(e, "SSL_CERT_FILE", bundle)
-					setEnvBoth(e, "REQUESTS_CA_BUNDLE", bundle)
-					setEnvBoth(e, "CURL_CA_BUNDLE", bundle)
-					setEnvBoth(e, "GIT_SSL_CAINFO", bundle)
+				if err := applyCATrust(e); err != nil {
+					e.warn("Warning: generate_ca_bundle: " + err.Error() + ". The jail's TLS " +
+						"clients use the image's public roots; a restart composes the bundle again.")
 				}
 			},
 			notDarwin: "the macos-user host launcher builds the bundle instead, from the tool " +
-				"profile's public roots and the CAs this Mac's System keychain trusts for TLS, and " +
-				"names it in the session env file, which is the agent's environment there " +
-				"(macosuser.ComposeCATrust)",
+				"profile's public roots and the CAs this Mac's System and login keychains trust " +
+				"for TLS, and names it in the session env file, which is the agent's environment " +
+				"there (macosuser.ComposeCATrust)",
 		},
 		{name: "generate_bashrc", gen: GenerateBashrc},
 		{
@@ -380,39 +376,8 @@ func bootSteps() []bootStep {
 		{
 			name: "generate_mcp_wrappers",
 			gen:  GenerateMCPWrappers,
-			notDarwin: "the wrapper bodies are Linux-absolute (/usr/bin/chromium, `exec /bin/node`, " +
-				"/etc/fonts) and this backend provisions none of them; mcp_presets_declined says so instead",
-		},
-		{
-			// NO MCP WRAPPERS ON macos-user (Open Decision #4, resolved 2026-09-03 in favour of
-			// the option the plan recommended: skip and say so). Their bodies are Linux-absolute
-			// with no GOOS guard, and this backend bakes no image, so on macOS all three paths
-			// are simply absent (verified on macOS 26.5). SKIPPED, NOT PORTED: a darwin variant
-			// would have to find Chrome, node and a fontconfig on a machine yolo did not
-			// provision, and guess wrong on most of them. An absent wrapper that says so beats
-			// a present one that lies — the ruling `workspace_readonly` got on this backend
-			// (d0961f2c).
-			//
-			// NOR ANY SERVER ENTRY FOR ONE: Env.SkipMCPPresets keeps the preset out of every
-			// agent's MCP table (mcpServersWith), since an entry naming a wrapper this backend
-			// never writes is the same lie told in the agent's config. So the line names what was
-			// left out.
-			//
-			// The line is the setup census's notice for mcp_presets on macos-user
-			// (internal/setupcensus, OQ-BP-1: the macos-user notice block reads the census), naming
-			// each preset the config enabled.
-			name: "mcp_presets_declined",
-			run: func(b *bootRun) {
-				// A sealed build runs no agent, so no agent's MCP config is left wanting (PPX-D48).
-				if b.sealed {
-					return
-				}
-				if names := b.e.LoadMCPPresetNames(); len(names) > 0 {
-					b.e.warn(setupcensus.Warning(setupcensus.MacosUser, "mcp_presets").Plain(strings.Join(names, ", ")))
-				}
-			},
-			noMark:       true,
-			notContainer: "the container generates the wrappers (generate_mcp_wrappers)",
+			notDarwin: "the wrapper bodies are Linux-absolute (`exec /bin/node`, /etc/fonts) and this " +
+				"backend provisions neither; a pack's MCP server runs through its own program here",
 		},
 		{
 			// Skills are mounted :ro by the launcher — no entrypoint action. A perf-log mark only.

@@ -91,10 +91,6 @@ type assembleInput struct {
 	// (Options.forkDeliveriesFor, forkbuild.go): the store key its jail materializes, or why there
 	// is none. Emitted beside the store mount as entrypoint.ForkBuildsEnv; nil emits nothing.
 	forkDeliveries map[string]entrypoint.ForkDelivery
-	// programOverrides is this launch's dev-override decisions (Options.programOverridePlans,
-	// programoverrides.go): bound, handed to the jail as entrypoint.ProgramOverridesEnv, and
-	// disclosed where they are bound. nil emits nothing.
-	programOverrides []programOverridePlan
 	// patchedTrees is the host's decision per patched extension for this launch
 	// (Options.patchedTreesWire, patchedtrees.go), emitted as YOLO_PATCHED_TREES; treeDirs is the
 	// per-launch copy the `files` emitter mounts for each one delivered, by extension key.
@@ -107,6 +103,10 @@ type assembleInput struct {
 	// whole at /home/agent instead.
 	homeSkeleton string
 	wsState      string // <workspace>/.yolo/home
+	// hostCAFile is the in-jail path of the host's CAs this fresh launch composed
+	// (prepareHostCATrust, hostcatrust.go), "" when it composed none. INPUT because composing it
+	// reads the host and writes a file, which argv assembly must stay free of.
+	hostCAFile string
 	// durableDir is the in-jail path this fresh launch's durable dir was made at
 	// (ensureDurableDir), exported as $YOLO_DURABLE_DIR; "" exports nothing. INPUT because
 	// making it creates a directory, which argv assembly must stay free of.
@@ -396,13 +396,6 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 		for _, b := range o.hostFontBinds(rt, paths.Home(), out.print) {
 			mountArgs = append(mountArgs, "-v", b.bindArg())
 			out.print(hostFontDisclosure(b))
-		}
-		// THE DEV OVERRIDES' checkouts outside the workspace, read-only, with the line naming
-		// which bytes each overridden program runs, printed where the bind is emitted
-		// (programoverrides.go, BG-D10).
-		mountArgs = append(mountArgs, programOverrideBindArgs(in.programOverrides)...)
-		for _, line := range programOverrideLines(programOverridesWire(in.programOverrides)) {
-			out.print(line)
 		}
 	}
 
@@ -1029,12 +1022,6 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 	if wire := entrypoint.ForkBuildsWire(in.forkDeliveries); wire != "" {
 		runCmd = append(runCmd, "-e", entrypoint.ForkBuildsEnv+"="+wire)
 	}
-	// --- DEV OVERRIDES: where each overridden program's checkout is, or why it was refused ---
-	if !in.sealed {
-		if wire := entrypoint.ProgramOverridesWire(programOverridesWire(in.programOverrides)); wire != "" {
-			runCmd = append(runCmd, "-e", entrypoint.ProgramOverridesEnv+"="+wire)
-		}
-	}
 	// --- PATCHED EXTENSIONS: what each one was handed, and whether its agent's launchers stop ---
 	// (patchedtrees.go, docs/reference/pi-extensions.md PPX-D8, PPX-D18).
 	if wire := entrypoint.PatchedTreesWire(in.patchedTrees); wire != "" {
@@ -1173,6 +1160,10 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 		// WARNING), so an idle bridge never registers.
 		runCmd = append(runCmd, serviceEndpointEnvArgs(in, o)...)
 	}
+	// --- the host's CA trust (hostcatrust.go, PS-D16) ---
+	// CROSSES UNDER THE SEAL, by decision (seal.go's crossing table, PS-D16): a CA certificate is
+	// public, and a fork build behind an inspecting proxy fetches nothing without it.
+	runCmd = append(runCmd, hostCAArgs(rt, in.wsState, in.hostCAFile)...)
 
 	// --- the host path map (docs/reference/in-jail-nix-roots.md "Translated roots and the host path map") ---
 	// LAST BEFORE THE IMAGE, because it is read off every mount above: which host directory
@@ -1260,7 +1251,7 @@ func (o *Options) commonEnvBlock(in *assembleInput, blockedConfigJSON, netMode s
 	cfg := in.cfg
 	// None under the seal (seal.go): a server's literal env is a credential, and a build runs no
 	// agent to start one.
-	lspServers, mcpServers, mcpPresets := agentServerTables(cfg, in.sealed, in.packs)
+	lspServers, mcpServers := agentServerTables(cfg, in.sealed, in.packs)
 	// None of the user's in any capture jail (seal.go): the jail's mise install installs this.
 	miseTools, _ := in.jailMiseTools()
 	env := []string{
@@ -1315,9 +1306,8 @@ func (o *Options) commonEnvBlock(in *assembleInput, blockedConfigJSON, netMode s
 		// THE COMPOSED TABLE (packload.ComposeMCPServers, through agentServerTables): each selected
 		// pack's `mcp` entries joined to the jail's home, your mcp_servers merged over them. Composed
 		// here, on the host, for this backend's home (docs/design/mcp-presets-removal.md OQ-MP4); the
-		// jail reads it as it always read your table, over its presets. None under the seal.
+		// jail reads it as it always read your table. None under the seal.
 		"-e", "YOLO_MCP_SERVERS="+jsonDumpsOrEmptyObj(mcpServers),
-		"-e", "YOLO_MCP_PRESETS="+jsonDumpsOrEmptyList(mcpPresets),
 		// The `agent_updates` policy, read from USER scope directly rather than from the
 		// merged config: /workspace is bind-mounted rw, so a workspace value would let an
 		// agent freeze its own updates (config.AgentUpdatesWire). Emitted on EVERY launch,

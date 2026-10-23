@@ -3,7 +3,7 @@ title: "Two presets, seven hardcodings, and a backend that can have neither"
 date: 2026-09-12
 status: accepted
 stage: DESIGN
-next: "Rule OQ-MP9 (the browser report the build moved into the wrapper) and the packs safe subset at pack-system.md#OQ-PK1, then build §13 step 3 (retire mcp_presets); steps 1 and 2, the mcp kind and the chrome-devtools pack, are built (MP-D8)"
+next: "Rule OQ-MP9 (the browser report the build moved into the wrapper); every step of §13 is built, step 3 (retiring mcp_presets) on 2026-10-23 (MP-D10), so what is left is graduating the built design into mcp-configuration.md"
 depends-on:
   - ../reference/pack-system.md#OQ-PK1
 tags: [design, mcp, packs, config, removal, chrome-devtools, macos-user]
@@ -14,19 +14,17 @@ vantage:
 
 # Two presets, seven hardcodings, and a backend that can have neither
 
-**Status:** 2026-10-05 — every question settled but [`OQ-MP9`](#OQ-MP9), which the build
-opened, and [§13](#13-what-i-would-build-in-order)'s steps 0, 1 and 2 are built: the
-chromium-path fix, the `mcp` kind (`packdecl.KindMCP`, composed by
-`packload.ComposeMCPServers`), and `packs/chrome-devtools`, delivered in a container jail, on
-macos-user and at `yolo host`. Step 3, retiring `mcp_presets`, is not: ⚠ one ruling
-([`OQ-MP7`](#decision-ledger)) rejected its own leaning and redraws the `packs` workspace-scope boundary,
-and the key a workspace can write cannot retire into a selection only user scope can make until
-that is ruled, at [`OQ-PK1`](../reference/pack-system.md#oq-pk1), open. Steps 1 and 2 went first,
-ahead of it, under the maintainer's 2026-10-04 delegation ([MP-D8](#MP-D8)); until step 3 both
-mechanisms are live, and the pack's entry replaces a same-named preset. `sequential-thinking` is
-still a valid preset (`validMCPPresets`, `internal/config/config.go`). UNMEASURED: no agent has
-connected to the server the pack composes, at any notch, and no browser has been driven
-through it; the Mac half has run on no Mac.
+**Status:** 2026-10-23 — every question settled but [`OQ-MP9`](#OQ-MP9), which the build
+opened, and every step of [§13](#13-what-i-would-build-in-order) is built: the chromium-path fix,
+the `mcp` kind (`packdecl.KindMCP`, composed by `packload.ComposeMCPServers`),
+`packs/chrome-devtools`, delivered in a container jail, on macos-user and at `yolo host`, and on
+2026-10-23 step 3, the retirement of `mcp_presets` ([MP-D10](#MP-D10)). It waited on
+[`OQ-PK1`](../reference/pack-system.md#oq-pk1), ruled the same day: no pack may be named at
+workspace scope for now, so the browser is turned on only by selecting the pack in the user
+config. A config carrying `mcp_presets` is refused at either scope (a warning inside a jail,
+where the config is the host's snapshot), `sequential-thinking` is gone, and core names no MCP
+server of its own. UNMEASURED: no agent has connected to the server the pack composes, at any
+notch, and no browser has been driven through it; the Mac half has run on no Mac.
 
 > **In short.** `mcp_presets` is the last place core states *which MCP servers exist*, and that
 > is a content claim, not a domain one — so it dissolves rather than moves. `sequential-thinking`
@@ -591,10 +589,11 @@ the embed one. It carries the `program`, the `requires`, the MCP entry, the wrap
 saying what a jail needs for it to work. (As built it carries no `requires`, the wrapper reporting
 the browser instead: [MP-D5](#MP-D5), open at [`OQ-MP9`](#OQ-MP9).)
 
-**Step 3 — the retirement.** Delete the seven hardcodings, retire the key, delete
-`Env.SkipMCPPresets` and the three macos-user carve-outs, and land the docs in the same commit.
+**Step 3 — the retirement. BUILT 2026-10-23** ([MP-D10](#MP-D10)). Delete the seven hardcodings,
+retire the key, delete `Env.SkipMCPPresets` and the three macos-user carve-outs, and land the docs
+in the same commit.
 
-**Steps 1 and 2 shipped before step 3, which waits on [`OQ-PK1`](../reference/pack-system.md#oq-pk1)** ([MP-D8](#MP-D8), amending the
+**Steps 1 and 2 shipped before step 3, which waited on [`OQ-PK1`](../reference/pack-system.md#oq-pk1)** ([MP-D8](#MP-D8), amending the
 sentence that stood here: "Steps 1–3 do not ship separately"). Its three reasons, answered in
 turn: a kind with no pack would be dead code, and the two shipped together; a pack with the key
 still live is two mechanisms for one thing, which is the cost taken knowingly, bounded by the
@@ -610,6 +609,15 @@ over the staged tree), and `yolo host apply`'s inputs (`cli.composeHostInputs`).
 autonomy kind's autonomous posture. Decisions [MP-D1](#MP-D1) to [MP-D9](#MP-D9) record the calls
 the build made, MP-D9 the fix review asked for: the agents' launchers install the server's program
 before they start the agent.
+
+**As built (2026-10-23), step 3.** `mcp_presets` is a retired key (`retiredTopLevelConfigKeys`),
+refused by `validateMCPPresetsRetired` with `config.MCPPresetsRetiredMessage`, which names the
+pack, says a workspace file cannot select it, and gives [§4](#4-sequential-thinking-is-deleted--what-that-costs-and-what-a-user-does-instead)'s
+`mcp_servers` entry; `yolo host apply`, which runs no full validation, names it in its report. The
+preset table, its chromium resolution, the never-spawned `chrome-devtools-mcp-wrapper`, the
+bootstrap's preset install, `YOLO_MCP_PRESETS`, `validMCPPresets`, `Env.SkipMCPPresets`, the
+macos-user notice step and the same-file preset/null check are deleted, and with them the
+interim rule that the pack's entry replaced a same-named preset.
 
 ---
 
@@ -694,3 +702,4 @@ folded into the sections each row names.
 | <a id="MP-D7"></a>MP-D7 | *Implementation decision, as MP-D1.* **Composition follows the provider precedent's shape**: the selected packs' entries in pack order, a name two declarations ship held by the later (NC-D59) and refused before any launch by validation (`config.validatePackMCPServers`) and in `yolo pack footprint` (`Collisions`); the user's entry merges over the pack's per field, `env` per variable; a user `null` removes the pack's and stays in the table as a removal, so a jail's preset of that name goes too | 2026-10-05 | [§6.1](#61-the-three-candidate-shapes) |
 | <a id="MP-D8"></a>MP-D8 | *Implementation decision, as MP-D1, amending [§13](#13-what-i-would-build-in-order)'s "Steps 1–3 do not ship separately".* **Steps 1 and 2 ship before step 3**, which waits on [`OQ-PK1`](../reference/pack-system.md#oq-pk1): a key a workspace can write cannot retire into a selection only user scope can make until [`OQ-MP7`](#decision-ledger)'s demotion is ruled. The cost is two mechanisms at once, bounded by the pack's entry replacing a same-named preset, and the build answers the maintainer's request for the server at `yolo host` ([roadmap](../plans/roadmap.md) item 44: "the maintainer wants it") | 2026-10-05 | [§13](#13-what-i-would-build-in-order) |
 | <a id="MP-D9"></a>MP-D9 | *Implementation decision, as MP-D1; fixes a defect review found in the jail half.* **A jail's and macos-user's agent launchers install and refresh a pack server's program before they exec the agent**, as they do a preset's package: a server takes the trigger of the agent that connects to it, and nothing may move at connect time ([program-delivery.md §3.5](program-delivery.md#35-the-second-axis-who-the-dependency-serves-amendment-2026-09-03), [`OQ-PD12a`](program-delivery.md#decision-ledger)). The npm `program` an `mcp` entry's `bin` names joins the transitive refresh set while the composed table holds that server, and the program's own launcher, which the server runs through for the posture's flags, bakes no update and no server refresh of its own; its cold install stays, for a server no agent's launcher started. **Every launcher's install writes to stderr**: npm's and an installer's output went to stdout, the server's JSON-RPC channel, ahead of its `initialize` response. An installer program, and an npm one whose pack declares install flags, keep their own launcher's trigger, since the refresh hands npm a spec alone; a pinned one is installed again once at its first start, the refresh writing no record of the declaration its launcher compares | 2026-10-05 | [§13](#13-what-i-would-build-in-order) |
+| <a id="MP-D10"></a>MP-D10 | *Implementation decision, building step 3 after [`OQ-PK1`](../reference/pack-system.md#oq-pk1) was ruled on 2026-10-23 ("no workspace packs for now, retire mcp_presets").* **The key is refused at either scope with every value, `[]` and `null` included**, as the other retired keys are: an error on the host, a warning inside a jail. The refusal names `chrome-devtools` as a `packs` entry "beside your agents" rather than spelling a whole `"packs": [...]` list, because a pasted list would replace the user's agents. `yolo host apply` names the key in its report, since the host notch runs only the providers' validation. | 2026-10-23 | [§13](#13-what-i-would-build-in-order) |

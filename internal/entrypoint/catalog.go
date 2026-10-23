@@ -81,7 +81,7 @@ const (
 	OrphanGoBin OrphanClass = "go-bin"
 )
 
-// Orphan is one installed thing that no selected pack or MCP preset declares.
+// Orphan is one installed thing that no selected pack declares.
 //
 // IT CARRIES THE BYTES' ABSOLUTE PATH, which the boot report never prints, and that is the
 // point of the type: the catalog is a report, but the removal act OQ-PD4 rules is an act on
@@ -108,7 +108,7 @@ type Orphan struct {
 }
 
 // InstalledOrphans returns every installed package, ~/.local/bin entry and $GOBIN binary
-// that no selected pack or MCP preset declares. It reads the directory trees and the pack
+// that no selected pack declares. It reads the directory trees and the pack
 // manifests; it writes nothing.
 //
 // THE THREE FINDERS ARE THE THREE PLACES A yolo-RUN INSTALL LANDS OR LANDED, and the set is
@@ -157,7 +157,7 @@ func InstalledOrphans(e *Env) []Orphan {
 }
 
 // CatalogInstalledOrphans reports every installed package, ~/.local/bin entry and $GOBIN
-// binary that no selected pack or MCP preset declares: ONE line on the launch
+// binary that no selected pack declares: ONE line on the launch
 // terminal stating how many there are, and the list — one line each, naming the orphan and,
 // for a file, its size — in the boot log.
 //
@@ -206,7 +206,7 @@ func reportOrphans(e *Env, orphans []Orphan) {
 // (OQ-PD4) — and it names the two verbs that act, so a reader who wants the list is one
 // command away rather than one file away.
 func catalogSummary(n int) string {
-	return fmt.Sprintf("%s%d installed %s %s declared by no selected pack or preset — "+
+	return fmt.Sprintf("%s%d installed %s %s declared by no selected pack — "+
 		"boot.log names them (`yolo programs ls` for sizes; `programs.autoprune` "+
 		"removes them)", catalogPrefix, n,
 		catalogPlural(n, "program", "programs"), catalogPlural(n, "is", "are"))
@@ -222,14 +222,14 @@ func catalogPlural(n int, one, many string) string {
 }
 
 // catalogLine is one orphan's line, in the boot log. The classes state DIFFERENT declaring
-// sets — an npm package can be claimed by a pack or an MCP preset, a ~/.local/bin entry only
-// by a pack, and a $GOBIN entry by nothing at all now that the LSP recipe is gone — and
+// sets — an npm package or a ~/.local/bin entry can be claimed only by a pack, and a $GOBIN
+// entry by nothing at all now that the LSP recipe is gone — and
 // saying so per class is the half of the report that tells a reader which declaration they
 // would have to add to keep it.
 func catalogLine(o Orphan) string {
 	switch o.Class {
 	case OrphanNpm:
-		return "npm package installed but not declared by any selected pack or preset: " +
+		return "npm package installed but not declared by any selected pack: " +
 			o.Display
 	case OrphanLocalBin:
 		return o.Display + " installed but not declared by any selected pack" + o.Size
@@ -267,9 +267,6 @@ func catalogNpmOrphans(e *Env, packs []*packload.Pack) []string {
 			}
 		}
 	}
-	for _, pkg := range strings.Fields(mcpPresetNpmPackages(e)) {
-		declared[pkg] = struct{}{}
-	}
 
 	var orphans []string
 	for _, name := range installedNpmPackages(e) {
@@ -283,9 +280,9 @@ func catalogNpmOrphans(e *Env, packs []*packload.Pack) []string {
 
 // installedNpmPackages lists the global prefix's package names, scoped ones included.
 //
-// A scope is a DIRECTORY, not a package: `@modelcontextprotocol/server-sequential-thinking`
-// lives two levels down, so a one-level walk would report every scope as an orphan named
-// `@modelcontextprotocol` and never see the package the pack actually declared.
+// A scope is a DIRECTORY, not a package: `@scope/name` lives two levels down, so a one-level
+// walk would report every scope as an orphan named `@scope` and never see the package the
+// pack actually declared.
 //
 // A DOT-PREFIXED NAME IS NEVER A PACKAGE, at either level, and the two-name denylist this
 // replaced ("`.bin`", "`.package-lock.json`") named only the entries npm leaves behind when
@@ -370,13 +367,12 @@ func catalogPath(e *Env, abs string) string {
 }
 
 // catalogLocalBinOrphans compares ~/.local/bin against everything that has an owner: a
-// pack's native installer, the two MCP wrapper surfaces, the retired macOS log wrapper, and the
+// pack's native installer, the mcp-wrappers directory, the retired macOS log wrapper, and the
 // stale in-jail clients RemoveStaleGeneratedClients is already unlinking this boot.
 func catalogLocalBinOrphans(e *Env, packs []*packload.Pack) []pathOrphan {
 	declared := map[string]struct{}{
-		"chrome-devtools-mcp-wrapper": {}, // GenerateMCPWrappers
-		"mcp-wrappers":                {}, // its sibling directory
-		"yolo-log":                    {}, // RetireYoloLog (macOS) unlinks ours and names any other
+		"mcp-wrappers": {}, // GenerateMCPWrappers
+		"yolo-log":     {}, // RetireYoloLog (macOS) unlinks ours and names any other
 	}
 	for _, name := range staleGeneratedClients {
 		declared[name] = struct{}{}

@@ -18,12 +18,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Run the macOS agent as you (experimental).** Set `"macos_user_mode": "self"` in your user config and `macos-user` runs the agent as you, with no setup and a project anywhere, under a stricter sandbox profile. See [the macos-user backend](userguide/guides/macos.md#the-macos-user-backend).
 
-**Packs can build their own tools.** A launch, in a jail, on `macos-user` or with `yolo host`, builds a pack's tool from its source once, in a sealed build (for macOS on a Mac), and again only when the source changes; `yolo pack build` builds it ahead of time, and a pack without the source can name a checksum-verified prebuilt download. `programs.overrides` in your user config runs a pack's program from your own checkout instead. See [programs built from a pack's tree](docs/reference/pack-system.md#program-via-pack).
+**Packs can build their own tools.** A launch, in a jail, on `macos-user` or with `yolo host`, builds a pack's tool from its source once, in a sealed build (for macOS on a Mac), and again only when the source changes; `yolo pack build` builds it ahead of time, and a pack without the source can name a checksum-verified prebuilt download, which you can also choose over the source. `programs.overrides` in your user config builds a pack's program from your own checkout instead, at each launch. See [programs built from a pack's tree](docs/reference/pack-system.md#program-via-pack).
+
+**Jails trust your host's certificate authorities.** A corporate or inspecting-proxy CA your host trusts is now trusted in every jail, and the launch names each one and where it came from. On macOS your login keychain's count too, though with `macos-user`'s separate account only tools that read a CA file (curl, git, Node, Python) trust those, not `gh` or `mise`. See [the corporate certificate trap](docs/design/provisioner-sets.md#163-the-corporate-certificate-trap).
+
+### Changed
+
+- `mcp_presets` is removed, and a config that still has it stops the launch: delete the key, add `chrome-devtools` to `packs` in your user config for the browser, and write `sequential-thinking` under `mcp_servers` yourself if you want it. See [MCP and LSP](userguide/guides/mcp-and-lsp.md#mcp_presets-is-gone).
 
 **Your fonts in the jail.** On `macos-user`, tools find the Mac's fonts and your packages' fonts, and a jail running as you finds your own too. Add `"share_host_fonts": true` to your user config to share your font folder read-only with a container jail or the separate sandbox user; each launch names it. See [the macos-user backend](userguide/guides/macos.md#the-macos-user-backend).
 
 ### Fixed
 
+- In a container jail, an `SSL_CERT_FILE` you set in your config now applies to every TLS tool instead of losing to the jail's own bundle.
 - `yolo host apply` and `yolo host -- <agent>` now remove a file a pack stopped shipping or moved, and say so, instead of leaving the old copy to break launches; a copy from an earlier version is archived, and one you changed is kept and named with the command to remove it. See [the host copy converges](docs/reference/pack-system.md#host-files-converge).
 - On macOS (`macos-user`), a pack's skills, briefing and files now leave the agent's home at the next launch after you drop the pack; any you edited stay, and the launch names each with the command that removes it.
 

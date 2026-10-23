@@ -42,8 +42,8 @@ func knownLaunchYOLOEnvNames(packs []*packload.Pack, channel *packChannel) []str
 		"YOLO_AGENT_UPDATES", "YOLO_CAPTURES_DIR", "YOLO_CONTEXT_DIR", "YOLO_CONTRACT_TAGS", "YOLO_CTX_MOUNTS_TOKEN",
 		"YOLO_FORK_BUILDS", "YOLO_HOST_DIR", "YOLO_HOST_LAYERS", "YOLO_HOST_LOOPBACK", "YOLO_HOST_PATH_MAP",
 		"YOLO_JAIL_DAEMONS", "YOLO_JAIL_DAEMON_READY_NAMES", "YOLO_JAIL_MAIN", "YOLO_LSP_SERVERS",
-		"YOLO_MCP_PRESETS", "YOLO_MISE_TOOLS", "YOLO_PATCHED_TREES", "YOLO_PROVIDERS", "YOLO_PROFILES",
-		"YOLO_PUBLISHED_PORTS", "YOLO_FORWARD_HOST_PORTS", "YOLO_PROGRAMS_AUTOPRUNE", "YOLO_PROGRAM_OVERRIDES",
+		"YOLO_MISE_TOOLS", "YOLO_PATCHED_TREES", "YOLO_PROVIDERS", "YOLO_PROFILES",
+		"YOLO_PUBLISHED_PORTS", "YOLO_FORWARD_HOST_PORTS", "YOLO_PROGRAMS_AUTOPRUNE",
 		"YOLO_USE_PROFILES", "YOLO_PROVISION_MS", "YOLO_SESSION_ID", "YOLO_USER_LAYER",
 		"YOLO_SERVICE_AWS_AUTH_ENDPOINT", "YOLO_SERVICE_CLAUDE_OAUTH_BROKER_ENDPOINT",
 		"YOLO_SERVICE_GITHUB_BROKER_ENDPOINT", "YOLO_SERVICE_WIRE_BRIDGE_ENDPOINT",
@@ -51,6 +51,10 @@ func knownLaunchYOLOEnvNames(packs []*packload.Pack, channel *packChannel) []str
 		// These two fixed names are shipped-pack facts with runtime readers. Do not derive or
 		// hydrate an unselected pack merely to recognize its inherited diagnostic name.
 		"YOLO_AUTH_PRELAUNCH_CODEX_FLAG", "YOLO_AUTH_PRELAUNCH_CODEX_PATH", "YOLO_PI_PROVIDER_POLICY",
+		// Retired 2026-10-23; jails started by an older yolo still export them, so a nested launch
+		// from one must not warn about a name its user cannot unset. YOLO_PROGRAM_OVERRIDES carried
+		// the dev override's live mount, which BG-D19 deleted.
+		"YOLO_MCP_PRESETS", "YOLO_PROGRAM_OVERRIDES",
 	} {
 		add(name)
 	}

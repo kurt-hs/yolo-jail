@@ -1,7 +1,8 @@
 package macosuser
 
 // cabundle.go is CORPORATE CA TRUST inside the macos-user sandbox (docs/design/provisioner-sets.md
-// §16.3 and PS-D10, built on OQ-PS14 (a) and OQ-PS15 (a) as leaned).
+// §16.3, PS-D10 and PS-D14, built on OQ-PS14 and OQ-PS15 as ruled 2026-10-23: the host's trust,
+// the login keychain's included, is the sandbox's).
 //
 // An employer that inspects TLS traffic has its MDM install its own certificate authority into
 // the Mac's System keychain. Go programs, mise and pip ask macOS and see it. Nix curl, nix git,
@@ -10,8 +11,9 @@ package macosuser
 //
 // At each launch the host-side yolo, which runs as the human and outside the sandbox:
 //
-//  1. reads the System keychain, which is world-readable, with `security find-certificate` and no
-//     sudo; it never writes a keychain, and both Seatbelt keychain denies stay;
+//  1. reads the System keychain, which is world-readable, and the launching user's own login
+//     keychain, with `security find-certificate` and no sudo; it never writes a keychain, and
+//     every Seatbelt keychain deny stays;
 //  2. keeps each unexpired CA whose extended key usage allows TLS servers, and then only those
 //     `security verify-cert -p ssl` confirms macOS trusts (Homebrew's ca-certificates filter);
 //  3. writes, per session beside the env file, a bundle of the profile's public roots plus the kept
@@ -19,10 +21,11 @@ package macosuser
 //  4. points NIX_SSL_CERT_FILE, SSL_CERT_FILE, REQUESTS_CA_BUNDLE, CURL_CA_BUNDLE and
 //     GIT_SSL_CAINFO at the bundle, and NODE_EXTRA_CA_CERTS at the second file (Node reads that
 //     variable as ONE file it adds to its own roots, so it is never a colon-joined list);
-//  5. names every CA it took, at launch (a launch has no quiet mode).
+//  5. names every CA it took, and the keychain it came from, at launch (a launch has no quiet mode).
 //
-// A keychain that cannot be read warns, names env_sources, and still points the variables at the
-// profile's public roots: it never refuses a launch.
+// A System keychain that cannot be read warns, names env_sources, and still points the variables
+// at the profile's public roots; a login keychain that cannot be read is one note, and the launch
+// trusts the System keychain's CAs alone. Neither ever refuses a launch.
 //
 // THE CALLER'S OWN BUNDLE WINS, FOR ALL FIVE (applyCATrust). Each tool reads its own of the five
 // first, so a user who set one of them, say SSL_CERT_FILE in env_sources, would have curl, git and
@@ -31,14 +34,11 @@ package macosuser
 // Node adds to its own roots and is none of the five, still names the keychain's CAs, as a default.
 
 import (
-	"bytes"
-	"crypto/x509"
-	"encoding/pem"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/catrust"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
@@ -64,6 +64,19 @@ const (
 // every certificate in it (-a), as PEM (-p), run as the invoking user with no sudo.
 func systemKeychainExportArgv() []string {
 	return []string{securityBin, "find-certificate", "-a", "-p", systemKeychainPath}
+}
+
+// loginKeychainRel is the launching user's login keychain under their home: the file name macOS
+// has used since 10.12 (the older `login.keychain` is not read).
+const loginKeychainRel = "Library/Keychains/login.keychain-db"
+
+// loginKeychainExportArgv is the login keychain read a launch makes (readLoginKeychainReal): every
+// certificate in the keychain at path (-a), as PEM (-p), as the invoking user, whose keychain it
+// is. Certificates are not secret items, so the read needs no unlock (UNMEASURED: a Mac session
+// confirms it never prompts; the reader's timeout and closed stdin are what keep a launch from
+// waiting on one if it does).
+func loginKeychainExportArgv(path string) []string {
+	return []string{securityBin, "find-certificate", "-a", "-p", path}
 }
 
 // verifyCAArgv is the trust question asked of the one CA in the file at path (verifyCAReal):
@@ -95,12 +108,10 @@ func sessionEnvDirFile(key, sd, suffix string) string {
 	return sd + "/" + sandboxEnvLeaf + "/" + key + suffix
 }
 
-// TrustedCA is one certificate authority taken from the System keychain: the name the launch
-// discloses it by, and its PEM block.
-type TrustedCA struct {
-	Name string
-	PEM  string
-}
+// TrustedCA is one certificate authority taken from a keychain: the name the launch discloses it
+// by, its PEM block, and the keychain it came from (catrust.SourceSystemKeychain or
+// catrust.SourceLoginKeychain; "" reads as the System keychain).
+type TrustedCA = catrust.CA
 
 // CATrust is what one launch composed for TLS trust in the sandbox. The zero value composed
 // nothing (no tool profile: a dry run, a capture with no packages), and sets no variable.
@@ -111,11 +122,22 @@ type CATrust struct {
 	// MissingProfileBundle is a profile bundle path that could not be read, which also sets no
 	// variable: pointing one at a file that is not there would break TLS rather than narrow it.
 	MissingProfileBundle string
-	// ReadError is why the keychain was not read, or "" when it was.
+	// ReadError is why the System keychain was not read, or "" when it was.
 	ReadError string
-	// Kept are the CAs the launch trusts beyond the public roots, in keychain order.
+	// LoginRead says the launching user's login keychain was read too, and LoginReadError why it
+	// was not when the launch tried (OQ-PS15 as ruled: a CA trusted only there is trusted in the
+	// sandbox too). Neither is set when the launch wires no login reader.
+	LoginRead      bool
+	LoginReadError string
+	// SeparateAccount says the sandbox runs as the second account rather than as you (mode.go).
+	// There, a program that asks macOS for trust (Go's, such as gh and mise) asks it as that
+	// account, so the login keychain's CAs reach only the tools that read a CA file, and the
+	// disclosure says so (PS-D14). Set by the caller, which knows the mode.
+	SeparateAccount bool
+	// Kept are the CAs the launch trusts beyond the public roots: the System keychain's in its
+	// order, then the login keychain's not already among them.
 	Kept []TrustedCA
-	// LeftOut counts the CAs the keychain held that were left out: expired, not for TLS servers,
+	// LeftOut counts the CAs the keychains held that were left out: expired, not for TLS servers,
 	// or not trusted by macOS for TLS.
 	LeftOut int
 	// Bundle is the profile's roots plus Kept, and Extras is Kept alone; both "" when nothing was
@@ -124,8 +146,77 @@ type CATrust struct {
 	Extras string
 }
 
-// ComposeCATrust composes this launch's trust from the materialized tool profile and the System
-// keychain. A READ OF THE HOST, so it runs in the orchestrator, never in the pure plan builder.
+// KeychainReaders are the three host reads a keychain export makes: the System keychain, the
+// launching user's login keychain, and macOS's own trust verdict on one CA. Each runs as the
+// invoking user with no sudo, and none writes a keychain. A nil System or Login reader is a read
+// this build does not make; nil Verify trusts nothing beyond the public roots.
+type KeychainReaders struct {
+	System func() (string, error)
+	Login  func() (string, error)
+	Verify func(pem string) bool
+}
+
+// RealKeychainReaders are the production reads (`security`, real.go), for a caller outside this
+// package: a container launch on a macOS host exports the same trust (PS-D16).
+func RealKeychainReaders() KeychainReaders {
+	return KeychainReaders{System: readSystemKeychainReal, Login: readLoginKeychainReal, Verify: verifyCAReal}
+}
+
+// KeychainTrust is what one export of the host's keychains found.
+type KeychainTrust struct {
+	// Kept are the CAs macOS trusts for TLS, each labelled with the keychain it came from: the
+	// System keychain's first, then the login keychain's not already among them.
+	Kept []TrustedCA
+	// LeftOut counts the certificates left out: not a TLS CA, outside their validity, or not
+	// trusted by macOS for TLS.
+	LeftOut int
+	// SystemError and LoginError are why a keychain was not read ("" when it was, or when this
+	// build wires no login reader); LoginRead says the login keychain was read.
+	SystemError, LoginError string
+	LoginRead               bool
+}
+
+// ReadHostKeychainTrust exports the CAs this Mac trusts for TLS from the System keychain and the
+// launching user's login keychain (OQ-PS14 and OQ-PS15 as ruled 2026-10-23: "if it was trusted on
+// the host, it should be trusted in the jail, regardless of how that trust got there"). Every
+// candidate passes the same filter (catrust.ParseCAs) and then `security verify-cert -p ssl`, which
+// runs as the invoking user and so honors the user trust-settings domain as well as the admin and
+// system ones: a CA the user marked "Always Trust" passes, one they distrusted does not. A keychain
+// that cannot be read is recorded and the other is still read: a failure narrows the trust and
+// never refuses (an unreadable login keychain leaves the System keychain's CAs, with a note).
+func ReadHostKeychainTrust(r KeychainReaders, now time.Time) KeychainTrust {
+	var kt KeychainTrust
+	var candidates []TrustedCA
+	if r.System == nil {
+		kt.SystemError = "this build has no keychain reader wired"
+	} else if out, err := r.System(); err != nil {
+		kt.SystemError = err.Error()
+	} else {
+		candidates, kt.LeftOut = catrust.ParseCAs(out, catrust.SourceSystemKeychain, now)
+	}
+	if r.Login != nil {
+		if out, err := r.Login(); err != nil {
+			kt.LoginError = err.Error()
+		} else {
+			kt.LoginRead = true
+			c, left := catrust.ParseCAs(out, catrust.SourceLoginKeychain, now)
+			kt.LeftOut += left
+			candidates = catrust.Merge(candidates, c)
+		}
+	}
+	for _, c := range candidates {
+		if r.Verify != nil && r.Verify(c.PEM) {
+			kt.Kept = append(kt.Kept, c)
+		} else {
+			kt.LeftOut++
+		}
+	}
+	return kt
+}
+
+// ComposeCATrust composes this launch's trust from the materialized tool profile and the host's
+// keychains (ReadHostKeychainTrust). A READ OF THE HOST, so it runs in the orchestrator, never in
+// the pure plan builder.
 func ComposeCATrust(deps Deps, darwin *Darwin) CATrust {
 	if darwin == nil || darwin.ProfilePath == "" {
 		return CATrust{}
@@ -140,25 +231,10 @@ func ComposeCATrust(deps Deps, darwin *Darwin) CATrust {
 	if strings.TrimSpace(roots) == "" {
 		return CATrust{MissingProfileBundle: profile}
 	}
-	ca := CATrust{ProfileBundle: profile}
-	if deps.ReadSystemKeychain == nil {
-		ca.ReadError = "this build has no keychain reader wired"
-		return ca
-	}
-	out, err := deps.ReadSystemKeychain()
-	if err != nil {
-		ca.ReadError = err.Error()
-		return ca
-	}
-	candidates, left := keychainCACandidates(out, time.Now())
-	for _, c := range candidates {
-		if deps.VerifyCA != nil && deps.VerifyCA(c.PEM) {
-			ca.Kept = append(ca.Kept, c)
-		} else {
-			left++
-		}
-	}
-	ca.LeftOut = left
+	kt := ReadHostKeychainTrust(KeychainReaders{System: deps.ReadSystemKeychain,
+		Login: deps.ReadLoginKeychain, Verify: deps.VerifyCA}, time.Now())
+	ca := CATrust{ProfileBundle: profile, ReadError: kt.SystemError, LoginRead: kt.LoginRead,
+		LoginReadError: kt.LoginError, Kept: kt.Kept, LeftOut: kt.LeftOut}
 	if len(ca.Kept) == 0 {
 		return ca
 	}
@@ -169,56 +245,6 @@ func ComposeCATrust(deps Deps, darwin *Darwin) CATrust {
 	ca.Extras = extras.String()
 	ca.Bundle = strings.TrimRight(roots, "\n") + "\n" + ca.Extras
 	return ca
-}
-
-// keychainCACandidates parses `security find-certificate -a -p` output and returns the
-// certificates that can be TLS trust anchors, each once, with how many it left out: a block that
-// does not parse, a certificate that is not a CA, one outside its validity at now, and one whose
-// extended key usage names neither TLS servers nor any purpose. What macOS's own trust settings
-// say is asked afterwards, one certificate at a time (Deps.VerifyCA).
-func keychainCACandidates(pemOut string, now time.Time) (kept []TrustedCA, left int) {
-	rest := []byte(pemOut)
-	var seen [][]byte
-	for {
-		var block *pem.Block
-		block, rest = pem.Decode(rest)
-		if block == nil {
-			return kept, left
-		}
-		if block.Type != "CERTIFICATE" {
-			continue
-		}
-		cert, err := x509.ParseCertificate(block.Bytes)
-		if err != nil || !cert.IsCA || now.Before(cert.NotBefore) || now.After(cert.NotAfter) ||
-			!allowsServerAuth(cert) {
-			left++
-			continue
-		}
-		if slices.ContainsFunc(seen, func(der []byte) bool { return bytes.Equal(der, cert.Raw) }) {
-			continue
-		}
-		seen = append(seen, cert.Raw)
-		kept = append(kept, TrustedCA{Name: caName(cert), PEM: string(pem.EncodeToMemory(block))})
-	}
-}
-
-// allowsServerAuth reports whether a CA's extended key usage permits TLS server certificates: no
-// EKU at all (unconstrained), ServerAuth, or Any.
-func allowsServerAuth(c *x509.Certificate) bool {
-	if len(c.ExtKeyUsage) == 0 && len(c.UnknownExtKeyUsage) == 0 {
-		return true
-	}
-	return slices.Contains(c.ExtKeyUsage, x509.ExtKeyUsageServerAuth) ||
-		slices.Contains(c.ExtKeyUsage, x509.ExtKeyUsageAny)
-}
-
-// caName is the name a CA is disclosed by: its subject's common name, or the whole subject when it
-// has none.
-func caName(c *x509.Certificate) string {
-	if c.Subject.CommonName != "" {
-		return c.Subject.CommonName
-	}
-	return c.Subject.String()
 }
 
 // applyCATrust sets the CA variables on a copy of env and returns the copy, with the session's CA
@@ -364,7 +390,8 @@ const caTrustRetry = "The sandbox's TLS variables name this file, so the launch 
 // printCATrust is the launch's disclosure of what it trusts for TLS in the sandbox, read off the
 // plan, so the variables it names are the ones the env file really sets. follows is the bundle
 // variable the launch's own env layers set (applyCATrust), which the other four then name too:
-// the line says so, and that the keychain's CAs then reach Node alone, or nothing.
+// the line says so, and that the keychain's CAs then reach Node alone, or nothing. Each CA is
+// named with the keychain it came from (catrust.SourcesPhrase).
 func printCATrust(out printer, ca CATrust, envContent, bundleFile, extrasFile, follows string) {
 	if ca.MissingProfileBundle != "" {
 		out.printf("[yellow]Warning: the sandbox's tool profile has no CA bundle at %s[/yellow], "+
@@ -376,16 +403,56 @@ func printCATrust(out printer, ca CATrust, envContent, bundleFile, extrasFile, f
 	if ca.ProfileBundle == "" {
 		return
 	}
+	esc := func(s string) string { return richtext.Escape(termsafe.Visible(s)) }
+	n := len(ca.Kept)
+	// A KEYCHAIN THAT COULD NOT BE READ, said on a line of its own whenever another source still
+	// added a CA, so the main line below stays true: the login keychain's note always, and the
+	// System keychain's warning when the login keychain's CAs are what remain.
+	if ca.LoginReadError != "" {
+		out.printf("[yellow]Note: could not read your login keychain (%s)[/yellow], so a certificate "+
+			"authority you trusted only there is not trusted in the sandbox this launch; this Mac's "+
+			"System keychain's still are. If the keychain is locked, unlock it (`security "+
+			"unlock-keychain`) and launch again.", esc(ca.LoginReadError))
+	}
+	if ca.ReadError != "" && n > 0 {
+		out.printf("[yellow]Warning: could not read this Mac's System keychain (%s)[/yellow], so "+
+			"the sandbox adds only your login keychain's certificate authorities.", esc(ca.ReadError))
+	}
+	kept := make([]TrustedCA, 0, n)
+	for _, c := range ca.Kept {
+		if c.Source == "" {
+			c.Source = catrust.SourceSystemKeychain
+		}
+		kept = append(kept, c)
+	}
+	names := make([]string, 0, n)
+	var fromLogin []string
+	for _, c := range kept {
+		names = append(names, esc(c.Name))
+		if c.Source == catrust.SourceLoginKeychain {
+			fromLogin = append(fromLogin, esc(c.Name))
+		}
+	}
+	// THE SEPARATE ACCOUNT'S LIMIT, after the main line (PS-D14): a program that asks macOS for
+	// trust asks it as the sandbox account, whose own login keychain is not yours.
+	if ca.SeparateAccount && len(fromLogin) > 0 {
+		defer out.printf("[dim]The agent runs as a separate account, so the %s from your login "+
+			"keychain (%s) %s trusted only by tools that read a CA file, such as curl, git, Node and "+
+			"Python; programs that ask macOS instead, such as gh and mise, do not trust %s.[/dim]",
+			plural(len(fromLogin), "certificate authority", "certificate authorities"),
+			strings.Join(fromLogin, ", "), plural(len(fromLogin), "is", "are"),
+			plural(len(fromLogin), "it", "them"))
+	}
+	// What was read, as the subject of "adds no …" and "trusts …".
+	holder, verb, trusts, pronoun := "This Mac's System keychain", "adds", "trusts", "it"
+	if ca.LoginRead {
+		holder, verb, trusts, pronoun = "This Mac's System keychain and your login keychain", "add", "trust", "them"
+	}
 	left := ""
 	if ca.LeftOut > 0 {
-		left = fmt.Sprintf(" %d more in it %s left out: expired, not for TLS servers, or not "+
-			"trusted by macOS for TLS.", ca.LeftOut, plural(ca.LeftOut, "was", "were"))
+		left = fmt.Sprintf(" %d more in %s %s left out: expired, not for TLS servers, or not "+
+			"trusted by macOS for TLS.", ca.LeftOut, pronoun, plural(ca.LeftOut, "was", "were"))
 	}
-	names := make([]string, 0, len(ca.Kept))
-	for _, c := range ca.Kept {
-		names = append(names, richtext.Escape(termsafe.Visible(c.Name)))
-	}
-	n := len(ca.Kept)
 	authorities := fmt.Sprintf("%d certificate %s", n, plural(n, "authority", "authorities"))
 	node := ""
 	if v, ok := sandboxEnvFileValue(envContent, NodeExtraCAVar); ok && v == extrasFile && extrasFile != "" {
@@ -397,20 +464,19 @@ func printCATrust(out printer, ca CATrust, envContent, bundleFile, extrasFile, f
 			return lead + " configured environment sets " + follows + ", so " + caVarsClause(envContent) + "."
 		}
 		switch {
-		case ca.ReadError != "":
+		case ca.ReadError != "" && n == 0:
 			out.printf("[yellow]Warning: could not read this Mac's System keychain (%s)[/yellow], so "+
 				"the sandbox adds none of its certificate authorities. %s",
-				richtext.Escape(termsafe.Visible(ca.ReadError)), yours("Your"))
+				esc(ca.ReadError), yours("Your"))
 		case n == 0:
-			out.printf("[dim]TLS in the sandbox: %s This Mac's System keychain adds no certificate "+
-				"authority.%s[/dim]", yours("your"), left)
+			out.printf("[dim]TLS in the sandbox: %s %s %s no certificate "+
+				"authority.%s[/dim]", yours("your"), holder, verb, left)
 		case node != "":
-			out.printf("Trusting %s from this Mac's System keychain in Node only: %s.%s %s Every "+
-				"other tool trusts only what those variables name.%s", authorities,
-				strings.Join(names, ", "), node, yours("Your"), left)
+			out.printf("Trusting %s%s.%s %s Every other tool trusts only what those variables name.%s",
+				authorities, catrust.SourcesPhrase(kept, " in Node only", esc), node, yours("Your"), left)
 		default:
-			out.printf("This Mac's System keychain trusts %s for TLS (%s), and the sandbox does "+
-				"not add %s. %s %s keeps your own value too.%s", authorities,
+			out.printf("%s %s %s for TLS (%s), and the sandbox does not add %s. %s %s keeps your "+
+				"own value too.%s", holder, trusts, authorities,
 				strings.Join(names, ", "), plural(n, "it", "them"), yours("Your"), NodeExtraCAVar, left)
 		}
 		return
@@ -436,24 +502,24 @@ func printCATrust(out printer, ca CATrust, envContent, bundleFile, extrasFile, f
 		tail = " " + strings.Join(theirs, ", ") + " keep the empty value your own environment set."
 	}
 	switch {
-	case ca.ReadError != "":
+	case ca.ReadError != "" && n == 0:
 		out.printf("[yellow]Warning: could not read this Mac's System keychain (%s)[/yellow], so "+
 			"the sandbox trusts only the public roots in its tool profile: %s name %s.%s A "+
 			"certificate authority your network needs can be named in env_sources: put a bundle "+
 			"holding it and the public roots in the workspace and set {\"SSL_CERT_FILE\": \"<that "+
 			"file>\"}, which the other four follow, and {\"%s\": \"<that file>\"} for Node.",
-			richtext.Escape(termsafe.Visible(ca.ReadError)), vars, target, tail, NodeExtraCAVar)
+			esc(ca.ReadError), vars, target, tail, NodeExtraCAVar)
 	case n == 0:
 		out.printf("[dim]TLS in the sandbox: %s name the public roots in its tool profile (%s); "+
-			"this Mac's System keychain adds no certificate authority.%s%s[/dim]",
-			vars, target, left, tail)
+			"%s %s no certificate authority.%s%s[/dim]",
+			vars, target, strings.ToLower(holder[:1])+holder[1:], verb, left, tail)
 	default:
 		if node == "" {
 			node = " " + NodeExtraCAVar + " keeps your own value, so Node does not add " +
 				plural(n, "it", "them") + "."
 		}
-		out.printf("Trusting %s from this Mac's System keychain: %s. %s name %s, the tool "+
-			"profile's public roots plus %s.%s%s%s", authorities, strings.Join(names, ", "), vars,
+		out.printf("Trusting %s%s. %s name %s, the tool "+
+			"profile's public roots plus %s.%s%s%s", authorities, catrust.SourcesPhrase(kept, "", esc), vars,
 			target, plural(n, "it", "them"), node, left, tail)
 	}
 }

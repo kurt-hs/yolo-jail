@@ -1,8 +1,8 @@
 package run
 
 // launcherownedenv_test.go pins that no config env entry can set a launcher-owned contract name
-// (macosuser.LauncherOwnedEnvNames) in a jail: an env_sources entry naming YOLO_FORK_BUILDS or
-// YOLO_PROGRAM_OVERRIDES would otherwise decide which file a program's launcher runs. On macos-user
+// (macosuser.LauncherOwnedEnvNames) in a jail: an env_sources entry naming YOLO_FORK_BUILDS would
+// otherwise decide which file a program's launcher runs. On macos-user
 // the composed launch env is relayed to the darwin bootstrap for those names, so the composition
 // must not carry them; on podman the env_sources values reach only the user env file as defaults,
 // which the boot never takes a YOLO_ name from (entrypoint's launcherContractKey).
@@ -29,9 +29,8 @@ func TestAConfigEnvEntryCannotSetALauncherOwnedName(t *testing.T) {
 		t.Fatal(err)
 	}
 	evilForks := `{"x":{"key":"evil"}}`
-	evilOverrides := `{"x":{"dir":"/workspace/evil","run":"x"}}`
-	cfg := `{"packs":[],"env_sources":[{"` + entrypoint.ForkBuildsEnv + `":` + jsonQuote(evilForks) + `,"` +
-		entrypoint.ProgramOverridesEnv + `":` + jsonQuote(evilOverrides) + `,"KEEP_ME":"1"}]}`
+	cfg := `{"packs":[],"env_sources":[{"` + entrypoint.ForkBuildsEnv + `":` + jsonQuote(evilForks) +
+		`,"KEEP_ME":"1"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "config.jsonc"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +51,7 @@ func TestAConfigEnvEntryCannotSetALauncherOwnedName(t *testing.T) {
 	if _, ok := env.Get("KEEP_ME"); !ok {
 		t.Fatalf("the fixture is not the case: env_sources did not reach the launch env: %v", env.Keys())
 	}
-	for _, k := range []string{entrypoint.ForkBuildsEnv, entrypoint.ProgramOverridesEnv} {
+	for _, k := range []string{entrypoint.ForkBuildsEnv} {
 		if v, ok := env.Get(k); ok {
 			t.Errorf("macos-user: env_sources set the launcher-owned %s = %v in the launch env", k, v)
 		}

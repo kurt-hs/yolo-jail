@@ -163,9 +163,9 @@ func TestOnlyTheLauncherCanMakeABootASealedBuild(t *testing.T) {
 }
 
 // THE MACOS-USER BUILD ACT'S BOOTSTRAP IS A SEALED BUILD TOO, told so on its argv (PPX-D48): it renders
-// no pack surface, so it names no ownerless overlay, and it prints no agent-config notice such as
-// the mcp_presets one, since it runs one build line and no agent. The maintainer's Mac printed both,
-// and eight "no owner" lines, in every build jail. The user's own macos-user boot still says both.
+// no pack surface, so it names no ownerless overlay, since it runs one build line and no agent.
+// The maintainer's Mac printed eight "no owner" lines in every build jail. The user's own
+// macos-user boot still says it.
 func TestTheMacosUserBuildBootstrapIsASealedBuild(t *testing.T) {
 	packs := []*packload.Pack{overlayContributorPack(t, "acme-fzf", map[string]any{"k": 1})}
 	for _, sealed := range []bool{true, false} {
@@ -173,32 +173,28 @@ func TestTheMacosUserBuildBootstrapIsASealedBuild(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			home := t.TempDir()
 			var stderr, log bytes.Buffer
-			e := DarwinEnvFrom(map[string]string{"JAIL_HOME": home, "YOLO_DARWIN_WORKSPACE": t.TempDir(),
-				"YOLO_MCP_PRESETS": `["chrome-devtools"]`}, home)
+			e := DarwinEnvFrom(map[string]string{"JAIL_HOME": home, "YOLO_DARWIN_WORKSPACE": t.TempDir()}, home)
 			e.Stderr, e.LogOnly = &stderr, &log
 			withCtxRoot(t, t.TempDir(), "acme-fzf")
-			steps := []bootStep{bootStepNamed(t, "mcp_presets_declined"), bootStepNamed(t, "configure_pack_surfaces")}
+			steps := []bootStep{bootStepNamed(t, "configure_pack_surfaces")}
 			runSteps(&bootRun{e: e, target: bootDarwin, darwin: DarwinBootstrapOptions{Sealed: sealed},
 				packsLoaded: true, packs: packs}, steps)
-			for _, w := range []string{"no effect", "mcp_presets are not delivered on macos-user"} {
-				if said := strings.Contains(stderr.String(), w); said == sealed {
-					t.Errorf("the boot said %q = %v, want %v:\n%s", w, said, !sealed, stderr.String())
-				}
+			if said := strings.Contains(stderr.String(), "no effect"); said == sealed {
+				t.Errorf("the boot said %q = %v, want %v:\n%s", "no effect", said, !sealed, stderr.String())
 			}
 			if skipped := strings.Contains(log.String(), sealedBuildSkipNote); skipped != sealed {
 				t.Errorf("the boot log records the sealed skip = %v, want %v:\n%s", skipped, sealed, log.String())
 			}
 		})
 	}
-	// THROUGH THE ENTRY: RunDarwinBootstrap hands its options to the boot, so a sealed bootstrap of a
-	// config enabling a preset prints no preset notice.
-	home := t.TempDir()
+	// THROUGH THE ENTRY: RunDarwinBootstrap hands its options to the boot, so a sealed bootstrap's
+	// boot log records the sealed skip.
+	home, ws := resolvedDir(t), resolvedDir(t)
 	var stderr strings.Builder
-	e := DarwinEnvFrom(map[string]string{"JAIL_HOME": home, "YOLO_DARWIN_WORKSPACE": t.TempDir(),
-		"YOLO_MCP_PRESETS": `["chrome-devtools"]`}, home)
+	e := DarwinEnvFrom(map[string]string{"JAIL_HOME": home, "YOLO_DARWIN_WORKSPACE": ws}, home)
 	e.Stderr = &stderr
 	_ = RunDarwinBootstrap(e, DarwinBootstrapOptions{Sealed: true})
-	if strings.Contains(stderr.String(), "mcp_presets") {
-		t.Errorf("a sealed bootstrap printed the agent-config notice:\n%s", stderr.String())
+	if raw, _ := os.ReadFile(BootLogPath(ws)); !strings.Contains(string(raw), sealedBuildSkipNote) {
+		t.Errorf("a sealed bootstrap rendered its pack surfaces; boot.log:\n%s\nstderr:\n%s", raw, stderr.String())
 	}
 }

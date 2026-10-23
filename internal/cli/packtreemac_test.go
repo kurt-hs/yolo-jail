@@ -101,11 +101,12 @@ func TestTheDarwinBuildScriptRunsThePlacement(t *testing.T) {
 	}
 }
 
-// OQ-BG2's LEANING ON A MAC: the darwin act can build a pack's tree in the run-as-you mode, and in
-// the account mode once the sandbox account exists. With no account it never can, so a declared
-// darwin prebuilt stands in — fetched by `yolo pack install`'s prefetch only then, never while a
-// build can run (P5).
-func TestADarwinPrebuiltStandsInOnlyWhereTheDarwinActCanNeverRun(t *testing.T) {
+// OQ-BG2 AS RULED, ON A MAC: the darwin act can build a pack's tree in the run-as-you mode, and in
+// the account mode once the sandbox account exists. With no account it never can — and still a
+// declared darwin prebuilt does NOT stand in: `yolo pack install`'s prefetch fetches nothing for a
+// present source on any Mac, and fetches the artifact only once the user opts in (BG-D18). Delete
+// the prefetch's read of config.ProgramPrebuiltOptIns and the last assertion goes red.
+func TestADarwinPrebuiltIsFetchedForAPresentSourceOnlyWithTheOptIn(t *testing.T) {
 	if darwinPackTreeBuildable(macSetup{}.probes()) {
 		t.Error("an account-mode Mac with no sandbox account reads as able to build")
 	}
@@ -139,7 +140,13 @@ func TestADarwinPrebuiltStandsInOnlyWhereTheDarwinActCanNeverRun(t *testing.T) {
 	}
 	withMac(t, macSetup{})
 	prefetch()
+	if n := hits.Load(); n != 0 {
+		t.Errorf("%d requests for the darwin prebuilt on a Mac with no sandbox account, want none: a "+
+			"prebuilt is never substituted for a present source", n)
+	}
+	writeUserConfig(t, `{"programs": {"overrides": {"x": {"prebuilt": true}}}}`)
+	prefetch()
 	if n := hits.Load(); n != 1 {
-		t.Errorf("%d requests for the darwin prebuilt on a Mac with no sandbox account, want one", n)
+		t.Errorf("%d requests for the darwin prebuilt once the user opted x into it, want one", n)
 	}
 }

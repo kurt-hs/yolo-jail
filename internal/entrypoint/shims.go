@@ -489,9 +489,6 @@ func GenerateAgentLaunchers(e *Env) error {
 	// And its patched-extension decisions (PatchedTreesEnv): the launchers of a pack that owns a
 	// tree with nothing to serve stop before exec (PPX-D18).
 	trees := patchedTrees(e)
-	// And its dev-override decisions (ProgramOverridesEnv, overridelauncher.go): an overridden bin
-	// gets the override's launcher in place of its via's, whatever that via is.
-	overrides := programOverrides(e)
 
 	packs, err := LoadJailPacks(e)
 	if err != nil {
@@ -500,8 +497,7 @@ func GenerateAgentLaunchers(e *Env) error {
 	// The yolo-INSTALLED MCP server set, computed ONCE for the same reason the probe
 	// path is: it is jail-global, not per-pack. §3.5 phrases the scope per agent ("an agent
 	// whose config names that server"), and in this tree that narrowing is the identity —
-	// YOLO_MCP_PRESETS is a jail-global key, YOLO_MCP_SERVERS one composed table, and every
-	// agent's surface renders from that one table. See serverrefresh.go's header for where a
+	// YOLO_MCP_SERVERS is one composed table, and every agent's surface renders from it. See serverrefresh.go's header for where a
 	// per-agent set would enter if that ever changes.
 	servers := ServerRefreshSpecs(e, packs)
 	// A SERVER TAKES ITS AGENT'S TRIGGER (§3.5, OQ-PD12a): the program a pack's `mcp` server runs
@@ -577,16 +573,6 @@ func GenerateAgentLaunchers(e *Env) error {
 			updates, launcherSet := agentUpdatesAllows(e, p.Name), servers
 			if serverBins[inst.Bin] {
 				updates, launcherSet = false, launcherServers{}
-			}
-			// A DEV OVERRIDE wins over every rung of the program's own delivery
-			// (docs/design/pack-buildable-programs.md §4): the launcher runs the checkout, and
-			// nothing of the via's install, build or materialize is generated beside it.
-			if ov, ok := overrides[inst.Bin]; ok {
-				if err := writeExecutable(launcherPath, overrideLauncher(inst.Bin, ov,
-					launchFlagsFor(e, packs, inst.Bin))); err != nil {
-					return err
-				}
-				continue
 			}
 			var launcher string
 			switch inst.Kind {
@@ -1074,7 +1060,8 @@ _stamp_mtime() {
 // receiptsFile is where every install yolo itself runs appends its gap receipt
 // (docs/design/program-delivery.md §10 step one, OQ-PD1's "yolo-written receipts only
 // where no native lock exists"). One JSON line per install: the npm and installer agent
-// launchers, the pnpm package-manager launcher, and the bootstrap's MCP-preset arm.
+// launchers and the pnpm package-manager launcher. (The bootstrap's MCP-preset arm, kind
+// mcp-npm, went with the `mcp_presets` key; a receipts log from before then still holds it.)
 //
 // THE WORKSPACE OWNS THE REALIZATION, NOT THE DECLARATION, and the file is filed with the
 // former on purpose. Packs are USER scope by ruling (OQ-PD1: "ecosystem-native lockfiles at
@@ -1112,17 +1099,15 @@ func receiptsFile(e *Env) string {
 // a backslash cannot produce a line no reader can parse. The shell downstream interpolates
 // only constrained values (a spec, a version, a hex digest, an integer, an act, a date).
 //
-// bin and declared are omitted when empty, which is the bootstrap MCP arm's case: it walks
-// its package list at run time, so it renders the constant half here and appends the
+// bin and declared are omitted when empty, which was the bootstrap MCP arm's case: it walked
+// its package list at run time, so it rendered the constant half here and appended the
 // declaration from the shell (_yolo_head) under the same scrubbing.
 //
-// NO `path` FIELD FROM THE BOOTSTRAP'S ARM (mcp-npm), and that is what the kind is for. It
-// installs a LIST — the enabled MCP presets' packages — through one resolver, so every entry
-// lands in the one directory that resolver owns: $NPM_CONFIG_PREFIX/lib/node_modules (+ its
-// bin/). The kind therefore IMPLIES the prefix, and spelling it per line would repeat one
-// constant across every receipt a boot writes while adding nothing a reader could not
-// derive. (Two more list kinds, lsp-npm and lsp-go, were written by the LSP recipe loop until
-// it was deleted; a receipts log from before then still holds them.) The three launcher funnels are the
+// NO `path` FIELD FROM A LIST KIND, and that is what the kind is for. The three list kinds —
+// mcp-npm, written by the bootstrap's MCP-preset arm until the `mcp_presets` key retired, and
+// lsp-npm and lsp-go, written by the LSP recipe loop until it was deleted — each installed
+// through one resolver into the one directory it owns, so the kind IMPLIES the prefix. A
+// receipts log from before those deletions still holds them. The three launcher funnels are the
 // opposite case and DO carry it: each installs one program and has $REAL_BIN in hand, and
 // for the installer kind the landing path is the only identity there is (§6.3).
 func receiptPrefix(kind, bin, declared string) string {
@@ -1470,8 +1455,7 @@ _installed_version() {
 # PATH (macos-user executes these launchers natively, under env -i, against whatever the
 # host has) would record "resolved":"0" for every install it ever made, and a reconcile
 # reading the file back cannot tell that from a package genuinely at version 0. An omitted
-# field says "unknown", which is the truth, and _yolo_receipt drops an empty one. Same shape
-# as the bootstrap's _yolo_npm_version, for the same reason.
+# field says "unknown", which is the truth, and _yolo_receipt drops an empty one.
 _resolved_version() {
     local v
     v=$(jq -r '.version' "$NPM_CONFIG_PREFIX/lib/node_modules/$PKG/package.json" 2>/dev/null) || return 0
@@ -1772,7 +1756,7 @@ fi
 # spawns its servers itself and a half-updated set at connect time is worse than a stale one.
 #
 # SERVERS_* are BAKED, never read from the environment: macos-user execs these launchers under
-# "env -i", so a ${YOLO_MCP_PRESETS:-} here would be populated on the container backends and
+# "env -i", so a ${YOLO_MCP_SERVERS:-} here would be populated on the container backends and
 # empty on the one backend with no image to hide it. Same reason CAPTURES_DIR and
 # _YOLO_RECEIPTS are baked; see ServerRefreshSpecs.
 #
@@ -2512,7 +2496,7 @@ fi
 # spawns its servers itself and a half-updated set at connect time is worse than a stale one.
 #
 # SERVERS_* are BAKED, never read from the environment: macos-user execs these launchers under
-# "env -i", so a ${YOLO_MCP_PRESETS:-} here would be populated on the container backends and
+# "env -i", so a ${YOLO_MCP_SERVERS:-} here would be populated on the container backends and
 # empty on the one backend with no image to hide it. Same reason CAPTURES_DIR and
 # _YOLO_RECEIPTS are baked; see ServerRefreshSpecs.
 #

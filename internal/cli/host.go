@@ -1144,6 +1144,16 @@ func hostPreflight(launch *hostComposition, errw io.Writer) int {
 		printHostLines(errw, refusal)
 		return 1
 	}
+	// A DEV OVERRIDE NAMING A PROGRAM NO PACK BUILDS FROM ITS OWN TREE is refused, as a jail launch
+	// refuses it (docs/design/pack-buildable-programs.md BG-D19): it would otherwise do nothing, and
+	// the user would run bytes they did not choose. A pack-tree program's checkout is built by the
+	// floor (floorPackTree).
+	if lines := run.NonPackTreeOverrideLines(launch.selection.packs, config.ProgramOverrides(nil)); len(lines) > 0 {
+		for _, l := range lines {
+			fmt.Fprintf(errw, "yolo host: refusing to launch: %s\n", l)
+		}
+		return 1
+	}
 
 	// THE CREDENTIAL PRE-FLIGHT at the host notch (docs/reference/providers.md#the-credential-preflight,
 	// #pv-oq-13) — the same check the jail's launcher runs, on the environment THIS notch
@@ -1792,11 +1802,6 @@ func (c *hostComposition) selectionLines() []string {
 	for _, note := range c.selection.skewNotes() {
 		lines = append(lines, "Warning: "+note)
 	}
-	// WHICH BYTES (docs/design/pack-buildable-programs.md §4, BG-D10): each dev override this launch
-	// applies, or refuses, in one line — the floor's entry for that program runs the checkout
-	// (newHostFloor's Overrides) — said on every `yolo host --` and `yolo host env`, never only when
-	// the floor installs it.
-	lines = append(lines, run.HostProgramOverrideLines(c.selection.packs, config.ProgramOverrides(nil))...)
 	return lines
 }
 

@@ -94,7 +94,7 @@ func ValidateConfig(config *jsonx.OrderedMap, workspace string, resolver Loophol
 	validateHostProcessesRetired(config, errs, warns)
 	validateMiseTools(config, errs)
 	validateLSPServers(config, errs)
-	validateMCPPresets(config, errs)
+	validateMCPPresetsRetired(config, errs, warns)
 	validateMCPServers(config, errs)
 	validatePackMCPServers(errs)
 	validateProviders(config, workspace, errs, warns)
@@ -1097,25 +1097,41 @@ func validateLSPServers(config *jsonx.OrderedMap, errs *[]string) {
 	}
 }
 
-func validateMCPPresets(config *jsonx.OrderedMap, errs *[]string) {
-	v, present := config.Get("mcp_presets")
-	if !present || v == nil {
+// MCPPresetsRetiredMessage is the refusal of the retired `mcp_presets` key, with both next
+// steps (docs/design/mcp-presets-removal.md §13 step 3). `yolo host apply`, which runs no full
+// validation, names it too (composeHostInputs).
+const MCPPresetsRetiredMessage = "config.mcp_presets: REMOVED — yolo no longer keeps its own list of MCP servers. " +
+	"Delete the key. For the browser (`chrome-devtools`), add `chrome-devtools` to `packs` in " +
+	"~/.config/yolo-jail/config.jsonc (beside your agents, e.g. " +
+	`["claude", "chrome-devtools"]); a workspace file cannot select it. For ` +
+	"`sequential-thinking`, which was deleted, write the server yourself: " +
+	`"mcp_servers": {"sequential-thinking": {"command": "npx", "args": ["-y", ` +
+	`"@modelcontextprotocol/server-sequential-thinking"]}}. Then run ` + "`yolo check`."
+
+// validateMCPPresetsRetired reports the DELETED top-level `mcp_presets` key (2026-10-23,
+// docs/design/mcp-presets-removal.md §13 step 3, ruled at docs/reference/pack-system.md#oq-pk1).
+// It was core's own list of which MCP servers exist, two names long: `chrome-devtools` is the
+// pack of that name now, selected in the user config, and `sequential-thinking` was deleted
+// with no replacement beyond the user's own `mcp_servers` entry (§4).
+//
+// A REFUSAL, NOT SILENCE, for validateJournalRetired's reason: the key turned a server on, and
+// a config still asking for the browser and getting nothing has been silently denied it (§9,
+// OQ-MP6). Every value is refused, `[]` and null included — the key being present is the
+// whole condition — and type checks went with the key.
+//
+// ERROR ON THE HOST, WARNING INSIDE A JAIL, for validateJournalRetired's reason: in-jail the
+// config is the host-generated snapshot, which an older host may still have written it into.
+func validateMCPPresetsRetired(config *jsonx.OrderedMap, errs, warns *[]string) {
+	if _, present := config.Get("mcp_presets"); !present {
 		return
 	}
-	list, ok := asList(v)
-	if !ok {
-		add(errs, "config.mcp_presets: expected an array of preset names")
+	msg := MCPPresetsRetiredMessage
+	if inJail() {
+		add(warns, msg+" (ignored here: this is the host-generated config snapshot, "+
+			"so remove the key from the HOST config.)")
 		return
 	}
-	for idx, nameV := range list {
-		name, ok := asStr(nameV)
-		if !ok {
-			add(errs, fmt.Sprintf("config.mcp_presets[%d]: expected a string", idx))
-		} else if _, valid := validMCPPresets[name]; !valid {
-			add(errs, fmt.Sprintf("config.mcp_presets[%d]: unknown preset '%s'. Valid presets: %s",
-				idx, name, joinSorted(validMCPPresets)))
-		}
-	}
+	add(errs, msg)
 }
 
 func validateMCPServers(config *jsonx.OrderedMap, errs *[]string) {
@@ -1209,40 +1225,6 @@ func validatePackMCPServers(errs *[]string) {
 	for _, msg := range packload.MCPNameCollisions(packs) {
 		add(errs, "config.packs: "+msg)
 	}
-}
-
-// PresetNullConflicts reports same-file preset/null contradictions: a preset enabled in
-// `mcp_presets` and null-removed in `mcp_servers` within ONE config (cfg, which the launch and
-// `yolo check` each read per scope; ValidateConfig sees only the merged map, where an override
-// across scopes is legal). Each problem leads with where the null entry was written (src,
-// sources.go), else with label, the config's own name for itself.
-//
-// ONE copy for both callers: the launch gate and `yolo check` each kept their own, word for
-// word, which is how two spellings of one refusal start to differ.
-func PresetNullConflicts(cfg *jsonx.OrderedMap, label string, src *Sources) []string {
-	var errs []string
-	presetsV, _ := cfg.Get("mcp_presets")
-	serversV, _ := cfg.Get("mcp_servers")
-	presets, okP := presetsV.([]any)
-	servers, okS := serversV.(*jsonx.OrderedMap)
-	if !okP || !okS {
-		return errs
-	}
-	for _, nameV := range presets {
-		name, ok := nameV.(string)
-		if !ok {
-			continue
-		}
-		if v, present := servers.Get(name); present && v == nil {
-			where := label
-			if locs := src.node().key("mcp_servers").key(name).locations(); len(locs) > 0 {
-				where = locs[0]
-			}
-			errs = append(errs, where+": preset '"+name+"' is enabled in mcp_presets but "+
-				"null-removed in mcp_servers within the same config file")
-		}
-	}
-	return errs
 }
 
 func validateProviders(config *jsonx.OrderedMap, workspace string, errs, warns *[]string) {

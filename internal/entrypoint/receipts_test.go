@@ -544,16 +544,13 @@ func TestNativeLauncherVendorSelfUpdateEmitsNoReceipt(t *testing.T) {
 // be RUN rather than read: a receipt accumulated in the wrong scope is lost silently and
 // looks perfectly correct in a diff. It was built for the LSP install loop, which read its
 // list from a pipe and so ran in a subshell; that loop is deleted with the LSP recipe table
-// (docs/reference/mcp-configuration.md#oq-lsp1), and the probe now drives the MCP-preset arm
-// and pins that nothing installs a language server. The fake `go` stays so a surviving `go
+// (docs/reference/mcp-configuration.md#oq-lsp1), as is the MCP-preset arm that came after it
+// (docs/design/mcp-presets-removal.md §13 step 3), and the probe now pins that nothing installs
+// a language server. The fake `go` stays so a surviving `go
 // install` would have something to run, and it logs what it was asked to do.
 type bootstrapProbe struct {
-	home    string
-	fakeBin string
-	// presets is YOLO_MCP_PRESETS, which is a GENERATION-time input rather than a run-time
-	// one: the package list is baked into the script by mcpPresetNpmPackages, so a test
-	// that set it in the run env would exercise nothing.
-	presets      string
+	home         string
+	fakeBin      string
 	receiptsPath string
 	// sentinel is where the deleted LSP loop kept its record; a test seeds a leftover one
 	// there to prove nothing reads or rewrites it.
@@ -645,19 +642,16 @@ printf '%s\n' "${line%%\"*}"
 func (b *bootstrapProbe) run(t *testing.T, env ...string) string {
 	t.Helper()
 	e := NewEnv(map[string]string{
-		"JAIL_HOME":        b.home,
-		"YOLO_WORKSPACE":   filepath.Join(b.home, "ws"),
-		"YOLO_MCP_PRESETS": b.presets,
+		"JAIL_HOME":      b.home,
+		"YOLO_WORKSPACE": filepath.Join(b.home, "ws"),
 	})
 	if err := GenerateBootstrapScript(e); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(bootstrapPath(e))
-	// The fakes plus the system dirs, NEVER the developer's own $PATH. The MCP block
-	// decides whether to install by probing `command -v mcp-server-sequential-thinking`,
-	// and this jail's real ~/.npm-global/bin is on the inherited PATH — so inheriting it
-	// made the block skip its install and the test pass or fail on whether the machine
-	// running it happens to use that MCP server.
+	// The fakes plus the system dirs, NEVER the developer's own $PATH: a probe that found this
+	// jail's real ~/.npm-global/bin would make the test pass or fail on what the machine running
+	// it happens to have installed.
 	cmd.Env = append([]string{
 		"HOME=" + b.home,
 		"PATH=" + b.fakeBin + ":" + testutil.YoloBinaryDir(t) + ":/bin:/usr/bin",
@@ -672,21 +666,6 @@ func (b *bootstrapProbe) run(t *testing.T, env ...string) string {
 func (b *bootstrapProbe) receipts(t *testing.T) []map[string]any {
 	t.Helper()
 	return readReceipts(t, b.receiptsPath)
-}
-
-// pick returns the one receipt of the given kind, or fails.
-func pick(t *testing.T, got []map[string]any, kind string) map[string]any {
-	t.Helper()
-	var found []map[string]any
-	for _, r := range got {
-		if r["kind"] == kind {
-			found = append(found, r)
-		}
-	}
-	if len(found) != 1 {
-		t.Fatalf("want exactly 1 %q receipt, got %d of them in %v", kind, len(found), got)
-	}
-	return found[0]
 }
 
 // TestBootstrapInstallsNoLanguageServer: the LSP install loop, the YOLO_LSP_*_INSTALL lists
@@ -728,65 +707,6 @@ func TestBootstrapInstallsNoLanguageServer(t *testing.T) {
 	}
 	if data, err := os.ReadFile(b.sentinel); err != nil || string(data) != sentinel {
 		t.Errorf("the leftover sentinel was rewritten or removed (err=%v, now %q)", err, data)
-	}
-}
-
-// TestMCPPresetInstallLeavesAReceiptPerPackage covers the install site the "every install
-// yolo runs" claim was missing on the bootstrap side.
-//
-// The MCP block installs the whole preset list in ONE npm invocation, because that is what
-// npm is good at — but the receipt's unit is a package, not an invocation: a reader asking
-// where a given server came from has to find a line naming it.
-func TestMCPPresetInstallLeavesAReceiptPerPackage(t *testing.T) {
-	b := newBootstrapProbe(t)
-	b.presets = `["sequential-thinking"]`
-	out := b.run(t)
-
-	r := pick(t, b.receipts(t), "mcp-npm")
-	if d := str(t, r, "declared"); d != "@modelcontextprotocol/server-sequential-thinking" {
-		t.Errorf("mcp-npm declared = %q, want the package the enabled preset needs\n%s", d, out)
-	}
-	if v := str(t, r, "resolved"); v != "3.2.1" {
-		t.Errorf("mcp-npm resolved = %q, want the version from the installed package.json", v)
-	}
-	if act := str(t, r, "act"); act != "install" {
-		t.Errorf("mcp-npm act = %q, want install", act)
-	}
-	// No landing path on this arm: the kind names the resolver, and the resolver owns one
-	// prefix — see receiptPrefix. A per-line copy of one constant is not information.
-	if p, present := r["path"]; present {
-		t.Errorf("the mcp-npm arm installs a LIST into the prefix its kind implies; a path "+
-			"field there is a repeated constant: %v", p)
-	}
-}
-
-// TestMCPPresetReceiptIsNotWrittenAfterAFailedInstall: the arm captures npm's status rather
-// than running under "|| true" — an offline boot fails here routinely and simply retries next
-// launch, and a receipt is a claim about bytes.
-func TestMCPPresetReceiptIsNotWrittenAfterAFailedInstall(t *testing.T) {
-	b := newBootstrapProbe(t)
-	b.presets = `["sequential-thinking"]`
-	out := b.run(t, "FAKE_NPM_FAIL=1")
-
-	for _, r := range b.receipts(t) {
-		if r["kind"] == "mcp-npm" {
-			t.Errorf("a failed MCP install must leave no receipt: %v\n%s", r, out)
-		}
-	}
-}
-
-// TestMCPPresetWithNoEnabledPresetInstallsNothingAndRecordsNothing: the receipt loop must be
-// inside the gate, not beside it. D6 made the install preset-gated after measuring 112 npm
-// packages in a jail with no agents and no presets; a receipt written for a jail that
-// installed nothing would re-introduce exactly that claim in the record.
-func TestMCPPresetWithNoEnabledPresetInstallsNothingAndRecordsNothing(t *testing.T) {
-	b := newBootstrapProbe(t)
-	out := b.run(t) // no presets
-
-	for _, r := range b.receipts(t) {
-		if r["kind"] == "mcp-npm" {
-			t.Errorf("no preset asked for anything, so nothing was installed: %v\n%s", r, out)
-		}
 	}
 }
 
@@ -914,8 +834,7 @@ func TestReceiptPrefixEscapesTheDeclaration(t *testing.T) {
 	if m["bin"] != `bi"n` || m["declared"] != `pkg\"@1` {
 		t.Errorf("round-trip lost the original strings: %v", m)
 	}
-	// The MCP-preset loop renders only the constant half; its declared package comes from
-	// the shell.
+	// A list kind (the retired MCP-preset loop's mcp-npm) rendered only the constant half.
 	if got := receiptPrefix("mcp-npm", "", ""); got != `{"schema":1,"kind":"mcp-npm"` {
 		t.Errorf("empty bin/declared must be omitted, got %q", got)
 	}

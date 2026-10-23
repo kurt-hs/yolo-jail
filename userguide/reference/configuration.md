@@ -81,7 +81,6 @@ A typical project config:
 {
   "packages": ["postgresql", "strace"],          // Nix packages built into the jail
   "mise_tools": { "node": "22", "python": "3.13" },
-  "mcp_presets": ["chrome-devtools"],
   "network": {
     "ports": ["3000:3000"],                      // open the dev server from your host
     "forward_host_ports": [5432]                 // reach the host's Postgres from the jail

@@ -10,7 +10,26 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	officialpacks "github.com/mschulkind-oss/yolo-jail/packs"
 )
+
+// renderClaude renders the shipped claude pack's surfaces into e's home — the pack's real
+// render, from a copy of the shipped tree materialized into a temp dir of the test's own.
+func renderClaude(t *testing.T, e *entrypoint.Env) {
+	t.Helper()
+	all, problems := packload.MaterializeEmbedded(officialpacks.FS, t.TempDir())
+	if len(problems) != 0 {
+		t.Fatalf("materializing the shipped packs: %v", problems)
+	}
+	for _, p := range all {
+		if p.Name == "claude" {
+			entrypoint.ConfigurePackSurfaces(e, []*packload.Pack{p})
+			return
+		}
+	}
+	t.Fatal("no shipped claude pack")
+}
 
 // secretEnv is a composed launch env holding the two kinds of value this whole mechanism
 // exists for: a credential hydrated from env_sources, and a provider token the profile

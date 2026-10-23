@@ -215,6 +215,17 @@ func TestRunInvokesUnknownYOLOEnvironmentWarningBeforeBackend(t *testing.T) {
 	}
 }
 
+// YOLO_MCP_PRESETS retired with the `mcp_presets` key on 2026-10-23, but a jail an older yolo
+// started still exports it, so a nested or integration launch from one inherits it. Its user
+// cannot unset it in an environment yolo set up, so the launch must recognize it rather than
+// warn about it on every nested launch.
+func TestARetiredMCPPresetsWireFromAnOlderOuterJailIsRecognized(t *testing.T) {
+	if !slices.Contains(knownLaunchYOLOEnvNames(nil, nil), "YOLO_MCP_PRESETS") {
+		t.Fatal("YOLO_MCP_PRESETS is not a recognized launch name, so every launch from a jail an " +
+			"older yolo started warns about a variable its user cannot act on")
+	}
+}
+
 func TestUnknownYOLOEnvironmentWarningUsesLaunchLogWriter(t *testing.T) {
 	const unknown = "YOLO_ITEM98_LOG_UNKNOWN"
 	t.Setenv(unknown, "secret-item98-value")

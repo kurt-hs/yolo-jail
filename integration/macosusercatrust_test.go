@@ -16,9 +16,9 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 )
 
-// TestMacosUserTrustsSystemKeychainCA: A CERTIFICATE AUTHORITY THE MAC'S SYSTEM KEYCHAIN TRUSTS
+// TestMacosUserTrustsSystemKeychainCA: A CERTIFICATE AUTHORITY THE MAC'S SYSTEM OR LOGIN KEYCHAIN TRUSTS
 // FOR TLS IS TRUSTED INSIDE THE SANDBOX, and the launch names it (internal/macosuser/cabundle.go;
-// docs/design/provisioner-sets.md PS-D10).
+// docs/design/provisioner-sets.md PS-D10, PS-D14).
 //
 // THE CA IS ONE THIS MAC ALREADY TRUSTS. The test never writes a keychain: the suite takes no
 // privilege `yolo macos-setup` does not install, and adding a trusted root to the System keychain
@@ -44,16 +44,30 @@ func TestMacosUserTrustsSystemKeychainCA(t *testing.T) {
 	requireMacosUser(t)
 	kept, leftOut := catrustKeychainCAs(t)
 	if len(kept) == 0 {
-		macosUserSkipCountably(t, macosUserGateLaunch, fmt.Sprintf("this Mac's System keychain holds no "+
-			"certificate authority macOS trusts for TLS (%d certificate(s) read, every one left out), "+
+		macosUserSkipCountably(t, macosUserGateLaunch, fmt.Sprintf("neither this Mac's System keychain nor "+
+			"your login keychain holds a certificate authority macOS trusts for TLS (%d System "+
+			"keychain certificate(s) read, every one left out), "+
 			"and this test only reads it: it never adds one, which would need root (OQ-DM1). A Mac "+
 			"whose MDM or administrator installed a TLS CA in the System keychain runs it",
 			len(leftOut)))
 	}
 	for _, c := range kept {
-		t.Logf("a CA this Mac's System keychain trusts for TLS: %s", c.Name)
+		t.Logf("a CA trusted for TLS, from %s: %s", c.Source, c.Name)
 	}
+	// BOTH MODES (PS-D15): the second account reads the files through its one ACL grant, and
+	// run-as-you reads files the user wrote, by the exact paths its profile opens.
+	for _, mode := range []string{"account", "self"} {
+		t.Run(mode, func(t *testing.T) {
+			packHome(t, `{"macos_user_mode": "`+mode+`"}`)
+			macosUserCATrustLaunch(t, kept, leftOut)
+		})
+	}
+}
 
+// macosUserCATrustLaunch is one launch of TestMacosUserTrustsSystemKeychainCA, in the mode the
+// isolated user config names.
+func macosUserCATrustLaunch(t *testing.T, kept []macosuser.TrustedCA, leftOut []string) {
+	t.Helper()
 	ws := macosUserWorkspace(t, `{}`)
 	r := runMacosUser(t, ws, `echo "=== VARS ==="; `+
 		`echo "NIX=${NIX_SSL_CERT_FILE-}"; echo "SSL=${SSL_CERT_FILE-}"; echo "REQ=${REQUESTS_CA_BUNDLE-}"; `+
@@ -91,7 +105,7 @@ func TestMacosUserTrustsSystemKeychainCA(t *testing.T) {
 	for where, text := range map[string]string{"the launch's output": r.combined(), "launch.log": string(logBody)} {
 		disclosure := catrustDisclosure(text)
 		if disclosure == "" {
-			t.Errorf("%s has no line naming the CAs it took from this Mac's System keychain:\n%s",
+			t.Errorf("%s has no line naming the CAs it took from this Mac's keychains:\n%s",
 				where, lastLines(text, 40))
 			continue
 		}
@@ -200,7 +214,7 @@ func catrustHoldsCert(text, pemText string) bool {
 func catrustDisclosure(text string) string {
 	var out []string
 	for _, line := range strings.Split(text, "\n") {
-		if strings.Contains(line, "from this Mac's System keychain") {
+		if strings.Contains(line, "from this Mac's System keychain") || strings.Contains(line, "from your login keychain") {
 			out = append(out, strings.TrimSpace(line))
 		}
 	}

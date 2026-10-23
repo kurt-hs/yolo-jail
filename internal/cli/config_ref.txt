@@ -2111,10 +2111,8 @@
     names.  So the provider facts reach `pi/models`, `pi/codex-models`,
     `codex/config`, `opencode/config` and `oh-omp/models` at the host too, pi
     registers the declared openai-codex list, and every agent's MCP and LSP files
-    carry those servers.  Never an MCP preset (its command is a wrapper only a jail
-    writes; the `chrome-devtools` pack carries that server to the host), a fetched
-    pack's `mcp` entry (its command would run unconfined as you), a workspace's
-    config, or a value naming a path only a jail has: each is left out and named.  A table a derive declares in
+    carry those servers.  Never a fetched pack's `mcp` entry (its command would
+    run unconfined as you), a workspace's config, or a value naming a path only a jail has: each is left out and named.  A table a derive declares in
     full is yolo's there, as in a jail, so an entry you added by hand to one is
     dropped — confirmed first, the first time — unless your config declares it.
     That selection is applied edge-triggered: written when the chosen profile
@@ -2519,20 +2517,19 @@
     Example: {"rust": {"command": "rust-analyzer", "args": [],
               "fileExtensions": {".rs": "rust"}}}
 
-  [bold]mcp_presets[/bold] (array of strings): Enable built-in MCP server presets by name.
-    No presets are enabled by default. Available presets:
-      • chrome-devtools: Headless Chromium automation via Chrome DevTools Protocol.
-      • sequential-thinking: Chain-of-thought reasoning via MCP.
-    Invalid: enabling a preset here and null-removing it in the same config file.
-    Jail only: a preset's command is a wrapper a jail's boot writes, so `yolo host
-    apply` writes no preset into your real home and names each one it leaves out.
-    For chrome-devtools add "chrome-devtools" to `packs` instead: the pack gives the
-    same server at the host, in a jail and on macos-user, and where both are on its
-    entry replaces the preset's.
-    Example: ["chrome-devtools", "sequential-thinking"]
+  [bold]mcp_presets[/bold] (array of strings): REMOVED — a config carrying it is REFUSED,
+    in either file.  yolo no longer keeps its own list of MCP servers:
+      • chrome-devtools — add "chrome-devtools" to `packs` in
+        ~/.config/yolo-jail/config.jsonc, beside your agents.  The pack gives the
+        server in a jail, on macos-user and at the host.  A workspace file cannot
+        select it.
+      • sequential-thinking — deleted.  Write it yourself under `mcp_servers`:
+          "sequential-thinking": {"command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]}
+    Delete the key, then run [cyan]yolo check[/cyan].
 
   [bold]mcp_servers[/bold] (object): Custom MCP servers for Copilot, Claude, and Codex.
-    Add custom servers, or set a preset/inherited server to [bold]null[/bold] to disable it.
+    Add custom servers, or set a pack's or an inherited server to [bold]null[/bold] to disable it.
     A selected pack's `mcp` entry (the `chrome-devtools` pack's, say) is composed
     under this table: an entry of yours with its name merges over it per field, and
     [bold]null[/bold] removes it.
@@ -2689,7 +2686,7 @@
     programs nothing declares any more.
     • [bold]autoprune[/bold] (boolean, [bold]default false[/bold]): Remove orphans at boot.
       An ORPHAN is something installed in this jail's per-workspace home that no
-      selected pack or MCP preset declares — what a dropped pack left behind.
+      selected pack declares — what a dropped pack left behind.
       Every boot already NAMES them ("boot catalog: ..." lines, with sizes);
       nothing removes them unless you set this.
       With it on, each launch removes what it cataloged, printing every path first.
@@ -2706,42 +2703,46 @@
       Every backend: on macos-user the launch hands the switch to the sandbox's
       bootstrap, which runs the same boot catalog (notch-convergence.md NC-D71).
       Not yet run on a Mac.
-    • [bold]overrides[/bold] (object, keyed by program name, [bold]default none[/bold]): Point one
-      program at a checkout you are developing, so its bytes come from your own directory
-      instead of the pack's copy. The name is the program's bin as its pack declares it.
+    • [bold]overrides[/bold] (object, keyed by program name, [bold]default none[/bold]): Build one
+      program from a checkout you are developing, in place of its pack's own source. The
+      name is the program's bin as its pack declares it.
         "overrides": {
-          "board": { "path": "~/code/board-cli" },
-          "pi":    { "path": "~/code/pi", "run": "packages/coding-agent/dist/cli.js" }
+          "board": { "path": "~/code/board-cli" }
         }
-      Each entry takes [bold]path[/bold] (required): the directory the program runs from, an
-      absolute path or one starting with ~/. A relative path, ~user/, an empty value, or any
-      other type is a validation error naming the key to fix. [bold]run[/bold] (optional): the
-      file inside that directory to run, relative to it. An absolute path, a ".." segment, or
-      an empty value is a validation error. Without [bold]run[/bold], the program's own run is
-      used. An unknown key inside an entry is an error, so a misspelling cannot pass silently.
-      A bad entry is ignored at launch with a warning naming it, and its valid siblings
-      still apply. A malformed user config applies no override at all.
+      Each entry takes [bold]path[/bold] (required): the checkout, an absolute path or one
+      starting with ~/. A relative path, ~user/, an empty value, or any other type is a
+      validation error naming the key to fix. An unknown key inside an entry is an error, so
+      a misspelling cannot pass silently; the former [bold]run[/bold] is no longer read, and
+      its error says the pack's own run is used. A bad entry is ignored at launch with a
+      warning naming it, and its valid siblings still apply. A malformed user config applies
+      no override at all.
       USER SCOPE ONLY. A workspace value is a validation error that names this file, because
       a repo-committed, agent-editable file must not choose which bytes your programs run.
       Overrides are not inherited by a nested launch: the inner jail reads its own user
       config.
-      Applied at each fresh launch on podman and Apple Container, to any program a selected
-      pack declares, whatever its via: the program runs <path>/<run> as found, with no
-      install and no build, and never falls back to the pack's copy. A path inside the
-      workspace runs from /workspace/<rel>; any other is bound read-only at
-      /ctx/program-overrides/<bin>. Either way an edit there shows at the next invocation,
-      with no relaunch. Every launch and attach prints which file runs. The program is
-      refused, and the launch stops as for any program that cannot be installed
-      (YOLO_ALLOW_MISSING_PROGRAMS=1 starts it anyway), when the path does not resolve to a
-      directory, is or contains your home, this config directory or yolo's state directory,
-      names no file to run, or the file is missing or not executable. A change to this key
-      takes effect at the next fresh launch. An override naming a program no selected pack
-      declares does nothing; `yolo check` lists it. On macos-user the program runs the
-      checkout at its own path, a checkout outside the workspace is linked read-only at
-      $YOLO_CONTEXT_DIR/program-overrides/<bin>, and the sandbox may read and run it but
-      not write it; a checkout a `mounts` entry could not use there (one in a home folder,
-      in the account mode) refuses that program. Not yet applied by `yolo host`, which says
-      so.
+      Applies only to a program its pack builds from its own tree (via "pack"). At each
+      fresh launch, `yolo host` launch and `yolo pack build`, on every backend, the program
+      is built from the checkout exactly as from the pack's tree: the pack's own build and
+      run, the same sealed build and store, keyed by the checkout's contents as they sit on
+      disk (uncommitted edits and git-ignored files included, .git skipped). An unchanged
+      checkout reuses its build; an edit is built at the next fresh launch, never in a
+      running jail. Every launch prints a line naming the checkout and whether it was
+      rebuilt or reused. A build that fails stops the launch as any failed build does
+      (YOLO_ALLOW_MISSING_PROGRAMS=1 starts it anyway), and never falls back to the pack's
+      copy. The program is refused when the path does not resolve to a directory, or is or
+      contains your home, this config directory or yolo's state directory. An override of
+      any other program a selected pack declares refuses the launch, naming the way to build
+      it from a checkout: a fork pack (via "source", fork_of, and a git+file:// source). An
+      override naming a program no selected pack declares does nothing; `yolo check` lists it.
+      An entry may instead be [bold]{ "prebuilt": true }[/bold]: run the pack's verified
+      prebuilt artifact for a program built from its pack's tree (via "pack"), even when the
+      pack ships its source. yolo never swaps a prebuilt in on its own: a source that cannot
+      be built here (a Mac with no sandbox account, say) is refused, naming the setup step
+      and this setting. With it set, every launch, `yolo host` and `yolo pack build` fetch
+      the artifact, check its sha256 and print a line naming it. A pack with no prebuilt for
+      the platform refuses the program, naming the platforms it does declare. "prebuilt"
+      and "path" in one entry is a validation error naming both.
+        "overrides": { "board": { "prebuilt": true } }
 
   [bold]resources[/bold] (object): Container resource limits.
     Sets hard cgroup constraints on the jail container via podman flags.
@@ -2845,7 +2846,6 @@
   {
     "runtime": "podman",
     "mise_tools": {"neovim": "nightly"},
-    "mcp_presets": ["chrome-devtools"],
     "lsp_servers": {
       "rust": {"command": "rust-analyzer", "args": [],
                "fileExtensions": {".rs": "rust"}}

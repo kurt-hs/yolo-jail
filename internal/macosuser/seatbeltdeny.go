@@ -344,7 +344,6 @@ func DenyDefaultProfile(p ProfileParams) string {
 	}
 	b.WriteString(servicesDirReadAllow(p.ServicesDirs))
 	b.WriteString(contextReadAllow(p.Context))
-	b.WriteString(programOverrideReadAllow(p.Context))
 	b.WriteString(relocationReadAllow(p.Relocations))
 	b.WriteString(userFontsReadAllow(p.FontReads))
 
