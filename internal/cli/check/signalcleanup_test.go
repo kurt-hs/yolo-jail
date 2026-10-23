@@ -30,9 +30,8 @@ func TestSignalExitRemovesSelectedPackTree(t *testing.T) {
 
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
-	tmp := filepath.Join(root, "tmp")
 	pack := filepath.Join(root, "fixture-pack")
-	for _, dir := range []string{filepath.Join(home, ".config", "yolo-jail"), tmp, pack} {
+	for _, dir := range []string{filepath.Join(home, ".config", "yolo-jail"), pack} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -49,9 +48,45 @@ func TestSignalExitRemovesSelectedPackTree(t *testing.T) {
 		sig  syscall.Signal
 		code int
 	}{{"SIGINT", syscall.SIGINT, 130}, {"SIGHUP", syscall.SIGHUP, 129}, {"SIGTERM", syscall.SIGTERM, 143}} {
-		t.Run(tc.name, func(t *testing.T) { runSignalCleanupCase(t, root, home, tmp, tc.sig, tc.code) })
+		t.Run(tc.name, func(t *testing.T) {
+			runSignalCleanupCase(t, root, home, caseTempDir(t, root, tc.name), tc.sig, tc.code)
+		})
 	}
-	t.Run("normal-cleanup overlap", func(t *testing.T) { runSignalCleanupOverlapCase(t, root, home, tmp) })
+	t.Run("normal-cleanup overlap", func(t *testing.T) {
+		runSignalCleanupOverlapCase(t, root, home, caseTempDir(t, root, "overlap"))
+	})
+}
+
+// caseTempDir gives each case its own TMPDIR, so a tree one case leaves behind (a
+// failed case's deferred SIGKILL skips every cleanup by design) fails that case and
+// not the next one.
+func caseTempDir(t *testing.T, root, name string) string {
+	t.Helper()
+	tmp := filepath.Join(root, "tmp-"+name)
+	if err := os.MkdirAll(tmp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return tmp
+}
+
+// assertNoStagingTrees fails the case whose child left a yolo-check-pack-* tree in
+// its own TMPDIR after exiting.
+func assertNoStagingTrees(t *testing.T, tmp string) {
+	t.Helper()
+	trees, err := filepath.Glob(filepath.Join(tmp, "yolo-check-pack-*"))
+	if err != nil || len(trees) != 0 {
+		t.Errorf("child exit left staging trees %q in its TMPDIR (glob error %v)", trees, err)
+	}
+}
+
+// writeMarkerAtomically publishes a marker file the parent polls for. os.WriteFile
+// truncates before it writes, so a polling reader can see an empty file.
+func writeMarkerAtomically(path string, data []byte) error {
+	partial := path + ".partial"
+	if err := os.WriteFile(partial, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(partial, path)
 }
 
 func runSignalCleanupOverlapCase(t *testing.T, root, home, tmp string) {
@@ -118,6 +153,7 @@ func runSignalCleanupOverlapCase(t *testing.T, root, home, tmp string) {
 	if _, err := os.Stat(terminal); err != nil {
 		t.Fatalf("signal callback did not finish after removal release: %v; output:\n%s", err, output.String())
 	}
+	assertNoStagingTrees(t, tmp)
 }
 
 func waitForFile(t *testing.T, path string, waited <-chan error, output *bytes.Buffer, failure string) {
@@ -220,6 +256,7 @@ func runSignalCleanupCase(t *testing.T, root, home, tmp string, sig syscall.Sign
 			t.Errorf("%s exit left process-owned tree %q (stat error %v)", sig, tree, err)
 		}
 	}
+	assertNoStagingTrees(t, tmp)
 }
 
 func runSignalCleanupChild(t *testing.T) {
@@ -323,7 +360,7 @@ func runSignalCleanupChild(t *testing.T) {
 			if err != nil || len(trees) != 1 {
 				t.Fatalf("post-pack image build saw staging trees %q, glob error %v", trees, err)
 			}
-			if err := os.WriteFile(stagedMarker, []byte(trees[0]), 0o600); err != nil {
+			if err := writeMarkerAtomically(stagedMarker, []byte(trees[0])); err != nil {
 				t.Fatal(err)
 			}
 			return "", []string{"fixture build failure"}
@@ -346,8 +383,8 @@ func runSignalCleanupChild(t *testing.T) {
 		if err != nil || len(trees) != 1 {
 			t.Fatalf("post-pack image build saw staging trees %q, glob error %v", trees, err)
 		}
-		if err := os.WriteFile(os.Getenv("CHECK_SIGNAL_MARKER"),
-			[]byte(strings.Join([]string{trees[0], fallbackRoot, processRoot}, "\n")), 0o600); err != nil {
+		if err := writeMarkerAtomically(os.Getenv("CHECK_SIGNAL_MARKER"),
+			[]byte(strings.Join([]string{trees[0], fallbackRoot, processRoot}, "\n"))); err != nil {
 			t.Fatal(err)
 		}
 		select {}
