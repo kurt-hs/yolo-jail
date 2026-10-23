@@ -55,14 +55,42 @@ blocker.
   and `TestMacosUserPackTreeProgramOverrideBuildsTheCheckout/self` fail; both `account` halves pass, as does
   `TestMacosUserPackTreeProgramBuildFailureRefusesOnlyIt` in both modes. The build jail exits 1 with
   *"capture bootstrap failed — the staging home has no generated launcher"*, from
-  `deps.Run(plan.BootstrapArgv)` in `internal/macosuser/capture.go`; the bootstrap itself prints nothing the
-  build log keeps, so the cause is not identified. It does not depend on the inherited `YOLO_JAIL` (fails
-  with it unset). Both tests landed 2026-10-23 and had not run on macOS before. Smallest next witness: the
-  self-mode bootstrap's own stderr for that capture, then the deny it hits.
+  the bootstrap call in `internal/macosuser/capture.go`; the bootstrap itself printed nothing the build log
+  keeps, so the cause is not identified. It does not depend on the inherited `YOLO_JAIL` (fails with it
+  unset). Both tests landed 2026-10-23 and had not run on macOS before.
+
+  *Since this run:* the bootstrap's own output, its last 8 KiB, now goes to the act's writer, which the build
+  log keeps, and the refusal carries its exit status and the end of its stderr. The next Mac run records the
+  cause.
+
+  *Hypothesis, read from the code on Linux:*
+
+  - **The passing failure test proves less than it seems.** `BuildFailureRefusesOnlyIt/self` asserts only
+    that the refusal names the program, the build log, the retry and the hatch, and a bootstrap failure
+    names all four too. Every other macos-user capture and build test runs in account mode. So the
+    self-mode capture bootstrap may never have succeeded on hardware.
+  - **Only self mode confines this bootstrap.** In account mode the bootstrap crosses with `sudo -n` and
+    runs unconfined; only the driver runs under `sandbox-exec`. In self mode the bootstrap runs under the
+    build's own profile (`SeatbeltSealedSelfCaptureProfile`). That profile is deny-by-default and opens only
+    the staging tree, yolo's staging root, your per-user temp dir and system paths. It sets no `Home`, and it denies the machine
+    root, the shared store, the host loopback and the nix daemon socket. A self-mode launch's bootstrap runs
+    under the session profile, which opens far more, so the launch tests passing does not cover this.
+    Any read or write the bootstrap makes outside those roots, a seal deny included, fails it here and
+    nowhere else.
+  - **The `-D YOLO_HOME_CONTENT_DELIVERY=1` lift is not the cause.** The capture profiles carry no
+    home-content forms, so nothing in them reads the parameter. A self-mode launch whose packs deliver no
+    home content has no such forms either, and self-mode launches passed in this run with the same `-D`.
+
+  *Witness to collect:* the `capture bootstrap` output block and stderr tail in the failing build's log, and
+  the Seatbelt denies logged while it ran (`log show --last 10m --style compact --predicate 'sender ==
+  "Sandbox"'`). If the deny names a path, the fix is to open that path to the bootstrap alone in the
+  run-as-you capture profile, the way `-D` opens home content to a launch's bootstrap. Opening it to the
+  driver as well would be wrong.
 - **Environmental: `TestMacosUserPatchedExtensionConflictRefusesAndSkipStartsWithoutIt`** fails only because
   the old host notch exported `YOLO_JAIL=1`, which current yolo deliberately treats as unknown and warns
-  about with a runtime hint the test refuses. It passes with `YOLO_JAIL` unset. The harness keeps only its
-  own `YOLO_TEST_*` dials out of launches.
+  about with a runtime hint the test refuses. It passes with `YOLO_JAIL` unset. At the time, the harness kept
+  only its own `YOLO_TEST_*` dials out of launches. Since this run it drops an inherited `YOLO_JAIL` as well
+  (`staleInheritedLaunchEnv` in `integration/harness_test.go`).
 
 **CA trust, measured for the first time with a real MDM CA.** This Mac's System keychain carries
 `Hyperscience JSS Built-in Certificate Authority` (a Jamf CA), so `TestMacosUserTrustsSystemKeychainCA`, which
