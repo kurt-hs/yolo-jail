@@ -55,9 +55,10 @@ type PackTreeDelivery struct {
 	Disclosure string
 	// Reason is why this program has no delivery here, "" when it has one.
 	Reason string
-	// PrebuiltOptInStep is the clause a refusal of a build that cannot run here adds: the explicit
-	// opt-in to the pack's prebuilt artifact for this platform (packdecl.PrebuiltOptInStep, OQ-BG2),
-	// "" when the pack declares none. Never a substitution: the floor refuses either way.
+	// PrebuiltOptInStep is the clause every refusal of this build adds — one that cannot run here, and
+	// one that ran and failed (BG-D21): the explicit opt-in to the pack's prebuilt artifact for this
+	// platform (packdecl.PrebuiltOptInStep, OQ-BG2), "" when the pack declares none or the build is a
+	// dev override's checkout. Never a substitution: the floor refuses either way.
 	PrebuiltOptInStep string
 	// Hit is the store's entry under this key, the hit a jail launch asks for; an error when there is
 	// none.
@@ -251,6 +252,10 @@ func (f *Floor) installFromPackTree(ctx context.Context, p Program, dir string) 
 			f.say("no build of %s from %s on this machine yet; building it %s", bin, d.What, f.buildHowPer("tree digest"))
 		}
 		if entry, err = d.Build(); err != nil {
+			// Every refusal of a pack-tree build names the prebuilt opt-in where one is declared (BG-D21).
+			if d.Jail && d.PrebuiltOptInStep != "" {
+				return nil, fmt.Errorf("%w; %s", err, d.PrebuiltOptInStep)
+			}
 			return nil, err
 		}
 		if entry == nil {

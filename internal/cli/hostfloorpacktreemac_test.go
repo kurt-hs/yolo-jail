@@ -14,6 +14,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -80,5 +81,14 @@ func TestAMacFloorBuildsAPackTreeProgramInTheDarwinAct(t *testing.T) {
 	if d.Reason != "" || d.Jail || !strings.Contains(d.Disclosure, "programs.overrides.x.prebuilt") ||
 		d.Revision != pack.Decl.Contributes[0].Prebuilt["darwin/arm64"].SHA256 {
 		t.Errorf("an opted-in Mac floor resolved %+v, want the darwin prebuilt, disclosed", d)
+	}
+
+	// A DEV OVERRIDE'S CHECKOUT on the same unbuildable Mac: the build is the checkout's, and its
+	// refusal names no prebuilt opt-in, which `path` cannot be combined with (BG-D21).
+	dev := floortest.ResolvedTemp(t)
+	writeUserConfig(t, `{"programs": {"overrides": {"x": {"path": "`+dev+`"}}}}`)
+	d = floorPackTree(prog, pack, store, io.Discard)
+	if d.Reason != "" || !d.Jail || !strings.Contains(d.Disclosure, dev) || d.PrebuiltOptInStep != "" {
+		t.Errorf("a checkout on an unbuildable Mac floor resolved %+v, want its build and no opt-in clause", d)
 	}
 }

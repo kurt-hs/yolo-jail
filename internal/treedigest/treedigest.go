@@ -25,9 +25,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"sort"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/nofollow"
 )
 
 // Of hashes a whole subtree — relative paths, entry kinds, file bytes and SYMLINK
@@ -47,55 +46,30 @@ func Of(root string) (string, error) { return OfSkipping(root, nil) }
 // changedExcept for the one caller that passes a set and why omitting content is honest there.
 func OfSkipping(root string, skip map[string]bool) (string, error) {
 	h := sha256.New()
-	var walk func(rel string) error
-	walk = func(rel string) error {
-		if skip[rel] {
-			return nil
-		}
-		path := filepath.Join(root, rel)
-		fi, err := os.Lstat(path)
-		if err != nil {
-			return err
-		}
-		switch {
-		case fi.Mode()&os.ModeSymlink != 0:
-			target, rerr := os.Readlink(path)
-			if rerr != nil {
-				return rerr
+	// THE WALK FOLLOWS NO LINK, NOT EVEN A RACING ONE (internal/nofollow): every entry is opened from
+	// its parent's descriptor with O_NOFOLLOW and classified by what was opened, so a directory or
+	// file an agent swaps for a symlink mid-walk fails the digest instead of hashing what the link
+	// names. A device, socket or pipe has no content form here, and is an error rather than a hang.
+	err := nofollow.Walk(root, skip, func(e nofollow.Entry) error {
+		switch e.Kind {
+		case nofollow.Symlink:
+			fmt.Fprintf(h, "l %s %s\n", e.Rel, e.Target)
+		case nofollow.Dir:
+			fmt.Fprintf(h, "d %s\n", e.Rel)
+		case nofollow.File:
+			// The exec bit is part of the identity: a skill that ships a script the user made
+			// executable is not the same skill as one that did not — and a captured install
+			// whose binary lost its exec bit is not the same install.
+			fmt.Fprintf(h, "f %s %o\n", e.Rel, e.Perm&0o111)
+			if _, err := io.Copy(h, e.File); err != nil {
+				return err
 			}
-			fmt.Fprintf(h, "l %s %s\n", rel, target)
-			return nil
-		case fi.IsDir():
-			entries, rerr := os.ReadDir(path)
-			if rerr != nil {
-				return rerr
-			}
-			names := make([]string, 0, len(entries))
-			for _, e := range entries {
-				names = append(names, e.Name())
-			}
-			sort.Strings(names) // ReadDir already sorts; stated so the digest cannot drift with it
-			fmt.Fprintf(h, "d %s\n", rel)
-			for _, name := range names {
-				if werr := walk(filepath.Join(rel, name)); werr != nil {
-					return werr
-				}
-			}
-			return nil
+		default:
+			return fmt.Errorf("%s: not a regular file, directory or symlink", e.Rel)
 		}
-		f, oerr := os.Open(path)
-		if oerr != nil {
-			return oerr
-		}
-		defer f.Close()
-		// The exec bit is part of the identity: a skill that ships a script the user made
-		// executable is not the same skill as one that did not — and a captured install
-		// whose binary lost its exec bit is not the same install.
-		fmt.Fprintf(h, "f %s %o\n", rel, fi.Mode().Perm()&0o111)
-		_, cerr := io.Copy(h, f)
-		return cerr
-	}
-	if err := walk("."); err != nil {
+		return nil
+	})
+	if err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil

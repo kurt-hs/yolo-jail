@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -79,37 +78,16 @@ func packTreeBuildSource(rt, id string) string {
 	return path.Join(containerWorkspace, forkSourceLeaf)
 }
 
-// copySourceTreeSkipping is copySourceTree leaving out skip, a set of slash-separated paths
-// relative to src (and their subtrees) — packload.PackTreeDigestSkip for a pack-tree source, so the
-// build is handed exactly the bytes its digest read.
-func copySourceTreeSkipping(src, dst string, skip map[string]bool) error {
-	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, p)
-		if err != nil {
-			return err
-		}
-		if skip[filepath.ToSlash(rel)] {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		return copySourceEntry(p, filepath.Join(dst, rel), d)
-	})
-}
-
 // stagePackTreeSource copies f's source directory, the launch's staged copy of its pack, into dst
 // minus `.git`, and checks that the copy is the tree digest says it builds: a source that moved
 // between the launch's digest and this copy would otherwise be admitted under the revision of
 // bytes it does not hold.
 func stagePackTreeSource(f packload.Fork, digest, dst string) error {
 	src := f.SourceDir()
-	if fi, err := os.Stat(src); err != nil {
+	if fi, err := os.Lstat(src); err != nil {
 		return fmt.Errorf("pack %s's source %s: %w", f.Pack, f.SourceSaid(), err)
 	} else if !fi.IsDir() {
+		// Lstat: a symlink is not a directory here, since the copy follows no link (internal/nofollow).
 		return fmt.Errorf("pack %s's source %s is not a directory", f.Pack, f.SourceSaid())
 	}
 	if err := os.MkdirAll(dst, 0o755); err != nil {

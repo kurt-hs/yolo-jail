@@ -1109,7 +1109,9 @@ it and reports it up to date.
 ([OQ-BG2](../design/pack-buildable-programs.md#OQ-BG2), ruled 2026-10-23). When the build cannot run
 because its environment was never set up, such as a Mac with no sandbox account in the account mode,
 the build is refused like a failed one, naming the setup step (`yolo macos-setup`), and, when the
-pack declares a prebuilt for that platform, the setting that opts into it. **To use the prebuilt
+pack declares a prebuilt for that platform, the setting that opts into it. Every other refusal
+of that build names the setting too: a failed build, a build jail that did not start, no container
+runtime ([BG-D21](../design/pack-buildable-programs.md#BG-D21)). **To use the prebuilt
 anyway**, set `"programs": {"overrides": {"<bin>": {"prebuilt": true}}}` in
 `~/.config/yolo-jail/config.jsonc` ([BG-D18](../design/pack-buildable-programs.md#BG-D18)). That
 program then takes the verified artifact on every notch even with `from` present, and its line says
@@ -1130,8 +1132,12 @@ edit is built at the next fresh launch, never in a running jail
 the checkout and whether it was rebuilt or reused; an attach names the build its launch made. A
 build that fails is the same fatal refusal as the pack's own, naming the log, the retry and
 `YOLO_ALLOW_MISSING_PROGRAMS=1`, and never falls back to the pack's copy. The host refuses the
-program, naming the path and the key, when the path does not resolve (symlinks first) to a
-directory or sits at the credential boundary (`paths.WorkspaceScopeBreach`). **It applies to a
+program, naming the path and the key, when the path is not a directory, passes through a symlink
+(the refusal names the resolved path to write instead), or sits at the credential boundary
+(`paths.WorkspaceScopeBreach`). The checkout is read without following any symlink, so a symlink
+inside it reaches the build as a symlink, never as what it points at
+([BG-D22](../design/pack-buildable-programs.md#BG-D22)). A refusal of a checkout's build never
+names the prebuilt setting, which cannot sit beside `path`. **It applies to a
 `via: "pack"` program only** ([BG-D19](../design/pack-buildable-programs.md#BG-D19)): an override
 naming any other program a selected pack declares refuses the launch, `yolo host` and `yolo check`,
 naming a fork pack (`via: "source"`, `fork_of`, a `git+file://` source) as the way to build that

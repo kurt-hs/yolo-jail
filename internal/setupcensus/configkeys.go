@@ -230,9 +230,8 @@ var configKeys = map[string]Entry{
 					"(refuseNonPackTreeOverrides)"),
 				PodmanMac: honored("the same resolution and build, the build jail running inside the " +
 					"Podman Machine VM from the host's staged copy of the checkout"),
-				AppleContainer: honored("the same resolution and build; below Apple Container 1.1.0 the " +
-					"slot builds nothing (roBindsUnsupported), so the program is refused like any pack-tree " +
-					"program's"),
+				AppleContainer: honored("the same resolution and build, through the same build slot; " +
+					"unmeasured on a Mac"),
 				MacosUser: honoredBy("the same resolution, the build the darwin sealed act " +
 					"(forkbuild.go's macos-user arm, which copies the checkout as it copies a pack's tree); " +
 					"unmeasured on a Mac"),

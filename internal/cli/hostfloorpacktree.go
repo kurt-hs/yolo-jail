@@ -117,6 +117,8 @@ func floorPackTree(p hostfloor.Program, pack *packload.Pack, store *capture.Stor
 		Jail:     !f.IsPrebuilt() && strings.TrimSpace(f.Build) != "",
 	}
 	if d.Jail {
+		// Every refusal of this build names the opt-in where one is declared (BG-D21); a dev override's
+		// checkout names none, since `path` cannot be combined with `prebuilt` (Fork.PrebuiltOptInStep).
 		d.PrebuiltOptInStep = f.PrebuiltOptInStep(platform)
 	}
 	if f.IsPrebuilt() {

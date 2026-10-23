@@ -36,12 +36,17 @@ func overrideUserConfigKey(bin string) string {
 }
 
 // ProgramCheckout applies the user's override of f, a pack-tree program, when overrides names its
-// bin: f with Checkout set to the path with its symlinks resolved (the darwin /var → /private/var
-// class), or why the override cannot apply, naming the path and the key. f comes back unchanged with
-// no reason when there is no override. The checks, the same on every notch: the path resolves to an
-// existing directory, and it is not at the credential boundary (paths.WorkspaceScopeBreach: the home,
-// the user config directory, yolo's state directory, or anything containing one), which yolo never
-// reads into a build.
+// bin: f with Checkout set to the path, or why the override cannot apply, naming the path and the key.
+// f comes back unchanged with no reason when there is no override. The checks, the same on every
+// notch: the path is an existing directory; it has NO SYMLINK IN IT (its resolved path is the path as
+// written — on macOS that means spelling /private/var, not /var); and it is not at the credential
+// boundary (paths.WorkspaceScopeBreach: the home, the user config directory, yolo's state directory,
+// or anything containing one), which yolo never reads into a build.
+//
+// Why no symlink: a checkout may sit where an agent can write, and a link in its path is one the
+// agent could re-point between this check and the read, at ~/.ssh say. With none, the read below it
+// (internal/nofollow, through PackTreeDigest and the build's copy) follows no link at all, so what is
+// read is the directory that was checked.
 func ProgramCheckout(f packload.Fork, overrides map[string]config.ProgramOverride) (packload.Fork, string) {
 	ov, ok := overrides[f.Bin]
 	if !ok || !f.IsPackTree() {
@@ -55,6 +60,9 @@ func ProgramCheckout(f packload.Fork, overrides map[string]config.ProgramOverrid
 			f.Pack + "'s own " + f.From + key
 	case !isDir(dir):
 		return f, ov.Path + " is not a directory — point it at your checkout of " + f.Bin + key
+	case dir != filepath.Clean(ov.Path):
+		return f, ov.Path + " passes through a symlink (it resolves to " + dir + "), and yolo reads a checkout " +
+			"only at a path with no symlink in it — set the path to " + dir + key
 	}
 	if breach := paths.WorkspaceScopeBreach(dir); breach != nil {
 		return f, breach.WhatFor("the override path") + ", the credential boundary yolo never builds from — " +

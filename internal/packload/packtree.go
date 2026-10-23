@@ -77,10 +77,24 @@ func (f Fork) ProgramRun() string {
 // PrebuiltPlatforms are the platforms f's `prebuilt` declares, sorted; nil for none.
 func (f Fork) PrebuiltPlatforms() []string { return packdecl.PrebuiltPlatforms(f.Prebuilts) }
 
-// PrebuiltOptInStep is packdecl.PrebuiltOptInStep for f on platform: the explicit opt-in a refusal
-// of a build that cannot run here names, "" when f declares no artifact for platform.
+// PrebuiltOptInStep is packdecl.PrebuiltOptInStep for f on platform: the explicit opt-in every
+// refusal of a pack-tree build names (BG-D21), "" when f declares no artifact for platform. Also ""
+// for a dev override's checkout, whose `path` the prebuilt opt-in cannot be combined with
+// (config.ProgramOverride), and for a prebuilt itself, which is no build.
 func (f Fork) PrebuiltOptInStep(platform string) string {
+	if f.Checkout != "" || f.IsPrebuilt() {
+		return ""
+	}
 	return packdecl.PrebuiltOptInStep(f.Pack, f.Bin, platform, f.Prebuilts)
+}
+
+// PrebuiltOptInClause is "; " plus PrebuiltOptInStep, or "" where that is "": what a refusal's
+// sentence appends.
+func (f Fork) PrebuiltOptInClause(platform string) string {
+	if step := f.PrebuiltOptInStep(platform); step != "" {
+		return "; " + step
+	}
+	return ""
 }
 
 // PackTreeResolve is the resolver's build-or-prebuilt half for one pack-tree program on platform
@@ -235,9 +249,10 @@ func PackTreeDigestSkip() map[string]bool {
 // program's source directory, with its `.git` left out. An ABSENT directory is "" and no error:
 // the manifest may name one the pack does not ship, and the resolver then turns to the prebuilt
 // artifact (docs/design/pack-buildable-programs.md §4). A path that exists and is not a directory
-// is an error, since nothing could be built from it.
+// is an error, since nothing could be built from it, and so is a symlink: the walk follows no link
+// (treedigest, internal/nofollow), the root included.
 func PackTreeDigest(dir string) (string, error) {
-	fi, err := os.Stat(dir)
+	fi, err := os.Lstat(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", nil
 	}

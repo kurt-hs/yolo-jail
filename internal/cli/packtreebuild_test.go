@@ -296,3 +296,75 @@ func TestTheLaunchSlotBuildsAPackTreeProgramOnceThenHits(t *testing.T) {
 		t.Errorf("a hit printed a build line:\n%s", out2)
 	}
 }
+
+// THE BUILD'S COPY FOLLOWS NO SYMLINK (copySourceTreeSkipping, over internal/nofollow): a link in a
+// checkout an agent can write — to a directory or a file outside it, ~/.ssh say — is copied AS A
+// LINK, with its target, and none of the bytes behind it reach the build's staged tree. A regular
+// file keeps its bytes and its exec bit.
+func TestTheBuildsCopyCopiesASymlinkAsALinkAndNeverFollowsIt(t *testing.T) {
+	base := t.TempDir()
+	src, outside, dst := filepath.Join(base, "checkout"), filepath.Join(base, "ssh"), filepath.Join(base, "staged")
+	for _, d := range []string{src, outside, dst} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	key := filepath.Join(outside, "id_ed25519")
+	if err := os.WriteFile(key, []byte("SECRET-HOST-BYTES"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "build.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(src, "dirlink")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(key, filepath.Join(src, "keylink")); err != nil {
+		t.Fatal(err)
+	}
+	if err := copySourceTreeSkipping(src, dst, packload.PackTreeDigestSkip()); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"dirlink": outside, "keylink": key} {
+		fi, err := os.Lstat(filepath.Join(dst, name))
+		if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("%s in the staged tree = %v (%v), want a symlink", name, fi, err)
+		}
+		if got, _ := os.Readlink(filepath.Join(dst, name)); got != want {
+			t.Errorf("%s points at %q, want %q", name, got, want)
+		}
+	}
+	if fi, err := os.Stat(filepath.Join(dst, "build.sh")); err != nil || fi.Mode().Perm()&0o100 == 0 {
+		t.Errorf("build.sh = %v (%v), want it copied with its exec bit", fi, err)
+	}
+	_ = filepath.WalkDir(dst, func(p string, d os.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if b, _ := os.ReadFile(p); strings.Contains(string(b), "SECRET-HOST-BYTES") {
+				t.Errorf("the staged tree holds the host's bytes at %s", p)
+			}
+		}
+		return nil
+	})
+}
+
+// A source whose ROOT is a symlink is refused before anything is copied (stagePackTreeSource's Lstat;
+// PackTreeDigest refuses one the same way).
+func TestASymlinkedSourceRootIsRefused(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := packload.PackTreeDigest(link); err == nil {
+		t.Errorf("PackTreeDigest of a symlinked root succeeded, want a refusal")
+	}
+	f := packload.Fork{Pack: "board", Bin: "board", Run: "make", Checkout: link}
+	if err := stagePackTreeSource(f, "digest", filepath.Join(base, "dst")); err == nil ||
+		!strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("staging a symlinked checkout = %v, want a not-a-directory refusal", err)
+	}
+}

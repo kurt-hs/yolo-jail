@@ -113,4 +113,14 @@ func TestThePrebuiltOptInStepIsNamedOnlyWhereOneIsDeclared(t *testing.T) {
 	if step := f.PrebuiltOptInStep("darwin/amd64"); step != "" {
 		t.Errorf("a platform with no prebuilt named an opt-in: %q", step)
 	}
+	if c := f.PrebuiltOptInClause("darwin/arm64"); c != "; "+f.PrebuiltOptInStep("darwin/arm64") {
+		t.Errorf("clause = %q, want \"; \" and the step", c)
+	}
+	// A DEV OVERRIDE'S CHECKOUT names none: its `path` cannot be combined with `prebuilt`, so following
+	// the advice would be a validation error.
+	co := f
+	co.Checkout = "/home/u/src/board"
+	if step, c := co.PrebuiltOptInStep("darwin/arm64"), co.PrebuiltOptInClause("darwin/arm64"); step != "" || c != "" {
+		t.Errorf("a checkout build named the opt-in: %q, %q", step, c)
+	}
 }

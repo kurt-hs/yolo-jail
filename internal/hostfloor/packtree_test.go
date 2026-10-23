@@ -204,6 +204,20 @@ func TestAFailedPackTreeRebuildDoesNotKeepTheOlderBuild(t *testing.T) {
 	if _, err := os.Stat(next.Launcher("board")); err == nil {
 		t.Error("the older build still serves after its rebuild failed")
 	}
+
+	// BG-D21: where the pack declares a prebuilt here, the failed build's refusal names the opt-in too.
+	optIn := "or, to run pack fx's prebuilt artifact for linux/amd64 instead of building it, set the opt-in"
+	resolve := next.PackTree
+	next.PackTree = func(p Program) PackTreeDelivery {
+		d := resolve(p)
+		d.PrebuiltOptInStep = optIn
+		return d
+	}
+	next.packTrees = nil
+	if _, _, err := next.Ensure(context.Background(), p); err == nil || !strings.Contains(err.Error(), "its log: /x.log") ||
+		!strings.Contains(err.Error(), "; "+optIn) {
+		t.Errorf("Ensure with a prebuilt declared = %v, want the act's failure and then the prebuilt opt-in", err)
+	}
 }
 
 // A BUILD NEEDS A JAIL: with no runtime and no build in the store, the program has no floor entry and
@@ -219,6 +233,21 @@ func TestAPackTreeBuildWithNoRuntimeIsNoFloorEntry(t *testing.T) {
 	}
 	if len(ps.builds) != 0 {
 		t.Errorf("the act ran with no runtime: %v", ps.builds)
+	}
+
+	// BG-D21: where the pack declares a prebuilt here, the no-runtime refusal names the opt-in too.
+	optIn := "or, to run pack fx's prebuilt artifact for linux/amd64 instead of building it, set the opt-in"
+	resolve := w.floor.PackTree
+	w.floor.PackTree = func(p Program) PackTreeDelivery {
+		d := resolve(p)
+		d.PrebuiltOptInStep = optIn
+		return d
+	}
+	w.floor.packTrees = nil
+	if _, _, err := w.floor.Ensure(context.Background(), packTreeProgram()); !errors.Is(err, ErrNoEntry) ||
+		!strings.Contains(err.Error(), "; "+optIn) || len(ps.builds) != 0 {
+		t.Errorf("Ensure with no runtime and a prebuilt declared = %v (builds %v), want the opt-in named and no build",
+			err, ps.builds)
 	}
 }
 

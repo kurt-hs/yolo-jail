@@ -17,6 +17,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
@@ -284,5 +285,58 @@ func TestPackHelpListsBuild(t *testing.T) {
 	packMain([]string{"--help"}, &out, &errw, false)
 	if !strings.Contains(out.String(), "yolo pack build [<pack>...] [--force] [--at jail|host]") {
 		t.Errorf("yolo pack --help does not list build:\n%s", out.String())
+	}
+}
+
+// BG-D21 ON `yolo pack build`: where the pack declares a prebuilt for this platform, EVERY refusal of
+// its build names the opt-in — here a build that ran and failed, which is the same line a missing
+// runtime or a build jail that did not start takes. A dev override's checkout names none: its `path`
+// cannot be combined with `prebuilt`. Red if packBuildOne stops appending Fork.PrebuiltOptInClause.
+func TestPackBuildRefusalNamesThePrebuiltOptInExceptForACheckout(t *testing.T) {
+	platform := forkBuildPlatform("")
+	for _, checkout := range []bool{false, true} {
+		t.Run(map[bool]string{false: "pack tree", true: "checkout"}[checkout], func(t *testing.T) {
+			dev := floortest.ResolvedTemp(t)
+			writeFile(t, filepath.Join(dev, "VERSION"), "dev\n")
+			extra := ""
+			if checkout {
+				extra = `"programs":{"overrides":{"x":{"path":"` + dev + `"}}},`
+			}
+			fx := packBuildHome(t, packBuildFixtureBuild, extra)
+			writeFile(t, filepath.Join(fx, "pack.json"), `{"name":"fx","contributes":[{"kind":"program","bin":"x",`+
+				`"via":"pack","from":"tools/x","build":"make","run":"x","prebuilt":{"`+platform+
+				`":{"url":"https://example.invalid/x","sha256":"`+strings.Repeat("c", 64)+`"}}}]}`)
+			runs := 0
+			withFakeCaptureJail(t, fakePackBuildJail(t, &runs, 3))
+			rc, out, errw := packBuildRun(t, "fx")
+			if rc != 1 || runs != 1 || !strings.Contains(out, "failed") {
+				t.Fatalf("rc %d, %d runs, want 1 and one failed build\nout:\n%s\nerr:\n%s", rc, runs, out, errw)
+			}
+			named := strings.Contains(out, `"x": {"prebuilt": true}`)
+			if checkout && named {
+				t.Errorf("a checkout build's refusal names the prebuilt opt-in:\n%s", out)
+			}
+			if !checkout && (!named || !strings.Contains(out, platform)) {
+				t.Errorf("the refusal does not name the prebuilt opt-in for %s:\n%s", platform, out)
+			}
+		})
+	}
+}
+
+// OQ-BG2 FOR A DEV OVERRIDE: a Mac that never set up its build environment refuses a checkout's
+// build naming the checkout (SourceSaid) and the setup step, and never the prebuilt opt-in, which
+// `path` cannot be combined with; the pack's own tree names both.
+func TestTheMacSetupRefusalOfACheckoutNamesTheCheckoutAndNoOptIn(t *testing.T) {
+	f := packload.Fork{Pack: "fx", Bin: "x", From: "tools/x", Run: "x",
+		Prebuilts: map[string]packdecl.PrebuiltBuild{"darwin/arm64": {URL: "https://example.invalid/x"}}}
+	if why := darwinPackTreeUnbuildableReason(f, "darwin/arm64"); !strings.Contains(why, "pack fx's tools/x") ||
+		!strings.Contains(why, `"x": {"prebuilt": true}`) {
+		t.Errorf("the pack tree's refusal = %q, want its source and the opt-in", why)
+	}
+	f.Checkout = "/Users/u/src/x"
+	why := darwinPackTreeUnbuildableReason(f, "darwin/arm64")
+	if !strings.Contains(why, "your checkout /Users/u/src/x") || !strings.Contains(why, "`yolo macos-setup`") ||
+		strings.Contains(why, "prebuilt") || strings.Contains(why, "tools/x") {
+		t.Errorf("the checkout's refusal = %q, want the checkout and the setup step, and no opt-in", why)
 	}
 }

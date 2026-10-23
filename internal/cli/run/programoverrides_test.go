@@ -62,9 +62,10 @@ func boardFork(t *testing.T) packload.Fork {
 	return packload.Fork{}
 }
 
-// THE CHECKS, the same on every notch (ProgramCheckout): the path's symlinks resolved first, and a
-// missing path, a file, and the home (the credential boundary) each refused naming the path and the
-// key. No override, and an override of a program that is no pack-tree program, leave the fork alone.
+// THE CHECKS, the same on every notch (ProgramCheckout): a path with no symlink in it is applied as
+// written; a path through a symlink (one an agent could re-point at ~/.ssh after the check), a missing
+// path, a file, and the home (the credential boundary) are each refused naming the path and the key,
+// the symlink's refusal naming the resolved path to write instead. No override leaves the fork alone.
 func TestProgramCheckoutResolvesThePathAndRefusesWhatItCannotBuild(t *testing.T) {
 	home := packHome(t)
 	dev := floortest.ResolvedTemp(t)
@@ -74,19 +75,22 @@ func TestProgramCheckoutResolvesThePathAndRefusesWhatItCannotBuild(t *testing.T)
 	}
 	file := filepath.Join(dev, "file")
 	writeFileAt(t, file, "x")
+	mkdirs(t, filepath.Join(dev, "sub"))
 	f := boardFork(t)
 
-	got, why := ProgramCheckout(f, map[string]config.ProgramOverride{"board": {Path: link}})
+	got, why := ProgramCheckout(f, map[string]config.ProgramOverride{"board": {Path: dev}})
 	if why != "" || got.Checkout != dev || got.SourceDir() != dev {
-		t.Errorf("board through a symlink = %+v (%q), want the resolved checkout %s", got, why, dev)
+		t.Errorf("board at %s = %+v (%q), want that checkout", dev, got, why)
 	}
 	for name, tc := range map[string]struct {
 		path string
 		want []string
 	}{
-		"missing":   {filepath.Join(dev, "nope"), []string{filepath.Join(dev, "nope"), "does not exist"}},
-		"not a dir": {file, []string{file, "not a directory"}},
-		"the home":  {home, []string{"IS your home directory", "credential boundary"}},
+		"a symlink":       {link, []string{link, "passes through a symlink", "set the path to " + dev}},
+		"under a symlink": {filepath.Join(link, "sub"), []string{"passes through a symlink"}},
+		"missing":         {filepath.Join(dev, "nope"), []string{filepath.Join(dev, "nope"), "does not exist"}},
+		"not a dir":       {file, []string{file, "not a directory"}},
+		"the home":        {home, []string{"IS your home directory", "credential boundary"}},
 	} {
 		got, why := ProgramCheckout(f, map[string]config.ProgramOverride{"board": {Path: tc.path}})
 		if got.Checkout != "" {

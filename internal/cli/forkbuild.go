@@ -33,7 +33,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -48,6 +47,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
+	"github.com/mschulkind-oss/yolo-jail/internal/nofollow"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
@@ -1274,8 +1274,8 @@ func buildPlainForkForLaunch(b forkBuild, rt string, report *buildReport, it *po
 		// which an earlier key's build, holding its slot before this one's, met.
 		report.skipLine(b.Fork, refused, it.stream())
 		return entrypoint.ForkDelivery{Reason: buildOf(b) +
-			" was not started: its build jail would refuse to start on the host — the next launch builds it",
-			Cause: refused.cause}
+			" was not started: its build jail would refuse to start on the host — the next launch builds it" +
+			b.Fork.PrebuiltOptInClause(b.Platform), Cause: refused.cause}
 	}
 	ctx := it.context()
 	start := buildStart{fork: b.Fork, what: b.Fork.Source + " at " + shortSHA(b.Commit), line: b.buildLine()}
@@ -1322,8 +1322,10 @@ func buildPlainForkForLaunch(b forkBuild, rt string, report *buildReport, it *po
 			if packTree {
 				next += ", or " + packTreeRetry(b.Fork) + " on the host"
 			}
+			// Every pack-tree build refusal names the prebuilt opt-in where one is declared (BG-D21).
 			return entrypoint.ForkDelivery{Reason: buildOf(b) +
-				" was not started: " + err.Error() + " on the host — " + next, Cause: cause}
+				" was not started: " + err.Error() + " on the host — " + next + b.Fork.PrebuiltOptInClause(b.Platform),
+				Cause: cause}
 		}
 		r.fail("failed")
 		if packTree {
@@ -1341,7 +1343,8 @@ func buildPlainForkForLaunch(b forkBuild, rt string, report *buildReport, it *po
 		}
 		if packTree {
 			return entrypoint.ForkDelivery{Reason: buildOf(b) + " failed on the host (" + err.Error() +
-				withBuildLog(failureLog(err, r.logPath)) + ") — retry: " + packTreeRetry(b.Fork) + " on the host"}
+				withBuildLog(failureLog(err, r.logPath)) + ") — retry: " + packTreeRetry(b.Fork) + " on the host" +
+				b.Fork.PrebuiltOptInClause(b.Platform)}
 		}
 		return entrypoint.ForkDelivery{Reason: buildOf(b) + " failed on the host (" + err.Error() + withBuildLog(r.logPath) + ")"}
 	}
@@ -1533,51 +1536,44 @@ var forkCheckout = func(store *packsrc.Store, a packsrc.Addr, commit string) (st
 // copySourceTree copies src to dst: directories, regular files with their permission bits, and
 // symlinks as links. The pack store's completion marker at the tree's root is not the fork's.
 func copySourceTree(src, dst string) error {
-	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, p)
-		if err != nil {
-			return err
-		}
-		if rel == ".yolo-pack-complete" {
-			return nil
-		}
-		return copySourceEntry(p, filepath.Join(dst, rel), d)
-	})
+	return copySourceTreeSkipping(src, dst, map[string]bool{".yolo-pack-complete": true})
 }
 
-// copySourceEntry copies one walked entry p to target: a directory made, a symlink copied as a
-// link and never followed, a regular file with its permission bits. A device, socket or pipe is not
-// source, and is left out.
-func copySourceEntry(p, target string, d fs.DirEntry) error {
-	info, err := d.Info()
-	if err != nil {
-		return err
-	}
-	switch {
-	case d.IsDir():
-		return os.MkdirAll(target, info.Mode().Perm()|0o700)
-	case d.Type()&fs.ModeSymlink != 0:
-		link, err := os.Readlink(p)
-		if err != nil {
-			return err
+// copySourceTreeSkipping copies src to dst leaving out skip, a set of slash-separated paths relative
+// to src (and their subtrees) — packload.PackTreeDigestSkip for a pack-tree source, so the build is
+// handed exactly the bytes its digest read. A directory is made, a regular file is copied with its
+// permission bits, and a SYMLINK IS COPIED AS A LINK AND NEVER FOLLOWED. A device, socket or pipe is
+// not source, and is left out.
+//
+// The read follows no link even under a race (internal/nofollow): a source tree may be a dev
+// override's checkout an agent can write, and an entry swapped for a symlink to ~/.ssh between its
+// listing and its read fails the copy instead of putting the host's bytes into a build.
+func copySourceTreeSkipping(src, dst string, skip map[string]bool) error {
+	return nofollow.Walk(src, skip, func(e nofollow.Entry) error {
+		target := filepath.Join(dst, e.Rel)
+		switch e.Kind {
+		case nofollow.Dir:
+			return os.MkdirAll(target, e.Perm|0o700)
+		case nofollow.Symlink:
+			return os.Symlink(e.Target, target)
+		case nofollow.File:
+			out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, e.Perm|0o600)
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(out, e.File); err != nil {
+				out.Close()
+				return err
+			}
+			if err := out.Close(); err != nil {
+				return err
+			}
+			// The umask does not get a say: the exec bits are part of a tree's digest (treedigest),
+			// and a pack-tree build checks its staged copy against the digest it was keyed on.
+			return os.Chmod(target, e.Perm|0o600)
 		}
-		return os.Symlink(link, target)
-	case d.Type().IsRegular():
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(target, data, info.Mode().Perm()|0o600); err != nil {
-			return err
-		}
-		// The umask does not get a say: the exec bits are part of a tree's digest (treedigest), and a
-		// pack-tree build checks its staged copy against the digest it was keyed on.
-		return os.Chmod(target, info.Mode().Perm()|0o600)
-	}
-	return nil
+		return nil
+	})
 }
 
 // forkBuildJailArgv is the build jail's command: capture-run around the fork's build command line,
