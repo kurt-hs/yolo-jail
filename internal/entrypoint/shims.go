@@ -489,9 +489,6 @@ func GenerateAgentLaunchers(e *Env) error {
 	// And its patched-extension decisions (PatchedTreesEnv): the launchers of a pack that owns a
 	// tree with nothing to serve stop before exec (PPX-D18).
 	trees := patchedTrees(e)
-	// And its dev-override decisions (ProgramOverridesEnv, overridelauncher.go): an overridden bin
-	// gets the override's launcher in place of its via's, whatever that via is.
-	overrides := programOverrides(e)
 
 	packs, err := LoadJailPacks(e)
 	if err != nil {
@@ -576,16 +573,6 @@ func GenerateAgentLaunchers(e *Env) error {
 			updates, launcherSet := agentUpdatesAllows(e, p.Name), servers
 			if serverBins[inst.Bin] {
 				updates, launcherSet = false, launcherServers{}
-			}
-			// A DEV OVERRIDE wins over every rung of the program's own delivery
-			// (docs/design/pack-buildable-programs.md §4): the launcher runs the checkout, and
-			// nothing of the via's install, build or materialize is generated beside it.
-			if ov, ok := overrides[inst.Bin]; ok {
-				if err := writeExecutable(launcherPath, overrideLauncher(inst.Bin, ov,
-					launchFlagsFor(e, packs, inst.Bin))); err != nil {
-					return err
-				}
-				continue
 			}
 			var launcher string
 			switch inst.Kind {

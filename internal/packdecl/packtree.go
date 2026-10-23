@@ -228,6 +228,14 @@ func PackTreeBuildSource(pack, from string) string {
 	return "pack:" + pack + "/" + from
 }
 
+// PackTreeCheckoutBuildSource is the SOURCE string of a pack-tree program built from the user's own
+// checkout at dir in place of its pack's `from` (`programs.overrides.<bin>.path`, BG-D19):
+// "checkout:<pack>:<dir>". It never equals a pack's own build source ("pack:…") nor a fork's (a
+// packsrc address), so a checkout's builds are kept, selected and reused apart from the pack's.
+func PackTreeCheckoutBuildSource(pack, dir string) string {
+	return "checkout:" + pack + ":" + dir
+}
+
 // PackTreeProgramDir is the home-relative directory a pack-tree program lives in: its source
 // directory copied there and built in place (BG-D4), so every path the build embeds is under the
 // home, where the capture's relocation records it.
@@ -296,3 +304,32 @@ func PackTreePrebuiltRecipe(bin string) string {
 // PackTreePrebuiltRun is where a prebuilt artifact lands inside its program's directory, relative
 // to it: the file under the program's own name, ~/.local/lib/yolo-programs/<bin>/<bin> (§7).
 func PackTreePrebuiltRun(bin string) string { return bin }
+
+// PrebuiltPlatforms are the platforms a `prebuilt` map declares, sorted; nil for none.
+func PrebuiltPlatforms(prebuilt map[string]PrebuiltBuild) []string {
+	var out []string
+	for p := range prebuilt {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// PrebuiltOptInSetting is the user-scope setting that opts one program into its pack's prebuilt
+// artifact even when the pack ships its source (docs/design/pack-buildable-programs.md §7, OQ-BG2,
+// BG-D18), spelled as a user writes it.
+func PrebuiltOptInSetting(bin string) string {
+	return `"programs": {"overrides": {"` + bin + `": {"prebuilt": true}}} in ~/.config/yolo-jail/config.jsonc`
+}
+
+// PrebuiltOptInStep is the clause a refusal of a pack-tree BUILD that cannot run here adds when the
+// pack declares a prebuilt artifact for platform (OQ-BG2): the explicit opt-in that runs it instead.
+// "" when it declares none, since then there is nothing to opt into. Never a substitution: yolo uses
+// the artifact for a present source only when the user sets this.
+func PrebuiltOptInStep(pack, bin, platform string, prebuilt map[string]PrebuiltBuild) string {
+	if _, ok := prebuilt[platform]; !ok {
+		return ""
+	}
+	return "or, to run pack " + pack + "'s prebuilt artifact for " + platform + " instead of building it, set " +
+		PrebuiltOptInSetting(bin)
+}

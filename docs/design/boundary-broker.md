@@ -3,26 +3,28 @@ title: "Reads run, writes ring the doorbell: time-boxed GitHub access across the
 date: 2026-09-28
 status: in-review
 stage: DESIGN
-next: "Deliver request/answer notice readiness (OQ-BB10 and yolo notify), rule OQ-BB15 explicit admit semantics, then implement rule grammar. Production writes remain refused; gated handler integration is built."
+next: "Build step 1 of the 2026-10-23 path, the broker-core factoring in git-broker.md, which waits on nothing; rule OQ-GB1 and OQ-BB17, which hold the git source and the answer path. Production writes remain refused; gated handler integration is built."
 depends-on:
   - agent-event-watchers.md
-tags: [design, credentials, github, gh, approvals, notifications, loopholes, audit, broker]
-summary: "Revised around the maintainer's 2026-09-28 brief and his 2026-09-29 rulings. A host daemon runs the host's own `gh` login on the jail's behalf, only against the workspace's own GitHub repositories. Each source defines named permission sets: GitHub's default two are read-only, always held, and read-write, which a human hands over whole for a window (15 minutes by default) from a persistent desktop notification on Linux and macOS. The request outlives its connection, the answer reaches the agent later through the `yolo notify` ping channel, and the agent re-issues its command under the grant. Credential-printing and host-reaching commands are refused outright, whatever is granted. Every brokered call is appended to a host audit log that yolo mounts into no jail. The scope is re-read from the workspace's remotes at every fresh launch and approved in that launch's config-change diff; an out-of-scope command is refused, and the only widening is a `brokered.github.repos` list in the workspace's own config, approved at that same gate (re-ruled 2026-10-05 and built that day, in workspace-widening.md; the user-scope entry keyed by workspace is retired). On macOS the notifier is terminal-notifier, a dependency of the Homebrew formula on Apple silicon running macOS 14 or later, where a prebuilt bottle exists. Step 1 (reads, the scope, the audit log, the mount fence) is built; a pack intercepts `gh` through a generic contribution kind. The workspace entry is built: a listed repository joins the scope for every set. Open: how a host daemon hands the launch a line to print."
+tags: [design, credentials, github, gh, git, approvals, notifications, loopholes, audit, broker]
+summary: "Revised around the maintainer's 2026-09-28 brief and his 2026-09-29 rulings. A host daemon runs the host's own `gh` login on the jail's behalf, only against the workspace's own GitHub repositories. Each source defines named permission sets: GitHub's default two are read-only, always held, and read-write, which a human hands over whole for a window (15 minutes by default) from a persistent desktop notification on Linux and macOS. The request outlives its connection, the answer reaches the agent later through the `yolo notify` ping channel, and the agent re-issues its command under the grant. Credential-printing and host-reaching commands are refused outright, whatever is granted. Every brokered call is appended to a host audit log that yolo mounts into no jail. The scope is re-read from the workspace's remotes at every fresh launch and approved in that launch's config-change diff; an out-of-scope command is refused, and the only widening is a `brokered.github.repos` list in the workspace's own config, approved at that same gate (re-ruled 2026-10-05 and built that day, in workspace-widening.md; the user-scope entry keyed by workspace is retired). On macOS the notifier is terminal-notifier, a dependency of the Homebrew formula on Apple silicon running macOS 14 or later, where a prebuilt bottle exists. Step 1 (reads, the scope, the audit log, the mount fence) is built; a pack intercepts `gh` through a generic contribution kind. The workspace entry is built: a listed repository joins the scope for every set. On 2026-10-23 the maintainer laid out the build in five steps: brokered sources with read and write sets (git next, after factoring out the source-neutral core), generic actionable toasts on Linux and macOS, a host CLI that views and approves requests, a web UI built out of tree on that CLI, and only then a talk about merging it. He also put long-lived access in the workspace config and asked that the answer wake the agent. Open: how a host daemon hands the launch a line to print, host-run approval by notification, explicit admit semantics, which sets a workspace may hold long-lived, and whether the answer path ships before the doorbell."
 vantage:
   status-chip: true
 ---
 
 # Reads run, writes ring the doorbell: time-boxed GitHub access across the jail boundary
 
-**Status:** 2026-09-28; **step 1 of [§11](#11-recommendation-and-the-first-build-slice)
-built 2026-09-29** (the read path, the repository scope, the audit log, the mount fence),
-**step 2's widening entry built 2026-10-01** ([BB-D33](#BB-D33), [BB-D52](#BB-D52); the
+**Status:** 2026-09-28; **re-planned 2026-10-23** around the maintainer's five-step path
+([§1.5](#15-the-maintainers-path-2026-10-23), [§11](#11-the-build-in-the-maintainers-five-steps)),
+with the git source split out to [`git-broker.md`](git-broker.md) and evidence for the new
+sections verified against `f9fcd599a`; **the GitHub read path, step 1's first source, built 2026-09-29** (the read path, the repository scope, the audit log, the mount fence),
+**the widening entry built 2026-10-01** ([BB-D33](#BB-D33), [BB-D52](#BB-D52); the
 `brokered` key in `internal/config/brokered.go`, run end to end against a fake host `gh` by
-`integration/githubbroker_test.go`), and **step 2's user-scope sets and host store/`yolo approve` slice built 2026-10-13**.
+`integration/githubbroker_test.go`), and **the user-scope sets and host store/`yolo approve` slice built 2026-10-13**.
 The real handler has host authority adapters and a delivery-gated request/wait/status/consume
 path, tested through the transport with a fake executor. Production still provides no delivery
 readiness, so writes refuse immediately without filing requests. See [§7](#7-grants-and-the-request-store).
-Notifications, explicit admission rules and step 3 are not built. Revised
+Notifications, explicit admission rules, macOS and the git source are not built. Revised
 around the maintainer's brief of that day; first sketched
 2026-08-05. [OQ-BB1](#15-decision-ledger), [OQ-BB2](#15-decision-ledger), [OQ-BB3](#15-decision-ledger), [OQ-BB4](#15-decision-ledger),
 [OQ-BB6](#15-decision-ledger), [OQ-BB7](#15-decision-ledger), [OQ-BB8](#15-decision-ledger), [OQ-BB9](#15-decision-ledger) and OQ-C were ruled on
@@ -73,19 +75,24 @@ per action. The maintainer put this on the plate for the week of 2026-09-28.
 (`yolo approve`, `yolo audit`), a user-scope config key for a source's sets, a workspace-scope
 one for the repositories a workspace asks for, a second part to the config-change gate's approval
 record (the repository scope, [§5.6](#56-the-repository-scope)), and `terminal-notifier` as a macOS dependency of the
-Homebrew formula on Apple silicon running macOS 14 or later ([§6.2](#62-macos)). The write path depends on the `yolo notify`
-ping box, which is designed and not built.
+Homebrew formula on Apple silicon running macOS 14 or later ([§6.2](#62-macos)). The write path's answer rides the `yolo notify`
+ping box, which is designed and not built, unless [OQ-BB17](#OQ-BB17) lets it ship first on the
+agent's own background wait.
 
 **Start at [§3](#3-the-flow)**, the flow. Everything else is what one step of it needs.
 
-**Needs your ruling:** [OQ-BB10](#OQ-BB10), [OQ-BB14](#OQ-BB14), [OQ-BB15](#OQ-BB15).
+**Needs your ruling:** [OQ-BB10](#OQ-BB10), [OQ-BB14](#OQ-BB14), [OQ-BB15](#OQ-BB15),
+[OQ-BB16](#OQ-BB16), [OQ-BB17](#OQ-BB17); and, for the git source,
+[OQ-GB1](git-broker.md#OQ-GB1) and [OQ-GB2](git-broker.md#OQ-GB2).
 [OQ-BB3](#15-decision-ledger), [OQ-BB4](#15-decision-ledger), [OQ-BB6](#15-decision-ledger),
 [OQ-BB7](#15-decision-ledger), [OQ-BB8](#15-decision-ledger), [OQ-BB9](#15-decision-ledger) and OQ-C were ruled 2026-09-29,
 [OQ-BB12](#15-decision-ledger) and [OQ-BB13](#15-decision-ledger) on 2026-10-01, and [OQ-BB6](#15-decision-ledger) re-ruled on
 2026-10-05, which makes [OQ-BB11](#15-decision-ledger) moot.
 
-**Reads with:** [`agent-event-watchers.md`](agent-event-watchers.md) (the `yolo notify` doorbell
-the answer rides back on), [`loophole-system.md`](../reference/loophole-system.md) and
+**Reads with:** [`git-broker.md`](git-broker.md) (step 1's factoring of the broker core, and git
+as its second source), [`agent-event-watchers.md`](agent-event-watchers.md) (the `yolo notify` doorbell
+the answer rides back on), [`live-config-apply.md`](live-config-apply.md) (applying a scope or a
+long-lived set to a running jail), [`loophole-system.md`](../reference/loophole-system.md) and
 [`loophole-transport.md`](../reference/loophole-transport.md) (what the broker is and how a jail
 reaches it), [`config-safety.md`](../reference/config-safety.md) (the config-change gate the
 scope is approved through), [`providers.md`'s credential gate](../reference/providers.md#the-credential-gate)
@@ -271,21 +278,58 @@ Numbered so later sections and sibling docs can cite them.
   ([BB-D34](#BB-D34)); other workspace keys that reach the host are gated by the config-change
   diff, not by this principle.
 
+### 1.5 The maintainer's path, 2026-10-23
+
+The maintainer pasted a Slack thread with a colleague who built his own approval flow: a local
+web dashboard of pending requests, read-only access standing and writes approved one by one, a
+git broker for fetch and push with per-branch push grants, and a two-minute window after which
+an unanswered request is denied and the agent must ask again. The maintainer, of his own
+comments there, *"I think my comments here lay out a clear path"*. The path, verbatim:
+
+> *"1. add support for whatever loopholes you need/want with rw and ro support, maybe factoring
+> out the CLI wrapping/proxy stuff*
+> *2. add generic support for yolo-jail sending (actionable) toasts on linux/mac*
+> *3. add some host-side machinery as a CLI that can view/approve these access requests*
+> *4. build your proposed web UI out of tree, and plug into the CLI or whatever generic surface
+> gets exposed for this.*
+> *5. talk about merging the web UI at this point, so it'll be much more clear"*
+
+| He says (2026-10-23) | Rules | Lands |
+| :--- | :--- | :--- |
+| The five steps above | **The build order.** Sources first, then toasts, then the CLI, then an out-of-tree UI on the CLI's surface | [§11](#11-the-build-in-the-maintainers-five-steps) |
+| *"maybe factoring out the CLI wrapping/proxy stuff"*; *"proxying the git CLI … maybe even worth making this a generic mechanism"* | The source-neutral broker core is factored out of the github-broker, and git is the second source on it | [`git-broker.md`](git-broker.md) |
+| *"generic support for yolo-jail sending (actionable) toasts"* | The notifier is yolo's, not the github-broker's: one front-end of the store that any source's requests reach | [§6](#6-the-doorbell-a-persistent-desktop-notification) |
+| *"plug into the CLI or whatever generic surface gets exposed"*; *"the CLI/hook would let you build this as well"* | The CLI's output is a stable, machine-readable surface, and the UI is not yolo's to build yet | [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship) |
+| *"we should also distinguish long lived access, which probably belongs in the workspace's yolo config, from temp access like pushing"* | **Long-lived access is declared in the workspace config**, approved at the config-change gate; a grant is the temporary kind | [§5.8](#58-long-lived-access-and-temporary-access) |
+| *"seeing an audit trail of what the agent did after the fact, as in, what commands exactly were used with your token/access, would be a nice touch"* | Already the design, and built for reads: every call audited with its canonical argv and the grant it ran under | [§8](#8-audit) |
+| *"it's a little annoying as a user experience because then you gotta kick it to continue … maybe you can auto kick the agent session when a response comes in, through that agent messaging protocol, although you may need to be a child proc"* | **The answer wakes the agent session**; an auto-deny the agent must be kicked past is the thing to avoid | [§3.3](#33-the-answer-comes-back-through-the-doorbell) |
+
+**What it does not change.** The credential still never crosses ([BB-P1](#BB-P1)), and the
+host runs every command. On the colleague's remote case, a Slack link that opens a dashboard
+served from his own machine, the maintainer's answer was not to build a UI in yet (*"who knows
+what it should be"*), which is why step 4 is out of tree.
+
 ## 2. What exists today
 
-Verified against `c8fda25f` on 2026-09-28.
+Verified against `f9fcd599a` on 2026-10-23. Line numbers are left out on purpose: the symbols
+are stable and the lines are not.
 
 | Piece | Where | State |
 | :--- | :--- | :--- |
 | A framed request/response protocol across the boundary | `internal/frameproto`, [`loophole-protocol.md`](../reference/loophole-protocol.md) | **shipped**, versioned |
-| A host daemon framework with host-asserted jail identity | `internal/hostservice`: the jail id comes *"in descending order of trust"* from the connection preamble, then the request, then `"unknown"` (`hostservice.go:98-102`); the preamble is written host to daemon, once, and *"a client cannot forge, suppress, or even observe it"* (`internal/svcendpoint/preamble.go:62-80`) | **shipped** |
+| A host daemon framework with host-asserted jail identity | `internal/hostservice`: the jail id comes *"in descending order of trust"* from the connection preamble, then the request, then `"unknown"`; the preamble is written host to daemon, once, and *"a client cannot forge, suppress, or even observe it"* (`internal/svcendpoint/preamble.go`) | **shipped** |
 | A jail-to-host transport that authenticates the jail | loopback TLS with a per-(jail, service) endpoint-file token; *"The adversary is a SIBLING JAIL. It is not the jail's own agent, and it is not a same-user host process"* ([`loophole-transport.md`](../reference/loophole-transport.md)) | **shipped** |
-| Argv safety for host-side execution | `Session.ExecAllowlisted` (`hostservice.go:196-270`): argv positions checked against a server-owned set, stdout and stderr streamed back as frames, rc 124 on timeout | **shipped**, but too coarse for `gh`: it checks words, not a subcommand's flag grammar |
-| A connection audit | `internal/crossaudit`: one line per jail-to-host connection, accepted or rejected, to `GLOBAL_STORAGE/logs/crossings.log`, `0600`, 4 MiB plus one archive (`crossaudit.go:70-190`) | **shipped** 2026-08-15. It records that a connection happened, never what it asked |
-| An agent-agnostic doorbell into the session | `yolo notify` and the per-launch ping box ([`agent-event-watchers.md`](agent-event-watchers.md)) | **designed, not built**. `rg` finds no `notify` verb in `internal/cli` or `cmd/` |
-| A request that outlives its connection | — | **missing** |
-| A human in the answer path | — | **missing**. The nearest thing, `promptYesNo` (`internal/cli/pack.go:1563`), is a foreground prompt its own comment says *"cannot tell a person from a pipe"* |
-| Desktop notifications | — | **missing**: no `notify-send`, `osascript`, D-Bus or UserNotifications code in the tree |
+| Argv safety for host-side execution | `Session.ExecAllowlisted`: argv positions checked against a server-owned set, stdout and stderr streamed back as frames, rc 124 on timeout | **shipped**, but too coarse for `gh`: it checks words, not a subcommand's flag grammar |
+| A connection audit | `internal/crossaudit`: one line per jail-to-host connection, accepted or rejected, to `GLOBAL_STORAGE/logs/crossings.log`, `0600`, 4 MiB plus one archive | **shipped** 2026-08-15. It records that a connection happened, never what it asked |
+| Jail-side interception of a command name | the `intercept` contribution kind (`packdecl.KindIntercept`), which `packs/github` uses to put `yolo gh --` in front of `gh` | **shipped** ([OQ-BB8](#15-decision-ledger)) |
+| The GitHub source: classifier, executor, daemon, forwarder | `internal/ghbroker`, `internal/brokerscope`, `packs/github`; `yolo gh status` and `yolo gh wait` in the forwarder | **shipped** for reads. One package holds both the source-neutral machinery and the gh-specific part, which [`git-broker.md` §3](git-broker.md#3-the-broker-core-what-step-1-factors-out) factors apart |
+| A request that outlives its connection, and grants | `internal/brokerstore`, one directory per source (`paths.BrokerSourceDir`) | **built**; production files nothing into it yet, since the handler waits on a delivery dependency no production code supplies (`ghbroker.RequiredDelivery`) |
+| A human in the answer path | `yolo approve` (`internal/cli/approve.go`): list, allow once, `--for`, `--deny`, `--revoke` | **built**, for the `github` store only and as text only: no `--json`, and no way to follow new requests |
+| The audit log and its viewer | `internal/brokeraudit`, whose events carry a `service`; `yolo audit` with `--since`, `--jail`, `--workspace`, `--set`, `--grant` and `--json` | **shipped**; no `--service` filter, since one source writes it |
+| A running jail's scope widened without a restart | `yolo config apply` ([`live-config-apply.md`](live-config-apply.md)) | **shipped** |
+| An agent-agnostic doorbell into the session | `yolo notify` and the per-launch ping box ([`agent-event-watchers.md`](agent-event-watchers.md)) | **designed, not built**: no `notify` verb in `internal/cli` or `cmd/` |
+| Desktop notifications | — | **missing**: no D-Bus, `notify-send`, terminal-notifier or UserNotifications code in the tree; the `osascript` lines in `internal/macosuser` are not notifications |
+| Anything for git | — | **missing** ([`git-broker.md`](git-broker.md)) |
 
 **What the loophole protocol's posture decides here.** The transport defends against a sibling
 jail, not against the jail's own agent or a same-user host process. So this design protects
@@ -390,8 +434,24 @@ still wanted.
   works only for an agent with background tasks, dies with the session, and must be started
   again every time. The ping box is agent-agnostic, survives the session, and reaches every
   agent through its own pack's deliverer.
-- **Until `yolo notify` is built**, the pending message names `yolo gh status <id>` instead, and
-  the agent polls. Nothing else changes.
+- **Until `yolo notify` is built**, the pending message names `yolo gh status <id>` instead.
+  Nothing else changes.
+
+**The answer must wake the session** (the maintainer, 2026-10-23, [§1.5](#15-the-maintainers-path-2026-10-23)):
+an answer the agent has to be kicked to notice is the experience he called *"a little
+annoying"*. That rules out polling as the design and makes the 30-second wait plus a
+60-minute request life, rather than a short auto-deny, the right shape: an answer that arrives
+an hour later still reaches the agent. Two things can wake a session:
+
+| Waker | How | Reaches | Waits on |
+| :--- | :--- | :--- | :--- |
+| **The ping** | the broker writes the ping box; the agent pack's deliverer wakes the session | every agent with a deliverer, whether or not it started anything | `yolo notify`, and [OQ-EW11](agent-event-watchers.md#OQ-EW11) to [OQ-EW13](agent-event-watchers.md#OQ-EW13), which hold that build |
+| **The agent's own wait** | the pending message tells the agent to run `yolo gh wait <id>` as a background task; the agent's harness wakes the session when that child exits with the answer | agents whose harness runs background tasks and reports their exit, Claude Code among them (INFERRED from the CI watcher, which relies on it; no agent session was started for this doc) | nothing: `yolo gh wait` is built |
+
+The second is what the maintainer meant by *"you may need to be a child proc"*: the waker is a
+child of the session, so no messaging protocol is needed. It dies with the session, which is the
+right answer for a session that ended. Whether writes may ship on it before the ping exists is
+[OQ-BB17](#OQ-BB17).
 
 ### 3.4 The agent re-issues under the grant
 
@@ -1046,7 +1106,60 @@ rulesets, `workflow enable/disable`, `pr merge`, every `gh api` write and every 
 write. The ruling has none in the default, so a 15-minute `read-write` grant can merge and
 delete. A source's sets and windows are configurable ([§5.7](#57-permission-sets)).
 
+### 5.8 Long-lived access and temporary access
+
+The maintainer, 2026-10-23: *"we should also distinguish long lived access, which probably
+belongs in the workspace's yolo config, from temp access like pushing"*. So there are two kinds,
+with two homes:
+
+| | Long-lived access | Temporary access |
+| :--- | :--- | :--- |
+| What it is | A windowed set this workspace holds as if it were standing | A grant: one command, or one set for a window and a use cap ([§7](#7-grants-and-the-request-store)) |
+| Where it lives | **The workspace config**: `brokered.<source>.hold`, a list of set names (the spelling is the implementer's; `yolo config-ref` is its authority once built) | The request store |
+| Who writes it | Anyone who can edit the workspace, the agent included | Only a human's answer, through a host front-end ([BB-P3](#BB-P3)) |
+| When it takes effect | **Only once a human approves it** at the config-change gate, as a row of the scope block, the way a `brokered.github.repos` entry does ([BB-P9](#BB-P9), [`workspace-widening.md`](workspace-widening.md)); `yolo config apply` applies it to a running jail ([`live-config-apply.md`](live-config-apply.md)) | When the human answers |
+| How it ends | Removed from the config; the removal narrows at once, with no approval | Expiry, use cap, revocation, or the jail stopping |
+| Audited | Every call, with `held` in place of a grant id | Every call, with the grant id |
+
+- **A held set never defines anything.** Which commands a set admits stays user-scope
+  ([§5.7](#57-permission-sets)); the workspace only names sets that exist. A name that matches
+  no set of that source is a `yolo check` error, and the launch refuses it naming the source's
+  sets.
+- **It never widens the scope or lifts a refusal** ([BB-P8](#BB-P8)).
+- **Every launch discloses it**: `github-broker: this workspace holds read-write (approved
+  2026-10-23)`.
+- Which sets a workspace may hold this way is [OQ-BB16](#OQ-BB16). For the git source, a held
+  per-ref push is a list of refs rather than a set name
+  ([`git-broker.md` §5](git-broker.md#5-the-git-sources-sets)).
+
 ## 6. The doorbell: a persistent desktop notification
+
+**The notifier is yolo's, not a broker's** ([BB-D71](#BB-D71)). Step 2 of the maintainer's path
+is *"generic support for yolo-jail sending (actionable) toasts"*, so the notifier is one host
+process per user, the **toast notifier** *(coined here: the host daemon that shows a pending
+request from any source's store as a desktop notification and writes the human's button press
+back as a decision; not the ping box, which carries answers to the agent)*. It is a front-end of
+the request store like `yolo approve` ([§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship)):
+
+- **Brokers only file requests.** The toast notifier watches every source's store, shows each
+  new pending request, and withdraws the notification when the request is decided by any
+  front-end or expires.
+- **One per user, started by the first launch whose broker can file requests**, and kept alive
+  while any such broker runs, under a lock like the Claude OAuth singleton's. A second launch
+  finds it running and starts nothing. It takes the session bus, and on macOS the GUI session, of
+  the launch that started it; a launch with neither starts none, and the next launch that has
+  one starts it then.
+- **A decision it writes goes through the store's one writer**, under the store's lock, like
+  every other front-end; the first decision written wins ([§7](#7-grants-and-the-request-store)).
+- **A broker restart no longer loses a shown notification**, since the notifier outlives it. A
+  notifier restart re-shows every pending request, as [§3.5](#35-failure-paths) says of a
+  broker restart.
+- **Its text comes from the source's own classifier rendering**, stored with the request, so a
+  second source needs no change to the notifier ([`git-broker.md` §3](git-broker.md#3-the-broker-core-what-step-1-factors-out)).
+
+The rest of this section was written for GitHub's requests with the notifier inside the broker.
+It holds for every source; wherever it says the broker shows, re-shows or withdraws a
+notification, or drives the notifier child, read the toast notifier.
 
 ### 6.1 Linux
 
@@ -1077,8 +1190,8 @@ How the desktops behave (MEASURED from their source unless marked):
 | swaync | yes, plus keys 1 to 9 | — | SOURCED only |
 
 **Two rules follow from that table.** The process that calls `Notify` must hold that same D-Bus
-connection until the request is decided, which is why the notifier lives in the broker and not in
-a helper that exits. And the broker connects only to the session bus named by the launch's own
+connection until the request is decided, which is why the toast notifier is a resident daemon
+and not a helper that exits. And the broker connects only to the session bus named by the launch's own
 `DBUS_SESSION_BUS_ADDRESS`, never falling back to `/run/user/<uid>/bus` or `dbus-launch`: a launch
 over SSH would otherwise pop an Allow button on an unattended desktop (godbus does both fallbacks,
 SOURCED from its source; the connection must be opened with auto-start off).
@@ -1230,7 +1343,7 @@ print a line only the broker knows: [§6.5](#65-when-there-is-no-notifier-or-nob
 notice line, `github-broker: r-… waits for approval: yolo approve r-…`, when there is no
 notifier. But the broker is a spawned per-jail daemon whose output goes to its log, nothing
 carries a line from it back to the launching process, and core cannot run `gh --version`
-itself without naming the tool. This decides whether step 2's no-notifier path says anything
+itself without naming the tool. This decides whether the no-notifier path, which turning writes on needs, says anything
 at the terminal. (It also used to decide where step 1's untested-version case was said; that case
 is gone since [BB-D70](#BB-D70).)
 
@@ -1245,15 +1358,41 @@ is gone since [BB-D70](#BB-D70).)
 - **C — Only where the broker already speaks:** the refusal text, `yolo check` and the log.
   [§6.5](#65-when-there-is-no-notifier-or-nobody-answers)'s terminal line becomes `yolo approve`'s own listing.
 
-### 6.6 One store, several front-ends
+### 6.6 One store, several front-ends, and a stable surface for the ones yolo does not ship
 
-The notification, `yolo approve`, and any later TUI or footer segment are all clients of one
-request store, and they decide nothing themselves: **the store is the API and the front-ends are
-dumb.** Authority stays with host processes that can open the store, never with an HTTP port: in
-bridge mode a jail reaches the host at `host.containers.internal`, so a loopback HTTP approval UI
-would be reachable by the very thing whose requests it approves. A web front-end, if ever wanted,
-is a thin local client of the store with its own operator credential
-([§A.6](#a6-recommendation--build-b1b-vendor-the-policy-engine-do-not-adopt-gh-broker)).
+The toast notifier, `yolo approve`, and any later TUI or footer segment are all clients of one
+request store, and they decide nothing themselves: **the store is the authority and the
+front-ends are dumb.** Authority stays with host processes that can open the store, never with
+an HTTP port yolo serves.
+
+**The CLI is the surface** ([BB-D72](#BB-D72)). Step 3 of the maintainer's path is *"host-side
+machinery as a CLI that can view/approve these access requests"*, and step 4 builds a web UI out
+of tree that *"plug[s] into the CLI or whatever generic surface gets exposed"*. So `yolo approve`
+becomes that surface, for every source, and its machine-readable output is a contract:
+
+| Spelling (the implementer's to finalize) | Does | Output |
+| :--- | :--- | :--- |
+| `yolo approve --json` | Lists pending requests and live grants, every source and jail | One JSON document: each request's id, source, jail, workspace, the set it asks for, the classifier's rendering, the repository or ref, filed and expiry times, state; each grant's id, holder, coverage, uses left, expiry |
+| `yolo approve --watch [--json]` | Follows the store until interrupted: the long-running view the colleague asked about | One line, or one JSON object, per event: request filed, decided, expired; grant used, ended, revoked. Opens with the current state, so a client that starts late misses nothing |
+| `yolo approve <id> [--for …] [--deny]`, `--revoke` | Decides, as today | Exit 0 on success; a stable non-zero code for "already decided", "unknown id" and "refused by policy", each with the next step in its message |
+
+- **Every JSON object carries `"schema": 1`.** A field is only ever added within a schema
+  number; a removal or a change of meaning bumps it, and the release notes say so.
+- **No push hook is built.** A UI or a Slack relay runs `yolo approve --watch --json` and acts
+  on each line; that gives an out-of-tree tool everything a hook would, with no second way for
+  yolo to run user code. If a relay needs yolo to start it, that is a later, additive key.
+- **`yolo audit --json` is the audit half of the surface**, unchanged, with the `--service`
+  filter the second source needs.
+
+> [!WARNING]
+> **An out-of-tree web UI must not accept approvals from the jails it approves.** In bridge
+> mode a jail reaches the host's loopback at `host.containers.internal`, so a UI listening on
+> `127.0.0.1` without its own operator credential lets the agent press its own Allow. yolo cannot
+> enforce this for a program it does not ship; the CLI's documentation says it in as many words.
+> A phone or remote approval is the UI's own design, for the same reason.
+
+What step 5 then decides is whether any such UI comes into the tree, with the surface already
+fixed by the CLI it was built on.
 
 ## 7. Grants and the request store
 
@@ -1622,76 +1761,105 @@ of unYOLO's ideas behind triggers. The asynchronous ruling fires three of them:
 | One-time decision tokens | approvals leaving the socket | **no**: every answer arrives at a host process over a channel the jail cannot reach | Nothing yet |
 | A separate operator listener | an HTTP UI | **no** | Nothing yet |
 
-## 11. Recommendation and the first build slice
+## 11. The build, in the maintainer's five steps
 
-**Build A.** Three steps, each shippable alone:
+**Build A**, in the order the maintainer set on 2026-10-23
+([§1.5](#15-the-maintainers-path-2026-10-23)). Each step ships alone; production writes stay
+refused with exit 77 until step 3 ends. Ledger rows written before 2026-10-23 number the old
+plan's steps: its step 1 was the GitHub read path, step 2 writes on Linux, step 3 macOS.
 
-1. **The read path and the audit log.** A `github` pack shipping the `github-broker` loophole
-   (off until enabled, R2 of [`loophole-system.md`](../reference/loophole-system.md#principles))
-   and the jail's `gh` forwarder; the broker's `gh` execution ([§4.1](#41-how-the-broker-runs-gh));
-   the classifier with the `read-only` set and the refusals; the repository scope, read at every
-   fresh launch, recorded as the approval record's scope part, shown as the scope block at the
-   head of the config-change diff, recorded by host `yolo check --accept-config-changes` too where
-   the check would start the broker, and handed to the broker in the launch's scope file
-   ([§5.6](#56-the-repository-scope), [BB-D30](#BB-D30) to [BB-D32](#BB-D32)); the audit log,
-   `yolo audit`, and the mount fence ([BB-D26](#BB-D26)). The forwarder is placed by [OQ-BB8](#15-decision-ledger)'s generic interception contribution.
-   Every read-write command returns exit 77 with *"writes need approval, which this version cannot
-   ask for"*, audited. Useful on day one: the agent reads PRs, runs and issues with no token in the jail.
-   The 77 comes at once, and since 2026-10-03 its message says that nothing waits and that the next
-   step is the host's ([BB-D66](#BB-D66)).
+| Step | His words | What yolo builds | Exists at `f9fcd599a` | New |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 | *"support for whatever loopholes you need/want with rw and ro support, maybe factoring out the CLI wrapping/proxy stuff"* | Brokered sources with read and write sets on a shared core | The GitHub source's read path, scope, audit, mount fence, the `intercept` kind, the host store and `yolo approve`, the delivery-gated write handler | The broker-core factoring and the git source ([`git-broker.md`](git-broker.md)); long-lived access ([§5.8](#58-long-lived-access-and-temporary-access)) |
+| 2 | *"generic support for yolo-jail sending (actionable) toasts on linux/mac"* | The toast notifier, a store front-end for every source ([§6](#6-the-doorbell-a-persistent-desktop-notification)) | Nothing: no notification code | All of it: D-Bus on Linux, terminal-notifier on macOS, the formula dependency and `yolo check` row |
+| 3 | *"host-side machinery as a CLI that can view/approve these access requests"* | `yolo approve` across sources, with `--json` and `--watch` ([§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship)); the answer path; then writes turned on | `yolo approve` for the github store, as text; `yolo gh status` and `wait` | The surface; the delivery dependency supplied in production; the answer path ([OQ-BB17](#OQ-BB17)) |
+| 4 | *"build your proposed web UI out of tree, and plug into the CLI"* | Nothing in the tree: the surface step 3 fixed, and its documentation | — | The CLI's documentation of the JSON contract and of the loopback warning |
+| 5 | *"talk about merging the web UI at this point"* | A conversation, with a UI that exists | — | — |
 
-   **Built 2026-09-29**, starting with the classifier, `ghbroker.Classify`, with its implementation
-   decisions recorded as [BB-D37](#BB-D37) to [BB-D45](#BB-D45). A review the same day found
-   gaps, fixed with a test each and recorded as [BB-D46](#BB-D46) to [BB-D51](#BB-D51): a
-   search-backed list whose text could reach past its repository, a host `gh` the agent could
-   have planted on a relative PATH entry, terminal sequences from agent-named paths and argvs,
-   the broker's shared log naming each workspace's scope, an uncapped read of the git config,
-   and a broker stopped mid-call leaving its `hosts.yml` copy behind. What step 1 did not build, and
-   why: the launch disclosure of a `GH_TOKEN` reaching the jail ([BB-D18](#BB-D18)), which waits on
-   [OQ-BB10](#OQ-BB10) or a `brokered` key of its own; the `agent` field of an audit line is empty, since the
-   forwarder cannot tell which agent ran it; and at that time a user-scope set definition could not be written, so `yolo check` had no
-   set definition to refuse ([§12](#12-what-done-looks-like) item 10).
-   Verified by unit tests, by `integration/githubbroker_test.go` (a real podman jail against a
-   fake host `gh`: a read, the refusals, a scope change at the next fresh launch, and an attach
-   that keeps the running scope) and on Linux only; the macos-user arm's gate is pinned by a unit
-   test through `Run`, but macos-user is unmeasured on a Mac, as [§4.4](#44-per-notch-and-backend)
-   says.
-2. **Writes on Linux.** The `read-write` set and set grants, user-scope set configuration
-   ([§5.7](#57-permission-sets)), the request store, the bounded wait, the D-Bus notifier,
-   `yolo approve`, and the answer as a ping. The ping needs `yolo notify` and its box, step 1 of
-   [`agent-event-watchers.md` §10](agent-event-watchers.md#10-what-i-would-build-in-order), and a
-   deliverer in the agent's pack to reach the model (steps 3 and 4 there, for Claude and pi). It
-   needs neither step 2 (the `sidecar` kind) nor step 6 (host-side sidecars, which wait on
-   [OQ-EW1](agent-event-watchers.md#14-decision-ledger)). Until a deliverer lands for an agent, `yolo gh status` carries the answer.
+### 11.1 Step 1: sources, read and write
 
-   **The widening entry built 2026-10-01**, first of step 2 since it waits on nothing else, as a
-   user-scope entry keyed by workspace ([BB-D52](#BB-D52)), and **rebuilt 2026-10-05 as the
-   workspace's own `brokered.github.repos`**, approved at the config-change gate
-   ([`workspace-widening.md`](workspace-widening.md)). Verified by unit tests through each call
-   site and by `integration/githubbroker_test.go`'s
-   `TestGitHubBrokerAWideningEntryAdmitsARepositoryForOneWorkspace`, a nested podman jail
-   against a fake host `gh`, on Linux only. The host store, `yolo approve`, and delivery-gated handler are built as described in [§7](#7-grants-and-the-request-store),
-   without production enqueue or write execution. Production delivery remains unbuilt, and two parts of it
-   wait on more than this step: the answer's ping on the doorbell above, which is not built, and
-   the no-notifier terminal notice on [OQ-BB10](#OQ-BB10), which is not ruled. The widening entry
-   needs neither.
-3. **macOS.** terminal-notifier as the notifier ([§6.2](#62-macos)): the broker driving it as a
-   child with the three choices, `@CLOSED` as a Deny, every other outcome re-showing the request
-   and never allowing it, and the first notification's Alerts line ([BB-D36](#BB-D36)); the dependency, on Apple silicon running macOS 14 or later, in the formula
-   [`release.yml`](../../.github/workflows/release.yml) generates, and the `yolo check` row
-   ([BB-D35](#BB-D35)); and the macos-user endpoint grant measured on a Mac. yolo's own signed
-   helper app replaces the dependency later, once the macOS release has a signing step
-   ([OQ-BB4](#15-decision-ledger)).
+**Built: the GitHub source's read path, 2026-09-29.** A `github` pack shipping the
+`github-broker` loophole, off until enabled; the jail's `gh` forwarder placed by the `intercept`
+kind ([OQ-BB8](#15-decision-ledger)); the broker's `gh` execution
+([§4.1](#41-how-the-broker-runs-gh)); the classifier with the `read-only` set and the refusals;
+the repository scope, read at every fresh launch, approved through the config-change gate and
+handed to the broker in the launch's scope file ([§5.6](#56-the-repository-scope),
+[BB-D30](#BB-D30) to [BB-D32](#BB-D32)); the audit log, `yolo audit`, and the mount fence
+([BB-D26](#BB-D26)). Its implementation decisions are [BB-D37](#BB-D37) to [BB-D45](#BB-D45),
+a same-day review's fixes [BB-D46](#BB-D46) to [BB-D51](#BB-D51), and the first in-jail use's
+[BB-D64](#BB-D64) to [BB-D68](#BB-D68). Every write returns exit 77 at once, saying that nothing
+waits and the next step is the host's ([BB-D66](#BB-D66)). Verified by unit tests and by
+`integration/githubbroker_test.go`, a real podman jail against a fake host `gh`, on Linux only;
+macos-user is unmeasured on a Mac ([§4.4](#44-per-notch-and-backend)). Not built in it: the
+launch disclosure of a `GH_TOKEN` reaching the jail ([BB-D18](#BB-D18)), and the audit line's
+`agent` field.
 
-[OQ-BB1](#15-decision-ledger), [OQ-BB2](#15-decision-ledger), [OQ-BB3](#15-decision-ledger), [OQ-BB4](#15-decision-ledger), [OQ-BB6](#15-decision-ledger),
-[OQ-BB7](#15-decision-ledger), [OQ-BB8](#15-decision-ledger) and [OQ-BB9](#15-decision-ledger) are ruled; step 2's widening entry,
-built in the workspace config, admits whole repositories that join the scope for every set. What still waits on a ruling:
-how a host daemon hands the launching terminal a line to print ([OQ-BB10](#OQ-BB10)), which step
-2's no-notifier notice needs. ([OQ-BB11](#15-decision-ledger), whether the merged config a jail can read
-keeps other workspaces' widening entries, is moot since the 2026-10-05 re-ruling of
-[OQ-BB6](#15-decision-ledger).)
+**Built: the widening entry, 2026-10-01**, rebuilt 2026-10-05 as the workspace's own
+`brokered.github.repos` ([`workspace-widening.md`](workspace-widening.md)), and since applied to
+a running jail by `yolo config apply` ([`live-config-apply.md`](live-config-apply.md)).
 
-**Testing constraints.** No test may call GitHub or start an agent. The classifier is tested on
+**Built: the host store, `yolo approve` and the delivery-gated handler, 2026-10-13**
+([§7](#7-grants-and-the-request-store)), without production enqueue or write execution.
+
+**Next, and the first slice of the 2026-10-23 plan**
+([`git-broker.md` §9](git-broker.md#9-the-first-slice)):
+
+1. **Factor the broker core** out of `internal/ghbroker`, with no behavior change: the github
+   source's tests pass unchanged, and a fake second source files, grants and audits through the
+   same core. Waits on nothing.
+2. **The git source's `read` set**: `git fetch`, `pull` and `ls-remote` in the jail through the
+   host's login, in scope, audited. Waits on [OQ-GB1](git-broker.md#OQ-GB1).
+3. **`push-own`**: a branch the agent creates is pushable again with no human, so the agent can
+   publish its own work before any notifier exists. Every other push answers 77, as gh's writes
+   do.
+
+Also in step 1, once ruled: long-lived access in the workspace config
+([§5.8](#58-long-lived-access-and-temporary-access), [OQ-BB16](#OQ-BB16)), and explicit set rules
+([OQ-BB15](#OQ-BB15)).
+
+### 11.2 Step 2: the toast notifier
+
+The toast notifier of [§6](#6-the-doorbell-a-persistent-desktop-notification): one per user,
+watching every source's store, on Linux through D-Bus ([§6.1](#61-linux)) and on macOS through
+terminal-notifier ([§6.2](#62-macos)), with the Homebrew formula's dependency on Apple silicon
+running macOS 14 or later and the `yolo check` row ([BB-D35](#BB-D35), [BB-D36](#BB-D36)).
+Linux and macOS land together, as the maintainer's *"linux/mac"* asks; macos-user's endpoint
+grant is measured on a Mac in the same step. Nothing in this step turns writes on: the toast
+can show a request only once one is filed. yolo's own signed helper app replaces
+terminal-notifier later, once the macOS release signs ([OQ-BB4](#15-decision-ledger)).
+
+### 11.3 Step 3: the CLI, the answer path, and writes
+
+1. **`yolo approve` for every source**, with `--json`, `--watch` and stable exit codes
+   ([§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship)),
+   and `yolo audit --service`.
+2. **The answer path.** Under [OQ-BB17](#OQ-BB17)'s leaning, the pending message tells the
+   agent to run `yolo <source> wait <id>` as a background task, which wakes the session; the
+   ping replaces it per agent as `yolo notify` and each pack's deliverer land
+   ([`agent-event-watchers.md` §10](agent-event-watchers.md#10-what-i-would-build-in-order)).
+3. **Writes turned on**: the production delivery dependency
+   ([§7](#7-grants-and-the-request-store)) is satisfied when a request can reach a human (the
+   toast notifier is running, or the no-notifier notice of [OQ-BB10](#OQ-BB10) is printed) and
+   its answer can reach the agent (step 2 of this list). Then GitHub's `read-write` set and git's
+   per-ref `push` file requests instead of answering 77.
+
+### 11.4 Steps 4 and 5
+
+yolo ships nothing for step 4 beyond step 3's documented surface; a UI is built against it, out of
+tree. Step 5 is a conversation about bringing one in.
+
+### 11.5 What still waits on a ruling
+
+- [OQ-GB1](git-broker.md#OQ-GB1), how git crosses, holds step 1's git source;
+  [OQ-GB2](git-broker.md#OQ-GB2) only how long a created-branch grant lives.
+- [OQ-BB17](#OQ-BB17), whether writes ship on the agent's own wait, holds step 3's writes.
+- [OQ-BB10](#OQ-BB10), the no-notifier notice, holds writes on a host with no notifier.
+- [OQ-BB15](#OQ-BB15) and [OQ-BB16](#OQ-BB16) hold their own features, nothing else.
+- [OQ-BB14](#OQ-BB14) holds nothing here; it decides host-run's future.
+
+### 11.6 Testing constraints
+
+No test may call GitHub or start an agent. The classifier is tested on
 argv alone, against a table pinned to a `gh` version; the executor against a fake `gh` that
 reports the environment, cwd and argv it received, which is how the refusals in
 [§5.5](#55-argv-hazards) get a test that fails when the scrub is deleted. The D-Bus notifier is
@@ -1770,6 +1938,15 @@ is.
     Intel Mac, or an Apple-silicon Mac before macOS 14, the tap install does not pull
     terminal-notifier; without it, `yolo check` with the github pack selected shows the row, and a
     request waits for `yolo approve`.
+19. Two jails, one in each of two workspaces, each file a request: one toast notifier process
+    shows both, and killing either jail's broker leaves the other's notification on screen.
+20. `yolo approve --watch --json` prints the current requests, then one line as each new request
+    is filed and one as it is decided, from any front-end; every object carries `"schema": 1`.
+21. A workspace config holding `read-write`, approved at the next fresh launch or by
+    `yolo config apply`, lets `gh pr comment` run with no request, audited as `held`; removing the
+    entry makes the next write ask again, with no approval needed for the removal.
+22. A write answered after the 30-second wait wakes a Claude Code session that ran the pending
+    message's background `yolo gh wait`, with no keystroke from the user.
 
 ## 13. What this does not cover, and the other two tiers
 
@@ -1785,11 +1962,11 @@ This design is the approve tier with the filter tier folded into it as the stand
 `read-only` set. Not
 covered:
 
-- **git transport.** `git push`/`fetch` stay the jail's business; B1b is the proxy that would
-  cover them, and nothing here waits on it.
-- **Other services.** The store, the notifier, `yolo approve` and the audit log are service-neutral
-  by construction (`service` in every record); a second broker is a new classifier, not a new
-  design. The AWS SSO case [`agent-credentials.md`](../reference/agent-credentials.md#sso-decision-ledger)
+- **git transport.** Designed as the second source in [`git-broker.md`](git-broker.md), whose
+  [OQ-GB1](git-broker.md#OQ-GB1) asks whether it is a proxied CLI or B1b, the proxy tier above.
+- **Other services.** The store, the toast notifier, `yolo approve` and the audit log are
+  service-neutral by construction (`service` in every record); a further source is a new
+  classifier on the broker core, not a new design. The AWS SSO case [`agent-credentials.md`](../reference/agent-credentials.md#sso-decision-ledger)
   parked here ([`OQ-SSO6`](../reference/agent-credentials.md#sso-decision-ledger)) is the likeliest second.
 - **Agent-internal prompts moved to the boundary.** The 2026-08 draft's use case B, gating every
   crossing the way an agent gates its own tool calls, is the long-run generalization of this
@@ -1802,7 +1979,7 @@ covered:
 ## 14. Open questions
 
 1. 💬 <a id="OQ-BB10"></a>**[OQ-BB10](#OQ-BB10): How does a host daemon hand the launching
-    terminal a line to print?** This decides whether step 2's no-notifier path says anything at
+    terminal a line to print?** This decides whether the no-notifier path, which turning writes on needs, says anything at
     the terminal. The line
     in question, and each option's cost:
     [a daemon's line at the launching terminal](#a-daemons-line-at-the-launching-terminal).
@@ -1813,7 +1990,7 @@ covered:
       line.**
     - **C — Only where the broker already speaks:** the refusal text, `yolo check` and the log.
 
-    <!-- vantage: question id=OQ-BB10 leaning="A: a notice file beside the daemon's socket, printed at readiness and tailed for the jail's life, because the later request notices need it and B is a subset of it." -->
+    <!-- vantage: oq id=OQ-BB10 leaning="A: a notice file beside the daemon's socket, printed at readiness and tailed for the jail's life, because the later request notices need it and B is a subset of it." -->
 
     _Leaning:_ **A.** It is the only option that serves [§6.5](#65-when-there-is-no-notifier-or-nobody-answers)'s notices after the launch, which
     the no-notifier path depends on, and B's start-up case is a special case of it.
@@ -1832,7 +2009,7 @@ covered:
     - **B — Allow once from a notification**: one digest, one use, 15 minutes, never a standing
       grant. Less friction; a click takes less attention than reading and pasting a line.
 
-    <!-- vantage: question id=OQ-BB14 leaning="A — a button that runs any command is the general RPC BB-P6 forbids, and reading the line is the only review host-run has." -->
+    <!-- vantage: oq id=OQ-BB14 leaning="A — a button that runs any command is the general RPC BB-P6 forbids, and reading the line is the only review host-run has." -->
 
     _Leaning:_ A — a button that runs any command is the general RPC BB-P6 forbids, and reading the line is the only review host-run has.
 
@@ -1847,11 +2024,53 @@ covered:
     - **A — Replace:** the explicit list is the complete set; omitted default reads disappear.
     - **B — Augment:** the explicit list adds to the named default; a custom set has no base rules.
 
-    <!-- vantage: question id=OQ-BB15 -->
+    <!-- vantage: oq id=OQ-BB15 leaning="B: augment. The launch disclosure already reads read-only (+ pr comment), a user adding one write means to add, and replace would drop every default read on a short list." -->
 
-    No leaning is implemented. Every explicit list, including empty, currently fails closed;
-    absence alone retains default rules. Flag predicates and API-pattern spelling also need
-    a defined grammar before those rules can run.
+    _Leaning:_ B: augment. The launch disclosure already reads `read-only (+ pr comment)`, a user adding one write means to add, and replace would drop every default read on a short list.
+
+    Until it is ruled, every explicit list fails closed ([§7](#7-grants-and-the-request-store)).
+
+    **Answer:**
+    > _(empty — fill in when decided)_
+
+4. 💬 <a id="OQ-BB16"></a>**[OQ-BB16](#OQ-BB16): Which sets may a workspace hold as long-lived
+    access?** An agent adds `read-write` to its workspace's `brokered.github.hold`; at the next
+    launch the human sees one more row in the scope block and presses y. This decides whether
+    that row can hand over merges and deletes for good
+    ([§5.8](#58-long-lived-access-and-temporary-access)).
+
+    - **A — Any set the source defines.** One rule; the y is the safeguard, as for
+      `brokered.github.repos`. The row is easy to approve without reading.
+    - **B — Only sets the user scope marks holdable** (`"holdable": true`). The user decides
+      once which sets can ever be held; the defaults ship none holdable, so `read-write` is
+      never held unless the user says so.
+    - **C — None yet.** Long-lived access waits for a use; only grants exist.
+
+    <!-- vantage: oq id=OQ-BB16 leaning="B: the maintainer put long-lived access in the workspace config, and B keeps it there while the user, not the agent, decides which sets a y can hand over for good." -->
+
+    _Leaning:_ B: the maintainer put long-lived access in the workspace config, and B keeps it there while the user, not the agent, decides which sets a y can hand over for good.
+
+    **Answer:**
+    > _(empty — fill in when decided)_
+
+5. 💬 <a id="OQ-BB17"></a>**[OQ-BB17](#OQ-BB17): May writes ship with the agent's own
+    background wait as the answer path, before `yolo notify` exists?** An agent's push waits
+    past 30 seconds and gets exit 75. The ping that would wake it is held by three open
+    questions in [`agent-event-watchers.md`](agent-event-watchers.md). This decides whether
+    writes wait for them ([§3.3](#33-the-answer-comes-back-through-the-doorbell)).
+
+    - **A — Wait for the ping.** One answer path, every agent with a deliverer; writes stay 77
+      until it lands.
+    - **B — Ship on the background wait.** The pending message names `yolo <source> wait <id>`;
+      Claude Code wakes on it today, an agent with no background tasks polls `status`, and the
+      ping replaces it per agent later.
+
+    <!-- vantage: oq id=OQ-BB17 leaning="B: it is the child-process wake the maintainer suggested, it is built, and it puts writes behind the toast and the CLI he ordered first rather than behind the doorbell's open questions." -->
+
+    _Leaning:_ B: it is the child-process wake the maintainer suggested, it is built, and it puts writes behind the toast and the CLI he ordered first rather than behind the doorbell's open questions.
+
+    **Answer:**
+    > _(empty — fill in when decided)_
 
 ## 15. Decision Ledger
 
@@ -1929,7 +2148,7 @@ covered:
 | <a id="BB-D62"></a>[`BB-D62`](#15-decision-ledger) | *Implementation decision,* answering a field report that the host gh's login is broad (`repo`, `read:org`, `gist`), so the classifier's parse is the only barrier, and asking for it to be fuzzed. Two Go native fuzz targets throw argv at `ghbroker.Classify`: `FuzzClassify` (a whole argv and the forwarder's repository) and `FuzzAPIEndpoint` (a `gh api` endpoint with a method and a field). Every call the broker would run, standing or windowed, goes to an **oracle** *(coined here)*: an independent reading of the canonical argv the way gh 2.101.0 and GitHub would take it, written from the grammar table and from what gh was MEASURED to send ([BB-D58](#BB-D58) to [BB-D61](#BB-D61)) rather than from the classifier's code. It resolves the command as cobra walks it, parses flags as pflag does (a search's `--repo` as CSV), reads every `--repo`, repository placeholder, repository flag and github.com URL, treats organization and user flags, search widening and GraphQL as account-wide, refuses a dot segment in a word gh puts into a path, and reads a `gh api` path under six server readings (split then decoded, decoded once whole, decoded to a fixpoint, with `\` as `/`, with empty segments collapsed, each with dot segments resolved). The property: an allowed call reaches only in-scope repositories and never the account, unless it is one of the commands that read nothing the login makes private. The seed corpus holds the report's cases (`..`, `?` and `#` in endpoints, `--hostname` and `-h`, `-F field=@file` and `--field`, `-f`, `--input`, repeated `-X`, flags after `--`, endpoints with a scheme or a host) and reproduced [BB-D59](#BB-D59) and [BB-D60](#BB-D60), which a flag sweep and the measurements found first. Run 2026-10-03, `FuzzClassify` for four runs of about 16 minutes in all, the last 8 minutes and 33.5 million executions with no failure, and `FuzzAPIEndpoint` for 5 minutes and 22.4 million executions with none, it found four more, each fixed with a failing test first and its input kept under `testdata/fuzz/FuzzClassify/`: one argv word holding a space (`"label clone"`) resolved as a two-word command gh itself calls unknown; an empty `issue transfer` or `label clone` repository skipped the scope check; a github.com URL argument with an encoded path (`https://github.com/o%2Fr/`) read as `o/r` decoded, so such a URL is now refused naming `-R`; and a search's `--repo 'o/r '` was checked trimmed while gh sends `repo:"o/r "` (MEASURED), so a name is now checked as sent. None reached another repository through the host gh as measured. A further test pins that the oracle flags the shapes it exists for. The oracle does not model GitHub's own path decoding, Unicode normalization or what a GraphQL query reaches, all UNMEASURED, and a per-repository fine-grained token as a second, server-side barrier is [§4.5](#45-the-alternative-mint-a-narrow-token)'s later credential source, not built | 2026-10-03 | [§5.1](#51-the-rule), [§5.5](#55-argv-hazards) | built: `ghbroker.FuzzClassify`, `ghbroker.FuzzAPIEndpoint` and the oracle `ghbroker.ghReach`, pinned by `TestTheFuzzOracleCatchesWhatItIsFor`; the findings by `TestClassifyWhatTheFuzzerFound` |
 | <a id="BB-D64"></a>[`BB-D64`](#15-decision-ledger) | *Implementation decision,* revising [BB-D5](#BB-D5) after the first in-jail use (2026-10-03), whose report said every agent meets this refusal once. `--jq` and the formatting `--template` run on the host, inside the brokered `gh`, over the output it is about to print. What they reach there is that output and `gh`'s environment, which [§4.1](#41-how-the-broker-runs-gh) builds from nothing. MEASURED against `gh` 2.101.0, with that environment and a fake login in `hosts.yml`: `--jq env` printed exactly the broker's variables plus `TCELL_MINIMIZE`, which `gh` sets itself; `input`, `inputs`, `import` and `include` of an absolute path, `input_filename`, `$__loc__`, `debug` and `stderr` each failed; a template has no `env`, `expandenv`, `readFile` or `include`. SOURCED in the go-gh v2.16.1 and gojq v0.12.19 that `gh` 2.101.0 links (`go version -m`): `gh` compiles a filter with an environment loader alone, so no module loader, input iterator or added function, and no gojq builtin opens a file, a connection or a process; the template functions are formatting ones and five of sprig's string functions. So a filter prints nothing the jail may not have, and [OQ-C](#15-decision-ledger)'s rule, refuse a command whose output is dangerous rather than filter it, has nothing to refuse. A filter is never query text, so the search rule ([BB-D46](#BB-D46)) skips it. The environment's variable names become a reviewed list a test pins, since `--jq env` prints every one. **Residual, stated:** the filter computes on the host. `[range(1e9)]` grew `gh` until it ran out of memory (MEASURED under a 3 GB address-space limit); the 300-second timeout bounds its time, and nothing bounds its memory. That reach is not new: the broker caps no `gh`'s memory, and its listener starts one handler per connection with no limit (INFERRED from `hostservice.serveListener`), so enough concurrent reads already reach the same. A cap on either is not built | 2026-10-03 | [§5.2](#52-the-read-only-set), [§5.4](#54-never-brokered), [§5.5](#55-argv-hazards) | built: the two cases gone from `ghbroker.globalFlagRefusal`, `ghbroker.apiFlags` and `ghbroker.isOutputFilter`, pinned by `TestClassify`, `TestServeRunsAJqFilterWhoseEnvironmentHoldsNoToken` and `TestTheEnvironmentAJqFilterCanReadIsExactlyTheReviewedSet` |
 | <a id="BB-D65"></a>[`BB-D65`](#15-decision-ledger) | *Implementation decision.* A jail's `gh auth status` is answered by the broker, and the host `gh` never runs the jail's argv for it. The answer is `github.com`, then `✓ Logged in to github.com account <login> through yolo's github-broker; the token stays on the host`, then the repositories this jail can use, exit 0. The first two lines keep `gh`'s own wording, so a script that looks for them still matches. The login is the host `gh`'s active github.com account, asked with the broker's own `auth status --hostname github.com --active --json hosts`, of which only the login and the state of `gh`'s check of it are used. `--json hosts` gets `gh`'s shape, with the token source `github-broker (host)` and no scopes; another field gets `gh`'s own message and exit 1; `--jq` and `--template` are refused, naming the pipe that does the same; `--help` runs `gh`. No usable host login is exit 69 with the message every other call gets. Reported from a jail 2026-10-03: `gh`'s own answer named the path of the run dir's `hosts.yml` copy, the token's prefix and its scopes, which mean nothing in the jail and decide nothing there, since the sets and the scope do. This is the one place the broker speaks for `gh`. It is not the filtered result [OQ-C](#15-decision-ledger)'s rule forbids, which is a dangerous command's output trimmed and passed on: nothing here was dangerous, and no part of `gh`'s output passes. The maintainer can overturn it | 2026-10-03 | [§4.2](#42-what-crosses-back), [§5.2](#52-the-read-only-set) | built: `ghbroker.Broker.answerAuthStatus` and `ghbroker.Runner.ActiveAccount`, pinned by `TestServeAnswersAuthStatusItself`, `TestServeAnswersAuthStatusJSONWithoutTheHostsFacts`, `TestServeAuthStatusWithNoHostLoginSaysSo` and `TestServeRefusesAFilterOnAuthStatusAndNamesThePipe` |
-| <a id="BB-D66"></a>[`BB-D66`](#15-decision-ledger) | *Implementation decision,* answering a question from the first in-jail use (2026-10-03): the briefing's *"writes wait for an approval step that is not built yet"* did not say whether a write fails or hangs. It fails at once, and it always did: step 1 classifies a write and returns 77 (`EX_NOPERM`, [BB-D6](#BB-D6)) before any wait, since it has no request store and no notifier to wait on; [§3.2](#32-a-write-and-the-bounded-wait)'s 30-second wait arrives with them in step 2. The code is kept, not a new one: in step 1, 77 already means a call that needs an approval this version cannot ask for, a write (and, until [BB-D70](#BB-D70), any call to an untested `gh`), apart from 64 (refused) and 69 (no broker or no login), and step 2 keeps it for a Deny. What changed is the message, to the standard the refusals keep: the reason (a write acts on GitHub with the host user's login, so it needs that user's approval, and that step is not built), that nothing ran and nothing is waiting, the code, and the next step (ask the user to run it on the host, where `yolo audit --set read-write` shows the exact command). The untested-`gh` 77 gained its next step the same way, `gh` 2.101.x on the host or the command run there, until [BB-D70](#BB-D70) removed that 77. The manifest's description says the same | 2026-10-03 | [§11](#11-recommendation-and-the-first-build-slice) | built: `ghbroker.Broker.Serve`, pinned by `TestServeAnswersEveryWrite77AndRunsNothing` and the write's timing in `TestForwardThroughTheFront` |
+| <a id="BB-D66"></a>[`BB-D66`](#15-decision-ledger) | *Implementation decision,* answering a question from the first in-jail use (2026-10-03): the briefing's *"writes wait for an approval step that is not built yet"* did not say whether a write fails or hangs. It fails at once, and it always did: step 1 classifies a write and returns 77 (`EX_NOPERM`, [BB-D6](#BB-D6)) before any wait, since it has no request store and no notifier to wait on; [§3.2](#32-a-write-and-the-bounded-wait)'s 30-second wait arrives with them in step 2. The code is kept, not a new one: in step 1, 77 already means a call that needs an approval this version cannot ask for, a write (and, until [BB-D70](#BB-D70), any call to an untested `gh`), apart from 64 (refused) and 69 (no broker or no login), and step 2 keeps it for a Deny. What changed is the message, to the standard the refusals keep: the reason (a write acts on GitHub with the host user's login, so it needs that user's approval, and that step is not built), that nothing ran and nothing is waiting, the code, and the next step (ask the user to run it on the host, where `yolo audit --set read-write` shows the exact command). The untested-`gh` 77 gained its next step the same way, `gh` 2.101.x on the host or the command run there, until [BB-D70](#BB-D70) removed that 77. The manifest's description says the same | 2026-10-03 | [§11](#11-the-build-in-the-maintainers-five-steps) | built: `ghbroker.Broker.Serve`, pinned by `TestServeAnswersEveryWrite77AndRunsNothing` and the write's timing in `TestForwardThroughTheFront` |
 | <a id="BB-D67"></a>[`BB-D67`](#15-decision-ledger) | *Implementation decision,* on a report from the first in-jail use (2026-10-03): `type gh` names `~/.yolo/bin/block/gh`, and a directory called `block` makes `gh` look blocked to whoever is debugging. The intercept stays where it is. [OQ-BB8](#15-decision-ledger)'s ruling puts it in `~/.yolo/bin/block` (*"take your leaning of A where we're putting a shim in there"*), and that directory is first on `PATH` because interception has to outrank installation ([`AGENTS.md`](../../AGENTS.md)'s PATH order). `~/.yolo/bin/launch` is the lazy installers' directory, under the opposite rule: no launcher is written for a name `/bin` already provides. Moving the shim would change a ruled placement for a cosmetic gain. It is made legible instead: its first lines say it is not a blocker, whose forwarder it is, what it runs, and what `YOLO_BYPASS_SHIMS=1` runs behind it, and the github pack's briefing names the path ([BB-D68](#BB-D68)) | 2026-10-03 | [§4.3](#43-the-jail-side) | built: `entrypoint.InterceptShimContent`, pinned by `TestAnInterceptSaysItIsAForwarderNotABlocker` |
 | <a id="BB-D68"></a>[`BB-D68`](#15-decision-ledger) | *Implementation decision,* on the first in-jail use's report (2026-10-03) that every agent learns each rule by failing once. The github pack ships a briefing, `packs/github/briefing/gh.md`, which the `briefing/` convention delivers to every agent in a jail that selects the pack. It says: `gh` is the forwarder at `~/.yolo/bin/block/gh` and not a blocker ([BB-D67](#BB-D67)); reads are `gh`'s own, and `--jq` and `--template` work ([BB-D64](#BB-D64)); a write exits 77 at once and is the user's to run on the host ([BB-D66](#BB-D66)); exit 64 says why and what to do instead, and raw `gh api graphql` is always refused while `gh`'s own commands, which use GraphQL inside, work; a slash in a branch name is percent-encoded in a `gh api` path, by [§5.3](#53-gh-api)'s decoding rule; `gh auth status` names the login ([BB-D65](#BB-D65)); exit 69 is no broker or no host login. Short on purpose: each refusal carries its own reason and next step, and the briefing says only what an agent would otherwise learn by failing. The loophole's one-line description in the briefing's loophole list says the write rule too | 2026-10-03 | [§4.3](#43-the-jail-side) | built: `packs/github/briefing/gh.md`, pinned by `TestTheGitHubPackBriefsEveryAgentOnGHInTheJail` through `stagePacks` and `refreshJailBriefings` |
 | <a id="BB-D69"></a>[`BB-D69`](#15-decision-ledger) | *Implementation decision, taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible.* MEASURED 2026-10-04: `yolo host apply --assert` with the packs `claude` and `github` wrote [BB-D68](#BB-D68)'s "`gh` in this jail" section, which names the forwarder at `~/.yolo/bin/block/gh`, into `~/.claude/CLAUDE.md`, while the same run's notch line said `intercept` does not apply at the host ([BB-D17](#BB-D17)). At the host `gh` is the user's own, so the prose was false there. A briefing content contribution may now declare `describes`, the kinds of its own pack's contributions its prose is about, and its files are delivered only where every named kind applies. The github pack declares `{"kind": "briefing", "from": "briefing/gh.md", "describes": ["intercept"]}`; the text is unchanged, and so is its delivery in a jail. The predicate names a kind, never a notch, as [pack-system.md §6c](../reference/pack-system.md#batch-6c) requires. At the host a kind applies for the pack when some host verb delivers one of the pack's own contributions of it: `yolo host apply` renders it, or `yolo host --` delivers it at launch. The answer is per contribution, and it is the one the apply's notch line prints (`entrypoint.HostDelivery`, built from that line's per-contribution outcome), so prose about a loophole with no doorway at the host is withheld in the run whose notch line says that loophole does not apply. As first built the gate answered per kind, and so delivered that prose, since some loopholes do have a doorway at `yolo host --`; review found it on 2026-10-05, before any pack shipped such a case. `yolo pack lint` has no pack set, so it falls back to the per-kind answer (`render.HostDelivers`), which settles a kind no host verb delivers in any shape, and for a kind whose answer depends on the contribution it says what the answer turns on. The host composer leaves a withheld file out of every destination. A pack whose every file in a destination it only borrowed is withheld is no longer one of that destination's owners, so the report names it `claude/briefing`; the adoption gate and the retire pass compose the same way. `yolo host apply` names each withheld file once, in its notch line (`github: briefing/gh.md describes intercept, which does not apply at the host — it reaches agents in a jail`), its destinations report under `--verbose` claims no delivery of one, and `yolo pack lint` names the gate on the file's delivery line. The jail composer does not read the field. The strict decoder refuses `describes` off briefing content, on a briefing destination, naming `briefing`, naming an unknown kind, or naming a kind the manifest does not declare. The last two run on the strict path only, so a jail reading a newer pack's manifest still boots | 2026-10-05 | [§4.4](#44-per-notch-and-backend) | built: `packdecl.Contribution.Describes`, `entrypoint.HostDelivery`, `entrypoint.HostDeliveredBriefing` and `render.HostDelivers`, pinned by `TestApplyHostWithholdsTheGitHubBriefingFromARealHome`, `TestApplyHostWithholdsProseAboutALoopholeTheHostOpensNoDoorwayFor`, `TestApplyHostVerboseClaimsNoDeliveryTheGateWithheld`, `TestComposeHostBriefingsForWithholdsByTheRequestsCensus`, `TestComposeHostBriefingsWithholdsProseAboutAKindTheHostDoesNotDeliver`, `TestComposeHostBriefingsAPackWithOnlyWithheldProseOwnsNothingItBorrowed`, `TestDescribesIsRefusedOffBriefingContent` and `TestPackLintNamesTheDescribesGateOnTheDeliveryLine` |
@@ -1943,6 +2162,9 @@ covered:
 | OQ-BB12 | **Maintainer ruling:** B, a file beside the user config, per project, written by the command; the user config is never edited. *"I don't want to do anything that edits the user config directly. We can edit a file that lives next to it of a different name or whatever. Obviously, this should be generic for any loophole or other things that need to be per project, I guess. We're looking for a per workspace properties folder or something like that. Unclear exactly where to put it. but I don't want to do anything ugly like trying to edit the user's configuration because it always leaves that a mess"* | 2026-10-01 | [§5.6](#56-the-repository-scope) | built: the per-workspace file and its command ([BB-D53](#BB-D53), [BB-D54](#BB-D54), [BB-D56](#BB-D56), [BB-D57](#BB-D57)) |
 | OQ-BB13 | **Maintainer ruling:** A, the broker is turned on per project only, for now. *"And yes, I think we should go with this manual enabling only for now. We will worry about a more global enabling another time."* | 2026-10-01 | [§5.6](#56-the-repository-scope) | built: [BB-D55](#BB-D55) |
 | OQ-BB11 | *Obviated, not ruled:* moot, a consequence of the 2026-10-05 re-ruling of [OQ-BB6](#15-decision-ledger): with no user-scope widening entry the delivery copy carries only this workspace's own, so no filter is built ([WW-D7](workspace-widening.md#WW-D7)) | 2026-10-05 | [§9.7](#97-the-delivery-copy-and-other-workspaces-widening-entries) | nothing to build: moot since [`workspace-widening.md`](workspace-widening.md) was built ([WW-D7](workspace-widening.md#WW-D7)); a copy already written keeps the old key until that workspace's next successful fresh launch |
+| <a id="BB-D71"></a>[`BB-D71`](#15-decision-ledger) | *Implementation decision,* carrying out step 2 of [BB-D73](#BB-D73). The notifier is one per-user host daemon, the toast notifier, that watches every source's store and writes decisions through the store's one writer; brokers only file requests. It outlives a broker restart, takes the session bus or GUI session of the launch that started it, and renders each request from the text its source's classifier stored with it. *Replaces* the notifier inside each broker that [§6](#6-the-doorbell-a-persistent-desktop-notification) first described | 2026-10-23 | [§6](#6-the-doorbell-a-persistent-desktop-notification) | — |
+| <a id="BB-D72"></a>[`BB-D72`](#15-decision-ledger) | *Implementation decision,* carrying out steps 3 and 4 of [BB-D73](#BB-D73). `yolo approve` is the surface an out-of-tree UI builds on, for every source: `--json`, `--watch` with one event per line that opens with the current state, stable exit codes, and `"schema": 1` on every object, bumped only for a removal or a change of meaning. No push hook is built, since a relay running `--watch --json` gets the same; one can be added later without changing the surface. Reversible | 2026-10-23 | [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship) | — |
+| <a id="BB-D73"></a>[`BB-D73`](#15-decision-ledger) | **Maintainer direction,** from a Slack thread with a colleague who built his own approval flow. The build order: (1) loopholes with read and write support, factoring out the CLI proxy machinery; (2) generic actionable toasts on Linux and macOS; (3) a host CLI that views and approves requests; (4) a web UI out of tree on that CLI; (5) then talk about merging it. *"I think my comments here lay out a clear path."* Also: long-lived access *"probably belongs in the workspace's yolo config"*, temporary access does not; the answer should wake the agent rather than leave it to be kicked; an audit of the exact commands run with the access is *"a nice touch"*, which [§8](#8-audit) already is | 2026-10-23 | [§1.5](#15-the-maintainers-path-2026-10-23), [§11](#11-the-build-in-the-maintainers-five-steps) | partly: the GitHub read path and its audit (step 1's first source) |
 
 ## Appendix A — prior art: unYOLO, re-analyzed from source (2026-08-12)
 
@@ -2223,16 +2445,16 @@ wholesale, not ignore.** The four decisive facts, in order of weight:
   separate executor process, and a re-check at execution — unYOLO has all three; the synchronous first
   step this doc planned then deliberately had none. Ceremony until then. **Trigger:** B2 step 4 (the durable queue).
 - **`expected_revision` + idempotency keys.** These exist to stop two operators double-approving.
-  A single foreground `yolo approve` cannot race itself. **Trigger:** the second front-end in [§6.6](#66-one-store-several-front-ends)
+  A single foreground `yolo approve` cannot race itself. **Trigger:** the second front-end in [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship)
   actually being built — at which point take it rather than re-deriving it.
 - **One-time decision tokens.** Their purpose is to make an *out-of-band* channel (Telegram
   callback buttons) unforgeable. yolo's approval path is a unix socket whose posture is already
   "the socket file is the authentication." **Trigger:** approvals ever leaving the socket.
 - **The grant store** (SQLite + goose). Not separable from `authorization/grants` in any case, and
   the first step this doc planned then was synchronous by design.
-- **A separate operator listener with distinct credentials.** Still the right answer to [§6.6](#66-one-store-several-front-ends)'s
+- **A separate operator listener with distinct credentials.** Still the right answer to [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship)'s
   caution — but that caution only bites if the approval UI is HTTP. Keep authority in the unix
-  socket and the problem does not arise. **Trigger:** the web UI in [§6.6](#66-one-store-several-front-ends).
+  socket and the problem does not arise. **Trigger:** the web UI in [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship).
 
 **The one vendoring option, if the policy model is wanted verbatim:** `authorization/policy` +
 `authorization/budget` + `internal/copyx` are MIT, **stdlib-only**, ~2,100 lines with a 1,456-line

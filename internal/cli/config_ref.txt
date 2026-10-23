@@ -2691,42 +2691,46 @@
       Every backend: on macos-user the launch hands the switch to the sandbox's
       bootstrap, which runs the same boot catalog (notch-convergence.md NC-D71).
       Not yet run on a Mac.
-    • [bold]overrides[/bold] (object, keyed by program name, [bold]default none[/bold]): Point one
-      program at a checkout you are developing, so its bytes come from your own directory
-      instead of the pack's copy. The name is the program's bin as its pack declares it.
+    • [bold]overrides[/bold] (object, keyed by program name, [bold]default none[/bold]): Build one
+      program from a checkout you are developing, in place of its pack's own source. The
+      name is the program's bin as its pack declares it.
         "overrides": {
-          "board": { "path": "~/code/board-cli" },
-          "pi":    { "path": "~/code/pi", "run": "packages/coding-agent/dist/cli.js" }
+          "board": { "path": "~/code/board-cli" }
         }
-      Each entry takes [bold]path[/bold] (required): the directory the program runs from, an
-      absolute path or one starting with ~/. A relative path, ~user/, an empty value, or any
-      other type is a validation error naming the key to fix. [bold]run[/bold] (optional): the
-      file inside that directory to run, relative to it. An absolute path, a ".." segment, or
-      an empty value is a validation error. Without [bold]run[/bold], the program's own run is
-      used. An unknown key inside an entry is an error, so a misspelling cannot pass silently.
-      A bad entry is ignored at launch with a warning naming it, and its valid siblings
-      still apply. A malformed user config applies no override at all.
+      Each entry takes [bold]path[/bold] (required): the checkout, an absolute path or one
+      starting with ~/. A relative path, ~user/, an empty value, or any other type is a
+      validation error naming the key to fix. An unknown key inside an entry is an error, so
+      a misspelling cannot pass silently; the former [bold]run[/bold] is no longer read, and
+      its error says the pack's own run is used. A bad entry is ignored at launch with a
+      warning naming it, and its valid siblings still apply. A malformed user config applies
+      no override at all.
       USER SCOPE ONLY. A workspace value is a validation error that names this file, because
       a repo-committed, agent-editable file must not choose which bytes your programs run.
       Overrides are not inherited by a nested launch: the inner jail reads its own user
       config.
-      Applied at each fresh launch on podman and Apple Container, to any program a selected
-      pack declares, whatever its via: the program runs <path>/<run> as found, with no
-      install and no build, and never falls back to the pack's copy. A path inside the
-      workspace runs from /workspace/<rel>; any other is bound read-only at
-      /ctx/program-overrides/<bin>. Either way an edit there shows at the next invocation,
-      with no relaunch. Every launch and attach prints which file runs. The program is
-      refused, and the launch stops as for any program that cannot be installed
-      (YOLO_ALLOW_MISSING_PROGRAMS=1 starts it anyway), when the path does not resolve to a
-      directory, is or contains your home, this config directory or yolo's state directory,
-      names no file to run, or the file is missing or not executable. A change to this key
-      takes effect at the next fresh launch. An override naming a program no selected pack
-      declares does nothing; `yolo check` lists it. On macos-user the program runs the
-      checkout at its own path, a checkout outside the workspace is linked read-only at
-      $YOLO_CONTEXT_DIR/program-overrides/<bin>, and the sandbox may read and run it but
-      not write it; a checkout a `mounts` entry could not use there (one in a home folder,
-      in the account mode) refuses that program. Not yet applied by `yolo host`, which says
-      so.
+      Applies only to a program its pack builds from its own tree (via "pack"). At each
+      fresh launch, `yolo host` launch and `yolo pack build`, on every backend, the program
+      is built from the checkout exactly as from the pack's tree: the pack's own build and
+      run, the same sealed build and store, keyed by the checkout's contents as they sit on
+      disk (uncommitted edits and git-ignored files included, .git skipped). An unchanged
+      checkout reuses its build; an edit is built at the next fresh launch, never in a
+      running jail. Every launch prints a line naming the checkout and whether it was
+      rebuilt or reused. A build that fails stops the launch as any failed build does
+      (YOLO_ALLOW_MISSING_PROGRAMS=1 starts it anyway), and never falls back to the pack's
+      copy. The program is refused when the path does not resolve to a directory, or is or
+      contains your home, this config directory or yolo's state directory. An override of
+      any other program a selected pack declares refuses the launch, naming the way to build
+      it from a checkout: a fork pack (via "source", fork_of, and a git+file:// source). An
+      override naming a program no selected pack declares does nothing; `yolo check` lists it.
+      An entry may instead be [bold]{ "prebuilt": true }[/bold]: run the pack's verified
+      prebuilt artifact for a program built from its pack's tree (via "pack"), even when the
+      pack ships its source. yolo never swaps a prebuilt in on its own: a source that cannot
+      be built here (a Mac with no sandbox account, say) is refused, naming the setup step
+      and this setting. With it set, every launch, `yolo host` and `yolo pack build` fetch
+      the artifact, check its sha256 and print a line naming it. A pack with no prebuilt for
+      the platform refuses the program, naming the platforms it does declare. "prebuilt"
+      and "path" in one entry is a validation error naming both.
+        "overrides": { "board": { "prebuilt": true } }
 
   [bold]resources[/bold] (object): Container resource limits.
     Sets hard cgroup constraints on the jail container via podman flags.

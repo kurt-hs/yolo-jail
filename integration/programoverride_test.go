@@ -5,145 +5,136 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/provision"
 )
 
 // programoverride_test.go is the container-level cell for a DEV OVERRIDE
-// (docs/design/pack-buildable-programs.md §5): `programs.overrides.<bin>` in the user config makes
-// the jail run that program from a checkout in the workspace, the launch names the override, and an
-// edit in the checkout shows at the next invocation with no fresh launch — the design's done step 4.
+// (docs/design/pack-buildable-programs.md §5, OQ-BG3's ruling): `programs.overrides.<bin>` in the
+// user config makes each fresh launch BUILD that program from the user's checkout, in place of its
+// pack's tree, with the pack's own build line, keyed on the checkout's tree digest — the design's done
+// step 4: set the override; relaunch, and it builds from the checkout and the launch names it;
+// relaunch unchanged, and nothing is rebuilt; edit the checkout and relaunch, and it rebuilds.
 //
-// THE PACK'S BUILD IS `exit 3`, and the readiness act is ON (withReadiness), so the test also proves
-// the override wins over the build: had the launch built the pack's tree, the build would fail and
-// the readiness act would refuse the launch.
-//
-// HERMETIC: the pack is a `file://` directory, the checkout a shell script in the workspace.
+// HERMETIC: the pack is a `file://` directory and the checkout a directory beside it, each holding a
+// VERSION file; the pack's build line writes a script printing that VERSION. The capture store is a
+// private fixture one (withPrivateFixtureYoloStore).
 
 const (
 	overrideFixturePack = "overridefx"
 	overrideFixtureBin  = "overridefx-x"
+	overrideBuiltLine   = "built program " + overrideFixturePack + "/" + overrideFixtureBin + " (built from your checkout "
 )
 
-// overrideFixture writes the pack and the user config overriding its program with dir/dev/x, and
-// returns the checkout's script path.
-func overrideFixture(t *testing.T, ws string) string {
+// overrideFixture writes the pack, whose tools/x says "pack", and a checkout outside any workspace,
+// and the user config overriding the program with that checkout. It returns the checkout and the
+// capture store. The build fails where the tree has no VERSION, so a checkout without one breaks it.
+func overrideFixture(t *testing.T) (checkout, store string) {
 	t.Helper()
 	pack := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(pack, "tools", "x"), 0o755); err != nil {
-		t.Fatal(err)
+	writeFile := func(path, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := os.WriteFile(filepath.Join(pack, "tools", "x", "VERSION"), []byte("1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(pack, "pack.json"), []byte(`{"name":"`+overrideFixturePack+
-		`","contributes":[{"kind":"program","bin":"`+overrideFixtureBin+`","via":"pack","from":"tools/x",`+
-		`"build":"echo the pack build ran; exit 3","run":"x"}]}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	checkout := filepath.Join(ws, "dev", "x")
-	if err := os.MkdirAll(checkout, 0o755); err != nil {
+	writeFile(filepath.Join(pack, "tools", "x", "VERSION"), "pack\n")
+	build := `test -f VERSION && printf '#!/bin/sh\necho x-%s\n' "$(cat VERSION)" > x`
+	buildJSON := strings.ReplaceAll(strings.ReplaceAll(build, `\`, `\\`), `"`, `\"`)
+	writeFile(filepath.Join(pack, "pack.json"), `{"name":"`+overrideFixturePack+`","contributes":[{"kind":"program",`+
+		`"bin":"`+overrideFixtureBin+`","via":"pack","from":"tools/x","build":"`+buildJSON+`","run":"x"}]}`)
+	checkout, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
 	packHome(t, `{"packs": [{"source": "file://`+pack+`", "name": "`+overrideFixturePack+`"}], `+
 		`"programs": {"overrides": {"`+overrideFixtureBin+`": {"path": "`+checkout+`"}}}}`)
 	withPrivateFixtureYoloStore(t)
 	t.Setenv(paths.AllowMissingProgramsEnv, "")
-	return filepath.Join(checkout, "x")
+	store = filepath.Join(os.Getenv("HOME"), ".local", "share", "yolo-jail", "captures")
+	before := captureEntryNames(t, store)
+	t.Cleanup(func() { removeNewCaptureEntries(t, store, before, overrideFixtureBin) })
+	return checkout, store
 }
 
-func writeScript(t *testing.T, path, say string) {
+func setCheckoutVersion(t *testing.T, checkout, v string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte("#!/bin/sh\necho "+say+"\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(checkout, "VERSION"), []byte(v+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestPackTreeProgramOverrideRunsTheCheckout(t *testing.T) {
+func TestPackTreeProgramOverrideBuildsTheCheckout(t *testing.T) {
 	requireJail(t)
-	ws := writeProject(t, `{}`)
-	script := overrideFixture(t, ws)
-	writeScript(t, script, "dev-1")
-	overrideLine := overrideFixtureBin + ": dev override — runs " + script
+	checkout, _ := overrideFixture(t)
+	setCheckoutVersion(t, checkout, "dev1")
+	key := "(programs.overrides." + overrideFixtureBin + " in ~/.config/yolo-jail/config.jsonc)"
+	named := overrideFixtureBin + ": built from your checkout " + checkout + " " + key
 
-	// 1. A FRESH LAUNCH runs the checkout, names the override, and builds nothing.
-	const releaseName = "release-override"
-	first := startYoloBackground(t, "first", ws,
-		overrideFixtureBin+`; echo FIRST-SESSION-UP; `+
-			`for _ in $(seq 1 600); do [ -f /workspace/`+releaseName+` ] && break; sleep 0.5; done`,
-		paths.NoProgramReadinessEnv+"=", "YOLO_VERSION=")
-	release := func() { _ = os.WriteFile(filepath.Join(ws, releaseName), []byte("go\n"), 0o644) }
-	t.Cleanup(release)
-	deadline := time.Now().Add(jailTimeout())
-	for !strings.Contains(first.combined(), "FIRST-SESSION-UP\n") {
-		select {
-		case err := <-first.done:
-			t.Fatalf("the launch exited (%v) before its session ran:\n%s", err, first.combined())
-		default:
+	launch := func(what string) string {
+		t.Helper()
+		r := runCommand(t, t.TempDir(), append(jailRunArgs(), "--", overrideFixtureBin), withHostSemantics(), withReadiness())
+		out := r.combined()
+		t.Logf("%s:\n%s", what, out)
+		if r.rc != 0 {
+			t.Fatalf("%s: rc %d", what, r.rc)
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the session never started within %s:\n%s", jailTimeout(), first.combined())
+		if strings.Contains(out, "x-pack") {
+			t.Fatalf("%s: the pack's own tree ran although the override names a checkout", what)
 		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	out := first.combined()
-	t.Logf("the fresh launch:\n%s", out)
-	if !strings.Contains(out, "dev-1") {
-		t.Errorf("the fresh launch did not run the checkout (want dev-1)")
-	}
-	if !strings.Contains(out, overrideLine) {
-		t.Errorf("the fresh launch did not name the override (want %q)", overrideLine)
-	}
-	if strings.Contains(out, "the pack build ran") || strings.Contains(out, "built program "+overrideFixturePack) {
-		t.Errorf("the pack's build ran although an override replaces it")
-	}
-	awaitLaunchLockReleased(t, ws, first)
-
-	// 2. AN EDIT IN THE CHECKOUT shows at the next invocation, on the same jail, with no launch.
-	writeScript(t, script, "dev-2")
-	r := runCommand(t, ws, append(jailRunArgs(), "--", overrideFixtureBin), withHostSemantics())
-	all := r.combined()
-	t.Logf("the attach:\n%s", all)
-	if r.rc != 0 || !strings.Contains(r.stdout, "Attaching to existing jail") {
-		t.Fatalf("rc %d: the second invocation did not attach, so it tested a fresh launch", r.rc)
-	}
-	if !strings.Contains(all, "dev-2") {
-		t.Errorf("the edit did not show at the next invocation (want dev-2)")
-	}
-	if !strings.Contains(all, overrideLine) {
-		t.Errorf("the attach did not name the override (want %q)", overrideLine)
+		return out
 	}
 
-	release()
-	if rc := first.wait(t, jailTimeout()); rc != 0 {
-		t.Errorf("the first launch rc = %d, want 0:\n%s", rc, first.combined())
+	// 1. SET THE OVERRIDE, LAUNCH: it builds from the checkout once, runs it, and the launch names it.
+	out := launch("the first launch")
+	if !strings.Contains(out, "x-dev1") || strings.Count(out, overrideBuiltLine) != 1 ||
+		!strings.Contains(out, named+" — rebuilt at tree digest ") {
+		t.Errorf("the first launch did not build the checkout once, run x-dev1 and name it (%q)", named)
+	}
+
+	// 2. RELAUNCH UNCHANGED: no rebuild, and the line says the build was reused.
+	out = launch("the launch with no change")
+	if !strings.Contains(out, "x-dev1") || strings.Contains(out, overrideBuiltLine) ||
+		!strings.Contains(out, named+" — reused its build at tree digest ") {
+		t.Errorf("the launch with no change rebuilt, did not run x-dev1, or did not say it reused the build")
+	}
+
+	// 3. EDIT THE CHECKOUT (uncommitted, no git at all), RELAUNCH: it rebuilds and runs the edit.
+	setCheckoutVersion(t, checkout, "dev2")
+	out = launch("the launch after the edit")
+	if !strings.Contains(out, "x-dev2") || strings.Count(out, overrideBuiltLine) != 1 ||
+		!strings.Contains(out, named+" — rebuilt at tree digest ") {
+		t.Errorf("the launch after the edit did not rebuild once and run x-dev2")
 	}
 }
 
-// TestPackTreeProgramOverrideWithNoFileRefusesTheLaunch: an override whose file is missing refuses
-// the launch through the readiness act (OQ-BG1's leaning), naming the file, the key and the pack's
-// build line, and never runs the pack's own copy.
-func TestPackTreeProgramOverrideWithNoFileRefusesTheLaunch(t *testing.T) {
+// TestPackTreeProgramOverrideBuildFailureRefusesTheLaunch: a checkout the pack's build fails on
+// refuses the launch through the readiness act (OQ-BG1), naming the program, its retry and the
+// hatch, and never runs the pack's own tree in its place.
+func TestPackTreeProgramOverrideBuildFailureRefusesTheLaunch(t *testing.T) {
 	requireJail(t)
-	ws := writeProject(t, `{}`)
-	script := overrideFixture(t, ws)
-	r := runCommand(t, ws, append(jailRunArgs(), "--", overrideFixtureBin), withHostSemantics(), withReadiness())
+	checkout, _ := overrideFixture(t) // no VERSION in the checkout: the build fails
+	r := runCommand(t, t.TempDir(), append(jailRunArgs(), "--", overrideFixtureBin), withHostSemantics(), withReadiness())
 	all := r.combined()
-	t.Logf("the launch with no file in the checkout:\n%s", all)
+	t.Logf("the launch whose checkout does not build:\n%s", all)
 	if r.rc != provision.StageRefusedStatus {
 		t.Fatalf("rc = %d, want the readiness refusal's %d", r.rc, provision.StageRefusedStatus)
 	}
 	for what, want := range map[string]string{
-		"the program":    "program " + overrideFixtureBin + " (pack " + overrideFixturePack + ")",
-		"the file":       script + " does not exist",
-		"the key":        "programs.overrides." + overrideFixtureBin,
-		"the build line": "echo the pack build ran; exit 3",
-		"the hatch":      paths.AllowMissingProgramsEnv + "=1",
+		"the program":  overrideFixtureBin,
+		"the checkout": "your checkout " + checkout,
+		"the retry":    "yolo pack build " + overrideFixturePack,
+		"the hatch":    paths.AllowMissingProgramsEnv + "=1",
 	} {
 		if !strings.Contains(all, want) {
 			t.Errorf("the refusal does not name %s (%q)", what, want)
 		}
+	}
+	if strings.Contains(all, "x-pack") {
+		t.Errorf("the pack's own tree ran in the failed checkout's place")
 	}
 }

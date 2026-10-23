@@ -4,13 +4,22 @@ package config
 //
 //	"programs": {
 //	  "autoprune": true,
-//	  "overrides": { "board": { "path": "~/code/board", "run": "dist/cli.js" } }
+//	  "overrides": {
+//	    "board": { "path": "~/code/board" },
+//	    "chart": { "prebuilt": true }
+//	  }
 //	}
 //
-// `autoprune` deletes files. `overrides` (docs/design/pack-buildable-programs.md §5, BG-D8)
-// points one program at a host checkout the user is developing, so the bytes that run are
-// the user's own: choosing a program's bytes is the same grant as deleting one, so it is
-// user scope too. Its launch wiring is a later slice; ProgramOverrides is the one reader.
+// `autoprune` deletes files. `overrides` (docs/design/pack-buildable-programs.md §5, BG-D19)
+// points a program a pack builds from its own tree at a host checkout the user is developing,
+// which every fresh launch builds in place of the pack's tree, so the bytes that run are the
+// user's own: choosing a program's bytes is the same grant as deleting one, so it is user scope
+// too. ProgramOverrides is its one reader of dev overrides.
+//
+// An entry may instead be `{"prebuilt": true}` (BG-D18): the user's explicit opt-in to the
+// pack's verified prebuilt artifact for a pack-tree program even when the pack ships its source,
+// which yolo never does on its own (OQ-BG2, ruled 2026-10-23). It names no path, so it is no dev
+// override, and ProgramPrebuiltOptIns is its one reader.
 //
 // It is OQ-PD4's third clause (docs/design/program-delivery.md §10 step four): "removal
 // happens only on an explicit act; autoprune exists as an option, DEFAULT OFF". Turning it on
@@ -41,30 +50,37 @@ import (
 )
 
 // programsKey is the top-level key, autopruneKey and overridesKey its two options. The
-// override's own fields are pathKey and runKey.
+// override's own fields are pathKey and prebuiltKey. retiredRunKey is the field an override
+// had while it ran a checkout in place (before OQ-BG3's ruling), refused with what replaced it.
 const (
-	programsKey  = "programs"
-	autopruneKey = "autoprune"
-	overridesKey = "overrides"
-	pathKey      = "path"
-	runKey       = "run"
+	programsKey   = "programs"
+	autopruneKey  = "autoprune"
+	overridesKey  = "overrides"
+	pathKey       = "path"
+	prebuiltKey   = "prebuilt"
+	retiredRunKey = "run"
 )
 
 // knownProgramsKeys is the key census for the `programs` object.
 var knownProgramsKeys = set(autopruneKey, overridesKey)
 
 // knownProgramOverrideKeys is the census for one `programs.overrides.<bin>` entry.
-var knownProgramOverrideKeys = set(pathKey, runKey)
+// retiredRunKey is in the census so it is reported once, with what replaced it, never also as an
+// unknown key.
+var knownProgramOverrideKeys = set(pathKey, prebuiltKey, retiredRunKey)
 
 // ProgramOverride is one `programs.overrides.<bin>` entry as the user's config states it,
-// after validation. Path is ~-expanded and cleaned; it must be absolute. Run is relative
-// and cleaned, or "" when the entry names none (a pack-tree program then runs its own).
+// after validation. Path is ~-expanded and cleaned; it must be absolute. The checkout is built
+// with the pack's own `build` and run by its own `run` (BG-D19), so the entry names no file.
 //
 // The directory's existence and its symlink resolution are NOT checked here: they are
 // checked at each fresh launch, on the host, where the bytes are read (BG-D9).
+//
+// Prebuilt is the `{"prebuilt": true}` form (BG-D18): Path is then empty, since the two forms
+// are mutually exclusive.
 type ProgramOverride struct {
-	Path string
-	Run  string
+	Path     string
+	Prebuilt bool
 }
 
 // ProgramOverrides returns the user's dev overrides, keyed by program bin. It is the one
@@ -76,6 +92,33 @@ type ProgramOverride struct {
 // alone, with a warning naming it: its valid siblings still apply. ValidateConfig reports
 // the same entry as an error, so `yolo check` is where the user learns why.
 func ProgramOverrides(warn Warn) map[string]ProgramOverride {
+	out := map[string]ProgramOverride{}
+	for bin, o := range programOverrideEntries(warn) {
+		if !o.Prebuilt {
+			out[bin] = o
+		}
+	}
+	return out
+}
+
+// ProgramPrebuiltOptIns returns the bins whose `programs.overrides.<bin>` entry is
+// `{"prebuilt": true}`: the user's explicit opt-in to the pack's verified prebuilt artifact for
+// that pack-tree program, even when the pack ships its source (BG-D18, OQ-BG2). It reads the USER
+// file directly and fails closed, as ProgramOverrides does: an unreadable file opts nothing in, so
+// the program is built from its source as it would be with no setting.
+func ProgramPrebuiltOptIns(warn Warn) map[string]bool {
+	out := map[string]bool{}
+	for bin, o := range programOverrideEntries(warn) {
+		if o.Prebuilt {
+			out[bin] = true
+		}
+	}
+	return out
+}
+
+// programOverrideEntries is every valid `programs.overrides` entry of the user file, of either
+// form, keyed by bin.
+func programOverrideEntries(warn Warn) map[string]ProgramOverride {
 	out := map[string]ProgramOverride{}
 	if warn == nil {
 		warn = func(string) {}
@@ -129,24 +172,49 @@ func parseProgramOverride(bin string, v any, errs *[]string) (ProgramOverride, b
 	}
 	m, ok := asMap(v)
 	if !ok {
-		add(errs, "config."+field+": expected an object with a \"path\" to the program's directory")
+		add(errs, "config."+field+": expected an object with a \"path\" to the program's directory, "+
+			"or \"prebuilt\": true")
 		return ProgramOverride{}, false
+	}
+	if _, has := m.Get(retiredRunKey); has {
+		// THE RETIRED FIELD, named with what replaced it rather than as an unknown key: a checkout
+		// is built with the pack's own `build` and run by its own `run` (OQ-BG3, BG-D19).
+		add(errs, "config."+field+"."+retiredRunKey+": no longer read — yolo now builds the checkout at "+
+			"\"path\" with the pack's own build line and runs the pack's own file; remove \"run\"")
 	}
 	reportUnknownKeys(m, knownProgramOverrideKeys, "config."+field, errs)
 
 	var o ProgramOverride
+	if bv, present := m.Get(prebuiltKey); present && bv != nil {
+		b, isBool := bv.(bool)
+		_, hasPath := m.Get(pathKey)
+		switch {
+		case !isBool:
+			add(errs, "config."+field+"."+prebuiltKey+": expected true or false")
+			return o, false
+		case b && hasPath:
+			add(errs, "config."+field+": \""+prebuiltKey+"\" and \""+pathKey+"\" cannot both be set — "+
+				"\"prebuilt\": true runs the pack's verified prebuilt artifact, and \"path\" builds your own "+
+				"checkout; keep the one you mean")
+			return o, false
+		case b:
+			o.Prebuilt = true
+			return o, len(*errs) == before
+		}
+	}
 	pv, present := m.Get(pathKey)
 	switch {
 	case !present || pv == nil:
-		add(errs, "config."+field+"."+pathKey+": required — the directory the program runs "+
-			"from, an absolute path or one starting with ~/")
+		add(errs, "config."+field+"."+pathKey+": required — your checkout of the program, which yolo "+
+			"builds in place of its pack's tree, an absolute path or one starting with ~/ (or \"prebuilt\": "+
+			"true to run the pack's prebuilt artifact)")
 	default:
 		p, isStr := pv.(string)
 		switch {
 		case !isStr:
 			add(errs, "config."+field+"."+pathKey+": expected a string")
 		case p == "":
-			add(errs, "config."+field+"."+pathKey+": empty — give the directory the program runs from")
+			add(errs, "config."+field+"."+pathKey+": empty — give your checkout of the program")
 		case p == "~" || strings.HasPrefix(p, "~/"):
 			o.Path = filepath.Clean(filepath.Join(paths.Home(), p[1:]))
 		case strings.HasPrefix(p, "~"):
@@ -160,26 +228,6 @@ func parseProgramOverride(bin string, v any, errs *[]string) (ProgramOverride, b
 		}
 	}
 
-	if rv, present := m.Get(runKey); present && rv != nil {
-		r, isStr := rv.(string)
-		c := filepath.Clean(r)
-		switch {
-		case !isStr:
-			add(errs, "config."+field+"."+runKey+": expected a string")
-		case r == "":
-			add(errs, "config."+field+"."+runKey+": empty — remove the key to run the program's own file")
-		case filepath.IsAbs(r):
-			add(errs, "config."+field+"."+runKey+": "+r+" is absolute; give the file relative to "+
-				"\"path\"")
-		case containsDotDot(r):
-			add(errs, "config."+field+"."+runKey+": "+r+" contains \"..\"; the file must sit "+
-				"inside \"path\"")
-		case c == ".":
-			add(errs, "config."+field+"."+runKey+": names the directory itself; give the file")
-		default:
-			o.Run = c
-		}
-	}
 	return o, len(*errs) == before
 }
 

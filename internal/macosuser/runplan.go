@@ -1240,14 +1240,13 @@ func stageCommandsNameEnvValue(cmds [][]string, content, key string) bool {
 }
 
 // LauncherOwnedEnvNames are the launcher's contract names that reach the darwin bootstrap from
-// the session's launch env (buildBootstrapEnv's relay), plus the dev-override decisions, which the
-// container boot reads the same way: each is the launcher's to set or leave unset, and none may come
+// the session's launch env (buildBootstrapEnv's relay): each is the launcher's to set or leave unset, and none may come
 // from the composed env — an env_sources entry naming YOLO_FORK_BUILDS would otherwise decide what a
 // source-built program's launcher runs. The run pipeline drops them from the composition
 // (packChannel.launchEnv); the session env file's YOLO_ lines never reach the bootstrap at all.
 func LauncherOwnedEnvNames() []string {
 	return []string{durable.EnvVar, paths.AllowMissingProgramsEnv, paths.NoProgramReadinessEnv,
-		entrypoint.ForkBuildsEnv, entrypoint.PatchedTreesEnv, entrypoint.ProgramOverridesEnv}
+		entrypoint.ForkBuildsEnv, entrypoint.PatchedTreesEnv}
 }
 
 // buildBootstrapEnv composes the env baked onto the `yolo internal darwin-bootstrap` self-exec
@@ -1354,12 +1353,6 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 		// and its launcher generation (the gate), as the container boot reads them.
 		if v, ok := sandboxEnv.Get(entrypoint.PatchedTreesEnv); ok {
 			bootstrapEnv.Set(entrypoint.PatchedTreesEnv, v)
-		}
-		// THE DEV-OVERRIDE DECISIONS (entrypoint.ProgramOverridesEnv; pack-buildable-programs.md §5),
-		// relayed the same way and for the same reason: the bootstrap's launcher generation writes an
-		// overridden program's launcher from them, in place of its via's, as the container boot does.
-		if v, ok := sandboxEnv.Get(entrypoint.ProgramOverridesEnv); ok {
-			bootstrapEnv.Set(entrypoint.ProgramOverridesEnv, v)
 		}
 		// Every name relayed above is in LauncherOwnedEnvNames, which the run pipeline keeps out of
 		// the composed env (packChannel.launchEnv), so what crosses is the launcher's own value.

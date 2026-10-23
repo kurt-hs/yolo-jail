@@ -591,7 +591,7 @@ func addForkKeys(pool *buildPool, req run.ForkBuildRequest, color bool, answer f
 		b := forkBuild{Fork: p.Fork, Commit: p.Commit, Platform: req.Platform}
 		if entry, _, err := resolveForkBuild(store, p.Fork.Bin, req.Platform, b.selectSource(), p.Commit, b.recipe()); err == nil {
 			// A HIT PRINTS NOTHING (BG-D10), a pack-tree program's as a fork's.
-			answer(p.Fork.Bin, entrypoint.ForkDelivery{Key: entry.Key})
+			answer(p.Fork.Bin, entrypoint.ForkDelivery{Key: entry.Key, Reused: true})
 			continue
 		}
 		if p.Fork.IsPrebuilt() {

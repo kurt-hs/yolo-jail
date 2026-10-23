@@ -167,58 +167,60 @@ func TestAFailedPackTreeBuildRefusesAHostLaunchNamingItsLogAndRetry(t *testing.T
 	}
 }
 
-// THE OVERRIDE ARM AT THE CALL SITE: with programs.overrides.x naming a checkout, `yolo host -- x`
-// prints the which-bytes line, never builds the pack's copy, and execs the floor's launcher, which runs
-// the checkout's file live. `yolo host env` prints the same line. A checkout whose file is missing
-// refuses the launch with 127, naming the file and the key, and never runs the pack's copy.
-func TestYoloHostRunsAProgramFromItsDevOverride(t *testing.T) {
+// THE OVERRIDE ARM AT THE CALL SITE (OQ-BG3's ruling): with programs.overrides.x naming a checkout,
+// `yolo host -- x` installs the program from the checkout, never the pack's tree, exactly as it installs
+// a pack-tree program, and names the checkout; an unchanged checkout installs nothing new; an edit is
+// installed at the next `yolo host` launch and never before it. A checkout the program cannot be built
+// from refuses the launch, naming it, and never runs the pack's copy. Red if hostfloorpacktree.go stops
+// passing the overrides to ResolvePackTreeProgram (the floor then runs the pack's x-1).
+func TestYoloHostBuildsAProgramFromItsDevOverride(t *testing.T) {
 	dev := floortest.ResolvedTemp(t)
-	hostPackTreeHome(t, packBuildFixtureBuild, `"programs":{"overrides":{"x":{"path":"`+dev+`"}}},`)
+	hostPackTreeHome(t, "", `"programs":{"overrides":{"x":{"path":"`+dev+`"}}},`)
 	withForkFloor(t)
-	runs := 0
-	withFakeCaptureJail(t, fakePackBuildJail(t, &runs, 0))
+	jail := 0
+	withFakeCaptureJail(t, func(run.Options) int { jail++; return 1 })
 	got := captureHostExec(t)
 	launcher := filepath.Join(paths.HostFloorDir(), "bin", "x")
+	named := "x: built from your checkout " + dev + " (programs.overrides.x in ~/.config/yolo-jail/config.jsonc)"
 
 	var errw bytes.Buffer
-	rc := hostExec(nil, []string{"x"}, io.Discard, &errw, nil)
-	if rc != 127 || got.execed || !strings.Contains(errw.String(), filepath.Join(dev, "x")) ||
-		!strings.Contains(errw.String(), "programs.overrides.x") {
-		t.Fatalf("a checkout with no x: rc=%d execed=%v, want 127 naming the file and the key\n%s", rc, got.execed, errw.String())
-	}
-	// The readiness act of another launch refuses it too, and never offers `host_floor`, which the
-	// override wins over.
-	stubBins(t, "other")
-	errw.Reset()
-	if rc := hostExec(nil, []string{"other"}, io.Discard, &errw, nil); rc == 0 || got.execed ||
-		!strings.Contains(errw.String(), "programs.overrides.x") || strings.Contains(errw.String(), "host_floor") {
-		t.Fatalf("yolo host -- other with a broken override: rc=%d execed=%v, want a refusal naming the key and "+
-			"no `host_floor`\n%s", rc, got.execed, errw.String())
+	if rc := hostExec(nil, []string{"x"}, io.Discard, &errw, nil); rc == 0 || got.execed ||
+		!strings.Contains(errw.String(), "your checkout "+dev) {
+		t.Fatalf("a checkout with no x: rc=%d execed=%v, want a refusal naming the checkout\n%s", rc, got.execed, errw.String())
 	}
 
-	writeFile(t, filepath.Join(dev, "x"), "#!/bin/sh\necho dev-1\n")
-	if err := os.Chmod(filepath.Join(dev, "x"), 0o755); err != nil {
-		t.Fatal(err)
+	setDev := func(word string) {
+		t.Helper()
+		writeFile(t, filepath.Join(dev, "x"), "#!/bin/sh\necho "+word+"\n")
+		if err := os.Chmod(filepath.Join(dev, "x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
+	setDev("dev-1")
 	errw.Reset()
-	line := "x: dev override — runs " + filepath.Join(dev, "x") + " (programs.overrides in ~/.config/yolo-jail/config.jsonc)"
 	if rc := hostExec(nil, []string{"x"}, io.Discard, &errw, nil); rc != 0 || got.target != launcher ||
-		!strings.Contains(errw.String(), line) {
-		t.Fatalf("rc=%d target=%s, want the floor's launcher and the line %q\n%s", rc, got.target, line, errw.String())
+		!strings.Contains(errw.String(), named) {
+		t.Fatalf("rc=%d target=%s, want the floor's launcher and the line %q\n%s", rc, got.target, named, errw.String())
 	}
-	if runs != 0 {
-		t.Errorf("the pack's build ran %d times beside its override", runs)
+	if out := runFloorLauncher(t, "x"); out != "dev-1\n" || jail != 0 {
+		t.Fatalf("the floor's x ran %q with %d build jails, want the checkout's dev-1 and none", out, jail)
 	}
-	if out := runFloorLauncher(t, "x"); out != "dev-1\n" {
-		t.Fatalf("the floor's x ran %q, want the checkout's dev-1", out)
-	}
-	writeFile(t, filepath.Join(dev, "x"), "#!/bin/sh\necho dev-2\n")
-	if out := runFloorLauncher(t, "x"); out != "dev-2\n" {
-		t.Errorf("after an edit the floor's x ran %q, want dev-2 with no launch", out)
+	first := floorRecord(t, "x").Revision
+
+	errw.Reset()
+	if rc := hostExec(nil, []string{"x"}, io.Discard, &errw, nil); rc != 0 || floorRecord(t, "x").Revision != first {
+		t.Fatalf("an unchanged checkout: rc=%d, want the same install\n%s", rc, errw.String())
 	}
 
-	var out, envErr bytes.Buffer
-	if rc := hostMain([]string{"env"}, &out, &envErr, false, nil); rc != 0 || !strings.Contains(envErr.String(), line) {
-		t.Errorf("yolo host env: rc=%d, want the line\n%s", rc, envErr.String())
+	setDev("dev-2")
+	if out := runFloorLauncher(t, "x"); out != "dev-1\n" {
+		t.Errorf("an edit reached the floor's x with no launch (%q): nothing is built at run time", out)
+	}
+	errw.Reset()
+	if rc := hostExec(nil, []string{"x"}, io.Discard, &errw, nil); rc != 0 {
+		t.Fatalf("after an edit: rc=%d\n%s", rc, errw.String())
+	}
+	if out := runFloorLauncher(t, "x"); out != "dev-2\n" || floorRecord(t, "x").Revision == first {
+		t.Fatalf("after an edit and a launch the floor's x ran %q, want dev-2 at a new digest", out)
 	}
 }

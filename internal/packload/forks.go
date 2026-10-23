@@ -147,8 +147,13 @@ type Fork struct {
 	// place of building From. nil for a build, and for every fork.
 	Prebuilt *packdecl.PrebuiltBuild
 	// PrebuiltWhy is why the prebuilt rung was chosen, for the disclosure line: its pack ships no
-	// From, or no build can run here. "" unless Prebuilt is set.
+	// From, or the user opted into it (BG-D18). "" unless Prebuilt is set.
 	PrebuiltWhy string
+	// Checkout is the user's own CHECKOUT this delivery builds in place of From
+	// (`programs.overrides.<bin>.path`, docs/design/pack-buildable-programs.md §5, BG-D19): the
+	// path with its symlinks resolved, digested and copied exactly as From would be, under the
+	// pack's own build and run. "" for a build of the pack's tree, and for every fork.
+	Checkout string
 	// Upstream marks the UPSTREAM BUILD of a patched fork or patched extension
 	// (docs/reference/patched-forks.md §8.5, "Skip the patches", YOLO_SKIP_PATCHES): the upstream's newest list entry
 	// built under the fork's own build recipe with no series applied. Its Patches and PatchBranch are

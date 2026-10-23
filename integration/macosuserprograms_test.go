@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -80,11 +79,11 @@ func TestMacosUserAutopruneRemovesAnOrphan(t *testing.T) {
 // six done steps; pack-buildable-programs-plan.md Task 10), in BOTH modes: the second account
 // (`macos_user_mode` "account") and run-as-you ("self"). The build is the darwin sealed act
 // (forked-programs-as-packs.md FP-D24) running the placement script against the act's own checkout;
-// the override is a read-only context link the Seatbelt profile opens for read and exec.
+// a dev override's checkout is built by the same act in place of the pack's tree.
 //
 // HERMETIC: the pack is a `file://` directory whose tools/x holds a VERSION file and whose build line
 // writes a /bin/sh script printing it, with macOS's own shell and tools; the override is a checkout
-// under the shared root, which the sandbox account can read in the account mode. No agent starts.
+// in a temporary directory, holding its own VERSION. No agent starts.
 //
 // ⚠ Mac-only, behind requireMacosUser. Each test removes the capture entries it added.
 // ---------------------------------------------------------------------------
@@ -170,43 +169,45 @@ func TestMacosUserPackTreeProgramBuildsOnceAndRebuildsOnChange(t *testing.T) {
 	}
 }
 
-// Done step 4: `programs.overrides` points the program at a checkout under the shared root; the
-// launch names the file that runs and builds nothing, the program runs the checkout, and an edit
-// there shows at the next run.
-func TestMacosUserPackTreeProgramOverrideRunsTheCheckout(t *testing.T) {
+// Done step 4 (OQ-BG3's ruling): `programs.overrides` points the program at a checkout; the launch
+// builds it from the checkout in the darwin act and names it, an unchanged relaunch reuses that build,
+// and an edit there is rebuilt at the next launch.
+func TestMacosUserPackTreeProgramOverrideBuildsTheCheckout(t *testing.T) {
 	for _, mode := range macosUserPackTreeModes {
 		t.Run(mode, func(t *testing.T) {
 			requireMacosUser(t)
-			dev, err := os.MkdirTemp(macosuser.SharedRootDefault(), "yolo-it-dev-")
-			if err != nil {
-				t.Fatalf("creating the checkout under %s: %v", macosuser.SharedRootDefault(), err)
-			}
-			t.Cleanup(func() { _ = os.RemoveAll(dev) })
-			if dev, err = filepath.EvalSymlinks(dev); err != nil {
-				t.Fatal(err)
-			}
-			write := func(word string) {
+			dev := resolvedTempDir(t)
+			setDev := func(v string) {
 				t.Helper()
-				if err := os.WriteFile(filepath.Join(dev, "x"), []byte("#!/bin/sh\necho "+word+"\n"), 0o755); err != nil {
+				if err := os.WriteFile(filepath.Join(dev, "VERSION"), []byte(v+"\n"), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
 			_, ws, _, _ := macosUserPackTreeFixture(t, mode, macosUserPackTreeBuild,
 				`"programs": {"overrides": {"`+macosUserPackTreeBin+`": {"path": "`+dev+`"}}}, `)
-			line := macosUserPackTreeBin + ": dev override — runs " + filepath.Join(dev, "x")
-			for _, word := range []string{"dev-1", "dev-2"} {
-				write(word)
+			named := macosUserPackTreeBin + ": built from your checkout " + dev
+			built := "built program " + macosUserPackTreePack + "/" + macosUserPackTreeBin + " (built from your checkout "
+			for _, step := range []struct{ version, want, how string }{
+				{"dev1", "x-dev1", " — rebuilt at tree digest "},
+				{"", "x-dev1", " — reused its build at tree digest "},
+				{"dev2", "x-dev2", " — rebuilt at tree digest "},
+			} {
+				if step.version != "" {
+					setDev(step.version)
+				}
+				want := step.want
 				r := runMacosUser(t, ws, macosUserPackTreeBin, withHostSemantics())
 				out := r.combined()
-				t.Logf("%s, %s:\n%s", mode, word, out)
-				if r.rc != 0 || !strings.Contains(out, word) {
-					t.Fatalf("rc %d, want the checkout's %s", r.rc, word)
+				t.Logf("%s, %q:\n%s", mode, step.version, out)
+				if r.rc != 0 || !strings.Contains(out, want) {
+					t.Fatalf("rc %d, want the checkout's %s", r.rc, want)
 				}
-				if !strings.Contains(out, line) {
-					t.Errorf("the launch does not name the file the override runs (%q)", line)
+				if !strings.Contains(out, named) || !strings.Contains(out, step.how) {
+					t.Errorf("the launch does not name the checkout build (%q ...%q)", named, step.how)
 				}
-				if strings.Contains(out, "built program") {
-					t.Errorf("the launch built the overridden program")
+				rebuilt := strings.Count(out, built)
+				if (step.version != "" && rebuilt != 1) || (step.version == "" && rebuilt != 0) {
+					t.Errorf("the launch built the checkout %d times", rebuilt)
 				}
 			}
 		})
