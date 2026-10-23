@@ -632,6 +632,10 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		darwinPrefix, blockedTools, launchMiseTools)
 	bootstrapEnv.Set(entrypoint.DarwinLoginPathEnv, SandboxPathForGuestBin(SandboxHome(), darwinPrefix, sessionGuestBinDir))
 	bootstrapEnv.Set(paths.ContextDirEnv, contextDir)
+	// The one tree yolo's own ~/ctx link may point into (entrypoint.ContextLinkOwnerEnv): the
+	// sandbox home is shared by every workspace, and each workspace's context dir is a child of
+	// this one.
+	bootstrapEnv.Set(entrypoint.ContextLinkOwnerEnv, StagedCtxParent(""))
 	// Never take identity from env_sources, and never give install capture an ID.
 	if nativehome.ValidID(sessionID) {
 		bootstrapEnv.Set(entrypoint.SessionIDEnv, sessionID)
@@ -1429,6 +1433,10 @@ func PlanInvariants(plan RunPlan) []string {
 		if !containsArg(plan.BootstrapArgv, paths.ContextDirEnv+"="+plan.ContextDir) {
 			problems = append(problems,
 				paths.ContextDirEnv+"="+plan.ContextDir+" is not baked into the bootstrap env")
+		}
+		if !containsArg(plan.BootstrapArgv, entrypoint.ContextLinkOwnerEnv+"="+StagedCtxParent("")) {
+			problems = append(problems, entrypoint.ContextLinkOwnerEnv+"="+StagedCtxParent("")+
+				" is not baked into the bootstrap env; a second workspace could not retarget its ~/ctx link")
 		}
 		if !SandboxEnvFileSets(plan.EnvFileContent, paths.ContextDirEnv, plan.ContextDir) {
 			problems = append(problems,

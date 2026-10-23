@@ -490,6 +490,15 @@ func StagedCtxRoot(cname, sd string) string {
 	return filepath.Join(sd, ctxLeaf, cname)
 }
 
+// StagedCtxParent is the directory every workspace's StagedCtxRoot sits in. It is the one tree
+// the sandbox's ~/ctx link may point into and still count as yolo's own (entrypoint.ContextLinkOwnerEnv).
+func StagedCtxParent(sd string) string {
+	if sd == "" {
+		sd = stateDir
+	}
+	return filepath.Join(sd, ctxLeaf)
+}
+
 // StageCtxCommands returns the argv, run as the host user, that copy the host-side composed
 // context tree into the staging root, readable by the sandbox account and by no other, for the
 // bootstrap to compose from.

@@ -106,7 +106,7 @@ func buildHomeSkeleton(root string, packs []*packload.Pack, cfg *jsonx.OrderedMa
 	if err := os.Chmod(dir, 0o755); err != nil {
 		return fail(fmt.Errorf("cannot set the mode of the home skeleton %s: %w", dir, err))
 	}
-	b := skeletonBuilder{dir: dir}
+	b := skeletonBuilder{dir: dir, asked: &[]string{}}
 
 	// --- FATAL: what storage.EnsureGlobalStorage used to put in the shared base ---
 	for _, rel := range skeletonDirs(packs) {
@@ -132,14 +132,6 @@ func buildHomeSkeleton(root string, packs []*packload.Pack, cfg *jsonx.OrderedMa
 		if err := b.symlink(r.Name, r.Target); err != nil {
 			return fail(err)
 		}
-	}
-	// The agent's ~/ctx link to the context dir (OQ-MM6). The home root is read-only in this
-	// jail, so the link is laid here from the host side, the same way as the redirects. Its
-	// target is the container's context dir, the string YOLO_CONTEXT_DIR names on podman, and
-	// it is absolute on purpose: the entrypoint's boot step compares the raw link string with
-	// that variable, and finds this link already correct, so it does nothing.
-	if err := b.symlink(paths.ContextLinkName, paths.ContainerContextDir); err != nil {
-		return fail(err)
 	}
 
 	// --- BEST-EFFORT: the config- and pack-driven mountpoints ---
@@ -189,7 +181,55 @@ func buildHomeSkeleton(root string, packs []*packload.Pack, cfg *jsonx.OrderedMa
 		}
 		warn(b.symlink(entry.Path, entry.SymlinkTarget()))
 	}
+
+	// THE CONTEXT LINK, LAST OF ALL (OQ-MM6). The home root is read-only in this jail, so the
+	// agent's ~/ctx link is laid here from the host side, pointing at the container's context
+	// dir (the string YOLO_CONTEXT_DIR names on podman; absolute on purpose, because the
+	// entrypoint compares raw link strings). It comes after every other entry, because a
+	// host-side MkdirAll or write through the link would land on the HOST's /ctx. A config or
+	// pack entry that claims ctx keeps its own directory, and the link is skipped with a line.
+	if w := b.layContextLink(paths.ContextLinkName, paths.ContainerContextDir); w != "" {
+		sk.warnings = append(sk.warnings, w)
+	}
 	return sk, nil
+}
+
+// layContextLink lays the link rel -> target inside the skeleton and returns the one line to
+// print about it, or "" when the link is laid. It never fails the launch: a home that cannot
+// take the link, or one that a declared entry claims, boots without it, and the mounts stay
+// where they are at $YOLO_CONTEXT_DIR.
+func (b skeletonBuilder) layContextLink(rel, target string) string {
+	if claimsPath(b.asked, rel) {
+		return claimedContextLinkLine(rel, target)
+	}
+	p := filepath.Join(b.dir, rel)
+	if _, err := os.Lstat(p); err == nil {
+		return claimedContextLinkLine(rel, target)
+	}
+	if err := os.Symlink(target, p); err != nil {
+		return fmt.Sprintf("yolo: could not link ~/%s to $%s (%s): %v; the mounts stay at $%s.",
+			rel, paths.ContextDirEnv, target, err, paths.ContextDirEnv)
+	}
+	return ""
+}
+
+// claimsPath reports whether any path asked of the builder is rel itself or under it.
+func claimsPath(asked *[]string, rel string) bool {
+	if asked == nil {
+		return false
+	}
+	for _, a := range *asked {
+		c := filepath.ToSlash(filepath.Clean(filepath.FromSlash(a)))
+		if c == rel || strings.HasPrefix(c, rel+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func claimedContextLinkLine(rel, target string) string {
+	return fmt.Sprintf("yolo: ~/%s is claimed by a home entry of this launch, so the context link is "+
+		"not laid; $%s still names %s.", rel, paths.ContextDirEnv, target)
 }
 
 // discardUnheldSkeleton removes a skeleton that no container ever held: the one this launch
@@ -226,12 +266,20 @@ func skeletonDirs(packs []*packload.Pack) []string {
 }
 
 // skeletonBuilder creates entries inside one skeleton directory.
-type skeletonBuilder struct{ dir string }
+type skeletonBuilder struct {
+	dir string
+	// asked is every home-relative path a builder method was asked for, refused or not, so
+	// the claim check sees each destination the config and packs declared.
+	asked *[]string
+}
 
 // path resolves a home-relative path inside the skeleton. Every input is validated upstream
 // (config validation, packdecl), and this refuses an absolute or escaping one anyway: the
 // builder runs on the host, and a path that leaves the skeleton is a host write.
 func (b skeletonBuilder) path(rel string) (string, error) {
+	if b.asked != nil {
+		*b.asked = append(*b.asked, rel)
+	}
 	clean := filepath.Clean(filepath.FromSlash(rel))
 	if rel == "" || filepath.IsAbs(clean) || clean == "." || clean == ".." ||
 		strings.HasPrefix(clean, ".."+string(filepath.Separator)) {

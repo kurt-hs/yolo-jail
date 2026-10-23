@@ -12,7 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-**Browse mounted folders from home.** Every jail links `~/ctx` to its mounted folders.
+**Browse mounted folders from home.** Every jail links `~/ctx` to its mounted folders, unless your config already uses the name `ctx`.
 
 ## [0.15.1] - 2026-10-22
 
