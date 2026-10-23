@@ -94,11 +94,14 @@ func TestAHookIsKilledWhenItsRequestLeavesPending(t *testing.T) {
 				if got := f.state(t, q.ID); got == "allowed" {
 					t.Fatalf("state %s after the hook was stopped", got)
 				}
-				// Killed because its request left pending is no failure; a timeout is.
-				failure := f.request(t, q.ID).HookFailure
-				if c.timeout > 0 && shape.name == "shell waiting" && !strings.HasPrefix(failure, "hook timed out after") {
-					t.Fatalf("a timed-out hook recorded %q", failure)
+				// Killed because its request left pending is no failure; a timeout is. The runner
+				// logs the stop before it records the failure, so a timeout's is waited for.
+				if c.timeout > 0 && shape.name == "shell waiting" {
+					waitFor(t, "the timeout to be recorded", func() bool {
+						return strings.HasPrefix(f.request(t, q.ID).HookFailure, "hook timed out after")
+					})
 				}
+				failure := f.request(t, q.ID).HookFailure
 				if c.timeout == 0 && failure != "" {
 					t.Fatalf("a hook stopped because its request left pending recorded %q", failure)
 				}
