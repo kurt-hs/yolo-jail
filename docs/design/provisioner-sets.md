@@ -883,9 +883,11 @@ question and should not wait on one.
    *"a launch or `yolo apply` materializes it"* at every notch, so the `materializes` flag
    `check` invented for itself moved into the shared renderer, and `yolo apply` stopped being
    named as a remedy it performs at NO notch (`darwinpkg.Materialize`'s one caller is the
-   macos-user run seam). And the flag had to be DERIVED in `apply` too, not passed as a constant
-   false — a `confinement: host` workspace whose runtime is macos-user does have a provisioner,
-   so a constant would have re-opened the disagreement on exactly those configs.
+   macos-user run seam). ⚠ This step first derived the flag from the runtime in `apply`, on
+   the premise that a `confinement: host` workspace whose runtime is macos-user has a
+   provisioner. [`OQ-NX8`](#OQ-NX8) corrected that: a macos-user profile serves that backend's
+   own launches, never `yolo host`, so at the host all three commands print the one inert line
+   whatever the runtime, a resolved profile root included.
 4. **Then the precedence order, PRINT-ONLY** — written as the first increment of both rulings and the
    smallest thing that changes user-visible behaviour. ⚠ *"Print-only" no longer describes a
    first step:* the host already drives an install at `--assert` (step 5's note), so this increment

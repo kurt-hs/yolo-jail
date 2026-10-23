@@ -200,10 +200,11 @@ func TestDescribeReportsPackageProfile(t *testing.T) {
 	}
 	pkgs := []any{"ripgrep", "fd"}
 
-	// host (no baked image), root present → names the resolved store path AND the root.
+	// a macOS guest (no baked image, the macos-user provisioner), root present → names the
+	// resolved store path AND the root.
 	var buf bytes.Buffer
 	pr := richtext.Printer{W: &buf}
-	printPackageProfile(pr, render.HostProfile(), pkgs, root, true)
+	printPackageProfile(pr, render.KindGuest, render.HostProfile(), pkgs, root, true)
 	if !strings.Contains(buf.String(), store) {
 		t.Errorf("a resolved profile must be named by its store path:\n%s", buf.String())
 	}
@@ -213,7 +214,7 @@ func TestDescribeReportsPackageProfile(t *testing.T) {
 
 	// Root ABSENT → declared, not yet resolved. Must not print a bogus path.
 	buf.Reset()
-	printPackageProfile(richtext.Printer{W: &buf}, render.HostProfile(), pkgs,
+	printPackageProfile(richtext.Printer{W: &buf}, render.KindGuest, render.HostProfile(), pkgs,
 		filepath.Join(t.TempDir(), "nope"), true)
 	if !strings.Contains(buf.String(), "2 declared") {
 		t.Errorf("an unresolved profile should still report the declared count:\n%s", buf.String())
@@ -231,14 +232,27 @@ func TestDescribeReportsPackageProfile(t *testing.T) {
 	// the gate the mechanism's rename is about — printing a nix profile path for a jail
 	// would name a closure the launch does not use.
 	buf.Reset()
-	printPackageProfile(richtext.Printer{W: &buf}, render.JailProfile(false), pkgs, root, true)
+	printPackageProfile(richtext.Printer{W: &buf}, render.KindJail, render.JailProfile(false), pkgs, root, true)
 	if buf.Len() != 0 {
 		t.Errorf("a jail's packages come from the image; nothing should be printed:\n%s", buf.String())
 	}
 
+	// host, root present → still the inert-by-design line, and no store path (OQ-NX8): the
+	// host never applies `packages:` (HP-DIR3), so a root under this home is not its answer.
+	buf.Reset()
+	printPackageProfile(richtext.Printer{W: &buf}, render.KindHost, render.HostProfile(), pkgs, root, true)
+	if got := buf.String(); !strings.Contains(got, "2 declared") ||
+		!strings.Contains(got, "inert at the `host` notch by design") ||
+		strings.Contains(got, store) || strings.Contains(got, "PATH") {
+		t.Errorf("the host's packages are inert by design, a resolved root included:\n%s", got)
+	}
+	if !packageProfileInert(render.KindHost, render.HostProfile(), pkgs, root, false) {
+		t.Errorf("a host with a resolved root is still inert, so apply folds it into the tier-1 line")
+	}
+
 	// No packages declared → nothing to report at any notch.
 	buf.Reset()
-	printPackageProfile(richtext.Printer{W: &buf}, render.HostProfile(), nil, root, true)
+	printPackageProfile(richtext.Printer{W: &buf}, render.KindGuest, render.HostProfile(), nil, root, true)
 	if buf.Len() != 0 {
 		t.Errorf("no declared packages => no line:\n%s", buf.String())
 	}
@@ -283,7 +297,7 @@ func TestAnUnprovisionedNotchReportsPackagesAsInertRatherThanPending(t *testing.
 	pkgs := []any{"ripgrep", "fd"}
 
 	var buf bytes.Buffer
-	printPackageProfile(richtext.Printer{W: &buf}, render.HostProfile(), pkgs, root, false)
+	printPackageProfile(richtext.Printer{W: &buf}, render.KindGuest, render.HostProfile(), pkgs, root, false)
 	got := buf.String()
 
 	if !strings.Contains(got, "2 declared") {

@@ -208,10 +208,13 @@ func TestPackageProfileGateIsTheBakedImageNotThePlatform(t *testing.T) {
 	})
 
 	t.Run("guest: no image, so the profile is the answer", func(t *testing.T) {
-		got, _ := run(t, "guest")
+		got, store := run(t, "guest")
 		if !strings.Contains(got, "Declared packages") {
 			t.Errorf("a notch with no baked image must get the packages report on ANY "+
 				"platform — this is Linux:\n%s", got)
+		}
+		if !strings.Contains(got, "[PASS]") || !strings.Contains(got, store) {
+			t.Errorf("expected the resolved root reported as a PASS naming %s:\n%s", store, got)
 		}
 	})
 

@@ -1222,10 +1222,10 @@ func reportHostPackages(pr richtext.Printer, errw io.Writer, home string) (inert
 	packages := config.EffectivePackages(cfg, runtime.GOOS)
 	root := darwinpkg.ProfileRootLink(home)
 	materializes := packagesMaterializeAt(render.KindHost, resolvedMechanism(cfg))
-	if !reportVerbose() && packageProfileInert(prof, packages, root, materializes) {
+	if !reportVerbose() && packageProfileInert(render.KindHost, prof, packages, root, materializes) {
 		return len(packages)
 	}
-	printPackageProfile(pr, prof, packages, root, materializes)
+	printPackageProfile(pr, render.KindHost, prof, packages, root, materializes)
 	return 0
 }
 

@@ -102,7 +102,7 @@ func describeMain(args []string, out, errw io.Writer, color bool) int {
 	// Reports what THIS machine would get, so it filters on the running platform —
 	// a linux-only package listed on a Mac would be a description of someone else's
 	// jail.
-	printPackageProfile(pr, prof, config.EffectivePackages(cfg, runtime.GOOS),
+	printPackageProfile(pr, notch, prof, config.EffectivePackages(cfg, runtime.GOOS),
 		darwinpkg.ProfileRootLink(paths.Home()),
 		packagesMaterializeAt(notch, resolvedMechanism(cfg)))
 	if packs, perr := config.LoadPacks(nil); perr == nil && len(packs) > 0 {
@@ -214,16 +214,36 @@ func packagesMaterializeAt(notch render.Kind, mechanism string) bool {
 
 // packageProfileInert is whether printPackageProfile would print the INERT line: packages are
 // declared, this notch bakes none, no profile is resolved, and nothing here would materialize one.
-func packageProfileInert(prof render.Profile, packages []any, rootLink string, materializes bool) bool {
-	if prof.Has(render.PrimBakedImage) || len(packages) == 0 || materializes {
+// At the HOST it is true whenever packages are declared, a resolved root included (OQ-NX8).
+func packageProfileInert(notch render.Kind, prof render.Profile, packages []any, rootLink string, materializes bool) bool {
+	if prof.Has(render.PrimBakedImage) || len(packages) == 0 {
+		return false
+	}
+	if notch == render.KindHost {
+		return true
+	}
+	if materializes {
 		return false
 	}
 	_, err := os.Readlink(rootLink)
 	return err != nil
 }
 
-func printPackageProfile(pr richtext.Printer, prof render.Profile, packages []any, rootLink string, materializes bool) {
+// hostPackagesInertNote is the host notch's reason, the same rule `yolo check` prints
+// (check/section_packageprofile.go's hostPackagesInertLine).
+const hostPackagesInertNote = "inert at the `host` notch by design: `yolo host` never applies " +
+	"the workspace's jail-only keys (HP-DIR3)"
+
+func printPackageProfile(pr richtext.Printer, notch render.Kind, prof render.Profile, packages []any, rootLink string, materializes bool) {
 	if prof.Has(render.PrimBakedImage) || len(packages) == 0 {
+		return
+	}
+	// THE HOST NEVER APPLIES `packages:` (OQ-NX8, HP-DIR3), so a GC root under this home is
+	// not its answer even when one resolves: it is some other launch's closure, and naming it
+	// with "add it to PATH" would offer the host a package layer the rule says it has none of.
+	if notch == render.KindHost {
+		pr.Printf("[bold]packages[/bold]     %d declared [dim]("+hostPackagesInertNote+")[/dim]",
+			len(packages))
 		return
 	}
 	target, err := os.Readlink(rootLink)
