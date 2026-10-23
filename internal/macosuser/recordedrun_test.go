@@ -61,7 +61,7 @@ func TestAFailedCaptureBootstrapReportsItsOwnOutput(t *testing.T) {
 		for what, want := range map[string]string{
 			"its output":      "boot: step one",
 			"its stderr":      "deny(1) file-read-data /Users/you/.local/share/yolo-jail/home",
-			"the literal tag": "[⁠bold]x",
+			"the literal tag": "[\u2060bold]x",
 			"its exit status": "capture bootstrap failed (exit 71)",
 			"the next step":   "Fix what its output names, then run the build or capture again",
 		} {
