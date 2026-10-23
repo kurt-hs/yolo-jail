@@ -263,14 +263,7 @@ func liftModelFacts(providers, shared *jsonx.OrderedMap) {
 				// entry alone rather than lowering it to a null model id.
 				continue
 			}
-			if rv, ok := obj.Get("openrouter_routing"); ok {
-				if rm, isMap := rv.(*jsonx.OrderedMap); isMap && rm.Len() > 0 {
-					if routing == nil {
-						routing = jsonx.NewOrderedMap()
-					}
-					routing.Set(alias, jsonx.DeepCopy(rm))
-				}
-			}
+			routing = layRouting(routing, alias, obj, shared)
 			models.Set(alias, id)
 			facts := flattenModelFacts(obj)
 			if facts.Len() == 0 {
@@ -295,6 +288,49 @@ func liftModelFacts(providers, shared *jsonx.OrderedMap) {
 			entry.Set("model_routing", routing)
 		}
 	}
+}
+
+// layRouting sets alias's `model_routing` entry from the route's own `openrouter_routing` and
+// the shared facts its `extends` names (OQ-ML5), and returns the routing map, made on first use.
+// The routing object is ONE fact, the way `cost` is: a route's own object REPLACES the shared
+// entry's whole and never merges key-wise (a `cost` must state all four rates, so a route's cost
+// already replaces the shared one whole), because the object is sent verbatim as OpenRouter's
+// request `provider` field and a key-wise merge would send a pin neither layer wrote. A route
+// stating none keeps a pack's pin for the alias, else takes the shared entry's. A null is a
+// TOMBSTONE (ML-D10) at either layer: on the route it drops every pin below it, a pack's
+// included; in the shared entry it means the shared facts carry no pin.
+func layRouting(routing *jsonx.OrderedMap, alias string, obj, shared *jsonx.OrderedMap) *jsonx.OrderedMap {
+	set := func(pin *jsonx.OrderedMap) {
+		if routing == nil {
+			routing = jsonx.NewOrderedMap()
+		}
+		routing.Set(alias, jsonx.DeepCopy(pin))
+	}
+	if own, ok := obj.Get("openrouter_routing"); ok {
+		if own == nil {
+			if routing != nil {
+				routing.Delete(alias)
+			}
+		} else if pin, isMap := own.(*jsonx.OrderedMap); isMap && pin.Len() > 0 {
+			set(pin)
+		}
+		return routing
+	}
+	if routing != nil {
+		if _, packPinned := routing.Get(alias); packPinned {
+			return routing
+		}
+	}
+	name, _ := stringAt(obj, "extends")
+	if name == "" || shared == nil {
+		return routing
+	}
+	if src := childMap(shared, name); src != nil {
+		if pin := childMap(src, "openrouter_routing"); pin != nil && pin.Len() > 0 {
+			set(pin)
+		}
+	}
+	return routing
 }
 
 // WithModelFacts hands ComposeProviders the user's top-level `model_facts`: facts written once

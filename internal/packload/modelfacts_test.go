@@ -74,3 +74,23 @@ func TestAnExtendsWithNoSharedFactsKeepsTheRoutesOwn(t *testing.T) {
 		t.Errorf("composed table = %s", s)
 	}
 }
+
+// A SHARED OPENROUTER PIN LANDS IN EACH EXTENDING ROUTE'S `model_routing` (fix 27), and a null
+// on the route is a TOMBSTONE (ML-D10): that route sends no pin, the shared one included.
+func TestASharedRoutingPinReachesEachRouteAndARouteNullDropsIt(t *testing.T) {
+	user := userProviders(t, `{"openrouter":{"models":{
+	  "a":{"id":"x/y:floor","extends":"xy"},
+	  "b":{"id":"x/y:floor@200k","extends":"xy","openrouter_routing":null}}}}`)
+	shared := userProviders(t, `{"xy":{"openrouter_routing":{"order":["streamlake"]}}}`)
+	got, err := ComposeProviders(user, nil, WithModelFacts(shared))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := dump(t, got)
+	if !strings.Contains(s, `"model_routing": {"a": {"order": ["streamlake"]}}`) {
+		t.Errorf("route a must inherit the shared pin and route b's null must drop it, got %s", s)
+	}
+	if strings.Contains(s, `"openrouter_routing"`) {
+		t.Errorf("the pin must not leak into the flat facts, got %s", s)
+	}
+}

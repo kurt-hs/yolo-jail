@@ -70,3 +70,24 @@ func TestSectionPacksWarnsAboutAnOpenRouterPinNothingSends(t *testing.T) {
 		t.Errorf("an inert pin must WARN, never fail:\n%s", out)
 	}
 }
+
+// A SHARED PIN NOTHING SENDS IS NAMED TOO (fix 27): a `model_facts` entry's `openrouter_routing`
+// reaches every route extending it, so the check composes with the shared facts and warns about
+// the Bedrock route that inherits one.
+func TestSectionPacksWarnsAboutASharedOpenRouterPinNothingSends(t *testing.T) {
+	packsFixture(t, `{"packs": ["pi", "openrouter"]}`)
+	v, err := jsonx.Decode([]byte(`{
+	  "model_facts": {"gpt": {"openrouter_routing": {"order": ["streamlake"]}}},
+	  "providers": {"bed": {"platform": "aws-bedrock", "region": "us-east-1",
+	    "models": {"gpt": {"id": "global.openai.gpt-6-luna", "extends": "gpt"}}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged, _ := v.(*jsonx.OrderedMap)
+	var buf bytes.Buffer
+	r := &reporter{w: &buf}
+	(&Options{}).sectionPacks(r, merged)
+	if out := buf.String(); !strings.Contains(out, `providers.bed.models.gpt.openrouter_routing`) {
+		t.Errorf("the check should name the inherited pin:\n%s", out)
+	}
+}
