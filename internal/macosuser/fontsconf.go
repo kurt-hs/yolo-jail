@@ -13,9 +13,11 @@ package macosuser
 //
 //   - /System/Library/Fonts, /Library/Fonts and the newest com_apple_MobileAsset_Font* folder
 //     (where macOS keeps the fonts it downloads on demand), resolved at each launch;
-//   - the human's own ~/Library/Fonts: always in the run-as-you mode, which is the human; in the
-//     separate-account mode only with `share_host_fonts`, which also grants that account read on
-//     it (fontAccessGrants) and opens it in the Seatbelt profile;
+//   - the human's own ~/Library/Fonts: always in the run-as-you mode, which is the human (the
+//     folder itself; one that is a link to elsewhere is skipped with a line, since the profile
+//     allow names the literal path); in the separate-account mode only with `share_host_fonts`,
+//     and then as a yolo-owned COPY the account may read (fontcopy.go), never the folder itself:
+//     the account is granted nothing inside your home;
 //   - the tool profile's share/fonts, so a font package in `packages:` counts;
 //
 // with a cache directory the sandbox can write (`<cachedir prefix="xdg">`, the sandbox HOME's
@@ -74,21 +76,25 @@ type FontSetup struct {
 	// ExtraReads are real paths the Seatbelt profile must open for a listed folder: a MobileAsset
 	// folder whose real path is outside /System/Library.
 	ExtraReads []string
-	// UserFonts is the human's ~/Library/Fonts when it is listed, else "".
+	// UserFonts is the font folder of yours the file lists, else "": ~/Library/Fonts in the
+	// run-as-you mode, the shared copy of it in the separate-account mode.
 	UserFonts string
-	// Shared is true when UserFonts is listed because of share_host_fonts (the separate-account
-	// mode), which also grants that account read on it.
-	Shared bool
+	// UserFontsLinked is ~/Library/Fonts in the run-as-you mode when it is a link to elsewhere,
+	// and so not listed.
+	UserFontsLinked string
+	// SharedFrom is the folder share_host_fonts copied from, when UserFonts is its copy.
+	SharedFrom string
 	// SharedMissing is the folder share_host_fonts asked for when it does not exist.
 	SharedMissing string
-	// Grants are the access entries the separate account needs to reach UserFonts, run as you;
-	// one already present is left out.
-	Grants [][]string
+	// Copy is what refreshing the shared copy found (share_host_fonts, separate-account mode).
+	Copy FontCopy
 }
 
 // ComposeFonts composes this launch's fonts from the tool profile and the Mac's font folders. A
-// READ OF THE HOST, so it runs in the orchestrator, never in the pure plan builder. self is the
-// run-as-you mode; share is the user-scope share_host_fonts opt-in; hostHome is your home.
+// READ OF THE HOST, and in the separate-account mode a refresh (share on) or removal (share off)
+// of the shared copy of your fonts, so it runs in the orchestrator, never in the pure plan
+// builder or a dry run. self is the run-as-you mode; share is the user-scope share_host_fonts
+// opt-in; hostHome is your home.
 func ComposeFonts(deps Deps, darwin *Darwin, hostHome string, self, share bool) FontSetup {
 	if darwin == nil || darwin.ProfilePath == "" {
 		return FontSetup{}
@@ -111,22 +117,43 @@ func ComposeFonts(deps Deps, darwin *Darwin, hostHome string, self, share bool) 
 	user := hostHome + "/" + userFontsRel
 	switch {
 	case self:
-		if isDir(user) {
-			f.UserFonts = user
+		if !isDir(user) {
+			return f
 		}
+		// The profile allow names the literal path, so a link to elsewhere is not listed: its
+		// target would be denied, and allowing the target would open a folder you did not name.
+		if deps.EvalSymlinks != nil {
+			if real, ok := deps.EvalSymlinks(user); ok && real != user {
+				f.UserFontsLinked = user
+				return f
+			}
+		}
+		f.UserFonts = user
 	case share:
 		if !isDir(user) {
 			f.SharedMissing = user
+			removeSharedFontCopy(deps)
 			return f
 		}
-		f.UserFonts, f.Shared = user, true
-		for _, g := range fontAccessGrants(hostHome) {
-			if !aceAlreadyGranted(deps, g[len(g)-1], g[2]) {
-				f.Grants = append(f.Grants, g)
-			}
+		f.SharedFrom = user
+		if deps.StageFontCopy == nil {
+			f.Copy = FontCopy{Err: "this build cannot copy fonts"}
+			return f
 		}
+		f.Copy = deps.StageFontCopy(user, fontCopyRoot())
+		f.UserFonts = f.Copy.Dir
+	default:
+		// The opt-in is off: no copy of your fonts stays behind.
+		removeSharedFontCopy(deps)
 	}
 	return f
+}
+
+// removeSharedFontCopy removes the separate account's copy of your fonts.
+func removeSharedFontCopy(deps Deps) {
+	if deps.RemoveFontCopy != nil {
+		deps.RemoveFontCopy(fontCopyRoot())
+	}
 }
 
 // newestMobileAssetFontDir is the newest com_apple_MobileAsset_Font<N> folder, by N, or "".
@@ -149,33 +176,9 @@ func newestMobileAssetFontDir(glob func(string) []string) string {
 	return best
 }
 
-// fontAccessGrants are the access entries that let the separate account read your font folder:
-// traverse (search, not list) on your home and on ~/Library, and list and read on
-// ~/Library/Fonts, inherited by what is added to it later. `user:` ACEs, as every grant to the
-// sandbox account is (sandboxFileReadAce says why), run as you, the owner, with no sudo.
-func fontAccessGrants(hostHome string) [][]string {
-	fonts := hostHome + "/" + userFontsRel
-	return [][]string{
-		{chmodBin, "+a", "user:" + SandboxUser + " allow search", hostHome},
-		{chmodBin, "+a", "user:" + SandboxUser + " allow search", hostHome + "/Library"},
-		{chmodBin, "+a", "user:" + SandboxUser + " allow list,search," + sandboxFileReadRights +
-			",file_inherit,directory_inherit", fonts},
-	}
-}
-
-// aceAlreadyGranted reports whether `ls -lde path` already shows ace, so a relaunch does not add
-// the same entry again. Unknown (no reader, a failed read) is not granted: the grant runs.
-func aceAlreadyGranted(deps Deps, p, ace string) bool {
-	if deps.RunCapture == nil {
-		return false
-	}
-	out, rc := deps.RunCapture([]string{"/bin/ls", "-lde", p})
-	return rc == 0 && strings.Contains(out, ace)
-}
-
 // SeatbeltReads are the paths a profile must open for this setup beyond its system read roots:
-// your font folder when it is listed, and a MobileAsset folder's real path outside
-// /System/Library.
+// the font folder of yours it lists (the folder in the run-as-you mode, the copy in the
+// separate-account mode), and a MobileAsset folder's real path outside /System/Library.
 func (f FontSetup) SeatbeltReads() []string {
 	var out []string
 	if f.UserFonts != "" {
@@ -260,28 +263,57 @@ func userFontsReadAllow(reads []string) string {
 		}
 	}
 	return "\n;; [yolo] Font folders the session's generated fonts.conf lists beyond the system read\n" +
-		";; roots (OQ-NX4, OQ-NX9): your ~/Library/Fonts and a MobileAsset font folder's real path.\n" +
+		";; roots (OQ-NX4, OQ-NX9): your ~/Library/Fonts (run as you) or yolo's copy of it (the\n" +
+		";; separate account, share_host_fonts), and a MobileAsset font folder's real path.\n" +
 		";; READ only, each folder exactly; metadata alone on the directories above it.\n" +
 		";; #seatbelt-test-id:font-folder-read-allow#\n" +
 		form("allow file-read-metadata", meta.String()) +
 		form("allow file-read*", subpathLines(reads))
 }
 
-// printFonts is the launch's disclosure of the fonts it gave the sandbox, read off the plan: one
-// line naming your shared font folder (share_host_fonts), one when that folder does not exist,
-// and one dim line naming the file and what it lists.
+// printFonts is the launch's disclosure of the fonts it gave the sandbox, read off the plan: a
+// line naming the copy of your fonts the separate account reads (share_host_fonts) and what it
+// left out, one when the folder does not exist or is not listed, and one dim line naming the
+// file and what it lists.
 func printFonts(out printer, f FontSetup, file string, userConfig string) {
 	if f.Profile == "" {
 		return
 	}
+	cfg := richtext.Escape(userConfig)
 	if f.SharedMissing != "" {
 		out.printf("[dim]%s: %s does not exist, so no font folder of yours is shared. Add fonts "+
 			"there, or remove %s from %s.[/dim]", ShareHostFontsKey,
-			richtext.Escape(f.SharedMissing), ShareHostFontsKey, richtext.Escape(userConfig))
+			richtext.Escape(f.SharedMissing), ShareHostFontsKey, cfg)
 	}
-	if f.Shared {
-		out.printf("Sharing your fonts read-only (%s): %s, readable by %s.", ShareHostFontsKey,
-			richtext.Escape(f.UserFonts), SandboxUser)
+	if f.UserFontsLinked != "" {
+		out.printf("[dim]Fonts in the sandbox: %s is a link to another folder, which the sandbox "+
+			"profile does not open, so it is not listed. Keep your fonts in the folder itself to "+
+			"have them read.[/dim]", richtext.Escape(f.UserFontsLinked))
+	}
+	if f.SharedFrom != "" {
+		src := richtext.Escape(f.SharedFrom)
+		switch {
+		case f.Copy.SourceIsLink:
+			out.printf("[yellow]%s: %s is a symbolic link, so it is not shared; yolo copies only "+
+				"the folder itself.[/yellow] Replace the link with the folder, or remove %s from %s.",
+				ShareHostFontsKey, src, ShareHostFontsKey, cfg)
+		case f.Copy.Dir == "":
+			out.printf("[yellow]%s: could not copy %s for %s (%s), so no font of yours is shared "+
+				"this launch.[/yellow] Launch again, and if this repeats, remove %s from %s.",
+				ShareHostFontsKey, src, SandboxUser, richtext.Escape(f.Copy.Err), ShareHostFontsKey, cfg)
+		default:
+			out.printf("Sharing your fonts read-only (%s): a copy of %s at %s, readable by %s.",
+				ShareHostFontsKey, src, richtext.Escape(f.Copy.Dir), SandboxUser)
+		}
+		if n := len(f.Copy.Unreadable); n > 0 {
+			out.printf("[dim]%s: %d file(s) in %s could not be read, so they are not shared: %s. "+
+				"Make them readable by you to share them.[/dim]", ShareHostFontsKey, n, src,
+				richtext.Escape(strings.Join(f.Copy.Unreadable, ", ")))
+		}
+		if f.Copy.Links > 0 {
+			out.printf("[dim]%s: %d symbolic link(s) in %s were skipped; only files are copied.[/dim]",
+				ShareHostFontsKey, f.Copy.Links, src)
+		}
 	}
 	if file == "" {
 		out.printf("[dim]Fonts in the sandbox: your own environment sets %s, so yolo's fonts.conf "+

@@ -391,15 +391,15 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 				out.print(rwMountDisclosure(m, rootful))
 			}
 		}
-		// THE DEV OVERRIDES' checkouts outside the workspace, read-only, with the line naming
-		// which bytes each overridden program runs, printed where the bind is emitted
-		// (programoverrides.go, BG-D10).
 		// THE USER'S FONT FOLDERS, read-only, with their disclosure line, when the user scope
 		// opts in (share_host_fonts, hostfonts.go).
 		for _, b := range o.hostFontBinds(rt, paths.Home(), out.print) {
 			mountArgs = append(mountArgs, "-v", b.bindArg())
 			out.print(hostFontDisclosure(b))
 		}
+		// THE DEV OVERRIDES' checkouts outside the workspace, read-only, with the line naming
+		// which bytes each overridden program runs, printed where the bind is emitted
+		// (programoverrides.go, BG-D10).
 		mountArgs = append(mountArgs, programOverrideBindArgs(in.programOverrides)...)
 		for _, line := range programOverrideLines(programOverridesWire(in.programOverrides)) {
 			out.print(line)

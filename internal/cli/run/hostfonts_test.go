@@ -8,16 +8,28 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
 // fontsArgv assembles a podman (or rt) argv with share_host_fonts set to share, HOME at home.
 func fontsArgv(t *testing.T, rt string, share, macOS bool, hostDirs ...string) (argv []string, home, printed string) {
 	t.Helper()
+	return fontsArgvWith(t, rt, func(home string) {
+		for _, d := range hostDirs {
+			mkdirs(t, filepath.Join(home, d))
+		}
+	}, func(o *Options, _ *assembleInput) {
+		o.ShareHostFontsConfig = func() bool { return share }
+		o.IsMacOS, o.IsLinux = macOS, !macOS
+	})
+}
+
+// fontsArgvWith is fontsArgv with the host home prepared by setup and the launch shaped by shape.
+func fontsArgvWith(t *testing.T, rt string, setup func(home string), shape func(*Options, *assembleInput)) (argv []string, home, printed string) {
+	t.Helper()
 	home = evalTempDir(t)
 	t.Setenv("HOME", home)
-	for _, d := range hostDirs {
-		mkdirs(t, filepath.Join(home, d))
-	}
+	setup(home)
 	ws := t.TempDir()
 	emptyLoopholeDirs(t)
 	wsState := filepath.Join(ws, ".yolo", "home")
@@ -25,17 +37,17 @@ func fontsArgv(t *testing.T, rt string, share, macOS bool, hostDirs ...string) (
 		t.Fatal(err)
 	}
 	o := goldenOptions(ws, home)
-	o.ShareHostFontsConfig = func() bool { return share }
-	o.IsMacOS, o.IsLinux = macOS, !macOS
 	var buf bytes.Buffer
 	o.Stdout, o.Stderr = &buf, &buf
 	sec := jsonx.NewOrderedMap()
 	sec.Set("blocked_tools", []any{})
-	argv = o.assembleRunCmd(&assembleInput{
+	in := &assembleInput{
 		cfg: newConfig("security", sec), rt: rt, cname: "yolo-ws-abcd1234",
 		agentsPath: filepath.Join(ws, "agents"), wsState: wsState, miseStore: "/mise-store",
 		yoloVersion: "9.9.9-test", mountTargets: map[string]struct{}{},
-	})
+	}
+	shape(o, in)
+	argv = o.assembleRunCmd(in)
 	return argv, home, buf.String()
 }
 
@@ -73,11 +85,11 @@ func TestShareHostFontsBindsYourFontFoldersReadOnly(t *testing.T) {
 	argv, h, printed := fontsArgv(t, "podman", true, false, ".local/share/fonts", ".fonts")
 	joined = strings.Join(argv, " ")
 	for _, b := range []hostFontBind{
-		{filepath.Join(h, ".local/share/fonts"), "/home/agent/.local/share/fonts/yolo-host"},
-		{filepath.Join(h, ".fonts"), "/home/agent/.local/share/fonts/yolo-host-dotfonts"},
+		{source: filepath.Join(h, ".local/share/fonts"), dest: "/home/agent/.local/share/fonts/yolo-host"},
+		{source: filepath.Join(h, ".fonts"), dest: "/home/agent/.local/share/fonts/yolo-host-dotfonts"},
 	} {
 		if !strings.Contains(joined, "-v "+b.source+":"+b.dest+":ro") {
-			t.Errorf("argv lacks the read-only bind %s:\n%s", b.bindArg(), joined)
+			t.Errorf("argv lacks the read-only bind of %s:\n%s", b.source, joined)
 		}
 		if !strings.Contains(printed, "Sharing your fonts read-only (share_host_fonts): "+b.source+" → "+b.dest) {
 			t.Errorf("no disclosure line for %s:\n%s", b.source, printed)
@@ -107,5 +119,77 @@ func TestShareHostFontsSourcesPerHost(t *testing.T) {
 	}
 	if s := o.hostFontSources("/home/you"); s[0].source != "/data/fonts" {
 		t.Errorf("XDG_DATA_HOME not honored: %+v", s)
+	}
+}
+
+// A SEALED BUILD JAIL gets no font bind, whatever the opt-in says (seal.go: a fork build gets no
+// host folder).
+func TestShareHostFontsBindsNothingIntoASealedBuild(t *testing.T) {
+	argv, _, printed := fontsArgvWith(t, "podman", func(home string) {
+		mkdirs(t, filepath.Join(home, ".fonts"))
+	}, func(o *Options, in *assembleInput) {
+		o.ShareHostFontsConfig = func() bool { return true }
+		in.sealed = true
+	})
+	if strings.Contains(strings.Join(argv, " "), hostFontsDir) || strings.Contains(printed, "share_host_fonts") {
+		t.Errorf("a sealed build got a font bind or line:\n%s\n%s", strings.Join(argv, " "), printed)
+	}
+}
+
+// A FONT SOURCE THAT IS NOT A FONT FOLDER of yours is skipped with a line: a ~/.fonts link to
+// ~/.ssh, and an XDG_DATA_HOME outside your home.
+func TestShareHostFontsSkipsCredentialAndOutsideSources(t *testing.T) {
+	outside := evalTempDir(t)
+	mkdirs(t, filepath.Join(outside, "fonts"))
+	argv, home, printed := fontsArgvWith(t, "podman", func(home string) {
+		mkdirs(t, filepath.Join(home, ".ssh"))
+		if err := os.Symlink(filepath.Join(home, ".ssh"), filepath.Join(home, ".fonts")); err != nil {
+			t.Fatal(err)
+		}
+	}, func(o *Options, _ *assembleInput) {
+		o.ShareHostFontsConfig = func() bool { return true }
+		o.Getenv = func(k string) string {
+			if k == "XDG_DATA_HOME" {
+				return outside
+			}
+			return ""
+		}
+	})
+	joined := strings.Join(argv, " ")
+	if strings.Contains(joined, hostFontsDir) {
+		t.Errorf("a credential or outside folder was bound:\n%s", joined)
+	}
+	for _, w := range []string{
+		"not sharing " + filepath.Join(home, ".fonts") + ": it resolves to " + filepath.Join(home, ".ssh"),
+		"not sharing " + filepath.Join(outside, "fonts") + ": it resolves to " + filepath.Join(outside, "fonts") + ", which is not a folder inside your home",
+	} {
+		if !strings.Contains(printed, w) {
+			t.Errorf("the launch does not say %q:\n%s", w, printed)
+		}
+	}
+
+	// A link to a folder of fonts elsewhere in the home is fine, and the bind uses the real path.
+	argv, home, printed = fontsArgvWith(t, "podman", func(home string) {
+		mkdirs(t, filepath.Join(home, "Dropbox", "fonts"))
+		if err := os.Symlink(filepath.Join(home, "Dropbox", "fonts"), filepath.Join(home, ".fonts")); err != nil {
+			t.Fatal(err)
+		}
+	}, func(o *Options, _ *assembleInput) { o.ShareHostFontsConfig = func() bool { return true } })
+	if want := "-v " + filepath.Join(home, "Dropbox", "fonts") + ":" + hostFontsDir + "/yolo-host-dotfonts:ro"; !strings.Contains(strings.Join(argv, " "), want) {
+		t.Errorf("a linked font folder inside the home is not bound by its real path (%s):\n%s\n%s", want, strings.Join(argv, " "), printed)
+	}
+}
+
+// The Podman Machine skip names the exact commands that share the folder.
+func TestShareHostFontsMachineSkipNamesTheCommands(t *testing.T) {
+	o := goldenOptions(t.TempDir(), "/Users/you")
+	o.machineShares = &machineSharesProbe{ok: true, shares: runtime.MachineShares{Machine: "dev",
+		Shares: []runtime.MachineShare{{Source: "/Users", Target: "/Users"}}}}
+	got := o.machineShareCommands("/Volumes/Fonts")
+	for _, w := range []string{"podman machine stop dev && podman machine rm dev",
+		"podman machine init", "-v /Users:/Users", "podman machine start"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("machineShareCommands lacks %q: %s", w, got)
+		}
 	}
 }

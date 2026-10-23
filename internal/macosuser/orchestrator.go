@@ -197,6 +197,11 @@ type Deps struct {
 	// MobileAsset font folders, and a listed folder's real path. nil finds none.
 	Glob         func(pattern string) []string
 	EvalSymlinks func(string) (string, bool)
+	// StageFontCopy refreshes the shared copy of your font folder the separate account reads
+	// under share_host_fonts, and RemoveFontCopy removes it when the opt-in is off (fontcopy.go).
+	// nil stages nothing and removes nothing.
+	StageFontCopy  func(src, root string) FontCopy
+	RemoveFontCopy func(root string)
 	// StartBackground starts argv in the background, in a process group of its own, with
 	// no terminal, and returns its handle: the stop that ends it (idempotent, never nil on
 	// success), a channel closed when it exits, and what it wrote on its own stdout and
@@ -1231,8 +1236,8 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// which variables it set.
 	steps.begin("ca_trust")
 	opts.CATrust = ComposeCATrust(deps, darwin)
-	// AND ITS FONTS (fontsconf.go): the Mac's font folders, and yours in the run-as-you mode or
-	// under share_host_fonts, read here for the same reason.
+	// AND ITS FONTS (fontsconf.go): the Mac's font folders, and yours in the run-as-you mode or,
+	// under share_host_fonts, a refreshed copy of them for the separate account (fontcopy.go).
 	opts.Fonts = ComposeFonts(deps, darwin, opts.HostHome, opts.Mode == ModeSelf, opts.ShareHostFonts)
 
 	steps.begin("build_plan")
@@ -2428,6 +2433,8 @@ func RealDeps(runProxy func(argv []string) int, materialize func(repoRoot string
 		VerifyCA:            verifyCAReal,
 		Glob:                globReal,
 		EvalSymlinks:        evalSymlinksReal,
+		StageFontCopy:       func(src, root string) FontCopy { return stageFontCopy(src, root, runReal) },
+		RemoveFontCopy:      removeFontCopy,
 		SetDiskIOPolicy:     ioprio.SetProcessDiskPolicy,
 		DiskIOPolicy:        ioprio.GetProcessDiskPolicy,
 		HostCPUs:            runtime.NumCPU,

@@ -967,10 +967,6 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	ctxLinks := append([]ContextLink(nil), hostCtx.Links...)
 	stageStep("context_dir", StageContextDirCommands(hostCtx.Tree, ctxLinks, cname, ""))
 	stageStep("endpoint_grants", endpointGrantCommands(sandboxEnv))
-	// YOUR FONT FOLDER, granted to the sandbox account under share_host_fonts (fontsconf.go).
-	if !self {
-		stageStep("font_grants", session.Fonts.Grants)
-	}
 	stageStep("session_tmp", SessionTmpCreateCommands(sessionTmp))
 
 	// THE GUEST'S JAIL DAEMONS (OQ-DP8, OQ-DP9; jaildaemon.go), composed only when the

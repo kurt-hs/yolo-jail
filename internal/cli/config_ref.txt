@@ -1317,11 +1317,14 @@
   [bold]share_host_fonts[/bold] (boolean): Share your own font folder, read-only, with a jail that does not run as you.  Default FALSE.
     A container jail gets ~/.local/share/fonts and ~/.fonts from a Linux host, or
     ~/Library/Fonts from a Mac, mounted read-only under the jail's
-    ~/.local/share/fonts, where its fontconfig finds them.  A macos-user jail in
-    the separate-account mode can read ~/Library/Fonts, and its fonts.conf lists
-    it.  Every such launch names each folder it shares; a folder that does not
-    exist is skipped with a line.  The run-as-you mode reads ~/Library/Fonts
-    always, and `yolo host` is you, so neither needs it.
+    ~/.local/share/fonts, where its fontconfig finds them; a folder that resolves
+    outside your home or into a credential folder is not shared.  A macos-user
+    jail in the separate-account mode reads a copy yolo keeps of the readable
+    files in ~/Library/Fonts, refreshed when they change and removed when you
+    turn this off; the sandbox user is given no access to your home.  Every such
+    launch names each folder it shares; a folder that does not exist is skipped
+    with a line.  The run-as-you mode reads ~/Library/Fonts always, and
+    `yolo host` is you, so neither needs it.
 
     USER SCOPE ONLY.  It is read from your user config alone, so a workspace value is
     a `yolo check` error and is never consulted -- and /workspace is writable by

@@ -268,7 +268,9 @@ variables at the same file.
 fonts in `/System/Library/Fonts` and `/Library/Fonts`, the fonts macOS downloads on demand, and
 any font package in your `packages`. A jail running as you also finds the fonts you installed for
 yourself in `~/Library/Fonts`. For the separate sandbox user, add `"share_host_fonts": true` to
-your user config: the sandbox can then read `~/Library/Fonts`, and every launch says so. The same
+your user config: each launch gives the sandbox a copy of the fonts in `~/Library/Fonts`, refreshed
+when they change, and says so. The sandbox user is given no access to your home itself, and the copy
+is removed when you turn the setting off. The same
 setting shares your fonts, read-only, with a container jail on any host. A project's config cannot
 set it.
 

@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -44,8 +45,17 @@ func fontDeps(dirs ...string) Deps {
 		}
 		return p, true
 	}
+	d.StageFontCopy = func(src, root string) FontCopy {
+		return FontCopy{Dir: root + "/" + testFontCopyDigest}
+	}
 	return d
 }
+
+// testFontCopyDigest is the copy folder fontDeps' StageFontCopy answers with.
+const testFontCopyDigest = "0123456789abcdef"
+
+// testFontCopy is that copy's path.
+func testFontCopy() string { return fontCopyRoot() + "/" + testFontCopyDigest }
 
 func fontDarwin() *Darwin {
 	return &Darwin{PathPrefix: []string{testProfile + "/bin"}, System: "aarch64-darwin", ProfilePath: testProfile}
@@ -61,8 +71,8 @@ func TestComposeFontsListsTheMacsFoldersAndTheNewestMobileAsset(t *testing.T) {
 	if strings.Join(f.ExtraReads, ",") != "/private/var/MobileAsset/AssetsV2/com_apple_MobileAsset_Font10" {
 		t.Errorf("ExtraReads = %v, want the MobileAsset folder's real path", f.ExtraReads)
 	}
-	if f.UserFonts != "" || len(f.Grants) != 0 {
-		t.Errorf("the account mode without share_host_fonts lists or grants your fonts: %+v", f)
+	if f.UserFonts != "" || f.SharedFrom != "" {
+		t.Errorf("the account mode without share_host_fonts lists your fonts: %+v", f)
 	}
 	conf := fontsConfContent(f)
 	for _, w := range []string{"<dir>/System/Library/Fonts</dir>", "<dir>/Library/Fonts</dir>",
@@ -84,8 +94,8 @@ func TestComposeFontsListsTheMacsFoldersAndTheNewestMobileAsset(t *testing.T) {
 func TestComposeFontsReadsYourFontsInSelfModeAlways(t *testing.T) {
 	user := testHostHome + "/Library/Fonts"
 	f := ComposeFonts(fontDeps(user), fontDarwin(), testHostHome, true, false)
-	if f.UserFonts != user || f.Shared || len(f.Grants) != 0 {
-		t.Errorf("self mode: %+v; want your fonts listed, with no grant and no opt-in", f)
+	if f.UserFonts != user || f.SharedFrom != "" {
+		t.Errorf("self mode: %+v; want your folder itself listed, with no copy and no opt-in", f)
 	}
 	if !strings.Contains(fontsConfContent(f), "<dir>"+user+"</dir>") {
 		t.Errorf("self mode's fonts.conf does not list %s", user)
@@ -95,35 +105,104 @@ func TestComposeFontsReadsYourFontsInSelfModeAlways(t *testing.T) {
 	}
 }
 
-func TestComposeFontsSharesYourFontsWithTheAccountOnlyWhenAsked(t *testing.T) {
+// A run-as-you ~/Library/Fonts that is a link to elsewhere is not listed: the profile allow names
+// the literal path.
+func TestComposeFontsSkipsALinkedFontFolderInSelfMode(t *testing.T) {
 	user := testHostHome + "/Library/Fonts"
 	d := fontDeps(user)
-	f := ComposeFonts(d, fontDarwin(), testHostHome, false, true)
-	if f.UserFonts != user || !f.Shared {
-		t.Fatalf("share_host_fonts: %+v; want your fonts listed and shared", f)
-	}
-	want := fontAccessGrants(testHostHome)
-	if fmt.Sprint(f.Grants) != fmt.Sprint(want) {
-		t.Errorf("grants = %v, want %v", f.Grants, want)
-	}
-	// An ACE a relaunch already granted is not added again.
-	d.RunCapture = func(argv []string) (string, int) {
-		if argv[len(argv)-1] == testHostHome {
-			return "drwxr-x---+ 1 you staff 0 Oct 1 " + testHostHome + "\n 0: user:" + SandboxUser + " allow search\n", 0
+	d.EvalSymlinks = func(p string) (string, bool) {
+		if p == user {
+			return "/Volumes/Fonts", true
 		}
-		return "", 0
+		return p, true
 	}
-	if g := ComposeFonts(d, fontDarwin(), testHostHome, false, true); len(g.Grants) != 2 {
-		t.Errorf("grants with the home already granted = %v, want the other two", g.Grants)
+	f := ComposeFonts(d, fontDarwin(), testHostHome, true, false)
+	if f.UserFonts != "" || f.UserFontsLinked != user {
+		t.Errorf("a linked ~/Library/Fonts: %+v; want it skipped and named", f)
 	}
+	if strings.Contains(fontsConfContent(f), user) || slices.Contains(f.SeatbeltReads(), user) {
+		t.Errorf("a linked ~/Library/Fonts is listed or opened: %v", f.SeatbeltReads())
+	}
+	var out bytes.Buffer
+	printFonts(printer{w: &out}, f, "/x.fonts.conf", "/u/config.jsonc")
+	if !strings.Contains(out.String(), user+" is a link to another folder") {
+		t.Errorf("the skip is not said:\n%s", out.String())
+	}
+}
+
+// THE SEPARATE ACCOUNT reads a yolo-owned COPY of your fonts, never the folder in your home, and
+// the opt-in off removes the copy.
+func TestComposeFontsSharesACopyWithTheAccountOnlyWhenAsked(t *testing.T) {
+	user := testHostHome + "/Library/Fonts"
+	d := fontDeps(user)
+	var staged, removed []string
+	stage := d.StageFontCopy
+	d.StageFontCopy = func(src, root string) FontCopy { staged = append(staged, src+" -> "+root); return stage(src, root) }
+	d.RemoveFontCopy = func(root string) { removed = append(removed, root) }
+
+	f := ComposeFonts(d, fontDarwin(), testHostHome, false, true)
+	if f.SharedFrom != user || f.UserFonts != testFontCopy() {
+		t.Fatalf("share_host_fonts: %+v; want the copy listed, from %s", f, user)
+	}
+	if fmt.Sprint(staged) != "["+user+" -> "+fontCopyRoot()+"]" || len(removed) != 0 {
+		t.Errorf("staged %v, removed %v; want one refresh from your folder into %s", staged, removed, fontCopyRoot())
+	}
+	conf := fontsConfContent(f)
+	if strings.Contains(conf, "<dir>"+user+"</dir>") || !strings.Contains(conf, "<dir>"+testFontCopy()+"</dir>") {
+		t.Errorf("the account's fonts.conf names your folder rather than the copy:\n%s", conf)
+	}
+	for _, r := range f.SeatbeltReads() {
+		if strings.HasPrefix(r, testHostHome) {
+			t.Errorf("the account profile would open %s inside your home", r)
+		}
+	}
+
+	staged, removed = nil, nil
+	if g := ComposeFonts(d, fontDarwin(), testHostHome, false, false); g.UserFonts != "" ||
+		fmt.Sprint(removed) != "["+fontCopyRoot()+"]" || len(staged) != 0 {
+		t.Errorf("share_host_fonts off: %+v, staged %v, removed %v; want the copy removed", g, staged, removed)
+	}
+	removed = nil
 	missing := ComposeFonts(fontDeps(), fontDarwin(), testHostHome, false, true)
-	if missing.SharedMissing != user || missing.UserFonts != "" || len(missing.Grants) != 0 {
-		t.Errorf("share_host_fonts with no folder: %+v; want it reported missing and nothing granted", missing)
+	if missing.SharedMissing != user || missing.UserFonts != "" {
+		t.Errorf("share_host_fonts with no folder: %+v; want it reported missing", missing)
+	}
+	// Self mode never copies and never removes another mode's copy by itself... it reads the folder.
+	staged = nil
+	if ComposeFonts(d, fontDarwin(), testHostHome, true, true); len(staged) != 0 {
+		t.Errorf("self mode copied your fonts: %v", staged)
+	}
+}
+
+// The copy's own refusals are each a line naming the next step.
+func TestPrintFontsNamesWhatTheCopyLeftOut(t *testing.T) {
+	user := testHostHome + "/Library/Fonts"
+	base := FontSetup{Profile: testProfile, SharedFrom: user}
+	cases := map[string]struct {
+		copy FontCopy
+		want []string
+	}{
+		"copied":  {FontCopy{Dir: testFontCopy()}, []string{"Sharing your fonts read-only (share_host_fonts): a copy of " + user + " at " + testFontCopy() + ", readable by _yolojail."}},
+		"link":    {FontCopy{SourceIsLink: true}, []string{user + " is a symbolic link, so it is not shared", "Replace the link with the folder"}},
+		"failed":  {FontCopy{Err: "disk full"}, []string{"could not copy " + user, "disk full", "Launch again"}},
+		"partial": {FontCopy{Dir: testFontCopy(), Unreadable: []string{"a.ttf", "b.otf"}, Links: 1}, []string{"2 file(s) in " + user + " could not be read, so they are not shared: a.ttf, b.otf", "1 symbolic link(s)"}},
+	}
+	for name, c := range cases {
+		f := base
+		f.Copy, f.UserFonts = c.copy, c.copy.Dir
+		var out bytes.Buffer
+		printFonts(printer{w: &out}, f, "/x.fonts.conf", "/u/config.jsonc")
+		for _, w := range c.want {
+			if !strings.Contains(out.String(), w) {
+				t.Errorf("%s: the launch does not say %q:\n%s", name, w, out.String())
+			}
+		}
 	}
 }
 
 // THE PLAN: FONTCONFIG_FILE names the session's fonts.conf, which is swept with the env file;
-// the account profile opens your font folder only with share_host_fonts, and the stage grants it.
+// the account profile opens the copy of your fonts only with share_host_fonts, and nothing is
+// granted inside your home.
 func TestThePlanNamesTheFontsConfAndOpensYourFontsInTheAccountProfile(t *testing.T) {
 	user := testHostHome + "/Library/Fonts"
 	fonts := ComposeFonts(fontDeps(user), fontDarwin(), testHostHome, false, true)
@@ -148,18 +227,18 @@ func TestThePlanNamesTheFontsConfAndOpensYourFontsInTheAccountProfile(t *testing
 		t.Errorf("the fonts.conf is not swept with the env file")
 	}
 	if !strings.Contains(plan.Seatbelt, "#seatbelt-test-id:font-folder-read-allow#") ||
-		!strings.Contains(plan.Seatbelt, "(subpath "+sbplStr(user)+")") {
-		t.Errorf("the account profile does not open %s:\n%s", user, plan.Seatbelt)
+		!strings.Contains(plan.Seatbelt, "(subpath "+sbplStr(testFontCopy())+")") {
+		t.Errorf("the account profile does not open the copy %s:\n%s", testFontCopy(), plan.Seatbelt)
+	}
+	if strings.Contains(plan.Seatbelt, sbplStr(user)) {
+		t.Errorf("the account profile names your own font folder %s", user)
 	}
 	// After the /Users read deny it re-opens, or the deny would win.
 	if strings.Index(plan.Seatbelt, "font-folder-read-allow") < strings.Index(plan.Seatbelt, "users-read-deny") {
 		t.Errorf("the font allow precedes the /Users deny it must re-open")
 	}
-	stage := fmt.Sprint(plan.StageCommands)
-	for _, g := range fontAccessGrants(testHostHome) {
-		if !strings.Contains(stage, fmt.Sprint(g)) {
-			t.Errorf("the stage does not grant %v", g)
-		}
+	if stage := fmt.Sprint(plan.StageCommands); strings.Contains(stage, testHostHome) {
+		t.Errorf("the stage touches your home:\n%s", stage)
 	}
 	files := plan.fontsFilePlans()
 	if len(files) != 1 || len(files[0].grant) != 1 {
@@ -232,7 +311,9 @@ func TestALaunchWritesTheFontsConfAndNamesYourSharedFonts(t *testing.T) {
 		}
 		return orig(p)
 	}
-	d.Glob, d.EvalSymlinks = base.Glob, base.EvalSymlinks
+	d.Glob, d.EvalSymlinks, d.StageFontCopy = base.Glob, base.EvalSymlinks, base.StageFontCopy
+	var removedCopy []string
+	d.RemoveFontCopy = func(root string) { removedCopy = append(removedCopy, root) }
 	contents := map[string]string{}
 	d.WriteHostFile = func(path, content string, mode os.FileMode) bool {
 		rec = append(rec, fmt.Sprintf("write:%s %#o", path, mode))
@@ -254,8 +335,12 @@ func TestALaunchWritesTheFontsConfAndNamesYourSharedFonts(t *testing.T) {
 	}
 	file := FontsConfFile(key, "")
 	joined := strings.Join(rec, "\n")
-	if !strings.Contains(contents[file], "<dir>"+user+"</dir>") {
-		t.Errorf("the launch did not write a fonts.conf listing %s:\n%s", user, joined)
+	if !strings.Contains(contents[file], "<dir>"+testFontCopy()+"</dir>") {
+		t.Errorf("the launch did not write a fonts.conf listing the copy %s:\n%s", testFontCopy(), joined)
+	}
+	if strings.Contains(joined, testHostHome) && strings.Contains(joined, "chmod") &&
+		strings.Contains(joined, "+a user:"+SandboxUser+" allow search "+testHostHome) {
+		t.Errorf("the launch grants the account access inside your home:\n%s", joined)
 	}
 	if !SandboxEnvFileSets(contents[SandboxEnvFile(key, "")], FontconfigFileVar, file) {
 		t.Errorf("the env file the launch wrote does not name %s", file)
@@ -263,12 +348,13 @@ func TestALaunchWritesTheFontsConfAndNamesYourSharedFonts(t *testing.T) {
 	if !strings.Contains(joined, "run:"+rmBin+" -f "+file) {
 		t.Errorf("%s is not removed when the session ends", file)
 	}
-	disclosure := "Sharing your fonts read-only (share_host_fonts): " + user + ", readable by " + SandboxUser + "."
+	disclosure := "Sharing your fonts read-only (share_host_fonts): a copy of " + user + " at " +
+		testFontCopy() + ", readable by " + SandboxUser + "."
 	if !strings.Contains(out.String(), disclosure) {
 		t.Errorf("the launch does not say %q:\n%s", disclosure, out.String())
 	}
 
-	// A missing folder: one launch line naming it and the next step, nothing granted.
+	// A missing folder: one launch line naming it and the next step, and the old copy removed.
 	out.Reset()
 	rec = nil
 	fontsThere = false
@@ -276,7 +362,7 @@ func TestALaunchWritesTheFontsConfAndNamesYourSharedFonts(t *testing.T) {
 		t.Fatalf("rc = %d\n%s", rc, out.String())
 	}
 	if !strings.Contains(out.String(), "share_host_fonts: "+user+" does not exist") ||
-		strings.Contains(strings.Join(rec, "\n"), "allow search "+testHostHome) {
-		t.Errorf("a missing font folder was not reported, or was granted:\n%s", out.String())
+		fmt.Sprint(removedCopy) != "["+fontCopyRoot()+"]" {
+		t.Errorf("a missing font folder was not reported, or its copy kept (%v):\n%s", removedCopy, out.String())
 	}
 }
