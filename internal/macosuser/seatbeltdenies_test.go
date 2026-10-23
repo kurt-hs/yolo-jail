@@ -37,8 +37,19 @@ func TestEverySeatbeltDenyCarriesATestID(t *testing.T) {
 	// The readonly entry and delivered content are passed so the config- and pack-driven
 	// denies are in the text too — otherwise the denies a launch generates are the ones this
 	// never checks.
-	lines := strings.Split(SeatbeltProfile("/Users/Shared/proj", "", []string{"vendored"},
-		sampleHomeReadonly()), "\n")
+	requireEveryDenyCarriesATestID(t, "the old profile", SeatbeltProfile("/Users/Shared/proj", "", []string{"vendored"},
+		sampleHomeReadonly()))
+	// The deny-by-default profile (seatbeltdeny.go), with every optional input set, under both
+	// values of each pending ruling, so every conditional deny is in one of the two texts.
+	requireEveryDenyCarriesATestID(t, "the deny-default profile", DenyDefaultProfile(fullProfileParams()))
+	alt := fullProfileParams()
+	alt.Loopback, alt.Tmp, alt.HostSoftware = LoopbackPolicy{AllowAll: true}, TmpPrivate, nil
+	requireEveryDenyCarriesATestID(t, "the deny-default profile, alternate rulings", DenyDefaultProfile(alt))
+}
+
+func requireEveryDenyCarriesATestID(t *testing.T, name, profile string) {
+	t.Helper()
+	lines := strings.Split(profile, "\n")
 	seen := map[string]int{}
 	denies := 0
 	for i, ln := range lines {
@@ -47,25 +58,25 @@ func TestEverySeatbeltDenyCarriesATestID(t *testing.T) {
 		}
 		denies++
 		if i == 0 {
-			t.Errorf("line %d is a deny with nothing above it: %s", i+1, ln)
+			t.Errorf("%s: line %d is a deny with nothing above it: %s", name, i+1, ln)
 			continue
 		}
 		m := seatbeltTestID.FindStringSubmatch(lines[i-1])
 		if m == nil {
-			t.Errorf("the deny on line %d carries no #seatbelt-test-id:…# on the line "+
+			t.Errorf("%s: the deny on line %d carries no #seatbelt-test-id:…# on the line "+
 				"above it, so nothing can name what proves it:\n  %s\n  %s",
-				i+1, lines[i-1], ln)
+				name, i+1, lines[i-1], ln)
 			continue
 		}
 		seen[m[1]]++
 	}
 	if denies == 0 {
-		t.Fatal("no deny directives found at all — the profile is not what this test thinks it is")
+		t.Fatalf("%s: no deny directives found at all — the profile is not what this test thinks it is", name)
 	}
 	for id, n := range seen {
 		if n > 1 {
-			t.Errorf("id %q labels %d denies; an id names one rule, or the registry "+
-				"cannot say which one a proof covers", id, n)
+			t.Errorf("%s: id %q labels %d denies; an id names one rule, or the registry "+
+				"cannot say which one a proof covers", name, id, n)
 		}
 	}
 }

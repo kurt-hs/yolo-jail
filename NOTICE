@@ -12,3 +12,9 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+This product includes Seatbelt profile rules adapted from Agent Safehouse
+(https://github.com/eugene1g/agent-safehouse), Copyright the Agent Safehouse
+authors, licensed under the Apache License, Version 2.0. The adapted rules
+ship in the macos-user deny-by-default profile
+(internal/macosuser/seatbeltdeny.go), which carries the attribution in its text.
