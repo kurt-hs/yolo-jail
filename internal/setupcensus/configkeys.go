@@ -533,6 +533,16 @@ var configKeys = map[string]Entry{
 			"(writeScopeFiles); loopholeAllow admits every loophole on this backend"),
 		Guide: []string{"`brokered`"},
 	},
+	"approval_hook": {
+		PodmanLinux: honored("the GitHub broker's host daemon (ghbroker.Main) reads it from the user " +
+			"config (config.ApprovalHook) and runs it per event of its own lifetime (brokerhook.Runner)"),
+		PodmanMac: honored("the same host daemon, on the Mac (ghbroker.Main)"),
+		AppleContainer: warned("loopholeAllow (loopholesruntime.go) does not start the GitHub " +
+			"broker here, so nothing runs the hook; notePackLoopholesInert names the loophole"),
+		MacosUser: honored("the same host daemon, started by startLoopholesMatching " +
+			"(loopholesruntime.go), runs it as the invoking user"),
+		Guide: []string{"`approval_hook`"},
+	},
 	"required_capabilities": everywhere(honored("refuseUnmetCapabilities runs inside "+
 		"loadAndValidateConfig, above the dispatch, so a capability nothing satisfies refuses "+
 		"the same way on every setup (preflight.go)"), "`required_capabilities`"),

@@ -188,6 +188,9 @@ var hostConfigKeys = map[string]keyCensusEntry{
 	// scope file (run's writeScopeFiles), and by `yolo check`'s report of that gate; no host-notch
 	// verb starts the broker. `yolo host apply` reads the user scope, where the key is refused
 	// (docs/design/workspace-widening.md WW-D9), so only a refused value can reach this entry.
+	"approval_hook": {KeyNotApplicable, "names the command a jail's host broker runs per approval " +
+		"event; the broker is not offered at the host (boundary-broker.md BB-D17), so no request is " +
+		"ever filed there"},
 	"brokered": {KeyNotApplicable, "lists the repositories a jail's GitHub broker admits for one " +
 		"workspace, from that workspace's own config, and a user-config value is refused; the " +
 		"broker is not offered at the host (boundary-broker.md BB-D17), where an agent runs your " +

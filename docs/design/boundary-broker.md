@@ -1419,6 +1419,19 @@ reference). The spellings above stand. The fields are the ones the store holds:
   need not be kept running by hand. It is off unless the user sets it, and only the user's own
   config can set it: a workspace config naming it is refused, as for long-lived access
   ([§5.8](#58-long-lived-access-and-temporary-access)).
+
+  **As built** (2026-10-23; `yolo config-ref` is the reference): the key is `approval_hook`, and
+  one line in the user config can be the whole front end:
+
+  ```jsonc
+  "approval_hook": "notify-send -A approve=Approve -A deny=Deny \"$YOLO_REQUEST_SUMMARY\""
+  ```
+
+  Each jail's host broker runs it with `sh -c`, the event's JSON on stdin and its fields in
+  `YOLO_*` variables, since a notifier such as `notify-send` takes its text as arguments. For a
+  request-filed event, a printed `approve` is Allow once and `deny` denies, each audited as a
+  `hook-decision`; anything else decides nothing. A run may last until its request would
+  expire. [BB-D75](#BB-D75) records who runs it and why.
 - **`yolo audit --json` is the audit half of the surface**, unchanged, with the `--service`
   filter the second source needs (built 2026-10-23).
 
@@ -1883,7 +1896,8 @@ terminal-notifier later, once the macOS release signs ([OQ-BB4](#15-decision-led
    its answer can reach the agent (step 2 of this list). Then GitHub's `read-write` set and git's
    per-ref `push` file requests instead of answering 77.
 4. **The event hook** ([BB-D75](#BB-D75)), after the watch and not holding writes: the
-   user-scope command yolo runs per event with its JSON on stdin.
+   user-scope command yolo runs per event with its JSON on stdin. **Built** 2026-10-23 as
+   `approval_hook`.
 
 ### 11.4 Steps 4 and 5
 
@@ -2236,7 +2250,7 @@ covered:
 | OQ-BB16 | **Maintainer ruling, none of the options as written, closest to B:** the git source is off by default and the user must include it; long-lived access, `read-only` or `read-write`, is granted only in the user's own config, scoped to workspaces by whatever form that config supports (today the per-workspace file); the workspace config can never widen it; temporary grants through `yolo approve` stay as designed. Partly supersedes [BB-D73](#BB-D73)'s *"probably belongs in the workspace's yolo config"*. *"there is no way that the workspace should be able to override that scoping. It can't widen."* Whether the rule reaches the existing `brokered.github.repos` list is [OQ-BB18](#OQ-BB18) | 2026-10-23 | [§5.8](#58-long-lived-access-and-temporary-access) | pending |
 | OQ-BB17 | **Maintainer ruling, as leaned (B):** writes ship with the agent's own background `yolo <source> wait <id>` as the answer path; the `yolo notify` ping replaces it per agent later. *"yes, ship now."* | 2026-10-23 | [§11.3](#113-step-3-the-cli-the-answer-path-and-writes) | pending |
 | OQ-BB18 | **Maintainer ruling, as leaned (A), level made explicit:** a workspace never raises a source's access level above the user's config (read-only there means no read-write from the workspace), but it freely requests repositories and branches (`brokered.github.repos`, new remotes), which join only at the human's y. *"the workspace is free to request the specific repositories and branches that it wants, and it's up to the user to gate that."* | 2026-10-23 | [§5.8](#58-long-lived-access-and-temporary-access) | pending |
-| <a id="BB-D75"></a>[`BB-D75`](#15-decision-ledger) | **Maintainer ruling, against [BB-D72](#BB-D72)'s no-hook half:** yolo gets an event hook as well as the watch, built in stages, the watch first and the hook as soon after as it can be; one without the other ships. *"if there's no push hook right now, then yes, I do want to add this in stages … having one piece of this without the other is totally fine … This is also not on by default."* *Implementation decision* in carrying it out: the hook is a user-scope key naming a command run per event with the event's JSON on stdin, off unless set, refused in a workspace config | 2026-10-23 | [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship) | pending |
+| <a id="BB-D75"></a>[`BB-D75`](#15-decision-ledger) | **Maintainer ruling, against [BB-D72](#BB-D72)'s no-hook half:** yolo gets an event hook as well as the watch, built in stages, the watch first and the hook as soon after as it can be; one without the other ships. *"if there's no push hook right now, then yes, I do want to add this in stages … having one piece of this without the other is totally fine … This is also not on by default."* *Implementation decision* in carrying it out: the hook is a user-scope key naming a command run per event with the event's JSON on stdin, off unless set, refused in a workspace config. *Implementation decisions* in building it, each reversible: the key is `approval_hook`. **Who runs it:** each jail's host broker daemon, for its own broker lifetime's records only, polling the store it already holds; so every record has one runner, the hook fires with no watch open, and it runs whenever a request can exist, since only a live broker files one. The key is read when the broker starts. **(a)** It runs under `sh -c`, with the event's fields in `YOLO_*` variables as well as its JSON on stdin, because a notifier such as `notify-send` takes its text as arguments and never reads stdin. **(b)** For a request-filed event, a trimmed stdout of exactly `approve` is Allow once, as `yolo approve <id>` with no `--for`, and `deny` denies; each is audited as a `hook-decision`, and any other output or a non-zero exit decides nothing. **(c)** A run may last a request's whole wait, one hour, so a notification left on screen can still be answered; each event runs its own command, so several pending requests run several at once | 2026-10-23 | [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship) | built: `internal/brokerhook`, started by `ghbroker.Main`; pinned by `TestTheBrokerRunsTheUsersApprovalHook`, `TestOnlyAnExactAnswerDecides` and `TestALaunchRefusesAWorkspaceApprovalHook` |
 | <a id="BB-D74"></a>[`BB-D74`](#15-decision-ledger) | *Implementation decision,* carrying out [OQ-BB16](#OQ-BB16)'s ruling, under which a workspace may at most narrow: the workspace config holds no long-lived-access key at all, neither one that widens nor one that narrows. A `brokered.<source>.hold` key, or any spelling of the level, at workspace scope is refused by `yolo check` and at launch, naming the per-workspace file and the host command that writes it. Narrowing is not offered because config merge union-merges lists, so a workspace narrowing a user list needs a merge rule of its own, and the user's side already ends access with one edit. Reversible if a use for narrowing appears | 2026-10-23 | [§5.8](#58-long-lived-access-and-temporary-access) | pending |
 
 ## Appendix A — prior art: unYOLO, re-analyzed from source (2026-08-12)
