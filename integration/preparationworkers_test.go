@@ -41,7 +41,10 @@ package integration
 // By HOME, read from /proc as homedaemons_test.go does: every process whose environment carries
 // HOME=<this test's temp home>. The HOME is unique to the test, so a match cannot be another
 // test's process or the machine's. The /proc start time ties the listed pid to the same process
-// before a signal, rather than trusting the pid alone. Two kinds are left out: the test binary's
+// before a signal, rather than trusting the pid alone. A process first seen while already
+// exiting, its environment released between the two HOME reads (CI run 39886931703: a late
+// podman), is never confirmed as this test's; it is waited for, never signalled, once the kernel
+// proves it exiting, and anything else unconfirmed is refused. Two kinds are left out: the test binary's
 // own descendants, which are the exec.Cmd children its own cleanups own (a stand-in, a session it
 // still holds), and a scratch remover (`internal scratch-rm`), which ends on its own within its
 // bound and is WAITED for, never stopped, since stopping it leaks the volumes it was removing. On
@@ -117,6 +120,15 @@ func (p homeProcess) yoloVerb() (string, bool) {
 }
 
 func (p homeProcess) isYolo() bool { _, ok := p.yoloVerb(); return ok }
+
+// exitingIdentity names a retained exiting process for a bound report, saying when its HOME was
+// never confirmed (provenExitingStopTarget), so the report does not claim it as this test's.
+func (p homeProcess) exitingIdentity() string {
+	if p.homeMatched {
+		return p.String()
+	}
+	return p.String() + " (HOME ownership unconfirmed: its environment was already released when first read)"
+}
 
 // waitOnly reports a scratch remover, which is waited for and never signalled.
 func (p homeProcess) waitOnly() bool { v, _ := p.yoloVerb(); return v == "scratch-rm" }
@@ -360,12 +372,17 @@ type provenExitObservation struct {
 	lateHomeErr error
 }
 
-// provenExitingStopTarget recognizes only an already-owned process whose same post-argv stat
-// ties PF_EXITING, a valid live state, and field-22 starttime to the listed identity. A late
-// unreadable HOME observation remains visible and is retained only through the existing bound.
+// provenExitingStopTarget recognizes only a process whose same post-argv stat ties PF_EXITING, a
+// valid live state, and field-22 starttime to the listed identity. That process is either
+// already owned (its bracketed HOME read matched) or one whose bracketed read found its
+// environment already released: first seen while exiting, after the kernel dropped its memory, so
+// its HOME can no longer be confirmed but it can run no more code under any HOME. Either is only
+// WAITED for, never signalled, so an unconfirmed one claims no ownership; anything else whose
+// HOME was not confirmed is refused. A late unreadable HOME observation remains visible and is
+// retained only through the existing bound.
 func provenExitingStopTarget(home string, p homeProcess, snapshot stopProcessSnapshot, probes stopProcessProbes) (provenExitObservation, error) {
 	switch {
-	case !p.homeMatched:
+	case !p.homeMatched && !errors.Is(p.homeErr, errHomeEnvironmentCleared):
 		return provenExitObservation{reason: "HOME ownership was not previously confirmed"}, nil
 	case p.homeErr != nil && !errors.Is(p.homeErr, errHomeEnvironmentCleared):
 		return provenExitObservation{reason: "prior HOME observation was not coherent"}, nil
@@ -806,7 +823,7 @@ func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, 
 				return stopped, nil
 			}
 			if !time.Now().Before(deadline) {
-				boundErr := fmt.Errorf("known exiting process identity %s is still live after the stop bound %s; it was not signalled", exiting[0], bound)
+				boundErr := fmt.Errorf("known exiting process identity %s is still live after the stop bound %s; it was not signalled", exiting[0].exitingIdentity(), bound)
 				if exiting[0].lateHomeErr != nil {
 					return stopped, fmt.Errorf("%w: last HOME observation: %w", boundErr, exiting[0].lateHomeErr)
 				}
@@ -846,7 +863,7 @@ func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, 
 				}
 			}
 			for _, p := range exiting {
-				failures = append(failures, fmt.Sprintf("known exiting process identity %s is still live and was not signalled", p))
+				failures = append(failures, fmt.Sprintf("known exiting process identity %s is still live and was not signalled", p.exitingIdentity()))
 				if p.lateHomeErr != nil {
 					retainedHOMEErrors = append(retainedHOMEErrors, fmt.Errorf("last HOME observation for %s: %w", p, p.lateHomeErr))
 				}
@@ -1333,30 +1350,113 @@ func TestValidLiveLinuxProcessStateExcludesDeadStates(t *testing.T) {
 	}
 }
 
-func TestStopHomeProcessesDoesNotRetainInitiallyUnprovenHome(t *testing.T) {
+// CI run 39886931703: a podman spawned late in the stop was listed by its first HOME read, then
+// released its memory before the bracketed read, which found an empty environment. It was still
+// exiting, not yet a zombie, and the stop refused it as unconfirmed. Kernel-proven exiting, it is
+// waited for until gone and never signalled.
+func TestStopHomeProcessesWaitsForAnUnconfirmedHomeFirstSeenExiting(t *testing.T) {
 	const home = "/test/home"
 	const startTime = "876542"
 	cleared := fmt.Errorf("%w: environment disappeared during exit", errHomeEnvironmentCleared)
 	listed := homeProcess{
-		pid: 5150, ppid: 1, args: []string{"/bin/worker"}, startTime: startTime,
+		pid: 5150, ppid: 1, args: []string{"/bin/podman"}, startTime: startTime,
 		homeErr:     cleared,
 		homeMatched: bracketedHomeMatch(true, false, cleared, nil),
 	}
 	listCalls, inspectCalls, homeCalls, killCalls := 0, 0, 0, 0
 	probes := stopProcessProbes{
-		list: func(string) []homeProcess { listCalls++; return []homeProcess{listed} },
+		list: func(string) []homeProcess {
+			listCalls++
+			if listCalls == 1 {
+				return []homeProcess{listed}
+			}
+			return nil
+		},
 		inspect: func(int) (stopProcessSnapshot, error) {
 			inspectCalls++
+			if inspectCalls == 3 {
+				return stopProcessSnapshot{gone: true}, nil
+			}
 			return exitingStopSnapshot(startTime), nil
 		},
 		home: func(int, string) (bool, error) { homeCalls++; return false, cleared },
 		kill: func(int, syscall.Signal) error { killCalls++; return nil },
 	}
 	stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
-	if err == nil || !strings.Contains(err.Error(), "HOME ownership was not previously confirmed") ||
-		len(stopped) != 0 || listCalls != 1 || inspectCalls != 1 || homeCalls != 0 || killCalls != 0 {
-		t.Fatalf("stop=%v, %v (lists=%d inspections=%d HOME=%d signals=%d); want immediate refusal without claiming ownership",
+	if err != nil || len(stopped) != 0 || killCalls != 0 || listCalls != 3 || inspectCalls != 3 || homeCalls != 2 {
+		t.Fatalf("stop=%v, %v (lists=%d inspections=%d HOME=%d signals=%d); want the exiting process waited for until gone, without signal",
 			stopped, err, listCalls, inspectCalls, homeCalls, killCalls)
+	}
+}
+
+// Waiting for an unconfirmed exiting process stays bounded, and the bound report says its HOME
+// was never confirmed rather than claiming it as this test's.
+func TestStopHomeProcessesReportsUnconfirmedExitingHomeAtBound(t *testing.T) {
+	const home = "/test/home"
+	const startTime = "876540"
+	cleared := fmt.Errorf("%w: environment disappeared during exit", errHomeEnvironmentCleared)
+	listed := homeProcess{
+		pid: 5149, ppid: 1, args: []string{"/bin/podman"}, startTime: startTime,
+		homeErr: cleared, homeMatched: bracketedHomeMatch(true, false, cleared, nil),
+	}
+	listCalls, killCalls := 0, 0
+	probes := stopProcessProbes{
+		// An emptied environment fails the census's first HOME read, so the process is listed once.
+		list: func(string) []homeProcess {
+			listCalls++
+			if listCalls == 1 {
+				return []homeProcess{listed}
+			}
+			return nil
+		},
+		inspect: func(int) (stopProcessSnapshot, error) { return exitingStopSnapshot(startTime), nil },
+		home:    func(int, string) (bool, error) { return false, cleared },
+		kill:    func(int, syscall.Signal) error { killCalls++; return nil },
+	}
+	stopped, err := stopHomeProcessesWithinWithProbes(home, 30*time.Millisecond, 0, probes)
+	if err == nil || !strings.Contains(err.Error(), "still live") || !strings.Contains(err.Error(), "HOME ownership unconfirmed") ||
+		len(stopped) != 0 || killCalls != 0 {
+		t.Fatalf("stop=%v, %v, signals=%d; want a bounded failure naming the unconfirmed HOME, without signal", stopped, err, killCalls)
+	}
+}
+
+// An unconfirmed HOME is refused unless the kernel proves the process exiting: a live process
+// whose environment reads empty, one that still has arguments, or one whose starttime moved
+// across the HOME bracket is never waited for as if it were exiting, and never signalled.
+func TestStopHomeProcessesRefusesUnconfirmedHomeWithoutExitProof(t *testing.T) {
+	const home = "/test/home"
+	const startTime = "876542"
+	cleared := fmt.Errorf("%w: environment was cleared", errHomeEnvironmentCleared)
+	notExiting := exitingStopSnapshot(startTime)
+	notExiting.flags = 0
+	withArgs := exitingStopSnapshot(startTime)
+	withArgs.args = []string{"/bin/worker"}
+	listed := homeProcess{pid: 5150, ppid: 1, args: []string{"/bin/worker"}, startTime: startTime, homeErr: cleared}
+	moved := listed
+	moved.statErr = errors.New("process identity changed while reading its HOME and arguments")
+	for _, tc := range []struct {
+		name     string
+		listed   homeProcess
+		snapshot stopProcessSnapshot
+		want     string
+	}{
+		{name: "cleared environment without PF_EXITING", listed: listed, snapshot: notExiting, want: "does not prove PF_EXITING"},
+		{name: "cleared environment with arguments", listed: listed, snapshot: withArgs, want: "arguments are no longer empty"},
+		{name: "starttime moved across the HOME bracket", listed: moved, snapshot: exitingStopSnapshot(startTime), want: "original process identity was unreadable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			killCalls := 0
+			probes := stopProcessProbes{
+				list:    func(string) []homeProcess { return []homeProcess{tc.listed} },
+				inspect: func(int) (stopProcessSnapshot, error) { return tc.snapshot, nil },
+				home:    func(int, string) (bool, error) { return false, cleared },
+				kill:    func(int, syscall.Signal) error { killCalls++; return nil },
+			}
+			stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+			if err == nil || !strings.Contains(err.Error(), tc.want) || len(stopped) != 0 || killCalls != 0 {
+				t.Fatalf("stop=%v, %v, signals=%d; want immediate refusal containing %q", stopped, err, killCalls, tc.want)
+			}
+		})
 	}
 }
 
