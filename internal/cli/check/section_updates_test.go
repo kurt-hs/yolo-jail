@@ -66,8 +66,6 @@ func TestSectionUpdates(t *testing.T) {
 			[]string{"[SKIP] no update check has run for this build yet"}},
 		{"turned off", updatesOptions(t, ch, map[string]string{selfupdate.DisableEnv: "1"}, cached(nil)),
 			[]string{"[SKIP] the update check is off"}},
-		{"moved checkout", updatesOptions(t, selfupdate.Channel{Kind: selfupdate.KindUnknown, MissingSourceDir: "/src/gone"}, nil, nil),
-			[]string{"[WARN] this yolo was built from /src/gone, which no longer contains the yolo-jail checkout", "--from"}},
 	}
 
 	for _, c := range cases {
@@ -85,15 +83,20 @@ func TestSectionUpdates(t *testing.T) {
 	}
 }
 
-func TestSectionUpdatesExplainsSourceChecksAreExplicit(t *testing.T) {
-	ch := selfupdate.Channel{
-		Kind: selfupdate.KindSource, Exe: "/home/u/.local/bin/yolo",
-		SourceDir: "/src/yolo-jail", Branch: "main", Version: "cfefa8bf",
+// A snapshot install has no release to compare against, so the section names the
+// two ways to update it rather than a check that can never run, even with a cached
+// state file from an earlier channel.
+func TestSectionUpdatesNamesASnapshotsNextSteps(t *testing.T) {
+	ch := selfupdate.Channel{Kind: selfupdate.KindSnapshot, Exe: "/home/u/go/bin/yolo", Version: "0.10.0+510.gcfefa8bf"}
+	stale := &selfupdate.State{CheckedAt: updatesNow.Add(-time.Hour), Identity: ch.Identity(), Kind: ch.Kind, Latest: "0.11.0", Available: true}
+	out := runUpdatesSection(updatesOptions(t, ch, nil, stale))
+	for _, w := range []string{"[SKIP] " + selfupdate.SnapshotSummary, "just install", "yolo update --from <checkout>"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("missing %q in:\n%s", w, out)
+		}
 	}
-	out := runUpdatesSection(updatesOptions(t, ch, nil, nil))
-	if !strings.Contains(out, "source update checks run only on request") ||
-		!strings.Contains(out, "remote source check") {
-		t.Errorf("missing explicit-source-check guidance:\n%s", out)
+	if strings.Contains(out, "0.11.0") {
+		t.Errorf("a snapshot reported a release update:\n%s", out)
 	}
 }
 

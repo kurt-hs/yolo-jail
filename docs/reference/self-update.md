@@ -1,5 +1,5 @@
 ---
-summary: "How yolo checks and updates its host installation, which install channels are complete, and why source checks are explicit."
+summary: "How yolo checks and updates its host installation, which install channels are complete, and why a from-source install is a snapshot."
 ---
 
 # Self-update
@@ -12,29 +12,29 @@ self-update; replacing only the host executable is not a complete update.
 
 | Channel | Check | Apply |
 |---|---|---|
-| From source (`just deploy`) | Explicit Git check | `git pull --ff-only`, then `just deploy` |
+| From source (`just install`) | None: a snapshot has no release to compare against | Changes nothing; prints the two ways to update it, below |
 | Homebrew | Background or explicit GitHub release check | `HOMEBREW_NO_INSTALL_CLEANUP=1 brew upgrade yolo-jail`, followed by version verification |
 | `go install` | Background or explicit GitHub release check | Refused: binary-only install has no jail bundle; install a complete bundle instead |
 | pipx / uv tool | Background or explicit GitHub release check | Refused for the same missing-bundle reason |
 | Release archive | Background or explicit GitHub release check | Prints the release download link |
 
-Homebrew and from-source installs are self-contained: their update path replaces
-both the host launcher and the flake bundle that supplies the jail binaries.
-The Go and Python package channels contain only the host binary, so they cannot
-launch a jail by themselves. Install a complete bundle through Homebrew, a release
+Homebrew and from-source installs are self-contained: each installs both the
+host launcher and the flake bundle that supplies the jail binaries. The Go and
+Python package channels contain only the host binary, so they cannot launch a
+jail by themselves. Install a complete bundle through Homebrew, a release
 archive, or `just install`; `YOLO_REPO_ROOT` no longer supplies the missing launch
 source. Remove it from your shell configuration. Checkout development instead uses
 `just dev` or a PATH symlink to `scripts/dev-wrapper.sh`, which builds and invokes
 a matched launcher without changing the installed command.
 
-Neither complete update deletes what running jails use. A launch bind-mounts
+Neither complete install deletes what running jails use. A launch bind-mounts
 its jail binaries and flake bundle from the installation it ran from: for
 Homebrew that is the versioned Cellar keg, which `brew upgrade` removes by
 default, so the update sets `HOMEBREW_NO_INSTALL_CLEANUP=1` and the old keg
-stays until a `brew cleanup` removes it. `just deploy` stages a new bundle
-generation beside the one running jails mount and reaps a generation only once
-no container uses it. Running jails keep the old binaries until they are
-restarted.
+stays until a `brew cleanup` removes it. `just install` and `just deploy` stage
+a new bundle generation beside the one running jails mount and reap a generation
+only once no container uses it. Running jails keep the old binaries until they
+are restarted.
 
 ## Automatic checks
 
@@ -49,45 +49,50 @@ the check. Later checks may run from non-interactive commands because the
 machine-wide disclosure has already happened. No automatic check runs in a jail
 or when `CI` is set.
 
-Source installs are deliberately different: no ordinary command runs the
-updater's remote Git check against their checkout. A yolo checkout may itself
-be the workspace exposed to a jailed agent, and repository-local Git
-configuration is part of the
-[host-execution control plane](host-execution-from-the-workspace.md). Run
-`yolo update --check` or `yolo update` explicitly to check source.
+From-source installs and development bundles get no automatic check, notice or
+launch offer.
 
-## Source checks and updates
+## From-source installs
 
-A source check reads the checkout's current branch and upstream, asks the
-upstream for its tip, and counts commits affecting the Go/image inputs or the
-install and bundle scripts. If the tip is not already in the local object
-database, the check fetches commit objects without updating a ref, FETCH_HEAD,
-or tags. `git status` remains unchanged, but the object database is written.
+`just install` installs a snapshot of the checkout, the same as a release built
+at that commit. The binary records its version, commit, snapshot identity and
+the build kind `installed`, and nothing about where the checkout is, so nothing
+in the checkout affects the host afterwards
+([OQ-IP1](../design/installed-launcher-provenance.md#OQ-IP1)). yolo identifies
+the channel by that build kind alone.
 
-The update refuses a detached checkout, a branch different from the one stamped
-into the binary, or uncommitted changes. `--autostash` stashes tracked and
-untracked changes, deploys a clean build, and restores them even after a failed
-update.
+A snapshot of an arbitrary commit has no release to compare against, so
+`yolo update` and `yolo update --check` change nothing there. They say so and
+print the two next steps: run `just install` in your checkout, or name it with
+`yolo update --from <checkout>`. `--check` exits 0; a plain `yolo update` exits 1
+because it installed nothing. `yolo check` shows the same two steps in its
+Updates section.
 
-`--from <checkout>` is the recovery for a moved or re-cloned source tree and the
-explicit override for deploying another branch. A non-check invocation always
-redeploys so the replacement checkout is stamped into the new binary, even when
-there is no newer upstream commit. When that checkout has no usable upstream
-(or it cannot be reached), yolo deploys the named checkout as-is instead of
-making the recovery depend on a `git pull` that cannot succeed.
+The launcher `just install` puts on your `PATH` and the copy of `yolo` in the
+bundle for the host's own platform are one build: the launcher is copied from
+the bundle, never compiled twice
+([OQ-IP2](../design/installed-launcher-provenance.md#OQ-IP2)). On macOS the
+bundle carries no darwin `yolo`, and the macOS-account guest stages the
+running launcher itself. A Linux jail on a Mac runs the bundle's Linux `yolo`,
+which is by nature a different program from the darwin launcher.
 
-### What a source check or update runs
+`yolo update --from <checkout>` runs `just deploy` in the named checkout exactly
+as it stands, installing beside the running binary: no fetch, no pull and no
+branch check, because naming the checkout is naming what to deploy. It is
+accepted only on a from-source install. It refuses a checkout with uncommitted
+changes; `--autostash` stashes tracked and untracked changes, deploys a clean
+build, and restores them even after a failed deploy. `--check --from
+<checkout>` prints the deploy and changes nothing.
 
-Both run `git` in the checkout with that checkout's own Git configuration and
-hooks. The check reaches the upstream with `git ls-remote` and `git fetch`; the
-update runs `git pull`, and `git stash` when you pass `--autostash`. The update
-then runs the checkout's `Justfile` through `just deploy`. All of it
-runs on the host, as you. yolo ends Git's options before the remote, refuses an
-upstream whose name starts with `-`, and never lets Git prompt, but a
-repository's configuration can still name programs Git runs, such as a hook or
-`remote.<name>.uploadpack`.
+### What `--from` runs
 
-Developing yolo in a jail and updating from that checkout runs what the jail
+It runs `git status` and, with `--autostash`, `git stash` in the checkout, with
+that checkout's own Git configuration and hooks, then the checkout's `Justfile`
+through `just deploy`. All of it runs on the host, as you. `just deploy`
+restarts the Claude OAuth broker, so any jail using that broker loses it
+briefly.
+
+Developing yolo in a jail and deploying from that checkout runs what the jail
 wrote, by design: building a checkout runs its contents, and yolo adds no
 guard there ([the product cell](host-execution-from-the-workspace.md#the-two-axes)).
 
@@ -95,9 +100,8 @@ guard there ([the product cell](host-execution-from-the-workspace.md#the-two-axe
 
 The cached answer and background-check lock live under
 `~/.local/share/yolo-jail/update-check/`, outside directories mounted writable
-into a jail. The cache is keyed by installation kind and version; source
-entries also include the checkout path and stamped branch. Updating invalidates
-the answer but preserves the one-time disclosure.
+into a jail. The cache is keyed by installation kind and version. Updating
+invalidates the answer but preserves the one-time disclosure.
 
 `"update_check": false` in the user config disables automatic checks plus cached
 notices and launch offers. `YOLO_NO_UPDATE_CHECK=1` is the per-shell equivalent.

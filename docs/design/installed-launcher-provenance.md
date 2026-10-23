@@ -1,15 +1,15 @@
 ---
 title: "One program, two builds — should the installed launcher and the jail's copy be the same bytes?"
-stage: DESIGN
-status: in-review
-next: "Build the rulings: one build per install, the source channel and its stamps deleted"
+stage: BUILT
+status: accepted
+next: "Verify on a real Linux and Mac host that `just install` installs the bundle's own yolo, then graduate into self-update.md"
 tags: [install, self-update, builds, provenance]
 summary: "The installed launcher and the copy a jail runs come from one frozen snapshot but differ by two linker stamps, and only the from-source update channel reads them."
 ---
 
 # One program, two builds — should the installed launcher and the jail's copy be the same bytes?
 
-**Status:** 2026-10-23. Nothing in this document is implemented. Every claim about the tree was verified against `d4d3ff0d2`, and the measurements in [§2](#2-reproduction-and-the-one-variable) were taken in this checkout; [§1](#1-the-reported-asymmetry) is a host report and is marked as one.
+**Status:** 2026-10-23, built. All three rulings in [§8](#8-open-questions) are implemented, and [§9](#9-decision-ledger) records them with the implementation decisions they needed. `version.SourceDir`, `version.SourceBranch` and the source channel are deleted, a `just install` binary classifies as a snapshot install, and an install compiles `yolo` once. Sections 1 to 7 describe the tree before the build. Their claims were verified against `d4d3ff0d2`, so their line anchors name code that no longer exists. The measurements in [§2](#2-reproduction-and-the-one-variable) were taken in this checkout. [§1](#1-the-reported-asymmetry) is a host report and is marked as one. Not yet verified on a real host: `matched-bundle.py install` refuses inside a jail, so the installed launcher's bytes were checked only by the assemble test.
 
 > **In short.** `just install` builds `yolo` twice from one frozen snapshot, and the two builds differ by exactly two linker stamps that only the from-source update channel reads. The expectation that one snapshot should have one set of bytes is already true in the development channel, and would be true for an install the moment those two values stop living inside the artifact.
 
@@ -92,7 +92,7 @@ Two positions, both defensible, and they are what [OQ-IP1](#OQ-IP1) has to choos
 
 **P1 — an install is a snapshot.** `just install` freezes the source and installs it; afterwards nothing in the checkout may affect the host. Checkout-coupled work has its own channel: the development wrapper, invoked by path, which builds from the live checkout on demand without touching the installed command ([`matched-development-bundles.md`](matched-development-bundles.md)).
 
-**P2 — a from-source install is a channel that tracks a checkout.** It is the only install channel that can update itself in place: the source check reads the checkout's branch and upstream, and the apply runs `git pull --ff-only` and then `just deploy` there ([`self-update.md`](../reference/self-update.md#install-channels), [`self-update.md`](../reference/self-update.md#source-checks-and-updates)). Every other channel is found by a marker the distribution left behind — a Cellar path, a pipx receipt, a bundle beside the binary. A `git clone` plus `just install` leaves no marker at all, so `SourceDir` *is* that channel's marker.
+**P2 — a from-source install is a channel that tracks a checkout.** It is the only install channel that can update itself in place: the source check reads the checkout's branch and upstream, and the apply runs `git pull --ff-only` and then `just deploy` there ([`self-update.md`](../reference/self-update.md#install-channels), [`self-update.md`](../reference/self-update.md#from-source-installs)). Every other channel is found by a marker the distribution left behind — a Cellar path, a pipx receipt, a bundle beside the binary. A `git clone` plus `just install` leaves no marker at all, so `SourceDir` *is* that channel's marker.
 
 P2 is why the stamps exist, and it is not a small feature: without a marker, `selfupdate.Detect` cannot classify the binary as a source install at all, and reports the moved-checkout state instead ([`channel.go:177-183`](../../internal/selfupdate/channel.go)).
 
@@ -192,7 +192,17 @@ The digest's own documented purpose is the last row: it "tells two binaries apar
    > be there."* No new binary carries the stamps, and an old binary runs its own old code, whose
    > update installs the new build. The stamp reader is deleted with no transition.
 
-## 9. Terms
+## 9. Decision ledger
+
+| ID | Ruling / Decision | Date | Built |
+| :--- | :--- | :--- | :--- |
+| OQ-IP1 | **C: an install is a snapshot.** `SourceDir`, `SourceBranch`, their linker stamps and the source channel are deleted. `yolo update --from <checkout>` remains the explicit way to deploy a named checkout. | 2026-10-23 | `internal/selfupdate`, `internal/cli/update.go`, `scripts/build-go.sh`, `scripts/matched-bundle.py` |
+| OQ-IP2 | **One build, structurally.** `assemble` stages the bundle first, and on Linux copies the bundle's `bin/linux-<arch>/yolo` to `bin/yolo`. On macOS the bundle's darwin set is the guest helpers only, so the launcher is the one darwin build of `yolo`, and the macos-user guest stages that same running launcher. Nothing compiles `yolo` twice, and no byte comparison is added. A Linux container on a Mac runs the bundle's Linux `yolo`, a different program by nature. | 2026-10-23 | `scripts/matched-bundle.py`; regression test `test_assemble_builds_yolo_once_and_the_launcher_is_the_bundles_copy` |
+| OQ-IP3 | **Moot.** The stamp reader is deleted with no transition. | 2026-10-23 | `internal/selfupdate/channel.go` |
+| IP-D1 | *(implementation decision, the owner's)* **What a snapshot install's `yolo update` does.** A binary whose `BuildKind` is `installed` and that has no other channel marker is a snapshot install. `yolo update` and `--check` on it change nothing: they print that there is no release to compare against, and the two next steps, `just install` in the checkout or `yolo update --from <checkout>`. `--check` exits 0, and a plain update exits 1 because it installed nothing. It gets no background check, notice or launch offer. It is never classified as `go install`, as an archive, or as unknown. `yolo check` shows the same steps. | 2026-10-23 | `selfupdate.KindSnapshot`, `updateMain`, `sectionUpdates` |
+| IP-D2 | *(implementation decision, the builder's; reversible)* **What `--from` does now that no channel tracks a checkout.** `--from` is accepted only on a snapshot install. It runs `just deploy` in the named checkout exactly as it stands, pinned to the running binary's directory through `GOBIN`, with no fetch, pull, branch or upstream check. It refuses uncommitted changes unless `--autostash`, which stashes, deploys and restores. `--check --from` prints the deploy and changes nothing, and `--autostash` without `--from` is refused. | 2026-10-23 | `selfupdate.DeployCheckout`, `deployFrom` |
+
+## 10. Terms
 
 **Installed copy** *(coined here)* — the `yolo` executable a host install places on `PATH` (`$GOBIN/yolo`), which starts jails and is the copy that can update itself. Not the bundle copy, and not the development wrapper.
 

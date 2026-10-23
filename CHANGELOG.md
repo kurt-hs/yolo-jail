@@ -25,6 +25,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - `mcp_presets` is removed, and a config that still has it stops the launch: delete the key, add `chrome-devtools` to `packs` in your user config for the browser, and write `sequential-thinking` under `mcp_servers` yourself if you want it. See [MCP and LSP](userguide/guides/mcp-and-lsp.md#mcp_presets-is-gone).
+- A from-source install no longer follows its checkout. `yolo update` there changes nothing; to update, run `just install` in your checkout or `yolo update --from <checkout>`. See [from-source installs](docs/reference/self-update.md#from-source-installs).
 
 ### Fixed
 

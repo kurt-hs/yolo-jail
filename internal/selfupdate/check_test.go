@@ -3,6 +3,7 @@ package selfupdate
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -138,131 +139,6 @@ func (f *fakeGit) run(_ context.Context, dir string, args ...string) (string, er
 
 const testTip = "abc1234def5678"
 
-var testPaths = strings.Join(sourceUpdatePaths, " ")
-
-func TestSourceUpdatePathsIncludeDeployInputs(t *testing.T) {
-	for _, want := range []string{"Justfile", "scripts/build-go.sh", "scripts/stage-source-bundle.sh"} {
-		if !slices.Contains(sourceUpdatePaths, want) {
-			t.Errorf("sourceUpdatePaths omits %q", want)
-		}
-	}
-}
-
-func sourceGit() *fakeGit {
-	return &fakeGit{
-		answers: map[string]string{
-			"symbolic-ref --short -q HEAD":                               "main",
-			"config --get branch.main.remote":                            "origin",
-			"config --get branch.main.merge":                             "refs/heads/main",
-			"ls-remote --exit-code -- origin refs/heads/main":            testTip + "\trefs/heads/main",
-			"rev-list --count cfefa8bf.." + testTip + " -- " + testPaths: "12",
-			"rev-list --count HEAD.." + testTip + " -- " + testPaths:     "3",
-		},
-		// The tip is not local yet, so the check has to fetch it.
-		fail: map[string]bool{"cat-file -e " + testTip + "^{commit}": true},
-	}
-}
-
-func (f *fakeGit) ran(key string) bool {
-	for _, c := range f.calls {
-		if strings.HasSuffix(c, ": "+key) {
-			return true
-		}
-	}
-	return false
-}
-
-const quietFetch = "fetch --quiet --no-tags --no-write-fetch-head --refmap= -- origin refs/heads/main"
-
-func TestCheckSource(t *testing.T) {
-	ch := Channel{Kind: KindSource, Exe: "/home/u/.local/bin/yolo", SourceDir: "/src/yolo-jail", Branch: "main", Version: "cfefa8bf"}
-	check := func(g *fakeGit, ch Channel) State {
-		return Check(context.Background(), ch, State{}, CheckDeps{Git: g.run, Now: fixedNow})
-	}
-
-	t.Run("counts image-relevant commits from the binary's commit, writing no ref", func(t *testing.T) {
-		g := sourceGit()
-		st := check(g, ch)
-		if !st.Available || st.Behind != 12 || st.Upstream != "origin/main" || st.Latest != "abc1234d" {
-			t.Errorf("got %+v, want 12 commits behind origin/main", st)
-		}
-		if !g.ran(quietFetch) {
-			t.Errorf("want the ref-less fetch %q; calls: %v", quietFetch, g.calls)
-		}
-		for _, c := range g.calls {
-			if strings.HasSuffix(c, ": fetch --quiet") || strings.Contains(c, "pull") {
-				t.Errorf("a plain fetch/pull moves the user's refs: %q", c)
-			}
-		}
-	})
-	t.Run("a tip already present needs no fetch at all", func(t *testing.T) {
-		g := sourceGit()
-		g.fail = nil
-		check(g, ch)
-		if g.ran(quietFetch) {
-			t.Error("fetched a tip that was already local")
-		}
-	})
-	t.Run("a stamped commit rebased away falls back to HEAD", func(t *testing.T) {
-		g := sourceGit()
-		g.fail["cat-file -e cfefa8bf^{commit}"] = true
-		if st := check(g, ch); st.Behind != 3 {
-			t.Errorf("got %+v, want HEAD's count of 3", st)
-		}
-	})
-	t.Run("up to date, e.g. only docs changed upstream", func(t *testing.T) {
-		g := sourceGit()
-		g.answers["rev-list --count cfefa8bf.."+testTip+" -- "+testPaths] = "0"
-		if st := check(g, ch); st.Available || st.Error != "" {
-			t.Errorf("got %+v, want up to date", st)
-		}
-	})
-	t.Run("a switched branch is refused", func(t *testing.T) {
-		g := sourceGit()
-		g.answers["symbolic-ref --short -q HEAD"] = "feat/x"
-		st := check(g, ch)
-		if st.Available || !strings.Contains(st.Error, `on "feat/x"`) {
-			t.Errorf("got %+v, want a branch refusal", st)
-		}
-		if g.ran("ls-remote --exit-code -- origin refs/heads/main") {
-			t.Error("a refused checkout must not touch the network")
-		}
-	})
-	t.Run("no recorded branch accepts whatever is checked out", func(t *testing.T) {
-		g := sourceGit()
-		g.answers["symbolic-ref --short -q HEAD"] = "main"
-		unrecorded := ch
-		unrecorded.Branch = ""
-		if st := check(g, unrecorded); st.Error != "" {
-			t.Errorf("got %+v", st)
-		}
-	})
-	t.Run("no upstream branch is reported", func(t *testing.T) {
-		g := sourceGit()
-		g.fail["config --get branch.main.remote"] = true
-		st := check(g, ch)
-		if !strings.Contains(st.Error, "no upstream") {
-			t.Errorf("got %+v, want a no-upstream error", st)
-		}
-	})
-	t.Run("detached HEAD is reported", func(t *testing.T) {
-		g := sourceGit()
-		g.fail["symbolic-ref --short -q HEAD"] = true
-		st := check(g, ch)
-		if !strings.Contains(st.Error, "detached HEAD") {
-			t.Errorf("got %+v, want a detached-HEAD error", st)
-		}
-	})
-	t.Run("offline is transient", func(t *testing.T) {
-		g := sourceGit()
-		g.fail["ls-remote --exit-code -- origin refs/heads/main"] = true
-		st := check(g, ch)
-		if st.Available || !strings.Contains(st.Error, "ls-remote") {
-			t.Errorf("got %+v, want a transient ls-remote error", st)
-		}
-	})
-}
-
 func TestUnattendedGitEnvCannotAsk(t *testing.T) {
 	env := unattendedGitEnv([]string{
 		"HOME=/home/u", "SSH_AUTH_SOCK=/tmp/agent", "GIT_ASKPASS=/usr/bin/ksshaskpass",
@@ -298,7 +174,7 @@ printf 'ssh_askpass:%s\n' "${SSH_ASKPASS-unset}"
 	t.Setenv("GIT_ASKPASS", "/tmp/gui")
 	t.Setenv("SSH_ASKPASS", "/tmp/ssh-gui")
 
-	out, err := runGit(context.Background(), "/src/yolo-jail", "status", "--porcelain")
+	out, err := RunGit(context.Background(), "/src/yolo-jail", "status", "--porcelain")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,23 +185,33 @@ printf 'ssh_askpass:%s\n' "${SSH_ASKPASS-unset}"
 		"ssh_askpass:",
 	} {
 		if !strings.Contains(out, want) {
-			t.Errorf("runGit output missing %q:\n%s", want, out)
+			t.Errorf("RunGit output missing %q:\n%s", want, out)
 		}
 	}
 }
 
-// The refusal's `yolo update --from <checkout>` is for pasting, so a checkout under a path with
-// a space in it has to come back out of a shell as one word.
-func TestSourceBranchMismatchNamesTheCheckoutAsOneShellWord(t *testing.T) {
+// The dirty-checkout refusal's `yolo update --from <checkout> --autostash` is for pasting, so a
+// checkout under a path with a space in it has to come back out of a shell as one word.
+func TestDirtyCheckoutRefusalNamesTheCheckoutAsOneShellWord(t *testing.T) {
 	dir := "/Users/Jane Doe/code/yolo-jail"
-	msg := SourceBranchMismatch(Channel{Kind: KindSource, SourceDir: dir, Branch: "main"}, "topic").Error()
+	g := &fakeGit{answers: map[string]string{"status --porcelain": " M x.go"}}
+	err := DeployCheckout(context.Background(), "/home/u/go/bin/yolo", dir, CheckoutOptions{}, g.run,
+		func(context.Context, Step, io.Writer, io.Writer) error {
+			t.Fatal("a refused deploy ran a step")
+			return nil
+		},
+		io.Discard, io.Discard)
+	if err == nil {
+		t.Fatal("a dirty checkout was deployed without --autostash")
+	}
+	msg := err.Error()
 	_, rest, _ := strings.Cut(msg, "`yolo update --from ")
-	arg, _, ok := strings.Cut(rest, "`")
+	cmd, _, ok := strings.Cut(rest, "`")
 	if !ok {
 		t.Fatalf("the refusal offers no `yolo update --from <checkout>`: %q", msg)
 	}
-	if got := testsupport.ShellWords(t, "yolo update --from "+arg); !slices.Equal(got,
-		[]string{"yolo", "update", "--from", dir}) {
+	if got := testsupport.ShellWords(t, "yolo update --from "+cmd); !slices.Equal(got,
+		[]string{"yolo", "update", "--from", dir, "--autostash"}) {
 		t.Errorf("the offered command reads as %q in a shell: %q", got, msg)
 	}
 }

@@ -4,25 +4,27 @@
 // # The three pieces
 //
 //   - DETECT (this file): which channel installed the running binary — a
-//     from-source `just install`, Homebrew, `go install`, pipx, `uv tool`, or a
-//     release archive. Every channel has its own notion of "newer" and its own
-//     upgrade command, so nothing below can be decided before this.
-//   - CHECK (check.go, state.go): whether something newer exists. Release
+//     from-source `just install` snapshot, Homebrew, `go install`, pipx, `uv
+//     tool`, or a release archive. Every channel has its own notion of "newer"
+//     and its own upgrade command, so nothing below can be decided before this.
+//   - CHECK (check.go, state.go): whether a newer release exists. Release
 //     channels check in a detached `yolo internal update-check` process and
 //     cache the answer for Interval, so no ordinary command waits on the
-//     network. Source channels check only on an explicit `yolo update` request,
-//     because their checkout may be writable from a jail.
+//     network. A snapshot install is never checked: it is a snapshot of an
+//     arbitrary commit, with no release to compare against.
 //   - APPLY (apply.go): the complete channel's own upgrade command, run by
 //     `yolo update` or by the launch prompt, after which the caller re-execs the
 //     new binary. Binary-only channels are checked but refused with coordinated
-//     binary-and-bundle instructions.
+//     binary-and-bundle instructions. `yolo update --from <checkout>` is the one
+//     deploy that is not a channel's: it runs `just deploy` in the checkout the
+//     user names (DeployCheckout).
 //
 // # What it deliberately does not do
 //
 // It never runs inside a jail (the in-jail yolo is the host's, mounted
 // read-only), never updates without an explicit yes, and never replaces a
-// binary itself: a self-contained channel's package manager, or `just deploy`,
-// stays the only writer of its own install.
+// binary itself: a self-contained channel's package manager, or `just deploy`
+// in a checkout the user named, stays the only writer of its own install.
 package selfupdate
 
 import (
@@ -55,7 +57,7 @@ const (
 type Kind string
 
 const (
-	KindSource      Kind = "source"      // `just install` / `just deploy` from a checkout
+	KindSnapshot    Kind = "snapshot"    // `just install` / `just deploy` from a checkout: a snapshot of it
 	KindHomebrew    Kind = "homebrew"    // brew install mschulkind-oss/tap/yolo-jail
 	KindGoInstall   Kind = "go-install"  // go install …/cmd/yolo@<version>
 	KindPipx        Kind = "pipx"        // pipx install yolo-jail
@@ -75,32 +77,16 @@ type Channel struct {
 	Kind Kind
 	// Exe is the running binary, symlinks resolved.
 	Exe string
-	// SourceDir is the checkout a KindSource binary was built from.
-	SourceDir string
-	// Branch is the branch a KindSource binary was built from, when the build
-	// recorded one. An update refuses a checkout that has since switched
-	// branches: pulling THAT branch would deploy something the binary never was.
-	Branch string
-	// MissingSourceDir is set on a KindUnknown channel whose binary WAS built
-	// from source, from a path that no longer contains the yolo-jail checkout.
-	// It lets `yolo update` say so and name --from, instead of reporting an
-	// unidentifiable install.
-	MissingSourceDir string
-	// Version is what a check compares against: the stamped commit for
-	// KindSource (its updates are commits, not releases), the release version
-	// for every other kind.
+	// Version is what a check compares against: the release version. A
+	// KindSnapshot binary carries its baked version for display only; nothing
+	// compares it.
 	Version string
 	// SnapshotIdentity distinguishes dirty development outputs from the same commit.
 	SnapshotIdentity string
 }
 
-// Identity is the value a cached check is keyed to. A source check depends on
-// the checkout and branch as well as the binary's commit, so two builds from
-// the same commit but different clones must not share an answer.
+// Identity is the value a cached check is keyed to.
 func (c Channel) Identity() string {
-	if c.Kind == KindSource {
-		return strings.Join([]string{string(c.Kind), c.Version, c.SourceDir, c.Branch}, "\x00")
-	}
 	if c.Kind == KindDevelopment {
 		return strings.Join([]string{string(c.Kind), c.Version, c.SnapshotIdentity}, "\x00")
 	}
@@ -109,22 +95,17 @@ func (c Channel) Identity() string {
 
 // CanApply reports whether `yolo update` can replace the complete installation
 // for this channel. The Go and Python package channels carry only the host
-// binary, while an archive has no package manager to ask.
+// binary, while an archive has no package manager to ask. A snapshot install
+// has no channel to update through at all: `just install` in a checkout, or
+// `yolo update --from <checkout>`, is the step its owner takes.
 func (c Channel) CanApply() bool {
-	switch c.Kind {
-	case KindSource, KindHomebrew:
-		return true
-	}
-	return false
+	return c.Kind == KindHomebrew
 }
 
 // DetectInput is everything Detect decides from, so every channel is testable
 // without an installed binary.
 type DetectInput struct {
 	Exe              string // the running binary, symlinks resolved
-	SourceDir        string // version.SourceDir
-	SourceBranch     string // version.SourceBranch
-	GitCommit        string // version.GitCommit
 	Baked            string // version.Baked()
 	SnapshotIdentity string // version.SnapshotIdentity
 	BuildKind        string // version.BuildKind
@@ -132,8 +113,6 @@ type DetectInput struct {
 	// BuiltFromVCS reports a vcs.revision build setting: the binary was built
 	// inside a checkout, not fetched from the module proxy.
 	BuiltFromVCS bool
-	// IsSourceCheckout reports whether dir is this module's git work tree.
-	IsSourceCheckout func(dir string) bool
 	// HasBundleBeside reports whether a release bundle sits beside exeDir.
 	HasBundleBeside func(exeDir string) bool
 	// FileExists reports whether path exists: the pipx and uv markers.
@@ -142,8 +121,12 @@ type DetectInput struct {
 
 // Detect names the channel that installed the binary described by in. An
 // explicit development marker is checked first, before an adjacent bundle could
-// otherwise make a development launcher look like an archive. Source stamps then
-// precede package-manager and bundle evidence.
+// otherwise make a development launcher look like an archive. A from-source
+// install (BuildKind "installed", which only `just install` stamps) is a
+// snapshot: it is classified after the package-manager markers and before the
+// `go install` and archive evidence, so it is never mistaken for either, and it
+// is never reported as unidentified for lacking a release version
+// (docs/design/installed-launcher-provenance.md, OQ-IP1).
 //
 // pipx and uv are recognised by the metadata file each writes at the root of
 // the environment it installs into, not by a path spelling: both tools let a
@@ -174,23 +157,17 @@ func Detect(in DetectInput) Channel {
 		}
 		return false
 	}
-	stamped := in.SourceDir != "" && in.GitCommit != "" && in.GitCommit != "unknown"
 	switch {
 	case in.BuildKind == "development":
 		ch.Kind, ch.Version, ch.SnapshotIdentity = KindDevelopment, in.Baked, in.SnapshotIdentity
-	case stamped && in.IsSourceCheckout != nil && in.IsSourceCheckout(in.SourceDir):
-		ch.Kind, ch.SourceDir, ch.Branch, ch.Version = KindSource, in.SourceDir, in.SourceBranch, in.GitCommit
-	case stamped:
-		// Built from source, but the path no longer names this checkout.
-		// Nothing below can identify a from-source binary, so say what happened
-		// instead.
-		return Channel{Kind: KindUnknown, Exe: in.Exe, MissingSourceDir: in.SourceDir}
 	case strings.Contains(exe, "/Cellar/yolo-jail/"):
 		ch.Kind, ch.Version = KindHomebrew, in.Baked
 	case hasMarker("pipx_metadata.json"):
 		ch.Kind, ch.Version = KindPipx, in.Baked
 	case hasMarker("uv-receipt.toml"):
 		ch.Kind, ch.Version = KindUV, in.Baked
+	case in.BuildKind == "installed":
+		ch.Kind, ch.Version, ch.SnapshotIdentity = KindSnapshot, in.Baked, in.SnapshotIdentity
 	case in.Baked == "" && strings.HasPrefix(in.ModuleVersion, "v") && !in.BuiltFromVCS:
 		// `go install …@v0.10.0` stamps the module version into the build info
 		// and nothing into -ldflags. A local `go build` in a checkout ALSO gets a
@@ -201,8 +178,10 @@ func Detect(in DetectInput) Channel {
 		ch.Kind, ch.Version = KindArchive, in.Baked
 	}
 	// A release channel with no version has nothing to compare, so it is
-	// treated as unidentified rather than as permanently out of date.
-	if ch.Kind != KindUnknown && ch.Version == "" && ch.Kind != KindDevelopment {
+	// treated as unidentified rather than as permanently out of date. The
+	// development and snapshot kinds compare nothing automatically, so their
+	// marker alone identifies them.
+	if ch.Kind != KindUnknown && ch.Version == "" && ch.Kind != KindDevelopment && ch.Kind != KindSnapshot {
 		return Channel{Kind: KindUnknown, Exe: in.Exe}
 	}
 	return ch
@@ -229,15 +208,11 @@ func Current() Channel {
 	}
 	return Detect(DetectInput{
 		Exe:              exe,
-		SourceDir:        version.SourceDir,
-		SourceBranch:     version.SourceBranch,
-		GitCommit:        version.GitCommit,
 		Baked:            version.Baked(),
 		SnapshotIdentity: version.SnapshotIdentity,
 		BuildKind:        version.BuildKind,
 		ModuleVersion:    modVersion,
 		BuiltFromVCS:     fromVCS,
-		IsSourceCheckout: IsSourceCheckout,
 		HasBundleBeside: func(exeDir string) bool {
 			_, ok := reporoot.BundledSourceDirFrom(exeDir)
 			return ok
@@ -249,10 +224,9 @@ func Current() Channel {
 	})
 }
 
-// IsSourceCheckout reports whether dir is a yolo-jail git checkout. A stamped
-// path can outlive the checkout that occupied it; checking only for `.git`
-// would let an unrelated replacement repository become the source of a later
-// `git pull && just deploy`.
+// IsSourceCheckout reports whether dir is a yolo-jail git checkout, which
+// `yolo update --from` requires of the directory it names: checking only for
+// `.git` would let an unrelated repository become the source of a `just deploy`.
 func IsSourceCheckout(dir string) bool {
 	if dir == "" {
 		return false

@@ -28,25 +28,20 @@ var buildVersion = ""
 // for release forensics until the post-cutover CLI surface pass surfaces it.
 var GitCommit = ""
 
-// SourceDir is the absolute path of the checkout a from-source `just install`
-// built this binary from, stamped via -ldflags -X by that recipe and by nothing
-// else — the release channels (goreleaser, the homebrew formula, the PyPI
-// wheels, scripts/build-go.sh) leave it empty on purpose, since a path on the
-// build machine means nothing on the machine the binary lands on. It is what
-// lets `yolo update` find the checkout to pull and redeploy (internal/selfupdate).
-var SourceDir = ""
-
-// SourceBranch is the branch that checkout had checked out at build time,
-// stamped alongside SourceDir; empty for a detached HEAD. `yolo update` refuses
-// a checkout that has since switched branches rather than deploy that branch.
-var SourceBranch = ""
-
 // SnapshotIdentity is the lowercase SHA-256 identity of the frozen source snapshot
 // used to build a matched launcher bundle. Empty for legacy distribution builds.
 var SnapshotIdentity = ""
 
 // BuildKind classifies the launcher bundle as development or installed. Empty
 // identifies older distribution builds that predate matched-bundle metadata.
+//
+// "installed" is what a from-source `just install` stamps, and it is the whole
+// of that install's update-channel marker: such a binary is a snapshot of the
+// checkout it was built from, the same as a release built at that commit, and
+// records nothing about where that checkout is (internal/selfupdate KindSnapshot;
+// docs/design/installed-launcher-provenance.md, OQ-IP1). No stamp distinguishes
+// the installed launcher from the bundle's copy for the same platform, because
+// they are one build.
 var BuildKind = ""
 
 // Baked returns the -ldflags-stamped version, normalized, or "" for an

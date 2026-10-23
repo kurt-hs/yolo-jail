@@ -62,9 +62,9 @@ func TestStateRoundTrip(t *testing.T) {
 	if got := LoadState(path); got != (State{}) {
 		t.Errorf("a missing file must load as the zero State, got %+v", got)
 	}
-	ch := Channel{Kind: KindSource, SourceDir: "/src/yolo-jail", Branch: "main", Version: "cfefa8bf"}
-	want := State{CheckedAt: fixedNow(), Identity: ch.Identity(), Kind: KindSource, Current: "cfefa8bf",
-		Latest: "abc1234", Upstream: "origin/main", Behind: 12, Available: true}
+	ch := Channel{Kind: KindHomebrew, Version: "0.10.0"}
+	want := State{CheckedAt: fixedNow(), Identity: ch.Identity(), Kind: KindHomebrew, Current: "0.10.0",
+		Latest: "0.11.0", Available: true}
 	if err := SaveState(path, want); err != nil {
 		t.Fatal(err)
 	}
@@ -115,10 +115,6 @@ func TestPlan(t *testing.T) {
 		ch   Channel
 		want []string
 	}{
-		{Channel{Kind: KindSource, Exe: "/home/u/.local/bin/yolo", SourceDir: "/src/yolo-jail"}, []string{
-			"git pull --ff-only   (in /src/yolo-jail)",
-			"GOBIN=/home/u/.local/bin just deploy   (in /src/yolo-jail)",
-		}},
 		// Without HOMEBREW_NO_INSTALL_CLEANUP=1, brew deletes the old keg that
 		// running jails bind-mount their binaries from.
 		{Channel{Kind: KindHomebrew, Exe: "/opt/homebrew/Cellar/yolo-jail/0.10.0/bin/yolo"}, []string{"HOMEBREW_NO_INSTALL_CLEANUP=1 brew upgrade yolo-jail"}},
@@ -149,16 +145,39 @@ func TestPlan(t *testing.T) {
 			t.Errorf("%s: want an error pointing at the releases page, got %v", k, err)
 		}
 	}
+	// A snapshot has no channel to update through: its plan is the two steps its owner takes,
+	// never the releases page or "cannot tell how this yolo was installed".
+	_, err := Plan(Channel{Kind: KindSnapshot})
+	if err == nil || !strings.Contains(err.Error(), "`just install` in your yolo-jail checkout") ||
+		!strings.Contains(err.Error(), "yolo update --from <checkout>") ||
+		strings.Contains(err.Error(), ReleasesPage) || strings.Contains(err.Error(), "cannot tell") {
+		t.Errorf("snapshot: want the two next steps, got %v", err)
+	}
+}
+
+// `yolo update --from` deploys the named checkout as it stands, beside the running binary.
+func TestPlanCheckout(t *testing.T) {
+	var got []string
+	for _, s := range PlanCheckout("/home/u/.local/bin/yolo", "/src/yolo-jail") {
+		got = append(got, s.String())
+	}
+	if want := "GOBIN=/home/u/.local/bin just deploy   (in /src/yolo-jail)"; strings.Join(got, "\n") != want {
+		t.Errorf("checkout plan:\n got %q\nwant %q", got, want)
+	}
 }
 
 func applyGit(dirty string) *fakeGit {
-	return &fakeGit{answers: map[string]string{
-		"symbolic-ref --short -q HEAD": "main",
-		"status --porcelain":           dirty,
-	}}
+	return &fakeGit{answers: map[string]string{"status --porcelain": dirty}}
 }
 
-var sourceChannel = Channel{Kind: KindSource, Exe: "/home/u/.local/bin/yolo", SourceDir: "/src/yolo-jail", Branch: "main"}
+const (
+	testExe      = "/home/u/.local/bin/yolo"
+	testCheckout = "/src/yolo-jail"
+)
+
+func deploy(opts CheckoutOptions, g *fakeGit, r *recorder) error {
+	return DeployCheckout(context.Background(), testExe, testCheckout, opts, g.run, r.run, io.Discard, io.Discard)
+}
 
 // recorder is a Runner that records each step and fails the ones named in fail.
 type recorder struct {
@@ -175,54 +194,34 @@ func (r *recorder) run(_ context.Context, s Step, _, _ io.Writer) error {
 	return nil
 }
 
-func TestApplyRefusesADirtyCheckoutWithoutAutostash(t *testing.T) {
+func TestDeployCheckoutRefusesADirtyCheckoutWithoutAutostash(t *testing.T) {
 	r := &recorder{}
-	err := Apply(context.Background(), sourceChannel, ApplyOptions{}, applyGit(" M internal/cli/cli.go").run, r.run, io.Discard, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "uncommitted changes") || !strings.Contains(err.Error(), "--autostash") {
-		t.Errorf("want an uncommitted-changes refusal naming --autostash, got %v", err)
+	err := deploy(CheckoutOptions{}, applyGit(" M internal/cli/cli.go"), r)
+	if err == nil || !strings.Contains(err.Error(), "uncommitted changes") || !strings.Contains(err.Error(), "--autostash") ||
+		!strings.Contains(err.Error(), "just install") {
+		t.Errorf("want an uncommitted-changes refusal naming --autostash and just install, got %v", err)
 	}
 	if len(r.ran) != 0 {
 		t.Errorf("ran %v against a dirty checkout", r.ran)
 	}
 }
 
-func TestApplyRefusesASwitchedBranch(t *testing.T) {
-	g := applyGit("")
-	g.answers["symbolic-ref --short -q HEAD"] = "feat/x"
-	r := &recorder{}
-	err := Apply(context.Background(), sourceChannel, ApplyOptions{}, g.run, r.run, io.Discard, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), `on "feat/x"`) {
-		t.Errorf("want a branch refusal, got %v", err)
-	}
-	if len(r.ran) != 0 {
-		t.Errorf("ran %v on the wrong branch", r.ran)
-	}
-}
-
-func TestApplyRunsEveryStepInOrderAndStopsAtAFailure(t *testing.T) {
-	r := &recorder{}
-	if err := Apply(context.Background(), sourceChannel, ApplyOptions{}, applyGit("").run, r.run, io.Discard, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-
-	if strings.Join(r.ran, ",") != "git pull --ff-only,just deploy" {
-		t.Errorf("ran %v, want pull then deploy", r.ran)
-	}
-
-	r = &recorder{fail: map[string]bool{"git pull --ff-only": true}}
-	if err := Apply(context.Background(), sourceChannel, ApplyOptions{}, applyGit("").run, r.run, io.Discard, io.Discard); err == nil {
-		t.Error("a failing step must fail the update")
-	}
-	if len(r.ran) != 1 {
-		t.Errorf("ran %v after a failure, want only the first step", r.ran)
-	}
-
-	r = &recorder{}
-	if err := Apply(context.Background(), sourceChannel, ApplyOptions{SkipPull: true}, applyGit("").run, r.run, io.Discard, io.Discard); err != nil {
+// Naming the checkout names what to deploy: no pull, no branch check, only `just deploy`.
+func TestDeployCheckoutRunsOnlyTheDeployAndStopsAtAFailure(t *testing.T) {
+	g, r := applyGit(""), &recorder{}
+	if err := deploy(CheckoutOptions{}, g, r); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(r.ran, ",") != "just deploy" {
-		t.Errorf("skip-pull ran %v, want only deploy", r.ran)
+		t.Errorf("ran %v, want only the deploy", r.ran)
+	}
+	if strings.Join(g.calls, ",") != testCheckout+": status --porcelain" {
+		t.Errorf("read the checkout with %v, want only its status", g.calls)
+	}
+
+	r = &recorder{fail: map[string]bool{"just deploy": true}}
+	if err := deploy(CheckoutOptions{}, applyGit(""), r); err == nil {
+		t.Error("a failing deploy must fail the update")
 	}
 }
 
@@ -238,36 +237,50 @@ func TestRunStepDropsInheritedGitState(t *testing.T) {
 	}
 }
 
-func TestApplyAutostashDeploysACleanBuildAndRestoresTheEdits(t *testing.T) {
+func TestDeployCheckoutAutostashDeploysACleanBuildAndRestoresTheEdits(t *testing.T) {
 	stash := "git stash push --include-untracked -m " + AutostashMessage
 	r := &recorder{}
-	if err := Apply(context.Background(), sourceChannel, ApplyOptions{Autostash: true}, applyGit(" M x.go").run, r.run, io.Discard, io.Discard); err != nil {
+	if err := deploy(CheckoutOptions{Autostash: true}, applyGit(" M x.go"), r); err != nil {
 		t.Fatal(err)
 	}
-	want := stash + ",git pull --ff-only,just deploy,git stash pop"
+	want := stash + ",just deploy,git stash pop"
 	if strings.Join(r.ran, ",") != want {
 		t.Errorf("ran %v\nwant %s", r.ran, want)
 	}
 
 	// A clean checkout makes no stash, so there is nothing to pop.
 	r = &recorder{}
-	_ = Apply(context.Background(), sourceChannel, ApplyOptions{Autostash: true}, applyGit("").run, r.run, io.Discard, io.Discard)
+	_ = deploy(CheckoutOptions{Autostash: true}, applyGit(""), r)
 	if slices.Contains(r.ran, "git stash pop") {
 		t.Errorf("popped a stash it never made: %v", r.ran)
 	}
 
-	// A failed update still gives the edits back.
+	// A failed deploy still gives the edits back.
 	r = &recorder{fail: map[string]bool{"just deploy": true}}
-	err := Apply(context.Background(), sourceChannel, ApplyOptions{Autostash: true}, applyGit(" M x.go").run, r.run, io.Discard, io.Discard)
+	err := deploy(CheckoutOptions{Autostash: true}, applyGit(" M x.go"), r)
 	if err == nil || r.ran[len(r.ran)-1] != "git stash pop" {
 		t.Errorf("err=%v ran=%v, want the failure AND a final pop", err, r.ran)
 	}
 
 	// A pop that fails says where the edits are.
 	r = &recorder{fail: map[string]bool{"git stash pop": true}}
-	err = Apply(context.Background(), sourceChannel, ApplyOptions{Autostash: true}, applyGit(" M x.go").run, r.run, io.Discard, io.Discard)
+	err = deploy(CheckoutOptions{Autostash: true}, applyGit(" M x.go"), r)
 	if err == nil || !strings.Contains(err.Error(), "git stash list") {
 		t.Errorf("want the stash named in the error, got %v", err)
+	}
+}
+
+func TestApplyRunsTheChannelsPlan(t *testing.T) {
+	r := &recorder{}
+	if err := Apply(context.Background(), Channel{Kind: KindHomebrew}, r.run, io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(r.ran, ",") != "brew upgrade yolo-jail" {
+		t.Errorf("ran %v, want the brew upgrade", r.ran)
+	}
+	r = &recorder{}
+	if err := Apply(context.Background(), Channel{Kind: KindSnapshot}, r.run, io.Discard, io.Discard); err == nil || len(r.ran) != 0 {
+		t.Errorf("a snapshot install was applied: err=%v ran=%v", err, r.ran)
 	}
 }
 
@@ -276,10 +289,6 @@ func TestNotice(t *testing.T) {
 		st   State
 		want string
 	}{
-		{State{Kind: KindSource, Behind: 12, Upstream: "origin/main"},
-			"⬆ yolo-jail: 12 new commits on origin/main since this build — run `yolo update`"},
-		{State{Kind: KindSource, Behind: 1, Upstream: "origin/main"},
-			"⬆ yolo-jail: 1 new commit on origin/main since this build — run `yolo update`"},
 		{State{Kind: KindHomebrew, Latest: "0.11.0", Current: "0.10.0"},
 			"⬆ yolo-jail 0.11.0 is available (this is 0.10.0) — run `yolo update`"},
 		{State{Kind: KindGoInstall, Latest: "0.11.0", Current: "0.10.0"},
