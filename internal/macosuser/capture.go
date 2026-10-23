@@ -1071,9 +1071,13 @@ func runCaptureSteps(deps Deps, plan CapturePlan, problems []string, asUser [][]
 		return 1
 	}
 	packTree.consumerDispatched = true
-	if deps.Run(plan.BootstrapArgv) != 0 {
-		out.print("[bold red]capture bootstrap failed[/bold red] — the staging home has no " +
-			"generated launcher, so there is nothing for the capture to run. Aborting.")
+	// THE BOOTSTRAP'S OWN OUTPUT GOES TO OUT, bounded, whatever its exit (recordedrun.go): a build
+	// jail's log keeps Out and not this process's inherited descriptors, and the bootstrap's
+	// stderr is the only record of why a staging home got no launcher.
+	boot := runRecorded(deps, plan.BootstrapArgv, bootstrapOutputKept)
+	printRecordedOutput(out, "capture bootstrap", boot)
+	if boot.Status != 0 {
+		refuseCaptureBootstrap(out, boot)
 		return 1
 	}
 	if rc := deps.Run(plan.DriverArgv); rc != 0 {

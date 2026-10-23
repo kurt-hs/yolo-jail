@@ -64,6 +64,14 @@ type Deps struct {
 	// returning them with the returncode: for a check whose output the user needs only when it
 	// fails (setup's visudo checks). nil runs argv through Run instead, its output uncaptured.
 	RunCapture func(argv []string) (string, int)
+	// RunRecorded runs argv with stdin inherited and its stdout and stderr on pipes, and returns
+	// the last keep bytes of the two together, in the order they were written, and of stderr
+	// alone, with the returncode (runRecordedReal). It is for a child whose output must reach
+	// the act's own writer, Out, and not this process's inherited descriptors: the capture
+	// bootstrap's (runCaptureSteps), whose stdout and stderr a build jail's log never kept, so a
+	// failed bootstrap said nothing about why. nil runs argv through Run instead, its output
+	// unrecorded, which is how a test that fakes Run alone drives the acts.
+	RunRecorded func(argv []string, keep int) RecordedRun
 	// RunBash runs `bash -c <script>` and returns the returncode (unshare /
 	// fix-permissions).
 	RunBash func(script string) int
@@ -2426,6 +2434,7 @@ func RealDeps(runProxy func(argv []string) int, materialize func(repoRoot string
 		HostUser:            hostUserReal,
 		Run:                 runReal,
 		RunCapture:          runCaptureReal,
+		RunRecorded:         runRecordedReal,
 		RunBash:             runBashReal,
 		RunWithProxy:        runProxy,
 		WriteHostFile:       writeHostFileReal,

@@ -114,6 +114,17 @@ func runCaptureReal(argv []string) (string, int) {
 	return buf.String(), rc
 }
 
+// runRecordedReal is Deps.RunRecorded: runReal with stdout and stderr each on a pipe, keeping the
+// last keep bytes of both together and of stderr alone. stdin stays the terminal's. Nothing is
+// echoed as it runs: the caller writes what was kept to its own writer once the child has exited.
+func runRecordedReal(argv []string, keep int) RecordedRun {
+	both := newTailBuffer(keep)
+	stderr := newTailBuffer(keep)
+	rc := runOutputsTo(both, io.MultiWriter(both, stderr), argv)
+	return RecordedRun{Output: both.String(), Stderr: stderr.String(), Status: rc,
+		Cut: both.Cut() || stderr.Cut()}
+}
+
 // commandFor is exec.Command(argv…) with the working directory a crossing into the sandbox
 // account can read. sudo keeps the caller's cwd, and the caller's is usually under the invoking
 // user's home or its per-user temp dir, which _yolojail cannot traverse: every shell the guest
