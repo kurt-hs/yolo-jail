@@ -311,12 +311,16 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     whose git source is ruled (a brokered transport, created branches persisted, long-lived access on the user's side only);
     [whether writes ship on the agent's own background wait](../design/boundary-broker.md#OQ-BB17) holds writes.
     [Whether a workspace's own `repos` list may still widen a source's scope](../design/boundary-broker.md#OQ-BB18)
-    holds only its own feature, and [which config file holds a write grant](../design/boundary-broker.md#OQ-BB22) holds the grant config. Beside it,
+    holds only its own feature. Beside it,
     [workspace widening](../design/workspace-widening.md) graduates once [OQ-WW1](../design/workspace-widening.md#OQ-WW1) is ruled.
     Also beside it, asked for by the maintainer on 2026-10-09 and ruled to build on 2026-10-23: [the paste-to-host
     stopgap](../design/host-run-mailbox.md), whose [first slice](../design/host-run-mailbox-plan.md) is ready to build.
     It removes the copy-back of a host command's output until the broker's store and doorbell exist, with a line any
     agent or human writes by hand, and stays paste-only ([BB-D91](../design/boundary-broker.md#BB-D91)).
+    **Neither is done until it is documented for users** (the maintainer, 2026-10-23: *"at the end of this there's
+    proper evergreen documents and a user guide section that's up to date with how to precisely use all of this"*):
+    each graduates into a system doc under `docs/reference/`, and the user guide gains a section on running a host
+    command from the jail and on granting the agent GitHub and git writes (grants, the working set, `yolo approve`).
     Also asked for on 2026-10-09: [image paste in every agent](../design/image-paste.md), where [how far Ctrl+V is
     consumed](../design/image-paste.md#OQ-PA2) shapes the key handling, with [closing macos-user's possibly open
     pasteboard](../design/image-paste.md#OQ-PA1) and [the default](../design/image-paste.md#OQ-PA3); its first slice,
