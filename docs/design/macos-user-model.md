@@ -176,9 +176,11 @@ the optional Claude check was not run.
 
 **The two failures, and what changed:**
 
-- **Apple Events reached Finder.** `osascript -e 'tell application "Finder" to get name'` printed
-  `Finder` inside the sandbox, with `(deny default)` and the Apple Events service denied by name. The
-  profile now ends with `(deny appleevent-send)`, Seatbelt's own operation for it.
+- **Apple Events reached Finder — a false alarm, found 2026-10-23.** `osascript -e 'tell application
+  "Finder" to get name'` printed `Finder` inside the sandbox. AppleScript answers an application's
+  name from the specifier without sending an event, so that check passes under any profile. A real
+  event (`count windows`) fails inside with or without the `(deny appleevent-send)` the profile
+  gained; the rule stays as defense in depth, and b8 now counts windows.
 - **The keychain check was inconclusive.** Searching for an item that does not exist returns the
   same exit code whether or not the keychain service was reached. It now adds a throwaway item to
   your login keychain outside the sandbox and passes only if its secret does not come out inside.

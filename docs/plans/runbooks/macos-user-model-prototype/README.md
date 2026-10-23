@@ -175,8 +175,8 @@ The decisions, each traced to a design ruling. The file comments every allow on 
   their real names, `com.apple.SecurityServer` and `com.apple.securityd`, beside the earlier
   guesses, which do no harm if wrong. Check b4 is what proves the keychain closed, not those names.
 - **Apple Events:** denied by Seatbelt's own operation, `(deny appleevent-send)`, as the last rule
-  in the file so nothing re-allows it. The first run showed Finder answering `osascript` with
-  `(deny default)` and the Apple Events service denied by name both in place.
+  in the file so nothing re-allows it. The first run's Finder answer was a false alarm (`get name`
+  sends no event); a real event fails even without that rule.
 - **Processes:** any program may run; signals and process inspection reach only processes inside
   the sandbox; another process's command line and environment are denied on both channels.
 - **Network:** open, the whole loopback included ([`OQ-MM7`](../../../design/macos-user-model.md#OQ-MM7)). Unix sockets bind and connect only under

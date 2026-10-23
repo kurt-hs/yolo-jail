@@ -405,6 +405,5 @@
 )
 
 ;; [yolo] Apple Events by their own operation, last so nothing re-allows it.
-;; The first Mac run (macOS 26.5) showed osascript driving Finder with
-;; (deny default) and the appleevents mach-lookup deny both in place.
+;; Defense in depth: on macOS 26.5 a real event to Finder already fails without it.
 (deny appleevent-send)

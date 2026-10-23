@@ -588,8 +588,10 @@ elif [ "$MODE" = account ]; then
 else
 	skip b7 "clipboard holds no text: copy any text, then rerun to cover pbpaste"
 fi
+# count windows, not get name: AppleScript answers an application's name from the specifier
+# without sending Finder an event, so `get name` succeeds under any profile (measured 2026-10-23).
 expect_deny b8 "drive Finder with Apple Events (osascript)" \
-	"osascript -e 'tell application \"Finder\" to get name'" no
+	"osascript -e 'tell application \"Finder\" to count windows'" no
 expect_deny b9 "run a shell through System Events (osascript do shell script)" \
 	"osascript -e 'tell application \"System Events\" to do shell script \"id\"'" no
 expect_deny b10 "open an app through LaunchServices (open -g -a TextEdit)" 'open -g -a TextEdit' no

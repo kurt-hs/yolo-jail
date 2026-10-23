@@ -887,8 +887,7 @@ func closingDenies(hostHome string) string {
 		"    (global-name \"com.apple.coreservices.launchservicesd\"))           ;; LaunchServices: `open -a`, opening files in your apps.\n")
 
 	b.WriteString("\n;; [yolo] Apple Events by their own operation, last so nothing re-allows it.\n" +
-		";; The first Mac run (macOS 26.5) showed osascript driving Finder with\n" +
-		";; (deny default) and the appleevents mach-lookup deny both in place.\n" +
+		";; Defense in depth: on macOS 26.5 a real event to Finder already fails without it.\n" +
 		";; #seatbelt-test-id:appleevent-send-deny#\n" +
 		"(deny appleevent-send)\n")
 	return b.String()

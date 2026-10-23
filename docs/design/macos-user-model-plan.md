@@ -189,9 +189,9 @@ These are mechanism choices made under the rulings above, not owner rulings. The
   relocation allow placed after them re-opens a keychain. So a `mounts` entry naming `~/.ssh`
   stays denied on macOS. That is intended, and it is as strict as today's
   `contextReadAllow`-before-keychains ordering.
-- **`(deny default)` with `(deny appleevent-send)` missing is not enough.** On the first Mac run,
-  Finder answered `osascript` with deny-default in force and the Apple Events mach service denied
-  by name. Keep the operation deny as the final form, and pin it as the last line in a unit test.
+- **Keep `(deny appleevent-send)` as the final form, pinned as the last line in a unit test**, as
+  defense in depth. The first Mac run's "Finder answered `osascript`" was a false alarm: `get name`
+  sends no event. Measured 2026-10-23 on macOS 26.5, a real event fails without the rule.
 - **Every `(deny …)` line needs `;; #seatbelt-test-id:<id>#` on the line directly above it, and the
   id must be unique per deny.** `TestEverySeatbeltDenyCarriesATestID` reads exactly that shape. A
   multi-deny block like the prototype's `mach-lookup` list is one form with one id, not one per

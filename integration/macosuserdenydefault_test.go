@@ -777,11 +777,11 @@ func denyDefaultCases() []denyDefaultCase {
 		{
 			name: "b8_apple_events_to_finder_refused",
 			id:   "appleevent-send-deny",
-			why: "the first Mac run showed osascript driving Finder under (deny default) and the " +
-				"appleevents mach-lookup deny together; (deny appleevent-send) is the rule that decides. " +
-				"The control asks Finder its name, which needs Automation consent this host may not have.",
+			why: "counting Finder's windows needs a real Apple Event, which needs Automation consent this " +
+				"host may not have. Not `get name`: AppleScript answers that from the specifier without " +
+				"sending an event, so it succeeds under any profile (measured on macOS 26.5, 2026-10-23).",
 			script: func(denyDefaultFixtures) string {
-				return `osascript -e 'with timeout of 5 seconds' -e 'tell application "Finder" to get name' -e 'end timeout'`
+				return `osascript -e 'with timeout of 5 seconds' -e 'tell application "Finder" to count windows' -e 'end timeout'`
 			},
 			want:            wantRefused,
 			optionalControl: true,
