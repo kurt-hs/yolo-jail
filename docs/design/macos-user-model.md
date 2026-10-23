@@ -3,7 +3,7 @@ title: "macos-user's model: a second account, or a sandbox that starts from noth
 date: 2026-10-22
 status: in-review
 stage: DESIGN
-next: "Rerun the revised prototype on a Mac in both modes (§6), rule loopback and the shared /tmp, then seed the plan"
+next: "Rerun the prototype in account mode (self mode passed 2026-10-23), then rule loopback and the shared /tmp"
 tags: [macos-user, seatbelt, design, isolation, parity, safehouse, sandvault]
 summary: "Today macos-user runs the agent as a second Mac account under a Seatbelt profile that allows everything and denies a short list (SandVault's model). Ruled 2026-10-22: macos-user moves to Safehouse's model, the agent running as you under a profile that denies everything and allows a list, the closest macOS gets to podman's start-from-nothing container; the second account is kept from day one as an optional mode, off by default, on the same profile. This doc lays the models side by side, maps podman's pieces onto the Safehouse model, and names what the second account buys and costs."
 vantage:
@@ -198,6 +198,27 @@ so the command-line check also reads `kern.procargs2` directly.
   test servers on random ports, because Seatbelt cannot tell who is listening.
 - **The shared `/tmp` (b14).** In self mode a 0600 file of yours in `/tmp` is readable from inside;
   as the account, Unix permissions refuse it.
+
+### Self-mode rerun (2026-10-23)
+
+Run on the same Mac (macOS 26.5, arm64) at `fc7b1c56e`, self mode only, against both the
+hand-written [`profile.sb`](../plans/runbooks/macos-user-model-prototype/profile.sb) and the
+profile yolo generates (`--profile-from-yolo`). **Both: 33 PASS, 0 FAIL.** b4's throwaway keychain
+item stayed hidden, b12 and b13 hit a live process and were refused, b6 covered the ssh agent's
+launchd socket, and e1–e2 counted, the terminal holding Full Disk Access. Skipped: b7 (the clipboard
+held no text) and f1 (opt-in). b14 and d3 read as before under both profiles. Account mode is not
+yet rerun.
+
+- **b8 had been a false alarm.** AppleScript answers `get name` of an application from the
+  specifier without sending an event, so the first run's check passed under any profile. A real
+  event (`count windows`) is refused inside, with or without `(deny appleevent-send)`, which stays
+  as defense in depth. b8 now counts windows, in the script and in
+  `TestMacosUserDenyDefaultProfileEnforcesItsRules`.
+- **The integration suite's first native run** found one real gap: the generated profile's
+  `/dev` metadata allow out-ranked the raw-device `file-read*` deny, so `ls -l /dev/disk0`
+  succeeded. The deny now names `file-read-metadata` too. The same gap leaves the
+  metadata (not the contents) of `/System/Library/Keychains` visible, which holds Apple's public
+  root certificates; left as is.
 
 ## 7. The ruled model: two modes, one profile
 

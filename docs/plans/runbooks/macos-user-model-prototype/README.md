@@ -2,7 +2,7 @@
 title: "The macos-user model prototype"
 status: accepted
 stage: CURRENT
-next: "A human reruns both modes on a Mac with the revised b4, b8, b12 and b13, and pastes the output back"
+next: "A human reruns account mode on a Mac (self mode passed 2026-10-23), and pastes the output back"
 tags: [runbook, macos-user, seatbelt, safehouse, prototype]
 summary: "A hand-written deny-by-default Seatbelt profile and a check script that prove or disprove the ruled macos-user model on a Mac, with no yolo code involved"
 ---
