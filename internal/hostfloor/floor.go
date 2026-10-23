@@ -462,6 +462,11 @@ func (f *Floor) ensureDir(children ...string) error {
 // installer URL, or a fork's source address. A fork's pin and recipe are matched beside it
 // (Record.Revision, Record.Recipe), because the address alone names a repository, not a build.
 func declared(in packdecl.Install) string {
+	if in.IsPackTree() {
+		// A PACK-TREE program has no fork address; the floor holds none of them (packTreeNoEntry),
+		// so no record ever declares one.
+		return ""
+	}
 	switch in.Kind {
 	case "npm":
 		name, version := packdecl.SplitNpmSpec(in.Package)
@@ -486,14 +491,31 @@ func via(in packdecl.Install) string {
 	case "native":
 		return "installer"
 	case packdecl.InstallKindSource:
+		if in.IsPackTree() {
+			return packdecl.ViaPack
+		}
 		return packdecl.ViaSource
 	}
 	return in.Kind
 }
 
+// packTreeNoEntry is why the floor holds no PACK-TREE program (docs/design/pack-buildable-programs.md,
+// `via: "pack"`): its build is keyed by its pack tree's digest, never by a fork pin, and the floor's
+// arm for that build is not part of this yolo. Asked before anything that reads a fork pin, so a
+// pack-tree program never reaches forkPin, awaitsPin or PinFork.
+func packTreeNoEntry(p Program) string {
+	return "it is built from pack " + p.Pack + "'s own tree (" + p.Install.PackFrom + "), which the host " +
+		"floor does not build or hold — leave pack " + p.Pack + " out of the floor with the user config's " +
+		"`host_floor`, or run " + p.Bin() + " where a launch delivers it"
+}
+
 // forkPin is ForkPin's answer for p — after this Floor's own pin of it, when it made or tried one —
-// or why there is none when nothing can read a pin.
+// or why there is none when nothing can read a pin. A PACK-TREE program has none, and ForkPin is
+// never asked for one: its build is keyed by its tree's digest.
 func (f *Floor) forkPin(p Program) (commit, reason string) {
+	if p.Install.IsPackTree() {
+		return "", packTreeNoEntry(p)
+	}
 	if c, ok := f.madePins[p.Bin()]; ok {
 		return c, ""
 	}
@@ -515,7 +537,7 @@ func (f *Floor) forkPin(p Program) (commit, reason string) {
 // this Floor has not tried already. Such a program is not "no floor entry" — the install pins it
 // first — so Status reports it as an install would find it.
 func (f *Floor) awaitsPin(p Program) bool {
-	if p.Install.Kind != packdecl.InstallKindSource || f.PinFork == nil || f.ForkPinnable == nil {
+	if !p.Install.IsForkBuild() || f.PinFork == nil || f.ForkPinnable == nil {
 		return false
 	}
 	if _, tried := f.failedPins[p.Bin()]; tried {
@@ -638,6 +660,10 @@ func (f *Floor) recipeNoEntryReason(p Program) string {
 		return "an installer agent comes from a `yolo capture`, which runs in a Linux jail or, on a Mac, " +
 			"as the macos-user sandbox account, and this machine is " + f.GOOS + "/" + f.GOARCH
 	case packdecl.InstallKindSource:
+		if in.IsPackTree() {
+			// A PACK-TREE program: no fork pin, no fork build, and no floor arm in this yolo.
+			return packTreeNoEntry(p)
+		}
 		// A FORK (docs/design/forked-programs-as-packs.md): its host copy is the capture store's
 		// build of the fork's PINNED commit, relocated into the floor (FP-D4). A notch gets a build
 		// made for its own platform or none (§1: no cross-compilation): on Linux the capture jail's,
@@ -713,7 +739,7 @@ func (f *Floor) Status(p Program) Status {
 	case rec.Declared != declared(p.Install):
 		st.Pending = "the pack now declares " + declared(p.Install) + " (installed: " +
 			rec.Declared + ")"
-	case p.Install.Kind == packdecl.InstallKindSource:
+	case p.Install.IsForkBuild():
 		st.Pending = f.buildPending(p, rec)
 	case p.Install.Kind == "npm" && !packdecl.SatisfiesNodeFloor(rec.Node, p.Install.NodeFloor):
 		st.Pending = "it runs on Node " + rec.Node + ", below the pack's node_floor " +
@@ -756,7 +782,7 @@ func (f *Floor) buildPending(p Program, rec *Record) string {
 // machine lacks (HP-D15). It reads the store offline, never the network. A provisioned entry never comes through here: the
 // floor already holds it, whatever the store says now.
 func (f *Floor) provisionable(st Status) Status {
-	if st.Program.Install.Kind == packdecl.InstallKindSource {
+	if st.Program.Install.IsForkBuild() {
 		return f.buildProvisionable(st)
 	}
 	if st.Program.Install.Kind != "native" || f.ResolveCapture == nil {

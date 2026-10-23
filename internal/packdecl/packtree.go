@@ -1,6 +1,9 @@
 package packdecl
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"path"
 	"sort"
@@ -193,4 +196,83 @@ func PackTreeWarnings(contributions []Contribution, present func(dir string) boo
 			"\"prebuilt\" download for each platform it serves", c.Bin, c.From))
 	}
 	return out
+}
+
+// PackTreeLayoutVersion is the version of the placement layout a pack-tree build leaves
+// (PackTreeProduces): the program's directory under ~/.local/lib/yolo-programs and its link in
+// ~/.local/bin. It is in the recipe (PackTreeRecipe), so a change to the layout is a new build and
+// never a hit on an entry laid out the old way.
+const PackTreeLayoutVersion = 1
+
+// packTreeRecipeTag opens a pack-tree recipe's canonical form, so it never equals a fork's recipe
+// (ForkRecipe) or a tree's for the same strings: those canonical forms are JSON arrays too, and an
+// untagged one could coincide with them (BG-D3).
+const packTreeRecipeTag = "pack-tree"
+
+// PackTreeRecipe is a pack-tree program's RECIPE HASH (docs/design/pack-buildable-programs.md
+// §6.1, BG-D3): the sha256, in hex, of the JSON array ["pack-tree", layout version, from, build,
+// run]. Everything besides the source directory's content that could change the bytes a build
+// leaves is in it; the content is the build's revision (the tree digest), and the toolchain is
+// recorded on the receipt, not keyed (OQ-FP2, as for a fork).
+func PackTreeRecipe(from, build, run string) string {
+	canonical, _ := json.Marshal([]any{packTreeRecipeTag, PackTreeLayoutVersion, from, build, run})
+	sum := sha256.Sum256(canonical)
+	return hex.EncodeToString(sum[:])
+}
+
+// PackTreeBuildSource is a pack-tree build's SOURCE string, the first part of its build identity
+// and the key the capture store selects its entries under: "pack:<pack>/<from>". The pack's name is
+// in it, so two packs that ship the same tree build apart. It is a record, not an address: no
+// fork's source (a packsrc address, which never starts "pack:") can equal it.
+func PackTreeBuildSource(pack, from string) string {
+	return "pack:" + pack + "/" + from
+}
+
+// PackTreeProgramDir is the home-relative directory a pack-tree program lives in: its source
+// directory copied there and built in place (BG-D4), so every path the build embeds is under the
+// home, where the capture's relocation records it.
+func PackTreeProgramDir(bin string) string {
+	return ".local/lib/yolo-programs/" + bin
+}
+
+// PackTreeProgramLink is the home-relative path of a pack-tree program's link on PATH,
+// ~/.local/bin/<bin>, which points at `run` inside PackTreeProgramDir by a relative target.
+func PackTreeProgramLink(bin string) string {
+	return ".local/bin/" + bin
+}
+
+// PackTreeLinkTarget is the relative target of PackTreeProgramLink: from ~/.local/bin to `run`
+// inside the program's directory, "../lib/yolo-programs/<bin>/<run>".
+func PackTreeLinkTarget(bin, run string) string {
+	return "../lib/yolo-programs/" + bin + "/" + run
+}
+
+// PackTreeProduces are the home-relative paths a pack-tree program's store entry holds, and the
+// only ones (BG-D4): the link first, which is the program path the source launcher execs
+// (ForkProgramPath finds it), then the program's directory. The source launcher clears both before
+// it materializes a new key, which is what replaces the directory whole (BG-D12).
+func PackTreeProduces(bin string) []string {
+	return []string{PackTreeProgramLink(bin), PackTreeProgramDir(bin)}
+}
+
+// IsPackTree reports whether this Install is a PACK-TREE PROGRAM's delivery (`via: "pack"`): kind
+// "source", with the program file it runs. Such a program has no fork pin, no source address and
+// no fork recipe, so every reader of those asks this first.
+func (in Install) IsPackTree() bool {
+	return in.Kind == InstallKindSource && in.PackRun != ""
+}
+
+// IsForkBuild reports whether this Install is a FORK's delivery: kind "source" and not a pack-tree
+// program's. It is the predicate a reader of a fork's pin, source address or recipe asks, so a
+// pack-tree program, the install kind's other member, never reaches a fork's path.
+func (in Install) IsForkBuild() bool {
+	return in.Kind == InstallKindSource && !in.IsPackTree()
+}
+
+// PackTreeRecipe is PackTreeRecipe for this Install's pack-tree delivery, "" for any other program.
+func (in Install) PackTreeRecipe() string {
+	if !in.IsPackTree() {
+		return ""
+	}
+	return PackTreeRecipe(in.PackFrom, in.Build, in.PackRun)
 }

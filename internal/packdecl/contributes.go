@@ -1507,6 +1507,19 @@ func (m *Manifest) InstallContributions() []Install {
 			// A patched fork's series directory and follow rule ride along, so every reader of
 			// the program can tell a patched fork from a plain one (Install.IsPatchedFork).
 			in.Patches, in.Follow, in.PatchBranch = c.Patches, c.Follow, c.PatchBranch
+		case ViaPack:
+			// A PACK-TREE program (packtree.go): its source directory, its program file and its
+			// build line, and the two paths its store entry holds, synthesized from the bin. No
+			// Source, ForkedBy or pin: IsPackTree keeps every fork reader away from it. Copied,
+			// for Refresh's reason.
+			in.PackFrom, in.PackRun, in.Build = c.From, c.Run, c.Build
+			in.Produces = PackTreeProduces(c.Bin)
+			if len(c.Prebuilt) > 0 {
+				in.Prebuilt = make(map[string]PrebuiltBuild, len(c.Prebuilt))
+				for k, v := range c.Prebuilt {
+					in.Prebuilt[k] = v
+				}
+			}
 		}
 		out = append(out, in)
 	}

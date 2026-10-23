@@ -108,6 +108,21 @@ func forkDeliveryFor(d map[string]ForkDelivery, bin string) ForkDelivery {
 		" (a launcher older than the fork route, or a jail with no capture store)"}
 }
 
+// sourceDeliveryFor is forkDeliveryFor for a source launcher's program: a PACK-TREE program's
+// (`via: "pack"`) reason with no key names its pack's tree, never a fork route the launch did not
+// take, since its build is keyed by that tree's digest and no fork pin exists for it. pack is the
+// pack that declares the program.
+func sourceDeliveryFor(d map[string]ForkDelivery, inst *packdecl.Install, pack string) ForkDelivery {
+	if got, ok := d[inst.Bin]; ok && (got.Key != "" || got.Reason != "") {
+		return got
+	}
+	if inst.IsPackTree() {
+		return ForkDelivery{Reason: "the launch that started this jail built no " + inst.Bin + " from pack " +
+			pack + "'s own tree (" + inst.PackFrom + ")"}
+	}
+	return forkDeliveryFor(d, inst.Bin)
+}
+
 // forkKeyDir is where a home records which fork build key it holds, one file per bin: IN THE HOME'S
 // OWN STORAGE, beside the materialized program, never in ~/.cache. The launchers' other stamps live
 // in ~/.cache, which every jail on the machine binds from one shared directory — right for "when did
@@ -160,14 +175,21 @@ func forkReasonSaid(d ForkDelivery) string {
 	return strings.Join(lines, "\n")
 }
 
-// forkUpdateNote is what a fork's launcher says in update mode: what moves the fork's build, which
-// for a PATCHED fork is a fresh launch on the host (docs/reference/patched-forks.md §7), never a pin.
+// forkUpdateNote is what a source launcher says in update mode after "<bin>: ": whose build the
+// program is and what moves it — a fork's pin, a fresh launch on the host for a PATCHED fork
+// (docs/reference/patched-forks.md §7), or a change to its pack's tree for a PACK-TREE program,
+// which has no fork pack and no pin to name.
 func forkUpdateNote(inst *packdecl.Install) string {
+	if inst.IsPackTree() {
+		return "built from its pack's own tree (" + inst.PackFrom + ") — a change to that tree moves it, " +
+			"at the next launch from the host"
+	}
+	by := "built from source by fork pack " + inst.ForkedBy + " — "
 	if inst.IsPatchedFork() {
-		return "a patched fork: a fresh launch on the host checks its upstream and builds what moved " +
+		return by + "a patched fork: a fresh launch on the host checks its upstream and builds what moved " +
 			"('yolo pack update' there checks now), and the jail it starts runs that build"
 	}
-	return "its pin moves it (run 'yolo pack update' on the host, then launch again)"
+	return by + "its pin moves it (run 'yolo pack update' on the host, then launch again)"
 }
 
 // sourceLauncherTemplate is the source launcher body. Same splice contract as npmLauncherTemplate:
@@ -222,7 +244,7 @@ mkdir -p "$STAMP_DIR"
 # revision — or, for a patched fork, a fresh launch on the host checks its upstream and builds it.
 # "yolo pack update" reaches this and is told so.
 if [ "${YOLO_PACK_UPDATE:-}" = "1" ]; then
-    echo "  $BIN: built from source by fork pack $FORKED_BY — "__YOLO_FORK_UPDATE_NOTE__ >&2
+    echo "  $BIN: "__YOLO_FORK_UPDATE_NOTE__ >&2
     exit 0
 fi
 ` + treeGateShell + `

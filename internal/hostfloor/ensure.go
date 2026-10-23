@@ -180,6 +180,11 @@ func (f *Floor) servesANearMiss(p Program, rec *Record) bool {
 	if p.Install.IsPatchedFork() {
 		return f.patchedServesANearMiss(p, rec)
 	}
+	if p.Install.IsPackTree() {
+		// No copy the floor could hold is a pack-tree program's (packTreeNoEntry), so any is a
+		// near-miss, and a fork's pin is never asked for one.
+		return true
+	}
 	if p.Install.Kind != packdecl.InstallKindSource {
 		return rec.Via == packdecl.ViaSource
 	}
@@ -197,6 +202,9 @@ func (f *Floor) describeRecipe(p Program) string {
 	case "native":
 		return "the machine's capture of its installer (" + in.InstallerURL + ")"
 	case packdecl.InstallKindSource:
+		if in.IsPackTree() {
+			return "pack " + p.Pack + "'s build of its own tree (" + in.PackFrom + ")"
+		}
 		if in.IsPatchedFork() {
 			return f.describePatched(p)
 		}
@@ -530,7 +538,11 @@ func (f *Floor) installSelected(ctx context.Context, p Program, patched *Patched
 	case "native":
 		rec, err = f.installFromCapture(p, dir)
 	case packdecl.InstallKindSource:
-		if p.Install.IsPatchedFork() {
+		if p.Install.IsPackTree() {
+			// Unreachable through Status, which refuses it first (packTreeNoEntry); refused here too,
+			// so no path installs a pack-tree program as a fork's build.
+			err = &noEntryError{reason: packTreeNoEntry(p)}
+		} else if p.Install.IsPatchedFork() {
 			if patched != nil {
 				rec, err = f.installFromPatchedState(ctx, p, dir, *patched)
 			} else {

@@ -225,7 +225,8 @@ func RetiredHook(name string) string { return retiredHooks[name] }
 
 // Install declares a program the pack wants present in the jail.
 type Install struct {
-	// Kind is "npm", "native" or "source" (InstallKindSource, a fork's).
+	// Kind is "npm", "native" or "source" (InstallKindSource: a fork's, or a pack-tree
+	// program's, which IsPackTree tells apart).
 	Kind string `json:"kind"`
 	// Bin is the binary name on PATH, and the lazy-launcher filename.
 	Bin string `json:"bin"`
@@ -326,6 +327,16 @@ type Install struct {
 	// as the fork writes it, in place of Patches. The Contribution field of the same name carries the
 	// grammar.
 	PatchBranch string `json:"patch_branch,omitempty"`
+	// PackFrom, PackRun and Prebuilt are a PACK-TREE PROGRAM's delivery (packtree.go, `via:
+	// "pack"`): the pack-relative source directory, the file the program is relative to it, and the
+	// per-platform downloads. Build carries its optional build line, and Produces its two
+	// synthesized paths (PackTreeProduces). Its Kind is "source", so the source launcher, the
+	// materialize and readiness serve it unchanged; every reader of a FORK's pin, source address
+	// or recipe asks IsPackTree first and leaves it out (IsForkBuild). The Contribution fields
+	// From, Run and Prebuilt carry the grammar.
+	PackFrom string                   `json:"pack_from,omitempty"`
+	PackRun  string                   `json:"pack_run,omitempty"`
+	Prebuilt map[string]PrebuiltBuild `json:"prebuilt,omitempty"`
 	// ForkedBy names the fork pack whose build this program is, "" for every program that is
 	// not a fork's. Provenance only: every line that says what a source-built program is names
 	// the pack that supplied its bytes, not only the pack that owns its name.

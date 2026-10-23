@@ -134,3 +134,80 @@ func TestPackTreeProgramDecodesStrictlyAndTolerantly(t *testing.T) {
 		t.Errorf("DecodeTolerant skipped a pack-tree program this build knows: %v", skipped)
 	}
 }
+
+// TestPackTreeRecipeIsTaggedAndKeyedOnEveryInput (BG-D3): the recipe never equals a fork's for the
+// same strings, and moves when from, build or run moves.
+func TestPackTreeRecipeIsTaggedAndKeyedOnEveryInput(t *testing.T) {
+	base := PackTreeRecipe("tools/x", "make", "x")
+	for name, other := range map[string]string{
+		"fork recipe, same strings":  ForkRecipe("make", []string{"x"}, "tools/x"),
+		"fork recipe, the produces":  ForkRecipe("make", PackTreeProduces("x"), "tools/x"),
+		"fork source recipe":         ForkSourceRecipe("", "make", PackTreeProduces("x")),
+		"another from":               PackTreeRecipe("tools/y", "make", "x"),
+		"another build":              PackTreeRecipe("tools/x", "make all", "x"),
+		"another run":                PackTreeRecipe("tools/x", "make", "bin/x"),
+		"no build":                   PackTreeRecipe("tools/x", "", "x"),
+		"build and run swapped kind": PackTreeRecipe("tools/x", "x", "make"),
+	} {
+		if other == base {
+			t.Errorf("%s equals the pack-tree recipe %s", name, base)
+		}
+	}
+	if PackTreeRecipe("tools/x", "make", "x") != base {
+		t.Error("PackTreeRecipe is not a function of its inputs")
+	}
+	if got := PackTreeBuildSource("fx", "tools/x"); got != "pack:fx/tools/x" {
+		t.Errorf("PackTreeBuildSource = %q, want pack:fx/tools/x", got)
+	}
+}
+
+// TestAPackTreeProgramProjectsItsOwnDelivery is the hazard at the projection: kind "source" so the
+// source launcher, materialize and readiness serve it, but IsPackTree, never IsForkBuild, with its
+// own fields and its two synthesized paths, no source address, and no fork recipe.
+func TestAPackTreeProgramProjectsItsOwnDelivery(t *testing.T) {
+	c := goodPackTree()
+	c.Prebuilt = map[string]PrebuiltBuild{"linux/amd64": {URL: "https://example.invalid/b", SHA256: strings.Repeat("a", 64)}}
+	ins := (&Manifest{Contributes: []Contribution{c}}).InstallContributions()
+	if len(ins) != 1 {
+		t.Fatalf("InstallContributions = %+v, want one", ins)
+	}
+	in := ins[0]
+	if in.Kind != InstallKindSource || !in.IsPackTree() || in.IsForkBuild() || in.IsPatchedFork() {
+		t.Errorf("projection = %+v, want kind source, IsPackTree, not a fork's", in)
+	}
+	if in.PackFrom != "tools/board-cli" || in.PackRun != "dist/board.js" || in.Build != c.Build {
+		t.Errorf("projection lost its pack-tree fields: %+v", in)
+	}
+	if in.Source != "" || in.ForkedBy != "" {
+		t.Errorf("a pack-tree program carries a fork's address or pack: %+v", in)
+	}
+	want := []string{".local/bin/board", ".local/lib/yolo-programs/board"}
+	if strings.Join(in.Produces, ",") != strings.Join(want, ",") {
+		t.Errorf("Produces = %v, want %v", in.Produces, want)
+	}
+	if in.ProgramPath() != ".local/bin/board" {
+		t.Errorf("ProgramPath = %q, want .local/bin/board", in.ProgramPath())
+	}
+	if in.SourceRecipe() != "" {
+		t.Errorf("SourceRecipe = %q, want \"\": a fork's reader must find nothing to serve", in.SourceRecipe())
+	}
+	if in.PackTreeRecipe() != PackTreeRecipe("tools/board-cli", c.Build, "dist/board.js") {
+		t.Errorf("PackTreeRecipe = %q", in.PackTreeRecipe())
+	}
+	if in.Prebuilt["linux/amd64"].URL != "https://example.invalid/b" {
+		t.Errorf("Prebuilt not carried: %+v", in.Prebuilt)
+	}
+	c.Prebuilt["linux/amd64"] = PrebuiltBuild{URL: "https://changed.invalid"}
+	if in.Prebuilt["linux/amd64"].URL != "https://example.invalid/b" {
+		t.Error("the projection aliases the manifest's prebuilt map")
+	}
+	if got := PackTreeLinkTarget("board", "dist/board.js"); got != "../lib/yolo-programs/board/dist/board.js" {
+		t.Errorf("PackTreeLinkTarget = %q", got)
+	}
+	// A fork's projection is still a fork's.
+	fork := Install{Kind: InstallKindSource, Source: "git+https://example.com/x?ref=main", Build: "make",
+		Produces: []string{".local/bin/x"}, Bin: "x"}
+	if fork.IsPackTree() || !fork.IsForkBuild() || fork.PackTreeRecipe() != "" || fork.SourceRecipe() == "" {
+		t.Errorf("a fork's Install reads as a pack-tree program's: %+v", fork)
+	}
+}

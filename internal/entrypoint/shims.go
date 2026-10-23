@@ -600,7 +600,7 @@ func GenerateAgentLaunchers(e *Env) error {
 				// the host handed over (forklauncher.go). The base's upstream delivery is NOT a
 				// fallback, because a jail that ran the upstream program under the fork's name
 				// would be the wrong program looking like the right one.
-				segments := sourceAgentLauncherSegments(inst, forkDeliveryFor(forks, inst.Bin), stampDir,
+				segments := sourceAgentLauncherSegments(inst, sourceDeliveryFor(forks, inst, p.Name), stampDir,
 					forkKeyDir(e), receiptsFile(e), capturesDir(e), updates, launcherSet,
 					launchFlagsFor(e, packs, inst.Bin))
 				prefix := nodeExecPrefix(inst.NodeFloor)

@@ -31,7 +31,8 @@ import (
 const (
 	// ViaSource is the `via` a fork declares.
 	ViaSource = "source"
-	// InstallKindSource is Install.Kind for a program a fork's build delivers.
+	// InstallKindSource is Install.Kind for a program a fork's build delivers, and for a pack-tree
+	// program's (packtree.go), which Install.IsPackTree tells apart.
 	InstallKindSource = "source"
 )
 
@@ -451,7 +452,8 @@ func ForkProgramPath(bin string, produces []string) string {
 }
 
 // ProgramPath is ForkProgramPath for this Install: the home-relative path of the program a fork's
-// build leaves, "" for any program that is not a fork's.
+// build leaves — or a pack-tree program's, whose synthesized Produces put its link first
+// (PackTreeProduces) — "" for any program built from no source.
 func (in Install) ProgramPath() string {
 	if in.Kind != InstallKindSource {
 		return ""
@@ -509,7 +511,9 @@ func ForkSourceRecipe(source, build string, produces []string) string {
 // "" matches no build a store holds, so a reader that missed the patched arm finds nothing to
 // serve rather than a plain fork's build of the unpatched upstream.
 func (in Install) SourceRecipe() string {
-	if in.Kind != InstallKindSource || in.Patches != "" || in.PatchBranch != "" {
+	// A PACK-TREE program has no fork recipe either: its recipe is PackTreeRecipe, and a fork's
+	// reader that asked this one must find nothing to serve.
+	if in.Kind != InstallKindSource || in.IsPackTree() || in.Patches != "" || in.PatchBranch != "" {
 		return ""
 	}
 	return ForkSourceRecipe(in.Source, in.Build, in.Produces)

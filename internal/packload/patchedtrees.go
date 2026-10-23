@@ -42,6 +42,9 @@ func (f Fork) Label() string {
 	if f.IsTree() {
 		return "extension " + f.SeriesKey() + suffix
 	}
+	if f.IsPackTree() {
+		return "program " + f.SeriesKey() + " (built from its pack's tree)"
+	}
 	return "fork " + f.SeriesKey() + suffix
 }
 
@@ -67,6 +70,9 @@ func (f Fork) CaptureArg() string {
 // pack and its base; a patched extension's contributing pack, its owning agent pack, and every
 // fork of the owning agent's programs in the selection.
 func (f Fork) HoldPacks() []string {
+	if f.IsPackTree() {
+		return []string{f.Pack} // it forks nothing, so no base holds it
+	}
 	if !f.IsTree() {
 		return []string{f.Pack, f.Base}
 	}

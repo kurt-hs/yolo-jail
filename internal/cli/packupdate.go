@@ -281,6 +281,14 @@ func refreshPrograms(e *entrypoint.Env, pr richtext.Printer, errw io.Writer, run
 			if inst.Kind == "" {
 				continue
 			}
+			if inst.IsPackTree() {
+				// NOR DOES A PACK-TREE PROGRAM, and it has no pin either: its build is keyed by its
+				// pack tree's content, so what moves it is a change to the pack and a fresh launch.
+				found++
+				pr.Printf("[dim]%s: built from pack %s's own tree (%s) — a change to that tree moves it, "+
+					"at the next launch from the host, not a refresh here[/dim]", inst.Bin, p.Name, inst.PackFrom)
+				continue
+			}
 			if inst.Kind == packdecl.InstallKindSource {
 				// A FORK HAS NO UPDATE MODE (docs/design/forked-programs-as-packs.md): what moves
 				// it is its PIN, which `yolo pack update` moves on the host, and the next launch

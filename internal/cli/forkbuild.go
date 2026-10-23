@@ -276,6 +276,11 @@ type forkBuild struct {
 // build — the unpatched upstream — as the patched program. "" matches no build
 // (resolveForkBuild) and builds nothing (buildFork).
 func (b forkBuild) recipe() string {
+	if b.Fork.IsPackTree() {
+		// A PACK-TREE program's recipe is tagged as one (packdecl.PackTreeRecipe, BG-D3), so it never
+		// equals a fork's of the same strings.
+		return b.Fork.PackTreeRecipe()
+	}
 	if b.Fork.IsTree() {
 		// A PATCHED EXTENSION's recipe is tagged as a tree's (packdecl.TreeRecipe, PPX-D6), so it
 		// never equals a program's of the same inputs.
@@ -298,6 +303,10 @@ func (b forkBuild) recipe() string {
 // alone (patchedBuildSource), since the ref is not part of a patched build's identity (§6.3) — a
 // hold moved from `?ref=main` to `?ref=v1.0.1` finds the build already there.
 func (b forkBuild) buildSource() string {
+	if b.Fork.IsPackTree() {
+		// A PACK-TREE program's: "pack:<pack>/<from>", with its tree digest as the revision (Commit).
+		return b.Fork.BuildSource()
+	}
 	if b.Fork.FollowsUpstream() {
 		return patchedBuildSource(b.Fork.Source)
 	}
@@ -757,6 +766,12 @@ func buildFork(b forkBuild, mode buildMode, out, errw io.Writer, color bool) (*c
 	pr := richtext.Printer{W: out, Color: color}
 	store := &capture.Store{Dir: paths.CapturesDir()}
 	f := b.Fork
+	if f.IsPackTree() {
+		// A PACK-TREE PROGRAM's source is its pack's own tree, which this act does not stage yet: a
+		// build here would check out an empty source address. Refused, never a fork's checkout.
+		return nil, fmt.Errorf("%s is built from pack %s's own tree (%s), which this yolo's build act "+
+			"does not stage", f.Bin, f.Pack, f.From)
+	}
 	if b.recipe() == "" {
 		// A PATCHED FORK WITH NO SERIES READ, or anything else with no recipe: a build here would
 		// be the upstream unpatched, admitted under a recipe no reader asks for.

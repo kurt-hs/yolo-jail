@@ -554,7 +554,7 @@ func captureChoicesStep(packs []*packload.Pack, bin string) string {
 	for _, p := range packs {
 		installs, _ := p.HonoredInstalls()
 		for _, in := range installs {
-			if (in.Kind == packdeclNativeKind || in.Kind == packdecl.InstallKindSource) && !seen[in.Bin] {
+			if (in.Kind == packdeclNativeKind || in.IsForkBuild()) && !seen[in.Bin] {
 				seen[in.Bin] = true
 				choices = append(choices, in.Bin)
 			}
@@ -630,6 +630,13 @@ func resolveCaptureTarget(bin string) (*captureTarget, error) {
 		for _, in := range granted {
 			if in.Bin != bin {
 				continue
+			}
+			if in.IsPackTree() {
+				// A PACK-TREE program: its bytes are its pack's own tree, built by a launch keyed on
+				// that tree's digest, never a capture of an installer or a fork's pinned build.
+				return nil, fmt.Errorf("%s is built from pack %s's own tree (%s), not by an installer or a "+
+					"fork's pinned source, so `yolo capture` has nothing to capture for it: launch it "+
+					"(`yolo -- %s`), and the launch builds it from the pack", bin, p.Name, in.PackFrom, bin)
 			}
 			if in.Kind == packdecl.InstallKindSource {
 				// A FORK's program: its capture is its BUILD, from the pinned source rather than a

@@ -21,7 +21,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostpath"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
-	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -772,7 +771,7 @@ func floorPatchedBuild(p hostfloor.Program, g *packsrc.GoodBuild, receiptRecipe 
 func floorForkPins(progs []hostfloor.Program) map[string]packload.ForkPin {
 	var forks []packload.Fork
 	for _, p := range progs {
-		if p.Install.Kind == packdecl.InstallKindSource {
+		if p.Install.IsForkBuild() { // a pack-tree program has no fork pin
 			forks = append(forks, floorForkBuild(p, "").Fork)
 		}
 	}

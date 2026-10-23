@@ -133,6 +133,12 @@ type Fork struct {
 	// XB-D7), "" when it declares none and always for a patched one: what takes the tree's list entry's
 	// place in the contributing pack's lists wherever a launch hands no tree (ApplyTreeFallbacks).
 	Fallback string
+	// From and Run are a PACK-TREE PROGRAM's (packtree.go, `via: "pack"`): its source directory,
+	// relative to Root, and its program file, relative to From. Both "" for every fork. With Run set
+	// the value is a pack-tree program: Base is "" (it forks nothing), Source is "", Produces are
+	// packdecl.PackTreeProduces, and its build's identity is BuildSource, its tree digest and
+	// PackTreeRecipe (packtree.go).
+	From, Run string
 	// Upstream marks the UPSTREAM BUILD of a patched fork or patched extension
 	// (docs/reference/patched-forks.md §8.5, "Skip the patches", YOLO_SKIP_PATCHES): the upstream's newest list entry
 	// built under the fork's own build recipe with no series applied. Its Patches and PatchBranch are

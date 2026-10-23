@@ -151,7 +151,7 @@ func hostFreshProgramPreparation(packs []*packload.Pack, cmd0 string, errw io.Wr
 				rc = 1
 				return
 			}
-			if p.Install.Kind == packdecl.InstallKindSource && !p.Install.IsPatchedFork() {
+			if p.Install.IsForkBuild() && !p.Install.IsPatchedFork() { // a pack-tree program has no pin; Ensure refuses it
 				var exact *packload.Fork
 				for _, f := range packload.Forks(packs) {
 					if f.Key() == floorForkBuild(p, "").Fork.Key() && f.Bin == p.Bin() && !f.Patched() {

@@ -504,8 +504,24 @@ func FootprintOf(p *Pack) Footprint {
 				// The BASE's program after the fork rewrite: the name stays this pack's, and
 				// the review-worthy claim is the fork pack's own, above.
 				detail = "source: built by fork pack " + c.ForkedBy
+			case packdecl.ViaPack:
+				// A PACK-TREE program owns its name. Review-worthy when its bytes are made or fetched
+				// rather than shipped as they are: a build line runs code the pack names, as a fork's
+				// does (OQ-FP6), and a prebuilt artifact is a downloaded binary.
+				detail = "pack tree: " + c.From
+				if strings.TrimSpace(c.Build) != "" {
+					detail += ", " + BuildLineQuote(c.Build)
+					review = true
+				}
+				if len(c.Prebuilt) > 0 {
+					detail += ", or a prebuilt download"
+					review = true
+				}
 			}
 			add(packdecl.KindProgram, c.Bin, detail, review)
+			if c.Via == packdecl.ViaPack {
+				withBuildLine(p.Name+"/"+c.Bin, c.Build)
+			}
 		case packdecl.KindIntercept:
 			// Exclusive by the intercepted NAME, so two packs routing one command collide in
 			// the generic loop. Not review-worthy: the shim lives in the jail; what the
