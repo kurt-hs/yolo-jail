@@ -391,7 +391,9 @@ func (o *Options) noteProgramOverrides(plans []programOverridePlan) {
 
 // UndeclaredProgramOverrideLines is `yolo check`'s information about the user's overrides that name
 // a bin no selected pack declares: they do nothing in this workspace, which is not a failure,
-// because the user config spans every workspace (§5).
+// because the user config spans every workspace (§5). A prebuilt opt-in (BG-D18) is reported the same
+// way, and also where the program it names declares no `prebuilt` at all, which it cannot opt into;
+// one missing only for this launch's platform is the launch's refusal (packload.PackTreeResolve).
 func UndeclaredProgramOverrideLines(packs []*packload.Pack) []string {
 	declared := declaredPrograms(packs)
 	var out []string
@@ -399,6 +401,24 @@ func UndeclaredProgramOverrideLines(packs []*packload.Pack) []string {
 		if _, ok := declared[bin]; !ok {
 			out = append(out, "programs.overrides."+bin+": no selected pack declares "+bin+
 				", so it does nothing in this workspace")
+		}
+	}
+	prebuilts := map[string]packload.Fork{}
+	for _, f := range packload.PackTreePrograms(packs) {
+		if _, seen := prebuilts[f.Bin]; !seen {
+			prebuilts[f.Bin] = f
+		}
+	}
+	for bin := range config.ProgramPrebuiltOptIns(nil) {
+		f, packTree := prebuilts[bin]
+		d, isDeclared := declared[bin]
+		switch {
+		case !isDeclared:
+			out = append(out, "programs.overrides."+bin+".prebuilt: no selected pack declares "+bin+
+				", so it does nothing in this workspace")
+		case !packTree || len(f.Prebuilts) == 0:
+			out = append(out, "programs.overrides."+bin+".prebuilt: pack "+d.pack+" declares no "+
+				"prebuilt artifact for "+bin+", so it does nothing — remove the setting")
 		}
 	}
 	sort.Strings(out)

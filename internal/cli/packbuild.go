@@ -46,6 +46,9 @@ type packBuildOptions struct {
 	packs []string
 	force bool
 	at    string // "jail" or "host"
+	// prebuiltOptIn is the user's `programs.overrides.<bin>: {"prebuilt": true}` (BG-D18), read once
+	// per run (config.ProgramPrebuiltOptIns).
+	prebuiltOptIn map[string]bool
 }
 
 // parsePackBuildArgs reads `[<pack>...] [--force] [--at jail|host]`; the error is a usage refusal.
@@ -132,6 +135,7 @@ func packBuild(args []string, out, errw io.Writer, color bool) int {
 	}
 	rt := packBuildRuntime(opts.at)
 	overrides := config.ProgramOverrides(func(msg string) { fmt.Fprintf(errw, "Warning: %s\n", msg) })
+	opts.prebuiltOptIn = config.ProgramPrebuiltOptIns(nil)
 	programs := packload.PackTreePrograms(packs)
 	forks := append(packload.Forks(packs), packload.PatchedTrees(packs)...)
 	for _, p := range packs {
@@ -250,13 +254,18 @@ func packBuildOne(pr richtext.Printer, f packload.Fork, rt string, opts packBuil
 		return true
 	}
 	// WHICH BYTES, as a launch resolves them (packload.PackTreeResolve): the build of the pack's tree,
-	// or its prebuilt artifact where the tree is absent or no build can run for this notch.
-	buildable := rt != "macos-user" || darwinPackTreeBuildable(hostFloorMacProbes())
-	pin := packload.PackTreeResolve(f, platform, buildable)
+	// or its prebuilt artifact where the tree is absent or the user opted into it (BG-D18). Never a
+	// prebuilt in place of a build that cannot run here (OQ-BG2).
+	pin := packload.PackTreeResolve(f, platform, opts.prebuiltOptIn[f.Bin])
 	if pin.Reason != "" {
 		return fail(pin.Reason)
 	}
 	f, digest := pin.Fork, pin.Commit
+	if !f.IsPrebuilt() && rt == "macos-user" && !darwinPackTreeBuildable(hostFloorMacProbes()) {
+		// A BUILD ENVIRONMENT NEVER SET UP is a fatal refusal naming the setup step and, when the pack
+		// declares one for this platform, the explicit opt-in to its prebuilt — never the prebuilt.
+		return fail(darwinPackTreeUnbuildableReason(f, platform))
+	}
 	b := forkBuild{Fork: f, Commit: digest, Platform: platform}
 	store := &capture.Store{Dir: paths.CapturesDir()}
 	hit := false
@@ -316,15 +325,26 @@ func packBuildOne(pr richtext.Printer, f packload.Fork, rt string, opts packBuil
 
 // darwinPackTreeBuildable reports whether the darwin sealed act (macosuser.RunForkBuildAct, FP-D24)
 // can EVER build a pack's tree on this Mac: always in the run-as-you mode, which needs no account,
-// and in the account mode only once the sandbox account exists. A Mac with no sandbox account is the
-// design's "permanently unavailable" builder (pack-buildable-programs.md §9, the `yolo host` macOS
-// row), so a declared darwin `prebuilt` stands in (OQ-BG2's leaning); with none declared the build
-// pin comes back and the act's own refusal names `yolo macos-setup`. Every other refusal of the act
-// (root, no sandbox-exec, an unusable staging root) is a state the next run may not have, never a
-// reason to change which bytes run. A Mac's `yolo host` floor asks the same question
-// (pack-buildable-programs-plan.md Task 9's floor arm takes it as its buildable flag).
+// and in the account mode only once the sandbox account exists. A Mac with no sandbox account has
+// never set up its build environment (pack-buildable-programs.md §9, the `yolo host` macOS row): by
+// OQ-BG2's ruling a build there is a fatal refusal naming `yolo macos-setup` and, when the pack
+// declares a darwin prebuilt, the explicit opt-in to it (darwinPackTreeUnbuildableReason) — never
+// the prebuilt on yolo's own.
 func darwinPackTreeBuildable(p macCaptureProbes) bool {
 	return p.Mode == macosuser.ModeSelf || (p.SandboxUserExists != nil && p.SandboxUserExists())
+}
+
+// darwinPackTreeUnbuildableReason is the refusal of f's build on a Mac whose darwin act can never run
+// (darwinPackTreeBuildable false): the setup step, and the prebuilt opt-in when f declares an
+// artifact for platform (OQ-BG2).
+func darwinPackTreeUnbuildableReason(f packload.Fork, platform string) string {
+	why := "the sandbox account " + macosuser.SandboxUser + ", which a pack's build on a Mac runs as, does not " +
+		"exist, so " + f.Bin + " cannot be built from pack " + f.Pack + "'s " + f.From + " — run the one-time " +
+		"setup, `yolo macos-setup`"
+	if step := f.PrebuiltOptInStep(platform); step != "" {
+		why += "; " + step
+	}
+	return why
 }
 
 // fileExists reports whether path names an existing file.

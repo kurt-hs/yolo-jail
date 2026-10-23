@@ -7,11 +7,14 @@ package run
 // so the fork route's trigger, build slot and delivery (forkbuild.go) carry the program unchanged:
 // a store entry for this digest is a hit and prints nothing, and anything else is built once.
 //
-// Where the pack ships no source directory, the program's declared PREBUILT artifact for the jail's platform stands in (§7,
+// The program's declared PREBUILT artifact for the jail's platform is used where the pack ships no
+// source directory, or where the user opted that program into it (`programs.overrides.<bin>:
+// {"prebuilt": true}`, BG-D18) — never substituted for a present source on yolo's own (OQ-BG2, §7,
 // packload.PackTreeResolve): its sha256 is the pin, the build slot fetches and verifies it, and the
 // launch discloses it with that sha256 on every fresh launch and attach (prebuiltline.go).
 
 import (
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -26,15 +29,23 @@ func (o *Options) packTreePins(packs []*packload.Pack, rt string) []packload.For
 	if o.CapturesDir() == "" {
 		return nil
 	}
+	progs := packload.PackTreePrograms(packs)
+	if len(progs) == 0 {
+		return nil
+	}
 	var out []packload.ForkPin
 	platform := jailPlatform(rt)
-	for _, f := range packload.PackTreePrograms(packs) {
+	// THE USER'S OPT-IN, read from the user file alone: the one way a present source gives way to
+	// the prebuilt (BG-D18).
+	optIn := config.ProgramPrebuiltOptIns(nil)
+	for _, f := range progs {
 		// EVERY BACKEND BUILDS A PACK'S TREE: a container backend in its sealed build jail, and
 		// macos-user in the darwin sealed act (FP-D24's path), in either mode. A launch never meets the
 		// one machine whose darwin act can never run, an account-mode Mac with no sandbox account: the
 		// backend's preflight refuses that launch, naming the setup, before any build is pinned
-		// (Run's macosUserPreflight). So only an absent source lets the prebuilt stand in here.
-		out = append(out, packload.PackTreeResolve(f, platform, true))
+		// (Run's macosUserPreflight). A build that cannot run is refused, never answered with the
+		// prebuilt (OQ-BG2).
+		out = append(out, packload.PackTreeResolve(f, platform, optIn[f.Bin]))
 	}
 	return out
 }

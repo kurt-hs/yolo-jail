@@ -1070,9 +1070,10 @@ Unlike a fork, it names no other repository and no base pack:
   Absent means the tree runs as shipped.
 - **`run`** is required: the file the program is, relative to `from`, cleaned, with no `..`.
 - **`prebuilt`** is optional: a map from a `<goos>/<goarch>` key to `{url, sha256}`, used when
-  `from` is absent, or where no build of a pack's tree can ever run (a Mac with no sandbox account,
-  outside a launch). It follows `binaries`' rules: https only, no credentials in the URL, a 64-hex
-  sha256. An official pack may not declare it.
+  `from` is absent, or when you opt that program into it with `programs.overrides.<bin>:
+  {"prebuilt": true}` in your user config. It is never used in place of a build that cannot run.
+  It follows `binaries`' rules: https only, no credentials in the URL, a 64-hex sha256. An official
+  pack may not declare it.
 - **`platforms`** and **`node_floor`** are allowed, as on any program, and so is every behavior
   field. The delivery fields of other vias (`package`, `url`, `flags`, `update`, `versions_dir`,
   `installer_env`) and the fork fields are refused by name.
@@ -1088,7 +1089,7 @@ in the home whole, so no file of an older build survives. **A failed build refus
 naming the build's log under the workspace's `.yolo/` and `yolo pack build <pack>` as the retry. The
 readiness act then stops the launch, as for any program a launch cannot install, unless
 `YOLO_ALLOW_MISSING_PROGRAMS=1` starts the jail without it
-([OQ-BG1](../design/pack-buildable-programs.md#OQ-BG1)'s leaning). A launch waiting on another
+([OQ-BG1](../design/pack-buildable-programs.md#OQ-BG1)). A launch waiting on another
 launch's build of the same tree takes its result, a failure included; a launch that starts after the
 failure builds again. On macos-user, in either `macos_user_mode`, the build runs for macOS in the
 sealed build the sandbox uses for a fork, as the account or as you, with macOS's own shell and tools,
@@ -1101,11 +1102,20 @@ into the pack-binary cache, checks its sha256 before anything runs, and admits i
 store hit, offline included. Every fresh launch and attach prints one line naming the program, its
 pack, why the artifact stands in, the verified sha256 and the URL. A fetch failure or a digest
 mismatch stores nothing and refuses the program like a failed build, naming the URL, both digests
-for a mismatch, and the next step. A present `from` never fetches. A darwin artifact also stands in
-for `yolo pack build` and `yolo pack install` on a Mac whose sandbox account does not exist in the
-account mode ([OQ-BG2](../design/pack-buildable-programs.md#OQ-BG2)'s leaning: a builder that can
-never run here, never one that is busy). `yolo pack install` prefetches it, and `yolo pack build`
-fetches it and reports it up to date.
+for a mismatch, and the next step. `yolo pack install` prefetches it, and `yolo pack build` fetches
+it and reports it up to date.
+
+**A present `from` is always built, never swapped for the prebuilt**
+([OQ-BG2](../design/pack-buildable-programs.md#OQ-BG2), ruled 2026-10-23). When the build cannot run
+because its environment was never set up, such as a Mac with no sandbox account in the account mode,
+the build is refused like a failed one, naming the setup step (`yolo macos-setup`), and, when the
+pack declares a prebuilt for that platform, the setting that opts into it. **To use the prebuilt
+anyway**, set `"programs": {"overrides": {"<bin>": {"prebuilt": true}}}` in
+`~/.config/yolo-jail/config.jsonc` ([BG-D18](../design/pack-buildable-programs.md#BG-D18)). That
+program then takes the verified artifact on every notch even with `from` present, and its line says
+the setting chose it. Where the pack declares no artifact for the platform, the setting refuses the
+program, naming the platforms it does declare. It cannot sit beside `path` in the same entry, and a
+workspace config cannot set it.
 
 **A dev override runs your own checkout instead** (*dev override* is the design's coined term, its
 [§5](../design/pack-buildable-programs.md#5-the-dev-override)): `programs.overrides.<bin>` =
@@ -1140,8 +1150,9 @@ reinstalls the program once at the next `yolo host` launch. A prebuilt prints it
 launch. A failed build refuses the program, naming the build's log and `yolo pack build <pack> --at
 host`, and the launch's readiness act stops it unless `YOLO_ALLOW_MISSING_PROGRAMS=1` is set. A Mac's
 `yolo host` builds it for macOS in the sandbox's sealed build, as a fork's floor build is. With no
-sandbox account in the account mode a declared darwin `prebuilt` stands in; any other blocker of that
-build is named, with its next step. A dev override applies there as on Linux.
+sandbox account in the account mode, or any other blocker of that build, the program is refused,
+naming the next step and, where a darwin `prebuilt` is declared, the opt-in. A dev override and the
+prebuilt opt-in apply there as on Linux.
 
 **`yolo pack build [<pack>...] [--force] [--at jail|host]`** runs the build a launch would run for
 each such program, outside a launch, for CI or a first install
@@ -1151,8 +1162,9 @@ the same key. No argument means every selected pack. It prints one line per prog
 built, fetched for a prebuilt (with the sha256 it verified), or failed with the build's log and the
 command to retry. It exits 1 when any program failed.
 `--force` rebuilds even when the store holds the build. `--at host` builds for the host notch, which
-on Linux is the jail's build and on a Mac the sandbox's sealed macOS build, unless no sandbox account
-exists in the account mode and a darwin `prebuilt` stands in. A fork is skipped with a
+on Linux is the jail's build and on a Mac the sandbox's sealed macOS build. With no sandbox account in
+the account mode it refuses, naming `yolo macos-setup` and, where a darwin `prebuilt` is declared, the
+opt-in. A fork is skipped with a
 line naming `yolo capture <bin>`, its explicit rebuild, and a dev override is noted without stopping
 the build. It runs on the host only and refuses in a jail with exit 2, as it does for a pack name
 the config does not select.

@@ -18,7 +18,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
@@ -64,59 +63,70 @@ func (f Fork) ProgramRun() string {
 }
 
 // PrebuiltPlatforms are the platforms f's `prebuilt` declares, sorted; nil for none.
-func (f Fork) PrebuiltPlatforms() []string {
-	var out []string
-	for p := range f.Prebuilts {
-		out = append(out, p)
-	}
-	sort.Strings(out)
-	return out
+func (f Fork) PrebuiltPlatforms() []string { return packdecl.PrebuiltPlatforms(f.Prebuilts) }
+
+// PrebuiltOptInStep is packdecl.PrebuiltOptInStep for f on platform: the explicit opt-in a refusal
+// of a build that cannot run here names, "" when f declares no artifact for platform.
+func (f Fork) PrebuiltOptInStep(platform string) string {
+	return packdecl.PrebuiltOptInStep(f.Pack, f.Bin, platform, f.Prebuilts)
 }
 
 // PackTreeResolve is the resolver's build-or-prebuilt half for one pack-tree program on platform
 // (docs/design/pack-buildable-programs.md §4; the dev override, the rung above, is decided
 // elsewhere): which bytes this delivery takes, as the pin the fork route's build act keys on.
+// usePrebuilt is the user's explicit opt-in, `programs.overrides.<bin>.prebuilt` (BG-D18).
 //
-//   - The source directory is present and a build can run: the BUILD, its revision the tree
-//     digest. The artifact is never consulted (P5: never fetch a prebuilt while a build is
-//     possible).
-//   - The source directory is present and buildable is false: no build can EVER run for this
-//     notch with this yolo. A builder that is only busy is never passed as unbuildable (the
-//     leaning of OQ-BG2, so the bytes never depend on timing). The artifact stands in when
-//     `prebuilt` declares platform; otherwise the build pin is returned, and the caller's own
-//     refusal of that notch applies.
+// By OQ-BG2's ruling (2026-10-23) a prebuilt is NEVER substituted for a present source: not where
+// a builder is permanently unavailable, not where it is busy. A build that cannot run is the
+// caller's fatal refusal, which names the setup step and, when one is declared, the opt-in
+// (Fork.PrebuiltOptInStep).
+//
+//   - usePrebuilt: the PREBUILT when `prebuilt` declares platform, whether or not the source is
+//     present; otherwise a reason naming the setting and the platforms `prebuilt` does declare.
+//   - The source directory is present: the BUILD, its revision the tree digest. The artifact is
+//     never consulted (P5).
 //   - The source directory is absent: the PREBUILT when `prebuilt` declares platform, its revision
-//     the artifact's sha256; otherwise a reason naming the pack, `from`, the platform and the
-//     platforms `prebuilt` does declare.
+//     the artifact's sha256 — the only bytes the pack offers, so nothing is substituted; otherwise
+//     a reason naming the pack, `from`, the platform and the platforms `prebuilt` does declare.
 //
 // A prebuilt pin's Fork carries the artifact (Prebuilt) and why it was chosen (PrebuiltWhy).
-func PackTreeResolve(f Fork, platform string, buildable bool) ForkPin {
+func PackTreeResolve(f Fork, platform string, usePrebuilt bool) ForkPin {
 	p := ForkPin{Fork: f}
+	pb, declared := f.Prebuilts[platform]
+	have := "none"
+	if ps := f.PrebuiltPlatforms(); len(ps) > 0 {
+		have = strings.Join(ps, ", ")
+	}
+	if usePrebuilt {
+		if !declared {
+			p.Reason = "programs.overrides." + f.Bin + ".prebuilt is set in ~/.config/yolo-jail/config.jsonc, but pack " +
+				f.Pack + "'s `prebuilt` declares no artifact for " + platform + " (it declares: " + have +
+				") — remove that setting to build " + f.Bin + " from the pack's " + f.From + ", or ask the pack's " +
+				"author for a `prebuilt` entry for " + platform
+			return p
+		}
+		f.PrebuiltWhy = "programs.overrides." + f.Bin + ".prebuilt is set"
+		f.Prebuilt = &pb
+		p.Fork, p.Commit = f, pb.SHA256
+		return p
+	}
 	digest, err := f.Digest()
 	if err != nil {
 		p.Reason = "pack " + f.Pack + "'s source directory " + f.From + " could not be read (" + err.Error() +
 			") — fix the pack's tree and launch again"
 		return p
 	}
-	pb, declared := f.Prebuilts[platform]
 	switch {
-	case digest != "" && (buildable || !declared):
+	case digest != "":
 		p.Commit = digest
 		return p
-	case digest != "":
-		f.PrebuiltWhy = "no build of a pack's own tree runs for " + platform + " with this yolo"
 	case !declared:
-		have := "none"
-		if ps := f.PrebuiltPlatforms(); len(ps) > 0 {
-			have = strings.Join(ps, ", ")
-		}
 		p.Reason = "pack " + f.Pack + " ships no " + f.From + " to build " + f.Bin + " from, and its `prebuilt` " +
 			"declares no artifact for " + platform + " (it declares: " + have + ") — add that directory to the " +
 			"pack, or a `prebuilt` entry for " + platform
 		return p
-	default:
-		f.PrebuiltWhy = "no " + f.From + " in the pack"
 	}
+	f.PrebuiltWhy = "no " + f.From + " in the pack"
 	f.Prebuilt = &pb
 	p.Fork, p.Commit = f, pb.SHA256
 	return p

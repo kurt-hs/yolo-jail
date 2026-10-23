@@ -4,7 +4,7 @@ status: in-review
 stage: DESIGN
 next: "Morning review: the BG-D decisions; builders proceed on the leanings meanwhile, slice by slice in the plan"
 tags: [design, packs, programs, build, capture, overrides, notches]
-summary: "A pack cannot deliver a tool that needs a build from its own tree, point a tool at the checkout being developed, or fetch a verified prebuilt artifact. One new program delivery, `via: \"pack\"`, answers all three with one precedence — a user-scope dev override, then a build of the pack's tree, then a declared prebuilt artifact, then a refusal that names the missing piece. The build is the fork route's sealed build act with a different source, keyed by the tree's content, so nothing new builds, caches, locks or delivers."
+summary: "A pack cannot deliver a tool that needs a build from its own tree, point a tool at the checkout being developed, or fetch a verified prebuilt artifact. One new program delivery, `via: \"pack\"`, answers all three with one precedence — a user-scope dev override, then the user's opt-in to a declared prebuilt, then a build of the pack's tree, then the prebuilt where the pack ships no source, then a refusal that names the missing piece. A prebuilt is never substituted for a source that cannot be built. The build is the fork route's sealed build act with a different source, keyed by the tree's content, so nothing new builds, caches, locks or delivers."
 ---
 
 # A pack's own tool, built from its own tree: one more source for the fork route's build act
@@ -86,7 +86,8 @@ delegation; review in the morning*: [BG-D1](#BG-D1) to [BG-D17](#BG-D17) in the
   directory the user names, in place of whatever its pack would deliver. Not a pack and not a
   mount the user configures, although it is delivered through the same mount machinery.
 - **Prebuilt artifact** *(coined here)*: a file a pack names by URL and sha256, per platform,
-  for a pack-tree program to use when its source directory is absent. Not a `binaries` entry,
+  for a pack-tree program to use when its source directory is absent, or when the user opts into
+  it ([BG-D18](#BG-D18)). Not a `binaries` entry,
   which is a loophole's ([`pack-binaries.md`](../reference/pack-binaries.md)), though it is
   fetched and verified the same way.
 - **Build act**, **sealed**, **store key**, **capture store**: the fork route's, defined in
@@ -175,7 +176,7 @@ that can run a source-built program today ([§9](#9-notch-and-backend-coverage))
   "from": "tools/board-cli",              // source directory, relative to the pack root
   "build": "npm ci && npm run bundle",     // optional: absent means the tree runs as shipped
   "run": "dist/board.js",                  // the program, relative to `from`, after the build
-  "prebuilt": {                            // optional: used only when `from` is absent (OQ-BG2)
+  "prebuilt": {                            // optional: used when `from` is absent, or by the user's opt-in (BG-D18)
     "linux/amd64":  { "url": "https://example.invalid/board-linux-amd64",  "sha256": "<64 hex>" },
     "linux/arm64":  { "url": "https://example.invalid/board-linux-arm64",  "sha256": "<64 hex>" },
     "darwin/arm64": { "url": "https://example.invalid/board-darwin-arm64", "sha256": "<64 hex>" }
@@ -208,7 +209,11 @@ installing something wrong ([BG-D1](#BG-D1)).
 
 For each selected pack-tree program, on each notch that runs it, one resolver answers "which
 bytes", in this order. The first rung that applies decides. A rung that applies and then fails
-is a failure ([P5](#P5)); it never falls through to the next rung.
+is a failure ([P5](#P5)); it never falls through to the next rung. **A prebuilt is never
+substituted for a present source** ([OQ-BG2](#OQ-BG2)): a build that cannot run, for a builder
+never set up or one that is busy, is a refusal. The user's explicit opt-in
+(`programs.overrides.<bin>: {"prebuilt": true}`, [BG-D18](#BG-D18)) is the one way a present
+source gives way to the prebuilt.
 
 ```mermaid
 flowchart TD
@@ -216,15 +221,16 @@ flowchart TD
   ov -- "yes" --> ovok{"path valid and run file present?"}
   ovok -- "yes" --> ovrun["run the checkout in place; disclose"]
   ovok -- "no" --> refuse["refuse this program, naming the missing piece"]
-  ov -- "no" --> src{"source directory present in the staged pack?"}
+  ov -- "no" --> opt{"programs.overrides names this bin with prebuilt: true?"}
+  opt -- "yes" --> pre
+  opt -- "no" --> src{"source directory present in the staged pack?"}
   src -- "yes" --> canb{"can a build run on this machine and notch?"}
   canb -- "yes" --> key{"store entry for this key?"}
   key -- "yes" --> serve["serve it: silent"]
   key -- "no" --> build["build in the sealed build act"]
   build -- "admitted" --> serve2["serve it: result line"]
   build -- "fails" --> refuse
-  canb -- "permanently unavailable (OQ-BG2)" --> pre
-  canb -- "busy, or below a floor" --> refuse
+  canb -- "never set up, busy, or below a floor (OQ-BG2)" --> refuse
   src -- "no" --> pre{"prebuilt declared for this platform?"}
   pre -- "yes" --> fetch["fetched and verified; disclose with its sha256"]
   pre -- "no" --> refuse
@@ -240,6 +246,8 @@ implementer; the facts each line carries do not:
 | Override `run` file missing | the full host path expected, the pack's `build` line to run in that checkout (when it has one), and the key to remove to go back to the pack's own copy |
 | Build failed | the pack, the program, the build log path, the retry command `yolo pack build <pack>`, and the bypass ([§8](#8-failure-and-the-next-step)) |
 | Builder busy, or Apple Container below its read-only bind floor | the existing fork-route reason, unchanged |
+| Build environment never set up (a Mac with no sandbox account, in the account mode) | the setup step (`yolo macos-setup`) and, when `prebuilt` declares this platform, the opt-in that runs it instead ([OQ-BG2](#OQ-BG2)) |
+| Opt-in set, but no prebuilt for this platform | the setting, the platform, and the platforms `prebuilt` does declare (or "none") |
 | No source and no prebuilt for this platform | the pack, `from` as declared, the platform, and the platforms `prebuilt` does declare (or "none") |
 | Prebuilt fetch failed, or its digest did not match | the URL and, for a mismatch, both digests ([the integrity rule](../reference/pack-binaries.md#principles)) |
 
@@ -249,6 +257,7 @@ they hold ([BG-D10](#BG-D10)):
 ```text
 board: dev override — runs /home/me/.dotfiles/tools/board-cli/dist/board.js (programs.overrides in ~/.config/yolo-jail/config.jsonc)
 board: prebuilt artifact from pack dotfiles (no tools/board-cli in the pack) — sha256 8caa07df9d1f… verified, https://example.invalid/board-linux-amd64
+board: prebuilt artifact from pack dotfiles (programs.overrides.board.prebuilt is set) — sha256 8caa07df9d1f… verified, https://example.invalid/board-linux-amd64
 ```
 
 A build that ran prints the build pool's existing start, progress and result lines
@@ -276,6 +285,12 @@ names the source directory's tree digest in place of a commit. A hit prints noth
 object, so a workspace value is an error that names the user file, by the same construction
 ([BG-D8](#BG-D8)). The override is keyed by `bin`. Two selected packs cannot claim one `bin` (the
 launch's collision pre-flight), so a `bin` names at most one program.
+
+**The prebuilt opt-in is the entry's other form**: `"chart": { "prebuilt": true }` names no
+checkout. It runs the pack's verified prebuilt artifact for a pack-tree program, even with the
+source present ([§7](#7-the-prebuilt-artifact), [BG-D18](#BG-D18)). It cannot sit beside `path` or
+`run` in one entry, and validation names both fields. It is no dev override: nothing below applies
+to it.
 
 **What it applies to: any program a selected pack declares**, whatever its `via` ([BG-D8](#BG-D8)).
 `run` defaults to the program's own `run`, which only a pack-tree program has. For any other
@@ -406,9 +421,14 @@ so nothing of the user's is in it.
 
 ## 7. The prebuilt artifact
 
-- **When it is used:** the source directory is absent from the staged pack, or a build is
-  permanently unavailable here ([OQ-BG2](#OQ-BG2) leaning), and `prebuilt` declares this notch's
-  platform.
+- **When it is used:** `prebuilt` declares this notch's platform, and either the source
+  directory is absent from the staged pack, so the artifact is the only bytes the pack offers, or
+  the user opted that program into it with `programs.overrides.<bin>: {"prebuilt": true}`
+  ([BG-D18](#BG-D18)). **Never in place of a build that cannot run** ([OQ-BG2](#OQ-BG2)): a source
+  present on a machine that never set up its build environment is a fatal refusal through the
+  missing-build path, with the same `YOLO_ALLOW_MISSING_PROGRAMS=1` bypass. It names the setup step
+  and, when `prebuilt` declares the platform, the opt-in. An opt-in for a platform `prebuilt` does
+  not declare refuses the program, naming the platforms it does.
 - **Fetched by:** the launch's build slot on the host, before the jail; `yolo pack install` and
   `yolo pack update`, which prefetch every selected program's artifact as they do loophole
   binaries; and `yolo pack build`. All three go through the existing download cache
@@ -423,7 +443,7 @@ so nothing of the user's is in it.
 - **Offline:** an artifact admitted once is a store hit. A launch with no network and no entry is
   refused, naming the URL and `yolo pack install`.
 - **Never** used after a build that was attempted and failed ([P5](#P5)), and never fetched when
-  the source directory is present and a build can run.
+  the source directory is present, unless the user opted in.
 
 ## 8. Failure, and the next step
 
@@ -443,6 +463,8 @@ programs are untouched.
 | Lock wait ran out (20 minutes) | That launch's failed build, naming the holder's pid and the lock |
 | Apple Container busy with another jail | The existing refusal ([PF-D92](../reference/patched-forks.md#PF-D92)), which names the retry once the other jails stop |
 | Source absent, no prebuilt for the platform | Refused, naming what is declared ([§4](#4-precedence-one-resolver-four-rungs)) |
+| Source present, build environment never set up | Refused, naming the setup step and, when one is declared for the platform, the prebuilt opt-in; never the prebuilt ([OQ-BG2](#OQ-BG2)) |
+| Prebuilt opt-in set, no prebuilt for the platform | Refused, naming the setting and the platforms declared |
 | Prebuilt fetch failed or digest mismatch | Refused; nothing cached; never falls back to a cached copy that does not match |
 | Override invalid or its `run` missing | Refused, naming the path and the key ([§5](#5-the-dev-override)) |
 | Store entry half-written (crash mid-admit) | Missing completion marker reads as absent; the next launch rebuilds |
@@ -479,7 +501,7 @@ difference below is one the fork route already has, for the reason given.
 | **jail, Apple Container** | One build at a time. Refused while another jail runs (the existing gate). Below the read-only bind floor no store is mounted, so nothing store-delivered works, and the reason says so | Same store, so the same floor applies | A plain bind, which works below the floor too |
 | **jail, macos-user** | The sealed darwin act as the sandbox account ([FP-D24](forked-programs-as-packs.md#FP-D24)); the key is staged into the sandbox's capture store | darwin artifact, staged the same way | Context link plus a read and exec grant in the profile |
 | **`yolo host`, Linux** | The floor's build through the sealed capture jail, materialized into the floor prefix when relocatable ([FP-D16](forked-programs-as-packs.md#FP-D16)) | Linux artifact into the floor | Floor entry runs the host path |
-| **`yolo host`, macOS** | The darwin act. With no sandbox account the build is *permanently unavailable*, which [OQ-BG2](#OQ-BG2)'s leaning answers with the prebuilt | darwin artifact into the floor | Floor entry runs the host path |
+| **`yolo host`, macOS** | The darwin act. With no sandbox account the build is refused, naming `yolo macos-setup` and the prebuilt opt-in when a darwin artifact is declared ([OQ-BG2](#OQ-BG2)) | darwin artifact into the floor, where the source is absent or the user opted in | Floor entry runs the host path |
 | **guest** | Unbuilt, as every verb there is. Nothing here is keyed on there being two notches | | |
 
 > [!IMPORTANT]
@@ -496,7 +518,9 @@ difference below is one the fork route already has, for the reason given.
   after a broken override, no older build after a newer one failed ([P5](#P5)).
 - **Never write into the pack tree or into the override's directory.**
 - **Never let a workspace config set `programs.overrides`**, and never read one from there.
-- **Never fetch a prebuilt artifact while the source directory is present** and a build can run.
+- **Never fetch a prebuilt artifact while the source directory is present**, unless the user
+  opted that program into it ([BG-D18](#BG-D18)). Never substitute one for a build that cannot run
+  ([OQ-BG2](#OQ-BG2)).
 - **Never build, fetch or digest on an attach, a dry run, `yolo check`, inside a jail, or on a
   timer.**
 - **Never print a hit.** Never omit an override or prebuilt line.
@@ -628,7 +652,7 @@ reversible until it is built.
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | [OQ-BG1](#OQ-BG1) | A pack build that fails is handled identically to a fork build: the same fatal refusal, the same next steps, the same `YOLO_ALLOW_MISSING_PROGRAMS=1` bypass. | 2026-10-23 | [§11](#11-what-done-looks-like) | built: the fork route's missing-build refusal |
-| [OQ-BG2](#OQ-BG2) | A present source is built or the launch stops; a prebuilt is never substituted for it automatically. The user may always choose the prebuilt explicitly at user scope, and a pack shipping no source uses its prebuilt. | 2026-10-23 | [§7](#7-the-prebuilt-artifact) | pending |
+| [OQ-BG2](#OQ-BG2) | A present source is built or the launch stops; a prebuilt is never substituted for it automatically. The user may always choose the prebuilt explicitly at user scope, and a pack shipping no source uses its prebuilt. | 2026-10-23 | [§4](#4-precedence-one-resolver-four-rungs), [§7](#7-the-prebuilt-artifact) | built: `packload.PackTreeResolve` has no unbuildable input; the opt-in is [BG-D18](#BG-D18) |
 | [OQ-BG3](#OQ-BG3) | A dev override is built at each launch from the checkout as it sits on disk, through the pack-tree build act and its cache; no live mount and no build at run time. | 2026-10-23 | [§5](#5-the-dev-override) | pending |
 | <a id="BG-D1"></a>BG-D1 | **The new delivery is `via: "pack"`**, a fourth value in the closed set, delivered by the source launcher. It is not a relaxed `via: "source"`, which keeps its fork meaning. An older yolo skips the new value with a skew note instead of refusing it as a malformed fork. | 2026-10-22 | [§3](#3-the-declaration), [§12](#12-alternatives-with-verdicts) | — |
 | <a id="BG-D2"></a>BG-D2 | **The build is the fork route's build act**, sealed and never on the host. The pack-tree source is staged by copying the staged pack's `from` minus `.git`, in place of a git checkout. | 2026-10-22 | [§6.3](#63-the-build-act-reused-unchanged) | — |
@@ -646,4 +670,5 @@ reversible until it is built.
 | <a id="BG-D14"></a>BG-D14 | **A build failure's retry command is `yolo pack build <pack>`**, and its log is the pool's existing per-build log. | 2026-10-22 | [§8](#8-failure-and-the-next-step) | — |
 | <a id="BG-D15"></a>BG-D15 | **A nested launch inherits no override.** Its own user config decides. | 2026-10-22 | [§2](#2-goals-and-non-goals) | — |
 | <a id="BG-D16"></a>BG-D16 | **`yolo pack lint` warns** when `from` is absent in the linted tree and no `prebuilt` is declared. | 2026-10-22 | [§3](#3-the-declaration) | — |
+| <a id="BG-D18"></a>BG-D18 | **The prebuilt opt-in is `programs.overrides.<bin>: {"prebuilt": true}`**, user scope only, beside the dev override's `{path, run}` and mutually exclusive with it in one entry (a validation error naming both). With it set, a pack-tree program takes its verified prebuilt for the notch's platform on every notch (launch, macos-user, `yolo host`, `yolo pack build`, `yolo pack install`'s prefetch), even with the source present, disclosed with its sha256. A platform the pack declares no prebuilt for is a refusal naming the platforms it does; `yolo check` reports an opt-in that can do nothing. Decided by the lead, under [OQ-BG2](#OQ-BG2)'s ruling. | 2026-10-23 | [§5](#5-the-dev-override), [§7](#7-the-prebuilt-artifact) | built: `config.ProgramPrebuiltOptIns` |
 | <a id="BG-D17"></a>BG-D17 | **No receipt for an override**: nothing is installed. Its disclosure line and `yolo pack status` are the record. | 2026-10-22 | [§4](#4-precedence-one-resolver-four-rungs) | — |

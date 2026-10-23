@@ -63,6 +63,58 @@ func TestALaunchHandsItsPackTreeProgramToTheBuildActByDigest(t *testing.T) {
 	}
 }
 
+// THE PREBUILT OPT-IN AT A LAUNCH (BG-D18, OQ-BG2): with the source present, a launch hands the build
+// act the BUILD — the declared prebuilt is never substituted — unless the user's own config sets
+// `programs.overrides.x.prebuilt`, when it hands the verified prebuilt's pin (its sha256) instead.
+// Delete packTreePins' read of config.ProgramPrebuiltOptIns and the opted-in half goes red.
+func TestALaunchTakesThePrebuiltOverAPresentSourceOnlyWithTheOptIn(t *testing.T) {
+	sum := strings.Repeat("c", 64)
+	for _, optIn := range []bool{false, true} {
+		home := packHome(t)
+		t.Setenv("YOLO_VERSION", "")
+		t.Setenv("YOLO_PACK_ROOT", "")
+		pack := t.TempDir()
+		for rel, body := range map[string]string{
+			"pack.json": `{"contributes":[{"kind":"program","bin":"x","via":"pack","from":"tools/x","build":"make",` +
+				`"run":"x","prebuilt":{"` + jailPlatform("podman") + `":{"url":"https://example.invalid/x","sha256":"` + sum + `"}}}]}`,
+			"tools/x/VERSION": "1\n",
+		} {
+			p := filepath.Join(pack, rel)
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		packs := `[{"source":"file://` + pack + `","name":"fx"}]`
+		if optIn {
+			packs += `, "programs": {"overrides": {"x": {"prebuilt": true}}}`
+		}
+		writeUserPacks(t, home, packs)
+
+		var got []packload.ForkPin
+		_, printed := fakePodmanLaunch(t, func(o *Options) {
+			o.BuildForks = func(req ForkBuildRequest) map[string]entrypoint.ForkDelivery {
+				got = append(got, req.Pins...)
+				return map[string]entrypoint.ForkDelivery{"x": {Key: "k"}}
+			}
+		})
+		if len(got) != 1 {
+			t.Fatalf("opt-in %v: the build act was handed %d pins, want one\n%s", optIn, len(got), printed)
+		}
+		if optIn {
+			if !got[0].Fork.IsPrebuilt() || got[0].Commit != sum {
+				t.Errorf("opted in: the build act was handed %+v, want the prebuilt at sha256 %s", got[0], sum)
+			}
+			continue
+		}
+		if got[0].Fork.IsPrebuilt() || got[0].Commit == sum || got[0].Commit == "" {
+			t.Errorf("no opt-in: the build act was handed %+v, want the build of the present source", got[0])
+		}
+	}
+}
+
 // NEVER DIGEST ON AN ATTACH OR A DRY RUN (docs/design/pack-buildable-programs.md §10): the digest
 // reads every source directory whole, so the pack-tree pins are made on the fresh-launch path
 // alone — in runContainer below every attach site, and in Run's macos-user arm in the branch a dry

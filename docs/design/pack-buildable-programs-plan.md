@@ -10,10 +10,10 @@ summary: "Build hand-off for the pack-buildable-programs design: via \"pack\" de
 # Plan: buildable pack programs
 
 **Status:** 2026-10-22. Completed against the tree at `c0a14f4e4`, by the maintainer's
-authorization to build tonight on the design's leanings. The design's three open questions are
-unruled, and the tasks a ruling would change say so: [OQ-BG1](pack-buildable-programs.md#OQ-BG1)
-shapes Tasks 5 and 8, [OQ-BG2](pack-buildable-programs.md#OQ-BG2) Tasks 7 and 10, and
-[OQ-BG3](pack-buildable-programs.md#OQ-BG3) Task 8.
+authorization to build tonight on the design's leanings. [OQ-BG1](pack-buildable-programs.md#OQ-BG1)
+(Tasks 5 and 8) and [OQ-BG2](pack-buildable-programs.md#OQ-BG2) (Tasks 2, 7 and 10) were ruled on
+2026-10-23, and the tasks below carry the rulings. [OQ-BG3](pack-buildable-programs.md#OQ-BG3)
+(Task 8) is open.
 
 **Design:** [`pack-buildable-programs.md`](pack-buildable-programs.md).
 
@@ -263,7 +263,11 @@ func TestRunAndPrebuiltOffAPackTreeAreRefused(t *testing.T) {
 - **Settled:** `programs.overrides.<bin>` is `{path, run?}`, user scope only. `path` has `~`
   expanded, must be absolute after expansion, and is checked at launch (Task 8) rather than here.
   `run` is relative, cleaned, with no `..`. A workspace `programs` key is already an error. Keep
-  its message, and extend the reason so it covers choosing a program's bytes too.
+  its message, and extend the reason so it covers choosing a program's bytes too. The entry's other
+  form is `{"prebuilt": true}`, the prebuilt opt-in
+  ([BG-D18](pack-buildable-programs.md#BG-D18)). It is mutually exclusive with `path` and `run`
+  (a validation error naming both), is read by `ProgramPrebuiltOptIns`, and is never returned by
+  `ProgramOverrides`.
 - **Tests first** (`internal/config/programs_test.go`): with a user config of
   `{"programs":{"overrides":{"board":{"path":"~/x"},"pi":{"path":"/srv/pi","run":"dist/cli.js"}}}}`,
   `ProgramOverrides(nil)` returns two entries, `board.Path == $HOME/x` and `pi.Run ==
@@ -398,8 +402,11 @@ printf '#!/bin/sh\necho x-%s\n' "$(cat VERSION)" > x
 ### Task 7 — the prebuilt artifact (after 5)
 
 - **Settled:**
-  - used when `from` is absent, or (by [OQ-BG2](pack-buildable-programs.md#OQ-BG2)'s leaning) when
-    the builder is permanently unavailable;
+  - used when `from` is absent, or when the user opted the program into it
+    (`programs.overrides.<bin>.prebuilt`, [BG-D18](pack-buildable-programs.md#BG-D18)). Never in
+    place of a build that cannot run ([OQ-BG2](pack-buildable-programs.md#OQ-BG2), ruled): that
+    build is refused, naming the setup step and, when a prebuilt is declared for the platform, the
+    opt-in;
   - fetched through `packbin` by the launch slot, `yolo pack install`/`update` and
     `yolo pack build`;
   - admitted on the host as `~/.local/lib/yolo-programs/<bin>/<bin>` plus the link;
@@ -407,7 +414,8 @@ printf '#!/bin/sh\necho x-%s\n' "$(cat VERSION)" > x
   - never after a failed build.
 - **Tests first:**
   - unit: a digest mismatch caches nothing, and its message names both digests;
-  - a present `from` never fetches (assert zero requests to the TLS test server);
+  - a present `from` never fetches without the opt-in, on a Mac with no sandbox account too
+    (assert zero requests to the TLS test server), and fetches once with it;
   - integration `TestPackTreeProgramUsesThePrebuiltWithoutSources`: the step-1 fixture with
     `tools/x` deleted and a `prebuilt` served by the local TLS fixture; `yolo -- x` runs it, and
     the launch prints a line containing the first 12 hex digits of its sha256 (done step 5).
@@ -454,8 +462,9 @@ printf '#!/bin/sh\necho x-%s\n' "$(cat VERSION)" > x
 
 - **Settled:**
   - the darwin sealed act builds a pack-tree program (FP-D24's path);
-  - the prebuilt takes its darwin entry, and with no sandbox account it stands in
-    ([OQ-BG2](pack-buildable-programs.md#OQ-BG2) leaning);
+  - the prebuilt takes its darwin entry where the source is absent or the user opted in. With
+    no sandbox account a present source is refused, naming `yolo macos-setup` and the opt-in
+    ([OQ-BG2](pack-buildable-programs.md#OQ-BG2), ruled);
   - an override is a `ContextLink` that the profile grants read and exec under.
 - **Tests first:** on Linux, the rendered profile for a launch with one override contains the read
   and exec rules under the resolved path, in both profiles; extend
@@ -505,6 +514,8 @@ real-Mac run of the integration tests under `YOLO_RUNTIME=container`, which is o
   correct for `"source"`, and a new kind means teaching all 34 sites instead of excluding the
   handful that read a pin.
 - Don't digest the original pack directory. Digest the launch's staged copy, which nothing edits.
-- Don't fetch a prebuilt while a build is possible ([P5](pack-buildable-programs.md#P5)).
+- Don't fetch a prebuilt for a present source unless the user opted in, and never substitute one
+  for a build that cannot run ([P5](pack-buildable-programs.md#P5),
+  [OQ-BG2](pack-buildable-programs.md#OQ-BG2)).
 - Don't add a stat cache for the digest before a measurement asks for one.
 - Don't build an override ([OQ-BG3](pack-buildable-programs.md#OQ-BG3)).

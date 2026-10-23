@@ -4,13 +4,21 @@ package config
 //
 //	"programs": {
 //	  "autoprune": true,
-//	  "overrides": { "board": { "path": "~/code/board", "run": "dist/cli.js" } }
+//	  "overrides": {
+//	    "board": { "path": "~/code/board", "run": "dist/cli.js" },
+//	    "chart": { "prebuilt": true }
+//	  }
 //	}
 //
 // `autoprune` deletes files. `overrides` (docs/design/pack-buildable-programs.md §5, BG-D8)
 // points one program at a host checkout the user is developing, so the bytes that run are
 // the user's own: choosing a program's bytes is the same grant as deleting one, so it is
-// user scope too. Its launch wiring is a later slice; ProgramOverrides is the one reader.
+// user scope too. ProgramOverrides is its one reader of dev overrides.
+//
+// An entry may instead be `{"prebuilt": true}` (BG-D18): the user's explicit opt-in to the
+// pack's verified prebuilt artifact for a pack-tree program even when the pack ships its source,
+// which yolo never does on its own (OQ-BG2, ruled 2026-10-23). It names no path, so it is no dev
+// override, and ProgramPrebuiltOptIns is its one reader.
 //
 // It is OQ-PD4's third clause (docs/design/program-delivery.md §10 step four): "removal
 // happens only on an explicit act; autoprune exists as an option, DEFAULT OFF". Turning it on
@@ -48,13 +56,14 @@ const (
 	overridesKey = "overrides"
 	pathKey      = "path"
 	runKey       = "run"
+	prebuiltKey  = "prebuilt"
 )
 
 // knownProgramsKeys is the key census for the `programs` object.
 var knownProgramsKeys = set(autopruneKey, overridesKey)
 
 // knownProgramOverrideKeys is the census for one `programs.overrides.<bin>` entry.
-var knownProgramOverrideKeys = set(pathKey, runKey)
+var knownProgramOverrideKeys = set(pathKey, runKey, prebuiltKey)
 
 // ProgramOverride is one `programs.overrides.<bin>` entry as the user's config states it,
 // after validation. Path is ~-expanded and cleaned; it must be absolute. Run is relative
@@ -62,9 +71,13 @@ var knownProgramOverrideKeys = set(pathKey, runKey)
 //
 // The directory's existence and its symlink resolution are NOT checked here: they are
 // checked at each fresh launch, on the host, where the bytes are read (BG-D9).
+//
+// Prebuilt is the `{"prebuilt": true}` form (BG-D18): Path and Run are then empty, since the two
+// forms are mutually exclusive.
 type ProgramOverride struct {
-	Path string
-	Run  string
+	Path     string
+	Run      string
+	Prebuilt bool
 }
 
 // ProgramOverrides returns the user's dev overrides, keyed by program bin. It is the one
@@ -76,6 +89,33 @@ type ProgramOverride struct {
 // alone, with a warning naming it: its valid siblings still apply. ValidateConfig reports
 // the same entry as an error, so `yolo check` is where the user learns why.
 func ProgramOverrides(warn Warn) map[string]ProgramOverride {
+	out := map[string]ProgramOverride{}
+	for bin, o := range programOverrideEntries(warn) {
+		if !o.Prebuilt {
+			out[bin] = o
+		}
+	}
+	return out
+}
+
+// ProgramPrebuiltOptIns returns the bins whose `programs.overrides.<bin>` entry is
+// `{"prebuilt": true}`: the user's explicit opt-in to the pack's verified prebuilt artifact for
+// that pack-tree program, even when the pack ships its source (BG-D18, OQ-BG2). It reads the USER
+// file directly and fails closed, as ProgramOverrides does: an unreadable file opts nothing in, so
+// the program is built from its source as it would be with no setting.
+func ProgramPrebuiltOptIns(warn Warn) map[string]bool {
+	out := map[string]bool{}
+	for bin, o := range programOverrideEntries(warn) {
+		if o.Prebuilt {
+			out[bin] = true
+		}
+	}
+	return out
+}
+
+// programOverrideEntries is every valid `programs.overrides` entry of the user file, of either
+// form, keyed by bin.
+func programOverrideEntries(warn Warn) map[string]ProgramOverride {
 	out := map[string]ProgramOverride{}
 	if warn == nil {
 		warn = func(string) {}
@@ -129,17 +169,37 @@ func parseProgramOverride(bin string, v any, errs *[]string) (ProgramOverride, b
 	}
 	m, ok := asMap(v)
 	if !ok {
-		add(errs, "config."+field+": expected an object with a \"path\" to the program's directory")
+		add(errs, "config."+field+": expected an object with a \"path\" to the program's directory, "+
+			"or \"prebuilt\": true")
 		return ProgramOverride{}, false
 	}
 	reportUnknownKeys(m, knownProgramOverrideKeys, "config."+field, errs)
 
 	var o ProgramOverride
+	if bv, present := m.Get(prebuiltKey); present && bv != nil {
+		b, isBool := bv.(bool)
+		_, hasPath := m.Get(pathKey)
+		_, hasRun := m.Get(runKey)
+		switch {
+		case !isBool:
+			add(errs, "config."+field+"."+prebuiltKey+": expected true or false")
+			return o, false
+		case b && (hasPath || hasRun):
+			add(errs, "config."+field+": \""+prebuiltKey+"\" and \""+pathKey+"\" cannot both be set — "+
+				"\"prebuilt\": true runs the pack's verified prebuilt artifact, and \"path\" (with \"run\") "+
+				"runs your own checkout; keep the one you mean")
+			return o, false
+		case b:
+			o.Prebuilt = true
+			return o, len(*errs) == before
+		}
+	}
 	pv, present := m.Get(pathKey)
 	switch {
 	case !present || pv == nil:
 		add(errs, "config."+field+"."+pathKey+": required — the directory the program runs "+
-			"from, an absolute path or one starting with ~/")
+			"from, an absolute path or one starting with ~/ (or \"prebuilt\": true to run the pack's "+
+			"prebuilt artifact)")
 	default:
 		p, isStr := pv.(string)
 		switch {

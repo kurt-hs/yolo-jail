@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -223,6 +224,51 @@ func TestPackBuildAtHostOnAMacBuildsInTheDarwinAct(t *testing.T) {
 	}
 	if rc, _, errw := packBuildRun(t, "--at", "moon"); rc != 2 || !strings.Contains(errw, "jail") {
 		t.Errorf("--at moon: rc %d, want a usage refusal\n%s", rc, errw)
+	}
+}
+
+// OQ-BG2 AS RULED, ON `yolo pack build --at host` ON A MAC WITH NO SANDBOX ACCOUNT: the build
+// environment was never set up, so the verb refuses — naming `yolo macos-setup` and, since the pack
+// declares a darwin prebuilt, the explicit opt-in — and fetches nothing: a prebuilt is never
+// substituted for a present source. With the user's opt-in (`programs.overrides.x.prebuilt`, BG-D18)
+// the verified prebuilt is fetched instead, with no jail. Delete packBuild's read of
+// config.ProgramPrebuiltOptIns and the second half goes red.
+func TestPackBuildOnAMacWithNoSandboxAccountRefusesAndTheOptInTakesThePrebuilt(t *testing.T) {
+	body := []byte("#!/bin/sh\necho prebuilt-x\n")
+	for _, tc := range []struct {
+		name, extra string
+	}{{"no opt-in", ""}, {"opted in", `"programs":{"overrides":{"x":{"prebuilt":true}}},`}} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := packBuildHome(t, packBuildFixtureBuild, tc.extra)
+			url, hits, _ := servePrebuilt(t, body)
+			writeFile(t, filepath.Join(fx, "pack.json"), `{"name":"fx","contributes":[{"kind":"program","bin":"x",`+
+				`"via":"pack","from":"tools/x","build":"make","run":"x","prebuilt":{"darwin/`+goruntime.GOARCH+
+				`":{"url":"`+url+`","sha256":"`+sha256Hex(body)+`"}}}]}`)
+			prev := packBuildHostGOOS
+			packBuildHostGOOS = "darwin"
+			t.Cleanup(func() { packBuildHostGOOS = prev })
+			withMac(t, macSetup{})
+			runs := 0
+			withFakeCaptureJail(t, fakePackBuildJail(t, &runs, 0))
+			rc, out, errw := packBuildRun(t, "--at", "host", "fx")
+			if tc.extra == "" {
+				if rc != 1 || runs != 0 || hits.Load() != 0 {
+					t.Fatalf("rc %d, %d jail runs, %d fetches; want 1, none, none\nout:\n%s\nerr:\n%s",
+						rc, runs, hits.Load(), out, errw)
+				}
+				for _, want := range []string{"failed", "`yolo macos-setup`", `"x": {"prebuilt": true}`, "darwin/" + goruntime.GOARCH} {
+					if !strings.Contains(out, want) {
+						t.Errorf("the refusal lacks %q:\n%s", want, out)
+					}
+				}
+				return
+			}
+			if rc != 0 || runs != 0 || hits.Load() != 1 || !strings.Contains(out, "fetched") ||
+				!strings.Contains(out, "programs.overrides.x.prebuilt") {
+				t.Fatalf("rc %d, %d jail runs, %d fetches; want 0, none, one fetch of the opted-in prebuilt\nout:\n%s\nerr:\n%s",
+					rc, runs, hits.Load(), out, errw)
+			}
+		})
 	}
 }
 

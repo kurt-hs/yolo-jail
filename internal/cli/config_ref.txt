@@ -2719,8 +2719,17 @@
       checkout at its own path, a checkout outside the workspace is linked read-only at
       $YOLO_CONTEXT_DIR/program-overrides/<bin>, and the sandbox may read and run it but
       not write it; a checkout a `mounts` entry could not use there (one in a home folder,
-      in the account mode) refuses that program. Not yet applied by `yolo host`, which says
-      so.
+      in the account mode) refuses that program. `yolo host` applies it too, running the
+      file from the host path itself.
+      An entry may instead be [bold]{ "prebuilt": true }[/bold]: run the pack's verified
+      prebuilt artifact for a program built from its pack's tree (via "pack"), even when the
+      pack ships its source. yolo never swaps a prebuilt in on its own: a source that cannot
+      be built here (a Mac with no sandbox account, say) is refused, naming the setup step
+      and this setting. With it set, every launch, `yolo host` and `yolo pack build` fetch
+      the artifact, check its sha256 and print a line naming it. A pack with no prebuilt for
+      the platform refuses the program, naming the platforms it does declare. "prebuilt"
+      and "path" (or "run") in one entry is a validation error naming both.
+        "overrides": { "board": { "prebuilt": true } }
 
   [bold]resources[/bold] (object): Container resource limits.
     Sets hard cgroup constraints on the jail container via podman flags.

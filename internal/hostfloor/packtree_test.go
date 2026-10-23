@@ -294,6 +294,23 @@ func TestAPackTreeProgramOnAMacFloorIsBuiltAndInstalled(t *testing.T) {
 		!strings.Contains(err.Error(), "the sandbox account does not exist") {
 		t.Errorf("Ensure with the Mac's act blocked = %v, want no entry naming the act's blocker", err)
 	}
+	// OQ-BG2: the refusal of a build that cannot run names the prebuilt opt-in the resolver handed it
+	// (PrebuiltOptInStep), on the status and on the install — and never takes the prebuilt itself.
+	optIn := "or, to run pack fx's prebuilt artifact for darwin/arm64 instead of building it, set the opt-in"
+	resolve := blocked.PackTree
+	blocked.PackTree = func(p Program) PackTreeDelivery {
+		d := resolve(p)
+		d.PrebuiltOptInStep = optIn
+		return d
+	}
+	blocked.packTrees = nil
+	if _, _, err := blocked.Ensure(context.Background(), p); !errors.Is(err, ErrNoEntry) ||
+		!strings.Contains(err.Error(), "the sandbox account does not exist; "+optIn) {
+		t.Errorf("Ensure with the Mac's act blocked = %v, want the blocker and then the prebuilt opt-in", err)
+	}
+	if st := blocked.Status(p); st.Disposition != NoEntry || !strings.Contains(st.Reason, "; "+optIn) {
+		t.Errorf("Status with the Mac's act blocked = %s (%s), want no entry naming the opt-in", st.Disposition, st.Reason)
+	}
 
 	other := *w.floor
 	other.GOOS, other.packTrees = "freebsd", nil

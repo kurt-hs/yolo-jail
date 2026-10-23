@@ -266,3 +266,70 @@ func TestPackTreeProgramUsesThePrebuiltWithoutSources(t *testing.T) {
 		t.Errorf("%d requests after the second launch, want 1: a stored artifact is a hit", n)
 	}
 }
+
+// TestPackTreeProgramUsesThePrebuiltOverItsSourceOnlyWithTheOptIn is OQ-BG2's ruling end to end: a
+// pack that ships its source (whose build line fails, so any build would refuse the launch) and a
+// `prebuilt` for this jail's platform. With the user's opt-in, `programs.overrides.<bin>:
+// {"prebuilt": true}` (BG-D18), the launch fetches and runs the verified prebuilt and its line names
+// the setting; no build runs.
+func TestPackTreeProgramUsesThePrebuiltOverItsSourceOnlyWithTheOptIn(t *testing.T) {
+	requireJail(t)
+	if runtime.GOOS != "linux" {
+		t.Skip("the artifact's TLS server is trusted through SSL_CERT_FILE, which darwin's root pool ignores")
+	}
+	const (
+		pbPack = "packtreeoptin"
+		pbBin  = "packtreeoptin-x"
+	)
+	script := []byte("#!/bin/sh\necho opted-in-prebuilt-ran\n")
+	sum := sha256.Sum256(script)
+	digest := hex.EncodeToString(sum[:])
+	var hits atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		_, _ = w.Write(script)
+	}))
+	t.Cleanup(srv.Close)
+	certFile := filepath.Join(t.TempDir(), "server.pem")
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE",
+		Bytes: srv.Certificate().Raw}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	url := srv.URL + "/" + pbBin
+
+	pack := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(pack, "tools", "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pack, "tools", "x", "VERSION"), []byte("1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pack, "pack.json"), []byte(`{"name":"`+pbPack+`","contributes":[`+
+		`{"kind":"program","bin":"`+pbBin+`","via":"pack","from":"tools/x","build":"exit 7","run":"x",`+
+		`"prebuilt":{"linux/`+runtime.GOARCH+`":{"url":"`+url+`","sha256":"`+digest+`"}}}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	packHome(t, `{"packs": [{"source": "file://`+pack+`", "name": "`+pbPack+`"}], `+
+		`"programs": {"overrides": {"`+pbBin+`": {"prebuilt": true}}}}`)
+	withPrivateFixtureYoloStore(t)
+	t.Setenv(paths.AllowMissingProgramsEnv, "")
+	store := filepath.Join(os.Getenv("HOME"), ".local", "share", "yolo-jail", "captures")
+	before := captureEntryNames(t, store)
+	t.Cleanup(func() { removeNewCaptureEntries(t, store, before, pbBin) })
+
+	r := runCommand(t, t.TempDir(), append(jailRunArgs(), "--", pbBin), withHostSemantics(), withReadiness(),
+		withEnv("SSL_CERT_FILE="+certFile))
+	out := r.combined()
+	t.Logf("the launch:\n%s", out)
+	if r.rc != 0 || !strings.Contains(out, "opted-in-prebuilt-ran") {
+		t.Fatalf("rc %d: the opted-in launch did not run the prebuilt", r.rc)
+	}
+	line := pbBin + ": prebuilt artifact from pack " + pbPack + " (programs.overrides." + pbBin +
+		".prebuilt is set) — sha256 " + digest[:12]
+	if strings.Count(out, line) != 1 {
+		t.Errorf("the launch did not say once that the opt-in chose the prebuilt (%q)", line)
+	}
+	if n := hits.Load(); n != 1 {
+		t.Errorf("%d requests for the artifact, want 1", n)
+	}
+}

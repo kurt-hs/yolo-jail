@@ -147,7 +147,7 @@ type Fork struct {
 	// place of building From. nil for a build, and for every fork.
 	Prebuilt *packdecl.PrebuiltBuild
 	// PrebuiltWhy is why the prebuilt rung was chosen, for the disclosure line: its pack ships no
-	// From, or no build can run here. "" unless Prebuilt is set.
+	// From, or the user opted into it (BG-D18). "" unless Prebuilt is set.
 	PrebuiltWhy string
 	// Upstream marks the UPSTREAM BUILD of a patched fork or patched extension
 	// (docs/reference/patched-forks.md §8.5, "Skip the patches", YOLO_SKIP_PATCHES): the upstream's newest list entry

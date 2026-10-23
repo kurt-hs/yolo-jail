@@ -11,10 +11,10 @@ package cli
 //     floor's key is the key a jail launch on this machine looks up, and the build is handed the bytes
 //     the digest read (§6.1). A local pack read in place would key a build no launch ever asks for.
 //   - WHICH BYTES is packload.PackTreeResolve's answer for the floor's platform: the build of the tree,
-//     or the prebuilt artifact where the pack ships no source. On Linux a build can always run in
-//     principle (a runtime that is not installed is a step, not "permanently unavailable", OQ-BG2), so
-//     an artifact never stands in for a present source. On a Mac one stands in only where the darwin
-//     act can never run (darwinPackTreeBuildable).
+//     or the prebuilt artifact where the pack ships no source or the user opted into it
+//     (`programs.overrides.<bin>: {"prebuilt": true}`, BG-D18). An artifact never stands in for a
+//     present source on yolo's own (OQ-BG2): a build that cannot run here — no runtime on Linux, no
+//     sandbox account on a Mac — is the floor's refusal, which names the setup step and the opt-in.
 //   - THE ACT is buildFork, the one every launch runs: the sealed build jail, the host's copy of a tree
 //     with no build line, or the verified fetch, under the build's lock. Its failure names the build's
 //     log and the retry, `yolo pack build <pack> --at host` (§8).
@@ -92,13 +92,14 @@ func floorPackTree(p hostfloor.Program, pack *packload.Pack, store *capture.Stor
 			" as a program built from its own tree — run `yolo host` again to read its current declaration"}
 	}
 	platform := hostFloorCapturePlatform()
-	// A MAC'S FLOOR builds in the macos-user sealed act (FP-D24), as its forks do (wireFloorBuild),
-	// and the darwin prebuilt stands in only where that act can never run here — an account-mode Mac
-	// with no sandbox account (darwinPackTreeBuildable, OQ-BG2's leaning). A Linux floor can always
-	// build in principle.
+	// A MAC'S FLOOR builds in the macos-user sealed act (FP-D24), as its forks do (wireFloorBuild).
+	// Where that act cannot run — an account-mode Mac with no sandbox account among its refusals — the
+	// floor's own cannot-build refusal applies (BuildActUnavailable, macBuildBlocked), and it names
+	// the prebuilt opt-in when the pack declares an artifact here (PrebuiltOptInStep). A prebuilt is
+	// never substituted for a present source (OQ-BG2): only the user's opt-in (BG-D18) or an absent
+	// source takes it.
 	onMac := strings.HasPrefix(platform, "darwin/")
-	buildable := !onMac || darwinPackTreeBuildable(hostFloorMacProbes())
-	pin := packload.PackTreeResolve(*fork, platform, buildable)
+	pin := packload.PackTreeResolve(*fork, platform, config.ProgramPrebuiltOptIns(nil)[fork.Bin])
 	if pin.Reason != "" {
 		return hostfloor.PackTreeDelivery{Reason: pin.Reason}
 	}
@@ -110,6 +111,9 @@ func floorPackTree(p hostfloor.Program, pack *packload.Pack, store *capture.Stor
 		What:     packTreeWhat(b),
 		Version:  "tree " + shortSHA(b.Commit),
 		Jail:     !f.IsPrebuilt() && strings.TrimSpace(f.Build) != "",
+	}
+	if d.Jail {
+		d.PrebuiltOptInStep = f.PrebuiltOptInStep(platform)
 	}
 	if f.IsPrebuilt() {
 		d.Version = "prebuilt sha256 " + shortSHA(b.Commit)

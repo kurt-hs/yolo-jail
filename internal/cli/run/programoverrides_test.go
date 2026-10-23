@@ -262,6 +262,29 @@ func TestAnOverrideForAnUndeclaredBinDoesNothing(t *testing.T) {
 	}
 }
 
+// A PREBUILT OPT-IN THAT CAN DO NOTHING (BG-D18) is `yolo check` information: one naming a bin no
+// selected pack declares, and one naming a program with no `prebuilt` to opt into (here board, which
+// declares none, and the npm program pi). It is never a dev override, so no plan applies it.
+func TestAPrebuiltOptInThatCanDoNothingIsReported(t *testing.T) {
+	home := packHome(t)
+	writeConfigFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
+		`{"programs":{"overrides":{"elsewhere":{"prebuilt":true},"board":{"prebuilt":true},"pi":{"prebuilt":true}}}}`)
+	lines := UndeclaredProgramOverrideLines(overridePacks(t))
+	if len(lines) != 3 {
+		t.Fatalf("yolo check's information = %q, want three lines", lines)
+	}
+	for i, want := range []string{"programs.overrides.board.prebuilt: pack fx declares no prebuilt",
+		"programs.overrides.elsewhere.prebuilt: no selected pack declares elsewhere",
+		"programs.overrides.pi.prebuilt: pack fx declares no prebuilt"} {
+		if !strings.Contains(lines[i], want) {
+			t.Errorf("line %d = %q, want %q", i, lines[i], want)
+		}
+	}
+	if got := config.ProgramOverrides(nil); len(got) != 0 {
+		t.Errorf("a prebuilt opt-in read as a dev override: %+v", got)
+	}
+}
+
 func TestDroppedPinsLeaveOnlyTheOverriddenBins(t *testing.T) {
 	pins := []packload.ForkPin{{Fork: packload.Fork{Bin: "board"}}, {Fork: packload.Fork{Bin: "x"}}}
 	got := dropOverriddenPins(pins, []programOverridePlan{{bin: "board"}})

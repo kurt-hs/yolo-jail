@@ -1,9 +1,9 @@
 package packload
 
 // packtreeprebuilt_test.go pins the resolver's build-or-prebuilt half for a pack-tree program
-// (docs/design/pack-buildable-programs.md §4, §7, OQ-BG2's leaning): the build while the source is
-// present and a build can run, the platform's prebuilt where the source is absent or no build can
-// ever run, and a reason naming what is declared otherwise.
+// (docs/design/pack-buildable-programs.md §4, §7, OQ-BG2 as ruled 2026-10-23): the build while the
+// source is present, never the prebuilt in its place; the platform's prebuilt where the source is
+// absent or the user opted into it (BG-D18); and a reason naming what is declared otherwise.
 
 import (
 	"path/filepath"
@@ -30,9 +30,9 @@ func prebuiltProgram(t *testing.T, withSource bool) Fork {
 func TestAPresentSourceBuildsAndNeverTakesThePrebuilt(t *testing.T) {
 	f := prebuiltProgram(t, true)
 	digest, _ := f.Digest()
-	pin := PackTreeResolve(f, "linux/amd64", true)
+	pin := PackTreeResolve(f, "linux/amd64", false)
 	if pin.Commit != digest || pin.Fork.IsPrebuilt() || pin.Reason != "" {
-		t.Fatalf("a present, buildable source resolved to %+v, want its build at %s", pin, digest)
+		t.Fatalf("a present source resolved to %+v, want its build at %s", pin, digest)
 	}
 	if pin.Fork.PackTreeRecipe() != packdecl.PackTreeRecipe("tools/board-cli", "make", "dist/board.js") {
 		t.Errorf("a build's recipe is not the build recipe")
@@ -41,7 +41,7 @@ func TestAPresentSourceBuildsAndNeverTakesThePrebuilt(t *testing.T) {
 
 func TestAnAbsentSourceTakesThePlatformsPrebuilt(t *testing.T) {
 	f := prebuiltProgram(t, false)
-	pin := PackTreeResolve(f, "linux/amd64", true)
+	pin := PackTreeResolve(f, "linux/amd64", false)
 	if !pin.Fork.IsPrebuilt() || pin.Commit != strings.Repeat("a", 64) || pin.Reason != "" {
 		t.Fatalf("an absent source resolved to %+v, want linux/amd64's prebuilt", pin)
 	}
@@ -62,7 +62,7 @@ func TestAnAbsentSourceTakesThePlatformsPrebuilt(t *testing.T) {
 
 func TestAnAbsentSourceWithNoPrebuiltForThePlatformNamesWhatIsDeclared(t *testing.T) {
 	f := prebuiltProgram(t, false)
-	pin := PackTreeResolve(f, "linux/arm64", true)
+	pin := PackTreeResolve(f, "linux/arm64", false)
 	if pin.Commit != "" || pin.Fork.IsPrebuilt() {
 		t.Fatalf("resolved to %+v, want a reason", pin)
 	}
@@ -72,21 +72,45 @@ func TestAnAbsentSourceWithNoPrebuiltForThePlatformNamesWhatIsDeclared(t *testin
 		}
 	}
 	f.Prebuilts = nil
-	if pin := PackTreeResolve(f, "linux/amd64", true); !strings.Contains(pin.Reason, "(it declares: none)") {
+	if pin := PackTreeResolve(f, "linux/amd64", false); !strings.Contains(pin.Reason, "(it declares: none)") {
 		t.Errorf("no prebuilt at all: %q", pin.Reason)
 	}
 }
 
-// OQ-BG2's leaning: a builder that can never run here lets the prebuilt stand in; without one for
-// the platform the build pin comes back, for the caller's own refusal of that notch.
-func TestAnUnbuildableNotchTakesThePrebuiltWhenOneIsDeclared(t *testing.T) {
+// OQ-BG2 AS RULED: a present source is never answered with the prebuilt on yolo's own — the resolver
+// has no "unbuildable" input at all, so a builder that cannot run is the caller's refusal. The
+// user's opt-in (programs.overrides.<bin>.prebuilt, BG-D18) takes the declared artifact even with
+// the source present, and with none declared for the platform it is a reason naming the setting and
+// the platforms the pack does declare.
+func TestThePrebuiltOptInTakesTheArtifactOverAPresentSource(t *testing.T) {
 	f := prebuiltProgram(t, true)
-	pin := PackTreeResolve(f, "darwin/arm64", false)
-	if !pin.Fork.IsPrebuilt() || pin.Commit != strings.Repeat("b", 64) || !strings.Contains(pin.Fork.PrebuiltWhy, "no build") {
-		t.Fatalf("an unbuildable notch resolved to %+v, want darwin/arm64's prebuilt", pin)
+	pin := PackTreeResolve(f, "darwin/arm64", true)
+	if !pin.Fork.IsPrebuilt() || pin.Commit != strings.Repeat("b", 64) || pin.Reason != "" {
+		t.Fatalf("an opted-in program with its source present resolved to %+v, want darwin/arm64's prebuilt", pin)
 	}
-	digest, _ := f.Digest()
-	if pin := PackTreeResolve(f, "darwin/amd64", false); pin.Fork.IsPrebuilt() || pin.Commit != digest {
-		t.Errorf("an unbuildable notch with no prebuilt resolved to %+v, want the build pin", pin)
+	if !strings.Contains(pin.Fork.PrebuiltWhy, "programs.overrides.board.prebuilt") {
+		t.Errorf("why = %q, want the opt-in named", pin.Fork.PrebuiltWhy)
+	}
+	pin = PackTreeResolve(f, "darwin/amd64", true)
+	if pin.Fork.IsPrebuilt() || pin.Commit != "" {
+		t.Fatalf("an opt-in with no prebuilt for the platform resolved to %+v, want a reason", pin)
+	}
+	for _, want := range []string{"programs.overrides.board.prebuilt", "darwin/amd64", "darwin/arm64, linux/amd64"} {
+		if !strings.Contains(pin.Reason, want) {
+			t.Errorf("the opt-in's reason does not name %q: %s", want, pin.Reason)
+		}
+	}
+}
+
+// THE REFUSAL'S OPT-IN CLAUSE names the setting only where the pack declares an artifact for the
+// platform, since otherwise there is nothing to opt into.
+func TestThePrebuiltOptInStepIsNamedOnlyWhereOneIsDeclared(t *testing.T) {
+	f := prebuiltProgram(t, true)
+	if step := f.PrebuiltOptInStep("darwin/arm64"); !strings.Contains(step, `"board": {"prebuilt": true}`) ||
+		!strings.Contains(step, "darwin/arm64") {
+		t.Errorf("step = %q, want the opt-in for board on darwin/arm64", step)
+	}
+	if step := f.PrebuiltOptInStep("darwin/amd64"); step != "" {
+		t.Errorf("a platform with no prebuilt named an opt-in: %q", step)
 	}
 }

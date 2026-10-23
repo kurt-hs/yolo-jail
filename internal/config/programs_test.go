@@ -269,3 +269,60 @@ func TestProgramOverridesAreNotInherited(t *testing.T) {
 		}
 	}
 }
+
+// THE PREBUILT OPT-IN (BG-D18, OQ-BG2): `programs.overrides.<bin>: {"prebuilt": true}` is read by
+// ProgramPrebuiltOptIns and never by ProgramOverrides, since it names no checkout to run; it is
+// user scope only, like every `programs` key; and it cannot sit beside `path` (or `run`) in one
+// entry, the validation error naming both fields.
+//
+// MUTATION: drop prebuiltKey from parseProgramOverride, or have ProgramOverrides keep a Prebuilt
+// entry, and this goes red.
+func TestProgramPrebuiltOptInIsReadValidatedAndExclusive(t *testing.T) {
+	home := programsHome(t)
+	userConfigWith(t, home, `{"programs": {"overrides": {
+		"chart": {"prebuilt": true},
+		"board": {"path": "/srv/board"}
+	}}}`)
+	if got := ProgramPrebuiltOptIns(nil); len(got) != 1 || !got["chart"] {
+		t.Errorf("ProgramPrebuiltOptIns = %v, want chart alone", got)
+	}
+	if got := ProgramOverrides(nil); len(got) != 1 || got["board"].Path != "/srv/board" {
+		t.Errorf("ProgramOverrides = %+v, want board alone: a prebuilt opt-in is no dev override", got)
+	}
+
+	ws := t.TempDir()
+	for body, want := range map[string]string{
+		`{"programs": {"overrides": {"chart": {"prebuilt": true, "path": "/x"}}}}`: `"prebuilt" and "path" cannot both be set`,
+		`{"programs": {"overrides": {"chart": {"prebuilt": true, "run": "x"}}}}`:   `"prebuilt" and "path" cannot both be set`,
+		`{"programs": {"overrides": {"chart": {"prebuilt": "yes"}}}}`:              "config.programs.overrides.chart.prebuilt: expected true or false",
+	} {
+		errs, _ := ValidateConfig(decode(t, body), ws, nil)
+		if !anyContains(errs, want) {
+			t.Errorf("%s should report %q, got %v", body, want, errs)
+		}
+	}
+	errs, _ := ValidateConfig(decode(t, `{"programs": {"overrides": {"chart": {"prebuilt": true}}}}`), ws, nil)
+	for _, e := range errs {
+		if strings.HasPrefix(e, "config.programs") {
+			t.Errorf("the documented opt-in spelling must validate: %s", e)
+		}
+	}
+
+	// Both forms in one entry are dropped from both readers, with a warning.
+	userConfigWith(t, home, `{"programs": {"overrides": {"chart": {"prebuilt": true, "path": "/x"}}}}`)
+	var warned []string
+	if got := ProgramPrebuiltOptIns(func(m string) { warned = append(warned, m) }); len(got) != 0 {
+		t.Errorf("an entry with both prebuilt and path opted in: %v", got)
+	}
+	if !anyContains(warned, "programs.overrides.chart") {
+		t.Errorf("the dropped entry must be named in a warning, got %v", warned)
+	}
+
+	// A workspace config is never read.
+	userConfigWith(t, home, `{}`)
+	writeConfigAt(t, filepath.Join(ws, "yolo-jail.jsonc"), `{"programs": {"overrides": {"chart": {"prebuilt": true}}}}`)
+	t.Chdir(ws)
+	if got := ProgramPrebuiltOptIns(nil); len(got) != 0 {
+		t.Errorf("a WORKSPACE CONFIG opted a program into its prebuilt: %v", got)
+	}
+}
