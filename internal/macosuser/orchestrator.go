@@ -193,6 +193,11 @@ type Deps struct {
 	// trusts nothing beyond the public roots.
 	ReadSystemKeychain func() (string, error)
 	VerifyCA           func(pem string) bool
+	// ReadLoginKeychain exports every certificate in the launching user's login keychain as PEM,
+	// as that user (`security find-certificate -a -p <home>/Library/Keychains/login.keychain-db`,
+	// no sudo, no unlock). nil reads no login keychain; an error is one note at launch, and the
+	// launch trusts the System keychain's CAs alone (OQ-PS15 as ruled, PS-D14).
+	ReadLoginKeychain func() (string, error)
 	// StartBackground starts argv in the background, in a process group of its own, with
 	// no terminal, and returns its handle: the stop that ends it (idempotent, never nil on
 	// success), a channel closed when it exits, and what it wrote on its own stdout and
@@ -2398,6 +2403,7 @@ func RealDeps(runProxy func(argv []string) int, materialize func(repoRoot string
 		GuestProcesses:      guestProcessesReal,
 		StartPackTreeReaper: startPackTreeReaperReal,
 		ReadSystemKeychain:  readSystemKeychainReal,
+		ReadLoginKeychain:   readLoginKeychainReal,
 		VerifyCA:            verifyCAReal,
 		SetDiskIOPolicy:     ioprio.SetProcessDiskPolicy,
 		DiskIOPolicy:        ioprio.GetProcessDiskPolicy,

@@ -665,6 +665,7 @@ func TestRealDepsWireTheSessionRecordAndTheKeychain(t *testing.T) {
 	}
 	for name, seam := range map[string]struct{ wired, real any }{
 		"ReadSystemKeychain": {d.ReadSystemKeychain, readSystemKeychainReal},
+		"ReadLoginKeychain":  {d.ReadLoginKeychain, readLoginKeychainReal},
 		"VerifyCA":           {d.VerifyCA, verifyCAReal},
 	} {
 		if reflect.ValueOf(seam.wired).IsNil() ||
