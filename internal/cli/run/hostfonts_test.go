@@ -168,6 +168,18 @@ func TestShareHostFontsSkipsCredentialAndOutsideSources(t *testing.T) {
 		}
 	}
 
+	// An agent's home holds its login token: a ~/.fonts link into ~/.claude is skipped too.
+	argv, home, printed = fontsArgvWith(t, "podman", func(home string) {
+		mkdirs(t, filepath.Join(home, ".claude", "fonts"))
+		if err := os.Symlink(filepath.Join(home, ".claude", "fonts"), filepath.Join(home, ".fonts")); err != nil {
+			t.Fatal(err)
+		}
+	}, func(o *Options, _ *assembleInput) { o.ShareHostFontsConfig = func() bool { return true } })
+	if strings.Contains(strings.Join(argv, " "), hostFontsDir) ||
+		!strings.Contains(printed, "sits inside "+filepath.Join(home, ".claude")+", where credentials live") {
+		t.Errorf("a font folder inside ~/.claude was not refused:\n%s\n%s", strings.Join(argv, " "), printed)
+	}
+
 	// A link to a folder of fonts elsewhere in the home is fine, and the bind uses the real path.
 	argv, home, printed = fontsArgvWith(t, "podman", func(home string) {
 		mkdirs(t, filepath.Join(home, "Dropbox", "fonts"))

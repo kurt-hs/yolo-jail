@@ -213,3 +213,26 @@ func TestStageFontCopyConcurrentLaunchesAgree(t *testing.T) {
 		t.Errorf("after a refresh the root holds %v; want the one new copy", got)
 	}
 }
+
+// THE PRODUCTION SEAMS ARE WIRED: RealDeps stages the copy through stageFontCopy and removes it
+// through removeFontCopy. Without either, share_host_fonts silently shares nothing, or a copy
+// outlives the opt-in. Off macOS `chmod +a` fails, so the staged copy is refused for want of the
+// grant, which only stageFontCopy says.
+func TestRealDepsWireTheFontCopy(t *testing.T) {
+	d := RealDeps(nil, nil, false)
+	if d.StageFontCopy == nil || d.RemoveFontCopy == nil {
+		t.Fatalf("RealDeps leaves StageFontCopy or RemoveFontCopy nil")
+	}
+	src, root, _, _ := fontCopyFixture(t)
+	if c := d.StageFontCopy(src, root); c.Dir == "" &&
+		!strings.Contains(c.Err, "could not grant "+SandboxUser+" read on "+root) {
+		t.Errorf("RealDeps().StageFontCopy is not stageFontCopy: %+v", c)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "abc"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	d.RemoveFontCopy(root)
+	if _, err := os.Lstat(root); !os.IsNotExist(err) {
+		t.Errorf("RealDeps().RemoveFontCopy left %s: %v", root, err)
+	}
+}

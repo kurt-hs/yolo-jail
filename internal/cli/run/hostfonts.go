@@ -40,6 +40,8 @@ const hostFontsDir = jailHome + "/.local/share/fonts"
 var hostFontCredentialDirs = []string{
 	".ssh", ".gnupg", ".aws", ".azure", ".config", ".docker", ".kube", ".netrc",
 	".password-store", ".local/share/keyrings", "Library/Keychains",
+	// The coding agents' own homes, which hold their login tokens.
+	".claude", ".codex", ".copilot",
 }
 
 // hostFontBind is one font folder a launch binds read-only: source as the user named it, real
