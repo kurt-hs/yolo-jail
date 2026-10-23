@@ -639,7 +639,7 @@ Observable outcomes a human can check, not test names:
 
 ## 15. Open Questions
 
-1. 💬 <a id="OQ-MP9"></a>**[OQ-MP9](#OQ-MP9): Is the wrapper's own browser report enough, dropping [`OQ-MP5`](#decision-ledger)'s `requires` half?**
+1. ✅ <a id="OQ-MP9"></a>**[OQ-MP9](#OQ-MP9): Is the wrapper's own browser report enough, dropping [`OQ-MP5`](#decision-ledger)'s `requires` half?**
 
    The build declared no `requires` ([MP-D5](#MP-D5) says why: a Mac's Chrome is an app
    bundle, not `chromium` on PATH). The report is the wrapper's stderr line at each server start
@@ -653,14 +653,19 @@ Observable outcomes a human can check, not test names:
    - **D — A pack-declared check the launch runs**, the wrapper's `--check`: a launch-visible
      line from the one resolver, for a new kind or hook.
 
-   <!-- vantage: question id=OQ-MP9 leaning="A for this build, and D if the report should appear at launch: A reports the browser that will actually run and builds nothing; D is the one route to a launch line that keeps the search in one place." -->
-
    _Leaning:_ **A for this build, and D if you want the report at launch.** A reports the browser
    that will actually run and builds nothing new; D is the one route to a launch line that keeps
    the search in one place. C misreports, and B duplicates the search.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, D in the pack's own terms, a warning only:** *"if the pack can
+   > do it itself, then yes, this should be printed. I don't want Yolo to be doing anything here,
+   > but if the pack discovers at boot for whatever it's trying to wrap, it runs some script and
+   > sees that it's not there, then it should print it … it is possible after boot that it could
+   > be installed through Nix or whatever, and then it will just start working, so it is just a
+   > warning."* So the pack runs its own check (the wrapper's `--check`) at boot, inside the jail,
+   > and its one line is printed. yolo knows nothing browser-specific: it only runs a check a pack
+   > declares. A missing browser never stops a launch, since one installed later just works.
 
 ---
 
