@@ -321,6 +321,11 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 	for _, line := range unresolvedRefLines(loaded) {
 		r.dim(line)
 	}
+	// A DEV OVERRIDE naming no selected program does nothing here, and is information, not a
+	// failure (docs/design/pack-buildable-programs.md §5).
+	for _, line := range run.UndeclaredProgramOverrideLines(loaded) {
+		r.dim(line)
+	}
 
 	// Config-surface exclusivity over the SELECTED set — the check that would otherwise be
 	// learned at launch. FATAL here for the same reason the footprint collision below is: the

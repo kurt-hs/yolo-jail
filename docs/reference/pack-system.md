@@ -1101,8 +1101,24 @@ mismatch stores nothing and refuses the program like a failed build, naming the 
 for a mismatch, and the next step. A present `from` never fetches. The same artifact stands in on
 macos-user, whose sandbox builds no pack tree yet ([OQ-BG2](../design/pack-buildable-programs.md#OQ-BG2)'s
 leaning: a builder that can never run here, never one that is busy). `yolo pack install` prefetches
-it, and `yolo pack build` fetches it and reports it up to date. The dev override is a later step of
-the design.
+it, and `yolo pack build` fetches it and reports it up to date.
+
+**A dev override runs your own checkout instead** (*dev override* is the design's coined term, its
+[§5](../design/pack-buildable-programs.md#5-the-dev-override)): `programs.overrides.<bin>` =
+`{path, run?}` in the user config, never a workspace's (`yolo config-ref` has the key). It applies
+to any program a selected pack declares, whatever its `via`, and wins over the pack's build and
+`prebuilt`: that program's build is not run, and its launcher runs `<path>/<run>` as found, with no
+install and no build ([OQ-BG3](../design/pack-buildable-programs.md#OQ-BG3)'s leaning). `run`
+defaults to the program's own, which only a `via: "pack"` program has. On podman and Apple
+Container a path inside the workspace runs from `/workspace/<rel>` and any other is bound read-only
+at `/ctx/program-overrides/<bin>`, so an edit there shows at the next invocation with no relaunch.
+Every fresh launch and attach prints one line naming the file that runs. The host refuses the
+program, naming the path and the key, when the path does not resolve (symlinks first) to a
+directory, sits at the credential boundary (`paths.WorkspaceScopeBreach`), or names no file to run;
+the launcher refuses when the file is missing (naming the pack's `build` line) or not executable.
+Either refusal stops the launch through the readiness act, with `YOLO_ALLOW_MISSING_PROGRAMS=1` as
+the hatch, and never falls back to the pack's copy. macos-user and `yolo host` do not apply it yet,
+and the launch says so.
 
 **`yolo pack build [<pack>...] [--force] [--at jail|host]`** runs the build a launch would run for
 each such program, outside a launch, for CI or a first install

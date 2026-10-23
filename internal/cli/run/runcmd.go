@@ -792,6 +792,10 @@ type Options struct {
 	// forkPinned is this launch's forks with what the fork lock says each is pinned to, read once
 	// above the backend dispatch (noteForkPins) and acted on by the fork build trigger.
 	forkPinned []packload.ForkPin
+	// programOverridden is this launch's dev overrides (programoverrides.go): per overridden bin a
+	// selected pack declares, where its checkout appears in the jail or why it was refused. Decided
+	// once above the dispatch; the argv, the jail's env and the build trigger read it.
+	programOverridden []programOverridePlan
 	// cachedGoodOwner is the explicit, one-launch selector for a selected patched program, as typed
 	// (an attach's refusal repeats it); cachedGoodForks and cachedGoodTrees are the keys it covers
 	// (selectCachedGood).

@@ -218,6 +218,30 @@ var configKeys = map[string]Entry{
 			"config's autoprune to the bootstrap alone (notch-convergence.md NC-D71); unmeasured " +
 			"on a Mac"),
 		Guide: []string{"`programs: { autoprune: true }`"},
+		Aspects: map[string]Entry{
+			// programs.overrides (docs/design/pack-buildable-programs.md §5): one program run from a
+			// host checkout the user is developing.
+			"overrides": {
+				PodmanLinux: honored("programOverridePlans (programoverrides.go) decides each override at " +
+					"a fresh launch; assembleRunCmd binds a checkout outside the workspace read-only at " +
+					"/ctx/program-overrides/<bin> and passes YOLO_PROGRAM_OVERRIDES, and the boot writes " +
+					"the override launcher in place of the via's (entrypoint overridelauncher.go)"),
+				PodmanMac: honored("the same bind and env, made inside the Podman Machine VM; a checkout " +
+					"outside the machine's share set refuses the launch before the container starts " +
+					"(machineshares.go)"),
+				AppleContainer: honored("the same bind and env; below Apple Container 1.1.0 " +
+					"roBindsUnsupported (backendcaps.go) makes programOverridePlansFor refuse a checkout " +
+					"outside the workspace rather than bind it writable"),
+				MacosUser: warnedSaying("programOverridePlans applies none on macos-user, and "+
+					"noteUnappliedProgramOverrides (programoverrides.go) names each overridden program "+
+					"that still runs its pack's own copy (the plan's Task 10)", Notice{
+					Says: "`programs.overrides` is not applied on macos-user yet",
+					Then: "Each of these runs its pack's own copy; run a checkout from a podman jail.",
+					By:   "run.noteUnappliedProgramOverrides",
+				}),
+				Guide: []string{"`programs: { overrides: … }` — run a program from your own checkout"},
+			},
+		},
 	},
 
 	// ---- Resources, devices and networking ---------------------------------------------

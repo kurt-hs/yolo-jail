@@ -376,6 +376,11 @@ func Run(opts Options) (rc int) {
 	// forks' trigger and slot from here, and say nothing above the dispatch — a hit is silent, and a
 	// build says its own lines (docs/design/pack-buildable-programs.md BG-D10).
 	o.forkPinned = append(o.forkPinned, o.packTreePins(staged.packs, rt)...)
+	// THE DEV OVERRIDES (programoverrides.go): a program the user's programs.overrides points at a
+	// checkout runs that checkout, so its pack's build is not this launch's to run.
+	o.programOverridden = o.programOverridePlans(rt, staged.packs)
+	o.forkPinned = dropOverriddenPins(o.forkPinned, o.programOverridden)
+	o.noteUnappliedProgramOverrides(rt, staged.packs)
 	// THE PATCHED EXTENSIONS' block, above the dispatch beside the forks', and for its reason: every
 	// backend and an attach say what each one is at (docs/reference/pi-extensions.md §10).
 	o.patchedTrees = o.notePatchedTrees(staged.packs)
@@ -2176,6 +2181,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 		packStaging:          packStaging,
 		capturesDir:          o.CapturesDir(),
 		forkDeliveries:       o.forkDelivered,
+		programOverrides:     o.programOverridden,
 		patchedTrees:         o.patchedTreesWire(rt),
 		treeDirs:             o.patchedTreeDirs(),
 		wsState:              wsState,
@@ -2914,6 +2920,8 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 	// is visible at a glance (audit §B#4.
 	baked, _ := runtime.BakedYoloVersionFromInspectEnv(envLines)
 	o.emitLaunchBanner(rt, cname, nil, baked)
+	// Which bytes each overridden program runs, as the running jail's own launch decided (BG-D10).
+	o.noteAttachProgramOverrides(envLines)
 	// THE JAIL'S GRANT IS THE ONE IT WAS LAUNCHED WITH (jailgrant.go, ES-D33): this session holds
 	// it, and asks for no other. A request the running jail does not hold is refused before anything
 	// is written, naming the fresh launch; a subset of it, or the same set, or none, goes ahead.

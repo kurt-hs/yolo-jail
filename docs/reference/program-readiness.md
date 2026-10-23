@@ -157,6 +157,10 @@ act installs; the source launcher's install-only run materializes the host's bui
 it exits naming why, which is the error the refusal quotes. A program a pack builds from its own tree
 (`via: "pack"`) joins the act the same way, its quoted error naming the build's log and
 `yolo pack build <pack>` ([`pack-buildable-programs.md` §8](../design/pack-buildable-programs.md#8-failure-and-the-next-step)).
+A program a dev override (`programs.overrides`) points at a checkout joins it too: its install-only
+run installs nothing and checks only that the checkout's file is there and executable, and a refusal
+names the file, the key and the pack's build line
+([§5](../design/pack-buildable-programs.md#5-the-dev-override)).
 
 > [!NOTE]
 > **The launch's own install is the only one that refuses.** [`OQ-PD12`](../design/program-delivery.md#decision-ledger)'s *"No jail refuses to boot

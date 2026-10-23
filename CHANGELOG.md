@@ -20,6 +20,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Packs can build their own tools.** A pack can ship a tool's source and a build line, and a launch builds it once in a sealed jail, rebuilding only when the source changes; a pack without the source can name a checksum-verified prebuilt download instead. `yolo pack build` builds it ahead of time. A build that fails stops the launch, naming its log and the retry. See [programs built from a pack's tree](docs/reference/pack-system.md#program-via-pack).
 
+**Packs can build their own tools.** A pack can ship a tool's source and a build line, and a launch builds it once in a sealed jail, rebuilding only when the source changes; `yolo pack build` builds it ahead of time. A build that fails stops the launch, naming its log and the retry. `programs.overrides` in your user config runs any pack's program from your own checkout instead, picking up edits without a relaunch. See [programs built from a pack's tree](docs/reference/pack-system.md#program-via-pack).
+
 ### Fixed
 
 - `yolo host apply` and `yolo host -- <agent>` now remove a file a pack stopped shipping or moved, and say so, instead of leaving the old copy to break launches; a copy from an earlier version is archived, and one you changed is kept and named with the command to remove it. See [the host copy converges](docs/reference/pack-system.md#host-files-converge).

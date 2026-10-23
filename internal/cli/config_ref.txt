@@ -2690,8 +2690,20 @@
       USER SCOPE ONLY. A workspace value is a validation error that names this file, because
       a repo-committed, agent-editable file must not choose which bytes your programs run.
       Overrides are not inherited by a nested launch: the inner jail reads its own user
-      config. NOT YET APPLIED TO LAUNCHES: until the launch wiring lands, validation and this
-      reader are in place, and a launch still runs the pack's own copy.
+      config.
+      Applied at each fresh launch on podman and Apple Container, to any program a selected
+      pack declares, whatever its via: the program runs <path>/<run> as found, with no
+      install and no build, and never falls back to the pack's copy. A path inside the
+      workspace runs from /workspace/<rel>; any other is bound read-only at
+      /ctx/program-overrides/<bin>. Either way an edit there shows at the next invocation,
+      with no relaunch. Every launch and attach prints which file runs. The program is
+      refused, and the launch stops as for any program that cannot be installed
+      (YOLO_ALLOW_MISSING_PROGRAMS=1 starts it anyway), when the path does not resolve to a
+      directory, is or contains your home, this config directory or yolo's state directory,
+      names no file to run, or the file is missing or not executable. A change to this key
+      takes effect at the next fresh launch. An override naming a program no selected pack
+      declares does nothing; `yolo check` lists it. Not yet applied on macos-user or by
+      `yolo host`, where the launch says so.
 
   [bold]resources[/bold] (object): Container resource limits.
     Sets hard cgroup constraints on the jail container via podman flags.

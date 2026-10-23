@@ -273,5 +273,11 @@ func (o *Options) briefedCtxMounts(rt, ctxDir string, cfg *jsonx.OrderedMap, pac
 	for _, m := range o.packCtxMounts(rt, packs, nil) {
 		out = append(out, jailcontent.ContextMount{Path: m.dest, Host: m.source, Pack: m.pack})
 	}
+	// A dev override's checkout outside the workspace, bound read-only (programoverrides.go).
+	for _, p := range o.programOverridePlans(rt, packs) {
+		if p.bindSource != "" {
+			out = append(out, jailcontent.ContextMount{Path: p.wire.Dir, Host: p.bindSource})
+		}
+	}
 	return out
 }
