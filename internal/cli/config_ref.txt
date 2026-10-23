@@ -445,32 +445,43 @@
     "workspaces" keyed by a workspace's path, is retired: move each entry into
     its project's yolo-jail.local.jsonc; host `yolo check` prints each edit.
 
-  [bold]approval_hook[/bold] (string, [bold]USER SCOPE ONLY[/bold]): A command yolo runs for each approval
-    event, so one line can be your whole approval front end.  Off unless set.
+  [bold]on_request[/bold] (string, [bold]USER SCOPE ONLY[/bold]): A command yolo runs for each request a
+    jail files for your approval, so one line can be your whole approval front
+    end.  Off unless set.  NOT YET ACTIVE: the GitHub broker files no requests
+    until its writes are turned on, so today nothing runs this command; requests,
+    and with them this hook, begin once writes ship.
     Each running jail's broker (such as the github pack's github-broker) runs it
-    on the host, as you, with `sh -c`, once per event of that jail: a request
-    filed, decided or expired; a grant used, ended or revoked.  No
-    `yolo approve --watch` needs to stay open.  The event's JSON object, the
-    same one `yolo approve --watch --json` prints, is on its stdin, and its
-    fields are in the environment: YOLO_EVENT, YOLO_SOURCE, YOLO_REQUEST_ID,
-    YOLO_REQUEST_SUMMARY (one line: what the jail asks to run, where, which
-    set), YOLO_REQUEST_STATE, YOLO_REQUEST_EXPIRES, YOLO_WORKSPACE, YOLO_JAIL,
-    YOLO_SET, YOLO_REPO, YOLO_EVENT_SUMMARY, and for a grant YOLO_GRANT_ID,
-    YOLO_GRANT_USES_LEFT and YOLO_GRANT_EXPIRES.
+    on the host, as you, with `sh -c`, from your home directory, once per
+    request that jail files, and for nothing else: a decision, an expiry or a
+    grant's use runs nothing.  To follow every event, read
+    `yolo approve --watch --json` instead.  The request-filed event's JSON
+    object, the same one `yolo approve --watch --json` prints, is on its stdin,
+    and its fields are in the environment: YOLO_EVENT (request-filed),
+    YOLO_SOURCE, YOLO_REQUEST_ID, YOLO_REQUEST_SUMMARY, YOLO_REQUEST_EXPIRES,
+    YOLO_WORKSPACE, YOLO_JAIL, YOLO_SET and YOLO_REPO.  YOLO_REQUEST_SUMMARY is
+    one line of at most 2048 bytes: the request id, the set, the repository and
+    the jail first, then the command, each value over 60 characters cut to its
+    first 40 with its length and a short hash.
     Example (~/.config/yolo-jail/config.jsonc), a desktop notification with
     two buttons:
-      "approval_hook": "notify-send -A approve=Approve -A deny=Deny \"$YOLO_REQUEST_SUMMARY\""
-    • For a request-filed event, if the command prints exactly `approve` or
-      `deny` (surrounding space ignored), yolo decides the request that way:
-      approve is Allow once, as `yolo approve <id>` with no --for.  Any other
-      output, or a non-zero exit, decides nothing; the request still waits for
-      `yolo approve`.  The audit log records such a decision as a
-      "hook-decision".  A command that always prints approve approves every
-      request, so print it only on a person's answer.
-    • Each run may take as long as a request waits, one hour, so a
-      notification left on screen can still be answered; several events run
-      several commands at once.  The command's stderr is discarded: redirect
-      it yourself to debug.  A jail stopping stops its commands.
+      "on_request": "notify-send -A approve=Approve -A deny=Deny \"$YOLO_REQUEST_SUMMARY\""
+    • If the command prints exactly `approve` or `deny` (surrounding space
+      ignored), yolo decides the request that way: approve is Allow once, as
+      `yolo approve <id>` with no --for.  Any other output, or a non-zero
+      exit, decides nothing; the request still waits for `yolo approve`.  The
+      audit log records such a decision as a "hook-decision".  A command that
+      always prints approve approves every request, so print it only on a
+      person's answer.
+    • A run may take as long as its request waits, one hour, so a notification
+      left on screen can still be answered; several requests run several
+      commands at once.  When the request stops waiting some other way
+      (decided with `yolo approve`, expired, or refused because its jail
+      stopped), or the jail stops, yolo kills the command and everything it
+      started.  Its stderr is discarded: redirect it yourself to debug.
+    • notify-send: -A needs libnotify 0.7.10 or newer.  A notification that
+      times out or is dismissed ends the command with no answer, so the
+      request waits for `yolo approve`.  On a machine you reach over SSH, it
+      pops up on that machine's desktop, which may be unattended.
     • The summary and fields come from the jail's request, so treat them as
       the agent's words: show them, never run them.
     USER SCOPE ONLY.  A workspace config is the agent's to edit, and this

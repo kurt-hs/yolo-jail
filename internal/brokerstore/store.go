@@ -31,7 +31,11 @@ const PendingLife = time.Hour
 var (
 	ErrAlreadyDecided  = errors.New("already decided")
 	ErrUnknownID       = errors.New("unknown id")
-	ErrRefusedByPolicy = errors.New("refused by policy")
+	ErrRefusedByPolicy = errors.New("refused by policy") // the decision asks beyond the set's ceiling
+	// ErrNotConfirmed is a pending request the host can no longer vouch for: its jail's
+	// launch is gone without having ended it (a broker killed outright), its scope file is
+	// missing, or its set or classification changed. No decision can allow it.
+	ErrNotConfirmed = errors.New("not confirmed by the host")
 )
 
 // kindError carries its full message and one of the kinds above.
@@ -84,6 +88,9 @@ type Grant struct {
 	// EndReason is one of the End* constants once Ended is set. A record written before
 	// the field existed has none; EndedBy infers one.
 	EndReason string `json:",omitempty"`
+	// Issued is the uses the decision granted, so a watch that first sees a grant after it
+	// was used can still tell. A record written before the field existed has zero.
+	Issued int `json:",omitempty"`
 }
 
 // EndedBy is why the grant ended, "" while it is live.
@@ -107,7 +114,7 @@ type Decision struct {
 	For     time.Duration
 	Session bool
 	Uses    int
-	// Hook marks a decision the user's approval_hook made; it is audited as such.
+	// Hook marks a decision the user's on_request made; it is audited as such.
 	Hook bool
 }
 type Store struct {
@@ -454,7 +461,7 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 				return refusal(ErrAlreadyDecided, "request %s is already %s", id, q.State)
 			}
 			if err := validatePolicy(q.Policy); err != nil {
-				return refusal(ErrRefusedByPolicy, "%v", err)
+				return refusal(ErrNotConfirmed, "%v", err)
 			}
 			kind := "decision"
 			if d.Hook {
@@ -473,7 +480,7 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 			}
 			current, err := currentPolicy(*q, s.Revalidate)
 			if err != nil {
-				return refusal(ErrRefusedByPolicy, "%v", err)
+				return refusal(ErrNotConfirmed, "%v", err)
 			}
 			// Frontends cannot widen either the filed request or today's ceiling.
 			q.Policy.Window = min(q.Policy.Window, current.Window)
@@ -513,7 +520,7 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 			if err != nil {
 				return err
 			}
-			out = Grant{ID: gid, Request: q.ID, Jail: q.Jail, Start: q.Start, Set: q.Set, Digest: command, Expires: now.Add(duration), Uses: uses}
+			out = Grant{ID: gid, Request: q.ID, Jail: q.Jail, Start: q.Start, Set: q.Set, Digest: command, Expires: now.Add(duration), Uses: uses, Issued: uses}
 			if err = s.audit(context.Background(), kind, *q, out); err != nil {
 				return err
 			}

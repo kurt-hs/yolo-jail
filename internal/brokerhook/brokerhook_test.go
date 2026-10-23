@@ -59,15 +59,13 @@ func (f *fixture) run(t *testing.T, command string, log *syncBuffer) func() {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Runner{Store: f.store, Start: "start", Command: command, Interval: 5 * time.Millisecond, Log: log}
-	done := make(chan error)
-	go func() { done <- r.Run(ctx) }()
+	done := make(chan struct{})
+	go func() { r.Run(ctx); close(done) }()
 	// Run reads the store once before it watches; a request filed after that is an event.
 	time.Sleep(50 * time.Millisecond)
 	return func() {
 		cancel()
-		if err := <-done; err != nil {
-			t.Fatal(err)
-		}
+		<-done
 	}
 }
 
@@ -197,7 +195,7 @@ func TestTheHookGetsTheEventAndOnlyItsOwnLifetime(t *testing.T) {
 	}
 	fields := strings.Split(lines[1], "|")
 	if fields[0] != "request-filed" || fields[1] != q.ID || fields[2] != "github" || fields[3] != "/project" ||
-		!strings.Contains(fields[4], "pr comment 1 --body hi on o/r") {
+		fields[4] != "github "+q.ID+": set read-write on o/r for jail jail, to run: pr comment 1 --body hi" {
 		t.Fatalf("env %q", lines[1])
 	}
 }
@@ -210,7 +208,7 @@ func TestAHungHookIsStoppedAtItsTimeout(t *testing.T) {
 	defer cancel()
 	r := &Runner{Store: f.store, Start: "start", Command: f.script(t, "hook", "sleep 30\necho approve\n"),
 		Interval: 5 * time.Millisecond, Timeout: 100 * time.Millisecond, Log: &log}
-	go func() { _ = r.Run(ctx) }()
+	go r.Run(ctx)
 	time.Sleep(50 * time.Millisecond)
 	q, _ := f.store.File(f.filing)
 	waitFor(t, "the timeout", func() bool { return strings.Contains(log.String(), "stopped") })

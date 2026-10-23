@@ -13,18 +13,18 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// The broker's own process runs the user's approval_hook (BB-D75): with the key in the user
+// The broker's own process runs the user's on_request (BB-D75): with the key in the user
 // config, a request this broker lifetime holds is answered by a hook that prints `approve`,
-// with no `yolo approve` and no watch kept open. Deleting startApprovalHook's call in Main
+// with no `yolo approve` and no watch kept open. Deleting startOnRequest's call in Main
 // fails this test.
-func TestTheBrokerRunsTheUsersApprovalHook(t *testing.T) {
+func TestTheBrokerRunsTheUsersOnRequest(t *testing.T) {
 	dir := resolvedDir(t)
 	stdin := filepath.Join(dir, "stdin.json")
 	hook := filepath.Join(dir, "hook")
 	if err := os.WriteFile(hook, []byte("#!/bin/sh\ncat >'"+stdin+"'\necho approve\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	p := startBrokerProcessWith(t, `{"approval_hook": `+strconv.Quote(hook)+`}`)
+	p := startBrokerProcessWith(t, `{"on_request": `+strconv.Quote(hook)+`}`)
 	f, err := brokerscope.ReadFile(p.scopeFile)
 	if err != nil {
 		t.Fatal(err)
@@ -59,11 +59,11 @@ func TestTheBrokerRunsTheUsersApprovalHook(t *testing.T) {
 	}
 }
 
-// With no approval_hook set, the broker runs nothing for a request.
-func TestNoApprovalHookRunsNothing(t *testing.T) {
+// With no on_request set, the broker runs nothing for a request.
+func TestNoOnRequestRunsNothing(t *testing.T) {
 	var log bytes.Buffer
 	b := &Broker{store: &brokerstore.Store{Dir: t.TempDir()}, startID: "s", log: &log}
-	done := b.startApprovalHook(t.Context(), "")
+	done := b.startOnRequest(t.Context(), "")
 	select {
 	case <-done:
 	default:

@@ -142,7 +142,7 @@ func TestDiffSplitsAFilingDecidedBetweenReads(t *testing.T) {
 	}
 }
 
-// The three refusals a front end gives its own exit code are distinguishable.
+// The four refusals a front end gives its own exit code are distinguishable.
 func TestDecideRefusalKinds(t *testing.T) {
 	s, _, input := fixture(t)
 	input.Policy.MaxWindow, input.Policy.Session = time.Hour, false
@@ -167,7 +167,7 @@ func TestDecideRefusalKinds(t *testing.T) {
 	s.Revalidate = func(Request) (Policy, error) {
 		return Policy{}, errors.New("request holder is not this live host launch")
 	}
-	if _, err := s.Decide(r2.ID, "pending", Decision{}); !errors.Is(err, ErrRefusedByPolicy) {
+	if _, err := s.Decide(r2.ID, "pending", Decision{}); !errors.Is(err, ErrNotConfirmed) || errors.Is(err, ErrRefusedByPolicy) {
 		t.Fatalf("stale authority: %v", err)
 	}
 }
@@ -192,7 +192,13 @@ func TestWatchOpensWithStateThenEmitsEvents(t *testing.T) {
 		done <- s.Watch(ctx, 5*time.Millisecond, func(snap Snapshot) { opened = snap.Requests; close(started) },
 			func(ev Event) { mu.Lock(); got = append(got, ev.Kind); mu.Unlock() }, nil)
 	}()
-	<-started
+	select {
+	case <-started:
+	case err := <-done:
+		t.Fatalf("the watch ended before it opened: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the watch never handed over its opening state")
+	}
 	if len(opened) != 1 || opened[0].ID != first.ID {
 		t.Fatalf("opened with %+v", opened)
 	}

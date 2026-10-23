@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -65,8 +66,20 @@ func TestApproveStableExitCodes(t *testing.T) {
 	if rc, _ := run("--nonsense"); rc != approveExitUsage {
 		t.Fatal(rc)
 	}
+	// A request the host can no longer vouch for (its scope file is gone) is its own code,
+	// and its next step is not to pick a shorter window.
+	stale, err := s.File(brokerstore.Request{Jail: "j", Start: "s", Workspace: "/w", Argv: []string{"pr", "merge", "2"}, Repo: "o/r", StdinDigest: "stdin", Set: "read-write", Policy: brokerstore.Policy{Window: 15 * time.Minute, MaxWindow: time.Hour, Uses: 25}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Revalidate = func(brokerstore.Request) (brokerstore.Policy, error) {
+		return brokerstore.Policy{}, errors.New("read scope file: no such file or directory")
+	}
+	if rc, msg := run(stale.ID); rc != approveExitNotConfirmed || strings.Contains(msg, "shorter --for") || !strings.Contains(msg, "Next: deny it") {
+		t.Fatalf("not confirmed %d %q", rc, msg)
+	}
 	// The numbers are the contract a UI keys on.
-	if approveExitFailed != 1 || approveExitUsage != 2 || approveExitAlreadyDecided != 3 || approveExitUnknownID != 4 || approveExitPolicy != 5 {
+	if approveExitFailed != 1 || approveExitUsage != 2 || approveExitAlreadyDecided != 3 || approveExitUnknownID != 4 || approveExitPolicy != 5 || approveExitNotConfirmed != 6 {
 		t.Fatal("an exit code moved")
 	}
 }

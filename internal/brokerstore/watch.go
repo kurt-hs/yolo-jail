@@ -2,9 +2,11 @@ package brokerstore
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"sort"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
@@ -113,7 +115,9 @@ func Diff(prev, cur Snapshot) []Event {
 			parent = &q
 		}
 		old, seen := oldGrant[g.ID]
-		if seen && g.Uses < old.Uses {
+		// A grant first seen already used (issued and used inside one tick, the common flow
+		// for Allow once) still reports its use.
+		if (seen && g.Uses < old.Uses) || (!seen && ((g.Issued > 0 && g.Uses < g.Issued) || g.EndedBy() == EndUsed)) {
 			out = append(out, Event{Kind: EventGrantUsed, Request: parent, Grant: &g})
 		}
 		if !g.Ended.IsZero() && (!seen || old.Ended.IsZero()) {
@@ -268,11 +272,42 @@ func (s *Store) EventView(ev Event, at time.Time) EventView {
 	return v
 }
 
-// RequestSummary is the one line a person reads about a request: what the jail asks to
-// run, where, and under which set. Nothing in it can drive a terminal.
+// SummaryMax bounds a request summary in bytes. It reaches a hook as one environment
+// variable, and Linux refuses any single one over 128 KiB (MAX_ARG_STRLEN), so it stays far
+// below that; a notification shows less still.
+const SummaryMax = 2048
+
+// RequestSummary is the one line a person reads about a request. What is being approved
+// comes first: the request id, the set, the repository and the jail; the command comes
+// last, each value over 60 characters elided to its first 40, its length and a short hash
+// (boundary-broker.md §6.3), so a long --body cannot push the rest off screen. The line is
+// cut at SummaryMax, and nothing in it can drive a terminal.
 func (s *Store) RequestSummary(q Request) string {
-	return termsafe.Visible(fmt.Sprintf("%s: jail %s asks to run %s on %s (set %s) — %s",
-		s.SourceName(), q.Jail, shquote.JoinDisplay(q.Argv), q.Repo, q.Set, q.ID))
+	argv := make([]string, len(q.Argv))
+	for i, v := range q.Argv {
+		argv[i] = elide(v)
+	}
+	line := termsafe.Visible(fmt.Sprintf("%s %s: set %s on %s for jail %s, to run: %s",
+		s.SourceName(), q.ID, elide(q.Set), elide(q.Repo), elide(q.Jail), shquote.JoinDisplay(argv)))
+	if len(line) <= SummaryMax {
+		return line
+	}
+	const more = "…"
+	cut := SummaryMax - len(more)
+	for cut > 0 && !utf8.RuneStart(line[cut]) {
+		cut--
+	}
+	return line[:cut] + more
+}
+
+// elide shortens a value over 60 characters to its first 40, its length and a short hash.
+func elide(v string) string {
+	r := []rune(v)
+	if len(r) <= 60 {
+		return v
+	}
+	sum := sha256.Sum256([]byte(v))
+	return fmt.Sprintf("%s…[%d chars, sha256 %x]", string(r[:40]), len(r), sum[:4])
 }
 
 // Summary is an event's one line.

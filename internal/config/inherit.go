@@ -279,11 +279,11 @@ var inheritCensus = map[string]keyDisposition{
 	// approved at that workspace's gate (docs/design/workspace-widening.md). In an inherited user
 	// scope it would apply to every workspace a launch inside the jail opens, and user scope now
 	// refuses it; a nested workspace's own config carries its own.
-	// `approval_hook` is a command the HOST's brokers run as the user; an inner launcher's
+	// `on_request` is a command the HOST's brokers run as the user; an inner launcher's
 	// brokers would run it inside the jail, where its answer could approve the inner jail's
 	// requests with no human at the host seeing them.
-	"approval_hook": {reason: "names a command the host's brokers run per approval event; inside a jail it would run with no human at the host to answer"},
-	"brokered":      {reason: "one workspace's own key, approved at its gate; in an inherited user scope it would apply to every workspace an inner launch opens, and user scope refuses it"},
+	"on_request": {reason: "names a command the host's brokers run per filed request; inside a jail it would run with no human at the host to answer"},
+	"brokered":   {reason: "one workspace's own key, approved at its gate; in an inherited user scope it would apply to every workspace an inner launch opens, and user scope refuses it"},
 	// `update_check`: gates a check of the HOST's yolo install, which no in-jail yolo runs
 	// (selfupdate.Enabled is false wherever YOLO_VERSION is set) and a nested launcher's
 	// binary is the image's, updated by rebuilding it rather than by any channel.

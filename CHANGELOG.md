@@ -22,6 +22,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Jails trust your host's certificate authorities.** A corporate or inspecting-proxy CA your host trusts is now trusted in every jail, and the launch names each one and where it came from. On macOS your login keychain's count too, including for Go programs such as `gh` under `macos-user`'s separate account when they were built with Go 1.27 or later. See [the corporate certificate trap](docs/design/provisioner-sets.md#163-the-corporate-certificate-trap).
 
+**Build your own approval front end.** `yolo approve --json` lists pending requests and live grants, `yolo approve --watch --json` follows them one event per line, and failed decisions exit with fixed codes, so a UI or relay can be built on yolo's approvals. See [the approval surface](docs/design/boundary-broker.md#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship).
+
 **The browser pack warns when there is no browser.** With `chrome-devtools` selected, a jail launch that finds no Chrome or Chromium prints one line saying what to install; the launch goes on, and a browser installed later just works. See [the chrome-devtools pack](docs/reference/mcp-configuration.md#the-chrome-devtools-pack).
 
 ### Changed

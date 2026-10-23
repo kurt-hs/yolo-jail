@@ -147,14 +147,15 @@ func Main(argv []string) int {
 		}
 		close(stop)
 	}()
-	hookDone := b.startApprovalHook(ctx, config.ApprovalHook())
+	hookDone := b.startOnRequest(ctx, config.OnRequest())
 	err = hostservice.ServeFrontedUnix(b.Handle, *socket, stop)
 	cancel()
 	// A hook runs in its own process group, which the launcher's stop signal does not reach,
-	// so wait for the runner to kill what it started.
+	// so wait for the runner to kill what it started: past the runner's own wait on a killed
+	// hook's output. A launcher that SIGKILLs sooner still ends them, by Pdeathsig on Linux.
 	select {
 	case <-hookDone:
-	case <-time.After(3 * time.Second):
+	case <-time.After(brokerhook.KillWait + time.Second):
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "github-broker:", err)
@@ -163,21 +164,22 @@ func Main(argv []string) int {
 	return 0
 }
 
-// startApprovalHook runs the user's approval_hook for this broker lifetime's events
+// startOnRequest runs the user's on_request for each request this broker lifetime files
 // (BB-D75), when one is set. The returned channel closes once its runner has stopped.
-func (b *Broker) startApprovalHook(ctx context.Context, command string) <-chan struct{} {
+func (b *Broker) startOnRequest(ctx context.Context, command string) <-chan struct{} {
 	done := make(chan struct{})
 	if command == "" || b.store == nil || b.startID == "" {
 		close(done)
 		return done
 	}
-	r := &brokerhook.Runner{Store: b.store, Start: b.startID, Command: command, Log: b.log}
-	fmt.Fprintln(b.log, "github-broker: running your approval_hook for each approval event")
+	// The hook runs in the user's home: this daemon has moved into the store's directory,
+	// which is no place for a user's command to start.
+	home, _ := os.UserHomeDir()
+	r := &brokerhook.Runner{Store: b.store, Start: b.startID, Command: command, Dir: home, Log: b.log}
+	fmt.Fprintln(b.log, "github-broker: running your on_request for each request this jail files")
 	go func() {
 		defer close(done)
-		if err := r.Run(ctx); err != nil {
-			fmt.Fprintln(b.log, "github-broker: approval_hook is not running:", err, "; restart the jail to retry")
-		}
+		r.Run(ctx)
 	}()
 	return done
 }

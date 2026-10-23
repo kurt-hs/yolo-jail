@@ -41,7 +41,9 @@ it approves: a jail can reach a port the host listens on.
 
 Exit codes: 0 done; 1 the store could not be read or written; 2 usage;
 3 the request is already decided; 4 no request or grant has that id;
-5 refused by policy (beyond the set's ceiling, or its jail no longer runs).
+5 refused by policy (beyond the set's ceiling); 6 the host can no longer confirm
+the request (its jail's launch is gone or its scope changed), so it cannot be
+allowed. A request whose jail stopped normally is already refused, which is 3.
 
 The host store is built, but the GitHub broker does not file requests or execute
 writes yet. Its writes still refuse immediately; nothing waits for approval.
@@ -63,6 +65,7 @@ const (
 	approveExitAlreadyDecided = 3
 	approveExitUnknownID      = 4
 	approveExitPolicy         = 5
+	approveExitNotConfirmed   = 6
 )
 
 // approveWatchInterval is how often `--watch` polls the store.
@@ -87,7 +90,9 @@ func approveFailure(err error, errs io.Writer) int {
 	case errors.Is(err, brokerstore.ErrUnknownID):
 		code, next = approveExitUnknownID, "run `yolo approve` to list the current ids; an ended record is kept 7 days"
 	case errors.Is(err, brokerstore.ErrRefusedByPolicy):
-		code, next = approveExitPolicy, "Allow it once or choose a shorter --for; to widen the set, edit its entry under `brokered` in "+paths.UserConfigPath()+"; a request whose jail stopped cannot be approved"
+		code, next = approveExitPolicy, "Allow it once or choose a shorter --for; to widen the set, edit its entry under `brokered` in "+paths.UserConfigPath()
+	case errors.Is(err, brokerstore.ErrNotConfirmed):
+		code, next = approveExitNotConfirmed, "deny it with `yolo approve <id> --deny`, or let it expire; if its jail still runs, restart it and have the agent re-run its command to file a new request"
 	}
 	fmt.Fprintf(errs, "yolo approve: %s. Next: %s.\n", termsafe.Visible(err.Error()), next)
 	return code
