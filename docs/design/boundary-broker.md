@@ -85,9 +85,9 @@ background wait ([OQ-BB17](#OQ-BB17)).
 
 **Start at [§3](#3-the-flow)**, the flow. Everything else is what one step of it needs.
 
-**Needs your ruling:** [OQ-BB10](#OQ-BB10), [OQ-BB14](#OQ-BB14), [OQ-BB15](#OQ-BB15),
+**Needs your ruling:** [OQ-BB10](#OQ-BB10), [OQ-BB15](#OQ-BB15),
 [OQ-BB19](#OQ-BB19), [OQ-BB20](#OQ-BB20) and [OQ-BB21](#OQ-BB21).
-[OQ-BB16](#OQ-BB16), [OQ-BB17](#OQ-BB17), [OQ-BB18](#OQ-BB18), the grant model
+[OQ-BB14](#OQ-BB14) (no for now), [OQ-BB16](#OQ-BB16), [OQ-BB17](#OQ-BB17), [OQ-BB18](#OQ-BB18), the grant model
 ([BB-D76](#BB-D76) to [BB-D78](#BB-D78)), and the git source's
 [OQ-GB1](git-broker.md#OQ-GB1) and [OQ-GB2](git-broker.md#OQ-GB2), were ruled 2026-10-23.
 [OQ-BB3](#15-decision-ledger), [OQ-BB4](#15-decision-ledger), [OQ-BB6](#15-decision-ledger),
@@ -2198,7 +2198,7 @@ covered:
     **Answer:**
     > _(empty — fill in when decided)_
 
-2. 💬 <a id="OQ-BB14"></a>**[OQ-BB14](#OQ-BB14): Once the doorbell exists, may a notification
+2. ✅ <a id="OQ-BB14"></a>**[OQ-BB14](#OQ-BB14): Once the doorbell exists, may a notification
     approve an arbitrary host command filed through host-run?** Raised 2026-10-09 by
     [`host-run-mailbox.md`](host-run-mailbox.md), the paste-to-host stopgap this design is
     planned to absorb ([its §8](host-run-mailbox.md#8-how-the-gateway-absorbs-it)). This decides
@@ -2209,12 +2209,14 @@ covered:
     - **B — Allow once from a notification**: one digest, one use, 15 minutes, never a standing
       grant. Less friction; a click takes less attention than reading and pasting a line.
 
-    <!-- vantage: oq id=OQ-BB14 leaning="A — a button that runs any command is the general RPC BB-P6 forbids, and reading the line is the only review host-run has." -->
-
     _Leaning:_ A — a button that runs any command is the general RPC BB-P6 forbids, and reading the line is the only review host-run has.
 
     **Answer:**
-    > _(empty — fill in when decided)_
+    > **Ruled in review 2026-10-23, as leaned, for now:** A. No notification button runs an
+    > arbitrary host command; host-run stays paste-only, and there is no generic mechanism.
+    > *"we're not ready yet for that, but it's something we may consider. So the answer is no for
+    > now."* The paste-back half (the command's output returning to the jail after the paste) is
+    > [`host-run-mailbox.md`](host-run-mailbox.md)'s own design and is not affected.
 
 3. 💬 <a id="OQ-BB15"></a>**[OQ-BB15](#OQ-BB15): Does explicit `admit` replace or augment a default set's rules?**
     [§5.7](#57-permission-sets) says a same-named default with no `admit` keeps its rules,
@@ -2477,6 +2479,7 @@ covered:
 | <a id="BB-D88"></a>[`BB-D88`](#15-decision-ledger) | *Implementation decision.* Timed grants and working-set entries are keyed by the workspace and outlive the launch that made them; only Allow once keeps the broker start-id binding, so a jail stopping ends its Allow onces and nothing else. Revises [BB-D27](#BB-D27) in part and [BB-D9](#BB-D9)'s "a jail stopping ends its grants" | 2026-10-23 | [§5.8](#58-long-lived-access-and-temporary-access), [§7](#7-grants-and-the-request-store) | pending |
 | <a id="BB-D89"></a>[`BB-D89`](#15-decision-ledger) | *Implementation decision.* No grant carries a use cap: a timed grant is bounded by its clock and a working-set entry by its resource. Drops [BB-D21](#BB-D21)'s use cap, which was never the maintainer's words | 2026-10-23 | [§7](#7-grants-and-the-request-store) | pending |
 | <a id="BB-D90"></a>[`BB-D90`](#15-decision-ledger) | *Implementation decision.* A creation the workspace holds no user grant for rings like any write and offers Allow once and Allow for 15 minutes, never Add; what either creates joins the working set; the notification names the host command that gives the user grant | 2026-10-23 | [§5.8](#58-long-lived-access-and-temporary-access), [§6.4](#64-choosing-a-duration) | pending |
+| <a id="BB-D91"></a>[`BB-D91`](#15-decision-ledger) | **Ruled 2026-10-23 ([OQ-BB14](#OQ-BB14)), for now:** no notification approves an arbitrary host command; host-run stays paste-only. *"the answer is no for now"* | 2026-10-23 | [§14](#14-open-questions) | — |
 
 ## Appendix A — prior art: unYOLO, re-analyzed from source (2026-08-12)
 

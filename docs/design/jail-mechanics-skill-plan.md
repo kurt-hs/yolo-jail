@@ -78,6 +78,6 @@ file holds what the design work surfaced and the user need not rule on.
   renders a host version of jail-mechanics with exactly what applies on the host.
   `internal/cli/applyhostskills.go` and `internal/hostskills/compose.go` both state that built-ins
   are not written to a real home; both comments and the host render's layer plan change, and the
-  fact sheet needs a host-notch constructor fed from what `yolo host apply` applies. Whether
-  configuring-the-jail and diagnosing-the-jail also get host versions is not settled by the ruling
-  (*"whatever is applicable there"*); ask before building them.
+  fact sheet needs a host-notch constructor fed from what `yolo host apply` applies. configuring-the-jail and
+  diagnosing-the-jail get host versions too, keeping only what applies on the host, and one with
+  nothing that applies is not written ([JM-D11](jail-mechanics-skill.md#JM-D11)).
