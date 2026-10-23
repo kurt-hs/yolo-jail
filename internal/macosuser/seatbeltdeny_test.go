@@ -302,28 +302,46 @@ func TestDenyDefaultProfileGrantsTheSessionServicesDirReadOnly(t *testing.T) {
 	}
 }
 
-func TestDenyDefaultProfileTmpPolicyGovernsBothTempDirs(t *testing.T) {
+// OQ-MM8, ruled 2026-10-23 (MMP-D18): the shared /tmp is closed unless the hatch selects
+// TmpShared, and the user's DARWIN_USER_TEMP_DIR and the launch's own TMPDIR are granted under
+// either value. Removing the user-temp allow, the TMPDIR allow, or the TmpShared gate fails this.
+func TestDenyDefaultProfileTmpPolicyGovernsTheSharedTmpOnly(t *testing.T) {
 	pp := testProfileParams()
-	shared := DenyDefaultProfile(pp)
-	for _, want := range []string{`(subpath "/private/tmp")`, `(subpath "/tmp")`,
-		`(subpath "/private/var/folders/ab/xyz/T")`, "#seatbelt-test-id:shared-tmp-allow#"} {
-		if !strings.Contains(shared, want) {
-			t.Errorf("TmpShared lacks %s", want)
-		}
-	}
 	pp.Tmp = TmpPrivate
 	p := DenyDefaultProfile(pp)
-	for _, never := range []string{`(subpath "/private/tmp")`, `(subpath "/private/var/folders/ab/xyz/T")`,
-		`(subpath "/tmp")`, "shared-tmp-allow"} {
+	for _, never := range []string{`(subpath "/private/tmp")`, `(subpath "/tmp")`, SharedTmpAllowID} {
 		if strings.Contains(p, never) {
 			t.Errorf("TmpPrivate still grants %s", never)
 		}
 	}
-	if !strings.Contains(p, `(subpath "/private/var/folders/ab/xyz/T/yolo-alpha")`) {
-		t.Error("TmpPrivate lost the launch's own TMPDIR")
+	userTmp := "#seatbelt-test-id:" + UserTmpAllowID + "#\n" +
+		`(allow file-read* file-write* (subpath "/private/var/folders/ab/xyz/T"))`
+	for name, want := range map[string]string{
+		"the user's DARWIN_USER_TEMP_DIR": userTmp,
+		"the launch's own TMPDIR":         `(allow file-read* file-write* (subpath "/private/var/folders/ab/xyz/T/yolo-alpha"))`,
+		"the traversal literal":           `(literal "/private/var/folders/ab/xyz")`,
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("TmpPrivate lost %s (%s)", name, want)
+		}
 	}
-	if !strings.Contains(p, `(literal "/private/var/folders/ab/xyz/T")`) {
-		t.Error("TmpPrivate lost the traversal literal above the launch's TMPDIR")
+
+	pp.Tmp = TmpShared // the macos_user_shared_tmp hatch
+	shared := DenyDefaultProfile(pp)
+	at := strings.Index(shared, "#seatbelt-test-id:"+SharedTmpAllowID+"#")
+	if at < 0 {
+		t.Fatal("TmpShared renders no shared-/tmp allow")
+	}
+	if want := "(allow file-read* file-write*\n    (subpath \"/private/tmp\")\n    (subpath \"/tmp\"))\n"; !strings.Contains(shared[at:], want) {
+		t.Errorf("the shared-/tmp allow is not /tmp read-write in both spellings:\n%s", shared[at:])
+	}
+	if !strings.Contains(shared, userTmp) {
+		t.Error("TmpShared lost the user's DARWIN_USER_TEMP_DIR")
+	}
+	// No profile denies /tmp by name: (deny default) closes it, and the session's services dir
+	// under it keeps its exact-path grant.
+	if strings.Contains(p, `(deny file-read* file-write* (subpath "/private/tmp"))`) {
+		t.Error("a named /tmp deny would beat the services-dir grant")
 	}
 }
 
@@ -523,8 +541,8 @@ func TestWithProductionRulingsSetsThePrototypeValues(t *testing.T) {
 	if productionHostSoftware[0] == "/mutated" {
 		t.Error("WithProductionRulings shares the production slice")
 	}
-	// The prototype's choices, until slice 11 records the rulings.
-	if productionTmp != TmpShared ||
+	// OQ-MM8 is ruled (closed); OQ-MM9 keeps the prototype's choice until slice 11.
+	if productionTmp != TmpPrivate ||
 		!slices.Equal(productionHostSoftware, []string{"/opt/homebrew", "/usr/local", "/Applications"}) {
 		t.Error("a production ruling moved off the prototype's value before slice 11")
 	}

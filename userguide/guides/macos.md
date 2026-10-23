@@ -242,9 +242,12 @@ It is experimental. The agent reaches every service on your Mac's loopback (`loc
 jail on the host network would, and every launch says so. Servers the agent starts on `localhost`
 work too, test servers on random ports included. Each launch gets its own temporary folder for
 tools such as tmux, and the agent can use sockets it makes there or in the project. It cannot
-use your ssh agent's socket. The shared `/tmp` and
-your own temporary folder (`getconf DARWIN_USER_TEMP_DIR`) stay readable, as tools expect, so
-the agent can read a file another program of yours left there.
+use your ssh agent's socket. The shared `/tmp` is closed to the agent, so it cannot read files
+your other programs leave there, and the agent is told to use its own temporary folder (`$TMPDIR`)
+instead. Your own temporary folder (`getconf DARWIN_USER_TEMP_DIR`) stays open, because macOS
+tools write there whatever `$TMPDIR` says. If a tool you need insists on `/tmp`, add
+`"macos_user_shared_tmp": true` to your user config and launch again; every launch then says
+`/tmp` is open. A project's config cannot set it.
 
 **Check without changing anything.** Run `yolo check` from the project. It checks each thing a
 launch refuses to start without: that you are on macOS and not running as root, Seatbelt, the

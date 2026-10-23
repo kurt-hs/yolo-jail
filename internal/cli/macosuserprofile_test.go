@@ -81,14 +81,14 @@ func TestMacosUserProfileVerbAccountModeNamesTheAccountOnly(t *testing.T) {
 
 func TestMacosUserProfileVerbOverridesEachPendingRuling(t *testing.T) {
 	args := append(append([]string{}, profileTestArgs...),
-		"--shared-tmp", "private", "--host-software", "/opt/homebrew",
+		"--shared-tmp", "shared", "--host-software", "/opt/homebrew",
 		"--home", "/Users/you/agent-home", "--host-home", "/Users/other", "--darwin-tmp", "/private/var/folders/cd/T")
 	out, errOut, rc := runProfileVerb(t, args...)
 	if rc != 0 {
 		t.Fatalf("exit %d: %s", rc, errOut)
 	}
 	pp := profileTestParams()
-	pp.Tmp = macosuser.TmpPrivate
+	pp.Tmp = macosuser.TmpShared
 	pp.HostSoftware = []string{"/opt/homebrew"}
 	pp.Home = "/Users/you/agent-home"
 	pp.HostHome = "/Users/other"

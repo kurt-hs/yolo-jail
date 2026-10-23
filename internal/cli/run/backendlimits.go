@@ -226,3 +226,22 @@ func guestClientsSentence() string {
 	return list + " do run here, staged into this sandbox whenever the human has switched " +
 		"their loophole on."
 }
+
+// macosUserSharedTmpLimit is the agent's next step past the run-as-you profile's closed shared
+// /tmp (OQ-MM8, MMP-D18): Seatbelt's refusal is a bare "Operation not permitted", which names
+// nothing, so this line is the only place the agent learns where temporary files go instead.
+const macosUserSharedTmpLimit = "The shared `/tmp` (`/private/tmp`) is closed to this sandbox: " +
+	"reading or writing it fails with \"Operation not permitted\". Use `$TMPDIR`, this session's " +
+	"own temporary directory, for temporary files and sockets; a tool that hardcodes `/tmp` " +
+	"needs its temp-dir option or variable pointed at `$TMPDIR`. If one cannot be, ask the human " +
+	"to set `\"macos_user_shared_tmp\": true` in their user config and relaunch."
+
+// macosUserTmpLimit is macosUserSharedTmpLimit for a launch whose profile closes the shared
+// /tmp: macos-user in the run-as-you mode without the hatch. The account mode still runs the
+// old profile, which grants /tmp, so it says nothing.
+func (o *Options) macosUserTmpLimit(rt string) []string {
+	if rt != "macos-user" || o.MacosUserMode != macosuser.ModeSelf || o.MacosUserSharedTmp { // parity: NotApplicable — only the run-as-you Seatbelt profile closes the shared /tmp; a container's /tmp is its own (MMP-D18)
+		return nil
+	}
+	return []string{macosUserSharedTmpLimit}
+}

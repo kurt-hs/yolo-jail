@@ -34,6 +34,7 @@ var undoneKeySamples = map[string]string{
 	"host_import_exclusions": `{}`,
 	"kvm":                    `true`,
 	"macos_user_mode":        `"account"`,
+	"macos_user_shared_tmp":  `true`,
 	"mcp_presets":            `["sequential-thinking"]`,
 	"mise_tools":             `{"node": "22"}`,
 	"mounts":                 `["~/data"]`,

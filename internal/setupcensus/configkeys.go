@@ -593,4 +593,13 @@ var configKeys = map[string]Entry{
 			"user under the deny-by-default profile"),
 		Guide: []string{"`macos_user_mode`"},
 	},
+	"macos_user_shared_tmp": {
+		PodmanLinux:    notApplicable("ignored: not this backend; only the macos-user backend reads it"),
+		PodmanMac:      notApplicable("ignored: not this backend; only the macos-user backend reads it"),
+		AppleContainer: notApplicable("ignored: not this backend; only the macos-user backend reads it"),
+		MacosUser: honored("macosUserRun (cli/commands.go) reads it from the user config (config.MacosUserSharedTmp) " +
+			"and hands it to the backend (macosuser.Options.SharedTmp), whose run-as-you profile then grants " +
+			"the shared /tmp (TmpShared)"),
+		Guide: []string{"`macos_user_shared_tmp`"},
+	},
 }

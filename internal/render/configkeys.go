@@ -143,6 +143,8 @@ var hostConfigKeys = map[string]keyCensusEntry{
 		"machine"},
 	"macos_user_mode": {KeyNotApplicable, "selects the account a macos-user launch runs as; `yolo host` " +
 		"runs no jail, so the key has no meaning at the host notch"},
+	"macos_user_shared_tmp": {KeyNotApplicable, "opens the shared /tmp to a run-as-you macos-user " +
+		"launch's profile; `yolo host` runs no profile, so the key has no meaning at the host notch"},
 	"perf_logging": {KeyHonored, "`yolo host --` and `yolo host apply` record their spans when it " +
 		"is on, silently, into the machine-wide host-notch-perf.log (run.HostNotchTimingLog, " +
 		"reading config.PerfLoggingEnabled), as a jail launch records into its workspace's file"},

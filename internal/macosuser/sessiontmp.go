@@ -57,7 +57,8 @@ func withSessionTmpEnv(env *jsonx.OrderedMap, dir string) *jsonx.OrderedMap {
 		}
 	}
 	env = withEnvVar(env, "TMPDIR", dir)
-	for _, kv := range [][2]string{{"TMUX_TMPDIR", dir}, {"TMPPREFIX", dir + "/zsh"}} {
+	for _, kv := range [][2]string{{"TMUX_TMPDIR", dir}, {"TMPPREFIX", dir + "/zsh"},
+		{"OVERMIND_SOCKET", dir + "/overmind.sock"}} {
 		if old, ok := env.Get(kv[0]); !ok || asStr(old) == "" {
 			env = withEnvVar(env, kv[0], kv[1])
 		}

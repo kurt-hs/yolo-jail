@@ -74,6 +74,22 @@ func TestMacosLaunchPassesSelfModeToTheBackend(t *testing.T) {
 	}
 }
 
+// TestMacosLaunchPassesTheSharedTmpHatch: `"macos_user_shared_tmp": true` in the user config
+// reaches both readers from one read (OQ-MM8, MMP-D18): the briefing (run.Options) and the
+// profile (macosuser.Options). Absent, both read false. Fails if either half of the wiring is
+// deleted.
+func TestMacosLaunchPassesTheSharedTmpHatch(t *testing.T) {
+	seen, backend, called, _ := macosModeLaunch(t, `{"macos_user_mode": "self", "macos_user_shared_tmp": true}`)
+	if !called || !backend.SharedTmp || !seen.MacosUserSharedTmp {
+		t.Errorf("hatch set: called %v, backend %v, pipeline %v; want true for both", called,
+			backend.SharedTmp, seen.MacosUserSharedTmp)
+	}
+	seen, backend, _, _ = macosModeLaunch(t, `{"macos_user_mode": "self"}`)
+	if backend.SharedTmp || seen.MacosUserSharedTmp {
+		t.Errorf("hatch unset: backend %v, pipeline %v; want false", backend.SharedTmp, seen.MacosUserSharedTmp)
+	}
+}
+
 // TestMacosLaunchStaysInAccountModeByDefault: no key, or `account`, is the second account, the
 // default until slice 11.
 func TestMacosLaunchStaysInAccountModeByDefault(t *testing.T) {

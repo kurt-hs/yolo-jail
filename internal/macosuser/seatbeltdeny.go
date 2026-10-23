@@ -39,26 +39,30 @@ import (
 // profile"). ProfileParams.RunAsUser is rendered into the header comment only, so a human
 // reading an installed profile can tell which mode wrote it.
 
-// TmpPolicy is the pending shared-/tmp ruling (OQ-MM8). It governs /tmp AND the running
-// user's DARWIN_USER_TEMP_DIR together, since in self mode both are shared with every
-// process of yours.
+// TmpPolicy is the shared-/tmp ruling (OQ-MM8, ruled 2026-10-23: closed, with a hatch;
+// MMP-D18). It governs /tmp alone, in both spellings. The running user's DARWIN_USER_TEMP_DIR
+// is granted under either value: Apple's mktemp(3) callers, Java and Chrome write there
+// whatever TMPDIR says.
 type TmpPolicy int
 
 const (
-	// TmpShared grants /tmp and DARWIN_USER_TEMP_DIR read-write: the prototype's posture,
-	// and the zero value.
+	// TmpShared grants /tmp read-write: the prototype's posture, the zero value, and what the
+	// user-scope `macos_user_shared_tmp` hatch selects.
 	TmpShared TmpPolicy = iota
-	// TmpPrivate grants neither: only the launch's own TMPDIR (ProfileParams.SandboxTmp).
+	// TmpPrivate grants none of /tmp: the production value. The launch's own TMPDIR
+	// (ProfileParams.SandboxTmp) and the session's host-services dir (ServicesDirs) keep their
+	// own grants.
 	TmpPrivate
 )
 
-// The production values of the two rulings still pending (MMP-D13), set to the prototype's
+// The production values of the two rulings (MMP-D13), set to the prototype's
 // choices until slice 11 records the maintainer's answers. Each ruling is a one-line edit. The
 // third, loopback (OQ-MM7), is ruled: the whole loopback is allowed, and is no parameter
 // (networkBlocks, MMP-D14).
 var (
-	// productionTmp (OQ-MM8): shared, readable.
-	productionTmp = TmpShared
+	// productionTmp (OQ-MM8, ruled 2026-10-23): the shared /tmp is closed. A launch whose user
+	// set `macos_user_shared_tmp` opens it (PlanSession.SharedTmp).
+	productionTmp = TmpPrivate
 	// productionHostSoftware (OQ-MM9): the install trees the prototype left readable.
 	// /Applications is here rather than in the system list because OQ-MM9 names it with the
 	// other two: the alternative it weighs is nix-only tools, which hides all three.
@@ -236,10 +240,7 @@ func DenyDefaultProfile(p ProfileParams) string {
 		";; The agent's own files: workspace, home and temp, the writable places.\n" +
 		";; ---------------------------------------------------------------------------\n")
 
-	ancestorInputs := append([]string{ws, home, sandboxTmp, staging}, machine...)
-	if p.Tmp == TmpShared {
-		ancestorInputs = append(ancestorInputs, userTmp)
-	}
+	ancestorInputs := append([]string{ws, home, sandboxTmp, userTmp, staging}, machine...)
 	ancestorInputs = append(ancestorInputs, contextSources(p.Context, func(ContextLink) bool { return true })...)
 	ancestorInputs = append(ancestorInputs, relocationTargets(p.Relocations)...)
 	for _, a := range p.CacheAliases {
@@ -270,19 +271,20 @@ func DenyDefaultProfile(p ProfileParams) string {
 			";; #seatbelt-test-id:tmp-allow#\n" +
 			"(allow file-read* file-write* (subpath " + sbplStr(sandboxTmp) + "))\n")
 	}
+	if userTmp != "" {
+		b.WriteString("\n;; [10-runtime] The running user's DARWIN_USER_TEMP_DIR, under every /tmp\n" +
+			";; policy (OQ-MM8): Apple's mktemp callers, Java and Chrome write there regardless\n" +
+			";; of TMPDIR (confstr). The user's .../C cache dir is NOT granted. Narrower than\n" +
+			";; Safehouse, which grants all of /var/folders.\n" +
+			";; #seatbelt-test-id:" + UserTmpAllowID + "#\n" +
+			"(allow file-read* file-write* (subpath " + sbplStr(userTmp) + "))\n")
+	}
 	if p.Tmp == TmpShared {
-		clauses := ""
-		if userTmp != "" {
-			clauses += subpathLines([]string{userTmp})
-		}
-		clauses += subpathLines([]string{"/private/tmp", "/tmp"})
-		b.WriteString("\n;; [10-runtime] The shared temp dirs (OQ-MM8: shared). Every process of the\n" +
-			";; running user shares them, so in self mode your own files there are readable.\n" +
-			";; DARWIN_USER_TEMP_DIR: frameworks write there regardless of TMPDIR (confstr);\n" +
-			";; the user's .../C cache dir is NOT granted. /tmp: many tools hardcode it, in\n" +
-			";; both spellings. Narrower than Safehouse, which grants all of /var/folders.\n" +
-			";; #seatbelt-test-id:shared-tmp-allow#\n" +
-			form("allow file-read* file-write*", clauses))
+		b.WriteString("\n;; [10-runtime] The shared /tmp, opened by the macos_user_shared_tmp hatch\n" +
+			";; (OQ-MM8: closed by default). Every process of the running user shares it, so\n" +
+			";; in self mode your own files there are readable. Both spellings.\n" +
+			";; #seatbelt-test-id:" + SharedTmpAllowID + "#\n" +
+			form("allow file-read* file-write*", subpathLines([]string{"/private/tmp", "/tmp"})))
 	}
 	if len(machine) > 0 {
 		b.WriteString("\n;; [yolo] The machine root's shared dirs (MMP-D6), read-write.\n" +
@@ -659,6 +661,12 @@ func serviceBlocks() string {
 
 // LoopbackAllowID is the test id of the profile's loopback allow (OQ-MM7, ruled 2026-10-23).
 const LoopbackAllowID = "loopback-allow"
+
+// UserTmpAllowID marks the running user's DARWIN_USER_TEMP_DIR grant (MMP-D18).
+const UserTmpAllowID = "user-tmp-allow"
+
+// SharedTmpAllowID marks the shared-/tmp grant, rendered only under TmpShared (MMP-D18).
+const SharedTmpAllowID = "shared-tmp-allow"
 
 // UnixSocketAllowID is the test id of the profile's unix-socket allow on the sandbox's own
 // writable roots (MMP-D16).

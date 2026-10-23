@@ -220,12 +220,9 @@
     (subpath DARWIN_USER_TEMP_DIR)                                    ;; Frameworks write here regardless of TMPDIR (confstr); the user's .../C cache dir is NOT granted.
 )
 
-;; [10-runtime] /tmp is shared by every process on the Mac; tools hardcode it.
-;; Narrower than Safehouse, which grants all of /var/folders.
-(allow file-read* file-write*
-    (subpath "/private/tmp")                                          ;; Real /tmp; many tools hardcode /tmp for files and sockets.
-    (subpath "/tmp")                                                  ;; The /tmp symlink spelling of the same.
-)
+;; [10-runtime] The shared /tmp is NOT granted (OQ-MM8, ruled 2026-10-23: closed). Every
+;; process on the Mac shares it; (deny default) closes it. The user-scope
+;; macos_user_shared_tmp hatch reopens it in the generated profile only.
 
 ;; [10-runtime] Device nodes for shell I/O, PTYs and descriptor plumbing.
 (allow file-read* file-write*

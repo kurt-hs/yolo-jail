@@ -46,6 +46,9 @@ type RunPlan struct {
 	// bootstrap, and SessionTmpRemoveCommands remove it when the session ends.
 	SessionTmpDir            string
 	SessionTmpRemoveCommands [][]string
+	// SharedTmp is true when the run-as-you profile grants the shared /tmp (the
+	// `macos_user_shared_tmp` hatch, MMP-D18), which the launch discloses.
+	SharedTmp bool
 	// StagedDir is the host-owned staging root; StagedYolo is the staged yolo
 	// binary the sandbox self-execs. StageCommands stage that binary
 	// (fresh-inode copy).
@@ -448,11 +451,14 @@ type PlanSession struct {
 	//     (LaunchHomes) and names what the profile denies in it;
 	//   - HostUser, the invoking user's name, the sandbox's USER;
 	//   - DarwinUserTempDir, `getconf DARWIN_USER_TEMP_DIR` of the invoking user, which the profile
-	//     opens under the shared-/tmp ruling (frameworks write there whatever TMPDIR says).
+	//     opens under every /tmp policy (frameworks write there whatever TMPDIR says);
+	//   - SharedTmp, the user-scope `macos_user_shared_tmp` hatch (OQ-MM8, MMP-D18), which opens
+	//     the shared /tmp the profile otherwise closes.
 	Mode              Mode
 	HostHome          string
 	HostUser          string
 	DarwinUserTempDir string
+	SharedTmp         bool
 }
 
 // darwinBootstrapArgvUnder is DarwinBootstrapArgv, confined under profilePath when it is not ""
@@ -492,7 +498,7 @@ func selfProfileParams(workspace string, homes Homes, hostPackRoot string, sessi
 		machineDirs = append(machineDirs, filepath.Join(homes.Shared, d))
 	}
 	userTmp := strings.TrimRight(session.DarwinUserTempDir, "/")
-	return ProfileParams{
+	p := ProfileParams{
 		Workspace:         workspace,
 		Home:              homes.Home,
 		HostHome:          homes.Real,
@@ -510,6 +516,10 @@ func selfProfileParams(workspace string, homes Homes, hostPackRoot string, sessi
 		Devices:           devices,
 		RunAsUser:         session.HostUser,
 	}.WithProductionRulings()
+	if session.SharedTmp {
+		p.Tmp = TmpShared // the user's hatch (OQ-MM8, MMP-D18)
+	}
+	return p
 }
 
 // withoutAccessGrants drops every `chmod +a` from cmds, and the matching entry of steps when
@@ -1047,6 +1057,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		// carve-out (devices.go), and macos_log, whose "off" is a deny (SeatbeltProfile).
 		Seatbelt:                 seatbelt,
 		SessionTmpDir:            sessionTmp,
+		SharedTmp:                self && session.SharedTmp,
 		SessionTmpRemoveCommands: SessionTmpRemoveCommands(sessionTmp),
 		StagedDir:                stateDir,
 		StagedYolo:               stagedYolo,

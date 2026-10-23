@@ -72,6 +72,7 @@ var denyDefaultRules = []seatbeltRule{
 	{id: "workspace-write-allow"},
 	{id: "home-allow"},
 	{id: "tmp-allow"},
+	{id: "user-tmp-allow"},
 	{id: "shared-tmp-allow"},
 	{id: "machine-dir-allow"},
 	{id: "dev-io-allow"},
@@ -290,9 +291,9 @@ func unixBindConnectProbe(p string) string {
 		`$l->accept or die "accept: $!\n"; print "connected\n"' "$p" && rm -f "$p" && echo ` + seatbeltOK
 }
 
-// privateTmp is the variant without the shared-/tmp allow, so a services-dir case measures the
-// exact-path grant alone (the shared allow awaits its ruling).
-func privateTmp(_ denyDefaultFixtures, p *macosuser.ProfileParams) { p.Tmp = macosuser.TmpPrivate }
+// sharedTmp is the `macos_user_shared_tmp` hatch's profile (OQ-MM8, MMP-D18): the shared /tmp
+// granted read-write, which the production profile closes.
+func sharedTmp(_ denyDefaultFixtures, p *macosuser.ProfileParams) { p.Tmp = macosuser.TmpShared }
 
 // grantFakeHome is the closing-deny variant: the stand-in home is the profile's HostHome and is
 // granted whole, read-write, as a machine dir.
@@ -352,17 +353,40 @@ func denyDefaultCases() []denyDefaultCase {
 			want: wantAllowed,
 		},
 		{
-			name: "a3_shared_tmp_writable",
+			name: "a3_user_temp_dir_writable",
+			id:   "user-tmp-allow",
+			why: "the user's DARWIN_USER_TEMP_DIR stays open with /tmp closed (OQ-MM8): frameworks " +
+				"write there regardless of TMPDIR.",
+			needs: func(f denyDefaultFixtures) string {
+				if f.darwinTmp == "" {
+					return "getconf DARWIN_USER_TEMP_DIR answered nothing on this Mac"
+				}
+				return ""
+			},
+			script: func(f denyDefaultFixtures) string {
+				return `g=$(mktemp ` + sh(f.darwinTmp+"/yolo-dd-a3.XXXXXX") + `) && echo hi >"$g" && rm "$g" && echo ` + seatbeltOK
+			},
+			want: wantAllowed,
+		},
+		{
+			name: "shared_tmp_write_refused",
+			id:   "deny-default",
+			why: "OQ-MM8 closes the shared /tmp: nothing in the production profile grants it, so a " +
+				"write to /tmp/x is refused while $TMPDIR (a3_own_tmpdir_writable) works.",
+			script: func(f denyDefaultFixtures) string { return "echo hi >" + sh("/tmp/yolo-dd-mm8-"+f.nonce) },
+			want:   wantRefused,
+		},
+		{
+			name: "a3_shared_tmp_writable_with_the_hatch",
 			id:   "shared-tmp-allow",
-			why: "OQ-MM8's production value is shared: /tmp, which many tools hardcode, and the user's " +
-				"DARWIN_USER_TEMP_DIR, which frameworks write regardless of TMPDIR.",
+			why: "the macos_user_shared_tmp hatch reopens /tmp, which many tools hardcode, read and " +
+				"write, in both spellings.",
+			variant: sharedTmp,
 			script: func(f denyDefaultFixtures) string {
 				p := sh("/tmp/yolo-dd-a3-" + f.nonce)
-				s := "echo hi >" + p + " && rm " + p
-				if f.darwinTmp != "" {
-					s += ` && g=$(mktemp ` + sh(f.darwinTmp+"/yolo-dd-a3.XXXXXX") + `) && rm "$g"`
-				}
-				return s + " && echo " + seatbeltOK
+				q := sh("/private/tmp/yolo-dd-a3p-" + f.nonce)
+				return "echo hi >" + p + " && cat " + p + " >/dev/null && rm " + p +
+					" && echo hi >" + q + " && rm " + q + " && echo " + seatbeltOK
 			},
 			want: wantAllowed,
 		},
@@ -905,36 +929,34 @@ func denyDefaultCases() []denyDefaultCase {
 			name: "own_session_endpoint_readable_without_shared_tmp",
 			id:   "services-dir-read-allow",
 			why: "the agent's clients read their endpoint files in this session's services dir; the " +
-				"grant must stand without the shared-/tmp allow, so the variant drops that.",
-			variant: privateTmp,
+				"grant stands alone, the production profile closing the shared /tmp (OQ-MM8).",
 			script: func(f denyDefaultFixtures) string {
 				return "cat " + sh(f.services+"/demo.endpoint") + " && echo " + seatbeltOK
 			},
 			want: wantAllowed,
 		},
 		{
-			name:    "sibling_session_endpoint_unreadable",
-			id:      "deny-default",
-			why:     "another session's services dir is granted by nothing once the shared-/tmp allow is gone.",
-			variant: privateTmp,
-			script:  func(f denyDefaultFixtures) string { return "cat " + sh(f.sibling+"/demo.endpoint") },
-			want:    wantRefused,
+			name:   "sibling_session_endpoint_unreadable",
+			id:     "deny-default",
+			why:    "another session's services dir is granted by nothing with the shared /tmp closed.",
+			script: func(f denyDefaultFixtures) string { return "cat " + sh(f.sibling+"/demo.endpoint") },
+			want:   wantRefused,
 		},
 		{
-			name:    "services_dir_parent_unlistable",
-			id:      "deny-default",
-			why:     "the grant is a stat of /private/tmp, never a listing that names every other session's dir.",
-			variant: privateTmp,
-			script:  func(denyDefaultFixtures) string { return "ls /private/tmp >/dev/null" },
-			want:    wantRefused,
+			name:   "services_dir_parent_unlistable",
+			id:     "deny-default",
+			why:    "the grant is a stat of /private/tmp, never a listing that names every other session's dir.",
+			script: func(denyDefaultFixtures) string { return "ls /private/tmp >/dev/null" },
+			want:   wantRefused,
 		},
 		{
 			name: "services_liveness_lock_refused",
 			id:   "services-lock-deny",
 			why: "a read-only fd can flock: the session's liveness lock is denied after the grant and " +
-				"the shared-/tmp allow, so the agent cannot hold its session alive.",
-			script: func(f denyDefaultFixtures) string { return "cat " + sh(f.services+"/.session.lock") },
-			want:   wantRefused,
+				"after the hatch's shared-/tmp allow, so the agent cannot hold its session alive.",
+			variant: sharedTmp,
+			script:  func(f denyDefaultFixtures) string { return "cat " + sh(f.services+"/.session.lock") },
+			want:    wantRefused,
 		},
 		// --- (e) Full Disk Access.
 		{
@@ -1045,8 +1067,9 @@ func denyDefaultCases() []denyDefaultCase {
 			name: "launchd_listener_socket_hidden",
 			id:   "launchd-listener-deny",
 			why: "launchd's Listeners socket (the ssh agent's and others') sits under /private/tmp, which " +
-				"the shared /tmp allows, or under /private/var/run, whose metadata is allowed; the deny " +
-				"hides even its stat.",
+				"the hatch's shared /tmp allows (so the case runs under it), or under /private/var/run, " +
+				"whose metadata is allowed; the deny hides even its stat.",
+			variant: sharedTmp,
 			needs: func(f denyDefaultFixtures) string {
 				if f.listener == "" {
 					return "no launchd Listeners socket under /private/tmp or /private/var/run on this Mac"

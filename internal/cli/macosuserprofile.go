@@ -40,8 +40,9 @@ const macosUserProfileUsage = "usage: yolo internal " + macosUserProfileVerb +
 	"absolute and resolved through symlinks when they exist. --home defaults to W/.yolo/home,\n" +
 	"--host-home to $HOME, --darwin-tmp to `getconf DARWIN_USER_TEMP_DIR` on macOS.\n" +
 	"--services-dir grants a session's host-services dir read-only by exact path. The last\n" +
-	"three flags override the pending rulings' production values (the shared /tmp, the\n" +
-	"visible host software trees); without them the profile is the one a launch renders."
+	"three flags override the rulings' production values (the closed shared /tmp, which\n" +
+	"--shared-tmp shared opens as the macos_user_shared_tmp hatch does, and the visible host\n" +
+	"software trees); without them the profile is the one a launch renders."
 
 // macosUserProfileEnv is what the verb reads besides its flags, injected so the test needs
 // no Mac and no particular user.

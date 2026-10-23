@@ -226,7 +226,10 @@ var inheritCensus = map[string]keyDisposition{
 	// `macos_user_mode` is the macos-user backend's account choice, read from the user config on
 	// a macOS host only. A nested jail is Linux and has no macos-user backend, so it is not inherited.
 	"macos_user_mode": {reason: "chooses the account a macos-user launch runs as on a macOS host; a nested jail is Linux and has no macos-user backend"},
-	"network":         {nested: true, reason: "the network mode an inner launcher gives its container"},
+	// `macos_user_shared_tmp` is the same backend's shared-/tmp hatch (OQ-MM8), not inherited for
+	// the same reason.
+	"macos_user_shared_tmp": {reason: "opens the shared /tmp to a run-as-you macos-user launch on a macOS host; a nested jail is Linux and has no macos-user backend"},
+	"network":               {nested: true, reason: "the network mode an inner launcher gives its container"},
 	// `env_sources` is nested-only for a measured reason, not a judgement: its string
 	// entries are HOST FILE PATHS, and resolving them in-jail emits "env_sources file not
 	// found, skipping" on every in-jail check (measured 2026-08-14). An inner launcher

@@ -18,6 +18,12 @@ const (
 // as the run pipeline's macos-user arm publishes one, built in the given mode.
 func sessionTmpPlan(t *testing.T, mode Mode, env *jsonx.OrderedMap) RunPlan {
 	t.Helper()
+	return sessionTmpPlanWith(t, mode, env, nil)
+}
+
+// sessionTmpPlanWith is sessionTmpPlan with the session edited first.
+func sessionTmpPlanWith(t *testing.T, mode Mode, env *jsonx.OrderedMap, edit func(*PlanSession)) RunPlan {
+	t.Helper()
 	if env == nil {
 		env = jsonx.NewOrderedMap()
 		env.Set("YOLO_SERVICE_CLAUDE_OAUTH_BROKER_ENDPOINT", testServicesDir+"/claude-oauth-broker.endpoint")
@@ -25,6 +31,9 @@ func sessionTmpPlan(t *testing.T, mode Mode, env *jsonx.OrderedMap) RunPlan {
 	session := PlanSession{ID: testSessionID, Mode: mode}
 	if mode == ModeSelf {
 		session.HostHome, session.HostUser, session.DarwinUserTempDir = "/Users/you", "you", testUserTmp+"/"
+	}
+	if edit != nil {
+		edit(&session)
 	}
 	return BuildRunPlanWithDaemons("/Users/you/code/alpha", jsonx.NewOrderedMap(), nil, []string{"claude"},
 		"/usr/local/bin/yolo", "", HomeOverlay{}, HostContext{}, env, nil, nil,
@@ -43,7 +52,7 @@ func TestSelfModeSessionHasItsOwnTmpdir(t *testing.T) {
 		t.Fatalf("plan.SessionTmpDir = %q, want %q", plan.SessionTmpDir, testSessionTmp)
 	}
 	for key, want := range map[string]string{"TMPDIR": testSessionTmp, "TMUX_TMPDIR": testSessionTmp,
-		"TMPPREFIX": testSessionTmp + "/zsh"} {
+		"TMPPREFIX": testSessionTmp + "/zsh", "OVERMIND_SOCKET": testSessionTmp + "/overmind.sock"} {
 		if v, ok := sandboxEnvFileValue(plan.EnvFileContent, key); !ok || v != want {
 			t.Errorf("the session env file sets %s=%q (present %v), want %q", key, v, ok, want)
 		}
@@ -154,6 +163,47 @@ func TestASelfModeLaunchMakesAndRemovesItsTmpdir(t *testing.T) {
 	}
 }
 
+// OQ-MM8 (MMP-D18): a run-as-you launch whose user set the hatch says the shared /tmp is open,
+// and one without it says nothing. Read through a real launch, so deleting Options.SharedTmp's
+// handoff to the plan, or the disclosure call, fails this.
+func TestASelfModeLaunchDisclosesTheSharedTmpHatch(t *testing.T) {
+	for _, hatch := range []bool{true, false} {
+		userTmp := t.TempDir()
+		_, _, out, _ := runPackTreeLaunch(t, 0, nil, func(d *Deps, o *Options) {
+			o.Mode, o.HostHome, o.HostUser, o.SharedTmp = ModeSelf, "/Users/you", "you", hatch
+			d.SandboxUserExists = func() bool { return false }
+			d.RunAsGrant = func() bool { return false }
+			d.DarwinUserTempDir = func() string { return userTmp + "/" }
+		})
+		if got := strings.Contains(out.String(), "tmp: the shared /tmp is open"); got != hatch {
+			t.Errorf("hatch %v: disclosure printed %v:\n%s", hatch, got, out.String())
+		}
+	}
+}
+
+// OQ-MM8 (MMP-D18): a run-as-you plan closes the shared /tmp, and the user's hatch
+// (PlanSession.SharedTmp) opens it and is disclosed. The account mode ignores the hatch.
+// Removing the hatch in selfProfileParams, or its disclosure, fails this.
+func TestSelfModePlanClosesTheSharedTmpUnlessTheHatchIsSet(t *testing.T) {
+	closed := sessionTmpPlan(t, ModeSelf, nil)
+	if strings.Contains(closed.Seatbelt, SharedTmpAllowID) || closed.SharedTmp || sharedTmpDisclosure(closed) != "" {
+		t.Errorf("a plan with no hatch opens or discloses the shared /tmp")
+	}
+	if !strings.Contains(closed.Seatbelt, "#seatbelt-test-id:"+UserTmpAllowID+"#") {
+		t.Error("the run-as-you plan lost the user's DARWIN_USER_TEMP_DIR grant")
+	}
+	open := sessionTmpPlanWith(t, ModeSelf, nil, func(s *PlanSession) { s.SharedTmp = true })
+	if !strings.Contains(open.Seatbelt, "#seatbelt-test-id:"+SharedTmpAllowID+"#") || !open.SharedTmp {
+		t.Error("the hatch did not open the shared /tmp in the profile")
+	}
+	if line := sharedTmpDisclosure(open); !strings.Contains(line, "macos_user_shared_tmp") {
+		t.Errorf("the hatch is not disclosed: %q", line)
+	}
+	if account := sessionTmpPlanWith(t, ModeAccount, nil, func(s *PlanSession) { s.SharedTmp = true }); account.SharedTmp {
+		t.Error("the account mode took the run-as-you hatch")
+	}
+}
+
 // The account mode is today's plan: no session TMPDIR, and its profile (the old one) carries no
 // services grant.
 func TestAccountModeHasNoSessionTmpdirOrServicesGrant(t *testing.T) {
@@ -161,7 +211,7 @@ func TestAccountModeHasNoSessionTmpdirOrServicesGrant(t *testing.T) {
 	if plan.SessionTmpDir != "" || len(plan.SessionTmpRemoveCommands) != 0 {
 		t.Errorf("the account mode got a session TMPDIR: %q %v", plan.SessionTmpDir, plan.SessionTmpRemoveCommands)
 	}
-	for _, key := range []string{"TMPDIR", "TMUX_TMPDIR", "TMPPREFIX"} {
+	for _, key := range []string{"TMPDIR", "TMUX_TMPDIR", "TMPPREFIX", "OVERMIND_SOCKET"} {
 		if _, ok := sandboxEnvFileValue(plan.EnvFileContent, key); ok {
 			t.Errorf("the account mode's env file sets %s", key)
 		}

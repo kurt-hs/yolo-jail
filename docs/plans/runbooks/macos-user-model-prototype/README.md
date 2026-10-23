@@ -45,19 +45,17 @@ The checks, keyed to [§6](../../../design/macos-user-model.md#6-what-a-prototyp
 | Check | What must happen |
 | :--- | :--- |
 | 0 | The profile loads and `/bin/bash` starts under it. If not, nothing else runs. |
-| a1–a12 | The workspace, `$HOME` and temp dirs are writable; git init and commit work; a C build runs; a Homebrew and a nix binary run; HTTPS works, certificate trust included (`curl`, `gh`, `git ls-remote`); the system fonts are readable. |
-| b1–b13 | Each fails: reading a decoy secret in your home and `~/.ssh`, writing in your home, reading the throwaway login-keychain item's secret (b4) and the keychain file, the ssh agent, the clipboard, Apple Events to Finder and System Events, `open -a TextEdit`, `launchctl submit`, `kill -0` on a long-lived process of yours, and reading that process's command line through `ps` and through `sysctl kern.procargs2`. |
+| a3t, a3h | A write to the shared `/tmp` is refused (OQ-MM8, ruled 2026-10-23). With `--profile-from-yolo`, the `macos_user_shared_tmp` hatch's profile makes it work again (a3h). |
+| a1–a12 | The workspace, `$HOME` and own temp dirs are writable; git init and commit work; a C build runs; a Homebrew and a nix binary run; HTTPS works, certificate trust included (`curl`, `gh`, `git ls-remote`); the system fonts are readable. |
+| b1–b14 | Each fails: reading a decoy secret in your home and `~/.ssh`, writing in your home, reading the throwaway login-keychain item's secret (b4) and the keychain file, the ssh agent, the clipboard, Apple Events to Finder and System Events, `open -a TextEdit`, `launchctl submit`, `kill -0` on a long-lived process of yours, reading that process's command line through `ps` and through `sysctl kern.procargs2`, and reading a 0600 file of yours in the shared `/tmp` (b14). |
 | c1–c4 | A decoy project at `/opt/src/...` (or `/Library/Caches/...` where `/opt` is not writable) is unreadable; `/opt/homebrew` and the nix store are readable. |
 | d1, d3 | A loopback listener of yours is reachable from inside, and so is a loopback server the agent starts itself: OQ-MM7 (ruled 2026-10-23) allows the whole loopback. |
 | e1–e2 | With Full Disk Access granted to the terminal, profile-denied files stay unreadable. |
-| g1–g6 | A unix socket binds and connects under `$TMPDIR` and in the workspace. With `--profile-from-yolo`: the session's host-services liveness lock is refused; without the shared `/tmp`, the session's own endpoint file is readable, a sibling session's is not, and `/private/tmp` cannot be listed. |
+| g1–g6 | A unix socket binds and connects under `$TMPDIR` and in the workspace. With `--profile-from-yolo`: the session's host-services liveness lock is refused; with the shared `/tmp` closed, the session's own endpoint file is readable, a sibling session's is not, and `/private/tmp` cannot be listed. |
 | f1 | Optional: Claude Code installs into the sandbox's own home and `claude --version` runs. |
 
-One `INFO` line reports what the model knowingly leaves open, without counting it. It awaits a
-maintainer ruling, so the profile's rules for it are unchanged:
-
-- **b14:** the shared `/tmp`, where a file of yours is still readable. The first run read it in self
-  mode; in account mode Unix permissions refused it.
+b14 was an `INFO` line until OQ-MM8 closed the shared `/tmp`: the first run read that file in self
+mode, and in account mode Unix permissions refused it.
 
 ## How to run it
 
@@ -86,7 +84,7 @@ Options:
   [`profile.sb`](./profile.sb). `YOLO` is a yolo binary, for example one built from a checkout with
   `go build -o /tmp/yolo ./cmd/yolo`. The script renders the profile for its own workspace, home and
   temp dirs and a fake host-services dir with `YOLO internal macos-user-profile`, and renders it
-  again without the shared `/tmp` for checks g4–g6. To compare the two profiles by eye, run that command yourself with `--mode`,
+  again with `--shared-tmp shared`, the hatch's profile, for check a3h. To compare the two profiles by eye, run that command yourself with `--mode`,
   `--workspace` and `--tmp` (`--help` lists the rest) and diff its output against [`profile.sb`](./profile.sb).
 - `--with-claude` runs the native Claude Code installer inside the sandbox, into its own home, then
   `claude --version`. It makes network calls to download the installer, but never logs in and never
@@ -130,9 +128,9 @@ PASS b1   read the decoy secret in your home
 ```
 
 - **`PASS`** means the expected thing happened: an allow worked, or a deny held.
-- **`FAIL` on an a, c3–c4, d or g1–g2, g4 check** means the allow list is too narrow: a tool broke. That is
+- **`FAIL` on an a (other than a3t), c3–c4, d or g1–g2, g4 check** means the allow list is too narrow: a tool broke. That is
   expected on a first run, and it is a fix to [`profile.sb`](./profile.sb).
-- **`FAIL` on a b, c1–c2, e, g3 or g5–g6 check** means something the model must deny got through. That is
+- **`FAIL` on a3t, a b, c1–c2, e, g3 or g5–g6 check** means something the model must deny got through. That is
   the finding that matters most.
 - **`SKIP`** means the check could not run here (no Homebrew, no nix, no Command Line Tools, empty
   clipboard), and says what would let it run.
@@ -161,7 +159,7 @@ The decisions, each traced to a design ruling. The file comments every allow on 
   binaries Safehouse curates. `/opt` itself gets metadata only, so `/opt/homebrew` resolves while
   `/opt` cannot be listed.
 - **Read-write:** the workspace, the agent's home (`<workspace>/.yolo/home`), the launch's own temp
-  dir, the running user's `DARWIN_USER_TEMP_DIR`, and `/tmp`. Safehouse grants all of
+  dir and the running user's `DARWIN_USER_TEMP_DIR`. The shared `/tmp` is closed (OQ-MM8). Safehouse grants all of
   `/var/folders`; this grants one folder of it, and not the user cache folder beside it.
 - **Your home:** nothing but three locale preference files, read-only. Every directory above the
   workspace is readable as a single directory (its listing, nothing below it), as Safehouse does

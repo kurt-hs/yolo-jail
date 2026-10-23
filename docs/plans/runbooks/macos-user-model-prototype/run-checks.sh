@@ -152,7 +152,7 @@ fi
 
 # Two fake host-services session dirs, shaped as a launch names them (MMP-D15): this
 # session's, which the generated profile grants by exact path, and a sibling session's, which
-# nothing grants once the shared-/tmp allow is gone. Readable by the account too.
+# nothing grants with the shared /tmp closed (OQ-MM8). Readable by the account too.
 SERVICES_DIR="/private/tmp/yolo-host-services-$(printf '%08x' "$$")-rc$NONCE"
 SIBLING_DIR="/private/tmp/yolo-host-services-$(printf '%08x' "$$")-rcsib$NONCE"
 for d in "$SERVICES_DIR" "$SIBLING_DIR"; do
@@ -160,7 +160,7 @@ for d in "$SERVICES_DIR" "$SIBLING_DIR"; do
 		chmod 0644 "$d/demo.endpoint" "$d/.session.lock" || { echo "cannot create $d" >&2; exit 2; }
 done
 
-# A /tmp file of yours, to show what the shared /tmp still exposes (INFO only).
+# A /tmp file of yours, which the closed shared /tmp must hide (b14, OQ-MM8).
 TMP_DECOY="/private/tmp/yolo-prototype-tmpdecoy-$NONCE"
 printf 'tmp decoy %s\n' "$NONCE" >"$TMP_DECOY"
 chmod 0600 "$TMP_DECOY"
@@ -274,7 +274,7 @@ SB_PATH="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:/nix/var
 
 # render_profile [FLAG...]: with --profile-from-yolo, render the generated profile for this
 # run's workspace, home, temp dirs and services dir, with each extra FLAG of the verb (for
-# example --shared-tmp private), into its own file, and point PROFILE at it. The generated
+# example --shared-tmp shared), into its own file, and point PROFILE at it. The generated
 # profile takes no -D parameters: its paths are rendered into the text (MMP-D1).
 render_profile() {
 	local name="profile-yolo"
@@ -450,8 +450,24 @@ expect_allow a1 "read and write the workspace" \
 	'echo hi >"$WORKSPACE/a1.txt" && cat "$WORKSPACE/a1.txt" && rm "$WORKSPACE/a1.txt"'
 expect_allow a2 "read and write AGENT_HOME (\$HOME)" \
 	'mkdir -p "$HOME/.config/x" && echo hi >"$HOME/.config/x/f" && cat "$HOME/.config/x/f"'
-expect_allow a3 "write TMPDIR and /tmp" \
-	'f=$(mktemp) && echo hi >"$f" && cat "$f" && rm "$f" && echo hi >/tmp/yolo-prototype-a3-$NONCE && rm /tmp/yolo-prototype-a3-$NONCE'
+expect_allow a3 "write TMPDIR" \
+	'f=$(mktemp) && echo hi >"$f" && cat "$f" && rm "$f"'
+expect_deny a3t "a write to the shared /tmp is refused (OQ-MM8)" \
+	'echo hi >/tmp/yolo-prototype-a3t-$NONCE' yes
+rm -f "/private/tmp/yolo-prototype-a3t-$NONCE"
+if [ -n "$YOLO_BIN" ]; then
+	# The macos_user_shared_tmp hatch's profile reopens /tmp, read and write.
+	build_params --shared-tmp shared
+	script='echo hi >/tmp/yolo-prototype-a3h-$NONCE && cat /tmp/yolo-prototype-a3h-$NONCE && rm /tmp/yolo-prototype-a3h-$NONCE'
+	out="$(inside "$script")"
+	rc=$?
+	if [ $rc -eq 0 ]; then result PASS a3h "with the hatch, a write to /tmp works"; else result FAIL a3h "with the hatch, a write to /tmp works (exit $rc)"; fi
+	printf '    $ %s   (under %s)\n' "$script" "$(basename "$PROFILE")"
+	show "$out"
+	use_default
+else
+	skip a3h "the shared-/tmp hatch is the generated profile's: add --profile-from-yolo <yolo>"
+fi
 expect_allow a4 "signal a process inside the sandbox" \
 	'sleep 30 & p=$!; kill $p || exit 1; wait $p; rc=$?; echo "child ended with $rc"; [ $rc -eq 143 ]'
 
@@ -583,7 +599,7 @@ B13_PY=""
 /usr/bin/xcode-select -p >/dev/null 2>&1 && B13_PY="; /usr/bin/python3 \"\$WORKSPACE/.procargs.py\" $DECOY_PID"
 expect_deny b13 "read another process's argv (ps, then sysctl kern.procargs2, of pid $DECOY_PID)" \
 	"out=\$( { ps -o command= -p $DECOY_PID$B13_PY; } 2>&1 ); printf '%s\n' \"\$out\"; case \"\$out\" in *$DECOY_SLEEP_ARG*) exit 0 ;; esac; exit 1" yes
-info b14 "residual: a 0600 file of yours in the shared /tmp" "cat $TMP_DECOY"
+expect_deny b14 "read a 0600 file of yours in the shared /tmp (OQ-MM8)" "cat $TMP_DECOY" yes
 echo
 
 # --- (c) outside /Users ---------------------------------------------------------
@@ -641,25 +657,12 @@ expect_allow g2 "bind and connect a unix socket in the workspace by a relative p
 if [ -n "$YOLO_BIN" ]; then
 	expect_deny g3 "the session's liveness lock is refused ($SERVICES_DIR/.session.lock)" \
 		"cat '$SERVICES_DIR/.session.lock'" yes
-	# The rest without the shared-/tmp allow, so the exact-path grant stands alone (MMP-D15).
-	build_params --shared-tmp private
-	PRIVATE_TMP_PROFILE="$PROFILE"
-	use_private_tmp() { PROFILE="$PRIVATE_TMP_PROFILE"; PARAMS=(); }
-	for chk in "g4|allow|read this session's endpoint file without the shared /tmp|cat '$SERVICES_DIR/demo.endpoint'" \
-		"g5|deny|a sibling session's endpoint file is unreadable|cat '$SIBLING_DIR/demo.endpoint'" \
-		"g6|deny|/private/tmp cannot be listed (that would name every session's dir)|ls /private/tmp >/dev/null"; do
-		IFS='|' read -r id want desc script <<<"$chk"
-		use_private_tmp
-		out="$(inside "$script")"
-		rc=$?
-		if { [ "$want" = allow ] && [ $rc -eq 0 ]; } || { [ "$want" = deny ] && [ $rc -ne 0 ]; }; then
-			result PASS "$id" "$desc"
-		else
-			result FAIL "$id" "$desc (exit $rc)"
-		fi
-		printf '    $ %s   (under %s)\n' "$script" "$(basename "$PROFILE")"
-		show "$out"
-	done
+	# The shared /tmp is closed (OQ-MM8), so the exact-path grant stands alone (MMP-D15).
+	expect_allow g4 "read this session's endpoint file with the shared /tmp closed" \
+		"cat '$SERVICES_DIR/demo.endpoint'"
+	expect_deny g5 "a sibling session's endpoint file is unreadable" "cat '$SIBLING_DIR/demo.endpoint'" yes
+	expect_deny g6 "/private/tmp cannot be listed (that would name every session's dir)" \
+		"ls /private/tmp >/dev/null" yes
 else
 	skip g3 "the host-services grant is the generated profile's: add --profile-from-yolo <yolo>"
 fi

@@ -1288,8 +1288,9 @@
     with no account, admin setup or access grants, under a deny-by-default Seatbelt
     profile that opens the workspace, the agent's own home in .yolo/home and the
     tools, and denies the rest of your files, your keychain and your other
-    processes.  The shared /tmp and your own DARWIN_USER_TEMP_DIR stay readable,
-    so the agent can read files your other programs leave there.  A workspace may
+    processes.  The shared /tmp is closed (see macos_user_shared_tmp); each launch
+    gets its own TMPDIR, and your own DARWIN_USER_TEMP_DIR stays readable, so the
+    agent can read files your other programs leave there.  A workspace may
     then sit anywhere, your home included.  Every such launch says so first.  Only the macos-user setup reads it; podman and Apple
     Container ignore it.
 
@@ -1298,6 +1299,20 @@
     whatever runs in the jail.
     Example (~/.config/yolo-jail/config.jsonc):
       "macos_user_mode": "account"
+
+  [bold]macos_user_shared_tmp[/bold] (boolean): Open the shared /tmp to a run-as-you macos-user jail.  Default FALSE.
+    With macos_user_mode "self", the agent cannot read or write the shared /tmp
+    (/private/tmp): a tool that writes there fails with "Operation not permitted",
+    and the agent is told to use $TMPDIR, its launch's own temporary directory.
+    true opens /tmp again, read and write, for tools that need it; the agent can
+    then read the files your other programs leave there.  Every such launch says
+    so.  Only the macos-user setup reads it, and only in "self" mode.
+
+    USER SCOPE ONLY.  It is read from your user config alone, so a workspace value is
+    a `yolo check` error and is never consulted -- and /workspace is writable by
+    whatever runs in the jail.
+    Example (~/.config/yolo-jail/config.jsonc):
+      "macos_user_shared_tmp": true
 
   [bold]update_check[/bold] (boolean): Enable update checks and notices.  Default TRUE.
     Every ordinary host command reads the cached answer.  For a release-based install,

@@ -343,3 +343,23 @@ func TestBackendLimitsNameNoPackageStoreOnTheShippedPacks(t *testing.T) {
 		}
 	}
 }
+
+// OQ-MM8 (MMP-D18): a run-as-you launch's briefing tells the agent the shared /tmp is closed and
+// to use $TMPDIR, the next step Seatbelt's bare refusal cannot name. The account mode and the
+// hatch say nothing. Read through the composed briefing, so deleting the call in
+// refreshJailBriefings fails this as surely as deleting the line.
+func TestMacosUserSelfModeBriefingSaysTheSharedTmpIsClosed(t *testing.T) {
+	self := macosUserBriefingWith(t, appliedTestConfig(), func(o *Options) { o.MacosUserMode = macosuser.ModeSelf })
+	if !strings.Contains(self, "The shared `/tmp` (`/private/tmp`) is closed") || !strings.Contains(self, "Use `$TMPDIR`") {
+		t.Errorf("the run-as-you briefing does not say the shared /tmp is closed:\n%s", self)
+	}
+	account := macosUserBriefingWith(t, appliedTestConfig(), nil)
+	hatch := macosUserBriefingWith(t, appliedTestConfig(), func(o *Options) {
+		o.MacosUserMode, o.MacosUserSharedTmp = macosuser.ModeSelf, true
+	})
+	for name, b := range map[string]string{"account": account, "hatch": hatch} {
+		if strings.Contains(b, "is closed to this sandbox") {
+			t.Errorf("the %s briefing says the shared /tmp is closed", name)
+		}
+	}
+}

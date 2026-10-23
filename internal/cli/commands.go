@@ -1236,6 +1236,10 @@ func runRun(args []string) int {
 	macosMode, macosModeRefusal := macosUserLaunchMode()
 	hostHome, hostUser := macosUserHostIdentity()
 	opts.MacosUserMode, opts.MacosUserHostHome = macosMode, hostHome
+	// The shared-/tmp hatch (OQ-MM8, MMP-D18), read once like the mode and handed to both readers:
+	// the briefing (run.Options) and the profile (macosuser.Options).
+	sharedTmp := config.MacosUserSharedTmp()
+	opts.MacosUserSharedTmp = sharedTmp
 	opts.MacosUserRun = func(cfg *jsonx.OrderedMap, workspace string, agents, agentArgv []string,
 		repoRoot, packRoot string, homeOverlay macosuser.HomeOverlay, hostCtx macosuser.HostContext, dryRun bool,
 		packEnv *jsonx.OrderedMap, blocked []packload.BlockedTool, jailDaemons macosuser.JailDaemons) int {
@@ -1245,7 +1249,7 @@ func runRun(args []string) int {
 		}
 		return macosUserRun(cfg, workspace, agents, agentArgv, repoRoot, packRoot, homeOverlay,
 			hostCtx, dryRun, packEnv, blocked, jailDaemons, arm, ref.Log,
-			macosUserIdentity{Mode: macosMode, HostHome: hostHome, HostUser: hostUser})
+			macosUserIdentity{Mode: macosMode, HostHome: hostHome, HostUser: hostUser, SharedTmp: sharedTmp})
 	}
 	// Wire the fetched model list (docs/design/model-lists-and-pickers.md OQ-MM6): a provider no
 	// pack or config gives a list gets the region's from its platform's credential service. A
@@ -1387,6 +1391,8 @@ type macosUserIdentity struct {
 	Mode     macosuser.Mode
 	HostHome string
 	HostUser string
+	// SharedTmp is the user-scope `macos_user_shared_tmp` hatch (OQ-MM8, MMP-D18).
+	SharedTmp bool
 }
 
 // runMacosUserBackend is macosuser.RunMacosUser behind a package var, for launchRunPipeline's
@@ -1458,9 +1464,10 @@ func macosUserRun(cfg *jsonx.OrderedMap, workspace string, agents, agentArgv []s
 		macosuser.Options{
 			// Who the sandbox runs as (macos_user_mode), and the invoking user the run-as-you mode
 			// runs with; the account mode reads neither of the last two.
-			Mode:     who.Mode,
-			HostHome: who.HostHome,
-			HostUser: who.HostUser,
+			Mode:      who.Mode,
+			HostHome:  who.HostHome,
+			HostUser:  who.HostUser,
+			SharedTmp: who.SharedTmp,
 			// The session-start hook the run pipeline registered on its arm, run by the backend
 			// just before the session's command and on no other path.
 			OnAgentStart: arm.AgentStarting,

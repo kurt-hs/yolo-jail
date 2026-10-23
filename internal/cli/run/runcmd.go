@@ -502,6 +502,9 @@ type Options struct {
 	// sandbox's machine root (macosuser.LaunchHomes); "" reads this process's home.
 	MacosUserMode     macosuser.Mode
 	MacosUserHostHome string
+	// MacosUserSharedTmp is the user-scope `macos_user_shared_tmp` hatch (OQ-MM8, MMP-D18): a
+	// run-as-you profile then grants the shared /tmp, and the briefing drops its /tmp line.
+	MacosUserSharedTmp bool
 	// macosHostCASPlatform overrides the host platform the macos-user package-cache alias
 	// compares against the sandbox's ("" = hostcas.HostPlatform()), so a Linux test can state
 	// the Mac a macos-user launch runs on.

@@ -319,6 +319,9 @@ type Options struct {
 	Mode     Mode
 	HostHome string
 	HostUser string
+	// SharedTmp is the user-scope `macos_user_shared_tmp` hatch (OQ-MM8, MMP-D18), read by cli;
+	// the run-as-you profile then grants the shared /tmp. The account mode ignores it.
+	SharedTmp bool
 }
 
 // SelfModeDisclosure is the line a run-as-you launch prints first (macos_user_mode "self"): who
@@ -719,7 +722,7 @@ func buildPlan(deps Deps, opts Options, darwin *Darwin) RunPlan {
 		opts.BlockedTools, opts.JailDaemons, floors, programs,
 		PlanSession{ID: opts.SessionID, BundleIdentity: opts.BundleIdentity, CATrust: opts.CATrust,
 			Mode: opts.Mode, HostHome: opts.HostHome, HostUser: opts.HostUser,
-			DarwinUserTempDir: deps.darwinUserTempDir(opts.Mode)})
+			DarwinUserTempDir: deps.darwinUserTempDir(opts.Mode), SharedTmp: opts.SharedTmp})
 }
 
 // programReadinessStageFor is JR-D2's host-side stage-admission check. The same staged pack
@@ -1238,6 +1241,10 @@ func RunMacosUser(deps Deps, opts Options) int {
 	if line := loopbackDisclosure(plan); line != "" {
 		out.print(line)
 	}
+	// AND THE SHARED /tmp WHEN THE USER'S HATCH OPENED IT (OQ-MM8, MMP-D18).
+	if line := sharedTmpDisclosure(plan); line != "" {
+		out.print(line)
+	}
 
 	// THE DISK I/O POLICY (docs/design/io-priority.md §5.5, IO-D7), set on THIS process before
 	// anything that does the session's I/O starts: the stage copies, the bootstrap, the
@@ -1499,6 +1506,17 @@ func loopbackDisclosure(plan RunPlan) string {
 	}
 	return "loopback: the sandbox reaches every port of your loopback, as a jail on the host " +
 		"network would [dim](OQ-MM7)[/dim]"
+}
+
+// sharedTmpDisclosure is the line a run-as-you launch prints when the user's
+// `macos_user_shared_tmp` hatch opened the shared /tmp (OQ-MM8, MMP-D18), "" otherwise.
+func sharedTmpDisclosure(plan RunPlan) string {
+	if !plan.SharedTmp {
+		return ""
+	}
+	return "tmp: the shared /tmp is open to the sandbox, read and write, so it can read files your " +
+		"other programs leave there [dim](macos_user_shared_tmp in your user config; remove it to " +
+		"close /tmp again)[/dim]"
 }
 
 // darwinUserTempDir is the invoking user's DARWIN_USER_TEMP_DIR, physical and with no trailing
@@ -1994,6 +2012,9 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 	}
 	// THE OPEN LOOPBACK (OQ-MM7, MMP-D14), named whenever the deny-by-default profile runs.
 	if line := loopbackDisclosure(plan); line != "" {
+		p.print(line)
+	}
+	if line := sharedTmpDisclosure(plan); line != "" {
 		p.print(line)
 	}
 	// THE INSTALL-CAPTURE STORE (H4), named either way on the same rule: "nothing captured yet"

@@ -192,8 +192,9 @@ func (o *Options) refreshJailBriefings(cname string, cfg *jsonx.OrderedMap, rt s
 		// and in the agent's own briefing (backendLimits)". Half of a shipped ruling's stated
 		// precondition did not execute. The port remaps come from the plan the macos-user arm
 		// relays (macosUserPortPlan), which reads the same config and resolved mode.
-		BackendLimits: backendLimits(rt, staged.packs, cfg, o.macosUserPortPlan(rt, cfg).relays),
-		Handoff:       handoff,
+		BackendLimits: append(backendLimits(rt, staged.packs, cfg, o.macosUserPortPlan(rt, cfg).relays),
+			o.macosUserTmpLimit(rt)...),
+		Handoff: handoff,
 		// An attach that went ahead under the attach-skew acknowledgment, and only that: what the
 		// jail could not take, for the session this attach starts (SK-D15). Nil otherwise.
 		AttachSkew: o.attachSkewNotice,
