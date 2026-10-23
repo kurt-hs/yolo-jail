@@ -64,6 +64,27 @@ const (
 // refusal, installing nothing; a first install that fails returns its error.
 func (f *Floor) Ensure(ctx context.Context, p Program) (Status, Outcome, error) {
 	delete(f.preparedNPM, p.Bin())
+	if _, ok := f.override(p); ok {
+		// A DEV OVERRIDE wins over every rung its pack delivers (override.go): its own arm.
+		return f.ensureOverride(p)
+	}
+	if p.Install.IsPackTree() {
+		// A PACK-TREE program's key is resolved by its install, once, before its status is read
+		// (packtree.go): never for one the floor leaves out, whose resolution would digest for nothing.
+		if f.recipeNoEntryReason(p) == "" {
+			f.resolvePackTree(p)
+		}
+		st, outcome, err := f.ensure(ctx, p)
+		if err == nil {
+			f.sayPackTreeDisclosure(p)
+		}
+		return st, outcome, err
+	}
+	return f.ensure(ctx, p)
+}
+
+// ensure is Ensure for a program with no override and its pack-tree key, if any, resolved.
+func (f *Floor) ensure(ctx context.Context, p Program) (Status, Outcome, error) {
 	if p.Install.IsPatchedFork() {
 		// A PATCHED fork's install runs its advance first (patched.go): its own arm, end to end.
 		return f.ensurePatched(ctx, p)
@@ -177,16 +198,20 @@ func (f *Floor) Ensure(ctx context.Context, p Program) (Status, Outcome, error) 
 // from when a fork delivered it. A fork's build at the pin that is pending only for a raised
 // node_floor is the build the lock names, and keeps serving as an npm program's version does.
 func (f *Floor) servesANearMiss(p Program, rec *Record) bool {
+	if rec.Via == ViaOverride {
+		// A DEV OVERRIDE's entry is the checkout, never the pack's copy: once the override is gone it
+		// does not serve in the copy's place (§10: no fallback across a chosen source).
+		return true
+	}
 	if p.Install.IsPatchedFork() {
 		return f.patchedServesANearMiss(p, rec)
 	}
 	if p.Install.IsPackTree() {
-		// No copy the floor could hold is a pack-tree program's (packTreeNoEntry), so any is a
-		// near-miss, and a fork's pin is never asked for one.
-		return true
+		// Its install's resolved key, never a fork's pin (packtree.go).
+		return f.packTreeServesANearMiss(p, rec)
 	}
 	if p.Install.Kind != packdecl.InstallKindSource {
-		return rec.Via == packdecl.ViaSource
+		return rec.Via == packdecl.ViaSource || rec.Via == packdecl.ViaPack
 	}
 	commit, _ := f.forkPin(p)
 	return rec.Via != packdecl.ViaSource || rec.Declared != declared(p.Install) || rec.Revision != commit ||
@@ -539,9 +564,8 @@ func (f *Floor) installSelected(ctx context.Context, p Program, patched *Patched
 		rec, err = f.installFromCapture(p, dir)
 	case packdecl.InstallKindSource:
 		if p.Install.IsPackTree() {
-			// Unreachable through Status, which refuses it first (packTreeNoEntry); refused here too,
-			// so no path installs a pack-tree program as a fork's build.
-			err = &noEntryError{reason: packTreeNoEntry(p)}
+			// Its own arm, never a fork's build (packtree.go).
+			rec, err = f.installFromPackTree(ctx, p, dir)
 		} else if p.Install.IsPatchedFork() {
 			if patched != nil {
 				rec, err = f.installFromPatchedState(ctx, p, dir, *patched)

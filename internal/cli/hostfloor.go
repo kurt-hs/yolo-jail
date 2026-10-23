@@ -156,6 +156,12 @@ var newHostFloor = func(out io.Writer, progs []hostfloor.Program) *hostfloor.Flo
 	wireFloorCapture(f, out)
 	wireFloorBuild(f, store, out)
 	wireFloorOrdinaryCapture(f, store, out)
+	// A PACK-TREE program (hostfloorpacktree.go): its key from its pack staged as a launch stages it,
+	// the store's hit under it, and the build act every launch runs. And the user's DEV OVERRIDES
+	// (docs/design/pack-buildable-programs.md §5): the floor's entry for each runs the checkout, from
+	// the host path itself, after the checks a jail launch makes of it.
+	f.PackTree = floorPackTrees(store, out)
+	f.Overrides = run.HostFloorOverrides(progs, config.ProgramOverrides(nil))
 	return f
 }
 
@@ -1179,6 +1185,12 @@ func resolveHostLaunchTarget(packs []*packload.Pack, cmd0 string, lp *hostpath.L
 		// from before `host_floor` left the pack out is a deselected entry, not what "no copy" may
 		// run.
 		return onPath()
+	case errors.Is(err, hostfloor.ErrNoEntry) && floor.HasOverride(prog):
+		// A DEV OVERRIDE THAT CANNOT RUN (docs/design/pack-buildable-programs.md §5) refuses the program,
+		// and never falls back to its pack's copy or a copy on the PATH (§10). The reason names the file,
+		// the key and the step.
+		fmt.Fprintf(errw, "yolo host: will not run %s: %s\n", cmd0, st.Reason)
+		return hostTarget{}, 127
 	case errors.Is(err, hostfloor.ErrNoEntry):
 		// HNR-D2: a program a selected pack declares runs from the floor or not at all. The floor's
 		// reason carries its own fix; the line adds the two ways out that are always there.

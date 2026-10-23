@@ -337,6 +337,11 @@ type Install struct {
 	PackFrom string                   `json:"pack_from,omitempty"`
 	PackRun  string                   `json:"pack_run,omitempty"`
 	Prebuilt map[string]PrebuiltBuild `json:"prebuilt,omitempty"`
+	// PackRoot is a pack-tree program's pack root as loaded (packload's HonoredInstalls fills it),
+	// which PackFrom is relative to: the host floor asks whether the source directory is there
+	// without digesting it. "" for every other program, and when no loader filled it. Never
+	// serialized.
+	PackRoot string `json:"-"`
 	// ForkedBy names the fork pack whose build this program is, "" for every program that is
 	// not a fork's. Provenance only: every line that says what a source-built program is names
 	// the pack that supplied its bytes, not only the pack that owns its name.

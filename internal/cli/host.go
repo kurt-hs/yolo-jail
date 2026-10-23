@@ -1792,11 +1792,11 @@ func (c *hostComposition) selectionLines() []string {
 	for _, note := range c.selection.skewNotes() {
 		lines = append(lines, "Warning: "+note)
 	}
-	// A DEV OVERRIDE THIS NOTCH DOES NOT APPLY YET (docs/design/pack-buildable-programs.md §5, the
-	// plan's Task 9) is said, never ignored in silence: the program runs its pack's own copy here.
-	if line := run.HostUnappliedProgramOverridesLine(c.selection.packs); line != "" {
-		lines = append(lines, line)
-	}
+	// WHICH BYTES (docs/design/pack-buildable-programs.md §4, BG-D10): each dev override this launch
+	// applies, or refuses, in one line — the floor's entry for that program runs the checkout
+	// (newHostFloor's Overrides) — said on every `yolo host --` and `yolo host env`, never only when
+	// the floor installs it.
+	lines = append(lines, run.HostProgramOverrideLines(c.selection.packs, config.ProgramOverrides(nil))...)
 	return lines
 }
 

@@ -266,3 +266,40 @@ func TestAnAttachNamesTheRunningJailsOverrides(t *testing.T) {
 		t.Errorf("attach printed %q", out.String())
 	}
 }
+
+// `yolo host`'s resolution of an override (the plan's Task 9) makes the jail's checks, in one place
+// (overrideCheckout): the checkout runs from the host path itself, a symlink is resolved first, the
+// home is refused at the credential boundary, an npm program with no `run` is refused naming the
+// field, and an override naming no selected bin does nothing. Each refusal names the key.
+func TestYoloHostResolvesAnOverrideWithTheJailsChecks(t *testing.T) {
+	home := packHome(t)
+	dev := floortest.ResolvedTemp(t)
+	links := t.TempDir()
+	link := filepath.Join(links, "dev")
+	if err := os.Symlink(dev, link); err != nil {
+		t.Fatal(err)
+	}
+	got := HostProgramOverrides(overridePacks(t), map[string]config.ProgramOverride{
+		"board": {Path: link}, "pi": {Path: dev}, "nosuchbin": {Path: dev, Run: "x"},
+	})
+	if b := got["board"]; b.Refused != "" || b.Dir != dev || b.Run != "dist/board.js" || b.Build != "make" ||
+		b.File() != filepath.Join(dev, "dist", "board.js") {
+		t.Errorf("board = %+v, want the resolved checkout running the pack's own run", b)
+	}
+	if p := got["pi"]; !strings.Contains(p.Refused, "programs.overrides.pi.run") ||
+		!strings.Contains(p.Refused, "programs.overrides.pi in ~/.config/yolo-jail/config.jsonc") {
+		t.Errorf("pi = %+v, want a refusal naming the run field and the key", p)
+	}
+	if _, ok := got["nosuchbin"]; ok {
+		t.Error("an override naming no selected bin was resolved")
+	}
+	h := HostProgramOverrides(overridePacks(t), map[string]config.ProgramOverride{"board": {Path: home}})["board"]
+	if !strings.Contains(h.Refused, "credential boundary") || h.Dir != "" {
+		t.Errorf("an override of the home = %+v, want refused at the credential boundary", h)
+	}
+	lines := HostProgramOverrideLines(overridePacks(t), map[string]config.ProgramOverride{"board": {Path: home}, "pi": {Path: dev, Run: "bin/pi"}})
+	if len(lines) != 2 || !strings.Contains(lines[0], "board: dev override refused") ||
+		lines[1] != "pi: dev override — runs "+filepath.Join(dev, "bin", "pi")+" (programs.overrides in ~/.config/yolo-jail/config.jsonc)" {
+		t.Errorf("lines = %q", lines)
+	}
+}

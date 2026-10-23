@@ -25,7 +25,8 @@
 // Floor, so the launch, `yolo host apply`, `yolo check` and `yolo prune` ask the same questions
 // of the same code without this package importing any of their worlds.
 //
-// Three recipes, per OQ-HP3 and OQ-HP4, and forked-programs-as-packs.md FP-D4:
+// Four recipes, per OQ-HP3 and OQ-HP4, forked-programs-as-packs.md FP-D4, and
+// pack-buildable-programs.md §9:
 //
 //   - `via: npm`: installed with the floor's OWN Node — the official release tarball, verified
 //     against its published sha256 (node.go) — into a prefix-private npm prefix, and started
@@ -43,6 +44,12 @@
 //     (patched.go) is the build of its GOOD BUILD instead, and its install runs the fork's advance
 //     first (docs/reference/patched-forks.md §9), whose build is made as a plain fork's is: a capture
 //     jail's on Linux, the macos-user act's on a Mac (PF-D97).
+//   - `via: pack`, a PACK-TREE program (packtree.go, docs/design/pack-buildable-programs.md): the
+//     capture store's build of its pack's own source directory, keyed by that tree's digest rather
+//     than a pin, relocated into the prefix as a fork's build is; on Linux only, for now.
+//
+// And over any of them, a user's DEV OVERRIDE (override.go): the floor's entry runs a checkout from
+// the host path itself, and nothing is installed.
 //
 // # The layout (every name below is this package's)
 //
@@ -113,6 +120,11 @@ const (
 // no-entry program a launch refuses (HNR-D2). The first two are the user's own decisions; the last is
 // the jail's own rule, which writes no launcher for an unpublished program.
 func (f *Floor) OutsideTheFloor(p Program) bool {
+	if f.HasOverride(p) {
+		// A DEV OVERRIDE is the user's own choice of copy, and the floor's entry runs it (override.go):
+		// it wins over `host_floor`, the provisioner order and the platform, as over every rung.
+		return false
+	}
 	if f.Include != nil && !f.Include(p.Pack) {
 		return true
 	}
@@ -339,6 +351,17 @@ type Floor struct {
 	// and it answers for a patched fork's advance there (advanceBlocked): a floor given none has no
 	// darwin build to run. nil => CaptureUnavailable answers, with runtimeStep.
 	BuildActUnavailable func(bin, does string) string
+	// PackTree resolves a PACK-TREE program's delivery for this floor (packtree.go): its key, from the
+	// pack staged as a launch stages it, the store's hit under it, and the act that makes it. Only
+	// Ensure asks it, once per Floor, since it digests the source directory (§10: never on a check or
+	// a dry run). nil => this floor holds no pack-tree program.
+	PackTree func(p Program) PackTreeDelivery
+	// packTrees is this Floor's own PackTree answers, by bin, which every later status reads.
+	packTrees map[string]PackTreeDelivery
+	// Overrides are the user's DEV OVERRIDES (override.go) of programs this floor serves, by bin,
+	// resolved: such a program's floor entry runs the checkout, whatever its pack delivers. nil =>
+	// none.
+	Overrides map[string]Override
 	// Environ is the environment the installers are derived from (installerEnv strips the
 	// parts that would steer where an install lands). nil => os.Environ().
 	Environ []string
@@ -463,9 +486,9 @@ func (f *Floor) ensureDir(children ...string) error {
 // (Record.Revision, Record.Recipe), because the address alone names a repository, not a build.
 func declared(in packdecl.Install) string {
 	if in.IsPackTree() {
-		// A PACK-TREE program has no fork address; the floor holds none of them (packTreeNoEntry),
-		// so no record ever declares one.
-		return ""
+		// A PACK-TREE program has no fork address: its declaration is its pack's source directory, and
+		// its build's key (Record.Revision, Record.Recipe) is matched beside it (packtree.go).
+		return in.PackFrom
 	}
 	switch in.Kind {
 	case "npm":
@@ -499,22 +522,12 @@ func via(in packdecl.Install) string {
 	return in.Kind
 }
 
-// packTreeNoEntry is why the floor holds no PACK-TREE program (docs/design/pack-buildable-programs.md,
-// `via: "pack"`): its build is keyed by its pack tree's digest, never by a fork pin, and the floor's
-// arm for that build is not part of this yolo. Asked before anything that reads a fork pin, so a
-// pack-tree program never reaches forkPin, awaitsPin or PinFork.
-func packTreeNoEntry(p Program) string {
-	return "it is built from pack " + p.Pack + "'s own tree (" + p.Install.PackFrom + "), which the host " +
-		"floor does not build or hold — leave pack " + p.Pack + " out of the floor with the user config's " +
-		"`host_floor`, or run " + p.Bin() + " where a launch delivers it"
-}
-
 // forkPin is ForkPin's answer for p — after this Floor's own pin of it, when it made or tried one —
 // or why there is none when nothing can read a pin. A PACK-TREE program has none, and ForkPin is
 // never asked for one: its build is keyed by its tree's digest.
 func (f *Floor) forkPin(p Program) (commit, reason string) {
 	if p.Install.IsPackTree() {
-		return "", packTreeNoEntry(p)
+		return "", "it is built from pack " + p.Pack + "'s own tree, keyed by its digest, and has no fork pin"
 	}
 	if c, ok := f.madePins[p.Bin()]; ok {
 		return c, ""
@@ -590,6 +603,9 @@ var ErrNoEntry = errors.New("no floor entry")
 // So a copy whose loader went away has no floor entry, and `yolo host apply --assert` removes it
 // (Reconcile) as it does any other the floor can no longer hold.
 func (f *Floor) noEntryReason(p Program) string {
+	if o, ok := f.override(p); ok {
+		return overrideNoEntry(p.Bin(), o)
+	}
 	if why := f.recipeNoEntryReason(p); why != "" {
 		return why
 	}
@@ -661,8 +677,8 @@ func (f *Floor) recipeNoEntryReason(p Program) string {
 			"as the macos-user sandbox account, and this machine is " + f.GOOS + "/" + f.GOARCH
 	case packdecl.InstallKindSource:
 		if in.IsPackTree() {
-			// A PACK-TREE program: no fork pin, no fork build, and no floor arm in this yolo.
-			return packTreeNoEntry(p)
+			// A PACK-TREE program (packtree.go): no fork pin and no fork build — its own arm.
+			return f.packTreeRecipeNoEntry(p)
 		}
 		// A FORK (docs/design/forked-programs-as-packs.md): its host copy is the capture store's
 		// build of the fork's PINNED commit, relocated into the floor (FP-D4). A notch gets a build
@@ -705,6 +721,10 @@ func (f *Floor) recipeNoEntryReason(p Program) string {
 // does not hold, the capture store and whether a capture could run — and nothing else: no
 // network, no install, so `yolo check` and the launch gate can ask it freely.
 func (f *Floor) Status(p Program) Status {
+	if o, ok := f.override(p); ok {
+		// A DEV OVERRIDE's entry is the checkout's (override.go), whatever the pack delivers.
+		return f.overrideStatus(p, o)
+	}
 	if p.Install.IsPatchedFork() {
 		return f.patchedStatus(p)
 	}
@@ -741,6 +761,8 @@ func (f *Floor) Status(p Program) Status {
 			rec.Declared + ")"
 	case p.Install.IsForkBuild():
 		st.Pending = f.buildPending(p, rec)
+	case p.Install.IsPackTree():
+		st.Pending = f.packTreePending(p, rec)
 	case p.Install.Kind == "npm" && !packdecl.SatisfiesNodeFloor(rec.Node, p.Install.NodeFloor):
 		st.Pending = "it runs on Node " + rec.Node + ", below the pack's node_floor " +
 			p.Install.NodeFloor
@@ -784,6 +806,9 @@ func (f *Floor) buildPending(p Program, rec *Record) string {
 func (f *Floor) provisionable(st Status) Status {
 	if st.Program.Install.IsForkBuild() {
 		return f.buildProvisionable(st)
+	}
+	if st.Program.Install.IsPackTree() {
+		return f.packTreeProvisionable(st)
 	}
 	if st.Program.Install.Kind != "native" || f.ResolveCapture == nil {
 		return st

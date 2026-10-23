@@ -931,7 +931,15 @@ func EnvVarsFor(packs []*Pack, sel GateSelection, agent string) map[string]strin
 //
 // The `refused` return is always nil — see HonoredHostFiles for the family note.
 func (p *Pack) HonoredInstalls() (granted []packdecl.Install, refused []string) {
-	return p.Decl.InstallContributions(), nil
+	granted = p.Decl.InstallContributions()
+	for i := range granted {
+		if granted[i].IsPackTree() {
+			// The root its source directory is relative to, so the host floor can ask whether that
+			// directory is there without digesting it.
+			granted[i].PackRoot = p.Root
+		}
+	}
+	return granted, nil
 }
 
 // InstallBins lists the binaries this pack installs, sorted — the CLI names it puts on

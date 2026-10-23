@@ -69,6 +69,9 @@ func (r hostReadiness) done(bin string) bool { return r.settled[bin] }
 type hostReadinessFailure struct {
 	who, pack string
 	err       error
+	// override is set for a program a dev override serves: `host_floor` does not take it out of the
+	// floor (the override wins over it), so the refusal does not offer that way out for it.
+	override bool
 }
 
 // hostFreshProgramSet is the owner-scoped host part of --update: the requested declared program
@@ -269,7 +272,7 @@ func hostReadinessAct(packs []*packload.Pack, cmd []string, errw io.Writer, act 
 				}
 			}
 			failed = append(failed, hostReadinessFailure{who: "program " + p.Bin() + " (pack " + p.Pack + ")",
-				pack: p.Pack, err: err})
+				pack: p.Pack, err: err, override: floor.HasOverride(p)})
 		}
 	}
 	if len(failed) == 0 {
@@ -286,7 +289,7 @@ func hostReadinessAct(packs []*packload.Pack, cmd []string, errw io.Writer, act 
 		} else {
 			fmt.Fprintf(&list, "      %s: %v\n", f.who, f.err)
 		}
-		if !seenPack[f.pack] {
+		if !seenPack[f.pack] && !f.override {
 			seenPack[f.pack] = true
 			leaveOut = append(leaveOut, fmt.Sprintf("%q: false", f.pack))
 		}
@@ -310,11 +313,14 @@ func hostReadinessAct(packs []*packload.Pack, cmd []string, errw io.Writer, act 
 	}
 	// REFUSAL, not a warning, in the jail's words: a launch without a program its own config
 	// selected is not the environment that config promised.
-	fmt.Fprintf(errw, "yolo host: REFUSING to launch: a program a selected pack declares could not be installed.\n%s"+
-		"      Fix what each line names (an install needs the network), drop the pack from your packs list, or\n"+
-		"      leave it out of yolo's floor with `\"host_floor\": {%s}` in the user config.\n"+
+	ways := "      Fix what each line names (an install needs the network), or drop the pack from your packs list.\n"
+	if len(leaveOut) > 0 {
+		ways = "      Fix what each line names (an install needs the network), drop the pack from your packs list, or\n" +
+			"      leave it out of yolo's floor with `\"host_floor\": {" + strings.Join(leaveOut, ", ") + "}` in the user config.\n"
+	}
+	fmt.Fprintf(errw, "yolo host: REFUSING to launch: a program a selected pack declares could not be installed.\n%s%s"+
 		"      To launch without it:\n"+
-		"          %s=1 yolo host -- %s\n", list.String(), strings.Join(leaveOut, ", "),
+		"          %s=1 yolo host -- %s\n", list.String(), ways,
 		paths.AllowMissingProgramsEnv, shquote.Join(cmd))
 	return r, 1
 }

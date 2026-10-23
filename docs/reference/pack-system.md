@@ -1117,8 +1117,22 @@ program, naming the path and the key, when the path does not resolve (symlinks f
 directory, sits at the credential boundary (`paths.WorkspaceScopeBreach`), or names no file to run;
 the launcher refuses when the file is missing (naming the pack's `build` line) or not executable.
 Either refusal stops the launch through the readiness act, with `YOLO_ALLOW_MISSING_PROGRAMS=1` as
-the hatch, and never falls back to the pack's copy. macos-user and `yolo host` do not apply it yet,
+the hatch, and never falls back to the pack's copy. At `yolo host` the same checks apply, and the
+floor's entry for the program runs the file from the host path itself, so an edit there shows at the
+next invocation; `yolo host --` and `yolo host env` print the same line, and a missing file refuses
+the program, naming the file, the key and the pack's build line. macos-user does not apply it yet,
 and the launch says so.
+
+**`yolo host` on Linux delivers it from yolo's floor**
+([§9](../design/pack-buildable-programs.md#9-notch-and-backend-coverage)). The floor stages the pack
+as a launch does and keys on the same tree digest, so it shares the jail's build on that machine: a
+store hit is materialized into the floor, a miss runs the same sealed build (or the host's copy for a
+program with no `build`, or the verified `prebuilt` fetch where the pack ships no `from`), and an edit
+reinstalls the program once at the next `yolo host` launch. A prebuilt prints its line on every
+launch. A failed build refuses the program, naming the build's log and `yolo pack build <pack> --at
+host`, and the launch's readiness act stops it unless `YOLO_ALLOW_MISSING_PROGRAMS=1` is set. A Mac's
+`yolo host` does not build one yet, and says to run it in a jail or leave the pack out with
+`host_floor`.
 
 **`yolo pack build [<pack>...] [--force] [--at jail|host]`** runs the build a launch would run for
 each such program, outside a launch, for CI or a first install

@@ -189,9 +189,25 @@ func (f *Floor) installFromBuild(ctx context.Context, p Program, dir string) (*R
 	if why := buildUnusable(p, commit, entry); why != "" {
 		return nil, &noEntryError{reason: why}
 	}
+	what := "fork pack " + in.ForkedBy + "'s build of " + bin + " at " + buildVersion(commit)
+	entryPath, err := f.materializeBuild(p, entry, dir, what, "fork build "+entry.Key+" ("+buildVersion(commit)+")")
+	if err != nil {
+		return nil, err
+	}
+	rec := &Record{Entry: entryPath, Capture: entry.Key, Revision: commit, Recipe: in.SourceRecipe(),
+		Version: buildVersion(commit)}
+	defer f.span(bin, "exec_record")()
+	return f.execRecord(ctx, in, rec)
+}
+
+// materializeBuild is a build's materialize into dir/home, relocated and CONFINED, as an installer's
+// capture is (the manifest is the build jail's account of itself, and this materialize runs on the
+// host), and the path of the runnable program it left: a fork's build (installFromBuild) and a
+// pack-tree program's (installFromPackTree) alike. what names the build in a refusal, and from in
+// the line that reports the materialize.
+func (f *Floor) materializeBuild(p Program, entry *capture.Entry, dir, what, from string) (string, error) {
+	in, bin := p.Install, p.Bin()
 	home := filepath.Join(dir, "home")
-	// CONFINED, as an installer's capture is: the manifest is the build jail's account of itself,
-	// and this materialize runs on the host.
 	endMaterialize := f.span(bin, "materialize")
 	res, err := capture.Materialize(capture.MaterializeOptions{Entry: entry, Home: home, Stderr: f.out(),
 		Confined: true, Platform: f.CapturePlatform})
@@ -203,34 +219,33 @@ func (f *Floor) installFromBuild(ctx context.Context, p Program, dir string) (*R
 		if m, merr := capture.ReadManifest(entry.Root); merr == nil && m.Home != "" {
 			buildHome = m.Home
 		}
-		return nil, &noEntryError{reason: notRelocatableReason("fork pack "+in.ForkedBy+"'s build of "+bin+
-			" at "+buildVersion(commit), buildHome, []string{err.Error()})}
+		return "", &noEntryError{reason: notRelocatableReason(what, buildHome, []string{err.Error()})}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("materializing the build of %s: %w", bin, err)
+		return "", fmt.Errorf("materializing the build of %s: %w", bin, err)
 	}
 	entryPath := filepath.Join(home, filepath.FromSlash(in.ProgramPath()))
 	st, err := os.Stat(entryPath)
 	if err != nil || st.IsDir() || st.Mode().Perm()&0o111 == 0 {
-		return nil, fmt.Errorf("the build of %s (%s) holds no runnable ~/%s", bin, entry.Key, in.ProgramPath())
+		return "", fmt.Errorf("the build of %s (%s) holds no runnable ~/%s", bin, entry.Key, in.ProgramPath())
 	}
-	f.say("materialized %s from fork build %s (%s) by %s (%d files)", bin, entry.Key, buildVersion(commit),
-		res.Mechanism(), res.Files)
-	rec := &Record{Entry: entryPath, Capture: entry.Key, Revision: commit, Recipe: in.SourceRecipe(),
-		Version: buildVersion(commit)}
-	defer f.span(bin, "exec_record")()
-	return f.execRecord(ctx, in, rec)
+	f.say("materialized %s from %s by %s (%d files)", bin, from, res.Mechanism(), res.Files)
+	return entryPath, nil
 }
 
 // buildHow is the clause the line that starts a fork's build says how it runs: the macos-user
 // sandbox account on a Mac (FP-D24), whose build serves this floor alone, and on Linux the sealed jail
 // whose build every jail on the machine reuses.
-func (f *Floor) buildHow() string {
+func (f *Floor) buildHow() string { return f.buildHowPer("commit") }
+
+// buildHowPer is buildHow with the unit a build is made once per: a fork's commit, a pack-tree
+// program's tree digest.
+func (f *Floor) buildHowPer(unit string) string {
 	if f.GOOS == "darwin" {
 		return "as the macos-user sandbox account, sealed under Seatbelt in a throwaway home (once per " +
-			"commit per Mac)"
+			unit + " per Mac)"
 	}
-	return "in a sealed jail (once per commit per machine, and every jail on this machine reuses it)"
+	return "in a sealed jail (once per " + unit + " per machine, and every jail on this machine reuses it)"
 }
 
 // execRecord fills rec's Exec for a fork's build materialized at rec.Entry: the program itself, or

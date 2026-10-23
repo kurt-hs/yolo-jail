@@ -13,8 +13,10 @@ package run
 // override wins over a build, and a build that ran anyway could refuse a launch the user pointed
 // elsewhere), and the disclosure names each one on every fresh launch and attach (BG-D10).
 //
-// macos-user and `yolo host` are later slices (the plan's Tasks 9 and 10). There, the launch says
-// the override is not applied yet rather than ignoring it silently.
+// `yolo host` applies the same checks (overrideCheckout) and runs the checkout from the host path
+// itself, through its floor entry (HostProgramOverrides, hostfloor's override.go), with the same
+// disclosure (HostProgramOverrideLines). macos-user is a later slice (the plan's Task 10); there the
+// launch says the override is not applied yet rather than ignoring it silently.
 
 import (
 	"path"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/setupcensus"
@@ -95,28 +98,12 @@ func (o *Options) programOverridePlansFor(rt string, packs []*packload.Pack,
 			p.wire = entrypoint.ProgramOverride{Host: ov.Path, Build: d.build,
 				Refused: why + " (" + overrideUserConfigKey(bin) + ")"}
 		}
-		dir, err := filepath.EvalSymlinks(ov.Path)
+		dir, run, why := overrideCheckout(bin, ov, d, "a jail may never read")
 		switch {
-		case err != nil:
-			refuse(ov.Path + " does not exist or cannot be read")
-		case !isDir(dir):
-			refuse(ov.Path + " is not a directory")
+		case why != "":
+			refuse(why)
 		default:
 			p.wire.Host = dir
-			run := ov.Run
-			if run == "" {
-				run = d.run
-			}
-			if breach := paths.WorkspaceScopeBreach(dir); breach != nil {
-				refuse(breach.WhatFor("the override path") + ", the credential boundary a jail may " +
-					"never read")
-				break
-			}
-			if run == "" {
-				refuse("pack " + d.pack + "'s " + bin + " names no file to run from a checkout — set " +
-					"programs.overrides." + bin + ".run to the file inside " + ov.Path)
-				break
-			}
 			p.wire.Run = run
 			if isUnderOrEqual(dir, ws) {
 				rel, _ := filepath.Rel(ws, dir)
@@ -131,6 +118,102 @@ func (o *Options) programOverridePlansFor(rt string, packs []*packload.Pack,
 			p.bindSource = dir
 		}
 		out = append(out, p)
+	}
+	return out
+}
+
+// overrideCheckout is the checks every notch makes of one override on the host (§5, BG-D9), in one
+// place so a jail and `yolo host` refuse alike: the path resolves, symlinks first (the darwin /var →
+// /private/var class), to an existing directory; it is not at the credential boundary
+// (paths.WorkspaceScopeBreach); and there is a file to run, the entry's `run` else the program's own.
+// It returns the resolved directory and the run file, or why the override is refused, without the
+// key (the caller appends it). boundary ends the credential-boundary sentence in the notch's words.
+func overrideCheckout(bin string, ov config.ProgramOverride, d declaredProgram, boundary string) (dir, run, refused string) {
+	dir, err := filepath.EvalSymlinks(ov.Path)
+	switch {
+	case err != nil:
+		return "", "", ov.Path + " does not exist or cannot be read"
+	case !isDir(dir):
+		return "", "", ov.Path + " is not a directory"
+	}
+	run = ov.Run
+	if run == "" {
+		run = d.run
+	}
+	if breach := paths.WorkspaceScopeBreach(dir); breach != nil {
+		return dir, "", breach.WhatFor("the override path") + ", the credential boundary " + boundary
+	}
+	if run == "" {
+		return dir, "", "pack " + d.pack + "'s " + bin + " names no file to run from a checkout — set " +
+			"programs.overrides." + bin + ".run to the file inside " + ov.Path
+	}
+	return dir, run, ""
+}
+
+// HostProgramOverrides is `yolo host`'s decision for the user's overrides (§5's delivery table: the
+// host path itself), one per overridden bin a selected pack declares: the checks a jail launch makes
+// (overrideCheckout), resolved for the floor, which writes bin/<bin> to exec the file (hostfloor's
+// override.go). An override naming no selected bin does nothing, as in a jail.
+func HostProgramOverrides(packs []*packload.Pack, overrides map[string]config.ProgramOverride) map[string]hostfloor.Override {
+	return hostOverrides(declaredPrograms(packs), overrides)
+}
+
+// HostFloorOverrides is HostProgramOverrides over the floor's own programs (the one candidate set a
+// floor is built from, first declaration of a bin winning, as declaredPrograms takes them).
+func HostFloorOverrides(progs []hostfloor.Program, overrides map[string]config.ProgramOverride) map[string]hostfloor.Override {
+	declared := map[string]declaredProgram{}
+	for _, p := range progs {
+		d := declaredProgram{pack: p.Pack}
+		if p.Install.IsPackTree() {
+			d.run, d.build = p.Install.PackRun, p.Install.Build
+		}
+		declared[p.Bin()] = d
+	}
+	return hostOverrides(declared, overrides)
+}
+
+// hostOverrides is the host's decision for each override naming a declared bin.
+func hostOverrides(declared map[string]declaredProgram, overrides map[string]config.ProgramOverride) map[string]hostfloor.Override {
+	if len(overrides) == 0 {
+		return nil
+	}
+	out := map[string]hostfloor.Override{}
+	for bin, ov := range overrides {
+		d, ok := declared[bin]
+		if !ok {
+			continue
+		}
+		dir, run, why := overrideCheckout(bin, ov, d, "yolo never runs a program from")
+		o := hostfloor.Override{Host: ov.Path, Dir: dir, Run: run, Build: d.build}
+		if why != "" {
+			o = hostfloor.Override{Host: ov.Path, Build: d.build, Refused: why + " (" + overrideUserConfigKey(bin) + ")"}
+		}
+		out[bin] = o
+	}
+	return out
+}
+
+// HostProgramOverrideLines is `yolo host`'s disclosure of the overrides it applies (BG-D10), one line
+// per overridden bin a selected pack declares, in the jail's words: which file runs, or why the
+// override is refused and that yolo host will not run the program until it is fixed or removed. Plain
+// text: the host prints it with its own prefix, on every `yolo host --` and `yolo host env`.
+func HostProgramOverrideLines(packs []*packload.Pack, overrides map[string]config.ProgramOverride) []string {
+	resolved := HostProgramOverrides(packs, overrides)
+	bins := make([]string, 0, len(resolved))
+	for bin := range resolved {
+		bins = append(bins, bin)
+	}
+	sort.Strings(bins)
+	var out []string
+	for _, bin := range bins {
+		o := resolved[bin]
+		if o.Refused != "" {
+			out = append(out, bin+": dev override refused — "+o.Refused+"; yolo host will not run "+bin+
+				" until it is fixed or removed")
+			continue
+		}
+		out = append(out, bin+": dev override — runs "+o.File()+" (programs.overrides in "+
+			"~/.config/yolo-jail/config.jsonc)")
 	}
 	return out
 }
@@ -263,8 +346,7 @@ func (o *Options) noteUnappliedProgramOverrides(rt string, packs []*packload.Pac
 }
 
 // OverriddenDeclaredPrograms is every bin the user's programs.overrides names that a selected pack
-// declares, sorted: the overrides a notch that does not apply them yet must name (macos-user here,
-// and `yolo host`'s HostUnappliedProgramOverridesLine).
+// declares, sorted: the overrides a notch that does not apply them yet must name (macos-user).
 func OverriddenDeclaredPrograms(packs []*packload.Pack) []string {
 	declared := declaredPrograms(packs)
 	var bins []string
@@ -275,20 +357,6 @@ func OverriddenDeclaredPrograms(packs []*packload.Pack) []string {
 	}
 	sort.Strings(bins)
 	return bins
-}
-
-// HostUnappliedProgramOverridesLine is `yolo host`'s line for the overrides it does not apply yet
-// (the plan's Task 9), in the macos-user notice's words, "" when no selected pack declares an
-// overridden bin. Plain text: the host prints it with its own prefix.
-func HostUnappliedProgramOverridesLine(packs []*packload.Pack) string {
-	bins := OverriddenDeclaredPrograms(packs)
-	if len(bins) == 0 {
-		return ""
-	}
-	return setupcensus.Notice{
-		Says: "`programs.overrides` is not applied by `yolo host` yet",
-		Then: "Each of these runs its pack's own copy; run a checkout from a podman jail.",
-	}.Plain(strings.Join(bins, ", "))
 }
 
 // UndeclaredProgramOverrideLines is `yolo check`'s information about the user's overrides that name
