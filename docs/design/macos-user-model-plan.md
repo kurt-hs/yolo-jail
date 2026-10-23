@@ -1,0 +1,1095 @@
+---
+title: "Plan: rebuild macos-user on one deny-by-default profile, run as you by default"
+status: accepted
+stage: DECIDED
+next: "Build slices 1 to 5 on the Linux gates; production behavior changes only at slice 11, after a human reruns the prototype checks against the generated profile on a Mac"
+depends-on:
+  - macos-user-model.md
+tags: [macos-user, seatbelt, plan, safehouse, home, parity]
+vantage:
+  status-chip: true
+---
+
+# Plan: rebuild macos-user on one deny-by-default profile, run as you by default
+
+**Status:** 2026-10-22. Completed against the tree, written against `319b6ab64`. Nothing is
+built. Two maintainer rulings from the prototype's first Mac run are still pending (loopback and
+the shared `/tmp`), and Homebrew's visibility is unconfirmed. The plan treats all three as
+parameters of the profile, and only slice 11 sets their production values
+([Blockers](#blockers)). Slices 1 to 10 leave the production default as it is today: the second
+account under the `(allow default)` profile.
+
+**Design:** [macos-user's model](macos-user-model.md#7-the-ruled-model-two-modes-one-profile). The
+measured starting point is the
+[prototype profile](../plans/runbooks/macos-user-model-prototype/profile.sb) and its
+[runbook](../plans/runbooks/macos-user-model-prototype/README.md).
+
+**Supersedes in part:** the [concurrent-workspace plan](macos-user-concurrent-workspaces-plan.md).
+Its account-mode mechanisms are reused below where they still fit: the machine root
+([MCWP-D2](macos-user-concurrent-workspaces-plan.md#MCWP-D2)), the machine-tier lock
+([MCWP-D8](macos-user-concurrent-workspaces-plan.md#MCWP-D8)) and the guest scope check
+([MCWP-D10](macos-user-concurrent-workspaces-plan.md#MCWP-D10)). Its HOME geometry
+(`.yolo/native-home`) is replaced by [MMP-D5](#MMP-D5). Do not build both plans.
+
+**Precedence:** the design wins on behavior. The tree wins on fact when the drift is cosmetic (a
+moved line, or a renamed helper with the same role): follow the tree and say so in the report and
+the commit. This plan is advice and is the first thing to be wrong. Never twist the code to match
+it. **Stop and report, and do not commit**, when:
+
+- a task's red test does not fail the way the task predicts;
+- a named file is dirty with someone else's work;
+- a named symbol is gone;
+- the fix needs a file outside the task's fence;
+- a gate fails outside the task's scope.
+
+## Settled — do not re-open
+
+Quoted from the design's [§7](macos-user-model.md#7-the-ruled-model-two-modes-one-profile) and
+[Decision Ledger](macos-user-model.md#decision-ledger):
+
+- *"Every macos-user launch runs under a deny-by-default Seatbelt profile covering files, system
+  services, signals and process inspection … Which user runs it is a parameter of the profile, not
+  a second profile."*
+- *"Default mode: the agent runs as you. No account, admin setup, access grants or projects
+  folder. A workspace may be anywhere, including your home folder."*
+- *"Optional mode: the second account, off by default, built from day one. The same profile run as
+  `_yolojail`. The mode alone brings the account's setup and switching, and the access grants."*
+- *"Shared by both modes: a per-launch `HOME` under the workspace's `.yolo/home`, so two workspaces
+  run at once in either mode without a shared account home; mounts at their original path with a
+  context-dir link; the host keychain reached only through the loophole."* The keychain ruling is
+  [OQ-KC4](keychain-from-a-jail.md#8-decision-ledger): *"always the host's keychain"*. The
+  sandbox never reaches it.
+- *"install trees such as `/opt/homebrew`, never a parent such as `/opt`"*
+  ([OQ-MM2](macos-user-model.md#OQ-MM2)).
+- Loopback: denied by default, with yolo's own service ports allowed. *"A workspace may allow more
+  ports in its config; a change to that list goes through the same config-change approval"*
+  ([OQ-MM3](macos-user-model.md#OQ-MM3)). That ruling is re-raised by the first Mac run. See
+  [Blockers](#blockers).
+- *"No transition for Macs already set up for the second account. Launches move to the default
+  mode, and nothing migrates, cleans up or announces the old account"*
+  ([OQ-MM4](macos-user-model.md#OQ-MM4)).
+- *"No per-language home grants … Package caches are shared with your real caches by the general
+  rule for every backend ([OQ-BF11](../reference/disk-footprint.md#OQ-BF11)) … their config files,
+  which hold registry tokens, never are."*
+- *"Selecting the mode is a user-scope setting; a workspace config cannot choose it. Its name and
+  spelling are the plan's to choose."*
+- *"What done looks like: with no setting, `yolo -- claude` in `~/code/alpha` launches with no admin
+  step, and the agent cannot read `/opt/src/clientX`, `~/.ssh` or the keychain; with the optional
+  mode set on a Mac where setup ran, the same launch runs as `_yolojail` with the same denies; two
+  workspaces launch at once in either mode."*
+- The threat model is [the misguided-agent principle](../reference/misguided-agent-principle.md):
+  keep credentials and wider access out of an eager agent's reach. Do not add defenses aimed at an
+  adversary.
+
+## Implementation decisions
+
+These are mechanism choices made under the rulings above, not owner rulings. The ids are
+*coined here*, so commits and code comments can cite them.
+
+| ID *(coined here)* | Decision | Why |
+| :--- | :--- | :--- |
+| <a id="MMP-D1"></a>MMP-D1 | **The profile is rendered as literal text per session**, by a new `DenyDefaultProfile(ProfileParams) string` in a new `internal/macosuser/seatbeltdeny.go`. Values are escaped with `sbplStr`, not passed as `sandbox-exec -D` parameters. The old `seatbeltProfile` stays untouched until slice 13. | Every launch already writes a 0444 per-session file (`SessionProfilePath`), and every pinned test reads text. The prototype's `-D` slots (eight ancestors, four ports) were a script's limit, not a design. |
+| <a id="MMP-D2"></a>MMP-D2 | **`macosuser.Mode`**: `ModeAccount` is the zero value, `ModeSelf` the other. It is carried on `PlanSession.Mode` beside a new `PlanSession.HostHome` (the invoking user's resolved home). `internal/cli/commands.go` sets both explicitly on every launch. | With account as the zero value, the hundreds of existing plan tests keep building today's plan unchanged. The orchestrator never relies on the zero value. |
+| <a id="MMP-D3"></a>MMP-D3 | **The setting is `"macos_user_mode": "self" \| "account"`**, top level and user scope only. It is read through `UserScopeConfigOrEmpty`, so the per-workspace user layer is not consulted. An absent key means `account` until slice 11, then `self`. | The values match the prototype's `--mode self\|account`. One machine-wide mode keeps a second mental model out of each workspace (design [§4](macos-user-model.md#4-what-the-second-account-buys-and-what-it-costs)). |
+| <a id="MMP-D4"></a>MMP-D4 | **One crossing value, `RunAs{Mode}`**, with `Argv(setHome bool, argv ...string)`. Account mode returns `RunAsSandboxArgv` byte for byte. Self mode returns `/usr/bin/env argv…`, with no sudo. Every caller of `RunAsSandboxArgv` goes through it. | One switch per launch, so no consumer can be left crossing into an account that self mode does not have. |
+| <a id="MMP-D5"></a>MMP-D5 | **HOME is `paths.WorkspaceHomeState(ws)`, `<ws>/.yolo/home` itself, in both modes.** Agent state sits there as real dot-named directories (`.claude`, `.pi/agent`, `.config`, `.local`, `.npm-global`, `go`, `.yolo/bin`), which is the layout Apple Container already binds at `/home/agent`. There are no links from HOME into the sidecar. Existing undotted sidecar dirs (`claude/` and the rest, written by today's account layout or by podman) are left in place and unused. | This is design [§3](macos-user-model.md#3-podman-mapped-onto-the-safehouse-model) taken literally. [MCWP-D1](macos-user-concurrent-workspaces-plan.md#MCWP-D1) rejected `.yolo/home` only because of the account home's name mapping, which this model removes. Leaving the old dirs unused is [OQ-MM4](macos-user-model.md#OQ-MM4). |
+| <a id="MMP-D6"></a>MMP-D6 | **The machine root.** Self mode uses a new `paths.MacosUserMachineRoot()` = `<GlobalStorage>/macos-user`, holding `.cache`, `Library/Caches` and `.yolo/mise`. HOME links `.cache` and `Library/Caches` into it, and `MISE_DATA_DIR` names `<root>/.yolo/mise` absolutely. Selected `scope: machine` pack dirs link to `paths.GlobalHome()/<dir>`, the same store podman binds. Account mode keeps `SandboxHome()` for all of these (MCWP-D2). | `GlobalCache()` and `GlobalMise()` hold Linux artifacts on a Mac that also runs podman or Apple Container, so darwin binaries must not land there. The credential dirs are OS-neutral, so sharing them with podman keeps one login per machine, as every backend does today. Cheap to reverse. |
+| <a id="MMP-D7"></a>MMP-D7 | **`YOLO_DARWIN_REAL_HOME`** joins the protected env pairs (`sandboxEnvPairs`, `protectedSandboxEnvKeys` in `envfile.go`). Self mode sets it to the invoking user's home, account mode to `SandboxHome()`. One `paths` helper, called from `cli.Main` and `cmd/yolo-jaild`, judges guest workspace scope against it instead of `$HOME` (MCWP-D10's shape). | With HOME inside the workspace, every guest verb that creates `.yolo` would otherwise see "the workspace contains your home" and refuse. Do not use `os/user`: yolo is built without cgo, and without cgo `os/user` on darwin answers from `$HOME`. |
+| <a id="MMP-D8"></a>MMP-D8 | **The staging root stays `/Users/Shared/yolo-staged` in both modes.** When it is absent, a self-mode launch creates it through `ensureHostOwnedRoot`'s `mkdir` branch, which needs no root because `/Users/Shared` is 1777. A root that is foreign, a link, or unsafe stays a refusal. | No refactor of `StagingRoot()`'s many callers. The profile grants it read only, so the sandbox cannot write it even as you. |
+| <a id="MMP-D9"></a>MMP-D9 | **The darwin bootstrap runs under the session profile** (`sandbox-exec -f <profile>`) in self mode, and in account mode from slice 12. | Run unconfined as you, a link the agent planted in its own writable HOME would carry a bootstrap write into your real home. Confined, the bootstrap can write only what the agent can. |
+| <a id="MMP-D10"></a>MMP-D10 | **The loopback allow list** has three parts, with no new config key. The first is each `YOLO_SERVICE_*_ENDPOINT` file's port, read with `svcendpoint.Read` after the host services start (they start in `run.go` before `RunMacosUser`). The second is the served addresses' launcher-reserved ports. The third is the JAIL port of each `network.forward_host_ports` entry. It is rendered only when the policy denies loopback. | `forward_host_ports` already means "host loopback ports this jail may reach", and every workspace-config change already goes through the approval diff (`CheckConfigChanges`). A second key would be a second spelling of one fact. |
+| <a id="MMP-D11"></a>MMP-D11 | **The overlay install keeps a record**, `<sidecar>/.yolo-home-overlay-installed.json`, written after every install. A recorded destination that the current list no longer names, or covers, is removed. The removal goes through the same roots and `overlayLinks.route` as an install, and a recorded entry that fails `normalizeOverlayDests` is ignored. | It mirrors the cache-relocation manifest (`writeCacheRelocationManifest`). It lives in the sidecar because today's HOME is shared between workspaces. Under [MMP-D5](#MMP-D5) the sidecar is HOME, so it is the same file. |
+| <a id="MMP-D12"></a>MMP-D12 | **Package-cache aliasing in self mode.** A HOME link at the path the sandbox's own copy of the tool uses on macOS points at the host's real cache, with a profile read/write allow on the resolved target (new id `cache-alias-allow`). `hostcas.Store` gains `DarwinHost` and `DarwinRel`. The `decide` gates admit `macos-user` only when `Facts.MacosUserSelf` is set. | This is the link-plus-allow shape that `cache_relocations` already uses on this backend. The ownership gate is satisfied by construction, because the agent is you ([OQ-BF11](../reference/disk-footprint.md#OQ-BF11)). |
+| <a id="MMP-D13"></a>MMP-D13 | **The pending rulings are `ProfileParams` fields**: `Loopback LoopbackPolicy{AllowAll bool; Ports []int}`, `Tmp TmpPolicy` (`TmpShared` or `TmpPrivate`) and `HostSoftware []string`. Their production values are three named constants in `internal/macosuser/seatbeltdeny.go` (`productionLoopback`, `productionTmp`, `productionHostSoftware`), set to the prototype's choices until slice 11. | Each ruling becomes a one-constant edit, and the tests cover both values of each. |
+
+## Map
+
+| Path | Change | Slice |
+| :--- | :--- | :--- |
+| [`internal/entrypoint/darwinoverlay.go`](../../internal/entrypoint/darwinoverlay.go) | install record and removal of dropped destinations ([MMP-D11](#MMP-D11)) | 1 |
+| `internal/config/macosusermode.go` | new: key constant, `MacosUserMode()`, `macosUserModeValue`, `macosUserModeProblem` | 2 |
+| [`internal/config/validate.go`](../../internal/config/validate.go), [`internal/config/config.go`](../../internal/config/config.go) | `validateMacosUserMode` in `ValidateConfig`'s list; key in `knownTopLevelConfigKeys` | 2 |
+| [`internal/config/inherit.go`](../../internal/config/inherit.go), [`internal/render/configkeys.go`](../../internal/render/configkeys.go), [`internal/setupcensus/configkeys.go`](../../internal/setupcensus/configkeys.go) | census rows for the new key | 2 |
+| [`internal/cli/config_ref.txt`](../../internal/cli/config_ref.txt), [`userguide/reference/settings-per-setup.md`](../../userguide/reference/settings-per-setup.md) | key documented | 2 |
+| [`internal/cli/commands.go`](../../internal/cli/commands.go) | read the mode, refuse `self` (until slice 6), fill `PlanSession.Mode`/`HostHome` (`~:1399`) | 2, 6, 11 |
+| `internal/macosuser/mode.go` | new: `Mode`, `ParseMode`, `RunAs`, `RunAs.Argv` | 3 |
+| [`internal/macosuser/macosuser.go`](../../internal/macosuser/macosuser.go), [`privilege.go`](../../internal/macosuser/privilege.go), [`provision.go`](../../internal/macosuser/provision.go), [`jaildaemon.go`](../../internal/macosuser/jaildaemon.go), [`serviceprobe.go`](../../internal/macosuser/serviceprobe.go), [`ctxlinks.go`](../../internal/macosuser/ctxlinks.go), [`capture.go`](../../internal/macosuser/capture.go) | every `RunAsSandboxArgv` call goes through `RunAs` | 3 |
+| `internal/macosuser/seatbeltdeny.go` | new: `ProfileParams`, `LoopbackPolicy`, `TmpPolicy`, `DenyDefaultProfile`, production constants | 4 |
+| `integration/macosuserdenydefault_test.go` | new: registry of the new profile's ids (Linux, `-short`); runtime cases (macOS CI, slice 10) | 4, 10 |
+| [`internal/paths/paths.go`](../../internal/paths/paths.go), [`internal/paths/workspacescope.go`](../../internal/paths/workspacescope.go) | `MacosUserMachineRoot`; guest scope helper ([MMP-D7](#MMP-D7)) | 5 |
+| [`internal/entrypoint/darwinhomelayout.go`](../../internal/entrypoint/darwinhomelayout.go) | `DarwinHomes`, `DeriveDarwinWorkspaceHome`; `darwinHomeLayoutFor` picks it when HOME is the sidecar | 5 |
+| [`internal/cli/internal.go`](../../internal/cli/internal.go) (`~:362`), `cmd/yolo-jaild` | guest scope helper call sites | 5 |
+| [`internal/macosuser/envfile.go`](../../internal/macosuser/envfile.go) | `YOLO_DARWIN_REAL_HOME`, `YOLO_DARWIN_MACHINE_HOME`, `YOLO_DARWIN_SHARED_HOME` join `protectedSandboxEnvKeys` | 5 |
+| [`internal/macosuser/runplan.go`](../../internal/macosuser/runplan.go) | self-mode branch of `BuildRunPlanWithStages`: homes, profile, argvs, no ACL or endpoint grants, confined bootstrap; `PlanInvariants` self-mode rules | 6 |
+| [`internal/macosuser/orchestrator.go`](../../internal/macosuser/orchestrator.go), [`preconditions.go`](../../internal/macosuser/preconditions.go) | self mode skips the hold, the account preconditions and the grant stage; creates the staging root | 6 |
+| [`internal/macosuser/ctxlinks.go`](../../internal/macosuser/ctxlinks.go) | rule 5 (no source in a home) and the sudo preflight only in account mode | 6 |
+| [`internal/macosuser/macosuser.go`](../../internal/macosuser/macosuser.go) `HomeContaining` call sites | the in-home refusal only in account mode | 6 |
+| `internal/macosuser/loopbackports.go` | new: `LoopbackPorts` ([MMP-D10](#MMP-D10)) | 7 |
+| [`internal/hostcas/hostcas.go`](../../internal/hostcas/hostcas.go), [`internal/cli/run/hostcasalias.go`](../../internal/cli/run/hostcasalias.go), `internal/hostcas/probe_darwin.go` (new) | darwin rows, `MacosUserSelf` gate, darwin probe | 8 |
+| [`internal/macosuser/seatbeltcapture.go`](../../internal/macosuser/seatbeltcapture.go), [`capture.go`](../../internal/macosuser/capture.go) | self-mode capture: crossing, the denied "shared home" becomes the machine root and shared dirs | 9 |
+| `internal/cli` (new hidden verb `yolo internal macos-user-profile`), [`run-checks.sh`](../plans/runbooks/macos-user-model-prototype/run-checks.sh), [prototype README](../plans/runbooks/macos-user-model-prototype/README.md) | render the generated profile; `--profile-from-yolo` option | 10 |
+| [`NOTICE`](../../NOTICE) | Agent Safehouse (Apache-2.0) attribution for the adapted rules | 4 |
+| docs listed under [Ships with](#ships-with) | behavior flips | 11, 12, 13 |
+| [`internal/cli/run/accounthomehold.go`](../../internal/cli/run/accounthomehold.go) | deleted, with `Deps.HoldAccountHome`, `PreflightLaunch`'s hold parameter and the `commands.go:1472` wiring | 13 |
+
+## Reuse before you write
+
+- **Escaping and ancestor walking.** Use `sbplStr` for every path. Write a general
+  `ancestorLiteralsAll(paths ...string)` beside `ancestorLiterals` (`seatbelt.go:513`). The existing
+  one deliberately covers only `/Users/Shared/` and must keep that shape for the old profile until
+  slice 13.
+- **Context, relocation, device and readonly blocks.** Call `contextReadAllow`,
+  `contextWriteAllow`, `contextReadonlyDeny` (`ctxlinks.go:1152-1183`), `relocationReadAllow`,
+  `relocationWriteAllow`, `readonlyDenies`, `homeReadonlyDenies` and `deviceIoctlAllow` from the new
+  builder. Do not copy them. Their ids carry over unchanged ([Test-id ledger](#test-id-ledger)).
+- **The prototype is the rule text.** Port
+  [`profile.sb`](../plans/runbooks/macos-user-model-prototype/profile.sb) block by block, with its
+  `[source]` tags and its Apache-2.0 header, into the generated text. The header ships inside every
+  installed profile. Add one Safehouse line to `NOTICE`.
+- **User-scope key.** Mirror [`perflogging.go`](../../internal/config/perflogging.go): a value
+  function split from the real-home read, and a `…Problem(v)` shape check. The workspace refusal
+  mirrors `validateHostManagement` (`validate.go:565-584`). The tests mirror
+  [`hostwrappers_test.go`](../../internal/config/hostwrappers_test.go).
+- **No-follow manifest writes.** Copy `InstallDarwinCacheRelocations`' shape
+  (`darwinhomelayout.go:832`): `os.OpenRoot`, then `readCacheRelocationManifest` and
+  `writeCacheRelocationManifest` (`:932`, `:950`) for the record format and rename.
+- **Overlay test fixture.** `newOverlayFixture`, `stage`, `install`, `requireFile` and
+  `requireAbsent` in [`darwinoverlay_test.go`](../../internal/entrypoint/darwinoverlay_test.go)
+  build the whole state slice 1 needs.
+- **Plan test fixture.** `testRunPlan` and `hasProblem`
+  ([`launchconfinement_test.go`](../../internal/macosuser/launchconfinement_test.go)), plus
+  `containsArgPair`.
+- **Endpoint ports.** `svcendpoint.Read(path)` returns `Endpoint.HostPort`. `isServiceEndpointVar`
+  (`runplan.go:989`) already picks the variables.
+- **Port-key parsing.** `macosuserportrelay.go` already walks `network.forward_host_ports` entries
+  into JAIL and HOST ports. Reuse its parse, and do not write a third.
+- **Bounded lock (account mode only, slice 12).** `lockBounded` and `unlockClose` in
+  `accounthomehold.go:183-214` give the wait shape for MCWP-D8's machine-tier lock. Reimplement it
+  in `internal/entrypoint`, which cannot import `internal/cli/run`, before slice 13 deletes the
+  file.
+- **Native test fixtures (slices 10 and 12).** `requireMacosUserSeatbelt`, the bare-control pattern,
+  and `seatbeltCases` in
+  [`macosuserseatbelt_test.go`](../../integration/macosuserseatbelt_test.go). The runbook's check
+  list (a1 to f1) is the case list to port.
+
+## Traps
+
+- **SBPL is last-match-wins, and the explicit denies must stay last.** The prototype ends with the
+  host-secret, keychain, socket and service denies, then `(deny appleevent-send)`. A context or
+  relocation allow placed after them re-opens a keychain. So a `mounts` entry naming `~/.ssh`
+  stays denied on macOS. That is intended, and it is as strict as today's
+  `contextReadAllow`-before-keychains ordering.
+- **`(deny default)` with `(deny appleevent-send)` missing is not enough.** On the first Mac run,
+  Finder answered `osascript` with deny-default in force and the Apple Events mach service denied
+  by name. Keep the operation deny as the final form, and pin it as the last line in a unit test.
+- **Every `(deny …)` line needs `;; #seatbelt-test-id:<id>#` on the line directly above it, and the
+  id must be unique per deny.** `TestEverySeatbeltDenyCarriesATestID` reads exactly that shape. A
+  multi-deny block like the prototype's `mach-lookup` list is one form with one id, not one per
+  name.
+- **Paths must be physical.** The kernel resolves symlinks before the policy is consulted, so a rule
+  on `/tmp` or `/var/folders/…` matches nothing (`BuildRunPlanWithStages`' header records the
+  measurement). Resolve every root once, as the plan already does for the workspace.
+  `DARWIN_USER_TEMP_DIR` comes back unresolved and with a trailing slash from
+  `getconf DARWIN_USER_TEMP_DIR`.
+- **`/usr` covers `/usr/local`, which is Intel Homebrew.** If the ruling hides host software,
+  `/usr/local` needs its own deny after the `/usr` allow. `HostSoftware` decides both
+  `/opt/homebrew` and `/usr/local`.
+- **`DARWIN_USER_TEMP_DIR` in self mode is your own temp dir**, which every process of yours shares.
+  It is the same exposure as the shared `/tmp` (check b14), so `TmpPolicy` must govern both.
+- **A declared device now needs file access, not just ioctl.** Under `(allow default)` a
+  `/dev/cu.*` open already succeeded. Under deny-default it does not, so `deviceIoctlAllow` alone
+  leaves `config.devices` broken. Emit `file-read* file-write*` beside the ioctl allow, under the
+  same id.
+- **`darwinoverlaylink.go`'s seal rests on the uid split** (staged files are `a-w` and owned by the
+  host user, so the account "cannot chmod it"). In self mode the agent is that owner, and
+  `homeReadonlyDenies` (`file-write*` includes mode changes) is the only protection. Never drop the
+  home-content denies from the new profile.
+- **`MkdirAll` follows links.** HOME is agent-writable, so the bootstrap must check the HOME chain
+  before it creates anything (`linkedSidecarPaths`' shape). Confining the bootstrap
+  ([MMP-D9](#MMP-D9)) bounds the damage, but it does not replace the check.
+- **`SandboxMiseData(home)` follows HOME.** Fed the workspace HOME, it silently creates a
+  per-workspace mise store. Pass the machine root ([MMP-D6](#MMP-D6)).
+- **HOME inside the workspace.** A tool walking up from a cwd under HOME finds the workspace's
+  `.git` (`.yolo/.gitignore` hides `.yolo`). `cd ~ && yolo config …` in the guest finds
+  `<HOME>/.yolo` as a workspace marker. `workspace_readonly: ["."]` makes HOME read-only. All three
+  are accepted divergences, as in the concurrent plan's traps. Do not move HOME.
+- **Ephemeral loophole ports.** `svcendpoint.Listen` binds `127.0.0.1:0`, so a port is known only
+  after its daemon publishes. The profile is written at `install_profile`, after `run.go` starts the
+  host services. If an endpoint file is missing at plan time, the launch must say which service and
+  stop. It must not render a profile that silently omits the port, because the in-jail witness
+  would then refuse the launch anyway, and less clearly.
+- **The registry test renders one profile.** `TestMacosUserSeatbeltRegistryMatchesTheProfile` reads
+  only the old profile, so the new ids get their own registry and test (slice 4). Do not union them
+  into the old one, because slice 13 deletes the old one whole.
+- **`hostcas` source paths are Linux defaults.** On macOS, `os.UserCacheDir()` is
+  `~/Library/Caches`, and `probe_other.go` reports every store absent. Without a darwin probe,
+  slice 8 aliases nothing and every unit test still passes.
+- **The capture profile shares the account-home assumption.** `seatbeltcapture.go` denies
+  `SandboxHome()` explicitly. In self mode, the store it must keep a captured installer away from is
+  the machine root plus `GlobalHome()`'s shared dirs (slice 9).
+- **Integration tests for the old account path keep running in macOS CI until slice 13.**
+  `macosuseraccounthome_test.go` asserts the hold. It must keep passing, because account mode keeps
+  the hold until slice 12.
+
+## Test-id ledger
+
+Every `#seatbelt-test-id:` in today's profile, and what becomes of it in the deny-default profile
+(requirement 1). **Kept** means the same id on a rule with the same effect. **Subsumed** means the
+behavior holds through `deny-default`, the id retires with the old profile in slice 13, and its
+runtime case is re-registered against `deny-default`.
+
+| Today's id | In the new profile |
+| :--- | :--- |
+| `write-outside-deny` | subsumed by `deny-default` (writes outside the allow list are refused) |
+| `workspace-write-allow`, `workspace-read-allow` | kept |
+| `workspace-readonly-deny`, `home-content-write-deny`, `home-content-anchor-deny` | kept, same position after the writable allows |
+| `volumes-read-deny` | subsumed by `deny-default` |
+| `boot-volume-read-allow` | retired: nothing is granted by a `/Volumes` path, and the id was registered unproven |
+| `raw-device-deny` | kept as an explicit deny in the closing block |
+| `users-read-deny` | subsumed by `deny-default`; the named secrets get `host-secrets-deny` |
+| `staging-root-read-allow` | kept (read only) |
+| `library-keychains-deny`, `system-keychains-deny` | kept, in the closing block |
+| `cross-process-procargs-deny`, `cross-process-pidinfo-deny`, `same-sandbox-pidinfo-allow` | kept |
+| `file-ioctl-deny` | subsumed by `deny-default` |
+| `file-ioctl-tty-allow` | kept |
+| `device-ioctl-allow` | kept, widened to file read and write on the node (see [Traps](#traps)) |
+| `macos-log-deny` | kept, in the closing block |
+| `context-read-allow`, `context-write-allow`, `context-readonly-deny` | kept |
+| `cache-relocation-read-allow`, `cache-relocation-write-allow` | kept |
+
+New ids: `deny-default`, `system-read-allow`, `host-software-read-allow`, `ancestor-literal-allow`,
+`home-allow`, `machine-dir-allow`, `tmp-allow`, `process-allow`, `mach-lookup-allow`,
+`host-secrets-deny`, `launchd-listener-deny`, `ssh-agent-socket-deny`, `container-socket-deny`,
+`service-deny`, `appleevent-send-deny`, `loopback-deny`, `loopback-port-allow`, and
+`cache-alias-allow` (slice 8). The names are cheap and the implementer's to adjust. Each one needs
+a registry entry.
+
+## Tasks
+
+The slices in order. A **Mac** column entry of "human" means a person runs the named check on a
+real Mac before the slice lands. "CI" means the macOS runner in `.github/workflows/macos-user.yml`
+runs it after landing, as a backstop.
+
+| Slice | Touches | Mac | Order |
+| :--- | :--- | :--- | :--- |
+| 1 | overlay install record | no (CI backstop) | independent |
+| 2 | `macos_user_mode` key | no | independent |
+| 3 | `RunAs` crossing | no | independent |
+| 4 | deny-default profile builder | no | independent |
+| 5 | self-mode homes, layout, guest scope | no | after 3 |
+| 6 | self-mode plan and orchestrator, opt-in `self` | no (CI backstop) | after 2, 3, 4, 5 |
+| 7 | loopback port collection | no | after 6, only if loopback stays denied |
+| 8 | package-cache aliasing in self mode | no (verified in 11) | after 6 |
+| 9 | self-mode install capture | CI | after 6 |
+| 10 | profile render verb, runbook option, policy suite | CI | after 4 |
+| 11 | rulings in, rerun gate, default flips to `self` | **human** | after 6 to 10 |
+| 12 | account mode on the model | **human** | after 11 |
+| 13 | delete the old profile, shared home and hold | CI | after 12 |
+
+### Slice 1 — the overlay forgets nothing it installed (independent)
+
+- **Settled:** a destination a later launch no longer lists is removed, like an unmounted bind on
+  podman. Agent state beside it stays ([MMP-D11](#MMP-D11)). Do not re-open.
+- **Preconditions:** `installHomeOverlayDestinations(overlay, home string, roots []overlayRoot, links overlayLinks) error`
+  exists at `darwinoverlay.go:342`. Otherwise stop.
+- **Tests first.** Append to `internal/entrypoint/darwinoverlay_test.go`:
+
+  ```go
+  // A destination the next overlay stops listing is REMOVED, the way a dropped bind
+  // vanishes on podman; the one still listed is replaced and the agent's state stays.
+  func TestOverlayInstallRemovesADestinationTheNextOverlayNoLongerLists(t *testing.T) {
+  	f := newOverlayFixture(t)
+  	f.stage(t) // lists .pi/agent/skills and .pi/agent/AGENTS.md
+  	if err := f.install(t); err != nil {
+  		t.Fatal(err)
+  	}
+  	state := f.agentState(t)
+
+  	if err := os.RemoveAll(f.overlay); err != nil {
+  		t.Fatal(err)
+  	}
+  	writeTreeFile(t, filepath.Join(f.overlay, ".pi", "agent", "skills", "demo", "SKILL.md"), "next skill")
+  	if _, err := WriteHomeOverlayManifest(f.overlay, []string{".pi/agent/skills"}); err != nil {
+  		t.Fatal(err)
+  	}
+  	if err := f.install(t); err != nil {
+  		t.Fatal(err)
+  	}
+  	requireAbsent(t, filepath.Join(f.home, ".pi", "agent", "AGENTS.md"),
+  		"a destination the overlay stopped listing lingered")
+  	requireFile(t, filepath.Join(f.home, ".pi", "agent", "skills", "demo", "SKILL.md"), "next skill")
+  	requireFile(t, state, "pi's sign-in")
+  }
+
+  // The record is in the agent-writable sidecar, so an entry naming a path outside the
+  // home is ignored, never followed.
+  func TestOverlayInstallIgnoresARecordEntryOutsideTheHome(t *testing.T) {
+  	f := newOverlayFixture(t)
+  	f.stage(t)
+  	if err := f.install(t); err != nil {
+  		t.Fatal(err)
+  	}
+  	outside := filepath.Join(filepath.Dir(f.home), "outside.txt")
+  	writeTreeFile(t, outside, "not yolo's")
+  	writeTreeFile(t, filepath.Join(f.sidecar, ".yolo-home-overlay-installed.json"),
+  		`{"destinations": ["../outside.txt", "/etc/passwd", ".pi/agent/AGENTS.md"]}`)
+  	if err := f.install(t); err != nil {
+  		t.Fatal(err)
+  	}
+  	requireFile(t, outside, "not yolo's")
+  	requireFile(t, filepath.Join(f.home, ".pi", "agent", "AGENTS.md"), "new briefing")
+  }
+  ```
+
+  Red: `go test -short -run 'TestOverlayInstallRemovesADestination|TestOverlayInstallIgnoresARecordEntry' ./internal/entrypoint`.
+  The first test fails with "a destination the overlay stopped listing lingered". The second may
+  pass already. It is a guard that must stay green.
+- **Change:** in `installHomeOverlayDestinations`, after the install loop, read the record from the
+  sidecar root (open it beneath the sidecar's `overlayRoot`, `O_NOFOLLOW`, size-capped as
+  `HomeOverlayDigest` reads), normalize it with `normalizeOverlayDests`, and remove every entry not
+  equal to or under a current destination. Remove through a sibling of `installOverlayDestination`
+  that resolves the route and roots the same way. Then write the current list as the new record
+  (rename into place). With no sidecar root, keep no record and say nothing. Name the constant
+  beside `HomeOverlayManifestName`.
+- **Gates:** the red command green; `go test -short ./internal/entrypoint`; `just format`.
+- **Fences:** no host-side change (`internal/cli/run/macoshomeoverlay.go`), no profile change.
+- **Commit:** `fix(macos-user): remove overlay destinations a later launch no longer lists`
+- **Report:** the red output, the green gates, and whether the second test was already green.
+
+### Slice 2 — the mode setting (independent)
+
+- **Settled:** user scope only; a workspace value is refused loudly ([MMP-D3](#MMP-D3)). Until
+  slice 6, `self` is refused at launch with a next step, so the key never reads as protection that is
+  not there.
+- **Tests first.** New `internal/config/macosusermode_test.go`:
+
+  ```go
+  package config
+
+  import (
+  	"os"
+  	"path/filepath"
+  	"strings"
+  	"testing"
+  )
+
+  func TestMacosUserModeReadsUserConfigOnly(t *testing.T) {
+  	home := t.TempDir()
+  	t.Setenv("HOME", home)
+  	t.Setenv("YOLO_VERSION", "")
+  	userCfg := filepath.Join(home, ".config", "yolo-jail", "config.jsonc")
+  	if err := os.MkdirAll(filepath.Dir(userCfg), 0o755); err != nil {
+  		t.Fatal(err)
+  	}
+  	if got, set := MacosUserMode(); set || got != "" {
+  		t.Errorf("no user config: MacosUserMode() = %q, %v; want \"\", false", got, set)
+  	}
+  	write(t, userCfg, `{"macos_user_mode": "account"}`)
+  	if got, set := MacosUserMode(); !set || got != "account" {
+  		t.Errorf("MacosUserMode() = %q, %v; want account, true", got, set)
+  	}
+  	ws := t.TempDir()
+  	t.Chdir(ws)
+  	write(t, filepath.Join(ws, WorkspaceConfigName), `{"macos_user_mode": "self"}`)
+  	if got, _ := MacosUserMode(); got != "account" {
+  		t.Fatalf("a WORKSPACE config chose the macos-user mode (%q)", got)
+  	}
+  }
+
+  func TestValidateMacosUserModeRefusesWorkspaceScope(t *testing.T) {
+  	ws := t.TempDir()
+  	t.Setenv("YOLO_VERSION", "")
+  	write(t, filepath.Join(ws, WorkspaceConfigName), `{"macos_user_mode": "account"}`)
+  	var errs []string
+  	validateMacosUserMode(decode(t, `{"macos_user_mode": "account"}`), ws, &errs)
+  	if joined := strings.Join(errs, "\n"); !strings.Contains(joined, "user-scope only") {
+  		t.Errorf("errors = %v, want one saying 'user-scope only'", errs)
+  	}
+  }
+
+  func TestValidateMacosUserModeShape(t *testing.T) {
+  	ws := t.TempDir()
+  	t.Setenv("YOLO_VERSION", "")
+  	for _, bad := range []string{`"jail"`, `true`, `"Self"`} {
+  		var errs []string
+  		validateMacosUserMode(decode(t, `{"macos_user_mode": `+bad+`}`), ws, &errs)
+  		if len(errs) == 0 || !strings.Contains(errs[0], `"self" or "account"`) {
+  			t.Errorf("%s: errors = %v, want one naming \"self\" or \"account\"", bad, errs)
+  		}
+  	}
+  	for _, good := range []string{`"self"`, `"account"`} {
+  		var errs []string
+  		validateMacosUserMode(decode(t, `{"macos_user_mode": `+good+`}`), ws, &errs)
+  		if len(errs) != 0 {
+  			t.Errorf("%s: unexpected errors %v", good, errs)
+  		}
+  	}
+  }
+  ```
+
+  In `internal/cli`, add `TestMacosLaunchRefusesSelfModeUntilItIsBuilt`. It drives the
+  `commands.go` mode read through its seam with the user config `{"macos_user_mode": "self"}` and
+  asserts exit 1 with a message containing `macos_user_mode` and "remove it". This test is
+  rewritten in slice 6.
+
+  Red: `go test -short -run 'MacosUserMode' ./internal/config` fails to compile (`undefined: MacosUserMode`).
+- **Change:** `internal/config/macosusermode.go` holds `macosUserModeKey = "macos_user_mode"`,
+  `MacosUserMode() (value string, set bool)` over `UserScopeConfigOrEmpty()`, and
+  `macosUserModeProblem`. `validateMacosUserMode` is added to `ValidateConfig`'s list (keep its
+  order; append beside `validatePerfLogging`). Then add the key to `knownTopLevelConfigKeys`,
+  `render.hostConfigKeys`, the `inheritCensus` (not inherited: a nested jail is Linux), the
+  `setupcensus` entry (cells: macos-user "reads it", the other three setups "ignored: not this
+  backend") with its guide row, and `config_ref.txt`. In `commands.go`, read the mode before
+  building `macosuser.Options`. `self` refuses: `macos_user_mode "self" is not built yet; remove it
+  from ~/.config/yolo-jail/config.jsonc to launch as today` (happy path: it names the next step).
+- **Gates:** the red command green; `go test -short ./internal/config ./internal/setupcensus ./internal/render ./internal/cli`; `just format`.
+  `configrefcoverage_test.go`, `census_test.go` and `guide_test.go` fail until each surface carries
+  the key, which is the point.
+- **Fences:** nothing under `internal/macosuser`.
+- **Commit:** `feat(config): add the user-scope macos_user_mode setting`
+- **Report:** red, green, and the coverage tests that went red before each surface was added.
+
+### Slice 3 — one crossing value (independent)
+
+- **Settled:** account-mode argvs stay byte for byte as they are ([MMP-D4](#MMP-D4)).
+- **Tests first.** New `internal/macosuser/mode_test.go`:
+
+  ```go
+  package macosuser
+
+  import (
+  	"os"
+  	"path/filepath"
+  	"slices"
+  	"strings"
+  	"testing"
+  )
+
+  func TestRunAsAccountIsTheSudoRule(t *testing.T) {
+  	got := RunAs{}.Argv(true, "-i", "/usr/bin/true")
+  	want := RunAsSandboxArgv([]string{"--set-home"}, "-i", "/usr/bin/true")
+  	if !slices.Equal(got, want) {
+  		t.Errorf("account crossing = %v, want %v", got, want)
+  	}
+  }
+
+  func TestRunAsSelfCrossesNoAccount(t *testing.T) {
+  	got := RunAs{Mode: ModeSelf}.Argv(true, "-i", "/usr/bin/true")
+  	if want := []string{"/usr/bin/env", "-i", "/usr/bin/true"}; !slices.Equal(got, want) {
+  		t.Errorf("self crossing = %v, want %v", got, want)
+  	}
+  	if len(RunAsArgvProblems("self", got)) != 0 {
+  		t.Errorf("a self crossing reports sudo-rule problems: %v", RunAsArgvProblems("self", got))
+  	}
+  }
+
+  func TestParseMode(t *testing.T) {
+  	for in, want := range map[string]Mode{"": ModeAccount, "account": ModeAccount, "self": ModeSelf} {
+  		if got, err := ParseMode(in); err != nil || got != want {
+  			t.Errorf("ParseMode(%q) = %v, %v; want %v", in, got, err, want)
+  		}
+  	}
+  	if _, err := ParseMode("jail"); err == nil {
+  		t.Error("ParseMode(\"jail\") accepted")
+  	}
+  }
+
+  // The call-site pin: no file but privilege.go and mode.go spells the sudo crossing.
+  func TestEveryCrossingGoesThroughRunAs(t *testing.T) {
+  	files, err := filepath.Glob("*.go")
+  	if err != nil {
+  		t.Fatal(err)
+  	}
+  	for _, f := range files {
+  		if strings.HasSuffix(f, "_test.go") || f == "privilege.go" || f == "mode.go" {
+  			continue
+  		}
+  		b, err := os.ReadFile(f)
+  		if err != nil {
+  			t.Fatal(err)
+  		}
+  		if strings.Contains(string(b), "RunAsSandboxArgv(") {
+  			t.Errorf("%s calls RunAsSandboxArgv directly; cross through RunAs", f)
+  		}
+  	}
+  }
+  ```
+
+  Red: `go test -short -run 'RunAs|ParseMode|EveryCrossing' ./internal/macosuser` fails to compile.
+- **Change:** create `mode.go`. Give `LaunchArgvWithGuard`, `ProvisionArgv`, `DarwinBootstrapArgv`,
+  the jail-daemon and service-probe argv builders, `ContextPreflight` and the capture driver argvs a
+  `RunAs` (first parameter, or a field on the struct they already take). Callers in this slice pass
+  `RunAs{}`, which renders today's argv. Thread `PlanSession.Mode` into `BuildRunPlanWithStages` as
+  `RunAs{Mode: session.Mode}`, but do not branch on it yet. Add `PlanSession.Mode` and
+  `PlanSession.HostHome` now, and leave them unread.
+- **Gates:** the red command green; `go test -short ./internal/macosuser ./internal/cli/... ./integration`; `just format`.
+  Every existing argv test must stay green unchanged. One that needs editing means the account argv
+  moved, so stop and report.
+- **Fences:** no change to any argv's words in account mode; no profile change.
+- **Commit:** `refactor(macos-user): cross into the sandbox through one RunAs value`
+- **Report:** red, green, and every call site converted.
+
+### Slice 4 — the deny-default profile builder (independent)
+
+- **Settled:** one deny-by-default profile with the run-as user as a parameter, started from the
+  prototype ([MMP-D1](#MMP-D1), [MMP-D13](#MMP-D13)). Nothing calls it in production yet.
+- **Tests first.** New `internal/macosuser/seatbeltdeny_test.go`:
+
+  ```go
+  package macosuser
+
+  import (
+  	"strings"
+  	"testing"
+  )
+
+  func testProfileParams() ProfileParams {
+  	return ProfileParams{
+  		Workspace:         "/Users/you/code/alpha",
+  		Home:              "/Users/you/code/alpha/.yolo/home",
+  		HostHome:          "/Users/you",
+  		SandboxTmp:        "/private/var/folders/ab/xyz/T/yolo-alpha",
+  		DarwinUserTempDir: "/private/var/folders/ab/xyz/T",
+  		StagingRoot:       StagingRoot(),
+  		MachineDirs:       []string{"/Users/you/.local/share/yolo-jail/macos-user/.cache"},
+  		Loopback:          LoopbackPolicy{Ports: []int{31053}},
+  		Tmp:               TmpShared,
+  		HostSoftware:      []string{"/opt/homebrew", "/usr/local"},
+  	}
+  }
+
+  func TestDenyDefaultProfileStartsFromNothing(t *testing.T) {
+  	p := DenyDefaultProfile(testProfileParams())
+  	if strings.Contains(p, "(allow default)") {
+  		t.Fatal("the deny-default profile allows by default")
+  	}
+  	d, a := strings.Index(p, "(deny default)"), strings.Index(p, "(allow ")
+  	if d < 0 || a < d {
+  		t.Fatalf("(deny default) must precede every allow (deny %d, first allow %d)", d, a)
+  	}
+  	for _, want := range []string{
+  		`(subpath "/Users/you/code/alpha")`,
+  		`(literal "/Users")`, `(literal "/Users/you")`, `(literal "/Users/you/code")`,
+  		`(subpath "/opt/homebrew")`, `(literal "/opt")`,
+  		`(remote ip "localhost:31053")`,
+  	} {
+  		if !strings.Contains(p, want) {
+  			t.Errorf("profile lacks %s", want)
+  		}
+  	}
+  	for _, never := range []string{`(subpath "/Users/you")`, `(subpath "/opt")`, `(subpath "/Users")`} {
+  		if strings.Contains(p, never) {
+  			t.Errorf("profile grants %s, a parent of what it needs", never)
+  		}
+  	}
+  }
+
+  func TestDenyDefaultProfileEndsWithTheAppleEventDeny(t *testing.T) {
+  	p := strings.TrimSpace(DenyDefaultProfile(testProfileParams()))
+  	if !strings.HasSuffix(p, "(deny appleevent-send)") {
+  		t.Errorf("the last rule is not (deny appleevent-send):\n%s", p[max(0, len(p)-200):])
+  	}
+  }
+
+  func TestDenyDefaultProfileKeepsSecretsDeniedAfterAContextAllow(t *testing.T) {
+  	pp := testProfileParams()
+  	pp.Context = []ContextLink{{Dest: "/ctx/ssh", Source: "/Users/you/.ssh", Dir: true}}
+  	p := DenyDefaultProfile(pp)
+  	allow := strings.Index(p, "#seatbelt-test-id:context-read-allow#")
+  	deny := strings.Index(p, "#seatbelt-test-id:host-secrets-deny#")
+  	if allow < 0 || deny < allow {
+  		t.Errorf("host-secrets-deny (%d) must follow context-read-allow (%d)", deny, allow)
+  	}
+  }
+
+  func TestDenyDefaultProfileLoopbackPolicy(t *testing.T) {
+  	pp := testProfileParams()
+  	if p := DenyDefaultProfile(pp); !strings.Contains(p, `(deny network-outbound (remote ip "localhost:*"))`) {
+  		t.Error("a denying policy renders no loopback deny")
+  	}
+  	pp.Loopback = LoopbackPolicy{AllowAll: true}
+  	if p := DenyDefaultProfile(pp); strings.Contains(p, `"localhost:*"`) {
+  		t.Error("AllowAll still denies loopback")
+  	}
+  }
+
+  func TestDenyDefaultProfileTmpPolicyGovernsBothTempDirs(t *testing.T) {
+  	pp := testProfileParams()
+  	pp.Tmp = TmpPrivate
+  	p := DenyDefaultProfile(pp)
+  	for _, never := range []string{`(subpath "/private/tmp")`, `(subpath "/private/var/folders/ab/xyz/T")`} {
+  		if strings.Contains(p, never) {
+  			t.Errorf("TmpPrivate still grants %s", never)
+  		}
+  	}
+  	if !strings.Contains(p, `(subpath "/private/var/folders/ab/xyz/T/yolo-alpha")`) {
+  		t.Error("TmpPrivate lost the launch's own TMPDIR")
+  	}
+  }
+
+  func TestDenyDefaultProfileHidesUsrLocalWithoutHostSoftware(t *testing.T) {
+  	pp := testProfileParams()
+  	pp.HostSoftware = nil
+  	p := DenyDefaultProfile(pp)
+  	if strings.Contains(p, `(subpath "/opt/homebrew")`) || !strings.Contains(p, `(deny file-read* (subpath "/usr/local"))`) {
+  		t.Error("with no host software, /opt/homebrew must be absent and /usr/local denied after /usr")
+  	}
+  }
+  ```
+
+  Extend `TestEverySeatbeltDenyCarriesATestID` (`seatbeltdenies_test.go:36`) to run its loop over
+  `DenyDefaultProfile` as well, with every optional input set. In
+  `integration/macosuserdenydefault_test.go`, add `denyDefaultRules` (every new and kept id, each
+  `unproven: "runtime case lands in slice 10"`) and
+  `TestMacosUserDenyDefaultRegistryMatchesTheProfile`, which mirrors
+  `TestMacosUserSeatbeltRegistryMatchesTheProfile` (`macosuserseatbelt_test.go:939`) but renders
+  the new profile twice (loopback denied and allowed, tmp shared and private) and takes the union of
+  the ids.
+
+  Red: `go test -short -run 'DenyDefault' ./internal/macosuser ./integration` fails to compile.
+- **Change:** `seatbeltdeny.go` (types, builder, the three production constants set to the
+  prototype's values: loopback denied, `TmpShared`, `{"/opt/homebrew", "/usr/local"}`). Port the
+  prototype's blocks in its order. Its Apache-2.0 header becomes the profile's opening comment.
+  Insert the reused blocks ([Reuse](#reuse-before-you-write)) where the old profile places them
+  relative to the writable allow and the closing denies. `RunAs` is not a field: the profile text is
+  identical in both modes, which is the ruling. Add the Safehouse line to `NOTICE`.
+- **Gates:** the red command green; `go test -short ./internal/macosuser ./integration`; `just format`.
+- **Fences:** `seatbelt.go`'s `seatbeltProfile` unchanged; no caller.
+- **Commit:** `feat(macos-user): generate the deny-by-default Seatbelt profile`
+- **Report:** red, green, and every prototype rule dropped or changed in the port, with its reason.
+
+### Slice 5 — self-mode homes, layout and guest scope (after 3)
+
+- **Settled:** HOME is `<ws>/.yolo/home` with real dot-named dirs ([MMP-D5](#MMP-D5)); the machine
+  root and shared dirs per [MMP-D6](#MMP-D6); guest scope per [MMP-D7](#MMP-D7).
+- **Tests first.** Append to `internal/entrypoint/darwinhomelayout_test.go`:
+
+  ```go
+  func TestDeriveDarwinWorkspaceHomeKeepsStateAsRealDirsInTheHome(t *testing.T) {
+  	ws := "/Users/you/code/alpha"
+  	h := DarwinHomes{
+  		Home:    ws + "/.yolo/home",
+  		Machine: "/Users/you/.local/share/yolo-jail/macos-user",
+  		Shared:  "/Users/you/.local/share/yolo-jail/home",
+  	}
+  	l := DeriveDarwinWorkspaceHome(h, []string{".claude", ".pi/agent"}, []string{".claude-shared-credentials"})
+  	got := map[string]string{}
+  	for _, ln := range l.Links {
+  		got[ln.Path] = ln.Target
+  		if strings.HasPrefix(ln.Target, h.Home+"/") {
+  			t.Errorf("%s links back into HOME (%s); state is a real dir there", ln.Path, ln.Target)
+  		}
+  	}
+  	for p, want := range map[string]string{
+  		h.Home + "/.cache":                     h.Machine + "/.cache",
+  		h.Home + "/Library/Caches":             h.Machine + "/Library/Caches",
+  		h.Home + "/.claude-shared-credentials": h.Shared + "/.claude-shared-credentials",
+  	} {
+  		if got[p] != want {
+  			t.Errorf("%s -> %q, want %q", p, got[p], want)
+  		}
+  	}
+  	if len(l.Links) != 3 || len(l.Mirrors) != 0 {
+  		t.Errorf("links %v, mirrors %v; want 3 links, no mirrors", l.Links, l.Mirrors)
+  	}
+  	for _, d := range []string{".claude", ".pi/agent", ".npm-global", ".local", "go", ".yolo/bin", ".config"} {
+  		if !slices.Contains(l.Dirs, h.Home+"/"+d) {
+  			t.Errorf("Dirs lacks %s", h.Home+"/"+d)
+  		}
+  	}
+  	for _, ln := range l.Links {
+  		if strings.Contains(ln.Path, "/.yolo/mise") {
+  			t.Errorf("%s: MISE_DATA_DIR names the machine store; HOME gets no mise link", ln.Path)
+  		}
+  	}
+  }
+  ```
+
+  Append to `internal/paths/workspacescope_test.go` a
+  `TestGuestScopeJudgesAgainstTheRealHome`: with `HOME=<ws>/.yolo/home` and
+  `YOLO_DARWIN_REAL_HOME=<tmp>/you` (a directory owned by the test's euid),
+  `EnsureWorkspaceStateDir(ws)` succeeds. With the variable unset it refuses as today. Append to
+  `internal/macosuser/macosuser_test.go` a `TestSandboxEnvPairsCarryTheHomes`: the self-mode
+  pairs carry `HOME=<ws>/.yolo/home`, `MISE_DATA_DIR=<machine>/.yolo/mise`,
+  `YOLO_DARWIN_REAL_HOME=<host home>`, and the three variables are in `ProtectedSandboxEnvNames()`.
+
+  Red: `go test -short -run 'DeriveDarwinWorkspaceHome|GuestScopeJudges|SandboxEnvPairsCarry' ./internal/entrypoint ./internal/paths ./internal/macosuser`
+  fails to compile.
+- **Change:** add `paths.MacosUserMachineRoot()` beside `GlobalMise`. Add
+  `entrypoint.DarwinHomes` and `DeriveDarwinWorkspaceHome`. `darwinHomeLayoutFor` uses it when
+  `$HOME` equals `$YOLO_DARWIN_HOME_SIDECAR`, reading `YOLO_DARWIN_MACHINE_HOME` and
+  `YOLO_DARWIN_SHARED_HOME`. Before any `MkdirAll`, `Apply` refuses a link anywhere on
+  `<ws>/.yolo` → HOME (reuse `LinkedSidecarError`). `internal/macosuser` gets a
+  `LaunchHomes(mode, workspace, hostHome) Homes{Home, Machine, Shared, Real}`. `ModeAccount` returns
+  today's values (`SandboxHome()` for all but `Real`). `sandboxEnvPairs` takes `Homes`. The guest
+  scope helper lives in `paths`, and `cli.Main` and `cmd/yolo-jaild` call it. The one HOME source on
+  the guest is `internal/cli/internal.go:362-368`.
+- **Gates:** the red command green; `go test -short ./internal/entrypoint ./internal/paths ./internal/macosuser ./internal/cli`; `just format`.
+- **Fences:** no caller passes `ModeSelf` yet; `DeriveDarwinHomeLayout` and `Apply`'s account path
+  unchanged.
+- **Commit:** `feat(macos-user): derive the run-as-you workspace home`
+- **Report:** red, green.
+
+### Slice 6 — the self-mode launch, opt-in (after 2, 3, 4, 5)
+
+- **Settled:** default mode behavior from the design (no account, no admin, no grants, workspace
+  anywhere). The production default stays account. `"macos_user_mode": "self"` becomes an opt-in
+  that works.
+- **Preconditions:** slices 2 to 5 landed; `PlanSession.Mode` exists. Otherwise stop.
+- **Tests first.** New `internal/macosuser/selfmode_test.go`:
+
+  ```go
+  package macosuser
+
+  import (
+  	"strings"
+  	"testing"
+
+  	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+  )
+
+  func selfRunPlan(t *testing.T, ws string) RunPlan {
+  	t.Helper()
+  	return BuildRunPlanWithDaemons(ws, jsonx.NewOrderedMap(), nil, []string{"claude"},
+  		"/usr/local/bin/yolo", "", HomeOverlay{}, HostContext{}, jsonx.NewOrderedMap(), nil, nil,
+  		JailDaemons{}, FloorStage{}, PlanSession{Mode: ModeSelf, HostHome: "/Users/you"})
+  }
+
+  func TestSelfModePlanRunsNoSudoAndGrantsNothing(t *testing.T) {
+  	plan := selfRunPlan(t, "/Users/you/code/alpha")
+  	argvs := append([][]string{plan.LaunchArgv, plan.BootstrapArgv, plan.ProvisionArgv}, plan.StageCommands...)
+  	for _, a := range argvs {
+  		joined := strings.Join(a, " ")
+  		if len(a) > 0 && a[0] == "/usr/bin/sudo" {
+  			t.Errorf("self mode crosses into an account: %s", joined)
+  		}
+  		if strings.Contains(joined, "chmod +a") || strings.Contains(joined, "_yolojail") {
+  			t.Errorf("self mode grants or names the account: %s", joined)
+  		}
+  	}
+  	if problems := PlanInvariants(plan); len(problems) != 0 {
+  		t.Errorf("self-mode plan has problems:\n  %s", strings.Join(problems, "\n  "))
+  	}
+  }
+
+  func TestSelfModeAcceptsAWorkspaceInTheHome(t *testing.T) {
+  	if plan := selfRunPlan(t, "/Users/you/code/alpha"); plan.OffendingHomeSet {
+  		t.Errorf("self mode refuses a workspace in the home (%s)", plan.OffendingHome)
+  	}
+  }
+
+  func TestSelfModeUsesTheDenyDefaultProfileAndTheWorkspaceHome(t *testing.T) {
+  	plan := selfRunPlan(t, "/Users/you/code/alpha")
+  	if !strings.Contains(plan.Seatbelt, "(deny default)") || strings.Contains(plan.Seatbelt, "(allow default)") {
+  		t.Error("self mode does not run under the deny-default profile")
+  	}
+  	if !containsArg(plan.LaunchArgv, "HOME=/Users/you/code/alpha/.yolo/home") {
+  		t.Errorf("launch HOME is not the workspace home: %v", plan.LaunchArgv)
+  	}
+  	if !containsArgPair(plan.BootstrapArgv, "/usr/bin/sandbox-exec", "-f", plan.ProfilePath) {
+  		t.Errorf("the bootstrap is not confined (MMP-D9): %v", plan.BootstrapArgv)
+  	}
+  }
+
+  func TestAccountModePlanIsUnchanged(t *testing.T) {
+  	if !strings.Contains(testRunPlan(t).Seatbelt, "(allow default)") {
+  		t.Error("the zero-mode plan stopped using today's profile")
+  	}
+  }
+  ```
+
+  `containsArgPair` is production code (`capture.go:775`); add a test-only `containsArg` in the
+  new file if no test helper of that name exists. In the orchestrator tests, add
+  `TestSelfModeTakesNoAccountHomeHold`, in which a `Deps.HoldAccountHome` stub that fails the test
+  if called is never called for `Options{Mode: ModeSelf}`. Add
+  `TestSelfModeCreatesAnAbsentStagingRoot`, in which the stubbed `Run` records the `mkdir -m … /Users/Shared/yolo-staged`
+  argv and no sudo argv. Rewrite slice 2's `TestMacosLaunchRefusesSelfModeUntilItIsBuilt` to the
+  new behavior, `TestMacosLaunchPassesSelfModeToTheBackend`. It is a rewrite, not a repair.
+
+  Red: `go test -short -run 'SelfMode|AccountModePlanIsUnchanged' ./internal/macosuser ./internal/cli`.
+- **Change:** in `BuildRunPlanWithStages`, branch on `session.Mode` where the plan reads homes, the
+  profile, grants and the in-home check:
+  - homes come from `LaunchHomes`;
+  - the profile is `DenyDefaultProfile` with the production constants, and the loopback ports stay
+    empty until slice 7;
+  - `endpointGrantCommands`, workspace ACLs and `CacheRelocationACECommands` are skipped;
+  - the bootstrap argv runs under `sandbox-exec -f <profile>`;
+  - `OffendingHome` is not computed.
+
+  `PlanInvariants` gains the rule that a self-mode plan carries no sudo argv. In `RunMacosUser`, for
+  self mode:
+  - no `HoldAccountHome`;
+  - the preconditions run only `macos`, `not-root`, `sandbox-exec` and the staging-root checks, and
+    an absent root is created ([MMP-D8](#MMP-D8));
+  - no grant stage.
+
+  `SiteContextLinks` rule 5 and the sudo `ContextPreflight` apply only to account mode; self mode
+  probes with `RunAs{Mode: ModeSelf}`. `commands.go` passes the parsed mode and
+  `os.UserHomeDir()` (resolved) into `Options`.
+- **Gates:** the red command green;
+  `go test -short ./internal/macosuser ./internal/cli/... ./internal/entrypoint`;
+  `go test -run 'TestMacosUser' ./integration` (skips off a Mac; must compile); `just format`.
+- **Fences:** absent key still means account; no doc claims self mode works.
+- **Commit:** `feat(macos-user): launch as the invoking user when macos_user_mode is self`
+- **Report:** red, green, and the list of account-only steps self mode skips.
+
+### Slice 7 — loopback ports (after 6; build only if loopback stays denied)
+
+- **Settled:** [MMP-D10](#MMP-D10). Skip this slice entirely if the maintainer rules that loopback is
+  allowed on macOS.
+- **Tests first.** New `internal/macosuser/loopbackports_test.go`, with
+  `TestLoopbackPortsReadsEveryPublishedEndpoint`. Publish two endpoints with `svcendpoint.Publish`
+  into temp files, with `HostPort` set to `127.0.0.1:40001` and `127.0.0.1:40002`. Put their paths
+  under `YOLO_SERVICE_A_ENDPOINT` and `YOLO_SERVICE_B_ENDPOINT` in a sandbox env, add served ports
+  `{8214: 51000}` and a `forward_host_ports` entry `"11434:11435"`, and assert
+  `LoopbackPorts(...) == []int{11434, 40001, 40002, 51000}` (sorted, unique). Add
+  `TestLoopbackPortsNamesAMissingEndpoint`: a variable naming a missing file returns an error that
+  contains the variable's name.
+  Red: `go test -short -run LoopbackPorts ./internal/macosuser`.
+- **Change:** `loopbackports.go`. `BuildRunPlanWithStages`' self branch fills
+  `ProfileParams.Loopback.Ports`. A missing endpoint becomes a plan problem naming the service and
+  "run `yolo` again" (the [Traps](#traps) entry on ephemeral ports).
+- **Gates:** red green; `go test -short ./internal/macosuser`; `just format`.
+- **Commit:** `feat(macos-user): allow yolo's own loopback ports through the profile`
+
+### Slice 8 — package caches shared in self mode (after 6)
+
+- **Settled:** [OQ-BF11](../reference/disk-footprint.md#OQ-BF11): a fixed list, caches never configs,
+  only where files are the user's, a matching platform, and each alias announced. Self mode is
+  eligible because the agent is you.
+- **Tests first.** Append to `internal/hostcas/hostcas_test.go`:
+
+  ```go
+  func TestMacosUserSelfModeAliasesAPathKeyedStore(t *testing.T) {
+  	home := t.TempDir()
+  	f := Facts{
+  		Runtime: "macos-user", MacosUserSelf: true, IsMacOS: true,
+  		HostPlatform: "darwin/arm64", JailPlatform: "darwin/arm64",
+  		Ownership:  OwnershipYours,
+  		HostGetenv: func(k string) string { return map[string]string{"HOME": home}[k] },
+  	}
+  	probe := func(string) Presence { return Presence{Exists: true, IsDir: true, Writable: true} }
+  	d := decide(storeNamed(t, "pip-cache"), f, probe)
+  	if !d.Aliased {
+  		t.Fatalf("pip-cache not aliased in self mode: %s (%s)", d.Code, d.Reason)
+  	}
+  	if want := filepath.Join(home, "Library", "Caches", "pip"); d.Source != want {
+  		t.Errorf("source = %q, want the macOS default %q", d.Source, want)
+  	}
+  }
+
+  func TestMacosUserAccountModeDeclinesEveryStore(t *testing.T) {
+  	f := Facts{Runtime: "macos-user", IsMacOS: true, HostPlatform: "darwin/arm64", JailPlatform: "darwin/arm64"}
+  	for _, s := range Stores {
+  		if d := decide(s, f, func(string) Presence { return Presence{} }); d.Aliased || d.Code != CodeBackend {
+  			t.Errorf("%s in account mode: aliased=%v code=%s", s.Name, d.Aliased, d.Code)
+  		}
+  	}
+  }
+  ```
+
+  If `storeNamed` does not exist, add it to the test file. Add a row test pinning every store's
+  `DarwinRel`, and extend `TestNoStoreNamesAConfigOrCredentialPath` to read `DarwinHost` and
+  `DarwinRel` too.
+  Red: `go test -short -run 'MacosUser' ./internal/hostcas`.
+- **Change:** add `Store.DarwinHost` and `Store.DarwinRel`, and `Facts.MacosUserSelf`. In `decide`,
+  the backend and macOS gates admit `macos-user` with `MacosUserSelf`, and darwin resolves the
+  source with `DarwinHost`. Add `probe_darwin.go` (same contract as Linux's probe). In
+  `hostcasalias.go`, the macos-user caller sets `Ownership: OwnershipYours` and
+  `JailPlatform: "darwin/"+GOARCH`, and delivers each alias as a HOME link plus a
+  `cache-alias-allow` block (the relocation blocks' shape), never `-v`. Candidate darwin rows:
+  - pip: `~/Library/Caches/pip`;
+  - Go build: `~/Library/Caches/go-build`;
+  - Go modules: `~/go/pkg/mod`;
+  - uv: `~/.cache/uv`;
+  - npm: `~/.npm/_cacache`;
+  - yarn: `~/Library/Caches/Yarn`;
+  - pnpm store: `~/Library/pnpm/store`;
+  - cargo: `~/.cargo/registry`;
+  - pants: `~/.cache/pants/lmdb_store`;
+  - mise downloads: under `MISE_DATA_DIR`.
+
+  `DarwinRel` is the same path relative to HOME, unless the sandbox env overrides it (for example
+  `NPM_CONFIG_CACHE`, `entrypoint/shell.go:259`). Slice 11's Mac check confirms each row. A row the
+  Mac shows unused is dropped, not guessed again.
+- **Gates:** red green; `go test -short ./internal/hostcas ./internal/cli/run ./internal/macosuser`; `just format`.
+- **Commit:** `feat(hostcas): share package caches with macos-user's run-as-you mode`
+
+### Slice 9 — install capture in self mode (after 6; macOS CI)
+
+- **Settled:** a capture never reaches the shared credential store. In self mode that store is the
+  machine root plus `GlobalHome()`'s shared dirs.
+- **Tests first:** in `seatbeltcapture_test.go`, add
+  `TestSelfModeCaptureProfileDeniesTheMachineRootAndSharedDirs`, a sibling of
+  `TestCaptureProfileDeniesWritesToTheSharedHome`. Add a capture-plan test asserting that no sudo
+  argv appears when the mode is self.
+- **Change:** the capture profile builder takes the denied roots from `LaunchHomes` instead of
+  `SandboxHome()`. The capture and fork-build acts cross through `RunAs`. In self mode,
+  `privilegePreconditions` reduces to the staging and capture roots.
+- **Gates:** `go test -short ./internal/macosuser`; macOS CI runs `macosusercaptureseatbelt_test.go` after landing.
+- **Commit:** `feat(macos-user): run install capture as the invoking user in self mode`
+
+### Slice 10 — render the generated profile; the policy suite (after 4; macOS CI)
+
+- **Change.** Add a hidden verb, `yolo internal macos-user-profile --mode self|account --workspace W --home H --tmp T [--allow-port P]…`,
+  which prints `DenyDefaultProfile` for those inputs with the production constants. Give
+  [`run-checks.sh`](../plans/runbooks/macos-user-model-prototype/run-checks.sh) a
+  `--profile-from-yolo <yolo>` option. With it, after building its workspace, home and temp dir,
+  the script renders the profile through that verb and runs every check against it instead of
+  `profile.sb`. Port the runbook's a, b, c, d and e checks into
+  `integration/macosuserdenydefault_test.go` as runtime cases, each with its bare control, and
+  clear the `unproven` reasons slice 4 left.
+- **Tests first:** `TestMacosUserProfileVerbPrintsTheGeneratedProfile` in `internal/cli` compares
+  the verb's stdout with `DenyDefaultProfile` for the same inputs. The registry test from slice 4
+  now fails on every case that carries no id, until each is registered.
+- **Gates:** `go test -short ./internal/cli ./integration`; `bash -n` on the script; macOS CI runs the new cases after landing.
+- **Commit:** `test(macos-user): run the prototype checks against the generated profile`
+- **Report:** the CI run id and its pass, fail and skip counts.
+
+### Slice 11 — the rerun gate, then the default flips (after 6 to 10; human Mac run)
+
+- **Preconditions (stop and ask if any fails):**
+  1. The maintainer has ruled loopback, the shared `/tmp`, and Homebrew's visibility, in the design
+     doc ([Blockers](#blockers)).
+  2. A human ran `./run-checks.sh --mode self --profile-from-yolo <dev yolo>` and
+     `--mode account --account _yolojail` on a Mac, with the profile built from those rulings. Both
+     must be free of FAIL lines, and the output must be pasted into the design's
+     [first Mac run](macos-user-model.md#first-mac-run-2026-10-22) section as a dated second run.
+  3. On the same Mac, with `"macos_user_mode": "self"` set, `yolo -- claude` started in a fresh
+     `~/code/alpha` with no admin step. Claude logged in and stayed logged in across two launches
+     (design [§6](macos-user-model.md#6-what-a-prototype-must-show) items 1 and 6). Two workspaces
+     ran at once. A `pip download` inside wrote into the host's `~/Library/Caches/pip`, and each
+     slice 8 row was confirmed or dropped.
+- **Change:**
+  - set `productionLoopback`, `productionTmp` and `productionHostSoftware` to the rulings (if
+    loopback is allowed, revert slice 7's wiring, or never land it);
+  - make `MacosUserMode`'s absent value resolve to `self` in `commands.go`;
+  - flip the setupcensus cell and `config_ref.txt` default;
+  - update the docs under [Ships with](#ships-with).
+- **Tests first:** rewrite `TestMacosLaunchPassesSelfModeToTheBackend` so that an absent key also
+  yields `ModeSelf`. Add one test per constant pinning the ruled value. These are rewrites to the
+  new behavior, not repairs.
+- **Gates:** `just check-ci`; `go test -run 'TestMacosUser' ./integration` on macOS CI after landing.
+- **Commit:** `feat(macos-user): run as the invoking user by default`
+- **Report:** the two pasted runs, the CI run id, and the rulings each constant encodes.
+
+### Slice 12 — account mode on the model (after 11; human Mac run)
+
+- **Settled:** the same profile run as `_yolojail`; HOME in the workspace; access grants that let the
+  account reach the workspace; two workspaces at once, so no hold. A workspace in your home works
+  with grants: the design's done-state launches `~/code/alpha` in account mode, and
+  [MM-R1](macos-user-model.md#decision-ledger) accepts the grant risk.
+- **Change:**
+  - account mode takes the self-mode branch of `BuildRunPlanWithStages`, keeping the sudo
+    crossing, the grant stage and the account preconditions;
+  - the machine root is `SandboxHome()`, with MCWP-D8's machine-tier lock around machine dirs and
+    cache relocations;
+  - the workspace grant extends a traverse-only entry to each ancestor inside a home;
+  - `HomeContaining` stops refusing;
+  - `HoldAccountHome` is no longer taken.
+- **Tests first:** rewrite `TestHomeContaining`, `inhomeorder_test.go` and
+  `TestTheAccountHomeHoldGatesTheBuildAndSpansTheSession` to the new behavior. Delete
+  `integration/macosuseraccounthome_test.go`'s refusal case, and replace it with a two-workspace
+  concurrent launch as `_yolojail`.
+- **Gate:** a human reruns `run-checks.sh --mode account` with the generated profile and launches two
+  workspaces at once as the account. Then `just check-ci`, and macOS CI.
+- **Commit:** `feat(macos-user): run the optional account mode on the deny-default profile`
+
+### Slice 13 — delete what nothing uses (after 12; macOS CI)
+
+- **Change:** delete:
+  - `seatbeltProfile` and its wrappers, and the old registry entries (the [Test-id ledger](#test-id-ledger)
+    "subsumed" and "retired" rows);
+  - `accounthomehold.go`, `Deps.HoldAccountHome` and `PreflightLaunch`'s hold parameter;
+  - the shared-home routing in `darwinhomelayout.go` (`Mirrors`, `homeFileThroughLayout`'s
+    account branch, `occupiedLayoutError`'s `sudo rm` remedy);
+  - `overlayLinks`' cross-workspace refusals;
+  - `ctxlink.go`'s `ContextLinkOwnerEnv` retargeting;
+  - `DarwinLoginPathEnv`'s shared-home rationale, if nothing else reads it.
+
+  Run `rg -n` for each symbol before deleting it; a remaining caller means stop and report.
+  Mark the [concurrent-workspace plan](macos-user-concurrent-workspaces-plan.md) superseded in the
+  same commit, and repoint roadmap item 51.
+- **Gates:** `just check-ci`; macOS CI.
+- **Commit:** `refactor(macos-user): delete the shared account home and the allow-default profile`
+
+## Ships with
+
+- **Unit, per slice:** as each task names. The cases that catch a regression end to end:
+  - `TestSelfModePlanRunsNoSudoAndGrantsNothing` (a crossing added without `RunAs`);
+  - `TestEveryCrossingGoesThroughRunAs` (the call-site pin);
+  - `TestDenyDefaultProfileEndsWithTheAppleEventDeny` (the first Mac run's escape);
+  - `TestOverlayInstallRemovesADestinationTheNextOverlayNoLongerLists`.
+- **Integration:** `integration/macosuserdenydefault_test.go` (registry on Linux, runtime on macOS
+  CI) is the permanent home of the prototype's checks
+  ([§8.1](../research/agent-safehouse.md#81-a-policy-assertion-suite-for-macos-user--highest-value-moderate-cost)).
+  The two-workspace concurrent launch (slice 12) replaces the hold's refusal test.
+- **Tests that must be rewritten, not repaired:**
+  - slice 2's refusal test (in slice 6);
+  - `TestHomeContaining`, the `inhomeorder_test.go` cases and the hold tests in
+    `terminate_test.go` and `accounthomehold_test.go` (slices 12 and 13);
+  - `TestMacosUserASecondWorkspaceIsRefusedWhileASessionHoldsTheAccountHome` (slice 12);
+  - the old seatbelt registry (slice 13).
+- **Docs that will describe the old behavior after slice 11:**
+  - [`userguide/guides/macos.md`](../../userguide/guides/macos.md): setup, the projects folder,
+    access grants, the in-home refusal;
+  - [`settings-per-setup.md`](../../userguide/reference/settings-per-setup.md);
+  - [`macos-user-home-tiers.md`](../reference/macos-user-home-tiers.md): the shared account home;
+  - [`macos-user-provisioning.md`](../reference/macos-user-provisioning.md);
+  - [`context-mounts.md`](../reference/context-mounts.md#the-seatbelt-rules): rule 5 and the
+    profile blocks;
+  - [`disk-footprint.md`](../reference/disk-footprint.md): "never a macOS host" and "macos-user
+    waits for its run-as-you mode";
+  - [`macos-user-nix-and-features.md`](../reference/macos-user-nix-and-features.md);
+  - [`AGENTS.md`](../../AGENTS.md): the host-cache line's "never macOS", and the agent-log
+    location line ("the account home's links point there");
+  - [`docs/research/macos-support-matrix.md`](../research/macos-support-matrix.md): its profile
+    claims.
+
+  Check each doc's "only" and "always" claims, not just its links.
+- **Design doc:** fill the `Built` column of the [ledger](macos-user-model.md#decision-ledger) at
+  slices 11 and 12. The second Mac run goes into its first-run section (slice 11).
+- **Changelog:** slice 11 only. It gets one `### Changed` entry: the default now runs as you with
+  no setup, the second account is `"macos_user_mode": "account"`, and existing setups need no
+  action. Slice 8 gets one `### Added` line.
+- **Config surfaces:** `config_ref.txt`, `setupcensus`, `render.hostConfigKeys`, `inheritCensus`
+  (slice 2), and the default flip (slice 11).
+- **Cheap, and the implementer's:** the new ids' names; helper names; whether `RunAs` is a parameter
+  or a struct field; the record file's name.
+- **Stop and ask:**
+  - a prototype rule that the port needs to widen past what the prototype measured (any new
+    `subpath` on a parent directory, which is [OQ-MM2](macos-user-model.md#OQ-MM2)'s line);
+  - any change to which credential store self mode shares ([MMP-D6](#MMP-D6));
+  - slice 11 starting without the three rulings.
+
+## Don't
+
+- Don't pass the profile's values through `sandbox-exec -D`. A per-session text file is how every
+  launch already works ([MMP-D1](#MMP-D1)).
+- Don't open per-language home folders (`~/.cargo`, `~/.nvm`, …) "so tools work". The ruling is no
+  per-language home grants. Caches cross only through slice 8's fixed list, and never a config
+  file.
+- Don't grant the keychain, its services, or `~/Library/Keychains` to make an agent's login work. A
+  login lands in `<ws>/.yolo/home` as on podman, and the host keychain is the loophole's
+  ([OQ-KC4](keychain-from-a-jail.md#8-decision-ledger)).
+- Don't migrate, delete or announce anything about an existing `_yolojail` account, its home or its
+  sudo rule ([OQ-MM4](macos-user-model.md#OQ-MM4)).
+- Don't let a workspace config choose the mode, even as a "hint" ([MMP-D3](#MMP-D3)).
+- Don't build the concurrent-workspace plan's slices as well. This plan replaces its HOME geometry.
+- Don't flip the default in any slice but 11, and don't add a preview environment variable to reach
+  self mode early. The opt-in key is the preview.
+- Don't widen `/opt` or `/Users` to fix a start-up read. Find the exact path in
+  `log show --predicate 'sender == "Sandbox"'` and add that literal or subpath.
+
+## Blockers
+
+Only slice 11 is blocked. The rest build without the rulings, because each pending decision is a
+parameter ([MMP-D13](#MMP-D13)).
+
+- **Loopback (check d3)** and **the shared `/tmp` (check b14)**: named under *Needs your ruling* and
+  in the design's [first Mac run](macos-user-model.md#first-mac-run-2026-10-22). They are not yet
+  filed as question directives, so the planning index does not count them. Loopback re-raises
+  [OQ-MM3](macos-user-model.md#OQ-MM3).
+- **Host software (Homebrew) visibility**: the prototype allows `/opt/homebrew` read-only (and
+  `/usr/local`, through `/usr`), and the first run passed with it. This plan keeps that as
+  `productionHostSoftware` and marks it pending. It is not filed in the design.
