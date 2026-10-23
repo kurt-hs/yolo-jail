@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 """Run a matched build from the checkout this resolved wrapper belongs to."""
+# The shebang finds whatever python3 is first on PATH, which on macOS can be the system's 3.9;
+# deferred annotations keep `str | Path` from being evaluated there.
+from __future__ import annotations
+
 import importlib.util
 from pathlib import Path
 import sys
