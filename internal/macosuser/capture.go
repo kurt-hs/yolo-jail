@@ -511,7 +511,7 @@ func CaptureDriverArgv(runAs RunAs, stagedYolo, stagingHome, outDir, bin, profil
 	pathPrefix []string) []string {
 	// The crossing is the one run-as rule (RunAsSandboxArgv): `-n`, so it never prompts.
 	out := runAs.Argv(false, "-i")
-	out = append(out, sandboxEnvPairs(stagingHome, SandboxUser,
+	out = append(out, sandboxEnvPairs(accountHomes(stagingHome), SandboxUser,
 		SandboxPath(stagingHome, pathPrefix), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
 	out = append(out, ExecWithEnvFile(envFile, []string{
@@ -1413,7 +1413,7 @@ func buildDriverArgv(runAs RunAs, stagedYolo, stagingHome, outDir, lineStatus, s
 	pathPrefix []string) []string {
 	// The crossing is the one run-as rule (RunAsSandboxArgv): `-n`, so it never prompts.
 	out := runAs.Argv(false, "-i")
-	out = append(out, sandboxEnvPairs(stagingHome, SandboxUser,
+	out = append(out, sandboxEnvPairs(accountHomes(stagingHome), SandboxUser,
 		SandboxPath(stagingHome, pathPrefix), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
 	out = append(out, ExecWithEnvFile(envFile, []string{

@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/pytext"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
@@ -1388,7 +1389,7 @@ func LaunchArgvWithGuard(runAs RunAs, agentArgv []string, profilePath, envFile s
 	if home == "" {
 		home = SandboxHome()
 	}
-	envPairs := sandboxEnvPairs(home, user, SandboxPathForYolo(home, pathPrefix, stagedYolo), envFile)
+	envPairs := sandboxEnvPairs(accountHomes(home), user, SandboxPathForYolo(home, pathPrefix, stagedYolo), envFile)
 	// Run the agent from the workspace: a zsh cd's in, then execs the agent so it inherits
 	// the TTY and PID.
 	quotedAgent := make([]string, len(agentArgv))
@@ -1442,9 +1443,14 @@ func LaunchArgvWithGuard(runAs RunAs, agentArgv []string, profilePath, envFile s
 // install-capture driver (CaptureDriverArgv), which differ in what they exec and in nothing
 // about the environment they exec it in; two spellings of that would be two ways for a
 // capture to stop resembling a launch.
-func sandboxEnvPairs(home, user, pathValue, envFile string) []string {
+//
+// The homes come from Homes (LaunchHomes): in account mode all of them are one home and the list
+// is byte for byte what it was before Homes existed; in self mode HOME is the workspace home, the
+// mise store is the machine root's, and three more protected words tell the guest where the
+// machine root, the shared store and the real home are (MMP-D5 to MMP-D7).
+func sandboxEnvPairs(h Homes, user, pathValue, envFile string) []string {
 	envPairs := []string{
-		"HOME=" + home,
+		"HOME=" + h.Home,
 		"USER=" + user,
 		"SHELL=/bin/zsh",
 		"PATH=" + pathValue,
@@ -1454,13 +1460,27 @@ func sandboxEnvPairs(home, user, pathValue, envFile string) []string {
 		// Protected for the same reason the quartet is — the tier a store belongs to is this
 		// backend's to decide, not a caller's, and the default it overrides lands in the
 		// per-workspace tier (SandboxMiseData).
-		"MISE_DATA_DIR=" + SandboxMiseData(home),
+		//
+		// ⚠ FROM THE MACHINE HOME, NOT HOME: in self mode HOME is the workspace home, and
+		// SandboxMiseData of that is a per-workspace store, created silently.
+		"MISE_DATA_DIR=" + SandboxMiseData(h.Machine),
 		// The same PATH again, under its own name, because a LOGIN shell does not keep the
 		// one above: macOS path_helper reorders PATH in /etc/zprofile, and the rc files
 		// entrypoint.WriteLoginRC generates re-prepend from this variable rather than from a
 		// literal — those files sit at the root of a home every workspace shares, so a baked
 		// value is one workspace's store dirs in another's login shell.
 		entrypoint.DarwinLoginPathEnv + "=" + pathValue,
+	}
+	// Self mode's homes beyond HOME. Emitted only when the launch has a real home that is not
+	// HOME, so an account-mode argv carries none of them: its guest judges scope by its own HOME,
+	// which IS the account's real home, and lays the account layout, which reads neither store
+	// variable.
+	if h.Real != "" {
+		envPairs = append(envPairs,
+			entrypoint.DarwinMachineHomeEnv+"="+h.Machine,
+			entrypoint.DarwinSharedHomeEnv+"="+h.Shared,
+			paths.DarwinRealHomeEnv+"="+h.Real,
+		)
 	}
 	// The file's PATH, so a human reading `ps` or a dry run can find the environment the
 	// command line no longer shows. The reader that consumes it is ExecWithEnvFile's `sh -c`

@@ -1,6 +1,7 @@
 package macosuser
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -566,5 +567,50 @@ func TestEveryStagedRemovalIsUnsealedFirstAndEveryCategoryHasItsMode(t *testing.
 	}
 	if removals == 0 || categories == 0 {
 		t.Fatalf("the fixture removed %d trees and made %d categories, so it checked nothing", removals, categories)
+	}
+}
+
+// TestSandboxEnvPairsCarryTheHomes pins MMP-D5 to MMP-D7 on the closed env list: self mode's HOME
+// is the workspace home, its mise store the machine root's (never one under the workspace HOME),
+// and the guest is told the machine root, shared store and real home on protected words a
+// composed layer cannot override. Account mode carries none of the three.
+func TestSandboxEnvPairsCarryTheHomes(t *testing.T) {
+	ws, host := "/Users/you/code/alpha", "/Users/you"
+	machine := "/Users/you/.local/share/yolo-jail/macos-user"
+	shared := "/Users/you/.local/share/yolo-jail/home"
+	h := LaunchHomes(ModeSelf, ws, host)
+	if want := (Homes{Home: ws + "/.yolo/home", Machine: machine, Shared: shared, Real: host}); h != want {
+		t.Fatalf("LaunchHomes(self) = %+v, want %+v", h, want)
+	}
+	pairs := sandboxEnvPairs(h, "you", "/usr/bin:/bin", "")
+	for _, want := range []string{
+		"HOME=" + ws + "/.yolo/home",
+		"MISE_DATA_DIR=" + machine + "/.yolo/mise",
+		"YOLO_DARWIN_REAL_HOME=" + host,
+		"YOLO_DARWIN_MACHINE_HOME=" + machine,
+		"YOLO_DARWIN_SHARED_HOME=" + shared,
+	} {
+		if !slices.Contains(pairs, want) {
+			t.Errorf("self-mode pairs lack %s: %v", want, pairs)
+		}
+	}
+	protected := ProtectedSandboxEnvNames()
+	for _, k := range []string{"YOLO_DARWIN_REAL_HOME", "YOLO_DARWIN_MACHINE_HOME", "YOLO_DARWIN_SHARED_HOME"} {
+		if !slices.Contains(protected, k) {
+			t.Errorf("%s is not protected: a composed env layer could aim the session elsewhere", k)
+		}
+	}
+	if problems := SandboxArgvEnvProblems("self", append([]string{"/usr/bin/env", "-i"}, append(pairs, "/bin/true")...)); len(problems) != 0 {
+		t.Errorf("the plan invariant refuses self mode's own pairs: %v", problems)
+	}
+
+	if acct := LaunchHomes(ModeAccount, ws, host); acct != (Homes{Home: SandboxHome(), Machine: SandboxHome(), Shared: SandboxHome()}) {
+		t.Errorf("LaunchHomes(account) = %+v, want SandboxHome() in every role and no real home", acct)
+	}
+	for _, p := range sandboxEnvPairs(LaunchHomes(ModeAccount, ws, host), SandboxUser, "/usr/bin:/bin", "") {
+		if strings.HasPrefix(p, "YOLO_DARWIN_REAL_HOME=") || strings.HasPrefix(p, "YOLO_DARWIN_MACHINE_HOME=") ||
+			strings.HasPrefix(p, "YOLO_DARWIN_SHARED_HOME=") {
+			t.Errorf("account mode carries %s; its argvs must not change", p)
+		}
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/oauthterminator"
 	"github.com/mschulkind-oss/yolo-jail/internal/openaiauthadapter"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/supervisor"
 	"github.com/mschulkind-oss/yolo-jail/internal/wirebridged"
 )
@@ -37,6 +38,10 @@ func run(args []string) int {
 	// at init now, but a daemon that does read a pack must still give its hold back; here,
 	// inside run, so main's os.Exit cannot skip it and embeddedtree_test.go can pin it.
 	defer packload.ReleaseEmbedded()
+	// A run-as-you macos-user session's HOME is <workspace>/.yolo/home, inside the workspace, so
+	// a daemon creating the workspace's .yolo judges scope against the real home the launcher
+	// named (paths.GuardGuestScope, MMP-D7). Anywhere else it changes nothing.
+	defer paths.GuardGuestScope()()
 	if len(args) == 0 {
 		return usage()
 	}
@@ -59,7 +64,9 @@ func run(args []string) int {
 	}
 }
 
-func usage() int {
+// usage is a var so a test can observe the scope rule run is under when it dispatches
+// (TestRunJudgesGuestScopeAgainstTheRealHome).
+var usage = func() int {
 	fmt.Fprintln(os.Stderr, "usage: yolo-jaild <supervise|oauth-terminator|openai-auth-adapter|"+
 		"aws-credential-adapter|wire-bridge|nix-roots> [args...]")
 	return 2

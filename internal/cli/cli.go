@@ -20,6 +20,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/crossaudit"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/reporoot"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/version"
@@ -51,6 +52,11 @@ func Main(argv []string) int {
 	// launcher's signal arm (run.go's onTerminate). A later Embedded() loads again, so a
 	// second Main in one process is safe.
 	defer packload.ReleaseEmbedded()
+
+	// In a run-as-you macos-user session HOME is <workspace>/.yolo/home, inside the workspace,
+	// so every verb that creates the workspace's .yolo judges scope against the real home the
+	// launcher named instead (paths.GuardGuestScope, MMP-D7). Anywhere else it changes nothing.
+	defer paths.GuardGuestScope()()
 
 	if cwd := InvocationCWD(); cwd != "" {
 		_ = os.Chdir(cwd)

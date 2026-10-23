@@ -351,3 +351,19 @@ func TestTreeCopyRootForAPackTreeIsTheWorkspacesTreeCopyRoot(t *testing.T) {
 		t.Fatalf("TreeCopyRootFor(%q) = %q, want %q", tree, got, want)
 	}
 }
+
+// TestMacosUserMachineRootIsItsOwnStore pins MMP-D6: the run-as-you machine root is its own
+// state-dir child, never inside or around the shared cache, mise or home store that podman jails
+// on the same Mac fill with Linux files.
+func TestMacosUserMachineRootIsItsOwnStore(t *testing.T) {
+	t.Setenv("HOME", "/Users/you")
+	got := MacosUserMachineRoot()
+	if want := filepath.Join(GlobalStorage(), "macos-user"); got != want {
+		t.Errorf("MacosUserMachineRoot() = %q, want %q", got, want)
+	}
+	for _, shared := range []string{GlobalCache(), GlobalMise(), GlobalHome()} {
+		if scopeUnderOrEqual(got, shared) || scopeUnderOrEqual(shared, got) {
+			t.Errorf("the machine root %s overlaps the shared store %s", got, shared)
+		}
+	}
+}

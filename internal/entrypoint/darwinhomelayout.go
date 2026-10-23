@@ -220,6 +220,123 @@ func DeriveDarwinHomeLayout(home, sidecar string, writableDirs, sharedDirs []str
 	return l
 }
 
+// DarwinMachineHomeEnv names a run-as-you session's machine root (paths.MacosUserMachineRoot) to
+// the native bootstrap, and DarwinSharedHomeEnv the shared credential store
+// (paths.GlobalHome). Both are read only when HOME is the workspace sidecar itself
+// (DeriveDarwinWorkspaceHome), and both ride the sandbox's closed env list
+// (macosuser.sandboxEnvPairs), so no composed layer can aim a session's caches elsewhere.
+const (
+	DarwinMachineHomeEnv = "YOLO_DARWIN_MACHINE_HOME"
+	DarwinSharedHomeEnv  = "YOLO_DARWIN_SHARED_HOME"
+)
+
+// DarwinHomes are the three homes of a run-as-you macos-user session (MMP-D5, MMP-D6 in
+// docs/design/macos-user-model-plan.md):
+//
+//   - Home is HOME, <workspace>/.yolo/home itself, where agent state lives as real dot-named
+//     directories — the layout Apple Container already binds at /home/agent;
+//   - Machine is the darwin-only machine root, holding `.cache`, `Library/Caches` and
+//     `.yolo/mise` for every workspace on the Mac;
+//   - Shared is the store podman binds `scope: machine` pack dirs from, so one login serves
+//     every backend on the machine, as it does today.
+type DarwinHomes struct {
+	Home    string
+	Machine string
+	Shared  string
+}
+
+// DeriveDarwinWorkspaceHome is the pure deriver for a session whose HOME is the workspace
+// sidecar (MMP-D5), the run-as-you counterpart of DeriveDarwinHomeLayout. It takes the same two
+// pack-declared tier lists.
+//
+// WHAT CHANGES FROM THE ACCOUNT LAYOUT. There is no account home to link FROM, so nothing links
+// into the sidecar: the installed-program surfaces, ~/.yolo/bin, ~/.config and each
+// `scope: workspace` dir are real directories in HOME, spelled as the agent sees them
+// (`.claude`, not the container's `claude`). The links point OUT instead: ~/.cache and
+// ~/Library/Caches to the machine root, and each `scope: machine` dir to the shared store.
+//
+// AND THERE ARE NO MIRRORS, because the trap they exist for is gone: the shared_credentials
+// hook's relative `../.claude-shared-credentials` from ~/.claude resolves physically to
+// HOME/.claude-shared-credentials, which is itself the link into the shared store.
+//
+// No link carries mise: MISE_DATA_DIR names <Machine>/.yolo/mise absolutely
+// (macosuser.sandboxEnvPairs), so the store is made here as a directory and never reached
+// through HOME. An empty Machine or Shared lays none of its links; InstallDarwinHomeLayout
+// refuses such a launch before anything is laid (darwinWorkspaceHomeProblem).
+//
+// Existing undotted sidecar dirs (`claude/` and the rest, from the account layout or podman)
+// are left in place and unused (OQ-MM4: nothing migrates).
+func DeriveDarwinWorkspaceHome(h DarwinHomes, writableDirs, sharedDirs []string) DarwinHomeLayout {
+	l := DarwinHomeLayout{Home: h.Home, Sidecar: h.Home}
+	laid := map[string]struct{}{}
+	dir := func(homeRel string) {
+		l.Dirs = append(l.Dirs, filepath.Join(h.Home, homeRel))
+		laid[homeRel] = struct{}{}
+	}
+	for _, s := range paths.HomeSurfaces() {
+		dir(s.HomeRel)
+	}
+	dir(filepath.Join(".yolo", "bin"))
+	dir(".config")
+	for _, d := range writableDirs {
+		dir(d)
+	}
+	linkOut := func(homeRel, root string) {
+		target := filepath.Join(root, homeRel)
+		l.Dirs = append(l.Dirs, target)
+		l.Links = append(l.Links, DarwinHomeLink{Path: filepath.Join(h.Home, homeRel), Target: target})
+	}
+	if h.Machine != "" {
+		linkOut(".cache", h.Machine)
+		linkOut(filepath.Join("Library", "Caches"), h.Machine)
+		l.Dirs = append(l.Dirs, filepath.Join(h.Machine, ".yolo", "mise"))
+	}
+	if h.Shared != "" {
+		for _, d := range sharedDirs {
+			linkOut(d, h.Shared)
+		}
+	}
+	// Home-root files, by DeriveDarwinHomeLayout's rule: only where this layout lays the
+	// directory holding the target. Their relative targets resolve inside HOME.
+	for _, r := range paths.HomeFileRedirects() {
+		holder := strings.SplitN(filepath.ToSlash(r.Target), "/", 2)[0]
+		if _, ok := laid[holder]; !ok {
+			continue
+		}
+		l.FileRedirects = append(l.FileRedirects,
+			DarwinHomeLink{Path: filepath.Join(h.Home, r.Name), Target: r.Target})
+	}
+	return l
+}
+
+// darwinWorkspaceHomeProblem refuses a workspace-home launch (HOME is the sidecar) that did not
+// name both the machine root and the shared store: laid without them, ~/.cache would hold
+// darwin caches per workspace and every login would be per workspace, silently.
+func darwinWorkspaceHomeProblem(e *Env) error {
+	if !darwinHomeIsSidecar(e) {
+		return nil
+	}
+	var missing []string
+	for _, k := range []string{DarwinMachineHomeEnv, DarwinSharedHomeEnv} {
+		if e.Getenv(k) == "" {
+			missing = append(missing, k)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("the per-workspace home %s cannot be laid: the launch named no %s. "+
+		"Only a macos-user launch sets these; run `yolo` in the workspace again, and if it "+
+		"repeats, report it with this line", e.Home, strings.Join(missing, " or "))
+}
+
+// darwinHomeIsSidecar reports whether this bootstrap's HOME is the workspace sidecar itself, the
+// run-as-you layout (MMP-D5), rather than an account home linking into it.
+func darwinHomeIsSidecar(e *Env) bool {
+	sidecar := e.Getenv(DarwinHomeSidecarEnv)
+	return sidecar != "" && filepath.Clean(sidecar) == filepath.Clean(e.Home)
+}
+
 // Apply lays the layout down, idempotently, in the order the fields are declared.
 //
 // Every occupied path is collected and reported TOGETHER. One at a time would make the
@@ -393,8 +510,18 @@ func (l DarwinHomeLayout) linkedSidecarPaths() []string {
 	}
 	root := filepath.Dir(l.Sidecar)
 	chains := [][]string{{root, l.Sidecar}}
+	// Every directory the layout makes or links INTO under the sidecar: an account layout's
+	// Link targets, and a workspace home's own Dirs and the parents of its outward Links
+	// (DeriveDarwinWorkspaceHome), which MkdirAll would otherwise create through a planted link.
+	// For an account layout the extra two add nothing: its in-sidecar Dirs ARE its Link
+	// targets, and its Links sit in the account home.
+	under := make([]string, 0, len(l.Links)+len(l.Dirs))
 	for _, ln := range l.Links {
-		rel, err := filepath.Rel(l.Sidecar, ln.Target)
+		under = append(under, ln.Target, filepath.Dir(ln.Path))
+	}
+	under = append(under, l.Dirs...)
+	for _, p := range under {
+		rel, err := filepath.Rel(l.Sidecar, p)
 		if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
 			continue
 		}
@@ -761,6 +888,9 @@ func plural(n int, one, many string) string {
 // anything writes through ~/.cache. Both halves run, and a refusal from either is reported with
 // the other's, so one launch names everything to fix.
 func InstallDarwinHomeLayout(e *Env, packs []*packload.Pack) error {
+	if err := darwinWorkspaceHomeProblem(e); err != nil {
+		return err
+	}
 	l, ok := darwinHomeLayoutFor(e, packs)
 	if !ok {
 		return nil
@@ -1011,8 +1141,19 @@ func darwinHomeLayoutFor(e *Env, packs []*packload.Pack) (DarwinHomeLayout, bool
 	if sidecar == "" {
 		return DarwinHomeLayout{Home: e.Home}, false
 	}
-	l := DeriveDarwinHomeLayout(e.Home, sidecar,
-		packload.WritableDirs(packs), packload.SharedDirs(packs))
+	var l DarwinHomeLayout
+	if darwinHomeIsSidecar(e) {
+		// Run as you (MMP-D5): HOME is the sidecar, state is real dirs in it, and the
+		// machine root and shared store are named by the launcher.
+		l = DeriveDarwinWorkspaceHome(DarwinHomes{
+			Home:    e.Home,
+			Machine: e.Getenv(DarwinMachineHomeEnv),
+			Shared:  e.Getenv(DarwinSharedHomeEnv),
+		}, packload.WritableDirs(packs), packload.SharedDirs(packs))
+	} else {
+		l = DeriveDarwinHomeLayout(e.Home, sidecar,
+			packload.WritableDirs(packs), packload.SharedDirs(packs))
+	}
 	entries, _ := config.UnmarshalHostFiles(e.Getenv("YOLO_HOST_FILES"))
 	return l.WithHostFileRedirects(entries, packs), true
 }

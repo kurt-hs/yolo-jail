@@ -12,9 +12,12 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 func TestDispatchRoutesWireBridge(t *testing.T) {
@@ -84,5 +87,37 @@ func TestNixRootsIsDispatched(t *testing.T) {
 	}
 	if rc := run([]string{"nix-roots"}); rc != 0 {
 		t.Fatalf("run(nix-roots) = %d, want 0 (nothing to watch)", rc)
+	}
+}
+
+// TestRunJudgesGuestScopeAgainstTheRealHome pins run's paths.GuardGuestScope call site (MMP-D7):
+// in a run-as-you macos-user session HOME is <ws>/.yolo/home, so a daemon judging scope by HOME
+// would refuse the workspace's own .yolo. The dispatch is observed through usage, the one row
+// that needs nothing running; delete the call in run and the first assertion fails.
+func TestRunJudgesGuestScopeAgainstTheRealHome(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	realHome := filepath.Join(base, "you")
+	ws := filepath.Join(realHome, "code", "alpha")
+	if err := os.MkdirAll(paths.WorkspaceHomeState(ws), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", paths.WorkspaceHomeState(ws))
+	var breach *paths.ScopeBreach
+	saved := usage
+	usage = func() int { breach = paths.WorkspaceScopeBreach(ws); return 2 }
+	t.Cleanup(func() { usage = saved })
+
+	t.Setenv(paths.DarwinRealHomeEnv, realHome)
+	run(nil)
+	if breach != nil {
+		t.Fatalf("yolo-jaild's run judged scope by HOME with the real home named: %v", breach.What())
+	}
+	t.Setenv(paths.DarwinRealHomeEnv, "")
+	run(nil)
+	if breach == nil {
+		t.Error("with no real home named, a workspace containing HOME was admitted; this pin's contrast is gone")
 	}
 }

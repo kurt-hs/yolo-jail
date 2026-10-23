@@ -40,9 +40,11 @@ package paths
 // projects live, and ~/.dotfiles is the right way to put a dotfiles tree in a jail.
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 )
 
 // ScopeRootKind names the boundary root a workspace collided with. Callers key their own
@@ -156,6 +158,53 @@ var scopeHomeOverride atomic.Pointer[string]
 func GuardScopeUnder(home string) (restore func()) {
 	prev := scopeHomeOverride.Swap(&home)
 	return func() { scopeHomeOverride.Store(prev) }
+}
+
+// DarwinRealHomeEnv names the invoking user's real home for a macos-user guest process whose HOME
+// is not it (MMP-D7 in docs/design/macos-user-model-plan.md). A run-as-you session's HOME is
+// <workspace>/.yolo/home, INSIDE the workspace, so a guest verb judging workspace scope by HOME
+// would see "the workspace contains your home" and refuse to create the workspace's own .yolo.
+// The launcher sets it on the sandbox's closed env list (macosuser.sandboxEnvPairs), which is
+// what keeps a composed env layer from setting it.
+const DarwinRealHomeEnv = "YOLO_DARWIN_REAL_HOME"
+
+// GuestRealHome returns DarwinRealHomeEnv's value when it is fit to judge scope by, or "".
+//
+// FIT means an absolute path to a directory this process's effective uid owns. The variable can
+// be set by any process in the sandbox for a child, so a value naming somebody else's directory,
+// a file, a relative path or nothing at all is ignored and the process HOME's rule stands. The
+// owner is read off the directory itself rather than os/user: yolo is built without cgo, and
+// without cgo os/user on darwin answers from $HOME — the very value this replaces.
+func GuestRealHome() string {
+	h := os.Getenv(DarwinRealHomeEnv)
+	if h == "" || !filepath.IsAbs(h) {
+		return ""
+	}
+	fi, err := os.Stat(h)
+	if err != nil || !fi.IsDir() {
+		return ""
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok || st.Uid != uint32(os.Geteuid()) {
+		return ""
+	}
+	return filepath.Clean(h)
+}
+
+// GuardGuestScope is the guest's ONE scope rule (MMP-D7): when GuestRealHome names a real home,
+// every WorkspaceScopeBreach in this process judges against it (GuardScopeUnder) instead of HOME;
+// otherwise it changes nothing. It returns the restore function, which a caller defers.
+//
+// Its callers are the two guest entry points, cli.Main and cmd/yolo-jaild's run, so every verb
+// and daemon a run-as-you session starts judges by the same boundary. A verb that guards a
+// narrower home of its own afterwards (`yolo internal darwin-bootstrap`, the account's) still
+// does, since a later GuardScopeUnder wins until it is restored.
+func GuardGuestScope() (restore func()) {
+	h := GuestRealHome()
+	if h == "" {
+		return func() {}
+	}
+	return GuardScopeUnder(h)
 }
 
 // WritableSourceScopeBreach is the SAME rule for a host path a jail would WRITE through a

@@ -716,7 +716,11 @@ func WorkspaceHomeState(workspace string) string {
 }
 
 // GlobalHome returns the shared container /home/agent backing dir.
-func GlobalHome() string { return filepath.Join(GlobalStorage(), "home") }
+func GlobalHome() string { return GlobalHomeUnder(home()) }
+
+// GlobalHomeUnder is GlobalHome for an explicit home: the macos-user launcher names the invoking
+// user's RESOLVED home for a run-as-you session's shared store (macosuser.LaunchHomes).
+func GlobalHomeUnder(h string) string { return filepath.Join(GlobalStorageUnder(h), "home") }
 
 // HomeSurface is one of the per-workspace writable dirs inside the jail home: the pair of
 // names for ONE directory, which lives at <ws>/.yolo/home/<Subtree> on the host and at
@@ -887,6 +891,23 @@ func HostAgentStoreDir(pack string) string {
 
 // GlobalMise returns the shared mise data dir.
 func GlobalMise() string { return filepath.Join(GlobalStorage(), "mise") }
+
+// MacosUserMachineRoot returns $HOME/.local/share/yolo-jail/macos-user: the machine tier of a
+// run-as-you macos-user session (MMP-D6 in docs/design/macos-user-model-plan.md). It holds the
+// session's `.cache`, `Library/Caches` and `.yolo/mise`, which every workspace's HOME links or
+// names into.
+//
+// ⚠ NOT GlobalCache or GlobalMise. Those are the stores podman and Apple Container jails on the
+// same Mac fill with LINUX files, and a darwin binary landing beside them (or a Linux one found by
+// a darwin mise) is a tool that will not run. This root is darwin-only by construction: only the
+// macos-user backend names it.
+func MacosUserMachineRoot() string { return MacosUserMachineRootUnder(home()) }
+
+// MacosUserMachineRootUnder is MacosUserMachineRoot for an explicit home, the invoking user's
+// resolved one (macosuser.LaunchHomes).
+func MacosUserMachineRootUnder(h string) string {
+	return filepath.Join(GlobalStorageUnder(h), "macos-user")
+}
 
 // GlobalCache returns the shared cache dir.
 func GlobalCache() string { return filepath.Join(GlobalStorage(), "cache") }

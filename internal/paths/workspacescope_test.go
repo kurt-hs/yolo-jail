@@ -244,3 +244,73 @@ func TestWorkspaceScopeBreachUnderComparesTheHomesDirectoriesLexically(t *testin
 		}
 	}
 }
+
+// TestGuestScopeJudgesAgainstTheRealHome pins MMP-D7 (docs/design/macos-user-model-plan.md): a
+// run-as-you macos-user session has HOME=<ws>/.yolo/home, INSIDE the workspace, so judged by HOME
+// every guest verb creating <ws>/.yolo saw "the workspace contains your home" and refused.
+// GuardGuestScope judges by YOLO_DARWIN_REAL_HOME instead; unset, the rule is today's.
+func TestGuestScopeJudgesAgainstTheRealHome(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	realHome := filepath.Join(base, "you")
+	ws := filepath.Join(realHome, "code", "alpha")
+	sessionHome := WorkspaceHomeState(ws)
+	if err := os.MkdirAll(sessionHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", sessionHome)
+
+	t.Run("unset judges by HOME, as today", func(t *testing.T) {
+		t.Setenv(DarwinRealHomeEnv, "")
+		defer GuardGuestScope()()
+		if _, err := EnsureWorkspaceStateDir(ws); err == nil {
+			t.Fatal("EnsureWorkspaceStateDir admitted a workspace containing HOME with no real home named")
+		}
+	})
+	t.Run("set judges by the real home", func(t *testing.T) {
+		t.Setenv(DarwinRealHomeEnv, realHome)
+		defer GuardGuestScope()()
+		if _, err := EnsureWorkspaceStateDir(ws); err != nil {
+			t.Fatalf("EnsureWorkspaceStateDir refused under the real home %s: %v", realHome, err)
+		}
+		// The real home's own boundary still holds.
+		if WorkspaceScopeBreach(realHome) == nil {
+			t.Error("the real home itself was admitted as a workspace")
+		}
+	})
+	t.Run("restored afterwards", func(t *testing.T) {
+		t.Setenv(DarwinRealHomeEnv, realHome)
+		GuardGuestScope()()
+		if WorkspaceScopeBreach(ws) == nil {
+			t.Error("the guard outlived its restore")
+		}
+	})
+	// A value that is not an absolute directory this euid owns is ignored, never trusted: the
+	// sandbox's own processes can set the variable for a child.
+	for name, v := range map[string]string{
+		"relative": "you",
+		"missing":  filepath.Join(base, "nobody"),
+		"a file":   writeScopeFile(t, filepath.Join(base, "file")),
+	} {
+		t.Run("ignores "+name, func(t *testing.T) {
+			t.Setenv(DarwinRealHomeEnv, v)
+			if got := GuestRealHome(); got != "" {
+				t.Errorf("GuestRealHome() = %q for %q, want it ignored", got, v)
+			}
+			defer GuardGuestScope()()
+			if WorkspaceScopeBreach(ws) == nil {
+				t.Error("an untrusted real home relaxed the rule")
+			}
+		})
+	}
+}
+
+func writeScopeFile(t *testing.T, p string) string {
+	t.Helper()
+	if err := os.WriteFile(p, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}

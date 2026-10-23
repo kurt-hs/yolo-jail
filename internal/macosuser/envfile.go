@@ -62,6 +62,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // SandboxEnvFileEnv names the session env file on the argv. The value is a PATH, so the
@@ -307,7 +308,11 @@ func protectedSandboxEnvKeys() map[string]struct{} {
 // ProtectedSandboxEnvNames is protectedSandboxEnvKeys as a sorted list, for messages and
 // for tests that want to name the set rather than restate it.
 func ProtectedSandboxEnvNames() []string {
-	out := []string{"HOME", "USER", "SHELL", "PATH", "MISE_DATA_DIR", entrypoint.DarwinLoginPathEnv}
+	out := []string{"HOME", "USER", "SHELL", "PATH", "MISE_DATA_DIR", entrypoint.DarwinLoginPathEnv,
+		// Self mode's homes (sandboxEnvPairs): where the bootstrap links ~/.cache and the
+		// shared credential dirs, and which home the guest judges workspace scope by. A
+		// composed value would aim either somewhere of the composer's choosing.
+		entrypoint.DarwinMachineHomeEnv, entrypoint.DarwinSharedHomeEnv, paths.DarwinRealHomeEnv}
 	sort.Strings(out)
 	return out
 }

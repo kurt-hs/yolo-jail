@@ -1,6 +1,7 @@
 package entrypoint
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -497,6 +498,169 @@ func TestDarwinHomeLayoutRepointsAStaleLinkThePackStillDeclares(t *testing.T) {
 // throwaway staging home whose contract is that everything the installer writes lands under
 // it; its delta walk does not follow symlinks, so a layout there would record an empty
 // install. The launcher names the sidecar, the capture planner does not.
+func TestDeriveDarwinWorkspaceHomeKeepsStateAsRealDirsInTheHome(t *testing.T) {
+	ws := "/Users/you/code/alpha"
+	h := DarwinHomes{
+		Home:    ws + "/.yolo/home",
+		Machine: "/Users/you/.local/share/yolo-jail/macos-user",
+		Shared:  "/Users/you/.local/share/yolo-jail/home",
+	}
+	l := DeriveDarwinWorkspaceHome(h, []string{".claude", ".pi/agent"}, []string{".claude-shared-credentials"})
+	got := map[string]string{}
+	for _, ln := range l.Links {
+		got[ln.Path] = ln.Target
+		if strings.HasPrefix(ln.Target, h.Home+"/") {
+			t.Errorf("%s links back into HOME (%s); state is a real dir there", ln.Path, ln.Target)
+		}
+	}
+	for p, want := range map[string]string{
+		h.Home + "/.cache":                     h.Machine + "/.cache",
+		h.Home + "/Library/Caches":             h.Machine + "/Library/Caches",
+		h.Home + "/.claude-shared-credentials": h.Shared + "/.claude-shared-credentials",
+	} {
+		if got[p] != want {
+			t.Errorf("%s -> %q, want %q", p, got[p], want)
+		}
+	}
+	if len(l.Links) != 3 || len(l.Mirrors) != 0 {
+		t.Errorf("links %v, mirrors %v; want 3 links, no mirrors", l.Links, l.Mirrors)
+	}
+	for _, d := range []string{".claude", ".pi/agent", ".npm-global", ".local", "go", ".yolo/bin", ".config"} {
+		if !slices.Contains(l.Dirs, h.Home+"/"+d) {
+			t.Errorf("Dirs lacks %s", h.Home+"/"+d)
+		}
+	}
+	for _, ln := range l.Links {
+		if strings.Contains(ln.Path, "/.yolo/mise") {
+			t.Errorf("%s: MISE_DATA_DIR names the machine store; HOME gets no mise link", ln.Path)
+		}
+	}
+}
+
+// workspaceHomeBootstrap runs the REAL native bootstrap the way a run-as-you launch will (MMP-D5):
+// HOME is the workspace sidecar itself, and the machine root and shared store are named by their
+// variables. It returns the three homes and the bootstrap's error.
+func workspaceHomeBootstrap(t *testing.T, prep func(h DarwinHomes)) (DarwinHomes, error) {
+	t.Helper()
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws := filepath.Join(base, "you", "code", "alpha")
+	h := DarwinHomes{
+		Home:    filepath.Join(ws, ".yolo", "home"),
+		Machine: filepath.Join(base, "you", ".local", "share", "yolo-jail", "macos-user"),
+		Shared:  filepath.Join(base, "you", ".local", "share", "yolo-jail", "home"),
+	}
+	if err := os.MkdirAll(ws, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if prep != nil {
+		prep(h)
+	}
+	vars := map[string]string{
+		"HOME":                  h.Home,
+		"JAIL_HOME":             h.Home,
+		"YOLO_HOST_DIR":         ws,
+		"YOLO_BLOCK_CONFIG":     `[]`,
+		"YOLO_MISE_TOOLS":       `{}`,
+		"YOLO_PACK_ROOT":        stagePackForBootstrap(t, "claude"),
+		"YOLO_DARWIN_WORKSPACE": ws,
+		DarwinHomeSidecarEnv:    h.Home,
+		DarwinMachineHomeEnv:    h.Machine,
+		DarwinSharedHomeEnv:     h.Shared,
+		"MISE_DATA_DIR":         filepath.Join(h.Machine, ".yolo", "mise"),
+	}
+	e := DarwinEnvFrom(vars, h.Home)
+	e.Stderr = &strings.Builder{}
+	return h, RunDarwinBootstrap(e, DarwinBootstrapOptions{})
+}
+
+// THE PRODUCTION CALL SITE of the workspace home (darwinHomeLayoutFor's HOME == sidecar branch),
+// driven through the real boot entry: ~/.claude is a real directory in HOME, ~/.cache leads to the
+// machine root, and the claude pack's shared credential, written to the shared store after the
+// boot, reads back through ~/.claude — the hook's relative `..` resolving to HOME's own link into
+// the shared store. Delete the branch and ~/.claude becomes a link into a `claude` subdir.
+func TestDarwinBootstrapLaysTheWorkspaceHomeWhenHomeIsTheSidecar(t *testing.T) {
+	h, err := workspaceHomeBootstrap(t, nil)
+	if err != nil {
+		var linked *LinkedSidecarError
+		if errors.As(err, &linked) || strings.Contains(err.Error(), "home layout") {
+			t.Fatalf("the workspace home was not laid: %v", err)
+		}
+	}
+	fi, err := os.Lstat(filepath.Join(h.Home, ".claude"))
+	if err != nil || !fi.IsDir() {
+		t.Fatalf("~/.claude is not a real directory in the workspace home (%v, %v)", fi, err)
+	}
+	if target, err := os.Readlink(filepath.Join(h.Home, ".cache")); err != nil || target != filepath.Join(h.Machine, ".cache") {
+		t.Errorf("~/.cache -> %q (%v), want the machine root's %s", target, err, filepath.Join(h.Machine, ".cache"))
+	}
+	if _, err := os.Lstat(filepath.Join(h.Home, "claude")); err == nil {
+		t.Error("the account layout's undotted sidecar dir was laid in the workspace home")
+	}
+	cred := filepath.Join(h.Shared, ".claude-shared-credentials", ".credentials.json")
+	if err := os.WriteFile(cred, []byte("machine-tier-token"), 0o600); err != nil {
+		t.Fatalf("the shared store's credential dir was not made: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(h.Home, ".claude", ".credentials.json"))
+	if err != nil || string(got) != "machine-tier-token" {
+		t.Errorf("the shared credential does not resolve through ~/.claude: %q, %v", got, err)
+	}
+}
+
+// MkdirAll follows links, and HOME is in the workspace the agent writes. So a link anywhere on
+// <ws>/.yolo → HOME → a directory the layout makes is refused BEFORE anything is created
+// (Traps: "MkdirAll follows links").
+func TestTheWorkspaceHomeRefusesALinkOnItsChainBeforeCreatingAnything(t *testing.T) {
+	for _, rel := range []string{"", ".pi"} {
+		t.Run("link at HOME/"+rel, func(t *testing.T) {
+			victim := t.TempDir()
+			base, _ := filepath.EvalSymlinks(t.TempDir())
+			h := DarwinHomes{
+				Home:    filepath.Join(base, "ws", ".yolo", "home"),
+				Machine: filepath.Join(base, "machine"),
+				Shared:  filepath.Join(base, "shared"),
+			}
+			l := DeriveDarwinWorkspaceHome(h, []string{".pi/agent"}, nil)
+			at := filepath.Join(h.Home, rel)
+			if err := os.MkdirAll(filepath.Dir(at), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(victim, at); err != nil {
+				t.Fatal(err)
+			}
+			err := l.Apply()
+			var linked *LinkedSidecarError
+			if !errors.As(err, &linked) || !slices.Contains(linked.Links, at) {
+				t.Fatalf("Apply() = %v, want a LinkedSidecarError naming %s", err, at)
+			}
+			if entries, _ := os.ReadDir(victim); len(entries) != 0 {
+				t.Errorf("the layout wrote through the link: %v", entries)
+			}
+			if _, err := os.Stat(h.Machine); err == nil {
+				t.Error("the machine root was created before the refusal")
+			}
+		})
+	}
+}
+
+// A workspace home with no machine root or shared store named lays nothing and says which
+// variable the launch left out, rather than linking ~/.cache to a relative path.
+func TestTheWorkspaceHomeRefusesWithoutItsMachineAndSharedHomes(t *testing.T) {
+	base, _ := filepath.EvalSymlinks(t.TempDir())
+	home := filepath.Join(base, "ws", ".yolo", "home")
+	e := NewEnv(map[string]string{"JAIL_HOME": home, DarwinHomeSidecarEnv: home})
+	e.Home = home
+	err := InstallDarwinHomeLayout(e, nil)
+	if err == nil || !strings.Contains(err.Error(), DarwinMachineHomeEnv) || !strings.Contains(err.Error(), DarwinSharedHomeEnv) {
+		t.Fatalf("InstallDarwinHomeLayout() = %v, want a refusal naming both variables", err)
+	}
+	if _, err := os.Lstat(home); err == nil {
+		t.Error("the refusal created the home")
+	}
+}
+
 func TestInstallDarwinHomeLayoutWithoutASidecarWritesNothing(t *testing.T) {
 	home := t.TempDir()
 	e := NewEnv(map[string]string{"JAIL_HOME": home})
