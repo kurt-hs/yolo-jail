@@ -14,7 +14,9 @@
 // write (or a sticky one, where no one else can replace root's entry) — because no agent can have
 // placed or re-pointed it: `/var` → `/private/var` and `/tmp` on macOS, `/home` → `/var/home` on
 // Fedora Atomic, an autofs or corporate home link. Any other link refuses the walk
-// (UntrustedLinkError). BELOW the root, no link is ever followed: each entry is opened from its
+// (UntrustedLinkError). That reach is for a tree whose every ancestor may be an agent's, a dev
+// override's checkout; WalkBelow instead takes a base that is the caller's own (yolo's state
+// directory, the user's home), follows every link up to it, and no link from it down. BELOW the root, no link is ever followed: each entry is opened from its
 // parent's descriptor with O_NOFOLLOW (and O_DIRECTORY for a directory, O_NONBLOCK for a file, so a
 // planted FIFO cannot hang it), classified by fstat rather than by the path, and a symlink is only
 // reported by its target (Readlinkat). A component swapped after it was listed fails the open
@@ -96,6 +98,68 @@ func Walk(root string, skip map[string]bool, visit func(Entry) error) error {
 	}
 	defer unix.Close(parent)
 	return walkAt(parent, name, ".", skip, visit)
+}
+
+// WalkBelow is Walk with the TRUST ROOT named by the caller: base, a directory that is the caller's
+// own, such as yolo's state directory or the user's home. base is opened as the OS resolves it,
+// following every link on the way, a link the user placed included (a state directory moved to a
+// bigger disk, a dotfile manager's home). Every component from base down to root is opened from its
+// parent's descriptor with O_NOFOLLOW and follows NO link at all, not even root's: that span is where
+// an agent may write (a capture jail's workspace is staging/<id> under the store). A root whose last
+// component is a link is visited as one Symlink entry, as in Walk. root must be base or under it.
+//
+// Walk's reach from `/` is for a tree whose every ancestor may be an agent's, a dev override's
+// checkout (BG-D22); WalkBelow is for one whose ancestors above base are the user's.
+func WalkBelow(base, root string, skip map[string]bool, visit func(Entry) error) error {
+	absBase, err := filepath.Abs(base)
+	if err != nil {
+		return err
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(absBase, absRoot)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("%s is not under %s", root, base)
+	}
+	fd, err := openat(unix.AT_FDCWD, absBase, dirFlags&^unix.O_NOFOLLOW)
+	if err != nil {
+		return &os.PathError{Op: "open", Path: absBase, Err: err}
+	}
+	defer func() { unix.Close(fd) }()
+	if rel == "." {
+		return walkAt(fd, ".", ".", skip, visit)
+	}
+	comps := strings.Split(rel, string(filepath.Separator))
+	cur := absBase
+	for _, c := range comps[:len(comps)-1] {
+		here := filepath.Join(cur, c)
+		var st unix.Stat_t
+		if err := unix.Fstatat(fd, c, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			return &os.PathError{Op: "lstat", Path: here, Err: err}
+		}
+		if st.Mode&unix.S_IFMT == unix.S_IFLNK {
+			return &BelowBaseLinkError{Path: here, Base: absBase}
+		}
+		nfd, _, err := openChecked(fd, c, here, dirFlags, unix.S_IFDIR, &st)
+		if err != nil {
+			return err
+		}
+		unix.Close(fd)
+		fd, cur = nfd, here
+	}
+	return walkAt(fd, comps[len(comps)-1], ".", skip, visit)
+}
+
+// BelowBaseLinkError is a symlink between WalkBelow's base and its root: Path is the link.
+type BelowBaseLinkError struct {
+	Path string
+	Base string
+}
+
+func (e *BelowBaseLinkError) Error() string {
+	return e.Path + " is a symlink below " + e.Base + ", where yolo follows no symlink, since an agent may have placed it"
 }
 
 // Resolve is path with every trusted link on it resolved, read component by component as Walk reads

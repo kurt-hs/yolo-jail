@@ -254,3 +254,48 @@ func tempDir(t *testing.T) string {
 	}
 	return d
 }
+
+// WALKBELOW'S TRUST ROOT (BG-D22): a user's link above or at the base is followed; one between the
+// base and the root refuses the walk, even a root-owned one; the root's own link is one Symlink
+// entry; and a root outside the base is refused.
+func TestWalkBelowFollowsLinksUpToItsBaseAndNoneBelow(t *testing.T) {
+	root, outside := fixture(t)
+	base := filepath.Dir(root)
+	link := filepath.Join(tempDir(t), "state")
+	if err := os.Symlink(base, link); err != nil {
+		t.Fatal(err)
+	}
+	if os.Geteuid() == 0 {
+		if err := os.Lchown(link, 65534, 65534); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got []string
+	if err := WalkBelow(link, filepath.Join(link, "tree"), nil, func(e Entry) error {
+		got = append(got, e.Rel)
+		return nil
+	}); err != nil {
+		t.Fatalf("WalkBelow through the user's link at its base: %v", err)
+	}
+	if strings.Join(got, ",") != ".,f,sub,sub/g" {
+		t.Errorf("walked %v", got)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "planted")); err != nil {
+		t.Fatal(err)
+	}
+	err := WalkBelow(base, filepath.Join(root, "planted", "x"), nil, func(Entry) error { return nil })
+	var below *BelowBaseLinkError
+	if !errors.As(err, &below) {
+		t.Errorf("WalkBelow through a link below its base = %v, want a BelowBaseLinkError", err)
+	}
+	var kinds []Kind
+	if err := WalkBelow(base, filepath.Join(root, "planted"), nil, func(e Entry) error {
+		kinds = append(kinds, e.Kind)
+		return nil
+	}); err != nil || len(kinds) != 1 || kinds[0] != Symlink {
+		t.Errorf("a root that is a link walked as %v, %v; want one Symlink entry", kinds, err)
+	}
+	if err := WalkBelow(root, outside, nil, func(Entry) error { return nil }); err == nil {
+		t.Errorf("WalkBelow of a root outside its base succeeded")
+	}
+}

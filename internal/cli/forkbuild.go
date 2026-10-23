@@ -1538,7 +1538,7 @@ var forkCheckout = func(store *packsrc.Store, a packsrc.Addr, commit string) (st
 // copySourceTree copies src to dst: directories, regular files with their permission bits, and
 // symlinks as links. The pack store's completion marker at the tree's root is not the fork's.
 func copySourceTree(src, dst string) error {
-	return copySourceTreeSkipping(src, dst, map[string]bool{".yolo-pack-complete": true})
+	return copySourceTreeSkipping(src, dst, map[string]bool{".yolo-pack-complete": true}, false)
 }
 
 // copySourceTreeSkipping copies src to dst leaving out skip, a set of slash-separated paths relative
@@ -1556,8 +1556,24 @@ func copySourceTree(src, dst string) error {
 // volume a source holding both `Lib` (a link to /etc) and `lib/x` would otherwise write x through the
 // link; here `lib` meets the link as an existing entry and the copy stops. Only the root may exist
 // already, as a real directory.
-func copySourceTreeSkipping(src, dst string, skip map[string]bool) error {
-	return nofollow.Walk(src, skip, func(e nofollow.Entry) error {
+//
+// HOW src IS REACHED is checkout's (BG-D22): a dev override's checkout, any of whose ancestors an
+// agent may write, is reached from / following only root's links (nofollow.Walk); any other source
+// (a pack's staged tree, the pack store's checkout) sits under yolo's or the user's own directories,
+// whose links, a user's included, are followed as the OS does, and src itself and everything under it
+// follow none (nofollow.WalkBelow from src's parent).
+func copySourceTreeSkipping(src, dst string, skip map[string]bool, checkout bool) error {
+	walk := func(visit func(nofollow.Entry) error) error {
+		if checkout {
+			return nofollow.Walk(src, skip, visit)
+		}
+		abs, err := filepath.Abs(src)
+		if err != nil {
+			return err
+		}
+		return nofollow.WalkBelow(filepath.Dir(abs), abs, skip, visit)
+	}
+	return walk(func(e nofollow.Entry) error {
 		target := filepath.Join(dst, e.Rel)
 		switch e.Kind {
 		case nofollow.Dir:

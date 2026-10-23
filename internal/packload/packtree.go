@@ -250,8 +250,12 @@ func PackTreeDigestSkip() map[string]bool {
 // the manifest may name one the pack does not ship, and the resolver then turns to the prebuilt
 // artifact (docs/design/pack-buildable-programs.md §4). A path that exists and is not a directory
 // is an error, since nothing could be built from it, and so is a symlink: the walk follows no link
-// (treedigest, internal/nofollow), the root included.
-func PackTreeDigest(dir string) (string, error) {
+// (treedigest, internal/nofollow), the root included. dir's ancestors are yolo's or the user's own
+// (a pack's staged tree, a build's staging) and are followed as the OS does; a dev override's
+// checkout, whose ancestors an agent may write, is digested by Fork.Digest from / instead (BG-D22).
+func PackTreeDigest(dir string) (string, error) { return packTreeDigest(dir, false) }
+
+func packTreeDigest(dir string, checkout bool) (string, error) {
 	fi, err := os.Lstat(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", nil
@@ -262,13 +266,17 @@ func PackTreeDigest(dir string) (string, error) {
 	if !fi.IsDir() {
 		return "", fmt.Errorf("the source directory %s is not a directory", dir)
 	}
+	if checkout {
+		return treedigest.OfCheckout(dir, packTreeDigestSkip)
+	}
 	return treedigest.OfSkipping(dir, packTreeDigestSkip)
 }
 
-// Digest is PackTreeDigest of f's source directory, "" and no error for a fork.
+// Digest is PackTreeDigest of f's source directory, "" and no error for a fork. A dev override's
+// checkout is reached from / following only root's links (treedigest.OfCheckout, BG-D22).
 func (f Fork) Digest() (string, error) {
 	if !f.IsPackTree() {
 		return "", nil
 	}
-	return PackTreeDigest(f.SourceDir())
+	return packTreeDigest(f.SourceDir(), f.Checkout != "")
 }
