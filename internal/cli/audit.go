@@ -33,6 +33,7 @@ Refuses inside a jail: the log is on the host, and yolo mounts it into no jail.
 Flags:
   --since <when>      Only calls at or after <when>: a duration back from now
                       (30m, 2h, 7d) or an RFC 3339 time.
+  --service <source>  Only calls to this broker source, such as github.
   --jail <id>         Only calls from this jail id.
   --workspace <path>  Only calls from this workspace.
   --set <name>        Only calls the broker assigned this set: read-only,
@@ -57,10 +58,10 @@ func runAudit(args []string) int {
 }
 
 type auditFilter struct {
-	since                time.Time
-	jail, workspace, set string
-	grant                string
-	json                 bool
+	since                         time.Time
+	service, jail, workspace, set string
+	grant                         string
+	json                          bool
 }
 
 func auditMain(args []string, inJail bool, logPath string, now time.Time, stdout, stderr io.Writer) int {
@@ -96,12 +97,14 @@ func auditMain(args []string, inJail bool, logPath string, now time.Time, stdout
 				return 2
 			}
 			f.since = t
-		case "--jail", "--workspace", "--set", "--grant":
+		case "--service", "--jail", "--workspace", "--set", "--grant":
 			v, ok := value()
 			if !ok {
 				return 2
 			}
 			switch name {
+			case "--service":
+				f.service = v
 			case "--jail":
 				f.jail = v
 			case "--workspace":
@@ -158,7 +161,8 @@ func (f auditFilter) match(e brokeraudit.Event) bool {
 			return false
 		}
 	}
-	return (f.jail == "" || e.Jail == f.jail) &&
+	return (f.service == "" || e.Service == f.service) &&
+		(f.jail == "" || e.Jail == f.jail) &&
 		(f.workspace == "" || e.Workspace == f.workspace) &&
 		(f.set == "" || e.Set == f.set) &&
 		(f.grant == "" || e.Grant == f.grant)

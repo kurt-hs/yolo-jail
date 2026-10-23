@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/ghbroker"
 	"os"
@@ -25,28 +26,28 @@ func approvalFixture(t *testing.T) (*brokerstore.Store, brokerstore.Request) {
 func TestApproveOperatorPaths(t *testing.T) {
 	s, r := approvalFixture(t)
 	var out, errs bytes.Buffer
-	if rc := approveMain(nil, false, s, &out, &errs); rc != 0 || !strings.Contains(out.String(), r.ID) || strings.Contains(out.String(), "\x1b") {
+	if rc := approveMain(context.Background(), nil, false, s, &out, &errs); rc != 0 || !strings.Contains(out.String(), r.ID) || strings.Contains(out.String(), "\x1b") {
 		t.Fatalf("list %d %q %q", rc, out.String(), errs.String())
 	}
 	out.Reset()
-	if rc := approveMain([]string{r.ID, "--for", "2h"}, false, s, &out, &errs); rc == 0 {
+	if rc := approveMain(context.Background(), []string{r.ID, "--for", "2h"}, false, s, &out, &errs); rc == 0 {
 		t.Fatal("exceeded ceiling")
 	}
-	if rc := approveMain([]string{r.ID}, false, s, &out, &errs); rc != 0 || !strings.Contains(out.String(), "expires") {
+	if rc := approveMain(context.Background(), []string{r.ID}, false, s, &out, &errs); rc != 0 || !strings.Contains(out.String(), "expires") {
 		t.Fatalf("allow %d %q", rc, errs.String())
 	}
 	_, gs, _ := s.List()
 	if len(gs) != 1 {
 		t.Fatal(gs)
 	}
-	if rc := approveMain([]string{"--revoke", gs[0].ID}, false, s, &out, &errs); rc != 0 {
+	if rc := approveMain(context.Background(), []string{"--revoke", gs[0].ID}, false, s, &out, &errs); rc != 0 {
 		t.Fatal(errs.String())
 	}
 	if _, ok, _ := s.Consume("j", "s", "read-write", r.Digest, s.Revalidate); ok {
 		t.Fatal("revoked grant consumed")
 	}
 	for _, args := range [][]string{{r.ID, "--deny", "--for", "1m"}, {"--for", "1m"}, {"--revoke", "all", r.ID}, {"--for", "0s", r.ID}, {"--nonsense"}} {
-		if rc := approveMain(args, false, s, &out, &errs); rc == 0 {
+		if rc := approveMain(context.Background(), args, false, s, &out, &errs); rc == 0 {
 			t.Fatalf("accepted %v", args)
 		}
 	}
@@ -54,7 +55,7 @@ func TestApproveOperatorPaths(t *testing.T) {
 func TestApproveDenyAndJailRefusal(t *testing.T) {
 	s, r := approvalFixture(t)
 	var out, errs bytes.Buffer
-	if rc := approveMain([]string{r.ID, "--deny"}, false, s, &out, &errs); rc != 0 {
+	if rc := approveMain(context.Background(), []string{r.ID, "--deny"}, false, s, &out, &errs); rc != 0 {
 		t.Fatal(errs.String())
 	}
 	rs, gs, _ := s.List()
@@ -63,7 +64,7 @@ func TestApproveDenyAndJailRefusal(t *testing.T) {
 	}
 	out.Reset()
 	errs.Reset()
-	if rc := approveMain(nil, true, s, &out, &errs); rc != 2 || out.Len() != 0 || !strings.Contains(errs.String(), "host-only") {
+	if rc := approveMain(context.Background(), nil, true, s, &out, &errs); rc != 2 || out.Len() != 0 || !strings.Contains(errs.String(), "host-only") {
 		t.Fatal(rc, out.String(), errs.String())
 	}
 }

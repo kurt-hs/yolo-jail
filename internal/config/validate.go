@@ -127,6 +127,7 @@ func ValidateConfig(config *jsonx.OrderedMap, workspace string, resolver Loophol
 	validatePerfLogging(config, workspace, errs)
 	validateMacosUserMode(config, workspace, errs)
 	validateMacosUserSharedTmp(config, workspace, errs)
+	validateOnRequest(config, workspace, errs)
 	validateUpdateCheck(config, workspace, errs)
 	validatePromotionTarget(config, workspace, errs)
 	validatePacks(workspace, errs)

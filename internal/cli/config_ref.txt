@@ -445,6 +445,54 @@
     "workspaces" keyed by a workspace's path, is retired: move each entry into
     its project's yolo-jail.local.jsonc; host `yolo check` prints each edit.
 
+  [bold]on_request[/bold] (string, [bold]USER SCOPE ONLY[/bold]): A command yolo runs for each request a
+    jail files for your approval, so one line can be your whole approval front
+    end.  Off unless set.  NOT YET ACTIVE: the GitHub broker files no requests
+    until its writes are turned on, so today nothing runs this command; requests,
+    and with them this hook, begin once writes ship.
+    Each running jail's broker (such as the github pack's github-broker) runs it
+    on the host, as you, with `sh -c`, from your home directory, once per
+    request that jail files, and for nothing else: a decision, an expiry or a
+    grant's use runs nothing.  To follow every event, read
+    `yolo approve --watch --json` instead.  The request-filed event's JSON
+    object, the same one `yolo approve --watch --json` prints, is on its stdin,
+    and its fields are in the environment: YOLO_EVENT (request-filed),
+    YOLO_SOURCE, YOLO_REQUEST_ID, YOLO_REQUEST_SUMMARY, YOLO_REQUEST_EXPIRES,
+    YOLO_REQUEST_WORKSPACE, YOLO_REQUEST_JAIL, YOLO_REQUEST_SET and
+    YOLO_REQUEST_REPO, and YOLO_BIN, the full path of the yolo that runs it,
+    so it needs no yolo on its PATH.
+    YOLO_REQUEST_SUMMARY is one line of at most 2048 bytes: the request id, the
+    set, the repository and the jail first, then the command, each value over
+    60 characters cut to its first 40 with its length and a short hash.
+    IT ONLY NOTIFIES.  yolo reads nothing back from the command.  To decide,
+    the command runs `yolo approve` itself, so a button does exactly what that
+    command does, with its checks, refusals and audit.
+    Example (~/.config/yolo-jail/config.jsonc), a desktop notification with
+    the three buttons Allow once, Read-write 15 min and Deny:
+      "on_request": "a=$(notify-send -A once=\"Allow once\" -A rw=\"Read-write 15 min\" -A deny=Deny \"$YOLO_REQUEST_SUMMARY\"); case \"$a\" in once) \"$YOLO_BIN\" approve \"$YOLO_REQUEST_ID\";; rw) \"$YOLO_BIN\" approve \"$YOLO_REQUEST_ID\" --for 15m;; deny) \"$YOLO_BIN\" approve \"$YOLO_REQUEST_ID\" --deny;; esac"
+    Allow once is `yolo approve <id>`: that one command, once.  Read-write 15
+    min is `--for 15m`: the whole requested set for 15 minutes, within its
+    ceiling.  The same lines can live in a script the key names instead.
+    These buttons are provisional: grants are being reworked per resource,
+    and the example will follow.
+    • A run may take as long as its request waits, one hour, so a notification
+      left on screen can still be answered; several requests run several
+      commands at once.  As soon as the request stops waiting, whichever way
+      (a click's own `yolo approve`, a `yolo approve` elsewhere, expiry, or
+      refused because its jail stopped), or the jail stops, yolo kills the
+      command and everything it started.  Its output is discarded: redirect
+      it yourself to debug.
+    • notify-send: -A needs libnotify 0.7.10 or newer.  A notification that
+      times out or is dismissed ends the command with no answer, so the
+      request waits for `yolo approve`.  On a machine you reach over SSH, it
+      pops up on that machine's desktop, which may be unattended.
+    • The summary and fields come from the jail's request, so treat them as
+      the agent's words: show them, never run them.
+    USER SCOPE ONLY.  A workspace config is the agent's to edit, and this
+    command runs on the host and can approve, so a workspace value is a
+    `yolo check` error and refuses the launch.  It takes effect at the next
+    fresh launch.
+
   [bold]host_processes[/bold] (object): REMOVED — a config carrying it is REFUSED.
     Its keys moved to the host-processes loophole's own "settings" block, where they
     are declared by that loophole's manifest rather than by yolo's config schema:

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerhook"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
@@ -146,11 +147,48 @@ func Main(argv []string) int {
 		}
 		close(stop)
 	}()
-	if err := hostservice.ServeFrontedUnix(b.Handle, *socket, stop); err != nil {
+	hookDone := b.startOnRequest(ctx, config.OnRequest())
+	err = hostservice.ServeFrontedUnix(b.Handle, *socket, stop)
+	cancel()
+	// A hook runs in its own process group, which the launcher's stop signal does not reach,
+	// so wait for the runner to kill what it started: past the runner's own wait on a killed
+	// hook's output. A launcher that SIGKILLs sooner still ends them, by Pdeathsig on Linux.
+	select {
+	case <-hookDone:
+	case <-time.After(brokerhook.KillWait + time.Second):
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "github-broker:", err)
 		return 1
 	}
 	return 0
+}
+
+// startOnRequest runs the user's on_request for each request this broker lifetime files
+// (BB-D75), when one is set. The returned channel closes once its runner has stopped.
+func (b *Broker) startOnRequest(ctx context.Context, command string) <-chan struct{} {
+	done := make(chan struct{})
+	if command == "" || b.store == nil || b.startID == "" {
+		close(done)
+		return done
+	}
+	// The hook runs in the user's home: this daemon has moved into the store's directory,
+	// which is no place for a user's command to start.
+	home, _ := os.UserHomeDir()
+	// This daemon is `yolo internal daemon github-broker`, so its own executable is the yolo
+	// the hook calls to decide.
+	bin, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(b.log, "github-broker: on_request gets no YOLO_BIN:", err, "; its `yolo approve` must be on PATH")
+		bin = ""
+	}
+	r := &brokerhook.Runner{Store: b.store, Start: b.startID, Command: command, Bin: bin, Dir: home, Log: b.log}
+	fmt.Fprintln(b.log, "github-broker: running your on_request for each request this jail files")
+	go func() {
+		defer close(done)
+		r.Run(ctx)
+	}()
+	return done
 }
 
 // newBroker builds a broker for one launch's scope file, logging what it starts with.
@@ -167,7 +205,7 @@ func newBroker(sf brokerscope.File, spawnCwd string, log io.Writer) (*Broker, fu
 	sweepRunDirs()
 	runDir := newRunDir()
 	startID, startErr := brokerstore.NewStartID()
-	store := &brokerstore.Store{Dir: paths.BrokerSourceDir(Source)}
+	store := &brokerstore.Store{Dir: paths.BrokerSourceDir(Source), Source: Source}
 	b := &Broker{
 		// The start-time copy, used only by a broker no host authority is bound to; a bound
 		// broker classifies against the file as it re-reads it (ServeContext).

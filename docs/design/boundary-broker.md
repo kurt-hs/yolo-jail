@@ -387,8 +387,8 @@ are stable and the lines are not.
 | Jail-side interception of a command name | the `intercept` contribution kind (`packdecl.KindIntercept`), which `packs/github` uses to put `yolo gh --` in front of `gh` | **shipped** ([OQ-BB8](#15-decision-ledger)) |
 | The GitHub source: classifier, executor, daemon, forwarder | `internal/ghbroker`, `internal/brokerscope`, `packs/github`; `yolo gh status` and `yolo gh wait` in the forwarder | **shipped** for reads. One package holds both the source-neutral machinery and the gh-specific part, which [`git-broker.md` §3](git-broker.md#3-the-broker-core-what-step-1-factors-out) factors apart |
 | A request that outlives its connection, and grants | `internal/brokerstore`, one directory per source (`paths.BrokerSourceDir`) | **built**; production files nothing into it yet, since the handler waits on a delivery dependency no production code supplies (`ghbroker.RequiredDelivery`) |
-| A human in the answer path | `yolo approve` (`internal/cli/approve.go`): list, allow once, `--for`, `--deny`, `--revoke` | **built**, for the `github` store only and as text only: no `--json`, and no way to follow new requests |
-| The audit log and its viewer | `internal/brokeraudit`, whose events carry a `service`; `yolo audit` with `--since`, `--jail`, `--workspace`, `--set`, `--grant` and `--json` | **shipped**; no `--service` filter, since one source writes it |
+| A human in the answer path | `yolo approve` (`internal/cli/approve.go`): list, allow once, `--for`, `--deny`, `--revoke`, `--json`, `--watch` | **built**, for the `github` store only, with the stable surface of [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship) |
+| The audit log and its viewer | `internal/brokeraudit`, whose events carry a `service`; `yolo audit` with `--since`, `--jail`, `--workspace`, `--set`, `--grant` and `--json` | **shipped**, with `--service` |
 | A running jail's scope widened without a restart | `yolo config apply` ([`live-config-apply.md`](live-config-apply.md)) | **shipped** |
 | An agent-agnostic doorbell into the session | `yolo notify` and the per-launch ping box ([`agent-event-watchers.md`](agent-event-watchers.md)) | **designed, not built**: no `notify` verb in `internal/cli` or `cmd/` |
 | Desktop notifications | — | **missing**: no D-Bus, `notify-send`, terminal-notifier or UserNotifications code in the tree; the `osascript` lines in `internal/macosuser` are not notifications |
@@ -1515,16 +1515,73 @@ becomes that surface, for every source, and its machine-readable output is a con
 | `yolo approve --watch [--json]` | Follows the store until interrupted: the long-running view the colleague asked about | One line, or one JSON object, per event: request filed, decided, expired; grant used, ended, revoked; working-set entry joined, ended, revoked. Opens with the current state, so a client that starts late misses nothing |
 | `yolo approve <id> [--for …] [--add] [--deny]`, `--revoke` | Decides, as [§6.5](#65-when-there-is-no-notifier-or-nobody-answers) spells it | Exit 0 on success; a stable non-zero code for "already decided", "unknown id" and "refused by policy", each with the next step in its message |
 
-- **Every JSON object carries `"schema": 1`.** A field is only ever added within a schema
-  number; a removal or a change of meaning bumps it, and the release notes say so.
+**As built** (the first two rows and the codes, 2026-10-23; `yolo approve --help` is the
+reference). The spellings above stand. The fields are the ones the store holds:
+
+- **A request** has `id`, `source`, `jail`, `workspace`, `set`, `argv` (the classifier's
+  rebuilt command, after the program), `command` (the same, quoted for reading), `repo`,
+  `filed`, `expires`, `decided` once decided, and `state`: `pending`, `allowed`, `denied`,
+  `expired`, or `refused` when its jail stopped first.
+- **A grant** has `id`, `source`, `request`, `jail` (the holder), `set`, `coverage` (`command`
+  for an Allow once, `set` for the whole set), `uses_left`, `expires`, `ended` and `end_reason`
+  (`expired`, `used`, `revoked` or `stopped`) once it ends, and `state`.
+- **`--json`** prints one object, `requests` and `grants`. **`--watch --json`** opens with that
+  object carrying `"event": "state"`, then one object per event: `event` (`request-filed`,
+  `request-decided`, `request-expired`, `grant-used`, `grant-ended`, `grant-revoked`),
+  `source`, `time`, a one-line `summary`, the `request` (a grant event's parent), and the
+  `grant` (a grant event's, or the one an allowed decision issued).
+- **The watch polls**, once a second. The store has no change signal of its own, and a
+  pending request expires only inside the next transaction, so each poll is one read
+  transaction and the events are what changed since the last.
+- **The codes** are 1 for a store that cannot be read or written, 2 for usage, 3 already
+  decided, 4 unknown id, 5 refused by policy (beyond the set's ceiling), and 6 for a pending
+  request the host can no longer confirm: its jail's launch is gone without having ended it, or
+  its scope changed, so no decision can allow it. A request whose jail stopped normally was
+  already `refused` when it stopped, so deciding it is 3.
+- **A grant first seen already used** still reports `grant-used`: a grant records the uses it
+  was issued with, so an Allow once issued and spent between two polls, the common flow, is not
+  lost.
+
+- **Every JSON object carries `"schema": 1`**, the nested request and grant objects included.
+  A field is only ever added within a schema number; a removal or a change of meaning bumps
+  it, and the release notes say so.
 - **A hook follows the watch, in stages** ([BB-D75](#BB-D75)). The watch ships first: a UI or a
   Slack relay runs `yolo approve --watch --json` and acts on each line. Then a user-scope key
   names a command yolo runs for each event, the event's JSON object on its stdin, so a relay
   need not be kept running by hand. It is off unless the user sets it, and only the user's own
   config can set it: a workspace config naming it is refused, as for long-lived access
   ([§5.8](#58-long-lived-access-and-temporary-access)).
+
+  **As built** (2026-10-23; `yolo config-ref` is the reference): the key is `on_request`, and
+  one line in the user config can be the whole front end:
+
+  ```jsonc
+  "on_request": "a=$(notify-send -A once=\"Allow once\" -A rw=\"Read-write 15 min\" -A deny=Deny \"$YOLO_REQUEST_SUMMARY\"); case \"$a\" in once) \"$YOLO_BIN\" approve \"$YOLO_REQUEST_ID\";; rw) \"$YOLO_BIN\" approve \"$YOLO_REQUEST_ID\" --for 15m;; deny) \"$YOLO_BIN\" approve \"$YOLO_REQUEST_ID\" --deny;; esac"
+  ```
+
+  The three buttons are provisional: the grant model is being reworked into per-resource grants
+  in a separate document, and the example's buttons follow whatever that settles.
+
+  It is a **request hook**: each jail's host broker runs it once per request that jail files,
+  and for no other event, since a notifier that ran per event would show one toast per change
+  of a single request and only the first one's buttons would do anything. A tool that wants
+  every event reads `yolo approve --watch --json`. The broker runs it with `sh -c` from the
+  user's home, the request-filed event's JSON on stdin and its fields in `YOLO_REQUEST_*`
+  variables (`_ID`, `_SUMMARY`, `_EXPIRES`, `_WORKSPACE`, `_JAIL`, `_SET`, `_REPO`), since a
+  notifier such as `notify-send` takes its text as arguments. `YOLO_REQUEST_SUMMARY`
+  leads with the request id, the set, the repository and the jail, then the command with each
+  value over 60 characters elided as in [§6.3](#63-what-the-notification-shows), and is cut at
+  2048 bytes. `YOLO_BIN` is the absolute path of the running yolo, so the command needs no
+  yolo on its `PATH`. **The hook only notifies**: yolo reads nothing back from it, and a
+  decision is the user's command running `yolo approve "$YOLO_REQUEST_ID"` (with `--for 15m`
+  or `--deny`) on the host, so a button click does exactly what the CLI does, with its own
+  checks, refusals and audit. A run may last until its request would expire, and is killed
+  with its process group, a child it left running after its shell exited included, as soon as the request stops waiting, whichever way (its own
+  `yolo approve`, one elsewhere, expiry, or refusal because its jail stopped), or its broker
+  stops. Nothing runs it today: the broker files no requests until writes are turned on
+  ([§11.3](#113-step-3-the-cli-the-answer-path-and-writes) step 3). [BB-D75](#BB-D75) records who runs it and why.
 - **`yolo audit --json` is the audit half of the surface**, unchanged, with the `--service`
-  filter the second source needs.
+  filter the second source needs (built 2026-10-23).
 
 > [!WARNING]
 > **An out-of-tree web UI must not accept approvals from the jails it approves.** In bridge
@@ -2014,7 +2071,7 @@ terminal-notifier later, once the macOS release signs ([OQ-BB4](#15-decision-led
 
 1. **`yolo approve` for every source**, with `--json`, `--watch` and stable exit codes
    ([§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship)),
-   and `yolo audit --service`.
+   and `yolo audit --service`. **Built** 2026-10-23, for the one source with a store (`github`).
 2. **The answer path.** As [OQ-BB17](#OQ-BB17) ruled, the pending message tells the
    agent to run `yolo <source> wait <id>` as a background task, which wakes the session; the
    ping replaces it per agent as `yolo notify` and each pack's deliverer land
@@ -2026,7 +2083,8 @@ terminal-notifier later, once the macOS release signs ([OQ-BB4](#15-decision-led
    working-set entry covers, GitHub's and git's per-ref pushes alike, files a request on its
    resource instead of answering 77, answered by the buttons of [§6.4](#64-choosing-a-duration).
 4. **The event hook** ([BB-D75](#BB-D75)), after the watch and not holding writes: the
-   user-scope command yolo runs per event with its JSON on stdin.
+   user-scope command yolo runs per filed request with its JSON on stdin. **Built** 2026-10-23
+   as `on_request`, inert until step 3 files requests; the release notes cover it once step 3 ships.
 
 ### 11.4 Steps 4 and 5
 
@@ -2457,12 +2515,12 @@ covered:
 | OQ-BB13 | **Maintainer ruling:** A, the broker is turned on per project only, for now. *"And yes, I think we should go with this manual enabling only for now. We will worry about a more global enabling another time."* | 2026-10-01 | [§5.6](#56-the-repository-scope) | built: [BB-D55](#BB-D55) |
 | OQ-BB11 | *Obviated, not ruled:* moot, a consequence of the 2026-10-05 re-ruling of [OQ-BB6](#15-decision-ledger): with no user-scope widening entry the delivery copy carries only this workspace's own, so no filter is built ([WW-D7](workspace-widening.md#WW-D7)) | 2026-10-05 | [§9.7](#97-the-delivery-copy-and-other-workspaces-widening-entries) | nothing to build: moot since [`workspace-widening.md`](workspace-widening.md) was built ([WW-D7](workspace-widening.md#WW-D7)); a copy already written keeps the old key until that workspace's next successful fresh launch |
 | <a id="BB-D71"></a>[`BB-D71`](#15-decision-ledger) | *Implementation decision,* carrying out step 2 of [BB-D73](#BB-D73). The notifier is one per-user host daemon, the toast notifier, that watches every source's store and writes decisions through the store's one writer; brokers only file requests. It outlives a broker restart, takes the session bus or GUI session of the launch that started it, and renders each request from the text its source's classifier stored with it. *Replaces* the notifier inside each broker that [§6](#6-the-doorbell-a-persistent-desktop-notification) first described | 2026-10-23 | [§6](#6-the-doorbell-a-persistent-desktop-notification) | — |
-| <a id="BB-D72"></a>[`BB-D72`](#15-decision-ledger) | *Implementation decision,* carrying out steps 3 and 4 of [BB-D73](#BB-D73). `yolo approve` is the surface an out-of-tree UI builds on, for every source: `--json`, `--watch` with one event per line that opens with the current state, stable exit codes, and `"schema": 1` on every object, bumped only for a removal or a change of meaning. The no-hook half is superseded by [BB-D75](#BB-D75). Reversible | 2026-10-23 | [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship) | — |
+| <a id="BB-D72"></a>[`BB-D72`](#15-decision-ledger) | *Implementation decision,* carrying out steps 3 and 4 of [BB-D73](#BB-D73). `yolo approve` is the surface an out-of-tree UI builds on, for every source: `--json`, `--watch` with one event per line that opens with the current state, stable exit codes, and `"schema": 1` on every object, bumped only for a removal or a change of meaning. The no-hook half is superseded by [BB-D75](#BB-D75). Reversible | 2026-10-23 | [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship) | built: `internal/cli/approve.go` over `brokerstore.Store.Watch`, a poll (the store has no change signal); exit codes 3, 4, 5, 6; pinned by `TestApproveWatchJSON` and `TestApproveStableExitCodes` |
 | <a id="BB-D73"></a>[`BB-D73`](#15-decision-ledger) | **Maintainer direction,** from a Slack thread with a colleague who built his own approval flow. The build order: (1) loopholes with read and write support, factoring out the CLI proxy machinery; (2) generic actionable toasts on Linux and macOS; (3) a host CLI that views and approves requests; (4) a web UI out of tree on that CLI; (5) then talk about merging it. *"I think my comments here lay out a clear path."* Also: long-lived access *"probably belongs in the workspace's yolo config"*, temporary access does not; the answer should wake the agent rather than leave it to be kicked; an audit of the exact commands run with the access is *"a nice touch"*, which [§8](#8-audit) already is | 2026-10-23 | [§1.5](#15-the-maintainers-path-2026-10-23), [§11](#11-the-build-in-the-maintainers-five-steps) | partly: the GitHub read path and its audit (step 1's first source) |
 | OQ-BB16 | **Maintainer ruling, none of the options as written, closest to B:** the git source is off by default and the user must include it; long-lived access, `read-only` or `read-write`, is granted only in the user's own config, scoped to workspaces by whatever form that config supports (today the per-workspace file); the workspace config can never widen it; temporary grants through `yolo approve` stay as designed. Partly supersedes [BB-D73](#BB-D73)'s *"probably belongs in the workspace's yolo config"*. *"there is no way that the workspace should be able to override that scoping. It can't widen."* Whether the rule reaches the existing `brokered.github.repos` list is [OQ-BB18](#OQ-BB18). *Later the same day:* the levels are restated as user grants ([BB-D76](#BB-D76), [BB-D78](#BB-D78)); which grants exist is [OQ-BB19](#OQ-BB19) | 2026-10-23 | [§5.8](#58-long-lived-access-and-temporary-access) | pending |
 | OQ-BB17 | **Maintainer ruling, as leaned (B):** writes ship with the agent's own background `yolo <source> wait <id>` as the answer path; the `yolo notify` ping replaces it per agent later. *"yes, ship now."* | 2026-10-23 | [§11.3](#113-step-3-the-cli-the-answer-path-and-writes) | pending |
 | OQ-BB18 | **Maintainer ruling, as leaned (A), level made explicit:** a workspace never raises a source's access level above the user's config (read-only there means no read-write from the workspace), but it freely requests repositories and branches (`brokered.github.repos`, new remotes), which join only at the human's y. *"the workspace is free to request the specific repositories and branches that it wants, and it's up to the user to gate that."* *Later the same day:* "access level" reads as the user grants ([BB-D76](#BB-D76), [OQ-BB19](#OQ-BB19)) | 2026-10-23 | [§5.8](#58-long-lived-access-and-temporary-access) | pending |
-| <a id="BB-D75"></a>[`BB-D75`](#15-decision-ledger) | **Maintainer ruling, against [BB-D72](#BB-D72)'s no-hook half:** yolo gets an event hook as well as the watch, built in stages, the watch first and the hook as soon after as it can be; one without the other ships. *"if there's no push hook right now, then yes, I do want to add this in stages … having one piece of this without the other is totally fine … This is also not on by default."* *Implementation decision* in carrying it out: the hook is a user-scope key naming a command run per event with the event's JSON on stdin, off unless set, refused in a workspace config | 2026-10-23 | [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship) | pending |
+| <a id="BB-D75"></a>[`BB-D75`](#15-decision-ledger) | **Maintainer ruling, against [BB-D72](#BB-D72)'s no-hook half:** yolo gets an event hook as well as the watch, built in stages, the watch first and the hook as soon after as it can be; one without the other ships. *"if there's no push hook right now, then yes, I do want to add this in stages … having one piece of this without the other is totally fine … This is also not on by default."* *Implementation decision* in carrying it out: the hook is a user-scope key naming a command run per event with the event's JSON on stdin, off unless set, refused in a workspace config. *Lead's decision* (2026-10-23, after review): it is a **request hook**, not an event hook. The key is `on_request`, the maintainer's own name; it runs only for request-filed, because a notifier run per event showed four identical toasts per request (filed, decided, grant used, grant ended) and only the first one's buttons did anything; and when its request leaves `pending` (`yolo approve`, expiry, its jail stopping) its process group is killed, even after its shell has exited, so a notifier it backgrounded goes too; a request filed and decided between two polls runs no hook. Event watching for other tools stays `yolo approve --watch --json`. *Implementation decisions* in building it, each reversible. **Who runs it:** each jail's host broker daemon, for its own broker lifetime's requests only, polling the store it already holds; so every request has one runner, the hook fires with no watch open, and it runs whenever a request can exist, since only a live broker files one. The key is read when the broker starts; a store it cannot read at start is retried each second, and a request filed meanwhile still runs the hook. It runs from the user's home, never the broker's store directory, and on Linux dies with a broker killed outright (a parent-death signal). **(a)** It runs under `sh -c`, with the request's fields in `YOLO_REQUEST_*` variables as well as its JSON on stdin, because a notifier such as `notify-send` takes its text as arguments and never reads stdin; the prefix keeps them off names yolo itself reads, such as `YOLO_WORKSPACE`, which would otherwise leak into the `yolo approve` the hook runs. `YOLO_REQUEST_SUMMARY` leads with the id, set, repository and jail, elides each long command value as [§6.3](#63-what-the-notification-shows) does, and is cut at 2048 bytes, far under Linux's 128 KiB limit on one variable. **(b)** *Maintainer ruling* (2026-10-23): *"the button click should absolutely do the same thing as the CLI. It is doing nothing but calling the CLI."* So the hook **only notifies**: yolo reads nothing back from it, and there is no hook-decision audit kind. A decision is the user's command running `yolo approve "$YOLO_REQUEST_ID"` (optionally `--for 15m` or `--deny`) on the host, through the CLI's own path, refusals and audit; `YOLO_BIN`, the absolute path of the running yolo, lets that command work with no yolo on the hook's `PATH`. **(c)** A run may last a request's whole wait, one hour, so a notification left on screen can still be answered; each request runs its own command, so several pending requests run several at once. **Release notes when writes ship:** the hook does nothing until the broker files requests ([§11.3](#113-step-3-the-cli-the-answer-path-and-writes) step 3), so the release notes, written when a release is cut, cover it once writes ship, not before | 2026-10-23 | [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship) | built: `internal/brokerhook`, started by `ghbroker.Main`; pinned by `TestTheBrokerRunsTheUsersOnRequest`, `TestTheOnRequestExampleDecidesThroughTheCLI`, `TestTheHookDecidesNothingByItself`, `TestOnlyAFiledRequestRunsTheHook`, `TestAHookIsKilledWhenItsRequestLeavesPending`, `TestARequestDecidedBeforeItsFilingIsSeenRunsNoHook` and `TestALaunchRefusesAWorkspaceOnRequest` |
 | <a id="BB-D74"></a>[`BB-D74`](#15-decision-ledger) | *Implementation decision,* carrying out [OQ-BB16](#OQ-BB16)'s ruling, under which a workspace may at most narrow: the workspace config holds no long-lived-access key at all, neither one that widens nor one that narrows. A `brokered.<source>.hold` key, or any spelling of the level, at workspace scope is refused by `yolo check` and at launch, naming the per-workspace file and the host command that writes it. Narrowing is not offered because config merge union-merges lists, so a workspace narrowing a user list needs a merge rule of its own, and the user's side already ends access with one edit. Reversible if a use for narrowing appears | 2026-10-23 | [§5.8](#58-long-lived-access-and-temporary-access) | pending |
 | <a id="BB-D76"></a>[`BB-D76`](#15-decision-ledger) | **Maintainer ruling:** a grant is scoped to a resource, not a command. Creating is a user-level grant, and what the agent creates it then works with; any other write is asked for per resource, and one yes covers that resource from then on; grants may be time-limited; the buttons are the user's; nothing is scoped to a session. *"A one-off write creating a PR: just like read-only and read-write, PR creation should be a user-level granted write. But if it is granted, just like an agent can create a branch and work with it, they can create a PR and work with it. The burst of writes on review: I think just the first request is to widen the scope permanently to that PR, and then it can write whenever it wants. … Pushing to a branch it didn't create, I think is the same thing: it asks for access to that branch, and if it gets that access, it has that access. These should be able to be time-limited as well, I guess. … I guess it should be up to the user. It would be nice if there's a [allow] for 15 minutes and an added-to-the-working-set option for these things. I don't think we want anything scoped to a session. Sessions aren't helpful. Sessions aren't well-defined."* *My reading, an interpretation:* what is created joins the working set, kept per workspace until the resource is gone; the per-resource answers are Allow for 15 minutes, Add to the working set and Deny | 2026-10-23 | [§1.6](#16-the-grant-model-2026-10-23), [§5.7](#57-permission-sets), [§5.8](#58-long-lived-access-and-temporary-access) | pending |
 | <a id="BB-D77"></a>[`BB-D77`](#15-decision-ledger) | **Maintainer ruling:** Allow once survives as built, a third positive answer beside 15 minutes and Add: one use of the exact command, held by the broker, valid 15 minutes. *"allow once should add it to some queue somewhere … the GitHub broker or the Git broker will queue this acceptance and when the exact request fires again after the agent wakes up, then it uses its one thing. It already knows what we're approving here."* | 2026-10-23 | [§5.8](#58-long-lived-access-and-temporary-access), [§6.4](#64-choosing-a-duration), [§7](#7-grants-and-the-request-store) | pending |

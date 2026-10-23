@@ -170,9 +170,17 @@ type brokerProcess struct {
 	endpoint string
 	ghPID    string
 	stopFrnt chan struct{}
+	// scopeFile and workspace are the launch's, for a test filing a request as this jail.
+	scopeFile, workspace string
 }
 
 func startBrokerProcess(t *testing.T) *brokerProcess {
+	t.Helper()
+	return startBrokerProcessWith(t, "")
+}
+
+// startBrokerProcessWith is startBrokerProcess with a user config written first, when given.
+func startBrokerProcessWith(t *testing.T, userConfig string) *brokerProcess {
 	t.Helper()
 	if _, err := os.Stat("/bin/sh"); err != nil {
 		t.Skip("the fake gh needs /bin/sh")
@@ -200,12 +208,22 @@ func startBrokerProcess(t *testing.T) *brokerProcess {
 	if err := os.WriteFile(filepath.Join(cfg, "hosts.yml"), []byte("github.com:\n    oauth_token: "+fakeToken+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if userConfig != "" {
+		dir := filepath.Join(home, ".config", "yolo-jail")
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "config.jsonc"), []byte(userConfig), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	ws := filepath.Join(root, "ws")
 	sf, err := brokerscope.Write(brokerscope.File{Source: Source, LaunchID: "cafe", PID: os.Getpid(),
 		Container: "fixture", Workspace: ws, Repos: []string{"o/r"}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	p.scopeFile, p.workspace = sf, ws
 	sockDir, err := os.MkdirTemp("/tmp", "ghb-") // AF_UNIX paths are short on darwin
 	if err != nil {
 		t.Fatal(err)
@@ -215,7 +233,7 @@ func startBrokerProcess(t *testing.T) *brokerProcess {
 	p.cmd = exec.Command(os.Args[0], "-test.run=^TestBrokerMainHelper$", "-test.count=1", "--",
 		"--socket", sock, "--scope-file", sf)
 	p.cmd.Env = append(os.Environ(), "GHBROKER_MAIN_HELPER=1", "HOME="+home, "GH_CONFIG_DIR="+cfg,
-		"PATH="+fake+":/usr/bin:/bin")
+		"PATH="+fake+":/usr/bin:/bin", "YOLO_USER_LAYER=")
 	p.cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	var logs bytes.Buffer
 	p.cmd.Stdout, p.cmd.Stderr = &logs, &logs

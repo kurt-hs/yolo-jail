@@ -63,6 +63,8 @@ func TestAuditFilters(t *testing.T) {
 		{[]string{"--since", "1d"}, 3},
 		{[]string{"--since", "2026-09-29T11:00:00Z"}, 2},
 		{[]string{"--grant", "g-1"}, 0},
+		{[]string{"--service", "github"}, 3},
+		{[]string{"--service=git"}, 0},
 	} {
 		_, out, _ := runAuditCase(t, path, append(c.args, "--json")...)
 		got := 0
