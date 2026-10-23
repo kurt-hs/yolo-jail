@@ -84,7 +84,7 @@ func TestTreeBuildPlanInvariantsRefuseEachMissingPiece(t *testing.T) {
 			}
 		}, "never copies the checkout"},
 		{"the fork script instead", func(p *ForkBuildPlan) {
-			p.DriverArgv = ForkBuildDriverArgv(p.StagedYolo, p.StagingHome, p.OutDir, p.SrcDir, p.ToolchainFile,
+			p.DriverArgv = ForkBuildDriverArgv(RunAs{}, p.StagedYolo, p.StagingHome, p.OutDir, p.SrcDir, p.ToolchainFile,
 				"", p.Build, p.ProfilePath, p.EnvFile, p.DarwinPathPrefix)
 		}, "does not run the tree build"},
 		{"an absolute tree dir", func(p *ForkBuildPlan) { p.TreeDir = "/" + p.TreeDir }, "not a plain home-relative"},
@@ -109,12 +109,12 @@ func TestAForkPlanIsUnchangedByTheTreeSeam(t *testing.T) {
 	if plan.TreeDir != "" {
 		t.Fatalf("a fork plan carries a tree dir %q", plan.TreeDir)
 	}
-	want := ForkBuildDriverArgv(plan.StagedYolo, plan.StagingHome, plan.OutDir, plan.SrcDir, plan.ToolchainFile,
+	want := ForkBuildDriverArgv(RunAs{}, plan.StagedYolo, plan.StagingHome, plan.OutDir, plan.SrcDir, plan.ToolchainFile,
 		forkToolchainHead(opts), opts.Build, plan.ProfilePath, plan.EnvFile, plan.DarwinPathPrefix)
 	if !slices.Equal(plan.DriverArgv, want) {
 		t.Errorf("the fork driver changed:\n%q\nwant\n%q", plan.DriverArgv, want)
 	}
-	plan.DriverArgv = TreeBuildDriverArgv(plan.StagedYolo, plan.StagingHome, plan.OutDir, plan.SrcDir,
+	plan.DriverArgv = TreeBuildDriverArgv(RunAs{}, plan.StagedYolo, plan.StagingHome, plan.OutDir, plan.SrcDir,
 		plan.ToolchainFile, "", opts.Build, packdecl.TreeReservedDir("x"), plan.ProfilePath, plan.EnvFile,
 		plan.DarwinPathPrefix)
 	if problems := strings.Join(ForkBuildPlanInvariants(plan), "\n"); !strings.Contains(problems, "fork's build line") {

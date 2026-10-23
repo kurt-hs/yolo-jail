@@ -135,23 +135,6 @@ func commandFor(argv []string) *exec.Cmd {
 // can search.
 const sandboxCwd = "/"
 
-// isRunAsSandboxArgv reports whether argv is RunAsSandboxArgv's shape: sudo by absolute path
-// whose `--user=` is the sandbox account.
-func isRunAsSandboxArgv(argv []string) bool {
-	if len(argv) == 0 || argv[0] != sudoBin {
-		return false
-	}
-	for _, a := range argv[1:] {
-		if a == envBin {
-			return false
-		}
-		if a == "--user="+SandboxUser {
-			return true
-		}
-	}
-	return false
-}
-
 // runOutputsTo is runStdoutTo with stderr on errw too.
 func runOutputsTo(w, errw io.Writer, argv []string) int {
 	if len(argv) == 0 {

@@ -393,8 +393,8 @@ func TestARelocationTheSandboxCannotUseRefusesTheLaunch(t *testing.T) {
 func TestARefusalForAnUngrantableTargetDoesNotOfferFixPermissions(t *testing.T) {
 	ungranted := CacheRelocation{Subdir: "ms-playwright", Target: "/Volumes/Stick/pw", Created: true,
 		GrantFailure: "`/bin/chmod +a …`: chmod: Operation not supported"}
-	failed := append(CacheRelocationPreflight([]CacheRelocation{ungranted}, "")[2:],
-		CacheRelocationPreflight([]CacheRelocation{sharedReloc}, "")[2:]...)
+	failed := append(CacheRelocationPreflight(RunAs{}, []CacheRelocation{ungranted})[2:],
+		CacheRelocationPreflight(RunAs{}, []CacheRelocation{sharedReloc})[2:]...)
 	msg := CacheRelocationRefusalMessage(failed, "")
 	for _, want := range []string{"yolo created " + ungranted.Target + " on this launch and could not add",
 		"Operation not supported", "exFAT", "APFS", "yolo macos-fix-permissions " + sharedReloc.Target,

@@ -461,7 +461,7 @@ func TestEndpointGrantCommandsAreACLsNotAChmodWalk(t *testing.T) {
 func TestEveryPlanArgvIsTheRuleOrRunsAsTheHost(t *testing.T) {
 	plan := sessionPlan(t, "0123456789abcdef")
 	links := []ContextLink{{Source: "/Users/Shared/data", Dest: "/ctx/data", Dir: true}}
-	plan.ContextPreflight = ContextPreflight(links, "")
+	plan.ContextPreflight = ContextPreflight(RunAs{}, links)
 	var argvs [][]string
 	argvs = append(argvs, plan.BootstrapArgv, plan.ProvisionArgv, plan.LaunchArgv, plan.JailDaemonArgv)
 	for _, p := range plan.ContextPreflight {
@@ -493,7 +493,7 @@ func TestEveryPlanArgvIsTheRuleOrRunsAsTheHost(t *testing.T) {
 // a real Mac. Each case breaks one crossing of an otherwise good plan.
 func TestPlanInvariantsRefuseACrossingOutsideTheRule(t *testing.T) {
 	good := sessionPlan(t, "0123456789abcdef")
-	good.ContextPreflight = ContextPreflight([]ContextLink{{Source: "/Users/Shared/data", Dest: "/ctx/data", Dir: true}}, "")
+	good.ContextPreflight = ContextPreflight(RunAs{}, []ContextLink{{Source: "/Users/Shared/data", Dest: "/ctx/data", Dir: true}})
 	for name, mutate := range map[string]func(*RunPlan){
 		"a launch that may prompt": func(p *RunPlan) {
 			p.LaunchArgv = append([]string{sudoBin}, p.LaunchArgv[2:]...)

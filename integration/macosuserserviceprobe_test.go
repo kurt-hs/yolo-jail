@@ -88,7 +88,7 @@ func TestMacosUserServiceProbeRefusesAnEndpointTheSandboxCannotRead(t *testing.T
 	}
 	// THE REAL ARGV, its crossing included: the one run-as rule, `-n` and all (ProbeServicesArgv
 	// says why the `-n` costs nothing), started in "/" as the launch's runner starts it.
-	argv := macosuser.ProbeServicesArgv(macosuser.StagedYoloPath(""), profile, envFile, "", "", nil)
+	argv := macosuser.ProbeServicesArgv(macosuser.RunAs{}, macosuser.StagedYoloPath(""), profile, envFile, "", "", nil)
 	run := func() (int, string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()

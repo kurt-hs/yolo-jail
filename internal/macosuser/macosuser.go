@@ -1364,7 +1364,7 @@ func SandboxPathForYolo(home string, prefix []string, stagedYolo string) string 
 // sandbox must have before the file is read (sandboxEnvPairs, and the workspace-centric
 // `cd … && exec …` inner shell).
 func LaunchArgv(agentArgv []string, profilePath, envFile string, workspace, user, home string, pathPrefix []string) []string {
-	return LaunchArgvWithGuard(agentArgv, profilePath, envFile, workspace, user, home, pathPrefix, SessionGuard{}, "")
+	return LaunchArgvWithGuard(RunAs{}, agentArgv, profilePath, envFile, workspace, user, home, pathPrefix, SessionGuard{}, "")
 }
 
 // LaunchArgvWithGuard is LaunchArgv with the session guard (sessionguard.go) placed between
@@ -1381,7 +1381,7 @@ func LaunchArgv(agentArgv []string, profilePath, envFile string, workspace, user
 //
 // A guard that is not Enabled adds no word, so a launch that declares no resources.memory
 // gets the argv byte for byte as before it existed.
-func LaunchArgvWithGuard(agentArgv []string, profilePath, envFile string, workspace, user, home string, pathPrefix []string, guard SessionGuard, stagedYolo string) []string {
+func LaunchArgvWithGuard(runAs RunAs, agentArgv []string, profilePath, envFile string, workspace, user, home string, pathPrefix []string, guard SessionGuard, stagedYolo string) []string {
 	if user == "" {
 		user = SandboxUser
 	}
@@ -1417,7 +1417,7 @@ func LaunchArgvWithGuard(agentArgv []string, profilePath, envFile string, worksp
 	// not be measured at all until the probe was rewritten without variables. Without it,
 	// the same probe resolves all nine into the store profile and item 3's `fzf` still beats
 	// Homebrew's. PlanInvariants pins the absence on both argvs.
-	out := RunAsSandboxArgv([]string{"--set-home"}, "-i")
+	out := runAs.Argv(true, "-i")
 	out = append(out, envPairs...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
 	session := append(guard.Argv(stagedYolo), "/bin/zsh", "-c", inner)

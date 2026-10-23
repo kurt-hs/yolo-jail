@@ -79,7 +79,7 @@ func TestChmodSpellingsParseOnBSDChmod(t *testing.T) {
 			argvs = append(argvs, chmodArgvsInScript(cmd[2])...)
 		}
 	}
-	guest := CaptureScratchGuestCommands("/Users/Shared/yolo-staged/capture")
+	guest := CaptureScratchGuestCommands(RunAs{}, "/Users/Shared/yolo-staged/capture")
 	sawGuestChmod := false
 	for _, cmd := range guest {
 		for i, a := range cmd {

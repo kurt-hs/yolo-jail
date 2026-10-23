@@ -52,14 +52,14 @@ const ProbeServicesVerb = "probe-services"
 //
 // stagedYolo is the sealed copy the bootstrap self-execs (StagedYoloPath): the host's own
 // binary may sit where the sandbox account cannot read it.
-func ProbeServicesArgv(stagedYolo, profilePath, envFile, user, home string, pathPrefix []string) []string {
+func ProbeServicesArgv(runAs RunAs, stagedYolo, profilePath, envFile, user, home string, pathPrefix []string) []string {
 	if user == "" {
 		user = SandboxUser
 	}
 	if home == "" {
 		home = SandboxHome()
 	}
-	out := RunAsSandboxArgv(nil, "-i")
+	out := runAs.Argv(false, "-i")
 	out = append(out, sandboxEnvPairs(home, user, SandboxPathForYolo(home, pathPrefix, stagedYolo), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
 	out = append(out, ExecWithEnvFile(envFile, []string{stagedYolo, "internal", ProbeServicesVerb})...)

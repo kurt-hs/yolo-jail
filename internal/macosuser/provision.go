@@ -145,7 +145,7 @@ func ProvisionScript(workspace, bootstrapScript string, color bool) string {
 // and the guardrails pack refuses both with exit 127 — while the agent, a separate
 // process, does not; and the script is free to embed an absolute path without nesting
 // quotes inside a single-quoted `sh -c`.
-func ProvisionArgv(script, profilePath, envFile string,
+func ProvisionArgv(runAs RunAs, script, profilePath, envFile string,
 	workspace, user, home string, pathPrefix []string, guestBinDir string) []string {
 	if user == "" {
 		user = SandboxUser
@@ -153,7 +153,7 @@ func ProvisionArgv(script, profilePath, envFile string,
 	if home == "" {
 		home = SandboxHome()
 	}
-	out := RunAsSandboxArgv(nil, "-i", "YOLO_BYPASS_SHIMS=1")
+	out := runAs.Argv(false, "-i", "YOLO_BYPASS_SHIMS=1")
 	// The AGENT'S OWN environment, from the same function the launch argv uses — now the
 	// identity quartet plus the session env file's PATH, with the composed values inside
 	// the file (envfile.go). The stage installs into the prefixes the agent resolves

@@ -388,7 +388,7 @@ func removeSandboxWritten(dir string) error {
 	if err := os.RemoveAll(dir); err == nil {
 		return nil
 	}
-	for _, cmd := range macosuser.CaptureScratchGuestCommands(dir) {
+	for _, cmd := range macosuser.CaptureScratchGuestCommands(macosuser.RunAs{}, dir) {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		c := exec.CommandContext(ctx, cmd[0], cmd[1:]...)
 		c.Dir = "/"

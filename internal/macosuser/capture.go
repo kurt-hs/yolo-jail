@@ -187,6 +187,9 @@ type CaptureOptions struct {
 // CapturePlan is the fully-resolved, ordered artifacts + commands for one install capture — the
 // analogue of RunPlan, and a real gate rather than a pretty-printer (CapturePlanInvariants).
 type CapturePlan struct {
+	// RunAs is the capture's crossing into the sandbox (mode.go, MMP-D4). A capture runs as the
+	// second account until self-mode capture is built (the plan's slice 9).
+	RunAs RunAs
 	Bin   string
 	Cname string
 	// StagingRoot is the throwaway tree; StagingHome and OutDir are its two children.
@@ -248,6 +251,8 @@ func BuildCapturePlan(opts CaptureOptions) CapturePlan {
 // buildCapturePlanAt is BuildCapturePlan over a staging tree its caller names: an installer's,
 // keyed by its bin, or a fork's build's, keyed by the build (ForkBuildStagingRoot).
 func buildCapturePlanAt(opts CaptureOptions, stagingRoot string) CapturePlan {
+	// The second account, the only capture mode until the plan's slice 9 builds self-mode capture.
+	runAs := RunAs{}
 	darwinPrefix := []string{}
 	if opts.Darwin != nil {
 		darwinPrefix = append(darwinPrefix, opts.Darwin.PathPrefix...)
@@ -338,6 +343,7 @@ func buildCapturePlanAt(opts CaptureOptions, stagingRoot string) CapturePlan {
 	}
 
 	return CapturePlan{
+		RunAs:           runAs,
 		Bin:             opts.Bin,
 		Cname:           cname,
 		StagingRoot:     stagingRoot,
@@ -354,9 +360,9 @@ func buildCapturePlanAt(opts CaptureOptions, stagingRoot string) CapturePlan {
 		CleanupCommands: append(append(append(CaptureCleanupCommands(stagingRoot, profilePath),
 			SandboxEnvRemoveCommands(envFile)...), SandboxEnvRemoveCommands(caBundleFile)...),
 			SandboxEnvRemoveCommands(caExtrasFile)...),
-		ScratchGuestCommands: CaptureScratchGuestCommands(stagingRoot),
-		BootstrapArgv:        DarwinBootstrapArgv(stagedYolo, stagingHome, bootstrapEnv, ""),
-		DriverArgv: CaptureDriverArgv(stagedYolo, stagingHome, outDir, opts.Bin, profilePath,
+		ScratchGuestCommands: CaptureScratchGuestCommands(runAs, stagingRoot),
+		BootstrapArgv:        DarwinBootstrapArgv(runAs, stagedYolo, stagingHome, bootstrapEnv, ""),
+		DriverArgv: CaptureDriverArgv(runAs, stagedYolo, stagingHome, outDir, opts.Bin, profilePath,
 			envFile, darwinPrefix),
 		EnvFile:              envFile,
 		EnvFileContent:       envFileContent,
@@ -434,10 +440,10 @@ func CaptureCleanupCommands(stagingRoot, profilePath string) [][]string {
 // run-as rule, give the owner write on everything it owns, then remove what it can. It cannot
 // remove the tree's root, which is the host's; the host's own removal, run again after this,
 // takes the rest. The sandbox account owns what the installer wrote, so this needs no root.
-func CaptureScratchGuestCommands(stagingRoot string) [][]string {
+func CaptureScratchGuestCommands(runAs RunAs, stagingRoot string) [][]string {
 	return [][]string{
-		RunAsSandboxArgv(nil, chmodBin, "-R", "--", "u+w", stagingRoot),
-		RunAsSandboxArgv(nil, rmBin, "-rf", "--", stagingRoot),
+		runAs.Argv(false, chmodBin, "-R", "--", "u+w", stagingRoot),
+		runAs.Argv(false, rmBin, "-rf", "--", stagingRoot),
 	}
 }
 
@@ -501,10 +507,10 @@ func (p CapturePlan) staleCaptureFileCommands() [][]string {
 //
 // No `--login` and no `zsh -c`: there is nothing to cd into and no login rc to re-assert PATH
 // against macOS path_helper, because path_helper never runs on this argv.
-func CaptureDriverArgv(stagedYolo, stagingHome, outDir, bin, profilePath, envFile string,
+func CaptureDriverArgv(runAs RunAs, stagedYolo, stagingHome, outDir, bin, profilePath, envFile string,
 	pathPrefix []string) []string {
 	// The crossing is the one run-as rule (RunAsSandboxArgv): `-n`, so it never prompts.
-	out := RunAsSandboxArgv(nil, "-i")
+	out := runAs.Argv(false, "-i")
 	out = append(out, sandboxEnvPairs(stagingHome, SandboxUser,
 		SandboxPath(stagingHome, pathPrefix), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
@@ -1324,11 +1330,11 @@ func BuildForkBuildPlan(opts ForkBuildOptions) ForkBuildPlan {
 	src := ForkBuildSourceDir(stagingRoot)
 	toolchain := filepath.Join(stagingRoot, forkToolchainLeaf)
 	if opts.TreeDir != "" {
-		plan.DriverArgv = TreeBuildDriverArgv(plan.StagedYolo, plan.StagingHome, plan.OutDir, src, toolchain,
+		plan.DriverArgv = TreeBuildDriverArgv(plan.RunAs, plan.StagedYolo, plan.StagingHome, plan.OutDir, src, toolchain,
 			forkToolchainHead(opts), opts.Build, opts.TreeDir, plan.ProfilePath, plan.EnvFile,
 			plan.DarwinPathPrefix)
 	} else {
-		plan.DriverArgv = ForkBuildDriverArgv(plan.StagedYolo, plan.StagingHome, plan.OutDir, src, toolchain,
+		plan.DriverArgv = ForkBuildDriverArgv(plan.RunAs, plan.StagedYolo, plan.StagingHome, plan.OutDir, src, toolchain,
 			forkToolchainHead(opts), opts.Build, plan.ProfilePath, plan.EnvFile, plan.DarwinPathPrefix)
 	}
 	var copySource [][]string
@@ -1385,17 +1391,17 @@ func ForkBuildStagingCommands(stagingRoot, hostUser string) [][]string {
 
 // ForkBuildDriverArgv is CaptureDriverArgv for a fork's build: the same account, environment,
 // profile and capture driver, around `env YOLO_BYPASS_SHIMS=1 /bin/bash -c <ForkBuildScript>`.
-func ForkBuildDriverArgv(stagedYolo, stagingHome, outDir, srcDir, toolchainFile, toolchainHead, build,
+func ForkBuildDriverArgv(runAs RunAs, stagedYolo, stagingHome, outDir, srcDir, toolchainFile, toolchainHead, build,
 	profilePath, envFile string, pathPrefix []string) []string {
-	return buildDriverArgv(stagedYolo, stagingHome, outDir, lineStatusFile(toolchainFile),
+	return buildDriverArgv(runAs, stagedYolo, stagingHome, outDir, lineStatusFile(toolchainFile),
 		ForkBuildScript(srcDir, toolchainFile, toolchainHead, build), profilePath, envFile, pathPrefix)
 }
 
 // TreeBuildDriverArgv is ForkBuildDriverArgv for a PATCHED EXTENSION's build
 // (docs/reference/pi-extensions.md §7.1): the same crossing, around TreeBuildScript.
-func TreeBuildDriverArgv(stagedYolo, stagingHome, outDir, srcDir, toolchainFile, toolchainHead, build,
+func TreeBuildDriverArgv(runAs RunAs, stagedYolo, stagingHome, outDir, srcDir, toolchainFile, toolchainHead, build,
 	treeDir, profilePath, envFile string, pathPrefix []string) []string {
-	return buildDriverArgv(stagedYolo, stagingHome, outDir, lineStatusFile(toolchainFile),
+	return buildDriverArgv(runAs, stagedYolo, stagingHome, outDir, lineStatusFile(toolchainFile),
 		TreeBuildScript(srcDir, toolchainFile, toolchainHead, build, treeDir), profilePath, envFile, pathPrefix)
 }
 
@@ -1403,10 +1409,10 @@ func TreeBuildDriverArgv(stagedYolo, stagingHome, outDir, srcDir, toolchainFile,
 // the profile and the capture driver, around `env YOLO_BYPASS_SHIMS=1 /bin/bash -c <script>`. The
 // shell is macOS's own /bin/bash: a build runs on the platform's base system, and a recipe must work
 // there (pi-extensions.md PPX-D46).
-func buildDriverArgv(stagedYolo, stagingHome, outDir, lineStatus, script, profilePath, envFile string,
+func buildDriverArgv(runAs RunAs, stagedYolo, stagingHome, outDir, lineStatus, script, profilePath, envFile string,
 	pathPrefix []string) []string {
 	// The crossing is the one run-as rule (RunAsSandboxArgv): `-n`, so it never prompts.
-	out := RunAsSandboxArgv(nil, "-i")
+	out := runAs.Argv(false, "-i")
 	out = append(out, sandboxEnvPairs(stagingHome, SandboxUser,
 		SandboxPath(stagingHome, pathPrefix), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")

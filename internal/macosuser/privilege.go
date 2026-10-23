@@ -56,6 +56,10 @@ func LegacyStateDir() string { return legacyStateDir }
 // rule fail instead of prompting. sudoFlags admits `--set-home` alone; anything else is a
 // programming error and panics, because every other sudo flag either leaves the rule's shape
 // (`-E` needs SETENV, `--login` runs a shell) or targets another account.
+//
+// Account mode's half of RunAs (mode.go): a launch's crossings call RunAs.Argv, never this
+// directly, so one value decides which user every crossing runs as
+// (TestEveryCrossingGoesThroughRunAs).
 func RunAsSandboxArgv(sudoFlags []string, argv ...string) []string {
 	out := []string{sudoBin, "-n"}
 	for _, f := range sudoFlags {
@@ -66,6 +70,23 @@ func RunAsSandboxArgv(sudoFlags []string, argv ...string) []string {
 	}
 	out = append(out, "--user="+SandboxUser, envBin)
 	return append(out, argv...)
+}
+
+// isRunAsSandboxArgv reports whether argv is RunAsSandboxArgv's shape: sudo by absolute path
+// whose `--user=` is the sandbox account. commandFor (real.go) starts such a crossing in `/`.
+func isRunAsSandboxArgv(argv []string) bool {
+	if len(argv) == 0 || argv[0] != sudoBin {
+		return false
+	}
+	for _, a := range argv[1:] {
+		if a == envBin {
+			return false
+		}
+		if a == "--user="+SandboxUser {
+			return true
+		}
+	}
+	return false
 }
 
 // RunAsGrantProbeArgv is readiness probe G2: `/usr/bin/sudo -n --user=_yolojail /usr/bin/env

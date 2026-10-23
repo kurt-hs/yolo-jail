@@ -23,6 +23,10 @@ import (
 // real gate rather than a pretty-printer.
 type RunPlan struct {
 	Workspace string
+	// RunAs is the plan's one crossing into the sandbox (mode.go, MMP-D4): every argv below that
+	// starts a process as the sandbox's user was built by it, and PlanInvariants rebuilds the
+	// probes it expects through it too.
+	RunAs RunAs
 	// Cname is the WORKSPACE's container name: the launch lock and the staged trees are keyed
 	// by it, and shared by every session of the workspace. SessionID is this session's own id
 	// (SessionPlaceholder in a plan no launch minted one for), and SessionKey(Cname, SessionID)
@@ -374,7 +378,7 @@ const DarwinBootstrapSealedFlag = "--sealed-build"
 // YOLO_DARWIN_* extras (workspace, macos-log, login-path) ride verbatim. No
 // --set-home: the subcommand self-sets HOME/JAIL_HOME, and env -i controls the
 // environment precisely.
-func DarwinBootstrapArgv(stagedYolo, home string, bootstrapEnv *jsonx.OrderedMap, _ string) []string {
+func DarwinBootstrapArgv(runAs RunAs, stagedYolo, home string, bootstrapEnv *jsonx.OrderedMap, _ string) []string {
 	if home == "" {
 		home = SandboxHome()
 	}
@@ -392,7 +396,7 @@ func DarwinBootstrapArgv(stagedYolo, home string, bootstrapEnv *jsonx.OrderedMap
 			envPairs = append(envPairs, k+"="+asStr(v))
 		}
 	}
-	out := RunAsSandboxArgv(nil, "-i")
+	out := runAs.Argv(false, "-i")
 	out = append(out, envPairs...)
 	out = append(out, stagedYolo, "internal", "darwin-bootstrap")
 	return out
@@ -423,6 +427,12 @@ type PlanSession struct {
 	ID             string
 	BundleIdentity string
 	CATrust        CATrust
+	// Mode is who the sandbox runs as (mode.go, MMP-D2); the zero value is the second account.
+	// It reaches the plan as RunAs{Mode: Mode}, the crossing every argv is built through, and
+	// nothing else branches on it yet. HostHome is the invoking user's resolved home, which
+	// self mode will need; nothing reads it yet.
+	Mode     Mode
+	HostHome string
 }
 
 // sandboxPathPrefix is the store bin dirs this launch puts on the sandbox PATH, in order: the
@@ -721,6 +731,9 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	guard := SessionGuardFor(resCfg)
 	cpus, _ := CooperativeCPUs(resCfg)
 
+	// THE ONE CROSSING (mode.go, MMP-D4): every argv below that starts a process as the sandbox's
+	// user is built through it. Threaded from the session's mode and not branched on yet.
+	runAs := RunAs{Mode: session.Mode}
 	var provisionArgv []string
 	provisionScriptPath := ""
 	if ProvisionNeeded(cfg, floors) || programs.Needed() {
@@ -736,7 +749,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 			v, _ := sandboxEnv.Get(k)
 			return asStr(v)
 		})
-		provisionArgv = ProvisionArgv(ProvisionScript(workspace, provisionScriptPath, scriptColor),
+		provisionArgv = ProvisionArgv(runAs, ProvisionScript(workspace, provisionScriptPath, scriptColor),
 			profilePath, envFile, workspace, "", "", darwinPrefix, sessionGuestBinDir)
 	}
 
@@ -785,7 +798,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		daemonEnvFile = SandboxDaemonEnvFile(sessionKey, "")
 		daemonEnvContent = SandboxEnvFileContent(jailDaemons.Env)
 		supervisorLog = SupervisorLogPath(workspace)
-		jailDaemonArgv = JailDaemonArgv(profilePath, daemonEnvFile, supervisorLog, "", "", darwinPrefix, stagedYolo)
+		jailDaemonArgv = JailDaemonArgv(runAs, profilePath, daemonEnvFile, supervisorLog, "", "", darwinPrefix, stagedYolo)
 		// Every endpoint the DAEMONS dial is granted too — the same grant the agent's
 		// endpoints get, read off the daemon env for endpointGrantCommands' reason (the env
 		// is the manifest), deduped against the ones already granted.
@@ -801,13 +814,13 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	// exists whenever it does (the endpoint variable is in it).
 	var probeArgv []string
 	if carriesServiceEndpoint(sandboxEnv) {
-		probeArgv = ProbeServicesArgv(stagedYolo, profilePath, envFile, "", "", darwinPrefix)
+		probeArgv = ProbeServicesArgv(runAs, stagedYolo, profilePath, envFile, "", "", darwinPrefix)
 	}
 	// AND ONE REAL WRITE PER CACHE RELOCATION under this session's profile (ctxlinks.go's
 	// CacheRelocationWriteProbe), the question no DAC preflight can ask.
 	var relocationProbes []CacheRelocationProbe
 	for _, r := range relocs {
-		relocationProbes = append(relocationProbes, CacheRelocationWriteProbe(r, profilePath, sessionID, ""))
+		relocationProbes = append(relocationProbes, CacheRelocationWriteProbe(runAs, r, profilePath, sessionID, ""))
 	}
 
 	// workspace_readonly with the config self-lock the container backends perform, a symlinked
@@ -820,8 +833,8 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		envFileRemove = append(envFileRemove, SandboxEnvRemoveCommands(f)...)
 	}
 
-	bootstrapArgv := DarwinBootstrapArgv(stagedYolo, SandboxHome(), bootstrapEnv, "")
-	launchArgv := LaunchArgvWithGuard(agentArgv, profilePath, envFile, workspace, "", "", darwinPrefix, guard, stagedYolo)
+	bootstrapArgv := DarwinBootstrapArgv(runAs, stagedYolo, SandboxHome(), bootstrapEnv, "")
+	launchArgv := LaunchArgvWithGuard(runAs, agentArgv, profilePath, envFile, workspace, "", "", darwinPrefix, guard, stagedYolo)
 	sessionHomeDir := ""
 	if nativehome.ValidID(sessionID) {
 		bootstrapArgv = append(bootstrapArgv, nativehome.SessionFlag, sessionID)
@@ -836,6 +849,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		}
 	}
 	return RunPlan{
+		RunAs:                 runAs,
 		Workspace:             workspace,
 		Cname:                 cname,
 		SessionID:             sessionID,
@@ -857,7 +871,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		CtxRoot:           ctxRoot,
 		ContextDir:        contextDir,
 		ContextLinks:      ctxLinks,
-		ContextPreflight:  ContextPreflight(ctxLinks, ""),
+		ContextPreflight:  ContextPreflight(runAs, ctxLinks),
 		// A copied pack `mount` occupies its path as a copied host file does, so the plan's own
 		// re-siting (contextLinkProblems) refuses a link at, inside or around either.
 		ContextOccupied: ContextOccupied(append(append([]string(nil), hostCtx.Delivered...),
@@ -866,7 +880,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		// THE CACHE RELOCATIONS (ctxlinks.go): the links the bootstrap lays, the profile's rules
 		// above, and the two probes the launch asks before the agent.
 		CacheRelocations:         relocs,
-		CacheRelocationPreflight: CacheRelocationPreflight(relocs, ""),
+		CacheRelocationPreflight: CacheRelocationPreflight(runAs, relocs),
 		CacheRelocationProbes:    relocationProbes,
 		BootstrapArgv:            bootstrapArgv,
 		ProvisionArgv:            provisionArgv,

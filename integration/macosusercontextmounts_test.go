@@ -80,13 +80,13 @@ func TestMacosUserContextPreflightRefusesASourceTheSandboxCannotRead(t *testing.
 	closed := ctxSourceUnder(t, sharedUsersDir, 0o700)
 	open := ctxSourceUnder(t, sharedUsersDir, 0o755)
 
-	for _, p := range macosuser.ContextPreflight([]macosuser.ContextLink{{Dest: "/ctx/open", Source: open, Dir: true}}, "") {
+	for _, p := range macosuser.ContextPreflight(macosuser.RunAs{}, []macosuser.ContextLink{{Dest: "/ctx/open", Source: open, Dir: true}}) {
 		if !runPreflight(t, p.Argv) {
 			t.Errorf("the CONTROL failed: %s cannot %s %s at 0755, so a refusal below would "+
 				"say nothing about the mode (%v)", macosuser.SandboxUser, p.Access, open, p.Argv)
 		}
 	}
-	probes := macosuser.ContextPreflight([]macosuser.ContextLink{{Dest: "/ctx/closed", Source: closed, Dir: true}}, "")
+	probes := macosuser.ContextPreflight(macosuser.RunAs{}, []macosuser.ContextLink{{Dest: "/ctx/closed", Source: closed, Dir: true}})
 	if runPreflight(t, probes[0].Argv) {
 		t.Errorf("%s can read %s at 0700, owned by another account: the DAC preflight would "+
 			"admit a source the sandbox should not reach (%v)", macosuser.SandboxUser, closed, probes[0].Argv)
@@ -193,7 +193,7 @@ func TestMacosUserContextVolumesAndPrivacyDirsMeasurement(t *testing.T) {
 			continue
 		}
 		link := macosuser.ContextLink{Dest: "/ctx/probe", Source: src, Dir: true}
-		dac := runPreflight(t, macosuser.ContextPreflight([]macosuser.ContextLink{link}, "")[0].Argv)
+		dac := runPreflight(t, macosuser.ContextPreflight(macosuser.RunAs{}, []macosuser.ContextLink{link})[0].Argv)
 		profile := filepath.Join(profDir, "p.sb")
 		if err := os.WriteFile(profile, []byte(macosuser.SeatbeltProfileWithContext(
 			macosuser.SharedRootDefault(), "", nil, macosuser.HomeReadonly{},

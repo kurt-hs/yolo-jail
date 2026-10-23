@@ -15,7 +15,7 @@ import (
 // makes, and that a host command keeps the caller's cwd.
 func TestCommandForStartsACrossingInADirectoryTheSandboxCanRead(t *testing.T) {
 	crossings := map[string][]string{
-		"capture driver": CaptureDriverArgv("/s/bin/yolo", "/c/home", "/c/out", "jq", "/s/p.sb", "", nil),
+		"capture driver": CaptureDriverArgv(RunAs{}, "/s/bin/yolo", "/c/home", "/c/out", "jq", "/s/p.sb", "", nil),
 		"grant probe":    RunAsGrantProbeArgv(),
 		"set-home":       RunAsSandboxArgv([]string{"--set-home"}, "/bin/sh", "-c", "true"),
 	}

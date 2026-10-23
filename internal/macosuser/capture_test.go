@@ -153,7 +153,7 @@ func TestCapturePlanRefusesTheSharedHome(t *testing.T) {
 		t.Errorf("the bootstrap login PATH is not rooted at the staging home: %v", plan.BootstrapArgv)
 	}
 	broken := plan
-	broken.BootstrapArgv = DarwinBootstrapArgv(plan.StagedYolo, SandboxHome(), jsonx.NewOrderedMap(), "")
+	broken.BootstrapArgv = DarwinBootstrapArgv(RunAs{}, plan.StagedYolo, SandboxHome(), jsonx.NewOrderedMap(), "")
 	if !anyContains(CapturePlanInvariants(broken), "must never run against the shared sandbox home") {
 		t.Error("a bootstrap pointed at the shared home was not refused")
 	}

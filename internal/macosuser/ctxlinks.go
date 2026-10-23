@@ -713,12 +713,12 @@ const cacheRelocationProfileAccess = "write under the sandbox profile"
 // bits. ContextPreflight's shape for a read-write directory source, and its crossing: through
 // /usr/bin/env, the one command the run-as rule names. The second parameter is unused, the rule
 // naming one account.
-func CacheRelocationPreflight(relocs []CacheRelocation, _ string) []CacheRelocationProbe {
+func CacheRelocationPreflight(runAs RunAs, relocs []CacheRelocation) []CacheRelocationProbe {
 	var out []CacheRelocationProbe
 	for _, r := range relocs {
 		for _, a := range [][2]string{{"read", "-r"}, {"search", "-x"}, {"write", "-w"}} {
 			out = append(out, CacheRelocationProbe{Relocation: r, Access: a[0],
-				Argv: RunAsSandboxArgv(nil, testBin, a[1], r.Target)})
+				Argv: runAs.Argv(false, testBin, a[1], r.Target)})
 		}
 	}
 	return out
@@ -739,12 +739,12 @@ func CacheRelocationProbeFile(target, sessionID string) string {
 // (ownership, a removable or network volume's own rules), let the write through — asked before
 // the agent rather than by the agent's first cache write. The file is handed to the shell as
 // "$1", so no path is ever spliced into the script.
-func CacheRelocationWriteProbe(r CacheRelocation, profilePath, sessionID, user string) CacheRelocationProbe {
+func CacheRelocationWriteProbe(runAs RunAs, r CacheRelocation, profilePath, sessionID, user string) CacheRelocationProbe {
 	if user == "" {
 		user = SandboxUser
 	}
 	home := SandboxHome()
-	return CacheRelocationProbe{Relocation: r, Access: cacheRelocationProfileAccess, Argv: RunAsSandboxArgv(nil,
+	return CacheRelocationProbe{Relocation: r, Access: cacheRelocationProfileAccess, Argv: runAs.Argv(false,
 		"-i", "HOME="+home, "USER="+user,
 		"PATH=/usr/bin:/bin", "/usr/bin/sandbox-exec", "-f", profilePath, "--",
 		"/bin/sh", "-c", `: > "$1" && exec `+rmBin+` -f "$1"`, "sh",
@@ -858,14 +858,14 @@ func cacheRelocationProblems(plan RunPlan) []string {
 				entrypoint.DarwinCacheRelocationsEnv+"); no link would be laid, and the cache "+
 				"would stay in the sandbox home")
 		}
-		for _, p := range CacheRelocationPreflight([]CacheRelocation{r}, "") {
+		for _, p := range CacheRelocationPreflight(plan.RunAs, []CacheRelocation{r}) {
 			if !asked[strings.Join(p.Argv, "\x00")] {
 				problems = append(problems, name+" is not checked by the DAC preflight ("+
 					strings.Join(p.Argv, " ")+"); a target "+SandboxUser+" cannot "+p.Access+
 					" would fail only at the agent's first cache write")
 			}
 		}
-		if p := CacheRelocationWriteProbe(r, plan.ProfilePath, plan.SessionID, ""); !asked[strings.Join(p.Argv, "\x00")] {
+		if p := CacheRelocationWriteProbe(plan.RunAs, r, plan.ProfilePath, plan.SessionID, ""); !asked[strings.Join(p.Argv, "\x00")] {
 			problems = append(problems, name+" is not probed by a write under the session's "+
 				"Seatbelt profile; a volume the sandbox cannot write would fail only at the "+
 				"agent's first cache write")
@@ -931,11 +931,11 @@ type ContextProbe struct {
 // it, which the briefing states (§3.5's stated delta). Asking access(2) of the source also asks
 // it of every ancestor, since the lookup needs search on each, so a home that is not
 // traversable fails here too.
-func ContextPreflight(links []ContextLink, _ string) []ContextProbe {
+func ContextPreflight(runAs RunAs, links []ContextLink) []ContextProbe {
 	var out []ContextProbe
 	add := func(l ContextLink, access, flag string) {
 		out = append(out, ContextProbe{Link: l, Access: access,
-			Argv: RunAsSandboxArgv(nil, testBin, flag, l.Source)})
+			Argv: runAs.Argv(false, testBin, flag, l.Source)})
 	}
 	for _, l := range links {
 		add(l, "read", "-r")
@@ -1110,7 +1110,7 @@ func contextLinkProblems(plan RunPlan) []string {
 			need = append(need, "-w")
 		}
 		for _, flag := range need {
-			argv := RunAsSandboxArgv(nil, testBin, flag, l.Source)
+			argv := plan.RunAs.Argv(false, testBin, flag, l.Source)
 			if !asked[strings.Join(argv, "\x00")] {
 				problems = append(problems, name+" is not checked by the DAC preflight ("+
 					strings.Join(argv, " ")+"); a source "+SandboxUser+" cannot reach would "+

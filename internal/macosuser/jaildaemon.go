@@ -460,14 +460,14 @@ func WithSupervisorLog(logPath string, argv []string) []string {
 //
 // The supervisor is named by ABSOLUTE path, the one word of this argv yolo decides; the
 // daemons it starts are the payload's argvs verbatim, resolved on the PATH this argv sets.
-func JailDaemonArgv(profilePath, envFile, logPath, user, home string, pathPrefix []string, stagedYolo string) []string {
+func JailDaemonArgv(runAs RunAs, profilePath, envFile, logPath, user, home string, pathPrefix []string, stagedYolo string) []string {
 	if user == "" {
 		user = SandboxUser
 	}
 	if home == "" {
 		home = SandboxHome()
 	}
-	out := RunAsSandboxArgv([]string{"--set-home"}, "-i")
+	out := runAs.Argv(true, "-i")
 	out = append(out, sandboxEnvPairs(home, user, SandboxPathForYolo(home, pathPrefix, stagedYolo), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
 	jaild := filepath.Join(filepath.Dir(stagedYolo), JaildName)

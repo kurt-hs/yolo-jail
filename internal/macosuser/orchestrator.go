@@ -309,6 +309,11 @@ type Options struct {
 	OnStaged  func(paths []string)
 }
 
+// runAs is the launch's one crossing into the sandbox (mode.go, MMP-D4): the preflights the
+// orchestrator asks before the plan exists and the plan itself (PlanSession.Mode) both take it from
+// here. Always the second account until the plan's slice 6 reads macos_user_mode.
+func (o Options) runAs() RunAs { return RunAs{} }
+
 // grantTarget is the path a stage command grants the sandbox account an ACE on (`chmod +a <ace>
 // <path>`), and whether it is such a grant.
 func grantTarget(cmd []string) (string, bool) {
@@ -679,7 +684,8 @@ func buildPlan(deps Deps, opts Options, darwin *Darwin) RunPlan {
 	return BuildRunPlanWithStages(opts.Workspace, opts.Config, opts.Agents, opts.AgentArgv,
 		selfExe, opts.HostPackRoot, overlay, opts.HostCtx, env, darwin,
 		opts.BlockedTools, opts.JailDaemons, floors, programs,
-		PlanSession{ID: opts.SessionID, BundleIdentity: opts.BundleIdentity, CATrust: opts.CATrust})
+		PlanSession{ID: opts.SessionID, BundleIdentity: opts.BundleIdentity, CATrust: opts.CATrust,
+			Mode: opts.runAs().Mode})
 }
 
 // programReadinessStageFor is JR-D2's host-side stage-admission check. The same staged pack
@@ -969,7 +975,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// signal's status, not a refusal.
 
 	steps.begin("context_preflight")
-	kept, ok := runContextPreflight(deps, out, opts.HostCtx.Links, containerStep(opts.PackEnv))
+	kept, ok := runContextPreflight(deps, out, opts.runAs(), opts.HostCtx.Links, containerStep(opts.PackEnv))
 	if !ok {
 		return deps.endingOr(1)
 	}
@@ -977,7 +983,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// AND EVERY CACHE RELOCATION'S TARGET, the same DAC questions as a read-write context source
 	// (CacheRelocationPreflight), asked here for the same reasons. The write under the session's
 	// own profile needs the profile installed, so it waits for that step (relocation_probe).
-	if !runCacheRelocationProbes(deps, out, CacheRelocationPreflight(opts.HostCtx.Relocations, ""),
+	if !runCacheRelocationProbes(deps, out, CacheRelocationPreflight(opts.runAs(), opts.HostCtx.Relocations),
 		containerStep(opts.PackEnv)) {
 		return deps.endingOr(1)
 	}
@@ -1696,7 +1702,7 @@ func applyDiskIOPolicy(deps Deps, out printer, p ioprio.Priority) {
 // from the links returned, which are the ones the plan stages and the profile opens
 // (docs/reference/context-mounts.md#optional-mounts). The briefing was composed before this
 // question could be asked, so it may still list the skipped path; the skip line is what says so.
-func runContextPreflight(deps Deps, out printer, links []ContextLink, step string) ([]ContextLink, bool) {
+func runContextPreflight(deps Deps, out printer, runAs RunAs, links []ContextLink, step string) ([]ContextLink, bool) {
 	if len(links) == 0 {
 		return links, true
 	}
@@ -1705,7 +1711,7 @@ func runContextPreflight(deps Deps, out printer, links []ContextLink, step strin
 
 	var failed []ContextProbe
 	refused := map[string]bool{}
-	for _, p := range ContextPreflight(links, "") {
+	for _, p := range ContextPreflight(runAs, links) {
 		// A signal ending the launch stops the probing: each probe is a crossing of its own.
 		if _, ending := deps.ending(); ending {
 			return nil, false
