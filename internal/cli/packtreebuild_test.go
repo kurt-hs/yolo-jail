@@ -322,7 +322,7 @@ func TestTheBuildsCopyCopiesASymlinkAsALinkAndNeverFollowsIt(t *testing.T) {
 	if err := os.Symlink(key, filepath.Join(src, "keylink")); err != nil {
 		t.Fatal(err)
 	}
-	if err := copySourceTreeSkipping(src, dst, packload.PackTreeDigestSkip(), false); err != nil {
+	if err := copySourceTreeSkipping(src, dst, packload.PackTreeDigestSkip(), base); err != nil {
 		t.Fatal(err)
 	}
 	for name, want := range map[string]string{"dirlink": outside, "keylink": key} {
@@ -393,7 +393,7 @@ func TestTheBuildsCopyRefusesAnUntrustedLinkAboveItsRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := copySourceTreeSkipping(filepath.Join(link, "tool"), dst, nil, true); err == nil {
+	if err := copySourceTreeSkipping(filepath.Join(link, "tool"), dst, nil, ""); err == nil {
 		t.Errorf("the copy read through a user's link above its root")
 	}
 	if _, err := os.Stat(filepath.Join(dst, "id_ed25519")); err == nil {
@@ -418,7 +418,7 @@ func TestTheBuildsCopyNeverWritesThroughAnExistingEntry(t *testing.T) {
 	if err := os.Symlink(elsewhere, filepath.Join(dst, "lib")); err != nil {
 		t.Fatal(err)
 	}
-	if err := copySourceTreeSkipping(src, dst, nil, false); err == nil {
+	if err := copySourceTreeSkipping(src, dst, nil, base); err == nil {
 		t.Errorf("the copy went on past an existing destination entry")
 	}
 	if _, err := os.Lstat(filepath.Join(elsewhere, "x")); err == nil {
@@ -433,7 +433,7 @@ func TestTheBuildsCopyNeverWritesThroughAnExistingEntry(t *testing.T) {
 	if err := os.Remove(filepath.Join(dst, "lib")); err != nil {
 		t.Fatal(err)
 	}
-	if err := copySourceTreeSkipping(src, dst, nil, false); err == nil {
+	if err := copySourceTreeSkipping(src, dst, nil, base); err == nil {
 		t.Errorf("the copy overwrote an existing destination file")
 	}
 }
@@ -474,5 +474,40 @@ func TestStagingFollowsTheUsersStateLinkButNotACheckouts(t *testing.T) {
 	}
 	if err := stagePackTreeSource(checkout, digest, filepath.Join(base, "dst-checkout")); err == nil {
 		t.Errorf("staging a checkout behind a user's link succeeded, want a refusal")
+	}
+}
+
+// A LINK INSIDE THE PACK, BETWEEN ITS ROOT AND `from`, IS REFUSED (BG-D23): the trust root of a
+// pack's own source is the pack's root, not the source directory's parent, so a pack whose tools/ is
+// a link to a host directory holding an x/ with a key in it is neither digested nor copied. Red if
+// Fork.SourceBase, or either reader's use of it, goes back to the source directory's parent.
+func TestALinkInsideThePackAboveItsSourceIsRefused(t *testing.T) {
+	base := t.TempDir()
+	root, host := filepath.Join(base, "packs", "fx"), filepath.Join(base, "host")
+	for _, d := range []string{root, filepath.Join(host, "x")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, filepath.Join(host, "x", "id_ed25519"), "SECRET-HOST-BYTES")
+	link := filepath.Join(root, "tools")
+	if err := os.Symlink(host, link); err != nil {
+		t.Fatal(err)
+	}
+	if os.Geteuid() == 0 {
+		if err := os.Lchown(link, 65534, 65534); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := packload.Fork{Pack: "fx", Bin: "x", Run: "x", Root: root, From: "tools/x"}
+	if d, err := f.Digest(); err == nil {
+		t.Errorf("Digest read through a link inside the pack: %s", d)
+	}
+	dst := filepath.Join(base, "dst")
+	if err := stagePackTreeSource(f, "digest", dst); err == nil || strings.Contains(err.Error(), "changed while it was staged") {
+		t.Errorf("staging through a link inside the pack = %v, want the link refused", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "id_ed25519")); err == nil {
+		t.Errorf("the staging holds the host's key")
 	}
 }

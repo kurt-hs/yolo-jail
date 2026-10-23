@@ -109,7 +109,7 @@ func Walk(root string, skip map[string]bool, visit func(Entry) error) error {
 // component is a link is visited as one Symlink entry, as in Walk. root must be base or under it.
 //
 // Walk's reach from `/` is for a tree whose every ancestor may be an agent's, a dev override's
-// checkout (BG-D22); WalkBelow is for one whose ancestors above base are the user's.
+// checkout (BG-D22); WalkBelow is for one whose ancestors above base are the user's (BG-D23).
 func WalkBelow(base, root string, skip map[string]bool, visit func(Entry) error) error {
 	absBase, err := filepath.Abs(base)
 	if err != nil {
@@ -159,7 +159,9 @@ type BelowBaseLinkError struct {
 }
 
 func (e *BelowBaseLinkError) Error() string {
-	return e.Path + " is a symlink below " + e.Base + ", where yolo follows no symlink, since an agent may have placed it"
+	return e.Path + " is a symlink below " + e.Base + ", where yolo follows no symlink, since an agent may have placed it — " +
+		"replace the link with the directory it names, or, when it is in a capture's output, run the capture again: " +
+		"an installer that leaves a symlink in its own output path is refused"
 }
 
 // Resolve is path with every trusted link on it resolved, read component by component as Walk reads

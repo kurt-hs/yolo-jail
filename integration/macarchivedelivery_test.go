@@ -184,7 +184,7 @@ func macArchivePrivateState(t *testing.T) {
 	if err := os.MkdirAll(realCache, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(realCache, filepath.Join(state, "cache")); err != nil {
+	if err := userSymlink(realCache, filepath.Join(state, "cache")); err != nil {
 		t.Fatal(err)
 	}
 }

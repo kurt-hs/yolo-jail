@@ -93,7 +93,7 @@ func stagePackTreeSource(f packload.Fork, digest, dst string) error {
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return err
 	}
-	if err := copySourceTreeSkipping(src, dst, packload.PackTreeDigestSkip(), f.Checkout != ""); err != nil {
+	if err := copySourceTreeSkipping(src, dst, packload.PackTreeDigestSkip(), f.SourceBase()); err != nil {
 		return err
 	}
 	got, err := packload.PackTreeDigest(dst)

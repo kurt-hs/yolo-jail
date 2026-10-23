@@ -61,7 +61,7 @@ func OfSkipping(root string, skip map[string]bool) (string, error) {
 // OfBelow is OfSkipping with the trust root named: base and its ancestors are the caller's own and
 // followed as the OS does; from base down to root no link is followed (nofollow.WalkBelow). Capture
 // admission digests a staged tree below the store's staging root this way, the capture jail's
-// workspace being staging/<id> (BG-D22).
+// workspace being staging/<id> (BG-D23).
 func OfBelow(base, root string, skip map[string]bool) (string, error) {
 	return digest(func(visit func(nofollow.Entry) error) error { return nofollow.WalkBelow(base, root, skip, visit) })
 }

@@ -288,6 +288,9 @@ func TestWalkBelowFollowsLinksUpToItsBaseAndNoneBelow(t *testing.T) {
 	if !errors.As(err, &below) {
 		t.Errorf("WalkBelow through a link below its base = %v, want a BelowBaseLinkError", err)
 	}
+	if err != nil && !strings.Contains(err.Error(), "run the capture again") {
+		t.Errorf("the refusal names no next step: %v", err)
+	}
 	var kinds []Kind
 	if err := WalkBelow(base, filepath.Join(root, "planted"), nil, func(e Entry) error {
 		kinds = append(kinds, e.Kind)
