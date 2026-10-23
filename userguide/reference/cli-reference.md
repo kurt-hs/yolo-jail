@@ -105,6 +105,8 @@ yolo host-daemon status      # every host service shared by all jails
 yolo loopholes list          # the loopholes your config selects, and whether each is on
 yolo loopholes status        # on the host: run each loophole's self-check
 yolo audit                   # on the host: every brokered call, such as the jail's gh commands
+yolo host-run -- <cmd>       # on the host: run a command and send its output to the agent
+yolo host-run wait           # in the jail: wait for that output; also show
 ```
 
 `yolo audit` takes `--since 1h`, `--jail <id>`, `--workspace <path>`, `--set <name>` and `--json`.
@@ -114,7 +116,8 @@ Inside a jail, `yolo gh -- <args>` is what a bare `gh` runs when the `github` pa
 `yolo openai-auth` and `yolo host-daemon` arrive in the release after 0.10.0. On 0.10.0 the first is
 `yolo internal openai-auth`, and the second has no equivalent beyond `yolo broker`.
 
-See [Logins](../guides/authentication.md) and [Host Access and Loopholes](../guides/loopholes.md).
+See [Logins](../guides/authentication.md), [Host Access and Loopholes](../guides/loopholes.md) and
+[Run a Host Command for the Agent](../guides/host-commands.md).
 
 ## Disk
 

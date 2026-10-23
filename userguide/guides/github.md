@@ -7,7 +7,8 @@ your machine, the **github-broker**, runs each command for the jail and sends ba
 This version is **read-only**. An agent can read pull requests, issues, workflow runs, releases and
 files in this project's own GitHub repositories. A command that would change something on GitHub
 does not run yet: it stops at once and says that writes need an approval step, which is still
-being built, so you run that command on your machine instead.
+being built, so you run that command on your machine instead. The refusal prints a ready
+[`yolo host-run`](host-commands.md) line for that, which sends the output back to the agent.
 
 ## Turning it on
 
@@ -163,7 +164,7 @@ the entry to put in each project's `yolo-jail.local.jsonc` instead.
 | The agent runs | What happens |
 |---|---|
 | `gh pr view 32`, `gh issue list`, `gh run view --log`, `gh workflow list`, `gh repo view`, `gh release list`, `gh api repos/OWNER/REPO/...` and other reads | It runs with your login, and the output comes back as if it ran in the jail |
-| `gh pr comment`, `gh issue edit`, `gh pr merge`, `gh api -X POST ...` and other writes | Nothing runs, and nothing waits. It exits with code 77 at once: writes need an approval step, not built yet, so the agent asks you to run the command on your machine |
+| `gh pr comment`, `gh issue edit`, `gh pr merge`, `gh api -X POST ...` and other writes | Nothing runs, and nothing waits. It exits with code 77 at once: writes need an approval step, not built yet, so the agent asks you to run the command on your machine, with the [`yolo host-run`](host-commands.md) line the refusal prints |
 | `gh auth status` | Says which of your GitHub accounts the broker uses and which repositories the jail can reach. It never shows the token or its scopes |
 | `gh auth token`, `--web`, `gh api` to a full URL, a command that would read or write a file on your machine | Never runs, whatever else is allowed. It exits with code 64 and says why |
 | A repository outside this project, or a command across your whole account, such as a search with no `--repo` | Never runs. It exits with code 64 and names the repositories it can reach, and, for a repository, [where to add it](#adding-a-repository-the-project-has-no-remote-for) |
