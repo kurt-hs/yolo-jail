@@ -3754,7 +3754,7 @@ Whichever is ruled, R5's *"install is user-scope"* in
 
 **The question, each option in brief:**
 
-- 💬 <a id="oq-pk1"></a>**[`OQ-PK1`](#oq-pk1) — which packs may a workspace config declare?**
+- ✅ <a id="oq-pk1"></a>**[`OQ-PK1`](#oq-pk1) — which packs may a workspace config declare?**
   The user-scope rule above stands in the code, but
   [`OQ-MP7`](../design/mcp-presets-removal.md#decision-ledger) ruled on 2026-09-20 that it should not
   simply stand: define a **safe subset** of packs a workspace may declare, drawn on host reach
@@ -3768,8 +3768,6 @@ Whichever is ruled, R5's *"install is user-scope"* in
     included.**
   - **(c) (b), plus a pack the repository carries.**
 
-  <!-- vantage: question id=OQ-PK1 leaning="(b): shipped packs whose contributions all stay inside the jail, executable kinds included. OQ-MP7's own answer says an MCP server for an agent inside the jail is not what the rule protects, and a workspace config can already name any command in mcp_servers. Bare names only, because a git+ or file:// source reaches the host." -->
-
   _Leaning:_ **(b).** [OQ-MP7](../design/mcp-presets-removal.md#decision-ledger)'s answer draws the line itself: *"it was to stop a workspace
   controlling what runs on the host. An MCP server for an agent inside the jail is not that."*
   The objection it left open, unconditional execution, is one a workspace already has through
@@ -3779,7 +3777,17 @@ Whichever is ruled, R5's *"install is user-scope"* in
   layer already carries the case that wanted it most.
 
   **Answer:**
-  > _(empty — fill in when decided)_
+  > **Ruled in review 2026-10-23, none of the options for now:** no pack may be named at
+  > workspace scope yet, `mcp_presets` is deleted outright (`sequential-thinking` with it), and
+  > the browser is turned on only in the user's own config. The maintainer's instinct is (b),
+  > but it gets its own design doc first: *"my instinct is B, but I think we need to step back
+  > and write a design document here so that we're careful, because I think we do want this,
+  > although it's got quite a lot of implications … for now to make progress here I guess
+  > we're just saying it is a pack there's no way to turn it on in a workspace and MCP presets
+  > is getting deleted that way we can take the design doc and implementation in time."* This
+  > releases [`mcp-presets-removal.md`](../design/mcp-presets-removal.md)'s step 3 and narrows
+  > [OQ-MP7](../design/mcp-presets-removal.md#decision-ledger)'s "do not just lose it" to
+  > "lose it until the workspace-packs design lands".
 
 - 💬 <a id="oq-acp4"></a>**[`OQ-ACP4`](#oq-acp4) — does pruning a shared pack need usage data to be anybody's job?**
   A shared corpus of skills rots: it accumulates, quality drops, and people go back to their own
