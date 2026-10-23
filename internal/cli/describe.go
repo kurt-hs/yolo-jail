@@ -104,7 +104,7 @@ func describeMain(args []string, out, errw io.Writer, color bool) int {
 	// jail.
 	printPackageProfile(pr, prof, config.EffectivePackages(cfg, runtime.GOOS),
 		darwinpkg.ProfileRootLink(paths.Home()),
-		jailcontent.MechanismHasNoContainer(resolvedMechanism(cfg)))
+		packagesMaterializeAt(notch, resolvedMechanism(cfg)))
 	if packs, perr := config.LoadPacks(nil); perr == nil && len(packs) > 0 {
 		names := make([]string, 0, len(packs))
 		for _, p := range packs {
@@ -190,13 +190,28 @@ func printConfinementVector(pr richtext.Printer, prof render.Profile) {
 // materializes says whether anything at this notch BUILDS the profile, and it is what makes
 // the absent-root branch honest. Only the macos-user backend materializes one today
 // (darwinpkg.Materialize has exactly one caller, that backend's run seam), which is the macOS
-// guest notch as well as `runtime: "macos-user"` (env-manager plan EMP-D1); `host` and a Linux
-// `guest` have no package layer yet (docs/design/provisioner-evidence.md §3.4, "not orthogonal
-// to confinement: the provisioning primitive below jail"). Without it this branch
+// guest notch as well as `runtime: "macos-user"` (env-manager plan EMP-D1). A Linux `guest`
+// has no package layer yet (docs/design/provisioner-evidence.md §3.4, "not orthogonal to
+// confinement: the provisioning primitive below jail"); `host` never gets one, by design
+// (packagesMaterializeAt). Without it this branch
 // offered "a launch or `yolo apply` materializes it" at every notch — a remedy that does not
 // exist below jail, and one `yolo apply` does not perform at ANY notch. `check` corrected the
 // same cell for itself (check/section_packageprofile.go's `materializes`), and both follow
 // report-tiers.md P2: a loss with no remedy says so rather than borrowing one it cannot cash.
+
+// packagesMaterializeAt is the materializes argument for notch under mechanism. At the HOST
+// it is false whatever the runtime (OQ-NX8, ruled 2026-10-23, docs/design/provisioner-sets.md):
+// `yolo host` never applies the workspace's jail-only keys (HP-DIR3,
+// docs/reference/host-agent-environment.md#HP-DIR3), so `runtime: "macos-user"` — whose own
+// launches do build a profile — must not turn the host's inert line into "a run materializes
+// it". Elsewhere it is whether the mechanism provisions one, which only macos-user does.
+func packagesMaterializeAt(notch render.Kind, mechanism string) bool {
+	if notch == render.KindHost {
+		return false
+	}
+	return jailcontent.MechanismHasNoContainer(mechanism)
+}
+
 // packageProfileInert is whether printPackageProfile would print the INERT line: packages are
 // declared, this notch bakes none, no profile is resolved, and nothing here would materialize one.
 func packageProfileInert(prof render.Profile, packages []any, rootLink string, materializes bool) bool {

@@ -53,25 +53,41 @@ func (o *Options) sectionPackageProfile(r *reporter, merged *jsonx.OrderedMap, m
 	if prof.Has(render.PrimBakedImage) {
 		return
 	}
-	// WHETHER A LAUNCH HERE BUILDS THE PROFILE AT ALL, which decides what an absent root
-	// MEANS. Only the macos-user backend materializes it today (darwinpkg.Materialize has
-	// exactly one caller, the macos-user launch), and that backend is the macOS guest notch
-	// as well as `runtime: "macos-user"` (env-manager plan EMP-D1): the mechanism check
-	// resolved is macos-user for both. `host` and a Linux `guest` have no package layer yet
-	// (provisioner-evidence.md §3.4, "not orthogonal to confinement: the provisioning
-	// primitive below jail"). Reported through the same mechanism question the gate
-	// asks, not through IsMacOS: a native runtime is the thing that provisions, and the
-	// platform it happens to require is not what makes the sentence true.
-	materializes := jailcontent.MechanismHasNoContainer(mechanism)
 	platform := config.PlatformLinux
 	if o.IsMacOS {
 		platform = config.PlatformDarwin
 	}
 	declared := len(config.EffectivePackages(merged, platform))
+	// THE HOST NOTCH IS DECIDED BY THE NOTCH, NEVER THE RUNTIME (OQ-NX8, ruled 2026-10-23,
+	// docs/design/provisioner-sets.md#OQ-NX8). `yolo host` never applies the workspace's
+	// jail-only keys (HP-DIR3, docs/reference/host-agent-environment.md#HP-DIR3), so declared
+	// packages there are inert by design — not a gap awaiting a package layer, and not a
+	// finding. An info line, then, not a [WARN], and the same line with `runtime:
+	// "macos-user"` set: that backend materializes a profile for its own launches, and a host
+	// launch is not one of them. Nothing declared is no report at all.
+	if notch == render.KindHost {
+		if declared == 0 {
+			return
+		}
+		r.sectionHeader("Declared packages")
+		r.dim(hostPackagesInertLine(declared))
+		r.blank()
+		return
+	}
+	// WHETHER A LAUNCH HERE BUILDS THE PROFILE AT ALL, which decides what an absent root
+	// MEANS. Only the macos-user backend materializes it today (darwinpkg.Materialize has
+	// exactly one caller, the macos-user launch), and that backend is the macOS guest notch
+	// as well as `runtime: "macos-user"` (env-manager plan EMP-D1): the mechanism check
+	// resolved is macos-user for both. A Linux `guest` has no package layer yet
+	// (provisioner-evidence.md §3.4, "not orthogonal to confinement: the provisioning
+	// primitive below jail"); `host` returned above, inert by design. Reported through the same mechanism question the gate
+	// asks, not through IsMacOS: a native runtime is the thing that provisions, and the
+	// platform it happens to require is not what makes the sentence true.
+	materializes := jailcontent.MechanismHasNoContainer(mechanism)
 	if !materializes && declared == 0 {
 		// Nothing declared and nothing that would provision it: there is no closure to
 		// describe, so the honest report is no report. A [WARN] here would be a false alarm
-		// on every `confinement: host` workspace that never asked for a package.
+		// on every Linux `confinement: guest` workspace that never asked for a package.
 		return
 	}
 	r.sectionHeader("Declared packages")
@@ -102,10 +118,9 @@ func (o *Options) sectionPackageProfile(r *reporter, merged *jsonx.OrderedMap, m
 // the inertness instead and says there is nothing to run — P2's "a loss with no remedy says
 // so" rather than borrowing one it cannot cash (docs/reference/report-tiers.md#principles).
 // notch and declared are what that cell reports; the other three cells are about the ROOT
-// and depend on neither. A false materializes reaches here only at `host` or a Linux `guest`
-// — the gate has already returned for every notch composing an image, and the one mechanism
-// that provisions, macos-user, is the macOS guest's too — so naming the notch there is always
-// naming one of those two.
+// and depend on neither. A false materializes reaches here only at a Linux `guest` — the gate
+// has already returned for every notch composing an image and for `host` (inert by design,
+// OQ-NX8), and the one mechanism that provisions, macos-user, is the macOS guest's too.
 func (o *Options) checkPackageProfile(r *reporter, notch render.Kind, materializes bool, declared int) {
 	link := darwinpkg.ProfileRootLink(paths.Home())
 	target, err := os.Readlink(link)
@@ -119,7 +134,7 @@ func (o *Options) checkPackageProfile(r *reporter, notch render.Kind, materializ
 				"materializes at the `"+notch.String()+"` notch",
 				"A notch with no baked image gets its tools from a nix profile, and only "+
 					"the macos-user backend builds one today, which is also the guest notch "+
-					"on macOS — `host` and a Linux `guest` have no package layer yet "+
+					"on macOS — a Linux `guest` has no package layer yet "+
 					"(docs/design/provisioner-evidence.md §3.4).  "+
 					"Nothing to "+
 					"run: the entries are inert here, not wrong.")
@@ -138,4 +153,17 @@ func (o *Options) checkPackageProfile(r *reporter, notch render.Kind, materializ
 		return
 	}
 	r.ok("`packages:` profile resolved and GC-rooted: " + target)
+}
+
+// hostPackagesInertLine is the host notch's `packages:` line: inert by design, whatever the
+// runtime setting (OQ-NX8). It names the rule rather than a missing layer, because there is
+// no layer to wait for — the host never applies the workspace's jail-only keys (HP-DIR3).
+func hostPackagesInertLine(declared int) string {
+	noun := "entries"
+	if declared == 1 {
+		noun = "entry"
+	}
+	return "`packages:` declares " + itoa(declared) + " " + noun + ", inert at the `host` notch " +
+		"by design: `yolo host` never applies the workspace's jail-only keys " +
+		"(HP-DIR3, docs/reference/host-agent-environment.md)"
 }

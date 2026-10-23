@@ -207,30 +207,86 @@ func TestPackageProfileGateIsTheBakedImageNotThePlatform(t *testing.T) {
 		}
 	})
 
-	t.Run("host: no image, so the profile is the answer", func(t *testing.T) {
-		got, store := run(t, "host")
+	t.Run("guest: no image, so the profile is the answer", func(t *testing.T) {
+		got, _ := run(t, "guest")
 		if !strings.Contains(got, "Declared packages") {
-			t.Errorf("a notch with no baked image must get the profile report on ANY "+
+			t.Errorf("a notch with no baked image must get the packages report on ANY "+
 				"platform — this is Linux:\n%s", got)
 		}
-		if !strings.Contains(got, "[PASS]") || !strings.Contains(got, store) {
-			t.Errorf("expected the resolved root reported as a PASS naming %s:\n%s", store, got)
+	})
+
+	t.Run("host: inert by design, even with a resolved root", func(t *testing.T) {
+		got, store := run(t, "host")
+		if !strings.Contains(got, "Declared packages") || !strings.Contains(got, "inert at the `host` notch by design") {
+			t.Errorf("declared packages at the host must be reported inert by design (OQ-NX8):\n%s", got)
+		}
+		if strings.Contains(got, store) {
+			t.Errorf("the host never applies `packages:` (HP-DIR3), so a profile root is not its "+
+				"answer:\n%s", got)
 		}
 	})
 }
 
-// A notch with no image AND no provisioner must not borrow the macos-user remedy. "A run
-// materializes it" is true of the macos-user backend and false of `guest`/`host`, where
-// nothing builds the profile at all — so this cell states the inertness and says there is
-// nothing to run (report-tiers P2).
-func TestPackageProfileWarnsThatNothingMaterializesTheDeclaredPackages(t *testing.T) {
+// assertHostPackagesInertByDesign is OQ-NX8's report: at the host, declared packages are one
+// info line naming the rule, never a [WARN] and never a "not yet".
+func assertHostPackagesInertByDesign(t *testing.T, got string) {
+	t.Helper()
+	section := got
+	if i := strings.Index(got, "Declared packages"); i >= 0 {
+		section = got[i:]
+		if j := strings.Index(section, "\n\n"); j >= 0 {
+			section = section[:j]
+		}
+	} else {
+		t.Fatalf("declared packages at the host must still be reported:\n%s", got)
+	}
+	if !strings.Contains(section, "inert at the `host` notch by design") ||
+		!strings.Contains(section, "HP-DIR3") {
+		t.Errorf("the host's packages line must say inert by design, citing HP-DIR3:\n%s", section)
+	}
+	for _, banned := range []string{"[WARN]", "[PASS]", "[FAIL]", "no package layer yet",
+		"nothing materializes", "A run materializes it"} {
+		if strings.Contains(section, banned) {
+			t.Errorf("the host's packages line is info by design, so it must not say %q:\n%s",
+				banned, section)
+		}
+	}
+}
+
+// OQ-NX8 Q1 (b): at the host, `packages:` is inert BY DESIGN (HP-DIR3), so check prints an
+// info line, not the WARN a Linux guest's real gap gets.
+func TestPackageProfileReportsHostPackagesAsInertByDesign(t *testing.T) {
 	t.Setenv("HOME", t.TempDir()) // no GC root anywhere under it
 	got := runCheckOverConfig(t, `{"confinement": "host", "packages": ["ripgrep"]}`, false)
+	assertHostPackagesInertByDesign(t, got)
+}
+
+// OQ-NX8 Q2: the host report reads the NOTCH, not the runtime. With `runtime: "macos-user"`
+// the mechanism materializes a profile for its own launches, which used to send this config
+// down the root-probing path ([WARN] "A run materializes it"); a host launch is not one of
+// those launches, so the line is the same inert-by-design one.
+func TestPackageProfileReportsHostPackagesAsInertWhateverTheRuntime(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // no GC root: the old path WARNed here
+	got := runCheckOverConfig(t,
+		`{"confinement": "host", "runtime": "macos-user", "packages": ["ripgrep"]}`, true)
+	assertHostPackagesInertByDesign(t, got)
+}
+
+// A Linux guest has no image AND no provisioner, a real gap rather than a design, so it keeps
+// the WARN — and must not borrow the macos-user remedy. "A run materializes it" is true of the
+// macos-user backend and false here, where nothing builds the profile at all — so this cell
+// states the inertness and says there is nothing to run (report-tiers P2).
+func TestPackageProfileWarnsThatNothingMaterializesTheDeclaredPackages(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // no GC root anywhere under it
+	got := runCheckOverConfig(t, `{"confinement": "guest", "packages": ["ripgrep"]}`, false)
 	if !strings.Contains(got, "Declared packages") || !strings.Contains(got, "[WARN]") {
 		t.Fatalf("declared packages at a notch with no package layer must be reported:\n%s", got)
 	}
-	if !strings.Contains(got, "nothing materializes") {
-		t.Errorf("the WARN must say nothing materializes them here:\n%s", got)
+	if !strings.Contains(got, "nothing materializes") || !strings.Contains(got, "no package layer yet") {
+		t.Errorf("the WARN must say nothing materializes them here, yet:\n%s", got)
+	}
+	if strings.Contains(got, "`host` and") {
+		t.Errorf("the guest's WARN must not count the host as a gap — it is inert by design:\n%s", got)
 	}
 	if strings.Contains(got, "A run materializes it") {
 		t.Errorf("that note is the macos-user backend's and is false at this notch — a "+
@@ -243,9 +299,12 @@ func TestPackageProfileWarnsThatNothingMaterializesTheDeclaredPackages(t *testin
 // not a [PASS] for work that did not happen.
 func TestPackageProfileSaysNothingWhenNothingIsDeclaredAndNothingProvisions(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	got := runCheckOverConfig(t, `{"confinement": "host"}`, false)
-	if strings.Contains(got, "Declared packages") {
-		t.Errorf("no packages and no provisioner is not a finding:\n%s", got)
+	for _, cfg := range []string{`{"confinement": "host"}`, `{"confinement": "guest"}`,
+		`{"confinement": "host", "runtime": "macos-user"}`} {
+		got := runCheckOverConfig(t, cfg, strings.Contains(cfg, "macos-user"))
+		if strings.Contains(got, "Declared packages") {
+			t.Errorf("%s: no packages and no provisioner is not a finding:\n%s", cfg, got)
+		}
 	}
 }
 
