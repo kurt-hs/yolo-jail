@@ -1080,6 +1080,18 @@ Unlike a fork, it names no other repository and no base pack:
 program and kind, because no other reader consumes them. This build validates the declaration and
 lints it. It does not yet build, fetch or launch the program: those are later steps of the design.
 
+**`yolo pack build [<pack>...] [--force] [--at jail|host]`** runs the build a launch would run for
+each such program, outside a launch, for CI or a first install
+([BG-D11](../design/pack-buildable-programs.md#BG-D11)). It goes through the launch's own build act
+and key, so the next launch finds the build and builds nothing, and it waits for a launch building
+the same key. No argument means every selected pack. It prints one line per program: up to date,
+built, or failed with the build's log and the command to retry. It exits 1 when any program failed.
+`--force` rebuilds even when the store holds the build. `--at host` builds for the host notch, which
+on Linux is the jail's build and on a Mac is not built by this yolo yet. A fork is skipped with a
+line naming `yolo capture <bin>`, its explicit rebuild, and a dev override is noted without stopping
+the build. It runs on the host only and refuses in a jail with exit 2, as it does for a pack name
+the config does not select.
+
 **The selection rewrites the base.** Where the selected set is final, a copy of the base pack's
 program is rewritten with the fork's delivery (`packload.ApplyForks`), so every reader of the base's
 programs, the launcher generator and the host floor included, sees the fork's. It runs in the one

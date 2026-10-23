@@ -152,6 +152,7 @@ Examples:
   yolo pack footprint file://./packs/claude   # every claim a pack makes — READ THIS FIRST
   yolo pack install                   # fetch every git pack now (a launch also fetches)
   yolo pack update                    # re-fetch every git pack, tags and commit pins too
+  yolo pack build                     # build what packs build from their own tree, as a launch would
 
 See ` + "`yolo config-ref`" + ` (the "packs" section) for the full per-kind field reference.
 
@@ -217,6 +218,16 @@ yolo pack install or yolo pack update re-fetches a tag its author re-pointed.
                               pack's npm-declared program, and the act that MOVES a fork's pin
                               to what its ref names now. Run the npm half inside the jail —
                               that is where an agent CLI is installed
+  yolo pack build [<pack>...] [--force] [--at jail|host]
+                              run the build a launch would run for each program a selected
+                              pack builds from its own tree ("via":"pack"), outside a launch:
+                              for CI, or a first install. No argument means every selected
+                              pack. One line per program: up to date, built, or failed with
+                              its log and the command to retry; a launch then finds the build
+                              and builds nothing. --force rebuilds even when the store holds
+                              the build; --at host builds for the host notch rather than the
+                              jail. A fork is skipped with a line naming ` + "`yolo capture <bin>`" + `,
+                              its explicit rebuild. On the host only: it refuses in a jail
   yolo pack status            show locked commits and fork pins, and flag config/lock drift
   yolo pack status <pack>/<name>
                               print one selected fork's or built tree's full build line and
@@ -302,6 +313,8 @@ func packMain(args []string, out, errw io.Writer, color bool) int {
 		return packUpdate(out, errw, color)
 	case "prepare":
 		return packPrepare(args[1:], out, errw, color)
+	case "build":
+		return packBuild(args[1:], out, errw, color)
 	case "status":
 		if len(args) > 1 {
 			return packStatusKey(args[1:], out, errw, color)

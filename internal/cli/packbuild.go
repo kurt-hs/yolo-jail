@@ -1,0 +1,291 @@
+package cli
+
+// packbuild.go is `yolo pack build` (docs/design/pack-buildable-programs.md §8, BG-D11): the build
+// a launch would run for each PACK-TREE PROGRAM (a `program` delivered `via: "pack"`), run outside
+// a launch — for CI, and for a first install that should not wait inside a launch.
+//
+// IT IS THE LAUNCH'S BUILD, NOT A SECOND ONE. Each program goes through the fork route's one build
+// act (buildFork), with the same identity a launch computes (forkBuild: the pack-tree source, the
+// tree digest as the revision, the pack-tree recipe and the jail's platform), so a build made here
+// is the store entry the next launch finds as a hit, and a launch building the same key at the same
+// moment is waited on through the act's own lock. The only thing this verb adds is the act's
+// afterLock hook, so it can tell "the store already held it" (up to date) from "built now".
+//
+// On the host only: builds never run in a jail (the design's §9), and a fork's explicit rebuild is
+// `yolo capture <bin>`, which this verb names rather than repeats.
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	goruntime "runtime"
+	"strings"
+	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/capture"
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
+)
+
+// packBuildUsage is the verb's own usage line, printed with a usage refusal.
+const packBuildUsage = "usage: yolo pack build [<pack>...] [--force] [--at jail|host]"
+
+// packBuildHostGOOS is the host's GOOS for `--at host`, a variable so a test on Linux can ask
+// what a Mac would do.
+var packBuildHostGOOS = goruntime.GOOS
+
+// packBuildOptions are the verb's parsed arguments.
+type packBuildOptions struct {
+	packs []string
+	force bool
+	at    string // "jail" or "host"
+}
+
+// parsePackBuildArgs reads `[<pack>...] [--force] [--at jail|host]`; the error is a usage refusal.
+func parsePackBuildArgs(args []string) (packBuildOptions, error) {
+	o := packBuildOptions{at: "jail"}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--force":
+			o.force = true
+		case a == "--at" || strings.HasPrefix(a, "--at="):
+			v, ok := strings.CutPrefix(a, "--at=")
+			if !ok {
+				if i+1 >= len(args) {
+					return o, errors.New("--at needs a value: jail or host")
+				}
+				i++
+				v = args[i]
+			}
+			if v != "jail" && v != "host" {
+				return o, fmt.Errorf("--at %q: it is jail (the default) or host", v)
+			}
+			o.at = v
+		case strings.HasPrefix(a, "-"):
+			return o, fmt.Errorf("unknown flag %q", a)
+		default:
+			o.packs = append(o.packs, a)
+		}
+	}
+	return o, nil
+}
+
+// packBuildRuntime is the runtime a build for at runs under, handed to the act as captureFork
+// hands it: "macos-user" when the build is the Mac's darwin act, and "" otherwise, so the run
+// pipeline resolves a container backend as any capture does. `--at jail` builds for the
+// workspace runtime's jail (macos-user when that is the runtime), `--at host` for the host notch:
+// the darwin act on a Mac, a container jail's Linux build on Linux (the same build a jail gets).
+func packBuildRuntime(at string) string {
+	if at == "host" {
+		if packBuildHostGOOS == "darwin" {
+			return "macos-user"
+		}
+		return ""
+	}
+	if captureRuntime() == "macos-user" {
+		return "macos-user"
+	}
+	return ""
+}
+
+// packBuild is `yolo pack build`. Exit 0 when nothing failed, 1 when a program failed or could not
+// be read, 2 for a usage refusal, an unknown pack, or a jail.
+func packBuild(args []string, out, errw io.Writer, color bool) int {
+	opts, err := parsePackBuildArgs(args)
+	if err != nil {
+		fmt.Fprintf(errw, "yolo pack build: %v\n  %s (see `yolo pack --help`)\n", err, packBuildUsage)
+		return 2
+	}
+	if config.InJail() {
+		cmd := strings.Join(append([]string{"yolo pack build"}, args...), " ")
+		fmt.Fprintf(errw, "yolo pack build: builds never run inside a jail — run `%s` in a terminal on the host\n", cmd)
+		return 2
+	}
+	sel := selectConfiguredHostPacks()
+	if sel.loadErr != nil {
+		fmt.Fprintf(errw, "yolo pack build: %v\n  fix what it names in %s, then run `yolo pack build` again\n",
+			sel.loadErr, paths.UserConfigPath())
+		return 1
+	}
+	packs, rc := packBuildScope(sel, opts.packs, errw)
+	if rc != 0 {
+		return rc
+	}
+	pr := richtext.Printer{W: out, Color: color}
+	failed := false
+	if len(opts.packs) == 0 {
+		// The whole selection: a pack that did not resolve may carry a program, so it is a failure
+		// of this act, named with its reason.
+		for _, u := range sel.problems() {
+			pr.Printf("[red]failed[/red]     %s  [dim]%s — fix it, then run `yolo pack build` again[/dim]",
+				richtext.Escape(u.Name), richtext.Escape(u.Reason))
+			failed = true
+		}
+	}
+	rt := packBuildRuntime(opts.at)
+	overrides := config.ProgramOverrides(func(msg string) { fmt.Fprintf(errw, "Warning: %s\n", msg) })
+	programs := packload.PackTreePrograms(packs)
+	forks := append(packload.Forks(packs), packload.PatchedTrees(packs)...)
+	for _, p := range packs {
+		said := false
+		for _, f := range forks {
+			if f.Pack == p.Name {
+				said = true
+				pr.Printf("[dim]skipped[/dim]    %s  [dim]a fork's explicit rebuild is `yolo capture %s`[/dim]",
+					richtext.Escape(f.Label()), richtext.Escape(f.CaptureArg()))
+			}
+		}
+		for _, f := range programs {
+			if f.Pack != p.Name {
+				continue
+			}
+			said = true
+			if ov, ok := overrides[f.Bin]; ok {
+				pr.Printf("[dim]note[/dim]       %s  [dim]a dev override (programs.overrides) runs %s in its place; "+
+					"this builds the pack's copy, which serves once the override is removed[/dim]",
+					richtext.Escape(f.Label()), richtext.Escape(ov.Path))
+			}
+			if !packBuildOne(pr, f, rt, opts, errw, color) {
+				failed = true
+			}
+		}
+		if !said && len(opts.packs) > 0 {
+			pr.Printf("[dim]nothing to build in pack %s: it declares no program built from its own tree[/dim]",
+				richtext.Escape(p.Name))
+		}
+	}
+	if len(programs) == 0 && len(forks) == 0 && len(opts.packs) == 0 && !failed {
+		pr.Printf("[dim]nothing to build: no selected pack declares a program built from its own tree (\"via\": \"pack\")[/dim]")
+	}
+	if failed {
+		return 1
+	}
+	return 0
+}
+
+// packBuildScope is the packs the verb covers: every selected pack with no names, or the named
+// ones, in the selection's order. A name that is not selected is refused (2), naming `yolo pack
+// ls`; a named pack that is configured but did not resolve is refused (1) with its reason.
+func packBuildScope(sel hostPackSet, names []string, errw io.Writer) ([]*packload.Pack, int) {
+	if len(names) == 0 {
+		return sel.packs, 0
+	}
+	byName := map[string]*packload.Pack{}
+	for _, p := range sel.packs {
+		byName[p.Name] = p
+	}
+	want := map[string]bool{}
+	for _, n := range names {
+		if byName[n] != nil {
+			want[n] = true
+			continue
+		}
+		for _, u := range sel.unresolved {
+			if u.Name == n {
+				fmt.Fprintf(errw, "yolo pack build: the pack %s is configured but did not resolve: %s — fix that, "+
+					"then run `yolo pack build %s` again\n", n, u.Reason, n)
+				return nil, 1
+			}
+		}
+		fmt.Fprintf(errw, "yolo pack build: no selected pack is named %q — `yolo pack ls` lists the packs your "+
+			"config selects\n", n)
+		return nil, 2
+	}
+	var out []*packload.Pack
+	for _, p := range sel.packs {
+		if want[p.Name] {
+			out = append(out, p)
+		}
+	}
+	return out, 0
+}
+
+// packBuildOne builds one pack-tree program through the launch's build act and prints its one
+// result line: up to date, built, skipped (not published for this platform) or failed. It reports
+// whether nothing failed. The act's own progress — its lock wait, the build jail's output and
+// where that output is kept — goes to errw, so out carries the result lines alone.
+func packBuildOne(pr richtext.Printer, f packload.Fork, rt string, opts packBuildOptions, errw io.Writer, color bool) bool {
+	label := richtext.Escape(f.Label())
+	retry := "yolo pack build " + f.Pack
+	if opts.at == "host" {
+		retry += " --at host"
+	}
+	fail := func(why string) bool {
+		pr.Printf("[red]failed[/red]     %s  [dim]%s — then run `%s`[/dim]", label, richtext.Escape(why), richtext.Escape(retry))
+		return false
+	}
+	if rt == "macos-user" {
+		// parity: Warned — the darwin sealed act does not stage a pack's tree yet (pack-buildable-programs-plan.md Task 10); a launch on macos-user says the same
+		return fail("a program built from its pack's own tree is not built for macOS by this yolo yet")
+	}
+	platform := forkBuildPlatform(rt)
+	goos, arch, _ := strings.Cut(platform, "/")
+	if why := (packdecl.Install{Platforms: f.Platforms}).UnpublishedReason(goos, arch); why != "" {
+		pr.Printf("[dim]skipped[/dim]    %s  [dim]%s[/dim]", label, richtext.Escape(why))
+		return true
+	}
+	digest, err := f.Digest()
+	switch {
+	case err != nil:
+		return fail(fmt.Sprintf("its source directory %s could not be read (%v)", f.From, err))
+	case digest == "":
+		return fail(fmt.Sprintf("pack %s ships no %s to build it from", f.Pack, f.From))
+	}
+	b := forkBuild{Fork: f, Commit: digest, Platform: platform}
+	store := &capture.Store{Dir: paths.CapturesDir()}
+	hit := false
+	mode := buildMode{
+		force:          opts.force,
+		lock:           pidlock.Mode{Wait: true, Bound: forkBuildWaitBound},
+		runtime:        rt,
+		keepJailOutput: true,
+		jailStdout:     errw,
+		// THE HIT CHECK, under the lock as the act's own is, recorded so the line can say "up to date":
+		// a launch building the same key is waited for, and its build is then the hit (§10's row for
+		// `yolo pack build` while a launch builds). --force asks for no hit, so the act builds.
+		afterLock: func() (*capture.Entry, error, bool) {
+			if opts.force {
+				return nil, nil, false
+			}
+			entry, _, err := resolveForkBuild(store, f.Bin, b.Platform, b.selectSource(), b.Commit, b.recipe())
+			if err != nil {
+				return nil, nil, false
+			}
+			hit = true
+			return entry, nil, true
+		},
+	}
+	start := time.Now()
+	entry, err := buildFork(b, mode, errw, errw, color)
+	if err != nil {
+		why := err.Error()
+		if log := buildJailLogPath(store.StagingDir("fork-" + b.id())); fileExists(log) {
+			why += withBuildLog(log)
+		}
+		ok := fail(why)
+		for _, l := range notStartedLines(err, sealPacks(f), "  ", "`"+retry+"`") {
+			fmt.Fprintln(errw, l)
+		}
+		return ok
+	}
+	if hit {
+		pr.Printf("[green]up to date[/green] %s  [dim]tree digest %s, %s[/dim]  [cyan]%s[/cyan]",
+			label, shortSHA(digest), platform, entry.Key)
+		return true
+	}
+	pr.Printf("[green]built[/green]      %s  [dim]tree digest %s, %s, in %s[/dim]  [cyan]%s[/cyan]",
+		label, shortSHA(digest), platform, time.Since(start).Round(time.Second), entry.Key)
+	return true
+}
+
+// fileExists reports whether path names an existing file.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
