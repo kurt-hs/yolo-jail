@@ -63,8 +63,9 @@ func runHostSpelling(t *testing.T, test, helper, cfg, spelling string) string {
 	}
 	cmd := exec.Command(os.Args[0], "-test.run="+test)
 	cmd.Dir = t.TempDir()
+	// TMPDIR: the child's TestMain staged tree is removed with this test's dir (reexectmpdir_test.go).
 	cmd.Env = append(envWithoutYolo(), helper+"="+spelling, "HOME="+home,
-		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "NO_COLOR=1")
+		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "NO_COLOR=1", "TMPDIR="+t.TempDir())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("yolo %s: exit = %v, want 0\n%s", spelling, err, out)

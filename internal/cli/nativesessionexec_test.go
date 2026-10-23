@@ -38,6 +38,8 @@ func TestNativeSessionExecExportsToShellAndChildrenAndHoldsLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := exec.Command(os.Args[0], "-test.run=^TestNativeSessionExecHelper$")
+	// TMPDIR: the child's TestMain staged tree is removed with this test's dir (reexectmpdir_test.go).
+	c.Env = append(os.Environ(), "TMPDIR="+t.TempDir())
 	if err := c.Start(); err != nil {
 		t.Fatal(err)
 	}

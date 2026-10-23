@@ -113,7 +113,8 @@ func TestLeadingProfileReachesHostExec(t *testing.T) {
 		os.Exit(Main([]string{"yolo", "-p", "codex", "host", "--"}))
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestLeadingProfileReachesHostExec$")
-	cmd.Env = append(os.Environ(), helper+"=1")
+	// TMPDIR: the child's TestMain staged tree is removed with this test's dir (reexectmpdir_test.go).
+	cmd.Env = append(os.Environ(), helper+"=1", "TMPDIR="+t.TempDir())
 	output, err := cmd.CombinedOutput()
 	if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 2 {
 		t.Fatalf("exit = %v, want 2; output: %s", err, output)
