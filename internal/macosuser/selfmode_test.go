@@ -412,8 +412,14 @@ func TestSelfModeBootstrapAloneMayDeliverHomeContent(t *testing.T) {
 	plan := BuildRunPlanWithDaemons("/Users/you/code/alpha", jsonx.NewOrderedMap(), nil, []string{"claude"},
 		"/usr/local/bin/yolo", "", HomeOverlay{Tree: "/staged/overlay", Dests: []string{".claude/skills"},
 			WorkspaceDirs: []string{".claude"}}, HostContext{}, jsonx.NewOrderedMap(), nil, nil,
-		JailDaemons{}, FloorStage{}, PlanSession{Mode: ModeSelf, HostHome: "/Users/you", HostUser: "you",
+		selfModeWireBridgeDaemons("/opt/yolo/bin/darwin-arm64"), FloorStage{Unmet: []string{"node"}},
+		PlanSession{Mode: ModeSelf, HostHome: "/Users/you", HostUser: "you",
 			DarwinUserTempDir: "/private/var/folders/ab/xyz/T/"})
+	// The negative loop below is vacuous for an argv the plan never built.
+	if len(plan.JailDaemonArgv) == 0 || len(plan.ProvisionArgv) == 0 {
+		t.Fatalf("the plan built no supervisor or provisioning argv to check: %v / %v",
+			plan.JailDaemonArgv, plan.ProvisionArgv)
+	}
 	gate := `(if (not (param "` + HomeContentDeliveryParam + `"))` + "\n"
 	for _, id := range []string{"home-content-write-deny", "home-content-anchor-deny"} {
 		if !strings.Contains(plan.Seatbelt, gate+";; #seatbelt-test-id:"+id+"#\n") {

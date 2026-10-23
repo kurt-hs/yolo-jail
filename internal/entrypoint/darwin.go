@@ -185,9 +185,13 @@ func attachDarwinBootLog(e *Env, version string) *bootLog {
 // each staged dir with a `-v …:ro` bind, which is also what makes its copy READ-ONLY to the
 // agent. Here the read-only half is the session's Seatbelt profile (G14): every write,
 // rename and unlink of what this copies is denied to the agent at the physical path it lands
-// at (macosuser.ResolveHomeReadonly). That deny cannot get in THIS function's way, because
-// the bootstrap runs outside the sandbox — its argv carries no sandbox-exec — so the next
-// launch replaces the delivered trees exactly as it always has. The files are the sandbox
+// at (macosuser.ResolveHomeReadonly). That deny cannot get in THIS function's way: in account
+// mode the bootstrap runs outside the sandbox (its argv carries no sandbox-exec), and in
+// run-as-you mode it runs under the session profile started with -D
+// YOLO_HOME_CONTENT_DELIVERY=1, which lifts the two home-content forms for it alone
+// (macosuser.HomeContentDeliveryParam). Either way the next launch replaces the delivered
+// trees exactly as it always has, and either way the bootstrap must never run a pack script
+// (packbootchecks.go, P4), since it holds a write the agent does not. The files are the sandbox
 // user's own, so the file mode protects nothing; the profile is the whole guarantee, and only
 // a Mac run proves the kernel honors it.
 //
