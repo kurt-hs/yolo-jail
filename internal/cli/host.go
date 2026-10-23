@@ -1792,6 +1792,11 @@ func (c *hostComposition) selectionLines() []string {
 	for _, note := range c.selection.skewNotes() {
 		lines = append(lines, "Warning: "+note)
 	}
+	// A DEV OVERRIDE THIS NOTCH DOES NOT APPLY YET (docs/design/pack-buildable-programs.md §5, the
+	// plan's Task 9) is said, never ignored in silence: the program runs its pack's own copy here.
+	if line := run.HostUnappliedProgramOverridesLine(c.selection.packs); line != "" {
+		lines = append(lines, line)
+	}
 	return lines
 }
 

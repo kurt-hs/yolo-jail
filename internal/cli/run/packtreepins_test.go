@@ -7,6 +7,8 @@ package run
 // fork and a hit says nothing.
 
 import (
+	"go/ast"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,5 +60,49 @@ func TestALaunchHandsItsPackTreeProgramToTheBuildActByDigest(t *testing.T) {
 	}
 	if strings.Contains(printed, "Forks this launch") {
 		t.Errorf("a launch with no fork printed the forks' block:\n%s", printed)
+	}
+}
+
+// NEVER DIGEST ON AN ATTACH OR A DRY RUN (docs/design/pack-buildable-programs.md §10): the digest
+// reads every source directory whole, so the pack-tree pins are made on the fresh-launch path
+// alone — in runContainer below every attach site, and in Run's macos-user arm in the branch a dry
+// run does not take — each just before the slot. Red if the pins move back above the attach
+// decision or into the dry run.
+func TestPackTreePinsAreMadeOnTheFreshLaunchPathAlone(t *testing.T) {
+	type sites struct{ pins, direct, slot, lastAttach, dryRun []token.Pos }
+	find := func(name string) sites {
+		var s sites
+		ast.Inspect(funcDecl(t, "run.go", name), func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if f, ok := call.Fun.(*ast.SelectorExpr); ok {
+				switch f.Sel.Name {
+				case "addPackTreePins":
+					s.pins = append(s.pins, call.Pos())
+				case "packTreePins":
+					s.direct = append(s.direct, call.Pos())
+				case "runForkBuildSlotAndRefusals":
+					s.slot = append(s.slot, call.Pos())
+				case "attachExisting":
+					s.lastAttach = append(s.lastAttach, call.Pos())
+				case "dryRunForkDeliveries":
+					s.dryRun = append(s.dryRun, call.Pos())
+				}
+			}
+			return true
+		})
+		return s
+	}
+	c := find("runContainer")
+	if len(c.direct) != 0 || len(c.pins) != 1 || len(c.slot) != 1 || len(c.lastAttach) == 0 ||
+		c.pins[0] < c.lastAttach[len(c.lastAttach)-1] || c.pins[0] > c.slot[0] {
+		t.Errorf("runContainer must pin the pack-tree programs once, below every attach site and before the slot: %+v", c)
+	}
+	r := find("Run")
+	if len(r.direct) != 0 || len(r.pins) != 1 || len(r.slot) != 1 || len(r.dryRun) != 1 ||
+		r.pins[0] < r.dryRun[0] || r.pins[0] > r.slot[0] {
+		t.Errorf("Run must pin the pack-tree programs only in the macos-user arm's non-dry-run branch, before its slot: %+v", r)
 	}
 }

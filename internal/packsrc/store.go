@@ -1002,7 +1002,12 @@ func subdirNotFound(a Addr, commit string) error {
 
 // treeCompleteMarker is the file Materialize writes LAST into a checked-out tree, so a tree
 // without it is one an interrupted checkout left behind.
-const treeCompleteMarker = ".yolo-pack-complete"
+const treeCompleteMarker = TreeCompleteMarker
+
+// TreeCompleteMarker is treeCompleteMarker's name, for a reader of a staged pack that must leave
+// the store's bookkeeping out of what it digests or copies: a launch's staging copies a fetched
+// pack's root whole, marker included.
+const TreeCompleteMarker = ".yolo-pack-complete"
 
 // treeResolved is the pack root inside a complete tree: the tree itself, or the address's
 // subdirectory of it. It only reads.

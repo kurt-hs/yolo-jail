@@ -27,6 +27,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
@@ -107,7 +108,7 @@ func packBuild(args []string, out, errw io.Writer, color bool) int {
 		fmt.Fprintf(errw, "yolo pack build: builds never run inside a jail — run `%s` in a terminal on the host\n", cmd)
 		return 2
 	}
-	sel := selectConfiguredHostPacks()
+	sel := selectHostPacks(resolveStagedPack, config.UserScopeSelection())
 	if sel.loadErr != nil {
 		fmt.Fprintf(errw, "yolo pack build: %v\n  fix what it names in %s, then run `yolo pack build` again\n",
 			sel.loadErr, paths.UserConfigPath())
@@ -167,6 +168,27 @@ func packBuild(args []string, out, errw io.Writer, color bool) int {
 		return 1
 	}
 	return 0
+}
+
+// resolveStagedPack is the verb's pack resolver: every entry STAGED, as a launch stages each pack
+// into its own tree (config.ResolvePack with a Dest, run.Options.stagePackEntry's one call), into a
+// directory of this process's pack tree (packload.ProcessPackDir). A launch digests its staged copy,
+// and staging changes a tree (a local pack's symlinks become the files they name, among others), so
+// a digest of the pack read in place would key a build no launch ever looks up — and the no-build
+// copy would read the in-place tree, through any link it holds.
+func resolveStagedPack(e config.PackEntry) (*packload.Pack, error) {
+	dir, err := packload.ProcessPackDir(e.Slug())
+	if err != nil {
+		return nil, err
+	}
+	res, err := config.ResolvePack(e, config.ResolvePackSpec{Dest: dir})
+	if err != nil {
+		if errors.Is(err, packsrc.ErrNotFetched) && !e.IsLocal() && !e.Embedded() {
+			return nil, storeMissError{err}
+		}
+		return nil, err
+	}
+	return resolvedOrProblems(e, res)
 }
 
 // packBuildScope is the packs the verb covers: every selected pack with no names, or the named

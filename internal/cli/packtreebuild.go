@@ -75,9 +75,6 @@ func copySourceTreeSkipping(src, dst string, skip map[string]bool) error {
 			}
 			return nil
 		}
-		if rel == ".yolo-pack-complete" {
-			return nil
-		}
 		return copySourceEntry(p, filepath.Join(dst, rel), d)
 	})
 }
@@ -187,7 +184,47 @@ func packTreeAdmitProblem(m *capture.Manifest, f packload.Fork, workspace string
 	if e, ok := byPath[dir+"/"+f.ProgramRun()]; !ok || e.Kind == capture.KindDir {
 		return fmt.Sprintf("the build exited 0 but produced no %s in %s's tree (its `run`)", f.Run, f.From)
 	}
+	if why := packTreeRunLinkProblem(byPath, m.Home, dir, dir+"/"+f.ProgramRun()); why != "" {
+		return fmt.Sprintf("pack %s's `run` (%s) %s — point `run` at the file itself, or make the link "+
+			"relative and keep its target inside %s", f.Pack, f.Run, why, f.From)
+	}
 	return linksIntoTheBuild(m, workspace)
+}
+
+// packTreeRunLinkProblem is "" when p, the home-relative path of a pack-tree program's `run`,
+// is a file inside dir, the program's directory, or a symlink (or a chain of them) resolving to
+// one (the design's §3: `run` is a regular file inside the program's directory, or a symlink that
+// resolves inside it). Otherwise it says where the link leads. Targets are read off the manifest,
+// never followed on disk: an absolute one names the build's home (home), a relative one its link's
+// directory.
+func packTreeRunLinkProblem(byPath map[string]capture.ManifestEntry, home, dir, p string) string {
+	inside := func(q string) bool { return strings.HasPrefix(q, dir+"/") }
+	for hops := 0; hops < 40; hops++ {
+		e, ok := byPath[p]
+		switch {
+		case !ok:
+			return fmt.Sprintf("is a symlink to ~/%s, which the build did not produce", p)
+		case e.Kind == capture.KindDir:
+			return fmt.Sprintf("is a symlink to ~/%s, a directory", p)
+		case e.Kind != capture.KindSymlink:
+			return ""
+		}
+		next := e.Target
+		if path.IsAbs(next) {
+			rel, ok := strings.CutPrefix(path.Clean(next), path.Clean(home)+"/")
+			if !ok {
+				return fmt.Sprintf("is a symlink to %s, outside the program's directory ~/%s", e.Target, dir)
+			}
+			next = rel
+		} else {
+			next = path.Join(path.Dir(p), next)
+		}
+		if !inside(next) {
+			return fmt.Sprintf("is a symlink to %s, which resolves outside the program's directory ~/%s", e.Target, dir)
+		}
+		p = next
+	}
+	return "is a chain of symlinks that never reaches a file"
 }
 
 // packTreeCopyStaging is the store staging id of a no-build pack-tree program's copy (b's id).
@@ -211,14 +248,34 @@ func admitPackTreeCopy(store *capture.Store, b forkBuild) (*capture.Entry, *capt
 		return nil, nil, err
 	}
 	runPath := filepath.Join(dir, filepath.FromSlash(f.Run))
-	fi, err := os.Stat(runPath)
+	if _, err := os.Lstat(runPath); err != nil {
+		return nil, nil, fmt.Errorf("pack %s's %s holds no %s (its `run`): %w", f.Pack, f.From, f.Run, err)
+	}
+	// THE EXEC BIT GOES ON A FILE INSIDE THE COPY, never through a link to one outside it: a `run`
+	// that is a symlink is resolved and must land inside the program's directory (§3) before
+	// anything is changed, so no file beyond the copy is touched.
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	resolved, err := filepath.EvalSymlinks(runPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("pack %s's %s/%s (its `run`) is a symlink that resolves to nothing: %w — "+
+			"point `run` at the file itself", f.Pack, f.From, f.Run, err)
+	}
+	if !strings.HasPrefix(resolved, realDir+string(filepath.Separator)) {
+		return nil, nil, fmt.Errorf("pack %s's %s/%s (its `run`) is a symlink that resolves outside %s — "+
+			"point `run` at the file itself, or make the link relative and keep its target inside %s",
+			f.Pack, f.From, f.Run, f.From, f.From)
+	}
+	fi, err := os.Stat(resolved)
 	switch {
 	case err != nil:
-		return nil, nil, fmt.Errorf("pack %s's %s holds no %s (its `run`): %w", f.Pack, f.From, f.Run, err)
+		return nil, nil, err
 	case !fi.Mode().IsRegular():
 		return nil, nil, fmt.Errorf("pack %s's %s/%s (its `run`) is not a file", f.Pack, f.From, f.Run)
 	}
-	if err := os.Chmod(runPath, fi.Mode().Perm()|0o111); err != nil {
+	if err := os.Chmod(resolved, fi.Mode().Perm()|0o111); err != nil {
 		return nil, nil, err
 	}
 	link := filepath.Join(tree, filepath.FromSlash(packdecl.PackTreeProgramLink(f.Bin)))

@@ -1210,6 +1210,17 @@ func stageCommandsNameEnvValue(cmds [][]string, content, key string) bool {
 	return false
 }
 
+// LauncherOwnedEnvNames are the launcher's contract names that reach the darwin bootstrap from
+// the session's launch env (buildBootstrapEnv's relay), plus the dev-override decisions, which the
+// container boot reads the same way: each is the launcher's to set or leave unset, and none may come
+// from the composed env — an env_sources entry naming YOLO_FORK_BUILDS would otherwise decide what a
+// source-built program's launcher runs. The run pipeline drops them from the composition
+// (packChannel.launchEnv); the session env file's YOLO_ lines never reach the bootstrap at all.
+func LauncherOwnedEnvNames() []string {
+	return []string{durable.EnvVar, paths.AllowMissingProgramsEnv, paths.NoProgramReadinessEnv,
+		entrypoint.ForkBuildsEnv, entrypoint.PatchedTreesEnv, entrypoint.ProgramOverridesEnv}
+}
+
 // buildBootstrapEnv composes the env baked onto the `yolo internal darwin-bootstrap` self-exec
 // argv: the generator contract the entrypoint reads
 // (YOLO_HOST_DIR/BLOCK_CONFIG/MISE_TOOLS/LSP/MCP/HOST_FILES/PACK_ROOT), the git identity, the
@@ -1317,6 +1328,8 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 		if v, ok := sandboxEnv.Get(entrypoint.PatchedTreesEnv); ok {
 			bootstrapEnv.Set(entrypoint.PatchedTreesEnv, v)
 		}
+		// Every name relayed above is in LauncherOwnedEnvNames, which the run pipeline keeps out of
+		// the composed env (packChannel.launchEnv), so what crosses is the launcher's own value.
 	}
 	// host_files, IN TWO HALVES THAT COME FROM DIFFERENT PLACES, and the split is the
 	// credential boundary rather than a structure.

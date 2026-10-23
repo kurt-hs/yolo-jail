@@ -372,10 +372,9 @@ func Run(opts Options) (rc int) {
 	// above the dispatch, so every backend and an attach say which revision each source-built
 	// program is at (OQ-FP6, forkbuild.go).
 	o.forkPinned = o.noteForkPins(staged.packs, rt)
-	// THE PACK-TREE PROGRAMS (packtreepins.go): keyed on their staged tree's digest, they ride the
-	// forks' trigger and slot from here, and say nothing above the dispatch — a hit is silent, and a
-	// build says its own lines (docs/design/pack-buildable-programs.md BG-D10).
-	o.forkPinned = append(o.forkPinned, o.packTreePins(staged.packs, rt)...)
+	// THE PACK-TREE PROGRAMS are pinned on the fresh-launch path alone, just before the slot
+	// (addPackTreePins, packtreepins.go): their digest reads each source directory whole, which an
+	// attach and a dry run never do (docs/design/pack-buildable-programs.md §10).
 	// THE DEV OVERRIDES (programoverrides.go): a program the user's programs.overrides points at a
 	// checkout runs that checkout, so its pack's build is not this launch's to run.
 	o.programOverridden = o.programOverridePlans(rt, staged.packs)
@@ -627,6 +626,7 @@ func Run(opts Options) (rc int) {
 			o.dryRunForkDeliveries()
 			o.dryRunTreeDeliveries()
 		} else if release, ok := o.macosUserPreflight(); ok {
+			o.addPackTreePins(staged.packs, rt)
 			slotOK := o.runForkBuildSlotAndRefusals(cfg, rt, repoRoot)
 			release()
 			if !slotOK {
@@ -1831,6 +1831,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// arm's sequence too): a patch series that does not apply (patchfailures.go; PF-D81, PF-D83) and
 	// a missing patched build (missingbuilds.go; PPX-D40, PF-D77) refuse the launch here, before the
 	// image step and the boot, whatever the command.
+	o.addPackTreePins(staged.packs, rt)
 	if !o.runForkBuildSlotAndRefusals(cfg, rt, repoRoot) {
 		lock.Close()
 		return 1

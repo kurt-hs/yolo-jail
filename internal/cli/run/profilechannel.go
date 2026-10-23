@@ -35,6 +35,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
@@ -532,8 +533,21 @@ func (c *packChannel) deliverySource(o *Options, argvPairs map[string]string,
 // receives it (launchServiceInput).
 func (c *packChannel) launchEnv(agent string) *jsonx.OrderedMap {
 	env := jsonx.NewOrderedMap()
+	launcherOwned := map[string]bool{}
+	for _, k := range macosuser.LauncherOwnedEnvNames() {
+		launcherOwned[k] = true
+	}
 	for _, e := range c.scope.EnvFor(agent).Entries() {
 		if e.Unset || e.Key == "" {
+			continue
+		}
+		// A LAUNCHER CONTRACT NAME IS NEVER COMPOSED: this map is the macos-user session's launch
+		// env, which the run plan relays to the darwin bootstrap for exactly these names, so an
+		// env_sources entry (a dotenv file the workspace lists, which the agent can write) naming
+		// YOLO_FORK_BUILDS would choose what a source-built program's launcher runs. The launch
+		// sets each itself below the composition, as the container boot refuses a composed one
+		// (entrypoint's launcherContractKey).
+		if launcherOwned[e.Key] {
 			continue
 		}
 		env.Set(e.Key, e.Value)

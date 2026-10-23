@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/treedigest"
 )
 
@@ -170,9 +171,11 @@ func PackTreePrograms(packs []*Pack) []Fork {
 }
 
 // packTreeDigestSkip is what a pack-tree digest leaves out: the source directory's own `.git`,
-// which a `file://` pack checked out in place carries and which reaches no build (BG-D3). The
-// build's staging copies the same set, so the build is handed exactly the digested bytes.
-var packTreeDigestSkip = map[string]bool{".git": true}
+// which a `file://` pack checked out in place carries and which reaches no build (BG-D3), and the
+// pack store's completion marker, which a fetched pack's checkout keeps at its root and a launch's
+// staging copies with it, so a `from: "."` source holds it. The build's staging copies the same
+// set, so the build is handed exactly the digested bytes.
+var packTreeDigestSkip = map[string]bool{".git": true, packsrc.TreeCompleteMarker: true}
 
 // PackTreeDigestSkip is packTreeDigestSkip, copied, for the staging copy that must leave out
 // exactly what the digest does.

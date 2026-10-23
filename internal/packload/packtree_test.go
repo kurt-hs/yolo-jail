@@ -91,6 +91,12 @@ func TestPackTreeDigestIsTheSourceDirectorysContent(t *testing.T) {
 	if got, _ := PackTreeDigest(dir); got != base {
 		t.Errorf("a .git directory moved the digest: %s → %s", base, got)
 	}
+	// A fetched pack's store marker, which a `from: "."` source holds at its root, is the store's,
+	// not the program's: the build's copy leaves it out, so the digest must too.
+	writeTree(t, dir, map[string]string{".yolo-pack-complete": ""})
+	if got, _ := PackTreeDigest(dir); got != base {
+		t.Errorf("the pack store's completion marker moved the digest: %s → %s", base, got)
+	}
 
 	writeTree(t, dir, map[string]string{"VERSION": "2\n"})
 	byte1, _ := PackTreeDigest(dir)

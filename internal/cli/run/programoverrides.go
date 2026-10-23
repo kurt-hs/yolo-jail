@@ -255,19 +255,40 @@ func (o *Options) noteUnappliedProgramOverrides(rt string, packs []*packload.Pac
 	if rt != "macos-user" || o.CapturesDir() == "" || o.Sealed { // parity: Warned — this is the line that says it: macos-user's override arm is the plan's Task 10
 		return
 	}
-	overrides := config.ProgramOverrides(nil)
+	bins := OverriddenDeclaredPrograms(packs)
+	if len(bins) == 0 {
+		return
+	}
+	o.pr(o.Stderr).print(setupcensus.Warning(setupcensus.MacosUser, "programs.overrides").Line(strings.Join(bins, ", ")))
+}
+
+// OverriddenDeclaredPrograms is every bin the user's programs.overrides names that a selected pack
+// declares, sorted: the overrides a notch that does not apply them yet must name (macos-user here,
+// and `yolo host`'s HostUnappliedProgramOverridesLine).
+func OverriddenDeclaredPrograms(packs []*packload.Pack) []string {
 	declared := declaredPrograms(packs)
 	var bins []string
-	for bin := range overrides {
+	for bin := range config.ProgramOverrides(nil) {
 		if _, ok := declared[bin]; ok {
 			bins = append(bins, bin)
 		}
 	}
-	if len(bins) == 0 {
-		return
-	}
 	sort.Strings(bins)
-	o.pr(o.Stderr).print(setupcensus.Warning(setupcensus.MacosUser, "programs.overrides").Line(strings.Join(bins, ", ")))
+	return bins
+}
+
+// HostUnappliedProgramOverridesLine is `yolo host`'s line for the overrides it does not apply yet
+// (the plan's Task 9), in the macos-user notice's words, "" when no selected pack declares an
+// overridden bin. Plain text: the host prints it with its own prefix.
+func HostUnappliedProgramOverridesLine(packs []*packload.Pack) string {
+	bins := OverriddenDeclaredPrograms(packs)
+	if len(bins) == 0 {
+		return ""
+	}
+	return setupcensus.Notice{
+		Says: "`programs.overrides` is not applied by `yolo host` yet",
+		Then: "Each of these runs its pack's own copy; run a checkout from a podman jail.",
+	}.Plain(strings.Join(bins, ", "))
 }
 
 // UndeclaredProgramOverrideLines is `yolo check`'s information about the user's overrides that name

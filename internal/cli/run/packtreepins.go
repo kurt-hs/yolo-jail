@@ -35,6 +35,22 @@ func (o *Options) packTreePins(packs []*packload.Pack, rt string) []packload.For
 	return out
 }
 
+// addPackTreePins joins this launch's pack-tree pins to the fork pins the slot reads, the dev
+// overrides dropped as they are from the forks: keyed on their staged tree's digest, they ride the
+// forks' trigger and slot from here, and say nothing above the dispatch — a hit is silent, and a
+// build says its own lines (BG-D10). Called on the FRESH-LAUNCH path alone, just before the slot,
+// on both arms: the digest reads each source directory whole, which an attach and a dry run never
+// do (§10). Idempotent, for a path that reaches the slot again.
+func (o *Options) addPackTreePins(packs []*packload.Pack, rt string) {
+	kept := o.forkPinned[:0:0]
+	for _, p := range o.forkPinned {
+		if !p.Fork.IsPackTree() {
+			kept = append(kept, p)
+		}
+	}
+	o.forkPinned = dropOverriddenPins(append(kept, o.packTreePins(packs, rt)...), o.programOverridden)
+}
+
 // packTreeBuildable reports whether a build of a pack's tree can ever run for a jail on rt with this
 // yolo: false on macos-user, whose darwin sealed act does not stage a pack's tree yet
 // (docs/design/pack-buildable-programs-plan.md Task 10). That is a fixed fact of this binary, never
