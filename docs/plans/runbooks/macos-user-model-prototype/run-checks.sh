@@ -89,6 +89,10 @@ HOST_HOME="$(cd "$HOME" && pwd -P)"
 MADE_SHARED=0
 NONCE="$$${RANDOM}"
 AS=()
+# NARROW=1: the Mac grants only yolo's run-as rule, `(ACCOUNT) NOPASSWD: /usr/bin/env`, so every
+# crossing goes through /usr/bin/env, the account reaches the workspace through access grants
+# (ACLs, settable on your own files without root), and it deletes its own files at cleanup.
+NARROW=0
 
 if [ "$MODE" = account ]; then
 	if ! id -u "$ACCOUNT" >/dev/null 2>&1; then
@@ -97,9 +101,14 @@ if [ "$MODE" = account ]; then
 		echo "      run '--mode self' here instead, or run account mode on a Mac that has it."
 		exit 0
 	fi
-	echo "Account mode runs commands as '$ACCOUNT' through sudo; you may be asked for your password."
-	sudo -v || { echo "sudo failed; account mode needs sudo. Run '--mode self' instead." >&2; exit 2; }
-	AS=(sudo -n -u "$ACCOUNT")
+	if sudo -n -u "$ACCOUNT" /usr/bin/env /usr/bin/true 2>/dev/null; then
+		NARROW=1
+		echo "Account mode runs commands as '$ACCOUNT' through yolo's run-as rule (sudo -u $ACCOUNT /usr/bin/env); no password needed."
+	else
+		echo "Account mode runs commands as '$ACCOUNT' through sudo; you may be asked for your password."
+		sudo -v || { echo "sudo failed; account mode needs sudo. Run '--mode self' instead." >&2; exit 2; }
+	fi
+	AS=(sudo -n -u "$ACCOUNT" /usr/bin/env)
 	if [ ! -d /Users/Shared/yolo ]; then
 		MADE_SHARED=1
 		mkdir -p /Users/Shared/yolo 2>/dev/null || sudo mkdir -p /Users/Shared/yolo
@@ -205,7 +214,15 @@ G7_PID=""
 CLAUDE_LABEL="yolo.prototype.$NONCE"
 
 if [ "$MODE" = account ]; then
-	sudo chown -R "$ACCOUNT" "$WORKSPACE" "$SANDBOX_TMP"
+	if [ "$NARROW" = 1 ]; then
+		# Traverse on ROOT, and full, inherited access below it, for the account; you keep yours.
+		chmod +a "$ACCOUNT allow search,list,readattr,readextattr,readsecurity" "$ROOT"
+		chmod -R +a "$ACCOUNT allow read,write,execute,delete,append,list,search,add_file,add_subdirectory,delete_child,readattr,writeattr,readextattr,writeextattr,readsecurity,file_inherit,directory_inherit" \
+			"$WORKSPACE" "$SANDBOX_TMP"
+		chmod +a "$ACCOUNT allow read,readattr,readextattr,readsecurity" "$PROFILE" "$PROCARGS_PY"
+	else
+		sudo chown -R "$ACCOUNT" "$WORKSPACE" "$SANDBOX_TMP"
+	fi
 	DARWIN_TMP="$("${AS[@]}" /usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null)"
 else
 	DARWIN_TMP="$(/usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null)"
@@ -237,7 +254,11 @@ cleanup() {
 		echo "Kept $ROOT (--keep). Remove it with: ${AS[*]:+sudo }rm -rf '$ROOT'"
 		return
 	fi
-	if [ "$MODE" = account ]; then
+	if [ "$MODE" = account ] && [ "$NARROW" = 1 ]; then
+		# The account deletes what it made (its own files, under grants you set); then you delete the rest.
+		"${AS[@]}" /bin/rm -rf "$WORKSPACE" "$SANDBOX_TMP" 2>/dev/null
+		rm -rf "$ROOT"
+	elif [ "$MODE" = account ]; then
 		sudo rm -rf "$ROOT"
 		[ "$MADE_SHARED" = 1 ] && { rmdir /Users/Shared/yolo 2>/dev/null || sudo rmdir /Users/Shared/yolo 2>/dev/null; }
 	else
@@ -332,7 +353,7 @@ SB_ENV=(HOME="$AGENT_HOME" PATH="$SB_PATH" TMPDIR="$SANDBOX_TMP/" USER="$SB_USER
 inside() {
 	local script="$1"
 	shift
-	[ "$MODE" = account ] && sudo -v
+	[ "$MODE" = account ] && [ "$NARROW" = 0 ] && sudo -v
 	(cd "$WORKSPACE" && "${AS[@]+"${AS[@]}"}" /usr/bin/env -i "${SB_ENV[@]}" "$@" \
 		/usr/bin/sandbox-exec -f "$PROFILE" ${PARAMS[@]+"${PARAMS[@]}"} /bin/bash -c "$script") 2>&1
 }
@@ -341,7 +362,7 @@ inside() {
 control() {
 	local script="$1"
 	shift
-	[ "$MODE" = account ] && sudo -v
+	[ "$MODE" = account ] && [ "$NARROW" = 0 ] && sudo -v
 	(cd "$WORKSPACE" && "${AS[@]+"${AS[@]}"}" /usr/bin/env -i "${SB_ENV[@]}" "$@" \
 		/bin/bash -c "$script") 2>&1
 }
