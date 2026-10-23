@@ -62,7 +62,7 @@ func TestHostRunsPiOnItsWholeSet(t *testing.T) {
 		t.Fatalf("pi got %q, want --provider zai --model <id> --models <scope> ahead of its own argv\n%s",
 			run.argv, run.errs)
 	}
-	if scope := run.argv[6]; !strings.HasPrefix(scope, "zai/") || !strings.Contains(scope, "openrouter/*") {
+	if scope := run.argv[6]; !strings.HasPrefix(scope, "zai/") || !strings.Contains(scope, "openrouter/**") {
 		t.Errorf("--models %q must lead with zai's models and span openrouter", scope)
 	}
 	for _, name := range []string{"YOLO_PI_OPENAI_CODEX_MODELS", "YOLO_PI_MODEL_LISTS"} {
@@ -88,7 +88,7 @@ func TestHostRunsPiOnItsWholeSet(t *testing.T) {
 	deepseekOwn := `{"theme":"native"}`
 	writeFile(t, deepseekSettings, deepseekOwn)
 	providerOnly := hostSelectionRun(t, deepseekHome, []string{"-p", "pi=deepseek"}, "pi")
-	if want := []string{"pi", "--models", "deepseek/*"}; !reflect.DeepEqual(providerOnly.argv, want) {
+	if want := []string{"pi", "--models", "deepseek/**"}; !reflect.DeepEqual(providerOnly.argv, want) {
 		t.Errorf("yolo host -p pi=deepseek handed pi %q, want %q\n%s", providerOnly.argv, want, providerOnly.errs)
 	}
 	for _, name := range []string{"YOLO_PI_OPENAI_CODEX_MODELS", "YOLO_PI_MODEL_LISTS"} {

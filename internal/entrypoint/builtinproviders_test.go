@@ -352,8 +352,8 @@ func TestPiTakesItsOwnZaiWithNothingFromYolosList(t *testing.T) {
 		t.Errorf("pi selection = %v/%v, want its own zai on the profile's glm-5.3",
 			settings["defaultProvider"], settings["defaultModel"])
 	}
-	if got := settings["enabledModels"]; !reflect.DeepEqual(got, []any{"zai/*"}) {
-		t.Errorf("enabledModels = %v, want [zai/*]: pi's own list, whole", got)
+	if got := settings["enabledModels"]; !reflect.DeepEqual(got, []any{"zai/**"}) {
+		t.Errorf("enabledModels = %v, want [zai/**]: pi's own list, whole", got)
 	}
 	sub, _ := settings["subagents"].(map[string]any)
 	scope, _ := sub["modelScope"].(map[string]any)
@@ -369,6 +369,28 @@ func TestPiTakesItsOwnZaiWithNothingFromYolosList(t *testing.T) {
 	}
 	if lists := renderedFile(t, home, ".pi/agent/yolo-model-lists.json", codec.JSON{}); len(lists) != 0 {
 		t.Errorf("pi's extension is handed a list for its own zai: %v", lists)
+	}
+}
+
+// A BUILT-IN PROVIDER WITH SLASHED IDS IS SCOPED WITH `/**`: pi matches enabledModels with
+// minimatch (pi 1.0.1 dist/core/model-resolver.js, resolveModelScope), whose `*` stops at `/`, and
+// every OpenRouter id is `vendor/model`, so `openrouter/*` matched none of them and pi warned
+// `No models match pattern "openrouter/*"` on every invocation. `**` crosses the slash, and still
+// never another provider's prefix. pi-subagents' allow turns `*` into `.*`, which already crosses,
+// so its scope keeps the single star.
+func TestPiScopesItsOwnSlashedProviderWithGlobstar(t *testing.T) {
+	home := builtInRender(t, "pi", `{"pi":"openrouter"}`)
+	settings := renderedFile(t, home, ".pi/agent/settings.json", codec.JSON{})
+	if settings["defaultProvider"] != "openrouter" {
+		t.Fatalf("defaultProvider = %v, want pi's own openrouter, so this case measures nothing", settings["defaultProvider"])
+	}
+	if got := settings["enabledModels"]; !reflect.DeepEqual(got, []any{"openrouter/**"}) {
+		t.Errorf("enabledModels = %v, want [openrouter/**]: `openrouter/*` matches no `vendor/model` id under minimatch", got)
+	}
+	sub, _ := settings["subagents"].(map[string]any)
+	scope, _ := sub["modelScope"].(map[string]any)
+	if got := scope["allow"]; !reflect.DeepEqual(got, []any{"openrouter/*"}) {
+		t.Errorf("subagents.modelScope.allow = %v, want [openrouter/*] (pi-subagents' `*` is `.*`)", got)
 	}
 }
 

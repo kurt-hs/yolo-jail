@@ -31,6 +31,10 @@ func TestModelFactsAndExtendsValidate(t *testing.T) {
 		// Tombstones, in the shared facts and in a route's own.
 		`{"model_facts": {"m": {"reasoning": null, "cost": null, "description": null}},
 		  "providers": {"kilo": {"models": {"x": {"id": "x", "extends": "m", "input": null, "max_tokens": null}}}}}`,
+		// The OpenRouter pin is a shared fact too (fix 27), and a route may tombstone it.
+		`{"model_facts": {"m": {"openrouter_routing": {"order": ["streamlake"], "allow_fallbacks": false}}},
+		  "providers": {"or": {"models": {"x": {"id": "x", "extends": "m"}, "y": {"id": "y", "extends": "m", "openrouter_routing": null}}}}}`,
+		`{"model_facts": {"m": {"openrouter_routing": null}}}`,
 	} {
 		if errs := modelFactsErrors(t, body); len(errs) != 0 {
 			t.Errorf("valid %s: unexpected errors %v", body, errs)
@@ -41,6 +45,9 @@ func TestModelFactsAndExtendsValidate(t *testing.T) {
 		{`{"model_facts": {"m": 5}}`, "config.model_facts.m: expected an object"},
 		{`{"model_facts": {"m": {"id": "x"}}}`, "config.model_facts.m.id: unknown key"},
 		{`{"model_facts": {"m": {"reasoning": "yes"}}}`, "config.model_facts.m.reasoning: expected a boolean"},
+		{`{"model_facts": {"m": {"openrouter_routing": []}}}`, "config.model_facts.m.openrouter_routing: expected an object " +
+			"(sent verbatim as OpenRouter's request `provider` field)"},
+		{`{"model_facts": {"m": {"openrouter_routing": "order"}}}`, "config.model_facts.m.openrouter_routing: expected an object"},
 		{`{"providers": {"kilo": {"models": {"x": {"id": "x", "extends": ""}}}}}`, ".models.x.extends: expected the name of a `model_facts` entry"},
 		{`{"providers": {"kilo": {"models": {"x": {"id": "x", "extends": "nowhere"}}}}}`,
 			`.models.x.extends: names "nowhere", which config.model_facts does not declare`},

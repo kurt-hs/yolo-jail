@@ -240,9 +240,12 @@ var (
 	}
 	// knownSharedModelKeys is the closed field set a `model_facts.<name>` entry may carry: the
 	// facts a model keeps on every route, so knownModelKeys less what only a route can say — its
-	// wire `id`, its `vendor` (a route-level routing fact the bridge reads), its OpenRouter
-	// `openrouter_routing`, and `extends` itself.
-	knownSharedModelKeys = set("name", "description", "reasoning", "input", "cost", "context_window", "max_tokens", "base")
+	// wire `id`, its `vendor` (a route-level routing fact the bridge reads), its `wire_id`, and
+	// `extends` itself. `openrouter_routing` IS shared (fix 27): a 1M route and its 200k twin
+	// send one route and must send byte-identical requests, so the pin is written once; a
+	// route's own object replaces the shared one whole (packload.laySharedRouting).
+	knownSharedModelKeys = set("name", "description", "reasoning", "input", "cost", "context_window", "max_tokens", "base",
+		"openrouter_routing")
 	// knownModelCostKeys is the closed set of rates inside that `cost` object. Canonical
 	// snake; the consuming derive translates to its agent's spelling (pi's cacheRead/...).
 	knownModelCostKeys = set("input", "output", "cache_read", "cache_write")

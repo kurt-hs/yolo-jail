@@ -46,7 +46,10 @@ package integration
 // process table (procinfo_darwin_test.go: kern.proc and kern.procargs2). A process first seen while already
 // exiting, its environment released between the two HOME reads (CI run 39886931703: a late
 // podman), is never confirmed as this test's; it is waited for, never signalled, once the kernel
-// proves it exiting, and anything else unconfirmed is refused. Two kinds are left out: the test binary's
+// proves it exiting, and anything else unconfirmed is refused. One whose environment stops
+// naming the HOME between the reads, by exec'ing a program with a new one (CI run 40012293896:
+// a podman child becoming its OCI runtime), is no longer this test's: it is waited for briefly,
+// never signalled, and never fails the stop (homeDeparted). Two kinds are left out: the test binary's
 // own descendants, which are the exec.Cmd children its own cleanups own (a stand-in, a session it
 // still holds), and a scratch remover (`internal scratch-rm`), which ends on its own within its
 // bound and is WAITED for, never stopped, since stopping it leaks the volumes it was removing.
@@ -274,6 +277,64 @@ var errHomeObservationUnknown = errors.New("HOME observation was unreadable")
 var errHomeOwnershipChanged = errors.New("process no longer has the listed HOME")
 var errHomeEnvironmentCleared = errors.New("process environment was cleared")
 
+// errHomeDeparted marks a process let go because its HOME left (homeDeparted): never signalled,
+// and the home is listed again before the stop may return.
+var errHomeDeparted = errors.New("process environment no longer names this HOME")
+
+// homeDepartureWait bounds how long the stop waits for a process whose HOME left its environment
+// to end before letting it be.
+const homeDepartureWait = 2 * time.Second
+
+// homeDeparted reports a HOME read that found the environment still populated but no longer
+// naming this HOME: without HOME, or with a different one. A process does that by exec'ing a
+// program with a new environment, keeping its pid and start time. Podman does exactly that, which
+// is how CI run 40012293896 met it: it runs its OCI runtime (its `kill` and `delete` among them)
+// through utils.ExecCmdWithStdStreams with an environment of XDG_RUNTIME_DIR alone (read in
+// podman 5.8.9's libpod/oci_conmon_common.go; CI ran 4.9.3), and Go's os/exec starts a child
+// with CLONE_VM|CLONE_VFORK, so until its execve lands the child reads as podman, argv and
+// HOME included. The census's first HOME read caught it then, its bracketed second read after.
+//
+// By the stop's own criterion (the file header: a process is this test's because its
+// environment carries the HOME) such a process is no longer provably this test's, so it is
+// NEVER signalled: the start-time guard ties a pid to one process, not to this HOME. Nor does it
+// fail the stop, which fails only for a process provably under the HOME. It is waited for, up to
+// homeDepartureWait, so a departing runtime child is usually gone before the temp dir is
+// removed, and the home is listed again, so a process that comes back under the HOME is stopped
+// as any other. An emptied environment is not a departure: that is an exiting process, which
+// provenExitingStopTarget handles.
+func homeDeparted(err error) bool {
+	return errors.Is(err, errHomeOwnershipChanged) && !errors.Is(err, errHomeEnvironmentCleared)
+}
+
+// awaitHomeDeparture waits, up to homeDepartureWait and the stop's deadline, for a departed
+// process (homeDeparted) to end, to become a different process, or to name this HOME again. It
+// never signals, and it reports nothing: whichever happens, the next listing decides.
+func awaitHomeDeparture(home string, p homeProcess, deadline time.Time, probes stopProcessProbes) {
+	until := time.Now().Add(homeDepartureWait)
+	if deadline.Before(until) {
+		until = deadline
+	}
+	for {
+		snapshot, err := probes.inspect(p.pid)
+		if err != nil || snapshot.gone || p.startTime == "" || snapshot.startTime != p.startTime {
+			return
+		}
+		if probes.home != nil {
+			if matches, err := probes.home(p.pid, home); err == nil && matches {
+				return
+			}
+		}
+		pause := time.Until(until)
+		if pause <= 0 {
+			return
+		}
+		if pause > 50*time.Millisecond {
+			pause = 50 * time.Millisecond
+		}
+		time.Sleep(pause)
+	}
+}
+
 type uncertainHomeObservationError struct {
 	err error
 }
@@ -456,6 +517,10 @@ func reobserveUncertainHome(home string, p homeProcess, deadline time.Time, prob
 			if listed.startTime != "" && listed.startTime != p.startTime {
 				return homeProcess{}, false, fmt.Errorf("revalidating %s: pid now names a different process", p)
 			}
+			if homeDeparted(listed.homeErr) {
+				awaitHomeDeparture(home, p, deadline, probes)
+				return homeProcess{}, false, fmt.Errorf("revalidating %s: %w: %w", p, errHomeDeparted, listed.homeErr)
+			}
 			if listed.homeErr != nil && !errors.Is(listed.homeErr, errHomeObservationUnknown) {
 				return homeProcess{}, false, fmt.Errorf("revalidating %s HOME ownership: %w", p, listed.homeErr)
 			}
@@ -473,11 +538,12 @@ func reobserveUncertainHome(home string, p homeProcess, deadline time.Time, prob
 			return homeProcess{}, false, fmt.Errorf("revalidating %s: HOME observation probe is unavailable", p)
 		}
 		matches, err := probes.home(p.pid, home)
+		if homeDeparted(err) || (err == nil && !matches) {
+			awaitHomeDeparture(home, p, deadline, probes)
+			return homeProcess{}, false, fmt.Errorf("revalidating %s: %w: no longer has HOME=%s", p, errHomeDeparted, home)
+		}
 		if err != nil && !errors.Is(err, errHomeObservationUnknown) {
 			return homeProcess{}, false, fmt.Errorf("revalidating %s HOME ownership: %w", p, err)
-		}
-		if err == nil && !matches {
-			return homeProcess{}, false, fmt.Errorf("revalidating %s: process no longer has HOME=%s", p, home)
 		}
 		if err == nil && matches {
 			p.args = snapshot.args
@@ -620,15 +686,25 @@ func emptyArgStopDiagnostic(p homeProcess, snapshot stopProcessSnapshot) string 
 		stopDiagnosticErrorClass(snapshot.killErr), readOrder, observedAt)
 }
 
-func refreshStopListing(home string, procs []homeProcess, deadline time.Time, probes stopProcessProbes) ([]homeProcess, error) {
-	var current []homeProcess
+// refreshStopListing revalidates one listing. departed reports that it let a process go because
+// its HOME left (homeDeparted), so the caller lists the home again before it may return.
+func refreshStopListing(home string, procs []homeProcess, deadline time.Time, probes stopProcessProbes) (current []homeProcess, departed bool, err error) {
 	for _, p := range procs {
+		if homeDeparted(p.homeErr) {
+			awaitHomeDeparture(home, p, deadline, probes)
+			departed = true
+			continue
+		}
 		snapshot, live, err := validateStopTarget(home, p, probes)
 		var uncertain *uncertainHomeObservationError
 		if err != nil && errors.As(err, &uncertain) {
 			var refreshed homeProcess
 			var stillLive bool
 			refreshed, stillLive, err = reobserveUncertainHome(home, p, deadline, probes)
+			if errors.Is(err, errHomeDeparted) {
+				departed = true
+				continue
+			}
 			if err == nil && stillLive {
 				p = refreshed
 				snapshot, live = stopProcessSnapshot{args: p.args, startTime: p.startTime}, true
@@ -636,9 +712,9 @@ func refreshStopListing(home string, procs []homeProcess, deadline time.Time, pr
 		}
 		if err != nil {
 			if p.argsErr != nil {
-				return nil, fmt.Errorf("revalidating %s after its initial argument read failed: %w; revalidation: %v", p, p.argsErr, err)
+				return nil, false, fmt.Errorf("revalidating %s after its initial argument read failed: %w; revalidation: %v", p, p.argsErr, err)
 			}
-			return nil, err
+			return nil, false, err
 		}
 		if snapshot.lateHomeErr != nil && p.lateHomeErr == nil {
 			p.lateHomeErr = snapshot.lateHomeErr
@@ -650,7 +726,7 @@ func refreshStopListing(home string, procs []homeProcess, deadline time.Time, pr
 			if !snapshot.exiting {
 				proof, err := provenExitingStopTarget(home, p, snapshot, probes)
 				if err != nil {
-					return nil, err
+					return nil, false, err
 				}
 				snapshot.exiting = proof.exiting
 				snapshot.lateHomeErr = proof.lateHomeErr
@@ -667,13 +743,13 @@ func refreshStopListing(home string, procs []homeProcess, deadline time.Time, pr
 				continue
 			}
 			original := fmt.Errorf("revalidating %s before signalling: live process has no classifiable arguments", p)
-			return nil, fmt.Errorf("%w; %s", original, emptyArgStopDiagnostic(p, snapshot))
+			return nil, false, fmt.Errorf("%w; %s", original, emptyArgStopDiagnostic(p, snapshot))
 		}
 		p.args = snapshot.args
 		p.argsErr = nil
 		current = append(current, p)
 	}
-	return current, nil
+	return current, departed, nil
 }
 
 func signalStopTarget(home string, p homeProcess, signal syscall.Signal, probes stopProcessProbes) (bool, error) {
@@ -712,6 +788,7 @@ func waitStopTargetGone(home string, p homeProcess, deadline time.Time, probes s
 func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, probes stopProcessProbes) ([]string, error) {
 	var stopped []string
 	var exiting []homeProcess
+	relistedPastBound := false
 	deadline := time.Now().Add(bound)
 	for {
 		listed := probes.list(home)
@@ -762,7 +839,7 @@ func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, 
 			return stopped, nil
 		}
 
-		procs, err := refreshStopListing(home, listed, deadline, probes)
+		procs, departed, err := refreshStopListing(home, listed, deadline, probes)
 		if err != nil {
 			return stopped, err
 		}
@@ -787,6 +864,12 @@ func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, 
 
 		if len(procs) == 0 {
 			if len(exiting) == 0 {
+				// A departed process (homeDeparted) was let go: list again, so one back under the
+				// HOME is stopped or reported rather than missed; once past the bound, only once.
+				if departed && !relistedPastBound {
+					relistedPastBound = !time.Now().Before(deadline)
+					continue
+				}
 				return stopped, nil
 			}
 			if !time.Now().Before(deadline) {
@@ -1185,22 +1268,157 @@ func TestStopHomeProcessesRetriesOnlyUncertainHomeObservation(t *testing.T) {
 		}
 	})
 
-	t.Run("confirmed ownership change is not retried", func(t *testing.T) {
+	t.Run("HOME departing during the retry is never signalled", func(t *testing.T) {
+		departure := fmt.Errorf("%w: pid %d no longer has HOME", errHomeOwnershipChanged, base.pid)
+		listCalls, killCalls := 0, 0
+		probes := stopProcessProbes{
+			list: func(string) []homeProcess {
+				listCalls++
+				if listCalls == 1 {
+					return []homeProcess{unknown}
+				}
+				return nil
+			},
+			inspect: func(int) (stopProcessSnapshot, error) {
+				return stopProcessSnapshot{args: base.args, startTime: base.startTime}, nil
+			},
+			home: func(int, string) (bool, error) { return false, departure },
+			kill: func(int, syscall.Signal) error { killCalls++; return nil },
+		}
+		_, err := stopHomeProcessesWithinWithProbes(home, 100*time.Millisecond, 0, probes)
+		if err != nil || listCalls < 3 || killCalls != 0 {
+			t.Fatalf("stop error %v, lists %d, signals %d; want it let go unsignalled and the home re-listed", err, listCalls, killCalls)
+		}
+	})
+
+	t.Run("confirmed ownership change is never signalled", func(t *testing.T) {
 		changed := base
 		changed.homeErr = errHomeOwnershipChanged
 		listCalls, killCalls := 0, 0
 		probes := stopProcessProbes{
-			list: func(string) []homeProcess { listCalls++; return []homeProcess{changed} },
+			list: func(string) []homeProcess {
+				listCalls++
+				if listCalls == 1 {
+					return []homeProcess{changed}
+				}
+				return nil
+			},
 			inspect: func(int) (stopProcessSnapshot, error) {
 				return stopProcessSnapshot{args: base.args, startTime: base.startTime}, nil
 			},
+			home: func(int, string) (bool, error) { return false, errHomeOwnershipChanged },
 			kill: func(int, syscall.Signal) error { killCalls++; return nil },
 		}
-		_, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
-		if err == nil || listCalls != 1 || killCalls != 0 {
-			t.Fatalf("stop error %v, lists %d, signals %d; want immediate conservative error", err, listCalls, killCalls)
+		_, err := stopHomeProcessesWithinWithProbes(home, 100*time.Millisecond, 0, probes)
+		if err != nil || listCalls != 2 || killCalls != 0 {
+			t.Fatalf("stop error %v, lists %d, signals %d; want it let go unsignalled and the home re-listed", err, listCalls, killCalls)
 		}
 	})
+}
+
+// A process whose environment lost this HOME between the census's two reads is no longer this
+// test's by the stop's own criterion, so it is never signalled, and it fails the stop only if a
+// later listing finds it under the HOME again and it survives. CI run 40012293896 failed
+// TestPackTreeProgramBuildFailureRefusesOnlyIt's cleanup with exactly this listing: pid 85307
+// "(podman)", whose second HOME read found an environment without HOME (homeDeparted).
+func TestStopHomeProcessesLetsAProcessWhoseHOMELeftGoUnsignalled(t *testing.T) {
+	const home = "/test/home"
+	const pid = 85307
+	const startTime = "3141592"
+	for _, departure := range []error{
+		fmt.Errorf("%w: pid %d no longer has HOME", errHomeOwnershipChanged, pid),
+		fmt.Errorf("%w: pid %d now has a different HOME", errHomeOwnershipChanged, pid),
+	} {
+		listed := homeProcess{pid: pid, ppid: 4000, args: []string{"podman"}, startTime: startTime, homeErr: departure}
+		runtime := stopProcessSnapshot{args: []string{"crun", "state", "abc"}, startTime: startTime}
+
+		t.Run(departure.Error()+"/gone after its exec", func(t *testing.T) {
+			listCalls, inspectCalls, killCalls := 0, 0, 0
+			probes := stopProcessProbes{
+				list: func(string) []homeProcess {
+					listCalls++
+					if listCalls == 1 {
+						return []homeProcess{listed}
+					}
+					return nil
+				},
+				inspect: func(int) (stopProcessSnapshot, error) {
+					inspectCalls++
+					if inspectCalls == 1 {
+						return runtime, nil
+					}
+					return stopProcessSnapshot{gone: true}, nil
+				},
+				home: func(int, string) (bool, error) { return false, departure },
+				kill: func(int, syscall.Signal) error { killCalls++; return nil },
+			}
+			stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+			if err != nil || len(stopped) != 0 || killCalls != 0 || inspectCalls != 2 || listCalls != 2 {
+				t.Fatalf("stop=%v, %v (lists=%d inspections=%d signals=%d); want it waited for until gone, never signalled, and the home re-listed",
+					stopped, err, listCalls, inspectCalls, killCalls)
+			}
+		})
+
+		t.Run(departure.Error()+"/still live without the HOME", func(t *testing.T) {
+			listCalls, killCalls := 0, 0
+			probes := stopProcessProbes{
+				list: func(string) []homeProcess {
+					listCalls++
+					if listCalls == 1 {
+						return []homeProcess{listed}
+					}
+					return nil
+				},
+				inspect: func(int) (stopProcessSnapshot, error) { return runtime, nil },
+				home:    func(int, string) (bool, error) { return false, departure },
+				kill:    func(int, syscall.Signal) error { killCalls++; return nil },
+			}
+			started := time.Now()
+			stopped, err := stopHomeProcessesWithinWithProbes(home, 200*time.Millisecond, 0, probes)
+			if err != nil || len(stopped) != 0 || killCalls != 0 || listCalls != 2 {
+				t.Fatalf("stop=%v, %v (lists=%d signals=%d); want it let go unsignalled once no listing names it", stopped, err, listCalls, killCalls)
+			}
+			if elapsed := time.Since(started); elapsed < 150*time.Millisecond || elapsed > 2*time.Second {
+				t.Fatalf("the stop returned after %s; want it to wait for the departed process up to the stop bound, and no longer", elapsed)
+			}
+		})
+
+		t.Run(departure.Error()+"/back under the HOME is an ordinary target", func(t *testing.T) {
+			back := listed
+			back.homeErr, back.homeMatched = nil, true
+			listCalls, homeCalls, killCalls := 0, 0, 0
+			probes := stopProcessProbes{
+				list: func(string) []homeProcess {
+					listCalls++
+					switch listCalls {
+					case 1:
+						return []homeProcess{listed}
+					case 2:
+						return []homeProcess{back}
+					}
+					return nil
+				},
+				inspect: func(int) (stopProcessSnapshot, error) {
+					if killCalls > 0 {
+						return stopProcessSnapshot{gone: true}, nil
+					}
+					return stopProcessSnapshot{args: listed.args, startTime: startTime}, nil
+				},
+				home: func(int, string) (bool, error) {
+					homeCalls++
+					if homeCalls == 1 {
+						return false, departure
+					}
+					return true, nil
+				},
+				kill: func(int, syscall.Signal) error { killCalls++; return nil },
+			}
+			stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+			if err != nil || len(stopped) != 1 || killCalls != 1 {
+				t.Fatalf("stop=%v, %v (lists=%d signals=%d); want it stopped once a listing confirms it under the HOME again", stopped, err, listCalls, killCalls)
+			}
+		})
+	}
 }
 
 func TestInspectStopProcessRecordsReadOrderForLiveProcess(t *testing.T) {

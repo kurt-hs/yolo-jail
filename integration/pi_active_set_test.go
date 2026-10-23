@@ -44,10 +44,10 @@ func TestPiRunsOnEveryProviderOfItsSet(t *testing.T) {
 	// each contributes every model pi has for it, and none of yolo's list
 	// (docs/design/pi-codex-provider-shadowing.md OQ-3).
 	enabled, _ := settings.raw["enabledModels"].([]any)
-	if len(enabled) == 0 || enabled[0] != "zai/*" {
+	if len(enabled) == 0 || enabled[0] != "zai/**" {
 		t.Fatalf("pi's enabledModels = %v, want zai's run, pi's own list, first", enabled)
 	}
-	if enabled[len(enabled)-1] != "openrouter/*" {
+	if enabled[len(enabled)-1] != "openrouter/**" {
 		t.Errorf("pi's enabledModels = %v, want openrouter's run after zai's", enabled)
 	}
 	// Child agents stay inside the set (§4.6).
@@ -140,7 +140,7 @@ func TestTheProfileKeysListReachesPiWholeAndClaudeFirst(t *testing.T) {
 		t.Errorf("pi's start provider = %s, want the list's first entry, zai", settings.provider)
 	}
 	enabled, _ := settings.raw["enabledModels"].([]any)
-	if len(enabled) == 0 || enabled[len(enabled)-1] != "openrouter/*" {
+	if len(enabled) == 0 || enabled[len(enabled)-1] != "openrouter/**" {
 		t.Errorf("pi's enabledModels = %v, want the key's whole list, openrouter's run last", enabled)
 	}
 }

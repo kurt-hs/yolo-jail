@@ -1320,7 +1320,9 @@ oh-omp and opencode, and `openai-codex`, the first case. For such a provider:
 - **No row**, a via row included, so a profile's `via` re-points nothing for that agent, and the
   launch says so.
 - **The selection names the agent's own id**, and from yolo's list only the profile's `model`
-  option, taken as the agent's own id: pi gets that pair and `enabledModels` of `<id>/*`, opencode
+  option, taken as the agent's own id: pi gets that pair and `enabledModels` of `<id>/**` (a globstar, because pi matches
+  `enabledModels` with minimatch, whose `*` stops at `/`, and ids such as OpenRouter's are
+  `vendor/model`), opencode
   `model` and `enabled_providers`, oh-omp nothing. No `YOLO_MODEL_<ROLE>` is composed for it.
 - **A plan the agent serves under another name** is the pack's `plans` entry: opencode serves
   yolo's zai, the coding plan, as its own `zai-coding-plan` (its own `zai` is the metered API), and
@@ -1748,7 +1750,10 @@ and each route's object-form entry names them with `extends`
 ```
 
 The composition lays the shared facts under each route's own, so a route that serves a smaller
-context or charges another price states just that. pi gets every row **in full**: stock pi
+context or charges another price states just that. An entry may also carry `openrouter_routing`,
+so a 1M route and its 200k twin pin one upstream order written once; like `cost`, an
+object-valued fact is one fact, so a route's own object **replaces** the shared one whole (no
+key-by-key merge), and a route's `"openrouter_routing": null` sends no pin. pi gets every row **in full**: stock pi
 ignores `sharedModels` and `extends`, so a row relying on them would silently take its generic
 sizes. Only a pi whose pack declares `reads_shared_models` on its program gets the short form,
 the facts once as `sharedModels` and each row saying `extends` with what it overrides
@@ -2821,7 +2826,7 @@ above explains what each is for; this table is the only place the exact spelling
 | The Bedrock model list | none ships ([MM-D32](../design/model-lists-and-pickers.md#MM-D32), 2026-10-05, withdrawing [BR-D19](../design/bedrock-plumbing.md#BR-D19)'s three entries): each agent starts on its own Bedrock default; a pack's `models` contribution or the user's `providers.bedrock.models` supplies one | `packs/bedrock/pack.json`, `packs/bedrock/README.md` |
 | copilot's Bedrock start model | `openai.gpt-oss-120b-1:0`, through the bridge, when no profile and no list names one ([MM-D34](../design/model-lists-and-pickers.md#MM-D34)) | `packs/copilot/derive.lua` (`bedrockStartModel`) |
 | Model vendor | `vendor`, one lowercase token (`[a-z0-9][a-z0-9._-]*`), in a pack's `model_options.<alias>` or a user's object-form `models.<alias>`; an entry with none is offered to every agent | `packdecl.ValidModelVendor`, `config.validateModelEntry`, `packload.flattenModelFacts` |
-| Per-model OpenRouter routing | `openrouter_routing`, an object sent verbatim as OpenRouter's request `provider` field, and `base`, the pi catalog model id a variant row inherits its facts from. Declared on a user's object-form `models.<alias>` only. Both lower into the composed entry (`openrouter_routing` into the sibling `model_routing.<alias>`, `base` into `model_options.<alias>.base`) and reach pi through the `pi/model-lists` registration, whose extension lowers the routing into `compat.openRouterRouting`; with no `only` nothing refuses a model off the list ([OQ-MM3](../design/model-lists-and-pickers.md#OQ-MM3)) | `config.validateModelEntry`, `packload.liftModelFacts`, `packs/pi/derive.lua` (`model-lists`), `packs/pi/extensions/yolo-model-lists.js` (`definition`); [§Per-model OpenRouter routing](#per-model-openrouter-routing) |
+| Per-model OpenRouter routing | `openrouter_routing`, an object sent verbatim as OpenRouter's request `provider` field, and `base`, the pi catalog model id a variant row inherits its facts from. Declared on a user's object-form `models.<alias>`; `openrouter_routing` also in a top-level `model_facts` entry, which every alias whose merged facts' `extends` names it inherits (a pack's `model_options.<alias>.extends` included) and a route's own object replaces whole. Both lower into the composed entry (`openrouter_routing` into the sibling `model_routing.<alias>`, `base` into `model_options.<alias>.base`) and reach pi through the `pi/model-lists` registration, whose extension lowers the routing into `compat.openRouterRouting`; with no `only` nothing refuses a model off the list ([OQ-MM3](../design/model-lists-and-pickers.md#OQ-MM3)) | `config.validateModelEntry`, `packload.liftModelFacts` (`laySharedRouting`), `packs/pi/derive.lua` (`model-lists`), `packs/pi/extensions/yolo-model-lists.js` (`definition`); [§Per-model OpenRouter routing](#per-model-openrouter-routing) |
 | Model fact tombstones and shared facts | A model fact written as `null` (a user's object-form `models.<alias>`, a pack's `model_options.<alias>`, a `model_facts` entry) lowers as a null and reaches each derive as `ctx.tombstone`; `extends` lays the named top-level `model_facts` entry under the alias's own facts and records it once as the entry's `model_shared.<name>`. pi leaves a tombstoned field out of a `models.json` row, names it in a menu row's `tombstones`, and writes `sharedModels`/`extends` only when its pack declares `reads_shared_models` | `config.validateModelFacts`, `packload.liftModelFacts` (`WithModelFacts`), `luahook.markModelFactTombstones`, `packdecl.Contribution.ReadsSharedModels`, `packs/pi/derive.lua` (`piShareRow`), `packs/pi/extensions/yolo-model-lists.js` (`definition`, `withCatalog`); [the paragraph above](#per-model-openrouter-routing) |
 | Makers each Bedrock client calls | claude `anthropic`; codex `openai`; opencode and pi every maker | `packs/{claude,codex,opencode,pi}/derive.lua` (`callableModels`) |
 | Bedrock built-in provider ids | codex `amazon-bedrock-runtime`; opencode `amazon-bedrock`; pi `amazon-bedrock` | `packs/{codex,opencode,pi}/derive.lua` |

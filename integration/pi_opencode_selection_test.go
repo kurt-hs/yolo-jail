@@ -121,8 +121,8 @@ func TestPiAndOpencodeSelectionFollowTheActiveProfile(t *testing.T) {
 				"pi's own id: zai is one of pi's own providers, so pi runs its own list and "+
 				"the profile's model is the one id yolo still names (OQ-3)", piSettings.model)
 		}
-		if got, _ := piSettings.raw["enabledModels"].([]any); len(got) != 1 || got[0] != "zai/*" {
-			t.Errorf("pi settings.json enabledModels = %v, want [zai/*]: pi's own zai list, "+
+		if got, _ := piSettings.raw["enabledModels"].([]any); len(got) != 1 || got[0] != "zai/**" {
+			t.Errorf("pi settings.json enabledModels = %v, want [zai/**]: pi's own zai list, "+
 				"whole, and none of yolo's (glm-4.6 is yolo's and not pi's)", piSettings.raw["enabledModels"])
 		}
 		// The catalog and the selection are DIFFERENT FILES for pi: yolo's computed
