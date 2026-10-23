@@ -262,8 +262,8 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 17. [Notch convergence's held items](notch-convergence.md) — `env_sources` waits on item 13, the one `rmw` rule on [a
     table not declared in full](../reference/config-ownership.md#OQ-CO15) (rule [OQ-CO16](../reference/config-ownership.md#OQ-CO16)
     with it), and `yolo host -- claude` joining the shared login on the credential view's measures, below.
-18. [Rule the provisioner's remaining calls](../design/provisioner-sets.md), corporate-CA trust first — it shipped on its
-    leanings under delegation (PS-D10, reversible), so a ruling confirms or undoes what every macos-user launch now does.
+18. [The provisioner's calls](../design/provisioner-sets.md) are all ruled (2026-10-23); what remains is building
+    the one `program` kind that any selected pack may fill, and the separate account's Go trust.
 19. [Rule what the environment manager promises at each notch](../design/environment-manager-user-stories.md) — Q1b
     decides [`yolo check --at`](../reference/what-yolo-is.md#check-at-a-notch) and Q7 [the Linux guest notch](environment-manager-plan.md).
 20. [Rule the keychain from a jail](../design/keychain-from-a-jail.md), which settles [Copilot's machine-wide
