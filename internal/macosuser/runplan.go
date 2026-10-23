@@ -38,7 +38,11 @@ type RunPlan struct {
 	// SessionHomeDir is the account-owned config namespace, empty without declaring packs.
 	SessionHomeDir string
 	ProfilePath    string
-	Seatbelt       string
+	// Loopback is the loopback allow list the profile renders (loopbackports.go, MMP-D10): nil
+	// when the profile does not deny loopback (the account mode's today, or OQ-MM7 ruled
+	// allowed), so there is nothing to open and nothing to disclose.
+	Loopback *LoopbackCollection
+	Seatbelt string
 	// ProfileRemoveCommands remove the session's Seatbelt profile when the session ends.
 	ProfileRemoveCommands [][]string
 	// StagedDir is the host-owned staging root; StagedYolo is the staged yolo
@@ -448,6 +452,11 @@ type PlanSession struct {
 	HostHome          string
 	HostUser          string
 	DarwinUserTempDir string
+	// Loopback is the launch's collected loopback allow list (loopbackports.go, MMP-D10),
+	// collected by the orchestrator, which reads the endpoint files, so this builder stays pure.
+	// Rendered into the profile only while the loopback policy denies loopback (OQ-MM7), and
+	// today only by the run-as-you mode's deny-by-default profile.
+	Loopback LoopbackCollection
 }
 
 // darwinBootstrapArgvUnder is DarwinBootstrapArgv, confined under profilePath when it is not ""
@@ -473,8 +482,8 @@ func darwinBootstrapArgvUnder(runAs RunAs, stagedYolo, home string, bootstrapEnv
 // each selected `scope: machine` dir in the shared store as the writable places beyond them
 // (MMP-D6; never the whole store, which holds every other agent's login), the context mounts,
 // relocations, workspace_readonly, the staged home content, devices and the shared caches, with
-// the three pending rulings at their production values (MMP-D13). No loopback port is listed
-// until slice 7 collects yolo's own (MMP-D10).
+// the three pending rulings at their production values (MMP-D13), and the loopback ports the
+// orchestrator collected (MMP-D10, loopbackports.go).
 func selfProfileParams(workspace string, homes Homes, hostPackRoot string, session PlanSession,
 	readonlyRels, readonlyTargets []string, homeReadonly HomeReadonly, ctxLinks []ContextLink,
 	relocs []CacheRelocation, aliases []CacheAlias, devices []string) ProfileParams {
@@ -501,6 +510,9 @@ func selfProfileParams(workspace string, homes Homes, hostPackRoot string, sessi
 		HomeReadonly:      homeReadonly,
 		Devices:           devices,
 		RunAsUser:         session.HostUser,
+		// The collected allow list (loopbackports.go), which WithProductionRulings keeps only
+		// while the loopback ruling denies loopback (OQ-MM7).
+		Loopback: LoopbackPolicy{Ports: session.Loopback.Ports()},
 	}.WithProductionRulings()
 }
 
@@ -981,14 +993,22 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	}
 	bootstrapArgv := darwinBootstrapArgvUnder(runAs, stagedYolo, sandboxHome, bootstrapEnv, bootstrapProfile)
 	// THE PROFILE: the deny-by-default one in the run-as-you mode, with the pending rulings at
-	// their production values (MMP-D13) and no loopback port yet (slice 7); today's in the
+	// their production values (MMP-D13) and the collected loopback ports (slice 7); today's in the
 	// account mode, until slice 12 moves it onto the same profile.
 	seatbelt := seatbeltProfile(workspace, SandboxHome(), readonlyRels, readonlyTargets,
 		homeReadonly, ctxLinks, relocs, cfgStrList(cfg, "devices"))
+	// THE LOOPBACK ALLOW LIST (slice 7, MMP-D10): yolo's own service ports, the served addresses
+	// and the workspace's forward_host_ports, rendered only while the policy denies loopback.
+	var loopback *LoopbackCollection
 	if self {
-		seatbelt = DenyDefaultProfile(selfProfileParams(workspace, homes, hostPackRoot, session,
+		params := selfProfileParams(workspace, homes, hostPackRoot, session,
 			readonlyRels, readonlyTargets, homeReadonly, ctxLinks, relocs, hostCtx.CacheAliases,
-			cfgStrList(cfg, "devices")))
+			cfgStrList(cfg, "devices"))
+		if !params.Loopback.AllowAll {
+			collected := session.Loopback
+			loopback = &collected
+		}
+		seatbelt = DenyDefaultProfile(params)
 	}
 	envDirCommands := SandboxEnvDirCommands(envFile, "")
 	envGrantCommands := SandboxEnvGrantCommands(envFile, "")
@@ -1021,6 +1041,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		// workspace_readonly and its config lock, each raw-path `devices` entry's ioctl
 		// carve-out (devices.go), and macos_log, whose "off" is a deny (SeatbeltProfile).
 		Seatbelt:   seatbelt,
+		Loopback:   loopback,
 		StagedDir:  stateDir,
 		StagedYolo: stagedYolo,
 		// Binary first, then the pack trees, then the content overlay, then the context
@@ -2020,12 +2041,18 @@ func captureStoreInvariants(plan RunPlan) []string {
 //   - the launch named the invoking user's home, which places every home but HOME;
 //   - the profile is the deny-by-default one, never today's `(allow default)`;
 //   - the bootstrap runs under the session's profile (MMP-D9);
-//   - nothing grants an access entry, and nothing names the second account.
+//   - nothing grants an access entry, and nothing names the second account;
+//   - every published endpoint's port was read for the loopback allow list (MMP-D10).
 func selfModeProblems(plan RunPlan) []string {
 	if plan.RunAs.Mode != ModeSelf {
 		return nil
 	}
 	var problems []string
+	// An endpoint whose port the allow list could not read (loopbackports.go): the profile
+	// would refuse the sandbox that service, which the witness would then report less clearly.
+	if plan.Loopback != nil {
+		problems = append(problems, loopbackProblems(*plan.Loopback)...)
+	}
 	if real := plan.RunAs.Homes.Real; !filepath.IsAbs(real) {
 		problems = append(problems, "the run-as-you plan was given no absolute home for you ("+
 			quoteOrNone(real)+"); its machine root and shared store would be relative paths")

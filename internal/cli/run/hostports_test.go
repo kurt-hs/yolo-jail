@@ -19,7 +19,7 @@ func TestParsePortForwards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	want := []PortForward{{8000, 8000}, {9000, 9000}, {1234, 5678}}
+	want := []PortForward{{LocalPort: 8000, HostPort: 8000}, {LocalPort: 9000, HostPort: 9000}, {LocalPort: 1234, HostPort: 5678}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("parsed = %v, want %v", got, want)
 	}

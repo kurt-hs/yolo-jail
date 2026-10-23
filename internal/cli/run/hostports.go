@@ -6,10 +6,10 @@ package run
 import (
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
 
@@ -20,64 +20,13 @@ const (
 	SocketWaitPollInterval = 5 * time.Millisecond
 )
 
-// PortForward is one parsed forward: the port inside the jail (localPort) and
-// the host 127.0.0.1 port it bridges to (hostPort).
-type PortForward struct {
-	LocalPort int
-	HostPort  int
-}
+// PortForward is one parsed `network.forward_host_ports` entry (config.PortForward, where the one
+// reader of the key lives so the macos-user profile's loopback allow list reads the same grammar).
+type PortForward = config.PortForward
 
-// ParsePortForwards parses forward_host_ports config entries into
-// (localPort, hostPort) pairs:
-//
-//   - a JSON integer      → (n, n)
-//   - a string "a:b"      → (int(a), int(b))   [split once]
-//   - a plain string "n"  → (n, n)
-//   - anything else       → a warning (returned via the warn callback), skipped
-//
-// A non-numeric string port surfaces as a returned error, aborting the parse —
-// the caller decides. warn receives the "Warning: invalid port forward entry:
-// %v" text for non-int/str entries; pass nil to ignore.
+// ParsePortForwards is config.ParsePortForwards, the key's one reader.
 func ParsePortForwards(entries []any, warn func(string)) ([]PortForward, error) {
-	var result []PortForward
-	for _, entry := range entries {
-		// A JSON integer literal (jsonx decodes ints as jsonInt).
-		if jsonx.IsInt(entry) {
-			n, _ := jsonx.AsInt(entry)
-			result = append(result, PortForward{int(n), int(n)})
-			continue
-		}
-		// A raw Go int (callers that build entries directly).
-		if n, ok := entry.(int); ok {
-			result = append(result, PortForward{n, n})
-			continue
-		}
-		s, ok := entry.(string)
-		if !ok {
-			if warn != nil {
-				warn(fmt.Sprintf("Warning: invalid port forward entry: %v", entry))
-			}
-			continue
-		}
-		if idx := indexByte(s, ':'); idx >= 0 {
-			a, err := strconv.Atoi(s[:idx])
-			if err != nil {
-				return nil, fmt.Errorf("invalid port forward %q: %w", s, err)
-			}
-			b, err := strconv.Atoi(s[idx+1:])
-			if err != nil {
-				return nil, fmt.Errorf("invalid port forward %q: %w", s, err)
-			}
-			result = append(result, PortForward{a, b})
-			continue
-		}
-		p, err := strconv.Atoi(s)
-		if err != nil {
-			return nil, fmt.Errorf("invalid port forward %q: %w", s, err)
-		}
-		result = append(result, PortForward{p, p})
-	}
-	return result, nil
+	return config.ParsePortForwards(entries, warn)
 }
 
 // discloseImplicitProviderForwards prints ONE line per port a user provider caused to be
@@ -182,17 +131,6 @@ func mergeHostForwards(declared, implicit []any) []any {
 		out = append(out, port)
 	}
 	return out
-}
-
-// indexByte returns the index of the first b in s, or -1. Only the first ':'
-// splits (like split(":", 1)), so we need its first index.
-func indexByte(s string, b byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == b {
-			return i
-		}
-	}
-	return -1
 }
 
 // SocketPath returns the host-side socket file path for a local port under

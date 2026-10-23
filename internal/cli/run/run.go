@@ -1191,6 +1191,10 @@ func Run(opts Options) (rc int) {
 		// Composed LAST, after every endpoint variable has landed on launchEnv (the live
 		// path's handles, or a dry run's placeholder), since the daemons dial those files.
 		guest := channel.guestJailDaemons(guestDaemons, launchEnv)
+		// EVERY ADDRESS THIS LAUNCH SERVES, for the deny-by-default profile's loopback allow list
+		// (macosuser's loopbackports.go, MMP-D10): the guest's jail daemons, the doorways and the
+		// launch-owned services all answer on the Mac's loopback, which that profile denies.
+		guest.Served = o.servedLoopbackAddresses()
 		// THE PORT REMAPS' RELAYS (macosuserportrelay.go) open when the session starts, inside the
 		// backend (JailDaemons.OnLaunch), and close when the command exits: so a launch refused
 		// anywhere, here or in the backend, or still building its tools, publishes no port. A dry

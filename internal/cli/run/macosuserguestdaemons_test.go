@@ -11,6 +11,7 @@ package run
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -104,6 +105,30 @@ func TestMacosUserServesTheBedrockPointerThroughALaunchOwnedDoorway(t *testing.T
 	if !strings.Contains(stderr.String(), "and yolo internal daemon aws-credential-adapter --listen '{listen}' on your machine") {
 		t.Errorf("the launch does not disclose the AWS doorway's host argv as running on your machine:\n%s",
 			stderr.String())
+	}
+}
+
+// THE BACKEND IS HANDED EVERY ADDRESS THE LAUNCH SERVES (JailDaemons.Served), so the run-as-you
+// profile's loopback allow list opens the doorway's picked port (macosuser's loopbackports.go,
+// MMP-D10): the agent's client dials it on the Mac's own loopback, which that profile denies.
+// Deleting the Served assignment in run.go's macos-user arm fails this.
+func TestMacosUserHandsTheBackendTheDoorwaysServedAddress(t *testing.T) {
+	installFakeAWSCLI(t)
+	o, stderr, seen := overrideNativeLaunch(t,
+		awsAuthUserConfig(`, "loopholes": {"aws-auth": {"enabled": true,
+		"settings": {"profile": "yolo-unit", "unnarrowed": true}}}`), shellWith(nil))
+	doors := observeDoorways(t)
+	if rc := Run(*o); rc != 0 || !seen.reached {
+		t.Fatalf("Run() = %d (reached %v)\n%s", rc, seen.reached, stderr.String())
+	}
+	plan, _ := doors.only(t, "aws-auth")
+	listen := plan.Addresses()[0]
+	if !slices.Contains(seen.jailDaemons.Served, listen) {
+		t.Errorf("the backend was not handed the doorway's served address %s: %v",
+			listen, seen.jailDaemons.Served)
+	}
+	if !slices.IsSorted(seen.jailDaemons.Served) {
+		t.Errorf("the served addresses are not in a deterministic order: %v", seen.jailDaemons.Served)
 	}
 }
 

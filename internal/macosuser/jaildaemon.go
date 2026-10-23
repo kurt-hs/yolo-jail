@@ -374,6 +374,12 @@ type JailDaemons struct {
 	// this value, which is about the guest's daemons, only because the value already crosses the
 	// run pipeline's MacosUserRun seam whole, so the seam's signature does not change.
 	OnLaunch func() (stop func())
+	// Served is every loopback `host:port` this launch serves (internal/cli/run's served
+	// addresses): each guest jail daemon's, each credential doorway's and each launch-owned
+	// service's, at the address its clients were composed for. The deny-by-default profile opens
+	// each one's port (loopbackports.go, MMP-D10), since the agent's client dials it on the Mac's
+	// own loopback. It rides here for OnLaunch's reason: the value already crosses the seam whole.
+	Served []string
 }
 
 // Names is the daemons the payload names, sorted — what the supervisor will start.

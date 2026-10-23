@@ -69,6 +69,9 @@ type servedAddressState struct {
 	// adopted is set once an attach took the running jail's map: from then on nothing is
 	// picked, and a declared address the map does not name is served where it is declared.
 	adopted bool
+	// declared is every declared loopback `host:port` a settle was asked about, whether or not it
+	// moved: the served set's addresses, for servedLoopbackAddresses.
+	declared map[string]bool
 }
 
 // sharesNetnsFor reports whether a jail launched on rt with cfg shares this process's network
@@ -147,11 +150,18 @@ func loopbackHostPort(raw string) string {
 // reservation this launch holds (o.served.held) until the process serving the port has it.
 func (o *Options) settleServedAddresses(cfg *jsonx.OrderedMap, rt string,
 	specs []loopholes.JailDaemonSpec, packs []*packload.Pack) {
+	declared := declaredServedAddresses(specs, packs)
+	if o.served.declared == nil {
+		o.served.declared = map[string]bool{}
+	}
+	for _, hp := range declared {
+		o.served.declared[hp] = true
+	}
 	if o.served.adopted || !o.sharesNetnsFor(cfg, rt) {
 		return
 	}
 	var todo []string
-	for _, hp := range declaredServedAddresses(specs, packs) {
+	for _, hp := range declared {
 		if _, ok := o.served.moved[hp]; !ok {
 			todo = append(todo, hp)
 		}
@@ -306,7 +316,41 @@ func runningServedAddresses(wsState string) map[string]string {
 // jail's daemons already listen.
 func (o *Options) adoptRunningServedAddresses(running map[string]string) {
 	launchservice.ReleaseAll(o.served.held)
-	o.served = servedAddressState{moved: running, adopted: true}
+	o.served = servedAddressState{moved: running, adopted: true, declared: o.served.declared}
+}
+
+// servedLoopbackAddresses is every loopback `host:port` this launch serves, sorted and unique:
+// each declared address a settle saw, where it is served (moved or not), every address it moved
+// one to (a joined keeper's doorways among them), and every address a launch-owned service or
+// doorway plan answers on. The macos-user profile opens each one's port (JailDaemons.Served;
+// macosuser's loopbackports.go, MMP-D10), because the agent's clients dial them on the Mac's
+// own loopback, which the profile otherwise denies.
+func (o *Options) servedLoopbackAddresses() []string {
+	set := map[string]bool{}
+	for hp := range o.served.declared {
+		set[o.servedAddress(hp)] = true
+	}
+	for _, to := range o.served.moved {
+		set[to] = true
+	}
+	for _, plans := range [][]*launchservice.Plan{o.launchServices, o.launchDoorways} {
+		for _, p := range plans {
+			if p == nil {
+				continue
+			}
+			for _, to := range p.Moved {
+				set[to] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for a := range set {
+		if a != "" {
+			out = append(out, a)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // servedAddressesAgree reports whether channel was composed with exactly the served addresses

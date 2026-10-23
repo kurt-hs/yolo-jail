@@ -238,9 +238,11 @@ project's `.yolo/home` and the tools, and denies the rest of your files, your ke
 other processes. Every launch says so first. A project's config cannot choose this mode; only your
 user config can. Remove the line, or set it to `"account"`, to go back.
 
-It is experimental: yolo's own host services are not reachable from it yet, so a launch that
-starts one (the Claude login service, for one) stops at its reachability check. That check names
-`YOLO_ALLOW_UNREACHABLE_SERVICES=1`, which starts the agent anyway without the service.
+It is experimental. The agent cannot reach the services on your Mac's loopback (`localhost`)
+except yolo's own, such as the Claude login service, and the ports your project lists in
+`network.forward_host_ports`. Every launch lists the ports it opens. A server the agent starts on
+`localhost` is closed to the agent too, so a test that starts one and connects to it fails; to
+reach one on a fixed port, add that port to `network.forward_host_ports`.
 
 **Check without changing anything.** Run `yolo check` from the project. It checks each thing a
 launch refuses to start without: that you are on macOS and not running as root, Seatbelt, the
