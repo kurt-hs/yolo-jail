@@ -184,6 +184,17 @@ in this section are each a ruling and a build, and the gap they must close is 3.
 package's wall time. `internal/entrypoint` is second at 722.8 s, so nothing else is near the
 ceiling. A per-package timeout, or the first lever that saves a minute, settles it.
 
+**MEASURED on that Mac, 2026-10-23 at `83ac7bb41`: the `/usr/bin/git` shim is a quarter of the
+package.** 100 runs of `/usr/bin/git --version` take 20.0–21.1 ms each, against 10.1–11.2 ms for
+the Command Line Tools binary it forwards to (`xcrun --find git`,
+`/Library/Developer/CommandLineTools/usr/bin/git`), three interleaved rounds. `go test -short
+-count=1 -timeout 0 ./internal/cli` then took **1127 s** with the shim (load average 2.3 at start)
+and **872 s** with the CLT directory first on `PATH` (load average 5.2 at start), every test
+passing both times. That is 255 s saved, 23%, under more load. The two heaviest tests went from
+30.4 s to 21.6 s and from 22.2 s to 16.4 s. So the cheaper `git` on darwin, the second lever
+below, is now measured; how yolo or its tests would pick that binary is still a ruling.
+`internal/entrypoint` took 655 s the same day, so it does not approach the gate.
+
 **INFERRED from the lab report's two timings, superseded by the measurement above:** the two tests it names take 45.9 s and 29.8 s on
 the Mac, and start 1468 and 837 `git` processes on Linux, so each start costs about 31 to 36 ms
 there. 48,536 starts at that cost is about 25 minutes, past the limit. Unmeasured: whether the cost
