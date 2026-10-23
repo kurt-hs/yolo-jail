@@ -152,11 +152,10 @@ func TestALaunchTrustsAndNamesTheLoginKeychainsCA(t *testing.T) {
 	if !strings.Contains(out.String(), "6 more in them were left out") {
 		t.Errorf("the left-out count does not cover both keychains:\n%s", out.String())
 	}
-	// THE SEPARATE ACCOUNT'S LIMIT, said in plain words (PS-D14): Go's programs ask macOS as the
-	// sandbox account, so the login keychain's CA reaches only the tools that read a CA file.
-	limit := "The agent runs as a separate account, so the certificate authority from your login " +
-		"keychain (Staging CA) is trusted only by tools that read a CA file, such as curl, git, Node " +
-		"and Python; programs that ask macOS instead, such as gh and mise, do not trust it."
+	// THE SEPARATE ACCOUNT'S GO PROGRAMS (PS-D17, cagodebug.go): told to verify against the bundle,
+	// and what still asks macOS as the sandbox account named with the check.
+	limit := "One built with an older Go still asks macOS, as that account, and does not trust the " +
+		"one from your login keychain (Staging CA)"
 	if !strings.Contains(out.String(), limit) {
 		t.Errorf("the account-mode launch does not qualify the login keychain's CA:\n%s", out.String())
 	}
