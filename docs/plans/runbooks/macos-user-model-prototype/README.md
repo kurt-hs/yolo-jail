@@ -45,16 +45,16 @@ The checks, keyed to [§6](../../../design/macos-user-model.md#6-what-a-prototyp
 | Check | What must happen |
 | :--- | :--- |
 | 0 | The profile loads and `/bin/bash` starts under it. If not, nothing else runs. |
-| a3t, a3h | A write to the shared `/tmp` is refused (OQ-MM8, ruled 2026-10-23). With `--profile-from-yolo`, the `macos_user_shared_tmp` hatch's profile makes it work again (a3h). |
+| a3t, a3h | A write to the shared `/tmp` is refused ([`OQ-MM8`](../../../design/macos-user-model.md#OQ-MM8), ruled 2026-10-23). With `--profile-from-yolo`, the `macos_user_shared_tmp` hatch's profile makes it work again (a3h). |
 | a1–a12 | The workspace, `$HOME` and own temp dirs are writable; git init and commit work; a C build runs; a Homebrew and a nix binary run; HTTPS works, certificate trust included (`curl`, `gh`, `git ls-remote`); the system fonts are readable. |
 | b1–b14 | Each fails: reading a decoy secret in your home and `~/.ssh`, writing in your home, reading the throwaway login-keychain item's secret (b4) and the keychain file, the ssh agent, the clipboard, Apple Events to Finder and System Events, `open -a TextEdit`, `launchctl submit`, `kill -0` on a long-lived process of yours, reading that process's command line through `ps` and through `sysctl kern.procargs2`, and reading a 0600 file of yours in the shared `/tmp` (b14). |
 | c1–c4 | A decoy project at `/opt/src/...` (or `/Library/Caches/...` where `/opt` is not writable) is unreadable; `/opt/homebrew` and the nix store are readable. |
-| d1, d3 | A loopback listener of yours is reachable from inside, and so is a loopback server the agent starts itself: OQ-MM7 (ruled 2026-10-23) allows the whole loopback. |
+| d1, d3 | A loopback listener of yours is reachable from inside, and so is a loopback server the agent starts itself: [`OQ-MM7`](../../../design/macos-user-model.md#OQ-MM7) (ruled 2026-10-23) allows the whole loopback. |
 | e1–e2 | With Full Disk Access granted to the terminal, profile-denied files stay unreadable. |
 | g1–g8 | A unix socket binds and connects under `$TMPDIR` and in the workspace, and a workspace symlink to a socket outside those roots (one of the script's, g7; your colima or Docker Desktop socket when there is one, g8) does not connect. With `--profile-from-yolo`: the session's host-services liveness lock is refused; with the shared `/tmp` closed, the session's own endpoint file is readable, a sibling session's is not, and `/private/tmp` cannot be listed. |
 | f1 | Optional: Claude Code installs into the sandbox's own home and `claude --version` runs. |
 
-b14 was an `INFO` line until OQ-MM8 closed the shared `/tmp`: the first run read that file in self
+b14 was an `INFO` line until [`OQ-MM8`](../../../design/macos-user-model.md#OQ-MM8) closed the shared `/tmp`: the first run read that file in self
 mode, and in account mode Unix permissions refused it.
 
 ## How to run it
@@ -159,7 +159,7 @@ The decisions, each traced to a design ruling. The file comments every allow on 
   binaries Safehouse curates. `/opt` itself gets metadata only, so `/opt/homebrew` resolves while
   `/opt` cannot be listed.
 - **Read-write:** the workspace, the agent's home (`<workspace>/.yolo/home`), the launch's own temp
-  dir and the running user's `DARWIN_USER_TEMP_DIR`. The shared `/tmp` is closed (OQ-MM8). Safehouse grants all of
+  dir and the running user's `DARWIN_USER_TEMP_DIR`. The shared `/tmp` is closed ([`OQ-MM8`](../../../design/macos-user-model.md#OQ-MM8)). Safehouse grants all of
   `/var/folders`; this grants one folder of it, and not the user cache folder beside it.
 - **Your home:** nothing but three locale preference files, read-only. Every directory above the
   workspace is readable as a single directory (its listing, nothing below it), as Safehouse does
@@ -176,7 +176,7 @@ The decisions, each traced to a design ruling. The file comments every allow on 
   `(deny default)` and the Apple Events service denied by name both in place.
 - **Processes:** any program may run; signals and process inspection reach only processes inside
   the sandbox; another process's command line and environment are denied on both channels.
-- **Network:** open, the whole loopback included (OQ-MM7). Unix sockets bind and connect only under
+- **Network:** open, the whole loopback included ([`OQ-MM7`](../../../design/macos-user-model.md#OQ-MM7)). Unix sockets bind and connect only under
   the workspace, the agent's home and the launch's temp dir; the ssh agent and container runtime
   sockets are also denied by name.
 

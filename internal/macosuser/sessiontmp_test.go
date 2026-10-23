@@ -1,6 +1,7 @@
 package macosuser
 
 import (
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -127,7 +128,12 @@ func TestSelfModeProfileGrantsTheSessionServicesDir(t *testing.T) {
 // RunMacosUser fails this.
 func TestASelfModeLaunchMakesAndRemovesItsTmpdir(t *testing.T) {
 	var runs []string
-	userTmp := t.TempDir() // the fixture runs the stage commands for real
+	// The fixture runs the stage commands for real. Resolved where it is minted: the launch resolves
+	// the per-user temp dir, and macOS's t.TempDir() is under the /var -> /private/var symlink.
+	userTmp, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, _, out, _ := runPackTreeLaunch(t, 0, nil, func(d *Deps, o *Options) {
 		o.Mode, o.HostHome, o.HostUser = ModeSelf, "/Users/you", "you"
 		d.SandboxUserExists = func() bool { return false }
@@ -168,7 +174,10 @@ func TestASelfModeLaunchMakesAndRemovesItsTmpdir(t *testing.T) {
 // handoff to the plan, or the disclosure call, fails this.
 func TestASelfModeLaunchDisclosesTheSharedTmpHatch(t *testing.T) {
 	for _, hatch := range []bool{true, false} {
-		userTmp := t.TempDir()
+		userTmp, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
 		_, _, out, _ := runPackTreeLaunch(t, 0, nil, func(d *Deps, o *Options) {
 			o.Mode, o.HostHome, o.HostUser, o.SharedTmp = ModeSelf, "/Users/you", "you", hatch
 			d.SandboxUserExists = func() bool { return false }
