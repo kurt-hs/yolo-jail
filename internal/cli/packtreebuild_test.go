@@ -284,6 +284,10 @@ func TestTheLaunchSlotBuildsAPackTreeProgramOnceThenHits(t *testing.T) {
 	if runs != 1 || !strings.Contains(out1, "program builds") || !strings.Contains(out1, "built program fx/x") {
 		t.Fatalf("the first launch: %d jail runs, want one build with its lines:\n%s", runs, out1)
 	}
+	// WHICH BYTES (§4): the result line names the tree digest in place of a commit.
+	if !strings.Contains(out1, "built program fx/x (built from its pack's tree) at tree digest "+shortSHA(digest)) {
+		t.Errorf("the result line does not name the tree digest it built:\n%s", out1)
+	}
 	key2, out2 := slot()
 	if key2 != key1 || runs != 1 {
 		t.Errorf("the second launch: key %s (first %s), %d jail runs, want the hit and no build", key2, key1, runs)

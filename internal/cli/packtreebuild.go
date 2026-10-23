@@ -18,6 +18,8 @@ package cli
 //   - the copy with NO BUILD LINE, which the host lays out and admits itself, with no jail (BG-D5).
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -31,6 +33,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
@@ -285,11 +288,11 @@ func copyPackTreeForLaunch(b forkBuild, rt string, it *poolItem, color bool) ent
 	entry, err := buildFork(b, buildMode{lock: pidlock.Mode{Wait: true, Bound: forkBuildWaitBound, Cancel: ctx.Done()},
 		runtime: rt, admitCtx: ctx}, it.stream(), it.stream(), color)
 	if err != nil {
+		// Refused like a failed build (BG-D14), with no build log: no build ran.
 		pr.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf("Warning: could not copy %s from %s (%v) — "+
-			"nothing was stored, and this launch continues without %s. The next launch tries again.",
-			b.Fork.Bin, packTreeWhat(b), err, b.Fork.Bin)))
+			"nothing was stored. Retry: %s", b.Fork.Bin, packTreeWhat(b), err, packTreeRetry(b.Fork))))
 		return entrypoint.ForkDelivery{Reason: "pack " + b.Fork.Pack + "'s copy of " + b.Fork.From +
-			" could not be stored on the host (" + err.Error() + ")"}
+			" could not be stored on the host (" + err.Error() + ") — retry: " + packTreeRetry(b.Fork) + " on the host"}
 	}
 	return entrypoint.ForkDelivery{Key: entry.Key}
 }
@@ -302,4 +305,126 @@ const packTreeNoBuildToolchain = "none: no build line, the tree copied as shippe
 // directory at its tree digest.
 func packTreeWhat(b forkBuild) string {
 	return "pack " + b.Fork.Pack + "'s " + b.Fork.From + " at tree digest " + shortSHA(b.Commit)
+}
+
+// buildOf is the subject a launch's reason names for b's build, which the program's launcher in the
+// jail prints when it has no key: a fork's build of its pinned commit, or a pack-tree program's build
+// from its pack's own tree at its digest — never a fork for a program no fork pack declares.
+func buildOf(b forkBuild) string {
+	if b.Fork.IsPackTree() {
+		return "pack " + b.Fork.Pack + "'s build of " + b.Fork.Bin + " from " + b.Fork.From + " (tree digest " +
+			shortSHA(b.Commit) + ")"
+	}
+	return "fork " + b.Fork.Pack + "'s build of commit " + shortSHA(b.Commit)
+}
+
+// packTreeRetry is the retry command a pack-tree program's failed build names (BG-D14): the explicit
+// build of its pack, on the host.
+func packTreeRetry(f packload.Fork) string { return "`yolo pack build " + f.Pack + "`" }
+
+// packTreeFailure is the record a pack-tree build that failed leaves beside its build lock, read by a
+// launch that WAITED on that lock: BG-D13, the waiter takes the winner's result, a failure included,
+// rather than repeating a failing build. A launch that took the lock without waiting reads no record,
+// so one starting after a failure builds again, with no back-off. A success removes it.
+type packTreeFailure struct {
+	PID   int       `json:"pid"`
+	Time  time.Time `json:"time"`
+	Error string    `json:"error"`
+	// Log is the failed build's own log, "" when it had none (a build no launch reported).
+	Log string `json:"log,omitempty"`
+}
+
+// packTreeFailurePath is where b's failure record lives: beside its build lock, so it is per build
+// identity (source, digest, recipe and platform), as the lock is.
+func packTreeFailurePath(b forkBuild) string { return b.lockPath() + ".failed" }
+
+// recordPackTreeOutcome is called with b's lock held, once its build returned: a failure is recorded
+// for any launch waiting on the lock, and a success clears an older record. A build stopped by its
+// caller (a Ctrl-C ending the launch's wait) is no result of the build's, and leaves no record.
+func recordPackTreeOutcome(b forkBuild, mode buildMode, err error) {
+	path := packTreeFailurePath(b)
+	if err == nil {
+		_ = os.Remove(path)
+		return
+	}
+	if mode.admitCtx != nil && mode.admitCtx.Err() != nil {
+		return
+	}
+	var adopted packTreeWaitedFailure
+	if errors.As(err, &adopted) {
+		return // the winner's record stands; this launch only took it
+	}
+	log := mode.run.logFile()
+	if log == "" {
+		// A build no launch reports (`yolo pack build`): the build jail's own log, when it kept one.
+		if l := buildJailLogPath((&capture.Store{Dir: paths.CapturesDir()}).StagingDir("fork-" + b.id())); fileExists(l) {
+			log = l
+		}
+	}
+	rec := packTreeFailure{PID: os.Getpid(), Time: time.Now(), Error: err.Error(), Log: log}
+	data, merr := json.Marshal(rec)
+	if merr != nil {
+		return
+	}
+	tmp := path + ".tmp"
+	if os.WriteFile(tmp, data, 0o644) == nil {
+		_ = os.Rename(tmp, path)
+	}
+}
+
+// waitedPackTreeFailure is the failure of the build b's launch waited for, when the record that
+// build left is newer than the wait's start: nil when there is none, or when it is an older
+// launch's, which this one does not take.
+func waitedPackTreeFailure(b forkBuild, since time.Time) *packTreeFailure {
+	data, err := os.ReadFile(packTreeFailurePath(b))
+	if err != nil {
+		return nil
+	}
+	var rec packTreeFailure
+	if json.Unmarshal(data, &rec) != nil || rec.Time.Before(since) {
+		return nil
+	}
+	return &rec
+}
+
+// packTreeWaitedFailure is a launch's build that waited for another launch's build of the same key
+// and took its failure (BG-D13). log is the winner's build log, which the launch's reason names in
+// place of its own, which holds only the wait.
+type packTreeWaitedFailure struct{ rec packTreeFailure }
+
+func (e packTreeWaitedFailure) Error() string {
+	return fmt.Sprintf("the build it waited for (pid %d's, another launch) failed: %s", e.rec.PID, e.rec.Error)
+}
+
+// packTreeAfterLock is a pack-tree build's re-read once its lock is held, in place of the plain hit
+// check: the entry the build it waited for admitted, or that build's failure when it waited and the
+// winner failed. With neither, the act builds.
+func packTreeAfterLock(b forkBuild, store *capture.Store, waited bool, since time.Time) (*capture.Entry, error, bool) {
+	if entry, _, err := resolveForkBuild(store, b.Fork.Bin, b.Platform, b.selectSource(), b.Commit, b.recipe()); err == nil {
+		return entry, nil, true
+	}
+	if waited {
+		if rec := waitedPackTreeFailure(b, since); rec != nil {
+			return nil, packTreeWaitedFailure{rec: *rec}, true
+		}
+	}
+	return nil, nil, false
+}
+
+// logFile is the build's own log's path, "" for none or for a build no launch reports (a nil run).
+func (b *buildRun) logFile() string {
+	if b == nil {
+		return ""
+	}
+	return b.logPath
+}
+
+// failureLog is the log a failed build's reason names: the winner's, for a build that took the
+// failure of the build it waited for, else this build's own.
+func failureLog(err error, own string) string {
+	var adopted packTreeWaitedFailure
+	if errors.As(err, &adopted) {
+		return adopted.rec.Log
+	}
+	return own
 }

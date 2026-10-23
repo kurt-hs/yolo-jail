@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/provision"
 )
 
 // packtreeprogram_test.go is the container-level cell for a PACK-TREE PROGRAM
@@ -90,5 +93,84 @@ func TestPackTreeProgramBuildsOnceAndRebuildsOnChange(t *testing.T) {
 	}
 	if added := newCaptureEntries(t, store, before, packTreeFixtureBin); len(added) != 2 {
 		t.Errorf("the launch with no change added an entry: %v", added)
+	}
+}
+
+// TestPackTreeProgramBuildFailureRefusesOnlyIt is the design's done step 6 ("Break the build: only
+// that program is refused, and the log path is named"), under OQ-BG1's leaning: a pack-tree program
+// whose build fails stops the launch by the readiness act's rule (OQ-JR1), naming that program
+// alone, its build log, the retry command and the hatch; with YOLO_ALLOW_MISSING_PROGRAMS=1 the
+// jail starts and the pack's other program works. The readiness act is ON for both launches
+// (withReadiness): without it nothing is refused, and the test would pass vacuously.
+func TestPackTreeProgramBuildFailureRefusesOnlyIt(t *testing.T) {
+	requireJail(t)
+	const (
+		failPack  = "packtreefail"
+		brokenBin = "packtreefail-broken"
+		otherBin  = "packtreefail-other"
+	)
+	pack := t.TempDir()
+	src := filepath.Join(pack, "tools", "broken")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "main.sh"), []byte("echo never built\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The pack's other program: an installer in the pack itself, so nothing reaches the network.
+	installer := "#!/bin/bash\nset -euo pipefail\nmkdir -p \"$HOME/.local/bin\"\n" +
+		"printf '#!/bin/sh\\necho OTHER-RAN\\n' > \"$HOME/.local/bin/" + otherBin + "\"\n" +
+		"chmod +x \"$HOME/.local/bin/" + otherBin + "\"\n"
+	if err := os.WriteFile(filepath.Join(pack, "install.sh"), []byte(installer), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pack, "pack.json"), []byte(`{"name":"`+failPack+`","contributes":[`+
+		`{"kind":"program","bin":"`+brokenBin+`","via":"pack","from":"tools/broken","build":"echo building; exit 3","run":"x"},`+
+		`{"kind":"program","bin":"`+otherBin+`","via":"installer","url":"file:///ctx/packs/`+failPack+`/install.sh"}]}`),
+		0o644); err != nil {
+		t.Fatal(err)
+	}
+	packHome(t, `{"packs": [{"source": "file://`+pack+`", "name": "`+failPack+`"}]}`)
+	withPrivateFixtureYoloStore(t)
+	t.Setenv(paths.AllowMissingProgramsEnv, "")
+	dir := t.TempDir()
+
+	// 1. THE LAUNCH STOPS, naming only the broken program, its log, the retry and the hatch.
+	r := runCommand(t, dir, append(jailRunArgs(), "--", otherBin), withHostSemantics(), withReadiness())
+	all := r.combined()
+	t.Logf("the launch with the broken build:\n%s", all)
+	if r.rc != provision.StageRefusedStatus {
+		t.Fatalf("rc = %d, want the readiness refusal's %d", r.rc, provision.StageRefusedStatus)
+	}
+	if strings.Contains(all, "OTHER-RAN") {
+		t.Errorf("the command ran after the refusal")
+	}
+	for what, want := range map[string]string{
+		"the program":   "program " + brokenBin + " (pack " + failPack + ")",
+		"the build log": filepath.Join(".yolo", "build-"),
+		"the retry":     "yolo pack build " + failPack,
+		"the hatch":     paths.AllowMissingProgramsEnv + "=1",
+	} {
+		if !strings.Contains(all, want) {
+			t.Errorf("the refusal does not name %s (%q)", what, want)
+		}
+	}
+	if strings.Contains(all, "program "+otherBin+" (pack "+failPack+"): its install exited") {
+		t.Errorf("the refusal names the pack's other program too, whose install worked")
+	}
+	if strings.Contains(all, "fork "+failPack) || strings.Contains(all, "this launch continues without") {
+		t.Errorf("the refusal speaks of a fork, or says the launch continues, for a pack-tree program")
+	}
+
+	// 2. THE HATCH STARTS IT, and the pack's other program works.
+	r = runCommand(t, dir, append(jailRunArgs(), "--", otherBin), withHostSemantics(), withReadiness(),
+		withEnv(paths.AllowMissingProgramsEnv+"=1"))
+	all = r.combined()
+	t.Logf("the launch with the hatch:\n%s", all)
+	if r.rc != 0 || !strings.Contains(all, "OTHER-RAN") {
+		t.Fatalf("rc = %d: %s must start the jail and run %s", r.rc, paths.AllowMissingProgramsEnv, otherBin)
+	}
+	if !strings.Contains(all, "program "+brokenBin+" (pack "+failPack+")") {
+		t.Errorf("the hatch's launch does not list the program it starts without")
 	}
 }

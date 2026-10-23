@@ -138,7 +138,11 @@ func (o *Options) forkBuildPlan(rt string) (map[string]entrypoint.ForkDelivery, 
 			continue
 		}
 		if why := forkUnpublishedHere(p.Fork, rt); why != "" {
-			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: "fork " + p.Fork.Pack + " builds for none of this jail's platform: " + why}
+			who := "fork " + p.Fork.Pack
+			if p.Fork.IsPackTree() {
+				who = "pack " + p.Fork.Pack + "'s " + p.Fork.Bin
+			}
+			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: who + " builds for none of this jail's platform: " + why}
 			continue
 		}
 		build = append(build, p)
@@ -155,7 +159,11 @@ func (o *Options) forkBuildPlan(rt string) (map[string]entrypoint.ForkDelivery, 
 	}
 	if o.BuildForks == nil && o.BuildSlot == nil {
 		for _, p := range build {
-			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: "this launch builds no fork"}
+			why := "this launch builds no fork"
+			if p.Fork.IsPackTree() {
+				why = "this launch builds no program from its pack's tree"
+			}
+			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: why}
 		}
 		return out, nil
 	}
@@ -183,7 +191,11 @@ func (o *Options) finishForkDeliveries(out map[string]entrypoint.ForkDelivery, r
 	}
 	for _, p := range req.Pins {
 		if _, ok := out[p.Fork.Bin]; !ok {
-			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: "the fork build returned no answer for " + p.Fork.Bin}
+			what := "the fork build"
+			if p.Fork.IsPackTree() {
+				what = "the build of pack " + p.Fork.Pack + "'s tree"
+			}
+			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: what + " returned no answer for " + p.Fork.Bin}
 		}
 	}
 	return out

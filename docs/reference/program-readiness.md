@@ -154,7 +154,9 @@ not apply, the variable waives the failure only when nothing of the program woul
 
 **A fork with no host build stops a launch too** ([JR-D6](#JR-D6)). A fork's program is a program the
 act installs; the source launcher's install-only run materializes the host's build, and with no build
-it exits naming why, which is the error the refusal quotes.
+it exits naming why, which is the error the refusal quotes. A program a pack builds from its own tree
+(`via: "pack"`) joins the act the same way, its quoted error naming the build's log and
+`yolo pack build <pack>` ([`pack-buildable-programs.md` §8](../design/pack-buildable-programs.md#8-failure-and-the-next-step)).
 
 > [!NOTE]
 > **The launch's own install is the only one that refuses.** [`OQ-PD12`](../design/program-delivery.md#decision-ledger)'s *"No jail refuses to boot

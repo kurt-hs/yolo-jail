@@ -1077,8 +1077,19 @@ Unlike a fork, it names no other repository and no base pack:
   `installer_env`) and the fork fields are refused by name.
 
 `from` is refused on a program delivered any other way, and `run` and `prebuilt` on every other
-program and kind, because no other reader consumes them. This build validates the declaration and
-lints it. It does not yet build, fetch or launch the program: those are later steps of the design.
+program and kind, because no other reader consumes them.
+
+**A fresh launch builds it** in the fork route's sealed build jail, keyed on the tree digest of
+`from` in the launch's own staged copy of the pack, so an unchanged tree is a store hit that prints
+nothing, and an edit is built once. The build's result line names that digest. A program with no
+`build` is copied by the host with no jail. Delivering a new build replaces the program's directory
+in the home whole, so no file of an older build survives. **A failed build refuses that program**,
+naming the build's log under the workspace's `.yolo/` and `yolo pack build <pack>` as the retry. The
+readiness act then stops the launch, as for any program a launch cannot install, unless
+`YOLO_ALLOW_MISSING_PROGRAMS=1` starts the jail without it
+([OQ-BG1](../design/pack-buildable-programs.md#OQ-BG1)'s leaning). A launch waiting on another
+launch's build of the same tree takes its result, a failure included; a launch that starts after the
+failure builds again. Fetching `prebuilt` and the dev override are later steps of the design.
 
 **`yolo pack build [<pack>...] [--force] [--at jail|host]`** runs the build a launch would run for
 each such program, outside a launch, for CI or a first install

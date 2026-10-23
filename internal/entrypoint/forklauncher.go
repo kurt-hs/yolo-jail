@@ -69,6 +69,10 @@ type ForkDelivery struct {
 	// warning (internal/cli/run's missingbuilds.go), which then says it once. The host's alone: never
 	// on the wire.
 	Unsaid bool `json:"-"`
+	// Pack is the pack that declares the program, set in the jail by sourceDeliveryFor: what a
+	// PACK-TREE program's launcher names as the source of its bytes, and its receipt's declared
+	// source (packdecl.PackTreeBuildSource). Never on the wire: the jail reads it from its own packs.
+	Pack string `json:"-"`
 }
 
 // ForkBuildsWire renders the decisions for the environment, "" for none.
@@ -114,13 +118,48 @@ func forkDeliveryFor(d map[string]ForkDelivery, bin string) ForkDelivery {
 // pack that declares the program.
 func sourceDeliveryFor(d map[string]ForkDelivery, inst *packdecl.Install, pack string) ForkDelivery {
 	if got, ok := d[inst.Bin]; ok && (got.Key != "" || got.Reason != "") {
+		got.Pack = pack
 		return got
 	}
 	if inst.IsPackTree() {
-		return ForkDelivery{Reason: "the launch that started this jail built no " + inst.Bin + " from pack " +
+		return ForkDelivery{Pack: pack, Reason: "the launch that started this jail built no " + inst.Bin + " from pack " +
 			pack + "'s own tree (" + inst.PackFrom + ")"}
 	}
-	return forkDeliveryFor(d, inst.Bin)
+	got := forkDeliveryFor(d, inst.Bin)
+	got.Pack = pack
+	return got
+}
+
+// sourceBuiltBy is who built a source launcher's program, as its lines name it after "is not
+// available: ": a fork pack's build, or a PACK-TREE program's build from its own pack's tree, which
+// no fork pack declares (so never "fork 's build").
+func sourceBuiltBy(inst *packdecl.Install, d ForkDelivery) string {
+	if inst.IsPackTree() {
+		if d.Pack == "" {
+			return "the build of " + inst.Bin + " from its pack's tree (" + inst.PackFrom + ")"
+		}
+		return "pack " + d.Pack + "'s build of " + inst.Bin + " from " + inst.PackFrom
+	}
+	return "fork " + inst.ForkedBy + "'s build"
+}
+
+// sourceOwner is the pack that supplies a source launcher's bytes: the fork pack, or the pack that
+// declares a pack-tree program.
+func sourceOwner(inst *packdecl.Install, d ForkDelivery) string {
+	if inst.IsPackTree() {
+		return d.Pack
+	}
+	return inst.ForkedBy
+}
+
+// sourceDeclared is the declared source a source launcher's materialize records in its receipt: a
+// fork's pinned source address, or a pack-tree program's build source, "pack:<pack>/<from>", the
+// string its build receipt carries (packdecl.PackTreeBuildSource).
+func sourceDeclared(inst *packdecl.Install, d ForkDelivery) string {
+	if inst.IsPackTree() && d.Pack != "" {
+		return packdecl.PackTreeBuildSource(d.Pack, inst.PackFrom)
+	}
+	return inst.Source
 }
 
 // forkKeyDir is where a home records which fork build key it holds, one file per bin: IN THE HOME'S
@@ -145,8 +184,8 @@ func sourceAgentLauncherSegments(inst *packdecl.Install, d ForkDelivery, stampDi
 		"__YOLO_FORK_KEY_DIR__", shquote.Quote(keyDir),
 		"__YOLO_FORK_KEY__", shquote.Quote(d.Key),
 		"__YOLO_FORK_REASON__", shquote.Quote(forkReasonSaid(d)),
-		"__YOLO_FORKED_BY__", shquote.Quote(inst.ForkedBy),
-		"__YOLO_SOURCE__", shquote.Quote(inst.Source),
+		"__YOLO_BUILT_BY__", shquote.Quote(sourceBuiltBy(inst, d)),
+		"__YOLO_SOURCE__", shquote.Quote(sourceDeclared(inst, d)),
 		"__YOLO_FORK_UPDATE_NOTE__", shquote.Quote(forkUpdateNote(inst)),
 		"__YOLO_PRODUCES__", shquote.Join(inst.Produces),
 		"__YOLO_STAMP_DIR__", shquote.Quote(stampDir),
@@ -158,7 +197,7 @@ func sourceAgentLauncherSegments(inst *packdecl.Install, d ForkDelivery, stampDi
 		"__YOLO_EXEC_PREFIX__", token,
 		// The gate a patched extension this agent loads puts on it (patchedtrees.go, PPX-D18).
 		"__YOLO_TREE_GATE__", shquote.Quote(inst.Gate),
-	}, append(append(append(launchFlagSplices(flags), useInstalledSplices(inst.Bin, inst.ForkedBy)...), refreshSplices(inst.Refresh, inst.RefreshTiming)...), startupSplices(inst, true)...)...)...)
+	}, append(append(append(launchFlagSplices(flags), useInstalledSplices(inst.Bin, sourceOwner(inst, d))...), refreshSplices(inst.Refresh, inst.RefreshTiming)...), startupSplices(inst, true)...)...)...)
 	return strings.Split(r.Replace(sourceLauncherTemplate), token)
 }
 
@@ -195,8 +234,9 @@ func forkUpdateNote(inst *packdecl.Install) string {
 // sourceLauncherTemplate is the source launcher body. Same splice contract as npmLauncherTemplate:
 // every sentinel is a shquote'd literal in a bare position.
 const sourceLauncherTemplate = `#!/bin/bash
-# Source launcher — a program a FORK builds (forked-programs-as-packs.md): materialized from the
-# capture store entry the host built at the fork's pinned commit, never installed any other way.
+# Source launcher — a program a FORK builds (forked-programs-as-packs.md), or one a pack builds
+# from its own tree (pack-buildable-programs.md): materialized from the capture store entry the
+# host built at the fork's pinned commit or the tree's digest, never installed any other way.
 set -euo pipefail
 BIN=__YOLO_BIN__
 PROGRAM=__YOLO_PROGRAM_PATH__
@@ -204,10 +244,13 @@ REAL_BIN="$HOME/"__YOLO_PROGRAM_PATH__
 # The host's decision for this launch (ForkBuildsEnv): the store key, or why there is none.
 KEY=__YOLO_FORK_KEY__
 REASON=__YOLO_FORK_REASON__
-FORKED_BY=__YOLO_FORKED_BY__
+# Whose build this is, as the lines below name it: a fork pack's, or the pack's own for a program
+# built from its tree (sourceBuiltBy).
+BUILT_BY=__YOLO_BUILT_BY__
 SOURCE=__YOLO_SOURCE__
-# The home-relative paths the build leaves (the fork's produces): cleared before a different
-# key is materialized, so an older build's files do not outlive its pin.
+# The home-relative paths the build leaves (the fork's produces, or a pack-tree program's link and
+# its whole ~/.local/lib/yolo-programs/<bin> directory): cleared before a different key is
+# materialized, so no file of an older build outlives its pin or its tree (BG-D12).
 PRODUCES=(__YOLO_PRODUCES__)
 STAMP_DIR=__YOLO_STAMP_DIR__
 # Which key THIS home holds: in the home's own storage, never the machine-shared ~/.cache that
@@ -275,7 +318,7 @@ elif ! _yolo_verify_fork_tree; then
 fi
 if [ "$_NEEDS_MATERIALIZE" = "1" ]; then
     if [ -z "$CAPTURES_DIR" ] || [ ! -d "$CAPTURES_DIR" ] || ! command -v yolo >/dev/null 2>&1; then
-        echo "  ⚠ $BIN is not available: this jail has no capture store to materialize fork $FORKED_BY's build from" >&2
+        echo "  ⚠ $BIN is not available: this jail has no capture store to materialize $BUILT_BY from" >&2
         exit 1
     fi
     for p in "${PRODUCES[@]}"; do
@@ -283,11 +326,11 @@ if [ "$_NEEDS_MATERIALIZE" = "1" ]; then
     done
     if ! YOLO_BYPASS_SHIMS=1 yolo internal capture-materialize --store="$CAPTURES_DIR" --home="$HOME" \
         --bin="$BIN" --key="$KEY" --declared="$SOURCE" --receipts="$_YOLO_RECEIPTS"; then
-        echo "  ⚠ $BIN is not available: fork $FORKED_BY's build ($KEY) could not be put in place" >&2
+        echo "  ⚠ $BIN is not available: $BUILT_BY ($KEY) could not be put in place" >&2
         exit 1
     fi
     if [ ! -x "$REAL_BIN" ] || ! _yolo_verify_fork_tree; then
-        echo "  ⚠ $BIN is not available: fork $FORKED_BY's build ($KEY) did not materialize as the admitted output tree" >&2
+        echo "  ⚠ $BIN is not available: $BUILT_BY ($KEY) did not materialize as the admitted output tree" >&2
         exit 1
     fi
     mkdir -p "$KEY_DIR"
@@ -300,7 +343,7 @@ if [ "${` + InstallOnlyEnv + `:-}" = "1" ]; then
     if [ -x "$REAL_BIN" ]; then
         exit 0
     fi
-    echo "  ⚠ $BIN not available: fork $FORKED_BY's build ($KEY) holds no runnable $REAL_BIN" >&2
+    echo "  ⚠ $BIN not available: $BUILT_BY ($KEY) holds no runnable $REAL_BIN" >&2
     exit 1
 fi
 

@@ -179,7 +179,9 @@ its checksum, exactly as the sections above describe.
 ## What this does not license
 
 - **Not a declared build step.** A build is arbitrary code execution and is not bit-reproducible
-  in general, so it would lose P4 ([OQ-BP5](#OQ-BP5)).
+  in general, so it would lose P4 ([OQ-BP5](#OQ-BP5)). A pack that needs a built program declares
+  it `via: "pack"`, built in the sealed build jail
+  ([programs built from a pack's tree](pack-system.md#program-via-pack)).
 - **Not an artifact or dependency system.** One verified file per platform per loophole, fetched
   at install and keyed by digest. It should not grow into a package manager.
 - **Not a trust gate.** The digest is integrity and reproducibility. A fetched pack's host-side

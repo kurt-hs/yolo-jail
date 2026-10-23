@@ -636,7 +636,8 @@ if [ -n "$_yolo_ready_failed" ]; then
     if [ "$_YOLO_ALLOW_MISSING_PROGRAMS" = 1 ] && [ "__YOLO_LAUNCH_UPDATE__" != 1 ]; then
         echo "  ⚠ __YOLO_ALLOW_MISSING_ENV__ is set, so this jail starts WITHOUT what a selected pack declares:" >&2
         printf '%s' "$_yolo_ready_failed" >&2
-        echo "    Each installs the first time it is run; its install output is above." >&2
+        echo "    Each installs the first time it is run (one the host builds, at the next launch); its" >&2
+        echo "    install output is above." >&2
     else
         # REFUSAL, not a warning: a jail started without a program its own config selected is
         # not the environment that config promised.
@@ -645,7 +646,8 @@ if [ -n "$_yolo_ready_failed" ]; then
         echo "      The full install output is above.  Fix what stopped it (an install needs the" >&2
         echo "      network), or drop the pack from your packs list.  To start the jail without it:" >&2
         echo "          __YOLO_ALLOW_MISSING_ENV__=1 yolo <your command>" >&2
-        echo "      and each missing program installs the first time it is run." >&2
+        echo "      and each missing program installs the first time it is run (one the host builds," >&2
+        echo "      at the next launch: its retry is named above)." >&2
         if [ "__YOLO_LAUNCH_UPDATE__" = 1 ]; then
             echo "      An explicit update cannot use a missing-program bypass: repair and retry --update," >&2
             echo "      or launch without --update." >&2

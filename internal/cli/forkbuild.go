@@ -792,7 +792,9 @@ func buildFork(b forkBuild, mode buildMode, out, errw io.Writer, color bool) (*c
 		return nil, fmt.Errorf("fork %s is a patched fork, and its build was asked for with no series read", f.Key())
 	}
 	lockWait := advanceSpan(f, "build_lock_wait")
+	waitStart, waited := time.Now(), false
 	lk, err := pidlock.Acquire(b.lockPath(), mode.lock, func(pid int) {
+		waited = true
 		if mode.run != nil {
 			mode.run.phase(fmt.Sprintf("waiting for pid %d's build of it, at most %s", pid, forkBuildWaitBound))
 			return
@@ -812,7 +814,15 @@ func buildFork(b forkBuild, mode buildMode, out, errw io.Writer, color bool) (*c
 		return nil, err
 	}
 	defer lk.Release()
+	if f.IsPackTree() && mode.afterLock == nil && !mode.force {
+		// A WAITER TAKES THE WINNER'S RESULT (BG-D13): its entry, or its failure when this launch
+		// waited for it, rather than repeating a failing build.
+		mode.afterLock = func() (*capture.Entry, error, bool) { return packTreeAfterLock(b, store, waited, waitStart) }
+	}
 	entry, err := buildForkUnderLock(b, mode, store, pr, out, errw, color)
+	if f.IsPackTree() {
+		recordPackTreeOutcome(b, mode, err)
+	}
 	var deferred appleBuildDeferred
 	if mode.settle != nil && !(mode.preRunErr != nil && errors.As(*mode.preRunErr, &deferred)) {
 		sp := advanceSpan(f, "settle")
@@ -1215,12 +1225,26 @@ func buildForksForLaunch(req run.ForkBuildRequest, _, errw io.Writer, color bool
 // new wait the user had just declined, and one the Ctrl-C reached mid-build is stopped.
 func buildPlainForkForLaunch(b forkBuild, rt string, report *buildReport, it *poolItem, color bool) entrypoint.ForkDelivery {
 	epr := richtext.Printer{W: it.stream(), Color: color}
+	packTree := b.Fork.IsPackTree()
 	stopped := func(what string) entrypoint.ForkDelivery {
+		if packTree {
+			epr.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf("Warning: %s was not built from %s — a "+
+				"Ctrl-C ended this launch's wait for its builds. The next launch builds it, or %s now.",
+				b.Fork.Bin, packTreeWhat(b), packTreeRetry(b.Fork))))
+			return entrypoint.ForkDelivery{Reason: buildOf(b) + " was " + what + ": a Ctrl-C ended the launch's " +
+				"wait for its builds — the next launch builds it, or " + packTreeRetry(b.Fork) + " on the host"}
+		}
 		epr.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf("Warning: %s was not built at %s — a Ctrl-C "+
 			"ended this launch's wait for its fork builds, and this launch continues without %s. The next launch "+
 			"builds it.", b.Fork.Key(), shortSHA(b.Commit), b.Fork.Bin)))
-		return entrypoint.ForkDelivery{Reason: "fork " + b.Fork.Pack + "'s build of commit " + shortSHA(b.Commit) +
+		return entrypoint.ForkDelivery{Reason: buildOf(b) +
 			" was " + what + ": a Ctrl-C ended the launch's wait for its fork builds — the next launch builds it"}
+	}
+	// retry is what builds it once its cause is fixed: a pack-tree program's explicit build of its
+	// pack (BG-D14), or a fork's capture.
+	retry := "the next launch builds it, or `yolo capture " + b.Fork.Bin + "` now"
+	if packTree {
+		retry = "the next launch builds it, or " + packTreeRetry(b.Fork) + " now"
 	}
 	if it.stopped() {
 		return stopped("not started")
@@ -1234,7 +1258,7 @@ func buildPlainForkForLaunch(b forkBuild, rt string, report *buildReport, it *po
 		// ONE CAUSE, ONCE (buildcauses.go): sealed as a build jail of this launch that was refused,
 		// which an earlier key's build, holding its slot before this one's, met.
 		report.skipLine(b.Fork, refused, it.stream())
-		return entrypoint.ForkDelivery{Reason: "fork " + b.Fork.Pack + "'s build of commit " + shortSHA(b.Commit) +
+		return entrypoint.ForkDelivery{Reason: buildOf(b) +
 			" was not started: its build jail would refuse to start on the host — the next launch builds it",
 			Cause: refused.cause}
 	}
@@ -1267,24 +1291,50 @@ func buildPlainForkForLaunch(b forkBuild, rt string, report *buildReport, it *po
 			if ns.configRefused(b.Fork) {
 				report.noteRefused(b.Fork, cause)
 			}
-			epr.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf("Warning: could not build %s: %v — "+
-				"nothing was stored, and this launch continues without %s", b.Fork.Key(), err, b.Fork.Bin)))
-			for _, l := range notStartedLines(err, sealPacks(b.Fork), "  ", "the next launch builds it, or `yolo capture "+
-				b.Fork.Bin+"` now") {
+			if packTree {
+				// No "continues without": the readiness act stops the launch on a program it cannot
+				// deliver (OQ-BG1's leaning, OQ-JR1), unless the missing-program hatch is set.
+				epr.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf("Warning: could not build %s from %s: "+
+					"%v — nothing was stored", b.Fork.Bin, packTreeWhat(b), err)))
+			} else {
+				epr.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf("Warning: could not build %s: %v — "+
+					"nothing was stored, and this launch continues without %s", b.Fork.Key(), err, b.Fork.Bin)))
+			}
+			for _, l := range notStartedLines(err, sealPacks(b.Fork), "  ", retry) {
 				epr.Print(richtext.Escape(l))
 			}
-			return entrypoint.ForkDelivery{Reason: "fork " + b.Fork.Pack + "'s build of commit " + shortSHA(b.Commit) +
-				" was not started: " + err.Error() + " on the host — the next launch builds it", Cause: cause}
+			next := "the next launch builds it"
+			if packTree {
+				next += ", or " + packTreeRetry(b.Fork) + " on the host"
+			}
+			return entrypoint.ForkDelivery{Reason: buildOf(b) +
+				" was not started: " + err.Error() + " on the host — " + next, Cause: cause}
 		}
 		r.fail("failed")
-		epr.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf("Warning: could not build %s (%v) — nothing "+
-			"was stored, and this launch continues without %s. The next launch builds it again.", b.Fork.Key(), err,
-			b.Fork.Bin)))
+		if packTree {
+			// THE PROGRAM IS REFUSED, naming its log and its retry (BG-D14); the readiness act then stops
+			// the launch on it, naming the hatch, unless the hatch is set (OQ-BG1's leaning).
+			epr.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf("Warning: could not build %s from %s (%v) — "+
+				"nothing was stored. Retry: %s", b.Fork.Bin, packTreeWhat(b), err, packTreeRetry(b.Fork))))
+		} else {
+			epr.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf("Warning: could not build %s (%v) — nothing "+
+				"was stored, and this launch continues without %s. The next launch builds it again.", b.Fork.Key(), err,
+				b.Fork.Bin)))
+		}
 		for _, l := range r.failureLines() {
 			epr.Print(l)
 		}
-		return entrypoint.ForkDelivery{Reason: "fork " + b.Fork.Pack + "'s build of commit " +
-			shortSHA(b.Commit) + " failed on the host (" + err.Error() + withBuildLog(r.logPath) + ")"}
+		if packTree {
+			return entrypoint.ForkDelivery{Reason: buildOf(b) + " failed on the host (" + err.Error() +
+				withBuildLog(failureLog(err, r.logPath)) + ") — retry: " + packTreeRetry(b.Fork) + " on the host"}
+		}
+		return entrypoint.ForkDelivery{Reason: buildOf(b) + " failed on the host (" + err.Error() + withBuildLog(r.logPath) + ")"}
+	}
+	if packTree {
+		// WHICH BYTES (§4): the result line names the source directory's tree digest in place of a commit.
+		r.done("[green]built[/green] " + richtext.Escape(b.Fork.Label()+" at tree digest "+shortSHA(b.Commit)+
+			"; this jail runs it"))
+		return entrypoint.ForkDelivery{Key: entry.Key}
 	}
 	r.done("[green]built[/green] " + richtext.Escape(b.Fork.Label()+" at "+shortSHA(b.Commit)+"; this jail runs it"))
 	return entrypoint.ForkDelivery{Key: entry.Key}
