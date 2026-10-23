@@ -501,9 +501,10 @@ own name across kinds is one pack owning one name: `packs/claude` claims `claude
 single-pack groups are skipped.
 
 > [!WARNING]
-> **`requires` is deliberately not a claim.** A content pack asserting `requires claude` beside
+> **A need is deliberately not a claim.** A need is a `program` with no `via`
+> ([OQ-PS11](../design/provisioner-sets.md#OQ-PS11)). A content pack needing `claude` beside
 > the pack that provides claude is the most ordinary dependency a pack can declare, and a pack
-> requiring `fzf` must not collide with another that installs it. That is why `requires` combines
+> needing `fzf` must not collide with another that installs it. That is why a need combines
 > as Shared. Nothing is lost by leaving it out: a pack that owns an agent while only asserting its
 > binary still claims the name through the `agent` its briefing or skills declares.
 

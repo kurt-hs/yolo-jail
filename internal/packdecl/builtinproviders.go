@@ -74,7 +74,7 @@ func (m *Manifest) BuiltInProvidersFor(bin string) *BuiltInProviders {
 		return nil
 	}
 	for _, c := range m.Contributions() {
-		if c.Kind == KindProgram && c.Bin == bin {
+		if c.Provides() && c.Bin == bin {
 			return c.BuiltInProviders
 		}
 	}
@@ -178,7 +178,7 @@ func (m *Manifest) ReadsSharedModelsFor(bin string) bool {
 		return false
 	}
 	for _, c := range m.Contributions() {
-		if c.Kind == KindProgram && c.Bin == bin {
+		if c.Provides() && c.Bin == bin {
 			return c.ReadsSharedModels
 		}
 	}

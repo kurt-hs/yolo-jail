@@ -55,7 +55,7 @@ func putExe(t *testing.T, dir, name string) string {
 	return p
 }
 
-const hpTool = `{"kind":"requires","bin":"yolo-hp-tool","install_hints":{"apt":"yolo-hp-tool-apt"}}`
+const hpTool = `{"kind":"program","bin":"yolo-hp-tool","install_hints":{"apt":"yolo-hp-tool-apt"}}`
 
 // runCheckDepsT runs `yolo check-deps --no-manifest` and returns its rc and output.
 func runCheckDepsT(t *testing.T) (int, string) {
@@ -413,7 +413,7 @@ func TestTheInstallRunsWithTheLaunchPathAndTheReprobeReadsIt(t *testing.T) {
 // first half fails.
 func TestTheManagerGuessReadsHostPath(t *testing.T) {
 	home, _ := launchPathFixture(t, `,"host_path":["~/mgr/bin"]`,
-		`{"kind":"requires","bin":"yolo-hp-tool","install_hints":{"pacman":"yolo-hp-pacman"}}`)
+		`{"kind":"program","bin":"yolo-hp-tool","install_hints":{"pacman":"yolo-hp-pacman"}}`)
 	fakeBinDir(t) // a PATH with no manager at all
 	putExe(t, filepath.Join(home, "mgr", "bin"), "pacman")
 	if _, report := runCheckDepsT(t); !strings.Contains(report, "sudo pacman -S --noconfirm yolo-hp-pacman") {
@@ -432,7 +432,7 @@ func TestTheManagerGuessReadsHostPath(t *testing.T) {
 // it missing, naming the skipped folder, and the exec exits 127 with the miss line rather than
 // running the wrapper — which would exec `yolo host` again.
 func TestAWrapperNeverReadsAsItsProgram(t *testing.T) {
-	launchPathFixture(t, `,"host_management":"own","host_apply_on_launch":false`, `{"kind":"requires","bin":"yolo-hp-wrapped","install_hints":{"apt":"x"}}`)
+	launchPathFixture(t, `,"host_management":"own","host_apply_on_launch":false`, `{"kind":"program","bin":"yolo-hp-wrapped","install_hints":{"apt":"x"}}`)
 	wrap := paths.WrapDir()
 	putExe(t, wrap, "yolo-hp-wrapped")
 	t.Setenv("PATH", wrap+pathSep+os.Getenv("PATH"))

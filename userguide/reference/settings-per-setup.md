@@ -526,7 +526,7 @@ Re-running `yolo` in a workspace whose jail is still running does **not** start 
 
 ## What a pack can contribute, per setup
 
-Every contribution kind is delivered on all four setups — config files and their overlays, autonomy postures, hooks, blocked-tool and intercept shims, skills trees, workspace and machine-scope state dirs, read-only host-file grants, providers, the `models` lists that shape them and the `adapter` conversions they route through, `mcp` server entries, `requires` assertions, briefings, `program` launchers[^capture] and the agent files a `program` names, such as Copilot's model list[^agentfiles] — **except these**:
+Every contribution kind is delivered on all four setups — config files and their overlays, autonomy postures, hooks, blocked-tool and intercept shims, skills trees, workspace and machine-scope state dirs, read-only host-file grants, providers, the `models` lists that shape them and the `adapter` conversions they route through, `mcp` server entries, `program` needs (a `program` with no `via`), briefings, `program` launchers[^capture] and the agent files a `program` names, such as Copilot's model list[^agentfiles] — **except these**:
 
 | Contribution | podman/Linux | podman/macOS | container/macOS | macos-user/macOS |
 |---|---|---|---|---|

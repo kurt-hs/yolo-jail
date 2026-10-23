@@ -76,7 +76,7 @@ func agentFilesProblems(label string, c Contribution) []string {
 // the manifest installs no such program or the program declares none.
 func (m *Manifest) AgentFiles(bin string) map[string]string {
 	for _, c := range m.Contributions() {
-		if c.Kind == KindProgram && c.Bin == bin {
+		if c.Provides() && c.Bin == bin {
 			return c.AgentFiles
 		}
 	}

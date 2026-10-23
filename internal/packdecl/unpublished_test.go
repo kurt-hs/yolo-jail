@@ -14,7 +14,7 @@ func TestInstallAndDepRequirementAgreeAboutWhereAProgramIsPublished(t *testing.T
   {"kind":"program","bin":"only-darwin","via":"npm","package":"x","platforms":["darwin"]},
   {"kind":"program","bin":"one-arch","via":"npm","package":"y","platforms":["linux/arm64","darwin"]},
   {"kind":"program","bin":"everywhere","via":"npm","package":"z"},
-  {"kind":"requires","bin":"asserted"}]}`))
+  {"kind":"program","bin":"asserted"}]}`))
 	if len(problems) > 0 {
 		t.Fatalf("fixture: %v", problems)
 	}

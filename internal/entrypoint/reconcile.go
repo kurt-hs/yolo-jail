@@ -46,7 +46,7 @@ import (
 )
 
 // reconcilePrefix heads every line, the way catalogPrefix does and for the same reason: these
-// land in the boot log beside `requires` warnings and pack-skew notices, so a reader has to be
+// land in the boot log beside need warnings and pack-skew notices, so a reader has to be
 // able to tell at a glance that they are one report rather than a boot problem.
 const reconcilePrefix = "boot reconcile: "
 
@@ -166,7 +166,7 @@ func reconcileReceiptFindings(e *Env, latest map[receiptKey]receipt) []string {
 // a directory that does not exist. Same split, same reason as catalogNpmOrphans.
 //
 // A package that is GONE is not reported here. That is the catalog's opposite question and
-// `requires` already answers the missing-declared-binary one; a reconcile finding of "the
+// the need probe already answers the missing-declared-binary one; a reconcile finding of "the
 // receipt names a package that is not installed" on a jail whose workspace dropped the pack
 // would be a third voice saying what those two say better.
 //
@@ -245,7 +245,7 @@ func reconcileInstallerDigest(r receipt) string {
 	fi, err := os.Stat(r.Path)
 	if err != nil || !fi.Mode().IsRegular() {
 		// Absent or not a file: not this report's finding. An installer's program going
-		// missing is the catalog's and `requires`' question, and a self-updater that
+		// missing is the catalog's and the need probe's question, and a self-updater that
 		// replaced the file with a symlink is a shape this comparison cannot speak about.
 		return ""
 	}

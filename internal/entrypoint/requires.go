@@ -1,28 +1,34 @@
 package entrypoint
 
-// requires.go is the jail half of the `requires` kind: a pack declares a binary that must
-// EXIST, and yolo asserts it at boot instead of installing it.
+// requires.go is the jail half of a `program` NEED — an entry with no recipe
+// (docs/design/provisioner-sets.md OQ-PS11, OQ-PS5; it was the `requires` kind until
+// 2026-10-23): a pack declares a binary that must EXIST, and yolo asserts it at boot instead of
+// installing it — unless another selected pack's recipe provides it, in which case that pack's
+// launcher is what puts it on PATH and the boot log names the provider.
 //
-// Why it is not just `program` with the install left out: `program` means "yolo installs
-// this and owns a launcher path for it", and a pack wanting a tool the IMAGE already bakes
-// (fd, fzf) or the user already provides had to either lie — declaring an npm install for a
-// baked binary — or say nothing at all, which is what the fzf example pack did, losing its
-// host-notch install_hints in the process. Those are different claims and now have
-// different kinds.
+// Why a need is not a recipe with the install left out: a recipe means "yolo installs this and
+// owns a launcher path for it", and a pack wanting a tool the IMAGE already bakes (fd, fzf) or
+// the user already provides had to either lie — declaring an npm install for a baked binary —
+// or say nothing at all, losing its host-notch install_hints in the process.
 //
-// So this generates NOTHING. No launcher, no shim, no file: a `requires` contribution
-// cannot shadow anything, because it puts nothing on PATH. Its only jail-side effect is the
-// report below.
+// So this generates NOTHING. No launcher, no shim, no file: a need cannot shadow anything,
+// because it puts nothing on PATH. Its only jail-side effect is the report below.
 
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
-// AssertRequiredBins probes the jail's PATH for every `requires` binary the loaded packs
-// declare and warns, BY NAME, about each one that is absent.
+// AssertRequiredBins probes the jail's PATH for every need the loaded packs declare and no
+// other loaded pack provides, and warns, BY NAME, about each one that is absent. A need another
+// loaded pack provides is not probed — its provider's launcher installs it on first use, as it
+// would for that pack's own agent — and is recorded in the boot log with its provider. The
+// loaded packs are the staged tree, which holds the SELECTED packs and nothing wider.
 //
 // A WARNING, not an A12 boot failure, and the split matters. A12 makes a generator failure
 // fatal because a half-written config file hands the agent a broken home. This is the
@@ -41,7 +47,10 @@ func AssertRequiredBins(e *Env) {
 		// to add here.
 		return
 	}
-	// THE PATH A `requires` PROBE MUST SEARCH IS THE ONE THE AGENT WILL HAVE, and on
+	// Only a provider published for THIS machine counts: one whose recipe is for another
+	// platform gets no launcher here, so its need is probed and warned about like any other.
+	provided := packload.ProvidedNeeds(packs, runtime.GOOS, runtime.GOARCH)
+	// THE PATH A need's PROBE MUST SEARCH IS THE ONE THE AGENT WILL HAVE, and on
 	// macos-user that is not BootPath. BootPath is the container's shape — the two
 	// generated script dirs around $HOME/.local/bin, /bin and /usr/bin — and it has no
 	// entry for the native nix store, which is exactly where `packages:` materializes
@@ -57,12 +66,17 @@ func AssertRequiredBins(e *Env) {
 	path := agentPath(e)
 	for _, p := range packs {
 		for _, req := range p.Decl.RequiredBins() {
+			if prov := provided[p.Name+"\x00"+req.Bin]; prov != "" {
+				e.note("program " + req.Bin + ", needed by pack " + p.Name + ", is provided by pack " + prov)
+				continue
+			}
 			if lookPathIn(path, req.Bin) != "" {
 				continue
 			}
-			msg := "warning: pack " + p.Name + " requires " + req.Bin +
-				", which is not on PATH in this jail (yolo does not install a `requires` " +
-				"binary — add it to `packages` in yolo-jail.jsonc, or declare it as `program`)"
+			msg := "warning: pack " + p.Name + " needs program " + req.Bin +
+				", which is not on PATH in this jail and no selected pack provides it (yolo " +
+				"installs nothing for a `program` with no recipe — add it to `packages` in " +
+				"yolo-jail.jsonc, or select a pack whose `program` " + req.Bin + " carries one)"
 			if len(req.Hints) > 0 {
 				msg += " [host hints: " + strings.Join(sortedHintKeys(req.Hints), ", ") + "]"
 			}
@@ -137,7 +151,7 @@ func sortedHintKeys(hints map[string]string) []string {
 // prefix), the same string the login rc files re-prepend — and only the macos-user
 // launcher sets it, so the container boot is unaffected.
 //
-// Two callers now ask this question (the `requires` probe and the blocked-tool
+// Two callers now ask this question (the need probe and the blocked-tool
 // replacement gate), which is precisely why it is one function: they must not be
 // able to disagree about which PATH counts.
 func agentPath(e *Env) string {

@@ -390,22 +390,19 @@ func HostFields() FieldSet {
 		// its PATH (HE-D11), so it is delivered at launch (hostAtLaunch).
 		packdecl.KindBlockedTool: true,
 		packdecl.KindHook:        true,
-		packdecl.KindProgram:     true, // honored but confirm-gated by the caller (OQ-6/7)
+		// program is honored in both shapes. With a recipe it is confirm-gated by the caller
+		// (OQ-6/7). Without one (a need, OQ-PS11) it is REPORTED with its hints — the shape's
+		// entire host-side purpose: it asserts a binary must exist, which is exactly the
+		// question a host target answers (below jail, yolo bakes no image, so every dep is the
+		// host's), and it generates nothing, so there is no install to gate.
+		packdecl.KindProgram: true,
 		// config-list tracks config for config-overlay's reason — its entries land in a
 		// composed surface — and it is honored in the final sense, with no hostUnimplemented
 		// entry: a surface whose mode cannot capture a list path per entry yet refuses the
 		// CONTRIBUTION by name at render time (the engine's ListCaptureRefusal), which is a
 		// fact about one surface's mechanism and not about the notch.
 		packdecl.KindConfigList: true,
-		// requires is honored, and REPORTED with its hints — that is the kind's entire
-		// host-side purpose. It asserts a binary must exist, which is exactly the question a
-		// host target answers (below jail, yolo bakes no image, so every dep is the host's);
-		// and it generates nothing, so there is no install to gate. Refusing it would leave a
-		// content-only pack unable to carry a remedy for the tool it needs — the gap that
-		// motivated the kind, since `program` was the only way to get install_hints and it
-		// implies an install nobody wanted.
-		packdecl.KindRequires: true,
-		packdecl.KindAutonomy: true, // honored: host renders the GUARDED posture (§4.2)
+		packdecl.KindAutonomy:   true, // honored: host renders the GUARDED posture (§4.2)
 		// provider is honored at this notch and BUILT: `yolo host apply` composes the
 		// providers table at user scope and runs each surface's derive over it (OQ-HC1), and
 		// `yolo host -- <program>` composes the same table into the launched process.

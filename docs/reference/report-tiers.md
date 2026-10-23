@@ -687,9 +687,10 @@ Six properties an implementer would otherwise decide by accident:
    terminate signal stopped (yolo forwards those to it) stops the run with that signal's status
    and nothing written, even when the installer had already put its binary in place
    ([`PS-D7`](../design/provisioner-sets.md#PS-D7)).
-6. **Both kinds are fatal; only `program` gets the install offer.** `hostDepFinding.installable`
-   splits them. Offering to install a `requires` would contradict the kind's own definition, so it
-   refuses with the remedy named — and when any blocker is un-offerable the whole set is refused
+6. **Both shapes are fatal; only a `program` with a recipe gets the install offer.**
+   `hostDepFinding.installable` splits them. Offering to install a need (a `program` with no `via`,
+   the `requires` kind until [`OQ-PS11`](../design/provisioner-sets.md#OQ-PS11)) would contradict
+   what a need means, so it refuses with the remedy named — and when any blocker is un-offerable the whole set is refused
    rather than prompting for the installable half, because the run cannot complete either way and a
    prompt there would spend the user's `y` on a host this run has already refused.
 

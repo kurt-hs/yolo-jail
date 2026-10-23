@@ -180,7 +180,9 @@ var disclosureClasses = map[packdecl.Kind]disclosureClass{
 	// so this reasoning has to be restated (or refuted) by anyone who changes it.
 	packdecl.KindState: disclosureSkip,
 	// Everything below is jail-internal by construction.
-	packdecl.KindRequires: disclosureSkip,
+	// A NEED (a `program` with no recipe, reported under this display label) installs nothing
+	// and reads nothing on the host.
+	packload.ProgramNeedClaimKind: disclosureSkip,
 	// blocked-tool writes a refusing shim INSIDE the jail and reads nothing on the host.
 	// It changes what the agent may do — which is why it is a pack contribution at all —
 	// but the disclosure line answers "what does this launch reach on your machine", and

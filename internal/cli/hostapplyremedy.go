@@ -276,6 +276,15 @@ func printUnpublishedDepMisses(pr richtext.Printer, s *hostApplySurvey) {
 // the lines a user reads before answering `y` are the same lines the dry run showed them, so
 // "run the dry run first" is advice about the same text rather than about a different rendering
 // of it.
+// depShape names which shape of `program` declared a dependency: one with a recipe yolo can
+// install, or a need (no recipe) that must already be on PATH.
+func depShape(need bool) string {
+	if need {
+		return "program, no recipe"
+	}
+	return "program"
+}
+
 func depBlockerGroups(blockers []hostDepBlocker) []remedyGroup {
 	var out []remedyGroup
 	for _, b := range blockers {
@@ -283,7 +292,7 @@ func depBlockerGroups(blockers []hostDepBlocker) []remedyGroup {
 			Class: remedyClassDependency,
 			Key:   b.Bin,
 			Headline: fmt.Sprintf("`%s` is declared by your packs (%s) and MISSING on this host",
-				b.Bin, b.Kind),
+				b.Bin, depShape(b.Need)),
 			Remedy:      b.Remedy,
 			Alt:         b.Alt,
 			NoRemedy:    b.NoRemedy,

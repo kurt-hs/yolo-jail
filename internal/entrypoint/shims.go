@@ -546,8 +546,8 @@ func GenerateAgentLaunchers(e *Env) error {
 			// otherwise gets discovered as a tool mysteriously running the wrong version.
 			if why := launcherShadows(inst.Bin, probePath, miseBins); why != "" {
 				e.warn("pack " + p.Name + ": no launcher for " + inst.Bin + " — " + why +
-					", and a lazy installer must never shadow it (declare it as `requires` " +
-					"instead if the assertion is what you meant)")
+					", and a lazy installer must never shadow it (drop the `program`'s \"via\" " +
+					"if asserting the binary is present is what you meant)")
 				continue
 			}
 			// The PLATFORM axis of the same question, asked second on purpose

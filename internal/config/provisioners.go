@@ -144,7 +144,7 @@ func validateProvisioners(config *jsonx.OrderedMap, workspace string, errs, warn
 // (hostfloor.Outranking), and nix supplies only what the floor does not hold.
 const provisionersNixWarning = "nix is ranked above the pack's own recipe for %s, but an agent yolo's host " +
 	"floor holds does not come from nix yet (docs/design/provisioner-sets.md PS-D2): the floor keeps " +
-	"its own copy, and nix supplies only the programs it does not hold, such as a pack's `requires`. " +
+	"its own copy, and nix supplies only the programs it does not hold, such as a pack's `program` with no recipe. " +
 	"To run it from nix now, leave its pack out of the floor (`host_floor`) and install it yourself"
 
 // nixWarning is one order provisionersNixWarning is about: its path below the key, and the floor
@@ -159,7 +159,7 @@ type nixWarning struct {
 // also ships a nix recipe for — where the floor in fact keeps it (hostfloor.Outranking). An order
 // does that when nix comes before `pack` in it, or it names nix and leaves `pack` to yolo's
 // default, which comes after the list. reqs is what the selected packs declare per binary
-// (selectedDepRequirements). Nothing else is warned about: a `requires` has no floor entry, so
+// (selectedDepRequirements). Nothing else is warned about: a `program` with no recipe has no floor entry, so
 // nix supplying it is the order working, and no shipped agent pack ships a nix recipe, so an
 // order naming nix changes nothing for them.
 func nixAbovePack(cfg *jsonx.OrderedMap, reqs map[string][]depcheck.Requirement) []nixWarning {
@@ -393,7 +393,7 @@ func perPackageProblems(v any, reqs map[string][]depcheck.Requirement, complete 
 		}
 		declared := reqs[bin]
 		if len(declared) == 0 && complete {
-			out = append(out, fmt.Sprintf("%s: no selected pack declares %s as a `program` or a `requires`, "+
+			out = append(out, fmt.Sprintf("%s: no selected pack declares %s as a `program`, "+
 				"so this order would rank nothing. Check the binary's name (`yolo check-deps` lists every "+
 				"one), or remove it", binAt, bin))
 			continue

@@ -294,7 +294,7 @@ func ownerRuns(packs []*packload.Pack, f packload.Fork, bin string) bool {
 			continue
 		}
 		for _, c := range p.Decl.Contributions() {
-			if c.Kind == packdecl.KindProgram && c.Bin == bin {
+			if c.Provides() && c.Bin == bin {
 				return true
 			}
 		}
@@ -716,7 +716,7 @@ func ownerBinFor(f packload.Fork) string {
 			continue
 		}
 		for _, c := range p.Decl.Contributions() {
-			if c.Kind == packdecl.KindProgram && c.Bin != "" {
+			if c.Provides() && c.Bin != "" {
 				return c.Bin
 			}
 		}

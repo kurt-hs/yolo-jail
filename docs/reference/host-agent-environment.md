@@ -667,7 +667,7 @@ checked by its floor entry instead, the copy that runs.
 <a id="the-miss-line"></a>
 
 **The miss line** is one line yolo prints beside its verdict whenever a PATH check or a target
-lookup at the host finds nothing: a `requires` tool, a selected pack's program the floor cannot
+lookup at the host finds nothing: a tool a pack needs (a `program` with no `via`), a selected pack's program the floor cannot
 hold, or the target of `yolo host -- <cmd>`. From a Waybar widget whose PATH is `/usr/bin:/bin`,
 with `rg` required by the guardrails pack and installed in `~/.cargo/bin`:
 

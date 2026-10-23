@@ -383,6 +383,23 @@ func (o *Options) stagePacksInto(stagingRoot string, entries []config.PackEntry)
 	// launch, and it could not see this claim anyway — it keys by `(kind, target)` and skips
 	// non-exclusive kinds, while an agent name is claimed across FOUR kinds, two of which
 	// merge by design.
+	// Beside it, and FIRST: one program NAME with a recipe in two selected packs — PS-D18
+	// (docs/design/provisioner-sets.md). The user chose the provider by choosing the pack, so
+	// yolo does not pick one; the refusal names every provider and says to drop all but one
+	// from `packs`. AgentNameCollisions skips a clash made only of `program` claims, so this
+	// is the one report of it.
+	if cols := packload.ProgramProviderCollisions(loaded); len(cols) > 0 {
+		var msgs []string
+		for _, c := range cols {
+			msgs = append(msgs, fmt.Sprintf("program %s provided by %s — %s",
+				c.Target, strings.Join(c.Packs, ", "), c.Reason))
+		}
+		return nil, nil, fmt.Errorf("packs: %s", strings.Join(msgs, "\npacks: "))
+	}
+	// And the satisfied needs, by name (OQ-PS5): a recipe-less `program` one selected pack
+	// declares and another provides. Said on every launch that has one, so where a program
+	// came from is never a guess — the pack that needs it is not the pack that installs it.
+	o.noteProvidedPrograms(loaded)
 	if cols := packload.AgentNameCollisions(loaded); len(cols) > 0 {
 		var msgs []string
 		for _, c := range cols {
@@ -935,6 +952,17 @@ func (o *Options) stagePackEntry(entry config.PackEntry, dest string) (*packload
 	}
 	o.noteSkippedContributions(res.Pack)
 	return res.Pack, nil
+}
+
+// noteProvidedPrograms prints, to stderr, one line per `program` need another selected pack
+// satisfies (packload.ResolveProgramNeeds): which program, which pack needs it, which provides
+// it. Teed to launch.log with every other launch line.
+func (o *Options) noteProvidedPrograms(loaded []*packload.Pack) {
+	for _, n := range packload.ResolveProgramNeeds(loaded) {
+		if line := n.ProvidedLine(); line != "" {
+			o.pr(o.Stderr).print("[dim]" + line + "[/dim]")
+		}
+	}
 }
 
 // noteSkippedContributions prints, to stderr, one line per contribution of p this yolo cannot

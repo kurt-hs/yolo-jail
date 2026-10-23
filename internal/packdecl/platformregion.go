@@ -19,7 +19,7 @@ type PlatformRegion struct {
 // list) or the manifest installs no such program.
 func (m *Manifest) RegionEnvNamesFor(bin, platform string) []string {
 	for _, c := range m.Contributions() {
-		if c.Kind != KindProgram || c.Bin != bin {
+		if !c.Provides() || c.Bin != bin {
 			continue
 		}
 		for _, r := range c.PlatformRegions {

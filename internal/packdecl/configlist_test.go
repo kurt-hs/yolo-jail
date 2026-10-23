@@ -132,7 +132,7 @@ func TestConfigListFieldsRefusedOnOtherKinds(t *testing.T) {
 		{"overlay add", `{"kind":"config-overlay","surface":"pi/settings","add":["x"],` +
 			`"config":{"managed":{"k":1}}}`, "add"},
 		{"env add", `{"kind":"env","vars":{"A":"1"},"add":["x"]}`, "add"},
-		{"requires path", `{"kind":"requires","bin":"jq","path":"/x"}`, "path"},
+		{"requires path", `{"kind":"program","bin":"jq","path":"/x"}`, "path"},
 		// An EMPTY add is still a declared field: `[]` is present, so it is refused too.
 		{"env empty add", `{"kind":"env","vars":{"A":"1"},"add":[]}`, "add"},
 		{"overlay remove", `{"kind":"config-overlay","surface":"pi/settings","remove":["x"],` +

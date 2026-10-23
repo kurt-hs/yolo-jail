@@ -182,6 +182,12 @@ var knownReleaseBreaks = []knownReleaseBreak{
 	// two hooks were unknown to v0.10.0.
 	{release: "v0.15.1", pack: "chrome-devtools", problem: `unknown hook "boot_check"`,
 		guard: guardNoRestageOnAttach, pinnedBy: pinAttachLeavesAnOlderJailsTree},
+	// Measured against v0.15.1 on 2026-10-23: guardrails' two `requires` entries became
+	// `program` with no recipe (docs/design/provisioner-sets.md OQ-PS11, ruled with no
+	// transition), which v0.15.1's reader refuses as a program missing its "via". It is a
+	// validation problem, not an encoding/json refusal, so the rest of the manifest is read.
+	{release: "v0.15.1", pack: "guardrails", problem: `program needs "via"`,
+		guard: guardNoRestageOnAttach, pinnedBy: pinAttachLeavesAnOlderJailsTree},
 }
 
 // releaseDecodeProbe is the program compiled INSIDE the last release's tree: that release's

@@ -101,7 +101,7 @@ func TestHostExecLaunchesOverAnotherPacksMissingDependency(t *testing.T) {
 	home := gateFixture(t, true)
 	needy := filepath.Join(t.TempDir(), "needy")
 	writeFile(t, filepath.Join(needy, "pack.json"), `{"name":"needy","contributes":[
-	  {"kind":"requires","bin":"yolo-test-absent-bin","install_hints":{"brew":"x","apt":"x"}}]}`)
+	  {"kind":"program","bin":"yolo-test-absent-bin","install_hints":{"brew":"x","apt":"x"}}]}`)
 	// `own`, as gateFixture declares it: under the unset key (`none`) the gate never looks.
 	selectPacksWith(t, home, `"claude",{"source":"file://`+needy+`","name":"needy"}`,
 		`,"host_management":"own","host_apply_on_launch":true`)
