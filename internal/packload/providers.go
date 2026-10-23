@@ -251,6 +251,7 @@ func liftModelFacts(providers, shared *jsonx.OrderedMap) {
 		if prior, ok := entry.Get("model_routing"); ok {
 			routing, _ = prior.(*jsonx.OrderedMap)
 		}
+		stated := map[string]bool{}
 		for _, alias := range models.Keys() {
 			raw, _ := models.Get(alias)
 			obj, ok := raw.(*jsonx.OrderedMap)
@@ -263,7 +264,7 @@ func liftModelFacts(providers, shared *jsonx.OrderedMap) {
 				// entry alone rather than lowering it to a null model id.
 				continue
 			}
-			routing = layRouting(routing, alias, obj, shared)
+			routing, stated[alias] = layOwnRouting(routing, alias, obj)
 			models.Set(alias, id)
 			facts := flattenModelFacts(obj)
 			if facts.Len() == 0 {
@@ -280,6 +281,7 @@ func liftModelFacts(providers, shared *jsonx.OrderedMap) {
 			}
 			lifted.Set(alias, facts)
 		}
+		routing = laySharedRouting(routing, models, lifted, shared, stated)
 		if lifted != nil {
 			entry.Set("model_options", lifted)
 			layShared(entry, lifted, shared)
@@ -290,45 +292,56 @@ func liftModelFacts(providers, shared *jsonx.OrderedMap) {
 	}
 }
 
-// layRouting sets alias's `model_routing` entry from the route's own `openrouter_routing` and
-// the shared facts its `extends` names (OQ-ML5), and returns the routing map, made on first use.
-// The routing object is ONE fact, the way `cost` is: a route's own object REPLACES the shared
-// entry's whole and never merges key-wise (a `cost` must state all four rates, so a route's cost
-// already replaces the shared one whole), because the object is sent verbatim as OpenRouter's
-// request `provider` field and a key-wise merge would send a pin neither layer wrote. A route
-// stating none keeps a pack's pin for the alias, else takes the shared entry's. A null is a
-// TOMBSTONE (ML-D10) at either layer: on the route it drops every pin below it, a pack's
-// included; in the shared entry it means the shared facts carry no pin.
-func layRouting(routing *jsonx.OrderedMap, alias string, obj, shared *jsonx.OrderedMap) *jsonx.OrderedMap {
-	set := func(pin *jsonx.OrderedMap) {
+// layOwnRouting sets alias's `model_routing` entry from the route's own `openrouter_routing`
+// and reports whether the route stated one at all, a null included. A null is a TOMBSTONE
+// (ML-D10): the route sends no pin, the shared entry's included (laySharedRouting skips it).
+func layOwnRouting(routing *jsonx.OrderedMap, alias string, obj *jsonx.OrderedMap) (*jsonx.OrderedMap, bool) {
+	own, ok := obj.Get("openrouter_routing")
+	if !ok {
+		return routing, false
+	}
+	if pin, isMap := own.(*jsonx.OrderedMap); isMap && pin.Len() > 0 {
 		if routing == nil {
 			routing = jsonx.NewOrderedMap()
 		}
 		routing.Set(alias, jsonx.DeepCopy(pin))
 	}
-	if own, ok := obj.Get("openrouter_routing"); ok {
+	return routing, true
+}
+
+// laySharedRouting gives every alias that stated no pin of its own the `openrouter_routing` of
+// the `model_facts` entry its MERGED facts' `extends` names (OQ-ML5), so an `extends` a pack's
+// `model_options.<alias>` declares counts exactly as it does for layShared's scalar facts, a
+// string-form alias included. The routing object is ONE fact, the way `cost` is: a route's own
+// object REPLACES the shared entry's whole and never merges key-wise (a `cost` must state all
+// four rates, so a route's cost already replaces the shared one whole), because the object is
+// sent verbatim as OpenRouter's request `provider` field and a key-wise merge would send a pin
+// neither layer wrote. A null in the shared entry means the shared facts carry no pin.
+func laySharedRouting(routing, models, lifted, shared *jsonx.OrderedMap, stated map[string]bool) *jsonx.OrderedMap {
+	if shared == nil || lifted == nil {
+		return routing
+	}
+	for _, alias := range models.Keys() {
+		if stated[alias] {
+			continue
+		}
+		own := childMap(lifted, alias)
 		if own == nil {
-			if routing != nil {
-				routing.Delete(alias)
-			}
-		} else if pin, isMap := own.(*jsonx.OrderedMap); isMap && pin.Len() > 0 {
-			set(pin)
+			continue
 		}
-		return routing
-	}
-	if routing != nil {
-		if _, packPinned := routing.Get(alias); packPinned {
-			return routing
+		name, _ := stringAt(own, "extends")
+		src := childMap(shared, name)
+		if name == "" || src == nil {
+			continue
 		}
-	}
-	name, _ := stringAt(obj, "extends")
-	if name == "" || shared == nil {
-		return routing
-	}
-	if src := childMap(shared, name); src != nil {
-		if pin := childMap(src, "openrouter_routing"); pin != nil && pin.Len() > 0 {
-			set(pin)
+		pin := childMap(src, "openrouter_routing")
+		if pin == nil || pin.Len() == 0 {
+			continue
 		}
+		if routing == nil {
+			routing = jsonx.NewOrderedMap()
+		}
+		routing.Set(alias, jsonx.DeepCopy(pin))
 	}
 	return routing
 }

@@ -60,4 +60,31 @@ func TestPiRowsExtendingASharedEntryCarryItsOpenRouterPin(t *testing.T) {
 	if plain := piRow(t, m, "or", "deepseek/deepseek-v4.1-flash"); plain["compat"] != nil {
 		t.Errorf("a row extending an entry with no pin = %v, want no compat", plain)
 	}
+
+	// The pi/model-lists registration carries the same inherited pin on each row, which the
+	// extension lowers into the request's `provider` field.
+	lists, _ := r.surface(t, ".pi", "agent", "yolo-model-lists.json")["providers"].(map[string]any)
+	or, _ := lists["or"].(map[string]any)
+	listed, _ := or["models"].([]any)
+	registered := map[string]any{}
+	for _, row := range listed {
+		mm, _ := row.(map[string]any)
+		id, _ := mm["id"].(string)
+		registered[id] = mm["openrouter_routing"]
+	}
+	for id, w := range map[string]any{
+		"deepseek/deepseek-v4.1-flash:floor":      want,
+		"deepseek/deepseek-v4.1-flash:floor@200k": want,
+		"deepseek/deepseek-v4.1-flash:own":        map[string]any{"order": []any{"deepinfra"}},
+		"deepseek/deepseek-v4.1-flash":            nil,
+	} {
+		got, ok := registered[id]
+		if !ok {
+			t.Errorf("model-lists registration has no %s row: %v", id, listed)
+			continue
+		}
+		if !reflect.DeepEqual(got, w) {
+			t.Errorf("model-lists row %s openrouter_routing = %v, want %v", id, got, w)
+		}
+	}
 }

@@ -243,7 +243,7 @@ var (
 	// wire `id`, its `vendor` (a route-level routing fact the bridge reads), its `wire_id`, and
 	// `extends` itself. `openrouter_routing` IS shared (fix 27): a 1M route and its 200k twin
 	// send one route and must send byte-identical requests, so the pin is written once; a
-	// route's own object replaces the shared one whole (packload.layRouting).
+	// route's own object replaces the shared one whole (packload.laySharedRouting).
 	knownSharedModelKeys = set("name", "description", "reasoning", "input", "cost", "context_window", "max_tokens", "base",
 		"openrouter_routing")
 	// knownModelCostKeys is the closed set of rates inside that `cost` object. Canonical
