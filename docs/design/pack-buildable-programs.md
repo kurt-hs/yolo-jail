@@ -2,7 +2,7 @@
 title: "A pack's own tool, built from its own tree: one more source for the fork route's build act"
 status: in-review
 stage: DESIGN
-next: "Morning review: the BG-D decisions; builders proceed on the leanings meanwhile, slice by slice in the plan"
+next: "Morning review: the BG-D decisions; OQ-BG1 to OQ-BG3 are ruled and built"
 tags: [design, packs, programs, build, capture, overrides, notches]
 summary: "A pack cannot deliver a tool that needs a build from its own tree, point a tool at the checkout being developed, or fetch a verified prebuilt artifact. One new program delivery, `via: \"pack\"`, answers all three with one precedence — a user-scope dev override that builds a checkout in place of the pack's tree, then the user's opt-in to a declared prebuilt, then a build of the pack's tree, then the prebuilt where the pack ships no source, then a refusal that names the missing piece. A prebuilt is never substituted for a source that cannot be built. The build is the fork route's sealed build act with a different source, keyed by the tree's content, so nothing new builds, caches, locks or delivers."
 ---
@@ -605,6 +605,14 @@ needs a build. The plan gives each an integration test.
 | Override on the host notch runs a build of bytes a jail can write | This is the product ([§5](#5-the-dev-override)'s note). The choice is user scope, the build is sealed, and every launch discloses it |
 | The prebuilt artifact and the source drift apart | Out of yolo's reach by design. The two are used in different situations, never mixed, and the line says which one runs |
 
+## Backlog
+
+Found while building this design and outside its scope; none blocks it.
+
+- `TestHostDaemonStartupRefusalReachesSelectedLaunch` (in `internal/cli/run`) is flaky under a
+  loaded `just check-ci`: it times out on its 250 ms reachability check, and passed three runs out
+  of three on its own (2026-10-23). The bound wants widening, or the wait wants a signal.
+
 ## Open Questions
 
 1. <a id="OQ-BG1"></a>✅ **OQ-BG1: Does a program that cannot be delivered stop the launch?**
@@ -689,7 +697,7 @@ reversible until it is built.
 | :--- | :--- | :--- | :--- | :--- |
 | [OQ-BG1](#OQ-BG1) | A pack build that fails is handled identically to a fork build: the same fatal refusal, the same next steps, the same `YOLO_ALLOW_MISSING_PROGRAMS=1` bypass. | 2026-10-23 | [§11](#11-what-done-looks-like) | built: the fork route's missing-build refusal |
 | [OQ-BG2](#OQ-BG2) | A present source is built or the launch stops; a prebuilt is never substituted for it automatically. The user may always choose the prebuilt explicitly at user scope, and a pack shipping no source uses its prebuilt. | 2026-10-23 | [§4](#4-precedence-one-resolver-four-rungs), [§7](#7-the-prebuilt-artifact) | built: `packload.PackTreeResolve` has no unbuildable input; the opt-in is [BG-D18](#BG-D18) |
-| [OQ-BG3](#OQ-BG3) | A dev override is built at each launch from the checkout as it sits on disk, through the pack-tree build act and its cache; no live mount and no build at run time. | 2026-10-23 | [§5](#5-the-dev-override) | pending |
+| [OQ-BG3](#OQ-BG3) | A dev override is built at each launch from the checkout as it sits on disk, through the pack-tree build act and its cache; no live mount and no build at run time. | 2026-10-23 | [§5](#5-the-dev-override) | built: `run.ResolvePackTreeProgram` ([BG-D19](#BG-D19)) |
 | <a id="BG-D1"></a>BG-D1 | **The new delivery is `via: "pack"`**, a fourth value in the closed set, delivered by the source launcher. It is not a relaxed `via: "source"`, which keeps its fork meaning. An older yolo skips the new value with a skew note instead of refusing it as a malformed fork. | 2026-10-22 | [§3](#3-the-declaration), [§12](#12-alternatives-with-verdicts) | — |
 | <a id="BG-D2"></a>BG-D2 | **The build is the fork route's build act**, sealed and never on the host. The pack-tree source is staged by copying the staged pack's `from` minus `.git`, in place of a git checkout. | 2026-10-22 | [§6.3](#63-the-build-act-reused-unchanged) | — |
 | <a id="BG-D3"></a>BG-D3 | **Identity**: source `pack:<pack>/<from>`; revision is the tree digest of `from` with `.git` skipped; recipe is a tagged hash of `build`, `run` and the layout version; platform. The toolchain is recorded, not keyed. | 2026-10-22 | [§6.1](#61-the-source-and-what-keys-it) | — |
