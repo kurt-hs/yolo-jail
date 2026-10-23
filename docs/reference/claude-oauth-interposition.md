@@ -247,7 +247,8 @@ independent paths.
 > whole value as one filename (2.1.278's `maybeWarnAboutExtraCACerts`, offset 22159500). Since
 > [PS-D16](../design/provisioner-sets.md#PS-D16) the jail's boot reads that list as input and points
 > `NODE_EXTRA_CA_CERTS` at ONE file, `~/.config/yolo-extra-ca.pem`, holding every CA beyond the
-> public roots, so a second loophole CA no longer drops both.
+> public roots, so a second loophole CA no longer drops both. A file the user's own
+> `NODE_EXTRA_CA_CERTS` names is appended to it, never put in place of the loophole CAs.
 
 Two further notes for a threat model. The anchor is read **once per process** —
 `NODE_EXTRA_CA_CERTS` is in 2.1.278's startup-env list and `cacheExtraCACertificates` memoizes — so a

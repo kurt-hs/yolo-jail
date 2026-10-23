@@ -167,7 +167,10 @@ The decisions, each traced to a design ruling. The file comments every allow on 
   home's top-level names but read none of them. No per-language toolchain folder (`~/.nvm`,
   `~/.cargo` and the rest) is granted: the agent has its own `HOME`.
 - **System services:** Safehouse's list minus LaunchServices, which `open` uses. Trust evaluation
-  (`com.apple.trustd.agent`) stays, so HTTPS clients work. The keychain, clipboard, Apple Events
+  (`com.apple.trustd.agent`) stays, so HTTPS clients work. trustd's system daemon
+  (`com.apple.trustd`) is not reachable; check a4t runs a Go client (`gh`) through a TLS handshake,
+  and an x509 or certificate error there, behind a proxy whose CA the Mac trusts, is the evidence
+  for adding it ([PS-D15](../../../design/provisioner-sets.md#PS-D15)). The keychain, clipboard, Apple Events
   and LaunchServices are also denied by name at the end. The keychain's services are denied under
   their real names, `com.apple.SecurityServer` and `com.apple.securityd`, beside the earlier
   guesses, which do no harm if wrong. Check b4 is what proves the keychain closed, not those names.

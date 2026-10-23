@@ -470,6 +470,16 @@ if [ -n "$YOLO_BIN" ]; then
 else
 	skip a3h "the shared-/tmp hatch is the generated profile's: add --profile-from-yolo <yolo>"
 fi
+# A Go client's TLS trust (PS-D15): Go asks macOS's trustd, and the profile reaches only its
+# per-user agent (com.apple.trustd.agent), not the system daemon. An x509 or certificate error here,
+# on a network whose inspecting proxy's CA the Mac trusts, is the evidence for adding
+# com.apple.trustd back; paste it and the sandbox log's deny lines.
+if command -v gh >/dev/null 2>&1; then
+	info a4t "a Go client (gh) completes a TLS handshake to github.com (no login needed)" \
+		'out=$(gh api --hostname github.com /zen 2>&1); echo "$out"; ! printf "%s" "$out" | grep -qiE "x509|certificate"'
+else
+	skip a4t "a Go client's TLS trust needs gh on PATH (PS-D15)"
+fi
 expect_allow a4 "signal a process inside the sandbox" \
 	'sleep 30 & p=$!; kill $p || exit 1; wait $p; rc=$?; echo "child ended with $rc"; [ $rc -eq 143 ]'
 
