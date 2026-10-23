@@ -218,3 +218,52 @@ func TestNoHostFileTrustsTheImageAndLoopholes(t *testing.T) {
 	}
 	mustContain(t, "the boot log", logOnly, "the host adds no certificate authority", "the launcher composed no host file")
 }
+
+// A user's own NODE_EXTRA_CA_CERTS (a Zscaler root behind env_sources, say) is APPENDED to the one
+// extras file Node reads, beside the loophole and host CAs: pointing Node at the user's file alone
+// would drop the loophole CAs, and with them the oauth broker's interception leaf.
+func TestAUsersNodeExtraCACertsKeepsTheLoopholeCAs(t *testing.T) {
+	e, stderr, _ := loudEnv(t)
+	f := newCATrustFixture(t, e)
+	zscaler := caTestPEM(t, "Zscaler Root CA")
+	userNode := writeCAFixture(t, t.TempDir(), "zscaler.pem", zscaler)
+	userEnv := userEnvFilePath(e)
+	if err := os.MkdirAll(filepath.Dir(userEnv), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userEnv, []byte("export NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-'"+userNode+"'}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runCABootStep(t, e)
+
+	extrasPath := filepath.Join(e.Home, ExtraCAFileRel)
+	if e.Vars[nodeExtraCAVar] != extrasPath {
+		t.Fatalf("%s = %q, want the one extras file %s", nodeExtraCAVar, e.Vars[nodeExtraCAVar], extrasPath)
+	}
+	extras := readCAFile(t, extrasPath)
+	for name, c := range map[string]string{"the loophole CA": f.loopholeCA, "the host's CA": f.corpCA, "the user's CA": zscaler} {
+		if strings.Count(extras, c) != 1 {
+			t.Errorf("the extras file holds %s %d times, want once", name, strings.Count(extras, c))
+		}
+	}
+	mustContain(t, "the boot's disclosure", stderr, "which also holds the certificates in your "+userNode)
+}
+
+// A user NODE_EXTRA_CA_CERTS the jail cannot read is said, with where to look; the loophole CAs
+// still reach Node.
+func TestAnUnreadableUserNodeExtraCACertsIsSaid(t *testing.T) {
+	e, stderr, _ := loudEnv(t)
+	f := newCATrustFixture(t, e)
+	userEnv := userEnvFilePath(e)
+	if err := os.MkdirAll(filepath.Dir(userEnv), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userEnv, []byte("export NODE_EXTRA_CA_CERTS='/nowhere/zscaler.pem'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runCABootStep(t, e)
+	if !strings.Contains(readCAFile(t, filepath.Join(e.Home, ExtraCAFileRel)), f.loopholeCA) {
+		t.Error("the loophole CA left the extras file")
+	}
+	mustContain(t, "the boot's warning", stderr, "/nowhere/zscaler.pem, which the jail could not read", "env_sources")
+}

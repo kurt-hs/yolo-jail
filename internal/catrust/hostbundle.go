@@ -19,8 +19,8 @@ var LinuxBundleFiles = []string{
 	"/etc/ssl/cert.pem",                                 // Alpine
 }
 
-// HostBundle is what a Linux host's bundle read found: the file, the CAs it holds that a TLS client
-// can anchor on (ParseCAs), and how many it left out.
+// HostBundle is what a Linux host's bundle read found: the file, every in-date certificate it holds
+// (ParseBundle), and how many it left out (unparseable or out of date).
 type HostBundle struct {
 	Path    string
 	CAs     []CA
@@ -42,7 +42,7 @@ func ReadLinuxHostBundle(getenv func(string) string, readFile func(string) ([]by
 		if err != nil || len(data) == 0 {
 			continue
 		}
-		cas, left := ParseCAs(string(data), HostBundleSource(p), now)
+		cas, left := ParseBundle(string(data), HostBundleSource(p), now)
 		return HostBundle{Path: p, CAs: cas, LeftOut: left}, nil
 	}
 	if len(candidates) == 1 && candidates[0] != LinuxBundleFiles[0] {

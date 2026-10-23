@@ -61,6 +61,14 @@ package run
 //	                                       nix daemon or forwarded host loopback, and no
 //	                                       machine-wide store; and no `agents_md_extra`,
 //	                                       which is the user's own text
+//	the host's CA trust (prepareHostCATrust CROSSES, by decision (PS-D16): one composed file
+//	and hostCAArgs)                        of the CAs the host trusts, bound read-only, and
+//	                                       YOLO_HOST_CA_FILE naming it. A CA certificate is
+//	                                       public, not a credential, and the maintainer ruled
+//	                                       "every jail"; a fork build behind an inspecting
+//	                                       proxy fetches nothing without it. The macos-user
+//	                                       sealed capture composes the same trust
+//	                                       (ComposeCATrust), so the backends agree
 //	the whole macos-user arm (Run)         left above its first crossing site
 //	                                       (runSealedMacosUser): no context mount, relocation,
 //	                                       host service, keeper, doorway, credential view, host

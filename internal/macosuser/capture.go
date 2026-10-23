@@ -1362,6 +1362,7 @@ func RunCaptureAct(deps Deps, opts CaptureOptions, dest string, dryRun bool) int
 			return 1
 		}
 		opts.CATrust = ComposeCATrust(deps, opts.Darwin)
+		opts.CATrust.SeparateAccount = opts.Mode != ModeSelf
 		// The run-as-you profile grants your DARWIN_USER_TEMP_DIR under the shared-/tmp ruling, as a
 		// run-as-you launch's does; a read of the host, so never in a dry run.
 		if opts.DarwinUserTempDir == "" {
@@ -1869,6 +1870,7 @@ func RunForkBuildAct(deps Deps, opts ForkBuildOptions, dest, toolchainDest strin
 		}
 		opts.Darwin = d
 		opts.CATrust = ComposeCATrust(deps, opts.Darwin)
+		opts.CATrust.SeparateAccount = opts.Mode != ModeSelf
 		// The run-as-you profile grants your DARWIN_USER_TEMP_DIR under the shared-/tmp ruling, as a
 		// run-as-you launch's does; a read of the host, so never in a dry run.
 		if opts.DarwinUserTempDir == "" {

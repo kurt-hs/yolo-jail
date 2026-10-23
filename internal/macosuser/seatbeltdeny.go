@@ -647,7 +647,6 @@ func serviceBlocks() string {
 		"    (global-name \"com.apple.SystemConfiguration.configd\")             ;; Network configuration queries for resolver bootstrap.\n" +
 		"    (global-name \"com.apple.SystemConfiguration.DNSConfiguration\")    ;; DNS configuration (Node/c-ares).\n" +
 		"    (global-name \"com.apple.trustd.agent\")                            ;; Certificate trust evaluation: every HTTPS client (gh, mise, curl) asks it.\n" +
-		"    (global-name \"com.apple.trustd\")                                  ;; trustd's system daemon, which answers for the admin and system trust domains (PS-D15).\n" +
 		"    (global-name \"com.apple.diagnosticd\")                             ;; Unified logging backend used by frameworks.\n" +
 		"    (global-name \"com.apple.analyticsd\")                              ;; Analytics subsystem probed at framework start.\n" +
 		"    (global-name \"com.apple.dnssd.service\")                           ;; DNS-SD used for name resolution by ssh, curl.\n" +

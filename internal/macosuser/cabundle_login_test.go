@@ -5,7 +5,7 @@ package macosuser
 // launch as coming from it; an unreadable login keychain degrades to the System keychain's CAs with
 // a note, never a refusal. And the run-as-you delivery (PS-D15): the CA files are written as you,
 // with no sudo and no access entry, the profile reads each by its exact path and still reaches
-// trustd, and every keychain deny stays.
+// trustd's agent, and every keychain deny stays.
 
 import (
 	"bytes"
@@ -152,6 +152,14 @@ func TestALaunchTrustsAndNamesTheLoginKeychainsCA(t *testing.T) {
 	if !strings.Contains(out.String(), "6 more in them were left out") {
 		t.Errorf("the left-out count does not cover both keychains:\n%s", out.String())
 	}
+	// THE SEPARATE ACCOUNT'S LIMIT, said in plain words (PS-D14): Go's programs ask macOS as the
+	// sandbox account, so the login keychain's CA reaches only the tools that read a CA file.
+	limit := "The agent runs as a separate account, so the certificate authority from your login " +
+		"keychain (Staging CA) is trusted only by tools that read a CA file, such as curl, git, Node " +
+		"and Python; programs that ask macOS instead, such as gh and mise, do not trust it."
+	if !strings.Contains(out.String(), limit) {
+		t.Errorf("the account-mode launch does not qualify the login keychain's CA:\n%s", out.String())
+	}
 }
 
 // AN UNREADABLE LOGIN KEYCHAIN IS ONE NOTE WITH A NEXT STEP, and the launch goes on with the System
@@ -209,13 +217,16 @@ func TestASelfModeLaunchWritesTheCAFilesAsYouWithNoGrant(t *testing.T) {
 	if wrote != 2 {
 		t.Errorf("the run-as-you launch wrote %d CA files, want 2:\n%s", wrote, strings.Join(rec, "\n"))
 	}
+	if strings.Contains(out.String(), "separate account") {
+		t.Errorf("the run-as-you launch says the separate account's limit, which it does not have:\n%s", out.String())
+	}
 	if !strings.Contains(out.String(), "1 from your login keychain (Staging CA)") {
 		t.Errorf("the run-as-you launch does not name the login keychain's CA:\n%s", out.String())
 	}
 }
 
-// THE RUN-AS-YOU PROFILE reads each CA file by its exact path, still reaches trustd under both
-// names, and keeps every keychain deny: the System and login keychain files and securityd.
+// THE RUN-AS-YOU PROFILE reads each CA file by its exact path, still reaches trustd's per-user
+// agent (and not its system daemon), and keeps every keychain deny: the System and login keychain files and securityd.
 func TestTheSelfModeProfileReadsTheCAFilesAndReachesTrustd(t *testing.T) {
 	ca := CATrust{ProfileBundle: "/p/bundle", Kept: []TrustedCA{{Name: "Corp CA"}}, Bundle: "x", Extras: "x"}
 	plan := BuildRunPlanWithDaemons("/Users/you/code/alpha", jsonx.NewOrderedMap(), nil, []string{"claude"},
@@ -233,10 +244,13 @@ func TestTheSelfModeProfileReadsTheCAFilesAndReachesTrustd(t *testing.T) {
 		}
 	}
 	lookups := profileBlock(plan.Seatbelt, "mach-lookup-allow")
-	for _, name := range []string{"com.apple.trustd.agent", "com.apple.trustd"} {
-		if !strings.Contains(lookups, `(global-name "`+name+`")`) {
-			t.Errorf("the self-mode profile does not reach %s:\n%s", name, lookups)
-		}
+	if !strings.Contains(lookups, `(global-name "com.apple.trustd.agent")`) {
+		t.Errorf("the self-mode profile does not reach trustd's agent:\n%s", lookups)
+	}
+	// NOT trustd's system daemon, a root process, until a Mac shows a Go client failing without it
+	// (PS-D15; the runbook's trust check).
+	if strings.Contains(lookups, `(global-name "com.apple.trustd")`) {
+		t.Errorf("the self-mode profile reaches com.apple.trustd, which no Mac run has shown a need for:\n%s", lookups)
 	}
 	for _, deny := range []string{
 		`(deny file-read* file-write* (subpath "/Library/Keychains"))`,

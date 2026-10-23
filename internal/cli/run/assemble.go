@@ -1172,11 +1172,9 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 		runCmd = append(runCmd, serviceEndpointEnvArgs(in, o)...)
 	}
 	// --- the host's CA trust (hostcatrust.go, PS-D16) ---
-	// WITHHELD UNDER THE SEAL, like every crossing the seal does not allowlist (PS-D16): a sealed
-	// build trusts its image's public roots, as it did before the host's trust was imported.
-	if !in.sealed {
-		runCmd = append(runCmd, hostCAArgs(rt, in.wsState, in.hostCAFile)...)
-	}
+	// CROSSES UNDER THE SEAL, by decision (seal.go's crossing table, PS-D16): a CA certificate is
+	// public, and a fork build behind an inspecting proxy fetches nothing without it.
+	runCmd = append(runCmd, hostCAArgs(rt, in.wsState, in.hostCAFile)...)
 
 	// --- the host path map (docs/reference/in-jail-nix-roots.md "Translated roots and the host path map") ---
 	// LAST BEFORE THE IMAGE, because it is read off every mount above: which host directory

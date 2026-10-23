@@ -161,3 +161,30 @@ func TestReadLinuxHostBundle(t *testing.T) {
 		t.Errorf("an unreadable SSL_CERT_FILE is %v", err)
 	}
 }
+
+// A HOST'S OWN BUNDLE IS ITS TRUST DECISION (PS-D16): every certificate in it that parses and is in
+// date is kept, a self-signed server certificate and a client-only CA included, and only what is
+// out of date or unparseable is left out and counted. A keychain export keeps ParseCAs' filter.
+func TestReadLinuxHostBundleKeepsEveryInDateCertificate(t *testing.T) {
+	now := time.Now()
+	leaf := certPEM(t, "internal.example", false, now.Add(-time.Hour), now.Add(time.Hour))
+	clientCA := validCA(t, "Client-only CA", x509.ExtKeyUsageClientAuth)
+	expired := certPEM(t, "Expired CA", true, now.Add(-48*time.Hour), now.Add(-24*time.Hour))
+	corp := validCA(t, "Corp CA")
+	body := corp + leaf + clientCA + expired + "-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydA==\n-----END CERTIFICATE-----\n"
+	read := func(string) ([]byte, error) { return []byte(body), nil }
+	hb, err := ReadLinuxHostBundle(func(string) string { return "" }, read, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, c := range hb.CAs {
+		names = append(names, c.Name)
+	}
+	if strings.Join(names, ",") != "Corp CA,internal.example,Client-only CA" || hb.LeftOut != 2 {
+		t.Errorf("kept %v, left out %d; want every in-date certificate and 2 left out", names, hb.LeftOut)
+	}
+	if kept, _ := ParseCAs(body, SourceSystemKeychain, now); len(kept) != 1 {
+		t.Errorf("a keychain export keeps %d, want only the TLS anchor", len(kept))
+	}
+}

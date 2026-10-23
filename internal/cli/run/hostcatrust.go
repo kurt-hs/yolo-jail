@@ -23,6 +23,7 @@ package run
 // An attach never reaches here: the running jail keeps the trust it booted with.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -68,6 +69,11 @@ func readHostTrustReal() hostTrust {
 				"this launch; this Mac's System keychain's still are. If the keychain is locked, unlock it "+
 				"(`security unlock-keychain`) and launch again.")
 		}
+		if kt.LeftOut > 0 {
+			notes = append(notes, fmt.Sprintf("[dim]%d certificate(s) in this Mac's keychains were left "+
+				"out of the jail's trust: expired, not for TLS servers, or not trusted by macOS for TLS.[/dim]",
+				kt.LeftOut))
+		}
 		return hostTrust{cas: kt.Kept, notes: notes}
 	}
 	hb, err := catrust.ReadLinuxHostBundle(os.Getenv, os.ReadFile, now)
@@ -78,7 +84,12 @@ func readHostTrustReal() hostTrust {
 			"env_sources: put a bundle holding it and the public roots in the workspace and set " +
 			"{\"SSL_CERT_FILE\": \"<that file>\"}, which the other four TLS variables follow."}}
 	}
-	return hostTrust{cas: hb.CAs}
+	var notes []string
+	if hb.LeftOut > 0 {
+		notes = append(notes, fmt.Sprintf("[dim]%d certificate(s) in %s were left out of the jail's "+
+			"trust: out of date, or not readable as a certificate.[/dim]", hb.LeftOut, esc(hb.Path)))
+	}
+	return hostTrust{cas: hb.CAs, notes: notes}
 }
 
 // prepareHostCATrust reads the host's trust, writes the composed file where rt reaches it, prints

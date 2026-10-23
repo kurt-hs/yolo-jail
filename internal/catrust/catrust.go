@@ -55,6 +55,19 @@ func (c CA) DER() []byte {
 // certificate block (a key) is skipped and not counted. What the host's own trust settings say is
 // the caller's to ask afterwards (macOS: `security verify-cert`).
 func ParseCAs(pemText, source string, now time.Time) (kept []CA, left int) {
+	return parse(pemText, source, now, true)
+}
+
+// ParseBundle reads a host's own CA bundle file and keeps EVERY certificate in it that parses and
+// is within its validity at now, once, labelled source, with how many it left out. A
+// distribution's bundle is the host's trust decision already (an administrator who drops a
+// self-signed server certificate into it means it to be trusted), so neither CA-ness nor extended
+// key usage is second-guessed here, as ParseCAs does for a keychain export (PS-D16).
+func ParseBundle(pemText, source string, now time.Time) (kept []CA, left int) {
+	return parse(pemText, source, now, false)
+}
+
+func parse(pemText, source string, now time.Time, anchorsOnly bool) (kept []CA, left int) {
 	rest := []byte(pemText)
 	var seen [][]byte
 	for {
@@ -67,8 +80,8 @@ func ParseCAs(pemText, source string, now time.Time) (kept []CA, left int) {
 			continue
 		}
 		cert, err := x509.ParseCertificate(block.Bytes)
-		if err != nil || !cert.IsCA || now.Before(cert.NotBefore) || now.After(cert.NotAfter) ||
-			!AllowsServerAuth(cert) {
+		if err != nil || now.Before(cert.NotBefore) || now.After(cert.NotAfter) ||
+			anchorsOnly && (!cert.IsCA || !AllowsServerAuth(cert)) {
 			left++
 			continue
 		}

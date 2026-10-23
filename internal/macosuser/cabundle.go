@@ -129,6 +129,11 @@ type CATrust struct {
 	// sandbox too). Neither is set when the launch wires no login reader.
 	LoginRead      bool
 	LoginReadError string
+	// SeparateAccount says the sandbox runs as the second account rather than as you (mode.go).
+	// There, a program that asks macOS for trust (Go's, such as gh and mise) asks it as that
+	// account, so the login keychain's CAs reach only the tools that read a CA file, and the
+	// disclosure says so (PS-D14). Set by the caller, which knows the mode.
+	SeparateAccount bool
 	// Kept are the CAs the launch trusts beyond the public roots: the System keychain's in its
 	// order, then the login keychain's not already among them.
 	Kept []TrustedCA
@@ -421,8 +426,22 @@ func printCATrust(out printer, ca CATrust, envContent, bundleFile, extrasFile, f
 		kept = append(kept, c)
 	}
 	names := make([]string, 0, n)
+	var fromLogin []string
 	for _, c := range kept {
 		names = append(names, esc(c.Name))
+		if c.Source == catrust.SourceLoginKeychain {
+			fromLogin = append(fromLogin, esc(c.Name))
+		}
+	}
+	// THE SEPARATE ACCOUNT'S LIMIT, after the main line (PS-D14): a program that asks macOS for
+	// trust asks it as the sandbox account, whose own login keychain is not yours.
+	if ca.SeparateAccount && len(fromLogin) > 0 {
+		defer out.printf("[dim]The agent runs as a separate account, so the %s from your login "+
+			"keychain (%s) %s trusted only by tools that read a CA file, such as curl, git, Node and "+
+			"Python; programs that ask macOS instead, such as gh and mise, do not trust %s.[/dim]",
+			plural(len(fromLogin), "certificate authority", "certificate authorities"),
+			strings.Join(fromLogin, ", "), plural(len(fromLogin), "is", "are"),
+			plural(len(fromLogin), "it", "them"))
 	}
 	// What was read, as the subject of "adds no …" and "trusts …".
 	holder, verb, trusts, pronoun := "This Mac's System keychain", "adds", "trusts", "it"

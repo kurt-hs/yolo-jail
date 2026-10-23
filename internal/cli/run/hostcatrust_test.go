@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -60,9 +61,21 @@ func testPrinter(buf *bytes.Buffer) printer {
 // naming it: the whole launch runs, so deleting either call site (run.go's prepareHostCATrust,
 // assemble.go's hostCAArgs) fails this.
 func TestALaunchHandsTheJailTheHostsCAsAsOneFile(t *testing.T) {
+	assertHostCAsHanded(t, false)
+}
+
+// A SEALED build carries the host's CAs too (seal.go's crossing table, PS-D16): a CA certificate is
+// public, the maintainer ruled "every jail", and the macos-user sealed capture composes the same
+// trust. The seal's allowlist test (TestASealedLaunchHandsTheJailNoCrossing) names the variable.
+func TestASealedLaunchCarriesTheHostsCAs(t *testing.T) {
+	assertHostCAsHanded(t, true)
+}
+
+func assertHostCAsHanded(t *testing.T, sealed bool) {
+	t.Helper()
 	ca := hostCATestCA(t, "Example Corp Inspection CA", catrust.HostBundleSource("/etc/ssl/certs/ca-certificates.crt"))
 	stubHostTrust(t, hostTrust{cas: []catrust.CA{ca}})
-	argv, ws, _, _ := sealedLaunch(t, false)
+	argv, ws, _, _ := sealedLaunch(t, sealed)
 
 	if !slices.Contains(argvValues(argv, "-e"), entrypoint.HostCAFileEnv+"="+entrypoint.HostCAFileContainerPath) {
 		t.Errorf("the launch does not name the host's CA file to the jail; -e values: %v", argvValues(argv, "-e"))
@@ -91,27 +104,25 @@ bound:
 	}
 }
 
-// A sealed build reads none of the host's trust and is handed none: the seal allowlists no such
-// crossing (PS-D16).
-func TestASealedLaunchGetsNoHostCAs(t *testing.T) {
-	called := false
-	prev := readHostTrust
-	readHostTrust = func() hostTrust {
-		called = true
-		return hostTrust{cas: []catrust.CA{hostCATestCA(t, "Sealed Test CA", "x")}}
+// A LINUX HOST'S BUNDLE says how many certificates it left out, never silently (PS-D16): the
+// host's own read, through the host's SSL_CERT_FILE, which a Linux host's OpenSSL honors too.
+func TestALinuxHostSaysWhatItsBundleLeftOut(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("the Linux host read; a Mac reads its keychains")
 	}
-	t.Cleanup(func() { readHostTrust = prev })
-	argv, _, _, _ := sealedLaunch(t, true)
-	if called {
-		t.Error("a sealed launch read the host's trust")
+	ca := hostCATestCA(t, "Example Corp Inspection CA", "x")
+	bundle := filepath.Join(t.TempDir(), "bundle.pem")
+	body := ca.PEM + "-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydA==\n-----END CERTIFICATE-----\n"
+	if err := os.WriteFile(bundle, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if _, ok := sealedBindSources(argv)[entrypoint.HostCAFileContainerPath]; ok {
-		t.Error("a sealed launch binds the host's CA file")
+	t.Setenv("SSL_CERT_FILE", bundle)
+	ht := readHostTrustReal()
+	if len(ht.cas) != 1 || ht.cas[0].Source != catrust.HostBundleSource(bundle) {
+		t.Fatalf("the host read kept %+v, want the one CA from %s", ht.cas, bundle)
 	}
-	for _, e := range argvValues(argv, "-e") {
-		if strings.HasPrefix(e, entrypoint.HostCAFileEnv+"=") {
-			t.Errorf("a sealed launch hands the jail %s", e)
-		}
+	if len(ht.notes) != 1 || !strings.Contains(ht.notes[0], "1 certificate(s) in "+bundle+" were left out") {
+		t.Errorf("the left-out certificate is not said: %q", ht.notes)
 	}
 }
 

@@ -1226,6 +1226,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// which variables it set.
 	steps.begin("ca_trust")
 	opts.CATrust = ComposeCATrust(deps, darwin)
+	opts.CATrust.SeparateAccount = opts.Mode != ModeSelf
 
 	steps.begin("build_plan")
 	plan := buildPlan(deps, opts, darwin)
