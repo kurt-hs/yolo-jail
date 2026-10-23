@@ -3,11 +3,11 @@ title: "Reads run, writes ring the doorbell: time-boxed GitHub access across the
 date: 2026-09-28
 status: in-review
 stage: DESIGN
-next: "Build step 1 of the 2026-10-23 path, the broker-core factoring in git-broker.md, which waits on nothing, then the git source on the transport OQ-GB1 ruled; rule OQ-BB17, which holds the answer path, and OQ-BB18, whether a workspace may still widen a source's scope. Production writes remain refused; gated handler integration is built."
+next: "Build step 1 of the 2026-10-23 path, the broker-core factoring in git-broker.md, which waits on nothing, then the git source on the transport OQ-GB1 ruled; writes ship on the agent's background wait (OQ-BB17); a workspace requests repositories freely but never raises a level (OQ-BB18). Production writes remain refused; gated handler integration is built."
 depends-on:
   - agent-event-watchers.md
 tags: [design, credentials, github, gh, git, approvals, notifications, loopholes, audit, broker]
-summary: "Revised around the maintainer's 2026-09-28 brief and his 2026-09-29 rulings. A host daemon runs the host's own `gh` login on the jail's behalf, only against the workspace's own GitHub repositories. Each source defines named permission sets: GitHub's default two are read-only, always held, and read-write, which a human hands over whole for a window (15 minutes by default) from a persistent desktop notification on Linux and macOS. The request outlives its connection, the answer reaches the agent later through the `yolo notify` ping channel, and the agent re-issues its command under the grant. Credential-printing and host-reaching commands are refused outright, whatever is granted. Every brokered call is appended to a host audit log that yolo mounts into no jail. The scope is re-read from the workspace's remotes at every fresh launch and approved in that launch's config-change diff; an out-of-scope command is refused, and the only widening is a `brokered.github.repos` list in the workspace's own config, approved at that same gate (re-ruled 2026-10-05 and built that day, in workspace-widening.md; the user-scope entry keyed by workspace is retired). On macOS the notifier is terminal-notifier, a dependency of the Homebrew formula on Apple silicon running macOS 14 or later, where a prebuilt bottle exists. Step 1 (reads, the scope, the audit log, the mount fence) is built; a pack intercepts `gh` through a generic contribution kind. The workspace entry is built: a listed repository joins the scope for every set. On 2026-10-23 the maintainer laid out the build in five steps: brokered sources with read and write sets (git next, after factoring out the source-neutral core), generic actionable toasts on Linux and macOS, a host CLI that views and approves requests, a web UI built out of tree on that CLI, and only then a talk about merging it. He asked that the answer wake the agent, and ruled in review the same day that long-lived access is granted only in the user's own config, scoped to workspaces, which a workspace config can never widen; the git source is off until the user includes it. Open: how a host daemon hands the launch a line to print, host-run approval by notification, explicit admit semantics, whether the answer path ships before the doorbell, and whether the can't-widen rule reaches the existing workspace `repos` list."
+summary: "Revised around the maintainer's 2026-09-28 brief and his 2026-09-29 rulings. A host daemon runs the host's own `gh` login on the jail's behalf, only against the workspace's own GitHub repositories. Each source defines named permission sets: GitHub's default two are read-only, always held, and read-write, which a human hands over whole for a window (15 minutes by default) from a persistent desktop notification on Linux and macOS. The request outlives its connection, the answer reaches the agent later through the `yolo notify` ping channel, and the agent re-issues its command under the grant. Credential-printing and host-reaching commands are refused outright, whatever is granted. Every brokered call is appended to a host audit log that yolo mounts into no jail. The scope is re-read from the workspace's remotes at every fresh launch and approved in that launch's config-change diff; an out-of-scope command is refused, and the only widening is a `brokered.github.repos` list in the workspace's own config, approved at that same gate (re-ruled 2026-10-05 and built that day, in workspace-widening.md; the user-scope entry keyed by workspace is retired). On macOS the notifier is terminal-notifier, a dependency of the Homebrew formula on Apple silicon running macOS 14 or later, where a prebuilt bottle exists. Step 1 (reads, the scope, the audit log, the mount fence) is built; a pack intercepts `gh` through a generic contribution kind. The workspace entry is built: a listed repository joins the scope for every set. On 2026-10-23 the maintainer laid out the build in five steps: brokered sources with read and write sets (git next, after factoring out the source-neutral core), generic actionable toasts on Linux and macOS, a host CLI that views and approves requests, a web UI built out of tree on that CLI, and only then a talk about merging it. He asked that the answer wake the agent, and ruled in review the same day that long-lived access is granted only in the user's own config, scoped to workspaces, which a workspace config can never widen; the git source is off until the user includes it. Open: how a host daemon hands the launch a line to print, host-run approval by notification, explicit admit semantics; the answer path ships before the doorbell, and a workspace never raises the user's access level though it still requests repositories (ruled 2026-10-23)."
 vantage:
   status-chip: true
 ---
@@ -76,13 +76,13 @@ per action. The maintainer put this on the plate for the week of 2026-09-28.
 one for the repositories a workspace asks for, a second part to the config-change gate's approval
 record (the repository scope, [§5.6](#56-the-repository-scope)), and `terminal-notifier` as a macOS dependency of the
 Homebrew formula on Apple silicon running macOS 14 or later ([§6.2](#62-macos)). The write path's answer rides the `yolo notify`
-ping box, which is designed and not built, unless [OQ-BB17](#OQ-BB17) lets it ship first on the
-agent's own background wait.
+ping box, which is designed and not built; until it is, writes ship on the agent's own
+background wait ([OQ-BB17](#OQ-BB17)).
 
 **Start at [§3](#3-the-flow)**, the flow. Everything else is what one step of it needs.
 
 **Needs your ruling:** [OQ-BB10](#OQ-BB10), [OQ-BB14](#OQ-BB14), [OQ-BB15](#OQ-BB15),
-[OQ-BB17](#OQ-BB17), [OQ-BB18](#OQ-BB18). [OQ-BB16](#OQ-BB16), and the git source's
+[OQ-BB17](#OQ-BB17) and [OQ-BB18](#OQ-BB18) were ruled 2026-10-23. [OQ-BB16](#OQ-BB16), and the git source's
 [OQ-GB1](git-broker.md#OQ-GB1) and [OQ-GB2](git-broker.md#OQ-GB2), were ruled 2026-10-23.
 [OQ-BB3](#15-decision-ledger), [OQ-BB4](#15-decision-ledger), [OQ-BB6](#15-decision-ledger),
 [OQ-BB7](#15-decision-ledger), [OQ-BB8](#15-decision-ledger), [OQ-BB9](#15-decision-ledger) and OQ-C were ruled 2026-09-29,
@@ -1138,8 +1138,8 @@ config.
   ([§5.7](#57-permission-sets)). A level that names no set of that source is a `yolo check`
   error, and the launch refuses it naming the source's sets.
 - **It never widens the scope or lifts a refusal** ([BB-P8](#BB-P8)). Which repositories it
-  covers is the scope's question, and whether the workspace's own `repos` list may still widen
-  that scope is [OQ-BB18](#OQ-BB18).
+  covers is the scope's question: the workspace asks for repositories and branches, and the
+  human's y admits them ([OQ-BB18](#OQ-BB18), ruled 2026-10-23).
 - **Every launch discloses it**: `github-broker: this workspace holds read-write (user config)`.
 - **Temporary grants are unchanged**: `yolo approve` and the notification hand them out as
   [§7](#7-grants-and-the-request-store) designs.
@@ -1847,7 +1847,7 @@ terminal-notifier later, once the macOS release signs ([OQ-BB4](#15-decision-led
 1. **`yolo approve` for every source**, with `--json`, `--watch` and stable exit codes
    ([§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship)),
    and `yolo audit --service`.
-2. **The answer path.** Under [OQ-BB17](#OQ-BB17)'s leaning, the pending message tells the
+2. **The answer path.** As [OQ-BB17](#OQ-BB17) ruled, the pending message tells the
    agent to run `yolo <source> wait <id>` as a background task, which wakes the session; the
    ping replaces it per agent as `yolo notify` and each pack's deliverer land
    ([`agent-event-watchers.md` §10](agent-event-watchers.md#10-what-i-would-build-in-order)).
@@ -1864,10 +1864,6 @@ tree. Step 5 is a conversation about bringing one in.
 
 ### 11.5 What still waits on a ruling
 
-- [OQ-BB18](#OQ-BB18), whether the can't-widen rule reaches the workspace's own `repos` list
-  and remotes, may narrow the scope step 1's git source reads; the build reads the approved
-  remotes until it is ruled.
-- [OQ-BB17](#OQ-BB17), whether writes ship on the agent's own wait, holds step 3's writes.
 - [OQ-BB10](#OQ-BB10), the no-notifier notice, holds writes on a host with no notifier.
 - [OQ-BB15](#OQ-BB15) holds its own feature, nothing else.
 - [OQ-BB14](#OQ-BB14) holds nothing here; it decides host-run's future.
@@ -2074,7 +2070,7 @@ covered:
     > day's direction that long-lived access *"probably belongs in the workspace's yolo
     > config"*. Settled in [§5.8](#58-long-lived-access-and-temporary-access).
 
-5. 💬 <a id="OQ-BB17"></a>**[OQ-BB17](#OQ-BB17): May writes ship with the agent's own
+5. ✅ <a id="OQ-BB17"></a>**[OQ-BB17](#OQ-BB17): May writes ship with the agent's own
     background wait as the answer path, before `yolo notify` exists?** An agent's push waits
     past 30 seconds and gets exit 75. The ping that would wake it is held by three open
     questions in [`agent-event-watchers.md`](agent-event-watchers.md). This decides whether
@@ -2086,14 +2082,14 @@ covered:
       Claude Code wakes on it today, an agent with no background tasks polls `status`, and the
       ping replaces it per agent later.
 
-    <!-- vantage: oq id=OQ-BB17 leaning="B: it is the child-process wake the maintainer suggested, it is built, and it puts writes behind the toast and the CLI he ordered first rather than behind the doorbell's open questions." -->
-
     _Leaning:_ B: it is the child-process wake the maintainer suggested, it is built, and it puts writes behind the toast and the CLI he ordered first rather than behind the doorbell's open questions.
 
     **Answer:**
-    > _(empty — fill in when decided)_
+    > **Ruled in review 2026-10-23, as leaned (B):** *"yes, ship now."* Writes ship on the
+    > agent's own background `yolo <source> wait <id>`; the `yolo notify` ping replaces it per
+    > agent when it lands ([§11.3](#113-step-3-the-cli-the-answer-path-and-writes)).
 
-6. 💬 <a id="OQ-BB18"></a>**[OQ-BB18](#OQ-BB18): Does "a workspace can't widen" reach the
+6. ✅ <a id="OQ-BB18"></a>**[OQ-BB18](#OQ-BB18): Does "a workspace can't widen" reach the
     GitHub source's `repos` list too?** The agent, refused `acme/infra`, adds it to
     `brokered.github.repos` in `yolo-jail.jsonc`; you restart and press y, and it can read it
     ([`workspace-widening.md`](workspace-widening.md)). [OQ-BB16](#OQ-BB16) says a workspace
@@ -2104,12 +2100,17 @@ covered:
       at the y.
     - **C — B, and a new remote stops widening too.**
 
-    <!-- vantage: oq id=OQ-BB18 leaning="A: a repository joins only on a human's y, which the agent cannot press; the 2026-10-05 ruling moved the list into the workspace because the host-side edit was unworkable, and B leaves the same widening open through git remote add." -->
-
     _Leaning:_ A: a repository joins only on a human's y, which the agent cannot press; the 2026-10-05 ruling moved the list into the workspace because the host-side edit was unworkable, and B leaves the same widening open through `git remote add`.
 
     **Answer:**
-    > _(empty — fill in when decided)_
+    > **Ruled in review 2026-10-23, as leaned (A), with the level made explicit:** *"I was
+    > thinking in terms of just access to asking for GitHub repositories, not the specific
+    > repositories. A workspace should not be able to enable a read/write if read-only is set at
+    > the user level. But the workspace is free to request the specific repositories and branches
+    > that it wants, and it's up to the user to gate that."* The can't-widen rule covers the
+    > access LEVEL a source grants: a workspace never raises it above what the user's own config
+    > holds. Which repositories and branches it covers stays a workspace request, `repos` in
+    > `yolo-jail.jsonc` and new remotes alike, joining only at the human's y.
 
 ## 15. Decision Ledger
 
@@ -2205,6 +2206,8 @@ covered:
 | <a id="BB-D72"></a>[`BB-D72`](#15-decision-ledger) | *Implementation decision,* carrying out steps 3 and 4 of [BB-D73](#BB-D73). `yolo approve` is the surface an out-of-tree UI builds on, for every source: `--json`, `--watch` with one event per line that opens with the current state, stable exit codes, and `"schema": 1` on every object, bumped only for a removal or a change of meaning. No push hook is built, since a relay running `--watch --json` gets the same; one can be added later without changing the surface. Reversible | 2026-10-23 | [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship) | — |
 | <a id="BB-D73"></a>[`BB-D73`](#15-decision-ledger) | **Maintainer direction,** from a Slack thread with a colleague who built his own approval flow. The build order: (1) loopholes with read and write support, factoring out the CLI proxy machinery; (2) generic actionable toasts on Linux and macOS; (3) a host CLI that views and approves requests; (4) a web UI out of tree on that CLI; (5) then talk about merging it. *"I think my comments here lay out a clear path."* Also: long-lived access *"probably belongs in the workspace's yolo config"*, temporary access does not; the answer should wake the agent rather than leave it to be kicked; an audit of the exact commands run with the access is *"a nice touch"*, which [§8](#8-audit) already is | 2026-10-23 | [§1.5](#15-the-maintainers-path-2026-10-23), [§11](#11-the-build-in-the-maintainers-five-steps) | partly: the GitHub read path and its audit (step 1's first source) |
 | OQ-BB16 | **Maintainer ruling, none of the options as written, closest to B:** the git source is off by default and the user must include it; long-lived access, `read-only` or `read-write`, is granted only in the user's own config, scoped to workspaces by whatever form that config supports (today the per-workspace file); the workspace config can never widen it; temporary grants through `yolo approve` stay as designed. Partly supersedes [BB-D73](#BB-D73)'s *"probably belongs in the workspace's yolo config"*. *"there is no way that the workspace should be able to override that scoping. It can't widen."* Whether the rule reaches the existing `brokered.github.repos` list is [OQ-BB18](#OQ-BB18) | 2026-10-23 | [§5.8](#58-long-lived-access-and-temporary-access) | pending |
+| OQ-BB17 | **Maintainer ruling, as leaned (B):** writes ship with the agent's own background `yolo <source> wait <id>` as the answer path; the `yolo notify` ping replaces it per agent later. *"yes, ship now."* | 2026-10-23 | [§11.3](#113-step-3-the-cli-the-answer-path-and-writes) | pending |
+| OQ-BB18 | **Maintainer ruling, as leaned (A), level made explicit:** a workspace never raises a source's access level above the user's config (read-only there means no read-write from the workspace), but it freely requests repositories and branches (`brokered.github.repos`, new remotes), which join only at the human's y. *"the workspace is free to request the specific repositories and branches that it wants, and it's up to the user to gate that."* | 2026-10-23 | [§5.8](#58-long-lived-access-and-temporary-access) | pending |
 | <a id="BB-D74"></a>[`BB-D74`](#15-decision-ledger) | *Implementation decision,* carrying out [OQ-BB16](#OQ-BB16)'s ruling, under which a workspace may at most narrow: the workspace config holds no long-lived-access key at all, neither one that widens nor one that narrows. A `brokered.<source>.hold` key, or any spelling of the level, at workspace scope is refused by `yolo check` and at launch, naming the per-workspace file and the host command that writes it. Narrowing is not offered because config merge union-merges lists, so a workspace narrowing a user list needs a merge rule of its own, and the user's side already ends access with one edit. Reversible if a use for narrowing appears | 2026-10-23 | [§5.8](#58-long-lived-access-and-temporary-access) | pending |
 
 ## Appendix A — prior art: unYOLO, re-analyzed from source (2026-08-12)
