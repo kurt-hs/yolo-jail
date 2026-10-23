@@ -39,6 +39,7 @@ import (
 	goruntime "runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -123,14 +124,47 @@ func fakeHomeNix(t *testing.T, home string) int {
 		_ = cmd.Process.Kill()
 		<-exited
 	})
-	// As fakeHostDaemonProcess: /proc/<pid>/environ reads empty for a moment after Start.
-	for deadline := time.Now().Add(10 * time.Second); !processRunsWithHome(cmd.Process.Pid, home); {
+	// As fakeHostDaemonProcess: /proc/<pid>/environ reads empty for a moment after Start. And
+	// the shell's `sleep &` forks a copy of the shell, argv[0] `nix` and the same HOME, until it
+	// execs sleep: wait until no nix under this home is the stand-in's child, or a scan in that
+	// window counts two.
+	pid := cmd.Process.Pid
+	forkedCopy := func() bool {
+		for _, p := range homeNixProcesses(home) {
+			if parentPid(p) == pid {
+				return true
+			}
+		}
+		return false
+	}
+	for deadline := time.Now().Add(10 * time.Second); !processRunsWithHome(pid, home) || forkedCopy(); {
 		if time.Now().After(deadline) {
-			t.Fatalf("the stand-in nix (pid %d) never showed HOME=%s", cmd.Process.Pid, home)
+			t.Fatalf("the stand-in nix (pid %d) never stood alone under HOME=%s: %v",
+				pid, home, homeNixProcesses(home))
 		}
 		time.Sleep(time.Millisecond)
 	}
-	return cmd.Process.Pid
+	return pid
+}
+
+// parentPid reads pid's parent from /proc/<pid>/stat, or 0 when it cannot.
+func parentPid(pid int) int {
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return 0
+	}
+	// The command name is in parentheses and may hold spaces; the fields after its close are
+	// state, then the parent pid.
+	i := strings.LastIndexByte(string(b), ')')
+	if i < 0 {
+		return 0
+	}
+	f := strings.Fields(string(b)[i+1:])
+	if len(f) < 2 {
+		return 0
+	}
+	ppid, _ := strconv.Atoi(f[1])
+	return ppid
 }
 
 // Only this home's nix is stopped: one under another home, and a non-nix process under this one,

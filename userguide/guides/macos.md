@@ -258,11 +258,13 @@ user's home and shared with the sandbox, and Nix. Each failure names the command
 
 **Company certificates.** If IT installed a certificate authority in your Mac's System keychain,
 for example for a proxy that inspects HTTPS, the sandbox trusts it too, and each launch names the
-authorities it took. One you trusted only in your own login keychain is not included. To use it,
-put a certificate bundle holding it and the public roots in the project, and in `env_sources` set
-`SSL_CERT_FILE` to that file, and `NODE_EXTRA_CA_CERTS` too if you use Node. Setting
-`SSL_CERT_FILE` is enough for curl, git, Python and the other tools: yolo points their own
-variables at the same file.
+authorities it took. One you trusted only in your own login keychain is trusted too. When the
+agent runs as the separate sandbox account, Go programs such as `gh` trust it only if they were
+built with Go 1.27 or later; `go version <path to the program>` tells you, and the launch says so.
+To use a bundle of your own instead, put one holding your authority and the public roots in the
+project, and in `env_sources` set `SSL_CERT_FILE` to that file, and `NODE_EXTRA_CA_CERTS` too if
+you use Node. Setting `SSL_CERT_FILE` is enough for curl, git, Python and the other tools: yolo
+points their own variables at the same file.
 
 **Fonts.** Tools in the sandbox that draw text, such as a PDF or chart renderer, find your Mac's
 fonts in `/System/Library/Fonts` and `/Library/Fonts`, the fonts macOS downloads on demand, and

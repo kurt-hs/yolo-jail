@@ -921,6 +921,30 @@ running in another terminal.
 7. Record each result, with the macOS version, in the
    [design doc's status line](../../design/macos-user-privilege-lifecycle.md).
 
+## 12. A Go program in the separate account trusts your login keychain's CA — NEW 2026-10-23, NEVER RUN
+
+This checks [PS-D17](../../design/provisioner-sets.md#PS-D17). Run it on a Mac where a CA that
+signs a site you can reach (a company proxy's, typically) is marked "Always Trust" in **your
+login keychain only**, in the default separate-account mode. Nothing here writes a keychain.
+
+1. `yolo -- /bin/sh -c 'echo "$GODEBUG"; echo "$SSL_CERT_FILE"'`: prints
+   `x509sslcertoverrideplatform=1` and the session's `….ca-bundle.crt`. The launch prints a line
+   beginning `The agent runs as a separate account, so GODEBUG sets x509sslcertoverrideplatform=1`.
+   Watch for any password panel during the launch: there must be none.
+2. With `packages: ["gh"]`, run `go version <path>` on the host for the `gh` that `yolo -- /bin/sh -c 'command -v gh'` prints, to learn which Go built it. Then
+   `yolo -- gh api /zen` behind the proxy. A `gh` built with Go 1.27 or later must succeed; one
+   built with an older Go is expected to fail with `x509: certificate signed by unknown authority`,
+   which is the limit the launch line names.
+3. With a Go 1.27 toolchain on the host, in the project, build a client whose own default for the
+   setting is off, as a program whose `go.mod` declares a Go older than 1.27 has it:
+   `printf '//go:debug x509sslcertoverrideplatform=0\npackage main\nimport ("fmt";"net/http")\nfunc main(){r,err:=http.Get("https://<a site behind the proxy>");fmt.Println(r!=nil,err)}\n' > /tmp/c.go && go build -o ./c /tmp/c.go`.
+   Run `yolo -- ./c`: prints `true <nil>`, because the launch's `GODEBUG` overrides that default.
+   Then `yolo -- /usr/bin/env GODEBUG=x509sslcertoverrideplatform=0 ./c`: fails, proving it was the
+   setting and not the account's own trust.
+4. Remove the CA's trust in Keychain Access, launch again: the launch no longer names it, and step
+   3's client fails. Restore it afterwards.
+5. Record each result, with the macOS version, in PS-D17's UNMEASURED clause.
+
 ## Open threads from the first hardware run
 
 The 2026-09-12 session left these open. None is a product defect that a Mac has shown; each is
