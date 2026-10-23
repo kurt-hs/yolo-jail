@@ -2211,6 +2211,13 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 		userEnv:              userEnv,
 		channel:              channel,
 	}
+	// THE HOST'S CA TRUST (hostcatrust.go, PS-D16): read on the host and written as one file the
+	// jail's boot joins with its image's public roots. Here, on the fresh path only, because it
+	// writes that file; an attach keeps the trust its jail booted with. A sealed build reads and
+	// gets none: the seal hands its jail nothing from the host it does not allowlist (PS-D16).
+	if !o.Sealed {
+		in.hostCAFile = o.prepareHostCATrust(rt, wsState, out)
+	}
 	// THE HOME SKELETON (homeskeleton.go): a NEW per-jail directory, bound :ro at
 	// /home/agent, holding only the mountpoints and links this launch's binds need. Here,
 	// and only here, because this is the first point where all three of its inputs exist

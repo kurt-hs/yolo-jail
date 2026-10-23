@@ -325,23 +325,22 @@ func bootSteps() []bootStep {
 		},
 		{
 			// Build the combined CA bundle BEFORE bashrc and before any child spawn, so the env
-			// vars exported here propagate to every child the entrypoint spawns.
+			// vars exported here propagate to every child the entrypoint spawns. AFTER
+			// hydrate_user_env, whose file it reads for the user's own CA variables: the
+			// host's CAs join the bundle, and a bundle the user named wins for all five
+			// (catrust.go, PS-D16).
 			name: "generate_ca_bundle",
 			run: func(b *bootRun) {
 				e := b.e
-				if bundle, err := GenerateCABundle(e); err != nil {
-					e.warn("Warning: generate_ca_bundle: " + err.Error())
-				} else {
-					setEnvBoth(e, "SSL_CERT_FILE", bundle)
-					setEnvBoth(e, "REQUESTS_CA_BUNDLE", bundle)
-					setEnvBoth(e, "CURL_CA_BUNDLE", bundle)
-					setEnvBoth(e, "GIT_SSL_CAINFO", bundle)
+				if err := applyCATrust(e); err != nil {
+					e.warn("Warning: generate_ca_bundle: " + err.Error() + ". The jail's TLS " +
+						"clients use the image's public roots; a restart composes the bundle again.")
 				}
 			},
 			notDarwin: "the macos-user host launcher builds the bundle instead, from the tool " +
-				"profile's public roots and the CAs this Mac's System keychain trusts for TLS, and " +
-				"names it in the session env file, which is the agent's environment there " +
-				"(macosuser.ComposeCATrust)",
+				"profile's public roots and the CAs this Mac's System and login keychains trust " +
+				"for TLS, and names it in the session env file, which is the agent's environment " +
+				"there (macosuser.ComposeCATrust)",
 		},
 		{name: "generate_bashrc", gen: GenerateBashrc},
 		{

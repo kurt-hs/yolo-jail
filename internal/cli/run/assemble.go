@@ -107,6 +107,10 @@ type assembleInput struct {
 	// whole at /home/agent instead.
 	homeSkeleton string
 	wsState      string // <workspace>/.yolo/home
+	// hostCAFile is the in-jail path of the host's CAs this fresh launch composed
+	// (prepareHostCATrust, hostcatrust.go), "" when it composed none. INPUT because composing it
+	// reads the host and writes a file, which argv assembly must stay free of.
+	hostCAFile string
 	// durableDir is the in-jail path this fresh launch's durable dir was made at
 	// (ensureDurableDir), exported as $YOLO_DURABLE_DIR; "" exports nothing. INPUT because
 	// making it creates a directory, which argv assembly must stay free of.
@@ -1166,6 +1170,12 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 		// when the launch has decided the daemon will actually serve (§5's
 		// WARNING), so an idle bridge never registers.
 		runCmd = append(runCmd, serviceEndpointEnvArgs(in, o)...)
+	}
+	// --- the host's CA trust (hostcatrust.go, PS-D16) ---
+	// WITHHELD UNDER THE SEAL, like every crossing the seal does not allowlist (PS-D16): a sealed
+	// build trusts its image's public roots, as it did before the host's trust was imported.
+	if !in.sealed {
+		runCmd = append(runCmd, hostCAArgs(rt, in.wsState, in.hostCAFile)...)
 	}
 
 	// --- the host path map (docs/reference/in-jail-nix-roots.md "Translated roots and the host path map") ---

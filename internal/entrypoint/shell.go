@@ -230,17 +230,12 @@ export GIT_PAGER=cat
 export EDITOR=cat
 export VISUAL=nvim
 
-# Combined CA bundle — baseline Nix cacert + every loophole CA.
-# Point every standard TLS trust-store env var at one file so Python
-# (ssl, requests, httpx), curl, and git all verify the same roots the
-# in-jail broker leafs are signed by.  NODE_EXTRA_CA_CERTS is set by
-# the container launcher to just the extras (Node adds them to its own
-# bundled roots).  See GenerateCABundle in system.go.
-if [ -f "$HOME/.yolo-ca-bundle.crt" ]; then
-    export SSL_CERT_FILE="$HOME/.yolo-ca-bundle.crt"
-    export REQUESTS_CA_BUNDLE="$HOME/.yolo-ca-bundle.crt"
-    export CURL_CA_BUNDLE="$HOME/.yolo-ca-bundle.crt"
-    export GIT_SSL_CAINFO="$HOME/.yolo-ca-bundle.crt"
+# TLS trust — the image's public roots, the host's CAs and every loophole CA
+# in one bundle, as the boot decided the variables (catrust.go): the five
+# bundle variables name it, or the bundle your own environment named, and
+# NODE_EXTRA_CA_CERTS names the CAs beyond the public roots alone.
+if [ -f "$HOME/` + CAEnvFileRel + `" ]; then
+    . "$HOME/` + CAEnvFileRel + `"
 fi
 
 # Source user-defined env vars from config (defaults, overridable by .env).
