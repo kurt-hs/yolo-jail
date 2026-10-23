@@ -822,8 +822,10 @@ func closingDenies(hostHome string) string {
 		";; #seatbelt-test-id:system-keychains-deny#\n" +
 		"(deny file-read* file-write* (subpath \"/System/Library/Keychains\"))\n" +
 		"\n;; [yolo] Raw disk and packet capture: never, whatever config.devices says.\n" +
+		";; file-read-metadata is named because the /dev metadata allow above beats file-read*\n" +
+		";; alone: measured on macOS 26.5, `ls -l /dev/disk0` ran under the deny without it.\n" +
 		";; #seatbelt-test-id:raw-device-deny#\n" +
-		"(deny file-read* file-write*\n" +
+		"(deny file-read* file-write* file-read-metadata\n" +
 		"    (regex #\"^/dev/r?disk\")\n" +
 		"    (regex #\"^/private/dev/r?disk\")\n" +
 		"    (regex #\"^/dev/bpf\"))\n" +

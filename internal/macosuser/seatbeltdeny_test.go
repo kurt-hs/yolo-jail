@@ -133,6 +133,23 @@ func TestDenyDefaultProfileEndsWithTheAppleEventDeny(t *testing.T) {
 	}
 }
 
+// The /dev metadata allow out-ranks a bare file-read* deny on macOS 26.5, so the raw-device
+// deny must name file-read-metadata itself or a stat of /dev/disk0 succeeds
+// (TestMacosUserDenyDefaultProfileEnforcesItsRules/raw_device_metadata_refused is the native proof).
+func TestDenyDefaultProfileRawDeviceDenyCoversMetadata(t *testing.T) {
+	p := DenyDefaultProfile(testProfileParams())
+	at := strings.Index(p, "#seatbelt-test-id:raw-device-deny#")
+	if at < 0 {
+		t.Fatal("no raw-device-deny block")
+	}
+	rule := p[at:]
+	rule = rule[strings.Index(rule, "(deny"):]
+	rule = rule[:strings.Index(rule, "\n")]
+	if rule != "(deny file-read* file-write* file-read-metadata" {
+		t.Errorf("raw-device-deny opens with %q; it must deny file-read-metadata too", rule)
+	}
+}
+
 func TestDenyDefaultProfileKeepsSecretsDeniedAfterAContextAllow(t *testing.T) {
 	pp := testProfileParams()
 	pp.Context = []ContextLink{{Dest: "/ctx/ssh", Source: "/Users/you/.ssh", Dir: true}}
