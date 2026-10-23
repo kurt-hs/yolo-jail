@@ -56,7 +56,7 @@ func TestANeedRefusesRecipeAndAgentFieldsByName(t *testing.T) {
 	}
 }
 
-// PS-D19: within one pack, a need beside the pack's own recipe for the bin is refused, and so
+// PS-D20: within one pack, a need beside the pack's own recipe for the bin is refused, and so
 // are two recipes whose platforms overlap; recipes whose platforms do not overlap are one
 // program with a recipe per machine, which main accepted and this still does.
 func TestOnePackDeclaresAProgramOncePerMachine(t *testing.T) {

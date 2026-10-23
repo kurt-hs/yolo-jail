@@ -1327,7 +1327,7 @@ installs nothing for it. It takes `bin` and `install_hints` and nothing else; an
 is refused by name, with the two fixes (add a `via`, or delete the field). A need beside the
 same pack's own recipe for that bin is refused, and so are two recipes in one pack whose
 `platforms` overlap; recipes for platforms that do not overlap are one program with a recipe per
-machine ([PS-D19](../design/provisioner-sets.md#PS-D19)).
+machine ([PS-D20](../design/provisioner-sets.md#PS-D20)).
 
 What satisfies a need is decided across the **selected** packs only, by the
 [OQ-BH14](jail-home.md#reserving-a-name-is-not-creating-a-directory) selection rule: an

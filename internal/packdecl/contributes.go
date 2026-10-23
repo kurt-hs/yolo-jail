@@ -3796,7 +3796,7 @@ func knownRestart(v string) bool {
 }
 
 // validateProgramBins refuses, within ONE pack, the two ways of declaring a program BIN twice
-// that cannot mean anything (PS-D19, docs/design/provisioner-sets.md):
+// that cannot mean anything (PS-D20, docs/design/provisioner-sets.md):
 //
 //   - a NEED beside a RECIPE for the same bin: the pack's own recipe already provides it, so the
 //     need asks for nothing;
