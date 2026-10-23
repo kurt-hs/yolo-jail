@@ -217,8 +217,20 @@ class SnapshotTests(unittest.TestCase):
     def test_assemble_builds_yolo_once_and_the_launcher_is_the_bundles_copy(self):
         """The real build-go.sh and stage-source-bundle.sh, with a fake go that records every
         build: an assemble compiles cmd/yolo exactly once for the host platform, and on Linux
-        bin/yolo is byte-identical to the bundle's bin/linux-<arch>/yolo."""
-        root = self.root / "one-build"
+        bin/yolo is byte-identical to the bundle's bin/linux-<arch>/yolo. The fake go reports
+        the host, so every case runs on every machine: the real host, and forced Linux and
+        macOS hosts (a Mac host's stage also builds the jail's linux yolo, a different
+        program by nature, which must not count as a second build of the launcher)."""
+        real_os = subprocess.check_output(["go", "env", "GOHOSTOS"], text=True).strip()
+        real_arch = subprocess.check_output(["go", "env", "GOHOSTARCH"], text=True).strip()
+        for host_os, host_arch in [(real_os, real_arch), ("linux", "amd64"), ("darwin", "arm64")]:
+            with self.subTest(host=f"{host_os}/{host_arch}"):
+                self._assert_one_yolo_build(host_os, host_arch)
+
+    def _assert_one_yolo_build(self, host_os: str, host_arch: str):
+        root = self.root / f"one-build-{host_os}-{host_arch}"
+        if root.exists():
+            shutil.rmtree(root)
         repo = repo_fixture(root, real_scripts=True)
         shipped, guest = mb._binary_lists(repo / "scripts/stage-source-bundle.sh")
         for name in {*shipped, *guest, "goprobe"}:
@@ -228,8 +240,6 @@ class SnapshotTests(unittest.TestCase):
         subprocess.run(["git", "add", "cmd"], cwd=repo, env=env, check=True)
         subprocess.run(["git", "-c", "user.name=test", "-c", "user.email=test@example.invalid",
                         "commit", "-qm", "cmds"], cwd=repo, env=env, check=True)
-        host_os = subprocess.check_output(["go", "env", "GOHOSTOS"], text=True).strip()
-        host_arch = subprocess.check_output(["go", "env", "GOHOSTARCH"], text=True).strip()
         fakebin = root / "fakebin"; fakebin.mkdir()
         log = root / "builds.log"
         fake = fakebin / "go"
@@ -264,8 +274,13 @@ out.chmod(0o755)
                         version="v1", commit="c1")
             builds = log.read_text().splitlines()
             yolo_builds = [b for b in builds if b.endswith(" ./cmd/yolo")]
-            self.assertEqual(yolo_builds, [f"{host_os}/{host_arch} ./cmd/yolo"],
-                             f"cmd/yolo must be compiled exactly once, for the host platform: {builds}")
+            host_build = f"{host_os}/{host_arch} ./cmd/yolo"
+            self.assertEqual(yolo_builds.count(host_build), 1,
+                             f"cmd/yolo must be compiled exactly once for the host platform: {builds}")
+            self.assertEqual(len(yolo_builds), len(set(yolo_builds)),
+                             f"a platform's yolo was compiled twice: {builds}")
+            self.assertTrue(all(b == host_build or b.startswith("linux/") for b in yolo_builds),
+                            f"cmd/yolo was built for a platform that is neither the host nor the jail: {builds}")
             launcher = (output / "bin/yolo").read_bytes()
             share = output / "share/yolo-jail/bin"
             if host_os == "linux":

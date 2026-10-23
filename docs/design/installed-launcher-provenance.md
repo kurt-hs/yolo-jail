@@ -23,7 +23,7 @@ summary: "The installed launcher and the copy a jail runs come from one frozen s
 
 **Needs your ruling:** nothing open. **Ruled 2026-10-23:** [OQ-IP1](#OQ-IP1), [OQ-IP2](#OQ-IP2), [OQ-IP3](#OQ-IP3).
 
-**Reads with:** [`matched-development-bundles.md`](matched-development-bundles.md) (owns the matched-artifact contract and the development wrapper), [`installed-launcher-provenance-plan.md`](installed-launcher-provenance-plan.md) (the implementation sketch — incomplete while [OQ-IP1](#OQ-IP1) is open), [`self-update.md`](../reference/self-update.md) (owns the install channels and the source check), [`host-execution-from-the-workspace.md`](../reference/host-execution-from-the-workspace.md) (rules what a checkout a jail can write may do on the host), [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md) (owns the mounted prefix).
+**Reads with:** [`matched-development-bundles.md`](matched-development-bundles.md) (owns the matched-artifact contract and the development wrapper), [`installed-launcher-provenance-plan.md`](installed-launcher-provenance-plan.md) (the implementation sketch, now built), [`self-update.md`](../reference/self-update.md) (owns the install channels and what `yolo update` does on a from-source install), [`host-execution-from-the-workspace.md`](../reference/host-execution-from-the-workspace.md) (rules what a checkout a jail can write may do on the host), [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md) (owns the mounted prefix).
 
 ---
 
