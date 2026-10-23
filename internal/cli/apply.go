@@ -28,7 +28,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/darwinpkg"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
-	"github.com/mschulkind-oss/yolo-jail/internal/jailcontent"
 	"github.com/mschulkind-oss/yolo-jail/internal/outfmt"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -1195,7 +1194,7 @@ func reportConfigResult(pr richtext.Printer, survey *hostApplySurvey, owner stri
 //   - render.ProfileFor(render.KindHost), which is jailcontent.ConfinementProfile's answer for
 //     KindHost at every mechanism and platform (both return render.HostProfile()). The host
 //     composes no PrimBakedImage, so the gate is open here by construction: a jail's packages
-//     come from the image, and the host's come from wherever a provisioner put them.
+//     come from the image, and the host applies none (HP-DIR3), so the line says inert.
 //   - config.EffectivePackages(cfg, runtime.GOOS) — describe's own platform filter, so a
 //     darwin-only entry is not counted into a Linux host's closure.
 //   - the GC root under THIS apply's home rather than paths.Home(). The two cannot differ
@@ -1207,14 +1206,11 @@ func reportConfigResult(pr richtext.Printer, survey *hostApplySurvey, owner stri
 // the one the launch gate and every command-level test hold, and this is the same read
 // describe makes for the same line.
 //
-//   - materializes, DERIVED THE WAY describe DERIVES IT rather than hardcoded. This command
-//     provisions no packages, which makes a constant false tempting — and wrong: whether an
-//     absent GC root is a pending state or a permanent one is a fact about the MECHANISM, not
-//     about which command is asking. A `confinement: host` workspace whose runtime is
-//     macos-user does have a provisioner (darwinpkg.Materialize's one caller is that backend's
-//     run seam), so a constant here would make apply and describe disagree on exactly the
-//     configs this function exists to make agree. `check` corrected the same cell for itself in
-//     §9 step 2 (section_packageprofile.go's `materializes`) and reads the same mechanism.
+//   - materializes, DERIVED THE WAY describe DERIVES IT (packagesMaterializeAt) rather than
+//     hardcoded, so the two commands cannot drift. At the host notch that answer is false
+//     whatever the runtime (OQ-NX8, ruled 2026-10-23): a `runtime: "macos-user"` setting
+//     provisions a profile for that backend's launches, never for `yolo host`, so the line
+//     says inert, as `check`'s does (section_packageprofile.go).
 //
 // ⚠ WHAT THIS DOES NOT CLAIM. This command reports; it provisions nothing. `packages:` is
 // delivered by a baked image or by the boot-written farm at /run/yolo/packages, and the host
@@ -1236,11 +1232,11 @@ func reportHostPackages(pr richtext.Printer, errw io.Writer, home string) (inert
 	prof := render.ProfileFor(render.KindHost)
 	packages := config.EffectivePackages(cfg, runtime.GOOS)
 	root := darwinpkg.ProfileRootLink(home)
-	materializes := jailcontent.MechanismHasNoContainer(resolvedMechanism(cfg))
-	if !reportVerbose() && packageProfileInert(prof, packages, root, materializes) {
+	materializes := packagesMaterializeAt(render.KindHost, resolvedMechanism(cfg))
+	if !reportVerbose() && packageProfileInert(render.KindHost, prof, packages, root, materializes) {
 		return len(packages)
 	}
-	printPackageProfile(pr, prof, packages, root, materializes)
+	printPackageProfile(pr, render.KindHost, prof, packages, root, materializes)
 	return 0
 }
 

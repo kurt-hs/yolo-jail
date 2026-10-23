@@ -473,6 +473,25 @@ func bootSteps() []bootStep {
 			gen:  LinkContextDir,
 		},
 		{
+			// EACH SELECTED PACK'S boot_check (packbootchecks.go, mcp-presets-removal.md
+			// OQ-MP9): the pack's own script, run once, its output printed as a warning. After
+			// install_home_overlay, which is what puts the script in a macos-user home. A `run`,
+			// never a generator: a check that fails or hangs costs a line, never the boot.
+			name: "run_pack_boot_checks",
+			run: func(b *bootRun) {
+				if b.sealed {
+					return
+				}
+				packs, err := b.jailPacks()
+				if err != nil {
+					return // configure_pack_surfaces has already failed the boot on it
+				}
+				RunPackBootChecks(b.e, b.target, packs)
+			},
+			notSessionPass: "the jail's own boot ran each check once; a session's pass would print " +
+				"the same warning again on every attach",
+		},
+		{
 			// THE PROVISIONING STAGE'S SCRIPT ("The stage" of macos-user-provisioning.md).
 			// Written LAST among the generators that produce content, because it is the only one
 			// nothing here consumes: the stage is a separate, Seatbelt-confined process the

@@ -177,6 +177,11 @@ var knownReleaseBreaks = []knownReleaseBreak{
 	{release: "v0.11.0", pack: "codex", problem: `unknown field "notAtHost"`,
 		guard: guardNoRestageOnAttach, pinnedBy: pinAttachLeavesAnOlderJailsTree,
 		repair: dropKey("notAtHost")},
+	// Measured against v0.15.1 on 2026-10-23: chrome-devtools declares the boot_check hook
+	// (docs/design/mcp-presets-removal.md OQ-MP9, MP-D11), which v0.15.1's hook set lacks, as pi's
+	// two hooks were unknown to v0.10.0.
+	{release: "v0.15.1", pack: "chrome-devtools", problem: `unknown hook "boot_check"`,
+		guard: guardNoRestageOnAttach, pinnedBy: pinAttachLeavesAnOlderJailsTree},
 	// Measured against v0.15.1 on 2026-10-23: guardrails' two `requires` entries became
 	// `program` with no recipe (docs/design/provisioner-sets.md OQ-PS11, ruled with no
 	// transition), which v0.15.1's reader refuses as a program missing its "via". It is a

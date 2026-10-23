@@ -25,6 +25,7 @@ package entrypoint
 // same shape as `install` — a declaration, not a command — and it is deliberately NOT a
 // script the pack supplies: a pack that could run arbitrary code at boot would make the
 // origin gate meaningless, since shipping content and executing code would be one grant.
+// (boot_check is the ruled exception, and why it is bounded is stated below.)
 //
 // WHY THIS IS BETTER THAN THE SWITCH IT REPLACED, since the code volume is similar: the
 // switch keyed on "claude", so the behavior was unreachable for anything else and invisible
@@ -33,9 +34,18 @@ package entrypoint
 // your jail is readable from the pack.
 //
 // The honest limitation: the hook set is CLOSED (packdecl.KnownHooks), so a third-party pack
-// needing a genuinely new side effect cannot ship one. That is the accepted cost of not
-// executing pack code at boot. When a real second case appears, the hook joins this file;
-// inventing a general mechanism before then would be speculation.
+// needing a genuinely new side effect cannot ship one. When a real second case appears, the
+// hook joins this file; inventing a general mechanism before then would be speculation.
+//
+// ONE HOOK DOES RUN PACK CODE, by the maintainer's ruling: boot_check
+// (docs/design/mcp-presets-removal.md, OQ-MP9, 2026-10-23 — "if the pack discovers at boot …
+// that it's not there, then it should print it … it is just a warning"). It runs a script the
+// pack delivers, as the boot's user, in a CONTAINER jail only, where the whole boot is inside the
+// jail's confinement. It runs neither on macos-user, whose bootstrap is outside the agent's
+// Seatbelt profile and may run only yolo's own code (P4), nor at `yolo host`; there the pack's
+// program reports the same thing at its own start. Its output is printed and nothing else is done with it:
+// it cannot stop a launch, and a check that fails or hangs costs one line (packbootchecks.go).
+// It still takes no side effect off the list above; what it may print is all it does.
 
 import (
 	"fmt"
@@ -75,6 +85,10 @@ const (
 	// HookPerJailHistory points the tool's history file at a per-workspace file, so two
 	// jails on one machine do not interleave their history.
 	HookPerJailHistory = "per_jail_history"
+	// HookBootCheck runs a check script the pack delivers, once at boot, and prints what it
+	// says as a warning (packbootchecks.go). RunPackHooks does nothing for it: its own boot
+	// step runs it after the home overlay, the step that delivers the script on macos-user.
+	HookBootCheck = "boot_check"
 )
 
 // RunPackHooks honors each pack's requested hooks. Failures go through genStep, so a
@@ -102,6 +116,10 @@ func runPackHook(e *Env, p *packload.Pack, h packdecl.Hook) error {
 		return e.unshareDirectory(p, h)
 	case HookPerJailHistory:
 		return e.isolateHistoryFile(h)
+	case HookBootCheck:
+		// Run by the run_pack_boot_checks step (packbootchecks.go), not here, which runs it in a
+		// container jail and records its skip on macos-user.
+		return nil
 	default:
 		// Unknown hook names are rejected at manifest decode, so reaching here means the
 		// known-set and the switch disagree — a yolo bug, surfaced rather than ignored.
