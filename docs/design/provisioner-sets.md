@@ -118,7 +118,7 @@ The survey that forced all of it — the inventory, the coverage matrix, the nix
 [`provisioner-evidence.md`](provisioner-evidence.md), and you need it to **check** the argument
 rather than to follow it.
 
-**Needs your ruling:** [`OQ-PS5`](#OQ-PS5) (asked only if [`OQ-PS11`](#OQ-PS11) is ruled (a)), [`OQ-PS11`](#OQ-PS11), [`OQ-NX8`](#OQ-NX8). **Ruled 2026-10-23:** [`OQ-NX9`](#OQ-NX9) (a font-sharing opt-in, built now), [`OQ-NX4`](#OQ-NX4) (core locator rows only), [`OQ-PS14`](#OQ-PS14) and [`OQ-PS15`](#OQ-PS15) (import the host's trust, the login keychain's included, into every jail), [`OQ-PS16`](#OQ-PS16) (the separate account's Go programs trust it too).
+**Needs your ruling:** [`OQ-PS5`](#OQ-PS5) (live, since [`OQ-PS11`](#OQ-PS11) was ruled (a)). **Ruled 2026-10-23:** [`OQ-NX8`](#OQ-NX8) (`packages:` reported inert at the host, by design), [`OQ-NX9`](#OQ-NX9) (a font-sharing opt-in, built now), [`OQ-NX4`](#OQ-NX4) (core locator rows only), [`OQ-PS14`](#OQ-PS14) and [`OQ-PS15`](#OQ-PS15) (import the host's trust, the login keychain's included, into every jail), [`OQ-PS16`](#OQ-PS16) (the separate account's Go programs trust it too).
 
 > [!NOTE]
 > **Scope note — this doc absorbed
@@ -1970,7 +1970,7 @@ recommendation the doc rests on.
     > that are shared, even in guest mode or container mode, are the ones that are careful."* An
     > opt-in for the other two is [`OQ-NX9`](#OQ-NX9).
 
-4. 💬 <a id="OQ-NX8"></a>**OQ-NX8: Should the `packages:` key report at all below `jail`, and which command says
+4. ✅ <a id="OQ-NX8"></a>**OQ-NX8: Should the `packages:` key report at all below `jail`, and which command says
     so?**
 
     At the host, `packages:` is permanently inert under
@@ -1990,10 +1990,13 @@ recommendation the doc rests on.
     yolo does not have, and it drifts toward managing the workspace's runtime. On Q2, **yes.** The
     report should read the notch, not the runtime.
 
-    <!-- vantage: oq id=OQ-NX8 leaning="Q1 (b): at the host, check prints a by-design inert line at info level, matching yolo host apply and OQ-NC8's 'named as inert' for mise_tools; a presence probe needs a nix-attribute-to-binary map yolo lacks and drifts toward managing the workspace's runtime. Q2 yes: the host-notch report says inert whatever the runtime, because a confinement: host launch refuses and the macos-user profile never serves the host. HP-DIR3 (2026-09-29) already settled that packages: is permanently inert at the host, so the env-manager's '✗ packages' line is true there and 'no package layer yet' text should change." -->
-
     **Answer:**
-    > _(empty — fill in when decided)_
+    > **Ruled in review 2026-10-23, as leaned: one rule, `yolo host` never applies the workspace's
+    > jail-only keys.** *"yes, I agree. A … I didn't even actually know this was controversial. I
+    > thought this was already long decided."* It was: [`HP-DIR3`](../reference/host-agent-environment.md#HP-DIR3)
+    > settled it on 2026-09-29, and this answer only words the report. Q1 (b): at the host, `check`
+    > prints a by-design inert line at info level, not a WARN. Q2 yes, closed by the same rule: the
+    > host-notch report says inert whatever the runtime setting is.
 
 5. ✅ <a id="OQ-PS14"></a>**OQ-PS14: How does a macos-user sandbox trust a certificate authority
     that IT installed on the Mac?**
@@ -2383,6 +2386,7 @@ this doc already had, per the rule that one subject gets one question.
 | [`OQ-3`](#decision-ledger) | **folded into [`OQ-PS1`](#decision-ledger)(c)** | the mechanism is worked through in [the evidence doc](provisioner-evidence.md#33-nix-profile---profile-dir-the-only-candidate-that-reaches-a-users-own-path) |
 | [`OQ-4`](#decision-ledger) | [`OQ-NX4`](#OQ-NX4) | live |
 | [`OQ-PS16`](#OQ-PS16) | In the separate-account mode, programs that ask macOS for trust (Go's) trust the login keychain's CAs too, as the CA-file tools already do: *"if there's a cert in my trusted cert store, it's the machine."* | 2026-10-23 | [§16.3](#163-the-corporate-certificate-trap) | pending |
+| [`OQ-NX8`](#OQ-NX8) | At the host, `packages:` is reported as inert by design, at info level, whatever the runtime setting is: one rule, the host never applies the workspace's jail-only keys ([`HP-DIR3`](../reference/host-agent-environment.md#HP-DIR3)). | 2026-10-23 | [§16](#16-locator-variables-on-a-non-container-notch-researched-2026-09-29) | pending |
 | [`OQ-5`](#decision-ledger) | [`OQ-NX5`](#decision-ledger) | ruled 2026-09-29 — [Decision Ledger](#decision-ledger) |
 | [`OQ-6`](#decision-ledger) | [`OQ-NX6`](#decision-ledger) | settled 2026-08-02 — [Decision Ledger](#decision-ledger); the three traps are preserved in [coverage, freshness and the traps](provisioner-evidence.md#37-macos-vs-linux-coverage-freshness-and-the-traps) |
 | [`OQ-7`](#decision-ledger) | **folded into [`OQ-PS6`](#decision-ledger)** | it is that question's jail row; [§10](#10-alternatives-each-with-a-verdict) alternative F |
