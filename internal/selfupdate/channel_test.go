@@ -10,27 +10,31 @@ import (
 )
 
 func TestDetect(t *testing.T) {
-	isGit := func(dir string) bool { return dir == "/src/yolo-jail" }
-	noGit := func(string) bool { return false }
 	bundleIn := func(want string) func(string) bool {
 		return func(exeDir string) bool { return exeDir == want }
 	}
+	id := strings.Repeat("c", 64)
 	cases := []struct {
 		name string
 		in   DetectInput
 		want Channel
 	}{
 		{
-			name: "source install: stamped checkout that still exists",
-			in: DetectInput{Exe: "/home/u/.local/bin/yolo", SourceDir: "/src/yolo-jail", SourceBranch: "main", GitCommit: "cfefa8bf",
-				Baked: "0.10.0+510.gcfefa8bf", IsSourceCheckout: isGit},
-			want: Channel{Kind: KindSource, Exe: "/home/u/.local/bin/yolo", SourceDir: "/src/yolo-jail", Branch: "main", Version: "cfefa8bf"},
+			name: "from-source install: a snapshot, by its build kind",
+			in: DetectInput{Exe: "/home/u/go/bin/yolo", Baked: "0.10.0+510.gcfefa8bf", BuildKind: "installed",
+				SnapshotIdentity: id, ModuleVersion: "v0.10.1-0.20260925235235-cfefa8bf599b", BuiltFromVCS: true},
+			want: Channel{Kind: KindSnapshot, Exe: "/home/u/go/bin/yolo", Version: "0.10.0+510.gcfefa8bf", SnapshotIdentity: id},
 		},
 		{
-			name: "source stamp whose checkout is gone says so",
-			in: DetectInput{Exe: "/home/u/.local/bin/yolo", SourceDir: "/src/yolo-jail", GitCommit: "cfefa8bf",
-				Baked: "0.10.0+510.gcfefa8bf", IsSourceCheckout: noGit, HasBundleBeside: func(string) bool { return true }},
-			want: Channel{Kind: KindUnknown, Exe: "/home/u/.local/bin/yolo", MissingSourceDir: "/src/yolo-jail"},
+			name: "a snapshot is never an archive, even with a bundle beside it",
+			in: DetectInput{Exe: "/opt/yolo/yolo", Baked: "0.10.0", BuildKind: "installed",
+				HasBundleBeside: func(string) bool { return true }},
+			want: Channel{Kind: KindSnapshot, Exe: "/opt/yolo/yolo", Version: "0.10.0"},
+		},
+		{
+			name: "a snapshot is never go install, even with no baked version",
+			in:   DetectInput{Exe: "/home/u/go/bin/yolo", BuildKind: "installed", ModuleVersion: "v0.10.0"},
+			want: Channel{Kind: KindSnapshot, Exe: "/home/u/go/bin/yolo"},
 		},
 		{
 			name: "homebrew, even though it ships a bundle beside the binary",
@@ -145,43 +149,20 @@ func TestIsSourceCheckout(t *testing.T) {
 	}
 }
 
-func TestSourceIdentityIncludesCheckoutAndBranch(t *testing.T) {
-	base := Channel{Kind: KindSource, Version: "cfefa8bf", SourceDir: "/src/one", Branch: "main"}
-	for name, other := range map[string]Channel{
-		"checkout": {Kind: KindSource, Version: "cfefa8bf", SourceDir: "/src/two", Branch: "main"},
-		"branch":   {Kind: KindSource, Version: "cfefa8bf", SourceDir: "/src/one", Branch: "release"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if base.Identity() == other.Identity() {
-				t.Errorf("source identities collide: %q", base.Identity())
-			}
-		})
-	}
-}
+// Current is the call site that feeds the running binary's build kind to Detect: a `just
+// install` launcher (BuildKind "installed") is a snapshot, whatever else is known about it.
+// A test binary is otherwise unidentified, so dropping BuildKind from Current fails this.
+func TestCurrentClassifiesAnInstalledBuildAsASnapshot(t *testing.T) {
+	orig := version.BuildKind
+	t.Cleanup(func() { version.BuildKind = orig })
 
-func TestCurrentValidatesTheStampedCheckout(t *testing.T) {
-	origDir, origBranch, origCommit := version.SourceDir, version.SourceBranch, version.GitCommit
-	t.Cleanup(func() {
-		version.SourceDir, version.SourceBranch, version.GitCommit = origDir, origBranch, origCommit
-	})
-
-	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
-		t.Fatal(err)
+	version.BuildKind = ""
+	if got := Current(); got.Kind != KindUnknown {
+		t.Fatalf("Current() for an unstamped test binary = %+v, want unknown", got)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module "+Module+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	version.SourceDir, version.SourceBranch, version.GitCommit = dir, "main", "cfefa8bf"
-	if got := Current(); got.Kind != KindSource || got.SourceDir != dir {
-		t.Fatalf("Current() = %+v, want the stamped source checkout", got)
-	}
-
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/other\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := Current(); got.Kind != KindUnknown || got.MissingSourceDir != dir {
-		t.Fatalf("Current() = %+v, want the replaced checkout reported as missing", got)
+	version.BuildKind = "installed"
+	if got := Current(); got.Kind != KindSnapshot {
+		t.Fatalf("Current() for an installed build = %+v, want a snapshot", got)
 	}
 }
 
@@ -202,12 +183,12 @@ func TestEnabled(t *testing.T) {
 }
 
 func TestCanApply(t *testing.T) {
-	for _, k := range []Kind{KindSource, KindHomebrew} {
+	for _, k := range []Kind{KindHomebrew} {
 		if !(Channel{Kind: k}).CanApply() {
 			t.Errorf("%s should be updatable in place", k)
 		}
 	}
-	for _, k := range []Kind{KindGoInstall, KindPipx, KindUV, KindArchive, KindUnknown} {
+	for _, k := range []Kind{KindSnapshot, KindDevelopment, KindGoInstall, KindPipx, KindUV, KindArchive, KindUnknown} {
 		if (Channel{Kind: k}).CanApply() {
 			t.Errorf("%s cannot update the complete installation in place", k)
 		}
