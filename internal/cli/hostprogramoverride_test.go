@@ -13,7 +13,12 @@ import (
 // runs, in the jail's words, and the launch execs the floor's entry for it, which runs that file. An
 // override naming no selected program says nothing. Red if the line leaves selectionLines.
 func TestYoloHostAppliesAProgramOverrideOfAnNpmAgent(t *testing.T) {
-	ws := t.TempDir()
+	// Resolved where it is minted: on macOS t.TempDir() is under the /var -> /private/var link, and
+	// the floor records the override's resolved path.
+	ws, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	file := filepath.Join(ws, "cli.js")
 	writeFile(t, file, "#!/bin/sh\necho dev\n")
 	if err := os.Chmod(file, 0o755); err != nil {
