@@ -117,7 +117,7 @@ The survey that forced all of it — the inventory, the coverage matrix, the nix
 [`provisioner-evidence.md`](provisioner-evidence.md), and you need it to **check** the argument
 rather than to follow it.
 
-**Needs your ruling:** [`OQ-PS5`](#OQ-PS5) (asked only if [`OQ-PS11`](#OQ-PS11) is ruled (a)), [`OQ-PS11`](#OQ-PS11), [`OQ-NX8`](#OQ-NX8). **Ruled 2026-10-23:** [`OQ-NX4`](#OQ-NX4) (core locator rows only), [`OQ-PS14`](#OQ-PS14) and [`OQ-PS15`](#OQ-PS15) (import the host's trust, the login keychain's included, into every jail).
+**Needs your ruling:** [`OQ-PS5`](#OQ-PS5) (asked only if [`OQ-PS11`](#OQ-PS11) is ruled (a)), [`OQ-PS11`](#OQ-PS11), [`OQ-NX8`](#OQ-NX8), [`OQ-NX9`](#OQ-NX9). **Ruled 2026-10-23:** [`OQ-NX4`](#OQ-NX4) (core locator rows only), [`OQ-PS14`](#OQ-PS14) and [`OQ-PS15`](#OQ-PS15) (import the host's trust, the login keychain's included, into every jail).
 
 > [!NOTE]
 > **Scope note — this doc absorbed
@@ -1955,8 +1955,15 @@ recommendation the doc rests on.
     > generated macOS `fonts.conf` (with read allows for the font folders it lists),
     > `PKG_CONFIG_PATH` extended to `share/pkgconfig`, and the certificate row
     > ([`OQ-PS14`](#OQ-PS14)). No pack kind and no `packages:` field for now; a second real case
-    > reopens (a). Whether the human's own `~/Library/Fonts` is readable is asked separately in the
-    > same review, still open.
+    > reopens (a).
+    >
+    > **The human's own `~/Library/Fonts`, ruled the same day:** readable in run-as-you mode, always,
+    > and listed in the generated `fonts.conf`; not shared into the separate-account mode or a
+    > container jail, which give the same answer as each other. In his words: *"in self mode, you
+    > will always get the fonts. If it's not self mode, container and guest mode should have the
+    > same answer … If you're operating as the same user, you get that user['s] things. The ones
+    > that are shared, even in guest mode or container mode, are the ones that are careful."* An
+    > opt-in for the other two is [`OQ-NX9`](#OQ-NX9).
 
 4. 💬 <a id="OQ-NX8"></a>**OQ-NX8: Should the `packages:` key report at all below `jail`, and which command says
     so?**
@@ -2037,6 +2044,30 @@ recommendation the doc rests on.
     > **Ruled in review 2026-10-23, (b), in both modes:** *"if it was trusted on the host, it should
     > be trusted in the jail, regardless of how that trust got there."* The bundle also carries the
     > CAs the user's login keychain trusts for TLS, listed at launch as coming from it.
+
+7. 💬 <a id="OQ-NX9"></a>**OQ-NX9: Should there be an opt-in that shares your own fonts into a
+    separate-account or container jail?**
+
+    Priya's colleague Dev uses the separate-account mode, and his teammate Ana a container jail on
+    Linux. Both installed the company font for themselves: Dev in `~/Library/Fonts`, Ana in
+    `~/.local/share/fonts`. Since [`OQ-NX4`](#OQ-NX4)'s ruling, their agents' PDFs fall back to
+    another font, because only run-as-you mode reads the user's own fonts. The maintainer said
+    sharing them there would surprise him by default, *"but maybe we should have that as an option,
+    an opt-in."* The question is whether to build it, and when.
+
+    - **(a) Build it now:** one user-scope setting shares the user's font folder read-only, the same
+      in both backends (a read-only mount in a container, an access grant for the separate
+      account), named at each launch.
+    - **(b) Not until someone asks:** the launch says "your own fonts aren't shared in this mode;
+      add a font package", and the opt-in is built when a real user needs it.
+
+    <!-- vantage: oq id=OQ-NX9 leaning="(b): not until someone asks. A font package covers the need, the same evidence bar as OQ-NX4's core-rows-only ruling, and the launch line names the step." -->
+
+    _Leaning:_ **(b).** A font package already covers the need, and it is the same evidence bar
+    [`OQ-NX4`](#OQ-NX4) was ruled on: build when a real case shows up.
+
+    **Answer:**
+    > _(empty — fill in when decided)_
 
 ### Background to the open questions
 
