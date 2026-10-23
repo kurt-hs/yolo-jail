@@ -73,7 +73,8 @@ func RunPackBootChecks(e *Env, target bootTarget, packs []*packload.Pack) {
 			}
 			if target != bootContainer {
 				e.note(fmt.Sprintf("boot check %s (~/%s): skipped on macos-user, whose bootstrap "+
-					"runs outside the agent's sandbox and so runs no pack script (P4)",
+					"holds writes the agent's sandbox denies (it runs unsandboxed, or with the "+
+					"home-content delivery lift) and so runs no pack script (P4)",
 					p.Name, filepath.ToSlash(h.File)))
 				continue
 			}

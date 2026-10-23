@@ -3,6 +3,7 @@ package macosuser
 import (
 	"bytes"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -400,4 +401,53 @@ func selfModeWireBridgeDaemons(src string) JailDaemons {
 	env := jsonx.NewOrderedMap()
 	env.Set(jailDaemonsEnv, `[{"name":"wire-bridge","cmd":["yolo-jaild","wire-bridge"],"restart":"on-failure"}]`)
 	return JailDaemons{Env: env, GuestBinSource: src}
+}
+
+// THE HOME-CONTENT DENIES STAND ASIDE FOR THE BOOTSTRAP ALONE. The run-as-you bootstrap runs under
+// the session profile (MMP-D9) and is what delivers the staged skills and briefings, so both G14
+// forms are gated on HomeContentDeliveryParam and only the bootstrap is started with it. Before
+// the gate the deny refused the bootstrap's own mkdir and rename, and every run-as-you launch
+// stopped at install_home_overlay. Every other argv in the plan must leave the deny standing.
+func TestSelfModeBootstrapAloneMayDeliverHomeContent(t *testing.T) {
+	plan := BuildRunPlanWithDaemons("/Users/you/code/alpha", jsonx.NewOrderedMap(), nil, []string{"claude"},
+		"/usr/local/bin/yolo", "", HomeOverlay{Tree: "/staged/overlay", Dests: []string{".claude/skills"},
+			WorkspaceDirs: []string{".claude"}}, HostContext{}, jsonx.NewOrderedMap(), nil, nil,
+		selfModeWireBridgeDaemons("/opt/yolo/bin/darwin-arm64"), FloorStage{Unmet: []string{"node"}},
+		PlanSession{Mode: ModeSelf, HostHome: "/Users/you", HostUser: "you",
+			DarwinUserTempDir: "/private/var/folders/ab/xyz/T/"})
+	// The negative loop below is vacuous for an argv the plan never built.
+	if len(plan.JailDaemonArgv) == 0 || len(plan.ProvisionArgv) == 0 {
+		t.Fatalf("the plan built no supervisor or provisioning argv to check: %v / %v",
+			plan.JailDaemonArgv, plan.ProvisionArgv)
+	}
+	gate := `(if (not (param "` + HomeContentDeliveryParam + `"))` + "\n"
+	for _, id := range []string{"home-content-write-deny", "home-content-anchor-deny"} {
+		if !strings.Contains(plan.Seatbelt, gate+";; #seatbelt-test-id:"+id+"#\n") {
+			t.Errorf("%s is not gated on %s, so the bootstrap cannot deliver what it protects:\n%s",
+				id, HomeContentDeliveryParam, plan.Seatbelt)
+		}
+	}
+	lift := HomeContentDeliveryParam + "=1"
+	if !containsArgRun(plan.BootstrapArgv, []string{"/usr/bin/sandbox-exec", "-f", plan.ProfilePath, "-D", lift}) {
+		t.Errorf("the bootstrap is not started with -D %s: %v", lift, plan.BootstrapArgv)
+	}
+	v := reflect.ValueOf(plan)
+	for i := 0; i < v.NumField(); i++ {
+		name := v.Type().Field(i).Name
+		if name == "BootstrapArgv" {
+			continue
+		}
+		var argvs [][]string
+		switch f := v.Field(i).Interface().(type) {
+		case []string:
+			argvs = [][]string{f}
+		case [][]string:
+			argvs = f
+		}
+		for _, a := range argvs {
+			if slices.Contains(a, lift) {
+				t.Errorf("%s lifts the home-content deny, which only the bootstrap may: %v", name, a)
+			}
+		}
+	}
 }

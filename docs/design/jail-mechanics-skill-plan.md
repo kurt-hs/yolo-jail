@@ -2,15 +2,15 @@
 title: "jail-mechanics skill: implementation plan (seed)"
 status: draft
 stage: SKETCH
-next: "Complete against the tree once jail-mechanics-skill.md is accepted"
-depends-on: [jail-mechanics-skill.md#OQ-JM2, jail-mechanics-skill.md#OQ-JM4]
+next: "Planner: complete against the tree; the design is accepted and nothing is open"
 tags: [plan, skills, briefing, lifecycle]
 ---
 
 # jail-mechanics skill: implementation plan (seed)
 
-**Status:** 2026-10-23. Seeded during design; not a hand-off, and incomplete until the design is
-accepted. Nothing may be built from it while it is a seed.
+**Status:** 2026-10-23. The design is accepted and all four questions were ruled on 2026-10-23, so
+nothing blocks this plan any more. It is still the seed: a planner completes it against the tree
+(map, reuse, traps, tasks), and the build starts from the completed plan.
 
 The design is [`jail-mechanics-skill.md`](jail-mechanics-skill.md), and it wins on behavior. This
 file holds what the design work surfaced and the user need not rule on.
@@ -25,10 +25,19 @@ file holds what the design work surfaced and the user need not rule on.
   [`skills.go`](../../internal/jailcontent/skills.go)). The rendered skill is written after the packs,
   like `writeLSPPlugin`, per [JM-D2](jail-mechanics-skill.md#decision-ledger). Today the input is
   built *after* skills staging, so the order inside `refreshJailBriefings` changes.
-- **`TestBuiltinSkillsEmbedMatchesTree`** pins the embed list against the on-disk tree. A rendered
-  skill has no on-disk tree under `builtinskills/`; decide whether its templates live there (and the
-  test learns templates) or beside the renderer. Blocked on
-  [OQ-JM2](jail-mechanics-skill.md#OQ-JM2), which decides whether the other two become templates.
+- **All three built-in skills are rendered** ([OQ-JM2](jail-mechanics-skill.md#OQ-JM2), ruled
+  2026-10-23): configuring-the-jail and diagnosing-the-jail become templates over the same fact sheet
+  as jail-mechanics, so `writeBuiltinSkills` stops copying `builtinskills.FS` verbatim.
+  **`TestBuiltinSkillsEmbedMatchesTree`** pins the embed list against the on-disk tree; decide
+  whether the templates live under `builtinskills/` (and the test learns templates) or beside the
+  renderer.
+- **The ruling reaches past skills**: any informational text pushed into the jail renders from the
+  same facts and says only this jail's case. Search for every such text before scoping the build
+  (the briefing, the handoff section, generated shim and launcher messages); list what is in scope
+  in the completed plan.
+- **Paths are real** ([OQ-JM3](jail-mechanics-skill.md#OQ-JM3)): rendered text names the workspace's
+  real path and host paths. The macos-user briefing line that translates `/workspace`
+  (`briefing.go`) goes once nothing pushed into the jail spells `/workspace`.
 - **The change-timing table today** is `keyOutcome`, `mountsOutcome`, `scopeChangeOutcome` and
   `verifiedScopeOutcome` in [`liveapplyplan.go`](../../internal/cli/run/liveapplyplan.go), package
   `run`. `jailcontent` cannot import `run`; the table needs a package both import (or the renderer
@@ -61,9 +70,14 @@ file holds what the design work surfaced and the user need not rule on.
   `liveapply.go`'s command path, which today calls no staging; it needs the running jail's pack view
   that an attach builds.
 - **Static texts to edit when the design lands**: `packagesSection` and the Skills section in
-  `briefing.go`; both `SKILL.md` files; the agent-workflow paragraphs of `config_ref.txt`
+  `briefing.go` (the lifecycle text becomes one pointer line, per
+  [OQ-JM1](jail-mechanics-skill.md#OQ-JM1)); both `SKILL.md` files, which become templates; the agent-workflow paragraphs of `config_ref.txt`
   (search `Please restart the jail`); [`agent-briefings.md`](../reference/agent-briefings.md)'s
   Skills and Gotchas sections; [`config-safety.md`](../reference/config-safety.md)'s attach sentence.
-- **Host notch** ([OQ-JM4](jail-mechanics-skill.md#OQ-JM4)): `internal/cli/applyhostskills.go` and
-  `internal/hostskills/compose.go` both state that built-ins are not written to a real home; option A
-  changes both comments and the host render's layer plan.
+- **Host notch** ([OQ-JM4](jail-mechanics-skill.md#OQ-JM4), ruled 2026-10-23): `yolo host apply`
+  renders a host version of jail-mechanics with exactly what applies on the host.
+  `internal/cli/applyhostskills.go` and `internal/hostskills/compose.go` both state that built-ins
+  are not written to a real home; both comments and the host render's layer plan change, and the
+  fact sheet needs a host-notch constructor fed from what `yolo host apply` applies. configuring-the-jail and
+  diagnosing-the-jail get host versions too, keeping only what applies on the host, and one with
+  nothing that applies is not written ([JM-D11](jail-mechanics-skill.md#JM-D11)).

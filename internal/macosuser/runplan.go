@@ -473,8 +473,10 @@ type PlanSession struct {
 }
 
 // darwinBootstrapArgvUnder is DarwinBootstrapArgv, confined under profilePath when it is not ""
-// (`/usr/bin/sandbox-exec -f <profile>` before the staged yolo, after the environment), the
-// run-as-you mode's bootstrap (MMP-D9). An empty profilePath is DarwinBootstrapArgv byte for byte.
+// (`/usr/bin/sandbox-exec -f <profile> -D <HomeContentDeliveryParam>=1` before the staged yolo,
+// after the environment), the run-as-you mode's bootstrap (MMP-D9). The parameter lifts the
+// home-content denies alone, since this bootstrap is what delivers that content
+// (homeReadonlyDenies). An empty profilePath is DarwinBootstrapArgv byte for byte.
 func darwinBootstrapArgvUnder(runAs RunAs, stagedYolo, home string, bootstrapEnv *jsonx.OrderedMap, profilePath string) []string {
 	argv := DarwinBootstrapArgv(runAs, stagedYolo, home, bootstrapEnv, "")
 	if profilePath == "" {
@@ -483,7 +485,8 @@ func darwinBootstrapArgvUnder(runAs RunAs, stagedYolo, home string, bootstrapEnv
 	for i := len(argv) - 1; i >= 0; i-- {
 		if argv[i] == stagedYolo {
 			out := append([]string(nil), argv[:i]...)
-			out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath)
+			out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath,
+				"-D", HomeContentDeliveryParam+"=1")
 			return append(out, argv[i:]...)
 		}
 	}
