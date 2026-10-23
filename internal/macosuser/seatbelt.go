@@ -431,6 +431,10 @@ func readonlyDenies(workspace string, rels, targets []string) string {
 		"(deny file-write*\n" + strings.TrimSuffix(b.String(), "\n") + ")\n"
 }
 
+// HomeContentDeliveryParam is the SBPL parameter that lifts the home-content denies for the
+// bootstrap delivering that content; see homeReadonlyDenies.
+const HomeContentDeliveryParam = "YOLO_HOME_CONTENT_DELIVERY"
+
 // homeReadonlyDenies renders the sandbox home's content carve-outs (G14): TWO forms, one
 // per kind of entry, or "" when there are none — so a launch that delivered no skills and
 // no briefing gets a profile byte-identical to the one it got before this existed.
@@ -448,6 +452,15 @@ func readonlyDenies(workspace string, rels, targets []string) string {
 //     utimes on it would be a new way to break an agent at startup that the container's
 //     `:ro` bind never had. Unlink stops the chain being moved aside; create stops
 //     anything being put where it was.
+//
+// BOTH FORMS STAND ASIDE FOR THE DELIVERY, and only for it. The run-as-you bootstrap runs
+// under this same profile (MMP-D9) and is the writer that puts the content there, so each form
+// is wrapped in `(if (not (param HomeContentDeliveryParam)) …)` and the bootstrap alone is
+// started with `-D <param>=1` (darwinBootstrapArgvUnder). Without it the deny refused the
+// bootstrap's own mkdir and rename, and every run-as-you launch stopped at install_home_overlay.
+// The agent cannot set the parameter for itself: a sandboxed process may not apply a second
+// profile (`sandbox_apply: Operation not permitted`, measured on hardware 2026-10-23), and the
+// bootstrap's other confinement, everything outside HOME and the workspace, is unconditional.
 //
 // Entries that are not absolute are dropped rather than emitted, the mirror image of
 // readonlyDenies dropping absolute ones: a relative SBPL path is not a path the kernel ever
@@ -470,21 +483,23 @@ func homeReadonlyDenies(h HomeReadonly) string {
 	if subpaths == "" && literals == "" {
 		return ""
 	}
+	deliveryGate := "(if (not (param " + sbplStr(HomeContentDeliveryParam) + "))\n"
 	out := "\n" +
 		";; --- The sandbox home's staged skills and briefings: delivered by COPY, so\n" +
 		";;     write-protected here the way every container backend's `:ro` bind\n" +
 		";;     protects them.  Physical paths — the kernel resolves the home-tier\n" +
 		";;     layout's symlinks before this is consulted.  Must follow the allow\n" +
-		";;     above — last match wins. ---\n"
+		";;     above — last match wins.  Lifted only for the bootstrap that\n" +
+		";;     delivers them (-D " + HomeContentDeliveryParam + "=1). ---\n"
 	if subpaths != "" {
-		out += ";; #seatbelt-test-id:home-content-write-deny#\n" +
-			"(deny file-write*\n" + subpaths + ")\n"
+		out += deliveryGate + ";; #seatbelt-test-id:home-content-write-deny#\n" +
+			"(deny file-write*\n" + subpaths + "))\n"
 	}
 	if literals != "" {
 		out += ";; --- ...and every directory and layout link above them, so the chain\n" +
 			";;     cannot be moved aside and replaced by one the agent wrote. ---\n" +
-			";; #seatbelt-test-id:home-content-anchor-deny#\n" +
-			"(deny file-write-create file-write-unlink\n" + literals + ")\n"
+			deliveryGate + ";; #seatbelt-test-id:home-content-anchor-deny#\n" +
+			"(deny file-write-create file-write-unlink\n" + literals + "))\n"
 	}
 	return out
 }
