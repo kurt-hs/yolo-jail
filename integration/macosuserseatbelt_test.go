@@ -806,6 +806,35 @@ func TestMacosUserSeatbeltProfileEnforcesItsRules(t *testing.T) {
 	}
 }
 
+// TestMacosUserSeatbeltHomeContentDeliveryParam asks the kernel both halves of the
+// home-content gate (macosuser.HomeContentDeliveryParam). The run-as-you bootstrap runs under
+// the session profile (MMP-D9) and is what delivers the skills and briefings, so it is started
+// with `-D <param>=1` and must be able to write them; without that, every run-as-you launch
+// stopped at install_home_overlay with "operation not permitted". The agent, started without
+// it, must not be able to lift the deny by applying the profile again with the parameter set.
+func TestMacosUserSeatbeltHomeContentDeliveryParam(t *testing.T) {
+	requireMacosUserSeatbelt(t)
+	f := seatbeltFixture(t)
+	profile := seatbeltProfileFile(t, f)
+	deliver := macosuser.HomeContentDeliveryParam + "=1"
+	write := "printf 'x' >> " + sh(f.skills+"/demo/SKILL.md")
+	if out, rc := runScript(t, write, nil); rc != 0 {
+		t.Fatalf("the CONTROL failed: `%s` exits %d unsandboxed.\noutput:\n%s", write, rc, out)
+	}
+	if out, rc := runScript(t, write, []string{"/usr/bin/sandbox-exec", "-f", profile, "-D", deliver}); rc != 0 {
+		t.Errorf("the bootstrap's delivery write is refused with %s set (rc %d), so the run-as-you "+
+			"bootstrap cannot install the content it stages.\noutput:\n%s", deliver, rc, out)
+	}
+	nested := "/usr/bin/sandbox-exec -f " + sh(profile) + " -D " + sh(deliver) + " /bin/sh -c " + sh(write)
+	if out, rc := runScript(t, nested, []string{"/usr/bin/sandbox-exec", "-f", profile}); rc == 0 {
+		t.Errorf("a sandboxed process lifted the home-content deny by re-applying the profile with "+
+			"%s: the gate is the agent's to open.\noutput:\n%s", deliver, out)
+	}
+	if t.Failed() {
+		logSandboxDenials(t)
+	}
+}
+
 // TestMacosUserSeatbeltIoctlCoverageMeasurement RECORDS which ioctls on a non-terminal device
 // the profile's `(deny file-ioctl)` actually refuses, and asserts nothing about it. The deny is
 // MEASURED to refuse DTRACEHIOC_ADDDOF on /dev/dtracehelper (undeclared_device_ioctl_refused)
