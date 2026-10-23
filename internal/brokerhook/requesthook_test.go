@@ -94,6 +94,14 @@ func TestAHookIsKilledWhenItsRequestLeavesPending(t *testing.T) {
 				if got := f.state(t, q.ID); got == "allowed" {
 					t.Fatalf("state %s after the hook was stopped", got)
 				}
+				// Killed because its request left pending is no failure; a timeout is.
+				failure := f.request(t, q.ID).HookFailure
+				if c.timeout > 0 && shape.name == "shell waiting" && !strings.HasPrefix(failure, "hook timed out after") {
+					t.Fatalf("a timed-out hook recorded %q", failure)
+				}
+				if c.timeout == 0 && failure != "" {
+					t.Fatalf("a hook stopped because its request left pending recorded %q", failure)
+				}
 			})
 		}
 	}
@@ -210,26 +218,31 @@ func TestTheHookDecidesNothingByItself(t *testing.T) {
 	}
 }
 
-// YOLO_BIN names the yolo to call, so `"$YOLO_BIN" approve` resolves even when the hook's
-// PATH has no yolo.
-func TestTheHookGetsYoloBin(t *testing.T) {
+// Plain `yolo` works in the hook (Q43): a private directory holding exactly one entry, a
+// link named yolo to Bin, leads its PATH, so `yolo approve` resolves even when the broker's
+// own PATH has no yolo. YOLO_BIN names the same binary, and the directory goes when the
+// runner stops.
+func TestTheHookRunsPlainYolo(t *testing.T) {
 	f := newFixture(t)
 	binDir := filepath.Join(f.dir, "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	calls := filepath.Join(f.dir, "calls")
+	listing := filepath.Join(f.dir, "listing")
 	bin := filepath.Join(binDir, "yolo")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho \"$*\" >>'"+calls+"'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", "/usr/bin:/bin")
-	hook := f.script(t, "hook", "cat >/dev/null\n[ \"$YOLO_BIN\" = '"+bin+"' ] || exit 9\n\"$YOLO_BIN\" approve \"$YOLO_REQUEST_ID\"\n")
+	hook := f.script(t, "hook", "cat >/dev/null\n[ \"$YOLO_BIN\" = '"+bin+"' ] || exit 9\n"+
+		"d=$(dirname \"$(command -v yolo)\")\n[ \"$d\" != '"+binDir+"' ] || exit 8\n"+
+		"{ echo \"$d\"; ls -A \"$d\"; readlink \"$d/yolo\"; } >'"+listing+"'\n"+
+		"yolo approve \"$YOLO_REQUEST_ID\"\n")
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Runner{Store: f.store, Start: "start", Command: hook, Bin: bin, Interval: 5 * time.Millisecond}
 	done := make(chan struct{})
 	go func() { r.Run(ctx); close(done) }()
-	defer func() { cancel(); <-done }()
 	time.Sleep(50 * time.Millisecond)
 	q, err := f.store.File(f.filing)
 	if err != nil {
@@ -238,6 +251,56 @@ func TestTheHookGetsYoloBin(t *testing.T) {
 	waitFor(t, "the hook to call yolo", func() bool { b, _ := os.ReadFile(calls); return len(b) > 0 })
 	if b, _ := os.ReadFile(calls); string(b) != "approve "+q.ID+"\n" {
 		t.Fatalf("yolo was called with %q", b)
+	}
+	b, _ := os.ReadFile(listing)
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(lines) != 3 || lines[1] != "yolo" || lines[2] != bin || filepath.Dir(lines[0]) != f.store.Dir {
+		t.Fatalf("the hook's yolo directory: %q", b)
+	}
+	cancel()
+	<-done
+	if _, err := os.Lstat(lines[0]); !os.IsNotExist(err) {
+		t.Fatalf("the yolo directory outlived its runner: %v", err)
+	}
+}
+
+// A failing hook's exit and the last of its output go on its request's record, where every
+// listing shows them; the broker's shared log names the request and the exit, never the
+// output. It still decides nothing.
+func TestAFailedHookIsRecordedOnItsRequest(t *testing.T) {
+	f := newFixture(t)
+	var log syncBuffer
+	stop := f.run(t, f.script(t, "hook", "cat >/dev/null\necho 'some noise'\necho 'sh: notify-send: not found' >&2\nexit 127\n"), &log)
+	q, err := f.store.File(f.filing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the failure to be recorded", func() bool { return f.request(t, q.ID).HookFailure != "" })
+	stop()
+	got := f.request(t, q.ID)
+	if got.HookFailure != "hook exited 127: sh: notify-send: not found" || got.HookOutput != "some noise\nsh: notify-send: not found\n" {
+		t.Fatalf("recorded %q / %q", got.HookFailure, got.HookOutput)
+	}
+	if got.State != "pending" {
+		t.Fatalf("a failed hook left its request %s", got.State)
+	}
+	if l := log.String(); !strings.Contains(l, q.ID) || !strings.Contains(l, "exited 127") || strings.Contains(l, "notify-send") {
+		t.Fatalf("the shared log: %q", l)
+	}
+}
+
+// The kept output is the last OutputMax bytes, and the one line is bounded.
+func TestAFailedHooksOutputIsBounded(t *testing.T) {
+	var tb tailBuffer
+	for range 1000 {
+		tb.Write([]byte("0123456789"))
+	}
+	tb.Write([]byte("END"))
+	if s := tb.String(); len(s) != OutputMax || !strings.HasSuffix(s, "END") {
+		t.Fatalf("kept %d bytes ending %q", len(s), s[len(s)-5:])
+	}
+	if l := failureLine("hook exited 1", strings.Repeat("é", 500)); len(l) > FailureLineMax || !strings.HasSuffix(l, "…") {
+		t.Fatalf("line of %d bytes: %q", len(l), l)
 	}
 }
 

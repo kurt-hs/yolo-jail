@@ -76,6 +76,11 @@ type Request struct {
 	Policy                         Policy
 	Filed, Decided                 time.Time
 	State                          string
+	// HookFailure is one line saying the user's on_request failed for this request, such
+	// as "hook exited 127: sh: notify-send: not found"; HookOutput is the last of what it
+	// printed. Both are terminal-safe, and empty unless it failed (NoteHookFailure).
+	HookFailure string `json:",omitempty"`
+	HookOutput  string `json:",omitempty"`
 }
 
 // Expires is when the request stops waiting for an answer, whatever its state now.
@@ -621,6 +626,23 @@ func (s *Store) Revoke(id string) error {
 			return refusal(ErrUnknownID, "grant %q not found", id)
 		}
 		return nil
+	})
+}
+
+// NoteHookFailure records that the user's on_request failed for request id, with a one-line
+// failure and the tail of its output, so every listing of the request shows it. It decides
+// nothing and is not audited: the hook's output never moves a request's state.
+func (s *Store) NoteHookFailure(id, failure, output string) error {
+	return s.transaction(func(r *records, _ time.Time) error {
+		for i := range r.requests {
+			q := &r.requests[i]
+			if q.ID != id {
+				continue
+			}
+			q.HookFailure, q.HookOutput = failure, output
+			return s.write("requests", q.ID, q)
+		}
+		return refusal(ErrUnknownID, "request %q not found", id)
 	})
 }
 

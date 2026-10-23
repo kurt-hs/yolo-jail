@@ -18,8 +18,8 @@ import (
 )
 
 // onRequestExample is config-ref's worked example, word for word: the three buttons of
-// OQ-BB3, each calling `yolo approve` through YOLO_BIN.
-const onRequestExample = `a=$(notify-send -A once="Allow once" -A rw="Read-write 15 min" -A deny=Deny "$YOLO_REQUEST_SUMMARY"); case "$a" in once) "$YOLO_BIN" approve "$YOLO_REQUEST_ID";; rw) "$YOLO_BIN" approve "$YOLO_REQUEST_ID" --for 15m;; deny) "$YOLO_BIN" approve "$YOLO_REQUEST_ID" --deny;; esac`
+// OQ-BB3, each calling plain `yolo approve`, which the broker's private `yolo` link resolves.
+const onRequestExample = `a=$(notify-send -A once="Allow once" -A rw="Read-write 15 min" -A deny=Deny "$YOLO_REQUEST_SUMMARY"); case "$a" in once) yolo approve "$YOLO_REQUEST_ID";; rw) yolo approve "$YOLO_REQUEST_ID" --for 15m;; deny) yolo approve "$YOLO_REQUEST_ID" --deny;; esac`
 
 // A click does exactly what the CLI does, because it IS the CLI (BB-D75): the documented
 // example, with a stand-in notify-send answering each button in turn, runs the real
@@ -69,7 +69,7 @@ func TestTheOnRequestExampleDecidesThroughTheCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	yolo := filepath.Join(root, "yolo") // off the hook's PATH: only YOLO_BIN reaches it
+	yolo := filepath.Join(root, "yolo") // off the hook's PATH: only the broker's link reaches it
 	write := func(p, body string) {
 		if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
 			t.Fatal(err)

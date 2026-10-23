@@ -1,6 +1,7 @@
 package ghbroker
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -253,6 +254,23 @@ func TestWindowThroughRealForwarderHandlerAndStatus(t *testing.T) {
 	}
 	if got := Forward([]string{"status", rs[0].ID}, env); got != ExitTempFail {
 		t.Fatal(got)
+	}
+	// Once the user's on_request has failed for it, the agent hears so, and nothing more.
+	if b.notifierNote(rs[0].Jail, rs[0].ID) != "" {
+		t.Fatal("a notifier note before any hook failed")
+	}
+	if err := b.store.NoteHookFailure(rs[0].ID, "hook exited 127: sh: notify-send: not found", "sh: notify-send: not found\n"); err != nil {
+		t.Fatal(err)
+	}
+	var agentErr bytes.Buffer
+	withErr := env
+	withErr.Stderr = &agentErr
+	if got := Forward([]string{"status", rs[0].ID}, withErr); got != ExitTempFail ||
+		!strings.Contains(agentErr.String(), "notifier failed") || strings.Contains(agentErr.String(), "notify-send") {
+		t.Fatalf("status after a failed hook: %d %q", got, agentErr.String())
+	}
+	if note := b.notifierNote(rs[0].Jail, rs[0].ID); note != NotifierFailed {
+		t.Fatalf("notifier note %q", note)
 	}
 	if _, err := b.store.Decide(rs[0].ID, "pending", brokerstore.Decision{}); err != nil {
 		t.Fatal(err)

@@ -102,6 +102,20 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	}
 }
 
+func (f *fixture) request(t *testing.T, id string) brokerstore.Request {
+	t.Helper()
+	rs, _, err := f.store.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range rs {
+		if q.ID == id {
+			return q
+		}
+	}
+	return brokerstore.Request{}
+}
+
 func (f *fixture) state(t *testing.T, id string) string {
 	t.Helper()
 	rs, _, err := f.store.List()

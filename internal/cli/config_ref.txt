@@ -459,8 +459,10 @@
     and its fields are in the environment: YOLO_EVENT (request-filed),
     YOLO_SOURCE, YOLO_REQUEST_ID, YOLO_REQUEST_SUMMARY, YOLO_REQUEST_EXPIRES,
     YOLO_REQUEST_WORKSPACE, YOLO_REQUEST_JAIL, YOLO_REQUEST_SET and
-    YOLO_REQUEST_REPO, and YOLO_BIN, the full path of the yolo that runs it,
-    so it needs no yolo on its PATH.
+    YOLO_REQUEST_REPO.  A plain `yolo` works in it, whatever your PATH: a
+    private directory holding only a link named yolo to the running yolo
+    comes first on its PATH, and YOLO_BIN names that same yolo by its full
+    path, for a script that wants it absolute.
     YOLO_REQUEST_SUMMARY is one line of at most 2048 bytes: the request id, the
     set, the repository and the jail first, then the command, each value over
     60 characters cut to its first 40 with its length and a short hash.
@@ -469,19 +471,25 @@
     command does, with its checks, refusals and audit.
     Example (~/.config/yolo-jail/config.jsonc), a desktop notification with
     the three buttons Allow once, Read-write 15 min and Deny:
-      "on_request": "a=$(notify-send -A once=\"Allow once\" -A rw=\"Read-write 15 min\" -A deny=Deny \"$YOLO_REQUEST_SUMMARY\"); case \"$a\" in once) \"$YOLO_BIN\" approve \"$YOLO_REQUEST_ID\";; rw) \"$YOLO_BIN\" approve \"$YOLO_REQUEST_ID\" --for 15m;; deny) \"$YOLO_BIN\" approve \"$YOLO_REQUEST_ID\" --deny;; esac"
+      "on_request": "a=$(notify-send -A once=\"Allow once\" -A rw=\"Read-write 15 min\" -A deny=Deny \"$YOLO_REQUEST_SUMMARY\"); case \"$a\" in once) yolo approve \"$YOLO_REQUEST_ID\";; rw) yolo approve \"$YOLO_REQUEST_ID\" --for 15m;; deny) yolo approve \"$YOLO_REQUEST_ID\" --deny;; esac"
     Allow once is `yolo approve <id>`: that one command, once.  Read-write 15
     min is `--for 15m`: the whole requested set for 15 minutes, within its
     ceiling.  The same lines can live in a script the key names instead.
     These buttons are provisional: grants are being reworked per resource,
-    and the example will follow.
+    and the example will follow.  "$YOLO_BIN" approve works wherever plain
+    yolo approve does.
     • A run may take as long as its request waits, one hour, so a notification
       left on screen can still be answered; several requests run several
       commands at once.  As soon as the request stops waiting, whichever way
       (a click's own `yolo approve`, a `yolo approve` elsewhere, expiry, or
       refused because its jail stopped), or the jail stops, yolo kills the
-      command and everything it started.  Its output is discarded: redirect
-      it yourself to debug.
+      command and everything it started.
+    • A command that exits non-zero, or runs until its request would
+      expire, is a failure: `yolo approve` lists it on its request ("hook
+      exited 127: sh: notify-send: not found"), and --json carries it as
+      "hook_failure" with the last 4 KiB of its output as "hook_output",
+      including what a refusing `yolo approve` it ran printed.  The agent
+      is told your notifier failed.  The output never decides anything.
     • notify-send: -A needs libnotify 0.7.10 or newer.  A notification that
       times out or is dismissed ends the command with no answer, so the
       request waits for `yolo approve`.  On a machine you reach over SSH, it

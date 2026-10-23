@@ -35,7 +35,9 @@ ceiling and use cap. session lasts until the broker ends, capped at 12 hours.
 --json prints pending requests and live grants as one JSON document. --watch
 prints the current state, then one line per event (request filed, decided or
 expired; grant used, ended or revoked) until interrupted; with --json, one JSON
-object per line. Every JSON object carries "schema": 1. This is the surface a
+object per line. Every JSON object carries "schema": 1. A request whose
+on_request command failed says so, in the listing and as "hook_failure" and
+"hook_output" in its JSON. This is the surface a
 UI built outside yolo uses. Such a UI must never accept approvals from the jails
 it approves: a jail can reach a port the host listens on.
 
@@ -215,6 +217,9 @@ func approveMain(ctx context.Context, args []string, inJail bool, s *brokerstore
 func printApproveList(out io.Writer, snap brokerstore.Snapshot) {
 	for _, r := range snap.Requests {
 		fmt.Fprintf(out, "%s  %s  jail %s  set %s  [%s]  repo %s: %s\n", termsafe.Visible(r.ID), termsafe.Visible(r.State), termsafe.Visible(r.Jail), termsafe.Visible(r.Set), termsafe.Visible(r.Workspace), termsafe.Visible(r.Repo), shquote.JoinDisplay(r.Argv))
+		if r.HookFailure != "" {
+			fmt.Fprintf(out, "    your on_request failed, so you may not have been notified: %s (its output: `yolo approve --json`)\n", termsafe.Visible(r.HookFailure))
+		}
 	}
 	for _, g := range snap.Grants {
 		state := "live"

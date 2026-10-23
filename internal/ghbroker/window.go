@@ -133,7 +133,7 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 	}
 	status, err := b.waitStatus(ctx, jail, q.ID)
 	if err != nil {
-		return ExitTempFail, fmt.Sprintf("%s remains pending; nothing ran; check `yolo gh status %s` and re-run only if still wanted", q.ID, q.ID)
+		return ExitTempFail, fmt.Sprintf("%s remains pending; nothing ran; check `yolo gh status %s` and re-run only if still wanted%s", q.ID, q.ID, b.notifierNote(jail, q.ID))
 	}
 	if status.State != "allowed" {
 		return ExitNoPerm, fmt.Sprintf("%s is %s; nothing ran; ask the host user before retrying", q.ID, status.State)
@@ -143,6 +143,22 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 	}
 	return ExitNoPerm, "no live grant covers this command; refile and approve it on the host"
 }
+
+// notifierNote is a sentence for the agent when the user's on_request failed for request
+// id, "" otherwise. It says only that it failed, never its output.
+func (b *Broker) notifierNote(jail, id string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if q, err := b.store.StatusContext(ctx, jail, b.startID, id); err == nil && q.HookFailure != "" {
+		return NotifierFailed
+	}
+	return ""
+}
+
+// NotifierFailed is what the agent is told when the user's on_request failed for its
+// request.
+const NotifierFailed = "; the user's notifier failed, so they may not have seen this request: tell them to run `yolo approve` on the host"
+
 func (b *Broker) waitStatus(ctx context.Context, jail, id string) (brokerstore.Request, error) {
 	limit := 30 * time.Second
 	if b.waitLimit > 0 && b.waitLimit < limit {
@@ -196,6 +212,9 @@ func (b *Broker) requestStatus(ctx context.Context, req Request, jail string, st
 		return ExitNoPerm
 	}
 	stdout([]byte(q.ID + " " + q.State + "\n"))
+	if q.State == "pending" && q.HookFailure != "" {
+		stderr([]byte("github-broker: " + strings.TrimPrefix(NotifierFailed, "; ") + "\n"))
+	}
 	switch q.State {
 	case "allowed":
 		return 0

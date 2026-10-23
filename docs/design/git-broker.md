@@ -3,7 +3,7 @@ title: "Git through the host's login, one ref at a time: the second brokered sou
 date: 2026-10-23
 status: in-review
 stage: DESIGN
-next: "Build the broker-core factoring in §3, which waits on nothing; then the git source's read set over the brokered transport. Branch creation under a user grant waits on boundary-broker.md's OQ-BB19 naming the grants."
+next: "Build the broker-core factoring in §3, which waits on nothing; then the git source's read set over the brokered transport. Branch creation is the create-branch user grant, as boundary-broker.md's OQ-BB19 ruled."
 depends-on: [boundary-broker.md#OQ-BB19]
 tags: [design, credentials, git, github, broker, approvals, loopholes, audit]
 summary: "The second source behind the boundary broker, after gh: git fetch and push from a jail that holds no credential. Fetching is standing; read-only allows no push of any kind (ruled 2026-10-23). Creating a branch is a user grant in the user's own config for that workspace; a branch created under it joins the workspace's working set, where the agent then pushes freely. A push to any other ref asks a human per ref: Allow once, Allow push for 15 minutes, Add the ref to the working set, or Deny. Step 1 of the maintainer's 2026-10-23 path: it first factors the source-neutral broker core out of the github-broker, then adds git as a second source on it. Ruled 2026-10-23: git crosses as a brokered transport, every remote form rewritten to the host broker, which connects upstream the way the host already does (SSH keys or agent, or git's credential helper), for any git server; a working-set branch stays until it is deleted or revoked; the source is off until the user includes it. Open, in the broker's doc: which user grants exist (OQ-BB19)."
@@ -43,10 +43,10 @@ and a host-side record of the branches a workspace created.
 
 **Start at [§4](#4-how-git-crosses)**: the one architecture choice. The rest follows from it.
 
-**Needs your ruling:** [OQ-BB19](boundary-broker.md#OQ-BB19), in the broker's doc: which user
-grants exist, git's `create-branch` (and perhaps `push-branch`) among them. Nothing here:
-[OQ-GB1](#OQ-GB1) and [OQ-GB2](#OQ-GB2) were ruled 2026-10-23, as was a workspace requesting
-remotes ([OQ-BB18](boundary-broker.md#OQ-BB18)).
+**Needs your ruling:** nothing. [OQ-GB1](#OQ-GB1) and [OQ-GB2](#OQ-GB2) were ruled 2026-10-23,
+as were a workspace requesting remotes ([OQ-BB18](boundary-broker.md#OQ-BB18)) and the user
+grants, git's `create-branch` among them and no `push-branch`
+([OQ-BB19](boundary-broker.md#OQ-BB19)).
 
 **Reads with:** [`boundary-broker.md`](boundary-broker.md) (the design this extends: the request
 store, grants, the notification, `yolo approve`, the audit log and where long-lived access lives
@@ -88,7 +88,7 @@ and two of those rulings reach git directly:
 | :--- | :--- | :--- |
 | *"Read-only mode is read-only mode. It cannot create branches push... well, it can create branches in the local git repo. It cannot push them, that's for sure."* | Read-only allows no push of any kind, an agent's own branch included ([GB-D7](#GB-D7)) | [§5](#5-the-git-sources-sets) |
 | *"Pushing to a branch it didn't create, I think is the same thing: it asks for access to that branch, and if it gets that access, it has that access. These should be able to be time-limited as well"* | Any other ref is asked for per ref, and can be added to the working set or granted for a time ([BB-D76](boundary-broker.md#BB-D76)) | [§5](#5-the-git-sources-sets) |
-| *"Maybe we don't want to have read-only versus read-write. We just want to have these specific grants. You can tell me how many there are."* | Which grants exist, git's included, is [OQ-BB19](boundary-broker.md#OQ-BB19) | [§5](#5-the-git-sources-sets) |
+| *"Maybe we don't want to have read-only versus read-write. We just want to have these specific grants. You can tell me how many there are."* | Four user grants exist, git's `create-branch` among them ([OQ-BB19](boundary-broker.md#OQ-BB19)) | [§5](#5-the-git-sources-sets) |
 
 The standing rule is unchanged: the credential never crosses
 ([BB-P1](boundary-broker.md#BB-P1)).
@@ -199,7 +199,7 @@ to create branches. **Read-only is read-only** ([GB-D7](#GB-D7)): it fetches and
 | :--- | :--- | :--- |
 | read (standing) | fetch, `ls-remote`, the fetch half of `pull`, on any repository in scope | always, once the source is included |
 | branch creation | creating a branch under `refs/heads/` | the workspace holds the `create-branch` user grant; the new branch joins the working set ([§5.1](#51-the-working-set-of-pushable-branches)) |
-| branch push | updating, force-updating or deleting an existing branch | the branch is in the working set (whether that takes a `push-branch` user grant too is [OQ-BB19](boundary-broker.md#OQ-BB19)) |
+| branch push | updating, force-updating or deleting an existing branch | the branch is in the working set: created under `create-branch`, or someone else's branch a human added ([OQ-BB19](boundary-broker.md#OQ-BB19), [BB-D92](boundary-broker.md#BB-D92)); no separate push grant |
 | tag push, and a branch push outside the working set | any creation, update or deletion under `refs/tags/`; any branch push not covered above | never: asked for per ref |
 
 **Refused, under every set** ([BB-P8](boundary-broker.md#BB-P8)): a ref outside `refs/heads/`
@@ -225,8 +225,8 @@ set ([BB-D90](boundary-broker.md#BB-D90)).
 ref added to the working set, or a user grant in the user's own config for that workspace, never
 in the workspace config ([§5.8 there](boundary-broker.md#58-long-lived-access-and-temporary-access)).
 The levels `read-only` and `read-write` that [GB-D6](#GB-D6) mapped onto git are superseded by
-specific user grants, whose list is [OQ-BB19](boundary-broker.md#OQ-BB19). A workspace config can
-never give one.
+specific user grants, `read`, `create-branch`, `create-pr` and `create-issue`
+([OQ-BB19](boundary-broker.md#OQ-BB19)). A workspace config can never give one.
 
 ### 5.1 The working set of pushable branches
 
@@ -303,8 +303,7 @@ should be persisted because it's a property of the workspace."*
    for", as gh's writes do today.
 3. **The `create-branch` user grant**: creating a branch and pushing to it again, with the
    working set persisted per workspace, so an agent whose user gave the grant can publish its own
-   branch with no human and no notifier. Its exact name waits on
-   [OQ-BB19](boundary-broker.md#OQ-BB19); the mechanism does not.
+   branch with no human and no notifier ([OQ-BB19](boundary-broker.md#OQ-BB19)).
 
 Per-ref requests need the request path, which waits on the notifier and the CLI (steps 2
 and 3 of [the path](boundary-broker.md#11-the-build-in-the-maintainers-five-steps)).
