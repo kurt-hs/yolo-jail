@@ -3,7 +3,8 @@ package hostfloor
 // packtree.go is the floor's arm for a PACK-TREE PROGRAM (docs/design/pack-buildable-programs.md, a
 // `program` delivered `via: "pack"`): its host copy is the capture store's build of the pack's own
 // source directory — or, where the pack ships no source, its verified prebuilt artifact — relocated
-// into the floor exactly as a fork's build is (FP-D16; §9's `yolo host`, Linux row).
+// into the floor exactly as a fork's build is (FP-D16; §9's `yolo host` rows: Linux, and macOS,
+// whose build is the macos-user sealed act and whose blockers are that act's, BuildActUnavailable).
 //
 // # What is a fork's, and what is not
 //
@@ -89,23 +90,19 @@ func (f *Floor) resolvedPackTree(p Program) (PackTreeDelivery, bool) {
 }
 
 // packTreeNoEntry is why the floor holds no pack-tree program on a platform it does not build one for:
-// on a Mac the darwin act does not stage a pack's tree yet (the plan's Task 10), and anywhere else the
-// floor builds on Linux alone. The next step is a jail's, whose launch builds it, or the floor's
-// `host_floor`.
+// the floor builds one on Linux (a sealed build jail) and on a Mac (the macos-user sealed act, the
+// plan's Task 10), and on no other platform. The next step is a jail's, whose launch builds it, or the
+// floor's `host_floor`.
 func packTreeNoEntry(p Program, goos string) string {
-	where := "this machine is " + goos
-	if goos == "darwin" {
-		where = "on a Mac this yolo does not build a pack's own tree for the floor yet"
-	}
 	return "it is built from pack " + p.Pack + "'s own tree (" + p.Install.PackFrom + "), which the host " +
-		"floor builds on Linux, and " + where + " — run it in a jail (`yolo -- " + p.Bin() + "`), whose " +
+		"floor builds on Linux and macOS, and this machine is " + goos + " — run it in a jail (`yolo -- " + p.Bin() + "`), whose " +
 		"launch builds it, or leave pack " + p.Pack + " out of the floor with the user config's `host_floor`"
 }
 
 // packTreeRecipeNoEntry is recipeNoEntryReason's pack-tree arm: no entry on a platform the floor builds
 // none for, on a floor given no resolver, or where the install's own resolution found none.
 func (f *Floor) packTreeRecipeNoEntry(p Program) string {
-	if f.GOOS != "linux" {
+	if f.GOOS != "linux" && f.GOOS != "darwin" {
 		return packTreeNoEntry(p, f.GOOS)
 	}
 	if f.PackTree == nil {

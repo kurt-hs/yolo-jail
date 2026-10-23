@@ -265,21 +265,41 @@ func TestAPackTreeProgramWithNoSourceAndNoPrebuiltIsNoFloorEntry(t *testing.T) {
 	}
 }
 
-// NOT ON A MAC YET (the plan's Task 10): a darwin floor holds no pack-tree program, and says to run it
-// in a jail or leave the pack out of the floor. No fork path is reached on any platform.
-func TestAPackTreeProgramOnAMacFloorIsNoFloorEntryNamingAJail(t *testing.T) {
+// ON A MAC (the plan's Task 10) the floor holds a pack-tree program as on Linux: resolved by digest,
+// built through the floor's resolver (the CLI's runs the macos-user sealed act), and installed. Where
+// the Mac's build act cannot run now, its own blocker (BuildActUnavailable) is the no-entry reason.
+// On any other platform there is still no entry, naming a jail and `host_floor`. No fork path is
+// reached on any platform.
+func TestAPackTreeProgramOnAMacFloorIsBuiltAndInstalled(t *testing.T) {
 	digest := packTreeDigestOne
-	w, _, resolves := packTreeWorld(t, &digest, nil)
+	w, ps, resolves := packTreeWorld(t, &digest, nil)
 	f := *w.floor
 	f.GOOS = "darwin"
 	p := packTreeProgram()
-	st := f.Status(p)
-	if st.Disposition != NoEntry || !strings.Contains(st.Reason, "`yolo -- board`") || !strings.Contains(st.Reason, "`host_floor`") ||
-		strings.Contains(st.Reason, "pin") {
-		t.Fatalf("Status = %s (%s), want no floor entry naming a jail and `host_floor`", st.Disposition, st.Reason)
+	if st := f.Status(p); st.Disposition == NoEntry {
+		t.Fatalf("Status = %s (%s), want a darwin floor to hold a pack-tree program", st.Disposition, st.Reason)
 	}
-	if _, _, err := f.Ensure(context.Background(), p); !errors.Is(err, ErrNoEntry) || *resolves != 0 {
-		t.Errorf("Ensure = %v with %d resolutions, want ErrNoEntry and none", err, *resolves)
+	st, outcome, err := f.Ensure(context.Background(), p)
+	if err != nil || outcome != Installed || st.Disposition != Provisioned || *resolves != 1 ||
+		len(ps.builds) != 1 {
+		t.Fatalf("Ensure on a Mac floor: %s %s %v, %d resolutions, builds %v\n%s", outcome, st.Disposition, err,
+			*resolves, ps.builds, w.out.String())
+	}
+
+	blocked := *w.floor
+	blocked.GOOS, blocked.packTrees = "darwin", nil
+	blocked.BuildActUnavailable = func(string, string) string { return "the sandbox account does not exist" }
+	digest = packTreeDigestTwo
+	if _, _, err := blocked.Ensure(context.Background(), p); !errors.Is(err, ErrNoEntry) ||
+		!strings.Contains(err.Error(), "the sandbox account does not exist") {
+		t.Errorf("Ensure with the Mac's act blocked = %v, want no entry naming the act's blocker", err)
+	}
+
+	other := *w.floor
+	other.GOOS, other.packTrees = "freebsd", nil
+	if st := other.Status(p); st.Disposition != NoEntry || !strings.Contains(st.Reason, "`yolo -- board`") ||
+		!strings.Contains(st.Reason, "`host_floor`") || strings.Contains(st.Reason, "pin") {
+		t.Fatalf("Status on freebsd = %s (%s), want no floor entry naming a jail and `host_floor`", st.Disposition, st.Reason)
 	}
 	if via(p.Install) != packdecl.ViaPack {
 		t.Errorf("via = %q, want pack", via(p.Install))

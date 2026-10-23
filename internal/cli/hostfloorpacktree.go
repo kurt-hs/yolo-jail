@@ -1,7 +1,8 @@
 package cli
 
 // hostfloorpacktree.go wires a PACK-TREE PROGRAM (docs/design/pack-buildable-programs.md, `via:
-// "pack"`) into the host floor on Linux (§9's `yolo host`, Linux row; the plan's Task 9): the floor's
+// "pack"`) into the host floor (§9's `yolo host` rows; the plan's Tasks 9 and 10 — on a Mac the build
+// is the macos-user sealed act, as a fork's floor build is): the floor's
 // PackTree resolver (hostfloor's packtree.go) is answered here, through the same resolution and the
 // same build act a jail launch and `yolo host apply` share with `yolo pack build`.
 //
@@ -12,7 +13,8 @@ package cli
 //   - WHICH BYTES is packload.PackTreeResolve's answer for the floor's platform: the build of the tree,
 //     or the prebuilt artifact where the pack ships no source. On Linux a build can always run in
 //     principle (a runtime that is not installed is a step, not "permanently unavailable", OQ-BG2), so
-//     an artifact never stands in for a present source.
+//     an artifact never stands in for a present source. On a Mac one stands in only where the darwin
+//     act can never run (darwinPackTreeBuildable).
 //   - THE ACT is buildFork, the one every launch runs: the sealed build jail, the host's copy of a tree
 //     with no build line, or the verified fetch, under the build's lock. Its failure names the build's
 //     log and the retry, `yolo pack build <pack> --at host` (§8).
@@ -90,7 +92,13 @@ func floorPackTree(p hostfloor.Program, pack *packload.Pack, store *capture.Stor
 			" as a program built from its own tree — run `yolo host` again to read its current declaration"}
 	}
 	platform := hostFloorCapturePlatform()
-	pin := packload.PackTreeResolve(*fork, platform, true)
+	// A MAC'S FLOOR builds in the macos-user sealed act (FP-D24), as its forks do (wireFloorBuild),
+	// and the darwin prebuilt stands in only where that act can never run here — an account-mode Mac
+	// with no sandbox account (darwinPackTreeBuildable, OQ-BG2's leaning). A Linux floor can always
+	// build in principle.
+	onMac := strings.HasPrefix(platform, "darwin/")
+	buildable := !onMac || darwinPackTreeBuildable(hostFloorMacProbes())
+	pin := packload.PackTreeResolve(*fork, platform, buildable)
 	if pin.Reason != "" {
 		return hostfloor.PackTreeDelivery{Reason: pin.Reason}
 	}
@@ -112,8 +120,12 @@ func floorPackTree(p hostfloor.Program, pack *packload.Pack, store *capture.Stor
 		return entry, err
 	}
 	d.Build = func() (*capture.Entry, error) {
-		entry, err := floorBuildFork(b, buildMode{lock: pidlock.Mode{Wait: true, Bound: forkBuildWaitBound},
-			jailStdout: hostJailStdout(), keepJailOutput: true}, out, out, false)
+		mode := buildMode{lock: pidlock.Mode{Wait: true, Bound: forkBuildWaitBound},
+			jailStdout: hostJailStdout(), keepJailOutput: true}
+		if onMac {
+			mode.runtime = "macos-user"
+		}
+		entry, err := floorBuildFork(b, mode, out, out, false)
 		if err != nil {
 			return nil, floorPackTreeFailure(b, store, err)
 		}
