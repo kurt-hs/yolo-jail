@@ -5,7 +5,7 @@ description: Prepare, request, or verify a yolo-jail release. Use for release no
 
 # Cut a yolo-jail release
 
-Use this workflow for yolo-jail releases. Read [the release-process reference](../../../docs/reference/release-process.md) when a request meets an existing tag, failed workflow, partial publication, or resume. Follow [the repository's changelog guidance](../../../AGENTS.md#the-changelog-is-the-release) when writing notes; it sets the project's user-facing rules and points to the shared changelog standard.
+Use this workflow for yolo-jail releases. Read [the release-process reference](../../../docs/reference/release-process.md) when a request meets an existing tag, failed workflow, partial publication, or resume. Write the changelog section by [the rules below](#write-the-changelog-section). Landing work adds no changelog entry, so the section is written here, once, from the commits since the last tag.
 
 **A release request can create an immutable tag and publish artifacts.** Never run `just release` or dispatch a workflow unless the owner explicitly authorized publication. This skill prepares and verifies; it does not grant publication authority.
 
@@ -32,7 +32,7 @@ git log --oneline "$last_tag..HEAD"
 git log --format='%h %s%n%b' "$last_tag..HEAD"
 ```
 
-Edit [CHANGELOG.md](../../../CHANGELOG.md): move `[Unreleased]` into the owner-selected `## [X.Y.Z] - YYYY-MM-DD` section, using the actual release date. Write for users: open with one sentence naming the biggest changes; explain what users can now do or what problem stopped; keep breaking changes and the user's migration action explicit. Omit unreleased-only fixes, internal work, tests, commit subjects, and claims not verified against the current tree. Keep the section concise (about 650 words or less); use repo-relative doc links, which publication rewrites to links pinned to the immutable tag.
+Write the version's section in [CHANGELOG.md](../../../CHANGELOG.md) as `## [X.Y.Z] - YYYY-MM-DD`, using the owner-selected version and the actual release date, by [the rules below](#write-the-changelog-section). Fold in anything still under `[Unreleased]`, then remove that heading's content.
 
 The extractor and the release command choose the version from the newest dated changelog section. Do not hardcode a version or pass one to the release command. From the repository root, validate the chosen section without contacting GitHub:
 
@@ -43,6 +43,22 @@ sh scripts/changelog-section.sh "$version" >/dev/null
 ```
 
 Run relevant Markdown/frontmatter and changelog checks for what changed. A note-only edit does not justify a full Go or integration suite. Commit the notes/version preparation as one coherent commit, then hand its full SHA to the owner or authorized host operator. Do not push, tag, install, or publish from this skill.
+
+## Write the changelog section
+
+**The section for a version IS its GitHub release body, word for word**, and `just release` is the one path to a tag. It takes no version: it releases the newest dated section, read by [`scripts/release-version.sh`](../../../scripts/release-version.sh), prints the version it chose, and refuses an argument ([PTG-D3](../../../docs/reference/release-process.md#PTG-D3)). It refuses a heading that is not `X.Y.Z[-pre]` or is dated after today, a dirty tree, a HEAD origin cannot see, a version already tagged at another commit (one tagged at HEAD goes on, for a [tag-only resume](../../../docs/reference/release-process.md#resuming-a-tag-only-release)), or a section [`scripts/changelog-section.sh`](../../../scripts/changelog-section.sh) rejects. That script is the gate everywhere (`just release`, `release.yml` and `publish.yml` run it, and `just check-ci` runs its tests): it refuses a missing, empty or placeholder section, filler ("various improvements", "under the hood") and a list of commit subjects. There is no hatch, because a tag is never moved; a bad release is fixed by the next one. What the script cannot judge is who the section is written for:
+
+- **A line needs two yeses**: could a reader who never opens the repository notice it, and did what it fixes ship in a published version? A fix to something added in the same cycle folds into that feature's paragraph. Refactors, tests, dependency bumps, CI and internal docs never get a line, and neither does a feature that does nothing yet in a release (one behind an unshipped dependency).
+- **Write to the user, in their terms**: what they can now do, see or stop working around. No commit hashes, PR numbers, package names or file paths; a repository-relative doc link is fine, since `release.yml` pins it to the tag.
+- **Short, by the maintainer's ruling** (2026-10-01: ours had grown "nigh unreadable", ten times Vantage's). The standard is the `open-source-project` skill's `references/changelog.md`, kept tighter than its ceilings:
+  - a release opens with ONE sentence naming its two or three biggest changes;
+  - a feature is one `**Bold lead.**` paragraph of at most two or three short sentences, then `See [doc](link)`;
+  - a fix is one bullet line;
+  - a section stays at or under about 650 words.
+
+  Never say how a change works, why, or how it was found. `### Changed` keeps every upgrade-breaking change, each with the one action the user takes.
+- `### Added`, `### Changed`, `### Fixed`, then `### Contributors`, thanking each outside contributor by public GitHub name and linked handle (never an email). A feature an outside contributor built also names them inline on its own entry ("Contributed by …"). A number goes in only where a test or a constant pins it.
+- An old minor line's retrospective section is headed `## 0.9.x`. A heading that spells a full version is one the extractor will publish.
 
 ## Request and follow the release
 
