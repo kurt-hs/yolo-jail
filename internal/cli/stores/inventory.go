@@ -16,6 +16,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
 	"github.com/mschulkind-oss/yolo-jail/internal/durable"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostcas"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/prune"
@@ -222,7 +223,7 @@ func aliasStores(o Options) []Store {
 		s := Store{
 			Key:        "alias." + d.Store.Name,
 			Section:    SectionAlias,
-			Name:       d.Store.CacheRel,
+			Name:       d.Store.Label(),
 			Path:       d.Source,
 			Reclaimer:  Reclaimer{Detail: "the host user's own store; yolo never reclaims it"},
 			Verdict:    VerdictNotOurs,
@@ -238,30 +239,58 @@ func aliasStores(o Options) []Store {
 			continue
 		}
 		sizeStore(&s, d.Source, o)
+		stranded := d.Stranded
+		if stranded == "" {
+			// A per-workspace root (~/.local, ~/go): this command is machine-wide, so
+			// there is no one private copy to name.
+			stranded = "each workspace's .yolo/home" + strings.TrimPrefix(d.Dest, "/home/agent")
+		}
 		if d.Aliased {
 			s.Note = "ALIASED (writable) at " + d.Dest + " — this jail shares these host bytes " +
-				"instead of pooling a second copy. Its former private copy is at " + d.Stranded +
-				", now stranded: nothing in the jail reads it, and PurgeCacheByAge reclaims it " +
-				"once its files age past the cache rule. THIS row's bytes are the host's and are " +
-				"counted only here; the stranded copy's are in the cache/" +
-				firstSegment(d.Store.CacheRel) + " row above, when this frame has one. " +
-				d.Store.Evidence
+				"instead of pooling a second copy. Its former private copy is at " + stranded +
+				", now stranded: nothing in the jail reads it, and " + strandedReclaimer(d.Store) +
+				". THIS row's bytes are the host's and are counted only here" +
+				strandedCountedIn(d.Store) + ". " + d.Store.Evidence
 		} else {
-			s.Note = "not aliased: " + d.Reason + ". This jail keeps its own copy at " +
-				d.Stranded + " (counted in the shared-cache section above)"
+			s.Note = "not aliased: " + d.Reason + ". This jail keeps its own copy at " + stranded
+			if seg := d.Store.CacheSegment(); seg != "" {
+				s.Note += " (counted in the shared-cache section above)"
+			}
 		}
 		out = append(out, s)
 	}
 	return out
 }
 
-// firstSegment is a store's top-level cache subdir — the row in the shared-cache
-// section its stranded bytes are counted in.
-func firstSegment(rel string) string {
-	if i := strings.IndexByte(rel, '/'); i >= 0 {
-		return rel[:i]
+// strandedReclaimer names what reclaims an aliased store's stranded private copy.
+// The claim is checked against prune's own lists (TestEveryRecognisedStoresStrandedCopyHasAReclaimer
+// pins the two together), so a store whose segment no purge covers says so
+// instead of promising a reclaimer that would not run.
+func strandedReclaimer(s hostcas.Store) string {
+	if seg := s.CacheSegment(); seg != "" && cachePurgeCovers(seg) {
+		return "PurgeCacheByAge reclaims it once its files age past the cache rule"
 	}
-	return rel
+	return "no yolo reclaimer covers it; delete it by hand if you want the space back"
+}
+
+// strandedCountedIn says where the stranded copy's bytes are counted, when this
+// report counts them at all.
+func strandedCountedIn(s hostcas.Store) string {
+	switch s.Root {
+	case hostcas.RootCache:
+		return "; the stranded copy's are in the cache/" + s.CacheSegment() +
+			" row above, when this frame has one"
+	case hostcas.RootMise:
+		return "; the stranded copy's are in the mise/ row above"
+	}
+	return ""
+}
+
+// cachePurgeCovers reports whether a ~/.cache segment is on PurgeCacheByAge's
+// default or heavy subdir list.
+func cachePurgeCovers(seg string) bool {
+	return slices.Contains(prune.CachePurgeDefaultSubdirs, seg) ||
+		slices.Contains(prune.CachePurgeHeavySubdirs, seg)
 }
 
 // stateReclaimers maps a direct child of the state dir to what reclaims it.

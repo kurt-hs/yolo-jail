@@ -163,8 +163,8 @@ func (m configCtxMount) bindArg() string {
 // teed to launch.log with everything else the launch prints.
 //
 // THE INJECTION SENTENCE is the point of it. A path-keyed writable directory lets the jail
-// choose both the key and the bytes, which is exactly why hostcas admits only
-// content-addressed stores; a user-declared read-write mount is path-keyed by definition, so
+// choose both the key and the bytes, which is why hostcas admits only a fixed list of
+// caches yolo itself names (OQ-BF11); a user-declared read-write mount is path-keyed by definition, so
 // it is admissible only because a trusted source named it — and the user is told, every
 // launch, what that opens.
 //

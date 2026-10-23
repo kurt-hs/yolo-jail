@@ -172,9 +172,10 @@ func podmanBaseMounts(rt string, runFlags []string, workspace string, in *assemb
 	for _, rel := range sortedCacheRelocations(in.cacheRelocations) {
 		runCmd = append(runCmd, "-v", rel.Target+":/home/agent/.cache/"+rel.Subdir)
 	}
-	// L9's host-CAS aliases (OQ-BF10): the same shape as the relocations above —
-	// a rw bind nested inside the .cache mount — with two differences that are the
-	// whole feature. The SOURCE is the host user's own cache rather than storage
+	// L9's host-cache aliases (OQ-BF10, OQ-BF11): the same shape as the relocations
+	// above — a rw bind nested inside a jail bind (.cache here; ~/.local, ~/go and
+	// /mise for the module cache, pnpm store, cargo and mise stores) — with two
+	// differences that are the whole feature. The SOURCE is the host user's own cache rather than storage
 	// the user nominated, and the DESTINATION is the path the jail's copy of the
 	// tool already uses, so the mount lands on top of the private copy instead of
 	// beside it. Emitted here purely for readability, exactly as above: podman

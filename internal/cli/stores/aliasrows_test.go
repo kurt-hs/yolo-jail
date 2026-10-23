@@ -3,8 +3,10 @@ package stores
 import (
 	"encoding/json"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/hostcas"
 	"github.com/mschulkind-oss/yolo-jail/internal/prune"
@@ -16,7 +18,7 @@ import (
 func aliasDisposition(hostSrc, stranded string, aliased bool) hostcas.Disposition {
 	d := hostcas.Disposition{
 		Store: hostcas.Store{
-			Name: "pants-lmdb-store", Tool: "pants", CacheRel: "pants/lmdb_store",
+			Name: "pants-lmdb-store", Tool: "pants", Root: hostcas.RootCache, JailRel: "pants/lmdb_store",
 			Evidence: "digest-named blobs, verified",
 		},
 		Aliased:  aliased,
@@ -238,31 +240,17 @@ func TestAliasRowIsInTheJSON(t *testing.T) {
 	t.Errorf("no alias row in the JSON report: %s", buf.String())
 }
 
-// firstSegment names the shared-cache row the stranded bytes are counted in, so
-// the note can point a reader at it instead of double-reporting them.
-func TestFirstSegment(t *testing.T) {
-	for in, want := range map[string]string{
-		"pants/lmdb_store": "pants",
-		"pants":            "pants",
-		"a/b/c":            "a",
-		"":                 "",
-	} {
-		if got := firstSegment(in); got != want {
-			t.Errorf("firstSegment(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 // THE NOTE MAKES A CLAIM ABOUT internal/prune, so it is checked against prune's
 // own list rather than trusted: an aliased row tells the reader that the stranded
 // private copy is reclaimed by PurgeCacheByAge once its files age out. That is
 // only true while the store's top-level cache segment is on the purge's subdir
-// list, and the day a segment leaves that list this fails instead of the report
-// lying about who cleans up 27 G.
+// list, so the claim is made exactly for the stores whose segment is on it, and
+// the content-addressed store (27 G of pants) must stay one of them.
 //
 // It is also the answer to "what happens to the state already on disk the day
 // this ships": nothing is migrated and nothing is deleted by the alias — the
-// bytes stop being read and are left to the reclaimer that already covers them.
+// bytes stop being read and are left to the reclaimer that covers them, or the
+// note says none does.
 func TestEveryRecognisedStoresStrandedCopyHasAReclaimer(t *testing.T) {
 	covered := map[string]bool{}
 	for _, sub := range prune.CachePurgeDefaultSubdirs {
@@ -272,11 +260,84 @@ func TestEveryRecognisedStoresStrandedCopyHasAReclaimer(t *testing.T) {
 		covered[sub] = true
 	}
 	for _, s := range hostcas.Stores {
-		seg := firstSegment(s.CacheRel)
-		if !covered[seg] {
-			t.Errorf("hostcas.Stores[%q] strands bytes under cache/%s, which no PurgeCacheByAge "+
-				"subdir covers — the aliased row's note promises a reclaimer that would not run. "+
-				"Either add %q to prune's list or change the note.", s.Name, seg, seg)
+		seg := s.CacheSegment()
+		claims := strings.Contains(strandedReclaimer(s), "PurgeCacheByAge")
+		if want := seg != "" && covered[seg]; claims != want {
+			t.Errorf("hostcas.Stores[%q] (cache segment %q): the note claims PurgeCacheByAge=%v, "+
+				"but prune's lists say %v", s.Name, seg, claims, want)
 		}
 	}
+	if !covered[hostcas.Stores[0].CacheSegment()] {
+		t.Errorf("the content-addressed store's segment %q left PurgeCacheByAge's list",
+			hostcas.Stores[0].CacheSegment())
+	}
+}
+
+// `yolo stores` has no readiness gate, so it asks `podman info` itself for
+// OQ-BF11's ownership fact — through the Exec seam, only for podman, and an
+// answer it cannot read is unknown (which declines every path-keyed store, as
+// the launch does).
+func TestPodmanOwnershipAsksPodmanInfo(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the ownership read is podman-on-Linux only; macOS answers unknown without asking")
+	}
+	for _, tc := range []struct {
+		name string
+		rt   string
+		res  prune.ProbeResult
+		want hostcas.Ownership
+		asks bool
+	}{
+		{"rootless", "podman", prune.ProbeResult{Ran: true, Stdout: `{"host":{"security":{"rootless":true}}}`}, hostcas.OwnershipYours, true},
+		{"rootful", "podman", prune.ProbeResult{Ran: true, Stdout: `{"host":{"security":{"rootless":false}}}`}, hostcas.OwnershipNotYours, true},
+		{"podman failed", "podman", prune.ProbeResult{Ran: true, RC: 125}, hostcas.OwnershipUnknown, true},
+		{"podman absent", "podman", prune.ProbeResult{}, hostcas.OwnershipUnknown, true},
+		{"apple container", "container", prune.ProbeResult{Ran: true, Stdout: `{"host":{"security":{"rootless":true}}}`}, hostcas.OwnershipUnknown, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asked := false
+			o := &Options{Exec: func(argv []string, _ time.Duration) prune.ProbeResult {
+				asked = true
+				if strings.Join(argv, " ") != tc.rt+" info --format json" {
+					t.Errorf("asked %v, want `%s info --format json`", argv, tc.rt)
+				}
+				return tc.res
+			}}
+			if got := podmanOwnership(o, tc.rt); got != tc.want {
+				t.Errorf("ownership = %d, want %d", got, tc.want)
+			}
+			if asked != tc.asks {
+				t.Errorf("asked podman = %v, want %v", asked, tc.asks)
+			}
+		})
+	}
+}
+
+// The default HostCAS reader hands hostcas the ownership answer: on a rootless
+// podman with a host npm cache, the inventory's npm row says ALIASED.
+func TestDefaultHostCASReaderPassesTheOwnershipFact(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the alias is never-macOS")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CACHE_HOME", "")
+	writeFile(t, filepath.Join(home, ".npm", "_cacache", "index"), 10)
+	o := &Options{
+		DetectRuntime: func() string { return "podman" },
+		Exec: func([]string, time.Duration) prune.ProbeResult {
+			return prune.ProbeResult{Ran: true, Stdout: `{"host":{"security":{"rootless":true}}}`}
+		},
+		GlobalCache: func() string { return filepath.Join(t.TempDir(), "cache") },
+	}
+	fillDefaults(o)
+	for _, d := range o.HostCAS() {
+		if d.Store.Name == "npm-cacache" {
+			if !d.Aliased {
+				t.Errorf("npm not aliased on a rootless podman: %q %s", d.Code, d.Reason)
+			}
+			return
+		}
+	}
+	t.Fatal("no npm-cacache disposition")
 }

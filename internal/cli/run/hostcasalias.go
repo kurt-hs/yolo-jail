@@ -1,9 +1,10 @@
 package run
 
 // hostcasalias.go is the HOST half of L9 — the launch's decision about whether a
-// recognised content-addressed cache is ALIASED from the host instead of pooled a
-// second time inside the jail (docs/reference/disk-footprint.md "The levers" L9,
-// ruled as OQ-BF10 on 2026-09-08).
+// recognised host cache is ALIASED from the host instead of pooled a second time
+// inside the jail (docs/reference/disk-footprint.md "The levers" L9, ruled as
+// OQ-BF10 on 2026-09-08 for pants' content-addressed store and widened to package
+// caches by OQ-BF11 on 2026-10-22).
 //
 // The DECISION and its justification live in internal/hostcas, which `yolo
 // stores` reads too. This file is the binding: it turns the launch's own seams
@@ -19,6 +20,7 @@ package run
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostcas"
@@ -36,7 +38,11 @@ import (
 // pipeline. They are passed IN rather than read here because an explicit config
 // decision about where a cache lives outranks this optimisation, and the gate
 // that enforces that lives in hostcas with the rest of them.
-func (o *Options) planHostCASAlias(rt string, relocations []config.CacheRelocation) []hostcas.Disposition {
+//
+// wsState is the workspace's home state — the host side of the jail's ~/.local
+// and ~/go binds, under which the module cache's and pnpm store's private
+// copies live.
+func (o *Options) planHostCASAlias(rt string, relocations []config.CacheRelocation, wsState string) []hostcas.Disposition {
 	relocated := make([]string, 0, len(relocations))
 	for _, r := range relocations {
 		relocated = append(relocated, r.Subdir)
@@ -48,15 +54,48 @@ func (o *Options) planHostCASAlias(rt string, relocations []config.CacheRelocati
 		// comparison in hostcas is over facts rather than over an OS check.
 		HostPlatform: hostcas.HostPlatform(),
 		JailPlatform: hostcas.JailPlatform(),
+		// OQ-BF11's ownership gate, from the launch's ONE `podman info` answer (the
+		// readiness gate's). No answer is unknown, which declines every path-keyed
+		// store. A nested launch's podman reports rootful (it runs on --userns host),
+		// so a jail-in-a-jail declines them too; the rootless path is CI's to verify.
+		Ownership: o.hostCASOwnership(rt),
 		// Through o.Getenv, never os.Getenv: a frozen argv has to stay a function
 		// of its inputs. goldenOptions returns "" for every variable, which is what
 		// keeps every golden argv in this package free of an alias mount without
 		// any fixture having to know this feature exists.
 		HostCacheRoot:     hostcas.CacheRoot(o.Getenv),
+		HostGetenv:        o.Getenv,
 		JailCacheHost:     paths.GlobalCache(),
+		JailLocalHost:     homeSurfaceHost(wsState, ".local"),
+		JailGoPathHost:    homeSurfaceHost(wsState, "go"),
+		JailMiseHost:      jailMiseStoreDir(o.inJail()),
 		RelocatedSegments: relocated,
 		Probe:             o.HostCASProbe,
 	})
+}
+
+// hostCASOwnership is podman's rootless answer as an ownership fact: only a
+// podman launch whose readiness gate parsed an answer naming rootless can say.
+func (o *Options) hostCASOwnership(rt string) hostcas.Ownership {
+	if rt != "podman" || o.podmanFacts == nil || !o.podmanFacts.parsed { // parity: NotApplicable — rootless is a podman fact; hostcas declines every other backend before ownership is read (macos-user run-as-you is unbuilt, docs/design/macos-user-model.md)
+		return hostcas.OwnershipUnknown
+	}
+	return hostcas.OwnershipOf(o.podmanFacts.info.Host.Security.Rootless)
+}
+
+// homeSurfaceHost is the host side of a per-workspace home bind, read from the
+// same list podmanBaseMounts emits (paths.HomeSurfaces), so the stranded path and
+// the bind cannot disagree. "" without a wsState or for a name not on the list.
+func homeSurfaceHost(wsState, homeRel string) string {
+	if wsState == "" {
+		return ""
+	}
+	for _, s := range paths.HomeSurfaces() {
+		if s.HomeRel == homeRel {
+			return filepath.Join(wsState, s.Subtree)
+		}
+	}
+	return ""
 }
 
 // prepareHostCASAlias creates the DESTINATION's mountpoint for every aliased
@@ -165,10 +204,21 @@ func (o *Options) noteHostCASAlias(ds []hostcas.Disposition) {
 		return
 	}
 	out := o.pr(o.Stderr)
-	for _, d := range active {
+	// ONE alias reads as it always did. Several (OQ-BF11's package caches) are
+	// still each named with both paths — the disclosure is per alias — but under
+	// one heading, so a machine with every tool installed gets a compact block
+	// rather than a dozen repeated sentences.
+	if len(active) == 1 {
+		d := active[0]
 		out.print("[dim]Host cache aliased (writable): " + d.Source + " → " + d.Dest +
 			" — this jail shares the host's " + d.Store.Tool +
 			" store instead of keeping a second copy.[/dim]")
+	} else if len(active) > 1 {
+		out.print("[dim]Host caches aliased (writable) — this jail shares these host stores " +
+			"instead of keeping second copies:[/dim]")
+		for _, d := range active {
+			out.print("[dim]  " + d.Store.Tool + ": " + d.Source + " → " + d.Dest + "[/dim]")
+		}
 	}
 	for _, d := range degraded {
 		out.printf("[yellow]Not aliasing the host %s store:[/yellow] %s. "+

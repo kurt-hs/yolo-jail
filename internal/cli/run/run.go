@@ -2051,7 +2051,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// disclosed instead (noteHostCASAlias, at the banner).
 	var hostCAS []hostcas.Disposition
 	if !o.Sealed {
-		hostCAS = prepareHostCASAlias(o.planHostCASAlias(rt, relocations))
+		hostCAS = prepareHostCASAlias(o.planHostCASAlias(rt, relocations, wsState))
 	}
 
 	// User host_files (docs/reference/composed-file-permissions.md). Read with the same

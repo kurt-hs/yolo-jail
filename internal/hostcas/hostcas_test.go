@@ -16,7 +16,7 @@ func facts(t *testing.T) (Facts, string, string) {
 	root := t.TempDir()
 	hostCache := filepath.Join(root, "host-cache")
 	jailCache := filepath.Join(root, "yolo-cache")
-	src := filepath.Join(hostCache, Stores[0].CacheRel)
+	src := lmdbHost(hostCache)
 	if err := os.MkdirAll(src, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +61,9 @@ func linuxLikeProbe(path string) Presence {
 	return p
 }
 
+// lmdbHost is the content-addressed store's host path under a cache root.
+func lmdbHost(hostCache string) string { return Stores[0].Host(HostEnv{CacheRoot: hostCache}) }
+
 func one(t *testing.T, f Facts) Disposition {
 	t.Helper()
 	ds := Plan(f)
@@ -78,10 +81,10 @@ func TestPlanAliasesARecognisedWritableHostStore(t *testing.T) {
 	if !d.Aliased || d.Code != CodeAliased {
 		t.Fatalf("aliased=%v code=%q reason=%q — want the happy path", d.Aliased, d.Code, d.Reason)
 	}
-	if want := filepath.Join(hostCache, Stores[0].CacheRel); d.Source != want {
+	if want := lmdbHost(hostCache); d.Source != want {
 		t.Errorf("Source = %q, want %q", d.Source, want)
 	}
-	if want := filepath.Join(jailCache, Stores[0].CacheRel); d.Stranded != want {
+	if want := filepath.Join(jailCache, Stores[0].JailRel); d.Stranded != want {
 		t.Errorf("Stranded = %q, want %q — the private copy the alias replaces", d.Stranded, want)
 	}
 	if !strings.HasPrefix(d.Dest, jailCacheDir+"/") {
@@ -140,7 +143,7 @@ func TestPlanGates(t *testing.T) {
 		want: CodeSameTree,
 		mut: func(t *testing.T, f *Facts, _, jailCache string) {
 			f.HostCacheRoot = jailCache
-			if err := os.MkdirAll(filepath.Join(jailCache, Stores[0].CacheRel), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Join(jailCache, Stores[0].JailRel), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		},
@@ -153,13 +156,13 @@ func TestPlanGates(t *testing.T) {
 		name: "the user relocated this cache subdir",
 		want: CodeRelocated,
 		mut: func(_ *testing.T, f *Facts, _, _ string) {
-			f.RelocatedSegments = []string{"other", firstSegment(Stores[0].CacheRel)}
+			f.RelocatedSegments = []string{"other", Stores[0].CacheSegment()}
 		},
 	}, {
 		name: "host store absent",
 		want: CodeAbsent,
 		mut: func(t *testing.T, f *Facts, hostCache, _ string) {
-			if err := os.RemoveAll(filepath.Join(hostCache, Stores[0].CacheRel)); err != nil {
+			if err := os.RemoveAll(lmdbHost(hostCache)); err != nil {
 				t.Fatal(err)
 			}
 		},
@@ -167,7 +170,7 @@ func TestPlanGates(t *testing.T) {
 		name: "host store is a file",
 		want: CodeNotDir,
 		mut: func(t *testing.T, f *Facts, hostCache, _ string) {
-			p := filepath.Join(hostCache, Stores[0].CacheRel)
+			p := lmdbHost(hostCache)
 			if err := os.RemoveAll(p); err != nil {
 				t.Fatal(err)
 			}
@@ -194,10 +197,10 @@ func TestPlanGates(t *testing.T) {
 		name: "empty host store over a warm private copy",
 		want: CodeWouldColdStart,
 		mut: func(t *testing.T, f *Facts, hostCache, jailCache string) {
-			if err := os.Remove(filepath.Join(hostCache, Stores[0].CacheRel, "data.mdb")); err != nil {
+			if err := os.Remove(filepath.Join(lmdbHost(hostCache), "data.mdb")); err != nil {
 				t.Fatal(err)
 			}
-			priv := filepath.Join(jailCache, Stores[0].CacheRel)
+			priv := filepath.Join(jailCache, Stores[0].JailRel)
 			if err := os.MkdirAll(priv, 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -232,7 +235,7 @@ func TestAnUnrelatedRelocationDoesNotBlockTheAlias(t *testing.T) {
 	d := one(t, f)
 	if !d.Aliased {
 		t.Fatalf("declined with %q (%s) — only a relocation of THIS store's segment "+
-			"(%q) may block it", d.Code, d.Reason, firstSegment(Stores[0].CacheRel))
+			"(%q) may block it", d.Code, d.Reason, Stores[0].CacheSegment())
 	}
 }
 
@@ -251,7 +254,7 @@ func TestFirstSegment(t *testing.T) {
 // first jail fills the shared store instead of a private one.
 func TestEmptyHostStoreStillAliasesWhenNothingIsStranded(t *testing.T) {
 	f, hostCache, _ := facts(t)
-	if err := os.Remove(filepath.Join(hostCache, Stores[0].CacheRel, "data.mdb")); err != nil {
+	if err := os.Remove(filepath.Join(lmdbHost(hostCache), "data.mdb")); err != nil {
 		t.Fatal(err)
 	}
 	d := one(t, f)
@@ -261,39 +264,319 @@ func TestEmptyHostStoreStillAliasesWhenNothingIsStranded(t *testing.T) {
 	}
 }
 
-// THE CAS BOUNDARY IS THE RULING, and this is the guard against it widening by
-// accident. OQ-BF10: "aliased if and only if content-addressed … never
-// named_caches". Every store below was evaluated and excluded with a measured
-// reason recorded in Stores' own comment; a future edit that adds one has to
-// delete this test to do it, which is the point.
-func TestPathKeyedStoresAreNeverRecognised(t *testing.T) {
-	forbidden := []string{
-		"pants/named_caches", // path-keyed and path-poisoned; excluded by name in the ruling
-		"npm",                // _cacache/index-v5 maps a request URL to a digest
-		"go-build",           // <actionID>-a maps a writer-chosen action ID to an output ID
-		"uv",                 // simple-v2* is index-keyed; environments-v2 holds absolute paths
-		"pip",                // http-v2 is URL-keyed
-		"nce",                // coupled to named_caches by the INTERP-INFO records pointing into it
-	}
+// Every entry is completely declared, and its destination is a relative path
+// inside a known jail root.
+func TestEveryStoreIsCompletelyDeclared(t *testing.T) {
+	seen := map[string]bool{}
 	for _, s := range Stores {
-		for _, bad := range forbidden {
-			if s.CacheRel == bad || strings.HasPrefix(s.CacheRel, bad+"/") {
-				t.Errorf("Stores contains %q, which is path-keyed. OQ-BF10 excludes it "+
-					"CATEGORICALLY, and the reason is injection rather than size: a "+
-					"path-keyed store lets a jail write content the host tool reads because "+
-					"of where it sits.", s.CacheRel)
-			}
-		}
-		if strings.TrimSpace(s.Evidence) == "" {
-			t.Errorf("Stores[%q] has no Evidence — the CAS property is the whole "+
-				"justification and it is recorded, not assumed", s.Name)
-		}
-		if s.Name == "" || s.Tool == "" || s.CacheRel == "" {
+		if s.Name == "" || s.Tool == "" || s.JailRel == "" || s.Host == nil || s.Root.Dir() == "" {
 			t.Errorf("Stores[%q] is incompletely declared: %+v", s.Name, s)
 		}
-		if filepath.IsAbs(s.CacheRel) || strings.Contains(s.CacheRel, "..") {
-			t.Errorf("Stores[%q].CacheRel = %q must be a relative path inside the cache root",
-				s.Name, s.CacheRel)
+		if seen[s.Name] {
+			t.Errorf("Stores has two entries named %q — the name is the report key", s.Name)
+		}
+		seen[s.Name] = true
+		if strings.TrimSpace(s.Evidence) == "" {
+			t.Errorf("Stores[%q] has no Evidence — what the directory holds is recorded, not assumed", s.Name)
+		}
+		if filepath.IsAbs(s.JailRel) || strings.Contains(s.JailRel, "..") {
+			t.Errorf("Stores[%q].JailRel = %q must be a relative path inside its jail root", s.Name, s.JailRel)
+		}
+	}
+}
+
+// OQ-BF10's content-addressed store keeps behaving exactly as before: still the
+// first entry, still content-keyed (so the ownership gate never reaches it), at
+// the same paths on both sides.
+func TestTheContentAddressedStoreIsUnchanged(t *testing.T) {
+	s := Stores[0]
+	if s.Name != "pants-lmdb-store" || s.Keying != KeyContent {
+		t.Fatalf("Stores[0] = %q keying %d, want pants-lmdb-store, content-addressed", s.Name, s.Keying)
+	}
+	if got := s.Host(HostEnv{CacheRoot: "/h/.cache"}); got != "/h/.cache/pants/lmdb_store" {
+		t.Errorf("host path = %q", got)
+	}
+	if s.Dest() != "/home/agent/.cache/pants/lmdb_store" || s.Label() != "pants/lmdb_store" {
+		t.Errorf("dest = %q label = %q", s.Dest(), s.Label())
+	}
+	for _, s := range Stores[1:] {
+		if s.Keying != KeyPath {
+			t.Errorf("Stores[%q] is not path-keyed — only pants' lmdb_store has the CAS evidence", s.Name)
+		}
+	}
+}
+
+// THE PER-TOOL PATHS, pinned. The host side is each tool's documented Linux
+// default (and the variable the tool honors); the jail side is where the jail's
+// own copy writes, given how the jail sets HOME, NPM_CONFIG_CACHE, GOPATH,
+// CARGO_HOME and MISE_DATA_DIR.
+func TestStorePaths(t *testing.T) {
+	defaults := HostEnv{CacheRoot: "/h/.cache", Getenv: envOf(map[string]string{"HOME": "/h"})}
+	overridden := HostEnv{CacheRoot: "/x/cache", Getenv: envOf(map[string]string{
+		"HOME": "/h", "XDG_CACHE_HOME": "/x/cache", "XDG_DATA_HOME": "/x/data",
+		"npm_config_cache": "/o/npm", "PNPM_HOME": "/o/pnpm", "YARN_CACHE_FOLDER": "/o/yarn",
+		"PIP_CACHE_DIR": "/o/pip", "UV_CACHE_DIR": "/o/uv", "GOCACHE": "/o/gocache",
+		"GOMODCACHE": "/o/gomod", "CARGO_HOME": "/o/cargo", "MISE_DATA_DIR": "/o/mise",
+	})}
+	for _, tc := range []struct {
+		name, host, hostOverridden, dest string
+	}{
+		{"pants-lmdb-store", "/h/.cache/pants/lmdb_store", "/x/cache/pants/lmdb_store", "/home/agent/.cache/pants/lmdb_store"},
+		{"npm-cacache", "/h/.npm/_cacache", "/o/npm/_cacache", "/home/agent/.cache/npm/_cacache"},
+		{"pnpm-store", "/h/.local/share/pnpm/store", "/o/pnpm/store", "/home/agent/.local/share/pnpm/store"},
+		{"pnpm-cache", "/h/.cache/pnpm", "/x/cache/pnpm", "/home/agent/.cache/pnpm"},
+		{"yarn-cache", "/h/.cache/yarn", "/o/yarn", "/home/agent/.cache/yarn"},
+		{"pip-cache", "/h/.cache/pip", "/o/pip", "/home/agent/.cache/pip"},
+		{"uv-cache", "/h/.cache/uv", "/o/uv", "/home/agent/.cache/uv"},
+		{"go-build-cache", "/h/.cache/go-build", "/o/gocache", "/home/agent/.cache/go-build"},
+		{"go-mod-cache", "/h/go/pkg/mod", "/o/gomod", "/home/agent/go/pkg/mod"},
+		{"cargo-registry", "/h/.cargo/registry", "/o/cargo/registry", "/mise/cargo/registry"},
+		{"cargo-git", "/h/.cargo/git", "/o/cargo/git", "/mise/cargo/git"},
+		{"mise-downloads", "/h/.local/share/mise/downloads", "/o/mise/downloads", "/mise/downloads"},
+	} {
+		s := storeNamed(t, tc.name)
+		if got := s.Host(defaults); got != tc.host {
+			t.Errorf("%s: default host path = %q, want %q", tc.name, got, tc.host)
+		}
+		if got := s.Host(overridden); got != tc.hostOverridden {
+			t.Errorf("%s: overridden host path = %q, want %q", tc.name, got, tc.hostOverridden)
+		}
+		if got := s.Dest(); got != tc.dest {
+			t.Errorf("%s: jail path = %q, want %q", tc.name, got, tc.dest)
+		}
+	}
+	if len(Stores) != 12 {
+		t.Errorf("Stores has %d entries and this table pins 12 — pin the new entry's paths here", len(Stores))
+	}
+	// A GOPATH list takes its first entry, as go does; a relative one resolves nothing.
+	gm := storeNamed(t, "go-mod-cache")
+	if got := gm.Host(HostEnv{Getenv: envOf(map[string]string{"HOME": "/h", "GOPATH": "/g1:/g2"})}); got != "/g1/pkg/mod" {
+		t.Errorf("GOPATH list: %q", got)
+	}
+	if got := gm.Host(HostEnv{Getenv: envOf(map[string]string{"HOME": "/h", "GOPATH": "rel"})}); got != "" {
+		t.Errorf("relative GOPATH resolved to %q, want nothing", got)
+	}
+	// GOCACHE=off is not a path.
+	if got := storeNamed(t, "go-build-cache").Host(HostEnv{CacheRoot: "/h/.cache",
+		Getenv: envOf(map[string]string{"GOCACHE": "off"})}); got != "/h/.cache/go-build" {
+		t.Errorf("GOCACHE=off: %q", got)
+	}
+	// No environment at all resolves nothing, rather than a relative path.
+	for _, s := range Stores {
+		if got := s.Host(HostEnv{}); got != "" {
+			t.Errorf("%s resolved %q from an empty environment", s.Name, got)
+		}
+	}
+}
+
+// CACHES ONLY, NEVER A TOOL'S CONFIG OR CREDENTIALS (OQ-BF11). Each entry's host
+// and jail path, under default and overridden environments, must not BE or
+// CONTAIN a directory that holds a tool's config or credentials, and must not
+// name such a file. A new entry that aliases ~/.cargo whole, ~/.config/<tool>, or
+// a .npmrc fails here.
+func TestNoStoreNamesAConfigOrCredentialPath(t *testing.T) {
+	forbiddenNames := map[string]bool{
+		".npmrc": true, ".pypirc": true, ".yarnrc": true, ".yarnrc.yml": true, ".netrc": true,
+		"credentials": true, "credentials.toml": true, "config": true, "config.toml": true,
+		".config": true, "pip.conf": true, "uv.toml": true, "env": true, ".ssh": true,
+		".gitconfig": true, "auth.json": true, ".docker": true,
+	}
+	// Directories that hold config or credentials beside a cache: aliasing one of
+	// these — or anything above one — would carry them across.
+	holders := func(home string) []string {
+		return []string{
+			home, home + "/.cargo", home + "/.config", home + "/.local", home + "/.local/share",
+			home + "/.local/share/pnpm", home + "/.local/share/mise", home + "/.npm", home + "/go",
+			home + "/.cache", "/o/cargo", "/o/mise", "/o/pnpm", "/o/npm", "/x/cache", "/x/data",
+			"/home/agent", "/home/agent/.cache", "/home/agent/.local", "/home/agent/.local/share",
+			"/home/agent/go", "/mise", "/mise/cargo", "/home/agent/.config",
+		}
+	}
+	envs := []HostEnv{
+		{CacheRoot: "/h/.cache", Getenv: envOf(map[string]string{"HOME": "/h"})},
+		{CacheRoot: "/x/cache", Getenv: envOf(map[string]string{
+			"HOME": "/h", "XDG_CACHE_HOME": "/x/cache", "XDG_DATA_HOME": "/x/data",
+			"npm_config_cache": "/o/npm", "PNPM_HOME": "/o/pnpm", "CARGO_HOME": "/o/cargo",
+			"MISE_DATA_DIR": "/o/mise", "GOPATH": "/h/go",
+		})},
+	}
+	for _, s := range Stores {
+		var paths []string
+		for _, e := range envs {
+			paths = append(paths, s.Host(e))
+		}
+		paths = append(paths, s.Dest())
+		for _, p := range paths {
+			if p == "" {
+				t.Errorf("%s: resolved no path under a complete environment", s.Name)
+				continue
+			}
+			for _, part := range strings.Split(p, "/") {
+				if forbiddenNames[part] {
+					t.Errorf("%s: path %q names %q, a config or credential location — only cache "+
+						"directories cross (OQ-BF11)", s.Name, p, part)
+				}
+			}
+			for _, h := range holders("/h") {
+				if under(h, p) {
+					t.Errorf("%s: path %q is or contains %q, which holds config or credentials "+
+						"beside its cache — alias the cache subdirectory only", s.Name, p, h)
+				}
+			}
+		}
+	}
+}
+
+func storeNamed(t *testing.T, name string) Store {
+	t.Helper()
+	for _, s := range Stores {
+		if s.Name == name {
+			return s
+		}
+	}
+	t.Fatalf("no store named %q", name)
+	return Store{}
+}
+
+func envOf(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
+
+// pathKeyedFacts passes every gate for the npm store, rootless.
+func pathKeyedFacts(t *testing.T) (Facts, Store) {
+	t.Helper()
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	s := storeNamed(t, "npm-cacache")
+	src := filepath.Join(home, ".npm", "_cacache")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "index"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return Facts{
+		Runtime: "podman", HostPlatform: "linux/amd64", JailPlatform: "linux/amd64",
+		Ownership:     OwnershipYours,
+		Probe:         linuxLikeProbe,
+		HostCacheRoot: filepath.Join(home, ".cache"),
+		HostGetenv:    envOf(map[string]string{"HOME": home}),
+		JailCacheHost: filepath.Join(root, "yolo-cache"),
+	}, s
+}
+
+func dispositionOf(t *testing.T, ds []Disposition, name string) Disposition {
+	t.Helper()
+	for _, d := range ds {
+		if d.Store.Name == name {
+			return d
+		}
+	}
+	t.Fatalf("no disposition for %q", name)
+	return Disposition{}
+}
+
+// THE OWNERSHIP GATE (OQ-BF11): a path-keyed store aliases only on a podman that
+// ANSWERED rootless. Rootful refuses, and unknown — "could not ask" — refuses
+// too. The content-addressed store is unaffected either way.
+func TestPathKeyedStoresNeedRootlessPodman(t *testing.T) {
+	f, s := pathKeyedFacts(t)
+	if d := dispositionOf(t, Plan(f), s.Name); !d.Aliased {
+		t.Fatalf("rootless baseline not aliased (%q: %s) — the cases below would pass for the "+
+			"wrong reason", d.Code, d.Reason)
+	} else if d.Source != filepath.Join(f.HostGetenv("HOME"), ".npm", "_cacache") ||
+		d.Stranded != filepath.Join(f.JailCacheHost, "npm", "_cacache") {
+		t.Errorf("source %q stranded %q", d.Source, d.Stranded)
+	}
+	for _, tc := range []struct {
+		name string
+		own  Ownership
+		want Code
+	}{
+		{"rootful", OwnershipNotYours, CodeNotYours},
+		{"unknown", OwnershipUnknown, CodeOwnershipUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, s := pathKeyedFacts(t)
+			f.Ownership = tc.own
+			ds := Plan(f)
+			for _, d := range ds {
+				if d.Store.Keying != KeyPath {
+					continue
+				}
+				if d.Aliased || d.Code != tc.want {
+					t.Errorf("%s: aliased=%v code=%q, want declined with %q", d.Store.Name, d.Aliased, d.Code, tc.want)
+				}
+				if strings.TrimSpace(d.Reason) == "" {
+					t.Errorf("%s: decline without a reason", d.Store.Name)
+				}
+			}
+			_ = s
+		})
+	}
+}
+
+// The content-addressed store never consults ownership, so a rootful or
+// unknown podman aliases it exactly as before.
+func TestTheContentAddressedStoreIgnoresOwnership(t *testing.T) {
+	for _, own := range []Ownership{OwnershipUnknown, OwnershipNotYours, OwnershipYours} {
+		f, _, _ := facts(t)
+		f.Ownership = own
+		if d := one(t, f); !d.Aliased {
+			t.Errorf("ownership %d: lmdb_store declined with %q (%s)", own, d.Code, d.Reason)
+		}
+	}
+}
+
+// The existing gates hold for path-keyed stores too: backend, macOS, platform,
+// relocation (for a ~/.cache store), and absence.
+func TestPathKeyedStoresKeepEveryExistingGate(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want Code
+		mut  func(f *Facts)
+	}{
+		{"macos-user", CodeBackend, func(f *Facts) { f.Runtime = "macos-user" }},
+		{"apple container", CodeBackend, func(f *Facts) { f.Runtime = "container" }},
+		{"macos host", CodeMacOS, func(f *Facts) { f.IsMacOS = true }},
+		{"arch mismatch", CodePlatform, func(f *Facts) { f.JailPlatform = "linux/arm64" }},
+		{"relocated npm", CodeRelocated, func(f *Facts) { f.RelocatedSegments = []string{"npm"} }},
+		{"no HOME", CodeNoCacheRoot, func(f *Facts) { f.HostGetenv = envOf(nil) }},
+		{"absent", CodeAbsent, func(f *Facts) { f.HostGetenv = envOf(map[string]string{"HOME": "/nonexistent-home"}) }},
+		{"inside yolo's tree", CodeSameTree, func(f *Facts) {
+			f.HostGetenv = envOf(map[string]string{"npm_config_cache": filepath.Join(f.JailCacheHost, "npm")})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, s := pathKeyedFacts(t)
+			tc.mut(&f)
+			d := dispositionOf(t, Plan(f), s.Name)
+			if d.Aliased || d.Code != tc.want {
+				t.Errorf("aliased=%v code=%q (%s), want %q", d.Aliased, d.Code, d.Reason, tc.want)
+			}
+		})
+	}
+	// A store outside ~/.cache has no cache segment, so no relocation reaches it.
+	f, _ := pathKeyedFacts(t)
+	f.RelocatedSegments = []string{"go", "mod", "pkg", "cargo", "mise", "pnpm"}
+	for _, name := range []string{"go-mod-cache", "cargo-registry", "pnpm-store", "mise-downloads"} {
+		if d := dispositionOf(t, Plan(f), name); d.Code == CodeRelocated {
+			t.Errorf("%s declined as relocated, but cache_relocations only moves ~/.cache subdirs", name)
+		}
+	}
+}
+
+// Each jail root's stranded copy is under the host side of that root.
+func TestStrandedFollowsTheJailRoot(t *testing.T) {
+	f := Facts{JailCacheHost: "/s/cache", JailLocalHost: "/w/local", JailGoPathHost: "/w/go", JailMiseHost: "/s/mise"}
+	for name, want := range map[string]string{
+		"npm-cacache":    "/s/cache/npm/_cacache",
+		"pnpm-store":     "/w/local/share/pnpm/store",
+		"go-mod-cache":   "/w/go/pkg/mod",
+		"cargo-registry": "/s/mise/cargo/registry",
+		"mise-downloads": "/s/mise/downloads",
+	} {
+		s := storeNamed(t, name)
+		if got := s.Stranded(f.rootHost(s.Root)); got != want {
+			t.Errorf("%s stranded = %q, want %q", name, got, want)
 		}
 	}
 }

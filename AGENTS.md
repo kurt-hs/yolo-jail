@@ -382,28 +382,29 @@ live, so edits are visible on the host instantly — there is no sync step.
   is deliberately no `YOLO_ALLOW_*`. ⚠ One path-based exemption exists, `paths.scopeExempt`, naming the
   `yolo capture` scratch store and nothing else — a workspace's alone: a read-write `mounts` source runs the
   same rule without it (`paths.WritableSourceScopeBreach`).
-- **Exactly ONE host-TOOL-owned directory is bind-mounted WRITABLE into the jail, and the gate is
-  content addressing.** Every other writable host bind is the workspace itself, yolo's own state and
-  cache directories, or one the user named in their user-scope config — `cache_relocations`, and a
-  read-write `mounts` element (`config.LoadRWMounts`,
+- **Host-TOOL-owned directories bind-mounted WRITABLE into the jail are host CACHES on a fixed list in
+  code, and never a tool's config or credentials.** Every other writable host bind is the workspace
+  itself, yolo's own state and cache directories, or one the user named in their user-scope config —
+  `cache_relocations`, and a read-write `mounts` element (`config.LoadRWMounts`,
   [`context-mounts.md`](docs/reference/context-mounts.md#the-one-host-tool-owned-writable-bind)), which every
-  launch names in a disclosure line; a relocation gets no such line on a container backend (macos-user names each link it lays). A recognised **content-addressed** host
-  cache is aliased at the path the jail's own copy of the tool already uses, so it stops existing twice
-  (`internal/hostcas`, [`hostcasalias.go`](internal/cli/run/hostcasalias.go);
-  [`OQ-BF10`](docs/reference/disk-footprint.md#why-its-this-way), [the alias](docs/reference/disk-footprint.md#host-cas-aliasing)). Today that set is pants' `lmdb_store`
-  alone. **The gate is CONTENT ADDRESSING, and the reason is injection rather than size**: a path-keyed cache
-  lets a jail write content the host tool later reads *because of where it sits*, the jail choosing both key
-  and bytes, while a CAS rejects a blob whose digest does not match its key. ⚠ **npm's `_cacache` and Go's
-  build cache look like candidates and are NOT** — npm's index maps a request URL to an integrity digest and
-  Go's maps a writer-chosen action ID to an output ID, so both are exactly that injection channel, inside a
-  store whose *content* half really is content-addressed. Do not add a store to `hostcas.Stores` without
-  checking which half its index keys on. ⚠ **Ruled 2026-10-22, not built** ([OQ-BF11](docs/reference/disk-footprint.md#OQ-BF11), under
-  [the misguided-agent principle](docs/reference/misguided-agent-principle.md)): package caches join
-  the alias, never a tool's config or credentials, only where jail-written files end up owned by
-  the user and the platforms match. Until that lands, this paragraph describes the code. Also gated on matching host OS+arch, a writable non-empty source,
-  **never macOS**, and **never a segment the user relocated**. Every failure degrades to the private copy;
-  none can refuse a launch. The launch discloses the alias by name and `yolo stores` lists it as `not yolo's`,
-  so no reclaimer offers to delete host bytes.
+  launch names in a disclosure line; a relocation gets no such line on a container backend (macos-user names each link it lays).
+  A recognised host cache is aliased at the path the jail's own copy of the tool already uses, so it stops
+  existing twice (`internal/hostcas`, [`hostcasalias.go`](internal/cli/run/hostcasalias.go);
+  [the alias](docs/reference/disk-footprint.md#host-cas-aliasing)): pants' content-addressed `lmdb_store`
+  ([`OQ-BF10`](docs/reference/disk-footprint.md#why-its-this-way)) and the npm, pnpm, yarn, pip, uv, Go
+  build and module, cargo registry and git, and mise download caches
+  ([OQ-BF11](docs/reference/disk-footprint.md#OQ-BF11)). Poisoning a path-keyed cache takes intent, which
+  [the misguided-agent principle](docs/reference/misguided-agent-principle.md) puts out of scope; a config
+  file holds tokens a helpful agent would use. So **alias the cache SUBDIRECTORY only** where a tool keeps
+  config beside it (`~/.cargo/registry`, never `~/.cargo`), and `TestNoStoreNamesAConfigOrCredentialPath`
+  fails an entry that crosses that line. A path-keyed store also needs **rootless podman**, read tri-state
+  from the launch's `podman info` (rootful and "could not ask" both decline), so jail-written files are the
+  user's; a nested jail's podman reports rootful, so in-jail runs only ever show the decline and the
+  rootless path is CI's to verify. Every store is also gated on podman, **never macOS** (macos-user waits
+  for its run-as-you mode), matching host OS+arch, a writable existing source, a non-empty source over a
+  warm private copy, and **never a segment the user relocated**. Every failure degrades to the private
+  copy; none can refuse a launch. The launch discloses each alias by name and `yolo stores` lists it as
+  `not yolo's`, so no reclaimer offers to delete host bytes.
 - **Nix inside the jail** delegates to the host daemon: the CLI mounts `/nix/var/nix/daemon-socket` +
   `/nix/store:ro` and sets `NIX_REMOTE=daemon`. Without this you get "build users group has no members".
 - **Claude YOLO** is `--dangerously-skip-permissions` + `IS_SANDBOX=1` (the env var bypasses the UID-0

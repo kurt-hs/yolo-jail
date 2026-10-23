@@ -46,6 +46,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostcas"
+	"github.com/mschulkind-oss/yolo-jail/internal/image"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/outfmt"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -190,9 +191,9 @@ type Options struct {
 	// allocated blocks): an Apple Container tool disk is sparse, so its apparent
 	// size is its ceiling, not its cost. nil => allocatedBytes.
 	DiskBytes func(path string) (int64, error)
-	// HostCAS answers L9's question — which recognised content-addressed host
+	// HostCAS answers L9's question — which recognised host
 	// caches a launch from this frame would ALIAS rather than pool a second copy
-	// of (docs/reference/disk-footprint.md OQ-BF10). nil => the same
+	// of (docs/reference/disk-footprint.md OQ-BF10, OQ-BF11). nil => the same
 	// hostcas.Plan the launcher calls, over this frame's own facts.
 	//
 	// ONE PREDICATE, TWO READERS: the launch emits the mount and this command
@@ -325,12 +326,22 @@ func fillDefaults(o *Options) {
 					relocated = append(relocated, r.Subdir)
 				}
 			}
+			rt := o.DetectRuntime()
 			return hostcas.Plan(hostcas.Facts{
-				Runtime:       o.DetectRuntime(),
-				IsMacOS:       paths.IsMacOS,
-				HostPlatform:  hostcas.HostPlatform(),
-				JailPlatform:  hostcas.JailPlatform(),
+				Runtime:      rt,
+				IsMacOS:      paths.IsMacOS,
+				HostPlatform: hostcas.HostPlatform(),
+				JailPlatform: hostcas.JailPlatform(),
+				// The same `podman info` answer the launch's readiness gate reads,
+				// asked here because this command has no gate. Only asked where it
+				// could matter (podman, not macOS).
+				Ownership:     podmanOwnership(o, rt),
 				HostCacheRoot: hostcas.CacheRoot(os.Getenv),
+				HostGetenv:    os.Getenv,
+				// /mise's host side is machine-wide; ~/.local and ~/go are per
+				// workspace, and this command is not, so those stores' private copies
+				// are left unnamed (each workspace's .yolo/home/local and .yolo/home/go).
+				JailMiseHost: paths.GlobalMise(),
 				// THE FRAME AGAIN: paths.GlobalCache() is the host's tree for a host
 				// yolo and this jail's own for an in-jail one, so the "stranded"
 				// path this row names is the one a launch FROM THIS FRAME would
@@ -426,3 +437,23 @@ func realProbeExec(argv []string, timeout time.Duration) prune.ProbeResult {
 type printer struct{ richtext.Printer }
 
 func (p printer) line(msg string) { p.Print(msg) }
+
+// podmanOwnership asks `podman info` whether the runtime is rootless — the fact
+// OQ-BF11's ownership gate reads — through the Exec seam. Anything but a parsed
+// answer is unknown, which declines every path-keyed store.
+func podmanOwnership(o *Options, rt string) hostcas.Ownership {
+	if rt != "podman" || paths.IsMacOS || o.Exec == nil {
+		return hostcas.OwnershipUnknown
+	}
+	res := o.Exec(image.PodmanInfoCmd(rt), probeTimeout)
+	if !res.Ran || res.RC != 0 {
+		return hostcas.OwnershipUnknown
+	}
+	switch image.ParsePodmanStoreFacts(res.Stdout).Rootless {
+	case image.RootlessYes:
+		return hostcas.OwnershipYours
+	case image.RootlessNo:
+		return hostcas.OwnershipNotYours
+	}
+	return hostcas.OwnershipUnknown
+}

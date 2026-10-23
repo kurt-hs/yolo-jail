@@ -904,7 +904,7 @@ const embeddedPacksLeaf = "embedded-packs"
 // every jail at ~/.cache (internal/cli/run/assemble_parts.go), and host yolo loads this tree
 // with the authority of a pack yolo SHIPS — host_files grants, loophole host exec. A tree
 // there would be a jail-writable file the host executes BECAUSE OF WHERE IT SITS: the
-// injection class the hostcas rule in AGENTS.md exists to keep out. The location is the
+// host loading it with a shipped pack's authority, not a package cache a tool reads (OQ-BF11). The location is the
 // boundary; the tree's read-only modes are not (root ignores them).
 func EmbeddedPacksDir() string {
 	h := home()

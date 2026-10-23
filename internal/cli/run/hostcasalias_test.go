@@ -33,7 +33,7 @@ import (
 // with anything else on the argv.
 func aliasFixture() []hostcas.Disposition {
 	return []hostcas.Disposition{{
-		Store:    hostcas.Store{Name: "pants-lmdb-store", Tool: "pants", CacheRel: "pants/lmdb_store"},
+		Store:    hostcas.Stores[0],
 		Aliased:  true,
 		Source:   "/host-home/.cache/pants/lmdb_store",
 		Dest:     "/home/agent/.cache/pants/lmdb_store",
@@ -180,7 +180,7 @@ func TestPlanHostCASAliasReadsTheGetenvSeam(t *testing.T) {
 	processHome := t.TempDir()
 	t.Setenv("HOME", processHome)
 
-	store := filepath.Join(seamHome, ".cache", hostcas.Stores[0].CacheRel)
+	store := filepath.Join(seamHome, ".cache", hostcas.Stores[0].JailRel)
 	if err := os.MkdirAll(store, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestPlanHostCASAliasReadsTheGetenvSeam(t *testing.T) {
 		},
 		HostCASProbe: hostcas.DefaultProbe,
 	}
-	ds := o.planHostCASAlias("podman", nil)
+	ds := o.planHostCASAlias("podman", nil, "")
 	if len(ds) != len(hostcas.Stores) {
 		t.Fatalf("planHostCASAlias returned %d dispositions, want %d", len(ds), len(hostcas.Stores))
 	}
@@ -226,7 +226,7 @@ func TestPlanHostCASAliasPassesTheUsersRelocationsThrough(t *testing.T) {
 	requireLinuxHostCAS(t)
 	seamHome := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
-	store := filepath.Join(seamHome, ".cache", hostcas.Stores[0].CacheRel)
+	store := filepath.Join(seamHome, ".cache", hostcas.Stores[0].JailRel)
 	if err := os.MkdirAll(store, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -242,18 +242,18 @@ func TestPlanHostCASAliasPassesTheUsersRelocationsThrough(t *testing.T) {
 		},
 		HostCASProbe: hostcas.DefaultProbe,
 	}
-	seg := hostcas.Stores[0].CacheRel
+	seg := hostcas.Stores[0].JailRel
 	if i := strings.IndexByte(seg, '/'); i >= 0 {
 		seg = seg[:i]
 	}
 
-	if ds := o.planHostCASAlias("podman", nil); !ds[0].Aliased {
+	if ds := o.planHostCASAlias("podman", nil, ""); !ds[0].Aliased {
 		t.Fatalf("baseline is not aliased (%q: %s) — the relocation case below would "+
 			"pass for the wrong reason", ds[0].Code, ds[0].Reason)
 	}
 	ds := o.planHostCASAlias("podman", []config.CacheRelocation{
 		{Subdir: seg, Target: "/data/relocated/" + seg},
-	})
+	}, "")
 	if ds[0].Aliased {
 		t.Error("aliased a store the user relocated — the launcher is not passing " +
 			"cache_relocations into the plan")
@@ -570,8 +570,8 @@ func TestRunContainerWiresTheHostCASAlias(t *testing.T) {
 	// leaves every other assertion here green, and silently re-opens the failure
 	// the relocation gate exists to close: the alias would put a relocated cache's
 	// biggest subtree back under the home directory the user moved it off.
-	if len(planArgs) != 2 || planArgs[0] != "rt" || planArgs[1] != "relocations" {
-		t.Errorf("runContainer calls planHostCASAlias%v, want (rt, relocations) — the "+
+	if len(planArgs) != 3 || planArgs[0] != "rt" || planArgs[1] != "relocations" || planArgs[2] != "wsState" {
+		t.Errorf("runContainer calls planHostCASAlias%v, want (rt, relocations, wsState) — the "+
 			"user's cache_relocations must reach the gate that honors them", planArgs)
 	}
 	if calls["prepareHostCASAlias"] > calls["assembleRunCmd"] {
@@ -598,5 +598,190 @@ func hasMount(argv []string, spec string) bool {
 func TestJailPlatformMatchesTheCaptureManifestsPlatform(t *testing.T) {
 	if got, want := hostcas.JailPlatform(), containerJailPlatform(); got != want {
 		t.Errorf("hostcas.JailPlatform() = %q but containerJailPlatform() = %q", got, want)
+	}
+}
+
+// OQ-BF11's ownership fact comes from the launch's one `podman info` answer, and
+// only a parsed answer naming rootless can say "yours". Rootful is not yours;
+// no answer, an unparsed one, one that does not say, or a non-podman runtime is
+// unknown — and unknown declines.
+func TestHostCASOwnershipReadsThePodmanAnswer(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		rt   string
+		info string // "" => the gate never answered
+		want hostcas.Ownership
+	}{
+		{"rootless", "podman", `{"host":{"security":{"rootless":true}}}`, hostcas.OwnershipYours},
+		{"rootful", "podman", `{"host":{"security":{"rootless":false}}}`, hostcas.OwnershipNotYours},
+		{"silent about rootless", "podman", `{"host":{"security":{}}}`, hostcas.OwnershipUnknown},
+		{"not JSON", "podman", `podman: command failed`, hostcas.OwnershipUnknown},
+		{"never asked", "podman", "", hostcas.OwnershipUnknown},
+		{"apple container", "container", `{"host":{"security":{"rootless":true}}}`, hostcas.OwnershipUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o := &Options{}
+			fillDefaults(o)
+			if tc.info != "" {
+				o.acceptPodmanFacts(tc.info)
+			}
+			if got := o.hostCASOwnership(tc.rt); got != tc.want {
+				t.Errorf("hostCASOwnership = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// THE WIRING for OQ-BF11, end to end through planHostCASAlias over a real temp
+// home: on a rootless podman the package caches the host has are aliased, each
+// stranded copy under the jail root it nests in; on a rootful podman (which is
+// what a nested jail's podman reports) every path-keyed store declines while the
+// content-addressed one still aliases. Fails if the ownership fact, the host
+// environment or the workspace's home state stops reaching the plan.
+func TestPlanHostCASAliasAliasesPackageCachesOnlyOnRootless(t *testing.T) {
+	requireLinuxHostCAS(t)
+	seamHome := t.TempDir()
+	wsState := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	for _, rel := range []string{".cache/pants/lmdb_store", ".npm/_cacache", "go/pkg/mod", ".cache/pip"} {
+		dir := filepath.Join(seamHome, rel)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "entry"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seamEnv := func(k string) string {
+		if k == "HOME" {
+			return seamHome
+		}
+		return ""
+	}
+	plan := func(info string) map[string]hostcas.Disposition {
+		o := &Options{}
+		fillDefaults(o)
+		o.Getenv = seamEnv
+		o.HostCASProbe = hostcas.DefaultProbe
+		o.acceptPodmanFacts(info)
+		m := map[string]hostcas.Disposition{}
+		for _, d := range o.planHostCASAlias("podman", nil, wsState) {
+			m[d.Store.Name] = d
+		}
+		return m
+	}
+
+	rootless := plan(`{"host":{"security":{"rootless":true}}}`)
+	for name, src := range map[string]string{
+		"pants-lmdb-store": filepath.Join(seamHome, ".cache/pants/lmdb_store"),
+		"npm-cacache":      filepath.Join(seamHome, ".npm/_cacache"),
+		"go-mod-cache":     filepath.Join(seamHome, "go/pkg/mod"),
+		"pip-cache":        filepath.Join(seamHome, ".cache/pip"),
+	} {
+		d := rootless[name]
+		if !d.Aliased {
+			t.Errorf("rootless: %s not aliased (%q: %s)", name, d.Code, d.Reason)
+		}
+		if d.Source != src {
+			t.Errorf("rootless: %s source = %q, want %q", name, d.Source, src)
+		}
+	}
+	if got, want := rootless["go-mod-cache"].Stranded, filepath.Join(wsState, "go", "pkg", "mod"); got != want {
+		t.Errorf("go-mod-cache stranded = %q, want %q — the workspace's ~/go bind", got, want)
+	}
+	if got, want := rootless["pnpm-store"].Stranded, filepath.Join(wsState, "local", "share", "pnpm", "store"); got != want {
+		t.Errorf("pnpm-store stranded = %q, want %q — the workspace's ~/.local bind", got, want)
+	}
+	if d := rootless["cargo-registry"]; d.Aliased || d.Code != hostcas.CodeAbsent {
+		t.Errorf("cargo-registry with no host ~/.cargo: aliased=%v code=%q, want absent", d.Aliased, d.Code)
+	}
+
+	rootful := plan(`{"host":{"security":{"rootless":false}}}`)
+	if !rootful["pants-lmdb-store"].Aliased {
+		t.Errorf("rootful: the content-addressed store must alias as before (%q)", rootful["pants-lmdb-store"].Code)
+	}
+	for name, d := range rootful {
+		if d.Store.Keying == hostcas.KeyPath && (d.Aliased || d.Code != hostcas.CodeNotYours) {
+			t.Errorf("rootful: %s aliased=%v code=%q, want declined as %q", name, d.Aliased, d.Code, hostcas.CodeNotYours)
+		}
+	}
+	unknown := plan(`not json`)
+	if d := unknown["npm-cacache"]; d.Aliased || d.Code != hostcas.CodeOwnershipUnknown {
+		t.Errorf("unknown: npm aliased=%v code=%q, want %q", d.Aliased, d.Code, hostcas.CodeOwnershipUnknown)
+	}
+}
+
+// Every jail root an alias nests in is a bind the podman argv emits, and its
+// host side is the one planHostCASAlias hands hostcas — or the stranded path the
+// launch pre-creates would not be the directory the mount lands on.
+func TestEveryJailRootIsABindThePodmanArgvEmits(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	emptyLoopholeDirs(t)
+	o := goldenOptions("/ws", home)
+	in := aliasInput(t, "podman", nil)
+	argv := o.assembleRunCmd(in)
+	binds := map[string]string{}
+	for i := 0; i+1 < len(argv); i++ {
+		if argv[i] != "-v" {
+			continue
+		}
+		parts := strings.Split(argv[i+1], ":")
+		if len(parts) >= 2 {
+			binds[parts[1]] = parts[0]
+		}
+	}
+	want := map[hostcas.JailRoot]string{
+		hostcas.RootCache:  in.cacheSource(),
+		hostcas.RootLocal:  homeSurfaceHost(in.wsState, ".local"),
+		hostcas.RootGoPath: homeSurfaceHost(in.wsState, "go"),
+		hostcas.RootMise:   in.miseSource(""),
+	}
+	for _, s := range hostcas.Stores {
+		src, ok := binds[s.Root.Dir()]
+		if !ok {
+			t.Errorf("%s nests in %s, which the podman argv does not bind", s.Name, s.Root.Dir())
+			continue
+		}
+		if src != want[s.Root] {
+			t.Errorf("%s: %s is bound from %q, but the plan's host side is %q", s.Name, s.Root.Dir(), src, want[s.Root])
+		}
+	}
+}
+
+// Several active aliases are each disclosed with both paths, under one heading.
+func TestNoteHostCASAliasDisclosesEveryActiveAlias(t *testing.T) {
+	ds := append(aliasFixture(), hostcas.Disposition{
+		Store: hostcas.Stores[1], Aliased: true, Code: hostcas.CodeAliased,
+		Source: "/host-home/.npm/_cacache", Dest: "/home/agent/.cache/npm/_cacache",
+	})
+	var buf bytes.Buffer
+	o := &Options{Stderr: &buf}
+	fillDefaults(o)
+	o.Stderr = &buf
+	o.noteHostCASAlias(ds)
+	got := buf.String()
+	for _, w := range []string{"writable", "pants", "/host-home/.cache/pants/lmdb_store",
+		"/home/agent/.cache/pants/lmdb_store", "npm", "/host-home/.npm/_cacache",
+		"/home/agent/.cache/npm/_cacache"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("disclosure missing %q\ngot: %q", w, got)
+		}
+	}
+}
+
+// The two ownership declines are structural (a nested jail's podman always
+// reports rootful), so neither prints at launch; `yolo stores` explains them.
+func TestOwnershipDeclinesAreSilentAtLaunch(t *testing.T) {
+	for _, code := range []hostcas.Code{hostcas.CodeNotYours, hostcas.CodeOwnershipUnknown} {
+		d := hostcas.Disposition{Store: hostcas.Stores[1], Code: code, Reason: "podman is rootful"}
+		var buf bytes.Buffer
+		o := &Options{Stderr: &buf}
+		fillDefaults(o)
+		o.Stderr = &buf
+		o.noteHostCASAlias([]hostcas.Disposition{d})
+		if strings.TrimSpace(buf.String()) != "" {
+			t.Errorf("%s printed %q, want silence", code, buf.String())
+		}
 	}
 }

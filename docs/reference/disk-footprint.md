@@ -452,40 +452,60 @@ why the purge is offered.
 <a id="host-cas-aliasing"></a>
 
 A third disposition beside backfill and retention: make a store **not exist twice**. A recognized
-content-addressed host cache is bind-mounted writable at the path the jail's own copy of the tool
-uses, so the jail and the host share one store ([OQ-BF10](#why-its-this-way)).
+host cache is bind-mounted writable at the path the jail's own copy of the tool uses, so the jail
+and the host share one store. pants' content-addressed `lmdb_store` came first
+([OQ-BF10](#why-its-this-way)); package caches joined it ([OQ-BF11](#OQ-BF11)).
 
-> [!IMPORTANT]
-> **Ruled 2026-10-22, not built: package caches are bridged too** ([OQ-BF11](#OQ-BF11)).
-> Under [the misguided-agent principle](misguided-agent-principle.md), the injection reason below
-> guards against a deliberate act, not a mistake a helpful agent makes. A fixed list in code of
-> package caches (npm, pnpm, yarn, pip, uv, Go's build and module caches, cargo's registry, mise's
-> downloads) joins the alias, under three lines: **caches only, never a tool's config or
-> credentials** (`.npmrc`, `.pypirc`, cargo credentials, `~/.config/<tool>`); **only where the files
-> the jail writes end up owned by you** (rootless podman, and macos-user running as you; not rootful
-> podman, not macos-user's second-account mode); and **only where the host and the jail share an
-> operating system and architecture**. Each alias is announced at launch, as today's is. Until the
-> build lands, the content-addressed rule below is what the code does.
-
-- **Content-addressed only, because of injection.** A content-addressed store's keys are digests
-  of their contents, so a jail can add a wrong blob only under a name the reading tool rejects. A
-  path-keyed store lets a jail write content the host tool later reads because of where it sits.
-  ⚠ npm's `_cacache` and Go's build cache look like candidates and are not: their indexes map a
-  request URL or a writer-chosen action ID to a digest, which is that injection channel inside a
-  store whose content half really is content-addressed. uv and pip are URL-keyed too.
-- **The set is pants' `lmdb_store` alone**, in code (`hostcas.Stores`), with no config key and no
-  dial: yolo picks both sides of the mount, so no path is user-supplied, and a key would hand the
-  content-addressing test to a user who cannot check it. Widening it is a question to re-ask
-  against a measurement, not a follow-up.
-- **Gated on** the host matching the jail's OS and architecture, a writable non-empty source,
-  never on macOS, and never for a segment the user relocated with `cache_relocations`. An empty
-  host store over a warm private copy is declined, since it would hide a cache and buy nothing.
-- **Disclosed.** An active alias prints at launch (a writable bind of the host user's cache is
-  host access), and so does a decline the user could act on; a structural decline prints
-  nothing. `yolo stores` lists the alias in its own section as `not yolo's`.
+- **Two kinds of store, one mechanism.** A content-addressed store's keys are digests of their
+  contents, so a jail can add a wrong blob only under a name the reading tool rejects. A
+  path-keyed store (npm's index, Go's build cache, pip's HTTP cache) lets a jail write content the
+  host tool later reads because of where it sits. Poisoning one takes intent, which
+  [the misguided-agent principle](misguided-agent-principle.md) puts out of scope, so package
+  caches are shared too. pants' `named_caches` and `nce` stay out: they record jail paths, so
+  sharing them breaks the host's pants.
+- **Caches only, never a tool's config or credentials.** `.npmrc`, `.pypirc`, cargo's
+  `credentials.toml` and `config.toml`, and `~/.config/<tool>` never cross. Where a tool keeps
+  cache and config in one directory (`~/.cargo`, `~/.npm`), only the cache subdirectory is
+  aliased. A unit test fails on an entry whose path is or contains such a location.
+- **The set is a fixed list in code** (`hostcas.Stores`), with no config key and no dial: yolo
+  picks both sides of the mount, so no path is user-supplied. Each host path is the tool's
+  documented Linux default, honoring the environment variable the tool honors; a path set in the
+  tool's own config file is not read, so such a host simply has no store found. See
+  [the table](#aliased-host-stores).
+- **Gated on**, for every store: podman; never a macOS host; the host matching the jail's OS and
+  architecture; a writable source that exists; not yolo's own tree; never a segment the user
+  relocated with `cache_relocations`; and not an empty host store over a warm private copy.
+  **A path-keyed store also needs rootless podman**, read from the launch's `podman info`, so that
+  files the jail writes end up owned by you. Rootful declines, and so does a podman that did not
+  answer. Apple Container and macos-user decline every store for now: macos-user's run-as-you
+  mode is not built yet ([the macos-user model](../design/macos-user-model.md)).
+- **Disclosed.** Each active alias prints at launch with both paths (a writable bind of the host
+  user's cache is host access); several print under one heading. A decline the user could act on
+  prints too; a structural decline (no store, rootful podman, another backend) prints nothing.
+  `yolo stores` lists every store in its own section as `not yolo's`, with the reason for each
+  decline.
 - **Nothing is recorded or migrated.** The launch and `yolo stores` re-derive the decision through
-  `hostcas.Plan`. The private copy under the alias is stranded, not deleted, and the age purge
-  still covers it.
+  `hostcas.Plan`. The private copy under the alias is stranded, not deleted; the age purge covers
+  it for a `~/.cache` segment on its list, and `yolo stores` says when nothing does.
+
+<a id="aliased-host-stores"></a>
+
+| Store | Host path (Linux default; variable honored) | Jail path |
+| :--- | :--- | :--- |
+| pants `lmdb_store` (content-addressed) | `$XDG_CACHE_HOME/pants/lmdb_store` | `~/.cache/pants/lmdb_store` |
+| npm | `~/.npm/_cacache` (`npm_config_cache`) | `~/.cache/npm/_cacache` |
+| pnpm store | `~/.local/share/pnpm/store` (`PNPM_HOME`, `XDG_DATA_HOME`) | `~/.local/share/pnpm/store` |
+| pnpm metadata | `$XDG_CACHE_HOME/pnpm` | `~/.cache/pnpm` |
+| yarn (classic) | `$XDG_CACHE_HOME/yarn` (`YARN_CACHE_FOLDER`) | `~/.cache/yarn` |
+| pip | `$XDG_CACHE_HOME/pip` (`PIP_CACHE_DIR`) | `~/.cache/pip` |
+| uv | `$XDG_CACHE_HOME/uv` (`UV_CACHE_DIR`) | `~/.cache/uv` |
+| Go build cache | `$XDG_CACHE_HOME/go-build` (`GOCACHE`) | `~/.cache/go-build` |
+| Go module cache | `~/go/pkg/mod` (`GOMODCACHE`, `GOPATH`) | `~/go/pkg/mod` |
+| cargo registry, git | `~/.cargo/registry`, `~/.cargo/git` (`CARGO_HOME`) | `/mise/cargo/registry`, `/mise/cargo/git` |
+| mise downloads | `~/.local/share/mise/downloads` (`MISE_DATA_DIR`, `XDG_DATA_HOME`) | `/mise/downloads` |
+
+`$XDG_CACHE_HOME` falls back to `~/.cache`. Yarn berry's `~/.yarn/berry/cache` is not on the
+list: `~/.yarn` is not writable in a jail, so there is no jail-side cache to share.
 
 Concurrent writers across PID namespaces were already the status quo for the pooled store.
 UNMEASURED: whether LMDB's process-shared robust write mutex recovers a dead owner whose thread
@@ -660,8 +680,8 @@ record](#the-mise-use-record).
 | OQ-BF7 | **The macOS prefix outage is fixed by a refusal, not by staging or baking.** | One measured cause; one line of machine setup is cheaper than a second delivery mechanism. |
 | OQ-BF8 | **Dissolved**: liveness moved to the runtime, so the load sentinel's size needs no derivation. | The sentinel keeps only its diagnostic role ([`image-retention.md`](image-retention.md#the-load-sentinel-and-what-it-may-be-cited-for)). |
 | OQ-BF9 | **`yolo stores` records one dated sample per store per run, bounded, default on, `--no-record` to opt out.** | A read-only command could never report a rate. |
-| OQ-BF10 | **Host-cache aliasing is for content-addressed stores only, and the reason is injection, not size.** Scope stops at pants' `lmdb_store` pending a post-implementation measurement. **Superseded by [OQ-BF11](#OQ-BF11) once built.** | A path-keyed store is a write channel from jail to host. |
-| <a id="OQ-BF11"></a>[OQ-BF11](#OQ-BF11) | **Package caches are aliased too: a fixed list in code, caches never configs or credentials, only where jail-written files are owned by the user, only on a matching OS and architecture, each alias announced.** Ruled 2026-10-22, not built. | Poisoning a path-keyed cache takes intent; [the misguided-agent principle](misguided-agent-principle.md) puts that out of scope, and Safehouse shares the same caches read-write. A config file holds tokens a helpful agent would use, so it never crosses. |
+| OQ-BF10 | **Host-cache aliasing is for content-addressed stores only, and the reason is injection, not size.** Built for pants' `lmdb_store`, which still aliases on any podman. **Superseded by [OQ-BF11](#OQ-BF11), built 2026-10-22**: the content-addressed store keeps its gates and package caches join it. | A path-keyed store is a write channel from jail to host. |
+| <a id="OQ-BF11"></a>[OQ-BF11](#OQ-BF11) | **Package caches are aliased too: a fixed list in code, caches never configs or credentials, only where jail-written files are owned by the user, only on a matching OS and architecture, each alias announced.** Ruled and built 2026-10-22; "owned by the user" is rootless podman, and macos-user waits for its run-as-you mode. | Poisoning a path-keyed cache takes intent; [the misguided-agent principle](misguided-agent-principle.md) puts that out of scope, and Safehouse shares the same caches read-write. A config file holds tokens a helpful agent would use, so it never crosses. |
 | A6 | **No background or periodic reclaim: no daemon, timer or cron.** Reaffirmed as [OQ-YW1](../research/central-yolo-watcher.md#11-decision-ledger). | It adds a lifecycle yolo does not have and maximizes P7 exposure; the launch fires at least as often as the artifacts are made. |
 | <a id="BF-D1"></a>BF-D1 | **The vendor version prune runs once per launcher invocation, after the install-or-update branch, under a frozen update policy too; it yields silently to a writer holding the install lock, pays no subprocess in the steady state, and never fails the command.** | A prune moves no version, so a frozen launcher still needs it; a delete that cannot be made must not stop the program under `set -e`. |
 | <a id="BF-D2"></a>BF-D2 | **On `macos-user`, `yolo prune` asks no container runtime and `yolo stores` lists the backend's own storage.** Its running jails are its host-services sessions, read from the locks each session holds; container-only prune sections print one not-applicable line and exit 0; every staging sweep keeps live sessions' staging and declines when sessions cannot be listed; no `sudo`; only this user's sessions are read. | The backend runs no container, so both commands used to fail asking a runtime named `macos-user`. |
@@ -686,7 +706,7 @@ only place the values themselves are stated.
 | Prefix roots | `build/prefix-roots/<sha16>` | `image.PrefixRootsDir` |
 | Housekeeping locks | `locks/housekeeping.lock` (per deletion), `locks/housekeeping-pass.lock` (per pass) | `HousekeepingLockPath`, `HousekeepingPassLockPath` |
 | Housekeeping record | `<workspace>/.yolo/housekeeping.log` | `housekeepingLogName` |
-| Aliased host stores | pants `lmdb_store` | `hostcas.Stores` |
+| Aliased host stores | pants `lmdb_store`; npm, pnpm (store and metadata), yarn, pip, uv, Go build and module caches, cargo registry and git, mise downloads ([paths](#aliased-host-stores)) | `hostcas.Stores` |
 | Mise use window, refresh, record expiry | 30 days, 24 h, window + 7 days | `miseuse.Window`, `miseuse.Refresh`, `expireAfter` |
 | Mise offer threshold | 1 GiB, through the cache's offer | `internal/prune/miseversions.go` |
 | `yolo stores` sample ledger | `<state>/stores/<store>.samples`, last 30 per store | `internal/cli/stores` (`ledger.go`) |
