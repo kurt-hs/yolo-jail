@@ -88,7 +88,23 @@ with the shim and 872 s without, all tests passing. `internal/entrypoint` takes 
 - The Apple Container builder exemption, the interrupted-provisioning wording, podman workspaces through
   `/tmp` and `yolo host --` placement remain unruled on main.
 
-## 5. Temporary state
+## 5. `just done` on this Mac
+
+The full gate ran (no verified ancestor here), with the Command Line Tools git first on `PATH`;
+`internal/cli` then took 980 s, under the package limit. Its failures, at the tree of `5fb441574`:
+
+- `TestUsageListsEveryParsedFlag` (`yolo approve`, `yolo audit` flags missing from help): already passes at
+  `5c394d3f4`.
+- `TestCheckReportsAnOptionalMountItWillSkipAsInformation`: the check package read the developer's real
+  `$HOME`, so the maintainer's refused `mcp_presets` ended the merged section early. Fixed by giving the
+  package's `TestMain` a temporary `HOME`.
+- `TestStopHomeProcesses*` (three) and `TestProcessEnvironReadsALiveChildsHome` in `integration`: no child's
+  `HOME` was ever visible. `ps -E` cannot see the environment of a child this shell started either, so this
+  is the environment the gate ran in (this agent session, or macOS 26.5 itself), not yolo. Which of the two
+  is unmeasured; the same one-liner in a plain Terminal settles it:
+  `HOME=/tmp/probe sleep 30 & ps -E -ww -o command= -p $! | tr ' ' '\n' | grep '^HOME='`.
+
+## 6. Temporary state
 
 `~/.config/yolo-jail/overrides.jsonc` was created to set `macos_user_mode: self` and removed at the end of the
 session. Every prototype run removed its own directories and keychain item.
