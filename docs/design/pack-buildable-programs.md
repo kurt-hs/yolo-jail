@@ -2,7 +2,7 @@
 title: "A pack's own tool, built from its own tree: one more source for the fork route's build act"
 status: in-review
 stage: DESIGN
-next: "Morning review: rule OQ-BG1, OQ-BG2 and OQ-BG3 and review the BG-D decisions; builders proceed on the leanings meanwhile, slice by slice in the plan"
+next: "Morning review: rule OQ-BG2 and OQ-BG3 and review the BG-D decisions; builders proceed on the leanings meanwhile, slice by slice in the plan"
 tags: [design, packs, programs, build, capture, overrides, notches]
 summary: "A pack cannot deliver a tool that needs a build from its own tree, point a tool at the checkout being developed, or fetch a verified prebuilt artifact. One new program delivery, `via: \"pack\"`, answers all three with one precedence — a user-scope dev override, then a build of the pack's tree, then a declared prebuilt artifact, then a refusal that names the missing piece. The build is the fork route's sealed build act with a different source, keyed by the tree's content, so nothing new builds, caches, locks or delivers."
 ---
@@ -36,7 +36,7 @@ store mounted on Apple Container below its read-only bind floor.
 **Start at [§4](#4-precedence-one-resolver-four-rungs)**, the precedence. Everything else is how
 each rung gets its bytes.
 
-**Needs your ruling:** [OQ-BG1](#OQ-BG1), [OQ-BG2](#OQ-BG2), [OQ-BG3](#OQ-BG3).
+**Needs your ruling:** [OQ-BG2](#OQ-BG2), [OQ-BG3](#OQ-BG3). **Ruled:** [OQ-BG1](#OQ-BG1) (2026-10-23).
 
 **Reads with:** [`pack-buildable-programs-plan.md`](pack-buildable-programs-plan.md) (the
 implementation plan, written against the tree tonight on the leanings, by the maintainer's
@@ -55,8 +55,8 @@ ruling says otherwise.
 
 **Open questions** (product behavior with no single right answer):
 
-- [OQ-BG1](#OQ-BG1): does a program that cannot be delivered stop the launch, as every program
-  does today, or only drop that program? I lean towards stopping it, with the existing bypass.
+- [OQ-BG1](#OQ-BG1): ✅ ruled 2026-10-23: a failed build stops the launch exactly as a fork
+  build's does, with the same bypass.
 - [OQ-BG2](#OQ-BG2): may the prebuilt artifact stand in where no build can run on this machine,
   or only where the pack carries no source? I lean towards also allowing it where the builder is
   permanently unavailable, but never where it is only busy.
@@ -514,8 +514,8 @@ needs a build. The plan gives each an integration test.
    launch.
 5. **Remove the pack's sources: it uses the declared prebuilt artifact and reports the checksum
    it verified.**
-6. **Break the build: only that program is refused, and the log path is named.** Under
-   [OQ-BG1](#OQ-BG1)'s leaning, the launch stops by default. With `YOLO_ALLOW_MISSING_PROGRAMS=1`
+6. **Break the build: only that program is refused, and the log path is named.** By
+   [OQ-BG1](#OQ-BG1), the launch stops by default. With `YOLO_ALLOW_MISSING_PROGRAMS=1`
    it starts, and every other program works.
 
 | Where | Steps verifiable |
@@ -547,7 +547,7 @@ needs a build. The plan gives each an integration test.
 
 ## Open Questions
 
-1. 💬 **OQ-BG1: Does a program that cannot be delivered stop the launch?**
+1. <a id="OQ-BG1"></a>✅ **OQ-BG1: Does a program that cannot be delivered stop the launch?**
 
    The handoff asks that a failed build "not stop an unrelated launch, the same rule the other
    program kinds follow". Since 2026-10-05 every program's install failure stops the launch, by
@@ -558,12 +558,14 @@ needs a build. The plan gives each an integration test.
    - **B — Start without it, loudly.** This reopens [OQ-JR1](../reference/program-readiness.md#OQ-JR1) for one `via`, so a launch would mean
      two different things depending on the program's delivery.
 
-   <!-- vantage: question id=OQ-BG1 leaning="A — stop the launch with YOLO_ALLOW_MISSING_PROGRAMS as the bypass: it is the standing readiness rule, and matching it is what 'the same rule the other program kinds follow' asks." -->
-
    _Leaning:_ A — stop the launch with YOLO_ALLOW_MISSING_PROGRAMS as the bypass: it is the standing readiness rule, and matching it is what "the same rule the other program kinds follow" asks.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, as leaned (A):** a pack build is handled *"identically to how
+   > we handle builds of extensions and forks and stuff. We have the same escape hatch, it's the
+   > same happy path, and it's the same fatal error."* Built that way: a pack-tree build runs
+   > through the fork route's build act and its missing-build refusal, which names the build log,
+   > `yolo pack build <pack>` and `YOLO_ALLOW_MISSING_PROGRAMS=1`.
 
 2. 💬 **OQ-BG2: May the prebuilt artifact stand in where no build can run on this machine?**
 
@@ -577,7 +579,7 @@ needs a build. The plan gives each an integration test.
      refuses, so the bytes never change from one launch to the next because of timing.
    - **C — Any time a build cannot run now.** The bytes then depend on whatever else is running.
 
-   <!-- vantage: question id=OQ-BG2 leaning="B — absent source or a permanently unavailable builder, disclosed with its checksum; never a busy one, so the bytes do not depend on timing." -->
+   <!-- vantage: oq id=OQ-BG2 leaning="B — absent source or a permanently unavailable builder, disclosed with its checksum; never a busy one, so the bytes do not depend on timing." -->
 
    _Leaning:_ B — absent source or a permanently unavailable builder, disclosed with its checksum; never a busy one, so the bytes do not depend on timing.
 
@@ -595,7 +597,7 @@ needs a build. The plan gives each an integration test.
      session's authority on every changed invocation. On `yolo host` it would build on the host.
    - **C — Build at launch, in the sealed jail.** Changes are then picked up only at a launch.
 
-   <!-- vantage: question id=OQ-BG3 leaning="A — run as found: it is the only option that keeps both 'no launch needed' and 'never build on the host', and the refusal names the build line." -->
+   <!-- vantage: oq id=OQ-BG3 leaning="A — run as found: it is the only option that keeps both 'no launch needed' and 'never build on the host', and the refusal names the build line." -->
 
    _Leaning:_ A — run as found: it is the only option that keeps both "no launch needed" and "never build on the host", and the refusal names the build line.
 
@@ -609,6 +611,7 @@ reversible until it is built.
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
+| [OQ-BG1](#OQ-BG1) | A pack build that fails is handled identically to a fork build: the same fatal refusal, the same next steps, the same `YOLO_ALLOW_MISSING_PROGRAMS=1` bypass. | 2026-10-23 | [§11](#11-what-done-looks-like) | built: the fork route's missing-build refusal |
 | <a id="BG-D1"></a>BG-D1 | **The new delivery is `via: "pack"`**, a fourth value in the closed set, delivered by the source launcher. It is not a relaxed `via: "source"`, which keeps its fork meaning. An older yolo skips the new value with a skew note instead of refusing it as a malformed fork. | 2026-10-22 | [§3](#3-the-declaration), [§12](#12-alternatives-with-verdicts) | — |
 | <a id="BG-D2"></a>BG-D2 | **The build is the fork route's build act**, sealed and never on the host. The pack-tree source is staged by copying the staged pack's `from` minus `.git`, in place of a git checkout. | 2026-10-22 | [§6.3](#63-the-build-act-reused-unchanged) | — |
 | <a id="BG-D3"></a>BG-D3 | **Identity**: source `pack:<pack>/<from>`; revision is the tree digest of `from` with `.git` skipped; recipe is a tagged hash of `build`, `run` and the layout version; platform. The toolchain is recorded, not keyed. | 2026-10-22 | [§6.1](#61-the-source-and-what-keys-it) | — |

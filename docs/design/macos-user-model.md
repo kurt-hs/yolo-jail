@@ -16,8 +16,8 @@ vantage:
 is built. The [§6](#6-what-a-prototype-must-show) prototype is the check before building, not a
 reopening of the ruling. Its [first Mac run](#first-mac-run-2026-10-22) raised two questions.
 
-**Needs your ruling:** [OQ-MM7](#OQ-MM7), [OQ-MM8](#OQ-MM8), [OQ-MM9](#OQ-MM9), raised by the
-[first Mac run](#first-mac-run-2026-10-22).
+**Needs your ruling:** [OQ-MM7](#OQ-MM7), [OQ-MM8](#OQ-MM8), raised by the
+[first Mac run](#first-mac-run-2026-10-22). **Ruled:** [OQ-MM9](#OQ-MM9) (2026-10-23).
 
 **Reads with:** [Agent Safehouse research](../research/agent-safehouse.md) (the evidence for every
 Safehouse claim here), [SandVault and Safehouse compatibility](sandvault-safehouse-compat.md), and
@@ -253,7 +253,7 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
 
 1. <a id="OQ-MM7"></a>💬 **[`OQ-MM7`](#OQ-MM7) — On macOS, does loopback stay denied, now that it blocks the agent's own servers?**
 
-   <!-- vantage: question id=OQ-MM7 leaning="Allow loopback on macOS: Seatbelt cannot tell whose server holds a port, so a deny breaks random-port test servers (Go httptest, pytest fixtures, dev servers); podman keeps its private loopback." -->
+   <!-- vantage: oq id=OQ-MM7 leaning="Allow loopback on macOS: Seatbelt cannot tell whose server holds a port, so a deny breaks random-port test servers (Go httptest, pytest fixtures, dev servers); podman keeps its private loopback." -->
 
    [OQ-MM3](#OQ-MM3) ruled loopback denied except listed ports, matching podman. The first Mac
    run (check d3) showed the cost: Seatbelt filters by port, not by process, so a server the agent
@@ -268,7 +268,7 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
 
 2. <a id="OQ-MM8"></a>💬 **[`OQ-MM8`](#OQ-MM8) — In the run-as-you mode, may the agent read your files in the shared `/tmp`?**
 
-   <!-- vantage: question id=OQ-MM8 leaning="Leave /tmp readable and document it: tools write there constantly, and under the misguided-agent principle an eager agent rarely goes looking there." -->
+   <!-- vantage: oq id=OQ-MM8 leaning="Leave /tmp readable and document it: tools write there constantly, and under the misguided-agent principle an eager agent rarely goes looking there." -->
 
    Check b14: running as you, the agent reads your owner-only files in `/tmp`; the account mode is
    protected by Unix permissions. The shared `/tmp` also holds yolo's own per-session endpoint
@@ -280,9 +280,7 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
    **Answer:**
    > _(empty — fill in when decided)_
 
-3. <a id="OQ-MM9"></a>💬 **[`OQ-MM9`](#OQ-MM9) — Is host software (Homebrew) visible to the agent?**
-
-   <!-- vantage: question id=OQ-MM9 leaning="Yes, read-only and runnable: install trees (/opt/homebrew, /usr/local, /Applications) hold software, not secrets; your home's toolchain folders stay hidden; declared packages come first on PATH so a shared config behaves the same everywhere." -->
+3. <a id="OQ-MM9"></a>✅ **[`OQ-MM9`](#OQ-MM9) — Is host software (Homebrew) visible to the agent?**
 
    The prototype already allows `/opt/homebrew`, `/usr/local` and `/Applications` read-only. The
    alternative is nix-only tools, matching the container exactly. Either way your home's toolchain
@@ -291,7 +289,9 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
    _Leaning:_ visible read-only, declared packages first on `PATH`.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, as leaned:** *"Host software visible? A. Yes. That's what we
+   > decided."* Install trees (`/opt/homebrew`, `/usr/local`, `/Applications`) are readable and
+   > runnable; your home's toolchain folders stay hidden; declared packages come first on `PATH`.
 
 ## Decision Ledger
 
@@ -305,3 +305,4 @@ Ruled 2026-10-22 ([OQ-MM1](#OQ-MM1), [MM-R2](#decision-ledger)):
 | <a id="OQ-MM4"></a>[OQ-MM4](#OQ-MM4) | No transition for Macs already set up for the second account; reusing the account for the optional mode is welcome, not required. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | pending |
 | <a id="OQ-MM6"></a>[OQ-MM6](#OQ-MM6) | A `~/ctx` link to `$YOLO_CONTEXT_DIR` in the agent's home on every backend; `$YOLO_CONTEXT_DIR` stays the documented path. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | built: podman via the home skeleton (skipped when a config entry claims `ctx`); Apple Container and macos-user via the `link_context_dir` boot step (macos-user retargets its own link per workspace); macos-user is unit-tested only, not yet run on a Mac; Apple Container is untested |
 | <a id="OQ-MM5"></a>[OQ-MM5](#OQ-MM5) | Containers do not also bind mounts at their original host path; `$YOLO_CONTEXT_DIR/<name>` is the one supported path, and macOS allows the original path only for the link. | 2026-10-22 | [§7](#7-the-ruled-model-two-modes-one-profile) | — |
+| [OQ-MM9](#OQ-MM9) | Host software is visible to the agent, read-only and runnable: `/opt/homebrew`, `/usr/local` and `/Applications`, never a parent such as `/opt`; declared packages come first on `PATH`. | 2026-10-23 | [§8](#8-open-questions) | built in the run-as-you mode, opt-in; not yet run on a Mac |
