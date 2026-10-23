@@ -1,18 +1,18 @@
 ---
 title: "mise cannot reach HTTPS inside macos-user, and the keychain deny is why"
 date: 2026-10-23
-status: in-review
+status: accepted
 stage: DESIGN
-next: "Rule OQ-MT1 (witness C passed on the maintainer's Mac 2026-10-23, so A is available) and OQ-MT2"
+next: "Build MT-D5: nixpkgs mise with rustls-native-roots in the macos-user tool profile; propose the same switch to nixpkgs"
 tags: [design, macos, macos-user, seatbelt, tls, mise, ca-trust]
-summary: "Inside the macos-user Seatbelt profile, yolo's nixpkgs mise fails every HTTPS call with 'bad certificate format'. It is built with native-tls, whose SecureTransport handshake reads the server key through Apple's old CDSA code, which checks in with securityd (com.apple.SecurityServer). The profile denies that service on purpose because it fronts the login keychain. The proposal keeps the deny and ships a mise build that verifies through rustls-platform-verifier, which talks to trustd only. Unmeasured: the witnesses in §5 settle it on a Mac."
+summary: "Inside the macos-user Seatbelt profile, yolo's nixpkgs mise fails every HTTPS call with 'bad certificate format'. It is built with native-tls, whose SecureTransport handshake reads the server key through Apple's old CDSA code, which checks in with securityd (com.apple.SecurityServer). The profile denies that service on purpose because it fronts the login keychain. The proposal keeps the deny and ships a mise build that verifies through rustls-platform-verifier, which talks to trustd only. Measured on the maintainer's Mac 2026-10-23."
 ---
 
 # mise cannot reach HTTPS inside macos-user, and the keychain deny is why
 
 **Status:** 2026-10-23. Nothing built. The cause is traced from source and **measured on the
-maintainer's Mac** ([the Mac run](#measured-on-the-maintainers-mac-2026-10-23)): every witness came out as
-expected, and witness C passes, so option A works.
+maintainer's Mac** ([the Mac run](#measured-on-the-maintainers-mac-2026-10-23)): every witness came out
+as expected, and a rustls mise works under the deny. Both questions are ruled.
 
 > **In short.** Keep securityd denied and change mise, the same way the Go fix changed Go: ship
 > a mise build whose TLS verifies through the trust daemon the profile already allows, so
@@ -22,12 +22,13 @@ expected, and witness C passes, so option A works.
 just, …) fails to install, so the agent starts without them. It was reported from a managed Mac;
 the cause in [§2](#2-the-cause) predicts every Mac.
 
-**Cost.** A second mise version pin on darwin (or a slower source build), and nixpkgs' patches to
-mise are lost on that path.
+**Cost.** Each Mac compiles mise once per nixpkgs bump until nixpkgs builds it this way itself.
 
 **Start at [§2](#2-the-cause).**
 
-**Needs your ruling:** [OQ-MT1](#OQ-MT1), [OQ-MT2](#OQ-MT2).
+**Needs your ruling:** none. **Ruled 2026-10-23:** [OQ-MT1](#OQ-MT1) (a mise yolo installs,
+ideally from Nix, no maintained patches; never securityd), [OQ-MT2](#OQ-MT2) (account mode may
+miss login-keychain CAs; documented).
 
 **Reads with:** [`provisioner-sets.md`](provisioner-sets.md) (the CA trust rulings, PS-D10 and
 PS-D14), [`macos-user-model.md`](macos-user-model.md) (the profile and its keychain promise).
@@ -77,19 +78,21 @@ Traced from source; the witnesses in [§5](#5-witnesses-for-the-mac) measure it.
 
 ## 3. The proposal
 
-**Keep the deny, and deliver mise's upstream release build on darwin.** This is not a yolo build of
-mise: it is the binary mise's own installer (`mise.run`) and its GitHub releases hand every user,
-so on a Mac it is arguably the more common mise than nixpkgs'. mise's release tarballs are
-built with `rustls-native-roots`, which on macOS verifies through rustls-platform-verifier. That
-verifier creates and evaluates a `SecTrust` (the newer API), which sends evaluation to trustd, and
-`com.apple.trustd.agent` is already allowed (`seatbeltdeny.go:653`). It never touches the CDSA path
+**Keep the deny, and build nixpkgs' own mise with its other TLS feature on darwin.** mise offers
+`rustls-native-roots` as a cargo feature beside the default `native-tls`; mise's official release
+binaries are built with it. On macOS it verifies through rustls-platform-verifier, which creates
+and evaluates a `SecTrust` (the newer API). That sends evaluation to trustd, and
+`com.apple.trustd.agent` is already allowed (`seatbeltdeny.go:653`); it never touches the CDSA path
 in [§2](#2-the-cause) step 3. trustd reads the System keychain's trust settings itself, so an MDM CA
 should be trusted with no bundle at all.
 
-- **Delivery:** a hash-pinned fetch of the release tarball for each darwin architecture in
-  `flake.nix`, in the macos-user tool profile in place of nixpkgs mise. Linux and the container
-  backends keep nixpkgs mise.
-- **Version:** pinned to the same version nixpkgs ships, and bumped with it.
+- **Delivery:** the macos-user tool profile takes nixpkgs mise with its features switched, set in
+  `flake.nix`: a build setting, not a patch, so nothing of nixpkgs' recipe is copied or kept.
+  Linux and the container backends keep stock nixpkgs mise.
+- **Cost:** no binary cache holds this variant, so each Mac compiles mise once per nixpkgs bump.
+  If that proves too slow, option A (mise's official binary, hash-pinned) replaces it.
+- **End state:** the same switch proposed to nixpkgs (option F). Once it lands, the override is
+  deleted and every platform runs stock nixpkgs mise.
 - **Done looks like:** in a run-as-you launch with the profile unchanged, `mise ls-remote node`
   prints versions, and a repo's `mise.toml` tools install.
 
@@ -97,12 +100,14 @@ should be trusted with no bundle at all.
 
 | Option | Cost | Security | Verdict |
 | :--- | :--- | :--- | :--- |
-| **A — release mise on darwin** ([§3](#3-the-proposal)) | A second version pin; nixpkgs patches lost | The keychain deny stays | Proposed, if witness C passes |
-| **B — rebuild nixpkgs mise with `rustls-native-roots`** | No binary cache: mise compiles on each Mac after every nixpkgs bump, and its TLS crate may need cmake | Same as A | Fallback if a release pin is unwanted |
-| **C — allow `com.apple.SecurityServer`** | One line | **Breaks run-as-you's promise**: with the login keychain unlocked, the agent could list item attributes, add items, and read any item whose access list admits it without a prompt. Seatbelt filters this service by name only, so no narrower allow exists | Rejected unless A and B both fail |
+| **A — release mise on darwin** | A second version pin; nixpkgs patches lost | The keychain deny stays | Fallback if B compiles too slowly |
+| **B — rebuild nixpkgs mise with `rustls-native-roots`** | No binary cache: mise compiles on each Mac after every nixpkgs bump, and its TLS crate may need cmake | Same as A | Chosen bridge ([§3](#3-the-proposal), MT-D5) |
+| **C — allow `com.apple.SecurityServer`** | One line | **Breaks run-as-you's promise**: with the login keychain unlocked, the agent could list item attributes, add items, and read any item whose access list admits it without a prompt. Seatbelt filters this service by name only, so no narrower allow exists | Rejected outright (MT-D4) |
 | **D — no mise in the sandbox** | Repos' tools missing on macos-user | None | Rejected; it is today's failure |
 | **E — ask upstream to make rustls the macOS default** | Slow; not in our hands | — | Worth filing; not a fix |
-| **F — ask nixpkgs to build mise with `rustls-native-roots`** | One nixpkgs pull request; yolo then keeps nixpkgs mise everywhere | Same as A | The cleanest end state; A bridges until it lands |
+| **F — ask nixpkgs to build mise with `rustls-native-roots`** | One nixpkgs pull request; yolo then keeps nixpkgs mise everywhere | Same as A | The end state; B bridges until it lands |
+| **G — our own gatekeeper in front of securityd**, passing only the requests TLS needs | Apple's securityd protocol is private and versioned, and the service name is a compiled-in constant (`SECURITYSERVER_BOOTSTRAP_NAME` in Apple's `OSX/libsecurityd/lib/sscommon.h`; only an in-process C++ call overrides it), so steering a program to the gatekeeper means intercepting its service lookups | Keeps the deny if the filter is right; leaks the keychain under the gatekeeper's identity if not | Rejected (MT-D3): not simple and documented |
+| **H — replace the one CDSA call at program start** (`DYLD_INSERT_LIBRARIES`) | A small library, fixes every SecureTransport program | Keeps the deny | Rejected (MT-D3): monkey patching |
 
 ## 5. Witnesses for the Mac
 
@@ -153,7 +158,7 @@ failed in provisioning with the same error for `pipx:swarf` and the neovim plugi
 Still unmeasured: a host behind a TLS-intercepting proxy whose CA only the MDM installed, which is what
 the issuer line would show.
 
-**Then, once a build delivers option A:** a real run-as-you launch with the shipped profile, running
+**Then, once a build delivers [MT-D5](#decision-ledger):** a real run-as-you launch with the shipped profile, running
 `mise ls-remote node` and `mise install` in a repo with a `mise.toml`. Expected: versions listed and
 tools installed, with no profile change.
 
@@ -161,30 +166,31 @@ tools installed, with no profile change.
 
 - **Other native macOS programs** that use SecureTransport. Each would fail the same way; this doc
   fixes mise because it is the one reported. Witness B's method finds the next.
-- **Account mode's login-keychain CAs** for the release build: [OQ-MT2](#OQ-MT2).
+- **Account mode's login-keychain CAs.** A corporate CA kept only in the user's own login keychain
+  is not trusted by mise in the separate-account mode. Ruled acceptable and documented for users
+  ([MT-D2](#decision-ledger)).
 - **Container backends.** Their mise is Linux and reads the bundle file.
 
 ## 7. Open questions
 
-1. 💬 <a id="OQ-MT1"></a>**[OQ-MT1](#OQ-MT1): How does mise get TLS inside macos-user?**
+1. ✅ <a id="OQ-MT1"></a>**[OQ-MT1](#OQ-MT1): How does mise get TLS inside macos-user?**
 
-   <!-- vantage: oq id=OQ-MT1 leaning="A: witness C passed on the maintainer's Mac, under yolo's own profile too, so release mise on darwin keeps the keychain deny; dropped once option F lands in nixpkgs." -->
-
-   Witness C passed on 2026-10-23 ([the Mac run](#measured-on-the-maintainers-mac-2026-10-23)), under yolo's
-   own profile as well, so option A is available. The options and their costs are in
-   [§4](#4-alternatives).
-
-   - **A — Release mise on darwin**, mise's own official binary, hash-pinned, keychain deny kept;
-     dropped once a nixpkgs change (option F) lands.
-   - **B — Rebuild nixpkgs mise with rustls**, keychain deny kept, compiled on each Mac.
+   - **A — Release mise on darwin**, mise's own official binary, hash-pinned, keychain deny kept.
+   - **B — nixpkgs mise built with rustls**, keychain deny kept, compiled on each Mac.
    - **C — Allow securityd**, which ends run-as-you's keychain promise.
 
-   _Leaning:_ A, now that witness C passed; B if a second pin is unwanted; C only if both fail.
-
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, narrower than the options:** C is out: "We absolutely cannot
+   > allow access to the user's keychain and all their passwords inside any jail containment."
+   > For the mise yolo delivers into the environment: "I'm fine with picking something as
+   > appropriate that we install ourselves. I guess ideally it would come from Nix. That would be
+   > more convenient. But I don't want to maintain our own patches or anything."
 
-2. 💬 <a id="OQ-MT2"></a>**[OQ-MT2](#OQ-MT2): May the release mise miss login-keychain CAs in account mode?**
+   Applied in [MT-D5](#decision-ledger): B as the bridge, F as the end state. Witness C passed on
+   the maintainer's Mac ([the Mac run](#measured-on-the-maintainers-mac-2026-10-23)), under yolo's
+   own profile too, so a rustls mise works under the deny.
+
+2. ✅ <a id="OQ-MT2"></a>**[OQ-MT2](#OQ-MT2): May the release mise miss login-keychain CAs in account mode?**
 
    You ruled that the host's trust, the login keychain's included, is the sandbox's
    ([`provisioner-sets.md`](provisioner-sets.md)). In account mode the sandbox runs as a separate
@@ -195,16 +201,20 @@ tools installed, with no profile change.
    - **A — Accept the gap**, disclosed at launch as Go's is, and close both together later.
    - **B — Hold option A** of [OQ-MT1](#OQ-MT1) until a way exists to hand trustd those CAs.
 
-   <!-- vantage: oq id=OQ-MT2 leaning="A: the gap already exists for Go, it touches only account mode with a CA kept outside the System keychain, and holding the fix leaves every Mac without mise." -->
-
    _Leaning:_ A: the gap already exists for Go, it touches only account mode with a CA kept
    outside the System keychain, and holding the fix leaves every Mac without mise.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, as leaned (A):** "I'm absolutely okay with having the corporate
+   > CAs not work in some subset of the guest separate account mode. That's totally fine, and we'll
+   > just document that."
 
 ## Decision Ledger
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | MT-D1 | The `com.apple.SecurityServer` deny stays while any option that keeps it can work: it is how run-as-you keeps the agent away from the user's login keychain | 2026-10-23 | [§4](#4-alternatives) | — |
+| MT-D2 | Account mode may leave CAs held only in the user's login keychain untrusted by mise; the user guide says so ([OQ-MT2](#OQ-MT2) A) | 2026-10-23 | [§6](#6-what-this-does-not-cover) | pending |
+| MT-D3 | No stand-in for securityd and no patched function: a gatekeeper only if it is simple and documented, which [G](#4-alternatives) is not; the maintainer: "If it requires undocumented things and hacking service names and monkey patching, I don't want that. I also don't want to monkey patch" | 2026-10-23 | [§4](#4-alternatives) | — |
+| MT-D4 | Keychain access inside any containment is a non-starter; the mise yolo delivers is ours to choose, ideally from Nix, with no patches we maintain ([OQ-MT1](#OQ-MT1)) | 2026-10-23 | [§3](#3-the-proposal) | — |
+| MT-D5 | Bridge: on darwin, the macos-user tool profile takes nixpkgs mise with its cargo features switched from `native-tls` to `rustls-native-roots` (a build setting, not a patch). End state: the same change proposed to nixpkgs (option F), after which the override is deleted. Fallback if the per-Mac compile proves too slow: option A. Witness C passed 2026-10-23 | 2026-10-23 | [§4](#4-alternatives) | pending |
