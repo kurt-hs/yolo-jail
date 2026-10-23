@@ -23,6 +23,37 @@ import (
 
 const sessionLimit = 12 * time.Hour
 
+// PendingLife is how long a filed request waits for an answer before it expires.
+const PendingLife = time.Hour
+
+// The kinds of refusal a front end reports with its own stable exit code
+// (boundary-broker.md §6.6). Match them with errors.Is; the error's text is the message.
+var (
+	ErrAlreadyDecided  = errors.New("already decided")
+	ErrUnknownID       = errors.New("unknown id")
+	ErrRefusedByPolicy = errors.New("refused by policy")
+)
+
+// kindError carries its full message and one of the kinds above.
+type kindError struct {
+	msg  string
+	kind error
+}
+
+func (e *kindError) Error() string { return e.msg }
+func (e *kindError) Unwrap() error { return e.kind }
+func refusal(kind error, format string, args ...any) error {
+	return &kindError{msg: fmt.Sprintf(format, args...), kind: kind}
+}
+
+// The reasons a grant ends, recorded in Grant.EndReason.
+const (
+	EndExpired = "expired" // its window ran out
+	EndUsed    = "used"    // its last use was spent
+	EndRevoked = "revoked" // a human revoked it
+	EndStopped = "stopped" // the broker lifetime holding it ended
+)
+
 // Policy is the resolved windowed set policy, supplied by the HOST broker after
 // classification and scope checks, never decoded from a jail's request frame.
 // Session distinguishes a session ceiling from an ordinary duration ceiling.
@@ -42,10 +73,32 @@ type Request struct {
 	Filed, Decided                 time.Time
 	State                          string
 }
+
+// Expires is when the request stops waiting for an answer, whatever its state now.
+func (q Request) Expires() time.Time { return q.Filed.Add(PendingLife) }
+
 type Grant struct {
 	ID, Request, Jail, Start, Set, Digest string // empty Digest means the whole requested set
 	Expires, Ended                        time.Time
 	Uses                                  int
+	// EndReason is one of the End* constants once Ended is set. A record written before
+	// the field existed has none; EndedBy infers one.
+	EndReason string `json:",omitempty"`
+}
+
+// EndedBy is why the grant ended, "" while it is live.
+func (g Grant) EndedBy() string {
+	switch {
+	case g.Ended.IsZero():
+		return ""
+	case g.EndReason != "":
+		return g.EndReason
+	case g.Ended.Equal(g.Expires):
+		return EndExpired
+	case g.Uses == 0:
+		return EndUsed
+	}
+	return EndStopped
 }
 
 // Decision cannot change the holder, set or command. Zero For means Allow once.
@@ -54,10 +107,14 @@ type Decision struct {
 	For     time.Duration
 	Session bool
 	Uses    int
+	// Hook marks a decision the user's approval_hook made; it is audited as such.
+	Hook bool
 }
 type Store struct {
 	Dir string
-	Now func() time.Time
+	// Source names the broker source this store serves; empty means the directory's name.
+	Source string
+	Now    func() time.Time
 	// Revalidate is mandatory for approving decisions; it reads current host authority
 	// under the transaction lock. Nil fails closed. Deny/revoke need no authority.
 	Revalidate Revalidate
@@ -85,6 +142,14 @@ func currentPolicy(q Request, gate Revalidate) (Policy, error) {
 		return Policy{}, err
 	}
 	return p, nil
+}
+
+// SourceName is Source, or the store directory's name.
+func (s *Store) SourceName() string {
+	if s.Source != "" {
+		return s.Source
+	}
+	return filepath.Base(s.Dir)
 }
 
 func (s *Store) audit(ctx context.Context, kind string, q Request, g Grant) error {
@@ -166,9 +231,9 @@ func (s *Store) transactionContext(ctx context.Context, fn func(*records, time.T
 		now := s.now()
 		for i := range r.requests {
 			q := &r.requests[i]
-			if q.State == "pending" && !now.Before(q.Filed.Add(time.Hour)) {
+			if q.State == "pending" && !now.Before(q.Expires()) {
 				q.State = "expired"
-				q.Decided = q.Filed.Add(time.Hour)
+				q.Decided = q.Expires()
 				if err = s.write("requests", q.ID, q); err != nil {
 					return err
 				}
@@ -178,6 +243,7 @@ func (s *Store) transactionContext(ctx context.Context, fn func(*records, time.T
 			g := &r.grants[i]
 			if g.Ended.IsZero() && !now.Before(g.Expires) {
 				g.Ended = g.Expires
+				g.EndReason = EndExpired
 				if err = s.write("grants", g.ID, g); err != nil {
 					return err
 				}
@@ -385,16 +451,20 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 				continue
 			}
 			if q.State != expected || q.State != "pending" {
-				return fmt.Errorf("request %s is already %s; run `yolo approve` to list requests", id, q.State)
+				return refusal(ErrAlreadyDecided, "request %s is already %s", id, q.State)
 			}
 			if err := validatePolicy(q.Policy); err != nil {
-				return err
+				return refusal(ErrRefusedByPolicy, "%v", err)
+			}
+			kind := "decision"
+			if d.Hook {
+				kind = "hook-decision"
 			}
 			if d.Deny {
 				if d.For != 0 || d.Session || d.Uses != 0 {
 					return errors.New("deny cannot also grant")
 				}
-				if err := s.audit(context.Background(), "decision", *q, Grant{}); err != nil {
+				if err := s.audit(context.Background(), kind, *q, Grant{}); err != nil {
 					return err
 				}
 				q.State = "denied"
@@ -403,7 +473,7 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 			}
 			current, err := currentPolicy(*q, s.Revalidate)
 			if err != nil {
-				return err
+				return refusal(ErrRefusedByPolicy, "%v", err)
 			}
 			// Frontends cannot widen either the filed request or today's ceiling.
 			q.Policy.Window = min(q.Policy.Window, current.Window)
@@ -423,19 +493,19 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 				duration = d.For
 				if d.Session {
 					if !q.Policy.Session {
-						return errors.New("session exceeds this set's policy ceiling")
+						return refusal(ErrRefusedByPolicy, "session exceeds this set's policy ceiling")
 					}
 					duration = sessionLimit
 				}
 				if duration <= 0 || duration > q.Policy.MaxWindow {
-					return errors.New("duration exceeds this set's policy ceiling")
+					return refusal(ErrRefusedByPolicy, "duration exceeds this set's policy ceiling")
 				}
 				uses = q.Policy.Uses
 				command = ""
 			}
 			if d.Uses != 0 {
 				if d.Uses < 1 || d.Uses > uses {
-					return errors.New("uses exceed this grant's policy ceiling")
+					return refusal(ErrRefusedByPolicy, "uses exceed this grant's policy ceiling")
 				}
 				uses = d.Uses
 			}
@@ -444,7 +514,7 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 				return err
 			}
 			out = Grant{ID: gid, Request: q.ID, Jail: q.Jail, Start: q.Start, Set: q.Set, Digest: command, Expires: now.Add(duration), Uses: uses}
-			if err = s.audit(context.Background(), "decision", *q, out); err != nil {
+			if err = s.audit(context.Background(), kind, *q, out); err != nil {
 				return err
 			}
 			if err = s.write("grants", gid, out); err != nil {
@@ -454,7 +524,7 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 			q.Decided = now
 			return s.write("requests", q.ID, q)
 		}
-		return fmt.Errorf("request %q not found; run `yolo approve` to list requests", id)
+		return refusal(ErrUnknownID, "request %q not found", id)
 	})
 	return out, err
 }
@@ -506,6 +576,7 @@ func (s *Store) ConsumeDispatchContext(ctx context.Context, jail, start, set, co
 			g.Uses--
 			if g.Uses == 0 {
 				g.Ended = now
+				g.EndReason = EndUsed
 			}
 			if err := s.write("grants", g.ID, g); err != nil {
 				return err
@@ -538,13 +609,14 @@ func (s *Store) Revoke(id string) error {
 			found = true
 			if g.Ended.IsZero() {
 				g.Ended = now
+				g.EndReason = EndRevoked
 				if err := s.write("grants", g.ID, g); err != nil {
 					return err
 				}
 			}
 		}
 		if !found {
-			return fmt.Errorf("grant %q not found; run `yolo approve` to list grants", id)
+			return refusal(ErrUnknownID, "grant %q not found", id)
 		}
 		return nil
 	})
@@ -560,6 +632,7 @@ func (s *Store) End(jail, start string) ([]Grant, error) {
 			g := &r.grants[i]
 			if g.Jail == jail && g.Start == start && g.Ended.IsZero() {
 				g.Ended = now
+				g.EndReason = EndStopped
 				if err := s.write("grants", g.ID, g); err != nil {
 					return err
 				}
