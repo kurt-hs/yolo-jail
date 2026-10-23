@@ -1,15 +1,16 @@
 ---
 title: "One skill that says how this jail works, rendered from the launch that made it"
-status: in-review
-stage: DESIGN
-next: "Rule OQ-JM1 to OQ-JM4; the plan seed waits on OQ-JM2 and OQ-JM4"
+status: accepted
+stage: DECIDED
+next: "Complete jail-mechanics-skill-plan.md against the tree, then build"
 tags: [design, skills, briefing, lifecycle, config, live-apply, parity]
-summary: "A new built-in skill, jail-mechanics, rendered host-side at every launch, attach and config apply from the same deciders the launch uses: where each path in the jail comes from on the host and how long it lives, and, per change an agent can make or ask for, the exact steps (edit, check, what to ask the human to run on the host, what happens then). A short SKILL.md indexes generated recipe files, so only the case at hand is read. The timing of each change comes from the per-key table `yolo config apply` already decides with, so the skill and the command cannot disagree. The briefing keeps the facts an agent needs before its first action and loses its lifecycle paragraphs; configuring-the-jail and diagnosing-the-jail lose theirs too."
+summary: "A new built-in skill, jail-mechanics, rendered host-side at every launch, attach and config apply from the same deciders the launch uses: where each path in the jail comes from on the host and how long it lives, and, per change an agent can make or ask for, the exact steps (edit, check, what to ask the human to run on the host, what happens then). A short SKILL.md indexes generated recipe files, so only the case at hand is read. The timing of each change comes from the per-key table `yolo config apply` already decides with, so the skill and the command cannot disagree. The briefing keeps the facts an agent needs before its first action and one pointer line to the skill; configuring-the-jail and diagnosing-the-jail are rendered from the same facts, and `yolo host apply` renders a host version. All four questions were ruled on 2026-10-23, as leaned."
 ---
 
 # One skill that says how this jail works, rendered from the launch that made it
 
-**Status:** 2026-10-23. Nothing built. Evidence read at `2ac50a040`.
+**Status:** 2026-10-23. All four questions ruled in review on 2026-10-23, each as leaned. Nothing
+built. Evidence read at `2ac50a040`.
 
 > **In short.** Agents get jail mechanics wrong because every text they read about them is
 > static prose that has to cover every backend and every config at once, and so is either
@@ -26,17 +27,19 @@ packages"* ([§2](#2-what-agents-read-today-and-where-it-is-wrong)).
 **change-timing table** shared with `yolo config apply`, and one renderer that writes a short
 `SKILL.md` plus a few recipe files into the skills staging every entry already refreshes.
 
-**Cost.** The two existing built-in skills and the briefing each lose their lifecycle text. The
-built-in suite stops being purely embedded files.
+**Cost.** The briefing loses its lifecycle text. The two existing built-in skills become renderings
+too ([OQ-JM2](#OQ-JM2)), so the built-in suite stops being embedded files at all.
 
 **Start at [§4](#4-what-dynamic-means-the-jail-fact-sheet).** The chunking in
 [§5](#5-the-skill-a-short-index-and-generated-recipes) and the correctness tests in
 [§7](#7-how-it-stays-correct) follow from it.
 
-**Needs your ruling:** [OQ-JM1](#OQ-JM1), [OQ-JM2](#OQ-JM2), [OQ-JM3](#OQ-JM3), [OQ-JM4](#OQ-JM4).
+**Ruled 2026-10-23, nothing open:** [OQ-JM1](#OQ-JM1) (one pointer line in the briefing),
+[OQ-JM2](#OQ-JM2) (every built-in skill rendered), [OQ-JM3](#OQ-JM3) (real paths, host paths
+included), [OQ-JM4](#OQ-JM4) (a host rendering).
 
 **Reads with:** [`jail-mechanics-skill-plan.md`](jail-mechanics-skill-plan.md) (the implementation
-plan's seed; not a hand-off), [`live-config-apply.md`](live-config-apply.md) (the per-key timing this
+plan; a seed until it is completed against the tree), [`live-config-apply.md`](live-config-apply.md) (the per-key timing this
 reuses), [`agent-briefings.md`](../reference/agent-briefings.md) (the briefing and skills staging),
 [`jail-home.md`](../reference/jail-home.md#the-storage-class-briefing-section) (the persistence map).
 
@@ -45,8 +48,9 @@ reuses), [`agent-briefings.md`](../reference/agent-briefings.md) (the briefing a
 ## 1. Recommendation and principles
 
 Add a third built-in skill, **`jail-mechanics`**, rendered by the host-side launcher into the skills
-staging on every fresh launch, every attach and every `yolo config apply`. It covers two things and
-nothing else, as the maintainer asked (2026-10-23):
+staging on every fresh launch, every attach and every `yolo config apply`, and by `yolo host apply`
+at the host notch ([OQ-JM4](#OQ-JM4)). It covers two things and nothing else, as the maintainer asked
+(2026-10-23):
 
 > *"only describe the mappings to host files and the life cycles of making changes: restarting, when
 > host apply is needed, all that stuff should be dynamically generated based on what the user's
@@ -67,11 +71,16 @@ nothing else, as the maintainer asked (2026-10-23):
    will report.
 5. <a id="JM-P5"></a>**P5. Small at rest.** An agent that never invokes the skill pays for its
    description only. One that does reads the index and one recipe.
+6. <a id="JM-P6"></a>**P6. The rule covers everything yolo pushes in.** The ruling on
+   [OQ-JM2](#OQ-JM2) widens P1 and P2 from this skill to every built-in skill and every
+   informational text yolo writes into the jail: *"Whatever is dynamically shoved into the jail for
+   informational purposes should only apply to the situation in which the jail is in."*
 
 ### Terms
 
-- **Jail fact sheet** *(coined here)*: the host-side record of what one launch applied, assembled by
-  the run pipeline from its deciders, and the only input the renderer reads. It is not the config,
+- **Jail fact sheet** *(coined here)*: the host-side record of what one launch applied (or, at the
+  host notch, what one `yolo host apply` applies), assembled from its deciders, and the only input
+  the renderer reads. It is not the config,
   and not `.yolo/config-boot.json` (the agent-writable effective-config record).
 - **Change-timing table** *(coined here)*: for each config key and backend, when a change to it takes
   effect, and who must act. It is today's `keyOutcome` table
@@ -158,6 +167,12 @@ The renderer reads nothing else: no file, no environment variable, no probe
 | Restart | the exact commands | `stopRemedy` and `yolo` on a container backend; on macos-user, which has no `yolo stop` to run, the session model: end this session, run `yolo` |
 | Timing per key | [§6](#6-lifecycle-one-table-three-readers) | the change-timing table |
 
+Every path is rendered as it is, host paths included ([OQ-JM3](#OQ-JM3)): on macos-user the
+workspace is its real path, and every recipe names the host directory the human runs a command in.
+For generated text this supersedes the 2026-09-13 ruling that every text spells `/workspace`
+([`declaration-parity.md`](declaration-parity.md)), whose reason was that the built-in skills were
+static.
+
 ### 4.2 Static content
 
 Static means the same bytes in every jail of a notch: the skill's description, the recipe titles,
@@ -172,6 +187,10 @@ edit; read every `[FAIL]` before anything else"*). Static text carries no backen
   environment, the live mount record, the running jail's pack tree. The attach's current config is
   read only by the change-timing table, never by the fact sheet.
 - **macos-user** has no attach. Every entry is a fresh launch, so the first rule covers it.
+- **`yolo host apply`** renders the host version from the user config it applies, and says only
+  what applies on the real machine ([OQ-JM4](#OQ-JM4)): no restart, no jail path, no loophole, and
+  `yolo host apply` as the step after every edit. A recipe with nothing to say at the host is not
+  written, by the rule in [§5.1](#51-layout).
 
 That rule applies to the briefing's own facts as well, because both read one fact sheet. It closes
 the briefing half of [LA-D7](live-config-apply.md#LA-D7) without a second change.
@@ -321,7 +340,9 @@ the call site?**
 
 1. **The production call site renders the skill.** A test drives the run pipeline's staging function
    with a launch fixture and reads `jail-mechanics/` out of the staging dir. Deleting the renderer's
-   call, or writing the skill from the embedded tree instead, fails it.
+   call, or writing the skill from the embedded tree instead, fails it. The same test reads
+   configuring-the-jail and diagnosing-the-jail, which are rendered too ([OQ-JM2](#OQ-JM2)), and a
+   second one drives `yolo host apply`'s render path for the host version ([OQ-JM4](#OQ-JM4)).
 2. **The host map is the argv.** The existing persistence-map test compares the map with the
    assembled argv in both directions per backend
    ([DS-D17](../reference/jail-home.md#DS-D17)). It is widened to parse `host-map.md` from the same
@@ -338,19 +359,20 @@ the call site?**
 5. **The restart is the jail's.** On each container backend fixture the rendered restart command
    equals `stopRemedy`'s, and on macos-user no rendering names `yolo stop`.
 6. **Goldens per backend.** One full rendering per backend fixture (Linux podman rootless, Apple
-   Container, macos-user, and the host notch if [OQ-JM4](#OQ-JM4) says so), regenerated with a flag
+   Container, macos-user, and the host notch per [OQ-JM4](#OQ-JM4)), regenerated with a flag
    and reviewed as a diff. A golden pins bytes, not truth; tests 2 to 5 pin truth.
 
 ## 8. Relation to the briefing and the two existing skills
 
 **Nothing is said twice in two wordings.** A fact appears in the briefing and in the skill only when
-both render it from one fact-sheet field through one function.
+both render it from one fact-sheet field through one function. All three built-in skills render from
+the one fact sheet ([OQ-JM2](#OQ-JM2)), so each shows only this jail's case.
 
 | Text | Keeps | Loses (moves to jail-mechanics) |
 | :--- | :--- | :--- |
-| Briefing | Environment block, network, storage classes ([DS-D13](../reference/jail-home.md#DS-D13)), loopholes, blocked tools, context mounts, limitations | "Packages & Resource Limits"' request loop and the locked-config request; the macos-user resource paragraph moves into the `resources` row of `workspace-config.md`. What remains in its place is [OQ-JM1](#OQ-JM1)'s. |
-| configuring-the-jail | which file, merge layers, generated home files, the six wrong beliefs, the schema pointer | "You already know the loop", "When the config file is read-only", "Rebuild vs. restart", the brokered-switch paragraph |
-| diagnosing-the-jail | triage steps 1, 3, 4, 5, 7 | step 6, "my fix isn't taking effect", becomes a pointer to `yolo config drift` and the skill; step 2's two log paths and step 2b become rendered per [OQ-JM2](#OQ-JM2) |
+| Briefing | Environment block, network, storage classes ([DS-D13](../reference/jail-home.md#DS-D13)), loopholes, blocked tools, context mounts, limitations | "Packages & Resource Limits"' request loop and the locked-config request; the macos-user resource paragraph moves into the `resources` row of `workspace-config.md`. In its place, one rendered pointer line ([OQ-JM1](#OQ-JM1)): *"Before editing `yolo-jail.jsonc`, asking for a restart, or relying on a file from the host: read **jail-mechanics**."* The macos-user line *"there is no `/workspace` on this backend"* goes once no text pushed into the jail spells `/workspace` ([OQ-JM3](#OQ-JM3)) |
+| configuring-the-jail, rendered | which file (its real path), merge layers, generated home files for this backend only, the six wrong beliefs, the schema pointer | "You already know the loop", "When the config file is read-only", "Rebuild vs. restart", the brokered-switch paragraph |
+| diagnosing-the-jail, rendered | triage steps 1, 3, 4, 5, 7; step 2 with this backend's one log path; step 2b, the macOS ACL fix, on macos-user only ([OQ-JM2](#OQ-JM2)) | step 6, "my fix isn't taking effect", becomes a pointer to `yolo config drift` and the skill |
 | `yolo config-ref` agent workflow | the key reference | its "restart the jail" workflow paragraphs become one line naming the skill |
 
 The briefing's "Skills" section names the new skill first and says when to read it.
@@ -359,7 +381,7 @@ The briefing's "Skills" section names the new skill first and says when to read 
 
 | | podman (Linux) | podman (macOS machine) | Apple Container | macos-user | `yolo host` |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| Rendered at | launch, attach, `config apply` | same | launch only ([JM-D7](#JM-D7)) | every launch | [OQ-JM4](#OQ-JM4) |
+| Rendered at | launch, attach, `config apply` | same | launch only ([JM-D7](#JM-D7)) | every launch | `yolo host apply` ([OQ-JM4](#OQ-JM4)) |
 | Workspace sentence | `/workspace` is the host dir, bound live | same | same | the real path, not a mount ([OQ-JM3](#OQ-JM3)) | the real machine's directory |
 | Restart recipe | `yolo stop`, then `yolo` | same | same | end the session, run `yolo` | none: no jail |
 | Live-apply recipes | the table's A and B rows | the table, M3 unbuilt rows at restart | restart for mounts and scope | next session for every key | `yolo host apply` |
@@ -379,6 +401,7 @@ mechanism goes missing on one backend quietly.
 | `yolo config apply` that applied nothing | nothing | the effective config did not move |
 | a config file edit inside the jail | nothing | the jail cannot render; `yolo config drift` reports the edit |
 | Apple Container, any re-entry | nothing | the staged copy is the launch's ([JM-D7](#JM-D7)) |
+| `yolo host apply` | the host version | the host notch has no launch; its apply is the entry ([OQ-JM4](#OQ-JM4)) |
 
 A failed render never fails the entry: the previous rendering stays, and the launch prints one line
 naming the failure and that the skill describes the previous launch. Two renders of one jail are
@@ -397,12 +420,20 @@ serialized by the launch lock both callers already hold ([`live-config-apply.md`
   `yolo config drift` is live ([JM-D6](#JM-D6)).
 - **A static skill with per-backend sections.** Rejected: it is the conditional prose the request
   names.
+- **A three-step summary in the briefing beside the pointer** ([OQ-JM1](#OQ-JM1) B). Rejected
+  2026-10-23: a second copy of the sentence that drifted.
+- **Strip the two existing skills to backend-neutral static text** ([OQ-JM2](#OQ-JM2) A). Rejected
+  2026-10-23: the maintainer asked for everything generated that can be.
+- **Keep `/workspace` in rendered text** ([OQ-JM3](#OQ-JM3) B). Rejected 2026-10-23: a copied
+  `/workspace` path fails on macos-user.
+- **No mechanics skill at the host** ([OQ-JM4](#OQ-JM4) B and C). Rejected 2026-10-23: the host
+  agent gets what applies there.
 
 ## 12. Risks
 
 | Risk | Mitigation |
 | :--- | :--- |
-| An agent never picks the skill | static trigger wording ([§5.2](#52-skillmd)); the briefing names it beside the actions that need it ([OQ-JM1](#OQ-JM1)) |
+| An agent never picks the skill | static trigger wording ([§5.2](#52-skillmd)); the briefing's one pointer line names it beside the actions that need it ([OQ-JM1](#OQ-JM1)) |
 | The expectation disagrees with the command at runtime (an unproven rootless probe) | step 3 of every recipe says the command's output wins ([JM-D5](#JM-D5)) |
 | Apple Container's copy is agent-writable and never refreshed | it is the launch's copy of the launch's facts, so it is true of the jail; an edit misleads only the agent that made it ([the misguided-agent principle](../reference/misguided-agent-principle.md)) |
 | A pack ships a skill named `jail-mechanics` | the rendered skill wins over every layer, like yolo's LSP plugin, and the collision is reported ([JM-D2](#JM-D2)) |
@@ -415,12 +446,14 @@ serialized by the launch lock both callers already hold ([`live-config-apply.md`
 2. The fact sheet, as a widening of `BriefingInput`, built from the effective config at attach.
 3. The renderer and `SKILL.md`, `host-map.md`, `workspace-config.md`, `restart.md`: the four that
    carry the reported confusion.
-4. The remaining recipes; the removals from the briefing and both skills.
-5. `yolo config apply`'s re-render; the host notch per [OQ-JM4](#OQ-JM4).
+4. The remaining recipes; the briefing's pointer line in place of its lifecycle text; configuring-the-jail
+   and diagnosing-the-jail rendered from the fact sheet ([OQ-JM2](#OQ-JM2)).
+5. `yolo config apply`'s re-render; the host version rendered by `yolo host apply`
+   ([OQ-JM4](#OQ-JM4)).
 
 ## 14. Open questions
 
-1. 💬 <a id="OQ-JM1"></a>**OQ-JM1: What stays in the always-on briefing about making a change?**
+1. ✅ <a id="OQ-JM1"></a>**OQ-JM1: What stays in the always-on briefing about making a change?**
 
    Matt's jail agent wants `ffmpeg` permanently. It has the briefing in context and sees
    jail-mechanics only as a one-line description among its skills. What the briefing says decides
@@ -431,15 +464,14 @@ serialized by the launch lock both callers already hold ([`live-config-apply.md`
    - **B — The pointer and a three-step summary.** Edit, `yolo check --no-build`, then the steps in
      jail-mechanics. About four lines, rendered, so it cannot disagree with the skill.
 
-   <!-- vantage: oq id=OQ-JM1 leaning="A — the request is to move the steps into a skill; a summary is a second copy of the one sentence that drifted." -->
-
    _Leaning:_ A — the request is to move the steps into a skill; a summary is a second copy of the
    one sentence that drifted.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, as leaned:** A. The briefing carries one pointer line to
+   > jail-mechanics, and the steps live only in the skill. *"37 Yes A"*
 
-2. 💬 <a id="OQ-JM2"></a>**OQ-JM2: Are the two existing built-in skills rendered too, or only stripped?**
+2. ✅ <a id="OQ-JM2"></a>**OQ-JM2: Are the two existing built-in skills rendered too, or only stripped?**
 
    On macos-user, diagnosing-the-jail today tells the agent two log paths and a macOS-only ACL fix,
    and on podman the same skill shows that ACL section to an agent that can never hit it.
@@ -449,15 +481,17 @@ serialized by the launch lock both callers already hold ([`live-config-apply.md`
    - **B — Render all three.** One renderer and one fact sheet for the whole built-in suite; each
      backend's diagnosing-the-jail shows only its own log path and its own fixes.
 
-   <!-- vantage: oq id=OQ-JM2 leaning="B — the ACL fix is diagnosis, not mechanics, and stripping it into the mechanics skill moves it where a diagnosing agent will not look." -->
-
    _Leaning:_ B — the ACL fix is diagnosis, not mechanics, and stripping it into the mechanics skill
    moves it where a diagnosing agent will not look.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, as leaned, and broader:** B. Every built-in skill, and any
+   > informational content yolo pushes into the jail, is generated from the same facts and
+   > describes only the situation this jail is in. *"yes, we want to generate whatever we can.
+   > Whatever is dynamically shoved into the jail for informational purposes should only apply to
+   > the situation in which the jail is in."*
 
-3. 💬 <a id="OQ-JM3"></a>**OQ-JM3: Does the 2026-09-13 ruling to keep `/workspace` canonical still hold?**
+3. ✅ <a id="OQ-JM3"></a>**OQ-JM3: Does the 2026-09-13 ruling to keep `/workspace` canonical still hold?**
 
    On macos-user the workspace is `/Users/Shared/yolo/proj` and `/workspace` does not exist. The
    [ruling](declaration-parity.md) kept `/workspace` in every text because the built-in skills were
@@ -469,15 +503,16 @@ serialized by the launch lock both callers already hold ([`live-config-apply.md`
    - **B — Keep `/workspace` everywhere.** Rendered text spells `/workspace` too, and the briefing's
      line keeps translating it.
 
-   <!-- vantage: oq id=OQ-JM3 leaning="A — the agent copies commands verbatim, and a copied /workspace path fails on that backend." -->
-
    _Leaning:_ A — the agent copies commands verbatim, and a copied `/workspace` path fails on that
    backend.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, as leaned:** A. Generated skills show real paths, host paths
+   > included. For generated text this supersedes the 2026-09-13 always-`/workspace` ruling.
+   > *"if you're asking if the generated skills can expose host paths, I think the answer is yes.
+   > And that will allow the agent and the generated stuff to be correct."*
 
-4. 💬 <a id="OQ-JM4"></a>**OQ-JM4: Does a host agent get a rendered mechanics skill?**
+4. ✅ <a id="OQ-JM4"></a>**OQ-JM4: Does a host agent get a rendered mechanics skill?**
 
    Matt runs `yolo host -- claude` in `~/code/proj`, and the agent adds an MCP server to
    `~/.config/yolo-jail/config.jsonc`. It needs to know that `yolo host apply` renders it and that
@@ -489,20 +524,25 @@ serialized by the launch lock both callers already hold ([`live-config-apply.md`
    - **B — No skill at the host.** The host briefing gets one lifecycle line instead.
    - **C — Neither.** The host agent reads `yolo --help`.
 
-   <!-- vantage: oq id=OQ-JM4 leaning="A — the old reason was that the skills describe a jail, which a host rendering does not; parity asks for the same help at every notch." -->
-
    _Leaning:_ A — the old reason was that the skills describe a jail, which a host rendering does
    not; parity asks for the same help at every notch.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Ruled in review 2026-10-23, as leaned:** A. `yolo host apply` renders a host version with
+   > exactly what applies on the host. *"If you run an agent with YOLO host, it should get exactly
+   > as much as it needs. Yeah, the host version, whatever is applicable there."*
 
 ## Decision Ledger
 
-Implementation decisions, taken in this design; each is reversible.
+The four OQ rows are the maintainer's rulings. The JM-D rows are implementation decisions, taken in
+this design; each is reversible.
 
 | ID | Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
+| [OQ-JM1](#OQ-JM1) | **Ruled, as leaned:** the briefing carries one pointer line to jail-mechanics; the steps live only in the skill. *"37 Yes A"* | 2026-10-23 | [§8](#8-relation-to-the-briefing-and-the-two-existing-skills) | pending |
+| [OQ-JM2](#OQ-JM2) | **Ruled, as leaned, and broader:** every built-in skill and any informational content pushed into the jail is generated from the same facts, describing only this jail's situation. *"yes, we want to generate whatever we can."* | 2026-10-23 | [§1](#1-recommendation-and-principles) ([JM-P6](#JM-P6)), [§8](#8-relation-to-the-briefing-and-the-two-existing-skills) | pending |
+| [OQ-JM3](#OQ-JM3) | **Ruled, as leaned:** generated skills show real paths, host paths included; supersedes the 2026-09-13 always-`/workspace` ruling for generated text. *"that will allow the agent and the generated stuff to be correct."* | 2026-10-23 | [§4.1](#41-rendered-facts-and-their-deciders) | pending |
+| [OQ-JM4](#OQ-JM4) | **Ruled, as leaned:** `yolo host apply` renders a host version with exactly what applies on the host. *"the host version, whatever is applicable there."* | 2026-10-23 | [§4.3](#43-which-config-the-facts-come-from), [§10](#10-when-it-regenerates) | pending |
 | <a id="JM-D1"></a>JM-D1 | The skill is named `jail-mechanics`, the maintainer's own phrase. The description, which decides selection, is static ([§5.2](#52-skillmd)) | 2026-10-23 | [§5.2](#52-skillmd) | — |
 | <a id="JM-D2"></a>JM-D2 | The rendered skill is written over every skills layer, as yolo's LSP plugin is, and a pack or workspace skill of that name is reported as shadowed. No layer knows the launch's facts | 2026-10-23 | [§12](#12-risks) | — |
 | <a id="JM-D3"></a>JM-D3 | An attach builds the fact sheet from the effective config, never the current one; the briefing reads the same sheet, closing LA-D7's briefing half | 2026-10-23 | [§4.3](#43-which-config-the-facts-come-from) | — |
