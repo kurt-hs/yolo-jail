@@ -2375,10 +2375,14 @@
   [bold]model_facts[/bold] (object): Facts a model keeps on every route, written ONCE and
     named by each route's `providers.<name>.models.<alias>` object with `extends`.  Each key
     is a name you choose; each value takes a model entry's facts: {name, description,
-    reasoning, input, cost, context_window, max_tokens, base}, a null being a tombstone.
-    The order is: the route's own value, then these shared facts, then the agent's own
-    catalog, so a route that serves a smaller context or charges a different price states
-    just that.  An `extends` naming no entry here is refused.  pi gets every row in full,
+    reasoning, input, cost, context_window, max_tokens, base, openrouter_routing}, a null
+    being a tombstone.  The order is: the route's own value, then these shared facts, then
+    the agent's own catalog, so a route that serves a smaller context or charges a different
+    price states just that.  An object-valued fact is ONE fact: a route's own `cost` or
+    `openrouter_routing` REPLACES the shared object whole, never merging key by key, so a
+    1M route and its 200k twin extending one entry send the same OpenRouter `provider`
+    field, and a route stating "openrouter_routing": null sends none.  An `extends` naming
+    no entry here is refused.  pi gets every row in full,
     unless its pi reads the shared form: then models.json holds the facts once, as
     `sharedModels`, each row saying `extends` and stating only what differs, and the
     model-lists file carries the same `sharedModels` and `extends` beside full rows.  The

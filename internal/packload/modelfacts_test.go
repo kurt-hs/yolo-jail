@@ -74,3 +74,43 @@ func TestAnExtendsWithNoSharedFactsKeepsTheRoutesOwn(t *testing.T) {
 		t.Errorf("composed table = %s", s)
 	}
 }
+
+// A SHARED OPENROUTER PIN LANDS IN EACH EXTENDING ROUTE'S `model_routing` (fix 27), and a null
+// on the route is a TOMBSTONE (ML-D10): that route sends no pin, the shared one included.
+func TestASharedRoutingPinReachesEachRouteAndARouteNullDropsIt(t *testing.T) {
+	user := userProviders(t, `{"openrouter":{"models":{
+	  "a":{"id":"x/y:floor","extends":"xy"},
+	  "b":{"id":"x/y:floor@200k","extends":"xy","openrouter_routing":null}}}}`)
+	shared := userProviders(t, `{"xy":{"openrouter_routing":{"order":["streamlake"]}}}`)
+	got, err := ComposeProviders(user, nil, WithModelFacts(shared))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := dump(t, got)
+	if !strings.Contains(s, `"model_routing": {"a": {"order": ["streamlake"]}}`) {
+		t.Errorf("route a must inherit the shared pin and route b's null must drop it, got %s", s)
+	}
+	if strings.Contains(s, `"openrouter_routing"`) {
+		t.Errorf("the pin must not leak into the flat facts, got %s", s)
+	}
+}
+
+// A PACK'S `extends` CARRIES THE SHARED PIN TOO: routing follows the MERGED facts' pointer, as
+// every scalar shared fact does, so a string-form alias whose pack declares
+// `model_options.<alias>.extends`, and a user object over it that does not restate `extends`,
+// both inherit the entry's `openrouter_routing`.
+func TestAPackDeclaredExtendsCarriesTheSharedRoutingPin(t *testing.T) {
+	pack := &Pack{Name: "orx", Decl: declFrom(t, `{"contributes":[{"kind":"provider","name":"orx",
+	 "models":{"floor":"x/y:floor","twin":"x/y:floor@200k"},
+	 "model_options":{"floor":{"extends":"xy"},"twin":{"extends":"xy"}}}]}`)}
+	user := userProviders(t, `{"orx":{"models":{"twin":{"id":"x/y:floor@200k","context_window":204800}}}}`)
+	shared := userProviders(t, `{"xy":{"reasoning":true,"openrouter_routing":{"order":["streamlake"]}}}`)
+	got, err := ComposeProviders(user, []*Pack{pack}, WithModelFacts(shared))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := dump(t, got)
+	if !strings.Contains(s, `"model_routing": {"floor": {"order": ["streamlake"]}, "twin": {"order": ["streamlake"]}}`) {
+		t.Errorf("both aliases must inherit the pin through the pack's extends, got %s", s)
+	}
+}

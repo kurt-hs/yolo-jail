@@ -1437,7 +1437,7 @@ func validateModelEntry(entry *jsonx.OrderedMap, path string, sharedNames map[st
 
 // validateModelFacts checks the top-level `model_facts` map (docs/design/model-lists-and-pickers.md
 // OQ-ML5): each entry the facts a model's routes share, in the object-form model entry's
-// vocabulary minus what only a route can say (`id`, `vendor`, `openrouter_routing`, `extends`),
+// vocabulary minus what only a route can say (`id`, `vendor`, `wire_id`, `extends`),
 // a null fact being a tombstone (ML-D10). It returns the declared names, for `extends`.
 func validateModelFacts(config *jsonx.OrderedMap, errs *[]string) map[string]bool {
 	names := map[string]bool{}
@@ -1519,7 +1519,8 @@ func validateModelFactValues(entry *jsonx.OrderedMap, path string, errs *[]strin
 	// `openrouter_routing` is the one OBJECT-valued model fact, because it is sent VERBATIM as
 	// OpenRouter's request `provider` field (packs/pi/extensions/yolo-model-lists.js). Core
 	// checks the object shape only; pi's own openRouterRouting schema is the content's
-	// authority, and transcribing it here would be a second copy to keep true.
+	// authority, and transcribing it here would be a second copy to keep true. A `model_facts`
+	// entry carries it too, with the same check and the same message.
 	if v, ok := entry.Get("openrouter_routing"); ok && v != nil {
 		if _, isMap := asMap(v); !isMap {
 			add(errs, path+".openrouter_routing: expected an object (sent verbatim as OpenRouter's request `provider` field)")
