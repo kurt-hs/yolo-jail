@@ -271,8 +271,8 @@ func TestPiDeriveSettingsScopesDeclaredModels(t *testing.T) {
 	}
 	kiloSel, _ := gotKilo["selection"].(map[string]any)
 	kiloEnabled, ok := kiloSel["enabledModels"].([]any)
-	if !ok || len(kiloEnabled) != 1 || kiloEnabled[0] != "kilo/*" {
-		t.Errorf("kilo selection.enabledModels = %v, want ['kilo/*']", kiloSel["enabledModels"])
+	if !ok || len(kiloEnabled) != 1 || kiloEnabled[0] != "kilo/**" {
+		t.Errorf("kilo selection.enabledModels = %v, want ['kilo/**']", kiloSel["enabledModels"])
 	}
 }
 

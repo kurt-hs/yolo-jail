@@ -113,7 +113,7 @@ func TestPiOnBedrockWithNoListKeepsItsOwnCatalogAndDefault(t *testing.T) {
 	if m, set := s["defaultModel"]; set && m != nil {
 		t.Errorf("defaultModel = %v, want none: yolo picks no Bedrock model (MM-D32)", m)
 	}
-	if got, want := s["enabledModels"], []any{"amazon-bedrock/*"}; !reflect.DeepEqual(got, want) {
+	if got, want := s["enabledModels"], []any{"amazon-bedrock/**"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("enabledModels = %v, want %v, the whole provider", got, want)
 	}
 }

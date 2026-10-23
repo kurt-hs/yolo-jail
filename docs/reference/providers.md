@@ -1320,7 +1320,9 @@ oh-omp and opencode, and `openai-codex`, the first case. For such a provider:
 - **No row**, a via row included, so a profile's `via` re-points nothing for that agent, and the
   launch says so.
 - **The selection names the agent's own id**, and from yolo's list only the profile's `model`
-  option, taken as the agent's own id: pi gets that pair and `enabledModels` of `<id>/*`, opencode
+  option, taken as the agent's own id: pi gets that pair and `enabledModels` of `<id>/**` (a globstar, because pi matches
+  `enabledModels` with minimatch, whose `*` stops at `/`, and ids such as OpenRouter's are
+  `vendor/model`), opencode
   `model` and `enabled_providers`, oh-omp nothing. No `YOLO_MODEL_<ROLE>` is composed for it.
 - **A plan the agent serves under another name** is the pack's `plans` entry: opencode serves
   yolo's zai, the coding plan, as its own `zai-coding-plan` (its own `zai` is the metered API), and
