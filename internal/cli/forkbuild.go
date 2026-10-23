@@ -357,6 +357,17 @@ func (b forkBuild) buildLine() string {
 	return b.Fork.Build
 }
 
+// buildLineFor is b's build line as the jail booted with rt runs it: buildLine, except that a
+// PACK-TREE program's placement script copies its source from where that jail stages it
+// (packTreeBuildSource) — on macos-user the darwin act's checkout, not a container's /workspace/src.
+// Every caller that hands a line to a build jail uses this; buildLine stays the line a report shows.
+func (b forkBuild) buildLineFor(rt string) string {
+	if b.Fork.IsPackTree() && rt == "macos-user" {
+		return packTreePlacementScriptFrom(packTreeBuildSource(rt, b.id()), b.Fork.Bin, b.Fork.Run, b.Fork.Build)
+	}
+	return b.buildLine()
+}
+
 // buildID is a build's id from its key's parts (forkBuild.id): source, revision, recipe, platform.
 func buildID(source, commit, recipe, platform string) string {
 	sum := sha256.Sum256([]byte(source + "\x00" + commit + "\x00" + recipe + "\x00" + platform))
@@ -1599,8 +1610,16 @@ func forkBuildRunJail(workspace string, b forkBuild, s captureStreams, color boo
 	// tree. A PATCHED EXTENSION's too: its line may be "" (PPX-D3), and that arm runs the tree's
 	// script — the optional line, then the copy into seal.tree's reserved directory — as a container
 	// build jail runs treeBuildJailArgv.
-	seal := &captureSeal{only: sealPacks(b.Fork), tree: sealTree(b.Fork), build: b.buildLine(), id: b.id()}
-	return runCaptureJail(workspace, b.Fork.Bin, buildJailArgv(b.Fork, b.buildLine()), seal, s, color, on...)
+	//
+	// A PACK-TREE program's line is its placement script, copying from where this jail stages the
+	// source (buildLineFor): the darwin act's checkout on macos-user.
+	rt := ""
+	if len(on) > 0 {
+		rt = on[0].runtime
+	}
+	line := b.buildLineFor(rt)
+	seal := &captureSeal{only: sealPacks(b.Fork), tree: sealTree(b.Fork), build: line, id: b.id()}
+	return runCaptureJail(workspace, b.Fork.Bin, buildJailArgv(b.Fork, line), seal, s, color, on...)
 }
 
 // sealPacks are the packs a build jail's selection is narrowed to: a fork and its base, or a

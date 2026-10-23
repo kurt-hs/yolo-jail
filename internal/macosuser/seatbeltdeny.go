@@ -348,6 +348,7 @@ func DenyDefaultProfile(p ProfileParams) string {
 		b.WriteString(stagingReadAllow(staging, p.StagedReads))
 	}
 	b.WriteString(contextReadAllow(p.Context))
+	b.WriteString(programOverrideReadAllow(p.Context))
 	b.WriteString(relocationReadAllow(p.Relocations))
 
 	b.WriteString(processBlocks())

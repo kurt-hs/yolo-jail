@@ -232,13 +232,11 @@ var configKeys = map[string]Entry{
 				AppleContainer: honored("the same bind and env; below Apple Container 1.1.0 " +
 					"roBindsUnsupported (backendcaps.go) makes programOverridePlansFor refuse a checkout " +
 					"outside the workspace rather than bind it writable"),
-				MacosUser: warnedSaying("programOverridePlans applies none on macos-user, and "+
-					"noteUnappliedProgramOverrides (programoverrides.go) names each overridden program "+
-					"that still runs its pack's own copy (the plan's Task 10)", Notice{
-					Says: "`programs.overrides` is not applied on macos-user yet",
-					Then: "Each of these runs its pack's own copy; run a checkout from a podman jail.",
-					By:   "run.noteUnappliedProgramOverrides",
-				}),
+				MacosUser: honoredBy("programOverridePlansFor's macos-user arm (macosUserOverridePlace) runs " +
+					"the checkout at its own host path; one outside the workspace is a read-only context " +
+					"link sited by macosuser.SiteContextLinks, which the Seatbelt profile opens for read and " +
+					"exec (program-override-read-allow), and the decision reaches the darwin bootstrap as " +
+					"YOLO_PROGRAM_OVERRIDES (buildBootstrapEnv); unmeasured on a Mac"),
 				Guide: []string{"`programs: { overrides: … }` — run a program from your own checkout"},
 			},
 		},

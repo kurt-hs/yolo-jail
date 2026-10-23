@@ -15,8 +15,10 @@ package run
 //
 // `yolo host` applies the same checks (overrideCheckout) and runs the checkout from the host path
 // itself, through its floor entry (HostProgramOverrides, hostfloor's override.go), with the same
-// disclosure (HostProgramOverrideLines). macos-user is a later slice (the plan's Task 10); there the
-// launch says the override is not applied yet rather than ignoring it silently.
+// disclosure (HostProgramOverrideLines). ON MACOS-USER (the plan's Task 10) the same decision runs
+// the checkout from its own host path: a checkout outside the workspace becomes a read-only context
+// link the Seatbelt profile opens for read and exec (macosUserOverridePlace), and the decision
+// reaches the darwin bootstrap through the launch env.
 
 import (
 	"path"
@@ -27,9 +29,9 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
-	"github.com/mschulkind-oss/yolo-jail/internal/setupcensus"
 )
 
 // programOverridePlan is one applied (or refused) override this launch.
@@ -52,10 +54,7 @@ func overrideUserConfigKey(bin string) string {
 // a capture or build jail (CapturesDir ""), whose launch runs a pack's install or build and nothing
 // the user develops, nor under the seal.
 func (o *Options) programOverridePlans(rt string, packs []*packload.Pack) []programOverridePlan {
-	if o.CapturesDir() == "" || o.Sealed {
-		return nil
-	}
-	if rt == "macos-user" { // parity: Warned — macos-user's override arm (a context link with a read and exec grant) is the plan's Task 10; noteUnappliedProgramOverrides says so at launch
+	if o.CapturesDir == nil || o.CapturesDir() == "" || o.Sealed {
 		return nil
 	}
 	return o.programOverridePlansFor(rt, packs, config.ProgramOverrides(nil))
@@ -105,6 +104,12 @@ func (o *Options) programOverridePlansFor(rt string, packs []*packload.Pack,
 		default:
 			p.wire.Host = dir
 			p.wire.Run = run
+			if rt == "macos-user" { // parity: HonoredBy — macos-user runs the checkout at its own host path, a context link plus the profile's read and exec grant (macosUserOverridePlace)
+				if why := o.macosUserOverridePlace(&p, dir, ws); why != "" {
+					refuse(why)
+				}
+				break
+			}
 			if isUnderOrEqual(dir, ws) {
 				rel, _ := filepath.Rel(ws, dir)
 				p.wire.Dir = path.Join(jailWorkspace, filepath.ToSlash(rel))
@@ -332,31 +337,56 @@ func (o *Options) noteAttachProgramOverrides(envLines []string) {
 	}
 }
 
-// noteUnappliedProgramOverrides says, on a backend whose override arm is not built yet, which
-// selected programs the user's overrides name and that they still run their pack's own copy.
-func (o *Options) noteUnappliedProgramOverrides(rt string, packs []*packload.Pack) {
-	if rt != "macos-user" || o.CapturesDir() == "" || o.Sealed { // parity: Warned — this is the line that says it: macos-user's override arm is the plan's Task 10
-		return
+// macosUserOverridePlace is the macos-user arm's placement of one override whose path resolved to
+// dir (BG-D9): the program runs from the host path itself, since the sandbox has no mount namespace
+// and the workspace is at its own path. A checkout inside the workspace is already readable and
+// needs nothing more. Any other is delivered as a read-only context link at
+// /ctx/program-overrides/<bin>, which the Seatbelt profile opens for read and exec at dir
+// (macosuser's program-override-read-allow) and the DAC preflight asks the sandbox's user to reach
+// — sited first by the context mounts' own rules (macosuser.SiteContextLinks), so a checkout the
+// sandbox cannot reach (inside a home in the account mode, where the sandbox account reaches
+// nothing) or must not (yolo's state, every home, a place the sandbox writes) refuses this one
+// program, with the rule's reason, rather than the launch. It returns that reason, "" when placed.
+func (o *Options) macosUserOverridePlace(p *programOverridePlan, dir, ws string) string {
+	p.wire.Dir = dir
+	if isUnderOrEqual(dir, ws) {
+		return ""
 	}
-	bins := OverriddenDeclaredPrograms(packs)
-	if len(bins) == 0 {
-		return
+	l := macosUserOverrideLink(p.bin, dir)
+	if r := macosuser.SiteContextLinks(o.macosSiting(), ws, []macosuser.ContextLink{l}, nil); len(r) > 0 {
+		return dir + " cannot be run from on macos-user: " + strings.TrimPrefix(r[0].Reason, "its ") +
+			"; a checkout under " + macosuser.SharedRootDefault() + " works in either macos_user_mode"
 	}
-	o.pr(o.Stderr).print(setupcensus.Warning(setupcensus.MacosUser, "programs.overrides").Line(strings.Join(bins, ", ")))
+	p.bindSource = dir
+	return ""
 }
 
-// OverriddenDeclaredPrograms is every bin the user's programs.overrides names that a selected pack
-// declares, sorted: the overrides a notch that does not apply them yet must name (macos-user).
-func OverriddenDeclaredPrograms(packs []*packload.Pack) []string {
-	declared := declaredPrograms(packs)
-	var bins []string
-	for bin := range config.ProgramOverrides(nil) {
-		if _, ok := declared[bin]; ok {
-			bins = append(bins, bin)
+// macosUserOverrideLink is the context link a macos-user override outside the workspace is
+// delivered as: read-only, at the jail path the container backends bind it at.
+func macosUserOverrideLink(bin, dir string) macosuser.ContextLink {
+	return macosuser.ContextLink{Dest: path.Join(entrypoint.ProgramOverrideCtxDir, bin), Source: dir,
+		Named: dir, Dir: true, Override: bin}
+}
+
+// macosUserOverrideLinks are the context links this macos-user launch's applied overrides need: one
+// per checkout outside the workspace, handed to the backend with the context mounts.
+func macosUserOverrideLinks(plans []programOverridePlan) []macosuser.ContextLink {
+	var out []macosuser.ContextLink
+	for _, p := range plans {
+		if p.bindSource != "" && p.wire.Refused == "" {
+			out = append(out, macosUserOverrideLink(p.bin, p.bindSource))
 		}
 	}
-	sort.Strings(bins)
-	return bins
+	return out
+}
+
+// noteProgramOverrides prints the disclosure (programOverrideLines) on an arm that has no
+// assembleRunCmd to print it beside the binds: macos-user, where every invocation is a fresh launch.
+func (o *Options) noteProgramOverrides(plans []programOverridePlan) {
+	out := o.pr(o.Stdout)
+	for _, line := range programOverrideLines(programOverridesWire(plans)) {
+		out.print(line)
+	}
 }
 
 // UndeclaredProgramOverrideLines is `yolo check`'s information about the user's overrides that name

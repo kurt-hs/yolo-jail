@@ -18,7 +18,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Run the macOS agent as you (experimental).** Set `"macos_user_mode": "self"` in your user config and `macos-user` runs the agent as you, with no setup and a project anywhere, under a stricter sandbox profile. See [the macos-user backend](userguide/guides/macos.md#the-macos-user-backend).
 
-**Packs can build their own tools.** A launch, in a jail or with `yolo host` on Linux, builds a pack's tool from its source once, in a sealed jail, and again only when the source changes; `yolo pack build` builds it ahead of time, and a pack without the source can name a checksum-verified prebuilt download. `programs.overrides` in your user config runs a pack's program from your own checkout instead. See [programs built from a pack's tree](docs/reference/pack-system.md#program-via-pack).
+**Packs can build their own tools.** A launch, in a jail, on `macos-user` or with `yolo host`, builds a pack's tool from its source once, in a sealed build (for macOS on a Mac), and again only when the source changes; `yolo pack build` builds it ahead of time, and a pack without the source can name a checksum-verified prebuilt download. `programs.overrides` in your user config runs a pack's program from your own checkout instead. See [programs built from a pack's tree](docs/reference/pack-system.md#program-via-pack).
 
 ### Fixed
 

@@ -113,9 +113,9 @@ func fetchPackBinaries(packs []*packload.Pack, f packbin.Fetcher, goos, goarch s
 // fetchPackTreePrebuilts is the same download step for every PREBUILT artifact a launch on this
 // machine would take for a selected pack-tree program (docs/design/pack-buildable-programs.md §7,
 // BG-D7): resolved as the launch resolves it (packload.PackTreeResolve) for a container jail's
-// linux/<goarch>, and on a Mac for the macos-user sandbox's darwin/<goarch>, where no build of a
-// pack's tree runs yet. A program whose source directory is present and buildable fetches nothing
-// (P5). The launch then finds the artifact in the cache, offline included.
+// linux/<goarch>, and on a Mac for the macos-user sandbox's darwin/<goarch>, whose darwin act builds
+// a pack's tree unless it can never run on this Mac (darwinPackTreeBuildable). A program whose
+// source directory is present and buildable fetches nothing (P5). The launch then finds the artifact in the cache, offline included.
 func fetchPackTreePrebuilts(packs []*packload.Pack, f packbin.Fetcher, goos, goarch string,
 	pr richtext.Printer, errw io.Writer) int {
 	rc := 0
@@ -123,11 +123,11 @@ func fetchPackTreePrebuilts(packs []*packload.Pack, f packbin.Fetcher, goos, goa
 		platform  string
 		buildable bool
 	}{{"linux/" + goarch, true}}
-	if goos == "darwin" { // parity: HonoredBy — the macos-user sandbox runs darwin programs, and its darwin act builds no pack tree yet (Task 10), so its prebuilt is the one it takes
+	if goos == "darwin" { // parity: HonoredBy — the macos-user sandbox runs darwin programs, which its darwin act builds from a pack's tree wherever it can ever run (darwinPackTreeBuildable); a Mac where it never can takes the darwin prebuilt
 		notches = append(notches, struct {
 			platform  string
 			buildable bool
-		}{"darwin/" + goarch, false})
+		}{"darwin/" + goarch, darwinPackTreeBuildable(hostFloorMacProbes())})
 	}
 	for _, prog := range packload.PackTreePrograms(packs) {
 		for _, n := range notches {

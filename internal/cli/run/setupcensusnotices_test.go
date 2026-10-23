@@ -37,8 +37,7 @@ var runNoticeSamples = map[string]func(t *testing.T) string{
 	"macos-user/macOS gpu": func(t *testing.T) string {
 		return macosUserNoticeRun(t, `{"gpu": {"enabled": true}}`)
 	},
-	"macos-user/macOS kvm":                func(t *testing.T) string { return macosUserNoticeRun(t, `{"kvm": true}`) },
-	"macos-user/macOS programs.overrides": macosUserOverrideNoticeRun,
+	"macos-user/macOS kvm": func(t *testing.T) string { return macosUserNoticeRun(t, `{"kvm": true}`) },
 	"container/macOS cache_relocations": func(t *testing.T) string {
 		home := t.TempDir()
 		t.Setenv("HOME", home)

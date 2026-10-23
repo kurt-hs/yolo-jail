@@ -379,7 +379,6 @@ func Run(opts Options) (rc int) {
 	// checkout runs that checkout, so its pack's build is not this launch's to run.
 	o.programOverridden = o.programOverridePlans(rt, staged.packs)
 	o.forkPinned = dropOverriddenPins(o.forkPinned, o.programOverridden)
-	o.noteUnappliedProgramOverrides(rt, staged.packs)
 	// THE PATCHED EXTENSIONS' block, above the dispatch beside the forks', and for its reason: every
 	// backend and an attach say what each one is at (docs/reference/pi-extensions.md §10).
 	o.patchedTrees = o.notePatchedTrees(staged.packs)
@@ -946,6 +945,14 @@ func Run(opts Options) (rc int) {
 		if wire := entrypoint.ForkBuildsWire(o.forkDelivered); wire != "" {
 			launchEnv.Set(entrypoint.ForkBuildsEnv, wire)
 		}
+		// AND THE DEV OVERRIDES (programoverrides.go, BG-D9), handed over as a container's jail is
+		// handed them (entrypoint.ProgramOverridesEnv) and named, one line each, on every launch —
+		// this backend has no attach, so every invocation is the fresh launch that says which bytes
+		// run. A checkout outside the workspace crosses as a context link below (ctx.Links).
+		o.noteProgramOverrides(o.programOverridden)
+		if wire := entrypoint.ProgramOverridesWire(programOverridesWire(o.programOverridden)); wire != "" {
+			launchEnv.Set(entrypoint.ProgramOverridesEnv, wire)
+		}
 		// AND THE PATCHED EXTENSIONS the slot decided, as a container's jail is handed them
 		// (entrypoint.PatchedTreesEnv, PPX-D8): each delivered tree's build and label — its copy reaches
 		// the sandbox home through the overlay below (buildMacosHomeOverlayWith) — or why there is none,
@@ -1147,7 +1154,10 @@ func Run(opts Options) (rc int) {
 		o.notePackHostAccess(staged.packs, channel, nil)
 		// THE CONTEXT MOUNTS cross inside the host context, and each read-write one is
 		// disclosed at the same point (§2.4), so the backend is never handed one unsaid.
-		ctxDelivery.ctx.Links = ctxLinks
+		// A dev override's checkout outside the workspace crosses with them, as a read-only link the
+		// profile opens for read and exec (macosUserOverrideLinks): sited when it was decided, so a
+		// checkout the sandbox cannot reach refused that program, never the launch.
+		ctxDelivery.ctx.Links = append(ctxLinks, macosUserOverrideLinks(o.programOverridden)...)
 		// AND THE INSTALL-CAPTURE STORE'S ENTRIES (H4; macosctxtree.go's macosUserCaptures): each
 		// selected installer program's darwin entry, after the auto-capture above may have made it,
 		// for the backend to stage root-owned and name to its launchers.

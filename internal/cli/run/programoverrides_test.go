@@ -20,35 +20,113 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
-// macosUserOverrideNoticeRun drives Run's macos-user arm with an override naming a selected pack's
-// program, and returns stderr: the arm applies no override yet (the plan's Task 10), and says so
-// with the census's line (noteUnappliedProgramOverrides).
-func macosUserOverrideNoticeRun(t *testing.T) string {
-	t.Helper()
+// THE MACOS-USER ARM (the plan's Task 10), at Run's own entry point: an override of a selected
+// pack's program whose checkout is outside the workspace reaches the backend as a read-only context
+// link marked as that program's override, the decision rides the launch env the darwin bootstrap is
+// handed (YOLO_PROGRAM_OVERRIDES, which runplan's buildBootstrapEnv relays), and the launch names
+// the file that runs. Delete the arm's append to ctx.Links, its launchEnv.Set or its disclosure, and
+// this fails; so does putting back the early return that applied none on macos-user.
+func TestMacosUserRunsAnOverrideFromItsCheckout(t *testing.T) {
 	home := packHome(t)
 	pack := t.TempDir()
 	if err := os.WriteFile(filepath.Join(pack, "pack.json"), []byte(`{"contributes":[`+
 		`{"kind":"program","bin":"x","via":"pack","from":"tools/x","run":"x"}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	dev := t.TempDir()
+	dev := floortest.ResolvedTemp(t)
 	writeConfigFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
 		`{"packs":[{"source":"file://`+pack+`","name":"fx"}],"programs":{"overrides":{"x":{"path":"`+dev+`"}}}}`)
 	ws := t.TempDir()
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
 	o.DryRun = true
-	o.MacosUserRun = func(*jsonx.OrderedMap, string, []string, []string, string, string,
-		macosuser.HomeOverlay, macosuser.HostContext, bool, *jsonx.OrderedMap, []packload.BlockedTool, macosuser.JailDaemons) int {
+	o.macosCtxSiting = sitingWritable(t, "")
+	var ctx macosuser.HostContext
+	var env *jsonx.OrderedMap
+	o.MacosUserRun = func(_ *jsonx.OrderedMap, _ string, _, _ []string, _, _ string, _ macosuser.HomeOverlay,
+		hostCtx macosuser.HostContext, _ bool, packEnv *jsonx.OrderedMap, _ []packload.BlockedTool, _ macosuser.JailDaemons) int {
+		ctx, env = hostCtx, packEnv
 		return 0
 	}
 	if rc := Run(*o); rc != 0 {
 		t.Fatalf("Run() = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "— x.") {
-		t.Errorf("the notice does not name the overridden program:\n%s", stderr.String())
+	want := macosuser.ContextLink{Dest: "/ctx/program-overrides/x", Source: dev, Named: dev, Dir: true, Override: "x"}
+	found := false
+	for _, l := range ctx.Links {
+		found = found || l == want
 	}
-	return stderr.String()
+	if !found {
+		t.Errorf("the backend was handed no override link %+v; links: %+v", want, ctx.Links)
+	}
+	raw, _ := env.Get(entrypoint.ProgramOverridesEnv)
+	s, _ := raw.(string)
+	d, err := entrypoint.ParseProgramOverrides(s)
+	if err != nil || d["x"].Dir != dev || d["x"].Run != "x" || d["x"].Refused != "" {
+		t.Errorf("the launch env's %s = %q (%v), want x at %s running x", entrypoint.ProgramOverridesEnv, s, err, dev)
+	}
+	if want := "x: dev override — runs " + filepath.Join(dev, "x"); !strings.Contains(stdout.String(), want) {
+		t.Errorf("the launch does not name the file the override runs (%q):\n%s", want, stdout.String())
+	}
+	if strings.Contains(stderr.String(), "not applied") {
+		t.Errorf("the launch still says the override is not applied:\n%s", stderr.String())
+	}
+}
+
+// macosUserOverridePlans is programOverridePlansFor on the macos-user arm, with siting s.
+func macosUserOverridePlans(t *testing.T, ws string, s *macosuser.ContextSiting,
+	ov map[string]config.ProgramOverride) map[string]programOverridePlan {
+	t.Helper()
+	o := &Options{Workspace: ws, Getenv: func(string) string { return "" }, macosCtxSiting: s}
+	out := map[string]programOverridePlan{}
+	for _, p := range o.programOverridePlansFor("macos-user", overridePacks(t), ov) {
+		out[p.bin] = p
+	}
+	return out
+}
+
+// On macos-user a checkout runs from its own host path: inside the workspace with nothing more, and
+// outside it as a context link (bindSource), which macosUserOverrideLinks hands the backend. A
+// checkout the siting refuses — here one inside a real home, which the account mode's sandbox
+// account cannot reach — refuses that one program, naming the reason and the key, and is never
+// linked; the run-as-you mode, which reaches your home as you do, runs it.
+func TestMacosUserOverridePlacesTheCheckoutAtItsHostPath(t *testing.T) {
+	ws := floortest.ResolvedTemp(t)
+	inWS := filepath.Join(ws, "dev", "board")
+	users := floortest.ResolvedTemp(t)
+	inHome := filepath.Join(users, "alice", "code", "board")
+	for _, d := range []string{inWS, inHome} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	account := sitingWritable(t, "")
+	account.UsersRoot, account.UsersRootAliases = users, nil
+
+	got := macosUserOverridePlans(t, ws, account, map[string]config.ProgramOverride{"board": {Path: inWS}})["board"]
+	if got.wire.Dir != inWS || got.wire.Refused != "" || got.bindSource != "" {
+		t.Errorf("a checkout inside the workspace: %+v, want it run at %s with no link", got, inWS)
+	}
+
+	got = macosUserOverridePlans(t, ws, account, map[string]config.ProgramOverride{"board": {Path: inHome}})["board"]
+	if got.wire.Refused == "" || !strings.Contains(got.wire.Refused, "inside the home folder") ||
+		!strings.Contains(got.wire.Refused, "programs.overrides.board") || got.bindSource != "" {
+		t.Errorf("a checkout in a home under the account mode: %+v, want that program refused, naming why", got)
+	}
+	if links := macosUserOverrideLinks([]programOverridePlan{got}); len(links) != 0 {
+		t.Errorf("a refused override was linked: %+v", links)
+	}
+
+	self := macosuser.DarwinContextSitingFor(macosuser.ModeSelf, filepath.Join(users, "alice"))
+	self.UsersRoot, self.UsersRootAliases, self.WritableRoots = users, nil, nil
+	got = macosUserOverridePlans(t, ws, &self, map[string]config.ProgramOverride{"board": {Path: inHome}})["board"]
+	if got.wire.Dir != inHome || got.wire.Refused != "" || got.bindSource != inHome {
+		t.Errorf("a checkout in your home under the run-as-you mode: %+v, want it linked and run at %s", got, inHome)
+	}
+	links := macosUserOverrideLinks([]programOverridePlan{got})
+	if len(links) != 1 || links[0].Override != "board" || links[0].RW || links[0].Dest != "/ctx/program-overrides/board" {
+		t.Errorf("the override's link: %+v, want one read-only link at /ctx/program-overrides/board", links)
+	}
 }
 
 func overridePacks(t *testing.T) []*packload.Pack {

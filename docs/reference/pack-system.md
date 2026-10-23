@@ -1070,7 +1070,8 @@ Unlike a fork, it names no other repository and no base pack:
   Absent means the tree runs as shipped.
 - **`run`** is required: the file the program is, relative to `from`, cleaned, with no `..`.
 - **`prebuilt`** is optional: a map from a `<goos>/<goarch>` key to `{url, sha256}`, used when
-  `from` is absent, or where no build of a pack's tree runs (macos-user, for now). It follows `binaries`' rules: https only, no credentials in the URL, a 64-hex
+  `from` is absent, or where no build of a pack's tree can ever run (a Mac with no sandbox account,
+  outside a launch). It follows `binaries`' rules: https only, no credentials in the URL, a 64-hex
   sha256. An official pack may not declare it.
 - **`platforms`** and **`node_floor`** are allowed, as on any program, and so is every behavior
   field. The delivery fields of other vias (`package`, `url`, `flags`, `update`, `versions_dir`,
@@ -1089,7 +1090,9 @@ readiness act then stops the launch, as for any program a launch cannot install,
 `YOLO_ALLOW_MISSING_PROGRAMS=1` starts the jail without it
 ([OQ-BG1](../design/pack-buildable-programs.md#OQ-BG1)'s leaning). A launch waiting on another
 launch's build of the same tree takes its result, a failure included; a launch that starts after the
-failure builds again.
+failure builds again. On macos-user, in either `macos_user_mode`, the build runs for macOS in the
+sealed build the sandbox uses for a fork, as the account or as you, with macOS's own shell and tools,
+so a `build` line must work there.
 
 **With no `from` in the pack, a launch takes the `prebuilt` artifact** for the jail's platform
 ([§7](../design/pack-buildable-programs.md#7-the-prebuilt-artifact)): the host fetches it over https
@@ -1098,10 +1101,11 @@ into the pack-binary cache, checks its sha256 before anything runs, and admits i
 store hit, offline included. Every fresh launch and attach prints one line naming the program, its
 pack, why the artifact stands in, the verified sha256 and the URL. A fetch failure or a digest
 mismatch stores nothing and refuses the program like a failed build, naming the URL, both digests
-for a mismatch, and the next step. A present `from` never fetches. The same artifact stands in on
-macos-user, whose sandbox builds no pack tree yet ([OQ-BG2](../design/pack-buildable-programs.md#OQ-BG2)'s
-leaning: a builder that can never run here, never one that is busy). `yolo pack install` prefetches
-it, and `yolo pack build` fetches it and reports it up to date.
+for a mismatch, and the next step. A present `from` never fetches. A darwin artifact also stands in
+for `yolo pack build` and `yolo pack install` on a Mac whose sandbox account does not exist in the
+account mode ([OQ-BG2](../design/pack-buildable-programs.md#OQ-BG2)'s leaning: a builder that can
+never run here, never one that is busy). `yolo pack install` prefetches it, and `yolo pack build`
+fetches it and reports it up to date.
 
 **A dev override runs your own checkout instead** (*dev override* is the design's coined term, its
 [§5](../design/pack-buildable-programs.md#5-the-dev-override)): `programs.overrides.<bin>` =
@@ -1117,11 +1121,15 @@ program, naming the path and the key, when the path does not resolve (symlinks f
 directory, sits at the credential boundary (`paths.WorkspaceScopeBreach`), or names no file to run;
 the launcher refuses when the file is missing (naming the pack's `build` line) or not executable.
 Either refusal stops the launch through the readiness act, with `YOLO_ALLOW_MISSING_PROGRAMS=1` as
-the hatch, and never falls back to the pack's copy. At `yolo host` the same checks apply, and the
-floor's entry for the program runs the file from the host path itself, so an edit there shows at the
-next invocation; `yolo host --` and `yolo host env` print the same line, and a missing file refuses
-the program, naming the file, the key and the pack's build line. macos-user does not apply it yet,
-and the launch says so.
+the hatch, and never falls back to the pack's copy. On macos-user the program runs the checkout at
+its own path: one outside the workspace is also linked read-only at
+`$YOLO_CONTEXT_DIR/program-overrides/<bin>`, and the sandbox profile lets the agent read and run it
+but not write it. The siting rules of a `mounts` entry apply, so a checkout inside a home folder is
+refused in the account mode, where the sandbox account cannot reach it, and not in the run-as-you
+mode. At `yolo host` the same checks apply, and the floor's entry for the program runs the file from
+the host path itself, so an edit there shows at the next invocation; `yolo host --` and `yolo host
+env` print the same line, and a missing file refuses the program, naming the file, the key and the
+pack's build line.
 
 **`yolo host` on Linux delivers it from yolo's floor**
 ([§9](../design/pack-buildable-programs.md#9-notch-and-backend-coverage)). The floor stages the pack
@@ -1142,7 +1150,8 @@ the same key. No argument means every selected pack. It prints one line per prog
 built, fetched for a prebuilt (with the sha256 it verified), or failed with the build's log and the
 command to retry. It exits 1 when any program failed.
 `--force` rebuilds even when the store holds the build. `--at host` builds for the host notch, which
-on Linux is the jail's build and on a Mac is not built by this yolo yet, unless a darwin `prebuilt` stands in. A fork is skipped with a
+on Linux is the jail's build and on a Mac the sandbox's sealed macOS build, unless no sandbox account
+exists in the account mode and a darwin `prebuilt` stands in. A fork is skipped with a
 line naming `yolo capture <bin>`, its explicit rebuild, and a dev override is noted without stopping
 the build. It runs on the host only and refuses in a jail with exit 2, as it does for a pack name
 the config does not select.

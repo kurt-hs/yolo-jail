@@ -1328,6 +1328,12 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 		if v, ok := sandboxEnv.Get(entrypoint.PatchedTreesEnv); ok {
 			bootstrapEnv.Set(entrypoint.PatchedTreesEnv, v)
 		}
+		// THE DEV-OVERRIDE DECISIONS (entrypoint.ProgramOverridesEnv; pack-buildable-programs.md §5),
+		// relayed the same way and for the same reason: the bootstrap's launcher generation writes an
+		// overridden program's launcher from them, in place of its via's, as the container boot does.
+		if v, ok := sandboxEnv.Get(entrypoint.ProgramOverridesEnv); ok {
+			bootstrapEnv.Set(entrypoint.ProgramOverridesEnv, v)
+		}
 		// Every name relayed above is in LauncherOwnedEnvNames, which the run pipeline keeps out of
 		// the composed env (packChannel.launchEnv), so what crosses is the launcher's own value.
 	}

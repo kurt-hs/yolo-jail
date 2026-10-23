@@ -31,6 +31,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -48,13 +49,34 @@ import (
 // which a build line may carry, cannot comment out the placement after it; packdecl refuses a
 // newline in it, so it cannot close the braces early.
 func packTreePlacementScript(bin, run, build string) string {
+	return packTreePlacementScriptFrom(path.Join(containerWorkspace, forkSourceLeaf), bin, run, build)
+}
+
+// packTreePlacementScriptFrom is packTreePlacementScript copying from src, the staged source as
+// the build itself sees it: /workspace/src in a container build jail, and on macos-user the darwin
+// act's checkout in its staging tree (packTreeBuildSource). Every tool it names is in macOS's base
+// system with the same meaning (BSD cp has -a, ln has -sfn), since the darwin act runs it with
+// macOS's own /bin/bash on the platform's userland (PPX-D46).
+func packTreePlacementScriptFrom(src, bin, run, build string) string {
 	q := shquote.Quote
 	return `d="$HOME"/` + q(packdecl.PackTreeProgramDir(bin)) +
-		` && mkdir -p "$d" && cp -a ` + q(path.Join(containerWorkspace, forkSourceLeaf)) + `/. "$d"/` +
+		` && mkdir -p "$d" && cp -a ` + q(src) + `/. "$d"/` +
 		` && cd "$d" && {` + "\n" + build + "\n" + `}` +
 		` && test -f "$d"/` + q(run) + ` && chmod +x "$d"/` + q(run) +
 		` && mkdir -p "$HOME"/.local/bin && ln -sfn ` + q(packdecl.PackTreeLinkTarget(bin, run)) +
 		` "$HOME"/` + q(packdecl.PackTreeProgramLink(bin))
+}
+
+// packTreeBuildSource is where the build whose id is id finds its staged source, by the runtime its
+// jail boots with: the container build jail's /workspace/src, or on macos-user the darwin act's
+// checkout, src/ in the build's own staging tree (macosuser.ForkBuildSourceDir), which the act copies
+// the host workspace's src/ into before the build line runs. The capture root is the default one,
+// as forkBuildWorkspace's is: the act is handed none other (runCaptureJail's macos-user closure).
+func packTreeBuildSource(rt, id string) string {
+	if rt == "macos-user" {
+		return macosuser.ForkBuildSourceDir(macosuser.ForkBuildStagingRoot("", id))
+	}
+	return path.Join(containerWorkspace, forkSourceLeaf)
 }
 
 // copySourceTreeSkipping is copySourceTree leaving out skip, a set of slash-separated paths

@@ -1654,8 +1654,9 @@
                     {url, sha256}} (optional, used only when from is absent)}.  `from`
                     and `run` are required; `from` and `run` are refused on any other
                     program.  `yolo pack lint` warns when the source directory is empty.
-                    This build validates the declaration; it does not build, fetch or
-                    launch the program yet.
+                    A fresh launch builds it from that tree in a sealed build, on every
+                    backend (on macos-user, for macOS), or fetches the prebuilt when from
+                    is absent; `yolo pack build` runs the same build outside a launch.
                     A PATCHED fork adds `patches:"<pack dir>"`, a `git format-patch --base`
                     series yolo replays onto the UPSTREAM that `source` then names, so
                     what runs follows that upstream while the series applies and builds;
@@ -2702,8 +2703,12 @@
       directory, is or contains your home, this config directory or yolo's state directory,
       names no file to run, or the file is missing or not executable. A change to this key
       takes effect at the next fresh launch. An override naming a program no selected pack
-      declares does nothing; `yolo check` lists it. Not yet applied on macos-user or by
-      `yolo host`, where the launch says so.
+      declares does nothing; `yolo check` lists it. On macos-user the program runs the
+      checkout at its own path, a checkout outside the workspace is linked read-only at
+      $YOLO_CONTEXT_DIR/program-overrides/<bin>, and the sandbox may read and run it but
+      not write it; a checkout a `mounts` entry could not use there (one in a home folder,
+      in the account mode) refuses that program. Not yet applied by `yolo host`, which says
+      so.
 
   [bold]resources[/bold] (object): Container resource limits.
     Sets hard cgroup constraints on the jail container via podman flags.

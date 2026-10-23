@@ -7,8 +7,7 @@ package run
 // so the fork route's trigger, build slot and delivery (forkbuild.go) carry the program unchanged:
 // a store entry for this digest is a hit and prints nothing, and anything else is built once.
 //
-// Where the pack ships no source directory, or no build can ever run for this backend, the
-// program's declared PREBUILT artifact for the jail's platform stands in (§7,
+// Where the pack ships no source directory, the program's declared PREBUILT artifact for the jail's platform stands in (§7,
 // packload.PackTreeResolve): its sha256 is the pin, the build slot fetches and verifies it, and the
 // launch discloses it with that sha256 on every fresh launch and attach (prebuiltline.go).
 
@@ -30,7 +29,12 @@ func (o *Options) packTreePins(packs []*packload.Pack, rt string) []packload.For
 	var out []packload.ForkPin
 	platform := jailPlatform(rt)
 	for _, f := range packload.PackTreePrograms(packs) {
-		out = append(out, packload.PackTreeResolve(f, platform, packTreeBuildable(rt)))
+		// EVERY BACKEND BUILDS A PACK'S TREE: a container backend in its sealed build jail, and
+		// macos-user in the darwin sealed act (FP-D24's path), in either mode. A launch never meets the
+		// one machine whose darwin act can never run, an account-mode Mac with no sandbox account: the
+		// backend's preflight refuses that launch, naming the setup, before any build is pinned
+		// (Run's macosUserPreflight). So only an absent source lets the prebuilt stand in here.
+		out = append(out, packload.PackTreeResolve(f, platform, true))
 	}
 	return out
 }
@@ -49,13 +53,4 @@ func (o *Options) addPackTreePins(packs []*packload.Pack, rt string) {
 		}
 	}
 	o.forkPinned = dropOverriddenPins(append(kept, o.packTreePins(packs, rt)...), o.programOverridden)
-}
-
-// packTreeBuildable reports whether a build of a pack's tree can ever run for a jail on rt with this
-// yolo: false on macos-user, whose darwin sealed act does not stage a pack's tree yet
-// (docs/design/pack-buildable-programs-plan.md Task 10). That is a fixed fact of this binary, never
-// a busy builder, so the prebuilt standing in for it (OQ-BG2's leaning) does not make the bytes
-// depend on timing.
-func packTreeBuildable(rt string) bool {
-	return rt != "macos-user" // parity: Warned — the darwin act builds no pack tree yet (Task 10); a declared darwin prebuilt stands in, and without one the launch names why
 }

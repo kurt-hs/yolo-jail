@@ -132,12 +132,6 @@ func (o *Options) forkBuildPlan(rt string) (map[string]entrypoint.ForkDelivery, 
 			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: p.Reason}
 			continue
 		}
-		if p.Fork.IsPackTree() && !p.Fork.IsPrebuilt() && rt == "macos-user" { // parity: Warned — the darwin sealed act does not stage a pack's tree yet (docs/design/pack-buildable-programs-plan.md Task 10), so no build is tried and the program's launcher prints this reason
-			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: "a program built from pack " + p.Fork.Pack +
-				"'s own tree (" + p.Fork.From + ") is not built for macOS by this yolo yet, and the pack declares no " +
-				"`prebuilt` artifact for " + platform + " to stand in"}
-			continue
-		}
 		if why := forkUnpublishedHere(p.Fork, rt); why != "" {
 			who := "fork " + p.Fork.Pack
 			if p.Fork.IsPackTree() {
@@ -248,7 +242,10 @@ func (o *Options) noteMacosUserForks(rt string) {
 	}
 	for _, p := range o.forkPinned {
 		d, ok := o.forkDelivered[p.Fork.Bin]
-		if !ok || d.Key != "" {
+		if !ok || d.Key != "" || p.Fork.IsPackTree() {
+			// A PACK-TREE program is built on this backend as on every other (the darwin act), so its
+			// reason is the build's own — its log, `yolo pack build <pack>` and the bypass, which the
+			// slot already printed — and never this line's "run it on a container backend".
 			continue
 		}
 		why := d.Reason

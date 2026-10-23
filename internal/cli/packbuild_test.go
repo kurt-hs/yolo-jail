@@ -201,19 +201,25 @@ func TestPackBuildNotesADevOverrideAndStillBuilds(t *testing.T) {
 	}
 }
 
-// `--at host` on a Mac is the darwin act, which does not build a pack's tree yet: a failed line, exit
-// 1, and no jail. A bad --at is a usage refusal.
-func TestPackBuildAtHostOnAMacSaysItIsNotBuiltYet(t *testing.T) {
+// `--at host` on a Mac is the darwin act (FP-D24), which builds a pack's tree (the plan's Task 10):
+// the build jail is booted on macos-user and handed the placement script from the act's own
+// checkout, for darwin. A bad --at is a usage refusal.
+func TestPackBuildAtHostOnAMacBuildsInTheDarwinAct(t *testing.T) {
 	packBuildHome(t, packBuildFixtureBuild, "")
 	prev := packBuildHostGOOS
 	packBuildHostGOOS = "darwin"
 	t.Cleanup(func() { packBuildHostGOOS = prev })
+	withMac(t, macSetup{account: true})
 	runs := 0
-	withFakeCaptureJail(t, fakePackBuildJail(t, &runs, 0))
+	var seen run.Options
+	fake := fakePackBuildJail(t, &runs, 0)
+	withFakeCaptureJail(t, func(o run.Options) int { seen = o; return fake(o) })
 	rc, out, errw := packBuildRun(t, "--at", "host", "fx")
-	if rc != 1 || runs != 0 || !strings.Contains(out, "not built for macOS") ||
-		!strings.Contains(out, "yolo pack build fx --at host") {
-		t.Fatalf("rc %d, %d runs\nout:\n%s\nerr:\n%s", rc, runs, out, errw)
+	if rc != 0 || runs != 1 || !strings.Contains(out, "built") || !strings.Contains(out, "darwin/") {
+		t.Fatalf("rc %d, %d runs, want one darwin build\nout:\n%s\nerr:\n%s", rc, runs, out, errw)
+	}
+	if seen.Getenv == nil || seen.Getenv("YOLO_RUNTIME") != "macos-user" {
+		t.Errorf("the build jail was not booted on macos-user")
 	}
 	if rc, _, errw := packBuildRun(t, "--at", "moon"); rc != 2 || !strings.Contains(errw, "jail") {
 		t.Errorf("--at moon: rc %d, want a usage refusal\n%s", rc, errw)

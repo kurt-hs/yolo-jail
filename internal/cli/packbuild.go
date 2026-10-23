@@ -25,6 +25,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
@@ -250,14 +251,10 @@ func packBuildOne(pr richtext.Printer, f packload.Fork, rt string, opts packBuil
 	}
 	// WHICH BYTES, as a launch resolves them (packload.PackTreeResolve): the build of the pack's tree,
 	// or its prebuilt artifact where the tree is absent or no build can run for this notch.
-	buildable := rt != "macos-user" // parity: Warned — the darwin sealed act does not stage a pack's tree yet (pack-buildable-programs-plan.md Task 10); a declared darwin prebuilt stands in, as at a launch on macos-user
+	buildable := rt != "macos-user" || darwinPackTreeBuildable(hostFloorMacProbes())
 	pin := packload.PackTreeResolve(f, platform, buildable)
-	switch {
-	case pin.Reason != "":
+	if pin.Reason != "" {
 		return fail(pin.Reason)
-	case !buildable && !pin.Fork.IsPrebuilt():
-		return fail("a program built from its pack's own tree is not built for macOS by this yolo yet, and the " +
-			"pack declares no `prebuilt` artifact for " + platform + " to stand in")
 	}
 	f, digest := pin.Fork, pin.Commit
 	b := forkBuild{Fork: f, Commit: digest, Platform: platform}
@@ -315,6 +312,19 @@ func packBuildOne(pr richtext.Printer, f packload.Fork, rt string, opts packBuil
 	pr.Printf("[green]built[/green]      %s  [dim]tree digest %s, %s, in %s[/dim]  [cyan]%s[/cyan]",
 		label, shortSHA(digest), platform, time.Since(start).Round(time.Second), entry.Key)
 	return true
+}
+
+// darwinPackTreeBuildable reports whether the darwin sealed act (macosuser.RunForkBuildAct, FP-D24)
+// can EVER build a pack's tree on this Mac: always in the run-as-you mode, which needs no account,
+// and in the account mode only once the sandbox account exists. A Mac with no sandbox account is the
+// design's "permanently unavailable" builder (pack-buildable-programs.md §9, the `yolo host` macOS
+// row), so a declared darwin `prebuilt` stands in (OQ-BG2's leaning); with none declared the build
+// pin comes back and the act's own refusal names `yolo macos-setup`. Every other refusal of the act
+// (root, no sandbox-exec, an unusable staging root) is a state the next run may not have, never a
+// reason to change which bytes run. A Mac's `yolo host` floor asks the same question
+// (pack-buildable-programs-plan.md Task 9's floor arm takes it as its buildable flag).
+func darwinPackTreeBuildable(p macCaptureProbes) bool {
+	return p.Mode == macosuser.ModeSelf || (p.SandboxUserExists != nil && p.SandboxUserExists())
 }
 
 // fileExists reports whether path names an existing file.

@@ -263,6 +263,10 @@ func (o *Options) briefedCtxMounts(rt, ctxDir string, cfg *jsonx.OrderedMap, pac
 			out = append(out, jailcontent.ContextMount{Path: ctxDir + "/" + c.Rel(),
 				Host: c.Source, Pack: c.Pack, Copied: true})
 		}
+		// A dev override's checkout outside the workspace, linked read-only (programoverrides.go).
+		for _, l := range macosUserOverrideLinks(o.programOverridePlans(rt, packs)) {
+			out = append(out, jailcontent.ContextMount{Path: ctxDir + "/" + l.Rel(), Host: l.Source})
+		}
 		return out
 	}
 	var out []jailcontent.ContextMount
