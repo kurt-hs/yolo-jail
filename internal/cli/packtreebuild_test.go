@@ -368,3 +368,72 @@ func TestASymlinkedSourceRootIsRefused(t *testing.T) {
 		t.Errorf("staging a symlinked checkout = %v, want a not-a-directory refusal", err)
 	}
 }
+
+// THE BUILD'S COPY FOLLOWS NO LINK ABOVE ITS ROOT THAT ROOT DID NOT PLACE (BG-D22): the checkout is
+// proj/vendor/tool, and vendor is a user's link — swapped in after the override was checked — to a
+// host directory that also holds a tool/ with a key in it. The copy refuses and the staging holds
+// none of the host's bytes. Red if copySourceTreeSkipping goes back to a path-based walk.
+func TestTheBuildsCopyRefusesAnUntrustedLinkAboveItsRoot(t *testing.T) {
+	base := t.TempDir()
+	proj, host, dst := filepath.Join(base, "proj"), filepath.Join(base, "host"), filepath.Join(base, "staged")
+	for _, d := range []string{proj, filepath.Join(host, "tool")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(host, "tool", "id_ed25519"), []byte("SECRET-HOST-BYTES"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(proj, "vendor")
+	if err := os.Symlink(host, link); err != nil {
+		t.Fatal(err)
+	}
+	if os.Geteuid() == 0 {
+		if err := os.Lchown(link, 65534, 65534); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := copySourceTreeSkipping(filepath.Join(link, "tool"), dst, nil); err == nil {
+		t.Errorf("the copy read through a user's link above its root")
+	}
+	if _, err := os.Stat(filepath.Join(dst, "id_ed25519")); err == nil {
+		t.Errorf("the staging holds the host's key")
+	}
+}
+
+// THE COPY WRITES NOTHING THROUGH A LINK: a destination entry that already exists — here a link
+// standing where the source's directory goes, as `Lib` meets `lib` on a case-insensitive volume —
+// fails the copy, and nothing is written where the link points.
+func TestTheBuildsCopyNeverWritesThroughAnExistingEntry(t *testing.T) {
+	base := t.TempDir()
+	src, dst, elsewhere := filepath.Join(base, "src"), filepath.Join(base, "dst"), filepath.Join(base, "elsewhere")
+	for _, d := range []string{filepath.Join(src, "lib"), dst, elsewhere} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(src, "lib", "x"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(dst, "lib")); err != nil {
+		t.Fatal(err)
+	}
+	if err := copySourceTreeSkipping(src, dst, nil); err == nil {
+		t.Errorf("the copy went on past an existing destination entry")
+	}
+	if _, err := os.Lstat(filepath.Join(elsewhere, "x")); err == nil {
+		t.Errorf("the copy wrote through the link")
+	}
+	if err := os.WriteFile(filepath.Join(dst, "f"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "f"), []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dst, "lib")); err != nil {
+		t.Fatal(err)
+	}
+	if err := copySourceTreeSkipping(src, dst, nil); err == nil {
+		t.Errorf("the copy overwrote an existing destination file")
+	}
+}

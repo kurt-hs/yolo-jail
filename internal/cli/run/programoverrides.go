@@ -20,10 +20,12 @@ package run
 // fork pack that delivers a checkout of it.
 
 import (
+	"errors"
 	"path/filepath"
 	"sort"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/nofollow"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -38,31 +40,38 @@ func overrideUserConfigKey(bin string) string {
 // ProgramCheckout applies the user's override of f, a pack-tree program, when overrides names its
 // bin: f with Checkout set to the path, or why the override cannot apply, naming the path and the key.
 // f comes back unchanged with no reason when there is no override. The checks, the same on every
-// notch: the path is an existing directory; it has NO SYMLINK IN IT (its resolved path is the path as
-// written — on macOS that means spelling /private/var, not /var); and it is not at the credential
-// boundary (paths.WorkspaceScopeBreach: the home, the user config directory, yolo's state directory,
-// or anything containing one), which yolo never reads into a build.
+// notch: the path is resolved once, following only TRUSTED symlinks — owned by root, in a directory
+// only root can write, such as macOS's /var → /private/var or Fedora Atomic's /home → /var/home — and
+// refusing any other, naming the resolved path to write instead (nofollow.Resolve, BG-D22); it is an
+// existing directory; and it is not at the credential boundary (paths.WorkspaceScopeBreach: the home,
+// the user config directory, yolo's state directory, or anything containing one), which yolo never
+// reads into a build. Checkout is the resolved path.
 //
-// Why no symlink: a checkout may sit where an agent can write, and a link in its path is one the
-// agent could re-point between this check and the read, at ~/.ssh say. With none, the read below it
-// (internal/nofollow, through PackTreeDigest and the build's copy) follows no link at all, so what is
-// read is the directory that was checked.
+// Why only root's links: a checkout may sit where an agent can write, and a link it placed is one it
+// could re-point between this check and the read, at ~/.ssh say. The read below (internal/nofollow,
+// through PackTreeDigest and the build's copy) reaches the resolved path the same way, a component at
+// a time, so a link swapped in after this check refuses the read instead of being followed.
 func ProgramCheckout(f packload.Fork, overrides map[string]config.ProgramOverride) (packload.Fork, string) {
 	ov, ok := overrides[f.Bin]
 	if !ok || !f.IsPackTree() {
 		return f, ""
 	}
 	key := " (" + overrideUserConfigKey(f.Bin) + ")"
-	dir, err := filepath.EvalSymlinks(ov.Path)
+	dir, err := nofollow.Resolve(ov.Path)
+	var untrusted *nofollow.UntrustedLinkError
 	switch {
+	case errors.As(err, &untrusted):
+		to := "the directory it points at"
+		if real, err := filepath.EvalSymlinks(ov.Path); err == nil {
+			to = real
+		}
+		return f, ov.Path + " passes through " + untrusted.Path + ", a symlink " + untrusted.Why + ", and yolo reads a " +
+			"checkout only through symlinks root placed — set the path to " + to + key
 	case err != nil:
 		return f, ov.Path + " does not exist or cannot be read — fix the path, or remove the setting to build pack " +
 			f.Pack + "'s own " + f.From + key
 	case !isDir(dir):
 		return f, ov.Path + " is not a directory — point it at your checkout of " + f.Bin + key
-	case dir != filepath.Clean(ov.Path):
-		return f, ov.Path + " passes through a symlink (it resolves to " + dir + "), and yolo reads a checkout " +
-			"only at a path with no symlink in it — set the path to " + dir + key
 	}
 	if breach := paths.WorkspaceScopeBreach(dir); breach != nil {
 		return f, breach.WhatFor("the override path") + ", the credential boundary yolo never builds from — " +

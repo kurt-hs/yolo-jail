@@ -63,15 +63,22 @@ func boardFork(t *testing.T) packload.Fork {
 }
 
 // THE CHECKS, the same on every notch (ProgramCheckout): a path with no symlink in it is applied as
-// written; a path through a symlink (one an agent could re-point at ~/.ssh after the check), a missing
-// path, a file, and the home (the credential boundary) are each refused naming the path and the key,
-// the symlink's refusal naming the resolved path to write instead. No override leaves the fork alone.
+// written; a path through a symlink root did not place (one an agent could re-point at ~/.ssh after
+// the check), a missing path, a file, and the home (the credential boundary) are each refused naming
+// the path and the key, the symlink's refusal naming the resolved path to write instead (BG-D22). No
+// override leaves the fork alone.
 func TestProgramCheckoutResolvesThePathAndRefusesWhatItCannotBuild(t *testing.T) {
 	home := packHome(t)
 	dev := floortest.ResolvedTemp(t)
-	link := filepath.Join(t.TempDir(), "dev")
+	link := filepath.Join(floortest.ResolvedTemp(t), "dev")
 	if err := os.Symlink(dev, link); err != nil {
 		t.Fatal(err)
+	}
+	if os.Geteuid() == 0 {
+		// The user's own link: as root, hand it to someone else, as it would be on a real machine.
+		if err := os.Lchown(link, 65534, 65534); err != nil {
+			t.Fatal(err)
+		}
 	}
 	file := filepath.Join(dev, "file")
 	writeFileAt(t, file, "x")
@@ -86,8 +93,8 @@ func TestProgramCheckoutResolvesThePathAndRefusesWhatItCannotBuild(t *testing.T)
 		path string
 		want []string
 	}{
-		"a symlink":       {link, []string{link, "passes through a symlink", "set the path to " + dev}},
-		"under a symlink": {filepath.Join(link, "sub"), []string{"passes through a symlink"}},
+		"a symlink":       {link, []string{link, "a symlink owned by uid", "set the path to " + dev}},
+		"under a symlink": {filepath.Join(link, "sub"), []string{link + ", a symlink", "set the path to " + filepath.Join(dev, "sub")}},
 		"missing":         {filepath.Join(dev, "nope"), []string{filepath.Join(dev, "nope"), "does not exist"}},
 		"not a dir":       {file, []string{file, "not a directory"}},
 		"the home":        {home, []string{"IS your home directory", "credential boundary"}},
@@ -104,6 +111,30 @@ func TestProgramCheckoutResolvesThePathAndRefusesWhatItCannotBuild(t *testing.T)
 	}
 	if got, why := ProgramCheckout(f, nil); why != "" || got.Checkout != "" {
 		t.Errorf("no override changed the fork: %+v %q", got, why)
+	}
+}
+
+// A SYMLINK ROOT PLACED is followed, and the checkout is the resolved path: macOS's /var →
+// /private/var, Fedora Atomic's /home → /var/home, a corporate home link. Here a root-owned link in a
+// directory only root can write; skipped where the test is not root and cannot make one.
+func TestProgramCheckoutFollowsALinkRootPlaced(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("making a root-owned symlink needs root")
+	}
+	packHome(t)
+	dev := floortest.ResolvedTemp(t)
+	dir := floortest.ResolvedTemp(t)
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "home")
+	if err := os.Symlink(dev, link); err != nil {
+		t.Fatal(err)
+	}
+	mkdirs(t, filepath.Join(dev, "board"))
+	got, why := ProgramCheckout(boardFork(t), map[string]config.ProgramOverride{"board": {Path: filepath.Join(link, "board")}})
+	if why != "" || got.Checkout != filepath.Join(dev, "board") {
+		t.Errorf("a checkout through root's link = %q (%q), want the resolved %s", got.Checkout, why, filepath.Join(dev, "board"))
 	}
 }
 

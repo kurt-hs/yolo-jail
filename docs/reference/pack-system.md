@@ -1133,9 +1133,10 @@ the checkout and whether it was rebuilt or reused; an attach names the build its
 build that fails is the same fatal refusal as the pack's own, naming the log, the retry and
 `YOLO_ALLOW_MISSING_PROGRAMS=1`, and never falls back to the pack's copy. The host refuses the
 program, naming the path and the key, when the path is not a directory, passes through a symlink
-(the refusal names the resolved path to write instead), or sits at the credential boundary
-(`paths.WorkspaceScopeBreach`). The checkout is read without following any symlink, so a symlink
-inside it reaches the build as a symlink, never as what it points at
+that root did not place (the refusal names the resolved path to write instead; root's own links,
+such as macOS's `/var` or Fedora Atomic's `/home`, are followed), or sits at the credential
+boundary (`paths.WorkspaceScopeBreach`). The checkout is read without following any other symlink,
+so a symlink inside it reaches the build as a symlink, never as what it points at
 ([BG-D22](../design/pack-buildable-programs.md#BG-D22)). A refusal of a checkout's build never
 names the prebuilt setting, which cannot sit beside `path`. **It applies to a
 `via: "pack"` program only** ([BG-D19](../design/pack-buildable-programs.md#BG-D19)): an override

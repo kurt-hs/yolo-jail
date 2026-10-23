@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -41,6 +42,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
@@ -1548,16 +1550,34 @@ func copySourceTree(src, dst string) error {
 // The read follows no link even under a race (internal/nofollow): a source tree may be a dev
 // override's checkout an agent can write, and an entry swapped for a symlink to ~/.ssh between its
 // listing and its read fails the copy instead of putting the host's bytes into a build.
+//
+// THE WRITES NEVER GO THROUGH A LINK EITHER: every entry is created fresh (Mkdir, Symlink, and a file
+// opened O_EXCL|O_NOFOLLOW), so one that already exists fails the copy. On a case-insensitive staging
+// volume a source holding both `Lib` (a link to /etc) and `lib/x` would otherwise write x through the
+// link; here `lib` meets the link as an existing entry and the copy stops. Only the root may exist
+// already, as a real directory.
 func copySourceTreeSkipping(src, dst string, skip map[string]bool) error {
 	return nofollow.Walk(src, skip, func(e nofollow.Entry) error {
 		target := filepath.Join(dst, e.Rel)
 		switch e.Kind {
 		case nofollow.Dir:
-			return os.MkdirAll(target, e.Perm|0o700)
+			if e.Rel == "." {
+				if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+					return err
+				}
+				if err := os.Mkdir(target, e.Perm|0o700); err == nil || !errors.Is(err, fs.ErrExist) {
+					return err
+				}
+				if fi, err := os.Lstat(target); err != nil || !fi.IsDir() {
+					return fmt.Errorf("the build's staging %s exists and is not a directory", target)
+				}
+				return nil
+			}
+			return os.Mkdir(target, e.Perm|0o700)
 		case nofollow.Symlink:
 			return os.Symlink(e.Target, target)
 		case nofollow.File:
-			out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, e.Perm|0o600)
+			out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, e.Perm|0o600)
 			if err != nil {
 				return err
 			}
@@ -1565,12 +1585,13 @@ func copySourceTreeSkipping(src, dst string, skip map[string]bool) error {
 				out.Close()
 				return err
 			}
-			if err := out.Close(); err != nil {
-				return err
-			}
 			// The umask does not get a say: the exec bits are part of a tree's digest (treedigest),
 			// and a pack-tree build checks its staged copy against the digest it was keyed on.
-			return os.Chmod(target, e.Perm|0o600)
+			if err := out.Chmod(e.Perm | 0o600); err != nil {
+				out.Close()
+				return err
+			}
+			return out.Close()
 		}
 		return nil
 	})

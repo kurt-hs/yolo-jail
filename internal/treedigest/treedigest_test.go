@@ -170,3 +170,23 @@ func TestMissingRootIsAnError(t *testing.T) {
 		t.Error("digesting a missing root must fail")
 	}
 }
+
+// THE DIGEST FOLLOWS NO LINK ABOVE ITS ROOT THAT ROOT DID NOT PLACE (internal/nofollow, BG-D22): the
+// root is proj/vendor/tool, and vendor is a user's link to a host directory that also holds a tool/
+// with a key in it. A path-based reader digests the host's bytes; this one refuses. Red if OfSkipping
+// goes back to filepath.WalkDir.
+func TestTheDigestRefusesAnUntrustedLinkAboveItsRoot(t *testing.T) {
+	base := t.TempDir()
+	proj, host := filepath.Join(base, "proj"), filepath.Join(base, "host")
+	must(t, os.MkdirAll(proj, 0o755))
+	must(t, os.MkdirAll(filepath.Join(host, "tool"), 0o755))
+	must(t, os.WriteFile(filepath.Join(host, "tool", "id_ed25519"), []byte("SECRET"), 0o600))
+	link := filepath.Join(proj, "vendor")
+	must(t, os.Symlink(host, link))
+	if os.Geteuid() == 0 {
+		must(t, os.Lchown(link, 65534, 65534))
+	}
+	if d, err := Of(filepath.Join(link, "tool")); err == nil {
+		t.Errorf("the digest read through a user's link above its root: %s", d)
+	}
+}
