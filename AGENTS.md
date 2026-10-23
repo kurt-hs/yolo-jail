@@ -63,7 +63,9 @@ run too) with **no switch on any tool name**. Three rules before debugging it �
   ([`OQ-BH14`](docs/reference/jail-home.md#reserving-a-name-is-not-creating-a-directory),
   [`OQ-BH15`](docs/reference/jail-home.md#oq-bh15)): validation resolves the selection itself
   (`resolveSelectedPacks`, [`selectedpacks.go`](internal/config/selectedpacks.go)). **Do not read
-  `packload.Embedded*` to reserve a name.**
+  `packload.Embedded*` to reserve a name.** The one shipped-set reader allowed is
+  `storage.EnsureGlobalStorage`, which runs before config loads and makes every shipped pack's shared dir,
+  a bind source a jail mounts only when it selects the pack.
 - **`packload.Embedded()` leases ONE immutable tree per build** under
   `~/.local/share/yolo-jail/embedded-packs/<hash>`
   ([`embeddedcache.go`](internal/packload/embeddedcache.go)). ⚠ **Never move it under `cache/`**, which
@@ -154,11 +156,14 @@ The mechanics behind each of these are in
   fileset by hand. `tools/` and `integration/` are excluded on purpose.
 - **A launch REFUSES when the host `yolo` and the source it would mount disagree** across a host↔jail
   contract: `version.SourceSkew` compares the binary's commit stamp against HEAD through the `goSrc`
-  fileset + flake files, naming `just install`; `YOLO_ALLOW_SOURCE_SKEW=1` overrules it. **The
+  fileset + flake files, naming `just install`; `YOLO_ALLOW_SOURCE_SKEW=1` overrules it. It is silent
+  for a docs-only commit, for uncommitted work, and for anything it cannot prove. **The
   integration suite cannot see this class** — it always builds a fresh CLI.
 - **The cwd does not choose the flake.** A complete bundle beside the running executable wins; an
   installed launcher uses only its matching installed generation. `YOLO_REPO_ROOT` is retired and
-  refused. To run the checkout, see [Workflow](#workflow) step 2.
+  refused. To run the checkout, see [Workflow](#workflow) step 2. A dangling or cyclic dev alias fails
+  in the OS before the wrapper starts; repair it with
+  `ln -sfn /absolute/path/to/checkout/scripts/dev-wrapper.sh /path/to/yolo-dev`.
 - `vendor/` is committed and the nix build is hermetic (`-mod=vendor`, no network). A new dependency needs
   `go mod vendor` committed, or the image build breaks while `go test` passes.
 - Image reload sentinel is `BUILD_DIR/last-load-<runtime>` (not `.last-load`). `nix build --impure` exists
@@ -239,7 +244,7 @@ The mechanics behind each of these are in
   launcher reports its decision as `YOLO_HOST_LOOPBACK=requested|shared|unsupported|unknown` on every
   launch. The in-jail witness ([`reachability.go`](internal/entrypoint/reachability.go)) **REFUSES the
   launch** when an enabled jail-facing service is unreachable, escalating only for `requested` and
-  `shared`; `YOLO_ALLOW_UNREACHABLE_SERVICES=1` is the hatch, and it also covers a required in-jail
+  `shared`; `YOLO_ALLOW_UNREACHABLE_SERVICES=1`, forwarded from the host env, is the hatch, and it also covers a required in-jail
   service that did not start ([`requiredservice.go`](internal/entrypoint/requiredservice.go)).
 - **A WORKSPACE MAY NOT CONTAIN THE CREDENTIAL BOUNDARY, AND THOSE DIRECTORIES MAY NOT HOLD A `.yolo`.** A
   workspace that IS or CONTAINS `$HOME`, `~/.config/yolo-jail` or `~/.local/share/yolo-jail` — or sits
@@ -257,7 +262,8 @@ The mechanics behind each of these are in
   [OQ-BF11](docs/reference/disk-footprint.md#OQ-BF11)). Alias the cache SUBDIRECTORY only where a tool
   keeps config beside it (`~/.cargo/registry`, never `~/.cargo`);
   `TestNoStoreNamesAConfigOrCredentialPath` fails an entry that crosses that line. Every failure degrades
-  to the private copy; none can refuse a launch. A path-keyed store needs rootless podman, so a nested
+  to the private copy; none can refuse a launch. The launch discloses each alias by name and `yolo stores`
+  lists it as `not yolo's`, so no reclaimer offers to delete host bytes. A path-keyed store needs rootless podman, so a nested
   jail only ever shows the decline. No store is aliased on macOS except under macos-user's run-as-you
   mode, `"macos_user_mode": "self"` ([MMP-D12](docs/design/macos-user-model-plan.md#MMP-D12)). The only other writable host binds are the workspace, yolo's own state
   and cache dirs, and ones the user named in user-scope config (`cache_relocations`, read-write `mounts`).
@@ -285,7 +291,8 @@ The mechanics behind each of these are in
   PATH.
 - **`YOLO_STORE_PACKAGES=1` takes `packages:` from the mounted nix store instead of the image** (podman +
   Linux + nix daemon only), per LAUNCH and never per package, with a farm at `/run/yolo/packages`
-  ([`storepackages.go`](internal/entrypoint/storepackages.go)). It also selects the lean image, so
+  ([`storepackages.go`](internal/entrypoint/storepackages.go)). **Exactly one mechanism is live in any
+  jail**: a package both baked and staged silently runs the baked copy. It also selects the lean image, so
   `chromium` and `/etc/fonts` move
   ([store-delivered packages](docs/reference/image-staging-vs-baking.md#store-delivered-packages)).
 - **Env hygiene** (agents can't handle interactive UI): `PAGER`/`GIT_PAGER`=`cat`, `BAT_PAGER=""`,
@@ -301,7 +308,9 @@ The mechanics behind each of these are in
   ([`agent-briefings.md`](docs/reference/agent-briefings.md#the-workspace-layer)). ⚠ **The workspace layer
   is read by [`workspaceskills.go`](internal/jailcontent/workspaceskills.go)'s `confinedTree`, NEVER by
   `hostskills.ComposeInto`**, which follows symlinks
-  ([P5](docs/reference/agent-briefings.md#ws-p5)). ⚠ A skill in `~/.claude/skills` on the host reaches
+  ([P5](docs/reference/agent-briefings.md#ws-p5)). Nor an `os.Root` for the read itself: it follows a
+  link that stays inside it, which a race turns into a read of host bytes, so the bytes are read by an
+  `O_NOFOLLOW` walk along the path `os.Root` classified. ⚠ A skill in `~/.claude/skills` on the host reaches
   the jail by no path; there is no host user-level layer. ⚠ A skills contribution may FENCE children of its
   destination (`reserved`; `packs/claude` reserves `synced`,
   [`OQ-ST2`](docs/reference/pack-system.md#oq-st2)). The host→jail handoff (`.yolo/handover.md`) is a
@@ -354,7 +363,6 @@ Agent logs, for debugging: `~/.copilot/logs/` and `~/.claude/projects/` inside t
 live in `<workspace>/.yolo/home/`, under `copilot/` and `claude/` on podman and macos-user, and under
 `.copilot/` and `.claude/` on Apple Container.
 
-<<<<<<< ours
 ## The changelog is written at release time
 
 **Landing work adds no [`CHANGELOG.md`](CHANGELOG.md) entry.** The section for a version is written
@@ -362,23 +370,10 @@ once, when the release is cut, from the commits since the last tag, and it IS th
 body. How to write it, and the gates `just release` runs, are in the
 [`cutting-releases`](.pi/skills/cutting-releases/SKILL.md) skill (the maintainer's ruling,
 2026-10-23: *"We don't have to have an ongoing changelog maintained."*).
-=======
-## The changelog is the release
-
-**[`CHANGELOG.md`](CHANGELOG.md)'s section for a version IS its GitHub release body, word for word**, and
-`just release` is the one path to a tag: rename `[Unreleased]` to `[<version>] - <YYYY-MM-DD>`, commit,
-then run it with no version argument. [`scripts/changelog-section.sh`](scripts/changelog-section.sh) gates
-every release path, with no hatch.
-
-**Every change a user can notice gets a line under `[Unreleased]`, written to the user, short.** The
-rules — what earns a line, the shape of a feature and a fix, the word budget, `### Contributors` — are in
-[writing a changelog section](docs/reference/release-process.md#writing-a-changelog-section); read them
-before adding or rewording a line. When you land other work, rewrite its lines to that shape.
->>>>>>> theirs
 
 ## Workflow
 
-**The `Workers Builds: yolo-jail-docs` check is Cloudflare's**: renaming `scripts/build-site.sh` needs the
+**The `Workers Builds: yolo-jail-docs` check is Cloudflare's**: renaming [`scripts/build-site.sh`](scripts/build-site.sh) needs the
 dashboard's build command changed too ([`docs-website.md`](docs/reference/docs-website.md)).
 
 1. **Image change** → edit [`flake.nix`](flake.nix), then verify as in step 2: the nested run rebuilds
