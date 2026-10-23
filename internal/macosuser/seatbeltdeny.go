@@ -476,6 +476,7 @@ func systemReadBlocks(hostSoftware []string, hostHome string) string {
 		"    (subpath \"/Library/Preferences/Logging\")                          ;; Logging stack reads these prefs at process start.\n" +
 		"    (literal \"/Library/Preferences/.GlobalPreferences.plist\")         ;; Locale/time defaults queried by runtimes.\n" +
 		"    (literal \"/Library/Preferences/com.apple.networkd.plist\")         ;; DNS/network bootstrap reads networkd config.\n" +
+		"    (literal \"/Library/Preferences/com.apple.dt.Xcode.plist\")         ;; Xcode's license record: refused it, the /usr/bin xcrun shims (make, cc, lldb) say the license is not accepted.\n" +
 		"    (literal \"/dev\"))                                                 ;; /dev listing; shells enumerate it during start.\n")
 
 	var hidden []string

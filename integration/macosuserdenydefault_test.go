@@ -476,6 +476,31 @@ func denyDefaultCases() []denyDefaultCase {
 			want:   wantAllowed,
 		},
 		{
+			name: "xcode_shim_make_runs",
+			id:   "system-read-allow",
+			why: "/usr/bin/make, cc and lldb are xcrun shims that read Xcode's license record, " +
+				"/Library/Preferences/com.apple.dt.Xcode.plist; refused it, they print \"You have not " +
+				"agreed to the Xcode license agreements\" on a Mac where the license is accepted, so " +
+				"nothing builds from source. The fixture's TMPDIR is fresh, so no xcrun_db from an " +
+				"earlier run answers for the shim.",
+			needs:  needsPath("/Library/Preferences/com.apple.dt.Xcode.plist", "an accepted Xcode license"),
+			script: func(denyDefaultFixtures) string { return "/usr/bin/make --version >/dev/null && echo " + seatbeltOK },
+			want:   wantAllowed,
+		},
+		{
+			name: "user_preferences_read_refused",
+			id:   "deny-default",
+			why: "the Xcode shims' allow names one file in /Library/Preferences; your own " +
+				"~/Library/Preferences stays closed, by path and through cfprefsd alike.",
+			needs: func(f denyDefaultFixtures) string {
+				return needsPath(filepath.Join(f.hostHome, "Library/Preferences/com.apple.dock.plist"), "your Dock preferences")(f)
+			},
+			script: func(f denyDefaultFixtures) string {
+				return "/usr/bin/defaults read " + sh(filepath.Join(f.hostHome, "Library/Preferences/com.apple.dock.plist")) + " >/dev/null"
+			},
+			want: wantRefused,
+		},
+		{
 			name: "workspace_parent_listing_allowed",
 			id:   "ancestor-literal-allow",
 			why: "each ancestor of a granted root is a literal: git and Claude Code readdir() them at " +
