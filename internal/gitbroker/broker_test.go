@@ -168,7 +168,13 @@ func newFixtureOpts(t *testing.T, o fixtureOpts) *fixture {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git on PATH")
 	}
-	t.Setenv("HOME", t.TempDir())
+	// Resolved where it is minted: on macOS t.TempDir() is under /var -> /private/var, and a
+	// subprocess's pwd under HOME reports the resolved path.
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
 	t.Setenv("YOLO_USER_LAYER", "")
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {

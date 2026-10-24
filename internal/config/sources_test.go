@@ -446,10 +446,16 @@ func TestWorkspaceHostFilesRefusalCountsEveryEntry(t *testing.T) {
 // times a launch and would discard it, so recording it there is pure cost: the record is built
 // from every value of every file. The plain read must allocate measurably less than the
 // recording one over the same files; with the record kept on both they allocate the same.
+//
+// It checks the DIFFERENCE, not a ratio. Both readers pay allocations that grow with the depth
+// of the temp dir (macOS's /var/folders/… pushed a 0.9 ratio to 0.905), while what the record
+// adds depends only on the files below: each include holds more than recordFloorPerFile values,
+// and recording a value costs at least one allocation.
 func TestAPlainReadKeepsNoRecord(t *testing.T) {
+	const files, recordFloorPerFile = 8, 10
 	_, dir := sourcesHome(t)
 	var incs []string
-	for i := 0; i < 8; i++ {
+	for i := 0; i < files; i++ {
 		name := "inc" + strconv.Itoa(i) + ".jsonc"
 		incs = append(incs, strconv.Quote(name))
 		write(t, filepath.Join(dir, name), `{"packages": ["a`+strconv.Itoa(i)+`", "b"], "env": {"A": "1", "B": "2"},
@@ -459,8 +465,8 @@ func TestAPlainReadKeepsNoRecord(t *testing.T) {
 	ws := t.TempDir()
 	plain := testing.AllocsPerRun(20, func() { _, _ = LoadConfig(ws, true, discard) })
 	recorded := testing.AllocsPerRun(20, func() { _, _, _ = LoadConfigWithSources(ws, true, discard) })
-	if plain >= recorded*0.9 {
-		t.Errorf("LoadConfig allocates %v per read, LoadConfigWithSources %v: the plain read is "+
-			"building the record it discards", plain, recorded)
+	if floor := float64(files * recordFloorPerFile); recorded-plain < floor {
+		t.Errorf("LoadConfig allocates %v per read, LoadConfigWithSources %v: a difference under %v "+
+			"means the plain read is building the record it discards", plain, recorded, floor)
 	}
 }

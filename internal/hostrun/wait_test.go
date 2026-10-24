@@ -108,7 +108,9 @@ func TestWaitUnnamedTakesOnlyANewRun(t *testing.T) {
 	if rc := Wait(o); rc != 0 {
 		t.Fatalf("rc %d err %s", rc, f.err.String())
 	}
-	if out := f.out.String(); !strings.Contains(out, "fresh") || strings.Contains(out, "old") || !strings.Contains(out, newID) {
+	// Match the stdout section's body, not a bare word: the result's "full output:" line holds
+	// the temp path, and macOS's /var/folders/… contains "old".
+	if out := f.out.String(); !strings.Contains(out, "---\nfresh\n") || strings.Contains(out, "---\nold\n") || !strings.Contains(out, newID) {
 		t.Fatalf("%s", out)
 	}
 }
