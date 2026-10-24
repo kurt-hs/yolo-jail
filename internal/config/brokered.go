@@ -1362,8 +1362,9 @@ func UngrantedBrokerNotes(resolver LoopholeResolver) []string {
 			continue
 		}
 		out = append(out, "loophole "+name+" is selected and grants nothing: your user config holds no read "+
-			"grant for the "+pyReprValue(source)+" source, so it stays out of every workspace's config-change "+
-			"prompt and refuses every call. "+BrokerGrantAdvice(source))
+			"grant for the "+pyReprValue(source)+" source, so it refuses every call, and a workspace's "+
+			"config-change prompt asks nothing about it (beyond showing, once, the removal of a read grant "+
+			"that workspace approved earlier). "+BrokerGrantAdvice(source))
 	}
 	return out
 }

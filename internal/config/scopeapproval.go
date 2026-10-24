@@ -70,6 +70,11 @@ type ScopeSource struct {
 	// (BB-D110): its broker grants nothing, so it stays out of the gate: no block, no change, no
 	// refusal of a launch with no terminal, and nothing recorded. It approves an empty scope.
 	Dormant bool
+	// FirstRead is a source that holds a read grant now and held none at its last approval
+	// (BB-D110): whatever that record holds was approved while the broker could do nothing, so
+	// the gate compares against no record, and every remote and entry shows as added beside the
+	// grant.
+	FirstRead bool
 }
 
 // grantsRecordKey is the scope part's key for a source's approved grants: `<source>.grants`. A
@@ -437,6 +442,9 @@ func compareScope(check *ScopeCheck, old scopeRecord, oldSources sourcesRecord) 
 		cur := s.current()
 		prev, had := old[s.Source]
 		recorded := oldSources[s.Source]
+		if s.FirstRead {
+			prev, had, recorded = nil, false, nil
+		}
 		names := make([]string, len(cur))
 		srcs := map[string][]string{}
 		approved := make([]ScopeRepo, len(cur))

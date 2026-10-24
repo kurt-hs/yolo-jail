@@ -243,6 +243,8 @@ func NewScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead)
 		if !brokerscope.HoldsRead(s.Grants) {
 			s.Read.Remotes, s.Entry, s.Grants, s.GrantFiles, s.UserGrants = nil, nil, nil, nil, nil
 			s.Dormant = !recordHeldRead(rec, b.Source)
+		} else {
+			s.FirstRead = !recordHeldRead(rec, b.Source)
 		}
 		check.Sources = append(check.Sources, s)
 	}

@@ -576,8 +576,13 @@ func TestAGrantTheGateCannotJoinReachesNoScope(t *testing.T) {
 			if !o.checkConfigChanges(gbOn(), "podman") {
 				t.Fatalf("an accepted gate refused:\n%s", buf.String())
 			}
-			if strings.Contains(buf.String(), "+ grant "+c.kind+" github.com/o/r") {
-				t.Errorf("the gate showed a line for a grant that cannot join:\n%s", buf.String())
+			// The one grant line the gate may show is the user's read grant's.
+			wantGrantLines := []string{"+ grant read *  added (from your user config, for every workspace)"}
+			if want == nil {
+				wantGrantLines = nil
+			}
+			if got := linesContaining(buf.String(), "+ grant"); !reflect.DeepEqual(got, wantGrantLines) {
+				t.Errorf("the gate's grant lines are %q, want %q:\n%s", got, wantGrantLines, buf.String())
 			}
 			cname := "yolo-brokered-nogrant"
 			handles := o.startLoopholes(cname, "podman", gbOn())
@@ -585,8 +590,12 @@ func TestAGrantTheGateCannotJoinReachesNoScope(t *testing.T) {
 			if f := readHandedScope(t, marker, buf); !reflect.DeepEqual(f.Grants, want) {
 				t.Fatalf("scope file grants %v, want %v", f.Grants, want)
 			}
-			if strings.Contains(buf.String(), "github.com/o/r") && strings.Contains(buf.String(), "grants for this workspace: read *,") {
-				t.Errorf("the launch disclosed a grant that cannot join:\n%s", buf.String())
+			wantDisclosed := []string{"gb: grants for this workspace: read *"}
+			if want == nil {
+				wantDisclosed = nil
+			}
+			if got := linesContaining(buf.String(), "grants for this workspace:"); !reflect.DeepEqual(got, wantDisclosed) {
+				t.Errorf("the launch disclosed %q, want %q:\n%s", got, wantDisclosed, buf.String())
 			}
 		})
 	}
@@ -1015,6 +1024,26 @@ func TestABrokerWithNoReadGrantStaysOutOfTheGate(t *testing.T) {
 			t.Errorf("the old record became %v, want it kept", got)
 		}
 	})
+	// The same old record, then the user's read grant: the record was approved while the broker
+	// could do nothing, so the gate compares against no record and the remote shows as added
+	// beside the grant, not as unchanged.
+	t.Run("an old record of remotes, then a first read grant", func(t *testing.T) {
+		o, buf, _ := brokeredFixture(t)
+		old := &config.ScopeCheck{Sources: []config.ScopeSource{{Source: "gbsrc", Label: "gb", RemoteHost: "github.com",
+			Read: brokerscope.Read{Remotes: []brokerscope.Remote{{Name: "origin", Repo: "o/r"}}}}}}
+		if err := config.RecordApproval(o.Workspace, jsonx.NewOrderedMap(), old); err != nil {
+			t.Fatal(err)
+		}
+		if o.checkConfigChanges(gbOn(), "podman") {
+			t.Fatalf("a first read grant reached the broker unseen:\n%s", buf.String())
+		}
+		for _, want := range []string{`+ o/r  remote "origin"  added`,
+			"+ grant read *  added (from your user config, for every workspace)"} {
+			if !strings.Contains(buf.String(), want) {
+				t.Errorf("the gate does not show %q:\n%s", want, buf.String())
+			}
+		}
+	})
 	t.Run("granted, then withdrawn", func(t *testing.T) {
 		o, buf, _ := brokeredFixture(t)
 		// Granted: the remote and the grant are shown together, and a launch with no terminal
@@ -1061,4 +1090,15 @@ func TestABrokerWithNoReadGrantStaysOutOfTheGate(t *testing.T) {
 			t.Fatalf("a source whose withdrawal was approved is still at the gate:\n%s", buf.String())
 		}
 	})
+}
+
+// linesContaining is each line of out containing sub, trimmed of surrounding space.
+func linesContaining(out, sub string) []string {
+	var got []string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, sub) {
+			got = append(got, strings.TrimSpace(l))
+		}
+	}
+	return got
 }
