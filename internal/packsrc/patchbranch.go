@@ -36,21 +36,33 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // SeriesPatchBranch is the patch branch a Series stands for.
 type SeriesPatchBranch struct {
 	// Source is the patch branch's address as the manifest writes it; Repo and Ref are its parts.
 	Source, Repo, Ref string
-	// Commit is the commit the branch resolved to at the last check that fetched it.
-	Commit string
+	// Commit is the commit the branch resolved to at the last check that fetched it, and ResolvedRef the fully
+	// qualified ref that answered (PatchBranchResolved.Ref).
+	Commit, ResolvedRef string
 }
 
-// Label is the patch branch as a line names it: "<ref>@<short commit>".
-func (c *SeriesPatchBranch) Label() string { return c.Ref + "@" + shortCommit(c.Commit) }
+// Label is the patch branch as a line names it, the build's provenance in one line: "<ref>@<short commit>", and
+// the fully qualified ref that answered in parentheses when it is not the local branch refs/heads/<ref> — a
+// remote-tracking branch or a tag (resolvePatchBranchRef).
+func (c *SeriesPatchBranch) Label() string {
+	label := c.Ref + "@" + shortCommit(c.Commit)
+	if c.ResolvedRef != "" && c.ResolvedRef != "refs/heads/"+c.Ref && c.ResolvedRef != c.Ref {
+		label += " (" + c.ResolvedRef + ")"
+	}
+	return label
+}
 
 // PatchBranchResolved is what a check resolved a patch branch to, kept in the check record.
 type PatchBranchResolved struct {
@@ -60,6 +72,10 @@ type PatchBranchResolved struct {
 	Source     string `json:"source"`
 	Upstream   string `json:"upstream"`
 	Repository string `json:"repository,omitempty"`
+	// Ref is the fully qualified ref of the patch branch's repository that answered ?ref=
+	// (resolvePatchBranchRef): refs/heads/<ref>, refs/remotes/<remote>/<ref> or refs/tags/<ref>, empty
+	// for a full commit and in a record written before it was kept.
+	Ref string `json:"ref,omitempty"`
 	// Commit is the branch's commit; Base its merge base with the upstream ref's tip.
 	Commit string `json:"commit"`
 	Base   string `json:"base"`
@@ -117,6 +133,7 @@ func PatchBranchSeriesWithIdentity(source, dir, identity, upstream string, rec *
 		return nil, &PatchBranchUnresolvedError{Source: source}
 	}
 	s := UnresolvedPatchBranchSeries(source, dir)
+	s.PatchBranch.ResolvedRef = rec.PatchBranch.Ref
 	s.PatchBranch.Commit, s.Base, s.Digest = rec.PatchBranch.Commit, rec.PatchBranch.Base, PatchBranchDigest(rec.PatchBranch.Commit)
 	return s, nil
 }
@@ -204,7 +221,7 @@ func mirrorsOf(upstream string, patchBranch *Addr) []string {
 // or the check's problem, and a fetch that failed (one line), which the caller records as the
 // check's failed fetch: the copy the patch branch's mirror holds answers meanwhile.
 func (s *Store) resolvePatchBranch(b budget, c Addr, upstream, tip string, now time.Time) (*PatchBranchResolved, string, string) {
-	step := s.fetchStep(b, c.Repo, []Addr{c}, fetchMode{always: true, keepTags: true}, now, BranchRefreshInterval)
+	step := s.fetchStep(b, c.Repo, []Addr{c}, fetchMode{always: true, keepTags: true, remoteTracking: true}, now, BranchRefreshInterval)
 	fetchErr := ""
 	if step.fetchErr != nil {
 		fetchErr = "fetching the patch branch " + c.Raw + ": " + oneLine(step.fetchErr)
@@ -213,7 +230,7 @@ func (s *Store) resolvePatchBranch(b budget, c Addr, upstream, tip string, now t
 	if !mirrorExists(mirror) {
 		return nil, "this machine has never fetched the patch branch " + c.Raw + ", and " + fetchFailed(fetchErr), fetchErr
 	}
-	kind, _, commit, err := s.classifyRef(mirror, c.Ref)
+	kind, ref, commit, err := s.resolvePatchBranchRef(mirror, c.Ref)
 	switch {
 	case err != nil:
 		return nil, "could not read the patch branch " + c.Raw + ": " + oneLine(err) + localRetry, fetchErr
@@ -221,8 +238,8 @@ func (s *Store) resolvePatchBranch(b budget, c Addr, upstream, tip string, now t
 		return nil, "the patch branch's ?ref=" + c.Ref + " is not in this machine's copy of " + c.Repo + ", and " +
 			fetchFailed(fetchErr), fetchErr
 	case kind == refUnresolved:
-		return nil, "the patch branch's ?ref=" + c.Ref + " names no branch, tag or commit of " + c.Repo +
-			" — check the patch branch's ?ref=", ""
+		return nil, "the patch branch's ?ref=" + c.Ref + " names no local branch, remote-tracking branch, tag or commit of " +
+			c.Repo + " — " + s.patchBranchDelivery(c), ""
 	case kind == refOther:
 		return nil, "the patch branch's ?ref=" + c.Ref + " names neither a branch, a tag nor a full commit of " + c.Repo +
 			" — name the branch", ""
@@ -241,5 +258,132 @@ func (s *Store) resolvePatchBranch(b budget, c Addr, upstream, tip string, now t
 	case err != nil:
 		return nil, "could not ask for the patch branch's merge base with " + upstream + ": " + oneLine(err) + localRetry, fetchErr
 	}
-	return &PatchBranchResolved{Source: c.Raw, Upstream: upstream, Commit: commit, Base: strings.TrimSpace(out)}, "", fetchErr
+	return &PatchBranchResolved{Source: c.Raw, Upstream: upstream, Ref: ref, Commit: commit, Base: strings.TrimSpace(out)}, "", fetchErr
+}
+
+// resolvePatchBranchRef is THE ONE RESOLUTION of a patch branch's ?ref=, read in the patch branch's mirror with no
+// network: the kind that answered, the fully qualified ref that answered ("" for a commit) and its commit. Every
+// act that resolves a patch branch — a launch's check, `yolo pack update`, `yolo pack series check --online`,
+// `yolo pack lint --online` — reaches it through resolvePatchBranch, so a verdict and a build cannot disagree
+// about which ref they judged.
+//
+// THE ORDER, each asked by its fully qualified name so git's own rules for a bare name (which read
+// refs/remotes/<ref> as a remote named after the ref's first segment, never refs/remotes/origin/<ref>) decide
+// nothing:
+//
+//  1. the local branch, refs/heads/<ref>;
+//  2. a remote-tracking branch, refs/remotes/<remote>/<ref>: origin's first, then the other remotes' in byte
+//     order of the remote's name, so two remotes holding the ref always answer the same way. The remotes are
+//     those the repository holds remote-tracking refs of (the mirror fetches them, fetchMirror), which `git
+//     remote remove` deletes with the remote. A fetched ref is a delivered ref: no local branch is made for it;
+//  3. a tag, refs/tags/<ref>;
+//  4. a full commit;
+//
+// and then anything else git resolves (an abbreviated commit, HEAD) as refOther, which the caller refuses. A ref
+// already spelled refs/... is asked by that name alone.
+func (s *Store) resolvePatchBranchRef(mirror, ref string) (refKind, string, string, error) {
+	ask := func(kind refKind, name string) (refKind, string, string, bool, error) {
+		sha, err := s.revParse(mirror, name)
+		if err != nil {
+			return refUnresolved, "", "", false, fmt.Errorf("reading %s in the pack mirror: %w", name, err)
+		}
+		if sha == "" {
+			return refUnresolved, "", "", false, nil
+		}
+		return kind, name, sha, true, nil
+	}
+	if strings.HasPrefix(ref, "refs/") {
+		kind := refOther
+		switch {
+		case strings.HasPrefix(ref, "refs/heads/"), strings.HasPrefix(ref, "refs/remotes/"):
+			kind = refBranch
+		case strings.HasPrefix(ref, "refs/tags/"):
+			kind = refTag
+		}
+		k, name, sha, _, err := ask(kind, ref)
+		return k, name, sha, err
+	}
+	if k, name, sha, ok, err := ask(refBranch, "refs/heads/"+ref); ok || err != nil {
+		return k, name, sha, err
+	}
+	tracking, err := s.remoteTrackingFor(mirror, ref)
+	if err != nil {
+		return refUnresolved, "", "", err
+	}
+	for _, t := range tracking {
+		if k, name, sha, ok, err := ask(refBranch, t); ok || err != nil {
+			return k, name, sha, err
+		}
+	}
+	if k, name, sha, ok, err := ask(refTag, "refs/tags/"+ref); ok || err != nil {
+		return k, name, sha, err
+	}
+	if isFullSHA(ref) {
+		if k, _, sha, ok, err := ask(refCommit, ref); ok || err != nil {
+			return k, "", sha, err
+		}
+	}
+	k, _, sha, _, err := ask(refOther, ref)
+	return k, "", sha, err
+}
+
+// remoteTrackingFor is every refs/remotes/<remote>/<ref> the mirror holds, origin's first and then by the remote's
+// name (resolvePatchBranchRef).
+func (s *Store) remoteTrackingFor(mirror, ref string) ([]string, error) {
+	out, err := s.run(mirror, "for-each-ref", "--format=%(refname)", "refs/remotes/")
+	if err != nil {
+		return nil, fmt.Errorf("listing the remote-tracking refs in the pack mirror: %w", err)
+	}
+	type candidate struct{ remote, name string }
+	var found []candidate
+	for _, name := range strings.Split(out, "\n") {
+		name = strings.TrimSpace(name)
+		rest, ok := strings.CutPrefix(name, "refs/remotes/")
+		if !ok {
+			continue
+		}
+		if remote, ok := strings.CutSuffix(rest, "/"+ref); ok && remote != "" {
+			found = append(found, candidate{remote, name})
+		}
+	}
+	slices.SortFunc(found, func(a, b candidate) int {
+		switch {
+		case a.remote == b.remote:
+			return 0
+		case a.remote == "origin":
+			return -1
+		case b.remote == "origin":
+			return 1
+		}
+		return strings.Compare(a.remote, b.remote)
+	})
+	names := make([]string, len(found))
+	for i, c := range found {
+		names[i] = c.name
+	}
+	return names, nil
+}
+
+// patchBranchDelivery is the next step for a patch branch whose ?ref= nothing answers: for a repository on this
+// machine, the fetch that delivers the ref from its remote (origin, else the first by name); for one elsewhere,
+// publishing the branch there.
+func (s *Store) patchBranchDelivery(c Addr) string {
+	dir, local := strings.CutPrefix(c.Repo, "file://")
+	if !local {
+		return "push the branch to " + c.Repo + ", or correct the patch branch's ?ref="
+	}
+	var remotes []string
+	if out, err := s.run("", "-C", dir, "remote"); err == nil {
+		remotes = strings.Fields(out)
+	}
+	if len(remotes) == 0 {
+		return "create the branch in " + dir + " (it has no remote to fetch it from), or correct the patch branch's ?ref="
+	}
+	slices.Sort(remotes)
+	remote := remotes[0]
+	if slices.Contains(remotes, "origin") {
+		remote = "origin"
+	}
+	return "fetch it: `" + shquote.JoinDisplay([]string{"git", "-C", dir, "fetch", remote, c.Ref}) +
+		"`, or correct the patch branch's ?ref="
 }

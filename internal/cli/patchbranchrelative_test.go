@@ -8,6 +8,7 @@ package cli
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -131,5 +132,69 @@ func TestARelativePatchBranchNamingASubdirectoryNamesTheRoot(t *testing.T) {
 	rc, out := lintPack(t, fx.forkDir)
 	if rc == 0 || !strings.Contains(out, "not a repository's root") || !strings.Contains(out, "../..?ref=mine") {
 		t.Errorf("lint of a relative patch branch naming yolo-packs/: rc=%d\n%s", rc, out)
+	}
+}
+
+// A FETCHED-ONLY PATCH BRANCH (yolo-fix-requests §28): the pack's own repository holds `mine` only as
+// refs/remotes/origin/mine. The launch builds from it with no local branch made and names the ref that
+// answered; `yolo pack series check` names the same ref and commit; `yolo pack update` records the same
+// resolution, so a verdict and a build cannot disagree about which ref they judged.
+func TestAFetchedOnlyRelativePatchBranchBuildsAndEveryActNamesTheSameRef(t *testing.T) {
+	fx := newPatchBranchAdvanceFixture(t)
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	published := fx.patchBranch
+	tip := upstreamGit(t, published, "rev-parse", "mine")
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	machine := filepath.Join(root, "machine")
+	upstreamGit(t, root, "clone", "-q", published, machine)
+	upstreamGit(t, machine, "checkout", "-q", "-b", "work", fx.base)
+	upstreamGit(t, machine, "branch", "-q", "-D", "mine")
+	hasLocal := func() bool {
+		return exec.Command("git", "-C", machine, "show-ref", "--verify", "--quiet", "refs/heads/mine").Run() == nil
+	}
+	if hasLocal() {
+		t.Fatal("fixture: the machine clone still holds a local mine")
+	}
+	fx.patchBranch = machine
+	inRepoPatchBranch(t, fx, "../..?ref=mine")
+	label := "mine@" + shortSHA(tip) + " (refs/remotes/origin/mine)"
+
+	_, out, _ := fx.launch(t, "podman")
+	if len(fx.builds) != 1 || fx.builds[0] != lines30(map[int]string{10: "ten", 12: "twelve", 14: "fourteen"}) {
+		t.Fatalf("builds = %q, want v1.1.0 with the fetched patch branch merged\n%s", fx.builds, out)
+	}
+	if !strings.Contains(out, "+ patch branch "+label) {
+		t.Errorf("the launch does not name the ref that answered and its commit (%q):\n%s", label, out)
+	}
+	rec := fx.record(t)
+	if rec.Good == nil || rec.Good.PatchBranch != label || rec.PatchBranch == nil ||
+		rec.PatchBranch.Ref != "refs/remotes/origin/mine" || rec.PatchBranch.Commit != tip {
+		t.Fatalf("the record = good %+v, patch branch %+v; want %q at %s", rec.Good, rec.PatchBranch, label, tip)
+	}
+	if hasLocal() {
+		t.Error("the launch created a local branch in the pack's repository")
+	}
+
+	if rc, sc, errw := seriesVerb(t, "check", fx.forkDir); rc != 0 || !strings.Contains(sc, "merges the patch branch "+label+" cleanly") {
+		t.Errorf("`yolo pack series check` does not name the same ref and commit: rc=%d\n%s\n%s", rc, sc, errw)
+	}
+
+	// The branch moves on origin and the machine fetches: `yolo pack update` records the new commit from the
+	// same remote-tracking ref.
+	fx.patchBranch = published
+	moved := fx.patchBranchCommit(t, map[int]string{10: "ten", 12: "twelve", 20: "twenty"})
+	fx.patchBranch = machine
+	upstreamGit(t, machine, "fetch", "-q", "origin")
+	if rc, uo, ue := packVerb(t, "update"); rc != 0 {
+		t.Fatalf("`yolo pack update`: rc=%d\n%s\n%s", rc, uo, ue)
+	}
+	if r := fx.record(t).PatchBranch; r == nil || r.Ref != "refs/remotes/origin/mine" || r.Commit != moved {
+		t.Errorf("`yolo pack update` recorded %+v, want refs/remotes/origin/mine at %s", r, moved)
+	}
+	if hasLocal() {
+		t.Error("`yolo pack update` created a local branch in the pack's repository")
 	}
 }

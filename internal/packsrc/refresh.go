@@ -392,6 +392,9 @@ type fetchMode struct {
 	// forced fetch leaves them moved, which is how install moves to a re-pointed tag; a patched
 	// fork's check never follows a re-pointed tag (PF-D4), forced or not.
 	keepTags bool
+	// remoteTracking fetches the repository's remote-tracking refs too (refs/remotes/*), which a patch
+	// branch's ?ref= may name (resolvePatchBranchRef). A pack's own fetch leaves them out.
+	remoteTracking bool
 }
 
 // fetchStepResult is what fetchStep found and did.
@@ -443,7 +446,7 @@ func (s *Store) fetchStep(b budget, repo string, addrs []Addr, mode fetchMode, n
 		tags, tagsErr = s.tagSnapshot(mirror)
 	}
 	// A fetch whose moved tags go back runs with gc off (fetchMirror says why), forced or not.
-	r.fetchErr = s.fetchMirror(b, addrs[0], !restore)
+	r.fetchErr = s.fetchMirror(b, addrs[0], !restore, mode.remoteTracking)
 	if r.fetchErr != nil {
 		s.recordFetchFailure(repo, r.fetchErr)
 		return r

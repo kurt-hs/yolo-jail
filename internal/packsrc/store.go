@@ -497,7 +497,7 @@ func (s *Store) Sync(a Addr) (string, error) {
 	mirror := s.mirrorPath(a.Repo)
 	b, cancel := s.newBudget()
 	defer cancel()
-	ferr := s.fetchMirror(b, a, true)
+	ferr := s.fetchMirror(b, a, true, false)
 	if ferr != nil && !mirrorExists(mirror) {
 		return "", ferr
 	}
@@ -534,7 +534,11 @@ func mirrorExists(mirror string) bool {
 // fetch could otherwise drop the objects a tag it is about to restore still needs. Every
 // store run carries gc.auto=0 now as well (storeGitConfig); the mirror's gc is autoGC's,
 // after the tags are back.
-func (s *Store) fetchMirror(b budget, a Addr, explicit bool) error {
+//
+// remoteTracking fetches the remote's remote-tracking refs (refs/remotes/*) as well, under their own names, for
+// a patch branch (fetchMode.remoteTracking). --prune prunes only what a refspec given names, so a fetch without
+// them leaves them alone.
+func (s *Store) fetchMirror(b budget, a Addr, explicit, remoteTracking bool) error {
 	mirror := s.mirrorPath(a.Repo)
 	if err := os.MkdirAll(filepath.Dir(mirror), 0o755); err != nil {
 		return err
@@ -558,6 +562,9 @@ func (s *Store) fetchMirror(b budget, a Addr, explicit bool) error {
 	}
 	args = append(args, "fetch", "--prune", "origin",
 		"+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*")
+	if remoteTracking {
+		args = append(args, "+refs/remotes/*:refs/remotes/*")
+	}
 	if _, err := s.runIn(b, mirror, args...); err != nil {
 		return fmt.Errorf("fetching %s: %w", a.Repo, err)
 	}
