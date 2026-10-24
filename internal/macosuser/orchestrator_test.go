@@ -694,7 +694,7 @@ func TestMacosUnshareRunsStrip(t *testing.T) {
 	if rc := MacosUnshare(d, "/Users/Shared/yolo/proj"); rc != 0 {
 		t.Errorf("rc = %d", rc)
 	}
-	if !strings.Contains(strings.Join(rec, "\n"), "bash:set -euo pipefail\nws='/Users/Shared/yolo/proj'") {
+	if !strings.Contains(strings.Join(rec, "\n"), "bash:"+WorkspaceACLStripScript("/Users/Shared/yolo/proj")) {
 		t.Errorf("strip script not run: %v", rec)
 	}
 }
