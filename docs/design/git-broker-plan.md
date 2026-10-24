@@ -620,6 +620,13 @@ expensive with every change to `internal/ghbroker`; land it first.
     `ssh` never ran.
   - `TestSSHHostStartingWithDashRefused`: a scope entry `ssh://-oProxyCommand=x/r` (written
     directly to the scope file) is refused before any `ssh` runs.
+  - `TestOnlySSHAndHTTPSTransports`: scope entries `file:///srv/r.git`, `ext::sh -c x`,
+    `fd::3` and a scp-style path starting with `-` (each written directly to the scope file,
+    which accepts any transport string) are refused before any upstream starts; the broker
+    allows only `ssh://`, `https://` and scp-style `user@host:path`.
+  - The receive-pack path forwards the bytes `gitproto.Reader.Tee` buffered, only after the
+    commands are judged, and never re-encodes them with `WriteCommands` (which drops shallow
+    lines and re-orders capabilities).
   - `TestSSHEnvBuiltFromNothing`: with `GH_TOKEN=leak` and `AWS_SECRET_ACCESS_KEY=leak` in the
     broker's environment, the fake `ssh` records an env containing `SSH_AUTH_SOCK` (set by the
     test) and neither leak.
