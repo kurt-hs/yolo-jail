@@ -10,8 +10,13 @@ import (
 
 // MaxCommandBytes caps the bytes of a push's command list and push options together. The
 // broker holds the whole section in memory before judging it, and the jail chooses its size;
-// 32 MiB is a push of a few hundred thousand refs.
+// 32 MiB is a push of a few hundred thousand refs. Each packet is charged its wire bytes plus
+// packetOverhead, so a flood of empty packets cannot hold far more memory than the cap.
 const MaxCommandBytes = 32 << 20
+
+// packetOverhead is the charge per packet beyond its wire bytes: roughly the string header and
+// slice growth it costs to hold one push option or command.
+const packetOverhead = 32
 
 // Command is one ref update of a push: "<old-id> <new-id> <ref>".
 type Command struct {
@@ -88,9 +93,10 @@ func ReadCommands(r *Reader) ([]Command, Caps, []string, error) {
 			}
 			return p, err
 		}
-		total += len(p.Data) + 4
+		total += len(p.Data) + 4 + packetOverhead
 		if total > MaxCommandBytes {
-			return p, fmt.Errorf("%w: the push's %s exceeds %d bytes", ErrProtocol, what, MaxCommandBytes)
+			return p, fmt.Errorf("%w: the push's %s exceeds %d bytes (each packet charged %d bytes over its length)",
+				ErrProtocol, what, MaxCommandBytes, packetOverhead)
 		}
 		if p.Kind == Delim || p.Kind == ResponseEnd {
 			return p, fmt.Errorf("%w: a %s packet inside the push's %s", ErrProtocol, p.Kind, what)
@@ -167,7 +173,8 @@ func parseCommand(text string) (Command, error) {
 // WriteCommands writes a push's command list, as ReadCommands reads one: caps on the first
 // command, a flush, then, when caps carry push-options, the options and a flush. No commands
 // is a lone flush. Lines are written without a trailing newline, as git's send-pack writes
-// them; the reader accepts either.
+// them; the reader accepts either. It is not how a judged push is forwarded (it drops shallow
+// lines and re-orders the capabilities); forward the bytes Reader.Tee recorded.
 func WriteCommands(w *Writer, cmds []Command, caps Caps, opts []string) error {
 	for i, c := range cmds {
 		line := c.Old + " " + c.New + " " + c.Ref

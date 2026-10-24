@@ -20,10 +20,15 @@ const (
 // "agent=git/2.55.0" is one key.
 type Caps map[string]bool
 
-// ParseCaps reads a space-separated capability list.
+// ParseCaps reads a capability list as git does: it ends at the first NUL (git reads it as a
+// C string) and splits on space, tab, newline and carriage return only (git's isspace, which
+// unlike strings.Fields excludes \v and \f).
 func ParseCaps(s string) Caps {
+	s, _, _ = strings.Cut(s, "\x00")
 	c := Caps{}
-	for _, tok := range strings.Fields(s) {
+	for _, tok := range strings.FieldsFunc(s, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	}) {
 		c[tok] = true
 	}
 	return c

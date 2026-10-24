@@ -311,7 +311,7 @@ func TestSidebandChunksAtTheNegotiatedSize(t *testing.T) {
 		if err != nil {
 			break
 		}
-		if len(p.Data) > 999 || p.Data[0] != 1 {
+		if (len(p.Data) != 996 && total+len(p.Data)-1 != 2000) || p.Data[0] != 1 {
 			t.Fatalf("a side-band packet of %d bytes on band %d", len(p.Data), p.Data[0])
 		}
 		total += len(p.Data) - 1
@@ -342,5 +342,88 @@ func TestErrorsAreProtocolErrors(t *testing.T) {
 	_, err := NewReader(strings.NewReader("0003")).Read()
 	if !errors.Is(err, ErrProtocol) {
 		t.Fatalf("%v is not ErrProtocol", err)
+	}
+}
+
+// git cuts the capability list at the first NUL after the ref (receive-pack reads it as a C
+// string) and splits it on " \t\n\r" only; anything else would make the broker disagree with
+// the upstream about whether a push-options section follows.
+func TestCapabilityListParsedAsGitDoes(t *testing.T) {
+	one := strings.Repeat("1", 40)
+	read := func(first string, withOptions bool) (Caps, []string, string) {
+		t.Helper()
+		var in bytes.Buffer
+		w := NewWriter(&in)
+		_ = w.Line(zero + " " + one + " refs/heads/x\x00" + first + "\n")
+		_ = w.Flush()
+		if withOptions {
+			_ = w.Line("ci.skip\n")
+			_ = w.Flush()
+		}
+		in.WriteString("PACK")
+		_, caps, opts, err := ReadCommands(NewReader(&in))
+		if err != nil {
+			t.Fatalf("%q: %v", first, err)
+		}
+		return caps, opts, in.String()
+	}
+	caps, opts, rest := read("report-status push-options\x00junk", true)
+	if !caps.Has("push-options") || caps.Has("junk") || len(opts) != 1 || rest != "PACK" {
+		t.Fatalf("after a second NUL: caps %v opts %v rest %q", caps, opts, rest)
+	}
+	caps, opts, rest = read("report-status\tpush-options", true)
+	if !caps.Has("push-options") || len(opts) != 1 || rest != "PACK" {
+		t.Fatalf("tab-separated: caps %v opts %v rest %q", caps, opts, rest)
+	}
+	caps, opts, rest = read("report-status\vpush-options", false)
+	if caps.Has("push-options") || caps.Has("report-status") || len(opts) != 0 || rest != "PACK" {
+		t.Fatalf("a vertical tab is not git's separator: caps %v opts %v rest %q", caps, opts, rest)
+	}
+}
+
+func TestReadCommandsSHA256Line(t *testing.T) {
+	var in bytes.Buffer
+	w := NewWriter(&in)
+	z, a := strings.Repeat("0", 64), strings.Repeat("a", 64)
+	_ = w.Line(z + " " + a + " refs/heads/x\x00report-status object-format=sha256\n")
+	_ = w.Line(a + " " + z + " refs/heads/y\n")
+	_ = w.Flush()
+	cmds, caps, _, err := ReadCommands(NewReader(&in))
+	if err != nil || len(cmds) != 2 || !cmds[0].Create() || !cmds[1].Delete() || cmds[0].New != a {
+		t.Fatalf("%+v %v", cmds, err)
+	}
+	if v, _ := caps.Value("object-format"); v != "sha256" {
+		t.Fatalf("caps %v", caps)
+	}
+}
+
+func TestReadCommandsRefusesOverMaxCommandBytes(t *testing.T) {
+	one := strings.Repeat("1", 40)
+	line := zero + " " + one + " refs/heads/" + strings.Repeat("r", MaxData-100) + "\n"
+	var in bytes.Buffer
+	w := NewWriter(&in)
+	for range MaxCommandBytes/len(line) + 2 {
+		_ = w.Line(line)
+	}
+	_ = w.Flush()
+	_, _, _, err := ReadCommands(NewReader(&in))
+	if !errors.Is(err, ErrProtocol) || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("an over-cap command list: %v", err)
+	}
+}
+
+// An empty push option is a 4-byte packet but costs a string header and slice growth to hold,
+// so each packet is charged more than its wire bytes: a flood of them is refused well before
+// MaxCommandBytes/4 of them are held.
+func TestEmptyPushOptionFloodRefused(t *testing.T) {
+	var in bytes.Buffer
+	w := NewWriter(&in)
+	_ = w.Line(zero + " " + strings.Repeat("1", 40) + " refs/heads/x\x00push-options\n")
+	_ = w.Flush()
+	in.WriteString(strings.Repeat("0004", MaxCommandBytes/16))
+	_ = w.Flush()
+	_, _, opts, err := ReadCommands(NewReader(&in))
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("a flood of %d empty options was accepted (%d held)", MaxCommandBytes/16, len(opts))
 	}
 }

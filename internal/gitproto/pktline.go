@@ -74,8 +74,11 @@ type Reader struct {
 // NewReader returns a Reader over r.
 func NewReader(r io.Reader) *Reader { return &Reader{r: r} }
 
-// Tee copies the raw bytes of every packet read from now on to w, so a caller that judged a
-// section can forward it upstream byte for byte. A nil w stops the copy.
+// Tee copies the raw bytes of every packet to w as each is read, from now on; a nil w stops
+// the copy. It copies before anything has been judged, so a caller that must not forward an
+// unjudged section tees into a buffer and writes that buffer upstream only once the section
+// has been accepted. Forwarding a judged push uses these bytes, never WriteCommands, which
+// drops shallow lines and re-orders the capabilities.
 func (r *Reader) Tee(w io.Writer) { r.tee = w }
 
 // Read returns the next packet. A clean end of input before any header byte is io.EOF; any
