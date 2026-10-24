@@ -105,6 +105,7 @@ var subcommandUsage = map[string]subUsage{
 	"update":      {text: updateUsage, valueFlags: []string{"--from"}},
 	"approve":     {text: approveUsage, valueFlags: []string{"--for", "--revoke"}},
 	"gh":          {text: ghUsage},
+	"git-remote":  {text: gitRemoteUsage},
 	"host-run":    {text: hostRunUsage, valueFlags: []string{"-C", "--name", "--timeout"}},
 	"audit":       {text: auditUsage, valueFlags: []string{"--since", "--service", "--jail", "--workspace", "--set", "--grant"}},
 	"loopholes":   {text: loopholesUsage, valueFlags: []string{"--format"}},

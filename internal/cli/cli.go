@@ -84,6 +84,10 @@ func Main(argv []string) int {
 	if len(args) >= 1 && args[0] == "gh" {
 		return runGH(args[1:])
 	}
+	// `yolo git-remote` likewise (gitremote.go): its stdout is git's remote-helper protocol.
+	if len(args) >= 1 && args[0] == "git-remote" {
+		return runGitRemote(args[1:])
+	}
 	// `yolo host-run` too (HX-D15): its host form's terminal shows another program's output.
 	if len(args) >= 1 && args[0] == "host-run" {
 		return hostRunMain(args[1:])

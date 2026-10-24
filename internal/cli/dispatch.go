@@ -58,9 +58,11 @@ var registry = map[string]func(args []string) int{
 	"update":                runUpdate,
 	// The github-broker's two ends: `gh` is the jail side (Main routes it before the
 	// front door, gh.go), `audit` the host's record of every brokered call (audit.go).
-	"gh":      runGHVerb,
-	"audit":   runAudit,
-	"approve": runApprove,
+	"gh": runGHVerb,
+	// The git-broker's jail side: git's remote helper (gitremote.go), routed early too.
+	"git-remote": runGitRemoteVerb,
+	"audit":      runAudit,
+	"approve":    runApprove,
 	// A host command a human runs, delivered to the jail (hostrun.go); Main routes it early too.
 	"host-run": runHostRunVerb,
 }
