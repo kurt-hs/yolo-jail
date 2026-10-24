@@ -884,7 +884,7 @@
         # default-features = false, so the build below selects rustls for all
         # of them; the rest of mise's default features are kept.  Linux is
         # untouched: its native-tls is OpenSSL, which reads the CA bundle.
-        noncontainerFloorSubstitutes = pkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
+        noncontainerFloorSubstitutes = pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
           # ⚠ The cargo* names, not buildFeatures/buildNoDefaultFeatures:
           # buildRustPackage turns those into the cargo* variables once, when
           # the package is defined, so overrideAttrs on them changes nothing
