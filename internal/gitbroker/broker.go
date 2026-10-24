@@ -312,6 +312,14 @@ func (b *Broker) uploadPack(u *upstream, in io.Reader, out io.Writer, ev *broker
 		ev.Outcome, ev.Reason = "failed", fmt.Sprintf("the upstream answered nothing (ssh exited %d)", code)
 		return upstreamFailed(code, u.tail.String(), dest, say)
 	}
+	if code != 0 {
+		// git has had protocol bytes, so it ignores this exit code and judges the stream
+		// itself; the audit and the user still hear that the upstream failed.
+		ev.Outcome, ev.Reason = "failed", fmt.Sprintf("the upstream exited %d after answering", code)
+		say(fmt.Sprintf("the remote's ssh exited %d partway through (its message, if any, is above), so this fetch may "+
+			"be incomplete; run it again, or try `ssh -T %s` on the host.", code, dest))
+		return code
+	}
 	ev.Outcome = "ran"
 	return code
 }

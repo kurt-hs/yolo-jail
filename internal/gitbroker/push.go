@@ -75,6 +75,12 @@ func (b *Broker) receivePack(u *upstream, in io.Reader, out io.Writer, ev *broke
 		_, _ = io.Copy(io.Discard, u.stdout)
 		u.wait()
 		ev.Set, ev.Outcome, ev.Reason = "refused", "refused", "unreadable push commands"
+		if bytes.HasPrefix(firstPacket(teed.Bytes()), []byte("push-cert")) {
+			ev.Reason = "signed push"
+			say("a signed push (git push --signed) cannot be judged ref by ref, so nothing was forwarded and the " +
+				"remote is unchanged. Run the same push without --signed.")
+			return brokercore.ExitUsage
+		}
 		reason := err.Error()
 		if errors.Is(err, gitproto.ErrProtocol) {
 			reason = strings.TrimPrefix(reason, gitproto.ErrProtocol.Error()+": ")
@@ -98,7 +104,9 @@ func (b *Broker) receivePack(u *upstream, in io.Reader, out io.Writer, ev *broke
 			ev.Set = "read" // a push of nothing writes nothing
 		}
 		go func() {
-			if _, err := u.stdin.Write(teed.Bytes()); err == nil {
+			// A push of nothing ends at its flush: git sends nothing after it, and anything
+			// that follows was never judged, so it never goes up.
+			if _, err := u.stdin.Write(teed.Bytes()); err == nil && len(cmds) > 0 {
 				_, _ = io.Copy(u.stdin, in)
 			}
 			_ = u.stdin.Close()
@@ -218,4 +226,19 @@ func writeRefusal(out io.Writer, caps gitproto.Caps, cmds []gitproto.Command, re
 		return err
 	}
 	return w.Flush()
+}
+
+// firstPacket is the first data packet of a buffered command list after any shallow lines,
+// or nil.
+func firstPacket(teed []byte) []byte {
+	r := gitproto.NewReader(bytes.NewReader(teed))
+	for {
+		p, err := r.Read()
+		if err != nil || p.Kind != gitproto.Data {
+			return nil
+		}
+		if !bytes.HasPrefix(p.Data, []byte("shallow ")) {
+			return p.Data
+		}
+	}
 }

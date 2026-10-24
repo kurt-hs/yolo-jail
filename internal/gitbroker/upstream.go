@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/gitproto"
 )
@@ -50,13 +52,11 @@ func transportOf(remote string) (string, error) {
 		if strings.EqualFold(scheme, "https") {
 			return transportHTTPS, nil
 		}
-		return transportSSH, nil
-	}
-	if _, err := gitproto.Identity(remote); err != nil {
+	} else if _, err := gitproto.Identity(remote); err != nil {
 		return "", err
 	}
-	if _, path, _ := strings.Cut(remote, ":"); strings.HasPrefix(path, "-") {
-		return "", errors.New("its path starts with \"-\", which git-upload-pack would read as an option")
+	if _, err := splitSSH(remote); err != nil {
+		return "", err
 	}
 	return transportSSH, nil
 }
@@ -90,35 +90,94 @@ func parseSSH(remote string) (sshTarget, error) {
 	if _, err := transportOf(remote); err != nil {
 		return sshTarget{}, err
 	}
+	return splitSSH(remote)
+}
+
+// splitSSH takes an SSH remote apart from its raw text, as git does: git never
+// percent-decodes an ssh URL, so neither does this. A URL whose user, host or path a URL
+// decoder would read differently from the text (a %-escape) is refused rather than guessed
+// at, and the user part, which reaches ssh's argv and an ssh config's %r, must be a plain
+// login name: [A-Za-z0-9._-], not starting with "-".
+func splitSSH(remote string) (sshTarget, error) {
 	var t sshTarget
-	if strings.Contains(remote, "://") {
+	var user, host string
+	if scheme, rest, ok := strings.Cut(remote, "://"); ok {
+		if !strings.EqualFold(scheme, "ssh") {
+			return t, fmt.Errorf("%s:// is not an SSH remote", scheme)
+		}
+		slash := strings.IndexByte(rest, '/')
+		if slash < 0 {
+			return t, errors.New("it names no path")
+		}
+		authority, rawPath := rest[:slash], rest[slash:]
+		hostPort := authority
+		if at := strings.LastIndexByte(authority, '@'); at >= 0 {
+			user, hostPort = authority[:at], authority[at+1:]
+			if user == "" {
+				return t, errors.New("its user part is empty")
+			}
+		}
 		u, err := url.Parse(remote)
 		if err != nil {
 			return t, err
 		}
-		if !strings.EqualFold(u.Scheme, "ssh") {
-			return t, fmt.Errorf("%s:// is not an SSH remote", u.Scheme)
+		decodedUser := ""
+		if u.User != nil {
+			decodedUser = u.User.Username()
+			if _, hasPassword := u.User.Password(); hasPassword {
+				decodedUser += ":"
+			}
 		}
-		t.dest = u.Hostname()
-		if u.User != nil && u.User.Username() != "" {
-			t.dest = u.User.Username() + "@" + t.dest
+		if decodedUser != user || u.Host != hostPort || u.Path != rawPath || u.RawQuery != "" || u.Fragment != "" {
+			return t, errors.New("it holds a %-escape, which git sends as written but a URL decoder would not; " +
+				"write the remote without one")
 		}
-		t.port = u.Port()
-		t.path = u.Path
+		host, t.port = u.Hostname(), u.Port()
+		t.path = rawPath
 		if strings.HasPrefix(t.path, "/~") {
 			t.path = t.path[1:]
 		}
 	} else {
 		colon := strings.IndexByte(remote, ':')
-		t.dest, t.path = remote[:colon], remote[colon+1:]
+		if colon < 0 {
+			return t, errors.New("it is not an SSH remote")
+		}
+		host, t.path = remote[:colon], remote[colon+1:]
+		if at := strings.LastIndexByte(host, '@'); at >= 0 {
+			user, host = host[:at], host[at+1:]
+			if user == "" {
+				return t, errors.New("its user part is empty")
+			}
+		}
+	}
+	if user != "" && !validSSHUser(user) {
+		return t, errors.New("its user part holds a character outside A-Z, a-z, 0-9, \".\", \"_\" and \"-\", or starts with \"-\"")
+	}
+	t.dest = host
+	if user != "" {
+		t.dest = user + "@" + host
 	}
 	switch {
-	case t.dest == "" || strings.HasPrefix(t.dest, "-"):
+	case host == "" || strings.HasPrefix(host, "-"):
 		return t, errors.New("its host is empty or starts with \"-\"")
 	case t.path == "" || strings.HasPrefix(t.path, "-"):
 		return t, errors.New("its path is empty or starts with \"-\"")
 	}
 	return t, nil
+}
+
+// validSSHUser says user is a plain login name: [A-Za-z0-9._-]+, not starting with "-".
+func validSSHUser(user string) bool {
+	if user == "" || user[0] == '-' {
+		return false
+	}
+	for i := 0; i < len(user); i++ {
+		c := user[i]
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // sshArgv is the argv after `ssh` for service against remote (ID-7): no forwarding of any
@@ -199,20 +258,31 @@ func lookPath(name, pathEnv string) (string, error) {
 
 // upstream is one running host ssh.
 type upstream struct {
-	cmd        *exec.Cmd
-	stdin      io.WriteCloser
-	stdout     *bufio.Reader
-	stderrDone chan struct{}
-	tail       *tailBuffer
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	stdout *bufio.Reader
+	tail   *tailBuffer
 }
+
+// waitDelay bounds how long a finished or cancelled upstream's output pipes are waited on
+// when something it started still holds them open.
+const waitDelay = 5 * time.Second
 
 // startUpstream runs the host program at path with argv and env, in dir. Its stderr is
 // passed to the jail's stderr as it arrives, and its tail kept for the broker's own message.
+//
+// It runs in a process group of its own, and when ctx ends (the jail went away, or the
+// daemon was told to stop) the whole group is killed, so nothing the program started, such
+// as a child holding its stderr, keeps the call alive.
 func startUpstream(ctx context.Context, path string, argv, env []string, dir string, stderr io.Writer) (*upstream, error) {
 	cmd := exec.CommandContext(ctx, path, argv...)
 	cmd.Env = env
 	cmd.Dir = dir
 	cmd.SysProcAttr = childProcAttr()
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = waitDelay
+	u := &upstream{cmd: cmd, tail: &tailBuffer{max: 4096}}
+	cmd.Stderr = io.MultiWriter(stderr, u.tail)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -221,26 +291,17 @@ func startUpstream(ctx context.Context, path string, argv, env []string, dir str
 	if err != nil {
 		return nil, err
 	}
-	errPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, err
-	}
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	u := &upstream{cmd: cmd, stdin: stdin, stdout: bufio.NewReaderSize(stdout, 64<<10),
-		stderrDone: make(chan struct{}), tail: &tailBuffer{max: 4096}}
-	go func() {
-		defer close(u.stderrDone)
-		_, _ = io.Copy(io.MultiWriter(stderr, u.tail), errPipe)
-	}()
+	u.stdin, u.stdout = stdin, bufio.NewReaderSize(stdout, 64<<10)
 	return u, nil
 }
 
-// wait returns the program's exit code once its stderr is drained. The caller has read its
-// stdout to the end, or stopped needing it.
+// wait returns the program's exit code once its stderr is drained (or waitDelay after it
+// exited, if something else still holds it). The caller has read its stdout to the end, or
+// stopped needing it.
 func (u *upstream) wait() int {
-	<-u.stderrDone
 	err := u.cmd.Wait()
 	if err == nil {
 		return 0
@@ -248,6 +309,11 @@ func (u *upstream) wait() int {
 	var ee *exec.ExitError
 	if errors.As(err, &ee) && ee.ExitCode() >= 0 {
 		return ee.ExitCode()
+	}
+	// The program exited but something it started held its stderr past waitDelay: its own
+	// exit code still stands.
+	if errors.Is(err, exec.ErrWaitDelay) && u.cmd.ProcessState != nil && u.cmd.ProcessState.ExitCode() >= 0 {
+		return u.cmd.ProcessState.ExitCode()
 	}
 	return 1
 }

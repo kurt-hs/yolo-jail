@@ -75,7 +75,15 @@ type fixture struct {
 // sshScript is the fake host ssh: it records its argv and env, then runs its last argument
 // (git's remote command) with sh from the directory holding o/r.git, as sshd would run it in
 // the login's home.
+//
+// A body of "tee" runs git's remote command the same way, recording every byte the broker
+// sent the upstream in record/stdin.
 func sshScript(record, srv, body string) string {
+	if body == "tee" {
+		body = `PATH="$(git --exec-path):$PATH"
+cd ` + srv + ` || exit 1
+tee ` + record + `/stdin | sh -c "$last"`
+	}
 	if body == "" {
 		body = `PATH="$(git --exec-path):$PATH"
 cd ` + srv + ` || exit 1
@@ -135,6 +143,19 @@ func writeExec(t *testing.T, path, body string) {
 // ssh's default of running git's remote command.
 func newFixture(t *testing.T, sshBody string, repos ...string) *fixture {
 	t.Helper()
+	return newFixtureOpts(t, fixtureOpts{sshBody: sshBody, repos: repos})
+}
+
+type fixtureOpts struct {
+	sshBody string
+	repos   []string
+	// sshInWorkspace puts the fake ssh inside the workspace, where an agent can rewrite it.
+	sshInWorkspace bool
+}
+
+func newFixtureOpts(t *testing.T, o fixtureOpts) *fixture {
+	t.Helper()
+	sshBody, repos := o.sshBody, o.repos
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git on PATH")
 	}
@@ -163,6 +184,9 @@ func newFixture(t *testing.T, sshBody string, repos ...string) *fixture {
 	mustGit(t, seed, "push", "-q", f.bare, "main")
 	mustGit(t, root, "clone", "-q", f.bare, f.ws)
 	mustGit(t, f.ws, "remote", "set-url", "origin", origin)
+	if o.sshInWorkspace {
+		f.bin = filepath.Join(f.ws, ".tools")
+	}
 
 	writeExec(t, filepath.Join(f.bin, "ssh"), sshScript(f.record, filepath.Join(root, "srv"), sshBody))
 	writeExec(t, filepath.Join(f.helperBin, "git-remote-yolo"),
@@ -337,7 +361,7 @@ func (f *fixture) localCommit() {
 }
 
 func TestPushRefusedNothingForwarded(t *testing.T) {
-	f := newFixture(t, "")
+	f := newFixture(t, "tee")
 	before := mustGit(t, f.bare, "rev-parse", "main")
 	f.localCommit()
 	out, err := f.git("push", "origin", "HEAD:main")
@@ -352,6 +376,10 @@ func TestPushRefusedNothingForwarded(t *testing.T) {
 	}
 	if after := mustGit(t, f.bare, "rev-parse", "main"); after != before {
 		t.Fatalf("bare main moved %s -> %s", before, after)
+	}
+	// The upstream was sent an empty command list and nothing else.
+	if sent, err := os.ReadFile(filepath.Join(f.record, "stdin")); err != nil || string(sent) != "0000" {
+		t.Fatalf("the upstream received %q (%v), want exactly \"0000\"", sent, err)
 	}
 	var push *brokeraudit.Event
 	evs := auditEvents(t)
