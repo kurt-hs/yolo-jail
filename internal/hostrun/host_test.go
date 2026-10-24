@@ -436,7 +436,7 @@ func TestHostRunRefusesAWritablePathEntry(t *testing.T) {
 			os.MkdirAll(filepath.Join(h, "bin"), 0o755)
 			return filepath.Join(h, "bin")
 		},
-		"state": func(f *hostFixture) string { return filepath.Join(paths.GlobalStorage(), "bin") },
+		"state": func(f *hostFixture) string { return paths.GlobalCache() },
 	}
 	for name, entry := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -463,6 +463,73 @@ func TestHostRunRefusesAWritablePathEntry(t *testing.T) {
 				t.Fatalf("audit %+v", ev)
 			}
 		})
+	}
+}
+
+// TestHostRunAllowsAndSkipsYolosHostWrapperDir is the host launch-wrapper dir yolo itself asks
+// users to PREPEND to PATH (paths.WrapDir, host-agent-environment.md §5.1). It sits under yolo's
+// state directory but no jail mounts it (hostpath.ManagedDirs), so the PATH check lets it stand,
+// and the program is resolved past it the way a host launch resolves its target (HE-D5): `say`
+// runs the real tool, not the wrapper in front of it.
+func TestHostRunAllowsAndSkipsYolosHostWrapperDir(t *testing.T) {
+	f := newHostFixture(t)
+	wrap := paths.WrapDir()
+	if err := os.MkdirAll(wrap, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeScript(t, filepath.Join(wrap, "say"), `echo WRAPPED`)
+	f.setPath(wrap, f.bin, coreutilsDir(t))
+	if rc := f.run(t, "say", "hi"); rc != 0 {
+		t.Fatalf("rc %d\n%s", rc, f.termErr(t))
+	}
+	if got := f.termOut(t); got != "hi\n" {
+		t.Fatalf("the terminal saw %q", got)
+	}
+	var res Result
+	readJSON(t, filepath.Join(f.onlyRun(t), ResultFile), &res)
+	if res.Program != filepath.Join(f.bin, "say") {
+		t.Fatalf("program %q, want the real say past the wrapper dir", res.Program)
+	}
+}
+
+// TestHostRunStillRefusesTheRestOfTheStateDir: allowing the wrapper dir allows nothing else under
+// yolo's state directory, which a jail can write through its mounts (the shared cache, here).
+func TestHostRunStillRefusesTheRestOfTheStateDir(t *testing.T) {
+	f := newHostFixture(t)
+	cache := paths.GlobalCache()
+	if err := os.MkdirAll(cache, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.setPath(paths.WrapDir(), f.bin, coreutilsDir(t), cache)
+	if rc := f.run(t, "say", "hi"); rc != 64 {
+		t.Fatalf("rc %d\n%s", rc, f.termErr(t))
+	}
+	want := "inside yolo's state directory " + paths.GlobalStorage() + ", which a jail can write"
+	if !strings.Contains(f.termErr(t), want) {
+		t.Fatalf("want %q in\n%s", want, f.termErr(t))
+	}
+}
+
+// TestPathEntryProblemJudgesAManagedLinkByWhereItLeads: a name inside the managed dir that is a
+// link to elsewhere in the state directory is refused for where it resolves.
+func TestPathEntryProblemJudgesAManagedLinkByWhereItLeads(t *testing.T) {
+	state := evalTemp(t)
+	managed := filepath.Join(state, "bin")
+	cache := filepath.Join(state, "cache")
+	for _, d := range []string{managed, cache} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(managed, "wrap")
+	if err := os.Symlink(cache, link); err != nil {
+		t.Fatal(err)
+	}
+	if why := pathEntryProblem(link, []string{state}, []string{managed}); !strings.Contains(why, "state directory") {
+		t.Fatalf("a managed link into the cache was allowed: %q", why)
+	}
+	if why := pathEntryProblem(filepath.Join(managed, "block"), []string{state}, []string{managed}); why != "" {
+		t.Fatalf("a managed dir was refused: %q", why)
 	}
 }
 

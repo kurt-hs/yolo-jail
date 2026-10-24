@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostpath"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
@@ -51,6 +52,10 @@ type HostEnv struct {
 	Heartbeat time.Duration
 	// StateDirs are yolo's own state directories, refused as PATH entries; nil is the real ones.
 	StateDirs []string
+	// ManagedDirs are yolo's host-managed directories inside StateDirs, which no jail mounts:
+	// allowed as PATH entries and skipped when the program is resolved (HX-D32, HE-D5); nil is
+	// the real ones (hostpath.ManagedDirs).
+	ManagedDirs []string
 }
 
 func (e HostEnv) withDefaults() HostEnv {
@@ -83,6 +88,9 @@ func (e HostEnv) withDefaults() HostEnv {
 	}
 	if e.StateDirs == nil {
 		e.StateDirs = defaultStateDirs()
+	}
+	if e.ManagedDirs == nil {
+		e.ManagedDirs = hostpath.ManagedDirs()
 	}
 	return e
 }
@@ -167,14 +175,14 @@ func (h *hostRun) run() int {
 	pathVal, _ := lookupEnv(h.environ, "PATH")
 	entries := filepath.SplitList(pathVal)
 	for _, e := range entries {
-		if why := pathEntryProblem(e, h.env.StateDirs); why != "" {
+		if why := pathEntryProblem(e, h.env.StateDirs, h.env.ManagedDirs); why != "" {
 			return h.deliverRefusal(9,
 				fmt.Sprintf("your PATH holds %s, %s, which a jail can write", shquote.QuoteDisplay(e), why),
 				"Ask the human to remove that entry from PATH in the shell they ran the line in (or to open a fresh terminal without it), then to run the same line again.",
 				"Remove it from this shell's PATH and run the line again.")
 		}
 	}
-	program, lookErr := lookProgram(h.line.Argv[0], entries, h.startDir)
+	program, lookErr := lookProgram(h.line.Argv[0], pathVal, h.startDir, h.env.ManagedDirs)
 
 	// Step 10: the run directory.
 	started := h.env.Now()

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostpath"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -1223,6 +1224,11 @@ func TestAssembleNeverMountsTheEmbeddedPackCache(t *testing.T) {
 // The host's model menus (paths.HostModelMenusDir; docs/design/model-lists-and-pickers.md MM-D27)
 // are held to the same rule: a menu carries the prompt text a host program runs its model with, so
 // a jail that could write one would choose an unconfined agent's instructions.
+//
+// yolo's host-managed directories (hostpath.ManagedDirs: the generated bin tree, which holds the
+// host launch wrappers and blocker shims) are held to it too: `yolo host-run` trusts a PATH entry
+// there as one no jail can write (host-run-mailbox.md HX-D32), and that trust is only as good as
+// this assertion.
 func TestAssembleNeverMountsTheHostFloor(t *testing.T) {
 	check := func(t *testing.T, home string, argv []string) {
 		t.Helper()
@@ -1230,6 +1236,12 @@ func TestAssembleNeverMountsTheHostFloor(t *testing.T) {
 			paths.HostFloorDirUnder(home):      "the host agent floor",
 			paths.HostModelMenusDirUnder(home): "the host's model menus",
 			paths.HostTreesDirUnder(home):      "the host's patched-extension trees",
+		}
+		for _, d := range hostpath.ManagedDirs() {
+			if !strings.HasPrefix(d, home+string(filepath.Separator)) {
+				t.Fatalf("setup: managed dir %s is not under the launch's HOME %s", d, home)
+			}
+			guarded[d] = "yolo's host-managed directory (host-run trusts it)"
 		}
 		under := func(p, dir string) bool { return p == dir || strings.HasPrefix(p, dir+string(filepath.Separator)) }
 		sawState := false

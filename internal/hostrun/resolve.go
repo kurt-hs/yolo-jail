@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/hostwrap"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -39,9 +40,29 @@ func within(p, dir string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
+// withinAny reports whether p is inside one of dirs, as spelled or with its symlinks resolved.
+func withinAny(p string, dirs []string) bool {
+	for _, d := range dirs {
+		if within(p, d) {
+			return true
+		}
+		if rd, err := filepath.EvalSymlinks(d); err == nil && within(p, rd) {
+			return true
+		}
+	}
+	return false
+}
+
 // pathEntryProblem says why a PATH entry may supply jail-written code, or "" when it cannot.
 // Every entry is checked, searched or not, because the child inherits PATH (HX-D32).
-func pathEntryProblem(entry string, stateDirs []string) string {
+//
+// managedDirs are yolo's host-managed directories (hostpath.ManagedDirs: the generated bin tree,
+// which holds the host launch wrappers a user is asked to PREPEND to PATH). They sit inside the
+// state directory, but no backend mounts them into a jail, so an entry in one is not refused for
+// being in the state directory. Each spelling of the entry is judged on its own: a managed name
+// that resolves elsewhere in the state directory is still refused, and the .yolo check applies
+// to every entry regardless.
+func pathEntryProblem(entry string, stateDirs, managedDirs []string) string {
 	if entry == "" {
 		return "an empty entry, which means the current directory"
 	}
@@ -56,11 +77,11 @@ func pathEntryProblem(entry string, stateDirs []string) string {
 		if h := yoloAncestor(p); h != "" {
 			return "inside " + h + ", which holds a .yolo"
 		}
+		if withinAny(p, managedDirs) {
+			continue
+		}
 		for _, s := range stateDirs {
-			if within(p, s) || (func() bool {
-				rs, err := filepath.EvalSymlinks(s)
-				return err == nil && within(p, rs)
-			})() {
+			if withinAny(p, []string{s}) {
 				return "inside yolo's state directory " + s
 			}
 		}
@@ -68,9 +89,11 @@ func pathEntryProblem(entry string, stateDirs []string) string {
 	return ""
 }
 
-// lookProgram resolves argv0 the way exec does, over the given PATH entries, or relative to
-// startDir when it holds a slash.
-func lookProgram(argv0 string, entries []string, startDir string) (string, error) {
+// lookProgram resolves argv0 over pathVal the way a host launch resolves its target
+// (hostwrap.LookPathSkipping, HE-D5): skipping yolo's host-managed directories, so a name a host
+// launch wrapper shadows resolves to the real program rather than the wrapper. One holding a
+// slash is read relative to startDir.
+func lookProgram(argv0, pathVal, startDir string, managedDirs []string) (string, error) {
 	if strings.Contains(argv0, "/") {
 		p := argv0
 		if !filepath.IsAbs(p) {
@@ -81,16 +104,11 @@ func lookProgram(argv0 string, entries []string, startDir string) (string, error
 		}
 		return p, nil
 	}
-	for _, e := range entries {
-		if e == "" || !filepath.IsAbs(e) {
-			continue
-		}
-		p := filepath.Join(e, argv0)
-		if executable(p) == nil {
-			return p, nil
-		}
+	p, err := hostwrap.LookPathSkipping(pathVal, argv0, managedDirs)
+	if err != nil {
+		return "", &fs.PathError{Op: "find", Path: argv0, Err: errNotOnPath}
 	}
-	return "", &fs.PathError{Op: "find", Path: argv0, Err: errNotOnPath}
+	return p, nil
 }
 
 var errNotOnPath = errors.New("not found on PATH")
