@@ -319,6 +319,40 @@ exits 0 for a conflict too), and it is under the replay's existing git 2.40 floo
 refused by name ([PF-D58](#PF-D58)) and never falls back to a replay. How a patch branch is said in
 every line is [PF-D90](#PF-D90).
 
+#### A patch branch in a local checkout
+
+A relative or `git+file://` locator names a **local checkout** *(a term coined here)*: a repository on this
+machine, usually a clone with a remote. Its branch exists in two copies, the checkout's local branch
+(`refs/heads/<ref>`) and the remote's. The rule ([PF-D99](#PF-D99)): **build from whichever copy of the
+branch is newest, and always say which copy and how it relates to the other.**
+
+- **yolo fetches the checkout's remote into a mirror of its own**: `origin`, else the first remote by
+  name. It never runs `git fetch` in your repository, and never writes to it. The fetch is the one a patch
+  branch at a URL takes. It never prompts, it leaves your ssh command alone, and the store's timeout bounds
+  it. It runs at every fresh launch and at `yolo pack update`, outside the hourly upstream check's
+  throttle, at most once per repository and ref per command. A branch that moved is a new build key, and
+  the normal check and build run.
+- **Which copy builds:**
+
+  | Local branch vs. the remote tip | Builds | Says |
+  | :--- | :--- | :--- |
+  | No local branch | the remote tip | `no local branch` |
+  | Equal | it | `equal to origin` |
+  | Behind | the remote tip | `local branch is stale, N behind origin` |
+  | Ahead | the local branch | `N unpushed` |
+  | Diverged | the local branch, with a warning | both commits and counts, and `git -C <repo> push --force-with-lease <remote> <ref>` (if you rebased) |
+  | The fetch failed | the local branch, else the remote tip yolo last fetched, else the checkout's `refs/remotes/<remote>/<ref>`, else a tag | `not verified`, the last good fetch's age, and `git -C <repo> fetch <remote> <ref>` to run by hand |
+
+  A failed fetch never refuses. A ref that no copy holds is refused, naming the fetch that delivers it.
+- **One line, from the check record**, in the launch, `yolo pack update`, `yolo pack series check` and
+  `yolo pack status`: the ref, the copy that answered, its commit, the relation, and the freshness. For
+  example, `mine  origin 4cd0bc6b  local branch is stale, 1 behind origin  fetched just now`. A diverged
+  branch or a remote that could not be fetched is a warning. Because every act reads the same record, a
+  verdict and a build never disagree about the copy they judged.
+
+A patch branch at a URL has one copy and is unchanged. A `git+file://` repository with no remote is
+built from its local branch.
+
 ## 4. Detection
 
 ### 4.1 Where the check runs
@@ -1418,6 +1452,7 @@ adjust later."*), and remain his to overrule.
 | <a id="PF-D93"></a>PF-D93 | Implementation decision under [PD-NF1](../design/program-delivery.md#PD-NF1): an **apply error**, in the walk of the check's list or in the build's own replay, git older than 2.40 included, stops the act while a good build serves, and the record's `ApplyErr` stops every act after it — a jail launch inside the check throttle, the next-launch read after a background advance, the pre-write read of a patched extension by the apply `yolo pack update` runs (and, for a fork at the host, [PF-D94](#PF-D94)) — until the next check replays the list (`packsrc.CheckRecord.CurrentReplayFailure`, current only while the check is not due). A local replay that reclassifies the error as a conflict still wins, as the recorded patch failure. Supersedes [PF-D45](#PF-D45)'s serving |
 | <a id="PF-D94"></a>PF-D94 | Implementation decision under [PD-NF1](../design/program-delivery.md#PD-NF1): at the host floor an apply error that a local replay cannot classify stays the floor's **unresolved authority**, which refuses and which no hatch waives, as before; a jail launch stops on the same error as [PF-D93](#PF-D93) does, which the hatches waive. The stricter host rule is the floor's own, kept rather than loosened here |
 | <a id="PF-D95"></a>PF-D95 | Implementation decision under [PD-NF1](../design/program-delivery.md#PD-NF1): **an upstream yolo cannot reach is not a failure**. The check's failed fetch runs the good build with the line *"could not check its upstream (…) — still running …"*, at a jail launch and at `yolo host -- <bin>` alike: the fetch failure is no longer the host floor's operation error, which refused. `yolo capture`, an explicit check, still fails on it. Kept as they were, and not failures of a newer candidate: a check that could not run at all (its record lock or record, before any candidate is known), which serves with its warning; a replay whose check authority another check replaced (another process owns the candidate now); a busy lock `yolo capture` does not wait for, and the background advance's skip of a held lock; a check-record write that failed; and the background advance's retained workspace, which leaves the candidate pending for the next background advance |
+| <a id="PF-D99"></a>PF-D99 | Ruled 2026-10-24 by the maintainer (*"ok, all that sounds right. build it"*) on this rule: **a patch branch in a local checkout builds from whichever copy of the branch is newest, and always says which copy and how it relates to the other** ([a patch branch in a local checkout](#a-patch-branch-in-a-local-checkout)). yolo fetches the checkout's remote (`origin`, else the first by name) into its own mirror, never into the user's repository, at every fresh launch and `yolo pack update`, outside the hourly throttle. No local branch or a stale one builds the remote tip; equal, ahead or diverged builds the local branch, and diverged warns with the force-with-lease push. A failed fetch never refuses and says `not verified`. One line from the check record is printed by the launch, `yolo pack update`, `yolo pack series check` and `yolo pack status`. A patch branch at a URL is unchanged. Implementation decision: a remote fetch counts once per command when it ran within a minute on the check's clock in the same process; the checkout's own fetch, a local read, runs at every check |
 | <a id="PF-D98"></a>PF-D98 | Implementation decision, 2026-10-18: relative patch-branch check inputs and resolved records include the host-established declaring-repository identity, so distinct clones cannot share a throttle, branch resolution or build. The selected pack-tree record carries the identity and maps the declaring directory under the jail workspace; the guest does not recalculate a host identity from its own filesystem. When the declaring directory is outside the workspace, the record carries identity only—no host path becomes guest-reachable. Default `series check` hydrates that identity only for a relative branch still declared by the explicitly named pack and only when its mapped path resolves to that exact directory; the named manifest remains authoritative and another clone receives no mapping. It reports only a matching recorded outcome or good build, with no `WalkSeries`, fetch or mirror mutation; no historical verdict is reported as unavailable with a host update/launch remedy. `--online` is the only recomputation and uses a disposable scratch mirror. Regression evidence: the default caller test uses distinct host/guest repository identities and paths, deletes mirrors and installs a git-denying wrapper, then rejects an unrelated clone elsewhere in the workspace; the entrypoint mapping test also verifies an unmapped record carries no host directory path |
 
 | <a id="PF-D96"></a>PF-D96 | Implementation decision under [PD-NF1](../design/program-delivery.md#PD-NF1): Apple Container's **check-only** background advance is not a failed build: by design it builds nothing, and leaves the candidate pending for the next fresh launch, whose own advance builds it or, beside a running jail, stops ([PF-D92](#PF-D92)) |

@@ -51,17 +51,32 @@ type SeriesPatchBranch struct {
 	// Commit is the commit the branch resolved to at the last check that fetched it, and ResolvedRef the fully
 	// qualified ref that answered (PatchBranchResolved.Ref).
 	Commit, ResolvedRef string
+	// Resolved is the whole resolution the check record keeps (copy, relation, freshness), nil before any.
+	Resolved *PatchBranchResolved
 }
 
-// Label is the patch branch as a line names it, the build's provenance in one line: "<ref>@<short commit>", and
-// the fully qualified ref that answered in parentheses when it is not the local branch refs/heads/<ref> — a
-// remote-tracking branch or a tag (resolvePatchBranchRef).
+// Label is the patch branch as a line names it: "<ref>@<short commit>", and in parentheses the copy that
+// answered when it is not the local branch — a checkout's remote ("origin", patchbranchcheckout.go), or the
+// fully qualified remote-tracking branch or tag that answered (resolvePatchBranchRef).
 func (c *SeriesPatchBranch) Label() string {
 	label := c.Ref + "@" + shortCommit(c.Commit)
-	if c.ResolvedRef != "" && c.ResolvedRef != "refs/heads/"+c.Ref && c.ResolvedRef != c.Ref {
+	switch {
+	case c.Resolved != nil && c.Resolved.Copy == "local":
+	case c.Resolved != nil && c.Resolved.Copy != "":
+		label += " (" + c.Resolved.Copy + ")"
+	case c.ResolvedRef != "" && c.ResolvedRef != "refs/heads/"+c.Ref && c.ResolvedRef != c.Ref:
 		label += " (" + c.ResolvedRef + ")"
 	}
 	return label
+}
+
+// mirrorRepo is the repository whose mirror holds Commit: the checkout's remote when its copy answered
+// (PatchBranchResolved.MirrorRepo), else the patch branch's own.
+func (c *SeriesPatchBranch) mirrorRepo() string {
+	if c.Resolved != nil && c.Resolved.MirrorRepo != "" {
+		return c.Resolved.MirrorRepo
+	}
+	return c.Repo
 }
 
 // PatchBranchResolved is what a check resolved a patch branch to, kept in the check record.
@@ -81,6 +96,31 @@ type PatchBranchResolved struct {
 	Base   string `json:"base"`
 	// At is when it was resolved, in unix seconds.
 	At int64 `json:"at,omitempty"`
+
+	// A LOCAL CHECKOUT'S COPIES (patchbranchcopy.go), empty for a patch branch at a URL. Checkout is the
+	// checkout's path and Branch the ?ref= it names. Copy is the copy that answered: "local" (the checkout's
+	// refs/heads/<ref>), the checkout's remote by name (yolo's own mirror of it, or the checkout's
+	// refs/remotes/<remote>/<ref> when yolo has never fetched it), or the fully qualified ref of a fallback
+	// (another remote's tracking branch, a tag). MirrorRepo is the repository whose mirror holds Commit when it
+	// is not the patch branch's own.
+	Checkout   string `json:"checkout,omitempty"`
+	Branch     string `json:"branch,omitempty"`
+	Copy       string `json:"copy,omitempty"`
+	MirrorRepo string `json:"mirror_repo,omitempty"`
+	// Remote is the checkout's remote compared against (origin, else the first by name) and RemoteURL its
+	// address; Local the checkout's local branch and RemoteTip the remote's, "" where there is none; Ahead and
+	// Behind count the local branch's commits the remote tip lacks and the remote tip's the local lacks.
+	Remote    string `json:"remote,omitempty"`
+	RemoteURL string `json:"remote_url,omitempty"`
+	Local     string `json:"local,omitempty"`
+	RemoteTip string `json:"remote_tip,omitempty"`
+	Ahead     int    `json:"ahead,omitempty"`
+	Behind    int    `json:"behind,omitempty"`
+	// Verified is true when this resolution's fetch of the remote succeeded; FetchErr is why it did not, and
+	// FetchedAt the last successful fetch of the remote, in unix seconds on the check's clock (0: never).
+	Verified  bool   `json:"verified,omitempty"`
+	FetchErr  string `json:"fetch_error,omitempty"`
+	FetchedAt int64  `json:"fetched_at,omitempty"`
 }
 
 // PatchBranchDigest is a patch branch's SERIES DIGEST: the sha256, in hex, of the JSON array ["patch_branch", commit].
@@ -134,6 +174,8 @@ func PatchBranchSeriesWithIdentity(source, dir, identity, upstream string, rec *
 	}
 	s := UnresolvedPatchBranchSeries(source, dir)
 	s.PatchBranch.ResolvedRef = rec.PatchBranch.Ref
+	resolved := *rec.PatchBranch
+	s.PatchBranch.Resolved = &resolved
 	s.PatchBranch.Commit, s.Base, s.Digest = rec.PatchBranch.Commit, rec.PatchBranch.Base, PatchBranchDigest(rec.PatchBranch.Commit)
 	return s, nil
 }
@@ -207,9 +249,12 @@ func (s *Store) lockMirrors(repos []string, waiting func(string)) (func(), error
 
 // mirrorsOf is the repositories a check or a walk holds the mirror locks of: the upstream's, and the
 // patch branch's when there is one.
-func mirrorsOf(upstream string, patchBranch *Addr) []string {
+func mirrorsOf(upstream string, patchBranch *Addr, p *checkoutPlan) []string {
 	if patchBranch == nil {
 		return []string{upstream}
+	}
+	if p != nil && p.url != "" {
+		return []string{upstream, patchBranch.Repo, p.url}
 	}
 	return []string{upstream, patchBranch.Repo}
 }
@@ -220,17 +265,39 @@ func mirrorsOf(upstream string, patchBranch *Addr) []string {
 // tip, asked in a scratch repository that borrows both mirrors' objects. It returns the resolution,
 // or the check's problem, and a fetch that failed (one line), which the caller records as the
 // check's failed fetch: the copy the patch branch's mirror holds answers meanwhile.
-func (s *Store) resolvePatchBranch(b budget, c Addr, upstream, tip string, now time.Time) (*PatchBranchResolved, string, string) {
-	step := s.fetchStep(b, c.Repo, []Addr{c}, fetchMode{always: true, keepTags: true, remoteTracking: true}, now, BranchRefreshInterval)
+//
+// A LOCAL CHECKOUT (p non-nil, patchbranchcopy.go) has its remote fetched into yolo's own mirror of it too, in
+// the same budget, and the copy that answers is the two-copy rule's (pickCopy). That fetch failing is never the
+// check's failed fetch nor its problem: the resolution records it (Verified, FetchErr) and builds the best copy.
+func (s *Store) resolvePatchBranch(b budget, c Addr, p *checkoutPlan, upstream, tip string, now time.Time, once fetchOnce) (*PatchBranchResolved, string, string) {
 	fetchErr := ""
-	if step.fetchErr != nil {
-		fetchErr = "fetching the patch branch " + c.Raw + ": " + oneLine(step.fetchErr)
+	if err := s.patchBranchFetch(b, c, fetchMode{keepTags: true, remoteTracking: true}, now, once, false); err != nil {
+		fetchErr = "fetching the patch branch " + c.Raw + ": " + oneLine(err)
 	}
 	mirror := s.mirrorPath(c.Repo)
 	if !mirrorExists(mirror) {
 		return nil, "this machine has never fetched the patch branch " + c.Raw + ", and " + fetchFailed(fetchErr), fetchErr
 	}
-	kind, ref, commit, err := s.resolvePatchBranchRef(mirror, c.Ref)
+	resolved := &PatchBranchResolved{Source: c.Raw, Upstream: upstream}
+	var kind refKind
+	var ref, commit string
+	var err error
+	if p == nil {
+		kind, ref, commit, err = s.resolvePatchBranchRef(mirror, c.Ref)
+	} else {
+		resolved.Checkout, resolved.Branch = p.dir, c.Ref
+		if p.remote != "" {
+			ra := p.remoteAddr(c.Ref)
+			resolved.Remote, resolved.RemoteURL = p.remote, p.url
+			if ferr := s.patchBranchFetch(b, ra, fetchMode{keepTags: true}, now, once, true); ferr != nil {
+				resolved.FetchErr = oneLine(ferr)
+			} else {
+				resolved.Verified = true
+			}
+			resolved.FetchedAt = s.stampAt(ra)
+		}
+		kind, ref, commit, err = s.pickCopy(b, c, p, mirror, resolved)
+	}
 	switch {
 	case err != nil:
 		return nil, "could not read the patch branch " + c.Raw + ": " + oneLine(err) + localRetry, fetchErr
@@ -244,7 +311,11 @@ func (s *Store) resolvePatchBranch(b budget, c Addr, upstream, tip string, now t
 		return nil, "the patch branch's ?ref=" + c.Ref + " names neither a branch, a tag nor a full commit of " + c.Repo +
 			" — name the branch", ""
 	}
-	sc, err := newScratchOf(s.git(), b, s.mirrorPath(upstream), mirror)
+	held := mirror
+	if resolved.MirrorRepo != "" {
+		held = s.mirrorPath(resolved.MirrorRepo)
+	}
+	sc, err := newScratchOf(s.git(), b, s.mirrorPath(upstream), held)
 	if err != nil {
 		return nil, "could not ask for the patch branch's merge base: " + oneLine(err) + localRetry, fetchErr
 	}
@@ -258,7 +329,8 @@ func (s *Store) resolvePatchBranch(b budget, c Addr, upstream, tip string, now t
 	case err != nil:
 		return nil, "could not ask for the patch branch's merge base with " + upstream + ": " + oneLine(err) + localRetry, fetchErr
 	}
-	return &PatchBranchResolved{Source: c.Raw, Upstream: upstream, Ref: ref, Commit: commit, Base: strings.TrimSpace(out)}, "", fetchErr
+	resolved.Ref, resolved.Commit, resolved.Base = ref, commit, strings.TrimSpace(out)
+	return resolved, "", fetchErr
 }
 
 // resolvePatchBranchRef is THE ONE RESOLUTION of a patch branch's ?ref=, read in the patch branch's mirror with no

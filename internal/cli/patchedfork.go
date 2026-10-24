@@ -121,6 +121,7 @@ func checkPatchedFork(pr richtext.Printer, errw io.Writer, store *packsrc.Store,
 		return 1
 	}
 	original := res.Record
+	printPatchBranchProvenance(pr, f.Label(), original.PatchBranch)
 	if f.PatchBranch != "" {
 		// The patch branch as this check resolved it: its commit is what the walk merges and keys.
 		if s, err := packsrc.PatchBranchSeriesWithIdentity(f.PatchBranch, f.PatchBranchDir,
@@ -621,6 +622,11 @@ func patchedForkStatusLines(f packload.Fork) []string {
 	if c := series.PatchBranch; c != nil {
 		lines = append(lines, "[dim]"+richtext.Escape(fmt.Sprintf("  patch branch: %s of %s, merge base with upstream %s",
 			c.Label(), c.Repo, shortSHA(series.Base)))+"[/dim]")
+		if line, loud := patchBranchProvenance("  "+f.Label(), c.Resolved); loud {
+			lines = append(lines, "[yellow]  ⚠ "+richtext.Escape(strings.TrimSpace(line))+"[/yellow]")
+		} else if line != "" {
+			lines = append(lines, "[dim]"+richtext.Escape(line)+"[/dim]")
+		}
 	}
 	if series.Len() > 0 {
 		lines = append(lines, fmt.Sprintf("[dim]  series: %d %s in %s (series %s), base %s[/dim]", series.Len(),

@@ -7,6 +7,7 @@ package packsrc
 // created; and a ref nothing answers refused with the fetch that delivers it.
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -66,9 +67,10 @@ func (f *fetchedOnlyFixture) resolvedRef(t *testing.T, w PatchedWant) *PatchBran
 
 func TestAFetchedOnlyPatchBranchResolvesToTheRemoteTrackingRefWithNoLocalBranchMade(t *testing.T) {
 	f := newFetchedOnlyFixture(t)
+	// ORIGIN REACHABLE: yolo's own mirror of origin answers (patchbranchcopy.go).
 	r := f.resolvedRef(t, f.want("patch/x"))
-	if r.Commit != f.tip || r.Ref != "refs/remotes/origin/patch/x" {
-		t.Fatalf("resolved = commit %s ref %q, want origin's %s from refs/remotes/origin/patch/x", r.Commit, r.Ref, f.tip)
+	if r.Commit != f.tip || r.Copy != "origin" || r.MirrorRepo != f.published {
+		t.Fatalf("resolved = commit %s copy %q mirror %q, want origin's %s from yolo's mirror of it", r.Commit, r.Copy, r.MirrorRepo, f.tip)
 	}
 	if hasRef(t, f.machine, "refs/heads/patch/x") {
 		t.Error("resolving the patch branch created a local branch in the declaring repository")
@@ -77,8 +79,21 @@ func TestAFetchedOnlyPatchBranchResolvesToTheRemoteTrackingRefWithNoLocalBranchM
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := s.PatchBranch.Label(), "patch/x@"+shortCommit(f.tip)+" (refs/remotes/origin/patch/x)"; got != want {
-		t.Errorf("the patch branch's label = %q, want %q: one line naming the ref that answered and its commit", got, want)
+	if got, want := s.PatchBranch.Label(), "patch/x@"+shortCommit(f.tip)+" (origin)"; got != want {
+		t.Errorf("the patch branch's label = %q, want %q: one line naming the copy that answered and its commit", got, want)
+	}
+
+	// ORIGIN UNREACHABLE AND NEVER FETCHED BY YOLO: the checkout's own refs/remotes/origin/patch/x answers.
+	g := newFetchedOnlyFixture(t)
+	if err := os.Rename(g.published, g.published+".gone"); err != nil {
+		t.Fatal(err)
+	}
+	r = g.resolvedRef(t, g.want("patch/x"))
+	if r.Commit != g.tip || r.Ref != "refs/remotes/origin/patch/x" || r.Copy != "origin" || r.MirrorRepo != "" || r.Verified {
+		t.Fatalf("resolved = %+v, want %s from the checkout's refs/remotes/origin/patch/x, not verified", r, g.tip)
+	}
+	if hasRef(t, g.machine, "refs/heads/patch/x") {
+		t.Error("resolving the patch branch created a local branch in the declaring repository")
 	}
 }
 
@@ -111,12 +126,12 @@ func TestOriginAnswersFirstAndOtherwiseTheRemoteFirstByName(t *testing.T) {
 		gitIn(t, f.machine, "remote", "add", name, other)
 		gitIn(t, f.machine, "fetch", "-q", name)
 	}
-	if r := f.resolvedRef(t, f.want("patch/x")); r.Commit != f.tip || r.Ref != "refs/remotes/origin/patch/x" {
-		t.Fatalf("with origin present resolved = %s %q, want origin's", r.Commit, r.Ref)
+	if r := f.resolvedRef(t, f.want("patch/x")); r.Commit != f.tip || r.Copy != "origin" || r.Remote != "origin" {
+		t.Fatalf("with origin present resolved = %s %q, want origin's", r.Commit, r.Copy)
 	}
 	gitIn(t, f.machine, "remote", "remove", "origin")
-	if r := f.resolvedRef(t, f.want("patch/x")); r.Commit != otherTip || r.Ref != "refs/remotes/alpha/patch/x" {
-		t.Fatalf("with no origin resolved = %s %q, want alpha's (first by name)", r.Commit, r.Ref)
+	if r := f.resolvedRef(t, f.want("patch/x")); r.Commit != otherTip || r.Copy != "alpha" || r.Remote != "alpha" {
+		t.Fatalf("with no origin resolved = %s %q, want alpha's (first by name)", r.Commit, r.Copy)
 	}
 }
 

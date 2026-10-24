@@ -312,6 +312,7 @@ func recordedPatchBranchCheck(ctx context.Context, pr richtext.Printer, errw io.
 	pr.Printf("[dim]%s[/dim]", richtext.Escape(f.Label()+": uses the recorded patch-branch check"))
 	pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: patch branch %s, merge base with upstream %s",
 		f.Label(), series.PatchBranch.Label(), shortSHA(series.Base))))
+	printPatchBranchProvenance(pr, f.Label(), rec.PatchBranch)
 
 	var target packsrc.ListEntry
 	atBase := false
@@ -474,6 +475,7 @@ func seriesCheckOne(ctx context.Context, pr richtext.Printer, errw io.Writer, f 
 		series = resolved
 		pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: patch branch %s, merge base with upstream %s",
 			f.Label(), series.PatchBranch.Label(), shortSHA(series.Base))))
+		printPatchBranchProvenance(pr, f.Label(), res.Record.PatchBranch)
 	}
 	repo, subdir := mustRepo(f.Source), subdirOf(f.Source)
 	var list []packsrc.ListEntry

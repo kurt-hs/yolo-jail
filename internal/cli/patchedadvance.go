@@ -1320,8 +1320,8 @@ func (a *advance) run() advanceResult {
 			// the hour; it fetches itself, as a failed build with nothing to serve is retried by every
 			// fresh launch (§6.2). With a good build to run the throttle stands (§4.2).
 			res = a.packs.CheckPatched(f.CheckWant(a.series), packsrc.CheckOptions{Force: a.o.force,
-				RetryFailedFetch: !a.serves(),
-				FreshAfter:       a.freshCheckBoundary(), InputIdentity: a.o.freshIdentity, StartGuard: a.o.admitGuard, Now: patchedNow,
+				RetryFailedFetch: !a.serves(), RefreshPatchBranch: true,
+				FreshAfter: a.freshCheckBoundary(), InputIdentity: a.o.freshIdentity, StartGuard: a.o.admitGuard, Now: patchedNow,
 				Begin: func() (func(string), func()) {
 					if a.o.slot != nil {
 						// IN A JAIL LAUNCH'S POOL THE CHECK IS ITS LINE'S "checking N" (buildpool.go), and a
@@ -1391,6 +1391,14 @@ func (a *advance) run() advanceResult {
 			}
 		}
 		a.rec = res.Record
+		if res.Ran || res.PatchBranchRefreshed {
+			// A LOCAL CHECKOUT'S PATCH BRANCH says which copy answered and how fresh it is (§3.5).
+			if line, loud := patchBranchProvenance(f.Label(), a.rec.PatchBranch); loud {
+				a.warn("%s", line)
+			} else if line != "" {
+				a.dim("%s", line)
+			}
+		}
 		if a.patchBranchResolved() {
 			// A MOVED OR NEWLY RESOLVED PATCH BRANCH is an edit of what is applied, as an edited series is.
 			edited = good != nil && good.Recipe != a.recipe

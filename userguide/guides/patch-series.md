@@ -115,7 +115,8 @@ If you keep your changes on a branch that you merge the upstream into, name that
 
 - **The branch must contain upstream history.** Start it from an upstream commit and merge the
   upstream into it. Never rebase it.
-- **yolo checks the branch when it checks the upstream**, at most hourly. When you push to the
+- **yolo checks a branch at a URL when it checks the upstream**, at most hourly. A branch in a clone
+  on this machine is checked at every launch (see below). When you push to the
   branch, the next check rebuilds. `yolo pack update` checks now.
 - **When the branch does not merge**, the launch stops and names the conflicting files. It also
   prints the `git merge` commands that fix the branch.
@@ -125,6 +126,26 @@ If you keep your changes on a branch that you merge the upstream into, name that
 - **A `files` extension takes `patch_branch` the same way.** One contribution names `patches` or
   `patch_branch`, never both.
 - **`yolo pack status`** shows the patch branch's commit and how many releases it is behind.
+
+### A branch in a clone on this machine
+
+When the patch branch is in a clone on this machine (a relative path or `git+file://`), the branch
+has two copies: your clone's local branch and its remote's. yolo builds from whichever is newest and
+tells you which one it used:
+
+- **At every launch, yolo fetches the clone's remote** (`origin`, or the first remote by name) into its
+  own copy. It never runs `git fetch` in your clone and never changes it. A push from another machine is
+  built at your next launch.
+- **No local branch, or a local branch behind the remote**: the remote's branch builds, and yolo says the
+  local branch is stale.
+- **Local commits you have not pushed**: your local branch builds, and yolo counts the unpushed commits.
+- **Your branch and the remote's have diverged**: your local branch builds, with a warning that names both
+  commits. If you rebased, push with `git -C <repo> push --force-with-lease origin <branch>`.
+- **The fetch fails** (offline, no credentials): yolo still builds, from your local branch if there is one.
+  It says the branch is not verified, when it last fetched, and the `git fetch` to run yourself.
+
+The launch, `yolo pack update`, `yolo pack series check` and `yolo pack status` all print the same line,
+for example `mine  origin 4cd0bc6b  local branch is stale, 1 behind origin  fetched just now`.
 
 ## Build a pi extension as it is
 

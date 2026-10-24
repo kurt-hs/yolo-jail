@@ -260,8 +260,8 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 	mirrors, locks := []string{mirror}, []string{repo}
 	patchBranchMirror := ""
 	if series.PatchBranch != nil {
-		patchBranchMirror = s.mirrorPath(series.PatchBranch.Repo)
-		mirrors, locks = append(mirrors, patchBranchMirror), append(locks, series.PatchBranch.Repo)
+		patchBranchMirror = s.mirrorPath(series.PatchBranch.mirrorRepo())
+		mirrors, locks = append(mirrors, patchBranchMirror), append(locks, series.PatchBranch.mirrorRepo())
 	}
 	unlock, err := s.lockMirrors(locks, opts.Waiting)
 	if err != nil {
