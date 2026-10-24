@@ -27,7 +27,7 @@ func TestCurrentGateRequiredForApprovalAndConsumption(t *testing.T) {
 	if _, err := s.Decide(q.ID, "pending", Decision{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.Consume(q.Jail, q.Start, q.Set, q.Digest, nil); err == nil || ok {
+	if _, ok, err := s.Consume(q.Workspace, q.Jail, q.Set, q.Digest, nil); err == nil || ok {
 		t.Fatal("consumed without gate")
 	}
 }
@@ -90,7 +90,7 @@ func TestCurrentScopeAndPolicyFailClosedWithoutSpending(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, ok, e := s.Consume(q.Jail, q.Start, q.Set, q.Digest, gate); ok || e == nil {
+			if _, ok, e := s.Consume(q.Workspace, q.Jail, q.Set, q.Digest, gate); ok || e == nil {
 				t.Fatal(ok, e)
 			}
 			_, grants, e := s.List()
@@ -112,7 +112,7 @@ func TestActualScopeWriterSerializesWithConsumeGate(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	result := make(chan error, 1)
 	go func() {
-		_, ok, e := s.Consume(q.Jail, q.Start, q.Set, q.Digest, func(r Request) (Policy, error) { close(entered); <-release; return gate(r) })
+		_, ok, e := s.Consume(q.Workspace, q.Jail, q.Set, q.Digest, func(r Request) (Policy, error) { close(entered); <-release; return gate(r) })
 		if !ok && e == nil {
 			e = errors.New("unchanged use refused")
 		}
@@ -135,7 +135,7 @@ func TestActualScopeWriterSerializesWithConsumeGate(t *testing.T) {
 	if e := <-written; e != nil {
 		t.Fatal(e)
 	}
-	if _, ok, e := s.Consume(q.Jail, q.Start, q.Set, q.Digest, gate); ok || e == nil {
+	if _, ok, e := s.Consume(q.Workspace, q.Jail, q.Set, q.Digest, gate); ok || e == nil {
 		t.Fatal(ok, e)
 	}
 	_, gs, e := s.List()
@@ -159,7 +159,7 @@ func TestPolicyNarrowingWhileConsumerWaits(t *testing.T) {
 	err := brokerlock.WithTransaction(s.Dir, func() error {
 		go func() {
 			close(started)
-			_, ok, e := s.Consume(q.Jail, q.Start, q.Set, q.Digest, func(r Request) (Policy, error) {
+			_, ok, e := s.Consume(q.Workspace, q.Jail, q.Set, q.Digest, func(r Request) (Policy, error) {
 				_, e := gate(r)
 				if e != nil {
 					return Policy{}, e
@@ -205,7 +205,7 @@ func TestEndSerializesWithConsumption(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	consumed := make(chan error, 1)
 	go func() {
-		_, ok, e := s.Consume(q.Jail, q.Start, q.Set, q.Digest, func(r Request) (Policy, error) { close(entered); <-release; return unchangedPolicy(r) })
+		_, ok, e := s.Consume(q.Workspace, q.Jail, q.Set, q.Digest, func(r Request) (Policy, error) { close(entered); <-release; return unchangedPolicy(r) })
 		if !ok && e == nil {
 			e = errors.New("use refused")
 		}
@@ -214,11 +214,7 @@ func TestEndSerializesWithConsumption(t *testing.T) {
 	<-entered
 	ended := make(chan error, 1)
 	go func() {
-		gs, e := s.End(q.Jail, q.Start)
-		if e == nil && len(gs) != 1 {
-			e = errors.New("wrong ended grants")
-		}
-		ended <- e
+		ended <- s.End(q.Jail, q.Start)
 	}()
 	select {
 	case e := <-ended:
@@ -232,7 +228,8 @@ func TestEndSerializesWithConsumption(t *testing.T) {
 	if e := <-ended; e != nil {
 		t.Fatal(e)
 	}
-	if _, ok, e := s.Consume(q.Jail, q.Start, q.Set, q.Digest, unchangedPolicy); ok || e != nil {
+	// The lifetime's end ends no grant (BB-D99).
+	if _, ok, e := s.Consume(q.Workspace, q.Jail, q.Set, q.Digest, unchangedPolicy); !ok || e != nil {
 		t.Fatal(ok, e)
 	}
 }

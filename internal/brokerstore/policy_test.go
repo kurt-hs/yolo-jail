@@ -24,11 +24,11 @@ func TestAllowOnceNarrowsToPolicyCeiling(t *testing.T) {
 			if g.Expires.Sub(*now) != min(15*time.Minute, ceiling) || g.Uses != 1 {
 				t.Fatal(g)
 			}
-			if _, ok, _ := s.Consume(input.Jail, input.Start, input.Set, "wrong digest", s.Revalidate); ok {
+			if _, ok, _ := s.Consume(input.Workspace, input.Jail, input.Set, "wrong digest", s.Revalidate); ok {
 				t.Fatal("once covered another command")
 			}
 			*now = g.Expires
-			if _, ok, _ := s.Consume(input.Jail, input.Start, input.Set, r.Digest, s.Revalidate); ok {
+			if _, ok, _ := s.Consume(input.Workspace, input.Jail, input.Set, r.Digest, s.Revalidate); ok {
 				t.Fatal("consumed at expiry")
 			}
 		})
@@ -88,7 +88,7 @@ func TestRevokeAllEndsEveryHolderGrant(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, jail := range []string{"one", "two"} {
-		if _, ok, err := s.Consume(jail, input.Start, input.Set, "any", s.Revalidate); err != nil || ok {
+		if _, ok, err := s.Consume(input.Workspace, jail, input.Set, "any", s.Revalidate); err != nil || ok {
 			t.Fatal(ok, err)
 		}
 	}

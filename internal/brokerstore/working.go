@@ -146,8 +146,8 @@ func sortWorking(ws []WorkingEntry) {
 	})
 }
 
-// RevokeIn is Revoke within one workspace. id "all" with a workspace ends that workspace's
-// live grants (those whose request it filed) and its working set; with no workspace it ends
+// RevokeIn is Revoke within one workspace. id "all" with a workspace ends the live grants that
+// workspace holds (Grant.Workspace) and its working set; with no workspace it ends
 // every live grant and leaves every working set (BB-D86: `--revoke all` is grants, and
 // `--revoke all --workspace <path>` is that workspace's grants and working set). A `g-` or
 // `w-` id ends that one record, and takes no workspace. It returns how many live records it
@@ -162,16 +162,12 @@ func (s *Store) RevokeIn(id, workspace string) (int, error) {
 	}
 	err := s.transaction(func(r *records, now time.Time) error {
 		found := id == "all"
-		filedIn := map[string]string{}
-		for _, q := range r.requests {
-			filedIn[q.ID] = q.Workspace
-		}
 		for i := range r.grants {
 			g := &r.grants[i]
 			if id != "all" && g.ID != id {
 				continue
 			}
-			if workspace != "" && filepath.Clean(filedIn[g.Request]) != workspace {
+			if workspace != "" && !sameWorkspace(g.Workspace, workspace) {
 				continue
 			}
 			found = true

@@ -44,7 +44,7 @@ func TestApproveOperatorPaths(t *testing.T) {
 	if rc := approveMain(context.Background(), []string{"--revoke", gs[0].ID}, false, s, &out, &errs); rc != 0 {
 		t.Fatal(errs.String())
 	}
-	if _, ok, _ := s.Consume("j", "s", "read-write", r.Digest, s.Revalidate); ok {
+	if _, ok, _ := s.Consume(r.Workspace, "j", "read-write", r.Digest, s.Revalidate); ok {
 		t.Fatal("revoked grant consumed")
 	}
 	for _, args := range [][]string{{r.ID, "--deny", "--for", "1m"}, {"--for", "1m"}, {"--revoke", "all", r.ID}, {"--for", "0s", r.ID}, {"--nonsense"}} {
@@ -53,6 +53,40 @@ func TestApproveOperatorPaths(t *testing.T) {
 		}
 	}
 }
+
+// A grant is shown by its holder, the workspace (boundary-broker.md BB-D99): the allow line, the
+// listing and --json name it, and --json keeps the filing jail and the jail that used it.
+func TestApproveShowsAGrantsWorkspace(t *testing.T) {
+	s := &brokerstore.Store{Dir: t.TempDir(), Revalidate: func(q brokerstore.Request) (brokerstore.Policy, error) { return q.Policy, nil }}
+	r, err := s.File(brokerstore.Request{Jail: "j", Start: "s", Workspace: "/code/app", Argv: []string{"pr", "merge", "1"}, Repo: "o/r", StdinDigest: "stdin", Set: "read-write", Policy: brokerstore.Policy{Window: 15 * time.Minute, MaxWindow: time.Hour, Uses: 25}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out, errs bytes.Buffer
+	if rc := approveMain(context.Background(), []string{r.ID, "--for", "15m"}, false, s, &out, &errs); rc != 0 ||
+		!strings.Contains(out.String(), "every jail of /code/app") || !strings.Contains(out.String(), "across restarts") {
+		t.Fatalf("allow %d %q %q", rc, out.String(), errs.String())
+	}
+	if _, ok, err := s.Consume("/code/app", "another-jail", "read-write", r.Digest, s.Revalidate); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	out.Reset()
+	if rc := approveMain(context.Background(), nil, false, s, &out, &errs); rc != 0 || !strings.Contains(out.String(), "[/code/app]  set read-write") {
+		t.Fatalf("list %d %q", rc, out.String())
+	}
+	out.Reset()
+	if rc := approveMain(context.Background(), []string{"--json"}, false, s, &out, &errs); rc != 0 {
+		t.Fatal(errs.String())
+	}
+	var state brokerstore.StateView
+	if err := json.Unmarshal(out.Bytes(), &state); err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Grants) != 1 || state.Grants[0].Workspace != "/code/app" || state.Grants[0].Jail != "j" || state.Grants[0].UsedBy != "another-jail" {
+		t.Fatalf("--json grants %+v\n%s", state.Grants, out.String())
+	}
+}
+
 func TestApproveDenyAndJailRefusal(t *testing.T) {
 	s, r := approvalFixture(t)
 	var out, errs bytes.Buffer

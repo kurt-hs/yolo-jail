@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -74,12 +75,16 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 	sum := sha256.Sum256(req.Stdin)
 	q := brokerstore.Request{Jail: jail, Start: b.startID, Workspace: b.workspace, LaunchID: b.authority.scope.LaunchID, Argv: d.Argv, Repo: strings.Join(d.Repos, ","), Set: d.Set, Policy: p, StdinDigest: hex.EncodeToString(sum[:])}
 	q.Digest = brokerstore.CommandDigest(q)
+	// A grant is held by its workspace (boundary-broker.md BB-D99), so its parent request may
+	// come from a jail or broker lifetime that is gone: the gate checks that the parent is this
+	// workspace's and then authorizes the ACTUAL invocation against this live launch, which
+	// re-reads the current scope and policy, never the parent's holder.
 	gate := func(parent brokerstore.Request) (brokerstore.Policy, error) {
 		if err := ctx.Err(); err != nil {
 			return brokerstore.Policy{}, err
 		}
-		if _, err := b.authority.Revalidate(parent); err != nil {
-			return brokerstore.Policy{}, err
+		if filepath.Clean(parent.Workspace) != filepath.Clean(q.Workspace) {
+			return brokerstore.Policy{}, errors.New("the grant belongs to another workspace")
 		}
 		return b.authority.Revalidate(q) // actual argv/repo, not only a set grant's parent
 	}
@@ -88,7 +93,7 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 			return true, ExitTempFail, "caller disconnected or broker stopped; nothing ran; use `yolo gh status <request>` before retrying"
 		}
 		code := ExitTempFail
-		_, ok, err := b.store.ConsumeDispatchContext(ctx, jail, b.startID, d.Set, q.Digest, gate, func() error {
+		_, ok, err := b.store.ConsumeDispatchContext(ctx, b.workspace, jail, d.Set, q.Digest, gate, func() error {
 			code = b.dispatch(ctx, req, d, stdout, stderr, ev)
 			return nil
 		})

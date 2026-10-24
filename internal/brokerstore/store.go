@@ -55,7 +55,10 @@ const (
 	EndExpired = "expired" // its window ran out
 	EndUsed    = "used"    // its last use was spent
 	EndRevoked = "revoked" // a human revoked it
-	EndStopped = "stopped" // the broker lifetime holding it ended
+	// EndStopped is the reason an older yolo recorded when the broker lifetime holding a
+	// grant ended. A grant is now held by its workspace and no broker stopping ends it
+	// (boundary-broker.md BB-D99), so only a record written before that carries it.
+	EndStopped = "stopped"
 )
 
 // Policy is the resolved windowed set policy, supplied by the HOST broker after
@@ -86,10 +89,19 @@ type Request struct {
 // Expires is when the request stops waiting for an answer, whatever its state now.
 func (q Request) Expires() time.Time { return q.Filed.Add(PendingLife) }
 
+// Grant is one decision's authority. Its holder is Workspace: every jail of that workspace,
+// through broker restarts, jail restarts and relaunches, until it expires, is used up or is
+// revoked (boundary-broker.md BB-D99). Jail and Start are the jail and broker lifetime whose
+// request it answered, kept for the record; neither limits who may use it.
 type Grant struct {
 	ID, Request, Jail, Start, Set, Digest string // empty Digest means the whole requested set
-	Expires, Ended                        time.Time
-	Uses                                  int
+	// Workspace is the host workspace path of the request it answered: the grant's holder. A
+	// record written before the field existed takes its request's (adoptWorkspaces).
+	Workspace string `json:",omitempty"`
+	// UsedBy is the jail that spent its latest use, "" until one is spent.
+	UsedBy         string `json:",omitempty"`
+	Expires, Ended time.Time
+	Uses           int
 	// EndReason is one of the End* constants once Ended is set. A record written before
 	// the field existed has none; EndedBy infers one.
 	EndReason string `json:",omitempty"`
@@ -242,6 +254,7 @@ func (s *Store) transactionContext(ctx context.Context, fn func(*records, time.T
 		if err = readRecords(filepath.Join(s.Dir, "working"), &r.working); err != nil {
 			return err
 		}
+		adoptWorkspaces(&r)
 		now := s.now()
 		for i := range r.requests {
 			q := &r.requests[i]
@@ -301,6 +314,29 @@ func (s *Store) transactionContext(ctx context.Context, fn func(*records, time.T
 		return fn(&r, now)
 	})
 }
+
+// adoptWorkspaces gives each grant written before grants carried a workspace the workspace of
+// the request it answered, which the store keeps while it keeps the grant (BB-D99's
+// migration). It changes only the records read; the grant's next write stores it. A grant
+// whose request is gone keeps no workspace, and so no workspace holds it.
+func adoptWorkspaces(r *records) {
+	filedIn := map[string]string{}
+	for _, q := range r.requests {
+		filedIn[q.ID] = q.Workspace
+	}
+	for i := range r.grants {
+		if g := &r.grants[i]; g.Workspace == "" {
+			g.Workspace = filedIn[g.Request]
+		}
+	}
+}
+
+// sameWorkspace reports whether two recorded workspace paths name one workspace. An empty
+// path names none.
+func sameWorkspace(a, b string) bool {
+	return a != "" && b != "" && filepath.Clean(a) == filepath.Clean(b)
+}
+
 func validID(id, prefix string) bool {
 	if !strings.HasPrefix(id, prefix) || len(id) != 34 {
 		return false
@@ -538,7 +574,7 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 			if err != nil {
 				return err
 			}
-			out = Grant{ID: gid, Request: q.ID, Jail: q.Jail, Start: q.Start, Set: q.Set, Digest: command, Expires: now.Add(duration), Uses: uses, Issued: uses}
+			out = Grant{ID: gid, Request: q.ID, Jail: q.Jail, Start: q.Start, Workspace: filepath.Clean(q.Workspace), Set: q.Set, Digest: command, Expires: now.Add(duration), Uses: uses, Issued: uses}
 			if err = s.audit(context.Background(), kind, *q, out); err != nil {
 				return err
 			}
@@ -557,30 +593,40 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 // Consume revalidates current authority inside the same transaction immediately
 // before matching/spending. A missing gate fails closed for an otherwise live grant.
 // Spending is persisted before execution: a crash cannot refund a use.
-func (s *Store) Consume(jail, start, set, commandDigest string, revalidate Revalidate) (Grant, bool, error) {
-	return s.ConsumeContext(context.Background(), jail, start, set, commandDigest, revalidate)
+//
+// A grant matches by workspace, never by jail or broker lifetime (boundary-broker.md BB-D99):
+// any jail of the workspace whose request it answered may spend it, under any broker. jail is
+// the jail spending it, recorded on the grant (Grant.UsedBy) and so in the grant-used audit.
+func (s *Store) Consume(workspace, jail, set, commandDigest string, revalidate Revalidate) (Grant, bool, error) {
+	return s.ConsumeContext(context.Background(), workspace, jail, set, commandDigest, revalidate)
 }
-func (s *Store) ConsumeContext(ctx context.Context, jail, start, set, commandDigest string, revalidate Revalidate) (Grant, bool, error) {
-	return s.ConsumeDispatchContext(ctx, jail, start, set, commandDigest, revalidate, nil)
+func (s *Store) ConsumeContext(ctx context.Context, workspace, jail, set, commandDigest string, revalidate Revalidate) (Grant, bool, error) {
+	return s.ConsumeDispatchContext(ctx, workspace, jail, set, commandDigest, revalidate, nil)
 }
 
 // ConsumeDispatchContext durably spends and audits before invoking dispatch under
 // the same source lock. Dispatch must honor ctx and never nest a store/scope lock.
 // Scope removal/revocation that wins this lock prevents dispatch; one that follows
 // waits for bounded dispatch. A crash or dispatch failure never refunds the use.
-func (s *Store) ConsumeDispatchContext(ctx context.Context, jail, start, set, commandDigest string, revalidate Revalidate, dispatch func() error) (Grant, bool, error) {
+// The gate receives the grant's parent request, whose jail and broker lifetime may be gone,
+// so it must check the invocation being authorized against current host authority rather
+// than the parent's holder.
+func (s *Store) ConsumeDispatchContext(ctx context.Context, workspace, jail, set, commandDigest string, revalidate Revalidate, dispatch func() error) (Grant, bool, error) {
 	var out Grant
 	found := false
+	if workspace == "" || jail == "" {
+		return out, false, errors.New("spending a grant needs the host workspace and the jail spending it")
+	}
 	err := s.transactionContext(ctx, func(r *records, now time.Time) error {
 		for i := range r.grants {
 			g := &r.grants[i]
-			if g.Jail != jail || g.Start != start || g.Set != set || (!g.Ended.IsZero()) || g.Uses <= 0 || !now.Before(g.Expires) || (g.Digest != "" && g.Digest != commandDigest) {
+			if !sameWorkspace(g.Workspace, workspace) || g.Set != set || (!g.Ended.IsZero()) || g.Uses <= 0 || !now.Before(g.Expires) || (g.Digest != "" && g.Digest != commandDigest) {
 				continue
 			}
 			allowed := false
 			var parent Request
 			for _, q := range r.requests {
-				if q.ID == g.Request && q.State == "allowed" && q.Jail == jail && q.Start == start && q.Set == set {
+				if q.ID == g.Request && q.State == "allowed" && sameWorkspace(q.Workspace, workspace) && q.Set == set {
 					current, err := currentPolicy(q, revalidate)
 					if err != nil {
 						return err
@@ -599,6 +645,7 @@ func (s *Store) ConsumeDispatchContext(ctx context.Context, jail, start, set, co
 				continue
 			}
 			g.Uses--
+			g.UsedBy = jail
 			if g.Uses == 0 {
 				g.Ended = now
 				g.EndReason = EndUsed
@@ -648,23 +695,12 @@ func (s *Store) NoteHookFailure(id, failure, output string) error {
 	})
 }
 
-// End closes this broker lifetime, returning exactly the grants it durably ended
-// under this transaction, including partial progress on error. Audit those grants
-// even on error and report/retry incomplete teardown. Pending requests also end.
-func (s *Store) End(jail, start string) ([]Grant, error) {
-	var ended []Grant
-	err := s.transaction(func(r *records, now time.Time) error {
-		for i := range r.grants {
-			g := &r.grants[i]
-			if g.Jail == jail && g.Start == start && g.Ended.IsZero() {
-				g.Ended = now
-				g.EndReason = EndStopped
-				if err := s.write("grants", g.ID, g); err != nil {
-					return err
-				}
-				ended = append(ended, *g)
-			}
-		}
+// End closes this broker lifetime for jail: each request it filed that is still pending is
+// refused, since the call waiting on it is gone. It ends no grant: a grant is held by its
+// workspace and outlives every broker lifetime (boundary-broker.md BB-D99). Report and retry
+// an incomplete teardown.
+func (s *Store) End(jail, start string) error {
+	return s.transaction(func(r *records, now time.Time) error {
 		for i := range r.requests {
 			q := &r.requests[i]
 			if q.Jail == jail && q.Start == start && q.State == "pending" {
@@ -677,5 +713,4 @@ func (s *Store) End(jail, start string) ([]Grant, error) {
 		}
 		return nil
 	})
-	return ended, err
 }

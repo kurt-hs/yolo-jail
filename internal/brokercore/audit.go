@@ -19,9 +19,15 @@ func StoreAudit(log *brokeraudit.Log, service string) func(context.Context, stri
 				outcome = "allowed"
 			}
 		}
+		jail := q.Jail
 		if kind == "grant-used" {
 			outcome = "spent-before-dispatch"
+			// A grant is held by its workspace, so the jail spending it may not be the one that
+			// filed its request (boundary-broker.md BB-D99); the event names the one spending it.
+			if g.UsedBy != "" {
+				jail = g.UsedBy
+			}
 		}
-		return log.RequiredContext(ctx, brokeraudit.Event{Event: kind, Service: service, Jail: q.Jail, Workspace: q.Workspace, Argv: q.Argv, Repo: q.Repo, Set: q.Set, Request: q.ID, Grant: g.ID, Outcome: outcome})
+		return log.RequiredContext(ctx, brokeraudit.Event{Event: kind, Service: service, Jail: jail, Workspace: q.Workspace, Argv: q.Argv, Repo: q.Repo, Set: q.Set, Request: q.ID, Grant: g.ID, Outcome: outcome})
 	}
 }

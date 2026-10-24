@@ -587,61 +587,67 @@ func TestTheBrokerRunsAnEntrysRepositoryAndNamesTheEntryForAnother(t *testing.T)
 	}
 }
 
-func TestBrokerLifetimeBindsHostJailAndEndsItsGrants(t *testing.T) {
+// A BROKER STOPPING ENDS NO GRANT (boundary-broker.md BB-D99): its teardown refuses the
+// requests its jails left pending, since the call waiting on each is gone, and leaves every
+// grant live, so a restart or relaunch of the workspace keeps what the human granted.
+func TestBrokerLifetimeIsFreshAndItsTeardownKeepsGrants(t *testing.T) {
 	t.Setenv("HOME", resolvedDir(t))
 	t.Setenv("PATH", resolvedDir(t)) // no host gh is needed to test lifecycle teardown
 	var log bytes.Buffer
 	b, cleanup := newBroker(brokerscope.File{Workspace: "/workspace/project"}, "/workspace/project", &log)
 	other, cleanupOther := newBroker(brokerscope.File{Workspace: "/workspace/project"}, "/workspace/project", &bytes.Buffer{})
 	defer cleanupOther()
-	defer cleanup()
 	if b.startID == "" || b.startID == other.startID {
 		t.Fatalf("broker lifetimes are not unique: %q, %q", b.startID, other.startID)
 	}
 	store := b.store
 	store.Revalidate = func(q brokerstore.Request) (brokerstore.Policy, error) { return q.Policy, nil }
-	q, err := store.File(brokerstore.Request{Jail: "jail-one", Start: b.startID,
-		Workspace: b.workspace, Argv: []string{"pr", "merge", "1"}, Repo: "o/r",
-		StdinDigest: "none", Set: "read-write", Policy: brokerstore.Policy{
-			Window: 15 * time.Minute, MaxWindow: 12 * time.Hour, Session: true, Uses: 25,
-		}})
+	file := func(pr string) brokerstore.Request {
+		q, err := store.File(brokerstore.Request{Jail: "jail-one", Start: b.startID,
+			Workspace: b.workspace, Argv: []string{"pr", "merge", pr}, Repo: "o/r",
+			StdinDigest: "none", Set: "read-write", Policy: brokerstore.Policy{
+				Window: 15 * time.Minute, MaxWindow: 12 * time.Hour, Session: true, Uses: 25,
+			}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return q
+	}
+	granted := file("1")
+	g, err := store.Decide(granted.ID, "pending", brokerstore.Decision{For: 15 * time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Decide(q.ID, "pending", brokerstore.Decision{}); err != nil {
-		t.Fatal(err)
-	}
+	waiting := file("2")
 	b.trackJail("jail-one")
 	cleanup()
-	_, grants, err := store.List()
+	rs, grants, err := store.List()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, g := range grants {
-		if g.Jail == "jail-one" && g.Start == b.startID && g.Ended.IsZero() {
-			t.Fatalf("grant survived broker teardown: %+v", g)
+	for _, h := range grants {
+		if h.ID == g.ID && (!h.Ended.IsZero() || h.Workspace != "/workspace/project") {
+			t.Fatalf("broker teardown ended or unbound a workspace's grant: %+v", h)
+		}
+	}
+	for _, q := range rs {
+		if q.ID == waiting.ID && q.State != "refused" {
+			t.Fatalf("a pending request outlived its broker: %+v", q)
 		}
 	}
 	if !strings.Contains(log.String(), "no gh on the host") {
 		t.Fatalf("fake external executor setup did not take the unavailable path: %s", log.String())
 	}
-	audit, err := os.ReadFile(paths.BrokerAuditLog())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var found bool
+	audit, _ := os.ReadFile(paths.BrokerAuditLog())
 	for _, line := range bytes.Split(audit, []byte("\n")) {
 		var ev brokeraudit.Event
-		if json.Unmarshal(line, &ev) == nil && ev.Event == "grant-ended" && ev.Jail == "jail-one" && ev.Grant != "" {
-			found = true
+		if json.Unmarshal(line, &ev) == nil && ev.Event == "grant-ended" {
+			t.Fatalf("broker teardown audited a grant ending: %s", line)
 		}
-	}
-	if !found {
-		t.Fatalf("broker teardown did not audit grant-ended: %s", audit)
 	}
 }
 
-func TestBrokerTeardownReportsStoreFailureAndRetriesWithoutFalseAudit(t *testing.T) {
+func TestBrokerTeardownReportsStoreFailureAndRetries(t *testing.T) {
 	t.Setenv("HOME", resolvedDir(t))
 	t.Setenv("PATH", resolvedDir(t))
 	var log bytes.Buffer
@@ -649,10 +655,6 @@ func TestBrokerTeardownReportsStoreFailureAndRetriesWithoutFalseAudit(t *testing
 	defer cleanup()
 	b.store.Revalidate = func(q brokerstore.Request) (brokerstore.Policy, error) { return q.Policy, nil }
 	q, err := b.store.File(brokerstore.Request{Jail: "jail", Start: b.startID, Workspace: "/project", Argv: []string{"pr", "merge", "1"}, Repo: "o/r", StdinDigest: "none", Set: "read-write", Policy: brokerstore.Policy{Window: time.Minute, MaxWindow: time.Hour, Uses: 2}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	g, err := b.store.Decide(q.ID, "pending", brokerstore.Decision{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -675,21 +677,18 @@ func TestBrokerTeardownReportsStoreFailureAndRetriesWithoutFalseAudit(t *testing
 	if !tracked {
 		t.Fatal("failed teardown forgotten")
 	}
-	audit, _ := os.ReadFile(paths.BrokerAuditLog())
-	if bytes.Contains(audit, []byte(g.ID)) {
-		t.Fatal("false completed audit")
-	}
 	if err = os.WriteFile(path, saved, 0600); err != nil {
 		t.Fatal(err)
 	}
 	b.endLifetimes()
-	audit, err = os.ReadFile(paths.BrokerAuditLog())
-	if err != nil || bytes.Count(audit, []byte(g.ID)) != 1 {
-		t.Fatal(string(audit), err)
+	rs, _, err := b.store.List()
+	if err != nil || len(rs) != 1 || rs[0].State != "refused" {
+		t.Fatalf("retried teardown left %+v, %v", rs, err)
 	}
-	b.endLifetimes()
-	audit, _ = os.ReadFile(paths.BrokerAuditLog())
-	if bytes.Count(audit, []byte(g.ID)) != 1 {
-		t.Fatal("duplicate audit")
+	b.lifetimes.Mu.Lock()
+	_, tracked = b.lifetimes.Jails[q.Jail]
+	b.lifetimes.Mu.Unlock()
+	if tracked {
+		t.Fatal("finished teardown still tracked")
 	}
 }

@@ -60,7 +60,7 @@ func TestAHookIsKilledWhenItsRequestLeavesPending(t *testing.T) {
 			return err
 		}, "stopped because its request is no longer pending"},
 		{"jail stopped", 0, func(f *fixture, q brokerstore.Request) error {
-			_, err := f.store.End(q.Jail, q.Start)
+			err := f.store.End(q.Jail, q.Start)
 			return err
 		}, "stopped because its request is no longer pending"},
 		{"expired", 0, func(f *fixture, q brokerstore.Request) error {
@@ -146,7 +146,7 @@ func TestOnlyAFiledRequestRunsTheHook(t *testing.T) {
 	if _, err := f.store.Decide(q.ID, "pending", brokerstore.Decision{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := f.store.Consume(q.Jail, q.Start, q.Set, q.Digest, f.store.Revalidate); err != nil || !ok {
+	if _, ok, err := f.store.Consume(q.Workspace, q.Jail, q.Set, q.Digest, f.store.Revalidate); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
 	time.Sleep(100 * time.Millisecond) // twenty ticks

@@ -11,7 +11,7 @@ import (
 func TestDiffReportsAUseOfAGrantFirstSeenUsed(t *testing.T) {
 	s, _, input := fixture(t)
 	consume := func(digest string) {
-		if _, ok, err := s.Consume(input.Jail, input.Start, input.Set, digest, s.Revalidate); err != nil || !ok {
+		if _, ok, err := s.Consume(input.Workspace, input.Jail, input.Set, digest, s.Revalidate); err != nil || !ok {
 			t.Fatal(ok, err)
 		}
 	}

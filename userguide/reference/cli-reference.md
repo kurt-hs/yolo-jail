@@ -111,6 +111,10 @@ yolo host-run wait           # in the jail: wait for that output; also show
 
 `yolo audit` takes `--since 1h`, `--service <source>` (such as `github` or `git`), `--jail <id>`, `--workspace <path>`, `--set <name>` and `--json`.
 
+An approval belongs to the project, not to one jail: every jail of that project may use it, and it
+lasts through broker and jail restarts and relaunches until it expires, its uses run out, or you
+revoke it.
+
 `yolo approve`, on the host, lists the broker's requests and grants and each project's git
 working set (the branches the agent created under a create-branch grant, and, marked
 `from config`, those a branch grant in a running project's config declares; see

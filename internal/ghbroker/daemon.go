@@ -239,11 +239,10 @@ func (b *Broker) Handle(s *hostservice.Session) {
 
 func (b *Broker) trackJail(jail string) { b.lifetimes.Track(jail) }
 
-// endLifetimes revokes every grant held by a jail served by this broker process
-// (brokercore.Lifetimes.EndAll).
+// endLifetimes refuses every request still pending from a jail served by this broker process;
+// it ends no grant (brokercore.Lifetimes.EndAll).
 func (b *Broker) endLifetimes() {
-	b.lifetimes.EndAll(brokercore.LifetimeOwner{Name: "github-broker", Source: Source,
-		Workspace: b.workspace, Start: b.startID, Store: b.store, Audit: b.audit, Log: b.log})
+	b.lifetimes.EndAll(brokercore.LifetimeOwner{Name: "github-broker", Start: b.startID, Store: b.store, Log: b.log})
 }
 
 // requestFrom refuses malformed fields instead of dropping bytes or arguments.

@@ -39,7 +39,9 @@ request once, grant its requested set for a bounded duration, deny it, or
 revoke a grant or a working-set entry. Without --for, Allow once covers that
 exact command for one use, for at most 15 minutes and never beyond its set's
 ceiling. --for hands over the whole requested set, within its policy ceiling
-and use cap. session lasts until the broker ends, capped at 12 hours.
+and use cap; session is 12 hours. A grant belongs to the request's workspace:
+every jail of that project may use it, and it lasts through broker and jail
+restarts and relaunches until it expires, its uses run out, or it is revoked.
 
 The working set is the branches a workspace's git-broker pushes unasked: each
 one the agent created through the broker under a create-branch grant, until
@@ -57,7 +59,8 @@ yolo-jail.jsonc (brokered.git.grants), or the kind from
 brokered.git.grant_kinds in your user config.
 
 --json prints pending requests, live grants and live working-set entries as one
-JSON document; a branch declared in a running jail's config is a working-set
+JSON document; a grant's "workspace" is its holder, "jail" the jail whose
+request it answered, and "used_by" the jail that spent its latest use; a branch declared in a running jail's config is a working-set
 entry with "by": "config" and "file" naming the config that declares it. --watch prints the current state, then one line per event
 (request filed, decided or expired; grant used, ended or revoked) until
 interrupted; with --json, one "state" object holding every store, then one
@@ -250,7 +253,7 @@ func approveAll(ctx context.Context, args []string, inJail bool, stores []*broke
 			if g.Digest == "" {
 				coverage = "whole set " + termsafe.Visible(g.Set)
 			}
-			fmt.Fprintf(out, "Allowed %s: %s, %d use(s), expires %s (%s). Run `yolo approve` to list or `yolo approve --revoke %s` to revoke.\n", termsafe.Visible(request), coverage, g.Uses, g.Expires.Format(time.RFC3339), g.ID, g.ID)
+			fmt.Fprintf(out, "Allowed %s: %s, %d use(s) for every jail of %s, across restarts, expires %s (%s). Run `yolo approve` to list or `yolo approve --revoke %s` to revoke.\n", termsafe.Visible(request), coverage, g.Uses, termsafe.Visible(g.Workspace), g.Expires.Format(time.RFC3339), g.ID, g.ID)
 		}
 		return 0
 	}
@@ -498,7 +501,7 @@ func printApproveList(out io.Writer, snap brokerstore.Snapshot) {
 		if g.Digest != "" {
 			coverage += " (once)"
 		}
-		fmt.Fprintf(out, "%s  %s  jail %s  set %s  %d use(s)  expires %s\n", termsafe.Visible(g.ID), state, termsafe.Visible(g.Jail), termsafe.Visible(coverage), g.Uses, g.Expires.Format(time.RFC3339))
+		fmt.Fprintf(out, "%s  %s  [%s]  set %s  %d use(s)  expires %s\n", termsafe.Visible(g.ID), state, termsafe.Visible(g.Workspace), termsafe.Visible(coverage), g.Uses, g.Expires.Format(time.RFC3339))
 	}
 }
 

@@ -147,14 +147,14 @@ func TestConsumeDispatchCrashKeepsDurableSpentUse(t *testing.T) {
 				t.Fatal("no simulated crash")
 			}
 		}()
-		s.ConsumeDispatchContext(context.Background(), q.Jail, q.Start, q.Set, q.Digest, s.Revalidate, func() error { panic("process died at dispatch") })
+		s.ConsumeDispatchContext(context.Background(), q.Workspace, q.Jail, q.Set, q.Digest, s.Revalidate, func() error { panic("process died at dispatch") })
 	}()
 	reopened := &Store{Dir: s.Dir, Revalidate: unchangedPolicy, Now: s.Now}
 	_, gs, err := reopened.List()
 	if err != nil || gs[0].ID != g.ID || gs[0].Uses != 0 {
 		t.Fatal(gs, err)
 	}
-	if _, ok, err := reopened.Consume(q.Jail, q.Start, q.Set, q.Digest, reopened.Revalidate); err != nil || ok {
+	if _, ok, err := reopened.Consume(q.Workspace, q.Jail, q.Set, q.Digest, reopened.Revalidate); err != nil || ok {
 		t.Fatal("crash refunded", ok, err)
 	}
 }

@@ -30,7 +30,7 @@ const (
 	EventRequestDecided = "request-decided" // allowed, denied, or refused because its jail stopped
 	EventRequestExpired = "request-expired"
 	EventGrantUsed      = "grant-used"
-	EventGrantEnded     = "grant-ended" // expired, used up, or its jail stopped
+	EventGrantEnded     = "grant-ended" // expired or used up
 	EventGrantRevoked   = "grant-revoked"
 )
 
@@ -210,13 +210,15 @@ type GrantView struct {
 	ID        string     `json:"id"`
 	Source    string     `json:"source"`
 	Request   string     `json:"request"`
-	Jail      string     `json:"jail"` // the holder
+	Jail      string     `json:"jail"`              // the jail whose request it answered
+	Workspace string     `json:"workspace"`         // the holder: every jail of this workspace may use it
+	UsedBy    string     `json:"used_by,omitempty"` // the jail that spent its latest use
 	Set       string     `json:"set"`
 	Coverage  string     `json:"coverage"` // "command": the request's one command; "set": the whole set
 	UsesLeft  int        `json:"uses_left"`
 	Expires   time.Time  `json:"expires"`
 	Ended     *time.Time `json:"ended,omitempty"`
-	EndReason string     `json:"end_reason,omitempty"` // expired, used, revoked, stopped
+	EndReason string     `json:"end_reason,omitempty"` // expired, used, revoked; stopped only in a record an older yolo ended
 	State     string     `json:"state"`                // live or ended
 }
 
@@ -276,7 +278,7 @@ func (s *Store) RequestView(q Request) RequestView {
 }
 
 func (s *Store) GrantView(g Grant) GrantView {
-	v := GrantView{Schema: Schema, ID: g.ID, Source: s.SourceName(), Request: g.Request, Jail: g.Jail, Set: g.Set,
+	v := GrantView{Schema: Schema, ID: g.ID, Source: s.SourceName(), Request: g.Request, Jail: g.Jail, Workspace: g.Workspace, UsedBy: g.UsedBy, Set: g.Set,
 		Coverage: "set", UsesLeft: g.Uses, Expires: g.Expires, EndReason: g.EndedBy(), State: "live"}
 	if g.Digest != "" {
 		v.Coverage = "command"
@@ -378,8 +380,11 @@ func (s *Store) Summary(ev Event) string {
 	if g.Digest != "" {
 		coverage = "one command, set " + g.Set
 	}
-	line := fmt.Sprintf("%s %s %s: %s for jail %s, %d use(s) left, expires %s", ev.Kind, s.SourceName(), g.ID,
-		coverage, g.Jail, g.Uses, g.Expires.Format(time.RFC3339))
+	line := fmt.Sprintf("%s %s %s: %s for workspace %s, %d use(s) left, expires %s", ev.Kind, s.SourceName(), g.ID,
+		coverage, elide(g.Workspace), g.Uses, g.Expires.Format(time.RFC3339))
+	if ev.Kind == EventGrantUsed && g.UsedBy != "" {
+		line += ", used by jail " + elide(g.UsedBy)
+	}
 	if r := g.EndedBy(); r != "" {
 		line += ", ended (" + r + ")"
 	}

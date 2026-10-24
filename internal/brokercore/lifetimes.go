@@ -5,12 +5,12 @@ import (
 	"io"
 	"sync"
 
-	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
 )
 
 // Lifetimes is the set of jails one broker process has served, so that when the process
-// stops it can end every grant those jails hold under its start id. Its zero value is ready.
+// stops it can refuse every request those jails left pending under its start id. Its zero
+// value is ready.
 type Lifetimes struct {
 	Mu    sync.Mutex
 	Jails map[string]struct{}
@@ -26,22 +26,20 @@ func (l *Lifetimes) Track(jail string) {
 	l.Jails[jail] = struct{}{}
 }
 
-// LifetimeOwner is the broker whose lifetime is ending: the store EndAll ends grants in, the
-// start id they were granted under, where it audits them, and where it reports a teardown it
-// could not finish. EndAll takes it per call, so it reads the broker's fields as they are then.
+// LifetimeOwner is the broker whose lifetime is ending: the store EndAll refuses requests in,
+// the start id they were filed under, and where it reports a teardown it could not finish.
+// EndAll takes it per call, so it reads the broker's fields as they are then.
 type LifetimeOwner struct {
-	Name      string // the daemon's name, which prefixes its log lines
-	Source    string // the audit events' service
-	Workspace string
-	Start     string
-	Store     *brokerstore.Store
-	Audit     *brokeraudit.Log
-	Log       io.Writer
+	Name  string // the daemon's name, which prefixes its log lines
+	Start string
+	Store *brokerstore.Store
+	Log   io.Writer
 }
 
-// EndAll revokes every grant held by a jail served by this broker process. The random start
-// id also prevents an uncleanly terminated process from authorizing a later run. A jail whose
-// grants the store could not end stays tracked, so a later call retries it.
+// EndAll refuses every request still pending from a jail served by this broker process, since
+// the call waiting on it is gone (brokerstore.Store.End). It ends no grant: a grant is held by
+// its workspace and outlives the broker (boundary-broker.md BB-D99). A jail whose requests the
+// store could not refuse stays tracked, so a later call retries it.
 func (l *Lifetimes) EndAll(o LifetimeOwner) {
 	l.Mu.Lock()
 	jails := make([]string, 0, len(l.Jails))
@@ -50,20 +48,12 @@ func (l *Lifetimes) EndAll(o LifetimeOwner) {
 	}
 	l.Mu.Unlock()
 	for _, jail := range jails {
-		grants, err := o.Store.End(jail, o.Start)
-		if err != nil {
+		if err := o.Store.End(jail, o.Start); err != nil {
 			fmt.Fprintf(o.Log, "%s: broker lifetime teardown incomplete: %v; retry stopping the broker on the host\n", o.Name, err)
-		} else {
-			l.Mu.Lock()
-			delete(l.Jails, jail)
-			l.Mu.Unlock()
+			continue
 		}
-		for _, g := range grants {
-			if g.Jail == jail && g.Start == o.Start {
-				o.Audit.Append(brokeraudit.Event{Event: "grant-ended", Service: o.Source, Jail: jail,
-					Workspace: o.Workspace, Set: g.Set, Grant: g.ID, Outcome: "ended",
-					Reason: "broker lifetime ended"})
-			}
-		}
+		l.Mu.Lock()
+		delete(l.Jails, jail)
+		l.Mu.Unlock()
 	}
 }

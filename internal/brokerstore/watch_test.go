@@ -63,7 +63,7 @@ func TestDiffReportsEveryEvent(t *testing.T) {
 		t.Fatalf("decided event carries no grant: %+v", evs[0])
 	}
 	consume := func() {
-		if _, ok, err := s.Consume(input.Jail, input.Start, input.Set, r.Digest, s.Revalidate); err != nil || !ok {
+		if _, ok, err := s.Consume(input.Workspace, input.Jail, input.Set, r.Digest, s.Revalidate); err != nil || !ok {
 			t.Fatal(ok, err)
 		}
 	}
@@ -106,7 +106,7 @@ func TestDiffReportsEveryEvent(t *testing.T) {
 		t.Fatal(evs[1].Grant)
 	}
 
-	// The jail stopping refuses what is pending and ends what is live.
+	// The jail stopping refuses what is pending and leaves what is live (BB-D99).
 	input.Argv = []string{"pr", "merge", "5"}
 	r5, _ := s.File(input)
 	if _, err := s.Decide(r5.ID, "pending", Decision{For: time.Minute}); err != nil {
@@ -117,13 +117,13 @@ func TestDiffReportsEveryEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, evs = kinds(t, s, func() {
-		if _, err := s.End(input.Jail, input.Start); err != nil {
+		if err := s.End(input.Jail, input.Start); err != nil {
 			t.Fatal(err)
 		}
 	})
-	wantKinds(t, got, EventRequestDecided, EventGrantEnded)
-	if evs[0].Request.State != "refused" || evs[1].Grant.EndedBy() != EndStopped {
-		t.Fatal(evs[0].Request, evs[1].Grant)
+	wantKinds(t, got, EventRequestDecided)
+	if evs[0].Request.State != "refused" {
+		t.Fatal(evs[0].Request)
 	}
 }
 

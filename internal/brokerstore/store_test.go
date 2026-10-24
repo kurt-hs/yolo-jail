@@ -1,6 +1,8 @@
 package brokerstore
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
@@ -31,10 +33,10 @@ func TestFirstDecisionWinsAndOnceIsSpent(t *testing.T) {
 	if g.Uses != 1 || g.Digest != r.Digest {
 		t.Fatalf("once: %+v", g)
 	}
-	if _, ok, err := s.Consume(input.Jail, input.Start, input.Set, r.Digest, s.Revalidate); err != nil || !ok {
+	if _, ok, err := s.Consume(input.Workspace, input.Jail, input.Set, r.Digest, s.Revalidate); err != nil || !ok {
 		t.Fatalf("consume %v %v", ok, err)
 	}
-	if _, ok, _ := s.Consume(input.Jail, input.Start, input.Set, r.Digest, s.Revalidate); ok {
+	if _, ok, _ := s.Consume(input.Workspace, input.Jail, input.Set, r.Digest, s.Revalidate); ok {
 		t.Fatal("reused once")
 	}
 }
@@ -52,16 +54,16 @@ func TestPolicyExpiryIdentityAndRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, who := range [][2]string{{"other", "start"}, {"jail", "new"}} {
-		if _, ok, _ := s.Consume(who[0], who[1], input.Set, r.Digest, s.Revalidate); ok {
+	for _, ws := range []string{"/other", ""} {
+		if _, ok, _ := s.Consume(ws, input.Jail, input.Set, r.Digest, s.Revalidate); ok {
 			t.Fatal("wrong holder")
 		}
 	}
-	if _, ok, _ := s.Consume(input.Jail, input.Start, "other", r.Digest, s.Revalidate); ok {
+	if _, ok, _ := s.Consume(input.Workspace, input.Jail, "other", r.Digest, s.Revalidate); ok {
 		t.Fatal("wrong set")
 	}
 	*now = now.Add(time.Hour)
-	if _, ok, _ := s.Consume(input.Jail, input.Start, input.Set, r.Digest, s.Revalidate); ok {
+	if _, ok, _ := s.Consume(input.Workspace, input.Jail, input.Set, r.Digest, s.Revalidate); ok {
 		t.Fatal("expiry boundary")
 	}
 	if err := s.Revoke(g.ID); err != nil {
@@ -110,7 +112,7 @@ func TestConcurrentFilingAndUseAreSerialized(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, ok, err := s.Consume(input.Jail, input.Start, input.Set, "another command", s.Revalidate)
+			_, ok, err := s.Consume(input.Workspace, input.Jail, input.Set, "another command", s.Revalidate)
 			if err != nil {
 				t.Error(err)
 			}
@@ -166,11 +168,108 @@ func TestPendingExpiryAndEndLifetime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.End(input.Jail, input.Start); err != nil {
+	input.Argv = []string{"pr", "merge", "2"}
+	waiting, _ := s.File(input)
+	if err := s.End(input.Jail, input.Start); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, _ := s.Consume(input.Jail, input.Start, input.Set, r.Digest, s.Revalidate); ok {
-		t.Fatal("ended lifetime granted")
+	if q, err := s.Status(input.Jail, input.Start, waiting.ID); err != nil || q.State != "refused" {
+		t.Fatalf("a pending request outlived its broker lifetime: %+v %v", q, err)
+	}
+	// Ending the lifetime ends no grant (BB-D99): the session grant still serves the workspace.
+	if _, ok, err := s.Consume(input.Workspace, input.Jail, input.Set, r.Digest, s.Revalidate); err != nil || !ok {
+		t.Fatalf("ending a broker lifetime ended its workspace's grant: %v %v", ok, err)
+	}
+}
+
+// A GRANT OUTLIVES ITS BROKER, FOR ITS WORKSPACE ONLY (boundary-broker.md BB-D99). A grant is
+// approved under one broker; that broker ends its lifetime and a new broker opens the store
+// afresh, as a restart or relaunch does. Every jail of the workspace may spend the grant, and
+// the use records which; another workspace never sees it, nor can `--revoke all --workspace`
+// of another workspace end it.
+func TestAGrantOutlivesItsBrokerForItsWorkspaceOnly(t *testing.T) {
+	s, now, input := fixture(t)
+	once, _ := s.File(input)
+	g1, err := s.Decide(once.ID, "pending", Decision{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Argv, input.Set = []string{"pr", "merge", "2"}, "timed-set" // its own set, so it cannot cover the Allow once
+	timed, _ := s.File(input)
+	g2, err := s.Decide(timed.ID, "pending", Decision{For: 15 * time.Minute, Uses: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g1.Workspace != "/project" || g2.Workspace != "/project" {
+		t.Fatalf("a decision did not bind its grant to the request's workspace: %+v %+v", g1, g2)
+	}
+	if err := s.End(input.Jail, input.Start); err != nil {
+		t.Fatal(err)
+	}
+
+	next := &Store{Dir: s.Dir, Now: func() time.Time { return *now }, Revalidate: unchangedPolicy}
+	*now = now.Add(10 * time.Minute)
+	for _, ws := range []string{"/elsewhere", "/project/sub", ""} {
+		if _, ok, _ := next.Consume(ws, "jail", input.Set, timed.Digest, next.Revalidate); ok {
+			t.Fatalf("workspace %q spent /project's grant", ws)
+		}
+	}
+	if n, err := next.RevokeIn("all", "/elsewhere"); err != nil || n != 0 {
+		t.Fatalf("revoking another workspace ended %d records: %v", n, err)
+	}
+	if g, ok, err := next.Consume("/project", "jail", once.Set, once.Digest, next.Revalidate); err != nil || !ok || g.ID != g1.ID {
+		t.Fatalf("Allow once from the stopped broker: %+v %v %v", g, ok, err)
+	}
+	g, ok, err := next.Consume("/project/", "second-jail", input.Set, timed.Digest, next.Revalidate)
+	if err != nil || !ok || g.ID != g2.ID || g.UsedBy != "second-jail" || g.Uses != 2 {
+		t.Fatalf("timed grant from the stopped broker, spent by a second jail: %+v %v %v", g, ok, err)
+	}
+	*now = g2.Expires
+	if _, ok, _ := next.Consume("/project", "jail", input.Set, timed.Digest, next.Revalidate); ok {
+		t.Fatal("a grant outlived its expiry")
+	}
+}
+
+// An Allow once written before grants carried a workspace takes its request's (BB-D99's migration),
+// and one an older yolo ended as "stopped" stays ended.
+func TestALegacyGrantTakesItsRequestsWorkspace(t *testing.T) {
+	s, _, input := fixture(t)
+	r, _ := s.File(input)
+	g, err := s.Decide(r.ID, "pending", Decision{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Argv = []string{"pr", "merge", "2"}
+	r2, _ := s.File(input)
+	stopped, err := s.Decide(r2.ID, "pending", Decision{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := func(g Grant) {
+		g.Workspace = ""
+		b, err := json.Marshal(g)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(b, []byte("Workspace")) {
+			t.Fatalf("legacy record still names a workspace: %s", b)
+		}
+		if err := os.WriteFile(filepath.Join(s.Dir, "grants", g.ID+".json"), b, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	legacy(g)
+	stopped.Ended, stopped.EndReason = stopped.Expires.Add(-time.Minute), EndStopped
+	legacy(stopped)
+	if _, ok, _ := s.Consume("/elsewhere", "jail", input.Set, r.Digest, s.Revalidate); ok {
+		t.Fatal("a legacy grant served another workspace")
+	}
+	used, ok, err := s.Consume("/project", "jail", input.Set, r.Digest, s.Revalidate)
+	if err != nil || !ok || used.ID != g.ID || used.Workspace != "/project" {
+		t.Fatalf("legacy grant: %+v %v %v", used, ok, err)
+	}
+	if _, ok, _ := s.Consume("/project", "jail", input.Set, r2.Digest, s.Revalidate); ok {
+		t.Fatal("a grant an older broker ended as stopped came back")
 	}
 }
 
