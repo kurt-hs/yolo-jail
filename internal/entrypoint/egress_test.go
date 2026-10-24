@@ -184,29 +184,45 @@ func TestEgressProbeCallsADNSTimeoutSlowNotOffline(t *testing.T) {
 		return nil, &net.OpError{Op: "dial", Net: "tcp",
 			Err: &net.DNSError{Err: "i/o timeout", Name: "github.com", IsTimeout: true}}
 	}
+	podman := []string{"warning: DNS lookups in this jail took longer than 200ms",
+		"outbound access was not confirmed", "github.com:443: looking up the name outlasted",
+		"Next step:", "time getent hosts github.com", "podman machine stop"}
 	for _, c := range []struct {
 		name    string
+		native  bool
 		targets []string
 		answer  func(context.Context, string) (net.Conn, error)
+		want    []string
+		notWant string
 	}{
-		{"one target", oneTarget, slow},
-		{"beside a refusal", []string{"api.vendor.example:443", "github.com:443"},
+		{"one target", false, oneTarget, slow, podman, "dscacheutil"},
+		{"beside a refusal", false, []string{"api.vendor.example:443", "github.com:443"},
 			func(ctx context.Context, addr string) (net.Conn, error) {
 				if strings.HasPrefix(addr, "api.vendor.example") {
 					return nil, &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
 				}
 				return slow(ctx, addr)
-			}},
+			}, podman, "dscacheutil"},
+		// macOS has no getent, so the macos-user sandbox names dscacheutil.
+		{"macos-user", true, oneTarget, slow, []string{
+			"warning: DNS lookups in this sandbox took longer than 200ms",
+			"outbound access was not confirmed", "Next step:",
+			"time dscacheutil -q host -a name github.com", "this sandbox uses the Mac's own network"}, "getent"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := &fakeEgress{answer: c.answer}
-			term, log := runEgress(t, map[string]string{paths.JailBackendEnv: "podman"}, false, c.targets, f.dial)
-			for _, want := range []string{"warning: DNS lookups in this jail took longer than 200ms",
-				"outbound access was not confirmed", "github.com:443: looking up the name outlasted",
-				"Next step:", "time getent hosts github.com", "podman machine stop"} {
+			vars := map[string]string{paths.JailBackendEnv: "podman"}
+			if c.native {
+				vars = nil
+			}
+			term, log := runEgress(t, vars, c.native, c.targets, f.dial)
+			for _, want := range c.want {
 				if !strings.Contains(term, want) {
 					t.Errorf("warning lacks %q:\n%s", want, term)
 				}
+			}
+			if strings.Contains(term, c.notWant) {
+				t.Errorf("warning names %q, the other backend's lookup:\n%s", c.notWant, term)
 			}
 			if strings.Contains(term, "no outbound network") {
 				t.Errorf("a DNS timeout must not read as no network:\n%s", term)

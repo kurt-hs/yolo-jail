@@ -507,9 +507,10 @@ func egressAnySlowDNS(results []egressResult) bool {
 // unknown. Its next step is to time a lookup, which tells slow DNS from none.
 func egressSlowDNSWarning(p *egressProbe, results []egressResult) string {
 	var b strings.Builder
-	where := "this jail"
+	// macOS has no getent; dscacheutil asks the same resolver the sandbox's programs use.
+	where, lookup := "this jail", "time getent hosts "+egressNeutralHost
 	if p.native {
-		where = "this sandbox"
+		where, lookup = "this sandbox", "time dscacheutil -q host -a name "+egressNeutralHost
 	}
 	b.WriteString("warning: DNS lookups in " + where + " took longer than " + p.budget.String() +
 		"; outbound access was not confirmed:\n")
@@ -518,7 +519,7 @@ func egressSlowDNSWarning(p *egressProbe, results []egressResult) string {
 	}
 	b.WriteString("  A resolver this slow can make clients time out, each naming itself rather than DNS;\n" +
 		"  a VPN's resolver is a common cause.\n" +
-		"  Next step: time a lookup inside " + where + " with `time getent hosts " + egressNeutralHost + "`.\n" +
+		"  Next step: time a lookup inside " + where + " with `" + lookup + "`.\n" +
 		"  If it answers, the network works and DNS is slow: check the VPN or the resolver the host\n" +
 		"  hands out. If it never answers, treat this as no network:\n")
 	b.WriteString(egressNextStep(p, false))
