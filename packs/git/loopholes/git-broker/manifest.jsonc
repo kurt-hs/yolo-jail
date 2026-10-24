@@ -1,0 +1,57 @@
+// The `git-broker` loophole, shipped by the OFFICIAL `git` pack: a host daemon that connects to
+// one jail's approved git remotes the way the host does, on its behalf
+// (docs/design/git-broker.md, docs/design/git-broker-plan.md task 7). The daemon is
+// internal/gitbroker, reached from the jail through git's own remote-helper protocol: the
+// pack's `env` contribution rewrites ssh://, https:// and git@ remotes to `yolo::<url>`, so the
+// jail's real git runs `git-remote-yolo`, which the pack's `intercept` forwards to
+// `yolo git-remote --` (ID-4).
+//
+// THE CREDENTIAL NEVER CROSSES; THE PROTOCOL DOES. The jail sends a service and the remote URL;
+// the broker checks the URL against the scope the launch approved, connects to the approved
+// string with the host's ssh, streams a fetch back, and reads a push's ref commands before
+// forwarding anything. This build refuses every push per ref ("needs approval, which this
+// version cannot ask for") and audits every call.
+{
+  "name": "git-broker",
+  "description": "Run the jail's git fetch and push through the host's own SSH keys or agent, only against this workspace's git remotes as approved at launch: fetches stream back, every push is refused per ref until grants arrive (push from the host), and every call is audited on the host (yolo audit --service git).",
+  "version": 1,
+
+  // OFF until enabled, as every loophole that ships in a pack is (loophole-system.md R2), and
+  // a `brokered` manifest may not default on. Selecting the pack installs the remote helper and
+  // nothing else: the rewrite is `served_by` this loophole, so with it off the jail's git is
+  // untouched (ID-6). The broker starts only in a project it was turned on for, by `yolo
+  // loopholes enable git-broker` run there; a switch in the user config or a project's config is
+  // refused (git-broker.md GB-D5).
+  "default_enabled": false,
+
+  "transport": "loopback-tls",
+  "lifecycle": "spawned",
+
+  // THE REPOSITORY SCOPE (loopholedecl/brokered.go, ID-2). `remote_host: "*"` makes core read
+  // every remote of the workspace, on any host, `url` and `pushurl` alike, and put each URL in
+  // the config-change prompt verbatim; the scope file records what a human approved with
+  // `"form": "remote-url"`, and the broker connects only to an approved string. The credential
+  // paths are where the host keeps what git authenticates with; with this pack selected, a
+  // workspace `mounts` entry reaching one is refused (BB-D26, ID-12).
+  "brokered": {
+    "source": "git",
+    "remote_host": "*",
+    "credential_paths": ["~/.ssh", "$SSH_AUTH_SOCK", "~/.git-credentials", "~/.config/git/credentials"]
+  },
+
+  // One daemon per jail, behind yolo's front, with the connection preamble on: every audit line
+  // keys on the preamble's host-asserted jail id, never on a request field (BB-D1).
+  "host_daemon": {
+    "cmd": [
+      "yolo", "internal", "daemon", "git-broker",
+      "--socket", "{socket}",
+      "--scope-file", "{repository_scope}"
+    ],
+    "publishes": "socket"
+  },
+
+  // `yolo check` asks the daemon which host ssh and git it would run.
+  "doctor_cmd": [
+    "yolo", "internal", "daemon", "git-broker", "--self-check"
+  ]
+}

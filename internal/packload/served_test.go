@@ -240,3 +240,44 @@ func TestAnOverrideOfAnUnservedPointerIsNoFinding(t *testing.T) {
 		t.Errorf("a notch that withholds the pointer refused over it: %+v", f)
 	}
 }
+
+// THE GIT REWRITE EXISTS ONLY WHERE THE GIT-BROKER RUNS (docs/design/git-broker-plan.md ID-6):
+// packs/git's GIT_CONFIG_* contribution is `served_by` its loophole, so the host notch, which
+// serves nothing, folds none of it, and a jail serving git-broker folds all seven keys. Deleting
+// `served_by` from the pack's env contribution fails the first half.
+func TestGitRewriteWithheldWhereUnserved(t *testing.T) {
+	packs := embeddedNamed(t, "git")
+	keys := map[string]string{
+		"GIT_CONFIG_COUNT":   "3",
+		"GIT_CONFIG_KEY_0":   "url.yolo::ssh://.insteadOf",
+		"GIT_CONFIG_VALUE_0": "ssh://",
+		"GIT_CONFIG_KEY_1":   "url.yolo::https://.insteadOf",
+		"GIT_CONFIG_VALUE_1": "https://",
+		"GIT_CONFIG_KEY_2":   "url.yolo::git@.insteadOf",
+		"GIT_CONFIG_VALUE_2": "git@",
+	}
+	compose := func(served ServedDaemons) *CredentialScope {
+		t.Helper()
+		s, err := ScopeCredentials(ScopeInput{Packs: packs, NoDerives: true, Served: &served})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	host := compose(NothingServed())
+	for k := range keys {
+		if v, ok := host.DeliveredPackEnv(k); ok {
+			t.Errorf("the host notch folded %s=%q; nothing serves git-broker there", k, v)
+		}
+	}
+	if lines := strings.Join(UnservedLines(host, nil, nil), "\n"); !strings.Contains(lines, "GIT_CONFIG_COUNT") ||
+		!strings.Contains(lines, `"git-broker"`) {
+		t.Errorf("the withheld rewrite is not named:\n%s", lines)
+	}
+	jail := compose(ServedInJail([]string{"git-broker"}))
+	for k, want := range keys {
+		if v, ok := jail.DeliveredPackEnv(k); !ok || v != want {
+			t.Errorf("a jail serving git-broker folded %s=%q (%v), want %q", k, v, ok, want)
+		}
+	}
+}

@@ -47,7 +47,12 @@ func (o *Options) predictedServed(merged *jsonx.OrderedMap, packs []*packload.Pa
 	// The BOUND LOOPHOLES the launch's argv would bind, served by name as the launch's
 	// servedDaemons serves them (docs/design/loophole-packaging.md LP-D1), and the macos-user
 	// mark the launch sets, so a pointer at one is predicted withheld, in the launch's words.
-	served := packload.ServedInJail(append(names, set.JailBoundNames(set.Enabled(), rt)...)).WithListen(listen)
+	// And the FRONTED HOST LOOPHOLES, whose host daemon the launch starts and fronts over
+	// loopback-TLS (loopholes.FrontedHostNames, docs/design/git-broker-plan.md ID-6), served by
+	// name as the launch's servedDaemons serves them.
+	names = append(append(append([]string(nil), names...), set.JailBoundNames(set.Enabled(), rt)...),
+		set.FrontedHostNames(set.Enabled(), rt)...)
+	served := packload.ServedInJail(names).WithListen(listen)
 	if rt == "macos-user" {
 		served = served.MountsNothing()
 	}

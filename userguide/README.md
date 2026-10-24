@@ -90,6 +90,7 @@ The **[feature index](features.md)** links every feature to the page that covers
 | [Networking](guides/networking.md) | Ports, and reaching services on your host |
 | [Host Access and Loopholes](guides/loopholes.md) | Every way the jail reaches your machine |
 | [GitHub Without a Token](guides/github.md) | `gh` in the jail with your host's login, this project's repositories only |
+| [Git Without a Credential](guides/git.md) | `git fetch` in the jail through your host's SSH keys, this project's remotes only |
 | [Devices and GPUs](guides/devices-and-gpus.md) | USB, serial, NVIDIA and AMD passthrough on Linux |
 | [Storage](guides/storage.md) | What persists, what yolo reclaims, and moving caches |
 | [Writing Your Own Pack](guides/migrating-to-packs.md) | Your setup as a pack, and applying it to your own machine |

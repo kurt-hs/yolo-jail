@@ -36,6 +36,7 @@ access behind it.
 | `openai-auth-broker` (`openai-auth`, brought in by `claude`, `codex`, `opencode` and `pi`) | One shared ChatGPT login for Codex, pi and opencode ([Logins](authentication.md#a-shared-chatgpt-login-for-codex-and-pi)) | Yes |
 | `aws-auth` (`aws-auth`, also brought in by `bedrock`, which `claude`, `codex`, `opencode` and `pi` bring in) | AWS Bedrock with credentials from your host's `aws sso login`, narrowed to one role | No |
 | `github-broker` (`github`) | `gh` in the jail, run by your host's own GitHub login against this workspace's repositories, read-only for now, with no token in the jail ([GitHub](github.md)) | No; you turn it on per project, with `yolo loopholes enable github-broker` |
+| `git-broker` (`git`) | `git fetch` in the jail through your host's own SSH keys or agent, against this workspace's approved remotes, with every push refused for now and no key in the jail ([Git](git.md)) | No; you turn it on per project, with `yolo loopholes enable git-broker` |
 | `serial` (`serial`) | USB serial devices on the host, through an allowlist, with the `yolo-serial` command | No |
 | `journal` (`journal`) | The host's systemd journal, with `yolo-journalctl` (Linux hosts) | No |
 | `macos-log` (`macos-log`) | The Mac's unified log, with `yolo-log`: by default only entries from processes the `macos-user` sandbox runs (Mac hosts) | No |
@@ -68,9 +69,9 @@ For every project, switch it on in your user config:
 }
 ```
 
-`github-broker` has only the first way: a project you never turned it on in never runs it, and
-`yolo check` refuses its switch in your user config or in a project's own config. See
-[GitHub](github.md#turning-it-on).
+`github-broker` and `git-broker` have only the first way: a project you never turned one on in
+never runs it, and `yolo check` refuses its switch in your user config or in a project's own
+config. See [GitHub](github.md#turning-it-on) and [Git](git.md#turning-it-on).
 
 Some loopholes take their own settings under `settings`, such as `aws-auth`'s SSO profile and role;
 each pack's README in the repository describes them, and `yolo check` reports a setting that is

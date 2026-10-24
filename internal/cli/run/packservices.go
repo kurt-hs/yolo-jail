@@ -97,6 +97,9 @@ func (o *Options) jailDaemonsFor(cfg *jsonx.OrderedMap, rt string,
 	// The bound loopholes this runtime's argv binds, through the same set and so the same gate
 	// as the payload, recorded for servedDaemons the same way: every call reads the same config.
 	o.jailBound = set.JailBoundNames(set.Enabled(), rt)
+	// The fronted host loopholes, whose host daemon this launch starts, recorded the same way
+	// (loopholes.FrontedHostNames, docs/design/git-broker-plan.md ID-6).
+	o.frontedHost = set.FrontedHostNames(set.Enabled(), rt)
 	specs := o.withoutUnselectedProfileDaemons(cfg, packs,
 		set.JailDaemons(set.Enabled(), rt, serviceJailDaemons(packs)))
 	// A NESTED LAUNCH INHERITS a declaring loophole's pointer from the launching jail and runs

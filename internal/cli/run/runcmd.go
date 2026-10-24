@@ -297,6 +297,12 @@ type Options struct {
 	// `served_by` one reaches the jail only where its binds do (docs/design/loophole-packaging.md
 	// LP-D1). nil on macos-user, which binds nothing, and when none is active.
 	jailBound []string
+	// frontedHost are the FRONTED HOST LOOPHOLES (loopholes.FrontedHostNames: a host daemon this
+	// launch starts and fronts over loopback-TLS), recorded beside jailBound so servedDaemons
+	// serves their names: a pack env pointer `served_by` one (packs/git's GIT_CONFIG_* rewrite)
+	// reaches the jail only where its loophole is on (docs/design/git-broker-plan.md ID-6). nil on
+	// Apple Container, which runs no host services, and when none is enabled.
+	frontedHost []string
 	// parentPointers are the loopholes whose credential pointer the last jail-daemon payload this
 	// process composed takes from the launching jail instead of running their daemons
 	// (parentjailpointers.go, docs/reference/agent-credentials.md SSO-D2), each mapped to the

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -41,6 +42,54 @@ func TestCheckPredictsABoundLoopholeServedWhereItsBindsGo(t *testing.T) {
 		}
 		if got := (&Options{}).predictedServed(merged, nil).Serves("snd-like"); got != tc.served {
 			t.Errorf("runtime %q: predicted the bound loophole served = %v, want %v", tc.runtime, got, tc.served)
+		}
+	}
+}
+
+// THE GIT REWRITE IS PREDICTED SERVED ONLY WITH ITS LOOPHOLE ON (docs/design/git-broker-plan.md
+// ID-6): with packs ["git"] and git-broker disabled, the env the prediction composes lacks
+// GIT_CONFIG_COUNT; enabled, it carries the rewrite. Deleting predictedServed's
+// FrontedHostNames fails the enabled half.
+func TestGitRewriteServedOnlyWithTheLoophole(t *testing.T) {
+	t.Setenv("YOLO_VERSION", "")
+	os.Unsetenv("YOLO_VERSION")
+	wd, _ := os.Getwd()
+	module := filepath.Join(wd, "..", "..", "..", "packs", "git", "loopholes", "git-broker")
+	if _, err := os.Stat(filepath.Join(module, "manifest.jsonc")); err != nil {
+		t.Fatalf("the git pack's loophole module: %v", err)
+	}
+	loopholes.SetPackModules([]loopholes.PackModule{{Dir: module, HostExecApproved: true}})
+	t.Cleanup(loopholes.ResetPackModules)
+	t.Setenv("HOME", t.TempDir())
+	var git *packload.Pack
+	for _, p := range packload.Embedded() {
+		if p.Name == "git" {
+			git = p
+		}
+	}
+	if git == nil {
+		t.Fatal("no embedded git pack")
+	}
+	for _, enabled := range []bool{false, true} {
+		merged := jsonx.NewOrderedMap()
+		merged.Set("runtime", "podman")
+		lh, entry := jsonx.NewOrderedMap(), jsonx.NewOrderedMap()
+		entry.Set("enabled", enabled)
+		lh.Set("git-broker", entry)
+		merged.Set("loopholes", lh)
+		served := (&Options{}).predictedServed(merged, []*packload.Pack{git})
+		scope, err := packload.ScopeCredentials(packload.ScopeInput{
+			Packs: []*packload.Pack{git}, NoDerives: true, Served: &served})
+		if err != nil {
+			t.Fatal(err)
+		}
+		count, hasCount := scope.DeliveredPackEnv("GIT_CONFIG_COUNT")
+		key0, _ := scope.DeliveredPackEnv("GIT_CONFIG_KEY_0")
+		switch {
+		case !enabled && hasCount:
+			t.Errorf("git-broker disabled: the predicted env carries GIT_CONFIG_COUNT=%s", count)
+		case enabled && key0 != "url.yolo::ssh://.insteadOf":
+			t.Errorf("git-broker enabled: GIT_CONFIG_KEY_0 = %q, want url.yolo::ssh://.insteadOf", key0)
 		}
 	}
 }

@@ -1,0 +1,33 @@
+{
+  "contributes": [
+    {
+      "from": "loopholes/git-broker",
+      "kind": "loophole"
+    },
+    {
+      "describes": ["intercept"],
+      "from": "briefing/git.md",
+      "kind": "briefing"
+    },
+    {
+      "bin": "git-remote-yolo",
+      "forward": ["yolo", "git-remote", "--"],
+      "kind": "intercept"
+    },
+    {
+      "kind": "env",
+      "served_by": "git-broker",
+      "vars": {
+        "GIT_CONFIG_COUNT": "3",
+        "GIT_CONFIG_KEY_0": "url.yolo::ssh://.insteadOf",
+        "GIT_CONFIG_VALUE_0": "ssh://",
+        "GIT_CONFIG_KEY_1": "url.yolo::https://.insteadOf",
+        "GIT_CONFIG_VALUE_1": "https://",
+        "GIT_CONFIG_KEY_2": "url.yolo::git@.insteadOf",
+        "GIT_CONFIG_VALUE_2": "git@"
+      }
+    }
+  ],
+  "description": "git fetch and push without a credential in the jail: the jail's git reaches the git-broker on the host, which connects to this workspace's approved remotes the way the host does (its SSH keys or agent), streams fetches back, refuses every push per ref until grants arrive, and audits every call.",
+  "name": "git"
+}

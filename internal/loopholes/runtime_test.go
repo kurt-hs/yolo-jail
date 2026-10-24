@@ -873,3 +873,50 @@ func TestCurrentSettingsDoctorSubstitutesOnlyDeclaredSettingsToken(t *testing.T)
 }
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
+
+// A FRONTED HOST LOOPHOLE IS SERVED BY NAME WHERE ITS HOST DAEMON SERVES THE JAIL
+// (docs/design/git-broker-plan.md ID-6): an enabled loophole whose host_daemon answers over
+// loopback-tls is listed on podman and macos-user, never on Apple Container, which runs no host
+// services, and a disabled one, or one with no host daemon, never.
+func TestFrontedHostNames(t *testing.T) {
+	unsetJail(t)
+	md := modsDir(t)
+	writeManifest(t, mkdir(t, filepath.Join(md, "fronted")), map[string]any{
+		"name": "fronted", "description": "x", "transport": "loopback-tls", "lifecycle": "spawned",
+		"host_daemon": map[string]any{"cmd": []any{"daemon", "--socket", "{socket}"}},
+	})
+	writeManifest(t, mkdir(t, filepath.Join(md, "fronted-off")), map[string]any{
+		"name": "fronted-off", "description": "x", "transport": "loopback-tls", "lifecycle": "spawned",
+		"default_enabled": false,
+		"host_daemon":     map[string]any{"cmd": []any{"daemon", "--socket", "{socket}"}},
+	})
+	writeManifest(t, mkdir(t, filepath.Join(md, "no-daemon")), map[string]any{
+		"name": "no-daemon", "description": "x", "transport": "none",
+	})
+	// A record with a jail daemon too is served through that daemon (aws-auth's shape), so its
+	// pointers follow the jail daemon's split, never its host daemon.
+	writeManifest(t, mkdir(t, filepath.Join(md, "both-daemons")), map[string]any{
+		"name": "both-daemons", "description": "x", "transport": "loopback-tls", "lifecycle": "spawned",
+		"host_daemon": map[string]any{"cmd": []any{"daemon", "--socket", "{socket}"}},
+		"jail_daemon": map[string]any{"cmd": []any{"yolo-jaild", "both-daemons"}},
+	})
+	set := approvedSetFrom(md)
+	for _, tc := range []struct {
+		runtime string
+		want    []string
+	}{
+		{"podman", []string{"fronted"}},
+		{"macos-user", []string{"fronted"}},
+		{"", []string{"fronted"}},
+		{"container", nil},
+	} {
+		if got := set.FrontedHostNames(set.All(), tc.runtime); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("runtime %q: FrontedHostNames = %v, want %v", tc.runtime, got, tc.want)
+		}
+	}
+	// The ORIGIN GATE is the argv's: a set assembled by hand serves nothing.
+	ungated := SetOf(set.All())
+	if got := ungated.FrontedHostNames(ungated.Enabled(), "podman"); len(got) != 0 {
+		t.Errorf("an ungated set listed fronted host loopholes %v", got)
+	}
+}

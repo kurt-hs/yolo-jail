@@ -97,8 +97,10 @@ type Broker struct {
 // Main is `yolo internal daemon git-broker`: the core's daemon around this source's broker.
 func Main(argv []string) int {
 	return brokercore.Daemon{
-		Name:   Name,
-		Source: Source,
+		Name:           Name,
+		Source:         Source,
+		SelfCheck:      SelfCheck,
+		SelfCheckUsage: "report the host ssh and git and exit (used by `yolo check`)",
 		NewHandler: func(ctx context.Context, scopeFile string, sf brokerscope.File, spawnCwd string, stderr io.Writer) (brokercore.Launch, int) {
 			b, cleanup, err := newBroker(ctx, scopeFile, sf, spawnCwd, stderr, os.Getenv)
 			l := brokercore.Launch{Cleanup: cleanup, Log: stderr}

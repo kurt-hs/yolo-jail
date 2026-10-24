@@ -1231,6 +1231,10 @@ func (o *Options) servedDaemons(specs []loopholes.JailDaemonSpec) packload.Serve
 	// beside this payload): their pointers name a path in the jail that exists exactly when the
 	// bind does (docs/design/loophole-packaging.md LP-D1).
 	names = append(append([]string(nil), names...), o.jailBound...)
+	// And the FRONTED HOST LOOPHOLES jailDaemonsFor recorded: a pointer `served_by` one reaches
+	// its host daemon through yolo's loopback-TLS front (loopholes.FrontedHostNames,
+	// docs/design/git-broker-plan.md ID-6), so it is delivered exactly when the loophole is on.
+	names = append(names, o.frontedHost...)
 	served := packload.ServedInJail(names).WithListen(listen).WithRebind(o.movedServedAddresses()).
 		WithInherited(o.parentPointers)
 	if o.runtime == "macos-user" { // parity: Warned — the Seatbelt sandbox binds nothing (loopholes.JailBoundNames is nil there), so a pointer at what a loophole binds is withheld and the launch names it (packload.UnservedEnvLines)

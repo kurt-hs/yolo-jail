@@ -469,6 +469,40 @@ func (s Set) JailBoundNames(from []*Loophole, runtime string) []string {
 	return names
 }
 
+// FrontedHostNames names each record in from whose HOST DAEMON SERVES THE JAIL over yolo's
+// loopback-TLS front: a loophole with a `host_daemon`, no `jail_daemon` (one with a jail daemon
+// is served through it: ServedJailDaemonNames) and transport loopback-tls, admitted by
+// the same predicate the argv's loops ask (admitsJailSideEffects), so a disabled, inactive or
+// ungated record is not listed (docs/design/git-broker-plan.md ID-6).
+//
+// It is the host-daemon half of "served at this notch" (packload.ServedDaemons): a pack `env`
+// contribution `served_by` such a loophole (packs/git's GIT_CONFIG_* rewrite, which sends the
+// jail's git to the git-broker) is delivered exactly where the launch starts that daemon, and
+// withheld and named everywhere else, so with the loophole off the jail's git is untouched. It
+// is a config-level answer: a daemon that then fails to start leaves the pointer in place, and
+// its client names the missing endpoint.
+//
+// nil on Apple Container (`runtime == "container"`), which runs no host services. macos-user
+// serves them: its launch starts host daemons beside the guest as a container launch does.
+func (s Set) FrontedHostNames(from []*Loophole, runtime string) []string {
+	if runtime == "container" {
+		return nil
+	}
+	var names []string
+	for _, m := range from {
+		// A record with a jail daemon is served through that daemon (ServedJailDaemonNames), whose
+		// address its pointers name, so its host daemon serving does not serve them.
+		if m.HostDaemon == nil || m.JailDaemon != nil || m.Transport != loopholedecl.TransportLoopbackTLS {
+			continue
+		}
+		if !admitsJailSideEffects(m, runtime, &s, "RuntimeArgsFor") {
+			continue
+		}
+		names = append(names, m.Name)
+	}
+	return names
+}
+
 // jailDaemonSpecs is THE COMPOSER of this launch's jail-daemon entries — the body behind
 // Set.JailDaemons and the one runtimeArgsFor calls, so there is exactly one.
 func jailDaemonSpecs(loopholes []*Loophole, runtime string, gate *Set,
