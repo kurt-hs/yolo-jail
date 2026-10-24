@@ -68,14 +68,23 @@ func TestImageCopyRefusesWhatALaunchDoesNotWrite(t *testing.T) {
 	for _, tc := range []struct {
 		name, goos string
 		extra      []string
+		// The refusal names what works: `just load` for this runtime, which
+		// takes the archive branch, and the loader that branch runs.
+		wantStep, wantLoader string
 	}{
-		{"podman on macOS", "darwin", nil},
-		{"apple container", "linux", []string{"--runtime", "container"}},
+		{"podman on macOS", "darwin", nil, "YOLO_RUNTIME=podman just load", "podman load"},
+		{"apple container", "linux", []string{"--runtime", "container"}, "YOLO_RUNTIME=container just load", "container image load"},
 	} {
 		var stderr bytes.Buffer
 		if rc := imageCopyMain(append(tc.extra, args...), &stderr, tc.goos,
 			func([]string) (string, bool) { return imageCopyRootlessInfo, true }, never); rc != 2 {
 			t.Errorf("%s: rc = %d, want 2", tc.name, rc)
+		}
+		msg := stderr.String()
+		for _, want := range []string{"Next step:", tc.wantStep, tc.wantLoader, "launch a jail"} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("%s: refusal %q does not name %q", tc.name, msg, want)
+			}
 		}
 	}
 	if rc := imageCopyMain([]string{"--copier", "/c"}, &bytes.Buffer{}, "linux", nil, never); rc != 2 {

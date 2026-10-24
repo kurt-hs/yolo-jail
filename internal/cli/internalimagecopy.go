@@ -55,8 +55,15 @@ func imageCopyMain(args []string, stderr io.Writer, goos string,
 	// and a copy into a store named by a remote podman's `info` would write the
 	// Mac's filesystem at the VM's paths.
 	if *rt != "podman" || goos != "linux" {
-		fmt.Fprintf(stderr, "yolo internal %s: writes podman's store on Linux only "+
-			"(runtime %q on %s takes an archive, as a launch does)\n", imageCopyVerb, *rt, goos)
+		loader := *rt + " load"
+		if *rt == "container" {
+			loader = "container image load"
+		}
+		fmt.Fprintf(stderr, "yolo internal %s: writes podman's store on Linux only; "+
+			"runtime %q on %s takes an archive instead.\n"+
+			"  Next step: run `YOLO_RUNTIME=%s just load`, which writes the image to an OCI archive and loads it with `%s`; "+
+			"or just launch a jail, which delivers the image by archive itself.\n",
+			imageCopyVerb, *rt, goos, *rt, loader)
 		return 2
 	}
 	facts := image.ReadPodmanStoreFacts(*rt, capture)
