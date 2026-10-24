@@ -23,7 +23,7 @@ func (f *checkoutFixture) cloneWant() PatchedWant {
 // useClones installs clones as the map for the test.
 func useClones(t *testing.T, clones ...LocalClone) {
 	t.Helper()
-	old := SetLocalCloneSource(func() []LocalClone { return clones })
+	old := SetLocalCloneSource(func() ([]LocalClone, error) { return clones, nil })
 	t.Cleanup(func() { SetLocalCloneSource(old) })
 }
 
@@ -110,7 +110,11 @@ func TestAURLNoCloneMatchesIsNotRedirected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, plan := f.store.patchBranchPlan(c)
+	ch, err := f.store.chooseClone(c)
+	if err != nil || ch.match != nil || ch.skip != "" {
+		t.Fatalf("an unmatched URL chose %+v (%v)", ch, err)
+	}
+	got, plan := f.store.patchBranchPlan(c, ch)
 	if got.Repo != c.Repo || plan != nil {
 		t.Fatalf("an unmatched URL was planned at %q (plan %v)", got.Repo, plan)
 	}

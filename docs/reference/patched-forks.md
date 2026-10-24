@@ -373,17 +373,30 @@ A pack file names published URLs, for itself and for every patch branch, so anyo
 working copy. On your machine, the **local clone map** *(a term coined here)* is the set of git clones your user
 config reaches, each keyed by the URLs of its remotes. When a patch branch URL names the same repository as a
 remote of a clone in the map, yolo resolves it against that clone as a local checkout, by the rule above, with
-that remote compared against: behind builds the remote tip, ahead builds the local branch, diverged builds the
-local branch with the warning, and a failed fetch builds the best copy. This holds for any pack, however it was
-selected, including one fetched by URL; because the newest copy wins, a clone can only make a build newer.
+that one remote compared against: behind builds the remote tip, ahead builds the local branch, diverged builds
+the local branch with the warning, and a failed fetch builds the best copy. This holds for any pack, however it
+was selected, including one fetched by URL.
+
+**A clone answers only for a branch the published repository has** ([PF-D104](#PF-D104)). The ref must be a
+branch name, never a `refs/...` spelling, a tag or a commit, and the clone must hold it as the matched remote's
+tracking ref, `refs/remotes/<remote>/<branch>`. Only then does the clone's local branch of the same name win,
+and only when it is newer. A branch the clone has only locally, or only on another remote such as a fork, is
+built from the URL as if there were no clone. The line names the clone and why it was not used, as a warning:
+for example `commit 4cd0bc6b  local clone /home/you/src/pi (local_clones entry ~/src/pi) not used for
+?ref=mine: the clone has no refs/remotes/origin/mine …`. If the branch is pushed,
+`git -C <clone> fetch <remote>` lets the next launch use the clone. Within that rule, a clone moves a build
+only to a commit newer than the published branch's tip as the clone last fetched it, or one that diverges
+from it with the warning.
 
 - **A path registers its clone.** Every path your user config reads a pack from that lies inside a git clone
   registers that clone: a pack named by path or by `git+file://`, and the conventional local pack. A pack that
   is plain files in no repository registers nothing, and that is fine.
 - **`local_clones` registers one explicitly**, for a clone that holds no pack, such as a fork of an upstream
   tool: `"local_clones": ["~/src/pi"]` in `~/.config/yolo-jail/config.jsonc`. It is user scope only; a
-  workspace config that sets it is refused. An entry that does not exist, is in no git clone, or whose clone
-  has no remote is a config error that refuses `yolo check` and the launch, naming the entry.
+  workspace config that sets it is refused. An entry that is not an absolute path after `~` is expanded,
+  does not exist, is in no git clone, or whose clone has no remote is a fatal config error. It refuses every
+  verb that resolves patch branches, naming the entry and the next step: `yolo check`, the jail launch and
+  attach, `yolo host` and `yolo host apply`, and `yolo pack install`, `update` and `status`.
 - **Matching** is by repository identity ([PF-D101](#PF-D101)): `git@github.com:o/r.git`, `ssh://git@github.com/o/r`
   and `https://github.com/o/r` are one repository. When two clones match, a `local_clones` entry wins over a
   pack's clone, then the first in config order.
@@ -1356,6 +1369,27 @@ keeps the plain-fork manifest where older users point and publishes the patched 
   `integration/macosuserpatchedext_test.go` run only on the `macos-user.yml` job, and no Mac has run
   them.
 
+### Backlog: the local clone map
+
+Found by the review of [the local clone map](#the-local-clone-map); none is built, and none blocks it.
+
+- **Local-only branches through a clone** (a possible future question). [PF-D104](#PF-D104) builds a branch
+  the clone has only locally from the URL. Whether a user should be able to opt one in, for example a
+  branch never pushed, is not asked.
+- **A jail can redirect any pack's URL through a clone it can write.** When a pack path in the user config
+  lies inside a clone that is also a jail's workspace, code in that jail can add a remote spelled as another
+  pack's published URL (with a repository-local `insteadOf` pointing its fetch elsewhere) and commit ahead on
+  the branch. The host then builds those commits for any pack naming that URL, including a fetched one. That
+  jail could already edit the pack itself; what is new is the reach into other packs. PF-D104 requires the
+  branch as the matched remote's tracking ref, which the jail can still write, and the line names the clone.
+- **URL identity merges different repositories and misses some matches.** `gitproto.Identity` makes
+  `alice@git.corp:tools/x`, `ssh://bob@git.corp/~/tools/x` and `ssh://git.corp/tools/x` one identity,
+  though on a multi-user ssh host they are three repositories.
+  It misses, harmlessly: a `:22` port against an unported spelling, a path differing only in case, `git://`
+  (no identity), and an `insteadOf` shorthand.
+- **A stale record after unregistering a clone.** For up to the throttle interval (an hour), the record a
+  check wrote keeps `Checkout` and the clone's line, until a check runs again (`yolo pack update` forces one).
+
 ## Current values
 
 Verified at `8e65f3444`, the recovery hatches' rows at `15c739590`. The prose above explains what
@@ -1499,8 +1533,9 @@ adjust later."*), and remain his to overrule.
 | <a id="PF-D99"></a>PF-D99 | Ruled 2026-10-24 by the maintainer (*"ok, all that sounds right. build it"*) on this rule: **a patch branch in a local checkout builds from whichever copy of the branch is newest, and always says which copy and how it relates to the other** ([a patch branch in a local checkout](#a-patch-branch-in-a-local-checkout)). yolo fetches the checkout's remote (`origin`, else the first by name) into its own mirror, never into the user's repository, at every fresh launch and `yolo pack update`, outside the hourly throttle. No local branch or a stale one builds the remote tip; equal, ahead or diverged builds the local branch, and diverged warns with the force-with-lease push. A failed fetch never refuses and says `not verified`. One line from the check record is printed by the launch, `yolo pack update`, `yolo pack series check` and `yolo pack status`. A patch branch at a URL is unchanged. Implementation decisions: a remote fetch counts once per command when it ran within a minute on the check's clock in the same process; the checkout's own fetch, a local read, runs at every check. The remote fetch gets half of the check's remaining time, so a hung fetch is a failed fetch and never refuses the check. After a failed fetch, the remote's copy is the newer of yolo's last fetched tip and the checkout's `refs/remotes/<remote>/<ref>` by ancestry, and the checkout's when they diverged, since that is what the user just fetched (the coordinator's decision under the ruling's "newest copy wins", 2026-10-24). A fetch that succeeded and shows the branch gone from the remote builds the local branch (`not on origin`), else the stale tracking ref with a warning and the push that restores it, rather than refusing while a copy exists. A remote-tracking ref matches only the checkout's own remote names |
 | <a id="PF-D100"></a>PF-D100 | Ruled 2026-10-24 by the maintainer, dictated: **a pack file always names published URLs**, for itself and for every patch branch, so anyone who installs it by URL gets a working copy. *"if you have a path into any local clone of a repository, that adds that repository to the mapping, and because of the newest wins, this is safe even for other packs."* *"We can implicitly register local clones by using a path from them, but we can just also have a user level config to register them regardless."* The rule: whenever any pack, however selected and including one fetched by URL, names a patch branch URL that matches a remote of any registered clone, yolo resolves it against that clone with [PF-D99](#PF-D99)'s newest-copy rule, and the provenance line names the clone path ([the local clone map](#the-local-clone-map)). With no matching clone the URL behaves as before. Every config path a pack is read from that lands in a git clone registers it (a pack named by path or by `git+file://`, the conventional local pack); a plain-files pack registers nothing, which is no error. The user-scope-only `local_clones` key registers a clone explicitly, for a repository that holds no pack, and a workspace config is refused for it. Amended the same day, the maintainer: a `local_clones` entry that does not exist, is in no git clone, or whose clone has no remote is a **fatal** config error, not a warning (*"I think local clones broken in the way you say should be a fatal error. It kind of breaks precedence for it to be a non-fatal error ... It's in your user config. You don't want to silently not have this applied. That leads to hair pulling."*) |
 | <a id="PF-D101"></a>PF-D101 | *Implementation decision* under [PF-D100](#PF-D100), 2026-10-24: URLs are matched by repository identity, `gitproto.Identity` (host lower-cased, user, a trailing `/` and `.git` dropped), so scp-style, `ssh://` and `https://` spellings of one repository match; a `file://` URL or local path matches by its cleaned absolute path. Remotes are read as the clone's configuration writes them, before any `insteadOf` rewriting. When two registered clones match, an explicit `local_clones` entry wins over an implicit one, then the first in config order, and the line names the clones that also matched |
-| <a id="PF-D102"></a>PF-D102 | *Implementation decision* under [PF-D100](#PF-D100), 2026-10-24: the map is gathered from paths only (`git rev-parse --show-toplevel`, then the remote URLs from the clone's configuration), and never writes to the clone; PF-D99's guarantees about the user's refs and `FETCH_HEAD` apply. It is gathered from the user config each time a patch branch URL is resolved, not once at config load, so a verb that changes config, and a test, sees the change. The check record keeps the resolution under the locator as written, so a reader with no map reads the same record. `local_clones` is not inherited into a jail's config: its host paths name nothing there |
+| <a id="PF-D102"></a>PF-D102 | *Implementation decision* under [PF-D100](#PF-D100), 2026-10-24: the map is gathered from paths only (`git rev-parse --show-toplevel`, then the remote URLs from the clone's configuration), and never writes to the clone; PF-D99's guarantees about the user's refs and `FETCH_HEAD` apply. It is gathered from the user config once per patched check of a patch branch URL ([PF-D104](#PF-D104)), not once at config load, so a verb that changes config, and a test, sees the change. The check record keeps the resolution under the locator as written, so a reader with no map reads the same record. `local_clones` is not inherited into a jail's config: its host paths name nothing there |
 | <a id="PF-D103"></a>PF-D103 | *Implementation decision* under [PF-D100](#PF-D100), 2026-10-24: `yolo pack lint` warns, and still passes, when a pack names a relative or `git+file://` patch branch. The warning says whoever installs the pack by URL has their launch refused, as the pack paths inventory measured, and suggests the published URL (the repository's `origin`, when it has one), which the local clone map then resolves to the author's own clone. The relative form is not removed, since that is not ruled |
+| <a id="PF-D104"></a>PF-D104 | Decided 2026-10-24 by the coordinator of the local clone map's build, after its review found that newest-wins across ALL of a clone's remotes let a clone build a branch the published repository never had (a fork's branch, or a local-only one) for a pack that names the published URL: a clone matched by URL is compared against **only the matched remote**, and answers only for a **branch name** it holds as that remote's tracking ref, `refs/remotes/<remote>/<branch>`. A `refs/...` spelling never goes through a clone. The local branch of the same name then wins only when it is newer, by [PF-D99](#PF-D99). Anything else — a local-only branch, another remote's branch, a tag, a commit — is built from the URL as if no clone existed, and the provenance line names the clone and the reason, as a warning, with the fetch that would let the clone answer. Under the same review: a `local_clones` entry that is not absolute after `~` expansion is refused with the other entry problems ([PF-D100](#PF-D100)'s amendment), the map is gathered once per patched check rather than once per resolution step, and every verb that resolves patch branches (the launch and attach, `yolo check`, `yolo host`, `yolo host apply`, `yolo pack install`, `update` and `status`) refuses a broken `local_clones` up front, with the patched check itself refusing as the backstop |
 
 | <a id="PF-D96"></a>PF-D96 | Implementation decision under [PD-NF1](../design/program-delivery.md#PD-NF1): Apple Container's **check-only** background advance is not a failed build: by design it builds nothing, and leaves the candidate pending for the next fresh launch, whose own advance builds it or, beside a running jail, stops ([PF-D92](#PF-D92)) |
 | [OQ-PFK1](#PF-D23) | Decided on its leaning (B) under delegation: a user's own failed edit is not held on the previous good build. Recorded as [PF-D23](#PF-D23), amended by [PF-D77](#PF-D77) |

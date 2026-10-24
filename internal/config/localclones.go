@@ -8,14 +8,17 @@ package config
 //     pack. The maintainer (2026-10-24): "if you have a path into any local clone of a repository, that adds that
 //     repository to the mapping, and because of the newest wins, this is safe even for other packs." A pack that
 //     is plain files in no repository registers nothing, and that is no error.
-//   - EXPLICIT REGISTRATION, `local_clones`: a list of paths, `~` expanded, for a clone that holds no pack (a fork
-//     of an upstream tool). "We can implicitly register local clones by using a path from them, but we can just
-//     also have a user level config to register them regardless." USER SCOPE ONLY: a workspace config must not
-//     point yolo at host paths. An entry that does not exist, is in no git clone, or has no remote is a FATAL
-//     config error (the maintainer, 2026-10-24: "It's in your user config. You don't want to silently not have
-//     this applied. That leads to hair pulling.").
+//   - EXPLICIT REGISTRATION, `local_clones`: a list of absolute paths, `~` expanded, for a clone that holds no
+//     pack (a fork of an upstream tool). "We can implicitly register local clones by using a path from them, but
+//     we can just also have a user level config to register them regardless." USER SCOPE ONLY: a workspace config
+//     must not point yolo at host paths. An entry that is not absolute, does not exist, is in no git clone, or
+//     has no remote is a FATAL config error at every verb that resolves patch branches (the maintainer,
+//     2026-10-24: "It's in your user config. You don't want to silently not have this applied. That leads to
+//     hair pulling."): LocalClones returns it, so the check refuses, and `yolo check`, the launch, `yolo host`
+//     and the `yolo pack` verbs refuse up front with the same text (LocalClonesError).
 //
-// Gathering reads only: `git rev-parse --show-toplevel` and the clone's remote URLs from its configuration.
+// Gathering reads only: `git rev-parse --show-toplevel` and the clone's remote URLs from its configuration, with
+// the caller's GIT_DIR and its kin cleaned away (packsrc.CleanGitEnv).
 
 import (
 	"os"
@@ -32,14 +35,36 @@ import (
 const localClonesKey = "local_clones"
 
 func init() {
-	// The map is asked for whenever a patch branch URL is resolved, from the user config as it stands then.
+	// The map is asked for once per patched check that names a patch branch URL, from the user config as it
+	// stands then.
 	packsrc.SetLocalCloneSource(LocalClones)
+}
+
+// LocalClonesError is a `local_clones` value in the user config that registers nothing: each problem names the
+// entry and the next step. Every verb that resolves patch branches refuses with it.
+type LocalClonesError struct{ Problems []string }
+
+func (e *LocalClonesError) Error() string {
+	return strings.Join(e.Problems, "\n")
+}
+
+// LocalClonesProblem is the user config's `local_clones` refusal, nil when the key is absent or every entry
+// registers a clone.
+func LocalClonesProblem() error {
+	if problems := localClonesProblems(UserScopeConfigOrEmpty()); len(problems) > 0 {
+		return &LocalClonesError{Problems: problems}
+	}
+	return nil
 }
 
 // LocalClones is the local clone map: the `local_clones` entries first, in their order, then every clone a
 // configured pack's path lands in, in pack order (the conventional local pack last). A clone registered twice
-// keeps its first, explicit-first, registration. An entry that is no clone is left out; validation refuses it.
-func LocalClones() []packsrc.LocalClone {
+// keeps its first, explicit-first, registration. A broken `local_clones` value is a LocalClonesError, and no map.
+func LocalClones() ([]packsrc.LocalClone, error) {
+	user := UserScopeConfigOrEmpty()
+	if problems := localClonesProblems(user); len(problems) > 0 {
+		return nil, &LocalClonesError{Problems: problems}
+	}
 	var out []packsrc.LocalClone
 	seen := map[string]bool{}
 	add := func(path, from string, explicit bool) {
@@ -50,12 +75,12 @@ func LocalClones() []packsrc.LocalClone {
 		seen[top] = true
 		out = append(out, packsrc.LocalClone{Dir: top, Explicit: explicit, From: from, Remotes: remotes})
 	}
-	for _, e := range localCloneEntries(UserScopeConfigOrEmpty()) {
+	for _, e := range localCloneEntries(user) {
 		add(expandUser(e), e, true)
 	}
 	entries, _, err := LoadPackEntries()
 	if err != nil {
-		return out
+		return out, nil // the `packs` refusal is the selection's to say; no pack path registers anything
 	}
 	for _, e := range entries {
 		if e.Embedded() {
@@ -65,7 +90,7 @@ func LocalClones() []packsrc.LocalClone {
 			add(dir, e.Name, false)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // packEntryPath is the directory on this machine a pack source is read from: a file:// pack's path, a
@@ -100,6 +125,37 @@ func localCloneEntries(cfg *jsonx.OrderedMap) []string {
 	return out
 }
 
+// localClonesProblems is every reason cfg's `local_clones` value registers less than it says: its shape, and each
+// entry that is not absolute, does not exist, is in no clone, or whose clone has no remote. Each names the next
+// step.
+func localClonesProblems(cfg *jsonx.OrderedMap) []string {
+	v, present := cfg.Get(localClonesKey)
+	if !present || v == nil {
+		return nil
+	}
+	where := paths.UserConfigPath()
+	list, ok := v.([]any)
+	if !ok {
+		return []string{"config." + localClonesKey + ": expected a list of paths (got " + pyReprValue(v) +
+			") — write it as [\"~/src/repo\"], or remove it from " + where + "."}
+	}
+	var out []string
+	for _, item := range list {
+		s, ok := item.(string)
+		if !ok || strings.TrimSpace(s) == "" {
+			out = append(out, "config."+localClonesKey+": expected a list of paths (got the entry "+pyReprValue(item)+
+				") — write each entry as a path, or remove it from "+where+".")
+			continue
+		}
+		s = strings.TrimSpace(s)
+		if why := localCloneProblem(expandUser(s)); why != "" {
+			out = append(out, "config."+localClonesKey+": the entry "+pyReprValue(s)+" "+why+" — fix the path, "+
+				"clone the repository there, or remove the entry from "+where+".")
+		}
+	}
+	return out
+}
+
 // gatherClone is the clone path lands in, its top level and its remotes; ok false when path is in no clone.
 func gatherClone(path string) (string, []packsrc.CloneRemote, bool) {
 	if fi, err := os.Stat(path); err != nil || !fi.IsDir() {
@@ -127,30 +183,17 @@ func gatherClone(path string) (string, []packsrc.CloneRemote, bool) {
 	return top, remotes, true
 }
 
-// gitRead runs a read-only git in dir, stdout only.
+// gitRead runs a read-only git in dir, stdout only, with no GIT_DIR or kin inherited from the caller, which would
+// otherwise answer for that repository whatever dir is.
 func gitRead(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
+	cmd.Env = append(packsrc.CleanGitEnv(os.Environ()), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
 	out, err := cmd.Output()
 	return string(out), err
 }
 
-// validateLocalClones shape-checks the key, refuses a workspace value, and refuses a user entry that registers
-// nothing: one that does not exist, is in no git clone, or whose clone has no remote.
+// validateLocalClones refuses a workspace value, and the user value's problems (localClonesProblems).
 func validateLocalClones(config *jsonx.OrderedMap, workspace string, errs *[]string) {
-	v, present := config.Get(localClonesKey)
-	if present && v != nil {
-		list, ok := v.([]any)
-		if !ok {
-			add(errs, "config."+localClonesKey+": expected a list of paths (got "+pyReprValue(v)+")")
-		} else {
-			for _, item := range list {
-				if s, ok := item.(string); !ok || strings.TrimSpace(s) == "" {
-					add(errs, "config."+localClonesKey+": expected a list of paths (got the entry "+pyReprValue(item)+")")
-				}
-			}
-		}
-	}
 	if wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {}); err == nil && wsCfg != nil {
 		if wsValue, atWorkspace := wsCfg.Get(localClonesKey); atWorkspace && wsValue != nil {
 			add(errs, "config."+localClonesKey+": user-scope only — it points yolo at clones on this machine, and a "+
@@ -158,16 +201,17 @@ func validateLocalClones(config *jsonx.OrderedMap, workspace string, errs *[]str
 				", or remove it from the workspace config.")
 		}
 	}
-	for _, e := range localCloneEntries(UserScopeConfigOrEmpty()) {
-		if why := localCloneProblem(expandUser(e)); why != "" {
-			add(errs, "config."+localClonesKey+": the entry "+pyReprValue(e)+" "+why+" — fix the path, clone the "+
-				"repository there, or remove the entry from "+paths.UserConfigPath()+".")
-		}
+	for _, p := range localClonesProblems(UserScopeConfigOrEmpty()) {
+		add(errs, p)
 	}
 }
 
 // localCloneProblem is why path registers no clone, "" when it does.
 func localCloneProblem(path string) string {
+	if !filepath.IsAbs(path) {
+		return "is not an absolute path (a relative one would name a different directory from each place yolo " +
+			"runs), so write it from / or ~/"
+	}
 	fi, err := os.Stat(path)
 	switch {
 	case err != nil && os.IsNotExist(err):

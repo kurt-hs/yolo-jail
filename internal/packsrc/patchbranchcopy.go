@@ -300,19 +300,24 @@ func (r *PatchBranchResolved) NotVerified() bool {
 	return r.Checkout != "" && r.Remote != "" && !r.Verified
 }
 
-// Loud reports a line every act prints as a warning: a diverged branch, a remote that could not be fetched, or
-// a build from a stale tracking ref of a branch the remote no longer has.
+// Loud reports a line every act prints as a warning: a diverged branch, a remote that could not be fetched, a
+// build from a stale tracking ref of a branch the remote no longer has, or a registered local clone that matched
+// the URL and was not used (CloneSkipped).
 func (r *PatchBranchResolved) Loud() bool {
-	return r.Diverged() || r.NotVerified() || (r.RemoteGone && r.Local == "")
+	return r.Diverged() || r.NotVerified() || (r.RemoteGone && r.Local == "") || (r.Checkout == "" && r.CloneSkipped != "")
 }
 
 // Line is the patch branch's provenance in one line, read from the check record with no git: the ref, the copy
 // that answered, its commit, how it relates to the other copy, and the remote fetch's freshness as of now (the
-// check's clock). "" for a patch branch at a URL, whose label says all there is.
+// check's clock). For a patch branch at a URL, "" — whose label says all there is — unless a registered local
+// clone matched it and was not used, when it is the commit and why (CloneSkipped).
 //
 //	mine  origin 4cd0bc6b  local branch is stale, 1 behind origin  fetched just now
 //	mine  local 9e1f22aa  2 unpushed  not verified (fetch failed: …), last fetched 3 hours ago — run `git -C … fetch origin mine`
 func (r *PatchBranchResolved) Line(now time.Time) string {
+	if r != nil && r.Checkout == "" && r.CloneSkipped != "" {
+		return "commit " + shortCommit(r.Commit) + "  " + r.CloneSkipped
+	}
 	if r == nil || r.Checkout == "" {
 		return ""
 	}

@@ -19,7 +19,9 @@ package cli
 // verbs report.
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
@@ -42,6 +44,9 @@ type hostPackSet struct {
 	entryProblems []string
 	// closureErr is the closure's refusal (a need naming a pack yolo does not ship, a cycle).
 	closureErr error
+	// localClonesErr is the user config's `local_clones` refusal (config.LocalClonesProblem): every verb that
+	// resolves patch branches refuses it, as a jail launch does (docs/reference/patched-forks.md PF-D100).
+	localClonesErr error
 	// loadErr is an unreadable user config: no selection at all.
 	loadErr error
 }
@@ -70,12 +75,13 @@ func selectHostPacksFrom(entries []config.PackEntry, problems []string,
 		},
 	})
 	out := hostPackSet{
-		packs:         sel.Packs(),
-		configured:    sel.Configured,
-		added:         sel.Added,
-		causes:        sel.Causes,
-		entryProblems: problems,
-		closureErr:    sel.ClosureErr,
+		packs:          sel.Packs(),
+		configured:     sel.Configured,
+		added:          sel.Added,
+		causes:         sel.Causes,
+		entryProblems:  problems,
+		closureErr:     sel.ClosureErr,
+		localClonesErr: config.LocalClonesProblem(),
 	}
 	for _, u := range sel.Unresolved {
 		out.unresolved = append(out.unresolved, newUnresolvedPack(u.Entry, u.Err))
@@ -169,25 +175,58 @@ func (s hostPackSet) problems() []unresolvedPack {
 // launchRefusal is NC-D5's refusal for a launch-shaped host verb (`yolo host --`, `yolo host
 // env`): every problem, each naming its pack or entry, then the remedies. nil when the selection
 // is complete. A jail launch refuses each of these too (config validation, stagePacks), so the
-// two notches stop at the same configs.
+// two notches stop at the same configs. A broken `local_clones` (localClonesErr) is listed too, each line naming
+// its entry and next step itself, since it decides which copy of a patch branch every pack builds.
 func (s hostPackSet) launchRefusal() error {
 	problems := s.problems()
-	if len(problems) == 0 {
+	clones := localClonesLines(s.localClonesErr)
+	if len(problems) == 0 && len(clones) == 0 {
 		return nil
 	}
 	var lines []string
 	for _, u := range problems {
 		lines = append(lines, fmt.Sprintf("  ✗ %s: %s", u.Name, u.Reason))
 	}
+	for _, c := range clones {
+		lines = append(lines, "  ✗ "+c)
+	}
 	for _, g := range unresolvedPackGroups(problems) {
 		lines = append(lines, "  → "+g.Remedy)
 	}
 	return fmt.Errorf("packs: %s — this launch cannot carry the pack set your config asks for, "+
 		"and a launch never runs on part of it (a jail launch refuses the same config):\n%s",
-		describeCount(len(problems)), strings.Join(lines, "\n"))
+		describeCount(len(problems)+len(clones)), strings.Join(lines, "\n"))
+}
+
+// localClonesLines is a `local_clones` refusal's problems, one line each (config.LocalClonesError).
+func localClonesLines(err error) []string {
+	if err == nil {
+		return nil
+	}
+	var lce *config.LocalClonesError
+	if errors.As(err, &lce) {
+		return lce.Problems
+	}
+	return []string{err.Error()}
 }
 
 // describeCount is the refusal's head: how many problems it lists.
 func describeCount(n int) string {
 	return plural(n, "1 problem", fmt.Sprintf("%d problems", n))
+}
+
+// refuseLocalClones prints the user config's `local_clones` refusal (config.LocalClonesProblem) under verb and
+// reports whether it did: a verb that resolves patch branches never runs without the clones the user registered
+// (docs/reference/patched-forks.md PF-D100), and says the same lines a launch does, each naming its next step.
+func refuseLocalClones(errw io.Writer, verb string) bool {
+	lines := localClonesLines(config.LocalClonesProblem())
+	if len(lines) == 0 {
+		return false
+	}
+	fmt.Fprintf(errw, "%s: the user config's local_clones registers less than it names, and it never resolves "+
+		"a patch branch without the clones you registered:\n", verb)
+	for _, l := range lines {
+		fmt.Fprintf(errw, "  ✗ %s\n", l)
+	}
+	return true
 }

@@ -1409,13 +1409,18 @@
     same repository as a remote of a clone yolo knows, yolo builds from that
     clone with the newest-copy rule: your local branch when it is ahead or has
     diverged, the published tip when your branch is behind, and the best copy
-    when the fetch fails.  The provenance line names the clone it used.  Any
+    when the fetch fails.  The provenance line names the clone it used.  A
+    clone answers only for a branch name it has fetched from the matching
+    remote (refs/remotes/<remote>/<branch>); a branch it has only locally or
+    on another remote is built from the URL, and the line says why.  Any
     path a pack is read from that lies in a git clone registers that clone
     already, so list here only a clone that holds no pack, such as a fork of an
     upstream tool.  "~" is expanded.  When two clones match one URL, an entry
     here wins over a pack's clone, then the first in config order.  An entry
-    that does not exist, is not in a git clone, or whose clone has no remote is
-    a `yolo check` error, and the launch refuses.
+    that is not an absolute path, does not exist, is not in a git clone, or
+    whose clone has no remote is a `yolo check` error, and the launch,
+    `yolo host`, `yolo host apply` and `yolo pack install`, `update` and
+    `status` refuse.
 
     USER SCOPE ONLY.  A workspace config must not point yolo at host paths, so a
     workspace value is a `yolo check` error.

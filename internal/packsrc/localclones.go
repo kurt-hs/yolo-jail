@@ -12,18 +12,27 @@ package packsrc
 //
 //   - WHO REGISTERS. config (localclones.go there) gathers the map from the USER config: every path a pack is
 //     read from that lands inside a git clone (a pack named by path or by git+file://, the conventional local
-//     pack), and every `local_clones` entry. A plain-files pack in no repository registers nothing.
+//     pack), and every `local_clones` entry. A plain-files pack in no repository registers nothing. A broken
+//     `local_clones` value is the source's error, and the check refuses with it.
 //   - WHEN IT APPLIES. A patch branch whose repository is a URL (not a directory on this machine) that names
 //     the same repository as a remote of a registered clone is resolved as that clone's local checkout, with
-//     that remote compared against. Nothing else changes: the record still keys the resolution by the
-//     locator as written, so a reader with no map (a jail) reads the same record.
-//   - WHICH CLONE. An explicit `local_clones` entry before an implicit one, then config order (the order
-//     LocalCloneSource returns them in). The provenance line names the clone it used and why.
+//     ONLY THAT REMOTE compared against (PF-D104). The record still keys the resolution by the locator as
+//     written, so a reader with no map (a jail) reads the same record.
+//   - ONLY A REF THE URL HAS (PF-D104). Newest-wins is safe only for a branch the published repository has, so
+//     a clone answers only for a branch name (never a refs/... spelling, a tag or a commit) that the clone holds
+//     as that remote's tracking ref, refs/remotes/<remote>/<ref>. The local branch of the same name then wins
+//     only when it is newer, as for any checkout. Anything else — a local-only branch, another remote's branch —
+//     is built from the URL as if no clone existed, and the line names the clone and why it was not used.
+//   - WHICH CLONE. An explicit `local_clones` entry before an implicit one, then config order (the order the
+//     source returns them in). The provenance line names the clone it used and why.
+//   - ONCE PER CHECK. CheckPatched asks the source once, and only for a patch branch at a URL (chooseClone).
 //   - READ ONLY. Gathering runs `git rev-parse --show-toplevel` and reads the clone's remote URLs from its
-//     configuration; nothing is ever written to the clone.
+//     configuration; choosing reads the tracking ref; nothing is ever written to the clone.
 
 import (
+	"errors"
 	"net/url"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -56,13 +65,12 @@ func (c LocalClone) Via() string {
 
 var (
 	localCloneMu     sync.Mutex
-	localCloneSource func() []LocalClone
+	localCloneSource func() ([]LocalClone, error)
 )
 
 // SetLocalCloneSource installs the function that gathers the local clone map, which config installs (it
 // reads the user config, which this package does not), and returns the one it replaced. Nil means no map.
-// The source is asked at each resolution that could use it, so a test's or a verb's change of config is seen.
-func SetLocalCloneSource(f func() []LocalClone) func() []LocalClone {
+func SetLocalCloneSource(f func() ([]LocalClone, error)) func() ([]LocalClone, error) {
 	localCloneMu.Lock()
 	defer localCloneMu.Unlock()
 	old := localCloneSource
@@ -70,12 +78,12 @@ func SetLocalCloneSource(f func() []LocalClone) func() []LocalClone {
 	return old
 }
 
-func localClones() []LocalClone {
+func localClones() ([]LocalClone, error) {
 	localCloneMu.Lock()
 	f := localCloneSource
 	localCloneMu.Unlock()
 	if f == nil {
-		return nil
+		return nil, nil
 	}
 	return f()
 }
@@ -153,20 +161,57 @@ func matchLocalClone(repo string, clones []LocalClone) *CloneMatch {
 	return m
 }
 
-// cloneFor is the registered clone a patch branch at c resolves against, nil when c is no URL or no clone
-// matches. A repository that is a directory on this machine is a checkout already (checkoutPlanOf).
-func cloneFor(c Addr) *CloneMatch {
+// cloneChoice is what one check decided about a patch branch URL and the local clone map: the clone it resolves
+// against (match), or, when a clone matched and cannot answer for the ref, why not (skip). Zero for a patch
+// branch that is no URL, or that no clone matches.
+type cloneChoice struct {
+	match *CloneMatch
+	skip  string
+}
+
+// chooseClone is c's cloneChoice: the map asked once (the source's error is the check's), the matching clone,
+// and whether it may answer for c's ref (PF-D104).
+func (s *Store) chooseClone(c Addr) (cloneChoice, error) {
 	if c.Repo == "" || strings.HasPrefix(c.Repo, "file://") {
-		return nil
+		return cloneChoice{}, nil
 	}
-	return matchLocalClone(c.Repo, localClones())
+	clones, err := localClones()
+	if err != nil {
+		return cloneChoice{}, err
+	}
+	m := matchLocalClone(c.Repo, clones)
+	if m == nil {
+		return cloneChoice{}, nil
+	}
+	notUsed := func(why string) cloneChoice {
+		return cloneChoice{skip: "local clone " + m.Clone.Dir + " (" + m.Clone.Via() + ") not used for ?ref=" + c.Ref +
+			": " + why + "; built from " + c.Repo + " as if there were no clone"}
+	}
+	name, ok := branchName(c.Ref)
+	if !ok || strings.HasPrefix(c.Ref, "refs/") {
+		return notUsed("a clone answers only for a branch name its remote " + m.Remote.Name + " has, and this is " +
+			"no branch name"), nil
+	}
+	tracking := "refs/remotes/" + m.Remote.Name + "/" + name
+	sha, err := s.run("", "-C", m.Clone.Dir, "rev-parse", "--verify", "--quiet", tracking+"^{commit}")
+	var exit *exec.ExitError
+	if err != nil && !(errors.As(err, &exit) && exit.ExitCode() == 1) {
+		return notUsed("its " + tracking + " could not be read (" + oneLine(err) + ")"), nil
+	}
+	if strings.TrimSpace(sha) == "" {
+		return notUsed("the clone has no " + tracking + ", so the branch is not one the published repository " +
+			"has as far as the clone knows (a local-only branch, or another remote's, never stands in for the " +
+			"URL) — if it is pushed, `git -C " + m.Clone.Dir + " fetch " + m.Remote.Name + "` and the next launch uses " +
+			"the clone"), nil
+	}
+	return cloneChoice{match: m}, nil
 }
 
 // patchBranchPlan is the address a check fetches and resolves a patch branch at, and its checkout plan: a
-// checkout's own (checkoutPlanOf), or, for a URL a registered clone's remote names, that clone's, with that
-// remote as the one compared against. The returned address keeps c.Raw, which keys the record.
-func (s *Store) patchBranchPlan(c Addr) (Addr, *checkoutPlan) {
-	m := cloneFor(c)
+// checkout's own (checkoutPlanOf), or, for a URL a registered clone may answer for (ch.match), that clone's, with
+// only the matched remote compared against and read. The returned address keeps c.Raw, which keys the record.
+func (s *Store) patchBranchPlan(c Addr, ch cloneChoice) (Addr, *checkoutPlan) {
+	m := ch.match
 	if m == nil {
 		return c, s.checkoutPlanOf(c)
 	}
@@ -175,7 +220,7 @@ func (s *Store) patchBranchPlan(c Addr) (Addr, *checkoutPlan) {
 	if p == nil {
 		return c, s.checkoutPlanOf(c)
 	}
-	p.remote = m.Remote.Name
+	p.remote, p.remotes = m.Remote.Name, []string{m.Remote.Name}
 	if u, err := s.run("", "-C", m.Clone.Dir, "remote", "get-url", "--", m.Remote.Name); err == nil && strings.TrimSpace(u) != "" {
 		p.url = strings.TrimSpace(u)
 	} else {

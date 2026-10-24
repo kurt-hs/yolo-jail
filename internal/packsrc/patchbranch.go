@@ -112,6 +112,10 @@ type PatchBranchResolved struct {
 	// registered clones that matched the URL and lost (an explicit entry wins, then config order).
 	CloneVia    string   `json:"clone_via,omitempty"`
 	CloneOthers []string `json:"clone_others,omitempty"`
+	// CloneSkipped is set when a registered local clone matched a patch branch URL and did not answer for its
+	// ref (PF-D104: a refs/... spelling, or a branch the clone does not hold as the matched remote's tracking
+	// ref): the sentence naming the clone and why, and that the build is the URL's.
+	CloneSkipped string `json:"clone_skipped,omitempty"`
 	// Remote is the checkout's remote compared against (origin, else the first by name) and RemoteURL its
 	// address; Local the checkout's local branch and RemoteTip the remote's, "" where there is none; Ahead and
 	// Behind count the local branch's commits the remote tip lacks and the remote tip's the local lacks.

@@ -378,6 +378,11 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 	// the machine document, and a fact resolved once and passed twice is a fact two readers
 	// can come to disagree about.
 	survey.noteHome(home)
+	// A broken `local_clones` decides which copy of a patch branch every patched pack builds, so apply refuses it
+	// before it writes or builds anything, as every launch does (PF-D100).
+	if refuseLocalClones(errw, "yolo host apply") {
+		return 1
+	}
 	// LoadPackEntries rather than LoadPacks: a malformed `packs` entry is a pack the config asks
 	// for and this run cannot resolve, which the selection below reports and --assert refuses
 	// (NC-D5). Dropped in silence, a list of only malformed entries read as an empty `packs`, and

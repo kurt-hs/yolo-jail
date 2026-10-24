@@ -5,6 +5,7 @@ package config
 // workspace may not name clones, and an entry that registers nothing is a fatal config error.
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -100,6 +101,11 @@ func TestAPathPackRegistersItsCloneForAnotherPacksPublishedURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	lcUserConfig(t, `{"packs": [{"source": "`+packDir+`", "name": "other"}]}`)
+	// The published URL itself leads nowhere, at once: a check that did not use the clone fails fast rather than
+	// waiting on the network.
+	global := filepath.Join(t.TempDir(), "gitconfig")
+	write(t, global, "[url \"/nonexistent-published/\"]\n\tinsteadOf = ssh://git@example.com/\n")
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
 	before := lcRefs(t, machine)
 
 	store := &packsrc.Store{Dir: t.TempDir()}
@@ -132,8 +138,8 @@ func TestAPathPackRegistersItsCloneForAnotherPacksPublishedURL(t *testing.T) {
 func TestAPlainFilesPackRegistersNothing(t *testing.T) {
 	plain := t.TempDir()
 	lcUserConfig(t, `{"packs": [{"source": "`+plain+`", "name": "plain"}]}`)
-	if got := LocalClones(); len(got) != 0 {
-		t.Fatalf("a plain-files pack registered %+v", got)
+	if got, err := LocalClones(); err != nil || len(got) != 0 {
+		t.Fatalf("a plain-files pack registered %+v (%v)", got, err)
 	}
 	errs, _ := ValidateConfig(decode(t, `{}`), t.TempDir(), nil)
 	for _, e := range errs {
@@ -151,7 +157,10 @@ func TestLocalClonesEntryRegistersAClone(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = root
-	got := LocalClones()
+	got, err := LocalClones()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 1 || !got[0].Explicit || got[0].From != "~/m" {
 		t.Fatalf("LocalClones = %+v, want the one explicit entry", got)
 	}
@@ -192,5 +201,45 @@ func TestValidateConfigRefusesALocalClonesEntryThatRegistersNothing(t *testing.T
 	}
 	if _, known := knownTopLevelConfigKeys["local_clones"]; !known {
 		t.Error("local_clones is not in knownTopLevelConfigKeys")
+	}
+}
+
+// A relative entry (after `~` expansion) is refused, even when it names a clone from where yolo happens to run:
+// it would name a different directory from each place.
+func TestALocalClonesEntryMustBeAbsolute(t *testing.T) {
+	_, _, machine, _ := lcFixture(t, "git@example.com:o/r.git")
+	t.Chdir(filepath.Dir(machine))
+	body := `{"local_clones": ["machine"]}`
+	lcUserConfig(t, body)
+	errs, _ := ValidateConfig(decode(t, body), t.TempDir(), nil)
+	if joined := strings.Join(errs, "\n"); !strings.Contains(joined, "'machine' is not an absolute path") {
+		t.Errorf("errors = %v, want the relative entry refused", errs)
+	}
+	if _, err := LocalClones(); err == nil {
+		t.Error("LocalClones accepted a relative entry")
+	}
+}
+
+// LocalClones itself returns the refusal, so the patched check (and every verb that resolves patch branches
+// through it) refuses rather than building without the clone.
+func TestLocalClonesReturnsTheRefusal(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "gone")
+	lcUserConfig(t, `{"local_clones": ["`+missing+`"]}`)
+	got, err := LocalClones()
+	var lce *LocalClonesError
+	if !errors.As(err, &lce) || got != nil {
+		t.Fatalf("LocalClones = %+v, %v; want a LocalClonesError and no map", got, err)
+	}
+	if !strings.Contains(err.Error(), missing+"' does not exist") || !strings.Contains(err.Error(), "remove the entry from") {
+		t.Errorf("the refusal %q does not name the entry and the next step", err)
+	}
+	if LocalClonesProblem() == nil {
+		t.Error("LocalClonesProblem is nil for a broken entry")
+	}
+	store := &packsrc.Store{Dir: t.TempDir()}
+	res := store.CheckPatched(packsrc.PatchedWant{Owner: "p/t", Source: "git+file:///nonexistent?ref=main",
+		PatchBranch: "git+https://example.com/o/r?ref=mine"}, packsrc.CheckOptions{})
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "does not exist") {
+		t.Errorf("the patched check ran with a broken local_clones: %v", res.Err)
 	}
 }

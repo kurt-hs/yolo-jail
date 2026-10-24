@@ -1735,6 +1735,13 @@ func packInstall(out, errw io.Writer, color bool) int {
 // pin (`yolo pack update`), and without it install pins only a fork the lock does not pin yet for
 // its declared source (pinForks).
 func packInstallPins(out, errw io.Writer, color, repinForks bool) int {
+	verb := "yolo pack install"
+	if repinForks {
+		verb = "yolo pack update"
+	}
+	if refuseLocalClones(errw, verb) {
+		return 1
+	}
 	entries, err := config.LoadPacks(func(msg string) {
 		fmt.Fprintf(errw, "Warning: %s\n", msg)
 	})
@@ -1895,6 +1902,9 @@ func promptYesNo(out io.Writer, stdin io.Reader, prompt string) bool {
 // the CONFIG address, and a user who edits `?ref=v1` to `?ref=v2` has a config and a
 // lockfile that disagree until the next launch (or install) records the new address.
 func packStatus(out, errw io.Writer, color bool) int {
+	if refuseLocalClones(errw, "yolo pack status") {
+		return 1
+	}
 	entries, err := config.LoadPacks(nil)
 	if err != nil {
 		fmt.Fprintf(errw, "yolo pack status: %v\n", err)

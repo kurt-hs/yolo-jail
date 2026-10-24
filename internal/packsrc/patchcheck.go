@@ -179,7 +179,17 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 	if w.PatchBranch != "" && addr.Repo == "" {
 		return CheckResult{Err: fmt.Errorf("the patch branch repository is not mapped into this workspace — run `yolo pack series check` on the host or start a host launch")}
 	}
-	refresh := opts.RefreshPatchBranch && w.PatchBranch != "" && isCheckoutLocator(w)
+	// THE LOCAL CLONE MAP, asked once per check (localclones.go): which registered clone answers for a patch
+	// branch URL, or why the one that matched does not. A broken `local_clones` refuses the check.
+	var clone cloneChoice
+	if w.PatchBranch != "" {
+		if c, err := ParseFrom(w.PatchBranch, w.PatchBranchDir); err == nil {
+			if clone, err = s.chooseClone(c); err != nil {
+				return CheckResult{Err: err, Inputs: in}
+			}
+		}
+	}
+	refresh := opts.RefreshPatchBranch && w.PatchBranch != "" && isCheckoutLocator(w, clone)
 	once := fetchOnce{}
 	rec, readErr := s.LoadCheckRecord(w.Owner)
 	if readErr == nil && !opts.Force && opts.FreshAfter == nil && !retryFetch(opts, rec, in) && !refresh {
@@ -218,7 +228,7 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 				// same resolution, against the tip the last check recorded. Unmoved, the record takes this
 				// resolution's copy, relation and freshness, and no check runs; moved, the check runs now.
 				res.PatchBranchRefreshed = true
-				if moved = s.refreshPatchBranch(w, addr, r, now(), waiting, once); !moved {
+				if moved = s.refreshPatchBranch(w, clone, addr, r, now(), waiting, once); !moved {
 					res.Record = r
 					return true, nil
 				}
@@ -258,7 +268,7 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 				c, _ := ParseFrom(w.PatchBranch, w.PatchBranchDir) // Inputs parsed it
 				patchBranch = &c
 			}
-			found = s.findCandidates(addr, follow, w.Base, patchBranch, opts.Force || opts.FreshAfter != nil, now(), waiting, once)
+			found = s.findCandidates(addr, follow, w.Base, patchBranch, clone, opts.Force || opts.FreshAfter != nil, now(), waiting, once)
 		}
 		if found.lockHeld != nil {
 			// A NoWait STORE MET A HELD MIRROR LOCK: nothing was fetched or listed, so the attempt's
@@ -309,9 +319,9 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 
 // isCheckoutLocator reports a patch branch given as a local checkout: a relative locator, a git+file:// one, or a
 // URL a registered local clone's remote names (localclones.go).
-func isCheckoutLocator(w PatchedWant) bool {
+func isCheckoutLocator(w PatchedWant, clone cloneChoice) bool {
 	c, err := ParseFrom(w.PatchBranch, w.PatchBranchDir)
-	return err == nil && (strings.HasPrefix(c.Repo, "file://") || cloneFor(c) != nil)
+	return err == nil && (strings.HasPrefix(c.Repo, "file://") || clone.match != nil)
 }
 
 // refreshPatchBranch is a fresh launch's patch branch refresh inside the throttle: the checkout's patch branch
@@ -319,7 +329,7 @@ func isCheckoutLocator(w PatchedWant) bool {
 // last check found. It reports whether the check must run now — the branch moved, or the refresh could not say
 // (no recorded tip, a problem, the checkout's own fetch failed) — and otherwise puts this resolution in r. A
 // mirror lock another process holds keeps r as it stands.
-func (s *Store) refreshPatchBranch(w PatchedWant, upstream Addr, r *CheckRecord, now time.Time, waiting func(string), once fetchOnce) bool {
+func (s *Store) refreshPatchBranch(w PatchedWant, clone cloneChoice, upstream Addr, r *CheckRecord, now time.Time, waiting func(string), once fetchOnce) bool {
 	if r.Check == nil || r.Check.Tip == "" || r.PatchBranch == nil {
 		return true
 	}
@@ -327,7 +337,7 @@ func (s *Store) refreshPatchBranch(w PatchedWant, upstream Addr, r *CheckRecord,
 	if err != nil {
 		return true
 	}
-	c, plan := s.patchBranchPlan(c)
+	c, plan := s.patchBranchPlan(c, clone)
 	if plan == nil {
 		return true
 	}
@@ -376,12 +386,12 @@ func keepListedOutcomes(outcomes []EntryOutcome, list []ListEntry) []EntryOutcom
 
 // findCandidates is the check's fetch and ref rule, under the mirror's lock, with no checkout: the
 // fetch step, then the ref read afresh, the series' base made present, and the walk's list.
-func (s *Store) findCandidates(a Addr, follow FollowRule, base string, patchBranch *Addr, force bool, now time.Time,
+func (s *Store) findCandidates(a Addr, follow FollowRule, base string, patchBranch *Addr, clone cloneChoice, force bool, now time.Time,
 	waiting func(string), once fetchOnce) CheckFound {
 	var found CheckFound
 	var plan *checkoutPlan
 	if patchBranch != nil {
-		pb, p := s.patchBranchPlan(*patchBranch)
+		pb, p := s.patchBranchPlan(*patchBranch, clone)
 		patchBranch, plan = &pb, p
 	}
 	unlock, err := s.lockMirrors(mirrorsOf(a.Repo, patchBranch, plan), waiting)
@@ -442,8 +452,14 @@ func (s *Store) findCandidates(a Addr, follow FollowRule, base string, patchBran
 			}
 		}
 		if why != "" {
+			if clone.skip != "" {
+				why += " (" + clone.skip + ")"
+			}
 			found.Problem = why
 			return found
+		}
+		if clone.match == nil && resolved.Checkout == "" {
+			resolved.CloneSkipped = clone.skip
 		}
 		found.PatchBranch, base = resolved, resolved.Base
 	} else if base != "" {

@@ -164,8 +164,14 @@ for example `mine  origin 4cd0bc6b  local branch is stale, 1 behind origin  fetc
 When a pack names its patch branch by a published URL, and you have a clone of that repository, yolo
 builds from your clone by the rules above. The line names the clone it used, for example
 `mine  local 9e1f22aa  2 unpushed  fetched just now  local clone /home/you/src/pi (local_clones entry ~/src/pi)`.
-This works for any pack, including one you installed from someone else's URL, and since the newest copy
-wins, your clone can only make a build newer.
+This works for any pack, including one you installed from someone else's URL.
+
+Your clone is used only for a branch the published repository has: the patch branch must be a branch name,
+and your clone must have fetched it from the remote that matched, so `refs/remotes/origin/mine` exists. Then
+your local `mine` is built only when it is newer. A branch you have only locally, or only on another remote
+such as your fork, is built from the URL as if you had no clone, and the line warns that your clone was not
+used and why. If you have pushed the branch, `git -C ~/src/pi fetch origin` lets the next launch use your
+clone.
 
 yolo knows a clone in two ways:
 
@@ -179,8 +185,10 @@ yolo knows a clone in two ways:
   { "local_clones": ["~/src/pi"] }
   ```
 
-  It is read from your user config only. An entry that does not exist, is not in a git clone, or whose
-  clone has no remote stops `yolo check` and the launch, naming the entry.
+  It is read from your user config only. Write each entry from `/` or `~/`. An entry that is not an
+  absolute path, does not exist, is not in a git clone, or whose clone has no remote stops every command
+  that resolves patch branches, naming the entry and how to fix it: `yolo check`, the launch, `yolo host`,
+  `yolo host apply`, and `yolo pack install`, `update` and `status`.
 
 The URL matches whichever way the remote is spelled: `git@github.com:you/pi.git` and
 `https://github.com/you/pi` are the same repository. When two clones match, a `local_clones` entry wins,
