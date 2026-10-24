@@ -183,7 +183,7 @@ func uniqueLines(s string) []string {
 }
 
 // A `find` blocker first on PATH (the guardrails pack's, in a `yolo host --` session that runs
-// yolo) must not refuse the walk: both scripts run the system default PATH's find (`command -p find`). Measured on a Mac
+// yolo) must not refuse the walk: both scripts run /usr/bin/find, or the system default PATH's find where that is missing. Measured on a Mac
 // on 2026-10-23, where every launch fixture's macos-fix-permissions failed on the blocker.
 func TestThePermissionScriptsRunUnderAFindBlocker(t *testing.T) {
 	bash, err := exec.LookPath("bash")

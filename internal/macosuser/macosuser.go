@@ -1092,8 +1092,10 @@ func WorkspaceACLAces(group string) map[string]string {
 // permitted". Those files were created under the inheriting entries and already carry the
 // grant, so leaving them out loses nothing. The exclusion is built only when the account exists:
 // BSD find refuses `-user` naming an unknown user, and with no account no file can be its.
-// find runs as `command -p find`, the system default PATH's, never a guardrails `find` blocker
-// first on PATH (/usr/bin/find on a Mac; spelled portably so the scripts also run in a Linux test).
+// find is /usr/bin/find, never a guardrails `find` blocker first on PATH; where that path is
+// missing (a Linux test) it is the system default PATH's find, resolved by `command -p -v` and run
+// by path. Never `command -p find` itself: macOS's bash hands that default PATH to find, so
+// `-exec chmod` would stop meaning the PATH's chmod (the CI Mac ran /bin/chmod past the stub).
 // `${skip[@]+...}` because bash 3.2, macOS's, calls an empty array unbound under `set -u`.
 //
 // NO `set -e`, so one path chmod refuses does not end the script before the later walks: each
@@ -1104,6 +1106,7 @@ func FixPermissionsScript(root, group, failedList string) string {
 	aces := WorkspaceACLAces(group)
 	skip := `${skip[@]+"${skip[@]}"}`
 	return "set -uo pipefail\n" +
+		findBinLine +
 		"root=" + shQuote(root) + "\n" +
 		"failed=" + shQuote(failedList) + "\n" +
 		"skip=()\n" +
@@ -1111,7 +1114,7 @@ func FixPermissionsScript(root, group, failedList string) string {
 		shQuote(SandboxUser) + "); fi\n" +
 		"grant() {\n" +
 		"  local ace=$1; shift\n" +
-		"  command -p find \"$root\" " + skip + " \"$@\" -exec /bin/sh -c " + shQuote(grantBatch) +
+		"  \"$find_bin\" \"$root\" " + skip + " \"$@\" -exec /bin/sh -c " + shQuote(grantBatch) +
 		" sh \"$ace\" \"$failed\" {} +\n" +
 		"}\n" +
 		"echo \"Applying shared-group ACLs under $root (this can take a moment on a large tree)…\"\n" +
@@ -1121,6 +1124,9 @@ func FixPermissionsScript(root, group, failedList string) string {
 		"grant " + shQuote(aces["file"]) + " '!' -type d || rc=1\n" +
 		"exit $rc\n"
 }
+
+// findBinLine sets $find_bin for the permission scripts: see FixPermissionsScript.
+const findBinLine = "find_bin=/usr/bin/find; [ -x \"$find_bin\" ] || find_bin=$(command -p -v find)\n"
 
 // grantBatch is the /bin/sh body find runs per batch: $1 the entry, $2 the failed list, then
 // the paths.
@@ -1263,8 +1269,9 @@ func UngrantedChildrenScript(root, group string) string {
 // ACLs from the workspace (chmod -h -N).
 func WorkspaceACLStripScript(workspace string) string {
 	return "set -euo pipefail\n" +
+		findBinLine +
 		"ws=" + shQuote(workspace) + "\n" +
-		"command -p find \"$ws\" -exec chmod -h -N {} +\n"
+		"\"$find_bin\" \"$ws\" -exec chmod -h -N {} +\n"
 }
 
 // ---------------------------------------------------------------------------
