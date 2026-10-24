@@ -6452,6 +6452,7 @@
 "TestHostFloorAgentUpdatesHoldServesThePreparedGenerationUnchecked": 27,
 "TestHostFloorRefusesThePreparedGenerationPastAFailedNewerPreparation": 27,
 "TestHostFloorRetryThatCouldNotCheckServesThePreparedGeneration": 27,
+"TestHostFloorUseInstalledServesThePreparedGenerationAndSaysSo": 27,
 "TestHostFooterChecksNoFetchedPackOut": 18,
 "TestHostFooterNamesABridgedSelectionTheHostServes": 18,
 "TestHostFooterStaysSilentOnABrokenPackSet": 18,
