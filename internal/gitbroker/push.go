@@ -26,7 +26,7 @@ import (
 // only as an Exit frame.
 
 // receivePack runs one push and returns its exit code.
-func (b *Broker) receivePack(u *upstream, in io.Reader, out io.Writer, ev *brokeraudit.Event, dest string, say func(string)) int {
+func (b *Broker) receivePack(u *upstream, in io.Reader, out io.Writer, ev *brokeraudit.Event, dest string, cover coverer, say func(string)) int {
 	// 1. The advertisement, relayed packet by packet up to its flush.
 	relay := bufio.NewWriterSize(out, 64<<10)
 	adv := gitproto.NewReader(u.stdout)
@@ -64,7 +64,7 @@ func (b *Broker) receivePack(u *upstream, in io.Reader, out io.Writer, ev *broke
 	}
 
 	// 2. The commands, buffered exactly as they arrived and judged before a byte goes up.
-	p, code, ok := b.readPush(in, ev, say)
+	p, code, ok := b.readPush(in, ev, cover, say)
 	if !ok {
 		_, _ = io.WriteString(u.stdin, "0000")
 		_ = u.stdin.Close()
@@ -84,8 +84,10 @@ func (b *Broker) receivePack(u *upstream, in io.Reader, out io.Writer, ev *broke
 			}
 			_ = u.stdin.Close()
 		}()
-		_, _ = io.Copy(out, u.stdout)
-		return u.wait()
+		rep, repErr := relayReport(out, u.stdout, p.caps)
+		code := u.wait()
+		b.record(ev.Repo, p, ev.Refs, rep, repErr, say)
+		return code
 	}
 
 	// 3b. Refuse whole. The upstream gets an empty command list and nothing more.
@@ -115,7 +117,7 @@ type pushRead struct {
 // judges every ref. When they cannot be read it tells the user, records why, and returns ok
 // false with the exit code; the caller has sent the upstream none of them. A push nothing
 // refuses is recorded as run, in its set.
-func (b *Broker) readPush(in io.Reader, ev *brokeraudit.Event, say func(string)) (pushRead, int, bool) {
+func (b *Broker) readPush(in io.Reader, ev *brokeraudit.Event, cover coverer, say func(string)) (pushRead, int, bool) {
 	var teed bytes.Buffer
 	cr := gitproto.NewReader(in)
 	cr.Tee(&teed)
@@ -137,7 +139,7 @@ func (b *Broker) readPush(in io.Reader, ev *brokeraudit.Event, say func(string))
 			"unchanged. Run the push again; if it repeats, push from the host.")
 		return pushRead{}, brokercore.ExitUsage, false
 	}
-	refs, reasons, set := b.judge(cmds)
+	refs, reasons, set := judge(cmds, cover)
 	ev.Refs = refs
 	p := pushRead{cmds: cmds, caps: caps, teed: teed.Bytes(), reasons: reasons}
 	for _, r := range reasons {
@@ -158,9 +160,10 @@ func (b *Broker) readPush(in io.Reader, ev *brokeraudit.Event, say func(string))
 func (b *Broker) refuseToClient(out io.Writer, in io.Reader, p pushRead, dest string, ev *brokeraudit.Event, say func(string)) int {
 	ev.Set, ev.Outcome, ev.Reason = "refused", "refused", refusalSummary(p.reasons)
 	say("this push was refused whole, so nothing reached " + dest + " and the remote is unchanged; each ref's " +
-		"reason is on its `! [remote rejected]` line. A push through the broker needs the user's approval, which " +
-		"this version cannot ask for: push from the host instead (`git push` in this workspace there), where " +
-		"`yolo audit --service git` shows what was refused.")
+		"reason is on its `! [remote rejected]` line. Without approval, which this version cannot ask for, the " +
+		"broker pushes only a new branch under a create-branch grant and the branches this workspace created " +
+		"that way (`yolo approve` on the host lists them): push anything else from the host instead (`git push` " +
+		"in this workspace there), where `yolo audit --service git` shows what was refused.")
 	if !p.caps.Has("report-status") && !p.caps.Has("report-status-v2") {
 		for i, c := range p.cmds {
 			say(c.Ref + ": " + p.reasons[i])
@@ -175,10 +178,10 @@ func (b *Broker) refuseToClient(out io.Writer, in io.Reader, p pushRead, dest st
 }
 
 // judge assigns every ref command its outcome: covered (reason ""), or the reason it is not.
-// A ref outside refs/heads/ and refs/tags/ is refused always; any other ref nothing covers
-// needs approval, which this version cannot ask for. A push is all or nothing (GB-D4), so
-// when any ref is refused, a covered one is refused with the rest.
-func (b *Broker) judge(cmds []gitproto.Command) ([]brokeraudit.RefUpdate, []string, string) {
+// A ref outside refs/heads/ and refs/tags/ is refused always; any other ref cover does not
+// cover needs approval, which this version cannot ask for. A push is all or nothing (GB-D4),
+// so when any ref is refused, a covered one is refused with the rest.
+func judge(cmds []gitproto.Command, cover coverer) ([]brokeraudit.RefUpdate, []string, string) {
 	refs := make([]brokeraudit.RefUpdate, len(cmds))
 	reasons := make([]string, len(cmds))
 	set := ""
@@ -188,8 +191,8 @@ func (b *Broker) judge(cmds []gitproto.Command) ([]brokeraudit.RefUpdate, []stri
 		switch {
 		case !strings.HasPrefix(c.Ref, "refs/heads/") && !strings.HasPrefix(c.Ref, "refs/tags/"):
 			reasons[i] = reasonOutsideRefs
-		case b.cover != nil:
-			if s, by, ok := b.cover(c); ok {
+		case cover != nil:
+			if s, by, ok := cover(c); ok {
 				refs[i].CoveredBy = by
 				if set == "" || s == "working-set" {
 					set = s

@@ -38,11 +38,17 @@ const (
 type Snapshot struct {
 	Requests []Request
 	Grants   []Grant
+	// Working is the working set's entries, live and recently ended, in the order added. No
+	// watch event reports them.
+	Working []WorkingEntry
 }
 
 // Snapshot reads the store in one transaction.
 func (s *Store) Snapshot() (Snapshot, error) {
-	rs, gs, err := s.List()
+	var r records
+	err := s.transaction(func(cur *records, _ time.Time) error { r = *cur; return nil })
+	rs, gs, ws := r.requests, r.grants, append([]WorkingEntry(nil), r.working...)
+	sortWorking(ws)
 	sort.SliceStable(rs, func(i, j int) bool {
 		if !rs[i].Filed.Equal(rs[j].Filed) {
 			return rs[i].Filed.Before(rs[j].Filed)
@@ -55,7 +61,7 @@ func (s *Store) Snapshot() (Snapshot, error) {
 		}
 		return gs[i].ID < gs[j].ID
 	})
-	return Snapshot{Requests: rs, Grants: gs}, err
+	return Snapshot{Requests: rs, Grants: gs, Working: ws}, err
 }
 
 // Event is one change between two snapshots. Request is the request it concerns, or a
@@ -211,6 +217,25 @@ type StateView struct {
 	Event    string        `json:"event,omitempty"` // "state" when it opens a watch
 	Requests []RequestView `json:"requests"`
 	Grants   []GrantView   `json:"grants"`
+	Working  []WorkingView `json:"working"`
+}
+
+// WorkingView is a live working-set entry as the surface shows it.
+type WorkingView struct {
+	Schema    int       `json:"schema"`
+	ID        string    `json:"id"`
+	Source    string    `json:"source"`
+	Workspace string    `json:"workspace"`
+	Repo      string    `json:"repo"`
+	Kind      string    `json:"kind"`     // "branch"
+	Resource  string    `json:"resource"` // the ref
+	By        string    `json:"by"`       // "create-branch", a grant id, or "human"
+	Added     time.Time `json:"added"`
+}
+
+func (s *Store) WorkingView(e WorkingEntry) WorkingView {
+	return WorkingView{Schema: Schema, ID: e.ID, Source: s.SourceName(), Workspace: e.Workspace, Repo: e.Repo,
+		Kind: e.Kind, Resource: e.Resource, By: e.By, Added: e.Added}
 }
 
 // EventView is one watch event.
@@ -251,9 +276,15 @@ func (s *Store) GrantView(g Grant) GrantView {
 	return v
 }
 
-// StateView keeps what is still open: pending requests and live grants.
+// StateView keeps what is still open: pending requests, live grants and live working-set
+// entries.
 func (s *Store) StateView(snap Snapshot) StateView {
-	v := StateView{Schema: Schema, Requests: []RequestView{}, Grants: []GrantView{}}
+	v := StateView{Schema: Schema, Requests: []RequestView{}, Grants: []GrantView{}, Working: []WorkingView{}}
+	for _, e := range snap.Working {
+		if e.Live() {
+			v.Working = append(v.Working, s.WorkingView(e))
+		}
+	}
 	for _, q := range snap.Requests {
 		if q.State == "pending" {
 			v.Requests = append(v.Requests, s.RequestView(q))

@@ -9,11 +9,12 @@
 // THE CREDENTIAL NEVER CROSSES; THE PROTOCOL DOES. The jail sends a service and the remote URL;
 // the broker checks the URL against the scope the launch approved, connects to the approved
 // string with the host's ssh, streams a fetch back, and reads a push's ref commands before
-// forwarding anything. This build refuses every push per ref ("needs approval, which this
-// version cannot ask for") and audits every call.
+// forwarding anything. A push lands only where a grant or the working set covers every ref
+// (ID-9: creating a branch under a create-branch grant, then updating or deleting a branch the
+// broker created); every other push is refused per ref, and every call is audited.
 {
   "name": "git-broker",
-  "description": "Run the jail's git fetch and push through the host's own credentials (its SSH keys or agent for SSH remotes, its git credential helper for HTTPS ones), only against this workspace's git remotes as approved at launch: fetches stream back, every push is refused per ref until grants arrive (push from the host), and every call is audited on the host (yolo audit --service git).",
+  "description": "Run the jail's git fetch and push through the host's own credentials (its SSH keys or agent for SSH remotes, its git credential helper for HTTPS ones), only against this workspace's git remotes as approved at launch: fetches stream back, a push lands only on a branch a create-branch grant lets it create or one it created before (its working set, listed and revoked by yolo approve), every other push is refused per ref (push from the host), and every call is audited on the host (yolo audit --service git).",
   "version": 1,
 
   // OFF until enabled, as every loophole that ships in a pack is (loophole-system.md R2), and
@@ -36,6 +37,10 @@
   "brokered": {
     "source": "git",
     "remote_host": "*",
+    // The one grant kind this source defines (ID-10): a workspace grant of it, allowed by the
+    // user config's `brokered.git.grant_kinds`, lets the broker create branches under
+    // refs/heads/ in the granted repository (ID-9).
+    "grants": ["create-branch"],
     "credential_paths": ["~/.ssh", "$SSH_AUTH_SOCK", "~/.git-credentials", "~/.config/git/credentials"]
   },
 

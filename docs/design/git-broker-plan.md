@@ -945,3 +945,23 @@ Found in the task 6 review; out of scope, not blocking.
   `Broker.Handle` (`internal/gitbroker/broker.go`) cancels only when the jail's connection errors.
 - **A server whose CGI cannot take a chunked request body** (Go's `net/http/cgi` is one) refuses
   the broker's streamed push; check task 9's live run against real forges.
+
+  *Measured in task 9, 2026-10-24,* against task 6's test server with its de-chunking turned off
+  (`git http-backend` behind `net/http/cgi`): the broker's creation POST was answered HTTP 400 and
+  git printed `! [remote rejected] HEAD -> agent/x (the git-broker's HTTPS upstream failed; its
+  reason is above)`, with nothing recorded in the working set. Stock git's own push of the same
+  commit to the same server succeeded: it sent `Content-Length: 444`, because git buffers a push
+  body up to `http.postBuffer` (1 MiB by default) and streams chunked only above it. So the broker
+  is less compatible than git for small pushes. A forge that git can push a large branch to
+  already takes chunked bodies; no real forge was reached from the test environment. *Fix:*
+  buffer the body up to 1 MiB and send its length, streaming chunked above that, as git does;
+  that also lets a small push replay its POST on a 401 (the first entry above).
+
+Found building task 9; out of scope, not blocking.
+
+- **A creation on a ref with a live working-set entry ends the entry `gone` when the push is
+  judged** (ID-11), before the upstream answers, and even when another ref then refuses the push
+  whole. A jail that sends an all-zero old id for a branch that still exists ends its own entry;
+  the upstream then rejects the creation. It only ever narrows what the workspace may push.
+- **Revoking a working-set entry is not audited**, as revoking a grant is not: `yolo approve
+  --revoke` writes the store only. `yolo audit --service git` shows the pushes, not the revocations.

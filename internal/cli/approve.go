@@ -8,7 +8,9 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -16,48 +18,58 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/ghbroker"
+	"github.com/mschulkind-oss/yolo-jail/internal/gitbroker"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
 )
 
 const approveUsage = `Usage: yolo approve [request] [--for <duration|session> | --deny]
-       yolo approve --revoke <grant|all>
+       yolo approve --revoke <grant|w-entry|all> [--workspace <path>]
        yolo approve --json
        yolo approve --watch [--json]
 
-Host-only: list requests and grants, allow a request once, grant its requested
-set for a bounded duration, deny it, or revoke a grant. Without --for, Allow once
-covers that exact command for one use, for at most 15 minutes and never beyond
-its set's ceiling. --for hands over the whole requested set, within its policy
-ceiling and use cap. session lasts until the broker ends, capped at 12 hours.
+Host-only: list requests, grants and each workspace's working set, allow a
+request once, grant its requested set for a bounded duration, deny it, or
+revoke a grant or a working-set entry. Without --for, Allow once covers that
+exact command for one use, for at most 15 minutes and never beyond its set's
+ceiling. --for hands over the whole requested set, within its policy ceiling
+and use cap. session lasts until the broker ends, capped at 12 hours.
 
---json prints pending requests and live grants as one JSON document. --watch
-prints the current state, then one line per event (request filed, decided or
-expired; grant used, ended or revoked) until interrupted; with --json, one JSON
-object per line. Every JSON object carries "schema": 1. A request whose
-on_request command failed says so, in the listing and as "hook_failure" and
-"hook_output" in its JSON. This is the surface a
-UI built outside yolo uses. Such a UI must never accept approvals from the jails
+The working set is the branches a workspace's git-broker pushes unasked: each
+one the agent created through the broker under a create-branch grant, until
+the branch is deleted or the entry revoked. --revoke w-<id> ends one entry.
+--revoke all ends every live grant; --revoke all --workspace <path> ends that
+workspace's grants and its whole working set.
+
+--json prints pending requests, live grants and live working-set entries as one
+JSON document. --watch prints the current state, then one line per event
+(request filed, decided or expired; grant used, ended or revoked) until
+interrupted; with --json, one JSON object per line. Every JSON object carries
+"schema": 1. A request whose on_request command failed says so, in the listing
+and as "hook_failure" and "hook_output" in its JSON. This is the surface a UI
+built outside yolo uses. Such a UI must never accept approvals from the jails
 it approves: a jail can reach a port the host listens on.
 
 Exit codes: 0 done; 1 the store could not be read or written; 2 usage;
-3 the request is already decided; 4 no request or grant has that id;
+3 the request is already decided; 4 no request, grant or entry has that id;
 5 refused by policy (beyond the set's ceiling); 6 the host can no longer confirm
 the request (its jail's launch is gone or its scope changed), so it cannot be
 allowed. A request whose jail stopped normally is already refused, which is 3.
 
-The host store is built, but the GitHub broker does not file requests or execute
-writes yet. Its writes still refuse immediately; nothing waits for approval.
-The answer ping is not built either; a desktop notification is the user's own
-on_request command (see yolo config-ref).
+No broker files requests yet: a GitHub write, and a git push that neither a
+create-branch grant nor the working set covers, refuse immediately; nothing
+waits for approval. The answer ping is not built either; a desktop notification
+is the user's own on_request command (see yolo config-ref).
 
 Examples:
   yolo approve
   yolo approve r-<id>
   yolo approve r-<id> --for 15m
   yolo approve r-<id> --deny
+  yolo approve --revoke w-<id>
   yolo approve --revoke all
+  yolo approve --revoke all --workspace ~/code/app
   yolo approve --watch --json
 `
 
@@ -80,7 +92,14 @@ func runApprove(args []string) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return approveMain(ctx, args[1:], config.InJail(), &brokerstore.Store{Dir: paths.BrokerSourceDir(ghbroker.Source), Source: ghbroker.Source, Revalidate: ghbroker.ApprovalAuthority, Audit: ghbroker.StoreAudit(brokeraudit.Open(paths.BrokerAuditLog(), nil))}, os.Stdout, os.Stderr)
+	// Every registered source's store: the GitHub broker's requests and grants, and the git
+	// broker's working set. The git source files no request in this version, so its store
+	// needs no approval authority; a decision on it fails closed.
+	stores := []*brokerstore.Store{
+		{Dir: paths.BrokerSourceDir(ghbroker.Source), Source: ghbroker.Source, Revalidate: ghbroker.ApprovalAuthority, Audit: ghbroker.StoreAudit(brokeraudit.Open(paths.BrokerAuditLog(), nil))},
+		{Dir: paths.BrokerSourceDir(gitbroker.Source), Source: gitbroker.Source},
+	}
+	return approveAll(ctx, args[1:], config.InJail(), stores, os.Stdout, os.Stderr)
 }
 
 // approveFailure maps a store error to its stable exit code and the next step its message
@@ -101,23 +120,30 @@ func approveFailure(err error, errs io.Writer) int {
 	return code
 }
 
+// approveMain is approveAll over one store.
 func approveMain(ctx context.Context, args []string, inJail bool, s *brokerstore.Store, out, errs io.Writer) int {
+	return approveAll(ctx, args, inJail, []*brokerstore.Store{s}, out, errs)
+}
+
+// approveAll is `yolo approve` over every store in stores: it lists them all, and finds a
+// request, grant or working-set entry by its id in whichever store holds it.
+func approveAll(ctx context.Context, args []string, inJail bool, stores []*brokerstore.Store, out, errs io.Writer) int {
 	fail := func(err error) int {
-		fmt.Fprintf(errs, "yolo approve: %v. See `yolo approve --help`; run `yolo approve` on the host to list requests and grants.\n", err)
+		fmt.Fprintf(errs, "yolo approve: %v. See `yolo approve --help`; run `yolo approve` on the host to list requests, grants and working sets.\n", err)
 		return approveExitUsage
 	}
 	if inJail {
 		fmt.Fprintln(errs, "yolo approve is host-only: the request store is never mounted into a jail. Run `yolo approve` in a terminal on the host.")
 		return approveExitUsage
 	}
-	var request, revoke string
+	var request, revoke, workspace string
 	var d brokerstore.Decision
-	forSeen, asJSON, watch := false, false, false
+	forSeen, asJSON, watch, workspaceSeen := false, false, false, false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		name, value, eq := strings.Cut(a, "=")
 		switch name {
-		case "--for", "--revoke":
+		case "--for", "--revoke", "--workspace":
 			if !eq {
 				i++
 				if i >= len(args) {
@@ -125,11 +151,18 @@ func approveMain(ctx context.Context, args []string, inJail bool, s *brokerstore
 				}
 				value = args[i]
 			}
-			if name == "--revoke" {
+			switch name {
+			case "--revoke":
 				if revoke != "" || value == "" {
-					return fail(fmt.Errorf("name one grant or all for --revoke"))
+					return fail(fmt.Errorf("name one grant, one working-set entry, or all for --revoke"))
 				}
 				revoke = value
+				continue
+			case "--workspace":
+				if workspaceSeen || value == "" {
+					return fail(fmt.Errorf("give --workspace one workspace path"))
+				}
+				workspaceSeen, workspace = true, value
 				continue
 			}
 			if forSeen {
@@ -169,21 +202,25 @@ func approveMain(ctx context.Context, args []string, inJail bool, s *brokerstore
 	if (d.Deny && forSeen) || (revoke != "" && (request != "" || d.Deny || forSeen)) || ((d.Deny || forSeen) && request == "") {
 		return fail(fmt.Errorf("choose one request decision, or --revoke"))
 	}
+	if workspaceSeen && revoke != "all" {
+		return fail(fmt.Errorf("the --workspace flag narrows only --revoke all; revoke one grant or entry by its id alone"))
+	}
 	if (asJSON || watch) && (request != "" || revoke != "") {
 		return fail(fmt.Errorf("decide or revoke without --json or --watch, which only list or follow the store"))
 	}
 	if watch {
-		return approveWatch(ctx, s, asJSON, out, errs)
+		return approveWatch(ctx, stores, asJSON, out, errs)
 	}
 	if revoke != "" {
-		if err := s.Revoke(revoke); err != nil {
-			return approveFailure(err, errs)
-		}
-		fmt.Fprintf(out, "Revoked %s. Run `yolo approve` to list requests and grants.\n", termsafe.Visible(revoke))
-		return 0
+		return approveRevoke(stores, revoke, workspace, out, errs)
 	}
 	if request != "" {
-		g, err := s.Decide(request, "pending", d)
+		var g brokerstore.Grant
+		err := eachStore(stores, func(s *brokerstore.Store) error {
+			var err error
+			g, err = s.Decide(request, "pending", d)
+			return err
+		})
 		if err != nil {
 			return approveFailure(err, errs)
 		}
@@ -198,20 +235,96 @@ func approveMain(ctx context.Context, args []string, inJail bool, s *brokerstore
 		}
 		return 0
 	}
-	snap, err := s.Snapshot()
+	snaps := make([]brokerstore.Snapshot, len(stores))
+	for i, s := range stores {
+		snap, err := s.Snapshot()
+		if err != nil {
+			return approveFailure(err, errs)
+		}
+		snaps[i] = snap
+	}
+	if asJSON {
+		v := brokerstore.StateView{Schema: brokerstore.Schema, Requests: []brokerstore.RequestView{}, Grants: []brokerstore.GrantView{}, Working: []brokerstore.WorkingView{}}
+		for i, s := range stores {
+			sv := s.StateView(snaps[i])
+			v.Requests = append(v.Requests, sv.Requests...)
+			v.Grants = append(v.Grants, sv.Grants...)
+			v.Working = append(v.Working, sv.Working...)
+		}
+		return approveJSON(out, v, errs)
+	}
+	empty := true
+	for i, s := range stores {
+		printApproveList(out, snaps[i])
+		printWorkingSet(out, s, snaps[i])
+		empty = empty && len(snaps[i].Requests) == 0 && len(snaps[i].Grants) == 0 && !anyLive(snaps[i].Working)
+	}
+	if empty {
+		fmt.Fprintln(out, "No requests, grants or working-set entries. Brokers do not file requests yet: a GitHub write, and a git push nothing covers, refuse without one. Run `yolo approve --help` for the host store commands.")
+	} else {
+		fmt.Fprintln(out, "Decide with `yolo approve <request>` (once), `--for <duration>` (whole set), or `--deny`; revoke with `yolo approve --revoke <grant|w-entry|all> [--workspace <path>]`.")
+	}
+	return 0
+}
+
+// eachStore runs fn on each store in turn until one holds the id: the first result that is not
+// ErrUnknownID, or the last unknown-id error when none holds it.
+func eachStore(stores []*brokerstore.Store, fn func(*brokerstore.Store) error) error {
+	var err error
+	for _, s := range stores {
+		if err = fn(s); !errors.Is(err, brokerstore.ErrUnknownID) {
+			return err
+		}
+	}
+	return err
+}
+
+// approveRevoke is `--revoke <id|all> [--workspace <path>]`.
+func approveRevoke(stores []*brokerstore.Store, revoke, workspace string, out, errs io.Writer) int {
+	if revoke != "all" {
+		if err := eachStore(stores, func(s *brokerstore.Store) error { return s.Revoke(revoke) }); err != nil {
+			return approveFailure(err, errs)
+		}
+		fmt.Fprintf(out, "Revoked %s. Run `yolo approve` to list requests, grants and working sets.\n", termsafe.Visible(revoke))
+		return 0
+	}
+	if workspace == "" {
+		for _, s := range stores {
+			if err := s.Revoke("all"); err != nil {
+				return approveFailure(err, errs)
+			}
+		}
+		fmt.Fprintln(out, "Revoked every live grant; working sets are unchanged (`--revoke all --workspace <path>` ends one workspace's). Run `yolo approve` to list requests, grants and working sets.")
+		return 0
+	}
+	// A workspace is recorded by its host path as the launch resolved it; the path given here
+	// is matched both as written (made absolute) and with its symlinks resolved.
+	abs, err := filepath.Abs(workspace)
 	if err != nil {
 		return approveFailure(err, errs)
 	}
-	if asJSON {
-		return approveJSON(out, s.StateView(snap), errs)
+	forms := []string{filepath.Clean(abs)}
+	if real, err := filepath.EvalSymlinks(abs); err == nil && real != forms[0] {
+		forms = append(forms, real)
 	}
-	printApproveList(out, snap)
-	if len(snap.Requests) == 0 && len(snap.Grants) == 0 {
-		fmt.Fprintln(out, "No requests or grants. GitHub broker writes still refuse without filing a request; broker approval integration is not built yet. Run `yolo approve --help` for the host store commands.")
-	} else {
-		fmt.Fprintln(out, "Decide with `yolo approve <request>` (once), `--for <duration>` (whole set), or `--deny`; revoke with `yolo approve --revoke <grant|all>`.")
+	for _, s := range stores {
+		for _, ws := range forms {
+			if err := s.RevokeIn("all", ws); err != nil {
+				return approveFailure(err, errs)
+			}
+		}
 	}
+	fmt.Fprintf(out, "Revoked every live grant and working-set entry of %s. Run `yolo approve` to list requests, grants and working sets.\n", termsafe.Visible(forms[0]))
 	return 0
+}
+
+func anyLive(ws []brokerstore.WorkingEntry) bool {
+	for _, e := range ws {
+		if e.Live() {
+			return true
+		}
+	}
+	return false
 }
 
 func printApproveList(out io.Writer, snap brokerstore.Snapshot) {
@@ -234,6 +347,17 @@ func printApproveList(out io.Writer, snap brokerstore.Snapshot) {
 	}
 }
 
+// printWorkingSet lists the store's live working-set entries, one line each: what a workspace
+// may push unasked. An ended entry covers nothing and is not listed.
+func printWorkingSet(out io.Writer, s *brokerstore.Store, snap brokerstore.Snapshot) {
+	for _, e := range snap.Working {
+		if !e.Live() {
+			continue
+		}
+		fmt.Fprintf(out, "%s  working set  %s  [%s]  repo %s  %s %s  by %s  since %s\n", termsafe.Visible(e.ID), termsafe.Visible(s.SourceName()), termsafe.Visible(e.Workspace), termsafe.Visible(e.Repo), termsafe.Visible(e.Kind), termsafe.Visible(e.Resource), termsafe.Visible(e.By), e.Added.Format(time.RFC3339))
+	}
+}
+
 // approveJSON writes one object as one line.
 func approveJSON(out io.Writer, v any, errs io.Writer) int {
 	b, err := json.Marshal(v)
@@ -246,13 +370,17 @@ func approveJSON(out io.Writer, v any, errs io.Writer) int {
 	return 0
 }
 
-// approveWatch is `--watch`: the current state, then each event, until ctx ends. It polls
-// the store (brokerstore.Store.Watch says why).
-func approveWatch(ctx context.Context, s *brokerstore.Store, asJSON bool, out, errs io.Writer) int {
+// approveWatch is `--watch`: each store's current state, then each event, until ctx ends. It
+// polls the stores, each on its own (brokerstore.Store.Watch says why); with --json each
+// store's opening state is its own "state" object.
+func approveWatch(ctx context.Context, stores []*brokerstore.Store, asJSON bool, out, errs io.Writer) int {
+	var mu sync.Mutex
 	code := 0
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	emit := func(v any, line string) {
+		mu.Lock()
+		defer mu.Unlock()
 		if code != 0 {
 			return
 		}
@@ -265,27 +393,54 @@ func approveWatch(ctx context.Context, s *brokerstore.Store, asJSON bool, out, e
 			cancel() // the reader went away
 		}
 	}
-	warned := false
-	err := s.Watch(ctx, approveWatchInterval, func(snap brokerstore.Snapshot) {
-		if asJSON {
-			v := s.StateView(snap)
-			v.Event = "state"
-			emit(v, "")
-			return
-		}
-		printApproveList(out, snap)
-		fmt.Fprintln(errs, "Watching the store; one line per event. Press Ctrl-C to stop.")
-	}, func(ev brokerstore.Event) {
-		now := time.Now().UTC()
-		emit(s.EventView(ev, now), now.Format(time.RFC3339)+" "+s.Summary(ev))
-	}, func(err error) {
-		if !warned {
-			fmt.Fprintf(errs, "yolo approve: reading the store failed: %s; still watching, and retrying every %s.\n", termsafe.Visible(err.Error()), approveWatchInterval)
-			warned = true
-		}
-	})
-	if err != nil {
-		return approveFailure(err, errs)
+	var wg sync.WaitGroup
+	var firstErr error
+	started := 0
+	for _, s := range stores {
+		s := s
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			warned := false
+			err := s.Watch(ctx, approveWatchInterval, func(snap brokerstore.Snapshot) {
+				if asJSON {
+					v := s.StateView(snap)
+					v.Event = "state"
+					emit(v, "")
+					return
+				}
+				mu.Lock()
+				printApproveList(out, snap)
+				printWorkingSet(out, s, snap)
+				started++
+				if started == len(stores) {
+					fmt.Fprintln(errs, "Watching the store; one line per event. Press Ctrl-C to stop.")
+				}
+				mu.Unlock()
+			}, func(ev brokerstore.Event) {
+				now := time.Now().UTC()
+				emit(s.EventView(ev, now), now.Format(time.RFC3339)+" "+s.Summary(ev))
+			}, func(err error) {
+				mu.Lock()
+				defer mu.Unlock()
+				if !warned {
+					fmt.Fprintf(errs, "yolo approve: reading the store failed: %s; still watching, and retrying every %s.\n", termsafe.Visible(err.Error()), approveWatchInterval)
+					warned = true
+				}
+			})
+			if err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				mu.Unlock()
+				cancel()
+			}
+		}()
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return approveFailure(firstErr, errs)
 	}
 	return code
 }

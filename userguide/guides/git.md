@@ -6,10 +6,11 @@ credential helper for an HTTPS one. The jail never holds a key or a token. Inste
 service on your machine, the **git-broker**, connects to each remote for the jail and streams the
 result back. The jail runs the real `git`, unchanged.
 
-This version **fetches only**. `git fetch`, `git pull` and `git ls-remote` work. Every push needs
-a grant this version cannot ask for, so every push is refused before anything reaches the remote,
-in git's own words, and you push from your machine. Every call is recorded on your machine, and
-`yolo audit --service git` lists them.
+`git fetch`, `git pull` and `git ls-remote` work. A push goes through only when you have
+granted it ahead of time: with a **create-branch grant** the agent may push a new branch, and
+then keep pushing to the branches it created that way (its **working set**). Every other push is
+refused before anything reaches the remote, in git's own words, and you push it from your machine.
+Every call is recorded on your machine, and `yolo audit --service git` lists them.
 
 ## Turning it on
 
@@ -56,13 +57,65 @@ A remote whose `https://` address carries a password is left out, and the prompt
 A new remote joins the same way: add it with `git remote add`, then run `yolo config apply` on
 your machine, in the project, and answer y.
 
+## Letting the agent push its own branches
+
+Two settings, one in each config, let the agent create branches:
+
+1. **Your user config allows the kind of grant.** Without this, no project can hold it, and
+   `yolo check` refuses a project that asks, naming this key:
+
+   ```jsonc
+   // ~/.config/yolo-jail/config.jsonc
+   {
+     "packs": ["claude", "git"],
+     "brokered": { "git": { "grant_kinds": ["create-branch"] } }
+   }
+   ```
+
+2. **The project config names the grant and its repository**, as `host/path` (the remote's
+   address without the user, the scheme or `.git`), or `"*"` for every approved remote:
+
+   ```jsonc
+   // yolo-jail.jsonc in the project
+   {
+     "brokered": { "git": { "grants": [{ "kind": "create-branch", "repo": "github.com/me/app" }] } }
+   }
+   ```
+
+The grant joins at the next config-change prompt, where you approve it beside the remotes, or at
+`yolo config apply` for a running jail. Remove `create-branch` from your user config and the next
+push stops creating branches, in every project.
+
+With the grant, the agent may push a branch that does not exist yet on that repository. When the
+remote accepts it, the branch joins the project's **working set**: the branches the agent may
+push to again without asking, update, force-push or delete. The working set belongs to the
+project, not to one jail: two jails of the project share it, and it lasts across launches until
+the branch is deleted (by a push through the broker, or found gone on the remote at the next
+push) or you revoke it. A branch you pushed from your machine, or one another project created,
+is never in it, and neither is `main` or any other branch the agent did not create: those pushes
+are still refused.
+
+On your machine, `yolo approve` lists each project's working set:
+
+```text
+w-0c7b1e813e940452e59c53612436f6df  working set  git  [/home/me/code/app]  repo github.com/me/app  branch refs/heads/agent/x  by create-branch  since 2026-10-24T04:43:12Z
+```
+
+```bash
+yolo approve --revoke w-0c7b1e813e940452e59c53612436f6df   # one branch
+yolo approve --revoke all --workspace ~/code/app            # every grant and branch of that project
+```
+
 ## What happens
 
 | | |
 | :--- | :--- |
 | `git fetch`, `git pull`, `git ls-remote` over SSH | Run through your machine's `ssh` against an approved remote, streamed back as git expects |
 | `git fetch`, `git pull`, `git ls-remote` over HTTPS | Sent to an approved remote over HTTPS, checked against your machine's trusted certificates, with the credential your machine's `git credential fill` gives when the server asks for one |
-| `git push` | Refused per branch, nothing sent: `! [remote rejected] <branch> (needs approval, which this version cannot ask for)`. Push from your machine |
+| A push of a new branch, with a create-branch grant | Sent to the remote; when the remote accepts it, the branch joins the working set |
+| A push to a branch in the working set | Sent to the remote, force-pushes and deletes included |
+| Any other `git push` | Refused per branch, nothing sent: `! [remote rejected] <branch> (needs approval, which this version cannot ask for)`. Push from your machine |
+| A push of several branches, one of them refused | Refused whole: a push through the broker goes through entirely or not at all |
 | A push to anything but a branch or a tag | Refused always, naming `refs/heads/` and `refs/tags/` |
 | A remote you did not approve | Refused at once, naming the approved remotes and how to add one; nothing runs |
 | No SSH key or agent on your machine | git shows `ssh`'s own error, and the broker adds a line naming `ssh-add -l` on your machine |

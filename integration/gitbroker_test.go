@@ -59,6 +59,13 @@ func hostGit(t *testing.T, dir string, args ...string) string {
 
 func newGitBrokerFixture(t *testing.T, enable bool) gitBrokerFixture {
 	t.Helper()
+	return newGitBrokerFixtureWith(t, enable, `{"packs": ["git"]}`, `{}`)
+}
+
+// newGitBrokerFixtureWith is newGitBrokerFixture with the user config and the workspace config
+// given.
+func newGitBrokerFixtureWith(t *testing.T, enable bool, userConfig, workspaceConfig string) gitBrokerFixture {
+	t.Helper()
 	requireJail(t)
 	if rt := detectRuntime(); rt != "podman" {
 		t.Skipf("the git-broker chain needs podman, and this runtime is %q", rt)
@@ -75,11 +82,11 @@ func newGitBrokerFixture(t *testing.T, enable bool) gitBrokerFixture {
 	hostGit(t, srv, "clone", "-q", "--bare", seed, bare)
 	upstream := hostGit(t, bare, "rev-parse", "refs/heads/main")
 
-	dir := writeProject(t, `{}`)
+	dir := writeProject(t, workspaceConfig)
 	hostGit(t, dir, "init", "-q", "-b", "main")
 	hostGit(t, dir, "remote", "add", "origin", "git@fixture.test:o/r.git")
 
-	packHome(t, `{"packs": ["git"]}`)
+	packHome(t, userConfig)
 	macArchivePrivateState(t)
 	if enable {
 		if r := runCommand(t, dir, []string{"loopholes", "enable", "git-broker"}, withHostSemantics()); r.rc != 0 ||
@@ -219,5 +226,90 @@ func TestGitBrokerOffLeavesGitUntouched(t *testing.T) {
 	}
 	if logged, _ := os.ReadFile(fx.argvLog); len(logged) != 0 {
 		t.Errorf("the host ssh ran with the loophole off:\n%s", logged)
+	}
+}
+
+// CREATE-BRANCH AND THE WORKING SET, END TO END (git-broker-plan.md task 9). The user's own
+// config allows the kind, the workspace config names the grant, and both join at the host's
+// `yolo check --accept-config-changes`. A new branch pushed from the jail lands in the bare
+// repository and joins the workspace's working set; a second push lands; the jail restarts (a
+// new launch, a new broker) and a third push lands, on the working set alone; then `yolo approve
+// --revoke all --workspace <ws>` on the host ends the entry, and a fourth push is refused.
+func TestGitBrokerCreateBranch(t *testing.T) {
+	fx := newGitBrokerFixtureWith(t, true,
+		`{"packs": ["git"], "brokered": {"git": {"grant_kinds": ["create-branch"]}}}`,
+		`{"brokered": {"git": {"grants": [{"kind": "create-branch", "repo": "fixture.test/o/r"}]}}}`)
+	fx.recordScope(t, "git@fixture.test:o/r.git")
+	const ref = "refs/heads/agent/x"
+
+	// launch runs one jail and its pushes; it returns the combined output (git reports a rejected ref on stderr) and the jail's HEAD.
+	launch := func(step string, cmds ...string) (string, string) {
+		t.Helper()
+		cmds = append(cmds, "g rev-parse HEAD | sed 's/^/HEAD=/'")
+		r := runCommand(t, fx.dir, []string{"run", "--", "bash", "-lc", gitInJail + ghScript(cmds...)}, fx.opts...)
+		t.Logf("%s: rc %d\n%s", step, r.rc, r.combined())
+		if r.rc != 0 {
+			t.Fatalf("%s: the launch failed: rc %d\n%s%s", step, r.rc, r.combined(), gitBrokerDaemonLog(t))
+		}
+		return r.combined(), kvLine(r.stdout, "HEAD")
+	}
+	landed := func(step, head string) {
+		t.Helper()
+		if got := hostGit(t, fx.bare, "rev-parse", ref); got != head || head == "" {
+			t.Fatalf("%s: the upstream's %s is %s, want the jail's HEAD %q%s", step, ref, got, head, gitBrokerDaemonLog(t))
+		}
+	}
+
+	// 1 and 2: the creation under the grant, then an update the working set covers.
+	out, head := launch("first launch",
+		"g fetch -q origin && g checkout -q -b work origin/main && g commit -q --allow-empty -m one",
+		"g push -q origin HEAD:"+ref,
+		"g commit -q --allow-empty -m two && g push -q origin HEAD:"+ref)
+	if kvLine(out, "RCB") != "0" || kvLine(out, "RCC") != "0" {
+		t.Fatalf("first launch: the pushes failed:\n%s%s", out, gitBrokerDaemonLog(t))
+	}
+	landed("second push", head)
+
+	// The host lists the entry.
+	listing := runCommand(t, fx.dir, []string{"approve"}, withHostSemantics())
+	t.Logf("yolo approve:\n%s", listing.combined())
+	if listing.rc != 0 || !strings.Contains(listing.stdout, "working set  git") ||
+		!strings.Contains(listing.stdout, "fixture.test/o/r") || !strings.Contains(listing.stdout, ref) {
+		t.Fatalf("yolo approve does not list the working-set entry: rc %d\n%s", listing.rc, listing.combined())
+	}
+
+	// 3: a new launch, and only the working set covers the push.
+	out, head = launch("second launch", "g commit -q --allow-empty -m three && g push -q origin HEAD:"+ref)
+	if kvLine(out, "RCA") != "0" {
+		t.Fatalf("after the restart, the push failed:\n%s%s", out, gitBrokerDaemonLog(t))
+	}
+	landed("third push", head)
+
+	// 4: the host revokes the workspace's grants and working set, and the push is refused.
+	rv := runCommand(t, fx.dir, []string{"approve", "--revoke", "all", "--workspace", fx.dir}, withHostSemantics())
+	t.Logf("yolo approve --revoke all --workspace: rc %d\n%s", rv.rc, rv.combined())
+	if rv.rc != 0 {
+		t.Fatalf("yolo approve --revoke all --workspace: rc %d\n%s", rv.rc, rv.combined())
+	}
+	before := hostGit(t, fx.bare, "rev-parse", ref)
+	out, _ = launch("third launch", "g commit -q --allow-empty -m four && g push origin HEAD:"+ref)
+	if kvLine(out, "RCA") != "1" || !strings.Contains(out, "needs approval, which this version cannot ask for") {
+		t.Fatalf("after the revoke, the push was not refused:\n%s%s", out, gitBrokerDaemonLog(t))
+	}
+	if got := hostGit(t, fx.bare, "rev-parse", ref); got != before {
+		t.Fatalf("the upstream's %s moved to %s after the revoke", ref, got)
+	}
+
+	// The audit names what covered each push.
+	a := runCommand(t, fx.dir, []string{"audit", "--json", "--service", "git"}, withHostSemantics())
+	var sets []string
+	for _, line := range strings.Split(strings.TrimSpace(a.stdout), "\n") {
+		var e brokeraudit.Event
+		if json.Unmarshal([]byte(line), &e) == nil && len(e.Argv) == 1 && e.Argv[0] == "git-receive-pack" {
+			sets = append(sets, e.Set)
+		}
+	}
+	if strings.Join(sets, ",") != "create-branch,working-set,working-set,refused" {
+		t.Errorf("the pushes' audit sets are %v, want [create-branch working-set working-set refused]:\n%s", sets, a.combined())
 	}
 }

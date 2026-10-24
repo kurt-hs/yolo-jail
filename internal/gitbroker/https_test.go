@@ -16,6 +16,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/gitproto"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
@@ -104,6 +105,8 @@ type httpsOpts struct {
 	rejectPushPost bool
 	// authOnlyPushPost serves everything without a credential except a push POST.
 	authOnlyPushPost bool
+	// grants are the scope file's approved user grants.
+	grants []brokerscope.Grant
 }
 
 type httpsFixture struct {
@@ -128,6 +131,7 @@ func newHTTPSFixture(t *testing.T, o httpsOpts) *httpsFixture {
 	h := &httpsFixture{srv: &httpsServer{}}
 	var ts *httptest.Server
 	h.fixture = newFixtureOpts(t, fixtureOpts{
+		grants: o.grants,
 		prepare: func(f *fixture) ([]string, string) {
 			srvRoot := filepath.Join(f.root, "srv")
 			mustGit(t, f.bare, "config", "http.receivepack", "true")
@@ -628,5 +632,34 @@ func TestHTTPSAdvertisementOverTheCapRefused(t *testing.T) {
 	out, err = h.git("push", "origin", "HEAD:main")
 	if err == nil || !strings.Contains(out, "push advertisement is over 16 bytes") {
 		t.Fatalf("push: %v\n%s", err, out)
+	}
+}
+
+// A creation under the create-branch grant crosses HTTPS whole, lands in the bare repository,
+// and joins the working set from the upstream's own `ok` report (docs/design/git-broker-plan.md
+// task 9).
+func TestCreateBranchOverHTTPS(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{grants: []brokerscope.Grant{{Kind: "create-branch", Repo: brokerscope.AnyRepo}}})
+	allowKinds(t, "create-branch")
+	h.localCommit()
+	out, err := h.git("push", "origin", "HEAD:refs/heads/agent/x")
+	t.Logf("requests:\n%s", h.srv.log(t))
+	if err != nil {
+		t.Fatalf("git push: %v\n%s\nbroker log:\n%s", err, out, h.log.String())
+	}
+	if got, want := mustGit(t, h.bare, "rev-parse", "agent/x"), mustGit(t, h.ws, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("bare agent/x %s, local HEAD %s", got, want)
+	}
+	live := liveEntries(t)
+	if len(live) != 1 || live[0].Repo != h.host+"/o/r" || live[0].Resource != "refs/heads/agent/x" || live[0].By != "create-branch" {
+		t.Fatalf("live entries %+v", live)
+	}
+	// The next push is an update the entry covers, POSTed as the creation was.
+	h.commit("two")
+	if out, err := h.git("push", "origin", "HEAD:refs/heads/agent/x"); err != nil {
+		t.Fatalf("second push: %v\n%s", err, out)
+	}
+	if p := lastPush(t); p.Set != "working-set" || len(p.Refs) != 1 || p.Refs[0].CoveredBy != live[0].ID {
+		t.Fatalf("update audit %+v", p)
 	}
 }

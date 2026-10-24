@@ -15,6 +15,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
 	"github.com/mschulkind-oss/yolo-jail/internal/gitproto"
 	"github.com/mschulkind-oss/yolo-jail/internal/gitremote"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
@@ -70,6 +71,7 @@ type fixture struct {
 	endpoint  string
 	broker    *Broker
 	log       *lockedBuffer
+	getenv    func(string) string // the broker's environment
 }
 
 // sshScript is the fake host ssh: it records its argv and env, then runs its last argument
@@ -156,6 +158,8 @@ type fixtureOpts struct {
 	prepare func(f *fixture) (repos []string, pathFirst string)
 	// bound, when set, runs once the broker exists, before it serves.
 	bound func(f *fixture)
+	// grants are the scope file's approved user grants.
+	grants []brokerscope.Grant
 }
 
 func newFixtureOpts(t *testing.T, o fixtureOpts) *fixture {
@@ -207,31 +211,40 @@ func newFixtureOpts(t *testing.T, o fixtureOpts) *fixture {
 		repos = []string{origin}
 	}
 	sf := brokerscope.File{Source: Source, LaunchID: "fixture-launch", PID: os.Getpid(), Container: "fixture-container",
-		Workspace: f.ws, Form: brokerscope.FormRemoteURL, Repos: repos}
+		Workspace: f.ws, Form: brokerscope.FormRemoteURL, Repos: repos, Grants: o.grants}
+	brokerPath := pathFirst + string(os.PathListSeparator) + os.Getenv("PATH")
+	f.getenv = func(k string) string {
+		if k == "PATH" {
+			return brokerPath
+		}
+		return os.Getenv(k)
+	}
+	f.launch(sf, o.bound)
+	return f
+}
+
+// launch writes sf as a launch's scope file and serves a fresh broker bound to it, as a jail's
+// launch does; the fixture's endpoint then reaches the new broker.
+func (f *fixture) launch(sf brokerscope.File, bound func(*fixture)) {
+	t := f.t
+	t.Helper()
+	var err error
 	f.scopeFile, err = brokerscope.Write(sf)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	brokerPath := pathFirst + string(os.PathListSeparator) + os.Getenv("PATH")
-	getenv := func(k string) string {
-		if k == "PATH" {
-			return brokerPath
-		}
-		return os.Getenv(k)
-	}
-	b, cleanup, err := newBroker(ctx, f.scopeFile, sf, f.ws, f.log, getenv)
+	b, cleanup, err := newBroker(ctx, f.scopeFile, sf, f.ws, f.log, f.getenv)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(cleanup)
 	f.broker = b
-	if o.bound != nil {
-		o.bound(f)
+	if bound != nil {
+		bound(f)
 	}
 	f.endpoint = serve(t, b.Handle)
-	return f
 }
 
 // serve starts an in-test loopback-TLS endpoint running handler and returns its endpoint file.
@@ -593,5 +606,278 @@ func TestSSHArgv(t *testing.T) {
 		if err != nil || strings.Join(got, "\x00") != strings.Join(tc.want, "\x00") {
 			t.Errorf("sshArgv(%q) = %q, %v\nwant %q", tc.url, got, err, tc.want)
 		}
+	}
+}
+
+// --- create-branch and the working set (docs/design/git-broker-plan.md task 9) ---
+
+const fixtureRepo = "fixture.test/o/r"
+
+// createBranchGrant is the workspace's approved `create-branch` grant on the fixture's
+// repository.
+var createBranchGrant = []brokerscope.Grant{{Kind: "create-branch", Repo: fixtureRepo}}
+
+// allowKinds writes the user's own config listing kinds under brokered.git.grant_kinds; none
+// writes a config without the key.
+func allowKinds(t *testing.T, kinds ...string) {
+	t.Helper()
+	body := `{"brokered": {"git": {}}}`
+	if len(kinds) > 0 {
+		quoted, _ := json.Marshal(kinds)
+		body = `{"brokered": {"git": {"grant_kinds": ` + string(quoted) + `}}}`
+	}
+	p := paths.UserConfigPath()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(body+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// grantedFixture is the SSH fixture with the grant approved and the kind allowed.
+func grantedFixture(t *testing.T) *fixture {
+	t.Helper()
+	f := newFixtureOpts(t, fixtureOpts{grants: createBranchGrant})
+	allowKinds(t, "create-branch")
+	return f
+}
+
+// workingStore is the git source's store, as `yolo approve` opens it.
+func workingStore() *brokerstore.Store {
+	return &brokerstore.Store{Dir: paths.BrokerSourceDir(Source), Source: Source}
+}
+
+// liveEntries is the store's live working-set entries.
+func liveEntries(t *testing.T) []brokerstore.WorkingEntry {
+	t.Helper()
+	all, err := workingStore().Working()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var live []brokerstore.WorkingEntry
+	for _, e := range all {
+		if e.Live() {
+			live = append(live, e)
+		}
+	}
+	return live
+}
+
+// lastPush is the newest receive-pack audit event.
+func lastPush(t *testing.T) brokeraudit.Event {
+	t.Helper()
+	var push brokeraudit.Event
+	for _, e := range auditEvents(t) {
+		if len(e.Argv) == 1 && e.Argv[0] == serviceReceivePack {
+			push = e
+		}
+	}
+	return push
+}
+
+// commit adds a commit on the workspace's HEAD.
+func (f *fixture) commit(name string) {
+	f.t.Helper()
+	if err := os.WriteFile(filepath.Join(f.ws, name), []byte(name+"\n"), 0o644); err != nil {
+		f.t.Fatal(err)
+	}
+	mustGit(f.t, f.ws, "add", name)
+	mustGit(f.t, f.ws, "commit", "-q", "-m", name)
+}
+
+func (f *fixture) mustPush(args ...string) string {
+	f.t.Helper()
+	out, err := f.git(append([]string{"push"}, args...)...)
+	if err != nil {
+		f.t.Fatalf("git push %v: %v\n%s\nbroker log:\n%s", args, err, out, f.log.String())
+	}
+	return out
+}
+
+func (f *fixture) upstreamRef(ref string) string {
+	f.t.Helper()
+	out, err := run(f.t, f.bare, gitEnv(), "rev-parse", "--verify", "-q", ref)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+func TestCreateBranchUnderGrantJoinsWorkingSet(t *testing.T) {
+	f := grantedFixture(t)
+	f.commit("one")
+	f.mustPush("origin", "HEAD:refs/heads/agent/x")
+	if got, want := f.upstreamRef("refs/heads/agent/x"), mustGit(t, f.ws, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("upstream agent/x %q, local HEAD %q", got, want)
+	}
+	live := liveEntries(t)
+	if len(live) != 1 {
+		t.Fatalf("live entries %+v, want one", live)
+	}
+	e := live[0]
+	if e.Workspace != f.ws || e.Repo != fixtureRepo || e.Resource != "refs/heads/agent/x" || e.By != "create-branch" ||
+		e.Kind != brokerstore.WorkingBranch {
+		t.Fatalf("entry %+v", e)
+	}
+	if p := lastPush(t); p.Set != "create-branch" || len(p.Refs) != 1 || p.Refs[0].CoveredBy != "create-branch" {
+		t.Fatalf("creation audit %+v", p)
+	}
+
+	// A second push is an update the working set covers.
+	f.commit("two")
+	f.mustPush("origin", "HEAD:refs/heads/agent/x")
+	if p := lastPush(t); p.Set != "working-set" || len(p.Refs) != 1 || p.Refs[0].CoveredBy != e.ID {
+		t.Fatalf("update audit %+v, want covered_by %s", p, e.ID)
+	}
+	// A force push is an update too, in this step.
+	mustGit(t, f.ws, "commit", "-q", "--amend", "-m", "two, amended")
+	f.mustPush("--force", "origin", "HEAD:refs/heads/agent/x")
+	if got, want := f.upstreamRef("refs/heads/agent/x"), mustGit(t, f.ws, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("after the force push, upstream agent/x %q, local HEAD %q", got, want)
+	}
+	if p := lastPush(t); p.Set != "working-set" || p.Refs[0].CoveredBy != e.ID {
+		t.Fatalf("force-push audit %+v", p)
+	}
+	if n := len(liveEntries(t)); n != 1 {
+		t.Fatalf("%d live entries after updates, want 1", n)
+	}
+}
+
+func TestWorkingSetSurvivesANewBroker(t *testing.T) {
+	f := grantedFixture(t)
+	f.commit("one")
+	f.mustPush("origin", "HEAD:refs/heads/agent/x")
+	first := f.broker.start
+
+	// A new launch of the same workspace: a new scope file, a new broker with a new start id,
+	// and no grant this time, so only the working set can cover the push.
+	sf, err := brokerscope.ReadFile(f.scopeFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sf.LaunchID, sf.Grants, sf.BrokerStart, sf.BrokerPID, sf.LiveScope = "fixture-launch-2", nil, "", 0, false
+	f.launch(sf, nil)
+	if f.broker.start == first {
+		t.Fatal("the new broker kept the old start id")
+	}
+	f.commit("two")
+	f.mustPush("origin", "HEAD:refs/heads/agent/x")
+	if got, want := f.upstreamRef("refs/heads/agent/x"), mustGit(t, f.ws, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("upstream agent/x %q, local HEAD %q", got, want)
+	}
+}
+
+func TestNoGrantPushesNothing(t *testing.T) {
+	f := newFixture(t, "")
+	allowKinds(t, "create-branch") // the kind alone, with no grant in the scope
+	f.commit("one")
+	out, err := f.git("push", "origin", "HEAD:refs/heads/agent/x")
+	if err == nil || !strings.Contains(out, reasonNeedsApproval) {
+		t.Fatalf("an ungranted creation: %v\n%s", err, out)
+	}
+	if f.upstreamRef("refs/heads/agent/x") != "" {
+		t.Fatal("the creation reached the upstream")
+	}
+	if all, err := workingStore().Working(); err != nil || len(all) != 0 {
+		t.Fatalf("store %+v %v, want empty", all, err)
+	}
+}
+
+func TestUserKindRemovedTakesEffectAtNextPush(t *testing.T) {
+	f := grantedFixture(t)
+	f.commit("one")
+	f.mustPush("origin", "HEAD:refs/heads/agent/x")
+	allowKinds(t) // the user takes the kind away on the host
+	out, err := f.git("push", "origin", "HEAD:refs/heads/agent/y")
+	if err == nil || !strings.Contains(out, reasonNeedsApproval) {
+		t.Fatalf("a creation after the kind was removed: %v\n%s", err, out)
+	}
+	if f.upstreamRef("refs/heads/agent/y") != "" {
+		t.Fatal("agent/y reached the upstream")
+	}
+}
+
+func TestRejectedCreationRecordsNothing(t *testing.T) {
+	f := grantedFixture(t)
+	writeExec(t, filepath.Join(f.bare, "hooks", "pre-receive"), "#!/bin/sh\necho 'fixture: rejected' >&2\nexit 1\n")
+	f.commit("one")
+	out, err := f.git("push", "origin", "HEAD:refs/heads/agent/x")
+	if err == nil {
+		t.Fatalf("a push the hook rejects succeeded:\n%s", out)
+	}
+	if !strings.Contains(out, "pre-receive hook declined") {
+		t.Fatalf("the upstream's own report did not reach git:\n%s", out)
+	}
+	if all, err := workingStore().Working(); err != nil || len(all) != 0 {
+		t.Fatalf("store %+v %v, want empty", all, err)
+	}
+}
+
+func TestDeleteEndsEntry(t *testing.T) {
+	f := grantedFixture(t)
+	f.commit("one")
+	f.mustPush("origin", "HEAD:refs/heads/agent/x")
+	e := liveEntries(t)[0]
+	f.mustPush("origin", ":refs/heads/agent/x")
+	if f.upstreamRef("refs/heads/agent/x") != "" {
+		t.Fatal("agent/x survived its delete")
+	}
+	if p := lastPush(t); p.Set != "working-set" || p.Refs[0].CoveredBy != e.ID {
+		t.Fatalf("delete audit %+v", p)
+	}
+	all, _ := workingStore().Working()
+	if len(all) != 1 || all[0].ID != e.ID || all[0].EndReason != brokerstore.EndDeleted {
+		t.Fatalf("entries after the delete %+v", all)
+	}
+	// Deleted, the branch is no longer the workspace's: an update to it needs approval again.
+	if _, err := run(t, f.ws, gitEnv(), "push", "-q", f.bare, "HEAD~1:refs/heads/agent/x"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := f.git("push", "origin", "HEAD:refs/heads/agent/x"); err == nil {
+		t.Fatalf("an update to a deleted entry's branch succeeded:\n%s", out)
+	}
+}
+
+func TestGoneUpstreamEndsEntry(t *testing.T) {
+	f := grantedFixture(t)
+	f.commit("one")
+	f.mustPush("origin", "HEAD:refs/heads/agent/x")
+	old := liveEntries(t)[0]
+	mustGit(t, f.bare, "update-ref", "-d", "refs/heads/agent/x")
+	f.mustPush("origin", "HEAD:refs/heads/agent/x")
+	all, _ := workingStore().Working()
+	var ended, live []brokerstore.WorkingEntry
+	for _, e := range all {
+		if e.Live() {
+			live = append(live, e)
+		} else {
+			ended = append(ended, e)
+		}
+	}
+	if len(ended) != 1 || ended[0].ID != old.ID || ended[0].EndReason != brokerstore.EndGone {
+		t.Fatalf("ended entries %+v", ended)
+	}
+	if len(live) != 1 || live[0].ID == old.ID || live[0].Resource != "refs/heads/agent/x" {
+		t.Fatalf("live entries %+v", live)
+	}
+	if p := lastPush(t); p.Set != "create-branch" || p.Refs[0].CoveredBy != "create-branch" {
+		t.Fatalf("re-creation audit %+v", p)
+	}
+}
+
+func TestMainStillRefused(t *testing.T) {
+	f := grantedFixture(t)
+	before := f.upstreamRef("refs/heads/main")
+	f.commit("one")
+	out, err := f.git("push", "origin", "HEAD:main")
+	if err == nil || !strings.Contains(out, "! [remote rejected]") || !strings.Contains(out, reasonNeedsApproval) {
+		t.Fatalf("a push to main under create-branch: %v\n%s", err, out)
+	}
+	if f.upstreamRef("refs/heads/main") != before {
+		t.Fatal("main moved")
+	}
+	if n := len(liveEntries(t)); n != 0 {
+		t.Fatalf("%d entries after a refused push", n)
 	}
 }

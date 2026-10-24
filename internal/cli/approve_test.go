@@ -160,3 +160,132 @@ func TestAFailedHookIsListedWithItsRequest(t *testing.T) {
 		t.Fatalf("json %d %q %q", rc, out.String(), errs.String())
 	}
 }
+
+// --- the working set in `yolo approve` (docs/design/git-broker-plan.md task 9, BB-D86) ---
+
+func workingStore(dir string) *brokerstore.Store {
+	return &brokerstore.Store{Dir: dir, Source: "git"}
+}
+
+func addEntry(t *testing.T, s *brokerstore.Store, ws, ref string) brokerstore.WorkingEntry {
+	t.Helper()
+	e, _, err := s.AddWorking(brokerstore.WorkingEntry{Workspace: ws, Repo: "github.com/o/r", Kind: brokerstore.WorkingBranch,
+		Resource: ref, By: "create-branch"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+func TestApproveListsWorkingSet(t *testing.T) {
+	gh, _ := approvalFixture(t)
+	ws := workingStore(t.TempDir())
+	e := addEntry(t, ws, "/home/u/code/app", "refs/heads/agent/x")
+	stores := []*brokerstore.Store{gh, ws}
+	var out, errs bytes.Buffer
+	if rc := approveAll(context.Background(), nil, false, stores, &out, &errs); rc != 0 {
+		t.Fatalf("list %d %q", rc, errs.String())
+	}
+	t.Logf("listing:\n%s", out.String())
+	var line string
+	for _, l := range strings.Split(out.String(), "\n") {
+		if strings.HasPrefix(l, e.ID) {
+			line = l
+		}
+	}
+	for _, want := range []string{"git", "/home/u/code/app", "github.com/o/r", "refs/heads/agent/x", "create-branch"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("working-set line %q lacks %q in:\n%s", line, want, out.String())
+		}
+	}
+	if !strings.Contains(out.String(), "w-entry") {
+		t.Fatalf("the listing does not say how to revoke an entry:\n%s", out.String())
+	}
+	out.Reset()
+	if rc := approveAll(context.Background(), []string{"--json"}, false, stores, &out, &errs); rc != 0 ||
+		!strings.Contains(out.String(), `"working":[{`) || !strings.Contains(out.String(), `"id":"`+e.ID+`"`) ||
+		!strings.Contains(out.String(), `"resource":"refs/heads/agent/x"`) {
+		t.Fatalf("json %d %s %s", rc, out.String(), errs.String())
+	}
+	// An ended entry covers nothing, and is not listed.
+	if err := ws.EndWorking(e.ID, brokerstore.EndDeleted); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	approveAll(context.Background(), nil, false, stores, &out, &errs)
+	if strings.Contains(out.String(), e.ID) {
+		t.Fatalf("an ended entry is listed:\n%s", out.String())
+	}
+}
+
+// Through the registered verb, so the git store reaching `yolo approve` is pinned at its call
+// site (runApprove).
+func TestApproveRevokeWorkingID(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("YOLO_VERSION", "")
+	t.Setenv("YOLO_USER_LAYER", "")
+	ws := workingStore(paths.BrokerSourceDir("git"))
+	e := addEntry(t, ws, "/w", "refs/heads/agent/x")
+	keep := addEntry(t, ws, "/w", "refs/heads/agent/y")
+	if rc := registry["approve"]([]string{"approve", "--revoke", e.ID}); rc != 0 {
+		t.Fatalf("revoke %s: %d", e.ID, rc)
+	}
+	if _, ok, _ := ws.LiveWorking("/w", e.Repo, e.Resource); ok {
+		t.Fatal("revoked entry still live")
+	}
+	if _, ok, _ := ws.LiveWorking("/w", keep.Repo, keep.Resource); !ok {
+		t.Fatal("revoking one entry ended another")
+	}
+	if rc := registry["approve"]([]string{"approve", "--revoke", "w-00000000000000000000000000000000"}); rc != approveExitUnknownID {
+		t.Fatalf("unknown entry: %d, want %d", rc, approveExitUnknownID)
+	}
+}
+
+func TestApproveRevokeAllWorkspace(t *testing.T) {
+	gh := &brokerstore.Store{Dir: t.TempDir(), Source: "github", Revalidate: func(q brokerstore.Request) (brokerstore.Policy, error) { return q.Policy, nil }}
+	grantIn := func(ws string) brokerstore.Grant {
+		r, err := gh.File(brokerstore.Request{Jail: "j" + ws, Start: "s", Workspace: ws, Argv: []string{"pr", "merge"}, Repo: "o/r",
+			StdinDigest: "d", Set: "read-write", Policy: brokerstore.Policy{Window: 15 * time.Minute, MaxWindow: time.Hour, Uses: 5}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		g, err := gh.Decide(r.ID, "pending", brokerstore.Decision{For: time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+	root := t.TempDir()
+	a, b := root+"/a", root+"/b"
+	gA, gB := grantIn(a), grantIn(b)
+	ws := workingStore(t.TempDir())
+	eA, eB := addEntry(t, ws, a, "refs/heads/x"), addEntry(t, ws, b, "refs/heads/x")
+	stores := []*brokerstore.Store{gh, ws}
+	var out, errs bytes.Buffer
+	if rc := approveAll(context.Background(), []string{"--revoke", "all", "--workspace", a + "/"}, false, stores, &out, &errs); rc != 0 {
+		t.Fatalf("revoke all --workspace: %d %s", rc, errs.String())
+	}
+	_, gs, _ := gh.List()
+	for _, g := range gs {
+		if g.ID == gA.ID && g.EndedBy() != brokerstore.EndRevoked {
+			t.Fatalf("workspace a's grant: %+v", g)
+		}
+		if g.ID == gB.ID && !g.Ended.IsZero() {
+			t.Fatalf("workspace b's grant ended: %+v", g)
+		}
+	}
+	if _, ok, _ := ws.LiveWorking(a, eA.Repo, eA.Resource); ok {
+		t.Fatal("workspace a's entry still live")
+	}
+	if _, ok, _ := ws.LiveWorking(b, eB.Repo, eB.Resource); !ok {
+		t.Fatal("workspace b's entry ended")
+	}
+	for _, args := range [][]string{{"--revoke", eB.ID, "--workspace", b}, {"--workspace", b}, {"--revoke", "all", "--workspace"}} {
+		if rc := approveAll(context.Background(), args, false, stores, &out, &errs); rc != approveExitUsage {
+			t.Fatalf("%v: %d, want usage", args, rc)
+		}
+	}
+	if _, ok, _ := ws.LiveWorking(b, eB.Repo, eB.Resource); !ok {
+		t.Fatal("a refused revoke ended an entry")
+	}
+}

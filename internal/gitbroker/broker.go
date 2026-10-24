@@ -13,6 +13,8 @@
 //     commands before forwarding anything, and judges every ref (ID-9). A push nothing covers
 //     is refused whole in git's own report: over SSH the upstream is sent an empty command list and
 //     nothing else, over HTTPS no POST at all, and git prints `! [remote rejected] <ref> (<reason>)` per ref.
+//     A covered push (a new branch under a create-branch grant, or a branch in the workspace's
+//     working set: policy.go) is forwarded, and the upstream's report updates the working set.
 //
 // Every call is audited with `service: git` (ID-13).
 package gitbroker
@@ -84,10 +86,12 @@ type Broker struct {
 	log       io.Writer
 	now       func() time.Time
 	seq       atomic.Int64
-	// cover decides whether a grant or a working-set entry covers one ref command, and
-	// returns the set it falls in and what covered it. nil in this version: no grant and no
-	// working set exist yet (task 9), so every push is refused.
-	cover func(gitproto.Command) (set, coveredBy string, ok bool)
+	// store is the git source's host store, which holds every workspace's working set
+	// (brokerstore.WorkingEntry).
+	store *brokerstore.Store
+	// cover, when set, replaces the push policy (coverFor) for every ref command. It is a test
+	// seam and nothing else: nothing outside tests sets it.
+	cover coverer
 	// rootCAs is the HTTPS upstream's trust roots; nil, always outside tests, is the system's.
 	// It is a test seam and nothing else: no config key or environment variable reaches it,
 	// and nothing turns verification off (docs/design/git-broker-plan.md task 6's fence).
@@ -132,8 +136,8 @@ func newBroker(ctx context.Context, scopeFile string, sf brokerscope.File, spawn
 	}
 	b := &Broker{ctx: ctx, scopeFile: scopeFile, bound: bound, start: start, spawnCwd: spawnCwd, getenv: getenv,
 		audit: brokeraudit.Open(paths.BrokerAuditLog(), func(msg string) { fmt.Fprintln(log, Name+":", msg) }),
-		log:   log, now: time.Now}
-	fmt.Fprintln(log, Name+": serving this jail's git remotes through the host's ssh and git credentials; pushes are refused per ref until grants arrive")
+		log:   log, now: time.Now, store: &brokerstore.Store{Dir: paths.BrokerSourceDir(Source), Source: Source}}
+	fmt.Fprintln(log, Name+": serving this jail's git remotes through the host's ssh and git credentials; a push goes through when a create-branch grant or the workspace's working set covers every ref")
 	return b, func() { _ = brokercore.CloseLease(Source, lease) }, nil
 }
 
@@ -274,8 +278,13 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 			"Give the remote its SSH or HTTPS URL (`git remote set-url`), or fetch it on the host.", brokercore.ExitUsage)
 	}
 	ev.Repo, _ = gitproto.Identity(req.URL)
+	var cover coverer
+	if req.Service == serviceReceivePack {
+		// The live scope's grants and the user's grant kinds, as they read at this push.
+		cover = b.coverFor(f, ev.Repo, say)
+	}
 	if transport == transportHTTPS {
-		return finish(b.serveHTTPS(ctx, req, in, out, &ev, say))
+		return finish(b.serveHTTPS(ctx, req, in, out, &ev, cover, say))
 	}
 
 	argv, err := sshArgv(req.URL, req.Service, req.Protocol)
@@ -304,7 +313,7 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 		ev.Set = "read"
 		return finish(b.uploadPack(u, in, out, &ev, dest, say))
 	}
-	return finish(b.receivePack(u, in, out, &ev, dest, say))
+	return finish(b.receivePack(u, in, out, &ev, dest, cover, say))
 }
 
 // uploadPack relays a fetch both ways, and returns its exit code.

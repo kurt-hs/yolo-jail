@@ -193,6 +193,7 @@ func (s *Store) StatusContext(ctx context.Context, jail, start, id string) (Requ
 type records struct {
 	requests []Request
 	grants   []Grant
+	working  []WorkingEntry
 }
 
 func (s *Store) now() time.Time {
@@ -226,7 +227,7 @@ func (s *Store) transactionContext(ctx context.Context, fn func(*records, time.T
 	}
 	return brokerlock.WithTransactionContext(ctx, s.Dir, func() error {
 		var err error
-		for _, name := range []string{"requests", "grants"} {
+		for _, name := range []string{"requests", "grants", "working"} {
 			if err := privateDir(filepath.Join(s.Dir, name)); err != nil {
 				return err
 			}
@@ -236,6 +237,9 @@ func (s *Store) transactionContext(ctx context.Context, fn func(*records, time.T
 			return err
 		}
 		if err = readRecords(filepath.Join(s.Dir, "grants"), &r.grants); err != nil {
+			return err
+		}
+		if err = readRecords(filepath.Join(s.Dir, "working"), &r.working); err != nil {
 			return err
 		}
 		now := s.now()
@@ -266,6 +270,15 @@ func (s *Store) transactionContext(ctx context.Context, fn func(*records, time.T
 					return err
 				}
 				r.grants = append(r.grants[:i], r.grants[i+1:]...)
+			}
+		}
+		for i := len(r.working) - 1; i >= 0; i-- {
+			w := r.working[i]
+			if !w.Live() && !now.Before(w.Ended.Add(7*24*time.Hour)) {
+				if err = os.Remove(filepath.Join(s.Dir, "working", w.ID+".json")); err != nil {
+					return err
+				}
+				r.working = append(r.working[:i], r.working[i+1:]...)
 			}
 		}
 		for i := len(r.requests) - 1; i >= 0; i-- {
@@ -305,11 +318,7 @@ func readRecords[T any](dir string, out *[]T) error {
 			continue
 		}
 		id := strings.TrimSuffix(e.Name(), ".json")
-		prefix := "r-"
-		if filepath.Base(dir) == "grants" {
-			prefix = "g-"
-		}
-		if !validID(id, prefix) {
+		if !validID(id, recordPrefix(filepath.Base(dir))) {
 			return fmt.Errorf("invalid store record name %q", e.Name())
 		}
 		f, err := os.OpenFile(filepath.Join(dir, e.Name()), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
@@ -337,12 +346,21 @@ func readRecords[T any](dir string, out *[]T) error {
 	}
 	return nil
 }
-func (s *Store) write(kind, id string, v any) error {
-	prefix := "r-"
-	if kind == "grants" {
-		prefix = "g-"
+
+// recordPrefix is the id prefix of a record kind's directory: r- requests, g- grants and
+// w- working-set entries.
+func recordPrefix(kind string) string {
+	switch kind {
+	case "grants":
+		return "g-"
+	case "working":
+		return "w-"
 	}
-	if !validID(id, prefix) {
+	return "r-"
+}
+
+func (s *Store) write(kind, id string, v any) error {
+	if !validID(id, recordPrefix(kind)) {
 		return errors.New("invalid record identity")
 	}
 	b, err := json.Marshal(v)
@@ -605,29 +623,10 @@ func (s *Store) ConsumeDispatchContext(ctx context.Context, jail, start, set, co
 	})
 	return out, found, err
 }
-func (s *Store) Revoke(id string) error {
-	return s.transaction(func(r *records, now time.Time) error {
-		found := id == "all"
-		for i := range r.grants {
-			g := &r.grants[i]
-			if id != "all" && g.ID != id {
-				continue
-			}
-			found = true
-			if g.Ended.IsZero() {
-				g.Ended = now
-				g.EndReason = EndRevoked
-				if err := s.write("grants", g.ID, g); err != nil {
-					return err
-				}
-			}
-		}
-		if !found {
-			return refusal(ErrUnknownID, "grant %q not found", id)
-		}
-		return nil
-	})
-}
+
+// Revoke ends one grant or working-set entry by its id, or with "all" every live grant
+// (RevokeIn says what `all` leaves).
+func (s *Store) Revoke(id string) error { return s.RevokeIn(id, "") }
 
 // NoteHookFailure records that the user's on_request failed for request id, with a one-line
 // failure and the tail of its output, so every listing of the request shows it. It decides

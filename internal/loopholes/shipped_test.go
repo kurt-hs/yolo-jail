@@ -212,3 +212,21 @@ func TestEveryShippedLoopholeHasARow(t *testing.T) {
 		t.Errorf("packs/ carries %d loophole modules and the table has %d rows", found, len(shippedLoopholes))
 	}
 }
+
+// TestShippedGitBrokerDefinesCreateBranch pins the grant kind the shipped git-broker manifest
+// defines (docs/design/git-broker-plan.md ID-10). Without it every workspace grant of
+// `create-branch` is refused by `yolo check` ("it defines: none"), so the broker's create-branch
+// path is unreachable however the user configures it, while every package test that hands the
+// validator its own resolver stays green.
+func TestShippedGitBrokerDefinesCreateBranch(t *testing.T) {
+	lp, err := LoadPackLoophole(shippedLoopholeModule(t, "git-broker", "git"))
+	if err != nil {
+		t.Fatalf("load git-broker: %v", err)
+	}
+	if lp.Brokered == nil {
+		t.Fatal("git-broker: no brokered block")
+	}
+	if got := strings.Join(lp.Brokered.Grants, ","); got != "create-branch" {
+		t.Errorf("git-broker: brokered.grants = %q, want \"create-branch\"", got)
+	}
+}

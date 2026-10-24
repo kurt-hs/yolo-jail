@@ -62,6 +62,14 @@ One key works **only in a project config**: `brokered`, which adds repositories 
 [GitHub access](../guides/github.md#adding-a-repository-the-project-has-no-remote-for). The next
 fresh launch asks you to approve each one, and `yolo check` refuses it in your user config.
 
+Grants under `brokered` are split between the two: your user config lists the kinds of grant any
+project may hold, `brokered.<source>.grant_kinds`, and a project config names each grant and its
+repository, `brokered.<source>.grants`. A grant joins at the config-change prompt, and only if
+your user config lists its kind; `yolo check` refuses either key in the other config. The git
+source defines one kind, `create-branch`; see
+[Git](../guides/git.md#letting-the-agent-push-its-own-branches). `brokered.git.repos` is refused:
+a git remote joins with `git remote add`.
+
 ## A starting point
 
 A typical user config:

@@ -103,7 +103,7 @@ var subcommandUsage = map[string]subUsage{
 	"stores":      {text: stores.Usage},
 	"nix-roots":   {text: nixRootsUsage, valueFlags: []string{"--format"}},
 	"update":      {text: updateUsage, valueFlags: []string{"--from"}},
-	"approve":     {text: approveUsage, valueFlags: []string{"--for", "--revoke"}},
+	"approve":     {text: approveUsage, valueFlags: []string{"--for", "--revoke", "--workspace"}},
 	"gh":          {text: ghUsage},
 	"git-remote":  {text: gitRemoteUsage},
 	"host-run":    {text: hostRunUsage, valueFlags: []string{"-C", "--name", "--timeout"}},

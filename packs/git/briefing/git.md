@@ -17,11 +17,15 @@ With the broker on:
 
 - `git fetch`, `git pull` and `git ls-remote` work against this workspace's remotes as the user
   approved them at launch, over SSH or HTTPS.
-- **Every push needs a grant, and this version cannot ask for one**, so every push is refused,
-  per ref, in git's own report: `! [remote rejected] <ref> (<reason>)`. Nothing is pushed. Read
-  the reason: `needs approval, which this version cannot ask for` means the user has to push
-  from the host; a ref outside `refs/heads/` and `refs/tags/` is never pushed through the
-  broker. Do not retry a refused push.
+- **A push goes through only when the user granted it ahead of time.** With a `create-branch`
+  grant on the repository, you may push a branch that does not exist on the remote yet; once the
+  remote accepts it, it joins this workspace's working set, and later pushes to it (updates,
+  force-pushes, deletes) go through too, in this jail and in later ones. Push your work to a new
+  branch of your own, not to `main` or a branch someone else created. Every other push is refused
+  whole, per ref, in git's own report: `! [remote rejected] <ref> (<reason>)`, and nothing is
+  pushed. Read the reason: `needs approval, which this version cannot ask for` means the user
+  has to push it from the host (or grant `create-branch`, for a new branch); a ref outside
+  `refs/heads/` and `refs/tags/` is never pushed through the broker. Do not retry a refused push.
 - A remote outside the approved scope is refused naming the scope. A new remote joins only when
   the user approves it in the config-change prompt on the host: add it with `git remote add`,
   then ask the user to run `yolo config apply` on the host, in this workspace, and answer y.

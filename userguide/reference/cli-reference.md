@@ -110,6 +110,13 @@ yolo host-run wait           # in the jail: wait for that output; also show
 ```
 
 `yolo audit` takes `--since 1h`, `--service <source>` (such as `github` or `git`), `--jail <id>`, `--workspace <path>`, `--set <name>` and `--json`.
+
+`yolo approve`, on the host, lists the broker's requests and grants and each project's git
+working set (the branches the agent created under a create-branch grant; see
+[Git](../guides/git.md#letting-the-agent-push-its-own-branches)). `yolo approve --revoke <id>`
+ends one grant or working-set entry (`w-…`), `--revoke all` every grant, and
+`--revoke all --workspace <path>` every grant and working-set entry of that project. `--json`
+prints the same as one JSON document.
 Inside a jail, `yolo gh -- <args>` is what a bare `gh` runs when the `github` pack is selected; see
 [GitHub](../guides/github.md). `yolo git-remote -- <remote> <url>` is the remote helper the jail's
 git runs, as `git-remote-yolo`, for a remote the `git` pack sends to the git-broker; see

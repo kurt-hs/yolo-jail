@@ -83,6 +83,7 @@ type httpsLeg struct {
 	ev       *brokeraudit.Event
 	cred     *credential
 	approved bool
+	cover    coverer // the push policy, for a push
 }
 
 // newHTTPSLeg readies the upstream for the approved remote.
@@ -329,7 +330,7 @@ func mediaType(resp *http.Response) string {
 
 // serveHTTPS answers one request over the HTTPS upstream and returns its exit code. Nothing
 // has reached the client yet.
-func (b *Broker) serveHTTPS(ctx context.Context, req request, in io.Reader, out io.Writer, ev *brokeraudit.Event, say func(string)) int {
+func (b *Broker) serveHTTPS(ctx context.Context, req request, in io.Reader, out io.Writer, ev *brokeraudit.Event, cover coverer, say func(string)) int {
 	h, err := b.newHTTPSLeg(ctx, req.URL, req.Service, ev, say)
 	if err != nil {
 		ev.Set, ev.Outcome, ev.Reason = "refused", "refused", "remote not usable over https"
@@ -337,6 +338,7 @@ func (b *Broker) serveHTTPS(ctx context.Context, req request, in io.Reader, out 
 			"Fix the remote's URL with `git remote set-url`.")
 		return brokercore.ExitUsage
 	}
+	h.cover = cover
 	// Each request has its own transport; its idle connections end with the request.
 	defer h.client.CloseIdleConnections()
 	if req.Service == serviceUploadPack {
@@ -622,7 +624,7 @@ func (h *httpsLeg) push(in io.Reader, out io.Writer) int {
 		return brokercore.ExitUnavailable
 	}
 
-	p, code, ok := h.b.readPush(in, h.ev, h.say)
+	p, code, ok := h.b.readPush(in, h.ev, h.cover, h.say)
 	if !ok {
 		return code
 	}
@@ -658,9 +660,10 @@ func (h *httpsLeg) push(in io.Reader, out io.Writer) int {
 		_, _ = io.Copy(io.Discard, in)
 		return code
 	}
-	_, _ = io.Copy(out, presp.Body)
+	rep, repErr := relayReport(out, presp.Body, p.caps)
 	_ = presp.Body.Close()
 	_, _ = io.Copy(io.Discard, in)
+	h.b.record(h.ev.Repo, p, h.ev.Refs, rep, repErr, h.say)
 	return 0
 }
 
