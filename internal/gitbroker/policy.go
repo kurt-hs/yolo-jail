@@ -13,23 +13,26 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/gitproto"
 )
 
-// policy.go is what covers a pushed ref (docs/design/git-broker.md §5 and §5.1,
+// policy.go is what covers a pushed ref (docs/design/git-broker.md §5 and §5.1, GB-D12, GB-D13,
 // docs/design/git-broker-plan.md ID-9 and ID-11):
 //
 //   - a creation (old id all zeros) under refs/heads/ is covered by an approved `create-branch`
 //     grant on the repository, or on `*`, while the user's own config still lists the kind;
-//   - an update or delete under refs/heads/ is covered by a live working-set entry for that
-//     workspace, repository and ref;
+//   - a creation, update or delete under refs/heads/ is covered by the workspace's working set:
+//     a live entry in the store for that workspace, repository and ref, or a branch an approved
+//     `branch` grant declares in config while the user's own config still lists the kind;
 //   - nothing else is covered (tags, and any branch outside the working set, need approval).
 //
 // The live scope file's grants and the user config's `grant_kinds` are read at every push, so
 // a `yolo config apply` or an edit of the user config on the host reaches the next one. A
-// creation the upstream then reports `ok` joins the working set; a delete reported `ok` ends
-// its entry.
+// creation under create-branch the upstream then reports `ok` joins the working set in the
+// store; a delete of a store entry reported `ok` ends it. A branch declared in config is never
+// recorded: the config holds it, so a delete leaves it declared and removing the grant ends it.
 
 const (
-	// grantCreateBranch is the one grant kind the git source defines.
+	// The grant kinds the git source defines.
 	grantCreateBranch = "create-branch"
+	grantBranch       = brokerscope.KindBranch
 	// The audit sets a covered push falls in (ID-13).
 	setCreateBranch = "create-branch"
 	setWorkingSet   = "working-set"
@@ -38,7 +41,8 @@ const (
 )
 
 // coverer decides whether one ref command is covered, and returns the set it falls in and what
-// covered it: the grant kind, or the working-set entry's id.
+// covered it: the grant (`create-branch`, or `branch:<name>` for a branch declared in config),
+// or the store's working-set entry id.
 type coverer func(gitproto.Command) (set, coveredBy string, ok bool)
 
 // grantCovers reports whether grants hold a create-branch grant on repo or on every repository.
@@ -51,22 +55,34 @@ func grantCovers(grants []brokerscope.Grant, repo string) bool {
 	return false
 }
 
+// declaredBranch reports whether grants hold a `branch` grant declaring branch on repo (or on
+// every repository).
+func declaredBranch(grants []brokerscope.Grant, repo, branch string) bool {
+	for _, g := range grants {
+		if g.Kind == grantBranch && g.Branch == branch && (g.Repo == brokerscope.AnyRepo || g.Repo == repo) {
+			return true
+		}
+	}
+	return false
+}
+
 // coverFor is the push policy for one push to repo under the live scope file f. A store it
 // cannot read covers nothing, and says so once.
 func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) coverer {
 	if b.cover != nil {
 		return b.cover
 	}
+	kinds := config.BrokeredGrantKinds(Source)
 	granted := grantCovers(f.Grants, repo)
-	kindAllowed := slices.Contains(config.BrokeredGrantKinds(Source), grantCreateBranch)
-	canCreate := granted && kindAllowed
-	kindWarned := false
-	kindMissing := func() {
-		if !kindWarned {
-			kindWarned = true
-			say("this workspace's create-branch grant on " + repo + " is not in effect: your user config does not " +
-				"list create-branch under `brokered.git.grant_kinds`. Add it there on the host to let the broker " +
-				"create branches (the next push reads it), or push from the host.")
+	canCreate := granted && slices.Contains(kinds, grantCreateBranch)
+	branchAllowed := slices.Contains(kinds, grantBranch)
+	kindWarned := map[string]bool{}
+	kindMissing := func(kind, what string) {
+		if !kindWarned[kind] {
+			kindWarned[kind] = true
+			say("this workspace's " + kind + " grant on " + repo + " is not in effect: your user config does not " +
+				"list " + kind + " under `brokered.git.grant_kinds`. Add it there on the host to let the broker " +
+				what + " (the next push reads it), or push from the host.")
 		}
 	}
 	warned := false
@@ -79,13 +95,28 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 		}
 	}
 	return func(c gitproto.Command) (string, string, bool) {
-		if !strings.HasPrefix(c.Ref, "refs/heads/") {
+		branch, isBranch := strings.CutPrefix(c.Ref, "refs/heads/")
+		if !isBranch {
 			return "", "", false
+		}
+		declared := declaredBranch(f.Grants, repo, branch)
+		// A branch declared in config, its kind allowed, is in the working set: creation,
+		// update, force and delete alike (GB-D13).
+		inConfig := func() (string, string, bool) {
+			if !declared {
+				return "", "", false
+			}
+			if !branchAllowed {
+				kindMissing(grantBranch, "push to the branches it declares")
+				return "", "", false
+			}
+			return setWorkingSet, grantBranch + ":" + branch, true
 		}
 		e, live, err := b.store.LiveWorking(b.bound.Workspace, repo, c.Ref)
 		if err != nil {
 			storeFailed(err)
-			return "", "", false
+			// The store is not needed for a branch the config declares.
+			return inConfig()
 		}
 		if c.Create() {
 			// The workspace held this branch, and the upstream no longer has it: someone
@@ -93,21 +124,26 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 			if live {
 				if err := b.store.EndWorking(e.ID, brokerstore.EndGone); err != nil {
 					storeFailed(err)
-					return "", "", false
+					return inConfig()
 				}
+			}
+			// Declared in config first: such a branch is never recorded in the store.
+			if s, by, ok := inConfig(); ok {
+				return s, by, ok
 			}
 			if canCreate {
 				return setCreateBranch, grantCreateBranch, true
 			}
 			if granted {
-				kindMissing()
+				kindMissing(grantCreateBranch, "create branches")
 			}
 			return "", "", false
 		}
+		// A store entry first, so a delete through the broker ends the record it covers.
 		if live {
 			return setWorkingSet, e.ID, true
 		}
-		return "", "", false
+		return inConfig()
 	}
 }
 

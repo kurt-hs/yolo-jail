@@ -59,8 +59,9 @@ import (
 //
 //	"brokered": { "git": { "grants": [{"kind": "create-branch", "repo": "github.com/o/r"}] } }
 //
-// A grant joins only at the config-change gate, as a line of its source's scope block recorded
-// under `<source>.grants` (scopeapproval.go), and only within the user's kinds: one outside them
+// A `branch` grant names its branch too, `"branch": "main"`: a working-set branch declared in
+// config (docs/design/git-broker.md GB-D12, GB-D13); no other kind takes one. A grant joins
+// only at the config-change gate, as a line of its source's scope block recorded under `<source>.grants` (scopeapproval.go), and only within the user's kinds: one outside them
 // is refused here, naming the user-config key that would allow it.
 const (
 	brokeredKey           = "brokered"
@@ -78,11 +79,38 @@ const (
 
 // The keys of one `brokered.<source>.grants` entry.
 const (
-	brokeredGrantKindKey = "kind"
-	brokeredGrantRepoKey = "repo"
+	brokeredGrantKindKey   = "kind"
+	brokeredGrantRepoKey   = "repo"
+	brokeredGrantBranchKey = "branch"
 )
 
-var knownBrokeredGrantKeys = set(brokeredGrantKindKey, brokeredGrantRepoKey)
+var knownBrokeredGrantKeys = set(brokeredGrantKindKey, brokeredGrantRepoKey, brokeredGrantBranchKey)
+
+// grantBranchProblem is the error for a grant entry's `branch`, "" when it is right: a kind that
+// names a branch (brokerscope.GrantTakesBranch) has a valid one, and any other kind has none.
+// The second result is the branch as written, valid or not.
+func grantBranchProblem(entryPath, kind string, m *jsonx.OrderedMap) (string, string) {
+	bv, has := m.Get(brokeredGrantBranchKey)
+	path := entryPath + "." + brokeredGrantBranchKey
+	if !brokerscope.GrantTakesBranch(kind) {
+		if has {
+			return path + ": only a branch grant names a branch; a " + pyReprValue(kind) +
+				" grant covers its repository's branches as its kind says. Remove this key, or make the " +
+				"grant {\"kind\": \"branch\", …} to declare that branch in the working set.", ""
+		}
+		return "", ""
+	}
+	if !has {
+		return path + `: a branch grant names its branch, such as "branch": "main" (refs/heads/main). Add it.`, ""
+	}
+	branch, ok := bv.(string)
+	if !ok || !brokerscope.ValidGrantBranch(branch) {
+		return path + ": " + pyReprValue(bv) + " is not a branch name a branch grant can name: write one " +
+			"branch's short name as git accepts it (\"main\", \"release/1.2\"; not \"refs/heads/main\", and " +
+			"no pattern or wildcard). List each branch as its own grant. Tags and other refs are never covered.", branch
+	}
+	return "", branch
+}
 
 // impliedGrantKind is the kind no grant names: reading is what the loophole being on allows.
 const impliedGrantKind = "read"
@@ -923,7 +951,12 @@ func brokeredGrantProblems(v any, resolver LoopholeResolver) (errs, warns, userK
 					"remove this grant.")
 				continue
 			}
-			if g := kind + " " + repo; inList(seen, g) {
+			why, branch := grantBranchProblem(entryPath, kind, m)
+			if why != "" {
+				errs = append(errs, why)
+				continue
+			}
+			if g := (brokerscope.Grant{Kind: kind, Repo: repo, Branch: branch}).String(); inList(seen, g) {
 				errs = append(errs, entryPath+": the grant "+pyReprValue(g)+" is listed twice; list each once")
 				continue
 			} else {

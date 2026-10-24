@@ -112,12 +112,14 @@ yolo host-run wait           # in the jail: wait for that output; also show
 `yolo audit` takes `--since 1h`, `--service <source>` (such as `github` or `git`), `--jail <id>`, `--workspace <path>`, `--set <name>` and `--json`.
 
 `yolo approve`, on the host, lists the broker's requests and grants and each project's git
-working set (the branches the agent created under a create-branch grant; see
+working set (the branches the agent created under a create-branch grant, and, marked
+`from config`, those a branch grant in a running project's config declares; see
 [Git](../guides/git.md#letting-the-agent-push-its-own-branches)). `yolo approve --revoke <id>`
-ends one grant or working-set entry (`w-…`), `--revoke all` every grant, and
-`--revoke all --workspace <path>` every grant and working-set entry of that project; a path that
-matches nothing exits with an error. Neither ends a create-branch grant written in the project's
-config: remove it from `yolo-jail.jsonc` (`brokered.git.grants`), or remove the kind from
+ends one grant or working-set entry (`w-…`); a branch declared in config (`c-…`) is refused,
+naming the file to remove it from. `--revoke all` ends every grant, and
+`--revoke all --workspace <path>` every grant and recorded working-set entry of that project; a
+path that matches nothing exits with an error. Neither ends a create-branch or branch grant written in
+the project's config: remove it from `yolo-jail.jsonc` (`brokered.git.grants`), or remove the kind from
 `brokered.git.grant_kinds` in your user config. `--json` prints the same as one JSON document.
 
 Inside a jail, `yolo gh -- <args>` is what a bare `gh` runs when the `github` pack is selected; see

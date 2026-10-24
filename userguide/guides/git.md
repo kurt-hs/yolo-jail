@@ -8,7 +8,9 @@ result back. The jail runs the real `git`, unchanged.
 
 `git fetch`, `git pull` and `git ls-remote` work. A push goes through only when you have
 granted it ahead of time: with a **create-branch grant** the agent may push a new branch, and
-then keep pushing to the branches it created that way (its **working set**). Every other push is
+then keep pushing to the branches it created that way. Those branches are its **working set**,
+and a **branch grant** in the project config adds a branch you name, such as `main`, to it. Every
+other push is
 refused before anything reaches the remote, in git's own words, and you push it from your machine.
 Every call is recorded on your machine, and `yolo audit --service git` lists them.
 
@@ -93,7 +95,8 @@ project, not to one jail: two jails of the project share it, and it lasts across
 the branch is deleted (by a push through the broker, or found gone on the remote at the next
 push) or you revoke it. A branch you pushed from your machine, or one another project created,
 is never in it, and neither is `main` or any other branch the agent did not create: those pushes
-are still refused.
+are still refused, unless a [branch grant](#declaring-a-working-set-branch-in-config) in the
+project config declares the branch.
 
 On your machine, `yolo approve` lists each project's working set:
 
@@ -114,6 +117,54 @@ in your user config; the broker checks your user config at every push. A `--work
 matches nothing says so and exits with an error; the path in brackets in `yolo approve` is the one
 to give.
 
+## Declaring a working-set branch in config
+
+A **branch grant** puts a branch you name, such as `main` of the agent's own fork, in the
+project's working set, declared in config rather than created by the agent. It is granted the same
+two ways as create-branch:
+
+1. **Your user config allows the kind**, beside any other kind you allow:
+
+   ```jsonc
+   // ~/.config/yolo-jail/config.jsonc
+   {
+     "packs": ["claude", "git"],
+     "brokered": { "git": { "grant_kinds": ["create-branch", "branch"] } }
+   }
+   ```
+
+2. **The project config names the grant, its repository and its branch.** The branch is one
+   branch's short name, `main` for `refs/heads/main`. There is no pattern: list each branch as its
+   own grant.
+
+   ```jsonc
+   // yolo-jail.jsonc in the project
+   {
+     "brokered": { "git": { "grants": [
+       { "kind": "branch", "repo": "github.com/me/app", "branch": "main" }
+     ] } }
+   }
+   ```
+
+The grant joins at the next config-change prompt, or at `yolo config apply` for a running jail,
+as create-branch does, and `yolo check` refuses it while your user config does not list
+`branch`. A `branch` that is not a branch name git accepts, one written as `refs/heads/main`, or a
+pattern such as `"*"` is refused when the config loads, saying how to write it.
+
+The branch is then in the working set like one the agent created: the agent may push it, create
+it if it does not exist yet, force-push it and delete it. The remote's own branch protection
+still applies. A tag is never covered. The config holds the branch, not the broker's record, so a
+delete through the broker leaves it declared, and the agent may push it again. `yolo approve`
+lists it beside the recorded branches, marked `from config` with the file that declares it:
+
+```text
+c-5d0f3c2a9b8e71d4a6c0e9f2b1d3a7c5  working set  git  [/home/me/code/app]  repo github.com/me/app  branch refs/heads/main  from config /home/me/code/app/yolo-jail.jsonc
+```
+
+`yolo approve --revoke` refuses such a line and names that file. To take the branch out, remove
+the grant from the project's `yolo-jail.jsonc` and run `yolo config apply`, or remove `branch`
+from your user config. The broker reads both at every push, so either reaches the next one.
+
 ## What happens
 
 | | |
@@ -121,7 +172,7 @@ to give.
 | `git fetch`, `git pull`, `git ls-remote` over SSH | Run through your machine's `ssh` against an approved remote, streamed back as git expects |
 | `git fetch`, `git pull`, `git ls-remote` over HTTPS | Sent to an approved remote over HTTPS, checked against your machine's trusted certificates, with the credential your machine's `git credential fill` gives when the server asks for one |
 | A push of a new branch, with a create-branch grant | Sent to the remote; when the remote accepts it, the branch joins the working set |
-| A push to a branch in the working set | Sent to the remote, force-pushes and deletes included |
+| A push to a branch in the working set, recorded or declared in config | Sent to the remote, force-pushes and deletes included |
 | Any other `git push` | Refused per branch, nothing sent: `! [remote rejected] <branch> (needs approval, which this version cannot ask for)`. Push from your machine |
 | A push of several branches, one of them refused | Refused whole: a push through the broker goes through entirely or not at all |
 | A push to anything but a branch or a tag | Refused always, naming `refs/heads/` and `refs/tags/` |

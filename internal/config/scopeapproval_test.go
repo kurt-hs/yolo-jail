@@ -349,3 +349,29 @@ func TestASourceWithNoGrantsWritesNoGrantsKey(t *testing.T) {
 		t.Fatalf("removing the last grant left the record changed:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
+
+// A branch grant joins at the gate as create-branch does, its line naming the branch, and
+// the record keeps the branch (docs/design/git-broker.md GB-D12).
+func TestBranchGrantJoinsAtTheGateWithItsBranch(t *testing.T) {
+	ws := approvalWorkspace(t)
+	grant := brokerscope.Grant{Kind: "branch", Repo: "github.com/o/r", Branch: "main"}
+	gitScope := func(grants ...brokerscope.Grant) *ScopeCheck {
+		return &ScopeCheck{Sources: []ScopeSource{{Source: "git", Label: "git-broker", RemoteHost: "*",
+			Form: brokerscope.FormRemoteURL, Grants: grants,
+			Read: brokerscope.Read{GitConfig: "/w/.git/config",
+				Remotes: []brokerscope.Remote{{Name: "origin", Repo: "git@github.com:o/r.git"}}}}}}
+	}
+	if err := RecordApproval(ws, decode(t, `{}`), gitScope()); err != nil {
+		t.Fatal(err)
+	}
+	r, err := ScopeChanges(ws, gitScope(grant))
+	if err != nil || !r.ScopeChanged || !strings.Contains(strings.Join(r.ScopeBlock, "\n"), "+ grant branch github.com/o/r main  added") {
+		t.Fatalf("the gate's block has no line for the grant (%v): %+v", err, r)
+	}
+	if err := RecordApproval(ws, decode(t, `{}`), gitScope(grant)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ApprovedGrants(ws, "git"); len(got) != 1 || got[0] != grant {
+		t.Fatalf("approved grants %v, want [%v]", got, grant)
+	}
+}

@@ -696,6 +696,27 @@ func TestCreateBranchOverHTTPS(t *testing.T) {
 	}
 }
 
+// An update of main, declared in config by a branch grant, crosses HTTPS and lands, recording
+// nothing in the store (docs/design/git-broker.md GB-D12).
+func TestConfigBranchOverHTTPS(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{grants: []brokerscope.Grant{{Kind: "branch", Repo: brokerscope.AnyRepo, Branch: "main"}}})
+	allowKinds(t, "branch")
+	h.localCommit()
+	out, err := h.git("push", "origin", "HEAD:main")
+	if err != nil {
+		t.Fatalf("git push: %v\n%s\nbroker log:\n%s\nrequests:\n%s", err, out, h.log.String(), h.srv.log(t))
+	}
+	if got, want := mustGit(t, h.bare, "rev-parse", "main"), mustGit(t, h.ws, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("bare main %s, local HEAD %s", got, want)
+	}
+	if p := lastPush(t); p.Set != "working-set" || len(p.Refs) != 1 || p.Refs[0].CoveredBy != "branch:main" {
+		t.Fatalf("update audit %+v", p)
+	}
+	if n := len(liveEntries(t)); n != 0 {
+		t.Fatalf("%d working-set entries recorded for a branch declared in config", n)
+	}
+}
+
 // bigCommit commits a file of random bytes larger than pushBufferMax, so its push streams.
 func (h *httpsFixture) bigCommit() {
 	h.t.Helper()

@@ -20,12 +20,16 @@ With the broker on:
 - **A push goes through only when the user granted it ahead of time.** With a `create-branch`
   grant on the repository, you may push a branch that does not exist on the remote yet; once the
   remote accepts it, it joins this workspace's working set, and later pushes to it (updates,
-  force-pushes, deletes) go through too, in this jail and in later ones. Push your work to a new
-  branch of your own, not to `main` or a branch someone else created. Every other push is refused
-  whole, per ref, in git's own report: `! [remote rejected] <ref> (<reason>)`, and nothing is
-  pushed. Read the reason: `needs approval, which this version cannot ask for` means the user
-  has to push it from the host (or grant `create-branch`, for a new branch); a ref outside
-  `refs/heads/` and `refs/tags/` is never pushed through the broker. Do not retry a refused push.
+  force-pushes, deletes) go through too, in this jail and in later ones. A `branch` grant in
+  the workspace config declares a branch (such as `main`) in the working set too: you may
+  create, push, force-push and delete it like one you created. Unless the working set holds it,
+  push your work to a new branch of your own, not to `main` or a branch someone else created.
+  Every other push is refused whole, per ref, in git's own report:
+  `! [remote rejected] <ref> (<reason>)`, and nothing is pushed. Read the reason: `needs
+  approval, which this version cannot ask for` means the user has to push it from the host (or
+  grant `create-branch` for a new branch, or a `branch` grant for that branch, in the workspace
+  config and approve it with `yolo config apply`); a ref outside `refs/heads/` and `refs/tags/` is never pushed through
+  the broker. Do not retry a refused push.
 - A remote outside the approved scope is refused naming the scope. A new remote joins only when
   the user approves it in the config-change prompt on the host: add it with `git remote add`,
   then ask the user to run `yolo config apply` on the host, in this workspace, and answer y.

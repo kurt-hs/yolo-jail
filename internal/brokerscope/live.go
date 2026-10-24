@@ -33,6 +33,19 @@ func LiveFiles(source, container, workspace string) ([]LiveFile, error) {
 
 // LiveFilesContext is LiveFiles with context-bounded source lock acquisition.
 func LiveFilesContext(ctx context.Context, source, container, workspace string) ([]LiveFile, error) {
+	return liveFiles(ctx, source, func(f File) bool { return f.Container == container && f.Workspace == workspace })
+}
+
+// EveryLiveFile is every scope file of source a running broker is bound to, whatever its
+// container or workspace: `yolo approve` lists the working-set branches each one's approved
+// grants declare (docs/design/git-broker.md GB-D13).
+func EveryLiveFile(ctx context.Context, source string) ([]LiveFile, error) {
+	return liveFiles(ctx, source, func(File) bool { return true })
+}
+
+// liveFiles reads, under the source's lock transaction, the scope files of source whose
+// launch and broker are both alive and that match keeps.
+func liveFiles(ctx context.Context, source string, keep func(File) bool) ([]LiveFile, error) {
 	if ctx == nil {
 		return nil, errors.New("scope discovery requires a context")
 	}
@@ -55,7 +68,7 @@ func LiveFilesContext(ctx context.Context, source, container, workspace string) 
 			}
 			p := filepath.Join(dir, e.Name())
 			f, err := ReadFile(p)
-			if err != nil || f.Source != source || f.Container != container || f.Workspace != workspace {
+			if err != nil || f.Source != source || !keep(f) {
 				continue
 			}
 			if !processAlive(f.PID) || !processAlive(f.BrokerPID) {

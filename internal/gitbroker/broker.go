@@ -13,8 +13,8 @@
 //     commands before forwarding anything, and judges every ref (ID-9). A push nothing covers
 //     is refused whole in git's own report: over SSH the upstream is sent an empty command list and
 //     nothing else, over HTTPS no POST at all, and git prints `! [remote rejected] <ref> (<reason>)` per ref.
-//     A covered push (a new branch under a create-branch grant, or a branch in the workspace's
-//     working set: policy.go) is forwarded, and the upstream's report updates the working set.
+//     A covered push (a new branch under a create-branch grant, a branch in the workspace's
+//     working set, recorded or declared in config by a branch grant: policy.go) is forwarded, and the upstream's report updates the working set.
 //
 // Every call is audited with `service: git` (ID-13).
 package gitbroker
@@ -137,7 +137,7 @@ func newBroker(ctx context.Context, scopeFile string, sf brokerscope.File, spawn
 	b := &Broker{ctx: ctx, scopeFile: scopeFile, bound: bound, start: start, spawnCwd: spawnCwd, getenv: getenv,
 		audit: brokeraudit.Open(paths.BrokerAuditLog(), func(msg string) { fmt.Fprintln(log, Name+":", msg) }),
 		log:   log, now: time.Now, store: &brokerstore.Store{Dir: paths.BrokerSourceDir(Source), Source: Source}}
-	fmt.Fprintln(log, Name+": serving this jail's git remotes through the host's ssh and git credentials; a push goes through when a create-branch grant or the workspace's working set covers every ref")
+	fmt.Fprintln(log, Name+": serving this jail's git remotes through the host's ssh and git credentials; a push goes through when a create-branch grant or the workspace's working set (recorded, or declared in config) covers every ref")
 	return b, func() { _ = brokercore.CloseLease(Source, lease) }, nil
 }
 

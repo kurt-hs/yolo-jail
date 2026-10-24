@@ -923,3 +923,131 @@ func TestTagCreationUnderGrantRefused(t *testing.T) {
 		t.Fatalf("%d entries after a refused tag", n)
 	}
 }
+
+// --- a working-set branch declared in config (docs/design/git-broker.md GB-D12, GB-D13) ---
+
+// configBranchFixture is the SSH fixture with a `branch` grant on the fixture's repository for
+// branch approved, and the kind allowed in the user config.
+func configBranchFixture(t *testing.T, branch string) *fixture {
+	t.Helper()
+	f := newFixtureOpts(t, fixtureOpts{grants: []brokerscope.Grant{{Kind: "branch", Repo: fixtureRepo, Branch: branch}}})
+	allowKinds(t, "branch")
+	return f
+}
+
+// An update of main declared in config lands, is audited as the working set's, covered by the
+// grant, and records nothing in the store.
+func TestConfigBranchUpdatesMain(t *testing.T) {
+	f := configBranchFixture(t, "main")
+	f.commit("one")
+	f.mustPush("origin", "HEAD:main")
+	if got, want := f.upstreamRef("refs/heads/main"), mustGit(t, f.ws, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("upstream main %q, local HEAD %q", got, want)
+	}
+	if p := lastPush(t); p.Set != "working-set" || p.Outcome != "ran" || len(p.Refs) != 1 || p.Refs[0].CoveredBy != "branch:main" {
+		t.Fatalf("update audit %+v", p)
+	}
+	if all, err := workingStore().Working(); err != nil || len(all) != 0 {
+		t.Fatalf("store %+v %v, want empty: a branch declared in config is not recorded", all, err)
+	}
+}
+
+// A force update of the declared branch lands, as for any working-set branch; the remote's own
+// protection is the backstop.
+func TestConfigBranchForceUpdate(t *testing.T) {
+	f := configBranchFixture(t, "main")
+	f.commit("one")
+	f.mustPush("origin", "HEAD:main")
+	mustGit(t, f.ws, "commit", "-q", "--amend", "-m", "one, amended")
+	f.mustPush("--force", "origin", "HEAD:main")
+	if got, want := f.upstreamRef("refs/heads/main"), mustGit(t, f.ws, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("after the force push, upstream main %q, local HEAD %q", got, want)
+	}
+	if p := lastPush(t); p.Set != "working-set" || p.Refs[0].CoveredBy != "branch:main" {
+		t.Fatalf("force-push audit %+v", p)
+	}
+}
+
+// A delete of the declared branch lands, as for any working-set branch, and does not end the
+// declaration: the config still names the branch, so creating it again lands too.
+func TestConfigBranchDeleteAndRecreate(t *testing.T) {
+	f := configBranchFixture(t, "other")
+	if _, err := run(t, f.ws, gitEnv(), "push", "-q", f.bare, "HEAD:refs/heads/other"); err != nil {
+		t.Fatal(err)
+	}
+	f.mustPush("origin", ":refs/heads/other")
+	if f.upstreamRef("refs/heads/other") != "" {
+		t.Fatal("other survived its delete")
+	}
+	if p := lastPush(t); p.Set != "working-set" || p.Refs[0].CoveredBy != "branch:other" {
+		t.Fatalf("delete audit %+v", p)
+	}
+	f.commit("one")
+	f.mustPush("origin", "HEAD:refs/heads/other")
+	if f.upstreamRef("refs/heads/other") != mustGit(t, f.ws, "rev-parse", "HEAD") {
+		t.Fatal("re-creating the declared branch did not land")
+	}
+	if p := lastPush(t); p.Set != "working-set" || p.Refs[0].CoveredBy != "branch:other" {
+		t.Fatalf("re-creation audit %+v", p)
+	}
+	if all, err := workingStore().Working(); err != nil || len(all) != 0 {
+		t.Fatalf("store %+v %v, want empty", all, err)
+	}
+}
+
+// `branch: "main"` declares main and no other branch, and no tag of the same name.
+func TestConfigBranchCoversOnlyItsBranch(t *testing.T) {
+	f := configBranchFixture(t, "main")
+	f.commit("one")
+	for _, ref := range []string{"refs/heads/other", "refs/tags/main"} {
+		out, err := f.git("push", "origin", "HEAD:"+ref)
+		if err == nil || !strings.Contains(out, reasonNeedsApproval) {
+			t.Fatalf("a push to %s under a branch grant on main: %v\n%s", ref, err, out)
+		}
+		if f.upstreamRef(ref) != "" {
+			t.Fatalf("%s reached the upstream", ref)
+		}
+	}
+}
+
+// The broker reads the user config's grant_kinds at every push: the kind taken away on the host
+// refuses the next push, naming the key.
+func TestConfigBranchKindRemovedRefusesNextPush(t *testing.T) {
+	f := configBranchFixture(t, "main")
+	f.commit("one")
+	f.mustPush("origin", "HEAD:main")
+	before := f.upstreamRef("refs/heads/main")
+	allowKinds(t, "create-branch")
+	f.commit("two")
+	out, err := f.git("push", "origin", "HEAD:main")
+	if err == nil || !strings.Contains(out, reasonNeedsApproval) || !strings.Contains(out, "brokered.git.grant_kinds") {
+		t.Fatalf("a push after the kind was removed: %v\n%s", err, out)
+	}
+	if f.upstreamRef("refs/heads/main") != before {
+		t.Fatal("main moved")
+	}
+}
+
+// The broker reads the live scope file at every push: the grant withdrawn (as `yolo config
+// apply` withdraws it) takes the branch out of the working set at the next push.
+func TestConfigBranchGrantRemovedRefusesNextPush(t *testing.T) {
+	f := configBranchFixture(t, "main")
+	f.commit("one")
+	f.mustPush("origin", "HEAD:main")
+	before := f.upstreamRef("refs/heads/main")
+	sf, err := brokerscope.ReadFile(f.scopeFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := brokerscope.ReplaceScopeContext(context.Background(), f.scopeFile, f.broker.bound, sf.Repos, nil); err != nil {
+		t.Fatal(err)
+	}
+	f.commit("two")
+	out, err := f.git("push", "origin", "HEAD:main")
+	if err == nil || !strings.Contains(out, reasonNeedsApproval) {
+		t.Fatalf("a push after the grant was withdrawn: %v\n%s", err, out)
+	}
+	if f.upstreamRef("refs/heads/main") != before {
+		t.Fatal("main moved")
+	}
+}

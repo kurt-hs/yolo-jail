@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -359,7 +360,8 @@ func TestLiveScopeTransactionsHonorContextWhileSourceLockIsHeld(t *testing.T) {
 // grant fails the launch's write closed rather than reaching a broker.
 func TestWriteRefusesAMalformedGrant(t *testing.T) {
 	t.Setenv("HOME", resolvedTempDir(t))
-	for _, bad := range []Grant{{Kind: "Create Branch", Repo: "github.com/o/r"}, {Kind: "create-branch", Repo: "o/r"}} {
+	for _, bad := range []Grant{{Kind: "Create Branch", Repo: "github.com/o/r"}, {Kind: "create-branch", Repo: "o/r"},
+		{Kind: "branch", Repo: "github.com/o/r"}, {Kind: "branch", Repo: "github.com/o/r", Branch: "refs/heads/main"}} {
 		if _, err := Write(File{Source: "git", LaunchID: "badgrant", PID: os.Getpid(), Grants: []Grant{bad}}); err == nil {
 			t.Errorf("grant %+v was written", bad)
 		}
@@ -541,6 +543,31 @@ func TestLiveFilesSkipsADeadLaunchAndAnotherContainer(t *testing.T) {
 	}
 	if got, err := LiveFiles("github", "c", "/other-workspace"); err != nil || len(got) != 0 {
 		t.Fatalf("another workspace: %+v, %v", got, err)
+	}
+}
+
+// EveryLiveFile is every live scope file of a source, whatever its container or workspace
+// (`yolo approve` lists the working-set branches each one's config declares), and still skips
+// a dead launch and an unbound file.
+func TestEveryLiveFileListsEveryContainer(t *testing.T) {
+	t.Setenv("HOME", resolvedTempDir(t))
+	liveFixture(t, "live", "c", os.Getpid())
+	liveFixture(t, "dead", "c", 1<<30)
+	liveFixture(t, "other", "elsewhere", os.Getpid())
+	if _, err := Write(File{Source: "github", LaunchID: "unbound", Workspace: "/w", Container: "c", PID: os.Getpid()}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := EveryLiveFile(context.Background(), "github")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, f := range got {
+		ids = append(ids, f.File.LaunchID)
+	}
+	sort.Strings(ids)
+	if strings.Join(ids, ",") != "live,other" {
+		t.Fatalf("live files %v, want live and other", ids)
 	}
 }
 
@@ -732,6 +759,55 @@ func TestValidGrantRepo(t *testing.T) {
 		"https://github.com/o/r", "git@github.com:o/r", "github.com/o/../r", "*/*", "github.com/o r"} {
 		if ValidGrantRepo(bad) {
 			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+// A branch grant's branch is one branch's short name, validated the way git validates a
+// ref name (git check-ref-format, on refs/heads/<branch>), with no wildcard (docs/design/git-broker.md
+// GB-D13).
+func TestValidGrantBranch(t *testing.T) {
+	for _, ok := range []string{"main", "release/1.2", "agent/x", "feature-x_y", "a.b", "über"} {
+		if !ValidGrantBranch(ok) {
+			t.Errorf("%q refused", ok)
+		}
+	}
+	for _, bad := range []string{"", "refs/heads/main", "-main", "HEAD", "@", "a..b", ".hidden", "a/.b",
+		"a.lock", "a/b.lock", "a/", "/a", "a//b", "a.", "a@{b", "a b", "a~b", "a^b", "a:b", "a?b", "a*b",
+		"a[b", "a\\b", "a\x01b", "a\x7fb", "*", "**", "main*"} {
+		if ValidGrantBranch(bad) {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+// A branch grant names a branch, and no other kind does; its spelling carries the branch,
+// and parses back.
+func TestBranchGrantSpelling(t *testing.T) {
+	g := Grant{Kind: "branch", Repo: "github.com/o/r", Branch: "main"}
+	if !ValidGrant(g) {
+		t.Fatalf("%+v refused", g)
+	}
+	if got := g.String(); got != "branch github.com/o/r main" {
+		t.Fatalf("String() = %q", got)
+	}
+	if back, ok := ParseGrant(g.String()); !ok || back != g {
+		t.Fatalf("ParseGrant(%q) = %+v, %v", g.String(), back, ok)
+	}
+	cb := Grant{Kind: "create-branch", Repo: "*"}
+	if back, ok := ParseGrant(cb.String()); !ok || back != cb || cb.String() != "create-branch *" {
+		t.Fatalf("create-branch spelling %q parsed to %+v, %v", cb.String(), back, ok)
+	}
+	for _, bad := range []Grant{
+		{Kind: "branch", Repo: "github.com/o/r"},
+		{Kind: "branch", Repo: "github.com/o/r", Branch: "a..b"},
+		{Kind: "create-branch", Repo: "github.com/o/r", Branch: "main"},
+	} {
+		if ValidGrant(bad) {
+			t.Errorf("%+v accepted", bad)
+		}
+		if _, ok := ParseGrant(bad.String()); ok {
+			t.Errorf("ParseGrant(%q) accepted", bad.String())
 		}
 	}
 }

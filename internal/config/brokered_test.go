@@ -571,7 +571,7 @@ func TestEachMalformedBrokeredSetIsRefused(t *testing.T) {
 // gitGrantResolver is gitResolver with the git manifest's defined grant kinds.
 var gitGrantResolver = fenceResolver{known: map[string]LoopholeInfo{
 	"git-broker": {Name: "git-broker", HasHostDaemon: true, Brokered: &loopholedecl.Brokered{
-		Source: "git", RemoteHost: "*", Grants: []string{"create-branch"}}},
+		Source: "git", RemoteHost: "*", Grants: []string{"create-branch", "branch"}}},
 }}
 
 // validateWith loads the config as the launch does and validates it with resolver, keeping the
@@ -638,7 +638,7 @@ func TestGrantShapeRefusals(t *testing.T) {
 	}{
 		{"undefined kind", `{"brokered": {"git": {"grant_kinds": ["create-branch"]}}}`,
 			`{"brokered": {"git": {"grants": [{"kind": "create-pr", "repo": "github.com/o/r"}]}}}`,
-			`config.brokered.git.grants[0].kind: 'create-pr' is not a grant kind the git source defines (it defines: create-branch)`, ""},
+			`config.brokered.git.grants[0].kind: 'create-pr' is not a grant kind the git source defines (it defines: create-branch, branch)`, ""},
 		{"repo without host", `{"brokered": {"git": {"grant_kinds": ["create-branch"]}}}`,
 			`{"brokered": {"git": {"grants": [{"kind": "create-branch", "repo": "o/r"}]}}}`,
 			`config.brokered.git.grants[0].repo: 'o/r' is not a repository identity`, ""},
@@ -664,6 +664,92 @@ func TestGrantShapeRefusals(t *testing.T) {
 			}
 			if c.wantWarn != "" && !strings.Contains(warns, c.wantWarn) {
 				t.Errorf("warnings do not contain %q:\n%s", c.wantWarn, warns)
+			}
+		})
+	}
+}
+
+// --- branch grants: a working-set branch declared in config (docs/design/git-broker.md GB-D12, GB-D13) ---
+
+const oneBranchGrant = `{"brokered": {"git": {"grants": [{"kind": "branch", "repo": "github.com/o/r", "branch": "main"}]}}}`
+
+// `yolo check` refuses a branch grant the user's own config does not allow, naming the
+// user-config key, exactly as it does a create-branch grant.
+func TestBranchGrantKindNotAllowedNamesUserKey(t *testing.T) {
+	h := newBrokeredHost(t)
+	write(t, h.userCfg, `{"brokered": {"git": {"grant_kinds": ["create-branch"]}}}`)
+	write(t, filepath.Join(h.ws, WorkspaceConfigName), oneBranchGrant)
+	errs, _ := h.validateWith(t, gitGrantResolver)
+	if !strings.Contains(errs, "brokered.git.grant_kinds") || !strings.Contains(errs, "branch") {
+		t.Fatalf("no refusal naming brokered.git.grant_kinds and branch:\n%s", errs)
+	}
+}
+
+// An allowed branch grant is accepted, on one repository or on `*`, and the gate's read
+// carries it with its branch, so it can join the scope.
+func TestBranchGrantAllowedPasses(t *testing.T) {
+	h := newBrokeredHost(t)
+	write(t, h.userCfg, `{"brokered": {"git": {"grant_kinds": ["branch"]}}}`)
+	for _, body := range []string{oneBranchGrant,
+		`{"brokered": {"git": {"grants": [{"kind": "branch", "repo": "*", "branch": "main"}]}}}`} {
+		write(t, filepath.Join(h.ws, WorkspaceConfigName), body)
+		if errs, warns := h.validateWith(t, gitGrantResolver); errs != "" || warns != "" {
+			t.Fatalf("%s was not accepted:\nerrors:\n%s\nwarnings:\n%s", body, errs, warns)
+		}
+	}
+	write(t, filepath.Join(h.ws, WorkspaceConfigName), oneBranchGrant)
+	read, err := ReadWorkspaceForGate(h.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grants, _ := read.Grants("git", []string{"create-branch", "branch"})
+	want := brokerscope.Grant{Kind: "branch", Repo: "github.com/o/r", Branch: "main"}
+	if len(grants) != 1 || grants[0] != want {
+		t.Fatalf("the gate's read carries %+v, want [%+v]", grants, want)
+	}
+	// The same repository's grants on two branches are two grants, not a duplicate.
+	write(t, filepath.Join(h.ws, WorkspaceConfigName), `{"brokered": {"git": {"grants": [`+
+		`{"kind": "branch", "repo": "github.com/o/r", "branch": "main"},`+
+		`{"kind": "branch", "repo": "github.com/o/r", "branch": "dev"}]}}}`)
+	if errs, _ := h.validateWith(t, gitGrantResolver); errs != "" {
+		t.Fatalf("grants on two branches were refused:\n%s", errs)
+	}
+}
+
+// A branch grant's branch is refused at config load unless it is one branch's short name
+// git accepts, with no wildcard; a branch grant without one, and any other kind with one, are refused
+// too. Each refusal names the next step.
+func TestBranchGrantBadBranchRefused(t *testing.T) {
+	for _, c := range []struct{ name, grant, want string }{
+		{"missing", `{"kind": "branch", "repo": "github.com/o/r"}`,
+			`config.brokered.git.grants[0].branch: a branch grant names its branch`},
+		{"full ref", `{"kind": "branch", "repo": "github.com/o/r", "branch": "refs/heads/main"}`,
+			`config.brokered.git.grants[0].branch: 'refs/heads/main' is not a branch name`},
+		{"double dot", `{"kind": "branch", "repo": "github.com/o/r", "branch": "a..b"}`,
+			`config.brokered.git.grants[0].branch: 'a..b' is not a branch name`},
+		{"not a string", `{"kind": "branch", "repo": "github.com/o/r", "branch": 3}`,
+			`config.brokered.git.grants[0].branch: 3 is not a branch name`},
+		{"wildcard", `{"kind": "branch", "repo": "github.com/o/r", "branch": "*"}`,
+			`config.brokered.git.grants[0].branch: '*' is not a branch name`},
+		{"glob", `{"kind": "branch", "repo": "github.com/o/r", "branch": "release/*"}`,
+			`config.brokered.git.grants[0].branch: 'release/*' is not a branch name`},
+		{"create-branch with a branch", `{"kind": "create-branch", "repo": "github.com/o/r", "branch": "main"}`,
+			`config.brokered.git.grants[0].branch: only a branch grant names a branch`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newBrokeredHost(t)
+			write(t, h.userCfg, `{"brokered": {"git": {"grant_kinds": ["create-branch", "branch"]}}}`)
+			write(t, filepath.Join(h.ws, WorkspaceConfigName), `{"brokered": {"git": {"grants": [`+c.grant+`]}}}`)
+			errs, _ := h.validateWith(t, gitGrantResolver)
+			if !strings.Contains(errs, c.want) {
+				t.Fatalf("errors do not contain %q:\n%s", c.want, errs)
+			}
+			read, err := ReadWorkspaceForGate(h.ws)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if grants, _ := read.Grants("git", []string{"create-branch", "branch"}); len(grants) != 0 {
+				t.Fatalf("a refused grant reached the gate's read: %+v", grants)
 			}
 		})
 	}

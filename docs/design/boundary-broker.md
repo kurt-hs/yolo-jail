@@ -1155,6 +1155,11 @@ kind ([BB-D78](#BB-D78)). **Every write no user grant and no
 working-set entry covers is asked for per resource**: tags, releases, workflow runs, settings, and
 any PR, issue or branch outside the working set.
 
+**For git, extended on 2026-10-24** ([GB-D12](git-broker.md#GB-D12)): git also defines `branch`,
+a branch in the working set, declared in config, granted exactly as `create-branch` is. It adds no
+push concept (the `push-branch` row above stays folded away): a branch the workspace config
+declares is a working-set entry like one the agent created.
+
 #### How the built sets and `admit` collapse into this
 
 The built `brokered.<source>.sets` key declares standing and windowed sets, with `window`,

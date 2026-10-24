@@ -313,3 +313,57 @@ func TestGitBrokerCreateBranch(t *testing.T) {
 		t.Errorf("the pushes' audit sets are %v, want [create-branch working-set working-set refused]:\n%s", sets, a.combined())
 	}
 }
+
+// A BRANCH DECLARED IN CONFIG, END TO END (docs/design/git-broker.md GB-D12). The user's own
+// config allows the kind, the workspace config declares main as a working-set branch, and both
+// join at the host's `yolo check --accept-config-changes`: a jail's push to main lands in the
+// bare repository, audited as the working set, covered by the grant. A second workspace whose
+// user config allows the kind but whose workspace config declares no branch is refused the same
+// push, and its main does not move.
+func TestGitBrokerConfigBranch(t *testing.T) {
+	const userCfg = `{"packs": ["git"], "brokered": {"git": {"grant_kinds": ["branch"]}}}`
+	const push = "g fetch -q origin && g checkout -q -b work origin/main && g commit -q --allow-empty -m agent && g push origin HEAD:main"
+	launch := func(fx gitBrokerFixture, step string) (string, string) {
+		t.Helper()
+		r := runCommand(t, fx.dir, []string{"run", "--", "bash", "-lc", gitInJail + ghScript(push, "g rev-parse HEAD | sed 's/^/HEAD=/'")}, fx.opts...)
+		t.Logf("%s: rc %d\n%s", step, r.rc, r.combined())
+		if r.rc != 0 {
+			t.Fatalf("%s: the launch failed: rc %d\n%s%s", step, r.rc, r.combined(), gitBrokerDaemonLog(t))
+		}
+		return r.combined(), kvLine(r.stdout, "HEAD")
+	}
+
+	fx := newGitBrokerFixtureWith(t, true, userCfg,
+		`{"brokered": {"git": {"grants": [{"kind": "branch", "repo": "fixture.test/o/r", "branch": "main"}]}}}`)
+	fx.recordScope(t, "git@fixture.test:o/r.git")
+	out, head := launch(fx, "with the grant")
+	if kvLine(out, "RCA") != "0" {
+		t.Fatalf("with the grant, the push to main failed:\n%s%s", out, gitBrokerDaemonLog(t))
+	}
+	if got := hostGit(t, fx.bare, "rev-parse", "refs/heads/main"); got != head || head == "" || got == fx.upstream {
+		t.Fatalf("the upstream's main is %s, want the jail's HEAD %q%s", got, head, gitBrokerDaemonLog(t))
+	}
+	a := runCommand(t, fx.dir, []string{"audit", "--json", "--service", "git"}, withHostSemantics())
+	var covered []string
+	for _, line := range strings.Split(strings.TrimSpace(a.stdout), "\n") {
+		var e brokeraudit.Event
+		if json.Unmarshal([]byte(line), &e) == nil && len(e.Argv) == 1 && e.Argv[0] == "git-receive-pack" {
+			for _, ref := range e.Refs {
+				covered = append(covered, e.Set+"/"+ref.CoveredBy)
+			}
+		}
+	}
+	if strings.Join(covered, ",") != "working-set/branch:main" {
+		t.Errorf("the push's audit is %v, want [working-set/branch:main]:\n%s", covered, a.combined())
+	}
+
+	without := newGitBrokerFixtureWith(t, true, userCfg, `{}`)
+	without.recordScope(t, "git@fixture.test:o/r.git")
+	out, _ = launch(without, "without the grant")
+	if kvLine(out, "RCA") != "1" || !strings.Contains(out, "needs approval, which this version cannot ask for") {
+		t.Fatalf("without the grant, the push to main was not refused:\n%s%s", out, gitBrokerDaemonLog(t))
+	}
+	if got := hostGit(t, without.bare, "rev-parse", "refs/heads/main"); got != without.upstream {
+		t.Fatalf("without the grant, the upstream's main moved to %s", got)
+	}
+}

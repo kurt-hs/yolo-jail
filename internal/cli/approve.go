@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,12 +11,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/ghbroker"
@@ -38,11 +42,14 @@ and use cap. session lasts until the broker ends, capped at 12 hours.
 
 The working set is the branches a workspace's git-broker pushes unasked: each
 one the agent created through the broker under a create-branch grant, until
-the branch is deleted or the entry revoked. --revoke w-<id> ends one entry.
---revoke all ends every live grant; --revoke all --workspace <path> ends that
-workspace's grants and its whole working set, and exits 4 when nothing there
-matched. Neither ends a create-branch grant written in the project's config,
-so the agent can still create a new branch: remove it from the workspace's
+the branch is deleted or the entry revoked (a w-<id> entry), and each one a
+branch grant declares in the project's config (a c-<id> line, marked "from
+config", listed while a jail of that project runs). --revoke w-<id> ends one
+entry; --revoke c-<id> refuses with exit 5 and names the config file to remove
+the grant from. --revoke all ends every live grant; --revoke all --workspace
+<path> ends that workspace's grants and its recorded working set, and exits 4
+when nothing there matched. Neither ends a create-branch or branch grant
+written in the project's config: remove it from the workspace's
 yolo-jail.jsonc (brokered.git.grants), or the kind from
 brokered.git.grant_kinds in your user config.
 
@@ -59,7 +66,8 @@ it approves: a jail can reach a port the host listens on.
 Exit codes: 0 done; 1 the store could not be read or written; 2 usage;
 3 the request is already decided; 4 no request, grant or entry has that id
 (or, with --workspace, that workspace path);
-5 refused by policy (beyond the set's ceiling); 6 the host can no longer confirm
+5 refused by policy (beyond the set's ceiling, or a revoke of a branch declared
+in config); 6 the host can no longer confirm
 the request (its jail's launch is gone or its scope changed), so it cannot be
 allowed. A request whose jail stopped normally is already refused, which is 3.
 
@@ -218,7 +226,7 @@ func approveAll(ctx context.Context, args []string, inJail bool, stores []*broke
 		return approveWatch(ctx, stores, asJSON, out, errs)
 	}
 	if revoke != "" {
-		return approveRevoke(stores, revoke, workspace, out, errs)
+		return approveRevoke(ctx, stores, revoke, workspace, out, errs)
 	}
 	if request != "" {
 		var g brokerstore.Grant
@@ -256,7 +264,9 @@ func approveAll(ctx context.Context, args []string, inJail bool, stores []*broke
 	for i, s := range stores {
 		printApproveList(out, snaps[i])
 		printWorkingSet(out, s, snaps[i])
-		empty = empty && len(snaps[i].Requests) == 0 && len(snaps[i].Grants) == 0 && !anyLive(snaps[i].Working)
+		declared := storeConfigBranches(ctx, s)
+		printConfigBranches(out, declared)
+		empty = empty && len(snaps[i].Requests) == 0 && len(snaps[i].Grants) == 0 && !anyLive(snaps[i].Working) && len(declared) == 0
 	}
 	if empty {
 		fmt.Fprintln(out, "No requests, grants or working-set entries. Brokers do not file requests yet: a GitHub write, and a git push nothing covers, refuse without one. Run `yolo approve --help` for the host store commands.")
@@ -279,7 +289,17 @@ func eachStore(stores []*brokerstore.Store, fn func(*brokerstore.Store) error) e
 }
 
 // approveRevoke is `--revoke <id|all> [--workspace <path>]`.
-func approveRevoke(stores []*brokerstore.Store, revoke, workspace string, out, errs io.Writer) int {
+func approveRevoke(ctx context.Context, stores []*brokerstore.Store, revoke, workspace string, out, errs io.Writer) int {
+	if strings.HasPrefix(revoke, configBranchIDPrefix) {
+		for _, s := range stores {
+			for _, b := range storeConfigBranches(ctx, s) {
+				if b.ID == revoke {
+					return refuseConfigBranchRevoke(b, errs)
+				}
+			}
+		}
+		return approveFailure(fmt.Errorf("%w: %s", brokerstore.ErrUnknownID, revoke), errs)
+	}
 	if revoke != "all" {
 		if err := eachStore(stores, func(s *brokerstore.Store) error { return s.Revoke(revoke) }); err != nil {
 			return approveFailure(err, errs)
@@ -328,9 +348,93 @@ func approveRevoke(stores []*brokerstore.Store, revoke, workspace string, out, e
 
 // configGrantNote says what `--revoke all --workspace` cannot end: a grant written in config,
 // which the launch puts in the scope file and the broker re-reads at every push (ID-9, ID-10).
-const configGrantNote = "A create-branch grant in the project's config stays, so the agent can still create a new branch: " +
+const configGrantNote = "A create-branch or branch grant in the project's config stays, so the agent can still create " +
+	"a new branch, and every branch a branch grant declares stays in the working set: " +
 	"remove it from the workspace's yolo-jail.jsonc (`brokered.git.grants`), or remove the kind from " +
 	"`brokered.git.grant_kinds` in your user config, which takes effect at the next push."
+
+// configBranch is a working-set branch a `branch` grant declares in a workspace's config, as the
+// scope file of a running broker holds it (docs/design/git-broker.md GB-D13). It is never in the
+// store: the config holds it, so `yolo approve` lists it and cannot revoke it.
+type configBranch struct {
+	ID, Source, Workspace, Repo, Branch string
+	// File is the workspace's config file, where the grant is declared (or its local file).
+	File, LocalFile string
+}
+
+// storeConfigBranches is configBranches for the git source's store, the one source whose grants
+// declare branches, and none for any other. The scope files sit beside the store, so a store
+// anywhere but the source's own directory (a test's) has none.
+func storeConfigBranches(ctx context.Context, s *brokerstore.Store) []configBranch {
+	if s.SourceName() != gitbroker.Source || filepath.Clean(s.Dir) != filepath.Clean(paths.BrokerSourceDir(gitbroker.Source)) {
+		return nil
+	}
+	return configBranches(ctx, s.SourceName())
+}
+
+// configBranchIDPrefix marks a config-declared branch's id, beside a store entry's `w-`.
+const configBranchIDPrefix = "c-"
+
+// configBranches is every branch a `branch` grant declares in the scope file of a running broker
+// of source, once per workspace, repository and branch. A scope directory it cannot read lists
+// none.
+func configBranches(ctx context.Context, source string) []configBranch {
+	files, err := brokerscope.EveryLiveFile(ctx, source)
+	if err != nil {
+		return nil
+	}
+	var out []configBranch
+	seen := map[string]bool{}
+	for _, lf := range files {
+		for _, g := range lf.File.Grants {
+			if g.Kind != brokerscope.KindBranch {
+				continue
+			}
+			sum := sha256.Sum256([]byte(lf.File.Workspace + "\x00" + g.Repo + "\x00" + g.Branch))
+			id := configBranchIDPrefix + hex.EncodeToString(sum[:16])
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			file := lf.File.ConfigFile
+			if file == "" {
+				file = config.WorkspaceConfigName
+			}
+			b := configBranch{ID: id, Source: source, Workspace: lf.File.Workspace, Repo: g.Repo, Branch: g.Branch,
+				File: filepath.Join(lf.File.Workspace, file)}
+			if lf.File.LocalFile != "" {
+				b.LocalFile = filepath.Join(lf.File.Workspace, lf.File.LocalFile)
+			}
+			out = append(out, b)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// printConfigBranches lists the config-declared working-set branches, one line each, marked as
+// from config and naming the file that declares them.
+func printConfigBranches(out io.Writer, bs []configBranch) {
+	for _, b := range bs {
+		fmt.Fprintf(out, "%s  working set  %s  [%s]  repo %s  branch refs/heads/%s  from config %s\n", b.ID,
+			termsafe.Visible(b.Source), termsafe.Visible(b.Workspace), termsafe.Visible(b.Repo), termsafe.Visible(b.Branch),
+			termsafe.Visible(b.File))
+	}
+}
+
+// refuseConfigBranchRevoke answers a --revoke naming a config-declared branch: the broker
+// recorded nothing to revoke, so it names the file the declaration is removed from.
+func refuseConfigBranchRevoke(b configBranch, errs io.Writer) int {
+	where := termsafe.Visible(b.File)
+	if b.LocalFile != "" {
+		where += " (or its local file " + termsafe.Visible(b.LocalFile) + ", if it is declared there)"
+	}
+	fmt.Fprintf(errs, "yolo approve: %s is a working-set branch declared in config (refs/heads/%s of %s), not one the broker "+
+		"recorded, so there is nothing to revoke here.\nNext: remove its {\"kind\": \"branch\", …} entry under "+
+		"`brokered.%s.grants` in %s, then run `yolo config apply` in %s; the broker reads it at the next push.\n",
+		b.ID, termsafe.Visible(b.Branch), termsafe.Visible(b.Repo), termsafe.Visible(b.Source), where, termsafe.Visible(b.Workspace))
+	return approveExitPolicy
+}
 
 func anyLive(ws []brokerstore.WorkingEntry) bool {
 	for _, e := range ws {
@@ -420,6 +524,7 @@ func approveWatch(ctx context.Context, stores []*brokerstore.Store, asJSON bool,
 		for i, s := range stores {
 			printApproveList(out, snaps[i])
 			printWorkingSet(out, s, snaps[i])
+			printConfigBranches(out, storeConfigBranches(ctx, s))
 		}
 		fmt.Fprintln(errs, "Watching the store; one line per event. Press Ctrl-C to stop.")
 	}

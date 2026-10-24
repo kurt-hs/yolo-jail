@@ -241,6 +241,59 @@ func TestApproveRevokeWorkingID(t *testing.T) {
 	}
 }
 
+// A working-set branch declared in config (docs/design/git-broker.md GB-D13) is listed beside the
+// store's entries, marked as from config and naming the file, read from the scope file of the
+// running broker that holds it; a --revoke of it refuses, naming the file to remove it from.
+// Through the registered verb, so the scope-file read is pinned at its call site.
+func TestApproveListsAndRefusesToRevokeAConfigBranch(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("YOLO_VERSION", "")
+	t.Setenv("YOLO_USER_LAYER", "")
+	ws := "/home/u/code/app"
+	f := brokerscope.File{Source: "git", LaunchID: "cfgbranch", Workspace: ws, Container: "c", PID: os.Getpid(),
+		Form: brokerscope.FormRemoteURL, Repos: []string{"git@github.com:o/r.git"}, ConfigFile: "yolo-jail.jsonc",
+		Grants: []brokerscope.Grant{{Kind: "branch", Repo: "github.com/o/r", Branch: "main"}, {Kind: "create-branch", Repo: "*"}}}
+	path, err := brokerscope.Write(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := brokerscope.BindBroker(path, f, "start", func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	listing := captureStdout(t, func() {
+		if rc := registry["approve"]([]string{"approve"}); rc != 0 {
+			t.Fatalf("list: %d", rc)
+		}
+	})
+	t.Logf("listing:\n%s", listing)
+	var line string
+	for _, l := range strings.Split(listing, "\n") {
+		if strings.Contains(l, "refs/heads/main") {
+			line = l
+		}
+	}
+	for _, want := range []string{"c-", "working set", "git", "[" + ws + "]", "github.com/o/r", "from config", ws + "/yolo-jail.jsonc"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("config branch line %q lacks %q in:\n%s", line, want, listing)
+		}
+	}
+	if strings.Contains(listing, "create-branch *") || strings.Count(listing, "from config") != 1 {
+		t.Fatalf("only the branch grant is a working-set branch:\n%s", listing)
+	}
+	id := strings.Fields(line)[0]
+	var rc int
+	refusal := captureStderr(t, func() { rc = registry["approve"]([]string{"approve", "--revoke", id}) })
+	if rc != approveExitPolicy {
+		t.Fatalf("revoke %s: %d, want %d\n%s", id, rc, approveExitPolicy, refusal)
+	}
+	for _, want := range []string{"declared in config", ws + "/yolo-jail.jsonc", "brokered.git.grants", "yolo config apply"} {
+		if !strings.Contains(refusal, want) {
+			t.Fatalf("the refusal lacks %q:\n%s", want, refusal)
+		}
+	}
+}
+
 func TestApproveRevokeAllWorkspace(t *testing.T) {
 	gh := &brokerstore.Store{Dir: t.TempDir(), Source: "github", Revalidate: func(q brokerstore.Request) (brokerstore.Policy, error) { return q.Policy, nil }}
 	grantIn := func(ws string) brokerstore.Grant {

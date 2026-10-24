@@ -66,8 +66,10 @@ Grants under `brokered` are split between the two: your user config lists the ki
 project may hold, `brokered.<source>.grant_kinds`, and a project config names each grant and its
 repository, `brokered.<source>.grants`. A grant joins at the config-change prompt, and only if
 your user config lists its kind; `yolo check` refuses either key in the other config. The git
-source defines one kind, `create-branch`; see
-[Git](../guides/git.md#letting-the-agent-push-its-own-branches). `brokered.git.repos` is refused:
+source defines two kinds: `create-branch`
+([Git](../guides/git.md#letting-the-agent-push-its-own-branches)), and `branch`, a branch in the
+working set, declared in config, whose grant also names one `branch`, such as `"main"`
+([Git](../guides/git.md#declaring-a-working-set-branch-in-config)). `brokered.git.repos` is refused:
 a git remote joins with `git remote add`.
 
 ## A starting point

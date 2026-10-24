@@ -6,7 +6,7 @@ stage: DECIDED
 next: "Build step 1 from git-broker-plan.md, starting with its task 1, the broker-core factoring, which waits on nothing."
 depends-on: []
 tags: [design, credentials, git, github, broker, approvals, loopholes, audit]
-summary: "The second source behind the boundary broker, after gh: git fetch and push from a jail that holds no credential. Fetching is standing; read-only allows no push of any kind (ruled 2026-10-23). Creating a branch takes a create-branch grant: the user's own config allows the kind, the workspace config names the repository, and the grant joins at the config-change approval; a branch created under it joins the workspace's working set, where the agent then pushes freely. A push to any other ref asks a human per ref: Allow once, Allow push for 15 minutes, Add the ref to the working set, or Deny. Step 1 of the maintainer's 2026-10-23 path: it first factors the source-neutral broker core out of the github-broker, then adds git as a second source on it. Ruled 2026-10-23: git crosses as a brokered transport, every remote form rewritten to the host broker, which connects upstream the way the host already does (SSH keys or agent, or git's credential helper), for any git server; a working-set branch stays until it is deleted or revoked; the source is off until the user includes it. Nothing is open; the step-1 build is git-broker-plan.md."
+summary: "The second source behind the boundary broker, after gh: git fetch and push from a jail that holds no credential. Fetching is standing; read-only allows no push of any kind (ruled 2026-10-23). Creating a branch takes a create-branch grant: the user's own config allows the kind, the workspace config names the repository, and the grant joins at the config-change approval; a branch created under it joins the workspace's working set, where the agent then pushes freely. Long-lived access to an existing branch (such as main) is that branch in the working set, declared in config by a branch grant granted the same way (ruled 2026-10-24); there is no separate push grant. A push to any other ref asks a human per ref: Allow once, Allow push for 15 minutes, Add the ref to the working set, or Deny. Step 1 of the maintainer's 2026-10-23 path: it first factors the source-neutral broker core out of the github-broker, then adds git as a second source on it. Ruled 2026-10-23: git crosses as a brokered transport, every remote form rewritten to the host broker, which connects upstream the way the host already does (SSH keys or agent, or git's credential helper), for any git server; a working-set branch stays until it is deleted or revoked; the source is off until the user includes it. Nothing is open; the step-1 build is git-broker-plan.md."
 vantage:
   status-chip: true
 ---
@@ -47,8 +47,9 @@ and a host-side record of the branches a workspace created.
 
 **Needs your ruling:** None. [OQ-GB1](#OQ-GB1) and [OQ-GB2](#OQ-GB2) were ruled 2026-10-23,
 as were a workspace requesting remotes ([OQ-BB18](boundary-broker.md#OQ-BB18)), the user
-grants, git's `create-branch` among them and no `push-branch`
-([OQ-BB19](boundary-broker.md#OQ-BB19)), which file holds a grant
+grants, git's `create-branch` among them ([OQ-BB19](boundary-broker.md#OQ-BB19); still no
+`push-branch`: the working set takes branches from create-branch, from config
+([GB-D12](#GB-D12), 2026-10-24), and later from a human's Add), which file holds a grant
 ([OQ-BB22](boundary-broker.md#OQ-BB22)) and a host with no notifier
 ([OQ-BB10](boundary-broker.md#OQ-BB10)).
 
@@ -94,7 +95,15 @@ and two of those rulings reach git directly:
 | :--- | :--- | :--- |
 | *"Read-only mode is read-only mode. It cannot create branches push... well, it can create branches in the local git repo. It cannot push them, that's for sure."* | Read-only allows no push of any kind, an agent's own branch included ([GB-D7](#GB-D7)) | [§5](#5-the-git-sources-sets) |
 | *"Pushing to a branch it didn't create, I think is the same thing: it asks for access to that branch, and if it gets that access, it has that access. These should be able to be time-limited as well"* | Any other ref is asked for per ref, and can be added to the working set or granted for a time ([BB-D76](boundary-broker.md#BB-D76)) | [§5](#5-the-git-sources-sets) |
-| *"Maybe we don't want to have read-only versus read-write. We just want to have these specific grants. You can tell me how many there are."* | Four user grants exist, git's `create-branch` among them ([OQ-BB19](boundary-broker.md#OQ-BB19)) | [§5](#5-the-git-sources-sets) |
+| *"Maybe we don't want to have read-only versus read-write. We just want to have these specific grants. You can tell me how many there are."* | Four user grants exist, git's `create-branch` among them ([OQ-BB19](boundary-broker.md#OQ-BB19)); for git, extended on 2026-10-24 by `branch`, a working-set branch declared in config ([GB-D12](#GB-D12)) | [§5](#5-the-git-sources-sets) |
+
+On 2026-10-24 he ruled how long-lived push access to an existing branch is granted. It is not a
+push concept: the branch is declared in config as a working-set entry.
+
+| He says | Rules | Lands |
+| :--- | :--- | :--- |
+| *"I was expecting you to edit the jail config and then I run a config apply or something like that ... we can stick with main. And yes, I want to do this through the broker."* | Long-lived access to an existing branch such as `main` is granted in the workspace config, joins at the config-change approval, and goes through the broker ([GB-D12](#GB-D12)) | [§5](#5-the-git-sources-sets) |
+| *"Why do we need a specific push grant? I thought, is this not just writing to a branch? ... I said it should just be like a branch working set, and shouldn't that already cover what's needed here?"* | There is no `push-branch`: a `branch` grant declares a branch in the working set, and it is covered exactly as a working-set entry is ([GB-D12](#GB-D12), [GB-D13](#GB-D13)) | [§5.1](#51-the-working-set-of-pushable-branches) |
 
 Three more of that day's broker rulings reach git:
 
@@ -217,7 +226,7 @@ to create branches. **Read-only is read-only** ([GB-D7](#GB-D7)): it fetches and
 | :--- | :--- | :--- |
 | read (standing) | fetch, `ls-remote`, the fetch half of `pull`, on any repository in scope | always, once the source is included |
 | branch creation | creating a branch under `refs/heads/` | the workspace holds an approved `create-branch` grant naming the repository, or a wildcard; the new branch joins the working set ([§5.1](#51-the-working-set-of-pushable-branches)) |
-| branch push | updating, force-updating or deleting an existing branch | the branch is in the working set: created under `create-branch`, or someone else's branch a human added ([OQ-BB19](boundary-broker.md#OQ-BB19), [BB-D92](boundary-broker.md#BB-D92)); no separate push grant |
+| branch push | updating, force-updating or deleting an existing branch, or re-creating a deleted one the config declares | the branch is in the working set: created under `create-branch`, declared by an approved `branch` grant in the workspace config ([GB-D12](#GB-D12), [GB-D13](#GB-D13)), or someone else's branch a human added ([OQ-BB19](boundary-broker.md#OQ-BB19), [BB-D92](boundary-broker.md#BB-D92)) |
 | tag push, and a branch push outside the working set | any creation, update or deletion under `refs/tags/`; any branch push not covered above | never: asked for per ref |
 
 **Refused, under every set** ([BB-P8](boundary-broker.md#BB-P8)): a ref outside `refs/heads/`
@@ -240,35 +249,42 @@ offers Allow once and 15 minutes but not Add, and a branch created under either 
 set ([BB-D90](boundary-broker.md#BB-D90)).
 
 **Long-lived access**, such as an agent that always pushes to `main` of its own fork, is that
-ref added to the working set. **Creating branches is a user grant in two layers**
-([BB-D96](boundary-broker.md#BB-D96), [GB-D9](#GB-D9)):
+branch in the working set, declared in config by a `branch` grant ([GB-D12](#GB-D12)). **Creating
+branches and declaring one in the working set are user grants in two layers**
+([BB-D96](boundary-broker.md#BB-D96), [GB-D9](#GB-D9), [GB-D12](#GB-D12)):
 
-1. **The user's own config allows the kind.** Without `create-branch` listed there, no
-   workspace can hold it, and `yolo check` refuses a workspace grant of that kind, naming the
+1. **The user's own config allows the kind.** Without `create-branch` or `branch` listed there,
+   no workspace can hold it, and `yolo check` refuses a workspace grant of that kind, naming the
    user-config key that would allow it.
 2. **The workspace config names the grant and its repository**: `create-branch` on one
-   repository, or a wildcard written out as one.
+   repository, or a wildcard written out as one; `branch` on one repository and one branch,
+   `{"kind": "branch", "repo": "github.com/owner/name", "branch": "main"}`, with no pattern form
+   ([GB-D13](#GB-D13)).
 3. **The grant joins only at the config-change approval**, the same human y that admits a
    repository to the scope ([OQ-BB18](boundary-broker.md#OQ-BB18)). The workspace requests; the
    user gates. A workspace config alone holds nothing.
 
 The levels `read-only` and `read-write` that [GB-D6](#GB-D6) mapped onto git are superseded by
 specific user grants, `read`, `create-branch`, `create-pr` and `create-issue`
-([OQ-BB19](boundary-broker.md#OQ-BB19)); git defines `read` and `create-branch`. `read` needs no
-grant entry: it is what including the source means.
+([OQ-BB19](boundary-broker.md#OQ-BB19)); git defines `read`, `create-branch` and, since
+[GB-D12](#GB-D12), `branch`. `read` needs no grant entry: it is what including the source
+means.
 
 ### 5.1 The working set of pushable branches
 
 The **working set** *(coined here; the broker's doc widened it to PRs and issues,
 [§1.3 there](boundary-broker.md#13-terms))* is the set of refs a workspace may push to unasked.
-A ref joins it two ways, with the same standing either way ([OQ-GB2](#OQ-GB2), ruled
-2026-10-23):
+A ref joins it three ways, with the same standing each way ([OQ-GB2](#OQ-GB2), ruled
+2026-10-23; the config way, [GB-D12](#GB-D12), 2026-10-24):
 
 - **The agent creates it** under the `create-branch` user grant, or under an Allow once or a
   15-minute grant on a creation request. A ref update whose old id is all zeros creates the
   branch. When the broker forwards one and the upstream reports it accepted, the broker records
   `(workspace, repository, ref)` in the git source's store.
-- **A human adds it**: **Add `<ref>` to the working set** on a per-ref request, or
+- **The workspace config declares it** with an approved `branch` grant. The config holds it,
+  not the store: it stays until the grant leaves the config, and a delete does not end it
+  ([GB-D13](#GB-D13)).
+- **A human adds it** (not built yet): **Add `<ref>` to the working set** on a per-ref request, or
   `yolo approve <id> --add` ([BB-D86](boundary-broker.md#BB-D86)).
 
 The maintainer: *"if it creates a branch and pushes it, it should have permissions to it, just
@@ -389,3 +405,5 @@ revoked, over the launch or an age cap) are ruled and recorded in the
 | <a id="GB-D9"></a>GB-D9 | *Reconciliation,* carrying [BB-D96](boundary-broker.md#BB-D96) to git and replacing this doc's earlier "a user grant in the user's own config for that workspace": the user's own config lists the grant kinds a workspace may hold (`create-branch` for git); the workspace config holds each `create-branch` grant naming its repository, or a wildcard written out as one; a grant joins only at the config-change approval and within the user's kinds, and `yolo check` refuses one outside them, naming the user-config key. `read` needs no entry. The loophole switch of [GB-D5](#GB-D5) stays in the per-workspace file | 2026-10-23 | [§3](#3-the-broker-core-what-step-1-factors-out), [§5](#5-the-git-sources-sets) | pending |
 | <a id="GB-D10"></a>GB-D10 | *Reconciliation,* carrying [BB-D98](boundary-broker.md#BB-D98) to git: a per-ref request on a host with no notifier and no `on_request` hook gets no terminal line and no notice file; it is written to the broker's background log, and the agent's pending line and wait timeout stay its only messages | 2026-10-23 | [§6](#6-failure-paths) | pending |
 | <a id="GB-D11"></a>GB-D11 | *Reconciliation:* [BB-D97](boundary-broker.md#BB-D97)'s merge rule is the GitHub source's; the git source's working set holds only branches, which leave it on deletion or revocation ([OQ-GB2](#OQ-GB2)) | 2026-10-23 | [§5.1](#51-the-working-set-of-pushable-branches) | — |
+| <a id="GB-D12"></a>GB-D12 | **Maintainer ruling, extending, for git, [OQ-BB19](boundary-broker.md#OQ-BB19)'s list of user grants:** long-lived access to an existing branch, such as `main`, goes through the broker as a branch in the working set, declared in config. There is no `push-branch` and no separate push concept: the working set takes branches from create-branch, from config, and (later) from a human's Add. The kind is `branch`, granted exactly as `create-branch` is: the user's own config allows the kind (`brokered.git.grant_kinds`), the workspace's `yolo-jail.jsonc` names the grant, `{"kind": "branch", "repo": "github.com/owner/name", "branch": "main"}`, it joins at the config-change approval (`yolo config apply` for a running jail, or the launch prompt), and `yolo check` refuses a grant whose kind the user config does not allow, naming the key. *"I was expecting you to edit the jail config and then I run a config apply or something like that ... we can stick with main. And yes, I want to do this through the broker."* Then: *"Why do we need a specific push grant? I thought, is this not just writing to a branch? ... I said it should just be like a branch working set, and shouldn't that already cover what's needed here?"* | 2026-10-24 | [§1](#1-what-the-maintainer-ruled-2026-10-23), [§5](#5-the-git-sources-sets) | built |
+| <a id="GB-D13"></a>GB-D13 | *Implementation decision,* filling in [GB-D12](#GB-D12): a `branch` grant's `branch` is one branch's short name (`main`, meaning `refs/heads/main`), validated by git's ref-name rules (`git check-ref-format`); a full ref, a pattern or `"*"` is refused at config load with a next step, and tags and other refs are never covered. Its `repo` may be `"*"`, as a create-branch grant's may. The declared branch is covered exactly as a working-set entry is: creating, updating, force-updating and deleting it, the remote's own protection being the backstop. It is never recorded in the host store: the config holds it, so a delete through the broker leaves it declared, and removing the grant takes it out. A store entry for the same ref is preferred, so a delete through the broker still ends that record. The broker re-reads the live scope file and the user config's `grant_kinds` at every push, so removing either refuses the next push. The audit's set is `working-set` and its `covered_by` names the grant (`branch:main`). `yolo approve` lists each declared branch of a running jail's workspace beside the store's entries, with a `c-` id, marked `from config` with the file that declares it; `--revoke` of one exits 5 and names that file and `yolo config apply`. `--json` output does not yet carry declared branches | 2026-10-24 | [§5](#5-the-git-sources-sets) | built |

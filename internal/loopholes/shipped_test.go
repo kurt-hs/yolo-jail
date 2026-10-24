@@ -3,6 +3,7 @@ package loopholes
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -226,7 +227,24 @@ func TestShippedGitBrokerDefinesCreateBranch(t *testing.T) {
 	if lp.Brokered == nil {
 		t.Fatal("git-broker: no brokered block")
 	}
-	if got := strings.Join(lp.Brokered.Grants, ","); got != "create-branch" {
-		t.Errorf("git-broker: brokered.grants = %q, want \"create-branch\"", got)
+	if !slices.Contains(lp.Brokered.Grants, "create-branch") {
+		t.Errorf("git-broker: brokered.grants = %q, want it to hold \"create-branch\"", lp.Brokered.Grants)
+	}
+}
+
+// TestShippedGitBrokerDefinesBranch pins the branch grant kind in the shipped git-broker
+// manifest (docs/design/git-broker.md GB-D12): without it every workspace grant of `branch`
+// is refused by `yolo check` ("it defines: create-branch"), which is how a missing create-branch
+// broke task 9's first live run while every package test stayed green.
+func TestShippedGitBrokerDefinesBranch(t *testing.T) {
+	lp, err := LoadPackLoophole(shippedLoopholeModule(t, "git-broker", "git"))
+	if err != nil {
+		t.Fatalf("load git-broker: %v", err)
+	}
+	if lp.Brokered == nil {
+		t.Fatal("git-broker: no brokered block")
+	}
+	if got := strings.Join(lp.Brokered.Grants, ","); got != "create-branch,branch" {
+		t.Errorf("git-broker: brokered.grants = %q, want \"create-branch,branch\"", got)
 	}
 }
