@@ -30,6 +30,13 @@ func brokeredFixture(t *testing.T) (o *Options, buf *strings.Builder, marker str
 // gate keeps its daemon from starting.
 func brokeredFixtureWith(t *testing.T, hostExecApproved bool) (o *Options, buf *strings.Builder, marker string) {
 	t.Helper()
+	return brokeredFixtureOn(t, hostExecApproved, "github.com")
+}
+
+// brokeredFixtureOn is brokeredFixtureWith with the manifest's `brokered.remote_host` chosen:
+// "*" is a source on any host, whose scope is the workspace's remote URLs.
+func brokeredFixtureOn(t *testing.T, hostExecApproved bool, remoteHost string) (o *Options, buf *strings.Builder, marker string) {
+	t.Helper()
 	isolatePackModules(t)
 	home, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -44,7 +51,7 @@ func brokeredFixtureWith(t *testing.T, hostExecApproved bool) (o *Options, buf *
 	manifest := `{"name": "gb", "transport": "loopback-tls",
 	  "lifecycle": "spawned",
 	  "host_daemon": {"cmd": ["/bin/cp", "{repository_scope}", "` + marker + `"], "publishes": "socket"},
-	  "brokered": {"source": "gbsrc", "remote_host": "github.com"}}`
+	  "brokered": {"source": "gbsrc", "remote_host": "` + remoteHost + `"}}`
 	if err := os.WriteFile(filepath.Join(mod, "manifest.jsonc"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -436,6 +443,30 @@ func TestAWildcardEntryIsApprovedAtTheGateAndReachesTheBroker(t *testing.T) {
 		t.Fatalf("scope file repos %v, want the wildcard and the remote", f.Repos)
 	}
 	if want := `gb: scope for this workspace: */* (every repository on github.com; yolo-jail.jsonc), o/r (remote "origin")`; !strings.Contains(buf.String(), want) {
+		t.Errorf("the launch line is not %q:\n%s", want, buf.String())
+	}
+}
+
+// A source on any host (docs/design/git-broker-plan.md ID-2), through writeScopeFiles' own call
+// site: the gate approves the workspace's remote URLs verbatim, and the scope file the daemon is
+// handed records them with the remote-url form, which is what makes its broker match a URL
+// exactly rather than read it as an OWNER/REPO.
+func TestWriteScopeFilesRemoteURLForm(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the fixture daemon is /bin/cp")
+	}
+	o, buf, marker := brokeredFixtureOn(t, true, "*")
+	o.AcceptConfigChanges = true
+	if !o.checkConfigChanges(gbOn(), "podman") {
+		t.Fatalf("an accepted gate refused:\n%s", buf.String())
+	}
+	handles := o.startLoopholes("yolo-brokered-url", "podman", gbOn())
+	t.Cleanup(func() { o.stopLoopholes(handles, hostServiceSocketsDir("yolo-brokered-url", false), "", "") })
+	f := readHandedScope(t, marker, buf)
+	if f.Form != brokerscope.FormRemoteURL || strings.Join(f.Repos, ",") != "git@github.com:o/r.git" {
+		t.Fatalf("scope file form %q repos %v, want the remote-url form and the remote's URL", f.Form, f.Repos)
+	}
+	if want := `gb: scope for this workspace: git@github.com:o/r.git (remote "origin")`; !strings.Contains(buf.String(), want) {
 		t.Errorf("the launch line is not %q:\n%s", want, buf.String())
 	}
 }

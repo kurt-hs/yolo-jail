@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
+	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -366,6 +368,94 @@ func TestAnUnbrokeredSourceIsTheChecksWarningAndNeverTheLaunchs(t *testing.T) {
 	if joined := strings.Join(UnbrokeredSourceWarnings(cfg, fenceResolver{}), "\n"); !strings.Contains(joined,
 		"config.brokered.github: no loophole") || !strings.Contains(joined, "(brokered sources here: none)") {
 		t.Errorf("with no brokered loophole selected, every source is inert:\n%s", joined)
+	}
+}
+
+// gitResolver declares a source on any host, as the git pack's manifest does.
+var gitResolver = fenceResolver{known: map[string]LoopholeInfo{
+	"git-broker": {Name: "git-broker", HasHostDaemon: true, Brokered: &loopholedecl.Brokered{
+		Source: "git", RemoteHost: "*"}},
+}}
+
+// A source whose scope is every remote URL takes no `repos` entry (docs/design/git-broker-plan.md
+// ID-2): a git remote joins with `git remote add`, which reaches the gate as a new remote. The
+// refusal comes through the resolver, never the source's name, so an owner-repo source keeps its
+// entry.
+func TestBrokeredReposRefusedForWildcardSource(t *testing.T) {
+	h := newBrokeredHost(t)
+	write(t, filepath.Join(h.ws, WorkspaceConfigName), `{"brokered": {"git": {"repos": ["o/r"]}, "github": {"repos": ["org/lib"]}}}`)
+	cfg, err := LoadConfig(h.ws, true, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errs, _ := ValidateConfig(cfg, h.ws, gitResolver)
+	got := brokeredLines(strings.Join(errs, "\n"))
+	if !strings.Contains(got, "config.brokered.git.repos") || !strings.Contains(got, "git remote add") {
+		t.Fatalf("no refusal naming `git remote add` for brokered.git.repos:\n%s", got)
+	}
+	if strings.Contains(got, "config.brokered.github") {
+		t.Errorf("an owner-repo source's entry was refused:\n%s", got)
+	}
+	// With no resolver declaring git on any host, the entry is the ordinary shape it always was.
+	errs, _ = ValidateConfig(cfg, h.ws, nil)
+	if got := brokeredLines(strings.Join(errs, "\n")); got != "" {
+		t.Errorf("refused with no wildcard source known:\n%s", got)
+	}
+}
+
+// The gate's scope for a source on any host is the workspace's remote URLs, verbatim, and no
+// entry: a `brokered.git.repos` value reaches no scope even where nothing validated it, and a URL
+// carrying a password is left out with a line that says why.
+func TestTheRemoteURLScopeAtTheGate(t *testing.T) {
+	h := newBrokeredHost(t)
+	write(t, filepath.Join(h.ws, ".git", "config"), `[remote "origin"]
+	url = git@github.com:o/r.git
+	pushurl = ssh://git@github.com/o/r
+[remote "lab"]
+	url = https://gitlab.example.com/team/app.git
+[remote "leak"]
+	url = https://me:hunter2@git.example.com/x.git
+`)
+	write(t, filepath.Join(h.ws, WorkspaceConfigName), `{"brokered": {"git": {"repos": ["o/r"]}}}`)
+	read, err := ReadWorkspaceForGate(h.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := NewScopeCheck(h.ws, []ScopeBroker{{Source: "git", Label: "git-broker", RemoteHost: "*"}}, read)
+	s := check.Sources[0]
+	if s.Form != brokerscope.FormRemoteURL || len(s.Entry) != 0 {
+		t.Fatalf("source %+v, want the remote-url form and no entry", s)
+	}
+	want := []string{"git@github.com:o/r.git", "https://gitlab.example.com/team/app.git", "ssh://git@github.com/o/r"}
+	if got := s.Repos(); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("scope %q, want %q", got, want)
+	}
+	r, err := ScopeChanges(h.ws, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := strings.Join(r.ScopeBlock, "\n")
+	for _, w := range append(want, `remote "origin"`, `remote "lab"`, `"leak"`, "git-broker: 3 added") {
+		if !strings.Contains(block+"\n"+strings.Join(r.ScopeCounts, "\n"), w) {
+			t.Errorf("the gate does not show %q:\n%s", w, block)
+		}
+	}
+	if strings.Contains(block, "hunter2") || strings.Contains(block, "me:") || strings.Contains(block, " o/r ") {
+		t.Errorf("the gate shows the password, the user, or the entry:\n%s", block)
+	}
+	t.Logf("gate block:\n%s\n%s", block, strings.Join(r.ScopeCounts, "\n"))
+	if err := RecordApproval(h.ws, read.Config, check); err != nil {
+		t.Fatal(err)
+	}
+	if got := ApprovedScope(h.ws, "git"); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("approval record %q", got)
+	}
+	// A URL differing only in case is a different URL: it is a change the gate asks about.
+	write(t, filepath.Join(h.ws, ".git", "config"), "[remote \"origin\"]\n\turl = git@GitHub.com:o/r.git\n")
+	read, _ = ReadWorkspaceForGate(h.ws)
+	r, err = ScopeChanges(h.ws, NewScopeCheck(h.ws, []ScopeBroker{{Source: "git", Label: "git-broker", RemoteHost: "*"}}, read))
+	if err != nil || !r.ScopeChanged || !strings.Contains(strings.Join(r.ScopeCounts, ""), "1 added, 3 removed") {
+		t.Fatalf("a case-only URL change: %+v, %v", r, err)
 	}
 }
 

@@ -75,3 +75,25 @@ func TestBrokeredUnknownKeyRefusedTolerantly(t *testing.T) {
 		t.Fatal("tolerant decode accepted an unknown fence key")
 	}
 }
+
+// A source on any host declares `"remote_host": "*"` (docs/design/git-broker-plan.md ID-2): the
+// whole token alone, never a partial glob.
+func TestBrokeredRemoteHostWildcard(t *testing.T) {
+	m, err := decodeBrokered(t, `
+		"host_daemon": {"cmd": ["d", "{socket}", "{repository_scope}"], "publishes": "socket"},
+		"brokered": {"source": "git", "remote_host": "*"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Brokered == nil || m.Brokered.RemoteHost != "*" {
+		t.Fatalf("brokered %+v", m.Brokered)
+	}
+	for _, host := range []string{"*.com", "*.*", "git*", " *"} {
+		_, err := decodeBrokered(t, `
+			"host_daemon": {"cmd": ["d", "{socket}", "{repository_scope}"], "publishes": "socket"},
+			"brokered": {"source": "git", "remote_host": "`+host+`"}`)
+		if err == nil || !strings.Contains(err.Error(), "brokered.remote_host") {
+			t.Errorf("remote_host %q: err %v, want a refusal naming brokered.remote_host", host, err)
+		}
+	}
+}

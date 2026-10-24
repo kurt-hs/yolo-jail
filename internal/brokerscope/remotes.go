@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"unicode"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
 )
@@ -27,7 +28,8 @@ import (
 type Remote struct {
 	// Name is the remote's name in the git config ("origin").
 	Name string
-	// Repo is `owner/repo`.
+	// Repo is `owner/repo`; in a ReadAllRemotes read, the remote's URL exactly as its config
+	// wrote it, the remote-url form's scope entry.
 	Repo string
 }
 
@@ -45,6 +47,10 @@ type Read struct {
 	// unreadable config, a symlink, or a worktree `.git` file of the wrong shape. The
 	// launch says it; against a non-empty approved scope the empty read is a change.
 	Problem string
+	// Excluded says, one line per URL, why a remote's URL was left out of a ReadAllRemotes read:
+	// one carrying a password, or one the scope cannot hold. Each names the remote and never the
+	// URL's user-info, and is escaped for a terminal.
+	Excluded []string
 }
 
 // Repos is the read's repositories, each once, sorted.
@@ -85,23 +91,85 @@ func ReadRemotes(workspace, host string) Read {
 	return r
 }
 
-func readRemotes(workspace, host string) Read {
+// ReadAllRemotes reads a workspace's remotes for the remote-url scope form
+// (docs/design/git-broker-plan.md ID-2): the same walk and the same refusals as ReadRemotes,
+// keeping every `url` and `pushurl` of every remote on any host, verbatim, in the file's order,
+// in Remote.Repo. A URL whose user-info carries a password is left out, as is one the scope
+// cannot hold (ValidRemoteURL), each with an Excluded line.
+func ReadAllRemotes(workspace string) Read {
+	r, text := readGitConfig(workspace)
+	if text == "" {
+		r.GitConfig, r.Problem = termsafe.Visible(r.GitConfig), termsafe.Visible(r.Problem)
+		return r
+	}
+	for _, u := range parseRemoteValues(text, "url", "pushurl") {
+		name := termsafe.Visible(fmt.Sprintf("%q", u.name))
+		switch {
+		case hasPassword(u.url):
+			r.Excluded = append(r.Excluded, "remote "+name+": a "+u.key+" carrying a password is left "+
+				"out of the scope; keep the password in a git credential helper and set the remote's "+
+				"URL without it (`git remote set-url`)")
+		case !ValidRemoteURL(u.url):
+			r.Excluded = append(r.Excluded, "remote "+name+": its "+u.key+" is empty or holds a space "+
+				"or control character, so it is left out of the scope; set the remote's URL again "+
+				"with `git remote set-url`")
+		default:
+			r.Remotes = append(r.Remotes, Remote{Name: u.name, Repo: u.url})
+		}
+	}
+	r.GitConfig, r.Problem = termsafe.Visible(r.GitConfig), termsafe.Visible(r.Problem)
+	return r
+}
+
+// readGitConfig finds and reads the workspace's git config as text: "" text with the Read's
+// Problem set when it cannot, and with no problem when there is no .git.
+func readGitConfig(workspace string) (Read, string) {
 	cfgPath, problem := gitConfigPath(workspace)
 	if cfgPath == "" {
-		return Read{Problem: problem}
+		return Read{Problem: problem}, ""
 	}
 	data, err := readCapped(cfgPath, GitConfigCap)
 	switch {
 	case errors.Is(err, errNotRegular):
-		return Read{GitConfig: cfgPath, Problem: cfgPath + " is not a regular file (a symlink is not followed)"}
+		return Read{GitConfig: cfgPath, Problem: cfgPath + " is not a regular file (a symlink is not followed)"}, ""
 	case errors.Is(err, errTooLarge):
 		return Read{GitConfig: cfgPath, Problem: fmt.Sprintf("%s is larger than %d bytes, more than any git "+
-			"config git writes, so it is not read", cfgPath, GitConfigCap)}
+			"config git writes, so it is not read", cfgPath, GitConfigCap)}, ""
 	case err != nil:
-		return Read{GitConfig: cfgPath, Problem: "cannot read " + cfgPath + ": " + err.Error()}
+		return Read{GitConfig: cfgPath, Problem: "cannot read " + cfgPath + ": " + err.Error()}, ""
 	}
-	r := Read{GitConfig: cfgPath}
-	for _, u := range parseRemoteURLs(string(data)) {
+	return Read{GitConfig: cfgPath}, string(data)
+}
+
+// ValidRemoteURL reports whether s can be a remote-url scope entry: non-empty, no longer than
+// 4096 bytes, with no space or control character (so it prints as itself at the gate), and no
+// password in its user-info. It says nothing about the URL's scheme or host: which remotes a
+// source can reach is its broker's to refuse, by name, at the request.
+func ValidRemoteURL(s string) bool {
+	return s != "" && len(s) <= 4096 && !hasPassword(s) && !termsafe.HasUnsafe(s) &&
+		!strings.ContainsFunc(s, unicode.IsSpace)
+}
+
+// hasPassword reports whether a `scheme://` URL's user-info carries a password: the authority,
+// up to the first `/`, `?` or `#`, holds an `@`, and the part before its last `@` holds a `:`.
+func hasPassword(s string) bool {
+	_, rest, ok := strings.Cut(s, "://")
+	if !ok {
+		return false
+	}
+	if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+		rest = rest[:i]
+	}
+	at := strings.LastIndex(rest, "@")
+	return at >= 0 && strings.Contains(rest[:at], ":")
+}
+
+func readRemotes(workspace, host string) Read {
+	r, text := readGitConfig(workspace)
+	if text == "" {
+		return r
+	}
+	for _, u := range parseRemoteURLs(text) {
 		if repo := RepoFromRemoteURL(u.url, host); repo != "" {
 			r.Remotes = append(r.Remotes, Remote{Name: u.name, Repo: repo})
 		}
@@ -252,7 +320,7 @@ func readCapped(path string, limit int64) ([]byte, error) {
 	return data, nil
 }
 
-type remoteURL struct{ name, url string }
+type remoteURL struct{ name, key, url string }
 
 var (
 	sectionRE    = regexp.MustCompile(`^\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]\s*(.*)$`)
@@ -265,7 +333,11 @@ var (
 // continuation lines, the deprecated `[remote.name]` spelling — and deliberately nothing
 // that would make the file reach elsewhere: `include`, `includeIf` and `insteadOf` are not
 // honored, so a remote spelled through a rewrite is not a remote on the forge.
-func parseRemoteURLs(text string) []remoteURL {
+func parseRemoteURLs(text string) []remoteURL { return parseRemoteValues(text, "url") }
+
+// parseRemoteValues is parseRemoteURLs for any of keys (compared without case, as git compares
+// them), each value with its key spelled as keys spells it, in the file's order.
+func parseRemoteValues(text string, keys ...string) []remoteURL {
 	var out []remoteURL
 	section, sub := "", ""
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
@@ -301,10 +373,15 @@ func parseRemoteURLs(text string) []remoteURL {
 			continue
 		}
 		m := keyValueRE.FindStringSubmatch(line)
-		if m == nil || !strings.EqualFold(m[1], "url") {
+		if m == nil {
 			continue
 		}
-		out = append(out, remoteURL{name: sub, url: configValue(m[2])})
+		for _, k := range keys {
+			if strings.EqualFold(m[1], k) {
+				out = append(out, remoteURL{name: sub, key: k, url: configValue(m[2])})
+				break
+			}
+		}
 	}
 	return out
 }

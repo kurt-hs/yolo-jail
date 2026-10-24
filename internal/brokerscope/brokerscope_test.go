@@ -528,3 +528,108 @@ func TestLiveFilesSkipsADeadLaunchAndAnotherContainer(t *testing.T) {
 		t.Fatalf("another workspace: %+v, %v", got, err)
 	}
 }
+
+// ReadAllRemotes is the remote-URL scope's read (docs/design/git-broker-plan.md ID-2): every
+// `url` and `pushurl` of every remote, on any host, verbatim and in the file's order; a URL
+// carrying a password is left out, with a line that names the remote and not the secret.
+func TestReadAllRemotesKeepsEveryURL(t *testing.T) {
+	ws := resolvedTempDir(t)
+	writeFile(t, filepath.Join(ws, ".git", "config"), `[remote "origin"]
+	url = git@github.com:o/r.git
+	pushurl = ssh://git@github.com/o/r
+[remote "lab"]
+	url = https://gitlab.example.com/team/app.git
+[remote "leak"]
+	url = https://me:hunter2@git.example.com/x.git
+`)
+	r := ReadAllRemotes(ws)
+	var urls []string
+	for _, rm := range r.Remotes {
+		urls = append(urls, rm.Repo)
+	}
+	want := []string{"git@github.com:o/r.git", "ssh://git@github.com/o/r", "https://gitlab.example.com/team/app.git"}
+	if !reflect.DeepEqual(urls, want) {
+		t.Fatalf("urls %q, want %q", urls, want)
+	}
+	if r.Remotes[1].Name != "origin" || r.Remotes[2].Name != "lab" {
+		t.Errorf("remote names %+v", r.Remotes)
+	}
+	if len(r.Excluded) != 1 {
+		t.Fatalf("excluded %q, want one line", r.Excluded)
+	}
+	line := r.Excluded[0]
+	if !strings.Contains(line, `"leak"`) || strings.Contains(line, "hunter2") || strings.Contains(line, "me:") {
+		t.Errorf("excluded line %q must name remote leak and neither the password nor the user", line)
+	}
+	if r.Problem != "" || r.GitConfig != filepath.Join(ws, ".git", "config") {
+		t.Errorf("read %+v", r)
+	}
+}
+
+// remoteURLFile writes a scope file of the given form.
+func remoteURLFile(t *testing.T, launchID, form string, repos ...string) (string, File) {
+	t.Helper()
+	f := File{Source: "git", LaunchID: launchID, Workspace: "/w", Container: "c", PID: os.Getpid(),
+		Form: form, Repos: repos}
+	path, err := Write(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path, f
+}
+
+// A remote-url file matches a URL string exactly, and an owner-repo file still refuses one: the
+// branch is on the file's form, never on its source name.
+func TestValidateCurrentRemoteURLForm(t *testing.T) {
+	t.Setenv("HOME", resolvedTempDir(t))
+	path, f := remoteURLFile(t, "url", FormRemoteURL, "git@github.com:o/r.git")
+	if err := ValidateCurrent(path, f, "git@github.com:o/r.git"); err != nil {
+		t.Fatalf("the exact approved URL was refused: %v", err)
+	}
+	for _, other := range []string{"git@github.com:o/r", "git@evil.example:o/r.git", "GIT@github.com:o/r.git", "o/r"} {
+		if err := ValidateCurrent(path, f, other); err == nil {
+			t.Errorf("%q was admitted by a scope approving only git@github.com:o/r.git", other)
+		}
+	}
+	plainPath, plain := remoteURLFile(t, "plain", "", "o/r")
+	if err := ValidateCurrent(plainPath, plain, "git@github.com:o/r.git"); err == nil {
+		t.Error("an owner-repo file admitted a URL")
+	}
+	if err := ValidateCurrent(plainPath, plain, "o/r"); err != nil {
+		t.Errorf("an owner-repo file refused its own repository: %v", err)
+	}
+	// A URL in an owner-repo file is a corrupt scope, as before.
+	badPath, bad := remoteURLFile(t, "bad", "", "git@github.com:o/r.git")
+	if err := ValidateCurrent(badPath, bad, "git@github.com:o/r.git"); err == nil {
+		t.Error("an owner-repo file holding a URL admitted it")
+	}
+}
+
+// ReplaceRepos takes a URL list on a remote-url file and refuses one on an owner-repo file.
+func TestReplaceReposRemoteURLForm(t *testing.T) {
+	t.Setenv("HOME", resolvedTempDir(t))
+	path, f := remoteURLFile(t, "url", FormRemoteURL, "git@github.com:o/r.git")
+	bound, err := BindBroker(path, f, "start-url", func() error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	urls := []string{"git@github.com:o/r.git", "https://gitlab.example.com/team/app.git"}
+	if err := ReplaceRepos(path, bound, urls); err != nil {
+		t.Fatalf("a URL list was refused on a remote-url file: %v", err)
+	}
+	got, err := ReadFile(path)
+	if err != nil || !reflect.DeepEqual(got.Repos, urls) || got.Form != FormRemoteURL {
+		t.Fatalf("rewritten file %+v, %v", got, err)
+	}
+	if err := ReplaceRepos(path, bound, []string{"https://me:pw@git.example.com/x.git"}); err == nil {
+		t.Error("a URL carrying a password was written")
+	}
+
+	ghPath, gh := liveFixture(t, "gh", "c", os.Getpid())
+	if err := ReplaceRepos(ghPath, gh, []string{"git@github.com:o/r.git"}); err == nil {
+		t.Error("an owner-repo file took a URL")
+	}
+	if got, _ := ReadFile(ghPath); !reflect.DeepEqual(got.Repos, []string{"o/r"}) {
+		t.Fatalf("a refused rewrite changed the file: %v", got.Repos)
+	}
+}

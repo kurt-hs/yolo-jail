@@ -28,8 +28,44 @@ import (
 // two terminals in one workspace are two concurrent sessions sharing both, and one
 // session's approval must not replace the scope under the other's daemon.
 
-// FileVersion is the scope file's schema version.
+// FileVersion is the scope file's schema version. The remote-url form did not bump it: a file
+// without `form` reads as the owner-repo form it always was, and an older build reading a
+// remote-url file finds URLs ValidPattern refuses, so it fails closed as a corrupt scope.
 const FileVersion = 1
+
+// The remote-url scope form (coined in docs/design/git-broker-plan.md, ID-2): a scope whose
+// entries are exact remote URLs rather than OWNER/REPO. A source declares it with a manifest
+// `brokered.remote_host` of AnyRemoteHost; the gate reads it with ReadAllRemotes, and a request
+// matches only a URL string equal to an approved one.
+const (
+	FormRemoteURL = "remote-url"
+	// AnyRemoteHost is loopholedecl.AnyRemoteHost, the `remote_host` that selects the form.
+	AnyRemoteHost = "*"
+)
+
+// FormFor is the scope form a manifest's `brokered.remote_host` selects.
+func FormFor(remoteHost string) string {
+	if remoteHost == AnyRemoteHost {
+		return FormRemoteURL
+	}
+	return ""
+}
+
+// validEntry is the check a scope entry of form takes, and admits the matcher a request takes
+// against one: the form, never the source name, decides both.
+func validEntry(form, entry string) bool {
+	if form == FormRemoteURL {
+		return ValidRemoteURL(entry)
+	}
+	return ValidPattern(entry)
+}
+
+func admits(form, entry, request string) bool {
+	if form == FormRemoteURL {
+		return ValidRemoteURL(request) && entry == request
+	}
+	return Admits(entry, request)
+}
 
 // File is one launch's scope file.
 type File struct {
@@ -43,9 +79,14 @@ type File struct {
 	PID       int    `json:"pid"`
 	Container string `json:"container"`
 	Workspace string `json:"workspace"`
+	// Form is how Repos' entries read: "" for OWNER/REPO entries and whole-segment wildcards
+	// (ValidPattern, Admits), FormRemoteURL for exact remote URLs (ValidRemoteURL, compared as
+	// strings). Every reader branches on it, never on Source.
+	Form string `json:"form,omitempty"`
 	// Repos is the approved scope: the workspace's remotes on the forge and its
 	// `brokered.<source>.repos` entry, as a human approved them in this launch's config-change
-	// gate, from that gate's own result.
+	// gate, from that gate's own result. In the remote-url form, every remote URL of the
+	// workspace, verbatim, and no entry.
 	Repos []string `json:"repos"`
 	// Widened is no longer written (WW-D12). It was the user-scope widening entry's list, read
 	// from the user config with no approval, until that form was retired; it stays decodable,
@@ -198,19 +239,25 @@ func ValidateCurrent(path string, expected File, repo string) error {
 	if err != nil {
 		return err
 	}
+	if f.Form != "" && f.Form != FormRemoteURL {
+		return errors.New("scope file of an unknown form; relaunch the jail")
+	}
 	for _, r := range append(append([]string(nil), f.Repos...), f.Widened...) {
-		if !ValidPattern(r) {
+		if !validEntry(f.Form, r) {
 			return errors.New("corrupt repository scope; relaunch the jail")
 		}
 	}
 	if f.Source != expected.Source || f.LaunchID != expected.LaunchID || f.Workspace != expected.Workspace || f.Container != expected.Container || f.PID != expected.PID {
 		return errors.New("scope identity changed; relaunch the jail to approve its scope")
 	}
-	if !ValidRepo(repo) {
+	switch {
+	case f.Form == FormRemoteURL && !ValidRemoteURL(repo):
+		return errors.New("invalid remote URL; use a remote the workspace's approved scope holds")
+	case f.Form == "" && !ValidRepo(repo):
 		return errors.New("invalid repository; use an approved owner/repo")
 	}
 	for _, r := range append(append([]string(nil), f.Repos...), f.Widened...) {
-		if Admits(r, repo) {
+		if admits(f.Form, r, repo) {
 			return nil
 		}
 	}

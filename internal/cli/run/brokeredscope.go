@@ -109,8 +109,11 @@ func (o *Options) writeScopeFiles(cname string, brokered []*loopholes.Loophole) 
 			out.print("[yellow]" + lp.Name + ": cannot draw a launch id: " + err.Error() + "[/yellow]")
 			continue
 		}
+		// The form is the manifest's, as the gate read it (config.NewScopeCheck): a source on any
+		// host hands its broker exact remote URLs, which it must not read as OWNER/REPO.
+		form := brokerscope.FormFor(lp.Brokered.RemoteHost)
 		path, err := brokerscope.Write(brokerscope.File{Source: lp.Brokered.Source, LaunchID: id,
-			PID: os.Getpid(), Container: cname, Workspace: o.Workspace, Repos: repos,
+			PID: os.Getpid(), Container: cname, Workspace: o.Workspace, Form: form, Repos: repos,
 			ConfigFile: configName, LocalFile: localName})
 		if err != nil {
 			out.print("[yellow]" + lp.Name + ": cannot write this launch's scope file: " + err.Error() +
@@ -124,6 +127,11 @@ func (o *Options) writeScopeFiles(cname string, brokered []*loopholes.Loophole) 
 		// The disclosure of what the broker starts with (§5.6): every repository, and where it
 		// came from. A source label can name a file the agent chose, already free of control
 		// characters (config.ScopeRepo), and its markup is escaped here.
+		if len(approvedRepos) == 0 && form == brokerscope.FormRemoteURL {
+			out.printf("[dim]%s: this workspace has no approved remote, so its scope is empty; add one "+
+				"with `git remote add`, and the next launch asks about it[/dim]", lp.Name)
+			continue
+		}
 		if len(approvedRepos) == 0 {
 			out.printf("[dim]%s: this workspace has no approved remote on %s and no approved `%s` "+
 				"entry, so its repository scope is empty; only commands that name no repository run[/dim]",
@@ -136,7 +144,7 @@ func (o *Options) writeScopeFiles(cname string, brokered []*loopholes.Loophole) 
 			// A wildcard entry admits every repository its token covers, so the line says so
 			// rather than naming it as one more repository.
 			var facts []string
-			if n := brokerscope.WildcardNote(r.Repo, lp.Brokered.RemoteHost); n != "" {
+			if n := brokerscope.WildcardNote(r.Repo, lp.Brokered.RemoteHost); n != "" && form == "" {
 				facts = append(facts, n)
 			}
 			if len(r.Sources) > 0 {

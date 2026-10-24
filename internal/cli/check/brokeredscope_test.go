@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 )
@@ -51,6 +53,19 @@ func TestCheckReadsTheScopeWhereALaunchWouldStartABroker(t *testing.T) {
 	}
 	if brokeredScopeForCheck(ws, jsonx.NewOrderedMap(), "podman", nil) != nil {
 		t.Fatal("a brokered loophole no switch turned on starts no broker: it ships off")
+	}
+}
+
+// The recorded line for a source on any host lists its remote URLs, and an empty one names no
+// host and no entry key, neither of which that source has.
+func TestDescribeScopeRemoteURLForm(t *testing.T) {
+	s := config.ScopeSource{Source: "git", Label: "git-broker", RemoteHost: "*", Form: brokerscope.FormRemoteURL}
+	if got := describeScope(s); got != "none (no remote)" {
+		t.Errorf("empty remote-url scope reads %q", got)
+	}
+	s.Read.Remotes = []brokerscope.Remote{{Name: "origin", Repo: "git@github.com:o/r.git"}}
+	if got := describeScope(s); got != "git@github.com:o/r.git" {
+		t.Errorf("remote-url scope reads %q", got)
 	}
 }
 

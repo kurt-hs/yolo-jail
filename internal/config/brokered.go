@@ -408,7 +408,7 @@ func approvalConfigPart(wsCfg *jsonx.OrderedMap) *jsonx.OrderedMap {
 // A source no selected pack brokers is not reported here, because a launch runs this too, and
 // a committed entry would print it at every launch of every contributor who selects no such
 // pack (WW-D22). Host `yolo check` reports it instead (UnbrokeredSourceWarnings).
-func validateBrokered(config *jsonx.OrderedMap, workspace string, errs, warns *[]string) {
+func validateBrokered(config *jsonx.OrderedMap, workspace string, resolver LoopholeResolver, errs, warns *[]string) {
 	if _, present := config.Get(brokeredKey); !present {
 		// Every scope's keys survive into the merged map, so an absent key proves no scope
 		// wrote one.
@@ -416,7 +416,7 @@ func validateBrokered(config *jsonx.OrderedMap, workspace string, errs, warns *[
 	}
 	validateBrokeredRetired(config, workspace, errs, warns)
 	validateBrokeredUserScope(errs, warns)
-	validateBrokeredWorkspace(workspace, errs)
+	validateBrokeredWorkspace(workspace, resolver, errs)
 }
 
 // inJailSuffix is the retired-key convention's in-jail ending (validateAgentsRetired).
@@ -688,7 +688,12 @@ func validateBrokeredUserScope(errs, warns *[]string) {
 // was written at; any file outside the workspace that wrote it (WW-D17); and a key written twice
 // in one file (WW-D24). Errors in a jail too: there the files are the agent's own, and in-jail
 // `yolo check --no-build` is how it checks its edit.
-func validateBrokeredWorkspace(workspace string, errs *[]string) {
+//
+// A `repos` entry for a source a known loophole brokers on any host (`remote_host: "*"`) is
+// refused, through the resolver and never by the source's name: that source's scope is every
+// remote URL, matched exactly, so a git remote joins with `git remote add` and reaches the gate as
+// a new remote (docs/design/git-broker-plan.md ID-2).
+func validateBrokeredWorkspace(workspace string, resolver LoopholeResolver, errs *[]string) {
 	wsCfg, src, err := LoadWorkspaceConfigWithSources(workspace, false, func(string) {})
 	if err != nil || wsCfg == nil {
 		return
@@ -707,6 +712,43 @@ func validateBrokeredWorkspace(workspace string, errs *[]string) {
 	for _, p := range brokeredShapeProblems(v) {
 		add(errs, src.AnnotateOne(p))
 	}
+	for _, p := range remoteURLSourceReposProblems(v, resolver) {
+		add(errs, src.AnnotateOne(p))
+	}
+}
+
+// remoteURLSourceReposProblems refuses `brokered.<source>.repos` for each source a known loophole
+// brokers on any host (brokerscope.FormFor gives the remote-url form).
+func remoteURLSourceReposProblems(v any, resolver LoopholeResolver) []string {
+	sources, ok := asMap(v)
+	if !ok || resolver == nil {
+		return nil
+	}
+	known, _ := resolver.Known()
+	anyHost := map[string]bool{}
+	for _, info := range known {
+		if info.Brokered != nil && brokerscope.FormFor(info.Brokered.RemoteHost) == brokerscope.FormRemoteURL {
+			anyHost[info.Brokered.Source] = true
+		}
+	}
+	var out []string
+	for _, name := range sources.Keys() {
+		if !anyHost[name] {
+			continue
+		}
+		sv, _ := sources.Get(name)
+		src, ok := asMap(sv)
+		if !ok {
+			continue
+		}
+		if rv, has := src.Get(brokeredReposKey); has && rv != nil {
+			out = append(out, "config."+brokeredReposPath(name)+": not taken — this source's scope is "+
+				"every remote of the workspace, on any host, as its URL, so there is nothing to list "+
+				"here. Add a remote with `git remote add <name> <url>`, and the next launch's "+
+				"config-change gate asks about it; then remove this key.")
+		}
+	}
+	return out
 }
 
 // brokeredShapeProblems is every shape problem in a workspace `brokered` value, each a full

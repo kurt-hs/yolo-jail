@@ -3,6 +3,7 @@ package check
 import (
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
@@ -41,6 +42,9 @@ func scopeSourcesOf(s *config.ScopeCheck) []config.ScopeSource {
 // remotes' and its entry's, or what an empty one has none of.
 func describeScope(s config.ScopeSource) string {
 	repos := s.Repos()
+	if len(repos) == 0 && s.Form == brokerscope.FormRemoteURL {
+		return "none (no remote)"
+	}
 	if len(repos) == 0 {
 		return "none (no remote on " + s.RemoteHost + " and no `" + config.BrokeredReposKey(s.Source) + "` entry)"
 	}

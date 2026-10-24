@@ -79,7 +79,8 @@ func processAlive(pid int) bool {
 
 // ReplaceRepos rewrites the Repos of the scope file at path and nothing else, under the
 // source's transaction. It refuses a path that is not expect's launch path, a symlink, an
-// entry ValidPattern rejects, and a file whose identity differs from expect.
+// entry the file's form rejects (ValidPattern, or ValidRemoteURL for FormRemoteURL), and a file
+// whose identity differs from expect.
 func ReplaceRepos(path string, expect File, repos []string) error {
 	return ReplaceReposContext(context.Background(), path, expect, repos)
 }
@@ -95,10 +96,20 @@ func ReplaceReposContext(ctx context.Context, path string, expect File, repos []
 	if path != paths.BrokerScopeFile(expect.Source, expect.LaunchID) {
 		return errors.New("scope path is not the host launch path")
 	}
-	for _, r := range repos {
-		if !ValidPattern(r) {
+	// The entries are checked against the form of the file as read under the lock, never the
+	// caller's idea of it: the file is what its broker will read them as.
+	checkEntries := func(form string) error {
+		for _, r := range repos {
+			if validEntry(form, r) {
+				continue
+			}
+			if form == FormRemoteURL {
+				return errors.New("scope file: an entry is not a remote URL the remote-url scope can hold " +
+					"(empty, with a space or control character, or carrying a password)")
+			}
 			return fmt.Errorf("scope file: %q is not an OWNER/REPO or a whole-segment wildcard", r)
 		}
+		return nil
 	}
 	return brokerlock.WithTransactionContext(ctx, paths.BrokerSourceDir(expect.Source), func() error {
 		fi, err := os.Lstat(path)
@@ -115,6 +126,12 @@ func ReplaceReposContext(ctx context.Context, path string, expect File, repos []
 		if f.Source != expect.Source || f.LaunchID != expect.LaunchID || f.Container != expect.Container ||
 			f.Workspace != expect.Workspace || f.PID != expect.PID {
 			return errors.New("scope identity changed; the jail this scope was approved for is not the one running")
+		}
+		if f.Form != "" && f.Form != FormRemoteURL {
+			return errors.New("scope file of an unknown form; relaunch the jail")
+		}
+		if err := checkEntries(f.Form); err != nil {
+			return err
 		}
 		f.Repos = append([]string{}, repos...)
 		got, err := write(f)

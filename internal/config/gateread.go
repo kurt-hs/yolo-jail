@@ -131,7 +131,8 @@ type ScopeBroker struct {
 
 // NewScopeCheck is the scope part in play for brokers: each one's remotes, read from the
 // workspace's git config as text (brokerscope.ReadRemotes), and its entry, from the gate's own
-// read. nil when no broker starts, which leaves the gate exactly what it was before the scope
+// read; for a broker on any host (`remote_host: "*"`), every remote URL (brokerscope.ReadAllRemotes)
+// in the remote-url form, and no entry. nil when no broker starts, which leaves the gate exactly what it was before the scope
 // part existed.
 func NewScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead) *ScopeCheck {
 	if len(brokers) == 0 {
@@ -139,9 +140,16 @@ func NewScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead)
 	}
 	check := &ScopeCheck{}
 	for _, b := range brokers {
-		check.Sources = append(check.Sources, ScopeSource{Source: b.Source, Label: b.Label,
-			RemoteHost: b.RemoteHost, Read: brokerscope.ReadRemotes(workspace, b.RemoteHost),
-			Entry: read.Entry(b.Source)})
+		s := ScopeSource{Source: b.Source, Label: b.Label, RemoteHost: b.RemoteHost,
+			Form: brokerscope.FormFor(b.RemoteHost)}
+		if s.Form == brokerscope.FormRemoteURL {
+			// A source on any host: every remote URL, verbatim, and no entry, which validation
+			// refuses for it (validateBrokeredWorkspace); a remote joins by `git remote add`.
+			s.Read = brokerscope.ReadAllRemotes(workspace)
+		} else {
+			s.Read, s.Entry = brokerscope.ReadRemotes(workspace, b.RemoteHost), read.Entry(b.Source)
+		}
+		check.Sources = append(check.Sources, s)
 	}
 	return check
 }

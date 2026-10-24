@@ -18,7 +18,8 @@ import (
 // for another forge is a second manifest, not a second branch in core. For a loophole
 // declaring the block, core:
 //
-//  1. reads the workspace's remotes on `remote_host` as text at every fresh launch that
+//  1. reads the workspace's remotes on `remote_host` (every remote URL, verbatim, for `*`) as
+//     text at every fresh launch that
 //     starts the daemon (BB-D19), and the workspace config's `brokered.<source>.repos` entry
 //     (docs/design/workspace-widening.md), and puts the union in front of a human as the
 //     labeled scope block at the head of the config-change diff (BB-D30, BB-D31), recorded in
@@ -44,13 +45,21 @@ type Brokered struct {
 	// under, the workspace config's `brokered.<source>.repos` key that adds repositories
 	// to it, and the store and audit log's `service`: `github`.
 	Source string
-	// RemoteHost is the forge whose remotes make up the scope: `github.com`.
+	// RemoteHost is the forge whose remotes make up the scope: `github.com`. AnyRemoteHost
+	// (`*`) instead makes the scope every remote URL of the workspace, on any host, matched
+	// exactly (the remote-url scope form, brokerscope.FormRemoteURL; docs/design/git-broker-plan.md
+	// ID-2), and such a source takes no `brokered.<source>.repos` entry.
 	RemoteHost string
 	// CredentialPaths are host paths holding the source's credential, fenced from
 	// `mounts` (BB-D26). An entry is `~/…`, an absolute path, or `$VAR` / `$VAR/…`, which
 	// expands from the host environment and is dropped when the variable is unset.
 	CredentialPaths []string
 }
+
+// AnyRemoteHost is the `remote_host` that declares a source on any host. It is the token alone,
+// never a glob: `*.com` is refused. brokerscope.AnyRemoteHost is the same token, for the code
+// that reads a scope and does not import this package.
+const AnyRemoteHost = "*"
 
 const (
 	keyBrokered        = "brokered"
@@ -93,9 +102,10 @@ func parseBrokered(manifestPath string, raw any) (*Brokered, error) {
 	}
 	b.Source = src
 	host, _ := getOrNil(m, keyRemoteHost).(string)
-	if !remoteHostRE.MatchString(host) {
+	if host != AnyRemoteHost && !remoteHostRE.MatchString(host) {
 		return nil, Errorf("%s: 'brokered.remote_host' must be a lowercase hostname such as "+
-			"\"github.com\"", manifestPath)
+			"\"github.com\", or \"*\" alone for a source whose scope is every remote URL of the "+
+			"workspace, on any host", manifestPath)
 	}
 	b.RemoteHost = host
 	if v := getOrNil(m, keyCredentialPaths); v != nil {

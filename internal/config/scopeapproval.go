@@ -43,8 +43,13 @@ type ScopeSource struct {
 	Source string
 	// Label is the loophole that reads it (`github-broker`), naming the block.
 	Label string
-	// RemoteHost is the forge whose remotes were read: `github.com`.
+	// RemoteHost is the forge whose remotes were read: `github.com`, or `*` for every remote
+	// on any host (Form).
 	RemoteHost string
+	// Form is the scope file's form for this source (brokerscope.File.Form): "" for OWNER/REPO,
+	// brokerscope.FormRemoteURL for exact remote URLs. In that form Read holds URLs, Entry is
+	// empty, and a scope entry is compared exactly, never without case.
+	Form string
 	// Read is what the launch read from the workspace's remotes.
 	Read brokerscope.Read
 	// Entry is what the workspace's `brokered.<Source>.repos` lists, from the gate's one read
@@ -81,7 +86,7 @@ func (s ScopeSource) current() []scopeRepo {
 	at := map[string]int{}
 	var out []scopeRepo
 	get := func(repo string) *scopeRepo {
-		k := strings.ToLower(repo)
+		k := s.key(repo)
 		i, ok := at[k]
 		if !ok {
 			i = len(out)
@@ -106,6 +111,16 @@ func (s ScopeSource) current() []scopeRepo {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(out[i].repo) < strings.ToLower(out[j].repo) })
 	return out
+}
+
+// key is the spelling one scope entry is compared by: lower case for OWNER/REPO, as GitHub
+// compares names, and the entry exactly in the remote-url form, whose broker matches a URL
+// string exactly (docs/design/git-broker-plan.md ID-2).
+func (s ScopeSource) key(repo string) string {
+	if s.Form == brokerscope.FormRemoteURL {
+		return repo
+	}
+	return strings.ToLower(repo)
 }
 
 // Repos is the source's scope as read, each repository once, sorted: the remotes' and the
@@ -399,7 +414,7 @@ func compareScope(check *ScopeCheck, old scopeRecord, oldSources sourcesRecord) 
 		approved := make([]ScopeRepo, len(cur))
 		for i, r := range cur {
 			names[i] = r.repo
-			srcs[strings.ToLower(r.repo)] = r.keys()
+			srcs[s.key(r.repo)] = r.keys()
 			approved[i] = ScopeRepo{Repo: r.repo, Sources: r.labels()}
 		}
 		out.next[s.Source] = names
@@ -456,6 +471,9 @@ func scopeBlock(s ScopeSource, cur []scopeRepo, prev []string, had bool,
 	// rather than leaving the human to read the token as one repository's name. A literal
 	// entry gets no note.
 	note := func(repo string) string {
+		if s.Form == brokerscope.FormRemoteURL {
+			return ""
+		}
 		if n := brokerscope.WildcardNote(repo, s.RemoteHost); n != "" {
 			return " (" + n + ")"
 		}
@@ -463,7 +481,7 @@ func scopeBlock(s ScopeSource, cur []scopeRepo, prev []string, had bool,
 	}
 	inPrev := map[string]bool{}
 	for _, r := range prev {
-		inPrev[strings.ToLower(r)] = true
+		inPrev[s.key(r)] = true
 	}
 	edit.Key = brokeredReposPath(s.Source)
 	addFiles := func(files []string) {
@@ -475,7 +493,7 @@ func scopeBlock(s ScopeSource, cur []scopeRepo, prev []string, had bool,
 	}
 	added, removed, moved := 0, 0, 0
 	for _, r := range cur {
-		k := strings.ToLower(r.repo)
+		k := s.key(r.repo)
 		label := strings.Join(r.labels(), ", ")
 		if !inPrev[k] {
 			rows = append(rows, row{"+", r.repo, label, "added" + note(r.repo)})
@@ -502,10 +520,10 @@ func scopeBlock(s ScopeSource, cur []scopeRepo, prev []string, had bool,
 		rows = append(rows, row{" ", r.repo, label, "unchanged" + note(r.repo)})
 	}
 	for _, r := range prev {
-		if inPrev[strings.ToLower(r)] {
+		if inPrev[s.key(r)] {
 			rows = append(rows, row{"-", r, "", "removed" + note(r)})
 			removed++
-			addFiles(filesOfKeys(recorded[strings.ToLower(r)]))
+			addFiles(filesOfKeys(recorded[s.key(r)]))
 		}
 	}
 	changed = !had || added+removed+moved > 0
@@ -522,6 +540,9 @@ func scopeBlock(s ScopeSource, cur []scopeRepo, prev []string, had bool,
 	}
 	if s.Read.Problem != "" {
 		lines = append(lines, "  (the scope read as empty: "+s.Read.Problem+")")
+	}
+	for _, x := range s.Read.Excluded {
+		lines = append(lines, "  (left out: "+x+")")
 	}
 	count = fmt.Sprintf("%s: %d added, %d removed, %d source changed", s.Label, added, removed, moved)
 	return lines, count, edit, changed
