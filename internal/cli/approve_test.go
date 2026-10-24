@@ -311,8 +311,7 @@ func TestApproveListsAndRefusesToRevokeAConfigBranch(t *testing.T) {
 
 	// --revoke all --workspace with only declared branches there: nothing in the store matched,
 	// and the declared branches are named with the file to edit, not a loop back to the listing.
-	var allOut string
-	allOut = captureStderr(t, func() { rc = registry["approve"]([]string{"approve", "--revoke", "all", "--workspace", ws}) })
+	allOut := captureStderr(t, func() { rc = registry["approve"]([]string{"approve", "--revoke", "all", "--workspace", ws}) })
 	for _, want := range []string{"nothing in the store", "declared in config", ws + "/yolo-jail.jsonc", "brokered.git.grants", "refs/heads/main"} {
 		if !strings.Contains(allOut, want) {
 			t.Fatalf("--revoke all --workspace (rc %d) lacks %q:\n%s", rc, want, allOut)
