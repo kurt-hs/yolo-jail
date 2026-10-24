@@ -167,10 +167,14 @@ builds from your clone by the rules above. The line names the clone it used, for
 This works for any pack, including one you installed from someone else's URL.
 
 Your clone is used only for a branch the published repository has: the patch branch must be a branch name,
-and your clone must have fetched it from the remote that matched, so `refs/remotes/origin/mine` exists. Then
-your local `mine` is built only when it is newer. A branch you have only locally, or only on another remote
-such as your fork, is built from the URL as if you had no clone, and the line warns that your clone was not
-used and why. If you have pushed the branch, `git -C ~/src/pi fetch origin` lets the next launch use your
+and your clone must have fetched it from the remote that matched, so `refs/remotes/origin/mine` exists. That
+remote must also fetch from the published repository: if its first URL is your fork, or an `insteadOf`
+rewrites it to another host, your clone is not used. Then your clone is built by the rules above: the
+published tip when your `mine` is behind, your `mine` when it is ahead, and your `mine` with a warning when
+it has diverged or the fetch failed. If the published repository deleted the branch, your `mine` still
+builds, with a warning, because the pack names that URL. A branch you have only locally, or only on another
+remote such as your fork, is built from the URL as if you had no clone, and the line warns that your clone was
+not used and why. If you have pushed the branch, `git -C ~/src/pi fetch origin` lets the next launch use your
 clone.
 
 yolo knows a clone in two ways:
@@ -188,7 +192,8 @@ yolo knows a clone in two ways:
   It is read from your user config only. Write each entry from `/` or `~/`. An entry that is not an
   absolute path, does not exist, is not in a git clone, or whose clone has no remote stops every command
   that resolves patch branches, naming the entry and how to fix it: `yolo check`, the launch, `yolo host`,
-  `yolo host apply`, and `yolo pack install`, `update` and `status`.
+  `yolo host apply`, `yolo pack install`, `update` and `status`, and, for a patch branch named by URL,
+  `yolo pack series check` and `yolo pack lint --online`.
 
 The URL matches whichever way the remote is spelled: `git@github.com:you/pi.git` and
 `https://github.com/you/pi` are the same repository. When two clones match, a `local_clones` entry wins,

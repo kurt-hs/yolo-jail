@@ -301,10 +301,12 @@ func (r *PatchBranchResolved) NotVerified() bool {
 }
 
 // Loud reports a line every act prints as a warning: a diverged branch, a remote that could not be fetched, a
-// build from a stale tracking ref of a branch the remote no longer has, or a registered local clone that matched
-// the URL and was not used (CloneSkipped).
+// build from a stale tracking ref of a branch the remote no longer has, a registered local clone that matched
+// the URL and was not used (CloneSkipped), or one reached through the local clone map whose remote deleted the
+// branch, so its local branch builds a pack that names the URL (PF-D104; a pack's own checkout stays quiet).
 func (r *PatchBranchResolved) Loud() bool {
-	return r.Diverged() || r.NotVerified() || (r.RemoteGone && r.Local == "") || (r.Checkout == "" && r.CloneSkipped != "")
+	return r.Diverged() || r.NotVerified() || (r.RemoteGone && r.Local == "") ||
+		(r.Checkout == "" && r.CloneSkipped != "") || (r.RemoteGone && r.CloneVia != "")
 }
 
 // Line is the patch branch's provenance in one line, read from the check record with no git: the ref, the copy
@@ -351,6 +353,13 @@ func (r *PatchBranchResolved) relation() string {
 		return "not on " + r.Remote + " (stale tracking ref) — push it back with `" +
 			shquote.JoinDisplay([]string{"git", "-C", r.Checkout, "push", "--", r.Remote, "refs/remotes/" + r.Remote + "/" + r.Branch + ":refs/heads/" + r.Branch}) +
 			"`, or correct the patch branch's ?ref="
+	case r.RemoteGone && r.CloneVia != "":
+		// THROUGH THE MAP (PF-D104), not the pack's own checkout: the published URL deleted the branch, and the
+		// clone's local branch, found through its stale tracking ref, now builds a pack that names that URL.
+		return "not on " + r.Remote + ", which deleted it (the clone's tracking ref is stale), so this pack, which " +
+			"names the published URL, builds your clone's local branch — push it back with `" +
+			shquote.JoinDisplay([]string{"git", "-C", r.Checkout, "push", "--", r.Remote, r.Branch}) +
+			"`, or check the pack's ?ref= with its author"
 	case r.Local == "" && r.RemoteTip == "":
 		return "neither the local branch nor " + r.Remote + " has it"
 	case r.Local == "":

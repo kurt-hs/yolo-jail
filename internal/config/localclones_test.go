@@ -41,7 +41,7 @@ func lcCommit(t *testing.T, dir, file, body string) string {
 }
 
 // lcFixture is an upstream, a bare published copy of it holding branch mine, and "machine", the user's clone,
-// whose remote is written as remoteURL (rewritten to the bare copy by the clone's own insteadOf) and whose
+// whose remote is written as remoteURL (an ssh address the fixture's stand-in ssh serves from the bare copy) and whose
 // local mine is one commit ahead of the published one. It returns the root, the clone and the local tip.
 func lcFixture(t *testing.T, remoteURL string) (root, upstream, machine, localTip string) {
 	t.Helper()
@@ -67,7 +67,14 @@ func lcFixture(t *testing.T, remoteURL string) (root, upstream, machine, localTi
 	localTip = lcCommit(t, machine, "carry.txt", "unpushed\n")
 	lcGit(t, machine, "checkout", "-q", "main")
 	lcGit(t, machine, "remote", "set-url", "origin", remoteURL)
-	lcGit(t, machine, "config", "url."+published+".insteadOf", remoteURL)
+	// ssh stood in: the published address (an scp or ssh:// one) fetches the bare copy, with no network and no
+	// insteadOf, which would make the address git fetches another repository's.
+	script := filepath.Join(t.TempDir(), "fake-ssh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexec git-upload-pack '"+published+"'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_SSH_COMMAND", script)
+	t.Setenv("GIT_SSH_VARIANT", "simple")
 	return root, upstream, machine, localTip
 }
 
@@ -95,7 +102,7 @@ func lcRefs(t *testing.T, repo string) string {
 // inside their clone of that repository. The clone's newer local branch builds, its refs and FETCH_HEAD are
 // untouched, and the provenance line names the clone and the pack whose path registered it.
 func TestAPathPackRegistersItsCloneForAnotherPacksPublishedURL(t *testing.T) {
-	_, upstream, machine, localTip := lcFixture(t, "https://example.com/o/r.git")
+	_, upstream, machine, localTip := lcFixture(t, "git@example.com:o/r.git")
 	packDir := filepath.Join(machine, "packs", "other")
 	if err := os.MkdirAll(packDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -110,7 +117,7 @@ func TestAPathPackRegistersItsCloneForAnotherPacksPublishedURL(t *testing.T) {
 
 	store := &packsrc.Store{Dir: t.TempDir()}
 	want := packsrc.PatchedWant{Owner: "fetched/tool", Source: "git+file://" + upstream + "?ref=main",
-		PatchBranch: "git+ssh://git@example.com/o/r?ref=mine"} // the scp/ssh spelling still matches the https remote
+		PatchBranch: "git+ssh://git@example.com/o/r?ref=mine"} // the ssh:// spelling still matches the scp remote
 	now := time.Unix(1_800_000_000, 0)
 	res := store.CheckPatched(want, packsrc.CheckOptions{RefreshPatchBranch: true, Now: func() time.Time { return now }})
 	if res.Err != nil {

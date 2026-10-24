@@ -4,7 +4,7 @@ package cli
 // or git+file:// one (docs/reference/patched-forks.md §3.5, PF-D100). Such a locator names a repository on the
 // author's machine, so whoever installs the pack by its URL has no copy of it and their launch is refused
 // (measured in the pack paths inventory: "packs: recording relative patch branches for <pack>: …"). The fix
-// is the published URL, which the author's own clone still answers when it is newer, through the local clone
+// is the published URL, which the author's own clone still answers by the newest-copy rule, through the local clone
 // map. A warning, not a failure: the relative form stays the author's to keep (not ruled away).
 
 import (
@@ -35,7 +35,7 @@ func localPatchBranchWarnings(pack *packload.Pack, root string) []string {
 		}
 		out = append(out, f.Label()+": the patch branch "+raw+" names a repository on this machine, so whoever "+
 			"installs this pack by its URL has no copy of it and their launch is refused — name the published URL "+
-			"instead, "+suggest+"; your own clone is still built from automatically when it is newer, because a "+
+			"instead, "+suggest+"; your own clone is still built from automatically by the newest-copy rule, because a "+
 			"pack path inside it, or a `local_clones` entry, registers it")
 	}
 	return out

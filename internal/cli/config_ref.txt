@@ -1411,8 +1411,10 @@
     diverged, the published tip when your branch is behind, and the best copy
     when the fetch fails.  The provenance line names the clone it used.  A
     clone answers only for a branch name it has fetched from the matching
-    remote (refs/remotes/<remote>/<branch>); a branch it has only locally or
-    on another remote is built from the URL, and the line says why.  Any
+    remote (refs/remotes/<remote>/<branch>), and only when that remote
+    fetches from the same repository (its first url, after insteadOf); a
+    branch it has only locally or on another remote is built from the URL,
+    and the line says why.  Any
     path a pack is read from that lies in a git clone registers that clone
     already, so list here only a clone that holds no pack, such as a fork of an
     upstream tool.  "~" is expanded.  When two clones match one URL, an entry

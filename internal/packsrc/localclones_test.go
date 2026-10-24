@@ -43,6 +43,7 @@ func (f *checkoutFixture) cloneLaunch(t *testing.T) CheckResult {
 // names the https URL: the clone's unpushed local branch builds, and the line names the clone.
 func TestAPublishedURLBuildsTheRegisteredClonesNewerLocalBranch(t *testing.T) {
 	f := newCheckoutFixture(t)
+	f.publishedRemote(t)
 	tip := f.localMine(t, gitIn(t, f.pusher, "rev-parse", "mine"), 1)
 	useClones(t, LocalClone{Dir: f.machine, Explicit: true, From: "~/src/machine",
 		Remotes: []CloneRemote{{Name: "origin", URL: "git@github.com:o/r.git"}}})
@@ -72,6 +73,7 @@ func TestAPublishedURLBuildsTheRegisteredClonesNewerLocalBranch(t *testing.T) {
 // A clone whose local branch is behind the published tip builds the published tip.
 func TestABehindRegisteredCloneBuildsThePublishedTip(t *testing.T) {
 	f := newCheckoutFixture(t)
+	f.publishedRemote(t)
 	f.localMine(t, gitIn(t, f.pusher, "rev-parse", "mine"), 0)
 	pushed := f.push(t, map[int]string{10: "ten", 20: "twenty"})
 	useClones(t, LocalClone{Dir: f.machine, From: "other",
@@ -88,6 +90,7 @@ func TestABehindRegisteredCloneBuildsThePublishedTip(t *testing.T) {
 // also matched.
 func TestTwoMatchingClonesTheExplicitEntryWins(t *testing.T) {
 	f := newCheckoutFixture(t)
+	f.publishedRemote(t)
 	tip := f.localMine(t, gitIn(t, f.pusher, "rev-parse", "mine"), 2)
 	other := filepath.Join(filepath.Dir(f.machine), "other")
 	gitIn(t, filepath.Dir(f.machine), "clone", "-q", f.origin, other)
@@ -104,6 +107,7 @@ func TestTwoMatchingClonesTheExplicitEntryWins(t *testing.T) {
 // With no matching clone the URL form is unchanged: the map is not consulted for another repository.
 func TestAURLNoCloneMatchesIsNotRedirected(t *testing.T) {
 	f := newCheckoutFixture(t)
+	f.publishedRemote(t)
 	useClones(t, LocalClone{Dir: f.machine, Explicit: true, From: "~/m",
 		Remotes: []CloneRemote{{Name: "origin", URL: "git@github.com:someone/else.git"}}})
 	c, err := ParseFrom(publishedPatchBranch, "")

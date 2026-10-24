@@ -13,6 +13,25 @@ import (
 	"time"
 )
 
+// publishedRemote makes the machine's origin the PUBLISHED address, as a user's clone of a published branch has
+// it (git@github.com:o/r.git), with ssh stood in so that address fetches the fixture's origin with no network.
+func (f *checkoutFixture) publishedRemote(t *testing.T) {
+	t.Helper()
+	gitIn(t, f.machine, "remote", "set-url", "origin", "git@github.com:o/r.git")
+	fakeSSH(t, f.origin)
+}
+
+// fakeSSH stands in ssh for every git this test runs: whatever host and path it is asked for, it serves repo.
+func fakeSSH(t *testing.T, repo string) {
+	t.Helper()
+	script := filepath.Join(t.TempDir(), "fake-ssh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexec git-upload-pack '"+repo+"'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_SSH_COMMAND", script)
+	t.Setenv("GIT_SSH_VARIANT", "simple")
+}
+
 // urlReachesOrigin makes the published URL fetch the fixture's origin, as a URL the machine reaches does, so a
 // patch branch built from the URL (no clone) builds in a test with no network.
 func (f *checkoutFixture) urlReachesOrigin(t *testing.T) {
@@ -55,6 +74,7 @@ func (f *checkoutFixture) machineClone(fork string) LocalClone {
 // does not answer for it: the check reads the URL, which lacks it, and says the clone was not used and why.
 func TestACloneDoesNotAnswerForAnotherRemotesBranch(t *testing.T) {
 	f := newCheckoutFixture(t)
+	f.publishedRemote(t)
 	f.urlReachesOrigin(t)
 	fork := filepath.Join(filepath.Dir(f.machine), "fork.git")
 	gitIn(t, filepath.Dir(f.machine), "clone", "-q", "--bare", f.origin, fork)
@@ -80,6 +100,7 @@ func TestACloneDoesNotAnswerForAnotherRemotesBranch(t *testing.T) {
 // and the line names the clone, why it was not used, and the fetch that would let it answer.
 func TestALocalOnlyBranchThroughACloneBuildsFromTheURL(t *testing.T) {
 	f := newCheckoutFixture(t)
+	f.publishedRemote(t)
 	f.urlReachesOrigin(t)
 	gitIn(t, f.pusher, "checkout", "-q", "-b", "later", "mine")
 	pushed := commitFile(t, f.pusher, "later.txt", "pushed\n")
@@ -107,6 +128,7 @@ func TestALocalOnlyBranchThroughACloneBuildsFromTheURL(t *testing.T) {
 // A refs/... spelling never goes through a clone: the URL answers.
 func TestARefsSpellingThroughACloneBuildsFromTheURL(t *testing.T) {
 	f := newCheckoutFixture(t)
+	f.publishedRemote(t)
 	f.urlReachesOrigin(t)
 	f.localMine(t, gitIn(t, f.pusher, "rev-parse", "mine"), 1)
 	useClones(t, f.machineClone(""))
@@ -122,6 +144,7 @@ func TestARefsSpellingThroughACloneBuildsFromTheURL(t *testing.T) {
 // in the clone since the last check builds now (isCheckoutLocator's clone arm).
 func TestAFreshLaunchPicksUpANewCloneCommitInsideTheThrottle(t *testing.T) {
 	f := newCheckoutFixture(t)
+	f.publishedRemote(t)
 	f.localMine(t, gitIn(t, f.pusher, "rev-parse", "mine"), 1)
 	useClones(t, f.machineClone(""))
 	f.cloneLaunch(t)
@@ -131,5 +154,49 @@ func TestAFreshLaunchPicksUpANewCloneCommitInsideTheThrottle(t *testing.T) {
 	res := f.cloneLaunch(t)
 	if got := res.Record.PatchBranch.Commit; got != tip {
 		t.Fatalf("the launch inside the throttle built %s, want the clone's new commit %s", got, tip)
+	}
+}
+
+// A remote with two url values matches on either, but git fetches the first: a fork listed first must not answer
+// for the published URL listed second. The URL builds, and the line says why the clone was not used.
+func TestARemoteWhoseFirstURLIsAnotherRepositoryDoesNotAnswer(t *testing.T) {
+	f := newCheckoutFixture(t)
+	f.publishedRemote(t)
+	f.urlReachesOrigin(t)
+	f.localMine(t, gitIn(t, f.pusher, "rev-parse", "mine"), 1)
+	gitIn(t, f.machine, "remote", "set-url", "origin", "git@github.com:someone/fork.git")
+	gitIn(t, f.machine, "remote", "set-url", "--add", "origin", "git@github.com:o/r.git")
+	useClones(t, f.machineClone(""))
+	res := f.checkRef(t, "mine")
+	pb := res.Record.PatchBranch
+	if pb == nil || pb.Checkout != "" || pb.Commit != gitIn(t, f.pusher, "rev-parse", "mine") {
+		t.Fatalf("resolved %+v, want the URL's mine and no clone (problem %q)", pb, res.Record.Check.Problem)
+	}
+	wantLine(t, pb, f.now, "local clone "+f.machine, "not used", "fetches git@github.com:someone/fork.git")
+}
+
+// The published URL deleted the branch while the clone's tracking ref still holds it: the clone's local branch
+// builds, as for any checkout, but through the map it changes the build of a pack that names the URL, so it is
+// said loudly. The pack's own checkout of the same state stays quiet (request 28).
+func TestABranchThePublishedURLDeletedBuildsTheCloneLoudly(t *testing.T) {
+	f := newCheckoutFixture(t)
+	f.publishedRemote(t)
+	tip := f.localMine(t, gitIn(t, f.pusher, "rev-parse", "mine"), 1)
+	gitIn(t, f.pusher, "push", "-q", "origin", "--delete", "mine")
+	useClones(t, f.machineClone(""))
+	pb := f.cloneLaunch(t).Record.PatchBranch
+	if pb.Commit != tip || pb.Checkout != f.machine || !pb.RemoteGone {
+		t.Fatalf("resolved %+v, want the clone's local branch %s with the remote gone", pb, tip)
+	}
+	if !pb.Loud() {
+		t.Error("a clone reached through the map built a branch the published URL deleted, quietly")
+	}
+	wantLine(t, pb, f.now, "which deleted it", "local clone "+f.machine)
+
+	own := newCheckoutFixture(t)
+	own.localMine(t, gitIn(t, own.pusher, "rev-parse", "mine"), 1)
+	gitIn(t, own.pusher, "push", "-q", "origin", "--delete", "mine")
+	if r := own.launch(t).Record.PatchBranch; !r.RemoteGone || r.Loud() {
+		t.Errorf("the pack's own checkout: RemoteGone=%v Loud=%v, want gone and quiet", r.RemoteGone, r.Loud())
 	}
 }

@@ -20,8 +20,9 @@ package packsrc
 //     written, so a reader with no map (a jail) reads the same record.
 //   - ONLY A REF THE URL HAS (PF-D104). Newest-wins is safe only for a branch the published repository has, so
 //     a clone answers only for a branch name (never a refs/... spelling, a tag or a commit) that the clone holds
-//     as that remote's tracking ref, refs/remotes/<remote>/<ref>. The local branch of the same name then wins
-//     only when it is newer, as for any checkout. Anything else — a local-only branch, another remote's branch —
+//     as that remote's tracking ref, refs/remotes/<remote>/<ref>, from a remote whose fetch address (its first url,
+//     after insteadOf) names that repository. The clone then answers as any checkout does: ahead, diverged (loud)
+//     or after a failed fetch (loud) its local branch builds. Anything else — a local-only branch, another remote's branch —
 //     is built from the URL as if no clone existed, and the line names the clone and why it was not used.
 //   - WHICH CLONE. An explicit `local_clones` entry before an implicit one, then config order (the order the
 //     source returns them in). The provenance line names the clone it used and why.
@@ -167,6 +168,9 @@ func matchLocalClone(repo string, clones []LocalClone) *CloneMatch {
 type cloneChoice struct {
 	match *CloneMatch
 	skip  string
+	// fetchURL is the matched remote's address as git fetches it (`git remote get-url`: its first url value,
+	// after insteadOf), which chooseClone checked names the patch branch's repository.
+	fetchURL string
 }
 
 // chooseClone is c's cloneChoice: the map asked once (the source's error is the check's), the matching clone,
@@ -192,6 +196,19 @@ func (s *Store) chooseClone(c Addr) (cloneChoice, error) {
 		return notUsed("a clone answers only for a branch name its remote " + m.Remote.Name + " has, and this is " +
 			"no branch name"), nil
 	}
+	// THE ADDRESS GIT FETCHES must name the same repository: a remote can carry several url values, matched on
+	// any, while git fetches the first, rewritten by any insteadOf. A fork listed first, or a rewrite elsewhere,
+	// would otherwise answer for the published URL.
+	out, err := s.run("", "-C", m.Clone.Dir, "remote", "get-url", "--", m.Remote.Name)
+	fetchURL := strings.TrimSpace(out)
+	switch {
+	case err != nil || fetchURL == "":
+		return notUsed("the address of its remote " + m.Remote.Name + " could not be read (" + oneLine(err) + ")"), nil
+	case RepoIdentity(fetchURL) != RepoIdentity(c.Repo):
+		return notUsed("its remote " + m.Remote.Name + " fetches " + fetchURL + " (its first url value, after any " +
+			"insteadOf), which is not that repository, so the clone's copy may not be the published one — make " +
+			"the published URL the remote's only url, or remove the rewrite"), nil
+	}
 	tracking := "refs/remotes/" + m.Remote.Name + "/" + name
 	sha, err := s.run("", "-C", m.Clone.Dir, "rev-parse", "--verify", "--quiet", tracking+"^{commit}")
 	var exit *exec.ExitError
@@ -204,7 +221,7 @@ func (s *Store) chooseClone(c Addr) (cloneChoice, error) {
 			"URL) — if it is pushed, `git -C " + m.Clone.Dir + " fetch " + m.Remote.Name + "` and the next launch uses " +
 			"the clone"), nil
 	}
-	return cloneChoice{match: m}, nil
+	return cloneChoice{match: m, fetchURL: fetchURL}, nil
 }
 
 // patchBranchPlan is the address a check fetches and resolves a patch branch at, and its checkout plan: a
@@ -220,15 +237,8 @@ func (s *Store) patchBranchPlan(c Addr, ch cloneChoice) (Addr, *checkoutPlan) {
 	if p == nil {
 		return c, s.checkoutPlanOf(c)
 	}
-	p.remote, p.remotes = m.Remote.Name, []string{m.Remote.Name}
-	if u, err := s.run("", "-C", m.Clone.Dir, "remote", "get-url", "--", m.Remote.Name); err == nil && strings.TrimSpace(u) != "" {
-		p.url = strings.TrimSpace(u)
-	} else {
-		p.url = m.Remote.URL
-	}
-	if !strings.Contains(p.url, "://") && !scpLike(p.url) && !filepath.IsAbs(p.url) {
-		p.url = filepath.Join(m.Clone.Dir, p.url)
-	}
+	// The address chooseClone checked names the published repository; the fetch reads exactly it.
+	p.remote, p.remotes, p.url = m.Remote.Name, []string{m.Remote.Name}, ch.fetchURL
 	p.clone = m
 	return local, p
 }
