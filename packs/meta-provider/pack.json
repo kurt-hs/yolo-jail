@@ -23,7 +23,7 @@
     // Measured 2026-10-12 on yolo 0.13.0: reproduce it by selecting the `meta` profile with
     // this `provider` contribution removed (the profile alone is not enough), and watch the
     // refusal above; add `{kind: "provider", name: "meta"}` back and a host-notch render of
-    // `pi/settings` succeeds with `defaultProvider: "meta"` and `enabledModels: ["meta/*"]`.
+    // `pi/settings` succeeds with `defaultProvider: "meta"` and `enabledModels: ["meta/**"]`.
     //
     // TWO WAYS TO SATISFY IT TODAY. The user-config spelling is `"providers": {"meta": {}}`
     // in ~/.config/yolo-jail/config.jsonc — an empty entry, and the one the original dotfiles
