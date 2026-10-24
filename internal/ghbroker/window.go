@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -76,21 +75,28 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 	q := brokerstore.Request{Jail: jail, Start: b.startID, Workspace: b.workspace, LaunchID: b.authority.scope.LaunchID, Argv: d.Argv, Repo: strings.Join(d.Repos, ","), Set: d.Set, Policy: p, StdinDigest: hex.EncodeToString(sum[:])}
 	q.Digest = brokerstore.CommandDigest(q)
 	// A grant is held by its workspace (boundary-broker.md BB-D99), so its parent request may
-	// come from a jail or broker lifetime that is gone: the gate checks that the parent is this
-	// workspace's and then authorizes the ACTUAL invocation against this live launch, which
-	// re-reads the current scope and policy, never the parent's holder.
+	// come from a jail or broker lifetime that is gone. The gate checks that the parent is this
+	// workspace's, then revalidates BOTH the parent's command and the ACTUAL invocation against
+	// this live launch's current scope and policy: the parent under this launch's holder, so a
+	// set grant whose own repository left the scope covers nothing more (narrowing invalidates
+	// a grant), and the invocation itself.
 	gate := func(parent brokerstore.Request) (brokerstore.Policy, error) {
 		if err := ctx.Err(); err != nil {
 			return brokerstore.Policy{}, err
 		}
-		if filepath.Clean(parent.Workspace) != filepath.Clean(q.Workspace) {
+		if !brokerstore.SameWorkspace(parent.Workspace, q.Workspace) {
 			return brokerstore.Policy{}, errors.New("the grant belongs to another workspace")
+		}
+		held := parent
+		held.Jail, held.Start, held.LaunchID, held.Workspace = q.Jail, q.Start, q.LaunchID, q.Workspace
+		if _, err := b.authority.Revalidate(held); err != nil {
+			return brokerstore.Policy{}, fmt.Errorf("the grant's own request no longer passes this launch's scope and policy: %w; refile the command", err)
 		}
 		return b.authority.Revalidate(q) // actual argv/repo, not only a set grant's parent
 	}
 	run := func() (bool, int, string) {
 		if ctx.Err() != nil {
-			return true, ExitTempFail, "caller disconnected or broker stopped; nothing ran; use `yolo gh status <request>` before retrying"
+			return true, ExitTempFail, "caller disconnected or broker stopped; nothing ran; run the same command again: a grant approved for it is kept across a broker or jail restart and covers the retry"
 		}
 		code := ExitTempFail
 		_, ok, err := b.store.ConsumeDispatchContext(ctx, b.workspace, jail, d.Set, q.Digest, gate, func() error {
@@ -128,7 +134,7 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 	}
 	status, err := b.waitStatus(ctx, jail, q.ID)
 	if err != nil {
-		return ExitTempFail, fmt.Sprintf("%s remains pending; nothing ran; check `yolo gh status %s` and re-run only if still wanted%s", q.ID, q.ID, b.notifierNote(jail, q.ID))
+		return ExitTempFail, fmt.Sprintf("%s remains pending; nothing ran; re-run the command once it is approved, if still wanted: a grant for it lasts across a broker or jail restart (`yolo gh status %s` answers only while this broker runs)%s", q.ID, q.ID, b.notifierNote(jail, q.ID))
 	}
 	if status.State != "allowed" {
 		return ExitNoPerm, fmt.Sprintf("%s is %s; nothing ran; ask the host user before retrying", q.ID, status.State)

@@ -113,7 +113,9 @@ yolo host-run wait           # in the jail: wait for that output; also show
 
 An approval belongs to the project, not to one jail: every jail of that project may use it, and it
 lasts through broker and jail restarts and relaunches until it expires, its uses run out, or you
-revoke it.
+revoke it. `yolo approve <request> --for <duration>` sets how long; `--for session` is 12 hours,
+whatever restarts in between. Removing a repository from the project's approved scope ends what
+an approval on that repository covers.
 
 `yolo approve`, on the host, lists the broker's requests and grants and each project's git
 working set (the branches the agent created under a create-branch grant, and, marked

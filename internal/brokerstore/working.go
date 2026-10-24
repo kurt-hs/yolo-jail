@@ -167,7 +167,7 @@ func (s *Store) RevokeIn(id, workspace string) (int, error) {
 			if id != "all" && g.ID != id {
 				continue
 			}
-			if workspace != "" && !sameWorkspace(g.Workspace, workspace) {
+			if workspace != "" && !SameWorkspace(g.Workspace, workspace) {
 				continue
 			}
 			found = true

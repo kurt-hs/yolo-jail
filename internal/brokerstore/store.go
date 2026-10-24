@@ -331,10 +331,29 @@ func adoptWorkspaces(r *records) {
 	}
 }
 
-// sameWorkspace reports whether two recorded workspace paths name one workspace. An empty
-// path names none.
-func sameWorkspace(a, b string) bool {
-	return a != "" && b != "" && filepath.Clean(a) == filepath.Clean(b)
+// ResolveWorkspace is a grant holder's identity for a host workspace path: absolute, with its
+// symlinks resolved, the rule runtime.ResolveWorkspace applies to the jail id, so `~/link` and
+// the directory it names are one holder. A path that cannot be resolved (gone, or unreadable)
+// keeps its lexical absolute form. "" stays "", which names no workspace.
+func ResolveWorkspace(path string) string {
+	if path == "" {
+		return ""
+	}
+	resolved, err := filepath.Abs(path)
+	if err != nil {
+		resolved = filepath.Clean(path)
+	}
+	if evaled, err := filepath.EvalSymlinks(resolved); err == nil {
+		resolved = evaled
+	}
+	return resolved
+}
+
+// SameWorkspace reports whether two recorded workspace paths name one workspace, compared by
+// ResolveWorkspace, so a record minted under a symlinked spelling, or before grants resolved
+// one, still matches. An empty path names none.
+func SameWorkspace(a, b string) bool {
+	return a != "" && b != "" && (filepath.Clean(a) == filepath.Clean(b) || ResolveWorkspace(a) == ResolveWorkspace(b))
 }
 
 func validID(id, prefix string) bool {
@@ -574,7 +593,7 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 			if err != nil {
 				return err
 			}
-			out = Grant{ID: gid, Request: q.ID, Jail: q.Jail, Start: q.Start, Workspace: filepath.Clean(q.Workspace), Set: q.Set, Digest: command, Expires: now.Add(duration), Uses: uses, Issued: uses}
+			out = Grant{ID: gid, Request: q.ID, Jail: q.Jail, Start: q.Start, Workspace: ResolveWorkspace(q.Workspace), Set: q.Set, Digest: command, Expires: now.Add(duration), Uses: uses, Issued: uses}
 			if err = s.audit(context.Background(), kind, *q, out); err != nil {
 				return err
 			}
@@ -620,13 +639,13 @@ func (s *Store) ConsumeDispatchContext(ctx context.Context, workspace, jail, set
 	err := s.transactionContext(ctx, func(r *records, now time.Time) error {
 		for i := range r.grants {
 			g := &r.grants[i]
-			if !sameWorkspace(g.Workspace, workspace) || g.Set != set || (!g.Ended.IsZero()) || g.Uses <= 0 || !now.Before(g.Expires) || (g.Digest != "" && g.Digest != commandDigest) {
+			if !SameWorkspace(g.Workspace, workspace) || g.Set != set || (!g.Ended.IsZero()) || g.Uses <= 0 || !now.Before(g.Expires) || (g.Digest != "" && g.Digest != commandDigest) {
 				continue
 			}
 			allowed := false
 			var parent Request
 			for _, q := range r.requests {
-				if q.ID == g.Request && q.State == "allowed" && sameWorkspace(q.Workspace, workspace) && q.Set == set {
+				if q.ID == g.Request && q.State == "allowed" && SameWorkspace(q.Workspace, workspace) && q.Set == set {
 					current, err := currentPolicy(q, revalidate)
 					if err != nil {
 						return err

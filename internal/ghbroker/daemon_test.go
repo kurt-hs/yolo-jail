@@ -602,6 +602,7 @@ func TestBrokerLifetimeIsFreshAndItsTeardownKeepsGrants(t *testing.T) {
 	}
 	store := b.store
 	store.Revalidate = func(q brokerstore.Request) (brokerstore.Policy, error) { return q.Policy, nil }
+	store.Audit = StoreAudit(b.audit) // as a bound broker sets it, so filing and deciding are audited
 	file := func(pr string) brokerstore.Request {
 		q, err := store.File(brokerstore.Request{Jail: "jail-one", Start: b.startID,
 			Workspace: b.workspace, Argv: []string{"pr", "merge", pr}, Repo: "o/r",
@@ -638,7 +639,15 @@ func TestBrokerLifetimeIsFreshAndItsTeardownKeepsGrants(t *testing.T) {
 	if !strings.Contains(log.String(), "no gh on the host") {
 		t.Fatalf("fake external executor setup did not take the unavailable path: %s", log.String())
 	}
-	audit, _ := os.ReadFile(paths.BrokerAuditLog())
+	// The filing and the decision were audited, so the log exists; a missing one would make
+	// the check below pass on nothing.
+	audit, err := os.ReadFile(paths.BrokerAuditLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(audit, []byte(g.ID)) {
+		t.Fatalf("the decision issuing %s was not audited: %s", g.ID, audit)
+	}
 	for _, line := range bytes.Split(audit, []byte("\n")) {
 		var ev brokeraudit.Event
 		if json.Unmarshal(line, &ev) == nil && ev.Event == "grant-ended" {
