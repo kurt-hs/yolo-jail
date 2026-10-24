@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -51,17 +50,30 @@ func TestFakeSourceFilesGrantsAndAuditsThroughTheCore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Decide(q.ID, "pending", brokerstore.Decision{}); err != nil {
+	g, err := store.Decide(q.ID, "pending", brokerstore.Decision{})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if g.ID == "" {
+		t.Fatal("allowing the request issued no grant")
 	}
 	if got := filepath.Dir(filepath.Dir(RunRoot(source))); got != paths.BrokerDir() {
 		t.Fatalf("run root %s is not under the broker dir", RunRoot(source))
 	}
-	data, err := os.ReadFile(paths.BrokerAuditLog())
+	events, _, err := brokeraudit.Read(paths.BrokerAuditLog())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"service":"fake"`) {
-		t.Fatalf("audit log has no fake-source event:\n%s", data)
+	var filed, allowed bool
+	for _, ev := range events {
+		if ev.Service != source || ev.Request != q.ID {
+			continue
+		}
+		filed = filed || ev.Event == "request"
+		allowed = allowed || (ev.Event == "decision" && ev.Grant == g.ID && ev.Outcome == "allowed")
+	}
+	if !filed || !allowed {
+		t.Fatalf("audit log lacks the fake source's filing (%v) or its allowed decision naming grant %s (%v):\n%+v",
+			filed, g.ID, allowed, events)
 	}
 }
