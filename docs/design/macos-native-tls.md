@@ -3,7 +3,7 @@ title: "mise cannot reach HTTPS inside macos-user, and the keychain deny is why"
 date: 2026-10-23
 status: accepted
 stage: BUILT
-next: "Propose the rustls switch to nixpkgs (option F); write the account-mode CA line in the user guide (MT-D2); then graduate into docs/reference/"
+next: "Graduate into docs/reference/ as a system doc"
 tags: [design, macos, macos-user, seatbelt, tls, mise, ca-trust]
 summary: "Inside the macos-user Seatbelt profile, yolo's nixpkgs mise fails every HTTPS call with 'bad certificate format'. It is built with native-tls, whose SecureTransport handshake reads the server key through Apple's old CDSA code, which checks in with securityd (com.apple.SecurityServer). The profile denies that service on purpose because it fronts the login keychain. The proposal keeps the deny and ships a mise build that verifies through rustls-platform-verifier, which talks to trustd only. Measured on the maintainer's Mac 2026-10-23."
 ---
@@ -13,8 +13,8 @@ summary: "Inside the macos-user Seatbelt profile, yolo's nixpkgs mise fails ever
 **Status:** 2026-10-23. **Built:** the macos-user tool profile's mise is nixpkgs mise built with
 rustls (`noncontainerFloorSubstitutes` in `flake.nix`, from a colleague's pull request), and a
 run-as-you launch installs a repo's mise tools under the unchanged profile, measured on a Mac. The
-cause is measured too ([the Mac run](#measured-on-the-maintainers-mac-2026-10-23)). Option F and the
-user-guide line (MT-D2) are unbuilt.
+cause is measured too ([the Mac run](#measured-on-the-maintainers-mac-2026-10-23)). The user guide
+states account mode's CA gap (MT-D2). Option F is not pursued (MT-D6).
 
 > **In short.** Keep securityd denied and change mise, the same way the Go fix changed Go: ship
 > a mise build whose TLS verifies through the trust daemon the profile already allows, so
@@ -24,7 +24,7 @@ user-guide line (MT-D2) are unbuilt.
 just, …) fails to install, so the agent starts without them. It was reported from a managed Mac;
 the cause in [§2](#2-the-cause) predicts every Mac.
 
-**Cost.** Each Mac compiles mise once per nixpkgs bump until nixpkgs builds it this way itself.
+**Cost.** Each Mac compiles mise once per nixpkgs bump: no binary cache holds this variant.
 
 **Start at [§2](#2-the-cause).**
 
@@ -93,8 +93,8 @@ should be trusted with no bundle at all.
   Linux and the container backends keep stock nixpkgs mise.
 - **Cost:** no binary cache holds this variant, so each Mac compiles mise once per nixpkgs bump.
   If that proves too slow, option A (mise's official binary, hash-pinned) replaces it.
-- **End state:** the same switch proposed to nixpkgs (option F). Once it lands, the override is
-  deleted and every platform runs stock nixpkgs mise.
+- **This is the fix, not a bridge.** Proposing the switch to nixpkgs (option F) is not pursued
+  ([MT-D6](#decision-ledger)): outside a sandbox that denies securityd, nixpkgs' users gain nothing.
 - **Done looks like:** in a run-as-you launch with the profile unchanged, `mise ls-remote node`
   prints versions, and a repo's `mise.toml` tools install.
 
@@ -107,7 +107,7 @@ should be trusted with no bundle at all.
 | **C — allow `com.apple.SecurityServer`** | One line | **Breaks run-as-you's promise**: with the login keychain unlocked, the agent could list item attributes, add items, and read any item whose access list admits it without a prompt. Seatbelt filters this service by name only, so no narrower allow exists | Rejected outright (MT-D4) |
 | **D — no mise in the sandbox** | Repos' tools missing on macos-user | None | Rejected; it is today's failure |
 | **E — ask upstream to make rustls the macOS default** | Slow; not in our hands | — | Worth filing; not a fix |
-| **F — ask nixpkgs to build mise with `rustls-native-roots`** | One nixpkgs pull request; yolo then keeps nixpkgs mise everywhere | Same as A | The end state; B bridges until it lands |
+| **F — ask nixpkgs to build mise with `rustls-native-roots`** | One nixpkgs pull request; yolo then keeps nixpkgs mise everywhere | Same as A | Not pursued (MT-D6) |
 | **G — our own gatekeeper in front of securityd**, passing only the requests TLS needs | Apple's securityd protocol is private and versioned, and the service name is a compiled-in constant (`SECURITYSERVER_BOOTSTRAP_NAME` in Apple's `OSX/libsecurityd/lib/sscommon.h`; only an in-process C++ call overrides it), so steering a program to the gatekeeper means intercepting its service lookups | Keeps the deny if the filter is right; leaks the keychain under the gatekeeper's identity if not | Rejected (MT-D3): not simple and documented |
 | **H — replace the one CDSA call at program start** (`DYLD_INSERT_LIBRARIES`) | A small library, fixes every SecureTransport program | Keeps the deny | Rejected (MT-D3): monkey patching |
 
@@ -188,7 +188,7 @@ tools installed, with no profile change.
    > appropriate that we install ourselves. I guess ideally it would come from Nix. That would be
    > more convenient. But I don't want to maintain our own patches or anything."
 
-   Applied in [MT-D5](#decision-ledger): B as the bridge, F as the end state. Witness C passed on
+   Applied in [MT-D5](#decision-ledger): B, kept as the fix ([MT-D6](#decision-ledger)). Witness C passed on
    the maintainer's Mac ([the Mac run](#measured-on-the-maintainers-mac-2026-10-23)), under yolo's
    own profile too, so a rustls mise works under the deny.
 
@@ -216,7 +216,8 @@ tools installed, with no profile change.
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | MT-D1 | The `com.apple.SecurityServer` deny stays while any option that keeps it can work: it is how run-as-you keeps the agent away from the user's login keychain | 2026-10-23 | [§4](#4-alternatives) | — |
-| MT-D2 | Account mode may leave CAs held only in the user's login keychain untrusted by mise; the user guide says so ([OQ-MT2](#OQ-MT2) A) | 2026-10-23 | [§6](#6-what-this-does-not-cover) | pending |
+| MT-D2 | Account mode may leave CAs held only in the user's login keychain untrusted by mise; the user guide says so ([OQ-MT2](#OQ-MT2) A) | 2026-10-23 | [§6](#6-what-this-does-not-cover) | ✅ 2026-10-23, [Company certificates](../../userguide/guides/macos.md) in the macOS guide |
 | MT-D3 | No stand-in for securityd and no patched function: a gatekeeper only if it is simple and documented, which [G](#4-alternatives) is not; the maintainer: "If it requires undocumented things and hacking service names and monkey patching, I don't want that. I also don't want to monkey patch" | 2026-10-23 | [§4](#4-alternatives) | — |
 | MT-D4 | Keychain access inside any containment is a non-starter; the mise yolo delivers is ours to choose, ideally from Nix, with no patches we maintain ([OQ-MT1](#OQ-MT1)) | 2026-10-23 | [§3](#3-the-proposal) | — |
-| MT-D5 | Bridge: on darwin, the macos-user tool profile takes nixpkgs mise with its cargo features switched from `native-tls` to `rustls-native-roots` (a build setting, not a patch). End state: the same change proposed to nixpkgs (option F), after which the override is deleted. Fallback if the per-Mac compile proves too slow: option A. Witness C passed 2026-10-23 | 2026-10-23 | [§4](#4-alternatives) | ✅ 2026-10-23, `noncontainerFloorSubstitutes` in `flake.nix`, with the `rustls` feature: at mise v2026.10.3 it and `rustls-native-roots` map every crate to the same `reqwest/rustls`. Option F not yet proposed |
+| MT-D5 | Bridge: on darwin, the macos-user tool profile takes nixpkgs mise with its cargo features switched from `native-tls` to `rustls-native-roots` (a build setting, not a patch). Fallback if the per-Mac compile proves too slow: option A. Witness C passed 2026-10-23 | 2026-10-23 | [§4](#4-alternatives) | ✅ 2026-10-23, `noncontainerFloorSubstitutes` in `flake.nix`, with the `rustls` feature: at mise v2026.10.3 it and `rustls-native-roots` map every crate to the same `reqwest/rustls`. |
+| MT-D6 | The nixpkgs change (option F) is not pursued; the `flake.nix` substitute stays the fix. The maintainer: "I will not pursue this upstream" | 2026-10-23 | [§3](#3-the-proposal) | — |
