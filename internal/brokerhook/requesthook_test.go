@@ -186,10 +186,13 @@ func TestAnUnreadableStoreIsRetriedAndLoggedOnce(t *testing.T) {
 	if _, err := good.File(f.filing); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(blocker); err != nil {
+	// Swap the link in with one rename: a remove-then-symlink leaves a window in which the
+	// runner's next poll creates the store directory where the blocker was.
+	link := blocker + ".link"
+	if err := os.Symlink(filepath.Dir(good.Dir), link); err != nil { // bad.Dir now names good.Dir
 		t.Fatal(err)
 	}
-	if err := os.Symlink(filepath.Dir(good.Dir), blocker); err != nil { // bad.Dir now names good.Dir
+	if err := os.Rename(link, blocker); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the hook to run once the store reads", func() bool { _, err := os.Stat(marker); return err == nil })
