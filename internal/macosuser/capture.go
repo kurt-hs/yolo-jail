@@ -934,7 +934,7 @@ func selfCapturePlanProblems(plan CapturePlan) []string {
 		}
 		if w, ok := argvWordNamingAccount(argv); ok {
 			problems = append(problems, "a run-as-you capture argv names the second account "+SandboxUser+
-				" where it runs or locates something: "+shquote.JoinDisplay([]string{w}))
+				": "+shquote.JoinDisplay([]string{w}))
 		}
 	}
 	// THE BOOTSTRAP IS TOLD YOUR REAL HOME (MMP-D22), and its profile lets it stat that home.

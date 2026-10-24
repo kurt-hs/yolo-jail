@@ -1,6 +1,7 @@
 package macosuser
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -2144,70 +2145,82 @@ func selfModeProblems(plan RunPlan) []string {
 		plan.JailDaemonArgv, plan.ProbeArgv} {
 		if w, ok := argvWordNamingAccount(argv); ok {
 			problems = append(problems, "a run-as-you argv names the second account "+SandboxUser+
-				" where it runs or locates something: "+w)
+				": "+w)
 		}
 	}
 	return problems
 }
 
-// argvWordNamingAccount returns the first word of argv that names the second account where it
-// would RUN or LOCATE something, and whether there is one (MMP-D23). The words judged are:
-//
-//   - the account's name as a word of its own (`-u _yolojail`);
-//   - a word that starts with "/" or "-": a program, a path argument, or a flag, including a
-//     `--home=<path>` one;
-//   - an assignment NAME=VALUE whose value is a path or a colon-separated list of paths (HOME,
-//     PATH, TMPDIR, MISE_DATA_DIR, YOLO_DARWIN_REAL_HOME, a `sandbox-exec -D` parameter).
-//
-// Every other word is text, never a location: a JSON wire such as YOLO_FORK_BUILDS, which quotes a
-// failed build's stderr; a shell script's body; a subcommand's name. A diagnostic that mentions
-// /Users/_yolojail used to make the whole plan unviable, which also kept the missing-programs hatch
-// from starting the sandbox it was meant to start.
+// argvWordNamingAccount returns the first word of argv that names the second account, and whether
+// there is one (MMP-D23). Every word is judged whole — a path, a flag, an env pair, a JSON wire, a
+// shell body — with ONE exemption: the diagnostic fields of the two wires that carry a failed
+// build's text (diagnosticWireFields). A failed run-as-you build's YOLO_FORK_BUILDS quoted the
+// bootstrap's stderr, which named /Users/_yolojail, and refused every launch, the missing-programs
+// hatch's included. A wire that does not decode is judged whole, so the exemption fails closed.
 func argvWordNamingAccount(argv []string) (string, bool) {
 	for _, w := range argv {
-		if !strings.Contains(w, SandboxUser) {
-			continue
+		text := w
+		if name, value, ok := strings.Cut(w, "="); ok {
+			if fields, wire := diagnosticWireFields[name]; wire {
+				text = name + "=" + withoutWireFields(value, fields)
+			}
 		}
-		if w == SandboxUser || strings.HasPrefix(w, "/") || strings.HasPrefix(w, "-") {
-			return w, true
-		}
-		if name, value, ok := strings.Cut(w, "="); ok && envNameShape(name) && pathListValue(value) {
+		if namesSandboxAccount(text) {
 			return w, true
 		}
 	}
 	return "", false
 }
 
-// envNameShape reports whether s is spelled as an environment variable name.
-func envNameShape(s string) bool {
-	if s == "" {
-		return false
-	}
-	for i, r := range s {
-		switch {
-		case r == '_', r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z':
-		case r >= '0' && r <= '9' && i > 0:
-		default:
-			return false
-		}
-	}
-	return true
+// diagnosticWireFields names, per wire, the JSON fields of each entry that are diagnostic text and
+// never locate anything: entrypoint.ForkDelivery's and entrypoint.TreeDelivery's `reason` and
+// `cause`. Every other field (ForkDelivery's key; TreeDelivery's into, build, label, owner) is still
+// judged. TestDiagnosticWireFieldsMatchTheEntrypointTypes pins these spellings to the types' tags.
+var diagnosticWireFields = map[string][]string{
+	entrypoint.ForkBuildsEnv:   {"reason", "cause"},
+	entrypoint.PatchedTreesEnv: {"reason", "cause"},
 }
 
-// pathListValue reports whether v is an absolute path or a colon-separated list of them (empty
-// elements allowed, as PATH allows them).
-func pathListValue(v string) bool {
-	seen := false
-	for _, el := range strings.Split(v, ":") {
-		if el == "" {
-			continue
+// withoutWireFields returns the wire value with the named fields removed from every entry, or the
+// value unchanged when it does not decode as an object of objects.
+func withoutWireFields(value string, fields []string) string {
+	var entries map[string]map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(value), &entries); err != nil {
+		return value
+	}
+	for _, e := range entries {
+		for _, f := range fields {
+			delete(e, f)
 		}
-		if !strings.HasPrefix(el, "/") {
+	}
+	out, err := json.Marshal(entries)
+	if err != nil {
+		return value
+	}
+	return string(out)
+}
+
+// namesSandboxAccount reports whether s names the second account: SandboxUser as a whole token,
+// not part of a longer name. A path component (/Users/_yolojail), a value (USER=_yolojail,
+// HOME=~_yolojail) and a quoted word all count; /Users/you/code/my_yolojail_fork does not.
+func namesSandboxAccount(s string) bool {
+	for from := 0; ; {
+		i := strings.Index(s[from:], SandboxUser)
+		if i < 0 {
 			return false
 		}
-		seen = true
+		start, end := from+i, from+i+len(SandboxUser)
+		if (start == 0 || !accountNameByte(s[start-1])) && (end == len(s) || !accountNameByte(s[end])) {
+			return true
+		}
+		from = start + 1
 	}
-	return seen
+}
+
+// accountNameByte reports whether c can continue an account or file name, so a SandboxUser match
+// beside it is part of a longer name.
+func accountNameByte(c byte) bool {
+	return c == '_' || c == '-' || c == '.' || c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z'
 }
 
 // crossingArgvProblems checks every argv the plan runs as the sandbox account against the run-as

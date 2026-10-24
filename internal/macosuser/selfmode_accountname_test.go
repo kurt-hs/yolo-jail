@@ -1,6 +1,8 @@
 package macosuser
 
 import (
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -20,33 +22,72 @@ const forkBuildFailureWire = `{"mupacktree-x":{"reason":"mupacktree-x was not st
 	`"cause":{"lines":["The end of its stderr:","yolo internal darwin-bootstrap: cannot read the sandbox ` +
 	`account's home /Users/_yolojail (stat /Users/_yolojail: operation not permitted)"]}}}`
 
-// A BUILD FAILURE'S TEXT LEAVES THE LAUNCH VIABLE (MMP-D23): the decision rides the bootstrap's
-// env -i list through the real relay (buildBootstrapEnv), names /Users/_yolojail, and the plan
-// still passes, so the missing-programs hatch can start the sandbox. Red with the viability check
-// back on "any word containing _yolojail".
-func TestSelfModeABuildFailureNamingTheAccountKeepsThePlanViable(t *testing.T) {
-	env := jsonx.NewOrderedMap()
-	env.Set(entrypoint.ForkBuildsEnv, forkBuildFailureWire)
-	plan := BuildRunPlanWithDaemons("/Users/you/code/alpha", jsonx.NewOrderedMap(), nil, []string{"claude"},
+// patchedTreeFailureWire is a YOLO_PATCHED_TREES value for an extension whose build failed the
+// same way: its cause quotes the same stderr, and its other fields name nothing of the account's.
+func patchedTreeFailureWire() string {
+	return entrypoint.PatchedTreesWire(map[string]entrypoint.TreeDelivery{
+		"pi-ext": {Into: ".pi/agent/extensions/pi-ext", Owner: "pi",
+			Reason: "pi-ext was not mounted: its build failed on /Users/_yolojail",
+			Cause: &entrypoint.BuildCause{Lines: []string{"yolo internal darwin-bootstrap: cannot read the " +
+				"sandbox account's home /Users/_yolojail"}}},
+	})
+}
+
+// selfPlanWithEnv is a run-as-you launch plan of ws whose composed env is env.
+func selfPlanWithEnv(ws string, env *jsonx.OrderedMap) RunPlan {
+	return BuildRunPlanWithDaemons(ws, jsonx.NewOrderedMap(), nil, []string{"claude"},
 		"/usr/local/bin/yolo", "", HomeOverlay{}, HostContext{}, env, nil, nil,
 		JailDaemons{}, FloorStage{}, PlanSession{Mode: ModeSelf, HostHome: "/Users/you", HostUser: "you",
 			DarwinUserTempDir: "/private/var/folders/ab/xyz/T/"})
-	if !containsArg(plan.BootstrapArgv, entrypoint.ForkBuildsEnv+"="+forkBuildFailureWire) {
-		t.Fatalf("the fixture's decision does not reach the bootstrap argv, so this test proves nothing: %v",
-			plan.BootstrapArgv)
-	}
-	if problems := PlanInvariants(plan); len(problems) != 0 {
-		t.Errorf("a build failure's text made the run-as-you plan unviable:\n  %s", strings.Join(problems, "\n  "))
-	}
+}
 
-	// The same plan with a word that LOCATES something in the account's home is still refused.
+// A BUILD FAILURE'S TEXT LEAVES THE LAUNCH VIABLE (MMP-D23): each wire rides the bootstrap's env -i
+// list through the real relay (buildBootstrapEnv), its reason and cause name /Users/_yolojail, and
+// the plan still passes, so the missing-programs hatch can start the sandbox. Red with the wires'
+// diagnostic fields no longer exempted.
+func TestSelfModeABuildFailureNamingTheAccountKeepsThePlanViable(t *testing.T) {
+	for name, wire := range map[string][2]string{
+		"a fork's build":         {entrypoint.ForkBuildsEnv, forkBuildFailureWire},
+		"a patched tree's build": {entrypoint.PatchedTreesEnv, patchedTreeFailureWire()},
+	} {
+		env := jsonx.NewOrderedMap()
+		env.Set(wire[0], wire[1])
+		plan := selfPlanWithEnv("/Users/you/code/alpha", env)
+		if !containsArg(plan.BootstrapArgv, wire[0]+"="+wire[1]) {
+			t.Fatalf("%s: the fixture's decision does not reach the bootstrap argv, so this test proves "+
+				"nothing: %v", name, plan.BootstrapArgv)
+		}
+		if problems := PlanInvariants(plan); len(problems) != 0 {
+			t.Errorf("%s: a build failure's text made the run-as-you plan unviable:\n  %s", name,
+				strings.Join(problems, "\n  "))
+		}
+	}
+}
+
+// EVERY OTHER FORM THAT NAMES THE ACCOUNT IS STILL REFUSED (MMP-D23), on a viable plan with one word
+// added: the five forms the review found admitted by the first narrowing, a non-diagnostic field
+// of each wire, a wire that does not decode, and the plain location forms. Red with the check
+// narrowed to anything short of the whole argv.
+func TestSelfModeEveryOtherWordNamingTheAccountIsRefused(t *testing.T) {
+	plan := selfPlanWithEnv("/Users/you/code/alpha", jsonx.NewOrderedMap())
+	if problems := PlanInvariants(plan); len(problems) != 0 {
+		t.Fatalf("the base plan is not viable:\n  %s", strings.Join(problems, "\n  "))
+	}
 	for name, word := range map[string]string{
-		"a path value":   "HOME=/Users/_yolojail",
-		"a path list":    "PATH=/usr/bin:/Users/_yolojail/.local/bin",
-		"a flag":         "--home=/Users/_yolojail",
-		"a program":      "/Users/_yolojail/bin/yolo",
-		"the bare name":  SandboxUser,
-		"a -D parameter": "YOLO_STATE=/Users/_yolojail/.yolo",
+		"USER as the account":    "USER=_yolojail",
+		"a launch body":          "cd '/Users/_yolojail' && exec claude",
+		"an MCP command path":    `YOLO_MCP_SERVERS={"x":{"command":"/Users/_yolojail/bin/srv"}}`,
+		"a cache alias":          `YOLO_DARWIN_CACHE_ALIASES={"/Users/you/code/alpha/.yolo/home/.cache/pip":"/Users/_yolojail/pip"}`,
+		"a tilde home":           "HOME=~_yolojail",
+		"a fork's key":           entrypoint.ForkBuildsEnv + `={"x":{"key":"/Users/_yolojail/store/x"}}`,
+		"a tree's into":          entrypoint.PatchedTreesEnv + `={"x":{"into":"../../_yolojail/x"}}`,
+		"an undecodable wire":    entrypoint.ForkBuildsEnv + `=not json: /Users/_yolojail`,
+		"a path value":           "HOME=/Users/_yolojail",
+		"a path list":            "PATH=/usr/bin:/Users/_yolojail/.local/bin",
+		"a flag":                 "--home=/Users/_yolojail",
+		"a program":              "/Users/_yolojail/bin/yolo",
+		"the bare name":          SandboxUser,
+		"the account as a value": "--user=_yolojail",
 	} {
 		p := plan
 		p.BootstrapArgv = append(append([]string(nil), plan.BootstrapArgv[:2]...), append([]string{word},
@@ -57,27 +98,48 @@ func TestSelfModeABuildFailureNamingTheAccountKeepsThePlanViable(t *testing.T) {
 	}
 }
 
-// The word classes, one at a time: text is never a location, and each location form is judged.
-func TestArgvWordNamingAccountJudgesOnlyLocations(t *testing.T) {
-	for _, w := range []string{
-		entrypoint.ForkBuildsEnv + "=" + forkBuildFailureWire,
-		"YOLO_REASON=the account _yolojail is missing",
-		"cd '/Users/_yolojail' && exec claude", // a shell body, which the env-pair checks cover
-		"capture-run",
-		"NOT AN ENV=/Users/_yolojail",
-	} {
-		if got, ok := argvWordNamingAccount([]string{"/usr/bin/env", "-i", w}); ok {
-			t.Errorf("text was judged a location: %q", got)
+// A NAME THAT ONLY CONTAINS THE ACCOUNT'S IS NOT THE ACCOUNT: a workspace called my_yolojail_fork
+// is viable, in every argv that names it. Red with the match back on a raw substring.
+func TestSelfModeAWorkspaceNameContainingTheAccountsIsViable(t *testing.T) {
+	for _, ws := range []string{"/Users/you/code/my_yolojail_fork", "/Users/you/code/_yolojail-fork",
+		"/Users/you/code/x_yolojail"} {
+		plan := selfPlanWithEnv(ws, jsonx.NewOrderedMap())
+		if !strings.Contains(strings.Join(plan.BootstrapArgv, " "), ws) {
+			t.Fatalf("the plan does not name the workspace %s, so this test proves nothing", ws)
+		}
+		if problems := PlanInvariants(plan); len(problems) != 0 {
+			t.Errorf("workspace %s: refused for a name containing the account's:\n  %s", ws,
+				strings.Join(problems, "\n  "))
 		}
 	}
-	for _, w := range []string{"HOME=/Users/_yolojail", "-u", "/Users/_yolojail", "--user=_yolojail", "_yolojail",
-		"TMPDIR=/private/tmp::/Users/_yolojail"} {
-		if !strings.Contains(w, SandboxUser) {
-			continue
+	for _, s := range []string{"/Users/_yolojail", "USER=_yolojail", "'/Users/_yolojail/x'", "~_yolojail"} {
+		if !namesSandboxAccount(s) {
+			t.Errorf("%q names the account and was not matched", s)
 		}
-		if _, ok := argvWordNamingAccount([]string{"/usr/bin/env", w}); !ok {
-			t.Errorf("a location naming the account passed: %q", w)
+	}
+}
+
+// THE EXEMPT FIELDS ARE THE ENTRYPOINT TYPES' OWN SPELLINGS: renaming ForkDelivery's or
+// TreeDelivery's reason or cause tag without this list would put the diagnostic back under the check
+// (and the launch back under the refusal); a list naming a field the type does not have exempts
+// nothing.
+func TestDiagnosticWireFieldsMatchTheEntrypointTypes(t *testing.T) {
+	for wire, typ := range map[string]reflect.Type{
+		entrypoint.ForkBuildsEnv:   reflect.TypeOf(entrypoint.ForkDelivery{}),
+		entrypoint.PatchedTreesEnv: reflect.TypeOf(entrypoint.TreeDelivery{}),
+	} {
+		tags := map[string]string{}
+		for i := 0; i < typ.NumField(); i++ {
+			f := typ.Field(i)
+			tags[f.Name], _, _ = strings.Cut(f.Tag.Get("json"), ",")
 		}
+		want := []string{tags["Reason"], tags["Cause"]}
+		if got := diagnosticWireFields[wire]; !slices.Equal(got, want) {
+			t.Errorf("%s exempts %v; %s's diagnostic fields are tagged %v", wire, got, typ.Name(), want)
+		}
+	}
+	if len(diagnosticWireFields) != 2 {
+		t.Errorf("diagnosticWireFields names %d wires; each one added needs its type pinned here", len(diagnosticWireFields))
 	}
 }
 
