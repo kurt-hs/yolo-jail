@@ -65,6 +65,14 @@ later, each naming itself rather than the network. The next step depends on the 
   entry; the check goes through it. A proxy listening on your computer's `127.0.0.1` cannot be
   reached at that address from inside a container.
 
+**"DNS lookups in this jail took longer than 3s; outbound access was not confirmed".** The same
+check, when a name lookup was still waiting for an answer at the end of its few seconds. That is a
+slow resolver, often a VPN's, not proof that the jail is offline, so the launch says it could not
+confirm access rather than that there is none. Time a lookup inside the jail with
+`time getent hosts github.com`. If it answers, the network works and DNS is slow: look at the VPN
+or the resolver your host hands out. If it never answers, follow the steps for no outbound network
+above.
+
 **"No packs are configured, so this jail has no coding agent".** Add an agent pack to your user
 config; see [Choose an agent](../getting-started.md#choose-an-agent).
 

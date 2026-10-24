@@ -44,6 +44,16 @@ package entrypoint
 // (mise's tool downloads are GitHub releases, and so are most installers' payloads), and which is
 // the probe on a jail with no packs. The verdict is "reachable" when ANY target answers, so one
 // vendor's outage or one blocked domain never reads as a jail with no network.
+//
+// # A DNS lookup that times out is slow DNS, not "no network"
+//
+// A lookup still pending when the budget runs out proves nothing about the network: measured
+// 2026-10-24 on a Mac behind the AWS VPN client, every launch's first lookup through the jail's
+// resolver took about 4 s while curl reached github.com fine, and the old wording called that
+// jail offline. So a lookup timeout is its own fault (egressSlowDNS), and when any target ended
+// on one the warning says DNS was slow and outbound access was NOT CONFIRMED, never that there is
+// no network. A definitive answer (no such host, connection refused, no route, a connection that
+// resolved and then timed out) keeps the "no outbound network access" warning.
 
 import (
 	"bufio"
@@ -94,8 +104,12 @@ type egressFault int
 
 const (
 	egressReached egressFault = iota
-	// egressDNS: the name did not resolve — the jail's resolver is unreachable or answers nothing.
+	// egressDNS: the name did not resolve — the resolver answered that it does not exist, or
+	// failed outright.
 	egressDNS
+	// egressSlowDNS: the lookup (of the target, or of the proxy when proxy is set) was still
+	// pending when the budget ran out. Not evidence of a missing network; see the file comment.
+	egressSlowDNS
 	// egressTimeout: the name resolved, and the connection never completed within the budget —
 	// the signature of a network that drops traffic, the motivating case's.
 	egressTimeout
@@ -134,6 +148,7 @@ type egressProbe struct {
 	// The facts the report needs, read from the Env when the probe started — the probe's
 	// goroutines never touch the Env, whose Vars map later boot steps write.
 	backend     string
+	budget      time.Duration
 	disposition loopbackDisposition
 	native      bool
 	proxySource string
@@ -148,6 +163,7 @@ func startEgressProbe(e *Env, targets []string, dial egressDialer, budget time.D
 		done:        make(chan struct{}),
 		results:     make([]egressResult, len(targets)),
 		backend:     e.Getenv(paths.JailBackendEnv),
+		budget:      budget,
 		disposition: launcherLoopbackDisposition(e),
 		native:      nativeSandbox(e),
 	}
@@ -251,6 +267,9 @@ func probeEgressTarget(ctx context.Context, dial egressDialer, target string, pr
 func classifyEgressDial(err error, viaProxy bool) (egressFault, string) {
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
+		if dnsErr.IsTimeout || isEgressTimeout(err) {
+			return egressSlowDNS, "DNS: lookup timed out"
+		}
 		if viaProxy {
 			return egressProxyDNS, "DNS: " + dnsErrSummary(dnsErr)
 		}
@@ -463,9 +482,47 @@ func reportEgress(e *Env, p *egressProbe) {
 	if len(results) == 0 {
 		return
 	}
+	if egressAnySlowDNS(results) {
+		e.warn(egressSlowDNSWarning(p, results))
+		e.note(fmt.Sprintf("egress: none of %d target(s) confirmed, a DNS lookup outlasted %s, backend=%q disposition=%s",
+			len(results), p.budget, p.backend, p.disposition))
+		return
+	}
 	e.warn(egressWarning(p, results))
 	e.note(fmt.Sprintf("egress: none of %d target(s) reachable, backend=%q disposition=%s",
 		len(results), p.backend, p.disposition))
+}
+
+func egressAnySlowDNS(results []egressResult) bool {
+	for _, r := range results {
+		if r.fault == egressSlowDNS {
+			return true
+		}
+	}
+	return false
+}
+
+// egressSlowDNSWarning is the terminal text when no target answered and at least one lookup was
+// still pending at the end of the budget: DNS was slow, and whether traffic leaves the jail is
+// unknown. Its next step is to time a lookup, which tells slow DNS from none.
+func egressSlowDNSWarning(p *egressProbe, results []egressResult) string {
+	var b strings.Builder
+	where := "this jail"
+	if p.native {
+		where = "this sandbox"
+	}
+	b.WriteString("warning: DNS lookups in " + where + " took longer than " + p.budget.String() +
+		"; outbound access was not confirmed:\n")
+	for _, r := range results {
+		b.WriteString("  - " + egressResultLine(r, p.proxySource) + "\n")
+	}
+	b.WriteString("  A resolver this slow can make clients time out, each naming itself rather than DNS;\n" +
+		"  a VPN's resolver is a common cause.\n" +
+		"  Next step: time a lookup inside " + where + " with `time getent hosts " + egressNeutralHost + "`.\n" +
+		"  If it answers, the network works and DNS is slow: check the VPN or the resolver the host\n" +
+		"  hands out. If it never answers, treat this as no network:\n")
+	b.WriteString(egressNextStep(p, false))
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // egressWarning is the terminal text: what was found, one line per target, what it will look
@@ -496,6 +553,12 @@ func egressResultLine(r egressResult, proxySource string) string {
 	switch r.fault {
 	case egressDNS:
 		return r.target + ": the name did not resolve (" + r.detail + ")"
+	case egressSlowDNS:
+		if r.proxy != "" {
+			return r.target + ": looking up the proxy " + r.proxy + " named by " + proxySource +
+				" outlasted the probe's budget (" + r.detail + ")"
+		}
+		return r.target + ": looking up the name outlasted the probe's budget (" + r.detail + ")"
 	case egressTimeout:
 		return r.target + ": the connection timed out (" + r.detail + ")"
 	case egressConnect:

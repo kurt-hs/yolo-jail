@@ -121,6 +121,103 @@ func TestEgressProbeNamesARefusedConnection(t *testing.T) {
 	}
 }
 
+// A LOOKUP THAT TIMES OUT IS SLOW DNS, NOT "NO NETWORK"; a definitive failure keeps the
+// no-network fault. The classification table the warning is chosen from.
+func TestClassifyEgressDialTellsSlowDNSFromADefinitiveFailure(t *testing.T) {
+	op := func(err error) error { return &net.OpError{Op: "dial", Net: "tcp", Err: err} }
+	cases := []struct {
+		name     string
+		err      error
+		viaProxy bool
+		want     egressFault
+	}{
+		{"lookup timed out", op(&net.DNSError{Err: "i/o timeout", Name: "github.com", IsTimeout: true}), false, egressSlowDNS},
+		{"lookup outlived the context", op(&net.DNSError{Err: context.DeadlineExceeded.Error(), Name: "github.com",
+			UnwrapErr: context.DeadlineExceeded}), false, egressSlowDNS},
+		{"proxy lookup timed out", op(&net.DNSError{Err: "i/o timeout", Name: "proxy", IsTimeout: true}), true, egressSlowDNS},
+		{"no such host", dnsFailure("github.com"), false, egressDNS},
+		{"proxy: no such host", dnsFailure("proxy"), true, egressProxyDNS},
+		{"server failure", op(&net.DNSError{Err: "server misbehaving", Name: "github.com"}), false, egressDNS},
+		{"connection refused", op(syscall.ECONNREFUSED), false, egressConnect},
+		{"no route", op(syscall.EHOSTUNREACH), false, egressConnect},
+		{"network unreachable", op(syscall.ENETUNREACH), false, egressConnect},
+		{"resolved, then the connection timed out", op(context.DeadlineExceeded), false, egressTimeout},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got, detail := classifyEgressDial(c.err, c.viaProxy); got != c.want {
+				t.Errorf("classified as %d (%s), want %d", got, detail, c.want)
+			}
+		})
+	}
+}
+
+// What Go's own resolver returns when the probe's budget ends mid-lookup must land on the
+// slow-DNS fault: a resolver that receives the query and never answers, as a VPN's slow one does
+// for longer than the budget. No packet leaves the machine.
+func TestARealResolverTimeoutIsSlowDNS(t *testing.T) {
+	silent, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Skip("no loopback UDP:", err)
+	}
+	defer silent.Close()
+	d := &net.Dialer{Resolver: &net.Resolver{PreferGo: true,
+		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "udp", silent.LocalAddr().String())
+		}}}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_, err = d.DialContext(ctx, "tcp", "slow-dns.example:443")
+	if err == nil {
+		t.Fatal("a resolver that never answers resolved the name")
+	}
+	if got, detail := classifyEgressDial(err, false); got != egressSlowDNS {
+		t.Errorf("%v classified as %d (%s), want slow DNS", err, got, detail)
+	}
+}
+
+// The terminal text for slow DNS says so, never "no outbound network", and names a next step.
+// One target's definitive failure beside another's slow lookup still does not prove the jail
+// offline, so it gets the slow-DNS text too.
+func TestEgressProbeCallsADNSTimeoutSlowNotOffline(t *testing.T) {
+	slow := func(context.Context, string) (net.Conn, error) {
+		return nil, &net.OpError{Op: "dial", Net: "tcp",
+			Err: &net.DNSError{Err: "i/o timeout", Name: "github.com", IsTimeout: true}}
+	}
+	for _, c := range []struct {
+		name    string
+		targets []string
+		answer  func(context.Context, string) (net.Conn, error)
+	}{
+		{"one target", oneTarget, slow},
+		{"beside a refusal", []string{"api.vendor.example:443", "github.com:443"},
+			func(ctx context.Context, addr string) (net.Conn, error) {
+				if strings.HasPrefix(addr, "api.vendor.example") {
+					return nil, &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
+				}
+				return slow(ctx, addr)
+			}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := &fakeEgress{answer: c.answer}
+			term, log := runEgress(t, map[string]string{paths.JailBackendEnv: "podman"}, false, c.targets, f.dial)
+			for _, want := range []string{"warning: DNS lookups in this jail took longer than 200ms",
+				"outbound access was not confirmed", "github.com:443: looking up the name outlasted",
+				"Next step:", "time getent hosts github.com", "podman machine stop"} {
+				if !strings.Contains(term, want) {
+					t.Errorf("warning lacks %q:\n%s", want, term)
+				}
+			}
+			if strings.Contains(term, "no outbound network") {
+				t.Errorf("a DNS timeout must not read as no network:\n%s", term)
+			}
+			if !strings.Contains(log, "a DNS lookup outlasted") {
+				t.Errorf("the boot log must record the slow-DNS verdict:\n%s", log)
+			}
+		})
+	}
+}
+
 // ANY target answering is a jail with a network: one vendor's outage or one blocked domain is not
 // what this check reports.
 func TestEgressProbeIsSilentWhenAnyTargetAnswers(t *testing.T) {
