@@ -252,6 +252,13 @@ esac
 `)
 	write("go", `echo "go $* token=${GITHUB_TOKEN:-} gh=${GH_TOKEN:-} tap=${HOMEBREW_TAP_TOKEN:-} cachix=${CACHIX_AUTH_TOKEN:-}" >> "$TRACE"
 case "$*" in
+  *tools/release-gate\ darwin-floor*)
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = --wait-shas ]; then echo "wait-shas: $(tr '\n' ' ' < "$2")" >> "$TRACE"; shift 2; else shift; fi
+    done
+    if [ "${FAIL_FLOOR_GATE:-}" = 1 ]; then echo "fake floor refusal: gh workflow run darwin-floor-cache.yml --ref main" >&2; exit 1; fi
+    echo '{"cache":"yolo-jail"}'
+    ;;
   *tools/release-gate*)
     if [ "${FAIL_GATE:-}" = 1 ]; then echo "fake CI refusal" >&2; exit 1; fi
     echo '{"sha":"'"$TEST_SHA"'"}'
@@ -318,7 +325,7 @@ esac
 func commandEnv(bin, trace string, extra ...string) []string {
 	overridden := map[string]bool{"PATH": true, "TRACE": true, "TEST_SHA": true, "TEST_TAG_OBJECT": true,
 		"GITHUB_REPOSITORY": true, "GITHUB_REF_TYPE": true, "GITHUB_REF_NAME": true, "GITHUB_EVENT_NAME": true,
-		"GITHUB_RUN_ATTEMPT": true}
+		"GITHUB_RUN_ATTEMPT": true, "CACHIX_CONFIGURED": true}
 	for _, item := range extra {
 		if key, _, ok := strings.Cut(item, "="); ok {
 			overridden[key] = true
@@ -341,6 +348,9 @@ func commandEnv(bin, trace string, extra ...string) []string {
 		"GITHUB_REF_NAME=main",
 		"GITHUB_EVENT_NAME=workflow_dispatch",
 		"GITHUB_RUN_ATTEMPT=1",
+		// A fixture repository without Cachix: the darwin floor gate skips, as
+		// for a fork. The floor tests set it to true.
+		"CACHIX_CONFIGURED=false",
 	)
 	return append(env, extra...)
 }
@@ -1806,15 +1816,17 @@ func TestRequestResumesATagOnlyReleaseWithoutTouchingTheTag(t *testing.T) {
 func TestRequestJobTimeoutExceedsItsWaits(t *testing.T) {
 	ciMinutes := regexp.MustCompile(`release-gate [^\n]*--timeout ([0-9]+)m`).FindSubmatch(mustRead(t, "tools/release-wiring/preflight.sh"))
 	releaseSeconds := regexp.MustCompile(`RELEASE_WAIT_SECONDS:-([0-9]+)`).FindSubmatch(mustRead(t, "tools/release-wiring/request.sh"))
-	if ciMinutes == nil || releaseSeconds == nil {
-		t.Fatal("cannot find the CI wait in preflight.sh or the Release wait in request.sh")
+	floorMinutes := regexp.MustCompile(`--timeout ([0-9]+)m`).FindSubmatch(mustRead(t, "tools/release-wiring/darwin-floor-gate.sh"))
+	if ciMinutes == nil || releaseSeconds == nil || floorMinutes == nil {
+		t.Fatal("cannot find the CI wait in preflight.sh, the floor wait in darwin-floor-gate.sh or the Release wait in request.sh")
 	}
 	ci, _ := strconv.Atoi(string(ciMinutes[1]))
+	floor, _ := strconv.Atoi(string(floorMinutes[1]))
 	release, _ := strconv.Atoi(string(releaseSeconds[1]))
 	const slackMinutes = 15 // checkout, setup-go, the tag writes and the dispatches
 	job := readWorkflow(t, ".github/workflows/release-request.yml").Jobs["create-tag-and-dispatch"]
-	if want := ci + release/60 + slackMinutes; job.Timeout < want {
-		t.Fatalf("create-tag-and-dispatch timeout-minutes = %d, want at least %d (CI wait %dm + Release wait %dm + %dm)", job.Timeout, want, ci, release/60, slackMinutes)
+	if want := ci + floor + release/60 + slackMinutes; job.Timeout < want {
+		t.Fatalf("create-tag-and-dispatch timeout-minutes = %d, want at least %d (CI wait %dm + floor wait %dm + Release wait %dm + %dm)", job.Timeout, want, ci, floor, release/60, slackMinutes)
 	}
 }
 

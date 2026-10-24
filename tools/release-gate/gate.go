@@ -347,7 +347,7 @@ func (g *gate) getJSON(ctx context.Context, endpoint string, query url.Values, d
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
 			response.Body.Close()
 			cancel()
-			return nil, fmt.Errorf("the Actions API returned HTTP %d for %s", response.StatusCode, endpoint)
+			return nil, statusError{code: response.StatusCode, endpoint: endpoint}
 		}
 		body, err := io.ReadAll(io.LimitReader(response.Body, (5<<20)+1))
 		response.Body.Close()
@@ -371,6 +371,18 @@ func (g *gate) getJSON(ctx context.Context, endpoint string, query url.Values, d
 		return next, nil
 	}
 	return nil, errors.New("the Actions API retry limit reached")
+}
+
+// statusError is a non-retried, non-2xx Actions API answer. Its text is the
+// one every caller has always printed; the type lets a caller tell a 404 (a
+// workflow the default branch does not have yet) from a failure.
+type statusError struct {
+	code     int
+	endpoint string
+}
+
+func (e statusError) Error() string {
+	return fmt.Sprintf("the Actions API returned HTTP %d for %s", e.code, e.endpoint)
 }
 
 func retryDelay(retryAfter string, attempt int, now time.Time) time.Duration {

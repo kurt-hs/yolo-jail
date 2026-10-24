@@ -25,10 +25,11 @@ name: darwin floor cache
 # with `--option sandbox true` as a MEASUREMENT; this workflow never runs them, so what it
 # pushes is what a user's own unsandboxed launch would build.
 #
-# A RELEASE CAN SHIP BEFORE THIS PUSH HAS HAPPENED. Nothing in `release.yml` or
-# `publish.yml` waits on it, and the push takes as long as the build (about half an hour
-# cold). A user who installs that release then builds the floor themselves, slower but not
-# broken: losing this cache costs time only, never function.
+# A RELEASE WAITS FOR THIS PUSH. The release request's darwin floor cache gate
+# (tools/release-wiring/darwin-floor-gate.sh, docs/reference/release-process.md#PTG-D4)
+# refuses to tag a commit whose two floor profiles are not in the cache, waiting while a
+# run of this workflow for that commit's flake inputs is in progress. Losing this cache
+# still costs time only, never function: a user without it builds the floor themselves.
 on:
   push:
     branches: [main]

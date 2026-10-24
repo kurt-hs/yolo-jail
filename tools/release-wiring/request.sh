@@ -20,6 +20,14 @@ if ! GITHUB_REPOSITORY="$GITHUB_REPOSITORY" RELEASE_VERSION="$RELEASE_VERSION" \
   echo "✗ Final exact-SHA eligibility proof refused ${RELEASE_VERSION}; correct the issue and request this version again. No tag was created or changed." >&2
   exit 1
 fi
+# Before any tag write, and for a resume as well: the macOS floor profiles of
+# this exact commit must be in Cachix (docs/reference/release-process.md#PTG-D4).
+if ! GITHUB_REPOSITORY="$GITHUB_REPOSITORY" RELEASE_SHA="$RELEASE_SHA" GH_TOKEN="${GH_TOKEN:-}" \
+  CACHIX_CONFIGURED="${CACHIX_CONFIGURED:-}" CACHIX_CACHE="${CACHIX_CACHE:-}" DARWIN_FLOOR_PATHS="${DARWIN_FLOOR_PATHS:-}" \
+  tools/release-wiring/darwin-floor-gate.sh; then
+  echo "✗ The darwin floor cache gate refused ${RELEASE_VERSION}; take the step it names and request this version again. No tag was created or changed." >&2
+  exit 1
+fi
 
 tag="v${RELEASE_VERSION}"
 if ! refs=$(git ls-remote origin "refs/tags/${tag}"); then

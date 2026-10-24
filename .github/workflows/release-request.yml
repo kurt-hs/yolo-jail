@@ -63,6 +63,8 @@ jobs:
     permissions:
       contents: read
       actions: read
+    outputs:
+      darwin-floor-paths: ${{ steps.darwin-floor.outputs.paths }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -89,12 +91,27 @@ jobs:
           TARGET_ROOT: target
         run: tools/release-wiring/prepare.sh
 
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # Evaluates (never builds) the target flake's two macOS floor profiles, for
+      # the darwin floor cache gate the write job runs before the tag.
+      - name: Compute the darwin floor profile paths
+        id: darwin-floor
+        env:
+          RELEASE_SHA: ${{ inputs.sha }}
+          TARGET_ROOT: target
+        run: tools/release-wiring/darwin-floor-paths.sh
+
   create-tag-and-dispatch:
     needs: [eligibility, prepare-target]
     runs-on: ubuntu-latest
-    # Holds the CI wait (preflight.sh, 60m) and then the Release wait
-    # (request.sh, 90m) in one job; TestRequestJobTimeoutExceedsItsWaits pins it.
-    timeout-minutes: 170
+    # Holds the CI wait (preflight.sh, 60m), the darwin floor cache wait
+    # (darwin-floor-gate.sh, 100m) and then the Release wait (request.sh, 90m)
+    # in one job; TestRequestJobTimeoutExceedsItsWaits pins it.
+    timeout-minutes: 270
     permissions:
       contents: write
       actions: write
@@ -122,4 +139,9 @@ jobs:
           RELEASE_PRETAG: "1"
           RELEASE_ORDER_CHECK: "1"
           GH_TOKEN: ${{ github.token }}
+          # Whether the secret exists, never its value: the gate only reads the
+          # public cache, and a fork without Cachix skips it.
+          CACHIX_CONFIGURED: ${{ secrets.CACHIX_AUTH_TOKEN != '' }}
+          CACHIX_CACHE: ${{ vars.CACHIX_CACHE || 'yolo-jail' }}
+          DARWIN_FLOOR_PATHS: ${{ needs.prepare-target.outputs.darwin-floor-paths }}
         run: tools/release-wiring/request.sh
