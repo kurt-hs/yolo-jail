@@ -150,15 +150,17 @@ func sortWorking(ws []WorkingEntry) {
 // live grants (those whose request it filed) and its working set; with no workspace it ends
 // every live grant and leaves every working set (BB-D86: `--revoke all` is grants, and
 // `--revoke all --workspace <path>` is that workspace's grants and working set). A `g-` or
-// `w-` id ends that one record, and takes no workspace.
-func (s *Store) RevokeIn(id, workspace string) error {
+// `w-` id ends that one record, and takes no workspace. It returns how many live records it
+// ended, so a caller can say when a workspace matched nothing.
+func (s *Store) RevokeIn(id, workspace string) (int, error) {
 	if workspace != "" && id != "all" {
-		return errors.New("a workspace narrows only `all`; revoke one grant or entry by its id alone")
+		return 0, errors.New("a workspace narrows only `all`; revoke one grant or entry by its id alone")
 	}
+	ended := 0
 	if workspace != "" {
 		workspace = filepath.Clean(workspace)
 	}
-	return s.transaction(func(r *records, now time.Time) error {
+	err := s.transaction(func(r *records, now time.Time) error {
 		found := id == "all"
 		filedIn := map[string]string{}
 		for _, q := range r.requests {
@@ -174,6 +176,7 @@ func (s *Store) RevokeIn(id, workspace string) error {
 			}
 			found = true
 			if g.Ended.IsZero() {
+				ended++
 				g.Ended = now
 				g.EndReason = EndRevoked
 				if err := s.write("grants", g.ID, g); err != nil {
@@ -191,6 +194,7 @@ func (s *Store) RevokeIn(id, workspace string) error {
 			}
 			found = true
 			if w.Live() {
+				ended++
 				w.Ended, w.EndReason = now, EndRevoked
 				if err := s.write("working", w.ID, w); err != nil {
 					return err
@@ -202,4 +206,8 @@ func (s *Store) RevokeIn(id, workspace string) error {
 		}
 		return nil
 	})
+	if err != nil {
+		return 0, err
+	}
+	return ended, nil
 }

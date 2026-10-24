@@ -173,3 +173,43 @@ func TestApproveWatchText(t *testing.T) {
 		t.Fatalf("%q", errs.String())
 	}
 }
+
+// `--watch --json` over several stores opens with ONE "state" object holding every store's
+// records (boundary-broker.md BB-D72, §6.6), then each store's events.
+func TestApproveWatchJSONOpensWithOneMergedState(t *testing.T) {
+	fastWatch(t)
+	gh, r := approvalFixture(t)
+	gh.Source = "github"
+	ws := workingStore(t.TempDir())
+	e := addEntry(t, ws, "/home/u/code/app", "refs/heads/agent/x")
+	stores := []*brokerstore.Store{gh, ws}
+	ctx, cancel := context.WithCancel(context.Background())
+	var out, errs syncBuffer
+	done := make(chan int)
+	go func() { done <- approveAll(ctx, []string{"--watch", "--json"}, false, stores, &out, &errs) }()
+	waitLines(t, &out, 1)
+	if _, err := gh.Decide(r.ID, "pending", brokerstore.Decision{}); err != nil {
+		t.Fatal(err)
+	}
+	lines := waitLines(t, &out, 2)
+	cancel()
+	if rc := <-done; rc != 0 {
+		t.Fatal(rc, errs.String())
+	}
+	var events []string
+	for _, l := range lines {
+		var v struct {
+			Event string `json:"event"`
+		}
+		if err := json.Unmarshal([]byte(l), &v); err != nil {
+			t.Fatalf("%v %q", err, l)
+		}
+		events = append(events, v.Event)
+	}
+	if strings.Join(events, ",") != "state,request-decided" {
+		t.Fatalf("events %v, want one state then the decision:\n%s", events, strings.Join(lines, "\n"))
+	}
+	if !strings.Contains(lines[0], r.ID) || !strings.Contains(lines[0], e.ID) {
+		t.Fatalf("the opening state lacks a store's records (want %s and %s): %s", r.ID, e.ID, lines[0])
+	}
+}

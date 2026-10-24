@@ -143,8 +143,8 @@ func TestRevokeAllForWorkspace(t *testing.T) {
 	gA, gB := grantIn("/a"), grantIn("/b")
 	eA, _, _ := s.AddWorking(branch("/a", "refs/heads/x"))
 	eB, _, _ := s.AddWorking(branch("/b", "refs/heads/x"))
-	if err := s.RevokeIn("all", "/a"); err != nil {
-		t.Fatal(err)
+	if n, err := s.RevokeIn("all", "/a"); err != nil || n != 2 {
+		t.Fatalf("revoke /a: ended %d, want its grant and entry: %v", n, err)
 	}
 	_, gs, _ := s.List()
 	for _, g := range gs {
@@ -172,11 +172,11 @@ func TestRevokeAllForWorkspace(t *testing.T) {
 	if _, ok, _ := s.LiveWorking("/b", eB.Repo, eB.Resource); !ok {
 		t.Fatal("--revoke all with no workspace ended a working-set entry")
 	}
-	// A workspace with nothing in the store is not an error: there is nothing to end.
-	if err := s.RevokeIn("all", "/none"); err != nil {
-		t.Fatalf("empty workspace: %v", err)
+	// A workspace with nothing in the store is not an error: it ends nothing, and says so.
+	if n, err := s.RevokeIn("all", "/none"); err != nil || n != 0 {
+		t.Fatalf("empty workspace: ended %d, %v", n, err)
 	}
-	if err := s.RevokeIn(eB.ID, "/a"); err == nil {
+	if _, err := s.RevokeIn(eB.ID, "/a"); err == nil {
 		t.Fatal("a workspace filter was accepted with one id")
 	}
 }

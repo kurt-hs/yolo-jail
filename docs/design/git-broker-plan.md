@@ -939,8 +939,10 @@ measured assumption, with its stop-and-report condition.
 
 Found in the task 6 review; out of scope, not blocking.
 
-- **A push POST that gets a 401 is not replayed.** The push body streams, so a server that asks
-  for a credential only at the upload (and not at its `info/refs`) fails the push, naming the host.
+- **A push POST over 1 MiB that gets a 401 is not replayed.** That body streams, so a server that
+  asks for a credential only at the upload (and not at its `info/refs`) fails the push, naming the
+  host. A push of at most 1 MiB is buffered and replayed with the host's credential (fixed after
+  the task 9 review).
 - **A stalled upstream can hang a call once the jail side has closed**, over HTTPS as over SSH:
   `Broker.Handle` (`internal/gitbroker/broker.go`) cancels only when the jail's connection errors.
 - **A server whose CGI cannot take a chunked request body** (Go's `net/http/cgi` is one) refuses
@@ -953,9 +955,15 @@ Found in the task 6 review; out of scope, not blocking.
   commit to the same server succeeded: it sent `Content-Length: 444`, because git buffers a push
   body up to `http.postBuffer` (1 MiB by default) and streams chunked only above it. So the broker
   is less compatible than git for small pushes. A forge that git can push a large branch to
-  already takes chunked bodies; no real forge was reached from the test environment. *Fix:*
-  buffer the body up to 1 MiB and send its length, streaming chunked above that, as git does;
-  that also lets a small push replay its POST on a 401 (the first entry above).
+  already takes chunked bodies; no real forge was reached from the test environment.
+
+  *Fixed after the task 9 review:* the broker reads up to 1 MiB + 1 byte of the push body; at or
+  under 1 MiB it sends the body with a `Content-Length` (and replays it with a credential on a
+  401), and above that it streams chunked as before. The test server now answers a chunked POST
+  411 unless a test opts in, so every small HTTPS push test is a regression test, and
+  `TestHTTPSSmallPushSentWithLength` and `TestHTTPSLargePushStreamsChunked`
+  (`internal/gitbroker/https_test.go`) pin both sides. A server that refuses chunked bodies still
+  refuses a push over 1 MiB, as it refuses git's own.
 
 Found building task 9; out of scope, not blocking.
 
@@ -965,3 +973,11 @@ Found building task 9; out of scope, not blocking.
   the upstream then rejects the creation. It only ever narrows what the workspace may push.
 - **Revoking a working-set entry is not audited**, as revoking a grant is not: `yolo approve
   --revoke` writes the store only. `yolo audit --service git` shows the pushes, not the revocations.
+- **`yolo approve --watch` reports no working-set events.** It opens with one state holding every
+  store's live entries, but `brokerstore.Diff` compares requests and grants only, so an entry added,
+  deleted, gone or revoked while watching shows up only in the next `yolo approve` listing.
+- **ID-3's repository identity can merge two repositories.** It drops the user and strips a leading
+  `~/`, so on a host where a path is relative to the login's home, `alice@host:r.git` and
+  `bob@host:r.git` (two homes), or `ssh://host/~/r.git` and `ssh://host/r.git`, are one identity: a
+  grant or working-set entry for one covers the other. On the forges ID-3 was written for, where
+  the path names the repository whoever logs in, the forms are the same repository.

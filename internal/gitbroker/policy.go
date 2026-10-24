@@ -57,7 +57,18 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 	if b.cover != nil {
 		return b.cover
 	}
-	canCreate := grantCovers(f.Grants, repo) && slices.Contains(config.BrokeredGrantKinds(Source), grantCreateBranch)
+	granted := grantCovers(f.Grants, repo)
+	kindAllowed := slices.Contains(config.BrokeredGrantKinds(Source), grantCreateBranch)
+	canCreate := granted && kindAllowed
+	kindWarned := false
+	kindMissing := func() {
+		if !kindWarned {
+			kindWarned = true
+			say("this workspace's create-branch grant on " + repo + " is not in effect: your user config does not " +
+				"list create-branch under `brokered.git.grant_kinds`. Add it there on the host to let the broker " +
+				"create branches (the next push reads it), or push from the host.")
+		}
+	}
 	warned := false
 	storeFailed := func(err error) {
 		if !warned {
@@ -87,6 +98,9 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 			}
 			if canCreate {
 				return setCreateBranch, grantCreateBranch, true
+			}
+			if granted {
+				kindMissing()
 			}
 			return "", "", false
 		}

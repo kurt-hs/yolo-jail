@@ -103,8 +103,16 @@ w-0c7b1e813e940452e59c53612436f6df  working set  git  [/home/me/code/app]  repo 
 
 ```bash
 yolo approve --revoke w-0c7b1e813e940452e59c53612436f6df   # one branch
-yolo approve --revoke all --workspace ~/code/app            # every grant and branch of that project
+yolo approve --revoke all --workspace ~/code/app            # every working-set branch of that project
 ```
+
+Revoking ends what the broker recorded: the working-set entries, and any grant you allowed with
+`yolo approve`. It does not end the create-branch grant in the project's config, so the agent can
+still push a new branch afterward. To stop that, remove the grant from the project's
+`yolo-jail.jsonc` (`brokered.git.grants`), or remove `create-branch` from `brokered.git.grant_kinds`
+in your user config; the broker checks your user config at every push. A `--workspace` path that
+matches nothing says so and exits with an error; the path in brackets in `yolo approve` is the one
+to give.
 
 ## What happens
 

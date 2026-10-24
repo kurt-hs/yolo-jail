@@ -626,7 +626,10 @@ func (s *Store) ConsumeDispatchContext(ctx context.Context, jail, start, set, co
 
 // Revoke ends one grant or working-set entry by its id, or with "all" every live grant
 // (RevokeIn says what `all` leaves).
-func (s *Store) Revoke(id string) error { return s.RevokeIn(id, "") }
+func (s *Store) Revoke(id string) error {
+	_, err := s.RevokeIn(id, "")
+	return err
+}
 
 // NoteHookFailure records that the user's on_request failed for request id, with a one-line
 // failure and the tail of its output, so every listing of the request shows it. It decides

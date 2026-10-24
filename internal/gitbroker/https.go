@@ -43,6 +43,10 @@ import (
 // TLS uses the system roots. NOTHING turns verification off: no config key and no environment
 // variable reaches the TLS config, and the one seam (Broker.rootCAs) is set only by tests.
 
+// pushBufferMax is the largest push body the broker reads whole and sends with a
+// Content-Length, git's own default http.postBuffer (1 MiB); a larger one streams chunked.
+const pushBufferMax = 1 << 20
+
 // errNoCredential is a 401 the host's credential helper had no answer for.
 var errNoCredential = errors.New("the host has no credential for this remote")
 
@@ -393,11 +397,12 @@ func (h *httpsLeg) checkResponse(resp *http.Response, want string) int {
 			"credential on the host (run this fetch or push once there), then try again.")
 		return brokercore.ExitUnavailable
 	case resp.StatusCode == http.StatusUnauthorized:
-		// Only a streamed push POST gets here: it cannot be replayed with a credential.
+		// Only a push POST over pushBufferMax gets here: it streams, so it cannot be replayed
+		// with a credential.
 		h.ev.Outcome, h.ev.Reason = "refused", "the server asked for a credential only at the push's upload"
 		h.say("the server " + host + " asked for a credential only when the push was uploaded (HTTP 401), after " +
-			"reading its refs without one, so no credential was asked of the host and nothing was pushed. Push " +
-			"from the host instead.")
+			"reading its refs without one. The push is over 1 MiB, so it streams and cannot be sent again: no " +
+			"credential was asked of the host and nothing was pushed. Push from the host instead.")
 		return brokercore.ExitUnavailable
 	case resp.StatusCode/100 == 3:
 		h.ev.Outcome, h.ev.Reason = "refused", "the server redirected"
@@ -635,15 +640,32 @@ func (h *httpsLeg) push(in io.Reader, out io.Writer) int {
 		// A push of nothing: receive-pack would answer nothing, so nothing goes up.
 		return 0
 	}
-	// The judged bytes as read, then the pack to the client's end when there is one. The body
-	// streams: a 401 here cannot be replayed, and the advertisement GET has already settled
-	// the credential.
-	var body io.Reader = bytes.NewReader(p.teed)
+	// The judged bytes as read, then the pack to the client's end when there is one. A body of
+	// at most pushBufferMax is read whole and sent with a Content-Length, as git's own client
+	// does under http.postBuffer: a server or CGI host that cannot take a chunked body takes
+	// it, and a 401 on it is replayed with the host's credential like every other request. A
+	// larger body streams chunked, and a 401 on it cannot be replayed.
+	var full io.Reader = bytes.NewReader(p.teed)
 	if gitproto.NeedsPack(p.cmds) {
-		body = io.MultiReader(body, in)
+		full = io.MultiReader(full, in)
 	}
-	presp, err := h.send(http.MethodPost, "/git-receive-pack", "application/x-git-receive-pack-request",
-		"application/x-git-receive-pack-result", body)
+	head, err := io.ReadAll(io.LimitReader(full, pushBufferMax+1))
+	if err != nil {
+		h.ev.Outcome, h.ev.Reason = "failed", "the jail's push ended early"
+		h.say("the push from the jail ended early (" + err.Error() + "), so nothing was sent to " + h.remote.Host + ".")
+		return brokercore.ExitUnavailable
+	}
+	var presp *http.Response
+	if len(head) <= pushBufferMax {
+		presp, err = h.do(http.MethodPost, "/git-receive-pack", "application/x-git-receive-pack-request",
+			"application/x-git-receive-pack-result", head)
+	} else {
+		presp, err = h.send(http.MethodPost, "/git-receive-pack", "application/x-git-receive-pack-request",
+			"application/x-git-receive-pack-result", io.MultiReader(bytes.NewReader(head), full))
+		if err == nil {
+			h.settle(presp)
+		}
+	}
 	// A failed POST is answered in git's own report, then the rest of git's stream is read and
 	// dropped, as refuseToClient does. The report goes first: a push of deletes only sends no
 	// pack and keeps its side open until it has read the report.
@@ -653,7 +675,6 @@ func (h *httpsLeg) push(in io.Reader, out io.Writer) int {
 		_, _ = io.Copy(io.Discard, in)
 		return code
 	}
-	h.settle(presp)
 	if code := h.checkResponse(presp, "application/x-git-receive-pack-result"); code != 0 {
 		drainClose(presp)
 		_ = writeRefusal(out, p.caps, p.cmds, sameReason(len(p.cmds), "the git-broker's HTTPS upstream failed; its reason is above"))

@@ -3,6 +3,7 @@ package gitbroker
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/x509"
 	"fmt"
 	"io"
@@ -38,12 +39,16 @@ type seenRequest struct {
 	AnyAuth                  bool // carried an Authorization header at all
 	Status                   int
 	Command                  string // a POST body's first line: a v2 command, or a push's first command
+	Chunked                  bool   // a POST sent with no length (Transfer-Encoding: chunked)
 }
 
 func (r seenRequest) String() string {
 	s := fmt.Sprintf("%s %s Git-Protocol=%q auth=%v -> %d", r.Method, r.URI, r.GitProtocol, r.AnyAuth, r.Status)
 	if r.Command != "" {
 		s += " [" + r.Command + "]"
+	}
+	if r.Chunked {
+		s += " chunked"
 	}
 	return s
 }
@@ -107,6 +112,9 @@ type httpsOpts struct {
 	authOnlyPushPost bool
 	// grants are the scope file's approved user grants.
 	grants []brokerscope.Grant
+	// acceptChunked de-chunks a chunked POST for http-backend. Without it the server answers a
+	// chunked POST 411, as a CGI host that cannot take one does (net/http/cgi refuses it).
+	acceptChunked bool
 }
 
 type httpsFixture struct {
@@ -142,14 +150,17 @@ func newHTTPSFixture(t *testing.T, o httpsOpts) *httpsFixture {
 				user, pass, ok := r.BasicAuth()
 				rec := seenRequest{Method: r.Method, URI: r.URL.RequestURI(), GitProtocol: r.Header.Get("Git-Protocol"),
 					Authed: ok && user == httpsUser && pass == httpsPass, AnyAuth: r.Header.Get("Authorization") != ""}
+				rec.Chunked = r.Method == http.MethodPost && r.ContentLength < 0
 				if r.Method == http.MethodPost {
 					body, _ := io.ReadAll(r.Body)
 					rec.Command = firstCommand(body)
-					// net/http/cgi refuses a chunked body, which the broker streams a push as
-					// (git's own client does too, for a large one), so the test server hands
+					// net/http/cgi refuses a chunked body, which the broker streams a push over
+					// 1 MiB as (git's own client does too); only acceptChunked hands
 					// http-backend the buffered body with a length.
 					r.Body = io.NopCloser(bytes.NewReader(body))
-					r.ContentLength, r.TransferEncoding = int64(len(body)), nil
+					if o.acceptChunked {
+						r.ContentLength, r.TransferEncoding = int64(len(body)), nil
+					}
 				}
 				sw := &statusRecorder{ResponseWriter: w, status: 200}
 				defer func() {
@@ -158,6 +169,10 @@ func newHTTPSFixture(t *testing.T, o httpsOpts) *httpsFixture {
 					h.srv.seen = append(h.srv.seen, rec)
 					h.srv.mu.Unlock()
 				}()
+				if rec.Chunked && !o.acceptChunked {
+					sw.WriteHeader(http.StatusLengthRequired)
+					return
+				}
 				pushPost := r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-receive-pack")
 				needAuth := !o.authOnlyPushPost || pushPost
 				if (needAuth && !rec.Authed) || (o.rejectPushPost && pushPost) {
@@ -569,12 +584,29 @@ func TestHTTPSPushPostRefusedCredentialRejected(t *testing.T) {
 	}
 }
 
-// A server that wants a credential only at the push's upload cannot get one (the streamed body
-// is not replayed), and the message does not claim one was filled.
-func TestHTTPSPushPostAuthWithoutCredential(t *testing.T) {
+// A server that wants a credential only at the push's upload gets one for a push of at most
+// 1 MiB: the buffered body is replayed with the host's credential, as every other request is.
+func TestHTTPSPushPostAuthReplaysASmallPush(t *testing.T) {
 	h := newHTTPSFixture(t, httpsOpts{authOnlyPushPost: true,
 		cover: func(gitproto.Command) (string, string, bool) { return "create-branch", "create-branch", true }})
 	h.localCommit()
+	if out, err := h.git("push", "origin", "HEAD:refs/heads/agent/x"); err != nil {
+		t.Fatalf("push: %v\n%s\nrequests:\n%s", err, out, h.srv.log(t))
+	}
+	if got, want := mustGit(t, h.bare, "rev-parse", "agent/x"), mustGit(t, h.ws, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("bare agent/x %s, local HEAD %s", got, want)
+	}
+	if len(h.callsOf("fill")) != 1 || len(h.callsOf("approve")) != 1 {
+		t.Fatalf("credential calls %v", h.credCalls())
+	}
+}
+
+// A server that wants a credential only at the upload of a push over 1 MiB cannot get one
+// (the streamed body is not replayed), and the message does not claim one was filled.
+func TestHTTPSPushPostAuthWithoutCredential(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{authOnlyPushPost: true, acceptChunked: true,
+		cover: func(gitproto.Command) (string, string, bool) { return "create-branch", "create-branch", true }})
+	h.bigCommit()
 	out, err := h.git("push", "origin", "HEAD:refs/heads/agent/x")
 	if err == nil || !strings.Contains(out, "asked for a credential only when the push was uploaded") ||
 		strings.Contains(out, "refused the credential") {
@@ -661,5 +693,65 @@ func TestCreateBranchOverHTTPS(t *testing.T) {
 	}
 	if p := lastPush(t); p.Set != "working-set" || len(p.Refs) != 1 || p.Refs[0].CoveredBy != live[0].ID {
 		t.Fatalf("update audit %+v", p)
+	}
+}
+
+// bigCommit commits a file of random bytes larger than pushBufferMax, so its push streams.
+func (h *httpsFixture) bigCommit() {
+	h.t.Helper()
+	b := make([]byte, pushBufferMax+pushBufferMax/2)
+	if _, err := rand.Read(b); err != nil {
+		h.t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h.ws, "big"), b, 0o644); err != nil {
+		h.t.Fatal(err)
+	}
+	mustGit(h.t, h.ws, "add", "big")
+	mustGit(h.t, h.ws, "commit", "-q", "-m", "big")
+}
+
+// pushPosts is the server's receive-pack POSTs.
+func (h *httpsFixture) pushPosts() []seenRequest {
+	var posts []seenRequest
+	for _, r := range h.srv.requests() {
+		if r.Method == http.MethodPost && strings.HasSuffix(strings.SplitN(r.URI, "?", 2)[0], "/git-receive-pack") {
+			posts = append(posts, r)
+		}
+	}
+	return posts
+}
+
+// A push of at most 1 MiB is sent with a Content-Length, so a server or CGI host that refuses
+// a chunked body (this one answers 411) takes it.
+func TestHTTPSSmallPushSentWithLength(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{
+		cover: func(gitproto.Command) (string, string, bool) { return "create-branch", "create-branch", true }})
+	h.localCommit()
+	if out, err := h.git("push", "origin", "HEAD:refs/heads/agent/x"); err != nil {
+		t.Fatalf("push to a server that refuses chunked bodies: %v\n%s\nrequests:\n%s", err, out, h.srv.log(t))
+	}
+	if got, want := mustGit(t, h.bare, "rev-parse", "agent/x"), mustGit(t, h.ws, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("bare agent/x %s, local HEAD %s", got, want)
+	}
+	posts := h.pushPosts()
+	if len(posts) != 1 || posts[0].Chunked {
+		t.Fatalf("push POSTs %+v, want one with a length", posts)
+	}
+}
+
+// A push over 1 MiB streams chunked, as git's own client streams one.
+func TestHTTPSLargePushStreamsChunked(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{acceptChunked: true,
+		cover: func(gitproto.Command) (string, string, bool) { return "create-branch", "create-branch", true }})
+	h.bigCommit()
+	if out, err := h.git("push", "origin", "HEAD:refs/heads/agent/x"); err != nil {
+		t.Fatalf("push: %v\n%s\nrequests:\n%s", err, out, h.srv.log(t))
+	}
+	if got, want := mustGit(t, h.bare, "rev-parse", "agent/x"), mustGit(t, h.ws, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("bare agent/x %s, local HEAD %s", got, want)
+	}
+	posts := h.pushPosts()
+	if len(posts) != 1 || !posts[0].Chunked {
+		t.Fatalf("push POSTs %+v, want one chunked", posts)
 	}
 }

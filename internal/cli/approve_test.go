@@ -265,6 +265,13 @@ func TestApproveRevokeAllWorkspace(t *testing.T) {
 	if rc := approveAll(context.Background(), []string{"--revoke", "all", "--workspace", a + "/"}, false, stores, &out, &errs); rc != 0 {
 		t.Fatalf("revoke all --workspace: %d %s", rc, errs.String())
 	}
+	// The output counts what it ended and says the config's create-branch grant stays, naming
+	// both places that remove it.
+	for _, want := range []string{"Revoked 2 ", "stays", "brokered.git.grants", "brokered.git.grant_kinds"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("revoke output lacks %q:\n%s", want, out.String())
+		}
+	}
 	_, gs, _ := gh.List()
 	for _, g := range gs {
 		if g.ID == gA.ID && g.EndedBy() != brokerstore.EndRevoked {
@@ -287,5 +294,26 @@ func TestApproveRevokeAllWorkspace(t *testing.T) {
 	}
 	if _, ok, _ := ws.LiveWorking(b, eB.Repo, eB.Resource); !ok {
 		t.Fatal("a refused revoke ended an entry")
+	}
+}
+
+// A --workspace path that matches nothing does not report success: it says nothing matched,
+// points at the listing that shows each entry's workspace, and exits with the unknown-id code.
+func TestApproveRevokeAllWorkspaceMatchingNothing(t *testing.T) {
+	ws := workingStore(t.TempDir())
+	root := t.TempDir()
+	e := addEntry(t, ws, root+"/app", "refs/heads/x")
+	var out, errs bytes.Buffer
+	rc := approveAll(context.Background(), []string{"--revoke", "all", "--workspace", root + "/typo"}, false,
+		[]*brokerstore.Store{ws}, &out, &errs)
+	if rc != approveExitUnknownID {
+		t.Fatalf("rc %d, want %d (out %q, errs %q)", rc, approveExitUnknownID, out.String(), errs.String())
+	}
+	if strings.Contains(out.String(), "Revoked") || !strings.Contains(errs.String(), "nothing to revoke") ||
+		!strings.Contains(errs.String(), "Next: run `yolo approve`") {
+		t.Fatalf("out %q errs %q", out.String(), errs.String())
+	}
+	if _, ok, _ := ws.LiveWorking(e.Workspace, e.Repo, e.Resource); !ok {
+		t.Fatal("a revoke that matched nothing ended an entry")
 	}
 }

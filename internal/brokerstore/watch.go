@@ -152,12 +152,21 @@ func (s *Store) Watch(ctx context.Context, interval time.Duration, start func(Sn
 	if start != nil {
 		start(prev)
 	}
+	s.WatchFrom(ctx, prev, interval, emit, warn)
+	return nil
+}
+
+// WatchFrom polls the store every interval from prev, a snapshot the caller already read, and
+// hands each event since it to emit until ctx ends; a failed read goes to warn and the next tick
+// tries again. A caller following several stores reads each one first, shows them as one state,
+// and then follows each from its own snapshot, so nothing between the read and the poll is lost.
+func (s *Store) WatchFrom(ctx context.Context, prev Snapshot, interval time.Duration, emit func(Event), warn func(error)) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case <-t.C:
 		}
 		cur, err := s.Snapshot()

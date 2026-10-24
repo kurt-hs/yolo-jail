@@ -793,6 +793,10 @@ func TestUserKindRemovedTakesEffectAtNextPush(t *testing.T) {
 	if err == nil || !strings.Contains(out, reasonNeedsApproval) {
 		t.Fatalf("a creation after the kind was removed: %v\n%s", err, out)
 	}
+	// The refusal names the user-config key that would let the grant work.
+	if !strings.Contains(out, "brokered.git.grant_kinds") {
+		t.Fatalf("the refusal does not name brokered.git.grant_kinds:\n%s", out)
+	}
 	if f.upstreamRef("refs/heads/agent/y") != "" {
 		t.Fatal("agent/y reached the upstream")
 	}
@@ -879,5 +883,43 @@ func TestMainStillRefused(t *testing.T) {
 	}
 	if n := len(liveEntries(t)); n != 0 {
 		t.Fatalf("%d entries after a refused push", n)
+	}
+}
+
+// The broker re-reads the live scope file at every push: a grant withdrawn between two
+// creations (as `yolo config apply` withdraws it) refuses the second.
+func TestGrantWithdrawnBetweenCreationsRefusesTheSecond(t *testing.T) {
+	f := grantedFixture(t)
+	f.commit("one")
+	f.mustPush("origin", "HEAD:refs/heads/agent/x")
+	sf, err := brokerscope.ReadFile(f.scopeFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := brokerscope.ReplaceScopeContext(context.Background(), f.scopeFile, f.broker.bound, sf.Repos, nil); err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.git("push", "origin", "HEAD:refs/heads/agent/y")
+	if err == nil || !strings.Contains(out, reasonNeedsApproval) {
+		t.Fatalf("a creation after the grant was withdrawn: %v\n%s", err, out)
+	}
+	if f.upstreamRef("refs/heads/agent/y") != "" {
+		t.Fatal("agent/y reached the upstream")
+	}
+}
+
+// A create-branch grant covers branches only: a tag creation under it is refused.
+func TestTagCreationUnderGrantRefused(t *testing.T) {
+	f := grantedFixture(t)
+	f.commit("one")
+	out, err := f.git("push", "origin", "HEAD:refs/tags/v1")
+	if err == nil || !strings.Contains(out, reasonNeedsApproval) {
+		t.Fatalf("a tag creation under create-branch: %v\n%s", err, out)
+	}
+	if f.upstreamRef("refs/tags/v1") != "" {
+		t.Fatal("the tag reached the upstream")
+	}
+	if n := len(liveEntries(t)); n != 0 {
+		t.Fatalf("%d entries after a refused tag", n)
 	}
 }
