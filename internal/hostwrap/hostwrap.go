@@ -492,10 +492,16 @@ func LookPathSkipping(pathEnv, bin string, skipRoots []string) (string, error) {
 		}
 		return abs, nil
 	}
+	// Each skip root is compared as spelled and with its symlinks resolved, and so is each
+	// entry: a PATH entry that reaches a skipped directory through a link (or a skip root under
+	// a symlinked HOME) is still skipped.
 	var cleanSkips []string
 	for _, r := range skipRoots {
 		if r != "" {
 			cleanSkips = append(cleanSkips, filepath.Clean(r))
+			if rr, err := filepath.EvalSymlinks(r); err == nil {
+				cleanSkips = append(cleanSkips, rr)
+			}
 		}
 	}
 	var searched []string
@@ -505,6 +511,9 @@ func LookPathSkipping(pathEnv, bin string, skipRoots []string) (string, error) {
 		}
 		clean := filepath.Clean(dir)
 		if underAny(clean, cleanSkips) {
+			continue
+		}
+		if rd, err := filepath.EvalSymlinks(clean); err == nil && underAny(rd, cleanSkips) {
 			continue
 		}
 		searched = append(searched, clean)

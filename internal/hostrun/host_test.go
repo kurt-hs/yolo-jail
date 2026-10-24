@@ -533,6 +533,74 @@ func TestPathEntryProblemJudgesAManagedLinkByWhereItLeads(t *testing.T) {
 	}
 }
 
+// TestPathEntryProblemGivesALinkedManagedDirNoExemption: when the managed dir is itself a link
+// (<state>/bin -> <state>/cache), the exemption would follow it into the jail-writable cache, so
+// it is withdrawn: an entry through the link and the cache named directly are both refused.
+func TestPathEntryProblemGivesALinkedManagedDirNoExemption(t *testing.T) {
+	state := evalTemp(t)
+	cache := filepath.Join(state, "cache")
+	if err := os.MkdirAll(filepath.Join(cache, "wrap"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	managed := filepath.Join(state, "bin")
+	if err := os.Symlink(cache, managed); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range []string{filepath.Join(managed, "wrap"), filepath.Join(cache, "wrap")} {
+		if why := pathEntryProblem(entry, []string{state}, []string{managed}); !strings.Contains(why, "state directory") {
+			t.Errorf("%s was allowed through a linked managed dir: %q", entry, why)
+		}
+	}
+}
+
+// TestPathEntryProblemAllowsTheManagedDirUnderALinkedHome: a HOME reached through a link
+// (Silverblue's /home -> /var/home) leaves the managed dir where it says it is, so it is allowed
+// by either spelling.
+func TestPathEntryProblemAllowsTheManagedDirUnderALinkedHome(t *testing.T) {
+	root := evalTemp(t)
+	realHome := filepath.Join(root, "var", "home")
+	if err := os.MkdirAll(filepath.Join(realHome, "state", "bin", "wrap"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "var", "home"), filepath.Join(root, "home")); err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(root, "home", "state")
+	managed := filepath.Join(state, "bin")
+	for _, entry := range []string{filepath.Join(managed, "wrap"), filepath.Join(realHome, "state", "bin", "wrap")} {
+		if why := pathEntryProblem(entry, []string{state}, []string{managed}); why != "" {
+			t.Errorf("%s was refused: %q", entry, why)
+		}
+	}
+}
+
+// TestLookProgramSkipsTheManagedDirReachedThroughALink: PATH spells the wrap dir through a link
+// to the state dir; the lookup still skips it and finds the real program.
+func TestLookProgramSkipsTheManagedDirReachedThroughALink(t *testing.T) {
+	root := evalTemp(t)
+	state := filepath.Join(root, "state")
+	wrap := filepath.Join(state, "bin", "wrap")
+	real := filepath.Join(root, "real")
+	for _, d := range []string{wrap, real, filepath.Join(root, "x")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeScript(t, filepath.Join(wrap, "say"), "echo WRAPPED")
+	writeScript(t, filepath.Join(real, "say"), "echo real")
+	if err := os.Symlink(state, filepath.Join(root, "x", "alias")); err != nil {
+		t.Fatal(err)
+	}
+	pathVal := filepath.Join(root, "x", "alias", "bin", "wrap") + string(os.PathListSeparator) + real
+	got, err := lookProgram("say", pathVal, root, []string{filepath.Join(state, "bin")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(real, "say"); got != want {
+		t.Fatalf("resolved %q, want %q", got, want)
+	}
+}
+
 func TestHostRunRefusesTheGHCredentialForm(t *testing.T) {
 	f := newHostFixture(t)
 	if rc := f.run(t, "gh", "auth", "token"); rc != 64 {

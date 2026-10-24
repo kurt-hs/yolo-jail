@@ -78,8 +78,9 @@ agent is told too.
 - **A `gh` command that prints your GitHub token**, such as `gh auth token`.
 - **A `PATH` the jail could write to.** An empty or relative entry, or one inside a project
   directory or yolo's own state, could swap in a different program. Remove it from that shell.
-  yolo's own host wrapper folder, `~/.local/share/yolo-jail/bin/wrap`, is allowed, since no jail
-  can write it. yolo looks past it for the program, so `gh` runs your real `gh`, not a wrapper.
+  yolo's own folder of generated host programs, `~/.local/share/yolo-jail/bin`, is allowed,
+  since no jail can write it. That includes the host wrapper folder, `bin/wrap`. yolo looks past
+  that folder for the program, so `gh` runs your real `gh`, not a wrapper.
 - **A link the jail planted where yolo writes.** yolo will not write through it.
 
 ## Where results live

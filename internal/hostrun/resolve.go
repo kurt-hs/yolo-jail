@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/hostwrap"
@@ -53,16 +54,57 @@ func withinAny(p string, dirs []string) bool {
 	return false
 }
 
+// resolveExisting is p with its symlinks resolved as far as it exists: the nearest existing
+// ancestor resolved, the missing rest joined on lexically.
+func resolveExisting(p string) string {
+	p = filepath.Clean(p)
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	parent := filepath.Dir(p)
+	if parent == p {
+		return p
+	}
+	return filepath.Join(resolveExisting(parent), filepath.Base(p))
+}
+
+// trustedManagedDirs returns the spellings of each managed dir that is really where it says it
+// is: inside a state dir, and resolving to the same place inside that state dir resolved. A
+// managed dir that is itself a link (say <state>/bin -> <state>/cache) would carry the exemption
+// to whatever it points at, so it gets none. Both sides are resolved, so a symlinked HOME
+// (/home -> /var/home) still matches. Each trusted dir is returned as spelled and resolved.
+func trustedManagedDirs(stateDirs, managedDirs []string) []string {
+	var out []string
+	for _, m := range managedDirs {
+		m = filepath.Clean(m)
+		for _, s := range stateDirs {
+			s = filepath.Clean(s)
+			if s == "" || !within(m, s) || m == s {
+				continue
+			}
+			rel, _ := filepath.Rel(s, m)
+			rm := resolveExisting(m)
+			if rm == filepath.Join(resolveExisting(s), rel) {
+				out = append(out, m, rm)
+			}
+			break
+		}
+	}
+	return out
+}
+
 // pathEntryProblem says why a PATH entry may supply jail-written code, or "" when it cannot.
 // Every entry is checked, searched or not, because the child inherits PATH (HX-D32).
 //
 // managedDirs are yolo's host-managed directories (hostpath.ManagedDirs: the generated bin tree,
 // which holds the host launch wrappers a user is asked to PREPEND to PATH). They sit inside the
 // state directory, but no backend mounts them into a jail, so an entry in one is not refused for
-// being in the state directory. Each spelling of the entry is judged on its own: a managed name
-// that resolves elsewhere in the state directory is still refused, and the .yolo check applies
-// to every entry regardless.
+// being in the state directory — provided the managed dir is not itself a link out of its place
+// (trustedManagedDirs), in which case it is exempt from nothing. Each spelling of the entry is
+// judged on its own: a name inside the managed dir that is a link to elsewhere in the state
+// directory is still refused, and the .yolo check applies to every entry regardless.
 func pathEntryProblem(entry string, stateDirs, managedDirs []string) string {
+	trusted := trustedManagedDirs(stateDirs, managedDirs)
 	if entry == "" {
 		return "an empty entry, which means the current directory"
 	}
@@ -77,7 +119,7 @@ func pathEntryProblem(entry string, stateDirs, managedDirs []string) string {
 		if h := yoloAncestor(p); h != "" {
 			return "inside " + h + ", which holds a .yolo"
 		}
-		if withinAny(p, managedDirs) {
+		if slices.ContainsFunc(trusted, func(d string) bool { return within(p, d) }) {
 			continue
 		}
 		for _, s := range stateDirs {

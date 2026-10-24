@@ -550,6 +550,32 @@ func TestLookPathSkippingIsTheRecursionGuard(t *testing.T) {
 	}
 }
 
+// TestLookPathSkippingSkipsAnEntryReachedThroughALink: a PATH entry spelled through a link to
+// the state dir (/x/alias/bin/wrap, alias -> state) is the skipped dir, and is skipped.
+func TestLookPathSkippingSkipsAnEntryReachedThroughALink(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(root, "state")
+	mkexec(t, filepath.Join(state, "bin", "wrap"), "claude")
+	real := mkexec(t, filepath.Join(root, "usr", "bin"), "claude")
+	if err := os.MkdirAll(filepath.Join(root, "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(state, filepath.Join(root, "x", "alias")); err != nil {
+		t.Fatal(err)
+	}
+	pathEnv := filepath.Join(root, "x", "alias", "bin", "wrap") + string(os.PathListSeparator) + real
+	got, err := LookPathSkipping(pathEnv, "claude", []string{filepath.Join(state, "bin")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(real, "claude"); got != want {
+		t.Errorf("resolved %q, want %q — a link to the wrap dir found the wrapper", got, want)
+	}
+}
+
 // TestLookPathSkippingSkipsWholeSubtree: skipping the bin/ parent must also skip
 // bin/wrap, bin/block and bin/launch beneath it.
 func TestLookPathSkippingSkipsWholeSubtree(t *testing.T) {
