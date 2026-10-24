@@ -388,6 +388,17 @@ func buildCapturePlanAt(opts CaptureOptions, stagingRoot string) CapturePlan {
 	if captureTmp != "" {
 		bootstrapEnv.Set("TMPDIR", captureTmp)
 	}
+	// THE RUN-AS-YOU CAPTURE'S REAL HOME, told to the bootstrap as a launch tells it (BuildRunPlan's
+	// self branch, MMP-D7): the bootstrap's identity check and scope rule read it
+	// (paths.GuestRealHome), and without it they take the account mode's branch and stat
+	// /Users/_yolojail, which the capture profile denies, so every run-as-you capture and fork
+	// build was refused before its build line (MMP-D22). It is the ONLY one of that branch's homes a
+	// capture passes: the machine root and the shared store are what its profile denies
+	// (captureStoreDeny), the mise store is the staging home's (buildBootstrapEnv), and a capture
+	// names no sidecar, so the bootstrap lays no workspace-home layout that would read them.
+	if self && runAs.Homes.Real != "" {
+		bootstrapEnv.Set(paths.DarwinRealHomeEnv, runAs.Homes.Real)
+	}
 	stagedYolo := StagedYoloPath("")
 	offendingHome, offendingSet := HomeContaining(stagingRoot)
 
@@ -921,9 +932,24 @@ func selfCapturePlanProblems(plan CapturePlan) []string {
 			problems = append(problems, "a run-as-you capture argv does not cross through "+envBin+
 				" alone: "+shquote.JoinDisplay(argv))
 		}
-		if slices.ContainsFunc(argv, func(w string) bool { return strings.Contains(w, SandboxUser) }) {
+		if w, ok := argvWordNamingAccount(argv); ok {
 			problems = append(problems, "a run-as-you capture argv names the second account "+SandboxUser+
-				": "+shquote.JoinDisplay(argv))
+				" where it runs or locates something: "+shquote.JoinDisplay([]string{w}))
+		}
+	}
+	// THE BOOTSTRAP IS TOLD YOUR REAL HOME (MMP-D22), and its profile lets it stat that home.
+	// Without the variable the bootstrap judges itself an account-mode one and stats
+	// /Users/_yolojail; without the stat, paths.GuestRealHome answers "" and it does the same.
+	if real := plan.RunAs.Homes.Real; filepath.IsAbs(real) && len(plan.BootstrapArgv) > 0 {
+		if !containsArg(plan.BootstrapArgv, paths.DarwinRealHomeEnv+"="+real) {
+			problems = append(problems, "the run-as-you capture bootstrap is not told your real home ("+
+				paths.DarwinRealHomeEnv+"="+real+"); it would take the account mode's identity check, "+
+				"which reads "+SandboxHome()+" and refuses")
+		}
+		if allow := HostHomeStatAllow(real); !strings.Contains(plan.Seatbelt, allow) {
+			problems = append(problems, "the run-as-you capture profile does not let its bootstrap stat your "+
+				"real home "+real+" (#seatbelt-test-id:"+HostHomeStatID+"#); the identity check would fail "+
+				"as if no real home were named")
 		}
 	}
 	if len(plan.BootstrapArgv) > 0 &&

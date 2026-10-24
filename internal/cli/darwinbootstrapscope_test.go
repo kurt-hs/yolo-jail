@@ -263,3 +263,58 @@ func TestDarwinBootstrapRunsAsYouOnlyIntoTheWorkspaceHome(t *testing.T) {
 		t.Errorf("the launch's own HOME was refused: %v", err)
 	}
 }
+
+// A RUN-AS-YOU CAPTURE'S BOOTSTRAP RUNS AS YOU (MMP-D22): told your real home, with HOME its
+// staging home inside the staging tree it names as the workspace and no sidecar, it passes the
+// identity check and the self-mode HOME guard and writes its boot log, where it used to be refused
+// for a HOME that was not <workspace>/.yolo/home. A staging "home" that IS your real home is still
+// refused before anything is created. Fails if the guard loses its capture shape, or admits one
+// whose HOME is your home.
+func TestDarwinBootstrapAdmitsARunAsYouCaptureStagingHome(t *testing.T) {
+	saved := darwinBootstrapScopeHome
+	darwinBootstrapScopeHome = func() string { return filepath.Join(resolvedDir(t), "no-account") }
+	t.Cleanup(func() { darwinBootstrapScopeHome = saved })
+	real := resolvedDir(t)
+	staging := filepath.Join(resolvedDir(t), "yolo-captures", "somebin")
+	stagingHome := macosuser.CaptureStagingHome(staging)
+	if err := os.MkdirAll(stagingHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	clearLaunchEnv(t)
+	t.Cleanup(packload.OverrideSkewTolerance(false))
+	t.Setenv(paths.DarwinRealHomeEnv, real)
+	t.Setenv("HOME", stagingHome)
+	t.Setenv("JAIL_HOME", stagingHome)
+	t.Setenv(entrypoint.DarwinHomeSidecarEnv, "")
+	t.Setenv("YOLO_DARWIN_WORKSPACE", staging)
+	if err := darwinBootstrapIdentityRefusal(); err != nil {
+		t.Fatalf("the run-as-you capture bootstrap failed its identity check: %v", err)
+	}
+	if err := darwinBootstrapSelfHomeRefusal(); err != nil {
+		t.Fatalf("the run-as-you capture's staging home was refused: %v", err)
+	}
+	runDarwinBootstrap(nil) // the generation's own result does not matter here; getting past the guards does
+	if _, err := os.Stat(filepath.Join(paths.WorkspaceStateDir(staging), "boot.log")); err != nil {
+		t.Errorf("the run-as-you capture's bootstrap wrote no boot.log, so a guard refused it: %v", err)
+	}
+
+	// The capture shape with your real home as its staging home: refused, nothing created.
+	outer := resolvedDir(t)
+	real = macosuser.CaptureStagingHome(outer)
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(paths.DarwinRealHomeEnv, real)
+	t.Setenv("HOME", real)
+	t.Setenv("JAIL_HOME", real)
+	t.Setenv("YOLO_DARWIN_WORKSPACE", outer)
+	if err := darwinBootstrapSelfHomeRefusal(); err == nil {
+		t.Error("a capture-shaped bootstrap whose staging home is your real home was admitted")
+	}
+	if rc := runDarwinBootstrap(nil); rc != 1 {
+		t.Errorf("a capture-shaped bootstrap into your real home returned %d, want 1", rc)
+	}
+	if _, err := os.Stat(paths.WorkspaceStateDir(outer)); !os.IsNotExist(err) {
+		t.Errorf("the refused bootstrap created %s (%v)", paths.WorkspaceStateDir(outer), err)
+	}
+}

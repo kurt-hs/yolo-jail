@@ -109,6 +109,9 @@ These are mechanism choices made under the rulings above, not owner rulings. The
 | <a id="MMP-D20"></a>MMP-D20 | **A TMPDIR the user's env composes outside what the run-as-you profile grants refuses the launch**, naming the fix: remove the override, point it inside the workspace, or, for `/tmp`, set the hatch (`composedTmpdirProblem`, read by `PlanInvariants`). The granted roots are the workspace, the agent's home, the user's `DARWIN_USER_TEMP_DIR` (which holds the session's own) and, with the hatch, `/private/tmp`, compared lexically with `/tmp`, `/var` and `/etc` in their `/private` spelling. One inside a root is kept, and tmux and zsh follow it. | Granting an arbitrary user path would widen the profile from config; refusing names the one-line fix, and every value that works today inside the workspace keeps working. |
 | <a id="MMP-D21"></a>MMP-D21 | **Run-as-you captures and builds get a TMPDIR of their own, and the self-mode bootstrap is told the session's.** A capture or a fork/dev-override build sets `TMPDIR=<staging tree>/tmp` (`CaptureStagingTmp`), made with the tree and removed with it, in its env file (the driver, the installer, the build line) and its bootstrap's env, over any composed one; both capture profiles take the hatch (`CaptureOptions.SharedTmp`, read by cli). A self-mode launch's bootstrap gets `TMPDIR` too. | All three run under `env -i`, so with no TMPDIR `go build`, `mktemp -d`, installers and the bootstrap's children fell back to the `/tmp` [MMP-D18](#MMP-D18) closed. The staging tree is already the capture profile's one writable root, and a sibling of the home and out dirs, so nothing in it is captured. |
 | <a id="MMP-D19"></a>MMP-D19 | **The per-user cache dir (`<DARWIN_USER_CACHE_DIR>`, the `.../C` beside `.../T`) and `/private/var/tmp` are not granted.** No tool was verified to need either, so both are in [Open items](#open-items) until a Mac run shows one does. | [`OQ-MM8`](./macos-user-model.md#OQ-MM8)'s instruction: grant them only on a verified need. Each grant is one line in `DenyDefaultProfile` when it comes. |
+| <a id="MMP-D22"></a>MMP-D22 | **A run-as-you capture or fork build tells its bootstrap your real home, lets it stat that home, and the bootstrap admits the capture's staging home.** `buildCapturePlanAt`'s self branch sets `YOLO_DARWIN_REAL_HOME` (`paths.DarwinRealHomeEnv`) on the bootstrap's `env -i` list and nothing else from a launch's self branch: the machine root and shared store are what the capture profile denies, the mise store is the staging home's, and a capture names no sidecar, so no workspace-home layout reads them. `SeatbeltSelfCaptureProfile` sets the new `ProfileParams.HostHomeStat`, which renders `host-home-stat-allow`: `file-read-metadata` on the real home and each directory above it, before the closing denies. `selfCapturePlanProblems` refuses a plan missing either half. `darwinBootstrapSelfHomeRefusal` admits one more shape: no sidecar, and `HOME` equal to `macosuser.CaptureStagingHome(<workspace>)`, unless that home is or holds your real home or sits in yolo's own directories. | The [2026-10-24 Mac report](../lab-reports/2026-10-24-mac-verification-after-gitbroker.md#1b-why-as-read-from-the-code-not-yet-confirmed-by-a-fix), section 1b. With no variable, `paths.GuestRealHome` answered `""` and the bootstrap took the account mode's identity check, which stats `/Users/_yolojail`. Reading the code confirmed both follow-on refusals the report predicted. The capture profile's granted roots (the staging tree under `/Users/Shared`, the staging root, the user temp dir) are not under the real home, so no ancestor literal reached it and the stat would have been denied. A capture's `HOME` is its staging home, so the launch-only HOME guard would have refused it next. A stat lists nothing and reads nothing below the home. |
+| <a id="MMP-D23"></a>MMP-D23 | **Diagnostic text never makes a run-as-you plan unviable.** The "names the second account" checks (`selfModeProblems`, `selfCapturePlanProblems`) judge only the argv words that run or locate something (`argvWordNamingAccount`): the account's name as a word of its own, a word starting with `/` or `-` (a program, a path argument, a flag such as `--home=<path>`), and a `NAME=VALUE` assignment whose value is an absolute path or a colon-separated list of them. A JSON wire, a shell body or free text is not judged. The refusal names the offending word, not the whole argv. | The maintainer's ruling (2026-10-24) on [section 1c](../lab-reports/2026-10-24-mac-verification-after-gitbroker.md#1c-a-self-mode-build-failure-now-refuses-the-whole-launch-hatch-included): a failed build's `YOLO_FORK_BUILDS` quoted the bootstrap's stderr, which named `/Users/_yolojail`, so every self-mode launch was refused and `YOLO_ALLOW_MISSING_PROGRAMS=1` could not help. A known gap: a JSON wire that locates something (`YOLO_DARWIN_CACHE_ALIASES`, `YOLO_HOST_FILES`) is no longer judged either; the profile, not this check, is what keeps the sandbox out of the account's home. |
+| <a id="MMP-D24"></a>MMP-D24 | **`YOLO_FORK_BUILDS` stays on the bootstrap's argv.** It is not moved to a file. | With [MMP-D23](#MMP-D23) the viability defect is gone either way. The session env file cannot carry it, because the bootstrap's hydrator drops every `YOLO_` name from that file on purpose ([OQ-PD29](program-delivery.md#decision-ledger)). A launcher-owned file would be a second channel in `internal/entrypoint` for one variable. Revisit it if the value's size nears `ARG_MAX`, or if a decision ever carries something that must not show in `ps`. |
 
 ## Map
 
@@ -273,8 +276,8 @@ New ids: `deny-default`, `system-read-allow`, `host-software-read-allow`, `ances
 `service-deny`, `appleevent-send-deny`, `loopback-allow` ([MMP-D14](#MMP-D14); it replaced
 `loopback-deny` and `loopback-port-allow`), `unix-socket-allow` ([MMP-D16](#MMP-D16)),
 `services-dir-read-allow` and `services-lock-deny` ([MMP-D15](#MMP-D15)), `user-tmp-allow` and
-`shared-tmp-allow` (the hatch's; [MMP-D18](#MMP-D18)), and
-`cache-alias-allow` (slice 8). The names are cheap and the implementer's to adjust. Each one needs
+`shared-tmp-allow` (the hatch's; [MMP-D18](#MMP-D18)), `host-home-stat-allow` (the run-as-you
+capture's; [MMP-D22](#MMP-D22)), and `cache-alias-allow` (slice 8). The names are cheap and the implementer's to adjust. Each one needs
 a registry entry.
 
 ## Tasks
@@ -1068,6 +1071,18 @@ and its plan with it; git history keeps both.
   self mode early. The opt-in key is the preview.
 - Don't widen `/opt` or `/Users` to fix a start-up read. Find the exact path in
   `log show --predicate 'sender == "Sandbox"'` and add that literal or subpath.
+
+## Mac checks
+
+[MMP-D22](#MMP-D22) and [MMP-D23](#MMP-D23) are pinned by unit tests on Linux, but neither has run on a
+Mac. The maintainer's Mac agent runs:
+
+- `YOLO_TEST_MACOS_USER=1 go test -count=1 -timeout 0 -v -run '^TestMacosUserPackTreeProgram' ./integration`.
+  Expected: the three `/self` subtests pass (`…BuildsOnceAndRebuildsOnChange/self`,
+  `…OverrideBuildsTheCheckout/self`, `…BuildFailureRefusesOnlyIt/self`). If a `/self` build still
+  fails, its refusal carries the bootstrap's stderr. A `stat` of the real home refused there means
+  `host-home-stat-allow` is too narrow. A `refusing to generate into` line means the HOME guard did
+  not take the capture shape.
 
 ## Blockers
 

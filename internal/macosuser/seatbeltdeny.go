@@ -87,6 +87,12 @@ type ProfileParams struct {
 	// HostHome is the invoking human's home. It is named only to deny parts of it, and to
 	// read its locale preferences (CoreFoundation finds them through the account's home).
 	HostHome string
+	// HostHomeStat grants file-read-metadata on HostHome itself and each directory above it: a
+	// stat, never a listing or a read below it. A launch's granted roots already reach it (its
+	// machine root is under HostHome, so the ancestor literals name it); a run-as-you capture's
+	// do not, and its bootstrap must stat the real home to run as you (paths.GuestRealHome,
+	// MMP-D22).
+	HostHomeStat bool
 	// SandboxTmp is the launch's own TMPDIR, read-write under every TmpPolicy, and one of the
 	// roots the sandbox may bind and connect unix sockets under.
 	SandboxTmp string
@@ -342,6 +348,9 @@ func DenyDefaultProfile(p ProfileParams) string {
 	if staging != "" {
 		b.WriteString(stagingReadAllow(staging, p.StagedReads))
 	}
+	if p.HostHomeStat {
+		b.WriteString(HostHomeStatAllow(hostHome))
+	}
 	b.WriteString(servicesDirReadAllow(p.ServicesDirs))
 	b.WriteString(contextReadAllow(p.Context))
 	b.WriteString(relocationReadAllow(p.Relocations))
@@ -353,6 +362,28 @@ func DenyDefaultProfile(p ProfileParams) string {
 	b.WriteString(nixDaemonBlocks())
 	b.WriteString(closingDenies(hostHome))
 	return b.String()
+}
+
+// HostHomeStatID is the test id of HostHomeStatAllow's block.
+const HostHomeStatID = "host-home-stat-allow"
+
+// HostHomeStatAllow is ProfileParams.HostHomeStat's block: metadata alone on the real home and
+// each directory above it, so os.Stat of the home (paths.GuestRealHome, the bootstrap's identity
+// check) and the symlink walk of the scope rule succeed, while nothing in it is listed or read.
+// "" when the home is not absolute.
+func HostHomeStatAllow(hostHome string) string {
+	h := absClean(hostHome)
+	if h == "" || h == "/" {
+		return ""
+	}
+	var meta strings.Builder
+	for dir := h; dir != "/"; dir = path.Dir(dir) {
+		meta.WriteString("    (literal " + sbplStr(dir) + ")\n")
+	}
+	return "\n;; [yolo] Your real home, metadata only (MMP-D22): the bootstrap stats it to run as you\n" +
+		";; and to judge workspace scope by it. A stat lists nothing and reads nothing below it.\n" +
+		";; #seatbelt-test-id:" + HostHomeStatID + "#\n" +
+		form("allow file-read-metadata", meta.String())
 }
 
 // stagingReadAllow is the profile's read on the host-owned staging root: the whole root, or,

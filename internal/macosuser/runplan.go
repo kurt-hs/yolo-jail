@@ -2142,12 +2142,72 @@ func selfModeProblems(plan RunPlan) []string {
 	}
 	for _, argv := range [][]string{plan.LaunchArgv, plan.BootstrapArgv, plan.ProvisionArgv,
 		plan.JailDaemonArgv, plan.ProbeArgv} {
-		if slices.ContainsFunc(argv, func(w string) bool { return strings.Contains(w, SandboxUser) }) {
+		if w, ok := argvWordNamingAccount(argv); ok {
 			problems = append(problems, "a run-as-you argv names the second account "+SandboxUser+
-				": "+strings.Join(argv, " "))
+				" where it runs or locates something: "+w)
 		}
 	}
 	return problems
+}
+
+// argvWordNamingAccount returns the first word of argv that names the second account where it
+// would RUN or LOCATE something, and whether there is one (MMP-D23). The words judged are:
+//
+//   - the account's name as a word of its own (`-u _yolojail`);
+//   - a word that starts with "/" or "-": a program, a path argument, or a flag, including a
+//     `--home=<path>` one;
+//   - an assignment NAME=VALUE whose value is a path or a colon-separated list of paths (HOME,
+//     PATH, TMPDIR, MISE_DATA_DIR, YOLO_DARWIN_REAL_HOME, a `sandbox-exec -D` parameter).
+//
+// Every other word is text, never a location: a JSON wire such as YOLO_FORK_BUILDS, which quotes a
+// failed build's stderr; a shell script's body; a subcommand's name. A diagnostic that mentions
+// /Users/_yolojail used to make the whole plan unviable, which also kept the missing-programs hatch
+// from starting the sandbox it was meant to start.
+func argvWordNamingAccount(argv []string) (string, bool) {
+	for _, w := range argv {
+		if !strings.Contains(w, SandboxUser) {
+			continue
+		}
+		if w == SandboxUser || strings.HasPrefix(w, "/") || strings.HasPrefix(w, "-") {
+			return w, true
+		}
+		if name, value, ok := strings.Cut(w, "="); ok && envNameShape(name) && pathListValue(value) {
+			return w, true
+		}
+	}
+	return "", false
+}
+
+// envNameShape reports whether s is spelled as an environment variable name.
+func envNameShape(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r == '_', r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// pathListValue reports whether v is an absolute path or a colon-separated list of them (empty
+// elements allowed, as PATH allows them).
+func pathListValue(v string) bool {
+	seen := false
+	for _, el := range strings.Split(v, ":") {
+		if el == "" {
+			continue
+		}
+		if !strings.HasPrefix(el, "/") {
+			return false
+		}
+		seen = true
+	}
+	return seen
 }
 
 // crossingArgvProblems checks every argv the plan runs as the sandbox account against the run-as

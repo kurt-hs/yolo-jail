@@ -467,14 +467,29 @@ func darwinBootstrapBoundaryHome() string {
 // the launcher names three ways (HOME, the sidecar, the workspace). A hand-run with HOME at your
 // real home is refused before anything is created, which is what the account mode's identity
 // check promised and the run-as-you identity (you) cannot.
+//
+// A RUN-AS-YOU CAPTURE OR FORK BUILD is the one other shape it admits (MMP-D22): no sidecar, the
+// honest "this home is not a workspace's", and HOME the staging home of the staging tree it names
+// as the workspace (macosuser.CaptureStagingHome), which is neither your real home nor holds it.
 func darwinBootstrapSelfHomeRefusal() error {
-	if darwinBootstrapRealHome() == "" {
+	real := darwinBootstrapRealHome()
+	if real == "" {
 		return nil
 	}
 	home := firstNonEmptyEnv("JAIL_HOME", "HOME")
 	sidecar := os.Getenv(entrypoint.DarwinHomeSidecarEnv)
+	ws := os.Getenv("YOLO_DARWIN_WORKSPACE")
+	if sidecar == "" && ws != "" && home != "" && filepath.IsAbs(ws) &&
+		filepath.Clean(home) == macosuser.CaptureStagingHome(filepath.Clean(ws)) {
+		if paths.WorkspaceScopeBreachUnder(home, real) != nil {
+			return fmt.Errorf("refusing to generate into %s: as you, a capture's staging home may be "+
+				"neither your home %s, nor hold it, nor sit in yolo's own directories — run `yolo capture` "+
+				"instead", home, real)
+		}
+		return nil
+	}
 	want := ""
-	if ws := os.Getenv("YOLO_DARWIN_WORKSPACE"); ws != "" {
+	if ws != "" {
 		want = paths.WorkspaceHomeState(ws)
 	}
 	if home == "" || want == "" || filepath.Clean(home) != want || filepath.Clean(sidecar) != want {

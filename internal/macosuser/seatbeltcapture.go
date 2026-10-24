@@ -285,6 +285,7 @@ func SeatbeltSelfCaptureProfile(stagingRoot string, homes Homes, user, userTmp s
 	p := ProfileParams{
 		Workspace:         stagingRoot,
 		HostHome:          homes.Real,
+		HostHomeStat:      true,
 		DarwinUserTempDir: strings.TrimRight(userTmp, "/"),
 		StagingRoot:       stateDir,
 		RunAsUser:         user,
