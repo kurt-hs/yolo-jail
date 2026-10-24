@@ -46,6 +46,10 @@ const (
 	exitUnavailable = 69 // EX_UNAVAILABLE: no endpoint, or the broker stopped answering
 )
 
+// gitGone is said when git stops reading the helper's output mid-transfer.
+const gitGone = "git stopped reading this helper's output (%v), so the transfer ended early; " +
+	"run the git command again"
+
 // relayChunk is the most of git's bytes one Stdout frame carries.
 const relayChunk = 64 * 1024
 
@@ -73,11 +77,13 @@ func Run(args []string, env Env) int {
 	if len(args) > 0 && args[0] == "--" {
 		args = args[1:]
 	}
-	url := ""
+	// git passes `<remote> <url>` for a `yolo::<url>` remote, and the remote's name alone
+	// when the remote has no URL of its own; the name is never sent as a URL.
+	remote, url := "", ""
 	if len(args) >= 2 {
-		url = args[1]
+		remote, url = args[0], args[1]
 	} else if len(args) == 1 {
-		url = args[0]
+		remote = args[0]
 	}
 	say := func(format string, a ...any) {
 		fmt.Fprintf(env.Stderr, "git-remote-yolo (git-broker): "+format+"\n", a...)
@@ -95,7 +101,7 @@ func Run(args []string, env Env) int {
 		case line == "capabilities":
 			_, _ = io.WriteString(env.Stdout, "connect\n\n")
 		case strings.HasPrefix(line, "connect "):
-			return connect(strings.TrimPrefix(line, "connect "), url, in, env, say)
+			return connect(strings.TrimPrefix(line, "connect "), remote, url, in, env, say)
 		default:
 			say("git asked for %q, which this helper does not offer: it offers only `connect`. "+
 				"Report this with your git version (`git --version`).", line)
@@ -105,15 +111,23 @@ func Run(args []string, env Env) int {
 }
 
 // connect opens the broker stream for service and relays it until the broker's Exit frame.
-func connect(service, url string, in *bufio.Reader, env Env, say func(string, ...any)) int {
+func connect(service, remote, url string, in *bufio.Reader, env Env, say func(string, ...any)) int {
 	if service != "git-upload-pack" && service != "git-receive-pack" {
 		say("%s does not cross the git-broker: only fetch (git-upload-pack) and push "+
-			"(git-receive-pack) do, so this command has no remote form in a jail.", service)
+			"(git-receive-pack) do, so this command has no remote form in a jail. Run it on the host "+
+			"instead, for example with `yolo host-run`.", service)
+		return exitUsage
+	}
+	if url == "" && remote != "" {
+		say("the remote %q has no URL, so there is nothing to connect to. Give it the remote's real "+
+			"URL with `git remote set-url %s <url>`; the jail's git routes ssh://, https:// and git@ "+
+			"URLs through the broker itself.", remote, shquote.QuoteDisplay(remote))
 		return exitUsage
 	}
 	if url == "" {
 		say("git gave this helper no URL; it runs as `git-remote-yolo <remote> <url>`, which git does " +
-			"for a remote whose URL starts with `yolo::`.")
+			"for a remote whose URL starts with `yolo::`. Run git itself (`git fetch <remote>`) rather " +
+			"than this helper.")
 		return exitUsage
 	}
 	endpoint := env.Getenv(EndpointEnv)
@@ -141,13 +155,16 @@ func connect(service, url string, in *bufio.Reader, env Env, say func(string, ..
 		case errors.Is(err, svcendpoint.ErrAuthRejected):
 			say("the broker rejected this jail's token (the endpoint file %s is stale); relaunch the jail", endpoint)
 		default:
-			say("cannot reach the broker named by %s: %v", endpoint, err)
+			say("cannot reach the broker named by %s: %v; see `yolo check` on the host, then start a "+
+				"fresh jail", endpoint, err)
 		}
 		return exitUnavailable
 	}
 	defer conn.Close()
 	if err := frameproto.WriteRequest(conn, body); err != nil {
-		say("the broker stopped answering: %v", err)
+		say("the broker stopped answering: %v; its log is "+
+			"~/.local/share/yolo-jail/logs/host-service-git-broker.log on the host; see `yolo check` "+
+			"there, then start a fresh jail", err)
 		return exitUnavailable
 	}
 
@@ -187,11 +204,13 @@ func connect(service, url string, in *bufio.Reader, env Env, say func(string, ..
 				// with protocol bytes, so a refusal before any leaves git seeing the helper
 				// fail rather than an empty remote.
 				if _, err := io.WriteString(env.Stdout, "\n"); err != nil {
+					say(gitGone, err)
 					return exitUnavailable
 				}
 				connected = true
 			}
 			if _, err := env.Stdout.Write(f.Payload); err != nil {
+				say(gitGone, err)
 				return exitUnavailable
 			}
 		case frameproto.StreamStderr:
@@ -199,6 +218,9 @@ func connect(service, url string, in *bufio.Reader, env Env, say func(string, ..
 		case frameproto.StreamExit:
 			rc, err := frameproto.ExitCode(f.Payload)
 			if err != nil {
+				say("the broker sent a malformed exit frame (%v), so whether git's command finished is "+
+					"unknown; check with `git status` or `git fetch`, and report it with the host's "+
+					"~/.local/share/yolo-jail/logs/host-service-git-broker.log", err)
 				return exitUnavailable
 			}
 			return rc

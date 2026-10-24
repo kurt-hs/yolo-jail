@@ -135,14 +135,49 @@ func TestHelperNoEndpointNamesTheSwitch(t *testing.T) {
 	}
 }
 
-// Only upload-pack and receive-pack cross; anything else is refused without dialing.
+// countingEndpoint serves an endpoint that counts the requests reaching it and refuses each.
+func countingEndpoint(t *testing.T) (string, func() int) {
+	t.Helper()
+	dialed := make(chan struct{}, 16)
+	endpoint := serve(t, func(s *hostservice.Session) {
+		dialed <- struct{}{}
+		s.Exit(1)
+	})
+	return endpoint, func() int { return len(dialed) }
+}
+
+// Only upload-pack and receive-pack cross; anything else is refused with 64, before the
+// endpoint is dialed even when one is published.
 func TestHelperRefusesOtherServicesAndCommands(t *testing.T) {
+	endpoint, dials := countingEndpoint(t)
 	for _, in := range []string{"connect git-upload-archive\n", "list\n", "stateless-connect git-upload-pack\n"} {
 		var out, errb bytes.Buffer
-		rc := Run([]string{"origin", "ssh://git@github.com/o/r"}, envOf(nil, in, &out, &errb))
-		if rc == 0 || out.Len() != 0 || !strings.Contains(errb.String(), "git-remote-yolo") {
+		rc := Run([]string{"origin", "ssh://git@github.com/o/r"},
+			envOf(map[string]string{EndpointEnv: endpoint}, in, &out, &errb))
+		if rc != 64 || out.Len() != 0 || !strings.Contains(errb.String(), "git-remote-yolo") {
 			t.Errorf("%q: rc %d stdout %q stderr %q", in, rc, out.String(), errb.String())
 		}
+	}
+	if n := dials(); n != 0 {
+		t.Fatalf("the endpoint was dialed %d times for refused commands", n)
+	}
+}
+
+// A remote with no URL reaches the helper as its name alone; the name is never sent as a URL.
+func TestHelperRemoteWithNoURLIsRefused(t *testing.T) {
+	endpoint, dials := countingEndpoint(t)
+	var out, errb bytes.Buffer
+	rc := Run([]string{"--", "origin"},
+		envOf(map[string]string{EndpointEnv: endpoint}, "capabilities\nconnect git-upload-pack\n", &out, &errb))
+	if rc != 64 || out.String() != "connect\n\n" {
+		t.Fatalf("rc %d stdout %q stderr %q", rc, out.String(), errb.String())
+	}
+	if !strings.Contains(errb.String(), `the remote "origin" has no URL`) ||
+		!strings.Contains(errb.String(), "git remote set-url origin <url>") {
+		t.Fatalf("stderr %q", errb.String())
+	}
+	if n := dials(); n != 0 {
+		t.Fatalf("the endpoint was dialed %d times", n)
 	}
 }
 

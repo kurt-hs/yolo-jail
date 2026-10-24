@@ -12,7 +12,7 @@ import (
 // `yolo git-remote` speaks git's remote-helper protocol on stdout, so Main routes it
 // before the front door: no banner, no update notice, nothing but the helper's reply.
 // This fails if the early route in Main is deleted, because the registry path prints
-// the startup banner.
+// the startup banner to stderr, which the test requires to be empty.
 func TestGitRemoteRoutedBeforeTheFrontDoor(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv(gitremote.EndpointEnv, "")
