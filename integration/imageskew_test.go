@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -158,11 +159,20 @@ const identityReadScript = "cat " + identityFilePath + " 2>/dev/null" +
 // plus the `container image load` that reads it, which is exactly what
 // internal/image's deliverToAppleContainer does. Naming the wrong one would hand a
 // Mac user a command that writes into a store nothing reads.
-func skewFixCopy(rt string) string {
-	if rt == "container" {
+//
+// The branch is the launch's and `just load`'s: only podman on LINUX writes
+// containers-storage. Podman on a Mac keeps its store inside the podman machine,
+// image-copy refuses there, and the archive plus `podman load -i` is what a launch
+// does (lab report 2026-10-24, section 4a).
+func skewFixCopy(rt, goos string) string {
+	if rt != "podman" || goos != "linux" {
+		load := rt + " load -i"
+		if rt == "container" {
+			load = "container image load -i"
+		}
 		return "./result-1/bin/skopeo --insecure-policy copy \\\n" +
 			"            \"nix:$(readlink -f ./result)\" oci-archive:/tmp/jail-image.oci:" + jailImage +
-			" && container image load -i /tmp/jail-image.oci"
+			" && " + load + " /tmp/jail-image.oci"
 	}
 	return "go run ./cmd/yolo internal image-copy --runtime " + rt + " \\\n" +
 		"            --copier ./result-1/bin/skopeo --image \"$(readlink -f ./result)\" \\\n" +
@@ -412,7 +422,7 @@ func checkImageSkew(rt, image string) {
 		return
 	}
 
-	msg := skewMessage(image, rt, want, got)
+	msg := skewMessage(image, rt, runtime.GOOS, want, got)
 	if mode == skewWarn {
 		log.Printf("[integration] WARNING (proceeding anyway):\n%s", msg)
 		return
@@ -550,7 +560,7 @@ func TestTheLauncherAndTheHarnessAgreeOnTheIdentity(t *testing.T) {
 // instruction. It names both store paths (so the reader can see it is a source
 // mismatch and not a flaky test), says what the mismatch invalidates, and gives
 // the exact commands that resolve it.
-func skewMessage(image, rt, want, got string) string {
+func skewMessage(image, rt, goos, want, got string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "STALE JAIL IMAGE — refusing to run the container suite.\n\n")
 	fmt.Fprintf(&b, "  %s was built from a DIFFERENT flake than the one under test.\n", image)
@@ -572,7 +582,7 @@ func skewMessage(image, rt, want, got string) string {
 	fmt.Fprintf(&b, "        %s=1 go test -count=1 -timeout 0 ./integration\n", rebuildEnv)
 	fmt.Fprintf(&b, "    rebuild + reload by hand:\n")
 	fmt.Fprintf(&b, "        cd %s && nix build --impure .#ociImage .#imageCopier && \\\n", repoRoot)
-	fmt.Fprintf(&b, "            %s\n", skewFixCopy(rt))
+	fmt.Fprintf(&b, "            %s\n", skewFixCopy(rt, goos))
 	fmt.Fprintf(&b, "    accept the skew for this run (a host-CLI-only change, a bisect, ...):\n")
 	fmt.Fprintf(&b, "        %s=warn go test -count=1 -timeout 0 ./integration\n\n", skewEnv)
 	fmt.Fprintf(&b, "  Note: nix only sees git-TRACKED files, so `git add` a newly created file\n")

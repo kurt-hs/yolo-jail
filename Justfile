@@ -184,17 +184,27 @@ build-image-minimal:
 # file (docs/reference/image-staging-vs-baking.md, "The delta archive"). The file is removed
 # afterwards — a leftover is what makes the NEXT copy fail, since skopeo will not
 # write over an existing archive.
+#
+# THE BRANCH IS THE LAUNCH'S: only podman on Linux writes containers-storage, and
+# every other runtime takes the archive and its own loader (image.ImageLoadCmd:
+# `container image load -i`, else `<runtime> load -i`). That is also exactly what
+# `yolo internal image-copy` accepts, so podman on a Mac — whose store is inside
+# the podman machine — no longer reaches the verb only to be refused.
 load: build-image
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ "{{ runtime }}" = "container" ]; then
+    if [ "{{ runtime }}" != "podman" ] || [ "$(uname -s)" != "Linux" ]; then
         archive=$(mktemp -t yolo-jail-image.XXXXXX.oci)
         rm -f "$archive"
         trap 'rm -f "$archive"' EXIT
         ./result-1/bin/skopeo --insecure-policy copy \
             "nix:$(readlink -f ./result)" \
             "oci-archive:$archive:yolo-jail:latest"
-        container image load -i "$archive"
+        if [ "{{ runtime }}" = "container" ]; then
+            container image load -i "$archive"
+        else
+            "{{ runtime }}" load -i "$archive"
+        fi
     else
         # THE LAUNCH'S OWN COPY, not a shell spelling of it: `yolo internal
         # image-copy` reads `podman info` once and runs image.DeliveryCopyArgvFor —

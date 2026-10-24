@@ -153,9 +153,10 @@ The mechanics behind each of these are in
   ([the security delta](docs/reference/image-staging-vs-baking.md#the-security-delta)).
 - ⚠ **Rootless podman: the image copy runs as `podman unshare -- <copier> copy …` and names the STORE on
   the destination** ([`storespec.go`](internal/image/storespec.go)); rootful takes the bare copy and bare
-  ref. The branch is decided from `podman info` BEFORE the copy, never by retrying a failure. `just load`
-  copies through `yolo internal image-copy`, never a shell spelling. macOS podman and Apple Container take
-  an archive.
+  ref. The branch is decided from `podman info` BEFORE the copy, never by retrying a failure. On Linux
+  podman `just load` copies through `yolo internal image-copy`, never a shell spelling; macOS podman and
+  Apple Container take an archive and their own loader, in a launch and in `just load` alike
+  (`image.TestJustLoadTakesTheLaunchsDeliveryBranch`).
 - **A failed nix build STOPS the jail** — it never falls back to a stale image.
   `YOLO_ALLOW_STALE_IMAGE=1` opts back in. `SkipBuild` is untouched: no build ran, so nothing failed.
 - **The `goSrc` fileset trap** ([`flake.nix`](flake.nix)): the hermetic Go build only sees

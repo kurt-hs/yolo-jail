@@ -109,7 +109,7 @@ func TestIdentityHintExplainsTheOneTimeMismatch(t *testing.T) {
 func TestSkewMessageIsActionable(t *testing.T) {
 	wantID := "sha256:" + strings.Repeat("a", 64)
 	gotID := "sha256:" + strings.Repeat("b", 64)
-	msg := skewMessage("localhost/yolo-jail:latest", "podman", wantID, gotID)
+	msg := skewMessage("localhost/yolo-jail:latest", "podman", "linux", wantID, gotID)
 	for _, want := range []string{
 		wantID,                          // what the source wants
 		gotID,                           // what is loaded
@@ -137,7 +137,7 @@ func TestSkewMessageIsActionable(t *testing.T) {
 	// THE DESTINATION IS PER RUNTIME, and getting it wrong hands a Mac user a
 	// command that writes into a store nothing reads. Apple Container has no
 	// containers-storage; it takes a file and a loader.
-	ac := skewMessage("yolo-jail:latest", "container", wantID, gotID)
+	ac := skewMessage("yolo-jail:latest", "container", "darwin", wantID, gotID)
 	if strings.Contains(ac, "containers-storage:") || strings.Contains(ac, "image-copy") {
 		t.Errorf("the Apple Container fix names podman's store:\n%s", ac)
 	}
@@ -150,6 +150,17 @@ func TestSkewMessageIsActionable(t *testing.T) {
 	} {
 		if !strings.Contains(ac, want) {
 			t.Errorf("the Apple Container fix is missing %q:\n%s", want, ac)
+		}
+	}
+	// PODMAN ON A MAC takes the archive too: image-copy refuses there, so naming it
+	// handed the reader a fix that failed in seven seconds (lab report 2026-10-24, 4a).
+	mp := skewMessage("localhost/yolo-jail:latest", "podman", "darwin", wantID, gotID)
+	if strings.Contains(mp, "image-copy") || strings.Contains(mp, "containers-storage:") {
+		t.Errorf("the darwin podman fix names a copy that refuses on darwin:\n%s", mp)
+	}
+	for _, want := range []string{"oci-archive:", "podman load -i", "YOLO_RUNTIME=podman just load"} {
+		if !strings.Contains(mp, want) {
+			t.Errorf("the darwin podman fix is missing %q:\n%s", want, mp)
 		}
 	}
 }
