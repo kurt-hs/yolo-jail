@@ -54,6 +54,12 @@ type Brokered struct {
 	// `mounts` (BB-D26). An entry is `~/…`, an absolute path, or `$VAR` / `$VAR/…`, which
 	// expands from the host environment and is dropped when the variable is unset.
 	CredentialPaths []string
+	// Grants are the kinds of user grant the source defines (docs/design/git-broker-plan.md ID-10,
+	// BB-D96): `create-branch` for git. Declaring a kind grants nothing: the user's own config
+	// lists the kinds a workspace may hold (`brokered.<source>.grant_kinds`), and the workspace
+	// config holds each grant, which joins only at the config-change gate. `read` is implied by
+	// the loophole being on and needs no declaration.
+	Grants []string
 }
 
 // AnyRemoteHost is the `remote_host` that declares a source on any host. It is the token alone,
@@ -66,18 +72,23 @@ const (
 	keySource          = "source"
 	keyRemoteHost      = "remote_host"
 	keyCredentialPaths = "credential_paths"
+	keyGrants          = "grants"
 )
 
 // brokeredKeys is the block's census. Like a settings declaration it has one voice,
 // refusal, in both decoders: an unknown key in a fence is a fence that silently does not
 // exist, which is the direction the version-boundary tolerance must not fail in.
-var brokeredKeys = []string{keySource, keyRemoteHost, keyCredentialPaths}
+var brokeredKeys = []string{keySource, keyRemoteHost, keyCredentialPaths, keyGrants}
 
 var (
 	sourceRE     = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 	remoteHostRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
 	credPathRE   = regexp.MustCompile(`^(~(/.*)?|/.*|\$[A-Z_][A-Z0-9_]*(/.*)?)$`)
 )
+
+// ValidGrantKind reports whether s spells a grant kind, as the manifest, the user's `grant_kinds`
+// and a workspace grant all do: a lowercase letter, then lowercase letters, digits and hyphens.
+func ValidGrantKind(s string) bool { return sourceRE.MatchString(s) }
 
 func parseBrokered(manifestPath string, raw any) (*Brokered, error) {
 	if raw == nil {
@@ -122,6 +133,24 @@ func parseBrokered(manifestPath string, raw any) (*Brokered, error) {
 					"absolute path, or $VAR / $VAR/…", manifestPath, p)
 			}
 			b.CredentialPaths = append(b.CredentialPaths, p)
+		}
+	}
+	if v := getOrNil(m, keyGrants); v != nil {
+		list, isList := v.([]any)
+		if !isList || !AllStrings(list) {
+			return nil, Errorf("%s: 'brokered.grants' must be a list of grant kinds such as "+
+				"[\"create-branch\"]", manifestPath)
+		}
+		for _, k := range StringSlice(list) {
+			if !ValidGrantKind(k) {
+				return nil, Errorf("%s: 'brokered.grants' entry %q is not a grant kind: a lowercase "+
+					"letter, then lowercase letters, digits and hyphens, such as \"create-branch\"",
+					manifestPath, k)
+			}
+			if inList(k, b.Grants) {
+				return nil, Errorf("%s: 'brokered.grants' names %q twice; list each kind once", manifestPath, k)
+			}
+			b.Grants = append(b.Grants, k)
 		}
 	}
 	return b, nil

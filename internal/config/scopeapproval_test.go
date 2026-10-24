@@ -259,3 +259,57 @@ func TestRecordApprovalWritesBothParts(t *testing.T) {
 		t.Fatal("RecordApproval with no scope in play wrote a scope part")
 	}
 }
+
+// A grant joins only at the gate (BB-D96; docs/design/git-broker-plan.md ID-10): a new one is a
+// line of its source's scope block, no reading of the record holds it until the gate records, and
+// it is recorded under the key `<source>.grants`.
+func TestGrantJoinsOnlyAtTheGate(t *testing.T) {
+	ws := approvalWorkspace(t)
+	grant := brokerscope.Grant{Kind: "create-branch", Repo: "github.com/o/r"}
+	gitScope := func(grants ...brokerscope.Grant) *ScopeCheck {
+		return &ScopeCheck{Sources: []ScopeSource{{Source: "git", Label: "git-broker", RemoteHost: "*",
+			Form: brokerscope.FormRemoteURL, Grants: grants,
+			Read: brokerscope.Read{GitConfig: "/w/.git/config",
+				Remotes: []brokerscope.Remote{{Name: "origin", Repo: "git@github.com:o/r.git"}}}}}}
+	}
+	// The remote alone first, so the grant is the only change.
+	if err := RecordApproval(ws, decode(t, `{}`), gitScope()); err != nil {
+		t.Fatal(err)
+	}
+	p := &reportPrompter{accept: false}
+	ok, err := CheckConfigAndScopeChanges(ws, decode(t, `{}`), gitScope(grant), true, false, p)
+	if err != nil || ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if p.got == nil || !p.got.ScopeChanged {
+		t.Fatalf("a new grant asked nothing: %+v", p.got)
+	}
+	block := strings.Join(p.got.ScopeBlock, "\n")
+	if !strings.Contains(block, "+ grant create-branch github.com/o/r  added") {
+		t.Fatalf("the block has no line for the grant:\n%s", block)
+	}
+	if got := ApprovedGrants(ws, "git"); len(got) != 0 {
+		t.Fatalf("a declined grant reached the record: %v", got)
+	}
+	if err := RecordApproval(ws, decode(t, `{}`), gitScope(grant)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ApprovedGrants(ws, "git"); len(got) != 1 || got[0] != grant {
+		t.Fatalf("approved grants %v, want [%v]", got, grant)
+	}
+	data, err := os.ReadFile(ApprovalScopePath(ws))
+	if err != nil || !strings.Contains(string(data), `"git.grants"`) {
+		t.Fatalf("the record holds no git.grants key (%v):\n%s", err, data)
+	}
+	if got := ApprovedScope(ws, "git"); len(got) != 1 || got[0] != "git@github.com:o/r.git" {
+		t.Fatalf("the grant moved the source's repositories: %v", got)
+	}
+	// Recorded, it asks nothing more; removed, it is a change again.
+	if ok, err := CheckConfigAndScopeChanges(ws, decode(t, `{}`), gitScope(grant), false, false, &failPrompter{t: t}); err != nil || !ok {
+		t.Fatalf("an approved grant re-asked: ok=%v err=%v", ok, err)
+	}
+	r, err := ScopeChanges(ws, gitScope())
+	if err != nil || !r.ScopeChanged || !strings.Contains(strings.Join(r.ScopeBlock, "\n"), "- grant create-branch github.com/o/r") {
+		t.Fatalf("a removed grant is not a change (%v): %+v", err, r)
+	}
+}

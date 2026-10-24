@@ -136,7 +136,8 @@ func verifiedScopeOutcome(rt string, scopes []scopeDelta) (applyOutcome, string)
 			return outcome, reason
 		}
 		added, removed := d.addedRemoved()
-		if len(added) != 0 || len(removed) != 0 {
+		gAdded, gRemoved := d.grantsAddedRemoved()
+		if len(added) != 0 || len(removed) != 0 || len(gAdded) != 0 || len(gRemoved) != 0 {
 			return outcomeNextRestart, "the running broker's scope differs from the approved scope"
 		}
 	}
@@ -199,6 +200,9 @@ func renderApplyChanges(plan []applyChange) []string {
 type scopeDelta struct {
 	label, source string
 	desired       []string
+	// desiredGrants are the user grants the gate approves (docs/design/git-broker-plan.md ID-10),
+	// compared with each live file's own.
+	desiredGrants []brokerscope.Grant
 	files         []liveScopeFile
 	discoveryErr  string
 	// recordChanged is the gate's own answer when no live file was found: the scope differs
@@ -232,6 +236,33 @@ func (d scopeDelta) addedRemoved() (added, removed []string) {
 			if k := brokerscope.EntryKey(form, r); !want[k] && !seenRm[k] {
 				seenRm[k] = true
 				removed = append(removed, r)
+			}
+		}
+	}
+	return added, removed
+}
+
+// grantsAddedRemoved is addedRemoved for the grants: over every live file, each approved grant a
+// file lacks and each grant a file holds that the gate does not approve, compared exactly (a
+// grant's kind and repository identity are already canonical), each once.
+func (d scopeDelta) grantsAddedRemoved() (added, removed []brokerscope.Grant) {
+	has := func(l []brokerscope.Grant, g brokerscope.Grant) bool {
+		for _, x := range l {
+			if x == g {
+				return true
+			}
+		}
+		return false
+	}
+	for _, f := range d.files {
+		for _, g := range d.desiredGrants {
+			if !has(f.File.Grants, g) && !has(added, g) {
+				added = append(added, g)
+			}
+		}
+		for _, g := range f.File.Grants {
+			if !has(d.desiredGrants, g) && !has(removed, g) {
+				removed = append(removed, g)
 			}
 		}
 	}
@@ -380,7 +411,8 @@ func buildApplyPlan(in applyPlanInput) []applyChange {
 			continue
 		}
 		added, removed := d.addedRemoved()
-		if len(added) == 0 && len(removed) == 0 {
+		gAdded, gRemoved := d.grantsAddedRemoved()
+		if len(added) == 0 && len(removed) == 0 && len(gAdded) == 0 && len(gRemoved) == 0 {
 			continue
 		}
 		var parts []string
@@ -389,6 +421,12 @@ func buildApplyPlan(in applyPlanInput) []applyChange {
 		}
 		for _, r := range removed {
 			parts = append(parts, "-"+r)
+		}
+		for _, g := range gAdded {
+			parts = append(parts, "+grant "+g.String())
+		}
+		for _, g := range gRemoved {
+			parts = append(parts, "-grant "+g.String())
 		}
 		c := applyChange{kind: changeScope, sign: "~",
 			label: d.label + " repository scope (" + strings.Join(parts, ", ") + ")",

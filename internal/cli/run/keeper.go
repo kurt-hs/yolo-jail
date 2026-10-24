@@ -280,6 +280,7 @@ func newKeeper(plan *keeperPlan, seams KeeperSeams, progress, lifeline, lock *os
 	fillDefaults(&o)
 	o.runtime = plan.Runtime
 	o.approvedScopes = plan.ApprovedScopes
+	o.approvedGrants = plan.ApprovedGrants
 	o.settingsPrepared = plan.SettingsPrepared
 	o.settingsFrozen = plan.Settings
 	o.packTree, o.packTreeHeld = plan.PackTree, plan.PackTree != ""

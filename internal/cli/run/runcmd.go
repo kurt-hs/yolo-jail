@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/awsauthdaemon"
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostcas"
@@ -334,6 +335,10 @@ type Options struct {
 	// docs/design/workspace-widening.md WW-P2). Set only by a gate that passed, from its
 	// in-memory result; the spawn writes each one to the launch's scope file.
 	approvedScopes map[string][]config.ScopeRepo
+	// approvedGrants are the user grants the same gate approved, per brokered loophole name
+	// (config.ScopeCheck.ApprovedGrants; docs/design/git-broker-plan.md ID-10), set beside
+	// approvedScopes and written to the same scope files.
+	approvedGrants map[string][]brokerscope.Grant
 	// scopeFiles are the scope files this launch wrote, per brokered loophole name, which
 	// {repository_scope} resolves to at the spawn and the loophole's stop removes (BB-D32).
 	scopeFiles map[string]string

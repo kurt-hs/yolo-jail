@@ -389,9 +389,9 @@
     but how the endpoint file crosses into an AC guest is an unmade decision, so
     host services stay explicitly DEFERRED there rather than quietly enabled.
 
-  [bold]brokered[/bold] (object, [bold]repos: WORKSPACE SCOPE, sets: USER SCOPE[/bold]): More
-    repositories for this workspace's brokered loophole, such as the github pack's github-broker,
-    and the permission sets a write grant hands over.
+  [bold]brokered[/bold] (object, [bold]repos, grants: WORKSPACE SCOPE; sets, grant_kinds: USER SCOPE[/bold]):
+    More repositories for this workspace's brokered loophole, such as the github pack's
+    github-broker, the permission sets a write grant hands over, and user grants in two layers.
     A brokered loophole runs your host login's commands for the jail, but only
     against the workspace's repositories: its git remotes, and any it lists
     here, which every fresh launch reads and asks you to approve.  It runs only
@@ -434,6 +434,22 @@
       "github-broker: sets from user config: read-only (+ pr comment), review 1h".  A workspace
       file may NOT name sets: that file is the agent's to edit, so `sets` there is a `yolo check`
       error.
+    • [bold]grant_kinds[/bold] (USER SCOPE ONLY): the kinds of user grant a workspace may hold
+      for this source, as in "grant_kinds": ["create-branch"].  A kind is one the loophole's
+      manifest defines (`brokered.grants`; the git pack's git-broker defines "create-branch").
+      Listing a kind grants nothing by itself.  A workspace file may NOT name grant_kinds.
+    • [bold]grants[/bold] (WORKSPACE SCOPE ONLY): the specific grants this workspace holds,
+      each naming the repository it covers:
+        "grants": [{"kind": "create-branch", "repo": "github.com/o/r"}]
+      • kind: a kind the source defines AND your user config's grant_kinds lists; anything
+        else is a `yolo check` error naming the key that would allow it.  "read" needs no
+        grant (the loophole being on allows it) and only warns.
+      • repo: the host and path a remote reduces to (host in lower case with a dot or a
+        port, path with no scheme, user or ".git"), or "*" for every repository of the scope.
+      A grant joins only when you approve it: each is a line of the repository-scope block at
+      the next fresh launch, or at `yolo config apply`, which replaces a running jail's grants
+      as it replaces its repositories, and each launch names the grants in force.  A user-config
+      file may NOT name grants.
     It takes effect at the next fresh launch: the config-change prompt shows each
     repository as a row of the repository-scope block, naming the file it came
     from, and asks you to approve it; then the launch names the scope, as in

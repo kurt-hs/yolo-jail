@@ -102,6 +102,10 @@ type File struct {
 	// from the user config with no approval, until that form was retired; it stays decodable,
 	// and a broker still adds it to the scope, so a file a previous build wrote reads as it did.
 	Widened []string `json:"widened,omitempty"`
+	// Grants are the user grants the workspace config names, as this launch's gate approved
+	// them (grant.go; docs/design/git-broker-plan.md ID-10). Absent from a file an older build
+	// wrote, which reads as holding none.
+	Grants []Grant `json:"grants,omitempty"`
 	// ConfigFile and LocalFile are the names, never paths, of the workspace's config file and
 	// local file as the loader reads them (`yolo-jail.jsonc` or the `yolo-jail.json` a project
 	// keeps, and its local file), so the broker's out-of-scope refusal names the exact file to
@@ -131,6 +135,9 @@ func Write(f File) (string, error) {
 	// Validate before deriving a lock directory from a source name.
 	if f.Source == "" || f.LaunchID == "" || strings.ContainsAny(f.Source+f.LaunchID, "/\\.") {
 		return "", errors.New("scope file: bad source or launch id")
+	}
+	if err := checkGrants(f.Grants); err != nil {
+		return "", err
 	}
 	var path string
 	err := brokerlock.WithTransaction(paths.BrokerSourceDir(f.Source), func() error { var err error; path, err = write(f); return err })

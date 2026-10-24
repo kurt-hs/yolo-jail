@@ -85,8 +85,21 @@ func ReplaceRepos(path string, expect File, repos []string) error {
 	return ReplaceReposContext(context.Background(), path, expect, repos)
 }
 
-// ReplaceReposContext is ReplaceRepos with context-bounded source lock acquisition.
+// ReplaceReposContext is ReplaceRepos with context-bounded source lock acquisition. The file's
+// grants are left as they are.
 func ReplaceReposContext(ctx context.Context, path string, expect File, repos []string) error {
+	return replaceScope(ctx, path, expect, repos, nil, false)
+}
+
+// ReplaceScopeContext is ReplaceReposContext that also replaces the file's grants
+// (docs/design/git-broker-plan.md ID-10): `yolo config apply` hands a running broker the
+// repositories and the grants its gate approved together. A grant ValidGrant refuses is refused
+// with the file left as it was.
+func ReplaceScopeContext(ctx context.Context, path string, expect File, repos []string, grants []Grant) error {
+	return replaceScope(ctx, path, expect, repos, grants, true)
+}
+
+func replaceScope(ctx context.Context, path string, expect File, repos []string, grants []Grant, setGrants bool) error {
 	if ctx == nil {
 		return errors.New("scope replacement requires a context")
 	}
@@ -111,6 +124,11 @@ func ReplaceReposContext(ctx context.Context, path string, expect File, repos []
 		}
 		return nil
 	}
+	if setGrants {
+		if err := checkGrants(grants); err != nil {
+			return err
+		}
+	}
 	return brokerlock.WithTransactionContext(ctx, paths.BrokerSourceDir(expect.Source), func() error {
 		fi, err := os.Lstat(path)
 		if err != nil {
@@ -134,6 +152,9 @@ func ReplaceReposContext(ctx context.Context, path string, expect File, repos []
 			return err
 		}
 		f.Repos = append([]string{}, repos...)
+		if setGrants {
+			f.Grants = append([]Grant(nil), grants...)
+		}
 		got, err := write(f)
 		if err != nil {
 			return err

@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
@@ -73,6 +74,9 @@ type keeperPlan struct {
 	// into each broker's scope file and names on the launch line. It is the gate's own result;
 	// the keeper never derives it from Config, the merged config read before the gate (WW-P2).
 	ApprovedScopes map[string][]config.ScopeRepo `json:"approved_scopes,omitempty"`
+	// ApprovedGrants are the user grants the same gate approved, per brokered loophole
+	// (Options.approvedGrants), which the keeper writes into the same scope files.
+	ApprovedGrants map[string][]brokerscope.Grant `json:"approved_grants,omitempty"`
 	// Forwards are the host ports the jail reaches through socket forwards, parsed and disclosed by
 	// the launch, and ForwardDir the per-jail socket directory, "" when there are none.
 	Forwards   []PortForward `json:"forwards,omitempty"`

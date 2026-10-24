@@ -97,3 +97,25 @@ func TestBrokeredRemoteHostWildcard(t *testing.T) {
 		}
 	}
 }
+
+// A source names the grant kinds it defines (docs/design/git-broker-plan.md ID-10, BB-D96): each a
+// lowercase name, as a workspace grant and the user's `grant_kinds` spell it.
+func TestBrokeredGrants(t *testing.T) {
+	m, err := decodeBrokered(t, `
+		"host_daemon": {"cmd": ["d", "{socket}", "{repository_scope}"], "publishes": "socket"},
+		"brokered": {"source": "git", "remote_host": "*", "grants": ["create-branch"]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Brokered == nil || !reflect.DeepEqual(m.Brokered.Grants, []string{"create-branch"}) {
+		t.Fatalf("brokered %+v, want grants [create-branch]", m.Brokered)
+	}
+	for _, grants := range []string{`["Create Branch"]`, `"create-branch"`, `[1]`, `["create-branch", "create-branch"]`} {
+		_, err := decodeBrokered(t, `
+			"host_daemon": {"cmd": ["d", "{socket}", "{repository_scope}"], "publishes": "socket"},
+			"brokered": {"source": "git", "remote_host": "*", "grants": `+grants+`}`)
+		if err == nil || !strings.Contains(err.Error(), "brokered.grants") {
+			t.Errorf("grants %s: err %v, want a refusal naming brokered.grants", grants, err)
+		}
+	}
+}

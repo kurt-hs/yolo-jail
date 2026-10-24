@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -37,6 +38,34 @@ func brokeredFixtureWith(t *testing.T, hostExecApproved bool) (o *Options, buf *
 // "*" is a source on any host, whose scope is the workspace's remote URLs.
 func brokeredFixtureOn(t *testing.T, hostExecApproved bool, remoteHost string) (o *Options, buf *strings.Builder, marker string) {
 	t.Helper()
+	return brokeredFixtureBlock(t, hostExecApproved, `{"source": "gbsrc", "remote_host": "`+remoteHost+`"}`)
+}
+
+// brokeredFixtureGrants is a source on any host that defines the `create-branch` grant kind, as
+// the git pack's manifest does (docs/design/git-broker-plan.md ID-10).
+func brokeredFixtureGrants(t *testing.T) (o *Options, buf *strings.Builder, marker string) {
+	t.Helper()
+	return brokeredFixtureBlock(t, true, `{"source": "gbsrc", "remote_host": "*", "grants": ["create-branch"]}`)
+}
+
+// grantKindsConfig is a user config allowing source's grant kinds (`brokered.<source>.grant_kinds`).
+func grantKindsConfig(source string, kinds ...string) *jsonx.OrderedMap {
+	list := make([]any, len(kinds))
+	for i, k := range kinds {
+		list[i] = k
+	}
+	src := jsonx.NewOrderedMap()
+	src.Set("grant_kinds", list)
+	sources := jsonx.NewOrderedMap()
+	sources.Set(source, src)
+	cfg := jsonx.NewOrderedMap()
+	cfg.Set("brokered", sources)
+	return cfg
+}
+
+// brokeredFixtureBlock is brokeredFixtureOn with the manifest's whole `brokered` block chosen.
+func brokeredFixtureBlock(t *testing.T, hostExecApproved bool, block string) (o *Options, buf *strings.Builder, marker string) {
+	t.Helper()
 	isolatePackModules(t)
 	home, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -51,7 +80,7 @@ func brokeredFixtureOn(t *testing.T, hostExecApproved bool, remoteHost string) (
 	manifest := `{"name": "gb", "transport": "loopback-tls",
 	  "lifecycle": "spawned",
 	  "host_daemon": {"cmd": ["/bin/cp", "{repository_scope}", "` + marker + `"], "publishes": "socket"},
-	  "brokered": {"source": "gbsrc", "remote_host": "` + remoteHost + `"}}`
+	  "brokered": ` + block + `}`
 	if err := os.WriteFile(filepath.Join(mod, "manifest.jsonc"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -468,6 +497,36 @@ func TestWriteScopeFilesRemoteURLForm(t *testing.T) {
 	}
 	if want := `gb: scope for this workspace: git@github.com:o/r.git (remote "origin")`; !strings.Contains(buf.String(), want) {
 		t.Errorf("the launch line is not %q:\n%s", want, buf.String())
+	}
+}
+
+// The scope file's `grants` hold what this launch's gate approved (docs/design/git-broker-plan.md
+// ID-10), through writeScopeFiles' own call site: a grant written into the workspace config after
+// the y waits for the next fresh launch, as a repository entry does.
+func TestScopeFileCarriesApprovedGrants(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the fixture daemon is /bin/cp")
+	}
+	o, buf, marker := brokeredFixtureGrants(t)
+	writeUserConfigOf(t, grantKindsConfig("gbsrc", "create-branch"))
+	writeWorkspaceConfig(t, o.Workspace, `{"brokered": {"gbsrc": {"grants": [{"kind": "create-branch", "repo": "github.com/o/r"}]}}}`)
+	o.AcceptConfigChanges = true
+	if !o.checkConfigChanges(gbOn(), "podman") {
+		t.Fatalf("an accepted gate refused:\n%s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "+ grant create-branch github.com/o/r  added") {
+		t.Errorf("the gate showed no line for the grant:\n%s", buf.String())
+	}
+	writeWorkspaceConfig(t, o.Workspace, `{"brokered": {"gbsrc": {"grants": [{"kind": "create-branch", "repo": "github.com/o/r"}, {"kind": "create-branch", "repo": "*"}]}}}`)
+	handles := o.startLoopholes("yolo-brokered-grants", "podman", gbOn())
+	t.Cleanup(func() { o.stopLoopholes(handles, hostServiceSocketsDir("yolo-brokered-grants", false), "", "") })
+	f := readHandedScope(t, marker, buf)
+	want := []brokerscope.Grant{{Kind: "create-branch", Repo: "github.com/o/r"}}
+	if !reflect.DeepEqual(f.Grants, want) {
+		t.Fatalf("scope file grants %v, want the gate's %v alone", f.Grants, want)
+	}
+	if line := "gb: grants for this workspace: create-branch github.com/o/r"; !strings.Contains(buf.String(), line) {
+		t.Errorf("the launch did not disclose the grant as %q:\n%s", line, buf.String())
 	}
 }
 

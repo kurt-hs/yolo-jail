@@ -40,7 +40,7 @@ func (o *Options) brokeredScopeCheck(rt string, cfg *jsonx.OrderedMap, read *con
 	brokers := make([]config.ScopeBroker, 0, len(lps))
 	for _, lp := range lps {
 		brokers = append(brokers, config.ScopeBroker{Source: lp.Brokered.Source, Label: lp.Name,
-			RemoteHost: lp.Brokered.RemoteHost})
+			RemoteHost: lp.Brokered.RemoteHost, GrantKinds: lp.Brokered.Grants})
 	}
 	check := config.NewScopeCheck(o.Workspace, brokers, read)
 	for _, s := range check.Sources {
@@ -57,10 +57,12 @@ func (o *Options) brokeredScopeCheck(rt string, cfg *jsonx.OrderedMap, read *con
 
 // recordApprovedScopes keeps what the gate just approved, per loophole, for the spawn: the
 // gate's own in-memory result (WW-P2), never a re-read of the approval record, which a
-// concurrent macos-user session can write between this gate and the spawn.
-func (o *Options) recordApprovedScopes(approved map[string][]config.ScopeRepo) {
+// concurrent macos-user session can write between this gate and the spawn. grants are the user
+// grants the same gate approved (config.ScopeCheck.ApprovedGrants), kept beside them.
+func (o *Options) recordApprovedScopes(approved map[string][]config.ScopeRepo, grants map[string][]brokerscope.Grant) {
 	if approved != nil {
 		o.approvedScopes = approved
+		o.approvedGrants = grants
 	}
 }
 
@@ -112,9 +114,15 @@ func (o *Options) writeScopeFiles(cname string, brokered []*loopholes.Loophole) 
 		// The form is the manifest's, as the gate read it (config.NewScopeCheck): a source on any
 		// host hands its broker exact remote URLs, which it must not read as OWNER/REPO.
 		form := brokerscope.FormFor(lp.Brokered.RemoteHost)
+		// The grants the same gate approved (docs/design/git-broker-plan.md ID-10), and none
+		// where it approved no scope: the same fail-closed rule as the repositories.
+		var grants []brokerscope.Grant
+		if approved {
+			grants = o.approvedGrants[lp.Name]
+		}
 		path, err := brokerscope.Write(brokerscope.File{Source: lp.Brokered.Source, LaunchID: id,
 			PID: os.Getpid(), Container: cname, Workspace: o.Workspace, Form: form, Repos: repos,
-			ConfigFile: configName, LocalFile: localName})
+			Grants: grants, ConfigFile: configName, LocalFile: localName})
 		if err != nil {
 			out.print("[yellow]" + lp.Name + ": cannot write this launch's scope file: " + err.Error() +
 				" — the loophole will not start[/yellow]")
@@ -124,6 +132,15 @@ func (o *Options) writeScopeFiles(cname string, brokered []*loopholes.Loophole) 
 			o.scopeFiles = map[string]string{}
 		}
 		o.scopeFiles[lp.Name] = path
+		// Each grant the broker starts with is disclosed beside its scope, on every launch: a
+		// grant is standing access, which a human should see each time it is in force.
+		if len(grants) > 0 {
+			shown := make([]string, len(grants))
+			for i, g := range grants {
+				shown[i] = g.String()
+			}
+			out.printf("[dim]%s: grants for this workspace: %s[/dim]", lp.Name, richtext.Escape(strings.Join(shown, ", ")))
+		}
 		// The disclosure of what the broker starts with (§5.6): every repository, and where it
 		// came from. A source label can name a file the agent chose, already free of control
 		// characters (config.ScopeRepo), and its markup is escaped here.

@@ -26,7 +26,7 @@ func brokeredScopeForCheck(workspace string, merged *jsonx.OrderedMap, rt string
 	brokers := make([]config.ScopeBroker, 0, len(lps))
 	for _, lp := range lps {
 		brokers = append(brokers, config.ScopeBroker{Source: lp.Brokered.Source, Label: lp.Name,
-			RemoteHost: lp.Brokered.RemoteHost})
+			RemoteHost: lp.Brokered.RemoteHost, GrantKinds: lp.Brokered.Grants})
 	}
 	return config.NewScopeCheck(workspace, brokers, read)
 }

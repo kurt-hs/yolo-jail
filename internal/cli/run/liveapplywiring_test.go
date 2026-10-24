@@ -68,7 +68,7 @@ func TestLiveApplySeamsAreTheRealSteps(t *testing.T) {
 		name       string
 		seam, real any
 	}{
-		{"replaceScopeRepos", replaceScopeReposSeam, brokerscope.ReplaceReposContext},
+		{"replaceScopeRepos", replaceScopeReposSeam, brokerscope.ReplaceScopeContext},
 		{"ctxMountsLive", ctxMountsLiveSeam, (*Options).ctxMountsLive},
 		{"readCtxMountRecord", readCtxMountRecordSeam, readCtxMountRecord},
 		{"diffCtxMounts", diffCtxMountsSeam, diffCtxMounts},

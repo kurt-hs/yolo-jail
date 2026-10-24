@@ -671,3 +671,52 @@ func TestReplaceReposRemoteURLForm(t *testing.T) {
 		t.Fatalf("a refused rewrite changed the file: %v", got.Repos)
 	}
 }
+
+// `yolo config apply` replaces a running launch's grants with its repositories
+// (docs/design/git-broker-plan.md ID-10), and a malformed grant is refused with the file left
+// as it was. ReplaceRepos leaves the grants alone.
+func TestReplaceScopeCarriesGrants(t *testing.T) {
+	t.Setenv("HOME", resolvedTempDir(t))
+	path, f := remoteURLFile(t, "url", FormRemoteURL, "git@github.com:o/r.git")
+	bound, err := BindBroker(path, f, "start-url", func() error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	grants := []Grant{{Kind: "create-branch", Repo: "github.com/o/r"}, {Kind: "create-branch", Repo: AnyRepo}}
+	if err := ReplaceScopeContext(context.Background(), path, bound, []string{"git@github.com:o/r.git"}, grants); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadFile(path)
+	if err != nil || !reflect.DeepEqual(got.Grants, grants) {
+		t.Fatalf("rewritten file %+v, %v", got, err)
+	}
+	if err := ReplaceRepos(path, bound, []string{"git@github.com:o/r.git"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := ReadFile(path); !reflect.DeepEqual(got.Grants, grants) {
+		t.Fatalf("ReplaceRepos changed the grants: %v", got.Grants)
+	}
+	for _, bad := range []Grant{{Kind: "Create Branch", Repo: "github.com/o/r"}, {Kind: "create-branch", Repo: "o/r"},
+		{Kind: "create-branch", Repo: "https://github.com/o/r"}, {Kind: "create-branch", Repo: "github.com/o/r.git"}} {
+		if err := ReplaceScopeContext(context.Background(), path, bound, nil, []Grant{bad}); err == nil {
+			t.Errorf("grant %+v was written", bad)
+		}
+	}
+	if got, _ := ReadFile(path); !reflect.DeepEqual(got.Grants, grants) {
+		t.Fatalf("a refused rewrite changed the grants: %v", got.Grants)
+	}
+}
+
+func TestValidGrantRepo(t *testing.T) {
+	for _, ok := range []string{"github.com/o/r", "*", "git.example.com:2222/team/app", "gitlab.example.com/a/b/c"} {
+		if !ValidGrantRepo(ok) {
+			t.Errorf("%q refused", ok)
+		}
+	}
+	for _, bad := range []string{"", "o/r", "github.com", "GitHub.com/o/r", "github.com/o/r.git", "github.com/o/r/",
+		"https://github.com/o/r", "git@github.com:o/r", "github.com/o/../r", "*/*", "github.com/o r"} {
+		if ValidGrantRepo(bad) {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

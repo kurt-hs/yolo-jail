@@ -54,7 +54,7 @@ var (
 		}
 		return out, err
 	}
-	replaceScopeReposSeam         = brokerscope.ReplaceReposContext
+	replaceScopeReposSeam         = brokerscope.ReplaceScopeContext
 	invalidateCtxMountRecordSeam  = invalidateCtxMountRecord
 	ctxMountsLiveSeam             = (*Options).ctxMountsLive
 	ctxMountRecordInvalidatedSeam = ctxMountRecordInvalidated
@@ -325,7 +325,7 @@ func (o *Options) applyPlan(run *applyRun, scope *config.ScopeCheck) []applyChan
 		defer cancelDiscovery()
 		for _, s := range scope.Sources {
 			d := scopeDelta{label: s.Label, source: s.Source, desired: s.Repos(),
-				recordChanged: changedLabels[s.Label]}
+				desiredGrants: s.Grants, recordChanged: changedLabels[s.Label]}
 			if run.mode.running && run.rt != "container" { // parity: Warned — Apple Container starts no broker; the scope line says so
 				files, discoveryErr := liveScopeFilesSeam(discoveryCtx, s.Source, run.cname, o.Workspace)
 				d.files = files
@@ -508,10 +508,13 @@ func (o *Options) applyStep(run *applyRun, c *applyChange, deadline time.Time) e
 		for i, r := range approved {
 			repos[i] = r.Repo
 		}
+		// The grants go with the repositories, from the same gate (docs/design/git-broker-plan.md
+		// ID-10).
+		grants := o.approvedGrants[c.scope.label]
 		ctx, cancel := contextForDeadline(deadline)
 		defer cancel()
 		for _, f := range c.scope.files {
-			if err := replaceScopeReposSeam(ctx, f.Path, f.File, repos); err != nil {
+			if err := replaceScopeReposSeam(ctx, f.Path, f.File, repos, grants); err != nil {
 				return err
 			}
 		}
@@ -610,7 +613,7 @@ func (o *Options) configChangesPending(rt, cname string, cfg *jsonx.OrderedMap, 
 	brokers := make([]config.ScopeBroker, 0, len(lps))
 	for _, lp := range lps {
 		brokers = append(brokers, config.ScopeBroker{Source: lp.Brokered.Source, Label: lp.Name,
-			RemoteHost: lp.Brokered.RemoteHost})
+			RemoteHost: lp.Brokered.RemoteHost, GrantKinds: lp.Brokered.Grants})
 	}
 	r, err := config.ScopeChanges(o.Workspace, config.NewScopeCheck(o.Workspace, brokers, read))
 	return err == nil && r.ScopeChanged

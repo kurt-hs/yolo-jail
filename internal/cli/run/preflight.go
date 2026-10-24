@@ -444,7 +444,7 @@ func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHook
 	ok, approved, err := config.ApproveConfigAndScope(o.Workspace, read.Config, scope, o.IsTTYStdin(),
 		o.AcceptConfigChanges, pr)
 	if ok && err == nil {
-		o.recordApprovedScopes(approved)
+		o.recordApprovedScopes(approved, scope.ApprovedGrants())
 	}
 	if err != nil {
 		// The OQ-D2 refusal gets rendered rather than dumped: same diff, same

@@ -55,6 +55,25 @@ type ScopeSource struct {
 	// Entry is what the workspace's `brokered.<Source>.repos` lists, from the gate's one read
 	// of the workspace config (WorkspaceRead.Entry).
 	Entry []EntryRepo
+	// Grants are the user grants the workspace's `brokered.<Source>.grants` names, of a kind
+	// the source defines and the user's own config allows (WorkspaceRead.Grants), and GrantFiles
+	// the workspace-relative files that name them. A grant is a line of the source's block of its
+	// own, recorded under grantsRecordKey (BB-D96; docs/design/git-broker-plan.md ID-10).
+	Grants     []brokerscope.Grant
+	GrantFiles []string
+}
+
+// grantsRecordKey is the scope part's key for a source's approved grants: `<source>.grants`. A
+// source name cannot hold a `.` (loopholedecl), so it collides with no source's own key.
+func grantsRecordKey(source string) string { return source + "." + brokeredGrantsKey }
+
+// grantStrings is grants in the record's spelling (brokerscope.Grant.String), in order.
+func grantStrings(grants []brokerscope.Grant) []string {
+	out := make([]string, len(grants))
+	for i, g := range grants {
+		out[i] = g.String()
+	}
+	return out
 }
 
 // ScopeCheck is the scope part in play for one gate.
@@ -391,10 +410,13 @@ type scopeOutcome struct {
 	// approved is each in-play loophole's scope as read, which is what a passing gate
 	// approved or confirmed, by loophole name.
 	approved map[string][]ScopeRepo
+	// approvedGrants is each in-play loophole's grants as read, the same way.
+	approvedGrants map[string][]brokerscope.Grant
 }
 
 func compareScope(check *ScopeCheck, old scopeRecord, oldSources sourcesRecord) scopeOutcome {
-	out := scopeOutcome{next: scopeRecord{}, nextSources: sourcesRecord{}, approved: map[string][]ScopeRepo{}}
+	out := scopeOutcome{next: scopeRecord{}, nextSources: sourcesRecord{}, approved: map[string][]ScopeRepo{},
+		approvedGrants: map[string][]brokerscope.Grant{}}
 	for k, v := range old {
 		out.next[k] = append([]string(nil), v...)
 	}
@@ -416,11 +438,31 @@ func compareScope(check *ScopeCheck, old scopeRecord, oldSources sourcesRecord) 
 		out.next[s.Source] = names
 		out.nextSources[s.Source] = srcs
 		out.approved[s.Label] = approved
-		if !had && len(cur) == 0 {
+		// The grants under their own key, written only when there are some, so a source with
+		// none leaves the record's bytes as they were before grants existed.
+		gkey := grantsRecordKey(s.Source)
+		prevGrants := old[gkey]
+		if len(s.Grants) > 0 {
+			out.next[gkey] = grantStrings(s.Grants)
+		} else {
+			delete(out.next, gkey)
+		}
+		out.approvedGrants[s.Label] = append([]brokerscope.Grant(nil), s.Grants...)
+		if !had && len(cur) == 0 && len(s.Grants) == 0 && len(prevGrants) == 0 {
 			// Nothing to approve and no record yet: recorded silently, as an empty config is.
 			continue
 		}
 		block, count, edit, changed := scopeBlock(s, cur, prev, had, recorded)
+		gBlock, gCount, gChanged := grantBlock(s, prevGrants)
+		block = append(block, gBlock...)
+		if gChanged {
+			count += "; grants: " + gCount
+			if len(s.GrantFiles) > 0 {
+				out.entryEdits = append(out.entryEdits, EntryEdit{Key: brokeredGrantsPath(s.Source),
+					Files: append([]string(nil), s.GrantFiles...)})
+			}
+		}
+		changed = changed || gChanged
 		if !changed {
 			continue
 		}
@@ -544,6 +586,50 @@ func scopeBlock(s ScopeSource, cur []scopeRepo, prev []string, had bool,
 	return lines, count, edit, changed
 }
 
+// grantBlock is the grant lines of one source's scope block (BB-D96; docs/design/git-broker-plan.md
+// ID-10): each grant added or removed against the record's `<source>.grants`, and the unchanged
+// ones for context, each its own line after the repositories. It returns the lines, the count
+// for the source's count line, and whether a grant changed. No lines for a source that has and
+// had none. A grant is compared exactly: its kind and repository identity are already canonical.
+func grantBlock(s ScopeSource, prev []string) (lines []string, count string, changed bool) {
+	if len(s.Grants) == 0 && len(prev) == 0 {
+		return nil, "", false
+	}
+	type row struct{ mark, grant, what string }
+	var rows []row
+	inPrev := map[string]bool{}
+	for _, g := range prev {
+		inPrev[g] = true
+	}
+	added, removed := 0, 0
+	for _, g := range grantStrings(s.Grants) {
+		if inPrev[g] {
+			delete(inPrev, g)
+			rows = append(rows, row{" ", g, "unchanged"})
+			continue
+		}
+		rows = append(rows, row{"+", g, "added"})
+		added++
+	}
+	for _, g := range prev {
+		if inPrev[g] {
+			rows = append(rows, row{"-", g, "removed"})
+			removed++
+		}
+	}
+	width := 0
+	for _, r := range rows {
+		width = max(width, len(r.grant))
+	}
+	for _, r := range rows {
+		// The record is host-side but the repository came from the workspace config; a grant is
+		// a kind and an identity, neither of which can hold a control character (ValidGrant),
+		// and a recorded one is escaped anyway.
+		lines = append(lines, fmt.Sprintf("  %s grant %-*s  %s", r.mark, width, termsafe.Visible(r.grant), r.what))
+	}
+	return lines, fmt.Sprintf("%d added, %d removed", added, removed), added+removed > 0
+}
+
 // readScopeRecords reads both scope-side parts of the record.
 func readScopeRecords(workspace string) (scopeRecord, bool, sourcesRecord, error) {
 	old, exists, err := readScopeRecord(ApprovalScopePath(workspace))
@@ -621,4 +707,36 @@ func ApprovedScope(workspace, source string) []string {
 		return nil
 	}
 	return append([]string(nil), rec[source]...)
+}
+
+// ApprovedGrants returns the grants the approval record holds for a source, under
+// `<source>.grants`. Like ApprovedScope it is a report of the record, never what a launch hands
+// its broker (ScopeCheck.ApprovedGrants is). An entry that does not parse is skipped.
+func ApprovedGrants(workspace, source string) []brokerscope.Grant {
+	rec, _, err := readScopeRecord(ApprovalScopePath(workspace))
+	if err != nil {
+		return nil
+	}
+	var out []brokerscope.Grant
+	for _, s := range rec[grantsRecordKey(source)] {
+		if g, ok := brokerscope.ParseGrant(s); ok {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+// ApprovedGrants is the grants a gate over this check approves, by loophole name: each in-play
+// source's grants as the gate's one read found them (WW-P2). Meaningful only once the gate
+// passed (ApproveConfigAndScope returned ok), as its approved repositories are; nil when no
+// scope is in play.
+func (s *ScopeCheck) ApprovedGrants() map[string][]brokerscope.Grant {
+	if !s.inPlay() {
+		return nil
+	}
+	out := map[string][]brokerscope.Grant{}
+	for _, src := range s.Sources {
+		out[src.Label] = append([]brokerscope.Grant(nil), src.Grants...)
+	}
+	return out
 }

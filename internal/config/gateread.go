@@ -114,6 +114,67 @@ func (r *WorkspaceRead) Entry(source string) []EntryRepo {
 	return out
 }
 
+// Grants is what this read's `brokered.<source>.grants` names that can join the scope (BB-D96,
+// docs/design/git-broker-plan.md ID-10): each grant once, in the order written, of a kind in
+// defined (the source's manifest) that the user's own config allows (BrokeredGrantKinds), and
+// with the workspace-relative files that name any of them, in merge order. An entry validation
+// refuses or warns about (a malformed one, `read`, a kind outside either list) is skipped, so it
+// reaches no scope even where nothing validated.
+func (r *WorkspaceRead) Grants(source string, defined []string) (grants []brokerscope.Grant, files []string) {
+	if r == nil || r.Config == nil || len(defined) == 0 {
+		return nil, nil
+	}
+	sv, _ := r.Config.Get(brokeredKey)
+	sources, ok := asMap(sv)
+	if !ok {
+		return nil, nil
+	}
+	srcV, _ := sources.Get(source)
+	src, ok := asMap(srcV)
+	if !ok {
+		return nil, nil
+	}
+	gv, _ := src.Get(brokeredGrantsKey)
+	list, _ := gv.([]any)
+	allowed := BrokeredGrantKinds(source)
+	node := r.sources.node().key(brokeredKey).key(source).key(brokeredGrantsKey)
+	var fileList []*srcFile
+	for i, e := range list {
+		m, ok := asMap(e)
+		if !ok {
+			continue
+		}
+		kv, _ := m.Get(brokeredGrantKindKey)
+		rv, _ := m.Get(brokeredGrantRepoKey)
+		kind, _ := kv.(string)
+		repo, _ := rv.(string)
+		g := brokerscope.Grant{Kind: kind, Repo: repo}
+		if len(m.Keys()) != 2 || !brokerscope.ValidGrant(g) || kind == impliedGrantKind ||
+			!inList(defined, kind) || !inList(allowed, kind) {
+			continue
+		}
+		dup := false
+		for _, have := range grants {
+			dup = dup || have == g
+		}
+		if !dup {
+			grants = append(grants, g)
+		}
+		for _, w := range node.elem(i).writerList() {
+			if w.file != nil && w.file.contained {
+				fileList = append(fileList, w.file)
+			}
+		}
+	}
+	sort.SliceStable(fileList, func(a, b int) bool { return fileList[a].seq < fileList[b].seq })
+	for _, f := range fileList {
+		if !inList(files, f.rel) {
+			files = append(files, f.rel)
+		}
+	}
+	return grants, files
+}
+
 func inList(list []string, s string) bool {
 	for _, x := range list {
 		if x == s {
@@ -127,12 +188,16 @@ func inList(list []string, s string) bool {
 // whose remotes make up its scope (loopholedecl.Brokered).
 type ScopeBroker struct {
 	Source, Label, RemoteHost string
+	// GrantKinds are the grant kinds the source defines (loopholedecl.Brokered.Grants): a
+	// workspace grant of any other kind reaches no scope.
+	GrantKinds []string
 }
 
 // NewScopeCheck is the scope part in play for brokers: each one's remotes, read from the
 // workspace's git config as text (brokerscope.ReadRemotes), and its entry, from the gate's own
 // read; for a broker on any host (`remote_host: "*"`), every remote URL (brokerscope.ReadAllRemotes)
-// in the remote-url form, and no entry. nil when no broker starts, which leaves the gate exactly what it was before the scope
+// in the remote-url form, and no entry. Each source also carries the grants the same read names
+// (WorkspaceRead.Grants). nil when no broker starts, which leaves the gate exactly what it was before the scope
 // part existed.
 func NewScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead) *ScopeCheck {
 	if len(brokers) == 0 {
@@ -149,6 +214,7 @@ func NewScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead)
 		} else {
 			s.Read, s.Entry = brokerscope.ReadRemotes(workspace, b.RemoteHost), read.Entry(b.Source)
 		}
+		s.Grants, s.GrantFiles = read.Grants(b.Source, b.GrantKinds)
 		check.Sources = append(check.Sources, s)
 	}
 	return check

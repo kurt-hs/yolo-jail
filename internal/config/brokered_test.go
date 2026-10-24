@@ -567,3 +567,88 @@ func TestEachMalformedBrokeredSetIsRefused(t *testing.T) {
 		t.Errorf("a rule with a newline was not refused:\n%s", errs)
 	}
 }
+
+// gitGrantResolver is gitResolver with the git manifest's defined grant kinds.
+var gitGrantResolver = fenceResolver{known: map[string]LoopholeInfo{
+	"git-broker": {Name: "git-broker", HasHostDaemon: true, Brokered: &loopholedecl.Brokered{
+		Source: "git", RemoteHost: "*", Grants: []string{"create-branch"}}},
+}}
+
+// validateWith loads the config as the launch does and validates it with resolver, keeping the
+// lines about `brokered`.
+func (h brokeredHost) validateWith(t *testing.T, resolver LoopholeResolver) (errs, warns string) {
+	t.Helper()
+	cfg, err := LoadConfig(h.ws, true, func(string) {})
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	e, w := ValidateConfig(cfg, h.ws, resolver)
+	return brokeredLines(strings.Join(e, "\n")), brokeredLines(strings.Join(w, "\n"))
+}
+
+const oneGitGrant = `{"brokered": {"git": {"grants": [{"kind": "create-branch", "repo": "github.com/o/r"}]}}}`
+
+// A workspace grant of a kind the user's own config does not allow is refused, naming the
+// user-config key that would allow it (BB-D96; docs/design/git-broker-plan.md ID-10).
+func TestGrantKindNotAllowedNamesUserKey(t *testing.T) {
+	h := newBrokeredHost(t)
+	write(t, filepath.Join(h.ws, WorkspaceConfigName), oneGitGrant)
+	errs, _ := h.validateWith(t, gitGrantResolver)
+	if !strings.Contains(errs, "brokered.git.grant_kinds") || !strings.Contains(errs, "create-branch") {
+		t.Fatalf("no refusal naming brokered.git.grant_kinds and create-branch:\n%s", errs)
+	}
+}
+
+func TestGrantKindAllowedPasses(t *testing.T) {
+	h := newBrokeredHost(t)
+	write(t, h.userCfg, `{"brokered": {"git": {"grant_kinds": ["create-branch"]}}}`)
+	write(t, filepath.Join(h.ws, WorkspaceConfigName), oneGitGrant)
+	if errs, warns := h.validateWith(t, gitGrantResolver); errs != "" || warns != "" {
+		t.Fatalf("an allowed grant was not accepted:\nerrors:\n%s\nwarnings:\n%s", errs, warns)
+	}
+	write(t, filepath.Join(h.ws, WorkspaceConfigName), `{"brokered": {"git": {"grants": [{"kind": "create-branch", "repo": "*"}]}}}`)
+	if errs, _ := h.validateWith(t, gitGrantResolver); errs != "" {
+		t.Fatalf("the written-out wildcard was refused:\n%s", errs)
+	}
+}
+
+// Each wrong shape has its own message: a kind the source does not define, a repo that is not a
+// repository identity, `grant_kinds` at workspace scope and `grants` at user scope; `read`, which
+// the loophole being on implies, warns.
+func TestGrantShapeRefusals(t *testing.T) {
+	for _, c := range []struct {
+		name, user, ws    string
+		wantErr, wantWarn string
+	}{
+		{"undefined kind", `{"brokered": {"git": {"grant_kinds": ["create-branch"]}}}`,
+			`{"brokered": {"git": {"grants": [{"kind": "create-pr", "repo": "github.com/o/r"}]}}}`,
+			`config.brokered.git.grants[0].kind: 'create-pr' is not a grant kind the git source defines (it defines: create-branch)`, ""},
+		{"repo without host", `{"brokered": {"git": {"grant_kinds": ["create-branch"]}}}`,
+			`{"brokered": {"git": {"grants": [{"kind": "create-branch", "repo": "o/r"}]}}}`,
+			`config.brokered.git.grants[0].repo: 'o/r' is not a repository identity`, ""},
+		{"grant_kinds at workspace scope", `{}`,
+			`{"brokered": {"git": {"grant_kinds": ["create-branch"]}}}`,
+			"config.brokered.git.grant_kinds: user scope only", ""},
+		{"grants at user scope", `{"brokered": {"git": {"grants": [{"kind": "create-branch", "repo": "github.com/o/r"}]}}}`,
+			`{}`, "config.brokered.git.grants: not in the user config", ""},
+		{"read warns", `{}`,
+			`{"brokered": {"git": {"grants": [{"kind": "read", "repo": "github.com/o/r"}]}}}`,
+			"", "config.brokered.git.grants[0]: `read` needs no grant"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newBrokeredHost(t)
+			write(t, h.userCfg, c.user)
+			write(t, filepath.Join(h.ws, WorkspaceConfigName), c.ws)
+			errs, warns := h.validateWith(t, gitGrantResolver)
+			if c.wantErr == "" && errs != "" {
+				t.Errorf("unexpected errors:\n%s", errs)
+			}
+			if c.wantErr != "" && !strings.Contains(errs, c.wantErr) {
+				t.Errorf("errors do not contain %q:\n%s", c.wantErr, errs)
+			}
+			if c.wantWarn != "" && !strings.Contains(warns, c.wantWarn) {
+				t.Errorf("warnings do not contain %q:\n%s", c.wantWarn, warns)
+			}
+		})
+	}
+}

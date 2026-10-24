@@ -779,7 +779,7 @@ func TestConfigApplyReplacesTheLiveScope(t *testing.T) {
 		return []liveScopeFile{f}, nil
 	})
 	var replaced []string
-	swapSeam(t, &replaceScopeReposSeam, func(_ context.Context, path string, _ brokerscope.File, repos []string) error {
+	swapSeam(t, &replaceScopeReposSeam, func(_ context.Context, path string, _ brokerscope.File, repos []string, _ []brokerscope.Grant) error {
 		if path != "/scope/1" {
 			t.Errorf("replaced %s", path)
 		}
@@ -818,7 +818,7 @@ func TestConfigApplyReplacesACaseOnlyRemoteURLChange(t *testing.T) {
 		return []liveScopeFile{f}, nil
 	})
 	var replaced []string
-	swapSeam(t, &replaceScopeReposSeam, func(_ context.Context, _ string, _ brokerscope.File, repos []string) error {
+	swapSeam(t, &replaceScopeReposSeam, func(_ context.Context, _ string, _ brokerscope.File, repos []string, _ []brokerscope.Grant) error {
 		replaced = repos
 		return nil
 	})
@@ -833,6 +833,55 @@ func TestConfigApplyReplacesACaseOnlyRemoteURLChange(t *testing.T) {
 	}
 }
 
+// `yolo config apply` replaces a running launch's grants as it replaces its repositories
+// (docs/design/git-broker-plan.md ID-10): a grant the gate approves that the live file lacks is a
+// scope change, named on its line, and the seam writes the approved grants.
+func TestConfigApplyReplacesGrants(t *testing.T) {
+	o, buf, _ := brokeredFixtureGrants(t)
+	if _, err := config.WriteWorkspaceBootBaseline(o.Workspace, jsonx.NewOrderedMap()); err != nil {
+		t.Fatal(err)
+	}
+	user := gbOn()
+	brokered, _ := grantKindsConfig("gbsrc", "create-branch").Get("brokered")
+	user.Set("brokered", brokered)
+	writeUserConfigOf(t, user)
+	writeWorkspaceConfig(t, o.Workspace, `{"brokered": {"gbsrc": {"grants": [{"kind": "create-branch", "repo": "github.com/o/r"}]}}}`)
+	answer(o, "y")
+	f := liveScopeFile{Path: "/scope/1", LiveScope: true, File: brokerscope.File{Source: "gbsrc",
+		Form: brokerscope.FormRemoteURL, Repos: []string{"git@github.com:o/r.git"}}}
+	swapSeam(t, &liveScopeFilesSeam, func(_ context.Context, source, _, _ string) ([]liveScopeFile, error) {
+		if source != "gbsrc" {
+			return nil, nil
+		}
+		return []liveScopeFile{f}, nil
+	})
+	var replaced []brokerscope.Grant
+	called := false
+	swapSeam(t, &replaceScopeReposSeam, func(_ context.Context, _ string, _ brokerscope.File, _ []string, grants []brokerscope.Grant) error {
+		called, replaced = true, grants
+		return nil
+	})
+	// The config as the gate's read composes it, which the apply requires its cfg to be.
+	read, err := config.ReadWorkspaceForGate(o.Workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged, err := config.ComposeWithWorkspaceRead(o.Workspace, read.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rc := o.liveApply(merged, "podman", "yolo-ws", nil, applyMode{running: true}); rc != 0 {
+		t.Fatalf("rc = %d, want 0\n%s", rc, buf.String())
+	}
+	want := []brokerscope.Grant{{Kind: "create-branch", Repo: "github.com/o/r"}}
+	if !called || !reflect.DeepEqual(replaced, want) {
+		t.Fatalf("the live file's grants became %v (called %v), want %v", replaced, called, want)
+	}
+	if !strings.Contains(buf.String(), "+grant create-branch github.com/o/r") || !strings.Contains(buf.String(), "applied now") {
+		t.Errorf("no applied-now line naming the grant:\n%s", buf.String())
+	}
+}
+
 // A broker that cannot take live scope: recorded, at next restart.
 func TestConfigApplyScopeOnAnOldBrokerWaits(t *testing.T) {
 	o, buf, _ := brokeredFixture(t)
@@ -844,7 +893,7 @@ func TestConfigApplyScopeOnAnOldBrokerWaits(t *testing.T) {
 	swapSeam(t, &liveScopeFilesSeam, func(_ context.Context, _, _, _ string) ([]liveScopeFile, error) {
 		return []liveScopeFile{{Path: "/scope/1", File: brokerscope.File{Repos: nil}}}, nil
 	})
-	swapSeam(t, &replaceScopeReposSeam, func(_ context.Context, _ string, _ brokerscope.File, _ []string) error {
+	swapSeam(t, &replaceScopeReposSeam, func(_ context.Context, _ string, _ brokerscope.File, _ []string, _ []brokerscope.Grant) error {
 		t.Error("an old broker's file was rewritten")
 		return nil
 	})
