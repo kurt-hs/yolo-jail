@@ -13,6 +13,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 INPUT_FILES = {"go.mod", "go.sum", "flake.nix", "flake.lock", "Justfile",
@@ -188,7 +189,11 @@ def freeze_snapshot(repo: Path, destination: Path) -> str:
 
 
 def _run(command, *, cwd: Path, env: dict[str, str], runner=subprocess.run):
-    runner(command, cwd=cwd, env=env, check=True)
+    # The build's progress goes to stderr (fd 2): stdout is the caller's. `build-dev` prints the
+    # launcher's path there, and `just deploy` discards the first run's stdout, which once hid
+    # every progress line behind a silent half-minute build.
+    sys.stderr.flush()
+    runner(command, cwd=cwd, env=env, check=True, stdout=2)
 
 
 def assemble(snapshot: Path, destination: Path, *, identity: str, build_kind: str,
@@ -374,10 +379,16 @@ def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subproc
                     subprocess.CalledProcessError):
                 continue
         output = Path(td) / "bundle"
+        print(f"Building a development bundle for this checkout ({host_os}-{host_arch}): the source "
+              "changed since the last one. Later runs of the same source reuse it.",
+              file=sys.stderr, flush=True)
+        started = time.monotonic()
         builder(snapshot, output, identity=identity, build_kind="development",
                 version=version, commit=commit, runner=runner)
         published = _publish_assembled_bundle(home, output, identity, shipped, guest, host_os, host_arch,
                                               stamps)
+        print(f"Built the development bundle in {time.monotonic() - started:.0f} s.",
+              file=sys.stderr, flush=True)
         return published / "bin/yolo"
 
 

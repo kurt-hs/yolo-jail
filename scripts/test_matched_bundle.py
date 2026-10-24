@@ -190,8 +190,11 @@ class SnapshotTests(unittest.TestCase):
             goarch = subprocess.check_output(["go", "env", "GOHOSTARCH"], text=True).strip()
             launcher = "#!/bin/sh\nprintf '%s\\n' 'snapshot identity: " + identity + "' 'build kind: development'\n"
             seen = []
-            def run(argv, *, cwd, env, check):
+            def run(argv, *, cwd, env, check, stdout):
                 seen.append(Path(argv[0]))
+                # Progress goes to stderr: the caller's stdout carries the launcher path, and a
+                # deploy discards it.
+                self.assertEqual(stdout, 2)
                 self.assertNotIn("YOLO_REPO_ROOT", env)
                 self.assertEqual(cwd, snapshot)
                 self.assertTrue(Path(argv[0]).is_relative_to(snapshot))
@@ -341,6 +344,21 @@ class PackageTests(unittest.TestCase):
             helper.chmod(0o644); helper.unlink()
             rebuilt=mb.build_dev_bundle(repo, home, builder=builder)
             self.assertNotEqual(dirty, rebuilt); self.assertEqual(len(calls), 3)
+
+    def test_a_build_says_so_on_stderr_and_a_reuse_says_nothing(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root); home=root/"home"
+            for expect_build in (True, False):
+                with self.subTest(build=expect_build):
+                    stdout=StringIO(); stderr=StringIO()
+                    with redirect_stdout(stdout), redirect_stderr(stderr):
+                        mb.build_dev_bundle(repo, home, builder=fake_assembler)
+                    self.assertEqual(stdout.getvalue(), "", "build progress reached stdout")
+                    said=stderr.getvalue()
+                    self.assertEqual("Building a development bundle" in said, expect_build, said)
+                    self.assertEqual("Built the development bundle in" in said, expect_build, said)
 
     def test_build_cache_never_reuses_a_bundle_stamped_for_another_commit_or_dirtiness(self):
         # The same frozen content can be built from a dirty tree at the parent commit and then
