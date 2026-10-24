@@ -924,3 +924,14 @@ expensive with every change to `internal/ghbroker`; land it first.
 None. Every ruling the design rests on is in its [ledger](git-broker.md#12-decision-ledger) and
 [`boundary-broker.md`'s](boundary-broker.md#15-decision-ledger). Task 6 carries the one
 measured assumption, with its stop-and-report condition.
+
+## Backlog
+
+Found in the task 6 review; out of scope, not blocking.
+
+- **A push POST that gets a 401 is not replayed.** The push body streams, so a server that asks
+  for a credential only at the upload (and not at its `info/refs`) fails the push, naming the host.
+- **A stalled upstream can hang a call once the jail side has closed**, over HTTPS as over SSH:
+  `Broker.Handle` (`internal/gitbroker/broker.go`) cancels only when the jail's connection errors.
+- **A server whose CGI cannot take a chunked request body** (Go's `net/http/cgi` is one) refuses
+  the broker's streamed push; check task 9's live run against real forges.

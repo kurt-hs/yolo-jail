@@ -2,6 +2,7 @@ package gitbroker
 
 import (
 	"bytes"
+	"context"
 	"crypto/x509"
 	"fmt"
 	"io"
@@ -99,6 +100,10 @@ type httpsOpts struct {
 	untrusted bool
 	// cover stands in for a grant (Broker.cover).
 	cover func(gitproto.Command) (string, string, bool)
+	// rejectPushPost answers every push POST with 401, whatever credential it carries.
+	rejectPushPost bool
+	// authOnlyPushPost serves everything without a credential except a push POST.
+	authOnlyPushPost bool
 }
 
 type httpsFixture struct {
@@ -149,7 +154,9 @@ func newHTTPSFixture(t *testing.T, o httpsOpts) *httpsFixture {
 					h.srv.seen = append(h.srv.seen, rec)
 					h.srv.mu.Unlock()
 				}()
-				if !rec.Authed {
+				pushPost := r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-receive-pack")
+				needAuth := !o.authOnlyPushPost || pushPost
+				if (needAuth && !rec.Authed) || (o.rejectPushPost && pushPost) {
 					sw.Header().Set("WWW-Authenticate", `Basic realm="fixture"`)
 					sw.WriteHeader(http.StatusUnauthorized)
 					return
@@ -362,6 +369,7 @@ func TestHTTPSV0ServerRefused(t *testing.T) {
 func TestCredentialFillRunsInAnEmptyBrokerDir(t *testing.T) {
 	t.Setenv("GH_TOKEN", "leak")
 	t.Setenv("GIT_ASKPASS", "/leak/askpass")
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/fixture-bus")
 	h := newHTTPSFixture(t, httpsOpts{})
 	if out, err := h.git("fetch", "origin"); err != nil {
 		t.Fatalf("git fetch: %v\n%s", err, out)
@@ -398,7 +406,8 @@ func TestCredentialFillRunsInAnEmptyBrokerDir(t *testing.T) {
 		t.Fatalf("the credential directory %q outlived the call (%v)", cwd, err)
 	}
 	env := readFile(t, filepath.Join(fill, "env"))
-	for _, want := range []string{"GIT_TERMINAL_PROMPT=0\n", "GIT_CEILING_DIRECTORIES=" + cwd + "\n", "GIT_ASKPASS=\n"} {
+	for _, want := range []string{"GIT_TERMINAL_PROMPT=0\n", "GIT_CEILING_DIRECTORIES=" + cwd + "\n", "GIT_ASKPASS=\n",
+		"GCM_INTERACTIVE=never\n", "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/fixture-bus\n"} {
 		if !strings.Contains(env, want) {
 			t.Fatalf("fill env lacks %q:\n%s", want, env)
 		}
@@ -470,5 +479,154 @@ func TestHTTPSUntrustedCertificateRefused(t *testing.T) {
 	}
 	if len(h.credCalls()) != 0 {
 		t.Fatal("credential fill ran for a server whose certificate failed")
+	}
+}
+
+// callsOf returns the recorded host git calls for one credential action.
+func (h *httpsFixture) callsOf(action string) []string {
+	var out []string
+	for _, c := range h.credCalls() {
+		if strings.HasSuffix(c, "-"+action) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// approve and reject send back every field fill answered, verbatim, so a helper's refresh
+// token and expiry survive a jail fetch (git-credential-oauth, credential-cache).
+func TestCredentialFieldsRoundTrip(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{credBody: `printf 'protocol=https\nhost=evil.test\nusername=fixture\npassword=s3cret\npassword_expiry_utc=4102444800\noauth_refresh_token=r3fresh\nwwwauth[]=Basic realm="fixture"\n'`})
+	if out, err := h.git("fetch", "origin"); err != nil {
+		t.Fatalf("git fetch: %v\n%s", err, out)
+	}
+	approves := h.callsOf("approve")
+	if len(approves) != 1 {
+		t.Fatalf("approve calls %v", h.credCalls())
+	}
+	got := readFile(t, filepath.Join(approves[0], "stdin"))
+	want := "protocol=https\nhost=" + h.host + "\npath=o/r.git\nusername=fixture\npassword=s3cret\n" +
+		"password_expiry_utc=4102444800\noauth_refresh_token=r3fresh\nwwwauth[]=Basic realm=\"fixture\"\n\n"
+	if got != want {
+		t.Fatalf("approve stdin %q\nwant %q", got, want)
+	}
+}
+
+// A credential the server refuses is reported rejected, with every field fill answered.
+func TestRefusedCredentialIsRejected(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{credBody: `printf 'username=fixture\npassword=wrong\noauth_refresh_token=r3fresh\n'`})
+	out, err := h.git("fetch", "origin")
+	if err == nil || !strings.Contains(out, "refused the credential") {
+		t.Fatalf("fetch: %v\n%s", err, out)
+	}
+	rejects := h.callsOf("reject")
+	if len(rejects) != 1 || len(h.callsOf("approve")) != 0 {
+		t.Fatalf("credential calls %v", h.credCalls())
+	}
+	if s := readFile(t, filepath.Join(rejects[0], "stdin")); !strings.Contains(s, "password=wrong\noauth_refresh_token=r3fresh\n") {
+		t.Fatalf("reject stdin %q", s)
+	}
+}
+
+// A fill answer holding a control character is no credential, and nothing reaches the server.
+func TestCredentialControlCharacterRefused(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{credBody: `printf 'username=fixture\npassword=s3c\rret\n'`})
+	out, err := h.git("fetch", "origin")
+	if err == nil || !strings.Contains(out, "git credential fill") {
+		t.Fatalf("fetch: %v\n%s", err, out)
+	}
+	for _, r := range h.srv.requests() {
+		if r.AnyAuth {
+			t.Fatalf("a request carried credentials:\n%s", h.srv.log(t))
+		}
+	}
+}
+
+func TestCredentialSafe(t *testing.T) {
+	for line, want := range map[string]bool{"username=a": true, "path=o/r\n": false, "password=a\rb": false,
+		"x=a\x00": false, "x=\x7f": false, `wwwauth[]=Basic realm="x"`: true} {
+		if got := credentialSafe(line); got != want {
+			t.Errorf("credentialSafe(%q) = %v", line, got)
+		}
+	}
+}
+
+// A push POST the server refuses with 401 rejects the credential, and git gets a report.
+func TestHTTPSPushPostRefusedCredentialRejected(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{rejectPushPost: true,
+		cover: func(gitproto.Command) (string, string, bool) { return "create-branch", "create-branch", true }})
+	h.localCommit()
+	out, err := h.git("push", "origin", "HEAD:refs/heads/agent/x")
+	if err == nil || !strings.Contains(out, "! [remote rejected]") || !strings.Contains(out, "refused the credential") {
+		t.Fatalf("push: %v\n%s", err, out)
+	}
+	if len(h.callsOf("approve")) != 1 || len(h.callsOf("reject")) != 1 {
+		t.Fatalf("credential calls %v", h.credCalls())
+	}
+}
+
+// A server that wants a credential only at the push's upload cannot get one (the streamed body
+// is not replayed), and the message does not claim one was filled.
+func TestHTTPSPushPostAuthWithoutCredential(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{authOnlyPushPost: true,
+		cover: func(gitproto.Command) (string, string, bool) { return "create-branch", "create-branch", true }})
+	h.localCommit()
+	out, err := h.git("push", "origin", "HEAD:refs/heads/agent/x")
+	if err == nil || !strings.Contains(out, "asked for a credential only when the push was uploaded") ||
+		strings.Contains(out, "refused the credential") {
+		t.Fatalf("push: %v\n%s", err, out)
+	}
+	if len(h.credCalls()) != 0 {
+		t.Fatalf("credential calls %v", h.credCalls())
+	}
+}
+
+// A push of no commands sends nothing upstream.
+func TestHTTPSEmptyPushPostsNothing(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{
+		cover: func(gitproto.Command) (string, string, bool) { return "create-branch", "create-branch", true }})
+	var out, errb bytes.Buffer
+	rc := h.broker.serveRequest(context.Background(), request{Service: serviceReceivePack, URL: h.url}, "fixture",
+		strings.NewReader("0000"), &out, &errb)
+	if rc != 0 {
+		t.Fatalf("rc %d stderr %q", rc, errb.String())
+	}
+	for _, r := range h.srv.requests() {
+		if r.Method == http.MethodPost {
+			t.Fatalf("an empty push was POSTed:\n%s", h.srv.log(t))
+		}
+	}
+}
+
+func TestHTTPSRequestOverTheCapRefused(t *testing.T) {
+	saved := maxRequest
+	maxRequest = 64
+	t.Cleanup(func() { maxRequest = saved })
+	h := newHTTPSFixture(t, httpsOpts{})
+	out, err := h.git("fetch", "origin")
+	if err == nil || !strings.Contains(out, "remote error: the git-broker refused a fetch request over 64 bytes") ||
+		!strings.Contains(out, "fetch this on the host") {
+		t.Fatalf("fetch: %v\n%s", err, out)
+	}
+	for _, r := range h.srv.requests() {
+		if r.Method == http.MethodPost {
+			t.Fatalf("an over-cap request was POSTed:\n%s", h.srv.log(t))
+		}
+	}
+}
+
+func TestHTTPSAdvertisementOverTheCapRefused(t *testing.T) {
+	saved := maxAdvertisement
+	maxAdvertisement = 16
+	t.Cleanup(func() { maxAdvertisement = saved })
+	h := newHTTPSFixture(t, httpsOpts{})
+	out, err := h.git("fetch", "origin")
+	if err == nil || !strings.Contains(out, "is over 16 bytes") {
+		t.Fatalf("fetch: %v\n%s", err, out)
+	}
+	h.localCommit()
+	out, err = h.git("push", "origin", "HEAD:main")
+	if err == nil || !strings.Contains(out, "push advertisement is over 16 bytes") {
+		t.Fatalf("push: %v\n%s", err, out)
 	}
 }

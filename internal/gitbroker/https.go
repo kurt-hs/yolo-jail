@@ -54,9 +54,21 @@ const credentialTimeout = 2 * time.Minute
 // whose agent starts with "git/".
 const userAgent = "git/yolo-git-broker"
 
-// credential is what `git credential fill` answered.
+// maxAdvertisement bounds a capability or ref advertisement, and maxRequest one v2 client
+// request, the broker buffers. Both are gitproto.MaxCommandBytes; variables so a test can
+// lower them.
+var (
+	maxAdvertisement = gitproto.MaxCommandBytes
+	maxRequest       = gitproto.MaxCommandBytes
+)
+
+// credential is what `git credential fill` answered. fields is every key=value line of the
+// answer except protocol, host and path (which the broker sets itself), in order: approve and
+// reject send them back verbatim, as git does, so a helper's oauth_refresh_token,
+// password_expiry_utc, wwwauth[] and capability[] survive the round trip.
 type credential struct {
 	username, password string
+	fields             []string
 }
 
 // httpsLeg is one request's HTTPS upstream.
@@ -181,19 +193,45 @@ func (h *httpsLeg) fill() (*credential, error) {
 	}
 	c := &credential{}
 	sc := bufio.NewScanner(bytes.NewReader(out))
+	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
-		k, v, _ := strings.Cut(sc.Text(), "=")
+		line := sc.Text()
+		if line == "" {
+			break
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok || k == "" {
+			continue
+		}
+		if !credentialSafe(line) {
+			return nil, fmt.Errorf("%w: the host's credential helper answered a control character in %q", errNoCredential, k)
+		}
 		switch k {
+		case "protocol", "host", "path", "quit":
+			continue
 		case "username":
 			c.username = v
 		case "password":
 			c.password = v
 		}
+		c.fields = append(c.fields, line)
 	}
 	if c.password == "" {
 		return nil, errNoCredential
 	}
 	return c, nil
+}
+
+// credentialSafe says a line written to `git credential`'s stdin holds no newline, carriage
+// return, NUL or other control character, so it cannot end the record early or smuggle in a
+// field (git's own credential code refuses the same).
+func credentialSafe(line string) bool {
+	for i := 0; i < len(line); i++ {
+		if c := line[i]; c < 0x20 || c == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 func (h *httpsLeg) credentialRun(action string, c *credential) error {
@@ -225,16 +263,25 @@ func (h *httpsLeg) credentialRunOutput(action string, c *credential) ([]byte, er
 	}
 	defer os.RemoveAll(dir)
 
-	var in strings.Builder
-	in.WriteString("protocol=https\nhost=" + h.remote.Host + "\n")
+	lines := []string{"protocol=https", "host=" + h.remote.Host}
 	if p := strings.TrimPrefix(h.remote.Path, "/"); p != "" {
-		in.WriteString("path=" + p + "\n")
+		lines = append(lines, "path="+p)
 	}
 	switch {
 	case c != nil:
-		in.WriteString("username=" + c.username + "\npassword=" + c.password + "\n")
+		lines = append(lines, c.fields...)
 	case h.user != "":
-		in.WriteString("username=" + h.user + "\n")
+		lines = append(lines, "username="+h.user)
+	}
+	var in strings.Builder
+	for _, l := range lines {
+		// Defense in depth: fill already refused such an answer, and a URL with an escaped
+		// control character in its path stops here.
+		if !credentialSafe(l) {
+			k, _, _ := strings.Cut(l, "=")
+			return nil, fmt.Errorf("the credential's %q holds a newline or control character, so `git credential %s` was not run", k, action)
+		}
+		in.WriteString(l + "\n")
 	}
 	in.WriteString("\n")
 
@@ -290,6 +337,8 @@ func (b *Broker) serveHTTPS(ctx context.Context, req request, in io.Reader, out 
 			"Fix the remote's URL with `git remote set-url`.")
 		return brokercore.ExitUsage
 	}
+	// Each request has its own transport; its idle connections end with the request.
+	defer h.client.CloseIdleConnections()
 	if req.Service == serviceUploadPack {
 		ev.Set = "read"
 		return h.fetch(in, out)
@@ -335,11 +384,18 @@ func (h *httpsLeg) requestFailed(err error) int {
 func (h *httpsLeg) checkResponse(resp *http.Response, want string) int {
 	host := h.remote.Host
 	switch {
-	case resp.StatusCode == http.StatusUnauthorized:
+	case resp.StatusCode == http.StatusUnauthorized && h.cred != nil:
 		h.ev.Outcome, h.ev.Reason = "refused", "the server refused the host's credential"
 		h.say("the server " + host + " refused the credential the host's `git credential fill` gave (HTTP 401), " +
 			"so nothing was transferred; the broker told the host's credential helper to reject it. Store a working " +
 			"credential on the host (run this fetch or push once there), then try again.")
+		return brokercore.ExitUnavailable
+	case resp.StatusCode == http.StatusUnauthorized:
+		// Only a streamed push POST gets here: it cannot be replayed with a credential.
+		h.ev.Outcome, h.ev.Reason = "refused", "the server asked for a credential only at the push's upload"
+		h.say("the server " + host + " asked for a credential only when the push was uploaded (HTTP 401), after " +
+			"reading its refs without one, so no credential was asked of the host and nothing was pushed. Push " +
+			"from the host instead.")
 		return brokercore.ExitUnavailable
 	case resp.StatusCode/100 == 3:
 		h.ev.Outcome, h.ev.Reason = "refused", "the server redirected"
@@ -381,6 +437,41 @@ func skipServiceLine(r *gitproto.Reader) (gitproto.Packet, error) {
 	return p, nil
 }
 
+// errTooLarge is an advertisement over maxAdvertisement.
+var errTooLarge = errors.New("advertisement too large")
+
+// readToFlush reads packets up to and including a flush, the caller's Tee collecting them,
+// and refuses past maxAdvertisement bytes, the first packet's already counted in used.
+func readToFlush(r *gitproto.Reader, used int) error {
+	for {
+		p, err := r.Read()
+		if err != nil {
+			return err
+		}
+		used += len(p.Data) + 4
+		if used > maxAdvertisement {
+			return errTooLarge
+		}
+		if p.Kind == gitproto.Flush {
+			return nil
+		}
+	}
+}
+
+// advertisementFailed tells the user why an advertisement could not be relayed.
+func (h *httpsLeg) advertisementFailed(what string, err error) int {
+	h.ev.Outcome, h.ev.Reason = "failed", "unreadable "+what
+	if errors.Is(err, errTooLarge) {
+		h.ev.Reason = what + " over the broker's limit"
+		h.say(fmt.Sprintf("the server %s's %s is over %d bytes, more than the broker relays, so nothing was "+
+			"transferred. Run this on the host, or use the remote's SSH URL.", h.remote.Host, what, maxAdvertisement))
+		return brokercore.ExitUnavailable
+	}
+	h.say("the server " + h.remote.Host + "'s " + what + " could not be read (" + err.Error() +
+		"), so nothing was transferred. Try `git ls-remote " + h.remote.String() + "` on the host.")
+	return brokercore.ExitUnavailable
+}
+
 // fetch is a v2 fetch: the capability advertisement, then one POST per client request.
 func (h *httpsLeg) fetch(in io.Reader, out io.Writer) int {
 	resp, code := h.advertisement()
@@ -402,19 +493,11 @@ func (h *httpsLeg) fetch(in io.Reader, out io.Writer) int {
 	if err == nil {
 		_ = gitproto.NewWriter(&adv).Data(first.Data)
 		ar.Tee(&adv)
-		for {
-			var p gitproto.Packet
-			if p, err = ar.Read(); err != nil || p.Kind == gitproto.Flush {
-				break
-			}
-		}
+		err = readToFlush(ar, adv.Len())
 	}
 	drainClose(resp)
 	if err != nil {
-		h.ev.Outcome, h.ev.Reason = "failed", "unreadable capability advertisement"
-		h.say("the server " + h.remote.Host + "'s capability advertisement could not be read (" + err.Error() +
-			"), so nothing was transferred. Try `git ls-remote " + h.remote.String() + "` on the host.")
-		return brokercore.ExitUnavailable
+		return h.advertisementFailed("capability advertisement", err)
 	}
 	if _, err := out.Write(adv.Bytes()); err != nil {
 		h.ev.Outcome, h.ev.Reason = "failed", "the jail stopped reading"
@@ -436,9 +519,14 @@ func (h *httpsLeg) fetch(in io.Reader, out io.Writer) int {
 				break
 			}
 			total += len(p.Data) + 4
-			if total > gitproto.MaxCommandBytes {
-				rerr = fmt.Errorf("%w: a request over %d bytes", gitproto.ErrProtocol, gitproto.MaxCommandBytes)
-				break
+			if total > maxRequest {
+				cr.Tee(nil)
+				h.ev.Outcome, h.ev.Reason = "refused", "a fetch request over the broker's limit"
+				msg := fmt.Sprintf("the git-broker refused a fetch request over %d bytes, so it was not sent "+
+					"upstream; fetch this on the host, or use the remote's SSH URL", maxRequest)
+				h.say(msg + ".")
+				_ = gitproto.NewWriter(out).Line("ERR " + msg + "\n")
+				return brokercore.ExitUsage
 			}
 			if p.Kind == gitproto.Flush {
 				break
@@ -518,12 +606,7 @@ func (h *httpsLeg) push(in io.Reader, out io.Writer) int {
 		} else if first.Kind == gitproto.Data {
 			_ = gitproto.NewWriter(&adv).Data(first.Data)
 			ar.Tee(&adv)
-			for {
-				var p gitproto.Packet
-				if p, err = ar.Read(); err != nil || p.Kind == gitproto.Flush {
-					break
-				}
-			}
+			err = readToFlush(ar, adv.Len())
 		} else {
 			// An empty repository's advertisement can be a flush alone.
 			_ = gitproto.NewWriter(&adv).Flush()
@@ -531,10 +614,8 @@ func (h *httpsLeg) push(in io.Reader, out io.Writer) int {
 	}
 	drainClose(resp)
 	if err != nil {
-		h.ev.Set, h.ev.Outcome, h.ev.Reason = "refused", "failed", "unreadable receive-pack advertisement"
-		h.say("the server " + h.remote.Host + "'s push advertisement could not be read (" + err.Error() +
-			"), so nothing was pushed. Try `git ls-remote " + h.remote.String() + "` on the host.")
-		return brokercore.ExitUnavailable
+		h.ev.Set = "refused"
+		return h.advertisementFailed("push advertisement", err)
 	}
 	if _, err := out.Write(adv.Bytes()); err != nil {
 		h.ev.Set, h.ev.Outcome, h.ev.Reason = "refused", "failed", "the jail stopped reading"
@@ -561,15 +642,20 @@ func (h *httpsLeg) push(in io.Reader, out io.Writer) int {
 	}
 	presp, err := h.send(http.MethodPost, "/git-receive-pack", "application/x-git-receive-pack-request",
 		"application/x-git-receive-pack-result", body)
+	// A failed POST is answered in git's own report, then the rest of git's stream is read and
+	// dropped, as refuseToClient does. The report goes first: a push of deletes only sends no
+	// pack and keeps its side open until it has read the report.
 	if err != nil {
 		code := h.requestFailed(err)
 		_ = writeRefusal(out, p.caps, p.cmds, sameReason(len(p.cmds), "the git-broker's HTTPS upstream failed: "+err.Error()))
+		_, _ = io.Copy(io.Discard, in)
 		return code
 	}
 	h.settle(presp)
 	if code := h.checkResponse(presp, "application/x-git-receive-pack-result"); code != 0 {
 		drainClose(presp)
 		_ = writeRefusal(out, p.caps, p.cmds, sameReason(len(p.cmds), "the git-broker's HTTPS upstream failed; its reason is above"))
+		_, _ = io.Copy(io.Discard, in)
 		return code
 	}
 	_, _ = io.Copy(out, presp.Body)
