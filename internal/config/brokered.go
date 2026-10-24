@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -120,8 +121,141 @@ func grantBranchProblem(entryPath, kind, repo string, m *jsonx.OrderedMap) (stri
 	return "", branch
 }
 
-// impliedGrantKind is the kind no grant names: reading is what the loophole being on allows.
-const impliedGrantKind = "read"
+// readGrantKind is the grant kind every brokered source defines without declaring it: reading
+// the repositories of the approved scope (docs/design/boundary-broker.md BB-D105, BB-D107). A
+// broker holding no read grant refuses every call, so its pack being selected grants nothing.
+// It is the one kind the user config may hold as a grant itself, for every workspace.
+const readGrantKind = brokerscope.KindRead
+
+// definedGrantKinds is the kinds a source's grants may be of: read, which every source defines,
+// then the kinds its manifest declares.
+func definedGrantKinds(declared []string) []string {
+	out := []string{readGrantKind}
+	for _, k := range declared {
+		if !inList(out, k) {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// userGrantsValue parses a user-scope `brokered.<source>.grants` list (BB-D107): the user
+// config holds only `{"kind": "read", "repo": "*"}`, which grants read on each workspace's own
+// approved scope to every workspace, and needs no `grant_kinds` entry, since the user config is
+// the ceiling's owner. It returns the valid grants and one message per problem, each starting
+// with path; a malformed entry is skipped, never repaired.
+func userGrantsValue(source, path string, v any) ([]brokerscope.Grant, []string) {
+	list, ok := v.([]any)
+	if !ok {
+		return nil, []string{path + `: expected a list holding {"kind": "read", "repo": "*"} (got ` +
+			pyReprValue(v) + ")"}
+	}
+	var out []brokerscope.Grant
+	var problems []string
+	for i, e := range list {
+		entryPath := path + "[" + itoa(i) + "]"
+		m, ok := asMap(e)
+		if !ok {
+			problems = append(problems, entryPath+`: expected {"kind": "read", "repo": "*"} (got `+pyReprValue(e)+")")
+			continue
+		}
+		before := len(problems)
+		reportUnknownKeysTo(&problems, m, knownBrokeredGrantKeys, entryPath)
+		kv, _ := m.Get(brokeredGrantKindKey)
+		rv, _ := m.Get(brokeredGrantRepoKey)
+		_, hasBranch := m.Get(brokeredGrantBranchKey)
+		switch {
+		case kv != readGrantKind:
+			problems = append(problems, entryPath+"."+brokeredGrantKindKey+": "+pyReprValue(kv)+" is not a grant "+
+				"the user config holds: it holds only {\"kind\": \"read\", \"repo\": \"*\"}, read access for "+
+				"every workspace to its own approved remotes. Any other grant names its repository in the "+
+				"workspace config of the project that holds it, "+WorkspaceConfigName+", or "+
+				WorkspaceLocalConfigName+" beside it, and the user config allows its kind in `"+
+				brokeredGrantKindsPath(source)+"`. Move it there, or remove it.")
+		case rv != brokerscope.AnyRepo:
+			problems = append(problems, entryPath+"."+brokeredGrantRepoKey+": a read grant in the user config "+
+				"names \"*\", meaning each workspace's own approved remotes (got "+pyReprValue(rv)+"). To "+
+				"grant read on chosen repositories only, add \"read\" to `"+brokeredGrantKindsPath(source)+
+				"` here and name the grant in each project's workspace config instead.")
+		case hasBranch:
+			problems = append(problems, entryPath+"."+brokeredGrantBranchKey+": a read grant names no branch. "+
+				"Remove this key.")
+		}
+		if len(problems) > before {
+			continue
+		}
+		g := brokerscope.Grant{Kind: readGrantKind, Repo: brokerscope.AnyRepo}
+		if slices.Contains(out, g) {
+			problems = append(problems, entryPath+": the grant \"read *\" is listed twice; list it once")
+			continue
+		}
+		out = append(out, g)
+	}
+	return out, problems
+}
+
+// allowedGrantKinds is the kinds a workspace grant of source may be of: the user's
+// `grant_kinds`, and `read` too where the user config holds a read grant itself, so a workspace
+// naming one is redundant rather than refused.
+func allowedGrantKinds(source string) []string {
+	user := UserScopeConfigOrEmpty()
+	allowed := grantKindsOf(user, source)
+	if len(userGrantsOf(user, source)) > 0 && !inList(allowed, readGrantKind) {
+		allowed = append(allowed, readGrantKind)
+	}
+	return allowed
+}
+
+// BrokeredUserGrants is the grants the user's own config holds for source, for every
+// workspace (BB-D107): `read *` when it lists one, else nil. It reads the user scope alone, and
+// skips a malformed entry, which the validator reports.
+func BrokeredUserGrants(source string) []brokerscope.Grant {
+	return userGrantsOf(UserScopeConfigOrEmpty(), source)
+}
+
+func userGrantsOf(user *jsonx.OrderedMap, source string) []brokerscope.Grant {
+	v, _ := user.Get(brokeredKey)
+	sources, ok := asMap(v)
+	if !ok {
+		return nil
+	}
+	sv, _ := sources.Get(source)
+	src, ok := asMap(sv)
+	if !ok {
+		return nil
+	}
+	gv, has := src.Get(brokeredGrantsKey)
+	if !has || gv == nil {
+		return nil
+	}
+	grants, _ := userGrantsValue(source, "", gv)
+	return grants
+}
+
+// BrokerGrantAdvice is the next step every refusal of a broker that grants nothing names
+// (BB-D108, BB-D109): the user-config read grant for every workspace, and `yolo config apply`.
+// It names the source's key, never a loophole or tool name core would have to know.
+func BrokerGrantAdvice(source string) string {
+	return "To let every workspace read its own approved remotes through it, add {\"kind\": \"read\", " +
+		"\"repo\": \"*\"} to the list at `" + brokeredGrantsPath(source) + "` in your user config, " +
+		paths.UserConfigPath() + " (written \"brokered\": {\"" + source + "\": {\"grants\": [{\"kind\": " +
+		"\"read\", \"repo\": \"*\"}]}} where it has no `brokered` key), then run `yolo config apply` on " +
+		"the host, in the workspace, and approve the grant there."
+}
+
+// BrokerNoReadRefusal is a broker's refusal of a call on repo (spelled as the source spells it)
+// that no read grant covers (BB-D108): nothing ran, the grant to add, and how this jail's broker
+// takes it — at its next call where the launch's scope is live, otherwise at a fresh launch.
+func BrokerNoReadRefusal(source, repo string, live bool) string {
+	next := " This jail's running broker takes the grant at its next call."
+	if !live {
+		next = " This jail's broker cannot take a new grant while it runs, so restart the jail afterwards " +
+			"and approve the grant at the launch's config-change gate."
+	}
+	return "this workspace holds no read grant on " + repo + ", so nothing ran: the " + source + " broker runs " +
+		"whenever its pack is selected, but grants nothing until a grant in config does. " +
+		BrokerGrantAdvice(source) + next
+}
 
 // The keys one entry of `brokered.<source>.sets` may hold (boundary-broker.md §5.7): the set's
 // name and mode, the window a windowed set is granted for with its ceiling and use cap, and the
@@ -168,7 +302,11 @@ func brokeredGrantKindsPath(source string) string {
 // user scope alone: a workspace's copy is refused rather than read. nil when none is listed,
 // which allows no grant.
 func BrokeredGrantKinds(source string) []string {
-	v, _ := UserScopeConfigOrEmpty().Get(brokeredKey)
+	return grantKindsOf(UserScopeConfigOrEmpty(), source)
+}
+
+func grantKindsOf(user *jsonx.OrderedMap, source string) []string {
+	v, _ := user.Get(brokeredKey)
 	sources, ok := asMap(v)
 	if !ok {
 		return nil
@@ -811,12 +949,10 @@ func validateBrokeredUserScope(errs, warns *[]string) {
 			}
 		}
 		if gv, has := src.Get(brokeredGrantsKey); has && gv != nil {
-			refuse(path + "." + brokeredGrantsKey + ": not in the user config — a grant names the " +
-				"repository it covers in the workspace config of the project that holds it, " +
-				WorkspaceConfigName + ", or " + WorkspaceLocalConfigName + " beside it, and joins at that " +
-				"project's next launch. The user config lists only the kinds a workspace may hold, as `" +
-				brokeredGrantKindsPath(name) + "`. Move each grant there, then remove this key from " +
-				paths.UserConfigPath() + ".")
+			_, problems := userGrantsValue(name, path+"."+brokeredGrantsKey, gv)
+			for _, p := range problems {
+				refuse(p)
+			}
 		}
 		if kv, has := src.Get(brokeredGrantKindsKey); has && kv != nil {
 			for _, p := range grantKindsProblems(path+"."+brokeredGrantKindsKey, kv) {
@@ -881,7 +1017,7 @@ func validateBrokeredWorkspace(workspace string, resolver LoopholeResolver, errs
 }
 
 // brokeredGrantProblems is every problem in a workspace `brokered` value's `grants` entries: the
-// errors, the warnings (`read`, which no grant names), and the errors that depend on the user's
+// errors, the warnings (none today), and the errors that depend on the user's
 // own config (a kind it does not allow), which the caller weakens in a jail. A kind the source
 // does not define is known only through the resolver: with none, or for a source no known
 // loophole brokers, that check is skipped (UnbrokeredSourceWarnings names such a source).
@@ -895,7 +1031,7 @@ func brokeredGrantProblems(v any, resolver LoopholeResolver) (errs, warns, userK
 		known, _ := resolver.Known()
 		for _, info := range known {
 			if info.Brokered != nil {
-				defined[info.Brokered.Source] = append(defined[info.Brokered.Source], info.Brokered.Grants...)
+				defined[info.Brokered.Source] = definedGrantKinds(append(defined[info.Brokered.Source], info.Brokered.Grants...))
 			}
 		}
 	}
@@ -917,7 +1053,7 @@ func brokeredGrantProblems(v any, resolver LoopholeResolver) (errs, warns, userK
 			continue
 		}
 		kinds, sourceKnown := defined[name]
-		allowed := BrokeredGrantKinds(name)
+		allowed := allowedGrantKinds(name)
 		var seen []string
 		for i, e := range list {
 			entryPath := path + "[" + itoa(i) + "]"
@@ -933,11 +1069,6 @@ func brokeredGrantProblems(v any, resolver LoopholeResolver) (errs, warns, userK
 			if !ok || !loopholedecl.ValidGrantKind(kind) {
 				errs = append(errs, entryPath+"."+brokeredGrantKindKey+": expected a grant kind such as "+
 					"\"create-branch\" (got "+pyReprValue(kv)+")")
-				continue
-			}
-			if kind == impliedGrantKind {
-				warns = append(warns, entryPath+": `read` needs no grant — reading is what the loophole "+
-					"being on allows. Remove this entry.")
 				continue
 			}
 			rv, _ := m.Get(brokeredGrantRepoKey)
@@ -1198,6 +1329,40 @@ func UnbrokeredSourceWarnings(merged *jsonx.OrderedMap, resolver LoopholeResolve
 			"the source "+pyReprValue(name)+", so this entry does nothing here (brokered sources "+
 			"here: "+names+"). Check the spelling against the loophole manifest's `brokered.source`, "+
 			"or select the pack that ships it; if you use no such pack, nothing needs doing.")
+	}
+	return out
+}
+
+// UngrantedBrokerNotes are host `yolo check`'s up-front notes for each brokered loophole a
+// selected pack installs whose source the user config grants nothing (docs/design/boundary-broker.md
+// BB-D108, BB-D109): it runs in every workspace, and refuses every call until a read grant is
+// approved, so the check names that grant before a call meets the refusal. A user config
+// listing `read` in `grant_kinds` leaves the grant to each workspace, and gets no note. Nil in
+// a jail, whose user config is the host's snapshot.
+func UngrantedBrokerNotes(resolver LoopholeResolver) []string {
+	if resolver == nil || inJail() {
+		return nil
+	}
+	known, _ := resolver.Known()
+	names := make([]string, 0, len(known))
+	for name := range known {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	user := UserScopeConfigOrEmpty()
+	var out []string
+	for _, name := range names {
+		info := known[name]
+		if info.Brokered == nil {
+			continue
+		}
+		source := info.Brokered.Source
+		if len(userGrantsOf(user, source)) > 0 || inList(grantKindsOf(user, source), readGrantKind) {
+			continue
+		}
+		out = append(out, "loophole "+name+" runs in every workspace while its pack is selected, and grants "+
+			"nothing: your user config holds no read grant for the "+pyReprValue(source)+" source, so every "+
+			"call through it is refused. "+BrokerGrantAdvice(source))
 	}
 	return out
 }

@@ -35,8 +35,8 @@ access behind it.
 | `claude-oauth-broker` (`claude`) | One shared Claude login that stays fresh across jails ([Logins](authentication.md#a-shared-claude-login-that-stays-fresh)) | Yes |
 | `openai-auth-broker` (`openai-auth`, brought in by `claude`, `codex`, `opencode` and `pi`) | One shared ChatGPT login for Codex, pi and opencode ([Logins](authentication.md#a-shared-chatgpt-login-for-codex-and-pi)) | Yes |
 | `aws-auth` (`aws-auth`, also brought in by `bedrock`, which `claude`, `codex`, `opencode` and `pi` bring in) | AWS Bedrock with credentials from your host's `aws sso login`, narrowed to one role | No |
-| `github-broker` (`github`) | `gh` in the jail, run by your host's own GitHub login against this workspace's repositories, read-only for now, with no token in the jail ([GitHub](github.md)) | No; you turn it on per project, with `yolo loopholes enable github-broker` |
-| `git-broker` (`git`) | `git fetch` and `git push` in the jail through your host's own credentials, its SSH keys or agent or, for HTTPS, its git credential helper, against this workspace's approved remotes, with no credential in the jail. A push lands only on a new branch a create-branch grant covers or on a branch in the working set: one the agent created that way, or one a branch grant in the project config declares; every other push is refused ([Git](git.md#letting-the-agent-push-its-own-branches)) | No; you turn it on per project, with `yolo loopholes enable git-broker` |
+| `github-broker` (`github`) | `gh` in the jail, run by your host's own GitHub login against this workspace's repositories, read-only for now, with no token in the jail ([GitHub](github.md)) | Yes, but it grants nothing until a read grant in your user config does ([GitHub](github.md#turning-it-on)) |
+| `git-broker` (`git`) | `git fetch` and `git push` in the jail through your host's own credentials, its SSH keys or agent or, for HTTPS, its git credential helper, against this workspace's approved remotes, with no credential in the jail. A push lands only on a new branch a create-branch grant covers or on a branch in the working set: one the agent created that way, or one a branch grant in the project config declares; every other push is refused ([Git](git.md#letting-the-agent-push-its-own-branches)) | Yes, but it grants nothing until a read grant in your user config does ([Git](git.md#turning-it-on)) |
 | `serial` (`serial`) | USB serial devices on the host, through an allowlist, with the `yolo-serial` command | No |
 | `journal` (`journal`) | The host's systemd journal, with `yolo-journalctl` (Linux hosts) | No |
 | `macos-log` (`macos-log`) | The Mac's unified log, with `yolo-log`: by default only entries from processes the `macos-user` sandbox runs (Mac hosts) | No |
@@ -69,9 +69,11 @@ For every project, switch it on in your user config:
 }
 ```
 
-`github-broker` and `git-broker` have only the first way: a project you never turned one on in
-never runs it, and `yolo check` refuses its switch in your user config or in a project's own
-config. See [GitHub](github.md#turning-it-on) and [Git](git.md#turning-it-on).
+`github-broker` and `git-broker` have neither: they have no switch. Each runs in every project
+while its pack is selected and grants nothing until you grant read access under `brokered` in
+your user config, a grant each project's config-change prompt or `yolo config apply` shows before
+it takes effect. `yolo loopholes enable` refuses for them, and `yolo check` refuses their switch in
+any config file. See [GitHub](github.md#turning-it-on) and [Git](git.md#turning-it-on).
 
 Some loopholes take their own settings under `settings`, such as `aws-auth`'s SSO profile and role;
 each pack's README in the repository describes them, and `yolo check` reports a setting that is

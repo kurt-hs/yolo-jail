@@ -12,15 +12,16 @@
 // answers every write with exit 77.
 {
   "name": "github-broker",
-  "description": "Run the host's gh login for the jail against this workspace's GitHub repositories, its remotes and any its config lists under brokered.github.repos, as approved at launch: read-only commands run, a write exits 77 at once because its approval step is not built yet (run it on the host), and every call is audited on the host (yolo audit).",
+  "description": "Run the host's gh login for the jail against this workspace's GitHub repositories, its remotes and any its config lists under brokered.github.repos, as approved at launch, and only under a read grant in config (brokered.github.grants; with none, every call is refused): read-only commands run, a write exits 77 at once because its approval step is not built yet (run it on the host), and every call is audited on the host (yolo audit).",
   "version": 1,
 
-  // OFF until enabled, as every loophole that ships in a pack is (loophole-system.md R2), and
-  // a `brokered` manifest may not default on. Selecting the pack installs the `gh` forwarder;
-  // the broker starts only in a project it was turned on for, by `yolo loopholes enable
-  // github-broker` run there, which writes that project's per-workspace file. A switch in the
-  // user config or a project's config is refused (boundary-broker.md OQ-BB13, BB-D55).
-  "default_enabled": false,
+  // NO SWITCH, AND NO ACCESS BY DEFAULT (boundary-broker.md BB-D104 to BB-D106). A `brokered`
+  // loophole runs whenever its pack is selected, so selecting the pack installs the `gh`
+  // forwarder and starts the broker in every workspace, and the broker grants nothing: every
+  // call is refused until a read grant covers the repository. The usual one is the user
+  // config's `"brokered": {"github": {"grants": [{"kind": "read", "repo": "*"}]}}`, which each
+  // workspace's config-change prompt or `yolo config apply` shows and a human approves. That is
+  // why this manifest has no `default_enabled`.
 
   "transport": "loopback-tls",
   "lifecycle": "spawned",

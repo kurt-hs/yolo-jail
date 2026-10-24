@@ -710,7 +710,7 @@ func TestConfigBranchOverHTTPS(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := brokerscope.ReplaceScopeContext(context.Background(), h.scopeFile, h.broker.bound, sf.Repos,
-		[]brokerscope.Grant{{Kind: "branch", Repo: repo, Branch: "main"}}); err != nil {
+		[]brokerscope.Grant{readGrant, {Kind: "branch", Repo: repo, Branch: "main"}}); err != nil {
 		t.Fatal(err)
 	}
 	allowKinds(t, "branch")

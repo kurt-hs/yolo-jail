@@ -629,8 +629,9 @@ func TestGrantKindAllowedPasses(t *testing.T) {
 }
 
 // Each wrong shape has its own message: a kind the source does not define, a repo that is not a
-// repository identity, `grant_kinds` at workspace scope and `grants` at user scope; `read`, which
-// the loophole being on implies, warns.
+// repository identity, `grant_kinds` at workspace scope, a user-scope grant other than the read
+// grant for every workspace (BB-D107), and a workspace read grant the user config does not allow.
+// A workspace read grant the user config allows, or holds itself, passes.
 func TestGrantShapeRefusals(t *testing.T) {
 	for _, c := range []struct {
 		name, user, ws    string
@@ -638,18 +639,25 @@ func TestGrantShapeRefusals(t *testing.T) {
 	}{
 		{"undefined kind", `{"brokered": {"git": {"grant_kinds": ["create-branch"]}}}`,
 			`{"brokered": {"git": {"grants": [{"kind": "create-pr", "repo": "github.com/o/r"}]}}}`,
-			`config.brokered.git.grants[0].kind: 'create-pr' is not a grant kind the git source defines (it defines: create-branch, branch)`, ""},
+			`config.brokered.git.grants[0].kind: 'create-pr' is not a grant kind the git source defines (it defines: read, create-branch, branch)`, ""},
 		{"repo without host", `{"brokered": {"git": {"grant_kinds": ["create-branch"]}}}`,
 			`{"brokered": {"git": {"grants": [{"kind": "create-branch", "repo": "o/r"}]}}}`,
 			`config.brokered.git.grants[0].repo: 'o/r' is not a repository identity`, ""},
 		{"grant_kinds at workspace scope", `{}`,
 			`{"brokered": {"git": {"grant_kinds": ["create-branch"]}}}`,
 			"config.brokered.git.grant_kinds: user scope only", ""},
-		{"grants at user scope", `{"brokered": {"git": {"grants": [{"kind": "create-branch", "repo": "github.com/o/r"}]}}}`,
-			`{}`, "config.brokered.git.grants: not in the user config", ""},
-		{"read warns", `{}`,
+		{"another kind at user scope", `{"brokered": {"git": {"grants": [{"kind": "create-branch", "repo": "github.com/o/r"}]}}}`,
+			`{}`, "config.brokered.git.grants[0].kind: 'create-branch' is not a grant the user config holds", ""},
+		{"one repository at user scope", `{"brokered": {"git": {"grants": [{"kind": "read", "repo": "github.com/o/r"}]}}}`,
+			`{}`, "config.brokered.git.grants[0].repo:", ""},
+		{"read at workspace scope, not allowed", `{}`,
 			`{"brokered": {"git": {"grants": [{"kind": "read", "repo": "github.com/o/r"}]}}}`,
-			"", "config.brokered.git.grants[0]: `read` needs no grant"},
+			"your user config does not allow a workspace to hold a 'read' grant", ""},
+		{"read at workspace scope, allowed", `{"brokered": {"git": {"grant_kinds": ["read"]}}}`,
+			`{"brokered": {"git": {"grants": [{"kind": "read", "repo": "github.com/o/r"}]}}}`, "", ""},
+		{"read at workspace scope, user holds read", `{"brokered": {"git": {"grants": [{"kind": "read", "repo": "*"}]}}}`,
+			`{"brokered": {"git": {"grants": [{"kind": "read", "repo": "github.com/o/r"}]}}}`, "", ""},
+		{"read for every workspace", `{"brokered": {"git": {"grants": [{"kind": "read", "repo": "*"}]}}}`, `{}`, "", ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			h := newBrokeredHost(t)

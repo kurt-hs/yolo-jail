@@ -28,8 +28,10 @@ func TestTheLaunchServesTheGitRewriteOnlyWhereItFrontsGitBroker(t *testing.T) {
 	}{
 		{"podman", true, true, nil},
 		{"macos-user", true, true, nil},
-		{"podman", false, false, []string{"off for this workspace", "`yolo loopholes enable git-broker`"}},
-		{"macos-user", false, false, []string{"`yolo loopholes enable git-broker`"}},
+		// A broker has no switch (docs/design/boundary-broker.md BB-D106): a config switch of
+		// git-broker off changes nothing, so the rewrite is served wherever the broker runs.
+		{"podman", false, true, nil},
+		{"macos-user", false, true, nil},
 		{"container", true, false, []string{"Apple Container", "runs no host services"}},
 	} {
 		cfg := bareConfig()

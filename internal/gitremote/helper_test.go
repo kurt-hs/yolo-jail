@@ -127,7 +127,7 @@ func TestHelperNoEndpointNamesTheSwitch(t *testing.T) {
 	if rc != 69 {
 		t.Fatalf("rc %d", rc)
 	}
-	if !strings.Contains(errb.String(), "yolo loopholes enable git-broker --workspace /home/u/app") {
+	if !strings.Contains(errb.String(), "run `yolo check` on the host,\n  in /home/u/app,") {
 		t.Fatalf("stderr %q", errb.String())
 	}
 	if out.String() != "connect\n\n" {

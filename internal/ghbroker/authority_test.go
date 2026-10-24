@@ -15,7 +15,7 @@ func authorityFixture(t *testing.T) (*Authority, brokerstore.Request) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("YOLO_USER_LAYER", "")
-	sf := brokerscope.File{Source: Source, LaunchID: "fixture", PID: os.Getpid(), Container: "fixture-container", Workspace: "/fixture", Repos: []string{"o/r"}}
+	sf := brokerscope.File{Grants: readAll, Source: Source, LaunchID: "fixture", PID: os.Getpid(), Container: "fixture-container", Workspace: "/fixture", Repos: []string{"o/r"}}
 	path, err := brokerscope.Write(sf)
 	if err != nil {
 		t.Fatal(err)

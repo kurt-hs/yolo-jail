@@ -33,12 +33,14 @@ import (
 // because it existed. This one is named by the workspace it governs, carries one key family
 // today (`loopholes.<name>.enabled`, everything else refused), is written by a command whose
 // last line names it, and is named by `yolo check` and located by every refusal of a key in it.
+// A brokered loophole has no switch (BB-D106), so one this file holds for it, written by an
+// older yolo, is ignored with a note (staleBrokerSwitchNote, BB-D109).
 //
 // # Its shape
 //
 //	{
 //	  "workspace": "/home/you/code/app",
-//	  "loopholes": { "github-broker": { "enabled": true } }
+//	  "loopholes": { "journal": { "enabled": true } }
 //	}
 //
 // The file is named `<the folder's name, sanitized>-<first 12 hex digits of the SHA-256 of the

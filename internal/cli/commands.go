@@ -866,16 +866,17 @@ Subcommands:
   disable <name>    … or off. HOST-SIDE: each writes that workspace's own file in
                     ~/.config/yolo-jail/workspaces/, never your config.jsonc, and
                     prints which file; it applies from the workspace's next fresh
-                    launch, and no jail can read it.
+                    launch, and no jail can read it. A loophole whose manifest
+                    declares ` + "`brokered`" + ` (github-broker, git-broker) has no switch:
+                    it runs whenever its pack is selected and grants nothing until
+                    a grant in config does, so both refuse for it, naming the grant;
+                    ` + "`disable`" + ` first removes a switch an older yolo wrote for it.
 
 Flags for ` + "`enable`" + ` and ` + "`disable`" + `:
   --workspace <path>  The workspace to switch. Default: this folder, the workspace
                       a launch here uses.
   --global            Every workspace instead: print the ` + "`loopholes`" + ` block to add
                       to ~/.config/yolo-jail/config.jsonc, write nothing, and exit 1.
-                      A loophole that runs a host login's commands (one whose
-                      manifest declares ` + "`brokered`" + `, such as github-broker) has no
-                      --global: it is switched one workspace at a time.
 
 Flags for ` + "`list`" + ` and ` + "`status`" + ` (the two that report state):
 ` + outputFormatUsage + `
@@ -892,7 +893,7 @@ Examples:
   yolo loopholes list                   # what is wired into this jail?
   yolo loopholes list --format json     # the same, for an agent
   yolo loopholes status                 # host-side: is each one healthy?
-  yolo loopholes enable github-broker   # on, for this workspace only
+  yolo loopholes enable journal         # on, for this workspace only
 
 The ` + "`loopholes`" + ` config key is documented in ` + "`yolo config-ref`" + `; a pack can ship one
 (` + "`yolo pack --help`" + `, the ` + "`loophole`" + ` kind).`

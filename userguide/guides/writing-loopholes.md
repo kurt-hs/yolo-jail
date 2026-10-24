@@ -203,9 +203,12 @@ must name that placeholder, and the program must refuse anything outside the lis
 selected, a project's `mounts` entry that reaches a `credential_paths` entry, or yolo's own broker
 folder, is refused.
 
-A `brokered` loophole is turned on one project at a time, only by `yolo loopholes enable <name>`
-run in that project, so its manifest may not set `default_enabled` to `true`, and a user's or a
-project's config file may not switch it.
+A `brokered` loophole has no switch: it runs whenever its pack is selected, so its manifest may
+not set `default_enabled` to `true`, no config file may switch it, and `yolo loopholes enable`
+refuses for it. The scope file also carries the grants the human approved, a `read` grant among
+them when the user granted one. yolo's own brokers refuse every call no `read` grant covers, so
+that selecting their pack grants nothing; do the same in yours. yolo cannot enforce it for a pack
+it does not ship.
 
 ### A program on the host
 

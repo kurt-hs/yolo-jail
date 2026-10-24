@@ -18,40 +18,37 @@ You need `gh` installed on your machine and logged in:
 gh auth login          # on your machine, once
 ```
 
-Then select the pack in your user config (`~/.config/yolo-jail/config.jsonc`):
+Then select the pack, and grant read access, in your user config
+(`~/.config/yolo-jail/config.jsonc`):
 
 ```jsonc
 {
-  "packs": ["claude", "github"]
+  "packs": ["claude", "github"],
+  "brokered": { "github": { "grants": [{ "kind": "read", "repo": "*" }] } }
 }
 ```
 
-And in each project that should have the broker, run this on your machine:
+Selecting the pack puts yolo's `gh` in front of the jail's own copy and starts the broker, in
+every project, and on its own it **grants nothing**: without the read grant, every call is
+refused, naming the grant to add. The read grant lets each project read its own repositories,
+[below](#the-repositories-it-can-reach); `"*"` means each project's own, never every repository
+your login can reach.
 
-```bash
-yolo loopholes enable github-broker
-```
+The grant never takes effect unseen. Each project's next config-change prompt, or
+`yolo config apply` run on your machine in the project, shows it as a line of the
+repository-scope block, marked as coming from your user config, and asks you to approve it. A
+running jail's broker takes it at its next call, with no restart.
 
-Selecting the pack puts yolo's `gh` in front of the jail's own copy, in every project. The command
-turns the broker on for that one project, from its next fresh launch. It never edits your config:
-it writes a small file for the project in `~/.config/yolo-jail/workspaces/` and prints its name.
-There is no switch that turns the broker on for every project.
+### Turning it off
 
-### Only in some projects
+The broker has no on/off switch: `yolo loopholes enable github-broker` refuses, and `yolo check`
+and the launch refuse a `github-broker` switch in your user config or in a project's
+`yolo-jail.jsonc` or `yolo-jail.local.jsonc`. To stop the broker, take `github` out of `packs`.
+An older yolo's per-project switch is ignored with a warning; `yolo loopholes disable
+github-broker` removes it.
 
-The broker runs only in the projects you turned it on in. The command switches the folder you
-run it in, which is the project a `yolo` started there opens. To take the broker out of one again,
-run `yolo loopholes disable github-broker` there. To name a project from another folder, add
-`--workspace`, as in `yolo loopholes enable github-broker --workspace ~/code/app`.
-
-A project's own config can't turn the broker on or off: `yolo check` and the launch refuse a
-`github-broker` switch in `yolo-jail.jsonc` or `yolo-jail.local.jsonc`, because an agent can edit
-those files, and they refuse one in your user config too. A jail can't read the file the command
-writes, so an agent in the jail can't change it either.
-
-If you answer `N` at the repository prompt, the launch stops and names
-`yolo loopholes disable github-broker`, which keeps the broker out of that project's next launch,
-so it no longer asks.
+If you answer `N` at the repository prompt, the launch stops and says the same: take the pack out
+of `packs`, or the next launch asks again.
 
 ## The repositories it can reach
 
@@ -220,9 +217,12 @@ such as `\x1b`, so a command cannot change what your terminal shows.
 
 ## If something goes wrong
 
-- **`gh` exits 69** saying the jail has no github-broker endpoint: the broker is off in this
-  project, or the jail was started before you turned it on. Run the command the message prints,
-  `yolo loopholes enable github-broker`, on your machine, and start a fresh jail.
+- **`gh` exits 64** saying the workspace holds no read grant: add the read grant
+  [above](#turning-it-on) to your user config, then run `yolo config apply` on your machine, in
+  the project, and approve it.
+- **`gh` exits 69** saying the jail has no github-broker endpoint: the broker did not start for
+  this launch, or the jail was started before you selected the pack. Run `yolo check` on your
+  machine, in the project, and start a fresh jail.
 - **`gh` exits 69** saying the host has no `gh` or no login: install `gh` on your machine and run
   `gh auth status` there.
 - **`gh` exits 69** saying the broker will not run the host `gh`: the first `gh` on your `PATH` is

@@ -670,6 +670,9 @@ func (o *Options) sectionMergedConfig(r *reporter, merged *jsonx.OrderedMap, wor
 	// launch's, since a committed entry would print it at every launch of every contributor
 	// who selects no such pack (docs/design/workspace-widening.md WW-D22).
 	warnings = append(warnings, config.UnbrokeredSourceWarnings(merged, resolver)...)
+	// A selected pack's broker that the user config grants nothing: said up front, before a
+	// call meets the refusal (docs/design/boundary-broker.md BB-D109).
+	warnings = append(warnings, config.UngrantedBrokerNotes(resolver)...)
 	// Every message above that names a config key, located (the preset/null ones already are).
 	errors = located.merged.Annotate(errors)
 	warnings = located.merged.Annotate(warnings)

@@ -528,9 +528,11 @@ type SetEnabledOptions struct {
 // config directly. We can edit a file that lives next to it of a different name or whatever."
 // config.jsonc is a hand-commented file, and a read-modify-write through the JSONC decoder drops
 // every comment in it. So `--global`, the every-workspace switch, still prints the block to
-// paste, writes nothing and exits 1, as the whole command did until this change; and a
-// brokered loophole has no `--global` at all, since its switch is per workspace only
-// (OQ-BB13).
+// paste, writes nothing and exits 1, as the whole command did until this change.
+//
+// A BROKERED LOOPHOLE HAS NO SWITCH (BB-D104, BB-D109): it runs whenever its pack is selected,
+// and what it may do is a grant in config. Both verbs refuse for one, naming that grant
+// (setBrokerSwitch), and `disable` first takes out a switch a previous yolo wrote.
 //
 // HOST-SIDE ONLY. In a jail it refuses, naming the command to run on the host: the file lives
 // in a folder no jail can read, and a jail's own folder would govern only launches made inside
@@ -544,6 +546,18 @@ type SetEnabledOptions struct {
 // manifest carries the pack author's default, not the user's answer.
 func CmdSetEnabled(deps Deps, name string, enabled bool, opts SetEnabledOptions) int {
 	verb := verbFor(enabled)
+	if deps.InJail {
+		// A broker has no switch on either side (BB-D109): say so here too, rather than send
+		// the user to a host command that refuses.
+		for _, lp := range loopholesWithConfig(deps, true).All() {
+			if lp.Name == name && lp.Brokered != nil {
+				fmt.Fprintf(deps.Err, "yolo loopholes %s: %s has no switch: it runs whenever the pack that "+
+					"ships it is selected, and grants nothing until the user's config does. %s\n", verb, name,
+					config.BrokerGrantAdvice(lp.Brokered.Source))
+				return 1
+			}
+		}
+	}
 	if deps.InJail && !opts.Global {
 		fmt.Fprintf(deps.Err, "yolo loopholes %s: this is a jail, and a per-workspace switch is "+
 			"made on the host, in a folder no jail can read.\n", verb)
@@ -578,8 +592,11 @@ func CmdSetEnabled(deps Deps, name string, enabled bool, opts SetEnabledOptions)
 			"installs its own.\n", verb, name, paths.UserConfigPath())
 		return 1
 	}
+	if found.Brokered != nil {
+		return setBrokerSwitch(deps, found, enabled, opts)
+	}
 	if opts.Global {
-		return setEnabledGlobally(deps, name, enabled, found.Brokered != nil)
+		return setEnabledGlobally(deps, name, enabled)
 	}
 	ws := opts.Workspace
 	if !workspaceUsable(deps, verb, name, enabled, ws) {
@@ -647,16 +664,42 @@ func clearUninstalledSwitch(deps Deps, name, ws string) (rc int, handled bool) {
 	return 0, true
 }
 
-// setEnabledGlobally is `--global`: the user-config block that switches name for every
-// workspace, printed to paste, never written (OQ-BB12), and exit 1, since nothing changed. A
-// brokered loophole has none (OQ-BB13), so it names the per-project command instead.
-func setEnabledGlobally(deps Deps, name string, enabled, brokered bool) int {
-	if brokered {
-		fmt.Fprintf(deps.Err, "yolo loopholes %s --global: %s runs a host login's commands for a "+
-			"jail, so it is switched one project at a time and has no every-project switch. Run "+
-			"`yolo loopholes %s %s` in each project instead.\n", verbFor(enabled), name, verbFor(enabled), name)
-		return 1
+// setBrokerSwitch is `enable` or `disable` of a brokered loophole, which has no switch any more
+// (docs/design/boundary-broker.md BB-D104, BB-D109): it runs whenever its pack is selected, and
+// what it may do is a grant in config, approved with `yolo config apply`. So both verbs refuse,
+// naming that grant; `disable` first takes out a switch a previous yolo wrote into this
+// workspace's per-workspace file, which is ignored now, and says so.
+func setBrokerSwitch(deps Deps, lp *Loophole, enabled bool, opts SetEnabledOptions) int {
+	verb := verbFor(enabled)
+	advice := config.BrokerGrantAdvice(lp.Brokered.Source)
+	if !enabled && !opts.Global && paths.WorkspaceScopeBreach(opts.Workspace) == nil {
+		if fi, err := os.Stat(opts.Workspace); err == nil && fi.IsDir() {
+			remove := deps.RemoveSwitch
+			if remove == nil {
+				remove = config.RemoveWorkspaceLoophole
+			}
+			path, removed, err := remove(opts.Workspace, lp.Name)
+			if err != nil {
+				fmt.Fprintf(deps.Err, "yolo loopholes disable: %v\n", err)
+				return 1
+			}
+			if removed {
+				fmt.Fprintf(deps.Out, "%s has no per-workspace switch any more, so its old one is removed from "+
+					"%s. It runs whenever its pack is selected, and grants nothing until your config does. %s\n",
+					lp.Name, path, advice)
+				return 0
+			}
+		}
 	}
+	fmt.Fprintf(deps.Err, "yolo loopholes %s: %s has no switch: it runs whenever the pack that ships it is "+
+		"selected, and grants nothing until your config does. %s To stop it running, take its pack out of "+
+		"`packs` in %s.\n", verb, lp.Name, advice, paths.UserConfigPath())
+	return 1
+}
+
+// setEnabledGlobally is `--global`: the user-config block that switches name for every
+// workspace, printed to paste, never written (OQ-BB12), and exit 1, since nothing changed.
+func setEnabledGlobally(deps Deps, name string, enabled bool) int {
 	fmt.Fprintf(deps.Err,
 		"yolo loopholes %s --global writes nothing: yolo does not edit your user config.\n"+
 			"To switch %s for every workspace, add this to %s:\n"+

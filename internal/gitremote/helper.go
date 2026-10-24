@@ -132,16 +132,17 @@ func connect(service, remote, url string, in *bufio.Reader, env Env, say func(st
 	}
 	endpoint := env.Getenv(EndpointEnv)
 	if endpoint == "" {
-		// The switch is per project and host-side, so the step names the command to run there,
-		// with this jail's workspace as the host names it when the launch said (YOLO_HOST_DIR).
-		where := "    yolo loopholes enable git-broker\n  in this project, on the host,"
+		// The broker runs whenever the `git` pack is selected (docs/design/boundary-broker.md
+		// BB-D104), so a missing endpoint is a launch that did not start it: the step is `yolo
+		// check` on the host, in this jail's workspace as the host names it (YOLO_HOST_DIR).
+		where := "in this project"
 		if hostDir := env.Getenv("YOLO_HOST_DIR"); hostDir != "" {
-			where = "    yolo loopholes enable git-broker --workspace " + shquote.QuoteDisplay(hostDir) + "\n  on the host,"
+			where = "in " + shquote.QuoteDisplay(hostDir)
 		}
-		say("this jail has no git-broker endpoint, so git cannot reach the host's remotes.\n" +
-			"  git's remotes here are routed by the `git` pack; its loophole is off in a project until turned on there:\n" +
-			where + " then start a fresh jail (`yolo check` shows whether it runs). Apple Container runs\n" +
-			"  no host services, so there it stays off. The jail holds no git credential.")
+		say("this jail has no git-broker endpoint, so git cannot reach the host's remotes: the broker did not\n" +
+			"  start for this launch. It runs whenever the `git` pack is selected; run `yolo check` on the host,\n" +
+			"  " + where + ", to see why, then start a fresh jail. Apple Container runs no host services, so\n" +
+			"  there it never starts. The jail holds no git credential.")
 		return exitUnavailable
 	}
 

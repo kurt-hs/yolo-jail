@@ -88,50 +88,61 @@ func writeWorkspaceSwitch(t *testing.T, home, ws, body string) {
 	}
 }
 
-// TestOnlyAWorkspaceSwitchedOnStartsTheBroker is MANUAL-ONLY at the launch
-// (docs/design/boundary-broker.md OQ-BB13, BB-D55): with the github pack selected, the
-// github-broker is in play — its repository scope asked about at the gate — for a workspace
-// whose per-workspace file turns it on, and for no other; a switch in the user config, or in
-// the workspace's own config, refuses the launch naming `yolo loopholes enable`.
-func TestOnlyAWorkspaceSwitchedOnStartsTheBroker(t *testing.T) {
-	t.Run("switched on for this workspace", func(t *testing.T) {
-		home, ws, run := launchWithGitHub(t, "")
-		writeWorkspaceSwitch(t, home, ws, `{"workspace": "`+ws+`", "loopholes": {"github-broker": {"enabled": true}}}`)
-		l := run()
+// TestASelectedBrokerPackPutsTheBrokerInPlay: a broker has no switch
+// (docs/design/boundary-broker.md BB-D104, BB-D106, BB-D109). With the github pack selected, the
+// github-broker is in play in every workspace, its repository scope asked about at the gate, and
+// it grants nothing: the gate shows no grant until the user config holds the read grant, and
+// then shows that grant on its own line, marked as the user config's, so it never takes effect
+// unseen (BB-D105, BB-D107). A switch a previous yolo wrote into the per-workspace file is
+// ignored, in either direction, with a note naming the grant and the command that takes it out;
+// a switch in the user config, or in the workspace's own config, refuses the launch naming the
+// grant that gives access instead.
+func TestASelectedBrokerPackPutsTheBrokerInPlay(t *testing.T) {
+	// asked is the launch refused at the gate for want of a terminal, having shown the scope.
+	asked := func(t *testing.T, l brokerLaunch) {
+		t.Helper()
 		if l.rc == 0 || l.reached {
 			t.Fatalf("a launch with no terminal ran past an unapproved repository scope: rc %d, "+
 				"reached=%v\n%s", l.rc, l.reached, l.out)
 		}
 		for _, want := range []string{"github-broker repository scope, read from", `+ o/r  remote "origin"  added`,
-			"--accept-config-changes", "`yolo loopholes disable github-broker --workspace " + shquote.QuoteDisplay(ws) + "`"} {
+			"--accept-config-changes", "take the pack that ships it out of `packs`"} {
 			if !strings.Contains(l.out, want) {
 				t.Errorf("the refusal does not show %q:\n%s", want, l.out)
 			}
 		}
-	})
-	t.Run("no switch", func(t *testing.T) {
+	}
+	t.Run("no grant", func(t *testing.T) {
 		_, _, run := launchWithGitHub(t, "")
 		l := run()
-		if l.rc != 0 || !l.reached {
-			t.Fatalf("a launch with the pack selected and no switch did not launch: rc %d\n%s", l.rc, l.out)
-		}
-		if strings.Contains(l.out, "repository scope") {
-			t.Errorf("a workspace that never turned the broker on was asked about its repositories:\n%s", l.out)
+		asked(t, l)
+		if strings.Contains(l.out, "+ grant") {
+			t.Errorf("a broker with no grant in config was shown one at the gate:\n%s", l.out)
 		}
 	})
-	t.Run("switched on for another workspace", func(t *testing.T) {
-		home, ws, run := launchWithGitHub(t, "")
-		other := filepath.Join(filepath.Dir(ws), "elsewhere")
-		writeWorkspaceSwitch(t, home, ws, `{"workspace": "`+other+`", "loopholes": {"github-broker": {"enabled": true}}}`)
+	t.Run("the user config's read grant", func(t *testing.T) {
+		_, _, run := launchWithGitHub(t, `,
+  "brokered": {"github": {"grants": [{"kind": "read", "repo": "*"}]}}`)
 		l := run()
-		if l.rc != 0 || !l.reached || strings.Contains(l.out, "repository scope") {
-			t.Fatalf("a file naming another workspace turned the broker on here: rc %d reached=%v\n%s",
-				l.rc, l.reached, l.out)
-		}
-		if !strings.Contains(l.out, "nothing in it applies") {
-			t.Errorf("the launch did not warn about the file naming another workspace:\n%s", l.out)
+		asked(t, l)
+		if !strings.Contains(l.out, "+ grant read *  added (from your user config, for every workspace)") {
+			t.Errorf("the gate does not show the user config's read grant:\n%s", l.out)
 		}
 	})
+	for _, v := range []string{"true", "false"} {
+		t.Run("an old per-workspace switch, "+v, func(t *testing.T) {
+			home, ws, run := launchWithGitHub(t, "")
+			writeWorkspaceSwitch(t, home, ws, `{"workspace": "`+ws+`", "loopholes": {"github-broker": {"enabled": `+v+`}}}`)
+			l := run()
+			asked(t, l)
+			for _, want := range []string{"loopholes.github-broker.enabled", "is ignored", "brokered.github.grants",
+				"`yolo loopholes disable github-broker --workspace " + shquote.QuoteDisplay(ws) + "`"} {
+				if !strings.Contains(l.out, want) {
+					t.Errorf("the launch does not note the ignored switch with %q:\n%s", want, l.out)
+				}
+			}
+		})
+	}
 	t.Run("switched in the user config", func(t *testing.T) {
 		_, _, run := launchWithGitHub(t, `,
   "loopholes": {"github-broker": {"enabled": true}}`)
@@ -139,8 +150,8 @@ func TestOnlyAWorkspaceSwitchedOnStartsTheBroker(t *testing.T) {
 		if l.rc == 0 || l.reached {
 			t.Fatalf("a user-config switch of a brokered loophole launched: rc %d\n%s", l.rc, l.out)
 		}
-		if !strings.Contains(l.out, "`yolo loopholes enable github-broker`") {
-			t.Errorf("the refusal does not name the command that switches it per project:\n%s", l.out)
+		if !strings.Contains(l.out, "has no switch") || !strings.Contains(l.out, "brokered.github.grants") {
+			t.Errorf("the refusal does not name the grant that gives access:\n%s", l.out)
 		}
 	})
 	// Every name the loader reads a workspace config under: the `.json` spellings are read
@@ -156,12 +167,9 @@ func TestOnlyAWorkspaceSwitchedOnStartsTheBroker(t *testing.T) {
 			if l.rc == 0 || l.reached {
 				t.Fatalf("a workspace switch of a brokered loophole launched: rc %d\n%s", l.rc, l.out)
 			}
-			if !strings.Contains(l.out, "never by "+filepath.Join(ws, name)+",") ||
-				!strings.Contains(l.out, "`yolo loopholes enable github-broker`") {
-				t.Errorf("the refusal does not name the file and the command:\n%s", l.out)
-			}
-			if strings.Contains(l.out, "repository scope") {
-				t.Errorf("the refused switch put the broker in play:\n%s", l.out)
+			if !strings.Contains(l.out, "never "+filepath.Join(ws, name)+", a file an agent can edit") ||
+				!strings.Contains(l.out, "brokered.github.grants") {
+				t.Errorf("the refusal does not name the file and the grant:\n%s", l.out)
 			}
 		})
 	}

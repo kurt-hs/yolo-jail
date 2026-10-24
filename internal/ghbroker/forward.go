@@ -56,18 +56,18 @@ func Forward(args []string, env ForwardEnv) int {
 	say := func(format string, a ...any) { fmt.Fprintf(env.Stderr, "gh (github-broker): "+format+"\n", a...) }
 	endpoint := env.Getenv(EndpointEnv)
 	if endpoint == "" {
-		// The switch is per project and host-side (docs/design/boundary-broker.md OQ-BB13), so the
-		// step names the command to run there, with this jail's workspace as the host names it
-		// when the launch said (YOLO_HOST_DIR).
-		where := "    yolo loopholes enable github-broker\n  in this project, on the host,"
+		// The broker runs whenever the `github` pack is selected (docs/design/boundary-broker.md
+		// BB-D104), so a missing endpoint is a launch that did not start it: the step is `yolo
+		// check` on the host, in this jail's workspace as the host names it (YOLO_HOST_DIR).
+		where := "in this project"
 		if hostDir := env.Getenv("YOLO_HOST_DIR"); hostDir != "" {
-			where = "    yolo loopholes enable github-broker --workspace " + shquote.QuoteDisplay(hostDir) + "\n  on the host,"
+			where = "in " + shquote.QuoteDisplay(hostDir)
 		}
-		say("this jail has no github-broker endpoint, so `gh` cannot reach the host's GitHub login.\n" +
-			"  gh here is forwarded by the `github` pack; its loophole is off in a project until turned on there:\n" +
-			where + " then start a fresh jail (`yolo check` shows whether it runs). Apple Container runs\n" +
-			"  no host services, so there it stays off. The image's own gh is still reachable by path, or\n" +
-			"  with YOLO_BYPASS_SHIMS=1, and holds no GitHub credential in the jail.")
+		say("this jail has no github-broker endpoint, so `gh` cannot reach the host's GitHub login: the broker\n" +
+			"  did not start for this launch. It runs whenever the `github` pack is selected; run `yolo check` on\n" +
+			"  the host, " + where + ", to see why, then start a fresh jail. Apple Container runs no host\n" +
+			"  services, so there it never starts. The image's own gh is still reachable by path, or with\n" +
+			"  YOLO_BYPASS_SHIMS=1, and holds no GitHub credential in the jail.")
 		return ExitUnavailable
 	}
 

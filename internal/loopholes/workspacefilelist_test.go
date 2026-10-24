@@ -15,8 +15,8 @@ import (
 // workspacefilelist_test.go: `yolo loopholes list` and `status` read the per-workspace file
 // (config/workspacefile.go; docs/design/boundary-broker.md BB-D54) as the launch does.
 
-// brokeredModule records one pack loophole declaring `brokered`, off by default as a brokered
-// manifest must be (OQ-BB13), and one ordinary loophole, also off.
+// brokeredModule records one pack loophole declaring `brokered`, which runs whenever its pack is
+// selected (BB-D106), and one ordinary loophole, off by default.
 func brokeredModule(t *testing.T) {
 	t.Helper()
 	isolateModules(t)
@@ -45,32 +45,33 @@ func listedEnabled(t *testing.T, deps Deps) map[string]bool {
 }
 
 // TestLoopholesListReadsThePerWorkspaceFileLast: the per-workspace file is the listing's last
-// scope, as it is the launch's, so a loophole it switches lists as the launch will run it, over
-// the workspace config's own switch; and a user-config switch of a brokered loophole is refused
-// here as the launch refuses it, naming the command that switches it per project.
+// scope, as it is the launch's, so an ordinary loophole it switches lists as the launch will run
+// it, over the workspace config's own switch. A brokered loophole has no switch (BB-D106): it
+// lists as on whatever any file says, and a user-config switch of it is refused here as the
+// launch refuses it, naming the grant that gives access instead.
 func TestLoopholesListReadsThePerWorkspaceFileLast(t *testing.T) {
 	unsetJail(t)
 	brokeredModule(t)
 	t.Setenv("HOME", t.TempDir())
 	var out, errBuf bytes.Buffer
-	deps := cmdDeps(t, &out, &errBuf, `{"loopholes": {"gb": {"enabled": true}}}`,
+	deps := cmdDeps(t, &out, &errBuf, `{"loopholes": {"gb": {"enabled": false}}}`,
 		`{"loopholes": {"plain": {"enabled": false}}}`)
-	if got := listedEnabled(t, deps); got["gb"] || got["plain"] {
-		t.Fatalf("with no per-workspace file: %v, want both off (the user switch of gb refused)", got)
+	if got := listedEnabled(t, deps); !got["gb"] || got["plain"] {
+		t.Fatalf("with no per-workspace file: %v, want gb on (it has no switch) and plain off", got)
 	}
-	if !strings.Contains(errBuf.String(), "`yolo loopholes enable gb`") {
+	if !strings.Contains(errBuf.String(), "has no switch") || !strings.Contains(errBuf.String(), "brokered.gbsrc.grants") {
 		t.Errorf("the refused user-config switch of a brokered loophole was not reported:\n%s", errBuf.String())
 	}
 
-	for _, name := range []string{"gb", "plain"} {
-		if _, err := config.SetWorkspaceLoophole(deps.Cwd, name, true); err != nil {
+	for name, on := range map[string]bool{"gb": false, "plain": true} {
+		if _, err := config.SetWorkspaceLoophole(deps.Cwd, name, on); err != nil {
 			t.Fatal(err)
 		}
 	}
 	deps.LoadWorkspaceFile = config.ReadWorkspaceFile
 	if got := listedEnabled(t, deps); !got["gb"] || !got["plain"] {
-		t.Errorf("with the per-workspace file switching both on: %v, want both on, over the "+
-			"workspace config's own switch", got)
+		t.Errorf("with the per-workspace file switching gb off and plain on: %v, want both on: plain "+
+			"over the workspace config's own switch, gb with no switch to read", got)
 	}
 }
 
@@ -91,7 +92,7 @@ func TestInAJailEveryLoopholeListsAsTheHostLaunchedIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	deps.LaunchConfig = func(string) (*jsonx.OrderedMap, bool) { return launched.(*jsonx.OrderedMap), true }
-	if got := listedEnabled(t, deps); got["gb"] || !got["plain"] {
+	if got := listedEnabled(t, deps); !got["gb"] || !got["plain"] {
 		t.Fatalf("on the host the launch config was read: %v", got)
 	}
 	deps.InJail = true

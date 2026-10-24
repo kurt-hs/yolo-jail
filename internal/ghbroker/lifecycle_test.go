@@ -130,7 +130,7 @@ func TestTheNextStartCollectsARunDirADeadOwnerLeft(t *testing.T) {
 				}
 			}
 			if via == "broker" {
-				_, cleanup := newBroker(brokerscope.File{Workspace: "/w"}, "/w", &bytes.Buffer{})
+				_, cleanup := newBroker(brokerscope.File{Grants: readAll, Workspace: "/w"}, "/w", &bytes.Buffer{})
 				cleanup()
 			} else {
 				SelfCheck(&bytes.Buffer{})
@@ -218,7 +218,7 @@ func startBrokerProcessWith(t *testing.T, userConfig string) *brokerProcess {
 		}
 	}
 	ws := filepath.Join(root, "ws")
-	sf, err := brokerscope.Write(brokerscope.File{Source: Source, LaunchID: "cafe", PID: os.Getpid(),
+	sf, err := brokerscope.Write(brokerscope.File{Grants: readAll, Source: Source, LaunchID: "cafe", PID: os.Getpid(),
 		Container: "fixture", Workspace: ws, Repos: []string{"o/r"}})
 	if err != nil {
 		t.Fatal(err)
@@ -339,7 +339,7 @@ func TestAKilledBrokersCopyIsCollectedByTheNextStart(t *testing.T) {
 		t.Fatalf("expected the killed broker's run dir to remain until the next start: %v", err)
 	}
 	t.Setenv("PATH", resolvedDir(t))
-	_, cleanup := newBroker(brokerscope.File{Workspace: "/w"}, "/w", &bytes.Buffer{})
+	_, cleanup := newBroker(brokerscope.File{Grants: readAll, Workspace: "/w"}, "/w", &bytes.Buffer{})
 	cleanup()
 	if _, err := os.Stat(runDir); !os.IsNotExist(err) {
 		t.Fatalf("the next broker did not collect the killed one's hosts.yml copy: %v", err)

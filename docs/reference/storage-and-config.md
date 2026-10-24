@@ -83,7 +83,7 @@ Five sources, merged in order, later overriding earlier:
 | User | `~/.config/yolo-jail/config.jsonc` | anything, including every install-shaped key |
 | Workspace | `<workspace>/yolo-jail.jsonc` | the repo's own needs; committed |
 | Workspace-local | `<workspace>/yolo-jail.local.jsonc` | per-machine tweaks; kept out of version control |
-| Per-workspace file | `~/.config/yolo-jail/workspaces/<folder>-<hash>.jsonc` | loophole switches for that one workspace, written by `yolo loopholes enable` and `disable` |
+| Per-workspace file | `~/.config/yolo-jail/workspaces/<folder>-<hash>.jsonc` | loophole switches for that one workspace, written by `yolo loopholes enable` and `disable`; never a broker's, which has no switch |
 | Environment | a small set of `YOLO_*` variables | last-resort overrides |
 
 `yolo-jail.local.jsonc` is auto-merged whenever it sits beside `yolo-jail.jsonc` — no
@@ -129,7 +129,9 @@ can edit.
   file. Its `workspace` field is
   authoritative: a file whose field does not resolve to the launching workspace is ignored, and the
   launch and `yolo check` warn.
-- **What it holds.** `loopholes.<name>.enabled` alone today. Any other key is refused, with a next
+- **What it holds.** `loopholes.<name>.enabled` alone today. A brokered loophole's entry, which
+  an older yolo wrote, is ignored with a warning, and `yolo loopholes disable <name>` removes it
+  ([BB-D109](../design/boundary-broker.md#BB-D109)). Any other key is refused, with a next
   step, so later per-project properties have a home and a typo is never silent.
 - **Where it merges.** Last, over the workspace's own config files too, since each key it holds is
   a human's switch for this workspace. `yolo config dump`, `yolo check` and the launch all read it.

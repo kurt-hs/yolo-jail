@@ -17,6 +17,10 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 )
 
+// readAll is the read grant on every repository the gate approves into a scope file from the
+// user config (docs/design/boundary-broker.md BB-D107): without it the broker refuses every call.
+var readAll = []brokerscope.Grant{{Kind: brokerscope.KindRead, Repo: brokerscope.AnyRepo}}
+
 // brokerFixture is a broker over a fake gh, writing its audit log under a private HOME.
 type brokerFixture struct {
 	b       *Broker
@@ -30,7 +34,7 @@ func newBrokerFixture(t *testing.T, version string) brokerFixture {
 	f := newRunnerFixture(t, version, nil)
 	b := &Broker{
 		runner:    f.r,
-		scope:     NewScope([]string{"o/r"}),
+		scope:     NewScope([]string{"o/r"}).WithGrants(readAll...),
 		workspace: "/home/u/code/app",
 		audit:     brokeraudit.Open(paths.BrokerAuditLog(), nil),
 		log:       &bytes.Buffer{},
@@ -178,7 +182,7 @@ func TestServeRunsAJqFilterWhoseEnvironmentHoldsNoToken(t *testing.T) {
 // token's prefix and its scopes, which mean nothing in the jail.
 func TestServeAnswersAuthStatusItself(t *testing.T) {
 	f := newBrokerFixture(t, "2.101.0")
-	f.b.scope = NewScope([]string{"o/r", "o/lib"})
+	f.b.scope = NewScope([]string{"o/r", "o/lib"}).WithGrants(readAll...)
 	code, out, errOut := f.serve(t, Request{Argv: []string{"auth", "status"}})
 	if code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errOut)
@@ -301,7 +305,7 @@ func TestServeAnyGHVersionRunsAReviewedRead(t *testing.T) {
 // `gh auth status` on the host, after gh's stderr.
 func TestServeMapsNoHostLoginTo69(t *testing.T) {
 	f := newBrokerFixture(t, "2.101.0")
-	f.b.scope = NewScope([]string{"o/r", "o/nologin"})
+	f.b.scope = NewScope([]string{"o/r", "o/nologin"}).WithGrants(readAll...)
 	code, _, errOut := f.serve(t, Request{Argv: []string{"pr", "view", "1", "-R", "o/nologin"}})
 	if code != ExitUnavailable || !strings.Contains(errOut, "gh auth login") ||
 		!strings.Contains(errOut, "`gh auth status` on the host") {
@@ -418,8 +422,8 @@ func TestForwardWithNoEndpointSaysHowToEnableIt(t *testing.T) {
 	for _, c := range []struct {
 		hostDir, want string
 	}{
-		{"", "yolo loopholes enable github-broker\n  in this project, on the host,"},
-		{"/home/you/my code/app", "yolo loopholes enable github-broker --workspace '/home/you/my code/app'"},
+		{"", "run `yolo check` on\n  the host, in this project,"},
+		{"/home/you/my code/app", "the host, in '/home/you/my code/app',"},
 	} {
 		var errOut bytes.Buffer
 		getenv := func(k string) string {
@@ -465,7 +469,7 @@ func TestNewBrokerTakesTheScopeFromTheFile(t *testing.T) {
 	t.Setenv("HOME", resolvedDir(t))
 	t.Setenv("PATH", resolvedDir(t)) // no gh: the broker still starts and answers 69
 	var log bytes.Buffer
-	b, cleanup := newBroker(brokerscope.File{Workspace: "/w", Repos: []string{"o/r"}, Widened: []string{"x/y"}}, "/w", &log)
+	b, cleanup := newBroker(brokerscope.File{Grants: readAll, Workspace: "/w", Repos: []string{"o/r"}, Widened: []string{"x/y"}}, "/w", &log)
 	defer cleanup()
 	// A `widened` list a previous build wrote still joins the scope for every set (OQ-BB9, ruled
 	// A); no launch writes one now (WW-D12).
@@ -495,7 +499,7 @@ func TestTheBrokersLogNamesNoWorkspaceRepositoryOrHostPath(t *testing.T) {
 	t.Setenv("GH_CONFIG_DIR", cfg)
 	ws := filepath.Join(resolvedDir(t), "secret-client-project")
 	var log bytes.Buffer
-	b, cleanup := newBroker(brokerscope.File{Workspace: ws, Repos: []string{"acme/private-roadmap"},
+	b, cleanup := newBroker(brokerscope.File{Grants: readAll, Workspace: ws, Repos: []string{"acme/private-roadmap"},
 		Widened: []string{"acme/other-private"}}, ws, &log)
 	defer cleanup()
 	if b.runner == nil {
@@ -534,7 +538,7 @@ func TestTheBrokerRunsAnEntrysRepositoryAndNamesTheEntryForAnother(t *testing.T)
 	t.Setenv("PATH", filepath.Dir(gh)+":/usr/bin:/bin")
 	t.Setenv("GH_CONFIG_DIR", cfg)
 	ws := filepath.Join(resolvedDir(t), "R&D app")
-	b, cleanup := newBroker(brokerscope.File{Workspace: ws, Repos: []string{"o/r", "org/lib"},
+	b, cleanup := newBroker(brokerscope.File{Grants: readAll, Workspace: ws, Repos: []string{"o/r", "org/lib"},
 		ConfigFile: "yolo-jail.json", LocalFile: "yolo-jail.local.jsonc"}, ws, &bytes.Buffer{})
 	defer cleanup()
 	if b.runner == nil {
@@ -576,7 +580,7 @@ func TestTheBrokerRunsAnEntrysRepositoryAndNamesTheEntryForAnother(t *testing.T)
 	}
 
 	// A scope file without the names: the refusal names the file the briefing gives.
-	b2, cleanup2 := newBroker(brokerscope.File{Workspace: ws, Repos: []string{"o/r"}}, ws, &bytes.Buffer{})
+	b2, cleanup2 := newBroker(brokerscope.File{Grants: readAll, Workspace: ws, Repos: []string{"o/r"}}, ws, &bytes.Buffer{})
 	defer cleanup2()
 	var errOut2 bytes.Buffer
 	b2.Serve(Request{Argv: []string{"pr", "view", "1", "-R", "other/private"}}, "jail-1", func([]byte) {},
@@ -594,8 +598,8 @@ func TestBrokerLifetimeIsFreshAndItsTeardownKeepsGrants(t *testing.T) {
 	t.Setenv("HOME", resolvedDir(t))
 	t.Setenv("PATH", resolvedDir(t)) // no host gh is needed to test lifecycle teardown
 	var log bytes.Buffer
-	b, cleanup := newBroker(brokerscope.File{Workspace: "/workspace/project"}, "/workspace/project", &log)
-	other, cleanupOther := newBroker(brokerscope.File{Workspace: "/workspace/project"}, "/workspace/project", &bytes.Buffer{})
+	b, cleanup := newBroker(brokerscope.File{Grants: readAll, Workspace: "/workspace/project"}, "/workspace/project", &log)
+	other, cleanupOther := newBroker(brokerscope.File{Grants: readAll, Workspace: "/workspace/project"}, "/workspace/project", &bytes.Buffer{})
 	defer cleanupOther()
 	if b.startID == "" || b.startID == other.startID {
 		t.Fatalf("broker lifetimes are not unique: %q, %q", b.startID, other.startID)
@@ -660,7 +664,7 @@ func TestBrokerTeardownReportsStoreFailureAndRetries(t *testing.T) {
 	t.Setenv("HOME", resolvedDir(t))
 	t.Setenv("PATH", resolvedDir(t))
 	var log bytes.Buffer
-	b, cleanup := newBroker(brokerscope.File{Workspace: "/project"}, "/project", &log)
+	b, cleanup := newBroker(brokerscope.File{Grants: readAll, Workspace: "/project"}, "/project", &log)
 	defer cleanup()
 	b.store.Revalidate = func(q brokerstore.Request) (brokerstore.Policy, error) { return q.Policy, nil }
 	q, err := b.store.File(brokerstore.Request{Jail: "jail", Start: b.startID, Workspace: "/project", Argv: []string{"pr", "merge", "1"}, Repo: "o/r", StdinDigest: "none", Set: "read-write", Policy: brokerstore.Policy{Window: time.Minute, MaxWindow: time.Hour, Uses: 2}})

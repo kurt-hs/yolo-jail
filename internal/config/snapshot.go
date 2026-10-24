@@ -9,7 +9,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
-	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
 )
 
@@ -201,18 +200,17 @@ func (e *ChangedNonInteractiveError) Advice() string {
 func withoutBrokerSteps(labels []string, workspace string) string {
 	var b strings.Builder
 	for _, l := range labels {
-		b.WriteString("\nTo launch this project without " + l + " instead, run `" +
-			DisableLoopholeCommand(l, workspace) + "`: it is off for this project from the next " +
-			"launch, which then asks nothing about its repositories.")
+		b.WriteString("\n" + WithoutBrokerStep(l) + " The next launch then asks nothing about its repositories.")
 	}
 	return b.String()
 }
 
-// DisableLoopholeCommand is `yolo loopholes disable <name> --workspace <workspace>`, the path
-// quoted for a shell and a control character in it written as an escape, so the command works
-// from whatever folder it is pasted in.
-func DisableLoopholeCommand(name, workspace string) string {
-	return "yolo loopholes disable " + name + " --workspace " + shquote.QuoteDisplay(workspace)
+// WithoutBrokerStep is the way to launch without the brokered loophole name: a broker has no
+// switch (docs/design/boundary-broker.md BB-D104, BB-D106), so it is deselecting the pack that
+// ships it, in the user config, which takes it out of every project.
+func WithoutBrokerStep(name string) string {
+	return "To launch without " + name + " instead, take the pack that ships it out of `packs` in " +
+		paths.UserConfigPath() + ": it runs whenever that pack is selected, in every project."
 }
 
 func (e *ChangedNonInteractiveError) Error() string {

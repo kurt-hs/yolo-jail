@@ -31,6 +31,33 @@ const AnyRepo = "*"
 // set, declared in config rather than recorded in the store (docs/design/git-broker.md GB-D12).
 const KindBranch = "branch"
 
+// KindRead is the grant kind every brokered source defines without declaring it: reading the
+// repositories of the approved scope (docs/design/boundary-broker.md BB-D105, BB-D107). A broker
+// whose live scope file holds no read grant covering a repository refuses every call on it.
+const KindRead = "read"
+
+// ReadCovers reports whether grants hold a read grant on repo, or on AnyRepo. same compares a
+// grant's repository identity with repo, which each source spells its own way (git a remote's
+// identity, gh `OWNER/REPO`).
+func ReadCovers(grants []Grant, repo string, same func(grantRepo, repo string) bool) bool {
+	for _, g := range grants {
+		if g.Kind == KindRead && (g.Repo == AnyRepo || same(g.Repo, repo)) {
+			return true
+		}
+	}
+	return false
+}
+
+// HoldsRead reports whether grants hold any read grant.
+func HoldsRead(grants []Grant) bool {
+	for _, g := range grants {
+		if g.Kind == KindRead {
+			return true
+		}
+	}
+	return false
+}
+
 // GrantTakesBranch reports whether a grant of kind names a branch.
 func GrantTakesBranch(kind string) bool { return kind == KindBranch }
 

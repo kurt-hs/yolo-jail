@@ -301,7 +301,12 @@ func resolve(m *loopholedecl.Manifest, modulePath string) *Loophole {
 		// the user set it (discover.go's applyWorkspaceOverrides). Seeding the switch
 		// with the default is what lets config stay an OVERRIDE rather than a third
 		// value to reconcile (docs/reference/loophole-system.md OQ-A9).
-		Enabled:       m.DefaultEnabled,
+		//
+		// A BROKERED loophole is the exception: it is on whenever it is installed, which for a
+		// pack's is whenever its pack is selected, and no switch decides it
+		// (docs/design/boundary-broker.md BB-D106). What it may do is decided by grants in
+		// config, not by whether it runs.
+		Enabled:       m.DefaultEnabled || m.Brokered != nil,
 		Transport:     m.Transport,
 		Lifecycle:     m.Lifecycle,
 		Intercepts:    m.Intercepts,

@@ -40,7 +40,10 @@ workspace entry, and the user-scope form survives only as history in [§9.7](#97
 and the ledger. The re-ruling makes [OQ-BB11](#15-decision-ledger) moot ([WW-D7](workspace-widening.md#WW-D7)).
 [OQ-BB12](#15-decision-ledger) and [OQ-BB13](#15-decision-ledger), filed and ruled 2026-10-01, put the broker's switch
 in a per-workspace file beside the user config, for one project at a time, built as
-[BB-D53](#BB-D53) to [BB-D57](#BB-D57). Step 1 lives in
+[BB-D53](#BB-D53) to [BB-D57](#BB-D57). **On 2026-10-24 the maintainer removed that switch for
+brokers** ([BB-D104](#BB-D104), [BB-D105](#BB-D105)): selecting the pack starts the broker and grants
+nothing, and read access is an explicit grant in the user config that each workspace's approval
+shows, built as [BB-D106](#BB-D106) to [BB-D109](#BB-D109). Step 1 lives in
 `internal/ghbroker` (the classifier, the executor, the daemon and the `yolo gh` forwarder),
 `internal/brokerscope`, `internal/brokeraudit`, `packs/github` and the `intercept` contribution
 kind; its implementation decisions are
@@ -85,7 +88,8 @@ background wait ([OQ-BB17](#OQ-BB17)).
 
 **Start at [§3](#3-the-flow)**, the flow. Everything else is what one step of it needs.
 
-**Needs your ruling:** none.
+**Needs your ruling:** [OQ-BB23](#OQ-BB23), whether the user config may grant a write kind to
+every workspace (leaning: not now).
 [OQ-BB10](#OQ-BB10), [OQ-BB14](#OQ-BB14) (no for now), [OQ-BB15](#OQ-BB15), [OQ-BB16](#OQ-BB16), [OQ-BB19](#OQ-BB19) (four grants), [OQ-BB20](#OQ-BB20), [OQ-BB21](#OQ-BB21), [OQ-BB22](#OQ-BB22), [OQ-BB17](#OQ-BB17), [OQ-BB18](#OQ-BB18), the grant model
 ([BB-D76](#BB-D76) to [BB-D78](#BB-D78)), and the git source's
 [OQ-GB1](git-broker.md#OQ-GB1) and [OQ-GB2](git-broker.md#OQ-GB2), were ruled 2026-10-23.
@@ -872,9 +876,8 @@ broker, and never at an **attach** ([§1.3](#13-terms)). One attach is the excep
 attach's skew gate settles a pack, profile-daemon or contract skew by restarting the jail
 (`skewRestarted` in `internal/cli/run/run.go`), `Run` continues as a fresh launch through the
 config-change gate, so that invocation re-reads the remotes and may show the scope block. A launch
-starts the broker when the github pack is selected, its loophole is turned on for that workspace
-by the workspace's per-workspace file, the only switch it has ([OQ-BB13](#15-decision-ledger),
-[BB-D55](#BB-D55)), and the backend runs it ([§4.4](#44-per-notch-and-backend)). macos-user has no attach, so every invocation there reads
+starts the broker whenever the github pack is selected and the backend runs it; the broker has no
+switch, and it grants nothing until a read grant does ([BB-D104](#BB-D104) to [BB-D108](#BB-D108)) ([§4.4](#44-per-notch-and-backend)). macos-user has no attach, so every invocation there reads
 the scope, and two terminals in one workspace are two concurrent sessions, each with its own
 scope file ([BB-D32](#BB-D32)). Apple Container starts no broker, so it reads nothing.
 
@@ -2522,6 +2525,21 @@ covered:
     > workspace still never widens past the user's ceiling ([OQ-BB16](#OQ-BB16)); it requests,
     > within it, and the human's y admits ([BB-D96](#BB-D96)).
 
+11. <a id="OQ-BB23"></a>**[OQ-BB23](#OQ-BB23): May the user config grant other kinds to every workspace?**
+    [BB-D105](#BB-D105) puts read access for every workspace in the user config. The same form
+    could carry a write kind, such as `{"kind": "create-branch", "repo": "*"}`, letting every
+    workspace create branches in its own repositories without a grant in each workspace file.
+    Today the user scope accepts only the read grant ([BB-D107](#BB-D107)).
+
+    - **A — Read only, as built.** A write grant stays per workspace ([BB-D96](#BB-D96)).
+    - **B — Any kind the user's `grant_kinds` lists, with `"repo": "*"`**, still shown at each
+      workspace's approval.
+
+    _Leaning:_ **A, not now.** [OQ-BB22](#OQ-BB22) ruled that the specific write grants live in
+    the workspace config, and nothing yet asks for a write in every workspace at once.
+
+    **Answer:** open.
+
 ## 15. Decision Ledger
 
 | ID | Ruling / Decision | Date | Settled in | Built |
@@ -2648,6 +2666,12 @@ covered:
 | <a id="BB-D101"></a>[`BB-D101`](#15-decision-ledger) | *Implementation decision,* what `yolo approve` shows for [BB-D99](#BB-D99). The text listing names a grant by its workspace in brackets, as a request's and a working-set entry's lines already do, in place of the jail; the allow line says the grant is for every jail of that workspace, across restarts. `--json` and `--watch --json` add `workspace` (the holder) and `used_by` (the jail that spent its latest use) to a grant and keep `jail`, now documented as the jail whose request it answered; its value is unchanged, so `schema` stays 1. A watch summary for a grant names its workspace, and for a use the jail that used it | 2026-10-24 | [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship) | built: `printApproveList`, `brokerstore.Store.GrantView`, pinned by `TestApproveShowsAGrantsWorkspace` |
 | <a id="BB-D102"></a>[`BB-D102`](#15-decision-ledger) | *Implementation decision,* how revoke addresses a grant under [BB-D99](#BB-D99). A grant is revoked by its `g-` id, or with every grant a workspace holds by `--revoke all --workspace <path>`, now matched against the grant's own workspace rather than its request's; `--revoke all` still ends every live grant. No revoke names a jail, since a jail holds nothing of its own | 2026-10-24 | [§7](#7-grants-and-the-request-store) | built: `brokerstore.Store.RevokeIn`, pinned by `TestAGrantOutlivesItsBrokerForItsWorkspaceOnly` and `TestApproveRevokeAllWorkspace` |
 | <a id="BB-D103"></a>[`BB-D103`](#15-decision-ledger) | *Implementation decision,* the workspace identity of [BB-D99](#BB-D99). A grant's holder is the workspace path made absolute with its symlinks resolved, the rule `runtime.ResolveWorkspace` applies to the jail id, so a launch through `~/link` and one through the real path are one holder. The store resolves it where the grant is minted (`Store.Decide`) and again when it compares two paths (`brokerstore.SameWorkspace`), so a request filed, or a grant written, under a symlinked spelling or by an earlier build still matches; a path that cannot be resolved keeps its lexical absolute form. The launch's scope file keeps the path as given: resolving there would also move the working set's and the audit's identity, which is outside this change. The working set still compares its paths lexically | 2026-10-24 | [§7](#7-grants-and-the-request-store) | built: `brokerstore.ResolveWorkspace`, pinned by `TestAGrantServesTheWorkspaceUnderEitherSpelling` |
+| <a id="BB-D104"></a>[`BB-D104`](#15-decision-ledger) | **Maintainer ruling:** selecting a broker's pack starts the broker and grants nothing; `yolo loopholes enable` goes away for brokers. The only point of selecting the pack is that a later `yolo config apply` takes effect without restarting the jail. *"selecting the pack includes it, but it does not by default grant anything. If you want the default read-only grant, you must specifically specify that alongside the pack. So it's basically a no-op option"* and *"I think loopholes enable can go away for brokers, but our brokers that we ship should default to basically no increased access ... it still should require adding a grant or config of some sort to give that permission, and it should flow through the config apply stuff. Now we can't mechanically enforce this for all packs. We will just set this as a precedent with our packs."* This is a precedent for the packs yolo ships, not a rule yolo enforces on every pack. Supersedes [OQ-BB13](#15-decision-ledger)'s per-project switch and [BB-D55](#BB-D55) | 2026-10-24 | [§5.6](#56-the-repository-scope) | built: [BB-D106](#BB-D106) to [BB-D109](#BB-D109) |
+| <a id="BB-D105"></a>[`BB-D105`](#15-decision-ledger) | **Maintainer ruling:** default read-only access is an explicit grant in the user config, covering every workspace, and it still appears in the config-change approval: *"a user config that gives all workspaces read-only access to their configured git repo"*; *"It doesn't happen automatically unseen."* | 2026-10-24 | [§5.6](#56-the-repository-scope) | built: [BB-D107](#BB-D107) |
+| <a id="BB-D106"></a>[`BB-D106`](#15-decision-ledger) | *Implementation decision,* carrying out [BB-D104](#BB-D104). A broker is any loophole whose manifest declares `brokered`; nothing switches on a tool name. It is enabled whenever its pack is selected (`loopholes.Load`), and every config switch of it is ignored (`loopholes.SwitchedByConfig`, `loopholes.EnabledUnder`). A manifest declaring `brokered` with `default_enabled: true` is refused at load; `false` is ignored. `loopholes.<name>.enabled` for a broker in the user config or a project's config is a `yolo check` error that names the read grant and says that taking the pack out of `packs` stops the broker. When a launch's scope prompt is declined, the next step it names is that same change to `packs`. A consequence: every workspace now meets the scope prompt once the pack is selected | 2026-10-24 | [§5.6](#56-the-repository-scope) | built: `loopholes.EnabledUnder`, `config.brokeredUserSwitchRefusal`, `config.brokeredWorkspaceSwitchRefusal`, `config.WithoutBrokerStep`, pinned by `TestASelectedBrokerPackPutsTheBrokerInPlay`, `TestABrokeredLoopholeHasNoSwitch` and `TestBrokeredBlockAndTokenAreHeldTogether` |
+| <a id="BB-D107"></a>[`BB-D107`](#15-decision-ledger) | *Implementation decision,* carrying out [BB-D105](#BB-D105). The spelling is `"brokered": {"<source>": {"grants": [{"kind": "read", "repo": "*"}]}}` in the user config, where it means each workspace's own approved repositories. That is the only grant the user scope accepts, and it needs no `grant_kinds` entry. `read` is a kind every source defines. A workspace may hold its own `read` grant when the user's `grant_kinds` lists `read` or the user holds the read grant. The gate's grant list is the union, the user's grants first, with duplicates removed. Each grant shows in the repository-scope block as `+ grant read *  added (from your user config, for every workspace)`, joins only at that workspace's y or at `yolo config apply`, and is recorded under `<source>.grants` like a workspace grant ([BB-D96](#BB-D96) is unchanged) | 2026-10-24 | [§5.6](#56-the-repository-scope), [§5.8](#58-long-lived-access-and-temporary-access) | built: `config.BrokeredUserGrants`, `config.NewScopeCheck`, pinned by `TestTheUserReadGrantIsShownAtTheGate` and `TestASelectedBrokerPackPutsTheBrokerInPlay` |
+| <a id="BB-D108"></a>[`BB-D108`](#15-decision-ledger) | *Implementation decision:* with no read grant covering the call's repository in the live scope file, the broker refuses the call with exit 64 and the audit reason `no read grant`. The refusal message (`config.BrokerNoReadRefusal`) names the grant and `yolo config apply`, and says whether the running broker takes the grant at its next call. Read is the floor, so a push needs it too. A `gh` command naming no repository needs some read grant. The broker reads only the scope file, never the user config, so withdrawing the user grant takes effect at the next `yolo config apply` or launch, the same path that grants it | 2026-10-24 | [§5.6](#56-the-repository-scope) | built: `gitbroker` `serveRequest`, `ghbroker` `Scope.unread`, pinned by `TestNoReadGrantRefusesEveryCall` (both packages), `TestUserReadGrantAppliedLetsTheFetchThrough`, `TestUserReadGrantWithdrawnRefusesTheNextFetch` and `TestReadGrantCoversItsOwnRepository` |
+| <a id="BB-D109"></a>[`BB-D109`](#15-decision-ledger) | *Implementation decision,* migrating from [BB-D55](#BB-D55): `yolo loopholes enable` on a broker refuses, naming the grant and the `packs` change. `yolo loopholes disable` on a broker also refuses, except that it first removes a switch an older yolo wrote into the per-workspace file and then exits 0. Such a stale switch is ignored with a validation warning that names the grant and that `disable` command. Host `yolo check` notes each selected broker whose source has no user read grant and no `read` in `grant_kinds`, saying every call through it is refused. Non-broker loopholes keep their switches unchanged | 2026-10-24 | [§5.6](#56-the-repository-scope) | built: `loopholes.setBrokerSwitch`, `config.staleBrokerSwitchNote`, `config.UngrantedBrokerNotes`, pinned by `TestLoopholesEnableRefusesABroker`, `TestLoopholesDisableRemovesABrokersOldSwitch`, `TestABrokeredLoopholeHasNoSwitch` and `TestCheckSaysUpFrontWhatASelectedBrokerGrants` |
 
 ## Appendix A — prior art: unYOLO, re-analyzed from source (2026-08-12)
 

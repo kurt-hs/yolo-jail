@@ -13,7 +13,8 @@ import (
 )
 
 // `yolo check --accept-config-changes` records the scope part exactly where a launch would
-// start a brokered loophole, from the same remotes (BB-D30).
+// start a brokered loophole, from the same remotes (BB-D30): wherever its pack is selected,
+// whatever a config switch says, since it has none (docs/design/boundary-broker.md BB-D106).
 func TestCheckReadsTheScopeWhereALaunchWouldStartABroker(t *testing.T) {
 	mod := filepath.Join(t.TempDir(), "gb")
 	if err := os.MkdirAll(mod, 0o755); err != nil {
@@ -49,11 +50,11 @@ func TestCheckReadsTheScopeWhereALaunchWouldStartABroker(t *testing.T) {
 	if brokeredScopeForCheck(ws, gbSwitched(true), "container", nil) != nil {
 		t.Fatal("Apple Container starts no broker, so the check must record no scope there")
 	}
-	if brokeredScopeForCheck(ws, gbSwitched(false), "podman", nil) != nil {
-		t.Fatal("a disabled brokered loophole starts no broker, so its scope is not in play")
+	if brokeredScopeForCheck(ws, gbSwitched(false), "podman", nil) == nil {
+		t.Fatal("a config switch turned a brokered loophole off, which it has no switch for")
 	}
-	if brokeredScopeForCheck(ws, jsonx.NewOrderedMap(), "podman", nil) != nil {
-		t.Fatal("a brokered loophole no switch turned on starts no broker: it ships off")
+	if brokeredScopeForCheck(ws, jsonx.NewOrderedMap(), "podman", nil) == nil {
+		t.Fatal("a brokered loophole with no switch starts no broker: it runs whenever its pack is selected")
 	}
 }
 

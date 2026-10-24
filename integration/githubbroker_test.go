@@ -23,8 +23,8 @@ import (
 
 // THE GITHUB BROKER, END TO END (docs/design/boundary-broker.md §11 step 1, §12).
 //
-// A real jail selecting the `github` pack, with the `github-broker` loophole turned on for its
-// workspace by `yolo loopholes enable github-broker` (the per-workspace file), runs a
+// A real jail selecting the `github` pack, whose user config grants read access to every
+// workspace (docs/design/boundary-broker.md BB-D105), runs a
 // bare `gh` — which the pack's `intercept` contribution routes to `yolo gh` — and the host
 // broker runs the host's `gh`. Nothing reaches GitHub: the host's `gh` here is a FAKE on
 // the launcher's PATH, which the per-jail daemon inherits, and which prints the argv it was
@@ -49,10 +49,12 @@ import (
 
 const fakeGHToken = "gho_yoloIntegrationFakeToken0123456789"
 
+// githubReadGrant is the user config's read grant for every workspace (BB-D107).
+const githubReadGrant = `{"kind": "read", "repo": "*"}`
+
 // githubBrokerFixture is one prepared workspace: a git checkout whose origin is on
-// github.com, a user config selecting the pack, the loophole turned on for it by the real
-// `yolo loopholes enable`, a private state
-// dir, and a fake host `gh` first on the launcher's PATH.
+// github.com, a user config selecting the pack and granting read access to every workspace, a
+// private state dir, and a fake host `gh` first on the launcher's PATH.
 type githubBrokerFixture struct {
 	dir     string
 	opts    []runOption
@@ -79,17 +81,10 @@ func newGitHubBrokerFixture(t *testing.T) githubBrokerFixture {
 	}
 	git("init", "-q", "-b", "main")
 	git("remote", "add", "origin", "https://github.com/yolo-it/app.git")
-	// The pack in the user config; the broker on for THIS workspace alone, by the command a
-	// user runs in it, which writes the workspace's per-workspace file
-	// (docs/design/boundary-broker.md OQ-BB13). A user-config switch is refused. YOLO_VERSION is
-	// blanked because the suite may run inside a jail, and this is the host's verb.
-	packHome(t, `{"packs": ["github"]}`)
+	// The pack and the read grant in the user config: selecting the pack starts the broker and
+	// grants nothing, and the read grant joins at the scope approval (BB-D104, BB-D107).
+	packHome(t, `{"packs": ["github"], "brokered": {"github": {"grants": [`+githubReadGrant+`]}}}`)
 	macArchivePrivateState(t)
-	if r := runCommand(t, dir, []string{"loopholes", "enable", "github-broker"},
-		withHostSemantics()); r.rc != 0 ||
-		!strings.Contains(r.stdout, "github-broker is on for ") {
-		t.Fatalf("yolo loopholes enable github-broker: rc %d\n%s", r.rc, r.combined())
-	}
 
 	bin := t.TempDir()
 	argvLog := writeFakeHostGH(t, bin)

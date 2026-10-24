@@ -287,10 +287,14 @@
       does not edit your config.
 
       A loophole whose manifest declares "brokered" (the github pack's
-      github-broker) is switched ONLY that way, one project at a time: its
-      "enabled" here, or under "loopholes" in a project's yolo-jail.jsonc or
-      yolo-jail.local.jsonc (or their .json spellings), is an error naming the
-      command, and its manifest may not set "default_enabled": true.
+      github-broker, the git pack's git-broker) has NO switch: it runs whenever
+      its pack is selected, and grants nothing until a grant under "brokered"
+      does (see "brokered" below).  Its "enabled" here, or under "loopholes" in
+      a project's yolo-jail.jsonc or yolo-jail.local.jsonc (or their .json
+      spellings), is an error naming that grant; one an older yolo wrote into
+      a per-workspace file is ignored with a warning, and
+      [cyan]yolo loopholes disable <name>[/cyan] removes it.  Its manifest may not
+      set "default_enabled": true.
 
     DECLARING an inline service also takes:
       "command" (array of strings, required): the command to launch on the host
@@ -389,15 +393,19 @@
     but how the endpoint file crosses into an AC guest is an unmade decision, so
     host services stay explicitly DEFERRED there rather than quietly enabled.
 
-  [bold]brokered[/bold] (object, [bold]repos, grants: WORKSPACE SCOPE; sets, grant_kinds: USER SCOPE[/bold]):
+  [bold]brokered[/bold] (object, [bold]repos: WORKSPACE SCOPE; sets, grant_kinds: USER SCOPE; grants: both[/bold]):
     More repositories for this workspace's brokered loophole, such as the github pack's
     github-broker, the permission sets a write grant hands over, and user grants in two layers.
     A brokered loophole runs your host login's commands for the jail, but only
     against the workspace's repositories: its git remotes, and any it lists
-    here, which every fresh launch reads and asks you to approve.  It runs only
-    in a workspace you turned it on for with [cyan]yolo loopholes enable <name>[/cyan]
-    (see "loopholes" above); answering N at that approval names
-    [cyan]yolo loopholes disable <name>[/cyan].  List a repository the project has no
+    here, which every fresh launch reads and asks you to approve.  It runs in
+    every workspace while its pack is selected, and GRANTS NOTHING until a grant
+    here does: with none, it refuses every call, naming the grant.  The usual one
+    is read access for every workspace, in your user config:
+      "brokered": { "github": { "grants": [{"kind": "read", "repo": "*"}] } }
+    It still joins each workspace only at that workspace's config-change prompt,
+    or at [cyan]yolo config apply[/cyan] on the host, as a line of the
+    repository-scope block marked as your user config's.  List a repository the project has no
     remote for in yolo-jail.jsonc, or in yolo-jail.local.jsonc for what the
     project should not commit (yolo does not git-ignore that file):
       "brokered": {
@@ -438,18 +446,21 @@
       for this source, as in "grant_kinds": ["create-branch"].  A kind is one the loophole's
       manifest defines (`brokered.grants`; the git pack's git-broker defines "create-branch").
       Listing a kind grants nothing by itself.  A workspace file may NOT name grant_kinds.
-    • [bold]grants[/bold] (WORKSPACE SCOPE ONLY): the specific grants this workspace holds,
-      each naming the repository it covers:
+    • [bold]grants[/bold]: in your USER config, only {"kind": "read", "repo": "*"}, read
+      access for every workspace to its own approved repositories (above); any other grant
+      there is an error.  In a WORKSPACE file, the specific grants this workspace holds, each
+      naming the repository it covers:
         "grants": [{"kind": "create-branch", "repo": "github.com/o/r"}]
-      • kind: a kind the source defines AND your user config's grant_kinds lists; anything
-        else is a `yolo check` error naming the key that would allow it.  "read" needs no
-        grant (the loophole being on allows it) and only warns.
+      • kind: "read", which every source defines, or a kind the source's manifest defines;
+        either way your user config's grant_kinds must list it (or, for "read", your user
+        config holds the read grant itself); anything else is a `yolo check` error naming
+        the key that would allow it.  Every call through the broker needs a read grant on
+        its repository, a push as well as a fetch.
       • repo: the host and path a remote reduces to (host in lower case with a dot or a
         port, path with no scheme, user or ".git"), or "*" for every repository of the scope.
       A grant joins only when you approve it: each is a line of the repository-scope block at
       the next fresh launch, or at `yolo config apply`, which replaces a running jail's grants
-      as it replaces its repositories, and each launch names the grants in force.  A user-config
-      file may NOT name grants.
+      as it replaces its repositories, and each launch names the grants in force.
     It takes effect at the next fresh launch: the config-change prompt shows each
     repository as a row of the repository-scope block, naming the file it came
     from, and asks you to approve it; then the launch names the scope, as in

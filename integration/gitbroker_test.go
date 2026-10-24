@@ -18,9 +18,9 @@ import (
 
 // THE GIT BROKER, END TO END (docs/design/git-broker.md, git-broker-plan.md task 7).
 //
-// A real jail selecting the `git` pack, with the `git-broker` loophole turned on for its
-// workspace by `yolo loopholes enable git-broker`, runs the image's real `git fetch` and `git
-// push` against a workspace whose origin is `git@fixture.test:o/r.git`. The pack's `env`
+// A real jail selecting the `git` pack, whose user config grants read access to every
+// workspace (boundary-broker.md BB-D105, git-broker.md GB-D15), runs the image's real `git fetch`
+// and `git push` against a workspace whose origin is `git@fixture.test:o/r.git`. The pack's `env`
 // contribution, `served_by` the loophole, rewrites the remote to `yolo::git@…`, git runs the
 // pack's `git-remote-yolo` intercept, which forwards to `yolo git-remote`, and the host broker
 // runs the host's `ssh`. Nothing reaches a network: the host's `ssh` here is a FAKE first on the
@@ -57,14 +57,21 @@ func hostGit(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func newGitBrokerFixture(t *testing.T, enable bool) gitBrokerFixture {
+func newGitBrokerFixture(t *testing.T, read bool) gitBrokerFixture {
 	t.Helper()
-	return newGitBrokerFixtureWith(t, enable, `{"packs": ["git"]}`, `{}`)
+	if read {
+		return newGitBrokerFixtureWith(t, `{"packs": ["git"], "brokered": {"git": {"grants": [`+gitReadGrant+`]}}}`, `{}`)
+	}
+	return newGitBrokerFixtureWith(t, `{"packs": ["git"]}`, `{}`)
 }
+
+// gitReadGrant is the user config's read grant for every workspace (BB-D107): selecting the pack
+// grants nothing without it.
+const gitReadGrant = `{"kind": "read", "repo": "*"}`
 
 // newGitBrokerFixtureWith is newGitBrokerFixture with the user config and the workspace config
 // given.
-func newGitBrokerFixtureWith(t *testing.T, enable bool, userConfig, workspaceConfig string) gitBrokerFixture {
+func newGitBrokerFixtureWith(t *testing.T, userConfig, workspaceConfig string) gitBrokerFixture {
 	t.Helper()
 	requireJail(t)
 	if rt := detectRuntime(); rt != "podman" {
@@ -88,12 +95,6 @@ func newGitBrokerFixtureWith(t *testing.T, enable bool, userConfig, workspaceCon
 
 	packHome(t, userConfig)
 	macArchivePrivateState(t)
-	if enable {
-		if r := runCommand(t, dir, []string{"loopholes", "enable", "git-broker"}, withHostSemantics()); r.rc != 0 ||
-			!strings.Contains(r.stdout, "git-broker is on for ") {
-			t.Fatalf("yolo loopholes enable git-broker: rc %d\n%s", r.rc, r.combined())
-		}
-	}
 
 	// The fake host ssh: it records its argv, then runs its last argument (git's remote
 	// command) from the directory holding o/r.git, as sshd would in the login's home. It answers
@@ -205,27 +206,33 @@ func TestGitBrokerFetchAndRefusal(t *testing.T) {
 	}
 }
 
-// With the loophole NOT enabled the pack changes nothing about git: the rewrite is withheld
-// (ID-6), so the remote is not rewritten and a fetch fails as it would with no broker, by the
-// jail's own ssh.
-func TestGitBrokerOffLeavesGitUntouched(t *testing.T) {
+// With the pack selected and NO read grant the broker runs and grants nothing (BB-D104, BB-D108):
+// the rewrite is served, and the fetch is refused naming the grant, with the host's ssh never
+// run.
+func TestGitBrokerWithNoGrantRefusesTheFetch(t *testing.T) {
 	fx := newGitBrokerFixture(t, false)
+	fx.recordScope(t, "git@fixture.test:o/r.git")
 	script := gitInJail + ghScript(
-		"env | grep GIT_CONFIG_COUNT",
-		"timeout 60 g -c core.sshCommand='ssh -o BatchMode=yes -o ConnectTimeout=5' fetch origin",
+		"env | grep -c '^GIT_CONFIG_COUNT=3$'",
+		"g fetch origin",
 	)
 	r := runCommand(t, fx.dir, []string{"run", "--", "bash", "-lc", script}, fx.opts...)
 	if r.rc != 0 {
-		t.Fatalf("the launch failed: rc %d\n%s", r.rc, r.combined())
+		t.Fatalf("the launch failed: rc %d\n%s%s", r.rc, r.combined(), gitBrokerDaemonLog(t))
 	}
-	if got := kvLine(r.stdout, "RCA"); got != "1" {
-		t.Errorf("env | grep GIT_CONFIG_COUNT exited %q, want 1 (no match):\n%s", got, r.combined())
+	if got := kvLine(r.stdout, "RCA"); got != "0" {
+		t.Errorf("the rewrite is not in the env (grep exited %q):\n%s", got, r.combined())
 	}
 	if got := kvLine(r.stdout, "RCB"); got == "0" || got == "" {
-		t.Errorf("git fetch exited %q with no broker, want a failure:\n%s", got, r.combined())
+		t.Errorf("git fetch exited %q with no read grant, want a failure:\n%s", got, r.combined())
 	}
-	if logged, _ := os.ReadFile(fx.argvLog); len(logged) != 0 {
-		t.Errorf("the host ssh ran with the loophole off:\n%s", logged)
+	for _, want := range []string{"holds no read grant", `"kind": "read"`, "yolo config apply"} {
+		if !strings.Contains(r.combined(), want) {
+			t.Errorf("the refused fetch does not say %q:\n%s", want, r.combined())
+		}
+	}
+	if logged, _ := os.ReadFile(fx.argvLog); strings.Contains(string(logged), "git-upload-pack") {
+		t.Errorf("the host ssh ran with no read grant:\n%s", logged)
 	}
 }
 
@@ -236,8 +243,8 @@ func TestGitBrokerOffLeavesGitUntouched(t *testing.T) {
 // new launch, a new broker) and a third push lands, on the working set alone; then `yolo approve
 // --revoke all --workspace <ws>` on the host ends the entry, and a fourth push is refused.
 func TestGitBrokerCreateBranch(t *testing.T) {
-	fx := newGitBrokerFixtureWith(t, true,
-		`{"packs": ["git"], "brokered": {"git": {"grant_kinds": ["create-branch"]}}}`,
+	fx := newGitBrokerFixtureWith(t,
+		`{"packs": ["git"], "brokered": {"git": {"grant_kinds": ["create-branch"], "grants": [`+gitReadGrant+`]}}}`,
 		`{"brokered": {"git": {"grants": [{"kind": "create-branch", "repo": "fixture.test/o/r"}]}}}`)
 	fx.recordScope(t, "git@fixture.test:o/r.git")
 	const ref = "refs/heads/agent/x"
@@ -321,7 +328,7 @@ func TestGitBrokerCreateBranch(t *testing.T) {
 // user config allows the kind but whose workspace config declares no branch is refused the same
 // push, and its main does not move.
 func TestGitBrokerConfigBranch(t *testing.T) {
-	const userCfg = `{"packs": ["git"], "brokered": {"git": {"grant_kinds": ["branch"]}}}`
+	const userCfg = `{"packs": ["git"], "brokered": {"git": {"grant_kinds": ["branch"], "grants": [` + gitReadGrant + `]}}}`
 	const push = "g fetch -q origin && g checkout -q -b work origin/main && g commit -q --allow-empty -m agent && g push origin HEAD:main"
 	launch := func(fx gitBrokerFixture, step string) (string, string) {
 		t.Helper()
@@ -333,7 +340,7 @@ func TestGitBrokerConfigBranch(t *testing.T) {
 		return r.combined(), kvLine(r.stdout, "HEAD")
 	}
 
-	fx := newGitBrokerFixtureWith(t, true, userCfg,
+	fx := newGitBrokerFixtureWith(t, userCfg,
 		`{"brokered": {"git": {"grants": [{"kind": "branch", "repo": "fixture.test/o/r", "branch": "main"}]}}}`)
 	fx.recordScope(t, "git@fixture.test:o/r.git")
 	out, head := launch(fx, "with the grant")
@@ -357,7 +364,7 @@ func TestGitBrokerConfigBranch(t *testing.T) {
 		t.Errorf("the push's audit is %v, want [working-set/branch:main]:\n%s", covered, a.combined())
 	}
 
-	without := newGitBrokerFixtureWith(t, true, userCfg, `{}`)
+	without := newGitBrokerFixtureWith(t, userCfg, `{}`)
 	without.recordScope(t, "git@fixture.test:o/r.git")
 	out, _ = launch(without, "without the grant")
 	if kvLine(out, "RCA") != "1" || !strings.Contains(out, "needs approval, which this version cannot ask for") {

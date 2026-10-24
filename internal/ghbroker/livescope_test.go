@@ -24,7 +24,7 @@ func liveBroker(t *testing.T) *Broker {
 	t.Helper()
 	a, _ := authorityFixture(t)
 	log := brokeraudit.Open(paths.BrokerAuditLog(), nil)
-	return &Broker{authority: a, scope: NewScope(a.scope.Repos), workspace: a.scope.Workspace,
+	return &Broker{authority: a, scope: NewScope(a.scope.Repos).WithGrants(readAll...), workspace: a.scope.Workspace,
 		startID: a.start, store: &brokerstore.Store{Dir: paths.BrokerSourceDir(Source), Revalidate: a.Revalidate,
 			Audit: StoreAudit(log)}, audit: log, log: io.Discard, now: time.Now}
 }

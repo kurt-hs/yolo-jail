@@ -30,19 +30,19 @@ and the message says to run the command on the host.
 ```jsonc
 // ~/.config/yolo-jail/config.jsonc — user scope
 {
-  "packs": ["claude", "github"]                            // 1. the forwarder
+  "packs": ["claude", "github"],                           // 1. the forwarder and the broker
+  "brokered": {
+    "github": { "grants": [{ "kind": "read", "repo": "*" }] } // 2. read access, every workspace
+  }
 }
 ```
 
-```bash
-yolo loopholes enable github-broker    # 2. the broker, for this project only, on the host
-```
-
-The broker is switched one project at a time, and only by that command
-(`--workspace <path>` names another project; `yolo loopholes disable github-broker` turns it
-off again). It writes the project's per-workspace file in `~/.config/yolo-jail/workspaces/`,
-never `config.jsonc`, and no jail can read it. A `github-broker` switch in the user config or in
-a project's own config is refused.
+Selecting the pack starts the broker in every workspace, and it grants nothing: with no grant,
+every call is refused, naming the grant. The read grant is what lets each workspace read its own
+approved repositories, and it is never in force unseen: each workspace's config-change prompt,
+or `yolo config apply` on the host, shows it as a line of the repository-scope block, marked as
+your user config's, and asks you to approve it. The broker has no switch, so `yolo loopholes
+enable github-broker` refuses; to stop the broker, take the pack out of `packs`.
 
 The host needs `gh` and a login: `gh auth login` on the host, once. The next fresh launch
 of a workspace with a GitHub remote asks once, in its config-change prompt, to approve the

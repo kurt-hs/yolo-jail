@@ -12,8 +12,9 @@ import (
 )
 
 // loopholesenable_test.go drives `yolo loopholes enable|disable` through the real dispatch, over a
-// temporary HOME selecting the github pack, as a user runs it (docs/design/boundary-broker.md
-// OQ-BB12, OQ-BB13, BB-D57).
+// temporary HOME selecting the github and journal packs, as a user runs it
+// (docs/design/boundary-broker.md OQ-BB12, BB-D57): the per-workspace switch of journal, an
+// ordinary loophole, and the refusal of any switch for github-broker, which has none (BB-D109).
 
 // enableHome is a resolved HOME whose user config selects the github and journal packs, written as a person
 // writes it (comments included), and a resolved workspace with a workspace config and a folder
@@ -58,7 +59,7 @@ func enableHome(t *testing.T) (home, userCfg, userBody, ws string) {
 func TestLoopholesEnableWritesThePerWorkspaceFileAndNothingElse(t *testing.T) {
 	home, userCfg, userBody, ws := enableHome(t)
 
-	rc, stdout, stderr := captureDispatchRC(t, []string{"loopholes", "enable", "github-broker"})
+	rc, stdout, stderr := captureDispatchRC(t, []string{"loopholes", "enable", "journal"})
 	if rc != 0 {
 		t.Fatalf("enable rc = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout, stderr)
 	}
@@ -66,7 +67,7 @@ func TestLoopholesEnableWritesThePerWorkspaceFileAndNothingElse(t *testing.T) {
 	if !strings.HasPrefix(path, filepath.Join(home, ".config", "yolo-jail", "workspaces")+string(filepath.Separator)) {
 		t.Fatalf("the per-workspace file %s is not in the folder beside the user config", path)
 	}
-	for _, want := range []string{"github-broker is on for " + ws, "next fresh launch", path} {
+	for _, want := range []string{"journal is on for " + ws, "next fresh launch", path} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("enable's line does not say %q:\n%s", want, stdout)
 		}
@@ -79,15 +80,15 @@ func TestLoopholesEnableWritesThePerWorkspaceFileAndNothingElse(t *testing.T) {
 		t.Fatal(err)
 	}
 	block, _ := cfg.Get("loopholes")
-	if v, set := loopholes.ConfigEnabledOverride(asMapForTest(block), "github-broker"); !set || !v {
-		t.Fatalf("after enable the launch's config has github-broker enabled=%v set=%v", v, set)
+	if v, set := loopholes.ConfigEnabledOverride(asMapForTest(block), "journal"); !set || !v {
+		t.Fatalf("after enable the launch's config has journal enabled=%v set=%v", v, set)
 	}
 
-	rc, stdout, stderr = captureDispatchRC(t, []string{"loopholes", "disable", "github-broker"})
-	if rc != 0 || !strings.Contains(stdout, "github-broker is off for "+ws) {
+	rc, stdout, stderr = captureDispatchRC(t, []string{"loopholes", "disable", "journal"})
+	if rc != 0 || !strings.Contains(stdout, "journal is off for "+ws) {
 		t.Fatalf("disable rc = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout, stderr)
 	}
-	if wf := config.ReadWorkspaceFile(ws); wf.Switches() != "github-broker off" {
+	if wf := config.ReadWorkspaceFile(ws); wf.Switches() != "journal off" {
 		t.Errorf("after disable the file says %q", wf.Switches())
 	}
 
@@ -95,14 +96,14 @@ func TestLoopholesEnableWritesThePerWorkspaceFileAndNothingElse(t *testing.T) {
 	if err := os.MkdirAll(other, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	rc, stdout, stderr = captureDispatchRC(t, []string{"loopholes", "enable", "github-broker", "--workspace", other})
-	if rc != 0 || !strings.Contains(stdout, "github-broker is on for "+other) {
+	rc, stdout, stderr = captureDispatchRC(t, []string{"loopholes", "enable", "journal", "--workspace", other})
+	if rc != 0 || !strings.Contains(stdout, "journal is on for "+other) {
 		t.Fatalf("enable --workspace rc = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout, stderr)
 	}
-	if wf := config.ReadWorkspaceFile(other); wf.Switches() != "github-broker on" {
+	if wf := config.ReadWorkspaceFile(other); wf.Switches() != "journal on" {
 		t.Errorf("--workspace wrote %q for the other workspace", wf.Switches())
 	}
-	if wf := config.ReadWorkspaceFile(ws); wf.Switches() != "github-broker off" {
+	if wf := config.ReadWorkspaceFile(ws); wf.Switches() != "journal off" {
 		t.Errorf("--workspace changed this workspace's file too: %q", wf.Switches())
 	}
 
@@ -113,8 +114,7 @@ func TestLoopholesEnableWritesThePerWorkspaceFileAndNothingElse(t *testing.T) {
 
 // TestLoopholesEnableRefusesWhatItCannotDo: each refusal exits non-zero, writes nothing, and names
 // the next step: an unknown name (`yolo loopholes list`), a jail (the host command, with this
-// jail's workspace as the host names it), `--global` for a brokered loophole (the per-project
-// command), and a home that cannot be a workspace. `--global` for any other loophole still
+// jail's workspace as the host names it), and a home that cannot be a workspace. `--global` for any other loophole still
 // prints the block to paste, and writes nothing.
 func TestLoopholesEnableRefusesWhatItCannotDo(t *testing.T) {
 	home, userCfg, userBody, ws := enableHome(t)
@@ -128,20 +128,18 @@ func TestLoopholesEnableRefusesWhatItCannotDo(t *testing.T) {
 	}{
 		{"unknown name", []string{"loopholes", "enable", "no-such"}, nil, "",
 			[]string{`no loophole named "no-such"`, "`yolo loopholes list`"}},
-		{"in a jail", []string{"loopholes", "enable", "github-broker"},
+		{"in a jail", []string{"loopholes", "enable", "journal"},
 			map[string]string{"YOLO_VERSION": "9.9.9-test", "YOLO_HOST_DIR": "/home/someone/code/app",
 				"YOLO_WORKSPACE": ws}, "",
-			[]string{"this is a jail", "yolo loopholes enable github-broker --workspace /home/someone/code/app",
+			[]string{"this is a jail", "yolo loopholes enable journal --workspace /home/someone/code/app",
 				"fresh jail"}},
-		{"--global for a brokered loophole", []string{"loopholes", "enable", "github-broker", "--global"}, nil, "",
-			[]string{"no every-project switch", "`yolo loopholes enable github-broker`"}},
 		{"--global for another loophole", []string{"loopholes", "enable", "journal", "--global"}, nil, "",
 			[]string{"writes nothing", `"journal": { "enabled": true }`, "config.jsonc"}},
 		// A block naming nothing installed is one the launch then warns about, or, for a pack
 		// selected later, refuses: --global checks the name first, as the per-project form does.
 		{"--global for an unknown name", []string{"loopholes", "enable", "no-such", "--global"}, nil, "",
 			[]string{`no loophole named "no-such"`, "`yolo loopholes list`"}},
-		{"the home", []string{"loopholes", "enable", "github-broker"}, nil, home,
+		{"the home", []string{"loopholes", "enable", "journal"}, nil, home,
 			[]string{"no launch may use it as a workspace", "--workspace <project>"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -203,21 +201,21 @@ func TestLoopholesEnableSwitchesTheFolderALaunchHereUses(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Chdir(c.cwd)
-			rc, stdout, stderr := captureDispatchRC(t, []string{"loopholes", "enable", "github-broker"})
-			if rc != 0 || !strings.Contains(stdout, "github-broker is on for "+c.cwd+" ") {
+			rc, stdout, stderr := captureDispatchRC(t, []string{"loopholes", "enable", "journal"})
+			if rc != 0 || !strings.Contains(stdout, "journal is on for "+c.cwd+" ") {
 				t.Fatalf("enable rc = %d, want it on for %s\nstdout:\n%s\nstderr:\n%s", rc, c.cwd, stdout, stderr)
 			}
-			if wf := config.ReadWorkspaceFile(c.cwd); wf.Switches() != "github-broker on" {
+			if wf := config.ReadWorkspaceFile(c.cwd); wf.Switches() != "journal on" {
 				t.Errorf("the launch here reads %q, want the switch", wf.Switches())
 			}
 			if wf := config.ReadWorkspaceFile(c.parent); wf != nil {
 				t.Errorf("enable wrote the parent's file %s: %q", wf.Path, wf.Switches())
 			}
-			rc, stdout, stderr = captureDispatchRC(t, []string{"loopholes", "disable", "github-broker"})
+			rc, stdout, stderr = captureDispatchRC(t, []string{"loopholes", "disable", "journal"})
 			if rc != 0 {
 				t.Fatalf("disable rc = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout, stderr)
 			}
-			if wf := config.ReadWorkspaceFile(c.cwd); wf.Switches() != "github-broker off" {
+			if wf := config.ReadWorkspaceFile(c.cwd); wf.Switches() != "journal off" {
 				t.Errorf("after disable here the launch here reads %q", wf.Switches())
 			}
 		})
@@ -232,11 +230,11 @@ func TestLoopholesEnableExpandsATildeTheShellLeft(t *testing.T) {
 	if err := os.MkdirAll(other, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	rc, stdout, stderr := captureDispatchRC(t, []string{"loopholes", "enable", "github-broker", "--workspace=~/code/other"})
-	if rc != 0 || !strings.Contains(stdout, "github-broker is on for "+other+" ") {
+	rc, stdout, stderr := captureDispatchRC(t, []string{"loopholes", "enable", "journal", "--workspace=~/code/other"})
+	if rc != 0 || !strings.Contains(stdout, "journal is on for "+other+" ") {
 		t.Fatalf("rc = %d, want it on for %s\nstdout:\n%s\nstderr:\n%s", rc, other, stdout, stderr)
 	}
-	if wf := config.ReadWorkspaceFile(other); wf.Switches() != "github-broker on" {
+	if wf := config.ReadWorkspaceFile(other); wf.Switches() != "journal on" {
 		t.Errorf("the file for %s says %q", other, wf.Switches())
 	}
 }
@@ -247,7 +245,7 @@ func TestLoopholesEnableExpandsATildeTheShellLeft(t *testing.T) {
 // refusing an uninstalled name; with no switch to clear, the name is refused as before.
 func TestLoopholesDisableClearsASwitchForALoopholeNoLongerInstalled(t *testing.T) {
 	_, userCfg, _, ws := enableHome(t)
-	if rc, stdout, stderr := captureDispatchRC(t, []string{"loopholes", "enable", "github-broker"}); rc != 0 {
+	if rc, stdout, stderr := captureDispatchRC(t, []string{"loopholes", "enable", "journal"}); rc != 0 {
 		t.Fatalf("enable rc = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout, stderr)
 	}
 	path := config.WorkspaceFilePath(ws)
@@ -257,17 +255,17 @@ func TestLoopholesDisableClearsASwitchForALoopholeNoLongerInstalled(t *testing.T
 	}
 	loopholes.ResetPackModules()
 
-	rc, stdout, stderr := captureDispatchRC(t, []string{"loopholes", "disable", "github-broker"})
+	rc, stdout, stderr := captureDispatchRC(t, []string{"loopholes", "disable", "journal"})
 	if rc != 0 {
 		t.Fatalf("disable of a stale switch rc = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout, stderr)
 	}
-	for _, want := range []string{"github-broker", "removed", path} {
+	for _, want := range []string{"journal", "removed", path} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("disable's line does not say %q:\n%s", want, stdout)
 		}
 	}
 	if wf := config.ReadWorkspaceFile(ws); wf != nil {
-		if _, set := wf.LoopholeSwitch("github-broker"); set {
+		if _, set := wf.LoopholeSwitch("journal"); set {
 			t.Errorf("the stale switch is still in %s: %q", wf.Path, wf.Switches())
 		}
 	}
@@ -275,8 +273,8 @@ func TestLoopholesDisableClearsASwitchForALoopholeNoLongerInstalled(t *testing.T
 		t.Errorf("config.jsonc changed: %q", after)
 	}
 
-	rc, _, stderr = captureDispatchRC(t, []string{"loopholes", "disable", "github-broker"})
-	if rc == 0 || !strings.Contains(stderr, `no loophole named "github-broker"`) {
+	rc, _, stderr = captureDispatchRC(t, []string{"loopholes", "disable", "journal"})
+	if rc == 0 || !strings.Contains(stderr, `no loophole named "journal"`) {
 		t.Errorf("with no switch left, disable rc = %d, want the uninstalled-name refusal:\n%s", rc, stderr)
 	}
 }
@@ -296,5 +294,74 @@ func TestLoopholesEnableGlobalRefusesALoopholeNoPackInstalls(t *testing.T) {
 	}
 	if !strings.Contains(stderr, `no loophole named "github-broker"`) || strings.Contains(stderr, "add this to") {
 		t.Errorf("--global for an uninstalled loophole printed a block, or no refusal:\n%s", stderr)
+	}
+}
+
+// TestLoopholesEnableRefusesABroker: a brokered loophole has no switch (docs/design/boundary-broker.md
+// BB-D104, BB-D109), so `enable` refuses for it on the host, with `--global`, and in a jail, each
+// naming the user-config read grant and `yolo config apply`, and none writes a file.
+func TestLoopholesEnableRefusesABroker(t *testing.T) {
+	home, userCfg, userBody, ws := enableHome(t)
+	dir := filepath.Join(home, ".config", "yolo-jail", "workspaces")
+	for _, c := range []struct {
+		name string
+		args []string
+		env  map[string]string
+	}{
+		{"on the host", []string{"loopholes", "enable", "github-broker"}, nil},
+		{"--global", []string{"loopholes", "enable", "github-broker", "--global"}, nil},
+		{"disable with no old switch", []string{"loopholes", "disable", "github-broker"}, nil},
+		{"in a jail", []string{"loopholes", "enable", "github-broker"},
+			map[string]string{"YOLO_VERSION": "9.9.9-test", "YOLO_HOST_DIR": "/home/someone/code/app", "YOLO_WORKSPACE": ws}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			for k, v := range c.env {
+				t.Setenv(k, v)
+			}
+			rc, stdout, stderr := captureDispatchRC(t, c.args)
+			if rc == 0 {
+				t.Fatalf("rc 0, want a refusal\nstdout:\n%s\nstderr:\n%s", stdout, stderr)
+			}
+			for _, want := range []string{"github-broker has no switch", "brokered.github.grants",
+				`{"kind": "read", "repo": "*"}`, "yolo config apply"} {
+				if !strings.Contains(stderr, want) {
+					t.Errorf("the refusal does not say %q:\n%s", want, stderr)
+				}
+			}
+			if strings.Contains(stderr, "add this to") {
+				t.Errorf("a broker got a switch block to paste:\n%s", stderr)
+			}
+			if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+				t.Errorf("a refusal wrote %v", entries)
+			}
+			if after, _ := os.ReadFile(userCfg); string(after) != userBody {
+				t.Errorf("config.jsonc changed: %q", after)
+			}
+		})
+	}
+}
+
+// TestLoopholesDisableRemovesABrokersOldSwitch: a switch a previous yolo wrote for a broker into
+// the per-workspace file is ignored now (BB-D109); `disable` is the command the launch's note
+// names to take it out, and it does, exit 0, naming the grant that gives access instead.
+func TestLoopholesDisableRemovesABrokersOldSwitch(t *testing.T) {
+	_, _, _, ws := enableHome(t)
+	path, err := config.SetWorkspaceLoophole(ws, "github-broker", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc, stdout, stderr := captureDispatchRC(t, []string{"loopholes", "disable", "github-broker"})
+	if rc != 0 {
+		t.Fatalf("disable rc = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout, stderr)
+	}
+	for _, want := range []string{"old one is removed", path, "brokered.github.grants"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("disable's line does not say %q:\n%s", want, stdout)
+		}
+	}
+	if wf := config.ReadWorkspaceFile(ws); wf != nil {
+		if _, set := wf.LoopholeSwitch("github-broker"); set {
+			t.Errorf("the old switch is still in %s: %q", wf.Path, wf.Switches())
+		}
 	}
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -121,9 +122,10 @@ func (r *WorkspaceRead) Entry(source string) []EntryRepo {
 // refuses or warns about (a malformed one, `read`, a kind outside either list) is skipped, so it
 // reaches no scope even where nothing validated.
 func (r *WorkspaceRead) Grants(source string, defined []string) (grants []brokerscope.Grant, files []string) {
-	if r == nil || r.Config == nil || len(defined) == 0 {
+	if r == nil || r.Config == nil {
 		return nil, nil
 	}
+	defined = definedGrantKinds(defined)
 	sv, _ := r.Config.Get(brokeredKey)
 	sources, ok := asMap(sv)
 	if !ok {
@@ -136,7 +138,7 @@ func (r *WorkspaceRead) Grants(source string, defined []string) (grants []broker
 	}
 	gv, _ := src.Get(brokeredGrantsKey)
 	list, _ := gv.([]any)
-	allowed := BrokeredGrantKinds(source)
+	allowed := allowedGrantKinds(source)
 	node := r.sources.node().key(brokeredKey).key(source).key(brokeredGrantsKey)
 	var fileList []*srcFile
 	for i, e := range list {
@@ -157,7 +159,7 @@ func (r *WorkspaceRead) Grants(source string, defined []string) (grants []broker
 		// A branch is part of the grant only for a kind that names one (ValidGrant refuses it on
 		// any other, and refuses a branch grant without one).
 		g := brokerscope.Grant{Kind: kind, Repo: repo, Branch: branch}
-		if len(m.Keys()) != keys || (hasBranch && !branchOK) || !brokerscope.ValidGrant(g) || kind == impliedGrantKind ||
+		if len(m.Keys()) != keys || (hasBranch && !branchOK) || !brokerscope.ValidGrant(g) ||
 			!inList(defined, kind) || !inList(allowed, kind) {
 			continue
 		}
@@ -222,7 +224,16 @@ func NewScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead)
 		} else {
 			s.Read, s.Entry = brokerscope.ReadRemotes(workspace, b.RemoteHost), read.Entry(b.Source)
 		}
-		s.Grants, s.GrantFiles = read.Grants(b.Source, b.GrantKinds)
+		// The user config's own grants first (BB-D107), then the workspace's, each once: both
+		// join only at this gate, and the user's are marked as theirs on the block's line.
+		s.UserGrants = BrokeredUserGrants(b.Source)
+		ws, files := read.Grants(b.Source, b.GrantKinds)
+		s.Grants, s.GrantFiles = append([]brokerscope.Grant(nil), s.UserGrants...), files
+		for _, g := range ws {
+			if !slices.Contains(s.Grants, g) {
+				s.Grants = append(s.Grants, g)
+			}
+		}
 		check.Sources = append(check.Sources, s)
 	}
 	return check

@@ -51,8 +51,6 @@ func TestCheckAcceptShowsAndRecordsTheWorkspaceEntry(t *testing.T) {
 		must(t, os.MkdirAll(filepath.Join(w, ".git"), 0o755))
 		must(t, os.WriteFile(filepath.Join(w, ".git", "config"),
 			[]byte("[remote \"origin\"]\n\turl = https://github.com/o/r\n"), 0o644))
-		_, err := config.SetWorkspaceLoophole(w, "gb", true)
-		must(t, err)
 	}, func(o *Options) {
 		o.AcceptConfigChanges = true
 		onTheHost(o)

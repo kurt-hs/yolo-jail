@@ -122,9 +122,7 @@ func ApplyConfigEnabled(lps []*Loophole, loopholesConfig *jsonx.OrderedMap) []*L
 		if lp == nil {
 			continue
 		}
-		if v, set := ConfigEnabledOverride(loopholesConfig, lp.Name); set {
-			lp.Enabled = v
-		}
+		lp.Enabled = EnabledUnder(lp, loopholesConfig)
 	}
 	return lps
 }

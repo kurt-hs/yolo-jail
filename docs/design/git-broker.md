@@ -51,7 +51,8 @@ grants, git's `create-branch` among them ([OQ-BB19](boundary-broker.md#OQ-BB19);
 `push-branch`: the working set takes branches from create-branch, from config
 ([GB-D12](#GB-D12), 2026-10-24), and later from a human's Add), which file holds a grant
 ([OQ-BB22](boundary-broker.md#OQ-BB22)) and a host with no notifier
-([OQ-BB10](boundary-broker.md#OQ-BB10)).
+([OQ-BB10](boundary-broker.md#OQ-BB10)). On 2026-10-24 the broker lost its switch: selecting the
+git pack starts it, and it grants nothing until a `read` grant in config does ([GB-D15](#GB-D15)).
 
 **Reads with:** [`boundary-broker.md`](boundary-broker.md) (the design this extends: the request
 store, grants, the notification, `yolo approve`, the audit log and where long-lived access lives
@@ -233,10 +234,11 @@ to create branches. **Read-only is read-only** ([GB-D7](#GB-D7)): it fetches and
 and `refs/tags/` (`refs/pull/…`, `refs/notes/…`, and the like), and a push to a repository out
 of scope.
 
-**The source is off until the user includes it** ([OQ-BB16](boundary-broker.md#OQ-BB16)):
-*"we have default nothing for Git, and you even have to include that"*. Enabling the
-github-broker does not include it, and nothing in a workspace's own config can
-([GB-D5](#GB-D5)).
+**The source grants nothing until the user grants it** ([OQ-BB16](boundary-broker.md#OQ-BB16)):
+*"we have default nothing for Git, and you even have to include that"*. Selecting the git pack
+starts the broker and grants nothing; every call is refused until a `read` grant covers the
+remote, usually the user config's read grant for every workspace, which each workspace's
+config-change approval shows ([GB-D15](#GB-D15)). The broker has no switch.
 
 **A per-ref request names its refs.** The request shows each ref the push would change, old id
 to new id, with `force` marked where the new id does not descend from the old. The answers are
@@ -267,8 +269,8 @@ branches and declaring one in the working set are user grants in two layers**
 The levels `read-only` and `read-write` that [GB-D6](#GB-D6) mapped onto git are superseded by
 specific user grants, `read`, `create-branch`, `create-pr` and `create-issue`
 ([OQ-BB19](boundary-broker.md#OQ-BB19)); git defines `read`, `create-branch` and, since
-[GB-D12](#GB-D12), `branch`. `read` needs no grant entry: it is what including the source
-means.
+[GB-D12](#GB-D12), `branch`. `read` is a grant too, the floor every fetch and push needs
+([GB-D15](#GB-D15)).
 
 ### 5.1 The working set of pushable branches
 
@@ -305,7 +307,7 @@ should be persisted because it's a property of the workspace."*
 | What fails | What happens |
 | :--- | :--- |
 | The broker is not running | git reports the endpoint unreachable, and the briefing names `yolo check` |
-| The source is not included for this workspace | Refused at once in git's own error line, naming the user-config switch and that nothing ran ([GB-D5](#GB-D5)) |
+| No read grant covers the remote | Refused at once in git's own error line, naming the read grant, `yolo config apply` and that nothing ran ([GB-D15](#GB-D15)) |
 | The repository is out of scope | Refused at once, naming the scope, as for gh ([§5.6 there](boundary-broker.md#56-the-repository-scope)); audited, no request |
 | The host has no credential for the remote (no SSH key or agent, or `git credential fill` returns nothing) | Refused naming what the host lacks and the host command that fixes it; the broker never starts a login and never prompts for a username or password |
 | An SSH key needs a touch or passphrase and nobody answers on the host | The upstream connection times out; the agent sees git's own error, and an Allow once covering the push is not spent |
@@ -408,3 +410,4 @@ revoked, over the launch or an age cap) are ruled and recorded in the
 | <a id="GB-D12"></a>GB-D12 | **Maintainer ruling, extending, for git, [OQ-BB19](boundary-broker.md#OQ-BB19)'s list of user grants:** long-lived access to an existing branch, such as `main`, goes through the broker as a branch in the working set, declared in config. There is no `push-branch` and no separate push concept: the working set takes branches from create-branch, from config, and (later) from a human's Add. The kind is `branch`, granted exactly as `create-branch` is: the user's own config allows the kind (`brokered.git.grant_kinds`), the workspace's `yolo-jail.jsonc` names the grant, `{"kind": "branch", "repo": "github.com/owner/name", "branch": "main"}`, it joins at the config-change approval (`yolo config apply` for a running jail, or the launch prompt), and `yolo check` refuses a grant whose kind the user config does not allow, naming the key. *"I was expecting you to edit the jail config and then I run a config apply or something like that ... we can stick with main. And yes, I want to do this through the broker."* Then: *"Why do we need a specific push grant? I thought, is this not just writing to a branch? ... I said it should just be like a branch working set, and shouldn't that already cover what's needed here?"* | 2026-10-24 | [§1](#1-what-the-maintainer-ruled-2026-10-23), [§5](#5-the-git-sources-sets) | built |
 | <a id="GB-D13"></a>GB-D13 | *Implementation decision,* filling in [GB-D12](#GB-D12): a `branch` grant's `branch` is one branch's short name (`main`, meaning `refs/heads/main`), validated by git's ref-name rules (`git check-ref-format`); a full ref, a pattern or `"*"` is refused at config load with a next step, and tags and other refs are never covered. Its `repo` names one repository and is never `"*"`, unlike a create-branch grant's: with `"*"`, the branch on every approved remote, an upstream organization's remote and any remote approved later included, could be force-pushed or deleted, while the ruling's case was `main` of the agent's own fork. A `"*"` is refused at config load, naming the repository as the next step and one grant per repository, and the scope file refuses it too. This narrows access, so it is the coordinator's decision rather than a ruling. The declared branch is covered exactly as a working-set entry is: creating, updating, force-updating and deleting it, the remote's own protection being the backstop. It is never recorded in the host store: the config holds it, so a delete through the broker leaves it declared, and removing the grant takes it out. A store entry for the same ref is preferred, so a delete through the broker still ends that record. The broker re-reads the live scope file and the user config's `grant_kinds` at every push, so removing either refuses the next push. The audit's set is `working-set` and its `covered_by` names the grant (`branch:main`). `yolo approve` lists each declared branch of a running jail's workspace beside the store's entries, with a `c-` id, marked `from config` with the file that declares it; `--revoke` of one exits 5 and names that file and `yolo config apply`; a `c-` id no running jail declares exits 4, saying it is declared in config and listed only while a jail of its project runs. `--revoke all --workspace` leaves declared branches in place, and when they are all that workspace holds it names their config file instead of pointing back to the listing. `--json` carries each one as a working-set entry with `"by": "config"` and `"file"`. A declared branch whose kind the user config no longer lists says so only when the push is refused, not when a create-branch grant covers it | 2026-10-24 | [§5](#5-the-git-sources-sets) | built |
 | <a id="GB-D14"></a>GB-D14 | *Reconciliation,* carrying [BB-D99](boundary-broker.md#BB-D99) to git: every grant the git source records will be held by the workspace and kept across broker and jail restarts and relaunches until it expires, is used up or is revoked, as the GitHub source's are; a broker stopping ends none. The git source files no request in this version, so it records no timed grant or Allow once yet; its working-set entries were already keyed by workspace, nothing ends them at broker or jail stop, and the integration test `TestGitBrokerCreateBranch` already pushes on the working set alone after a relaunch, with a new broker | 2026-10-24 | [§5.1](#51-the-working-set-of-pushable-branches) | built in the shared store ([BB-D99](boundary-broker.md#BB-D99)) |
+| <a id="GB-D15"></a>GB-D15 | **Maintainer ruling, carried to git** ([BB-D104](boundary-broker.md#BB-D104), [BB-D105](boundary-broker.md#BB-D105)): the git-broker has no switch. Selecting the git pack starts it in every workspace and serves the remote rewrite, and it grants nothing: every fetch and push is refused until a `read` grant covers the remote. The usual grant is the user config's `"brokered": {"git": {"grants": [{"kind": "read", "repo": "*"}]}}`, shown at each workspace's config-change approval. *"a user config that gives all workspaces read-only access to their configured git repo"*. Supersedes [GB-D5](#GB-D5) and [GB-D9](#GB-D9)'s "read needs no grant entry"; `read` is now a grant kind like the others ([BB-D107](boundary-broker.md#BB-D107)) | 2026-10-24 | [§5](#5-the-git-sources-sets), [§6](#6-failure-paths) | built: as [BB-D106](boundary-broker.md#BB-D106) to [BB-D109](boundary-broker.md#BB-D109); the git side in `gitbroker` `serveRequest`, pinned by `TestNoReadGrantRefusesEveryCall`, `TestUserReadGrantAppliedLetsTheFetchThrough`, `TestUserReadGrantWithdrawnRefusesTheNextFetch` and `TestReadGrantOnAnotherRepoCoversNothing` |

@@ -36,6 +36,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/brokercore"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/frameproto"
 	"github.com/mschulkind-oss/yolo-jail/internal/gitproto"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
@@ -271,13 +272,21 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 	if err := brokerscope.ValidateCurrent(b.scopeFile, b.bound, req.URL); err != nil {
 		return refuse("refused", err.Error(), "refused: "+err.Error()+"; nothing ran.", brokercore.ExitUsage)
 	}
+	ev.Repo, _ = gitproto.Identity(req.URL)
+	// READ IS THE FLOOR (docs/design/boundary-broker.md BB-D108): a selected pack's broker grants
+	// nothing until a read grant in the live scope file covers the remote, so a fetch and a push
+	// alike are refused here. The gate approved the grant into the file, and only the gate takes
+	// it out: a `yolo config apply` after the user config drops it.
+	if !brokerscope.ReadCovers(f.Grants, ev.Repo, func(g, r string) bool { return g == r }) {
+		return refuse("refused", "no read grant", config.BrokerNoReadRefusal(Source, req.URL, f.LiveScope),
+			brokercore.ExitUsage)
+	}
 	transport, err := transportOf(req.URL)
 	if err != nil {
 		return refuse("refused", "transport not brokered", "the approved remote "+req.URL+" does not cross the git-broker: "+
 			err.Error()+". Only ssh://, https:// and scp-style user@host:path remotes reach the host, so nothing ran. "+
 			"Give the remote its SSH or HTTPS URL (`git remote set-url`), or fetch it on the host.", brokercore.ExitUsage)
 	}
-	ev.Repo, _ = gitproto.Identity(req.URL)
 	var cover coverer
 	if req.Service == serviceReceivePack {
 		// The live scope's grants and the user's grant kinds, as they read at this push.

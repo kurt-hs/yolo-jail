@@ -29,7 +29,7 @@ func windowFixture(t *testing.T) (*Broker, *atomic.Int32) {
 	a, _ := authorityFixture(t)
 	count := new(atomic.Int32)
 	log := brokeraudit.Open(paths.BrokerAuditLog(), nil)
-	b := &Broker{authority: a, scope: NewScope([]string{"o/r"}), workspace: a.scope.Workspace, startID: a.start, store: &brokerstore.Store{Dir: paths.BrokerSourceDir(Source), Revalidate: a.Revalidate, Audit: StoreAudit(log)}, audit: log, log: io.Discard, now: time.Now, waitLimit: 20 * time.Millisecond}
+	b := &Broker{authority: a, scope: NewScope([]string{"o/r"}).WithGrants(readAll...), workspace: a.scope.Workspace, startID: a.start, store: &brokerstore.Store{Dir: paths.BrokerSourceDir(Source), Revalidate: a.Revalidate, Audit: StoreAudit(log)}, audit: log, log: io.Discard, now: time.Now, waitLimit: 20 * time.Millisecond}
 	b.execute = func(ctx context.Context, argv []string, stdin []byte, out, err func([]byte)) RunResult {
 		count.Add(1)
 		return RunResult{Exit: 0}

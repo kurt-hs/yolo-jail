@@ -681,8 +681,7 @@ func declineLines(r config.ChangeReport, attach bool) []string {
 			": undo it there, or answer y at the next launch, which asks again.")
 	}
 	for _, l := range r.ScopeLabels {
-		lines = append(lines, "To launch this project without "+l+", run `"+
-			config.DisableLoopholeCommand(l, r.Workspace)+"`; otherwise the next launch asks about "+
+		lines = append(lines, config.WithoutBrokerStep(l)+" Otherwise the next launch asks about "+
 			"its repositories again.")
 	}
 	return lines

@@ -59,8 +59,13 @@ type ScopeSource struct {
 	// the source defines and the user's own config allows (WorkspaceRead.Grants), and GrantFiles
 	// the workspace-relative files that name them. A grant is a line of the source's block of its
 	// own, recorded under grantsRecordKey (BB-D96; docs/design/git-broker-plan.md ID-10).
+	//
+	// Grants also holds, first, the grants the user's own config holds for every workspace
+	// (BrokeredUserGrants, BB-D107), which are approved at the same gate as the workspace's, and
+	// UserGrants is those alone, for the line that says where each came from.
 	Grants     []brokerscope.Grant
 	GrantFiles []string
+	UserGrants []brokerscope.Grant
 }
 
 // grantsRecordKey is the scope part's key for a source's approved grants: `<source>.grants`. A
@@ -598,13 +603,23 @@ func grantBlock(s ScopeSource, prev []string) (lines []string, count string, cha
 		inPrev[g] = true
 	}
 	added, removed := 0, 0
+	// A grant the user's own config holds says so on its line (BB-D107): it applies to every
+	// workspace, and a human sees it at each workspace's gate rather than meeting it unseen.
+	fromUser := map[string]bool{}
+	for _, g := range grantStrings(s.UserGrants) {
+		fromUser[g] = true
+	}
 	for _, g := range grantStrings(s.Grants) {
+		suffix := ""
+		if fromUser[g] {
+			suffix = " (from your user config, for every workspace)"
+		}
 		if inPrev[g] {
 			delete(inPrev, g)
-			rows = append(rows, row{" ", g, "unchanged"})
+			rows = append(rows, row{" ", g, "unchanged" + suffix})
 			continue
 		}
-		rows = append(rows, row{"+", g, "added"})
+		rows = append(rows, row{"+", g, "added" + suffix})
 		added++
 	}
 	for _, g := range prev {

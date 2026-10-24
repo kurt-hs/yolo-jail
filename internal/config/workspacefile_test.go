@@ -254,12 +254,13 @@ func TestSetWorkspaceLoopholeWritesOnlyItsOwnFile(t *testing.T) {
 	}
 }
 
-// TestABrokeredLoopholeIsSwitchedOnlyByTheWorkspaceFile: MANUAL-ONLY (OQ-BB13, BB-D55). A
-// brokered loophole's switch in the user config is refused in both directions, as is one in the
-// workspace's own config files, each naming `yolo loopholes enable|disable`; the per-workspace
-// file's is accepted, and in a jail the workspace file's is a warning as every workspace scope
-// rule is.
-func TestABrokeredLoopholeIsSwitchedOnlyByTheWorkspaceFile(t *testing.T) {
+// TestABrokeredLoopholeHasNoSwitch: NO SWITCH (docs/design/boundary-broker.md BB-D106, BB-D109).
+// A brokered loophole's switch in the user config is refused in both directions, as is one in
+// the workspace's own config files, each naming the user-config read grant that gives access
+// instead; the per-workspace file's, which a previous yolo wrote, is ignored with a warning
+// naming the grant and the command that takes it out; and in a jail the workspace file's
+// refusal is a warning as every workspace scope rule is.
+func TestABrokeredLoopholeHasNoSwitch(t *testing.T) {
 	resolver := fakeResolver{"github-broker": {Name: "github-broker", HasHostDaemon: true,
 		Brokered: &loopholedecl.Brokered{Source: "github", RemoteHost: "github.com"}}}
 	validate := func(ws string) (string, string) {
@@ -278,7 +279,7 @@ func TestABrokeredLoopholeIsSwitchedOnlyByTheWorkspaceFile(t *testing.T) {
 			write(t, userCfg, `{"loopholes": {"github-broker": {"enabled": `+v+`}}}`)
 			errs, _ := validate(ws)
 			for _, want := range []string{"config.jsonc:", "config.loopholes.github-broker.enabled",
-				"may not switch it", "`yolo loopholes enable github-broker`"} {
+				"has no switch", "brokered.github.grants", "yolo config apply", "take its pack out of `packs`"} {
 				if !strings.Contains(errs, want) {
 					t.Errorf("enabled: %s: the refusal does not say %q:\n%s", v, want, errs)
 				}
@@ -293,7 +294,7 @@ func TestABrokeredLoopholeIsSwitchedOnlyByTheWorkspaceFile(t *testing.T) {
 			_, _, ws := workspaceFileHome(t, "app")
 			write(t, filepath.Join(ws, name), `{"loopholes": {"github-broker": {"enabled": false}}}`)
 			errs, warns := validate(ws)
-			for _, want := range []string{filepath.Join(ws, name) + ",", "`yolo loopholes disable github-broker`", "agent can edit"} {
+			for _, want := range []string{filepath.Join(ws, name) + ",", "has no switch", "brokered.github.grants", "agent can edit"} {
 				if !strings.Contains(errs, want) {
 					t.Errorf("%s: the refusal does not say %q:\n%s", name, want, errs)
 				}
@@ -306,9 +307,9 @@ func TestABrokeredLoopholeIsSwitchedOnlyByTheWorkspaceFile(t *testing.T) {
 			if strings.Contains(jerrs, "agent can edit") || !strings.Contains(jwarns, "agent can edit") {
 				t.Errorf("%s in a jail: errors %q warnings %q, want the refusal as a warning", name, jerrs, jwarns)
 			}
-			// The command refuses in a jail, so the step says where it runs rather than "here".
-			if strings.Contains(jwarns, "` here") || !strings.Contains(jwarns, "on the host, in this project") {
-				t.Errorf("%s in a jail: the step does not say to run the command on the host:\n%s", name, jwarns)
+			// The grant is the host's to give, so the step says where it runs.
+			if !strings.Contains(jwarns, "on the host, in the workspace") {
+				t.Errorf("%s in a jail: the step does not say to run `yolo config apply` on the host:\n%s", name, jwarns)
 			}
 		}
 	})
@@ -317,8 +318,21 @@ func TestABrokeredLoopholeIsSwitchedOnlyByTheWorkspaceFile(t *testing.T) {
 		if _, err := SetWorkspaceLoophole(ws, "github-broker", true); err != nil {
 			t.Fatal(err)
 		}
-		if errs, _ := validate(ws); errs != "" {
-			t.Errorf("the per-workspace file's switch was refused:\n%s", errs)
+		errs, warns := validate(ws)
+		if errs != "" {
+			t.Errorf("the per-workspace file's old switch was refused, not ignored:\n%s", errs)
+		}
+		for _, want := range []string{"loopholes.github-broker.enabled (on) is ignored", "brokered.github.grants",
+			"yolo config apply", "`yolo loopholes disable github-broker --workspace " + ws + "`"} {
+			if !strings.Contains(warns, want) {
+				t.Errorf("the ignored switch's note does not say %q:\n%s", want, warns)
+			}
+		}
+	})
+	t.Run("no per-workspace switch, no note", func(t *testing.T) {
+		_, _, ws := workspaceFileHome(t, "app")
+		if _, warns := validate(ws); strings.Contains(warns, "is ignored") {
+			t.Errorf("a note with no old switch:\n%s", warns)
 		}
 	})
 }

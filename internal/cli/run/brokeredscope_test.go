@@ -126,29 +126,30 @@ func gbOn() *jsonx.OrderedMap {
 // TestADeclineNamesTheNextStep is the happy-path rule at the prompt's `N`
 // (docs/reference/happy-path-principle.md rule 1): it used to print "Config changes rejected.
 // Exiting." and nothing else. A declined repository scope names the command that launches the
-// project without the broker; a declined config change names the file it is in and that the next
+// project without the broker (deselecting its pack: a broker has no switch, BB-D106); a declined
+// config change names the file it is in and that the next
 // launch asks again; both, when both changed. Driven through the gate's real prompter, as a
 // terminal answers it.
 func TestADeclineNamesTheNextStep(t *testing.T) {
 	for _, c := range []struct {
-		name          string
-		configChanged bool
-		merged        *jsonx.OrderedMap
-		want, not     []string
+		name                        string
+		configChanged, scopeChanged bool
+		merged                      *jsonx.OrderedMap
+		want, not                   []string
 	}{
-		{"scope only", false, gbOn(),
+		{"scope only", false, true, gbOn(),
 			[]string{"Repository scope changes rejected; nothing was recorded. Exiting.",
-				"To launch this project without gb, run `yolo loopholes disable gb --workspace <ws>`"},
+				"To launch without gb instead, take the pack that ships it out of `packs` in "},
 			[]string{"The workspace config change is in", " here"}},
-		{"config and scope", true, gbOn(),
+		{"config and scope", true, true, gbOn(),
 			[]string{"Workspace config and repository scope changes rejected; nothing was recorded. Exiting.",
 				"The workspace config change is in ", "yolo-jail.jsonc: undo it there, or answer y at the next launch, which asks again.",
-				"run `yolo loopholes disable gb --workspace <ws>`"},
-			[]string{" here"}},
-		{"config only", true, jsonx.NewOrderedMap(),
+				"take the pack that ships it out of `packs`"},
+			[]string{" here", "yolo loopholes disable"}},
+		{"config only", true, false, jsonx.NewOrderedMap(),
 			[]string{"Config changes rejected; nothing was recorded. Exiting.",
 				"yolo-jail.jsonc: undo it there, or answer y at the next launch, which asks again."},
-			[]string{"yolo loopholes disable", "repository scope changes"}},
+			[]string{"take the pack that ships it", "repository scope changes"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			o, buf, _ := brokeredFixture(t)
@@ -159,6 +160,13 @@ func TestADeclineNamesTheNextStep(t *testing.T) {
 			}
 			o.IsTTYStdin = func() bool { return true }
 			o.Stdin = strings.NewReader("n\n")
+			if !c.scopeChanged {
+				// The broker is in play wherever its pack is selected (BB-D106), so a config-only
+				// change is a workspace with no remote: its empty scope is no change.
+				if err := os.Remove(filepath.Join(o.Workspace, ".git", "config")); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if c.configChanged {
 				if err := config.RecordApproval(o.Workspace, jsonx.NewOrderedMap(), nil); err != nil {
 					t.Fatal(err)
@@ -532,8 +540,9 @@ func TestScopeFileCarriesApprovedGrants(t *testing.T) {
 
 // The gate's own filter (docs/design/git-broker-plan.md ID-10), through the real path: a grant the
 // workspace lists at the gate's read joins no scope when the user's config does not allow its
-// kind, when the source does not define it, or when it is `read`, which every scope implies. The
-// gate shows no line for it and the scope file holds no grants.
+// kind, when the source does not define it, or when it is `read`, which every source defines
+// (BB-D107) but the user config neither lists nor holds. The gate shows no line for it and the
+// scope file holds no grants.
 func TestAGrantTheGateCannotJoinReachesNoScope(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the fixture daemon is /bin/cp")
@@ -547,8 +556,8 @@ func TestAGrantTheGateCannotJoinReachesNoScope(t *testing.T) {
 			nil, "create-branch"},
 		{"the source does not define the kind", `{"source": "gbsrc", "remote_host": "*", "grants": ["create-branch"]}`,
 			[]string{"create-branch", "delete-branch"}, "delete-branch"},
-		{"the kind is read", `{"source": "gbsrc", "remote_host": "*", "grants": ["create-branch", "read"]}`,
-			[]string{"create-branch", "read"}, "read"},
+		{"the kind is read, not allowed", `{"source": "gbsrc", "remote_host": "*", "grants": ["create-branch"]}`,
+			[]string{"create-branch"}, "read"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			o, buf, marker := brokeredFixtureBlock(t, true, c.block)
@@ -801,7 +810,7 @@ func TestADeclinedEntryNamesTheFileItIsIn(t *testing.T) {
 	for _, want := range []string{"+ org/lib  yolo-jail.jsonc",
 		"The `brokered.gbsrc.repos` change is in yolo-jail.jsonc: undo it there, or answer y at the next launch",
 		"gb: 2 added, 0 removed, 0 source changed",
-		"run `yolo loopholes disable gb --workspace"} {
+		"take the pack that ships it out of `packs`"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the decline does not say %q:\n%s", want, out)
 		}

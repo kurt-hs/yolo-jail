@@ -158,8 +158,42 @@ type fixtureOpts struct {
 	prepare func(f *fixture) (repos []string, pathFirst string)
 	// bound, when set, runs once the broker exists, before it serves.
 	bound func(f *fixture)
-	// grants are the scope file's approved user grants.
+	// grants are the scope file's approved user grants, after the read grant every fixture
+	// holds unless noRead is set (BB-D108).
 	grants []brokerscope.Grant
+	// noRead leaves the read grant out of both the user config and the scope file: the broker
+	// of a selected pack that grants nothing.
+	noRead bool
+}
+
+// readGrant is the user config's read grant for every workspace (BB-D107), as the gate approves
+// it into the scope file.
+var readGrant = brokerscope.Grant{Kind: "read", Repo: brokerscope.AnyRepo}
+
+// userConfigBody is the user config allowKinds and the fixture write: the read grant unless
+// noRead, and kinds under grant_kinds when any are given.
+func userConfigBody(noRead bool, kinds ...string) string {
+	body := map[string]any{}
+	if !noRead {
+		body["grants"] = []map[string]string{{"kind": "read", "repo": "*"}}
+	}
+	if len(kinds) > 0 {
+		body["grant_kinds"] = kinds
+	}
+	out, _ := json.Marshal(map[string]any{"brokered": map[string]any{"git": body}})
+	return string(out)
+}
+
+// writeUserConfig writes body as the user's own config.
+func writeUserConfig(t *testing.T, body string) {
+	t.Helper()
+	p := paths.UserConfigPath()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(body+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func newFixtureOpts(t *testing.T, o fixtureOpts) *fixture {
@@ -216,8 +250,13 @@ func newFixtureOpts(t *testing.T, o fixtureOpts) *fixture {
 	if len(repos) == 0 {
 		repos = []string{origin}
 	}
+	grants := o.grants
+	if !o.noRead {
+		grants = append([]brokerscope.Grant{readGrant}, grants...)
+	}
+	writeUserConfig(t, userConfigBody(o.noRead))
 	sf := brokerscope.File{Source: Source, LaunchID: "fixture-launch", PID: os.Getpid(), Container: "fixture-container",
-		Workspace: f.ws, Form: brokerscope.FormRemoteURL, Repos: repos, Grants: o.grants}
+		Workspace: f.ws, Form: brokerscope.FormRemoteURL, Repos: repos, Grants: grants}
 	brokerPath := pathFirst + string(os.PathListSeparator) + os.Getenv("PATH")
 	f.getenv = func(k string) string {
 		if k == "PATH" {
@@ -623,22 +662,11 @@ const fixtureRepo = "fixture.test/o/r"
 // repository.
 var createBranchGrant = []brokerscope.Grant{{Kind: "create-branch", Repo: fixtureRepo}}
 
-// allowKinds writes the user's own config listing kinds under brokered.git.grant_kinds; none
-// writes a config without the key.
+// allowKinds writes the user's own config listing kinds under brokered.git.grant_kinds beside
+// the read grant every fixture holds; none writes a config without the key.
 func allowKinds(t *testing.T, kinds ...string) {
 	t.Helper()
-	body := `{"brokered": {"git": {}}}`
-	if len(kinds) > 0 {
-		quoted, _ := json.Marshal(kinds)
-		body = `{"brokered": {"git": {"grant_kinds": ` + string(quoted) + `}}}`
-	}
-	p := paths.UserConfigPath()
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(p, []byte(body+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeUserConfig(t, userConfigBody(false, kinds...))
 }
 
 // grantedFixture is the SSH fixture with the grant approved and the kind allowed.
@@ -762,7 +790,7 @@ func TestWorkingSetSurvivesANewBroker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sf.LaunchID, sf.Grants, sf.BrokerStart, sf.BrokerPID, sf.LiveScope = "fixture-launch-2", nil, "", 0, false
+	sf.LaunchID, sf.Grants, sf.BrokerStart, sf.BrokerPID, sf.LiveScope = "fixture-launch-2", []brokerscope.Grant{readGrant}, "", 0, false
 	f.launch(sf, nil)
 	if f.broker.start == first {
 		t.Fatal("the new broker kept the old start id")
@@ -902,7 +930,7 @@ func TestGrantWithdrawnBetweenCreationsRefusesTheSecond(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := brokerscope.ReplaceScopeContext(context.Background(), f.scopeFile, f.broker.bound, sf.Repos, nil); err != nil {
+	if err := brokerscope.ReplaceScopeContext(context.Background(), f.scopeFile, f.broker.bound, sf.Repos, []brokerscope.Grant{readGrant}); err != nil {
 		t.Fatal(err)
 	}
 	out, err := f.git("push", "origin", "HEAD:refs/heads/agent/y")
@@ -1077,7 +1105,7 @@ func TestConfigBranchGrantRemovedRefusesNextPush(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := brokerscope.ReplaceScopeContext(context.Background(), f.scopeFile, f.broker.bound, sf.Repos, nil); err != nil {
+	if err := brokerscope.ReplaceScopeContext(context.Background(), f.scopeFile, f.broker.bound, sf.Repos, []brokerscope.Grant{readGrant}); err != nil {
 		t.Fatal(err)
 	}
 	f.commit("two")

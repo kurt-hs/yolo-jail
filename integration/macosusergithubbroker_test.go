@@ -37,7 +37,9 @@ import (
 // for this workspace's lines only.
 func TestMacosUserGitHubBrokerRunsAReadAgainstTheHostGH(t *testing.T) {
 	requireMacosUser(t)
-	packHome(t, `{"packs": ["github"]}`)
+	// The pack and the read grant in the user config: selecting the pack starts the broker and
+	// grants nothing, and the read grant joins at the scope approval (BB-D104, BB-D107).
+	packHome(t, `{"packs": ["github"], "brokered": {"github": {"grants": [`+githubReadGrant+`]}}}`)
 	ws := macosUserWorkspace(t, `{}`)
 	git := func(args ...string) {
 		t.Helper()
@@ -50,12 +52,6 @@ func TestMacosUserGitHubBrokerRunsAReadAgainstTheHostGH(t *testing.T) {
 	}
 	git("init", "-q", "-b", "main")
 	git("remote", "add", "origin", "https://github.com/yolo-it/app.git")
-	// The broker on for THIS workspace alone, by the command a user runs in it (OQ-BB13).
-	// YOLO_VERSION is blanked because this is the host's verb.
-	if r := runCommand(t, ws, []string{"loopholes", "enable", "github-broker"},
-		withEnv("YOLO_VERSION=")); r.rc != 0 || !strings.Contains(r.stdout, "github-broker is on for ") {
-		t.Fatalf("yolo loopholes enable github-broker: rc %d\n%s", r.rc, r.combined())
-	}
 
 	bin := resolvedTempDir(t)
 	argvLog := writeFakeHostGH(t, bin)

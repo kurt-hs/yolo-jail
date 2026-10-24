@@ -17,7 +17,7 @@ func TestLeaseCrashHelper(t *testing.T) {
 	if os.Getenv("PILE7_LEASE_CRASH") != "1" {
 		return
 	}
-	sf := brokerscope.File{Source: Source, LaunchID: "crash", PID: os.Getpid(), Container: "crash-container", Workspace: "/fixture", Repos: []string{"o/r"}}
+	sf := brokerscope.File{Grants: readAll, Source: Source, LaunchID: "crash", PID: os.Getpid(), Container: "crash-container", Workspace: "/fixture", Repos: []string{"o/r"}}
 	path, err := brokerscope.Write(sf)
 	if err != nil {
 		t.Fatal(err)

@@ -24,27 +24,29 @@ Your machine needs whatever it already uses to reach your remotes:
   host, such as the one `git config credential.helper` names, a system keychain, or Git
   Credential Manager. The broker asks it with `git credential fill` and never prompts you.
 
-Select the pack in your user config (`~/.config/yolo-jail/config.jsonc`):
+Select the pack, and grant read access, in your user config (`~/.config/yolo-jail/config.jsonc`):
 
 ```jsonc
 {
-  "packs": ["claude", "git"]
+  "packs": ["claude", "git"],
+  "brokered": { "git": { "grants": [{ "kind": "read", "repo": "*" }] } }
 }
 ```
 
-And in each project that should have the broker, run this on your machine:
+Selecting the pack starts the broker in every project, and on its own it **grants nothing**:
+without the read grant, every fetch and push through it is refused, naming the grant to add. The
+read grant lets each project fetch from its own approved remotes, and nothing else; `"*"` means
+each project's own remotes, never every repository you can reach.
 
-```bash
-yolo loopholes enable git-broker
-```
+The grant never takes effect unseen. Each project's next config-change prompt, or
+`yolo config apply` run on your machine in the project, shows it as a line of the
+repository-scope block, marked as coming from your user config, and asks you to approve it. A
+running jail's broker takes it at its next call, with no restart.
 
-The command turns the broker on for that one project, from its next fresh launch. It never edits
-your config: it writes a small file for the project in `~/.config/yolo-jail/workspaces/` and
-prints its name. There is no switch that turns the broker on for every project, and `yolo check`
-refuses a `git-broker` switch in your user config or in a project's own config.
-
-Selecting the pack alone changes nothing about git. With the broker off, the jail's git behaves
-exactly as it would without the pack, and the launch's "Not set" line names the command above.
+The broker has no on/off switch: `yolo loopholes enable git-broker` refuses, and `yolo check`
+refuses a `git-broker` switch in any config file. To stop the broker, take `git` out of `packs`.
+An older yolo's per-project switch is ignored with a warning; `yolo loopholes disable git-broker`
+removes it.
 
 ### Approving the remotes
 

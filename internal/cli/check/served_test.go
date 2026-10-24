@@ -46,11 +46,13 @@ func TestCheckPredictsABoundLoopholeServedWhereItsBindsGo(t *testing.T) {
 	}
 }
 
-// THE GIT REWRITE IS PREDICTED SERVED ONLY WITH ITS LOOPHOLE ON (docs/design/git-broker-plan.md
-// ID-6): with packs ["git"] and git-broker disabled, the env the prediction composes lacks
-// GIT_CONFIG_COUNT; enabled, it carries the rewrite. Deleting predictedServed's
-// FrontedHostNames fails the enabled half.
-func TestGitRewriteServedOnlyWithTheLoophole(t *testing.T) {
+// THE GIT REWRITE IS PREDICTED SERVED WHEREVER ITS BROKER RUNS (docs/design/git-broker-plan.md
+// ID-6; docs/design/boundary-broker.md BB-D104): with packs ["git"] on podman the env the
+// prediction composes carries the rewrite whatever a config switch of git-broker says, since a
+// broker has none; on Apple Container, which runs no host services, it lacks GIT_CONFIG_COUNT
+// and the Not-set line says why. Deleting predictedServed's FrontedHostNames fails the podman
+// half.
+func TestGitRewriteServedWhereverItsBrokerRuns(t *testing.T) {
 	t.Setenv("YOLO_VERSION", "")
 	os.Unsetenv("YOLO_VERSION")
 	wd, _ := os.Getwd()
@@ -70,32 +72,39 @@ func TestGitRewriteServedOnlyWithTheLoophole(t *testing.T) {
 	if git == nil {
 		t.Fatal("no embedded git pack")
 	}
-	for _, enabled := range []bool{false, true} {
+	for _, c := range []struct {
+		runtime string
+		enabled bool
+	}{{"podman", false}, {"podman", true}, {"container", true}} {
+		enabled, served := c.enabled, c.runtime == "podman"
 		merged := jsonx.NewOrderedMap()
-		merged.Set("runtime", "podman")
+		merged.Set("runtime", c.runtime)
 		lh, entry := jsonx.NewOrderedMap(), jsonx.NewOrderedMap()
 		entry.Set("enabled", enabled)
 		lh.Set("git-broker", entry)
 		merged.Set("loopholes", lh)
-		served := (&Options{}).predictedServed(merged, []*packload.Pack{git})
+		predicted := (&Options{}).predictedServed(merged, []*packload.Pack{git})
 		scope, err := packload.ScopeCredentials(packload.ScopeInput{
-			Packs: []*packload.Pack{git}, NoDerives: true, Served: &served})
+			Packs: []*packload.Pack{git}, NoDerives: true, Served: &predicted})
 		if err != nil {
 			t.Fatal(err)
 		}
 		count, hasCount := scope.DeliveredPackEnv("GIT_CONFIG_COUNT")
 		key0, _ := scope.DeliveredPackEnv("GIT_CONFIG_KEY_0")
 		switch {
-		case !enabled && hasCount:
-			t.Errorf("git-broker disabled: the predicted env carries GIT_CONFIG_COUNT=%s", count)
-		case enabled && key0 != "url.yolo::ssh://.insteadOf":
-			t.Errorf("git-broker enabled: GIT_CONFIG_KEY_0 = %q, want url.yolo::ssh://.insteadOf", key0)
+		case !served && hasCount:
+			t.Errorf("%s: the predicted env carries GIT_CONFIG_COUNT=%s", c.runtime, count)
+		case served && key0 != "url.yolo::ssh://.insteadOf":
+			t.Errorf("%s, switch %v: GIT_CONFIG_KEY_0 = %q, want url.yolo::ssh://.insteadOf", c.runtime, enabled, key0)
 		}
-		// The withheld rewrite is named in the launch's words, with the command that turns it on
-		// (loopholes.Set.FrontedHostWhy): deleting predictedServed's WithNotServedWhy fails this.
+		// The withheld rewrite is named in the launch's words (loopholes.Set.FrontedHostWhy):
+		// deleting predictedServed's WithNotServedWhy fails this.
 		lines := strings.Join(packload.UnservedLines(scope, nil, nil), "\n")
-		if !enabled && !strings.Contains(lines, "`yolo loopholes enable git-broker`") {
-			t.Errorf("git-broker disabled: the predicted Not-set line does not name the enable command:\n%s", lines)
+		if !served && !strings.Contains(lines, "Apple Container cannot serve") {
+			t.Errorf("%s: the predicted Not-set line does not say why:\n%s", c.runtime, lines)
+		}
+		if strings.Contains(lines, "yolo loopholes enable") {
+			t.Errorf("%s: the predicted Not-set line names a switch the broker does not have:\n%s", c.runtime, lines)
 		}
 	}
 }

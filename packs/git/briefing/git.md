@@ -1,22 +1,29 @@
 ## `git` remotes in this jail
 
-**First check whether the broker is on for this project:** `echo "${GIT_CONFIG_COUNT:-unset}"`.
+**First check whether the broker runs for this jail:** `echo "${GIT_CONFIG_COUNT:-unset}"`.
 
-- **`unset`: the git broker is off for this project.** Plain git behaves exactly as it would
-  without the git pack: no remote is rewritten, and a remote that needs a credential fails for
-  want of one, since the jail holds none. Only the user can turn it on: ask them to run
-  `yolo loopholes enable git-broker` on the host, in this workspace, and to start a fresh launch.
-- **A number: the broker is on.** This jail's `git` is the real one, but its `ssh://`,
+- **`unset`: the git broker did not start for this launch.** It runs whenever the git pack is
+  selected, so this is a backend that runs no host services (Apple Container) or a broker that
+  failed to start. Plain git behaves exactly as it would without the git pack: no remote is
+  rewritten, and a remote that needs a credential fails for want of one, since the jail holds
+  none. Ask the user to run `yolo check` on the host, in this workspace.
+- **A number: the broker runs.** This jail's `git` is the real one, but its `ssh://`,
   `https://` and `git@` remotes go through the git pack's broker on the host: `GIT_CONFIG_COUNT`
   and the `GIT_CONFIG_KEY_<n>` variables rewrite them to `yolo::<url>`, and git runs
   `git-remote-yolo` (`~/.yolo/bin/block/git-remote-yolo`, a forwarder to `yolo git-remote`). The
   host connects with its own credentials, its SSH keys or agent for an SSH remote and its git
   credential helper for an HTTPS one; the jail holds no git credential.
 
-With the broker on:
+With the broker running:
 
-- `git fetch`, `git pull` and `git ls-remote` work against this workspace's remotes as the user
-  approved them at launch, over SSH or HTTPS.
+- **It grants nothing until the user's config does.** A fetch or push refused with `no read
+  grant` means the user has not granted read access: ask them to add
+  `{"kind": "read", "repo": "*"}` to `brokered.git.grants` in their user config on the host, then
+  run `yolo config apply` on the host, in this workspace, and approve the grant. The running
+  broker takes it at its next call. You cannot grant it from the jail, and a workspace config
+  edit does not either.
+- With the read grant, `git fetch`, `git pull` and `git ls-remote` work against this
+  workspace's remotes as the user approved them, over SSH or HTTPS.
 - **A push goes through only when the user granted it ahead of time.** With a `create-branch`
   grant on the repository, you may push a branch that does not exist on the remote yet; once the
   remote accepts it, it joins this workspace's working set, and later pushes to it (updates,

@@ -803,14 +803,14 @@ func walk(data *jsonx.OrderedMap, manifestPath, dirName string) (*Manifest, erro
 		}
 		defaultEnabled = b
 	}
-	// A BROKERED loophole is turned on one workspace at a time, and only by the per-workspace
-	// file `yolo loopholes enable` writes (docs/design/boundary-broker.md OQ-BB13, BB-D55): a
-	// default of on would turn it on in every workspace, which is the one thing that ruling
-	// leaves out.
+	// A BROKERED loophole is on whenever its pack is selected and grants nothing until a grant
+	// in config says so (docs/design/boundary-broker.md BB-D104, BB-D105): `default_enabled` does
+	// not decide it, so `true` is refused as a claim the loader would not honor. `false`, the
+	// spelling every brokered manifest needed before, still loads and is ignored.
 	if defaultEnabled && brokered != nil {
-		return nil, Errorf("%s: a 'brokered' loophole is turned on per workspace, by `yolo "+
-			"loopholes enable %s` run in that workspace, so 'default_enabled' cannot be true; "+
-			"remove it", manifestPath, name)
+		return nil, Errorf("%s: a 'brokered' loophole runs whenever its pack is selected and grants "+
+			"nothing until a grant in config does, so 'default_enabled' does not apply to %s; remove it",
+			manifestPath, name)
 	}
 
 	brokerIP := DefaultBrokerIP

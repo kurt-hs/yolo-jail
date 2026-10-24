@@ -147,6 +147,23 @@ func ConfigEnabledOverride(loopholesConfig *jsonx.OrderedMap, name string) (enab
 	return config.LoopholeEnabledOverride(loopholesConfig, name)
 }
 
+// SwitchedByConfig reports whether a `loopholes.<name>.enabled` key decides lp: true for every
+// loophole but a brokered one (its manifest declares `brokered`), which runs whenever it is
+// installed and is narrowed by grants instead (docs/design/boundary-broker.md BB-D106). A switch
+// for a brokered loophole in any file is ignored here; validation says where it is and what
+// replaces it.
+func SwitchedByConfig(lp *Loophole) bool { return lp != nil && lp.Brokered == nil }
+
+// EnabledUnder is whether lp runs under the merged config block: the block's switch where one
+// decides it (SwitchedByConfig), else the record's own state. Every reader that resolves a
+// switch over a record goes through it, so a reporting surface cannot list a broker as off.
+func EnabledUnder(lp *Loophole, loopholesConfig *jsonx.OrderedMap) bool {
+	if v, set := ConfigEnabledOverride(loopholesConfig, lp.Name); set && SwitchedByConfig(lp) {
+		return v
+	}
+	return lp.Enabled
+}
+
 // matching entries of `existing` in place and returns the NEW inline loopholes
 // (in document order) that matched nothing.
 func applyWorkspaceOverrides(existing map[string]*Loophole, loopholesConfig *jsonx.OrderedMap) []*Loophole {
@@ -167,7 +184,7 @@ func applyWorkspaceOverrides(existing map[string]*Loophole, loopholesConfig *jso
 			newInline = append(newInline, synthesizeConfigLoopholes(single)...)
 			continue
 		}
-		if v, set := ConfigEnabledOverride(loopholesConfig, name); set {
+		if v, set := ConfigEnabledOverride(loopholesConfig, name); set && SwitchedByConfig(target) {
 			target.Enabled = v
 		}
 		if envV, ok := spec.Get("env"); ok && loopholedecl.Truthy(envV) {

@@ -30,6 +30,9 @@ type Scope struct {
 	// `yolo config apply` then changes it with no restart, and the out-of-scope message says
 	// so (docs/design/live-config-apply.md §6, §7).
 	live bool
+	// grants are the user grants the gate approved into the scope file (brokerscope.File.Grants):
+	// the read grant every call needs (docs/design/boundary-broker.md BB-D108) among them.
+	grants []brokerscope.Grant
 }
 
 // scopeOfFile is the scope a scope file holds, naming its config files, and live when a
@@ -38,7 +41,38 @@ type Scope struct {
 func scopeOfFile(f brokerscope.File) Scope {
 	s := NewScope(append(append([]string(nil), f.Repos...), f.Widened...)).ForFiles(f.ConfigFile, f.LocalFile)
 	s.live = f.LiveScope
+	s.grants = append([]brokerscope.Grant(nil), f.Grants...)
 	return s
+}
+
+// WithGrants returns s holding grants as the gate approved them.
+func (s Scope) WithGrants(grants ...brokerscope.Grant) Scope {
+	s.grants = append(append([]brokerscope.Grant(nil), s.grants...), grants...)
+	return s
+}
+
+// sameRepo compares a grant's repository identity (`github.com/o/r`) with a command's
+// `OWNER/REPO`, case-insensitively as GitHub names are.
+func sameRepo(grantRepo, repo string) bool {
+	return strings.EqualFold(grantRepo, SourceHost+"/"+repo)
+}
+
+// unread is the first of repos no read grant covers, and whether there is one. A command that
+// names no repository still needs a read grant of some kind: a selected pack's broker grants
+// nothing until one says so (BB-D108).
+func (s Scope) unread(repos []string) (string, bool) {
+	if !brokerscope.HoldsRead(s.grants) {
+		if len(repos) > 0 {
+			return SourceHost + "/" + repos[0], true
+		}
+		return "any repository", true
+	}
+	for _, r := range repos {
+		if !brokerscope.ReadCovers(s.grants, r, sameRepo) {
+			return SourceHost + "/" + r, true
+		}
+	}
+	return "", false
 }
 
 // NewScope builds a scope from `OWNER/REPO` names and approved wildcard entries, dropping

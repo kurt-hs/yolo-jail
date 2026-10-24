@@ -20,6 +20,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/brokercore"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
@@ -376,6 +377,16 @@ func (b *Broker) ServeContext(ctx context.Context, req Request, jail string, std
 	ev.Repo = strings.Join(d.Repos, ",")
 	if d.Argv != nil {
 		ev.Argv = d.Argv
+	}
+	// READ IS THE FLOOR (docs/design/boundary-broker.md BB-D108): a selected pack's broker
+	// grants nothing until a read grant covers the repository, so a command that would run,
+	// a read or a write, is refused here, naming the grant.
+	if d.Outcome == OutcomeStanding || d.Outcome == OutcomeWindowed {
+		if repo, missing := scope.unread(d.Repos); missing {
+			ev.Set, ev.Outcome, ev.Reason = "refused", "refused", "no read grant"
+			say("refused: " + config.BrokerNoReadRefusal(Source, repo, scope.live))
+			return finish(ExitUsage)
+		}
 	}
 	switch d.Outcome {
 	case OutcomeRefused:

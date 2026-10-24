@@ -158,7 +158,9 @@ func (o *Options) checkLoopholes(r *reporter) {
 		}
 		lp := e.Loophole
 		sw, wsScoped := switches[lp.Name]
-		if _, decided := wsFile.LoopholeSwitch(lp.Name); decided {
+		if _, decided := wsFile.LoopholeSwitch(lp.Name); decided || !loopholes.SwitchedByConfig(lp) {
+			// A broker's switch decides nothing anywhere (BB-D106): validation refuses the
+			// workspace file's, and this row would describe a state that does not run.
 			wsScoped = false
 		}
 		if wsScoped && !sw.Enabled {
@@ -174,10 +176,7 @@ func (o *Options) checkLoopholes(r *reporter) {
 		// self-check is the next thing a reader wants. Ending the iteration here would
 		// undo OQ-A12 — the reason every loophole's doctor_cmd is reported at all — for
 		// exactly the loopholes whose activation is least expected.
-		enabled := lp.Enabled
-		if v, set := loopholes.ConfigEnabledOverride(userSwitches, lp.Name); set {
-			enabled = v
-		}
+		enabled := loopholes.EnabledUnder(lp, userSwitches)
 		if wsScoped && sw.Enabled {
 			r.warn("loophole "+lp.Name+": enabled by "+sw.File+" (workspace scope)",
 				"An agent-editable file turned an installed loophole ON; jails "+
@@ -616,10 +615,7 @@ func (o *Options) checkHostServiceLiveness(r *reporter) {
 		if lp == nil || e.Err != "" {
 			continue
 		}
-		enabled := lp.Enabled
-		if v, set := loopholes.ConfigEnabledOverride(userSwitches, lp.Name); set {
-			enabled = v
-		}
+		enabled := loopholes.EnabledUnder(lp, userSwitches)
 		if _, inert := inertReason(lp); enabled && !inert && lp.HostDaemon != nil {
 			externals = append(externals, lp)
 		}

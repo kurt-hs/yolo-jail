@@ -95,7 +95,7 @@ func TestTheDaemonRefusesAGHInsideItsWorkspace(t *testing.T) {
 	t.Setenv("HOME", resolvedDir(t))
 	t.Setenv("PATH", filepath.Join(ws, "bin"))
 	var log bytes.Buffer
-	b, cleanup := newBroker(brokerscope.File{Workspace: ws, Repos: []string{"o/r"}}, ws, &log)
+	b, cleanup := newBroker(brokerscope.File{Grants: readAll, Workspace: ws, Repos: []string{"o/r"}}, ws, &log)
 	defer cleanup()
 	assertNotRun(t, marker)
 	if b.runner != nil {

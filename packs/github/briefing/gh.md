@@ -4,7 +4,12 @@
 to the github-broker on the host, which runs the host's own `gh` login against this workspace's
 GitHub repositories. The jail holds no GitHub token; `gh auth status` names the login.
 
-- Reads run, and their output and exit codes are `gh`'s own. `--jq` and `--template` work as in
+- **The broker grants nothing until the user's config does.** A call refused with `no read
+  grant` means the user has not granted read access: ask them to add
+  `{"kind": "read", "repo": "*"}` to `brokered.github.grants` in their user config on the host,
+  then run `yolo config apply` on the host, in this workspace, and approve the grant. You cannot
+  grant it from the jail.
+- With the read grant, reads run, and their output and exit codes are `gh`'s own. `--jq` and `--template` work as in
   `gh`, and so does piping `--json` output into `jq`.
 - A write (`gh pr comment`, `gh issue edit`, `gh api -X POST …`) runs nothing and exits 77 at
   once: writes from a jail need an approval step that is not built yet. The refusal prints a
