@@ -20,6 +20,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/awsauthdaemon"
 	"github.com/mschulkind-oss/yolo-jail/internal/awscredadapter"
 	"github.com/mschulkind-oss/yolo-jail/internal/ghbroker"
+	"github.com/mschulkind-oss/yolo-jail/internal/gitbroker"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostprocesses"
 	"github.com/mschulkind-oss/yolo-jail/internal/journald"
 	"github.com/mschulkind-oss/yolo-jail/internal/oauthbroker"
@@ -56,7 +57,7 @@ func IsDaemonArgv(argv []string) bool {
 // for an argv nothing emits any more.
 func Run(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: yolo internal daemon <aws-auth|aws-credential-adapter|claude-oauth-broker|github-broker|host-processes|jail-keeper|journal|macos-log|openai-auth-adapter|openai-auth-broker|serial|wire-bridge> [args...]")
+		fmt.Fprintln(os.Stderr, "usage: yolo internal daemon <aws-auth|aws-credential-adapter|claude-oauth-broker|git-broker|github-broker|host-processes|jail-keeper|journal|macos-log|openai-auth-adapter|openai-auth-broker|serial|wire-bridge> [args...]")
 		return 2
 	}
 	rest := args[1:]
@@ -86,6 +87,10 @@ func Run(args []string) int {
 		// packs/github's per-jail broker: runs the host's gh for one jail, fenced to the
 		// workspace's own repositories (docs/design/boundary-broker.md).
 		return ghbroker.Main(rest)
+	case "git-broker":
+		// packs/git's per-jail broker: git fetch and push for one jail over the host's own ssh,
+		// fenced to the workspace's approved remotes (docs/design/git-broker.md).
+		return gitbroker.Main(rest)
 	case "host-processes":
 		return hostprocesses.Main(rest)
 	case "journal":

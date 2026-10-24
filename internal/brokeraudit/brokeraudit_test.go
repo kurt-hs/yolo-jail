@@ -106,3 +106,29 @@ func TestWriteFailureWarnsOnce(t *testing.T) {
 		t.Fatalf("warnings %q", warnings)
 	}
 }
+
+// A git push's line carries the remote and one entry per ref (git-broker-plan ID-13); a gh
+// line, which has neither, writes neither key.
+func TestGitRemoteAndRefsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "broker", "audit.jsonl")
+	l := Open(path, nil)
+	l.Append(Event{Event: "call", Service: "git", Argv: []string{"git-receive-pack"}, Repo: "github.com/o/r",
+		Remote: "git@github.com:o/r.git", Set: "refused", Outcome: "refused",
+		Refs: []RefUpdate{{Ref: "refs/heads/main", Old: "a", New: "b"}, {Ref: "refs/heads/agent/x", Old: "0", New: "c", CoveredBy: "w-1"}}})
+	l.Append(Event{Event: "call", Service: "github", Argv: []string{"pr", "view"}, Set: "read-only", Outcome: "ran"})
+	events, _, err := Read(path)
+	if err != nil || len(events) != 2 {
+		t.Fatalf("Read: %v %+v", err, events)
+	}
+	if events[0].Remote != "git@github.com:o/r.git" || len(events[0].Refs) != 2 || events[0].Refs[1].CoveredBy != "w-1" {
+		t.Fatalf("git event %+v", events[0])
+	}
+	data, _ := os.ReadFile(path)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if !strings.Contains(lines[0], `"refs":[{"ref":"refs/heads/main","old":"a","new":"b"},{"ref":"refs/heads/agent/x","old":"0","new":"c","covered_by":"w-1"}]`) {
+		t.Fatalf("git line %s", lines[0])
+	}
+	if strings.Contains(lines[1], `"remote"`) || strings.Contains(lines[1], `"refs"`) {
+		t.Fatalf("gh line carries git keys: %s", lines[1])
+	}
+}

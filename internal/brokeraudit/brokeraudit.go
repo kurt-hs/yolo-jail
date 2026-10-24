@@ -46,6 +46,15 @@ type Stdin struct {
 	SHA256 string `json:"sha256"`
 }
 
+// RefUpdate is one ref command of a git push: the ref, its old and new object ids, and
+// what covered it (a grant kind or a working-set `w-` id), empty when nothing did.
+type RefUpdate struct {
+	Ref       string `json:"ref"`
+	Old       string `json:"old"`
+	New       string `json:"new"`
+	CoveredBy string `json:"covered_by,omitempty"`
+}
+
 // Event is one audit line. The delivery-gated handler also records request, decision
 // and grant-used authorization evidence; lifetime teardown records grant-ended.
 type Event struct {
@@ -63,8 +72,13 @@ type Event struct {
 	// not parse, the argv the jail sent.
 	Argv  []string `json:"argv"`
 	Stdin *Stdin   `json:"stdin,omitempty"`
-	// Repo is the repository the command touched, when it names one.
+	// Repo is the repository the command touched, when it names one. For git it is the
+	// repository identity (host/path, docs/design/git-broker-plan.md ID-3).
 	Repo string `json:"repo,omitempty"`
+	// Remote is the approved remote URL a git call connected to, verbatim.
+	Remote string `json:"remote,omitempty"`
+	// Refs is one entry per ref command of a git push, in the push's order.
+	Refs []RefUpdate `json:"refs,omitempty"`
 	// Set is the permission set the classifier assigned, or "refused" or "out-of-scope".
 	Set string `json:"set"`
 	// Outcome is `ran`, `pending`, `denied` or `refused`.

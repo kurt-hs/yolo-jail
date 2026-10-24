@@ -45,3 +45,22 @@ func TestTheMacosLogMemberIsDispatched(t *testing.T) {
 		t.Errorf("rc=%d stderr=%q, want the macos-log bridge's own --socket refusal", rc, out)
 	}
 }
+
+// TestTheGitBrokerMemberIsDispatched: packs/git's manifest spells
+// `yolo internal daemon git-broker`, so the name must reach the broker's own flag check
+// rather than "unknown daemon".
+func TestTheGitBrokerMemberIsDispatched(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stderr
+	os.Stderr = w
+	rc := Run([]string{"git-broker"})
+	os.Stderr = saved
+	_ = w.Close()
+	out, _ := io.ReadAll(r)
+	if rc != 2 || !strings.Contains(string(out), "git-broker: --socket and --scope-file are required") {
+		t.Errorf("rc=%d stderr=%q, want the git-broker's own flag refusal", rc, out)
+	}
+}
