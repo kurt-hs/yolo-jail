@@ -410,13 +410,10 @@ type scopeOutcome struct {
 	// approved is each in-play loophole's scope as read, which is what a passing gate
 	// approved or confirmed, by loophole name.
 	approved map[string][]ScopeRepo
-	// approvedGrants is each in-play loophole's grants as read, the same way.
-	approvedGrants map[string][]brokerscope.Grant
 }
 
 func compareScope(check *ScopeCheck, old scopeRecord, oldSources sourcesRecord) scopeOutcome {
-	out := scopeOutcome{next: scopeRecord{}, nextSources: sourcesRecord{}, approved: map[string][]ScopeRepo{},
-		approvedGrants: map[string][]brokerscope.Grant{}}
+	out := scopeOutcome{next: scopeRecord{}, nextSources: sourcesRecord{}, approved: map[string][]ScopeRepo{}}
 	for k, v := range old {
 		out.next[k] = append([]string(nil), v...)
 	}
@@ -447,7 +444,6 @@ func compareScope(check *ScopeCheck, old scopeRecord, oldSources sourcesRecord) 
 		} else {
 			delete(out.next, gkey)
 		}
-		out.approvedGrants[s.Label] = append([]brokerscope.Grant(nil), s.Grants...)
 		if !had && len(cur) == 0 && len(s.Grants) == 0 && len(prevGrants) == 0 {
 			// Nothing to approve and no record yet: recorded silently, as an empty config is.
 			continue

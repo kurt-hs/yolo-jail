@@ -354,6 +354,21 @@ func TestLiveScopeTransactionsHonorContextWhileSourceLockIsHeld(t *testing.T) {
 	}
 }
 
+// A launch's scope file never carries a grant the broker would refuse to read
+// (docs/design/git-broker-plan.md ID-10): Write refuses it and writes nothing, so a malformed
+// grant fails the launch's write closed rather than reaching a broker.
+func TestWriteRefusesAMalformedGrant(t *testing.T) {
+	t.Setenv("HOME", resolvedTempDir(t))
+	for _, bad := range []Grant{{Kind: "Create Branch", Repo: "github.com/o/r"}, {Kind: "create-branch", Repo: "o/r"}} {
+		if _, err := Write(File{Source: "git", LaunchID: "badgrant", PID: os.Getpid(), Grants: []Grant{bad}}); err == nil {
+			t.Errorf("grant %+v was written", bad)
+		}
+		if _, err := os.Stat(paths.BrokerScopeFile("git", "badgrant")); !os.IsNotExist(err) {
+			t.Fatalf("a refused write left a scope file (err %v)", err)
+		}
+	}
+}
+
 func TestScopeFileRoundTripAndSweep(t *testing.T) {
 	home := resolvedTempDir(t)
 	t.Setenv("HOME", home)

@@ -271,6 +271,14 @@ Each is the planner's, decided within the design's behavior. Each is reversible;
     `yolo config apply` replaces a running jail's grants as it replaces its repositories. *Why:*
     the gate is the "config-change approval" BB-D96 names, and `config apply` is that gate run
     live. *Reverse by:* key renames before release; `yolo config-ref` is the authority once built.
+
+    **ID-10a — A grant's `repo` needs a host with a `.` or a `:`.** *Implementation decision*,
+    made in Task 8. A grant's `repo` is `*` or a repository identity (ID-3) whose host contains
+    a `.` or a `:` (a port). So a scope entry on `git@gitserver:team/app.git`, whose identity is
+    `gitserver/team/app`, is admittable, but a grant covering it must be `"*"`. *Why:* so the
+    GitHub shorthand `o/r` written as a grant's `repo` is refused, rather than read as host `o`
+    and path `r`. *Reverse by:* accepting a
+    single-label host when the identity has two or more path segments after it.
 11. **ID-11 — The working set's records.** A new record kind in the source's store,
     `working/w-<id>.json`: `ID`, `Workspace`, `Repo` (identity), `Kind` (`"branch"`), `Resource`
     (the ref), `Added`, `By` (`"create-branch"`, a grant id, or `"human"`), `Ended`, `EndReason`

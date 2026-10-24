@@ -313,3 +313,39 @@ func TestGrantJoinsOnlyAtTheGate(t *testing.T) {
 		t.Fatalf("a removed grant is not a change (%v): %+v", err, r)
 	}
 }
+
+// A source with no grants leaves the scope record's bytes as they were before grants existed
+// (docs/design/git-broker-plan.md ID-10): no `<source>.grants` key, and removing a source's last
+// grant takes the key away again rather than leaving an empty list.
+func TestASourceWithNoGrantsWritesNoGrantsKey(t *testing.T) {
+	ws := approvalWorkspace(t)
+	gitScope := func(grants ...brokerscope.Grant) *ScopeCheck {
+		return &ScopeCheck{Sources: []ScopeSource{{Source: "git", Label: "git-broker", RemoteHost: "*",
+			Form: brokerscope.FormRemoteURL, Grants: grants,
+			Read: brokerscope.Read{GitConfig: "/w/.git/config",
+				Remotes: []brokerscope.Remote{{Name: "origin", Repo: "git@github.com:o/r.git"}}}}}}
+	}
+	if err := RecordApproval(ws, decode(t, `{}`), gitScope()); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(ApprovalScopePath(ws))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(before), "grants") {
+		t.Fatalf("a source with no grants wrote a grants key:\n%s", before)
+	}
+	if err := RecordApproval(ws, decode(t, `{}`), gitScope(brokerscope.Grant{Kind: "create-branch", Repo: "*"})); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordApproval(ws, decode(t, `{}`), gitScope()); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(ApprovalScopePath(ws))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("removing the last grant left the record changed:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}

@@ -185,18 +185,20 @@ var hostConfigKeys = map[string]keyCensusEntry{
 	"kvm": {KeyNotApplicable, "passes /dev/kvm into a container; at the host it is already yours"},
 	"mise_tools": {KeyNotApplicable, "a jail composes mise's config from it, and nothing at the " +
 		"host manages your own mise"},
-	// `brokered` is a workspace's own key, read only by a jail launch's config-change gate, which
-	// approves its `brokered.<source>.repos` entry and hands the result to the GitHub broker's
-	// scope file (run's writeScopeFiles), and by `yolo check`'s report of that gate; no host-notch
-	// verb starts the broker. `yolo host apply` reads the user scope, where the key is refused
-	// (docs/design/workspace-widening.md WW-D9), so only a refused value can reach this entry.
 	"on_request": {KeyNotApplicable, "names the command a jail's host broker runs per request it files; " +
 		"the broker is not offered at the host (boundary-broker.md BB-D17), so no request is " +
 		"ever filed there"},
-	"brokered": {KeyNotApplicable, "lists the repositories a jail's GitHub broker admits for one " +
-		"workspace, from that workspace's own config, and a user-config value is refused; the " +
-		"broker is not offered at the host (boundary-broker.md BB-D17), where an agent runs your " +
-		"own gh"},
+	// `brokered` is read only by a jail launch and by `yolo check`'s report of its gate; no
+	// host-notch verb starts a broker. Its workspace half, `brokered.<source>.repos` and
+	// `.grants`, is approved at the launch's config-change gate and handed to the broker's scope
+	// file (run's writeScopeFiles). Its user half, `brokered.<source>.sets` and `.grant_kinds`,
+	// names the permission sets a broker runs under and the grant kinds a workspace may name
+	// (docs/design/boundary-broker.md BB-D23, docs/design/git-broker-plan.md ID-10); the user
+	// scope refuses every other key, so `yolo host apply` has nothing here to render.
+	"brokered": {KeyNotApplicable, "configures a jail's brokers: a workspace's own config lists the " +
+		"repositories and grants its broker admits, and the user config the permission sets the " +
+		"broker runs under and the grant kinds a workspace may name; no broker is offered at the " +
+		"host (boundary-broker.md BB-D17), where an agent runs your own gh and git"},
 	"programs": {KeyNotApplicable, "`programs.autoprune` lets a jail's boot delete the orphaned " +
 		"agent binaries in its home; the host floor removes a deselected program on an owned " +
 		"host's `yolo host apply --assert` whatever this key says (HP-D8), and under \"none\" " +

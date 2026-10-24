@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/broker"
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/claudeview"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -178,20 +179,35 @@ func TestTheKeepersPlanCarriesTheApprovedScopes(t *testing.T) {
 	want := map[string][]config.ScopeRepo{"gb": {{Repo: "o/r", Sources: []string{`remote "origin"`}},
 		{Repo: "org/lib", Sources: []string{"yolo-jail.jsonc", `x\x1b[2K.jsonc`}}}}
 	o.approvedScopes = want
-	plan, err := o.keeperPlanFor(jsonx.NewOrderedMap(), "podman", "yolo-scopes", stagedPacks{}, nil, nil, nil, "", "",
+	// The user grants the same gate approved ride the same plan (docs/design/git-broker-plan.md
+	// ID-10), through both plan builders: the container keeper's and macos-user's.
+	wantGrants := map[string][]brokerscope.Grant{"gb": {{Kind: "create-branch", Repo: "github.com/o/r"}}}
+	o.approvedGrants = wantGrants
+	podmanPlan, err := o.keeperPlanFor(jsonx.NewOrderedMap(), "podman", "yolo-scopes", stagedPacks{}, nil, nil, nil, "", "",
 		[]string{"podman", "run"}, &assembleInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := writeKeeperPlan(plan)
+	o.macosUserKey = &macosUserKeying{}
+	macPlan, err := o.macosUserKeeperPlanFor(jsonx.NewOrderedMap(), "macos-user", "yolo-scopes", stagedPacks{}, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	read, err := readKeeperPlan(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if k := newKeeper(read, KeeperSeams{}, nil, nil, nil, nil); !reflect.DeepEqual(k.o.approvedScopes, want) {
-		t.Fatalf("the keeper holds %+v, want the gate's %+v", k.o.approvedScopes, want)
+	for name, plan := range map[string]*keeperPlan{"podman": podmanPlan, "macos-user": macPlan} {
+		path, err := writeKeeperPlan(plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		read, err := readKeeperPlan(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		k := newKeeper(read, KeeperSeams{}, nil, nil, nil, nil)
+		if !reflect.DeepEqual(k.o.approvedScopes, want) {
+			t.Fatalf("%s: the keeper holds %+v, want the gate's %+v", name, k.o.approvedScopes, want)
+		}
+		if !reflect.DeepEqual(k.o.approvedGrants, wantGrants) {
+			t.Fatalf("%s: the keeper holds grants %+v, want the gate's %+v", name, k.o.approvedGrants, wantGrants)
+		}
 	}
 }

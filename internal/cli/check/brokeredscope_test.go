@@ -3,6 +3,7 @@ package check
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
@@ -53,6 +54,58 @@ func TestCheckReadsTheScopeWhereALaunchWouldStartABroker(t *testing.T) {
 	}
 	if brokeredScopeForCheck(ws, jsonx.NewOrderedMap(), "podman", nil) != nil {
 		t.Fatal("a brokered loophole no switch turned on starts no broker: it ships off")
+	}
+}
+
+// The check's scope carries the grant kinds the source's manifest defines into the gate's filter
+// (docs/design/git-broker-plan.md ID-10), so a grant the user allows and the workspace names
+// reaches the record `yolo check --accept-config-changes` writes, as it would a launch's.
+func TestCheckScopeCarriesTheSourcesGrantKinds(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("YOLO_USER_LAYER", "")
+	cfgDir := filepath.Join(home, ".config", "yolo-jail")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.jsonc"),
+		[]byte(`{"brokered": {"gbsrc": {"grant_kinds": ["create-branch"]}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mod := filepath.Join(t.TempDir(), "gb")
+	if err := os.MkdirAll(mod, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"name": "gb", "transport": "loopback-tls",
+	  "lifecycle": "spawned",
+	  "host_daemon": {"cmd": ["/bin/true", "{socket}", "{repository_scope}"], "publishes": "socket"},
+	  "brokered": {"source": "gbsrc", "remote_host": "*", "grants": ["create-branch"]}}`
+	if err := os.WriteFile(filepath.Join(mod, "manifest.jsonc"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	restore := loopholes.SnapshotPackModules()
+	t.Cleanup(restore)
+	loopholes.SetPackModules([]loopholes.PackModule{{Dir: mod, HostExecApproved: true}})
+
+	ws, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ws, "yolo-jail.jsonc"),
+		[]byte(`{"brokered": {"gbsrc": {"grants": [{"kind": "create-branch", "repo": "github.com/o/r"}]}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	read, err := config.ReadWorkspaceForGate(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := brokeredScopeForCheck(ws, gbSwitched(true), "podman", read)
+	want := []brokerscope.Grant{{Kind: "create-branch", Repo: "github.com/o/r"}}
+	if s == nil || len(s.Sources) != 1 || !reflect.DeepEqual(s.Sources[0].Grants, want) {
+		t.Fatalf("scope %+v, want the grant %v", s, want)
 	}
 }
 

@@ -530,6 +530,89 @@ func TestScopeFileCarriesApprovedGrants(t *testing.T) {
 	}
 }
 
+// The gate's own filter (docs/design/git-broker-plan.md ID-10), through the real path: a grant the
+// workspace lists at the gate's read joins no scope when the user's config does not allow its
+// kind, when the source does not define it, or when it is `read`, which every scope implies. The
+// gate shows no line for it and the scope file holds no grants.
+func TestAGrantTheGateCannotJoinReachesNoScope(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the fixture daemon is /bin/cp")
+	}
+	for _, c := range []struct {
+		name, block string
+		allowed     []string
+		kind        string
+	}{
+		{"the user config lacks the kind", `{"source": "gbsrc", "remote_host": "*", "grants": ["create-branch"]}`,
+			nil, "create-branch"},
+		{"the source does not define the kind", `{"source": "gbsrc", "remote_host": "*", "grants": ["create-branch"]}`,
+			[]string{"create-branch", "delete-branch"}, "delete-branch"},
+		{"the kind is read", `{"source": "gbsrc", "remote_host": "*", "grants": ["create-branch", "read"]}`,
+			[]string{"create-branch", "read"}, "read"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			o, buf, marker := brokeredFixtureBlock(t, true, c.block)
+			writeUserConfigOf(t, grantKindsConfig("gbsrc", c.allowed...))
+			writeWorkspaceConfig(t, o.Workspace, `{"brokered": {"gbsrc": {"grants": [{"kind": "`+c.kind+`", "repo": "github.com/o/r"}]}}}`)
+			o.AcceptConfigChanges = true
+			if !o.checkConfigChanges(gbOn(), "podman") {
+				t.Fatalf("an accepted gate refused:\n%s", buf.String())
+			}
+			if strings.Contains(buf.String(), "+ grant") {
+				t.Errorf("the gate showed a line for a grant that cannot join:\n%s", buf.String())
+			}
+			cname := "yolo-brokered-nogrant"
+			handles := o.startLoopholes(cname, "podman", gbOn())
+			t.Cleanup(func() { o.stopLoopholes(handles, hostServiceSocketsDir(cname, false), "", "") })
+			if f := readHandedScope(t, marker, buf); len(f.Grants) != 0 {
+				t.Fatalf("scope file grants %v, want none", f.Grants)
+			}
+			if strings.Contains(buf.String(), "grants for this workspace") {
+				t.Errorf("the launch disclosed a grant that cannot join:\n%s", buf.String())
+			}
+		})
+	}
+}
+
+// FAIL CLOSED for grants as for repositories: a spawn whose gate recorded no approved scope for a
+// loophole hands its broker no grant, even where grants are held for it, so a path that skipped
+// the gate cannot start a broker with standing access.
+func TestNoApprovedScopeHandsNoGrant(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the fixture daemon is /bin/cp")
+	}
+	o, buf, marker := brokeredFixtureGrants(t)
+	o.approvedGrants = map[string][]brokerscope.Grant{"gb": {{Kind: "create-branch", Repo: "github.com/o/r"}}}
+	cname := "yolo-brokered-ungated-grant"
+	handles := o.startLoopholes(cname, "podman", gbOn())
+	t.Cleanup(func() { o.stopLoopholes(handles, hostServiceSocketsDir(cname, false), "", "") })
+	if f := readHandedScope(t, marker, buf); len(f.Grants) != 0 {
+		t.Fatalf("an ungated spawn handed its broker grants %v", f.Grants)
+	}
+	if strings.Contains(buf.String(), "grants for this workspace") {
+		t.Errorf("an ungated spawn disclosed a grant:\n%s", buf.String())
+	}
+}
+
+// A non-interactive attach's pending check reads grants as the gate does (LA-D9;
+// docs/design/git-broker-plan.md ID-10): a grant the user allows and the workspace names after the
+// last approval is a pending change, so the attach prints its notice rather than nothing.
+func TestAnUnapprovedGrantIsPendingAtAnAttach(t *testing.T) {
+	o, buf, _ := brokeredFixtureGrants(t)
+	writeUserConfigOf(t, grantKindsConfig("gbsrc", "create-branch"))
+	o.AcceptConfigChanges = true
+	if !o.checkConfigChanges(gbOn(), "podman") {
+		t.Fatalf("an accepted gate refused:\n%s", buf.String())
+	}
+	if o.configChangesPending("podman", "yolo-pending-grant", gbOn(), nil) {
+		t.Fatal("a just-approved workspace reads as pending")
+	}
+	writeWorkspaceConfig(t, o.Workspace, `{"brokered": {"gbsrc": {"grants": [{"kind": "create-branch", "repo": "github.com/o/r"}]}}}`)
+	if !o.configChangesPending("podman", "yolo-pending-grant", gbOn(), nil) {
+		t.Fatal("a grant named after the last approval is not pending at an attach")
+	}
+}
+
 // WW-P2: the scope file holds what THIS gate approved, held in memory. An edit to the entry
 // after the y, and an approval another session records between this gate and the spawn, both
 // wait for the next fresh launch.

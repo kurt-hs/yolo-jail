@@ -836,8 +836,7 @@ func validateBrokeredWorkspace(workspace string, resolver LoopholeResolver, errs
 		// The user's kinds are the host's user config, which a jail does not read as the host
 		// does, so there the check is said and not enforced; the host's launch enforces it.
 		if inJail() {
-			add(warns, src.AnnotateOne(p)+" (checked against this jail's copy of the user config; "+
-				"the host's launch enforces it.)")
+			add(warns, src.AnnotateOne(p)+inJailSuffix)
 			continue
 		}
 		add(errs, src.AnnotateOne(p))

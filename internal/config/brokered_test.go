@@ -599,6 +599,22 @@ func TestGrantKindNotAllowedNamesUserKey(t *testing.T) {
 	}
 }
 
+// In a jail the user config is the host-generated snapshot, so a kind it does not allow warns, with
+// the in-jail ending every such user-scope finding carries, rather than refusing; the host's
+// launch enforces it.
+func TestGrantKindNotAllowedOnlyWarnsInAJail(t *testing.T) {
+	h := newBrokeredHost(t)
+	write(t, filepath.Join(h.ws, WorkspaceConfigName), oneGitGrant)
+	t.Setenv("YOLO_VERSION", "test")
+	errs, warns := h.validateWith(t, gitGrantResolver)
+	if strings.Contains(errs, "brokered.git.grant_kinds") {
+		t.Fatalf("a jail refused a kind only the host's user config can allow:\n%s", errs)
+	}
+	if !strings.Contains(warns, "brokered.git.grant_kinds") || !strings.Contains(warns, inJailSuffix) {
+		t.Fatalf("no in-jail warning naming brokered.git.grant_kinds:\n%s", warns)
+	}
+}
+
 func TestGrantKindAllowedPasses(t *testing.T) {
 	h := newBrokeredHost(t)
 	write(t, h.userCfg, `{"brokered": {"git": {"grant_kinds": ["create-branch"]}}}`)
