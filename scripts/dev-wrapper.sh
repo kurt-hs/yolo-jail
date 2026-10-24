@@ -30,7 +30,9 @@ def main() -> int:
         return 1
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    sys.argv = [str(helper), "dev", "--repo", str(repo), "--home", str(Path.home()), "--", *sys.argv[1:]]
+    # --argv0: the launcher runs under the name this wrapper was invoked as (yolo-dev, say).
+    sys.argv = [str(helper), "dev", "--repo", str(repo), "--home", str(Path.home()),
+                "--argv0", sys.argv[0], "--", *sys.argv[1:]]
     return module.main()
 
 

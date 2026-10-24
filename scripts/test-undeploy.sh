@@ -20,6 +20,19 @@ check() {
     if [ "$2" = 0 ]; then ok "$1"; else bad "$1"; fi
 }
 
+# The stub yolo is a real Go build whose main package is yolo's (testdata/fake-yolo), since
+# undeploy.sh runs only what launcher-slot.py identifies as a yolo build. It appends
+# `stop <name>` for `host-daemon stop` to $HOME/../stop.log.
+if ! command -v go >/dev/null 2>&1; then
+    echo "FAIL test-undeploy.sh needs go to build its stub yolo; install it (just setup) and re-run" >&2
+    exit 1
+fi
+mkdir -p "$tmp/fakemod/cmd/yolo"
+printf 'module github.com/mschulkind-oss/yolo-jail\n\ngo 1.22\n' >"$tmp/fakemod/go.mod"
+cp "$here/testdata/fake-yolo/main.go" "$tmp/fakemod/cmd/yolo/main.go"
+(cd "$tmp/fakemod" && GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=mod \
+    go build -trimpath -o "$tmp/fake-yolo" ./cmd/yolo)
+
 # fixture: builds $home, $gobin, $log with a stub yolo, a bundle symlink, a generation
 # dir and a state file.
 fixture() {
@@ -31,16 +44,13 @@ fixture() {
     : >"$log"
     echo state >"$home/.local/share/yolo-jail/state.json"
     ln -s flake-bundles/gen1 "$home/.local/share/yolo-jail/flake-bundle"
-    cat >"$gobin/yolo" <<EOS
-#!/bin/sh
-case "\$*" in
-    "internal bundle-dir") echo "$home/.local/share/yolo-jail/flake-bundle" ;;
-    "host-daemon status --format json")
-        echo '[{"loophole": "alpha", "running": true}, {"loophole": "beta", "running": false}]' ;;
-    "host-daemon stop "*) echo "stop \$3" >>"$log" ;;
-esac
-EOS
-    chmod +x "$gobin/yolo"
+    cp "$tmp/fake-yolo" "$gobin/yolo"
+}
+
+# foreign <path>: an executable that is not a yolo build and records any run in $log.
+foreign() {
+    printf '#!/bin/sh\n# github.com/mschulkind-oss/yolo-jail/cmd/yolo\necho ran >>"%s"\n' "$log" >"$1"
+    chmod +x "$1"
 }
 
 # run_script [args...] — YOLO_VERSION / YOLO_REPO_ROOT cleared, real yolo off PATH.
@@ -121,6 +131,60 @@ check "g: wrapper never ran" "$([ ! -s "$log" ] && echo 0 || echo 1)"
 check "g: checkout kept" "$([ -f "$tmp/checkout/scripts/dev-wrapper.sh" ] && echo 0 || echo 1)"
 check "g: says it was the dev launcher" "$(grep -q 'dev launcher link' "$tmp/out" && echo 0 || echo 1)"
 check "g: stable link still removed" "$([ ! -L "$home/.local/share/yolo-jail/$bundle" ] && echo 0 || echo 1)"
+
+# (h) a GOBIN/yolo that is not a yolo build is refused, never run, and nothing changes
+fixture
+foreign "$gobin/yolo"
+cp "$gobin/yolo" "$tmp/foreign.orig"
+rc=0
+run_script || rc=$?
+check "h: refuses (exit 1)" "$([ "$rc" = 1 ] && echo 0 || echo 1)"
+check "h: never ran it" "$([ ! -s "$log" ] && echo 0 || echo 1)"
+check "h: left untouched" "$(cmp -s "$gobin/yolo" "$tmp/foreign.orig" && echo 0 || echo 1)"
+check "h: stable link kept" "$([ -L "$home/.local/share/yolo-jail/$bundle" ] && echo 0 || echo 1)"
+check "h: names the next step" "$(grep -q "remove it by hand" "$tmp/err" && echo 0 || echo 1)"
+
+# (i) a named undeploy removes only that launcher, and keeps the bundle the deployed yolo uses
+fixture
+ln -s "$tmp/checkout/scripts/dev-wrapper.sh" "$gobin/yolo-dev"
+rc=0
+run_script yolo-dev || rc=$?
+check "i: exits 0" "$rc"
+check "i: yolo-dev removed" "$([ ! -L "$gobin/yolo-dev" ] && echo 0 || echo 1)"
+check "i: yolo kept" "$(cmp -s "$gobin/yolo" "$tmp/fake-yolo" && echo 0 || echo 1)"
+check "i: no daemon stopped" "$([ ! -s "$log" ] && echo 0 || echo 1)"
+check "i: stable link kept for yolo" "$([ -L "$home/.local/share/yolo-jail/$bundle" ] && echo 0 || echo 1)"
+check "i: says why it kept the link" "$(grep -q "still used by" "$tmp/out" && echo 0 || echo 1)"
+
+# (j) an unnamed undeploy lists the launchers it left behind, with the command for each
+fixture
+ln -s "$tmp/checkout/scripts/dev-wrapper.sh" "$gobin/yolo-dev"
+rc=0
+run_script || rc=$?
+check "j: exits 0" "$rc"
+check "j: yolo removed" "$([ ! -e "$gobin/yolo" ] && echo 0 || echo 1)"
+check "j: yolo-dev kept" "$([ -L "$gobin/yolo-dev" ] && echo 0 || echo 1)"
+check "j: lists yolo-dev with its command" "$(grep -q "$gobin/yolo-dev: .*Remove it with: just undeploy yolo-dev" "$tmp/out" && echo 0 || echo 1)"
+check "j: a dev launcher does not keep the stable link" "$([ ! -L "$home/.local/share/yolo-jail/$bundle" ] && echo 0 || echo 1)"
+
+# (k) a named launcher that is not yolo's is refused untouched
+fixture
+foreign "$gobin/yolo-x"
+rc=0
+run_script yolo-x || rc=$?
+check "k: refuses (exit 1)" "$([ "$rc" = 1 ] && echo 0 || echo 1)"
+check "k: never ran it" "$([ ! -s "$log" ] && echo 0 || echo 1)"
+check "k: kept it and yolo" "$([ -x "$gobin/yolo-x" ] && [ -x "$gobin/yolo" ] && echo 0 || echo 1)"
+
+# (l) one name at a time, and a plain name only
+fixture
+rc=0
+run_script yolo-a yolo-b || rc=$?
+check "l: two names refused (exit 2)" "$([ "$rc" = 2 ] && echo 0 || echo 1)"
+rc=0
+run_script ../yolo || rc=$?
+check "l: a path refused (exit 2)" "$([ "$rc" = 2 ] && echo 0 || echo 1)"
+check "l: nothing removed" "$([ -x "$gobin/yolo" ] && echo 0 || echo 1)"
 
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

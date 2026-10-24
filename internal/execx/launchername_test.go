@@ -101,6 +101,19 @@ func TestYoloRunsUnderAnotherName(t *testing.T) {
 			t.Errorf("%s: the daemon group did not prime the broker: %v\n%s", name, err, out)
 		}
 	}
+
+	// The dev wrapper execs a bundle's launcher with argv[0] set to the name it was invoked as
+	// (scripts/matched-bundle.py), so `yolo-dev host-run -- yolo-dev host-run ...` is caught as
+	// nesting even though the binary on disk is named yolo.
+	cmd := exec.Command(built, "host-run", "--", "yolo-dev", "host-run", "--", "true")
+	cmd.Args[0] = filepath.Join(dir, "yolo-dev")
+	// The in-jail form parses the line and prints it, running and creating nothing, with no
+	// terminal check ahead of the parse.
+	cmd.Env = []string{"HOME=" + t.TempDir(), "PATH=/usr/bin:/bin", "YOLO_NO_BANNER=1", "YOLO_VERSION=test"}
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "is itself `yolo host-run`") {
+		t.Errorf("host-run under argv[0] yolo-dev did not refuse a nested yolo-dev host-run: %v\n%s", err, out)
+	}
 }
 
 func runWith(env []string, argv0 string, args ...string) (string, error) {

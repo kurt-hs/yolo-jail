@@ -137,10 +137,13 @@ The mechanics behind each of these are in
 - `just build-go` → `dist-go/<goos>-<goarch>/` is the **cross-compile-for-shipping** step only; it feeds
   no in-jail run. `just deploy` is `just install` plus Claude-broker priming. `just deploy-dev` is the
   same with `$GOBIN/<name>` a symlink to [`dev-wrapper.sh`](scripts/dev-wrapper.sh), current at every run. Both take an
-  optional launcher name (default `yolo`) and replace only a yolo build or dev link in that slot,
-  refusing anything else ([`launcher-slot.py`](scripts/launcher-slot.py),
+  optional launcher name (default `yolo`). The slot is replaced only when it holds a yolo build
+  (named by its Go build info, never run before that), a link to one, this checkout's dev link, a
+  pre-Go Python script or a dangling link; anything else, another checkout's dev link included, is
+  refused untouched ([`launcher-slot.py`](scripts/launcher-slot.py),
   [`test_launcher_slot.py`](scripts/test_launcher_slot.py)). Deployed launchers share ONE installed
-  bundle, so only one is current; a deployed `yolo` beside a dev `yolo-dev` is the side-by-side pair.
+  bundle, so a second deployed name is refused; a deployed `yolo` beside a dev `yolo-dev` is the
+  side-by-side pair. `just undeploy [name]` removes one.
 - **THE IMAGE DOES NOT CONTAIN YOLO.** `/opt/yolo-jail` is TWO `:ro` bind mounts the launch supplies —
   linux binaries at `bin/`, the flake bundle at `share/yolo-jail/`
   ([`jailprefix.go`](internal/cli/run/jailprefix.go); the image bakes only the mountpoints and
@@ -167,7 +170,8 @@ The mechanics behind each of these are in
 - **The cwd does not choose the flake.** A complete bundle beside the running executable wins; an
   installed launcher uses only its matching installed generation. `YOLO_REPO_ROOT` is retired and
   refused. To run the checkout, see [Workflow](#workflow) step 2. A dangling or cyclic dev alias fails
-  in the OS before the wrapper starts; repair it with `just deploy-dev <name>` on the host, or
+  in the OS before the wrapper starts; repair it with `just deploy-dev <name>` on the host when the
+  alias is in `$GOBIN`, or
   `ln -sfn /absolute/path/to/checkout/scripts/dev-wrapper.sh /path/to/yolo-dev`.
 - `vendor/` is committed and the nix build is hermetic (`-mod=vendor`, no network). A new dependency needs
   `go mod vendor` committed, or the image build breaks while `go test` passes.

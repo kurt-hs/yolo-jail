@@ -559,13 +559,16 @@ func init() { internaldaemon.JailKeeper = runJailKeeper }
 // it cannot live in the installed binary's startup path, because the whole
 // point is to unblock the install that produces that binary.
 //
-// Flags: --gobin=DIR (default: $GOBIN, else $GOPATH/bin).
+// Flags: --gobin=DIR (default: $GOBIN, else $GOPATH/bin); --name=LAUNCHER, the
+// name the install writes in GOBIN (default yolo; any other leaves GOBIN/yolo alone).
 func runMigrateHost(args []string) int {
-	gobin := ""
+	gobin, launcher := "", ""
 	for _, a := range args {
 		switch {
 		case strings.HasPrefix(a, "--gobin="):
 			gobin = strings.TrimPrefix(a, "--gobin=")
+		case strings.HasPrefix(a, "--name="):
+			launcher = strings.TrimPrefix(a, "--name=")
 		case len(a) > 0 && a[0] == '-':
 			fmt.Fprintf(os.Stderr, "migrate-host: unknown flag %q\n", a)
 			return 2
@@ -584,7 +587,9 @@ func runMigrateHost(args []string) int {
 		gobin = resolved
 	}
 
-	if _, err := hostmigrate.New(gobin).Preflight(); err != nil {
+	m := hostmigrate.New(gobin)
+	m.Launcher = launcher
+	if _, err := m.Preflight(); err != nil {
 		fmt.Fprintf(os.Stderr, "\nyolo-jail: cannot install over an existing file.\n  %v\n", err)
 		return 1
 	}

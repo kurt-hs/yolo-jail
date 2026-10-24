@@ -441,6 +441,27 @@ class PackageTests(unittest.TestCase):
             self.assertIn("Ignoring obsolete YOLO_REPO_ROOT",stderr.getvalue())
             self.assertNotIn(secret,stderr.getvalue())
 
+    def test_dev_command_reports_on_stderr_and_runs_under_the_invoked_name(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as td:
+            repo=repo_fixture(Path(td)); home=Path(td)/"home"; launcher=Path(td)/"matched/yolo"
+            launcher.parent.mkdir(); launcher.write_text("launcher")
+            cases=(("/home/u/go/bin/yolo-dev","/home/u/go/bin/yolo-dev"),
+                   (str(repo/"scripts/dev-wrapper.sh"),str(launcher)), (None,str(launcher)))
+            for argv0,shown in cases:
+                with self.subTest(argv0=argv0):
+                    executed=[]; stdout=StringIO(); stderr=StringIO()
+                    with mock.patch.object(mb,"build_dev_bundle",return_value=launcher), \
+                         redirect_stdout(stdout), redirect_stderr(stderr):
+                        mb.command(repo,"dev",home=home,args=["host-run","--","x"],argv0=argv0,
+                                   execer=lambda path,argv,env: executed.append((path,argv,env)))
+                    self.assertEqual(executed[0][0],str(launcher))
+                    self.assertEqual(executed[0][1],[shown,"host-run","--","x"])
+                    self.assertEqual(stdout.getvalue(),"","the dev wrapper wrote to the launcher's stdout")
+                    self.assertIn(f"Matched development bundle: {launcher}",stderr.getvalue())
+
     def test_install_command_runs_shared_activation_workflow(self):
         result, gobin = self._just_install("yolo")
         self.assertIn("Launcher slot "+str(gobin/"yolo")+": empty.",result.stdout)
@@ -455,7 +476,7 @@ class PackageTests(unittest.TestCase):
         self.assertFalse((gobin/"yolo-dev").is_symlink(),"the dev link is still in the slot")
         self.assertFalse((gobin/"yolo").exists(),"a named install wrote the default slot")
         self.assertIn("replacing the dev launcher for the checkout at",result.stdout)
-        self.assertIn("Switched yolo-dev from the dev launcher to a deployed one.",result.stdout)
+        self.assertIn("Switched yolo-dev from the dev launcher to a deployed one; `just deploy-dev yolo-dev` switches it back.",result.stdout)
 
     def _just_install(self, name, prepare=None):
         with tempfile.TemporaryDirectory() as td:
@@ -485,7 +506,7 @@ def runner(argv, **kwargs):
     if argv and (argv[0] in ("git", "go", "readlink") or "--version" in argv):
         return real_run(argv, **kwargs)
     if "migrate-host" in argv:
-        events.append(("migrate-host", argv[0]))
+        events.append(("migrate-host", argv))
         return SimpleNamespace(stdout="")
     if "--stage" in argv:
         generation = Path(os.environ["YOLO_TEST_GENERATION"])
@@ -547,6 +568,9 @@ raise SystemExit(code)
             self.assertTrue((gobin/name).is_file(),"the production Justfile install flow did not install its launcher")
             events=json.loads((root/"events.json").read_text())
             self.assertEqual([event[0] for event in events],["migrate-host","stage","activate"])
+            # migrate-host inspects the GOBIN this install writes, for this launcher name only.
+            self.assertIn(f"--gobin={gobin}",events[0][1])
+            self.assertIn(f"--name={name}",events[0][1])
             self.assertEqual(events[2][1],events[1][1])
             self.assertEqual(events[1][1],str(generation))
             self.assertTrue((generation/"flake.nix").is_file(),"install did not stage the matched flake")
@@ -602,7 +626,7 @@ identity={self.identity!r}
 if sys.argv[1:]==["--version","--full"]:
  print("snapshot identity: "+identity); print("build kind: development")
  print("build stamp: "+{version!r}); print("commit: "+{commit!r}); raise SystemExit(0)
-with open(os.environ["YOLO_TEST_LOG"],"w") as f: json.dump({{"args":sys.argv[1:],"cwd":os.getcwd(),"hasRepoRoot":"YOLO_REPO_ROOT" in os.environ,"path":os.environ.get("PATH")}},f)
+with open(os.environ["YOLO_TEST_LOG"],"w") as f: json.dump({{"argv0":sys.argv[0],"args":sys.argv[1:],"cwd":os.getcwd(),"hasRepoRoot":"YOLO_REPO_ROOT" in os.environ,"path":os.environ.get("PATH")}},f)
 if os.environ.get("YOLO_TEST_SIGNAL"): os.kill(os.getpid(),getattr(signal,"SIG"+os.environ["YOLO_TEST_SIGNAL"]))
 raise SystemExit(23)
 '''
@@ -642,11 +666,29 @@ raise SystemExit(23)
             result=subprocess.run(command,cwd=self.cwd,env=env,text=True,capture_output=True)
             self.assertEqual(result.returncode,23,result.stderr)
             record=json.loads(self.log.read_text()); self.assertEqual(record["args"],args)
+            self.assertNotIn("Matched development bundle",result.stdout)
+            self.assertIn("Matched development bundle",result.stderr)
             self.assertEqual(record["cwd"],str(self.cwd)); self.assertFalse(record["hasRepoRoot"])
             self.assertEqual(record["path"],env["PATH"]); self.assertEqual(os.readlink(self.active),self.active_target)
             self.assertIn("remove that export",result.stderr); self.assertNotIn(str(self.other),result.stderr)
             self.assertFalse(self.stale_marker.exists())
         self.assertEqual(len(list((self.home/".local/share/yolo-jail/dev-bundles").glob("*"))),1)
+
+    def test_wrapper_passes_the_name_it_was_invoked_as(self):
+        """dev-wrapper.sh hands matched-bundle.py --argv0 <the invoked path>, which the launcher
+        then runs under (a shebang stub cannot observe its own argv[0], so the handoff is pinned)."""
+        checkout=self.root/"argv0 checkout"; (checkout/"scripts").mkdir(parents=True)
+        shutil.copy2(HERE/"dev-wrapper.sh",checkout/"scripts/dev-wrapper.sh")
+        record=self.root/"argv.json"
+        (checkout/"scripts/matched-bundle.py").write_text(
+            "import json, sys\n"
+            f"def main():\n    json.dump(sys.argv, open({str(record)!r}, 'w'))\n    return 0\n")
+        link=self.links/"yolo-named"; link.symlink_to(checkout/"scripts/dev-wrapper.sh")
+        result=subprocess.run([str(link),"host-run","--","true"],cwd=self.cwd,env=self.env(),text=True,capture_output=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        argv=json.loads(record.read_text())
+        self.assertEqual(argv[argv.index("--argv0")+1],str(link))
+        self.assertEqual(argv[argv.index("--")+1:],["host-run","--","true"])
 
     def test_wrapper_without_obsolete_selector_is_silent_about_it(self):
         env=self.env(); env.pop("YOLO_REPO_ROOT")

@@ -180,7 +180,7 @@ helpers. The regular image build still uses Nix as usual.
 
 `YOLO_REPO_ROOT` no longer selects a launch source. Remove an old export from your shell profile.
 If a PATH alias has a dangling or cyclic symlink, the operating system rejects it before the wrapper
-starts; run `just deploy-dev <name>` again, or replace it with
+starts. If the alias is in Go's bin directory, run `just deploy-dev <name>` again; otherwise replace it with
 `ln -sfn /absolute/path/to/yolo-jail/scripts/dev-wrapper.sh /path/to/yolo-dev`, substituting your
 checkout and alias paths.
 

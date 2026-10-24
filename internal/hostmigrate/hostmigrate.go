@@ -101,6 +101,10 @@ type Migrator struct {
 	Exec func(name string, args ...string) ([]byte, error)
 	// Out receives human-readable progress. Nil discards it.
 	Out io.Writer
+	// Launcher is the name the install writes in GOBIN ("" means "yolo"). An
+	// install under another name (`just deploy yolo-stable`) never touches
+	// GOBIN/yolo or the uv tool that owns it: it only reports what is there.
+	Launcher string
 }
 
 // New returns a Migrator wired to the real host.
@@ -148,14 +152,21 @@ func (m *Migrator) logf(format string, args ...any) {
 // an opaque message and where guessing could destroy something of the user's.
 func (m *Migrator) Preflight() (Result, error) {
 	var res Result
+	named := m.Launcher != "" && m.Launcher != "yolo"
 
-	if m.uninstallUvTool() {
+	if !named && m.uninstallUvTool() {
 		res.UvUninstalled = true
 	}
 
 	for _, name := range LegacyNames {
 		path := filepath.Join(m.GOBIN, name)
 		kind := m.classify(path)
+		if named && name == "yolo" {
+			if kind != KindAbsent {
+				m.logf("  found a %s at %s; left it alone, since this install is named %s", kind, path, m.Launcher)
+			}
+			continue
+		}
 		switch {
 		case kind.Stale():
 			if err := os.Remove(path); err != nil {

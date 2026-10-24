@@ -148,7 +148,7 @@ _host-state name:
 
 # Undo `just deploy`/`just install` (any platform) so a packaged yolo runs; `just undeploy --dry-run` previews.
 undeploy *args:
-    sh scripts/undeploy.sh {{args}}
+    sh scripts/undeploy.sh "$@"
 
 # Build the container image using Nix
 build-image:

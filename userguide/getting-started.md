@@ -386,8 +386,10 @@ just deploy             # yolo: the deployed copy
 just deploy-dev yolo-dev   # yolo-dev: runs your clone as it stands
 ```
 
-Keep one deployed copy at a time. Deployed copies share one set of build files, so deploying a second
-one breaks the first, and the command warns you when that happens.
+Keep one deployed copy at a time. Deployed copies share one set of build files, so `just deploy`
+refuses a second name while another deployed copy is installed, and tells you how to make one of them
+a dev launcher instead. `just undeploy <name>` removes one launcher; plain `just undeploy` removes
+`yolo` and lists any others it left in place.
 
 ### Other ways to install
 
@@ -422,7 +424,8 @@ launch channels; install from Homebrew or a release archive, or use the complete
 matched launcher from that checkout. For a command on your PATH instead, run `just deploy-dev`
 (see [From source](#from-source)). `YOLO_REPO_ROOT` no longer selects a launch source, so remove it
 from your shell configuration. A dev command whose link is dangling or cyclic fails before its script
-can run; run `just deploy-dev <name>` in your clone again, or replace it with
+can run; if the link is in Go's bin directory, run `just deploy-dev <name>` in your clone again.
+Otherwise replace it with
 `ln -sfn /absolute/path/to/yolo-jail/scripts/dev-wrapper.sh /path/to/yolo-dev`, using your checkout
 and chosen PATH name.
 

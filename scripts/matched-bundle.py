@@ -438,7 +438,7 @@ def _resolved_path(path: str | Path) -> str:
 
 def command(repo: Path, mode: str, *, home: Path, gobin: Path | None = None,
             name: str = "yolo", args: list[str] | None = None, builder=assemble, runner=subprocess.run,
-            execer=os.execvpe):
+            execer=os.execvpe, argv0: str | None = None):
     if mode in ("build-dev", "dev"):
         launcher = build_dev_bundle(repo, home, builder=builder, runner=runner)
         if mode == "build-dev":
@@ -447,9 +447,13 @@ def command(repo: Path, mode: str, *, home: Path, gobin: Path | None = None,
             print("Ignoring obsolete YOLO_REPO_ROOT; remove that export and invoke the matched bundle by path.", file=sys.stderr)
         child_env = os.environ.copy()
         child_env.pop("YOLO_REPO_ROOT", None)
-        print(f"Matched development bundle: {launcher}")
-        child_argv = [str(launcher), *(args or [])]
-        execer(child_argv[0], child_argv, child_env)
+        # stderr, flushed: stdout belongs to the launcher, and an exec discards Python's buffers.
+        print(f"Matched development bundle: {launcher}", file=sys.stderr, flush=True)
+        # The launcher runs under the name it was invoked as (a `just deploy-dev yolo-dev` link), so
+        # its own name checks see `yolo-dev`; `just dev` runs the wrapper by its path and keeps the
+        # launcher's.
+        shown = argv0 if argv0 and Path(argv0).name != "dev-wrapper.sh" else str(launcher)
+        execer(str(launcher), [shown, *(args or [])], child_env)
         return 0
     if mode != "install":
         raise ValueError(f"unknown matched bundle mode: {mode}")
@@ -475,7 +479,8 @@ def command(repo: Path, mode: str, *, home: Path, gobin: Path | None = None,
                                           env=_git_env(), text=True).strip()
             gobin = Path(raw) if raw else Path(subprocess.check_output(
                 ["go", "env", "GOPATH"], cwd=snapshot, env=_git_env(), text=True).strip()) / "bin"
-        subprocess.run([str(launcher), "internal", "migrate-host", f"--gobin={gobin}"], env=env, check=True)
+        subprocess.run([str(launcher), "internal", "migrate-host", f"--gobin={gobin}",
+                        f"--name={name}"], env=env, check=True)
         publish_install_generation(launcher, output / "share/yolo-jail", identity, env,
                                    runner=runner, shipped=shipped, guest=guest,
                                    host_os=host_os, host_arch=host_arch)
@@ -501,6 +506,7 @@ def main() -> int:
     parser.add_argument("--home", type=Path, default=Path.home())
     parser.add_argument("--gobin", type=Path)
     parser.add_argument("--name", default="yolo")
+    parser.add_argument("--argv0", help="dev mode: the name the dev wrapper was invoked as")
     raw = sys.argv[1:]
     if "--" in raw:
         split = raw.index("--")
@@ -510,10 +516,11 @@ def main() -> int:
         args = parser.parse_args(raw)
         forwarded = []
     try:
-        if not args.name or "/" in args.name or args.name in (".", ".."):
+        if (not args.name or "/" in args.name or args.name in (".", "..")
+                or any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in args.name)):
             raise ValueError(f"--name must be a plain file name, not {args.name!r}")
         result = command(args.repo, args.mode, home=args.home, gobin=args.gobin, name=args.name,
-                         args=forwarded, execer=os.execvpe)
+                         args=forwarded, execer=os.execvpe, argv0=args.argv0)
         if args.mode == "build-dev":
             print(result)
         return result if isinstance(result, int) else 0

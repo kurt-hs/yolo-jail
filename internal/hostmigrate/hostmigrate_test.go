@@ -355,6 +355,44 @@ func TestHasPythonShebang(t *testing.T) {
 	}
 }
 
+// An install under another name (`just deploy yolo-stable`) neither blocks on nor
+// deletes whatever is at GOBIN/yolo, and leaves the uv tool alone: it only reports.
+// Before Launcher, an unidentifiable GOBIN/yolo refused every named deploy, and a
+// stale one was deleted by it.
+func TestANamedInstallNeverTouchesGOBINYolo(t *testing.T) {
+	for _, tc := range []struct{ name, content string }{
+		{"unidentifiable", "#!/bin/sh\necho mine\n"},
+		{"stale python", "#!/usr/bin/env python3\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gobin := t.TempDir()
+			write(t, filepath.Join(gobin, "yolo"), tc.content)
+			m, log := testMigrator(gobin)
+			m.Launcher = "yolo-stable"
+			m.LookPath = func(name string) (string, error) { return "/usr/bin/" + name, nil }
+			var ran []string
+			m.Exec = func(name string, args ...string) ([]byte, error) {
+				ran = append(ran, name+" "+strings.Join(args, " "))
+				return []byte("yolo-jail v0.6.1\n- yolo\n"), nil
+			}
+			res, err := m.Preflight()
+			if err != nil || res.Blocked != "" || len(res.Removed) != 0 || res.UvUninstalled {
+				t.Fatalf("a named install acted on GOBIN/yolo: res=%+v err=%v", res, err)
+			}
+			if len(ran) != 0 {
+				t.Errorf("a named install ran %q", ran)
+			}
+			got, err := os.ReadFile(filepath.Join(gobin, "yolo"))
+			if err != nil || string(got) != tc.content {
+				t.Fatalf("GOBIN/yolo changed: %q %v", got, err)
+			}
+			if !strings.Contains(log.String(), "left it alone, since this install is named yolo-stable") {
+				t.Errorf("nothing reported what is at GOBIN/yolo: %q", log.String())
+			}
+		})
+	}
+}
+
 // A `just deploy-dev` symlink at GOBIN/yolo must not block `just deploy`: the
 // install replaces it atomically, and before KindDevLauncher it read as an
 // unidentifiable blocker, so switching back from dev failed in migrate-host.

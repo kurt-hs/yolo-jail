@@ -3,23 +3,27 @@
 
 THE SLOT is one path, `<GOBIN>/<name>`: the directory `just install` has always written to
 (`go env GOBIN`, else `$(go env GOPATH)/bin`) and a launcher name, `yolo` unless the recipe was
-given another. Whatever occupies it is classified before anything is written:
+given another. Whatever occupies it is classified before anything is written, and NOTHING is
+executed until it has been identified as a yolo build:
 
-  absent    nothing there.
-  deployed  a yolo binary (a `just deploy`, or any other build of this module).
-  dev       a symlink to a checkout's scripts/dev-wrapper.sh (`just deploy-dev`), live or dangling.
-  link      a symlink to a yolo binary.
-  legacy    a pre-Go Python console script (the same rule internal/hostmigrate applies).
-  dangling  a symlink that resolves to nothing.
-  foreign   anything else. NEVER replaced: the recipe refuses and names the next step.
+  absent     nothing there.
+  deployed   a yolo build: an ELF or Mach-O Go binary whose embedded build info names
+             github.com/mschulkind-oss/yolo-jail/cmd/yolo as its main package.
+  link       a symlink to a yolo build.
+  dev        a symlink to THIS checkout's scripts/dev-wrapper.sh (`just deploy-dev`).
+  other-dev  a symlink to ANOTHER checkout's scripts/dev-wrapper.sh. Refused.
+  legacy     a pre-Go Python console script (the rule internal/hostmigrate applies).
+  dangling   a symlink that resolves to nothing, including a dev link whose checkout moved.
+  foreign    anything else. Refused, and left untouched.
 
-Every kind but foreign is replaced, and the recipe says what it replaced. `deploy` builds and
-installs a matched launcher through matched-bundle.py; `deploy-dev` swaps in a symlink to this
-checkout's dev wrapper, which builds a matched bundle from the checkout on every run.
+Every kind but other-dev and foreign is replaced, and the recipe says what it replaced. `deploy`
+builds and installs a matched launcher through matched-bundle.py; `deploy-dev` swaps in a symlink
+to this checkout's dev wrapper, which builds a matched bundle from the checkout on every run.
 """
 from __future__ import annotations
 
 import argparse
+import mmap
 import os
 from pathlib import Path
 import shutil
@@ -27,9 +31,12 @@ import subprocess
 import sys
 import uuid
 
-MODULE_MARKER = b"github.com/mschulkind-oss/yolo-jail"
+YOLO_MAIN = "github.com/mschulkind-oss/yolo-jail/cmd/yolo"
+BUILDINFO_MAGIC = b"\xff Go buildinf:"
+# ELF, then Mach-O 64/32 in both byte orders, then a universal (fat) Mach-O.
+EXEC_MAGICS = (b"\x7fELF", b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe",
+               b"\xfe\xed\xfa\xce", b"\xca\xfe\xba\xbe")
 DEV_WRAPPER = "dev-wrapper.sh"
-LEGACY_NAMES = ("yolo", "yolo-ps", "yolo-host-processes", "yolo-claude-oauth-broker-host")
 REPLACEABLE = ("absent", "deployed", "dev", "link", "legacy", "dangling")
 
 
@@ -45,9 +52,15 @@ def _clean_env() -> dict[str, str]:
 
 
 def validate_name(name: str) -> str:
-    if not name or name in (".", "..") or "/" in name or name.startswith("-") or "\0" in name:
+    if (not name or name in (".", "..") or "/" in name or name.startswith("-")
+            or any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in name)):
         raise SlotError(f"launcher name {name!r} is not a plain file name; pass one such as yolo-dev")
     return name
+
+
+def name_arg(name: str) -> str:
+    """The recipe argument that names this launcher: nothing for the default."""
+    return "" if name == "yolo" else f" {name}"
 
 
 def resolve_gobin(explicit: Path | None = None) -> Path:
@@ -64,23 +77,78 @@ def resolve_gobin(explicit: Path | None = None) -> Path:
         raise SlotError(f"cannot ask Go for GOBIN ({exc}); install Go (`just setup`) or pass --gobin") from exc
 
 
-def _is_yolo_binary(path: Path) -> bool:
+def _uvarint(buf, pos: int) -> tuple[int, int]:
+    value = shift = 0
+    while True:
+        byte = buf[pos]
+        pos += 1
+        value |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            return value, pos
+        shift += 7
+        if shift > 63:
+            raise ValueError("varint overflow")
+
+
+def go_main_package(path: Path) -> str | None:
+    """The main package path in a Go binary's build info, read without running it.
+
+    Only an ELF or Mach-O file is considered, and only the Go 1.18+ inline build-info layout
+    (a 16-byte aligned "\\xff Go buildinf:" header whose flags carry bit 2, then the varint-length
+    Go version and module info) counts. Anything else is not a Go binary here.
+    """
+    try:
+        with path.open("rb") as handle:
+            if handle.read(4) not in EXEC_MAGICS:
+                return None
+            if os.fstat(handle.fileno()).st_size < 64:
+                return None
+            with mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as buf:
+                at = buf.find(BUILDINFO_MAGIC)
+                while at != -1:
+                    found = _parse_buildinfo(buf, at)
+                    if found is not None:
+                        return found
+                    at = buf.find(BUILDINFO_MAGIC, at + 1)
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _parse_buildinfo(buf, at: int) -> str | None:
+    if at % 16 or at + 32 > len(buf) or not buf[at + 15] & 0x2:
+        return None
+    try:
+        size, pos = _uvarint(buf, at + 32)
+        version = bytes(buf[pos:pos + size])
+        size, pos = _uvarint(buf, pos + size)
+        modinfo = bytes(buf[pos:pos + size])
+    except (IndexError, ValueError):
+        return None
+    if not version.startswith(b"go") or len(modinfo) < 33:
+        return None
+    for line in modinfo[16:-16].decode("utf-8", "replace").splitlines():
+        if line.startswith("path\t"):
+            return line[len("path\t"):]
+    return None
+
+
+def is_yolo_build(path: Path) -> bool:
     try:
         if not path.is_file() or not os.access(path, os.X_OK):
             return False
-        tail = b""
-        with path.open("rb") as handle:
-            while chunk := handle.read(1 << 20):
-                if MODULE_MARKER in tail + chunk:
-                    return True
-                tail = chunk[-len(MODULE_MARKER):]
     except OSError:
         return False
-    return False
+    return go_main_package(path) == YOLO_MAIN
 
 
 def version_fields(path: Path) -> dict[str, str]:
-    """`<path> --version --full` as a field map; empty when the probe fails."""
+    """`<path> --version --full` as a field map; empty when the probe fails.
+
+    Run ONLY on a path is_yolo_build accepted.
+    """
+    if not is_yolo_build(path):
+        return {}
     try:
         out = subprocess.run([str(path), "--version", "--full"], env=_clean_env(), text=True,
                              capture_output=True, timeout=30, check=True).stdout
@@ -119,8 +187,15 @@ def _python_shebang(path: Path) -> bool:
     return line.startswith(b"#!") and b"python" in line
 
 
-def classify(slot: Path) -> tuple[str, str]:
-    """(kind, description) of whatever occupies slot, changing nothing."""
+def _is_dev_wrapper_target(target: str) -> bool:
+    # The same test internal/hostmigrate's KindDevLauncher applies to the link's target.
+    target_path = Path(target)
+    return target_path.name == DEV_WRAPPER and target_path.parent.name == "scripts"
+
+
+def classify(slot: Path, repo: Path | None = None) -> tuple[str, str]:
+    """(kind, description) of whatever occupies slot, changing and running nothing but a
+    yolo build's `--version --full`. With repo, a dev link to any other checkout is other-dev."""
     try:
         st = slot.lstat()
     except FileNotFoundError:
@@ -128,21 +203,22 @@ def classify(slot: Path) -> tuple[str, str]:
     if slot.is_symlink():
         target = os.readlink(slot)
         absolute = Path(target) if os.path.isabs(target) else slot.parent / target
-        if Path(target).name == DEV_WRAPPER:
-            if absolute.exists():
-                checkout = Path(os.path.realpath(absolute)).parent.parent
-                return "dev", f"the dev launcher for the checkout at {checkout}"
-            return "dev", f"a dangling dev launcher link to {target}"
         if not absolute.exists():
-            return "dangling", f"a dangling symlink to {target}"
+            what = "dev launcher link" if _is_dev_wrapper_target(target) else "symlink"
+            return "dangling", f"a dangling {what} to {target}"
+        if _is_dev_wrapper_target(target):
+            checkout = Path(os.path.realpath(absolute)).parent.parent
+            if repo is None or checkout == Path(os.path.realpath(repo)):
+                return "dev", f"the dev launcher for the checkout at {checkout}"
+            return "other-dev", f"the dev launcher for another checkout, at {checkout}"
         resolved = Path(os.path.realpath(absolute))
-        if _is_yolo_binary(resolved):
+        if is_yolo_build(resolved):
             return "link", f"a symlink to {_describe_yolo(resolved)} at {resolved}"
         if _in_python_venv(absolute):
             return "legacy", f"a pre-Go Python yolo-jail console script linking into {absolute.parent.parent}"
-        return "foreign", f"a symlink to {target}, which is not yolo"
+        return "foreign", f"a symlink to {target}, which is not a yolo build"
     if slot.is_file():
-        if _is_yolo_binary(slot):
+        if is_yolo_build(slot):
             return "deployed", _describe_yolo(slot)
         if slot.name == "yolo" and _python_shebang(slot):
             return "legacy", "a pre-Go Python yolo script"
@@ -151,10 +227,15 @@ def classify(slot: Path) -> tuple[str, str]:
     return "foreign", f"a {kind}"
 
 
-def check_slot(slot: Path, mode: str) -> tuple[str, str]:
-    kind, desc = classify(slot)
+def check_slot(slot: Path, mode: str, repo: Path) -> tuple[str, str]:
+    kind, desc = classify(slot, repo)
+    other = "deploy-dev yolo-dev" if mode == "dev" else "deploy yolo-stable"
+    if kind == "other-dev":
+        raise SlotError(
+            f"{slot} is {desc}; it was left untouched.\n"
+            f"  Run `just deploy-dev{name_arg(slot.name)}` in that checkout, or remove the link "
+            f"(rm {slot}) and re-run here; or install under another name: just {other}")
     if kind not in REPLACEABLE:
-        other = "deploy-dev yolo-dev" if mode == "dev" else "deploy yolo-stable"
         raise SlotError(
             f"{slot} holds {desc}; it is not something `just deploy` or `just deploy-dev` installed, "
             "so it was left untouched.\n"
@@ -180,28 +261,45 @@ def _path_warning(slot: Path) -> None:
               f"Remove that one or put {slot.parent} earlier in PATH, then run 'hash -r'.", file=sys.stderr)
 
 
-def _sibling_deployed(gobin: Path, name: str, identity: str) -> list[Path]:
-    """Other deployed launchers in gobin built from another snapshot."""
+def launchers(gobin: Path) -> list[tuple[Path, str, str, str]]:
+    """Every yolo launcher in gobin as (path, kind, build kind, description): yolo builds, links
+    to them, and dev links. Only identified yolo builds are run (for their build kind)."""
     found = []
     try:
-        entries = sorted(gobin.iterdir())
+        entries = sorted(p for p in gobin.iterdir() if not p.name.startswith("."))
     except OSError:
         return found
     for entry in entries:
-        if entry.name == name or not entry.name.startswith("yolo") or entry.is_symlink():
-            continue
-        if not _is_yolo_binary(entry):
-            continue
-        fields = version_fields(entry)
-        if fields.get("build kind") == "installed" and fields.get("snapshot identity") != identity:
-            found.append(entry)
+        kind, desc = classify(entry)
+        if kind in ("deployed", "link"):
+            found.append((entry, kind, version_fields(Path(os.path.realpath(entry))).get("build kind", ""), desc))
+        elif kind == "dev":
+            found.append((entry, kind, "development", desc))
     return found
+
+
+def check_no_other_deployed(slot: Path) -> None:
+    """Refuse BEFORE the installed bundle moves if another deployed launcher shares it."""
+    mine = os.path.realpath(slot)
+    for path, _, build_kind, desc in launchers(slot.parent):
+        if build_kind != "installed" or os.path.realpath(path) == mine:
+            continue
+        other = path.name
+        raise SlotError(
+            f"{path} is another deployed launcher ({desc}). Deployed launchers share ONE installed flake "
+            f"bundle, so deploying {slot.name} would make {other} refuse to launch. Nothing was changed. "
+            "Choose one:\n"
+            f"  just deploy-dev{name_arg(other)}   # make {other} the dev launcher, then re-run "
+            f"just deploy{name_arg(slot.name)}\n"
+            f"  just deploy{name_arg(other)}       # redeploy {other} instead; {slot.name} then refuses "
+            "until it is redeployed or made the dev launcher")
 
 
 def deploy(repo: Path, home: Path, gobin: Path, name: str, *, installer=None) -> Path:
     """Install a matched deployed launcher at gobin/name, replacing what deploy-dev put there."""
     slot = gobin / validate_name(name)
-    kind, desc = check_slot(slot, "deploy")
+    kind, desc = check_slot(slot, "deploy", repo)
+    check_no_other_deployed(slot)
     report_slot(slot, kind, desc)
     if installer is None:
         def installer():
@@ -211,14 +309,10 @@ def deploy(repo: Path, home: Path, gobin: Path, name: str, *, installer=None) ->
                             "--name", name], check=True)
     installer()
     if kind == "dev":
-        print(f"Switched {slot.name} from the dev launcher to a deployed one.")
+        print(f"Switched {name} from the dev launcher to a deployed one; "
+              f"`just deploy-dev{name_arg(name)}` switches it back.")
     elif kind != "absent":
         print(f"Replaced {desc}.")
-    identity = version_fields(slot).get("snapshot identity", "")
-    for other in _sibling_deployed(gobin, name, identity):
-        print(f"⚠ {other} is another deployed launcher. Deployed launchers share ONE installed flake "
-              f"bundle, so it now refuses to launch. Make it the dev launcher (just deploy-dev {other.name}) "
-              f"or remove it (rm {other}).", file=sys.stderr)
     return slot
 
 
@@ -228,7 +322,7 @@ def deploy_dev(repo: Path, gobin: Path, name: str) -> Path:
     wrapper = repo.resolve() / "scripts" / DEV_WRAPPER
     if not wrapper.is_file() or not os.access(wrapper, os.X_OK):
         raise SlotError(f"{wrapper} is missing or not executable; run deploy-dev from a yolo-jail checkout")
-    kind, desc = check_slot(slot, "dev")
+    kind, desc = check_slot(slot, "dev", repo)
     report_slot(slot, kind, desc)
     gobin.mkdir(parents=True, exist_ok=True)
     staged = gobin / f".{name}-dev-{uuid.uuid4().hex}"
@@ -238,10 +332,11 @@ def deploy_dev(repo: Path, gobin: Path, name: str) -> Path:
     except OSError:
         staged.unlink(missing_ok=True)
         raise
-    print(f"Installed {slot} -> {wrapper}: every run builds (or reuses) a bundle matched to this checkout.")
+    print(f"Installed {slot} -> {wrapper}: every run builds (or reuses) a bundle matched to this checkout. "
+          f"`just deploy{name_arg(name)}` switches {name} back to a deployed launcher.")
     if kind == "deployed":
-        print("Replaced the deployed launcher. Its installed flake bundle is kept for any other deployed "
-              "launcher; `just deploy` switches back, and `just undeploy` removes both.")
+        print(f"Replaced the deployed launcher. Its installed flake bundle is kept for any other deployed "
+              f"launcher; `just undeploy{name_arg(name)}` removes {name}.")
     elif kind not in ("absent", "dev"):
         print(f"Replaced {desc}.")
     _path_warning(slot)
@@ -251,12 +346,12 @@ def deploy_dev(repo: Path, gobin: Path, name: str) -> Path:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    for cmd in ("inspect", "path", "deploy", "deploy-dev"):
+    for cmd in ("inspect", "path", "list", "deploy", "deploy-dev"):
         p = sub.add_parser(cmd)
         p.add_argument("--name", default="yolo")
         p.add_argument("--gobin", type=Path)
-        if cmd in ("deploy", "deploy-dev"):
-            p.add_argument("--repo", type=Path, default=Path.cwd())
+        if cmd in ("inspect", "deploy", "deploy-dev"):
+            p.add_argument("--repo", type=Path)
         if cmd == "deploy":
             p.add_argument("--home", type=Path, default=Path.home())
     args = parser.parse_args(argv)
@@ -266,15 +361,21 @@ def main(argv: list[str] | None = None) -> int:
                             "Run it on the host; in a jail, test Go changes with: just dev -- <args>")
         gobin = resolve_gobin(args.gobin)
         name = validate_name(args.name)
+        repo = getattr(args, "repo", None)
+        if args.command in ("deploy", "deploy-dev"):
+            repo = (repo or Path.cwd()).resolve()
         if args.command == "path":
             print(gobin / name)
         elif args.command == "inspect":
-            kind, desc = classify(gobin / name)
+            kind, desc = classify(gobin / name, repo)
             print(f"{kind}\t{desc}")
+        elif args.command == "list":
+            for path, kind, build_kind, desc in launchers(gobin):
+                print(f"{path}\t{kind}\t{build_kind or '-'}\t{desc}")
         elif args.command == "deploy":
-            deploy(args.repo.resolve(), args.home, gobin, name)
+            deploy(repo, args.home, gobin, name)
         else:
-            deploy_dev(args.repo, gobin, name)
+            deploy_dev(repo, gobin, name)
         return 0
     except SlotError as exc:
         print(f"✗ {exc}", file=sys.stderr)
