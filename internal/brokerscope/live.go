@@ -105,7 +105,7 @@ func ReplaceReposContext(ctx context.Context, path string, expect File, repos []
 			}
 			if form == FormRemoteURL {
 				return errors.New("scope file: an entry is not a remote URL the remote-url scope can hold " +
-					"(empty, with a space or control character, or carrying a password)")
+					"(empty, with a space or control character, or carrying a credential)")
 			}
 			return fmt.Errorf("scope file: %q is not an OWNER/REPO or a whole-segment wildcard", r)
 		}

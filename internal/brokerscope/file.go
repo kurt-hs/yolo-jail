@@ -51,6 +51,16 @@ func FormFor(remoteHost string) string {
 	return ""
 }
 
+// EntryKey is the spelling a scope entry of form is compared by wherever two scopes are diffed
+// (the gate, `yolo config apply`): lower case for OWNER/REPO, as GitHub compares names, and the
+// entry exactly in the remote-url form, whose broker matches a URL string exactly.
+func EntryKey(form, entry string) string {
+	if form == FormRemoteURL {
+		return entry
+	}
+	return strings.ToLower(entry)
+}
+
 // validEntry is the check a scope entry of form takes, and admits the matcher a request takes
 // against one: the form, never the source name, decides both.
 func validEntry(form, entry string) bool {

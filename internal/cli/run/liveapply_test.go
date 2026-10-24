@@ -798,6 +798,41 @@ func TestConfigApplyReplacesTheLiveScope(t *testing.T) {
 	}
 }
 
+// A remote-url scope compares exactly (docs/design/git-broker-plan.md ID-2): a running broker's
+// file holding a URL that differs from the approved one only in case is a change, so the apply
+// names it and rewrites the file, rather than reading it as "already matches" and leaving the
+// old spelling admitted.
+func TestConfigApplyReplacesACaseOnlyRemoteURLChange(t *testing.T) {
+	o, buf, _ := brokeredFixtureOn(t, true, "*")
+	if _, err := config.WriteWorkspaceBootBaseline(o.Workspace, jsonx.NewOrderedMap()); err != nil {
+		t.Fatal(err)
+	}
+	writeUserConfigOf(t, gbOn())
+	answer(o, "y")
+	f := liveScopeFile{Path: "/scope/1", LiveScope: true, File: brokerscope.File{Source: "gbsrc",
+		Form: brokerscope.FormRemoteURL, Repos: []string{"git@github.com:O/R.git"}}}
+	swapSeam(t, &liveScopeFilesSeam, func(_ context.Context, source, _, _ string) ([]liveScopeFile, error) {
+		if source != "gbsrc" {
+			return nil, nil
+		}
+		return []liveScopeFile{f}, nil
+	})
+	var replaced []string
+	swapSeam(t, &replaceScopeReposSeam, func(_ context.Context, _ string, _ brokerscope.File, repos []string) error {
+		replaced = repos
+		return nil
+	})
+	if rc := o.liveApply(gbOn(), "podman", "yolo-ws", nil, applyMode{running: true}); rc != 0 {
+		t.Fatalf("rc = %d, want 0\n%s", rc, buf.String())
+	}
+	if len(replaced) != 1 || replaced[0] != "git@github.com:o/r.git" {
+		t.Errorf("the live file's repos became %v, want the approved [git@github.com:o/r.git]", replaced)
+	}
+	if !strings.Contains(buf.String(), "gb repository scope") || strings.Contains(buf.String(), "already matches") {
+		t.Errorf("no scope change line for a case-only URL change:\n%s", buf.String())
+	}
+}
+
 // A broker that cannot take live scope: recorded, at next restart.
 func TestConfigApplyScopeOnAnOldBrokerWaits(t *testing.T) {
 	o, buf, _ := brokeredFixture(t)

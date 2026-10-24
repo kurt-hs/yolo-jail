@@ -566,6 +566,44 @@ func TestReadAllRemotesKeepsEveryURL(t *testing.T) {
 	}
 }
 
+// An http(s) URL with ANY user-info carries a credential (a token is commonly the user name), so
+// it is left out; an ssh:// URL keeps a bare user, as `git@` is, and still loses a password.
+func TestReadAllRemotesLeavesOutATokenAsUserName(t *testing.T) {
+	ws := resolvedTempDir(t)
+	writeFile(t, filepath.Join(ws, ".git", "config"), `[remote "tok"]
+	url = https://ghp_TOKEN@github.com/o/r.git
+[remote "plain"]
+	url = http://oauth2@git.example.com/x.git
+[remote "sshpw"]
+	url = ssh://git:pw@host.example/x.git
+[remote "ssh"]
+	url = ssh://git@host.example/x.git
+`)
+	r := ReadAllRemotes(ws)
+	if len(r.Remotes) != 1 || r.Remotes[0].Repo != "ssh://git@host.example/x.git" {
+		t.Fatalf("remotes %+v, want only the ssh:// URL with a bare user", r.Remotes)
+	}
+	if len(r.Excluded) != 3 {
+		t.Fatalf("excluded %q, want three lines", r.Excluded)
+	}
+	joined := strings.Join(r.Excluded, "\n")
+	for _, name := range []string{`"tok"`, `"plain"`, `"sshpw"`} {
+		if !strings.Contains(joined, name) {
+			t.Errorf("no excluded line names remote %s:\n%s", name, joined)
+		}
+	}
+	for _, secret := range []string{"ghp_TOKEN", "oauth2", "pw@", "github.com", "git.example.com"} {
+		if strings.Contains(joined, secret) {
+			t.Errorf("an excluded line shows %q:\n%s", secret, joined)
+		}
+	}
+	for _, bad := range []string{"https://ghp_TOKEN@github.com/o/r.git", "HTTPS://t@h/x", "ssh://git:pw@h/x"} {
+		if ValidRemoteURL(bad) {
+			t.Errorf("ValidRemoteURL(%q) = true", bad)
+		}
+	}
+}
+
 // remoteURLFile writes a scope file of the given form.
 func remoteURLFile(t *testing.T, launchID, form string, repos ...string) (string, File) {
 	t.Helper()

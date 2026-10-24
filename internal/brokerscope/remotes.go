@@ -48,8 +48,8 @@ type Read struct {
 	// launch says it; against a non-empty approved scope the empty read is a change.
 	Problem string
 	// Excluded says, one line per URL, why a remote's URL was left out of a ReadAllRemotes read:
-	// one carrying a password, or one the scope cannot hold. Each names the remote and never the
-	// URL's user-info, and is escaped for a terminal.
+	// one carrying a credential, or one the scope cannot hold. Each names the remote and never
+	// the URL, and is escaped for a terminal.
 	Excluded []string
 }
 
@@ -94,7 +94,7 @@ func ReadRemotes(workspace, host string) Read {
 // ReadAllRemotes reads a workspace's remotes for the remote-url scope form
 // (docs/design/git-broker-plan.md ID-2): the same walk and the same refusals as ReadRemotes,
 // keeping every `url` and `pushurl` of every remote on any host, verbatim, in the file's order,
-// in Remote.Repo. A URL whose user-info carries a password is left out, as is one the scope
+// in Remote.Repo. A URL whose user-info carries a credential is left out, as is one the scope
 // cannot hold (ValidRemoteURL), each with an Excluded line.
 func ReadAllRemotes(workspace string) Read {
 	r, text := readGitConfig(workspace)
@@ -105,10 +105,11 @@ func ReadAllRemotes(workspace string) Read {
 	for _, u := range parseRemoteValues(text, "url", "pushurl") {
 		name := termsafe.Visible(fmt.Sprintf("%q", u.name))
 		switch {
-		case hasPassword(u.url):
-			r.Excluded = append(r.Excluded, "remote "+name+": a "+u.key+" carrying a password is left "+
-				"out of the scope; keep the password in a git credential helper and set the remote's "+
-				"URL without it (`git remote set-url`)")
+		case hasCredential(u.url):
+			r.Excluded = append(r.Excluded, "remote "+name+": a "+u.key+" carrying a credential (a "+
+				"password, or any user name on http or https, where a token often sits) is left out of "+
+				"the scope; keep the credential in a git credential helper and set the remote's URL "+
+				"without it (`git remote set-url`)")
 		case !ValidRemoteURL(u.url):
 			r.Excluded = append(r.Excluded, "remote "+name+": its "+u.key+" is empty or holds a space "+
 				"or control character, so it is left out of the scope; set the remote's URL again "+
@@ -143,17 +144,20 @@ func readGitConfig(workspace string) (Read, string) {
 
 // ValidRemoteURL reports whether s can be a remote-url scope entry: non-empty, no longer than
 // 4096 bytes, with no space or control character (so it prints as itself at the gate), and no
-// password in its user-info. It says nothing about the URL's scheme or host: which remotes a
+// credential in its user-info (hasCredential). It says nothing about the URL's scheme or host: which remotes a
 // source can reach is its broker's to refuse, by name, at the request.
 func ValidRemoteURL(s string) bool {
-	return s != "" && len(s) <= 4096 && !hasPassword(s) && !termsafe.HasUnsafe(s) &&
+	return s != "" && len(s) <= 4096 && !hasCredential(s) && !termsafe.HasUnsafe(s) &&
 		!strings.ContainsFunc(s, unicode.IsSpace)
 }
 
-// hasPassword reports whether a `scheme://` URL's user-info carries a password: the authority,
-// up to the first `/`, `?` or `#`, holds an `@`, and the part before its last `@` holds a `:`.
-func hasPassword(s string) bool {
-	_, rest, ok := strings.Cut(s, "://")
+// hasCredential reports whether a `scheme://` URL's user-info carries a credential. The
+// user-info is the authority (up to the first `/`, `?` or `#`) before its last `@`. For http and
+// https ANY user-info counts, since a token is commonly written as the user name
+// (`https://ghp_…@github.com/…`); for every other scheme a password does (a `:` in the
+// user-info), and a bare user such as ssh's `git@` is kept.
+func hasCredential(s string) bool {
+	scheme, rest, ok := strings.Cut(s, "://")
 	if !ok {
 		return false
 	}
@@ -161,7 +165,14 @@ func hasPassword(s string) bool {
 		rest = rest[:i]
 	}
 	at := strings.LastIndex(rest, "@")
-	return at >= 0 && strings.Contains(rest[:at], ":")
+	if at < 0 {
+		return false
+	}
+	switch strings.ToLower(scheme) {
+	case "http", "https":
+		return true
+	}
+	return strings.Contains(rest[:at], ":")
 }
 
 func readRemotes(workspace, host string) Read {

@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/ctxinject"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
@@ -206,28 +207,29 @@ type scopeDelta struct {
 }
 
 // addedRemoved is, over every live file, what the gate approves that a file lacks (added) and
-// what a file holds that the gate does not approve (removed), each repository once, compared
-// without case as the scope is. Empty both ways means every file already holds the approval.
+// what a file holds that the gate does not approve (removed), each repository once, compared as
+// the file's form compares its entries (brokerscope.EntryKey): without case for OWNER/REPO, and
+// exactly for remote URLs. Empty both ways means every file already holds the approval.
 func (d scopeDelta) addedRemoved() (added, removed []string) {
-	lower := func(l []string) map[string]bool {
+	keyed := func(form string, l []string) map[string]bool {
 		m := map[string]bool{}
 		for _, r := range l {
-			m[strings.ToLower(r)] = true
+			m[brokerscope.EntryKey(form, r)] = true
 		}
 		return m
 	}
-	want := lower(d.desired)
 	seenAdd, seenRm := map[string]bool{}, map[string]bool{}
 	for _, f := range d.files {
-		have := lower(f.File.Repos)
+		form := f.File.Form
+		want, have := keyed(form, d.desired), keyed(form, f.File.Repos)
 		for _, r := range d.desired {
-			if k := strings.ToLower(r); !have[k] && !seenAdd[k] {
+			if k := brokerscope.EntryKey(form, r); !have[k] && !seenAdd[k] {
 				seenAdd[k] = true
 				added = append(added, r)
 			}
 		}
 		for _, r := range f.File.Repos {
-			if k := strings.ToLower(r); !want[k] && !seenRm[k] {
+			if k := brokerscope.EntryKey(form, r); !want[k] && !seenRm[k] {
 				seenRm[k] = true
 				removed = append(removed, r)
 			}

@@ -115,13 +115,9 @@ func (s ScopeSource) current() []scopeRepo {
 
 // key is the spelling one scope entry is compared by: lower case for OWNER/REPO, as GitHub
 // compares names, and the entry exactly in the remote-url form, whose broker matches a URL
-// string exactly (docs/design/git-broker-plan.md ID-2).
-func (s ScopeSource) key(repo string) string {
-	if s.Form == brokerscope.FormRemoteURL {
-		return repo
-	}
-	return strings.ToLower(repo)
-}
+// string exactly (docs/design/git-broker-plan.md ID-2): brokerscope.EntryKey, which `yolo config
+// apply` diffs a running broker's file by too.
+func (s ScopeSource) key(repo string) string { return brokerscope.EntryKey(s.Form, repo) }
 
 // Repos is the source's scope as read, each repository once, sorted: the remotes' and the
 // entry's.
