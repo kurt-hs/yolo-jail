@@ -131,6 +131,18 @@ than `OWNER/REPO` (ID-2).
   that pattern: its inbound pump reads frames.
 - **git chooses `connect` over `stateless-connect`** when a helper offers both
   (gitremote-helpers(7)). The helper offers `connect` only.
+- **git sets no `GIT_PROTOCOL` for a `connect`-only helper.** Measured on 2026-10-23 with git
+  2.55 in the task 4 review: with `protocol.version=2` the helper's request carried an empty
+  `protocol` on every fetch, ls-remote and push, and all of them ran protocol v0. So the
+  `SendEnv=GIT_PROTOCOL` branch of ID-7 never fires through this helper, and ID-8's v2 relay
+  rests on git accepting a v2 advertisement it did not ask for: task 6's stop-and-report guard
+  is the expected outcome to check first, not an edge case.
+- **git ignores the helper's exit code once the connected line is out.** A broker that sent
+  `0000` and then dropped made the helper exit 69 while `git fetch` exited 0 and saw an empty
+  remote. A failure after the first upstream bytes must surface inside git's own protocol
+  (an `ERR` packet, or a `ng` line in the report), never only as an Exit frame.
+- **The helper sends no `agent`.** Nothing in the jail names the running agent (the gh
+  forwarder sends none either), so the field is left out and the audit records no agent.
 - **receive-pack sends the server's advertisement first.** The broker must open the upstream
   before it can read the push's commands, and so can only refuse after connecting upstream.
   Refusing then means sending the upstream a flush (an empty command list, which receive-pack
@@ -650,8 +662,8 @@ expensive with every change to `internal/ghbroker`; land it first.
 - **Fences:** no grants and no working set yet (every push is refused); no pack files; nothing
   under `internal/ghbroker/`.
 - **Commit:** `feat(gitbroker): git fetch through the host's SSH, pushes refused per ref`
-- **Report:** red, green, the refused-push stderr verbatim, and whether git passed `GIT_PROTOCOL`
-  to the helper (it decides nothing here; record it for task 6).
+- **Report:** red, green, and the refused-push stderr verbatim. (Whether git passes
+  `GIT_PROTOCOL` to the helper is already measured: it does not; see the pitfalls above.)
 
 ### Task 6 — the HTTPS upstream
 
@@ -681,7 +693,9 @@ expensive with every change to `internal/ghbroker`; land it first.
     `git credential fill` on the host, and the server saw no request with credentials.
 
   Red: HTTPS answers "arrive in the next build".
-- **Change:** an HTTPS upstream beside the SSH one, chosen by the approved URL's scheme. If real
+- **Change:** an HTTPS upstream beside the SSH one, chosen by the approved URL's scheme. Write
+  `TestHTTPSFetchProtocolV2` first and run it before anything else: git sends a `connect`
+  helper no `GIT_PROTOCOL` (pitfalls above), so the client starts in v0. If real
   git rejects the v2 relay through a `connect` helper, or does not close its side after the pack,
   **stop and report**: ID-8 rests on both, and the fallback (v0 stateless negotiation) is a
   larger task that needs re-planning.
