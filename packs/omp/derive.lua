@@ -247,7 +247,8 @@ end
 -- whose list an `only` narrowed contributes that run, its default first, and every other entry
 -- contributes `<provider>/**`, every model omp has for it, which is what "no scope of its own"
 -- shows it today (omp matches enabledModels as globs over `<provider>/<id>`, read in 0.15.3's
--- resolveModelScope). The globstar is load-bearing: Bun.Glob's `*` does not cross `/`. Runs follow set order, so the primary's leads and omp's start rule above
+-- resolveModelScope). The globstar is load-bearing: Bun.Glob's `*` does not cross `/`. Runs
+-- follow set order, so the primary's leads and omp's start rule above
 -- lands on the primary when nothing saved is in the scope. With no entry narrowed nothing is
 -- written, exactly as for one profile (AP-P1), and a set of one takes the single path below
 -- unchanged. Only the primary rides the via route (AP-D9).
