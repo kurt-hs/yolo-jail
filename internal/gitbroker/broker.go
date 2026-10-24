@@ -1,24 +1,26 @@
 // Package gitbroker is the git-broker, `yolo internal daemon git-broker`: the host half of
 // git as a brokered source (docs/design/git-broker.md §4, docs/design/git-broker-plan.md
-// task 5). One runs per jail, behind yolo's loopback-TLS front, on the broker core
+// tasks 5 and 6). One runs per jail, behind yolo's loopback-TLS front, on the broker core
 // (internal/brokercore).
 //
 // The jail's remote helper (internal/gitremote) sends one request frame naming the service
 // and the remote URL, then git's bytes (ID-5). The broker checks the URL against the launch's
-// live remote-url scope, connects to the approved URL over the host's own ssh (ID-7), and:
+// live remote-url scope, connects to the approved URL over the host's own ssh (ID-7) or over
+// smart HTTP with the host's own `git credential fill` (ID-8, https.go), and:
 //
 //   - for a fetch (git-upload-pack), relays both ways: a `read`;
 //   - for a push (git-receive-pack), relays the upstream's advertisement, reads the push's ref
 //     commands before forwarding anything, and judges every ref (ID-9). A push nothing covers
-//     is refused whole in git's own report: the upstream is sent an empty command list and
-//     nothing else, and git prints `! [remote rejected] <ref> (<reason>)` per ref.
+//     is refused whole in git's own report: over SSH the upstream is sent an empty command list and
+//     nothing else, over HTTPS no POST at all, and git prints `! [remote rejected] <ref> (<reason>)` per ref.
 //
-// Every call is audited with `service: git` (ID-13). HTTPS remotes arrive in task 6.
+// Every call is audited with `service: git` (ID-13).
 package gitbroker
 
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -86,6 +88,10 @@ type Broker struct {
 	// returns the set it falls in and what covered it. nil in this version: no grant and no
 	// working set exist yet (task 9), so every push is refused.
 	cover func(gitproto.Command) (set, coveredBy string, ok bool)
+	// rootCAs is the HTTPS upstream's trust roots; nil, always outside tests, is the system's.
+	// It is a test seam and nothing else: no config key or environment variable reaches it,
+	// and nothing turns verification off (docs/design/git-broker-plan.md task 6's fence).
+	rootCAs *x509.CertPool
 }
 
 // Main is `yolo internal daemon git-broker`: the core's daemon around this source's broker.
@@ -125,7 +131,7 @@ func newBroker(ctx context.Context, scopeFile string, sf brokerscope.File, spawn
 	b := &Broker{ctx: ctx, scopeFile: scopeFile, bound: bound, start: start, spawnCwd: spawnCwd, getenv: getenv,
 		audit: brokeraudit.Open(paths.BrokerAuditLog(), func(msg string) { fmt.Fprintln(log, Name+":", msg) }),
 		log:   log, now: time.Now}
-	fmt.Fprintln(log, Name+": serving this jail's git remotes through the host's ssh; pushes are refused per ref until grants arrive")
+	fmt.Fprintln(log, Name+": serving this jail's git remotes through the host's ssh and git credentials; pushes are refused per ref until grants arrive")
 	return b, func() { _ = brokercore.CloseLease(Source, lease) }, nil
 }
 
@@ -267,8 +273,7 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 	}
 	ev.Repo, _ = gitproto.Identity(req.URL)
 	if transport == transportHTTPS {
-		return refuse("refused", "https upstream not built", "HTTPS remotes arrive in the next build; use the SSH remote "+
-			"(`git remote set-url` to its git@ or ssh:// URL, then approve it). Nothing ran.", brokercore.ExitUnavailable)
+		return finish(b.serveHTTPS(ctx, req, in, out, &ev, say))
 	}
 
 	argv, err := sshArgv(req.URL, req.Service, req.Protocol)

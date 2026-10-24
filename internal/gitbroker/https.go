@@ -1,0 +1,587 @@
+package gitbroker
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"io"
+	"mime"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
+	"github.com/mschulkind-oss/yolo-jail/internal/brokercore"
+	"github.com/mschulkind-oss/yolo-jail/internal/gitproto"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+)
+
+// https.go is the HTTPS upstream (docs/design/git-broker-plan.md ID-8, docs/design/git-broker.md
+// §4.3): smart HTTP to the approved URL, with the credential the host's own `git credential
+// fill` gives.
+//
+// A fetch always asks the server for protocol v2 (`Git-Protocol: version=2`). v2 is
+// request-response, so the client's stateful stream maps onto stateless POSTs with no
+// negotiation state of the broker's own: the broker relays the capability advertisement, then
+// POSTs each client request up to its flush and relays the response, until the client sends an
+// empty request or closes its side. git sends a `connect` helper no GIT_PROTOCOL, so the
+// client starts out expecting v0 and takes the "version 2" advertisement as the server's
+// choice, which git's discover_version allows. A server that answers v0 is refused.
+//
+// A push is v0: the receive-pack advertisement is relayed without its `# service` line and that
+// line's flush, the commands are read and judged exactly as over SSH (push.go), and a covered
+// push is POSTed whole (the judged bytes, then the pack to the client's end) and the report
+// relayed.
+//
+// TLS uses the system roots. NOTHING turns verification off: no config key and no environment
+// variable reaches the TLS config, and the one seam (Broker.rootCAs) is set only by tests.
+
+// errNoCredential is a 401 the host's credential helper had no answer for.
+var errNoCredential = errors.New("the host has no credential for this remote")
+
+// credentialTimeout bounds one `git credential` run. A helper that waits on a person (a
+// keychain unlock dialog, say) is given that long, and is then killed.
+const credentialTimeout = 2 * time.Minute
+
+// userAgent is what the broker calls itself. Some forges serve smart HTTP only to a client
+// whose agent starts with "git/".
+const userAgent = "git/yolo-git-broker"
+
+// credential is what `git credential fill` answered.
+type credential struct {
+	username, password string
+}
+
+// httpsLeg is one request's HTTPS upstream.
+type httpsLeg struct {
+	ctx      context.Context
+	b        *Broker
+	client   *http.Client
+	remote   *url.URL // the approved URL, user-info dropped
+	user     string   // the approved URL's user name, if any
+	service  string
+	say      func(string)
+	ev       *brokeraudit.Event
+	cred     *credential
+	approved bool
+}
+
+// newHTTPSLeg readies the upstream for the approved remote.
+func (b *Broker) newHTTPSLeg(ctx context.Context, remote, service string, ev *brokeraudit.Event, say func(string)) (*httpsLeg, error) {
+	u, err := url.Parse(remote)
+	if err != nil {
+		return nil, err
+	}
+	if u.RawQuery != "" || u.Fragment != "" || u.Host == "" {
+		return nil, errors.New("it carries a query or fragment, or names no host")
+	}
+	h := &httpsLeg{ctx: ctx, b: b, service: service, say: say, ev: ev}
+	if u.User != nil {
+		h.user = u.User.Username()
+	}
+	clean := *u
+	clean.User = nil
+	h.remote = &clean
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.TLSClientConfig = &tls.Config{RootCAs: b.rootCAs, MinVersion: tls.VersionTLS12}
+	h.client = &http.Client{Transport: tr,
+		// The broker connects to the approved URL and nowhere else: a redirect is answered, not
+		// followed.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return h, nil
+}
+
+// endpoint is the approved URL with suffix appended to its path, as git's remote-curl does.
+func (h *httpsLeg) endpoint(suffix string) string {
+	u := *h.remote
+	return u.Scheme + "://" + u.Host + strings.TrimSuffix(u.EscapedPath(), "/") + suffix
+}
+
+// do sends one request, filling a credential from the host on a 401 and retrying once. body
+// is replayable bytes (nil for a GET). On success it reports the credential approved to the
+// host's helper, once; a credential the server then refuses is reported rejected.
+func (h *httpsLeg) do(method, suffix, contentType, accept string, body []byte) (*http.Response, error) {
+	send := func() (*http.Response, error) {
+		var rd io.Reader
+		if body != nil {
+			rd = bytes.NewReader(body)
+		}
+		return h.send(method, suffix, contentType, accept, rd)
+	}
+	resp, err := send()
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusUnauthorized && h.cred == nil {
+		drainClose(resp)
+		c, err := h.fill()
+		if err != nil {
+			return nil, err
+		}
+		h.cred = c
+		if resp, err = send(); err != nil {
+			return nil, err
+		}
+	}
+	h.settle(resp)
+	return resp, nil
+}
+
+// send sends one request with the credential held, if any.
+func (h *httpsLeg) send(method, suffix, contentType, accept string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(h.ctx, method, h.endpoint(suffix), body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Pragma", "no-cache")
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if h.service == serviceUploadPack {
+		req.Header.Set("Git-Protocol", "version=2")
+	}
+	if h.cred != nil {
+		req.SetBasicAuth(h.cred.username, h.cred.password)
+	}
+	return h.client.Do(req)
+}
+
+// settle tells the host's credential helper how the credential fared, as git does: approve
+// after the first authenticated success, reject on a 401 with it.
+func (h *httpsLeg) settle(resp *http.Response) {
+	if h.cred == nil {
+		return
+	}
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized:
+		_ = h.credentialRun("reject", h.cred)
+	case resp.StatusCode/100 == 2 && !h.approved:
+		h.approved = true
+		_ = h.credentialRun("approve", h.cred)
+	}
+}
+
+// fill asks the host's git for a credential. One that comes back without a password, or a
+// helper that fails, is errNoCredential: the broker never prompts and never starts a login.
+func (h *httpsLeg) fill() (*credential, error) {
+	out, err := h.credentialRunOutput("fill", nil)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", errNoCredential, err)
+	}
+	c := &credential{}
+	sc := bufio.NewScanner(bytes.NewReader(out))
+	for sc.Scan() {
+		k, v, _ := strings.Cut(sc.Text(), "=")
+		switch k {
+		case "username":
+			c.username = v
+		case "password":
+			c.password = v
+		}
+	}
+	if c.password == "" {
+		return nil, errNoCredential
+	}
+	return c, nil
+}
+
+func (h *httpsLeg) credentialRun(action string, c *credential) error {
+	_, err := h.credentialRunOutput(action, c)
+	return err
+}
+
+// credentialRunOutput runs `git credential <action>` on the host (GB-D3, ID-8): the host's git,
+// placement-checked, in a fresh empty directory the broker owns with GIT_CEILING_DIRECTORIES
+// set to it, so no repository's config is read; an environment built from nothing; no terminal
+// prompt and no askpass program, so a helper with nothing stored answers nothing rather than
+// asking anyone.
+func (h *httpsLeg) credentialRunOutput(action string, c *credential) ([]byte, error) {
+	b := h.b
+	git, err := lookPath("git", b.getenv("PATH"))
+	if err != nil {
+		return nil, errors.New("the host has no git on the PATH yolo was launched with")
+	}
+	if why := brokercore.PlacementRefusal("git", b.bound.Workspace, b.spawnCwd)(git); why != "" {
+		return nil, errors.New(why)
+	}
+	parent := paths.BrokerSourceDir(Source)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return nil, err
+	}
+	dir, err := os.MkdirTemp(parent, "credential-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+
+	var in strings.Builder
+	in.WriteString("protocol=https\nhost=" + h.remote.Host + "\n")
+	if p := strings.TrimPrefix(h.remote.Path, "/"); p != "" {
+		in.WriteString("path=" + p + "\n")
+	}
+	switch {
+	case c != nil:
+		in.WriteString("username=" + c.username + "\npassword=" + c.password + "\n")
+	case h.user != "":
+		in.WriteString("username=" + h.user + "\n")
+	}
+	in.WriteString("\n")
+
+	ctx, cancel := context.WithTimeout(h.ctx, credentialTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, git, "credential", action)
+	cmd.Dir = dir
+	cmd.Env = credentialEnv(b.getenv, dir)
+	cmd.Stdin = strings.NewReader(in.String())
+	cmd.SysProcAttr = childProcAttr()
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = waitDelay
+	// Its stderr is dropped: a helper's message can name the account, and the user is told
+	// what to run on the host instead.
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("`git credential %s` failed (%v)", action, err)
+	}
+	return out, nil
+}
+
+// credentialEnv is the host git's environment for `git credential`, built from nothing (ID-8):
+// PATH, HOME and the session bus a keyring helper needs, plus what keeps it from asking anyone.
+// GIT_ASKPASS set empty stops git falling back to core.askPass or SSH_ASKPASS, and
+// GCM_INTERACTIVE=never stops Git Credential Manager opening a login, so a helper with nothing
+// stored answers nothing (git-broker.md §6: the broker never prompts and never starts a login).
+func credentialEnv(getenv func(string) string, dir string) []string {
+	env := []string{"PATH=" + getenv("PATH"), "HOME=" + getenv("HOME")}
+	if v := getenv("DBUS_SESSION_BUS_ADDRESS"); v != "" {
+		env = append(env, "DBUS_SESSION_BUS_ADDRESS="+v)
+	}
+	return append(env, "GIT_TERMINAL_PROMPT=0", "GIT_CEILING_DIRECTORIES="+dir, "GIT_ASKPASS=", "GCM_INTERACTIVE=never")
+}
+
+func drainClose(resp *http.Response) {
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	_ = resp.Body.Close()
+}
+
+// mediaType is a response's Content-Type without parameters.
+func mediaType(resp *http.Response) string {
+	mt, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	return mt
+}
+
+// serveHTTPS answers one request over the HTTPS upstream and returns its exit code. Nothing
+// has reached the client yet.
+func (b *Broker) serveHTTPS(ctx context.Context, req request, in io.Reader, out io.Writer, ev *brokeraudit.Event, say func(string)) int {
+	h, err := b.newHTTPSLeg(ctx, req.URL, req.Service, ev, say)
+	if err != nil {
+		ev.Set, ev.Outcome, ev.Reason = "refused", "refused", "remote not usable over https"
+		say("the approved remote " + req.URL + " cannot be reached over HTTPS: " + err.Error() + "; nothing ran. " +
+			"Fix the remote's URL with `git remote set-url`.")
+		return brokercore.ExitUsage
+	}
+	if req.Service == serviceUploadPack {
+		ev.Set = "read"
+		return h.fetch(in, out)
+	}
+	return h.push(in, out)
+}
+
+// advertisement GETs info/refs for the leg's service. A failure is told to the user and
+// returned as the exit code; nothing has reached the client.
+func (h *httpsLeg) advertisement() (*http.Response, int) {
+	resp, err := h.do(http.MethodGet, "/info/refs?service="+h.service, "", "*/*", nil)
+	if err != nil {
+		return nil, h.requestFailed(err)
+	}
+	if code := h.checkResponse(resp, "application/x-"+h.service+"-advertisement"); code != 0 {
+		drainClose(resp)
+		return nil, code
+	}
+	return resp, 0
+}
+
+// requestFailed tells the user why a request that reached no answer failed.
+func (h *httpsLeg) requestFailed(err error) int {
+	host := h.remote.Host
+	h.ev.Outcome = "failed"
+	if errors.Is(err, errNoCredential) {
+		h.ev.Outcome, h.ev.Reason = "refused", "the host has no credential for the remote"
+		h.say("the host has no credential for " + host + " (the server asked for one, and the host's " +
+			"`git credential fill` returned no password), so nothing was transferred. On the host, run " +
+			"`git credential fill` with `protocol=https` and `host=" + host + "` to see what its credential " +
+			"helper answers, and store a credential there (for example by running this fetch or push once on the " +
+			"host). The broker never prompts for a username or password and never starts a login.")
+		return brokercore.ExitUnavailable
+	}
+	h.ev.Reason = "the HTTPS request failed"
+	h.say("the HTTPS request to " + host + " failed (" + err.Error() + "), so nothing was transferred. " +
+		"Try `git ls-remote " + h.remote.String() + "` on the host.")
+	return brokercore.ExitUnavailable
+}
+
+// checkResponse refuses a response that is not a success of the wanted type, telling the user
+// why, and returns 0 for one that is.
+func (h *httpsLeg) checkResponse(resp *http.Response, want string) int {
+	host := h.remote.Host
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized:
+		h.ev.Outcome, h.ev.Reason = "refused", "the server refused the host's credential"
+		h.say("the server " + host + " refused the credential the host's `git credential fill` gave (HTTP 401), " +
+			"so nothing was transferred; the broker told the host's credential helper to reject it. Store a working " +
+			"credential on the host (run this fetch or push once there), then try again.")
+		return brokercore.ExitUnavailable
+	case resp.StatusCode/100 == 3:
+		h.ev.Outcome, h.ev.Reason = "refused", "the server redirected"
+		h.say(fmt.Sprintf("the server %s redirected the request (HTTP %d, to %s); the broker connects only to the "+
+			"approved URL, so nothing was transferred. Set the remote to the URL it redirects to with "+
+			"`git remote set-url`, and approve it at the config-change gate.", host, resp.StatusCode,
+			resp.Header.Get("Location")))
+		return brokercore.ExitUsage
+	case resp.StatusCode != http.StatusOK:
+		h.ev.Outcome, h.ev.Reason = "failed", fmt.Sprintf("the server answered HTTP %d", resp.StatusCode)
+		h.say(fmt.Sprintf("the server %s answered HTTP %d, so nothing was transferred. Try `git ls-remote %s` on "+
+			"the host.", host, resp.StatusCode, h.remote.String()))
+		return brokercore.ExitUnavailable
+	case mediaType(resp) != want:
+		h.ev.Outcome, h.ev.Reason = "refused", "not a smart-HTTP server"
+		h.say("the server " + host + " did not answer as a smart-HTTP git server (its content type was " +
+			fmt.Sprintf("%q", resp.Header.Get("Content-Type")) + "), so nothing was transferred. Use its SSH remote.")
+		return brokercore.ExitUnavailable
+	}
+	return 0
+}
+
+// skipServiceLine reads the first packet of an advertisement, skipping a `# service=` line and
+// its flush, which a v0 server (and some v2 ones) send first.
+func skipServiceLine(r *gitproto.Reader) (gitproto.Packet, error) {
+	p, err := r.Read()
+	if err != nil {
+		return p, err
+	}
+	if p.Kind == gitproto.Data && bytes.HasPrefix(p.Data, []byte("# service=")) {
+		if p, err = r.Read(); err != nil {
+			return p, err
+		}
+		if p.Kind != gitproto.Flush {
+			return p, fmt.Errorf("%w: no flush after the service line", gitproto.ErrProtocol)
+		}
+		return r.Read()
+	}
+	return p, nil
+}
+
+// fetch is a v2 fetch: the capability advertisement, then one POST per client request.
+func (h *httpsLeg) fetch(in io.Reader, out io.Writer) int {
+	resp, code := h.advertisement()
+	if resp == nil {
+		return code
+	}
+	// The advertisement is buffered whole before any of it reaches the client, so a v0 or
+	// broken one is refused before git has seen a byte.
+	var adv bytes.Buffer
+	ar := gitproto.NewReader(resp.Body)
+	first, err := skipServiceLine(ar)
+	if err == nil && (first.Kind != gitproto.Data || string(bytes.TrimSuffix(first.Data, []byte("\n"))) != "version 2") {
+		drainClose(resp)
+		h.ev.Outcome, h.ev.Reason = "refused", "the server does not speak protocol v2"
+		h.say("the HTTPS server " + h.remote.Host + " does not speak protocol v2; use its SSH remote " +
+			"(`git remote set-url` to its git@ or ssh:// URL, then approve it). Nothing was transferred.")
+		return brokercore.ExitUnavailable
+	}
+	if err == nil {
+		_ = gitproto.NewWriter(&adv).Data(first.Data)
+		ar.Tee(&adv)
+		for {
+			var p gitproto.Packet
+			if p, err = ar.Read(); err != nil || p.Kind == gitproto.Flush {
+				break
+			}
+		}
+	}
+	drainClose(resp)
+	if err != nil {
+		h.ev.Outcome, h.ev.Reason = "failed", "unreadable capability advertisement"
+		h.say("the server " + h.remote.Host + "'s capability advertisement could not be read (" + err.Error() +
+			"), so nothing was transferred. Try `git ls-remote " + h.remote.String() + "` on the host.")
+		return brokercore.ExitUnavailable
+	}
+	if _, err := out.Write(adv.Bytes()); err != nil {
+		h.ev.Outcome, h.ev.Reason = "failed", "the jail stopped reading"
+		return brokercore.ExitUnavailable
+	}
+
+	// From here git has protocol bytes and ignores the exit code: a failure is said in an ERR
+	// packet, which git prints and dies on.
+	cr := gitproto.NewReader(in)
+	for {
+		var body bytes.Buffer
+		cr.Tee(&body)
+		n, total := 0, 0
+		var rerr error
+		for {
+			p, err := cr.Read()
+			if err != nil {
+				rerr = err
+				break
+			}
+			total += len(p.Data) + 4
+			if total > gitproto.MaxCommandBytes {
+				rerr = fmt.Errorf("%w: a request over %d bytes", gitproto.ErrProtocol, gitproto.MaxCommandBytes)
+				break
+			}
+			if p.Kind == gitproto.Flush {
+				break
+			}
+			n++
+		}
+		cr.Tee(nil)
+		if rerr != nil {
+			if errors.Is(rerr, io.EOF) && n == 0 {
+				// git closed its side between requests: the fetch is over. Measured with git
+				// 2.55 through the connect helper: after a fetch that transferred a pack, git
+				// closes with no flush; after ls-refs alone (an up-to-date fetch, ls-remote) it
+				// sends an empty request first, handled below.
+				h.ev.Outcome = "ran"
+				return 0
+			}
+			h.ev.Outcome, h.ev.Reason = "failed", "the client's request was cut off or unreadable"
+			return brokercore.ExitUnavailable
+		}
+		if n == 0 {
+			// An empty request ends the session; git closes its side after it.
+			_, _ = io.Copy(io.Discard, in)
+			h.ev.Outcome = "ran"
+			return 0
+		}
+		if code := h.post(body.Bytes(), out); code != 0 {
+			return code
+		}
+	}
+}
+
+// post sends one v2 request and relays its response to the client.
+func (h *httpsLeg) post(body []byte, out io.Writer) int {
+	resp, err := h.do(http.MethodPost, "/git-upload-pack", "application/x-git-upload-pack-request",
+		"application/x-git-upload-pack-result", body)
+	if err != nil {
+		return h.errPacket(out, func() int { return h.requestFailed(err) })
+	}
+	if code := h.checkResponse(resp, "application/x-git-upload-pack-result"); code != 0 {
+		drainClose(resp)
+		return h.errPacket(out, func() int { return code })
+	}
+	_, err = io.Copy(out, resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		h.ev.Outcome, h.ev.Reason = "failed", "the response was cut off"
+		h.say("the server " + h.remote.Host + "'s response ended early (" + err.Error() + "), so this fetch is " +
+			"incomplete; run it again.")
+		return brokercore.ExitUnavailable
+	}
+	return 0
+}
+
+// errPacket runs fail, which tells the user on stderr, and then sends git an ERR packet so
+// git, which has had protocol bytes and ignores the exit code, fails the fetch.
+func (h *httpsLeg) errPacket(out io.Writer, fail func() int) int {
+	code := fail()
+	_ = gitproto.NewWriter(out).Line("ERR the git-broker's HTTPS upstream failed; its reason is above\n")
+	return code
+}
+
+// push is a push over HTTPS: the receive-pack advertisement relayed, the commands judged
+// (push.go), and either a refusal answered here with nothing POSTed, or the whole push POSTed
+// and the report relayed.
+func (h *httpsLeg) push(in io.Reader, out io.Writer) int {
+	resp, code := h.advertisement()
+	if resp == nil {
+		h.ev.Set = "refused"
+		return code
+	}
+	var adv bytes.Buffer
+	ar := gitproto.NewReader(resp.Body)
+	first, err := skipServiceLine(ar)
+	if err == nil {
+		if first.Kind == gitproto.Data && bytes.HasPrefix(first.Data, []byte("version ")) {
+			err = fmt.Errorf("%w: a %q advertisement for a push", gitproto.ErrProtocol, bytes.TrimSpace(first.Data))
+		} else if first.Kind == gitproto.Data {
+			_ = gitproto.NewWriter(&adv).Data(first.Data)
+			ar.Tee(&adv)
+			for {
+				var p gitproto.Packet
+				if p, err = ar.Read(); err != nil || p.Kind == gitproto.Flush {
+					break
+				}
+			}
+		} else {
+			// An empty repository's advertisement can be a flush alone.
+			_ = gitproto.NewWriter(&adv).Flush()
+		}
+	}
+	drainClose(resp)
+	if err != nil {
+		h.ev.Set, h.ev.Outcome, h.ev.Reason = "refused", "failed", "unreadable receive-pack advertisement"
+		h.say("the server " + h.remote.Host + "'s push advertisement could not be read (" + err.Error() +
+			"), so nothing was pushed. Try `git ls-remote " + h.remote.String() + "` on the host.")
+		return brokercore.ExitUnavailable
+	}
+	if _, err := out.Write(adv.Bytes()); err != nil {
+		h.ev.Set, h.ev.Outcome, h.ev.Reason = "refused", "failed", "the jail stopped reading"
+		return brokercore.ExitUnavailable
+	}
+
+	p, code, ok := h.b.readPush(in, h.ev, h.say)
+	if !ok {
+		return code
+	}
+	if p.refused {
+		return h.b.refuseToClient(out, in, p, h.remote.Host, h.ev, h.say)
+	}
+	if len(p.cmds) == 0 {
+		// A push of nothing: receive-pack would answer nothing, so nothing goes up.
+		return 0
+	}
+	// The judged bytes as read, then the pack to the client's end when there is one. The body
+	// streams: a 401 here cannot be replayed, and the advertisement GET has already settled
+	// the credential.
+	var body io.Reader = bytes.NewReader(p.teed)
+	if gitproto.NeedsPack(p.cmds) {
+		body = io.MultiReader(body, in)
+	}
+	presp, err := h.send(http.MethodPost, "/git-receive-pack", "application/x-git-receive-pack-request",
+		"application/x-git-receive-pack-result", body)
+	if err != nil {
+		code := h.requestFailed(err)
+		_ = writeRefusal(out, p.caps, p.cmds, sameReason(len(p.cmds), "the git-broker's HTTPS upstream failed: "+err.Error()))
+		return code
+	}
+	h.settle(presp)
+	if code := h.checkResponse(presp, "application/x-git-receive-pack-result"); code != 0 {
+		drainClose(presp)
+		_ = writeRefusal(out, p.caps, p.cmds, sameReason(len(p.cmds), "the git-broker's HTTPS upstream failed; its reason is above"))
+		return code
+	}
+	_, _ = io.Copy(out, presp.Body)
+	_ = presp.Body.Close()
+	_, _ = io.Copy(io.Discard, in)
+	return 0
+}
+
+func sameReason(n int, reason string) []string {
+	r := make([]string, n)
+	for i := range r {
+		r[i] = reason
+	}
+	return r
+}

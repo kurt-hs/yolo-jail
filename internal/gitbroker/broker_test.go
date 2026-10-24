@@ -151,6 +151,11 @@ type fixtureOpts struct {
 	repos   []string
 	// sshInWorkspace puts the fake ssh inside the workspace, where an agent can rewrite it.
 	sshInWorkspace bool
+	// prepare, when set, runs once the repositories exist and before the scope is written: it
+	// returns the scope's repositories and a directory to put first on the broker's PATH.
+	prepare func(f *fixture) (repos []string, pathFirst string)
+	// bound, when set, runs once the broker exists, before it serves.
+	bound func(f *fixture)
 }
 
 func newFixtureOpts(t *testing.T, o fixtureOpts) *fixture {
@@ -192,6 +197,12 @@ func newFixtureOpts(t *testing.T, o fixtureOpts) *fixture {
 	writeExec(t, filepath.Join(f.helperBin, "git-remote-yolo"),
 		"#!/bin/sh\nexec \"$TEST_BINARY\" -test.run='^TestHelperProcess$' -- \"$@\"\n")
 
+	pathFirst := f.bin
+	if o.prepare != nil {
+		var dir string
+		repos, dir = o.prepare(f)
+		pathFirst = dir + string(os.PathListSeparator) + f.bin
+	}
 	if len(repos) == 0 {
 		repos = []string{origin}
 	}
@@ -203,7 +214,7 @@ func newFixtureOpts(t *testing.T, o fixtureOpts) *fixture {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	brokerPath := f.bin + string(os.PathListSeparator) + os.Getenv("PATH")
+	brokerPath := pathFirst + string(os.PathListSeparator) + os.Getenv("PATH")
 	getenv := func(k string) string {
 		if k == "PATH" {
 			return brokerPath
@@ -216,6 +227,9 @@ func newFixtureOpts(t *testing.T, o fixtureOpts) *fixture {
 	}
 	t.Cleanup(cleanup)
 	f.broker = b
+	if o.bound != nil {
+		o.bound(f)
+	}
 	f.endpoint = serve(t, b.Handle)
 	return f
 }
@@ -249,11 +263,12 @@ func serve(t *testing.T, handler hostservice.Handler) string {
 	return endpoint
 }
 
-// git runs the real git in the workspace the way the jail's does: every git@ remote
-// rewritten to the helper, which reaches the fixture's endpoint.
+// git runs the real git in the workspace the way the jail's does: every git@ and https://
+// remote rewritten to the helper, which reaches the fixture's endpoint.
 func (f *fixture) git(args ...string) (string, error) {
 	f.t.Helper()
-	env := gitEnv("GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=url.yolo::git@.insteadOf", "GIT_CONFIG_VALUE_0=git@",
+	env := gitEnv("GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=url.yolo::git@.insteadOf", "GIT_CONFIG_VALUE_0=git@",
+		"GIT_CONFIG_KEY_1=url.yolo::https://.insteadOf", "GIT_CONFIG_VALUE_1=https://",
 		"PATH="+f.helperBin+string(os.PathListSeparator)+os.Getenv("PATH"),
 		gitremote.EndpointEnv+"="+f.endpoint, "GO_HELPER=1", "TEST_BINARY="+os.Args[0])
 	return run(f.t, f.ws, env, args...)
@@ -451,14 +466,10 @@ func TestOnlySSHAndHTTPSTransports(t *testing.T) {
 			t.Fatalf("%q: the fake ssh ran", bad)
 		}
 	}
-	const https = "https://fixture.test/o/r.git"
-	f.setScope(https)
-	rc, stdout, stderr := f.helper(https, "git-upload-pack", nil)
-	if rc == 0 || stdout != "connect\n\n" || !strings.Contains(stderr, "HTTPS remotes arrive in the next build; use the SSH remote") {
-		t.Fatalf("https: rc %d stdout %q stderr %q", rc, stdout, stderr)
-	}
-	if f.sshRan() {
-		t.Fatal("the fake ssh ran for an https remote")
+	// https:// is the other transport that crosses, over the HTTPS upstream (https_test.go),
+	// never the host's ssh.
+	if tr, err := transportOf("https://fixture.test/o/r.git"); err != nil || tr != transportHTTPS {
+		t.Fatalf("https: transport %q, %v", tr, err)
 	}
 }
 

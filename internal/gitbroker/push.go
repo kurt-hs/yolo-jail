@@ -64,49 +64,22 @@ func (b *Broker) receivePack(u *upstream, in io.Reader, out io.Writer, ev *broke
 	}
 
 	// 2. The commands, buffered exactly as they arrived and judged before a byte goes up.
-	var teed bytes.Buffer
-	cr := gitproto.NewReader(in)
-	cr.Tee(&teed)
-	cmds, caps, _, err := gitproto.ReadCommands(cr)
-	cr.Tee(nil)
-	if err != nil {
+	p, code, ok := b.readPush(in, ev, say)
+	if !ok {
 		_, _ = io.WriteString(u.stdin, "0000")
 		_ = u.stdin.Close()
 		_, _ = io.Copy(io.Discard, u.stdout)
 		u.wait()
-		ev.Set, ev.Outcome, ev.Reason = "refused", "refused", "unreadable push commands"
-		if bytes.HasPrefix(firstPacket(teed.Bytes()), []byte("push-cert")) {
-			ev.Reason = "signed push"
-			say("a signed push (git push --signed) cannot be judged ref by ref, so nothing was forwarded and the " +
-				"remote is unchanged. Run the same push without --signed.")
-			return brokercore.ExitUsage
-		}
-		reason := err.Error()
-		if errors.Is(err, gitproto.ErrProtocol) {
-			reason = strings.TrimPrefix(reason, gitproto.ErrProtocol.Error()+": ")
-		}
-		say("the push's commands could not be read (" + reason + "), so nothing was forwarded and the remote is " +
-			"unchanged. Run the push again; if it repeats, push from the host.")
-		return brokercore.ExitUsage
-	}
-	refs, reasons, set := b.judge(cmds)
-	ev.Refs = refs
-	refused := false
-	for _, r := range reasons {
-		refused = refused || r != ""
+		return code
 	}
 
-	if !refused {
+	if !p.refused {
 		// 3a. Forward: the judged bytes as read, then the rest of git's stream (the pack, when
 		// there is one), and relay the upstream's answer.
-		ev.Set, ev.Outcome = set, "ran"
-		if len(cmds) == 0 {
-			ev.Set = "read" // a push of nothing writes nothing
-		}
 		go func() {
 			// A push of nothing ends at its flush: git sends nothing after it, and anything
 			// that follows was never judged, so it never goes up.
-			if _, err := u.stdin.Write(teed.Bytes()); err == nil && len(cmds) > 0 {
+			if _, err := u.stdin.Write(p.teed); err == nil && len(p.cmds) > 0 {
 				_, _ = io.Copy(u.stdin, in)
 			}
 			_ = u.stdin.Close()
@@ -116,7 +89,6 @@ func (b *Broker) receivePack(u *upstream, in io.Reader, out io.Writer, ev *broke
 	}
 
 	// 3b. Refuse whole. The upstream gets an empty command list and nothing more.
-	ev.Set, ev.Outcome, ev.Reason = "refused", "refused", refusalSummary(reasons)
 	_, _ = io.WriteString(u.stdin, "0000")
 	_ = u.stdin.Close()
 	drained := make(chan struct{})
@@ -124,22 +96,81 @@ func (b *Broker) receivePack(u *upstream, in io.Reader, out io.Writer, ev *broke
 		_, _ = io.Copy(io.Discard, u.stdout)
 		close(drained)
 	}()
+	code = b.refuseToClient(out, in, p, dest, ev, say)
+	<-drained
+	u.wait()
+	return code
+}
+
+// pushRead is a push's commands, read and judged.
+type pushRead struct {
+	cmds    []gitproto.Command
+	caps    gitproto.Caps
+	teed    []byte // the command section's bytes exactly as they arrived
+	reasons []string
+	refused bool
+}
+
+// readPush reads the push's commands from the client without forwarding a byte of them, and
+// judges every ref. When they cannot be read it tells the user, records why, and returns ok
+// false with the exit code; the caller has sent the upstream none of them. A push nothing
+// refuses is recorded as run, in its set.
+func (b *Broker) readPush(in io.Reader, ev *brokeraudit.Event, say func(string)) (pushRead, int, bool) {
+	var teed bytes.Buffer
+	cr := gitproto.NewReader(in)
+	cr.Tee(&teed)
+	cmds, caps, _, err := gitproto.ReadCommands(cr)
+	cr.Tee(nil)
+	if err != nil {
+		ev.Set, ev.Outcome, ev.Reason = "refused", "refused", "unreadable push commands"
+		if bytes.HasPrefix(firstPacket(teed.Bytes()), []byte("push-cert")) {
+			ev.Reason = "signed push"
+			say("a signed push (git push --signed) cannot be judged ref by ref, so nothing was forwarded and the " +
+				"remote is unchanged. Run the same push without --signed.")
+			return pushRead{}, brokercore.ExitUsage, false
+		}
+		reason := err.Error()
+		if errors.Is(err, gitproto.ErrProtocol) {
+			reason = strings.TrimPrefix(reason, gitproto.ErrProtocol.Error()+": ")
+		}
+		say("the push's commands could not be read (" + reason + "), so nothing was forwarded and the remote is " +
+			"unchanged. Run the push again; if it repeats, push from the host.")
+		return pushRead{}, brokercore.ExitUsage, false
+	}
+	refs, reasons, set := b.judge(cmds)
+	ev.Refs = refs
+	p := pushRead{cmds: cmds, caps: caps, teed: teed.Bytes(), reasons: reasons}
+	for _, r := range reasons {
+		p.refused = p.refused || r != ""
+	}
+	if !p.refused {
+		ev.Set, ev.Outcome = set, "ran"
+		if len(cmds) == 0 {
+			ev.Set = "read" // a push of nothing writes nothing
+		}
+	}
+	return p, 0, true
+}
+
+// refuseToClient answers a push refused whole: the user's message, git's own report with an
+// `ng` line per ref, and the rest of git's stream read and dropped. The caller has sent the
+// upstream nothing beyond, over SSH, an empty command list.
+func (b *Broker) refuseToClient(out io.Writer, in io.Reader, p pushRead, dest string, ev *brokeraudit.Event, say func(string)) int {
+	ev.Set, ev.Outcome, ev.Reason = "refused", "refused", refusalSummary(p.reasons)
 	say("this push was refused whole, so nothing reached " + dest + " and the remote is unchanged; each ref's " +
 		"reason is on its `! [remote rejected]` line. A push through the broker needs the user's approval, which " +
 		"this version cannot ask for: push from the host instead (`git push` in this workspace there), where " +
 		"`yolo audit --service git` shows what was refused.")
-	if !caps.Has("report-status") && !caps.Has("report-status-v2") {
-		for i, c := range cmds {
-			say(c.Ref + ": " + reasons[i])
+	if !p.caps.Has("report-status") && !p.caps.Has("report-status-v2") {
+		for i, c := range p.cmds {
+			say(c.Ref + ": " + p.reasons[i])
 		}
 	}
-	_ = writeRefusal(out, caps, cmds, reasons)
+	_ = writeRefusal(out, p.caps, p.cmds, p.reasons)
 	// git sends its pack after the commands and closes its side once the pack is written (or,
 	// for a push of deletes only, once it has read the report); read it all and drop it, so
 	// git never writes into a closed stream before it reads the report.
 	_, _ = io.Copy(io.Discard, in)
-	<-drained
-	u.wait()
 	return brokercore.ExitNoPerm
 }
 
