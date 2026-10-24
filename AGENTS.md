@@ -200,7 +200,9 @@ The mechanics behind each of these are in
   command. ⚠ **`imageIdentity` must stay a content hash declared OUTSIDE `eachDefaultSystem`**
   (`TestImageIdentityIsSystemInvariant`, [`imageskew_test.go`](integration/imageskew_test.go)).
   `YOLO_TEST_REBUILD_IMAGE=1` forces a rebuild+reload; `YOLO_TEST_IMAGE_SKEW=warn|off` downgrades the
-  check (`fail` is the default; darwin auto-downgrades). **`git add` before rebuilding** — nix sees tracked files only.
+  check (`fail` is the default on every host, darwin included: there is no per-platform downgrade,
+  see the ruling above `parseImageIdentity`). **`git add` before rebuilding** — nix sees tracked
+  files only.
 - **A test that pins the CALLEE while the CALL SITE is unpinned is not a test** — nothing fails when the
   production caller is deleted. Nor is one asserting the SENTENCE a comment makes rather than the system.
   When adding one, ask: **does it fail if I delete the call site?**
