@@ -36,8 +36,10 @@ your login can reach.
 
 The grant never takes effect unseen. Each project's next config-change prompt, or
 `yolo config apply` run on your machine in the project, shows it as a line of the
-repository-scope block, marked as coming from your user config, and asks you to approve it. A
-running jail's broker takes it at its next call, with no restart.
+repository-scope block, marked as coming from your user config, beside the remotes it covers,
+and asks you to approve it. A running jail's broker takes it at its next call, with no restart.
+Without the read grant, the prompt asks nothing about the broker at all; withdrawing the grant
+shows the remotes and the grant removed once, and after that the prompt is silent again.
 
 ### Turning it off
 

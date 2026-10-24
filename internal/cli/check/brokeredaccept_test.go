@@ -26,7 +26,17 @@ func brokeredCheckHome(t *testing.T) string {
 	  "host_daemon": {"cmd": ["/bin/true", "{socket}", "{repository_scope}"], "publishes": "socket"},
 	  "brokered": {"source": "gbsrc", "remote_host": "github.com"}}`), 0o644))
 	recordPackModule(t, mod, true)
+	writeUserReadGrant(t, home)
 	return home
+}
+
+// writeUserReadGrant writes the user config's read grant for gbsrc under home: without one, a
+// broker source holds nothing and stays out of the gate (docs/design/boundary-broker.md BB-D110).
+func writeUserReadGrant(t *testing.T, home string) {
+	t.Helper()
+	cfg := filepath.Join(home, ".config", "yolo-jail", "config.jsonc")
+	must(t, os.MkdirAll(filepath.Dir(cfg), 0o755))
+	must(t, os.WriteFile(cfg, []byte(`{"brokered": {"gbsrc": {"grants": [{"kind": "read", "repo": "*"}]}}}`), 0o644))
 }
 
 func onTheHost(o *Options) { o.Getenv = func(string) string { return "" } }

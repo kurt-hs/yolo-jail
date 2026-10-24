@@ -206,12 +206,12 @@ func TestGitBrokerFetchAndRefusal(t *testing.T) {
 	}
 }
 
-// With the pack selected and NO read grant the broker runs and grants nothing (BB-D104, BB-D108):
-// the rewrite is served, and the fetch is refused naming the grant, with the host's ssh never
-// run.
+// With the pack selected and NO read grant the broker runs and grants nothing (BB-D104, BB-D108,
+// BB-D110): the launch meets no config-change gate for it, so it proceeds with no terminal and no
+// approval recorded; the rewrite is served, and the fetch is refused naming the grant, with the
+// host's ssh never run.
 func TestGitBrokerWithNoGrantRefusesTheFetch(t *testing.T) {
 	fx := newGitBrokerFixture(t, false)
-	fx.recordScope(t, "git@fixture.test:o/r.git")
 	script := gitInJail + ghScript(
 		"env | grep -c '^GIT_CONFIG_COUNT=3$'",
 		"g fetch origin",
@@ -231,7 +231,7 @@ func TestGitBrokerWithNoGrantRefusesTheFetch(t *testing.T) {
 			t.Errorf("the refused fetch does not say %q:\n%s", want, r.combined())
 		}
 	}
-	if logged, _ := os.ReadFile(fx.argvLog); strings.Contains(string(logged), "git-upload-pack") {
+	if logged, _ := os.ReadFile(fx.argvLog); len(logged) != 0 {
 		t.Errorf("the host ssh ran with no read grant:\n%s", logged)
 	}
 }

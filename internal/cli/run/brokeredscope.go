@@ -141,6 +141,13 @@ func (o *Options) writeScopeFiles(cname string, brokered []*loopholes.Loophole) 
 			}
 			out.printf("[dim]%s: grants for this workspace: %s[/dim]", lp.Name, richtext.Escape(strings.Join(shown, ", ")))
 		}
+		// A broker with no read grant grants nothing (BB-D108, BB-D110): its gate approved no
+		// scope, and every call through it is refused, so the line says that and how to grant.
+		if !brokerscope.HoldsRead(grants) {
+			out.printf("[dim]%s: grants nothing in this workspace: no read grant applies, so every call "+
+				"through it is refused. %s[/dim]", lp.Name, richtext.Escape(config.BrokerGrantAdvice(lp.Brokered.Source)))
+			continue
+		}
 		// The disclosure of what the broker starts with (§5.6): every repository, and where it
 		// came from. A source label can name a file the agent chose, already free of control
 		// characters (config.ScopeRepo), and its markup is escaped here.

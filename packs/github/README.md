@@ -41,11 +41,12 @@ Selecting the pack starts the broker in every workspace, and it grants nothing: 
 every call is refused, naming the grant. The read grant is what lets each workspace read its own
 approved repositories, and it is never in force unseen: each workspace's config-change prompt,
 or `yolo config apply` on the host, shows it as a line of the repository-scope block, marked as
-your user config's, and asks you to approve it. The broker has no switch, so `yolo loopholes
+your user config's, beside the repositories it covers, and asks you to approve it. Without the
+grant, the prompt asks nothing about the broker. The broker has no switch, so `yolo loopholes
 enable github-broker` refuses; to stop the broker, take the pack out of `packs`.
 
-The host needs `gh` and a login: `gh auth login` on the host, once. The next fresh launch
-of a workspace with a GitHub remote asks once, in its config-change prompt, to approve the
+The host needs `gh` and a login: `gh auth login` on the host, once. Once the read grant
+applies, the next fresh launch of a workspace with a GitHub remote asks once, in its config-change prompt, to approve the
 **repository scope**, the `owner/repo` of each `github.com` remote in the workspace's
 `.git/config`. With no terminal, pass `--accept-config-changes`, or run
 `yolo check --accept-config-changes` on the host first.

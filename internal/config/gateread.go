@@ -209,10 +209,16 @@ type ScopeBroker struct {
 // in the remote-url form, and no entry. Each source also carries the grants the same read names
 // (WorkspaceRead.Grants). nil when no broker starts, which leaves the gate exactly what it was before the scope
 // part existed.
+//
+// A SOURCE WITH NO READ GRANT HOLDS NOTHING (BB-D110): its remotes, its entry and its other
+// grants are dropped from what the gate reads, since its broker refuses every call anyway. One
+// whose last approved record held no read grant either is Dormant, out of the gate entirely; one
+// whose record held one shows that grant and its scope removed, once.
 func NewScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead) *ScopeCheck {
 	if len(brokers) == 0 {
 		return nil
 	}
+	rec, _, _ := readScopeRecord(ApprovalScopePath(workspace))
 	check := &ScopeCheck{}
 	for _, b := range brokers {
 		s := ScopeSource{Source: b.Source, Label: b.Label, RemoteHost: b.RemoteHost,
@@ -234,7 +240,22 @@ func NewScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead)
 				s.Grants = append(s.Grants, g)
 			}
 		}
+		if !brokerscope.HoldsRead(s.Grants) {
+			s.Read.Remotes, s.Entry, s.Grants, s.GrantFiles, s.UserGrants = nil, nil, nil, nil, nil
+			s.Dormant = !recordHeldRead(rec, b.Source)
+		}
 		check.Sources = append(check.Sources, s)
 	}
 	return check
+}
+
+// recordHeldRead reports whether an approval record holds a read grant for source: whether the
+// last approval let its broker do anything at all (BB-D110).
+func recordHeldRead(rec scopeRecord, source string) bool {
+	for _, e := range rec[grantsRecordKey(source)] {
+		if g, ok := brokerscope.ParseGrant(e); ok && g.Kind == brokerscope.KindRead {
+			return true
+		}
+	}
+	return false
 }

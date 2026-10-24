@@ -786,7 +786,7 @@ func TestConfigApplyReplacesTheLiveScope(t *testing.T) {
 		replaced = repos
 		return nil
 	})
-	rc := o.liveApply(gbOn(), "podman", "yolo-ws", nil, applyMode{running: true})
+	rc := o.liveApply(withUserReadGrant(gbOn()), "podman", "yolo-ws", nil, applyMode{running: true})
 	if rc != 0 {
 		t.Fatalf("rc = %d, want 0\n%s", rc, buf.String())
 	}
@@ -822,7 +822,7 @@ func TestConfigApplyReplacesACaseOnlyRemoteURLChange(t *testing.T) {
 		replaced = repos
 		return nil
 	})
-	if rc := o.liveApply(gbOn(), "podman", "yolo-ws", nil, applyMode{running: true}); rc != 0 {
+	if rc := o.liveApply(withUserReadGrant(gbOn()), "podman", "yolo-ws", nil, applyMode{running: true}); rc != 0 {
 		t.Fatalf("rc = %d, want 0\n%s", rc, buf.String())
 	}
 	if len(replaced) != 1 || replaced[0] != "git@github.com:o/r.git" {
@@ -873,7 +873,7 @@ func TestConfigApplyReplacesGrants(t *testing.T) {
 	if rc := o.liveApply(merged, "podman", "yolo-ws", nil, applyMode{running: true}); rc != 0 {
 		t.Fatalf("rc = %d, want 0\n%s", rc, buf.String())
 	}
-	want := []brokerscope.Grant{{Kind: "create-branch", Repo: "github.com/o/r"}}
+	want := []brokerscope.Grant{{Kind: "read", Repo: "*"}, {Kind: "create-branch", Repo: "github.com/o/r"}}
 	if !called || !reflect.DeepEqual(replaced, want) {
 		t.Fatalf("the live file's grants became %v (called %v), want %v", replaced, called, want)
 	}
@@ -897,7 +897,7 @@ func TestConfigApplyScopeOnAnOldBrokerWaits(t *testing.T) {
 		t.Error("an old broker's file was rewritten")
 		return nil
 	})
-	if rc := o.liveApply(gbOn(), "podman", "yolo-ws", nil, applyMode{running: true}); rc != 3 {
+	if rc := o.liveApply(withUserReadGrant(gbOn()), "podman", "yolo-ws", nil, applyMode{running: true}); rc != 3 {
 		t.Fatalf("rc = %d, want 3\n%s", rc, buf.String())
 	}
 	if got := config.ApprovedScope(o.Workspace, "gbsrc"); len(got) != 1 {

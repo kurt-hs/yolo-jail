@@ -40,8 +40,10 @@ each project's own remotes, never every repository you can reach.
 
 The grant never takes effect unseen. Each project's next config-change prompt, or
 `yolo config apply` run on your machine in the project, shows it as a line of the
-repository-scope block, marked as coming from your user config, and asks you to approve it. A
-running jail's broker takes it at its next call, with no restart.
+repository-scope block, marked as coming from your user config, beside the remotes it covers,
+and asks you to approve it. A running jail's broker takes it at its next call, with no restart.
+Without the read grant, the prompt asks nothing about the broker at all; withdrawing the grant
+shows the remotes and the grant removed once, and after that the prompt is silent again.
 
 The broker has no on/off switch: `yolo loopholes enable git-broker` refuses, and `yolo check`
 refuses a `git-broker` switch in any config file. To stop the broker, take `git` out of `packs`.
@@ -50,8 +52,8 @@ removes it.
 
 ### Approving the remotes
 
-The next fresh launch of the project asks once, in its config-change prompt, to approve its
-**remotes**: every `url` and `pushurl` in the project's `.git/config`, on any host, shown exactly
+Once the read grant applies, the next fresh launch of the project asks once, in its
+config-change prompt, to approve its **remotes**: every `url` and `pushurl` in the project's `.git/config`, on any host, shown exactly
 as written. The broker connects only to a remote you approved, and only to the address you
 approved. With no terminal, pass `--accept-config-changes`, or run
 `yolo check --accept-config-changes` on your machine first.

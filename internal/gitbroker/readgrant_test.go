@@ -101,3 +101,23 @@ func TestReadGrantOnAnotherRepoCoversNothing(t *testing.T) {
 		t.Fatalf("fetch under its own repository's read grant: %v\n%s", err, out)
 	}
 }
+
+// A workspace whose launch recorded no remotes, because it held no read grant and so stayed out
+// of the gate (docs/design/boundary-broker.md BB-D110), is refused naming the read grant, not
+// told to add a remote.
+func TestNoReadGrantAndNoRemotesNamesTheGrant(t *testing.T) {
+	f := newFixtureOpts(t, fixtureOpts{noRead: true})
+	if err := brokerscope.ReplaceScopeContext(context.Background(), f.scopeFile, f.broker.bound, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.git("fetch", "origin")
+	if err == nil {
+		t.Fatalf("fetch succeeded with no read grant and no remotes:\n%s", out)
+	}
+	if !strings.Contains(out, "holds no read grant") || strings.Contains(out, "approved scope") {
+		t.Fatalf("the refusal does not name the read grant alone:\n%s", out)
+	}
+	if f.sshRan() {
+		t.Fatal("the host's ssh ran with no read grant")
+	}
+}

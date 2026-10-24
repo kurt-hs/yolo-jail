@@ -5189,6 +5189,7 @@
 "internal/cli/check/basehomedisclosure_test.go",
 "internal/cli/check/brokeredaccept_test.go",
 "internal/cli/check/brokeredscope_test.go",
+"internal/cli/check/brokergrant_test.go",
 "internal/cli/check/brokerprobe_test.go",
 "internal/cli/check/brokerstalepid_test.go",
 "internal/cli/check/builder_test.go",
@@ -6523,7 +6524,7 @@
 },
 "internal/cli/check": {
 "TestANixInAMacosUserJailNamesTheHost": 33,
-"TestGitRewriteServedOnlyWithTheLoophole": 37,
+"TestGitRewriteServedWhereverItsBrokerRuns": 37,
 "TestHostServiceLivenessMissingDirIsOneRow": 36,
 "TestHostServiceLivenessNoCaveatWithoutALoopbackTLSProbe": 36,
 "TestHostServiceLivenessSaysWhatItCannotSee": 36,

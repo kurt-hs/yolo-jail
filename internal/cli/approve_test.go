@@ -128,7 +128,7 @@ func TestApproveRegistryUsesCurrentHostAuthorityAndRequiredAudit(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("YOLO_VERSION", "")
 	t.Setenv("YOLO_USER_LAYER", "")
-	sf := brokerscope.File{Source: "github", LaunchID: "registry", PID: os.Getpid(), Container: "registry-jail", Workspace: "/fixture", Repos: []string{"o/r"}}
+	sf := brokerscope.File{Source: "github", LaunchID: "registry", PID: os.Getpid(), Container: "registry-jail", Workspace: "/fixture", Repos: []string{"o/r"}, Grants: []brokerscope.Grant{{Kind: brokerscope.KindRead, Repo: "*"}}}
 	path, err := brokerscope.Write(sf)
 	if err != nil {
 		t.Fatal(err)

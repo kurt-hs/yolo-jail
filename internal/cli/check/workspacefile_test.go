@@ -28,6 +28,7 @@ func TestCheckReadsThePerWorkspaceFileAsALaunchDoes(t *testing.T) {
 	  "host_daemon": {"cmd": ["/bin/true", "{socket}", "{repository_scope}"], "publishes": "socket"},
 	  "brokered": {"source": "gbsrc", "remote_host": "github.com"}}`), 0o644))
 	recordPackModule(t, mod, true)
+	writeUserReadGrant(t, home)
 
 	var path string
 	out := runCheckOverConfigWith(t, `{}`, false, func(ws string) {

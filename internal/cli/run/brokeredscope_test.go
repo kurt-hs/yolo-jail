@@ -97,6 +97,9 @@ func brokeredFixtureBlock(t *testing.T, hostExecApproved bool, block string) (o 
 		[]byte("[remote \"origin\"]\n\turl = git@github.com:o/r.git\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// The user's read grant for every workspace: without it the broker grants nothing and
+	// stays out of the gate (BB-D110), which no fixture here is about.
+	writeUserConfigOf(t, jsonx.NewOrderedMap())
 	buf = &strings.Builder{}
 	o = &Options{}
 	fillDefaults(o)
@@ -162,10 +165,8 @@ func TestADeclineNamesTheNextStep(t *testing.T) {
 			o.Stdin = strings.NewReader("n\n")
 			if !c.scopeChanged {
 				// The broker is in play wherever its pack is selected (BB-D106), so a config-only
-				// change is a workspace with no remote: its empty scope is no change.
-				if err := os.Remove(filepath.Join(o.Workspace, ".git", "config")); err != nil {
-					t.Fatal(err)
-				}
+				// change is one whose broker holds no read grant: out of the gate (BB-D110).
+				writeUserConfigOf(t, mapOf(t, `{"brokered": {"gbsrc": {"grants": []}}}`))
 			}
 			if c.configChanged {
 				if err := config.RecordApproval(o.Workspace, jsonx.NewOrderedMap(), nil); err != nil {
@@ -529,11 +530,11 @@ func TestScopeFileCarriesApprovedGrants(t *testing.T) {
 	handles := o.startLoopholes("yolo-brokered-grants", "podman", gbOn())
 	t.Cleanup(func() { o.stopLoopholes(handles, hostServiceSocketsDir("yolo-brokered-grants", false), "", "") })
 	f := readHandedScope(t, marker, buf)
-	want := []brokerscope.Grant{{Kind: "create-branch", Repo: "github.com/o/r"}}
+	want := []brokerscope.Grant{{Kind: "read", Repo: "*"}, {Kind: "create-branch", Repo: "github.com/o/r"}}
 	if !reflect.DeepEqual(f.Grants, want) {
 		t.Fatalf("scope file grants %v, want the gate's %v alone", f.Grants, want)
 	}
-	if line := "gb: grants for this workspace: create-branch github.com/o/r"; !strings.Contains(buf.String(), line) {
+	if line := "gb: grants for this workspace: read *, create-branch github.com/o/r"; !strings.Contains(buf.String(), line) {
 		t.Errorf("the launch did not disclose the grant as %q:\n%s", line, buf.String())
 	}
 }
@@ -561,22 +562,30 @@ func TestAGrantTheGateCannotJoinReachesNoScope(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			o, buf, marker := brokeredFixtureBlock(t, true, c.block)
-			writeUserConfigOf(t, grantKindsConfig("gbsrc", c.allowed...))
+			user := grantKindsConfig("gbsrc", c.allowed...)
+			// The user's read grant joins every scope; a workspace `read` grant joins only beside
+			// it, so its case is one whose user config holds none: then nothing joins (BB-D110).
+			want := []brokerscope.Grant{{Kind: "read", Repo: "*"}}
+			if c.kind == "read" {
+				user = mapOf(t, `{"brokered": {"gbsrc": {"grant_kinds": ["create-branch"], "grants": []}}}`)
+				want = nil
+			}
+			writeUserConfigOf(t, user)
 			writeWorkspaceConfig(t, o.Workspace, `{"brokered": {"gbsrc": {"grants": [{"kind": "`+c.kind+`", "repo": "github.com/o/r"}]}}}`)
 			o.AcceptConfigChanges = true
 			if !o.checkConfigChanges(gbOn(), "podman") {
 				t.Fatalf("an accepted gate refused:\n%s", buf.String())
 			}
-			if strings.Contains(buf.String(), "+ grant") {
+			if strings.Contains(buf.String(), "+ grant "+c.kind+" github.com/o/r") {
 				t.Errorf("the gate showed a line for a grant that cannot join:\n%s", buf.String())
 			}
 			cname := "yolo-brokered-nogrant"
 			handles := o.startLoopholes(cname, "podman", gbOn())
 			t.Cleanup(func() { o.stopLoopholes(handles, hostServiceSocketsDir(cname, false), "", "") })
-			if f := readHandedScope(t, marker, buf); len(f.Grants) != 0 {
-				t.Fatalf("scope file grants %v, want none", f.Grants)
+			if f := readHandedScope(t, marker, buf); !reflect.DeepEqual(f.Grants, want) {
+				t.Fatalf("scope file grants %v, want %v", f.Grants, want)
 			}
-			if strings.Contains(buf.String(), "grants for this workspace") {
+			if strings.Contains(buf.String(), "github.com/o/r") && strings.Contains(buf.String(), "grants for this workspace: read *,") {
 				t.Errorf("the launch disclosed a grant that cannot join:\n%s", buf.String())
 			}
 		})
@@ -950,4 +959,106 @@ func TestTheLaunchDisclosesTheUserScopesBrokeredSets(t *testing.T) {
 	if want := "gb: sets from user config: read-only (+ pr comment), review 1h"; !strings.Contains(buf.String(), want) {
 		t.Errorf("the launch does not disclose %q:\n%s", want, buf.String())
 	}
+}
+
+// SELECTING THE PACK IS "BASICALLY A NO-OP OPTION" (docs/design/boundary-broker.md BB-D110). A
+// broker source that holds no read grant now, and held none at its last approval, is out of the
+// gate: no prompt at a terminal, no refusal without one, and nothing recorded. The user's read
+// grant then puts it to the gate with the remotes it reaches, both on the block; withdrawing the
+// grant shows the scope and the grant removed, once, and an approval clears them, after which the
+// source is out of the gate again.
+func TestABrokerWithNoReadGrantStaysOutOfTheGate(t *testing.T) {
+	noRead := `{"brokered": {"gbsrc": {"grants": []}}}`
+	t.Run("at a terminal", func(t *testing.T) {
+		o, buf, _ := brokeredFixture(t)
+		writeUserConfigOf(t, mapOf(t, noRead))
+		o.IsTTYStdin = func() bool { return true }
+		o.Stdin = strings.NewReader("n\n")
+		if !o.checkConfigChanges(gbOn(), "podman") {
+			t.Fatalf("a broker with no read grant was put to the gate, and the `n` refused the launch:\n%s", buf.String())
+		}
+		if strings.Contains(buf.String(), "repository scope") || strings.Contains(buf.String(), "[y/N]") {
+			t.Errorf("a broker with no read grant prompted:\n%s", buf.String())
+		}
+		if got := config.ApprovedScope(o.Workspace, "gbsrc"); len(got) != 0 {
+			t.Errorf("a broker with no read grant had its scope recorded: %v", got)
+		}
+	})
+	t.Run("with no terminal", func(t *testing.T) {
+		o, buf, _ := brokeredFixture(t)
+		writeUserConfigOf(t, mapOf(t, noRead))
+		if !o.checkConfigChanges(gbOn(), "podman") {
+			t.Fatalf("a launch with no terminal was refused over a broker with no read grant:\n%s", buf.String())
+		}
+		if strings.Contains(buf.String(), "--accept-config-changes") {
+			t.Errorf("the launch named the refusal's flag:\n%s", buf.String())
+		}
+	})
+	// A record from before brokers granted nothing: remotes approved under the old per-project
+	// switch, and no grant. The source is still out of the gate: its record is kept as it is,
+	// and nothing about it is asked.
+	t.Run("an old record of remotes and no grant", func(t *testing.T) {
+		o, buf, _ := brokeredFixture(t)
+		writeUserConfigOf(t, mapOf(t, noRead))
+		old := &config.ScopeCheck{Sources: []config.ScopeSource{{Source: "gbsrc", Label: "gb", RemoteHost: "github.com",
+			Read: brokerscope.Read{Remotes: []brokerscope.Remote{{Name: "origin", Repo: "o/r"}}}}}}
+		if err := config.RecordApproval(o.Workspace, jsonx.NewOrderedMap(), old); err != nil {
+			t.Fatal(err)
+		}
+		if !o.checkConfigChanges(gbOn(), "podman") {
+			t.Fatalf("a launch with no terminal was refused over an old record and no read grant:\n%s", buf.String())
+		}
+		if strings.Contains(buf.String(), "repository scope") {
+			t.Errorf("a broker with no read grant was put to the gate:\n%s", buf.String())
+		}
+		if got := config.ApprovedScope(o.Workspace, "gbsrc"); len(got) != 1 {
+			t.Errorf("the old record became %v, want it kept", got)
+		}
+	})
+	t.Run("granted, then withdrawn", func(t *testing.T) {
+		o, buf, _ := brokeredFixture(t)
+		// Granted: the remote and the grant are shown together, and a launch with no terminal
+		// refuses until they are approved.
+		if o.checkConfigChanges(gbOn(), "podman") {
+			t.Fatalf("the read grant reached the broker unseen:\n%s", buf.String())
+		}
+		for _, want := range []string{`+ o/r  remote "origin"  added`,
+			"+ grant read *  added (from your user config, for every workspace)"} {
+			if !strings.Contains(buf.String(), want) {
+				t.Errorf("the gate does not show %q:\n%s", want, buf.String())
+			}
+		}
+		o.AcceptConfigChanges = true
+		if !o.checkConfigChanges(gbOn(), "podman") {
+			t.Fatalf("an accepted gate refused:\n%s", buf.String())
+		}
+		if got := config.ApprovedScope(o.Workspace, "gbsrc"); len(got) != 1 {
+			t.Fatalf("the approved scope is %v, want the remote", got)
+		}
+		// Withdrawn: shown once, removed, and the approval clears the record.
+		writeUserConfigOf(t, mapOf(t, noRead))
+		buf.Reset()
+		o.AcceptConfigChanges = false
+		if o.checkConfigChanges(gbOn(), "podman") {
+			t.Fatalf("a withdrawn grant was dropped unseen:\n%s", buf.String())
+		}
+		for _, want := range []string{"- o/r", "- grant read *"} {
+			if !strings.Contains(buf.String(), want) {
+				t.Errorf("the withdrawal does not show %q:\n%s", want, buf.String())
+			}
+		}
+		o.AcceptConfigChanges = true
+		if !o.checkConfigChanges(gbOn(), "podman") {
+			t.Fatalf("an accepted withdrawal refused:\n%s", buf.String())
+		}
+		if got, grants := config.ApprovedScope(o.Workspace, "gbsrc"), config.ApprovedGrants(o.Workspace, "gbsrc"); len(got) != 0 || len(grants) != 0 {
+			t.Fatalf("after the withdrawal the record holds %v and %v, want neither", got, grants)
+		}
+		// Out of the gate again.
+		buf.Reset()
+		o.AcceptConfigChanges = false
+		if !o.checkConfigChanges(gbOn(), "podman") || strings.Contains(buf.String(), "repository scope") {
+			t.Fatalf("a source whose withdrawal was approved is still at the gate:\n%s", buf.String())
+		}
+	})
 }

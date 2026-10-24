@@ -358,6 +358,19 @@ func (b *Broker) ServeContext(ctx context.Context, req Request, jail string, std
 		scope = scopeOfFile(f)
 	}
 	d := Classify(req.Argv, req.Repo, scope)
+	// READ IS THE FLOOR (docs/design/boundary-broker.md BB-D108): a selected pack's broker
+	// grants nothing until a read grant covers the repository, so a command that would run, a
+	// read or a write, is refused here, naming the grant. With no read grant at all, every
+	// command is refused so, whatever else would refuse it: the workspace's gate approved no
+	// scope (BB-D110), so the grant is the one next step that helps.
+	if !brokerscope.HoldsRead(scope.grants) || d.Outcome == OutcomeStanding || d.Outcome == OutcomeWindowed {
+		if repo, missing := scope.unread(d.Repos); missing {
+			ev.Repo = strings.Join(d.Repos, ",")
+			ev.Set, ev.Outcome, ev.Reason = "refused", "refused", "no read grant"
+			say("refused: " + config.BrokerNoReadRefusal(Source, repo, scope.live))
+			return finish(ExitUsage)
+		}
+	}
 	if b.authority != nil && (d.Outcome == OutcomeStanding || d.Outcome == OutcomeWindowed) {
 		current, _, err := b.authority.Classify(req.Argv, req.Repo)
 		if err != nil {
@@ -377,16 +390,6 @@ func (b *Broker) ServeContext(ctx context.Context, req Request, jail string, std
 	ev.Repo = strings.Join(d.Repos, ",")
 	if d.Argv != nil {
 		ev.Argv = d.Argv
-	}
-	// READ IS THE FLOOR (docs/design/boundary-broker.md BB-D108): a selected pack's broker
-	// grants nothing until a read grant covers the repository, so a command that would run,
-	// a read or a write, is refused here, naming the grant.
-	if d.Outcome == OutcomeStanding || d.Outcome == OutcomeWindowed {
-		if repo, missing := scope.unread(d.Repos); missing {
-			ev.Set, ev.Outcome, ev.Reason = "refused", "refused", "no read grant"
-			say("refused: " + config.BrokerNoReadRefusal(Source, repo, scope.live))
-			return finish(ExitUsage)
-		}
 	}
 	switch d.Outcome {
 	case OutcomeRefused:

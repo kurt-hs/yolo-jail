@@ -90,9 +90,13 @@ func TestConfigApplyAppliesWhenBothReadsAgree(t *testing.T) {
 }
 
 // writeUserConfigOf writes cfg as the user-scope config under $HOME, so a test that hands the
-// apply a merged config hands it the one the gate's read composes to.
+// apply a merged config hands it the one the gate's read composes to. It adds the user's read
+// grant for the fixture's source, gbsrc, unless cfg says what gbsrc's grants are itself (an
+// empty list for none): a broker with no read grant stays out of the gate (BB-D110), and every
+// fixture here is about a broker whose gate asks.
 func writeUserConfigOf(t *testing.T, cfg *jsonx.OrderedMap) {
 	t.Helper()
+	cfg = withUserReadGrant(cfg)
 	s, err := jsonx.DumpsSnapshot(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -311,4 +315,42 @@ func TestUserScopeMountsUnknownOnlyOnPodman(t *testing.T) {
 			t.Errorf("userScopeMountsUnknown(%s, rw=%v) = %v, want %v", c.rt, c.mounts[0].rw, got, c.want)
 		}
 	}
+}
+
+// withUserReadGrant is cfg with `brokered.gbsrc.grants` holding the user's read grant for every
+// workspace (BB-D107), where cfg names no grants for gbsrc. cfg itself is not changed.
+func withUserReadGrant(cfg *jsonx.OrderedMap) *jsonx.OrderedMap {
+	out := jsonx.NewOrderedMap()
+	for _, k := range cfg.Keys() {
+		v, _ := cfg.Get(k)
+		out.Set(k, v)
+	}
+	sources := jsonx.NewOrderedMap()
+	if v, ok := out.Get("brokered"); ok {
+		if m, ok := v.(*jsonx.OrderedMap); ok {
+			for _, k := range m.Keys() {
+				sv, _ := m.Get(k)
+				sources.Set(k, sv)
+			}
+		}
+	}
+	src := jsonx.NewOrderedMap()
+	if v, ok := sources.Get("gbsrc"); ok {
+		if m, ok := v.(*jsonx.OrderedMap); ok {
+			if _, has := m.Get("grants"); has {
+				return cfg
+			}
+			for _, k := range m.Keys() {
+				sv, _ := m.Get(k)
+				src.Set(k, sv)
+			}
+		}
+	}
+	read := jsonx.NewOrderedMap()
+	read.Set("kind", "read")
+	read.Set("repo", "*")
+	src.Set("grants", []any{read})
+	sources.Set("gbsrc", src)
+	out.Set("brokered", sources)
+	return out
 }

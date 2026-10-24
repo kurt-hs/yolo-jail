@@ -26,7 +26,7 @@ func relaunchBroker(t *testing.T, launchID, container, workspace string, repos .
 		repos = []string{"o/r"}
 	}
 	t.Helper()
-	sf := brokerscope.File{Source: Source, LaunchID: launchID, PID: os.Getpid(), Container: container, Workspace: workspace, Repos: repos}
+	sf := brokerscope.File{Source: Source, LaunchID: launchID, PID: os.Getpid(), Container: container, Workspace: workspace, Repos: repos, Grants: readAll}
 	path, err := brokerscope.Write(sf)
 	if err != nil {
 		t.Fatal(err)
@@ -42,7 +42,7 @@ func relaunchBroker(t *testing.T, launchID, container, workspace string, repos .
 	t.Cleanup(func() { _ = a.Close() })
 	count := new(atomic.Int32)
 	log := brokeraudit.Open(paths.BrokerAuditLog(), nil)
-	b := &Broker{authority: a, scope: NewScope(repos), workspace: workspace, startID: start,
+	b := &Broker{authority: a, scope: NewScope(repos).WithGrants(readAll...), workspace: workspace, startID: start,
 		store: &brokerstore.Store{Dir: paths.BrokerSourceDir(Source), Revalidate: a.Revalidate, Audit: StoreAudit(log)},
 		audit: log, log: io.Discard, now: time.Now, waitLimit: 20 * time.Millisecond}
 	b.execute = func(context.Context, []string, []byte, func([]byte), func([]byte)) RunResult {

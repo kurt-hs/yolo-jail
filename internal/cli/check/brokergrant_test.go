@@ -10,17 +10,23 @@ import (
 )
 
 // Host `yolo check` says up front what a selected pack's broker may do (docs/design/boundary-broker.md
-// BB-D108, BB-D109): with no read grant in the user config, a note that it grants nothing, naming
-// the grant; with the grant, no note; and a switch a previous yolo wrote into the per-workspace
+// BB-D108, BB-D109, BB-D110): with no read grant in the user config, a plain note, never a
+// warning, that it grants nothing, naming the grant; with the grant, no note; and a switch a previous yolo wrote into the per-workspace
 // file is reported as ignored, naming the grant and the command that takes it out.
 func TestCheckSaysUpFrontWhatASelectedBrokerGrants(t *testing.T) {
-	const note = "loophole gb runs in every workspace while its pack is selected, and grants nothing"
+	const note = "loophole gb is selected and grants nothing"
 	t.Run("no grant", func(t *testing.T) {
-		brokeredCheckHome(t)
+		home := brokeredCheckHome(t)
+		must(t, os.WriteFile(filepath.Join(home, ".config", "yolo-jail", "config.jsonc"), []byte(`{}`), 0o644))
 		out := runCheckOverConfigWith(t, `{}`, false, nil, onTheHost)
 		for _, want := range []string{note, "brokered.gbsrc.grants", `{"kind": "read", "repo": "*"}`, "yolo config apply"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("yolo check does not say %q:\n%s", want, out)
+			}
+		}
+		for _, l := range strings.Split(out, "\n") {
+			if strings.Contains(l, note) && strings.Contains(l, "[WARN]") {
+				t.Errorf("the note is a warning: %s", l)
 			}
 		}
 	})

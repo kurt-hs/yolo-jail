@@ -44,7 +44,7 @@ func TestTheOnRequestExampleDecidesThroughTheCLI(t *testing.T) {
 	// A live launch's scope, bound to a broker lifetime this process holds.
 	ws := filepath.Join(root, "ws")
 	sf := brokerscope.File{Source: ghbroker.Source, LaunchID: "cafe", PID: os.Getpid(), Container: "fixture",
-		Workspace: ws, Repos: []string{"o/r"}}
+		Workspace: ws, Repos: []string{"o/r"}, Grants: []brokerscope.Grant{{Kind: brokerscope.KindRead, Repo: "*"}}}
 	path, err := brokerscope.Write(sf)
 	if err != nil {
 		t.Fatal(err)

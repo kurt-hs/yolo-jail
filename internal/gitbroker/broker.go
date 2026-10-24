@@ -266,6 +266,15 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 		return refuse("refused", "scope file is not a remote-url scope", "this launch's scope file does not hold "+
 			"remote URLs, so no remote is approved; nothing ran. Relaunch the jail.", brokercore.ExitNoPerm)
 	}
+	// A WORKSPACE HOLDING NO READ GRANT AT ALL is told so before anything about its remotes: its
+	// launch recorded none, since a source with no read grant stays out of the gate
+	// (docs/design/boundary-broker.md BB-D110), so "not in the approved scope" would name the
+	// wrong next step.
+	if !brokerscope.HoldsRead(f.Grants) {
+		ev.Repo, _ = gitproto.Identity(req.URL)
+		return refuse("refused", "no read grant", config.BrokerNoReadRefusal(Source, req.URL, f.LiveScope),
+			brokercore.ExitUsage)
+	}
 	if !slices.Contains(f.Repos, req.URL) {
 		return refuse("out-of-scope", "remote not in the approved scope", outOfScope(req.URL, f), brokercore.ExitUsage)
 	}

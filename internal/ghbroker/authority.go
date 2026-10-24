@@ -59,6 +59,12 @@ func (a *Authority) Classify(argv []string, repo string) (Decision, brokerstore.
 	if d.Outcome != OutcomeStanding && d.Outcome != OutcomeWindowed {
 		return d, brokerstore.Policy{}, errors.New(d.Reason)
 	}
+	// READ IS THE FLOOR here too, against the same fresh read (BB-D108): an approved write
+	// revalidates through this (Revalidate), so a read grant withdrawn by a `yolo config apply`
+	// during the approval wait refuses the write rather than letting it run.
+	if r, missing := scopeOfFile(f).unread(d.Repos); missing {
+		return d, brokerstore.Policy{}, errors.New(config.BrokerNoReadRefusal(Source, r, f.LiveScope))
+	}
 	d = Classify(d.Argv, repo, NewScope(append(append([]string(nil), f.Repos...), f.Widened...)))
 	for _, r := range d.Repos {
 		if err = brokerscope.ValidateCurrent(a.path, a.scope, r); err != nil {

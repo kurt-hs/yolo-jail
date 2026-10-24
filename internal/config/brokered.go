@@ -1335,10 +1335,11 @@ func UnbrokeredSourceWarnings(merged *jsonx.OrderedMap, resolver LoopholeResolve
 
 // UngrantedBrokerNotes are host `yolo check`'s up-front notes for each brokered loophole a
 // selected pack installs whose source the user config grants nothing (docs/design/boundary-broker.md
-// BB-D108, BB-D109): it runs in every workspace, and refuses every call until a read grant is
-// approved, so the check names that grant before a call meets the refusal. A user config
-// listing `read` in `grant_kinds` leaves the grant to each workspace, and gets no note. Nil in
-// a jail, whose user config is the host's snapshot.
+// BB-D108, BB-D109, BB-D110). Selecting the pack with no grant is a legitimate choice, "basically
+// a no-op option", so each is a plain note, never a warning: it says the broker grants nothing
+// and names the read grant to add for anyone who meant otherwise. A user config listing `read`
+// in `grant_kinds` leaves the grant to each workspace, and gets no note. Nil in a jail, whose
+// user config is the host's snapshot.
 func UngrantedBrokerNotes(resolver LoopholeResolver) []string {
 	if resolver == nil || inJail() {
 		return nil
@@ -1360,9 +1361,9 @@ func UngrantedBrokerNotes(resolver LoopholeResolver) []string {
 		if len(userGrantsOf(user, source)) > 0 || inList(grantKindsOf(user, source), readGrantKind) {
 			continue
 		}
-		out = append(out, "loophole "+name+" runs in every workspace while its pack is selected, and grants "+
-			"nothing: your user config holds no read grant for the "+pyReprValue(source)+" source, so every "+
-			"call through it is refused. "+BrokerGrantAdvice(source))
+		out = append(out, "loophole "+name+" is selected and grants nothing: your user config holds no read "+
+			"grant for the "+pyReprValue(source)+" source, so it stays out of every workspace's config-change "+
+			"prompt and refuses every call. "+BrokerGrantAdvice(source))
 	}
 	return out
 }

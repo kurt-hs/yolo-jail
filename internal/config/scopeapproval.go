@@ -66,6 +66,10 @@ type ScopeSource struct {
 	Grants     []brokerscope.Grant
 	GrantFiles []string
 	UserGrants []brokerscope.Grant
+	// Dormant is a source that holds no read grant now and held none at its last approval
+	// (BB-D110): its broker grants nothing, so it stays out of the gate: no block, no change, no
+	// refusal of a launch with no terminal, and nothing recorded. It approves an empty scope.
+	Dormant bool
 }
 
 // grantsRecordKey is the scope part's key for a source's approved grants: `<source>.grants`. A
@@ -426,6 +430,10 @@ func compareScope(check *ScopeCheck, old scopeRecord, oldSources sourcesRecord) 
 		out.nextSources[k] = v
 	}
 	for _, s := range check.Sources {
+		if s.Dormant {
+			out.approved[s.Label] = []ScopeRepo{}
+			continue
+		}
 		cur := s.current()
 		prev, had := old[s.Source]
 		recorded := oldSources[s.Source]

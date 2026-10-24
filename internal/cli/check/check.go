@@ -670,9 +670,12 @@ func (o *Options) sectionMergedConfig(r *reporter, merged *jsonx.OrderedMap, wor
 	// launch's, since a committed entry would print it at every launch of every contributor
 	// who selects no such pack (docs/design/workspace-widening.md WW-D22).
 	warnings = append(warnings, config.UnbrokeredSourceWarnings(merged, resolver)...)
-	// A selected pack's broker that the user config grants nothing: said up front, before a
-	// call meets the refusal (docs/design/boundary-broker.md BB-D109).
-	warnings = append(warnings, config.UngrantedBrokerNotes(resolver)...)
+	// A selected pack's broker that the user config grants nothing: a legitimate choice, so a
+	// plain note naming the grant to add, never a warning (docs/design/boundary-broker.md BB-D109,
+	// BB-D110).
+	for _, msg := range config.UngrantedBrokerNotes(resolver) {
+		r.dim(termsafe.VisibleLines(msg))
+	}
 	// Every message above that names a config key, located (the preset/null ones already are).
 	errors = located.merged.Annotate(errors)
 	warnings = located.merged.Annotate(warnings)
@@ -731,6 +734,13 @@ func (o *Options) sectionMergedConfig(r *reporter, merged *jsonx.OrderedMap, wor
 				if writeErr := config.RecordApproval(workspace, read.Config, scope); writeErr == nil {
 					r.ok("Approved workspace config recorded to host approval snapshot")
 					for _, s := range scopeSourcesOf(scope) {
+						if s.Dormant {
+							// BB-D110: a source with no read grant is out of the gate, so
+							// nothing about it was recorded.
+							r.ok(s.Label + " grants nothing in this workspace (no read grant applies), so no " +
+								"repository scope was recorded for it")
+							continue
+						}
 						r.ok("Approved " + s.Label + " repository scope recorded: " + describeScope(s))
 					}
 				} else {

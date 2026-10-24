@@ -30,6 +30,11 @@ func TestCheckReadsTheScopeWhereALaunchWouldStartABroker(t *testing.T) {
 	restore := loopholes.SnapshotPackModules()
 	t.Cleanup(restore)
 	loopholes.SetPackModules([]loopholes.PackModule{{Dir: mod, HostExecApproved: true}})
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	must(t, err)
+	t.Setenv("HOME", home)
+	t.Setenv("YOLO_USER_LAYER", "")
+	writeUserReadGrant(t, home)
 
 	ws := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(ws, ".git"), 0o755); err != nil {
@@ -73,7 +78,7 @@ func TestCheckScopeCarriesTheSourcesGrantKinds(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(cfgDir, "config.jsonc"),
-		[]byte(`{"brokered": {"gbsrc": {"grant_kinds": ["create-branch"]}}}`), 0o644); err != nil {
+		[]byte(`{"brokered": {"gbsrc": {"grant_kinds": ["create-branch"], "grants": [{"kind": "read", "repo": "*"}]}}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	mod := filepath.Join(t.TempDir(), "gb")
@@ -104,7 +109,7 @@ func TestCheckScopeCarriesTheSourcesGrantKinds(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := brokeredScopeForCheck(ws, gbSwitched(true), "podman", read)
-	want := []brokerscope.Grant{{Kind: "create-branch", Repo: "github.com/o/r"}}
+	want := []brokerscope.Grant{{Kind: "read", Repo: "*"}, {Kind: "create-branch", Repo: "github.com/o/r"}}
 	if s == nil || len(s.Sources) != 1 || !reflect.DeepEqual(s.Sources[0].Grants, want) {
 		t.Fatalf("scope %+v, want the grant %v", s, want)
 	}

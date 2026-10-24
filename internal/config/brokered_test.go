@@ -417,6 +417,8 @@ func TestTheRemoteURLScopeAtTheGate(t *testing.T) {
 	url = https://me:hunter2@git.example.com/x.git
 `)
 	write(t, filepath.Join(h.ws, WorkspaceConfigName), `{"brokered": {"git": {"repos": ["o/r"]}}}`)
+	// The user's read grant: a source with none holds nothing at the gate (BB-D110).
+	write(t, h.userCfg, `{"brokered": {"git": {"grants": [{"kind": "read", "repo": "*"}]}}}`)
 	read, err := ReadWorkspaceForGate(h.ws)
 	if err != nil {
 		t.Fatal(err)

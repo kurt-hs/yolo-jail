@@ -90,10 +90,11 @@ func writeWorkspaceSwitch(t *testing.T, home, ws, body string) {
 
 // TestASelectedBrokerPackPutsTheBrokerInPlay: a broker has no switch
 // (docs/design/boundary-broker.md BB-D104, BB-D106, BB-D109). With the github pack selected, the
-// github-broker is in play in every workspace, its repository scope asked about at the gate, and
-// it grants nothing: the gate shows no grant until the user config holds the read grant, and
-// then shows that grant on its own line, marked as the user config's, so it never takes effect
-// unseen (BB-D105, BB-D107). A switch a previous yolo wrote into the per-workspace file is
+// github-broker runs in every workspace and grants nothing, and selecting it is "basically a
+// no-op option" (BB-D110): with no read grant the gate asks nothing about its remotes, and a
+// launch with no terminal goes on. Once the user config holds the read grant the gate shows it
+// on its own line, marked as the user config's, together with the remotes it reaches, so neither
+// takes effect unseen (BB-D105, BB-D107). A switch a previous yolo wrote into the per-workspace file is
 // ignored, in either direction, with a note naming the grant and the command that takes it out;
 // a switch in the user config, or in the workspace's own config, refuses the launch naming the
 // grant that gives access instead.
@@ -112,13 +113,26 @@ func TestASelectedBrokerPackPutsTheBrokerInPlay(t *testing.T) {
 			}
 		}
 	}
+	// notAsked is the launch that went on with no terminal, having asked nothing about the
+	// broker's scope, and said the broker grants nothing.
+	notAsked := func(t *testing.T, l brokerLaunch) {
+		t.Helper()
+		if l.rc != 0 || !l.reached {
+			t.Fatalf("a launch with no terminal and no read grant was stopped: rc %d, reached=%v\n%s",
+				l.rc, l.reached, l.out)
+		}
+		for _, bad := range []string{"repository scope", `+ o/r`, "--accept-config-changes"} {
+			if strings.Contains(l.out, bad) {
+				t.Errorf("a broker with no read grant was put to the gate (%q):\n%s", bad, l.out)
+			}
+		}
+		if !strings.Contains(l.out, "github-broker: grants nothing in this workspace") {
+			t.Errorf("the launch does not say the broker grants nothing:\n%s", l.out)
+		}
+	}
 	t.Run("no grant", func(t *testing.T) {
 		_, _, run := launchWithGitHub(t, "")
-		l := run()
-		asked(t, l)
-		if strings.Contains(l.out, "+ grant") {
-			t.Errorf("a broker with no grant in config was shown one at the gate:\n%s", l.out)
-		}
+		notAsked(t, run())
 	})
 	t.Run("the user config's read grant", func(t *testing.T) {
 		_, _, run := launchWithGitHub(t, `,
@@ -134,7 +148,7 @@ func TestASelectedBrokerPackPutsTheBrokerInPlay(t *testing.T) {
 			home, ws, run := launchWithGitHub(t, "")
 			writeWorkspaceSwitch(t, home, ws, `{"workspace": "`+ws+`", "loopholes": {"github-broker": {"enabled": `+v+`}}}`)
 			l := run()
-			asked(t, l)
+			notAsked(t, l)
 			for _, want := range []string{"loopholes.github-broker.enabled", "is ignored", "brokered.github.grants",
 				"`yolo loopholes disable github-broker --workspace " + shquote.QuoteDisplay(ws) + "`"} {
 				if !strings.Contains(l.out, want) {
