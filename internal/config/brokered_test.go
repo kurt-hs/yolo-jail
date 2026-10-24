@@ -610,7 +610,7 @@ func TestGrantKindNotAllowedOnlyWarnsInAJail(t *testing.T) {
 	if strings.Contains(errs, "brokered.git.grant_kinds") {
 		t.Fatalf("a jail refused a kind only the host's user config can allow:\n%s", errs)
 	}
-	if !strings.Contains(warns, "brokered.git.grant_kinds") || !strings.Contains(warns, inJailSuffix) {
+	if !strings.Contains(warns, "brokered.git.grant_kinds") || !strings.Contains(warns, "the host's launch enforces it") {
 		t.Fatalf("no in-jail warning naming brokered.git.grant_kinds:\n%s", warns)
 	}
 }
