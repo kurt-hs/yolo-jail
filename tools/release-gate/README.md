@@ -36,13 +36,17 @@ creates refs, dispatches workflows, or invokes Git; the caller,
 [`darwin-floor-gate.sh`](../release-wiring/darwin-floor-gate.sh), computes the commit list.
 
 ```console
-go run ./tools/release-gate darwin-floor --repo OWNER/REPO --cache NAME --path STORE_PATH --path STORE_PATH \
+go run ./tools/release-gate darwin-floor --repo OWNER/REPO --cache NAME --sha FULL_SHA \
+  [--later-flake-change FULL_SHA] --path STORE_PATH --path STORE_PATH \
   --wait-shas FILE --timeout 100m --poll-interval 30s
 ```
 
 Each `--path` must be a `/nix/store/<hash>-<name>` path; `--wait-shas` is a file of full commit SHAs, one per
 line. A path is cached when `https://NAME.cachix.org/<hash>.narinfo` answers 200 with a `StorePath:` naming
-it; a 404 is a miss; 429/5xx retry; anything else refuses. On a miss it polls while a
-`darwin-floor-cache.yml` main run, push or dispatch, for one of the listed commits is queued or running, and
-otherwise refuses with the dispatch to run. Exit 0 prints `{"cache": ..., "paths": [...]}`; a refusal,
+it; a 404 is a miss; 429/5xx retry; anything else refuses. A profile counts only when every path on its
+narinfo's `References:` line is cached too. While a `darwin-floor-cache.yml` run for one of the listed
+commits (a push on main, or a dispatch on any branch) is queued or running, it polls, even when every path is
+already cached. With none pending it reads the cache once more, then passes or refuses with the dispatch to
+run: on main, or, when `--later-flake-change` names a later flake change on main, on a branch pushed at
+`--sha`. Exit 0 prints `{"cache": ..., "paths": [...]}`; a refusal,
 failure or timeout exits 1 with the next step on stderr; invalid input exits 2.

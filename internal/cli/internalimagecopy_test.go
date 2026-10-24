@@ -86,6 +86,10 @@ func TestImageCopyRefusesWhatALaunchDoesNotWrite(t *testing.T) {
 				t.Errorf("%s: refusal %q does not name %q", tc.name, msg, want)
 			}
 		}
+		// "just launch" would read as a recipe, and there is none.
+		if strings.Contains(msg, "just launch") {
+			t.Errorf("%s: refusal %q reads as a `just launch` recipe", tc.name, msg)
+		}
 	}
 	if rc := imageCopyMain([]string{"--copier", "/c"}, &bytes.Buffer{}, "linux", nil, never); rc != 2 {
 		t.Errorf("missing flags: rc = %d, want 2", rc)

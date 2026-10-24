@@ -14,18 +14,22 @@ if [ "${GITHUB_RUN_ATTEMPT:-1}" != 1 ]; then
   echo "✗ This release request is a rerun. Preserve state and inspect the original request/publisher runs read-only with the owner; no write is safe." >&2
   exit 1
 fi
-if ! GITHUB_REPOSITORY="$GITHUB_REPOSITORY" RELEASE_VERSION="$RELEASE_VERSION" \
-  RELEASE_SHA="$RELEASE_SHA" GITHUB_REF_TYPE="$GITHUB_REF_TYPE" GITHUB_REF_NAME="$GITHUB_REF_NAME" \
-  WORKFLOW_SHA="${WORKFLOW_SHA:-}" RELEASE_PRETAG=1 RELEASE_ORDER_CHECK=1 RELEASE_ALLOW_RESUME=1 tools/release-wiring/preflight.sh; then
-  echo "✗ Final exact-SHA eligibility proof refused ${RELEASE_VERSION}; correct the issue and request this version again. No tag was created or changed." >&2
-  exit 1
-fi
-# Before any tag write, and for a resume as well: the macOS floor profiles of
-# this exact commit must be in Cachix (docs/reference/release-process.md#PTG-D4).
+# For a first request and a resume alike: the macOS floor profiles of this
+# exact commit must be in Cachix (docs/reference/release-process.md#PTG-D4).
+# It runs BEFORE the final preflight, because it can wait up to 100 minutes:
+# the version-order, tag and exact-CI proof must stay the last read before the
+# tag write, or a release that lands during the wait would leave this tag
+# reserved and unpublishable.
 if ! GITHUB_REPOSITORY="$GITHUB_REPOSITORY" RELEASE_SHA="$RELEASE_SHA" GH_TOKEN="${GH_TOKEN:-}" \
   CACHIX_CONFIGURED="${CACHIX_CONFIGURED:-}" CACHIX_CACHE="${CACHIX_CACHE:-}" DARWIN_FLOOR_PATHS="${DARWIN_FLOOR_PATHS:-}" \
   tools/release-wiring/darwin-floor-gate.sh; then
   echo "✗ The darwin floor cache gate refused ${RELEASE_VERSION}; take the step it names and request this version again. No tag was created or changed." >&2
+  exit 1
+fi
+if ! GITHUB_REPOSITORY="$GITHUB_REPOSITORY" RELEASE_VERSION="$RELEASE_VERSION" \
+  RELEASE_SHA="$RELEASE_SHA" GITHUB_REF_TYPE="$GITHUB_REF_TYPE" GITHUB_REF_NAME="$GITHUB_REF_NAME" \
+  WORKFLOW_SHA="${WORKFLOW_SHA:-}" RELEASE_PRETAG=1 RELEASE_ORDER_CHECK=1 RELEASE_ALLOW_RESUME=1 tools/release-wiring/preflight.sh; then
+  echo "✗ Final exact-SHA eligibility proof refused ${RELEASE_VERSION}; correct the issue and request this version again. No tag was created or changed." >&2
   exit 1
 fi
 

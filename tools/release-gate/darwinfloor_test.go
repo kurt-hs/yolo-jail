@@ -35,13 +35,18 @@ type fakeFloor struct {
 	cacheStatus   int               // a fixed non-200/404 answer
 	noWorkflow    bool
 	runs          []run
-	runsCalls     int
-	server        *httptest.Server
+	// runSeq, when set, answers the Nth run listing with runSeq[N], the last
+	// repeating: a run GitHub reports changing while the gate polls.
+	runSeq [][]run
+	// refs is a narinfo's References line, as store path base names.
+	refs      map[string][]string
+	runsCalls int
+	server    *httptest.Server
 }
 
 func newFakeFloor(t *testing.T) *fakeFloor {
 	t.Helper()
-	f := &fakeFloor{present: map[string]int{}, checks: map[string]int{}, narinfoPath: map[string]string{}}
+	f := &fakeFloor{present: map[string]int{}, checks: map[string]int{}, narinfoPath: map[string]string{}, refs: map[string][]string{}}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.server.Close)
 	return f
@@ -72,7 +77,7 @@ func (f *fakeFloor) serve(w http.ResponseWriter, r *http.Request) {
 				if override, ok := f.narinfoPath[path]; ok {
 					named = override
 				}
-				fmt.Fprintf(w, "StorePath: %s\nURL: nar/x.nar.zst\nCompression: zstd\n", named)
+				fmt.Fprintf(w, "StorePath: %s\nURL: nar/x.nar.zst\nCompression: zstd\nReferences: %s\n", named, strings.Join(f.refs[path], " "))
 				return
 			}
 		}
@@ -84,12 +89,12 @@ func (f *fakeFloor) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewEncoder(w).Encode(workflow{ID: 77, Path: floorWorkflowPath})
 	case r.URL.Path == "/repos/owner/project/actions/workflows/77/runs":
-		f.runsCalls++
-		if r.URL.Query().Get("branch") != "main" {
-			http.Error(w, "branch filter missing", http.StatusBadRequest)
-			return
+		runs := f.runs
+		if len(f.runSeq) > 0 {
+			runs = f.runSeq[min(f.runsCalls, len(f.runSeq)-1)]
 		}
-		_ = json.NewEncoder(w).Encode(runList{TotalCount: len(f.runs), WorkflowRuns: f.runs})
+		f.runsCalls++
+		_ = json.NewEncoder(w).Encode(runList{TotalCount: len(runs), WorkflowRuns: runs})
 	default:
 		http.Error(w, "unexpected "+r.URL.Path, http.StatusTeapot)
 	}
@@ -113,7 +118,7 @@ func newTestFloorGate(t *testing.T, f *fakeFloor) (*floorGate, *fakeClock) {
 			now: clock.now, sleep: clock.sleep, timeout: 10 * time.Minute, pollEvery: 30 * time.Second, requestMax: time.Second,
 		},
 		cache: "yolo-jail", cacheURL: f.server.URL + "/cache", paths: []string{floorArm, floorIntel},
-		waitSHAs: map[string]bool{testSHA: true, flakeSHA: true},
+		waitSHAs: map[string]bool{testSHA: true, flakeSHA: true}, targetSHA: testSHA,
 	}, clock
 }
 
@@ -125,8 +130,8 @@ func TestFloorGatePassesWhenBothProfilesAreCached(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
-	if proof.Cache != "yolo-jail" || len(proof.Paths) != 2 || clock.sleeps != 0 || f.runsCalls != 0 {
-		t.Fatalf("proof=%+v sleeps=%d runsCalls=%d; want an immediate pass without asking Actions", proof, clock.sleeps, f.runsCalls)
+	if proof.Cache != "yolo-jail" || len(proof.Paths) != 2 || clock.sleeps != 0 {
+		t.Fatalf("proof=%+v sleeps=%d; want an immediate pass", proof, clock.sleeps)
 	}
 }
 
@@ -136,7 +141,8 @@ func TestFloorGateWaitsForAPendingRunForTheFlakeCommit(t *testing.T) {
 			f := newFakeFloor(t)
 			f.present[floorArm] = 0
 			f.present[floorIntel] = 3 // pushed after three checks
-			f.runs = []run{floorRun(5, sha, "in_progress", "")}
+			running := []run{floorRun(5, sha, "in_progress", "")}
+			f.runSeq = [][]run{running, running, running, {floorRun(5, sha, "completed", "success")}}
 			g, clock := newTestFloorGate(t, f)
 			if _, err := g.wait(context.Background()); err != nil {
 				t.Fatalf("wait: %v", err)
@@ -244,7 +250,7 @@ func floorCLIArgs(t *testing.T, extra ...string) []string {
 		t.Fatal(err)
 	}
 	return append([]string{"--repo", "owner/project", "--cache", "yolo-jail", "--path", floorArm, "--path", floorIntel,
-		"--wait-shas", waitFile, "--timeout", "1m", "--poll-interval", "1s"}, extra...)
+		"--sha", testSHA, "--wait-shas", waitFile, "--timeout", "1m", "--poll-interval", "1s"}, extra...)
 }
 
 func TestFloorCLIRefusesInvalidArguments(t *testing.T) {
@@ -290,5 +296,112 @@ func TestCLIDispatchesTheDarwinFloorSubcommand(t *testing.T) {
 	var stderr bytes.Buffer
 	if code := runCLI([]string{"darwin-floor", "--cache", "x"}, &bytes.Buffer{}, &stderr); code != 2 || !strings.Contains(stderr.String(), "release-gate darwin-floor") {
 		t.Fatalf("code=%d stderr=%q; want the darwin-floor argument refusal", code, stderr.String())
+	}
+}
+
+// A cache hit while a relevant run is still going is not a pass: the push may
+// be part-way through, so the gate waits for the run to conclude.
+func TestFloorGateWaitsOutAPendingRunEvenOnAHit(t *testing.T) {
+	f := newFakeFloor(t)
+	f.present[floorArm], f.present[floorIntel] = 0, 0
+	running := []run{floorRun(5, testSHA, "in_progress", "")}
+	f.runSeq = [][]run{running, running, {floorRun(5, testSHA, "completed", "success")}}
+	g, clock := newTestFloorGate(t, f)
+	if _, err := g.wait(context.Background()); err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if clock.sleeps != 2 {
+		t.Fatalf("slept %d times, want 2 polls until the run concluded", clock.sleeps)
+	}
+}
+
+// With no run pending, a miss is read once more before the refusal, so a push
+// that finished between the two reads passes.
+func TestFloorGateRereadsTheCacheOnceBeforeRefusing(t *testing.T) {
+	f := newFakeFloor(t)
+	f.present[floorArm] = 0
+	f.present[floorIntel] = 1 // served from the second read on
+	f.runs = []run{floorRun(5, testSHA, "completed", "success")}
+	g, clock := newTestFloorGate(t, f)
+	if _, err := g.wait(context.Background()); err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if clock.sleeps != 0 || f.checks[floorIntel] != 2 {
+		t.Fatalf("sleeps=%d reads=%d; want one re-read and no wait", clock.sleeps, f.checks[floorIntel])
+	}
+}
+
+// Every path a profile's narinfo references must be cached too: the rustls
+// mise is one, and a profile without it would still build mise on a Mac.
+func TestFloorGateRequiresEveryReferencedPath(t *testing.T) {
+	const mise = "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-mise-2026.10.0"
+	for _, cached := range []bool{false, true} {
+		f := newFakeFloor(t)
+		f.present[floorArm], f.present[floorIntel] = 0, 0
+		f.refs[floorArm] = []string{strings.TrimPrefix(floorArm, "/nix/store/"), strings.TrimPrefix(mise, "/nix/store/")}
+		f.refs[floorIntel] = []string{strings.TrimPrefix(mise, "/nix/store/")}
+		if cached {
+			f.present[mise] = 0
+		}
+		g, _ := newTestFloorGate(t, f)
+		_, err := g.wait(context.Background())
+		if cached {
+			if err != nil {
+				t.Fatalf("wait with every reference cached: %v", err)
+			}
+			if f.checks[mise] != 1 {
+				t.Fatalf("mise was read %d times in one pass, want once", f.checks[mise])
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), mise) || strings.Contains(err.Error(), floorArm+",") {
+			t.Fatalf("err = %v, want a refusal naming only the missing reference", err)
+		}
+	}
+}
+
+// When main has changed the flake since the target, a dispatch on main builds a
+// different floor, so the refusal names a dispatch on a branch at the target.
+func TestFloorGateNamesABranchDispatchWhenMainHasMovedTheFlake(t *testing.T) {
+	f := newFakeFloor(t)
+	g, _ := newTestFloorGate(t, f)
+	g.laterFlakeChange = otherSHA
+	_, err := g.wait(context.Background())
+	msg := fmt.Sprint(err)
+	for _, want := range []string{
+		"git push origin " + testSHA + ":refs/heads/darwin-floor-" + testSHA[:12],
+		"gh workflow run darwin-floor-cache.yml --repo owner/project --ref darwin-floor-" + testSHA[:12],
+		otherSHA,
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("refusal %q lacks %q", msg, want)
+		}
+	}
+	if strings.Contains(msg, "--ref main") {
+		t.Fatalf("refusal %q names a dispatch on main, which builds another flake", msg)
+	}
+}
+
+// That branch dispatch is a run the gate waits for; a push off main is not.
+func TestFloorGateCountsABranchDispatchButNotABranchPush(t *testing.T) {
+	for _, tc := range []struct {
+		event string
+		wait  bool
+	}{{"workflow_dispatch", true}, {"push", false}} {
+		f := newFakeFloor(t)
+		f.present[floorArm], f.present[floorIntel] = 0, 2
+		r := floorRun(5, testSHA, "in_progress", "")
+		r.Event, r.HeadBranch = tc.event, "darwin-floor-"+testSHA[:12]
+		done := r
+		done.Status, done.Conclusion = "completed", "success"
+		f.runSeq = [][]run{{r}, {done}}
+		g, clock := newTestFloorGate(t, f)
+		_, err := g.wait(context.Background())
+		if tc.wait && (err != nil || clock.sleeps != 1) {
+			t.Fatalf("%s: err=%v sleeps=%d; want one wait then a pass", tc.event, err, clock.sleeps)
+		}
+		if !tc.wait && err == nil {
+			t.Fatalf("%s: a push off main was waited on", tc.event)
+		}
 	}
 }

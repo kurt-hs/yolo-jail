@@ -47,8 +47,10 @@ done
 # The commits whose darwin-floor-cache runs build these exact paths: main's
 # commits from the last one at or before the target that changed the flake
 # inputs, up to the next one after it that changes them again. A push run's
-# head_sha is the tip of its push and a dispatched run's is main's tip at
-# dispatch, so either can be any commit in that span.
+# head_sha is the tip of its push and a run dispatched on main has main's tip
+# at dispatch, so either can be any commit in that span; one dispatched on a
+# branch at the target (the step named when main has moved its flake on) has
+# the target itself.
 git fetch --quiet --no-tags origin main || fail "Could not refresh origin/main; retry after connectivity is restored."
 wait_file=$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/darwin-floor-wait.XXXXXX") || fail "Could not allocate runner temp space."
 trap 'rm -f "$wait_file"' EXIT
@@ -68,7 +70,14 @@ if [ -n "$flake_commit" ]; then
   } >> "$wait_file" || fail "Could not list main's commits since ${flake_commit}."
 fi
 
-if ! go run ./tools/release-gate darwin-floor --repo "$GITHUB_REPOSITORY" --cache "$cache" "${path_args[@]}" \
+# A later flake change on main means a dispatch on main builds another floor;
+# the gate then names a dispatch on a branch at the target instead.
+later_args=()
+if [ -n "${next_change:-}" ]; then
+  later_args=(--later-flake-change "$next_change")
+fi
+if ! go run ./tools/release-gate darwin-floor --repo "$GITHUB_REPOSITORY" --cache "$cache" --sha "$RELEASE_SHA" \
+  "${later_args[@]}" "${path_args[@]}" \
   --wait-shas "$wait_file" --timeout 100m --poll-interval 30s; then
   fail "The darwin floor profiles of ${RELEASE_SHA} are not in https://${cache}.cachix.org (the step to take is above); request this version again once they are."
 fi

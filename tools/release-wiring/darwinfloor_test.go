@@ -15,8 +15,9 @@ const (
 
 var floorPathsEnv = "DARWIN_FLOOR_PATHS=" + floorArmPath + " " + floorIntelPath
 
-// The request runs the darwin floor gate after the exact-SHA CI gate and before
-// any tag write; a refusal leaves no tag, a fork without Cachix skips with a
+// The request runs the darwin floor gate before the final preflight (exact-SHA
+// CI, version order, tag identity), so that proof stays the last read before
+// the tag write however long the floor wait took; a refusal leaves no tag, a fork without Cachix skips with a
 // line saying so, and an unset or malformed hand-off refuses rather than skips.
 func TestRequestRunsTheDarwinFloorGateBeforeTheTag(t *testing.T) {
 	root := repositoryRoot(t)
@@ -61,12 +62,12 @@ func TestRequestRunsTheDarwinFloorGateBeforeTheTag(t *testing.T) {
 			if tc.wantOut != "" && !strings.Contains(out, tc.wantOut) {
 				t.Fatalf("output lacks %q: %s", tc.wantOut, out)
 			}
-			if tag < 0 || ciGate < 0 || (tc.wantGate && !(ciGate < floorGate && floorGate < tag)) {
-				t.Fatalf("want CI gate, then floor gate, then the tag: %v", lines)
+			if tag < 0 || ciGate < 0 || (tc.wantGate && !(floorGate < ciGate && ciGate < tag)) {
+				t.Fatalf("want the floor gate, then the CI/preflight gate, then the tag: %v", lines)
 			}
 			if tc.wantGate {
 				call := lines[floorGate]
-				for _, want := range []string{"--repo owner/repo", "--cache yolo-jail", "--path " + floorArmPath, "--path " + floorIntelPath, "--timeout 100m"} {
+				for _, want := range []string{"--repo owner/repo", "--cache yolo-jail", "--path " + floorArmPath, "--path " + floorIntelPath, "--timeout 100m", "--sha " + testSHA} {
 					if !strings.Contains(call, want) {
 						t.Fatalf("floor gate call %q lacks %q", call, want)
 					}
@@ -127,10 +128,11 @@ func TestDarwinFloorGateWaitsOnlyForRunsOfTheTargetsFlakeInputs(t *testing.T) {
 		name, sha string
 		want      []string
 		notWant   []string
+		later     string // the --later-flake-change the gate must be handed
 	}{
-		{"between two flake changes", release, []string{flake, c2, release, c4}, []string{c0, nextFlake, c6}},
-		{"the flake change itself", flake, []string{flake, c2, release, c4}, []string{c0, nextFlake, c6}},
-		{"after the last flake change", c6, []string{nextFlake, c6}, []string{c0, flake, release, c4}},
+		{"between two flake changes", release, []string{flake, c2, release, c4}, []string{c0, nextFlake, c6}, nextFlake},
+		{"the flake change itself", flake, []string{flake, c2, release, c4}, []string{c0, nextFlake, c6}, nextFlake},
+		{"after the last flake change", c6, []string{nextFlake, c6}, []string{c0, flake, release, c4}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_ = os.Remove(trace)
@@ -141,6 +143,13 @@ func TestDarwinFloorGateWaitsOnlyForRunsOfTheTargetsFlakeInputs(t *testing.T) {
 				t.Fatalf("gate failed: %v: %s", err, out)
 			}
 			lines := readTrace(t, trace)
+			call := lines[traceIndex(lines, "tools/release-gate darwin-floor")]
+			if tc.later == "" && strings.Contains(call, "--later-flake-change") {
+				t.Errorf("gate call %q names a later flake change where main has none", call)
+			}
+			if tc.later != "" && !strings.Contains(call, "--later-flake-change "+tc.later) {
+				t.Errorf("gate call %q does not name the later flake change %s", call, tc.later)
+			}
 			i := traceIndex(lines, "wait-shas:")
 			if i < 0 {
 				t.Fatalf("the gate passed no wait list: %v", lines)

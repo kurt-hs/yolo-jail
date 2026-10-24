@@ -41,6 +41,12 @@ type floorGate struct {
 	cacheURL string
 	paths    []string
 	waitSHAs map[string]bool
+	// targetSHA is the commit being released, and laterFlakeChange, when set,
+	// the first main commit after it that changes the flake inputs. With one,
+	// a dispatch on main builds a different flake, so the next step names a
+	// dispatch on a ref at the target instead.
+	targetSHA        string
+	laterFlakeChange string
 	// progress receives one line per wait, so a log shows which run it is on.
 	progress io.Writer
 }
@@ -57,7 +63,18 @@ type floorRefusal struct{ msg string }
 func (r floorRefusal) Error() string { return r.msg }
 
 func (f *floorGate) dispatchStep() string {
-	return fmt.Sprintf("gh workflow run %s --repo %s --ref main", floorWorkflowFile, f.api.repo)
+	if f.laterFlakeChange == "" {
+		return fmt.Sprintf("gh workflow run %s --repo %s --ref main", floorWorkflowFile, f.api.repo)
+	}
+	short := f.targetSHA
+	if len(short) > 12 {
+		short = short[:12]
+	}
+	branch := "darwin-floor-" + short
+	return fmt.Sprintf("main has changed the flake inputs since %s (at %s), so a dispatch on main builds a different floor; "+
+		"push a branch at the target and dispatch there: git push origin %s:refs/heads/%s && gh workflow run %s --repo %s --ref %s "+
+		"(delete the branch once it has pushed)",
+		f.targetSHA, f.laterFlakeChange, f.targetSHA, branch, floorWorkflowFile, f.api.repo, branch)
 }
 
 func (f *floorGate) wait(parent context.Context) (floorProof, error) {
@@ -79,6 +96,13 @@ func (f *floorGate) wait(parent context.Context) (floorProof, error) {
 		if err := g.checkDeadline(ctx, deadline); err != nil {
 			return floorProof{}, f.timedOut(watched)
 		}
+		pending, latest, err := f.relevantRuns(ctx, &g)
+		if err != nil {
+			if g.checkDeadline(ctx, deadline) != nil {
+				return floorProof{}, f.timedOut(watched)
+			}
+			return floorProof{}, err
+		}
 		missing, err := f.missingPaths(ctx, &g)
 		if err != nil {
 			if g.checkDeadline(ctx, deadline) != nil {
@@ -86,15 +110,18 @@ func (f *floorGate) wait(parent context.Context) (floorProof, error) {
 			}
 			return floorProof{}, err
 		}
-		if len(missing) == 0 {
-			return floorProof{Cache: f.cache, Paths: append([]string(nil), f.paths...)}, nil
-		}
-		pending, latest, err := f.relevantRuns(ctx, &g)
-		if err != nil {
-			if g.checkDeadline(ctx, deadline) != nil {
-				return floorProof{}, f.timedOut(watched)
+		if pending == nil && len(missing) > 0 {
+			// The run may have finished its push between the two reads above:
+			// read the cache once more before refusing.
+			if missing, err = f.missingPaths(ctx, &g); err != nil {
+				if g.checkDeadline(ctx, deadline) != nil {
+					return floorProof{}, f.timedOut(watched)
+				}
+				return floorProof{}, err
 			}
-			return floorProof{}, err
+		}
+		if pending == nil && len(missing) == 0 {
+			return floorProof{Cache: f.cache, Paths: append([]string(nil), f.paths...)}, nil
 		}
 		if pending == nil {
 			msg := fmt.Sprintf("darwin floor profile(s) %s are not in https://%s.cachix.org, and no %s run for this commit's flake inputs is queued or running",
@@ -106,7 +133,11 @@ func (f *floorGate) wait(parent context.Context) (floorProof, error) {
 		}
 		watched = pending
 		if f.progress != nil {
-			fmt.Fprintf(f.progress, "Waiting for %s run %d (%s) to push %s\n", floorWorkflowFile, pending.ID, pending.Status, strings.Join(missing, ", "))
+			if len(missing) == 0 {
+				fmt.Fprintf(f.progress, "The floor profiles are cached; waiting for %s run %d (%s) to finish its push\n", floorWorkflowFile, pending.ID, pending.Status)
+			} else {
+				fmt.Fprintf(f.progress, "Waiting for %s run %d (%s) to push %s\n", floorWorkflowFile, pending.ID, pending.Status, strings.Join(missing, ", "))
+			}
 		}
 		remaining := deadline.Sub(g.now())
 		pause := g.pollEvery
@@ -133,78 +164,128 @@ func (f *floorGate) timedOut(watched *run) error {
 		floorWorkflowFile, watched.ID, watched.ID, f.api.repo, f.dispatchStep())}
 }
 
-// missingPaths returns the paths whose narinfo the cache does not serve.
+// missingPaths returns the store paths the cache does not serve: each profile
+// whose narinfo is absent, and, for a profile that is present, each path its
+// narinfo's References line names that is absent (the floor's own packages,
+// mise among them). Each path is asked once per call.
 func (f *floorGate) missingPaths(ctx context.Context, g *gate) ([]string, error) {
 	var missing []string
-	for _, path := range f.paths {
-		hit, err := f.narinfoHit(ctx, g, path)
+	seen := map[string]bool{}
+	check := func(path string) ([]string, error) {
+		if seen[path] {
+			return nil, nil
+		}
+		seen[path] = true
+		hit, refs, err := f.narinfoHit(ctx, g, path)
 		if err != nil {
 			return nil, err
 		}
 		if !hit {
 			missing = append(missing, path)
 		}
+		return refs, nil
+	}
+	for _, path := range f.paths {
+		refs, err := check(path)
+		if err != nil {
+			return nil, err
+		}
+		for _, ref := range refs {
+			if _, err := check(ref); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return missing, nil
 }
 
-func (f *floorGate) narinfoHit(ctx context.Context, g *gate, path string) (bool, error) {
+// narinfoHit reports whether the cache serves path's narinfo and, when it
+// does, the other store paths that narinfo's References line names.
+func (f *floorGate) narinfoHit(ctx context.Context, g *gate, path string) (bool, []string, error) {
 	m := storePathPattern.FindStringSubmatch(path)
 	if m == nil {
-		return false, fmt.Errorf("invalid store path %q", path)
+		return false, nil, fmt.Errorf("invalid store path %q", path)
 	}
 	endpoint := strings.TrimRight(f.cacheURL, "/") + "/" + m[1] + ".narinfo"
 	for attempt := 0; attempt <= 3; attempt++ {
 		if err := g.checkDeadline(ctx, g.deadline); err != nil {
-			return false, err
+			return false, nil, err
 		}
 		requestContext, cancel := context.WithTimeout(ctx, g.requestMax)
 		req, err := http.NewRequestWithContext(requestContext, http.MethodGet, endpoint, nil)
 		if err != nil {
 			cancel()
-			return false, errors.New("could not construct the Cachix narinfo request")
+			return false, nil, errors.New("could not construct the Cachix narinfo request")
 		}
 		response, err := g.client.Do(req)
 		if err != nil {
 			cancel()
-			return false, fmt.Errorf("the Cachix narinfo request for %s failed; check https://%s.cachix.org is reachable and request again", path, f.cache)
+			return false, nil, fmt.Errorf("the Cachix narinfo request for %s failed; check https://%s.cachix.org is reachable and request again", path, f.cache)
 		}
 		switch {
 		case response.StatusCode == http.StatusNotFound:
 			response.Body.Close()
 			cancel()
-			return false, nil
+			return false, nil, nil
 		case response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500:
 			delay := retryDelay(response.Header.Get("Retry-After"), attempt, g.now())
 			response.Body.Close()
 			cancel()
 			if attempt == 3 {
-				return false, fmt.Errorf("the Cachix cache remained unavailable (HTTP %d) for %s; request this release again once https://%s.cachix.org answers", response.StatusCode, path, f.cache)
+				return false, nil, fmt.Errorf("the Cachix cache remained unavailable (HTTP %d) for %s; request this release again once https://%s.cachix.org answers", response.StatusCode, path, f.cache)
 			}
 			if remaining := g.deadline.Sub(g.now()); delay > remaining {
 				delay = remaining
 			}
 			if err := g.sleep(ctx, delay); err != nil {
-				return false, errors.New("the Cachix narinfo retry was interrupted")
+				return false, nil, errors.New("the Cachix narinfo retry was interrupted")
 			}
 			continue
 		case response.StatusCode != http.StatusOK:
 			response.Body.Close()
 			cancel()
-			return false, fmt.Errorf("the Cachix cache returned HTTP %d for %s; this gate reads only a public cache, so check https://%s.cachix.org is public and is the one the CACHIX_CACHE variable names, then request again", response.StatusCode, path, f.cache)
+			return false, nil, fmt.Errorf("the Cachix cache returned HTTP %d for %s; this gate reads only a public cache, so check https://%s.cachix.org is public and is the one the CACHIX_CACHE variable names, then request again", response.StatusCode, path, f.cache)
 		}
 		body, err := io.ReadAll(io.LimitReader(response.Body, maxNarinfoBytes+1))
 		response.Body.Close()
 		cancel()
 		if err != nil || len(body) > maxNarinfoBytes {
-			return false, fmt.Errorf("could not read the Cachix narinfo for %s; request this release again", path)
+			return false, nil, fmt.Errorf("could not read the Cachix narinfo for %s; request this release again", path)
 		}
 		if !narinfoNames(body, path) {
-			return false, fmt.Errorf("the Cachix narinfo for %s names a different store path; inspect https://%s.cachix.org before releasing", path, f.cache)
+			return false, nil, fmt.Errorf("the Cachix narinfo for %s names a different store path; inspect https://%s.cachix.org before releasing", path, f.cache)
 		}
-		return true, nil
+		refs, err := narinfoReferences(body, path)
+		if err != nil {
+			return false, nil, fmt.Errorf("the Cachix narinfo for %s %s; inspect https://%s.cachix.org before releasing", path, err, f.cache)
+		}
+		return true, refs, nil
 	}
-	return false, errors.New("the Cachix narinfo retry limit was reached")
+	return false, nil, errors.New("the Cachix narinfo retry limit was reached")
+}
+
+// narinfoReferences returns the store paths a narinfo's References line names,
+// without path itself. Each entry is a store path's base name.
+func narinfoReferences(body []byte, path string) ([]string, error) {
+	scanner := bufio.NewScanner(strings.NewReader(string(body)))
+	for scanner.Scan() {
+		key, value, ok := strings.Cut(scanner.Text(), ":")
+		if !ok || key != "References" {
+			continue
+		}
+		var refs []string
+		for _, name := range strings.Fields(value) {
+			ref := "/nix/store/" + name
+			if !storePathPattern.MatchString(ref) {
+				return nil, fmt.Errorf("names an invalid reference %q", name)
+			}
+			if ref != path {
+				refs = append(refs, ref)
+			}
+		}
+		return refs, nil
+	}
+	return nil, nil
 }
 
 func narinfoNames(body []byte, path string) bool {
@@ -233,7 +314,7 @@ func (f *floorGate) relevantRuns(ctx context.Context, g *gate) (pending, latest 
 		return nil, nil, errors.New("the Actions workflow identity did not match " + floorWorkflowPath)
 	}
 	endpoint := fmt.Sprintf("/repos/%s/actions/workflows/%d/runs", g.repo, wf.ID)
-	query := url.Values{"branch": {branch}, "per_page": {strconv.Itoa(pageSize)}}
+	query := url.Values{"per_page": {strconv.Itoa(pageSize)}}
 	var matches []run
 	for page := 1; page <= floorRunPages; page++ {
 		query.Set("page", strconv.Itoa(page))
@@ -270,10 +351,13 @@ func (f *floorGate) relevantRuns(ctx context.Context, g *gate) (pending, latest 
 	return nil, latest, nil
 }
 
+// relevant: a run of this repository's workflow at one of the wait commits. A
+// push counts only on main; a dispatch on any branch, because when main has
+// moved its flake on, the next step is a dispatch on a branch at the target.
 func (f *floorGate) relevant(candidate run, workflowID int64) bool {
 	return candidate.ID > 0 && candidate.WorkflowID == workflowID &&
 		(candidate.Path == floorWorkflowPath || strings.HasPrefix(candidate.Path, floorWorkflowPath+"@")) &&
-		candidate.HeadBranch == branch && (candidate.Event == "push" || candidate.Event == "workflow_dispatch") &&
+		((candidate.Event == "push" && candidate.HeadBranch == branch) || (candidate.Event == "workflow_dispatch" && candidate.HeadBranch != "")) &&
 		candidate.Repository.FullName == f.api.repo && candidate.HeadRepository.FullName == f.api.repo &&
 		f.waitSHAs[candidate.HeadSHA]
 }
