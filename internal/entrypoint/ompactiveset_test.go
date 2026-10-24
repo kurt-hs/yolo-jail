@@ -5,8 +5,10 @@ package entrypoint
 // runs on for one launch): with YOLO_USE_PROFILES carrying `{"oh-omp": ["zai", "router"]}`, the
 // boot renders a models.yml row for each entry, keyed to its own credential, and, when an `only`
 // narrowed any entry's list, an `enabledModels` scope in config.yml that holds every entry in set
-// order: the narrowed run with its default first, and `<provider>/*` for an entry with no narrowed
-// list, since omp's selector shows nothing outside a scope. Through ConfigurePackSurfaces, the
+// order: the narrowed run with its default first, and `<provider>/**` for an entry with no narrowed
+// list, since omp's selector shows nothing outside a scope. The globstar is load-bearing: omp
+// matches the scope with Bun.Glob, whose `*` does not cross `/`, and OpenRouter's ids are
+// `vendor/model`. Through ConfigurePackSurfaces, the
 // entry the boot loop uses, over the real embedded omp pack: deleting the surface loop's set
 // lowering, ctx.active_set, or the derive's set branch fails these cases.
 
@@ -107,8 +109,8 @@ func TestOmpScopesTheWholeSetWhenAnEntryIsNarrowed(t *testing.T) {
 		use  string
 		want []any
 	}{
-		{`{"oh-omp":["zhipu","router"]}`, []any{"zhipu/glm-5.3", "zhipu/glm-5.3-flash", "router/*"}},
-		{`{"oh-omp":["router","zhipu"]}`, []any{"router/*", "zhipu/glm-5.3", "zhipu/glm-5.3-flash"}},
+		{`{"oh-omp":["zhipu","router"]}`, []any{"zhipu/glm-5.3", "zhipu/glm-5.3-flash", "router/**"}},
+		{`{"oh-omp":["router","zhipu"]}`, []any{"router/**", "zhipu/glm-5.3", "zhipu/glm-5.3-flash"}},
 	} {
 		home := renderOmpSet(t, ompSetProviders(true), tc.use)
 		cfg := ompYAML(t, home, "config.yml")
@@ -135,6 +137,43 @@ func TestAnOmpSetOfOneRendersExactlyTheSingleProfile(t *testing.T) {
 					narrowed, file, errA, a, errB, b)
 			}
 		}
+	}
+}
+
+// A WHOLE-PROVIDER SCOPE OVER SLASHED IDS USES `/**` (AP-D18): omp matches enabledModels with
+// Bun.Glob (0.15.3's resolveModelScope), whose `*` stops at `/`, and every OpenRouter id is
+// `vendor/model`, so `openrouter/*` matched none of them and omp warned `No models match pattern`.
+// openrouter is one of omp's built-in providers, so this is the built-in case through the real
+// derive: the narrowed zhipu leads, and openrouter, with no narrowed list, takes the globstar.
+func TestOmpScopesASlashedBuiltInProviderWithGlobstar(t *testing.T) {
+	providers := `{
+  "zhipu":{"api_key_env_name":"ZAI_API_KEY","models_only":true,
+    "models":{"default":"glm-5.3","glm-5.3":"glm-5.3"},
+    "endpoints":{"openai":{"base_url":"https://api.z.ai/api/coding/paas/v4","wire_api":"openai-chat-completions"}}},
+  "openrouter":{"api_key_env_name":"OPENROUTER_API_KEY",
+    "models":{"default":"vendor/b","vendor/a":"vendor/a","vendor/b":"vendor/b"},
+    "endpoints":{"openai":{"base_url":"https://openrouter.ai/api/v1","wire_api":"openai-chat-completions"}}}}`
+	use := `{"oh-omp":["zhipu","openrouter"]}`
+	profiles := `{"zhipu":{"provider":"zhipu"},"openrouter":{"provider":"openrouter"}}`
+	omp, err := embeddedPack("omp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var errw bytes.Buffer
+	e := &Env{Home: t.TempDir(), Workspace: t.TempDir(), Stderr: &errw, Vars: map[string]string{
+		"YOLO_PROVIDERS":    providers,
+		"YOLO_USE_PROFILES": use,
+		"YOLO_PROFILES":     profiles,
+	}}
+	withCtxRoot(t, t.TempDir(), "omp")
+	ConfigurePackSurfaces(e, []*packload.Pack{omp})
+	if fails := e.GenFailures(); len(fails) != 0 {
+		t.Fatalf("boot render failed: %v\n%s", fails, errw.String())
+	}
+	cfg := ompYAML(t, e.Home, "config.yml")
+	want := []any{"zhipu/glm-5.3", "openrouter/**"}
+	if got := cfg["enabledModels"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("enabledModels = %v, want %v: `openrouter/*` matches no `vendor/model` id under Bun.Glob", got, want)
 	}
 }
 

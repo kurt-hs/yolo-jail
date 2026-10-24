@@ -245,9 +245,9 @@ end
 --
 -- A scope is all of omp's picker, so once one is written each entry must be in it: an entry
 -- whose list an `only` narrowed contributes that run, its default first, and every other entry
--- contributes `<provider>/*`, every model omp has for it, which is what "no scope of its own"
+-- contributes `<provider>/**`, every model omp has for it, which is what "no scope of its own"
 -- shows it today (omp matches enabledModels as globs over `<provider>/<id>`, read in 0.15.3's
--- resolveModelScope). Runs follow set order, so the primary's leads and omp's start rule above
+-- resolveModelScope). The globstar is load-bearing: Bun.Glob's `*` does not cross `/`. Runs follow set order, so the primary's leads and omp's start rule above
 -- lands on the primary when nothing saved is in the scope. With no entry narrowed nothing is
 -- written, exactly as for one profile (AP-P1), and a set of one takes the single path below
 -- unchanged. Only the primary rides the via route (AP-D9).
@@ -277,7 +277,9 @@ yolo.derive("oh-omp", "settings", function(ctx)
       else
         -- omp's own id for a provider it has built in (ompOwn, OQ-3), the name otherwise.
         local own = ompOwn(ctx, e.provider)
-        add(((type(own) == "table") and own.id or e.provider) .. "/*")
+        -- `/**`, not `/*`: omp matches enabledModels with Bun.Glob, whose `*` stops at `/`, and
+        -- OpenRouter's ids are `vendor/model`, so `openrouter/*` matched none of them.
+        add(((type(own) == "table") and own.id or e.provider) .. "/**")
       end
     end
   end
