@@ -1,18 +1,18 @@
 ---
 title: "A pack's own tool, built from its own tree: one more source for the fork route's build act"
-status: in-review
-stage: DESIGN
-next: "Morning review: the BG-D decisions; OQ-BG1 to OQ-BG3 are ruled and built"
+status: accepted
+stage: DECIDED
+next: "On a Mac: find why macos-user's run-as-you mode fails a pack-tree build at the capture bootstrap, then run the done steps under Apple Container and on a Mac's yolo host"
 tags: [design, packs, programs, build, capture, overrides, notches]
 summary: "A pack cannot deliver a tool that needs a build from its own tree, point a tool at the checkout being developed, or fetch a verified prebuilt artifact. One new program delivery, `via: \"pack\"`, answers all three with one precedence — a user-scope dev override that builds a checkout in place of the pack's tree, then the user's opt-in to a declared prebuilt, then a build of the pack's tree, then the prebuilt where the pack ships no source, then a refusal that names the missing piece. A prebuilt is never substituted for a source that cannot be built. The build is the fork route's sealed build act with a different source, keyed by the tree's content, so nothing new builds, caches, locks or delivers."
 ---
 
 # A pack's own tool, built from its own tree: one more source for the fork route's build act
 
-**Status:** 2026-10-22. Nothing built. Evidence read at `c0a14f4e4`. Written overnight under the
-maintainer's delegation; every implementation decision is in the
-[Decision Ledger](#decision-ledger) for morning review, and the three product questions are
-[open](#open-questions) with leanings the [plan](pack-buildable-programs-plan.md) builds on.
+**Status:** 2026-10-23, audited at `64a6e2144`. Every row of the
+[Decision Ledger](#decision-ledger) is built and has a test on Linux. The Mac still owes work:
+macos-user's run-as-you mode fails done steps 1–4, and Apple Container and a Mac's `yolo host`
+have never run them ([§11](#11-what-done-looks-like)).
 
 > **In short.** A tool a pack builds from its own tree is a fork whose source is the pack itself.
 > So the feature is a new *source* for the fork route's existing build act, keyed by the content of
@@ -36,44 +36,16 @@ store mounted on Apple Container below its read-only bind floor.
 **Start at [§4](#4-precedence-one-resolver-four-rungs)**, the precedence. Everything else is how
 each rung gets its bytes.
 
-**Needs your ruling:** nothing open. **Ruled 2026-10-23:** [OQ-BG1](#OQ-BG1), [OQ-BG2](#OQ-BG2), [OQ-BG3](#OQ-BG3).
+**Needs your ruling:** None.
 
 **Reads with:** [`pack-buildable-programs-plan.md`](pack-buildable-programs-plan.md) (the
-implementation plan, written against the tree tonight on the leanings, by the maintainer's
-authorization);
+implementation plan; only its Mac task is still owed);
 [`forked-programs-as-packs.md`](forked-programs-as-packs.md) (the build act, the seal and the
 store identity this reuses);
 [`program-readiness.md`](../reference/program-readiness.md) (the launch's install act this joins);
 [`pack-binaries.md`](../reference/pack-binaries.md) (the verified download this reuses).
 
 ---
-
-## For morning review
-
-The maintainer asked for this list at the top. Builders proceed on every leaning below until a
-ruling says otherwise.
-
-**Open questions** (product behavior with no single right answer):
-
-- [OQ-BG1](#OQ-BG1): ✅ ruled 2026-10-23: a failed build stops the launch exactly as a fork
-  build's does, with the same bypass.
-- [OQ-BG2](#OQ-BG2): ✅ ruled 2026-10-23: never substituted automatically; always available by explicit choice. Original question: may the prebuilt artifact stand in where no build can run on this machine,
-  or only where the pack carries no source? I lean towards also allowing it where the builder is
-  permanently unavailable, but never where it is only busy.
-- [OQ-BG3](#OQ-BG3): ✅ ruled 2026-10-23: an override is built at launch from the checkout on disk, like a fork; nothing is picked up inside a running jail.
-  I lean towards running it as found.
-
-**Implementation decisions**, each recorded as *decided under the 2026-10-22 overnight
-delegation; review in the morning*: [BG-D1](#BG-D1) to [BG-D17](#BG-D17) in the
-[Decision Ledger](#decision-ledger). The ones most likely to draw a comment:
-
-- [BG-D1](#BG-D1): the new value is `via: "pack"`, not a reuse of `via: "source"`.
-- [BG-D4](#BG-D4): the build runs where its output will live, in the home.
-- [BG-D7](#BG-D7): the download is a single file. Archives are not supported in v1.
-- [BG-D8](#BG-D8): the override is `programs.overrides` in the user config. Since
-  [BG-D19](#BG-D19) it applies to pack-tree programs only.
-- [BG-D11](#BG-D11): `yolo pack build` covers `via: "pack"` programs only. For a fork it names
-  `yolo capture`.
 
 ## Defined terms
 
@@ -156,7 +128,7 @@ that can run a source-built program today ([§9](#9-notch-and-backend-coverage))
 - **A remote build cache, signing or reproducible builds.** These are the fork route's non-goals
   and stay so.
 - **Archive artifacts in v1.** A prebuilt artifact is one file ([BG-D7](#BG-D7)).
-- **Running a dev override's checkout live**, without a launch ([OQ-BG3](#OQ-BG3) ruled: it is
+- **Running a dev override's checkout live**, without a launch ([OQ-BG3](#decision-ledger) ruled: it is
   built at launch, as a fork is).
 - **A dev override of a program no pack builds from its tree** ([BG-D19](#BG-D19)). A fork pack
   builds such a program from a checkout.
@@ -213,7 +185,7 @@ installing something wrong ([BG-D1](#BG-D1)).
 For each selected pack-tree program, on each notch that runs it, one resolver answers "which
 bytes", in this order. The first rung that applies decides. A rung that applies and then fails
 is a failure ([P5](#P5)); it never falls through to the next rung. **A prebuilt is never
-substituted for a present source** ([OQ-BG2](#OQ-BG2)): a build that cannot run, for a builder
+substituted for a present source** ([OQ-BG2](#decision-ledger)): a build that cannot run, for a builder
 never set up or one that is busy, is a refusal. The user's explicit opt-in
 (`programs.overrides.<bin>: {"prebuilt": true}`, [BG-D18](#BG-D18)) is the one way a present
 source gives way to the prebuilt.
@@ -251,7 +223,7 @@ implementer; the facts each line carries do not:
 | Override checkout gone or unreadable at the launch | the checkout, the cause, and the key to fix or remove |
 | Build failed | the pack, the program, the build log path, the retry command `yolo pack build <pack>`, the bypass ([§8](#8-failure-and-the-next-step)), and the prebuilt opt-in when `prebuilt` declares this platform ([BG-D21](#BG-D21)) |
 | Builder busy, its jail did not start, no container runtime, or Apple Container below its read-only bind floor | the existing fork-route reason, then the prebuilt opt-in when `prebuilt` declares this platform ([BG-D21](#BG-D21)) |
-| Build environment never set up (a Mac with no sandbox account, in the account mode) | the setup step (`yolo macos-setup`) and, when `prebuilt` declares this platform, the opt-in that runs it instead ([OQ-BG2](#OQ-BG2)) |
+| Build environment never set up (a Mac with no sandbox account, in the account mode) | the setup step (`yolo macos-setup`) and, when `prebuilt` declares this platform, the opt-in that runs it instead ([OQ-BG2](#decision-ledger)) |
 | Opt-in set, but no prebuilt for this platform | the setting, the platform, and the platforms `prebuilt` does declare (or "none") |
 | No source and no prebuilt for this platform | the pack, `from` as declared, the platform, and the platforms `prebuilt` does declare (or "none") |
 | Prebuilt fetch failed, or its digest did not match | the URL and, for a mismatch, both digests ([the integrity rule](../reference/pack-binaries.md#principles)) |
@@ -284,12 +256,12 @@ names the source directory's tree digest in place of a commit. A hit prints noth
 }
 ```
 
-**What it is, as ruled** ([OQ-BG3](#OQ-BG3), 2026-10-23, against the leaning): the checkout
+**What it is, as ruled** ([OQ-BG3](#decision-ledger), 2026-10-23): the checkout
 replaces the pack's `from`, and nothing else changes. At each fresh launch, each `yolo host` floor
 resolution and each `yolo pack build`, the program is built from the checkout exactly as a
 pack-tree program is built from its pack's tree ([§6](#6-building-the-fork-routes-act-with-the-packs-tree-as-its-source)):
 the same sealed build act, the pack's own `build` and `run`, the same store, lock and pool lines,
-and the same fatal refusal when the build fails ([OQ-BG1](#OQ-BG1)). In the maintainer's words: *"you
+and the same fatal refusal when the build fails ([OQ-BG1](#decision-ledger)). In the maintainer's words: *"you
 start the jail, it gets built and that's it ... just like the forks work."* There is no live
 mount, no build at run time and no pickup in a running jail. An edit in the checkout is built at
 the next fresh launch, and an unchanged checkout is a hit that builds nothing.
@@ -455,7 +427,7 @@ so nothing of the user's is in it.
 - **When it is used:** `prebuilt` declares this notch's platform, and either the source
   directory is absent from the staged pack, so the artifact is the only bytes the pack offers, or
   the user opted that program into it with `programs.overrides.<bin>: {"prebuilt": true}`
-  ([BG-D18](#BG-D18)). **Never in place of a build that cannot run** ([OQ-BG2](#OQ-BG2)): a source
+  ([BG-D18](#BG-D18)). **Never in place of a build that cannot run** ([OQ-BG2](#decision-ledger)): a source
   present on a machine that never set up its build environment is a fatal refusal through the
   missing-build path, with the same `YOLO_ALLOW_MISSING_PROGRAMS=1` bypass. It names the setup step
   and, when `prebuilt` declares the platform, the opt-in. An opt-in for a platform `prebuilt` does
@@ -479,8 +451,8 @@ so nothing of the user's is in it.
 ## 8. Failure, and the next step
 
 **Every failure refuses that program**, naming the pack, the program, the cause, the log when one
-exists, the retry command and the bypass. The leaning of [OQ-BG1](#OQ-BG1) is that such a failure
-stops the launch, as it does for every program today
+exists, the retry command and the bypass. By [OQ-BG1](#decision-ledger) such a failure stops the
+launch, as it does for every program
 ([OQ-JR1](../reference/program-readiness.md#OQ-JR1)): the readiness act's install-only run of the
 program's launcher exits non-zero, and the act refuses with `provision.RefusedStatus`.
 `YOLO_ALLOW_MISSING_PROGRAMS=1` starts the jail without that program, loudly, and the jail's other
@@ -494,7 +466,7 @@ programs are untouched.
 | Lock wait ran out (20 minutes) | That launch's failed build, naming the holder's pid and the lock |
 | Apple Container busy with another jail | The existing refusal ([PF-D92](../reference/patched-forks.md#PF-D92)), which names the retry once the other jails stop |
 | Source absent, no prebuilt for the platform | Refused, naming what is declared ([§4](#4-precedence-one-resolver-four-rungs)) |
-| Source present, build environment never set up | Refused, naming the setup step and, when one is declared for the platform, the prebuilt opt-in; never the prebuilt ([OQ-BG2](#OQ-BG2)) |
+| Source present, build environment never set up | Refused, naming the setup step and, when one is declared for the platform, the prebuilt opt-in; never the prebuilt ([OQ-BG2](#decision-ledger)) |
 | Prebuilt opt-in set, no prebuilt for the platform | Refused, naming the setting and the platforms declared |
 | Prebuilt fetch failed or digest mismatch | Refused; nothing cached; never falls back to a cached copy that does not match |
 | Override invalid, its checkout gone, or naming a program that is not a pack-tree program | Refused, naming the path, the key and the next step ([§5](#5-the-dev-override)) |
@@ -534,13 +506,13 @@ difference below is one the fork route already has, for the reason given.
 | **jail, Apple Container** | One build at a time. Refused while another jail runs (the existing gate). Below the read-only bind floor no store is mounted, so nothing store-delivered works, and the reason says so | Same store, so the same floor applies | Built from the checkout, so the same gate and floor apply |
 | **jail, macos-user** | The sealed darwin act as the sandbox account ([FP-D24](forked-programs-as-packs.md#FP-D24)); the key is staged into the sandbox's capture store | darwin artifact, staged the same way | Built from the checkout by the darwin act |
 | **`yolo host`, Linux** | The floor's build through the sealed capture jail, materialized into the floor prefix when relocatable ([FP-D16](forked-programs-as-packs.md#FP-D16)) | Linux artifact into the floor | Built from the checkout into the floor at each `yolo host` launch |
-| **`yolo host`, macOS** | The darwin act. With no sandbox account the build is refused, naming `yolo macos-setup` and the prebuilt opt-in when a darwin artifact is declared ([OQ-BG2](#OQ-BG2)) | darwin artifact into the floor, where the source is absent or the user opted in | Built from the checkout by the darwin act, refused the same way with no sandbox account |
+| **`yolo host`, macOS** | The darwin act. With no sandbox account the build is refused, naming `yolo macos-setup` and the prebuilt opt-in when a darwin artifact is declared ([OQ-BG2](#decision-ledger)) | darwin artifact into the floor, where the source is absent or the user opted in | Built from the checkout by the darwin act, refused the same way with no sandbox account |
 | **guest** | Unbuilt, as every verb there is. Nothing here is keyed on there being two notches | | |
 
 > [!IMPORTANT]
 > **Nothing here can be verified for macos-user, Apple Container or a Mac's `yolo host` from
-> Linux.** A nested podman jail verifies the podman rows. The rest need a real Mac, as the fork
-> route's darwin act did ([§11](#11-what-done-looks-like)).
+> Linux.** A nested podman jail verifies the podman rows. The rest need a real Mac, and
+> [§11](#11-what-done-looks-like) records what one has run so far.
 
 ## 10. Forbidden behavior
 
@@ -551,11 +523,11 @@ difference below is one the fork route already has, for the reason given.
   after a broken override, no older build after a newer one failed ([P5](#P5)).
 - **Never write into the pack tree or into the override's directory.**
 - **Never deliver an override live**: no mount or link of the checkout into a jail, no run of the
-  checkout's own files on `yolo host`, and no build at run time ([OQ-BG3](#OQ-BG3)).
+  checkout's own files on `yolo host`, and no build at run time ([OQ-BG3](#decision-ledger)).
 - **Never let a workspace config set `programs.overrides`**, and never read one from there.
 - **Never fetch a prebuilt artifact while the source directory is present**, unless the user
   opted that program into it ([BG-D18](#BG-D18)). Never substitute one for a build that cannot run
-  ([OQ-BG2](#OQ-BG2)).
+  ([OQ-BG2](#decision-ledger)).
 - **Never build, fetch or digest on an attach, a dry run, `yolo check`, inside a jail, or on a
   timer.**
 - **Never print a hit.** Never omit an override or prebuilt line.
@@ -574,14 +546,23 @@ needs a build. The plan gives each an integration test.
 5. **Remove the pack's sources: it uses the declared prebuilt artifact and reports the checksum
    it verified.**
 6. **Break the build: only that program is refused, and the log path is named.** By
-   [OQ-BG1](#OQ-BG1), the launch stops by default. With `YOLO_ALLOW_MISSING_PROGRAMS=1`
+   [OQ-BG1](#decision-ledger), the launch stops by default. With `YOLO_ALLOW_MISSING_PROGRAMS=1`
    it starts, and every other program works.
 
-| Where | Steps verifiable |
-| :--- | :--- |
-| Nested podman jail, from a matched dev bundle | 1–6 |
-| A Linux host's `yolo host` | 1–6 on the floor |
-| A real Mac: macos-user, Apple Container, and `yolo host` | 1–6 on each; owed, as for every darwin build |
+| Where | Steps | Integration tests | Recorded on hardware |
+| :--- | :--- | :--- | :--- |
+| Nested podman jail, from a matched dev bundle | 1–6 | `packtreeprogram_test.go`, `programoverride_test.go` | No run recorded here |
+| A Linux host's `yolo host` | 1–6 on the floor | `TestHostFloorBuildsAPackTreeProgramFromItsTree` covers 1–4 and 6; step 5 has a unit test only | No run on a real host (outside a nested jail) recorded |
+| A real Mac, macos-user, account mode | 1–6 | `TestMacosUserPackTree*` | All four passed, 2026-10-23 ([lab report](../lab-reports/2026-10-23-native-mac-verification.md#2-the-macos-user-suite)) |
+| A real Mac, macos-user, run-as-you mode | 1–6 | `TestMacosUserPackTree*` | **Fails steps 1–4**: the build and override tests fail at the capture bootstrap, cause not yet found; the failure and prebuilt tests pass (same report) |
+| A real Mac, Apple Container, and `yolo host` | 1–6 on each | none of their own | **Owed**: never run |
+
+> [!WARNING]
+> **Still open on the Mac**, and the reason this design is not `BUILT`: the run-as-you capture
+> bootstrap failure above, and a first run under Apple Container and on a Mac's `yolo host`. A
+Linux host's `yolo host` also has no real-host run on record, though nothing there is Mac-only. The
+> run-as-you failure may not be specific to this design. Every other macos-user capture test runs in
+> account mode, so that mode's capture bootstrap may never have worked on hardware.
 
 ## 12. Alternatives, with verdicts
 
@@ -591,8 +572,8 @@ needs a build. The plan gives each an integration test.
 | **A `files` contribution plus a hand-written launcher** | **Rejected as the answer, though it works today for a tool that needs no build** (the handoff's own Node case). It has no build, no key, no override and no artifact. |
 | **`binaries` with a build step** | **Rejected by ruling** ([OQ-BP5](../reference/pack-binaries.md#OQ-BP5)): a build is arbitrary code, and belongs in the sealed capture jail, which is where this design puts it. |
 | **Build in a scratch directory, copy the output** | **Rejected** for the relocation reason in [§6.2](#62-the-build-runs-where-its-output-lives). |
-| **The override builds the checkout in a sealed jail at launch, keyed on its digest** | **Chosen by ruling** ([OQ-BG3](#OQ-BG3), 2026-10-23), over this design's leaning. It gives up the request's "pick up changes without a launch", which the maintainer set aside: a checkout behaves like a fork's or a pi extension's, built at launch and nothing more. The cost is a digest of the working tree, `node_modules` included, on every launch ([BG-D20](#BG-D20)). |
-| **Run the checkout as found, live** (the former leaning: a mount, a context link, the host path) | **Rejected by ruling** ([OQ-BG3](#OQ-BG3)): it is special behavior the forks do not have. A developer who wants a live checkout in one jail builds it and points at it there, with no help from yolo. |
+| **The override builds the checkout in a sealed jail at launch, keyed on its digest** | **Chosen by ruling** ([OQ-BG3](#decision-ledger), 2026-10-23). It gives up the request's "pick up changes without a launch", which the maintainer set aside: a checkout behaves like a fork's or a pi extension's, built at launch and nothing more. The cost is a digest of the working tree, `node_modules` included, on every launch ([BG-D20](#BG-D20)). |
+| **Run the checkout as found, live** (a mount, a context link, the host path) | **Rejected by ruling** ([OQ-BG3](#decision-ledger)): it is special behavior the forks do not have. A developer who wants a live checkout in one jail builds it and points at it there, with no help from yolo. |
 | **Key on the pack's commit instead of the tree digest** | **Rejected.** A `file://` pack has no commit, and a commit that touched only other files would rebuild for nothing. |
 
 ## 13. Risks
@@ -613,111 +594,39 @@ Found while building this design and outside its scope; none blocks it.
   loaded `just check-ci`: it times out on its 250 ms reachability check, and passed three runs out
   of three on its own (2026-10-23). The bound wants widening, or the wait wants a signal.
 
-## Open Questions
-
-1. <a id="OQ-BG1"></a>✅ **OQ-BG1: Does a program that cannot be delivered stop the launch?**
-
-   The handoff asks that a failed build "not stop an unrelated launch, the same rule the other
-   program kinds follow". Since 2026-10-05 every program's install failure stops the launch, by
-   [OQ-JR1](../reference/program-readiness.md#OQ-JR1), with a bypass.
-
-   - **A — Stop the launch, with the bypass.** This is [OQ-JR1](../reference/program-readiness.md#OQ-JR1)'s rule, applied unchanged. Only this
-     program is named, and the bypass leaves every other program working.
-   - **B — Start without it, loudly.** This reopens [OQ-JR1](../reference/program-readiness.md#OQ-JR1) for one `via`, so a launch would mean
-     two different things depending on the program's delivery.
-
-   _Leaning:_ A — stop the launch with YOLO_ALLOW_MISSING_PROGRAMS as the bypass: it is the standing readiness rule, and matching it is what "the same rule the other program kinds follow" asks.
-
-   **Answer:**
-   > **Ruled in review 2026-10-23, as leaned (A):** a pack build is handled *"identically to how
-   > we handle builds of extensions and forks and stuff. We have the same escape hatch, it's the
-   > same happy path, and it's the same fatal error."* Built that way: a pack-tree build runs
-   > through the fork route's build act and its missing-build refusal, which names the build log,
-   > `yolo pack build <pack>` and `YOLO_ALLOW_MISSING_PROGRAMS=1`.
-
-2. <a id="OQ-BG2"></a>✅ **OQ-BG2: May the prebuilt artifact stand in where no build can run on this machine?**
-
-   The handoff names the artifact for an absent source. Some machines can never build: a Mac with
-   no sandbox account, for `yolo host`. Others cannot build right now: Apple Container while
-   another jail runs.
-
-   - **A — Absent source only.** Exactly the handoff's rule. A Mac with no sandbox account gets
-     no program, even though the pack ships one for it.
-   - **B — Absent source, or a builder that is permanently unavailable.** A busy builder still
-     refuses, so the bytes never change from one launch to the next because of timing.
-   - **C — Any time a build cannot run now.** The bytes then depend on whatever else is running.
-
-
-   _Leaning:_ B — absent source or a permanently unavailable builder, disclosed with its checksum; never a busy one, so the bytes do not depend on timing.
-
-   **Answer:**
-   > **Ruled in review 2026-10-23, none of the options as written:** *"if you've never set up your
-   > building environment, I suppose we just should have a fatal error when building is required.
-   > If there's a pre-built option, we should always allow you to use the pre-built, but I don't
-   > think we should ... automatically give you some old version just because this, I think that
-   > breaks mental models."* So where the pack ships its source, yolo builds it or the launch stops,
-   > and the refusal names the setup step; a prebuilt is never substituted automatically. The user
-   > may always choose the pack's prebuilt explicitly, at user scope (`programs.overrides.<bin>`
-   > with `"prebuilt": true`), and the refusal names that choice. A pack that ships no source uses
-   > its prebuilt, since nothing is substituted.
-   > Confirmed for that case 2026-10-23: *"adding the pack is your acknowledgement that you trust
-   > this pack and you will then run whatever the pack runs."*
-
-3. <a id="OQ-BG3"></a>✅ **OQ-BG3: Does yolo build a dev override, or run the checkout as it finds it?**
-
-   The override's purpose is to pick up changes "without a launch". For a compiled tool, someone
-   has to rebuild after an edit.
-
-   - **A — Run as found.** The developer builds, as they would anyway. A missing `run` file is
-     refused, and the refusal names the pack's build line.
-   - **B — Build at invocation, in the session.** Automatic, but it runs the build with the
-     session's authority on every changed invocation. On `yolo host` it would build on the host.
-   - **C — Build at launch, in the sealed jail.** Changes are then picked up only at a launch.
-
-
-   _Leaning:_ A — run as found: it is the only option that keeps both "no launch needed" and "never build on the host", and the refusal names the build line.
-
-   **Answer:**
-   > **Ruled in review 2026-10-23, against the leaning (C, built the fork way):** *"I don't want
-   > these builds to like automatically be building in the jail. I want them to be like pi
-   > extensions or the pi fork. Like you start the jail, it gets built and that's it. ... I want
-   > workspace B upon launch to recompile from what is sitting on disk at its launch, just like the
-   > forks work. I don't want special behavior here. ... If you're developing board in Jail
-   > Workspace A, you will build it and point to it yourself. You don't need any help from YOLO."*
-   > An override builds the program at each launch from the checkout as it sits on disk, through
-   > the same sealed build act and cache as a pack-tree build; nothing is picked up inside a
-   > running jail.
-
 ## Decision Ledger
 
-Every row is *decided under the 2026-10-22 overnight delegation; review in the morning*, and
-reversible until it is built.
+The three OQ-BG rows are the maintainer's rulings from the 2026-10-23 review. BG-D1 to BG-D16 were
+decided under the maintainer's 2026-10-22 overnight delegation. BG-D18 onward were decided by the
+lead under a ruling, as each row says. No separate ruling on the delegated rows is recorded. **Built**
+names the code and the test that pins it. *Mutation-checked* means that deleting or neutering the
+named call site at `64a6e2144` turned that test red.
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| [OQ-BG1](#OQ-BG1) | A pack build that fails is handled identically to a fork build: the same fatal refusal, the same next steps, the same `YOLO_ALLOW_MISSING_PROGRAMS=1` bypass. | 2026-10-23 | [§11](#11-what-done-looks-like) | built: the fork route's missing-build refusal |
-| [OQ-BG2](#OQ-BG2) | A present source is built or the launch stops; a prebuilt is never substituted for it automatically. The user may always choose the prebuilt explicitly at user scope, and a pack shipping no source uses its prebuilt. | 2026-10-23 | [§4](#4-precedence-one-resolver-four-rungs), [§7](#7-the-prebuilt-artifact) | built: `packload.PackTreeResolve` has no unbuildable input; the opt-in is [BG-D18](#BG-D18) |
-| [OQ-BG3](#OQ-BG3) | A dev override is built at each launch from the checkout as it sits on disk, through the pack-tree build act and its cache; no live mount and no build at run time. | 2026-10-23 | [§5](#5-the-dev-override) | built: `run.ResolvePackTreeProgram` ([BG-D19](#BG-D19)) |
-| <a id="BG-D1"></a>BG-D1 | **The new delivery is `via: "pack"`**, a fourth value in the closed set, delivered by the source launcher. It is not a relaxed `via: "source"`, which keeps its fork meaning. An older yolo skips the new value with a skew note instead of refusing it as a malformed fork. | 2026-10-22 | [§3](#3-the-declaration), [§12](#12-alternatives-with-verdicts) | — |
-| <a id="BG-D2"></a>BG-D2 | **The build is the fork route's build act**, sealed and never on the host. The pack-tree source is staged by copying the staged pack's `from` minus `.git`, in place of a git checkout. | 2026-10-22 | [§6.3](#63-the-build-act-reused-unchanged) | — |
-| <a id="BG-D3"></a>BG-D3 | **Identity**: source `pack:<pack>/<from>`; revision is the tree digest of `from` with `.git` skipped; recipe is a tagged hash of `build`, `run` and the layout version; platform. The toolchain is recorded, not keyed. | 2026-10-22 | [§6.1](#61-the-source-and-what-keys-it) | — |
-| <a id="BG-D4"></a>BG-D4 | **The build runs where its output lives**: `from` is copied to `~/.local/lib/yolo-programs/<bin>/` and built there, with `~/.local/bin/<bin>` as a relative link to `<run>`. The entry holds only those two paths. | 2026-10-22 | [§6.2](#62-the-build-runs-where-its-output-lives) | — |
-| <a id="BG-D5"></a>BG-D5 | **No `build` means no jail**: the host admits the copied layout directly, under the same lock and key. | 2026-10-22 | [§6.4](#64-no-build-line-no-jail) | — |
-| <a id="BG-D6"></a>BG-D6 | **`run` names the program relative to `from`**, and yolo sets its exec bit at placement rather than requiring the author to commit one. | 2026-10-22 | [§3](#3-the-declaration) | — |
-| <a id="BG-D7"></a>BG-D7 | **`prebuilt`** is a per-platform `{url, sha256}` map under `binaries`' rules. It holds one file, with no archives in v1. It is fetched through `packbin` by a launch, `yolo pack install`/`update` and `yolo pack build`, admitted as a store entry, and refused in an official pack. A launch may fetch it, despite [BP-D5](../reference/pack-binaries.md#BP-D5), because BP-D5 governs a loophole's binary, while a program is installed at launch by [OQ-JR1](../reference/program-readiness.md#OQ-JR1). | 2026-10-22 | [§7](#7-the-prebuilt-artifact) | — |
-| <a id="BG-D8"></a>BG-D8 | **The override is `programs.overrides.<bin>` `{path}`** in the user-scope-only `programs` key, keyed by `bin`, on every workspace. Narrowed by [BG-D19](#BG-D19): it applies to pack-tree programs only, and its `run` is retired. | 2026-10-22 | [§5](#5-the-dev-override) | built: `config.ProgramOverrides` |
-| <a id="BG-D9"></a>BG-D9 | **A `path` at the credential boundary is refused at every notch.** The live delivery this row also decided (a context mount, a macos-user link and grant, the host path on `yolo host`) is deleted by [BG-D19](#BG-D19). | 2026-10-22 | [§5](#5-the-dev-override) | built: `run.ProgramCheckout` |
-| <a id="BG-D10"></a>BG-D10 | **Lines**: an override or prebuilt line on every fresh launch and attach; the pool's lines when a build runs; nothing on a hit. | 2026-10-22 | [§4](#4-precedence-one-resolver-four-rungs) | — |
-| <a id="BG-D11"></a>BG-D11 | **`yolo pack build [<pack>...] [--force] [--at jail\|host]`** runs on the host only. It waits on the build lock, covers pack-tree programs, and names `yolo capture <bin>` for a fork. | 2026-10-22 | [§8](#8-failure-and-the-next-step) | — |
-| <a id="BG-D12"></a>BG-D12 | **Materializing a new key replaces the program directory whole.** | 2026-10-22 | [§6.5](#65-materialize-replaces-the-whole-program-directory) | — |
-| <a id="BG-D13"></a>BG-D13 | **A waiter takes the winner's result, failure included.** A launch starting after a failure builds again, with no back-off. | 2026-10-22 | [§6.6](#66-two-at-once) | — |
-| <a id="BG-D14"></a>BG-D14 | **A build failure's retry command is `yolo pack build <pack>`**, and its log is the pool's existing per-build log. | 2026-10-22 | [§8](#8-failure-and-the-next-step) | — |
-| <a id="BG-D15"></a>BG-D15 | **A nested launch inherits no override.** Its own user config decides. | 2026-10-22 | [§2](#2-goals-and-non-goals) | — |
-| <a id="BG-D16"></a>BG-D16 | **`yolo pack lint` warns** when `from` is absent in the linted tree and no `prebuilt` is declared. | 2026-10-22 | [§3](#3-the-declaration) | — |
-| <a id="BG-D18"></a>BG-D18 | **The prebuilt opt-in is `programs.overrides.<bin>: {"prebuilt": true}`**, user scope only, beside the dev override's `{path, run}` and mutually exclusive with it in one entry (a validation error naming both). With it set, a pack-tree program takes its verified prebuilt for the notch's platform on every notch (launch, macos-user, `yolo host`, `yolo pack build`, `yolo pack install`'s prefetch), even with the source present, disclosed with its sha256. A platform the pack declares no prebuilt for is a refusal naming the platforms it does; `yolo check` reports an opt-in that can do nothing. Decided by the lead, under [OQ-BG2](#OQ-BG2)'s ruling. | 2026-10-23 | [§5](#5-the-dev-override), [§7](#7-the-prebuilt-artifact) | built: `config.ProgramPrebuiltOptIns` |
+| OQ-BG1 | A pack build that fails is handled identically to a fork build: the same fatal refusal, the same next steps, the same `YOLO_ALLOW_MISSING_PROGRAMS=1` bypass. | 2026-10-23 | [§11](#11-what-done-looks-like) | built: the fork route's missing-build refusal (`provision.RefusedStatus`); `TestAFailedPackTreeBuildIsRefusedWithItsLogAndRetry`, integration `TestPackTreeProgramBuildFailureRefusesOnlyIt` |
+| OQ-BG2 | A present source is built or the launch stops; a prebuilt is never substituted for it automatically. The user may always choose the prebuilt explicitly at user scope, and a pack shipping no source uses its prebuilt. | 2026-10-23 | [§4](#4-precedence-one-resolver-four-rungs), [§7](#7-the-prebuilt-artifact) | built: `packload.PackTreeResolve` has no unbuildable input; `TestAPresentSourceBuildsAndNeverTakesThePrebuilt`, `TestAPresentSourceNeverFetchesThePrebuilt`, `TestADarwinPrebuiltIsFetchedForAPresentSourceOnlyWithTheOptIn`; the opt-in is [BG-D18](#BG-D18) |
+| OQ-BG3 | A dev override is built at each launch from the checkout as it sits on disk, through the pack-tree build act and its cache; no live mount and no build at run time. | 2026-10-23 | [§5](#5-the-dev-override) | built: `run.ResolvePackTreeProgram` ([BG-D19](#BG-D19)); `TestALaunchBuildsAnOverriddenProgramFromItsCheckout` (mutation-checked), integration `TestPackTreeProgramOverrideBuildsTheCheckout` |
+| <a id="BG-D1"></a>BG-D1 | **The new delivery is `via: "pack"`**, a fourth value in the closed set, delivered by the source launcher. It is not a relaxed `via: "source"`, which keeps its fork meaning. An older yolo skips the new value with a skew note instead of refusing it as a malformed fork. | 2026-10-22 | [§3](#3-the-declaration), [§12](#12-alternatives-with-verdicts) | built: `ViaPack` in `knownVias` (`packdecl/contributes.go`); `TestKnownViasCoversTheShippedMechanisms`, `TestPackTreeProgramDecodesStrictlyAndTolerantly` (mutation-checked: dropping the entry turns both red) |
+| <a id="BG-D2"></a>BG-D2 | **The build is the fork route's build act**, sealed and never on the host. The pack-tree source is staged by copying the staged pack's `from` minus `.git`, in place of a git checkout. | 2026-10-22 | [§6.3](#63-the-build-act-reused-unchanged) | built: `stagePackTreeSource`, called by the build act (`cli/forkbuild.go`); `TestTheBuildActBuildsAPackTreeProgramFromItsStagedTree` (mutation-checked), `TestAFromRootPackTreeProgramBuildsFromALaunchsStagedTree` |
+| <a id="BG-D3"></a>BG-D3 | **Identity**: source `pack:<pack>/<from>`; revision is the tree digest of `from` with `.git` skipped; recipe is a tagged hash of `build`, `run` and the layout version; platform. The toolchain is recorded, not keyed. | 2026-10-22 | [§6.1](#61-the-source-and-what-keys-it) | built: `packdecl.PackTreeRecipe`, `PackTreeBuildSource`, `packload.PackTreeDigest`; `TestPackTreeRecipeIsTaggedAndKeyedOnEveryInput`, `TestPackTreeDigestIsTheSourceDirectorysContent`, `TestAPackTreeBuildIsKeyedOnItsTreeRecipeAndPlatform` (mutation-checked at the build act's recipe call) |
+| <a id="BG-D4"></a>BG-D4 | **The build runs where its output lives**: `from` is copied to `~/.local/lib/yolo-programs/<bin>/` and built there, with `~/.local/bin/<bin>` as a relative link to `<run>`. The entry holds only those two paths. | 2026-10-22 | [§6.2](#62-the-build-runs-where-its-output-lives) | built: `packTreePlacementScript`, `prunePackTreeOutput` (`cli/packtreebuild.go`); `TestThePackTreePlacementScriptBuildsInPlaceAndLinks`, `TestTheBuildActBuildsAPackTreeProgramFromItsStagedTree` (mutation-checked at the prune call) |
+| <a id="BG-D5"></a>BG-D5 | **No `build` means no jail**: the host admits the copied layout directly, under the same lock and key. | 2026-10-22 | [§6.4](#64-no-build-line-no-jail) | built: `admitPackTreeCopyUnderLock`; `TestAPackTreeProgramWithNoBuildLineIsCopiedWithNoJail` (mutation-checked) |
+| <a id="BG-D6"></a>BG-D6 | **`run` names the program relative to `from`**, and yolo sets its exec bit at placement rather than requiring the author to commit one. | 2026-10-22 | [§3](#3-the-declaration) | built: the placement script's `chmod +x`; `TestThePackTreePlacementScriptBuildsInPlaceAndLinks` (mutation-checked), `TestAPackTreeRunSymlinkMustResolveInsideTheProgramDirectory` |
+| <a id="BG-D7"></a>BG-D7 | **`prebuilt`** is a per-platform `{url, sha256}` map under `binaries`' rules. It holds one file, with no archives in v1. It is fetched through `packbin` by a launch, `yolo pack install`/`update` and `yolo pack build`, admitted as a store entry, and refused in an official pack. A launch may fetch it, despite [BP-D5](../reference/pack-binaries.md#BP-D5), because BP-D5 governs a loophole's binary, while a program is installed at launch by [OQ-JR1](../reference/program-readiness.md#OQ-JR1). | 2026-10-22 | [§7](#7-the-prebuilt-artifact) | built: `packdecl.prebuiltProblems`, `cli/packtreeprebuilt.go`, `fetchPackTreePrebuilts` (`yolo pack install`, which `pack update` runs); `TestTheLaunchSlotFetchesAPrebuiltOnceThenHits` and `TestPackInstallPrefetchesAnAbsentSourcesPrebuilt` (both mutation-checked), `TestAPrebuiltDigestMismatchStoresNothingAndNamesBothDigests`, `TestPackBuildFetchesAPrebuiltThenReportsItUpToDate`, the census `TestNoOfficialPackDeclaresAPrebuilt`, integration `TestPackTreeProgramUsesThePrebuiltWithoutSources` |
+| <a id="BG-D8"></a>BG-D8 | **The override is `programs.overrides.<bin>` `{path}`** in the user-scope-only `programs` key, keyed by `bin`, on every workspace. Narrowed by [BG-D19](#BG-D19): it applies to pack-tree programs only, and its `run` is retired. | 2026-10-22 | [§5](#5-the-dev-override) | built: `config.ProgramOverrides`, `validatePrograms`; `TestProgramOverridesReadsTheUserConfig`, `TestProgramOverridesIsUserScopeOnly`, `TestProgramOverridesFailsClosed`; the launch's read (`run/packtreepins.go`) mutation-checked by `TestALaunchBuildsAnOverriddenProgramFromItsCheckout` |
+| <a id="BG-D9"></a>BG-D9 | **A `path` at the credential boundary is refused at every notch.** The live delivery this row also decided (a context mount, a macos-user link and grant, the host path on `yolo host`) is deleted by [BG-D19](#BG-D19). | 2026-10-22 | [§5](#5-the-dev-override) | built: `run.ProgramCheckout` calls `paths.WorkspaceScopeBreach`; `TestProgramCheckoutResolvesThePathAndRefusesWhatItCannotBuild` (mutation-checked) |
+| <a id="BG-D10"></a>BG-D10 | **Lines**: an override or prebuilt line on every fresh launch and attach; the pool's lines when a build runs; nothing on a hit. | 2026-10-22 | [§4](#4-precedence-one-resolver-four-rungs) | built: `notePrebuiltDeliveries` and `noteCheckoutDeliveries` (`run/buildslot.go`), the attach's lines (`run/patchedforkline.go`), `hostfloor`'s `sayPackTreeDisclosure`; `TestALaunchWithNoSourceTakesThePrebuiltAndSaysItsSHA`, `TestALaunchBuildsAnOverriddenProgramFromItsCheckout`, `TestAnAttachSaysThePrebuiltItsJailRuns` (all three call sites mutation-checked), `TestAnAttachNamesTheCheckoutItsJailRuns`; the silent hit is step 3 of integration `TestPackTreeProgramBuildsOnceAndRebuildsOnChange` |
+| <a id="BG-D11"></a>BG-D11 | **`yolo pack build [<pack>...] [--force] [--at jail\|host]`** runs on the host only. It waits on the build lock, covers pack-tree programs, and names `yolo capture <bin>` for a fork. | 2026-10-22 | [§8](#8-failure-and-the-next-step) | built: `cli/packbuild.go`, dispatched by `yolo pack`'s `build` case; eleven `TestPackBuild*` tests and `TestPackHelpListsBuild` (mutation-checked: renaming the case turns ten red) |
+| <a id="BG-D12"></a>BG-D12 | **Materializing a new key replaces the program directory whole.** | 2026-10-22 | [§6.5](#65-materialize-replaces-the-whole-program-directory) | built: the source launcher clears `PRODUCES`, which for a pack-tree program holds the whole `~/.local/lib/yolo-programs/<bin>` (`packdecl.PackTreeProduces`); `TestAPackTreeLauncherReplacesAnOlderBuildWhole` (mutation-checked) |
+| <a id="BG-D13"></a>BG-D13 | **A waiter takes the winner's result, failure included.** A launch starting after a failure builds again, with no back-off. | 2026-10-22 | [§6.6](#66-two-at-once) | built: `waitedPackTreeFailure` in `packTreeAfterLock`; `TestAPackTreeWaiterTakesTheWinnersFailure` (mutation-checked) |
+| <a id="BG-D14"></a>BG-D14 | **A build failure's retry command is `yolo pack build <pack>`**, and its log is the pool's existing per-build log. | 2026-10-22 | [§8](#8-failure-and-the-next-step) | built: `packTreeRetry`, and the pool's `build-<slug>.log` (`buildLogName`); `TestAFailedPackTreeBuildIsRefusedWithItsLogAndRetry` (mutation-checked), integration `TestPackTreeProgramBuildFailureRefusesOnlyIt` |
+| <a id="BG-D15"></a>BG-D15 | **A nested launch inherits no override.** Its own user config decides. | 2026-10-22 | [§2](#2-goals-and-non-goals) | built: `programs` is a never-inherited key (`config/inherit.go`); `TestProgramOverridesAreNotInherited`. Deleting that entry leaves the test green, because an unlisted key is not inherited either: the outcome is pinned, and the entry is redundant by construction |
+| <a id="BG-D16"></a>BG-D16 | **`yolo pack lint` warns** when `from` is absent in the linted tree and no `prebuilt` is declared. | 2026-10-22 | [§3](#3-the-declaration) | built: `packdecl.PackTreeWarnings`, called by `yolo pack lint` (`cli/pack.go`); `TestPackLintWarnsWhenTheSourceDirectoryIsAbsent` (mutation-checked) |
+| <a id="BG-D18"></a>BG-D18 | **The prebuilt opt-in is `programs.overrides.<bin>: {"prebuilt": true}`**, user scope only, beside the dev override's `{path, run}` and mutually exclusive with it in one entry (a validation error naming both). With it set, a pack-tree program takes its verified prebuilt for the notch's platform on every notch (launch, macos-user, `yolo host`, `yolo pack build`, `yolo pack install`'s prefetch), even with the source present, disclosed with its sha256. A platform the pack declares no prebuilt for is a refusal naming the platforms it does; `yolo check` reports an opt-in that can do nothing. Decided by the lead, under [OQ-BG2](#decision-ledger)'s ruling. | 2026-10-23 | [§5](#5-the-dev-override), [§7](#7-the-prebuilt-artifact) | built: `config.ProgramPrebuiltOptIns`, read by a launch, `yolo pack build`, `yolo pack install` and the host floor; `TestProgramPrebuiltOptInIsReadValidatedAndExclusive`, `TestALaunchTakesThePrebuiltOverAPresentSourceOnlyWithTheOptIn` (the launch's read mutation-checked), `TestThePrebuiltOptInTakesTheArtifactOverAPresentSource`, integration `TestPackTreeProgramUsesThePrebuiltOverItsSourceOnlyWithTheOptIn` |
 | <a id="BG-D17"></a>BG-D17 | ~~No receipt for an override: nothing is installed.~~ Superseded by [BG-D19](#BG-D19): an override is a build like any other, admitted with its receipt, and its line names the checkout. | 2026-10-22 | [§4](#4-precedence-one-resolver-four-rungs) | superseded |
-| <a id="BG-D19"></a>BG-D19 | **Under [OQ-BG3](#OQ-BG3)'s ruling, a dev override builds its checkout in place of the pack's `from`**, at each fresh launch, `yolo host` floor resolution and `yolo pack build`, through the same build act, store, lock and fatal refusal, keyed by the checkout's tree digest under the build source `checkout:<pack>:<path>`. All live delivery is deleted: the `/ctx/program-overrides` mount, the macos-user link and Seatbelt grant, the host-path run on `yolo host`, the override launcher and its readiness check. It applies only to `via: "pack"` programs, narrowing [BG-D8](#BG-D8) and [BG-D9](#BG-D9): an override naming any other declared program refuses the launch, `yolo host` and `yolo check`, naming a fork pack as the next step. The override's `run` is retired, a validation error naming the pack's own `run`. Every fresh launch names the checkout and whether its build was rebuilt or reused. Decided by the lead under the ruling. | 2026-10-23 | [§5](#5-the-dev-override) | built: `run.ResolvePackTreeProgram`, `run.NonPackTreeOverrideLines` |
-| <a id="BG-D21"></a>BG-D21 | **Every refusal of a pack-tree build names the prebuilt opt-in** when `prebuilt` declares the platform: a launch's "not started" and "failed" refusals, `yolo pack build`'s failed line (no container runtime included), the `yolo host` floor's cannot-build and failed-build refusals, and the never-set-up Mac. It is applied wherever [OQ-BG2](#OQ-BG2)'s ruling says "the refusal names that choice". A dev override's checkout never names it, because `path` and `prebuilt` cannot share an entry, so following the advice would be a validation error. Decided by the lead, under [OQ-BG2](#OQ-BG2)'s ruling. | 2026-10-23 | [§4](#4-precedence-one-resolver-four-rungs), [§8](#8-failure-and-the-next-step) | built: `packload.Fork.PrebuiltOptInClause` |
-| <a id="BG-D22"></a>BG-D22 | **A checkout is read without following a symlink anyone but root could have placed.** Its `path` is resolved once, following only a TRUSTED symlink: owned by root, in a directory owned by root that no one else can write, or a sticky one. That admits macOS's `/var` and `/tmp`, Fedora Atomic's `/home`, and autofs or corporate home links. Any other link is refused, naming the resolved path, because an agent able to write there could re-point it at `~/.ssh` between the check and the read. The digest and the build's copy reach their root the same way, one component at a time from `/`, each opened from its parent's descriptor with `O_NOFOLLOW`, so a parent directory swapped for a link after the check refuses the read. Below the root no link is followed: a symlink is digested and copied as a link, and an entry swapped for one mid-read fails the read. The copy creates every entry fresh (`O_EXCL`, no `MkdirAll`), so it never writes through a link. A pack's own staged tree, and every other tree yolo digests, is read without following a link from its root down, but reached through its owner's links ([BG-D23](#BG-D23)). A known limit: a hard link to a file outside the checkout is read as a file inside it. Decided by the lead, after review. | 2026-10-23 | [§5](#5-the-dev-override), [§6.1](#61-the-source-and-what-keys-it) | built: `internal/nofollow`, `run.ProgramCheckout` |
-| <a id="BG-D23"></a>BG-D23 | **The reach from `/` is for a checkout only; every other tree is reached through links its owner placed.** The trust root is where the path stops being the user's own. A dev override's checkout may sit anywhere an agent writes, so every ancestor is suspect and [BG-D22](#BG-D22)'s rule holds. Yolo's state directory (`~/.local/share/yolo-jail`), its `captures` store and the home are the user's, who may symlink them, for instance to a bigger disk; refusing those links failed every capture admission on a runner whose home links the machine's store. So those ancestors are followed as the operating system resolves them, and the no-follow rule starts at the agent-writable boundary: a capture is digested below the store's `staging/` directory, the capture jail's workspace being `staging/<id>`, so a link there or anywhere in the captured tree is still refused; a pack's own source is read from the pack's root down, so a link inside the pack between its root and `from` is refused; a build's staging and a skills tree are read without following a link from their root down. Decided by the lead, refining BG-D22 after the Pack Installs run on the commit that landed it. | 2026-10-23 | [§5](#5-the-dev-override) | built: `nofollow.WalkBelow`, `treedigest.OfBelow`, `treedigest.OfCheckout`, `packload.Fork.SourceBase` |
-| <a id="BG-D20"></a>BG-D20 | **A checkout's digest and copy include git-ignored files**; only `.git` is skipped, by [BG-D3](#BG-D3)'s rule. yolo parses no `.gitignore` and never runs git on a checkout an agent may write (a repository's own config can run code through git, such as an fsmonitor hook). The cost of a large ignored tree is a slower digest, never a wrong build. | 2026-10-23 | [§5](#5-the-dev-override) | built: `packload.PackTreeDigest` over the checkout |
+| <a id="BG-D19"></a>BG-D19 | **Under [OQ-BG3](#decision-ledger)'s ruling, a dev override builds its checkout in place of the pack's `from`**, at each fresh launch, `yolo host` floor resolution and `yolo pack build`, through the same build act, store, lock and fatal refusal, keyed by the checkout's tree digest under the build source `checkout:<pack>:<path>`. All live delivery is deleted: the `/ctx/program-overrides` mount, the macos-user link and Seatbelt grant, the host-path run on `yolo host`, the override launcher and its readiness check. It applies only to `via: "pack"` programs, narrowing [BG-D8](#BG-D8) and [BG-D9](#BG-D9): an override naming any other declared program refuses the launch, `yolo host` and `yolo check`, naming a fork pack as the next step. The override's `run` is retired, a validation error naming the pack's own `run`. Every fresh launch names the checkout and whether its build was rebuilt or reused. Decided by the lead under the ruling. | 2026-10-23 | [§5](#5-the-dev-override) | built: `run.ResolvePackTreeProgram`, `run.NonPackTreeOverrideLines` (a launch, `yolo host`, `yolo check`); `TestALaunchRefusesAnOverrideOfANonPackTreeProgram` and `TestCheckFailsADevOverrideOfANonPackTreeProgram` (both mutation-checked), `TestYoloHostRefusesAProgramOverrideOfAnNpmAgent`, `TestYoloHostBuildsAProgramFromItsDevOverride`, integration `TestPackTreeProgramOverrideBuildsTheCheckout` |
+| <a id="BG-D21"></a>BG-D21 | **Every refusal of a pack-tree build names the prebuilt opt-in** when `prebuilt` declares the platform: a launch's "not started" and "failed" refusals, `yolo pack build`'s failed line (no container runtime included), the `yolo host` floor's cannot-build and failed-build refusals, and the never-set-up Mac. It is applied wherever [OQ-BG2](#decision-ledger)'s ruling says "the refusal names that choice". A dev override's checkout never names it, because `path` and `prebuilt` cannot share an entry, so following the advice would be a validation error. Decided by the lead, under [OQ-BG2](#decision-ledger)'s ruling. | 2026-10-23 | [§4](#4-precedence-one-resolver-four-rungs), [§8](#8-failure-and-the-next-step) | built: `packload.Fork.PrebuiltOptInClause` in the build act's refusals, `yolo pack build` and the floor; `TestALaunchsPackTreeBuildRefusalNamesThePrebuiltOptIn` (mutation-checked at the failed-build refusal), `TestAPackTreeBuildSkippedForARefusedSealNamesThePrebuiltOptIn`, `TestPackBuildRefusalNamesThePrebuiltOptInExceptForACheckout` |
+| <a id="BG-D22"></a>BG-D22 | **A checkout is read without following a symlink anyone but root could have placed.** Its `path` is resolved once, following only a TRUSTED symlink: owned by root, in a directory owned by root that no one else can write, or a sticky one. That admits macOS's `/var` and `/tmp`, Fedora Atomic's `/home`, and autofs or corporate home links. Any other link is refused, naming the resolved path, because an agent able to write there could re-point it at `~/.ssh` between the check and the read. The digest and the build's copy reach their root the same way, one component at a time from `/`, each opened from its parent's descriptor with `O_NOFOLLOW`, so a parent directory swapped for a link after the check refuses the read. Below the root no link is followed: a symlink is digested and copied as a link, and an entry swapped for one mid-read fails the read. The copy creates every entry fresh (`O_EXCL`, no `MkdirAll`), so it never writes through a link. A pack's own staged tree, and every other tree yolo digests, is read without following a link from its root down, but reached through its owner's links ([BG-D23](#BG-D23)). A known limit: a hard link to a file outside the checkout is read as a file inside it. Decided by the lead, after review. | 2026-10-23 | [§5](#5-the-dev-override), [§6.1](#61-the-source-and-what-keys-it) | built: `internal/nofollow`, `run.ProgramCheckout`; `TestProgramCheckoutFollowsALinkRootPlaced`, `TestTheBuildsCopyCopiesASymlinkAsALinkAndNeverFollowsIt`, `TestTheBuildsCopyRefusesAnUntrustedLinkAboveItsRoot`, `TestTheBuildsCopyNeverWritesThroughAnExistingEntry`, `TestTheDigestRefusesAnUntrustedLinkAboveItsRoot`; not mutation-checked |
+| <a id="BG-D23"></a>BG-D23 | **The reach from `/` is for a checkout only; every other tree is reached through links its owner placed.** The trust root is where the path stops being the user's own. A dev override's checkout may sit anywhere an agent writes, so every ancestor is suspect and [BG-D22](#BG-D22)'s rule holds. Yolo's state directory (`~/.local/share/yolo-jail`), its `captures` store and the home are the user's, who may symlink them, for instance to a bigger disk; refusing those links failed every capture admission on a runner whose home links the machine's store. So those ancestors are followed as the operating system resolves them, and the no-follow rule starts at the agent-writable boundary: a capture is digested below the store's `staging/` directory, the capture jail's workspace being `staging/<id>`, so a link there or anywhere in the captured tree is still refused; a pack's own source is read from the pack's root down, so a link inside the pack between its root and `from` is refused; a build's staging and a skills tree are read without following a link from their root down. Decided by the lead, refining BG-D22 after the Pack Installs run on the commit that landed it. | 2026-10-23 | [§5](#5-the-dev-override) | built: `nofollow.WalkBelow`, `treedigest.OfBelow`, `treedigest.OfCheckout`, `packload.Fork.SourceBase`; `TestWalkBelowFollowsLinksUpToItsBaseAndNoneBelow`, `TestStagingFollowsTheUsersStateLinkButNotACheckouts`, `TestALinkInsideThePackAboveItsSourceIsRefused`; not mutation-checked |
+| <a id="BG-D20"></a>BG-D20 | **A checkout's digest and copy include git-ignored files**; only `.git` is skipped, by [BG-D3](#BG-D3)'s rule. yolo parses no `.gitignore` and never runs git on a checkout an agent may write (a repository's own config can run code through git, such as an fsmonitor hook). The cost of a large ignored tree is a slower digest, never a wrong build. | 2026-10-23 | [§5](#5-the-dev-override) | built: `packload.PackTreeDigest` over the checkout skips only `.git`, and nothing reads a `.gitignore`; `TestACheckoutIsKeyedOnItsOwnTreeDigest` pins the `.git` skip and the uncommitted edit, but no test puts a git-ignored file in a checkout |

@@ -1100,7 +1100,7 @@ in the home whole, so no file of an older build survives. **A failed build refus
 naming the build's log under the workspace's `.yolo/` and `yolo pack build <pack>` as the retry. The
 readiness act then stops the launch, as for any program a launch cannot install, unless
 `YOLO_ALLOW_MISSING_PROGRAMS=1` starts the jail without it
-([OQ-BG1](../design/pack-buildable-programs.md#OQ-BG1)). A launch waiting on another
+([OQ-BG1](../design/pack-buildable-programs.md#decision-ledger)). A launch waiting on another
 launch's build of the same tree takes its result, a failure included; a launch that starts after the
 failure builds again. On macos-user, in either `macos_user_mode`, the build runs for macOS in the
 sealed build the sandbox uses for a fork, as the account or as you, with macOS's own shell and tools,
@@ -1117,7 +1117,7 @@ for a mismatch, and the next step. `yolo pack install` prefetches it, and `yolo 
 it and reports it up to date.
 
 **A present `from` is always built, never swapped for the prebuilt**
-([OQ-BG2](../design/pack-buildable-programs.md#OQ-BG2), ruled 2026-10-23). When the build cannot run
+([OQ-BG2](../design/pack-buildable-programs.md#decision-ledger), ruled 2026-10-23). When the build cannot run
 because its environment was never set up, such as a Mac with no sandbox account in the account mode,
 the build is refused like a failed one, naming the setup step (`yolo macos-setup`), and, when the
 pack declares a prebuilt for that platform, the setting that opts into it. Every other refusal
@@ -1139,7 +1139,7 @@ pack's own `build` and `run`, in the same sealed build, store and lock, keyed by
 digest as it sits on disk (uncommitted edits included, `.git` skipped, git-ignored files included,
 [BG-D20](../design/pack-buildable-programs.md#BG-D20)). An unchanged checkout reuses its build; an
 edit is built at the next fresh launch, never in a running jail
-([OQ-BG3](../design/pack-buildable-programs.md#OQ-BG3)). Every fresh launch prints one line naming
+([OQ-BG3](../design/pack-buildable-programs.md#decision-ledger)). Every fresh launch prints one line naming
 the checkout and whether it was rebuilt or reused; an attach names the build its launch made. A
 build that fails is the same fatal refusal as the pack's own, naming the log, the retry and
 `YOLO_ALLOW_MISSING_PROGRAMS=1`, and never falls back to the pack's copy. The host refuses the

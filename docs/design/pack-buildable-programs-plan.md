@@ -1,20 +1,22 @@
 ---
 title: "Plan: buildable pack programs"
-status: in-review
+status: accepted
 stage: DECIDED
-next: "Task 1 (manifest vocabulary) and Task 2 (override config), in parallel worktrees; stop at each task's targeted gate"
+next: "Task 10 on a real Mac: fix the run-as-you capture bootstrap failure, then record the done steps under macos-user, Apple Container and yolo host"
 tags: [plan, packs, programs, build, capture, overrides]
 summary: "Build hand-off for the pack-buildable-programs design: via \"pack\" delivered through the fork route's build act and the capture store, programs.overrides in the user scope, the prebuilt download, and yolo pack build, in ten ordered slices with their tests."
 ---
 
 # Plan: buildable pack programs
 
-**Status:** 2026-10-22. Completed against the tree at `c0a14f4e4`, by the maintainer's
-authorization to build tonight on the design's leanings. [OQ-BG1](pack-buildable-programs.md#OQ-BG1)
-(Tasks 5 and 8) and [OQ-BG2](pack-buildable-programs.md#OQ-BG2) (Tasks 2, 7 and 10) were ruled on
-2026-10-23, and the tasks below carry the rulings. [OQ-BG3](pack-buildable-programs.md#OQ-BG3)
-(Tasks 8 to 10) was ruled the same day against its leaning: a dev override is built from its
-checkout at each launch, and the tasks carry that too.
+**Status:** 2026-10-23, audited at `64a6e2144`. Written against `c0a14f4e4`. The tasks carry the
+three rulings of 2026-10-23 ([OQ-BG1 to OQ-BG3](pack-buildable-programs.md#decision-ledger)).
+Tasks 1 to 9 are built. The design's ledger names the code and tests for each decision. Task 10's
+Linux half is built: the darwin act's placement and the Mac floor have unit tests, and
+`integration/macosuserprograms_test.go` holds the Mac tests. Its native evidence is still owed. On
+a real Mac on 2026-10-23, account mode passed all four tests and run-as-you mode failed two of them
+([the lab report](../lab-reports/2026-10-23-native-mac-verification.md#2-the-macos-user-suite)).
+Apple Container has not run yet.
 
 **Design:** [`pack-buildable-programs.md`](pack-buildable-programs.md).
 
@@ -67,7 +69,7 @@ Never `--no-verify`; never `just install` in the jail.
 | `internal/cli/packtreeprebuilt.go` | **new** — prebuilt fetch and host admission | 7 |
 | `internal/cli/packbinaries.go` | `installPackBinaries` (~`:41`) also prefetches selected programs' `prebuilt` | 7 |
 | `internal/cli/run/programoverrides.go` | the override puts its checkout in place of `from` (`ResolvePackTreeProgram`), its line, and the refusal of a non-pack-tree program | 8 |
-| `internal/cli/run/programlines.go` | **new** — override and prebuilt disclosure lines, fresh launch and attach | 7, 8 |
+| `internal/cli/run/prebuiltline.go`, `programoverrides.go`, `patchedforkline.go` | prebuilt and checkout disclosure lines, fresh launch and attach | 7, 8 |
 | `internal/hostfloor/floor.go`, `ensure.go`, `built.go` | pack-tree arm (no pin), which builds an override's checkout the same way | 9 |
 | `internal/cli/hostfloor.go` | `wireFloorBuild` (~`:176`) resolves pack-tree builds by digest | 9 |
 | `integration/packtreeprogram_test.go` | **new** — the design's six done steps | 4, 5, 7, 8 |
@@ -106,9 +108,6 @@ Never `--no-verify`; never `just install` in the jail.
   `programs` key. `overrides` inherits both for free.
 - **The scope predicate:** `paths.WorkspaceScopeBreach(path)`
   (`internal/paths/workspacescope.go:137`).
-- **Context mounts:** `Options.configCtxMounts` (`internal/cli/run/ctxmounts.go:55`) is the one
-  reading that feeds the argv, the briefing and the disclosure. On macos-user, context mounts
-  become `ContextLink`s that the profile builder grants (`internal/macosuser/seatbelt.go:160`).
 - **Integration fixtures:** `TestForkBuildDeliversTheForkInPlaceOfItsBase`
   (`integration/forkbuild_test.go:62`) for a `file://` fixture pack and a sh-only build line;
   `withReadiness()` (`integration/harness_test.go:1306`) to turn the readiness act back on;
@@ -137,9 +136,10 @@ Never `--no-verify`; never `just install` in the jail.
   file is silently missing from the nested jail.
 - **Selection is newest-wins on a one-second receipt stamp.** The floor takes the entry the act
   returns, never a second lookup (FP-D16's reason). Keep that in `yolo pack build --force`.
-- **The darwin symlink class:** resolve an override path with `filepath.EvalSymlinks` *before* the
-  scope check and before the mount. On a Mac, `/tmp` is a link to `/private/tmp`. Reproduce on
-  Linux with `TMPDIR=/tmp/link` ([AGENTS.md, Testing](../../AGENTS.md#testing)).
+- **The darwin symlink class:** resolve an override path once, through root's links only
+  (`nofollow.Resolve`, [BG-D22](pack-buildable-programs.md#BG-D22)), *before* the scope check. On
+  a Mac, `/tmp` is a link to `/private/tmp`. Reproduce on Linux with `TMPDIR=/tmp/link`
+  ([AGENTS.md, Testing](../../AGENTS.md#testing)).
 - **`from` is already a field on `Contribution`** (`contributes.go:328`, pack-relative). The
   per-kind field census (search `case "from"` near `contributes.go:4456`) must accept it on a
   program only when `via` is `"pack"`, or `{"kind":"program","via":"npm","from":"x"}` validates
@@ -257,21 +257,22 @@ func TestRunAndPrebuiltOffAPackTreeAreRefused(t *testing.T) {
 
 ### Task 2 — `programs.overrides` (independent)
 
-- **Settled:** `programs.overrides.<bin>` is `{path, run?}`, user scope only. `path` has `~`
+- **Settled:** `programs.overrides.<bin>` is `{path}`, user scope only. `path` has `~`
   expanded, must be absolute after expansion, and is checked at launch (Task 8) rather than here.
-  `run` is relative, cleaned, with no `..`. A workspace `programs` key is already an error. Keep
+  `run` is retired ([BG-D19](pack-buildable-programs.md#BG-D19)): an entry carrying it is a
+  validation error naming the pack's own `run`. A workspace `programs` key is already an error. Keep
   its message, and extend the reason so it covers choosing a program's bytes too. The entry's other
   form is `{"prebuilt": true}`, the prebuilt opt-in
-  ([BG-D18](pack-buildable-programs.md#BG-D18)). It is mutually exclusive with `path` and `run`
+  ([BG-D18](pack-buildable-programs.md#BG-D18)). It is mutually exclusive with `path`
   (a validation error naming both), is read by `ProgramPrebuiltOptIns`, and is never returned by
   `ProgramOverrides`.
 - **Tests first** (`internal/config/programs_test.go`): with a user config of
-  `{"programs":{"overrides":{"board":{"path":"~/x"},"pi":{"path":"/srv/pi","run":"dist/cli.js"}}}}`,
-  `ProgramOverrides(nil)` returns two entries, `board.Path == $HOME/x` and `pi.Run ==
-  "dist/cli.js"`. These shapes must each produce a validation error naming the field:
+  `{"programs":{"overrides":{"board":{"path":"~/x"},"pi":{"path":"/srv/pi"}}}}`,
+  `ProgramOverrides(nil)` returns two entries, `board.Path == $HOME/x` and `pi.Path ==
+  "/srv/pi"`. These shapes must each produce a validation error naming the field:
   - `{"programs":{"overrides":{"board":{"path":""}}}}`;
   - `{"programs":{"overrides":{"board":{"path":"rel/x"}}}}`;
-  - `{"programs":{"overrides":{"board":{"path":"/x","run":"../y"}}}}`;
+  - `{"programs":{"overrides":{"board":{"path":"/x","run":"y"}}}}` (the retired `run`);
   - `{"programs":{"overrides":{"board":{"path":"/x","color":"red"}}}}` (unknown key).
 
   A workspace `yolo-jail.jsonc` carrying `programs.overrides` is an error containing
@@ -360,7 +361,7 @@ printf '#!/bin/sh\necho x-%s\n' "$(cat VERSION)" > x
 
 - **Settled:**
   - a failed build refuses that program, naming the log, `yolo pack build <pack>` and
-    `YOLO_ALLOW_MISSING_PROGRAMS=1` ([OQ-BG1](pack-buildable-programs.md#OQ-BG1) leaning: the
+    `YOLO_ALLOW_MISSING_PROGRAMS=1` ([OQ-BG1](pack-buildable-programs.md#decision-ledger): the
     launch stops);
   - a waiter takes the winner's failure;
   - materializing a new key removes `~/.local/lib/yolo-programs/<bin>/` first.
@@ -401,7 +402,7 @@ printf '#!/bin/sh\necho x-%s\n' "$(cat VERSION)" > x
 - **Settled:**
   - used when `from` is absent, or when the user opted the program into it
     (`programs.overrides.<bin>.prebuilt`, [BG-D18](pack-buildable-programs.md#BG-D18)). Never in
-    place of a build that cannot run ([OQ-BG2](pack-buildable-programs.md#OQ-BG2), ruled): that
+    place of a build that cannot run ([OQ-BG2](pack-buildable-programs.md#decision-ledger), ruled): that
     build is refused, naming the setup step and, when a prebuilt is declared for the platform, the
     opt-in;
   - fetched through `packbin` by the launch slot, `yolo pack install`/`update` and
@@ -420,7 +421,7 @@ printf '#!/bin/sh\necho x-%s\n' "$(cat VERSION)" > x
 
 ### Task 8 — the dev override builds its checkout (after 2 and 5)
 
-Rewritten to [OQ-BG3](pack-buildable-programs.md#OQ-BG3)'s ruling (2026-10-23) and
+Rewritten to [OQ-BG3](pack-buildable-programs.md#decision-ledger)'s ruling (2026-10-23) and
 [BG-D19](pack-buildable-programs.md#BG-D19); the live delivery this task first built is deleted.
 
 - **Settled:**
@@ -466,7 +467,7 @@ Rewritten to [OQ-BG3](pack-buildable-programs.md#OQ-BG3)'s ruling (2026-10-23) a
   - the darwin sealed act builds a pack-tree program (FP-D24's path);
   - the prebuilt takes its darwin entry where the source is absent or the user opted in. With
     no sandbox account a present source is refused, naming `yolo macos-setup` and the opt-in
-    ([OQ-BG2](pack-buildable-programs.md#OQ-BG2), ruled);
+    ([OQ-BG2](pack-buildable-programs.md#decision-ledger), ruled);
   - an override's checkout is built by the same darwin act; the profile grants it nothing.
 - **Tests first:** on Linux, the darwin act's staging of a checkout. On a Mac,
   `integration/macosuserprograms_test.go` gains the six done steps under `macos-user`.
@@ -517,7 +518,7 @@ real-Mac run of the integration tests under `YOLO_RUNTIME=container`, which is o
 - Don't digest the original pack directory. Digest the launch's staged copy, which nothing edits.
 - Don't fetch a prebuilt for a present source unless the user opted in, and never substitute one
   for a build that cannot run ([P5](pack-buildable-programs.md#P5),
-  [OQ-BG2](pack-buildable-programs.md#OQ-BG2)).
+  [OQ-BG2](pack-buildable-programs.md#decision-ledger)).
 - Don't add a stat cache for the digest before a measurement asks for one.
 - Don't deliver an override live, or build one anywhere but the build act
-  ([OQ-BG3](pack-buildable-programs.md#OQ-BG3)).
+  ([OQ-BG3](pack-buildable-programs.md#decision-ledger)).
