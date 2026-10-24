@@ -70,6 +70,13 @@
   // Lua supplies lua/luac so the packs' derive.lua files can be syntax-checked
   // in a bare shell (the repo validates Lua pack derives).
   "mise_tools": {"lua": "5.4.9"},
+  // The git broker may push to main of this repository (a working-set branch, see
+  // userguide/guides/git.md). Takes effect only once the user config lists "branch"
+  // in brokered.git.grant_kinds and the grant is approved at the config-change prompt
+  // or `yolo config apply`.
+  "brokered": { "git": { "grants": [
+    { "kind": "branch", "repo": "github.com/mschulkind-oss/yolo-jail", "branch": "main" }
+  ] } },
   // Additional language servers. No defaults — declare each server you want; its binary
   // must be on PATH (e.g. via mise_tools) or given as an absolute command.
   // "lsp_servers": {
