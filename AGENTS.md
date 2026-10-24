@@ -137,10 +137,10 @@ The mechanics behind each of these are in
 - `just build-go` → `dist-go/<goos>-<goarch>/` is the **cross-compile-for-shipping** step only; it feeds
   no in-jail run. `just deploy` is `just install` plus Claude-broker priming. `just deploy-dev` is the
   same with `$GOBIN/<name>` a symlink to [`dev-wrapper.sh`](scripts/dev-wrapper.sh), current at every run. Both take an
-  optional launcher name (default `yolo`). The slot is replaced only when it holds a yolo build
-  (named by its Go build info, never run before that), a link to one, this checkout's dev link, a
-  pre-Go Python script or a dangling link; anything else, another checkout's dev link included, is
-  refused untouched ([`launcher-slot.py`](scripts/launcher-slot.py),
+  optional launcher name (default `yolo`, never `*.test`). The slot is replaced only when it holds a
+  yolo build (named by its Go build info, never run before that), a link to one, this checkout's dev
+  link, a pre-Go Python script under a `hostmigrate.LegacyNames` name, or a dangling link; anything
+  else, another checkout's dev link included, is refused untouched ([`launcher-slot.py`](scripts/launcher-slot.py),
   [`test_launcher_slot.py`](scripts/test_launcher_slot.py)). Deployed launchers share ONE installed
   bundle, so a second deployed name is refused; a deployed `yolo` beside a dev `yolo-dev` is the
   side-by-side pair. `just undeploy [name]` removes one.

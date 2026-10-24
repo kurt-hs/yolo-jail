@@ -12,7 +12,7 @@ executed until it has been identified as a yolo build:
   link       a symlink to a yolo build.
   dev        a symlink to THIS checkout's scripts/dev-wrapper.sh (`just deploy-dev`).
   other-dev  a symlink to ANOTHER checkout's scripts/dev-wrapper.sh. Refused.
-  legacy     a pre-Go Python console script (the rule internal/hostmigrate applies).
+  legacy     a pre-Go Python console script under one of its old names (internal/hostmigrate's rule).
   dangling   a symlink that resolves to nothing, including a dev link whose checkout moved.
   foreign    anything else. Refused, and left untouched.
 
@@ -37,6 +37,9 @@ BUILDINFO_MAGIC = b"\xff Go buildinf:"
 EXEC_MAGICS = (b"\x7fELF", b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe",
                b"\xfe\xed\xfa\xce", b"\xca\xfe\xba\xbe")
 DEV_WRAPPER = "dev-wrapper.sh"
+# internal/hostmigrate.LegacyNames: the console scripts the Python distribution installed, the only
+# names a venv link or a Python script is retired under (test_launcher_slot.py pins the two lists).
+LEGACY_NAMES = ("yolo", "yolo-ps", "yolo-host-processes", "yolo-claude-oauth-broker-host")
 REPLACEABLE = ("absent", "deployed", "dev", "link", "legacy", "dangling")
 
 
@@ -55,6 +58,11 @@ def validate_name(name: str) -> str:
     if (not name or name in (".", "..") or "/" in name or name.startswith("-")
             or any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in name)):
         raise SlotError(f"launcher name {name!r} is not a plain file name; pass one such as yolo-dev")
+    if name.endswith(".test"):
+        # internal/packload (testBinaryCacheDirFor) treats a binary named *.test as a Go test
+        # binary and would keep its embedded packs somewhere else.
+        raise SlotError(f"launcher name {name!r} ends in .test, which yolo reads as a Go test binary; "
+                        "pass another name, such as yolo-dev")
     return name
 
 
@@ -214,13 +222,13 @@ def classify(slot: Path, repo: Path | None = None) -> tuple[str, str]:
         resolved = Path(os.path.realpath(absolute))
         if is_yolo_build(resolved):
             return "link", f"a symlink to {_describe_yolo(resolved)} at {resolved}"
-        if _in_python_venv(absolute):
+        if slot.name in LEGACY_NAMES and _in_python_venv(absolute):
             return "legacy", f"a pre-Go Python yolo-jail console script linking into {absolute.parent.parent}"
         return "foreign", f"a symlink to {target}, which is not a yolo build"
     if slot.is_file():
         if is_yolo_build(slot):
             return "deployed", _describe_yolo(slot)
-        if slot.name == "yolo" and _python_shebang(slot):
+        if slot.name in LEGACY_NAMES and _python_shebang(slot):
             return "legacy", "a pre-Go Python yolo script"
         return "foreign", "a file that is not a yolo build"
     kind = "directory" if slot.is_dir() else f"special file (mode {oct(st.st_mode)})"
@@ -292,7 +300,9 @@ def check_no_other_deployed(slot: Path) -> None:
             f"  just deploy-dev{name_arg(other)}   # make {other} the dev launcher, then re-run "
             f"just deploy{name_arg(slot.name)}\n"
             f"  just deploy{name_arg(other)}       # redeploy {other} instead; {slot.name} then refuses "
-            "until it is redeployed or made the dev launcher")
+            "until it is redeployed or made the dev launcher\n"
+            f"  just undeploy{name_arg(other)}     # remove {other} (a stale copy, say), then re-run "
+            f"just deploy{name_arg(slot.name)}")
 
 
 def deploy(repo: Path, home: Path, gobin: Path, name: str, *, installer=None) -> Path:

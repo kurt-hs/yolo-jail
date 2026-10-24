@@ -115,7 +115,9 @@ class ClassifyTests(Fixture):
         (venv / "bin").mkdir(parents=True)
         (venv / "pyvenv.cfg").write_text("")
         (venv / "bin/yolo").write_text("#!/usr/bin/env python3\n")
+        os.symlink(venv / "bin/yolo", self.gobin / "yolo-ps")
         os.symlink(venv / "bin/yolo", self.gobin / "venvlink")
+        (self.gobin / "yolo-dev").write_text("#!/usr/bin/env python3\nimport yolo_jail\n")
         (self.gobin / "yolo").write_text("#!/usr/bin/env python3\nimport yolo_jail\n")
         (self.gobin / "pyother").write_text("#!/usr/bin/env python3\n")
         (self.gobin / "shell").write_text("#!/bin/sh\necho hi\n")
@@ -133,8 +135,8 @@ class ClassifyTests(Fixture):
         (self.root / "bin/dev-wrapper.sh").write_text("#!/bin/sh\n")
         os.symlink(self.root / "bin/dev-wrapper.sh", self.gobin / "notscripts")
         want = {"absent": "absent", "deployed": "deployed", "dev": "dev", "otherdev": "other-dev",
-                "devgone": "dangling", "link": "link", "dangling": "dangling", "venvlink": "legacy",
-                "yolo": "legacy", "pyother": "foreign", "shell": "foreign", "wrapper": "foreign",
+                "devgone": "dangling", "link": "link", "dangling": "dangling", "yolo-ps": "legacy",
+                "venvlink": "foreign", "yolo": "legacy", "yolo-dev": "foreign", "pyother": "foreign", "shell": "foreign", "wrapper": "foreign",
                 "othergo": "foreign", "elfmarker": "foreign", "dir": "foreign", "otherlink": "foreign",
                 "notscripts": "foreign"}
         self.assertEqual({name: self.kind(name) for name in want}, want)
@@ -159,6 +161,15 @@ class ClassifyTests(Fixture):
         self.assert_never_ran()
         self.assertEqual(ls.version_fields(fake_yolo(self.root / "y", kind="installed"))["build kind"],
                          "installed")
+
+    def test_legacy_names_are_hostmigrates(self):
+        go = (HERE.parent / "internal/hostmigrate/hostmigrate.go").read_text()
+        block = go.split("var LegacyNames = []string{", 1)[1].split("}", 1)[0]
+        self.assertEqual(tuple(n.strip().strip('",') for n in block.split() if n.strip()), ls.LEGACY_NAMES)
+
+    def test_a_name_ending_in_test_is_refused_with_the_reason(self):
+        with self.assertRaisesRegex(ls.SlotError, "Go test binary"):
+            ls.validate_name("yolo.test")
 
     def test_names_must_be_plain(self):
         for bad in ("", ".", "..", "a/b", "-x", "yolo\n", "yo\x1blo", "yolo\x7f", "a\tb"):
@@ -289,6 +300,7 @@ class ReplaceTests(Fixture):
                 self.assertIn("Nothing was changed", message)
                 self.assertIn("just deploy-dev yolo-stable", message)
                 self.assertIn("just deploy yolo-stable", message)
+                self.assertIn("just undeploy yolo-stable", message)
 
     def test_dev_builds_dev_links_and_aliases_of_the_slot_may_coexist(self):
         fake_yolo(self.gobin / "yolo-b", kind="development")

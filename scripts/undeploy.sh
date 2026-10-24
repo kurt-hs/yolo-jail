@@ -7,10 +7,11 @@
 #
 # WHAT A SOURCE INSTALL LEAVES, and what this does with each:
 #   - $GOBIN/yolo, the installed binary: REMOVED, after the host-wide daemons it runs are
-#     stopped (a launch ensures them again from whichever yolo it is). It is run only once
-#     launcher-slot.py has identified it as a yolo build. A `just deploy-dev` link to a
-#     checkout's scripts/dev-wrapper.sh, or a pre-Go Python script, is REMOVED without being
-#     run; anything else is refused with nothing changed.
+#     stopped unless another deployed launcher remains (a launch ensures them again from
+#     whichever yolo it is). It is run only once launcher-slot.py has identified it as a
+#     yolo build. A `just deploy-dev` link to a checkout's scripts/dev-wrapper.sh, or a
+#     pre-Go Python script under one of its old names, is REMOVED without being run;
+#     anything else is refused with nothing changed.
 #   - The stable flake-bundle link (~/.local/share/yolo-jail/flake-bundle): REMOVED, unless
 #     another deployed launcher in $GOBIN still uses it. A packaged yolo builds from the
 #     bundle beside its own binary, and with no link left every staged generation is
@@ -122,6 +123,15 @@ if [ "$runnable" = 1 ]; then
 fi
 [ -n "$bundle" ] || bundle="$HOME/.local/share/yolo-jail/flake-bundle"
 
+# Every other yolo launcher in GOBIN, as "path<TAB>kind<TAB>build kind<TAB>description", and
+# the deployed ones among them, which still use the stable bundle link and the host daemons.
+tab="$(printf '\t')"
+others=""
+if [ "$have_helper" = 1 ]; then
+    others="$(slot list | awk -F "$tab" -v bin="$bin" '$1 != bin' || true)"
+fi
+users="$(printf '%s\n' "$others" | awk -F "$tab" '$3 == "installed" { print $1 }')"
+
 removed=0
 
 if [ "$kind" = dev ]; then
@@ -136,29 +146,27 @@ elif [ "$kind" = dangling ]; then
     echo "⚠ $bin is a dangling symlink to $(readlink "$bin"); left in place." >&2
     echo "  Remove it with: rm '$bin'" >&2
 elif [ "$runnable" = 1 ]; then
-    echo "Stopping host-wide daemons run by $bin"
-    names="$("$bin" host-daemon status --format json 2>/dev/null |
-        grep -o '"loophole": *"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/' || true)"
-    for daemon in $names; do
-        # Stopping one that is not running is a no-op; a failure must not strand the
-        # binary half-removed, so it is reported and the undeploy continues.
-        run "$bin" host-daemon stop "$daemon" >/dev/null 2>&1 ||
-            echo "  ⚠ could not stop $daemon; stop it with 'yolo host-daemon stop $daemon'" >&2
-    done
+    if [ -n "$users" ]; then
+        # The host-wide daemons are shared: stopping them would cut off every jail the
+        # remaining deployed launcher started.
+        echo "Left the host-wide daemons running: another deployed launcher remains ($(printf '%s' "$users" | tr '\n' ' ' | sed 's/ $//'))."
+    else
+        echo "Stopping host-wide daemons run by $bin"
+        names="$("$bin" host-daemon status --format json 2>/dev/null |
+            grep -o '"loophole": *"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/' || true)"
+        for daemon in $names; do
+            # Stopping one that is not running is a no-op; a failure must not strand the
+            # binary half-removed, so it is reported and the undeploy continues.
+            run "$bin" host-daemon stop "$daemon" >/dev/null 2>&1 ||
+                echo "  ⚠ could not stop $daemon; stop it with 'yolo host-daemon stop $daemon'" >&2
+        done
+    fi
     echo "Removing $bin"
     run rm -f "$bin"
     removed=1
 else
     echo "No source-installed launcher at $bin"
 fi
-
-# Every other yolo launcher in GOBIN, as "path<TAB>kind<TAB>build kind<TAB>description".
-tab="$(printf '\t')"
-others=""
-if [ "$have_helper" = 1 ]; then
-    others="$(slot list | awk -F "$tab" -v bin="$bin" '$1 != bin' || true)"
-fi
-users="$(printf '%s\n' "$others" | awk -F "$tab" '$3 == "installed" { print $1 }')"
 
 if [ -n "$users" ] && [ -L "$bundle" ]; then
     echo "Kept flake-bundle link $bundle: still used by the deployed launcher(s):"

@@ -519,6 +519,10 @@ def main() -> int:
         if (not args.name or "/" in args.name or args.name in (".", "..")
                 or any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in args.name)):
             raise ValueError(f"--name must be a plain file name, not {args.name!r}")
+        if args.name.endswith(".test"):
+            # internal/packload treats a binary named *.test as a Go test binary.
+            raise ValueError(f"--name {args.name!r} ends in .test, which yolo reads as a Go test binary; "
+                             "pick another name, such as yolo-dev")
         result = command(args.repo, args.mode, home=args.home, gobin=args.gobin, name=args.name,
                          args=forwarded, execer=os.execvpe, argv0=args.argv0)
         if args.mode == "build-dev":

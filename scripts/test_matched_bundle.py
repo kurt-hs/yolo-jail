@@ -441,6 +441,17 @@ class PackageTests(unittest.TestCase):
             self.assertIn("Ignoring obsolete YOLO_REPO_ROOT",stderr.getvalue())
             self.assertNotIn(secret,stderr.getvalue())
 
+    def test_a_launcher_name_ending_in_test_is_refused_before_anything_runs(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        from unittest import mock
+        stderr=StringIO()
+        with mock.patch.object(mb,"command",side_effect=AssertionError("command ran")), \
+             mock.patch.object(sys,"argv",["matched-bundle.py","install","--name","yolo.test"]), \
+             redirect_stderr(stderr):
+            self.assertEqual(mb.main(),1)
+        self.assertIn("Go test binary",stderr.getvalue())
+
     def test_dev_command_reports_on_stderr_and_runs_under_the_invoked_name(self):
         from contextlib import redirect_stderr, redirect_stdout
         from io import StringIO

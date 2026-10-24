@@ -186,5 +186,29 @@ run_script ../yolo || rc=$?
 check "l: a path refused (exit 2)" "$([ "$rc" = 2 ] && echo 0 || echo 1)"
 check "l: nothing removed" "$([ -x "$gobin/yolo" ] && echo 0 || echo 1)"
 
+# (m) a named undeploy leaves the shared host daemons running while another deployed launcher remains
+fixture
+cp "$tmp/fake-yolo" "$gobin/yolo-b"
+rc=0
+run_script yolo-b || rc=$?
+check "m: exits 0" "$rc"
+check "m: yolo-b removed" "$([ ! -e "$gobin/yolo-b" ] && echo 0 || echo 1)"
+check "m: no daemon stopped" "$([ ! -s "$log" ] && echo 0 || echo 1)"
+check "m: says why" "$(grep -q "another deployed launcher remains ($gobin/yolo)" "$tmp/out" && echo 0 || echo 1)"
+check "m: yolo and the stable link kept" "$([ -x "$gobin/yolo" ] && [ -L "$home/.local/share/yolo-jail/$bundle" ] && echo 0 || echo 1)"
+
+# (n) a venv link is pre-Go yolo only under one of its old names; any other name is refused untouched
+fixture
+mkdir -p "$tmp/venv/bin"
+: >"$tmp/venv/pyvenv.cfg"
+printf '#!/usr/bin/env python3\n' >"$tmp/venv/bin/sometool"
+chmod +x "$tmp/venv/bin/sometool"
+ln -s "$tmp/venv/bin/sometool" "$gobin/yolo-dev"
+rc=0
+run_script yolo-dev || rc=$?
+check "n: refuses (exit 1)" "$([ "$rc" = 1 ] && echo 0 || echo 1)"
+check "n: link kept" "$([ -L "$gobin/yolo-dev" ] && echo 0 || echo 1)"
+check "n: tool kept" "$([ -f "$tmp/venv/bin/sometool" ] && echo 0 || echo 1)"
+
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]
