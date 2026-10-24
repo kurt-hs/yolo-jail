@@ -106,7 +106,9 @@ func TestACheckoutPatchBranchBuildsTheNewestCopyAndEveryActSaysWhich(t *testing.
 	_, status, _ := packVerb(t, "status")
 	mustContain(t, "status", status, "patch branch mine  origin "+shortSHA(pushed)+"  no local branch  fetched just now")
 
-	// `yolo pack update` resolves and records the same.
+	// A PUSH BETWEEN A LAUNCH AND `yolo pack update`: the update's own fetch picks it up, and it says so.
+	pushed = c.push(t, map[int]string{10: "ten", 12: "twelve", 20: "twenty", 24: "twentyfour"})
+	line = "fork forkpack/tool: patch branch mine  origin " + shortSHA(pushed) + "  no local branch  fetched just now"
 	c.later(2 * time.Minute)
 	rc, uo, ue := packVerb(t, "update")
 	if rc != 0 {
@@ -131,7 +133,7 @@ func TestACheckoutPatchBranchBuildsTheNewestCopyAndEveryActSaysWhich(t *testing.
 	_, out, _ = c.launch(t, "podman")
 	mustContain(t, "the diverged launch", out, "⚠ fork forkpack/tool: patch branch mine  local "+shortSHA(local)+
 		"  diverged from origin: local "+shortSHA(local)+" has 1 commit origin lacks, origin "+shortSHA(pushed)+
-		" has 1 the local branch lacks — `git -C "+c.machine+" push --force-with-lease origin mine` (if you rebased)")
+		" has 2 the local branch lacks — `git -C "+c.machine+" push --force-with-lease -- origin mine` (if you rebased)")
 
 	// A FAILED FETCH never refuses: the local branch builds, not verified, with the fetch to run by hand.
 	if err := os.Rename(c.origin, c.origin+".gone"); err != nil {
@@ -143,7 +145,7 @@ func TestACheckoutPatchBranchBuildsTheNewestCopyAndEveryActSaysWhich(t *testing.
 		t.Fatalf("a failed fetch handed nothing:\n%s", out)
 	}
 	mustContain(t, "the offline launch", out, "⚠ fork forkpack/tool: patch branch mine  local "+shortSHA(local),
-		"not verified (fetch failed: ", "last fetched 2 minutes ago", "`git -C "+c.machine+" fetch origin mine`")
+		"not verified (fetch failed: ", "last fetched 2 minutes ago", "`git -C "+c.machine+" fetch -- origin mine`")
 	if exec.Command("git", "-C", c.machine, "show-ref", "--verify", "--quiet", "refs/remotes/origin/mine").Run() != nil {
 		t.Error("the user's remote-tracking ref is gone")
 	}

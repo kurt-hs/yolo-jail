@@ -7,11 +7,15 @@ package packsrc
 // relates to the other, with the fetch's freshness. A failed fetch never refuses.
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // checkoutFixture is the upstream, a bare "origin" holding branch mine (pushed by "pusher", a second
@@ -175,7 +179,7 @@ func TestADivergedLocalBranchWinsWithTheWarningAndTheFix(t *testing.T) {
 	}
 	wantLine(t, r, f.now, "mine  local "+shortCommit(local), "diverged from origin",
 		"local "+shortCommit(local)+" has 1 commit origin lacks", "origin "+shortCommit(pushed)+" has 2 the local branch lacks",
-		"`git -C "+f.machine+" push --force-with-lease origin mine` (if you rebased)", "fetched just now")
+		"`git -C "+f.machine+" push --force-with-lease -- origin mine` (if you rebased)", "fetched just now")
 }
 
 func TestAFailedFetchBuildsTheBestCopyAndSaysNotVerified(t *testing.T) {
@@ -186,12 +190,16 @@ func TestAFailedFetchBuildsTheBestCopyAndSaysNotVerified(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.now = f.now.Add(3 * time.Hour)
+	before := userRefs(t, f.machine)
 	r := f.launch(t).Record.PatchBranch
 	if r.Commit != tip || r.Copy != "origin" || r.Verified || r.FetchErr == "" {
 		t.Fatalf("resolved = %+v, want the mirror's last fetched %s, not verified", r, tip)
 	}
+	if after := userRefs(t, f.machine); after != before {
+		t.Errorf("a launch whose fetch failed changed the user's repository:\nbefore %s\nafter %s", before, after)
+	}
 	wantLine(t, r, f.now, "mine  origin "+shortCommit(tip), "not verified", "last fetched 3 hours ago",
-		"`git -C "+f.machine+" fetch origin mine`")
+		"`git -C "+f.machine+" fetch -- origin mine`")
 
 	// With a local branch, the local branch answers a failed fetch.
 	local := f.localMine(t, tip, 1)
@@ -201,4 +209,166 @@ func TestAFailedFetchBuildsTheBestCopyAndSaysNotVerified(t *testing.T) {
 		t.Fatalf("resolved = %+v, want the local %s, not verified", r, local)
 	}
 	wantLine(t, r, f.now, "mine  local "+shortCommit(local), "not verified")
+}
+
+// originWrapper runs f.store's git through a wrapper that acts on the fetches into YOLO'S MIRROR OF ORIGIN, and
+// nothing else, as set says: "hang" sleeps past any budget, "fail" exits 1, "" runs git. fetches counts them.
+func (f *checkoutFixture) originWrapper(t *testing.T) (set func(mode string), fetches func() int) {
+	t.Helper()
+	dir := t.TempDir()
+	modeFile, logFile := filepath.Join(dir, "mode"), filepath.Join(dir, "log")
+	set = func(mode string) {
+		if err := os.WriteFile(modeFile, []byte(mode), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set("")
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := shquote.Quote
+	f.store.Git = writeScript(t, fmt.Sprintf(`fetch=; ours=
+for a in "$@"; do
+  [ "$a" = fetch ] && fetch=1
+  [ "$a" = %s ] && ours=1
+done
+if [ -n "$fetch" ] && [ -n "$ours" ]; then
+  echo fetch >> %s
+  case "$(cat %s)" in
+    hang) exec sleep 30 ;;
+    fail) echo "fatal: origin is unreachable" >&2; exit 1 ;;
+  esac
+fi
+exec %s "$@"
+`, q("--git-dir="+f.store.mirrorPath(f.origin)), q(logFile), q(modeFile), q(realGit)))
+	fetches = func() int {
+		data, _ := os.ReadFile(logFile)
+		return strings.Count(string(data), "fetch\n")
+	}
+	return set, fetches
+}
+
+func TestAHungRemoteFetchTimesOutOnItsOwnBudgetAndStillBuilds(t *testing.T) {
+	f := newCheckoutFixture(t)
+	set, _ := f.originWrapper(t)
+	tip := gitIn(t, f.pusher, "rev-parse", "mine")
+	f.launch(t)
+	set("hang")
+	f.store.Timeout = 4 * time.Second
+	f.now = f.now.Add(3 * time.Hour) // the whole check runs: the fetch, the comparison, the merge base
+	start := time.Now()
+	r := f.launch(t).Record.PatchBranch // no Err, no Problem (launch says)
+	if r.Commit != tip || r.Verified || !strings.Contains(r.FetchErr, "timed out") {
+		t.Fatalf("resolved = %+v, want the mirror's %s, not verified, the fetch timed out", r, tip)
+	}
+	wantLine(t, r, f.now, "mine  origin "+shortCommit(tip), "not verified (fetch failed: ")
+	if took := time.Since(start); took > 4*time.Second+gitWaitDelay {
+		t.Errorf("the check took %s, past its budget", took)
+	}
+}
+
+func TestAFailedFetchBuildsTheTrackingRefTheUserFetched(t *testing.T) {
+	f := newCheckoutFixture(t)
+	set, _ := f.originWrapper(t)
+	f.launch(t)
+	pushed := f.push(t, map[int]string{10: "ten", 12: "twelve"})
+	set("fail")
+	gitIn(t, f.machine, "fetch", "-q", "origin") // the line's next step, run by the user
+	f.now = f.now.Add(2 * time.Minute)
+	r := f.launch(t).Record.PatchBranch
+	if r.Commit != pushed || r.Copy != "origin" || r.Verified {
+		t.Fatalf("resolved = %+v, want the pushed %s the user fetched, not verified", r, pushed)
+	}
+	wantLine(t, r, f.now, "mine  origin "+shortCommit(pushed)+"  no local branch  not verified")
+}
+
+func TestRefDoesNotMatchATrackingBranchWithASlashedName(t *testing.T) {
+	f := newCheckoutFixture(t)
+	gitIn(t, f.pusher, "push", "-q", "origin", "mine:refs/heads/alice/other")
+	gitIn(t, f.machine, "fetch", "-q", "origin")
+	w := f.want()
+	w.PatchBranch = "git+file://" + f.machine + "?ref=other"
+	res := f.store.CheckPatched(w, CheckOptions{Now: func() time.Time { return f.now }})
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if p := res.Record.Check.Problem; !strings.Contains(p, "names no local branch, remote-tracking branch, tag or commit") {
+		t.Errorf("?ref=other resolved against refs/remotes/origin/alice/other: problem %q, patch branch %+v",
+			p, res.Record.PatchBranch)
+	}
+}
+
+func TestABranchDeletedOnOriginBuildsTheLocalBranchNotOnOrigin(t *testing.T) {
+	f := newCheckoutFixture(t)
+	local := f.localMine(t, "origin/mine", 1)
+	gitIn(t, f.pusher, "push", "-q", "origin", "--delete", "mine")
+	r := f.launch(t).Record.PatchBranch
+	if r.Commit != local || r.Copy != "local" || !r.Verified || !r.RemoteGone || r.Loud() {
+		t.Fatalf("resolved = %+v, want the local %s, verified, not on origin, quiet", r, local)
+	}
+	wantLine(t, r, f.now, "mine  local "+shortCommit(local)+"  not on origin  fetched just now")
+}
+
+func TestABranchDeletedOnOriginWithNoLocalBuildsTheStaleTrackingRefLoudly(t *testing.T) {
+	f := newCheckoutFixture(t)
+	stale := gitIn(t, f.machine, "rev-parse", "refs/remotes/origin/mine")
+	gitIn(t, f.pusher, "push", "-q", "origin", "--delete", "mine")
+	r := f.launch(t).Record.PatchBranch
+	if r.Commit != stale || r.Copy != "origin" || !r.Verified || !r.RemoteGone || !r.Loud() {
+		t.Fatalf("resolved = %+v, want the stale tracking ref's %s, loud", r, stale)
+	}
+	wantLine(t, r, f.now, "mine  origin "+shortCommit(stale)+"  not on origin (stale tracking ref)",
+		"`git -C "+f.machine+" push -- origin refs/remotes/origin/mine:refs/heads/mine`")
+}
+
+func TestAFailedFetchWithNoMirrorFallsBackToTheTrackingRefThenATagThenRefuses(t *testing.T) {
+	f := newCheckoutFixture(t)
+	tip := gitIn(t, f.machine, "rev-parse", "refs/remotes/origin/mine")
+	if err := os.Rename(f.origin, f.origin+".gone"); err != nil {
+		t.Fatal(err)
+	}
+	r := f.launch(t).Record.PatchBranch
+	if r.Commit != tip || r.Ref != "refs/remotes/origin/mine" || r.Verified || r.FetchedAt != 0 {
+		t.Fatalf("resolved = %+v, want the tracking ref's %s, never fetched", r, tip)
+	}
+	wantLine(t, r, f.now, "mine  origin "+shortCommit(tip), "not verified", "never fetched")
+
+	gitIn(t, f.machine, "update-ref", "-d", "refs/remotes/origin/mine")
+	gitIn(t, f.machine, "tag", "mine", tip)
+	f.now = f.now.Add(2 * time.Minute)
+	if r = f.launch(t).Record.PatchBranch; r.Commit != tip || r.Ref != "refs/tags/mine" || r.Verified {
+		t.Fatalf("resolved = %+v, want the tag's %s", r, tip)
+	}
+
+	w := f.want()
+	w.Owner, w.PatchBranch = "forkpack/other", "git+file://"+f.machine+"?ref=absent"
+	res := f.store.CheckPatched(w, CheckOptions{Now: func() time.Time { return f.now }})
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if p := res.Record.Check.Problem; !strings.Contains(p, "names no local branch, remote-tracking branch, tag or commit") ||
+		!strings.Contains(p, "fetch -- origin absent") {
+		t.Errorf("nothing anywhere: problem %q, want the existing refusal and its fetch", p)
+	}
+}
+
+func TestEachRemoteIsFetchedOncePerCommand(t *testing.T) {
+	f := newCheckoutFixture(t)
+	_, fetches := f.originWrapper(t)
+	for _, owner := range []string{"forkpack/tool", "forkpack/other"} { // one launch, two owners, one patch branch
+		w := f.want()
+		w.Owner = owner
+		if res := f.store.CheckPatched(w, CheckOptions{RefreshPatchBranch: true, Now: func() time.Time { return f.now }}); res.Err != nil {
+			t.Fatal(res.Err)
+		}
+	}
+	if n := fetches(); n != 1 {
+		t.Errorf("one command fetched origin %d times, want once", n)
+	}
+	f.now = f.now.Add(2 * time.Minute) // the next command
+	f.launch(t)
+	if n := fetches(); n != 2 {
+		t.Errorf("the next command fetched origin %d times in all, want 2", n)
+	}
 }

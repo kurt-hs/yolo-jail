@@ -9,17 +9,22 @@ package packsrc
 //     which is fetched from the checkout as before) and its remote's tip, which yolo fetches from the
 //     checkout's remote (origin, else the first by name) INTO A MIRROR OF ITS OWN, by the same per-mirror
 //     fetch a patch branch at a URL takes (non-interactive: GIT_TERMINAL_PROMPT=0, no askpass, the user's
-//     ssh command left alone; bounded by the store's timeout). Nothing is ever fetched into, or written to,
-//     the user's repository.
+//     ssh command left alone, so ssh may still prompt at a terminal in `yolo pack install`/`update`) in a
+//     BUDGET OF ITS OWN, half of what the check has left (budget.share), so a hung fetch times out as a failed
+//     fetch and the steps after it keep theirs. Nothing is ever fetched into, or written to, the user's
+//     repository.
 //   - WHEN. At every check, and at every fresh launch inside the hourly throttle as well
 //     (CheckOptions.RefreshPatchBranch): a branch that moved is a new build key and the normal check and
 //     build run. At most once per repository and ref per command (patchBranchFetches).
 //   - WHICH COPY. No local branch: the remote tip. Equal: either. The local branch behind: the remote tip,
 //     and the local branch is said to be stale. Ahead: the local branch, with its unpushed commits counted.
 //     Diverged: the local branch, warned loudly with both commits and counts and the push that repairs a
-//     rebase. A fetch that failed never refuses: the local branch, else the remote tip yolo last fetched,
-//     else the checkout's own refs/remotes/<remote>/<ref>, else the dc8a83511 order (resolvePatchBranchRef),
-//     said "not verified" with the last good fetch's age and the fetch to run by hand.
+//     rebase. A fetch that failed never refuses: the local branch, else the newer (by ancestry; diverged, the
+//     tracking ref) of the remote tip yolo last fetched and the checkout's own refs/remotes/<remote>/<ref>,
+//     so the `git fetch` the line suggests is what builds next, else the plain order (resolvePatchBranchRef),
+//     said "not verified" with the last good fetch's age and the fetch to run by hand. A fetch that succeeded
+//     and shows the remote no longer has the branch (RemoteGone): the local branch, "not on <remote>"; with
+//     none, the checkout's stale tracking ref, said to be one, loudly, with the push that restores it.
 //   - ONE LINE (PatchBranchResolved.Line) from the check record, so the launch, `yolo pack update`, `yolo
 //     pack series check` and `yolo pack status` cannot disagree about which copy they judged.
 
@@ -39,6 +44,9 @@ import (
 type checkoutPlan struct {
 	dir         string // the checkout
 	remote, url string // its remote (origin, else the first by name) and that remote's address; "" for none
+	// remotes is every remote the checkout has (`git remote`), never nil: resolvePatchBranchRef matches
+	// remote-tracking refs against these names only.
+	remotes []string
 }
 
 // remoteAddr is the remote's address at the patch branch's ref, the key of its mirror and stamp.
@@ -59,6 +67,7 @@ func (s *Store) checkoutPlanOf(c Addr) *checkoutPlan {
 		return nil
 	}
 	remotes := strings.Fields(out)
+	p.remotes = append([]string{}, remotes...)
 	if len(remotes) == 0 {
 		return p
 	}
@@ -72,7 +81,7 @@ func (s *Store) checkoutPlanOf(c Addr) *checkoutPlan {
 			p.remote = r
 		}
 	}
-	url, err := s.run("", "-C", dir, "remote", "get-url", p.remote)
+	url, err := s.run("", "-C", dir, "remote", "get-url", "--", p.remote)
 	if url = strings.TrimSpace(url); err != nil || url == "" {
 		p.remote = ""
 		return p
@@ -167,7 +176,7 @@ func branchName(ref string) (string, bool) {
 func (s *Store) pickCopy(b budget, c Addr, p *checkoutPlan, mirror string, r *PatchBranchResolved) (refKind, string, string, error) {
 	name, ok := branchName(c.Ref)
 	if !ok {
-		kind, ref, commit, err := s.resolvePatchBranchRef(mirror, c.Ref)
+		kind, ref, commit, err := s.resolvePatchBranchRef(mirror, c.Ref, p.remotes)
 		r.Copy = ref
 		return kind, ref, commit, err
 	}
@@ -177,20 +186,49 @@ func (s *Store) pickCopy(b budget, c Addr, p *checkoutPlan, mirror string, r *Pa
 	}
 	remoteTip, remoteRepo, remoteRef := "", "", ""
 	if p.remote != "" {
-		if rm := s.mirrorPath(p.url); mirrorExists(rm) {
-			if remoteTip, err = s.revParse(rm, "refs/heads/"+name); err != nil {
-				return refUnresolved, "", "", err
-			}
-			remoteRepo, remoteRef = p.url, "refs/heads/"+name
+		// The remote's tip two ways: yolo's own mirror of the remote (fetched just now when r.Verified), and the
+		// checkout's refs/remotes/<remote>/<ref>, as the user last fetched it.
+		tracking := "refs/remotes/" + p.remote + "/" + name
+		trackTip, err := s.revParse(mirror, tracking)
+		if err != nil {
+			return refUnresolved, "", "", err
 		}
-		if remoteTip == "" {
-			// YOLO HAS NEVER FETCHED THE REMOTE (or it lacks the branch): the checkout's own remote-tracking
-			// ref, as the checkout last fetched it.
-			ref := "refs/remotes/" + p.remote + "/" + name
-			if remoteTip, err = s.revParse(mirror, ref); err != nil {
+		mirrorTip := ""
+		if rm := s.mirrorPath(p.url); mirrorExists(rm) {
+			if mirrorTip, err = s.revParse(rm, "refs/heads/"+name); err != nil {
 				return refUnresolved, "", "", err
 			}
-			remoteRepo, remoteRef = "", ref
+		}
+		fromMirror := func() { remoteTip, remoteRepo, remoteRef = mirrorTip, p.url, "refs/heads/"+name }
+		fromTracking := func() { remoteTip, remoteRepo, remoteRef = trackTip, "", tracking }
+		switch {
+		case r.Verified && mirrorTip == "":
+			// THE REMOTE NO LONGER HAS THE BRANCH (the fetch prunes): the checkout's tracking ref is stale and
+			// is no remote tip. The local branch answers, "not on <remote>"; with none, the stale tracking ref
+			// still builds (a copy exists, so nothing refuses), said to be one.
+			r.RemoteGone = true
+			if local == "" && trackTip != "" {
+				r.Copy = p.remote
+				return refBranch, tracking, trackTip, nil
+			}
+		case r.Verified, trackTip == "", trackTip == mirrorTip:
+			if mirrorTip != "" {
+				fromMirror()
+			}
+		case mirrorTip == "":
+			fromTracking()
+		default:
+			// YOLO'S FETCH FAILED and the copies differ: the newer by ancestry, so a `git fetch` the user ran
+			// (the line's next step) is what builds; diverged, the tracking ref, the user's latest fetch.
+			ahead, behind, err := s.aheadBehind(b, mirror, p.url, trackTip, mirrorTip)
+			if err != nil {
+				return refUnresolved, "", "", err
+			}
+			if ahead == 0 && behind > 0 {
+				fromMirror()
+			} else {
+				fromTracking()
+			}
 		}
 	}
 	r.Local, r.RemoteTip = local, remoteTip
@@ -205,7 +243,7 @@ func (s *Store) pickCopy(b budget, c Addr, p *checkoutPlan, mirror string, r *Pa
 	switch {
 	case local == "" && remoteTip == "":
 		// NEITHER COPY: the plain order, whose other remotes' tracking branches and tags may still answer.
-		kind, ref, commit, err := s.resolvePatchBranchRef(mirror, c.Ref)
+		kind, ref, commit, err := s.resolvePatchBranchRef(mirror, c.Ref, p.remotes)
 		r.Copy = ref
 		return kind, ref, commit, err
 	case local == "":
@@ -259,6 +297,12 @@ func (r *PatchBranchResolved) NotVerified() bool {
 	return r.Checkout != "" && r.Remote != "" && !r.Verified
 }
 
+// Loud reports a line every act prints as a warning: a diverged branch, a remote that could not be fetched, or
+// a build from a stale tracking ref of a branch the remote no longer has.
+func (r *PatchBranchResolved) Loud() bool {
+	return r.Diverged() || r.NotVerified() || (r.RemoteGone && r.Local == "")
+}
+
 // Line is the patch branch's provenance in one line, read from the check record with no git: the ref, the copy
 // that answered, its commit, how it relates to the other copy, and the remote fetch's freshness as of now (the
 // check's clock). "" for a patch branch at a URL, whose label says all there is.
@@ -288,6 +332,10 @@ func (r *PatchBranchResolved) relation() string {
 	switch {
 	case r.Remote == "":
 		return "no remote to compare with"
+	case r.RemoteGone && r.Local == "":
+		return "not on " + r.Remote + " (stale tracking ref) — push it back with `" +
+			shquote.JoinDisplay([]string{"git", "-C", r.Checkout, "push", "--", r.Remote, "refs/remotes/" + r.Remote + "/" + r.Branch + ":refs/heads/" + r.Branch}) +
+			"`, or correct the patch branch's ?ref="
 	case r.Local == "" && r.RemoteTip == "":
 		return "neither the local branch nor " + r.Remote + " has it"
 	case r.Local == "":
@@ -300,7 +348,7 @@ func (r *PatchBranchResolved) relation() string {
 		return fmt.Sprintf("diverged from %s: local %s has %d %s %s lacks, %s %s has %d the local branch lacks — "+
 			"`%s` (if you rebased)", r.Remote, shortCommit(r.Local), r.Ahead, plural(r.Ahead, "commit", "commits"),
 			r.Remote, r.Remote, shortCommit(r.RemoteTip), r.Behind,
-			shquote.JoinDisplay([]string{"git", "-C", r.Checkout, "push", "--force-with-lease", r.Remote, r.Branch}))
+			shquote.JoinDisplay([]string{"git", "-C", r.Checkout, "push", "--force-with-lease", "--", r.Remote, r.Branch}))
 	case r.Ahead > 0:
 		return fmt.Sprintf("%d unpushed", r.Ahead)
 	case r.Behind > 0:
@@ -329,7 +377,7 @@ func (r *PatchBranchResolved) freshness(now time.Time) string {
 		why = " (fetch failed: " + r.FetchErr + ")"
 	}
 	return "not verified" + why + ", " + last + " — run `" +
-		shquote.JoinDisplay([]string{"git", "-C", r.Checkout, "fetch", r.Remote, r.Branch}) + "` to fetch it by hand"
+		shquote.JoinDisplay([]string{"git", "-C", r.Checkout, "fetch", "--", r.Remote, r.Branch}) + "` to fetch it by hand"
 }
 
 // agoWords is a duration as a line says how long ago: "just now", "N minutes ago", "N hours ago", "N days ago".

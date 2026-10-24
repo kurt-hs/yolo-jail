@@ -136,13 +136,21 @@ tells you which one it used:
 - **At every launch, yolo fetches the clone's remote** (`origin`, or the first remote by name) into its
   own copy. It never runs `git fetch` in your clone and never changes it. A push from another machine is
   built at your next launch.
-- **No local branch, or a local branch behind the remote**: the remote's branch builds, and yolo says the
-  local branch is stale.
+- **No local branch**: the remote's branch builds, and yolo says there is no local branch.
+- **A local branch behind the remote**: the remote's branch builds, and yolo says the local branch is
+  stale.
 - **Local commits you have not pushed**: your local branch builds, and yolo counts the unpushed commits.
 - **Your branch and the remote's have diverged**: your local branch builds, with a warning that names both
-  commits. If you rebased, push with `git -C <repo> push --force-with-lease origin <branch>`.
-- **The fetch fails** (offline, no credentials): yolo still builds, from your local branch if there is one.
-  It says the branch is not verified, when it last fetched, and the `git fetch` to run yourself.
+  commits. If you rebased, push with `git -C <repo> push --force-with-lease -- origin <branch>`.
+- **The fetch fails** (offline, no credentials, or it takes too long): yolo still builds, from your local
+  branch if there is one. It says the branch is not verified, when it last fetched, and the `git fetch` to
+  run yourself. Once you have run it, the next launch builds what you fetched.
+- **The branch was deleted on the remote**: your local branch builds, and yolo says it is not on origin.
+  With no local branch, yolo builds your clone's last copy of the remote's branch and warns that it is
+  stale, with the push that puts it back.
+
+yolo's own fetch never asks for git credentials. At a terminal, `yolo pack update` may still let ssh ask
+you something, such as whether to trust a new host.
 
 The launch, `yolo pack update`, `yolo pack series check` and `yolo pack status` all print the same line,
 for example `mine  origin 4cd0bc6b  local branch is stale, 1 behind origin  fetched just now`.

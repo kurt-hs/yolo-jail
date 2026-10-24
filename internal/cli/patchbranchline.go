@@ -15,7 +15,7 @@ func patchBranchProvenance(label string, r *packsrc.PatchBranchResolved) (line s
 	if text == "" {
 		return "", false
 	}
-	return label + ": patch branch " + text, r.Diverged() || r.NotVerified()
+	return label + ": patch branch " + text, r.Loud()
 }
 
 // printPatchBranchProvenance prints patchBranchProvenance, dim or as a warning.

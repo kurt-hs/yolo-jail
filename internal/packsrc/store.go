@@ -236,6 +236,18 @@ func (s *Store) newBudget() (budget, context.CancelFunc) {
 	return budget{ctx: ctx, d: s.timeout()}, cancel
 }
 
+// share is a BOUNDED SUB-BUDGET of b: half of what remains of it, so a run that may hang (a network fetch)
+// times out on its own and the runs after it keep the other half. The caller cancels it when done.
+func (b budget) share() (budget, context.CancelFunc) {
+	left := b.d
+	if dl, ok := b.ctx.Deadline(); ok {
+		left = time.Until(dl)
+	}
+	d := max(left/2, 0)
+	ctx, cancel := context.WithTimeout(b.ctx, d)
+	return budget{ctx: ctx, d: d.Round(time.Millisecond)}, cancel
+}
+
 // parentCtx is the context every budget of this store starts under: Ctx, or none.
 func (s *Store) parentCtx() context.Context {
 	if s.Ctx != nil {

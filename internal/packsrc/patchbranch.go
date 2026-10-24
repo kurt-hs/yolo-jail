@@ -121,6 +121,10 @@ type PatchBranchResolved struct {
 	Verified  bool   `json:"verified,omitempty"`
 	FetchErr  string `json:"fetch_error,omitempty"`
 	FetchedAt int64  `json:"fetched_at,omitempty"`
+	// RemoteGone is true when the remote's fetch succeeded and the remote no longer has the branch (deleted, or
+	// never pushed): RemoteTip is then "", and with no local branch Commit is the checkout's stale
+	// refs/remotes/<remote>/<ref>.
+	RemoteGone bool `json:"remote_gone,omitempty"`
 }
 
 // PatchBranchDigest is a patch branch's SERIES DIGEST: the sha256, in hex, of the JSON array ["patch_branch", commit].
@@ -283,13 +287,18 @@ func (s *Store) resolvePatchBranch(b budget, c Addr, p *checkoutPlan, upstream, 
 	var ref, commit string
 	var err error
 	if p == nil {
-		kind, ref, commit, err = s.resolvePatchBranchRef(mirror, c.Ref)
+		kind, ref, commit, err = s.resolvePatchBranchRef(mirror, c.Ref, nil)
 	} else {
 		resolved.Checkout, resolved.Branch = p.dir, c.Ref
 		if p.remote != "" {
 			ra := p.remoteAddr(c.Ref)
 			resolved.Remote, resolved.RemoteURL = p.remote, p.url
-			if ferr := s.patchBranchFetch(b, ra, fetchMode{keepTags: true}, now, once, true); ferr != nil {
+			// THE REMOTE'S FETCH HAS A BUDGET OF ITS OWN, half of what is left, so a fetch that hangs times out
+			// as a failed fetch ("not verified") and the comparison and merge base after it keep theirs.
+			fb, cancel := b.share()
+			ferr := s.patchBranchFetch(fb, ra, fetchMode{keepTags: true}, now, once, true)
+			cancel()
+			if ferr != nil {
 				resolved.FetchErr = oneLine(ferr)
 			} else {
 				resolved.Verified = true
@@ -346,14 +355,15 @@ func (s *Store) resolvePatchBranch(b budget, c Addr, p *checkoutPlan, upstream, 
 //  1. the local branch, refs/heads/<ref>;
 //  2. a remote-tracking branch, refs/remotes/<remote>/<ref>: origin's first, then the other remotes' in byte
 //     order of the remote's name, so two remotes holding the ref always answer the same way. The remotes are
-//     those the repository holds remote-tracking refs of (the mirror fetches them, fetchMirror), which `git
-//     remote remove` deletes with the remote. A fetched ref is a delivered ref: no local branch is made for it;
+//     the checkout's own (remotes, its `git remote`; remoteTrackingFor), whose tracking refs the mirror fetches
+//     (fetchMirror) and `git remote remove` deletes with the remote. A fetched ref is a delivered ref: no local
+//     branch is made for it;
 //  3. a tag, refs/tags/<ref>;
 //  4. a full commit;
 //
 // and then anything else git resolves (an abbreviated commit, HEAD) as refOther, which the caller refuses. A ref
 // already spelled refs/... is asked by that name alone.
-func (s *Store) resolvePatchBranchRef(mirror, ref string) (refKind, string, string, error) {
+func (s *Store) resolvePatchBranchRef(mirror, ref string, remotes []string) (refKind, string, string, error) {
 	ask := func(kind refKind, name string) (refKind, string, string, bool, error) {
 		sha, err := s.revParse(mirror, name)
 		if err != nil {
@@ -378,7 +388,7 @@ func (s *Store) resolvePatchBranchRef(mirror, ref string) (refKind, string, stri
 	if k, name, sha, ok, err := ask(refBranch, "refs/heads/"+ref); ok || err != nil {
 		return k, name, sha, err
 	}
-	tracking, err := s.remoteTrackingFor(mirror, ref)
+	tracking, err := s.remoteTrackingFor(mirror, ref, remotes)
 	if err != nil {
 		return refUnresolved, "", "", err
 	}
@@ -400,22 +410,31 @@ func (s *Store) resolvePatchBranchRef(mirror, ref string) (refKind, string, stri
 }
 
 // remoteTrackingFor is every refs/remotes/<remote>/<ref> the mirror holds, origin's first and then by the remote's
-// name (resolvePatchBranchRef).
-func (s *Store) remoteTrackingFor(mirror, ref string) ([]string, error) {
-	out, err := s.run(mirror, "for-each-ref", "--format=%(refname)", "refs/remotes/")
-	if err != nil {
-		return nil, fmt.Errorf("listing the remote-tracking refs in the pack mirror: %w", err)
-	}
+// name (resolvePatchBranchRef). A remote is one of remotes, the names the checkout's `git remote` lists, so
+// ?ref=mine never matches refs/remotes/origin/alice/mine (remote "origin", branch "alice/mine"). With remotes nil
+// (a repository not on this machine, whose remotes cannot be asked) a remote is a name with no slash, git's
+// common case, for the same reason.
+func (s *Store) remoteTrackingFor(mirror, ref string, remotes []string) ([]string, error) {
 	type candidate struct{ remote, name string }
 	var found []candidate
-	for _, name := range strings.Split(out, "\n") {
-		name = strings.TrimSpace(name)
-		rest, ok := strings.CutPrefix(name, "refs/remotes/")
-		if !ok {
-			continue
+	if remotes != nil {
+		for _, r := range remotes {
+			found = append(found, candidate{r, "refs/remotes/" + r + "/" + ref})
 		}
-		if remote, ok := strings.CutSuffix(rest, "/"+ref); ok && remote != "" {
-			found = append(found, candidate{remote, name})
+	} else {
+		out, err := s.run(mirror, "for-each-ref", "--format=%(refname)", "refs/remotes/")
+		if err != nil {
+			return nil, fmt.Errorf("listing the remote-tracking refs in the pack mirror: %w", err)
+		}
+		for _, name := range strings.Split(out, "\n") {
+			name = strings.TrimSpace(name)
+			rest, ok := strings.CutPrefix(name, "refs/remotes/")
+			if !ok {
+				continue
+			}
+			if remote, ok := strings.CutSuffix(rest, "/"+ref); ok && remote != "" && !strings.Contains(remote, "/") {
+				found = append(found, candidate{remote, name})
+			}
 		}
 	}
 	slices.SortFunc(found, func(a, b candidate) int {
@@ -456,6 +475,6 @@ func (s *Store) patchBranchDelivery(c Addr) string {
 	if slices.Contains(remotes, "origin") {
 		remote = "origin"
 	}
-	return "fetch it: `" + shquote.JoinDisplay([]string{"git", "-C", dir, "fetch", remote, c.Ref}) +
+	return "fetch it: `" + shquote.JoinDisplay([]string{"git", "-C", dir, "fetch", "--", remote, c.Ref}) +
 		"`, or correct the patch branch's ?ref="
 }
