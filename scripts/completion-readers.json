@@ -4534,8 +4534,10 @@
 "internal/macosuser/provision.go",
 "internal/macosuser/runplan.go",
 "internal/macosuser/seatbelt.go",
+"internal/packsrc/localclones.go",
 "internal/run",
 "macosuser",
+"packsrc",
 "run"
 ],
 "listed": [
@@ -5473,6 +5475,7 @@
 "internal/cli/iopriorityref_test.go",
 "internal/cli/jailstreams_test.go",
 "internal/cli/jailwithcredentials_test.go",
+"internal/cli/localclonesrefusal_test.go",
 "internal/cli/locknewerschema_test.go",
 "internal/cli/logsink_test.go",
 "internal/cli/loopholesenable_test.go",
@@ -5512,6 +5515,7 @@
 "internal/cli/packlintdeliveries_test.go",
 "internal/cli/packlintdescribes_test.go",
 "internal/cli/packlinthookstate_test.go",
+"internal/cli/packlintlocalbranch_test.go",
 "internal/cli/packlintoverlay_test.go",
 "internal/cli/packlintpacktree_test.go",
 "internal/cli/packlintpatched_test.go",
