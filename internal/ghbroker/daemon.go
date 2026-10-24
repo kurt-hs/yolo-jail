@@ -8,24 +8,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostrun"
 	"io"
 	"os"
-	"os/signal"
-	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
-	"syscall"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
-	"github.com/mschulkind-oss/yolo-jail/internal/brokerhook"
+	"github.com/mschulkind-oss/yolo-jail/internal/brokercore"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
-	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
@@ -82,114 +76,51 @@ type Broker struct {
 	workspace   string
 	startID     string
 	store       *brokerstore.Store
-	lifetimeMu  sync.Mutex
-	jails       map[string]struct{}
+	lifetimes   brokercore.Lifetimes
 	audit       *brokeraudit.Log
 	log         io.Writer
 	now         func() time.Time
 }
 
-// Main is `yolo internal daemon github-broker`.
+// Main is `yolo internal daemon github-broker`: the core's daemon (brokercore.Daemon) around
+// this source's broker.
 func Main(argv []string) int {
-	fs := flag.NewFlagSet("github-broker", flag.ContinueOnError)
-	socket := fs.String("socket", "", "AF_UNIX socket to bind (behind yolo's front)")
-	scopeFile := fs.String("scope-file", "", "this launch's scope file, written by the launch")
-	selfCheck := fs.Bool("self-check", false, "report the host gh and exit (used by `yolo check`)")
-	if err := fs.Parse(argv); err != nil {
-		return 2
-	}
-	if *selfCheck {
-		return SelfCheck(os.Stdout)
-	}
-	if *socket == "" || *scopeFile == "" {
-		fmt.Fprintln(os.Stderr, "github-broker: --socket and --scope-file are required")
-		return 2
-	}
-	// FAIL CLOSED: a broker whose launch handed it no readable scope runs nothing, rather
-	// than guessing a scope from anywhere else (BB-D32: it never reads the remotes or the
-	// approval record).
-	sf, err := brokerscope.ReadFile(*scopeFile)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "github-broker: refusing to start:", err)
-		return 1
-	}
-	// The launch spawns this daemon from the workspace. Leave it for a directory the broker
-	// owns, so nothing this process does later resolves a relative path in the agent's tree;
-	// the workspace is still what the host gh's placement is checked against.
-	spawnCwd, _ := os.Getwd()
-	if dir := paths.BrokerSourceDir(Source); os.MkdirAll(dir, 0o700) == nil {
-		_ = os.Chdir(dir)
-	}
-	b, cleanup := newBroker(sf, spawnCwd, os.Stderr)
-	defer cleanup()
-	b.authority, err = BindAuthority(*scopeFile, sf, b.startID)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "github-broker: refusing host authority:", err, "; relaunch the jail")
-		return 1
-	}
-	b.store.Revalidate = b.authority.Revalidate
-	b.store.Audit = StoreAudit(b.audit)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	b.shutdown = ctx
-	// TOLD TO STOP, END gh FIRST. The launcher stops a daemon with SIGTERM to its process
-	// group and SIGKILLs it after a grace; the listener then waits for every call in flight,
-	// and a gh in its own process group never saw the SIGTERM. So the broker kills its gh
-	// children itself, the calls return inside the grace, and the deferred cleanup, which
-	// removes the copy of the host's hosts.yml, runs.
-	stop := make(chan struct{})
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
-	go func() {
-		<-sig
-		cancel()
-		if b.runner != nil {
-			b.runner.Shutdown()
-		}
-		close(stop)
-	}()
-	hookDone := b.startOnRequest(ctx, config.OnRequest())
-	err = hostservice.ServeFrontedUnix(b.Handle, *socket, stop)
-	cancel()
-	// A hook runs in its own process group, which the launcher's stop signal does not reach,
-	// so wait for the runner to kill what it started: past the runner's own wait on a killed
-	// hook's output. A launcher that SIGKILLs sooner still ends them, by Pdeathsig on Linux.
-	select {
-	case <-hookDone:
-	case <-time.After(brokerhook.KillWait + time.Second):
-	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "github-broker:", err)
-		return 1
-	}
-	return 0
+	var b *Broker
+	return brokercore.Daemon{
+		Name:           "github-broker",
+		Source:         Source,
+		SelfCheck:      SelfCheck,
+		SelfCheckUsage: "report the host gh and exit (used by `yolo check`)",
+		NewHandler: func(ctx context.Context, scopeFile string, sf brokerscope.File, spawnCwd string, stderr io.Writer) (brokercore.Launch, int) {
+			var cleanup func()
+			b, cleanup = newBroker(sf, spawnCwd, stderr)
+			l := brokercore.Launch{Handle: b.Handle, Store: b.store, Start: b.startID, Log: b.log, Cleanup: cleanup}
+			var err error
+			b.authority, err = BindAuthority(scopeFile, sf, b.startID)
+			if err != nil {
+				fmt.Fprintln(stderr, "github-broker: refusing host authority:", err, "; relaunch the jail")
+				return l, 1
+			}
+			b.store.Revalidate = b.authority.Revalidate
+			b.store.Audit = StoreAudit(b.audit)
+			b.shutdown = ctx
+			return l, 0
+		},
+		// TOLD TO STOP, END gh FIRST: a gh in its own process group never saw the SIGTERM, so
+		// the broker kills its gh children itself, the calls return inside the grace, and the
+		// deferred cleanup, which removes the copy of the host's hosts.yml, runs.
+		OnStop: func() {
+			if b != nil && b.runner != nil {
+				b.runner.Shutdown()
+			}
+		},
+	}.Main(argv)
 }
 
 // startOnRequest runs the user's on_request for each request this broker lifetime files
-// (BB-D75), when one is set. The returned channel closes once its runner has stopped.
+// (BB-D75), when one is set (brokercore.StartOnRequest).
 func (b *Broker) startOnRequest(ctx context.Context, command string) <-chan struct{} {
-	done := make(chan struct{})
-	if command == "" || b.store == nil || b.startID == "" {
-		close(done)
-		return done
-	}
-	// The hook runs in the user's home: this daemon has moved into the store's directory,
-	// which is no place for a user's command to start.
-	home, _ := os.UserHomeDir()
-	// This daemon is `yolo internal daemon github-broker`, so its own executable is the yolo
-	// the hook calls to decide: YOLO_BIN, and the `yolo` the runner links first on its PATH.
-	bin, err := os.Executable()
-	if err != nil {
-		fmt.Fprintln(b.log, "github-broker: on_request gets no YOLO_BIN:", err, "; its `yolo approve` must be on PATH")
-		bin = ""
-	}
-	r := &brokerhook.Runner{Store: b.store, Start: b.startID, Command: command, Bin: bin, Dir: home, Log: b.log}
-	fmt.Fprintln(b.log, "github-broker: running your on_request for each request this jail files")
-	go func() {
-		defer close(done)
-		r.Run(ctx)
-	}()
-	return done
+	return brokercore.StartOnRequest(ctx, "github-broker", b.store, b.startID, command, b.log)
 }
 
 // newBroker builds a broker for one launch's scope file, logging what it starts with.
@@ -214,7 +145,6 @@ func newBroker(sf brokerscope.File, spawnCwd string, log io.Writer) (*Broker, fu
 		workspace: sf.Workspace,
 		startID:   startID,
 		store:     store,
-		jails:     make(map[string]struct{}),
 		audit: brokeraudit.Open(paths.BrokerAuditLog(), func(msg string) {
 			fmt.Fprintln(log, "github-broker:", msg)
 		}),
@@ -252,40 +182,10 @@ func newBroker(sf brokerscope.File, spawnCwd string, log io.Writer) (*Broker, fu
 	}
 }
 
-// placementRefusal is the loophole placement rule (config.AgentWritableTreeOf, the tree
-// comparison config.LoopholePlacementProblems makes, without its argv-reading skips;
-// docs/reference/loophole-system.md#the-placement-rule) applied to the host gh: a gh inside
-// the workspace or the jail home tree is a program an agent can rewrite, and the broker runs
-// it on the host as the user, so it refuses it by name. Each workspace is checked as given
-// and with its symlinks resolved, because NewRunner asks about the gh both ways. A directory
-// no launch may use as a workspace (the home, or one holding it: paths.WorkspaceScopeBreach)
-// is skipped, since `yolo check` run from the home would otherwise read every host gh under
-// it as the agent's.
+// placementRefusal is the loophole placement rule applied to the host gh
+// (brokercore.PlacementRefusal).
 func placementRefusal(workspaces ...string) func(gh string) string {
-	var trees []string
-	for _, ws := range workspaces {
-		if ws == "" || paths.WorkspaceScopeBreach(ws) != nil {
-			continue
-		}
-		trees = append(trees, ws)
-		if real, err := filepath.EvalSymlinks(ws); err == nil && real != ws {
-			trees = append(trees, real)
-		}
-	}
-	if len(trees) == 0 {
-		trees = []string{""} // the jail home tree alone
-	}
-	return func(gh string) string {
-		for _, ws := range trees {
-			if what := config.AgentWritableTreeOf(gh, ws); what != "" {
-				return "the broker will not run the host gh: " + gh + " is inside " + what +
-					", where an agent can rewrite it between launches (the placement rule, " +
-					"docs/reference/loophole-system.md#the-placement-rule). Put a gh installed outside " +
-					"that tree first on the PATH yolo is launched with."
-			}
-		}
-		return ""
-	}
+	return brokercore.PlacementRefusal("gh", workspaces...)
 }
 
 // SelfCheck is `doctor_cmd`: it reports the host gh the broker would run, and fails only
@@ -337,41 +237,13 @@ func (b *Broker) Handle(s *hostservice.Session) {
 	s.Exit(code)
 }
 
-func (b *Broker) trackJail(jail string) {
-	b.lifetimeMu.Lock()
-	defer b.lifetimeMu.Unlock()
-	if b.jails == nil {
-		b.jails = make(map[string]struct{})
-	}
-	b.jails[jail] = struct{}{}
-}
+func (b *Broker) trackJail(jail string) { b.lifetimes.Track(jail) }
 
-// endLifetimes revokes every grant held by a jail served by this broker process. The
-// random start id also prevents an uncleanly terminated process from authorizing a later run.
+// endLifetimes revokes every grant held by a jail served by this broker process
+// (brokercore.Lifetimes.EndAll).
 func (b *Broker) endLifetimes() {
-	b.lifetimeMu.Lock()
-	jails := make([]string, 0, len(b.jails))
-	for jail := range b.jails {
-		jails = append(jails, jail)
-	}
-	b.lifetimeMu.Unlock()
-	for _, jail := range jails {
-		grants, err := b.store.End(jail, b.startID)
-		if err != nil {
-			fmt.Fprintf(b.log, "github-broker: broker lifetime teardown incomplete: %v; retry stopping the broker on the host\n", err)
-		} else {
-			b.lifetimeMu.Lock()
-			delete(b.jails, jail)
-			b.lifetimeMu.Unlock()
-		}
-		for _, g := range grants {
-			if g.Jail == jail && g.Start == b.startID {
-				b.audit.Append(brokeraudit.Event{Event: "grant-ended", Service: Source, Jail: jail,
-					Workspace: b.workspace, Set: g.Set, Grant: g.ID, Outcome: "ended",
-					Reason: "broker lifetime ended"})
-			}
-		}
-	}
+	b.lifetimes.EndAll(brokercore.LifetimeOwner{Name: "github-broker", Source: Source,
+		Workspace: b.workspace, Start: b.startID, Store: b.store, Audit: b.audit, Log: b.log})
 }
 
 // requestFrom refuses malformed fields instead of dropping bytes or arguments.

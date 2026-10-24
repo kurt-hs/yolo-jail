@@ -1,4 +1,4 @@
-package ghbroker
+package brokercore
 
 import (
 	"bytes"
@@ -21,7 +21,8 @@ type lifetimeLease struct {
 	LaunchID string `json:"launch_id"`
 }
 
-func validLifetimeToken(s string) bool {
+// ValidLifetimeToken says s is a broker start or launch id a lease file name may carry.
+func ValidLifetimeToken(s string) bool {
 	if s == "" {
 		return false
 	}
@@ -36,14 +37,14 @@ func validLifetimeToken(s string) bool {
 // collectInertLeases is called by the next real broker binding under the shared
 // source transaction. Creation/lease acquisition/binding use that same lock, so
 // a just-created file cannot be mistaken for an abandoned lifetime.
-func collectInertLeases(dir string) error {
+func collectInertLeases(source, dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
 	}
 	for _, entry := range entries {
 		start, ok := strings.CutPrefix(entry.Name(), ".lifetime-")
-		if !ok || !validLifetimeToken(start) {
+		if !ok || !ValidLifetimeToken(start) {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
@@ -51,7 +52,7 @@ func collectInertLeases(dir string) error {
 		if err != nil {
 			continue
 		}
-		err = collectInertLease(f, path, start)
+		err = collectInertLease(source, f, path, start)
 		f.Close()
 		if err != nil {
 			return err
@@ -59,7 +60,7 @@ func collectInertLeases(dir string) error {
 	}
 	return nil
 }
-func collectInertLease(f *os.File, path, start string) error {
+func collectInertLease(source string, f *os.File, path, start string) error {
 	fi, err := f.Stat()
 	if err != nil || !fi.Mode().IsRegular() {
 		return nil
@@ -82,7 +83,7 @@ func collectInertLease(f *os.File, path, start string) error {
 	if dec.Decode(&trailing) != io.EOF {
 		return nil
 	}
-	if lease.Version != lifetimeLeaseVersion || lease.Source != Source || lease.Start != start || !validLifetimeToken(lease.LaunchID) {
+	if lease.Version != lifetimeLeaseVersion || lease.Source != source || lease.Start != start || !ValidLifetimeToken(lease.LaunchID) {
 		return nil
 	}
 	current, err := os.Lstat(path)

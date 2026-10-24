@@ -17,6 +17,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/brokercore"
 )
 
 // runner.go runs the host's gh the way docs/design/boundary-broker.md §4.1 requires
@@ -42,12 +44,12 @@ const (
 // Exit codes the broker adds to gh's own, from sysexits.h (§3.2): none collides with gh's
 // 0, 1, 2, 4 or 8.
 const (
-	ExitUsage       = 64 // EX_USAGE: refused, or out of scope
-	ExitUnavailable = 69 // EX_UNAVAILABLE: no broker, no host gh, or no host login
-	ExitTempFail    = 75 // EX_TEMPFAIL: pending a human (step 2)
-	ExitNoPerm      = 77 // EX_NOPERM: denied, or a write this version cannot ask for (at once: BB-D66)
-	ExitTimeout     = 124
-	ghExitAuth      = 4 // gh's own "authentication required"
+	ExitUsage       = brokercore.ExitUsage       // 64, EX_USAGE: refused, or out of scope
+	ExitUnavailable = brokercore.ExitUnavailable // 69, EX_UNAVAILABLE: no broker, no host gh, or no host login
+	ExitTempFail    = brokercore.ExitTempFail    // 75, EX_TEMPFAIL: pending a human (step 2)
+	ExitNoPerm      = brokercore.ExitNoPerm      // 77, EX_NOPERM: denied, or a write this version cannot ask for (at once: BB-D66)
+	ExitTimeout     = brokercore.ExitTimeout     // 124
+	ghExitAuth      = 4                          // gh's own "authentication required"
 )
 
 // ErrNoGH is a host with no gh on the broker's PATH.

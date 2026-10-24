@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
+	"github.com/mschulkind-oss/yolo-jail/internal/brokercore"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -23,20 +24,9 @@ type RequiredDelivery interface {
 	Request(context.Context, brokerstore.Request) error
 }
 
+// StoreAudit is the github store's required audit hook (brokercore.StoreAudit).
 func StoreAudit(log *brokeraudit.Log) func(context.Context, string, brokerstore.Request, brokerstore.Grant) error {
-	return func(ctx context.Context, kind string, q brokerstore.Request, g brokerstore.Grant) error {
-		outcome := "pending"
-		if kind == "decision" {
-			outcome = "denied"
-			if g.ID != "" {
-				outcome = "allowed"
-			}
-		}
-		if kind == "grant-used" {
-			outcome = "spent-before-dispatch"
-		}
-		return log.RequiredContext(ctx, brokeraudit.Event{Event: kind, Service: Source, Jail: q.Jail, Workspace: q.Workspace, Argv: q.Argv, Repo: q.Repo, Set: q.Set, Request: q.ID, Grant: g.ID, Outcome: outcome})
-	}
+	return brokercore.StoreAudit(log, Source)
 }
 func (b *Broker) window(ctx context.Context, req Request, jail string, d Decision, stdout, stderr func([]byte), ev *brokeraudit.Event) (int, string) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)

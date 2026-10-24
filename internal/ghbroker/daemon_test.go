@@ -669,9 +669,9 @@ func TestBrokerTeardownReportsStoreFailureAndRetriesWithoutFalseAudit(t *testing
 	if !strings.Contains(log.String(), "teardown incomplete") {
 		t.Fatal(log.String())
 	}
-	b.lifetimeMu.Lock()
-	_, tracked := b.jails[q.Jail]
-	b.lifetimeMu.Unlock()
+	b.lifetimes.Mu.Lock()
+	_, tracked := b.lifetimes.Jails[q.Jail]
+	b.lifetimes.Mu.Unlock()
 	if !tracked {
 		t.Fatal("failed teardown forgotten")
 	}
