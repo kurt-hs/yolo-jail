@@ -147,3 +147,89 @@ func TestMacosUserQ3CacheMissStepRebuildsAFloorPackage(t *testing.T) {
 			"tests at %d)", i, tests)
 	}
 }
+
+// floorBuildStepName is the step in each macos-user.yml job that realizes the floor before any
+// launch does.
+const floorBuildStepName = "Build the macOS floor (before any launch)"
+
+// THE FLOOR IS BUILT BEFORE ANY LAUNCH, IN ITS OWN STEP, in both macos-user.yml jobs that
+// launch. A cold floor (the rustls mise after a change to its derivation, ~27 min on an
+// M-series Mac) used to be paid inside the first test's 30-minute deadline, which timed out and
+// kept nothing (lab report 2026-10-24, section 3). Pinned from Linux under -short, like Q3.
+func TestMacosUserFloorIsBuiltBeforeAnyLaunch(t *testing.T) {
+	wf := uncommentedYAML(readWorkflow(t, "macos-user.yml"))
+	split := strings.Index(wf, "\n  install:")
+	if split < 0 {
+		t.Fatal("macos-user.yml has no `install` job; this test's job split has lost its reference point")
+	}
+	for _, job := range []struct{ name, body, tests string }{
+		{"macos-user", wf[:split], "-run '^TestMacosUser'"},
+		{"install", wf[split:], "TestMacosUserPackInstallsVersionsAndConfigures"},
+	} {
+		step, ok := stepContaining(job.body, floorBuildStepName)
+		if !ok {
+			t.Errorf("the %s job has no %q step, so its first launch pays a cold floor inside "+
+				"a test's deadline", job.name, floorBuildStepName)
+			continue
+		}
+		for _, want := range []struct{ text, why string }{
+			{"env -u YOLO_EXTRA_PACKAGES nix build", "the floor alone, as a default launch builds it"},
+			{".#packages.${sys}." + darwinpkg.FloorProfileAttr, "the attribute every macos-user launch realizes"},
+			{"--accept-flake-config", "the flake's substituter (yolo-jail.cachix.org) must be asked"},
+			{"timeout-minutes:", "the step needs its own ceiling, not a test's"},
+		} {
+			if !strings.Contains(step, want.text) {
+				t.Errorf("the %s job's floor step lacks %q: %s.\nstep:\n%s", job.name, want.text, want.why, step)
+			}
+		}
+		for _, bad := range []struct{ text, why string }{
+			{"continue-on-error", "a floor that does not build fails every launch, and this step must say so"},
+			{"--option sandbox", "the floor a launch uses is built unsandboxed; Q3 measures the sandbox"},
+		} {
+			if strings.Contains(step, bad.text) {
+				t.Errorf("the %s job's floor step has %q: %s", job.name, bad.text, bad.why)
+			}
+		}
+		at, tests := strings.Index(job.body, floorBuildStepName), strings.Index(job.body, job.tests)
+		if tests < 0 {
+			t.Errorf("the %s job no longer runs %s; the ordering check lost its reference point", job.name, job.tests)
+		} else if at > tests {
+			t.Errorf("the %s job builds the floor AFTER its launches", job.name)
+		}
+	}
+	// Q3's sandboxed build stays FIRST in the main job: after a plain floor build it would find
+	// nothing left to build.
+	mainJob := wf[:split]
+	if q3, at := strings.Index(mainJob, "--option sandbox true"), strings.Index(mainJob, floorBuildStepName); q3 > at {
+		t.Errorf("the plain floor build runs before Q3's sandboxed one, which then measures nothing")
+	}
+}
+
+// THE DARWIN FLOOR IS PUSHED TO CACHIX WHEN ITS INPUTS CHANGE ON main, from a macOS runner, out
+// of a plain build. Every other push to the cache runs on Linux, and a cache is per-system.
+func TestDarwinFloorCacheWorkflowPushesTheFloorOnEveryFlakeChange(t *testing.T) {
+	wf := uncommentedYAML(readWorkflow(t, "darwin-floor-cache.yml"))
+	for _, want := range []struct{ text, why string }{
+		{"branches: [main]", "the push must follow main, where users update from"},
+		{"- flake.nix", "the profile's inputs are flake.nix and flake.lock"},
+		{"- flake.lock", "the profile's inputs are flake.nix and flake.lock"},
+		{"aarch64-darwin", "Apple Silicon is where macos-user runs"},
+		{"env -u YOLO_EXTRA_PACKAGES nix build", "the floor alone, as a default launch builds it"},
+		{".#packages.${sys}." + darwinpkg.FloorProfileAttr, "the attribute every macos-user launch realizes"},
+		{`cachix push "$CACHE_NAME" "$OUT"`, "the built profile's closure must be what is pushed"},
+		{"secrets.CACHIX_AUTH_TOKEN", "the push is gated on the token, as nightly-macos.yml's is"},
+		{"vars.CACHIX_CACHE || 'yolo-jail'", "the cache name comes from the vars context, as nightly-macos.yml's does"},
+	} {
+		if !strings.Contains(wf, want.text) {
+			t.Errorf("darwin-floor-cache.yml lacks %q: %s", want.text, want.why)
+		}
+	}
+	if strings.Contains(wf, "--option sandbox") {
+		t.Error("darwin-floor-cache.yml builds with the sandbox option: it must push what an " +
+			"unsandboxed launch builds, and Q3 in macos-user.yml is the measurement")
+	}
+	if strings.Contains(wf, "schedule:") {
+		t.Error("darwin-floor-cache.yml has a schedule; its trigger is a flake change on main, " +
+			"and a schedule adds runs that push nothing new")
+	}
+}

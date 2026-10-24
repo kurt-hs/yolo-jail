@@ -837,9 +837,11 @@ only of the floor: `TestMacosUserFloorReachesTheSandboxPath` took 73.61 s on a h
 ([the benchmark's CI section](../research/macos-backend-performance.md#26-what-ci-logs-already-hold)).
 It says nothing of a developer's Mac or of the stage below. An LSP-configured workspace's first launch builds the whole native
 floor closure, then runs `mise install` plus an `npm install -g` per server, **in series**,
-before the agent starts. The floor comes from `cache.nixos.org` — this project's own
-substituter serves Linux closures only — so whatever part of it has no darwin build compiles
-on the spot.
+before the agent starts. The floor comes from `cache.nixos.org` and this project's own
+substituter, `yolo-jail.cachix.org`, which carries the floor profile for both darwin systems
+once [`darwin-floor-cache.yml`](../../.github/workflows/darwin-floor-cache.yml) has pushed it
+for the commit (see [the binary cache](image-staging-vs-baking.md#the-binary-cache)); whatever
+part is in neither compiles on the spot.
 
 Three places depend on that number not existing:
 

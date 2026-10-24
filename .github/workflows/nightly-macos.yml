@@ -931,7 +931,10 @@ jobs:
 
       # SUBSTITUTE ONLY. `skipPush`, because this job realizes darwin paths (the copier, the
       # per-commit install prefix) that nothing else here pushes and that would only grow the
-      # cache. It still configures the (possibly overridden) cache as a substituter.
+      # cache. It still configures the (possibly overridden) cache as a substituter. The one
+      # darwin closure the cache does carry is the macos-user floor profile, which
+      # `darwin-floor-cache.yml` pushes from macOS runners when flake.nix or flake.lock
+      # changes on main; every push in THIS file is Linux.
       - name: Use the Cachix cache (substitute only)
         if: steps.cachix.outputs.enabled == 'true'
         uses: cachix/cachix-action@v17

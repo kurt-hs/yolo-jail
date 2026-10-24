@@ -72,8 +72,10 @@ jobs:
     # far below this: in scheduled run 36134719833 (2026-09-25) the integration step took
     # under 2.5 minutes and the job under 4. So this is the wedge budget, not the normal
     # one. Revise it against the duration green runs report, never against a guess. The
-    # inner dial is YOLO_TEST_MACOS_USER_TIMEOUT (seconds, per launch).
-    timeout-minutes: 120
+    # inner dial is YOLO_TEST_MACOS_USER_TIMEOUT (seconds, per launch). The 60 above the
+    # former 120 is exactly the ceiling of "Build the macOS floor", a step this budget did
+    # not hold before; no test's own budget moved.
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
         with:
@@ -88,10 +90,15 @@ jobs:
       #
       # Nothing to configure beyond the experimental features: the launch's own argv
       # already carries `--accept-flake-config` (`darwinpkg.nixFlags`), so the flake's
-      # substituter is honored without this step restating it. Note that the substituter
-      # in question serves LINUX closures — `publish.yml` pushes x86_64-linux and
-      # aarch64-linux — so the darwin floor comes from cache.nixos.org, and whatever
-      # part of it has no darwin build compiles here. That is the unmeasured cost above.
+      # substituter is honored without this step restating it. That substituter,
+      # yolo-jail.cachix.org, serves the Linux image closures (`publish.yml`,
+      # `nightly-macos.yml`) and the darwin floor profile, which `darwin-floor-cache.yml`
+      # builds and pushes from macOS runners whenever flake.nix or flake.lock changes on
+      # main. The rest of the floor comes from cache.nixos.org. The one floor entry
+      # neither public cache can serve is the rustls mise (flake.nix,
+      # `noncontainerFloorSubstitutes`): about 27 minutes cold on an M-series Mac. Before
+      # that push has happened for a commit, it compiles here, in "Build the macOS floor"
+      # below and never inside a test's budget.
       - name: Install Nix
         uses: cachix/install-nix-action@v31
         with:
@@ -126,14 +133,14 @@ jobs:
       # builds, so a renamed attr is a named error here rather than an empty "nothing failed".
       #
       # WHY IT RUNS FIRST. Only a derivation this runner BUILDS says anything about the
-      # sandbox; a path substituted from cache.nixos.org was built elsewhere. The launches below
-      # realize this same floor unsandboxed, so after them there would be nothing left to build.
-      # A derivation that fails here is simply built again, unsandboxed, by the first launch.
+      # sandbox; a path substituted from a binary cache was built elsewhere. "Build the macOS
+      # floor" below realizes this same floor unsandboxed, so after it there would be nothing
+      # left to build. A derivation that fails here is simply built again, unsandboxed, there.
       #
       # `continue-on-error` because the answer is a LIST, and a failure is part of the list.
       # `--keep-going` so one refusal does not hide the rest. `timeout-minutes` is a ceiling on
-      # waste inside the job's own 120: it is the floor build the first launch would otherwise
-      # pay, not an extra one, except for whatever the sandbox refuses.
+      # waste inside the job's own: it is the floor build the step below would otherwise pay,
+      # not an extra one, except for whatever the sandbox refuses.
       #
       # ⚠ `--option sandbox true` IS A RESTRICTED SETTING: the daemon honors it only from a
       # trusted user and otherwise ignores it with a warning. The step greps for that warning
@@ -250,6 +257,31 @@ jobs:
           # A non-reproducible output is an ANSWER (it built), so it does not mark the step failed.
           if [ -n "$ran" ] && grep -q "may not be deterministic" /tmp/q3m.err; then exit 0; fi
           exit "$rc"
+
+      # THE FLOOR, BUILT BEFORE ANY LAUNCH, with its own ceiling. Every macos-user launch
+      # realizes `.#packages.<system>.yoloNoncontainerProfile` with YOLO_EXTRA_PACKAGES unset
+      # (darwinpkg.BuildFloorProfileArgv), and the first launch used to pay for whatever of
+      # it was not in a cache INSIDE its own 30-minute deadline. After a change to mise's
+      # derivation that is the rustls mise, about 27 minutes cold on an M-series Mac (lab
+      # report 2026-10-24, section 3): the first test timed out, its killed build stored
+      # nothing, and the next test started the same build over. warmJail
+      # (integration/harness_test.go) returns early on darwin, so nothing else warms it.
+      #
+      # A PLAIN BUILD, never the Q3 steps above: those are measurements with
+      # `continue-on-error` and the sandbox on, and a refusal there must not leave the floor
+      # unbuilt. When Q3 already built everything this is a no-op. NOT `continue-on-error`:
+      # a floor that does not build fails every launch below, so this step's red is the one
+      # place that names the real cause. The ceiling is this step's, not a test's;
+      # integration/macosusersandboxstep_test.go pins the step, its attribute and its place.
+      - name: Build the macOS floor (before any launch)
+        timeout-minutes: 60
+        run: |
+          set -euo pipefail
+          sys="$(nix eval --impure --raw --expr builtins.currentSystem)"
+          start=$(date +%s)
+          env -u YOLO_EXTRA_PACKAGES nix build --impure --accept-flake-config --no-link \
+            --print-out-paths ".#packages.${sys}.yoloNoncontainerProfile"
+          echo "the floor took $(( $(date +%s) - start ))s to realize" | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
 
       # The account the whole backend runs as. The suite will NOT create it — a test
       # run must not silently add a system account to somebody's Mac — so it is an
@@ -578,10 +610,11 @@ jobs:
     # label's platform.
     runs-on: macos-latest
     name: install ${{ matrix.pack }} from its vendor (macos-user, darwin)
-    # A CEILING ON WASTE, as in Pack Installs. One launch here builds the floor and
-    # installs one agent; the suite's own per-launch deadline (macosUserTimeout,
-    # YOLO_TEST_MACOS_USER_TIMEOUT) fires first on a wedged install.
-    timeout-minutes: 60
+    # A CEILING ON WASTE, as in Pack Installs. One launch here installs one agent, on a
+    # floor "Build the macOS floor" realized first; the suite's own per-launch deadline
+    # (macosUserTimeout, YOLO_TEST_MACOS_USER_TIMEOUT) fires first on a wedged install.
+    # The 60 above the former 60 is exactly that step's ceiling; no test's budget moved.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
         with:
@@ -611,6 +644,18 @@ jobs:
       # As above, and NOT under sudo, for the same reason.
       - name: Create the sandbox account
         run: go run ./cmd/yolo macos-setup
+
+      # As in the job above, and for its reason: a cold floor (the rustls mise after a
+      # change to its derivation) must not be paid inside the install test's deadline.
+      - name: Build the macOS floor (before any launch)
+        timeout-minutes: 60
+        run: |
+          set -euo pipefail
+          sys="$(nix eval --impure --raw --expr builtins.currentSystem)"
+          start=$(date +%s)
+          env -u YOLO_EXTRA_PACKAGES nix build --impure --accept-flake-config --no-link \
+            --print-out-paths ".#packages.${sys}.yoloNoncontainerProfile"
+          echo "the floor took $(( $(date +%s) - start ))s to realize" | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
 
       # -run selects this pack's subtest and no other, so a red cell names its vendor in
       # the job name. YOLO_TEST_REAL_PACK_INSTALLS un-skips the install

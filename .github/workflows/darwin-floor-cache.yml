@@ -1,0 +1,132 @@
+name: darwin floor cache
+
+# PUSH THE macOS FLOOR PROFILE TO CACHIX, so a Mac substitutes it instead of building it.
+#
+# Every macos-user launch realizes `.#packages.<darwin system>.yoloNoncontainerProfile`
+# with YOLO_EXTRA_PACKAGES unset (darwinpkg.BuildFloorProfileArgv), the floor alone. Most
+# of it is on cache.nixos.org. The rustls mise is not: flake.nix builds mise with
+# different cargo features on darwin (`noncontainerFloorSubstitutes`), so no public cache
+# holds it, and before this workflow every Mac compiled it at the first launch after any
+# flake.lock bump that moved mise, about 27 minutes on an M-series Mac (lab report
+# 2026-10-24, section 3). Users honor this cache on darwin: the install guide makes them
+# trusted users, and a launch passes --accept-flake-config. Every other push to the
+# cache runs on Linux (`nightly-macos.yml`, `publish.yml`), and a Cachix cache is
+# per-system, so only a macOS runner can produce these paths.
+#
+# THE TRIGGER IS A PATH-FILTERED PUSH TO main, the cheapest one that covers every change:
+# the profile's whole input set is flake.nix plus flake.lock. Its derivation closure names
+# no yolo source (checked 2026-10-24 with `nix-store -qR` on the aarch64-darwin .drv: no
+# goSrc, no path from this repository), unlike the image, whose identity hashes the same
+# two files. A nightly or a release trigger would leave a user who updates between them
+# paying the build. `workflow_dispatch` re-runs it by hand, for a cache that was
+# unconfigured or failed when the change landed.
+#
+# PUSHED FROM A PLAIN BUILD. The Q3 steps in `macos-user.yml` build the same attribute
+# with `--option sandbox true` as a MEASUREMENT; this workflow never runs them, so what it
+# pushes is what a user's own unsandboxed launch would build.
+#
+# A RELEASE CAN SHIP BEFORE THIS PUSH HAS HAPPENED. Nothing in `release.yml` or
+# `publish.yml` waits on it, and the push takes as long as the build (about half an hour
+# cold). A user who installs that release then builds the floor themselves, slower but not
+# broken: losing this cache costs time only, never function.
+on:
+  push:
+    branches: [main]
+    paths:
+      - flake.nix
+      - flake.lock
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# See ci.yml for the full rationale (pinned JS actions that still bundle Node 20).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+# One run per ref at a time; a newer flake change queues behind the one building, and a
+# queued run is replaced by a still newer one, which covers main's head either way.
+concurrency:
+  group: darwin-floor-cache-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  push-floor:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Apple Silicon, the architecture macos-user is used on.
+          - runner: macos-latest
+            system: aarch64-darwin
+          # Intel, which the flake still evaluates for (eachDefaultSystem includes
+          # x86_64-darwin; nixpkgs warns that 26.05 is its last release). The label is the
+          # one nightly-macos.yml already runs on.
+          - runner: macos-26-intel
+            system: x86_64-darwin
+    runs-on: ${{ matrix.runner }}
+    name: push the floor (${{ matrix.system }})
+    # A ceiling on waste: one cold floor build (~27 min on an M-series Mac, unmeasured on
+    # these runners) plus the push.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # GATED ON THE TOKEN ALONE, and the NAME FROM THE `vars` CONTEXT, exactly as
+      # nightly-macos.yml's gate (whose comment says why a shell expansion cannot see the
+      # override). A fork without the secret builds nothing here.
+      - name: Check Cachix is configured
+        id: cachix
+        run: |
+          if [ -n "${{ secrets.CACHIX_AUTH_TOKEN }}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "cache=${{ vars.CACHIX_CACHE || 'yolo-jail' }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Cachix not configured (no CACHIX_AUTH_TOKEN). Skipping the floor build and push."
+          fi
+
+      # skipPush: the push below names the profile's closure explicitly, so nothing else
+      # this job realizes (nix's own eval inputs) is uploaded by the action's store watcher.
+      - name: Set up Cachix
+        if: steps.cachix.outputs.enabled == 'true'
+        uses: cachix/cachix-action@v17
+        with:
+          name: ${{ steps.cachix.outputs.cache }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+
+      - name: Build the floor profile
+        id: build
+        if: steps.cachix.outputs.enabled == 'true'
+        timeout-minutes: 75
+        run: |
+          set -euo pipefail
+          sys="$(nix eval --impure --raw --expr builtins.currentSystem)"
+          if [ "$sys" != "${{ matrix.system }}" ]; then
+            echo "::error::runner ${{ matrix.runner }} evaluates as ${sys}, not ${{ matrix.system }}; fix the matrix"
+            exit 1
+          fi
+          start=$(date +%s)
+          out="$(env -u YOLO_EXTRA_PACKAGES nix build --impure --accept-flake-config --no-link \
+            --print-out-paths ".#packages.${sys}.yoloNoncontainerProfile")"
+          echo "out=${out}" >> "$GITHUB_OUTPUT"
+          echo "- ${sys}: \`${out}\`, realized in $(( $(date +%s) - start ))s" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # `cachix push` uploads the path's whole closure, skipping what the cache already
+      # holds, the same command `just cachix-push` runs for the Linux image.
+      - name: Push the floor profile
+        if: steps.cachix.outputs.enabled == 'true'
+        env:
+          CACHE_NAME: ${{ steps.cachix.outputs.cache }}
+          OUT: ${{ steps.build.outputs.out }}
+        run: |
+          set -euo pipefail
+          cachix push "$CACHE_NAME" "$OUT"
+          echo "- pushed to https://${CACHE_NAME}.cachix.org" | tee -a "$GITHUB_STEP_SUMMARY"

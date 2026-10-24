@@ -1648,15 +1648,30 @@ lock has not moved. What the cache cannot reach: a from-source build of uncommit
 code, which has never existed anywhere; and every `packages:`-bearing image, because CI publishes
 only the stock attributes, so a baked `packages:` user is a cache miss by construction. Store
 delivery is what makes the cache useful to them — complements, not alternatives. `macos-user` has
-no image and nothing to substitute.
+no image; what it substitutes is its floor profile, below.
 
 **On a Mac** (measured by the macOS nightly on 2026-10-03, `TestMacImageSubstitutesFromCachix` on
 an Intel runner): every Linux path of the stock image is fetched, from `cache.nixos.org` or this
 cache, and no Linux derivation is built, so a Mac needs no Linux builder for the stock image. It
 still builds 13 to 15 small darwin-system helpers locally (nix2container, its JSON metadata and
-three symlink trees), because the flake builds them with the host's package set and only Linux
-runners push. To use a cache name other than `yolo-jail`, change the `nixConfig` URL and key in
-`flake.nix`, the `CACHE` default of `just cachix-push`, and the `CACHIX_CACHE` repository variable.
+three symlink trees), because the flake builds them with the host's package set and the image's
+pushes run only on Linux.
+
+**The macos-user floor.** Every macos-user launch realizes
+`.#packages.<darwin system>.yoloNoncontainerProfile` with no `packages:`, and one entry of it, the
+mise built with rustls (`noncontainerFloorSubstitutes` in [`flake.nix`](../../flake.nix)), is in no
+public cache: built cold it takes about 27 minutes on an M-series Mac
+([lab report, section 3](../lab-reports/2026-10-24-mac-verification-after-gitbroker.md#3-the-rustls-mise-costs-27-minutes-cold-and-a-macos-user-test-has-30)).
+[`darwin-floor-cache.yml`](../../.github/workflows/darwin-floor-cache.yml) builds that profile on
+macOS runners, for aarch64-darwin and x86_64-darwin, and pushes its closure to this cache on every
+push to `main` that changes `flake.nix` or `flake.lock`, the profile's whole input set. It uses the
+same gate as the Linux pushes: the `CACHIX_AUTH_TOKEN` secret, and the name from the `CACHIX_CACHE`
+variable. A release does not wait for that push, so a release cut within about half an hour of a
+flake change can reach users before its floor is in the cache; they then build it themselves,
+which is slower but works.
+
+To use a cache name other than `yolo-jail`, change the `nixConfig` URL and key in `flake.nix`, the
+`CACHE` default of `just cachix-push`, and the `CACHIX_CACHE` repository variable.
 
 ## Backends
 
