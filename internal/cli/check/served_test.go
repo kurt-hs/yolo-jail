@@ -91,6 +91,12 @@ func TestGitRewriteServedOnlyWithTheLoophole(t *testing.T) {
 		case enabled && key0 != "url.yolo::ssh://.insteadOf":
 			t.Errorf("git-broker enabled: GIT_CONFIG_KEY_0 = %q, want url.yolo::ssh://.insteadOf", key0)
 		}
+		// The withheld rewrite is named in the launch's words, with the command that turns it on
+		// (loopholes.Set.FrontedHostWhy): deleting predictedServed's WithNotServedWhy fails this.
+		lines := strings.Join(packload.UnservedLines(scope, nil, nil), "\n")
+		if !enabled && !strings.Contains(lines, "`yolo loopholes enable git-broker`") {
+			t.Errorf("git-broker disabled: the predicted Not-set line does not name the enable command:\n%s", lines)
+		}
 	}
 }
 

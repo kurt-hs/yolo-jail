@@ -920,3 +920,55 @@ func TestFrontedHostNames(t *testing.T) {
 		t.Errorf("an ungated set listed fronted host loopholes %v", got)
 	}
 }
+
+// TestFrontedHostWhy: each fronted-shape record a launch leaves out gets a reason naming the
+// next step, worded for why it is out here: off for the workspace, on Apple Container, or at
+// `yolo host --`. A served one, and a record of another shape, gets none.
+func TestFrontedHostWhy(t *testing.T) {
+	unsetJail(t)
+	md := modsDir(t)
+	writeManifest(t, mkdir(t, filepath.Join(md, "fronted")), map[string]any{
+		"name": "fronted", "description": "x", "transport": "loopback-tls", "lifecycle": "spawned",
+		"host_daemon": map[string]any{"cmd": []any{"daemon", "--socket", "{socket}"}},
+	})
+	writeManifest(t, mkdir(t, filepath.Join(md, "fronted-off")), map[string]any{
+		"name": "fronted-off", "description": "x", "transport": "loopback-tls", "lifecycle": "spawned",
+		"default_enabled": false,
+		"host_daemon":     map[string]any{"cmd": []any{"daemon", "--socket", "{socket}"}},
+	})
+	writeManifest(t, mkdir(t, filepath.Join(md, "both-daemons")), map[string]any{
+		"name": "both-daemons", "description": "x", "transport": "loopback-tls", "lifecycle": "spawned",
+		"host_daemon": map[string]any{"cmd": []any{"daemon", "--socket", "{socket}"}},
+		"jail_daemon": map[string]any{"cmd": []any{"yolo-jaild", "both-daemons"}},
+	})
+	set := approvedSetFrom(md)
+
+	podman := set.FrontedHostWhy("podman")
+	if _, ok := podman["fronted"]; ok || len(podman) != 1 {
+		t.Fatalf("podman: FrontedHostWhy = %v, want only fronted-off", podman)
+	}
+	if got := podman["fronted-off"]; !strings.Contains(got, "off for this workspace") ||
+		!strings.Contains(got, "`yolo loopholes enable fronted-off`") {
+		t.Errorf("podman, loophole off: %q does not name the enable command", got)
+	}
+	if got := set.FrontedHostWhy("macos-user")["fronted-off"]; got != podman["fronted-off"] {
+		t.Errorf("macos-user, loophole off: %q, want podman's %q", got, podman["fronted-off"])
+	}
+	ac := set.FrontedHostWhy("container")
+	for _, name := range []string{"fronted", "fronted-off"} {
+		if got := ac[name]; !strings.Contains(got, "Apple Container") ||
+			!strings.Contains(got, "runs no host services") {
+			t.Errorf("container, %s: %q does not say Apple Container runs no host services", name, got)
+		}
+	}
+	host := set.FrontedHostWhy("host")
+	for _, name := range []string{"fronted", "fronted-off"} {
+		if got := host[name]; !strings.Contains(got, "`yolo host --` does not front") ||
+			!strings.Contains(got, "host's own credentials") {
+			t.Errorf("host, %s: %q does not say the host agent uses the host's own credentials", name, got)
+		}
+	}
+	if _, ok := host["both-daemons"]; ok {
+		t.Errorf("a record with a jail daemon got a fronted reason: %q", host["both-daemons"])
+	}
+}

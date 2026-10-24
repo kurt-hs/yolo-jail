@@ -100,6 +100,7 @@ func (o *Options) jailDaemonsFor(cfg *jsonx.OrderedMap, rt string,
 	// The fronted host loopholes, whose host daemon this launch starts, recorded the same way
 	// (loopholes.FrontedHostNames, docs/design/git-broker-plan.md ID-6).
 	o.frontedHost = set.FrontedHostNames(set.Enabled(), rt)
+	o.frontedWhy = set.FrontedHostWhy(rt)
 	specs := o.withoutUnselectedProfileDaemons(cfg, packs,
 		set.JailDaemons(set.Enabled(), rt, serviceJailDaemons(packs)))
 	// A NESTED LAUNCH INHERITS a declaring loophole's pointer from the launching jail and runs

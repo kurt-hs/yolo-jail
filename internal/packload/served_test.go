@@ -274,6 +274,15 @@ func TestGitRewriteWithheldWhereUnserved(t *testing.T) {
 		!strings.Contains(lines, `"git-broker"`) {
 		t.Errorf("the withheld rewrite is not named:\n%s", lines)
 	}
+	// git-broker is a HOST daemon the jail reaches through yolo's front, so its line says so and
+	// carries the launch's reason (WithNotServedWhy) as given, next step included.
+	const why = "whose loophole is off: run the fix"
+	off := strings.Join(UnservedLines(compose(ServedInJail(nil).WithNotServedWhy(
+		map[string]string{"git-broker": why})), nil, nil), "\n")
+	if !strings.Contains(off, `points at the "git-broker" loophole's host daemon, `+why) ||
+		strings.Contains(off, "jail daemon") {
+		t.Errorf("the withheld rewrite's line does not name the host daemon and the reason:\n%s", off)
+	}
 	jail := compose(ServedInJail([]string{"git-broker"}))
 	for k, want := range keys {
 		if v, ok := jail.DeliveredPackEnv(k); !ok || v != want {

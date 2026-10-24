@@ -89,11 +89,13 @@ func newGitBrokerFixture(t *testing.T, enable bool) gitBrokerFixture {
 	}
 
 	// The fake host ssh: it records its argv, then runs its last argument (git's remote
-	// command) from the directory holding o/r.git, as sshd would in the login's home.
+	// command) from the directory holding o/r.git, as sshd would in the login's home. It answers
+	// `ssh -V` as OpenSSH does, since the loophole's self-check fails an ssh that does not run.
 	bin := t.TempDir()
 	argvLog := filepath.Join(bin, "argv.log")
 	script := "#!/bin/sh\n" +
 		"printf '%s\\n' \"$*\" >> '" + argvLog + "'\n" +
+		"[ \"$1\" = -V ] && { echo 'OpenSSH_9.9p1 fixture' >&2; exit 0; }\n" +
 		"for a in \"$@\"; do last=$a; done\n" +
 		"PATH=\"$(git --exec-path):$PATH\"\n" +
 		"cd '" + srv + "' || exit 1\n" +

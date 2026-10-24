@@ -62,6 +62,37 @@ func TestSelfCheckWithoutSSHFailsNamingTheFix(t *testing.T) {
 	}
 }
 
+// An ssh that does not run (`ssh -V` exits non-zero and prints nothing) reaches no remote
+// either, so the doctor fails naming the fix rather than reporting a version line that is not
+// one. A git whose --version fails is named with its fix too, without failing.
+func TestSelfCheckWithBrokenSSHFailsNamingTheFix(t *testing.T) {
+	bin := t.TempDir()
+	ssh := writeFakeTool(t, bin, "ssh", "exit 127\n")
+	git := writeFakeTool(t, bin, "git", "exit 1\n")
+	t.Setenv("PATH", bin)
+	t.Setenv("HOME", t.TempDir())
+	var out bytes.Buffer
+	if rc := SelfCheck(&out); rc != 1 {
+		t.Fatalf("SelfCheck = %d with an ssh that does not run, want 1\n%s", rc, out.String())
+	}
+	for _, want := range []string{ssh, "`ssh -V` failed", "reinstall OpenSSH on the host"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the self-check does not say %q:\n%s", want, out.String())
+		}
+	}
+
+	writeFakeTool(t, bin, "ssh", "echo 'OpenSSH_9.9p1 fake' >&2\n")
+	out.Reset()
+	if rc := SelfCheck(&out); rc != 0 {
+		t.Fatalf("SelfCheck = %d with a broken git, want 0\n%s", rc, out.String())
+	}
+	for _, want := range []string{git, "`git --version` failed", "reinstall git on the host"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the self-check does not say %q:\n%s", want, out.String())
+		}
+	}
+}
+
 // Main routes --self-check to SelfCheck, so the manifest's doctor_cmd runs it.
 func TestMainSelfCheckFlag(t *testing.T) {
 	bin := t.TempDir()

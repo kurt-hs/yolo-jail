@@ -109,7 +109,7 @@ yolo host-run -- <cmd>       # on the host: run a command and send its output to
 yolo host-run wait           # in the jail: wait for that output; also show
 ```
 
-`yolo audit` takes `--since 1h`, `--jail <id>`, `--workspace <path>`, `--set <name>` and `--json`.
+`yolo audit` takes `--since 1h`, `--service <source>` (such as `github` or `git`), `--jail <id>`, `--workspace <path>`, `--set <name>` and `--json`.
 Inside a jail, `yolo gh -- <args>` is what a bare `gh` runs when the `github` pack is selected; see
 [GitHub](../guides/github.md). `yolo git-remote -- <remote> <url>` is the remote helper the jail's
 git runs, as `git-remote-yolo`, for a remote the `git` pack sends to the git-broker; see

@@ -303,6 +303,9 @@ type Options struct {
 	// reaches the jail only where its loophole is on (docs/design/git-broker-plan.md ID-6). nil on
 	// Apple Container, which runs no host services, and when none is enabled.
 	frontedHost []string
+	// frontedWhy is why each fronted-shape loophole frontedHost leaves out is not served
+	// (loopholes.Set.FrontedHostWhy), keyed by name, for the "Not set" line's clause.
+	frontedWhy map[string]string
 	// parentPointers are the loopholes whose credential pointer the last jail-daemon payload this
 	// process composed takes from the launching jail instead of running their daemons
 	// (parentjailpointers.go, docs/reference/agent-credentials.md SSO-D2), each mapped to the

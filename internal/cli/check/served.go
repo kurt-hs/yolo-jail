@@ -52,7 +52,7 @@ func (o *Options) predictedServed(merged *jsonx.OrderedMap, packs []*packload.Pa
 	// name as the launch's servedDaemons serves them.
 	names = append(append(append([]string(nil), names...), set.JailBoundNames(set.Enabled(), rt)...),
 		set.FrontedHostNames(set.Enabled(), rt)...)
-	served := packload.ServedInJail(names).WithListen(listen)
+	served := packload.ServedInJail(names).WithListen(listen).WithNotServedWhy(set.FrontedHostWhy(rt))
 	if rt == "macos-user" {
 		served = served.MountsNothing()
 	}

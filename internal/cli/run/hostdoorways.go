@@ -353,6 +353,19 @@ func HostOpenAIServiceOn(cfg *jsonx.OrderedMap, packs []*packload.Pack) bool {
 	return ok && lp.Active() && set.MayRunHostCode(lp)
 }
 
+// HostFrontedWhy is why a `yolo host` launch of packs serves none of their FRONTED HOST
+// LOOPHOLES (loopholes.Set.FrontedHostWhy at the host notch; docs/design/git-broker-plan.md
+// ID-6), keyed by loophole name: packs/git's rewrite is withheld there because the agent's git
+// already runs on the host, which the host notch's doorway clause would not say.
+func HostFrontedWhy(cfg *jsonx.OrderedMap, packs []*packload.Pack) map[string]string {
+	set := loopholes.NewSet(loopholes.DiscoverOptions{
+		LoopholesConfig:   cfgMap(cfg, "loopholes"),
+		PackModules:       packLoopholeModules(packs),
+		PackSupersessions: packSupersessions(packs),
+	})
+	return set.FrontedHostWhy(hostNotchRuntime)
+}
+
 // ForService is every doorway this launch opens for the launch-owned service that carries its
 // clientless agent, and not for the agent (PlanHostDoorwaysFor), sorted; nil for none. Only the
 // ones it opens: a doorway left closed (its loophole off) is not the service's either.

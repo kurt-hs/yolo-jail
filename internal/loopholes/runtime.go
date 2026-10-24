@@ -490,17 +490,59 @@ func (s Set) FrontedHostNames(from []*Loophole, runtime string) []string {
 	}
 	var names []string
 	for _, m := range from {
-		// A record with a jail daemon is served through that daemon (ServedJailDaemonNames), whose
-		// address its pointers name, so its host daemon serving does not serve them.
-		if m.HostDaemon == nil || m.JailDaemon != nil || m.Transport != loopholedecl.TransportLoopbackTLS {
-			continue
-		}
-		if !admitsJailSideEffects(m, runtime, &s, "RuntimeArgsFor") {
+		if !frontedShape(m) || !admitsJailSideEffects(m, runtime, &s, "RuntimeArgsFor") {
 			continue
 		}
 		names = append(names, m.Name)
 	}
 	return names
+}
+
+// frontedShape is the declaration FrontedHostNames fronts: a `host_daemon`, transport
+// loopback-tls, and no `jail_daemon`. A record with a jail daemon is served through that daemon
+// (ServedJailDaemonNames), whose address its pointers name, so its host daemon serving does not
+// serve them.
+func frontedShape(m *Loophole) bool {
+	return m.HostDaemon != nil && m.JailDaemon == nil && m.Transport == loopholedecl.TransportLoopbackTLS
+}
+
+// FrontedHostWhy is why each record of the fronted shape (frontedShape) that FrontedHostNames
+// leaves out at runtime is not served, keyed by loophole name: the clause the launch's "Not set"
+// line puts after the name of a pack env pointer `served_by` it (packload.ServedDaemons'
+// WithNotServedWhy), ending in the next step. runtime "host" is `yolo host --`, which fronts
+// none: its agent already runs on the host. nil when every one is served.
+func (s Set) FrontedHostWhy(runtime string) map[string]string {
+	served := map[string]bool{}
+	if runtime != "host" {
+		for _, name := range s.FrontedHostNames(s.Enabled(), runtime) {
+			served[name] = true
+		}
+	}
+	why := map[string]string{}
+	for _, m := range s.all {
+		if !frontedShape(m) || served[m.Name] {
+			continue
+		}
+		switch {
+		case runtime == "host":
+			why[m.Name] = "which `yolo host --` does not front: its agent runs on the host, so its " +
+				"tools reach what that loophole brokers with the host's own credentials, " +
+				"and nothing is rewritten to go through yolo"
+		case runtime == "container":
+			why[m.Name] = "which Apple Container cannot serve: that backend runs no host services " +
+				"for a jail; the podman or macos-user backend runs it"
+		case !m.Enabled:
+			why[m.Name] = "whose loophole is off for this workspace: `yolo loopholes enable " +
+				m.Name + "` in the workspace turns it on for the next launch"
+		default:
+			why[m.Name] = "whose loophole is enabled but not active here: `yolo check` says what it " +
+				"is missing"
+		}
+	}
+	if len(why) == 0 {
+		return nil
+	}
+	return why
 }
 
 // jailDaemonSpecs is THE COMPOSER of this launch's jail-daemon entries — the body behind

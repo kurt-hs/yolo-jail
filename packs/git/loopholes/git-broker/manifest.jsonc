@@ -13,7 +13,7 @@
 // version cannot ask for") and audits every call.
 {
   "name": "git-broker",
-  "description": "Run the jail's git fetch and push through the host's own SSH keys or agent, only against this workspace's git remotes as approved at launch: fetches stream back, every push is refused per ref until grants arrive (push from the host), and every call is audited on the host (yolo audit --service git).",
+  "description": "Run the jail's git fetch and push through the host's own credentials (its SSH keys or agent for SSH remotes, its git credential helper for HTTPS ones), only against this workspace's git remotes as approved at launch: fetches stream back, every push is refused per ref until grants arrive (push from the host), and every call is audited on the host (yolo audit --service git).",
   "version": 1,
 
   // OFF until enabled, as every loophole that ships in a pack is (loophole-system.md R2), and

@@ -222,6 +222,16 @@ Each is the planner's, decided within the design's behavior. Each is reversible;
    as [§6](git-broker.md#6-failure-paths) requires. *Why:* without the gate, enabling the pack
    would break every remote fetch in a jail with the loophole off, and every host git at
    `yolo host --`. *Reverse by:* deleting the method and its three call sites.
+
+   *Built differently (Task 7):* `FrontedHostNames` also leaves out a loophole that declares a
+   `jail_daemon` beside its `host_daemon`. Such a loophole (aws-auth's shape) serves its pointers
+   through the jail daemon, whose address they name, and `loopholes.ServedJailDaemonNames`
+   already decides where that one runs; listing it here too would deliver its pointers on a
+   runtime whose jail daemon does not run there, such as the macos-user guest's declines. A
+   withheld rewrite names its own reason (`loopholes.Set.FrontedHostWhy`, passed through
+   `WithNotServedWhy` at the launch, at `yolo check` and at `yolo host --`): the loophole off names
+   `yolo loopholes enable git-broker`, Apple Container says it runs no host services, and the
+   host says its agent's git already reaches remotes with the host's own credentials.
 7. **ID-7 — SSH upstream.** The broker runs the host's `ssh` (placement-checked) as
    `ssh -x -T -o ClearAllForwardings=yes -o PermitLocalCommand=no -o ConnectTimeout=30 [-p <port>] [-o SendEnv=GIT_PROTOCOL] -- <[user@]host> "<git-upload-pack|git-receive-pack> '<path>'"`,
    the path single-quoted by `shquote`, as a stateful pipe. A host starting with `-` is refused.

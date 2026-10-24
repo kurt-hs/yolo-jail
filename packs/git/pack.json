@@ -28,6 +28,6 @@
       }
     }
   ],
-  "description": "git fetch and push without a credential in the jail: the jail's git reaches the git-broker on the host, which connects to this workspace's approved remotes the way the host does (its SSH keys or agent), streams fetches back, refuses every push per ref until grants arrive, and audits every call.",
+  "description": "git fetch and push without a credential in the jail: the jail's git reaches the git-broker on the host, which connects to this workspace's approved remotes the way the host does (its SSH keys or agent, or its git credential helper over HTTPS), streams fetches back, refuses every push per ref until grants arrive, and audits every call.",
   "name": "git"
 }

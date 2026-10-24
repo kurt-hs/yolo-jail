@@ -427,14 +427,18 @@ func (s *CredentialScope) UnservedEnvLines(byLaunch LaunchServes) []string {
 	type reason struct {
 		daemon, why string
 		bound       bool
+		fronted     bool
 	}
 	byReason := map[reason][]string{}
 	var reasons []reason
 	// A pointer at what a BOUND LOOPHOLE binds into a jail (ServedDaemons.notBoundWhy) points
 	// at no daemon, so its line says what it does point at and why this notch has none.
-	var bound map[string]bool
+	// A pointer `served_by` a FRONTED HOST LOOPHOLE (loopholes.FrontedHostNames) reaches its host
+	// daemon, not a jail daemon, and its reason already names the next step.
+	var bound, fronted map[string]bool
 	if len(s.unservedEnv) > 0 {
 		bound = boundLoopholes(s.packs)
+		fronted = frontedLoopholes(s.packs)
 	}
 	for k, daemon := range s.unservedEnv {
 		why := ""
@@ -454,7 +458,7 @@ func (s *CredentialScope) UnservedEnvLines(byLaunch LaunchServes) []string {
 			// (WithNotServedWhy), else the notch's (ServedDaemons.notServedWhy).
 			why = s.served.notServedWhy(daemon)
 		}
-		r := reason{daemon, why, bound[daemon]}
+		r := reason{daemon, why, bound[daemon], fronted[daemon]}
 		if _, seen := byReason[r]; !seen {
 			reasons = append(reasons, r)
 		}
@@ -473,6 +477,11 @@ func (s *CredentialScope) UnservedEnvLines(byLaunch LaunchServes) []string {
 		if r.bound {
 			lines = append(lines, strings.Join(vars, ", ")+" — points at what the "+
 				strconv.Quote(r.daemon)+" loophole binds into a jail, "+r.why)
+			continue
+		}
+		if r.fronted {
+			lines = append(lines, strings.Join(vars, ", ")+" — points at the "+
+				strconv.Quote(r.daemon)+" loophole's host daemon, "+r.why)
 			continue
 		}
 		lines = append(lines, strings.Join(vars, ", ")+" — points at the "+
@@ -529,6 +538,29 @@ func boundLoopholes(packs []*Pack) map[string]bool {
 		for _, m := range mods {
 			if m.Decl == nil || m.Decl.JailDaemon != nil ||
 				(len(m.Decl.HostBindMounts) == 0 && len(m.Decl.HostDevices) == 0) {
+				continue
+			}
+			if out == nil {
+				out = map[string]bool{}
+			}
+			out[m.Name] = true
+		}
+	}
+	return out
+}
+
+// frontedLoopholes names every loophole module of packs in the fronted shape
+// (loopholes.FrontedHostNames): a `host_daemon`, transport loopback-tls, no `jail_daemon`.
+func frontedLoopholes(packs []*Pack) map[string]bool {
+	var out map[string]bool
+	for _, p := range packs {
+		if p == nil || p.Decl == nil {
+			continue
+		}
+		mods, _, _ := p.LoopholeModules()
+		for _, m := range mods {
+			if m.Decl == nil || m.Decl.HostDaemon == nil || m.Decl.JailDaemon != nil ||
+				m.Decl.Transport != loopholedecl.TransportLoopbackTLS {
 				continue
 			}
 			if out == nil {

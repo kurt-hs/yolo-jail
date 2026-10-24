@@ -168,3 +168,31 @@ func TestTheHostWithholdsAPointerAtAJailDaemonAndNamesIt(t *testing.T) {
 		})
 	}
 }
+
+// THE GIT REWRITE AT THE HOST IS WITHHELD FOR ITS OWN REASON. packs/git's GIT_CONFIG_* rewrite is
+// `served_by` git-broker, a host daemon yolo fronts for a jail; at `yolo host --` the agent's git
+// already runs on the host, so the line says that, not the host notch's doorway clause. Through
+// the real hostEnvDelta, so deleting the host composition's run.HostFrontedWhy call fails it.
+func TestTheHostNamesWhyItWithholdsTheGitRewrite(t *testing.T) {
+	hostUnservedHome(t, `{"packs": ["claude", "git"]}`)
+	t.Setenv("GIT_CONFIG_COUNT", "")
+	vars, disclosure, err := hostEnvDelta("claude", "", nil, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range vars {
+		if v.Key == "GIT_CONFIG_COUNT" && !v.Unset {
+			t.Errorf("the host exported GIT_CONFIG_COUNT=%s", v.Value)
+		}
+	}
+	joined := strings.Join(disclosure, "\n")
+	for _, want := range []string{"GIT_CONFIG_COUNT", `"git-broker" loophole's host daemon`,
+		"`yolo host --` does not front", "host's own credentials"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("the host's disclosure does not say %q:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "HS-D22") {
+		t.Errorf("the git rewrite's line gives the doorway reason:\n%s", joined)
+	}
+}

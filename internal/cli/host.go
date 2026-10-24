@@ -1291,7 +1291,7 @@ func (c *hostComposition) servedSet(workerWhy map[string]string) packload.Served
 	if plans := append(append([]*launchservice.Plan(nil), c.services...), c.workers...); len(plans) > 0 {
 		served = launchservice.Served(plans).Plus(served)
 	}
-	return served.WithNotServedWhy(workerWhy)
+	return served.WithNotServedWhy(c.frontedWhy).WithNotServedWhy(workerWhy)
 }
 
 // callerTokens is the gate's caller tokens for this launch (packload.ScopeInput.CallerTokens): the
@@ -1602,6 +1602,10 @@ type hostComposition struct {
 	// (run.PlanHostDoorways; docs/design/host-notch-services.md HS-D15, HS-D21), planned only
 	// by the front door that runs the agent, and the reason each one it leaves closed is closed.
 	doorways *run.HostDoorways
+	// frontedWhy is why the host notch serves no FRONTED HOST LOOPHOLE (run.HostFrontedWhy;
+	// docs/design/git-broker-plan.md ID-6), keyed by name: the clause a withheld pointer at
+	// one is named with, since the host notch's own clause speaks of doorways.
+	frontedWhy map[string]string
 	// served is the served set the credential gate composed this launch against: the doorways
 	// and services above, at their settled addresses, marked as the host notch's. The OQ-SSO8
 	// check reads it too, so a pointer this launch delivers is checked for its overrides.
@@ -2814,6 +2818,7 @@ func composeHostVarsWith(cfg *jsonx.OrderedMap, workspace, agent, command, profi
 		return c
 	}
 	c.doorways = doorways
+	c.frontedWhy = run.HostFrontedWhy(cfg, packs)
 	// THE PURE WORKERS (docs/design/host-notch-services.md HS-D29): every held service no
 	// adaptation names, whose host half no pairing starts. `yolo host --` starts each one the
 	// gate asks for and admission admits, beside the agent; every other front door, and every
