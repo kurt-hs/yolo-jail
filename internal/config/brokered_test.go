@@ -690,14 +690,10 @@ func TestBranchGrantKindNotAllowedNamesUserKey(t *testing.T) {
 func TestBranchGrantAllowedPasses(t *testing.T) {
 	h := newBrokeredHost(t)
 	write(t, h.userCfg, `{"brokered": {"git": {"grant_kinds": ["branch"]}}}`)
-	for _, body := range []string{oneBranchGrant,
-		`{"brokered": {"git": {"grants": [{"kind": "branch", "repo": "*", "branch": "main"}]}}}`} {
-		write(t, filepath.Join(h.ws, WorkspaceConfigName), body)
-		if errs, warns := h.validateWith(t, gitGrantResolver); errs != "" || warns != "" {
-			t.Fatalf("%s was not accepted:\nerrors:\n%s\nwarnings:\n%s", body, errs, warns)
-		}
-	}
 	write(t, filepath.Join(h.ws, WorkspaceConfigName), oneBranchGrant)
+	if errs, warns := h.validateWith(t, gitGrantResolver); errs != "" || warns != "" {
+		t.Fatalf("%s was not accepted:\nerrors:\n%s\nwarnings:\n%s", oneBranchGrant, errs, warns)
+	}
 	read, err := ReadWorkspaceForGate(h.ws)
 	if err != nil {
 		t.Fatal(err)
@@ -713,6 +709,26 @@ func TestBranchGrantAllowedPasses(t *testing.T) {
 		`{"kind": "branch", "repo": "github.com/o/r", "branch": "dev"}]}}}`)
 	if errs, _ := h.validateWith(t, gitGrantResolver); errs != "" {
 		t.Fatalf("grants on two branches were refused:\n%s", errs)
+	}
+}
+
+// A branch grant on every repository is refused at config load (GB-D13): it would put the branch
+// on every approved remote, an upstream's included, in the working set. The refusal names the
+// next step, and the same repository named outright passes.
+func TestBranchGrantOnEveryRepoRefused(t *testing.T) {
+	h := newBrokeredHost(t)
+	write(t, h.userCfg, `{"brokered": {"git": {"grant_kinds": ["branch"]}}}`)
+	write(t, filepath.Join(h.ws, WorkspaceConfigName),
+		`{"brokered": {"git": {"grants": [{"kind": "branch", "repo": "*", "branch": "main"}]}}}`)
+	errs, _ := h.validateWith(t, gitGrantResolver)
+	for _, want := range []string{`config.brokered.git.grants[0].repo: a branch grant cannot name "*"`,
+		"Name the repository", "list one grant per repository"} {
+		if !strings.Contains(errs, want) {
+			t.Errorf("errors lack %q:\n%s", want, errs)
+		}
+	}
+	if brokerscope.ValidGrant(brokerscope.Grant{Kind: "branch", Repo: brokerscope.AnyRepo, Branch: "main"}) {
+		t.Error("the scope file accepts a branch grant on every repository")
 	}
 }
 

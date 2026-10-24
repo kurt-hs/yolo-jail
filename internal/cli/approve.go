@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -29,7 +30,7 @@ import (
 )
 
 const approveUsage = `Usage: yolo approve [request] [--for <duration|session> | --deny]
-       yolo approve --revoke <grant|w-entry|all> [--workspace <path>]
+       yolo approve --revoke <grant|w-entry|c-entry|all> [--workspace <path>]
        yolo approve --json
        yolo approve --watch [--json]
 
@@ -46,15 +47,18 @@ the branch is deleted or the entry revoked (a w-<id> entry), and each one a
 branch grant declares in the project's config (a c-<id> line, marked "from
 config", listed while a jail of that project runs). --revoke w-<id> ends one
 entry; --revoke c-<id> refuses with exit 5 and names the config file to remove
-the grant from. --revoke all ends every live grant; --revoke all --workspace
-<path> ends that workspace's grants and its recorded working set, and exits 4
-when nothing there matched. Neither ends a create-branch or branch grant
+the grant from (exit 4 when no running jail declares it). --revoke all ends
+every live grant; --revoke all --workspace <path> ends that workspace's grants
+and its recorded working set, and exits 4 when nothing in the store matched,
+naming the config file when the workspace's working set holds only branches
+declared there. Neither ends a create-branch or branch grant
 written in the project's config: remove it from the workspace's
 yolo-jail.jsonc (brokered.git.grants), or the kind from
 brokered.git.grant_kinds in your user config.
 
 --json prints pending requests, live grants and live working-set entries as one
-JSON document. --watch prints the current state, then one line per event
+JSON document; a branch declared in a running jail's config is a working-set
+entry with "by": "config" and "file" naming the config that declares it. --watch prints the current state, then one line per event
 (request filed, decided or expired; grant used, ended or revoked) until
 interrupted; with --json, one "state" object holding every store, then one
 JSON object per event, each on its own line. Every JSON object carries
@@ -82,6 +86,7 @@ Examples:
   yolo approve r-<id> --for 15m
   yolo approve r-<id> --deny
   yolo approve --revoke w-<id>
+  yolo approve --revoke c-<id>       # names the config file to edit instead
   yolo approve --revoke all
   yolo approve --revoke all --workspace ~/code/app
   yolo approve --watch --json
@@ -258,7 +263,7 @@ func approveAll(ctx context.Context, args []string, inJail bool, stores []*broke
 		snaps[i] = snap
 	}
 	if asJSON {
-		return approveJSON(out, mergedState(stores, snaps), errs)
+		return approveJSON(out, withConfigBranches(ctx, stores, mergedState(stores, snaps)), errs)
 	}
 	empty := true
 	for i, s := range stores {
@@ -271,7 +276,7 @@ func approveAll(ctx context.Context, args []string, inJail bool, stores []*broke
 	if empty {
 		fmt.Fprintln(out, "No requests, grants or working-set entries. Brokers do not file requests yet: a GitHub write, and a git push nothing covers, refuse without one. Run `yolo approve --help` for the host store commands.")
 	} else {
-		fmt.Fprintln(out, "Decide with `yolo approve <request>` (once), `--for <duration>` (whole set), or `--deny`; revoke with `yolo approve --revoke <grant|w-entry|all> [--workspace <path>]`.")
+		fmt.Fprintln(out, "Decide with `yolo approve <request>` (once), `--for <duration>` (whole set), or `--deny`; revoke with `yolo approve --revoke <grant|w-entry|c-entry|all> [--workspace <path>]` (a c- entry is declared in config and is removed there).")
 	}
 	return 0
 }
@@ -298,7 +303,14 @@ func approveRevoke(ctx context.Context, stores []*brokerstore.Store, revoke, wor
 				}
 			}
 		}
-		return approveFailure(fmt.Errorf("%w: %s", brokerstore.ErrUnknownID, revoke), errs)
+		// No running jail declares it: its jail stopped, or the grant left the config. The store
+		// never held it, so the store's "ended record kept 7 days" does not apply.
+		fmt.Fprintf(errs, "yolo approve: no running jail declares %s. A c- id is a working-set branch declared in config, "+
+			"listed only while a jail of its project runs; the broker recorded nothing to revoke.\n"+
+			"Next: to take the branch out, remove its {\"kind\": \"branch\", …} entry under `brokered.git.grants` in the "+
+			"project's yolo-jail.jsonc, then run `yolo config apply` in the project (a stopped jail reads it at its next "+
+			"launch); run `yolo approve` to list the ids of running jails.\n", termsafe.Visible(revoke))
+		return approveExitUnknownID
 	}
 	if revoke != "all" {
 		if err := eachStore(stores, func(s *brokerstore.Store) error { return s.Revoke(revoke) }); err != nil {
@@ -337,6 +349,31 @@ func approveRevoke(ctx context.Context, stores []*brokerstore.Store, revoke, wor
 		}
 	}
 	shown := termsafe.Visible(forms[0])
+	var declared []configBranch
+	for _, s := range stores {
+		for _, b := range storeConfigBranches(ctx, s) {
+			if slices.Contains(forms, b.Workspace) {
+				declared = append(declared, b)
+			}
+		}
+	}
+	if ended == 0 && len(declared) > 0 {
+		// Only branches declared in config match: the listing would show the same path again,
+		// so name what holds them instead.
+		fmt.Fprintf(errs, "yolo approve: nothing in the store to revoke for %s: no live grant or recorded working-set entry. "+
+			"Its working set holds only branches declared in config:\n", shown)
+		files := []string{}
+		for _, b := range declared {
+			fmt.Fprintf(errs, "  refs/heads/%s of %s, declared in config in %s\n", termsafe.Visible(b.Branch), termsafe.Visible(b.Repo), termsafe.Visible(b.File))
+			if !slices.Contains(files, b.File) {
+				files = append(files, b.File)
+			}
+		}
+		fmt.Fprintf(errs, "Next: remove each {\"kind\": \"branch\", …} entry under `brokered.git.grants` in %s (or its local "+
+			"file), then run `yolo config apply` in %s; or remove `branch` from `brokered.git.grant_kinds` in your user "+
+			"config. The broker reads both at the next push.\n", termsafe.Visible(strings.Join(files, ", ")), shown)
+		return approveExitUnknownID
+	}
 	if ended == 0 {
 		fmt.Fprintf(errs, "yolo approve: nothing to revoke for %s: no live grant or working-set entry records that workspace path.\n"+
 			"Next: run `yolo approve` to see each working-set entry's workspace (in brackets), then give that path to --workspace.\n", shown)
@@ -501,6 +538,23 @@ func mergedState(stores []*brokerstore.Store, snaps []brokerstore.Snapshot) brok
 	return v
 }
 
+// withConfigBranches adds to v's working set every branch a `branch` grant declares in a running
+// jail's config, as the text listing shows them: By "config", with the file that declares it.
+func withConfigBranches(ctx context.Context, stores []*brokerstore.Store, v brokerstore.StateView) brokerstore.StateView {
+	for _, s := range stores {
+		for _, b := range storeConfigBranches(ctx, s) {
+			v.Working = append(v.Working, brokerstore.WorkingView{Schema: brokerstore.Schema, ID: b.ID, Source: b.Source,
+				Workspace: b.Workspace, Repo: b.Repo, Kind: brokerstore.WorkingBranch, Resource: "refs/heads/" + b.Branch,
+				By: configBranchBy, File: b.File})
+		}
+	}
+	return v
+}
+
+// configBranchBy is a config-declared branch's By in `--json`, beside a store entry's
+// "create-branch", grant id or "human".
+const configBranchBy = "config"
+
 // approveWatch is `--watch`: every store's current state, shown once, then each event, until
 // ctx ends. It reads every store before showing anything, so `--json` opens with exactly one
 // "state" object holding all of them, then follows each store from the snapshot it read
@@ -515,7 +569,7 @@ func approveWatch(ctx context.Context, stores []*brokerstore.Store, asJSON bool,
 		snaps[i] = snap
 	}
 	if asJSON {
-		v := mergedState(stores, snaps)
+		v := withConfigBranches(ctx, stores, mergedState(stores, snaps))
 		v.Event = "state"
 		if code := approveJSON(out, v, errs); code != 0 {
 			return code

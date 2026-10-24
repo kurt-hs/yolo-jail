@@ -55,11 +55,11 @@ func grantCovers(grants []brokerscope.Grant, repo string) bool {
 	return false
 }
 
-// declaredBranch reports whether grants hold a `branch` grant declaring branch on repo (or on
-// every repository).
+// declaredBranch reports whether grants hold a `branch` grant declaring branch on repo. A branch
+// grant always names its repository; one naming "*" is never valid (GB-D13) and covers nothing.
 func declaredBranch(grants []brokerscope.Grant, repo, branch string) bool {
 	for _, g := range grants {
-		if g.Kind == grantBranch && g.Branch == branch && (g.Repo == brokerscope.AnyRepo || g.Repo == repo) {
+		if g.Kind == grantBranch && g.Branch == branch && g.Repo == repo {
 			return true
 		}
 	}
@@ -103,20 +103,31 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 		// A branch declared in config, its kind allowed, is in the working set: creation,
 		// update, force and delete alike (GB-D13).
 		inConfig := func() (string, string, bool) {
-			if !declared {
-				return "", "", false
-			}
-			if !branchAllowed {
-				kindMissing(grantBranch, "push to the branches it declares")
+			if !declared || !branchAllowed {
 				return "", "", false
 			}
 			return setWorkingSet, grantBranch + ":" + branch, true
+		}
+		// refused is the end of every path that covers nothing: a declared branch whose kind
+		// the user config no longer lists says so only here, once the push is refused, so a
+		// push another grant covers prints no refusal line.
+		refused := func() (string, string, bool) {
+			if declared && !branchAllowed {
+				kindMissing(grantBranch, "push to the branches it declares")
+			}
+			return "", "", false
+		}
+		orRefused := func(s, by string, ok bool) (string, string, bool) {
+			if ok {
+				return s, by, ok
+			}
+			return refused()
 		}
 		e, live, err := b.store.LiveWorking(b.bound.Workspace, repo, c.Ref)
 		if err != nil {
 			storeFailed(err)
 			// The store is not needed for a branch the config declares.
-			return inConfig()
+			return orRefused(inConfig())
 		}
 		if c.Create() {
 			// The workspace held this branch, and the upstream no longer has it: someone
@@ -124,7 +135,7 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 			if live {
 				if err := b.store.EndWorking(e.ID, brokerstore.EndGone); err != nil {
 					storeFailed(err)
-					return inConfig()
+					return orRefused(inConfig())
 				}
 			}
 			// Declared in config first: such a branch is never recorded in the store.
@@ -137,13 +148,13 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 			if granted {
 				kindMissing(grantCreateBranch, "create branches")
 			}
-			return "", "", false
+			return refused()
 		}
 		// A store entry first, so a delete through the broker ends the record it covers.
 		if live {
 			return setWorkingSet, e.ID, true
 		}
-		return inConfig()
+		return orRefused(inConfig())
 	}
 }
 

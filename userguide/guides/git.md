@@ -106,7 +106,7 @@ w-0c7b1e813e940452e59c53612436f6df  working set  git  [/home/me/code/app]  repo 
 
 ```bash
 yolo approve --revoke w-0c7b1e813e940452e59c53612436f6df   # one branch
-yolo approve --revoke all --workspace ~/code/app            # every working-set branch of that project
+yolo approve --revoke all --workspace ~/code/app            # every recorded branch of that project; branches declared in config stay
 ```
 
 Revoking ends what the broker recorded: the working-set entries, and any grant you allowed with
@@ -149,19 +149,24 @@ two ways as create-branch:
 The grant joins at the next config-change prompt, or at `yolo config apply` for a running jail,
 as create-branch does, and `yolo check` refuses it while your user config does not list
 `branch`. A `branch` that is not a branch name git accepts, one written as `refs/heads/main`, or a
-pattern such as `"*"` is refused when the config loads, saying how to write it.
+pattern such as `"*"` is refused when the config loads, saying how to write it. So is `"repo": "*"`:
+it would put the branch of every approved remote in the working set, an upstream project's
+`main` and any remote you approve later included. Name the repository, and list one grant per
+repository.
 
 The branch is then in the working set like one the agent created: the agent may push it, create
 it if it does not exist yet, force-push it and delete it. The remote's own branch protection
 still applies. A tag is never covered. The config holds the branch, not the broker's record, so a
-delete through the broker leaves it declared, and the agent may push it again. `yolo approve`
-lists it beside the recorded branches, marked `from config` with the file that declares it:
+delete through the broker leaves it declared, and the agent may push it again. While a jail of
+the project runs, `yolo approve` lists the branch beside the recorded ones, marked `from config`
+with the file that declares it:
 
 ```text
 c-5d0f3c2a9b8e71d4a6c0e9f2b1d3a7c5  working set  git  [/home/me/code/app]  repo github.com/me/app  branch refs/heads/main  from config /home/me/code/app/yolo-jail.jsonc
 ```
 
-`yolo approve --revoke` refuses such a line and names that file. To take the branch out, remove
+`yolo approve --revoke` refuses such a line and names that file, and
+`yolo approve --revoke all --workspace` leaves it in place. To take the branch out, remove
 the grant from the project's `yolo-jail.jsonc` and run `yolo config apply`, or remove `branch`
 from your user config. The broker reads both at every push, so either reaches the next one.
 

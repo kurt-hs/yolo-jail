@@ -238,8 +238,11 @@ type WorkingView struct {
 	Repo      string    `json:"repo"`
 	Kind      string    `json:"kind"`     // "branch"
 	Resource  string    `json:"resource"` // the ref
-	By        string    `json:"by"`       // "create-branch", a grant id, or "human"
-	Added     time.Time `json:"added"`
+	By        string    `json:"by"`       // "create-branch", a grant id, "human", or "config"
+	Added     time.Time `json:"added,omitzero"`
+	// File is, for a branch a `branch` grant declares in config (By "config"), the workspace
+	// config that declares it; such an entry is not in the store and has no Added.
+	File string `json:"file,omitempty"`
 }
 
 func (s *Store) WorkingView(e WorkingEntry) WorkingView {

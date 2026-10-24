@@ -120,7 +120,9 @@ naming the file to remove it from. `--revoke all` ends every grant, and
 `--revoke all --workspace <path>` every grant and recorded working-set entry of that project; a
 path that matches nothing exits with an error. Neither ends a create-branch or branch grant written in
 the project's config: remove it from `yolo-jail.jsonc` (`brokered.git.grants`), or remove the kind from
-`brokered.git.grant_kinds` in your user config. `--json` prints the same as one JSON document.
+`brokered.git.grant_kinds` in your user config. `--json` prints the same as one JSON document; a
+branch declared in config is a working-set entry there with `"by": "config"` and a `"file"`
+naming the config that declares it.
 
 Inside a jail, `yolo gh -- <args>` is what a bare `gh` runs when the `github` pack is selected; see
 [GitHub](../guides/github.md). `yolo git-remote -- <remote> <url>` is the remote helper the jail's

@@ -87,9 +87,10 @@ const (
 var knownBrokeredGrantKeys = set(brokeredGrantKindKey, brokeredGrantRepoKey, brokeredGrantBranchKey)
 
 // grantBranchProblem is the error for a grant entry's `branch`, "" when it is right: a kind that
-// names a branch (brokerscope.GrantTakesBranch) has a valid one, and any other kind has none.
+// names a branch (brokerscope.GrantTakesBranch) has a valid one on one named repository (never
+// "*", GB-D13), and any other kind has none.
 // The second result is the branch as written, valid or not.
-func grantBranchProblem(entryPath, kind string, m *jsonx.OrderedMap) (string, string) {
+func grantBranchProblem(entryPath, kind, repo string, m *jsonx.OrderedMap) (string, string) {
 	bv, has := m.Get(brokeredGrantBranchKey)
 	path := entryPath + "." + brokeredGrantBranchKey
 	if !brokerscope.GrantTakesBranch(kind) {
@@ -99,6 +100,13 @@ func grantBranchProblem(entryPath, kind string, m *jsonx.OrderedMap) (string, st
 				"grant {\"kind\": \"branch\", …} to declare that branch in the working set.", ""
 		}
 		return "", ""
+	}
+	if repo == brokerscope.AnyRepo {
+		// GB-D13: "*" would declare the branch on every approved remote, an upstream's and any
+		// approved later included, where the agent could force-push or delete it.
+		return entryPath + "." + brokeredGrantRepoKey + `: a branch grant cannot name "*": it would put the ` +
+			"branch on every approved remote, an upstream's and any approved later included, in the working " +
+			"set. Name the repository, such as \"github.com/me/app\"; list one grant per repository.", ""
 	}
 	if !has {
 		return path + `: a branch grant names its branch, such as "branch": "main" (refs/heads/main). Add it.`, ""
@@ -951,7 +959,7 @@ func brokeredGrantProblems(v any, resolver LoopholeResolver) (errs, warns, userK
 					"remove this grant.")
 				continue
 			}
-			why, branch := grantBranchProblem(entryPath, kind, m)
+			why, branch := grantBranchProblem(entryPath, kind, repo, m)
 			if why != "" {
 				errs = append(errs, why)
 				continue

@@ -60,7 +60,9 @@ func ValidGrant(g Grant) bool {
 		return false
 	}
 	if GrantTakesBranch(g.Kind) {
-		return ValidGrantBranch(g.Branch)
+		// A branch grant names one repository (git-broker.md GB-D13): "*" would put the branch
+		// on every approved remote in the working set.
+		return g.Repo != AnyRepo && ValidGrantBranch(g.Branch)
 	}
 	return g.Branch == ""
 }

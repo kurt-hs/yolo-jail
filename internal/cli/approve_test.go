@@ -3,14 +3,15 @@ package cli
 import (
 	"bytes"
 	"context"
-	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
-	"github.com/mschulkind-oss/yolo-jail/internal/ghbroker"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
+	"github.com/mschulkind-oss/yolo-jail/internal/ghbroker"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -291,6 +292,51 @@ func TestApproveListsAndRefusesToRevokeAConfigBranch(t *testing.T) {
 		if !strings.Contains(refusal, want) {
 			t.Fatalf("the refusal lacks %q:\n%s", want, refusal)
 		}
+	}
+
+	// --json carries the declared branch beside the store's entries, by "config", with its file.
+	js := captureStdout(t, func() {
+		if rc := registry["approve"]([]string{"approve", "--json"}); rc != 0 {
+			t.Fatalf("--json: %d", rc)
+		}
+	})
+	var state brokerstore.StateView
+	if err := json.Unmarshal([]byte(js), &state); err != nil {
+		t.Fatalf("--json: %v\n%s", err, js)
+	}
+	if len(state.Working) != 1 || state.Working[0].ID != id || state.Working[0].By != "config" ||
+		state.Working[0].Resource != "refs/heads/main" || state.Working[0].File != ws+"/yolo-jail.jsonc" {
+		t.Fatalf("--json working %+v, want the declared branch %s by config:\n%s", state.Working, id, js)
+	}
+
+	// --revoke all --workspace with only declared branches there: nothing in the store matched,
+	// and the declared branches are named with the file to edit, not a loop back to the listing.
+	var allOut string
+	allOut = captureStderr(t, func() { rc = registry["approve"]([]string{"approve", "--revoke", "all", "--workspace", ws}) })
+	for _, want := range []string{"nothing in the store", "declared in config", ws + "/yolo-jail.jsonc", "brokered.git.grants", "refs/heads/main"} {
+		if !strings.Contains(allOut, want) {
+			t.Fatalf("--revoke all --workspace (rc %d) lacks %q:\n%s", rc, want, allOut)
+		}
+	}
+	if strings.Contains(allOut, "give that path to --workspace") {
+		t.Fatalf("--revoke all --workspace loops back to the listing:\n%s", allOut)
+	}
+
+	// A c- id no running jail declares (its jail stopped): said as a branch declared in config,
+	// listed only while a jail of its project runs, never the store's 7-day text.
+	unknown := captureStderr(t, func() {
+		rc = registry["approve"]([]string{"approve", "--revoke", "c-00000000000000000000000000000000"})
+	})
+	if rc != approveExitUnknownID {
+		t.Fatalf("unknown c- id: %d, want %d\n%s", rc, approveExitUnknownID, unknown)
+	}
+	for _, want := range []string{"declared in config", "while a jail of its project runs", "brokered.git.grants"} {
+		if !strings.Contains(unknown, want) {
+			t.Fatalf("unknown c- id lacks %q:\n%s", want, unknown)
+		}
+	}
+	if strings.Contains(unknown, "7 days") {
+		t.Fatalf("unknown c- id prints the store's ended-record text:\n%s", unknown)
 	}
 }
 

@@ -1010,6 +1010,38 @@ func TestConfigBranchCoversOnlyItsBranch(t *testing.T) {
 	}
 }
 
+// A branch grant names its repository: one on another repository declares nothing here, so a
+// push to the same branch name of this repository is refused.
+func TestConfigBranchOnAnotherRepoRefuses(t *testing.T) {
+	f := newFixtureOpts(t, fixtureOpts{grants: []brokerscope.Grant{{Kind: "branch", Repo: "other.test/o/r", Branch: "main"}}})
+	allowKinds(t, "branch")
+	f.commit("one")
+	before := f.upstreamRef("refs/heads/main")
+	out, err := f.git("push", "origin", "HEAD:main")
+	if err == nil || !strings.Contains(out, reasonNeedsApproval) {
+		t.Fatalf("a push to %s's main under a branch grant on other.test/o/r: %v\n%s", fixtureRepo, err, out)
+	}
+	if f.upstreamRef("refs/heads/main") != before {
+		t.Fatal("main moved")
+	}
+}
+
+// A branch declared in config whose kind the user config no longer lists says so only when the
+// push is refused: a creation a create-branch grant covers lands with no "not in effect" line.
+func TestConfigBranchKindMissingSilentWhenCreateBranchCovers(t *testing.T) {
+	f := newFixtureOpts(t, fixtureOpts{grants: []brokerscope.Grant{
+		{Kind: "branch", Repo: fixtureRepo, Branch: "feature"}, {Kind: "create-branch", Repo: fixtureRepo}}})
+	allowKinds(t, "create-branch")
+	f.commit("one")
+	out := f.mustPush("origin", "HEAD:refs/heads/feature")
+	if strings.Contains(out, "not in effect") {
+		t.Fatalf("a push create-branch covered printed a refusal line:\n%s", out)
+	}
+	if p := lastPush(t); p.Set != "create-branch" || p.Refs[0].CoveredBy != "create-branch" {
+		t.Fatalf("creation audit %+v", p)
+	}
+}
+
 // The broker reads the user config's grant_kinds at every push: the kind taken away on the host
 // refuses the next push, naming the key.
 func TestConfigBranchKindRemovedRefusesNextPush(t *testing.T) {

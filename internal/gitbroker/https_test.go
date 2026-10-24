@@ -699,7 +699,20 @@ func TestCreateBranchOverHTTPS(t *testing.T) {
 // An update of main, declared in config by a branch grant, crosses HTTPS and lands, recording
 // nothing in the store (docs/design/git-broker.md GB-D12).
 func TestConfigBranchOverHTTPS(t *testing.T) {
-	h := newHTTPSFixture(t, httpsOpts{grants: []brokerscope.Grant{{Kind: "branch", Repo: brokerscope.AnyRepo, Branch: "main"}}})
+	h := newHTTPSFixture(t, httpsOpts{})
+	// A branch grant names its repository, whose identity carries the server's port.
+	repo, err := gitproto.Identity(h.url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sf, err := brokerscope.ReadFile(h.scopeFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := brokerscope.ReplaceScopeContext(context.Background(), h.scopeFile, h.broker.bound, sf.Repos,
+		[]brokerscope.Grant{{Kind: "branch", Repo: repo, Branch: "main"}}); err != nil {
+		t.Fatal(err)
+	}
 	allowKinds(t, "branch")
 	h.localCommit()
 	out, err := h.git("push", "origin", "HEAD:main")
