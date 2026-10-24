@@ -1084,6 +1084,9 @@ Mac. The maintainer's Mac agent runs:
   `host-home-stat-allow` is too narrow. A `refusing to generate into` line means the HOME guard did
   not take the capture shape.
 
+That check is Step 1 of [the 2026-10-24 Mac session](../plans/runbooks/mac-claude-login-session.md),
+which goes on to whether macos-user's Claude reads the credential view.
+
 ## Blockers
 
 Only slice 11 is blocked. The rest build without the rulings, because each pending decision is a
