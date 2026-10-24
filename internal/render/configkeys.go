@@ -172,6 +172,8 @@ var hostConfigKeys = map[string]keyCensusEntry{
 		"home simply is writable"},
 	"ephemeral_storage": {KeyNotApplicable, "the backing for a container's /tmp, /var/tmp and " +
 		"/var/lib/containers; the host's are your own"},
+	"local_clones": {KeyHonored, "the pack check `yolo host` runs resolves a patch branch URL against " +
+		"a registered clone (config.LocalClones), as a jail launch's does"},
 	"cache_relocations": {KeyNotApplicable, "moves a jail's cache segments onto host paths; " +
 		"off-container the caches are already yours (host-side, `yolo stores` and `yolo prune` " +
 		"read it only to account for the relocated segments)"},

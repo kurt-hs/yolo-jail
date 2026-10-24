@@ -70,7 +70,7 @@ var knownTopLevelConfigKeys = set(
 	"loopholes", "brokered", "host_processes", "journal",
 	"kvm", "prune", "programs", "ephemeral_storage", "macos_log", "include_if_found", "agents_md_extra",
 	"briefing_provenance",
-	"cache_relocations", "writable_home_dirs", "host_files", "host_wrappers", "share_host_fonts",
+	"cache_relocations", "writable_home_dirs", "host_files", "host_wrappers", "share_host_fonts", "local_clones",
 	"host_apply_on_launch", "host_management", "host_import_exclusions", "agent_updates", "host_floor", "host_path", "provisioners", "packs", "perf_logging", "macos_user_mode", "macos_user_shared_tmp", "on_request",
 	"update_check", "promotion_target",
 	"providers", "model_facts", "profiles", "profile", "required_capabilities", "adapters",

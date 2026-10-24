@@ -1404,6 +1404,24 @@
     Example (~/.config/yolo-jail/config.jsonc):
       "share_host_fonts": true
 
+  [bold]local_clones[/bold] (list of paths): Clones of yours that a published patch branch URL is built from.  Default [].
+    A pack names its patch branch by its published URL.  When that URL names the
+    same repository as a remote of a clone yolo knows, yolo builds from that
+    clone with the newest-copy rule: your local branch when it is ahead or has
+    diverged, the published tip when your branch is behind, and the best copy
+    when the fetch fails.  The provenance line names the clone it used.  Any
+    path a pack is read from that lies in a git clone registers that clone
+    already, so list here only a clone that holds no pack, such as a fork of an
+    upstream tool.  "~" is expanded.  When two clones match one URL, an entry
+    here wins over a pack's clone, then the first in config order.  An entry
+    that does not exist, is not in a git clone, or whose clone has no remote is
+    a `yolo check` error, and the launch refuses.
+
+    USER SCOPE ONLY.  A workspace config must not point yolo at host paths, so a
+    workspace value is a `yolo check` error.
+    Example (~/.config/yolo-jail/config.jsonc):
+      "local_clones": ["~/src/pi"]
+
   [bold]update_check[/bold] (boolean): Enable update checks and notices.  Default TRUE.
     Every ordinary host command reads the cached answer.  For a release-based install,
     normally once a day it starts a detached request to GitHub's releases API;

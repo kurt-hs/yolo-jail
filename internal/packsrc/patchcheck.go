@@ -307,10 +307,11 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 	return res
 }
 
-// isCheckoutLocator reports a patch branch given as a local checkout: a relative locator, or a git+file:// one.
+// isCheckoutLocator reports a patch branch given as a local checkout: a relative locator, a git+file:// one, or a
+// URL a registered local clone's remote names (localclones.go).
 func isCheckoutLocator(w PatchedWant) bool {
 	c, err := ParseFrom(w.PatchBranch, w.PatchBranchDir)
-	return err == nil && strings.HasPrefix(c.Repo, "file://")
+	return err == nil && (strings.HasPrefix(c.Repo, "file://") || cloneFor(c) != nil)
 }
 
 // refreshPatchBranch is a fresh launch's patch branch refresh inside the throttle: the checkout's patch branch
@@ -326,7 +327,7 @@ func (s *Store) refreshPatchBranch(w PatchedWant, upstream Addr, r *CheckRecord,
 	if err != nil {
 		return true
 	}
-	plan := s.checkoutPlanOf(c)
+	c, plan := s.patchBranchPlan(c)
 	if plan == nil {
 		return true
 	}
@@ -380,7 +381,8 @@ func (s *Store) findCandidates(a Addr, follow FollowRule, base string, patchBran
 	var found CheckFound
 	var plan *checkoutPlan
 	if patchBranch != nil {
-		plan = s.checkoutPlanOf(*patchBranch)
+		pb, p := s.patchBranchPlan(*patchBranch)
+		patchBranch, plan = &pb, p
 	}
 	unlock, err := s.lockMirrors(mirrorsOf(a.Repo, patchBranch, plan), waiting)
 	if err != nil {

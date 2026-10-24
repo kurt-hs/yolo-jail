@@ -828,6 +828,11 @@ func packLint(args []string, out, errw io.Writer, color bool) int {
 	for _, w := range packload.LintDuplicateLoads(pack) {
 		pr.Printf("[yellow]⚠[/yellow] %s", richtext.Escape(w))
 	}
+	// A patch branch named by a relative or git+file:// locator, which no one installing by URL can reach
+	// (packlintlocalbranch.go, PF-D100).
+	for _, w := range localPatchBranchWarnings(pack, lintRoot) {
+		pr.Printf("[yellow]⚠[/yellow] %s", richtext.Escape(w))
+	}
 	// A program built from its pack's own tree whose source directory holds nothing (BG-D16).
 	for _, w := range packdecl.PackTreeWarnings(pack.Decl.Contributions(), func(dir string) bool {
 		return stagedUnder(res.Staged, dir)

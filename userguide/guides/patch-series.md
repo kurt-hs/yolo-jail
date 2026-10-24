@@ -120,9 +120,13 @@ If you keep your changes on a branch that you merge the upstream into, name that
   branch, the next check rebuilds. `yolo pack update` checks now.
 - **When the branch does not merge**, the launch stops and names the conflicting files. It also
   prints the `git merge` commands that fix the branch.
-- **A pack inside the repository it patches from names it by a relative path**, such as
-  `"patch_branch": "../..?ref=patches"`. The path starts at the pack's directory and cannot climb
-  above the pack's own git repository, so it names the same repository in a jail and on the host.
+- **Name the published URL, and your local clone is used automatically when it's newer.** Anyone who
+  installs your pack by URL then gets a working copy, and on your machine yolo builds from your own
+  clone of that repository (see [your clone of a published branch](#your-clone-of-a-published-branch)).
+- **A relative path also works, but only on your machine**, such as `"patch_branch": "../..?ref=patches"`
+  from a pack inside the repository it patches from. The path starts at the pack's directory and cannot
+  climb above the pack's own git repository. Whoever installs the pack by URL has their launch refused,
+  and so does a `git+file://` path, so `yolo pack lint` warns of both.
 - **A `files` extension takes `patch_branch` the same way.** One contribution names `patches` or
   `patch_branch`, never both.
 - **`yolo pack status`** shows the patch branch's commit and how many releases it is behind.
@@ -154,6 +158,33 @@ you something, such as whether to trust a new host.
 
 The launch, `yolo pack update`, `yolo pack series check` and `yolo pack status` all print the same line,
 for example `mine  origin 4cd0bc6b  local branch is stale, 1 behind origin  fetched just now`.
+
+### Your clone of a published branch
+
+When a pack names its patch branch by a published URL, and you have a clone of that repository, yolo
+builds from your clone by the rules above. The line names the clone it used, for example
+`mine  local 9e1f22aa  2 unpushed  fetched just now  local clone /home/you/src/pi (local_clones entry ~/src/pi)`.
+This works for any pack, including one you installed from someone else's URL, and since the newest copy
+wins, your clone can only make a build newer.
+
+yolo knows a clone in two ways:
+
+- **A pack in it.** Any path your user config reads a pack from that lies inside a git clone registers
+  that clone, keyed by its remotes. That includes a pack named by path and the local pack in
+  `~/.config/yolo-jail/local`. A pack that is plain files outside any repository registers nothing.
+- **`local_clones`**, for a clone that holds no pack, such as your fork of the tool itself:
+
+  ```jsonc
+  // ~/.config/yolo-jail/config.jsonc
+  { "local_clones": ["~/src/pi"] }
+  ```
+
+  It is read from your user config only. An entry that does not exist, is not in a git clone, or whose
+  clone has no remote stops `yolo check` and the launch, naming the entry.
+
+The URL matches whichever way the remote is spelled: `git@github.com:you/pi.git` and
+`https://github.com/you/pi` are the same repository. When two clones match, a `local_clones` entry wins,
+then the first in your config.
 
 ## Build a pi extension as it is
 

@@ -47,6 +47,9 @@ type checkoutPlan struct {
 	// remotes is every remote the checkout has (`git remote`), never nil: resolvePatchBranchRef matches
 	// remote-tracking refs against these names only.
 	remotes []string
+	// clone is the registered local clone a patch branch URL resolved to (localclones.go), nil for a checkout
+	// the locator names itself.
+	clone *CloneMatch
 }
 
 // remoteAddr is the remote's address at the patch branch's ref, the key of its mirror and stamp.
@@ -323,6 +326,13 @@ func (r *PatchBranchResolved) Line(now time.Time) string {
 	}
 	if fresh := r.freshness(now); fresh != "" {
 		parts = append(parts, fresh)
+	}
+	if r.CloneVia != "" {
+		clone := "local clone " + r.Checkout + " (" + r.CloneVia
+		if len(r.CloneOthers) > 0 {
+			clone += "; also matched " + strings.Join(r.CloneOthers, ", ")
+		}
+		parts = append(parts, clone+")")
 	}
 	return strings.Join(parts, "  ")
 }

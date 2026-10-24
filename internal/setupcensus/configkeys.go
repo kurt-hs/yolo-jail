@@ -573,6 +573,9 @@ var configKeys = map[string]Entry{
 	"perf_logging": everywhere(honored("fillDefaults reads config.PerfLoggingEnabled once "+
 		"(runcmd.go) and Run's initPerf starts the collector before the setup is chosen"),
 		"`include_if_found`"),
+	"local_clones": everywhere(honored("the host's pack check resolves a patch branch URL against a "+
+		"registered clone (packsrc localclones.go, gathered by config.LocalClones from the user config); "+
+		"no jail reads it"), "`local_clones`"),
 	"update_check": everywhere(honored("gates this machine's own update check "+
 		"(config.UpdateCheckEnabled); no jail reads it"), "`include_if_found`"),
 	"macos_user_mode": {

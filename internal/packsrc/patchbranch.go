@@ -107,6 +107,11 @@ type PatchBranchResolved struct {
 	Branch     string `json:"branch,omitempty"`
 	Copy       string `json:"copy,omitempty"`
 	MirrorRepo string `json:"mirror_repo,omitempty"`
+	// CloneVia is set when Checkout is a registered LOCAL CLONE a patch branch URL resolved to (localclones.go):
+	// how the clone was registered ("local_clones entry …", "the path of pack …"). CloneOthers are the further
+	// registered clones that matched the URL and lost (an explicit entry wins, then config order).
+	CloneVia    string   `json:"clone_via,omitempty"`
+	CloneOthers []string `json:"clone_others,omitempty"`
 	// Remote is the checkout's remote compared against (origin, else the first by name) and RemoteURL its
 	// address; Local the checkout's local branch and RemoteTip the remote's, "" where there is none; Ahead and
 	// Behind count the local branch's commits the remote tip lacks and the remote tip's the local lacks.
@@ -290,6 +295,9 @@ func (s *Store) resolvePatchBranch(b budget, c Addr, p *checkoutPlan, upstream, 
 		kind, ref, commit, err = s.resolvePatchBranchRef(mirror, c.Ref, nil)
 	} else {
 		resolved.Checkout, resolved.Branch = p.dir, c.Ref
+		if p.clone != nil {
+			resolved.CloneVia, resolved.CloneOthers = p.clone.Clone.Via(), p.clone.Others
+		}
 		if p.remote != "" {
 			ra := p.remoteAddr(c.Ref)
 			resolved.Remote, resolved.RemoteURL = p.remote, p.url
@@ -306,6 +314,11 @@ func (s *Store) resolvePatchBranch(b budget, c Addr, p *checkoutPlan, upstream, 
 			resolved.FetchedAt = s.stampAt(ra)
 		}
 		kind, ref, commit, err = s.pickCopy(b, c, p, mirror, resolved)
+		if p.clone != nil && resolved.MirrorRepo == "" {
+			// A REGISTERED CLONE stands in for the URL the manifest names, so a copy read from the clone's
+			// own mirror is held there, not in the URL's: every reader (replay) takes the mirror from here.
+			resolved.MirrorRepo = c.Repo
+		}
 	}
 	switch {
 	case err != nil:

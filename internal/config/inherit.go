@@ -263,6 +263,10 @@ var inheritCensus = map[string]keyDisposition{
 	// would share the jail's own home's font folder instead, the same words naming a different
 	// object (host_files' class).
 	"share_host_fonts": {reason: "shares the host user's font folder, which a jail's own home is not"},
+	// `local_clones`: HOST paths of the user's clones, which the host's pack check reads. In a container they
+	// name nothing, and an entry that names nothing is a fatal config error, so inheriting them would refuse
+	// every in-jail check (cache_relocations' false-error class).
+	"local_clones": {reason: "host paths of the user's clones, absent in the container, where an entry naming nothing is an error"},
 	// `host_floor`: which selected packs' programs yolo installs into the HOST's own prefix for
 	// `yolo host` to run. A jail provisions its agents through its own launchers and has no
 	// host prefix, so the key has no referent in a container.

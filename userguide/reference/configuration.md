@@ -54,6 +54,9 @@ project config and names the file to move them to:
 - `cache_relocations`
 - `host_management`, `host_wrappers`, `host_apply_on_launch`, `host_floor`, `host_path`, `provisioners` and `promotion_target`
 - `perf_logging` and `update_check`
+- `local_clones`, the clones of yours a published patch branch is built from when they are newer (see
+  [your clone of a published branch](../guides/patch-series.md#your-clone-of-a-published-branch)); an
+  entry that is not a git clone with a remote stops `yolo check` and the launch
 - a `host_files` entry that names a `source` file on your host
 - a host service's `command`, `env` and `doctor_cmd`, and any loophole setting its pack marks as
   user-only
