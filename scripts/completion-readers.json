@@ -2064,6 +2064,7 @@
 "internal/wirebridged",
 "packs/**",
 "scripts/**",
+"scripts/__pycache__",
 "tools/**",
 "userguide/**"
 ]
@@ -3600,7 +3601,8 @@
 "internal/wirebridge",
 "internal/wirebridged",
 "packs/**",
-"scripts/**"
+"scripts/**",
+"scripts/__pycache__"
 ]
 },
 {
@@ -6718,6 +6720,7 @@
 "TestEveryDiscoverCallSiteIsConverged": 57,
 "TestEveryShippedLoopholeHasARow": 62,
 "TestShippedBrokerNeverMountsItsPrivateKey": 61,
+"TestShippedGitBrokerDefinesBranch": 63,
 "TestShippedGitBrokerDefinesCreateBranch": 63,
 "TestShippedLoopholePlatformDeclarations": 60,
 "TestShippedManifestsParse": 60,
