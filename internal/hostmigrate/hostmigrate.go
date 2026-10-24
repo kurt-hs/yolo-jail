@@ -58,6 +58,10 @@ const (
 	KindGoBinary
 	// KindUnknown — something we cannot explain. Never removed.
 	KindUnknown
+	// KindDevLauncher — a symlink to a checkout's scripts/dev-wrapper.sh, which
+	// `just deploy-dev` installs. Not stale and not a blocker: the install
+	// replaces it atomically (scripts/launcher-slot.py owns that decision).
+	KindDevLauncher
 )
 
 // Stale reports whether this kind is a pre-Go artifact safe to remove.
@@ -77,6 +81,8 @@ func (k Kind) String() string {
 		return "python script"
 	case KindGoBinary:
 		return "go binary"
+	case KindDevLauncher:
+		return "dev launcher symlink"
 	default:
 		return "unrecognized file"
 	}
@@ -231,6 +237,9 @@ func (m *Migrator) classify(path string) Kind {
 		}
 		if _, err := os.Stat(target); err != nil {
 			return KindBrokenLink
+		}
+		if filepath.Base(target) == "dev-wrapper.sh" && filepath.Base(filepath.Dir(target)) == "scripts" {
+			return KindDevLauncher
 		}
 		if inPythonVenv(target) {
 			return KindPythonVenvLink

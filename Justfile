@@ -33,8 +33,8 @@ build-go:
 stage-bundle DEST="dist/bundle/share/yolo-jail":
     ./scripts/stage-source-bundle.sh {{ DEST }}
 
-# Install the host binary (yolo) to $GOBIN or $GOPATH/bin
-install:
+# Install the host binary as $GOBIN/<name> (default yolo; else $GOPATH/bin), replacing a deployed or dev launcher there
+install name="yolo":
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -54,7 +54,7 @@ install:
         exit 1
     fi
 
-    python3 scripts/matched-bundle.py install --repo "$(pwd -P)" --home "$HOME"
+    python3 scripts/launcher-slot.py deploy --repo "$(pwd -P)" --home "$HOME" --name "$1"
 
 # Build and print a matched development launcher without activating/installing it.
 build-dev-bundle:
@@ -64,10 +64,28 @@ build-dev-bundle:
 dev *args:
     ./scripts/dev-wrapper.sh "$@"
 
-# Install yolo CLI and prime the Claude OAuth broker state. Safe to re-run.
-deploy: install
+# Install yolo CLI and prime the Claude OAuth broker state. Safe to re-run. `just deploy yolo-stable` installs under another name.
+deploy name="yolo": (install name) (_host-state name)
+
+# Like deploy, but $GOBIN/<name> becomes a link to this checkout's dev wrapper: every run builds (or reuses) a bundle matched to the checkout as it stands.
+deploy-dev name="yolo": (_install-dev name) (_host-state name)
+
+# Point $GOBIN/<name> at scripts/dev-wrapper.sh, replacing a deployed or dev launcher there.
+_install-dev name:
     #!/usr/bin/env bash
     set -euo pipefail
+    if [ -n "${YOLO_VERSION:-}" ]; then
+        echo "✗ 'just deploy-dev' is host-only — refusing inside a jail (YOLO_VERSION set)." >&2
+        echo "  In a jail, test Go changes with: just dev -- <args>" >&2
+        exit 1
+    fi
+    python3 scripts/launcher-slot.py deploy-dev --repo "$(pwd -P)" --name "$1"
+
+# The host state both deploy recipes keep current, whichever launcher is in the slot.
+_host-state name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    launcher="$(python3 scripts/launcher-slot.py path --name "$1")"
 
     # --- Retire pre-broker Claude token refresher install ---
     if command -v systemctl >/dev/null 2>&1; then
@@ -87,8 +105,8 @@ deploy: install
     if ! command -v openssl >/dev/null 2>&1; then
         echo "⚠ openssl not found — skipping claude-oauth-broker state init"
     else
-        if ! command -v yolo >/dev/null 2>&1; then
-            echo "ERROR: yolo not on PATH after install" >&2
+        if [ ! -x "$launcher" ]; then
+            echo "ERROR: $launcher is missing or not executable after install" >&2
             exit 1
         fi
 
@@ -114,8 +132,9 @@ deploy: install
             fi
         fi
 
-        # Generate CA + leaf in the state dir (idempotent).
-        yolo internal daemon claude-oauth-broker --init-ca >/dev/null
+        # Generate CA + leaf in the state dir (idempotent). Through a dev launcher this first run
+        # builds the matched bundle, which proves the link works.
+        "$launcher" internal daemon claude-oauth-broker --init-ca >/dev/null
 
         echo "✓ claude-oauth-broker state primed at $HOME/.local/share/yolo-jail/state/claude-oauth-broker"
     fi
@@ -125,7 +144,7 @@ deploy: install
     # next launch starts this deploy's.
     echo "  Running jails keep the host daemons they started; launch a jail again to use this build's. \`yolo host-daemon status\` lists them."
 
-    echo "yolo-jail deployed. Verify: yolo loopholes list"
+    echo "yolo-jail deployed as $launcher. Verify: $1 loopholes list"
 
 # Undo `just deploy`/`just install` (any platform) so a packaged yolo runs; `just undeploy --dry-run` previews.
 undeploy *args:
@@ -315,6 +334,8 @@ lint-ci: lint
     # The matched launcher snapshot, install-publication and wrapper regressions are permanent
     # lint-ci coverage, and therefore run under check-ci too.
     python3 scripts/test_matched_bundle.py
+    # The launcher slot `just deploy` and `just deploy-dev` share: what they replace and refuse.
+    python3 scripts/test_launcher_slot.py
     # An answered question left in question form still reads as a decision to make, and only
     # `vantage-check index` lists it, so check the index (the design-doc skill's compaction rule).
     python3 scripts/test-check-answered-questions.py

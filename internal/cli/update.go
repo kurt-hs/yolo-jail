@@ -525,7 +525,7 @@ func fromCheckout(ch selfupdate.Channel, dir string) (string, error) {
 	case selfupdate.KindUnknown:
 		return "", fmt.Errorf("--from is for from-source installs, and nothing shows this yolo (%s) was installed from source; run `just install` in the checkout to install it, or reinstall a release from %s", ch.Exe, selfupdate.ReleasesPage)
 	case selfupdate.KindDevelopment:
-		return "", fmt.Errorf("--from is for from-source installs; this yolo is a development bundle, which `just build-dev-bundle` rebuilds from its checkout")
+		return "", fmt.Errorf("--from is for from-source installs; this yolo is a development bundle, which the dev launcher (`just deploy-dev`) rebuilds from its checkout on every run; `just deploy` in the checkout installs a deployed yolo instead")
 	default:
 		return "", fmt.Errorf("--from is for from-source installs; this yolo is managed by %s (see `yolo update --help` for that channel's safe update path)", ch.Kind)
 	}

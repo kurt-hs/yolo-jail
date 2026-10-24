@@ -11,6 +11,7 @@ package hostrun
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -105,9 +106,18 @@ func flagValue(args []string, i int, name string) (string, int, error) {
 	return args[i+1], i + 1, nil
 }
 
-// isRecursive reports whether argv is `yolo host-run …`, by the program's base name.
+// selfName is the base name this process was invoked as, so a launcher installed under
+// another name (`just deploy yolo-stable`, `just deploy-dev yolo-dev`) still catches itself.
+var selfName = func() string { return filepath.Base(os.Args[0]) }
+
+// isRecursive reports whether argv is `yolo host-run …`, by the program's base name: `yolo`,
+// or whatever name this yolo was itself invoked as.
 func isRecursive(argv []string) bool {
-	return len(argv) >= 2 && filepath.Base(argv[0]) == "yolo" && argv[1] == "host-run"
+	if len(argv) < 2 || argv[1] != "host-run" {
+		return false
+	}
+	base := filepath.Base(argv[0])
+	return base == "yolo" || base == selfName()
 }
 
 var labelPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,39}$`)

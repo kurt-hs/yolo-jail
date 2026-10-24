@@ -44,6 +44,9 @@ def repo_fixture(root: Path, *, real_scripts=False):
             (scripts / name).write_text(f"fixture {name}\n")
     env = clean_git_env()
     subprocess.run(["git", "init", "-q"], cwd=repo, env=env, check=True)
+    if real_scripts:
+        # The Justfile's install recipe goes through the slot helper, which is not a build input.
+        shutil.copy2(HERE / "launcher-slot.py", scripts / "launcher-slot.py")
     subprocess.run(["git", "add", "go.mod", "flake.nix", "flake.lock", "Justfile", "scripts", "cmd"],
                    cwd=repo, env=env, check=True)
     subprocess.run(["git", "add", "-f", "internal/generated/tracked.go"], cwd=repo, env=env, check=True)
@@ -439,10 +442,28 @@ class PackageTests(unittest.TestCase):
             self.assertNotIn(secret,stderr.getvalue())
 
     def test_install_command_runs_shared_activation_workflow(self):
+        result, gobin = self._just_install("yolo")
+        self.assertIn("Launcher slot "+str(gobin/"yolo")+": empty.",result.stdout)
+
+    def test_install_under_a_name_switches_that_slot_back_from_the_dev_launcher(self):
+        """`just install yolo-dev` over a `just deploy-dev yolo-dev` link replaces the link, says so,
+        and leaves the default slot alone."""
+        def prepare(repo, gobin):
+            gobin.mkdir()
+            os.symlink(repo/"scripts/dev-wrapper.sh", gobin/"yolo-dev")
+        result, gobin = self._just_install("yolo-dev", prepare)
+        self.assertFalse((gobin/"yolo-dev").is_symlink(),"the dev link is still in the slot")
+        self.assertFalse((gobin/"yolo").exists(),"a named install wrote the default slot")
+        self.assertIn("replacing the dev launcher for the checkout at",result.stdout)
+        self.assertIn("Switched yolo-dev from the dev launcher to a deployed one.",result.stdout)
+
+    def _just_install(self, name, prepare=None):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); repo=repo_fixture(root, real_scripts=True); home=root/"home"
             home.mkdir(); gobin=root/"gobin"; generation=root/"generation"
             shutil.copy2(HERE.parent/"Justfile", repo/"Justfile")
+            if prepare is not None:
+                prepare(repo, gobin)
             fakebin=root/"fakebin"; fakebin.mkdir()
             driver=root/"install-driver.py"
             driver.write_text(r'''import importlib.util, json, os, subprocess, sys
@@ -453,6 +474,10 @@ script = Path(sys.argv[1]).resolve()
 spec = importlib.util.spec_from_file_location("install_under_test", script)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+if script.name != "matched-bundle.py":
+    # The slot helper runs as itself and reaches matched-bundle.py through this shim again.
+    sys.argv = [str(script), *sys.argv[2:]]
+    raise SystemExit(module.main())
 real_run = subprocess.run
 events = []
 
@@ -517,16 +542,17 @@ raise SystemExit(code)
             env.update({"PATH":str(fakebin)+os.pathsep+env.get("PATH",""), "HOME":str(home),
                         "GOBIN":str(gobin), "YOLO_VERSION":"", "YOLO_TEST_GENERATION":str(generation),
                         "YOLO_TEST_EVENTS":str(root/"events.json")})
-            result=subprocess.run(["just", "install"], cwd=repo, env=env, text=True, capture_output=True)
+            result=subprocess.run(["just", "install", name], cwd=repo, env=env, text=True, capture_output=True)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            self.assertTrue((gobin/"yolo").is_file(),"the production Justfile install flow did not install its launcher")
+            self.assertTrue((gobin/name).is_file(),"the production Justfile install flow did not install its launcher")
             events=json.loads((root/"events.json").read_text())
             self.assertEqual([event[0] for event in events],["migrate-host","stage","activate"])
             self.assertEqual(events[2][1],events[1][1])
             self.assertEqual(events[1][1],str(generation))
             self.assertTrue((generation/"flake.nix").is_file(),"install did not stage the matched flake")
             self.assertTrue((generation/"yolo-build-stamp.json").is_file(),"install did not stage matched identity metadata")
-            self.assertEqual(result.stdout.count("Installed to "),1)
+            self.assertEqual(result.stdout.count(f"Installed {gobin/name}"),1)
+            return result, gobin
 
     def test_install_generation_activates_only_identity_match(self):
         with tempfile.TemporaryDirectory() as td:

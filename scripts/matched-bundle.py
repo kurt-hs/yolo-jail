@@ -420,12 +420,12 @@ def _install_guard(env: dict[str, str]) -> None:
         raise RuntimeError("'just install' is host-only — refusing inside a jail (YOLO_VERSION set).")
 
 
-def _atomic_install_launcher(source: Path, gobin: Path) -> Path:
+def _atomic_install_launcher(source: Path, gobin: Path, name: str = "yolo") -> Path:
     gobin.mkdir(parents=True, exist_ok=True)
-    staged = gobin / f".yolo-install-{uuid.uuid4().hex}"
+    staged = gobin / f".{name}-install-{uuid.uuid4().hex}"
     shutil.copy2(source, staged)
-    os.replace(staged, gobin / "yolo")
-    return gobin / "yolo"
+    os.replace(staged, gobin / name)
+    return gobin / name
 
 
 def _resolved_path(path: str | Path) -> str:
@@ -437,7 +437,7 @@ def _resolved_path(path: str | Path) -> str:
 
 
 def command(repo: Path, mode: str, *, home: Path, gobin: Path | None = None,
-            args: list[str] | None = None, builder=assemble, runner=subprocess.run,
+            name: str = "yolo", args: list[str] | None = None, builder=assemble, runner=subprocess.run,
             execer=os.execvpe):
     if mode in ("build-dev", "dev"):
         launcher = build_dev_bundle(repo, home, builder=builder, runner=runner)
@@ -470,26 +470,26 @@ def command(repo: Path, mode: str, *, home: Path, gobin: Path | None = None,
         assemble(snapshot, output, identity=identity, build_kind="installed",
                  version=version, commit=commit, runner=runner)
         launcher = output / "bin/yolo"
-        subprocess.run([str(launcher), "internal", "migrate-host"], env=env, check=True)
-        publish_install_generation(launcher, output / "share/yolo-jail", identity, env,
-                                   runner=runner, shipped=shipped, guest=guest,
-                                   host_os=host_os, host_arch=host_arch)
         if gobin is None:
             raw = subprocess.check_output(["go", "env", "GOBIN"], cwd=snapshot,
                                           env=_git_env(), text=True).strip()
             gobin = Path(raw) if raw else Path(subprocess.check_output(
                 ["go", "env", "GOPATH"], cwd=snapshot, env=_git_env(), text=True).strip()) / "bin"
-        installed = _atomic_install_launcher(launcher, gobin)
-        print(f"Installed to {gobin}")
-        resolved = shutil.which("yolo")
+        subprocess.run([str(launcher), "internal", "migrate-host", f"--gobin={gobin}"], env=env, check=True)
+        publish_install_generation(launcher, output / "share/yolo-jail", identity, env,
+                                   runner=runner, shipped=shipped, guest=guest,
+                                   host_os=host_os, host_arch=host_arch)
+        installed = _atomic_install_launcher(launcher, gobin, name)
+        print(f"Installed {installed}")
+        resolved = shutil.which(name)
         if resolved and _resolved_path(resolved) != _resolved_path(installed):
             print(file=sys.stderr)
-            print("⚠ WARNING: this install is NOT the yolo your shell runs.", file=sys.stderr)
+            print(f"⚠ WARNING: this install is NOT the {name} your shell runs.", file=sys.stderr)
             print(f"    installed:  {installed}\n    resolves:   {resolved}", file=sys.stderr)
             print(f"  Every launch will keep using the older one. Put {gobin} ahead of it on PATH (or remove {resolved}), then run 'hash -r'.", file=sys.stderr)
             print(file=sys.stderr)
         if resolved and resolved != str(installed):
-            print(f"⚠ PATH resolves yolo to {resolved}, not the copy just installed at {installed}.", file=sys.stderr)
+            print(f"⚠ PATH resolves {name} to {resolved}, not the copy just installed at {installed}.", file=sys.stderr)
             print(f"  Remove the other install, or put {gobin} earlier in PATH.", file=sys.stderr)
         return installed
 
@@ -500,6 +500,7 @@ def main() -> int:
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     parser.add_argument("--home", type=Path, default=Path.home())
     parser.add_argument("--gobin", type=Path)
+    parser.add_argument("--name", default="yolo")
     raw = sys.argv[1:]
     if "--" in raw:
         split = raw.index("--")
@@ -509,7 +510,9 @@ def main() -> int:
         args = parser.parse_args(raw)
         forwarded = []
     try:
-        result = command(args.repo, args.mode, home=args.home, gobin=args.gobin,
+        if not args.name or "/" in args.name or args.name in (".", ".."):
+            raise ValueError(f"--name must be a plain file name, not {args.name!r}")
+        result = command(args.repo, args.mode, home=args.home, gobin=args.gobin, name=args.name,
                          args=forwarded, execer=os.execvpe)
         if args.mode == "build-dev":
             print(result)

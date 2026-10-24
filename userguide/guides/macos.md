@@ -171,17 +171,18 @@ installed command to select a different flake. From the checkout:
 just dev -- bash
 ```
 
-To use a PATH command, symlink `scripts/dev-wrapper.sh` from the checkout under any chosen name,
-including `yolo-dev` or `yolo`. The wrapper builds from the symlink's checkout, preserves your
-current directory as the jail workspace, and execs the matched launcher by absolute path. It does
-not replace the installed command, and the development bundle lives under your home directory, so
-default Podman Machine setup does not need to share `/nix` for these helpers. The regular image
-build still uses Nix as usual.
+To use a PATH command, run `just deploy-dev yolo-dev` in the checkout (or plain `just deploy-dev` to
+make `yolo` itself the dev command; `just deploy` switches back). It links `scripts/dev-wrapper.sh`
+under that name. The wrapper builds from the link's checkout, preserves your current directory as
+the jail workspace, and execs the matched launcher by absolute path. The development bundle lives
+under your home directory, so default Podman Machine setup does not need to share `/nix` for these
+helpers. The regular image build still uses Nix as usual.
 
 `YOLO_REPO_ROOT` no longer selects a launch source. Remove an old export from your shell profile.
 If a PATH alias has a dangling or cyclic symlink, the operating system rejects it before the wrapper
-starts; replace it with `ln -sfn /absolute/path/to/yolo-jail/scripts/dev-wrapper.sh /path/to/yolo-dev`,
-substituting your checkout and alias paths.
+starts; run `just deploy-dev <name>` again, or replace it with
+`ln -sfn /absolute/path/to/yolo-jail/scripts/dev-wrapper.sh /path/to/yolo-dev`, substituting your
+checkout and alias paths.
 
 ## The macos-user backend
 

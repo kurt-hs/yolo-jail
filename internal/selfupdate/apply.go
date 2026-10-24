@@ -136,9 +136,14 @@ const AutostashMessage = "yolo update autostash"
 // The deploy is pinned to the directory the running binary is in. Without that
 // it follows whatever GOBIN the toolchain manager exports — a per-Go-version
 // directory under mise, which is not on PATH — and the update "succeeds" into a
-// binary nothing runs.
+// binary nothing runs. It is pinned to the running binary's NAME too: a launcher
+// deployed as `just deploy yolo-stable` redeploys itself, not the `yolo` beside it.
 func PlanCheckout(exe, dir string) []Step {
-	return []Step{{Argv: []string{"just", "deploy"}, Dir: dir, Env: []string{"GOBIN=" + filepath.Dir(exe)}}}
+	argv := []string{"just", "deploy"}
+	if name := filepath.Base(exe); name != "yolo" && name != "." && name != string(filepath.Separator) {
+		argv = append(argv, name)
+	}
+	return []Step{{Argv: argv, Dir: dir, Env: []string{"GOBIN=" + filepath.Dir(exe)}}}
 }
 
 // DeployCheckout runs PlanCheckout's steps for `yolo update --from dir`. A

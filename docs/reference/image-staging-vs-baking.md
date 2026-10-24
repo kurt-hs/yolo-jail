@@ -347,7 +347,8 @@ installed/default workflow remains `yolo` from its complete installed bundle.
 
 `YOLO_REPO_ROOT` is retired. Remove it from shell configuration; direct launchers refuse it with a
 next step naming `just build-dev-bundle` or `just install`. A wrapper alias with a dangling or cyclic
-symlink fails in the operating system before its script can run. Repair it with
+symlink fails in the operating system before its script can run. Repair it from the checkout with
+`just deploy-dev <alias>`, which replaces a dangling dev link in `$GOBIN`, or with
 `ln -sfn /absolute/path/to/checkout/scripts/dev-wrapper.sh /path/to/yolo-dev`, substituting the
 chosen checkout and PATH alias.
 

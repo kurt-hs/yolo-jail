@@ -24,8 +24,9 @@ Python package channels contain only the host binary, so they cannot launch a
 jail by themselves. Install a complete bundle through Homebrew, a release
 archive, or `just install`; `YOLO_REPO_ROOT` no longer supplies the missing launch
 source. Remove it from your shell configuration. Checkout development instead uses
-`just dev` or a PATH symlink to `scripts/dev-wrapper.sh`, which builds and invokes
-a matched launcher without changing the installed command.
+`just dev` or a PATH symlink to `scripts/dev-wrapper.sh` (`just deploy-dev [name]`
+installs one), which builds and invokes a matched launcher from the checkout on
+every run.
 
 Neither complete install deletes what running jails use. A launch bind-mounts
 its jail binaries and flake bundle from the installation it ran from: for

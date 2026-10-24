@@ -31,6 +31,20 @@ func TestParseHostArgs(t *testing.T) {
 	}
 }
 
+// A yolo installed under another name refuses its own name nested too, and still lets an
+// unrelated program called host-run-something through.
+func TestParseHostArgsRefusesItsOwnInstalledName(t *testing.T) {
+	saved := selfName
+	selfName = func() string { return "yolo-dev" }
+	t.Cleanup(func() { selfName = saved })
+	if _, err := ParseHostArgs([]string{"--", "/home/u/go/bin/yolo-dev", "host-run", "--", "x"}); err == nil {
+		t.Error("accepted the launcher's own name nested")
+	}
+	if _, err := ParseHostArgs([]string{"--", "other", "host-run"}); err != nil {
+		t.Errorf("refused an unrelated program: %v", err)
+	}
+}
+
 func TestCheckLabel(t *testing.T) {
 	for _, ok := range []string{"a", "m-1", "merge-42-q7", "0.x_y", strings.Repeat("a", 40)} {
 		if err := CheckLabel(ok); err != nil {

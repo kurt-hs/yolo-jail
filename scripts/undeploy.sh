@@ -5,7 +5,8 @@
 #
 # WHAT A SOURCE INSTALL LEAVES, and what this does with each:
 #   - $GOBIN/yolo, the `go install` binary: REMOVED, after the host-wide daemons it runs
-#     are stopped (a launch ensures them again from whichever yolo it is).
+#     are stopped (a launch ensures them again from whichever yolo it is). A `just
+#     deploy-dev` link to a checkout's scripts/dev-wrapper.sh is REMOVED without being run.
 #   - The stable flake-bundle link (~/.local/share/yolo-jail/flake-bundle): REMOVED. A
 #     packaged yolo builds from the bundle beside its own binary, and with no link left
 #     every staged generation is superseded.
@@ -58,15 +59,26 @@ bin="$gobin/yolo"
 
 # Ask the binary for its bundle path while it still exists (it is the one authority:
 # paths.FlakeBundleDir); fall back to that function's value when it is already gone.
+# A `just deploy-dev` link is never run: the dev wrapper would build a whole bundle just to
+# answer, and the host daemons a jail started end with that jail.
+dev_link=0
+if [ -L "$bin" ]; then
+    case "$(readlink "$bin")" in */scripts/dev-wrapper.sh) dev_link=1 ;; esac
+fi
+
 bundle=""
-if [ -x "$bin" ]; then
+if [ "$dev_link" = 0 ] && [ -x "$bin" ]; then
     bundle="$("$bin" internal bundle-dir 2>/dev/null | head -n 1 || true)"
 fi
 [ -n "$bundle" ] || bundle="$HOME/.local/share/yolo-jail/flake-bundle"
 
 removed=0
 
-if [ -x "$bin" ]; then
+if [ "$dev_link" = 1 ]; then
+    echo "Removing the dev launcher link $bin (-> $(readlink "$bin"))"
+    run rm -f "$bin"
+    removed=1
+elif [ -x "$bin" ]; then
     echo "Stopping host-wide daemons run by $bin"
     names="$("$bin" host-daemon status --format json 2>/dev/null |
         grep -o '"loophole": *"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/' || true)"

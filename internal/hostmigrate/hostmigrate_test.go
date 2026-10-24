@@ -354,3 +354,35 @@ func TestHasPythonShebang(t *testing.T) {
 		}
 	}
 }
+
+// A `just deploy-dev` symlink at GOBIN/yolo must not block `just deploy`: the
+// install replaces it atomically, and before KindDevLauncher it read as an
+// unidentifiable blocker, so switching back from dev failed in migrate-host.
+func TestDevLauncherLinkDoesNotBlockTheInstall(t *testing.T) {
+	dir := t.TempDir()
+	gobin := filepath.Join(dir, "gobin")
+	scripts := filepath.Join(dir, "checkout", "scripts")
+	for _, d := range []string{gobin, scripts} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wrapper := filepath.Join(scripts, "dev-wrapper.sh")
+	write(t, wrapper, "#!/usr/bin/env python3\n")
+	symlink(t, wrapper, filepath.Join(gobin, "yolo"))
+
+	m, _ := testMigrator(gobin)
+	if got := m.classify(filepath.Join(gobin, "yolo")); got != KindDevLauncher {
+		t.Fatalf("classify = %v, want KindDevLauncher", got)
+	}
+	if KindDevLauncher.Stale() {
+		t.Fatal("a dev launcher link is not stale")
+	}
+	res, err := m.Preflight()
+	if err != nil || res.Blocked != "" || len(res.Removed) != 0 {
+		t.Fatalf("Preflight over a dev launcher link: res=%+v err=%v", res, err)
+	}
+	if _, err := os.Lstat(filepath.Join(gobin, "yolo")); err != nil {
+		t.Fatalf("the dev launcher link was removed: %v", err)
+	}
+}

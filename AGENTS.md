@@ -135,7 +135,12 @@ The mechanics behind each of these are in
 [`image-staging-vs-baking.md`](docs/reference/image-staging-vs-baking.md).
 
 - `just build-go` → `dist-go/<goos>-<goarch>/` is the **cross-compile-for-shipping** step only; it feeds
-  no in-jail run. `just deploy` is `just install` plus Claude-broker priming.
+  no in-jail run. `just deploy` is `just install` plus Claude-broker priming. `just deploy-dev` is the
+  same with `$GOBIN/<name>` a symlink to [`dev-wrapper.sh`](scripts/dev-wrapper.sh), current at every run. Both take an
+  optional launcher name (default `yolo`) and replace only a yolo build or dev link in that slot,
+  refusing anything else ([`launcher-slot.py`](scripts/launcher-slot.py),
+  [`test_launcher_slot.py`](scripts/test_launcher_slot.py)). Deployed launchers share ONE installed
+  bundle, so only one is current; a deployed `yolo` beside a dev `yolo-dev` is the side-by-side pair.
 - **THE IMAGE DOES NOT CONTAIN YOLO.** `/opt/yolo-jail` is TWO `:ro` bind mounts the launch supplies —
   linux binaries at `bin/`, the flake bundle at `share/yolo-jail/`
   ([`jailprefix.go`](internal/cli/run/jailprefix.go); the image bakes only the mountpoints and
@@ -162,7 +167,7 @@ The mechanics behind each of these are in
 - **The cwd does not choose the flake.** A complete bundle beside the running executable wins; an
   installed launcher uses only its matching installed generation. `YOLO_REPO_ROOT` is retired and
   refused. To run the checkout, see [Workflow](#workflow) step 2. A dangling or cyclic dev alias fails
-  in the OS before the wrapper starts; repair it with
+  in the OS before the wrapper starts; repair it with `just deploy-dev <name>` on the host, or
   `ln -sfn /absolute/path/to/checkout/scripts/dev-wrapper.sh /path/to/yolo-dev`.
 - `vendor/` is committed and the nix build is hermetic (`-mod=vendor`, no network). A new dependency needs
   `go mod vendor` committed, or the image build breaks while `go test` passes.
@@ -382,7 +387,8 @@ dashboard's build command changed too ([`docs-website.md`](docs/reference/docs-w
 2. **Logic change** → edit `cmd/`/`internal/`, run `just build-dev-bundle`, and invoke its emitted
    launcher **by absolute path from a throwaway workspace** (`just dev -- <args>` does the same from the
    caller's cwd). NOT bare `yolo` — that is the installed launcher, and the outer jail's binaries are
-   frozen for the session. Never `just install` in-jail. For a **reachability-shaped** or
+   frozen for the session. Never `just install` or `just deploy-dev` in-jail; on the host,
+   `just deploy-dev [name]` installs the same wrapper as an evergreen launcher. For a **reachability-shaped** or
    **rootless-only** change, a nested jail proves nothing — see the carve-outs under [Testing](#testing).
 3. `just format` (gofmt) before committing.
 4. **Committing and landing are different steps.** Commit as often as the work has logical steps, with

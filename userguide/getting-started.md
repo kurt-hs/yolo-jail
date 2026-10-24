@@ -373,6 +373,22 @@ mise exec -- just deploy
 `just deploy` installs `yolo` into Go's bin directory, `$(go env GOPATH)/bin` unless you set `GOBIN`,
 so make sure that directory is on your PATH.
 
+**A dev launcher that is always current.** `just deploy-dev` installs `yolo` as a link to the clone's
+`scripts/dev-wrapper.sh` instead. Every time you run it, it builds yolo from the clone as it stands,
+or reuses the last build if nothing changed, so you never redeploy after an edit. `just deploy`
+switches back. Each command says what it replaced. If something that is not yolo already has the
+name, it leaves it alone and tells you what to do.
+
+Both commands take a different name, so you can keep both kinds side by side:
+
+```bash
+just deploy             # yolo: the deployed copy
+just deploy-dev yolo-dev   # yolo-dev: runs your clone as it stands
+```
+
+Keep one deployed copy at a time. Deployed copies share one set of build files, so deploying a second
+one breaks the first, and the command warns you when that happens.
+
 ### Other ways to install
 
 yolo builds each jail from its **build files**: a Nix recipe (`flake.nix`, the "flake"), its lockfile,
@@ -403,11 +419,12 @@ never `yolo` alone.
 **Binary-only channels.** `go install`, pipx and uvx contain no jail bundle, so they are not standalone
 launch channels; install from Homebrew or a release archive, or use the complete bundle produced by
 `just install`. For yolo development, clone the repository and run `just dev`; it builds and execs a
-matched launcher from that checkout. You may symlink `scripts/dev-wrapper.sh` to any name on your
-PATH instead. `YOLO_REPO_ROOT` no longer selects a launch source, so remove it from your shell
-configuration. A wrapper alias whose link is dangling or cyclic fails before its script can run;
-replace it with `ln -sfn /absolute/path/to/yolo-jail/scripts/dev-wrapper.sh /path/to/yolo-dev`, using
-your checkout and chosen PATH name.
+matched launcher from that checkout. For a command on your PATH instead, run `just deploy-dev`
+(see [From source](#from-source)). `YOLO_REPO_ROOT` no longer selects a launch source, so remove it
+from your shell configuration. A dev command whose link is dangling or cyclic fails before its script
+can run; run `just deploy-dev <name>` in your clone again, or replace it with
+`ln -sfn /absolute/path/to/yolo-jail/scripts/dev-wrapper.sh /path/to/yolo-dev`, using your checkout
+and chosen PATH name.
 
 ## Step 4: First launch
 

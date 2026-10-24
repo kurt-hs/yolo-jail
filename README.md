@@ -67,9 +67,9 @@ Homebrew, a [release archive](https://github.com/mschulkind-oss/yolo-jail/releas
 from-source install ship a complete bundle. `go install` and `pipx install yolo-jail` (or
 `uvx yolo-jail`) ship only the binary and are not standalone jail-launch channels.
 For checkout development, `just dev` builds and runs a matched launcher without changing the
-installed command. You can also symlink [`scripts/dev-wrapper.sh`](scripts/dev-wrapper.sh) under
-any name on your PATH, including `yolo`; it always execs the matching launcher by absolute path
-and keeps your current directory as the workspace. Remove `YOLO_REPO_ROOT` from your shell
+installed command. `just deploy-dev [name]` puts [`scripts/dev-wrapper.sh`](scripts/dev-wrapper.sh)
+on your PATH as `yolo` or any name you give, such as `yolo-dev` beside a deployed `yolo`; it always
+execs the matching launcher by absolute path and keeps your current directory as the workspace. Remove `YOLO_REPO_ROOT` from your shell
 configuration: it no longer selects a launch source. See [development from source](userguide/getting-started.md#from-source).
 
 ### From source

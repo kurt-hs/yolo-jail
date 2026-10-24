@@ -106,5 +106,21 @@ check "f: names obsolete selector" "$(grep -q 'YOLO_REPO_ROOT is obsolete' "$tmp
 check "f: does not disclose selector value" "$(! grep -q '/private/checkout' "$tmp/err" && echo 0 || echo 1)"
 check "f: offers matched build by path" "$(grep -q 'just build-dev-bundle' "$tmp/err" && grep -q 'printed launcher path' "$tmp/err" && echo 0 || echo 1)"
 
+# (g) a `just deploy-dev` link is removed without being run (running it would build a bundle)
+fixture
+mkdir -p "$tmp/checkout/scripts"
+printf '#!/bin/sh\necho ran >>"%s"\n' "$log" >"$tmp/checkout/scripts/dev-wrapper.sh"
+chmod +x "$tmp/checkout/scripts/dev-wrapper.sh"
+rm -f "$gobin/yolo"
+ln -s "$tmp/checkout/scripts/dev-wrapper.sh" "$gobin/yolo"
+rc=0
+run_script || rc=$?
+check "g: exits 0" "$rc"
+check "g: dev link removed" "$([ ! -e "$gobin/yolo" ] && [ ! -L "$gobin/yolo" ] && echo 0 || echo 1)"
+check "g: wrapper never ran" "$([ ! -s "$log" ] && echo 0 || echo 1)"
+check "g: checkout kept" "$([ -f "$tmp/checkout/scripts/dev-wrapper.sh" ] && echo 0 || echo 1)"
+check "g: says it was the dev launcher" "$(grep -q 'dev launcher link' "$tmp/out" && echo 0 || echo 1)"
+check "g: stable link still removed" "$([ ! -L "$home/.local/share/yolo-jail/$bundle" ] && echo 0 || echo 1)"
+
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

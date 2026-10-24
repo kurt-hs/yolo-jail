@@ -166,6 +166,17 @@ func TestPlanCheckout(t *testing.T) {
 	}
 }
 
+// A launcher deployed under another name redeploys under that name, not over the `yolo` beside it.
+func TestPlanCheckoutKeepsTheLauncherName(t *testing.T) {
+	var got []string
+	for _, s := range PlanCheckout("/home/u/.local/bin/yolo-stable", "/src/yolo-jail") {
+		got = append(got, s.String())
+	}
+	if want := "GOBIN=/home/u/.local/bin just deploy yolo-stable   (in /src/yolo-jail)"; strings.Join(got, "\n") != want {
+		t.Errorf("checkout plan:\n got %q\nwant %q", got, want)
+	}
+}
+
 func applyGit(dirty string) *fakeGit {
 	return &fakeGit{answers: map[string]string{"status --porcelain": dirty}}
 }
