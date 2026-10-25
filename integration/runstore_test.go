@@ -63,6 +63,10 @@ import (
 //     only a cost.
 //   - stores — the install-capture store, machine-wide by design (autoCaptureEnvForSuite).
 //
+// ⚠ A LAUNCH WITH THE AUTOMATIC REAPERS ON GETS NONE OF THESE LINKS. Its slot would reap the
+// machine's build/, locks/ and embedded-packs/ through them, so it runs on a store of its own
+// (isolateReaperStore, reaperstore_test.go), and runLaunch refuses one that does not.
+//
 // The loophole state root and its ownership record are therefore private, which is the fix;
 // so are the per-jail staging dirs, the home skeleton store and the approvals, which is
 // isolation no test depended on the absence of. The retired-state archive this churn fills

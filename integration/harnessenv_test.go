@@ -169,6 +169,7 @@ func TestEveryLaunchTheSuiteMakesHasTheAutomaticReapersOff(t *testing.T) {
 	if r := runCommand(t, dir, []string{"run", "--", "true"}); !strings.Contains(r.stdout, "REAPERS_OFF=1.") {
 		t.Errorf("a launch did not have the automatic reapers off: %q", r.stdout)
 	}
+	isolateReaperStore(t) // runLaunch refuses a reaper launch without one (reaperstore_test.go)
 	if r := runCommand(t, dir, []string{"run", "--", "true"}, withAutoReapers()); !strings.Contains(r.stdout, "REAPERS_OFF=.") {
 		t.Errorf("withAutoReapers did not turn the automatic reapers back on: %q", r.stdout)
 	}

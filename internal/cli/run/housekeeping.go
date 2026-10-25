@@ -209,8 +209,11 @@ var housekeepingSlots sync.WaitGroup
 // runHousekeeping is the slot's body: every automatic class, in one place, as one
 // pass, after the container is up, each deletion under the shared lock.
 //
-// Ordering inside it is not load-bearing today — each class is independent and
-// debounced on its own stamp. What IS load-bearing is that this runs AFTER the
+// Each class is debounced on its own stamp, and one ordering inside it is
+// load-bearing: the build-state links run before the store outputs, because the
+// prefix roots and retired out-links they remove are what keep superseded install
+// prefixes out of that class's reach (TestTheSlotRunsTheBuildStateClasses). Also
+// load-bearing is that this runs AFTER the
 // container is visible (so a reap can never race this launch's own image) and
 // that nothing here can fail the launch.
 func (o *Options) runHousekeeping(rt string, reclaimConsent reclaimConsent, cname string) {
@@ -218,6 +221,10 @@ func (o *Options) runHousekeeping(rt string, reclaimConsent reclaimConsent, cnam
 	defer sp.End()
 	o.withHousekeepingPass(func(guard prune.Guard) {
 		o.autoReapOldImages(rt, guard)
+		// Build-state links BEFORE store outputs: a prefix root or a retired out-link is
+		// what keeps a superseded install prefix out of that class's reach.
+		o.reapBuildStateLinks(rt, guard)
+		o.reapEmbeddedPackTrees()
 		o.reapSupersededStoreOutputs(rt, guard)
 		o.measureAndPurgeCache(reclaimConsent, guard)
 		o.measureAndPurgeMiseVersions(rt, reclaimConsent, guard)
@@ -248,13 +255,12 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 	housekeepingSlots.Go(func() { safeRun(func() { o.runMacosUserHousekeeping(consent) }) })
 }
 
-// runMacosUserHousekeeping is the macos-user arm's slot body: two of the container slot's
+// runMacosUserHousekeeping is the macos-user arm's slot body: four of the container slot's
 // classes, as one pass under the same pass lock and per-deletion guard as the container's
-// (withHousekeepingPass). Only one of them grows on this backend, the retired loophole state; the
-// other is the shared cache, which this backend does not write and container jails on the same
-// Mac fill.
+// (withHousekeepingPass). Each is a store this backend writes or shares with container jails on
+// the same Mac; the list below says which.
 //
-// THREE CLASSES, and which ones is decided BY RUNTIME, not by asking anything:
+// FOUR CLASSES, and which ones is decided BY RUNTIME, not by asking anything:
 //
 //   - the shared cache's age purge (measureAndPurgeCache, OQ-BF1's offered tier): measured here
 //     for the next launch's offer, purged only on consent. A macos-user sandbox keeps its caches
@@ -263,6 +269,8 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 //     launch offers it like any other launch.
 //   - retired loophole-state generations (reapRetiredLoopholeState): written by every launch's
 //     retirement pass, on every backend.
+//   - other builds' embedded pack trees (reapEmbeddedPackTrees): one per yolo build, on every
+//     backend, gated by each tree's lease rather than by a container runtime.
 //   - orphaned per-jail state (reapOrphanCnameStateMacosUser): see below.
 //
 // EVERY OTHER CLASS OF THE CONTAINER SLOT IS LEFT OUT, with no probe and no note, because none of
@@ -271,10 +279,10 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 // may mount one), agent staging (its sweep needs the container runtime's live set, and a session's
 // own staging is kept by prune.SessionStagingNames when a container launch's slot runs), image
 // tars (this backend writes none, and a stamp written here would delay a podman keep-0 pass by a
-// day) and scratch volumes. The embedded pack trees are a `yolo prune` class, on every backend.
-// The agent-log class (reapWorkspaceAgentLogs) is not run here: its allowlist names the podman
-// overlay's `.yolo/home` layout, which this backend's workspace sidecar has not been checked
-// against (disk-footprint.md's backlog).
+// day), scratch volumes and the build-state links (this backend writes none). The agent-log
+// class (reapWorkspaceAgentLogs) is not run here: its allowlist names the podman overlay's
+// `.yolo/home` layout, which this backend's workspace sidecar has not been checked against
+// (disk-footprint.md's backlog).
 //
 // The orphaned per-jail state sweep runs here too: macos-user sessions write per-name keeper,
 // arrival and session locks, and its known set needs no container runtime
@@ -285,6 +293,7 @@ func (o *Options) runMacosUserHousekeeping(consent reclaimConsent) {
 	o.withHousekeepingPass(func(guard prune.Guard) {
 		o.measureAndPurgeCache(consent, guard)
 		o.reapRetiredLoopholeState(guard)
+		o.reapEmbeddedPackTrees()
 		o.reapOrphanCnameStateMacosUser(guard)
 	})
 }

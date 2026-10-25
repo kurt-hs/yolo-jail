@@ -118,9 +118,10 @@ func TestPruneOnMacosUserAsksNoRuntimeAndExitsZero(t *testing.T) {
 			t.Errorf("apply=%v: the tracked workspaces are not the live session's (%s):\n%s", apply, ws, out)
 		}
 		// Stopped containers, scratch volumes, relays, old images, tarballs, image roots, store
-		// outputs, prefix roots and the store GC: nine sections, one line each.
-		if n := strings.Count(out, strings.TrimSpace(stripMarkup(macosUserNotApplicable))); n != 9 {
-			t.Errorf("apply=%v: %d not-applicable lines, want 9:\n%s", apply, n, out)
+		// outputs, prefix roots, the retired and aged build links and the store GC: ten sections,
+		// one line each.
+		if n := strings.Count(out, strings.TrimSpace(stripMarkup(macosUserNotApplicable))); n != 10 {
+			t.Errorf("apply=%v: %d not-applicable lines, want 10:\n%s", apply, n, out)
 		}
 		if !strings.Contains(out, "YOLO_RUNTIME=container yolo prune") {
 			t.Errorf("apply=%v: the report does not name how to prune a container runtime:\n%s", apply, out)

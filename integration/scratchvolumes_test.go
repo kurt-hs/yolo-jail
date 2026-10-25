@@ -472,7 +472,7 @@ func waitForScratchRemoval(dir, cname string, runs int, runtime string) (string,
 // a volume that is not a scratch volume are left alone.
 //
 // The one launch here turns the automatic reapers back on (withAutoReapers), which the suite
-// keeps off: this reaper is its subject.
+// keeps off: this reaper is its subject. It runs on a private store (isolateReaperStore).
 func TestTheSlotReapsLeftoverScratchVolumes(t *testing.T) {
 	requireJail(t)
 	requirePodman(t)
@@ -497,6 +497,10 @@ func TestTheSlotReapsLeftoverScratchVolumes(t *testing.T) {
 	youngMade := time.Now()
 	mkvol(young)
 
+	// A PRIVATE STORE, with every debounced class stamped as just run (reaperstore_test.go): the
+	// launch turns every automatic reaper on, and this class, which has no debounce, is the only
+	// one that should run. It reaps the runtime's volumes, which no store isolates.
+	isolateReaperStore(t)
 	dir := writeProject(t, `{}`)
 	// The slot dies at the launch's exit and the scratch class is its last, so the jail must
 	// outlive every class ahead of it. A fixed sleep did not: on a CI runner the image class

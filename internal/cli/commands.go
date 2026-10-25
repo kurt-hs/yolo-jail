@@ -181,7 +181,9 @@ Flags:
                            copy). An offline start still reads whatever tars
                            exist -- this bounds what is KEPT, not what is read.
   --no-build-roots         Skip the nix build GC roots.
-  --no-image-roots         Skip the nix image GC roots.
+  --no-image-roots         Skip every nix GC-root section: image, prefix and
+                           package-profile roots, yolo's own store outputs, and the
+                           build out-links (dangling, retired, image-copier).
   --no-shadowed-home       Skip the shadowed jail-home sweep.
   --no-embedded-packs      Skip the built-in pack copy sweep (embedded-packs/
                            and TMPDIR).
