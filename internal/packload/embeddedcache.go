@@ -24,6 +24,9 @@ package packload
 // The base is resolved through its symlinks once, where it is minted, so Pack.Root, the
 // lease inode and what a reaper probes stay one directory for the process's whole life even
 // if a link on the way (macos-user's ~/.local, re-pointed by every launch) moves later.
+// Any other go-test binary (a `go test -c` binary, a per-test runner's) shares one base in
+// TMPDIR, TestSharedCachePrefix's, refused unless it is a real directory only this euid can
+// write.
 //
 // THE FALLBACK. When the base is unresolvable or unwritable, or its tree cannot be trusted,
 // the process takes the pre-cache shape: its own tree in TMPDIR, deleted by ReleaseEmbedded. That
@@ -33,7 +36,9 @@ package packload
 // LEFTOVERS IN THE BASE. A populate killed mid-write leaves a .tmp- dir, a quarantine leaves a
 // .bad- one, a prune killed mid-delete a .reap- one. Every process that loads from the base
 // sweeps those of them no process holds (sweepDeadCacheEntries), by the rule `yolo prune`
-// applies to the same names. Other builds' FINAL trees are left to prune alone.
+// applies to the same names. Other builds' FINAL trees are left to prune alone — except in
+// the shared test base, which prune never visits, so a load from it reaps them, and the dead
+// fallback trees in TMPDIR, by the same lease-and-age rule.
 
 import (
 	"bytes"
@@ -295,24 +300,31 @@ func loadFromCacheLocked(base string, strict bool) bool {
 	if err != nil {
 		return false
 	}
+	// Judged on the UNRESOLVED name: TMPDIR is shared, and a link another user left at the
+	// test base's name resolves to a directory whose name no longer says "test base".
+	unresolved := base
+	testBase := isTestSharedCacheBase(unresolved)
 	if base, err = ensureEmbeddedBase(base, strict); err != nil {
 		return false
 	}
-	testBase := isTestSharedCacheBase(base)
-	if testBase && !privateToEuid(base) {
+	if testBase && (!privateToEuid(unresolved) || !privateToEuid(base)) {
 		return false
 	}
 	if !loadCacheTreeLocked(base, sum) {
 		return false
 	}
-	sweepDeadCacheEntries(base, time.Now())
+	now := time.Now()
+	sweepDeadCacheEntries(base, now)
 	if testBase {
 		// No `yolo prune` ever looks in a test base, so its other builds' trees — one per
 		// edit to packs/ — are reaped here, by the same lease-and-age rule: a test binary
 		// still reading one holds its lease.
-		sweepLeasedDirs(base, time.Now(), func(name string) bool {
+		sweepLeasedDirs(base, now, func(name string) bool {
 			return name != sum && isEmbeddedFinalName(name)
 		})
+		// And the per-process fallback trees test binaries left in TMPDIR before they shared
+		// this base, which no later fallback materialization would come to sweep now.
+		sweepDeadFallbacks(os.TempDir(), now)
 	}
 	return true
 }

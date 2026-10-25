@@ -62,8 +62,7 @@ func WatchMain(args []string) int {
 	if ws == "" {
 		ws = "/workspace"
 	}
-	w := newWatcher(HostAutoDir, ws, m, os.Getenv)
-	w.Log = logw
+	w := newWatcher(HostAutoDir, ws, m, os.Getenv, os.Stderr)
 	if _, ok := m.Translate(w.resolvedRegistryDir()); !ok {
 		fmt.Fprintf(logw, "nix-roots: %s is under no mount the host can see (a workspace under "+
 			"/tmp, or a read-only one), so no managed root can be made here; nothing to watch\n", w.Registry.Dir())
@@ -83,9 +82,11 @@ func WatchMain(args []string) int {
 }
 
 // newWatcher is the watcher WatchMain runs: the workspace registry, registering through a
-// Registrar that the watcher also PINS through, so every admission is fenced (NR-D7).
-func newWatcher(autoDir, workspace string, m HostMap, getenv func(string) string) *Watcher {
+// Registrar that the watcher also PINS through, so every admission is fenced (NR-D7), and
+// logging to stderr through watchLog, so the log the boot named (LogEnv) stays bounded.
+func newWatcher(autoDir, workspace string, m HostMap, getenv func(string) string, stderr *os.File) *Watcher {
 	registrar := &Registrar{Map: m, Socket: getenv("NIX_DAEMON_SOCKET_PATH"), StoreDir: getenv("NIX_STORE_DIR")}
 	reg := &Registry{Workspace: workspace, StoreDir: getenv("NIX_STORE_DIR"), Register: registrar.Register}
-	return &Watcher{AutoDir: autoDir, Map: m, Registry: reg, Registrar: registrar}
+	return &Watcher{AutoDir: autoDir, Map: m, Registry: reg, Registrar: registrar,
+		Log: watchLog(getenv(LogEnv), stderr)}
 }

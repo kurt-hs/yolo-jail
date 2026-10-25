@@ -41,3 +41,36 @@ func TestWatchMainBoundsTheLogTheBootNamed(t *testing.T) {
 		t.Errorf("no archived generation: %v", err)
 	}
 }
+
+// The watcher WatchMain builds logs its renewal lines through the bounding writer, not raw
+// stderr: a renewal line written to an over-cap log leaves it bounded.
+// MUTATION: build the watcher with Log: stderr in newWatcher and this fails.
+func TestTheProductionWatchersRenewalLinesAreBounded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nix-roots.log")
+	if err := os.WriteFile(path, bytes.Repeat([]byte("renewed a link\n"), logcap.MaxBytes/15+2), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	getenv := func(k string) string {
+		if k == LogEnv {
+			return path
+		}
+		return ""
+	}
+	w := newWatcher("/auto", "/workspace", HostMap{"/workspace": "/h"}, getenv, f)
+	if _, ok := w.Log.(*logcap.Writer); !ok {
+		t.Fatalf("the production watcher logs to %T, want a *logcap.Writer", w.Log)
+	}
+	w.logf("renewed %s", "/workspace/result")
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Size() > logcap.MaxBytes {
+		t.Fatalf("nix-roots.log is %d bytes after a renewal line, past the cap %d", st.Size(), logcap.MaxBytes)
+	}
+}

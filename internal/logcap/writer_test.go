@@ -44,7 +44,8 @@ func TestWriterTrimsTheLogItHoldsWithoutAReopen(t *testing.T) {
 	}
 }
 
-// A log moved away from path is not the writer's to trim through path.
+// A log moved away from path is not the writer's to trim through path; the file the writer
+// still holds is emptied in place instead of growing unseen.
 func TestWriterLeavesAReplacedPathAlone(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "x.log")
@@ -66,5 +67,36 @@ func TestWriterLeavesAReplacedPathAlone(t *testing.T) {
 	}
 	if got := size(t, path); got != int64(len(other)) {
 		t.Fatalf("the writer trimmed a file it does not write: %d bytes, want %d", got, len(other))
+	}
+	if got := size(t, filepath.Join(dir, "moved.log")); got != 0 {
+		t.Errorf("the moved log the writer holds is %d bytes past the cap, want it emptied", got)
+	}
+}
+
+// A log deleted under its writer is emptied through the writer's own descriptor rather than
+// growing as an unlinked file for the writer's life.
+func TestWriterEmptiesADeletedLogItStillHolds(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x.log")
+	f, err := Open(path, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	w := NewWriter(path, f)
+	if _, err := w.Write(append(bytes.Repeat([]byte("w"), MaxBytes), '\n')); err != nil {
+		t.Fatal(err)
+	}
+	st, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Size() != 0 {
+		t.Errorf("the unlinked log is %d bytes past the cap, want it emptied", st.Size())
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("the writer recreated the deleted path (stat %v)", err)
 	}
 }

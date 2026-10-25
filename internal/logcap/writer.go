@@ -13,9 +13,10 @@ import (
 // end. A trim that fails leaves the log as it was; the write's own result is what Write returns.
 //
 // f must be the log at path, opened O_APPEND (Open's shape, or a descriptor a parent opened
-// that way and handed down). When path no longer names f's file — the log was moved or
-// replaced — nothing is trimmed: trimming a file this writer is not writing would bound
-// nothing it writes.
+// that way and handed down). When path no longer names f's file — the log was moved,
+// replaced or deleted — the file at path is left alone, since trimming it would bound nothing
+// this writer writes, and f's own file is emptied in place instead, so a writer left holding
+// an unlinked log does not grow it for the rest of its life.
 type Writer struct {
 	path string
 	f    *os.File
@@ -31,10 +32,17 @@ func (w *Writer) Write(p []byte) (int, error) {
 	defer w.mu.Unlock()
 	n, err := w.f.Write(p)
 	if over, serr := overCap(w.f); serr == nil && over {
-		if st, perr := os.Stat(w.path); perr == nil {
-			if fst, ferr := w.f.Stat(); ferr == nil && os.SameFile(st, fst) {
-				_ = Trim(w.path)
-			}
+		st, perr := os.Stat(w.path)
+		fst, ferr := w.f.Stat()
+		switch {
+		case ferr != nil:
+		case perr == nil && os.SameFile(st, fst):
+			_ = Trim(w.path)
+		default:
+			// path names another file, or none: what f writes to is unlinked or moved, and
+			// no reader finds it through path any more. Empty it rather than let it grow for
+			// the writer's life; the file at path, if any, is not this writer's to touch.
+			_ = w.f.Truncate(0)
 		}
 	}
 	return n, err

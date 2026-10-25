@@ -126,6 +126,79 @@ func TestTheSharedTestBaseReapsAbandonedOtherBuildTrees(t *testing.T) {
 	}
 }
 
+// leasedDir makes dir with a free lease, modified age ago.
+func leasedDir(t *testing.T, dir string, age time.Duration) {
+	t.Helper()
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, packload.EmbeddedLeaseName), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	when := time.Now().Add(-age)
+	if err := os.Chtimes(dir, when, when); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A load from the shared test base also reaps the per-process fallback trees test binaries
+// left in TMPDIR before they shared it: an abandoned one goes, one inside the age floor stays.
+// MUTATION: drop the sweepDeadFallbacks call in loadFromCacheLocked and this fails.
+func TestTheSharedTestBaseReapsDeadFallbackTreesInTMPDIR(t *testing.T) {
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Join(parent, packload.TestSharedCachePrefix+"x")
+	tmp, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(tmp, packload.EmbeddedFallbackPrefix+"1")
+	young := filepath.Join(tmp, packload.EmbeddedFallbackPrefix+"2")
+	leasedDir(t, stale, 2*time.Hour)
+	leasedDir(t, young, 0)
+	t.Setenv("TMPDIR", tmp)
+	t.Cleanup(packload.OverrideEmbeddedCacheDir(base))
+	mustEmbedded(t)
+	if root, fallback := packload.EmbeddedLocation(); fallback || !strings.HasPrefix(root, base) {
+		t.Fatalf("setup: loaded %s (fallback=%v), want the shared test base %s", root, fallback, base)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("an abandoned fallback tree survived a load from the shared test base (stat %v)", err)
+	}
+	if _, err := os.Stat(young); err != nil {
+		t.Errorf("a fallback tree inside the age floor was reaped: %v", err)
+	}
+}
+
+// A link at the shared test base's name — another user's, in a shared TMPDIR — is never
+// followed: the process takes its own fallback tree and writes nothing through the link.
+// MUTATION: judge the test base on the resolved path and this fails.
+func TestASymlinkAtTheSharedTestBaseIsRefused(t *testing.T) {
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(parent, "elsewhere")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(parent, packload.TestSharedCachePrefix+"x")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", t.TempDir())
+	t.Cleanup(packload.OverrideEmbeddedCacheDir(link))
+	mustEmbedded(t)
+	if _, fallback := packload.EmbeddedLocation(); !fallback {
+		t.Error("the loader adopted a test base that is a symlink")
+	}
+	if es, _ := os.ReadDir(target); len(es) != 0 {
+		t.Errorf("the loader wrote %d entries through the link", len(es))
+	}
+}
+
 func copyExecutable(t *testing.T, src, dst string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
