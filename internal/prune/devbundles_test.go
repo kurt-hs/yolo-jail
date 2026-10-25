@@ -247,6 +247,37 @@ func TestDevBundleGuardRecheckKeepsABundleReusedSinceTheListing(t *testing.T) {
 	}
 }
 
+// TestDevBundleReuseBetweenListingAndRemovalKeepsItWithNoGuard: the post-build sweep and
+// `yolo prune --apply` pass no guard, so the rename-then-recheck in removeDevBundle is the only
+// thing between a bundle build_dev_bundle just chose (and touched) and its deletion.
+func TestDevBundleReuseBetweenListingAndRemovalKeepsItWithNoGuard(t *testing.T) {
+	dir := devDir(t)
+	b := mkDevBundle(t, dir, 1, 48*time.Hour)
+	stale := mkDevBundle(t, dir, 2, 48*time.Hour)
+	devBundleBeforeRemove = func(p string) {
+		if p == b {
+			setAge(t, b, 0) // build_dev_bundle touched it: chosen for a launch
+		}
+	}
+	t.Cleanup(func() { devBundleBeforeRemove = nil })
+	r := PruneDevBundles(dir, 0, knownNothingRunning(), true, devNow, nil)
+	if !exists(b) {
+		t.Fatal("a bundle reused between the listing and its removal was deleted")
+	}
+	if exists(stale) {
+		t.Error("the untouched old bundle survived")
+	}
+	if removedNames(r)[filepath.Base(b)] {
+		t.Error("the reused bundle is reported as removed")
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".reap-") {
+			t.Errorf("left %s behind; the reused bundle must be renamed back", e.Name())
+		}
+	}
+}
+
 // TestPruneRunReportsAndReclaimsDevBundles pins the `yolo prune` call site: delete the section
 // from Run and this fails, whatever the unit tests above say.
 func TestPruneRunReportsAndReclaimsDevBundles(t *testing.T) {

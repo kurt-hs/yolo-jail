@@ -435,7 +435,7 @@ func TestDevBundleReapAsksWhatIsRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	fn := afterFunc(string(src), "func (o *Options) reapDevBundles(")
-	for _, want := range []string{"prune.LiveYoloContainers(", "prune.DevBundleEvidence(",
+	for _, want := range []string{"prune.DevBundleOSCanAnswer()", "prune.LiveYoloContainers(", "prune.DevBundleEvidence(",
 		"prune.PruneDevBundles(", "true, o.Now(), guard)", `if r.Unknown != "" || r.Declined != "" {`} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("the development-bundle pass no longer has %s. A bundle a running jail mounts "+

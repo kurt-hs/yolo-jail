@@ -19,8 +19,61 @@ func fakeDevBundleDeps(storage string, podmanUp bool) devBundleReapDeps {
 		run: func([]string, time.Duration) prune.ProbeResult {
 			return prune.ProbeResult{Ran: podmanUp, RC: 0}
 		},
-		procs: func() ([]prune.ProcStart, bool) { return nil, true },
-		now:   time.Now,
+		procs:       func() ([]prune.ProcStart, bool) { return nil, true },
+		now:         time.Now,
+		getenv:      func(string) string { return "" },
+		osCanAnswer: func() bool { return true },
+	}
+}
+
+func TestDevBundleReapVerbHonorsTheAutoReapOptOut(t *testing.T) {
+	storage := t.TempDir()
+	bundles := mkOldDevBundles(t, prune.DevBundlesDirUnder(storage), 5)
+	d := fakeDevBundleDeps(storage, true)
+	d.getenv = func(k string) string {
+		if k == "YOLO_NO_AUTO_IMAGE_REAP" {
+			return "1"
+		}
+		return ""
+	}
+	var stderr bytes.Buffer
+	if rc := runDevBundleReap(nil, &stderr, d); rc != 0 {
+		t.Fatalf("rc=%d", rc)
+	}
+	for _, b := range bundles {
+		if _, err := os.Stat(b); err != nil {
+			t.Fatal("YOLO_NO_AUTO_IMAGE_REAP=1 did not stop the post-build sweep")
+		}
+	}
+}
+
+// On an OS that can never answer, the verb asks nothing and names the by-hand removal rather
+// than a `yolo prune --apply` that would decline the same way.
+func TestDevBundleReapVerbOnAnOSThatCannotAnswerNamesTheByHandRemoval(t *testing.T) {
+	storage := t.TempDir()
+	bundles := mkOldDevBundles(t, prune.DevBundlesDirUnder(storage), 5)
+	d := fakeDevBundleDeps(storage, true)
+	d.osCanAnswer = func() bool { return false }
+	d.run = func([]string, time.Duration) prune.ProbeResult {
+		t.Fatal("asked the runtime on an OS whose sweep can never remove a bundle")
+		return prune.ProbeResult{}
+	}
+	d.procs = func() ([]prune.ProcStart, bool) {
+		t.Fatal("read the process table on an OS whose sweep can never remove a bundle")
+		return nil, false
+	}
+	var stderr bytes.Buffer
+	if rc := runDevBundleReap(nil, &stderr, d); rc != 0 {
+		t.Fatalf("rc=%d", rc)
+	}
+	for _, b := range bundles {
+		if _, err := os.Stat(b); err != nil {
+			t.Fatal("removed a bundle on an OS that cannot answer")
+		}
+	}
+	out := stderr.String()
+	if !strings.Contains(out, prune.DevBundleByHand) || strings.Contains(out, "retries") {
+		t.Errorf("stderr = %q, want the by-hand removal and no retry promise", out)
 	}
 }
 

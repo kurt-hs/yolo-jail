@@ -28,7 +28,7 @@ package prune
 // THE PROCESS TABLE IS READ ON LINUX ONLY. On macOS a macos-user session runs its guest as the
 // sandbox ACCOUNT, another user, whose processes' executables this user cannot read; a bundle
 // such a session runs from would read as unused. So every other OS declines, naming the
-// by-hand removal instead (devBundleProcsWhyOS).
+// by-hand removal instead (DevBundleOSWhy).
 
 import (
 	"errors"
@@ -84,7 +84,8 @@ var (
 	devBundleStagingName = regexp.MustCompile(`^\.building-[A-Za-z0-9_]+$`)
 	// What this sweep renames a bundle to before deleting it, so an interrupted deletion leaves
 	// a name build_dev_bundle never reuses (its glob is <identity[:16]>-*) and this sweep finishes.
-	devBundleReapingName = regexp.MustCompile(`^\.reap-[0-9a-f]{16}-[0-9a-f]{32}-[0-9]+-[0-9]+$`)
+	// A staging dir is renamed the same way, keeping its `.building-` name inside.
+	devBundleReapingName = regexp.MustCompile(`^\.reap-([0-9a-f]{16}-[0-9a-f]{32}|\.building-[A-Za-z0-9_]+)-[0-9]+-[0-9]+$`)
 )
 
 // Kept reasons, spelled once so the report's grouping and the tests agree.
@@ -105,27 +106,59 @@ type DevBundleLiveness struct {
 	Procs      []ProcStart
 	ProcsKnown bool
 	ProcsWhy   string
+	// OSDecline is true when ProcsKnown is false because this OS can never answer
+	// (DevBundleOSCanAnswer), not because one read failed. A retry does not help there, so a
+	// caller names the by-hand removal instead.
+	OSDecline bool
 }
 
 // DevBundleEvidence gathers the liveness evidence: the bundle each running jail mounts, asked
 // of the runtime, and the process table procs reads. live is the caller's LiveYoloContainers
 // answer, so a `yolo prune` that already asked does not ask twice.
+//
+// The process table is read FIRST, and an unreadable one returns without asking the runtime:
+// the sweep removes nothing then anyway, and every container inspect would be wasted.
 func DevBundleEvidence(rt string, live runtime.LiveSet, run RunFunc, procs func() ([]ProcStart, bool)) DevBundleLiveness {
 	var ev DevBundleLiveness
-	sources, known, why := LivePrefixSources(rt, live, prefixBinMountDest, run)
-	ev.MountSources, ev.MountsKnown, ev.MountsWhy = sources, known, string(why)
 	ev.Procs, ev.ProcsKnown = procs()
 	if !ev.ProcsKnown {
 		ev.ProcsWhy = "could not read the process table"
-		if goruntime.GOOS != "linux" {
-			ev.ProcsWhy = devBundleProcsWhyOS
+		if !DevBundleOSCanAnswer() {
+			ev.ProcsWhy, ev.OSDecline = DevBundleOSWhy, true
 		}
+		return ev
 	}
+	sources, known, why := LivePrefixSources(rt, live, prefixBinMountDest, run)
+	ev.MountSources, ev.MountsKnown, ev.MountsWhy = sources, known, string(why)
 	return ev
 }
 
-// devBundleProcsWhyOS is the decline on an OS whose process table the sweep does not read.
-const devBundleProcsWhyOS = "this OS has no process table yolo can read every bundle user from " +
+// DevBundleOSCanAnswer reports whether this OS gives the sweep a process table it trusts:
+// Linux only (the file comment says why). Where it cannot, no sweep will ever remove a bundle,
+// so the housekeeping slot skips the class outright and the other callers name the by-hand
+// removal (DevBundleByHand) rather than a retry.
+func DevBundleOSCanAnswer() bool { return goruntime.GOOS == "linux" }
+
+// DevBundleByHand is the by-hand removal a decline names, for a bundle the reader knows is unused.
+const DevBundleByHand = "chmod -R u+w <bundle> && rm -rf <bundle>"
+
+// CountDevBundles counts the published bundles (names matched-bundle.py writes) under dir.
+func CountDevBundles(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if e.IsDir() && devBundleName.MatchString(e.Name()) {
+			n++
+		}
+	}
+	return n
+}
+
+// DevBundleOSWhy is the decline on an OS whose process table the sweep does not read.
+const DevBundleOSWhy = "this OS has no process table yolo can read every bundle user from " +
 	"(a macos-user session runs as another account)"
 
 // DevBundleProcStarts is the default process reader for the sweep: this user's processes on
@@ -143,6 +176,8 @@ type DevBundleReap struct {
 	// Unknown is non-empty when the liveness evidence could not be had. Nothing was removed
 	// (or would be), and it names the missing evidence.
 	Unknown string
+	// OSDecline: Unknown is DevBundleOSWhy, which no retry changes.
+	OSDecline bool
 }
 
 // PruneDevBundles sweeps dir (DevBundlesDirUnder) and removes — or, with apply false, lists —
@@ -179,6 +214,7 @@ func PruneDevBundles(dir string, keep int, ev DevBundleLiveness, apply bool, now
 	switch {
 	case !ev.ProcsKnown:
 		r.Unknown = nonEmpty(ev.ProcsWhy, "could not read the process table")
+		r.OSDecline = ev.OSDecline
 		return r
 	case !ev.MountsKnown:
 		r.Unknown = nonEmpty(ev.MountsWhy, "could not ask the runtime which bundle each running jail mounts")
@@ -276,7 +312,11 @@ func PruneDevBundles(dir string, keep int, ev DevBundleLiveness, apply bool, now
 			ran := guard.Do(func() bool {
 				fi, err := os.Lstat(e.Path)
 				return err == nil && fi.IsDir() && fi.ModTime().Equal(mtime)
-			}, func() { e.Err = removeDevBundle(dir, e.Path, e.Name) })
+			}, func() { e.Err = removeDevBundle(dir, e.Path, e.Name, mtime) })
+			if errors.Is(e.Err, errDevBundleReused) {
+				e.Err = nil
+				ran = false
+			}
 			if !ran {
 				r.keep(e, whyYoung, "used since it was listed")
 				continue
@@ -301,13 +341,41 @@ func devBundleHolder(bundle string, inUse map[string]string) string {
 	return ""
 }
 
-// removeDevBundle renames a final bundle aside, then removes the read-only tree.
-func removeDevBundle(dir, p, name string) error {
+// errDevBundleReused: the bundle was used between the listing and its removal, and was kept.
+var errDevBundleReused = errors.New("used since it was listed")
+
+// devBundleBeforeRemove runs just before a removal renames its entry; tests use it to land a
+// reuse in the window between the listing and the removal. nil in production.
+var devBundleBeforeRemove func(path string)
+
+// removeDevBundle renames a bundle or staging dir aside, checks it was not used since it was
+// listed, and removes the read-only tree.
+//
+// THE RENAME IS THE CLAIM, and it closes the reuse race whether or not a guard runs (the
+// post-build sweep and `yolo prune --apply` pass none). build_dev_bundle touches a bundle BEFORE
+// it validates and runs it, and skips one it cannot touch. So a reuse either touched the bundle
+// before this rename (the renamed directory then carries a newer mtime than the listing saw,
+// and it is renamed back and kept) or tries to touch it after, finds no bundle at that name, and
+// does not reuse it. A rename does not change the renamed directory's own mtime.
+func removeDevBundle(dir, p, name string, listed time.Time) error {
+	if devBundleBeforeRemove != nil {
+		devBundleBeforeRemove(p)
+	}
 	target := p
-	if devBundleName.MatchString(name) {
+	if !devBundleReapingName.MatchString(name) {
 		target = filepath.Join(dir, fmt.Sprintf(".reap-%s-%d-%d", name, os.Getpid(), time.Now().UnixNano()))
 		if err := os.Rename(p, target); err != nil {
 			return err
+		}
+		fi, err := os.Lstat(target)
+		if err != nil {
+			return err
+		}
+		if fi.ModTime().After(listed) {
+			if err := os.Rename(target, p); err != nil {
+				return fmt.Errorf("it was used since it was listed, and renaming it back failed: %w", err)
+			}
+			return errDevBundleReused
 		}
 	}
 	return RemoveReadOnlyTree(target)

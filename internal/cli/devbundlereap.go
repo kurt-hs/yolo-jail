@@ -27,7 +27,15 @@ type devBundleReapDeps struct {
 	run     prune.RunFunc
 	procs   func() ([]prune.ProcStart, bool)
 	now     func() time.Time
+	getenv  func(string) string
+	// osCanAnswer is prune.DevBundleOSCanAnswer: false on an OS whose sweep can never remove a
+	// bundle, where the verb asks nothing and names the by-hand removal instead of a retry.
+	osCanAnswer func() bool
 }
+
+// devBundleReapOptOutEnv is the housekeeping slot's automatic-reap opt-out
+// (run.autoReapOptOutEnv). The post-build sweep is automatic too, so it honors the same one.
+const devBundleReapOptOutEnv = "YOLO_NO_AUTO_IMAGE_REAP"
 
 func defaultDevBundleReapDeps() devBundleReapDeps {
 	return devBundleReapDeps{
@@ -38,9 +46,11 @@ func defaultDevBundleReapDeps() devBundleReapDeps {
 				return err == nil
 			})
 		},
-		run:   prune.ProbeExec,
-		procs: prune.DevBundleProcStarts,
-		now:   time.Now,
+		run:         prune.ProbeExec,
+		procs:       prune.DevBundleProcStarts,
+		now:         time.Now,
+		getenv:      os.Getenv,
+		osCanAnswer: prune.DevBundleOSCanAnswer,
 	}
 }
 
@@ -53,6 +63,18 @@ func runDevBundleReap(args []string, stderr io.Writer, d devBundleReapDeps) int 
 	default:
 		fmt.Fprintln(stderr, "usage: yolo internal "+devBundleReapVerb+" [--dir <dev-bundles dir>]")
 		return 2
+	}
+	if d.getenv(devBundleReapOptOutEnv) != "" {
+		return 0
+	}
+	if !d.osCanAnswer() {
+		// Checked before any evidence is gathered: no answer here would let a bundle go. Said
+		// only once the backlog is past what a sweep would keep, so a fresh checkout is quiet.
+		if n := prune.CountDevBundles(dir); n > prune.DevBundleKeep {
+			fmt.Fprintf(stderr, "%d development bundles under %s are kept: %s. Remove ones you know "+
+				"are unused by hand: %s\n", n, dir, prune.DevBundleOSWhy, prune.DevBundleByHand)
+		}
+		return 0
 	}
 	rt := d.rt()
 	live := prune.LiveYoloContainers(rt, d.run)

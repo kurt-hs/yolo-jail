@@ -630,13 +630,17 @@ published.
 
 **A bundle is kept** when any of these holds:
 
-- **It is one of the three most recently used**, by directory mtime. A publish sets the mtime,
-  and `matched-bundle.py` touches a bundle it reuses, so the bundle for the source `just dev`
-  runs now is the newest one. The other two cover the snapshots a developer switches back to,
-  each of which would otherwise cost a rebuild.
+- **It is one of the three most recently used**, by directory mtime. A publish stamps the mtime
+  as of the publish, and `matched-bundle.py` touches a candidate before it validates or reuses
+  it, so the bundle for the source `just dev` runs now is the newest one. The other two cover the
+  snapshots a developer switches back to, each of which would otherwise cost a rebuild.
 - **It was used within the last hour.** That covers the gap between `matched-bundle.py` choosing
-  a bundle and its launcher starting, which neither check below can see. A guarded deletion reads
-  the mtime again, so a reuse after the listing keeps the bundle.
+  a bundle and its launcher starting, which neither check below can see.
+- **It was used after the sweep listed it.** Every deletion first renames the bundle to
+  `.reap-*`, then reads the renamed directory's mtime: a newer one means a reuse touched it, and
+  the bundle is renamed back and kept. A reuse that comes after the rename finds no bundle to
+  touch, and `matched-bundle.py` does not reuse a candidate it cannot touch. This holds for every
+  caller, whether or not it takes the housekeeping lock.
 - **A running jail mounts it.** A dev launch mounts the bundle's own helpers at
   `/opt/yolo-jail/bin`. The runtime is asked, as it is for [prefix roots](#prefix-roots).
 - **A live process runs out of it**: the dev `yolo` for the whole of its launch, and every host
@@ -645,16 +649,25 @@ published.
 **It declines whole, removing nothing,** when the runtime cannot list or inspect its running
 jails, the process table cannot be read, or a process that could be a yolo binary hides its
 executable. It says which of these happened. A process whose name is not a yolo binary's is no
-evidence either way: every executable in a bundle is named `yolo*`, and ssh-agent hides its
-executable from its own user. **On macOS it always declines.** A `macos-user` session runs as the
-sandbox account, whose processes this user cannot read, so a bundle such a session uses would
-look unused. The decline names the by-hand removal.
+evidence either way, because every executable in a bundle is named `yolo*`. **On macOS it never
+removes a bundle.** A `macos-user` session runs as the sandbox account, whose processes this user
+cannot read, so a bundle such a session uses would look unused. There `yolo prune` and the
+post-build sweep ask nothing and name the by-hand removal, the post-build sweep only once more
+than three bundles exist, and the housekeeping slot skips the class.
 
 `.building-*` publish directories older than an hour belong to a publish that died, and go under
-the same liveness checks. A bundle is renamed to `.reap-*` before deletion, so a concurrent
-`just dev` never picks a half-deleted one, and an interrupted deletion is finished next time.
-Directories are 0555, so each is made owner-writable before its children are removed. Nothing
-else under `dev-bundles/` is touched.
+the same liveness checks. Staging dirs and bundles alike are renamed to `.reap-*` before
+deletion, so a concurrent `just dev` never picks a half-deleted one, and an interrupted deletion
+is finished next time. Directories are 0555, so each is made owner-writable before its children
+are removed. Nothing else under `dev-bundles/` is touched. `YOLO_NO_AUTO_IMAGE_REAP=1` stops the
+post-build sweep and the slot's pass, as it stops the slot's other automatic classes;
+`yolo prune --apply` still runs it.
+
+**A host wrapper can name a bundle.** `yolo-dev host apply` writes wrappers that name the running
+`yolo`. A dev launcher is not on PATH under its own path (PATH holds the dev wrapper, which runs
+it), so the wrapper names the bundle's `bin/yolo` itself. Once a later sweep removes that bundle,
+the wrapper names a missing file until the next `host apply`. It is listed under
+[open gaps](#owed-measurements).
 
 ## The levers
 
@@ -712,6 +725,10 @@ number; each is now one of the mechanisms above.
   whether that belongs to `yolo stores` or to nothing is undecided.
 - **Apple Container's image store has no reclaimer** and was never measured; the label probe is
   podman's spelling.
+- **Host wrappers written from a dev launcher name a reapable bundle.** `hostwrap.Running` falls
+  back to the running executable when no PATH entry names it, which for a dev launcher is
+  `dev-bundles/<bundle>/bin/yolo` ([development bundles](#development-bundles)). The fix is for
+  hostwrap to prefer a stable launcher path, such as the dev wrapper that started it.
 - **No reclaimer exists for `macos-user`'s own storage** (`/var/yolo-jail`, the sandbox account's
   caches); one would run as that account through `sudo`, which only a Mac can verify.
 

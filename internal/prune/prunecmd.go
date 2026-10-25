@@ -969,11 +969,16 @@ func Run(opts Options) int {
 			"the newest %d are kept)[/dim]", devBundlesLeaf, DevBundleKeep))
 		ev := DevBundleEvidence(rt, live, opts.Exec, opts.DevBundleProcs)
 		bundles := PruneDevBundles(dir, DevBundleKeep, ev, apply, opts.Now(), nil)
-		if bundles.Unknown != "" {
+		switch {
+		case bundles.OSDecline:
+			// No retry changes this answer, so the line names only the by-hand removal.
+			p.line(fmt.Sprintf("  [dim]not swept here — %s. Remove a bundle you know is unused by hand: "+
+				"%s[/dim]", bundles.Unknown, DevBundleByHand))
+		case bundles.Unknown != "":
 			p.line(fmt.Sprintf("  [dim]skipped — %s; declining to remove development bundles. "+
 				"Re-run once that can be read, or remove a bundle you know is unused by hand: "+
-				"chmod -R u+w <bundle> && rm -rf <bundle>[/dim]", bundles.Unknown))
-		} else {
+				"%s[/dim]", bundles.Unknown, DevBundleByHand))
+		default:
 			declinedSweep = renderEmbeddedReap(p, apply, bundles.EmbeddedReap, "bundle(s)") || declinedSweep
 		}
 		devBundleBytes, devBundleCount = bundles.Bytes, bundles.RemovedCount()

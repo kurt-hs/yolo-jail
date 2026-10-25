@@ -804,6 +804,12 @@ func (o *Options) reapDevBundles(rt string, guard prune.Guard) {
 	if o.Getenv(autoReapOptOutEnv) != "" {
 		return
 	}
+	if !prune.DevBundleOSCanAnswer() {
+		// An OS whose sweep can never remove a bundle (macOS): skip outright rather than ask the
+		// runtime on every launch for an answer that cannot change. `yolo prune` names the by-hand
+		// removal there.
+		return
+	}
 	due, done := o.classDebounce("dev-bundles")
 	if !due {
 		return

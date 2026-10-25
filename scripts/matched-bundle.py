@@ -342,6 +342,10 @@ def _publish_assembled_bundle(home: Path, assembled: Path, identity: str,
     staging = Path(tempfile.mkdtemp(prefix=".building-", dir=root))
     try:
         shutil.copytree(assembled, staging, dirs_exist_ok=True)
+        # copytree copies the assembled tree's mtime onto staging (copystat), which is the
+        # build's START: a long build would make an in-flight publish look abandoned to the
+        # reaper's staging floor, and the published bundle look old. Stamp it as of now.
+        os.utime(staging)
         validate_bundle(staging, identity, "development", shipped=shipped, guest=guest,
                         host_os=host_os, host_arch=host_arch, stamps=stamps)
         _make_readonly(staging)
@@ -353,15 +357,19 @@ def _publish_assembled_bundle(home: Path, assembled: Path, identity: str,
         raise
 
 
-def _touch_reused_bundle(bundle: Path) -> None:
-    """Mark a reused bundle as used now. Its mtime is what the Go reaper (prune.PruneDevBundles)
-    keeps the newest few by and what its grace window reads, so the bundle `just dev` is about to
-    launch is never the one a concurrent sweep collects. Best effort: a bundle we cannot touch is
-    still the right one to run."""
+def _touch_reused_bundle(bundle: Path) -> bool:
+    """Mark a candidate bundle as used now, BEFORE it is validated or run; False when it cannot be.
+
+    Its mtime is what the Go reaper (prune.PruneDevBundles) keeps the newest few by and what its
+    grace window reads. The reaper renames a bundle aside before deleting it and re-reads the
+    renamed directory's mtime: a touch that landed first keeps the bundle, and a touch that comes
+    after finds no bundle at this name. So a bundle that cannot be touched may be one a sweep is
+    removing, and is not reused (the caller skips it)."""
     try:
         os.utime(bundle)
+        return True
     except OSError:
-        pass
+        return False
 
 
 def _reap_dev_bundles(launcher: Path, root: Path, runner=subprocess.run) -> None:
@@ -397,10 +405,11 @@ def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subproc
         host_os, host_arch = _platform(snapshot)
         shipped, guest = _binary_lists(snapshot / "scripts/stage-source-bundle.sh")
         for candidate in sorted(root.glob(f"{identity[:16]}-*")):
+            if not _touch_reused_bundle(candidate):
+                continue
             try:
                 validate_bundle(candidate, identity, "development", shipped=shipped, guest=guest,
                                 host_os=host_os, host_arch=host_arch, stamps=stamps)
-                _touch_reused_bundle(candidate)
                 return candidate / "bin/yolo"
             except (OSError, ValueError, RuntimeError, json.JSONDecodeError,
                     subprocess.CalledProcessError):

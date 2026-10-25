@@ -359,6 +359,32 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(len(reaped), 1, "a reuse ran the reaper")
             self.assertGreater(bundle.stat().st_mtime, 1_000_000, "a reuse did not mark the bundle used")
 
+    def test_a_candidate_that_cannot_be_touched_is_not_reused(self):
+        # The reaper renames a bundle aside before deleting it; a touch that fails may be one
+        # racing that removal, so the candidate is skipped and a fresh bundle is built.
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root); home=root/"home"; calls=[]
+            def builder(snapshot, output, **kw):
+                calls.append(kw["identity"]); fake_assembler(snapshot, output, **kw)
+            first=mb.build_dev_bundle(repo, home, builder=builder, reaper=lambda *a: None)
+            original=mb._touch_reused_bundle
+            mb._touch_reused_bundle=lambda bundle: False
+            try:
+                second=mb.build_dev_bundle(repo, home, builder=builder, reaper=lambda *a: None)
+            finally:
+                mb._touch_reused_bundle=original
+            self.assertNotEqual(first, second); self.assertEqual(len(calls), 2)
+            self.assertFalse(mb._touch_reused_bundle(root/"missing-bundle"))
+
+    def test_a_published_bundle_is_stamped_as_of_its_publish_not_its_build_start(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root); home=root/"home"
+            def builder(snapshot, output, **kw):
+                fake_assembler(snapshot, output, **kw); os.utime(output, (1_000_000, 1_000_000))
+            launcher=mb.build_dev_bundle(repo, home, builder=builder, reaper=lambda *a: None)
+            self.assertGreater(launcher.parent.parent.stat().st_mtime, 1_000_000,
+                               "copytree's copied build-start mtime reached the published bundle")
+
     def test_reaper_runs_the_launchers_internal_verb_and_never_fails_the_build(self):
         calls=[]
         def runner(argv, **kw): calls.append((argv, kw)); raise subprocess.TimeoutExpired(argv, 1)
