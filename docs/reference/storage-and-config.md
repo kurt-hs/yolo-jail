@@ -270,7 +270,10 @@ another's tree.
 
 When the directory cannot be used, a process falls back to a private tree in
 `$TMPDIR/yolo-embedded-lease-*` that it deletes on release; one left by a killed process
-is swept by the next fallback once its lease is free. The layout and trust rules are in
+is swept by the next fallback once its lease is free. A Go test binary uses neither: one that
+`go test` runs keeps its tree inside the build's temporary work directory, and any other (a
+`go test -c` binary) shares one leased tree per build under `$TMPDIR/yolo-test-embedded-packs-<uid>`,
+since nothing would delete a per-process tree at a test binary's exit. The layout and trust rules are in
 [`embeddedcache.go`](../../internal/packload/embeddedcache.go).
 
 ### What is shared and writable, and what serializes it
