@@ -627,14 +627,31 @@ func TestHostComposedBriefingIsNotDeliveredTwice(t *testing.T) {
 			a.rc, a.stdout, a.stderr)
 	}
 
-	r := runYolo(t, dir, `rg -c PACKRULE /home/agent/.claude/CLAUDE.md`)
+	// The count is marked, so it is read from its own line whatever else reaches stdout. The two
+	// failures are told apart: a wrong count is this test's subject, and a launcher line on stdout
+	// is a different defect (a 2026-10-25 macOS nightly failed here with a correct count of 1,
+	// read as "<keychain note>\n1" because the host-trust notes went to stdout).
+	r := runYolo(t, dir, `n=$(rg -c PACKRULE /home/agent/.claude/CLAUDE.md) || exit $?; echo "PACKRULE-COUNT=$n"`)
 	if r.rc != 0 {
 		t.Fatalf("the pack's prose did not reach the jail at all: rc %d\nstdout: %s\nstderr: %s",
 			r.rc, r.stdout, r.stderr)
 	}
-	if got := strings.TrimSpace(r.stdout); got != "1" {
-		t.Errorf("the pack's prose reached the jail %s times, want 1 — the jail prepended the "+
-			"host briefing yolo composed and then composed the same packs again:\n%s",
-			got, r.combined())
+	count, other := "", []string{}
+	for _, line := range strings.Split(strings.TrimSpace(r.stdout), "\n") {
+		if v, ok := strings.CutPrefix(line, "PACKRULE-COUNT="); ok {
+			count = v
+		} else {
+			other = append(other, line)
+		}
+	}
+	if count != "1" {
+		t.Errorf("the pack's prose reached the jail %q times, want \"1\" — the jail prepended the "+
+			"host briefing yolo composed and then composed the same packs again\nstdout:\n%s\nstderr:\n%s",
+			count, r.stdout, r.stderr)
+	}
+	if len(other) > 0 {
+		t.Errorf("the launcher wrote %d line(s) to stdout besides the command's output, which a "+
+			"caller piping `yolo run -- <cmd>` reads as the command's; launch lines belong on stderr:\n%s",
+			len(other), strings.Join(other, "\n"))
 	}
 }

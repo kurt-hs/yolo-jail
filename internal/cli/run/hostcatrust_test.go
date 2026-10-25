@@ -104,6 +104,26 @@ bound:
 	}
 }
 
+// THE HOST-TRUST NOTES GO TO STDERR, never to stdout: `yolo run -- <cmd>`'s stdout IS the command's
+// stdout, so a note there is read as the command's output. On a Mac with no readable login keychain
+// (every CI runner's temp HOME) the notes printed ahead of `rg -c`'s count and failed
+// integration's TestHostComposedBriefingIsNotDeliveredTwice with a correct count of 1, darwin only,
+// because a Linux host's bundle usually yields no note at all. The whole launch runs, so this
+// fails if the call site in runContainer hands prepareHostCATrust a stdout printer again.
+func TestHostTrustNotesNeverReachTheCommandsStdout(t *testing.T) {
+	const note = "Note: could not read your login keychain (no login keychain)"
+	ca := hostCATestCA(t, "Example Corp Inspection CA", catrust.SourceSystemKeychain)
+	stubHostTrust(t, hostTrust{cas: []catrust.CA{ca}, notes: []string{note, "3 certificate(s) were left out"}})
+	_, _, _, stdout, stderr := sealCrossingsFixture.launchStreams(t, false)
+	if strings.Contains(stdout, "login keychain") || strings.Contains(stdout, "left out") {
+		t.Errorf("a host-trust note reached the launcher's stdout, which a jail command's output "+
+			"shares:\nstdout:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, note) {
+		t.Errorf("the host-trust note was not printed on stderr:\nstderr:\n%s", stderr)
+	}
+}
+
 // A LINUX HOST'S BUNDLE says how many certificates it left out, never silently (PS-D16): the
 // host's own read, through the host's SSL_CERT_FILE, which a Linux host's OpenSSL honors too.
 func TestALinuxHostSaysWhatItsBundleLeftOut(t *testing.T) {
