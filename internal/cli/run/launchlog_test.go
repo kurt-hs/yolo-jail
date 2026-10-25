@@ -287,14 +287,21 @@ func TestThePublishedWriterIsUndoneWhenTheRunBlockCloses(t *testing.T) {
 	// Against what was published BEFORE, not against os.Stdout: the property is that
 	// the attach leaves nothing behind, and asserting the process's own stdout would
 	// make this test a report on every other test in this binary.
-	before := macosuser.LaunchWriter()
+	before, beforeNotices := macosuser.LaunchWriter(), macosuser.LaunchNoticeWriter()
 	l := attachLaunchLog(o)
 	if got := macosuser.LaunchWriter(); got != o.Stdout {
 		t.Fatalf("attachLaunchLog published %v, not the teed stdout it installed", got)
+	}
+	// The notices go to the teed STDERR: logged, and off the command's stdout.
+	if got := macosuser.LaunchNoticeWriter(); got != o.Stderr {
+		t.Fatalf("attachLaunchLog published %v as the notice writer, not the teed stderr it installed", got)
 	}
 	l.finish(0)
 	if got := macosuser.LaunchWriter(); got != before {
 		t.Errorf("the published writer outlived the run block (%T): a later `yolo macos-*` "+
 			"command would print into this launch's closed log", got)
+	}
+	if got := macosuser.LaunchNoticeWriter(); got != beforeNotices {
+		t.Errorf("the published notice writer outlived the run block (%T)", got)
 	}
 }

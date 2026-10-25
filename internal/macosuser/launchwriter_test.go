@@ -61,3 +61,20 @@ func TestNoPublishedWriterLeavesTheMacosCommandsOnTheProcess(t *testing.T) {
 			"into a finished launch's log instead of the terminal", deps.Out)
 	}
 }
+
+// TestRealDepsTakesThePublishedNoticeWriter: a launch's notices (Deps.Notices) reach the teed
+// stderr the run pipeline published, and with nothing published they go to the process's stderr,
+// never to its stdout, which the command's output shares.
+func TestRealDepsTakesThePublishedNoticeWriter(t *testing.T) {
+	if deps := RealDeps(nil, nil, false); deps.Notices != os.Stderr {
+		t.Fatalf("with nothing published, RealDeps().Notices is %T, want os.Stderr", deps.Notices)
+	}
+	var buf bytes.Buffer
+	undo := SetLaunchNoticeWriter(&buf)
+	defer undo()
+	deps := RealDeps(nil, nil, false)
+	noticePrinter(deps).print("[yellow]Note: could not read your login keychain[/yellow]")
+	if !strings.Contains(buf.String(), "could not read your login keychain") {
+		t.Errorf("the notice printer did not reach the published notice writer: %q", buf.String())
+	}
+}

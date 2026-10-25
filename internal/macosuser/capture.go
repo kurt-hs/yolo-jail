@@ -1407,7 +1407,7 @@ func RunCaptureAct(deps Deps, opts CaptureOptions, dest string, dryRun bool) int
 		}
 		return 0
 	}
-	printCATrust(out, plan.CATrust, plan.EnvFileContent, plan.CABundleFile, plan.CAExtrasFile, plan.CAFollows)
+	printCATrust(noticePrinter(deps), plan.CATrust, plan.EnvFileContent, plan.CABundleFile, plan.CAExtrasFile, plan.CAFollows)
 	rc := RunCapturePlan(deps, plan)
 	// Sweep whatever the run got as far as, INCLUDING on failure: a half-provisioned staging
 	// tree left behind would merge into the next capture's baseline. It runs after the move
@@ -1916,7 +1916,7 @@ func RunForkBuildAct(deps Deps, opts ForkBuildOptions, dest, toolchainDest strin
 		}
 		return 0
 	}
-	printCATrust(out, plan.CATrust, plan.EnvFileContent, plan.CABundleFile, plan.CAExtrasFile, plan.CAFollows)
+	printCATrust(noticePrinter(deps), plan.CATrust, plan.EnvFileContent, plan.CABundleFile, plan.CAExtrasFile, plan.CAFollows)
 	rc := RunForkBuildPlan(deps, plan)
 	defer RunCaptureCleanup(deps, plan.CapturePlan)
 	// The record, when the script wrote one: a build that ran without it is still a build, and its

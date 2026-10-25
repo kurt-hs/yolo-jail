@@ -228,6 +228,13 @@ type Deps struct {
 	// Out receives the human output. Rich markup is rendered to ANSI when
 	// Color is set, else stripped to plain text.
 	Out io.Writer
+	// Notices receives the launch's notices that must stay out of the command's output: Out is
+	// the launch's stdout, which the command's own stdout shares, so a line printed there on every
+	// launch leads every piped or parsed payload. On a launch it is the launch's stderr
+	// (LaunchNoticeWriter); nil prints them on Out, which is every caller that sets Out alone.
+	// Today it carries the sandbox's TLS trust lines (printCATrust), the macos-user half of the
+	// container launch's host-trust notes, which go to stderr for the same reason.
+	Notices io.Writer
 	// Progress is the rendering of the launch's slow steps on Out (the native nix
 	// build). The zero value — line-oriented, silent for its first 2 s — is the
 	// only one a real launch uses: the build streams nix's own stderr to the
@@ -1267,7 +1274,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 	}
 	// A DISCLOSURE, every launch: which certificate authorities the sandbox trusts, and which
 	// variables say so.
-	printCATrust(out, plan.CATrust, plan.EnvFileContent, plan.CABundleFile, plan.CAExtrasFile, plan.CAFollows)
+	printCATrust(noticePrinter(deps), plan.CATrust, plan.EnvFileContent, plan.CABundleFile, plan.CAExtrasFile, plan.CAFollows)
 	// And the fonts it lists, with your font folder named whenever share_host_fonts shares it.
 	printFonts(out, plan.Fonts, plan.FontsConfFile, paths.UserConfigPath())
 	// AND THAT YOUR WHOLE LOOPBACK IS OPEN TO IT (OQ-MM7, MMP-D14), whenever the deny-by-default
@@ -2409,6 +2416,43 @@ func LaunchWriter() io.Writer {
 	return os.Stdout
 }
 
+// launchNoticeWriter is LaunchWriter's sibling for Deps.Notices: the launch's teed stderr,
+// published by the run pipeline beside the teed stdout, so a notice reaches the launch log too.
+var launchNoticeWriter io.Writer
+
+// SetLaunchNoticeWriter publishes w as the writer the next RealDeps resolves Notices from, and
+// returns the undo (never nil), on SetLaunchWriter's terms.
+func SetLaunchNoticeWriter(w io.Writer) func() {
+	launchWriterMu.Lock()
+	defer launchWriterMu.Unlock()
+	prev := launchNoticeWriter
+	launchNoticeWriter = w
+	return func() {
+		launchWriterMu.Lock()
+		defer launchWriterMu.Unlock()
+		launchNoticeWriter = prev
+	}
+}
+
+// LaunchNoticeWriter returns the published notice writer, or os.Stderr when nothing published
+// one: a notice belongs off the command's stdout whether or not a launch log is open.
+func LaunchNoticeWriter() io.Writer {
+	launchWriterMu.Lock()
+	defer launchWriterMu.Unlock()
+	if launchNoticeWriter != nil {
+		return launchNoticeWriter
+	}
+	return os.Stderr
+}
+
+// noticePrinter prints on deps.Notices, or on Out for a caller that set Out alone.
+func noticePrinter(deps Deps) printer {
+	if deps.Notices != nil {
+		return printer{w: deps.Notices, color: deps.Color}
+	}
+	return printer{w: deps.Out, color: deps.Color}
+}
+
 // RealDeps returns Deps backed by real subprocesses / filesystem. runProxy is
 // the session runner (Deps.RunWithProxy): on a launch, the one its signal arm
 // supplies (internal/cli/run's MacosUserArm.RunSession, a plain foreground exec
@@ -2466,6 +2510,7 @@ func RealDeps(runProxy func(argv []string) int, materialize func(repoRoot string
 		RunAsGrant:          runAsGrantReal,
 		DarwinUserTempDir:   darwinUserTempDirReal,
 		Out:                 LaunchWriter(),
+		Notices:             LaunchNoticeWriter(),
 		Color:               color,
 	}
 }

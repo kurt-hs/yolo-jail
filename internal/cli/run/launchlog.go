@@ -138,7 +138,10 @@ func attachLaunchLog(o *Options) *launchLog {
 	l.writeHeader(o)
 	o.Stdout = teeLog{w: o.Stdout, log: f}
 	o.Stderr = teeLog{w: o.Stderr, log: f}
-	l.restoreOut = macosuser.SetLaunchWriter(o.Stdout)
+	// And the teed stderr, for the backend's notices (macosuser.Deps.Notices), which stay off
+	// the command's stdout.
+	undoOut, undoNotices := macosuser.SetLaunchWriter(o.Stdout), macosuser.SetLaunchNoticeWriter(o.Stderr)
+	l.restoreOut = func() { undoNotices(); undoOut() }
 	return l
 }
 

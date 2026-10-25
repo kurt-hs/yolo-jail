@@ -73,6 +73,15 @@ type sealFixture struct {
 // handed, the workspace, the host home and everything the launch printed.
 func (f sealFixture) launch(t *testing.T, sealed bool) (argv []string, ws, home, printed string) {
 	t.Helper()
+	argv, ws, home, stdout, stderr := f.launchStreams(t, sealed)
+	return argv, ws, home, stdout + stderr
+}
+
+// launchStreams is launch with the launcher's two streams kept apart, for a test about which one
+// a line reaches: a jail command's stdout is the launcher's stdout, so a launch line there is read
+// as the command's output by anything that pipes it.
+func (f sealFixture) launchStreams(t *testing.T, sealed bool) (argv []string, ws, home, stdoutText, stderrText string) {
+	t.Helper()
 	home = packHome(t)
 	previousModules := loopholes.SnapshotPackModules()
 	t.Cleanup(previousModules)
@@ -166,7 +175,7 @@ func (f sealFixture) launch(t *testing.T, sealed bool) (argv []string, ws, home,
 		t.Fatalf("the launch (sealed=%v) never ran its runtime (%v)\nstdout:\n%s\nstderr:\n%s",
 			sealed, err, stdout.String(), stderr.String())
 	}
-	return strings.Split(strings.TrimRight(string(raw), "\n"), "\n"), ws, home, stdout.String() + stderr.String()
+	return strings.Split(strings.TrimRight(string(raw), "\n"), "\n"), ws, home, stdout.String(), stderr.String()
 }
 
 // sealCrossingsFixture is the fixture declaring every crossing FP-D9 and FP-D11 name: env_sources,
