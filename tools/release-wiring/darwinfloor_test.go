@@ -19,7 +19,7 @@ var floorPathsEnv = "DARWIN_FLOOR_PATHS=" + floorArmPath + " " + floorIntelPath
 // The request runs the darwin floor gate before the final preflight (exact-SHA
 // CI, version order, tag identity), so that proof stays the last read before
 // the tag write however long the floor wait or build took; a failure leaves no tag, a fork without Cachix skips with a
-// line saying so, and an unset or malformed hand-off refuses rather than skips.
+// line saying so while the project's own repository fails, and an unset or malformed hand-off refuses rather than skips.
 func TestRequestRunsTheDarwinFloorGateBeforeTheTag(t *testing.T) {
 	root := repositoryRoot(t)
 	script := filepath.Join(root, "tools", "release-wiring", "request.sh")
@@ -34,6 +34,8 @@ func TestRequestRunsTheDarwinFloorGateBeforeTheTag(t *testing.T) {
 		{name: "a floor build that does not land fails before the tag", extra: []string{"CACHIX_CONFIGURED=true", floorPathsEnv, "FAIL_FLOOR_GATE=1"}, wantGate: true,
 			wantError: "request this release again"},
 		{name: "a fork without Cachix skips and says so", extra: []string{"CACHIX_CONFIGURED=false"}, wantOut: "skipping the darwin floor cache gate"},
+		{name: "the project's own repository without Cachix fails before the tag", extra: []string{"CACHIX_CONFIGURED=false", "GITHUB_REPOSITORY=mschulkind-oss/yolo-jail"},
+			wantError: "no CACHIX_AUTH_TOKEN secret"},
 		{name: "an unset Cachix flag refuses", extra: []string{"CACHIX_CONFIGURED="}, wantError: "CACHIX_CONFIGURED must be true or false"},
 		{name: "a missing path hand-off refuses", extra: []string{"CACHIX_CONFIGURED=true", "DARWIN_FLOOR_PATHS=" + floorArmPath}, wantError: "Expected the two darwin floor profile paths"},
 		{name: "an unsafe path refuses", extra: []string{"CACHIX_CONFIGURED=true", "DARWIN_FLOOR_PATHS=" + floorArmPath + " /tmp/evil"}, wantError: "invalid store path"},

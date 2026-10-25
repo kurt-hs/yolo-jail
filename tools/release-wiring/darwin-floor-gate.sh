@@ -26,6 +26,12 @@ fail() {
 : "${RELEASE_SHA:?RELEASE_SHA is required (full lowercase commit SHA)}"
 case "${CACHIX_CONFIGURED:-}" in
   false)
+    # Only a fork may skip: the project's own repository always pushes its floor
+    # to Cachix, so a missing secret there is a broken release setup, not a fork
+    # (PTG-D5: no release without the floor).
+    if [ "$GITHUB_REPOSITORY" = "mschulkind-oss/yolo-jail" ]; then
+      fail "${GITHUB_REPOSITORY} has no CACHIX_AUTH_TOKEN secret, so the darwin floor cannot be built into Cachix. Restore the secret (repository Settings > Secrets and variables > Actions), then request this release again; the version is still unreserved."
+    fi
     echo "Cachix is not configured for ${GITHUB_REPOSITORY} (no CACHIX_AUTH_TOKEN secret), so darwin-floor-cache.yml pushes nothing; skipping the darwin floor cache gate. macos-user users of this release build the floor themselves."
     exit 0
     ;;
