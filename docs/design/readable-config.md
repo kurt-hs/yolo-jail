@@ -3,7 +3,7 @@ title: "Config that reads right the first time, and that yolo can edit without m
 date: 2026-10-24
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC9 (may yolo write your file, and how), OQ-RC11 (file name or version field), OQ-RC13 (conventions) and OQ-RC14 (the two profile names); the rest follow, and none needs code first"
+next: "Rule OQ-RC9 (may yolo write your file, and how), OQ-RC11 (file name or version field), OQ-RC13 (conventions), OQ-RC14 (the two profile names) and OQ-RC15 (how your packs are named); the rest follow, and none needs code first"
 tags: [config, packs, manifest, providers, profiles, broker, grants, format, toml, migration, editing, readability, design]
 summary: "The maintainer's config takes 178 lines to say about 20 things, and lines such as `grant read *` are misread by the person who wrote them. Measured on that file, the shape accounts for nearly all of the length: the same content reshaped is about 58 lines in JSONC and 53 in TOML. So the vocabulary is the first proposal, TOML the second. The third and fourth are what the maintainer asked for on 2026-10-24: a transition that converts every file automatically, and commands that edit a config file mechanically, in place, without touching a byte they were not asked to. The file name is the version marker, a migrate command rewrites every file it can name and proves it lost nothing, and about sixty places where yolo today says 'add this to your config' print one command instead."
 vantage:
@@ -19,7 +19,7 @@ repository, the effective user config this jail inherited at launch (generated
 `work.jsonc`, `personal.jsonc`) are not visible from the jail; their contents are known only
 through the generated copy.
 
-**Needs your ruling:** [OQ-RC1](#OQ-RC1) to [OQ-RC14](#OQ-RC14).
+**Needs your ruling:** [OQ-RC1](#OQ-RC1) to [OQ-RC15](#OQ-RC15).
 
 > **In short.** A config a stranger reads correctly comes from its shape, not its file format,
 > and a config yolo can edit without a mess comes from touching only the bytes of one value.
@@ -168,7 +168,7 @@ because a workspace file is the agent's to edit.
 
 | Section | Holds | Replaces today | Scope |
 | :--- | :--- | :--- | :--- |
-| `packs`, `pack_folders` | what the jail is built from; folders where a bare name is also looked up, so your own packs are listed like shipped ones | `packs` (full paths written out) | user |
+| `packs`, `pack_folders` | what the jail is built from; a name for each folder your own packs come from, so `dotfiles/matt` names one | `packs` (full paths written out) | user |
 | `install.nix`, `install.mise` | extra tools | `packages`, `mise_tools` | both |
 | `mcp_servers.<name>` | MCP servers; the key keeps its name | `mcp_servers` | both |
 | `allow.<pack>` | what a jail may do with your host logins: git, GitHub, AWS | `brokered.*`, `loopholes.<name>.enabled` and `settings` for login-serving packs | user for the most it may do, workspace for what a project asks |
@@ -201,37 +201,39 @@ Each lever can be adopted or vetoed on its own ([OQ-RC1](#OQ-RC1)).
 - **L3. Shared facts are stated once.** A provider's `every_model` table holds the facts each of
   its models shares unless the model says otherwise. This is per provider, unlike today's
   `model_facts` and `extends`, which share facts across routes to the same model.
-- **L4. Selecting a pack is the switch.** A pack in `packs` is on. A login-serving pack is on when
-  its `[allow.<pack>]` table is in the user config, because that table is where the user said
-  so. A pack a workspace wants off writes `off = true` under it, which is what the per-workspace
-  switch file's `enabled: false` becomes. This amends four loophole rules, and keeps each one's
-  reason:
+- **L4. `packs` is the only switch.** A pack in `packs` is on; there is no second switch, so
+  `loopholes.<name>.enabled` goes. A login-serving pack's settings live under `[allow.<pack>]`,
+  and that table is settings, not a switch: it selects nothing and looks nothing up. Listing
+  `aws-auth` with no `[allow.aws-auth]` is a `yolo check` finding ("aws-auth does nothing without
+  `[allow.aws-auth] profile = …`"), and writing the table for a pack not in `packs` is one too. A
+  pack a workspace wants off writes `off = true` under it, which is what the per-workspace switch
+  file's `enabled: false` becomes. The only thing in this doc that turns a section into a
+  selection is convention C3 in [§4.5](#45-lines-that-need-not-exist), and it is vetoable on its
+  own. L4 amends four loophole rules and keeps each one's reason:
   - [R1](../reference/loophole-system.md#principles), "presence never activates": a manifest on
-    disk still activates nothing; a *selection* is the user writing the name down, which is
-    saying so. Nothing is selected by default (`run.warnIfNoPacks`).
-  - R2, "absent `default_enabled` means off": the manifest key goes; the selection decides.
-  - R4, "host access is never on by default": host access is `allow`, which is user scope only,
-    so no project and no default can turn it on.
+    disk still activates nothing; the name in `packs` is the user saying so, and nothing is listed
+    by default (`run.warnIfNoPacks`).
+  - R2, "absent `default_enabled` means off": the manifest key goes; the list decides.
+  - R4, "host access is never on by default": `allow` is user scope only, so no project and no
+    default can turn it on, and a listed login pack with no table serves nothing.
   - R5, "enable is either scope": a workspace may still turn a non-login pack *off*, and may still
     *ask* for host access it cannot grant.
 - **L5. Words carry their meaning.** `brokered` → `allow`; `grants` and `grant_kinds` → `fetch`,
   `push` and `read` ([§4.2](#42-what-a-jail-may-do-with-your-logins)); `profile` keeps its name ([RC-D1](#decision-ledger)), and gets
   `everyone` for `*` and `"own login"` for `null`; a model's `input` → `accepts`, `cost` → `price`,
   `context_window` → `context`; and the string mini-languages of [§4.4](#44-values-that-were-strings).
-- **L6. Your own pack folders are named once.** `pack_folders = ["~/.dotfiles/yolo-packs"]`, and
-  `"matt"` finds `~/.dotfiles/yolo-packs/matt`. A pack's name is already its folder's name: a
-  configured pack is named by the last segment of its source address, and the manifest's `name` is
-  informational (`internal/packload/packload.go`, the `Pack.Name` comment). L6 adds a second place
-  a bare name is looked up, nothing else. **The namespace is flat, per config, and already exists:**
-  every pack in one config has one name, shipped or not, and two entries with one name are refused
-  today with "give one an explicit `name`" (`internal/config/packs.go`). A name is the user's handle
-  for the pack in their own files, not an identity: there is no registry, this doc creates none,
-  and a shared pack's author chooses nothing about it. So a colleague's `tools` and yours do not
-  collide anywhere but in a config that lists both, and that config renames one:
-  `{ git = "https://github.com/acme/tools", name = "acme-tools" }`. A bare name is looked up in
-  the shipped packs and then in `pack_folders`; a name found in both is refused naming both and
-  the two spellings that pick one, never shadowed. A git pack is always written as a table, so its
-  name is the repository's unless the table says otherwise, as today.
+- **L6. A pack that is not shipped is named by where it comes from.** `dotfiles/matt`, where
+  `[pack_folders] dotfiles = "~/.dotfiles/yolo-packs"` names the folder once; `local/<name>` for the
+  conventional folder (C1); `acme/tools` for a git pack, from its URL's owner and repository. Only
+  shipped packs are bare, and `yolo/<name>` is their explicit spelling. So no bare name is ever
+  looked up outside the shipped set, and no collision can arise that a user has to rename their
+  way out of: two authors' `tools` are `acme/tools` and `beta/tools` wherever they appear. Today a
+  pack is already named by the last segment of its source address, the manifest's `name` is
+  informational (`internal/packload/packload.go`, the `Pack.Name` comment), and two entries with
+  one name are refused with "give one an explicit `name`" (`internal/config/packs.go`). That is
+  the rename-on-collision model, and the maintainer's review of 2026-10-25 called it Python
+  imports but worse. The qualified form is Homebrew's and Claude Code's ([§4.6](#46-how-other-tools-name-things-from-several-sources)),
+  and [OQ-RC15](#OQ-RC15) rules on it.
 
 ### 4.2 What a jail may do with your logins
 
@@ -324,7 +326,7 @@ convention reads only what the user wrote there. Each can be vetoed alone ([OQ-R
 
 | | Convention | The line it removes | What you already did that implies it | When it is wrong, what you see |
 | :--- | :--- | :--- | :--- | :--- |
-| **C1** | `~/.config/yolo-jail/packs/` is a pack folder | `pack_folders = [...]` | put a folder there, or symlinked your dotfiles' folder to it | a name there that is also shipped is refused naming both |
+| **C1** | `~/.config/yolo-jail/packs/<name>` is `local/<name>` | the `[pack_folders]` line | put a folder there, or symlinked your dotfiles' folder to it | `local/x` with no such folder is refused naming the path it looked at |
 | **C2** | `~/.config/yolo-jail/config.d/*.toml` are read after `config.toml`, in name order | every `include_if_found` for a file you control | put the file there; with dotfile tags of the `tag-work` kind, the work file exists only on work machines | `yolo config why` names the file; a `.jsonc` there is refused naming `migrate` |
 | **C3** | A section for a pack selects the pack | `"aws-auth"`, `"bedrock"`, `"git"`, `"github"` in `packs` | wrote `[allow.aws-auth]`, `[providers.bedrock]`, `[allow.git]` | a section naming no pack is refused with the nearest pack name; the launch's pack line says `bedrock (by [providers.bedrock])` |
 | **C4** | A grant table's presence is its common grant | `fetch = true`, `read = true` | wrote `[allow.git]` or `[allow.github]` | the approval prompt lists each line as today |
@@ -333,20 +335,49 @@ convention reads only what the user wrote there. Each can be vetoed alone ([OQ-R
 | **C7** | A model named without facts takes the catalog's | the facts on the Fable, Opus and Haiku rows | named a model the agent's catalog knows | an unknown model with no facts is refused naming the facts it needs |
 | **C8** | One declared setup is everyone's | `[profile] everyone = "bedrock"` | declared exactly one profile, or no profile and one provider, in your files | two declared and no selection: refused, naming both |
 
-What it does to the maintainer's files is [Appendix A.2](#a2-the-same-with-the-conventions): no
-include line, no pack-folder line, four fewer names in `packs`, no selection line on either kind
-of machine. What it does to his packs: `luna-worker`, `coordinator-reads-blocked`,
+What the six of the leaning do to the maintainer's files is
+[Appendix A.2](#a2-the-same-with-the-conventions): no include line and no pack-folder line; C3
+and C8 would also take four names out of `packs` and the selection line off both kinds of machine. What it does to his packs: `luna-worker`, `coordinator-reads-blocked`,
 `workspace-questions` and `claude-bedrock-global` become folders with no manifest
 ([Appendix B.7](#b7-a-small-personal-pack-luna-worker)). The pack levers already carry the same
 idea: P1's `home/`, P6's `codec` from the extension, and pi packages
 ([§6.1](#61-why-ten-files-take-fifty-lines)).
 
-**C3 and C8 act at a distance**, and they are the two to veto if that bothers you: a declaration
-selects, and a declaration chooses. Both are written by the user in the user config, so neither
-can be a project's doing, and both are named on the launch's pack line and in `config show`. The
+**C3 and C8 act at a distance**: a declaration selects, and a declaration chooses. C3 also makes
+every `allow.<pack>` and `providers.<name>` heading a pack lookup, which the maintainer read as
+*"implying a search for a pack through a lookup system"*; it is, and it is why the leaning on
+[OQ-RC13](#OQ-RC13) leaves those two out. Both are written by the user in the user config, so
+neither can be a project's doing, and both would be named on the launch's pack line and in
+`config show`. The
 commands of [§8](#8-who-writes-the-file) are conventions of the same kind: a write runs `yolo
 check` after itself, a grant offers its approval, a launch offers the migration. The line you did
 not write is the line you cannot misread.
+
+### 4.6 How other tools name things from several sources
+
+The maintainer, on the rename-on-collision model: *"there's like a de facto registry … This is
+just like Python imports, but worse … Find me other tools that do something similar."* Checked
+2026-10-25 against each tool's documentation where linked; the rest are stated from documentation
+not re-read for this draft.
+
+| Tool | A bare name means | A thing from another source | Two with one name | Model |
+| :--- | :--- | :--- | :--- | :--- |
+| Python imports | the first match on `sys.path` | the same bare name | silently shadowed | the failure to avoid |
+| apt | one flat name across every repository | the same name | pin priorities decide, silently | the same failure, by policy |
+| [Homebrew](https://rubydoc.brew.sh/TapFormulaAmbiguityError.html) | a core formula | `user/repo/name` from a tap | refused: "use the fully-qualified name" | **built-ins bare, everything else qualified** |
+| [Claude Code plugins](https://code.claude.com/docs/en/discover-plugins) | — | `plugin@marketplace` | cannot meet; a marketplace name is unique, and adding one with the same name replaces it | the same, with `@` |
+| Docker images | `library/ubuntu` | `user/image`, with a registry prefix | cannot meet | the same |
+| Nix flakes, Terraform providers | — | every input has a local name you choose, plus its source | cannot meet: you named both | all handles, no bare names |
+| Cargo | a crates.io name | `key = { git = …, package = "x" }`, the key being your name for it | renamed through the key | rename on collision |
+| Go imports | — | the import path is the identity | an import alias | rename on collision |
+| [lazy.nvim](https://git.kjan.de/jank/lazy.nvim/src/tag/v9.8.4/doc/lazy.nvim.txt) | — | `owner/repo`, local directory named by the repository | `name =` overrides | rename on collision |
+
+Two models survive the table without a rename step: **qualified names with bare built-ins**
+(Homebrew, Claude Code, Docker), and **all handles** (Nix, Terraform), where nothing is bare and
+the config is a table of names you chose with their sources. The first costs one token on each
+non-shipped pack (`dotfiles/matt`); the second costs a table entry for every shipped pack too
+(`[packs.claude]` with nothing under it), which is what `packs = ["claude"]` exists to avoid.
+[OQ-RC15](#OQ-RC15) chooses; L6 is written for the first.
 
 ## 5. The same content in four formats
 
@@ -941,7 +972,7 @@ review of 2026-10-24 kept the name ([RC-D1](#decision-ledger)).
    - **L4:** selecting a pack is its switch; a login-serving pack is on when its settings table is
      in your config. This amends four loophole rules, each keeping its reason.
    - **L5:** the renames (`profile` excepted; it keeps its name), and tables where strings carried two meanings.
-   - **L6:** `pack_folders`, so your own packs are listed by bare name.
+   - **L6:** a non-shipped pack is named by its source, `dotfiles/matt`, never by a bare name.
 
    <!-- vantage: question id=OQ-RC1 leaning="All six. L4 is the only one that changes ruled rules, and selecting a pack by name is the user saying so, which is what those rules protect." -->
 
@@ -1221,10 +1252,10 @@ review of 2026-10-24 kept the name ([RC-D1](#decision-ledger)).
       one list of what is on; the selection stays a written line.
     - **C — None.** Every line is written, as today.
 
-    <!-- vantage: question id=OQ-RC13 leaning="A: each convention reads only what the user already wrote in user scope, and config show names every supplied line." -->
+    <!-- vantage: question id=OQ-RC13 leaning="B: packs stays the one list of what is on and a heading never looks a pack up; the other six read only what the user already wrote." -->
 
-    _Leaning:_ A: each convention reads only what the user already wrote in user scope, and
-    `config show` names every supplied line.
+    _Leaning:_ B: `packs` stays the one list of what is on and a heading never looks a pack up; the
+    other six read only what the user already wrote.
 
     **Answer:**
     > _(empty — fill in when decided)_
@@ -1254,6 +1285,31 @@ review of 2026-10-24 kept the name ([RC-D1](#decision-ledger)).
     **Answer:**
     > _(empty — fill in when decided)_
 
+15. 💬 <a id="OQ-RC15"></a>**OQ-RC15: How is a pack that yolo does not ship named in your config?**
+
+    A colleague publishes a pack called `tools`, and so does someone on another team. You list
+    both. Today each is named by the last segment of its address, so the second is refused with
+    "give one an explicit `name`", and you rename it. You called that *"like Python imports, but
+    worse"*. Homebrew and Claude Code never reach that step: a built-in is bare and anything else
+    carries its source, `user/repo/name` or `plugin@marketplace`.
+
+    - **A — Qualified by source.** Shipped packs are bare; yours are `dotfiles/matt` and
+      `local/x`, a folder named once under `[pack_folders]`; a git pack is `acme/tools` from its
+      URL. No bare lookup outside the shipped set, and no rename, ever. One token more per pack.
+    - **B — Bare names, refusal on collision.** `"matt"` is found in the shipped set or a folder;
+      a name in both is refused naming both, and you rename one. Shortest, and the step you
+      dislike stays for the rare collision.
+    - **C — Paths, as today.** `"~/.dotfiles/yolo-packs/matt"` and the full git URL. No names to
+      design, and the longest lines in the file.
+
+    <!-- vantage: question id=OQ-RC15 leaning="A: the collision cannot happen, so there is nothing to rename; it is Homebrew's model, and the shipped set is the only bare namespace, as core is." -->
+
+    _Leaning:_ A: the collision cannot happen, so there is nothing to rename; it is Homebrew's
+    model, and the shipped set is the only bare namespace, as core is.
+
+    **Answer:**
+    > _(empty — fill in when decided)_
+
 ## Decision Ledger
 
 | ID | Ruling / Decision | Date | Settled in | Built |
@@ -1272,12 +1328,12 @@ reconstructed from what the packs say about it and is marked where it is a guess
 
 ```toml
 # Machine-wide settings. Every key: `yolo config-ref`.
-pack_folders = ["~/.dotfiles/yolo-packs"]   # a bare name below is also looked for here
+pack_folders = { dotfiles = "~/.dotfiles/yolo-packs" }   # names the folder once
 packs = [
-  "pi", "pi-fork", "codex", "journal", "host-processes", "serial", "guardrails",
+  "pi", "dotfiles/pi-fork", "codex", "journal", "host-processes", "serial", "guardrails",
   "git", "github", "chrome-devtools",
-  "matt", "matt-fzf", "matt-mods", "matt-agentwork",
-  { git = "https://github.com/mschulkind-oss/matt-craft", ref = "main" },
+  "dotfiles/matt", "dotfiles/matt-fzf", "dotfiles/matt-mods", "dotfiles/matt-agentwork",
+  { git = "https://github.com/mschulkind-oss/matt-craft", ref = "main" },   # named mschulkind-oss/matt-craft
 ]
 include_if_found = ["overrides.toml", "../../.dotfiles/tag-work/config/yolo-jail/work.toml",
                     "../../.dotfiles/tag-personal/config/yolo-jail/personal.toml"]
@@ -1302,7 +1358,7 @@ claude = "own login"
 `~/.dotfiles/tag-work/config/yolo-jail/work.toml`, work machines:
 
 ```toml
-packs = ["bedrock", "aws-auth", "copilot", "claude", "luna-worker", "claude-bedrock-global"]
+packs = ["bedrock", "aws-auth", "copilot", "claude", "dotfiles/luna-worker", "dotfiles/claude-bedrock-global"]
 
 # What jails may do with your own logins. Each project asks for what it needs.
 [allow.git]
@@ -1379,17 +1435,19 @@ optional = true                   # a backend that cannot deliver it skips it
 
 ### A.2 The same, with the conventions
 
-Under [§4.5](#45-lines-that-need-not-exist), with `~/.config/yolo-jail/packs` a symlink to
-`~/.dotfiles/yolo-packs` and the three included files living in `config.d/` (the work and
-personal ones as dotfile-tag symlinks that exist only on their machines). Names follow
-[OQ-RC14](#OQ-RC14)'s option A.
+Under the leanings: the six conventions of [OQ-RC13](#OQ-RC13)'s option B, with
+`~/.config/yolo-jail/packs` a symlink to `~/.dotfiles/yolo-packs` (so `local/matt`) and the three
+included files living in `config.d/` (the work and personal ones as dotfile-tag symlinks that
+exist only on their machines); [OQ-RC14](#OQ-RC14)'s `run_on`; [OQ-RC15](#OQ-RC15)'s qualified
+names. `packs` stays the one list of what is on, and the selection stays a written line.
 
 `~/.config/yolo-jail/config.toml`:
 
 ```toml
 packs = [
-  "pi", "pi-fork", "codex", "journal", "host-processes", "serial", "guardrails", "chrome-devtools",
-  "matt", "matt-fzf", "matt-mods", "matt-agentwork",
+  "pi", "local/pi-fork", "codex", "journal", "host-processes", "serial", "guardrails",
+  "git", "github", "chrome-devtools",
+  "local/matt", "local/matt-fzf", "local/matt-mods", "local/matt-agentwork",
   { git = "https://github.com/mschulkind-oss/matt-craft", ref = "main" },
 ]
 
@@ -1406,24 +1464,27 @@ command = ["npx", "-y", "tavily-mcp@latest"]
 env = { TAVILY_API_KEY = "${TAVILY_API_KEY}" }
 
 [run_on]
-claude = "own login"              # everyone else: the one setup this machine declares
+claude = "own login"
 ```
 
 `config.d/work.toml`, work machines:
 
 ```toml
-packs = ["copilot", "claude", "luna-worker", "claude-bedrock-global"]
+packs = ["bedrock", "aws-auth", "copilot", "claude", "local/luna-worker", "local/claude-bedrock-global"]
+
+[run_on]
+everyone = "bedrock"
 
 [allow.git]                       # fetch, by the table's presence
 push = "when a project asks"
 
 [allow.github]                    # read, by the table's presence
 
-[allow.aws-auth]                  # selects aws-auth
+[allow.aws-auth]
 profile = "hssandbox-BedrockInference"
 unnarrowed = true
 
-[providers.bedrock]               # selects bedrock, and is everyone's setup, being the only one
+[providers.bedrock]
 region = "us-east-1"
 model = "global.openai.gpt-6.1-sol"
 
@@ -1444,9 +1505,12 @@ reasoning = true
 `config.d/personal.toml`, personal machines (reconstructed):
 
 ```toml
-packs = ["agy-capture", "meta-muse", "workspace-questions"]
+packs = ["openrouter", "local/agy-capture", "local/meta-muse", "local/workspace-questions"]
 
-[providers.openrouter]            # selects openrouter, and is everyone's setup here
+[run_on]
+everyone = "openrouter"
+
+[providers.openrouter]
 model = "deepseek/deepseek-v4.1-flash-1017:floor"
 
 [providers.openrouter.models]
@@ -1454,7 +1518,7 @@ model = "deepseek/deepseek-v4.1-flash-1017:floor"
 "deepseek/deepseek-v4.1-flash:nitro@200k"      = { twin_of = "deepseek/deepseek-v4.1-flash:nitro",      context = 204_800 }
 ```
 
-Forty non-blank lines across four files, against 178 today, with no include line and no selection line.
+Forty-five non-blank lines across four files, against 178 today, with no include line and no pack-folder line.
 C7's three short rows wait on the catalog check noted above.
 
 ## Appendix B: more configs, today and proposed
