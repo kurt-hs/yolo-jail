@@ -285,8 +285,10 @@ the request reported and skipped, with the line that would allow it, and the jai
 
 ```console
 $ yolo check
-yolo-jail.toml:3: requests.git.push asks to push to main; your config does not list push under
-  allow.git.on_request, so this project will not. To allow it: yolo allow git on_request push
+yolo-jail.toml:3: this project requests push to main.
+  Your config does not allow push on request, so this project runs without it.
+  To allow it for every project you work on (in your config, not this file):
+    yolo allow git on_request push
 ```
 
 At launch the approval prompt lists each granted request as `+ git: push to main` and each
@@ -294,26 +296,27 @@ skipped one as `– git: push to main (not allowed on request by your config)`; 
 vocabulary. The four ruled grant kinds map onto these keys ([appendix A.6](#a6-the-grant-kinds-mapped)).
 One thing about `fetch` is still open: how far it reaches.
 
-1. 💬 <a id="OQ-RC16"></a>**OQ-RC16: May your config let a jail fetch from any repository, not only the project's own?**
+1. 💬 <a id="OQ-RC16"></a>**OQ-RC16: Should `fetch` reach only the project's own repositories, or any repository your login can?**
 
-   You write `always = ["fetch"]`. Today, and in the file above, that reaches the project's
-   remotes as approved at launch, plus what the project's `requests.github.repos` names. An agent that clones a
-   second repository to read it is refused, with the scope in the message. Widening `fetch`
-   changes the broker's per-workspace scope, which the boundary-broker doc rules. A fetch is
-   read-only, so what a wider setting risks is a private repository's contents reaching a jail
-   whose project never named it.
+   Still live, and the one thing about `fetch` the file above leaves open. Today `always =
+   ["fetch"]` reaches the project's remotes as approved at launch, plus what its
+   `requests.github.repos` names; an agent that clones some other repository to read it is
+   refused. You read the line as "any Git repo is allowed to be fetched by the jail, which would
+   be nice." Widening it changes the broker's per-workspace scope. A fetch is read-only, so what
+   a wider setting risks is a private repository's contents reaching a jail whose project never
+   named it.
 
    ```toml
-   # A  a list of patterns widens it; without the key, the project's own
+   # A  a second key widens it; without the key, the project's own
    [allow.git]
    always = ["fetch"]
    fetch_from = ["github.com/mschulkind-oss/*"]   # or ["*"]: any repository the host login reaches
 
-   # B  the project's own remotes only, as today; a project adds others under [requests.github] repos
+   # B  the project's own repositories only, as today; a project adds others under [requests.github] repos
    [allow.git]
    always = ["fetch"]
 
-   # C  any repository the host login reaches, whenever fetch is allowed
+   # C  any repository the host login reaches, whenever fetch is allowed; nothing to write
    [allow.git]
    always = ["fetch"]
    ```
