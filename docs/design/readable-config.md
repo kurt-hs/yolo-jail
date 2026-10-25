@@ -203,13 +203,23 @@ Each lever can be adopted or vetoed on its own ([OQ-RC1](#OQ-RC1)).
   `model_facts` and `extends`, which share facts across routes to the same model.
 - **L4. `packs` is the only switch.** A pack in `packs` is on; there is no second switch, so
   `loopholes.<name>.enabled` goes. A login-serving pack's settings live under `[allow.<pack>]`,
-  and that table is settings, not a switch: it selects nothing and looks nothing up. Listing
-  `aws-auth` with no `[allow.aws-auth]` is a `yolo check` finding ("aws-auth does nothing without
-  `[allow.aws-auth] profile = …`"), and writing the table for a pack not in `packs` is one too. A
-  pack a workspace wants off writes `off = true` under it, which is what the per-workspace switch
-  file's `enabled: false` becomes. The only thing in this doc that turns a section into a
-  selection is convention C3 in [§4.5](#45-lines-that-need-not-exist), and it is vetoable on its
-  own. L4 amends four loophole rules and keeps each one's reason:
+  and that table is settings, not a switch: it selects nothing and looks nothing up. **A table
+  with no pack, or a pack with no table, is a nudge, not a selection** ([RC-D7](#decision-ledger)):
+  yolo knows which pack a section belongs to, names it, and offers the one command.
+
+  ```console
+  $ yolo check
+  ~/.config/yolo-jail/config.toml:12: [allow.aws-auth] is set, but aws-auth is not in packs, so nothing serves it.
+    Add it to packs? [y/N]                       (or later: yolo pack add aws-auth)
+
+  $ yolo check
+  ~/.config/yolo-jail/config.toml:3: packs lists aws-auth, but [allow.aws-auth] names no profile, so it serves nothing.
+    Set one: yolo config set allow.aws-auth.profile <aws profile>
+  ```
+
+  A pack a workspace wants off writes `off = true` under it, which is what the per-workspace
+  switch file's `enabled: false` becomes. L4 amends four loophole rules and keeps each one's
+  reason:
   - [R1](../reference/loophole-system.md#principles), "presence never activates": a manifest on
     disk still activates nothing; the name in `packs` is the user saying so, and nothing is listed
     by default (`run.warnIfNoPacks`).
@@ -433,7 +443,8 @@ include_if_found = ["overrides.toml", "../../.dotfiles/tag-work/config/yolo-jail
     work.toml -> ~/.dotfiles/tag-work/config/yolo-jail/work.toml
 ```
 
-**C3. A section selects its pack.** Not in the leaning: it makes a heading a pack lookup.
+**C3. A section selects its pack.** Not in the leaning: it makes a heading a pack lookup. L4's
+nudge covers the case instead: the section with no pack names the pack and offers to add it.
 
 ```toml
 # before
@@ -524,7 +535,8 @@ The six of the leaning take the maintainer's files to
 and C8 would also take four names out of `packs` and the selection line off both kinds of
 machine, and they are left out because each acts at a distance: C3 makes every `allow.<pack>`
 and `providers.<name>` heading a pack lookup, which the maintainer read as *"implying a search for
-a pack through a lookup system"*; it is. The pack levers already carry the same idea: P1's
+a pack through a lookup system"*; it is. His alternative is L4's nudge: the same inference, spent
+on a question with a `y` rather than on a selection ([RC-D7](#decision-ledger)). The pack levers already carry the same idea: P1's
 `home/`, P6's `codec` from the extension, and pi packages ([§6.1](#61-why-ten-files-take-fifty-lines)).
 The commands of [§8](#8-who-writes-the-file) are conventions of the same kind: a write runs
 `yolo check` after itself, a grant offers its approval, a launch offers the migration. The line
@@ -1517,6 +1529,7 @@ review of 2026-10-24 kept the name ([RC-D1](#decision-ledger)).
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | <a id="RC-D1"></a>RC-D1 | **The `profile` key keeps its name.** Review comment on the draft's `use`: *"awful name … isn't this a profile?"* It is, and PP-D10's reason (the key mirrors `-p`) stands. L5 no longer renames it | 2026-10-24 | [§4.3](#43-models-one-name-for-the-common-case) | — |
+| <a id="RC-D7"></a>RC-D7 | **A section without its pack is a nudge, not a selection.** Review follow-up: *"perhaps we can just give some help if you allow something without the pack, maybe we can infer which pack you would need and give you a happy path nudge?"* `yolo check` names the pack and offers `yolo pack add <pack>` with a `y`; the reverse case offers the setting | 2026-10-25 | [§4.1](#41-the-levers-each-one-syntax-free) | — |
 | <a id="RC-D6"></a>RC-D6 | **No value is a reserved string.** Review comment on `"when a project asks"`: *"some weird string like this is just weird for a config file."* A value is `true`, `false`, a number, a name or a list of names; `push = true` at user scope is the ceiling, `new_branches = true` replaces `"new branches"` | 2026-10-25 | [§4.2](#42-what-a-jail-may-do-with-your-logins) | — |
 | <a id="RC-D5"></a>RC-D5 | **`false`, not `"own login"`,** for an agent yolo gives no setup. Review comment: *"don't like"* | 2026-10-25 | [§4.3](#43-models-one-name-for-the-common-case) | — |
 | <a id="RC-D4"></a>RC-D4 | **`default`, not `everyone`,** for today's `"*"`. Review comment: *"don't like the name"* | 2026-10-25 | [§4.3](#43-models-one-name-for-the-common-case) | — |
