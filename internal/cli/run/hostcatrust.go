@@ -11,7 +11,7 @@ package run
 //     host sets it, else the distribution's bundle; catrust.ReadLinuxHostBundle);
 //   - a macOS host (podman machine, Apple Container): the System keychain and the user's login
 //     keychain, exported and verified exactly as a macos-user launch does
-//     (macosuser.ReadHostKeychainTrust).
+//     (macosuser.ReadHostKeychainTrust), plus the bundle SSL_CERT_FILE names when the host sets it.
 //
 // It writes the CAs that pass into ONE file, each labelled with its source (catrust.Render), and
 // hands the jail that file alone, never a host directory: a read-only bind on podman, a copy in
@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/catrust"
@@ -50,11 +51,18 @@ type hostTrust struct {
 // readHostTrust is the host read, a seam for a test; production reads the host this launch runs on.
 var readHostTrust = readHostTrustReal
 
+// hostGOOS and hostKeychainReaders are the host readHostTrustReal reads, seams so a Linux test can
+// drive a macOS host's read with stubbed keychains.
+var (
+	hostGOOS            = runtime.GOOS
+	hostKeychainReaders = macosuser.RealKeychainReaders
+)
+
 func readHostTrustReal() hostTrust {
 	now := time.Now()
 	esc := func(s string) string { return richtext.Escape(termsafe.Visible(s)) }
-	if runtime.GOOS == "darwin" {
-		kt := macosuser.ReadHostKeychainTrust(macosuser.RealKeychainReaders(), now)
+	if hostGOOS == "darwin" {
+		kt := macosuser.ReadHostKeychainTrust(hostKeychainReaders(), now)
 		var notes []string
 		if kt.SystemError != "" {
 			notes = append(notes, "[yellow]Warning: could not read this Mac's System keychain ("+
@@ -74,7 +82,22 @@ func readHostTrustReal() hostTrust {
 				"out of the jail's trust: expired, not for TLS servers, or not trusted by macOS for TLS.[/dim]",
 				kt.LeftOut))
 		}
-		return hostTrust{cas: kt.Kept, notes: notes}
+		// The bundle the host's SSL_CERT_FILE names is this Mac's trust too: its OpenSSL programs
+		// (nix curl, git, Python) read it, so a CA trusted there is trusted in the jail beside the
+		// keychains', as on a Linux host ("regardless of how that trust got there", OQ-PS15).
+		if strings.TrimSpace(os.Getenv("SSL_CERT_FILE")) == "" {
+			return hostTrust{cas: kt.Kept, notes: notes}
+		}
+		hb, err := catrust.ReadLinuxHostBundle(os.Getenv, os.ReadFile, now)
+		if err != nil {
+			notes = append(notes, "[yellow]Warning: could not read this host's CA bundle ("+esc(err.Error())+
+				")[/yellow], so the jail does not trust the certificate authorities in it this launch; this "+
+				"Mac's keychains' still are. Point SSL_CERT_FILE at a readable bundle, or unset it, and launch again.")
+		} else if hb.LeftOut > 0 {
+			notes = append(notes, fmt.Sprintf("[dim]%d certificate(s) in %s were left out of the jail's "+
+				"trust: out of date, or not readable as a certificate.[/dim]", hb.LeftOut, esc(hb.Path)))
+		}
+		return hostTrust{cas: catrust.Merge(kt.Kept, hb.CAs), notes: notes}
 	}
 	hb, err := catrust.ReadLinuxHostBundle(os.Getenv, os.ReadFile, now)
 	if err != nil {
