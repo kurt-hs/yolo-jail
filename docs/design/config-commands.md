@@ -114,10 +114,9 @@ Written. Your config adds tavily; this project's jail will not see it.
 Where did this value come from:
 
 ```console
-$ yolo config why active_provider.claude
-active_provider.claude = "anthropic"
+$ yolo config why active_provider.except
+active_provider.except = ["claude"]
   set in  ~/.config/yolo-jail/config.d/overrides.toml:9
-  default would be: the default setup, "bedrock"
 ```
 
 ## 2. The sixty places this replaces
@@ -221,7 +220,7 @@ $ yolo request git push main               # project config: [requests.git] push
 $ yolo request github repos acme/shared
 $ yolo allow git on_request push           # user config: [allow.git] on_request += "push"
 $ yolo active-provider default bedrock     # user config: [active_provider] default = "bedrock"
-$ yolo active-provider claude anthropic
+$ yolo active-provider except claude
 ```
 
 One generic verb, keyed by path:
@@ -229,7 +228,7 @@ One generic verb, keyed by path:
 ```console
 $ yolo config add packs local/matt
 $ yolo config add allow.git.always fetch
-$ yolo config set active_provider.claude anthropic
+$ yolo config add active_provider.except claude
 $ yolo config add requests.git.push main --project
 $ yolo config unset mcp_servers.tavily --local
 $ yolo config set --dry-run machine.resources.memory 32g
@@ -295,7 +294,7 @@ The same excerpt in each format:
 
 ```jsonc
 { "allow": { "git": { "always": ["fetch"], "on_request": ["push"] } },
-  "active_provider": { "default": "bedrock", "claude": "anthropic" },
+  "active_provider": { "default": "bedrock", "except": ["claude"] },
   "providers": { "bedrock": { "region": "us-east-1",
     "models": { "global.openai.gpt-6.1-sol": { "name": "Sol 6.1", "context": 272000 } } } } }
 ```
@@ -307,7 +306,7 @@ on_request = ["push"]
 
 [active_provider]
 default = "bedrock"
-claude = "anthropic"
+except = ["claude"]
 
 [providers.bedrock]
 region = "us-east-1"
@@ -316,7 +315,7 @@ models."global.openai.gpt-6.1-sol" = { name = "Sol 6.1", context = 272_000 }
 
 ```yaml
 allow: { git: { always: [fetch], on_request: [push] } }
-active_provider: { default: bedrock, claude: anthropic }
+active_provider: { default: bedrock, except: [claude] }
 providers:
   bedrock:
     region: us-east-1

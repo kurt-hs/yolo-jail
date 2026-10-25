@@ -195,7 +195,7 @@ are spelled, is the question.
    [env]
    unset = ["AWS_PROFILE"]
    [active_provider]
-   claude = "anthropic"              # its own login is a provider, so nothing to remove
+   except = ["claude"]               # left to itself (OQ-RC20 in config-user.md)
    [requests.github]
    repos = []                        # an empty list clears a list
 

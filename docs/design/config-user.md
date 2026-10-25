@@ -3,7 +3,7 @@ title: "Your config, one screen: packs, logins, and which setup each agent runs 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC14 (§5) and OQ-RC16 (§6); every other section of this document is approved"
+next: "Rule OQ-RC14 and OQ-RC20 (§5) and OQ-RC16 (§6); every other section of this document is approved"
 tags: [config, packs, providers, profiles, broker, grants, conventions, design]
 summary: "The user config as one annotated file, today and proposed, then one section per part of it. A section with a question carries that question at its end; a section without one is approved. Part of the readable-config redesign; the ledger of rulings is in the front door and the evidence is in the appendix."
 ---
@@ -18,8 +18,9 @@ this jail inherited it, condensed.
 time. A section that still needs a decision ends with its question; a section with no question
 is approved, and the [ledger](readable-config.md#decision-ledger) says when.
 
-**Needs your ruling:** [OQ-RC14](#OQ-RC14) in [§5](#5-which-setup-each-agent-runs-on),
-[OQ-RC16](#OQ-RC16) in [§6](#6-what-a-jail-may-do-with-your-logins).
+**Needs your ruling:** [OQ-RC14](#OQ-RC14) and [OQ-RC20](#OQ-RC20) in
+[§5](#5-which-setup-each-agent-runs-on), [OQ-RC16](#OQ-RC16) in
+[§6](#6-what-a-jail-may-do-with-your-logins).
 
 > **In short.** Each section of your config names what you decided, in a word you would use, and
 > says it once. The file below is the whole proposal; the prose only says why.
@@ -91,7 +92,7 @@ unnarrowed = true
 
 [active_provider]                 # the provider each agent runs on                       (§5, ?OQ-RC14)
 default = "bedrock"
-claude = "anthropic"              # claude's own login, which the claude pack declares as a provider
+except = ["claude"]               # left to itself: yolo configures nothing, claude logs in as it would alone  (?OQ-RC20)
 
 [providers.bedrock]               # selectable by its own name                           (§5)
 region = "us-east-1"
@@ -171,7 +172,7 @@ sources, and why this is Homebrew's model, is
 
 Today three keys share one word. `providers.bedrock` says where models come from; `profiles.bedrock`
 picks that provider and a starting model; `profile` maps each agent to a profile, with `"*"` for
-everyone and `null` for "keep your own login". Seven of the nine shipped profiles are named after
+everyone and `null` for "left to itself". Seven of the nine shipped profiles are named after
 the one provider they pick, so `-p bedrock` names one of two things.
 
 **Approved 2026-10-25:** a provider is selectable by its own name and starts on its own `model`.
@@ -191,23 +192,29 @@ model = "global.anthropic.claude-opus-5-5"
 [providers.bedrock.variants.bridge]            # or a different route to it
 via = "wire-bridge"
 
-[providers.openai-codex]                       # codex's own login, declared by its pack; alias lets -p codex work
+[providers.openai-codex]                       # the ChatGPT login, declared by the openai-auth pack; alias lets -p codex work
 alias = "codex"
 
 [active_provider]                              # the provider each agent runs on
 default = "bedrock"                            # a provider, by name; -p bedrock
 claude = "bedrock/opus"                        # a variant, as provider/variant; -p bedrock/opus
-codex = "openai-codex"                         # its own login: a provider like any other, so no special value
 pi = ["bedrock", "codex"]                      # several, switchable inside the agent, as today's list is
+except = ["codex"]                             # left to itself: yolo configures nothing for it     (?OQ-RC20)
 ```
 
-An agent's own login is a provider too, declared by the agent's pack (`openai-codex` by the
-openai-auth pack today; `anthropic` for claude, `github-copilot` for copilot), so "keep your own
-login" is written as that provider's name and no special value exists. `-p` and the selection key
-name the same things, as today. The one thing left is what the two keys are called: the
-selection, and a declared second configuration. The selection's name has to
-say what it is with no provider table in sight, since on the maintainer's machines it sits in a
-different file from them.
+A name is refused with the list of providers the selected packs declare, so the names are
+discoverable at the point of use:
+
+```console
+$ yolo check
+config.toml:19: active_provider.claude = "bedrok": no such provider. Declared: bedrock, bedrock/opus,
+  bedrock/bridge, openai-codex (codex), openrouter.
+```
+
+`-p` and the selection key name the same things, as today. Two things are left: what the two keys
+are called, and how an agent is left to itself, since what claude does on its own is not one
+nameable thing (its subscription, an API key, or Bedrock through its own environment) and so
+cannot be a provider name.
 
 1. 💬 🤷 <a id="OQ-RC14"></a>**OQ-RC14: What are the selection and the declarations called?**
 
@@ -223,13 +230,11 @@ different file from them.
    [active_provider]
    default = "bedrock"
    claude = "bedrock/opus"
-   codex = "openai-codex"
 
    # B  provider_for: "the provider for each agent"
    [provider_for]
    default = "bedrock"
    claude = "bedrock/opus"
-   codex = "openai-codex"
 
    # C  default_provider, per agent; reads oddly for an agent-specific line
    [default_provider]
@@ -241,6 +246,39 @@ different file from them.
 
    _Leaning:_ A: `active_provider` says both halves, a provider and the one in use, and pairs
    with `providers.*` as declared against selected.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
+2. 💬 <a id="OQ-RC20"></a>**OQ-RC20: How does the file say that an agent is left to its own login?**
+
+   You run everything on Bedrock except claude, which should log in the way it would with no yolo
+   at all. Today that line is `"claude": null`. What claude then does is not one thing yolo can
+   name: a subscription, an API key, or Bedrock through claude's own environment variables, chosen
+   by claude from what it finds. So the line cannot be a provider name; it has to say "nothing
+   from yolo" in a way a cold reader gets right, and `false` read as "nothing turned on".
+
+   ```toml
+   # A  a list of the agents left out of the default; no value is special, and it reads as a sentence
+   [active_provider]
+   default = "bedrock"
+   except = ["claude"]
+
+   # B  one keyword, reserved so no provider may take it
+   [active_provider]
+   default = "bedrock"
+   claude = "native"
+
+   # C  false
+   [active_provider]
+   default = "bedrock"
+   claude = false
+   ```
+
+   <!-- vantage: question id=OQ-RC20 leaning="A: default bedrock, except claude is the sentence a reader would say, and nothing in it has to be learned." -->
+
+   _Leaning:_ A: "default bedrock, except claude" is the sentence a reader would say, and nothing
+   in it has to be learned.
 
    **Answer:**
    > _(empty — fill in when decided)_
