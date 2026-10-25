@@ -362,6 +362,14 @@ var stateReclaimers = map[string]Reclaimer{
 	// tracked host-session liveness maps a running agent to the version it may still read. A dropped
 	// extension's copies still go at `yolo host apply --assert` under host_management "own", and
 	// `--revert` removes all versions.
+	// macos-user's run-as-you machine tier (paths.MacosUserMachineRoot): its .cache holds that
+	// backend's own Copilot self-update store, judged by the live macos-user sessions. The rest of
+	// the tier (its mise store, Library/Caches) has no reclaimer, which the detail says.
+	paths.MacosUserMachineLeaf: {Func: "PruneCopilotPkgVersions",
+		Detail: fmt.Sprintf(".cache/copilot/pkg only: keep the newest %d complete versions per platform; older "+
+			"ones once superseded %dd and no live macos-user session predates that; nothing else here is reclaimed",
+			prune.CopilotPkgKeep, int(prune.CopilotPkgGrace.Hours()/24)),
+		Trigger: "macos-user's `yolo prune --apply`; post-launch slot of a macos-user launch, daily"},
 	"host-trees": {Detail: "all admitted versions of each selected patched extension are retained because host-session liveness is untracked; a dropped extension's copies go at `yolo host apply --assert` under host_management \"own\", all versions go at `yolo host apply --revert`", Trigger: "yolo host apply --assert"},
 }
 
@@ -596,6 +604,26 @@ func cacheStores(o Options) []Store {
 			Detail:  fmt.Sprintf("older than %dd, OPT-IN; credentials and locks held", prune.NewDefaultOptions().CacheAge),
 			Trigger: "yolo prune --apply --purge-heavy-caches",
 		}
+	}
+
+	// copilot/ is forbidden to the age purge (its files carry 1985 timestamps), and its pkg/
+	// self-update store has its own keep-newest reclaimer, automatic on the slot. Its veto reads
+	// podman's running jails, so macos-user's own prune and slot judge macos-user's store instead
+	// (the state dir's macos-user/ row) and this one is podman's.
+	copilotSlot := "; post-launch slot of a podman launch, daily"
+	if o.InJail() {
+		copilotSlot = ""
+	}
+	copilotTrigger := "yolo prune --apply" + copilotSlot
+	if rt == macosUserRuntime {
+		copilotTrigger = "`YOLO_RUNTIME=podman yolo prune --apply`" + copilotSlot
+	}
+	covered["copilot"] = Reclaimer{
+		Func: "PruneCopilotPkgVersions",
+		Detail: fmt.Sprintf("pkg/ only: keep the newest %d complete versions per platform; older ones once "+
+			"superseded %dd and no running jail predates that (podman; not judged on Apple Container)",
+			prune.CopilotPkgKeep, int(prune.CopilotPkgGrace.Hours()/24)),
+		Trigger: copilotTrigger,
 	}
 
 	entries, err := os.ReadDir(root)

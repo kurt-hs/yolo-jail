@@ -131,7 +131,7 @@ func TestTheCachePurgeStopsAtItsDeadline(t *testing.T) {
 		purgeClock = func() time.Time { calls++; return base.Add(time.Duration(calls) * time.Second) }
 		defer func() { purgeClock = orig }()
 		_, n, partial := PurgeCacheByAgeWithin(root, []string{"uv"}, nil, 30, true, time.Now(), nil,
-			base.Add(3*time.Second+time.Millisecond))
+			base.Add(5*time.Second+time.Millisecond))
 		left := 0
 		for _, rel := range files {
 			if present(root, rel) {

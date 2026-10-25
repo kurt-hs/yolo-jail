@@ -342,7 +342,7 @@ Reclaim now? [y]es / [n]ot now (ask again in 7 days) / ne[v]er (yolo prune stays
 - **Measure late, offer early.** The size a prompt shows is the previous slot's dated
   measurement, or a probe cheap enough to run in front of a launch. A cache walk never runs
   there. Each walk has a time budget; a walk that exceeds it reports a partial figure and says
-  so.
+  so, and the next pass resumes where it stopped (see [the shared cache](#the-shared-cache)).
 - **Degenerate inputs.** An empty store or a class with nothing reclaimable is silent. A store
   the probe cannot read declines its class for this pass and does not stamp the debounce, so the
   next launch retries.
@@ -492,6 +492,55 @@ there is a no-op. `go-build` stays on the list because removing it would be a ch
 behind it, and must never be cited as evidence the purge works. `staticcheck` stays off. `nce`,
 content-addressed with no eviction, is on. pants, uv, pip, npm and pex do not self-trim; they are
 why the purge is offered.
+
+**The purge resumes; it does not restart.** It walks each subdir in name order and keeps its place
+between passes in `build/cache-purge-progress.json`: one place for the measurement and one for the
+consented removal, since each is its own walk with its own budget. A pass the budget stops goes on
+from there at the next launch, the class stays due until both walks have reached the end of the
+list, and `housekeeping.log` names the subdirs a cut pass covered and the ones left. `yolo prune
+--apply` resumes from the removal's place too; its dry run starts at the beginning. Before this,
+every pass started again at `uv`, which used the whole budget, so no pass reached the subdirs after
+it.
+
+**Some directories go whole or not at all.** Where a tool trusts a directory's existence as proof
+that its contents are complete, the purge removes the directory as one item, only when the directory
+and every file in it are older than the cutoff: uv's unpacked wheels (`archive-v0/<id>`) and cached
+environments, pex's unpacked chroots and venvs (also under pants' `named_caches/pex_root`), npx
+installs, `nce` installs and node-gyp header sets. It renames the directory out of the tool's way
+before removing it, so an interrupted removal never leaves a half-empty entry. Everywhere else a
+file is a whole entry and goes on its own. The list, and the reasoning for each cache, is
+`cachePurgeUnits` in `internal/prune/cachepurge.go`.
+
+**Copilot's self-update store has its own rule.** `copilot/pkg/<platform>/<version>/` gains one
+unpacked release (150-200 MB) per Copilot self-update and nothing removed old ones. The age purge
+cannot judge it: the release's files carry 1985 timestamps. A copilot starts on the newest complete
+version (one with its `.extraction-complete` marker), so an old version can be running only in a
+jail that started before a newer complete version was unpacked. An automatic class keeps the
+newest complete versions per platform and removes an older version whole only when a newer
+complete one was unpacked more than a grace period ago and no running jail started before that. A
+version still unpacking is never counted among the kept ones. Each backend runs it on the store
+its own jails fill, with its own evidence of which jails are running:
+
+- **Containers** fill the shared cache's store. The container slot judges it by the running
+  jails' start times as podman reports them.
+- **macos-user** in its run-as-you mode keeps a store of its own under
+  `~/.local/share/yolo-jail/macos-user/.cache`. Darwin releases never share a store with the
+  Linux ones. Its slot, on its own debounce stamp, judges that store by the live host-services
+  sessions. A session's start is the earliest modification time of its directory, its record and
+  its lock, all of which it creates as it starts. `yolo prune` on macos-user does the same.
+
+When the running jails can't be listed, the class declines: it notes this in `housekeeping.log`,
+doesn't stamp, and asks again at the next launch. On Apple Container the class is skipped: once a
+day the slot notes that yolo can't judge the store there, naming the gap. macos-user's
+account-mode store is out of reach (both are under
+[open gaps](#owed-measurements)). It is automatic because its evidence is complete (the backend's
+own list of running jails, the veto that protects live state) and a removed version costs one
+release download at most: both halves of [BF-P3](#backfill-rules).
+
+**Reported sizes can overstate what a pass freed.** A pass counts each removed file's size, so a
+file hard-linked elsewhere (uv links from `archive-v0` into environments) frees nothing on disk
+while it is counted, and an offer's figure is the sum of a cycle measured over several passes, part
+of which an earlier consented removal may already have freed.
 
 > [!WARNING]
 > **A path expression is evaluated in the frame that runs it.** The cache root resolves to the
@@ -828,10 +877,12 @@ number; each is now one of the mechanisms above.
   prune at every invocation is unmeasured in bytes.
 - **The mise store once its first window has passed:** the first offer, and the store's growth
   against its last samples.
-- **A possible defect in the cache age purge for `uv`:** one sample showed it holding several
-  windows' worth of growth across a purge. Not diagnosed: it needs a modification-time histogram
-  of that subdir on the host. Whether uv refreshes modification times on hits is the first
-  candidate.
+- **The re-measure of `uv` after the resuming purge.** The open "uv defect" (the subdir holding
+  several windows' worth of growth across consented purges) was the budget: every pass started at
+  `uv` and its removal reached only a slice of it. uv does not refresh modification times on hits:
+  in a development jail on 2026-10-24, 27 of 1,532 `archive-v0` entries had a file modified within
+  30 days, and those were exactly the 27 whose directory was. Owed: the subdir's size on the host a
+  week after the resuming purge ships.
 - **Workspace-local bytes are in no inventory row.** Agent worktrees under
   `<workspace>/.claude/worktrees/` are on the same device and appear nowhere in `yolo stores`;
   whether that belongs to `yolo stores` or to nothing is undecided.
@@ -848,7 +899,34 @@ number; each is now one of the mechanisms above.
   ([`storage-and-config.md`](storage-and-config.md#machine-wide-storage)). The host slot could
   sweep them only by reading every workspace's jail home, which it does not do today.
 - **No reclaimer exists for `macos-user`'s own storage** (`/var/yolo-jail`, the sandbox account's
-  caches); one would run as that account through `sudo`, which only a Mac can verify.
+  caches); one would run as that account through `sudo`, which only a Mac can verify. That
+  includes the account mode's Copilot self-update store in the sandbox account's home; the
+  run-as-you mode's store is reaped.
+- **Parity gap: Apple Container's Copilot self-update class** is skipped, with a note once a
+  day in `housekeeping.log` and a line in `yolo prune`. The
+  [Copilot rule](#the-shared-cache) needs each running jail's start time. `container inspect`
+  carries a `status.startedDate` ([setup-support-gaps §5.1](../plans/setup-support-gaps.md#51-what-is-now-measured)
+  row 5), but nobody has measured how its value is encoded, and yolo reads no Apple Container start
+  time anywhere. Until then the shared cache's store grows unbounded on a Mac that runs only Apple
+  Container. Mac check: run `container inspect <a running yolo jail>`, record `status.startedDate`
+  next to the jail's real start time, and add that reader to `prune.RunningJailStarts`.
+- **Backlog: the failure-report tests skip as root.** Both
+  `TestAFailedUnitRemovalIsReported` (`internal/prune`) and
+  `TestAFailedRemovalLeavesTheCacheClassDue` (`internal/cli/run`) stage the failure with a
+  read-only directory. Root removes from that anyway, so a root CI runner or a jail skips them.
+  Each passed when run as uid 65534 on 2026-10-24. Fix by staging the failure some other way.
+- **Backlog: `yolo prune`'s reload of the cache purge progress before saving is unpinned.** No
+  test fails if prune saves the progress it loaded at the start rather than reloading it, which
+  would overwrite a slot's measurement place moved meanwhile.
+- **Backlog: is darwin Copilot's store in `.cache` or `~/Library/Caches`?** The macos-user class
+  judges `macos-user/.cache/copilot/pkg`. If darwin Copilot unpacks under `Library/Caches`
+  instead, that store is unbounded and this class finds nothing. Mac check: after a Copilot
+  self-update in a run-as-you session, see which of the two holds `copilot/pkg`.
+- **Backlog: macOS `/tmp` cleaners and session locks.** macos-user's session dirs live under
+  `/tmp`. If macOS's periodic `/tmp` cleanup removes a long-running session's lock or dir, that
+  session reads as unknown or vanishes from the listing. Unknown still vetoes, but a vanished
+  session gives up its veto on the Copilot class and its keep on its agent staging. Mac check:
+  whether a session idle for more than 3 days keeps its `/tmp` dir.
 
 ## Why it's this way
 
@@ -895,6 +973,8 @@ only place the values themselves are stated.
 | Cache walk and purge budget | 60 s per pass | `prune.CachePurgeBudget` |
 | Cache age cutoff | 30 days | `yolo prune --cache-age` default |
 | Cache purge default subdirs | uv, pip, npm, go-build, mise, pex, pants, node-gyp, gopls, nce | `prune.CachePurgeDefaultSubdirs` |
+| Cache purge place between passes | `build/cache-purge-progress.json` | `prune.CachePurgeProgressName` |
+| Copilot self-update versions kept | the newest 3 complete per platform; an older one goes once a newer complete one is 7 days old and no running jail predates it | `prune.CopilotPkgKeep`, `prune.CopilotPkgGrace` |
 | Image-tar keep | 0 on podman, 3 on Apple Container | `prune.ResolveImageCacheKeep`, `ImageCacheKeepAppleContainer` |
 | `*.tmp` grace floor under `cache/images` | 1 hour | `imageCacheTmpGraceFloor` |
 | Owner label | `org.yolo-jail.owner=yolo` | `prune.JailImageOwnerLabel`, `flake.nix` |

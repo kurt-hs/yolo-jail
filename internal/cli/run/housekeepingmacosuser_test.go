@@ -160,9 +160,10 @@ func TestMacosUserLaunchRunsItsHousekeepingSlot(t *testing.T) {
 	// on a container launch of the same Mac by a day. The embedded-pack class is shared: its store
 	// is the same on every backend.
 	// The orphaned per-jail state stamp is shared with the container slot on purpose: it is the
-	// same sweep over the same store, so whichever slot ran it covers both.
+	// same sweep over the same store, so whichever slot ran it covers both. The Copilot class's is
+	// not: the two slots judge different stores.
 	if got, want := strings.Join(reapStamps(t), ","),
-		"last-cache-reap,last-embedded-packs-reap,last-loophole-state-reap,last-orphan-cname-state-reap"; got != want {
+		"last-cache-reap,last-copilot-pkg-macos-user-reap,last-embedded-packs-reap,last-loophole-state-reap,last-orphan-cname-state-reap"; got != want {
 		t.Errorf("the macos-user slot left the stamps %q, want %q", got, want)
 	}
 }

@@ -1288,15 +1288,80 @@ func Run(opts Options) int {
 			}
 		}
 		// Bounded like the launch's pass (CI-D7): a cache can hold hundreds of thousands of files.
-		var cachePartial bool
-		cacheBytes, cacheFiles, cachePartial = PurgeCacheByAgeWithin(joinPath(gs, "cache"), subdirs, opts.CacheRelocations,
-			float64(opts.CacheAge), apply, opts.Now(), nil, purgeClock().Add(CachePurgeBudget))
+		// --apply resumes where the last removal stopped, the launch slot's or an earlier
+		// `yolo prune --apply`'s (the same cursor, CachePurgeProgress.Apply), so running it again
+		// goes on rather than walking the same first subdir again. A dry run always starts at the
+		// beginning and moves no cursor.
+		var from CachePurgeCursor
+		progressPath := joinPath(opts.BuildDir(), CachePurgeProgressName)
+		if apply {
+			from = LoadCachePurgeProgress(progressPath).Apply
+		}
+		res := PurgeCacheByAgeFrom(joinPath(gs, "cache"), subdirs, opts.CacheRelocations,
+			float64(opts.CacheAge), apply, opts.Now(), nil, purgeClock().Add(CachePurgeBudget), from)
+		cacheBytes, cacheFiles = res.Bytes, res.Files
+		if apply {
+			// RELOADED just before the save, and only the removal's place written: this command
+			// takes no housekeeping lock, and a launch's slot may have moved the measurement's
+			// place (or its own removal's) while the walk ran. The last writer of Apply wins,
+			// which at worst walks some of a cycle twice.
+			progress := LoadCachePurgeProgress(progressPath)
+			progress.Apply = res.Next
+			SaveCachePurgeProgress(progressPath, progress)
+		}
 		p.line(fmt.Sprintf("  %s: %s across %s files", verb(apply, "would remove", "removed"), FmtBytes(cacheBytes), fmtComma(cacheFiles)))
-		if cachePartial {
-			p.line(fmt.Sprintf("  [yellow]partial: stopped at the %s budget, so this is a lower bound — "+
-				"run `yolo prune --apply` again to continue[/yellow]", CachePurgeBudget))
+		for _, f := range res.Failed {
+			p.line(fmt.Sprintf("  [yellow]could not finish removing %s — check its permissions and run "+
+				"`yolo prune --apply` again[/yellow]", f))
+		}
+		if res.Partial {
+			next := "run `yolo prune --apply` again to continue from there"
+			if !apply {
+				next = "`yolo prune --apply` removes as it walks and continues from where it stops, run after run"
+			}
+			p.line(fmt.Sprintf("  [yellow]partial: stopped at the %s budget, so this is a lower bound (%s) — %s[/yellow]",
+				CachePurgeBudget, res.Describe(), next))
+		} else if !from.IsStart() {
+			p.line(fmt.Sprintf("  [dim]resumed at %s/%s, where the last removal stopped; %s[/dim]", from.Sub, from.Path, res.Describe()))
 		}
 		totalSaved += cacheBytes
+	}
+
+	// --- Copilot's self-update store (copilot/pkg; copilotpkg.go) ---
+	// The launch's slot reaps it automatically, once a day; this is the same rule on demand, with
+	// the same veto: the running jails' start times, asked of the runtime, or a decline. On
+	// macos-user it is that backend's own store, judged by its sessions, as its slot does; the
+	// shared cache's Linux store is a container runtime's to judge (`YOLO_RUNTIME=podman yolo prune`).
+	{
+		store, label := joinPath(gs, "cache"), "cache/copilot/pkg"
+		jails := func() JailStarts { return RunningJailStarts(rt, opts.Exec) }
+		if macosUser {
+			store, label = CopilotPkgCacheMacosUser(gs), paths.MacosUserMachineLeaf+"/.cache/copilot/pkg"
+			jails = func() JailStarts { return MacosUserJailStarts(paths.HostServicesBase(paths.IsMacOS)) }
+		}
+		res := PruneCopilotPkgVersions(store, CopilotPkgKeep, CopilotPkgGrace, opts.Now(), jails, apply, nil)
+		p.line("")
+		p.line(fmt.Sprintf("[bold]Copilot self-update versions[/bold]  (%s; keep the newest %d "+
+			"complete per platform, and any a running jail may still use)", label, CopilotPkgKeep))
+		switch {
+		case res.Declined != "" && rt == "container":
+			p.line("  [yellow]not judged on Apple Container, which yolo reads no jail start time from yet — " +
+				"disk-footprint.md's open gap \"Parity gap: Apple Container's Copilot self-update class\" is " +
+				"the fix and names the Mac check that unblocks it[/yellow]")
+		case res.Declined != "":
+			p.line(fmt.Sprintf("  [yellow]declined: %s — nothing removed; run `yolo prune --apply` where the "+
+				"runtime that runs your jails can list them[/yellow]", res.Declined))
+		case len(res.Removed) == 0 && len(res.Failed) == 0:
+			p.line("  [dim]none[/dim]")
+		}
+		for _, v := range res.Removed {
+			p.line(fmt.Sprintf("  %s %s (%s)", verb(apply, "would remove", "removed"), v.Display(), FmtBytes(v.Bytes)))
+		}
+		for _, v := range res.Failed {
+			p.line(fmt.Sprintf("  [yellow]could not remove %s: %s — check its permissions and run "+
+				"`yolo prune --apply` again[/yellow]", v.Display(), v.Err))
+		}
+		totalSaved += res.Bytes
 	}
 
 	// --- Unused tool versions in the shared mise store (disk-footprint.md OQ-DF4) ---

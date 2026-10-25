@@ -227,6 +227,7 @@ func (o *Options) runHousekeeping(rt string, reclaimConsent reclaimConsent, cnam
 		o.reapEmbeddedPackTrees()
 		o.reapSupersededStoreOutputs(rt, guard)
 		o.measureAndPurgeCache(reclaimConsent, guard)
+		o.reapCopilotPkgVersions(rt, guard)
 		o.measureAndPurgeMiseVersions(rt, reclaimConsent, guard)
 		o.reapSmallAutomaticClasses(rt, cname, guard)
 		o.reapOrphanCnameState(rt, cname, guard)
@@ -254,12 +255,12 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 	housekeepingSlots.Go(func() { safeRun(func() { o.runMacosUserHousekeeping(consent) }) })
 }
 
-// runMacosUserHousekeeping is the macos-user arm's slot body: four of the container slot's
-// classes, as one pass under the same pass lock and per-deletion guard as the container's
-// (withHousekeepingPass). Each is a store this backend writes or shares with container jails on
-// the same Mac; the list below says which.
+// runMacosUserHousekeeping is the macos-user arm's slot body: five classes, as one pass under
+// the same pass lock and per-deletion guard as the container's (withHousekeepingPass). Each is a
+// store this backend writes or shares with container jails on the same Mac; the list below says
+// which.
 //
-// FOUR CLASSES, and which ones is decided BY RUNTIME, not by asking anything:
+// FIVE CLASSES, and which ones is decided BY RUNTIME, not by asking anything:
 //
 //   - the shared cache's age purge (measureAndPurgeCache, OQ-BF1's offered tier): measured here
 //     for the next launch's offer, purged only on consent. A macos-user sandbox keeps its caches
@@ -268,6 +269,8 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 //     launch offers it like any other launch.
 //   - retired loophole-state generations (reapRetiredLoopholeState): written by every launch's
 //     retirement pass, on every backend.
+//   - macos-user's own Copilot self-update store (reapMacosUserCopilotPkgVersions): the
+//     container slot's rule, judged by this backend's sessions instead of a container runtime.
 //   - other builds' embedded pack trees (reapEmbeddedPackTrees): one per yolo build, on every
 //     backend, gated by each tree's lease rather than by a container runtime.
 //   - orphaned per-jail state (reapOrphanCnameStateMacosUser): see below.
@@ -290,6 +293,7 @@ func (o *Options) runMacosUserHousekeeping(consent reclaimConsent) {
 	o.withHousekeepingPass(func(guard prune.Guard) {
 		o.measureAndPurgeCache(consent, guard)
 		o.reapRetiredLoopholeState(guard)
+		o.reapMacosUserCopilotPkgVersions(guard)
 		o.reapEmbeddedPackTrees()
 		o.reapOrphanCnameStateMacosUser(guard)
 	})
@@ -349,32 +353,54 @@ func (o *Options) measureAndPurgeCache(consent reclaimConsent, guard prune.Guard
 	// DRY-RUN FIRST, always: the measurement is what the next launch offers on,
 	// and it must exist whether or not this launch may delete anything.
 	//
-	// Each pass stops at cacheWalkBudget (CI-D7). A measurement that stopped is
-	// recorded as partial, and the debounce is stamped only by a measurement that
-	// finished: a pass cut short is not a pass, and the next launch retries it.
-	bytes, files, partial := prune.PurgeCacheByAgeWithin(cacheRoot, subdirs, nil, cacheAgeDays, false, o.Now(), nil,
-		time.Now().Add(cacheWalkBudget))
+	// Each walk stops at cacheWalkBudget (CI-D7) and RESUMES where it stopped
+	// (prune.CachePurgeProgress): a pass that restarted at the first subdir spent
+	// its whole budget in uv and never reached the subdirs after it. The
+	// measurement adds up over its cycle and is recorded partial until a pass
+	// finishes the cycle.
+	//
+	// WHICH CYCLE STAMPS THE DEBOUNCE: without consent, the measurement's; with
+	// consent, the removal's (or, when there was nothing to remove, the
+	// measurement's). Requiring both to finish on one pass could alternate for
+	// ever, each walk finishing on the pass the other was cut.
+	progressPath := filepath.Join(paths.BuildDir(), prune.CachePurgeProgressName)
+	progress := prune.LoadCachePurgeProgress(progressPath)
+	measured := prune.PurgeCacheByAgeFrom(cacheRoot, subdirs, nil, cacheAgeDays, false, o.Now(), nil,
+		cacheWalkDeadline("measure"), progress.Measure)
+	bytes, files, measuredAll := progress.AddMeasurement(measured)
 	RecordOfferMeasurement(cachePurgeClass, offerMeasurement{
 		Bytes:   bytes,
 		Detail:  fmtCachePurgeDetail(files),
 		When:    o.Now(),
-		Partial: partial,
+		Partial: !measuredAll,
 	})
-	if !partial {
+	if !measuredAll {
+		o.housekeepingNote("cache: measurement %s; %s so far", measured.Describe(), prune.FmtBytes(bytes))
+	}
+	complete := measuredAll
+	if consented && (bytes > 0 || !progress.Apply.IsStart()) {
+		applied := prune.PurgeCacheByAgeFrom(cacheRoot, subdirs, nil, cacheAgeDays, true, o.Now(), guard,
+			cacheWalkDeadline("apply"), progress.Apply)
+		progress.Apply = applied.Next
+		// A removal that failed leaves the class due, so the note's "the next launch retries" is
+		// true; the cursor still moves on, and the next cycle reaches the leftover again.
+		complete = !applied.Partial && len(applied.Failed) == 0
+		if applied.Bytes > 0 {
+			o.housekeepingNote("cache: reclaimed %s older than %d days, as agreed",
+				prune.FmtBytes(applied.Bytes), int(cacheAgeDays))
+		}
+		for _, f := range applied.Failed {
+			o.housekeepingNote("cache: could not finish removing %s; check its permissions, then the next "+
+				"launch retries, or run `yolo prune --apply`", f)
+		}
+		if applied.Partial {
+			o.housekeepingNote("cache: removal stopped at the %s budget: %s; the next launch continues, "+
+				"or run `yolo prune --apply`", cacheWalkBudget, applied.Describe())
+		}
+	}
+	prune.SaveCachePurgeProgress(progressPath, progress)
+	if complete {
 		done()
-	}
-	if !consented || bytes == 0 {
-		return
-	}
-	removed, _, cut := prune.PurgeCacheByAgeWithin(cacheRoot, subdirs, nil, cacheAgeDays, true, o.Now(), guard,
-		time.Now().Add(cacheWalkBudget))
-	if removed > 0 {
-		o.housekeepingNote("cache: reclaimed %s older than %d days, as agreed",
-			prune.FmtBytes(removed), int(cacheAgeDays))
-	}
-	if cut {
-		o.housekeepingNote("cache: stopped at the %s budget; a later launch continues, or run `yolo prune --apply`",
-			cacheWalkBudget)
 	}
 }
 
@@ -385,6 +411,10 @@ const cacheAgeDays = 30
 // the figure is reported as partial rather than as a total that happens to be
 // short, and the deletions stop. A var only so a test can make it already past.
 var cacheWalkBudget = prune.CachePurgeBudget
+
+// cacheWalkDeadline is when the named cache walk ("measure" or "apply") of this pass stops: a seam
+// so a test can cut one walk and not the other.
+var cacheWalkDeadline = func(walk string) time.Time { return time.Now().Add(cacheWalkBudget) }
 
 func fmtCachePurgeDetail(files int) string {
 	if files == 1 {

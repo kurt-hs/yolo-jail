@@ -383,7 +383,7 @@ func TestEveryClassDeletesUnderTheGuard(t *testing.T) {
 	for _, call := range []string{
 		"prune.AutoReapOldImagesGuarded(rt, buildDir, o.Now(), run, guard)",
 		"prune.DeleteSupersededStoreOutputsGuarded(candidates, true, run, guard, rootDirs)",
-		"prune.PurgeCacheByAgeWithin(cacheRoot, subdirs, nil, cacheAgeDays, true, o.Now(), guard,",
+		"prune.PurgeCacheByAgeFrom(cacheRoot, subdirs, nil, cacheAgeDays, true, o.Now(), guard,",
 		"prune.PruneUnusedMiseVersionsGuarded(sweep, o.Now(), guard)",
 		"prune.PruneOrphanAgentStagingGuarded(",
 		"prune.PruneRetiredLoopholeStateGuarded(",

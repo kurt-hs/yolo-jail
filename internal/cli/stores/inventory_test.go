@@ -111,6 +111,35 @@ func TestCacheCoverageComesFromPrunesOwnLists(t *testing.T) {
 	}
 }
 
+// TestTheCopilotRowsNameTheirOwnReclaimers: the shared cache's copilot row is podman's to reclaim,
+// and on macos-user names podman's prune as its trigger; macos-user's own store, in the state
+// dir's macos-user/ row, names that backend's prune and slot.
+func TestTheCopilotRowsNameTheirOwnReclaimers(t *testing.T) {
+	o, state := testOptions(t)
+	writeFile(t, filepath.Join(state, "cache", "copilot", "pkg", "f"), 4)
+	writeFile(t, filepath.Join(state, "macos-user", ".cache", "copilot", "pkg", "f"), 4)
+	for _, rt := range []string{"podman", "macos-user"} {
+		o.DetectRuntime = func() string { return rt }
+		rows := map[string]Store{}
+		for _, r := range cacheStores(o) {
+			rows[r.Key] = r
+		}
+		for _, r := range stateStores(o, nil) {
+			rows[r.Key] = r
+		}
+		shared, own := rows["cache.copilot"], rows["state.macos-user"]
+		if shared.Reclaimer.Func != "PruneCopilotPkgVersions" || own.Reclaimer.Func != "PruneCopilotPkgVersions" {
+			t.Fatalf("%s: shared %+v, own %+v: want both reclaimed by PruneCopilotPkgVersions", rt, shared.Reclaimer, own.Reclaimer)
+		}
+		if podmanTrigger := strings.Contains(shared.Reclaimer.Trigger, "YOLO_RUNTIME=podman"); podmanTrigger != (rt == "macos-user") {
+			t.Errorf("%s: the shared copilot row's trigger is %q", rt, shared.Reclaimer.Trigger)
+		}
+		if !strings.Contains(own.Reclaimer.Trigger, "macos-user") {
+			t.Errorf("%s: macos-user's store names the trigger %q", rt, own.Reclaimer.Trigger)
+		}
+	}
+}
+
 // TestImageCacheKeepIsAskedNotAssumed: the tar retention default moved with
 // OQ-BF6 (0 on podman, 3 on Apple Container), and this row must ask
 // prune.ResolveImageCacheKeep rather than carry a number of its own.
@@ -297,6 +326,7 @@ func TestEveryNamedReclaimerExists(t *testing.T) {
 	}
 	// The rows built inline, which the table above does not cover.
 	named["PurgeCacheByAge"] = "cacheStores"
+	named["PruneCopilotPkgVersions"] = "cacheStores (the copilot row)"
 	named["PruneImageCache"] = "cacheStores (the tar row)"
 	named["PruneOldImages"] = "imageStores (the tagged row)"
 	named["RemoveScratchVolume"] = "scratchStores (the live row)"
