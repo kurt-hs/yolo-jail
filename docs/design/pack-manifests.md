@@ -3,9 +3,9 @@ title: "Pack manifests: the same rules, shown on the maintainer's own packs"
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC5 (manifests in the same breaking change?)"
+next: "Rule OQ-RC19 (§4, the manifest shape) and OQ-RC5 (§5, in the same break as the configs?)"
 tags: [packs, manifest, toml, conventions, design]
-summary: "Each of the maintainer's twelve packs, before and after: a manifest-less folder for the simple ones, a short TOML manifest for the rest, models declared once, and flags that add instead of replace. One question. Part of the readable-config redesign."
+summary: "Each of the maintainer's twelve packs, before and after: a manifest-less folder for the simple ones, a short TOML manifest for the rest, models declared once, and flags that add instead of replace. Each section ends with its question; a section with none is approved. Part of the readable-config redesign."
 ---
 
 # Pack manifests: the same rules, shown on the maintainer's own packs
@@ -13,7 +13,12 @@ summary: "Each of the maintainer's twelve packs, before and after: a manifest-le
 **Status:** 2026-10-25. Nothing is built. The "today" manifests are the maintainer's twelve
 packs, read on 2026-10-24.
 
-**Needs your ruling:** [OQ-RC5](#OQ-RC5).
+**How to read this.** [§1](#1-a-small-pack-luna-worker) to [§4](#4-flags-that-add-and-a-model-said-once)
+are the shape, pack by pack, and [§4](#4-flags-that-add-and-a-model-said-once) ends with the
+question that approves it; [§5](#5-the-migration) ends with the question of when it lands.
+
+**Needs your ruling:** [OQ-RC19](#OQ-RC19) in [§4](#4-flags-that-add-and-a-model-said-once),
+[OQ-RC5](#OQ-RC5) in [§5](#5-the-migration).
 
 > **In short.** A pack's folders say what it is; the manifest says only what a folder cannot.
 > Four of the twelve packs need no manifest at all, and the two big ones lose four-fifths of
@@ -97,8 +102,9 @@ set.fileSuggestion = { type = "command", command = "~/.claude/bin/file-suggestio
 
 ## 3. No manifest at all
 
+Approved 2026-10-25 as convention C6 ([`config-user.md` §8](config-user.md#8-lines-you-never-write)).
 Folders say what they are; `pack.toml` is for what a folder cannot say: a program to install, a
-source to fetch and patch, a build, a model. This is convention C6 of the user-config doc.
+source to fetch and patch, a build, a model.
 
 ```text
 <pack>/
@@ -152,39 +158,50 @@ price = { input = 0.1, output = 0.2, cache_read = 0.002, cache_write = 0 }
 `twin_of` takes every fact of the named row and sends its id on the wire; each agent's render
 writes its own file from these rows.
 
+1. 💬 <a id="OQ-RC19"></a>**OQ-RC19: Is the manifest shape approved, lever by lever?**
+
+   You open `matt/pack.json` to see what the pack does and meet 860 lines, 271 of them 39 `files`
+   entries and 425 of them pi's settings written inline; in `agy-capture`, deleting one restated
+   flag would make agy prompt for every tool; `meta-muse` writes the same model facts six times.
+   [§1](#1-a-small-pack-luna-worker) to [§4](#4-flags-that-add-and-a-model-said-once) show the
+   six levers on those packs; each can be vetoed alone.
+
+   ```toml
+   # P1  home/ is laid into the home directory, file by file          (32 of matt's 39 files entries go)
+   # P2  an overlay's content lives in its own file, in the agent's own format   (425 lines leave the manifest)
+   # P3  grouped by kind, the pack's identity stated once
+   [[program]]
+   bin = "fd"
+   # P4  a contribution states only what it changes; replace = true says otherwise
+   # P5  a model is declared once, in yolo's shape, for every agent  (twin_of, thinking, images, api)
+   # P6  the obvious is not written
+   install = "jq"                                   # one hint when every manager agrees
+   ```
+
+   <!-- vantage: question id=OQ-RC19 leaning="Approve all six: the four smallest packs become folders, and the two largest keep every fact in a fifth of the lines." -->
+
+   _Leaning:_ Approve all six: the four smallest packs become folders, and the two largest keep
+   every fact in a fifth of the lines.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
 ## 5. The migration
 
 `yolo pack migrate <path>` rewrites the manifest, keeps comments as the config migration does,
 moves plain-copy `files` entries into `home/` or a pi package folder, and uses `git mv` in a
 checkout, so history follows. A local pack in the old format is refused naming the command; a
-fetched one is [OQ-RC8](config-migration.md#OQ-RC8).
-
-## 6. Principles
-
-1. **A folder is the declaration.** A manifest names only what a folder cannot.
-2. **Big content lives in its own file, in its owner's format.** An overlay body is pi's or
-   claude's settings, not yolo's.
-3. **A contribution states only what it changes.** Lists add and objects merge; `replace = true`
-   says otherwise.
-4. **A model is declared once, in yolo's shape, for every agent.**
-5. **The obvious is not written.** One install hint when every manager agrees; `codec` from the
-   extension; `scope = "workspace"` and `run = bin` as defaults. Shipped packs keep the
-   per-manager form, which keeps the test that every shipped hint cites its source.
-6. **A pack is named by where it comes from**, never by its manifest
-   ([OQ-RC15](readable-config.md#decision-ledger), ruled).
-
-## 7. Open questions
+fetched one is [OQ-RC8](config-migration.md#OQ-RC8). A yolo of 0.11.1 or earlier refuses any new
+manifest field outright, so a new manifest shape is a new file name however it is done.
 
 1. 💬 <a id="OQ-RC5"></a>**OQ-RC5: Should pack manifests change in the same breaking change as the configs?**
 
-   You open `matt/pack.json` to see what the pack does. It is 860 lines: 271 are 39 `files`
-   entries, 32 of them plain copies to the same path, and 425 are pi's settings written inline.
-   In `agy-capture`, deleting one restated flag would make agy prompt for every tool. A yolo of
-   0.11.1 or earlier refuses any new manifest field outright, so a new manifest shape is a new file
-   name however it is done.
+   You upgrade yolo. If the manifests change with the configs, one release pair covers both and
+   `yolo pack migrate` runs beside `yolo config migrate`; if the configs go first, your config is
+   new while your packs are old for a release, and you migrate twice.
 
    ```text
-   # A  together: one migration, one release pair, yolo pack migrate moves the files
+   # A  together: one migration, one release pair
    release N    knows config.toml, yolo-jail.toml, pack.toml
    release N+1  reads only them; config migrate and pack migrate
 
@@ -203,6 +220,20 @@ fetched one is [OQ-RC8](config-migration.md#OQ-RC8).
 
    **Answer:**
    > _(empty — fill in when decided)_
+
+## 6. Principles
+
+1. **A folder is the declaration.** A manifest names only what a folder cannot.
+2. **Big content lives in its own file, in its owner's format.** An overlay body is pi's or
+   claude's settings, not yolo's.
+3. **A contribution states only what it changes.** Lists add and objects merge; `replace = true`
+   says otherwise.
+4. **A model is declared once, in yolo's shape, for every agent.**
+5. **The obvious is not written.** One install hint when every manager agrees; `codec` from the
+   extension; `scope = "workspace"` and `run = bin` as defaults. Shipped packs keep the
+   per-manager form, which keeps the test that every shipped hint cites its source.
+6. **A pack is named by where it comes from**, never by its manifest
+   ([`config-user.md` §4](config-user.md#4-naming-a-pack-that-is-not-shipped)).
 
 ## Appendix: evidence
 
@@ -266,5 +297,5 @@ stays there. [OQ-PC1](pack-conventions.md#OQ-PC1) to [OQ-PC3](pack-conventions.m
 single-file `files` entries in `matt` on 2026-10-05 and found about five lines saved; that count
 covered pi-path entries only, where this one covers every copy-only entry across his packs, 39.
 Its rejections of a one-value `install_hints` and of a provider implying its profile were its own
-verdicts, not the maintainer's rulings, so both are re-opened here and in
-[`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on).
+verdicts, not the maintainer's rulings; the second is now ruled the other way
+([`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on)).

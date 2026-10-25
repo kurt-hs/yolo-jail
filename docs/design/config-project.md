@@ -3,17 +3,22 @@ title: "A project's file: what it installs, what it asks for, and what it turns 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC7 (how a file says off, with no null)"
+next: "Rule OQ-RC17 (§1, the file's shape) and OQ-RC7 (§3, saying off with no null)"
 tags: [config, workspace, install, grants, mounts, design]
-summary: "The project config as annotated files, today and proposed: install, needs, mounts, ports, environment, and the local file. One question: how a TOML file says 'remove' with no null. Part of the readable-config redesign."
+summary: "The project config as annotated files, today and proposed: install, needs, mounts, ports, environment, and the local file. Each section ends with its question; a section with none is approved. Part of the readable-config redesign."
 ---
 
 # A project's file: what it installs, what it asks for, and what it turns off
 
-**Status:** 2026-10-25. Nothing is built. The "today" files are this repository's and a
-composite team project's.
+**Status:** 2026-10-25. Nothing is built. The "today" files are this repository's and a composite
+team project's.
 
-**Needs your ruling:** [OQ-RC7](#OQ-RC7).
+**How to read this.** [§1](#1-the-file) is the file and ends with the question that approves its
+shape; [§2](#2-no-file-at-all) is approved already; [§3](#3-the-local-file-and-turning-something-off)
+ends with the one question about spelling "off".
+
+**Needs your ruling:** [OQ-RC17](#OQ-RC17) in [§1](#1-the-file), [OQ-RC7](#OQ-RC7) in
+[§3](#3-the-local-file-and-turning-something-off).
 
 > **In short.** A project file says what the project needs, inside what your own config allows,
 > and most projects need no file at all.
@@ -24,7 +29,9 @@ composite team project's.
 
 ---
 
-## 1. This repository's file, today and proposed
+## 1. The file
+
+### This repository's
 
 Today, `yolo-jail.jsonc`: 133 lines, of which 121 are the template's comments and 12 are live.
 
@@ -50,30 +57,7 @@ mise = { lua = "5.4.9" }          # syntax-checks the packs' derive.lua files
 push = ["main"]
 ```
 
-And the uncommitted `yolo-jail.local.toml`, unchanged in meaning from today's:
-
-```toml
-[[mounts]]
-host = "~/.local/share/yolo-jail/logs"
-at = "/ctx/host-yolo-logs"
-optional = true                   # a backend that cannot deliver it skips it
-```
-
-## 2. No file at all
-
-Most projects need nothing. `yolo` in a folder with no `yolo-jail.toml` runs with defaults;
-`yolo init` writes the three-line pointer file only when asked, and `.yolo/` goes into
-`.git/info/exclude` rather than the project's `.gitignore`. This is convention C5 of
-[`config-user.md`](config-user.md#8-lines-you-never-write).
-
-```text
-# before                                   # after
-acme/                                      acme/
-  yolo-jail.toml   (the 133-line template)
-  .gitignore       (+ ".yolo/")
-```
-
-## 3. A team project
+### A team project's
 
 Today:
 
@@ -81,10 +65,11 @@ Today:
 {
   "packages": ["postgresql", "just"],
   "mise_tools": { "node": "22", "python": "3.12" },
-  "mounts": ["~/code/acme-shared"],
+  "mounts": ["~/code/acme-shared", "~/x:/ctx/x:ro"],  // the second is one host path named "~/x:/ctx/x:ro", skipped with a warning
   "network": { "ports": ["8000:8000"], "forward_host_ports": [5432] },   // HOST:JAIL, then JAIL:HOST
   "gpu": { "enabled": true },
   "resources": { "memory": "16g", "cpus": 8 },
+  "env_sources": ["~/.config/yolo-jail/secrets.env", { "AWS_PROFILE": null, "PAGER": "cat" }],
   "brokered": { "github": { "repos": ["acme/shared"] } }
 }
 ```
@@ -94,15 +79,24 @@ Proposed:
 ```toml
 [install]
 nix = ["postgresql", "just"]
-mise = { node = "22", python = "3.12" }   # "3.12" stays a string, in TOML and in YAML's absence
+mise = { node = "22", python = "3.12" }   # "3.12" stays a string
 
 mounts = ["~/code/acme-shared"]           # read-only; a bare path with no colon is still legal
+
+[[mounts]]
+host = "~/x"
+at = "/ctx/x"                             # read-only unless `write = true`, which only your config may say
 
 [machine]
 gpu = true                                # warns and starts without one on a machine that has none
 resources = { memory = "16g", cpus = 8 }
 ports = [{ host = 8000, jail = 8000 }]           # the host reaches the jail's :8000
 forward = [{ jail = 5432, host = 5432 }]         # the jail reaches the host's postgres at localhost:5432
+
+[env]
+files = ["~/.config/yolo-jail/secrets.env"]
+set = { PAGER = "cat" }
+unset = ["AWS_PROFILE"]
 
 [needs.github]
 repos = ["acme/shared"]                   # beyond this repository's own remotes
@@ -111,38 +105,59 @@ repos = ["acme/shared"]                   # beyond this repository's own remotes
 new_branches = true                       # branches of its own, never main; each is approved at launch
 ```
 
+A direction is a key, not a position in a string: `{ host = 8000, jail = 8000 }` where today's
+`"8000:8000"` and `forward_host_ports` run opposite ways. A project asks; your config allows.
 Asking past the ceiling is refused at `yolo check`, naming both lines:
 
 ```console
 $ yolo check
-yolo-jail.toml:16: [needs.git] new_branches = true asks to push, and your config's allow.git.push is false.
+yolo-jail.toml:22: [needs.git] new_branches = true asks to push, and your config's allow.git.push is false.
   Allow it for every project: yolo allow git push        (or leave it, and this project cannot push)
 ```
 
-## 4. Values that were strings
+Nothing that decides where inference goes or what a jail may do with your logins is accepted
+here, because this file is the agent's to edit; `yolo check` refuses such a key naming the file
+it belongs in.
 
-```jsonc
-"mounts": ["~/x:/ctx/x:ro"]                    // one host path named "~/x:/ctx/x:ro", skipped with a warning
+1. 💬 <a id="OQ-RC17"></a>**OQ-RC17: Is the project file's shape approved?**
+
+   An agent in a jail opens the project's file to add a tool, or a teammate opens it to see what
+   the project needs. Today they meet 121 lines of template comments around 12 live ones, two
+   port lists that run in opposite directions, a mount string that is parsed on colons, and a
+   `brokered` block. The file above is the proposal, section by section; each can be vetoed
+   alone.
+
+   ```toml
+   [install]          # nix and mise, where today's packages and mise_tools were
+   mounts / [[mounts]] # a bare path, or a table with host and at
+   [machine]          # gpu, resources, ports, forward, where today's four top-level keys were
+   [env]              # files, set, unset, where today's one mixed list was
+   [needs.*]          # what this project asks for, within your allow
+   ```
+
+   <!-- vantage: question id=OQ-RC17 leaning="Approve: each section names what the project decides, and the two string traps become keys." -->
+
+   _Leaning:_ Approve: each section names what the project decides, and the two string traps
+   become keys.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
+## 2. No file at all
+
+Approved 2026-10-25 as convention C5 ([`config-user.md` §8](config-user.md#8-lines-you-never-write)).
+Most projects need nothing. `yolo` in a folder with no `yolo-jail.toml` runs with defaults;
+`yolo init` writes the three-line pointer file only when asked, and `.yolo/` goes into
+`.git/info/exclude` rather than the project's `.gitignore`.
+
+```text
+# before                                   # after
+acme/                                      acme/
+  yolo-jail.toml   (the 133-line template)
+  .gitignore       (+ ".yolo/")
 ```
 
-```toml
-[[mounts]]
-host = "~/x"
-at = "/ctx/x"                                  # read-only unless `write = true`, which only your config may say
-```
-
-```jsonc
-"env_sources": ["~/.config/yolo-jail/secrets.env", { "AWS_PROFILE": null, "PAGER": "cat" }]
-```
-
-```toml
-[env]
-files = ["~/.config/yolo-jail/secrets.env"]
-set = { PAGER = "cat" }
-unset = ["AWS_PROFILE"]
-```
-
-## 5. The local file, and turning something off
+## 3. The local file, and turning something off
 
 `yolo-jail.local.toml` is this machine's and uncommitted, merged after the project file as today.
 It is where a project turns off something your own config added:
@@ -153,24 +168,15 @@ It is where a project turns off something your own config added:
 command = ["npx", "-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/acme"]
 
 [mcp_servers.tavily]
-off = true                        # your config adds it; not wanted here        (OQ-RC7, option A)
+off = true                        # your config adds it; not wanted here
 
 [machine]
 resources = { memory = "32g" }
 ```
 
-## 6. Principles
-
-1. **A project asks; your config allows.** `needs` here must fit inside `allow` there, and every
-   ask is a line in the launch approval prompt, as today.
-2. **A project file is the agent's to edit**, so nothing that decides where inference goes or
-   what a jail may do with your logins is accepted here; `yolo check` refuses it naming the file
-   it belongs in.
-3. **A direction is a key, not a position in a string.** `{ host = 8000, jail = 8000 }`.
-4. **Off is a word at the place**, never a `null` ([OQ-RC7](#OQ-RC7)).
-5. **No file is the common case.**
-
-## 7. Open questions
+Config lists merge by union, so a lower layer can add to a list and never remove from it; "off"
+has to be a word on the thing. What that word is, and how the other places `null` is used today
+are spelled, is the question.
 
 1. 💬 <a id="OQ-RC7"></a>**OQ-RC7: How does a TOML file say "remove" or "not this one", with no `null`?**
 
@@ -191,7 +197,7 @@ resources = { memory = "32g" }
    [needs.github]
    repos = []                        # an empty list clears a list
 
-   # B  one reserved string, valid wherever a value may be removed  (against principle 5 of config-user.md)
+   # B  one reserved string, valid wherever a value may be removed  (a reserved string, which principle 5 rules out)
    mcp_servers.tavily = "off"
    env.AWS_PROFILE = "off"
 
@@ -206,6 +212,16 @@ resources = { memory = "32g" }
 
    **Answer:**
    > _(empty — fill in when decided)_
+
+## 4. Principles
+
+1. **A project asks; your config allows.** `needs` here must fit inside `allow` there, and every
+   ask is a line in the launch approval prompt, as today.
+2. **A project file is the agent's to edit**, so nothing user-scope is accepted here, and the
+   refusal names the file it belongs in.
+3. **A direction is a key, not a position in a string.**
+4. **Off is a word at the place**, never a `null`.
+5. **No file is the common case.**
 
 ## Appendix: evidence
 

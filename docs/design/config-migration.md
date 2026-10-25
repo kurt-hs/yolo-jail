@@ -3,9 +3,9 @@ title: "Moving to the new config: the file name is the version, and one command 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC11 (file name or version key), then OQ-RC6 (older yolos) and OQ-RC8 (fetched packs)"
+next: "Rule OQ-RC11 (§2), OQ-RC6 (§3), OQ-RC18 (§4) and OQ-RC8 (§5)"
 tags: [config, migration, versioning, release, design]
-summary: "How a yolo knows which config it has, the order of releases, what `yolo config migrate` does and proves, and what every machine sees along the way, shown as transcripts. Part of the readable-config redesign."
+summary: "How a yolo knows which config it has, the order of releases, what `yolo config migrate` does and proves, and what every machine sees along the way, shown as transcripts. Each section ends with its question. Part of the readable-config redesign."
 ---
 
 # Moving to the new config: the file name is the version, and one command converts everything
@@ -13,7 +13,12 @@ summary: "How a yolo knows which config it has, the order of releases, what `yol
 **Status:** 2026-10-25. Nothing is built. The transcripts are what a person would see under the
 leanings.
 
-**Needs your ruling:** [OQ-RC6](#OQ-RC6), [OQ-RC8](#OQ-RC8), [OQ-RC11](#OQ-RC11).
+**How to read this.** [§1](#1-what-youd-see) is the transcripts; [§2](#2-how-a-yolo-knows-which-config-it-has)
+to [§5](#5-every-case) each end with their question.
+
+**Needs your ruling:** [OQ-RC11](#OQ-RC11) in [§2](#2-how-a-yolo-knows-which-config-it-has),
+[OQ-RC6](#OQ-RC6) in [§3](#3-the-order-of-releases), [OQ-RC18](#OQ-RC18) in
+[§4](#4-what-yolo-config-migrate-does), [OQ-RC8](#OQ-RC8) in [§5](#5-every-case).
 
 > **In short.** `config.toml` beside no `config.jsonc` is the whole version scheme. One release
 > teaches old yolos the new name; the next reads only it and offers the conversion, which refuses
@@ -81,84 +86,44 @@ $ yolo check
   fetch = true
 ```
 
-## 2. The order of releases
+## 2. How a yolo knows which config it has
 
-1. **Release N recognizes the new names and refuses them.** A `config.toml`, `yolo-jail.toml` or
-   a pack folder holding `pack.toml` stops the launch with "this file is for a newer yolo". It
-   changes nothing else, so it ships long before the rest. The pack case matters: without it an
-   older yolo treats a migrated pack as manifest-less and silently stages only its files.
-2. **Release N+1 reads only the new format** and refuses an old file, offering the conversion.
-3. **Every machine that shares dotfiles upgrades to N before any of them migrates**, because one
-   machine's migration rewrites the file every other machine reads.
+Three ways to mark a generation, and they are not equivalent. Today there is no version field;
+old files are recognized only by content digests, and an unknown top-level key is already a hard
+error on the host.
 
-## 3. What `yolo config migrate` does
+```text
+# A  the file name
+~/.config/yolo-jail/config.toml            old yolo: "for a newer yolo: upgrade" (release N), or no config at all (older)
+~/.config/yolo-jail/config.jsonc           new yolo: "old format; convert now?"
 
-1. **Proves it lost nothing.** Effective config before (old files) and after (the files it would
-   write), as canonical JSON in the new vocabulary; it refuses to write unless they are equal, and
-   prints any difference key by key.
-2. **Rewrites each file where it is, and never merges.** `config.jsonc` → `config.toml`, each
-   include → its `.toml` twin with the include entries respelled; through a symlink, so the
-   dotfiles copy changes; a file it cannot reach is listed with the command to run where it can;
-   each original kept as `<name>.pre-migrate`.
-3. **Keeps comments.** A comment moves with the key it sits above. One whose key is gone stays in
-   place as `# (was on: <old key>)`.
-4. **Drops written defaults and folds repeated facts**, each as its own hunk, only while the
-   equality check holds.
-5. **Respells the records only yolo reads**: the approval records under
-   `~/.local/share/yolo-jail/approvals/` and each workspace's `.yolo/config-boot.json`. Without
-   this every migrated workspace meets a full-file approval prompt once, and a launch with no
-   terminal is refused until someone answers. A record it cannot read is left, and that workspace
-   prompts once, which the output says.
-6. **Deletes a zero-byte `config.lua`** and names it; refuses a non-empty one, naming it.
-7. **Runs once, on request.** The launch offers it; nothing runs it unasked. On the host for the
-   user files; in a jail only for the project's.
+# B  a version key, first in a same-named file (only possible if the format stays JSONC)
+{ "yolo": 2, ... }                         old yolo: `config.yolo: unknown key`, naming the key, not the upgrade
 
-## 4. Every case
+# C  both: the name now, and a key reserved for the next shape change inside TOML
+yolo = 2
+```
 
-- **Both `config.toml` and `config.jsonc` in one place:** refused, naming both and the command.
-  Formats are never merged.
-- **An old key in a new file:** refused, naming the replacement already respelled. No aliases.
-- **A project file in a jail:** an agent may run the migration on it.
-- **Shipped packs:** migrated in the commit that changes the reader.
-- **A local pack in the old format:** refused, naming `yolo pack migrate <path>`
-  ([`pack-manifests.md`](pack-manifests.md#5-the-migration)).
-- **A fetched pack in the old format:** [OQ-RC8](#OQ-RC8).
-- **A yolo older than this change:** [OQ-RC6](#OQ-RC6).
-- **Files only yolo reads** stay JSON in the new vocabulary; a drift report says `allow.git.push`,
-  never `brokered.git.grants`. The jail's inherited copy of the user config becomes TOML.
-- **An error in a new file** names `file:line:col` and the key.
-- **The repository's own references:** over 400 Go files name the old file names, and only the
-  workspace name has a constant; one fixture helper is what stops the next format change from
-  touching 400 files (in the seed).
-
-## 5. Principles
-
-1. **The name is the version.** `.jsonc` is old, `.toml` is new; nothing inside a file says
-   which yolo wrote it until a same-format shape change needs it ([OQ-RC11](#OQ-RC11)).
-2. **A conversion proves equality or writes nothing.**
-3. **No aliases, ever.** An old spelling is refused naming the new one.
-4. **Nothing migrates unasked.** The launch offers; a person answers.
-5. **The step before the break is a release that only knows the names.**
-
-## 6. Open questions
+Every surveyed tool that changed its config shape converged on the file name: ESLint's flat config
+is a new file name plus a migrate command; Docker Compose's `version` key switched semantics
+between 2 and 3, confused users for years, and is now ignored with a warning; Ruff kept reading
+old keys forever with a warning and needed neither. A version key earns its place only when the
+*same* file will change shape again within one format.
 
 1. 💬 <a id="OQ-RC11"></a>**OQ-RC11: Is the file name the version, or a key inside the file?**
 
    You said: *"if we change file names here that would allow us a pretty easy transition plan. We
    can version it. I suppose we can put a version field in the JSON that we read first."* A
-   colleague on last month's yolo pulls dotfiles migrated on another machine.
+   colleague on last month's yolo pulls dotfiles migrated on another machine. With a new name,
+   their yolo finds no `config.jsonc` and starts a jail with no packs, unless it is the release
+   that knows the new name and says "upgrade". With a version key in a same-named file, their
+   yolo reads it and fails on the first unknown key, naming the key.
 
-   ```text
-   # A  the file name
-   ~/.config/yolo-jail/config.toml            old yolo: "for a newer yolo: upgrade" (release N), or no config at all (older)
-   ~/.config/yolo-jail/config.jsonc           new yolo: "old format; convert now?"
-
-   # B  a version key, first in a same-named file (only possible if the format stays JSONC)
-   { "yolo": 2, ... }                         old yolo: `config.yolo: unknown key`, naming the key, not the upgrade
-
-   # C  both: the name now, and a key reserved for the next shape change inside TOML
-   yolo = 2                                   Compose's lesson: a key nobody needs gets copied without meaning
-   ```
+   - **A — The file name.** No key. A format change has to change the name anyway. The release
+     before the change teaches old yolos the name.
+   - **B — A version key**, `yolo = 2`, first in the file, same name. Only possible if the format
+     stays JSONC.
+   - **C — Both.** The name now, and a key reserved for the next shape change inside TOML.
 
    <!-- vantage: question id=OQ-RC11 leaning="A: the name is the version, as ESLint did; a key is added the day a same-format shape change needs one, and not before." -->
 
@@ -168,7 +133,17 @@ $ yolo check
    **Answer:**
    > _(empty — fill in when decided)_
 
-2. 💬 <a id="OQ-RC6"></a>**OQ-RC6: What happens on a machine still running an older yolo?**
+## 3. The order of releases
+
+1. **Release N recognizes the new names and refuses them.** A `config.toml`, `yolo-jail.toml` or
+   a pack folder holding `pack.toml` stops the launch with "this file is for a newer yolo". It
+   changes nothing else, so it ships long before the rest. The pack case matters: without it an
+   older yolo treats a migrated pack as manifest-less and silently stages only its files.
+2. **Release N+1 reads only the new format** and refuses an old file, offering the conversion.
+3. **Every machine that shares dotfiles upgrades to N before any of them migrates**, because one
+   machine's migration rewrites the file every other machine reads.
+
+1. 💬 <a id="OQ-RC6"></a>**OQ-RC6: What happens on a machine still running an older yolo?**
 
    A colleague migrates with the new yolo, then runs a jail from an older yolo installed
    elsewhere, or your Mac is a release behind. The older yolo looks for `config.jsonc`, finds
@@ -195,7 +170,67 @@ $ yolo check
    **Answer:**
    > _(empty — fill in when decided)_
 
-3. 💬 <a id="OQ-RC8"></a>**OQ-RC8: What happens to a pack fetched from someone else's repository that still has an old `pack.json`?**
+## 4. What `yolo config migrate` does
+
+1. **Proves it lost nothing.** Effective config before (old files) and after (the files it would
+   write), as canonical JSON in the new vocabulary; it refuses to write unless they are equal, and
+   prints any difference key by key.
+2. **Rewrites each file where it is, and never merges.** `config.jsonc` → `config.toml`, each
+   include → its `.toml` twin with the include entries respelled; through a symlink, so the
+   dotfiles copy changes; a file it cannot reach is listed with the command to run where it can;
+   each original kept as `<name>.pre-migrate`.
+3. **Keeps comments.** A comment moves with the key it sits above. One whose key is gone stays in
+   place as `# (was on: <old key>)`.
+4. **Drops written defaults and folds repeated facts**, each as its own hunk, only while the
+   equality check holds.
+5. **Respells the records only yolo reads**: the approval records under
+   `~/.local/share/yolo-jail/approvals/` and each workspace's `.yolo/config-boot.json`. Without
+   this every migrated workspace meets a full-file approval prompt once, and a launch with no
+   terminal is refused until someone answers. A record it cannot read is left, and that workspace
+   prompts once, which the output says.
+6. **Deletes a zero-byte `config.lua`** and names it; refuses a non-empty one, naming it.
+7. **Runs once, on request.** The launch offers it; nothing runs it unasked. On the host for the
+   user files; in a jail only for the project's.
+
+1. 💬 <a id="OQ-RC18"></a>**OQ-RC18: Is what the migration does approved?**
+
+   You run `yolo config migrate` on a work machine and see the transcript in [§1](#1-what-youd-see):
+   four files found, one named as missing with the command to run elsewhere, a zero-byte
+   `config.lua` to delete, one diff summary per file, the equality line, the records respelled,
+   and the `y/N`. The seven behaviors above are what produces it; each can be vetoed alone.
+
+   - **A — Approve all seven.**
+   - **B — Approve, except:** name the behavior to change (for instance, do not fold facts or drop
+     defaults; convert the spelling only, and leave the shrinking to a later `yolo config tidy`).
+   - **C — Convert nothing automatically**; print the new files and let the person save them.
+
+   <!-- vantage: question id=OQ-RC18 leaning="A: the equality check is what makes the folds safe, and a conversion that leaves the shrinking for later leaves the misreadings in place for as long." -->
+
+   _Leaning:_ A: the equality check is what makes the folds safe, and a conversion that leaves the
+   shrinking for later leaves the misreadings in place for as long.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
+## 5. Every case
+
+- **Both `config.toml` and `config.jsonc` in one place:** refused, naming both and the command.
+  Formats are never merged.
+- **An old key in a new file:** refused, naming the replacement already respelled. No aliases.
+- **A project file in a jail:** an agent may run the migration on it.
+- **Shipped packs:** migrated in the commit that changes the reader.
+- **A local pack in the old format:** refused, naming `yolo pack migrate <path>`
+  ([`pack-manifests.md`](pack-manifests.md#5-the-migration)).
+- **A yolo older than this change:** [OQ-RC6](#OQ-RC6).
+- **Files only yolo reads** stay JSON in the new vocabulary; a drift report says `allow.git.push`,
+  never `brokered.git.grants`. The jail's inherited copy of the user config becomes TOML.
+- **An error in a new file** names `file:line:col` and the key.
+- **The repository's own references:** over 400 Go files name the old file names, and only the
+  workspace name has a constant; one fixture helper is what stops the next format change from
+  touching 400 files (in the seed).
+- **A fetched pack in the old format:** the one case left open.
+
+1. 💬 <a id="OQ-RC8"></a>**OQ-RC8: What happens to a pack fetched from someone else's repository that still has an old `pack.json`?**
 
    A colleague publishes a pack on GitHub and you list it. You upgrade to the release that reads
    only `pack.toml`; the colleague has not migrated. Today the one fetched pack in your list,
@@ -222,6 +257,15 @@ $ yolo check
    **Answer:**
    > _(empty — fill in when decided)_
 
+## 6. Principles
+
+1. **The name is the version.** `.jsonc` is old, `.toml` is new; nothing inside a file says
+   which yolo wrote it until a same-format shape change needs it.
+2. **A conversion proves equality or writes nothing.**
+3. **No aliases, ever.** An old spelling is refused naming the new one.
+4. **Nothing migrates unasked.** The launch offers; a person answers.
+5. **The step before the break is a release that only knows the names.**
+
 ## Appendix: evidence
 
 - **No version field exists today**, and old files are recognized only by content digests
@@ -230,7 +274,7 @@ $ yolo check
   replacement (`internal/config/validate.go`); nothing rewrites a config file.
 - **The approval snapshot is canonical JSON** that must not change by one byte, or every
   workspace prompts ([`config-safety.md`](../reference/config-safety.md)); renaming keys changes
-  it, which is why step 5 of [§3](#3-what-yolo-config-migrate-does) exists.
+  it, which is why step 5 of [§4](#4-what-yolo-config-migrate-does) exists.
 - **Prior art on versioning.** ESLint's flat config is a new file name plus a migrate command.
   Docker Compose's `version` key switched semantics between 2 and 3, confused users for years,
   and is now ignored with a warning. Ruff kept reading old keys forever with a warning. Renovate

@@ -3,7 +3,7 @@ title: "Config that reads right the first time: the front door"
 date: 2026-10-24
 status: in-review
 stage: DESIGN
-next: "Eleven questions remain, each at the end of the section it is about; the maintainer rules by comment in the docs"
+next: "Fourteen questions remain, each at the end of the section it is about; the maintainer rules by comment in the docs"
 tags: [config, packs, manifest, providers, profiles, broker, grants, format, toml, migration, editing, readability, design]
 summary: "The front door to the readable-config redesign: the thesis, the principles, the five documents (each one annotated config file with its questions), and the ledger of rulings made so far. The maintainer's config takes 178 lines to say about 20 things and is misread by its author; reshaped it is under 60, yolo can edit it one hunk at a time, and one command converts every file."
 vantage:
@@ -13,11 +13,11 @@ vantage:
 # Config that reads right the first time: the front door
 
 **Status:** 2026-10-25. Nothing is built. Sixteen rulings recorded ([ledger](#decision-ledger));
-eleven questions open, each in the document that shows its file. Evidence verified at
+fourteen questions open, each in the document that shows its file. Evidence verified at
 `fa13f42d9` against this repository, the effective user config this jail inherited, the 21
 shipped packs, and the maintainer's twelve packs.
 
-**Needs your ruling:** eleven questions, listed per document in [§2](#2-the-five-documents).
+**Needs your ruling:** fourteen questions, listed per document in [§2](#2-the-five-documents).
 
 > **In short.** A config a stranger reads correctly comes from its shape, not its file format, and
 > a config yolo can edit without a mess comes from touching only the bytes of one value. Neither
@@ -57,10 +57,10 @@ seed; incomplete while any question is open).
 | Document | The file it shows | Its questions |
 | :--- | :--- | :--- |
 | [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | [OQ-RC14](config-user.md#OQ-RC14) the two profile names · [OQ-RC16](config-user.md#OQ-RC16) fetch from any repository |
-| [`config-project.md`](config-project.md) | `yolo-jail.toml` and `.local`: install, needs, mounts, ports, env, turning things off | [OQ-RC7](config-project.md#OQ-RC7) saying "off" with no `null` |
+| [`config-project.md`](config-project.md) | `yolo-jail.toml` and `.local`: install, needs, mounts, ports, env, turning things off | [OQ-RC17](config-project.md#OQ-RC17) the file's shape · [OQ-RC7](config-project.md#OQ-RC7) saying "off" with no `null` |
 | [`config-commands.md`](config-commands.md) | the command each "edit your config" message prints, what it does to the file, and the format underneath | [OQ-RC9](config-commands.md#OQ-RC9) may yolo write your file · [OQ-RC2](config-commands.md#OQ-RC2) TOML or JSONC · [OQ-RC10](config-commands.md#OQ-RC10) the verbs · [OQ-RC12](config-commands.md#OQ-RC12) what `yolo config` means |
-| [`config-migration.md`](config-migration.md) | the new file names, the release order, the migrate transcript | [OQ-RC11](config-migration.md#OQ-RC11) name or version key · [OQ-RC6](config-migration.md#OQ-RC6) older yolos · [OQ-RC8](config-migration.md#OQ-RC8) fetched packs |
-| [`pack-manifests.md`](pack-manifests.md) | the maintainer's twelve packs, before and after | [OQ-RC5](pack-manifests.md#OQ-RC5) manifests in the same break |
+| [`config-migration.md`](config-migration.md) | the new file names, the release order, the migrate transcript | [OQ-RC11](config-migration.md#OQ-RC11) name or version key · [OQ-RC6](config-migration.md#OQ-RC6) older yolos · [OQ-RC18](config-migration.md#OQ-RC18) what migrate does · [OQ-RC8](config-migration.md#OQ-RC8) fetched packs |
+| [`pack-manifests.md`](pack-manifests.md) | the maintainer's twelve packs, before and after | [OQ-RC19](pack-manifests.md#OQ-RC19) the manifest shape · [OQ-RC5](pack-manifests.md#OQ-RC5) manifests in the same break |
 
 ## 3. What this takes over, and what it reverses
 
