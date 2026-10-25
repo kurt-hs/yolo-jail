@@ -171,7 +171,8 @@ because a workspace file is the agent's to edit.
 | `packs`, `pack_folders` | what the jail is built from; a name for each folder your own packs come from, so `dotfiles/matt` names one | `packs` (full paths written out) | user |
 | `install.nix`, `install.mise` | extra tools | `packages`, `mise_tools` | both |
 | `mcp_servers.<name>` | MCP servers; the key keeps its name | `mcp_servers` | both |
-| `allow.<pack>` | what a jail may do with your host logins: git, GitHub, AWS | `brokered.*`, `loopholes.<name>.enabled` and `settings` for login-serving packs | user for the most it may do, workspace for what a project asks |
+| `allow.<pack>` | the most any project's jail may do with your host logins: git, GitHub, AWS | `brokered.*.grant_kinds`, the user read grant, `loopholes.<name>.settings` for login-serving packs | user |
+| `needs.<pack>` | what this project asks for, within `allow` | `brokered.*.grants`, `brokered.github.repos` | workspace |
 | `profile` | which profile each agent uses; the key keeps its name | `profile` | user |
 | `providers.<name>` | where models come from, the starting model, the model list | `providers`, the common case of `profiles` | user |
 | `profiles.<name>` | a second configuration of one provider, when you need one | `profiles` | user |
@@ -249,9 +250,13 @@ Each lever can be adopted or vetoed on its own ([OQ-RC1](#OQ-RC1)).
 
 ### 4.2 What a jail may do with your logins
 
-[OQ-RC4](#OQ-RC4) names the section. One key, two scopes: in the user config a key is the most any
-project may get; in a project config the same key is what this project asks for, and every ask is
-a line in the launch approval prompt. No value is a reserved string ([RC-D6](#decision-ledger)):
+Two words for two things ([RC-D8](#decision-ledger)): `allow`, in the user config, is the most any
+project's jail may do with your logins; `needs`, in a project config, is what this project asks
+for, which must fit inside `allow`, and every ask is a line in the launch approval prompt. The
+maintainer's review: *"at the user level these are maximum grants, and at the project level these
+are the actual grants that must fit within the user level."* That is the model, and the two
+sections are named apart so the same line never means two things. [OQ-RC4](#OQ-RC4) names the
+first; the second follows its verb. No value is a reserved string ([RC-D6](#decision-ledger)):
 each is `true`, `false`, a name, or a list of names.
 
 Today, the maintainer's user config and this repository's project config:
@@ -280,15 +285,18 @@ push = true                       # a project may ask, branch by branch; never a
 read = true
 write = true                      # a project may ask for create-pr or create-issue
 
-# yolo-jail.toml: what this project asks for
-[allow.git]
+# yolo-jail.toml: what this project asks for, within the above
+[needs.git]
 push = ["main"]                   # branches it asks to push to; each is approved at launch
 new_branches = true               # may create branches of its own
 
-[allow.github]
+[needs.github]
 write = ["create-pr"]
 repos = ["acme/shared"]           # beyond this repository's own remotes
 ```
+
+A project asking past the ceiling is refused at `yolo check` naming both lines: `needs.git.push`
+in `yolo-jail.toml:4` asks to push, and `allow.git.push` in your config is `false`.
 
 **What `fetch = true` reaches.** The project's own remotes, plus what `repos` names, approved at
 launch exactly as today's `{"kind": "read", "repo": "*"}` is; it is not every repository the host
@@ -935,8 +943,8 @@ $ yolo pack remove journal
 $ yolo install nix just                    # project config: install.nix += "just"
 $ yolo install mise python@3.12 --user
 $ yolo allow git fetch                     # user config: [allow.git] fetch = true
-$ yolo allow git push main                 # project config: [allow.git] push += "main"
-$ yolo allow github repos acme/shared
+$ yolo needs git push main                 # project config: [needs.git] push += "main"
+$ yolo needs github repos acme/shared
 $ yolo profile bedrock                         # user config: [profile] default = "bedrock"
 $ yolo profile claude false
 $ yolo mcp off tavily --local              # yolo-jail.local: [mcp_servers.tavily] off = true
@@ -948,7 +956,7 @@ $ yolo mcp off tavily --local              # yolo-jail.local: [mcp_servers.tavil
 $ yolo config add packs matt
 $ yolo config set allow.git.fetch true
 $ yolo config set profile.claude false
-$ yolo config add allow.git.push main --project
+$ yolo config add needs.git.push main --project
 $ yolo config unset mcp_servers.tavily --local     # writes off = true where the key would be
 $ yolo config set --dry-run machine.resources.memory 32g
 ```
@@ -1226,8 +1234,8 @@ review of 2026-10-24 kept the name ([RC-D1](#decision-ledger)).
    name, and the maintainer rejected it on 2026-10-24 ([RC-D2](#decision-ledger)); the body uses
    `allow` as the placeholder until this is ruled.
 
-   - **A — `allow`**: `[allow.git] push = ["main"]`. Reads as a sentence, and is the verb the
-     command already uses (`yolo allow git push main`).
+   - **A — `allow`**: `[allow.git] fetch = true`, with `needs` as the project-side word. Reads as
+     a sentence, and is the verb the command already uses (`yolo allow git fetch`).
    - **B — `logins`**: `[logins.git] fetch = true`. Names what is lent, not the act.
    - **C — `host_logins`**: the same, saying whose.
    - **D — `on_your_behalf`**: the plainest English, and the longest to type.
@@ -1529,6 +1537,7 @@ review of 2026-10-24 kept the name ([RC-D1](#decision-ledger)).
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | <a id="RC-D1"></a>RC-D1 | **The `profile` key keeps its name.** Review comment on the draft's `use`: *"awful name … isn't this a profile?"* It is, and PP-D10's reason (the key mirrors `-p`) stands. L5 no longer renames it | 2026-10-24 | [§4.3](#43-models-one-name-for-the-common-case) | — |
+| <a id="RC-D8"></a>RC-D8 | **Two words for two scopes.** Review comment: *"we're using the exact same language here, and it means two different things in two different places."* The user-config ceiling is `allow`; a project's ask is `needs`, and must fit inside it | 2026-10-25 | [§4.2](#42-what-a-jail-may-do-with-your-logins) | — |
 | <a id="RC-D7"></a>RC-D7 | **A section without its pack is a nudge, not a selection.** Review follow-up: *"perhaps we can just give some help if you allow something without the pack, maybe we can infer which pack you would need and give you a happy path nudge?"* `yolo check` names the pack and offers `yolo pack add <pack>` with a `y`; the reverse case offers the setting | 2026-10-25 | [§4.1](#41-the-levers-each-one-syntax-free) | — |
 | <a id="RC-D6"></a>RC-D6 | **No value is a reserved string.** Review comment on `"when a project asks"`: *"some weird string like this is just weird for a config file."* A value is `true`, `false`, a number, a name or a list of names; `push = true` at user scope is the ceiling, `new_branches = true` replaces `"new branches"` | 2026-10-25 | [§4.2](#42-what-a-jail-may-do-with-your-logins) | — |
 | <a id="RC-D5"></a>RC-D5 | **`false`, not `"own login"`,** for an agent yolo gives no setup. Review comment: *"don't like"* | 2026-10-25 | [§4.3](#43-models-one-name-for-the-common-case) | — |
@@ -1638,7 +1647,7 @@ This repository's `yolo-jail.toml`, replacing 133 lines:
 nix = ["just"]                    # runs this repo's Justfile recipes
 mise = { lua = "5.4.9" }          # syntax-checks the packs' derive.lua files
 
-[allow.git]
+[needs.git]
 push = ["main"]
 ```
 
@@ -1827,10 +1836,10 @@ resources = { memory = "16g", cpus = 8 }
 ports = [{ host = 8000, jail = 8000 }]       # the host reaches the jail's :8000
 forward = [{ jail = 5432, host = 5432 }]     # the jail reaches the host's postgres at localhost:5432
 
-[allow.github]
+[needs.github]
 repos = ["acme/shared"]            # beyond this repository's own remotes
 
-[allow.git]
+[needs.git]
 new_branches = true                # branches of its own, never main; each is approved at launch
 ```
 
