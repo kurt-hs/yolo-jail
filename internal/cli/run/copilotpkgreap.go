@@ -31,7 +31,23 @@ const CopilotPkgMacosUserHousekeepingClass = "copilot-pkg-macos-user"
 // The container slot judges the shared cache's store, which container jails fill, by the
 // runtime's running jails. The macos-user slot runs the same rule on that backend's own store by
 // its sessions (reapMacosUserCopilotPkgVersions).
+//
+// ON APPLE CONTAINER THE CLASS IS SKIPPED, not declined: yolo reads no start time from that
+// runtime, so a decline would repeat at every launch with a next step that cannot succeed. The
+// skip is noted once a day, under the class's own stamp, naming the documented gap.
 func (o *Options) reapCopilotPkgVersions(rt string, guard prune.Guard) {
+	if rt == "container" { // parity: Warned — yolo reads no Apple Container start time, so the Copilot store is not judged there; noted once a day, naming disk-footprint.md's open gap
+		if o.inJail() || o.Getenv(autoReapOptOutEnv) != "" {
+			return
+		}
+		if due, done := o.classDebounce(CopilotPkgHousekeepingClass); due {
+			o.housekeepingNote("copilot: the self-update store is not judged on Apple Container, which yolo " +
+				"reads no jail start time from yet; disk-footprint.md's open gap \"Parity gap: Apple " +
+				"Container's Copilot self-update class\" is the fix and names the Mac check that unblocks it")
+			done()
+		}
+		return
+	}
 	o.reapCopilotPkgStore(CopilotPkgHousekeepingClass, filepath.Join(paths.GlobalStorage(), "cache"),
 		func() prune.JailStarts { return prune.RunningJailStarts(rt, o.pruneRunFunc()) }, guard)
 }

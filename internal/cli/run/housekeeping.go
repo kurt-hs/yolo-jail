@@ -373,7 +373,9 @@ func (o *Options) measureAndPurgeCache(consent reclaimConsent, guard prune.Guard
 		applied := prune.PurgeCacheByAgeFrom(cacheRoot, subdirs, nil, cacheAgeDays, true, o.Now(), guard,
 			cacheWalkDeadline("apply"), progress.Apply)
 		progress.Apply = applied.Next
-		complete = !applied.Partial
+		// A removal that failed leaves the class due, so the note's "the next launch retries" is
+		// true; the cursor still moves on, and the next cycle reaches the leftover again.
+		complete = !applied.Partial && len(applied.Failed) == 0
 		if applied.Bytes > 0 {
 			o.housekeepingNote("cache: reclaimed %s older than %d days, as agreed",
 				prune.FmtBytes(applied.Bytes), int(cacheAgeDays))

@@ -1335,6 +1335,10 @@ func Run(opts Options) int {
 		p.line(fmt.Sprintf("[bold]Copilot self-update versions[/bold]  (%s; keep the newest %d "+
 			"complete per platform, and any a running jail may still use)", label, CopilotPkgKeep))
 		switch {
+		case res.Declined != "" && rt == "container":
+			p.line("  [yellow]not judged on Apple Container, which yolo reads no jail start time from yet — " +
+				"disk-footprint.md's open gap \"Parity gap: Apple Container's Copilot self-update class\" is " +
+				"the fix and names the Mac check that unblocks it[/yellow]")
 		case res.Declined != "":
 			p.line(fmt.Sprintf("  [yellow]declined: %s — nothing removed; run `yolo prune --apply` where the "+
 				"runtime that runs your jails can list them[/yellow]", res.Declined))

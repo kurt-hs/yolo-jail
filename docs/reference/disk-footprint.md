@@ -486,8 +486,9 @@ its own jails fill, with its own evidence of which jails are running:
   its lock, all of which it creates as it starts. `yolo prune` on macos-user does the same.
 
 When the running jails can't be listed, the class declines: it notes this in `housekeeping.log`,
-doesn't stamp, and asks again at the next launch. On Apple Container it always declines, and
-macos-user's account-mode store is out of reach (both are under
+doesn't stamp, and asks again at the next launch. On Apple Container the class is skipped: once a
+day the slot notes that yolo can't judge the store there, naming the gap. macos-user's
+account-mode store is out of reach (both are under
 [open gaps](#owed-measurements)). It is automatic because its evidence is complete (the backend's
 own list of running jails, the veto that protects live state) and a removed version costs one
 release download at most: both halves of [BF-P3](#backfill-rules).
@@ -849,13 +850,31 @@ number; each is now one of the mechanisms above.
   caches); one would run as that account through `sudo`, which only a Mac can verify. That
   includes the account mode's Copilot self-update store in the sandbox account's home; the
   run-as-you mode's store is reaped.
-- **Parity gap: Apple Container's Copilot self-update class always declines.** The
+- **Parity gap: Apple Container's Copilot self-update class** is skipped, with a note once a
+  day in `housekeeping.log` and a line in `yolo prune`. The
   [Copilot rule](#the-shared-cache) needs each running jail's start time. `container inspect`
   carries a `status.startedDate` ([setup-support-gaps §5.1](../plans/setup-support-gaps.md#51-what-is-now-measured)
   row 5), but nobody has measured how its value is encoded, and yolo reads no Apple Container start
   time anywhere. Until then the shared cache's store grows unbounded on a Mac that runs only Apple
   Container. Mac check: run `container inspect <a running yolo jail>`, record `status.startedDate`
   next to the jail's real start time, and add that reader to `prune.RunningJailStarts`.
+- **Backlog: the failure-report tests skip as root.** Both
+  `TestAFailedUnitRemovalIsReported` (`internal/prune`) and
+  `TestAFailedRemovalLeavesTheCacheClassDue` (`internal/cli/run`) stage the failure with a
+  read-only directory. Root removes from that anyway, so a root CI runner or a jail skips them.
+  Each passed when run as uid 65534 on 2026-10-24. Fix by staging the failure some other way.
+- **Backlog: `yolo prune`'s reload of the cache purge progress before saving is unpinned.** No
+  test fails if prune saves the progress it loaded at the start rather than reloading it, which
+  would overwrite a slot's measurement place moved meanwhile.
+- **Backlog: is darwin Copilot's store in `.cache` or `~/Library/Caches`?** The macos-user class
+  judges `macos-user/.cache/copilot/pkg`. If darwin Copilot unpacks under `Library/Caches`
+  instead, that store is unbounded and this class finds nothing. Mac check: after a Copilot
+  self-update in a run-as-you session, see which of the two holds `copilot/pkg`.
+- **Backlog: macOS `/tmp` cleaners and session locks.** macos-user's session dirs live under
+  `/tmp`. If macOS's periodic `/tmp` cleanup removes a long-running session's lock or dir, that
+  session reads as unknown or vanishes from the listing. Unknown still vetoes, but a vanished
+  session gives up its veto on the Copilot class and its keep on its agent staging. Mac check:
+  whether a session idle for more than 3 days keeps its `/tmp` dir.
 
 ## Why it's this way
 

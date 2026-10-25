@@ -133,6 +133,34 @@ func TestTheContainerSlotRunsTheCopilotPkgReaper(t *testing.T) {
 	}
 }
 
+// TestTheCopilotPkgClassIsSkippedOnAppleContainer: yolo reads no Apple Container start time, so
+// the class removes nothing, asks nothing, and notes the documented gap once a day rather than a
+// decline at every launch.
+func TestTheCopilotPkgClassIsSkippedOnAppleContainer(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	o := goldenOptions(t.TempDir(), home)
+	o.Now = time.Now
+	o.Getenv = func(string) string { return "" }
+	o.Exec = func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {
+		t.Errorf("the skipped class asked the runtime: %v", argv)
+		return ExecResult{}
+	}
+	pkg := copilotStore(t)
+	o.reapCopilotPkgVersions("container", nil)
+	o.reapCopilotPkgVersions("container", nil)
+	if _, err := os.Stat(filepath.Join(pkg, "1.0.1")); err != nil {
+		t.Errorf("1.0.1 was removed on Apple Container")
+	}
+	if due, _ := o.classDebounce(CopilotPkgHousekeepingClass); due {
+		t.Errorf("the skip did not stamp the class, so it would be noted at every launch")
+	}
+	log, _ := os.ReadFile(filepath.Join(o.Workspace, ".yolo", housekeepingLogName))
+	if n := strings.Count(string(log), "Parity gap: Apple Container"); n != 1 || strings.Contains(string(log), "declined") {
+		t.Errorf("want the gap named once and no decline, got %d notes:\n%s", n, log)
+	}
+}
+
 // TestTheMacosUserCopilotPkgReaperJudgesItsOwnStoreBySessions: the macos-user class removes a long
 // superseded version from macos-user's own store (the run-as-you machine tier), never the shared
 // cache's Linux store, asks no runtime, keeps the version while a live session started before the
@@ -284,6 +312,35 @@ func TestTheCopilotPkgReaperDeclinesWithoutARuntimeAnswer(t *testing.T) {
 	log, _ := os.ReadFile(filepath.Join(o.Workspace, ".yolo", housekeepingLogName))
 	if !strings.Contains(string(log), "copilot: declined") || !strings.Contains(string(log), "yolo prune --apply") {
 		t.Errorf("the decline is not noted with a next step:\n%s", log)
+	}
+}
+
+// TestAFailedRemovalLeavesTheCacheClassDue: a consented removal that could not remove something
+// notes it and leaves the class due. Skipped as root (disk-footprint.md's backlog names it).
+func TestAFailedRemovalLeavesTheCacheClassDue(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root removes a read-only directory's entries, so the failure cannot be staged")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	o := goldenOptions(t.TempDir(), home)
+	o.Now = time.Now
+	// An interrupted removal's tombstone, which the pass finishes whatever its age, holding a
+	// directory it cannot empty.
+	ro := filepath.Dir(agedCacheFile(t, "uv/archive-v0/.yolo-purge-abc/pkg/a.py"))
+	if err := os.Chmod(ro, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(ro, 0o755) })
+	var c reclaimConsent
+	c.grant(cachePurgeClass, false)
+	o.measureAndPurgeCache(c, nil)
+	log, _ := os.ReadFile(filepath.Join(o.Workspace, ".yolo", housekeepingLogName))
+	if !strings.Contains(string(log), "could not finish removing") {
+		t.Fatalf("the failure was not noted:\n%s", log)
+	}
+	if due, _ := o.classDebounce(CacheHousekeepingClass); !due {
+		t.Errorf("a removal that failed stamped the debounce, so the note's \"the next launch retries\" is false")
 	}
 }
 
