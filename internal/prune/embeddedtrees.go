@@ -89,6 +89,10 @@ type ProcStart struct {
 	// cut and cannot be proven NOT to be a yolo binary or a go test binary.
 	NameTruncated bool
 	Start         time.Time
+	// Exe is the executable's full path where the OS gives it (/proc/<pid>/exe on Linux,
+	// kern.procargs2 on darwin), else "". The development-bundle sweep (devbundles.go) keys on
+	// it: a bundle a live process is executing out of is in use.
+	Exe string
 }
 
 // yoloCandidate: a process that could have written a legacy tree — any yolo binary

@@ -336,6 +336,10 @@ var stateReclaimers = map[string]Reclaimer{
 	// Apple Container delivery records beside them are reaped with their image when
 	// next read, not by this sweep.
 	"image-delivery": {Func: "PruneImageDelivery", Detail: "interrupted deliveries past a 1h floor", Trigger: "yolo prune --apply"},
+	// One read-only bundle per source snapshot `just dev` ran (scripts/matched-bundle.py). Kept:
+	// the newest few and anything a running jail mounts or a live process executes out of;
+	// collected after each new bundle is published, by the housekeeping slot, and by prune.
+	"dev-bundles":    {Func: "PruneDevBundles", Detail: "newest 3 + in use by a running jail or process kept; liveness-gated", Trigger: "after each `just dev` build, the housekeeping slot, and yolo prune --apply"},
 	"embedded-packs": {Func: "PruneEmbeddedPackTrees", Detail: "other builds' trees, lease-gated; current build kept", Trigger: "yolo prune --apply"},
 	// The host agent floor (paths.HostFloorDir): yolo's own copies of the selected packs' agents,
 	// which `yolo host` runs. Self-bounded in the two ways that matter — an install keeps its

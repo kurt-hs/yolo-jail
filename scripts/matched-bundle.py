@@ -342,6 +342,10 @@ def _publish_assembled_bundle(home: Path, assembled: Path, identity: str,
     staging = Path(tempfile.mkdtemp(prefix=".building-", dir=root))
     try:
         shutil.copytree(assembled, staging, dirs_exist_ok=True)
+        # copytree copies the assembled tree's mtime onto staging (copystat), which is the
+        # build's START: a long build would make an in-flight publish look abandoned to the
+        # reaper's staging floor, and the published bundle look old. Stamp it as of now.
+        os.utime(staging)
         validate_bundle(staging, identity, "development", shipped=shipped, guest=guest,
                         host_os=host_os, host_arch=host_arch, stamps=stamps)
         _make_readonly(staging)
@@ -353,11 +357,41 @@ def _publish_assembled_bundle(home: Path, assembled: Path, identity: str,
         raise
 
 
-def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subprocess.run) -> Path:
+def _touch_reused_bundle(bundle: Path) -> bool:
+    """Mark a candidate bundle as used now, BEFORE it is validated or run; False when it cannot be.
+
+    Its mtime is what the Go reaper (prune.PruneDevBundles) keeps the newest few by and what its
+    grace window reads. The reaper renames a bundle aside before deleting it and re-reads the
+    renamed directory's mtime: a touch that landed first keeps the bundle, and a touch that comes
+    after finds no bundle at this name. So a bundle that cannot be touched may be one a sweep is
+    removing, and is not reused (the caller skips it)."""
+    try:
+        os.utime(bundle)
+        return True
+    except OSError:
+        return False
+
+
+def _reap_dev_bundles(launcher: Path, root: Path, runner=subprocess.run) -> None:
+    """Collect unused development bundles with the launcher just published: one rule, in Go
+    (`yolo internal dev-bundle-reap`, the same prune.PruneDevBundles `yolo prune` runs), never a
+    second copy here. It keeps the newest few and anything a running jail or process uses, and
+    prints only when it removed something or declined. Best effort: a failed sweep never fails
+    the build, and `yolo prune --apply` retries it."""
+    try:
+        runner([str(launcher), "internal", "dev-bundle-reap", "--dir", str(root)],
+               stdout=subprocess.DEVNULL, check=False, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subprocess.run,
+                     reaper=_reap_dev_bundles) -> Path:
     """Reuse a complete bundle of this identity and stamp, otherwise publish a fresh immutable build.
 
     A candidate must match the snapshot identity AND the version/commit the ldflags embed, so
     the same content built at another commit or dirtiness is a miss, never a stale stamp.
+    After a publish, the new launcher collects the bundles nothing uses any more (reaper).
     """
     repo = repo.resolve()
     home = home.resolve()
@@ -371,6 +405,8 @@ def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subproc
         host_os, host_arch = _platform(snapshot)
         shipped, guest = _binary_lists(snapshot / "scripts/stage-source-bundle.sh")
         for candidate in sorted(root.glob(f"{identity[:16]}-*")):
+            if not _touch_reused_bundle(candidate):
+                continue
             try:
                 validate_bundle(candidate, identity, "development", shipped=shipped, guest=guest,
                                 host_os=host_os, host_arch=host_arch, stamps=stamps)
@@ -389,6 +425,7 @@ def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subproc
                                               stamps)
         print(f"Built the development bundle in {time.monotonic() - started:.0f} s.",
               file=sys.stderr, flush=True)
+        reaper(published / "bin/yolo", root)
         return published / "bin/yolo"
 
 

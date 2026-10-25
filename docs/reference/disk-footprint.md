@@ -24,6 +24,8 @@ covers:
   - internal/prune/staleoutlinks.go
   - internal/prune/agentstaging.go
   - internal/prune/agentlogs.go
+  - internal/prune/devbundles.go
+  - internal/cli/devbundlereap.go
 tags: [disk, prune, housekeeping, podman, nix, mise, stores]
 summary: "How yolo keeps its disk footprint bounded without waiting for a human: every reclaimer runs from the process that made the bytes or from the launch's post-attach housekeeping slot, automatic where the evidence is complete and regeneration is cheap, offered at launch where it is not, and every store, reclaimed or not, is listed by `yolo stores`."
 ---
@@ -258,7 +260,7 @@ process, same lifetime, same environment.
 **What runs there, each class on its own daily stamp:** the superseded-image reap, yolo's own
 store outputs, the shared cache's measure and (with consent) purge, the mise store's measure and
 (with consent) removal, agent-staging orphans with retired loophole state, image tars,
-superseded flake-bundle generations, and the start of the detached scratch-volume remover
+superseded flake-bundle generations, unused [development bundles](#development-bundles), and the start of the detached scratch-volume remover
 ([`durable-scratch-space.md`](jail-home.md)). `runHousekeeping` is the
 list.
 
@@ -288,6 +290,7 @@ program, and none of the slot's stores grows at that notch.
 | Image tars on a streaming runtime | automatic | a tar is one-shot (P3); regeneration is a build | none |
 | Superseded vendor versions | automatic, in the launcher itself | the live symlink is complete evidence | two builds per program |
 | Agent staging, retired loophole state | automatic | tri-state gated; small | swept |
+| Development bundles (`just dev`) | automatic, and after each new bundle is published | the runtime and the process table say what is in use; regeneration is a rebuild | the newest three, plus any in use |
 | yolo's own unrooted store outputs | automatic, host-only | every running jail's prefix is rooted ([OQ-BF4](#why-its-this-way)), and nix refuses a live path | deleted by name |
 | Shared cache, older than its age cutoff | **offered**, then automatic | regeneration is a re-download of unknown size | age purge, once consented |
 | Unused mise tool versions | **offered**, then automatic | regeneration is a re-download for a workspace that returns | versions no jail used within the window, once consented |
@@ -649,6 +652,60 @@ Three sweeps of derived junk, from `yolo prune` and, for staging, the slot:
 - **Regenerable agent logs**, age-purged per workspace overlay. Claude transcripts are excluded:
   they are durable user data.
 
+## Development bundles
+
+<a id="development-bundles"></a>
+
+`just build-dev-bundle` and `just dev` (`scripts/matched-bundle.py`) publish one read-only
+directory per source snapshot under the state dir, `dev-bundles/<identity>-<uuid>/`: the
+launcher at `bin/yolo` and the bundle a launch mounts under `share/yolo-jail/`. A developer's
+machine gains one per edit-and-run: 113 of them, 16 GB, in the maintainer's jail on 2026-10-24.
+`prune.PruneDevBundles` is the one rule, and three callers run it: `yolo prune` (reported in the
+dry run, reclaimed by `--apply`), the [housekeeping slot](#the-housekeeping-slot), and
+`yolo internal dev-bundle-reap`, which `matched-bundle.py` runs with each launcher it has just
+published.
+
+**A bundle is kept** when any of these holds:
+
+- **It is one of the three most recently used**, by directory mtime. A publish stamps the mtime
+  as of the publish, and `matched-bundle.py` touches a candidate before it validates or reuses
+  it, so the bundle for the source `just dev` runs now is the newest one. The other two cover the
+  snapshots a developer switches back to, each of which would otherwise cost a rebuild.
+- **It was used within the last hour.** That covers the gap between `matched-bundle.py` choosing
+  a bundle and its launcher starting, which neither check below can see.
+- **It was used after the sweep listed it.** Every deletion first renames the bundle to
+  `.reap-*`, then reads the renamed directory's mtime: a newer one means a reuse touched it, and
+  the bundle is renamed back and kept. A reuse that comes after the rename finds no bundle to
+  touch, and `matched-bundle.py` does not reuse a candidate it cannot touch. This holds for every
+  caller, whether or not it takes the housekeeping lock.
+- **A running jail mounts it.** A dev launch mounts the bundle's own helpers at
+  `/opt/yolo-jail/bin`. The runtime is asked, as it is for [prefix roots](#prefix-roots).
+- **A live process runs out of it**: the dev `yolo` for the whole of its launch, and every host
+  daemon it starts. The check reads `/proc/<pid>/exe` for this user's processes.
+
+**It declines whole, removing nothing,** when the runtime cannot list or inspect its running
+jails, the process table cannot be read, or a process that could be a yolo binary hides its
+executable. It says which of these happened. A process whose name is not a yolo binary's is no
+evidence either way, because every executable in a bundle is named `yolo*`. **On macOS it never
+removes a bundle.** A `macos-user` session runs as the sandbox account, whose processes this user
+cannot read, so a bundle such a session uses would look unused. There `yolo prune` and the
+post-build sweep ask nothing and name the by-hand removal, the post-build sweep only once more
+than three bundles exist, and the housekeeping slot skips the class.
+
+`.building-*` publish directories older than an hour belong to a publish that died, and go under
+the same liveness checks. Staging dirs and bundles alike are renamed to `.reap-*` before
+deletion, so a concurrent `just dev` never picks a half-deleted one, and an interrupted deletion
+is finished next time. Directories are 0555, so each is made owner-writable before its children
+are removed. Nothing else under `dev-bundles/` is touched. `YOLO_NO_AUTO_IMAGE_REAP=1` stops the
+post-build sweep and the slot's pass, as it stops the slot's other automatic classes;
+`yolo prune --apply` still runs it.
+
+**A host wrapper can name a bundle.** `yolo-dev host apply` writes wrappers that name the running
+`yolo`. A dev launcher is not on PATH under its own path (PATH holds the dev wrapper, which runs
+it), so the wrapper names the bundle's `bin/yolo` itself. Once a later sweep removes that bundle,
+the wrapper names a missing file until the next `host apply`. It is listed under
+[open gaps](#owed-measurements).
+
 ## The levers
 
 <a id="the-levers"></a>
@@ -707,6 +764,10 @@ number; each is now one of the mechanisms above.
   whether that belongs to `yolo stores` or to nothing is undecided.
 - **Apple Container's image store has no reclaimer** and was never measured; the label probe is
   podman's spelling.
+- **Host wrappers written from a dev launcher name a reapable bundle.** `hostwrap.Running` falls
+  back to the running executable when no PATH entry names it, which for a dev launcher is
+  `dev-bundles/<bundle>/bin/yolo` ([development bundles](#development-bundles)). The fix is for
+  hostwrap to prefer a stable launcher path, such as the dev wrapper that started it.
 - **No reclaimer exists for `macos-user`'s own storage** (`/var/yolo-jail`, the sandbox account's
   caches); one would run as that account through `sudo`, which only a Mac can verify.
 
@@ -766,6 +827,7 @@ only place the values themselves are stated.
 | Mise use window, refresh, record expiry | 30 days, 24 h, window + 7 days | `miseuse.Window`, `miseuse.Refresh`, `expireAfter` |
 | Mise offer threshold | 1 GiB, through the cache's offer | `internal/prune/miseversions.go` |
 | `yolo stores` sample ledger | `<state>/stores/<store>.samples`, last 30 per store | `internal/cli/stores` (`ledger.go`) |
+| Development bundles kept | the newest 3, plus anything used within 1 hour or in use; `.building-*` judged after 1 hour | `prune.DevBundleKeep`, `prune.DevBundleGrace`, `devBundleStagingFloor` |
 | Vendor versions kept | 2 | `KEEP_VERSIONS` in the generated launcher (`internal/entrypoint/shims.go`) |
 | Image-reap hatch | `YOLO_NO_AUTO_IMAGE_REAP=1` | `internal/cli/run` |
 | macOS prefix opt-in | `YOLO_NIX_HOST_DAEMON` | `prefixUnreachableFromVM` |

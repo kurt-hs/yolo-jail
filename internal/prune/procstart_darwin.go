@@ -41,6 +41,7 @@ func darwinProcStarts() ([]ProcStart, bool) {
 		p := ProcStart{PID: pid, Start: time.Unix(sec, nsec)}
 		if path := execPath(pid); path != "" {
 			p.Name = filepath.Base(path)
+			p.Exe = path
 		} else {
 			comm := kp.P_comm[:]
 			if i := bytes.IndexByte(comm, 0); i >= 0 {

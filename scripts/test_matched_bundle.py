@@ -345,6 +345,54 @@ class PackageTests(unittest.TestCase):
             rebuilt=mb.build_dev_bundle(repo, home, builder=builder)
             self.assertNotEqual(dirty, rebuilt); self.assertEqual(len(calls), 3)
 
+    def test_a_publish_runs_the_new_launchers_reaper_and_a_reuse_touches_instead(self):
+        # One rule, in Go: the Python side only hands the freshly published launcher the
+        # directory, and marks a reused bundle as recently used so the reaper keeps it.
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root); home=root/"home"; reaped=[]
+            def reaper(launcher, directory): reaped.append((launcher, directory))
+            first=mb.build_dev_bundle(repo, home, builder=fake_assembler, reaper=reaper)
+            self.assertEqual(reaped, [(first, (home/".local/share/yolo-jail/dev-bundles").resolve())])
+            bundle=first.parent.parent
+            os.utime(bundle, (1_000_000, 1_000_000))
+            self.assertEqual(first, mb.build_dev_bundle(repo, home, builder=fake_assembler, reaper=reaper))
+            self.assertEqual(len(reaped), 1, "a reuse ran the reaper")
+            self.assertGreater(bundle.stat().st_mtime, 1_000_000, "a reuse did not mark the bundle used")
+
+    def test_a_candidate_that_cannot_be_touched_is_not_reused(self):
+        # The reaper renames a bundle aside before deleting it; a touch that fails may be one
+        # racing that removal, so the candidate is skipped and a fresh bundle is built.
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root); home=root/"home"; calls=[]
+            def builder(snapshot, output, **kw):
+                calls.append(kw["identity"]); fake_assembler(snapshot, output, **kw)
+            first=mb.build_dev_bundle(repo, home, builder=builder, reaper=lambda *a: None)
+            original=mb._touch_reused_bundle
+            mb._touch_reused_bundle=lambda bundle: False
+            try:
+                second=mb.build_dev_bundle(repo, home, builder=builder, reaper=lambda *a: None)
+            finally:
+                mb._touch_reused_bundle=original
+            self.assertNotEqual(first, second); self.assertEqual(len(calls), 2)
+            self.assertFalse(mb._touch_reused_bundle(root/"missing-bundle"))
+
+    def test_a_published_bundle_is_stamped_as_of_its_publish_not_its_build_start(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root); home=root/"home"
+            def builder(snapshot, output, **kw):
+                fake_assembler(snapshot, output, **kw); os.utime(output, (1_000_000, 1_000_000))
+            launcher=mb.build_dev_bundle(repo, home, builder=builder, reaper=lambda *a: None)
+            self.assertGreater(launcher.parent.parent.stat().st_mtime, 1_000_000,
+                               "copytree's copied build-start mtime reached the published bundle")
+
+    def test_reaper_runs_the_launchers_internal_verb_and_never_fails_the_build(self):
+        calls=[]
+        def runner(argv, **kw): calls.append((argv, kw)); raise subprocess.TimeoutExpired(argv, 1)
+        mb._reap_dev_bundles(Path("/b/bin/yolo"), Path("/state/dev-bundles"), runner=runner)
+        self.assertEqual(calls[0][0], ["/b/bin/yolo", "internal", "dev-bundle-reap", "--dir", "/state/dev-bundles"])
+        self.assertIs(calls[0][1]["check"], False)
+        mb._reap_dev_bundles(Path("/nonexistent/bin/yolo"), Path("/state/dev-bundles"))
+
     def test_a_build_says_so_on_stderr_and_a_reuse_says_nothing(self):
         from contextlib import redirect_stderr, redirect_stdout
         from io import StringIO

@@ -225,6 +225,7 @@ func (o *Options) runHousekeeping(rt string, reclaimConsent reclaimConsent, cnam
 		o.reapSmallAutomaticClasses(rt, cname, guard)
 		o.reapImageTars(rt, guard)
 		o.reapFlakeBundleGenerations(rt, guard)
+		o.reapDevBundles(rt, guard)
 		// Deletes nothing in the slot: it starts the detached remover, which removes each
 		// volume only once podman says no container references it (scratchremoval.go).
 		o.reapScratchVolumes(rt)
@@ -813,6 +814,42 @@ func (o *Options) reapFlakeBundleGenerations(rt string, guard prune.Guard) {
 	done()
 	if len(removed) > 0 {
 		o.housekeepingNote("flake bundle: reclaimed %d superseded generation(s)", len(removed))
+	}
+}
+
+// reapDevBundles collects the development bundles `just dev` published that nothing uses any
+// more (prune.PruneDevBundles: the newest prune.DevBundleKeep, anything a running jail mounts and
+// anything a live process executes out of are kept).
+//
+// NOT host-only, unlike the flake-bundle class: a developer running `just dev` inside a jail
+// publishes into the jail's own state dir, and a nested launch's slot runs in that jail, whose
+// runtime and process table are the ones that can say what is in use. Declines, unstamped, when
+// either cannot be asked.
+func (o *Options) reapDevBundles(rt string, guard prune.Guard) {
+	if o.Getenv(autoReapOptOutEnv) != "" {
+		return
+	}
+	if !prune.DevBundleOSCanAnswer() {
+		// An OS whose sweep can never remove a bundle (macOS): skip outright rather than ask the
+		// runtime on every launch for an answer that cannot change. `yolo prune` names the by-hand
+		// removal there.
+		return
+	}
+	due, done := o.classDebounce("dev-bundles")
+	if !due {
+		return
+	}
+	run := o.pruneRunFunc()
+	live := prune.LiveYoloContainers(rt, run)
+	ev := prune.DevBundleEvidence(rt, live, run, prune.DevBundleProcStarts)
+	r := prune.PruneDevBundles(prune.DevBundlesDirUnder(paths.GlobalStorage()), prune.DevBundleKeep, ev,
+		true, o.Now(), guard)
+	if r.Unknown != "" || r.Declined != "" {
+		return // not stamped: the next launch retries
+	}
+	done()
+	if n := r.RemovedCount(); n > 0 {
+		o.housekeepingNote("dev bundles: reclaimed %d unused development bundle(s), %s", n, prune.FmtBytes(r.Bytes))
 	}
 }
 
