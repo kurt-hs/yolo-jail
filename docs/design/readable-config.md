@@ -12,7 +12,7 @@ vantage:
 
 # Config that reads right the first time: the front door
 
-**Status:** 2026-10-25. Nothing is built. Twenty-two rulings recorded ([ledger](#decision-ledger));
+**Status:** 2026-10-25. Nothing is built. Twenty-three rulings recorded ([ledger](#decision-ledger));
 thirteen questions open, each in the document that shows its file. Evidence verified at
 `fa13f42d9` against this repository, the effective user config this jail inherited, the 21
 shipped packs, and the maintainer's twelve packs.
@@ -56,7 +56,7 @@ seed; incomplete while any question is open).
 
 | Document | The file it shows | Its questions |
 | :--- | :--- | :--- |
-| [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | [OQ-RC16](config-user.md#OQ-RC16) fetch from any repository |
+| [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | [OQ-RC21](config-user.md#OQ-RC21) a public repository outside the scope |
 | [`config-project.md`](config-project.md) | `yolo-jail.toml` and `.local`: install, requests, mounts, ports, env, turning things off | [OQ-RC17](config-project.md#OQ-RC17) the file's shape · [OQ-RC7](config-project.md#OQ-RC7) saying "off" with no `null` |
 | [`config-commands.md`](config-commands.md) | the command each "edit your config" message prints, what it does to the file, and the format underneath | [OQ-RC9](config-commands.md#OQ-RC9) may yolo write your file · [OQ-RC2](config-commands.md#OQ-RC2) TOML or JSONC · [OQ-RC10](config-commands.md#OQ-RC10) the verbs · [OQ-RC12](config-commands.md#OQ-RC12) what `yolo config` means |
 | [`config-migration.md`](config-migration.md) | the new file names, the release order, the migrate transcript | [OQ-RC11](config-migration.md#OQ-RC11) name or version key · [OQ-RC6](config-migration.md#OQ-RC6) older yolos · [OQ-RC18](config-migration.md#OQ-RC18) what migrate does · [OQ-RC8](config-migration.md#OQ-RC8) fetched packs |
@@ -91,6 +91,7 @@ seed; incomplete while any question is open).
 | OQ-RC15 | **A pack yolo does not ship is named by its source.** Ruled by taking the leaning: *"A: the collision cannot happen, so there is nothing to rename; it is Homebrew's model, and the shipped set is the only bare namespace, as core is."* `local/<name>`, `<source>/<name>`, `<owner>/<repo>`; no bare path form | 2026-10-25 | [`config-user.md` §4](config-user.md#4-naming-a-pack-that-is-not-shipped) | — |
 | OQ-RC13 | **All six conventions go in.** Ruled by taking the leaning: *"A: each of the six reads only what the user already wrote, and none lets a heading or a declaration stand for a value."* C1 pack sources, C2 `config.d/`, C5 no project file, C6 no manifest, C7 catalog facts, C9 default branch | 2026-10-25 | [`config-user.md` §8](config-user.md#8-lines-you-never-write) | — |
 | OQ-RC3 | **A provider is selectable by its own name and starts on its `model`; a variant is a second configuration of one provider.** Ruled by taking the leaning: *"B: the common case is one name, and the rare case keeps the profile that already works."* Same-named shipped profiles are deleted; answers [OQ-PP1](providers-and-profiles-redesign.md#OQ-PP1) | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |
+| OQ-RC16 | **`fetch` reaches the project's own repositories, plus what it requests; nothing else.** Ruled B, in the maintainer's words: *"nothing should escape having the user be prompted with the explicit thing being granted and saying yes … this should not be an exception."* An agent wanting another repository adds it to the project file and goes through check, apply and the prompt. The public-repository case is [OQ-RC21](config-user.md#OQ-RC21) | 2026-10-25 | [`config-user.md` §6](config-user.md#6-what-a-jail-may-do-with-your-logins) | — |
 | OQ-RC20 | **`"native"` is the one reserved word: an agent set to it is left to its own login.** Ruled B: *"this means it's a fatal error to try to use that as a regular provider name."* A provider named `native` is refused | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |
 | OQ-RC14 | **The selection key is `active_provider`;** declarations are `providers.<name>` with `variants` under them. Ruled by taking the leaning: *"A: active_provider says both halves, a provider and the one in use, and pairs with providers.* as declared against selected."* | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |
 | <a id="RC-D15"></a>RC-D15 | **RC-D14 does not hold.** The maintainer: *"what's the thing going to be for Claude? And what if there's two different defaults that Claude could use? … it depends on other environment … so you can't really name it."* An agent left to itself is not a provider; how the file says so was then ruled: `"native"` ([OQ-RC20](#decision-ledger)) | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |

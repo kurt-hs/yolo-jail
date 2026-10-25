@@ -3,7 +3,7 @@ title: "Your config, one screen: packs, logins, and which setup each agent runs 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC16 (§6); every other section of this document is approved"
+next: "Rule OQ-RC21 (§6); every other section of this document is approved"
 tags: [config, packs, providers, profiles, broker, grants, conventions, design]
 summary: "The user config as one annotated file, today and proposed, then one section per part of it. A section with a question carries that question at its end; a section without one is approved. Part of the readable-config redesign; the ledger of rulings is in the front door and the evidence is in the appendix."
 ---
@@ -18,7 +18,7 @@ this jail inherited it, condensed.
 time. A section that still needs a decision ends with its question; a section with no question
 is approved, and the [ledger](readable-config.md#decision-ledger) says when.
 
-**Needs your ruling:** [OQ-RC16](#OQ-RC16) in [§6](#6-what-a-jail-may-do-with-your-logins).
+**Needs your ruling:** [OQ-RC21](#OQ-RC21) in [§6](#6-what-a-jail-may-do-with-your-logins).
 
 > **In short.** Each section of your config names what you decided, in a word you would use, and
 > says it once. The file below is the whole proposal; the prose only says why.
@@ -77,7 +77,7 @@ packs = ["pi", "local/pi-fork", "codex", "git", "github", "bedrock", "aws-auth",
          # the only switch; local/<name> is ~/.config/yolo-jail/packs/<name>                (§4)
 
 [allow.git]                       # what every project's jail may do with your git login  (§6)
-always = ["fetch"]                # its own remotes                                       (?OQ-RC16)
+always = ["fetch"]                # its own repositories; a project requests others       (§6)
 on_request = ["push", "new_branches"]   # a project may request these; each approved at launch
 
 [allow.github]
@@ -235,7 +235,7 @@ shape: what every project's jail gets (`always`), and what a project may *reques
 ```toml
 # your config
 [allow.git]
-always = ["fetch"]                # every project's jail: its own remotes, as approved at launch (?OQ-RC16)
+always = ["fetch"]                # every project's jail: its own repositories, as approved at launch
 on_request = ["push", "new_branches"]   # a project may request these; never granted by this line
 
 [allow.github]
@@ -271,37 +271,39 @@ yolo-jail.toml:3: this project requests push to main.
 At launch the approval prompt lists each granted request as `+ git: push to main` and each
 skipped one as `– git: push to main (not allowed on request by your config)`; `*` leaves the
 vocabulary. The four ruled grant kinds map onto these keys ([appendix A.6](#a6-the-grant-kinds-mapped)).
-One thing about `fetch` is still open: how far it reaches.
 
-1. 💬 <a id="OQ-RC16"></a>**OQ-RC16: Should `fetch` reach only the project's own repositories, or any repository your login can?**
+**Approved 2026-10-25: `fetch` reaches the project's own repositories**, as approved at launch,
+plus what the project's `requests.github.repos` names, and nothing else. An agent that wants
+another repository adds it to the project file and goes through the normal route: `yolo check`,
+`yolo config apply`, the prompt that names the repository, your `y`. No mechanism bypasses that
+prompt, and this is not an exception to it.
 
-   Still live, and the one thing about `fetch` the file above leaves open. Today `always =
-   ["fetch"]` reaches the project's remotes as approved at launch, plus what its
-   `requests.github.repos` names; an agent that clones some other repository to read it is
-   refused. You read the line as "any Git repo is allowed to be fetched by the jail, which would
-   be nice." Widening it changes the broker's per-workspace scope. A fetch is read-only, so what
-   a wider setting risks is a private repository's contents reaching a jail whose project never
-   named it.
+```console
+$ git -C /workspace/vendor/other fetch
+fatal: github.com/acme/other is not in this workspace's scope.
+  Add it: yolo config add requests.github.repos acme/other   (then yolo check, and the human runs yolo config apply)
+```
 
-   ```toml
-   # A  a second key widens it; without the key, the project's own
-   [allow.git]
-   always = ["fetch"]
-   fetch_from = ["github.com/mschulkind-oss/*"]   # or ["*"]: any repository the host login reaches
+One case is left: a public repository, which needs no login of yours at all.
 
-   # B  the project's own repositories only, as today; a project adds others under [requests.github] repos
-   [allow.git]
-   always = ["fetch"]
+1. 💬 <a id="OQ-RC21"></a>**OQ-RC21: May a jail fetch a public repository outside its scope without asking?**
 
-   # C  any repository the host login reaches, whenever fetch is allowed; nothing to write
-   [allow.git]
-   always = ["fetch"]
-   ```
+   An agent in a jail runs `git clone https://github.com/golang/go` to read something. In a jail
+   every `https://` remote is routed through the git broker on the host, which refuses a
+   repository outside the workspace's approved scope, so the clone fails even though the
+   repository is public and no login of yours would be used. The agent's way forward is the same
+   as for a private one: add it to `requests.github.repos`, check, apply, your `y`.
 
-   <!-- vantage: question id=OQ-RC16 leaning="A: the user config is trusted and a read is cheap to widen, but a line that names what it opens beats one that opens everything." -->
+   - **A — Pass a public repository through without asking.** The broker tries the fetch with no
+     credential first; if the remote serves it, nothing of yours was lent and no prompt is owed.
+     A private repository still goes through the scope and the prompt.
+   - **B — Every fetch is in scope or refused**, public or not, as today. One rule, one prompt;
+     reading a public repository costs an apply.
 
-   _Leaning:_ A: the user config is trusted and a read is cheap to widen, but a line that names
-   what it opens beats one that opens everything.
+   <!-- vantage: question id=OQ-RC21 leaning="A: the broker exists to lend your logins; a fetch that lends none is not its concern, and the prompt protects what it protects either way." -->
+
+   _Leaning:_ A: the broker exists to lend your logins; a fetch that lends none is not its
+   concern, and the prompt protects what it protects either way.
 
    **Answer:**
    > _(empty — fill in when decided)_
