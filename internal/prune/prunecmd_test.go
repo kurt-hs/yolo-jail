@@ -41,6 +41,9 @@ func baseOpts(t *testing.T) (Options, string) {
 	o := NewDefaultOptions()
 	o.DetectRuntime = func() string { return "podman" }
 	o.Exec = stubExec(map[string]string{}, nil)
+	// No container runtime beside a macos-user backend unless a test says so: the real PATH
+	// would make the macos-user sections depend on the machine.
+	o.HasBinary = func(string) bool { return false }
 	o.Now = func() time.Time { return time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC) }
 	o.GlobalStorage = func() string { return gs }
 	o.GlobalHome = func() string { return filepath.Join(gs, "home") }

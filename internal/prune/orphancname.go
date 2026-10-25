@@ -218,6 +218,39 @@ func AllYoloContainerNames(rt string, run RunFunc) runtime.LiveSet {
 	return runtime.LiveSet{Known: true, Names: names}
 }
 
+// macosUserBesideRuntimes are the container runtimes a macos-user sweep looks for on PATH: a
+// container jail of the same Mac owns its names whatever backend is asking.
+var macosUserBesideRuntimes = []string{"podman", "container"}
+
+// InstalledContainerRuntimes is every container runtime in macosUserBesideRuntimes that has
+// reports installed. The macos-user housekeeping slot and `yolo prune` on that backend both read
+// it, so the two known sets cannot drift apart.
+func InstalledContainerRuntimes(has func(string) bool) []string {
+	var out []string
+	for _, rt := range macosUserBesideRuntimes {
+		if has(rt) {
+			out = append(out, rt)
+		}
+	}
+	return out
+}
+
+// AllYoloContainerNamesOf is AllYoloContainerNames over several runtimes, merged. ok=false, with
+// failed naming the runtime, when any of them cannot be asked: the caller declines.
+func AllYoloContainerNamesOf(runtimes []string, run RunFunc) (names map[string]struct{}, failed string, ok bool) {
+	names = map[string]struct{}{}
+	for _, rt := range runtimes {
+		all := AllYoloContainerNames(rt, run)
+		if !all.Known {
+			return nil, rt, false
+		}
+		for n := range all.Names {
+			names[n] = struct{}{}
+		}
+	}
+	return names, "", true
+}
+
 // LiveSessionKeys is the workspace key (paths.JailShortHash of the cname) of every host-services
 // session under base that is live or whose liveness cannot be read. ok=false when the sessions
 // cannot be listed, and the caller then declines.

@@ -95,6 +95,9 @@ type Options struct {
 	// config here). The CLI front door (runPrune) injects a config-aware variant
 	// that also honors the workspace `runtime` key.
 	DetectRuntime func() string
+	// HasBinary reports whether a program is on PATH. On macos-user it says which container
+	// runtimes sit beside the backend (InstalledContainerRuntimes). nil => exec.LookPath.
+	HasBinary func(string) bool
 	// Exec is the container-runtime probe seam. nil =>
 	// realProbeExec (captures stdout, honors the per-call timeout, with a
 	// missing-binary/start-failure/timeout => Ran=false degrade).
@@ -266,6 +269,12 @@ func fillDefaults(o *Options) {
 	}
 	if o.Exec == nil {
 		o.Exec = realProbeExec
+	}
+	if o.HasBinary == nil {
+		o.HasBinary = func(bin string) bool {
+			_, err := exec.LookPath(bin)
+			return err == nil
+		}
 	}
 	if o.Now == nil {
 		o.Now = time.Now
@@ -1172,21 +1181,24 @@ func Run(opts Options) int {
 	// container name leaves under global storage (orphancname.go has the rules). Same
 	// --no-build-roots gate as agent staging, its sibling class. Its known set asks the runtime
 	// for containers in ANY state (a stopped container still owns its name), so it cannot reuse
-	// the live set above; on macos-user, as for staging, there is no runtime to ask and the
-	// tracking files and sessions are the whole known set (BF-D2).
+	// the live set above. On macos-user the known set is the tracking files and the sessions
+	// (BF-D2), plus the any-state listing of every container runtime installed beside it, read
+	// through the same helper the macos-user housekeeping slot uses; one that is installed but
+	// cannot answer declines.
 	if !opts.NoBuildRoots {
 		p.line("")
 		p.line(fmt.Sprintf("[bold]Orphaned per-jail state[/bold]  [dim](locks, logs, owners, current-image pointers, approvals; untouched for %dd)[/dim]",
 			int(OrphanCnameAgeFloor/(24*time.Hour))))
-		all := runtime.LiveSet{Known: macosUser, Names: map[string]struct{}{}}
-		if !macosUser {
-			all = AllYoloContainerNames(rt, opts.Exec)
+		runtimes := []string{rt}
+		if macosUser {
+			runtimes = InstalledContainerRuntimes(opts.HasBinary)
 		}
+		listed, failedRT, listedOK := AllYoloContainerNamesOf(runtimes, opts.Exec)
 		sessionKeys, sessionsKnown := LiveSessionKeys(paths.HostServicesBase(paths.IsMacOS))
 		switch {
-		case !all.Known:
-			p.line(fmt.Sprintf("  [dim]skipped — could not list the runtime's containers (%s); declining to sweep[/dim]", rt))
-			p.line(runtimeDeclineNextStep(rt))
+		case !listedOK:
+			p.line(fmt.Sprintf("  [dim]skipped — could not list the runtime's containers (%s); declining to sweep[/dim]", failedRT))
+			p.line(runtimeDeclineNextStep(failedRT))
 			declinedSweep = true
 		case !sessionsKnown:
 			p.line("  [dim]skipped — could not list the host-services sessions; declining to sweep[/dim]")
@@ -1194,7 +1206,7 @@ func Run(opts Options) int {
 			declinedSweep = true
 		default:
 			known := TrackedContainerNames(opts.ContainerDir())
-			for name := range all.Names {
+			for name := range listed {
 				known[name] = struct{}{}
 			}
 			rep := PruneOrphanCnameStateGuarded(OrphanCnameDirsUnder(gs, opts.BuildDir(), opts.ContainerDir()),

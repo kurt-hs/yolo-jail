@@ -720,7 +720,8 @@ tracking files and the sessions as its known set, as `yolo prune` reads that bac
 ([BF-D2](#BF-D2)); a container runtime on `PATH` beside it adds its any-state listing, and one
 that is on `PATH` but cannot be asked declines the pass. `YOLO_NO_AUTO_IMAGE_REAP` turns it off
 with the other automatic classes. `yolo prune` lists it on a dry run and removes it with
-`--apply`, under `--no-build-roots` like agent staging; a declined sweep there names its next step
+`--apply`, under `--no-build-roots` like agent staging, and on `macos-user` builds the same known
+set through the same helper (`prune.InstalledContainerRuntimes`); a declined sweep there names its next step
 and makes the command exit non-zero, as every declined section does.
 
 **Unverified on a Mac:** on Apple Container the any-state listing is `container ls --all`, read

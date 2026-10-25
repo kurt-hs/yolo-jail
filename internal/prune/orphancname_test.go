@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -381,6 +382,68 @@ func TestPruneRunSweepsOrphanedPerJailState(t *testing.T) {
 		}
 		if !hasLine(&buf, "  `podman ps -a` must answer for this sweep to run; `yolo check` diagnoses the runtime. Re-run `yolo prune` once it does.") {
 			t.Errorf("the decline names no next step:\n%s", buf.String())
+		}
+		f.assertAll(t, false)
+	})
+}
+
+// `yolo prune` on macos-user reads the container runtimes installed beside it through
+// InstalledContainerRuntimes, as the macos-user slot does: none installed sweeps on the tracking
+// files and sessions alone, an installed runtime's stopped container keeps its name, and an
+// installed runtime that cannot answer declines non-zero with a next step. The last two fail if
+// prune stops consulting the installed runtimes.
+func TestPruneOnMacosUserConsultsInstalledRuntimes(t *testing.T) {
+	run := func(t *testing.T, has func(string) bool, exec func(f *orphanFixture) RunFunc) (*orphanFixture, int, string) {
+		t.Helper()
+		redirectSessions(t)
+		o, _ := baseOpts(t)
+		f := newOrphanFixture(t)
+		o.GlobalStorage = func() string { return f.gs }
+		o.BuildDir = func() string { return f.build }
+		o.ContainerDir = func() string { return f.containers }
+		o.Now = func() time.Time { return f.now }
+		o.DetectRuntime = func() string { return "macos-user" }
+		o.HasBinary = has
+		o.Exec = exec(f)
+		o.Apply = true
+		var buf bytes.Buffer
+		o.Out = &buf
+		rc := Run(o)
+		return f, rc, buf.String()
+	}
+	podmanOnly := func(bin string) bool { return bin == "podman" }
+	const listing = "podman\x00ps\x00-a\x00--format\x00{{.Names}}"
+	t.Run("none installed sweeps", func(t *testing.T) {
+		f, _, out := run(t, func(string) bool { return false }, func(*orphanFixture) RunFunc { return noMacosUserExec(t) })
+		if !strings.Contains(out, "Orphaned per-jail state") {
+			t.Fatalf("no section:\n%s", out)
+		}
+		f.assertAll(t, true)
+	})
+	t.Run("an installed runtime's stopped container keeps its name", func(t *testing.T) {
+		f, _, out := run(t, podmanOnly, func(f *orphanFixture) RunFunc {
+			return stubExec(map[string]string{listing: f.cname + "\n"}, nil)
+		})
+		if !strings.Contains(out, "Orphaned per-jail state") {
+			t.Fatalf("no section:\n%s", out)
+		}
+		f.assertAll(t, false)
+	})
+	t.Run("an installed runtime that cannot answer declines", func(t *testing.T) {
+		f, rc, out := run(t, podmanOnly, func(*orphanFixture) RunFunc {
+			return func(argv []string, _ time.Duration) ProbeResult {
+				if strings.Join(argv, "\x00") == listing {
+					return ProbeResult{Ran: false}
+				}
+				return ProbeResult{Ran: true}
+			}
+		})
+		if rc == 0 {
+			t.Errorf("a declined sweep exited 0 (OQ-LS2):\n%s", out)
+		}
+		if !strings.Contains(out, "  skipped — could not list the runtime's containers (podman); declining to sweep") ||
+			!strings.Contains(out, "`podman ps -a` must answer for this sweep to run") {
+			t.Errorf("no decline with a next step:\n%s", out)
 		}
 		f.assertAll(t, false)
 	})

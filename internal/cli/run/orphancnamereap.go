@@ -39,12 +39,10 @@ func (o *Options) reapOrphanCnameState(rt, launchingCname string, guard prune.Gu
 // there (BF-D2); a container runtime installed beside it (podman or Apple Container on PATH) adds
 // its any-state listing, and one that is present but cannot be asked declines the pass.
 func (o *Options) reapOrphanCnameStateMacosUser(guard prune.Guard) {
-	var runtimes []string
-	for _, rt := range []string{"podman", "container"} {
-		if _, ok := o.LookPath(rt); ok {
-			runtimes = append(runtimes, rt)
-		}
-	}
+	runtimes := prune.InstalledContainerRuntimes(func(rt string) bool {
+		_, ok := o.LookPath(rt)
+		return ok
+	})
 	o.sweepOrphanCnameState(runtimes, "", guard)
 }
 
@@ -58,18 +56,16 @@ func (o *Options) sweepOrphanCnameState(runtimes []string, launchingCname string
 	if !due {
 		return
 	}
-	known := prune.TrackedContainerNames(paths.ContainerDir())
-	for _, rt := range runtimes {
-		all := prune.AllYoloContainerNames(rt, o.pruneRunFunc())
-		if !all.Known {
-			return
-		}
-		for name := range all.Names {
-			known[name] = struct{}{}
-		}
-	}
-	sessionKeys, ok := orphanSessionKeys(paths.HostServicesBase(o.IsMacOS))
+	listed, _, ok := prune.AllYoloContainerNamesOf(runtimes, o.pruneRunFunc())
 	if !ok {
+		return
+	}
+	known := prune.TrackedContainerNames(paths.ContainerDir())
+	for name := range listed {
+		known[name] = struct{}{}
+	}
+	sessionKeys, sessionsOK := orphanSessionKeys(paths.HostServicesBase(o.IsMacOS))
+	if !sessionsOK {
 		return
 	}
 	if launchingCname != "" {
