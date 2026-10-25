@@ -160,11 +160,26 @@ Numbered so the questions can cite them.
 
 ## 4. The nudge, when a table and a pack disagree
 
+A settings table for a pack that is not selected is an error, not a warning
+([RC-D9](readable-config.md#decision-ledger)): `allow.<pack>` is valid only when `<pack>` is in
+`packs`. The nudge offers the fix first; declined, the check fails and a launch refuses.
+
 ```console
 $ yolo check
-~/.config/yolo-jail/config.toml:12: [allow.aws-auth] is set, but aws-auth is not in packs, so nothing serves it.
-  Add it to packs? [y/N]                       (or later: yolo pack add aws-auth)
+~/.config/yolo-jail/config.toml:12: [allow.aws-auth] is set, but aws-auth is not in packs.
+  Add it to packs? [y/N] n
+error: config.toml:12: allow.aws-auth names a pack that is not selected. Add it (yolo pack add aws-auth)
+  or delete the table.
 
+$ yolo check
+~/.config/yolo-jail/config.toml:12: [allow.aws-aut] names no pack. Did you mean aws-auth?
+error: config.toml:12: allow.aws-aut: no such pack.
+```
+
+The reverse, a listed login pack whose table names no profile, is a warning: the pack installs,
+its service serves nothing, and the check says what to set.
+
+```console
 $ yolo check
 ~/.config/yolo-jail/config.toml:3: packs lists aws-auth, but [allow.aws-auth] names no profile, so it serves nothing.
   Set one: yolo config set allow.aws-auth.profile <aws profile>
@@ -174,25 +189,53 @@ $ yolo check
 
 A convention is a default that follows from something you already did. Three rules bound every
 one: the explicit key still wins when written; `yolo config show` prints what a convention
-supplied, as `fetch = true   # by convention: [allow.git] is present`; and no convention widens
+supplied, as `packs = [..., "local/matt"]   # by convention: local/ is ~/.config/yolo-jail/packs`; and no convention widens
 what a jail may do with a login. [OQ-RC13](#OQ-RC13) takes or vetoes each; its leaning takes all but
-C3 and C8.
+C3, C4 and C8.
 
 ```toml
 # C1  your packs folder: ~/.config/yolo-jail/packs/<name> is local/<name>
 pack_sources = { dotfiles = "~/.dotfiles/yolo-packs" }       # before
 packs = ["dotfiles/matt"]
-packs = ["local/matt"]                                        # after: the folder is a symlink there
+packs = ["local/matt"]                                        # after, with the folder linked:
+```
 
+```console
+$ ln -s ~/.dotfiles/yolo-packs ~/.config/yolo-jail/packs     # or one link per pack, or real directories
+```
+
+`~/.config/yolo-jail/packs/` is an ordinary directory; a symlink in it, or the directory itself
+being one, is a path like any other. A local pack already follows symlinks wherever they point,
+by rule ([OQ-NC9](../plans/notch-convergence.md#7-decision-ledger), 2026-09-28), because dotfile managers deploy
+exactly this shape; a fetched pack does not. No new handling. If you keep both spellings and list
+both, `local/matt` and `dotfiles/matt` resolve to one directory, and yolo refuses the duplicate
+naming both lines; list one.
+
+```toml
 # C2  machine files: config.d/*.toml are read after config.toml, in name order
 include_if_found = ["../../.dotfiles/tag-work/config/yolo-jail/work.toml"]   # before
-                                                              # after: no line; the dotfile tag puts
-                                                              #   work.toml in config.d/ on work machines
+                                                              # after: no line; the file is in config.d/
+```
 
-# C4  a grant table's presence is its common grant
-[allow.git]                                                   # before
-fetch = true
-[allow.git]                                                   # after
+```text
+~/.config/yolo-jail/
+  config.toml
+  config.d/
+    overrides.toml
+    work.toml -> ~/.dotfiles/tag-work/config/yolo-jail/work.toml      # present on work machines only
+```
+
+"tag" is from the path of your own work file, `~/.dotfiles/tag-work/…`: the layout rcm's
+`rcup -t work` uses, where a `tag-<name>/` directory is linked into `~` only on machines where the
+tag is on. If that is what puts `work.jsonc` on work machines today, then moving it to
+`tag-work/config/yolo-jail/config.d/work.toml` puts it in `config.d/` there and nowhere else, and
+the include line is unnecessary. If your dotfiles link differently, C2 still holds for any file
+you place in `config.d/`; only the "no line at all" part depends on the linking.
+
+```toml
+
+# C4  withdrawn 2026-10-25: an empty [allow.git] meaning "fetch" is presence standing for a value,
+#     which no one reads cold; fetch = true stays written
 
 # C7  a model named without facts takes the catalog's (pending the catalog check)
 "global.anthropic.claude-opus-5-5" = { name = "Opus 5.5", context = 1_000_000, price = { … } }   # before
@@ -320,16 +363,16 @@ default = "bedrock"
    A colleague sets up a work machine and writes the file in [§2](#2-the-file-proposed). Under all
    nine conventions of [§5](#5-lines-you-never-write), `packs` loses `bedrock`, `aws-auth`, `git`
    and `github` (the sections selected them), the `[run_on] default` line goes (one provider is
-   everyone's), and `fetch = true` goes (the table is the grant). `yolo config show` prints each
+   everyone's). `yolo config show` prints each
    supplied line with `# by convention`. The line they did not write is one they cannot get wrong,
    and one they cannot see without asking.
 
    - **A — All nine.**
-   - **B — All but C3 and C8**, the two where a declaration acts at a distance. `packs` stays the
-     one list of what is on; the selection stays a written line.
+   - **B — All but C3, C4 and C8**, where a declaration or a bare heading stands for a value.
+     `packs` stays the one list of what is on; the selection and the grant stay written lines.
    - **C — None.**
 
-   <!-- vantage: question id=OQ-RC13 leaning="B: packs stays the one list of what is on and a heading never looks a pack up; the other six read only what the user already wrote." -->
+   <!-- vantage: question id=OQ-RC13 leaning="B: packs stays the one list of what is on, and no heading looks a pack up or stands for a value; the rest read only what the user already wrote." -->
 
    _Leaning:_ B: `packs` stays the one list of what is on and a heading never looks a pack up; the
    other six read only what the user already wrote.

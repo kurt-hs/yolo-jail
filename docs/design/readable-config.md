@@ -12,7 +12,7 @@ vantage:
 
 # Config that reads right the first time: the front door
 
-**Status:** 2026-10-25. Nothing is built. Eight rulings recorded ([ledger](#decision-ledger));
+**Status:** 2026-10-25. Nothing is built. Ten rulings recorded ([ledger](#decision-ledger));
 sixteen questions open, each in the document that shows its file. Evidence verified at
 `fa13f42d9` against this repository, the effective user config this jail inherited, the 21
 shipped packs, and the maintainer's twelve packs.
@@ -87,6 +87,8 @@ seed; incomplete while any question is open).
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
+| <a id="RC-D10"></a>RC-D10 | **An empty section means nothing.** Review comment on convention C4: *"you're saying an empty section is meaningful?"* Withdrawn: presence never stands for a value; `fetch = true` stays written | 2026-10-25 | [`config-user.md` §5](config-user.md#5-lines-you-never-write) | — |
+| <a id="RC-D9"></a>RC-D9 | **A settings table for an unselected pack is an error.** Review comment: *"if you say no, then this should turn into a fatal error because an allow.<foo> should error if not valid."* The nudge offers `yolo pack add`; declined, the check fails and a launch refuses. A table naming no pack at all is an error with "did you mean" | 2026-10-25 | [`config-user.md` §4](config-user.md#4-the-nudge-when-a-table-and-a-pack-disagree) | — |
 | <a id="RC-D8"></a>RC-D8 | **Two words for two scopes.** Review comment: *"we're using the exact same language here, and it means two different things in two different places."* The user-config ceiling is `allow`; a project's ask is `needs`, and must fit inside it | 2026-10-25 | [`config-user.md` §3](config-user.md#3-principles) | — |
 | <a id="RC-D7"></a>RC-D7 | **A section without its pack is a nudge, not a selection.** Review follow-up: *"maybe we can infer which pack you would need and give you a happy path nudge?"* `yolo check` names the pack and offers `yolo pack add <pack>` with a `y`; the reverse case offers the setting | 2026-10-25 | [`config-user.md` §4](config-user.md#4-the-nudge-when-a-table-and-a-pack-disagree) | — |
 | <a id="RC-D6"></a>RC-D6 | **No value is a reserved string.** Review comment on `"when a project asks"`: *"some weird string like this is just weird for a config file."* A value is `true`, `false`, a number, a name or a list of names; `push = true` at user scope is the ceiling, `new_branches = true` replaces `"new branches"` | 2026-10-25 | [`config-user.md` §3](config-user.md#3-principles) | — |
