@@ -60,7 +60,7 @@ type Options struct {
 	NoImages         bool // --no-images
 	NoImageCache     bool // --no-image-cache
 	NoBuildRoots     bool // --no-build-roots
-	NoImageRoots     bool // --no-image-roots
+	NoImageRoots     bool // --no-image-roots: every GC-root section, the build-state links included
 	NoShadowedHome   bool // --no-shadowed-home
 	NoEmbeddedPacks  bool // --no-embedded-packs
 	ImageCacheKeep   int  // --image-cache-keep (default: per-runtime, see ResolveImageCacheKeep)

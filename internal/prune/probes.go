@@ -184,6 +184,23 @@ func mountsArrayFrom(stdout string) ([]map[string]any, bool) {
 // decline: the decline still fires, unchanged, for every container yolo could
 // not ask.
 func inspectMountSourceKnown(rt, name, dest string, run RunFunc) (string, bool) {
+	if rt == "container" {
+		// Apple Container's inspect takes no --format: the whole document is read.
+		res := run([]string{"container", "inspect", name}, inspectTimeout)
+		if !res.Ran || res.RC != 0 {
+			return "", false
+		}
+		mounts, ok := runtime.MountsFromContainerInspectJSON(res.Stdout)
+		if !ok {
+			return "", false
+		}
+		for _, m := range mounts {
+			if m.Destination == dest && m.Source != "" {
+				return m.Source, true
+			}
+		}
+		return "", true
+	}
 	res := run([]string{rt, "inspect", "--format", "{{json .Mounts}}", name}, inspectTimeout)
 	if !res.Ran || res.RC != 0 {
 		return "", false

@@ -48,7 +48,7 @@ func (o *Options) reapBuildStateLinks(rt string, guard prune.Guard) {
 	if srcKnown {
 		prefixRoots = prune.PruneOrphanPrefixRootsGuarded(filepath.Join(buildDir, "prefix-roots"),
 			sources, srcKnown, true, o.Now(), guard)
-		outLinks = prune.PruneRetiredPrefixOutLinks(buildDir, sources, srcKnown, true, guard)
+		outLinks = prune.PruneRetiredPrefixOutLinks(buildDir, sources, srcKnown, true, o.Now(), guard)
 	} else {
 		o.housekeepingNote("build state: declined prefix roots and retired prefix out-links — %s; "+
 			"a later launch retries, or run `yolo prune --apply`", srcWhy)

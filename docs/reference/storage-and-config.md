@@ -263,9 +263,10 @@ mount on each ([`jail-home.md`](jail-home.md) has the full per-backend layout):
 - **macos-user:** the tree is at `/Users/_yolojail/.local/share/yolo-jail/embedded-packs`, where
   `~/.local` is the home layout's symlink to `<workspace>/.yolo/home/local`.
 
-Host `yolo prune` sweeps only the host's own `embedded-packs/`. A workspace's in-jail trees
-from older builds are reaped only by a `yolo prune` run inside that workspace's jail, and host
-dedup never links them, because sharing an inode across workspaces would let one jail write
+Host `yolo prune` and the host launch's housekeeping slot sweep only the host's own
+`embedded-packs/`. A workspace's in-jail trees from older builds are reaped only by a `yolo prune`
+run inside that workspace's jail, or by the slot of a launch made inside it, and host dedup never
+links them, because sharing an inode across workspaces would let one jail write
 another's tree.
 
 When the directory cannot be used, a process falls back to a private tree in

@@ -46,7 +46,7 @@ func mkTarget(t *testing.T, dir, name string) string {
 func TestRetiredPrefixOutLinksDeclineWhenLivenessUnknown(t *testing.T) {
 	dir := t.TempDir()
 	link := mkLink(t, "/nix/store/aaaa-yolo-jail-install-prefix", filepath.Join(dir, "jail-prefix-0123456789abcdef"), 30*24*time.Hour)
-	if got := PruneRetiredPrefixOutLinks(dir, nil, false, true, nil); len(got) != 0 {
+	if got := PruneRetiredPrefixOutLinks(dir, nil, false, true, time.Now(), nil); len(got) != 0 {
 		t.Fatalf("removed %v with liveness unknown — an older jail may still execute from that prefix", got)
 	}
 	if !exists(link) {
@@ -58,7 +58,8 @@ func TestRetiredPrefixOutLinksKeepARunningJailsPrefixAndRemoveTheRest(t *testing
 	dir := t.TempDir()
 	live := "/nix/store/aaaa-yolo-jail-install-prefix"
 	keep := mkLink(t, live, filepath.Join(dir, "jail-prefix-aaaaaaaaaaaaaaaa"), 30*24*time.Hour)
-	gone := mkLink(t, "/nix/store/bbbb-yolo-jail-install-prefix", filepath.Join(dir, "jail-prefix-bbbbbbbbbbbbbbbb"), time.Minute)
+	gone := mkLink(t, "/nix/store/bbbb-yolo-jail-install-prefix", filepath.Join(dir, "jail-prefix-bbbbbbbbbbbbbbbb"), 2*time.Hour)
+	young := mkLink(t, "/nix/store/dddd-yolo-jail-install-prefix", filepath.Join(dir, "jail-prefix-dddddddddddddddd"), time.Minute)
 	other := mkLink(t, "/nix/store/cccc-skopeo", filepath.Join(dir, "restore-result"), 30*24*time.Hour)
 	notLink := filepath.Join(dir, "jail-prefix-notalink")
 	if err := os.WriteFile(notLink, nil, 0o644); err != nil {
@@ -66,13 +67,15 @@ func TestRetiredPrefixOutLinksKeepARunningJailsPrefixAndRemoveTheRest(t *testing
 	}
 	sources := map[string]bool{live + "/" + image.JailPrefixSubdir + "/bin": true}
 
-	if dry := PruneRetiredPrefixOutLinks(dir, sources, true, false, nil); !reflect.DeepEqual(dry, []string{gone}) || !exists(gone) {
+	if dry := PruneRetiredPrefixOutLinks(dir, sources, true, false, time.Now(), nil); !reflect.DeepEqual(dry, []string{gone}) || !exists(gone) {
 		t.Fatalf("dry run = %v, want [%s] reported and nothing removed", dry, gone)
 	}
-	got := PruneRetiredPrefixOutLinks(dir, sources, true, true, nil)
+	got := PruneRetiredPrefixOutLinks(dir, sources, true, true, time.Now(), nil)
 	if !reflect.DeepEqual(got, []string{gone}) || exists(gone) {
-		t.Fatalf("removed %v, want exactly the retired link no jail runs from (%s); no writer exists, "+
-			"so even a minute-old one is retired", got, gone)
+		t.Fatalf("removed %v, want exactly the retired link no jail runs from (%s)", got, gone)
+	}
+	if !exists(young) {
+		t.Error("a link younger than PrefixRootGrace was removed; an older launcher may be mid-build")
 	}
 	if !exists(keep) {
 		t.Error("the out-link of a prefix a running jail executes from was removed")
@@ -308,5 +311,85 @@ func TestPruneRunsTheBuildStateSection(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("report lacks %q:\n%s", want, out)
 		}
+	}
+}
+
+// acDoc is Apple Container's `container inspect` document in the measured top-level shape
+// (docs/plans/setup-support-gaps.md §5.1 row 5). The mount entry's field names are NOT
+// measured on a Mac (disk-footprint.md BF-D4).
+func acDoc(mountSrc, mountDest string, env ...string) string {
+	envJSON := `"PATH=/bin"`
+	for _, e := range env {
+		envJSON += `,"` + e + `"`
+	}
+	mounts := ""
+	if mountDest != "" {
+		mounts = `{"source":"` + mountSrc + `","destination":"` + mountDest + `","options":["ro"]}`
+	}
+	return `[{"id":"yolo-a","status":{"state":"running"},"configuration":{"mounts":[` + mounts +
+		`],"labels":{},"initProcess":{"environment":[` + envJSON + `]}}}]`
+}
+
+// TestAppleContainerLivenessIsAnswered: Apple Container's inspect takes no --format, so the
+// liveness readers must read its whole document. Asked with --format, every pass declined on
+// that runtime forever.
+func TestAppleContainerLivenessIsAnswered(t *testing.T) {
+	live := runtime.LiveSet{Known: true, Names: map[string]struct{}{"yolo-a": {}}}
+	src := "/nix/store/aaaa-yolo-jail-install-prefix/" + image.JailPrefixSubdir + "/bin"
+	run := func(argv []string, _ time.Duration) ProbeResult {
+		if strings.Join(argv, " ") != "container inspect yolo-a" {
+			return ProbeResult{Ran: true, RC: 64} // AC rejects --format
+		}
+		return ProbeResult{Ran: true, Stdout: acDoc(src, prefixBinMountDest, "YOLO_STORE_FHS_PROFILES=/nix/store/x-yolo-image-extras")}
+	}
+	sources, known, why := LivePrefixSources("container", live, prefixBinMountDest, run)
+	if !known || !sources[src] {
+		t.Fatalf("LivePrefixSources on Apple Container = %v, %v, %q; want the mounted prefix", sources, known, why)
+	}
+	profiles, known, pwhy := LiveStoreProfiles("container", live, run)
+	if !known || !profiles["/nix/store/x-yolo-image-extras"] {
+		t.Fatalf("LiveStoreProfiles on Apple Container = %v, %v, %q", profiles, known, pwhy)
+	}
+
+	// A container with no mount at the prefix destination answered: it holds no prefix.
+	noMount := func([]string, time.Duration) ProbeResult { return ProbeResult{Ran: true, Stdout: acDoc("", "")} }
+	if s, known, _ := LivePrefixSources("container", live, prefixBinMountDest, noMount); !known || len(s) != 0 {
+		t.Fatalf("a container with no prefix mount: %v, %v; want known and empty", s, known)
+	}
+	// A document without a mounts array is not an answer.
+	bad := func([]string, time.Duration) ProbeResult {
+		return ProbeResult{Ran: true, Stdout: `[{"configuration":{}}]`}
+	}
+	if _, known, _ := LivePrefixSources("container", live, prefixBinMountDest, bad); known {
+		t.Fatal("a document with no mounts array must read as could-not-ask")
+	}
+}
+
+// TestImageCopierLinkReplacedMidPassIsKept: a launch that rebuilt the copier after the sweep
+// judged its link replaced the link with a new inode; the removal compares identity first.
+func TestImageCopierLinkReplacedMidPassIsKept(t *testing.T) {
+	dir := t.TempDir()
+	skopeo := mkTarget(t, t.TempDir(), "skopeo")
+	_ = mkLink(t, skopeo, filepath.Join(dir, "image-copier-1111111111111111"), time.Hour)
+	old := mkLink(t, skopeo, filepath.Join(dir, "image-copier-2222222222222222"), 30*24*time.Hour)
+	rebuild := Guard(func(recheck func() bool, del func()) bool {
+		// The launch's `nix build --out-link` renames a fresh link over the old one, keeping
+		// the old mtime here so the recheck alone would still pass.
+		tmp := old + ".tmp"
+		mkLink(t, skopeo, tmp, 30*24*time.Hour)
+		if err := os.Rename(tmp, old); err != nil {
+			t.Fatal(err)
+		}
+		if !recheck() {
+			return false
+		}
+		del()
+		return true
+	})
+	if got := PruneImageCopierLinks(dir, BuildLinkRetention, true, time.Now(), rebuild); len(got) != 0 {
+		t.Fatalf("removed %v; the link was replaced after it was judged", got)
+	}
+	if !exists(old) {
+		t.Fatal("a copier link a launch just rewrote was removed")
 	}
 }

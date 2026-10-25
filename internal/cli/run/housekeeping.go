@@ -209,8 +209,11 @@ var housekeepingSlots sync.WaitGroup
 // runHousekeeping is the slot's body: every automatic class, in one place, as one
 // pass, after the container is up, each deletion under the shared lock.
 //
-// Ordering inside it is not load-bearing today — each class is independent and
-// debounced on its own stamp. What IS load-bearing is that this runs AFTER the
+// Each class is debounced on its own stamp, and one ordering inside it is
+// load-bearing: the build-state links run before the store outputs, because the
+// prefix roots and retired out-links they remove are what keep superseded install
+// prefixes out of that class's reach (TestTheSlotRunsTheBuildStateClasses). Also
+// load-bearing is that this runs AFTER the
 // container is visible (so a reap can never race this launch's own image) and
 // that nothing here can fail the launch.
 func (o *Options) runHousekeeping(rt string, reclaimConsent reclaimConsent, cname string) {

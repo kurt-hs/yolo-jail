@@ -31,12 +31,15 @@ import (
 // policy — the distinction OQ-LS1 draws, applied honestly in the place it is
 // still needed.
 //
-// The race is real and asymmetric: resolveJailPrefix registers the root BEFORE
-// the image build and the container start, so there is a window — an entire nix
-// build wide — in which the root exists and no container references it yet.
-// Another launch's pass during that window would reap a root that is about to
-// become live. An hour is far more than that window and far less than any
-// retention horizon, which is exactly what a race guard should be.
+// The race was real and asymmetric: resolveJailPrefix registered the root BEFORE
+// the image build and the container start, so there was a window — an entire nix
+// build wide — in which the root existed and no container referenced it yet.
+// Another launch's pass during that window would reap a root about to become
+// live. No launch registers a prefix root now (a launch mounts a bundle's
+// prebuilt helpers), but an older yolo still running may, and the retired
+// jail-prefix-* out-links it wrote get the same guard (PruneRetiredPrefixOutLinks).
+// An hour is far more than that window and far less than any retention horizon,
+// which is exactly what a race guard should be.
 const PrefixRootGrace = time.Hour
 
 // prefixBinMountDest is the container-side path the launcher always bind-mounts

@@ -435,7 +435,7 @@ class**, and `yolo prune` runs the same functions. Each kind keeps the policy th
 | Link | Policy | Kept |
 | :--- | :--- | :--- |
 | `prefix-roots/<sha16>` | Liveness | The prefix a running jail executes from, and any root younger than the grace |
-| `jail-prefix-<sha16>`, the retired prefix out-links | Liveness | The out-link of a prefix a running jail executes from. No yolo writes these names any more |
+| `jail-prefix-<sha16>`, the retired prefix out-links | Liveness | The out-link of a prefix a running jail executes from, and any link younger than the prefix-root grace. No yolo writes these names any more |
 | `image-copier-<sha16>` and its `-man` twin | Age | The newest link, and any link written within the retention. A dangling link, or a `-man` link with no main link, goes at once. No running jail runs the copier, and a launch that copies rebuilds and re-links it first |
 | `package-roots/extras-*` and `package-roots/jail-*` | Liveness, then age | Any profile a running jail was started with (its `YOLO_STORE_PROFILES` and `YOLO_STORE_FHS_PROFILES`), the newest root of each kind, and any root written within the retention |
 
@@ -775,6 +775,12 @@ number; each is now one of the mechanisms above.
   back to the running executable when no PATH entry names it, which for a dev launcher is
   `dev-bundles/<bundle>/bin/yolo` ([development bundles](#development-bundles)). The fix is for
   hostwrap to prefer a stable launcher path, such as the dev wrapper that started it.
+- **A workspace's in-jail embedded pack trees are reaped only from inside it.** Each workspace's
+  jail home keeps its own `embedded-packs/` (per-workspace storage), and only a `yolo prune` in
+  that jail or the slot of a launch made inside it sweeps them. A workspace whose jail never
+  launches a nested jail keeps one tree per yolo build it ran
+  ([`storage-and-config.md`](storage-and-config.md#machine-wide-storage)). The host slot could
+  sweep them only by reading every workspace's jail home, which it does not do today.
 - **No reclaimer exists for `macos-user`'s own storage** (`/var/yolo-jail`, the sandbox account's
   caches); one would run as that account through `sudo`, which only a Mac can verify.
 
@@ -808,7 +814,7 @@ record](#the-mise-use-record).
 | <a id="BF-D1"></a>BF-D1 | **The vendor version prune runs once per launcher invocation, after the install-or-update branch, under a frozen update policy too; it yields silently to a writer holding the install lock, pays no subprocess in the steady state, and never fails the command.** | A prune moves no version, so a frozen launcher still needs it; a delete that cannot be made must not stop the program under `set -e`. |
 | <a id="BF-D2"></a>BF-D2 | **On `macos-user`, `yolo prune` asks no container runtime and `yolo stores` lists the backend's own storage.** Its running jails are its host-services sessions, read from the locks each session holds; container-only prune sections print one not-applicable line and exit 0; every staging sweep keeps live sessions' staging and declines when sessions cannot be listed; no `sudo`; only this user's sessions are read. | The backend runs no container, so both commands used to fail asking a runtime named `macos-user`. |
 | <a id="BF-D3"></a>BF-D3 | **A `macos-user` launch runs a slot of its own for retired loophole state and the shared cache's offer**, after the config approval and before the launch lock, on its own goroutine, never after the backend returns. | Those two classes grow on a Mac whatever the backend; the others need a container runtime's liveness. |
-| <a id="BF-D4"></a>BF-D4 | *Implementation decision.* **The build-state links and the embedded pack trees are automatic classes of the slot, the links before the store outputs.** Prefix roots, retired prefix out-links and package-profile roots are held by liveness and decline when it is unknown; image-copier links age out with the newest kept. The embedded trees also run in the `macos-user` slot. | Each had a collector only in `yolo prune`, or none, so the closures they root were never freed. The order lets the store-output class reach the prefixes the links stop rooting. |
+| <a id="BF-D4"></a>BF-D4 | *Implementation decision.* **The build-state links and the embedded pack trees are automatic classes of the slot, the links before the store outputs.** Prefix roots, retired prefix out-links and package-profile roots are held by liveness and decline when it is unknown; image-copier links age out with the newest kept. The embedded trees also run in the `macos-user` slot. On Apple Container, whose `container inspect` takes no `--format`, the liveness readers parse the whole inspect document: `configuration.mounts` and `configuration.initProcess.environment`. The mounts array is measured; the `source` and `destination` field names of one entry are not yet verified on a Mac (`runtime.MountsFromContainerInspectJSON`). A shape that does not parse reads as unknown, so the class declines rather than deletes. In `yolo prune`, `--no-image-roots` skips these sections with the other GC-root sections. | Each had a collector only in `yolo prune`, or none, so the closures they root were never freed. The order lets the store-output class reach the prefixes the links stop rooting. |
 
 ## Current values
 

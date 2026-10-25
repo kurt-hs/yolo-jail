@@ -197,6 +197,25 @@ func TestTheBuildStateClassesHonorTheOptOut(t *testing.T) {
 	}
 }
 
+// TestPackageRootFamiliesMatchTheWriters pins the package-root sweep's name families to the
+// launch's two writers. A renamed writer would make its roots invisible to the sweep (they
+// would accumulate again), and the families must stay distinct, since each keeps its own
+// newest root.
+func TestPackageRootFamiliesMatchTheWriters(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	extras := filepath.Base(extrasProfileRootLink("/nix/store/x-yolo-image-extras"))
+	jail := filepath.Base(storeProfileRootLink([]any{"git"}))
+	fe, fj := prune.PackageRootFamily(extras), prune.PackageRootFamily(jail)
+	if fe == "" || fj == "" || fe == fj {
+		t.Fatalf("the writers name %q and %q, families %q and %q: each must match its own family",
+			extras, jail, fe, fj)
+	}
+	if filepath.Dir(extrasProfileRootLink("/nix/store/x")) != paths.PackageRootsDir() ||
+		filepath.Dir(storeProfileRootLink([]any{"git"})) != paths.PackageRootsDir() {
+		t.Fatal("a package-profile root is written outside paths.PackageRootsDir, which the sweep reads")
+	}
+}
+
 // TestTheSlotRunsTheBuildStateClasses is the call-site pin: deleting either call from
 // the slot leaves every unit test above green and the stores growing again. The
 // build-state class must come before the store-output class, whose candidates its

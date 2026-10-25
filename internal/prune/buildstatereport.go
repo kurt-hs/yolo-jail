@@ -26,7 +26,7 @@ func renderBuildStateLinks(p *printer, rt string, live runtime.LiveSet, buildDir
 
 	sources, srcKnown, why := LivePrefixSources(rt, live, prefixBinMountDest, opts.Exec)
 	if srcKnown {
-		outLinks := PruneRetiredPrefixOutLinks(buildDir, sources, srcKnown, apply, nil)
+		outLinks := PruneRetiredPrefixOutLinks(buildDir, sources, srcKnown, apply, opts.Now(), nil)
 		report("retired jail-prefix out-link(s)", outLinks)
 		removed += len(outLinks)
 	} else {

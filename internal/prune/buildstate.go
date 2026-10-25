@@ -111,7 +111,7 @@ func livePrefixStorePaths(liveSources map[string]bool) map[string]bool {
 // liveKnown=false removes nothing: a link might be the only root of a store prefix an
 // older jail still runs on. The store paths themselves are deleted, if ever, by the
 // store-output reaper, which keeps a running jail's prefix on its own evidence.
-func PruneRetiredPrefixOutLinks(buildDir string, liveSources map[string]bool, liveKnown, apply bool, guard Guard) []string {
+func PruneRetiredPrefixOutLinks(buildDir string, liveSources map[string]bool, liveKnown, apply bool, now time.Time, guard Guard) []string {
 	removed := []string{}
 	if !liveKnown {
 		return removed
@@ -128,6 +128,11 @@ func PruneRetiredPrefixOutLinks(buildDir string, liveSources map[string]bool, li
 		link := filepath.Join(buildDir, e.Name())
 		if !isSymlink(link) {
 			continue // not ours
+		}
+		// PrefixRootGrace, as for the prefix roots: an older launcher still mid-build may
+		// have written this link moments ago, before its container exists.
+		if st, err := os.Lstat(link); err != nil || now.Sub(st.ModTime()) < PrefixRootGrace {
+			continue
 		}
 		if target, err := os.Readlink(link); err == nil && live[target] {
 			continue // a running jail executes from this prefix
@@ -223,7 +228,24 @@ func PruneImageCopierLinks(buildDir string, retention time.Duration, apply bool,
 				continue
 			}
 			main := p.main
-			if guard.Do(func() bool { return reapable(main) }, func() { _ = os.Remove(link) }) {
+			seen, err := os.Lstat(link)
+			if err != nil {
+				continue
+			}
+			// The link removed must be the one judged: a launch rebuilding this copier
+			// replaces the link with a new inode (nix renames a fresh symlink over it), so
+			// a link compared by identity right before the removal is left alone if it
+			// changed. A rebuild landing between that comparison and the unlink is the
+			// residual race, a window of two syscalls: it costs that launch's root on the
+			// copier until its next rebuild, never a running jail anything, and nix does
+			// not collect a path a running process holds open.
+			var gone bool
+			guard.Do(func() bool { return reapable(main) }, func() {
+				if cur, err := os.Lstat(link); err == nil && os.SameFile(seen, cur) {
+					gone = os.Remove(link) == nil
+				}
+			})
+			if gone {
 				removed = append(removed, link)
 			}
 		}
@@ -259,9 +281,8 @@ func LiveStoreProfiles(rt string, live runtime.LiveSet, run RunFunc) (map[string
 	sort.Strings(names)
 	profiles := map[string]bool{}
 	for _, name := range names {
-		res := run([]string{rt, "inspect", "--format", "{{json .Config.Env}}", name}, inspectTimeout)
-		var env []string
-		if !res.Ran || res.RC != 0 || json.Unmarshal([]byte(strings.TrimSpace(res.Stdout)), &env) != nil || env == nil {
+		env, ok := inspectEnv(rt, name, run)
+		if !ok {
 			return nil, false, fmt.Sprintf("could not read running container %s's environment from %s", name, rt)
 		}
 		for _, kv := range env {
@@ -279,9 +300,40 @@ func LiveStoreProfiles(rt string, live runtime.LiveSet, run RunFunc) (map[string
 	return profiles, true, ""
 }
 
+// inspectEnv reads one container's environment. Apple Container's inspect takes no
+// --format, so its whole document is read (runtime.EnvFromContainerInspectJSON); every
+// other runtime answers `inspect --format {{json .Config.Env}}`.
+func inspectEnv(rt, name string, run RunFunc) ([]string, bool) {
+	if rt == "container" {
+		res := run([]string{"container", "inspect", name}, inspectTimeout)
+		if !res.Ran || res.RC != 0 {
+			return nil, false
+		}
+		return runtime.EnvFromContainerInspectJSON(res.Stdout)
+	}
+	res := run([]string{rt, "inspect", "--format", "{{json .Config.Env}}", name}, inspectTimeout)
+	var env []string
+	if !res.Ran || res.RC != 0 || json.Unmarshal([]byte(strings.TrimSpace(res.Stdout)), &env) != nil || env == nil {
+		return nil, false
+	}
+	return env, true
+}
+
 // packageRootFamilies are the leaf prefixes under BUILD_DIR/package-roots: the image
 // extras' profile and the store-delivered `packages:` profile.
 var packageRootFamilies = []string{"extras-", "jail-"}
+
+// PackageRootFamily is the family prefix a package-roots leaf belongs to, or "" for a name
+// no writer produces. TestPackageRootFamiliesMatchTheWriters pins it against the launch's
+// two writers.
+func PackageRootFamily(name string) string {
+	for _, f := range packageRootFamilies {
+		if strings.HasPrefix(name, f) {
+			return f
+		}
+	}
+	return ""
+}
 
 // PrunePackageRoots ages out package-profile roots under rootsDir. Kept: a root whose
 // target a running jail was started with (liveProfiles), the newest root of each family
@@ -302,16 +354,8 @@ func PrunePackageRoots(rootsDir string, liveProfiles map[string]bool, liveKnown 
 	newest := map[string]string{}
 	newestTime := map[string]time.Time{}
 	var links []string
-	familyOf := func(name string) string {
-		for _, f := range packageRootFamilies {
-			if strings.HasPrefix(name, f) {
-				return f
-			}
-		}
-		return ""
-	}
 	for _, e := range entries {
-		fam := familyOf(e.Name())
+		fam := PackageRootFamily(e.Name())
 		link := filepath.Join(rootsDir, e.Name())
 		if fam == "" || !isSymlink(link) {
 			continue
@@ -329,7 +373,7 @@ func PrunePackageRoots(rootsDir string, liveProfiles map[string]bool, liveKnown 
 		if target, err := os.Readlink(link); err == nil && liveProfiles[target] {
 			return false
 		}
-		if newest[familyOf(filepath.Base(link))] == link {
+		if newest[PackageRootFamily(filepath.Base(link))] == link {
 			return false
 		}
 		return now.Sub(st.ModTime()) >= retention
