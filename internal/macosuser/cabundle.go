@@ -23,6 +23,12 @@ package macosuser
 //     variable as ONE file it adds to its own roots, so it is never a colon-joined list);
 //  5. names every CA it took, and the keychain it came from, at launch (a launch has no quiet mode).
 //
+// The bundle the launching user's SSL_CERT_FILE names, when they set one, is this Mac's trust too:
+// its OpenSSL programs (nix curl, git, Python) read it. Its in-date certificates the profile's roots
+// do not already carry are kept after the keychains' CAs, named with the bundle's path
+// (ReadSSLCertFileTrust, the same read a container launch on a macOS host makes, PS-D16). A
+// bundle that cannot be read warns with the next step and keeps the keychains' CAs.
+//
 // A System keychain that cannot be read warns, names env_sources, and still points the variables
 // at the profile's public roots; a login keychain that cannot be read is one note, and the launch
 // trusts the System keychain's CAs alone. Neither ever refuses a launch.
@@ -141,6 +147,10 @@ type CATrust struct {
 	// LeftOut counts the CAs the keychains held that were left out: expired, not for TLS servers,
 	// or not trusted by macOS for TLS.
 	LeftOut int
+	// HostBundle is the read of the bundle the launching user's SSL_CERT_FILE names (zero when it
+	// is unset). Its CAs the profile's roots and the keychains do not already carry are in Kept,
+	// after the keychains'; its own left-out count and read error are said by SSLCertFileNotes.
+	HostBundle SSLCertFileTrust
 	// Bundle is the profile's roots plus Kept, and Extras is Kept alone; both "" when nothing was
 	// kept, in which case the variables name ProfileBundle itself and no file is written.
 	Bundle string
@@ -215,6 +225,57 @@ func ReadHostKeychainTrust(r KeychainReaders, now time.Time) KeychainTrust {
 	return kt
 }
 
+// SSLCertFileTrust is what one read of the bundle the launching user's SSL_CERT_FILE names found.
+// The zero value is a launch whose user set no SSL_CERT_FILE.
+type SSLCertFileTrust struct {
+	// Path is the file SSL_CERT_FILE names, "" when it is unset.
+	Path string
+	// CAs are its in-date certificates, each named with the bundle (catrust.HostBundleSource).
+	CAs []TrustedCA
+	// LeftOut counts its certificates left out: out of date, or not readable as a certificate.
+	LeftOut int
+	// Error is why it was not read, or "" when it was.
+	Error string
+}
+
+// ReadSSLCertFileTrust reads the bundle SSL_CERT_FILE names on this Mac, which its OpenSSL
+// programs trust, so a CA trusted there is trusted in the jail beside the keychains' ("regardless
+// of how that trust got there", OQ-PS15). With SSL_CERT_FILE unset it reads nothing, and never a
+// Linux distribution's path. Every in-date certificate is kept, as on a Linux host: the file IS
+// the user's trust decision, so no verify-cert is asked. Both backends on a macOS host call it: a
+// container launch (PS-D16) and a macos-user launch (ComposeCATrust).
+func ReadSSLCertFileTrust(getenv func(string) string, readFile func(string) ([]byte, error), now time.Time) SSLCertFileTrust {
+	if getenv == nil || readFile == nil {
+		return SSLCertFileTrust{}
+	}
+	p := strings.TrimSpace(getenv("SSL_CERT_FILE"))
+	if p == "" {
+		return SSLCertFileTrust{}
+	}
+	hb, err := catrust.ReadLinuxHostBundle(func(string) string { return p }, readFile, now)
+	if err != nil {
+		return SSLCertFileTrust{Path: p, Error: err.Error()}
+	}
+	return SSLCertFileTrust{Path: hb.Path, CAs: hb.CAs, LeftOut: hb.LeftOut}
+}
+
+// SSLCertFileNotes are the lines a launch prints about the bundle SSL_CERT_FILE names: a warning
+// with the next step when it could not be read, and how many certificates it left out. place is
+// where the trust goes ("the jail", "the sandbox").
+func SSLCertFileNotes(st SSLCertFileTrust, place string) []string {
+	esc := func(s string) string { return richtext.Escape(termsafe.Visible(s)) }
+	switch {
+	case st.Error != "":
+		return []string{"[yellow]Warning: could not read this host's CA bundle (" + esc(st.Error) +
+			")[/yellow], so " + place + " does not trust the certificate authorities in it this launch; this " +
+			"Mac's keychains' still are. Point SSL_CERT_FILE at a readable bundle, or unset it, and launch again."}
+	case st.LeftOut > 0:
+		return []string{fmt.Sprintf("[dim]%d certificate(s) in %s were left out of %s's "+
+			"trust: out of date, or not readable as a certificate.[/dim]", st.LeftOut, esc(st.Path), place)}
+	}
+	return nil
+}
+
 // ComposeCATrust composes this launch's trust from the materialized tool profile and the host's
 // keychains (ReadHostKeychainTrust). A READ OF THE HOST, so it runs in the orchestrator, never in
 // the pure plan builder.
@@ -236,6 +297,23 @@ func ComposeCATrust(deps Deps, darwin *Darwin) CATrust {
 		Login: deps.ReadLoginKeychain, Verify: deps.VerifyCA}, time.Now())
 	ca := CATrust{ProfileBundle: profile, ReadError: kt.SystemError, LoginRead: kt.LoginRead,
 		LoginReadError: kt.LoginError, Kept: kt.Kept, LeftOut: kt.LeftOut}
+	// THE BUNDLE SSL_CERT_FILE NAMES, after the keychains' CAs, less what the profile's roots or the
+	// keychains already carry: a bundle that is mostly Mozilla's roots adds, and names, only the rest.
+	var readFile func(string) ([]byte, error)
+	if deps.ReadFile != nil {
+		readFile = func(p string) ([]byte, error) {
+			if body, ok := deps.ReadFile(p); ok && body != "" {
+				return []byte(body), nil
+			}
+			return nil, fmt.Errorf("cannot read %s", p)
+		}
+	}
+	ca.HostBundle = ReadSSLCertFileTrust(deps.Getenv, readFile, time.Now())
+	if len(ca.HostBundle.CAs) > 0 {
+		base, _ := catrust.ParseBundle(roots, "", time.Now())
+		base = append(base, ca.Kept...)
+		ca.Kept = append(ca.Kept, catrust.Merge(base, ca.HostBundle.CAs)[len(base):]...)
+	}
 	if len(ca.Kept) == 0 {
 		return ca
 	}
@@ -417,9 +495,19 @@ func printCATrust(out printer, ca CATrust, envContent, bundleFile, extrasFile, f
 			"System keychain's still are. If the keychain is locked, unlock it (`security "+
 			"unlock-keychain`) and launch again.", esc(ca.LoginReadError))
 	}
+	// THE BUNDLE SSL_CERT_FILE NAMES: a warning when it could not be read, and what it left out,
+	// worded as the container launch words them (SSLCertFileNotes).
+	for _, line := range SSLCertFileNotes(ca.HostBundle, "the sandbox") {
+		out.print(line)
+	}
+	bundleRead := ca.HostBundle.Path != "" && ca.HostBundle.Error == ""
 	if ca.ReadError != "" && n > 0 {
+		rest := "only your login keychain's certificate authorities"
+		if bundleRead {
+			rest = "none of its certificate authorities"
+		}
 		out.printf("[yellow]Warning: could not read this Mac's System keychain (%s)[/yellow], so "+
-			"the sandbox adds only your login keychain's certificate authorities.", esc(ca.ReadError))
+			"the sandbox adds %s.", esc(ca.ReadError), rest)
 	}
 	kept := make([]TrustedCA, 0, n)
 	for _, c := range ca.Kept {
@@ -457,6 +545,17 @@ func printCATrust(out printer, ca CATrust, envContent, bundleFile, extrasFile, f
 	holder, verb, trusts, pronoun := "This Mac's System keychain", "adds", "trusts", "it"
 	if ca.LoginRead {
 		holder, verb, trusts, pronoun = "This Mac's System keychain and your login keychain", "add", "trust", "them"
+	}
+	if bundleRead {
+		// The bundle joins the subject; the left-out count below stays the keychains' own.
+		if ca.LoginRead {
+			holder = "This Mac's System keychain, your login keychain"
+			pronoun = "the keychains"
+		} else {
+			pronoun = "the keychain"
+		}
+		holder += " and the bundle SSL_CERT_FILE names (" + esc(ca.HostBundle.Path) + ")"
+		verb, trusts = "add", "trust"
 	}
 	left := ""
 	if ca.LeftOut > 0 {
