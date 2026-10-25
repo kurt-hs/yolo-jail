@@ -19,7 +19,7 @@ repository, the effective user config this jail inherited at launch (generated
 `work.jsonc`, `personal.jsonc`) are not visible from the jail; their contents are known only
 through the generated copy.
 
-**Needs your ruling:** [OQ-RC1](#OQ-RC1) to [OQ-RC15](#OQ-RC15).
+**Needs your ruling:** [OQ-RC1](#OQ-RC1) to [OQ-RC16](#OQ-RC16).
 
 > **In short.** A config a stranger reads correctly comes from its shape, not its file format,
 > and a config yolo can edit without a mess comes from touching only the bytes of one value.
@@ -220,8 +220,10 @@ Each lever can be adopted or vetoed on its own ([OQ-RC1](#OQ-RC1)).
     *ask* for host access it cannot grant.
 - **L5. Words carry their meaning.** `brokered` → `allow`; `grants` and `grant_kinds` → `fetch`,
   `push` and `read` ([§4.2](#42-what-a-jail-may-do-with-your-logins)); `profile` keeps its name ([RC-D1](#decision-ledger)), and gets
-  `everyone` for `*` and `"own login"` for `null`; a model's `input` → `accepts`, `cost` → `price`,
+  `default` for `*` and `false` for `null`; a model's `input` → `accepts`, `cost` → `price`,
   `context_window` → `context`; and the string mini-languages of [§4.4](#44-values-that-were-strings).
+  **No value is a reserved string** ([RC-D6](#decision-ledger)): a value is `true`, `false`, a
+  number, a name, or a list of names, never a phrase yolo has to recognize.
 - **L6. A pack that is not shipped is named by where it comes from.** `dotfiles/matt`, where
   `[pack_folders] dotfiles = "~/.dotfiles/yolo-packs"` names the folder once; `local/<name>` for the
   conventional folder (C1); `acme/tools` for a git pack, from its URL's owner and repository. Only
@@ -237,38 +239,62 @@ Each lever can be adopted or vetoed on its own ([OQ-RC1](#OQ-RC1)).
 
 ### 4.2 What a jail may do with your logins
 
-[OQ-RC4](#OQ-RC4) names the section. The user config states the most any project may get. A
-project states what it asks for, and every ask is a line in the launch approval prompt.
+[OQ-RC4](#OQ-RC4) names the section. One key, two scopes: in the user config a key is the most any
+project may get; in a project config the same key is what this project asks for, and every ask is
+a line in the launch approval prompt. No value is a reserved string ([RC-D6](#decision-ledger)):
+each is `true`, `false`, a name, or a list of names.
+
+Today, the maintainer's user config and this repository's project config:
+
+```jsonc
+// ~/.config/yolo-jail/config.jsonc
+"brokered": {
+  "git":    { "grants": [{ "kind": "read", "repo": "*" }], "grant_kinds": ["branch"] },
+  "github": { "grants": [{ "kind": "read", "repo": "*" }] }
+}
+// yolo-jail.jsonc
+"brokered": { "git": { "grants": [
+  { "kind": "branch", "repo": "github.com/mschulkind-oss/yolo-jail", "branch": "main" }
+] } }
+```
+
+Proposed:
 
 ```toml
-# your config: the most any project's jail may do
+# ~/.config/yolo-jail/config.toml: the most any project's jail may do
 [allow.git]
-fetch = true                      # or false, or a list of repositories
-push = "when a project asks"      # or "never" (the default)
+fetch = true                      # this project's own remotes, as approved at launch
+push = true                       # a project may ask, branch by branch; never a grant by itself
 
 [allow.github]
 read = true
-write = "when a project asks"     # create-pr and create-issue, the two ruled write kinds
+write = true                      # a project may ask for create-pr or create-issue
 
-# a project's yolo-jail.toml: what this project asks for
+# yolo-jail.toml: what this project asks for
 [allow.git]
-push = ["main"]                   # branch names, or "new branches"
+push = ["main"]                   # branches it asks to push to; each is approved at launch
+new_branches = true               # may create branches of its own
 
 [allow.github]
 write = ["create-pr"]
 repos = ["acme/shared"]           # beyond this repository's own remotes
 ```
 
-The repositories are always the project's own remotes plus the ones `repos` names. Both are
-approved at launch as today, and `*` leaves the vocabulary. Approval prompt lines become `+ git:
-fetch from mschulkind-oss/yolo-jail` and `+ git: push to main`. The four ruled grant kinds
-([OQ-BB19](boundary-broker.md#OQ-BB19)) map as `read` → `read`, `create-branch` →
-`push = "new branches"`, `branch` → `push = ["main"]`, and `create-pr` and `create-issue` →
-`write`. A GitHub `write` ask is accepted by the config and refused at use until a jail's write
-request can reach `yolo approve`, whose delivery is not built (`internal/ghbroker/window.go` says
-so); the refusal says that. `push = "when a project asks"` in the user config answers
-[OQ-BB23](boundary-broker.md#OQ-BB23) (may the user config grant write kinds to every workspace)
-with "yes, as a ceiling, never as a grant", which is that question's leaning.
+**What `fetch = true` reaches.** The project's own remotes, plus what `repos` names, approved at
+launch exactly as today's `{"kind": "read", "repo": "*"}` is; it is not every repository the host
+login can reach. The maintainer's review asked for that wider reading, and it is a scope change to
+the broker's model, so it is [OQ-RC16](#OQ-RC16): the proposed spelling is a list of patterns in
+the user config, `fetch = ["github.com/mschulkind-oss/*"]`, with `["*"]` for any.
+
+The four ruled grant kinds ([OQ-BB19](boundary-broker.md#OQ-BB19)) map as `read` → `read`,
+`create-branch` → `new_branches = true`, `branch` → `push = ["main"]`, and `create-pr` and
+`create-issue` → `write`. Approval prompt lines become `+ git: fetch from
+mschulkind-oss/yolo-jail` and `+ git: push to main`, and `*` leaves the vocabulary. A GitHub
+`write` ask is accepted by the config and refused at use until a jail's write request can reach
+`yolo approve`, whose delivery is not built (`internal/ghbroker/window.go` says so); the refusal
+says that. `push = true` in the user config answers [OQ-BB23](boundary-broker.md#OQ-BB23) (may the
+user config grant write kinds to every workspace) with "as a ceiling, never as a grant", which is
+that question's leaning.
 
 ### 4.3 Models: one name for the common case
 
@@ -277,8 +303,8 @@ model, and a selection `{"*": "bedrock"}`. The proposal ([OQ-RC3](#OQ-RC3), opti
 
 ```toml
 [profile]
-everyone = "bedrock"              # a provider or a profile name
-claude = "own login"
+default = "bedrock"               # a provider or a profile name
+claude = false                    # no setup from yolo: claude keeps its own login
 
 [providers.bedrock]
 region = "us-east-1"
@@ -302,56 +328,207 @@ what a profile is still for.
 
 ### 4.4 Values that were strings
 
-Several values are small languages packed into strings, and each has a trap. The table form
-already exists for `mounts`: this repository's `yolo-jail.local.jsonc` writes
-`{ "host": …, "at": …, "mode": "ro", "optional": true }`. The proposal makes the table the only
-form where a string has more than one reading:
+Several values are small languages packed into strings, and each has a trap. Today and proposed,
+each from a real project config:
 
-| Today | Trap | Proposed |
-| :--- | :--- | :--- |
-| `"mounts": ["~/x:/ctx/x:ro"]` | one host path named `~/x:/ctx/x:ro`, skipped with a warning | `[[mounts]] host = "~/x", at = "/ctx/x"`; a bare string stays legal only for a path with no colon |
-| `"ports": ["8000:8000"]` beside `"forward_host_ports": ["5432:5432"]` | reversed order; config-ref says "Note the reversed order" | `ports = [{ host = 8000, jail = 8000 }]`, `forward = [{ jail = 5432, host = 5432 }]` |
-| `"git+https://…?ref=main"` | a URL scheme that is not one | `{ git = "https://…", ref = "main" }` |
-| `env_sources: ["~/secrets.env", {"AWS_PROFILE": null}]` | paths and maps in one list; `null` means unset | `env.files`, `env.set`, `env.unset` |
+**A mount.** Today the string form is parsed on colons, so a `~` path with a colon in it is taken
+as one host path and skipped with a warning; this repository already uses the table form.
+
+```jsonc
+"mounts": ["~/code/acme-shared", "~/x:/ctx/x:ro"]
+```
+
+```toml
+mounts = ["~/code/acme-shared"]                  # a bare path with no colon is still legal
+
+[[mounts]]
+host = "~/x"
+at = "/ctx/x"                                    # read-only unless `write = true`
+```
+
+**Ports.** Today `ports` is `HOST:JAIL` and `forward_host_ports` beside it is `JAIL:HOST`;
+`config-ref` has to say "Note the reversed order."
+
+```jsonc
+"network": { "ports": ["8000:8000"], "forward_host_ports": ["5432:5432"] }
+```
+
+```toml
+[machine]
+ports = [{ host = 8000, jail = 8000 }]           # the host reaches the jail's :8000
+forward = [{ jail = 5432, host = 5432 }]         # the jail reaches the host's :5432
+```
+
+**A git pack.** Today a URL scheme that is not one.
+
+```jsonc
+"packs": ["git+https://github.com/mschulkind-oss/matt-craft?ref=main"]
+```
+
+```toml
+packs = [{ git = "https://github.com/mschulkind-oss/matt-craft", ref = "main" }]
+```
+
+**Environment.** Today one list mixes file paths and maps, and `null` means unset.
+
+```jsonc
+"env_sources": ["~/.config/yolo-jail/secrets.env", { "AWS_PROFILE": null, "PAGER": "cat" }]
+```
+
+```toml
+[env]
+files = ["~/.config/yolo-jail/secrets.env"]
+set = { PAGER = "cat" }
+unset = ["AWS_PROFILE"]
+```
+
+**The broker grants** are [§4.2](#42-what-a-jail-may-do-with-your-logins), and the model rows
+[Appendix A](#appendix-a-the-maintainers-config-whole).
 
 ### 4.5 Lines that need not exist
 
 The maintainer, 2026-10-25: *"is there anywhere we can apply a healthy dose of convention over
 configuration? I like that. happy paths everywhere."* A convention here is a default that follows
-from something the user already did, so the line that would say it is never written. Three rules
-bound every one: the explicit key still exists and wins when written; `yolo config show` prints
-what a convention supplied with `# by convention: <what implied it>`, so nothing is invisible; and
-no convention widens what a jail may do with a login, because `allow` is user scope and a
-convention reads only what the user wrote there. Each can be vetoed alone ([OQ-RC13](#OQ-RC13)).
+from something the user already did, so the line that would say it is never written. Each one
+below is shown as the lines it removes; [OQ-RC13](#OQ-RC13) takes or vetoes each alone, and its
+leaning takes six of the eight.
 
-| | Convention | The line it removes | What you already did that implies it | When it is wrong, what you see |
-| :--- | :--- | :--- | :--- | :--- |
-| **C1** | `~/.config/yolo-jail/packs/<name>` is `local/<name>` | the `[pack_folders]` line | put a folder there, or symlinked your dotfiles' folder to it | `local/x` with no such folder is refused naming the path it looked at |
-| **C2** | `~/.config/yolo-jail/config.d/*.toml` are read after `config.toml`, in name order | every `include_if_found` for a file you control | put the file there; with dotfile tags of the `tag-work` kind, the work file exists only on work machines | `yolo config why` names the file; a `.jsonc` there is refused naming `migrate` |
-| **C3** | A section for a pack selects the pack | `"aws-auth"`, `"bedrock"`, `"git"`, `"github"` in `packs` | wrote `[allow.aws-auth]`, `[providers.bedrock]`, `[allow.git]` | a section naming no pack is refused with the nearest pack name; the launch's pack line says `bedrock (by [providers.bedrock])` |
-| **C4** | A grant table's presence is its common grant | `fetch = true`, `read = true` | wrote `[allow.git]` or `[allow.github]` | the approval prompt lists each line as today |
-| **C5** | A project needs no file | a `yolo-jail.toml` with nothing to say; the `.gitignore` line | ran `yolo` in the folder | `yolo init` writes the pointer comment only when asked; `.yolo/` goes into `.git/info/exclude` |
-| **C6** | A pack needs no manifest | `pack.toml` for four of the twelve packs | laid files out as `home/`, `skills/`, `briefing/`, `overlays/<surface>[@<profile>].<ext>`, `patches/` | `yolo pack explain` lists what each folder contributed; a folder it does not know is named |
-| **C7** | A model named without facts takes the catalog's | the facts on the Fable, Opus and Haiku rows | named a model the agent's catalog knows | an unknown model with no facts is refused naming the facts it needs |
-| **C8** | One declared setup is everyone's | `[profile] everyone = "bedrock"` | declared exactly one profile, or no profile and one provider, in your files | two declared and no selection: refused, naming both |
+Three rules bound every one. The explicit key still exists and wins when written. `yolo config
+show` prints what a convention supplied, so nothing is invisible:
 
-What the six of the leaning do to the maintainer's files is
-[Appendix A.2](#a2-the-same-with-the-conventions): no include line and no pack-folder line; C3
-and C8 would also take four names out of `packs` and the selection line off both kinds of machine. What it does to his packs: `luna-worker`, `coordinator-reads-blocked`,
-`workspace-questions` and `claude-bedrock-global` become folders with no manifest
-([Appendix B.7](#b7-a-small-personal-pack-luna-worker)). The pack levers already carry the same
-idea: P1's `home/`, P6's `codec` from the extension, and pi packages
-([§6.1](#61-why-ten-files-take-fifty-lines)).
+```console
+$ yolo config show
+[allow.git]
+fetch = true                      # by convention: [allow.git] is present
+```
 
-**C3 and C8 act at a distance**: a declaration selects, and a declaration chooses. C3 also makes
-every `allow.<pack>` and `providers.<name>` heading a pack lookup, which the maintainer read as
-*"implying a search for a pack through a lookup system"*; it is, and it is why the leaning on
-[OQ-RC13](#OQ-RC13) leaves those two out. Both are written by the user in the user config, so
-neither can be a project's doing, and both would be named on the launch's pack line and in
-`config show`. The
-commands of [§8](#8-who-writes-the-file) are conventions of the same kind: a write runs `yolo
-check` after itself, a grant offers its approval, a launch offers the migration. The line you did
-not write is the line you cannot misread.
+And no convention widens what a jail may do with a login: `allow` is user scope, and a convention
+reads only what the user wrote there.
+
+**C1. Your packs folder.** `~/.config/yolo-jail/packs/<name>` is `local/<name>`.
+
+```toml
+# before
+pack_folders = { dotfiles = "~/.dotfiles/yolo-packs" }
+packs = ["dotfiles/matt", "dotfiles/matt-fzf"]
+
+# after, with ~/.config/yolo-jail/packs a symlink to ~/.dotfiles/yolo-packs
+packs = ["local/matt", "local/matt-fzf"]
+```
+
+**C2. Machine files.** `~/.config/yolo-jail/config.d/*.toml` are read after `config.toml`, in
+name order.
+
+```toml
+# before, in config.toml
+include_if_found = ["overrides.toml", "../../.dotfiles/tag-work/config/yolo-jail/work.toml"]
+```
+
+```text
+# after: no line; the folder says it, and a dotfile tag puts work.toml there on work machines only
+~/.config/yolo-jail/
+  config.toml
+  config.d/
+    overrides.toml
+    work.toml -> ~/.dotfiles/tag-work/config/yolo-jail/work.toml
+```
+
+**C3. A section selects its pack.** Not in the leaning: it makes a heading a pack lookup.
+
+```toml
+# before
+packs = ["claude", "bedrock", "aws-auth", "git", "github"]
+[allow.aws-auth]
+profile = "my-sso-profile"
+
+# after
+packs = ["claude"]
+[allow.aws-auth]                  # selects aws-auth; [providers.bedrock] and [allow.git] likewise
+profile = "my-sso-profile"
+```
+
+**C4. A grant table's presence is its common grant.**
+
+```toml
+# before
+[allow.git]
+fetch = true
+
+[allow.github]
+read = true
+
+# after
+[allow.git]
+
+[allow.github]
+```
+
+**C5. A project needs no file.**
+
+```text
+# before
+acme/
+  yolo-jail.toml                  # "# This project's jail. Every key: yolo config-ref"
+  .gitignore                      # + ".yolo/"
+
+# after: nothing; `yolo` runs with defaults, and .yolo/ goes into .git/info/exclude
+acme/
+```
+
+**C6. A pack needs no manifest.** Folders say what they are: `home/`, `skills/`, `briefing/`,
+`overlays/<surface>[@<profile>].<ext>`, `patches/`. `pack.toml` is for what a folder cannot say.
+
+```text
+# before                                  # after
+luna-worker/                              luna-worker/
+  pack.toml   (5 lines, B.7)                overlays/pi-settings.jsonc
+  README.md                                 README.md
+
+claude-bedrock-global/                    claude-bedrock-global/
+  pack.toml   (19 lines today)              overlays/claude-settings@bedrock.jsonc
+  README.md                                 README.md
+
+workspace-questions/                      workspace-questions/
+  pack.toml                                 briefing/workspace-questions.md
+  briefing/workspace-questions.md
+```
+
+**C7. A model named without facts takes the catalog's.** Pending the check that pi's catalog
+carries them.
+
+```toml
+# before
+"global.anthropic.claude-opus-5-5" = { name = "Opus 5.5", context = 1_000_000, price = { input = 4, output = 20, cache_read = 0.2, cache_write = 5 } }
+
+# after
+"global.anthropic.claude-opus-5-5" = { name = "Opus 5.5" }
+```
+
+**C8. One declared setup is everyone's.** Not in the leaning: a declaration chooses.
+
+```toml
+# before
+[run_on]
+default = "bedrock"
+
+[providers.bedrock]
+region = "us-east-1"
+
+# after
+[providers.bedrock]               # the only setup this machine declares, so everyone's
+region = "us-east-1"
+```
+
+The six of the leaning take the maintainer's files to
+[Appendix A.2](#a2-the-same-with-the-conventions): no include line and no pack-folder line. C3
+and C8 would also take four names out of `packs` and the selection line off both kinds of
+machine, and they are left out because each acts at a distance: C3 makes every `allow.<pack>`
+and `providers.<name>` heading a pack lookup, which the maintainer read as *"implying a search for
+a pack through a lookup system"*; it is. The pack levers already carry the same idea: P1's
+`home/`, P6's `codec` from the extension, and pi packages ([§6.1](#61-why-ten-files-take-fifty-lines)).
+The commands of [§8](#8-who-writes-the-file) are conventions of the same kind: a write runs
+`yolo check` after itself, a grant offers its approval, a launch offers the migration. The line
+you did not write is the line you cannot misread.
 
 ### 4.6 How other tools name things from several sources
 
@@ -389,10 +566,10 @@ The same excerpt each time: the logins section and one model. Full renderings ar
 ```jsonc
 {
   "allow": {
-    "git": {"fetch": true, "push": "when a project asks"},
+    "git": {"fetch": true, "push": true},
     "aws-auth": {"profile": "hssandbox-BedrockInference", "unnarrowed": true}
   },
-  "use": {"everyone": "bedrock", "claude": "own login"},
+  "use": {"default": "bedrock", "claude": false},
   "providers": {"bedrock": {
     "region": "us-east-1",
     "models": {"global.openai.gpt-6.1-sol": {"name": "Sol 6.1", "context": 272000}}
@@ -405,15 +582,15 @@ The same excerpt each time: the logins section and one model. Full renderings ar
 ```toml
 [allow.git]
 fetch = true
-push = "when a project asks"
+push = true                       # a project may ask, branch by branch
 
 [allow.aws-auth]
 profile = "hssandbox-BedrockInference"
 unnarrowed = true
 
 [profile]
-everyone = "bedrock"
-claude = "own login"
+default = "bedrock"
+claude = false
 
 [providers.bedrock]
 region = "us-east-1"
@@ -424,9 +601,9 @@ models."global.openai.gpt-6.1-sol" = { name = "Sol 6.1", context = 272_000 }
 
 ```yaml
 allow:
-  git: {fetch: true, push: when a project asks}
+  git: {fetch: true, push: true}
   aws-auth: {profile: hssandbox-BedrockInference, unnarrowed: true}
-use: {everyone: bedrock, claude: own login}
+use: {default: bedrock, claude: false}
 providers:
   bedrock:
     region: us-east-1
@@ -438,10 +615,10 @@ providers:
 
 ```kdl
 as-you {
-    git fetch=#true push="when a project asks"
+    git fetch=#true push=#true
     aws-auth profile="hssandbox-BedrockInference" unnarrowed=#true
 }
-use everyone="bedrock" claude="own login"
+use default="bedrock" claude=#false
 provider "bedrock" region="us-east-1" {
     model "global.openai.gpt-6.1-sol" name="Sol 6.1" context=272000
 }
@@ -748,8 +925,8 @@ $ yolo install mise python@3.12 --user
 $ yolo allow git fetch                     # user config: [allow.git] fetch = true
 $ yolo allow git push main                 # project config: [allow.git] push += "main"
 $ yolo allow github repos acme/shared
-$ yolo profile bedrock                         # user config: [profile] everyone = "bedrock"
-$ yolo profile claude "own login"
+$ yolo profile bedrock                         # user config: [profile] default = "bedrock"
+$ yolo profile claude false
 $ yolo mcp off tavily --local              # yolo-jail.local: [mcp_servers.tavily] off = true
 ```
 
@@ -758,7 +935,7 @@ $ yolo mcp off tavily --local              # yolo-jail.local: [mcp_servers.tavil
 ```console
 $ yolo config add packs matt
 $ yolo config set allow.git.fetch true
-$ yolo config set profile.claude "own login"
+$ yolo config set profile.claude false
 $ yolo config add allow.git.push main --project
 $ yolo config unset mcp_servers.tavily --local     # writes off = true where the key would be
 $ yolo config set --dry-run machine.resources.memory 32g
@@ -1104,10 +1281,10 @@ review of 2026-10-24 kept the name ([RC-D1](#decision-ledger)).
    cold reader understands, and a mechanical `unset` command needs one it can write.
 
    - **A — A word where each thing lives.** `off = true` on anything with a name (`[mcp_servers.tavily]
-     off = true`, a pack, a provider), `unset = ["AWS_PROFILE"]` under `env`, `"own login"` in
+     off = true`, a pack, a provider), `unset = ["AWS_PROFILE"]` under `env`, `false` in
      `profile`, and an empty list to clear a list. Four spellings, each saying what it does.
    - **B — One reserved string, `"off"`,** valid wherever a value may be removed. One rule, but
-     `"off"` can then never be a real value, and `"off"` for "keep your own login" reads wrong.
+     `"off"` can then never be a real value, and it is a reserved string, which [RC-D6](#decision-ledger) rules out.
    - **C — One top-level list of removals:** `remove = ["mcp_servers.tavily", "env.AWS_PROFILE"]`. Every
      removal in one place, far from the thing it removes.
 
@@ -1241,7 +1418,7 @@ review of 2026-10-24 kept the name ([RC-D1](#decision-ledger)).
 
     A colleague sets up a work machine. They list `bedrock`, `aws-auth`, `git` and `github` in
     `packs`, write `[allow.aws-auth]` with a profile, `[providers.bedrock]` with a region, and
-    `[profile] everyone = "bedrock"`. Under the eight conventions the four names leave `packs`
+    `[profile] default = "bedrock"`. Under the eight conventions the four names leave `packs`
     (writing the section selected each pack), the selection line goes (one provider is
     everyone's), and `fetch = true` under `[allow.git]` goes (the table is the grant). `yolo
     config show` prints each supplied line with `# by convention`. The line they did not write is
@@ -1263,15 +1440,15 @@ review of 2026-10-24 kept the name ([RC-D1](#decision-ledger)).
 14. 💬 🤷 <a id="OQ-RC14"></a>**OQ-RC14: What are the selection and the declarations called, if not `profile` and `profiles`?**
 
     Two keys differ by one letter and mean different things: `profile` maps each agent to a setup
-    (`claude = "own login"`, `everyone = "bedrock"`), and `profiles.<name>` describes a setup as a
+    (`claude = false`, `default = "bedrock"`), and `profiles.<name>` describes a setup as a
     provider plus options. You ruled the first name on 2026-09-29 so it mirrors `-p`, and on
     2026-10-24 called the pair *"still kinda awful."* Under option B of the provider question, a
     setup is usually just a provider, and a `profiles` entry is a variant of one.
 
-    - **A — `run_on` and `providers.<p>.variants.<v>`.** `[run_on] everyone = "bedrock"`, `claude
-      = "own login"`; `[providers.bedrock.variants.opus] model = "…"`, selected as `bedrock/opus`.
+    - **A — `run_on` and `providers.<p>.variants.<v>`.** `[run_on] default = "bedrock"`, `claude
+      = false`; `[providers.bedrock.variants.opus] model = "…"`, selected as `bedrock/opus`.
       The word "profile" disappears from the config; `-p` keeps its letter.
-    - **B — `agents` and `setups.<name>`.** `[agents] claude = "own login"` reads best of all, but
+    - **B — `agents` and `setups.<name>`.** `[agents] claude = false` reads best of all, but
       `agents` is a retired key that today errors with "name the pack in `packs`", so a migrated
       file would meet the old refusal on an old yolo.
     - **C — Keep `profile`, rename the declarations `setups.<name>`.** The selection keeps the
@@ -1310,11 +1487,39 @@ review of 2026-10-24 kept the name ([RC-D1](#decision-ledger)).
     **Answer:**
     > _(empty — fill in when decided)_
 
+16. 💬 <a id="OQ-RC16"></a>**OQ-RC16: May your config let a jail fetch from any repository, not only the project's own?**
+
+    You write `[allow.git] fetch = true`. Today that reaches the project's remotes as approved at
+    launch, nothing else; an agent that clones a second repository to read it is refused with the
+    scope. You read the line as "any Git repo is allowed to be fetched by the jail, which would be
+    nice if that's true." Widening it is a change to the broker's per-workspace scope, which the
+    boundary-broker doc rules, and a fetch is read-only: what it risks is a private repository's
+    contents reaching a jail whose project never named it.
+
+    - **A — A list of patterns in the user config widens it.** `fetch = ["github.com/mschulkind-oss/*"]`,
+      and `fetch = ["*"]` is any repository the host login can reach; `true` stays the project's
+      own. Each pattern is one line in the approval prompt, once per workspace.
+    - **B — The project's own remotes only**, as today. An agent that needs another repository
+      adds it to the project's `repos`, which `yolo config apply` approves.
+    - **C — Any repository, always,** when `fetch = true`. The simplest reading of the line, and
+      no per-workspace approval of remotes for fetch at all.
+
+    <!-- vantage: question id=OQ-RC16 leaning="A: the user config is trusted and a read is cheap to widen, but a line that names what it opens beats one that opens everything." -->
+
+    _Leaning:_ A: the user config is trusted and a read is cheap to widen, but a line that names
+    what it opens beats one that opens everything.
+
+    **Answer:**
+    > _(empty — fill in when decided)_
+
 ## Decision Ledger
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | <a id="RC-D1"></a>RC-D1 | **The `profile` key keeps its name.** Review comment on the draft's `use`: *"awful name … isn't this a profile?"* It is, and PP-D10's reason (the key mirrors `-p`) stands. L5 no longer renames it | 2026-10-24 | [§4.3](#43-models-one-name-for-the-common-case) | — |
+| <a id="RC-D6"></a>RC-D6 | **No value is a reserved string.** Review comment on `"when a project asks"`: *"some weird string like this is just weird for a config file."* A value is `true`, `false`, a number, a name or a list of names; `push = true` at user scope is the ceiling, `new_branches = true` replaces `"new branches"` | 2026-10-25 | [§4.2](#42-what-a-jail-may-do-with-your-logins) | — |
+| <a id="RC-D5"></a>RC-D5 | **`false`, not `"own login"`,** for an agent yolo gives no setup. Review comment: *"don't like"* | 2026-10-25 | [§4.3](#43-models-one-name-for-the-common-case) | — |
+| <a id="RC-D4"></a>RC-D4 | **`default`, not `everyone`,** for today's `"*"`. Review comment: *"don't like the name"* | 2026-10-25 | [§4.3](#43-models-one-name-for-the-common-case) | — |
 | <a id="RC-D3"></a>RC-D3 | **Plural for a collection the user fills, singular for one thing.** Review comment: *"why is this plural and mcp singular?"* `mcp.<name>` becomes `mcp_servers.<name>` (today's name), `[[mount]]` becomes `[[mounts]]`; all-singular would collide the selection with the declarations | 2026-10-24 | [§4](#4-the-proposed-vocabulary) | — |
 | <a id="RC-D2"></a>RC-D2 | **Not `as_you`.** Review comment: *"I hate the name 'as_you'."* The section's name stays open as [OQ-RC4](#OQ-RC4) with `allow` as the placeholder | 2026-10-24 | [§4.2](#42-what-a-jail-may-do-with-your-logins) | — |
 
@@ -1351,8 +1556,8 @@ command = ["npx", "-y", "tavily-mcp@latest"]
 env = { TAVILY_API_KEY = "${TAVILY_API_KEY}" }   # passed through literally; the agent expands it
 
 [profile]
-everyone = "bedrock"
-claude = "own login"
+default = "bedrock"
+claude = false
 ```
 
 `~/.dotfiles/tag-work/config/yolo-jail/work.toml`, work machines:
@@ -1363,7 +1568,7 @@ packs = ["bedrock", "aws-auth", "copilot", "claude", "dotfiles/luna-worker", "do
 # What jails may do with your own logins. Each project asks for what it needs.
 [allow.git]
 fetch = true
-push = "when a project asks"
+push = true                       # a project may ask, branch by branch
 
 [allow.github]
 read = true
@@ -1397,7 +1602,7 @@ OpenRouter rows are a guess at shape, not content):
 packs = ["agy-capture", "meta-muse", "workspace-questions"]
 
 [profile]
-everyone = "or"
+default = "or"
 
 [profiles.or]
 provider = "openrouter"
@@ -1464,7 +1669,7 @@ command = ["npx", "-y", "tavily-mcp@latest"]
 env = { TAVILY_API_KEY = "${TAVILY_API_KEY}" }
 
 [run_on]
-claude = "own login"
+claude = false
 ```
 
 `config.d/work.toml`, work machines:
@@ -1473,10 +1678,10 @@ claude = "own login"
 packs = ["bedrock", "aws-auth", "copilot", "claude", "local/luna-worker", "local/claude-bedrock-global"]
 
 [run_on]
-everyone = "bedrock"
+default = "bedrock"
 
 [allow.git]                       # fetch, by the table's presence
-push = "when a project asks"
+push = true                       # a project may ask, branch by branch
 
 [allow.github]                    # read, by the table's presence
 
@@ -1508,7 +1713,7 @@ reasoning = true
 packs = ["openrouter", "local/agy-capture", "local/meta-muse", "local/workspace-questions"]
 
 [run_on]
-everyone = "openrouter"
+default = "openrouter"
 
 [providers.openrouter]
 model = "deepseek/deepseek-v4.1-flash-1017:floor"
@@ -1549,8 +1754,8 @@ packs = ["claude", "pi", "bedrock", "aws-auth"]
 profile = "my-sso-profile"
 
 [profile]
-everyone = "bedrock"
-claude = "own login"
+default = "bedrock"
+claude = false
 ```
 
 ### B.3 pi on OpenRouter and Z.ai at once, keys from a file
@@ -1613,7 +1818,7 @@ forward = [{ jail = 5432, host = 5432 }]     # the jail reaches the host's postg
 repos = ["acme/shared"]            # beyond this repository's own remotes
 
 [allow.git]
-push = "new branches"              # a new branch, never main; each is approved at launch
+new_branches = true                # branches of its own, never main; each is approved at launch
 ```
 
 ### B.5 The project's uncommitted local file
@@ -1852,9 +2057,9 @@ why release N ships first and every dotfiles machine takes it before any of them
 
 ```console
 $ yolo config why profile.claude
-profile.claude = "own login"
+profile.claude = false
   set in  ~/.config/yolo-jail/overrides.toml:9   (via include_if_found from config.toml:8)
-  default would be: everyone's choice, "bedrock"
+  default would be: the default setup, "bedrock"
 ```
 
 The answer comes from the origins record the launch already writes; the command is the only new
