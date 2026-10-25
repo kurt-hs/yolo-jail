@@ -247,13 +247,12 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 	housekeepingSlots.Go(func() { safeRun(func() { o.runMacosUserHousekeeping(consent) }) })
 }
 
-// runMacosUserHousekeeping is the macos-user arm's slot body: two of the container slot's
-// classes, as one pass under the same pass lock and per-deletion guard as the container's
-// (withHousekeepingPass). Only one of them grows on this backend, the retired loophole state; the
-// other is the shared cache, which this backend does not write and container jails on the same
-// Mac fill.
+// runMacosUserHousekeeping is the macos-user arm's slot body: three classes, as one pass under
+// the same pass lock and per-deletion guard as the container's (withHousekeepingPass). Two of
+// them grow on this backend, the retired loophole state and its own Copilot store; the other is
+// the shared cache, which this backend does not write and container jails on the same Mac fill.
 //
-// TWO CLASSES, and which ones is decided BY RUNTIME, not by asking anything:
+// THREE CLASSES, and which ones is decided BY RUNTIME, not by asking anything:
 //
 //   - the shared cache's age purge (measureAndPurgeCache, OQ-BF1's offered tier): measured here
 //     for the next launch's offer, purged only on consent. A macos-user sandbox keeps its caches
@@ -262,6 +261,8 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 //     launch offers it like any other launch.
 //   - retired loophole-state generations (reapRetiredLoopholeState): written by every launch's
 //     retirement pass, on every backend.
+//   - macos-user's own Copilot self-update store (reapMacosUserCopilotPkgVersions): the
+//     container slot's rule, judged by this backend's sessions instead of a container runtime.
 //
 // EVERY OTHER CLASS OF THE CONTAINER SLOT IS LEFT OUT, with no probe and no note, because none of
 // their stores grows on this backend and each of their gates asks a container runtime: images,
@@ -277,6 +278,7 @@ func (o *Options) runMacosUserHousekeeping(consent reclaimConsent) {
 	o.withHousekeepingPass(func(guard prune.Guard) {
 		o.measureAndPurgeCache(consent, guard)
 		o.reapRetiredLoopholeState(guard)
+		o.reapMacosUserCopilotPkgVersions(guard)
 	})
 }
 

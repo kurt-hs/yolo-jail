@@ -920,8 +920,12 @@ func MacosUserMachineRoot() string { return MacosUserMachineRootUnder(home()) }
 // MacosUserMachineRootUnder is MacosUserMachineRoot for an explicit home, the invoking user's
 // resolved one (macosuser.LaunchHomes).
 func MacosUserMachineRootUnder(h string) string {
-	return filepath.Join(GlobalStorageUnder(h), "macos-user")
+	return filepath.Join(GlobalStorageUnder(h), MacosUserMachineLeaf)
 }
+
+// MacosUserMachineLeaf is MacosUserMachineRoot's name under the state dir, for a reader handed
+// the state dir rather than a home (`yolo prune`'s injected GlobalStorage).
+const MacosUserMachineLeaf = "macos-user"
 
 // GlobalCache returns the shared cache dir.
 func GlobalCache() string { return filepath.Join(GlobalStorage(), "cache") }

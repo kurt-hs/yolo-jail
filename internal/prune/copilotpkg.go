@@ -1,13 +1,18 @@
 package prune
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
 // copilot/pkg is the GitHub Copilot CLI's self-update store in the shared cache:
@@ -24,8 +29,9 @@ import (
 // store. So a version V can be running only in a copilot that started before some newer complete
 // version N was extracted, and that copilot runs in a jail that started before then too. V goes
 // only when a newer complete version was extracted more than CopilotPkgGrace ago AND no running
-// jail started before that extraction — the running jails' start times asked of the container
-// runtime. A runtime that cannot be asked declines the whole class (CopilotPkgResult.Declined):
+// jail started before that extraction — the running jails' start times asked of whatever runs the
+// jails that use the store (RunningJailStarts for the container store, MacosUserJailStarts for
+// macos-user's own). A runtime that cannot be asked declines the whole class (CopilotPkgResult.Declined):
 // "no jail is running" and "I could not tell" are not the same answer when the action is deleting a
 // program out from under one. The newest CopilotPkgKeep complete versions stay whatever the
 // answer, and a version without .extraction-complete (an unpacking in progress, or one that never
@@ -56,9 +62,62 @@ type JailStarts struct {
 	Starts []time.Time
 }
 
+// CopilotPkgCacheMacosUser is the cache root of macos-user's own Copilot store: the run-as-you
+// mode's machine tier (paths.MacosUserMachineRootUnder), whose `.cache` every self-mode session's
+// HOME links into. NOT the shared cache: that holds the Linux releases container jails on the
+// same Mac unpack, and no macos-user session runs them. The account mode's store is in the
+// sandbox account's own home, which the invoking user cannot remove from (disk-footprint.md,
+// "Copilot's self-update store", names that gap). A Mac that never ran self mode has no such
+// directory, and the pass finds nothing. globalStorage is the invoking user's state dir
+// (paths.GlobalStorageUnder of their home).
+func CopilotPkgCacheMacosUser(globalStorage string) string {
+	return filepath.Join(globalStorage, paths.MacosUserMachineLeaf, ".cache")
+}
+
+// MacosUserJailStarts is RunningJailStarts for macos-user, which runs no container: its running
+// jails are its host-services sessions (runtime.MacosUserSessions), each one's start the earliest
+// modification time among its dir, its record and its lock. A session makes all three as it
+// starts and writes none of them again (the record once, O_EXCL; the lock is only ever flocked);
+// a later file in the dir can only move the dir's own time later, so the earliest is the start or
+// before it, the safe direction for a veto. A session whose liveness reads UNKNOWN counts as
+// running, as every sweep reading these does; one that reads GONE does not. A session dir that is
+// gone by the time it is read ended; any other failure to read one declines, like a listing that
+// could not run.
+func MacosUserJailStarts(base string) JailStarts {
+	sessions, ok := runtime.MacosUserSessions(base)
+	if !ok {
+		return JailStarts{Why: "the macos-user sessions under " + base + " could not be listed"}
+	}
+	js := JailStarts{Known: true}
+	for _, s := range sessions {
+		if s.Liveness == runtime.SessionGone {
+			continue
+		}
+		var start time.Time
+		for _, p := range []string{s.Dir, filepath.Join(s.Dir, runtime.SessionRecordName),
+			filepath.Join(s.Dir, paths.HostServicesSessionLockName)} {
+			st, err := os.Lstat(p)
+			if err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					continue
+				}
+				return JailStarts{Why: "could not read when the macos-user session " + s.Dir + " started: " + err.Error()}
+			}
+			if start.IsZero() || st.ModTime().Before(start) {
+				start = st.ModTime()
+			}
+		}
+		if !start.IsZero() {
+			js.Starts = append(js.Starts, start)
+		}
+	}
+	return js
+}
+
 // RunningJailStarts asks rt for the start time of every running yolo-* container. Only podman's
-// `ps` reports one yolo reads (StartedAt, unix seconds); Apple Container's `container ls` does not,
-// and macos-user runs no container, so both decline.
+// `ps` reports one yolo reads (StartedAt, unix seconds). Apple Container's `container inspect`
+// carries a status.startedDate whose encoding nobody has measured, so it declines
+// (disk-footprint.md names the gap); macos-user runs no container and is MacosUserJailStarts.
 func RunningJailStarts(rt string, run RunFunc) JailStarts {
 	if rt != "podman" {
 		return JailStarts{Why: "the " + strconv.Quote(rt) + " runtime reports no container start time yolo reads"}

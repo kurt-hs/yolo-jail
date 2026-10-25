@@ -1242,17 +1242,24 @@ func Run(opts Options) int {
 
 	// --- Copilot's self-update store (copilot/pkg; copilotpkg.go) ---
 	// The launch's slot reaps it automatically, once a day; this is the same rule on demand, with
-	// the same veto: the running jails' start times, asked of the runtime, or a decline.
+	// the same veto: the running jails' start times, asked of the runtime, or a decline. On
+	// macos-user it is that backend's own store, judged by its sessions, as its slot does; the
+	// shared cache's Linux store is a container runtime's to judge (`YOLO_RUNTIME=podman yolo prune`).
 	{
-		res := PruneCopilotPkgVersions(joinPath(gs, "cache"), CopilotPkgKeep, CopilotPkgGrace, opts.Now(),
-			func() JailStarts { return RunningJailStarts(rt, opts.Exec) }, apply, nil)
+		store, label := joinPath(gs, "cache"), "cache/copilot/pkg"
+		jails := func() JailStarts { return RunningJailStarts(rt, opts.Exec) }
+		if macosUser {
+			store, label = CopilotPkgCacheMacosUser(gs), paths.MacosUserMachineLeaf+"/.cache/copilot/pkg"
+			jails = func() JailStarts { return MacosUserJailStarts(paths.HostServicesBase(paths.IsMacOS)) }
+		}
+		res := PruneCopilotPkgVersions(store, CopilotPkgKeep, CopilotPkgGrace, opts.Now(), jails, apply, nil)
 		p.line("")
-		p.line(fmt.Sprintf("[bold]Copilot self-update versions[/bold]  (cache/copilot/pkg; keep the newest %d "+
-			"complete per platform, and any a running jail may still use)", CopilotPkgKeep))
+		p.line(fmt.Sprintf("[bold]Copilot self-update versions[/bold]  (%s; keep the newest %d "+
+			"complete per platform, and any a running jail may still use)", label, CopilotPkgKeep))
 		switch {
 		case res.Declined != "":
 			p.line(fmt.Sprintf("  [yellow]declined: %s — nothing removed; run `yolo prune --apply` where the "+
-				"podman that runs your jails can list them[/yellow]", res.Declined))
+				"runtime that runs your jails can list them[/yellow]", res.Declined))
 		case len(res.Removed) == 0 && len(res.Failed) == 0:
 			p.line("  [dim]none[/dim]")
 		}

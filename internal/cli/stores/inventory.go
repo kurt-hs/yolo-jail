@@ -607,7 +607,7 @@ func cacheStores(o Options) []Store {
 	covered["copilot"] = Reclaimer{
 		Func: "PruneCopilotPkgVersions",
 		Detail: fmt.Sprintf("pkg/ only: keep the newest %d complete versions per platform; older ones once "+
-			"superseded %dd and no running jail predates that (podman)",
+			"superseded %dd and no running jail predates that (podman; Apple Container declines)",
 			prune.CopilotPkgKeep, int(prune.CopilotPkgGrace.Hours()/24)),
 		Trigger: "yolo prune --apply" + copilotSlot,
 	}

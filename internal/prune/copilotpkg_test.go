@@ -5,8 +5,12 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
 const day = 24 * time.Hour
@@ -231,5 +235,83 @@ func TestManualPruneRunsTheCopilotSection(t *testing.T) {
 	Run(o)
 	if copilotPresent(cache, "1.0.1") || !strings.Contains(buf.String(), "removed linux-x64/1.0.1") {
 		t.Errorf("`yolo prune --apply` did not reap 1.0.1:\n%s", buf.String())
+	}
+}
+
+// plantDatedSession makes a macos-user session dir under base whose dir, record and lock are all
+// dated started; live holds its lock for the rest of the test, and !live leaves it free (gone).
+func plantDatedSession(t *testing.T, base string, live bool, notch string, started time.Time) {
+	t.Helper()
+	dir, err := os.MkdirTemp(base, paths.HostServicesSessionPrefix("yolo-ws"))
+	must(t, err)
+	must(t, runtime.WriteSessionRecord(dir, runtime.SessionRecord{Notch: notch}))
+	lock := filepath.Join(dir, paths.HostServicesSessionLockName)
+	f, err := os.OpenFile(lock, os.O_CREATE|os.O_RDWR, 0o600)
+	must(t, err)
+	t.Cleanup(func() { _ = f.Close() })
+	if live {
+		must(t, syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB))
+	}
+	for _, p := range []string{lock, filepath.Join(dir, runtime.SessionRecordName), dir} {
+		must(t, os.Chtimes(p, started, started))
+	}
+}
+
+// TestMacosUserJailStartsReadsTheLiveSessions: a live macos-user session's start is the earliest
+// of its dir, record and lock times; a gone session and a `yolo host` session are not jails.
+func TestMacosUserJailStartsReadsTheLiveSessions(t *testing.T) {
+	base := redirectSessions(t)
+	early := time.Now().Add(-40 * day).Truncate(time.Second)
+	plantDatedSession(t, base, true, runtime.NotchMacosUser, early)
+	plantDatedSession(t, base, false, runtime.NotchMacosUser, time.Now().Add(-80*day))
+	plantDatedSession(t, base, true, runtime.NotchHost, time.Now().Add(-80*day))
+	js := MacosUserJailStarts(base)
+	if !js.Known || len(js.Starts) != 1 || !js.Starts[0].Equal(early) {
+		t.Errorf("got %+v, want the one live macos-user session, started %v", js, early)
+	}
+}
+
+// TestCopilotPkgOnMacosUserKeepsAVersionALiveSessionMayUse is the veto through the session reader:
+// a live session older than the superseding extraction keeps the version; with none it goes.
+func TestCopilotPkgOnMacosUserKeepsAVersionALiveSessionMayUse(t *testing.T) {
+	for _, early := range []bool{false, true} {
+		base := redirectSessions(t)
+		if early {
+			plantDatedSession(t, base, true, runtime.NotchMacosUser, time.Now().Add(-90*day))
+		}
+		cache := t.TempDir()
+		for _, v := range []string{"1.0.4", "1.0.3", "1.0.2", "1.0.1"} {
+			copilotVersion(t, cache, v, 60)
+		}
+		PruneCopilotPkgVersions(cache, 3, 7*day, time.Now(), func() JailStarts { return MacosUserJailStarts(base) }, true, nil)
+		if copilotPresent(cache, "1.0.1") != early {
+			t.Errorf("session before the superseding version=%v: 1.0.1 present=%v", early, !early)
+		}
+	}
+}
+
+// TestManualPruneOnMacosUserJudgesItsOwnStore pins `yolo prune`'s macos-user call site: it reaps
+// macos-user's own store, by its sessions, and leaves the shared cache's Linux store alone.
+func TestManualPruneOnMacosUserJudgesItsOwnStore(t *testing.T) {
+	redirectSessions(t)
+	o, gs := baseOpts(t)
+	o.Apply = true
+	o.Now = time.Now
+	o.DetectRuntime = func() string { return macosUserRuntime }
+	o.Exec = noMacosUserExec(t)
+	own := CopilotPkgCacheMacosUser(gs)
+	shared := filepath.Join(gs, "cache")
+	for _, v := range []string{"1.0.4", "1.0.3", "1.0.2", "1.0.1"} {
+		copilotVersion(t, own, v, 60)
+		copilotVersion(t, shared, v, 60)
+	}
+	var buf strings.Builder
+	o.Out = &buf
+	Run(o)
+	if copilotPresent(own, "1.0.1") || !strings.Contains(buf.String(), "removed linux-x64/1.0.1") {
+		t.Errorf("`yolo prune --apply` on macos-user did not reap its own store's 1.0.1:\n%s", buf.String())
+	}
+	if !copilotPresent(shared, "1.0.1") {
+		t.Errorf("`yolo prune` on macos-user removed from the shared cache's store")
 	}
 }

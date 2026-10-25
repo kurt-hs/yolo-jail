@@ -4,11 +4,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/prune"
+	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
 // agedCacheFile writes rel under the shared cache, 60 days old.
@@ -110,9 +112,10 @@ func TestTheCacheDebounceWaitsForTheWholeCycle(t *testing.T) {
 }
 
 // TestTheContainerSlotRunsTheCopilotPkgReaper is the call-site pin for the Copilot self-update
-// store: the container slot runs it with its runtime, under the guard; the macos-user slot, which
-// asks no runtime by design, does not. prune's own tests prove the rule; nothing there notices a
-// slot that stopped calling it.
+// store: the container slot runs the shared cache's with its runtime, under the guard; the
+// macos-user slot runs its own store's, judged by its sessions, and not the container one, whose
+// veto needs a container runtime. prune's own tests prove the rule; nothing there notices a slot
+// that stopped calling it.
 func TestTheContainerSlotRunsTheCopilotPkgReaper(t *testing.T) {
 	src, err := os.ReadFile("housekeeping.go")
 	if err != nil {
@@ -121,8 +124,89 @@ func TestTheContainerSlotRunsTheCopilotPkgReaper(t *testing.T) {
 	if !strings.Contains(afterFunc(string(src), "func (o *Options) runHousekeeping("), "o.reapCopilotPkgVersions(rt, guard)") {
 		t.Errorf("the container slot no longer runs reapCopilotPkgVersions with its runtime under the guard")
 	}
-	if strings.Contains(afterFunc(string(src), "func (o *Options) runMacosUserHousekeeping("), "reapCopilotPkgVersions") {
+	mu := afterFunc(string(src), "func (o *Options) runMacosUserHousekeeping(")
+	if strings.Contains(mu, "reapCopilotPkgVersions(") {
 		t.Errorf("the macos-user slot runs reapCopilotPkgVersions, whose veto needs a container runtime")
+	}
+	if !strings.Contains(mu, "o.reapMacosUserCopilotPkgVersions(guard)") {
+		t.Errorf("the macos-user slot no longer runs reapMacosUserCopilotPkgVersions under the guard")
+	}
+}
+
+// TestTheMacosUserCopilotPkgReaperJudgesItsOwnStoreBySessions: the macos-user class removes a long
+// superseded version from macos-user's own store (the run-as-you machine tier), never the shared
+// cache's Linux store, asks no runtime, keeps the version while a live session started before the
+// superseding extraction, and stamps its own class, not the container one.
+func TestTheMacosUserCopilotPkgReaperJudgesItsOwnStoreBySessions(t *testing.T) {
+	for _, sessionEarly := range []bool{false, true} {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		o := goldenOptions(t.TempDir(), home)
+		o.Now = time.Now
+		o.Getenv = func(string) string { return "" }
+		o.MacosUserHostHome = home
+		o.Exec = func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {
+			t.Errorf("the macos-user class asked a runtime: %v", argv)
+			return ExecResult{}
+		}
+		shared := copilotStore(t)
+		own := filepath.Join(prune.CopilotPkgCacheMacosUser(paths.GlobalStorageUnder(home)), "copilot", "pkg", "darwin-arm64")
+		if err := os.MkdirAll(filepath.Dir(own), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(shared, own); err != nil {
+			t.Fatal(err)
+		}
+		shared = copilotStore(t) // the shared cache's Linux store, which this class must not judge
+		base := t.TempDir()
+		o.IsMacOS = false
+		old := paths.HostSingletonDir
+		paths.HostSingletonDir = base
+		t.Cleanup(func() { paths.HostSingletonDir = old })
+		if sessionEarly {
+			plantLiveMacosUserSession(t, base, time.Now().Add(-90*24*time.Hour))
+		}
+		o.reapMacosUserCopilotPkgVersions(nil)
+		_, err := os.Stat(filepath.Join(own, "1.0.1"))
+		if gone := os.IsNotExist(err); gone == sessionEarly {
+			t.Errorf("session before the superseding version=%v: 1.0.1 removed=%v", sessionEarly, gone)
+		}
+		if _, err := os.Stat(filepath.Join(shared, "1.0.1")); err != nil {
+			t.Errorf("the macos-user class removed from the shared cache's store")
+		}
+		if due, _ := o.classDebounce(CopilotPkgMacosUserHousekeepingClass); due {
+			t.Errorf("session early=%v: the class was not stamped", sessionEarly)
+		}
+		if due, _ := o.classDebounce(CopilotPkgHousekeepingClass); !due {
+			t.Errorf("the macos-user class stamped the container class")
+		}
+	}
+}
+
+// plantLiveMacosUserSession makes a live macos-user session dir under base, its dir, record and
+// lock all dated started, its lock held for the rest of the test.
+func plantLiveMacosUserSession(t *testing.T, base string, started time.Time) {
+	t.Helper()
+	dir, err := os.MkdirTemp(base, paths.HostServicesSessionPrefix("yolo-ws"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.WriteSessionRecord(dir, runtime.SessionRecord{Notch: runtime.NotchMacosUser}); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(dir, paths.HostServicesSessionLockName)
+	f, err := os.OpenFile(lock, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{lock, filepath.Join(dir, runtime.SessionRecordName), dir} {
+		if err := os.Chtimes(p, started, started); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

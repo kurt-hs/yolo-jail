@@ -466,13 +466,24 @@ file is a whole entry and goes on its own. The list, and the reasoning for each 
 unpacked release (150-200 MB) per Copilot self-update and nothing removed old ones. The age purge
 cannot judge it: the release's files carry 1985 timestamps. A copilot starts on the newest complete
 version (one with its `.extraction-complete` marker), so an old version can be running only in a
-jail that started before a newer complete version was unpacked. An automatic class on the
-container slot keeps the newest complete versions per platform and removes an older version whole
-only when a newer complete one was unpacked more than a grace period ago and no running jail
-started before that, the running jails' start times read from podman. A runtime that cannot list
-them (Apple Container, macos-user, a failed listing) declines the class: noted in
-`housekeeping.log`, not stamped, and asked again at the next launch. A version still unpacking is
-never counted among the kept ones. It is automatic because its evidence is complete (the runtime's
+jail that started before a newer complete version was unpacked. An automatic class keeps the
+newest complete versions per platform and removes an older version whole only when a newer
+complete one was unpacked more than a grace period ago and no running jail started before that. A
+version still unpacking is never counted among the kept ones. Each backend runs it on the store
+its own jails fill, with its own evidence of which jails are running:
+
+- **Containers** fill the shared cache's store. The container slot judges it by the running
+  jails' start times as podman reports them.
+- **macos-user** in its run-as-you mode keeps a store of its own under
+  `~/.local/share/yolo-jail/macos-user/.cache`. Darwin releases never share a store with the
+  Linux ones. Its slot, on its own debounce stamp, judges that store by the live host-services
+  sessions. A session's start is the earliest modification time of its directory, its record and
+  its lock, all of which it creates as it starts. `yolo prune` on macos-user does the same.
+
+When the running jails can't be listed, the class declines: it notes this in `housekeeping.log`,
+doesn't stamp, and asks again at the next launch. On Apple Container it always declines, and
+macos-user's account-mode store is out of reach (both are under
+[open gaps](#owed-measurements)). It is automatic because its evidence is complete (the backend's
 own list of running jails, the veto that protects live state) and a removed version costs one
 release download at most: both halves of [BF-P3](#backfill-rules).
 
@@ -769,7 +780,16 @@ number; each is now one of the mechanisms above.
   `dev-bundles/<bundle>/bin/yolo` ([development bundles](#development-bundles)). The fix is for
   hostwrap to prefer a stable launcher path, such as the dev wrapper that started it.
 - **No reclaimer exists for `macos-user`'s own storage** (`/var/yolo-jail`, the sandbox account's
-  caches); one would run as that account through `sudo`, which only a Mac can verify.
+  caches); one would run as that account through `sudo`, which only a Mac can verify. That
+  includes the account mode's Copilot self-update store in the sandbox account's home; the
+  run-as-you mode's store is reaped.
+- **Parity gap: Apple Container's Copilot self-update class always declines.** The
+  [Copilot rule](#the-shared-cache) needs each running jail's start time. `container inspect`
+  carries a `status.startedDate` ([setup-support-gaps §5.1](../plans/setup-support-gaps.md#51-what-is-now-measured)
+  row 5), but nobody has measured how its value is encoded, and yolo reads no Apple Container start
+  time anywhere. Until then the shared cache's store grows unbounded on a Mac that runs only Apple
+  Container. Mac check: run `container inspect <a running yolo jail>`, record `status.startedDate`
+  next to the jail's real start time, and add that reader to `prune.RunningJailStarts`.
 
 ## Why it's this way
 

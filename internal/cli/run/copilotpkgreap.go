@@ -11,6 +11,12 @@ import (
 // by its debounce name.
 const CopilotPkgHousekeepingClass = "copilot-pkg"
 
+// CopilotPkgMacosUserHousekeepingClass is the macos-user slot's class for its own Copilot store
+// (reapMacosUserCopilotPkgVersions). Its own stamp, not the container class's: the two judge
+// different stores, and on a Mac running both backends one slot's stamp must not hold back the
+// other's store for a day.
+const CopilotPkgMacosUserHousekeepingClass = "copilot-pkg-macos-user"
+
 // reapCopilotPkgVersions bounds the shared cache's copilot/pkg store: past the newest
 // prune.CopilotPkgKeep complete versions per platform, it removes each version a newer complete
 // one superseded more than prune.CopilotPkgGrace ago, unless a running jail started before that
@@ -22,22 +28,37 @@ const CopilotPkgHousekeepingClass = "copilot-pkg"
 // launch asks again. Host-only, debounced to once a day, and it honors the automatic reapers'
 // opt-out.
 //
-// THE CONTAINER SLOT ONLY. The macos-user slot asks no runtime, by design, and this class cannot
-// judge without one; the container launches that fill the shared cache run it.
+// The container slot judges the shared cache's store, which container jails fill, by the
+// runtime's running jails. The macos-user slot runs the same rule on that backend's own store by
+// its sessions (reapMacosUserCopilotPkgVersions).
 func (o *Options) reapCopilotPkgVersions(rt string, guard prune.Guard) {
+	o.reapCopilotPkgStore(CopilotPkgHousekeepingClass, filepath.Join(paths.GlobalStorage(), "cache"),
+		func() prune.JailStarts { return prune.RunningJailStarts(rt, o.pruneRunFunc()) }, guard)
+}
+
+// reapMacosUserCopilotPkgVersions is the class on the macos-user slot: macos-user's own store
+// (prune.CopilotPkgCacheMacosUser, the run-as-you machine tier), its running jails the
+// host-services sessions (prune.MacosUserJailStarts). The shared cache's store is not this
+// slot's: macos-user runs none of the Linux releases in it, and this slot asks no container
+// runtime, so the container slot judges that one.
+func (o *Options) reapMacosUserCopilotPkgVersions(guard prune.Guard) {
+	o.reapCopilotPkgStore(CopilotPkgMacosUserHousekeepingClass, prune.CopilotPkgCacheMacosUser(paths.GlobalStorageUnder(o.macosUserHostHome())),
+		func() prune.JailStarts { return prune.MacosUserJailStarts(paths.HostServicesBase(o.IsMacOS)) }, guard)
+}
+
+// reapCopilotPkgStore is one store's pass under class's debounce.
+func (o *Options) reapCopilotPkgStore(class, cacheRoot string, jails func() prune.JailStarts, guard prune.Guard) {
 	if o.inJail() {
 		return // the host cache is the host's to sweep
 	}
 	if o.Getenv(autoReapOptOutEnv) != "" {
 		return
 	}
-	due, done := o.classDebounce(CopilotPkgHousekeepingClass)
+	due, done := o.classDebounce(class)
 	if !due {
 		return
 	}
-	res := prune.PruneCopilotPkgVersions(filepath.Join(paths.GlobalStorage(), "cache"),
-		prune.CopilotPkgKeep, prune.CopilotPkgGrace, o.Now(),
-		func() prune.JailStarts { return prune.RunningJailStarts(rt, o.pruneRunFunc()) }, true, guard)
+	res := prune.PruneCopilotPkgVersions(cacheRoot, prune.CopilotPkgKeep, prune.CopilotPkgGrace, o.Now(), jails, true, guard)
 	if res.Declined != "" {
 		o.housekeepingNote("copilot: declined — %s; the next launch asks again, or `yolo prune --apply` "+
 			"on a machine whose runtime can list its running jails", res.Declined)
