@@ -809,8 +809,8 @@ func withHostSemantics() runOption {
 }
 
 // autoReapersOffEnv turns off every automatic reaper a launch's housekeeping runs: superseded
-// images, yolo's own store outputs, flake-bundle generations, image tars, leftover scratch volumes
-// and the small classes (autoReapOptOutEnv, internal/cli/run/autoreapimages.go). TestMain sets it
+// images, yolo's own store outputs, flake-bundle generations, image tars, leftover scratch volumes,
+// the small classes and orphaned per-jail state (autoReapOptOutEnv, internal/cli/run/autoreapimages.go). TestMain sets it
 // for the whole suite (applySuiteEnv).
 const autoReapersOffEnv = "YOLO_NO_AUTO_IMAGE_REAP"
 

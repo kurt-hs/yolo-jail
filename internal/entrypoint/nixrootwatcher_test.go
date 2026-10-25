@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/logcap"
 	"github.com/mschulkind-oss/yolo-jail/internal/nixroots"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
@@ -121,5 +122,45 @@ func TestASessionsPassStartsNoRootWatcher(t *testing.T) {
 				t.Errorf("spawned %v, want %d", *spawned, c.want)
 			}
 		})
+	}
+}
+
+// The watcher's log is bounded: the boot trims what earlier boots left (logcap.Open), and it
+// names the log to the watcher (nixroots.LogEnv) so the watcher can trim it while it runs.
+// MUTATION: open with plain os.OpenFile, or drop the env entry, and this fails.
+func TestTheWatcherLogIsTrimmedAtTheOpenAndNamedToTheWatcher(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "logs", "nix-roots.log")
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(logPath, []byte(strings.Repeat("renewed old link\n", logcap.MaxBytes/17+2)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	done := filepath.Join(dir, "done")
+	bin := filepath.Join(dir, "watcher")
+	script := "#!/bin/sh\necho \"log=$" + nixroots.LogEnv + "\" >&2\n: > " + shquote.Quote(done) + "\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := startNixRootWatcherFn(bin, logPath); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(done); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	body, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(body), "log="+logPath+"\n") {
+		t.Fatalf("the log was not trimmed at the open, or the watcher was not told its path: %.200q", body)
+	}
+	if _, err := os.Stat(logPath + logcap.ArchiveSuffix); err != nil {
+		t.Errorf("no archived generation after the open's trim: %v", err)
 	}
 }

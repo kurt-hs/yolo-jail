@@ -402,5 +402,5 @@ only place the values themselves are stated.
 | Registry lock wait | 30 s | `lockWait` (`registry.go`) |
 | Registry | `<workspace>/.yolo/nix-roots/` (`roots.json`, `links/<id>`, `.lock`); id = 16 hex digits of the jail link's SHA-256 | `internal/nixroots` (`registry.go`) |
 | Watcher lock | `/tmp/yolo-nix-roots.lock` | `nixroots.WatchLock` |
-| Watcher log | `~/.local/state/yolo-jail-daemons/nix-roots.log` | `internal/entrypoint` (`nixrootwatcher.go`) |
+| Watcher log | `~/.local/state/yolo-jail-daemons/nix-roots.log`; past 4 MiB it moves to `nix-roots.log.1`, at the boot's open and while the watcher writes | `internal/entrypoint` (`nixrootwatcher.go`); the cap `logcap.MaxBytes`, the running trim `logcap.Writer` through `nixroots.LogEnv` |
 | Worker protocol spoken | 1.37 | `internal/nixroots` (`daemon.go`) |

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/logcap"
 	"github.com/mschulkind-oss/yolo-jail/internal/nixroots"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
@@ -31,17 +32,22 @@ var (
 )
 
 // startNixRootWatcherFn spawns the watcher detached, its output appended to logPath.
+//
+// BOUNDED, at this open and while the watcher writes: logcap.Open trims what earlier boots
+// left, and nixroots.LogEnv tells the watcher which file its stderr is, so it trims the log
+// itself as it goes (logcap.Writer). It logs a line per kept link per renewal for the jail's
+// whole life, and an O_APPEND log with neither grew without bound (13 MB in one jail).
 var startNixRootWatcherFn = func(bin, logPath string) error {
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return err
 	}
-	log, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	log, err := logcap.Open(logPath, 0o644)
 	if err != nil {
 		return err
 	}
 	defer log.Close()
 	cmd := exec.Command(bin, "nix-roots")
-	cmd.Env = os.Environ()
+	cmd.Env = append(os.Environ(), nixroots.LogEnv+"="+logPath)
 	cmd.Stdout, cmd.Stderr = log, log
 	// Its own process group, so a signal meant for the jail's foreground (a Ctrl-C) is not.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

@@ -229,6 +229,7 @@ func (o *Options) runHousekeeping(rt string, reclaimConsent reclaimConsent, cnam
 		o.measureAndPurgeCache(reclaimConsent, guard)
 		o.measureAndPurgeMiseVersions(rt, reclaimConsent, guard)
 		o.reapSmallAutomaticClasses(rt, cname, guard)
+		o.reapOrphanCnameState(rt, cname, guard)
 		o.reapImageTars(rt, guard)
 		o.reapFlakeBundleGenerations(rt, guard)
 		o.reapDevBundles(rt, guard)
@@ -253,13 +254,12 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 	housekeepingSlots.Go(func() { safeRun(func() { o.runMacosUserHousekeeping(consent) }) })
 }
 
-// runMacosUserHousekeeping is the macos-user arm's slot body: three of the container slot's
+// runMacosUserHousekeeping is the macos-user arm's slot body: four of the container slot's
 // classes, as one pass under the same pass lock and per-deletion guard as the container's
-// (withHousekeepingPass). Only one of them grows on this backend, the retired loophole state; the
-// other is the shared cache, which this backend does not write and container jails on the same
-// Mac fill.
+// (withHousekeepingPass). Each is a store this backend writes or shares with container jails on
+// the same Mac; the list below says which.
 //
-// THREE CLASSES, and which ones is decided BY RUNTIME, not by asking anything:
+// FOUR CLASSES, and which ones is decided BY RUNTIME, not by asking anything:
 //
 //   - the shared cache's age purge (measureAndPurgeCache, OQ-BF1's offered tier): measured here
 //     for the next launch's offer, purged only on consent. A macos-user sandbox keeps its caches
@@ -270,6 +270,7 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 //     retirement pass, on every backend.
 //   - other builds' embedded pack trees (reapEmbeddedPackTrees): one per yolo build, on every
 //     backend, gated by each tree's lease rather than by a container runtime.
+//   - orphaned per-jail state (reapOrphanCnameStateMacosUser): see below.
 //
 // EVERY OTHER CLASS OF THE CONTAINER SLOT IS LEFT OUT, with no probe and no note, because none of
 // their stores grows on this backend and each of their gates asks a container runtime: images,
@@ -279,6 +280,10 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 // tars (this backend writes none, and a stamp written here would delay a podman keep-0 pass by a
 // day), scratch volumes and the build-state links (this backend writes none). Agent logs are
 // durable user data.
+//
+// The orphaned per-jail state sweep runs here too: macos-user sessions write per-name keeper,
+// arrival and session locks, and its known set needs no container runtime
+// (reapOrphanCnameStateMacosUser).
 func (o *Options) runMacosUserHousekeeping(consent reclaimConsent) {
 	sp := o.Perf.Span("housekeeping.slot")
 	defer sp.End()
@@ -286,6 +291,7 @@ func (o *Options) runMacosUserHousekeeping(consent reclaimConsent) {
 		o.measureAndPurgeCache(consent, guard)
 		o.reapRetiredLoopholeState(guard)
 		o.reapEmbeddedPackTrees()
+		o.reapOrphanCnameStateMacosUser(guard)
 	})
 }
 

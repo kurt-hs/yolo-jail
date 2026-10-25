@@ -120,7 +120,7 @@ func TestTheWatcherPinsRegistersAndFencesOnOneConnection(t *testing.T) {
 
 // The CALL SITE of the fence: the watcher WatchMain builds pins through its registrar.
 func TestTheProductionWatcherIsFenced(t *testing.T) {
-	w := newWatcher("/auto", "/workspace", HostMap{"/workspace": "/h"}, func(string) string { return "" })
+	w := newWatcher("/auto", "/workspace", HostMap{"/workspace": "/h"}, func(string) string { return "" }, os.Stderr)
 	if w.Registrar == nil || w.Registry.Register == nil {
 		t.Fatal("the production watcher registers without a pin")
 	}
