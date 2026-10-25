@@ -24,6 +24,9 @@ package packload
 // The base is resolved through its symlinks once, where it is minted, so Pack.Root, the
 // lease inode and what a reaper probes stay one directory for the process's whole life even
 // if a link on the way (macos-user's ~/.local, re-pointed by every launch) moves later.
+// Any other go-test binary (a `go test -c` binary, a per-test runner's) shares one base in
+// TMPDIR, TestSharedCachePrefix's, refused unless it is a real directory only this euid can
+// write.
 //
 // THE FALLBACK. When the base is unresolvable or unwritable, or its tree cannot be trusted,
 // the process takes the pre-cache shape: its own tree in TMPDIR, deleted by ReleaseEmbedded. That
@@ -33,7 +36,9 @@ package packload
 // LEFTOVERS IN THE BASE. A populate killed mid-write leaves a .tmp- dir, a quarantine leaves a
 // .bad- one, a prune killed mid-delete a .reap- one. Every process that loads from the base
 // sweeps those of them no process holds (sweepDeadCacheEntries), by the rule `yolo prune`
-// applies to the same names. Other builds' FINAL trees are left to prune alone.
+// applies to the same names. Other builds' FINAL trees are left to prune alone — except in
+// the shared test base, which prune never visits, so a load from it reaps them, and the dead
+// fallback trees in TMPDIR, by the same lease-and-age rule.
 
 import (
 	"bytes"
@@ -47,6 +52,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -190,20 +196,52 @@ func embeddedCacheBaseLocked() (base string, strict bool) {
 		return cacheOverrideDir, false
 	}
 	if dir, isTest := testBinaryCacheDir(); isTest {
-		return dir, dir != ""
+		if dir == "" {
+			return testSharedCacheBase(), false
+		}
+		return dir, true
 	}
 	return paths.EmbeddedPacksDir(), false
+}
+
+// TestSharedCachePrefix names the cache base a go test binary OUTSIDE cmd/go's $WORK uses:
+// TMPDIR/yolo-test-embedded-packs-<euid>, an ordinary leased cache base (one immutable tree
+// per build, shared by every such binary) rather than a per-process fallback tree each.
+//
+// Why: nothing releases a test binary's fallback tree at its exit — a test binary has no
+// cli.Main defer, and testing.M exits through os.Exit — so each one stayed in TMPDIR until a
+// later fallback's sweep found it at least embeddedReapFloor old. A runner that executes each
+// test as its own process (scripts/completion-census.py, `go test -c` run per test) made one
+// ~0.9 MB tree per test: 7,658 trees, 6.7 GB, in about 30 minutes (measured 2026-10-24).
+// A shared tree leaves nothing per process to remove. Still TMPDIR, never HOME: the unit
+// suite must not write the developer's real state dir.
+const TestSharedCachePrefix = "yolo-test-embedded-packs-"
+
+// testSharedCacheBase is TestSharedCachePrefix's directory for this euid.
+func testSharedCacheBase() string {
+	return filepath.Join(os.TempDir(), TestSharedCachePrefix+strconv.Itoa(os.Geteuid()))
+}
+
+// isTestSharedCacheBase reports whether base is a TestSharedCachePrefix directory.
+func isTestSharedCacheBase(base string) bool {
+	return strings.HasPrefix(filepath.Base(base), TestSharedCachePrefix)
+}
+
+// privateToEuid reports whether dir is a real directory this euid owns that no one else can
+// write: TMPDIR is shared, so a test base another user made (or opened up) is not adopted.
+func privateToEuid(dir string) bool {
+	fi, err := os.Lstat(dir)
+	return err == nil && fi.IsDir() && ownedByEuid(fi) && fi.Mode().Perm()&0o022 == 0
 }
 
 // testBinaryCacheDir recognises a go test binary and, for one, answers the only base it may
 // use: a directory beside the binary when that binary sits in cmd/go's $WORK
 // (…/go-build<N>/b<M>/<pkg>.test), which cmd/go removes when the run ends — or when kept by
 // `go test -work`, keeps along with the rest of $WORK. Any other test binary (`go test -c`
-// run by hand, one renamed, delve's) gets "" and takes the per-process fallback; nothing
-// releases that at a test binary's exit, so it stays in TMPDIR until the next fallback's
-// sweep or `yolo prune` reaps it (both once it is embeddedReapFloor old and its lease free).
-// A test binary NEVER uses HOME: the unit suite must not write the developer's real state
-// dir.
+// run by hand, one renamed, delve's, a per-test runner's) gets "", and embeddedCacheBaseLocked
+// sends it to the shared TMPDIR base TestSharedCachePrefix names rather than a per-process
+// fallback, which nothing would release at a test binary's exit. A test binary NEVER uses
+// HOME: the unit suite must not write the developer's real state dir.
 //
 // Two signals, either sufficient. The NAME: cmd/go builds every test binary as <pkg>.test.
 // And the FLAGS: package testing registers `test.v` on flag.CommandLine in testing.Init,
@@ -262,13 +300,46 @@ func loadFromCacheLocked(base string, strict bool) bool {
 	if err != nil {
 		return false
 	}
+	// Judged on the UNRESOLVED name: TMPDIR is shared, and a link another user left at the
+	// test base's name resolves to a directory whose name no longer says "test base".
+	unresolved := base
+	testBase := isTestSharedCacheBase(unresolved)
 	if base, err = ensureEmbeddedBase(base, strict); err != nil {
+		return false
+	}
+	if testBase && (!privateToEuid(unresolved) || !privateToEuid(base)) {
 		return false
 	}
 	if !loadCacheTreeLocked(base, sum) {
 		return false
 	}
-	sweepDeadCacheEntries(base, time.Now())
+	now := time.Now()
+	sweepDeadCacheEntries(base, now)
+	if testBase {
+		// No `yolo prune` ever looks in a test base, so its other builds' trees — one per
+		// edit to packs/ — are reaped here, by the same lease-and-age rule: a test binary
+		// still reading one holds its lease.
+		sweepLeasedDirs(base, now, func(name string) bool {
+			return name != sum && isEmbeddedFinalName(name)
+		})
+		// And the per-process fallback trees test binaries left in TMPDIR before they shared
+		// this base, which no later fallback materialization would come to sweep now.
+		sweepDeadFallbacks(os.TempDir(), now)
+	}
+	return true
+}
+
+// isEmbeddedFinalName reports whether name has the shape of a final tree's name: the hash,
+// 32 lowercase hex digits.
+func isEmbeddedFinalName(name string) bool {
+	if len(name) != 32 {
+		return false
+	}
+	for _, c := range name {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
 	return true
 }
 

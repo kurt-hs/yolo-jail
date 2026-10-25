@@ -67,7 +67,9 @@ func readProcStartsFrom(proc string, euid int) ([]ProcStart, bool) {
 		}
 		p.PID = pid
 		if exe, err := os.Readlink(filepath.Join(dir, "exe")); err == nil {
-			p.Name = filepath.Base(strings.TrimSuffix(exe, " (deleted)"))
+			exe = strings.TrimSuffix(exe, " (deleted)")
+			p.Name = filepath.Base(exe)
+			p.Exe = exe
 			p.NameTruncated = false
 		}
 		out = append(out, p)

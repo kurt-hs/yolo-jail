@@ -31,6 +31,8 @@
 // holds at most MaxBytes plus what its writers wrote since the last launch that touched it.
 // Nothing trims it while no yolo command runs, so a daemon that writes heavily between two
 // launches still grows its log past the cap until the next one; the archive never passes it.
+// A writer that holds its log for a whole jail's life and knows the log's path bounds it as it
+// writes instead (Writer, writer.go): the in-jail nix root watcher's nix-roots.log.
 //
 // # NEVER A DEPENDENCY
 //
