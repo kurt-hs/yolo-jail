@@ -3,7 +3,7 @@ title: "Config that reads right the first time: the shape is the problem, and JS
 date: 2026-10-24
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC1 (which shape changes go in) and OQ-RC2 (which file format); OQ-RC3 to OQ-RC6 follow, and none of them needs code first"
+next: "Rule OQ-RC1 (which shape changes go in) and OQ-RC2 (which file format); OQ-RC3 to OQ-RC9 follow, and none of them needs code first"
 tags: [config, packs, manifest, providers, profiles, broker, grants, format, toml, readability, design]
 summary: "The maintainer's own config takes 178 lines to say about 20 things, and lines such as `grant read *`, `grant_kinds` and three `bedrock`s in a row are misread by the person who wrote them. Measured on that file, the shape (written defaults, repeated facts, mechanism-named keys, one switch spread over three keys) accounts for nearly all of the length: the same content in today's JSONC, reshaped, is about 58 lines, and in TOML about 53. The format changes how noisy each line looks, not how many there are or what they mean. So this doc proposes a vocabulary built on what the user is deciding (what to install, what models the agents use, what a jail may do with your logins), the same rules applied to pack manifests, and TOML as the recommended format, with JSONC kept as the fallback. It absorbs the open manifest-format questions and the provider-versus-profile question."
 vantage:
@@ -15,10 +15,10 @@ vantage:
 **Status:** 2026-10-24. Nothing is built. The measurements use the effective user config this jail
 inherited at launch (`~/.config/yolo-jail/config.jsonc` inside the jail, generated
 2026-10-25T00:30:59Z), this repository's [`yolo-jail.jsonc`](../../yolo-jail.jsonc), and the 21 packs
-staged under `/ctx/packs/` at `758e4c759`. Working files are kept under the durable directory and are
-not cited here.
+staged under `/ctx/packs/` at `758e4c759`, plus the maintainer's twelve packs copied verbatim on
+2026-10-24. Working files are kept under the durable directory and are not cited here.
 
-**Needs your ruling:** [OQ-RC1](#OQ-RC1) to [OQ-RC6](#OQ-RC6).
+**Needs your ruling:** [OQ-RC1](#OQ-RC1) to [OQ-RC9](#OQ-RC9).
 
 > **In short.** A config a stranger can read correctly comes from its shape far more than from its
 > file format. Each key should name what the user decides, in their own words, and say it once. The
@@ -41,14 +41,18 @@ one list entry per file. [§4](#4-the-proposed-vocabulary) is the whole proposal
 
 **Cost.** Every config file and every pack manifest is rewritten once, with no aliases: an old
 spelling is refused, naming the new one, and `yolo config migrate` does the rewrite. A yolo older
-than the change does not read the new files ([OQ-RC6](#OQ-RC6)).
+than the change does not read the new files ([OQ-RC6](#OQ-RC6)), and the rewrite meets a standing
+ruling that yolo never edits the user config ([OQ-RC9](#OQ-RC9)).
 
 **Start at:** [§2](#2-where-todays-config-misleads), the misreadings, then
-[§5](#5-the-same-content-in-four-formats), the formats side by side.
+[§5](#5-the-same-content-in-four-formats), the formats side by side. The compression exercise is
+[§7](#7-measuring-the-repetition), the transition [§8](#8-moving-to-the-new-config), the further
+problems [§9](#9-other-problems-this-could-solve), and more example configs
+[Appendix B](#appendix-b-more-configs-today-and-proposed).
 
 **Reads with:** [`manifest-language.md`](manifest-language.md) and
 [`pack-conventions.md`](pack-conventions.md), whose open questions this doc takes over
-([§8](#8-what-this-doc-takes-over)); [`providers-and-profiles-redesign.md`](providers-and-profiles-redesign.md),
+([§10](#10-what-this-doc-takes-over)); [`providers-and-profiles-redesign.md`](providers-and-profiles-redesign.md),
 whose [OQ-PP1](providers-and-profiles-redesign.md#OQ-PP1) [OQ-RC3](#OQ-RC3) answers; and
 [`boundary-broker.md`](boundary-broker.md), where today's grant rules are ruled.
 
@@ -350,8 +354,9 @@ comments spend paragraphs on which layer (`defaults` or `managed`) wins a render
 pack author has to explain the merge rules on every entry, the merge rules are the shape problem.
 
 **Models are written twice, in two formats.** `meta-muse` writes six model rows straight into pi's
-own `models.json` through a `pi/models` overlay. It repeats the same seven-level `thinkingLevelMap`
-six times. Each `[200k]` row copies every fact of the row it shadows and adds a `wireId`, then
+own `models.json` through a `pi/models` overlay: three models and a `[200k]` twin of each, 199 lines
+once expanded. It writes a seven-level `thinkingLevelMap` six times, in two variants that differ
+only in `max`. Each `[200k]` row copies every fact of the row it shadows and adds a `wireId`, then
 the ids appear again in a `pi/settings` overlay for compaction. yolo has `wire_id` and
 `model_facts` for exactly that pair. The pack cannot use them, because yolo's model facts have no
 thinking levels, image limits or wire API: those reach pi only through `base`, from a catalog
@@ -367,6 +372,7 @@ Six levers cover most of it:
   `~/.pi/agent/extensions`. Two packs claiming one file still refuse the launch, as today. A comment
   that explained an entry moves into the file, or into the pack's README. A `files` entry stays for
   what a folder cannot say: a `source` to fetch, `patches`, a `build`.
+  [§6.1](#61-why-ten-files-take-fifty-lines) is why this is needed, and the list form it adds.
 - **P2. An overlay's content lives in its own file, in the agent's own format.** `overlays/pi-settings.jsonc`
   holds what is now the `config` object of a `config-overlay` entry, and the manifest names the
   surface and, if any, the profile. The 425 lines move out of the manifest rather than shrinking.
@@ -382,8 +388,9 @@ Six levers cover most of it:
   (`replace = true`). `agy-capture` then writes `--model gemini-3.8-flash-medium` and nothing else,
   and losing the permission bypass by deleting a line stops being possible.
 - **P5. A model is declared once, in yolo's model shape, for every agent.** yolo's model facts
-  gain what `meta-muse` needs (thinking levels, image limits, wire API). Its six rows become two
-  models with a `[200k]` twin each through `wire_id`, plus the shared facts once. Each agent's
+  gain what `meta-muse` needs (thinking levels, image limits, wire API). Its six rows become three
+  models with a `[200k]` twin each through `wire_id`, plus the shared facts once
+  ([Appendix B.8](#b8-meta-muses-models-under-p5)). Each agent's
   derive writes its own file from them. The `pi/models` overlay is then only for what no agent
   shape covers.
 - **P6. The obvious is not written.** An install hint that is the same on every package manager
@@ -439,28 +446,281 @@ surface = "claude/settings"
 set.fileSuggestion = { type = "command", command = "~/.claude/bin/file-suggestion.sh" }
 ```
 
-## 7. Behavior in every case
+### 6.1 Why ten files take fifty lines
+
+The maintainer: *"putting 10 files somewhere requires like 35 lines each repeating every source and
+dest path, rather than just a list of a few files."* Measured: `matt` copies 25 files into
+`~/.pi/agent/extensions/` with 25 `files` entries, 127 lines. Each entry writes its file's path
+twice: once under `files/extensions/`, once under `.pi/agent/extensions/`. Across `matt`'s 39
+`files` entries, 1,169 bytes are an `into` whose last part repeats its `from`.
+
+**The cause is a mechanism, not the format.** A `files` entry is a read-only mount over its whole
+destination, and two entries claiming one path refuse the launch
+([`pack-system.md`](../reference/pack-system.md), the `files` section). So a pack cannot hand over
+the folder `~/.pi/agent/extensions/` when `matt-mods` adds `tok-stats.ts` to the same folder: each
+file needs its own mount, and so its own entry. TOML alone takes the 127 lines to about 75. The
+mechanism is what writes 25 entries.
+
+**For pi, the fix has already shipped, and these packs predate it.**
+[OQ-PR1](../reference/pack-system.md#oq-pr1), ruled 2026-10-05 in the maintainer's words *"we need
+to be able to consolidate our pack files, they repeat way too much,"* lets a pack reach pi with one
+entry, `{"kind": "files", "agents": ["pi"], "from": "files/pi"}`. pi loads that folder as a
+package: every top-level file in its `extensions/`, `themes/` and `prompts/`, with no list
+([pi packages](../reference/pack-system.md#pi-packages)). Moving `files/extensions` to
+`files/pi/extensions` and `files/themes` to `files/pi/themes` turns 26 of `matt`'s entries into one,
+today, with no yolo change. `yolo pack migrate` should make that move, and `pack lint` should name
+a pack that copies files one by one into a folder pi loads as a package.
+
+**For every other folder, P1 and a list form.** Files laid out under `home/` land file by file, so
+two packs and the user can share a folder. Where the pack's own layout should not mirror the home
+(a folder shared with other tools, or files picked from a larger tree), one entry takes a list:
+
+```toml
+[[files]]
+from = "files/extensions"
+into = ".pi/agent/extensions"
+only = ["turn-bell.ts", "versions.ts", "board", "work-control"]   # or omit `only` for every file
+```
+
+Each listed name is mounted on its own, so the file-by-file merge and the two-claims refusal both
+still hold. Measured on the 25 extensions, the list form is 30 lines against 127.
+
+## 7. Measuring the repetition
+
+The maintainer: *"We went through this exercise once with the metaphor of checking how well the
+config files will compress as a proxy for how repetitive they are. We should probably go through
+that full exercise again with my packs."* The first run is
+[`manifest-language.md` §1](manifest-language.md) (2026-09-20, re-measured 2026-09-22). This is the
+second, on 2026-10-24, over the twelve packs and the user config.
+
+**Method.** Each file has its comments removed and is minified (`json.dumps` with no spaces), so
+indentation and comments do not count. That leaves gzip −9 and xz −9e over the result. **Ratio**
+is compressed bytes over minified bytes: lower means more of the file was predictable from the rest of
+it. The **prose baseline** is the first N bytes of
+[`what-yolo-is.md`](../reference/what-yolo-is.md), cut to each file's minified size, because a
+small file compresses worse than a large one whatever it holds. Working files are kept under the
+durable directory.
+
+| File | Raw bytes | Without comments | Minified | gzip bytes | gzip ratio | xz ratio | Prose, same size |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `matt` | 34,402 | 24,708 | 15,264 | 3,669 | **0.24** | 0.24 | 0.40 |
+| `meta-muse` | 28,135 | 10,508 | 4,513 | 1,149 | **0.25** | 0.27 | 0.43 |
+| `agy-capture` | 3,011 | 1,414 | 801 | 421 | 0.53 | 0.64 | 0.60 |
+| `matt-mods` | 1,649 | 1,649 | 1,224 | 455 | **0.37** | 0.43 | 0.56 |
+| `matt-fzf` | 1,102 | 1,102 | 667 | 314 | 0.47 | 0.58 | 0.61 |
+| `luna-worker` | 677 | 677 | 464 | 301 | 0.65 | 0.82 | 0.66 |
+| `coordinator-reads-blocked` | 688 | 688 | 574 | 341 | 0.59 | 0.77 | 0.64 |
+| `claude-bedrock-global` | 653 | 653 | 519 | 349 | 0.67 | 0.82 | 0.65 |
+| `pi-fork` | 608 | 608 | 435 | 280 | 0.64 | 0.86 | 0.66 |
+| `matt-agentwork` | 416 | 416 | 290 | 193 | 0.67 | 0.91 | 0.70 |
+| `workspace-questions` | 366 | 366 | 331 | 226 | 0.68 | 0.89 | 0.69 |
+| `deepseek-flash-only` | 254 | 254 | 203 | 151 | 0.74 | 1.06 | 0.74 |
+| shipped `packs/claude` | 10,393 | 8,352 | 6,110 | 1,649 | 0.27 | 0.28 | 0.41 |
+| shipped `packs/pi` | 14,531 | 9,281 | 5,582 | 1,903 | 0.34 | 0.35 | 0.41 |
+
+Sections of `matt` and `meta-muse`, measured the same way:
+
+| Section | Minified | gzip bytes | gzip ratio |
+| :--- | ---: | ---: | ---: |
+| `matt`'s 25 extension copies | 2,794 | 419 | **0.15** |
+| `meta-muse`'s `pi/models` overlay (six rows) | 2,608 | 473 | **0.18** |
+| `matt`'s seven overlay bodies | 7,089 | 1,864 | 0.26 |
+
+**What it says.**
+
+- **The small packs are not repetitive.** Seven of them compress within 0.05 of prose of the
+  same size. Their trouble is the per-line noise of [§5](#5-the-same-content-in-four-formats), not
+  repetition. `matt-fzf` sits 0.14 under prose, and that is its five-manager install hints, the
+  P6 case.
+- **The repetition is where the eye says it is.** `matt`, `meta-muse` and `matt-mods` sit 0.16 to
+  0.19 below prose. Inside them, the extension copies (0.15) and the six model rows (0.18) are the
+  most repetitive text measured in either exercise, lower than any whole manifest. Those are
+  [§6.1](#61-why-ten-files-take-fifty-lines) and P5.
+- **Comments are 28% of `matt`'s bytes and 63% of `meta-muse`'s.** Their size is the
+  "comments explain yolo" finding of [§6](#6-packs-the-same-rules), measured.
+
+**Before and after.** Lines are without comments or blank lines. Bytes are minified for JSON and
+without comments for TOML:
+
+| The same content | Lines | Bytes | gzip bytes | gzip ratio |
+| :--- | ---: | ---: | ---: | ---: |
+| user config, today (JSON) | 170 | 2,447 | 769 | 0.31 |
+| user config, proposed (TOML, [Appendix A](#appendix-a-the-maintainers-config-whole)) | 40 | 1,818 | 781 | 0.43 |
+| `matt-fzf`, today | 56 | 667 | 314 | 0.47 |
+| `matt-fzf`, proposed (TOML, [§6](#6-packs-the-same-rules)) | 14 | 391 | 227 | 0.58 |
+| `matt`'s 25 extension copies, today | 127 | 2,794 | 419 | 0.15 |
+| the same as one list entry ([§6.1](#61-why-ten-files-take-fifty-lines)) | 30 | 637 | 298 | 0.47 |
+| `matt` whole, today | — | 15,264 | 3,666 | 0.24 |
+| `matt` without its plain `files` entries (P1) | — | 11,845 | 3,216 | 0.27 |
+| …and with its overlay bodies moved to files (P2) | — | 5,315 | 1,598 | 0.30 |
+
+**Why the ratio cannot be the target, again.** The proposed user config is a quarter of the lines,
+and gzip gives it *more* bytes than today's (781 against 769). The ratio rose from 0.31 to 0.43
+because the repeats gzip was already discarding are gone. What remains is the information, and the
+shape change kept all of it. That is
+[`manifest-language.md`](manifest-language.md)'s finding: the compressed size measures what a file
+says, and the reshape is meant to keep what it says while dropping how often it says it. So a
+manifest that improves *rises* toward the prose line. Hitting a ratio number would push in exactly the
+wrong direction, by minifying or by removing information.
+
+**So the exercise is a detector, and three numbers are the scorecard:**
+
+1. **Gzip ratio below the prose line, by section.** It finds where to look: anything 0.10 or more
+   under prose of its size is repeating itself. `pack lint` could report it per contribution.
+2. **Lines a person reads**, without comments or blanks. This is the cost the maintainer named.
+3. **Facts written more than once:** a path repeated in `from` and `into`, a model fact on every row,
+   a flag restated because lists replace. Each is a place two copies can disagree, which is the
+   [§1](#1-the-test-every-line-must-pass) rule 2 failure. They are counted by hand today. The
+   compressed size (the numerator, not the ratio) should stay flat while the other two fall, which
+   is the proof that a rewrite lost nothing.
+
+## 8. Moving to the new config
+
+### 8.1 The order of releases
+
+[OQ-RC6](#OQ-RC6)'s leaning, made concrete:
+
+1. **Release N recognizes the new files and refuses them.** A `config.toml`, `yolo-jail.toml` or
+   `pack.toml` found by a yolo that does not read them stops the launch with "this file is for a
+   newer yolo: run `yolo update` (or `just install`)". It changes nothing else, so it is safe to
+   ship long before the rest.
+2. **Release N+1 reads only the new format** and refuses an old file, naming `yolo config migrate`.
+   A launch that finds only old files offers the migration (`y/N`), shows the diff, and on `y`
+   writes and continues. That follows the [happy-path principle](../reference/happy-path-principle.md):
+   the stop does the next step when asked.
+3. **Every machine that shares dotfiles upgrades before any of them migrates.** The maintainer's
+   user config is synced across work and personal machines through `~/.dotfiles`, so one machine's
+   migration rewrites the file every other machine reads. Release N is what makes the order safe:
+   an older machine refuses the new file by name, rather than starting with no packs.
+
+### 8.2 What `yolo config migrate` does
+
+- **It proves it lost nothing.** It computes the effective config before (`yolo config dump`, the
+  canonical JSON) and from the files it would write, and refuses to write unless the two are equal.
+  Any difference is printed, key by key.
+- **It keeps comments.** The packs have 394 comment lines, and the configs have more. A comment moves
+  with the key it sits above. One whose key is gone (a default no longer written, a fact folded into
+  `every_model`) is kept in place as a comment with `# (was on: <old key>)`, never dropped silently.
+  JSONC→TOML needs a parser that keeps comments attached to keys. That library choice belongs in the
+  implementation plan.
+- **It writes nothing it cannot name.** It rewrites the user config, the conventional
+  `overrides` file, the project's two files and every `include_if_found` file it can reach. A file
+  reached through a symlink is written through the link, so the dotfiles copy changes and the
+  diff shows the real path. A file it cannot reach is listed with the command to run where it can.
+  Each original is kept as `<name>.pre-migrate`.
+- **It drops written defaults** (L1) and **folds repeated facts** (L2, L3) only when the equality
+  check above still holds. Each fold appears in the diff as its own hunk, so the user sees why a
+  line went.
+
+### 8.3 Behavior in every case
 
 - **Both `config.toml` and `config.jsonc` exist in one place.** yolo refuses, naming both and
   `yolo config migrate`, which keeps one. It never merges two formats of one file.
 - **An old key, `brokered` say, in a new file.** `yolo check` and the launch refuse, naming the
   replacement line already respelled, as the `use_profiles` refusal does today. There are no aliases.
-- **`yolo config migrate`** rewrites every file it can name (user, the conventional overrides, the
-  project's two files, `include_if_found` files it can reach), shows the diff, writes on `y`, and
-  keeps each original as `<name>.pre-migrate`. It never edits a file outside those, and it names
-  each file it could not reach, such as a dotfiles-managed include. A workspace file stays an agent's
-  to migrate: the command works there too.
-- **A pack manifest in the old format.** Refused, naming `yolo pack migrate <path>`, which rewrites
-  the manifest and moves single-file `files` entries into `home/`. A fetched pack is its author's
-  to migrate: until it is, it is refused with the author named.
-- **A yolo older than this change** ([OQ-RC6](#OQ-RC6)).
+- **A workspace file** is an agent's to edit, so `yolo config migrate` works there too, and an
+  agent in the jail may run it on the project's files. A jail sees only a generated copy of the
+  user config, never the file itself, so the user config is migrated on the host.
+- **Shipped packs** are migrated in the same commit that changes the reader, so no released yolo
+  ever ships a pack it refuses.
+- **A local pack in the old format** (a path in `packs`, or a folder `pack_folders` names) is
+  refused, naming `yolo pack migrate <path>`. That command rewrites the manifest, keeps comments
+  as `yolo config migrate` does, and moves plain-copy `files` entries into `home/` or a pi package
+  folder ([§6.1](#61-why-ten-files-take-fifty-lines)). It moves files with `git mv` when the pack is a
+  git checkout, so history follows.
+- **A fetched pack in the old format** (`git+https://…?ref=main`): [OQ-RC8](#OQ-RC8).
+- **A yolo older than this change** ([OQ-RC6](#OQ-RC6), [§8.1](#81-the-order-of-releases)).
+- **Files yolo writes** stay JSON ([§5](#5-the-same-content-in-four-formats)), and so does the
+  internal canonical form: the boot baseline `config drift` compares against, `config dump --json`
+  and the approval record. Only their vocabulary changes, so a drift report and an approval prompt
+  say `as_you.git.push`, never `brokered.git.grants`. The jail's inherited copy of the user config
+  becomes TOML, so what an agent in the jail reads matches what the user wrote.
+- **An error in a new file** names `file:line:col` and the key, as JSONC errors do today. The TOML
+  library must report key positions; that is a selection criterion for the plan, not a design
+  choice.
+- **The repository's own references.** Over 400 Go files under `internal/`, `integration/` and
+  `cmd/` name `yolo-jail.jsonc` or `config.jsonc`, and 51 user-guide and reference files mention
+  JSONC. Test fixtures that write config should go through one helper that writes the new format,
+  so the next format change touches one place. `yolo config-ref` is regenerated in the new
+  vocabulary ([§9](#9-other-problems-this-could-solve)).
 - **What done looks like.** The maintainer's config, migrated, reads correctly cold, line by line,
   against [§2](#2-where-todays-config-misleads)'s table, and is under 60 lines. This repository's is
   under 15. `matt`'s manifest holds no single-file `files` entry and no overlay body, `agy-capture` restates no
   flag it does not change, and `meta-muse` declares each model once. The approval
   prompt has no `*` and no `kind`.
 
-## 8. What this doc takes over
+## 9. Other problems this could solve
+
+The maintainer asked for the issues this will meet and the ones it could fix while it is open.
+Each item below is either covered by a question or offered as an idea. An idea needs no ruling
+unless someone wants it in.
+
+**Problems the change will meet.**
+
+- **TOML has no `null`, and today's config uses `null` for four different things.** It means "keep
+  your own login" (`"claude": null`), "remove an inherited MCP server", "unset an environment
+  variable" (`env_sources`) and, in includes, "disable what a lower layer set". `yolo config-ref`
+  mentions `null` on 27 lines. Each of those needs a word: [OQ-RC7](#OQ-RC7).
+- **String mini-languages fail the cold read.** Several values are small languages packed into
+  strings, and each has a trap:
+  - `mounts`: `"~/x:/ctx/x:ro"` is one host path literally named `~/x:/ctx/x:ro`. It does not
+    exist, so the mount is skipped with only a warning (config-ref, `mounts`).
+  - `ports` is `"HOST:JAIL"`, and `forward_host_ports` beside it is `JAIL:HOST`. The config-ref
+    example has to say "Note the reversed order."
+  - A git pack is `git+https://…?ref=main`.
+
+  The proposal: each becomes a table whose keys say the direction, such as
+  `mount = { from = "~/lib", at = "/ctx/lib" }`, `ports = [{ host = 8000, jail = 8000 }]` and
+  `forward = [{ jail = 5432, host = 5432 }]`, and `{ git = "https://…", ref = "main" }`. A bare
+  string stays legal only where it has one reading: a path with no colon, or a shipped pack name.
+  This is L5 applied to values, and it belongs in [OQ-RC1](#OQ-RC1)'s L5 if ruled in.
+- **Mixed-type lists.** `env_sources` mixes file paths and inline maps, and `mounts` mixes strings and
+  objects. TOML arrays can hold both, but a reader cannot tell what an entry does from its type.
+  Splitting each into named keys (`env.files = [...]`, `env.set = {...}`) says it. This is part of
+  the same L5.
+- **`${VAR}` looks like interpolation, and yolo does none.** `TAVILY_API_KEY = "${TAVILY_API_KEY}"`
+  reaches the agent's MCP config literally, for the agent to resolve (config-ref, `mcp_servers`). A
+  cold reader assumes yolo expands it. Either yolo expands it at render time from the jail's
+  environment, or `yolo check` notes the literal pass-through on that line. Idea; the first changes
+  what reaches the agent, so it would need its own question.
+- **`yolo config` already means something else.** Today it is the agent-config composition
+  pipeline (`ls`, `render`, `diff`), not yolo's own config. Adding `yolo config migrate` and
+  `yolo config why` to it puts two meanings under one verb. Either the composition commands move
+  (`yolo surfaces …`) or the new ones go elsewhere. The plan picks the spelling; the help text
+  must not mix them.
+- **"yolo never edits the user config" is a standing ruling.** [OQ-BB12](boundary-broker.md#15-decision-ledger)
+  (2026-10-01): *"I don't want to do anything that edits the user config directly."*
+  `yolo config migrate` rewrites it. Whether a one-time rewrite the user asks for, with a diff and a
+  backup, falls inside that ruling is the maintainer's to say: [OQ-RC9](#OQ-RC9).
+- **Fetched packs in the old format**: [OQ-RC8](#OQ-RC8).
+- **Seven layers, and no way to see which one set a line.** These are the user config, its includes,
+  the per-workspace file yolo writes, the project config, `yolo-jail.local`, the selected packs'
+  contributions, and the profile. A reader looking at one file cannot tell what the others changed.
+  Idea: `yolo config why <key>` prints each layer that set the key, in order, with
+  `file:line`. `yolo config show` prints the effective config in the new format with a
+  `# from: <file>:<line>` comment per section.
+
+**Opportunities.**
+
+- **Scope in the section name.** A key that only user scope may set is refused in a project file
+  today, but nothing in the file says so. The section table in [§4](#4-the-proposed-vocabulary)
+  states scope per section. `yolo check` can name the scope in its refusal, and `yolo init`'s comment
+  can say "these sections only work in your user config".
+- **A published JSON Schema.** Taplo (the TOML language server) and VS Code's JSON support read a
+  JSON Schema, giving completion, hover text and red squiggles in the editor. Generated from the same
+  Go declarations `yolo check` validates against, it cannot drift. config-ref's 3,201 lines could
+  then be generated per section from the schema's descriptions, rather than written by hand.
+- **"Did you mean" for unknown keys.** A typo (`as-you`, `provider`) gets the nearest valid key.
+  An old key gets its respelling ([§8.3](#83-behavior-in-every-case)).
+- **Machine tags without include files.** The maintainer's work-only packs reach a machine through
+  `include_if_found` of a dotfiles file. A conditional section would say it in the file a reader
+  opens: `[when.tag.work] packs = ["luna-worker", "claude-bedrock-global"]`, with the tag set per
+  machine. Idea, not a question: includes keep working, and this only matters if the include
+  indirection is what confuses.
+- **`yolo init` writes the minimum.** L1's short file, with the one comment pointing at
+  `yolo config-ref` and the schema.
+
+## 10. What this doc takes over
 
 These questions are answered by this doc's rulings, and their documents are updated when the
 rulings land:
@@ -481,7 +741,7 @@ renames it to `use`. The reason for that ruling still holds (the key mirrors the
 form); only the word changes, because `profile` beside `profiles` and `providers` is the confusion
 the maintainer named.
 
-## 9. Open questions
+## 11. Open questions
 
 1. 💬 <a id="OQ-RC1"></a>**OQ-RC1: Which of the six shape changes go in?**
 
@@ -618,6 +878,81 @@ the maintainer named.
    **Answer:**
    > _(empty — fill in when decided)_
 
+7. 💬 <a id="OQ-RC7"></a>**OQ-RC7: How does a TOML file say "remove" or "not this one", with no `null`?**
+
+   The maintainer's user config adds the `tavily` MCP server. In one project they don't want it, so
+   today that project's config writes `"mcp_servers": {"tavily": null}`. The same `null` keeps
+   claude on its own login (`"claude": null`), unsets `AWS_PROFILE` in `env_sources`, and disables a
+   lower layer's value in an include. TOML has no `null`, so each of these needs a spelling, and a
+   cold reader has to understand it.
+
+   - **A — A word where each case lives.** `off = true` on anything that can be switched off
+     (`[mcp.tavily] off = true`, the same word L4 gives a pack), `unset = ["AWS_PROFILE"]` under
+     `env`, and `"own login"` in `use`. Each spelling says what it does, and there are three of them
+     to learn.
+   - **B — One reserved string, `"off"`,** valid wherever a value may be removed:
+     `mcp.tavily = "off"`, `env.AWS_PROFILE = "off"`. One rule, but the string `"off"` can then never be a
+     real value, and `"off"` for "keep your own login" reads wrong.
+   - **C — One top-level list of removals:** `remove = ["mcp.tavily", "env.AWS_PROFILE"]`. Every
+     removal is in one place, far from the thing it removes.
+
+   <!-- vantage: question id=OQ-RC7 leaning="A: a word at the place, each saying what it does; off = true matches L4, and the cases are few." -->
+
+   _Leaning:_ A. The word sits where the thing is and says what it does. `off = true` is already
+   L4's word, and there are only three cases.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
+8. 💬 <a id="OQ-RC8"></a>**OQ-RC8: What happens to a pack fetched from someone else's repository that still has an old `pack.json`?**
+
+   A colleague publishes a pack on GitHub, and the maintainer lists it as `git+https://…?ref=main`.
+   The maintainer upgrades yolo to the release that reads only `pack.toml`. The colleague has not
+   migrated. Today the one fetched pack in the maintainer's list, `matt-craft`, has no manifest at
+   all, so it is not affected. A colleague's pack would be.
+
+   - **A — yolo keeps an old-manifest reader for fetched packs only,** converting in memory. Nothing
+     breaks, and yolo carries two readers, the second path this project prefers to delete.
+   - **B — Refuse, naming the pack's repository and the two ways forward:** ask its author to run
+     `yolo pack migrate`, or fork it and run it yourself. One reader, and a fetched pack breaks
+     until someone migrates it.
+   - **C — B, after a grace period of one release in which A applies with a warning.**
+
+   <!-- vantage: question id=OQ-RC8 leaning="B: one reader; no fetched pack in use today has a manifest, and the refusal names both ways forward." -->
+
+   _Leaning:_ B. One reader. No fetched pack in use today has a manifest to break, and the
+   refusal names both ways forward.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
+9. 💬 <a id="OQ-RC9"></a>**OQ-RC9: May `yolo config migrate` rewrite your user config, given the ruling that yolo never edits it?**
+
+   On 2026-10-01 the maintainer ruled that the per-project switch goes in a file beside the user
+   config: *"I don't want to do anything that edits the user config directly … because it always
+   leaves that a mess"* ([OQ-BB12](boundary-broker.md#15-decision-ledger)). A colleague now runs
+   `yolo config migrate`. It wants to replace their hand-written `config.jsonc` with a `config.toml`.
+   The ruling was about yolo editing the file as a side effect of a command. This is a rewrite the
+   user asked for, with a diff first and a backup after, but that reading is this doc's, not the
+   maintainer's.
+
+   - **A — Yes, on request only.** The command writes `config.toml`, renames the old file to
+     `config.jsonc.pre-migrate`, and shows the diff before either. A launch offers the command
+     (`y/N`) and never runs it unasked.
+   - **B — It writes the new file beside the old one and touches nothing else.** The new yolo
+     refuses while both exist and prints the one `mv` that finishes the job. The ruling holds
+     literally, at the cost of one command the user types.
+   - **C — It prints the new file and writes nothing.** The user saves it by hand.
+
+   <!-- vantage: question id=OQ-RC9 leaning="A: the ruling's complaint was a command's side effect leaving a mess; an asked-for whole-file rewrite with a diff and a backup is not that, but it is the maintainer's to say." -->
+
+   _Leaning:_ A. The ruling's complaint was a command's side effect leaving a mess. A whole-file
+   rewrite the user asks for, shown first and backed up, is not that. But it is the maintainer's
+   ruling to read, not this doc's.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
 ## Decision Ledger
 
 | ID | Ruling / Decision | Date | Settled in | Built |
@@ -699,3 +1034,209 @@ mise = { lua = "5.4.9" }          # syntax-checks the packs' derive.lua files
 [as_you.git]
 push = ["main"]
 ```
+
+## Appendix B: more configs, today and proposed
+
+Each example is in the proposed shape, in TOML. Where a today's version exists in a form yolo
+reads, it is shown first. Key names follow [§4](#4-the-proposed-vocabulary) and are as open as
+the questions that decide them.
+
+### B.1 A colleague on a Claude subscription, nothing else
+
+Today, `~/.config/yolo-jail/config.jsonc`:
+
+```jsonc
+{"packs": ["claude"]}
+```
+
+Proposed, `~/.config/yolo-jail/config.toml`:
+
+```toml
+packs = ["claude"]
+```
+
+The shape already works for the smallest config. What the colleague meets next is the 120-line
+template in their first project, which L1 removes.
+
+### B.2 A work machine: pi on Bedrock through AWS SSO, claude on its own login
+
+Today:
+
+```jsonc
+{
+  "packs": ["claude", "pi", "bedrock", "aws-auth"],
+  "loopholes": {
+    "aws-auth": {"enabled": true, "settings": {"profile": "my-sso-profile"}}
+  },
+  "profile": {"*": "bedrock", "claude": null}
+}
+```
+
+Proposed:
+
+```toml
+packs = ["claude", "pi", "bedrock", "aws-auth"]
+
+[as_you.aws-auth]                 # serves your AWS SSO login to the jail; writing this turns it on
+profile = "my-sso-profile"
+
+[use]
+everyone = "bedrock"
+claude = "own login"
+```
+
+The double switch is gone (L4), and `"own login"` replaces `null` ([OQ-RC7](#OQ-RC7)).
+
+### B.3 pi on OpenRouter and Z.ai at once, keys from a file
+
+Today:
+
+```jsonc
+{
+  "packs": ["pi", "openrouter", "zai"],
+  "profile": {"pi": ["zai", "openrouter"]},
+  "env_sources": ["~/.config/yolo-jail/secrets.env"]
+}
+```
+
+Proposed:
+
+```toml
+packs = ["pi", "openrouter", "zai"]
+
+[use]
+pi = ["zai", "openrouter"]        # both available in pi, switchable there
+
+[env]
+files = ["~/.config/yolo-jail/secrets.env"]   # the API keys these providers read
+```
+
+`env_sources`' mix of paths and maps becomes `env.files` and `env.set`
+([§9](#9-other-problems-this-could-solve)).
+
+### B.4 A team project
+
+Today, `yolo-jail.jsonc` in the repository:
+
+```jsonc
+{
+  "packages": ["postgresql", "just"],
+  "mise_tools": {"node": "22", "python": "3.12"},
+  "mounts": ["~/code/acme-shared"],
+  "network": {"ports": ["8000:8000"], "forward_host_ports": [5432]},
+  "gpu": {"enabled": true},
+  "resources": {"memory": "16g", "cpus": 8},
+  "brokered": {"github": {"repos": ["acme/shared"]}}
+}
+```
+
+Proposed, `yolo-jail.toml`:
+
+```toml
+[install]
+nix = ["postgresql", "just"]
+mise = { node = "22", python = "3.12" }
+
+[[mount]]                          # read-only unless `write = true`, which only your user config may say
+from = "~/code/acme-shared"
+
+[machine]
+gpu = true                         # warns and starts without one on a machine that has none
+resources = { memory = "16g", cpus = 8 }
+ports = [{ host = 8000, jail = 8000 }]       # the host reaches the jail's :8000
+forward = [{ jail = 5432, host = 5432 }]     # the jail reaches the host's postgres at localhost:5432
+
+[as_you.github]
+repos = ["acme/shared"]            # beyond this repository's own remotes
+
+[as_you.git]
+push = "new branches"              # a new branch, never main; each is approved at launch
+```
+
+`python = "3.12"` stays the string it is. The directions are keys, not positions in a string.
+
+### B.5 The project's uncommitted local file
+
+`yolo-jail.local.toml`, auto-merged as `yolo-jail.local.jsonc` is today:
+
+```toml
+# This machine only; not committed.
+[mcp.postgres]
+command = ["npx", "-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/acme"]
+
+[mcp.tavily]
+off = true                         # the user config adds it; not wanted here (OQ-RC7, option A)
+
+[machine]
+resources = { memory = "32g" }
+```
+
+### B.6 Work and personal machines from one dotfiles repository
+
+Today the maintainer's user config includes a file that exists only on work machines:
+
+```jsonc
+{"include_if_found": ["~/.dotfiles/tag-work/config/yolo-jail/work.jsonc"]}
+```
+
+That keeps working, as `include_if_found = [...]`. The idea in
+[§9](#9-other-problems-this-could-solve) puts the difference in the file a reader opens instead:
+
+```toml
+[when.tag.work]                    # this machine's tags are set once, per machine
+packs = ["luna-worker", "claude-bedrock-global"]
+```
+
+### B.7 A small personal pack: `luna-worker`
+
+Today, 23 lines. Its job is one setting:
+
+```toml
+name = "luna-worker"
+description = "Work machines: pi's worker subagent runs on GPT-6 Luna when the session is on Bedrock."
+
+[[overlay]]
+surface = "pi/settings"
+set.managed.subagents.agentOverridesByProvider.amazon-bedrock.worker.model = "amazon-bedrock/global.openai.gpt-6-luna"
+```
+
+A dotted key in TOML says the whole path on one line, so the nesting stops costing a line per level.
+`coordinator-reads-blocked` is the same shape: one `set.managed.workControl.allowReads = false`.
+
+### B.8 `meta-muse`'s models under P5
+
+Today, 199 lines of pi's `models.json` format plus three compaction rows in `pi/settings`.
+Proposed, with the facts yolo's model shape does not have today marked as new:
+
+```toml
+[providers.meta.every_model]
+api = "openai-responses"           # new fact: the wire API
+reasoning = true
+accepts = ["text", "image"]
+thinking = ["minimal", "low", "medium", "high", "xhigh", "max"]   # new fact: the levels it takes
+max_tokens = 128_000
+price = { input = 0, output = 0, cache_read = 0, cache_write = 0 }
+
+[providers.meta.models."muse-spark-1.3-contributor"]
+name = "Spark 1.3"
+context = 1_048_576
+max_tokens = 131_072
+thinking = ["minimal", "low", "medium", "high", "xhigh"]
+images = { max_width = 2000, max_height = 2000, max_bytes = 4_718_592, jpeg_quality = 80 }   # new fact
+price = { input = 0.1, output = 0.2, cache_read = 0.002, cache_write = 0 }
+
+[providers.meta.models]
+"muse-wonder-1.0-contributor"      = { name = "Wonder 1.0",      context = 1_007_997 }
+"muse-wonder-full-1.0-contributor" = { name = "Wonder Full 1.0", context = 1_007_997 }
+
+# The [200k] twins: the same model on the wire, compacted at 200k.
+"muse-spark-1.3-contributor[200k]"       = { twin_of = "muse-spark-1.3-contributor",       compact_at = 200_000 }
+"muse-wonder-1.0-contributor[200k]"      = { twin_of = "muse-wonder-1.0-contributor",      compact_at = 200_000 }
+"muse-wonder-full-1.0-contributor[200k]" = { twin_of = "muse-wonder-full-1.0-contributor", compact_at = 200_000 }
+```
+
+`twin_of` and `compact_at` are new too. `twin_of` takes every fact of the named row and sends its
+id as the twin's `wire_id`. Today's `extends` is close, but it names a top-level `model_facts`
+entry rather than a sibling row, and `wire_id` must be written. 21 lines replace 199 plus the three
+compaction rows. Each agent's render writes its own file from these rows, so pi gets its six
+`models.json` rows and the compaction overrides, and no pack writes either by hand.
