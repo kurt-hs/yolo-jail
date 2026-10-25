@@ -1,7 +1,7 @@
 ---
 status: accepted
 stage: CURRENT
-next: "The maintainer's Mac agent runs Steps 0 to 4, then leads the maintainer through Step 5"
+next: "Ran 2026-10-24/25; results below and in docs/lab-reports/2026-10-25-mac-claude-login-session.md. Decide the self-mode view path, the /tmp/claude-<uid> denial, and the macOS /login and /logout paths"
 date: 2026-10-24
 tags: [runbook, macos-user, claude, credentials, oauth, broker, measures, mac-agent]
 summary: "One Mac session for the maintainer's Mac agent: the pending pack-tree integration check, then whether macos-user's Claude reads the credential view (M11), whether a running session adopts a refreshed view and recovers from a wrong token, the same at `yolo host -- claude` (H1 to H3, H5), and the native bridge's lock (Phase A). The agent runs what needs no sign-out, and leads the maintainer through the rest."
@@ -9,7 +9,7 @@ summary: "One Mac session for the maintainer's Mac agent: the pending pack-tree 
 
 # One Mac session: does Claude on a Mac read the credential view?
 
-**Status:** 2026-10-24. Nothing here has run. **Authorized:** the maintainer asked for this brief on
+**Status:** 2026-10-24. Ran 2026-10-24 to 25 on the maintainer's Mac; see [Results](#results) and [the lab report](../../lab-reports/2026-10-25-mac-claude-login-session.md). **Authorized:** the maintainer asked for this brief on
 2026-10-24 so that their Mac agent runs it: *"write something up for my mac agent, it will do what
 it can then lead me through the rest."* That is the explicit authorization
 [the native refresh design](../../design/macos-user-claude-refresh.md) and
@@ -183,12 +183,16 @@ Lead the maintainer through what the agent did not run, one item at a time, and 
 
 | Step | Mode | Date | Claude Code | Result | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | | | | | |
-| 2 (M11) | account | | | | |
-| 2 (M11) | self | | | | |
-| 3a | account | | | | |
-| 3a | self | | | | |
-| 3b | account | | | | |
-| 3b | self | | | | |
-| 4 (H1–H3, H5) | host | | | | |
-| Phase A | | | | | |
+| 1 | both | 2026-10-24 | — | **pass** | All six `TestMacosUserPackTreeProgram` subtests pass (`/self` ×3 included) at `9a1e0d9c9`. |
+| 2 (M11) | account | 2026-10-24 | 2.1.310 | **pass** | `ok`; the view is `live`, `refresh token: absent`, and its fingerprint is the canonical login's. |
+| 2 (M11) | self | 2026-10-24 | 2.1.304 | **fail as shipped; pass with two workarounds** | Claude exits on `EPERM … mkdir '/tmp/claude-501'`. With `CLAUDE_CODE_TMPDIR=$TMPDIR` it says `Not logged in`, because the view is written to `.yolo/home/claude/` and Claude reads `.yolo/home/.claude/`. With `CLAUDE_SECURESTORAGE_CONFIG_DIR=$HOME/claude` as well, it answers `ok`: it reads the file, not the Keychain. |
+| 3a | account | 2026-10-24 | 2.1.310 | **pass** | Fingerprint `f69329e6` → `e5436b50`, then a second `ok` with no restart. Interactive first run needed `hasCompletedOnboarding` set (see the lab report). The broker log has no `view: wrote` line for a `claude-auth refresh`. |
+| 3a | self | 2026-10-24 | 2.1.304 | **pass with the workarounds** | `e5436b50` → `d05558da`, then a second `ok`. |
+| 3b | account | 2026-10-24 | 2.1.310 | **pass (order changed)** | Starting on the wrong token exits at once (*"Your organization requires remote managed settings to load"*), so the order was good → wrong with a new mtime (401) → good with the wrong file's mtime, which was answered. |
+| 3b | self | 2026-10-24 | 2.1.304 | **pass with the workarounds (order changed)** | As in account mode. |
+| 4 (H1–H3, H5) | host | 2026-10-24 | 2.1.310 | **pass** | H1 `ok`, view `live`, runtime host. H2: no file, Keychain entry's metadata unchanged. H3 `d05558da` → `3620240f`, second `ok`. H5 `ok`, no store line. Pointing the store at a wrong-token copy fails, so host Claude reads the file even with a Keychain login. Needed `YOLO_ALLOW_MISSING_PROGRAMS=1`. |
+| Phase A | self | 2026-10-25 | 2.1.304 | **pass with `CLAUDE_CODE_TMPDIR`** | At `482763948` (PR 62), both sessions name the shared store. A forced expiry made session A refresh in the sandbox (rt `96ac6130` → `74a4c6c4`); the broker adopted it within seconds and both sessions answered. Account mode cannot run it: one session at a time. |
+| C1 | account | 2026-10-25 | 2.1.310 | **fail** | `/login` in a view jail: *"Couldn't save your login. If your Mac's keychain is locked…"*; nothing enrolled. Same as without the view. |
+| C2 | account | 2026-10-25 | 2.1.310 | **fail** | `/logout` deletes the view file; the broker counts a /logout only when the file remains without `claudeAiOauth` (`internal/oauthbroker/views.go:386`), so it rewrote the view. |
+| C3 | — | 2026-10-25 | — | **pass** | Canonical gone, shared file and both views `no claudeAiOauth login`. |
+| H4 | host | 2026-10-25 | 2.1.310 | **fail** | The launch printed the enrolment line; `/login` saved to a new Keychain entry `Claude Code-credentials-5d0efea8`, the store stayed empty, nothing enrolled. |
