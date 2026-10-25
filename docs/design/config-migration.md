@@ -83,7 +83,7 @@ An old key in a new file:
 $ yolo check
 ~/.config/yolo-jail/config.toml:14: `brokered` is no longer a key. Its lines are now:
   [allow.git]
-  fetch = true
+  always = ["fetch"]
 ```
 
 ## 2. How a yolo knows which config it has

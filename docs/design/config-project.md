@@ -53,7 +53,7 @@ Proposed, `yolo-jail.toml`:
 nix = ["just"]                    # runs this repo's Justfile recipes
 mise = { lua = "5.4.9" }          # syntax-checks the packs' derive.lua files
 
-[requests.git]                    # what this project requests, from what your [allow.git] lists as requestable
+[requests.git]                    # what this project requests, from your [allow.git] on_request list
 push = ["main"]
 ```
 
@@ -107,14 +107,14 @@ new_branches = true                       # branches of its own, never main; eac
 
 A direction is a key, not a position in a string: `{ host = 8000, jail = 8000 }` where today's
 `"8000:8000"` and `forward_host_ports` run opposite ways. A project requests; your config says
-what is requestable. A request outside that is not an error: two people on one repository may
+what may be requested. A request outside that is not an error: two people on one repository may
 allow different things, so the one who does not sees it reported and skipped, and the jail runs
 without it:
 
 ```console
 $ yolo check
 yolo-jail.toml:22: requests.git.new_branches asks to create branches; your config does not list
-  new_branches as requestable for git, so this project will not. To allow it: yolo allow git requestable new_branches
+  new_branches under allow.git.on_request, so this project will not. To allow it: yolo allow git on_request new_branches
 ```
 
 Nothing that decides where inference goes or what a jail may do with your logins is accepted
@@ -134,7 +134,7 @@ it belongs in.
    mounts / [[mounts]] # a bare path, or a table with host and at
    [machine]          # gpu, resources, ports, forward, where today's four top-level keys were
    [env]              # files, set, unset, where today's one mixed list was
-   [requests.*]       # what this project requests, from what your allow lists as requestable
+   [requests.*]       # what this project requests, from your allow's on_request list
    ```
 
    <!-- vantage: question id=OQ-RC17 leaning="Approve: each section names what the project decides, and the two string traps become keys." -->
@@ -217,7 +217,7 @@ are spelled, is the question.
 
 ## 4. Principles
 
-1. **A project requests; your config says what is requestable.** Every request is a line in the
+1. **A project requests; your config says what may be requested.** Every request is a line in the
    launch approval prompt, granted or skipped; a request outside your ceiling is never an error.
 2. **A project file is the agent's to edit**, so nothing user-scope is accepted here, and the
    refusal names the file it belongs in.

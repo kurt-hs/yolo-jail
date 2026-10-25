@@ -77,8 +77,8 @@ Added. This is a project-config change: run `yolo check --no-build`, then ask th
 The same agent touching a user-scope key:
 
 ```console
-$ yolo config set allow.git.fetch true
-allow.git.fetch is a user-config key, and a jail sees only a generated copy of your user config.
+$ yolo config add allow.git.always fetch
+allow.git.always is a user-config key, and a jail sees only a generated copy of your user config.
 Run it on the host:
     yolo host-run -C /home/matt/code/yolo-jail --name allow-git-fetch -- yolo allow git fetch
 ```
@@ -92,7 +92,7 @@ $ yolo allow git fetch
  packs = ["bedrock", "aws-auth", "copilot", "claude"]
 +
 +[allow.git]
-+fetch = true
++always = ["fetch"]
 Written to config.d/work.toml, the file that already holds [allow].
 This takes effect when a workspace approves it. Approve now for this workspace? [y/N] y
   + git: fetch from mschulkind-oss/yolo-jail (from your user config, for every workspace)
@@ -184,19 +184,19 @@ the absence of a mess; whether that answers the ruling is yours to say.
    $ yolo allow git fetch
    ~/.config/yolo-jail/config.toml
    +[allow.git]
-   +fetch = true
+   +always = ["fetch"]
 
    # B  companion file only: your file is never written; removals stay by hand
    $ yolo allow git fetch
    ~/.config/yolo-jail/managed.toml        (written whole by yolo; do not edit)
    [allow.git]
-   fetch = true
+   always = ["fetch"]
 
    # C  print the edit
    $ yolo allow git fetch
    Add to ~/.config/yolo-jail/config.toml:
    [allow.git]
-   fetch = true
+   always = ["fetch"]
    ```
 
    <!-- vantage: question id=OQ-RC9 leaning="A: the ruling's complaint was a mess left by a side effect; a one-hunk edit you asked for is neither, and B cannot remove anything because lists merge by union." -->
@@ -216,10 +216,10 @@ $ yolo pack add local/matt                 # user config: packs += "local/matt"
 $ yolo pack remove journal
 $ yolo install nix just                    # project config: install.nix += "just"
 $ yolo install mise python@3.12 --user
-$ yolo allow git fetch                     # user config: [allow.git] fetch = true
+$ yolo allow git fetch                     # user config: [allow.git] always += "fetch"
 $ yolo request git push main               # project config: [requests.git] push += "main"
 $ yolo request github repos acme/shared
-$ yolo allow git requestable push          # user config: [allow.git] requestable += "push"
+$ yolo allow git on_request push           # user config: [allow.git] on_request += "push"
 $ yolo inference default bedrock           # user config: [inference_provider] default = "bedrock"
 $ yolo inference claude false
 ```
@@ -228,7 +228,7 @@ One generic verb, keyed by path:
 
 ```console
 $ yolo config add packs local/matt
-$ yolo config set allow.git.fetch true
+$ yolo config add allow.git.always fetch
 $ yolo config set inference_provider.claude false
 $ yolo config add requests.git.push main --project
 $ yolo config unset mcp_servers.tavily --local
@@ -251,7 +251,7 @@ like), while `apply`, `drift` and `dump` are about yolo's own config. Two questi
    $ yolo allow git fetch
 
    # B  one generic verb only; every key has a command, and a message prints it from the key it knows
-   $ yolo config set allow.git.fetch true
+   $ yolo config add allow.git.always fetch
 
    # C  both: B underneath, A as sugar; messages print B, people type A
    ```
@@ -272,11 +272,11 @@ like), while `apply`, `drift` and `dump` are about yolo's own config. Two questi
    ```console
    # A  move the six composition commands; yolo config is yolo's config
    $ yolo surface render claude/settings
-   $ yolo config set allow.git.fetch true
+   $ yolo config add allow.git.always fetch
 
    # B  leave yolo config alone; the new verbs go elsewhere
    $ yolo config render claude/settings
-   $ yolo set allow.git.fetch true
+   $ yolo add allow.git.always fetch
 
    # C  both meanings under one verb, two sections in the help text
    ```
@@ -294,7 +294,7 @@ like), while `apply`, `drift` and `dump` are about yolo's own config. Two questi
 The same excerpt in each format:
 
 ```jsonc
-{ "allow": { "git": { "fetch": true, "requestable": ["push"] } },
+{ "allow": { "git": { "always": ["fetch"], "on_request": ["push"] } },
   "inference_provider": { "default": "bedrock", "claude": false },
   "providers": { "bedrock": { "region": "us-east-1",
     "models": { "global.openai.gpt-6.1-sol": { "name": "Sol 6.1", "context": 272000 } } } } }
@@ -302,8 +302,8 @@ The same excerpt in each format:
 
 ```toml
 [allow.git]
-fetch = true
-requestable = ["push"]
+always = ["fetch"]
+on_request = ["push"]
 
 [inference_provider]
 default = "bedrock"
@@ -315,7 +315,7 @@ models."global.openai.gpt-6.1-sol" = { name = "Sol 6.1", context = 272_000 }
 ```
 
 ```yaml
-allow: { git: { fetch: true, requestable: [push] } }
+allow: { git: { always: [fetch], on_request: [push] } }
 inference_provider: { default: bedrock, claude: false }
 providers:
   bedrock:

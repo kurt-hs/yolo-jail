@@ -78,12 +78,12 @@ packs = ["pi", "local/pi-fork", "codex", "git", "github", "bedrock", "aws-auth",
          # the only switch; local/<name> is ~/.config/yolo-jail/packs/<name>                (§4)
 
 [allow.git]                       # what every project's jail may do with your git login  (§6)
-fetch = true                      # its own remotes                                       (?OQ-RC16)
-requestable = ["push", "new_branches"]   # what a project may request on top; each approved at launch
+always = ["fetch"]                # its own remotes                                       (?OQ-RC16)
+on_request = ["push", "new_branches"]   # a project may request these; each approved at launch
 
 [allow.github]
-read = true
-requestable = ["create_pr", "create_issue"]
+always = ["read"]
+on_request = ["create_pr", "create_issue"]
 
 [allow.aws-auth]                  # settings; the switch is the name in packs              (§7)
 profile = "my-sso-profile"
@@ -109,7 +109,7 @@ reasoning = true
 ```
 
 A project's own file requests what it wants under `[requests.git]` and `[requests.github]`, from
-what `allow` here lists as requestable ([`config-project.md`](config-project.md)). On the maintainer's machines
+what `allow` here lists as `on_request` ([`config-project.md`](config-project.md)). On the maintainer's machines
 this is four files, not one: `config.toml`, `config.d/overrides.toml`, and a work and a personal
 file that his dotfiles put in `config.d/` on the right machines
 ([appendix A.3](#a3-four-files-not-one)). The whole set is 45 non-blank lines.
@@ -251,19 +251,19 @@ Today this is `brokered`: a user read grant `{"kind": "read", "repo": "*"}` and 
 list in your config, and per-repository grants in a project's. The broker approves a scope per
 workspace at launch, the project's own remotes plus any it names, and the grants act within it.
 
-**Approved 2026-10-25:** the section is `allow`. It says two things, in two keys that cannot be
-confused: what every project's jail gets (`fetch = true`), and what a project may *request* on top
-(`requestable = [...]`), each request approved at launch. A project requests under `requests`.
+**Approved 2026-10-25:** the section is `allow`. It says two things, in two lists of the same
+shape: what every project's jail gets (`always`), and what a project may *request* on top
+(`on_request`), each request approved at launch. A project requests under `requests`.
 
 ```toml
 # your config
 [allow.git]
-fetch = true                      # every project's jail: its own remotes, as approved at launch (?OQ-RC16)
-requestable = ["push", "new_branches"]   # what a project may request on top; never granted by this line
+always = ["fetch"]                # every project's jail: its own remotes, as approved at launch (?OQ-RC16)
+on_request = ["push", "new_branches"]   # a project may request these; never granted by this line
 
 [allow.github]
-read = true
-requestable = ["create_pr", "create_issue"]
+always = ["read"]
+on_request = ["create_pr", "create_issue"]
 
 [allow.aws-auth]                  # the AWS login the aws-auth pack serves to the jail
 profile = "my-sso-profile"
@@ -285,36 +285,37 @@ the request reported and skipped, with the line that would allow it, and the jai
 
 ```console
 $ yolo check
-yolo-jail.toml:3: requests.git.push asks to push to main; your config does not list push as
-  requestable for git, so this project will not. To allow it: yolo allow git requestable push
+yolo-jail.toml:3: requests.git.push asks to push to main; your config does not list push under
+  allow.git.on_request, so this project will not. To allow it: yolo allow git on_request push
 ```
 
 At launch the approval prompt lists each granted request as `+ git: push to main` and each
-skipped one as `– git: push to main (not requestable under your config)`; `*` leaves the
+skipped one as `– git: push to main (not allowed on request by your config)`; `*` leaves the
 vocabulary. The four ruled grant kinds map onto these keys ([appendix A.6](#a6-the-grant-kinds-mapped)).
 One thing about `fetch` is still open: how far it reaches.
 
 1. 💬 <a id="OQ-RC16"></a>**OQ-RC16: May your config let a jail fetch from any repository, not only the project's own?**
 
-   You write `fetch = true`. Today, and in the file above, that reaches the project's remotes as
-   approved at launch, plus what the project's `requests.github.repos` names. An agent that clones a
+   You write `always = ["fetch"]`. Today, and in the file above, that reaches the project's
+   remotes as approved at launch, plus what the project's `requests.github.repos` names. An agent that clones a
    second repository to read it is refused, with the scope in the message. Widening `fetch`
    changes the broker's per-workspace scope, which the boundary-broker doc rules. A fetch is
    read-only, so what a wider setting risks is a private repository's contents reaching a jail
    whose project never named it.
 
    ```toml
-   # A  a list of patterns widens it; true stays the project's own
+   # A  a list of patterns widens it; without the key, the project's own
    [allow.git]
-   fetch = ["github.com/mschulkind-oss/*"]        # or ["*"]: any repository the host login reaches
+   always = ["fetch"]
+   fetch_from = ["github.com/mschulkind-oss/*"]   # or ["*"]: any repository the host login reaches
 
    # B  the project's own remotes only, as today; a project adds others under [requests.github] repos
    [allow.git]
-   fetch = true
+   always = ["fetch"]
 
-   # C  any repository the host login reaches, always, when fetch = true
+   # C  any repository the host login reaches, whenever fetch is allowed
    [allow.git]
-   fetch = true
+   always = ["fetch"]
    ```
 
    <!-- vantage: question id=OQ-RC16 leaning="A: the user config is trusted and a read is cheap to widen, but a line that names what it opens beats one that opens everything." -->
@@ -497,10 +498,11 @@ one name are refused with "give one an explicit `name`" (`internal/config/packs.
 The four ruled grant kinds ([OQ-BB19](boundary-broker.md#OQ-BB19)) become `read` → `read`,
 `create-branch` → `new_branches = true`, `branch` → `push = ["main"]`, `create-pr` →
 `create_pr = true` and `create-issue` → `create_issue = true`; the user-config `grant_kinds`
-list becomes `requestable`. A requestable kind answers [OQ-BB23](boundary-broker.md#OQ-BB23)
+list becomes `on_request`, and the user read grant becomes `always = ["fetch"]`. An `on_request`
+kind answers [OQ-BB23](boundary-broker.md#OQ-BB23)
 with "as a ceiling, never as a grant", its leaning. A GitHub
 `create_pr` or `create_issue` request is accepted by the config and refused at use until a jail's write request can reach
-`yolo approve`, whose delivery is not built (`internal/ghbroker/window.go`). `fetch = true`
+`yolo approve`, whose delivery is not built (`internal/ghbroker/window.go`). `always = ["fetch"]`
 reaches what today's `{"kind": "read", "repo": "*"}` reaches: the project's remotes plus `repos`,
 approved at launch.
 
