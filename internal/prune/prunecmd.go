@@ -1163,6 +1163,64 @@ func Run(opts Options) int {
 		}
 	}
 
+	// --- Orphaned per-jail state ---
+	// The lock files, logs, owner files, current-image pointers and approval records one
+	// container name leaves under global storage (orphancname.go has the rules). Same
+	// --no-build-roots gate as agent staging, its sibling class. Its known set asks the runtime
+	// for containers in ANY state (a stopped container still owns its name), so it cannot reuse
+	// the live set above; on macos-user, as for staging, there is no runtime to ask and the
+	// tracking files and sessions are the whole known set (BF-D2).
+	if !opts.NoBuildRoots {
+		p.line("")
+		p.line(fmt.Sprintf("[bold]Orphaned per-jail state[/bold]  [dim](locks, logs, owners, current-image pointers, approvals; untouched for %dd)[/dim]",
+			int(OrphanCnameAgeFloor/(24*time.Hour))))
+		all := runtime.LiveSet{Known: macosUser, Names: map[string]struct{}{}}
+		if !macosUser {
+			all = AllYoloContainerNames(rt, opts.Exec)
+		}
+		sessionKeys, sessionsKnown := LiveSessionKeys(paths.HostServicesBase(paths.IsMacOS))
+		switch {
+		case !all.Known:
+			p.line(fmt.Sprintf("  [dim]skipped — could not list the runtime's containers (%s); declining to sweep[/dim]", rt))
+		case !sessionsKnown:
+			p.line("  [dim]skipped — could not list the host-services sessions; declining to sweep[/dim]")
+		default:
+			known := TrackedContainerNames(opts.ContainerDir())
+			for name := range all.Names {
+				known[name] = struct{}{}
+			}
+			rep := PruneOrphanCnameStateGuarded(OrphanCnameDirsUnder(gs, opts.BuildDir(), opts.ContainerDir()),
+				known, sessionKeys, true, apply, opts.Now(), nil)
+			if rep.Files > 0 {
+				var parts []string
+				for _, class := range []string{OrphanClassLocks, OrphanClassLogs, OrphanClassOwners,
+					OrphanClassCurrentImages, OrphanClassApprovals} {
+					if n := rep.ByClass[class]; n > 0 {
+						parts = append(parts, fmt.Sprintf("%s %s", fmtComma(n), class))
+					}
+				}
+				p.line(fmt.Sprintf("  %s: %s file(s) (%s) of %s container name(s), %s",
+					verb(apply, "would remove", "removed"), fmtComma(rep.Files), strings.Join(parts, ", "),
+					fmtComma(len(rep.Names)), FmtBytes(rep.Bytes)))
+				const listCap = 20
+				for i, n := range rep.Names {
+					if i == listCap {
+						p.line(fmt.Sprintf("    [dim]… and %s more[/dim]", fmtComma(len(rep.Names)-listCap)))
+						break
+					}
+					p.line("    • " + n)
+				}
+			} else {
+				p.line("  [dim]none[/dim]")
+			}
+			if rep.Busy > 0 {
+				p.line(fmt.Sprintf("  [dim]kept %s lock file(s) another process holds; the next run retries them[/dim]",
+					fmtComma(rep.Busy)))
+			}
+			totalSaved += rep.Bytes
+		}
+	}
+
 	// --- Shadowed seed subtrees ---
 	var shadowedBytes int64
 	var shadowedItems int

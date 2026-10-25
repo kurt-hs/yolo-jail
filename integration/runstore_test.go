@@ -47,8 +47,12 @@ import (
 //     would show the reaper only this run's workspaces, and it would reap every image the
 //     machine's other jails run (the reason macArchiveEnv sets YOLO_NO_AUTO_IMAGE_REAP).
 //   - locks — the image-copy lock is machine-wide ON PURPOSE (internal/image/copylock.go), and
-//     TestImageCopyLockSerializesConcurrentLaunches is its test; per-workspace locks are keyed
-//     by container name, which a temp workspace makes unique anyway.
+//     TestImageCopyLockSerializesConcurrentLaunches is its test; and the capture-<program> and
+//     fork-build-<id> locks there guard the SHARED `stores` below, so a private locks/ would let
+//     two runs build into one store entry at once. Per-workspace locks are keyed by container
+//     name, which a temp workspace makes unique, so they never contend across runs; the ones a
+//     run leaves behind are reclaimed by the orphaned per-jail state sweep
+//     (internal/prune/orphancname.go) once untouched for its age floor.
 //   - cache — the npm and mise download caches: warm across runs, never a correctness input.
 //   - embedded-packs — one immutable tree per build, adopted under a shared lease
 //     (internal/packload/embeddedcache.go): built for many processes, and a copy per run is

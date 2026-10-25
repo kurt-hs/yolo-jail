@@ -351,6 +351,7 @@ func TestSlotRunsEveryAutomaticClass(t *testing.T) {
 		"o.measureAndPurgeCache(reclaimConsent, guard)",
 		"o.measureAndPurgeMiseVersions(rt, reclaimConsent, guard)",
 		"o.reapSmallAutomaticClasses(rt, cname, guard)",
+		"o.reapOrphanCnameState(rt, cname, guard)",
 		"o.reapImageTars(rt, guard)",
 		"o.reapFlakeBundleGenerations(rt, guard)",
 		"o.reapDevBundles(rt, guard)",

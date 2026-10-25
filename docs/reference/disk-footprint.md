@@ -26,6 +26,8 @@ covers:
   - internal/prune/agentlogs.go
   - internal/prune/devbundles.go
   - internal/cli/devbundlereap.go
+  - internal/prune/orphancname.go
+  - internal/cli/run/orphancnamereap.go
 tags: [disk, prune, housekeeping, podman, nix, mise, stores]
 summary: "How yolo keeps its disk footprint bounded without waiting for a human: every reclaimer runs from the process that made the bytes or from the launch's post-attach housekeeping slot, automatic where the evidence is complete and regeneration is cheap, offered at launch where it is not, and every store, reclaimed or not, is listed by `yolo stores`."
 ---
@@ -259,8 +261,9 @@ process, same lifetime, same environment.
 
 **What runs there, each class on its own daily stamp:** the superseded-image reap, yolo's own
 store outputs, the shared cache's measure and (with consent) purge, the mise store's measure and
-(with consent) removal, agent-staging orphans with retired loophole state, image tars,
-superseded flake-bundle generations, unused [development bundles](#development-bundles), and the start of the detached scratch-volume remover
+(with consent) removal, agent-staging orphans with retired loophole state, [orphaned per-jail
+state](#orphaned-per-jail-state), image tars, superseded flake-bundle generations, unused
+[development bundles](#development-bundles), and the start of the detached scratch-volume remover
 ([`durable-scratch-space.md`](jail-home.md)). `runHousekeeping` is the
 list.
 
@@ -291,6 +294,7 @@ program, and none of the slot's stores grows at that notch.
 | Superseded vendor versions | automatic, in the launcher itself | the live symlink is complete evidence | two builds per program |
 | Agent staging, retired loophole state | automatic | tri-state gated; small | swept |
 | Development bundles (`just dev`) | automatic, and after each new bundle is published | the runtime and the process table say what is in use; regeneration is a rebuild | the newest three, plus any in use |
+| [Orphaned per-jail state](#orphaned-per-jail-state) | automatic, host-only | tri-state gated; the next launch writes each file again, and an approval or pointer goes only once its workspace is gone | swept once untouched past its age floor |
 | yolo's own unrooted store outputs | automatic, host-only | every running jail's prefix is rooted ([OQ-BF4](#why-its-this-way)), and nix refuses a live path | deleted by name |
 | Shared cache, older than its age cutoff | **offered**, then automatic | regeneration is a re-download of unknown size | age purge, once consented |
 | Unused mise tool versions | **offered**, then automatic | regeneration is a re-download for a workspace that returns | versions no jail used within the window, once consented |
@@ -605,13 +609,14 @@ show.
 
 <a id="lifecycle-sweeps"></a>
 
-Three sweeps of derived junk, from `yolo prune` and, for staging, the slot:
+The sweeps of derived junk, from `yolo prune` and, for staging and per-jail state, the slot:
 
 - **Dangling out-links** in `build/` (`run-result-*`) whose target is gone. No liveness needed: a
   dangling link protects nothing.
 - **Orphaned agent staging** (`agents/<name>`) for names with no tracking file, no live container
   and no live host-services session, past an age floor. A staging sweep declines when the session
   listing cannot run.
+- **Orphaned per-jail state**, described [below](#orphaned-per-jail-state).
 - **Regenerable agent logs**, age-purged per workspace overlay. Claude transcripts are excluded:
   they are durable user data.
 
@@ -668,6 +673,41 @@ post-build sweep and the slot's pass, as it stops the slot's other automatic cla
 it), so the wrapper names the bundle's `bin/yolo` itself. Once a later sweep removes that bundle,
 the wrapper names a missing file until the next `host apply`. It is listed under
 [open gaps](#owed-measurements).
+### Orphaned per-jail state
+
+<a id="orphaned-per-jail-state"></a>
+
+Every launch writes small files under global storage keyed by its **container name**, the
+deterministic name `runtime.FromWorkspace` derives from the workspace path: the per-workspace
+locks in `locks/` (`<name>.lock`, `.keeper`, `.sessions`, `.arrival`, `.host-daemons.lock` and
+the `.session-records` directory), the keeper and port-forward logs in `logs/`, `owners/<name>`,
+the current-image pointer `build/current-images/<name>`, and the approval record in
+`approvals/`. A fresh temporary workspace mints a fresh name, so the integration suite and the
+npm-resolve and fork-build jails left these behind for ever. `prune.PruneOrphanCnameStateGuarded`
+removes a name's files only when all of the following hold:
+
+- the runtime lists no container of that name **in any state**, and a runtime that cannot be
+  asked declines the whole sweep;
+- no tracking file in `containers/` names it, no live host-services session's key is its hash,
+  and it is not the launching jail's own name;
+- **every** file of the name is older than the age floor, so one recent file keeps them all;
+- for the current-image pointer and the approval record only, the **workspace path is gone**.
+  yolo keeps no registry of workspaces, and the name is a one-way hash, so the pointer is the
+  one record of the path: a name with no readable pointer, or one whose recorded path does not
+  hash back to the name, keeps both. Deleting an approval record makes a returning workspace
+  prompt again, which is safe but should never happen to a workspace that still exists.
+
+A lock file is removed only while the sweep holds its exclusive `flock`, and only if the path
+still names the inode it locked; a busy or replaced lock is skipped and counted. Only names of
+the container-name shape followed by a per-name suffix are candidates, so the machine-wide locks
+(`image-copy.lock`, `housekeeping.lock`, `housekeeping-pass.lock`, `host-apply.lock`,
+`capture-<program>.lock`, `fork-build-<id>.lock`, the `macos-user-*` files) never are. The slot
+runs it host-only, on a container launch; `yolo prune` lists it on a dry run and removes it
+with `--apply`, under `--no-build-roots` like agent staging. A `macos-user` launch's slot does not
+run it yet; `yolo prune` there does.
+
+`fork-build-<id>.lock`, one per fork build, accumulates too and is not swept: its key is a build,
+not a container name, and its reclaimer belongs with the fork-build store's.
 
 ## The levers
 
@@ -780,6 +820,7 @@ only place the values themselves are stated.
 | `*.tmp` grace floor under `cache/images` | 1 hour | `imageCacheTmpGraceFloor` |
 | Owner label | `org.yolo-jail.owner=yolo` | `prune.JailImageOwnerLabel`, `flake.nix` |
 | Prefix roots | `build/prefix-roots/<sha16>` | `image.PrefixRootsDir` |
+| Orphaned per-jail state age floor | 14 days since the newest file of the name | `prune.OrphanCnameAgeFloor` |
 | Housekeeping locks | `locks/housekeeping.lock` (per deletion), `locks/housekeeping-pass.lock` (per pass) | `HousekeepingLockPath`, `HousekeepingPassLockPath` |
 | Housekeeping record | `<workspace>/.yolo/housekeeping.log` | `housekeepingLogName` |
 | Aliased host stores | pants `lmdb_store`; npm, pnpm (store and metadata), yarn, pip, uv, Go build and module caches, cargo registry, mise downloads ([paths](#aliased-host-stores)) | `hostcas.Stores` |
