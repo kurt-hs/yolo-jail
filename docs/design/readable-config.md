@@ -138,7 +138,7 @@ written. That counts in practice: yolo-generated files, `yolo config dump` and t
 inherited copy all expand.
 
 The packs show the same pattern ([§6](#6-packs-the-same-rules)): of the `matt` pack's 860 lines,
-271 are 39 `files` entries that each copy one file to the same-named path, and 425 are
+271 are 39 `files` entries, 32 of which only copy a file or folder to the same path, and 425 are
 `config-overlay` contents, which are pi's own settings, written inside the manifest.
 
 ## 4. The proposed vocabulary
@@ -328,8 +328,10 @@ gains nothing from TOML. Only files a person writes change.
 
 ## 6. Packs: the same rules
 
-The maintainer: *"and my packs."* The 14 shipped packs he selects have 1,343 manifest lines, and his own seven manifests
-have 1,065, of which 860 are `matt`'s (`matt-craft` has no manifest). By contribution kind, `matt` is:
+The maintainer: *"and my packs."* His twelve packs, copied verbatim on 2026-10-24 (`matt-craft`, a
+git pack with no manifest, aside), have 1,688 manifest lines, 394 of them comments. `matt` is 860
+lines and `meta-muse` 512. The other ten run from 9 to 74 lines. Seven of them are the same,
+byte for byte, as the copies staged in this jail. By contribution kind, `matt` is:
 
 | Kind | Entries | Lines | Of them comments |
 | :--- | ---: | ---: | ---: |
@@ -339,14 +341,32 @@ have 1,065, of which 860 are `matt`'s (`matt-craft` has no manifest). By contrib
 | `autonomy` | 1 | 42 | 6 |
 | the other five kinds | 8 | 59 | 5 |
 
-Three levers cover most of it:
+**Most comments explain yolo, not the pack.** `agy-capture` gives 24 of its 74 lines to two
+warnings. Its launch flags must restate `--dangerously-skip-permissions`, because a later pack's
+flag list replaces an earlier one's whole (`launchFlagClaims` in `internal/packload/packload.go`
+assigns, it does not append). Delete that flag, and agy prompts for every tool in a jail. Its
+`statusLine` overlay restates the whole object, because overlays replace objects. `meta-muse`'s
+comments spend paragraphs on which layer (`defaults` or `managed`) wins a render. When a
+pack author has to explain the merge rules on every entry, the merge rules are the shape problem.
+
+**Models are written twice, in two formats.** `meta-muse` writes six model rows straight into pi's
+own `models.json` through a `pi/models` overlay. It repeats the same seven-level `thinkingLevelMap`
+six times. Each `[200k]` row copies every fact of the row it shadows and adds a `wireId`, then
+the ids appear again in a `pi/settings` overlay for compaction. yolo has `wire_id` and
+`model_facts` for exactly that pair. The pack cannot use them, because yolo's model facts have no
+thinking levels, image limits or wire API: those reach pi only through `base`, from a catalog
+entry these models do not have (`internal/config/config.go`, the model-facts comment). So any
+model pi's catalog lacks has to be described in pi's file format, once per agent that wants it.
+
+Six levers cover most of it:
 
 - **P1. A `home/` folder in a pack is laid into the home directory, file by file.** It replaces
-  one-file `files` entries, 39 of them in `matt` alone. File by file means it merges with other
-  packs' and the user's own files in a shared folder such as `~/.pi/agent/extensions`. Two packs
-  claiming one file still refuse the launch, as today. A comment that explained an entry moves into
-  the file, or into the pack's README. A `files` entry stays for what a folder cannot say: a
-  `source` to fetch, `patches`, a `build`.
+  `files` entries that only copy a file or folder to the same path: 32 of `matt`'s 39 (the other 7
+  fetch, patch or build), 6 in `matt-mods` and 1 in `agy-capture`. File by file
+  means it merges with other packs' and the user's own files in a shared folder such as
+  `~/.pi/agent/extensions`. Two packs claiming one file still refuse the launch, as today. A comment
+  that explained an entry moves into the file, or into the pack's README. A `files` entry stays for
+  what a folder cannot say: a `source` to fetch, `patches`, a `build`.
 - **P2. An overlay's content lives in its own file, in the agent's own format.** `overlays/pi-settings.jsonc`
   holds what is now the `config` object of a `config-overlay` entry, and the manifest names the
   surface and, if any, the profile. The 425 lines move out of the manifest rather than shrinking.
@@ -357,13 +377,28 @@ Three levers cover most of it:
 - **P3. Group by kind, and state the pack's identity once.** This is
   [`manifest-language.md`](manifest-language.md)'s model change, already argued there: `[[program]]`
   entries together, no repeated `"kind"` and no repeated `"agent": "claude"`.
+- **P4. A contribution states only what it changes.** A later pack's launch flags add to the list,
+  and an overlay merges into an object key by key. Replacing must be said in as many words
+  (`replace = true`). `agy-capture` then writes `--model gemini-3.8-flash-medium` and nothing else,
+  and losing the permission bypass by deleting a line stops being possible.
+- **P5. A model is declared once, in yolo's model shape, for every agent.** yolo's model facts
+  gain what `meta-muse` needs (thinking levels, image limits, wire API). Its six rows become two
+  models with a `[200k]` twin each through `wire_id`, plus the shared facts once. Each agent's
+  derive writes its own file from them. The `pi/models` overlay is then only for what no agent
+  shape covers.
+- **P6. The obvious is not written.** An install hint that is the same on every package manager
+  is one value: `install = "jq"`, or `install = { all = "fd", apt = "fd-find", dnf = "fd-find" }`.
+  `matt-fzf`'s three programs take 30 lines today for two exceptions. A `config` entry's `codec`
+  follows from its path's extension, `state`'s `scope = "workspace"` is the default, and
+  `run` defaults to `bin`. Each is still writable.
 
 **This overturns a measured premise.** [`pack-conventions.md`](pack-conventions.md#appendix-a-counts)
 counted 10 single-file `files` entries in `matt` on 2026-10-04 and concluded the folder conventions
-save "about five lines in all". There are 39 today. Its rejections of a one-value `install_hints`
-and of a provider implying its profile were that document's own verdicts, not the maintainer's
-rulings, so this doc re-opens both ([§4.3](#43-models-one-name-for-the-common-case) re-opens the
-second).
+save "about five lines in all". There are 39 such copy-only entries across his packs today. Its rejections of a one-value
+`install_hints` and of a provider implying its profile were that document's own verdicts, not the
+maintainer's rulings, so this doc re-opens both ([§4.3](#43-models-one-name-for-the-common-case)
+re-opens the second). Its one-value rejection rested on a test that every shipped hint cite its
+source per manager. P6 keeps that test for shipped packs, which write the per-manager form.
 
 `matt`'s `board` program and two `files` entries, today and under P1 to P3 in TOML:
 
@@ -378,6 +413,30 @@ second).
 [[program]]
 bin = "board"
 from = "programs/board"           # via = "pack" and run = bin are the defaults
+```
+
+`matt-fzf`, whole, today 56 lines, under P1 to P6:
+
+```toml
+name = "matt-fzf"
+description = "Matt's fd|fzf custom file finder for Claude Code's @-file completion."
+# bin/ is at home/.claude/bin/ in the pack
+
+[[program]]
+bin = "fd"
+install = { all = "fd", apt = "fd-find", dnf = "fd-find" }
+
+[[program]]
+bin = "fzf"
+install = "fzf"
+
+[[program]]
+bin = "jq"
+install = "jq"
+
+[[overlay]]
+surface = "claude/settings"
+set.fileSuggestion = { type = "command", command = "~/.claude/bin/file-suggestion.sh" }
 ```
 
 ## 7. Behavior in every case
@@ -397,7 +456,8 @@ from = "programs/board"           # via = "pack" and run = bin are the defaults
 - **A yolo older than this change** ([OQ-RC6](#OQ-RC6)).
 - **What done looks like.** The maintainer's config, migrated, reads correctly cold, line by line,
   against [§2](#2-where-todays-config-misleads)'s table, and is under 60 lines. This repository's is
-  under 15. `matt`'s manifest holds no single-file `files` entry and no overlay body. The approval
+  under 15. `matt`'s manifest holds no single-file `files` entry and no overlay body, `agy-capture` restates no
+  flag it does not change, and `meta-muse` declares each model once. The approval
   prompt has no `*` and no `kind`.
 
 ## 8. What this doc takes over
@@ -516,12 +576,14 @@ the maintainer named.
 5. 💬 <a id="OQ-RC5"></a>**OQ-RC5: Should pack manifests change in the same breaking change?**
 
    The maintainer opens `matt/pack.json` to see what the pack does. It is 860 lines. 271 of them are
-   39 entries that each copy one file to the same-named path, and 425 are pi's settings written
-   inline. The pack conventions doc counted 10 such entries three weeks ago and decided a folder
-   convention was not worth it.
+   39 `files` entries, 32 of them plain copies to the same path, and 425 are pi's settings written
+   inline. In `agy-capture`, deleting one restated flag would make agy prompt for every tool, because
+   a later pack's flags replace the earlier list whole. `meta-muse` writes the same model facts six
+   times in pi's own format, because yolo's model shape cannot hold them.
 
-   - **A — Yes, together.** `home/`, overlay files, and grouping by kind, with `yolo pack migrate`
-     moving the files. One migration for configs and packs.
+   - **A — Yes, together.** All six pack levers (`home/`, overlay files, grouping by kind, merge
+     by default, models in yolo's shape, one-value install hints), with `yolo pack migrate` moving
+     the files. One migration for configs and packs. Any lever can be vetoed alone.
    - **B — Configs first, packs next.** Two migrations. The configs land sooner.
    - **C — Packs stay as they are.** The 860-line manifest stays.
 
