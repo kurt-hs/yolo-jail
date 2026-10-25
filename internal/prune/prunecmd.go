@@ -1075,6 +1075,15 @@ func Run(opts Options) int {
 		}
 	}
 
+	// --- Retired and aged build links (buildstate.go) ---
+	if !opts.NoImageRoots && macosUser {
+		p.line("")
+		p.line("[bold]Retired and aged build links[/bold]")
+		p.line(macosUserNotApplicable)
+	} else if !opts.NoImageRoots {
+		renderBuildStateLinks(p, rt, live, opts.BuildDir(), apply, opts)
+	}
+
 	// --- Orphaned agent staging ---
 	// AGENTS_DIR/<cname> briefing/skill staging dirs whose container is neither
 	// live nor tracked (storage §4). One dir accumulates per distinct container

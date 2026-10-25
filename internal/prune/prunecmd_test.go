@@ -112,6 +112,7 @@ func TestDryRunEmptyEnv(t *testing.T) {
 		"Cached image tarballs  (keep=0)",
 		"Legacy build-root staging dirs",
 		"Dangling build out-links",
+		"Retired and aged build links  (roots nothing reads any more)",
 		"Orphaned agent staging",
 		"Superseded install captures",
 		"Embedded pack trees  (state dir: embedded-packs/, one per build)",

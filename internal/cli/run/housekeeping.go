@@ -218,6 +218,10 @@ func (o *Options) runHousekeeping(rt string, reclaimConsent reclaimConsent, cnam
 	defer sp.End()
 	o.withHousekeepingPass(func(guard prune.Guard) {
 		o.autoReapOldImages(rt, guard)
+		// Build-state links BEFORE store outputs: a prefix root or a retired out-link is
+		// what keeps a superseded install prefix out of that class's reach.
+		o.reapBuildStateLinks(rt, guard)
+		o.reapEmbeddedPackTrees()
 		o.reapSupersededStoreOutputs(rt, guard)
 		o.measureAndPurgeCache(reclaimConsent, guard)
 		o.measureAndPurgeMiseVersions(rt, reclaimConsent, guard)
@@ -245,13 +249,13 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 	housekeepingSlots.Go(func() { safeRun(func() { o.runMacosUserHousekeeping(consent) }) })
 }
 
-// runMacosUserHousekeeping is the macos-user arm's slot body: two of the container slot's
+// runMacosUserHousekeeping is the macos-user arm's slot body: three of the container slot's
 // classes, as one pass under the same pass lock and per-deletion guard as the container's
 // (withHousekeepingPass). Only one of them grows on this backend, the retired loophole state; the
 // other is the shared cache, which this backend does not write and container jails on the same
 // Mac fill.
 //
-// TWO CLASSES, and which ones is decided BY RUNTIME, not by asking anything:
+// THREE CLASSES, and which ones is decided BY RUNTIME, not by asking anything:
 //
 //   - the shared cache's age purge (measureAndPurgeCache, OQ-BF1's offered tier): measured here
 //     for the next launch's offer, purged only on consent. A macos-user sandbox keeps its caches
@@ -260,6 +264,8 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 //     launch offers it like any other launch.
 //   - retired loophole-state generations (reapRetiredLoopholeState): written by every launch's
 //     retirement pass, on every backend.
+//   - other builds' embedded pack trees (reapEmbeddedPackTrees): one per yolo build, on every
+//     backend, gated by each tree's lease rather than by a container runtime.
 //
 // EVERY OTHER CLASS OF THE CONTAINER SLOT IS LEFT OUT, with no probe and no note, because none of
 // their stores grows on this backend and each of their gates asks a container runtime: images,
@@ -267,14 +273,15 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 // may mount one), agent staging (its sweep needs the container runtime's live set, and a session's
 // own staging is kept by prune.SessionStagingNames when a container launch's slot runs), image
 // tars (this backend writes none, and a stamp written here would delay a podman keep-0 pass by a
-// day) and scratch volumes. Agent logs are durable user data and the embedded pack trees are a
-// `yolo prune` class, on every backend.
+// day), scratch volumes and the build-state links (this backend writes none). Agent logs are
+// durable user data.
 func (o *Options) runMacosUserHousekeeping(consent reclaimConsent) {
 	sp := o.Perf.Span("housekeeping.slot")
 	defer sp.End()
 	o.withHousekeepingPass(func(guard prune.Guard) {
 		o.measureAndPurgeCache(consent, guard)
 		o.reapRetiredLoopholeState(guard)
+		o.reapEmbeddedPackTrees()
 	})
 }
 

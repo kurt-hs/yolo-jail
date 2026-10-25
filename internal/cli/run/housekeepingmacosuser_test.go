@@ -155,8 +155,9 @@ func TestMacosUserLaunchRunsItsHousekeepingSlot(t *testing.T) {
 	}
 	// AND STAMPS ONLY ITS OWN CLASSES: a stamp for a container class (image tars, flake-bundle
 	// generations, store outputs, the small classes, the image reap) would delay that class's pass
-	// on a container launch of the same Mac by a day.
-	if got, want := strings.Join(reapStamps(t), ","), "last-cache-reap,last-loophole-state-reap"; got != want {
+	// on a container launch of the same Mac by a day. The embedded-pack class is shared: its store
+	// is the same on every backend.
+	if got, want := strings.Join(reapStamps(t), ","), "last-cache-reap,last-embedded-packs-reap,last-loophole-state-reap"; got != want {
 		t.Errorf("the macos-user slot left the stamps %q, want %q", got, want)
 	}
 }

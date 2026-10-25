@@ -2,8 +2,6 @@ package prune
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -139,37 +137,15 @@ func PrefixStorePathOf(mountSource string) string {
 // liveKnown==false reaps nothing. A root younger than PrefixRootGrace is kept
 // regardless, covering the registration-before-container window described above.
 func PruneOrphanPrefixRoots(rootsDir string, liveSources map[string]bool, liveKnown bool, apply bool, now time.Time) []string {
-	reaped := []string{}
-	if !liveKnown {
-		return reaped
-	}
-	// The live SOURCES are directories; the roots are keyed by the store path.
+	return PruneOrphanPrefixRootsGuarded(rootsDir, liveSources, liveKnown, apply, now, nil)
+}
+
+// livePrefixKeys maps live prefix mount SOURCES (directories) to the keys the roots are
+// named by (the store path's sha16).
+func livePrefixKeys(liveSources map[string]bool) map[string]bool {
 	liveKeys := map[string]bool{}
-	for src := range liveSources {
-		if sp := PrefixStorePathOf(src); sp != "" {
-			liveKeys[image.ImageStoreKey(sp)] = true
-		}
+	for sp := range livePrefixStorePaths(liveSources) {
+		liveKeys[image.ImageStoreKey(sp)] = true
 	}
-	entries, err := os.ReadDir(rootsDir)
-	if err != nil {
-		return reaped
-	}
-	for _, e := range entries {
-		link := filepath.Join(rootsDir, e.Name())
-		st, err := os.Lstat(link)
-		if err != nil || st.Mode()&os.ModeSymlink == 0 {
-			continue
-		}
-		if liveKeys[e.Name()] {
-			continue // a jail is running from this prefix right now
-		}
-		if now.Sub(st.ModTime()) < PrefixRootGrace {
-			continue // registered moments ago; its container may not exist yet
-		}
-		reaped = append(reaped, link)
-		if apply {
-			_ = os.Remove(link)
-		}
-	}
-	return reaped
+	return liveKeys
 }

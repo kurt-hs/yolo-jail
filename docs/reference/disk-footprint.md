@@ -59,6 +59,7 @@ slot and the inventory), and from the lifecycle-sweep half of the plan `storage-
 | The mise use record and its reclaimer | `internal/miseuse`, `internal/entrypoint` (`miseuserecord.go`), `internal/prune` (`miseversions.go`) |
 | The inventory and its sample ledger | `internal/cli/stores` |
 | Lifecycle sweeps | `internal/prune` (`staleoutlinks.go`, `agentstaging.go`, `agentlogs.go`) |
+| Build-state links and embedded pack trees in the slot | `internal/prune` (`buildstate.go`, `embeddedtrees.go`), `internal/cli/run` (`buildstatehousekeeping.go`) |
 
 **Reads with:** [`image-retention.md`](image-retention.md) (what the image and GC-root reapers
 may delete, and on what evidence), [`image-staging-vs-baking.md`](image-staging-vs-baking.md)
@@ -255,8 +256,9 @@ exists for the jail's whole life. Work there never delays the jail, needs no dae
 the launch), and runs with the host's view of every store. It is not a background job: same
 process, same lifetime, same environment.
 
-**What runs there, each class on its own daily stamp:** the superseded-image reap, yolo's own
-store outputs, the shared cache's measure and (with consent) purge, the mise store's measure and
+**What runs there, each class on its own daily stamp:** the superseded-image reap, the
+[build-state links](#build-state-links) (before the store outputs, whose candidates those links
+keep rooted), other builds' embedded pack trees, yolo's own store outputs, the shared cache's measure and (with consent) purge, the mise store's measure and
 (with consent) removal, agent-staging orphans with retired loophole state, image tars,
 superseded flake-bundle generations, and the start of the detached scratch-volume remover
 ([`durable-scratch-space.md`](jail-home.md)). `runHousekeeping` is the
@@ -273,9 +275,10 @@ Three properties anything added must respect:
 - **Nothing that needs a terminal runs there.** The [offer](#the-offer) happens before the
   container attaches.
 
-**On `macos-user`** the launch runs a slot of its own for two classes only, the retired
-loophole-state generations and the shared cache's offered purge, started on its own goroutine
-before the backend's dispatch ([BF-D3](#BF-D3)). **`yolo host`** runs none: it execs into its
+**On `macos-user`** the launch runs a slot of its own for three classes only, the retired
+loophole-state generations, the shared cache's offered purge and other builds' embedded pack
+trees, started on its own goroutine before the backend's dispatch ([BF-D3](#BF-D3),
+[BF-D4](#BF-D4)). **`yolo host`** runs none: it execs into its
 program, and none of the slot's stores grows at that notch.
 
 ## Two tiers, one mapping
@@ -407,6 +410,47 @@ whole pass, naming the container.
 
 In a jail, a prefix root is registered under the host's spelling of its link
 ([`in-jail-nix-roots.md`](in-jail-nix-roots.md#yolos-own-roots)).
+
+**No launch registers a prefix root any more.** A launch now mounts the prebuilt helper binaries
+of the bundle it runs from, so nothing builds an install prefix. The roots already on disk are
+reaped by liveness, from the slot as well as from `yolo prune`, as one of the
+[build-state links](#build-state-links).
+
+### Build-state links
+
+<a id="build-state-links"></a>
+
+The build dir holds GC-root links that only `yolo prune`, or nothing, used to remove. Each one
+roots a store closure, so a link nobody removes is a closure nix can never collect. On
+2026-10-24 one jail's build dir held 938 prefix roots, 413 retired prefix out-links pinning about
+392 install prefixes, 170 image-copier link pairs and six image-extras roots.
+
+**The slot's build-state class removes them, at most once a day, before the store-output
+class**, and `yolo prune` runs the same functions. Each kind keeps the policy the
+[prefix-root test](#prefix-roots) gives it: can losing the link cost only a rebuild?
+
+| Link | Policy | Kept |
+| :--- | :--- | :--- |
+| `prefix-roots/<sha16>` | Liveness | The prefix a running jail executes from, and any root younger than the grace |
+| `jail-prefix-<sha16>`, the retired prefix out-links | Liveness | The out-link of a prefix a running jail executes from. No yolo writes these names any more |
+| `image-copier-<sha16>` and its `-man` twin | Age | The newest link, and any link written within the retention. A dangling link, or a `-man` link with no main link, goes at once. No running jail runs the copier, and a launch that copies rebuilds and re-links it first |
+| `package-roots/extras-*` and `package-roots/jail-*` | Liveness, then age | Any profile a running jail was started with (its `YOLO_STORE_PROFILES` and `YOLO_STORE_FHS_PROFILES`), the newest root of each kind, and any root written within the retention |
+
+**Unknown liveness declines.** If the runtime cannot list its jails, or cannot report one
+running container's mounts or environment, the liveness parts remove nothing, the decline goes to
+`housekeeping.log` naming the missing evidence, and the class stays due for the next launch. The
+copier links need no liveness and are swept either way. The class runs in a jail too: the links
+are in the jail's own build dir, and the runtime it asks is the jail's own.
+
+**Not reaped: the launch records and stock records** (`launch-images/`, `stock-images/`), one
+small file per image identity. A launch record whose store path is gone is already treated as a
+miss by its reader. A stock record is how the image reaper maps a running stock-tagged jail to its
+root, and without one that jail's mapping becomes unknown and the reaper declines
+([`image-retention.md`](image-retention.md#current-values)). Their bytes do not justify that risk.
+
+**Embedded pack trees** (`embedded-packs/`, one per yolo build) are swept by the slot on every
+backend, under their own stamp, by the lease rule `yolo prune` already used: this build's tree is
+never removed, and neither is a tree whose lease is held or cannot be probed.
 
 ### The prefix on macOS
 
@@ -612,6 +656,8 @@ Three sweeps of derived junk, from `yolo prune` and, for staging, the slot:
 - **Regenerable agent logs**, age-purged per workspace overlay. Claude transcripts are excluded:
   they are durable user data.
 
+The [build-state links](#build-state-links) are swept by the slot and by `yolo prune` alike.
+
 ## The levers
 
 <a id="the-levers"></a>
@@ -701,6 +747,7 @@ record](#the-mise-use-record).
 | <a id="BF-D1"></a>BF-D1 | **The vendor version prune runs once per launcher invocation, after the install-or-update branch, under a frozen update policy too; it yields silently to a writer holding the install lock, pays no subprocess in the steady state, and never fails the command.** | A prune moves no version, so a frozen launcher still needs it; a delete that cannot be made must not stop the program under `set -e`. |
 | <a id="BF-D2"></a>BF-D2 | **On `macos-user`, `yolo prune` asks no container runtime and `yolo stores` lists the backend's own storage.** Its running jails are its host-services sessions, read from the locks each session holds; container-only prune sections print one not-applicable line and exit 0; every staging sweep keeps live sessions' staging and declines when sessions cannot be listed; no `sudo`; only this user's sessions are read. | The backend runs no container, so both commands used to fail asking a runtime named `macos-user`. |
 | <a id="BF-D3"></a>BF-D3 | **A `macos-user` launch runs a slot of its own for retired loophole state and the shared cache's offer**, after the config approval and before the launch lock, on its own goroutine, never after the backend returns. | Those two classes grow on a Mac whatever the backend; the others need a container runtime's liveness. |
+| <a id="BF-D4"></a>BF-D4 | *Implementation decision.* **The build-state links and the embedded pack trees are automatic classes of the slot, the links before the store outputs.** Prefix roots, retired prefix out-links and package-profile roots are held by liveness and decline when it is unknown; image-copier links age out with the newest kept. The embedded trees also run in the `macos-user` slot. | Each had a collector only in `yolo prune`, or none, so the closures they root were never freed. The order lets the store-output class reach the prefixes the links stop rooting. |
 
 ## Current values
 
@@ -719,6 +766,7 @@ only place the values themselves are stated.
 | `*.tmp` grace floor under `cache/images` | 1 hour | `imageCacheTmpGraceFloor` |
 | Owner label | `org.yolo-jail.owner=yolo` | `prune.JailImageOwnerLabel`, `flake.nix` |
 | Prefix roots | `build/prefix-roots/<sha16>` | `image.PrefixRootsDir` |
+| Build-link retention (image-copier links, package-profile roots) | 7 days, the newest of each kind kept | `prune.BuildLinkRetention` |
 | Housekeeping locks | `locks/housekeeping.lock` (per deletion), `locks/housekeeping-pass.lock` (per pass) | `HousekeepingLockPath`, `HousekeepingPassLockPath` |
 | Housekeeping record | `<workspace>/.yolo/housekeeping.log` | `housekeepingLogName` |
 | Aliased host stores | pants `lmdb_store`; npm, pnpm (store and metadata), yarn, pip, uv, Go build and module caches, cargo registry, mise downloads ([paths](#aliased-host-stores)) | `hostcas.Stores` |
