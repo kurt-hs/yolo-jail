@@ -816,8 +816,9 @@ const autoReapersOffEnv = "YOLO_NO_AUTO_IMAGE_REAP"
 
 // withAutoReapers turns the automatic reapers back ON for one launch, for a test whose subject is
 // one of them (TestTheSlotReapsLeftoverScratchVolumes). One variable gates them all, so that launch
-// runs every reaper that is due, the image reaper included, against the machine's runtime; only a
-// test that needs one should ask. An empty value is "on": the reapers test for a non-empty one,
+// runs every reaper that is due. The test must call isolateReaperStore first, which gives the
+// launch a private store and leaves due only the classes it names; runLaunch refuses the launch
+// otherwise (reaperstore_test.go). An empty value is "on": the reapers test for a non-empty one,
 // and the launch's environment keeps the last of two entries for a name.
 func withAutoReapers() runOption {
 	return withEnv(autoReapersOffEnv + "=")
@@ -858,7 +859,8 @@ func runCommand(t *testing.T, dir string, args []string, opts ...runOption) resu
 }
 
 // launchTimeout is a launch its deadline ended: the one-line summary, then the detail a
-// reader of a CI log needs to say where it stood (timeoutDetail).
+// reader of a CI log needs to say where it stood (timeoutDetail). It also carries runLaunch's
+// refusal of a reaper launch without a private store (reaperLaunchRefusal), summary only.
 type launchTimeout struct {
 	summary, detail string
 }
@@ -881,6 +883,11 @@ func runLaunch(t *testing.T, dir string, args []string, opts ...runOption) (resu
 	cmd := exec.CommandContext(ctx, name, argv...)
 	cmd.Dir = dir
 	cmd.Env = launchEnvironment(cfg)
+	// A launch with the automatic reapers on reaps whatever store its HOME names, so it must
+	// name a private one (reaperstore_test.go).
+	if msg := reaperLaunchRefusal(cmd.Env); msg != "" {
+		return result{}, &launchTimeout{summary: msg}
+	}
 	awaitDetachedWriters(t, dir, launchHome(cmd.Env))
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

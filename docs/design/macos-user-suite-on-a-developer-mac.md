@@ -279,6 +279,7 @@ if it had none. It also freshens the shared cache class's stamp for that launch,
 runs that class first and its walk is bounded at a minute, longer than the test's session. The stamp's path is exported from the slot (`run.HousekeepingStampPath`), so the
 test cannot drift onto a file the slot does not read. `TestMacosUserSlotReadsTheExportedLoopholeStateStamp`
 and `TestOwnHousekeepingStampHandsTheMachinesStampBack` pin both halves under `-short` on Linux.
+**Superseded on 2026-10-24.** A launch with the reapers on ran every due class against the machine's shared `build/`, so the test now runs on a private store instead (`isolateReaperStore`, `integration/reaperstore_test.go`): its `build/` holds stamps no other launch reads, every class but loophole-state is stamped as just run, and the harness refuses a reaper launch without such a store. `ownHousekeepingStamp` and its test remain for a test that must own a machine stamp.
 Two things the cross-run lock does not keep out, because a developer's own launches do not take
 it: a real pass holding the machine-wide pass lock at that moment, which makes this one skip, and
 a real macos-user launch stamping the class in between. A failure now names both, and the stamps
