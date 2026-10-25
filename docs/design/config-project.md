@@ -64,7 +64,7 @@ optional = true                   # a backend that cannot deliver it skips it
 Most projects need nothing. `yolo` in a folder with no `yolo-jail.toml` runs with defaults;
 `yolo init` writes the three-line pointer file only when asked, and `.yolo/` goes into
 `.git/info/exclude` rather than the project's `.gitignore`. This is convention C5 of
-[`config-user.md`](config-user.md#5-lines-you-never-write).
+[`config-user.md`](config-user.md#8-lines-you-never-write).
 
 ```text
 # before                                   # after

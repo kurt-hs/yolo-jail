@@ -3,9 +3,9 @@ title: "Your config, one screen: packs, logins, and which setup each agent runs 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC14 and OQ-RC15; OQ-RC3, RC13 and RC16 follow"
+next: "Rule OQ-RC14 (§5) and OQ-RC16 (§6); every other section of this document is approved"
 tags: [config, packs, providers, profiles, broker, grants, conventions, design]
-summary: "The user config as one annotated file, today and proposed, the principles it obeys, and the seven choices still open, each a choice between lines of that file. Part of the readable-config redesign; the ledger of rulings is in the front door and the evidence is in the appendix."
+summary: "The user config as one annotated file, today and proposed, then one section per part of it. A section with a question carries that question at its end; a section without one is approved. Part of the readable-config redesign; the ledger of rulings is in the front door and the evidence is in the appendix."
 ---
 
 # Your config, one screen: packs, logins, and which setup each agent runs on
@@ -13,13 +13,13 @@ summary: "The user config as one annotated file, today and proposed, the princip
 **Status:** 2026-10-25. Nothing is built. The "today" file is the maintainer's effective config as
 this jail inherited it, condensed.
 
-**Approved 2026-10-25:** the shape of the file in [§2](#2-the-file-proposed), lever by lever, and
-`allow` as the logins section's name ([ledger](readable-config.md#decision-ledger)). **Still
-open:** the five questions in [§6](#6-open-questions), each a choice between lines of that file;
-the file is written with the leanings, and a `?` marks each line a question could change.
+**How to read this.** [§1](#1-the-file-today) and [§2](#2-the-file-proposed) are the whole file;
+[§4](#4-naming-a-pack-that-is-not-shipped) to [§8](#8-lines-you-never-write) take it one part at a
+time. A section that still needs a decision ends with its question; a section with no question
+is approved, and the [ledger](readable-config.md#decision-ledger) says when.
 
-**Needs your ruling:** [OQ-RC3](#OQ-RC3), [OQ-RC13](#OQ-RC13), [OQ-RC14](#OQ-RC14),
-[OQ-RC15](#OQ-RC15), [OQ-RC16](#OQ-RC16).
+**Needs your ruling:** [OQ-RC14](#OQ-RC14) in [§5](#5-which-setup-each-agent-runs-on),
+[OQ-RC16](#OQ-RC16) in [§6](#6-what-a-jail-may-do-with-your-logins).
 
 > **In short.** Each section of your config names what you decided, in a word you would use, and
 > says it once. The file below is the whole proposal; the prose only says why.
@@ -69,28 +69,30 @@ reader took each line to mean.
 
 ## 2. The file proposed
 
+Approved as a shape on 2026-10-25. The two lines marked `?` are the two questions left.
+
 ```toml
 # ~/.config/yolo-jail/config.toml
 packs = ["pi", "local/pi-fork", "codex", "git", "github", "bedrock", "aws-auth",
          "local/matt", { git = "https://github.com/mschulkind-oss/matt-craft" }, "claude"]
-         # the only switch; local/<name> is ~/.config/yolo-jail/packs/<name>        (?OQ-RC15)
+         # the only switch; local/<name> is ~/.config/yolo-jail/packs/<name>                (§4)
 
-[allow.git]                       # the most any project's jail may do with your logins
+[allow.git]                       # the most any project's jail may do with your logins   (§6)
 fetch = true                      # this project's own remotes                            (?OQ-RC16)
 push = true                       # a project may ask, branch by branch; never a grant by itself
 
 [allow.github]
 read = true
 
-[allow.aws-auth]                  # settings; the switch is the name in packs
+[allow.aws-auth]                  # settings; the switch is the name in packs              (§7)
 profile = "my-sso-profile"
 unnarrowed = true
 
-[run_on]                          # which setup each agent runs on                       (?OQ-RC14)
+[run_on]                          # which setup each agent runs on                       (§5, ?OQ-RC14)
 default = "bedrock"
 claude = false                    # no setup from yolo: claude keeps its own login
 
-[providers.bedrock]               # selectable by its own name                           (?OQ-RC3)
+[providers.bedrock]               # selectable by its own name                           (§5)
 region = "us-east-1"
 model = "global.openai.gpt-6.1-sol"
 
@@ -106,23 +108,40 @@ reasoning = true
 ```
 
 A project's own file asks for what it needs under `[needs.git]` and `[needs.github]`, within
-what `allow` here permits ([`config-project.md`](config-project.md)).
-
-On the maintainer's machines this is four files, not one: `config.toml`, `config.d/overrides.toml`,
-and a work and a personal file that his dotfiles put in `config.d/` on the right machines
+what `allow` here permits ([`config-project.md`](config-project.md)). On the maintainer's machines
+this is four files, not one: `config.toml`, `config.d/overrides.toml`, and a work and a personal
+file that his dotfiles put in `config.d/` on the right machines
 ([appendix A.3](#a3-four-files-not-one)). The whole set is 45 non-blank lines.
 
-### 2.1 Naming a pack that is not shipped
+## 3. Principles
 
-A pack lives in a source you named once, and a source is a directory tree of packs, wherever it
-is: a folder on this machine, or a git repository, which is the same layout fetched (what
-Homebrew calls a tap and Claude Code a marketplace). There is no bare path form.
+1. **Name the decision, not the mechanism.** `push = ["main"]`, not `{"kind": "branch", …}` under
+   `brokered`.
+2. **Say each fact once.** A model's key is its id; the maker follows from the id; facts every
+   model shares sit in `every_model`.
+3. **Write nothing that is the default.**
+4. **One switch, one place.** `packs` is the switch. A heading or a declaration never stands for
+   a value: a settings table selects nothing ([§7](#7-one-switch-and-the-nudge)), and a lone
+   provider does not pick itself as everyone's setup.
+5. **No value is a reserved string.** `true`, `false`, a number, a name, or a list of names;
+   never a phrase yolo has to recognize.
+6. **Two words for two scopes.** `allow` here is the ceiling; `needs` in a project is the ask,
+   and must fit inside it.
+7. **Plural for a collection you fill, singular for one thing.** `packs`, `providers.<name>`,
+   `mcp_servers.<name>`; `run_on`, `allow.git`.
+
+## 4. Naming a pack that is not shipped
+
+Approved 2026-10-25. A pack lives in a source you named once, and a source is a directory tree of
+packs, wherever it is: a folder on this machine, or a git repository, which is the same layout
+fetched (what Homebrew calls a tap and Claude Code a marketplace). Only shipped packs are bare, so
+two authors' `tools` cannot collide and nothing is ever renamed. There is no bare path form.
 
 ```toml
 [pack_sources]                                # named once; each is a tree of <pack>/ directories
 dotfiles = "~/.dotfiles/yolo-packs"
 src = "~/src"
-acme = { git = "https://github.com/acme/yolo-packs" }       # the default branch, locked (C9)
+acme = { git = "https://github.com/acme/yolo-packs" }       # the default branch, locked (§8, C9)
 
 packs = [
   "claude",                                   # shipped: bare; yolo/claude is the explicit spelling
@@ -137,34 +156,164 @@ packs = [
 Two git forms, each with one reading: a repository *of* packs is a source, and a repository that
 *is* a pack is listed directly. Both are fetched and locked as git packs are today
 (`packs.lock.json`). `ref = "v2.1.0"` or `ref = "alice/review"` pins something other than the
-default branch; with no `ref`, the default branch is read from the remote and locked (C9).
+default branch; with no `ref`, the default branch is read from the remote and locked.
 
 The name is used wherever yolo names the pack back to you: the launch's pack line, `yolo pack
-ls`, `explain` and `footprint`, the nudge in [§4](#4-the-nudge-when-a-table-and-a-pack-disagree),
-`pack lint`, and a settings table for a login-serving pack, which TOML then quotes:
-`[allow."local/my-auth"]`. A shipped pack's table stays bare, `[allow.aws-auth]`.
+ls`, `explain` and `footprint`, the nudge in [§7](#7-one-switch-and-the-nudge), `pack lint`, and
+a settings table for a login-serving pack, which TOML then quotes: `[allow."local/my-auth"]`. A
+shipped pack's table stays bare, `[allow.aws-auth]`. How other tools name things from several
+sources, and why this is Homebrew's model, is
+[appendix A.5](#a5-how-other-tools-name-things-from-several-sources).
 
-## 3. Principles
+## 5. Which setup each agent runs on
 
-1. **Name the decision, not the mechanism.** `push = ["main"]`, not `{"kind": "branch", …}` under
-   `brokered`.
-2. **Say each fact once.** A model's key is its id; the maker follows from the id; facts every
-   model shares sit in `every_model`.
-3. **Write nothing that is the default.**
-4. **One switch, one place.** `packs` is the switch. A settings table selects nothing and stands
-   for nothing; a table whose pack is not selected is an error, offered as a fix first
-   ([§4](#4-the-nudge-when-a-table-and-a-pack-disagree)).
-5. **No value is a reserved string.** `true`, `false`, a number, a name, or a list of names;
-   never a phrase yolo has to recognize.
-6. **Two words for two scopes.** `allow` here is the ceiling; `needs` in a project is the ask,
-   and must fit inside it.
-7. **Plural for a collection you fill, singular for one thing.** `packs`, `providers.<name>`,
-   `mcp_servers.<name>`; `run_on`, `allow.git`.
+Today three keys share one word. `providers.bedrock` says where models come from; `profiles.bedrock`
+picks that provider and a starting model; `profile` maps each agent to a profile, with `"*"` for
+everyone and `null` for "keep your own login". Seven of the nine shipped profiles are named after
+the one provider they pick, so `-p bedrock` names one of two things.
 
-## 4. The nudge, when a table and a pack disagree
+**Approved 2026-10-25:** a provider is selectable by its own name and starts on its own `model`.
+A second configuration of the same provider is a *variant* of it: a different starting model, or
+a different route (`via`). Provider and variant names share one namespace, and a shipped profile
+that only repeats its provider's name is deleted. What a profile carried that a provider could not,
+the starting model, now sits on the provider; what a variant is for is the rest.
 
-`allow.<pack>` is valid only when `<pack>` is in `packs`. The check offers the fix first; declined,
-it fails and a launch refuses.
+```toml
+[providers.bedrock]                            # selectable as "bedrock"
+region = "us-east-1"
+model = "global.openai.gpt-6.1-sol"            # where agents start
+
+[providers.bedrock.variants.opus]              # a variant: the same provider, a different start
+model = "global.anthropic.claude-opus-5-5"
+
+[providers.bedrock.variants.bridge]            # or a different route to it
+via = "wire-bridge"
+
+[providers.openai-codex]
+alias = "codex"                                # -p codex keeps working: the provider's own short name
+
+[run_on]                                       # the selection: agent → setup
+default = "bedrock"                            # the provider, by name; -p bedrock
+claude = "bedrock/opus"                        # a variant, as provider/variant; -p bedrock/opus
+codex = false                                  # no setup from yolo: the agent keeps its own login
+pi = ["bedrock", "codex"]                      # several, switchable inside the agent, as today's list is
+```
+
+`-p` and the selection key name the same things, as today. The one thing left is what the two
+keys are called: the selection, and a declared second configuration.
+
+1. 💬 🤷 <a id="OQ-RC14"></a>**OQ-RC14: What are the selection and the declarations called?**
+
+   The example above uses `run_on` and `variants`. Today the pair is `profile` and `profiles`, one
+   letter apart for two different things: one maps each agent to a setup, the other describes a
+   setup. With a provider selectable by name, most declared setups are variants of one provider,
+   which is what makes the word "profile" removable.
+
+   ```toml
+   # A  run_on, and variants under their provider; the word "profile" leaves the config
+   [run_on]
+   default = "bedrock"
+   claude = "bedrock/opus"
+   [providers.bedrock.variants.opus]
+   model = "global.anthropic.claude-opus-5-5"
+
+   # B  agents, and setups  (agents is a retired key: an old yolo refuses it naming packs)
+   [agents]
+   claude = "bedrock-opus"
+   [setups.bedrock-opus]
+   provider = "bedrock"
+   model = "global.anthropic.claude-opus-5-5"
+
+   # C  keep profile, rename only the declarations
+   [profile]
+   claude = "bedrock-opus"
+   [setups.bedrock-opus]
+   provider = "bedrock"
+   model = "global.anthropic.claude-opus-5-5"
+   ```
+
+   <!-- vantage: question id=OQ-RC14 leaning="A: run_on reads as a sentence per agent, a variant is what a same-provider profile is, and the pair goes." -->
+
+   _Leaning:_ A: `run_on` reads as a sentence per agent, a variant is what a same-provider profile
+   is, and the pair goes.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
+## 6. What a jail may do with your logins
+
+Today this is `brokered`: a user read grant `{"kind": "read", "repo": "*"}` and a `grant_kinds`
+list in your config, and per-repository grants in a project's. The broker approves a scope per
+workspace at launch, the project's own remotes plus any it names, and the grants act within it.
+
+**Approved 2026-10-25:** the section is `allow`, and it is the ceiling. A project asks under
+`needs`, and its ask must fit inside. No value is a phrase: `true`, `false`, a name, or a list.
+
+```toml
+# your config: the most any project's jail may do
+[allow.git]
+fetch = true                      # this project's own remotes, as approved at launch (?OQ-RC16)
+push = true                       # a project may ask, branch by branch; never a grant by itself
+
+[allow.github]
+read = true
+write = true                      # a project may ask for create-pr or create-issue
+
+[allow.aws-auth]                  # the AWS login the aws-auth pack serves to the jail
+profile = "my-sso-profile"
+unnarrowed = true
+
+# a project's yolo-jail.toml: what it asks for, within the above   (config-project.md)
+[needs.git]
+push = ["main"]
+new_branches = true
+
+[needs.github]
+write = ["create-pr"]
+repos = ["acme/shared"]           # beyond this repository's own remotes
+```
+
+Approval prompt lines become `+ git: fetch from mschulkind-oss/yolo-jail` and `+ git: push to
+main`; `*` leaves the vocabulary. The four ruled grant kinds map onto these keys
+([appendix A.6](#a6-the-grant-kinds-mapped)). One thing about `fetch` is still open: how far it
+reaches.
+
+1. 💬 <a id="OQ-RC16"></a>**OQ-RC16: May your config let a jail fetch from any repository, not only the project's own?**
+
+   You write `fetch = true`. Today, and in the file above, that reaches the project's remotes as
+   approved at launch, plus what the project's `needs.github.repos` names. An agent that clones a
+   second repository to read it is refused, with the scope in the message. Widening `fetch`
+   changes the broker's per-workspace scope, which the boundary-broker doc rules. A fetch is
+   read-only, so what a wider setting risks is a private repository's contents reaching a jail
+   whose project never named it.
+
+   ```toml
+   # A  a list of patterns widens it; true stays the project's own
+   [allow.git]
+   fetch = ["github.com/mschulkind-oss/*"]        # or ["*"]: any repository the host login reaches
+
+   # B  the project's own remotes only, as today; a project adds others under [needs.github] repos
+   [allow.git]
+   fetch = true
+
+   # C  any repository the host login reaches, always, when fetch = true
+   [allow.git]
+   fetch = true
+   ```
+
+   <!-- vantage: question id=OQ-RC16 leaning="A: the user config is trusted and a read is cheap to widen, but a line that names what it opens beats one that opens everything." -->
+
+   _Leaning:_ A: the user config is trusted and a read is cheap to widen, but a line that names
+   what it opens beats one that opens everything.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
+## 7. One switch, and the nudge
+
+Approved 2026-10-25. `packs` is the only switch; `loopholes.<name>.enabled` goes. A settings table
+such as `[allow.aws-auth]` selects nothing. `allow.<pack>` is valid only when `<pack>` is in
+`packs`; the check offers the fix first, and declined, it fails and a launch refuses.
 
 ```console
 $ yolo check
@@ -187,16 +336,16 @@ $ yolo check
   Set one: yolo config set allow.aws-auth.profile <aws profile>
 ```
 
-## 5. Lines you never write
+What this amends in the loophole rules, and why each one's reason survives, is
+[appendix A.4](#a4-what-l4-amends).
 
-A convention is a default that follows from something you already did, so the line that would
-say it is never written. Three rules bound every one: the explicit key still wins when written;
-`yolo config show` prints what a convention supplied, as `packs = [..., "local/matt"]   # by
-convention: local/ is ~/.config/yolo-jail/packs`; and no convention widens what a jail may do
-with a login. These six are proposed; [OQ-RC13](#OQ-RC13) takes or vetoes each. A heading or a
-declaration never stands for a value: a settings table does not select its pack
-([§4](#4-the-nudge-when-a-table-and-a-pack-disagree)), and a lone provider does not pick itself
-as everyone's setup.
+## 8. Lines you never write
+
+Approved 2026-10-25, all six. A convention is a default that follows from something you already
+did, so the line that would say it is never written. Three rules bound every one: the explicit
+key still wins when written; `yolo config show` prints what a convention supplied, as
+`packs = [..., "local/matt"]   # by convention: local/ is ~/.config/yolo-jail/packs`; and no
+convention widens what a jail may do with a login.
 
 ```toml
 # C1  your packs folder: ~/.config/yolo-jail/packs/<name> is local/<name>
@@ -254,158 +403,9 @@ C9 amends a stated rule: `internal/packsrc/addr.go` makes `?ref=` mandatory beca
 source silently changes under you." The lock file (`packs.lock.json`) records the commit, so an
 omitted ref is pinned at first fetch and moves only on `yolo pack update`, as a git dependency
 does in Cargo, npm and Go. The default branch is read with `git ls-remote --symref <url> HEAD`;
-a remote that does not answer is refused naming the `ref` to write.
-
-## 6. Open questions
-
-1. 💬 <a id="OQ-RC3"></a>**OQ-RC3: Should you be able to pick a provider by its own name, without a profile?**
-
-   The maintainer runs every agent on Bedrock, starting on Sol. Today that is three `bedrock`s. Seven
-   of the nine shipped profiles are named after the provider they pick, so `-p bedrock` names one
-   of two things. The providers doc leans toward keeping profiles as the only selectable thing,
-   because a provider has no place for the starting model; B gives it one. The spelling of a
-   variant is [OQ-RC14](#OQ-RC14)'s; B shows its option A.
-
-   ```toml
-   # A  profiles stay the only thing you select
-   [profiles.bedrock]
-   provider = "bedrock"
-   model = "global.openai.gpt-6.1-sol"
-   [run_on]
-   default = "bedrock"
-
-   # B  a provider is selectable by name and starts on its own model; a profile is only for a variant
-   [providers.bedrock]
-   model = "global.openai.gpt-6.1-sol"
-   [providers.bedrock.variants.opus]              # defining one: the same provider, a different start
-   model = "global.anthropic.claude-opus-5-5"
-   [providers.bedrock.variants.bridge]            # or a different route to it
-   via = "wire-bridge"
-   [run_on]
-   default = "bedrock"                            # using them: the provider by name, …
-   claude = "bedrock/opus"                        #   a variant as provider/variant, and -p bedrock/opus
-
-   # C  only providers; options ride the flag:  -p bedrock:model=opus
-   ```
-
-   <!-- vantage: question id=OQ-RC3 leaning="B: the common case is one name, and the rare case keeps the profile that already works." -->
-
-   _Leaning:_ B: the common case is one name, and the rare case keeps the profile that already
-   works.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-2. 💬 <a id="OQ-RC13"></a>**OQ-RC13: Which of the six conventions go in?**
-
-   A colleague sets up a work machine and writes the file in [§2](#2-the-file-proposed). The six
-   conventions of [§5](#5-lines-you-never-write) take lines off it that follow from what they
-   already did: the pack-sources line (C1), the include line (C2), a project file with nothing to
-   say (C5), a manifest for a pack that is only files (C6), facts the catalog already knows (C7),
-   and a `ref` that is the default branch (C9). Each is still writable, and `yolo config show`
-   prints what a convention supplied.
-
-   - **A — All six.**
-   - **B — Some.** Name the ones to drop; each stands alone.
-   - **C — None.** Every line is written.
-
-   <!-- vantage: question id=OQ-RC13 leaning="A: each of the six reads only what the user already wrote, and none lets a heading or a declaration stand for a value." -->
-
-   _Leaning:_ A: each of the six reads only what the user already wrote, and none lets a heading
-   or a declaration stand for a value.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-3. 💬 🤷 <a id="OQ-RC14"></a>**OQ-RC14: What are the selection and the declarations called?**
-
-   Two keys mean different things: one maps each agent to a setup, the other describes a setup.
-   Today they are `profile` and `profiles`, one letter apart. Under [OQ-RC3](#OQ-RC3)'s B a setup
-   is usually a provider, and a declared one is a variant of it.
-
-   ```toml
-   # A  run_on, and variants under their provider; the word "profile" leaves the config
-   [run_on]
-   default = "bedrock"
-   claude = false
-   [providers.bedrock.variants.opus]              # selected as bedrock/opus
-   model = "global.anthropic.claude-opus-5-5"
-
-   # B  agents, and setups  (agents is a retired key: an old yolo refuses it naming packs)
-   [agents]
-   claude = false
-   [setups.bedrock-opus]
-   provider = "bedrock"
-
-   # C  keep profile, rename only the declarations
-   [profile]
-   claude = false
-   [setups.bedrock-opus]
-   provider = "bedrock"
-   ```
-
-   <!-- vantage: question id=OQ-RC14 leaning="A: run_on reads as a sentence per agent, a variant is what a same-provider profile is, and the pair goes." -->
-
-   _Leaning:_ A: `run_on` reads as a sentence per agent, a variant is what a same-provider profile
-   is, and the pair goes.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-4. 💬 <a id="OQ-RC15"></a>**OQ-RC15: How is a pack that yolo does not ship named in your config?**
-
-   A colleague publishes a pack called `tools`, and so does someone on another team. You list
-   both. Today each is named by the last segment of its address, so the second is refused with
-   "give one an explicit `name`", and you rename it. Homebrew and Claude Code never reach that
-   step ([appendix A.5](#a5-how-other-tools-name-things-from-several-sources)).
-
-   ```toml
-   # A  qualified by source; only shipped packs are bare; no collision can happen
-   pack_sources = { dotfiles = "~/.dotfiles/yolo-packs", acme = { git = "https://github.com/acme/yolo-packs" } }
-   packs = ["claude", "dotfiles/matt", "local/x", "acme/tools"]
-
-   # B  bare names, found in the shipped set or a folder; a name in both is refused and you rename one
-   pack_sources = ["~/.dotfiles/yolo-packs"]
-   packs = ["claude", "matt", "x", { git = "https://github.com/acme/tools", name = "acme-tools" }]
-
-   # C  paths, as today
-   packs = ["claude", "~/.dotfiles/yolo-packs/matt", "git+https://github.com/acme/tools?ref=main"]
-   ```
-
-   <!-- vantage: question id=OQ-RC15 leaning="A: the collision cannot happen, so there is nothing to rename; it is Homebrew's model, and the shipped set is the only bare namespace, as core is." -->
-
-   _Leaning:_ A: the collision cannot happen, so there is nothing to rename; it is Homebrew's
-   model, and the shipped set is the only bare namespace, as core is.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-5. 💬 <a id="OQ-RC16"></a>**OQ-RC16: May your config let a jail fetch from any repository, not only the project's own?**
-
-   You write `[allow.git] fetch = true`. Today that reaches the project's remotes as approved at
-   launch; an agent that clones a second repository to read it is refused with the scope.
-   Widening it changes the broker's per-workspace scope; a fetch is read-only, so what it risks is
-   a private repository's contents reaching a jail whose project never named it.
-
-   ```toml
-   # A  a list of patterns widens it; true stays the project's own
-   [allow.git]
-   fetch = ["github.com/mschulkind-oss/*"]        # or ["*"] for any repository the host login reaches
-
-   # B  the project's own remotes only, as today; a project adds others under [needs.github] repos
-   [allow.git]
-   fetch = true
-
-   # C  any repository, always, when fetch = true
-   ```
-
-   <!-- vantage: question id=OQ-RC16 leaning="A: the user config is trusted and a read is cheap to widen, but a line that names what it opens beats one that opens everything." -->
-
-   _Leaning:_ A: the user config is trusted and a read is cheap to widen, but a line that names
-   what it opens beats one that opens everything.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+a remote that does not answer is refused naming the `ref` to write. C5 and C6 are shown in
+[`config-project.md`](config-project.md#2-no-file-at-all) and
+[`pack-manifests.md`](pack-manifests.md#3-no-manifest-at-all).
 
 ## Appendix: evidence
 
@@ -489,9 +489,8 @@ approved at launch.
 
 ### A.7 Models under the providers doc
 
-The standing leaning on [OQ-PP1](providers-and-profiles-redesign.md#OQ-PP1) keeps profiles as
-the only selectable thing, for [OQ-AP1](active-provider-sets.md#11-decision-ledger)'s reason: a
-provider loses a profile's options, the starting model among them. [OQ-RC3](#OQ-RC3)'s B answers
-that reason directly: the provider carries `model`. What it cannot carry (`via`, a second starting
-model) is what a variant is still for. Provider and variant names share one namespace; a clash is
-refused; a shipped profile that only repeats its provider's name is deleted.
+The providers doc's leaning on [OQ-PP1](providers-and-profiles-redesign.md#OQ-PP1) was to keep
+profiles as the only selectable thing, for [OQ-AP1](active-provider-sets.md#11-decision-ledger)'s
+reason: a provider loses a profile's options, the starting model among them. The ruling in
+[§5](#5-which-setup-each-agent-runs-on) answers that reason directly: the provider carries
+`model`. What it cannot carry (`via`, a second starting model) is what a variant is for.

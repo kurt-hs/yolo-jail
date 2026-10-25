@@ -171,7 +171,7 @@ fetched one is [OQ-RC8](config-migration.md#OQ-RC8).
    extension; `scope = "workspace"` and `run = bin` as defaults. Shipped packs keep the
    per-manager form, which keeps the test that every shipped hint cites its source.
 6. **A pack is named by where it comes from**, never by its manifest
-   ([OQ-RC15](config-user.md#OQ-RC15)).
+   ([OQ-RC15](readable-config.md#decision-ledger), ruled).
 
 ## 7. Open questions
 
@@ -267,4 +267,4 @@ single-file `files` entries in `matt` on 2026-10-05 and found about five lines s
 covered pi-path entries only, where this one covers every copy-only entry across his packs, 39.
 Its rejections of a one-value `install_hints` and of a provider implying its profile were its own
 verdicts, not the maintainer's rulings, so both are re-opened here and in
-[`config-user.md`](config-user.md#OQ-RC3).
+[`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on).
