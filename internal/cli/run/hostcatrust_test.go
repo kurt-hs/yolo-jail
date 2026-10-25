@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/catrust"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 )
 
 // hostCATestCA mints one self-signed CA with the common name cn and returns it as the host read
@@ -143,6 +145,64 @@ func TestALinuxHostSaysWhatItsBundleLeftOut(t *testing.T) {
 	}
 	if len(ht.notes) != 1 || !strings.Contains(ht.notes[0], "1 certificate(s) in "+bundle+" were left out") {
 		t.Errorf("the left-out certificate is not said: %q", ht.notes)
+	}
+}
+
+// A MAC'S SSL_CERT_FILE IS ITS TRUST TOO: a container launch on a macOS host reads the bundle the
+// host's SSL_CERT_FILE names beside the keychains, as a Linux host does (OQ-PS15, "regardless of
+// how that trust got there"). The macOS podman nightly's TestAContainerJailTrustsTheHostsCAs failed
+// because the darwin read took the keychains alone, so the CA the host bundle held never reached
+// the jail and NODE_EXTRA_CA_CERTS was left unset. Runs on Linux by stubbing the host's OS and
+// keychains.
+func TestAMacHostTrustsTheBundleItsSSLCertFileNames(t *testing.T) {
+	keychainCA := hostCATestCA(t, "Example Corp Keychain CA", catrust.SourceSystemKeychain)
+	prevGOOS, prevReaders := hostGOOS, hostKeychainReaders
+	hostGOOS = "darwin"
+	hostKeychainReaders = func() macosuser.KeychainReaders {
+		return macosuser.KeychainReaders{
+			System: func() (string, error) { return keychainCA.PEM, nil },
+			Login:  func() (string, error) { return "", errors.New("no login keychain at /nonexistent") },
+			Verify: func(string) bool { return true },
+		}
+	}
+	t.Cleanup(func() { hostGOOS, hostKeychainReaders = prevGOOS, prevReaders })
+
+	bundleCA := hostCATestCA(t, "Example Corp Integration CA", "x")
+	bundle := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(bundle, []byte(bundleCA.PEM), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SSL_CERT_FILE", bundle)
+	ht := readHostTrustReal()
+	var sources []string
+	for _, c := range ht.cas {
+		sources = append(sources, c.Name+" <- "+c.Source)
+	}
+	want := []string{
+		"Example Corp Keychain CA <- " + catrust.SourceSystemKeychain,
+		"Example Corp Integration CA <- " + catrust.HostBundleSource(bundle),
+	}
+	if !slices.Equal(sources, want) {
+		t.Errorf("a Mac's host read kept %q, want %q", sources, want)
+	}
+
+	// An unreadable SSL_CERT_FILE warns, naming the next step, and keeps the keychains' CAs.
+	t.Setenv("SSL_CERT_FILE", filepath.Join(t.TempDir(), "missing.pem"))
+	ht = readHostTrustReal()
+	if len(ht.cas) != 1 || ht.cas[0].Name != keychainCA.Name {
+		t.Errorf("an unreadable SSL_CERT_FILE dropped the keychain's CA: %+v", ht.cas)
+	}
+	if !slices.ContainsFunc(ht.notes, func(n string) bool {
+		return strings.Contains(n, "could not read this host's CA bundle") && strings.Contains(n, "Point SSL_CERT_FILE")
+	}) {
+		t.Errorf("an unreadable SSL_CERT_FILE is not warned about with its next step: %q", ht.notes)
+	}
+
+	// With SSL_CERT_FILE unset a Mac reads its keychains alone: no Linux distribution path.
+	t.Setenv("SSL_CERT_FILE", "")
+	ht = readHostTrustReal()
+	if len(ht.cas) != 1 || ht.cas[0].Name != keychainCA.Name {
+		t.Errorf("with no SSL_CERT_FILE a Mac's host read kept %+v, want the keychain's CA alone", ht.cas)
 	}
 }
 
