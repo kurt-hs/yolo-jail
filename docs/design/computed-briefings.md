@@ -244,8 +244,8 @@ Rules:
 - **A wildcard is expanded.** A grant on `*` appears on every approved repository; a producer
   never sees `*`.
 - **Concept names, not config names.** `push_new_branches` and `push_branches` survive the
-  readable-config rename of `brokered` to `as_you`, and of grant kinds to `fetch` and `push`
-  ([§4.2 there](readable-config.md#42-what-a-jail-may-do-with-your-logins)). A producer reads the
+  readable-config rename of `brokered` to `allow` and `needs`, and of grant kinds to `fetch` and `push`
+  ([the grant mapping there](config-user.md#a6-the-grant-kinds-mapped)). A producer reads the
   same fields whichever spelling the config uses. This design does not wait on that one.
 - **Sorted and stable.** Every list is sorted, so the same facts give the same bytes.
 - **No credential, no host path.** Nothing in the table is a token, a key path or a host

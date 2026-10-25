@@ -173,7 +173,11 @@ and a pi-subagents registry several extensions can share stays in item 28.
     [the lab report](../lab-reports/2026-10-19-launch-diagnostics-on-a-mac.md).
 
 11. [Rule the readable-config redesign](../design/readable-config.md) — the maintainer, 2026-10-24: *"this is
-    important"*. Its rulings decide the config vocabulary, the file format and the pack layout
+    important"*. It fronts five documents, each one config file with its questions:
+    [the user config](../design/config-user.md), [a project's file](../design/config-project.md),
+    [the editing commands and format](../design/config-commands.md),
+    [the migration](../design/config-migration.md) and [pack manifests](../design/pack-manifests.md).
+    Their rulings decide the config vocabulary, the file format and the pack layout
     together, and they take over [the manifest language](../design/manifest-language.md#OQ-M1)'s first two
     questions, [the pack conventions](../design/pack-conventions.md#OQ-PC1)' three and [what `-p`
     names](../design/providers-and-profiles-redesign.md#OQ-PP1). The broker-grant rework waits on it.
