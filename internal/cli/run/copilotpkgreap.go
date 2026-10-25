@@ -36,20 +36,22 @@ const CopilotPkgMacosUserHousekeepingClass = "copilot-pkg-macos-user"
 // runtime, so a decline would repeat at every launch with a next step that cannot succeed. The
 // skip is noted once a day, under the class's own stamp, naming the documented gap.
 func (o *Options) reapCopilotPkgVersions(rt string, guard prune.Guard) {
-	if rt == "container" { // parity: Warned — yolo reads no Apple Container start time, so the Copilot store is not judged there; noted once a day, naming disk-footprint.md's open gap
-		if o.inJail() || o.Getenv(autoReapOptOutEnv) != "" {
-			return
-		}
-		if due, done := o.classDebounce(CopilotPkgHousekeepingClass); due {
-			o.housekeepingNote("copilot: the self-update store is not judged on Apple Container, which yolo " +
-				"reads no jail start time from yet; disk-footprint.md's open gap \"Parity gap: Apple " +
-				"Container's Copilot self-update class\" is the fix and names the Mac check that unblocks it")
-			done()
-		}
+	if !o.copilotPkgClassRuns() {
 		return
 	}
-	o.reapCopilotPkgStore(CopilotPkgHousekeepingClass, filepath.Join(paths.GlobalStorage(), "cache"),
-		func() prune.JailStarts { return prune.RunningJailStarts(rt, o.pruneRunFunc()) }, guard)
+	due, done := o.classDebounce(CopilotPkgHousekeepingClass)
+	if !due {
+		return
+	}
+	if rt == "container" { // parity: Warned — yolo reads no Apple Container start time, so the Copilot store is not judged there; noted once a day, naming disk-footprint.md's open gap
+		o.housekeepingNote("copilot: the self-update store is not judged on Apple Container, which yolo " +
+			"reads no jail start time from yet; disk-footprint.md's open gap \"Parity gap: Apple " +
+			"Container's Copilot self-update class\" is the fix and names the Mac check that unblocks it")
+		done()
+		return
+	}
+	o.reapCopilotPkgStore(filepath.Join(paths.GlobalStorage(), "cache"),
+		func() prune.JailStarts { return prune.RunningJailStarts(rt, o.pruneRunFunc()) }, guard, done)
 }
 
 // reapMacosUserCopilotPkgVersions is the class on the macos-user slot: macos-user's own store
@@ -58,22 +60,28 @@ func (o *Options) reapCopilotPkgVersions(rt string, guard prune.Guard) {
 // slot's: macos-user runs none of the Linux releases in it, and this slot asks no container
 // runtime, so the container slot judges that one.
 func (o *Options) reapMacosUserCopilotPkgVersions(guard prune.Guard) {
-	o.reapCopilotPkgStore(CopilotPkgMacosUserHousekeepingClass, prune.CopilotPkgCacheMacosUser(paths.GlobalStorageUnder(o.macosUserHostHome())),
-		func() prune.JailStarts { return prune.MacosUserJailStarts(paths.HostServicesBase(o.IsMacOS)) }, guard)
-}
-
-// reapCopilotPkgStore is one store's pass under class's debounce.
-func (o *Options) reapCopilotPkgStore(class, cacheRoot string, jails func() prune.JailStarts, guard prune.Guard) {
-	if o.inJail() {
-		return // the host cache is the host's to sweep
-	}
-	if o.Getenv(autoReapOptOutEnv) != "" {
+	if !o.copilotPkgClassRuns() {
 		return
 	}
-	due, done := o.classDebounce(class)
+	due, done := o.classDebounce(CopilotPkgMacosUserHousekeepingClass)
 	if !due {
 		return
 	}
+	o.reapCopilotPkgStore(prune.CopilotPkgCacheMacosUser(paths.GlobalStorageUnder(o.macosUserHostHome())),
+		func() prune.JailStarts { return prune.MacosUserJailStarts(paths.HostServicesBase(o.IsMacOS)) }, guard, done)
+}
+
+// copilotPkgClassRuns is false in a jail (the host cache is the host's to sweep) and under the
+// automatic reapers' opt-out.
+func (o *Options) copilotPkgClassRuns() bool {
+	return !o.inJail() && o.Getenv(autoReapOptOutEnv) == ""
+}
+
+// reapCopilotPkgStore is one store's pass, its class already due; done stamps the class, and is
+// called only when the pass neither declined nor failed. Each caller takes its own class's
+// debounce, by its constant, so the integration suite's stamp census
+// (TestReaperStampNamesCoverEveryDebouncedClass) can read it.
+func (o *Options) reapCopilotPkgStore(cacheRoot string, jails func() prune.JailStarts, guard prune.Guard, done func()) {
 	res := prune.PruneCopilotPkgVersions(cacheRoot, prune.CopilotPkgKeep, prune.CopilotPkgGrace, o.Now(), jails, true, guard)
 	if res.Declined != "" {
 		o.housekeepingNote("copilot: declined — %s; the next launch asks again, or `yolo prune --apply` "+

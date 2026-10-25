@@ -50,6 +50,8 @@ var reaperStampNames = []string{
 	"last-embedded-packs-reap",
 	"last-store-outputs-reap",
 	"last-cache-reap",
+	"last-copilot-pkg-reap",
+	"last-copilot-pkg-macos-user-reap",
 	"last-mise-versions-reap",
 	"last-small-classes-reap",
 	"last-orphan-cname-state-reap",
