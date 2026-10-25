@@ -188,6 +188,14 @@ type Options struct {
 	// tree is kept. nil => the platform reader (/proc on Linux, kern.proc on darwin,
 	// "could not ask" elsewhere).
 	ProcStarts func() ([]ProcStart, bool)
+	// DevBundlesDir is where `just dev` publishes development bundles. nil => the dev-bundles
+	// child of GlobalStorage(), derived from that seam for EmbeddedPacksDir's reason. "" skips
+	// the section.
+	DevBundlesDir func() string
+	// DevBundleProcs lists the live processes the development-bundle sweep checks for one
+	// executing out of a bundle. false means "could not ask": nothing is removed. nil =>
+	// DevBundleProcStarts (/proc on Linux, "could not ask" elsewhere — devbundles.go says why).
+	DevBundleProcs func() ([]ProcStart, bool)
 }
 
 // ImageCacheKeepUnset marks "--image-cache-keep was not given", so Run can
@@ -310,6 +318,13 @@ func fillDefaults(o *Options) {
 	}
 	if o.ProcStarts == nil {
 		o.ProcStarts = readProcStarts
+	}
+	if o.DevBundlesDir == nil {
+		storage := o.GlobalStorage
+		o.DevBundlesDir = func() string { return DevBundlesDirUnder(storage()) }
+	}
+	if o.DevBundleProcs == nil {
+		o.DevBundleProcs = DevBundleProcStarts
 	}
 	if o.NixStoreGC == nil {
 		// realProbeExec inherits the process env (cmd.Env nil => os.Environ), so
@@ -940,6 +955,31 @@ func Run(opts Options) int {
 		}
 	}
 
+	// --- Development bundles ---
+	// One read-only bundle per source snapshot `just dev` ran (devbundles.go). Held by
+	// liveness — a running jail mounting one, a live process executing out of one — plus the
+	// newest DevBundleKeep, and the whole section removes nothing when either liveness question
+	// cannot be answered. Runs in-jail too: a developer working inside a jail publishes into
+	// the jail's own state dir, and the jail's runtime and /proc are the ones that can answer.
+	var devBundleBytes int64
+	var devBundleCount int
+	if dir := opts.DevBundlesDir(); dir != "" {
+		p.line("")
+		p.line(fmt.Sprintf("[bold]Development bundles[/bold]  [dim](state dir: %s/, one per `just dev` source snapshot; "+
+			"the newest %d are kept)[/dim]", devBundlesLeaf, DevBundleKeep))
+		ev := DevBundleEvidence(rt, live, opts.Exec, opts.DevBundleProcs)
+		bundles := PruneDevBundles(dir, DevBundleKeep, ev, apply, opts.Now(), nil)
+		if bundles.Unknown != "" {
+			p.line(fmt.Sprintf("  [dim]skipped — %s; declining to remove development bundles. "+
+				"Re-run once that can be read, or remove a bundle you know is unused by hand: "+
+				"chmod -R u+w <bundle> && rm -rf <bundle>[/dim]", bundles.Unknown))
+		} else {
+			declinedSweep = renderEmbeddedReap(p, apply, bundles.EmbeddedReap, "bundle(s)") || declinedSweep
+		}
+		devBundleBytes, devBundleCount = bundles.Bytes, bundles.RemovedCount()
+		totalSaved += devBundleBytes
+	}
+
 	// --- Orphaned image GC roots ---
 	// The durable per-image roots (build/roots/<sha16>, image-retention.md "A GC is safe at any moment") that
 	// keep a `nix-collect-garbage` from deleting a jail's closure. Reap the ones
@@ -1317,6 +1357,7 @@ func Run(opts Options) int {
 				{Name: "embedded_pack_trees", Bytes: embeddedTreeBytes, Count: embeddedTreeCount, Unit: "trees"},
 				{Name: "leaked_embedded_temp", Bytes: legacyTempBytes, Count: legacyTempCount, Unit: "dirs"},
 				{Name: "macos_guest_pack_trees", Bytes: guestTreeBytes, Count: guestTreeCount, Unit: "trees"},
+				{Name: "dev_bundles", Bytes: devBundleBytes, Count: devBundleCount, Unit: "bundles"},
 				{Name: "agent_staging", Bytes: agentStagingBytes, Count: agentStagingDirs, Unit: "dirs"},
 				{Name: "shadowed_home", Bytes: shadowedBytes, Count: shadowedItems, Unit: "paths"},
 				{Name: "caches", Bytes: cacheBytes, Count: cacheFiles, Unit: "files"},
@@ -1496,6 +1537,10 @@ type printer struct {
 func (p *printer) line(s string) { p.Print(s) }
 
 // --- real seams ---
+// ProbeExec is realProbeExec for a caller outside this package that asks the runtime the same
+// questions a prune does (`yolo internal dev-bundle-reap`).
+func ProbeExec(argv []string, timeout time.Duration) ProbeResult { return realProbeExec(argv, timeout) }
+
 // realProbeExec runs a container-runtime probe with the given timeout, returning
 // captured stdout. A missing binary / start failure / timeout yields Ran=false;
 // a completed run yields Ran=true with the exit status in RC (the engine treats

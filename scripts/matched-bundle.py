@@ -353,11 +353,37 @@ def _publish_assembled_bundle(home: Path, assembled: Path, identity: str,
         raise
 
 
-def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subprocess.run) -> Path:
+def _touch_reused_bundle(bundle: Path) -> None:
+    """Mark a reused bundle as used now. Its mtime is what the Go reaper (prune.PruneDevBundles)
+    keeps the newest few by and what its grace window reads, so the bundle `just dev` is about to
+    launch is never the one a concurrent sweep collects. Best effort: a bundle we cannot touch is
+    still the right one to run."""
+    try:
+        os.utime(bundle)
+    except OSError:
+        pass
+
+
+def _reap_dev_bundles(launcher: Path, root: Path, runner=subprocess.run) -> None:
+    """Collect unused development bundles with the launcher just published: one rule, in Go
+    (`yolo internal dev-bundle-reap`, the same prune.PruneDevBundles `yolo prune` runs), never a
+    second copy here. It keeps the newest few and anything a running jail or process uses, and
+    prints only when it removed something or declined. Best effort: a failed sweep never fails
+    the build, and `yolo prune --apply` retries it."""
+    try:
+        runner([str(launcher), "internal", "dev-bundle-reap", "--dir", str(root)],
+               stdout=subprocess.DEVNULL, check=False, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subprocess.run,
+                     reaper=_reap_dev_bundles) -> Path:
     """Reuse a complete bundle of this identity and stamp, otherwise publish a fresh immutable build.
 
     A candidate must match the snapshot identity AND the version/commit the ldflags embed, so
     the same content built at another commit or dirtiness is a miss, never a stale stamp.
+    After a publish, the new launcher collects the bundles nothing uses any more (reaper).
     """
     repo = repo.resolve()
     home = home.resolve()
@@ -374,6 +400,7 @@ def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subproc
             try:
                 validate_bundle(candidate, identity, "development", shipped=shipped, guest=guest,
                                 host_os=host_os, host_arch=host_arch, stamps=stamps)
+                _touch_reused_bundle(candidate)
                 return candidate / "bin/yolo"
             except (OSError, ValueError, RuntimeError, json.JSONDecodeError,
                     subprocess.CalledProcessError):
@@ -389,6 +416,7 @@ def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subproc
                                               stamps)
         print(f"Built the development bundle in {time.monotonic() - started:.0f} s.",
               file=sys.stderr, flush=True)
+        reaper(published / "bin/yolo", root)
         return published / "bin/yolo"
 
 

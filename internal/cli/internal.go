@@ -39,7 +39,7 @@ import (
 // rewrite semantics.
 func runInternal(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|ctx-attach|daemon|darwin-bootstrap|discard-rm|fork-build-jail|footer|image-copy|installer-check|log-append|macos-user-profile|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|pack-tree-reap|probe-services|refresh-programs|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
+		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|ctx-attach|daemon|darwin-bootstrap|dev-bundle-reap|discard-rm|fork-build-jail|footer|image-copy|installer-check|log-append|macos-user-profile|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|pack-tree-reap|probe-services|refresh-programs|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
 		return 2
 	}
 	switch args[0] {
@@ -178,6 +178,10 @@ func runInternal(args []string) int {
 		// The launch's podman-on-Linux image copy for `just load` and the integration
 		// suite's stale-image fix, so neither spells it in shell (internalimagecopy.go).
 		return runImageCopy(args[1:])
+	case devBundleReapVerb:
+		// The development-bundle sweep matched-bundle.py runs after publishing a bundle
+		// (devbundlereap.go). Hidden: its caller is that script.
+		return runDevBundleReap(args[1:], os.Stderr, defaultDevBundleReapDeps())
 	case "bundle-dir":
 		// The flake-bundle paths `just install` stages through, printed so the
 		// recipe never recomputes them — the drift that once aimed `rm -rf` at the
