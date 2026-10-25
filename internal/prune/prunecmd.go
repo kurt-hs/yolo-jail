@@ -1181,7 +1181,7 @@ func Run(opts Options) int {
 	}
 
 	// --- Agent log purge (age-based) ---
-	// Regenerable per-agent LOG dirs (copilot/logs, gemini/tmp, gemini-cli/logs)
+	// Regenerable per-agent LOG dirs (AgentLogSubdirs)
 	// under each tracked workspace's overlay + the shared cache (storage §4).
 	// Shares the --cache-age knob. DELIBERATELY EXCLUDES the Claude session
 	// transcripts (claude/projects) — durable, non-regenerable user data the
@@ -1190,7 +1190,7 @@ func Run(opts Options) int {
 	var agentLogFiles int
 	if opts.CacheAge > 0 {
 		p.line("")
-		p.line(fmt.Sprintf("[bold]Agent log purge[/bold]  (copilot/logs, gemini/tmp, gemini-cli/logs; age > %dd)", opts.CacheAge))
+		p.line(fmt.Sprintf("[bold]Agent log purge[/bold]  (%s; age > %dd)", strings.Join(AgentLogSubdirs(), ", "), opts.CacheAge))
 		p.line("  [dim]Claude transcripts (claude/projects) are durable user data — never purged[/dim]")
 		agentLogBytes, agentLogFiles = PurgeAgentLogs(workspaces, opts.GlobalCache(), float64(opts.CacheAge), apply, opts.Now())
 		if agentLogFiles > 0 {

@@ -257,7 +257,8 @@ process, same lifetime, same environment.
 
 **What runs there, each class on its own daily stamp:** the superseded-image reap, yolo's own
 store outputs, the shared cache's measure and (with consent) purge, the mise store's measure and
-(with consent) removal, agent-staging orphans with retired loophole state, image tars,
+(with consent) removal, agent-staging orphans with retired loophole state, the launching
+workspace's agent logs (every launch, no stamp), image tars,
 superseded flake-bundle generations, and the start of the detached scratch-volume remover
 ([`durable-scratch-space.md`](jail-home.md)). `runHousekeeping` is the
 list.
@@ -609,8 +610,52 @@ Three sweeps of derived junk, from `yolo prune` and, for staging, the slot:
 - **Orphaned agent staging** (`agents/<name>`) for names with no tracking file, no live container
   and no live host-services session, past an age floor. A staging sweep declines when the session
   listing cannot run.
-- **Regenerable agent logs**, age-purged per workspace overlay. Claude transcripts are excluded:
-  they are durable user data.
+- **Regenerable agent logs**, age-purged per workspace overlay after 30 days: the allowlisted log
+  directories `copilot/logs`, `gemini/tmp`, `pi/agent/logs` and `codex/log`, and the shared
+  cache's `gemini-cli/logs` (`agentlogs.go`). Session transcripts (`claude/projects`,
+  `pi/agent/sessions`, `codex/sessions`) are excluded: they are durable user data. `yolo prune`
+  sweeps every workspace a live container names; the slot sweeps the launching workspace's
+  overlay at every launch, with no stamp (`reapWorkspaceAgentLogs`), since a workspace whose jail
+  was never running when someone ran `yolo prune` otherwise grew its logs without bound.
+
+## Tool-managed worktrees in the durable dir
+
+<a id="tool-managed-worktrees"></a>
+
+The pi pack points pi-subagents' worktrees at `$YOLO_DURABLE_DIR/worktrees/pi-subagents`, out of
+`/tmp`, so a restart cannot delete a run's work
+([`jail-home.md`](jail-home.md#each-agents-own-pack)). pi-subagents removes a run's worktree
+only when nothing in it would be lost: the tree is unchanged, or a captured patch represents it.
+A tree holding work it could not capture, and every tree of a run cut short, stays by design. In
+`/tmp` a restart deleted those; in the durable dir nothing did, and one workspace held 417 of them
+(31 GB) and 426 registrations within days.
+
+So the pack that moved them bounds them. The pack's extension, which pi loads at every start,
+starts `yolo-jaild reap-worktrees` detached on that directory at most once an hour (the mtime of
+`.yolo-reap.json` there is the rate limit), and never on a directory the user chose. The reaper
+(`internal/worktreereap`) removes, with a plain `git worktree remove`, each `pi-worktree-*`
+worktree that is:
+
+- **clean**: `git status --porcelain` prints nothing, untracked files included; a dirty tree is
+  kept and listed under `kept_dirty` in `.yolo-reap.json`, and the remove itself refuses one
+  again;
+- **unlocked**;
+- **used by no process**: no process's working directory is in it (`/proc`, or `lsof` on
+  darwin); a reaper that cannot read the process table declines the whole pass;
+- **idle past a day**: the newest of the tree's directory and its registration's `HEAD` and
+  `index` mtimes.
+
+The branch is kept, so a commit the tree made stays reachable; the files the tree's own ignore
+rules hide (installed dependencies, build outputs) go with it, and they are the bulk. A
+registration beneath the directory whose tree is already gone, unlocked and a day old, is dropped
+the same way. Nothing else under the durable dir is touched.
+
+**Why in the jail, through the pack:** host code runs no git in a workspace and removes nothing
+beneath the durable dir ([DS-D3](jail-home.md#DS-D3)), and the host cannot see which jail
+processes work in a tree. In the jail, git running the workspace's config is the jail running its
+own code. Core knows no tool's name: the extension hands the reaper the directory and the name
+prefix. **Why not fix pi-subagents' cleanup:** it is right to keep what it cannot prove saved; the
+missing piece was an age and liveness bound, which only something outside the run can apply.
 
 ## The levers
 
@@ -640,10 +685,13 @@ number; each is now one of the mechanisms above.
 - **A byte-budget config key** ([OQ-DF4](#why-its-this-way)). A ceiling evicts what the next
   launch rebuilds; residue with a name gets a reclaimer instead.
 - **Reclaiming an agent's worktrees** or anything else under a workspace tree beyond `.yolo/`.
+  The one bounded exception is in the jail: clean, idle, unused worktrees a pack's own tool made
+  in the directory that pack chose ([tool-managed worktrees](#tool-managed-worktrees)).
 - **Removing an untagged image yolo cannot prove is its own**, or relaxing P5 for the host store.
 - **Editing the host's `nix.conf`.** `yolo check` warns about `min-free`; the edit is the
   human's ([owed host steps](image-retention.md#owed-host-steps)).
-- **Agent logs, transcripts and browser profiles** are durable user data, not reclaimable bulk.
+- **Agent transcripts and browser profiles** are durable user data, not reclaimable bulk. Only the
+  allowlisted log directories age out ([lifecycle sweeps](#lifecycle-sweeps)).
 
 ## Owed measurements and open gaps
 

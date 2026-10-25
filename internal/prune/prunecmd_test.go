@@ -122,7 +122,7 @@ func TestDryRunEmptyEnv(t *testing.T) {
 		// by nothing). `staticcheck` is still absent on purpose — it SELF-TRIMS,
 		// so a 30-day rule there can only ever be a no-op that costs a walk.
 		"Cache purge  (subdirs=uv,pip,npm,go-build,mise,pex,pants,node-gyp,gopls,nce, age > 30d)",
-		"Agent log purge  (copilot/logs, gemini/tmp, gemini-cli/logs; age > 30d)",
+		"Agent log purge  (copilot/logs, gemini/tmp, pi/agent/logs, codex/log, gemini-cli/logs; age > 30d)",
 		"  Claude transcripts (claude/projects) are durable user data — never purged",
 	} {
 		if !hasLine(&buf, want) {

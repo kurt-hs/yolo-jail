@@ -99,6 +99,51 @@ func TestTheDurableReportMapsTheHostSpellingAndFindsGoneRegistrations(t *testing
 	}
 }
 
+// THE BOOT NEVER PRINTS A STOPPED WALK'S FLOOR AS THE SIZE: one launch printed "≥ 12.9 GB" for
+// 410 GB. A walk that finishes records the total; one that stops shows the last recorded total
+// beside its floor and starts the full count in the background. The clock jumps a minute per
+// read, so the 2 s budget runs out at the first check.
+func TestTheDurableReportShowsTheLastFullCountAndStartsTheNext(t *testing.T) {
+	ws, dir := durableFixture(t)
+	if err := os.MkdirAll(filepath.Join(dir, "worktrees", "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// A walk that finishes records what it counted.
+	e := NewEnv(map[string]string{durable.EnvVar: dir})
+	e.Workspace = ws
+	e.Stderr = &bytes.Buffer{}
+	reportDurableDir(e, time.Now)
+	if rec, ok := durable.LastSize(ws); !ok || rec.Bytes != 1 {
+		t.Fatalf("a finished walk recorded %+v, %v; want its 1 B", rec, ok)
+	}
+
+	if err := durable.RecordSize(ws, durable.Size{Bytes: 410_000_000_000}, time.Now().Add(-3*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var started []string
+	oldStart, oldLook := startDurableCountFn, lookJaild
+	t.Cleanup(func() { startDurableCountFn, lookJaild = oldStart, oldLook })
+	lookJaild = func(string) (string, error) { return "/fake/yolo-jaild", nil }
+	startDurableCountFn = func(bin, w, _ string) error { started = append(started, bin+" "+w); return nil }
+
+	clock := time.Now()
+	jumping := func() time.Time { clock = clock.Add(time.Minute); return clock }
+	var stderr bytes.Buffer
+	e.Stderr = &stderr
+	reportDurableDir(e, jumping)
+	out := stderr.String()
+	if !strings.Contains(out, "410.0 GB at the last full count, ") || !strings.Contains(out, "a full count is running for the next launch") {
+		t.Errorf("the stopped walk's line does not lead with the last full count:\n%s", out)
+	}
+	if len(started) != 1 || started[0] != "/fake/yolo-jaild "+ws {
+		t.Errorf("background counts started: %v; want one for %s", started, ws)
+	}
+	if rec, _ := durable.LastSize(ws); rec.Bytes != 410_000_000_000 {
+		t.Errorf("a stopped walk overwrote the complete count: %+v", rec)
+	}
+}
+
 // No variable, no line: the launcher said why the launch has no durable dir.
 func TestTheDurableReportIsSilentWithoutTheVariable(t *testing.T) {
 	var stderr bytes.Buffer

@@ -222,6 +222,7 @@ func (o *Options) runHousekeeping(rt string, reclaimConsent reclaimConsent, cnam
 		o.measureAndPurgeCache(reclaimConsent, guard)
 		o.measureAndPurgeMiseVersions(rt, reclaimConsent, guard)
 		o.reapSmallAutomaticClasses(rt, cname, guard)
+		o.reapWorkspaceAgentLogs(guard)
 		o.reapImageTars(rt, guard)
 		o.reapFlakeBundleGenerations(rt, guard)
 		// Deletes nothing in the slot: it starts the detached remover, which removes each

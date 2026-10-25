@@ -1088,6 +1088,10 @@ What it says, and why each choice stays (the rendered text is pinned in
 > (`core.fsmonitor` runs on `git status`), so yolo running git there would run jail-chosen code as
 > the host user. Every reader opens the dir through `durable.Open`, which refuses a link at `.yolo`
 > as well as at `durable` ([DS-D24](#DS-D24)). `yolo prune` never deletes from it.
+>
+> The one deletion beneath it is the jail's own, never the host's: the pi pack's reaper of the
+> worktrees pi-subagents left in the directory that pack chose
+> ([tool-managed worktrees](disk-footprint.md#tool-managed-worktrees)).
 
 ### The durable worktree convention
 
@@ -1165,7 +1169,12 @@ yolo never deletes a durable worktree, so it makes them hard to forget ([`OQ-DS2
   launch path, where the macos-user bootstrap's `/usr/bin/git` could be the stub that asks to
   install the developer tools ([DS-D19](#DS-D19)). Idle is the newer of a worktree's admin `HEAD`
   and `index` mtimes. Size is the `lstat` total of the whole dir, following no link, under a
-  wall-clock budget; a stopped walk prints `≥` and says so. A workspace that is not a git
+  wall-clock budget. A walk that finishes records its total in `.yolo/durable-size.json`, beside
+  the dir; a stopped one prints the last recorded total and its age, with its own `≥` floor
+  labeled as not the total, and starts `yolo-jaild durable-size` detached, a walk with no budget at
+  the lowest CPU priority that records the next total, so the boot never waits on it (a 410 GB dir
+  printed *"≥ 12.9 GB"* before). The record is written and read only in the jail; host reports
+  measure for themselves ([DS-D3](#DS-D3)). A workspace that is not a git
   repository counts directories under `worktrees/`. None of this refuses or delays the launch past
   the budget.
 - **`yolo check`** adds a Durable dir section listing each worktree with size, idle, branch,
@@ -1199,8 +1208,12 @@ tool must be pointed at the dir, **its own pack does it**, never core:
   that is unset and the variable is set ([DS-D4](#DS-D4), [DS-D23](#DS-D23)). Not a pack `env`
   value, which is literal and cannot spell a per-backend workspace path, and not
   `PI_SUBAGENTS_WORKTREE_DIR` in the process environment, which every child process (a test runner)
-  would inherit. pi-dynamic-workflows hard-codes `<repo>/.pi/worktrees`, which survives and shows as
-  untracked; only an upstream setting can move it.
+  would inherit. Moving them out of `/tmp` also moved them out of the one class a restart cleans,
+  so the same extension bounds them: at most once an hour it starts `yolo-jaild reap-worktrees`,
+  which removes the clean, unlocked, unused `pi-worktree-*` trees idle past a day there and keeps
+  and lists every dirty one ([tool-managed worktrees](disk-footprint.md#tool-managed-worktrees)).
+  pi-dynamic-workflows hard-codes `<repo>/.pi/worktrees`, which survives and shows as untracked;
+  only an upstream setting can move it.
 - **claude**: Claude Code's own worktrees stay in `<repo>/.claude/worktrees/` ([DS-D5](#DS-D5)).
   Redirecting them costs more than it buys: a `WorktreeCreate` hook loses Claude Code's cleanup
   sweep, `.worktreeinclude` and transcript-follows-worktree, Claude Code prompts at the host notch
@@ -1687,6 +1700,8 @@ only place the values themselves are stated.
 | Durable dir and its variable | `<workspace>/.yolo/durable` (`/workspace/.yolo/durable` in a container jail), `YOLO_DURABLE_DIR`; worktrees under `worktrees/` | `durable.DirName`, `durable.EnvVar`, `durable.ContainerJailPath`, `durable.WorktreesDir` |
 | Durable-dir report budgets | size walk 2 s; `yolo check`'s section 10 s; at most 1000 registrations a scan; admin files read 4 KiB at most; directories read in batches of 256 | `durable.WalkBudget`, `durableCheckBudget`, `internal/durable/report.go` (`maxRegistrations`, `adminFileCap`, `readDirBatch`) |
 | pi-subagents' durable base | `$YOLO_DURABLE_DIR/worktrees/pi-subagents`, as `worktreeBaseDir` in `~/.pi/agent/extensions/subagent/config.json` | `packs/pi/extensions/yolo-durable-worktrees.js` |
+| Its reaper | at most hourly, `pi-worktree-*` trees idle past 24 h; report and rate limit `.yolo-reap.json` in that directory | `REAP_INTERVAL_MS` in the extension, `worktreereap.DefaultFloor`, `worktreereap.ReportName` |
+| Durable size record | `<workspace>/.yolo/durable-size.json`, the last complete count, jail-only | `durable.SizeRecordName`, `durable.CountMain` |
 | Storage-class section heading | `## Storage classes: what survives a restart` | `jailcontent.persistenceHeading` |
 
 ## Why it's this way

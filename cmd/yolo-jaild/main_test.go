@@ -90,6 +90,25 @@ func TestNixRootsIsDispatched(t *testing.T) {
 	}
 }
 
+// The worktree reaper's row: the pi pack's extension starts ["yolo-jaild", "reap-worktrees",
+// ...]. With a base that does not exist the pass exits 0; a missing row falls through to
+// usage and exits 2.
+func TestReapWorktreesIsDispatched(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "absent")
+	if rc := run([]string{"reap-worktrees", "--base", base, "--prefix", "pi-worktree-"}); rc != 0 {
+		t.Fatalf("run(reap-worktrees) = %d, want 0 (nothing to reap)", rc)
+	}
+}
+
+// The background size count's row: the boot starts ["yolo-jaild", "durable-size",
+// "--workspace", ws] when its own walk stopped. A workspace with no `.yolo` exits 0; a missing
+// row falls through to usage and exits 2.
+func TestDurableSizeIsDispatched(t *testing.T) {
+	if rc := run([]string{"durable-size", "--workspace", t.TempDir()}); rc != 0 {
+		t.Fatalf("run(durable-size) = %d, want 0", rc)
+	}
+}
+
 // TestRunJudgesGuestScopeAgainstTheRealHome pins run's paths.GuardGuestScope call site (MMP-D7):
 // in a run-as-you macos-user session HOME is <ws>/.yolo/home, so a daemon judging scope by HOME
 // would refuse the workspace's own .yolo. The dispatch is observed through usage, the one row

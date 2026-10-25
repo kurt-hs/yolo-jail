@@ -31,6 +31,12 @@ type Size struct {
 	Partial bool
 	// Unreadable counts directories the walk could not open and skipped.
 	Unreadable int
+	// Last is the last complete count recorded (LastSize), which a launch line shows beside a
+	// partial figure; zero when there is none. The caller sets it; Measure does not.
+	Last SizeRecord
+	// Counting is set by a caller that started a full count in the background
+	// (`yolo-jaild durable-size`), which the launch line then says.
+	Counting bool
 }
 
 // Measure is the lstat total of every regular file in workspace's durable dir, following no
@@ -529,7 +535,7 @@ func LaunchLines(sc Scan, sz Size, sizeErr error, budget time.Duration, now time
 		case sizeErr != nil:
 			parts = append(parts, "size unknown")
 		case sz.Partial:
-			parts = append(parts, fmt.Sprintf("≥ %s (size walk stopped at %s)", HumanBytes(sz.Bytes), budget))
+			parts = append(parts, partialSize(sz, budget, now))
 		default:
 			parts = append(parts, HumanBytes(sz.Bytes))
 		}
@@ -556,6 +562,29 @@ func LaunchLines(sc Scan, sz Size, sizeErr error, budget time.Duration, now time
 			"`git worktree prune -n -v` lists what a prune would drop.", n, noun, strings.Join(shown, ", "), more))
 	}
 	return out
+}
+
+// partialSize is the size cell of a walk that stopped at budget: never the floor alone, which
+// read as the total (a 410 GB dir printed "≥ 12.9 GB"). It leads with the last complete count
+// and its age when there is one, keeps the floor as what this walk counted, and says when the
+// full count is running for the next launch.
+func partialSize(sz Size, budget time.Duration, now time.Time) string {
+	floor := fmt.Sprintf("≥ %s counted in %s", HumanBytes(sz.Bytes), budget)
+	var s string
+	if !sz.Last.MeasuredAt.IsZero() {
+		age := now.Sub(sz.Last.MeasuredAt)
+		when := HumanIdle(age) + " ago"
+		if age < time.Hour {
+			when = "within the hour"
+		}
+		s = fmt.Sprintf("%s at the last full count, %s (%s)", HumanBytes(sz.Last.Bytes), when, floor)
+	} else {
+		s = floor + ", not the total"
+	}
+	if sz.Counting {
+		s += "; a full count is running for the next launch"
+	}
+	return s
 }
 
 func count(n int, one, many string) string {

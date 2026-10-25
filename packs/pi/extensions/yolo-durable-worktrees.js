@@ -14,9 +14,27 @@
 // It changes nothing when YOLO_DURABLE_DIR is unset (the host notch, or a launch with no
 // durable dir) or when the user already set PI_SUBAGENTS_WORKTREE_DIR or their own
 // worktreeBaseDir.
+//
+// AND IT BOUNDS WHAT IT MOVED (docs/reference/disk-footprint.md "Tool-managed worktrees in the
+// durable dir"). pi-subagents removes a run's worktree only when the tree is unchanged or a
+// captured patch represents it (cleanupSingleWorktree, src/runs/shared/worktree.ts); work it
+// could not capture, a run cut short and a restart all leave theirs, by design: nothing
+// pi-subagents cannot prove saved is discarded. In /tmp a restart deleted those; in the durable
+// dir nothing did, and one workspace grew 417 of them (31 GB) in a few days. So, at most once
+// an hour, the extension starts `yolo-jaild reap-worktrees` detached on the directory it set:
+// it removes, with `git worktree remove`, each `pi-worktree-*` tree that is clean, unlocked,
+// unused by any process and idle for a day, and lists the dirty ones it kept in
+// `<dir>/.yolo-reap.json`. Never on a directory the user chose.
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+// pi-subagents names each worktree `pi-worktree-<run>-<index>` (src/runs/shared/worktree.ts).
+export const WORKTREE_PREFIX = "pi-worktree-";
+// The reaper's report, whose mtime is also this rate limit (internal/worktreereap ReportName).
+export const REAP_REPORT = ".yolo-reap.json";
+export const REAP_INTERVAL_MS = 60 * 60 * 1000;
 
 export function durableWorktreeDir(env = process.env) {
 	const durable = env.YOLO_DURABLE_DIR;
@@ -40,10 +58,9 @@ export function subagentConfigPath(env = process.env) {
 	return path.join(agentDir, "extensions", "subagent", "config.json");
 }
 
-export default function registerYoloDurableWorktrees(_pi) {
-	const configPath = subagentConfigPath(process.env);
-	const dir = durableWorktreeDir(process.env);
-
+// configure writes or clears the yolo-managed worktreeBaseDir and reports whether the
+// directory in effect is the one yolo set (true) or none or the user's own (false).
+function configure(configPath, dir) {
 	let config = {};
 	let fileExists = false;
 	try {
@@ -56,21 +73,21 @@ export default function registerYoloDurableWorktrees(_pi) {
 			}
 		}
 	} catch {
-		return;
+		return false;
 	}
 
 	if (dir) {
 		if (config.worktreeBaseDir && !config._yoloManagedWorktreeBaseDir) {
-			return;
+			return false;
 		}
 		if (config.worktreeBaseDir === dir && config._yoloManagedWorktreeBaseDir === true) {
-			return;
+			return true;
 		}
 		config.worktreeBaseDir = dir;
 		config._yoloManagedWorktreeBaseDir = true;
 	} else {
 		if (!config._yoloManagedWorktreeBaseDir) {
-			return;
+			return false;
 		}
 		delete config.worktreeBaseDir;
 		delete config._yoloManagedWorktreeBaseDir;
@@ -78,13 +95,54 @@ export default function registerYoloDurableWorktrees(_pi) {
 			try {
 				if (fileExists) fs.unlinkSync(configPath);
 			} catch {}
-			return;
+			return false;
 		}
 	}
 
 	try {
 		fs.mkdirSync(path.dirname(configPath), { recursive: true });
 		fs.writeFileSync(configPath, `${JSON.stringify(config, null, "\t")}\n`, "utf8");
-	} catch {}
+	} catch {
+		return false;
+	}
+	return Boolean(dir);
 }
 
+// startReap starts one detached reaper pass on dir when the last one is older than the
+// interval, touching the report first so the many pi processes of one workflow start one pass,
+// not one each. It never blocks pi and never fails it: a missing yolo-jaild is ignored.
+export function startReap(dir, env = process.env, spawnFn = spawn, now = Date.now()) {
+	if (!dir) return false;
+	try {
+		if (!fs.lstatSync(dir).isDirectory()) return false;
+	} catch {
+		return false; // no worktree made there yet
+	}
+	const report = path.join(dir, REAP_REPORT);
+	try {
+		if (now - fs.statSync(report).mtimeMs < REAP_INTERVAL_MS) return false;
+	} catch {}
+	try {
+		fs.writeFileSync(report, `${JSON.stringify({ started: new Date(now).toISOString() })}\n`, "utf8");
+	} catch {
+		return false;
+	}
+	const args = ["reap-worktrees", "--base", dir, "--prefix", WORKTREE_PREFIX];
+	const durable = (env.YOLO_DURABLE_DIR || "").replace(/\/+$/, "");
+	if (durable) args.push("--repo", path.dirname(path.dirname(durable))); // <workspace>/.yolo/durable
+	try {
+		const child = spawnFn("yolo-jaild", args, { detached: true, stdio: "ignore", env });
+		child.on?.("error", () => {});
+		child.unref?.();
+	} catch {
+		return false;
+	}
+	return true;
+}
+
+export default function registerYoloDurableWorktrees(_pi) {
+	const dir = durableWorktreeDir(process.env);
+	if (configure(subagentConfigPath(process.env), dir)) {
+		startReap(dir, process.env);
+	}
+}
