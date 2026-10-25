@@ -144,7 +144,9 @@ func TestMacosUserLaunchRunsItsHousekeepingSlot(t *testing.T) {
 		t.Errorf("housekeeping.log does not record the reap (err %v):\n%s", err, note)
 	}
 	// THE PASS ASKS NO RUNTIME: none of the container slot's classes ran, so nothing was asked of
-	// podman, Apple Container or a binary named after this backend, and nothing declined.
+	// podman, Apple Container or a binary named after this backend, and nothing declined. (The
+	// orphaned per-jail state sweep asks a container runtime only when one is on PATH, and this
+	// fixture's PATH has none.)
 	mu.Lock()
 	defer mu.Unlock()
 	if len(slotArgv) != 0 {
@@ -156,7 +158,10 @@ func TestMacosUserLaunchRunsItsHousekeepingSlot(t *testing.T) {
 	// AND STAMPS ONLY ITS OWN CLASSES: a stamp for a container class (image tars, flake-bundle
 	// generations, store outputs, the small classes, the image reap) would delay that class's pass
 	// on a container launch of the same Mac by a day.
-	if got, want := strings.Join(reapStamps(t), ","), "last-cache-reap,last-loophole-state-reap"; got != want {
+	// The orphaned per-jail state stamp is shared with the container slot on purpose: it is the
+	// same sweep over the same store, so whichever slot ran it covers both.
+	if got, want := strings.Join(reapStamps(t), ","),
+		"last-cache-reap,last-loophole-state-reap,last-orphan-cname-state-reap"; got != want {
 		t.Errorf("the macos-user slot left the stamps %q, want %q", got, want)
 	}
 }

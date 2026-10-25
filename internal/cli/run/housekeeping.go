@@ -223,6 +223,7 @@ func (o *Options) runHousekeeping(rt string, reclaimConsent reclaimConsent, cnam
 		o.measureAndPurgeMiseVersions(rt, reclaimConsent, guard)
 		o.reapSmallAutomaticClasses(rt, cname, guard)
 		o.reapWorkspaceAgentLogs(guard)
+		o.reapOrphanCnameState(rt, cname, guard)
 		o.reapImageTars(rt, guard)
 		o.reapFlakeBundleGenerations(rt, guard)
 		o.reapDevBundles(rt, guard)
@@ -253,7 +254,7 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 // other is the shared cache, which this backend does not write and container jails on the same
 // Mac fill.
 //
-// TWO CLASSES, and which ones is decided BY RUNTIME, not by asking anything:
+// THREE CLASSES, and which ones is decided BY RUNTIME, not by asking anything:
 //
 //   - the shared cache's age purge (measureAndPurgeCache, OQ-BF1's offered tier): measured here
 //     for the next launch's offer, purged only on consent. A macos-user sandbox keeps its caches
@@ -262,6 +263,7 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 //     launch offers it like any other launch.
 //   - retired loophole-state generations (reapRetiredLoopholeState): written by every launch's
 //     retirement pass, on every backend.
+//   - orphaned per-jail state (reapOrphanCnameStateMacosUser): see below.
 //
 // EVERY OTHER CLASS OF THE CONTAINER SLOT IS LEFT OUT, with no probe and no note, because none of
 // their stores grows on this backend and each of their gates asks a container runtime: images,
@@ -273,12 +275,17 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 // The agent-log class (reapWorkspaceAgentLogs) is not run here: its allowlist names the podman
 // overlay's `.yolo/home` layout, which this backend's workspace sidecar has not been checked
 // against (disk-footprint.md's backlog).
+//
+// The orphaned per-jail state sweep runs here too: macos-user sessions write per-name keeper,
+// arrival and session locks, and its known set needs no container runtime
+// (reapOrphanCnameStateMacosUser).
 func (o *Options) runMacosUserHousekeeping(consent reclaimConsent) {
 	sp := o.Perf.Span("housekeeping.slot")
 	defer sp.End()
 	o.withHousekeepingPass(func(guard prune.Guard) {
 		o.measureAndPurgeCache(consent, guard)
 		o.reapRetiredLoopholeState(guard)
+		o.reapOrphanCnameStateMacosUser(guard)
 	})
 }
 
