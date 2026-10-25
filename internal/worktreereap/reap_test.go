@@ -358,15 +358,133 @@ func TestAWorktreeWithAnOperationInProgressIsKept(t *testing.T) {
 	}
 }
 
-// A commit only the tree's own branch holds is kept with the tree.
-func TestAWorktreeWhoseCommitIsOnNoOtherRefIsKept(t *testing.T) {
+func (f *fixture) hasBranch(t *testing.T, name string) bool {
+	t.Helper()
+	return strings.Contains(f.git(t, f.repo, "branch", "--list", name), name)
+}
+
+// A commit only the tree's own branch holds does not keep the tree: the branch and its reflog
+// outlive `git worktree remove`. It does keep the branch.
+func TestAWorktreeWhoseCommitIsOnlyOnItsBranchGoesAndTheBranchStays(t *testing.T) {
 	f := newFixture(t)
 	wt := f.add(t, "pi-worktree-ahead-0", old)
 	f.commit(t, wt, "work")
+	tip := strings.TrimSpace(f.git(t, wt, "rev-parse", "HEAD"))
 	f.age(t, wt, "pi-worktree-ahead-0", old)
-	keptUnsaved(t, f, f.reapWith(Options{BranchPrefix: "b-"}), wt, "no other ref")
-	if !strings.Contains(f.git(t, f.repo, "branch", "--list", "b-pi-worktree-ahead-0"), "b-pi-worktree-ahead-0") {
-		t.Fatal("the branch holding the only copy of a commit was deleted")
+	res := f.reapWith(Options{BranchPrefix: "b-"})
+	if !slices.Equal(res.Removed, []string{wt}) || exists(wt) {
+		t.Fatalf("Removed = %v, want [%s]; result %+v", res.Removed, wt, res)
+	}
+	if !f.hasBranch(t, "b-pi-worktree-ahead-0") || len(res.Branches) != 0 {
+		t.Fatalf("the branch holding the only copy of a commit was deleted (Branches %v)", res.Branches)
+	}
+	if got := strings.TrimSpace(f.git(t, f.repo, "rev-parse", "b-pi-worktree-ahead-0")); got != tip {
+		t.Fatalf("the branch moved: %s, want %s", got, tip)
+	}
+}
+
+// Only a local branch or a tag holds a tip for the branch's deletion: a stash entry or a
+// remote-tracking ref can go away (a `git stash drop`, a fetch), and the deleted branch's
+// reflog would go with it.
+func TestAStashOrRemoteRefIsNoHolderForTheBranch(t *testing.T) {
+	for _, holder := range []string{"refs/stash", "refs/remotes/origin/x"} {
+		t.Run(holder, func(t *testing.T) {
+			f := newFixture(t)
+			wt := filepath.Join(f.sub, "pi-worktree-run-0")
+			f.git(t, f.repo, "worktree", "add", "-q", "-b", "pi-subagents/run-0", wt)
+			f.commit(t, wt, "work")
+			if holder == "refs/stash" {
+				// A stash whose base is the tip: its commit contains the tip.
+				if err := os.WriteFile(filepath.Join(wt, "tracked"), []byte("stashed\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				f.git(t, wt, "stash", "-q")
+			} else {
+				f.git(t, f.repo, "update-ref", holder, "pi-subagents/run-0")
+			}
+			f.age(t, wt, "pi-worktree-run-0", old)
+			res := f.reapWith(Options{BranchPrefix: "pi-subagents/"})
+			if !slices.Equal(res.Removed, []string{wt}) {
+				t.Fatalf("Removed = %v; result %+v", res.Removed, res)
+			}
+			if !f.hasBranch(t, "pi-subagents/run-0") || len(res.Branches) != 0 {
+				t.Fatalf("the branch was deleted with only %s holding its tip", holder)
+			}
+		})
+	}
+	t.Run("a tag", func(t *testing.T) {
+		f := newFixture(t)
+		wt := filepath.Join(f.sub, "pi-worktree-run-0")
+		f.git(t, f.repo, "worktree", "add", "-q", "-b", "pi-subagents/run-0", wt)
+		f.commit(t, wt, "work")
+		f.git(t, f.repo, "tag", "kept", "pi-subagents/run-0")
+		f.age(t, wt, "pi-worktree-run-0", old)
+		res := f.reapWith(Options{BranchPrefix: "pi-subagents/"})
+		if !slices.Equal(res.Branches, []string{"pi-subagents/run-0"}) {
+			t.Fatalf("Branches = %v, want the branch a tag holds deleted", res.Branches)
+		}
+	})
+}
+
+// Index bits hide an edit from `git status`, and `git worktree remove` deletes it.
+func TestAnEditTheIndexHidesKeepsTheTree(t *testing.T) {
+	t.Run("assume-unchanged", func(t *testing.T) {
+		f := newFixture(t)
+		name := "pi-worktree-au-0"
+		wt := f.add(t, name, old)
+		f.git(t, wt, "update-index", "--assume-unchanged", "tracked")
+		if err := os.WriteFile(filepath.Join(wt, "tracked"), []byte("edited\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		f.age(t, wt, name, old)
+		res := f.reap()
+		if len(res.Removed) != 0 || !slices.Equal(res.Dirty, []string{wt}) || !strings.Contains(res.Reasons[wt], "assume-unchanged") {
+			t.Fatalf("an assume-unchanged edit was not kept: %+v", res)
+		}
+		if b, _ := os.ReadFile(filepath.Join(wt, "tracked")); string(b) != "edited\n" {
+			t.Fatal("the hidden edit is gone")
+		}
+	})
+	t.Run("skip-worktree on disk", func(t *testing.T) {
+		f := newFixture(t)
+		name := "pi-worktree-sw-0"
+		wt := f.add(t, name, old)
+		f.git(t, wt, "update-index", "--skip-worktree", "tracked")
+		if err := os.WriteFile(filepath.Join(wt, "tracked"), []byte("edited\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		f.age(t, wt, name, old)
+		res := f.reap()
+		if len(res.Removed) != 0 || !slices.Equal(res.Dirty, []string{wt}) || !strings.Contains(res.Reasons[wt], "skip-worktree") {
+			t.Fatalf("a skip-worktree edit was not kept: %+v", res)
+		}
+	})
+	t.Run("skip-worktree absent (a sparse checkout)", func(t *testing.T) {
+		f := newFixture(t)
+		name := "pi-worktree-sparse-0"
+		wt := f.add(t, name, old)
+		f.git(t, wt, "update-index", "--skip-worktree", "tracked")
+		if err := os.Remove(filepath.Join(wt, "tracked")); err != nil {
+			t.Fatal(err)
+		}
+		f.age(t, wt, name, old)
+		if res := f.reap(); !slices.Equal(res.Removed, []string{wt}) {
+			t.Fatalf("a sparse tree with nothing hidden was kept: %+v", res)
+		}
+	})
+}
+
+// A tree with submodules is kept, saying why: their own work is in repositories the reaper
+// does not examine.
+func TestATreeWithSubmodulesIsKeptAsUnknown(t *testing.T) {
+	f := newFixture(t)
+	name := "pi-worktree-sub-0"
+	wt := f.add(t, name, old)
+	f.commit(t, wt, ".gitmodules")
+	f.age(t, wt, name, old)
+	res := f.reap()
+	if len(res.Removed) != 0 || !slices.Equal(res.Unknown, []string{wt}) || !strings.Contains(res.Reasons[wt], "submodules") {
+		t.Fatalf("a tree with submodules was not kept with its reason: %+v", res)
 	}
 }
 
@@ -382,7 +500,7 @@ func TestAGoneRegistrationHoldingACommitIsKept(t *testing.T) {
 		f.age(t, wt, "pi-worktree-gone-0", old)
 		keptUnsaved(t, f, f.reap(), wt, "detached")
 	})
-	t.Run("a commit on no other ref", func(t *testing.T) {
+	t.Run("a commit only its branch holds", func(t *testing.T) {
 		f := newFixture(t)
 		wt := f.add(t, "pi-worktree-gone-0", old)
 		f.commit(t, wt, "work")
@@ -390,7 +508,11 @@ func TestAGoneRegistrationHoldingACommitIsKept(t *testing.T) {
 			t.Fatal(err)
 		}
 		f.age(t, wt, "pi-worktree-gone-0", old)
-		keptUnsaved(t, f, f.reap(), wt, "no other ref")
+		res := f.reapWith(Options{BranchPrefix: "b-"})
+		if !slices.Equal(res.Pruned, []string{wt}) || !f.hasBranch(t, "b-pi-worktree-gone-0") {
+			t.Fatalf("Pruned = %v, branch kept %v; want the registration dropped and the branch kept",
+				res.Pruned, f.hasBranch(t, "b-pi-worktree-gone-0"))
+		}
 	})
 	t.Run("mid-rebase", func(t *testing.T) {
 		f := newFixture(t)
@@ -452,6 +574,43 @@ func TestASyntheticLinkToTheRepositoryDoesNotKeepATree(t *testing.T) {
 	}
 }
 
+// pi-subagents links `<toplevel>/node_modules` from whichever tree its lead ran in: a link to
+// another work tree of the same repository is the tool's too. And the link goes only once
+// every keep check has passed: a tree kept for any reason keeps its link.
+func TestASyntheticLinkToAnotherWorkTreeCountsAndStaysWithAKeptTree(t *testing.T) {
+	f := newFixture(t)
+	lead := filepath.Join(filepath.Dir(f.repo), "lead")
+	f.git(t, f.repo, "worktree", "add", "-q", "-b", "lead", lead)
+	if err := os.MkdirAll(filepath.Join(lead, "node_modules"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fromLead := f.add(t, "pi-worktree-lead-0", old)
+	if err := os.Symlink(filepath.Join(lead, "node_modules"), filepath.Join(fromLead, "node_modules")); err != nil {
+		t.Fatal(err)
+	}
+	detached := filepath.Join(f.sub, "pi-worktree-detached-0")
+	f.git(t, f.repo, "worktree", "add", "-q", "--detach", detached)
+	if err := os.Symlink(filepath.Join(lead, "node_modules"), filepath.Join(detached, "node_modules")); err != nil {
+		t.Fatal(err)
+	}
+	f.age(t, fromLead, "pi-worktree-lead-0", old)
+	f.age(t, detached, "pi-worktree-detached-0", old)
+
+	res := f.reapWith(Options{Synthetic: []string{"node_modules"}})
+	if !slices.Equal(res.Removed, []string{fromLead}) {
+		t.Fatalf("Removed = %v, want the tree linked to the lead's node_modules; result %+v", res.Removed, res)
+	}
+	if !slices.Equal(res.Unsaved, []string{detached}) {
+		t.Fatalf("Unsaved = %v, want the detached tree", res.Unsaved)
+	}
+	if _, err := os.Lstat(filepath.Join(detached, "node_modules")); err != nil {
+		t.Fatalf("the kept tree lost its link: %v", err)
+	}
+	if !exists(filepath.Join(lead, "node_modules")) {
+		t.Fatal("the lead's node_modules was touched")
+	}
+}
+
 // A removed tree's branch goes too when it carries the tool's prefix and another ref holds its
 // tip; a branch without the prefix stays.
 func TestARemovedTreesPrefixedBranchIsDeleted(t *testing.T) {
@@ -477,12 +636,14 @@ func TestARemovedTreesPrefixedBranchIsDeleted(t *testing.T) {
 	}
 }
 
-// A prefix-named directory with no worktree in it is removed only when empty.
+// A prefix-named directory with no worktree in it is removed only when empty and idle past the
+// floor: one the tool just made is about to be filled.
 func TestAnEmptyToolDirectoryIsRemoved(t *testing.T) {
 	f := newFixture(t)
 	empty := filepath.Join(f.sub, "pi-worktree-empty-0")
 	full := filepath.Join(f.sub, "pi-worktree-full-0")
-	for _, d := range []string{empty, full} {
+	fresh := filepath.Join(f.sub, "pi-worktree-fresh-0")
+	for _, d := range []string{empty, full, fresh} {
 		if err := os.Mkdir(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -490,11 +651,20 @@ func TestAnEmptyToolDirectoryIsRemoved(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(full, "notes"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	when := f.now.Add(-old)
+	for _, d := range []string{empty, full} {
+		if err := os.Chtimes(d, when, when); err != nil {
+			t.Fatal(err)
+		}
+	}
 	res := f.reap()
 	if !slices.Equal(res.Emptied, []string{empty}) || exists(empty) {
 		t.Fatalf("Emptied = %v, want [%s]", res.Emptied, empty)
 	}
 	if !exists(filepath.Join(full, "notes")) {
 		t.Fatal("a directory holding files was touched")
+	}
+	if !exists(fresh) {
+		t.Fatal("an empty directory younger than the floor was removed")
 	}
 }

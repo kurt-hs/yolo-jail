@@ -40,7 +40,7 @@ func TestThePersistenceSectionLeadsWithTheDurableDir(t *testing.T) {
 		"- **Per launch** (on disk): `/tmp`, `/run`. Shared by every terminal attached to this jail. Survives nothing",
 		"yolo deletes these once the jail exits",
 		"Throwaway files only, never a worktree.",
-		"- **Per workspace**: `$YOLO_DURABLE_DIR`, your scratch space; in home, only `~/.claude`, `~/.config`, `~/go` (the agents' and tools' own state and installs: never put your work there); `/workspace/.venv` (this jail's own copies, not the host's). Survives restarts and every new launch of this workspace; another workspace has its own. yolo deletes nothing here but agents' log files older than 30 days and clean, idle worktrees a pack's tool left in `$YOLO_DURABLE_DIR`.",
+		"- **Per workspace**: `$YOLO_DURABLE_DIR`, your scratch space; in home, only `~/.claude`, `~/.config`, `~/go` (the agents' and tools' own state and installs: never put your work there); `/workspace/.venv` (this jail's own copies, not the host's). Survives restarts and every new launch of this workspace; another workspace has its own. yolo deletes nothing here but some agents' log files older than 30 days and clean, idle worktrees a pack's tool left in `$YOLO_DURABLE_DIR`.",
 		"- **Every workspace on this machine**: `~/.cache`, `/mise`. Survives restarts and workspace switches, and every jail on this machine shares them",
 		"Tool caches belong here (pip's `~/.cache/pip`, for one), never your work",
 		"- **The workspace itself**: `/workspace`, live on the host: the user's project, not a scratch area; only `$YOLO_DURABLE_DIR` inside it is yours. It outlives every jail, and yolo never cleans it up.",
@@ -252,7 +252,7 @@ func TestAPodmanTmpfsSectionGetsTheRAMClausesAndKeepsItsReadOnlyHome(t *testing.
 		"- **Per launch** (in RAM): `/tmp`, `/run`. Shared by every terminal attached to this jail. Survives " +
 			"nothing: they are gone when the jail stops, and a restart is a new launch with new, empty ones. " +
 			"Everything you put there uses this jail's memory.",
-		"yolo deletes nothing here but agents' log files older than 30 days and clean, idle worktrees a pack's tool left in `$YOLO_DURABLE_DIR`.",
+		"yolo deletes nothing here but some agents' log files older than 30 days and clean, idle worktrees a pack's tool left in `$YOLO_DURABLE_DIR`.",
 		"- **Read-only**: the rest of `/home/agent`",
 	} {
 		if !strings.Contains(sec, want) {

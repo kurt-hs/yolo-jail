@@ -209,7 +209,7 @@ func TestTheBriefingNamesEveryPathInThePersistenceMap(t *testing.T) {
 			// production call site writes, so a map that stopped saying either fact fails here.
 			podmanOnly := []string{
 				"(on disk)", "yolo deletes these once the jail exits",
-				"yolo deletes nothing here but agents' log files older than 30 days", "- **Read-only**:",
+				"yolo deletes nothing here but some agents' log files older than 30 days", "- **Read-only**:",
 			}
 			acOnly := []string{
 				"- **Per launch** (in RAM): ",

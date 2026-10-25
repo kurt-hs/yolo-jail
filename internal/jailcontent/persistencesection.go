@@ -136,7 +136,7 @@ func persistenceSection(m *PersistenceMap, d *DurableDir, workspace, hostWorkspa
 	if hasDurable {
 		worktrees = " and clean, idle worktrees a pack's tool left in `$" + durable.EnvVar + "`."
 	}
-	deletes := "yolo deletes nothing here but agents' log files older than 30 days" + worktrees
+	deletes := "yolo deletes nothing here but some agents' log files older than 30 days" + worktrees
 	switch {
 	case homeDurable:
 		where = append(where, "all of `"+home+"` outside the other classes, writable and kept in "+

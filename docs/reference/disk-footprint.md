@@ -697,16 +697,24 @@ When `yolo-jaild` cannot start, the extension writes the error and the next step
 
 - **clean**: `git status --porcelain` prints nothing, untracked files included; a dirty tree is
   kept and listed under `kept_dirty` in `.yolo-reap.json`, and the remove itself refuses one
-  again. pi-subagents links the repository's `node_modules` into each tree, and a `node_modules/`
+  again. pi-subagents links `<toplevel>/node_modules` into each tree, and a `node_modules/`
   ignore pattern does not match a link, so the extension names it (`--synthetic node_modules`):
-  when the only thing status reports is such a link pointing at `<repository>/node_modules`, the
-  link is removed and status asked again;
+  when the only thing status reports is such a link pointing at the `node_modules` of one of the
+  repository's other work trees (the main one, or the one the lead ran in), the tree counts as
+  clean. The link is removed only once every check here has passed, just before the tree;
+- **hiding nothing from status**: `git ls-files -v` shows no file marked assume-unchanged (a
+  lowercase tag) and no file marked skip-worktree (`S`) that exists on disk. Status cannot show an
+  edit to either, and `git worktree remove` deletes it. A skip-worktree file that is absent is a
+  sparse checkout and holds nothing. Such a tree is kept under `kept_dirty`, naming the file;
+- **without submodules**: a `.gitmodules` in the tree or a `modules/` admin dir keeps it under
+  `kept_unknown`, since a submodule's own work is in a repository the reaper does not examine;
 - **saved**: an empty status is not enough, because a tree can hold the only copy of a commit
   (an amend in the middle of a rebase leaves one that only a detached HEAD names). The tree's HEAD
-  must be a branch (`git symbolic-ref -q HEAD`), no operation may be in progress (`rebase-merge`,
-  `rebase-apply`, `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD` or `BISECT_LOG` in its admin
-  dir), and its HEAD commit must be reachable from some ref other than its own branch. A tree that
-  fails is kept under `kept_unsaved`, with the reason under `reasons`;
+  must be a branch (`git symbolic-ref -q HEAD`), and no operation may be in progress
+  (`rebase-merge`, `rebase-apply`, `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD` or `BISECT_LOG`
+  in its admin dir). A tree that fails is kept under `kept_unsaved`, with the reason under
+  `reasons`. Nothing more is asked of a tree on a branch: the branch and its reflog outlive
+  `git worktree remove`, so its commits stay reachable;
 - **unlocked**;
 - **used by no process**: no process's working directory is in it (`/proc`, or `lsof` on
   darwin); a reaper that cannot read the process table declines the whole pass. The table is the
@@ -716,12 +724,14 @@ When `yolo-jaild` cannot start, the extension writes the error and the next step
   `index` mtimes.
 
 After a removal, the tree's branch is deleted when it carries the `pi-subagents/` prefix the
-extension passes and another ref still holds its tip; any other branch stays. The files the tree's
-own ignore rules hide (installed dependencies, build outputs) go with it, and they are the bulk.
-A registration beneath the directory whose tree is already gone, unlocked and a day old, is
-dropped the same way, after the same saved check against its admin dir. An empty `pi-worktree-*`
-directory with no `.git` is removed with a plain `rmdir`. Nothing else under the durable dir is
-touched.
+extension passes and another local branch or a tag holds its tip; any other branch stays. A stash
+entry or a remote-tracking ref is no holder: deleting the branch drops its reflog, and a later
+`git stash drop` or fetch would then lose the commit. The files the tree's own ignore rules hide
+(installed dependencies, build outputs) go with it, and they are the bulk. A registration
+beneath the directory whose tree is already gone, unlocked and a day old, is dropped the same way,
+after the same saved check against its admin dir. An empty `pi-worktree-*` directory with no
+`.git`, idle past the same day, is removed with a plain `rmdir`. Nothing else under the durable
+dir is touched.
 
 **Why in the jail, through the pack:** host code runs no git in a workspace and removes nothing
 beneath the durable dir ([DS-D3](jail-home.md#DS-D3)), and the host cannot see which jail
@@ -867,7 +877,7 @@ number; each is now one of the mechanisms above.
 - **A byte-budget config key** ([OQ-DF4](#why-its-this-way)). A ceiling evicts what the next
   launch rebuilds; residue with a name gets a reclaimer instead.
 - **Reclaiming an agent's worktrees** or anything else under a workspace tree beyond `.yolo/`.
-  The one bounded exception is in the jail: clean, saved, idle, unused worktrees a pack's own
+  The one bounded exception is in the jail: clean, idle, unused worktrees on a branch a pack's own
   tool made beneath the durable dir ([tool-managed worktrees](#tool-managed-worktrees)).
 - **Removing an untagged image yolo cannot prove is its own**, or relaxing P5 for the host store.
 - **Editing the host's `nix.conf`.** `yolo check` warns about `min-free`; the edit is the

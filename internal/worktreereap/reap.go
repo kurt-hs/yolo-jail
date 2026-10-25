@@ -13,15 +13,18 @@
 //
 // IT NEVER DISCARDS WORK. An empty `git status` is not enough, because a tree can be clean and
 // still hold the only copy of a commit (an amend in the middle of a rebase leaves a detached
-// HEAD no ref names). A tree is removed only when, besides a clean status, its HEAD is a
-// branch, no operation (rebase, merge, cherry-pick, revert, bisect) is in progress in it, and
-// its HEAD commit is reachable from some ref other than its own branch; anything else is kept
-// and reported (Result.Dirty, Result.Unsaved). The removal is a plain `git worktree remove`,
+// HEAD no ref names) or an edit status cannot see (a file marked assume-unchanged, or
+// skip-worktree and on disk). A tree is removed only when, besides a clean status, no index
+// bit hides an edit, it has no submodules, its HEAD is a branch, and no operation (rebase,
+// merge, cherry-pick, revert, bisect) is in progress in it; anything else is kept and reported
+// (Result.Dirty, Result.Unsaved, Result.Unknown). A tree on a branch needs nothing more: the
+// branch and its reflog outlive the removal. The removal is a plain `git worktree remove`,
 // which refuses a changed tree again on its own. The tree's branch is deleted only when it
-// carries the caller's branch prefix and its tip is reachable from another ref. Only files the
-// worktree's own ignore rules hide go with the tree: build outputs and installed dependencies,
-// the bulk of a worktree's bytes; and a synthetic link the tool put there (Options.Synthetic)
-// when it points at the repository's own copy.
+// carries the caller's branch prefix and another local branch or a tag holds its tip; a stash
+// or a remote-tracking ref is no holder. Only files the worktree's own ignore rules hide go
+// with the tree: build outputs and installed dependencies, the bulk of a worktree's bytes; and
+// a synthetic link the tool put there (Options.Synthetic) when it points at the `node_modules`
+// of one of the repository's work trees, removed only once every keep check has passed.
 //
 // A REAPER THAT CANNOT ASK DECLINES: when the process table cannot be read, no worktree can be
 // shown unused, and nothing is removed (Result.Declined). The table is the jail's own: a
@@ -74,13 +77,14 @@ type Options struct {
 	// (ProcessCwds). An error declines the whole pass.
 	LiveCwds func() ([]string, error)
 	// Synthetic are names the tool links into each worktree from the repository (pi-subagents
-	// links `node_modules`). A link at one of them that points at `<repository>/<name>` makes
-	// git report the tree untracked (`?? node_modules`: an ignore pattern ending in `/` does not
-	// match a link), so when it is the only thing status reports, the link is removed and status
-	// asked again. Nothing else at such a name is touched.
+	// links `<toplevel>/node_modules`). Such a link makes git report the tree untracked (`??
+	// node_modules`: an ignore pattern ending in `/` does not match a link), so when status
+	// reports nothing else and the link points at `<work tree>/<name>` for one of the
+	// repository's other work trees, the tree counts as clean and the link is removed just
+	// before the tree. Nothing else at such a name is touched.
 	Synthetic []string
 	// BranchPrefix, when set, lets a removed tree's branch be deleted too, if its name starts
-	// with it and its tip is reachable from another ref. Empty keeps every branch.
+	// with it and another local branch or a tag holds its tip. Empty keeps every branch.
 	BranchPrefix string
 	// Git runs git with args in dir and returns its standard output; nil runs the real one.
 	Git func(dir string, args ...string) (string, error)
@@ -93,8 +97,8 @@ type Result struct {
 	Removed []string `json:"removed"`
 	// Pruned are registrations beneath Base whose directory was already gone, now dropped.
 	Pruned []string `json:"pruned,omitempty"`
-	// Dirty are kept because they hold uncommitted changes or untracked files: the one list
-	// a person may need to act on.
+	// Dirty are kept because they hold uncommitted changes or untracked files, or a file whose
+	// edits the index hides (Reasons names it): the one list a person may need to act on.
 	Dirty []string `json:"kept_dirty,omitempty"`
 	// Live are kept because a running process works inside them.
 	Live []string `json:"kept_live,omitempty"`
@@ -102,13 +106,12 @@ type Result struct {
 	Locked []string `json:"kept_locked,omitempty"`
 	// Young are kept because they were active within the floor.
 	Young []string `json:"kept_young,omitempty"`
-	// Unsaved are kept, with a clean status, because their HEAD is detached, an operation is in
-	// progress, or their HEAD commit is on no other ref: removing them could lose a commit.
-	// Reasons says which.
+	// Unsaved are kept, with a clean status, because their HEAD is detached or an operation is
+	// in progress: removing them could lose a commit. Reasons says which.
 	Unsaved []string `json:"kept_unsaved,omitempty"`
 	// Unknown are kept because something about them could not be read or checked.
 	Unknown []string `json:"kept_unknown,omitempty"`
-	// Emptied are empty prefix-named directories with no `.git`, removed.
+	// Emptied are empty prefix-named directories with no `.git`, idle past the floor, removed.
 	Emptied []string `json:"removed_empty,omitempty"`
 	// Branches are the branches deleted after their trees were removed.
 	Branches []string `json:"deleted_branches,omitempty"`
@@ -165,7 +168,12 @@ func Reap(o Options) Result {
 	commons := map[string]bool{}
 	for _, wt := range candidates(o.Base, o.Prefix) {
 		if _, err := os.Lstat(filepath.Join(wt, ".git")); errors.Is(err, fs.ErrNotExist) {
-			// A directory the tool left with no worktree in it: removed only when empty.
+			// A directory the tool left with no worktree in it: removed only when empty and idle
+			// past the floor, so one the tool is about to fill is not taken from under it.
+			fi, err := os.Lstat(wt)
+			if err != nil || now.Sub(fi.ModTime()) < o.Floor {
+				continue
+			}
 			if os.Remove(wt) == nil {
 				res.Emptied = append(res.Emptied, wt)
 			}
@@ -185,7 +193,11 @@ func Reap(o Options) Result {
 		case inUse(wt, cwds):
 			res.Live = append(res.Live, wt)
 		default:
-			clean, err := o.clean(wt, w)
+			if why := submodules(wt, w.admin); why != "" {
+				keep(&res.Unknown, wt, why)
+				continue
+			}
+			links, clean, err := o.status(wt, w.common)
 			if err != nil {
 				keep(&res.Unknown, wt, "git status: "+err.Error())
 				continue
@@ -194,7 +206,16 @@ func Reap(o Options) Result {
 				res.Dirty = append(res.Dirty, wt)
 				continue
 			}
-			branch, why, err := o.saved(wt, w.admin, w.common)
+			why, err := o.hidden(wt)
+			if err != nil {
+				keep(&res.Unknown, wt, "git ls-files -v: "+err.Error())
+				continue
+			}
+			if why != "" {
+				keep(&res.Dirty, wt, why)
+				continue
+			}
+			branch, why, err := o.saved(wt, w.admin)
 			if err != nil {
 				keep(&res.Unknown, wt, err.Error())
 				continue
@@ -203,8 +224,16 @@ func Reap(o Options) Result {
 				keep(&res.Unsaved, wt, why)
 				continue
 			}
+			// Every keep check has passed: only now go the tool's links, which `git worktree
+			// remove` would otherwise refuse as untracked. A failed remove puts them back.
+			restore, err := removeLinks(links)
+			if err != nil {
+				keep(&res.Unknown, wt, err.Error())
+				continue
+			}
 			// No --force: git refuses again if anything changed since the status.
 			if _, err := o.Git(w.common, "worktree", "remove", wt); err != nil {
+				restore()
 				keep(&res.Unknown, wt, "git worktree remove: "+err.Error())
 				continue
 			}
@@ -220,7 +249,7 @@ func Reap(o Options) Result {
 	}
 	for _, c := range sortedKeys(commons) {
 		for _, g := range goneRegistrations(c, bases, o.Prefix, now, o.Floor) {
-			branch, why, err := o.saved("", g.admin, c)
+			branch, why, err := o.saved("", g.admin)
 			if err != nil {
 				keep(&res.Unknown, g.path, err.Error())
 				continue
@@ -244,49 +273,125 @@ func Reap(o Options) Result {
 	return res
 }
 
-// clean reports whether wt's status is empty, after removing a synthetic link the tool made
-// when that link is the only thing status reports.
-func (o Options) clean(wt string, w worktree) (bool, error) {
-	status, err := o.Git(wt, "status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none")
+// link is a synthetic link the tool made in a worktree, and what it points at as written.
+type link struct{ path, target string }
+
+// status reports whether wt's status is empty but for synthetic links the tool made, and
+// returns those links. It removes nothing: the caller removes them only once every other keep
+// check has passed.
+func (o Options) status(wt, common string) ([]link, bool, error) {
+	out, err := o.Git(wt, "status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none")
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
-	lines := nonEmptyLines(status)
-	if len(lines) == 0 {
-		return true, nil
-	}
-	repoTree := ""
-	if filepath.Base(w.common) == ".git" {
-		repoTree = filepath.Dir(w.common)
-	}
-	var links []string
-	for _, l := range lines {
+	var tops []string
+	var links []link
+	for _, l := range nonEmptyLines(out) {
 		name, ok := strings.CutPrefix(l, "?? ")
 		name = strings.TrimSuffix(name, "/")
-		if !ok || repoTree == "" || !slicesContains(o.Synthetic, name) {
-			return false, nil
+		if !ok || !slicesContains(o.Synthetic, name) {
+			return nil, false, nil
 		}
 		p := filepath.Join(wt, name)
 		fi, err := os.Lstat(p)
 		if err != nil || fi.Mode()&fs.ModeSymlink == 0 {
-			return false, nil
+			return nil, false, nil
 		}
 		target, err := os.Readlink(p)
-		if err != nil || !samePath(absFrom(wt, target), filepath.Join(repoTree, name)) {
-			return false, nil
+		if err != nil {
+			return nil, false, nil
 		}
-		links = append(links, p)
-	}
-	for _, p := range links {
-		if err := os.Remove(p); err != nil {
-			return false, err
+		if tops == nil {
+			tops = o.toplevels(common, wt)
 		}
+		match := false
+		for _, top := range tops {
+			if samePath(absFrom(wt, target), filepath.Join(top, name)) {
+				match = true
+				break
+			}
+		}
+		if !match {
+			return nil, false, nil
+		}
+		links = append(links, link{path: p, target: target})
 	}
-	status, err = o.Git(wt, "status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none")
+	return links, true, nil
+}
+
+// toplevels are the work trees of common's repository other than wt: the main worktree and every
+// linked one. pi-subagents links `<toplevel>/node_modules` from whichever tree its lead ran in, so
+// a synthetic link to any of them is the tool's.
+func (o Options) toplevels(common, wt string) []string {
+	var out []string
+	if filepath.Base(common) == ".git" {
+		out = append(out, filepath.Dir(common))
+	}
+	list, err := o.Git(common, "worktree", "list", "--porcelain")
 	if err != nil {
-		return false, err
+		return out
 	}
-	return len(nonEmptyLines(status)) == 0, nil
+	for _, l := range nonEmptyLines(list) {
+		if p, ok := strings.CutPrefix(l, "worktree "); ok && !samePath(p, wt) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// removeLinks removes the tool's links and returns a function that puts them back.
+func removeLinks(links []link) (func(), error) {
+	var done []link
+	restore := func() {
+		for _, l := range done {
+			_ = os.Symlink(l.target, l.path)
+		}
+	}
+	for _, l := range links {
+		if err := os.Remove(l.path); err != nil {
+			restore()
+			return func() {}, fmt.Errorf("removing the tool's link %s: %v", l.path, err)
+		}
+		done = append(done, l)
+	}
+	return restore, nil
+}
+
+// hidden is a reason to keep wt when its index hides edits from `git status`: a file marked
+// assume-unchanged (a lowercase `git ls-files -v` tag), or one marked skip-worktree (`S`) that
+// exists on disk. `git worktree remove` deletes either with the tree. A skip-worktree file that is
+// absent is a sparse checkout doing its job, and holds nothing.
+func (o Options) hidden(wt string) (string, error) {
+	out, err := o.Git(wt, "ls-files", "-v", "-z")
+	if err != nil {
+		return "", err
+	}
+	for _, e := range strings.Split(out, "\x00") {
+		if len(e) < 3 || e[1] != ' ' {
+			continue
+		}
+		tag, path := e[0], e[2:]
+		switch {
+		case tag >= 'a' && tag <= 'z':
+			return "a file is marked assume-unchanged (" + path + "), so git status cannot show an edit to it", nil
+		case tag == 'S':
+			if _, err := os.Lstat(filepath.Join(wt, path)); err == nil {
+				return "a file is marked skip-worktree (" + path + ") and is on disk, so git status cannot show an edit to it", nil
+			}
+		}
+	}
+	return "", nil
+}
+
+// submodules is a reason to keep wt when it has submodules: their own uncommitted work and
+// unpushed commits live in repositories this reaper does not examine.
+func submodules(wt, admin string) string {
+	for _, p := range []string{filepath.Join(wt, ".gitmodules"), filepath.Join(admin, "modules")} {
+		if _, err := os.Lstat(p); err == nil {
+			return "it has submodules, whose own changes and commits this reaper does not check; remove it yourself once they are saved"
+		}
+	}
+	return ""
 }
 
 // inProgress are the admin-dir entries git keeps while an operation is under way in a
@@ -294,10 +399,12 @@ func (o Options) clean(wt string, w worktree) (bool, error) {
 var inProgress = []string{"rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG"}
 
 // saved decides whether a clean worktree's commits are safe without it. It returns the tree's
-// branch (refs/heads/…), and a reason to keep it when they may not be: a detached HEAD, an
-// operation in progress, or a HEAD commit no other ref reaches. wt is "" for a registration
-// whose tree is gone; HEAD is then read from the registration.
-func (o Options) saved(wt, admin, common string) (branch, why string, err error) {
+// branch (refs/heads/…), and a reason to keep it when they may not be: a detached HEAD, whose
+// commit only the tree's own reflog may name, or an operation in progress, whose state lives in
+// the admin dir that the removal deletes. A tree on a branch needs nothing more: the branch and
+// its reflog outlive `git worktree remove`. wt is "" for a registration whose tree is gone;
+// HEAD is then read from the registration.
+func (o Options) saved(wt, admin string) (branch, why string, err error) {
 	for _, name := range inProgress {
 		if _, err := os.Lstat(filepath.Join(admin, name)); err == nil {
 			return "", "an operation is in progress (" + name + ")", nil
@@ -317,26 +424,12 @@ func (o Options) saved(wt, admin, common string) (branch, why string, err error)
 			return "", "its HEAD is detached", nil
 		}
 	}
-	ref = strings.TrimSpace(ref)
-	tip, err := o.Git(common, "rev-parse", "--verify", "-q", ref+"^{commit}")
-	if err != nil {
-		return "", "its branch " + ref + " does not resolve to a commit", nil
-	}
-	tip = strings.TrimSpace(tip)
-	refs, err := o.Git(common, "for-each-ref", "--contains", tip, "--format=%(refname)")
-	if err != nil {
-		return "", "", fmt.Errorf("git for-each-ref --contains: %v", err)
-	}
-	for _, r := range nonEmptyLines(refs) {
-		if r != ref {
-			return ref, "", nil
-		}
-	}
-	return "", "its HEAD commit is on no other ref", nil
+	return strings.TrimSpace(ref), "", nil
 }
 
-// deleteBranch deletes ref when it carries the branch prefix and its tip is still reachable
-// from another ref.
+// deleteBranch deletes ref when it carries the branch prefix and another local branch or a tag
+// holds its tip. Only those count: a stash entry or a remote-tracking ref is no holder, since a
+// `git stash drop` or a fetch can take it away, and the deleted branch's reflog goes with it.
 func (o Options) deleteBranch(res *Result, common, ref string) {
 	name, ok := strings.CutPrefix(ref, "refs/heads/")
 	if o.BranchPrefix == "" || !ok || !strings.HasPrefix(name, o.BranchPrefix) {
@@ -346,7 +439,8 @@ func (o Options) deleteBranch(res *Result, common, ref string) {
 	if err != nil {
 		return
 	}
-	refs, err := o.Git(common, "for-each-ref", "--contains", strings.TrimSpace(tip), "--format=%(refname)")
+	refs, err := o.Git(common, "for-each-ref", "--contains", strings.TrimSpace(tip), "--format=%(refname)",
+		"refs/heads/", "refs/tags/")
 	if err != nil {
 		return
 	}

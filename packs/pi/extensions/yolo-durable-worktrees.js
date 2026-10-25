@@ -24,10 +24,11 @@
 // an hour, the extension starts `yolo-jaild reap-worktrees` detached on the worktree directory
 // in effect when it lies beneath $YOLO_DURABLE_DIR — the one it set, or one the user set there
 // (the house rule's PI_SUBAGENTS_WORKTREE_DIR=$YOLO_DURABLE_DIR/worktrees): it removes, with
-// `git worktree remove`, each `pi-worktree-*` tree that is clean, on a branch, in no git
-// operation, whose commit another ref holds, unlocked, unused by any jail process and idle for a
-// day, deletes its `pi-subagents/*` branch when another ref holds that tip too, and lists what it
-// kept in `<dir>/.yolo-reap.json`. Never on a directory outside the durable dir.
+// `git worktree remove`, each `pi-worktree-*` tree that is clean (no edit the index hides
+// either), on a branch, in no git operation, without submodules, unlocked, unused by any jail
+// process and idle for a day. The branch stays, so its commits do, unless it is a
+// `pi-subagents/*` branch whose tip another branch or a tag holds. What it kept is listed in
+// `<dir>/.yolo-reap.json`. Never on a directory outside the durable dir.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
