@@ -3,7 +3,7 @@ title: "Config that reads right the first time: the front door"
 date: 2026-10-24
 status: in-review
 stage: DESIGN
-next: "Fifteen questions remain, each at the end of the section it is about; the maintainer rules by comment in the docs"
+next: "Thirteen questions remain, each at the end of the section it is about; the maintainer rules by comment in the docs"
 tags: [config, packs, manifest, providers, profiles, broker, grants, format, toml, migration, editing, readability, design]
 summary: "The front door to the readable-config redesign: the thesis, the principles, the five documents (each one annotated config file with its questions), and the ledger of rulings made so far. The maintainer's config takes 178 lines to say about 20 things and is misread by its author; reshaped it is under 60, yolo can edit it one hunk at a time, and one command converts every file."
 vantage:
@@ -12,12 +12,12 @@ vantage:
 
 # Config that reads right the first time: the front door
 
-**Status:** 2026-10-25. Nothing is built. Twenty rulings recorded ([ledger](#decision-ledger));
-fifteen questions open, each in the document that shows its file. Evidence verified at
+**Status:** 2026-10-25. Nothing is built. Twenty-two rulings recorded ([ledger](#decision-ledger));
+thirteen questions open, each in the document that shows its file. Evidence verified at
 `fa13f42d9` against this repository, the effective user config this jail inherited, the 21
 shipped packs, and the maintainer's twelve packs.
 
-**Needs your ruling:** fifteen questions, listed per document in [§2](#2-the-five-documents).
+**Needs your ruling:** thirteen questions, listed per document in [§2](#2-the-five-documents).
 
 > **In short.** A config a stranger reads correctly comes from its shape, not its file format, and
 > a config yolo can edit without a mess comes from touching only the bytes of one value. Neither
@@ -47,7 +47,7 @@ seed; incomplete while any question is open).
 3. **Write nothing that is the default.** And a convention is a line you never write at all.
 4. **One switch, one place.** `packs` is the switch; a settings table with no pack is a nudge
    naming the pack and the command.
-5. **No value is a reserved string.** `true`, `false`, a number, a name, a list of names.
+5. **No value is a reserved string**, with one word excepted: `true`, `false`, a number, a name, a list of names, or `"native"` for an agent left to its own login.
 6. **Two words for two scopes.** Your config says what every project gets and what one may request; a project requests. A request outside that is skipped and reported, never an error.
 7. **An edit yolo makes changes only the bytes it was asked to.**
 8. **The file name is the version**, and one command converts everything, proving it lost nothing.
@@ -56,7 +56,7 @@ seed; incomplete while any question is open).
 
 | Document | The file it shows | Its questions |
 | :--- | :--- | :--- |
-| [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | [OQ-RC14](config-user.md#OQ-RC14) the selection key's name · [OQ-RC20](config-user.md#OQ-RC20) an agent left to itself · [OQ-RC16](config-user.md#OQ-RC16) fetch from any repository |
+| [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | [OQ-RC16](config-user.md#OQ-RC16) fetch from any repository |
 | [`config-project.md`](config-project.md) | `yolo-jail.toml` and `.local`: install, requests, mounts, ports, env, turning things off | [OQ-RC17](config-project.md#OQ-RC17) the file's shape · [OQ-RC7](config-project.md#OQ-RC7) saying "off" with no `null` |
 | [`config-commands.md`](config-commands.md) | the command each "edit your config" message prints, what it does to the file, and the format underneath | [OQ-RC9](config-commands.md#OQ-RC9) may yolo write your file · [OQ-RC2](config-commands.md#OQ-RC2) TOML or JSONC · [OQ-RC10](config-commands.md#OQ-RC10) the verbs · [OQ-RC12](config-commands.md#OQ-RC12) what `yolo config` means |
 | [`config-migration.md`](config-migration.md) | the new file names, the release order, the migrate transcript | [OQ-RC11](config-migration.md#OQ-RC11) name or version key · [OQ-RC6](config-migration.md#OQ-RC6) older yolos · [OQ-RC18](config-migration.md#OQ-RC18) what migrate does · [OQ-RC8](config-migration.md#OQ-RC8) fetched packs |
@@ -74,7 +74,7 @@ seed; incomplete while any question is open).
   JSONC and moving them "would be a proposal of its own". [OQ-RC2](config-commands.md#OQ-RC2) is that proposal.
 - **Amended:** [OQ-BB12](boundary-broker.md#15-decision-ledger), read as being about side effects
   and messes; [OQ-RC9](config-commands.md#OQ-RC9) is where that reading is ruled on. [PP-D10](providers-and-profiles-redesign.md#PP-D10)
-  stands as to the key's job; [OQ-RC14](config-user.md#OQ-RC14) is about its name.
+  stands as to the key's job; its name is now `active_provider` ([OQ-RC14](#decision-ledger)).
 
 ## 4. Non-goals
 
@@ -91,7 +91,9 @@ seed; incomplete while any question is open).
 | OQ-RC15 | **A pack yolo does not ship is named by its source.** Ruled by taking the leaning: *"A: the collision cannot happen, so there is nothing to rename; it is Homebrew's model, and the shipped set is the only bare namespace, as core is."* `local/<name>`, `<source>/<name>`, `<owner>/<repo>`; no bare path form | 2026-10-25 | [`config-user.md` §4](config-user.md#4-naming-a-pack-that-is-not-shipped) | — |
 | OQ-RC13 | **All six conventions go in.** Ruled by taking the leaning: *"A: each of the six reads only what the user already wrote, and none lets a heading or a declaration stand for a value."* C1 pack sources, C2 `config.d/`, C5 no project file, C6 no manifest, C7 catalog facts, C9 default branch | 2026-10-25 | [`config-user.md` §8](config-user.md#8-lines-you-never-write) | — |
 | OQ-RC3 | **A provider is selectable by its own name and starts on its `model`; a variant is a second configuration of one provider.** Ruled by taking the leaning: *"B: the common case is one name, and the rare case keeps the profile that already works."* Same-named shipped profiles are deleted; answers [OQ-PP1](providers-and-profiles-redesign.md#OQ-PP1) | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |
-| <a id="RC-D15"></a>RC-D15 | **RC-D14 does not hold.** The maintainer: *"what's the thing going to be for Claude? And what if there's two different defaults that Claude could use? … it depends on other environment … so you can't really name it."* An agent left to itself is not a provider; how the file says so is [OQ-RC20](config-user.md#OQ-RC20), leaning `except = ["claude"]` | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |
+| OQ-RC20 | **`"native"` is the one reserved word: an agent set to it is left to its own login.** Ruled B: *"this means it's a fatal error to try to use that as a regular provider name."* A provider named `native` is refused | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |
+| OQ-RC14 | **The selection key is `active_provider`;** declarations are `providers.<name>` with `variants` under them. Ruled by taking the leaning: *"A: active_provider says both halves, a provider and the one in use, and pairs with providers.* as declared against selected."* | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |
+| <a id="RC-D15"></a>RC-D15 | **RC-D14 does not hold.** The maintainer: *"what's the thing going to be for Claude? And what if there's two different defaults that Claude could use? … it depends on other environment … so you can't really name it."* An agent left to itself is not a provider; how the file says so was then ruled: `"native"` ([OQ-RC20](#decision-ledger)) | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |
 | <a id="RC-D14"></a>RC-D14 | **An agent's own login is a provider its pack declares; no special value means "keep your own login".** Review comment on `codex = false`: *"let's have a special value here instead … false seems like it has nothing turned on."* A reserved word would break RC-D6, and a name already exists: `codex = "openai-codex"`, `claude = "anthropic"` | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |
 | <a id="RC-D13"></a>RC-D13 | **One shape under `allow`: two lists, `always` and `on_request`.** The maintainer: *"so now we have two different shapes for default enabled and requestable?"* A boolean per granted capability beside a list of requestable ones was two shapes for one kind of thing | 2026-10-25 | [`config-user.md` §6](config-user.md#6-what-a-jail-may-do-with-your-logins) | — |
 | <a id="RC-D12"></a>RC-D12 | **A project `requests`; `allow` lists what is `requestable`; an unmet request is skipped, never an error.** Review comments: *"requests? … Needs implies it's a fatal failure and I'm not sure this is a fatal failure"* (two people on one repository may allow different things), and on `fetch = true` beside `push = true`: *"this fetch is like a default on and then push is not a default on, but it can ask. That's as confusing as it could be."* The two meanings are now two keys | 2026-10-25 | [`config-user.md` §6](config-user.md#6-what-a-jail-may-do-with-your-logins) | — |
@@ -107,4 +109,4 @@ seed; incomplete while any question is open).
 | <a id="RC-D4"></a>RC-D4 | **`default`, not `everyone`,** for today's `"*"`. Review comment: *"don't like the name"* | 2026-10-25 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |
 | <a id="RC-D3"></a>RC-D3 | **Plural for a collection the user fills, singular for one thing.** Review comment: *"why is this plural and mcp singular?"* `mcp.<name>` becomes `mcp_servers.<name>` (today's name), `[[mount]]` becomes `[[mounts]]`; all-singular would collide the selection with the declarations | 2026-10-24 | [`config-user.md` §3](config-user.md#3-principles) | — |
 | <a id="RC-D2"></a>RC-D2 | **Not `as_you`.** Review comment: *"I hate the name 'as_you'."* The section's name was then ruled `allow` ([OQ-RC4](#decision-ledger)) | 2026-10-24 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |
-| <a id="RC-D1"></a>RC-D1 | **The `profile` key keeps its job.** Review comment on the draft's `use`: *"awful name … isn't this a profile?"* It is the agent-to-setup selection, and PP-D10's reason (the key mirrors `-p`) stands; its name is [OQ-RC14](config-user.md#OQ-RC14) | 2026-10-24 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |
+| <a id="RC-D1"></a>RC-D1 | **The `profile` key keeps its job.** Review comment on the draft's `use`: *"awful name … isn't this a profile?"* It is the agent-to-setup selection, and PP-D10's reason (the key mirrors `-p`) stands; its name was later ruled `active_provider` ([OQ-RC14](#decision-ledger)) | 2026-10-24 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |

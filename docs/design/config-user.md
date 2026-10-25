@@ -3,7 +3,7 @@ title: "Your config, one screen: packs, logins, and which setup each agent runs 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC14 and OQ-RC20 (§5) and OQ-RC16 (§6); every other section of this document is approved"
+next: "Rule OQ-RC16 (§6); every other section of this document is approved"
 tags: [config, packs, providers, profiles, broker, grants, conventions, design]
 summary: "The user config as one annotated file, today and proposed, then one section per part of it. A section with a question carries that question at its end; a section without one is approved. Part of the readable-config redesign; the ledger of rulings is in the front door and the evidence is in the appendix."
 ---
@@ -18,9 +18,7 @@ this jail inherited it, condensed.
 time. A section that still needs a decision ends with its question; a section with no question
 is approved, and the [ledger](readable-config.md#decision-ledger) says when.
 
-**Needs your ruling:** [OQ-RC14](#OQ-RC14) and [OQ-RC20](#OQ-RC20) in
-[§5](#5-which-setup-each-agent-runs-on), [OQ-RC16](#OQ-RC16) in
-[§6](#6-what-a-jail-may-do-with-your-logins).
+**Needs your ruling:** [OQ-RC16](#OQ-RC16) in [§6](#6-what-a-jail-may-do-with-your-logins).
 
 > **In short.** Each section of your config names what you decided, in a word you would use, and
 > says it once. The file below is the whole proposal; the prose only says why.
@@ -70,7 +68,7 @@ reader took each line to mean.
 
 ## 2. The file proposed
 
-Approved as a shape on 2026-10-25. The two lines marked `?` are the two questions left.
+Approved as a shape on 2026-10-25. The line marked `?` is the one question left.
 
 ```toml
 # ~/.config/yolo-jail/config.toml
@@ -90,9 +88,9 @@ on_request = ["create_pr", "create_issue"]
 profile = "my-sso-profile"
 unnarrowed = true
 
-[active_provider]                 # the provider each agent runs on                       (§5, ?OQ-RC14)
+[active_provider]                 # the provider each agent runs on                       (§5)
 default = "bedrock"
-except = ["claude"]               # left to itself: yolo configures nothing, claude logs in as it would alone  (?OQ-RC20)
+claude = "native"                 # left to itself: yolo configures nothing; claude logs in as it would alone
 
 [providers.bedrock]               # selectable by its own name                           (§5)
 region = "us-east-1"
@@ -125,8 +123,9 @@ file that his dotfiles put in `config.d/` on the right machines
 4. **One switch, one place.** `packs` is the switch. A heading or a declaration never stands for
    a value: a settings table selects nothing ([§7](#7-one-switch-and-the-nudge)), and a lone
    provider does not pick itself as everyone's setup.
-5. **No value is a reserved string.** `true`, `false`, a number, a name, or a list of names;
-   never a phrase yolo has to recognize.
+5. **No value is a reserved string**, with one word excepted: `true`, `false`, a number, a name,
+   a list of names, or `"native"` for an agent left to its own login; never a phrase yolo has to
+   recognize.
 6. **Two words for two scopes.** `allow` here says what every project gets and what one may
    request; `requests` in a project is the request. One outside the ceiling is not granted, and
    says so; it is never an error.
@@ -199,7 +198,7 @@ alias = "codex"
 default = "bedrock"                            # a provider, by name; -p bedrock
 claude = "bedrock/opus"                        # a variant, as provider/variant; -p bedrock/opus
 pi = ["bedrock", "codex"]                      # several, switchable inside the agent, as today's list is
-except = ["codex"]                             # left to itself: yolo configures nothing for it     (?OQ-RC20)
+codex = "native"                               # left to itself: yolo configures nothing for it
 ```
 
 A name is refused with the list of providers the selected packs declare, so the names are
@@ -211,77 +210,17 @@ config.toml:19: active_provider.claude = "bedrok": no such provider. Declared: b
   bedrock/bridge, openai-codex (codex), openrouter.
 ```
 
-`-p` and the selection key name the same things, as today. Two things are left: what the two keys
-are called, and how an agent is left to itself, since what claude does on its own is not one
-nameable thing (its subscription, an API key, or Bedrock through its own environment) and so
-cannot be a provider name.
+`-p` and the selection key name the same things, as today. **Approved 2026-10-25:** the selection
+is `active_provider`, and `"native"` is the one reserved word in the config: an agent set to it is
+left to itself, since what claude does on its own is not one nameable thing (its subscription, an
+API key, or Bedrock through its own environment). A provider may not be named `native`; declaring
+one is an error.
 
-1. 💬 🤷 <a id="OQ-RC14"></a>**OQ-RC14: What are the selection and the declarations called?**
-
-   Today the pair is `profile` and `profiles`, one letter apart for two different things: one maps
-   each agent to a provider, the other describes providers. The selection's name is read in a file
-   of its own, with no provider table beside it, so it has to say what it is alone.
-
-   `providers.bedrock` and `variants` are accepted; only the selection key's name is open. It has
-   to say two things alone: that it is a provider, and that it is the one each agent runs on.
-
-   ```toml
-   # A  active_provider: "the active provider for each agent"
-   [active_provider]
-   default = "bedrock"
-   claude = "bedrock/opus"
-
-   # B  provider_for: "the provider for each agent"
-   [provider_for]
-   default = "bedrock"
-   claude = "bedrock/opus"
-
-   # C  default_provider, per agent; reads oddly for an agent-specific line
-   [default_provider]
-   default = "bedrock"
-   claude = "bedrock/opus"
-   ```
-
-   <!-- vantage: question id=OQ-RC14 leaning="A: active_provider says both halves, a provider and the one in use, and pairs with providers.* as declared against selected." -->
-
-   _Leaning:_ A: `active_provider` says both halves, a provider and the one in use, and pairs
-   with `providers.*` as declared against selected.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-2. 💬 <a id="OQ-RC20"></a>**OQ-RC20: How does the file say that an agent is left to its own login?**
-
-   You run everything on Bedrock except claude, which should log in the way it would with no yolo
-   at all. Today that line is `"claude": null`. What claude then does is not one thing yolo can
-   name: a subscription, an API key, or Bedrock through claude's own environment variables, chosen
-   by claude from what it finds. So the line cannot be a provider name; it has to say "nothing
-   from yolo" in a way a cold reader gets right, and `false` read as "nothing turned on".
-
-   ```toml
-   # A  a list of the agents left out of the default; no value is special, and it reads as a sentence
-   [active_provider]
-   default = "bedrock"
-   except = ["claude"]
-
-   # B  one keyword, reserved so no provider may take it
-   [active_provider]
-   default = "bedrock"
-   claude = "native"
-
-   # C  false
-   [active_provider]
-   default = "bedrock"
-   claude = false
-   ```
-
-   <!-- vantage: question id=OQ-RC20 leaning="A: default bedrock, except claude is the sentence a reader would say, and nothing in it has to be learned." -->
-
-   _Leaning:_ A: "default bedrock, except claude" is the sentence a reader would say, and nothing
-   in it has to be learned.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+```console
+$ yolo check
+error: config.toml:31: [providers.native]: "native" is reserved; it means an agent is left to its own login.
+  Rename the provider.
+```
 
 ## 6. What a jail may do with your logins
 
