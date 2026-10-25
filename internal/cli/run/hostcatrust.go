@@ -27,7 +27,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/catrust"
@@ -84,20 +83,11 @@ func readHostTrustReal() hostTrust {
 		}
 		// The bundle the host's SSL_CERT_FILE names is this Mac's trust too: its OpenSSL programs
 		// (nix curl, git, Python) read it, so a CA trusted there is trusted in the jail beside the
-		// keychains', as on a Linux host ("regardless of how that trust got there", OQ-PS15).
-		if strings.TrimSpace(os.Getenv("SSL_CERT_FILE")) == "" {
-			return hostTrust{cas: kt.Kept, notes: notes}
-		}
-		hb, err := catrust.ReadLinuxHostBundle(os.Getenv, os.ReadFile, now)
-		if err != nil {
-			notes = append(notes, "[yellow]Warning: could not read this host's CA bundle ("+esc(err.Error())+
-				")[/yellow], so the jail does not trust the certificate authorities in it this launch; this "+
-				"Mac's keychains' still are. Point SSL_CERT_FILE at a readable bundle, or unset it, and launch again.")
-		} else if hb.LeftOut > 0 {
-			notes = append(notes, fmt.Sprintf("[dim]%d certificate(s) in %s were left out of the jail's "+
-				"trust: out of date, or not readable as a certificate.[/dim]", hb.LeftOut, esc(hb.Path)))
-		}
-		return hostTrust{cas: catrust.Merge(kt.Kept, hb.CAs), notes: notes}
+		// keychains', as on a Linux host and in a macos-user sandbox ("regardless of how that trust
+		// got there", OQ-PS15). Unset, nothing is read: never a Linux distribution path.
+		st := macosuser.ReadSSLCertFileTrust(os.Getenv, os.ReadFile, now)
+		notes = append(notes, macosuser.SSLCertFileNotes(st, "the jail")...)
+		return hostTrust{cas: catrust.Merge(kt.Kept, st.CAs), notes: notes}
 	}
 	hb, err := catrust.ReadLinuxHostBundle(os.Getenv, os.ReadFile, now)
 	if err != nil {
