@@ -184,6 +184,31 @@ func TestALaunchWithALockedLoginKeychainNotesItAndGoesOn(t *testing.T) {
 	}
 }
 
+// THE TLS TRUST LINES ARE NOTICES, printed on Deps.Notices (the launch's stderr) and never on Out:
+// Out is the launch's stdout, which the command's own output shares, and on a Mac these lines print
+// on nearly every launch. The container launch moved the same keychain notes to stderr for the same
+// reason (internal/cli/run TestHostTrustNotesNeverReachTheCommandsStdout).
+func TestALaunchPrintsItsTLSTrustOnTheNoticeStreamNotStdout(t *testing.T) {
+	sys := newKeychainFixture(t)
+	login := newLoginFixture(t, sys)
+	var rec []string
+	d := loginCADeps(t, &rec, sys, login, map[string]string{})
+	d.ReadLoginKeychain = func() (string, error) { return "", errors.New("no login keychain at /h/x") }
+	var out, notices bytes.Buffer
+	d.Out, d.Notices = &out, &notices
+	if rc := RunMacosUser(d, newOpts("/Users/Shared/yolo/proj")); rc != 42 {
+		t.Fatalf("rc = %d\nout:\n%s\nnotices:\n%s", rc, out.String(), notices.String())
+	}
+	for _, line := range []string{"could not read your login keychain", "Trusting 2 certificate authorities"} {
+		if !strings.Contains(notices.String(), line) {
+			t.Errorf("the notice stream lacks %q:\n%s", line, notices.String())
+		}
+		if strings.Contains(out.String(), line) {
+			t.Errorf("%q reached Out, the launch's stdout:\n%s", line, out.String())
+		}
+	}
+}
+
 // THE RUN-AS-YOU DELIVERY: the launch writes both CA files as you, with no sudo and no access entry,
 // and they hold the login keychain's CA too. Fails if the self branch of caTrustFilePlans stops
 // stripping the grants, or the self launch stops composing the trust.
