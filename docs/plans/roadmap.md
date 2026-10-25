@@ -172,6 +172,12 @@ and a pi-subagents registry several extensions can share stays in item 28.
     `refuseWorkspaceScope`, which the host notch bypasses. Details and the workaround are in
     [the lab report](../lab-reports/2026-10-19-launch-diagnostics-on-a-mac.md).
 
+11. [Rule the readable-config redesign](../design/readable-config.md) — the maintainer, 2026-10-24: *"this is
+    important"*. Its rulings decide the config vocabulary, the file format and the pack layout
+    together, and they take over [the manifest language](../design/manifest-language.md#OQ-M1)'s first two
+    questions, [the pack conventions](../design/pack-conventions.md#OQ-PC1)' three and [what `-p`
+    names](../design/providers-and-profiles-redesign.md#OQ-PP1). The broker-grant rework waits on it.
+
 Native readiness and credential-store work retain their places below: assess
 [the privilege prerequisites](../research/sandvault-macos-privileges.md) without broad root
 cleanup, and rule [keychain scope/unlock/migration](../design/keychain-from-a-jail.md) without
