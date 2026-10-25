@@ -233,7 +233,9 @@ How the invariant is held:
   run, so a reaped root heals at the next launch (`image.RegisterImageRoot`, `AutoLoadImage`).
   One root on the image's store path covers every `/bin` tool, since they are all in its closure.
 - **The prefix root** for the mounted yolo binaries, held by liveness
-  ([prefix roots](disk-footprint.md#prefix-roots)).
+  ([prefix roots](disk-footprint.md#prefix-roots)). No launch registers one now; the slot reaps
+  the ones left by liveness, with the build dir's other roots
+  ([build-state links](disk-footprint.md#build-state-links)).
 - **Roots made in a jail** are registered under the host's spelling of the link
   ([`in-jail-nix-roots.md`](in-jail-nix-roots.md)); a jail-spelled root is one the host deletes as
   stale.
@@ -362,7 +364,7 @@ the values themselves are stated.
 | Load sentinel | one file per runtime under the machine-wide build dir, `last-load-<runtime>` | `internal/image` (`AddLoadedPath`) |
 | Sentinel capacity and order | a small fixed cap, most-recent-last, deduplicated on write | `internal/image` (`AddLoadedPath`) |
 | Current-image pointers | one file per workspace under the machine-wide build dir, holding the store path and the workspace that recorded it | `internal/prune` (`currentimages.go`) |
-| Stock records | one file per image identity under the machine-wide build dir's `stock-images/`, named by the identity's hex digest and holding one store path | `internal/image` (`stockimage.go`) |
+| Stock records | one file per image identity under the machine-wide build dir's `stock-images/`, named by the identity's hex digest and holding one store path. Never reaped: a running stock-tagged jail whose record is gone makes the image-root reaper decline | `internal/image` (`stockimage.go`) |
 | Automatic-reap debounce | once per day, per machine | `internal/prune` (`DueForAutoImageReap`) |
 | Automatic-reap hatch | `YOLO_NO_AUTO_IMAGE_REAP=1` | `internal/cli/run` |
 | The removed flag | `--keep-images` — **refused**, not ignored | `internal/cli` (`commands.go`, `subhelp.go`) |

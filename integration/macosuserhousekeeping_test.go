@@ -23,12 +23,17 @@ import (
 // enough for a pass over a fresh home, and the one launch is the whole test.
 func TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession(t *testing.T) {
 	requireMacosUser(t)
+	// A PRIVATE STORE (reaperstore_test.go): the launch turns every automatic reaper on, so its
+	// store must be its own. Every other class is stamped as just run in that store's build dir,
+	// which also keeps the shared cache's minute-long walk from using up the session before the
+	// loophole-state class runs; the loophole-state class is left due. This replaced taking the
+	// machine's stamps over (§6.3 of docs/design/macos-user-suite-on-a-developer-mac.md), since a
+	// private build dir holds stamps no other launch reads or writes.
+	isolateReaperStore(t, run.LoopholeStateHousekeepingClass)
 	ws := macosUserWorkspace(t, `{}`)
-	// The suite's isolated home the launch runs under (requireMacosUser): its machine store is the
-	// one the slot reaps. It is shared with every earlier test, whose launches retire generations
-	// of their own under today's timestamps, so the seeds are dated in the FUTURE: the keep is by
-	// name order (prune.PruneRetiredLoopholeStateGuarded), which makes the newest three seeds the
-	// newest three generations whatever else the suite left there.
+	// The seeds are dated in the FUTURE: the keep is by name order
+	// (prune.PruneRetiredLoopholeStateGuarded), so the newest three seeds are the newest three
+	// generations whatever this launch's own retirement adds.
 	archive := filepath.Join(os.Getenv("HOME"), ".local", "share", "yolo-jail", "state", ".retired")
 	base := time.Date(2099, 9, 1, 12, 0, 0, 0, time.UTC)
 	var seeded []string
@@ -50,20 +55,6 @@ func TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession(t *testi
 		}
 	})
 
-	// THE CLASS'S DEBOUNCE STAMP IS THE MACHINE'S (§6.3 of
-	// docs/design/macos-user-suite-on-a-developer-mac.md): the run store keeps this archive private
-	// but links the machine's build dir, where the stamp lives, so a developer's own launch earlier
-	// that day left this launch's slot not due, and it reaped nothing and noted nothing. The test
-	// owns the stamp for its launch, under the cross-run lock so another run's launch cannot stamp
-	// it meanwhile, and puts the machine's back.
-	//
-	// AND THE CACHE CLASS'S, made fresh: the slot runs the shared cache's measurement first, whose
-	// walk is bounded at a minute, against a session of seconds. On a machine whose cache stamp is
-	// stale that walk could use the session up before the loophole-state class ran.
-	holdMachineLock(t, true, "the macos-user housekeeping test owns the machine's housekeeping debounce stamps")
-	before := ownHousekeepingStamp(t, run.LoopholeStateHousekeepingClass, true) +
-		ownHousekeepingStamp(t, run.CacheHousekeepingClass, false)
-
 	r := runMacosUser(t, ws, "sleep 5\necho \"=== END ===\"", withAutoReapers())
 	if r.rc != 0 || !strings.Contains(r.stdout, "=== END ===") {
 		t.Fatalf("the macos-user launch did not run its session (rc %d), so nothing below is a "+
@@ -81,13 +72,12 @@ func TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession(t *testi
 	if len(left) < 3 || strings.Join(left[len(left)-3:], ",") != strings.Join(seeded[2:], ",") ||
 		strings.Contains(strings.Join(left, ","), seeded[0]) || strings.Contains(strings.Join(left, ","), seeded[1]) {
 		t.Errorf("after the session the retired generations are %v, want the newest three %v kept "+
-			"and %v reaped: the launch ran no housekeeping slot, its exit cut the pass, another "+
-			"pass held the machine's pass lock, or a launch outside the suite stamped the class meanwhile%s", left, seeded[2:], seeded[:2], before)
+			"and %v reaped: the launch ran no housekeeping slot or its exit cut the pass", left, seeded[2:], seeded[:2])
 	}
 	note, err := os.ReadFile(filepath.Join(ws, ".yolo", "housekeeping.log"))
 	if err != nil || !strings.Contains(string(note), "loophole state: reclaimed ") ||
 		!strings.Contains(string(note), " retired generation(s), keeping the newest 3") {
-		t.Errorf("housekeeping.log does not record the reap (err %v)%s:\n%s", err, before, note)
+		t.Errorf("housekeeping.log does not record the reap (err %v):\n%s", err, note)
 	}
 }
 

@@ -60,7 +60,7 @@ type Options struct {
 	NoImages         bool // --no-images
 	NoImageCache     bool // --no-image-cache
 	NoBuildRoots     bool // --no-build-roots
-	NoImageRoots     bool // --no-image-roots
+	NoImageRoots     bool // --no-image-roots: every GC-root section, the build-state links included
 	NoShadowedHome   bool // --no-shadowed-home
 	NoEmbeddedPacks  bool // --no-embedded-packs
 	ImageCacheKeep   int  // --image-cache-keep (default: per-runtime, see ResolveImageCacheKeep)
@@ -1127,6 +1127,15 @@ func Run(opts Options) int {
 		} else {
 			p.line("  [dim]none[/dim]")
 		}
+	}
+
+	// --- Retired and aged build links (buildstate.go) ---
+	if !opts.NoImageRoots && macosUser {
+		p.line("")
+		p.line("[bold]Retired and aged build links[/bold]")
+		p.line(macosUserNotApplicable)
+	} else if !opts.NoImageRoots {
+		renderBuildStateLinks(p, rt, live, opts.BuildDir(), apply, opts)
 	}
 
 	// --- Orphaned agent staging ---

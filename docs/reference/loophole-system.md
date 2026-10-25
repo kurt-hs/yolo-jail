@@ -917,7 +917,7 @@ on the signal the user typed: the pack leaving the selection list.
 The **embedded pack tree** — the on-disk copy of the packs compiled into the binary — is not
 this sweeper's business: it is
 one immutable tree per build, named by a content hash, owned by no pack and regenerable from the
-binary. `yolo prune` reaps other builds' trees by **lease** (whether a live process still holds
+binary. `yolo prune` and the launch's housekeeping slot reap other builds' trees by **lease** (whether a live process still holds
 one), never by pack selection; see
 [`storage-and-config.md`](storage-and-config.md#machine-wide-storage).
 

@@ -152,14 +152,17 @@ failures print a warning on the launch stream (the daemon refusing the root, and
 directory that cannot be made); every other failure is silent, and none fails the launch.
 
 **Reaping stays with the existing reapers, run where the links live**: a nested launcher's
-`yolo prune` sweeps its own `build/roots` and `build/prefix-roots` under the host's rules
-([`image-retention.md`](image-retention.md)). A translated root dies with its link.
+`yolo prune` sweeps its own `build/roots`, and its housekeeping slot and `yolo prune` both sweep
+its `build/prefix-roots` and `build/package-roots`, under the host's rules ([`image-retention.md`](image-retention.md),
+[build-state links](disk-footprint.md#build-state-links)). A translated root dies with its link.
 
 > [!NOTE]
-> **Not translated: the prefix's own `--out-link`**, which still registers under the jail's
-> spelling. The prefix root backs the same store path, so a translated copy would root nothing
-> more. **Nothing reaps `build/package-roots`**, on the host or in a jail, so a nested jail's two
-> profile roots last until their links are deleted, as the host's do.
+> **Not translated: the prefix's own `--out-link`** (`build/jail-prefix-*`), which registered
+> under the jail's spelling while launches still built a prefix. No yolo writes one now; the
+> leftovers are removed by liveness as retired out-links. **`build/package-roots` holds one
+> root per distinct image-extras closure and one per distinct `packages:` list**, not two
+> profile roots: the slot keeps each profile a running jail was started with, plus the newest
+> root of each kind, and ages out the rest after a week, on the host and in a jail alike.
 
 ## Managed roots
 
