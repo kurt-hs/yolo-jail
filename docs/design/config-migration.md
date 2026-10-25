@@ -47,7 +47,7 @@ Also found: ~/.config/yolo-jail/config.lua, 0 bytes. The transform that read it 
 
 --- ~/.config/yolo-jail/config.jsonc
 +++ ~/.config/yolo-jail/config.toml
-  (170 lines → 17; 3 comments moved with their keys)
+  (170 lines → 17; 3 comments kept, in place)
 --- ~/.dotfiles/tag-work/config/yolo-jail/work.jsonc
 +++ ~/.dotfiles/tag-work/config/yolo-jail/work.toml
   (131 lines → 29; 6 facts folded into [providers.bedrock.every_model]; "vendor" dropped on 6 models: it follows from the id)
@@ -179,8 +179,8 @@ old keys forever with a warning and needed neither. A version key earns its plac
    include → its `.toml` twin with the include entries respelled; through a symlink, so the
    dotfiles copy changes; a file it cannot reach is listed with the command to run where it can;
    each original kept as `<name>.pre-migrate`.
-3. **Keeps comments.** A comment moves with the key it sits above. One whose key is gone stays in
-   place as `# (was on: <old key>)`.
+3. **Keeps comments, in order.** A comment is never read as belonging to a key; each is written
+   back in document order, before whatever key follows it in the new file, and nothing is dropped.
 4. **Drops written defaults and folds repeated facts**, each as its own hunk, only while the
    equality check holds.
 5. **Respells the records only yolo reads**: the approval records under

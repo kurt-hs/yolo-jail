@@ -3,7 +3,7 @@ title: "Who writes the file: one command instead of 'edit your config', and the 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC9 (§3, may yolo write your file), then OQ-RC10 and OQ-RC12 (§4, the verbs) and OQ-RC2 (§5, the format)"
+next: "Rule OQ-RC10 and OQ-RC12 (§4, the commands) and OQ-RC2 (§5, the format); §3 is approved"
 tags: [config, cli, editing, toml, jsonc, design]
 summary: "About sixty places tell a person or an agent to hand-edit a config file. This doc shows the command each would print instead, what it does to the file (one hunk, every other byte untouched), the verbs, and the format underneath. Each section ends with its question. Part of the readable-config redesign."
 ---
@@ -11,15 +11,14 @@ summary: "About sixty places tell a person or an agent to hand-edit a config fil
 # Who writes the file: one command instead of "edit your config", and the format it writes
 
 **Status:** 2026-10-25. Nothing is built. The sessions below are what a person or an agent would
-see under the leanings; the spellings change with [§4](#4-the-verbs)'s questions.
+see under the leanings; the spellings change with [§4](#4-the-commands)'s questions.
 
 **How to read this.** [§1](#1-what-youd-see) is the transcripts; [§2](#2-the-sixty-places-this-replaces)
-is what they replace; [§3](#3-what-a-command-does-to-the-file), [§4](#4-the-verbs) and
-[§5](#5-the-format-underneath) each end with their question.
+is what they replace; [§4](#4-the-commands) and
+[§5](#5-the-format-underneath) end with their questions; [§3](#3-what-a-command-does-to-the-file) is approved.
 
-**Needs your ruling:** [OQ-RC9](#OQ-RC9) in [§3](#3-what-a-command-does-to-the-file),
-[OQ-RC10](#OQ-RC10) and [OQ-RC12](#OQ-RC12) in [§4](#4-the-verbs), [OQ-RC2](#OQ-RC2) in
-[§5](#5-the-format-underneath).
+**Needs your ruling:** [OQ-RC10](#OQ-RC10) and [OQ-RC12](#OQ-RC12) in [§4](#4-the-commands),
+[OQ-RC2](#OQ-RC2) in [§5](#5-the-format-underneath).
 
 > **In short.** A command you typed changes the bytes of one value in the file you named, and
 > nothing else. That is what makes editing your config not a mess, and it works in TOML or JSONC.
@@ -38,49 +37,42 @@ Adding a pack, on the host:
 ```console
 $ yolo pack add local/matt
 ~/.config/yolo-jail/config.toml
-@@ -4,4 +4,5 @@
-   "git", "github", "chrome-devtools",
--  "local/matt-fzf", "local/matt-mods", "local/matt-agentwork",
-+  "local/matt-fzf", "local/matt-mods", "local/matt-agentwork",
+@@ -5,2 +5,3 @@
+   "local/matt-fzf", "local/matt-mods", "local/matt-agentwork",
 +  "local/matt",
    { git = "https://github.com/mschulkind-oss/matt-craft" },
-Added "local/matt". It is read at the next launch.
+Added "local/matt" (found at ~/.config/yolo-jail/packs/matt). It is read at the next launch.
 ```
 
-Removing one, and what happens to its comment:
+Removing one. Only the item's own bytes change; a comment is never read as belonging to anything,
+so the one above the line stays where it is, yours to keep or delete:
 
 ```console
 $ yolo pack remove journal
 ~/.config/yolo-jail/config.toml
-@@ -2,6 +2,5 @@
- packs = [
--  # journal: read the host's systemd journal from inside the jail
+@@ -3,2 +3,2 @@
+   # journal: read the host's systemd journal from inside the jail
 -  "pi", "local/pi-fork", "codex", "journal", "host-processes",
 +  "pi", "local/pi-fork", "codex", "host-processes",
-Removed "journal". A comment above it was removed with it:
-  # journal: read the host's systemd journal from inside the jail
+Removed "journal".
 ```
 
-An agent in a jail asking for a tool, which today is a paragraph in the briefing:
+An agent in a jail asking for a tool. The project file is the agent's to edit, and adding a
+word to a list is not a job for a command; what follows the edit is, and `yolo check` does it:
 
 ```console
-$ yolo config add install.nix just
-/workspace/yolo-jail.toml
-@@ -2,3 +2,3 @@
- [install]
--nix = ["postgresql"]
-+nix = ["postgresql", "just"]
-Added. This is a project-config change: run `yolo check --no-build`, then ask the human to run
-`yolo config apply` on the host, in this workspace. A `nix` change also rebuilds the image.
+$ yolo check --no-build
+yolo-jail.toml: install.nix gained "just". This lands at the next `yolo config apply` (run by the
+  human on the host, in this workspace) and rebuilds the image.
 ```
 
 The same agent touching a user-scope key:
 
 ```console
-$ yolo config add allow.git.always fetch
-allow.git.always is a user-config key, and a jail sees only a generated copy of your user config.
-Run it on the host:
-    yolo host-run -C /home/matt/code/yolo-jail --name allow-git-fetch -- yolo allow git fetch
+$ git fetch
+fatal: no read grant: the host has not allowed git fetch for jails.
+  Ask the human to run, on the host:  yolo allow git fetch
+  (or:  yolo host-run -C /home/matt/code/yolo-jail --name allow-git-fetch -- yolo allow git fetch)
 ```
 
 Granting a read on the host, and the approval that follows, which today is two steps:
@@ -147,8 +139,9 @@ printer, which is what reformats a file.
 
 1. A new key goes at the end of its table; a new table at the end of the file after one blank
    line; a new list item after the last, with the list's own separator and line-breaking copied
-   from its neighbors; a removed key takes its trailing comma or newline and the comment lines
-   directly above it, and prints those comments.
+   from its neighbors; a removed key takes its own line and its trailing comma or newline, and
+   nothing else. A comment is never read as belonging to a key or an item; none is moved or
+   removed by any command.
 2. Indentation is copied from the nearest sibling; in an empty file, two spaces for JSONC and
    none for TOML.
 3. It writes to a temporary file and renames, as the per-workspace file does. Two commands at
@@ -168,115 +161,83 @@ user-scope key is refused with the `host-run` line. What happens next is what ha
 project edit lands at the next `yolo config apply` or launch through the same y/N gate; a
 user-config edit is trusted, except a grant, which offers its approval.
 
-Whether yolo may do this to your file at all is the question, because on 2026-10-01 you ruled
-that it never edits the user config: *"it always leaves that a mess."* The splice is written to be
-the absence of a mess; whether that answers the ruling is yours to say.
+**Approved 2026-10-25.** On 2026-10-01 the maintainer ruled that yolo never edits the user
+config, because *"it always leaves that a mess"*; a one-hunk edit the user asked for is neither a
+mess nor a side effect, and a companion file could add but never remove, since lists merge by
+union. State yolo writes on its own, such as the per-workspace switch, still goes in a file yolo
+owns beside yours.
 
-1. 💬 <a id="OQ-RC9"></a>**OQ-RC9: May yolo write your config file when you ask it to, and how?**
+## 4. The commands
 
-   A colleague is told, in about sixty places, to add `{"kind": "read", "repo": "*"}` to a list in
-   their config, then run `yolo config apply`. Read literally, the ruling leaves yolo printing the
-   lines. Read as being about the mess and the side effect, `yolo allow git fetch` can change one
-   hunk of their file and leave every other byte alone.
-
-   ```console
-   # A  splice on request: the file you named, one hunk, printed
-   $ yolo allow git fetch
-   ~/.config/yolo-jail/config.toml
-   +[allow.git]
-   +always = ["fetch"]
-
-   # B  companion file only: your file is never written; removals stay by hand
-   $ yolo allow git fetch
-   ~/.config/yolo-jail/managed.toml        (written whole by yolo; do not edit)
-   [allow.git]
-   always = ["fetch"]
-
-   # C  print the edit
-   $ yolo allow git fetch
-   Add to ~/.config/yolo-jail/config.toml:
-   [allow.git]
-   always = ["fetch"]
-   ```
-
-   <!-- vantage: question id=OQ-RC9 leaning="A: the ruling's complaint was a mess left by a side effect; a one-hunk edit you asked for is neither, and B cannot remove anything because lists merge by union." -->
-
-   _Leaning:_ A: the ruling's complaint was a mess left by a side effect; a one-hunk edit you asked
-   for is neither, and B cannot remove anything because lists merge by union.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-## 4. The verbs
-
-Two spellings are on the table, and both can exist. Named verbs, one per decision:
+A command earns its place by doing more than a text edit. An agent, or a person, can add a word
+to a list in a TOML file; what they cannot do by hand is resolve a pack's source, chain a grant
+into its approval, validate a provider name against the declared ones, write a removal into the
+right lower layer, or edit the user config from inside a jail. Those are the commands, named for
+the decision, in the style of `gh`:
 
 ```console
-$ yolo pack add local/matt                 # user config: packs += "local/matt"
+$ yolo pack add local/matt                 # resolves the source, refuses a duplicate, says when it is read
 $ yolo pack remove journal
-$ yolo install nix just                    # project config: install.nix += "just"
-$ yolo install mise python@3.12 --user
-$ yolo allow git fetch                     # user config: [allow.git] always += "fetch"
-$ yolo request git push main               # project config: [requests.git] push += "main"
-$ yolo request github repos acme/shared
-$ yolo allow git on_request push           # user config: [allow.git] on_request += "push"
-$ yolo active-provider default bedrock     # user config: [active_provider] default = "bedrock"
+$ yolo allow git fetch                     # user config, then offers the approval that makes it live
+$ yolo allow git on_request push
+$ yolo request git push main               # project config, then the check and the apply it needs
+$ yolo request github repos acme/other
+$ yolo active-provider default bedrock     # validated against the providers the selected packs declare
 $ yolo active-provider claude native
+$ yolo config unset mcp_servers.tavily --local   # writes off = true into the right layer
+$ yolo config migrate                      # the one whole-file rewrite, once
+$ yolo config why active_provider.claude   # which file set it
 ```
 
-One generic verb, keyed by path:
+There is no generic `yolo config set <path> <value>`: a key with no verb is a line in a file,
+and the agent or the person writes it; `yolo check` names the fix when the line is wrong. A pack's
+own keys (its `allow.<pack>` settings) get no verb of their own either, since a pack cannot ship
+one; `yolo allow <pack> <key> <value>` covers them with one verb per section.
 
-```console
-$ yolo config add packs local/matt
-$ yolo config add allow.git.always fetch
-$ yolo config set active_provider.claude native
-$ yolo config add requests.git.push main --project
-$ yolo config unset mcp_servers.tavily --local
-$ yolo config set --dry-run machine.resources.memory 32g
-```
+The sixty messages of [§2](#2-the-sixty-places-this-replaces) print the verb where one exists
+and the lines to add where none does, and in a jail the `host-run` line that runs the verb on the
+host.
 
-Today `yolo config` already means something else: `ls`, `render`, `diff`, `reset`, `promote` and
-`capture` are about the agent settings files yolo composes (`~/.claude/settings.json` and the
-like), while `apply`, `drift` and `dump` are about yolo's own config. Two questions follow.
+1. 💬 <a id="OQ-RC10"></a>**OQ-RC10: Named verbs only, or a generic `set` underneath them too?**
 
-1. 💬 <a id="OQ-RC10"></a>**OQ-RC10: Named verbs, one generic `set`, or both?**
-
-   An agent reads "edit `yolo-jail.jsonc` (`packages` / `resources`)" and adds a list item by hand;
-   a person reads "add `{"kind": "read", "repo": "*"}`" and pastes it under the wrong key. Either
-   could type one line. The question is which line the sixty messages print and which a person
-   remembers.
+   An agent reads "add `{"kind": "read", "repo": "*"}` to `brokered.git.grants` in your user
+   config" and a person pastes it under the wrong key; the named verb `yolo allow git fetch` is
+   what both would rather have had. A generic `yolo config set allow.git.always fetch` would also
+   exist for every key a pack adds, and is what a message could print for any key at all; it is
+   also a TOML editor an agent does not need.
 
    ```console
-   # A  named verbs only; a key with no verb has no command
+   # A  named verbs only, for the decisions above; every other key is a line someone writes
    $ yolo allow git fetch
 
-   # B  one generic verb only; every key has a command, and a message prints it from the key it knows
-   $ yolo config add allow.git.always fetch
-
-   # C  both: B underneath, A as sugar; messages print B, people type A
+   # B  named verbs, and a generic verb underneath for any key, printed by messages that have no verb
+   $ yolo allow git fetch
+   $ yolo config set allow.git.always fetch
    ```
 
-   <!-- vantage: question id=OQ-RC10 leaning="C: a message knows the key, a person knows the decision, and the sugar costs little once the generic verb exists." -->
+   <!-- vantage: question id=OQ-RC10 leaning="A: a command that only edits text is one an agent does better by hand, and a message that has no verb prints the lines." -->
 
-   _Leaning:_ C: a message knows the key, a person knows the decision, and the sugar costs little
-   once the generic verb exists.
+   _Leaning:_ A: a command that only edits text is one an agent does better by hand, and a
+   message that has no verb prints the lines.
 
    **Answer:**
    > _(empty — fill in when decided)_
 
-2. 💬 <a id="OQ-RC12"></a>**OQ-RC12: What does `yolo config` mean once it edits your config?**
+2. 💬 <a id="OQ-RC12"></a>**OQ-RC12: What does `yolo config` mean once `migrate`, `why` and `unset` join it?**
 
-   A person who types `yolo config set` expects yolo's own config; the help page today shows the
-   agent-settings pipeline under the same verb.
+   Today `yolo config ls`, `render`, `diff`, `reset`, `promote` and `capture` are about the agent
+   settings files yolo composes (`~/.claude/settings.json` and the like), while `apply`, `drift`
+   and `dump` are about yolo's own config. A person who types `yolo config why` expects the
+   second; the help page shows both.
 
    ```console
    # A  move the six composition commands; yolo config is yolo's config
    $ yolo surface render claude/settings
-   $ yolo config add allow.git.always fetch
+   $ yolo config why active_provider.claude
 
    # B  leave yolo config alone; the new verbs go elsewhere
    $ yolo config render claude/settings
-   $ yolo add allow.git.always fetch
+   $ yolo why active_provider.claude
 
    # C  both meanings under one verb, two sections in the help text
    ```
@@ -364,11 +325,14 @@ said the configs keep JSONC unless a proposal says otherwise; this is that propo
    lines and key order survive because they were never read as anything but bytes.
 2. **A command you typed may write your file; a side effect never does.** State yolo writes on
    its own, such as the per-workspace switch, goes in a file yolo owns beside yours.
-3. **Every stop prints the command.** Each of the sixty messages prints the one line that does
+3. **A command earns its place by doing more than a text edit.** A key with no verb is a line
+   someone writes, and `yolo check` names the fix when it is wrong.
+4. **A comment is never read as belonging to anything.** No command moves or removes one.
+5. **Every stop prints the command.** Each of the sixty messages prints the one line that does
    the edit, or the `host-run` line when it must happen elsewhere.
-4. **A write finishes the step.** It runs `yolo check` after itself, and a grant offers its
+6. **A write finishes the step.** It runs `yolo check` after itself, and a grant offers its
    approval.
-5. **What a person reads is in a person's format; what only yolo reads is JSON.**
+7. **What a person reads is in a person's format; what only yolo reads is JSON.**
 
 ## Appendix: evidence
 
@@ -410,7 +374,7 @@ splice; one position-reporting parse per format is.
 edits the user config directly. We can edit a file that lives next to it of a different name or
 whatever … I don't want to do anything ugly like trying to edit the user's configuration because
 it always leaves that a mess."* Built as the per-workspace switch file; five sibling docs restate
-it. [OQ-RC9](#OQ-RC9) is where the maintainer says whether a splice falls inside it.
+it. The splice was ruled to fall outside it on 2026-10-25 ([OQ-RC9](readable-config.md#decision-ledger)).
 
 ### A.5 Format facts
 

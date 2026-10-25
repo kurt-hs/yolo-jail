@@ -3,7 +3,7 @@ title: "Readable config: implementation plan (seed)"
 date: 2026-10-24
 status: draft
 stage: SKETCH
-depends-on: [config-commands.md#OQ-RC2, config-commands.md#OQ-RC9, config-migration.md#OQ-RC11]
+depends-on: [config-commands.md#OQ-RC2, config-migration.md#OQ-RC11]
 tags: [config, packs, migration, editing, plan]
 summary: "The parking lot for what the readable-config design surfaced below its altitude: the position-reporting parsers a splice needs, the code that already exists for it, the records a migration must respell, and the fixtures that hardcode today's file names. Not a hand-off; nothing builds from it while it is a sketch."
 ---
@@ -13,8 +13,7 @@ summary: "The parking lot for what the readable-config design surfaced below its
 **Status:** 2026-10-24 — seeded during design; not a hand-off, and incomplete until
 [`readable-config.md`](readable-config.md) and the five documents it fronts are accepted. The
 design wins on behavior; this file holds mechanism notes only. Blocked on
-[OQ-RC2](config-commands.md#OQ-RC2) (format), [OQ-RC9](config-commands.md#OQ-RC9) (splice or
-companion) and [OQ-RC11](config-migration.md#OQ-RC11) (file name or key), which decide which of
+[OQ-RC2](config-commands.md#OQ-RC2) (format), [OQ-RC9](readable-config.md#decision-ledger) (ruled: splice) and [OQ-RC11](config-migration.md#OQ-RC11) (file name or key), which decide which of
 the entries below apply.
 
 ## What already exists for a splice
