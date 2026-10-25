@@ -89,9 +89,9 @@ on_request = ["create_pr", "create_issue"]
 profile = "my-sso-profile"
 unnarrowed = true
 
-[inference_provider]              # where each agent's inference comes from              (§5, ?OQ-RC14)
+[active_provider]                 # the provider each agent runs on                       (§5, ?OQ-RC14)
 default = "bedrock"
-claude = false                    # none from yolo: claude keeps its own login
+claude = "anthropic"              # claude's own login, which the claude pack declares as a provider
 
 [providers.bedrock]               # selectable by its own name                           (§5)
 region = "us-east-1"
@@ -130,7 +130,7 @@ file that his dotfiles put in `config.d/` on the right machines
    request; `requests` in a project is the request. One outside the ceiling is not granted, and
    says so; it is never an error.
 7. **Plural for a collection you fill, singular for one thing.** `packs`, `providers.<name>`,
-   `mcp_servers.<name>`; `inference_provider`, `allow.git`.
+   `mcp_servers.<name>`; `active_provider`, `allow.git`.
 
 ## 4. Naming a pack that is not shipped
 
@@ -191,56 +191,56 @@ model = "global.anthropic.claude-opus-5-5"
 [providers.bedrock.variants.bridge]            # or a different route to it
 via = "wire-bridge"
 
-[providers.openai-codex]
-alias = "codex"                                # -p codex keeps working: the provider's own short name
+[providers.openai-codex]                       # codex's own login, declared by its pack; alias lets -p codex work
+alias = "codex"
 
-[inference_provider]                           # where each agent's inference comes from
-default = "bedrock"                            # the provider, by name; -p bedrock
+[active_provider]                              # the provider each agent runs on
+default = "bedrock"                            # a provider, by name; -p bedrock
 claude = "bedrock/opus"                        # a variant, as provider/variant; -p bedrock/opus
-codex = false                                  # none from yolo: the agent keeps its own login
+codex = "openai-codex"                         # its own login: a provider like any other, so no special value
 pi = ["bedrock", "codex"]                      # several, switchable inside the agent, as today's list is
 ```
 
-`-p` and the selection key name the same things, as today. The one thing left is what the two
-keys are called: the selection, and a declared second configuration. The selection's name has to
+An agent's own login is a provider too, declared by the agent's pack (`openai-codex` by the
+openai-auth pack today; `anthropic` for claude, `github-copilot` for copilot), so "keep your own
+login" is written as that provider's name and no special value exists. `-p` and the selection key
+name the same things, as today. The one thing left is what the two keys are called: the
+selection, and a declared second configuration. The selection's name has to
 say what it is with no provider table in sight, since on the maintainer's machines it sits in a
 different file from them.
 
 1. 💬 🤷 <a id="OQ-RC14"></a>**OQ-RC14: What are the selection and the declarations called?**
 
    Today the pair is `profile` and `profiles`, one letter apart for two different things: one maps
-   each agent to where its inference comes from, the other describes such a place. With a provider
-   selectable by name, most declared setups are variants of one provider. The selection's name is
-   read in a file of its own, with no provider table beside it, so it has to say what it is alone.
+   each agent to a provider, the other describes providers. The selection's name is read in a file
+   of its own, with no provider table beside it, so it has to say what it is alone.
+
+   `providers.bedrock` and `variants` are accepted; only the selection key's name is open. It has
+   to say two things alone: that it is a provider, and that it is the one each agent runs on.
 
    ```toml
-   # A  inference_provider, and variants under their provider; the word "profile" leaves the config
-   [inference_provider]
+   # A  active_provider: "the active provider for each agent"
+   [active_provider]
    default = "bedrock"
    claude = "bedrock/opus"
-   [providers.bedrock.variants.opus]
-   model = "global.anthropic.claude-opus-5-5"
+   codex = "openai-codex"
 
-   # B  active_profile, and profiles as today's declarations (a provider is still selectable by name)
-   [active_profile]
+   # B  provider_for: "the provider for each agent"
+   [provider_for]
    default = "bedrock"
-   claude = "bedrock-opus"
-   [profiles.bedrock-opus]
-   provider = "bedrock"
-   model = "global.anthropic.claude-opus-5-5"
+   claude = "bedrock/opus"
+   codex = "openai-codex"
 
-   # C  keep profile for the selection, rename only the declarations
-   [profile]
-   claude = "bedrock-opus"
-   [setups.bedrock-opus]
-   provider = "bedrock"
-   model = "global.anthropic.claude-opus-5-5"
+   # C  default_provider, per agent; reads oddly for an agent-specific line
+   [default_provider]
+   default = "bedrock"
+   claude = "bedrock/opus"
    ```
 
-   <!-- vantage: question id=OQ-RC14 leaning="A: inference_provider says what the key is with nothing else on the screen, a variant is what a same-provider profile is, and the pair goes." -->
+   <!-- vantage: question id=OQ-RC14 leaning="A: active_provider says both halves, a provider and the one in use, and pairs with providers.* as declared against selected." -->
 
-   _Leaning:_ A: `inference_provider` says what the key is with nothing else on the screen, a
-   variant is what a same-provider profile is, and the pair goes.
+   _Leaning:_ A: `active_provider` says both halves, a provider and the one in use, and pairs
+   with `providers.*` as declared against selected.
 
    **Answer:**
    > _(empty — fill in when decided)_

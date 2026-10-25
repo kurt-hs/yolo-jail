@@ -194,8 +194,8 @@ are spelled, is the question.
    off = true
    [env]
    unset = ["AWS_PROFILE"]
-   [inference_provider]
-   claude = false
+   [active_provider]
+   claude = "anthropic"              # its own login is a provider, so nothing to remove
    [requests.github]
    repos = []                        # an empty list clears a list
 

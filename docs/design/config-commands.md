@@ -114,8 +114,8 @@ Written. Your config adds tavily; this project's jail will not see it.
 Where did this value come from:
 
 ```console
-$ yolo config why inference_provider.claude
-inference_provider.claude = false
+$ yolo config why active_provider.claude
+active_provider.claude = "anthropic"
   set in  ~/.config/yolo-jail/config.d/overrides.toml:9
   default would be: the default setup, "bedrock"
 ```
@@ -220,8 +220,8 @@ $ yolo allow git fetch                     # user config: [allow.git] always += 
 $ yolo request git push main               # project config: [requests.git] push += "main"
 $ yolo request github repos acme/shared
 $ yolo allow git on_request push           # user config: [allow.git] on_request += "push"
-$ yolo inference default bedrock           # user config: [inference_provider] default = "bedrock"
-$ yolo inference claude false
+$ yolo active-provider default bedrock     # user config: [active_provider] default = "bedrock"
+$ yolo active-provider claude anthropic
 ```
 
 One generic verb, keyed by path:
@@ -229,7 +229,7 @@ One generic verb, keyed by path:
 ```console
 $ yolo config add packs local/matt
 $ yolo config add allow.git.always fetch
-$ yolo config set inference_provider.claude false
+$ yolo config set active_provider.claude anthropic
 $ yolo config add requests.git.push main --project
 $ yolo config unset mcp_servers.tavily --local
 $ yolo config set --dry-run machine.resources.memory 32g
@@ -295,7 +295,7 @@ The same excerpt in each format:
 
 ```jsonc
 { "allow": { "git": { "always": ["fetch"], "on_request": ["push"] } },
-  "inference_provider": { "default": "bedrock", "claude": false },
+  "active_provider": { "default": "bedrock", "claude": "anthropic" },
   "providers": { "bedrock": { "region": "us-east-1",
     "models": { "global.openai.gpt-6.1-sol": { "name": "Sol 6.1", "context": 272000 } } } } }
 ```
@@ -305,9 +305,9 @@ The same excerpt in each format:
 always = ["fetch"]
 on_request = ["push"]
 
-[inference_provider]
+[active_provider]
 default = "bedrock"
-claude = false
+claude = "anthropic"
 
 [providers.bedrock]
 region = "us-east-1"
@@ -316,7 +316,7 @@ models."global.openai.gpt-6.1-sol" = { name = "Sol 6.1", context = 272_000 }
 
 ```yaml
 allow: { git: { always: [fetch], on_request: [push] } }
-inference_provider: { default: bedrock, claude: false }
+active_provider: { default: bedrock, claude: anthropic }
 providers:
   bedrock:
     region: us-east-1
