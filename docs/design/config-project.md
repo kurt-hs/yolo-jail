@@ -53,7 +53,7 @@ Proposed, `yolo-jail.toml`:
 nix = ["just"]                    # runs this repo's Justfile recipes
 mise = { lua = "5.4.9" }          # syntax-checks the packs' derive.lua files
 
-[needs.git]                       # what this project asks for, within your [allow.git]
+[requests.git]                    # what this project requests, from what your [allow.git] lists as requestable
 push = ["main"]
 ```
 
@@ -98,21 +98,23 @@ files = ["~/.config/yolo-jail/secrets.env"]
 set = { PAGER = "cat" }
 unset = ["AWS_PROFILE"]
 
-[needs.github]
+[requests.github]
 repos = ["acme/shared"]                   # beyond this repository's own remotes
 
-[needs.git]
+[requests.git]
 new_branches = true                       # branches of its own, never main; each is approved at launch
 ```
 
 A direction is a key, not a position in a string: `{ host = 8000, jail = 8000 }` where today's
-`"8000:8000"` and `forward_host_ports` run opposite ways. A project asks; your config allows.
-Asking past the ceiling is refused at `yolo check`, naming both lines:
+`"8000:8000"` and `forward_host_ports` run opposite ways. A project requests; your config says
+what is requestable. A request outside that is not an error: two people on one repository may
+allow different things, so the one who does not sees it reported and skipped, and the jail runs
+without it:
 
 ```console
 $ yolo check
-yolo-jail.toml:22: [needs.git] new_branches = true asks to push, and your config's allow.git.push is false.
-  Allow it for every project: yolo allow git push        (or leave it, and this project cannot push)
+yolo-jail.toml:22: requests.git.new_branches asks to create branches; your config does not list
+  new_branches as requestable for git, so this project will not. To allow it: yolo allow git requestable new_branches
 ```
 
 Nothing that decides where inference goes or what a jail may do with your logins is accepted
@@ -132,7 +134,7 @@ it belongs in.
    mounts / [[mounts]] # a bare path, or a table with host and at
    [machine]          # gpu, resources, ports, forward, where today's four top-level keys were
    [env]              # files, set, unset, where today's one mixed list was
-   [needs.*]          # what this project asks for, within your allow
+   [requests.*]       # what this project requests, from what your allow lists as requestable
    ```
 
    <!-- vantage: question id=OQ-RC17 leaning="Approve: each section names what the project decides, and the two string traps become keys." -->
@@ -192,9 +194,9 @@ are spelled, is the question.
    off = true
    [env]
    unset = ["AWS_PROFILE"]
-   [run_on]
+   [inference_provider]
    claude = false
-   [needs.github]
+   [requests.github]
    repos = []                        # an empty list clears a list
 
    # B  one reserved string, valid wherever a value may be removed  (a reserved string, which principle 5 rules out)
@@ -215,8 +217,8 @@ are spelled, is the question.
 
 ## 4. Principles
 
-1. **A project asks; your config allows.** `needs` here must fit inside `allow` there, and every
-   ask is a line in the launch approval prompt, as today.
+1. **A project requests; your config says what is requestable.** Every request is a line in the
+   launch approval prompt, granted or skipped; a request outside your ceiling is never an error.
 2. **A project file is the agent's to edit**, so nothing user-scope is accepted here, and the
    refusal names the file it belongs in.
 3. **A direction is a key, not a position in a string.**
