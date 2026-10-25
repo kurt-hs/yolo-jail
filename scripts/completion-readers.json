@@ -3283,7 +3283,6 @@
 "flake.nix",
 "go.mod",
 "integration/*",
-"integration/reaperstore_test.go",
 "internal/agentcfg/*",
 "internal/agentcfg/codec/*",
 "internal/agentcfg/luahook/*",
