@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -234,5 +235,71 @@ func TestACutPassResumesInsideTheSubdirItStoppedIn(t *testing.T) {
 	}
 	if d := res.Describe(); d == "" {
 		t.Errorf("no description")
+	}
+}
+
+// TestAUnitIsNotHeldByItsPackageContent: the bucket-wide holds match "auth", "token" and *.lock
+// anywhere in a path, which inside an unpacked package is ordinary content. Holding on them kept
+// such units for ever; inside a unit only a lock at its top is held.
+func TestAUnitIsNotHeldByItsPackageContent(t *testing.T) {
+	root := t.TempDir()
+	agedUnit(t, root, "uv/archive-v0/req", 40, map[string]int{
+		"requests/auth.py": 40, "requests/__init__.py": 40, "transformers/tokenization_utils.py": 40,
+		"pkg-1.0.dist-info/poetry.lock": 40})
+	agedUnit(t, root, "npm/_npx/abc", 40, map[string]int{
+		"node_modules/js-tokens/index.js": 40, "node_modules/jsonwebtoken/sign.js": 40, "package.json": 40})
+	agedUnit(t, root, "uv/archive-v0/locked", 40, map[string]int{".lock": 40, "pkg/a.py": 40})
+	_, _, _ = PurgeCacheByAgeWithin(root, []string{"uv", "npm"}, nil, 30, true, time.Now(), nil, time.Time{})
+	for _, rel := range []string{"uv/archive-v0/req", "npm/_npx/abc"} {
+		if present(root, rel) {
+			t.Errorf("%s was kept: a name inside the package was read as a credential or lock", rel)
+		}
+	}
+	if !present(root, "uv/archive-v0/locked/pkg/a.py") {
+		t.Errorf("a unit with a lock file at its top was removed")
+	}
+}
+
+// TestAFailedUnitRemovalIsReported: a unit renamed out of the way whose removal fails is named in
+// the result, so the caller can say what to do, rather than retried in silence.
+func TestAFailedUnitRemovalIsReported(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root removes a read-only directory's entries, so the failure cannot be staged")
+	}
+	root := t.TempDir()
+	tomb := "uv/archive-v0/" + purgeTombstonePrefix + "abc"
+	agedUnit(t, root, tomb, 40, map[string]int{"pkg/a.py": 40})
+	ro := filepath.Join(root, filepath.FromSlash(tomb), "pkg")
+	must(t, os.Chmod(ro, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(ro, 0o755) })
+	res := PurgeCacheByAgeFrom(root, []string{"uv"}, nil, 30, true, time.Now(), nil, time.Time{}, CachePurgeCursor{})
+	if len(res.Failed) != 1 || !strings.Contains(res.Failed[0], purgeTombstonePrefix+"abc") {
+		t.Errorf("Failed = %v, want the tombstone named", res.Failed)
+	}
+}
+
+// TestManualPruneResumesTheRemoval pins `yolo prune --apply`'s call site: it starts at the
+// removal's saved place (pip, so uv's aged file is left for the cycle that already covered it),
+// saves the place it reached, and leaves the measurement's place as it found it.
+func TestManualPruneResumesTheRemoval(t *testing.T) {
+	o, gs := baseOpts(t)
+	o.Apply = true
+	o.NoContainers, o.NoImages, o.NoImageCache, o.NoBuildRoots = true, true, true, true
+	o.NoShadowedHome, o.NoEmbeddedPacks, o.NoHardlink = true, true, true
+	o.Now = time.Now
+	agedTree(t, filepath.Join(gs, "cache"), "uv/old", "pip/old")
+	progressPath := filepath.Join(gs, "build", CachePurgeProgressName)
+	SaveCachePurgeProgress(progressPath, CachePurgeProgress{
+		Measure: CachePurgeCursor{Sub: "npm", Path: "x"}, MeasureBytes: 7, Apply: CachePurgeCursor{Sub: "pip"}})
+	var buf strings.Builder
+	o.Out = &buf
+	Run(o)
+	if !present(gs, "cache/uv/old") || present(gs, "cache/pip/old") {
+		t.Errorf("uv/old present=%v, pip/old present=%v: want the removal resumed at pip",
+			present(gs, "cache/uv/old"), present(gs, "cache/pip/old"))
+	}
+	p := LoadCachePurgeProgress(progressPath)
+	if !p.Apply.IsStart() || p.Measure.Sub != "npm" || p.MeasureBytes != 7 {
+		t.Errorf("progress after the prune = %+v, want the removal's cycle finished and the measurement's untouched", p)
 	}
 }

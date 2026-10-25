@@ -109,51 +109,64 @@ func TestTheCacheDebounceWaitsForTheWholeCycle(t *testing.T) {
 	}
 }
 
-// TestTheSlotsRunTheCopilotPkgReaper is the call-site pin for the Copilot self-update store:
-// both slot bodies run it, and it deletes under the slot's guard. prune's own tests prove the rule;
-// nothing there notices a slot that stopped calling it.
-func TestTheSlotsRunTheCopilotPkgReaper(t *testing.T) {
+// TestTheContainerSlotRunsTheCopilotPkgReaper is the call-site pin for the Copilot self-update
+// store: the container slot runs it with its runtime, under the guard; the macos-user slot, which
+// asks no runtime by design, does not. prune's own tests prove the rule; nothing there notices a
+// slot that stopped calling it.
+func TestTheContainerSlotRunsTheCopilotPkgReaper(t *testing.T) {
 	src, err := os.ReadFile("housekeeping.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, fn := range []string{"func (o *Options) runHousekeeping(", "func (o *Options) runMacosUserHousekeeping("} {
-		if !strings.Contains(afterFunc(string(src), fn), "o.reapCopilotPkgVersions(guard)") {
-			t.Errorf("%s no longer runs reapCopilotPkgVersions under the guard", fn)
-		}
+	if !strings.Contains(afterFunc(string(src), "func (o *Options) runHousekeeping("), "o.reapCopilotPkgVersions(rt, guard)") {
+		t.Errorf("the container slot no longer runs reapCopilotPkgVersions with its runtime under the guard")
+	}
+	if strings.Contains(afterFunc(string(src), "func (o *Options) runMacosUserHousekeeping("), "reapCopilotPkgVersions") {
+		t.Errorf("the macos-user slot runs reapCopilotPkgVersions, whose veto needs a container runtime")
 	}
 }
 
-// TestTheCopilotPkgReaperRemovesOldVersionsOncePerDay: the slot's class removes a version past the
-// newest three that nothing used for a week, notes it, and is debounced; the opt-out skips it.
-func TestTheCopilotPkgReaperRemovesOldVersionsOncePerDay(t *testing.T) {
+// copilotStore writes four complete Copilot versions extracted 60 days ago and returns the
+// platform directory.
+func copilotStore(t *testing.T) string {
+	t.Helper()
+	pkg := filepath.Join(paths.GlobalStorage(), "cache", "copilot", "pkg", "linux-x64")
+	past := time.Now().Add(-60 * 24 * time.Hour)
+	for _, v := range []string{"1.0.4", "1.0.3", "1.0.2", "1.0.1"} {
+		dir := filepath.Join(pkg, v)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "index.js"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		marker := filepath.Join(dir, ".extraction-complete")
+		if err := os.WriteFile(marker, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.Chtimes(marker, past, past)
+	}
+	return pkg
+}
+
+// TestTheCopilotPkgReaperRemovesSupersededVersionsOncePerDay: with podman listing no running jail,
+// the slot's class removes a version past the newest three that a newer one long superseded, and
+// is debounced; the opt-out skips it.
+func TestTheCopilotPkgReaperRemovesSupersededVersionsOncePerDay(t *testing.T) {
 	for _, optOut := range []bool{false, true} {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
 		o := goldenOptions(t.TempDir(), home)
 		o.Now = time.Now
-		if optOut {
-			o.Getenv = func(k string) string {
-				if k == autoReapOptOutEnv {
-					return "1"
-				}
-				return ""
+		o.Getenv = func(k string) string {
+			if optOut && k == autoReapOptOutEnv {
+				return "1"
 			}
+			return ""
 		}
-		pkg := filepath.Join(paths.GlobalStorage(), "cache", "copilot", "pkg", "linux-x64")
-		past := time.Now().Add(-60 * 24 * time.Hour)
-		for _, v := range []string{"1.0.4", "1.0.3", "1.0.2", "1.0.1"} {
-			f := filepath.Join(pkg, v, "index.js")
-			if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			_ = os.Chtimes(f, past, past)
-			_ = os.Chtimes(filepath.Dir(f), past, past)
-		}
-		o.reapCopilotPkgVersions(nil)
+		o.Exec = func([]string, string, []string, time.Duration) ExecResult { return ExecResult{Ran: true, RC: 0} }
+		pkg := copilotStore(t)
+		o.reapCopilotPkgVersions("podman", nil)
 		_, err := os.Stat(filepath.Join(pkg, "1.0.1"))
 		if gone := os.IsNotExist(err); gone == optOut {
 			t.Errorf("optOut=%v: 1.0.1 removed=%v", optOut, gone)
@@ -164,5 +177,65 @@ func TestTheCopilotPkgReaperRemovesOldVersionsOncePerDay(t *testing.T) {
 		if due, _ := o.classDebounce(CopilotPkgHousekeepingClass); due != optOut {
 			t.Errorf("optOut=%v: due=%v after the pass", optOut, due)
 		}
+	}
+}
+
+// TestTheCopilotPkgReaperDeclinesWithoutARuntimeAnswer: a runtime that cannot list its running
+// jails' start times removes nothing, says why with a next step, and leaves the class due.
+func TestTheCopilotPkgReaperDeclinesWithoutARuntimeAnswer(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	o := goldenOptions(t.TempDir(), home)
+	o.Now = time.Now
+	o.Getenv = func(string) string { return "" }
+	o.Exec = func([]string, string, []string, time.Duration) ExecResult { return ExecResult{Ran: true, RC: 125} }
+	pkg := copilotStore(t)
+	o.reapCopilotPkgVersions("podman", nil)
+	if _, err := os.Stat(filepath.Join(pkg, "1.0.1")); err != nil {
+		t.Errorf("1.0.1 was removed although the running jails could not be listed")
+	}
+	if due, _ := o.classDebounce(CopilotPkgHousekeepingClass); !due {
+		t.Errorf("a declined pass stamped the debounce")
+	}
+	log, _ := os.ReadFile(filepath.Join(o.Workspace, ".yolo", housekeepingLogName))
+	if !strings.Contains(string(log), "copilot: declined") || !strings.Contains(string(log), "yolo prune --apply") {
+		t.Errorf("the decline is not noted with a next step:\n%s", log)
+	}
+}
+
+// TestWithConsentTheRemovalCycleStampsTheDebounce is the alternation the old rule allowed: with
+// consent, a pass whose measurement is cut but whose removal finishes its cycle stamps the class,
+// rather than waiting for both walks to finish on the same pass, which they might never do.
+func TestWithConsentTheRemovalCycleStampsTheDebounce(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	o := goldenOptions(t.TempDir(), home)
+	o.Now = time.Now
+	agedCacheFile(t, "uv/old")
+	pip := agedCacheFile(t, "pip/old")
+	progressPath := filepath.Join(paths.BuildDir(), prune.CachePurgeProgressName)
+	prune.SaveCachePurgeProgress(progressPath, prune.CachePurgeProgress{Apply: prune.CachePurgeCursor{Sub: "pip"}})
+
+	orig := cacheWalkDeadline
+	cacheWalkDeadline = func(walk string) time.Time {
+		if walk == "measure" {
+			return time.Now().Add(-time.Second) // cut at once
+		}
+		return time.Now().Add(time.Hour)
+	}
+	defer func() { cacheWalkDeadline = orig }()
+
+	var c reclaimConsent
+	c.grant(cachePurgeClass, false)
+	o.measureAndPurgeCache(c, nil)
+
+	if _, err := os.Stat(pip); !os.IsNotExist(err) {
+		t.Fatalf("the removal did not finish its cycle at pip")
+	}
+	if m := LastOfferMeasurement(cachePurgeClass); !m.Partial {
+		t.Errorf("the cut measurement was recorded complete")
+	}
+	if due, _ := o.classDebounce(CacheHousekeepingClass); due {
+		t.Errorf("with consent, a finished removal cycle left the class due: the two walks could alternate for ever")
 	}
 }

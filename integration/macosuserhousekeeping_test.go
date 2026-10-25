@@ -61,11 +61,8 @@ func TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession(t *testi
 	// walk is bounded at a minute, against a session of seconds. On a machine whose cache stamp is
 	// stale that walk could use the session up before the loophole-state class ran.
 	holdMachineLock(t, true, "the macos-user housekeeping test owns the machine's housekeeping debounce stamps")
-	// The Copilot self-update class's too, which runs between the two: it is not this test's
-	// subject, and a slot that reaped a developer's copilot/pkg on the way would be a side effect.
 	before := ownHousekeepingStamp(t, run.LoopholeStateHousekeepingClass, true) +
-		ownHousekeepingStamp(t, run.CacheHousekeepingClass, false) +
-		ownHousekeepingStamp(t, run.CopilotPkgHousekeepingClass, false)
+		ownHousekeepingStamp(t, run.CacheHousekeepingClass, false)
 
 	r := runMacosUser(t, ws, "sleep 5\necho \"=== END ===\"", withAutoReapers())
 	if r.rc != 0 || !strings.Contains(r.stdout, "=== END ===") {

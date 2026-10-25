@@ -461,13 +461,22 @@ file is a whole entry and goes on its own. The list, and the reasoning for each 
 
 **Copilot's self-update store has its own rule.** `copilot/pkg/<platform>/<version>/` gains one
 unpacked release (150-200 MB) per Copilot self-update and nothing removed old ones. The age purge
-cannot judge it: the release's files carry 1985 timestamps. So an automatic class keeps the newest
-versions per platform (one of them is the release a launched copilot resolves to) and any older one
-a jail read within a window, and removes the rest whole, once a day. The slot cannot ask a running
-jail which version it runs; the access-time window stands in for that, and on a filesystem mounted
-`noatime` the newest versions are the only protection. It is automatic and not offered because a
-removed version costs one release download at most, the bounded regeneration
-[BF-P3](#backfill-rules) asks for.
+cannot judge it: the release's files carry 1985 timestamps. A copilot starts on the newest complete
+version (one with its `.extraction-complete` marker), so an old version can be running only in a
+jail that started before a newer complete version was unpacked. An automatic class on the
+container slot keeps the newest complete versions per platform and removes an older version whole
+only when a newer complete one was unpacked more than a grace period ago and no running jail
+started before that, the running jails' start times read from podman. A runtime that cannot list
+them (Apple Container, macos-user, a failed listing) declines the class: noted in
+`housekeeping.log`, not stamped, and asked again at the next launch. A version still unpacking is
+never counted among the kept ones. It is automatic because its evidence is complete (the runtime's
+own list of running jails, the veto that protects live state) and a removed version costs one
+release download at most: both halves of [BF-P3](#backfill-rules).
+
+**Reported sizes can overstate what a pass freed.** A pass counts each removed file's size, so a
+file hard-linked elsewhere (uv links from `archive-v0` into environments) frees nothing on disk
+while it is counted, and an offer's figure is the sum of a cycle measured over several passes, part
+of which an earlier consented removal may already have freed.
 
 > [!WARNING]
 > **A path expression is evaluated in the frame that runs it.** The cache root resolves to the
@@ -730,7 +739,7 @@ record](#the-mise-use-record).
 | A6 | **No background or periodic reclaim: no daemon, timer or cron.** Reaffirmed as [OQ-YW1](../research/central-yolo-watcher.md#11-decision-ledger). | It adds a lifecycle yolo does not have and maximizes P7 exposure; the launch fires at least as often as the artifacts are made. |
 | <a id="BF-D1"></a>BF-D1 | **The vendor version prune runs once per launcher invocation, after the install-or-update branch, under a frozen update policy too; it yields silently to a writer holding the install lock, pays no subprocess in the steady state, and never fails the command.** | A prune moves no version, so a frozen launcher still needs it; a delete that cannot be made must not stop the program under `set -e`. |
 | <a id="BF-D2"></a>BF-D2 | **On `macos-user`, `yolo prune` asks no container runtime and `yolo stores` lists the backend's own storage.** Its running jails are its host-services sessions, read from the locks each session holds; container-only prune sections print one not-applicable line and exit 0; every staging sweep keeps live sessions' staging and declines when sessions cannot be listed; no `sudo`; only this user's sessions are read. | The backend runs no container, so both commands used to fail asking a runtime named `macos-user`. |
-| <a id="BF-D3"></a>BF-D3 | **A `macos-user` launch runs a slot of its own for retired loophole state, the shared cache's offer and Copilot's self-update store**, after the config approval and before the launch lock, on its own goroutine, never after the backend returns. | Those classes grow on a Mac whatever the backend; the others need a container runtime's liveness. |
+| <a id="BF-D3"></a>BF-D3 | **A `macos-user` launch runs a slot of its own for retired loophole state and the shared cache's offer**, after the config approval and before the launch lock, on its own goroutine, never after the backend returns. | Those two classes grow on a Mac whatever the backend; the others need a container runtime's liveness. |
 
 ## Current values
 
@@ -746,7 +755,7 @@ only place the values themselves are stated.
 | Cache age cutoff | 30 days | `yolo prune --cache-age` default |
 | Cache purge default subdirs | uv, pip, npm, go-build, mise, pex, pants, node-gyp, gopls, nce | `prune.CachePurgeDefaultSubdirs` |
 | Cache purge place between passes | `build/cache-purge-progress.json` | `prune.CachePurgeProgressName` |
-| Copilot self-update versions kept | the newest 3 per platform, plus any read within 7 days | `prune.CopilotPkgKeep`, `prune.CopilotPkgRecent` |
+| Copilot self-update versions kept | the newest 3 complete per platform; an older one goes once a newer complete one is 7 days old and no running jail predates it | `prune.CopilotPkgKeep`, `prune.CopilotPkgGrace` |
 | Image-tar keep | 0 on podman, 3 on Apple Container | `prune.ResolveImageCacheKeep`, `ImageCacheKeepAppleContainer` |
 | `*.tmp` grace floor under `cache/images` | 1 hour | `imageCacheTmpGraceFloor` |
 | Owner label | `org.yolo-jail.owner=yolo` | `prune.JailImageOwnerLabel`, `flake.nix` |

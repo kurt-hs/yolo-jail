@@ -596,14 +596,15 @@ func cacheStores(o Options) []Store {
 
 	// copilot/ is forbidden to the age purge (its files carry 1985 timestamps), and its pkg/
 	// self-update store has its own keep-newest reclaimer, automatic on the slot.
-	copilotSlot := "; post-launch slot, daily"
+	copilotSlot := "; post-launch slot of a container launch, daily"
 	if o.InJail() {
 		copilotSlot = ""
 	}
 	covered["copilot"] = Reclaimer{
 		Func: "PruneCopilotPkgVersions",
-		Detail: fmt.Sprintf("pkg/ only: keep the newest %d versions per platform and any used in %dd",
-			prune.CopilotPkgKeep, int(prune.CopilotPkgRecent.Hours()/24)),
+		Detail: fmt.Sprintf("pkg/ only: keep the newest %d complete versions per platform; older ones once "+
+			"superseded %dd and no running jail predates that (podman)",
+			prune.CopilotPkgKeep, int(prune.CopilotPkgGrace.Hours()/24)),
 		Trigger: "yolo prune --apply" + copilotSlot,
 	}
 

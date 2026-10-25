@@ -1162,19 +1162,26 @@ func Run(opts Options) int {
 		// beginning and moves no cursor.
 		var from CachePurgeCursor
 		progressPath := joinPath(opts.BuildDir(), CachePurgeProgressName)
-		var progress CachePurgeProgress
 		if apply {
-			progress = LoadCachePurgeProgress(progressPath)
-			from = progress.Apply
+			from = LoadCachePurgeProgress(progressPath).Apply
 		}
 		res := PurgeCacheByAgeFrom(joinPath(gs, "cache"), subdirs, opts.CacheRelocations,
 			float64(opts.CacheAge), apply, opts.Now(), nil, purgeClock().Add(CachePurgeBudget), from)
 		cacheBytes, cacheFiles = res.Bytes, res.Files
 		if apply {
+			// RELOADED just before the save, and only the removal's place written: this command
+			// takes no housekeeping lock, and a launch's slot may have moved the measurement's
+			// place (or its own removal's) while the walk ran. The last writer of Apply wins,
+			// which at worst walks some of a cycle twice.
+			progress := LoadCachePurgeProgress(progressPath)
 			progress.Apply = res.Next
 			SaveCachePurgeProgress(progressPath, progress)
 		}
 		p.line(fmt.Sprintf("  %s: %s across %s files", verb(apply, "would remove", "removed"), FmtBytes(cacheBytes), fmtComma(cacheFiles)))
+		for _, f := range res.Failed {
+			p.line(fmt.Sprintf("  [yellow]could not finish removing %s — check its permissions and run "+
+				"`yolo prune --apply` again[/yellow]", f))
+		}
 		if res.Partial {
 			next := "run `yolo prune --apply` again to continue from there"
 			if !apply {
@@ -1189,24 +1196,29 @@ func Run(opts Options) int {
 	}
 
 	// --- Copilot's self-update store (copilot/pkg; copilotpkg.go) ---
-	// The launch's slot reaps it automatically, once a day; this is the same rule on demand.
+	// The launch's slot reaps it automatically, once a day; this is the same rule on demand, with
+	// the same veto: the running jails' start times, asked of the runtime, or a decline.
 	{
-		removed, failed, bytes := PruneCopilotPkgVersions(joinPath(gs, "cache"), CopilotPkgKeep, CopilotPkgRecent,
-			opts.Now(), apply, nil)
+		res := PruneCopilotPkgVersions(joinPath(gs, "cache"), CopilotPkgKeep, CopilotPkgGrace, opts.Now(),
+			func() JailStarts { return RunningJailStarts(rt, opts.Exec) }, apply, nil)
 		p.line("")
 		p.line(fmt.Sprintf("[bold]Copilot self-update versions[/bold]  (cache/copilot/pkg; keep the newest %d "+
-			"per platform and any used in the last %d days)", CopilotPkgKeep, int(CopilotPkgRecent.Hours()/24)))
-		if len(removed) == 0 && len(failed) == 0 {
+			"complete per platform, and any a running jail may still use)", CopilotPkgKeep))
+		switch {
+		case res.Declined != "":
+			p.line(fmt.Sprintf("  [yellow]declined: %s — nothing removed; run `yolo prune --apply` where the "+
+				"podman that runs your jails can list them[/yellow]", res.Declined))
+		case len(res.Removed) == 0 && len(res.Failed) == 0:
 			p.line("  [dim]none[/dim]")
 		}
-		for _, v := range removed {
+		for _, v := range res.Removed {
 			p.line(fmt.Sprintf("  %s %s (%s)", verb(apply, "would remove", "removed"), v.Display(), FmtBytes(v.Bytes)))
 		}
-		for _, v := range failed {
+		for _, v := range res.Failed {
 			p.line(fmt.Sprintf("  [yellow]could not remove %s: %s — check its permissions and run "+
 				"`yolo prune --apply` again[/yellow]", v.Display(), v.Err))
 		}
-		totalSaved += bytes
+		totalSaved += res.Bytes
 	}
 
 	// --- Unused tool versions in the shared mise store (disk-footprint.md OQ-DF4) ---

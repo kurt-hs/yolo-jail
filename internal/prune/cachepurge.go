@@ -124,6 +124,9 @@ type CachePurgeResult struct {
 	// Covered is every subdir this pass walked, wholly or (the last, when Partial) in part.
 	// Remaining is every subdir it did not finish, the one it stopped in first; empty unless Partial.
 	Covered, Remaining []string
+	// Failed names each unit the pass renamed out of its tool's way but could not remove, with the
+	// error: the next pass tries again, and the caller says so.
+	Failed []string
 }
 
 // PurgeCacheByAgeFrom is PurgeCacheByAgeWithin starting at from (a cursor an earlier pass
@@ -172,6 +175,7 @@ func PurgeCacheByAgeFrom(cacheRoot string, subdirs []string, relocations map[str
 		}
 		res.Bytes += w.bytes
 		res.Files += w.files
+		res.Failed = append(res.Failed, w.failed...)
 		if w.partial {
 			res.Partial = true
 			res.Next = CachePurgeCursor{Sub: sub, Path: w.cursor}
@@ -255,7 +259,7 @@ func cacheHeld(bucket, rel string) bool {
 	}
 	base := strings.ToLower(parts[len(parts)-1])
 	switch {
-	case base == "lock", base == ".lock", strings.HasSuffix(base, ".lock"), strings.HasSuffix(base, ".lck"):
+	case isLockName(base):
 		return true
 	case base == "cachedir.tag":
 		return true
@@ -263,6 +267,11 @@ func cacheHeld(bucket, rel string) bool {
 		return true
 	}
 	return false
+}
+
+// isLockName reports whether a file name (lowercased) is a lock file's.
+func isLockName(base string) bool {
+	return base == "lock" || base == ".lock" || strings.HasSuffix(base, ".lock") || strings.HasSuffix(base, ".lck")
 }
 
 // purgeBeforeRemove, when set, is called with each file's path (relative to the purge's root)
@@ -309,6 +318,7 @@ type purgeWalk struct {
 	files   int
 	partial bool
 	cursor  string
+	failed  []string // units renamed away whose removal failed: path (relative to r) and error
 }
 
 func (w *purgeWalk) expired() bool {
@@ -424,12 +434,21 @@ next:
 }
 
 // unit removes the directory at path as one item (cachePurgeUnits): only when it and every
-// regular file in it are older than the cutoff and nothing in it is held, by renaming it to a
-// tombstone and removing that. A tombstone an earlier pass left goes whatever its age.
+// regular file in it are older than the cutoff and no lock file sits at its top, by renaming it to
+// a tombstone and removing that. A tombstone an earlier pass left goes whatever its age.
+//
+// NOT THE BUCKET-WIDE HOLDS (cacheHeld). Their substring rules exist for a bucket's own credential
+// and lock files; inside an unpacked package they match ordinary content (requests/auth.py,
+// the tokenization_*.py modules of transformers, node_modules/js-tokens, a bundled poetry.lock),
+// and holding on them kept those whole units for ever. No unit layout on the list keeps a
+// credential inside a unit, and the one lock any of them keeps near one (the .atomic_directory.lck
+// of pex) sits beside it, outside the walk of the unit; a lock file directly at a unit's top is
+// still held (scanUnit).
+//
+// NO TOOL LOCK IS TAKEN, as the per-file purge before it took none: uv and npm may be reading a
+// unit while it is renamed away. The age rule is the protection, the same exposure the per-file
+// purge had, and the rename leaves the tool a miss rather than a half-empty entry.
 func (w *purgeWalk) unit(r *os.Root, path, under string) {
-	if w.hold != nil && w.hold(under) {
-		return
-	}
 	tomb := strings.HasPrefix(filepath.Base(path), purgeTombstonePrefix)
 	if !tomb && !w.unitDirOld(r, path) {
 		return
@@ -470,7 +489,13 @@ func (w *purgeWalk) unit(r *os.Root, path, under string) {
 					return
 				}
 			}
-			removed = r.RemoveAll(gone) == nil
+			if err := r.RemoveAll(gone); err != nil {
+				// Renamed out of the tool's way, so nothing reads the rest; the next pass
+				// tries again, and the caller reports it with a next step.
+				w.failed = append(w.failed, filepath.ToSlash(gone)+": "+err.Error())
+				return
+			}
+			removed = true
 		})
 		if !removed {
 			return
@@ -508,8 +533,8 @@ func (w *purgeWalk) scanUnit(r *os.Root, path, under string, whole bool, deadlin
 			ents, err := f.ReadDir(purgeBatch)
 			for _, e := range ents {
 				cp, cu := filepath.Join(p, e.Name()), u+"/"+e.Name()
-				if !whole && w.hold != nil && w.hold(cu) {
-					old = false
+				if !whole && p == path && !e.IsDir() && isLockName(strings.ToLower(e.Name())) {
+					old = false // a lock at the unit's top: its age says nothing about its holder
 					return
 				}
 				if e.IsDir() {

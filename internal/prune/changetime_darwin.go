@@ -12,8 +12,3 @@ import (
 func statChangeTime(st *syscall.Stat_t) time.Time {
 	return time.Unix(st.Ctimespec.Unix())
 }
-
-// statAccessTime is st's last access time (st_atimespec on darwin).
-func statAccessTime(st *syscall.Stat_t) time.Time {
-	return time.Unix(st.Atimespec.Unix())
-}
