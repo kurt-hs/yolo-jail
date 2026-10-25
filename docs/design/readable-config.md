@@ -167,11 +167,11 @@ because a workspace file is the agent's to edit.
 
 | Section | Holds | Replaces today | Scope |
 | :--- | :--- | :--- | :--- |
-| `packs`, `pack_folders` | what the jail is built from; folders where a bare pack name is also looked up | `packs` (full paths written out) | user |
+| `packs`, `pack_folders` | what the jail is built from; folders where a bare name is also looked up, so your own packs are listed like shipped ones | `packs` (full paths written out) | user |
 | `install.nix`, `install.mise` | extra tools | `packages`, `mise_tools` | both |
 | `mcp.<name>` | MCP servers | `mcp_servers` | both |
-| `as_you.<pack>` | what a jail may do with your host logins: git, GitHub, AWS | `brokered.*`, `loopholes.<name>.enabled` and `settings` for login-serving packs | user for the most it may do, workspace for what a project asks |
-| `use` | which models each agent runs on | `profile` | user |
+| `allow.<pack>` | what a jail may do with your host logins: git, GitHub, AWS | `brokered.*`, `loopholes.<name>.enabled` and `settings` for login-serving packs | user for the most it may do, workspace for what a project asks |
+| `profile` | which profile each agent uses; the key keeps its name | `profile` | user |
 | `providers.<name>` | where models come from, the starting model, the model list | `providers`, the common case of `profiles` | user |
 | `profiles.<name>` | a second configuration of one provider, when you need one | `profiles` | user |
 | `machine` | resources, GPU, devices, network | `resources`, `gpu`, `devices`, `kvm`, `network` | both |
@@ -194,7 +194,7 @@ Each lever can be adopted or vetoed on its own ([OQ-RC1](#OQ-RC1)).
   its models shares unless the model says otherwise. This is per provider, unlike today's
   `model_facts` and `extends`, which share facts across routes to the same model.
 - **L4. Selecting a pack is the switch.** A pack in `packs` is on. A login-serving pack is on when
-  its `[as_you.<pack>]` table is in the user config, because that table is where the user said
+  its `[allow.<pack>]` table is in the user config, because that table is where the user said
   so. A pack a workspace wants off writes `off = true` under it, which is what the per-workspace
   switch file's `enabled: false` becomes. This amends four loophole rules, and keeps each one's
   reason:
@@ -202,17 +202,20 @@ Each lever can be adopted or vetoed on its own ([OQ-RC1](#OQ-RC1)).
     disk still activates nothing; a *selection* is the user writing the name down, which is
     saying so. Nothing is selected by default (`run.warnIfNoPacks`).
   - R2, "absent `default_enabled` means off": the manifest key goes; the selection decides.
-  - R4, "host access is never on by default": host access is `as_you`, which is user scope only,
+  - R4, "host access is never on by default": host access is `allow`, which is user scope only,
     so no project and no default can turn it on.
   - R5, "enable is either scope": a workspace may still turn a non-login pack *off*, and may still
     *ask* for host access it cannot grant.
-- **L5. Words carry their meaning.** `brokered` → `as_you`; `grants` and `grant_kinds` → `fetch`,
-  `push` and `read` ([§4.2](#42-what-a-jail-may-do-with-your-logins)); `profile` → `use`, with
+- **L5. Words carry their meaning.** `brokered` → `allow`; `grants` and `grant_kinds` → `fetch`,
+  `push` and `read` ([§4.2](#42-what-a-jail-may-do-with-your-logins)); `profile` keeps its name ([RC-D1](#decision-ledger)), and gets
   `everyone` for `*` and `"own login"` for `null`; a model's `input` → `accepts`, `cost` → `price`,
   `context_window` → `context`; and the string mini-languages of [§4.4](#44-values-that-were-strings).
 - **L6. Your own pack folders are named once.** `pack_folders = ["~/.dotfiles/yolo-packs"]`, and
-  `"matt"` finds `~/.dotfiles/yolo-packs/matt`. A bare name that matches both a shipped pack and a
-  folder pack is refused, naming both.
+  `"matt"` finds `~/.dotfiles/yolo-packs/matt`. A pack's name is already its folder's name: a
+  configured pack is named by the last segment of its source address, and the manifest's `name` is
+  informational (`internal/packload/packload.go`, the `Pack.Name` comment). L6 adds a second place
+  a bare name is looked up, nothing else. A bare name that matches both a shipped pack and a folder
+  pack is refused, naming both.
 
 ### 4.2 What a jail may do with your logins
 
@@ -221,19 +224,19 @@ project states what it asks for, and every ask is a line in the launch approval 
 
 ```toml
 # your config: the most any project's jail may do
-[as_you.git]
+[allow.git]
 fetch = true                      # or false, or a list of repositories
 push = "when a project asks"      # or "never" (the default)
 
-[as_you.github]
+[allow.github]
 read = true
 write = "when a project asks"     # create-pr and create-issue, the two ruled write kinds
 
 # a project's yolo-jail.toml: what this project asks for
-[as_you.git]
+[allow.git]
 push = ["main"]                   # branch names, or "new branches"
 
-[as_you.github]
+[allow.github]
 write = ["create-pr"]
 repos = ["acme/shared"]           # beyond this repository's own remotes
 ```
@@ -255,7 +258,7 @@ Today the maintainer writes a provider `bedrock`, a profile `bedrock` that picks
 model, and a selection `{"*": "bedrock"}`. The proposal ([OQ-RC3](#OQ-RC3), option B):
 
 ```toml
-[use]
+[profile]
 everyone = "bedrock"              # a provider or a profile name
 claude = "own login"
 
@@ -268,7 +271,7 @@ A provider is selectable by its own name and starts on its `model`. A profile is
 second configuration of one provider (`bedrock-opus`, or `bedrock-bridge` with its `via`).
 Provider and profile names share one namespace; a collision is refused. A shipped profile that only
 repeats its provider's name is deleted; seven of the nine shipped profiles are that today. `-p`
-names whatever `use` names.
+and `profile` name the same thing, as [PP-D10](providers-and-profiles-redesign.md#PP-D10) ruled.
 
 The standing leaning on [OQ-PP1](providers-and-profiles-redesign.md#OQ-PP1) is to keep profiles as
 the only selectable thing, for the reason [OQ-AP1](active-provider-sets.md#11-decision-ledger)
@@ -300,7 +303,7 @@ The same excerpt each time: the logins section and one model. Full renderings ar
 
 ```jsonc
 {
-  "as_you": {
+  "allow": {
     "git": {"fetch": true, "push": "when a project asks"},
     "aws-auth": {"profile": "hssandbox-BedrockInference", "unnarrowed": true}
   },
@@ -315,15 +318,15 @@ The same excerpt each time: the logins section and one model. Full renderings ar
 **TOML:**
 
 ```toml
-[as_you.git]
+[allow.git]
 fetch = true
 push = "when a project asks"
 
-[as_you.aws-auth]
+[allow.aws-auth]
 profile = "hssandbox-BedrockInference"
 unnarrowed = true
 
-[use]
+[profile]
 everyone = "bedrock"
 claude = "own login"
 
@@ -335,7 +338,7 @@ models."global.openai.gpt-6.1-sol" = { name = "Sol 6.1", context = 272_000 }
 **YAML:**
 
 ```yaml
-as_you:
+allow:
   git: {fetch: true, push: when a project asks}
   aws-auth: {profile: hssandbox-BedrockInference, unnarrowed: true}
 use: {everyone: bedrock, claude: own login}
@@ -657,11 +660,11 @@ $ yolo pack add matt                       # user config: packs += "matt"
 $ yolo pack remove journal
 $ yolo install nix just                    # project config: install.nix += "just"
 $ yolo install mise python@3.12 --user
-$ yolo allow git fetch                     # user config: [as_you.git] fetch = true
-$ yolo allow git push main                 # project config: [as_you.git] push += "main"
+$ yolo allow git fetch                     # user config: [allow.git] fetch = true
+$ yolo allow git push main                 # project config: [allow.git] push += "main"
 $ yolo allow github repos acme/shared
-$ yolo use bedrock                         # user config: [use] everyone = "bedrock"
-$ yolo use claude "own login"
+$ yolo profile bedrock                         # user config: [profile] everyone = "bedrock"
+$ yolo profile claude "own login"
 $ yolo mcp off tavily --local              # yolo-jail.local: [mcp.tavily] off = true
 ```
 
@@ -669,9 +672,9 @@ $ yolo mcp off tavily --local              # yolo-jail.local: [mcp.tavily] off =
 
 ```console
 $ yolo config add packs matt
-$ yolo config set as_you.git.fetch true
-$ yolo config set use.claude "own login"
-$ yolo config add as_you.git.push main --project
+$ yolo config set allow.git.fetch true
+$ yolo config set profile.claude "own login"
+$ yolo config add allow.git.push main --project
 $ yolo config unset mcp.tavily --local     # writes off = true where the key would be
 $ yolo config set --dry-run machine.resources.memory 32g
 ```
@@ -689,7 +692,7 @@ until `--file` picks one.
 **What happens next is what happens today.** A project-config edit lands at the next
 `yolo config apply` or launch, through the same y/N diff gate; an agent in a jail runs
 `yolo check --no-build` after it, as the briefing already says. A user-config edit is trusted and
-never prompts, except `as_you` grants, which go through the broker's approval as today; the command
+never prompts, except `allow` grants, which go through the broker's approval as today; the command
 that writes one offers to run `yolo config apply` next, so the two-step becomes one answer.
 
 ### 8.4 The verb `yolo config` is taken
@@ -800,7 +803,7 @@ what the first release is for.
 - **A fetched pack in the old format**: [OQ-RC8](#OQ-RC8).
 - **A yolo older than this change**: [OQ-RC6](#OQ-RC6) and [§9.2](#92-the-order-of-releases).
 - **Files only yolo reads** stay JSON, in the new vocabulary. A drift report and an approval
-  prompt say `as_you.git.push`, never `brokered.git.grants`. The jail's inherited copy of the user
+  prompt say `allow.git.push`, never `brokered.git.grants`. The jail's inherited copy of the user
   config becomes TOML, so what an agent reads matches what the user wrote.
 - **An error in a new file** names `file:line:col` and the key. Today's JSONC errors name a byte
   offset only (`internal/json5/json5.go`); the position index that serves a splice serves this too.
@@ -863,11 +866,10 @@ workspace launches with no new approval prompt.
 becomes, and that moving them "would be a proposal of its own". This is that proposal, and
 [OQ-RC2](#OQ-RC2) is where it is ruled on again.
 
-**Two rulings this amends.** [PP-D10](providers-and-profiles-redesign.md#PP-D10) renamed
-`use_profiles` to `profile` so the key mirrors `-p`; L5 renames it to `use`, keeping the reason
-(form for form) and changing the word, because `profile` beside `profiles` and `providers` is the
-confusion the maintainer named. [OQ-BB12](boundary-broker.md#15-decision-ledger) is read as being
-about side effects and messes; [OQ-RC9](#OQ-RC9).
+**One ruling this amends.** [OQ-BB12](boundary-broker.md#15-decision-ledger) is read as being
+about side effects and messes; [OQ-RC9](#OQ-RC9). [PP-D10](providers-and-profiles-redesign.md#PP-D10),
+the `profile` key that mirrors `-p`, stands: an earlier draft renamed it, and the maintainer's
+review of 2026-10-24 kept the name ([RC-D1](#decision-ledger)).
 
 ## 13. Open questions
 
@@ -884,7 +886,7 @@ about side effects and messes; [OQ-RC9](#OQ-RC9).
    - **L3:** facts every model of a provider shares are written once, in `every_model`.
    - **L4:** selecting a pack is its switch; a login-serving pack is on when its settings table is
      in your config. This amends four loophole rules, each keeping its reason.
-   - **L5:** the renames, and tables where strings carried two meanings.
+   - **L5:** the renames (`profile` excepted; it keeps its name), and tables where strings carried two meanings.
    - **L6:** `pack_folders`, so your own packs are listed by bare name.
 
    <!-- vantage: question id=OQ-RC1 leaning="All six. L4 is the only one that changes ruled rules, and selecting a pack by name is the user saying so, which is what those rules protect." -->
@@ -946,17 +948,20 @@ about side effects and messes; [OQ-RC9](#OQ-RC9).
 
    The maintainer reads `brokered.git.grants` and says *"I don't understand 'brokered'."* The
    section holds git fetch and push, GitHub reads and writes, and the AWS login `aws-auth` serves:
-   everything a jail does using a host credential it never sees.
+   everything a jail does using a host credential it never sees. `as_you` was the first draft's
+   name, and the maintainer rejected it on 2026-10-24 ([RC-D2](#decision-ledger)); the body uses
+   `allow` as the placeholder until this is ruled.
 
-   - **A — `as_you`**: `[as_you.git] push = ["main"]`. Short, and says whose identity is used.
-   - **B — `your_logins`**: names the credential, not the act.
-   - **C — `on_your_behalf`**: the plainest English, and the longest.
-   - **D — `access`**: familiar, but says nothing about whose login.
+   - **A — `allow`**: `[allow.git] push = ["main"]`. Reads as a sentence, and is the verb the
+     command already uses (`yolo allow git push main`).
+   - **B — `logins`**: `[logins.git] fetch = true`. Names what is lent, not the act.
+   - **C — `host_logins`**: the same, saying whose.
+   - **D — `on_your_behalf`**: the plainest English, and the longest to type.
 
-   <!-- vantage: question id=OQ-RC4 leaning="A, as_you: it reads as a sentence with what follows, and it is short enough to type." -->
+   <!-- vantage: question id=OQ-RC4 leaning="A, allow: it reads as a sentence with what follows, and the command verb and the section are then one word." -->
 
-   _Leaning:_ A, `as_you`: it reads as a sentence with what follows, and it is short enough to
-   type.
+   _Leaning:_ A, `allow`: it reads as a sentence with what follows, and the command verb and the
+   section are then one word.
 
    **Answer:**
    > _(empty — fill in when decided)_
@@ -1015,7 +1020,7 @@ about side effects and messes; [OQ-RC9](#OQ-RC9).
 
    - **A — A word where each thing lives.** `off = true` on anything with a name (`[mcp.tavily]
      off = true`, a pack, a provider), `unset = ["AWS_PROFILE"]` under `env`, `"own login"` in
-     `use`, and an empty list to clear a list. Four spellings, each saying what it does.
+     `profile`, and an empty list to clear a list. Four spellings, each saying what it does.
    - **B — One reserved string, `"off"`,** valid wherever a value may be removed. One rule, but
      `"off"` can then never be a real value, and `"off"` for "keep your own login" reads wrong.
    - **C — One top-level list of removals:** `remove = ["mcp.tavily", "env.AWS_PROFILE"]`. Every
@@ -1084,9 +1089,9 @@ about side effects and messes; [OQ-RC9](#OQ-RC9).
     print and which a person remembers.
 
     - **A — Named verbs**: `yolo pack add matt`, `yolo install nix just`, `yolo allow git fetch`,
-      `yolo use bedrock`. Each names the decision, as its section does. About ten verbs to learn,
+      `yolo profile bedrock`. Each names the decision, as its section does. About ten verbs to learn,
       and a key with no verb has no command.
-    - **B — One generic verb**: `yolo config set as_you.git.fetch true`, `yolo config add packs
+    - **B — One generic verb**: `yolo config set allow.git.fetch true`, `yolo config add packs
       matt`, `yolo config unset mcp.tavily`. Every key has a command, and a message prints it from
       the key it knows. Longer to type, and the path is the thing the shape work made readable.
     - **C — Both**: B underneath, A as sugar for the common decisions. Messages print B; people
@@ -1151,6 +1156,8 @@ about side effects and messes; [OQ-RC9](#OQ-RC9).
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
+| <a id="RC-D1"></a>RC-D1 | **The `profile` key keeps its name.** Review comment on the draft's `use`: *"awful name … isn't this a profile?"* It is, and PP-D10's reason (the key mirrors `-p`) stands. L5 no longer renames it | 2026-10-24 | [§4.3](#43-models-one-name-for-the-common-case) | — |
+| <a id="RC-D2"></a>RC-D2 | **Not `as_you`.** Review comment: *"I hate the name 'as_you'."* The section's name stays open as [OQ-RC4](#OQ-RC4) with `allow` as the placeholder | 2026-10-24 | [§4.2](#42-what-a-jail-may-do-with-your-logins) | — |
 
 ## Appendix A: the maintainer's config, whole
 
@@ -1184,7 +1191,7 @@ neovim = "nightly"
 command = ["npx", "-y", "tavily-mcp@latest"]
 env = { TAVILY_API_KEY = "${TAVILY_API_KEY}" }   # passed through literally; the agent expands it
 
-[use]
+[profile]
 everyone = "bedrock"
 claude = "own login"
 ```
@@ -1195,14 +1202,14 @@ claude = "own login"
 packs = ["bedrock", "aws-auth", "copilot", "claude", "luna-worker", "claude-bedrock-global"]
 
 # What jails may do with your own logins. Each project asks for what it needs.
-[as_you.git]
+[allow.git]
 fetch = true
 push = "when a project asks"
 
-[as_you.github]
+[allow.github]
 read = true
 
-[as_you.aws-auth]                 # writing this turns the service on
+[allow.aws-auth]                 # writing this turns the service on
 profile = "hssandbox-BedrockInference"
 unnarrowed = true
 
@@ -1230,7 +1237,7 @@ OpenRouter rows are a guess at shape, not content):
 ```toml
 packs = ["agy-capture", "meta-muse", "workspace-questions"]
 
-[use]
+[profile]
 everyone = "or"
 
 [profiles.or]
@@ -1254,7 +1261,7 @@ This repository's `yolo-jail.toml`, replacing 133 lines:
 nix = ["just"]                    # runs this repo's Justfile recipes
 mise = { lua = "5.4.9" }          # syntax-checks the packs' derive.lua files
 
-[as_you.git]
+[allow.git]
 push = ["main"]
 ```
 
@@ -1291,10 +1298,10 @@ Proposed:
 ```toml
 packs = ["claude", "pi", "bedrock", "aws-auth"]
 
-[as_you.aws-auth]                 # serves your AWS SSO login to the jail; writing this turns it on
+[allow.aws-auth]                 # serves your AWS SSO login to the jail; writing this turns it on
 profile = "my-sso-profile"
 
-[use]
+[profile]
 everyone = "bedrock"
 claude = "own login"
 ```
@@ -1316,7 +1323,7 @@ Proposed:
 ```toml
 packs = ["pi", "openrouter", "zai"]
 
-[use]
+[profile]
 pi = ["zai", "openrouter"]        # both available in pi, switchable there
 
 [env]
@@ -1355,10 +1362,10 @@ resources = { memory = "16g", cpus = 8 }
 ports = [{ host = 8000, jail = 8000 }]       # the host reaches the jail's :8000
 forward = [{ jail = 5432, host = 5432 }]     # the jail reaches the host's postgres at localhost:5432
 
-[as_you.github]
+[allow.github]
 repos = ["acme/shared"]            # beyond this repository's own remotes
 
-[as_you.git]
+[allow.git]
 push = "new branches"              # a new branch, never main; each is approved at launch
 ```
 
@@ -1496,8 +1503,8 @@ unchanged.
 ### C.4 A user-scope key from inside a jail
 
 ```console
-$ yolo config set as_you.git.fetch true
-as_you.git.fetch is a user-config key, and a jail sees only a generated copy of your user config.
+$ yolo config set allow.git.fetch true
+allow.git.fetch is a user-config key, and a jail sees only a generated copy of your user config.
 Run it on the host:
     yolo host-run -C /home/matt/code/yolo-jail --name allow-git-fetch -- yolo allow git fetch
 ```
@@ -1512,15 +1519,15 @@ $ yolo allow git fetch
 @@ -3,2 +3,5 @@
  packs = ["bedrock", "aws-auth", "copilot", "claude", "luna-worker", "claude-bedrock-global"]
 +
-+[as_you.git]
++[allow.git]
 +fetch = true
-Written through ~/.config/yolo-jail/config.toml → include work.toml, the file that holds [as_you].
+Written through ~/.config/yolo-jail/config.toml → include work.toml, the file that holds [allow].
 This grant takes effect when a workspace approves it. Approve now for this workspace? [y/N] y
   + git: fetch from mschulkind-oss/yolo-jail (from your user config, for every workspace)
 Approved. The running jail's broker takes it at its next call.
 ```
 
-Two steps become one answer. The table went to the file that already holds `as_you`; with no such
+Two steps become one answer. The table went to the file that already holds `allow`; with no such
 file, the user config itself.
 
 ### C.6 Turning something off in one project
@@ -1586,8 +1593,8 @@ why release N ships first and every dotfiles machine takes it before any of them
 ### C.9 Where did this value come from?
 
 ```console
-$ yolo config why use.claude
-use.claude = "own login"
+$ yolo config why profile.claude
+profile.claude = "own login"
   set in  ~/.config/yolo-jail/overrides.toml:9   (via include_if_found from config.toml:8)
   default would be: everyone's choice, "bedrock"
 ```
