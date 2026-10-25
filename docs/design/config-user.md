@@ -112,7 +112,7 @@ bare path form.
 [pack_sources]                                # named once; each is a tree of <pack>/ directories
 dotfiles = "~/.dotfiles/yolo-packs"
 src = "~/src"
-acme = { git = "https://github.com/acme/yolo-packs", ref = "main" }
+acme = { git = "https://github.com/acme/yolo-packs" }       # the default branch, locked (C9)
 
 packs = [
   "claude",                                   # shipped: bare; yolo/claude is the explicit spelling
@@ -120,13 +120,14 @@ packs = [
   "dotfiles/matt-fzf",                        # ~/.dotfiles/yolo-packs/matt-fzf
   "src/tools",                                # ~/src/tools: a folder you named that happens to hold one pack
   "acme/tools",                               # acme/yolo-packs' tools/ directory, fetched and locked as today
-  { git = "https://github.com/mschulkind-oss/matt-craft", ref = "main" },   # a repository that IS one pack:
+  { git = "https://github.com/mschulkind-oss/matt-craft" },   # a repository that IS one pack:
 ]                                             #   named mschulkind-oss/matt-craft from its URL, as today
 ```
 
 Two git forms, each with one reading: a repository *of* packs is a source, and a repository that
 *is* a pack is listed directly. Both are fetched and locked as git packs are today
-(`packs.lock.json`).
+(`packs.lock.json`). `ref = "v2.1.0"` or `ref = "alice/review"` pins something other than the
+default branch; with no `ref`, the default branch is read from the remote and locked (C9).
 
 The name is used wherever yolo names the pack back to you: the launch's pack line, `yolo pack
 ls`, `explain` and `footprint`, the nudge in [§4](#4-the-nudge-when-a-table-and-a-pack-disagree),
@@ -174,8 +175,8 @@ $ yolo check
 A convention is a default that follows from something you already did. Three rules bound every
 one: the explicit key still wins when written; `yolo config show` prints what a convention
 supplied, as `fetch = true   # by convention: [allow.git] is present`; and no convention widens
-what a jail may do with a login. [OQ-RC13](#OQ-RC13) takes or vetoes each; its leaning takes the
-first five.
+what a jail may do with a login. [OQ-RC13](#OQ-RC13) takes or vetoes each; its leaning takes all but
+C3 and C8.
 
 ```toml
 # C1  your packs folder: ~/.config/yolo-jail/packs/<name> is local/<name>
@@ -196,7 +197,17 @@ fetch = true
 # C7  a model named without facts takes the catalog's (pending the catalog check)
 "global.anthropic.claude-opus-5-5" = { name = "Opus 5.5", context = 1_000_000, price = { … } }   # before
 "global.anthropic.claude-opus-5-5" = { name = "Opus 5.5" }                                       # after
+
+# C9  a git source or pack with no ref follows the repository's default branch, pinned by the lock
+{ git = "https://github.com/acme/yolo-packs", ref = "main" }   # before (today: ?ref= is mandatory)
+{ git = "https://github.com/acme/yolo-packs" }                 # after: read from the remote, locked at first fetch
 ```
+
+C9 amends a stated rule: `internal/packsrc/addr.go` makes `?ref=` mandatory because "an unpinned
+source silently changes under you." The lock file (`packs.lock.json`) records the commit, so an
+omitted ref is pinned at first fetch and moves only on `yolo pack update`, as a git dependency
+does in Cargo, npm and Go. The default branch is read with `git ls-remote --symref <url> HEAD`;
+a remote that does not answer is refused naming the `ref` to write.
 
 C5 (a project needs no file) and C6 (a pack needs no manifest) are in
 [`config-project.md`](config-project.md#2-no-file-at-all) and
@@ -304,16 +315,16 @@ default = "bedrock"
    **Answer:**
    > _(empty — fill in when decided)_
 
-4. 💬 <a id="OQ-RC13"></a>**OQ-RC13: Which of the eight conventions go in?**
+4. 💬 <a id="OQ-RC13"></a>**OQ-RC13: Which of the nine conventions go in?**
 
    A colleague sets up a work machine and writes the file in [§2](#2-the-file-proposed). Under all
-   eight conventions of [§5](#5-lines-you-never-write), `packs` loses `bedrock`, `aws-auth`, `git`
+   nine conventions of [§5](#5-lines-you-never-write), `packs` loses `bedrock`, `aws-auth`, `git`
    and `github` (the sections selected them), the `[run_on] default` line goes (one provider is
    everyone's), and `fetch = true` goes (the table is the grant). `yolo config show` prints each
    supplied line with `# by convention`. The line they did not write is one they cannot get wrong,
    and one they cannot see without asking.
 
-   - **A — All eight.**
+   - **A — All nine.**
    - **B — All but C3 and C8**, the two where a declaration acts at a distance. `packs` stays the
      one list of what is on; the selection stays a written line.
    - **C — None.**
