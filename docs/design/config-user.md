@@ -77,20 +77,21 @@ packs = ["pi", "local/pi-fork", "codex", "git", "github", "bedrock", "aws-auth",
          "local/matt", { git = "https://github.com/mschulkind-oss/matt-craft" }, "claude"]
          # the only switch; local/<name> is ~/.config/yolo-jail/packs/<name>                (§4)
 
-[allow.git]                       # the most any project's jail may do with your logins   (§6)
-fetch = true                      # this project's own remotes                            (?OQ-RC16)
-push = true                       # a project may ask, branch by branch; never a grant by itself
+[allow.git]                       # what every project's jail may do with your git login  (§6)
+fetch = true                      # its own remotes                                       (?OQ-RC16)
+requestable = ["push", "new_branches"]   # what a project may request on top; each approved at launch
 
 [allow.github]
 read = true
+requestable = ["create_pr", "create_issue"]
 
 [allow.aws-auth]                  # settings; the switch is the name in packs              (§7)
 profile = "my-sso-profile"
 unnarrowed = true
 
-[run_on]                          # which setup each agent runs on                       (§5, ?OQ-RC14)
+[inference_provider]              # where each agent's inference comes from              (§5, ?OQ-RC14)
 default = "bedrock"
-claude = false                    # no setup from yolo: claude keeps its own login
+claude = false                    # none from yolo: claude keeps its own login
 
 [providers.bedrock]               # selectable by its own name                           (§5)
 region = "us-east-1"
@@ -107,8 +108,8 @@ reasoning = true
 # … four more, one line each
 ```
 
-A project's own file asks for what it needs under `[needs.git]` and `[needs.github]`, within
-what `allow` here permits ([`config-project.md`](config-project.md)). On the maintainer's machines
+A project's own file requests what it wants under `[requests.git]` and `[requests.github]`, from
+what `allow` here lists as requestable ([`config-project.md`](config-project.md)). On the maintainer's machines
 this is four files, not one: `config.toml`, `config.d/overrides.toml`, and a work and a personal
 file that his dotfiles put in `config.d/` on the right machines
 ([appendix A.3](#a3-four-files-not-one)). The whole set is 45 non-blank lines.
@@ -125,10 +126,11 @@ file that his dotfiles put in `config.d/` on the right machines
    provider does not pick itself as everyone's setup.
 5. **No value is a reserved string.** `true`, `false`, a number, a name, or a list of names;
    never a phrase yolo has to recognize.
-6. **Two words for two scopes.** `allow` here is the ceiling; `needs` in a project is the ask,
-   and must fit inside it.
+6. **Two words for two scopes.** `allow` here says what every project gets and what one may
+   request; `requests` in a project is the request. One outside the ceiling is not granted, and
+   says so; it is never an error.
 7. **Plural for a collection you fill, singular for one thing.** `packs`, `providers.<name>`,
-   `mcp_servers.<name>`; `run_on`, `allow.git`.
+   `mcp_servers.<name>`; `inference_provider`, `allow.git`.
 
 ## 4. Naming a pack that is not shipped
 
@@ -192,39 +194,42 @@ via = "wire-bridge"
 [providers.openai-codex]
 alias = "codex"                                # -p codex keeps working: the provider's own short name
 
-[run_on]                                       # the selection: agent → setup
+[inference_provider]                           # where each agent's inference comes from
 default = "bedrock"                            # the provider, by name; -p bedrock
 claude = "bedrock/opus"                        # a variant, as provider/variant; -p bedrock/opus
-codex = false                                  # no setup from yolo: the agent keeps its own login
+codex = false                                  # none from yolo: the agent keeps its own login
 pi = ["bedrock", "codex"]                      # several, switchable inside the agent, as today's list is
 ```
 
 `-p` and the selection key name the same things, as today. The one thing left is what the two
-keys are called: the selection, and a declared second configuration.
+keys are called: the selection, and a declared second configuration. The selection's name has to
+say what it is with no provider table in sight, since on the maintainer's machines it sits in a
+different file from them.
 
 1. 💬 🤷 <a id="OQ-RC14"></a>**OQ-RC14: What are the selection and the declarations called?**
 
-   The example above uses `run_on` and `variants`. Today the pair is `profile` and `profiles`, one
-   letter apart for two different things: one maps each agent to a setup, the other describes a
-   setup. With a provider selectable by name, most declared setups are variants of one provider,
-   which is what makes the word "profile" removable.
+   Today the pair is `profile` and `profiles`, one letter apart for two different things: one maps
+   each agent to where its inference comes from, the other describes such a place. With a provider
+   selectable by name, most declared setups are variants of one provider. The selection's name is
+   read in a file of its own, with no provider table beside it, so it has to say what it is alone.
 
    ```toml
-   # A  run_on, and variants under their provider; the word "profile" leaves the config
-   [run_on]
+   # A  inference_provider, and variants under their provider; the word "profile" leaves the config
+   [inference_provider]
    default = "bedrock"
    claude = "bedrock/opus"
    [providers.bedrock.variants.opus]
    model = "global.anthropic.claude-opus-5-5"
 
-   # B  agents, and setups  (agents is a retired key: an old yolo refuses it naming packs)
-   [agents]
+   # B  active_profile, and profiles as today's declarations (a provider is still selectable by name)
+   [active_profile]
+   default = "bedrock"
    claude = "bedrock-opus"
-   [setups.bedrock-opus]
+   [profiles.bedrock-opus]
    provider = "bedrock"
    model = "global.anthropic.claude-opus-5-5"
 
-   # C  keep profile, rename only the declarations
+   # C  keep profile for the selection, rename only the declarations
    [profile]
    claude = "bedrock-opus"
    [setups.bedrock-opus]
@@ -232,10 +237,10 @@ keys are called: the selection, and a declared second configuration.
    model = "global.anthropic.claude-opus-5-5"
    ```
 
-   <!-- vantage: question id=OQ-RC14 leaning="A: run_on reads as a sentence per agent, a variant is what a same-provider profile is, and the pair goes." -->
+   <!-- vantage: question id=OQ-RC14 leaning="A: inference_provider says what the key is with nothing else on the screen, a variant is what a same-provider profile is, and the pair goes." -->
 
-   _Leaning:_ A: `run_on` reads as a sentence per agent, a variant is what a same-provider profile
-   is, and the pair goes.
+   _Leaning:_ A: `inference_provider` says what the key is with nothing else on the screen, a
+   variant is what a same-provider profile is, and the pair goes.
 
    **Answer:**
    > _(empty — fill in when decided)_
@@ -246,42 +251,53 @@ Today this is `brokered`: a user read grant `{"kind": "read", "repo": "*"}` and 
 list in your config, and per-repository grants in a project's. The broker approves a scope per
 workspace at launch, the project's own remotes plus any it names, and the grants act within it.
 
-**Approved 2026-10-25:** the section is `allow`, and it is the ceiling. A project asks under
-`needs`, and its ask must fit inside. No value is a phrase: `true`, `false`, a name, or a list.
+**Approved 2026-10-25:** the section is `allow`. It says two things, in two keys that cannot be
+confused: what every project's jail gets (`fetch = true`), and what a project may *request* on top
+(`requestable = [...]`), each request approved at launch. A project requests under `requests`.
 
 ```toml
-# your config: the most any project's jail may do
+# your config
 [allow.git]
-fetch = true                      # this project's own remotes, as approved at launch (?OQ-RC16)
-push = true                       # a project may ask, branch by branch; never a grant by itself
+fetch = true                      # every project's jail: its own remotes, as approved at launch (?OQ-RC16)
+requestable = ["push", "new_branches"]   # what a project may request on top; never granted by this line
 
 [allow.github]
 read = true
-write = true                      # a project may ask for create-pr or create-issue
+requestable = ["create_pr", "create_issue"]
 
 [allow.aws-auth]                  # the AWS login the aws-auth pack serves to the jail
 profile = "my-sso-profile"
 unnarrowed = true
 
-# a project's yolo-jail.toml: what it asks for, within the above   (config-project.md)
-[needs.git]
+# a project's yolo-jail.toml   (config-project.md)
+[requests.git]
 push = ["main"]
 new_branches = true
 
-[needs.github]
-write = ["create-pr"]
+[requests.github]
+create_pr = true
 repos = ["acme/shared"]           # beyond this repository's own remotes
 ```
 
-Approval prompt lines become `+ git: fetch from mschulkind-oss/yolo-jail` and `+ git: push to
-main`; `*` leaves the vocabulary. The four ruled grant kinds map onto these keys
-([appendix A.6](#a6-the-grant-kinds-mapped)). One thing about `fetch` is still open: how far it
-reaches.
+**A request outside your ceiling is not an error.** Two people share a repository and one allows
+pushes while the other does not; the project file is the same for both. The one who does not sees
+the request reported and skipped, with the line that would allow it, and the jail runs without it:
+
+```console
+$ yolo check
+yolo-jail.toml:3: requests.git.push asks to push to main; your config does not list push as
+  requestable for git, so this project will not. To allow it: yolo allow git requestable push
+```
+
+At launch the approval prompt lists each granted request as `+ git: push to main` and each
+skipped one as `– git: push to main (not requestable under your config)`; `*` leaves the
+vocabulary. The four ruled grant kinds map onto these keys ([appendix A.6](#a6-the-grant-kinds-mapped)).
+One thing about `fetch` is still open: how far it reaches.
 
 1. 💬 <a id="OQ-RC16"></a>**OQ-RC16: May your config let a jail fetch from any repository, not only the project's own?**
 
    You write `fetch = true`. Today, and in the file above, that reaches the project's remotes as
-   approved at launch, plus what the project's `needs.github.repos` names. An agent that clones a
+   approved at launch, plus what the project's `requests.github.repos` names. An agent that clones a
    second repository to read it is refused, with the scope in the message. Widening `fetch`
    changes the broker's per-workspace scope, which the boundary-broker doc rules. A fetch is
    read-only, so what a wider setting risks is a private repository's contents reaching a jail
@@ -292,7 +308,7 @@ reaches.
    [allow.git]
    fetch = ["github.com/mschulkind-oss/*"]        # or ["*"]: any repository the host login reaches
 
-   # B  the project's own remotes only, as today; a project adds others under [needs.github] repos
+   # B  the project's own remotes only, as today; a project adds others under [requests.github] repos
    [allow.git]
    fetch = true
 
@@ -454,7 +470,7 @@ and nothing is listed by default, `run.warnIfNoPacks`); R2 "absent `default_enab
 (the manifest key goes; the list decides); R4 "host access is never on by default" (`allow` is
 user scope only, and a listed login pack with no table serves nothing); R5 "enable is either
 scope" (a workspace may still turn a non-login pack *off* with `off = true`, which is what the
-per-workspace switch file's `enabled: false` becomes, and may still *ask* under `needs`).
+per-workspace switch file's `enabled: false` becomes, and may still *request* under `requests`).
 
 ### A.5 How other tools name things from several sources
 
@@ -479,10 +495,11 @@ one name are refused with "give one an explicit `name`" (`internal/config/packs.
 ### A.6 The grant kinds, mapped
 
 The four ruled grant kinds ([OQ-BB19](boundary-broker.md#OQ-BB19)) become `read` → `read`,
-`create-branch` → `new_branches = true`, `branch` → `push = ["main"]`, and `create-pr` and
-`create-issue` → `write`. `push = true` at user scope answers
-[OQ-BB23](boundary-broker.md#OQ-BB23) with "as a ceiling, never as a grant", its leaning. A GitHub
-`write` ask is accepted by the config and refused at use until a jail's write request can reach
+`create-branch` → `new_branches = true`, `branch` → `push = ["main"]`, `create-pr` →
+`create_pr = true` and `create-issue` → `create_issue = true`; the user-config `grant_kinds`
+list becomes `requestable`. A requestable kind answers [OQ-BB23](boundary-broker.md#OQ-BB23)
+with "as a ceiling, never as a grant", its leaning. A GitHub
+`create_pr` or `create_issue` request is accepted by the config and refused at use until a jail's write request can reach
 `yolo approve`, whose delivery is not built (`internal/ghbroker/window.go`). `fetch = true`
 reaches what today's `{"kind": "read", "repo": "*"}` reaches: the project's remotes plus `repos`,
 approved at launch.

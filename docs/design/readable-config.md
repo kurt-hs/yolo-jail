@@ -12,7 +12,7 @@ vantage:
 
 # Config that reads right the first time: the front door
 
-**Status:** 2026-10-25. Nothing is built. Sixteen rulings recorded ([ledger](#decision-ledger));
+**Status:** 2026-10-25. Nothing is built. Seventeen rulings recorded ([ledger](#decision-ledger));
 fourteen questions open, each in the document that shows its file. Evidence verified at
 `fa13f42d9` against this repository, the effective user config this jail inherited, the 21
 shipped packs, and the maintainer's twelve packs.
@@ -48,7 +48,7 @@ seed; incomplete while any question is open).
 4. **One switch, one place.** `packs` is the switch; a settings table with no pack is a nudge
    naming the pack and the command.
 5. **No value is a reserved string.** `true`, `false`, a number, a name, a list of names.
-6. **Two words for two scopes.** Your config allows; a project needs.
+6. **Two words for two scopes.** Your config says what every project gets and what one may request; a project requests. A request outside that is skipped and reported, never an error.
 7. **An edit yolo makes changes only the bytes it was asked to.**
 8. **The file name is the version**, and one command converts everything, proving it lost nothing.
 
@@ -57,7 +57,7 @@ seed; incomplete while any question is open).
 | Document | The file it shows | Its questions |
 | :--- | :--- | :--- |
 | [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | [OQ-RC14](config-user.md#OQ-RC14) the two profile names · [OQ-RC16](config-user.md#OQ-RC16) fetch from any repository |
-| [`config-project.md`](config-project.md) | `yolo-jail.toml` and `.local`: install, needs, mounts, ports, env, turning things off | [OQ-RC17](config-project.md#OQ-RC17) the file's shape · [OQ-RC7](config-project.md#OQ-RC7) saying "off" with no `null` |
+| [`config-project.md`](config-project.md) | `yolo-jail.toml` and `.local`: install, requests, mounts, ports, env, turning things off | [OQ-RC17](config-project.md#OQ-RC17) the file's shape · [OQ-RC7](config-project.md#OQ-RC7) saying "off" with no `null` |
 | [`config-commands.md`](config-commands.md) | the command each "edit your config" message prints, what it does to the file, and the format underneath | [OQ-RC9](config-commands.md#OQ-RC9) may yolo write your file · [OQ-RC2](config-commands.md#OQ-RC2) TOML or JSONC · [OQ-RC10](config-commands.md#OQ-RC10) the verbs · [OQ-RC12](config-commands.md#OQ-RC12) what `yolo config` means |
 | [`config-migration.md`](config-migration.md) | the new file names, the release order, the migrate transcript | [OQ-RC11](config-migration.md#OQ-RC11) name or version key · [OQ-RC6](config-migration.md#OQ-RC6) older yolos · [OQ-RC18](config-migration.md#OQ-RC18) what migrate does · [OQ-RC8](config-migration.md#OQ-RC8) fetched packs |
 | [`pack-manifests.md`](pack-manifests.md) | the maintainer's twelve packs, before and after | [OQ-RC19](pack-manifests.md#OQ-RC19) the manifest shape · [OQ-RC5](pack-manifests.md#OQ-RC5) manifests in the same break |
@@ -91,6 +91,7 @@ seed; incomplete while any question is open).
 | OQ-RC15 | **A pack yolo does not ship is named by its source.** Ruled by taking the leaning: *"A: the collision cannot happen, so there is nothing to rename; it is Homebrew's model, and the shipped set is the only bare namespace, as core is."* `local/<name>`, `<source>/<name>`, `<owner>/<repo>`; no bare path form | 2026-10-25 | [`config-user.md` §4](config-user.md#4-naming-a-pack-that-is-not-shipped) | — |
 | OQ-RC13 | **All six conventions go in.** Ruled by taking the leaning: *"A: each of the six reads only what the user already wrote, and none lets a heading or a declaration stand for a value."* C1 pack sources, C2 `config.d/`, C5 no project file, C6 no manifest, C7 catalog facts, C9 default branch | 2026-10-25 | [`config-user.md` §8](config-user.md#8-lines-you-never-write) | — |
 | OQ-RC3 | **A provider is selectable by its own name and starts on its `model`; a variant is a second configuration of one provider.** Ruled by taking the leaning: *"B: the common case is one name, and the rare case keeps the profile that already works."* Same-named shipped profiles are deleted; answers [OQ-PP1](providers-and-profiles-redesign.md#OQ-PP1) | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |
+| <a id="RC-D12"></a>RC-D12 | **A project `requests`; `allow` lists what is `requestable`; an unmet request is skipped, never an error.** Review comments: *"requests? … Needs implies it's a fatal failure and I'm not sure this is a fatal failure"* (two people on one repository may allow different things), and on `fetch = true` beside `push = true`: *"this fetch is like a default on and then push is not a default on, but it can ask. That's as confusing as it could be."* The two meanings are now two keys | 2026-10-25 | [`config-user.md` §6](config-user.md#6-what-a-jail-may-do-with-your-logins) | — |
 | <a id="RC-D11"></a>RC-D11 | **A declaration never selects or chooses.** The maintainer, on seeing a section-selects-its-pack convention still offered: *"Didn't we already decide that the pack does have to be listed, but we're going to help you add it?"* Yes: RC-D7 and RC-D9 settle it, and RC-D10 settles the lone-provider-is-everyone's case the same way. Neither is an option under the conventions ruling below | 2026-10-25 | [`config-user.md` §8](config-user.md#8-lines-you-never-write) | — |
 | OQ-RC4 | **The logins section is `allow`.** Ruled by taking the leaning: *"A, allow: it reads as a sentence with what follows, and the command verb and the section are then one word."* A project's side is `needs` | 2026-10-25 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |
 | OQ-RC1 | **The shape of the user config is approved, all six levers.** Ruled by taking the leaning: *"All six. L4 is the only one that changes ruled rules, and the name in packs is the user saying so, which is what those rules protect."* L1 no written defaults; L2 a key is the value it names; L3 shared facts once; L4 `packs` is the only switch; L5 the renames; L6 a non-shipped pack named by its source | 2026-10-25 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |

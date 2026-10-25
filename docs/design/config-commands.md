@@ -114,8 +114,8 @@ Written. Your config adds tavily; this project's jail will not see it.
 Where did this value come from:
 
 ```console
-$ yolo config why run_on.claude
-run_on.claude = false
+$ yolo config why inference_provider.claude
+inference_provider.claude = false
   set in  ~/.config/yolo-jail/config.d/overrides.toml:9
   default would be: the default setup, "bedrock"
 ```
@@ -217,10 +217,11 @@ $ yolo pack remove journal
 $ yolo install nix just                    # project config: install.nix += "just"
 $ yolo install mise python@3.12 --user
 $ yolo allow git fetch                     # user config: [allow.git] fetch = true
-$ yolo needs git push main                 # project config: [needs.git] push += "main"
-$ yolo needs github repos acme/shared
-$ yolo run-on default bedrock              # user config: [run_on] default = "bedrock"
-$ yolo run-on claude false
+$ yolo request git push main               # project config: [requests.git] push += "main"
+$ yolo request github repos acme/shared
+$ yolo allow git requestable push          # user config: [allow.git] requestable += "push"
+$ yolo inference default bedrock           # user config: [inference_provider] default = "bedrock"
+$ yolo inference claude false
 ```
 
 One generic verb, keyed by path:
@@ -228,8 +229,8 @@ One generic verb, keyed by path:
 ```console
 $ yolo config add packs local/matt
 $ yolo config set allow.git.fetch true
-$ yolo config set run_on.claude false
-$ yolo config add needs.git.push main --project
+$ yolo config set inference_provider.claude false
+$ yolo config add requests.git.push main --project
 $ yolo config unset mcp_servers.tavily --local
 $ yolo config set --dry-run machine.resources.memory 32g
 ```
@@ -293,8 +294,8 @@ like), while `apply`, `drift` and `dump` are about yolo's own config. Two questi
 The same excerpt in each format:
 
 ```jsonc
-{ "allow": { "git": { "fetch": true, "push": true } },
-  "run_on": { "default": "bedrock", "claude": false },
+{ "allow": { "git": { "fetch": true, "requestable": ["push"] } },
+  "inference_provider": { "default": "bedrock", "claude": false },
   "providers": { "bedrock": { "region": "us-east-1",
     "models": { "global.openai.gpt-6.1-sol": { "name": "Sol 6.1", "context": 272000 } } } } }
 ```
@@ -302,9 +303,9 @@ The same excerpt in each format:
 ```toml
 [allow.git]
 fetch = true
-push = true
+requestable = ["push"]
 
-[run_on]
+[inference_provider]
 default = "bedrock"
 claude = false
 
@@ -314,8 +315,8 @@ models."global.openai.gpt-6.1-sol" = { name = "Sol 6.1", context = 272_000 }
 ```
 
 ```yaml
-allow: { git: { fetch: true, push: true } }
-run_on: { default: bedrock, claude: false }
+allow: { git: { fetch: true, requestable: [push] } }
+inference_provider: { default: bedrock, claude: false }
 providers:
   bedrock:
     region: us-east-1
