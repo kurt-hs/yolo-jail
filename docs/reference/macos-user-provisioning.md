@@ -245,7 +245,7 @@ rather than prompt, and the launch asks for the rule before any of this
    `user:_yolojail` read ACE, in a `0700` directory with a search ACE, swept on every exit path
    below it — and beside it the session's CA
    files when this Mac's keychains, or the bundle the launching user's `SSL_CERT_FILE` names,
-   add a CA and a variable names them
+   add a certificate (any in-date one, for the bundle) and a variable names them
    ([PS-D10](../design/provisioner-sets.md#PS-D10)), swept with it;
 3. the **darwin bootstrap** — `/usr/bin/sudo -n --user=_yolojail /usr/bin/env -i … <staged yolo>
    internal darwin-bootstrap`, yolo's own generators, **with no `sandbox-exec`**;
@@ -927,7 +927,7 @@ $ nix eval --json '.#yoloNoncontainerFloorNames.aarch64-darwin'
 | Legacy state dir | `/var/yolo-jail`, root-owned, written by older yolo versions only; [the legacy sweep](#the-legacy-sweep) | `internal/macosuser/privilege.go` (`LegacyStateDir`) |
 | Session Seatbelt profile | `/Users/Shared/yolo-staged/profile-<session>.sb`, host-owned `0444`, removed when the session ends | `internal/macosuser/macosuser.go` (`SessionProfilePath`); installed and removed by `orchestrator.go` |
 | Session env file | `/Users/Shared/yolo-staged/env/<session>.env`, host-owned `0600` with a `user:_yolojail` read ACE, named by `YOLO_DARWIN_ENV_FILE` | `internal/macosuser/envfile.go` (`SandboxEnvFile`, `SandboxEnvFileEnv`) |
-| Session CA files | `/Users/Shared/yolo-staged/env/<session>.ca-bundle.crt` and `<session>.extra-ca.pem`, host-owned `0600` with the same ACE, each written only when the keychains or the bundle the launching user's `SSL_CERT_FILE` names add a CA and a variable names the file: the bundle not when the launch's env layers name a bundle of their own, the extras not when they set `NODE_EXTRA_CA_CERTS` | `internal/macosuser/cabundle.go` (`CABundleFile`, `CAExtrasFile`, `ComposeCATrust`) |
+| Session CA files | `/Users/Shared/yolo-staged/env/<session>.ca-bundle.crt` and `<session>.extra-ca.pem`, host-owned `0600` with the same ACE, each written only when the keychains or the bundle the launching user's `SSL_CERT_FILE` names add a certificate (any in-date one, for the bundle) and a variable names the file: the bundle not when the launch's env layers name a bundle of their own, the extras not when they set `NODE_EXTRA_CA_CERTS` | `internal/macosuser/cabundle.go` (`CABundleFile`, `CAExtrasFile`, `ComposeCATrust`) |
 | Liveness record | `<global storage>/locks/macos-user-sessions/<session>.lock`, flocked for the session's life | `internal/macosuser/sessionfiles.go` (`openSessionRecord`, `sweepGoneSessions`) |
 | Sandbox PATH, and the login copy | `macosuser.SandboxPath`, carried as `PATH` and as `YOLO_DARWIN_LOGIN_PATH` | `internal/macosuser/macosuser.go`; `internal/entrypoint/darwinhomelayout.go` (`DarwinLoginPathEnv`) |
 | Shim bypass | `YOLO_BYPASS_SHIMS=1`, in the stage process's environment | `internal/macosuser/provision.go` (`ProvisionArgv`) |

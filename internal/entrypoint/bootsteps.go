@@ -335,8 +335,9 @@ func bootSteps() []bootStep {
 				}
 			},
 			notDarwin: "the macos-user host launcher builds the bundle instead, from the tool " +
-				"profile's public roots and the CAs this Mac's System and login keychains trust " +
-				"for TLS, and names it in the session env file, which is the agent's environment " +
+				"profile's public roots, the CAs this Mac's System and login keychains trust " +
+				"for TLS, and the in-date certificates of the bundle the user's SSL_CERT_FILE " +
+				"names, and names it in the session env file, which is the agent's environment " +
 				"there (macosuser.ComposeCATrust)",
 		},
 		{name: "generate_bashrc", gen: GenerateBashrc},

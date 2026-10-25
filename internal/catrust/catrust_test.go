@@ -160,6 +160,18 @@ func TestReadLinuxHostBundle(t *testing.T) {
 	if _, err := ReadLinuxHostBundle(env, none, time.Now()); err == nil || !strings.Contains(err.Error(), "SSL_CERT_FILE") {
 		t.Errorf("an unreadable SSL_CERT_FILE is %v", err)
 	}
+	// SSL_CERT_FILE naming the first distro path (nix-darwin's usual value) is still worded as
+	// SSL_CERT_FILE, not as the distro list.
+	distro := func(k string) string {
+		if k == "SSL_CERT_FILE" {
+			return LinuxBundleFiles[0]
+		}
+		return ""
+	}
+	want := "SSL_CERT_FILE names " + LinuxBundleFiles[0] + ", which could not be read"
+	if _, err := ReadLinuxHostBundle(distro, none, time.Now()); err == nil || err.Error() != want {
+		t.Errorf("an unreadable SSL_CERT_FILE naming %s is %v, want %q", LinuxBundleFiles[0], err, want)
+	}
 }
 
 // A HOST'S OWN BUNDLE IS ITS TRUST DECISION (PS-D16): every certificate in it that parses and is in

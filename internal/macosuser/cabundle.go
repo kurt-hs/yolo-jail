@@ -31,7 +31,7 @@ package macosuser
 //
 // A System keychain that cannot be read warns, names env_sources, and still points the variables
 // at the profile's public roots; a login keychain that cannot be read is one note, and the launch
-// trusts the System keychain's CAs alone. Neither ever refuses a launch.
+// trusts the System keychain's CAs and the SSL_CERT_FILE bundle's. None ever refuses a launch.
 //
 // THE CALLER'S OWN BUNDLE WINS, FOR ALL FIVE (applyCATrust). Each tool reads its own of the five
 // first, so a user who set one of them, say SSL_CERT_FILE in env_sources, would have curl, git and

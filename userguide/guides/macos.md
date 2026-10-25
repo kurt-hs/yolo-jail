@@ -260,7 +260,7 @@ user's home and shared with the sandbox, and Nix. Each failure names the command
 **Company certificates.** If IT installed a certificate authority in your Mac's System keychain,
 for example for a proxy that inspects HTTPS, the sandbox trusts it too, and each launch names the
 authorities it took. One you trusted only in your own login keychain is trusted too, and so is
-every certificate in the bundle your shell's `SSL_CERT_FILE` names, if you set it. When the
+every in-date certificate in the bundle your shell's `SSL_CERT_FILE` names, if you set it. When the
 agent runs as the separate sandbox account, Go programs such as `gh` trust it only if they were
 built with Go 1.27 or later; `go version <path to the program>` tells you, and the launch says so. mise,
 in that mode, does not trust it at all: put the authority in the System keychain instead.

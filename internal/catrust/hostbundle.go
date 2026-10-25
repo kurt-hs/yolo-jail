@@ -34,8 +34,9 @@ type HostBundle struct {
 // were tried; it is never a refusal, the jail then trusting its image's public roots alone.
 func ReadLinuxHostBundle(getenv func(string) string, readFile func(string) ([]byte, error), now time.Time) (HostBundle, error) {
 	candidates := LinuxBundleFiles
+	fromEnv := false
 	if p := strings.TrimSpace(getenv("SSL_CERT_FILE")); p != "" {
-		candidates = []string{p}
+		candidates, fromEnv = []string{p}, true
 	}
 	for _, p := range candidates {
 		data, err := readFile(p)
@@ -45,7 +46,7 @@ func ReadLinuxHostBundle(getenv func(string) string, readFile func(string) ([]by
 		cas, left := ParseBundle(string(data), HostBundleSource(p), now)
 		return HostBundle{Path: p, CAs: cas, LeftOut: left}, nil
 	}
-	if len(candidates) == 1 && candidates[0] != LinuxBundleFiles[0] {
+	if fromEnv {
 		return HostBundle{}, errors.New("SSL_CERT_FILE names " + candidates[0] + ", which could not be read")
 	}
 	return HostBundle{}, errors.New("none of " + strings.Join(candidates, ", ") + " could be read")

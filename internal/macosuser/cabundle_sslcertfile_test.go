@@ -140,3 +140,98 @@ func TestAMacosUserLaunchWithNoSSLCertFileReadsNoBundle(t *testing.T) {
 		t.Errorf("with no SSL_CERT_FILE the launch names a host CA bundle:\n%s", notices.String())
 	}
 }
+
+// withProfileRoots has the tool profile's CA bundle read as roots, a real certificate, in place of
+// caDeps' unparseable stub, so the filter against the profile's roots has something to match.
+func withProfileRoots(d Deps, roots string) Deps {
+	prev := d.ReadFile
+	d.ReadFile = func(p string) (string, bool) {
+		if p == testProfile+"/"+profileCABundleRel {
+			return roots, true
+		}
+		return prev(p)
+	}
+	return d
+}
+
+// A BUNDLE CERTIFICATE THE PROFILE'S ROOTS ALREADY CARRY IS NOT ADDED (nor named) again, matched by
+// its DER: one with the same name but another key is a different certificate, and is kept.
+func TestTheSSLCertFileBundleSkipsWhatTheProfileRootsCarry(t *testing.T) {
+	f := newKeychainFixture(t)
+	now := time.Now()
+	root := testCAPEM(t, "Public Root CA", true, now.Add(-time.Hour), now.Add(24*time.Hour), x509.ExtKeyUsageServerAuth)
+	twin := testCAPEM(t, "Public Root CA", true, now.Add(-time.Hour), now.Add(24*time.Hour), x509.ExtKeyUsageServerAuth)
+	d, _, _ := sslCertFileDeps(t, f, "/Users/lee/certs/corp-bundle.pem", root+twin)
+	d = withProfileRoots(d, root)
+	ca := ComposeCATrust(d, &Darwin{ProfilePath: testProfile})
+	var got []string
+	for _, c := range ca.Kept {
+		switch c.PEM {
+		case root:
+			got = append(got, "root")
+		case twin:
+			got = append(got, "twin")
+		}
+	}
+	if strings.Join(got, ",") != "twin" {
+		t.Errorf("from the bundle the launch kept %v, want the same-name certificate with another key alone", got)
+	}
+}
+
+// THE DISCLOSURE NAMES THE BUNDLE AS A SOURCE IT READ: with nothing added, the line says the
+// keychain(s) and the bundle added nothing, and the keychains' left-out count stays theirs.
+func TestTheTrustLineNamesTheSSLCertFileBundleAsASource(t *testing.T) {
+	f := newKeychainFixture(t)
+	now := time.Now()
+	root := testCAPEM(t, "Public Root CA", true, now.Add(-time.Hour), now.Add(24*time.Hour), x509.ExtKeyUsageServerAuth)
+	path := "/Users/lee/certs/corp-bundle.pem"
+	for _, tc := range []struct {
+		name         string
+		login        bool
+		holder, left string
+	}{
+		{"system", false, "this Mac's System keychain and the bundle SSL_CERT_FILE names (" + path +
+			") add no certificate authority", "more in the keychain were left out"},
+		{"system and login", true, "this Mac's System keychain, your login keychain and the bundle " +
+			"SSL_CERT_FILE names (" + path + ") add no certificate authority", "more in the keychains were left out"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, _, _ := sslCertFileDeps(t, f, path, root)
+			d = withProfileRoots(d, root)
+			d.VerifyCA = verifyOnly()
+			if tc.login {
+				d.ReadLoginKeychain = func() (string, error) { return "", nil }
+			}
+			var notices bytes.Buffer
+			d.Out, d.Notices = &bytes.Buffer{}, &notices
+			if rc := RunMacosUser(d, newOpts("/Users/Shared/yolo/proj")); rc != 42 {
+				t.Fatalf("rc = %d\n%s", rc, notices.String())
+			}
+			for _, want := range []string{tc.holder, tc.left} {
+				if !strings.Contains(notices.String(), want) {
+					t.Errorf("the notice stream lacks %q:\n%s", want, notices.String())
+				}
+			}
+		})
+	}
+}
+
+// AN UNREADABLE SYSTEM KEYCHAIN WITH THE BUNDLE READ says the sandbox adds none of the System
+// keychain's CAs, not that it adds only the login keychain's: the bundle's are what remain.
+func TestAnUnreadableSystemKeychainBesideTheSSLCertFileBundleSaysNoneOfItsCAs(t *testing.T) {
+	f := newKeychainFixture(t)
+	now := time.Now()
+	corp := testCAPEM(t, "Zscaler Root CA", true, now.Add(-time.Hour), now.Add(24*time.Hour), x509.ExtKeyUsageServerAuth)
+	d, _, _ := sslCertFileDeps(t, f, "/Users/lee/certs/corp-bundle.pem", corp)
+	d.ReadSystemKeychain = func() (string, error) { return "", fmt.Errorf("security: SecKeychainOpen failed") }
+	var notices bytes.Buffer
+	d.Out, d.Notices = &bytes.Buffer{}, &notices
+	if rc := RunMacosUser(d, newOpts("/Users/Shared/yolo/proj")); rc != 42 {
+		t.Fatalf("rc = %d\n%s", rc, notices.String())
+	}
+	want := "could not read this Mac's System keychain (security: SecKeychainOpen failed), so the " +
+		"sandbox adds none of its certificate authorities."
+	if !strings.Contains(notices.String(), want) {
+		t.Errorf("the notice stream lacks %q:\n%s", want, notices.String())
+	}
+}

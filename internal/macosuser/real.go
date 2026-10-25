@@ -536,7 +536,7 @@ func readSystemKeychainReal() (string, error) {
 // (loginKeychainExportArgv), as that user: their keychain, so no sudo, and it reads, never writes.
 // NEVER A PROMPT TO WAIT ON: stdin is closed and the read has a short deadline, so a keychain that
 // wanted an unlock or a dialog fails the read instead, which the launch reports as one note and
-// trusts the System keychain's CAs alone (UNMEASURED on a Mac: whether a locked keychain prompts
+// trusts the System keychain's CAs and the SSL_CERT_FILE bundle's (UNMEASURED on a Mac: whether a locked keychain prompts
 // for a certificate read at all; certificates are not secret items).
 func readLoginKeychainReal() (string, error) {
 	home, err := os.UserHomeDir()

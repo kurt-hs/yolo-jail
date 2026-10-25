@@ -213,7 +213,7 @@ type Deps struct {
 	// ReadLoginKeychain exports every certificate in the launching user's login keychain as PEM,
 	// as that user (`security find-certificate -a -p <home>/Library/Keychains/login.keychain-db`,
 	// no sudo, no unlock). nil reads no login keychain; an error is one note at launch, and the
-	// launch trusts the System keychain's CAs alone (OQ-PS15 as ruled, PS-D14).
+	// launch trusts the System keychain's CAs and the SSL_CERT_FILE bundle's (OQ-PS15 as ruled, PS-D14).
 	ReadLoginKeychain func() (string, error)
 	// StartBackground starts argv in the background, in a process group of its own, with
 	// no terminal, and returns its handle: the stop that ends it (idempotent, never nil on
