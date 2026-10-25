@@ -230,6 +230,7 @@ func (o *Options) runHousekeeping(rt string, reclaimConsent reclaimConsent, cnam
 		o.reapCopilotPkgVersions(rt, guard)
 		o.measureAndPurgeMiseVersions(rt, reclaimConsent, guard)
 		o.reapSmallAutomaticClasses(rt, cname, guard)
+		o.reapWorkspaceAgentLogs(guard)
 		o.reapOrphanCnameState(rt, cname, guard)
 		o.reapImageTars(rt, guard)
 		o.reapFlakeBundleGenerations(rt, guard)
@@ -281,8 +282,10 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 // may mount one), agent staging (its sweep needs the container runtime's live set, and a session's
 // own staging is kept by prune.SessionStagingNames when a container launch's slot runs), image
 // tars (this backend writes none, and a stamp written here would delay a podman keep-0 pass by a
-// day), scratch volumes and the build-state links (this backend writes none). Agent logs are
-// durable user data.
+// day), scratch volumes and the build-state links (this backend writes none). The agent-log
+// class (reapWorkspaceAgentLogs) is not run here: its allowlist names the podman overlay's
+// `.yolo/home` layout, which this backend's workspace sidecar has not been checked against
+// (disk-footprint.md's backlog).
 //
 // The orphaned per-jail state sweep runs here too: macos-user sessions write per-name keeper,
 // arrival and session locks, and its known set needs no container runtime

@@ -209,14 +209,14 @@ func TestTheBriefingNamesEveryPathInThePersistenceMap(t *testing.T) {
 			// production call site writes, so a map that stopped saying either fact fails here.
 			podmanOnly := []string{
 				"(on disk)", "yolo deletes these once the jail exits",
-				"yolo deletes nothing here but some agents' old log files", "- **Read-only**:",
+				"yolo deletes nothing here but some agents' log files older than 30 days", "- **Read-only**:",
 			}
 			acOnly := []string{
 				"- **Per launch** (in RAM): ",
 				"Survives nothing: they are gone when the jail stops, and a restart is a new launch " +
 					"with new, empty ones. Everything you put there uses this jail's memory.",
 				"all of `/home/agent` outside the other classes, writable and kept in this workspace's `.yolo/home`",
-				"yolo deletes nothing here but its own files (below).",
+				"yolo deletes nothing here but its own files (below) and clean, idle worktrees a pack's tool left in `$YOLO_DURABLE_DIR`.",
 				"- **Rewritten at each launch**: the briefing and skills files, and a few files yolo " +
 					"keeps in the home itself. A write to one may succeed here, and the next launch replaces it.",
 			}

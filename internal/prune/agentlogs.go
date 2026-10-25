@@ -19,9 +19,14 @@ import (
 //     is data loss, not cache reclaim. The plan (§4) calls this out explicitly.
 //   - anything under "claude/" that isn't a log: settings, plugins, tasks,
 //     file-history, sessions — all live state.
+//   - "pi/agent/sessions" and "codex/sessions": pi's and Codex's session
+//     transcripts, the same kind of user data as claude/projects. Only each
+//     tool's LOG directory is listed.
 var agentLogWorkspaceSubdirs = []string{
-	"copilot/logs", // GitHub Copilot CLI process logs (process-*.log)
-	"gemini/tmp",   // Gemini CLI scratch/log dir
+	"copilot/logs",  // GitHub Copilot CLI process logs (process-*.log)
+	"gemini/tmp",    // Gemini CLI scratch/log dir
+	"pi/agent/logs", // pi's diagnostic logs (perf-<timestamp>-<pid>.jsonl), a set per process
+	"codex/log",     // Codex CLI's log dir ($CODEX_HOME/log, codex-tui.log)
 }
 
 // agentLogGlobalCacheSubdirs are the log dirs under the shared GlobalCache
@@ -42,6 +47,19 @@ var agentLogGlobalCacheSubdirs = []string{
 //
 // Returns (bytesRemoved, filesRemoved); apply=false reports without mutating.
 func PurgeAgentLogs(workspaces []string, globalCache string, olderThanDays float64, apply bool, now time.Time) (bytesRemoved int64, filesRemoved int) {
+	return PurgeAgentLogsGuarded(workspaces, globalCache, olderThanDays, apply, now, nil)
+}
+
+// AgentLogSubdirs names every directory PurgeAgentLogs sweeps, the workspace-overlay ones
+// first, for a report header: the list is said where it is defined, never retyped.
+func AgentLogSubdirs() []string {
+	return append(append([]string(nil), agentLogWorkspaceSubdirs...), agentLogGlobalCacheSubdirs...)
+}
+
+// PurgeAgentLogsGuarded is PurgeAgentLogs with each deletion under guard (nil deletes
+// directly): the launch's housekeeping slot passes its shared-lock guard. An empty
+// globalCache sweeps no shared-cache dir.
+func PurgeAgentLogsGuarded(workspaces []string, globalCache string, olderThanDays float64, apply bool, now time.Time, guard Guard) (bytesRemoved int64, filesRemoved int) {
 	cutoff := now.Add(-time.Duration(olderThanDays * 86400 * float64(time.Second)))
 	for _, ws := range workspaces {
 		// The overlay is opened refusing a link at `.yolo` or at `.yolo/home`: both are
@@ -53,16 +71,19 @@ func PurgeAgentLogs(workspaces []string, globalCache string, olderThanDays float
 			continue
 		}
 		for _, sub := range agentLogWorkspaceSubdirs {
-			b, f := purgeOldFilesUnder(home, sub, cutoff, apply, nil)
+			b, f := purgeOldFilesUnder(home, sub, cutoff, apply, guard)
 			bytesRemoved += b
 			filesRemoved += f
 		}
 		home.Close()
 	}
+	if globalCache == "" {
+		return bytesRemoved, filesRemoved
+	}
 	// The shared cache is followed at its root, as PurgeCacheByAge's is, and walked beneath it.
 	if cache, err := os.OpenRoot(globalCache); err == nil {
 		for _, sub := range agentLogGlobalCacheSubdirs {
-			b, f := purgeOldFilesUnder(cache, sub, cutoff, apply, nil)
+			b, f := purgeOldFilesUnder(cache, sub, cutoff, apply, guard)
 			bytesRemoved += b
 			filesRemoved += f
 		}

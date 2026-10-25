@@ -23,7 +23,7 @@ func TestThePersistenceSectionLeadsWithTheDurableDir(t *testing.T) {
 	sec := persistenceSectionOf(t, out)
 	lead := persistenceHeading + "\n\n" +
 		"**`$YOLO_DURABLE_DIR`** (`/workspace/.yolo/durable`) is scratch space for what you do not want to lose in a restart: worktrees, clones, intermediate files. It is not part of the project, and the user never needs to look in it, so anything meant for the project or for the user goes where it otherwise would. Use any layout under it.\n" +
-		"It survives restarts and yolo never deletes it. It sits in the workspace's `.yolo`, which git ignores, so a `git clean -fdx` (or `-fdX`) in the workspace deletes it: never run one there. The rest of `/workspace` is the user's project.\n"
+		"It survives restarts, and yolo never deletes your work in it: the one removal is of clean, idle worktrees a pack's tool left there, which that pack's briefing names. It sits in the workspace's `.yolo`, which git ignores, so a `git clean -fdx` (or `-fdX`) in the workspace deletes it: never run one there. The rest of `/workspace` is the user's project.\n"
 	if !strings.HasPrefix(sec, lead) {
 		t.Errorf("the section does not open with the durable dir:\n%s", sec)
 	}
@@ -40,7 +40,7 @@ func TestThePersistenceSectionLeadsWithTheDurableDir(t *testing.T) {
 		"- **Per launch** (on disk): `/tmp`, `/run`. Shared by every terminal attached to this jail. Survives nothing",
 		"yolo deletes these once the jail exits",
 		"Throwaway files only, never a worktree.",
-		"- **Per workspace**: `$YOLO_DURABLE_DIR`, your scratch space; in home, only `~/.claude`, `~/.config`, `~/go` (the agents' and tools' own state and installs: never put your work there); `/workspace/.venv` (this jail's own copies, not the host's). Survives restarts and every new launch of this workspace; another workspace has its own. yolo deletes nothing here but some agents' old log files (`yolo prune --apply`).",
+		"- **Per workspace**: `$YOLO_DURABLE_DIR`, your scratch space; in home, only `~/.claude`, `~/.config`, `~/go` (the agents' and tools' own state and installs: never put your work there); `/workspace/.venv` (this jail's own copies, not the host's). Survives restarts and every new launch of this workspace; another workspace has its own. yolo deletes nothing here but some agents' log files older than 30 days and clean, idle worktrees a pack's tool left in `$YOLO_DURABLE_DIR`.",
 		"- **Every workspace on this machine**: `~/.cache`, `/mise`. Survives restarts and workspace switches, and every jail on this machine shares them",
 		"Tool caches belong here (pip's `~/.cache/pip`, for one), never your work",
 		"- **The workspace itself**: `/workspace`, live on the host: the user's project, not a scratch area; only `$YOLO_DURABLE_DIR` inside it is yours. It outlives every jail, and yolo never cleans it up.",
@@ -122,7 +122,7 @@ func TestTheDurableCaveatReplacesTheLifetimeSentence(t *testing.T) {
 	if !strings.Contains(sec, "Use any layout under it.\n⚠ Only as long as X. It sits in the workspace's `.yolo`, ") {
 		t.Errorf("the caveat is not where the lifetime sentence was:\n%s", sec)
 	}
-	if strings.Contains(sec, "never deletes it") {
+	if strings.Contains(sec, "never deletes") {
 		t.Errorf("the caveated lead still says yolo never deletes it:\n%s", sec)
 	}
 }
@@ -204,7 +204,7 @@ func TestTheAppleContainerSectionSaysWhatIsTrueThere(t *testing.T) {
 			"other classes, writable and kept in this workspace's `.yolo/home` (the agents' and tools' own state and " +
 			"installs: never put your work there); `/workspace/.venv`, `/mise` (this jail's own copies, not the host's). " +
 			"Survives restarts and every new launch of this workspace; another workspace has its own. yolo deletes " +
-			"nothing here but its own files (below).",
+			"nothing here but its own files (below) and clean, idle worktrees a pack's tool left in `$YOLO_DURABLE_DIR`.",
 		// /mise is this workspace's own tool disk on Apple Container (OQ-MB1), not a store
 		// every workspace shares.
 		"- **Every workspace on this machine**: `~/.cache`.",
@@ -252,7 +252,7 @@ func TestAPodmanTmpfsSectionGetsTheRAMClausesAndKeepsItsReadOnlyHome(t *testing.
 		"- **Per launch** (in RAM): `/tmp`, `/run`. Shared by every terminal attached to this jail. Survives " +
 			"nothing: they are gone when the jail stops, and a restart is a new launch with new, empty ones. " +
 			"Everything you put there uses this jail's memory.",
-		"yolo deletes nothing here but some agents' old log files (`yolo prune --apply`).",
+		"yolo deletes nothing here but some agents' log files older than 30 days and clean, idle worktrees a pack's tool left in `$YOLO_DURABLE_DIR`.",
 		"- **Read-only**: the rest of `/home/agent`",
 	} {
 		if !strings.Contains(sec, want) {

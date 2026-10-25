@@ -18,6 +18,7 @@ import (
 	"os"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/awscredadapter"
+	"github.com/mschulkind-oss/yolo-jail/internal/durable"
 	"github.com/mschulkind-oss/yolo-jail/internal/nixroots"
 	"github.com/mschulkind-oss/yolo-jail/internal/oauthterminator"
 	"github.com/mschulkind-oss/yolo-jail/internal/openaiauthadapter"
@@ -25,6 +26,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/supervisor"
 	"github.com/mschulkind-oss/yolo-jail/internal/wirebridged"
+	"github.com/mschulkind-oss/yolo-jail/internal/worktreereap"
 )
 
 func main() {
@@ -59,6 +61,10 @@ func run(args []string) int {
 		return wirebridged.Main(rest)
 	case "nix-roots":
 		return nixroots.WatchMain(rest)
+	case "reap-worktrees":
+		return worktreereap.Main(rest)
+	case "durable-size":
+		return durable.CountMain(rest)
 	default:
 		return usage()
 	}
@@ -68,6 +74,6 @@ func run(args []string) int {
 // (TestRunJudgesGuestScopeAgainstTheRealHome).
 var usage = func() int {
 	fmt.Fprintln(os.Stderr, "usage: yolo-jaild <supervise|oauth-terminator|openai-auth-adapter|"+
-		"aws-credential-adapter|wire-bridge|nix-roots> [args...]")
+		"aws-credential-adapter|wire-bridge|nix-roots|reap-worktrees|durable-size> [args...]")
 	return 2
 }

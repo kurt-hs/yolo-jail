@@ -309,7 +309,8 @@
 "internal/updatehint/*",
 "internal/version/*",
 "internal/wirebridge/*",
-"internal/wirebridged/*"
+"internal/wirebridged/*",
+"internal/worktreereap/*"
 ],
 "listed": [
 "cmd/**",
@@ -440,7 +441,8 @@
 "internal/updatehint",
 "internal/version",
 "internal/wirebridge",
-"internal/wirebridged"
+"internal/wirebridged",
+"internal/worktreereap"
 ]
 },
 {
@@ -631,7 +633,8 @@
 "internal/updatehint/updatehint.go",
 "internal/version/*.go",
 "internal/wirebridge/*.go",
-"internal/wirebridged/*.go"
+"internal/wirebridged/*.go",
+"internal/worktreereap/*.go"
 ],
 "listed": [
 "cmd/**",
@@ -765,7 +768,8 @@
 "internal/updatehint",
 "internal/version",
 "internal/wirebridge",
-"internal/wirebridged"
+"internal/wirebridged",
+"internal/worktreereap"
 ]
 },
 {
@@ -1208,7 +1212,8 @@
 "internal/updatehint/updatehint.go",
 "internal/version/*.go",
 "internal/wirebridge/*.go",
-"internal/wirebridged/*.go"
+"internal/wirebridged/*.go",
+"internal/worktreereap/*.go"
 ],
 "listed": [
 "cmd/**",
@@ -1341,7 +1346,8 @@
 "internal/updatehint",
 "internal/version",
 "internal/wirebridge",
-"internal/wirebridged"
+"internal/wirebridged",
+"internal/worktreereap"
 ]
 },
 {
@@ -1642,6 +1648,7 @@
 "internal/cli/run/accounthomehold.go",
 "internal/cli/run/actooldisk.go",
 "internal/cli/run/agentenvfiles.go",
+"internal/cli/run/agentlogreap.go",
 "internal/cli/run/amdcdispec.go",
 "internal/cli/run/armstack.go",
 "internal/cli/run/assemble.go",
@@ -1945,6 +1952,7 @@
 "internal/version/*.go",
 "internal/wirebridge/*.go",
 "internal/wirebridged/*.go",
+"internal/worktreereap/*.go",
 "packs/embed.go",
 "scripts/testdata/fake-yolo/main.go",
 "tools/build-wheels/*.go",
@@ -2089,6 +2097,7 @@
 "internal/version",
 "internal/wirebridge",
 "internal/wirebridged",
+"internal/worktreereap",
 "packs/**",
 "scripts/**",
 "scripts/__pycache__",
@@ -2683,6 +2692,7 @@
 "internal/version/*.go",
 "internal/wirebridge/*.go",
 "internal/wirebridged/*.go",
+"internal/worktreereap/*.go",
 "packs/embed.go"
 ],
 "listed": [
@@ -2815,6 +2825,7 @@
 "internal/version",
 "internal/wirebridge",
 "internal/wirebridged",
+"internal/worktreereap",
 "packs/**"
 ]
 },
@@ -2968,7 +2979,8 @@
 "internal/updatehint/updatehint.go",
 "internal/version/*.go",
 "internal/wirebridge/*.go",
-"internal/wirebridged/*.go"
+"internal/wirebridged/*.go",
+"internal/worktreereap/*.go"
 ],
 "listed": [
 "cmd/**",
@@ -3099,7 +3111,8 @@
 "internal/updatehint",
 "internal/version",
 "internal/wirebridge",
-"internal/wirebridged"
+"internal/wirebridged",
+"internal/worktreereap"
 ]
 },
 {
@@ -3445,6 +3458,7 @@
 "internal/version/*",
 "internal/wirebridge/*",
 "internal/wirebridged/*",
+"internal/worktreereap/*",
 "mise.toml",
 "packs/agy/*",
 "packs/audio/loopholes/audio/manifest.jsonc",
@@ -3630,6 +3644,7 @@
 "internal/version",
 "internal/wirebridge",
 "internal/wirebridged",
+"internal/worktreereap",
 "packs/**",
 "scripts/**",
 "scripts/__pycache__"
@@ -3780,7 +3795,8 @@
 "internal/updatehint/updatehint.go",
 "internal/version/*.go",
 "internal/wirebridge/*.go",
-"internal/wirebridged/*.go"
+"internal/wirebridged/*.go",
+"internal/worktreereap/*.go"
 ],
 "listed": [
 "internal",
@@ -3910,7 +3926,8 @@
 "internal/updatehint",
 "internal/version",
 "internal/wirebridge",
-"internal/wirebridged"
+"internal/wirebridged",
+"internal/worktreereap"
 ]
 },
 {
@@ -4061,7 +4078,8 @@
 "internal/updatehint/updatehint.go",
 "internal/version/*.go",
 "internal/wirebridge/*.go",
-"internal/wirebridged/*.go"
+"internal/wirebridged/*.go",
+"internal/worktreereap/*.go"
 ],
 "listed": [
 "cmd/**",
@@ -4192,7 +4210,8 @@
 "internal/updatehint",
 "internal/version",
 "internal/wirebridge",
-"internal/wirebridged"
+"internal/wirebridged",
+"internal/worktreereap"
 ]
 },
 {
@@ -4343,7 +4362,8 @@
 "internal/updatehint/updatehint.go",
 "internal/version/*.go",
 "internal/wirebridge/*.go",
-"internal/wirebridged/*.go"
+"internal/wirebridged/*.go",
+"internal/worktreereap/*.go"
 ],
 "listed": [
 "cmd/**",
@@ -4474,7 +4494,8 @@
 "internal/updatehint",
 "internal/version",
 "internal/wirebridge",
-"internal/wirebridged"
+"internal/wirebridged",
+"internal/worktreereap"
 ]
 },
 {
@@ -4701,7 +4722,8 @@
 "internal/updatehint",
 "internal/version",
 "internal/wirebridge",
-"internal/wirebridged"
+"internal/wirebridged",
+"internal/worktreereap"
 ]
 },
 {
@@ -4862,7 +4884,8 @@
 "internal/updatehint/updatehint.go",
 "internal/version/*.go",
 "internal/wirebridge/*.go",
-"internal/wirebridged/*.go"
+"internal/wirebridged/*.go",
+"internal/worktreereap/*.go"
 ],
 "listed": [
 "cmd/**",
@@ -4993,7 +5016,8 @@
 "internal/updatehint",
 "internal/version",
 "internal/wirebridge",
-"internal/wirebridged"
+"internal/wirebridged",
+"internal/worktreereap"
 ]
 },
 {
@@ -5675,6 +5699,7 @@
 "internal/cli/run/activeset_test.go",
 "internal/cli/run/actooldisk_test.go",
 "internal/cli/run/agentenvfiles_test.go",
+"internal/cli/run/agentlogreap_test.go",
 "internal/cli/run/agentprofileenv_test.go",
 "internal/cli/run/agentstagingselfreap_test.go",
 "internal/cli/run/agentstagingwindow_test.go",

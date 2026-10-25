@@ -142,15 +142,85 @@ func TestScanDirCountsDurableWorktreesFromTheAdminFiles(t *testing.T) {
 
 	lines := LaunchLines(sc, Size{Bytes: 1_200_000_000}, nil, WalkBudget, now)
 	want := []string{
-		"Durable dir: 2 worktrees and 1 other entry, 1.2 GB, oldest idle 41 days (fix-footer) — `yolo check` lists them; yolo deletes nothing here.",
+		"Durable dir: 2 worktrees and 1 other entry, 1.2 GB, oldest idle 41 days (fix-footer) — `yolo check` lists them; yolo deletes none of them but clean worktrees a pack's tool left idle for a day.",
 		"Durable dir: 1 worktree registration points at paths that no longer exist (" + sc.Prunable[0] + ") — `git worktree prune -n -v` lists what a prune would drop.",
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Errorf("launch lines:\n%s\nwant:\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
 	}
 	partial := LaunchLines(sc, Size{Bytes: 2_000_000_000, Partial: true}, nil, WalkBudget, now)
-	if !strings.Contains(partial[0], "≥ 2.0 GB (size walk stopped at 2s)") {
-		t.Errorf("a partial walk: %q", partial[0])
+	if !strings.Contains(partial[0], ", ≥ 2.0 GB counted in 2s, not the total,") {
+		t.Errorf("a partial walk with no complete count: %q", partial[0])
+	}
+	// A walk that stopped leads with the last complete count, never the floor alone: a 410 GB
+	// dir once printed "≥ 12.9 GB".
+	partial = LaunchLines(sc, Size{Bytes: 12_900_000_000, Partial: true, Counting: true,
+		Last: SizeRecord{Bytes: 410_000_000_000, MeasuredAt: now.Add(-3 * time.Hour)}}, nil, WalkBudget, now)
+	if want := ", 410.0 GB at the last full count, 3 hours ago (≥ 12.9 GB counted in 2s); " +
+		"a full count is running for the next launch,"; !strings.Contains(partial[0], want) {
+		t.Errorf("a partial walk with a complete count:\n%q\nwant it to contain\n%q", partial[0], want)
+	}
+}
+
+// The record round-trips, a partial count is never recorded, and a record the jail mangled
+// reads as none.
+func TestTheSizeRecordKeepsOnlyCompleteCounts(t *testing.T) {
+	ws := workspaceDir(t)
+	if _, err := Ensure(ws); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	if _, ok := LastSize(ws); ok {
+		t.Fatal("a record before any count")
+	}
+	if err := RecordSize(ws, Size{Bytes: 7, Partial: true}, at); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := LastSize(ws); ok {
+		t.Fatal("a partial count was recorded as complete")
+	}
+	if err := RecordSize(ws, Size{Bytes: 410_000_000_000}, at); err != nil {
+		t.Fatal(err)
+	}
+	if rec, ok := LastSize(ws); !ok || rec.Bytes != 410_000_000_000 || !rec.MeasuredAt.Equal(at) {
+		t.Fatalf("LastSize = %+v, %v", rec, ok)
+	}
+	if err := os.WriteFile(filepath.Join(ws, ".yolo", SizeRecordName), []byte("{nope"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := LastSize(ws); ok {
+		t.Fatal("a mangled record was read")
+	}
+}
+
+// The background count records the true total, with no budget, and makes no `.yolo`.
+func TestTheBackgroundCountRecordsTheWholeTotal(t *testing.T) {
+	ws := workspaceDir(t)
+	dir, err := Ensure(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 3 {
+		sub := filepath.Join(dir, "worktrees", "w"+string(rune('a'+i)))
+		if err := os.MkdirAll(sub, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sub, "f"), make([]byte, 1000), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if rc := CountMain([]string{"--workspace", ws}); rc != 0 {
+		t.Fatalf("rc = %d", rc)
+	}
+	if rec, ok := LastSize(ws); !ok || rec.Bytes != 3000 {
+		t.Fatalf("LastSize = %+v, %v; want 3000 bytes", rec, ok)
+	}
+	bare := workspaceDir(t)
+	if rc := CountMain([]string{"--workspace", bare}); rc != 0 {
+		t.Fatalf("rc = %d", rc)
+	}
+	if _, err := os.Lstat(filepath.Join(bare, ".yolo")); err == nil {
+		t.Fatal("the count made a .yolo in a workspace that had none")
 	}
 }
 
