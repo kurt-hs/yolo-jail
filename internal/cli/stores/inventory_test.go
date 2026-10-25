@@ -297,6 +297,7 @@ func TestEveryNamedReclaimerExists(t *testing.T) {
 	}
 	// The rows built inline, which the table above does not cover.
 	named["PurgeCacheByAge"] = "cacheStores"
+	named["PruneCopilotPkgVersions"] = "cacheStores (the copilot row)"
 	named["PruneImageCache"] = "cacheStores (the tar row)"
 	named["PruneOldImages"] = "imageStores (the tagged row)"
 	named["RemoveScratchVolume"] = "scratchStores (the live row)"

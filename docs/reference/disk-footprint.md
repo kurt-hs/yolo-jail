@@ -331,7 +331,7 @@ Reclaim now? [y]es / [n]ot now (ask again in 7 days) / ne[v]er (yolo prune stays
 - **Measure late, offer early.** The size a prompt shows is the previous slot's dated
   measurement, or a probe cheap enough to run in front of a launch. A cache walk never runs
   there. Each walk has a time budget; a walk that exceeds it reports a partial figure and says
-  so.
+  so, and the next pass resumes where it stopped (see [the shared cache](#the-shared-cache)).
 - **Degenerate inputs.** An empty store or a class with nothing reclaimable is silent. A store
   the probe cannot read declines its class for this pass and does not stamp the debounce, so the
   next launch retries.
@@ -440,6 +440,34 @@ there is a no-op. `go-build` stays on the list because removing it would be a ch
 behind it, and must never be cited as evidence the purge works. `staticcheck` stays off. `nce`,
 content-addressed with no eviction, is on. pants, uv, pip, npm and pex do not self-trim; they are
 why the purge is offered.
+
+**The purge resumes; it does not restart.** It walks each subdir in name order and keeps its place
+between passes in `build/cache-purge-progress.json`: one place for the measurement and one for the
+consented removal, since each is its own walk with its own budget. A pass the budget stops goes on
+from there at the next launch, the class stays due until both walks have reached the end of the
+list, and `housekeeping.log` names the subdirs a cut pass covered and the ones left. `yolo prune
+--apply` resumes from the removal's place too; its dry run starts at the beginning. Before this,
+every pass started again at `uv`, which used the whole budget, so no pass reached the subdirs after
+it.
+
+**Some directories go whole or not at all.** Where a tool trusts a directory's existence as proof
+that its contents are complete, the purge removes the directory as one item, only when the directory
+and every file in it are older than the cutoff: uv's unpacked wheels (`archive-v0/<id>`) and cached
+environments, pex's unpacked chroots and venvs (also under pants' `named_caches/pex_root`), npx
+installs, `nce` installs and node-gyp header sets. It renames the directory out of the tool's way
+before removing it, so an interrupted removal never leaves a half-empty entry. Everywhere else a
+file is a whole entry and goes on its own. The list, and the reasoning for each cache, is
+`cachePurgeUnits` in `internal/prune/cachepurge.go`.
+
+**Copilot's self-update store has its own rule.** `copilot/pkg/<platform>/<version>/` gains one
+unpacked release (150-200 MB) per Copilot self-update and nothing removed old ones. The age purge
+cannot judge it: the release's files carry 1985 timestamps. So an automatic class keeps the newest
+versions per platform (one of them is the release a launched copilot resolves to) and any older one
+a jail read within a window, and removes the rest whole, once a day. The slot cannot ask a running
+jail which version it runs; the access-time window stands in for that, and on a filesystem mounted
+`noatime` the newest versions are the only protection. It is automatic and not offered because a
+removed version costs one release download at most, the bounded regeneration
+[BF-P3](#backfill-rules) asks for.
 
 > [!WARNING]
 > **A path expression is evaluated in the frame that runs it.** The cache root resolves to the
@@ -659,10 +687,12 @@ number; each is now one of the mechanisms above.
   prune at every invocation is unmeasured in bytes.
 - **The mise store once its first window has passed:** the first offer, and the store's growth
   against its last samples.
-- **A possible defect in the cache age purge for `uv`:** one sample showed it holding several
-  windows' worth of growth across a purge. Not diagnosed: it needs a modification-time histogram
-  of that subdir on the host. Whether uv refreshes modification times on hits is the first
-  candidate.
+- **The re-measure of `uv` after the resuming purge.** The open "uv defect" (the subdir holding
+  several windows' worth of growth across consented purges) was the budget: every pass started at
+  `uv` and its removal reached only a slice of it. uv does not refresh modification times on hits:
+  in a development jail on 2026-10-24, 27 of 1,532 `archive-v0` entries had a file modified within
+  30 days, and those were exactly the 27 whose directory was. Owed: the subdir's size on the host a
+  week after the resuming purge ships.
 - **Workspace-local bytes are in no inventory row.** Agent worktrees under
   `<workspace>/.claude/worktrees/` are on the same device and appear nowhere in `yolo stores`;
   whether that belongs to `yolo stores` or to nothing is undecided.
@@ -700,7 +730,7 @@ record](#the-mise-use-record).
 | A6 | **No background or periodic reclaim: no daemon, timer or cron.** Reaffirmed as [OQ-YW1](../research/central-yolo-watcher.md#11-decision-ledger). | It adds a lifecycle yolo does not have and maximizes P7 exposure; the launch fires at least as often as the artifacts are made. |
 | <a id="BF-D1"></a>BF-D1 | **The vendor version prune runs once per launcher invocation, after the install-or-update branch, under a frozen update policy too; it yields silently to a writer holding the install lock, pays no subprocess in the steady state, and never fails the command.** | A prune moves no version, so a frozen launcher still needs it; a delete that cannot be made must not stop the program under `set -e`. |
 | <a id="BF-D2"></a>BF-D2 | **On `macos-user`, `yolo prune` asks no container runtime and `yolo stores` lists the backend's own storage.** Its running jails are its host-services sessions, read from the locks each session holds; container-only prune sections print one not-applicable line and exit 0; every staging sweep keeps live sessions' staging and declines when sessions cannot be listed; no `sudo`; only this user's sessions are read. | The backend runs no container, so both commands used to fail asking a runtime named `macos-user`. |
-| <a id="BF-D3"></a>BF-D3 | **A `macos-user` launch runs a slot of its own for retired loophole state and the shared cache's offer**, after the config approval and before the launch lock, on its own goroutine, never after the backend returns. | Those two classes grow on a Mac whatever the backend; the others need a container runtime's liveness. |
+| <a id="BF-D3"></a>BF-D3 | **A `macos-user` launch runs a slot of its own for retired loophole state, the shared cache's offer and Copilot's self-update store**, after the config approval and before the launch lock, on its own goroutine, never after the backend returns. | Those classes grow on a Mac whatever the backend; the others need a container runtime's liveness. |
 
 ## Current values
 
@@ -715,6 +745,8 @@ only place the values themselves are stated.
 | Cache walk and purge budget | 60 s per pass | `prune.CachePurgeBudget` |
 | Cache age cutoff | 30 days | `yolo prune --cache-age` default |
 | Cache purge default subdirs | uv, pip, npm, go-build, mise, pex, pants, node-gyp, gopls, nce | `prune.CachePurgeDefaultSubdirs` |
+| Cache purge place between passes | `build/cache-purge-progress.json` | `prune.CachePurgeProgressName` |
+| Copilot self-update versions kept | the newest 3 per platform, plus any read within 7 days | `prune.CopilotPkgKeep`, `prune.CopilotPkgRecent` |
 | Image-tar keep | 0 on podman, 3 on Apple Container | `prune.ResolveImageCacheKeep`, `ImageCacheKeepAppleContainer` |
 | `*.tmp` grace floor under `cache/images` | 1 hour | `imageCacheTmpGraceFloor` |
 | Owner label | `org.yolo-jail.owner=yolo` | `prune.JailImageOwnerLabel`, `flake.nix` |

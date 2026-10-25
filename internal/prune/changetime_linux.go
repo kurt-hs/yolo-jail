@@ -12,3 +12,8 @@ import (
 func statChangeTime(st *syscall.Stat_t) time.Time {
 	return time.Unix(st.Ctim.Unix())
 }
+
+// statAccessTime is st's last access time (st_atim).
+func statAccessTime(st *syscall.Stat_t) time.Time {
+	return time.Unix(st.Atim.Unix())
+}

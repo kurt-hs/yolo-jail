@@ -1,8 +1,10 @@
 package prune
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -57,7 +59,8 @@ var purgeClock = time.Now
 //     of under cacheRoot (see below);
 //   - forbidden browser-profile subdirs are hard-excluded even if named;
 //   - credentials and lock files are always held, whatever their age (cacheHeld);
-//   - symlinks are never followed or deleted;
+//   - symlinks are never followed, and never deleted except inside a unit removed whole;
+//   - a unit directory (cachePurgeUnits) goes whole, only when it and every file in it are old;
 //   - staleness is keyed off mtime (>= cutoff is kept), not atime;
 //   - apply=false returns accurate counts without mutating.
 //
@@ -83,12 +86,60 @@ func PurgeCacheByAgeGuarded(cacheRoot string, subdirs []string, relocations map[
 	return b, f
 }
 
-// PurgeCacheByAgeWithin is PurgeCacheByAgeGuarded stopped at deadline (zero: none). The deadline
-// is checked before each batch of directory entries and before each removal, and partial reports
-// that it stopped the pass: the counts are then what it reached, a lower bound, and the caller
-// must not record the pass as complete (CI-D7).
+// PurgeCacheByAgeWithin is PurgeCacheByAgeGuarded stopped at deadline (zero: none), always
+// starting at the first subdir. partial reports that the deadline stopped the pass: the counts are
+// then what it reached, a lower bound, and the caller must not record the pass as complete
+// (CI-D7). A caller that runs again later and wants the next pass to go on where this one stopped
+// uses PurgeCacheByAgeFrom, which returns that place.
 func PurgeCacheByAgeWithin(cacheRoot string, subdirs []string, relocations map[string]string, olderThanDays float64, apply bool, now time.Time, guard Guard, deadline time.Time) (bytesRemoved int64, filesRemoved int, partial bool) {
+	r := PurgeCacheByAgeFrom(cacheRoot, subdirs, relocations, olderThanDays, apply, now, guard, deadline, CachePurgeCursor{})
+	return r.Bytes, r.Files, r.Partial
+}
+
+// CachePurgeCursor is where a bounded cache purge resumes: the subdir, and the slash-separated
+// path within it of the first entry the stopped pass had not finished. The zero cursor is the
+// start of the list.
+//
+// THE WALK IS IN NAME ORDER so that a path is a place to resume from: each directory is read whole
+// (in batches, the deadline checked between them) and sorted, and a resumed walk skips, at every
+// level of the cursor's path, the names that sort before it. Before the cursor every pass
+// restarted at the first subdir, and a 60 s budget one large subdir (uv) used up meant no pass ever
+// reached the subdirs after it.
+type CachePurgeCursor struct {
+	Sub  string `json:"sub,omitempty"`
+	Path string `json:"path,omitempty"`
+}
+
+// IsStart reports whether c is the start of the list: no cycle in progress.
+func (c CachePurgeCursor) IsStart() bool { return c.Sub == "" }
+
+// CachePurgeResult is one bounded pass of PurgeCacheByAgeFrom.
+type CachePurgeResult struct {
+	Bytes   int64
+	Files   int
+	Partial bool // the deadline stopped the pass; Bytes and Files are a lower bound
+	// Next is where the next pass resumes: the zero cursor when this pass reached the end of the
+	// list, which completes a cycle that may have begun several passes earlier.
+	Next CachePurgeCursor
+	// Covered is every subdir this pass walked, wholly or (the last, when Partial) in part.
+	// Remaining is every subdir it did not finish, the one it stopped in first; empty unless Partial.
+	Covered, Remaining []string
+}
+
+// PurgeCacheByAgeFrom is PurgeCacheByAgeWithin starting at from (a cursor an earlier pass
+// returned in Next) rather than at the first subdir. A cursor naming a subdir no longer on the list
+// starts at the beginning.
+func PurgeCacheByAgeFrom(cacheRoot string, subdirs []string, relocations map[string]string, olderThanDays float64, apply bool, now time.Time, guard Guard, deadline time.Time, from CachePurgeCursor) CachePurgeResult {
 	cutoff := now.Add(-time.Duration(olderThanDays * 86400 * float64(time.Second)))
+	var res CachePurgeResult
+
+	first, resume := 0, []string(nil)
+	if i := slices.Index(subdirs, from.Sub); i >= 0 {
+		first = i
+		if from.Path != "" {
+			resume = strings.Split(from.Path, "/")
+		}
+	}
 
 	// The cache root is opened FOLLOWING a link at it, and so is a relocation target: neither
 	// is a path the jail can replace (each is a jail's mountpoint, and the components above are
@@ -99,12 +150,18 @@ func PurgeCacheByAgeWithin(cacheRoot string, subdirs []string, relocations map[s
 	if cache != nil {
 		defer cache.Close()
 	}
-	for _, sub := range subdirs {
+	for i := first; i < len(subdirs); i++ {
+		sub := subdirs[i]
 		if _, forbidden := cachePurgeForbidden[sub]; forbidden {
 			continue
 		}
 		w := purgeWalk{cutoff: cutoff, apply: apply, guard: guard, deadline: deadline,
-			hold: func(rel string) bool { return cacheHeld(sub, rel) }}
+			hold:  func(rel string) bool { return cacheHeld(sub, rel) },
+			units: cachePurgeUnits[sub]}
+		if i == first {
+			w.resume = resume
+		}
+		res.Covered = append(res.Covered, sub)
 		if target := relocations[sub]; target != "" {
 			if r, err := os.OpenRoot(target); err == nil {
 				w.run(r, ".")
@@ -113,14 +170,74 @@ func PurgeCacheByAgeWithin(cacheRoot string, subdirs []string, relocations map[s
 		} else if cache != nil {
 			w.run(cache, sub)
 		}
-		bytesRemoved += w.bytes
-		filesRemoved += w.files
+		res.Bytes += w.bytes
+		res.Files += w.files
 		if w.partial {
-			return bytesRemoved, filesRemoved, true
+			res.Partial = true
+			res.Next = CachePurgeCursor{Sub: sub, Path: w.cursor}
+			res.Remaining = append([]string{}, subdirs[i:]...)
+			return res
 		}
 	}
-	return bytesRemoved, filesRemoved, false
+	return res
 }
+
+// cachePurgeUnits names, per purged subdir, the directories the purge treats as ONE ITEM: removed
+// whole, and only when the directory itself and every regular file in it are older than the
+// cutoff and nothing in it is held. Each pattern is a path relative to the subdir, "*" matching
+// any one name; a directory at a matching path is a unit.
+//
+// THE RULE FOR BEING ON THIS LIST: the tool trusts the directory's EXISTENCE as proof that its
+// contents are complete. Purging file by file there leaves a half-empty (in the end an empty)
+// directory the tool goes on using: uv links a package out of archive-v0/<id> on the strength of
+// a pointer under wheels-v*/ naming that id, and never looks inside for what is missing. Those are:
+//
+//   - uv: archive-v0/<id> (an unpacked wheel), environments-v2/<id> (a cached ephemeral
+//     environment, a whole venv) and builds-v0/<id> (a build environment).
+//   - pex, and the pex root pants keeps under named_caches: each cache kind is
+//     <kind>/<layout version>/<hash>, made by pex's atomic_directory; installed_wheels and venvs
+//     nest the chroot one level further, beside its .atomic_directory.lck, so the unit is the
+//     level below the hash and the held lock stays out of it.
+//   - npm: _npx/<hash>, a whole node_modules install npx reuses by its presence.
+//   - nce: <hash>, a scie's unpacked install. node-gyp: <version>, headers it trusts once its
+//     installVersion file is there.
+//
+// EVERYTHING ELSE IS PURGED PER FILE, deliberately, because each file there is a whole entry
+// whose absence the tool reads as a miss and fetches again: uv's pointer and metadata files
+// (wheels-v*, simple-v*, sdists-v*, interpreter-v*); pip's http-v2 responses (a missing body or
+// header file is a cachecontrol miss) and its built wheels, one file each; npm's _cacache, whose
+// index entries name content by digest and verify it on read, so an entry whose content is gone
+// is a miss npm refetches; Go's build cache (go-build, gopls), which treats a missing output as a
+// miss; and mise's downloaded archives.
+var cachePurgeUnits = map[string][][]string{
+	"uv":       {{"archive-v0", "*"}, {"environments-v2", "*"}, {"builds-v0", "*"}},
+	"pex":      pexUnits(),
+	"pants":    pexUnits("named_caches", "pex_root"),
+	"npm":      {{"_npx", "*"}},
+	"nce":      {{"*"}},
+	"node-gyp": {{"*"}},
+}
+
+// pexUnits is pex's cache layout (see cachePurgeUnits) under prefix.
+func pexUnits(prefix ...string) [][]string {
+	var out [][]string
+	for _, kind := range []string{"installed_wheels", "venvs"} {
+		out = append(out, append(append([]string{}, prefix...), kind, "*", "*", "*"))
+	}
+	// The kinds whose <hash> directory is the atomic_directory itself, as observed on a real
+	// cache. A kind not named here (built_wheels, downloads, packed_wheels, ...) keeps the
+	// per-file purge until its layout is read the same way.
+	for _, kind := range []string{"unzipped_pexes", "bootstraps", "user_code", "isolated", "interpreters"} {
+		out = append(out, append(append([]string{}, prefix...), kind, "*", "*"))
+	}
+	return out
+}
+
+// purgeTombstonePrefix names a unit the purge has renamed out of the tool's way and not yet
+// finished removing. The rename is what makes a unit's removal all-or-nothing as the tool sees it:
+// the unit's own name is gone in one step, so an interrupted RemoveAll leaves a tombstone no tool
+// reads rather than a half-empty unit, and the next pass removes the tombstone whatever its age.
+const purgeTombstonePrefix = ".yolo-purge-"
 
 // cacheHeld reports whether the file at rel (slash-separated, relative to the bucket's root) is
 // one the age purge must keep whatever its age: the plan's "always hold" rows
@@ -176,17 +293,22 @@ func purgeOldFilesUnder(r *os.Root, rel string, cutoff time.Time, apply bool, gu
 }
 
 // purgeWalk is one bounded walk of a tree beneath an os.Root (CI-D7): directories are read
-// purgeBatch entries at a time, and the deadline is checked before each batch and each removal.
+// purgeBatch entries at a time and walked in name order, and the deadline is checked before each
+// batch, each entry and each removal. Where it stops it leaves cursor, the path (relative to the
+// walk's start) of the first entry it did not finish.
 type purgeWalk struct {
 	cutoff   time.Time
 	apply    bool
 	guard    Guard
 	hold     func(rel string) bool // rel is slash-separated, relative to the walk's start; nil holds nothing
 	deadline time.Time             // zero: none
+	units    [][]string            // cachePurgeUnits' patterns for this walk; nil: every file on its own
+	resume   []string              // a cursor's path, split: what sorts before it is skipped
 
 	bytes   int64
 	files   int
 	partial bool
+	cursor  string
 }
 
 func (w *purgeWalk) expired() bool {
@@ -196,46 +318,225 @@ func (w *purgeWalk) expired() bool {
 	return w.partial
 }
 
+// stopAt records rel as where the walk stopped, unless a deeper call already did.
+func (w *purgeWalk) stopAt(rel string) {
+	if w.cursor == "" {
+		w.cursor = rel
+	}
+}
+
 func (w *purgeWalk) run(r *os.Root, rel string) {
 	info, err := r.Lstat(rel)
 	if err != nil || !info.IsDir() {
 		return
 	}
-	w.dir(r, rel, "")
+	resume := w.resume
+	w.resume = nil
+	w.dir(r, rel, "", resume)
 }
 
-// dir walks the directory at path (relative to r); under is its path relative to the walk's
-// start, slash-separated, for the holds.
-func (w *purgeWalk) dir(r *os.Root, path, under string) {
+// readSorted reads the directory at path whole, purgeBatch entries at a time, and sorts it by
+// name. ok is false when the deadline passed before it finished.
+func (w *purgeWalk) readSorted(r *os.Root, path string) (ents []fs.DirEntry, ok bool) {
 	f, err := r.Open(path)
 	if err != nil {
-		return
+		return nil, true
 	}
 	defer f.Close()
 	for {
 		if w.expired() {
+			return nil, false
+		}
+		batch, err := f.ReadDir(purgeBatch)
+		ents = append(ents, batch...)
+		if err != nil { // io.EOF, or a directory that stopped reading
+			break
+		}
+	}
+	slices.SortFunc(ents, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
+	return ents, true
+}
+
+// dir walks the directory at path (relative to r); under is its path relative to the walk's
+// start, slash-separated, for the holds, the units and the cursor. resume is what is left of a
+// cursor's path at this level.
+func (w *purgeWalk) dir(r *os.Root, path, under string, resume []string) {
+	ents, ok := w.readSorted(r, path)
+	if !ok {
+		w.stopAt(under)
+		return
+	}
+	for _, e := range ents {
+		var rest []string
+		if len(resume) > 0 {
+			c := strings.Compare(e.Name(), resume[0])
+			if c < 0 {
+				continue // the pass that left the cursor finished it
+			}
+			if c == 0 {
+				rest = resume[1:]
+			}
+			resume = nil
+		}
+		p := filepath.Join(path, e.Name())
+		u := e.Name()
+		if under != "" {
+			u = under + "/" + e.Name()
+		}
+		if w.expired() {
+			w.stopAt(u)
 			return
 		}
-		ents, err := f.ReadDir(purgeBatch)
-		for _, e := range ents {
-			p := filepath.Join(path, e.Name())
-			u := e.Name()
-			if under != "" {
-				u = under + "/" + e.Name()
-			}
-			if e.IsDir() {
-				w.dir(r, p, u)
-			} else {
-				w.file(r, p, u)
-			}
-			if w.partial {
-				return
-			}
+		switch {
+		case e.IsDir() && w.isUnit(u):
+			w.unit(r, p, u)
+		case e.IsDir():
+			w.dir(r, p, u, rest)
+		default:
+			w.file(r, p, u)
 		}
-		if err != nil { // io.EOF, or a directory that stopped reading
+		if w.partial {
+			w.stopAt(u)
 			return
 		}
 	}
+}
+
+// isUnit reports whether the directory at rel matches one of the walk's unit patterns.
+func (w *purgeWalk) isUnit(rel string) bool {
+	if len(w.units) == 0 {
+		return false
+	}
+	parts := strings.Split(rel, "/")
+next:
+	for _, pat := range w.units {
+		if len(pat) != len(parts) {
+			continue
+		}
+		for i, c := range pat {
+			if c != "*" && c != parts[i] {
+				continue next
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// unit removes the directory at path as one item (cachePurgeUnits): only when it and every
+// regular file in it are older than the cutoff and nothing in it is held, by renaming it to a
+// tombstone and removing that. A tombstone an earlier pass left goes whatever its age.
+func (w *purgeWalk) unit(r *os.Root, path, under string) {
+	if w.hold != nil && w.hold(under) {
+		return
+	}
+	tomb := strings.HasPrefix(filepath.Base(path), purgeTombstonePrefix)
+	if !tomb && !w.unitDirOld(r, path) {
+		return
+	}
+	size, files, old, ok := w.scanUnit(r, path, under, tomb, w.deadline)
+	if !ok {
+		w.partial = true
+		w.stopAt(under)
+		return
+	}
+	if !old && !tomb {
+		return
+	}
+	if w.apply {
+		if w.expired() {
+			w.stopAt(under)
+			return
+		}
+		removed := false
+		w.guard.Do(func() bool {
+			// Under the guard's lock, the walk's own test, asked again of the whole unit.
+			if tomb {
+				return true
+			}
+			if !w.unitDirOld(r, path) {
+				return false
+			}
+			_, _, again, done := w.scanUnit(r, path, under, false, time.Time{})
+			return done && again
+		}, func() {
+			if purgeBeforeRemove != nil {
+				purgeBeforeRemove(path)
+			}
+			gone := path
+			if !tomb {
+				gone = filepath.Join(filepath.Dir(path), purgeTombstonePrefix+filepath.Base(path))
+				if r.Rename(path, gone) != nil {
+					return
+				}
+			}
+			removed = r.RemoveAll(gone) == nil
+		})
+		if !removed {
+			return
+		}
+	}
+	w.bytes += size
+	w.files += files
+}
+
+// unitDirOld reports whether the unit at path is a real directory (not a link) older than the
+// cutoff: a tool that unpacked into it recently set its modification time then.
+func (w *purgeWalk) unitDirOld(r *os.Root, path string) bool {
+	st, err := r.Lstat(path)
+	return err == nil && st.IsDir() && st.ModTime().Before(w.cutoff)
+}
+
+// scanUnit sums the regular files under the unit at path and reports whether every one is older
+// than the cutoff and none is held; it stops at the first that is not, unless whole (a tombstone,
+// which goes whatever it holds) asks it to sum everything. ok is false when deadline (zero: none)
+// passed before it finished.
+func (w *purgeWalk) scanUnit(r *os.Root, path, under string, whole bool, deadline time.Time) (size int64, files int, old, ok bool) {
+	old, ok = true, true
+	var walk func(p, u string)
+	walk = func(p, u string) {
+		f, err := r.Open(p)
+		if err != nil {
+			return
+		}
+		defer f.Close()
+		for old && ok {
+			if !deadline.IsZero() && !purgeClock().Before(deadline) {
+				ok = false
+				return
+			}
+			ents, err := f.ReadDir(purgeBatch)
+			for _, e := range ents {
+				cp, cu := filepath.Join(p, e.Name()), u+"/"+e.Name()
+				if !whole && w.hold != nil && w.hold(cu) {
+					old = false
+					return
+				}
+				if e.IsDir() {
+					walk(cp, cu)
+					if !old || !ok {
+						return
+					}
+					continue
+				}
+				st, err := r.Lstat(cp)
+				if err != nil || !st.Mode().IsRegular() {
+					continue // a link goes with its unit, never followed
+				}
+				if !whole && !st.ModTime().Before(w.cutoff) {
+					old = false
+					return
+				}
+				size += st.Size()
+				files++
+			}
+			if err != nil { // io.EOF, or a directory that stopped reading
+				return
+			}
+		}
+	}
+	walk(path, under)
+	return size, files, old, ok
 }
 
 func (w *purgeWalk) file(r *os.Root, path, under string) {
@@ -253,6 +554,7 @@ func (w *purgeWalk) file(r *os.Root, path, under string) {
 	size := st.Size()
 	if w.apply {
 		if w.expired() {
+			w.stopAt(under)
 			return
 		}
 		removed := false

@@ -1156,15 +1156,57 @@ func Run(opts Options) int {
 			}
 		}
 		// Bounded like the launch's pass (CI-D7): a cache can hold hundreds of thousands of files.
-		var cachePartial bool
-		cacheBytes, cacheFiles, cachePartial = PurgeCacheByAgeWithin(joinPath(gs, "cache"), subdirs, opts.CacheRelocations,
-			float64(opts.CacheAge), apply, opts.Now(), nil, purgeClock().Add(CachePurgeBudget))
+		// --apply resumes where the last removal stopped, the launch slot's or an earlier
+		// `yolo prune --apply`'s (the same cursor, CachePurgeProgress.Apply), so running it again
+		// goes on rather than walking the same first subdir again. A dry run always starts at the
+		// beginning and moves no cursor.
+		var from CachePurgeCursor
+		progressPath := joinPath(opts.BuildDir(), CachePurgeProgressName)
+		var progress CachePurgeProgress
+		if apply {
+			progress = LoadCachePurgeProgress(progressPath)
+			from = progress.Apply
+		}
+		res := PurgeCacheByAgeFrom(joinPath(gs, "cache"), subdirs, opts.CacheRelocations,
+			float64(opts.CacheAge), apply, opts.Now(), nil, purgeClock().Add(CachePurgeBudget), from)
+		cacheBytes, cacheFiles = res.Bytes, res.Files
+		if apply {
+			progress.Apply = res.Next
+			SaveCachePurgeProgress(progressPath, progress)
+		}
 		p.line(fmt.Sprintf("  %s: %s across %s files", verb(apply, "would remove", "removed"), FmtBytes(cacheBytes), fmtComma(cacheFiles)))
-		if cachePartial {
-			p.line(fmt.Sprintf("  [yellow]partial: stopped at the %s budget, so this is a lower bound — "+
-				"run `yolo prune --apply` again to continue[/yellow]", CachePurgeBudget))
+		if res.Partial {
+			next := "run `yolo prune --apply` again to continue from there"
+			if !apply {
+				next = "`yolo prune --apply` removes as it walks and continues from where it stops, run after run"
+			}
+			p.line(fmt.Sprintf("  [yellow]partial: stopped at the %s budget, so this is a lower bound (%s) — %s[/yellow]",
+				CachePurgeBudget, res.Describe(), next))
+		} else if !from.IsStart() {
+			p.line(fmt.Sprintf("  [dim]resumed at %s/%s, where the last removal stopped; %s[/dim]", from.Sub, from.Path, res.Describe()))
 		}
 		totalSaved += cacheBytes
+	}
+
+	// --- Copilot's self-update store (copilot/pkg; copilotpkg.go) ---
+	// The launch's slot reaps it automatically, once a day; this is the same rule on demand.
+	{
+		removed, failed, bytes := PruneCopilotPkgVersions(joinPath(gs, "cache"), CopilotPkgKeep, CopilotPkgRecent,
+			opts.Now(), apply, nil)
+		p.line("")
+		p.line(fmt.Sprintf("[bold]Copilot self-update versions[/bold]  (cache/copilot/pkg; keep the newest %d "+
+			"per platform and any used in the last %d days)", CopilotPkgKeep, int(CopilotPkgRecent.Hours()/24)))
+		if len(removed) == 0 && len(failed) == 0 {
+			p.line("  [dim]none[/dim]")
+		}
+		for _, v := range removed {
+			p.line(fmt.Sprintf("  %s %s (%s)", verb(apply, "would remove", "removed"), v.Display(), FmtBytes(v.Bytes)))
+		}
+		for _, v := range failed {
+			p.line(fmt.Sprintf("  [yellow]could not remove %s: %s — check its permissions and run "+
+				"`yolo prune --apply` again[/yellow]", v.Display(), v.Err))
+		}
+		totalSaved += bytes
 	}
 
 	// --- Unused tool versions in the shared mise store (disk-footprint.md OQ-DF4) ---
