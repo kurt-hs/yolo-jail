@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"syscall"
@@ -55,7 +56,7 @@ func TestMacosUserPasswordlessStartAndExit(t *testing.T) {
 	if r.rc != 0 || !strings.Contains(r.stdout, "=== AGENT _yolojail ===") {
 		t.Fatalf("the launch did not reach the agent as _yolojail (rc %d):\n%s", r.rc, r.combined())
 	}
-	if strings.Contains(r.combined(), "assword") {
+	if mentionsPassword(r.combined()) {
 		t.Errorf("the launch mentioned a password:\n%s", r.combined())
 	}
 	after, _ := os.ReadDir(filepath.Join(macosuser.StateDir(), "env"))
@@ -65,6 +66,37 @@ func TestMacosUserPasswordlessStartAndExit(t *testing.T) {
 	fi, err := os.Lstat(macosuser.StateDir())
 	if err != nil || fi.Sys().(*syscall.Stat_t).Uid != uint32(os.Geteuid()) {
 		t.Errorf("the staging root is not this user's: %v", err)
+	}
+}
+
+// mentionsPassword reports whether a launch's output says "password" as a WORD, the way a sudo
+// prompt ("Password:", "[sudo] password for runner:") or a message about one does. A substring
+// match is wrong here: the launch prints paths under its HOME, which is this test's t.TempDir(),
+// and that directory is named after the test, TestMacosUserPasswordlessStartAndExit, so the
+// macOS nightly of 2026-10-25 failed on the login keychain note quoting
+// ".../TestMacosUserPasswordlessStartAndExit2679030572/001/Library/Keychains/...".
+func mentionsPassword(out string) bool {
+	return passwordWord.MatchString(out)
+}
+
+// passwordWord is "password" or "passwords", any case, between word boundaries.
+var passwordWord = regexp.MustCompile(`(?i)\bpasswords?\b`)
+
+// TestAPasswordMentionIsAWordNotThisTestsOwnName pins the matcher with no jail: the nightly's own
+// line, which names only the test's temp directory, is not a mention; a sudo prompt is.
+func TestAPasswordMentionIsAWordNotThisTestsOwnName(t *testing.T) {
+	innocent := "Note: could not read your login keychain (no login keychain at /private/var/folders/n6/" +
+		"hn37q6pj7sj_9dmqqc2113800000gn/T/TestMacosUserPasswordlessStartAndExit2679030572/001/Library/" +
+		"Keychains/login.keychain-db), so a certificate authority you trusted only there is not trusted " +
+		"in the sandbox this launch"
+	if mentionsPassword(innocent) {
+		t.Errorf("the test's own temp directory counts as a password mention:\n%s", innocent)
+	}
+	for _, prompt := range []string{"Password:", "[sudo] password for runner:", "sudo: a password is required",
+		"Enter your passwords"} {
+		if !mentionsPassword(prompt) {
+			t.Errorf("%q is not counted as a password mention", prompt)
+		}
 	}
 }
 
