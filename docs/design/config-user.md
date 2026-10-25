@@ -101,6 +101,28 @@ reasoning = true
 # … four more, one line each
 ```
 
+### 2.1 Naming a pack that is not shipped
+
+Under [OQ-RC15](#OQ-RC15)'s leaning there is no bare path form: a pack lives in a place you
+named once, and a place may hold one pack.
+
+```toml
+pack_folders = { dotfiles = "~/.dotfiles/yolo-packs", src = "~/src" }   # places, named once
+packs = [
+  "claude",                                   # shipped: bare; yolo/claude is the explicit spelling
+  "local/matt",                               # ~/.config/yolo-jail/packs/matt; local is the one built-in place
+  "dotfiles/matt-fzf",                        # ~/.dotfiles/yolo-packs/matt-fzf
+  "src/tools",                                # ~/src/tools: a folder you named that happens to hold one pack
+  { git = "https://github.com/acme/tools" },  # acme/tools, from the URL; no name to choose
+]
+```
+
+The name is used wherever yolo names the pack back to you: the launch's pack line, `yolo pack
+ls`, `explain` and `footprint`, the nudge in [§4](#4-the-nudge-when-a-table-and-a-pack-disagree),
+`pack lint`, and a settings table for a login-serving pack, which TOML then quotes:
+`[allow."local/my-auth"]`. A shipped pack's table stays bare, `[allow.aws-auth]`. The staging
+directory's spelling of a slash is the plan's.
+
 On the maintainer's machines this is four files, not one: `config.toml`, `config.d/overrides.toml`,
 and a work and a personal file that dotfile tags put in `config.d/` on the right machines
 ([appendix A.3](#a3-four-files-not-one)). The whole set is 45 non-blank lines.

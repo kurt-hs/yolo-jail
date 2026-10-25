@@ -63,17 +63,17 @@ seed; incomplete while any question is open).
 
 ## 3. What this takes over, and what it reverses
 
-- [OQ-M1](manifest-language.md#OQ-M1) and [OQ-M2](manifest-language.md#OQ-M2) by OQ-RC5 and
-  OQ-RC2; [OQ-M3](manifest-language.md#OQ-M3) stays there.
+- [OQ-M1](manifest-language.md#OQ-M1) and [OQ-M2](manifest-language.md#OQ-M2) by [OQ-RC5](pack-manifests.md#OQ-RC5) and
+  [OQ-RC2](config-commands.md#OQ-RC2); [OQ-M3](manifest-language.md#OQ-M3) stays there.
 - [OQ-PC1](pack-conventions.md#OQ-PC1) to [OQ-PC3](pack-conventions.md#OQ-PC3) by the `home/`
   folder.
-- [OQ-PP1](providers-and-profiles-redesign.md#OQ-PP1) by OQ-RC3.
+- [OQ-PP1](providers-and-profiles-redesign.md#OQ-PP1) by [OQ-RC3](config-user.md#OQ-RC3).
 - [OQ-BB23](boundary-broker.md#OQ-BB23) by `push = true` at user scope: a ceiling, never a grant.
 - **Reversed on purpose:** [MN-D1](manifest-language.md#MN-D1) (2026-09-30), that the configs keep
-  JSONC and moving them "would be a proposal of its own". OQ-RC2 is that proposal.
+  JSONC and moving them "would be a proposal of its own". [OQ-RC2](config-commands.md#OQ-RC2) is that proposal.
 - **Amended:** [OQ-BB12](boundary-broker.md#15-decision-ledger), read as being about side effects
-  and messes; OQ-RC9 is where that reading is ruled on. [PP-D10](providers-and-profiles-redesign.md#PP-D10)
-  stands as to the key's job; OQ-RC14 is about its name.
+  and messes; [OQ-RC9](config-commands.md#OQ-RC9) is where that reading is ruled on. [PP-D10](providers-and-profiles-redesign.md#PP-D10)
+  stands as to the key's job; [OQ-RC14](config-user.md#OQ-RC14) is about its name.
 
 ## 4. Non-goals
 
