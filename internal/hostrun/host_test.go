@@ -707,21 +707,35 @@ func TestHostRunPrunesOldRunsOnly(t *testing.T) {
 	}
 }
 
+// The child really runs with this environment, so the DYLD_ entry is one dyld survives:
+// DYLD_INSERT_LIBRARIES naming a missing file makes dyld abort the child (SIGABRT, rc 134) on
+// darwin before the program starts. TestRiskyEnvNamesTheLoaderAndGitVariables covers that name.
 func TestHostRunDisclosesRiskyEnvironmentAndArgvPaths(t *testing.T) {
 	f := newHostFixture(t)
 	path := f.bin + string(os.PathListSeparator) + coreutilsDir(t)
+	missing := filepath.Join(f.root, "no-such-lib-dir")
 	f.env.Environ = func() []string {
-		return []string{"PATH=" + path, "LD_PRELOAD=/opt/x.so", "GIT_CONFIG_COUNT=1", "DYLD_INSERT_LIBRARIES=/y"}
+		return []string{"PATH=" + path, "LD_PRELOAD=/opt/x.so", "GIT_CONFIG_COUNT=1", "DYLD_FALLBACK_LIBRARY_PATH=" + missing}
 	}
 	target := filepath.Join(f.ws, "file")
 	os.WriteFile(target, nil, 0o600)
 	if rc := f.run(t, "say", target); rc != 0 {
-		t.Fatalf("rc %d", rc)
+		t.Fatalf("rc %d; the terminal's stderr:\n%s", rc, f.termErr(t))
 	}
 	e := f.termErr(t)
-	for _, want := range []string{"env:", "LD_PRELOAD=/opt/x.so", "GIT_CONFIG_COUNT=1", "DYLD_INSERT_LIBRARIES=/y", "--git-dir"} {
+	for _, want := range []string{"env:", "LD_PRELOAD=/opt/x.so", "GIT_CONFIG_COUNT=1", "DYLD_FALLBACK_LIBRARY_PATH=" + missing, "--git-dir"} {
 		if !strings.Contains(e, want) {
 			t.Errorf("disclosure lacks %q:\n%s", want, e)
 		}
+	}
+}
+
+func TestRiskyEnvNamesTheLoaderAndGitVariables(t *testing.T) {
+	in := []string{"PATH=/bin", "LD_PRELOAD=/opt/x.so", "LD_LIBRARY_PATH=/l", "BASH_ENV=/b", "ENV=/e",
+		"DYLD_INSERT_LIBRARIES=/y", "DYLD_LIBRARY_PATH=/d", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=k", "HOME=/h", "LD_PRELOADX=1"}
+	want := []string{"LD_PRELOAD=/opt/x.so", "LD_LIBRARY_PATH=/l", "BASH_ENV=/b", "ENV=/e",
+		"DYLD_INSERT_LIBRARIES=/y", "DYLD_LIBRARY_PATH=/d", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=k"}
+	if got := riskyEnv(in); !slices.Equal(got, want) {
+		t.Fatalf("riskyEnv = %q, want %q", got, want)
 	}
 }

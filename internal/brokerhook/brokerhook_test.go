@@ -178,10 +178,13 @@ func TestAHungHookIsStoppedAtItsTimeout(t *testing.T) {
 	f := newFixture(t)
 	var log syncBuffer
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	r := &Runner{Store: f.store, Start: "start", Command: f.script(t, "hook", "sleep 30\necho approve\n"),
 		Interval: 5 * time.Millisecond, Timeout: 100 * time.Millisecond, Log: &log}
-	go r.Run(ctx)
+	// Run tears down inside the store's directory after ctx ends (its hooks, its link
+	// directory); returning before it finishes races t.TempDir's cleanup.
+	done := make(chan struct{})
+	go func() { r.Run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
 	time.Sleep(50 * time.Millisecond)
 	q, _ := f.store.File(f.filing)
 	waitFor(t, "the timeout", func() bool { return strings.Contains(log.String(), "stopped") })
