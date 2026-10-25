@@ -87,7 +87,7 @@ func TestTheHostDurableSectionRunsNoGit(t *testing.T) {
 		"  worktrees/fix-footer  1 kB measured  idle 41 days  fix-footer  in-jail only  in-jail only\n",
 		"  worktrees/land  1 kB measured  idle 2 days  detached at 1a2b3c4d  in-jail only  in-jail only\n",
 		"  other entries  notes\n",
-		"  yolo never deletes anything here; a `git clean -fdx` (or `-fdX`) in the workspace does. ",
+		"  yolo deletes nothing here but clean, idle worktrees a pack's tool left; a `git clean -fdx` (or `-fdX`) in the workspace does. ",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the host section does not say %q:\n%s", want, out)
@@ -148,7 +148,7 @@ func TestCheckPrintsTheDurableSectionWithItsFooter(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	footer := "  yolo never deletes anything here; a " + durable.CleanCommand + " in the workspace does. " +
+	footer := "  yolo deletes nothing here but clean, idle worktrees a pack's tool left; a " + durable.CleanCommand + " in the workspace does. " +
 		durable.RemoveAdvice + "\n"
 	if !strings.Contains(out, "Durable dir\n") || !strings.Contains(out, footer) {
 		t.Errorf("Check() did not print the durable section and its footer:\n%s", out)

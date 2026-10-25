@@ -213,7 +213,7 @@ func TestANestedFreshLaunchBriefsTheCaveatAsTheLifetime(t *testing.T) {
 	nestInOuterTmp(t, o)
 	o.ensureDurableDir("podman", newConfig())
 	_, sec := durableBriefing(t, o, "podman")
-	if !strings.Contains(sec, nestedLifetime) || strings.Contains(sec, "never deletes it") {
+	if !strings.Contains(sec, nestedLifetime) || strings.Contains(sec, "never deletes") {
 		t.Errorf("the nested briefing does not give the caveat as the lifetime:\n%s", sec)
 	}
 }
@@ -258,7 +258,7 @@ func TestAnAttachBriefsTheDurableDirTheJailWasStartedWith(t *testing.T) {
 			if !strings.Contains(sec, tc.want) {
 				t.Errorf("the attach's briefing does not say %q:\n%s", tc.want, sec)
 			}
-			if tc.nested && strings.Contains(sec, "never deletes it") {
+			if tc.nested && strings.Contains(sec, "never deletes") {
 				t.Errorf("the nested attach's briefing says yolo never deletes it:\n%s", sec)
 			}
 		})

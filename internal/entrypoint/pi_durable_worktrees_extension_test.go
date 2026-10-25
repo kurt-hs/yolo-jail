@@ -214,45 +214,121 @@ func TestPiDurableWorktreesExtensionStartsTheReaperOnItsOwnDirectory(t *testing.
 		return ws, base
 	}
 
+	wantArgs := func(base, ws string) string {
+		return strings.Join([]string{"reap-worktrees", "--base", base, "--prefix", "pi-worktree-",
+			"--synthetic", "node_modules", "--branch-prefix", "pi-subagents/", "--repo", ws}, "\n") + "\n"
+	}
 	t.Run("due", func(t *testing.T) {
 		ws, base := newWorkspace(t)
+		report := filepath.Join(base, worktreereap.ReportName)
+		if err := os.WriteFile(report, []byte(`{"removed":["last pass"]}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		args, started := run(t, 50, ws)
 		if !started {
 			t.Fatal("loading the extension started no reaper on the directory it set")
 		}
-		want := strings.Join([]string{"reap-worktrees", "--base", base, "--prefix", "pi-worktree-", "--repo", ws}, "\n") + "\n"
-		if args != want {
+		if want := wantArgs(base, ws); args != want {
 			t.Fatalf("the reaper was started with\n%s\nwant\n%s", args, want)
 		}
-		if _, err := os.Stat(filepath.Join(base, ".yolo-reap.json")); err != nil {
+		if _, err := os.Stat(filepath.Join(base, worktreereap.StampName)); err != nil {
 			t.Fatalf("the rate-limit stamp was not written: %v", err)
+		}
+		if b, _ := os.ReadFile(report); string(b) != `{"removed":["last pass"]}` {
+			t.Fatalf("starting a pass overwrote the last report: %s", b)
 		}
 	})
 	t.Run("a recent pass", func(t *testing.T) {
 		ws, base := newWorkspace(t)
-		if err := os.WriteFile(filepath.Join(base, ".yolo-reap.json"), []byte("{}"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(base, worktreereap.StampName), []byte("x\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if _, started := run(t, 10, ws); started {
 			t.Fatal("a reaper started though a pass ran within the interval")
 		}
 	})
-	t.Run("the user's own directory", func(t *testing.T) {
+	t.Run("a directory the user chose beneath the durable dir", func(t *testing.T) {
 		ws, _ := newWorkspace(t)
-		if _, started := run(t, 10, ws, "PI_SUBAGENTS_WORKTREE_DIR="+filepath.Join(ws, "mine")); started {
-			t.Fatal("a reaper started on a worktree directory the user chose")
+		mine := filepath.Join(ws, ".yolo", "durable", "worktrees")
+		args, started := run(t, 50, ws, "PI_SUBAGENTS_WORKTREE_DIR="+mine)
+		if !started {
+			t.Fatal("no reaper started on PI_SUBAGENTS_WORKTREE_DIR beneath $YOLO_DURABLE_DIR")
+		}
+		if want := wantArgs(mine, ws); args != want {
+			t.Fatalf("the reaper was started with\n%s\nwant\n%s", args, want)
+		}
+	})
+	t.Run("a directory the user chose outside the durable dir", func(t *testing.T) {
+		ws, _ := newWorkspace(t)
+		mine := filepath.Join(ws, "mine")
+		if err := os.MkdirAll(mine, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, started := run(t, 10, ws, "PI_SUBAGENTS_WORKTREE_DIR="+mine); started {
+			t.Fatal("a reaper started on a worktree directory outside the durable dir")
 		}
 	})
 }
 
-// The extension's names are the reaper's: the report it stamps is the one the reaper writes.
+// A yolo-jaild that cannot start leaves its reason and the next step in the report, not the
+// last pass's findings with no word of the gap.
+func TestPiDurableWorktreesExtensionReportsAReaperThatCannotStart(t *testing.T) {
+	node := requireNode(t, "the pi durable-worktrees extension")
+	p := shippedPiPack(t)
+	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-durable-worktrees.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "extension.mjs"), source, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	harness := filepath.Join(dir, "harness.mjs")
+	if err := os.WriteFile(harness, []byte("import extension from \"./extension.mjs\";\nawait extension({});\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ws := t.TempDir()
+	base := filepath.Join(ws, ".yolo", "durable", "worktrees", "pi-subagents")
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(node, harness)
+	cmd.Dir = dir
+	cmd.Env = append(environWithout("YOLO_DURABLE_DIR", "PI_SUBAGENTS_WORKTREE_DIR", "PI_CODING_AGENT_DIR", "PATH", "HOME"),
+		"HOME="+t.TempDir(), "PATH="+t.TempDir(), "YOLO_DURABLE_DIR="+filepath.Join(ws, ".yolo", "durable"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("executing the extension: %v\n%s", err, out)
+	}
+	var got struct {
+		Errors []string `json:"errors"`
+		Next   string   `json:"next"`
+	}
+	b, err := os.ReadFile(filepath.Join(base, worktreereap.ReportName))
+	if err != nil {
+		t.Fatalf("no report of the failed start: %v", err)
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("parsing %s: %v", b, err)
+	}
+	if len(got.Errors) != 1 || !strings.Contains(got.Errors[0], "could not start yolo-jaild") || !strings.Contains(got.Next, "restart the jail") {
+		t.Fatalf("the report does not name the failed start and its next step: %s", b)
+	}
+}
+
+// The extension's names are the reaper's: the report it writes on a failed start is the one the
+// reaper writes, and its stamp is the one the reaper documents.
 func TestPiDurableWorktreesExtensionStampsTheReapersReport(t *testing.T) {
 	p := shippedPiPack(t)
 	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-durable-worktrees.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := `export const REAP_REPORT = "` + worktreereap.ReportName + `";`; !strings.Contains(string(source), want) {
-		t.Fatalf("the extension does not stamp %s, the reaper's report", worktreereap.ReportName)
+	for _, want := range []string{
+		`export const REAP_REPORT = "` + worktreereap.ReportName + `";`,
+		`export const REAP_STAMP = "` + worktreereap.StampName + `";`,
+	} {
+		if !strings.Contains(string(source), want) {
+			t.Fatalf("the extension does not declare %s", want)
+		}
 	}
 }

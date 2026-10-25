@@ -634,25 +634,45 @@ A tree holding work it could not capture, and every tree of a run cut short, sta
 `/tmp` a restart deleted those; in the durable dir nothing did, and one workspace held 417 of them
 (31 GB) and 426 registrations within days.
 
-So the pack that moved them bounds them. The pack's extension, which pi loads at every start,
-starts `yolo-jaild reap-worktrees` detached on that directory at most once an hour (the mtime of
-`.yolo-reap.json` there is the rate limit), and never on a directory the user chose. The reaper
-(`internal/worktreereap`) removes, with a plain `git worktree remove`, each `pi-worktree-*`
-worktree that is:
+So the pack that moved them bounds them; the maintainer's request of 2026-10-24 (every growth
+point bounded and cleaned) supersedes [`OQ-DS2`](jail-home.md#oq-ds2) for these trees
+([DS-P4](jail-home.md#DS-P4)). The pack's extension, which pi loads at every start, starts
+`yolo-jaild reap-worktrees` detached at most once an hour (the mtime of `.yolo-reap.stamp` is the
+rate limit, so `.yolo-reap.json` keeps the last pass's report). It runs on the worktree directory
+in effect when that lies beneath `$YOLO_DURABLE_DIR`: the one it set, or a
+`PI_SUBAGENTS_WORKTREE_DIR` or `worktreeBaseDir` the user pointed there, as the house rule's
+`$YOLO_DURABLE_DIR/worktrees` does. A directory outside the durable dir is the user's to bound.
+When `yolo-jaild` cannot start, the extension writes the error and the next step into
+`.yolo-reap.json`. The reaper (`internal/worktreereap`) removes, with a plain
+`git worktree remove`, each `pi-worktree-*` worktree that is:
 
 - **clean**: `git status --porcelain` prints nothing, untracked files included; a dirty tree is
   kept and listed under `kept_dirty` in `.yolo-reap.json`, and the remove itself refuses one
-  again;
+  again. pi-subagents links the repository's `node_modules` into each tree, and a `node_modules/`
+  ignore pattern does not match a link, so the extension names it (`--synthetic node_modules`):
+  when the only thing status reports is such a link pointing at `<repository>/node_modules`, the
+  link is removed and status asked again;
+- **saved**: an empty status is not enough, because a tree can hold the only copy of a commit
+  (an amend in the middle of a rebase leaves one that only a detached HEAD names). The tree's HEAD
+  must be a branch (`git symbolic-ref -q HEAD`), no operation may be in progress (`rebase-merge`,
+  `rebase-apply`, `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD` or `BISECT_LOG` in its admin
+  dir), and its HEAD commit must be reachable from some ref other than its own branch. A tree that
+  fails is kept under `kept_unsaved`, with the reason under `reasons`;
 - **unlocked**;
 - **used by no process**: no process's working directory is in it (`/proc`, or `lsof` on
-  darwin); a reaper that cannot read the process table declines the whole pass;
+  darwin); a reaper that cannot read the process table declines the whole pass. The table is the
+  jail's own, so a process of another jail or of the host working in the tree is not seen; the
+  idle floor covers that case;
 - **idle past a day**: the newest of the tree's directory and its registration's `HEAD` and
   `index` mtimes.
 
-The branch is kept, so a commit the tree made stays reachable; the files the tree's own ignore
-rules hide (installed dependencies, build outputs) go with it, and they are the bulk. A
-registration beneath the directory whose tree is already gone, unlocked and a day old, is dropped
-the same way. Nothing else under the durable dir is touched.
+After a removal, the tree's branch is deleted when it carries the `pi-subagents/` prefix the
+extension passes and another ref still holds its tip; any other branch stays. The files the tree's
+own ignore rules hide (installed dependencies, build outputs) go with it, and they are the bulk.
+A registration beneath the directory whose tree is already gone, unlocked and a day old, is
+dropped the same way, after the same saved check against its admin dir. An empty `pi-worktree-*`
+directory with no `.git` is removed with a plain `rmdir`. Nothing else under the durable dir is
+touched.
 
 **Why in the jail, through the pack:** host code runs no git in a workspace and removes nothing
 beneath the durable dir ([DS-D3](jail-home.md#DS-D3)), and the host cannot see which jail
@@ -743,8 +763,8 @@ number; each is now one of the mechanisms above.
 - **A byte-budget config key** ([OQ-DF4](#why-its-this-way)). A ceiling evicts what the next
   launch rebuilds; residue with a name gets a reclaimer instead.
 - **Reclaiming an agent's worktrees** or anything else under a workspace tree beyond `.yolo/`.
-  The one bounded exception is in the jail: clean, idle, unused worktrees a pack's own tool made
-  in the directory that pack chose ([tool-managed worktrees](#tool-managed-worktrees)).
+  The one bounded exception is in the jail: clean, saved, idle, unused worktrees a pack's own
+  tool made beneath the durable dir ([tool-managed worktrees](#tool-managed-worktrees)).
 - **Removing an untagged image yolo cannot prove is its own**, or relaxing P5 for the host store.
 - **Editing the host's `nix.conf`.** `yolo check` warns about `min-free`; the edit is the
   human's ([owed host steps](image-retention.md#owed-host-steps)).
@@ -780,6 +800,13 @@ number; each is now one of the mechanisms above.
   hostwrap to prefer a stable launcher path, such as the dev wrapper that started it.
 - **No reclaimer exists for `macos-user`'s own storage** (`/var/yolo-jail`, the sandbox account's
   caches); one would run as that account through `sudo`, which only a Mac can verify.
+- **Agent log directories should be a pack contribution, not a core list.** The allowlist in
+  `internal/prune/agentlogs.go` names each agent's log dir in core, which AGENTS.md's "core does
+  not know what an agent is" forbids in spirit: a pack should declare its log dirs, and the sweep
+  read the selected packs'. The list also names the podman overlay's layout only: Apple
+  Container's whole-home bind keeps the dots (`.pi/`, `.codex/`), so `pi/agent/logs` and
+  `codex/log` match nothing there, and the `macos-user` slot runs no agent-log pass because its
+  workspace sidecar's layout has not been checked against the list.
 
 ## Why it's this way
 

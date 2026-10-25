@@ -946,9 +946,12 @@ All but "durable" and "per-launch" were coined by the design that built this.
   tool keeps it, and the briefing recommends it to no one else.
 - <a id="DS-P3"></a>**DS-P3. `/tmp` stays per-launch, and the briefing says so.** The fix is the
   location, not a check before each use.
-- <a id="DS-P4"></a>**DS-P4. yolo reports what accumulates and never deletes it.** Only the agent
-  that made a worktree knows whether it holds unlanded work; yolo keeps the growth visible
-  ([`OQ-DS2`](#oq-ds2)).
+- <a id="DS-P4"></a>**DS-P4. yolo reports what accumulates and never deletes your work.** Only
+  the agent that made a worktree knows whether it holds unlanded work; yolo keeps the growth visible
+  ([`OQ-DS2`](#oq-ds2)). The one removal is of worktrees a pack's tool made and left there: clean,
+  on a branch whose commit another ref holds, unused and idle for a day
+  ([the tool-managed worktree reaper](disk-footprint.md#tool-managed-worktrees)). The maintainer's
+  2026-10-24 request put that reaper in [`OQ-DS2`](#oq-ds2)'s place for those trees.
 
 ### The storage classes
 
@@ -1034,8 +1037,9 @@ What it says, and why each choice stays (the rendered text is pinned in
 - **Any layout**, with worktrees in `worktrees/<task>`; a harness's `/tmp` instruction does not
   outrank it; and the home dirs are the agents' and tools' own state, never for work
   ([DS-D29](#DS-D29)).
-- **Its lifetime is said once** ([DS-D31](#DS-D31)): it survives restarts and yolo never deletes
-  it; it lives in `.yolo`, *"which git ignores"* ([DS-D32](#DS-D32), not "hidden from git", which
+- **Its lifetime is said once** ([DS-D31](#DS-D31)): it survives restarts, and yolo never deletes
+  your work in it, the one removal being clean, idle worktrees a pack's tool left there, which that
+  pack's briefing names ([DS-P4](#DS-P4)); it lives in `.yolo`, *"which git ignores"* ([DS-D32](#DS-D32), not "hidden from git", which
   read as "git cannot touch it"), so a `git clean -fdx` (or `-fdX`) in the workspace deletes it,
   and the agent never runs one there. It says *"survive a restart"*, not "next session", since a
   new session in the same launch still sees `/tmp`.
@@ -1148,12 +1152,15 @@ worktree's uncommitted files survive on disk but lose their index and `HEAD`.
 
 <a id="DS-D11"></a><a id="DS-D19"></a><a id="DS-D20"></a><a id="DS-D22"></a><a id="DS-D24"></a><a id="DS-D25"></a><a id="DS-D26"></a><a id="DS-D27"></a><a id="DS-D36"></a>
 
-yolo never deletes a durable worktree, so it makes them hard to forget ([`OQ-DS2`](#oq-ds2)):
+yolo never deletes a worktree you made in the durable dir, so it makes them hard to forget
+([`OQ-DS2`](#oq-ds2)). The worktrees a pack's tool made and left go by
+[the tool-managed worktree reaper](disk-footprint.md#tool-managed-worktrees):
 
 - **The launch line**, computed by the in-jail boot (`entrypoint.ReportDurableDir`; the bootstrap
   on macos-user) on every fresh launch and printed with the boot's other lines, so `launch.log` and
   `boot.log` carry it: worktree count, total size, and the oldest idle worktree by name, with a
-  pointer to `yolo check` and the reminder that yolo deletes nothing there ([DS-D11](#DS-D11)).
+  pointer to `yolo check` and the reminder that yolo deletes none of them but clean worktrees a
+  pack's tool left idle for a day ([DS-D11](#DS-D11)).
   Nothing prints for an empty dir. A second line counts **prunable registrations** whose path lies
   below the workspace or the per-launch set, which is the `/tmp` incident class caught at the next
   launch; it sends the reader to `git worktree prune -n -v`, never a bare prune, because inside a
@@ -1210,8 +1217,10 @@ tool must be pointed at the dir, **its own pack does it**, never core:
   `PI_SUBAGENTS_WORKTREE_DIR` in the process environment, which every child process (a test runner)
   would inherit. Moving them out of `/tmp` also moved them out of the one class a restart cleans,
   so the same extension bounds them: at most once an hour it starts `yolo-jaild reap-worktrees`,
-  which removes the clean, unlocked, unused `pi-worktree-*` trees idle past a day there and keeps
-  and lists every dirty one ([tool-managed worktrees](disk-footprint.md#tool-managed-worktrees)).
+  on the worktree directory in effect when it lies beneath the durable dir. That removes the
+  clean, unlocked, unused `pi-worktree-*` trees idle past a day whose HEAD is a branch another ref
+  also holds, with no git operation in progress, and keeps and lists every other one
+  ([tool-managed worktrees](disk-footprint.md#tool-managed-worktrees)).
   pi-dynamic-workflows hard-codes `<repo>/.pi/worktrees`, which survives and shows as untracked;
   only an upstream setting can move it.
 - **claude**: Claude Code's own worktrees stay in `<repo>/.claude/worktrees/` ([DS-D5](#DS-D5)).
@@ -1700,7 +1709,7 @@ only place the values themselves are stated.
 | Durable dir and its variable | `<workspace>/.yolo/durable` (`/workspace/.yolo/durable` in a container jail), `YOLO_DURABLE_DIR`; worktrees under `worktrees/` | `durable.DirName`, `durable.EnvVar`, `durable.ContainerJailPath`, `durable.WorktreesDir` |
 | Durable-dir report budgets | size walk 2 s; `yolo check`'s section 10 s; at most 1000 registrations a scan; admin files read 4 KiB at most; directories read in batches of 256 | `durable.WalkBudget`, `durableCheckBudget`, `internal/durable/report.go` (`maxRegistrations`, `adminFileCap`, `readDirBatch`) |
 | pi-subagents' durable base | `$YOLO_DURABLE_DIR/worktrees/pi-subagents`, as `worktreeBaseDir` in `~/.pi/agent/extensions/subagent/config.json` | `packs/pi/extensions/yolo-durable-worktrees.js` |
-| Its reaper | at most hourly, `pi-worktree-*` trees idle past 24 h; report and rate limit `.yolo-reap.json` in that directory | `REAP_INTERVAL_MS` in the extension, `worktreereap.DefaultFloor`, `worktreereap.ReportName` |
+| Its reaper | at most hourly, `pi-worktree-*` trees idle past 24 h; report `.yolo-reap.json` and rate limit `.yolo-reap.stamp` in that directory | `REAP_INTERVAL_MS` in the extension, `worktreereap.DefaultFloor`, `worktreereap.ReportName`, `worktreereap.StampName` |
 | Durable size record | `<workspace>/.yolo/durable-size.json`, the last complete count, jail-only | `durable.SizeRecordName`, `durable.CountMain` |
 | Storage-class section heading | `## Storage classes: what survives a restart` | `jailcontent.persistenceHeading` |
 
@@ -1727,7 +1736,7 @@ Forward-facing rulings a maintainer would otherwise undo, with their original id
 | <a id="oq-bh15"></a>[`OQ-BH15`](#oq-bh15) | `host_files`' surface-path reservation covers only the selected packs' surfaces, resolved as `writable_home_dirs` resolves them; `config.SurfaceCollisions` still refuses two writers at launch | Confirmed in review: *"why is there even a thing that can read a pack that is not selected?"* It was the last validation rule reading the shipped set. |
 | <a id="oq-bh16"></a>[`OQ-BH16`](#oq-bh16) | A launch removes its own skeleton at exit on the known-gone evidence that removes its tracking file; "could not ask" removes nothing; delegated to the build (*"it should get cleaned up when we can clean it up"*) | Without it a workspace used alone kept one skeleton per launch until `yolo prune --apply`. Removing a skeleton no container holds is not the modification [`OQ-BH10`](#oq-bh10) forbids. |
 | <a id="oq-ds1"></a>[`OQ-DS1`](#oq-ds1) | The durable dir is `<workspace>/.yolo/durable`, exported as `$YOLO_DURABLE_DIR` | The name must say durable, and "scratch" already means the per-launch volumes here. |
-| <a id="oq-ds2"></a>[`OQ-DS2`](#oq-ds2) | **The maintainer's ruling:** yolo never deletes the durable dir's contents, and reports them at every launch, in `yolo check` and in `yolo stores` (*"anything that lets them just not slip by forever"*) | A worktree's value is its unlanded commits and uncommitted files, which age says nothing about, so an age reaper would delete work. |
+| <a id="oq-ds2"></a>[`OQ-DS2`](#oq-ds2) | **The maintainer's ruling:** yolo never deletes the durable dir's contents, and reports them at every launch, in `yolo check` and in `yolo stores` (*"anything that lets them just not slip by forever"*). **Superseded for tool-managed worktrees** by the maintainer's request of 2026-10-24: *"I want to make sure every... every point that can expand is bounded in some way and has a clean up to keep it to its minimal footprint"*. A worktree a pack's tool made and left (pi-subagents' `pi-worktree-*`) is removed by [the tool-managed worktree reaper](disk-footprint.md#tool-managed-worktrees) once nothing in it can be lost; every other durable worktree keeps this ruling | A worktree's value is its unlanded commits and uncommitted files, which age says nothing about, so an age reaper would delete work. The reaper therefore never judges by age alone: it removes a tree only when its status is clean, its HEAD is a branch whose commit another ref holds, and no git operation is in progress |
 | <a id="oq-ds3"></a>[`OQ-DS3`](#oq-ds3) | The host notch gets one static sentence in the host header and no variable | Host `/tmp` is the machine's own, and a per-launch variable cannot reach the files `yolo host apply` writes. |
 | `C8` | The in-jail binaries and flake bundle are **mounted**, not baked | It takes the Go sources out of the image derivation, so a Go-only commit costs no image rebuild. The security delta — what executes in the jail is host-mutable with no rebuild — is the trade being made deliberately; see [`image-staging-vs-baking.md`](image-staging-vs-baking.md#the-security-delta). |
 | `HSD-1` | The host-services dir has **one creator, the spawn**, and the teardown removes it **only when the runtime answers** that no container of that name exists, running or not. (`HSD` stands for host-services dir, an id coined for this ledger.) | A second creation earlier in the launch had no teardown on the refusal paths between it and the spawn, so every refused launch left an empty directory in `/tmp`. The teardown used to read "could not ask the runtime" as "not running" and delete a possibly-live jail's endpoint files on no evidence. It asks whether a container exists, not whether one runs, because a relaunch releases the workspace lock once its bounded wait for a running container gives up, and a container that is only created is invisible to the running-only listing. That is the rule the tracking-file cleanup (`forgetGoneContainer`) already follows in the same teardown. Declining costs one directory, which the next launch of the workspace reuses. |

@@ -90,7 +90,7 @@ func TestTheDurableReportMapsTheHostSpellingAndFindsGoneRegistrations(t *testing
 	out := stderr.String()
 	for _, want := range []string{
 		"Durable dir: 1 worktree and 1 other entry, ",
-		"oldest idle 3 days (land) — `yolo check` lists them; yolo deletes nothing here.",
+		"oldest idle 3 days (land) — `yolo check` lists them; yolo deletes none of them but clean worktrees a pack's tool left idle for a day.",
 		"Durable dir: 1 worktree registration points at paths that no longer exist (" + gone + ")",
 	} {
 		if !strings.Contains(out, want) {

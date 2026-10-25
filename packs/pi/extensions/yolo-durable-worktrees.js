@@ -11,7 +11,7 @@
 // /workspace/.yolo/durable on the container backends and the workspace's real path on
 // macos-user. $YOLO_DURABLE_DIR is the launch's own answer, set only when the directory exists.
 //
-// It changes nothing when YOLO_DURABLE_DIR is unset (the host notch, or a launch with no
+// It changes no setting when YOLO_DURABLE_DIR is unset (the host notch, or a launch with no
 // durable dir) or when the user already set PI_SUBAGENTS_WORKTREE_DIR or their own
 // worktreeBaseDir.
 //
@@ -21,10 +21,13 @@
 // could not capture, a run cut short and a restart all leave theirs, by design: nothing
 // pi-subagents cannot prove saved is discarded. In /tmp a restart deleted those; in the durable
 // dir nothing did, and one workspace grew 417 of them (31 GB) in a few days. So, at most once
-// an hour, the extension starts `yolo-jaild reap-worktrees` detached on the directory it set:
-// it removes, with `git worktree remove`, each `pi-worktree-*` tree that is clean, unlocked,
-// unused by any process and idle for a day, and lists the dirty ones it kept in
-// `<dir>/.yolo-reap.json`. Never on a directory the user chose.
+// an hour, the extension starts `yolo-jaild reap-worktrees` detached on the worktree directory
+// in effect when it lies beneath $YOLO_DURABLE_DIR — the one it set, or one the user set there
+// (the house rule's PI_SUBAGENTS_WORKTREE_DIR=$YOLO_DURABLE_DIR/worktrees): it removes, with
+// `git worktree remove`, each `pi-worktree-*` tree that is clean, on a branch, in no git
+// operation, whose commit another ref holds, unlocked, unused by any jail process and idle for a
+// day, deletes its `pi-subagents/*` branch when another ref holds that tip too, and lists what it
+// kept in `<dir>/.yolo-reap.json`. Never on a directory outside the durable dir.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -32,8 +35,14 @@ import path from "node:path";
 
 // pi-subagents names each worktree `pi-worktree-<run>-<index>` (src/runs/shared/worktree.ts).
 export const WORKTREE_PREFIX = "pi-worktree-";
-// The reaper's report, whose mtime is also this rate limit (internal/worktreereap ReportName).
+// pi-subagents links the repository's node_modules into each worktree (a symlink no
+// `node_modules/` ignore pattern matches), and names each run's branch `pi-subagents/...`.
+export const SYNTHETIC = ["node_modules"];
+export const BRANCH_PREFIX = "pi-subagents/";
+// The reaper's report (internal/worktreereap ReportName) and this rate limit's stamp beside it
+// (StampName), kept apart so the report keeps the last pass's findings.
 export const REAP_REPORT = ".yolo-reap.json";
+export const REAP_STAMP = ".yolo-reap.stamp";
 export const REAP_INTERVAL_MS = 60 * 60 * 1000;
 
 export function durableWorktreeDir(env = process.env) {
@@ -108,9 +117,53 @@ function configure(configPath, dir) {
 	return Boolean(dir);
 }
 
-// startReap starts one detached reaper pass on dir when the last one is older than the
-// interval, touching the report first so the many pi processes of one workflow start one pass,
-// not one each. It never blocks pi and never fails it: a missing yolo-jaild is ignored.
+function realOrResolved(p) {
+	try {
+		return fs.realpathSync(p);
+	} catch {
+		return path.resolve(p);
+	}
+}
+
+// reapDir is the worktree directory in effect — PI_SUBAGENTS_WORKTREE_DIR, else worktreeBaseDir
+// in subagent/config.json (yolo's or the user's) — when it lies strictly beneath
+// $YOLO_DURABLE_DIR, and "" otherwise: a directory elsewhere is the user's to bound.
+export function reapDir(env = process.env, configPath = subagentConfigPath(env)) {
+	const durable = env.YOLO_DURABLE_DIR;
+	if (!durable) return "";
+	let dir = env.PI_SUBAGENTS_WORKTREE_DIR || "";
+	if (!dir) {
+		try {
+			const parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
+			if (typeof parsed?.worktreeBaseDir === "string") dir = parsed.worktreeBaseDir;
+		} catch {}
+	}
+	if (!dir) return "";
+	const rel = path.relative(realOrResolved(durable), realOrResolved(dir));
+	if (!rel || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return "";
+	return dir;
+}
+
+// reportFailure replaces the report with why no pass could start and what to do about it, so a
+// reader of `.yolo-reap.json` is not left with the last pass's findings and no word of the gap.
+function reportFailure(dir, now, err) {
+	const failure = {
+		at: new Date(now).toISOString(),
+		removed: null,
+		errors: [`could not start yolo-jaild reap-worktrees: ${err?.message || err}`],
+		next:
+			"yolo-jaild ships in every jail at /bin/yolo-jaild; restart the jail if it is missing, " +
+			`or run \`yolo-jaild reap-worktrees --base ${dir} --prefix ${WORKTREE_PREFIX}\` yourself`,
+	};
+	try {
+		fs.writeFileSync(path.join(dir, REAP_REPORT), `${JSON.stringify(failure, null, 2)}\n`, "utf8");
+	} catch {}
+}
+
+// startReap starts one detached reaper pass on dir when the stamp is older than the interval,
+// touching the stamp first so the many pi processes of one workflow start one pass, not one
+// each. It never blocks pi and never fails it: a yolo-jaild that cannot start is recorded in the
+// report with the next step.
 export function startReap(dir, env = process.env, spawnFn = spawn, now = Date.now()) {
 	if (!dir) return false;
 	try {
@@ -118,31 +171,33 @@ export function startReap(dir, env = process.env, spawnFn = spawn, now = Date.no
 	} catch {
 		return false; // no worktree made there yet
 	}
-	const report = path.join(dir, REAP_REPORT);
+	const stamp = path.join(dir, REAP_STAMP);
 	try {
-		if (now - fs.statSync(report).mtimeMs < REAP_INTERVAL_MS) return false;
+		if (now - fs.statSync(stamp).mtimeMs < REAP_INTERVAL_MS) return false;
 	} catch {}
 	try {
-		fs.writeFileSync(report, `${JSON.stringify({ started: new Date(now).toISOString() })}\n`, "utf8");
+		fs.writeFileSync(stamp, `${new Date(now).toISOString()}\n`, "utf8");
 	} catch {
 		return false;
 	}
 	const args = ["reap-worktrees", "--base", dir, "--prefix", WORKTREE_PREFIX];
+	for (const name of SYNTHETIC) args.push("--synthetic", name);
+	args.push("--branch-prefix", BRANCH_PREFIX);
 	const durable = (env.YOLO_DURABLE_DIR || "").replace(/\/+$/, "");
 	if (durable) args.push("--repo", path.dirname(path.dirname(durable))); // <workspace>/.yolo/durable
 	try {
 		const child = spawnFn("yolo-jaild", args, { detached: true, stdio: "ignore", env });
-		child.on?.("error", () => {});
+		child.on?.("error", (err) => reportFailure(dir, now, err));
 		child.unref?.();
-	} catch {
+	} catch (err) {
+		reportFailure(dir, now, err);
 		return false;
 	}
 	return true;
 }
 
 export default function registerYoloDurableWorktrees(_pi) {
-	const dir = durableWorktreeDir(process.env);
-	if (configure(subagentConfigPath(process.env), dir)) {
-		startReap(dir, process.env);
-	}
+	const configPath = subagentConfigPath(process.env);
+	configure(configPath, durableWorktreeDir(process.env));
+	startReap(reapDir(process.env, configPath), process.env);
 }

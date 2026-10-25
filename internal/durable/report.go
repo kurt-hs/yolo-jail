@@ -546,7 +546,7 @@ func LaunchLines(sc Scan, sz Size, sizeErr error, budget time.Duration, now time
 			}
 		}
 		out = append(out, "Durable dir: "+strings.Join(parts, ", ")+
-			" — `yolo check` lists them; yolo deletes nothing here.")
+			" — `yolo check` lists them; yolo deletes none of them but clean worktrees a pack's tool left idle for a day.")
 	}
 	if n := len(sc.Prunable); n > 0 {
 		shown := sc.Prunable

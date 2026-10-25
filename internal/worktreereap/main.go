@@ -11,14 +11,20 @@ import (
 )
 
 // ReportName is the file, directly in the worktree directory, each pass writes its Result to.
-// Its mtime is also the caller's rate limit: the pack's extension starts a pass only when it
-// is older than its interval, and touches it first so concurrent starters do not pile up.
+// It keeps the last pass's report until the next pass replaces it; a caller that could not start
+// a pass writes its own reason there instead.
 const ReportName = ".yolo-reap.json"
+
+// StampName is the caller's rate limit beside the report: the pack's extension starts a pass
+// only when the stamp is older than its interval, and touches it first so concurrent starters
+// do not pile up. The reaper itself never reads it.
+const StampName = ".yolo-reap.stamp"
 
 // lockName serializes passes over one directory; a pass that finds it held exits at once.
 const lockName = ".yolo-reap.lock"
 
-// Main is `yolo-jaild reap-worktrees --base DIR --prefix NAME [--repo DIR]... [--floor D]`:
+// Main is `yolo-jaild reap-worktrees --base DIR --prefix NAME [--repo DIR]... [--synthetic NAME]...
+// [--branch-prefix P] [--floor D]`:
 // one pass, its Result written to DIR/ReportName. It exits 0 unless its arguments are wrong;
 // a pass that removed nothing, or declined, is not a failure of the process that started it.
 func Main(args []string) int { return mainTo(args, os.Stderr) }
@@ -27,19 +33,21 @@ func mainTo(args []string, stderr io.Writer) int {
 	fs := flag.NewFlagSet("reap-worktrees", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var o Options
-	var repos multiFlag
+	var repos, synthetic multiFlag
 	fs.StringVar(&o.Base, "base", "", "the directory the tool makes its worktrees in")
 	fs.StringVar(&o.Prefix, "prefix", "", "the directory-name prefix of the tool's worktrees")
 	fs.Var(&repos, "repo", "a repository whose gone registrations beneath --base are dropped (repeatable)")
+	fs.Var(&synthetic, "synthetic", "a name the tool links into each worktree from the repository (repeatable)")
+	fs.StringVar(&o.BranchPrefix, "branch-prefix", "", "delete a removed tree's branch when it has this prefix and another ref holds its tip")
 	fs.DurationVar(&o.Floor, "floor", DefaultFloor, "how long a worktree must have been idle")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if o.Base == "" || o.Prefix == "" || fs.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: yolo-jaild reap-worktrees --base DIR --prefix NAME [--repo DIR]... [--floor 24h]")
+		fmt.Fprintln(stderr, "usage: yolo-jaild reap-worktrees --base DIR --prefix NAME [--repo DIR]... [--synthetic NAME]... [--branch-prefix P] [--floor 24h]")
 		return 2
 	}
-	o.Repos = repos
+	o.Repos, o.Synthetic = repos, synthetic
 	if fi, err := os.Lstat(o.Base); err != nil || !isDir(fi) {
 		return 0
 	}

@@ -12,7 +12,8 @@ import (
 )
 
 // ReportDurableDir is the launch line for the durable dir (docs/reference/jail-home.md#storage-classes-and-the-durable-dir
-// §5.4, OQ-DS2): yolo never deletes a durable worktree, so every fresh launch says how many
+// §5.4, OQ-DS2): yolo never deletes a worktree you made there (only clean, idle ones a pack's
+// tool left, DS-P4), so every fresh launch says how many
 // there are, how big they are and how long the oldest has sat idle — and, in a second line,
 // how many worktree registrations point at directories that are gone, which is the /tmp
 // incident class caught at the next launch.

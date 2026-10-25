@@ -7,12 +7,14 @@ set, yolo's extension `~/.pi/agent/extensions/yolo-durable-worktrees.js` sets
 `$YOLO_DURABLE_DIR/worktrees/pi-subagents`, and they go there. A `PI_SUBAGENTS_WORKTREE_DIR`
 already set, or a user-configured `worktreeBaseDir`, wins.
 pi-subagents removes a run's worktree only when nothing in it would be lost; one holding work it
-could not capture as a patch, and one whose run was cut short, stays. In the directory yolo set,
-the same extension bounds them: at most once an hour it removes, with `git worktree remove`, each
-`pi-worktree-*` worktree there that is clean, unlocked, used by no process and idle for a day.
-The branch stays, so a commit made there is not lost; files the worktree ignores go with it. A
-worktree with uncommitted changes is kept and listed in that directory's `.yolo-reap.json`:
-remove it yourself once its work is saved.
+could not capture as a patch, and one whose run was cut short, stays. Where their directory lies
+beneath `$YOLO_DURABLE_DIR` (yolo's, or a `PI_SUBAGENTS_WORKTREE_DIR` you set there), the same
+extension bounds them: at most once an hour it removes, with `git worktree remove`, each
+`pi-worktree-*` worktree there that is clean, on a branch, in no rebase, merge or other git
+operation, whose commit another ref also holds, unlocked, used by no process in this jail and idle
+for a day, and then its `pi-subagents/*` branch. Files the worktree ignores go with it. Every
+other worktree is kept and listed, with the reason, in that directory's `.yolo-reap.json`: remove
+it yourself once its work is saved.
 
 pi-dynamic-workflows puts its worktrees in the repository's `.pi/worktrees/`, which it has no
 setting to change. They survive a restart. Unless the repository ignores `.pi/worktrees/`,

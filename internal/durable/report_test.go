@@ -142,7 +142,7 @@ func TestScanDirCountsDurableWorktreesFromTheAdminFiles(t *testing.T) {
 
 	lines := LaunchLines(sc, Size{Bytes: 1_200_000_000}, nil, WalkBudget, now)
 	want := []string{
-		"Durable dir: 2 worktrees and 1 other entry, 1.2 GB, oldest idle 41 days (fix-footer) — `yolo check` lists them; yolo deletes nothing here.",
+		"Durable dir: 2 worktrees and 1 other entry, 1.2 GB, oldest idle 41 days (fix-footer) — `yolo check` lists them; yolo deletes none of them but clean worktrees a pack's tool left idle for a day.",
 		"Durable dir: 1 worktree registration points at paths that no longer exist (" + sc.Prunable[0] + ") — `git worktree prune -n -v` lists what a prune would drop.",
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {

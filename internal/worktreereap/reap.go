@@ -11,14 +11,22 @@
 // `yolo-jaild reap-worktrees`); core knows no tool's name, only the directory and the name
 // prefix the pack hands it.
 //
-// IT NEVER DISCARDS WORK. A worktree with any uncommitted change or untracked file is kept and
-// reported (Result.Dirty), and the removal itself is a plain `git worktree remove`, which
-// refuses such a tree again on its own. The branch is not deleted, so a commit the tree made
-// stays reachable. Only files the worktree's own ignore rules hide go with the tree: build
-// outputs and installed dependencies, the bulk of a worktree's bytes.
+// IT NEVER DISCARDS WORK. An empty `git status` is not enough, because a tree can be clean and
+// still hold the only copy of a commit (an amend in the middle of a rebase leaves a detached
+// HEAD no ref names). A tree is removed only when, besides a clean status, its HEAD is a
+// branch, no operation (rebase, merge, cherry-pick, revert, bisect) is in progress in it, and
+// its HEAD commit is reachable from some ref other than its own branch; anything else is kept
+// and reported (Result.Dirty, Result.Unsaved). The removal is a plain `git worktree remove`,
+// which refuses a changed tree again on its own. The tree's branch is deleted only when it
+// carries the caller's branch prefix and its tip is reachable from another ref. Only files the
+// worktree's own ignore rules hide go with the tree: build outputs and installed dependencies,
+// the bulk of a worktree's bytes; and a synthetic link the tool put there (Options.Synthetic)
+// when it points at the repository's own copy.
 //
 // A REAPER THAT CANNOT ASK DECLINES: when the process table cannot be read, no worktree can be
-// shown unused, and nothing is removed (Result.Declined).
+// shown unused, and nothing is removed (Result.Declined). The table is the jail's own: a
+// process of another jail or of the host working in the tree is not seen, which is why the idle
+// floor applies as well.
 package worktreereap
 
 import (
@@ -65,6 +73,15 @@ type Options struct {
 	// LiveCwds lists every running process's working directory; nil reads the process table
 	// (ProcessCwds). An error declines the whole pass.
 	LiveCwds func() ([]string, error)
+	// Synthetic are names the tool links into each worktree from the repository (pi-subagents
+	// links `node_modules`). A link at one of them that points at `<repository>/<name>` makes
+	// git report the tree untracked (`?? node_modules`: an ignore pattern ending in `/` does not
+	// match a link), so when it is the only thing status reports, the link is removed and status
+	// asked again. Nothing else at such a name is touched.
+	Synthetic []string
+	// BranchPrefix, when set, lets a removed tree's branch be deleted too, if its name starts
+	// with it and its tip is reachable from another ref. Empty keeps every branch.
+	BranchPrefix string
 	// Git runs git with args in dir and returns its standard output; nil runs the real one.
 	Git func(dir string, args ...string) (string, error)
 }
@@ -85,8 +102,18 @@ type Result struct {
 	Locked []string `json:"kept_locked,omitempty"`
 	// Young are kept because they were active within the floor.
 	Young []string `json:"kept_young,omitempty"`
+	// Unsaved are kept, with a clean status, because their HEAD is detached, an operation is in
+	// progress, or their HEAD commit is on no other ref: removing them could lose a commit.
+	// Reasons says which.
+	Unsaved []string `json:"kept_unsaved,omitempty"`
 	// Unknown are kept because something about them could not be read or checked.
 	Unknown []string `json:"kept_unknown,omitempty"`
+	// Emptied are empty prefix-named directories with no `.git`, removed.
+	Emptied []string `json:"removed_empty,omitempty"`
+	// Branches are the branches deleted after their trees were removed.
+	Branches []string `json:"deleted_branches,omitempty"`
+	// Reasons maps a kept tree to why, where its list alone does not say.
+	Reasons map[string]string `json:"reasons,omitempty"`
 	// Declined is why nothing was judged at all, when nothing was.
 	Declined string   `json:"declined,omitempty"`
 	Errors   []string `json:"errors,omitempty"`
@@ -126,12 +153,27 @@ func Reap(o Options) Result {
 		bases = append(bases, real)
 	}
 
+	keep := func(list *[]string, wt, reason string) {
+		*list = append(*list, wt)
+		if reason != "" {
+			if res.Reasons == nil {
+				res.Reasons = map[string]string{}
+			}
+			res.Reasons[wt] = reason
+		}
+	}
 	commons := map[string]bool{}
 	for _, wt := range candidates(o.Base, o.Prefix) {
+		if _, err := os.Lstat(filepath.Join(wt, ".git")); errors.Is(err, fs.ErrNotExist) {
+			// A directory the tool left with no worktree in it: removed only when empty.
+			if os.Remove(wt) == nil {
+				res.Emptied = append(res.Emptied, wt)
+			}
+			continue
+		}
 		w, err := readWorktree(wt)
 		if err != nil {
-			res.Unknown = append(res.Unknown, wt)
-			res.Errors = append(res.Errors, err.Error())
+			keep(&res.Unknown, wt, err.Error())
 			continue
 		}
 		commons[w.common] = true
@@ -143,22 +185,31 @@ func Reap(o Options) Result {
 		case inUse(wt, cwds):
 			res.Live = append(res.Live, wt)
 		default:
-			status, err := o.Git(wt, "status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none")
-			switch {
-			case err != nil:
-				res.Unknown = append(res.Unknown, wt)
-				res.Errors = append(res.Errors, fmt.Sprintf("%s: git status: %v", wt, err))
-			case strings.TrimSpace(status) != "":
-				res.Dirty = append(res.Dirty, wt)
-			default:
-				// No --force: git refuses again if anything changed since the status.
-				if _, err := o.Git(w.common, "worktree", "remove", wt); err != nil {
-					res.Errors = append(res.Errors, fmt.Sprintf("%s: git worktree remove: %v", wt, err))
-					res.Unknown = append(res.Unknown, wt)
-				} else {
-					res.Removed = append(res.Removed, wt)
-				}
+			clean, err := o.clean(wt, w)
+			if err != nil {
+				keep(&res.Unknown, wt, "git status: "+err.Error())
+				continue
 			}
+			if !clean {
+				res.Dirty = append(res.Dirty, wt)
+				continue
+			}
+			branch, why, err := o.saved(wt, w.admin, w.common)
+			if err != nil {
+				keep(&res.Unknown, wt, err.Error())
+				continue
+			}
+			if why != "" {
+				keep(&res.Unsaved, wt, why)
+				continue
+			}
+			// No --force: git refuses again if anything changed since the status.
+			if _, err := o.Git(w.common, "worktree", "remove", wt); err != nil {
+				keep(&res.Unknown, wt, "git worktree remove: "+err.Error())
+				continue
+			}
+			res.Removed = append(res.Removed, wt)
+			o.deleteBranch(&res, w.common, branch)
 		}
 	}
 
@@ -168,18 +219,166 @@ func Reap(o Options) Result {
 		}
 	}
 	for _, c := range sortedKeys(commons) {
-		for _, gone := range goneRegistrations(c, bases, o.Prefix, now, o.Floor) {
-			if _, err := o.Git(c, "worktree", "remove", gone); err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("%s: git worktree remove (directory gone): %v", gone, err))
+		for _, g := range goneRegistrations(c, bases, o.Prefix, now, o.Floor) {
+			branch, why, err := o.saved("", g.admin, c)
+			if err != nil {
+				keep(&res.Unknown, g.path, err.Error())
 				continue
 			}
-			res.Pruned = append(res.Pruned, gone)
+			if why != "" {
+				keep(&res.Unsaved, g.path, why)
+				continue
+			}
+			if _, err := o.Git(c, "worktree", "remove", g.path); err != nil {
+				keep(&res.Unknown, g.path, "git worktree remove (directory gone): "+err.Error())
+				continue
+			}
+			res.Pruned = append(res.Pruned, g.path)
+			o.deleteBranch(&res, c, branch)
 		}
 	}
-	for _, l := range [][]string{res.Removed, res.Pruned, res.Dirty, res.Live, res.Locked, res.Young, res.Unknown} {
+	for _, l := range [][]string{res.Removed, res.Pruned, res.Dirty, res.Live, res.Locked, res.Young,
+		res.Unsaved, res.Unknown, res.Emptied, res.Branches} {
 		sort.Strings(l)
 	}
 	return res
+}
+
+// clean reports whether wt's status is empty, after removing a synthetic link the tool made
+// when that link is the only thing status reports.
+func (o Options) clean(wt string, w worktree) (bool, error) {
+	status, err := o.Git(wt, "status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none")
+	if err != nil {
+		return false, err
+	}
+	lines := nonEmptyLines(status)
+	if len(lines) == 0 {
+		return true, nil
+	}
+	repoTree := ""
+	if filepath.Base(w.common) == ".git" {
+		repoTree = filepath.Dir(w.common)
+	}
+	var links []string
+	for _, l := range lines {
+		name, ok := strings.CutPrefix(l, "?? ")
+		name = strings.TrimSuffix(name, "/")
+		if !ok || repoTree == "" || !slicesContains(o.Synthetic, name) {
+			return false, nil
+		}
+		p := filepath.Join(wt, name)
+		fi, err := os.Lstat(p)
+		if err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+			return false, nil
+		}
+		target, err := os.Readlink(p)
+		if err != nil || !samePath(absFrom(wt, target), filepath.Join(repoTree, name)) {
+			return false, nil
+		}
+		links = append(links, p)
+	}
+	for _, p := range links {
+		if err := os.Remove(p); err != nil {
+			return false, err
+		}
+	}
+	status, err = o.Git(wt, "status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none")
+	if err != nil {
+		return false, err
+	}
+	return len(nonEmptyLines(status)) == 0, nil
+}
+
+// inProgress are the admin-dir entries git keeps while an operation is under way in a
+// worktree: its state lives there, not in the tree, so a clean status says nothing about it.
+var inProgress = []string{"rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG"}
+
+// saved decides whether a clean worktree's commits are safe without it. It returns the tree's
+// branch (refs/heads/…), and a reason to keep it when they may not be: a detached HEAD, an
+// operation in progress, or a HEAD commit no other ref reaches. wt is "" for a registration
+// whose tree is gone; HEAD is then read from the registration.
+func (o Options) saved(wt, admin, common string) (branch, why string, err error) {
+	for _, name := range inProgress {
+		if _, err := os.Lstat(filepath.Join(admin, name)); err == nil {
+			return "", "an operation is in progress (" + name + ")", nil
+		}
+	}
+	head, err := readLine(filepath.Join(admin, "HEAD"))
+	if err != nil {
+		return "", "", fmt.Errorf("its HEAD cannot be read: %v", err)
+	}
+	ref, ok := strings.CutPrefix(head, "ref: ")
+	if !ok {
+		return "", "its HEAD is detached", nil
+	}
+	if wt != "" {
+		// git's own answer, beside the admin file's.
+		if _, err := o.Git(wt, "symbolic-ref", "-q", "HEAD"); err != nil {
+			return "", "its HEAD is detached", nil
+		}
+	}
+	ref = strings.TrimSpace(ref)
+	tip, err := o.Git(common, "rev-parse", "--verify", "-q", ref+"^{commit}")
+	if err != nil {
+		return "", "its branch " + ref + " does not resolve to a commit", nil
+	}
+	tip = strings.TrimSpace(tip)
+	refs, err := o.Git(common, "for-each-ref", "--contains", tip, "--format=%(refname)")
+	if err != nil {
+		return "", "", fmt.Errorf("git for-each-ref --contains: %v", err)
+	}
+	for _, r := range nonEmptyLines(refs) {
+		if r != ref {
+			return ref, "", nil
+		}
+	}
+	return "", "its HEAD commit is on no other ref", nil
+}
+
+// deleteBranch deletes ref when it carries the branch prefix and its tip is still reachable
+// from another ref.
+func (o Options) deleteBranch(res *Result, common, ref string) {
+	name, ok := strings.CutPrefix(ref, "refs/heads/")
+	if o.BranchPrefix == "" || !ok || !strings.HasPrefix(name, o.BranchPrefix) {
+		return
+	}
+	tip, err := o.Git(common, "rev-parse", "--verify", "-q", ref+"^{commit}")
+	if err != nil {
+		return
+	}
+	refs, err := o.Git(common, "for-each-ref", "--contains", strings.TrimSpace(tip), "--format=%(refname)")
+	if err != nil {
+		return
+	}
+	for _, r := range nonEmptyLines(refs) {
+		if r != ref {
+			if _, err := o.Git(common, "branch", "-D", name); err == nil {
+				res.Branches = append(res.Branches, name)
+			} else {
+				res.Errors = append(res.Errors, fmt.Sprintf("%s: git branch -D: %v", name, err))
+			}
+			return
+		}
+	}
+}
+
+func nonEmptyLines(s string) []string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		if strings.TrimSpace(l) != "" {
+			out = append(out, strings.TrimRight(l, "\r"))
+		}
+	}
+	return out
+}
+
+func slicesContains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 // candidates are the prefix-named real directories directly in base and one level below it
@@ -220,6 +419,7 @@ func candidates(base, prefix string) []string {
 
 type worktree struct {
 	common     string
+	admin      string
 	locked     bool
 	lastActive time.Time
 }
@@ -249,6 +449,7 @@ func readWorktree(wt string) (worktree, error) {
 		common = absFrom(admin, c)
 	}
 	w.common = filepath.Clean(common)
+	w.admin = admin
 	if _, err := os.Lstat(filepath.Join(admin, "locked")); err == nil {
 		w.locked = true
 	}
@@ -262,13 +463,16 @@ func readWorktree(wt string) (worktree, error) {
 
 // goneRegistrations are common's unlocked registrations of prefix-named worktrees beneath one
 // of bases whose directory no longer exists and whose registration is older than floor.
-func goneRegistrations(common string, bases []string, prefix string, now time.Time, floor time.Duration) []string {
+// goneReg is one such registration: the tree it names and its admin directory.
+type goneReg struct{ path, admin string }
+
+func goneRegistrations(common string, bases []string, prefix string, now time.Time, floor time.Duration) []goneReg {
 	dir := filepath.Join(common, "worktrees")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
-	var out []string
+	var out []goneReg
 	for _, e := range entries {
 		admin := filepath.Join(dir, e.Name())
 		if _, err := os.Lstat(filepath.Join(admin, "locked")); err == nil {
@@ -288,9 +492,9 @@ func goneRegistrations(common string, bases []string, prefix string, now time.Ti
 		if fi, err := os.Lstat(admin); err != nil || now.Sub(fi.ModTime()) < floor {
 			continue
 		}
-		out = append(out, wt)
+		out = append(out, goneReg{path: wt, admin: admin})
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool { return out[i].path < out[j].path })
 	return out
 }
 

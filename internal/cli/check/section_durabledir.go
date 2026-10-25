@@ -117,7 +117,7 @@ func (o *Options) sectionDurableDir(r *reporter, workspace string) {
 	}
 	// The briefing's lifetime sentence, for the reader most likely to run the one command that
 	// deletes it: a human at the host's terminal (DS-D31).
-	r.line("  yolo never deletes anything here; a " + durable.CleanCommand + " in the workspace does. " +
+	r.line("  yolo deletes nothing here but clean, idle worktrees a pack's tool left; a " + durable.CleanCommand + " in the workspace does. " +
 		durable.RemoveAdvice)
 	r.blank()
 }

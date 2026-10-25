@@ -45,12 +45,14 @@ func TestEachAgentPackShipsItsOwnWorktreeProseToItsOwnAgent(t *testing.T) {
 		"`$YOLO_DURABLE_DIR/worktrees/pi-subagents`, and they go there. A `PI_SUBAGENTS_WORKTREE_DIR`\n" +
 		"already set, or a user-configured `worktreeBaseDir`, wins.\n" +
 		"pi-subagents removes a run's worktree only when nothing in it would be lost; one holding work it\n" +
-		"could not capture as a patch, and one whose run was cut short, stays. In the directory yolo set,\n" +
-		"the same extension bounds them: at most once an hour it removes, with `git worktree remove`, each\n" +
-		"`pi-worktree-*` worktree there that is clean, unlocked, used by no process and idle for a day.\n" +
-		"The branch stays, so a commit made there is not lost; files the worktree ignores go with it. A\n" +
-		"worktree with uncommitted changes is kept and listed in that directory's `.yolo-reap.json`:\n" +
-		"remove it yourself once its work is saved.\n\n" +
+		"could not capture as a patch, and one whose run was cut short, stays. Where their directory lies\n" +
+		"beneath `$YOLO_DURABLE_DIR` (yolo's, or a `PI_SUBAGENTS_WORKTREE_DIR` you set there), the same\n" +
+		"extension bounds them: at most once an hour it removes, with `git worktree remove`, each\n" +
+		"`pi-worktree-*` worktree there that is clean, on a branch, in no rebase, merge or other git\n" +
+		"operation, whose commit another ref also holds, unlocked, used by no process in this jail and idle\n" +
+		"for a day, and then its `pi-subagents/*` branch. Files the worktree ignores go with it. Every\n" +
+		"other worktree is kept and listed, with the reason, in that directory's `.yolo-reap.json`: remove\n" +
+		"it yourself once its work is saved.\n\n" +
 		"pi-dynamic-workflows puts its worktrees in the repository's `.pi/worktrees/`, which it has no\n" +
 		"setting to change. They survive a restart. Unless the repository ignores `.pi/worktrees/`,\n" +
 		"`git status` lists it: never `git add` it.\n\n" +

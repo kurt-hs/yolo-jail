@@ -269,8 +269,10 @@ func (o *Options) startMacosUserHousekeeping(consent reclaimConsent) {
 // may mount one), agent staging (its sweep needs the container runtime's live set, and a session's
 // own staging is kept by prune.SessionStagingNames when a container launch's slot runs), image
 // tars (this backend writes none, and a stamp written here would delay a podman keep-0 pass by a
-// day) and scratch volumes. Agent logs are durable user data and the embedded pack trees are a
-// `yolo prune` class, on every backend.
+// day) and scratch volumes. The embedded pack trees are a `yolo prune` class, on every backend.
+// The agent-log class (reapWorkspaceAgentLogs) is not run here: its allowlist names the podman
+// overlay's `.yolo/home` layout, which this backend's workspace sidecar has not been checked
+// against (disk-footprint.md's backlog).
 func (o *Options) runMacosUserHousekeeping(consent reclaimConsent) {
 	sp := o.Perf.Span("housekeeping.slot")
 	defer sp.End()

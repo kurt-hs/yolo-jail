@@ -89,7 +89,7 @@ func TestTheDurableSectionFooterAndNamesAreSafe(t *testing.T) {
 	}
 	o := &Options{Getenv: func(string) string { return "" }, Now: func() time.Time { return durableNow }}
 	out := runDurableSection(o, ws)
-	if !strings.Contains(out, "yolo never deletes anything here; a "+durable.CleanCommand+
+	if !strings.Contains(out, "yolo deletes nothing here but clean, idle worktrees a pack's tool left; a "+durable.CleanCommand+
 		" in the workspace does. "+durable.RemoveAdvice) {
 		t.Errorf("the footer does not say what deletes the dir and give the safe removal advice:\n%s", out)
 	}

@@ -43,7 +43,9 @@ type DurableDir struct {
 // (prune.CachePurgeDefaultSubdirs, 30 days by default), with the launch's housekeeping
 // trimming yolo's own image cache there and the boot's store step unlinking DANGLING mise
 // symlinks in /mise (provision.StepPruneStore). All of the machine-tier deletions are of
-// bytes that can be fetched or built again. yolo deletes nothing in the durable dir (OQ-DS2).
+// bytes that can be fetched or built again. In the durable dir yolo deletes only the clean,
+// idle worktrees a pack's tool left there (internal/worktreereap; jail-home.md DS-P4, which
+// supersedes OQ-DS2 for those trees).
 //
 // THE MAP, NOT THE MECHANISM NAME, PICKS THE WORDING (DS-P1). Apple Container's section differs
 // from podman's in exactly the two facts the map carries — the whole home is one per-workspace
@@ -121,19 +123,25 @@ func persistenceSection(m *PersistenceMap, d *DurableDir, workspace, hostWorkspa
 			outside = append(outside, p)
 		}
 	}
-	// What yolo deletes in this class. On a read-only home it is `yolo prune --apply`'s
-	// age-out of a few agents' log dirs, which it finds at `<ws>/.yolo/home/copilot/logs`
-	// and `gemini/tmp` (prune.agentLogWorkspaceSubdirs): the names podman binds with the
-	// leading dot stripped. A WHOLE-HOME bind (Apple Container) keeps the dots, so that
-	// age-out finds nothing there, and what yolo does delete is its own delivered files —
-	// the pack tree and generated scripts it replaces at each launch — which the
-	// "Rewritten at each launch" bullet below says.
-	deletes := "yolo deletes nothing here but some agents' old log files (`yolo prune --apply`)."
+	// What yolo deletes in this class. In every shape it is the pi pack's reaper of clean, idle
+	// worktrees its tool left in the durable dir (internal/worktreereap). On a read-only home it
+	// is also the age-out of a few agents' log dirs (the launch's daily slot and `yolo prune
+	// --apply`), which it finds at `<ws>/.yolo/home/copilot/logs`, `pi/agent/logs` and the like
+	// (prune.AgentLogSubdirs): the names podman binds with the leading dot stripped. A
+	// WHOLE-HOME bind (Apple Container) keeps the dots, so that age-out finds nothing there, and
+	// what yolo does delete is its own delivered files — the pack tree and generated scripts it
+	// replaces at each launch — which the "Rewritten at each launch" bullet below says.
+	// The worktree clause is said only where there is a durable dir to name.
+	worktrees := "."
+	if hasDurable {
+		worktrees = " and clean, idle worktrees a pack's tool left in `$" + durable.EnvVar + "`."
+	}
+	deletes := "yolo deletes nothing here but agents' log files older than 30 days" + worktrees
 	switch {
 	case homeDurable:
 		where = append(where, "all of `"+home+"` outside the other classes, writable and kept in "+
 			"this workspace's `.yolo/home`"+toolsOwn)
-		deletes = "yolo deletes nothing here but its own files (below)."
+		deletes = "yolo deletes nothing here but its own files (below)" + worktrees
 	case len(inHome) > 0:
 		where = append(where, "in home, only "+joinTilde(inHome, home)+toolsOwn)
 	}
@@ -235,7 +243,7 @@ func durableLead(d *DurableDir, workspace, hostWorkspace string) []string {
 		}
 	}
 	v := "`$" + durable.EnvVar + "`"
-	lifetime := "It survives restarts and yolo never deletes it."
+	lifetime := "It survives restarts, and yolo never deletes your work in it: the one removal is of clean, idle worktrees a pack's tool left there, which that pack's briefing names."
 	if d.Caveat != "" {
 		lifetime = "⚠ " + d.Caveat
 	}
