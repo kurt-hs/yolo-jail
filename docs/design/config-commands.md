@@ -3,22 +3,21 @@ title: "Who writes the file: one command instead of 'edit your config', and the 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC10 and OQ-RC12 (§4, the commands) and OQ-RC2 (§5, the format); §3 is approved"
+next: "Nothing owed here; the plan seed carries the splice and parser notes"
 tags: [config, cli, editing, toml, jsonc, design]
 summary: "About sixty places tell a person or an agent to hand-edit a config file. This doc shows the command each would print instead, what it does to the file (one hunk, every other byte untouched), the verbs, and the format underneath. Each section ends with its question. Part of the readable-config redesign."
 ---
 
 # Who writes the file: one command instead of "edit your config", and the format it writes
 
-**Status:** 2026-10-25. Nothing is built. The sessions below are what a person or an agent would
-see under the leanings; the spellings change with [§4](#4-the-commands)'s questions.
+**Status:** 2026-10-25. Nothing is built; every question is ruled. The sessions below are what a
+person or an agent would see.
 
 **How to read this.** [§1](#1-what-youd-see) is the transcripts; [§2](#2-the-sixty-places-this-replaces)
 is what they replace; [§4](#4-the-commands) and
-[§5](#5-the-format-underneath) end with their questions; [§3](#3-what-a-command-does-to-the-file) is approved.
+[§5](#5-the-format-underneath) record what was approved.
 
-**Needs your ruling:** [OQ-RC10](#OQ-RC10) and [OQ-RC12](#OQ-RC12) in [§4](#4-the-commands),
-[OQ-RC2](#OQ-RC2) in [§5](#5-the-format-underneath).
+**Needs your ruling:** None. Every section is approved ([ledger](readable-config.md#decision-ledger)).
 
 > **In short.** A command you typed changes the bytes of one value in the file you named, and
 > nothing else. That is what makes editing your config not a mess, and it works in TOML or JSONC.
@@ -189,66 +188,24 @@ $ yolo config migrate                      # the one whole-file rewrite, once
 $ yolo config why active_provider.claude   # which file set it
 ```
 
-There is no generic `yolo config set <path> <value>`: a key with no verb is a line in a file,
-and the agent or the person writes it; `yolo check` names the fix when the line is wrong. A pack's
-own keys (its `allow.<pack>` settings) get no verb of their own either, since a pack cannot ship
-one; `yolo allow <pack> <key> <value>` covers them with one verb per section.
+**Approved 2026-10-25.** Underneath the named verbs sits one generic verb for any key, which is
+what a message prints when no named verb covers its key, and what a pack's own `allow.<pack>`
+settings get, since a pack cannot ship a verb:
 
-The sixty messages of [§2](#2-the-sixty-places-this-replaces) print the verb where one exists
-and the lines to add where none does, and in a jail the `host-run` line that runs the verb on the
-host.
+```console
+$ yolo config set allow.aws-auth.profile my-sso-profile
+$ yolo config add allow.git.on_request push
+$ yolo config unset mcp_servers.tavily --local
+```
 
-1. 💬 <a id="OQ-RC10"></a>**OQ-RC10: Named verbs only, or a generic `set` underneath them too?**
+The named verbs are sugar over it. The sixty messages of [§2](#2-the-sixty-places-this-replaces)
+print the named verb where one exists and the generic one where none does, and in a jail the
+`host-run` line that runs it on the host. An agent editing a project file by hand is still fine;
+`yolo check` names the fix when a line is wrong.
 
-   An agent reads "add `{"kind": "read", "repo": "*"}` to `brokered.git.grants` in your user
-   config" and a person pastes it under the wrong key; the named verb `yolo allow git fetch` is
-   what both would rather have had. A generic `yolo config set allow.git.always fetch` would also
-   exist for every key a pack adds, and is what a message could print for any key at all; it is
-   also a TOML editor an agent does not need.
-
-   ```console
-   # A  named verbs only, for the decisions above; every other key is a line someone writes
-   $ yolo allow git fetch
-
-   # B  named verbs, and a generic verb underneath for any key, printed by messages that have no verb
-   $ yolo allow git fetch
-   $ yolo config set allow.git.always fetch
-   ```
-
-   <!-- vantage: question id=OQ-RC10 leaning="A: a command that only edits text is one an agent does better by hand, and a message that has no verb prints the lines." -->
-
-   _Leaning:_ A: a command that only edits text is one an agent does better by hand, and a
-   message that has no verb prints the lines.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-2. 💬 <a id="OQ-RC12"></a>**OQ-RC12: What does `yolo config` mean once `migrate`, `why` and `unset` join it?**
-
-   Today `yolo config ls`, `render`, `diff`, `reset`, `promote` and `capture` are about the agent
-   settings files yolo composes (`~/.claude/settings.json` and the like), while `apply`, `drift`
-   and `dump` are about yolo's own config. A person who types `yolo config why` expects the
-   second; the help page shows both.
-
-   ```console
-   # A  move the six composition commands; yolo config is yolo's config
-   $ yolo surface render claude/settings
-   $ yolo config why active_provider.claude
-
-   # B  leave yolo config alone; the new verbs go elsewhere
-   $ yolo config render claude/settings
-   $ yolo why active_provider.claude
-
-   # C  both meanings under one verb, two sections in the help text
-   ```
-
-   <!-- vantage: question id=OQ-RC12 leaning="A: config should mean the user's config, and six retired spellings that print their replacement cost one release of friction." -->
-
-   _Leaning:_ A: `config` should mean the user's config, and six retired spellings that print
-   their replacement cost one release of friction.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+**Approved 2026-10-25:** `yolo config` means yolo's own config. The six composition commands
+(`ls`, `render`, `diff`, `reset`, `promote`, `capture`) move to `yolo surface …`, and each retired
+spelling prints its replacement for one release.
 
 ## 5. The format underneath
 
@@ -284,40 +241,13 @@ providers:
     models: { global.openai.gpt-6.1-sol: { name: Sol 6.1, context: 272000 } }
 ```
 
-What decides it, in four lines: the shape removes two-thirds of the lines whatever the format;
-TOML keeps its one-line tables when a tool rewrites it and JSONC grows back to 133 lines; YAML
-reads `python: 3.10` as the number 3.1, which a mise version is; and both TOML and YAML are already
-vendored and used (`internal/tomlx`, `internal/agentcfg/codec`), so neither is a new dependency.
-Files only yolo reads stay JSON. A ruling of 2026-09-30 ([MN-D1](manifest-language.md#MN-D1))
-said the configs keep JSONC unless a proposal says otherwise; this is that proposal.
-
-1. 💬 <a id="OQ-RC2"></a>**OQ-RC2: TOML, or keep JSONC in the new shape?**
-
-   You open your config to add a model. Either way the reshape takes the file from 178 lines to
-   under 60, both formats are in the tree, and a splice edits either.
-
-   ```toml
-   # A  TOML, for every file a person writes; a model row stays one line when a tool rewrites it
-   models."global.openai.gpt-6.1-sol" = { name = "Sol 6.1", context = 272_000 }
-   ```
-
-   ```jsonc
-   // B  JSONC, reshaped; the splice is nearest to built (json5.Locate exists); a formatter expands this
-   "models": { "global.openai.gpt-6.1-sol": { "name": "Sol 6.1", "context": 272000 } }
-   ```
-
-   ```yaml
-   # C  YAML; the vendored library is frozen upstream, and a version number can read as a float
-   mise: { python: 3.10 }        # 3.1
-   ```
-
-   <!-- vantage: question id=OQ-RC2 leaning="A, TOML: low noise, no value misreads, familiar from mise.toml and Cargo, already vendored; the flatter shape avoids its one weakness." -->
-
-   _Leaning:_ A, TOML: low noise, no value misreads, familiar from `mise.toml` and Cargo, already
-   vendored; the flatter shape avoids its one weakness.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+**Approved 2026-10-25: TOML**, for every file a person writes. What decided it: the shape
+removes two-thirds of the lines whatever the format; TOML keeps its one-line tables when a tool
+rewrites it and JSONC grows back to 133 lines; YAML reads `python: 3.10` as the number 3.1, which
+a mise version is; and TOML is already vendored and used (`internal/tomlx`,
+`internal/agentcfg/codec`). Files only yolo reads stay JSON. This reverses
+[MN-D1](manifest-language.md#MN-D1) (2026-09-30), which kept the configs on JSONC until a
+proposal said otherwise.
 
 ## 6. Principles
 

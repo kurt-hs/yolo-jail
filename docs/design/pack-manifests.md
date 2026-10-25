@@ -291,7 +291,7 @@ written more than once, and a compressed size that stays flat.
 ### A.4 What this takes over
 
 [OQ-M1](manifest-language.md#OQ-M1) and [OQ-M2](manifest-language.md#OQ-M2) by
-[OQ-RC5](#OQ-RC5) and [OQ-RC2](config-commands.md#OQ-RC2); [OQ-M3](manifest-language.md#OQ-M3)
+[OQ-RC5](#OQ-RC5) and [OQ-RC2](readable-config.md#decision-ledger), ruled TOML; [OQ-M3](manifest-language.md#OQ-M3)
 stays there. [OQ-PC1](pack-conventions.md#OQ-PC1) to [OQ-PC3](pack-conventions.md#OQ-PC3) by the
 `home/` folder. [`pack-conventions.md`](pack-conventions.md#appendix-a-counts) counted ten
 single-file `files` entries in `matt` on 2026-10-05 and found about five lines saved; that count
