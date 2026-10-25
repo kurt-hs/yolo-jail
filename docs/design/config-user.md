@@ -3,15 +3,19 @@ title: "Your config, one screen: packs, logins, and which setup each agent runs 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC14 (the two profile names) and OQ-RC15 (how your packs are named); OQ-RC1, RC3, RC4, RC13 and RC16 follow"
+next: "Approve the file in §2, then rule OQ-RC14 and OQ-RC15; OQ-RC1, RC3, RC4, RC13 and RC16 follow"
 tags: [config, packs, providers, profiles, broker, grants, conventions, design]
-summary: "The user config as one annotated file, today and proposed, with the principles it obeys and the seven questions it raises. Part of the readable-config redesign; evidence is in the appendix."
+summary: "The user config as one annotated file, today and proposed, the principles it obeys, and the seven choices still open, each a choice between lines of that file. Part of the readable-config redesign; the ledger of rulings is in the front door and the evidence is in the appendix."
 ---
 
 # Your config, one screen: packs, logins, and which setup each agent runs on
 
 **Status:** 2026-10-25. Nothing is built. The "today" file is the maintainer's effective config as
-this jail inherited it, condensed; the evidence behind each claim is in [the appendix](#appendix-evidence).
+this jail inherited it, condensed.
+
+**What you are approving:** the file in [§2](#2-the-file-proposed). **What is still open:** the
+seven questions in [§6](#6-open-questions), each a choice between lines of that file; the file is
+written with the leanings, and a `?` marks each line a question could change.
 
 **Needs your ruling:** [OQ-RC1](#OQ-RC1), [OQ-RC3](#OQ-RC3), [OQ-RC4](#OQ-RC4),
 [OQ-RC13](#OQ-RC13), [OQ-RC14](#OQ-RC14), [OQ-RC15](#OQ-RC15), [OQ-RC16](#OQ-RC16).
@@ -19,16 +23,17 @@ this jail inherited it, condensed; the evidence behind each claim is in [the app
 > **In short.** Each section of your config names what you decided, in a word you would use, and
 > says it once. The file below is the whole proposal; the prose only says why.
 
-**Reads with:** [`readable-config.md`](readable-config.md) (the front door and the ledger of
-rulings so far), [`config-project.md`](config-project.md) (a project's file),
-[`config-commands.md`](config-commands.md) (format, and the commands that edit these files).
+**Reads with:** [`readable-config.md`](readable-config.md) (the front door, the principles, and
+the ledger of rulings), [`config-project.md`](config-project.md) (a project's file, which asks
+within what this one allows), [`config-commands.md`](config-commands.md) (the commands that edit
+these files).
 
 ---
 
 ## 1. The file today
 
-Condensed from the maintainer's effective config. The `// read as` comments are what the
-maintainer, or a cold reader, took each line to mean on 2026-10-24.
+Condensed from the maintainer's effective config. The `// read as` comments are what a cold
+reader took each line to mean.
 
 ```jsonc
 {
@@ -63,12 +68,10 @@ maintainer, or a cold reader, took each line to mean on 2026-10-24.
 
 ## 2. The file proposed
 
-Under the leanings of every question below. Names marked `?` are the open ones.
-
 ```toml
 # ~/.config/yolo-jail/config.toml
 packs = ["pi", "local/pi-fork", "codex", "git", "github", "bedrock", "aws-auth",
-         "local/matt", { git = "https://github.com/mschulkind-oss/matt-craft", ref = "main" }, "claude"]
+         "local/matt", { git = "https://github.com/mschulkind-oss/matt-craft" }, "claude"]
          # the only switch; local/<name> is ~/.config/yolo-jail/packs/<name>        (?OQ-RC15)
 
 [allow.git]                       # the most any project's jail may do with your logins   (?OQ-RC4)
@@ -101,12 +104,18 @@ reasoning = true
 # … four more, one line each
 ```
 
+A project's own file asks for what it needs under `[needs.git]` and `[needs.github]`, within
+what `allow` here permits ([`config-project.md`](config-project.md)).
+
+On the maintainer's machines this is four files, not one: `config.toml`, `config.d/overrides.toml`,
+and a work and a personal file that his dotfiles put in `config.d/` on the right machines
+([appendix A.3](#a3-four-files-not-one)). The whole set is 45 non-blank lines.
+
 ### 2.1 Naming a pack that is not shipped
 
-Under [OQ-RC15](#OQ-RC15)'s leaning a pack lives in a source you named once, and a source is a
-directory tree of packs, wherever it is: a folder on this machine, or a git repository, which is
-the same layout fetched (what Homebrew calls a tap and Claude Code a marketplace). There is no
-bare path form.
+A pack lives in a source you named once, and a source is a directory tree of packs, wherever it
+is: a folder on this machine, or a git repository, which is the same layout fetched (what
+Homebrew calls a tap and Claude Code a marketplace). There is no bare path form.
 
 ```toml
 [pack_sources]                                # named once; each is a tree of <pack>/ directories
@@ -132,37 +141,29 @@ default branch; with no `ref`, the default branch is read from the remote and lo
 The name is used wherever yolo names the pack back to you: the launch's pack line, `yolo pack
 ls`, `explain` and `footprint`, the nudge in [§4](#4-the-nudge-when-a-table-and-a-pack-disagree),
 `pack lint`, and a settings table for a login-serving pack, which TOML then quotes:
-`[allow."local/my-auth"]`. A shipped pack's table stays bare, `[allow.aws-auth]`. The staging
-directory's spelling of a slash is the plan's.
-
-On the maintainer's machines this is four files, not one: `config.toml`, `config.d/overrides.toml`,
-and a work and a personal file that dotfile tags put in `config.d/` on the right machines
-([appendix A.3](#a3-four-files-not-one)). The whole set is 45 non-blank lines.
+`[allow."local/my-auth"]`. A shipped pack's table stays bare, `[allow.aws-auth]`.
 
 ## 3. Principles
-
-Numbered so the questions can cite them.
 
 1. **Name the decision, not the mechanism.** `push = ["main"]`, not `{"kind": "branch", …}` under
    `brokered`.
 2. **Say each fact once.** A model's key is its id; the maker follows from the id; facts every
    model shares sit in `every_model`.
 3. **Write nothing that is the default.**
-4. **One switch, one place.** `packs` is the switch. A settings table selects nothing; a table
-   with no pack, or a pack with no table, is a nudge naming the pack and the command
-   ([RC-D7](readable-config.md#decision-ledger)).
+4. **One switch, one place.** `packs` is the switch. A settings table selects nothing and stands
+   for nothing; a table whose pack is not selected is an error, offered as a fix first
+   ([§4](#4-the-nudge-when-a-table-and-a-pack-disagree)).
 5. **No value is a reserved string.** `true`, `false`, a number, a name, or a list of names;
-   never a phrase yolo has to recognize ([RC-D6](readable-config.md#decision-ledger)).
+   never a phrase yolo has to recognize.
 6. **Two words for two scopes.** `allow` here is the ceiling; `needs` in a project is the ask,
-   and must fit inside it ([RC-D8](readable-config.md#decision-ledger)).
+   and must fit inside it.
 7. **Plural for a collection you fill, singular for one thing.** `packs`, `providers.<name>`,
-   `mcp_servers.<name>`; `run_on`, `allow.git` ([RC-D3](readable-config.md#decision-ledger)).
+   `mcp_servers.<name>`; `run_on`, `allow.git`.
 
 ## 4. The nudge, when a table and a pack disagree
 
-A settings table for a pack that is not selected is an error, not a warning
-([RC-D9](readable-config.md#decision-ledger)): `allow.<pack>` is valid only when `<pack>` is in
-`packs`. The nudge offers the fix first; declined, the check fails and a launch refuses.
+`allow.<pack>` is valid only when `<pack>` is in `packs`. The check offers the fix first; declined,
+it fails and a launch refuses.
 
 ```console
 $ yolo check
@@ -187,11 +188,11 @@ $ yolo check
 
 ## 5. Lines you never write
 
-A convention is a default that follows from something you already did. Three rules bound every
-one: the explicit key still wins when written; `yolo config show` prints what a convention
-supplied, as `packs = [..., "local/matt"]   # by convention: local/ is ~/.config/yolo-jail/packs`; and no convention widens
-what a jail may do with a login. [OQ-RC13](#OQ-RC13) takes or vetoes each; its leaning takes all but
-C3, C4 and C8.
+A convention is a default that follows from something you already did, so the line that would
+say it is never written. Three rules bound every one: the explicit key still wins when written;
+`yolo config show` prints what a convention supplied, as `packs = [..., "local/matt"]   # by
+convention: local/ is ~/.config/yolo-jail/packs`; and no convention widens what a jail may do
+with a login. These six are proposed; [OQ-RC13](#OQ-RC13) takes or vetoes each, and offers two more.
 
 ```toml
 # C1  your packs folder: ~/.config/yolo-jail/packs/<name> is local/<name>
@@ -206,8 +207,8 @@ $ ln -s ~/.dotfiles/yolo-packs ~/.config/yolo-jail/packs     # or one link per p
 
 `~/.config/yolo-jail/packs/` is an ordinary directory; a symlink in it, or the directory itself
 being one, is a path like any other. A local pack already follows symlinks wherever they point,
-by rule ([OQ-NC9](../plans/notch-convergence.md#7-decision-ledger), 2026-09-28), because dotfile managers deploy
-exactly this shape; a fetched pack does not. No new handling. If you keep both spellings and list
+by rule ([OQ-NC9](../plans/notch-convergence.md#7-decision-ledger), 2026-09-28), because dotfile
+managers deploy exactly this shape; a fetched pack does not. If you keep both spellings and list
 both, `local/matt` and `dotfiles/matt` resolve to one directory, and yolo refuses the duplicate
 naming both lines; list one.
 
@@ -225,17 +226,16 @@ include_if_found = ["../../.dotfiles/tag-work/config/yolo-jail/work.toml"]   # b
     work.toml -> ~/.dotfiles/tag-work/config/yolo-jail/work.toml      # present on work machines only
 ```
 
-"tag" is from the path of your own work file, `~/.dotfiles/tag-work/…`: the layout rcm's
+The `tag-work/` directory is from the path of the maintainer's own work file: the layout rcm's
 `rcup -t work` uses, where a `tag-<name>/` directory is linked into `~` only on machines where the
-tag is on. If that is what puts `work.jsonc` on work machines today, then moving it to
+tag is on. If that is what puts `work.jsonc` on work machines today, moving it to
 `tag-work/config/yolo-jail/config.d/work.toml` puts it in `config.d/` there and nowhere else, and
-the include line is unnecessary. If your dotfiles link differently, C2 still holds for any file
-you place in `config.d/`; only the "no line at all" part depends on the linking.
+the include line is unnecessary. If the dotfiles link differently, C2 still holds for any file
+placed in `config.d/`; only the "no line at all" part depends on the linking.
 
 ```toml
-
-# C4  withdrawn 2026-10-25: an empty [allow.git] meaning "fetch" is presence standing for a value,
-#     which no one reads cold; fetch = true stays written
+# C5  a project needs no file                                 (config-project.md §2)
+# C6  a pack needs no manifest                                (pack-manifests.md §3)
 
 # C7  a model named without facts takes the catalog's (pending the catalog check)
 "global.anthropic.claude-opus-5-5" = { name = "Opus 5.5", context = 1_000_000, price = { … } }   # before
@@ -252,32 +252,15 @@ omitted ref is pinned at first fetch and moves only on `yolo pack update`, as a 
 does in Cargo, npm and Go. The default branch is read with `git ls-remote --symref <url> HEAD`;
 a remote that does not answer is refused naming the `ref` to write.
 
-C5 (a project needs no file) and C6 (a pack needs no manifest) are in
-[`config-project.md`](config-project.md#2-no-file-at-all) and
-[`pack-manifests.md`](pack-manifests.md#3-no-manifest-at-all). Two more are not in the leaning,
-because a declaration acting at a distance is what the maintainer read as *"a search for a pack
-through a lookup system"*:
-
-```toml
-# C3  a section selects its pack (the nudge in §4 covers this case instead)
-packs = ["claude", "bedrock", "aws-auth"]                     # before
-packs = ["claude"]                                            # after: [allow.aws-auth] selected the rest
-
-# C8  one declared setup is everyone's
-[run_on]                                                      # before
-default = "bedrock"
-                                                              # after: no line; [providers.bedrock] is the only setup
-```
-
 ## 6. Open questions
 
-1. 💬 <a id="OQ-RC1"></a>**OQ-RC1: Which of the shape changes go in?**
+1. 💬 <a id="OQ-RC1"></a>**OQ-RC1: Is the shape of the file in §2 approved, lever by lever?**
 
    A colleague copies the maintainer's config to get Bedrock. They find `bedrock` three times,
    `"claude": null`, and an `aws-auth` that appears in `packs` and again under `loopholes` with
    `enabled: true`. They delete the `loopholes` block as a duplicate, and their jail starts with no
    AWS credentials and no message they can connect to it. Each lever below removes one such trap,
-   and each can be taken alone.
+   and each can be vetoed alone.
 
    ```toml
    # L1  no written defaults; yolo init writes a short file   (the 121-line template goes)
@@ -336,8 +319,7 @@ default = "bedrock"
 
    The maintainer reads `brokered.git.grants` and says *"I don't understand 'brokered'."* The
    section holds git fetch and push, GitHub reads and writes, and the AWS login `aws-auth` serves.
-   `as_you` was rejected ([RC-D2](readable-config.md#decision-ledger)); the project-side word is
-   `needs` whatever this is.
+   The project-side word is `needs` whatever this is.
 
    ```toml
    [allow.git]          # A: reads as a sentence; the command is `yolo allow git fetch`
@@ -358,34 +340,40 @@ default = "bedrock"
    **Answer:**
    > _(empty — fill in when decided)_
 
-4. 💬 <a id="OQ-RC13"></a>**OQ-RC13: Which of the nine conventions go in?**
+4. 💬 <a id="OQ-RC13"></a>**OQ-RC13: Which conventions go in?**
 
-   A colleague sets up a work machine and writes the file in [§2](#2-the-file-proposed). Under all
-   nine conventions of [§5](#5-lines-you-never-write), `packs` loses `bedrock`, `aws-auth`, `git`
-   and `github` (the sections selected them), the `[run_on] default` line goes (one provider is
-   everyone's). `yolo config show` prints each
-   supplied line with `# by convention`. The line they did not write is one they cannot get wrong,
-   and one they cannot see without asking.
+   A colleague sets up a work machine and writes the file in [§2](#2-the-file-proposed). The six
+   conventions of [§5](#5-lines-you-never-write) take lines off it that follow from what they
+   already did. Two more would take more off, and both let a declaration act at a distance:
 
-   - **A — All nine.**
-   - **B — All but C3, C4 and C8**, where a declaration or a bare heading stands for a value.
-     `packs` stays the one list of what is on; the selection and the grant stay written lines.
-   - **C — None.**
+   ```toml
+   # C3  a section selects its pack  (§4's nudge covers this case instead)
+   packs = ["claude", "bedrock", "aws-auth"]                     # before
+   packs = ["claude"]                                            # after: [allow.aws-auth] selected the rest
 
-   <!-- vantage: question id=OQ-RC13 leaning="B: packs stays the one list of what is on, and no heading looks a pack up or stands for a value; the rest read only what the user already wrote." -->
+   # C8  one declared setup is everyone's
+   [run_on]                                                      # before
+   default = "bedrock"
+                                                                 # after: no line; [providers.bedrock] is the only setup
+   ```
 
-   _Leaning:_ B: `packs` stays the one list of what is on and a heading never looks a pack up; the
-   other six read only what the user already wrote.
+   - **A — The six, and C3 and C8 too.**
+   - **B — The six.** `packs` stays the one list of what is on; the selection stays a written line.
+   - **C — None.** Every line is written.
+
+   <!-- vantage: question id=OQ-RC13 leaning="B: packs stays the one list of what is on, and no heading looks a pack up or stands for a value; the six read only what the user already wrote." -->
+
+   _Leaning:_ B: `packs` stays the one list of what is on, and no heading looks a pack up or
+   stands for a value; the six read only what the user already wrote.
 
    **Answer:**
    > _(empty — fill in when decided)_
 
-5. 💬 🤷 <a id="OQ-RC14"></a>**OQ-RC14: What are the selection and the declarations called, if not `profile` and `profiles`?**
+5. 💬 🤷 <a id="OQ-RC14"></a>**OQ-RC14: What are the selection and the declarations called?**
 
-   Two keys differ by one letter and mean different things: one maps each agent to a setup, the
-   other describes a setup. You ruled the first name on 2026-09-29 so it mirrors `-p`, and on
-   2026-10-24 called the pair *"still kinda awful."* Under [OQ-RC3](#OQ-RC3)'s B a setup is usually
-   a provider, and a declared one is a variant of it.
+   Two keys mean different things: one maps each agent to a setup, the other describes a setup.
+   Today they are `profile` and `profiles`, one letter apart. Under [OQ-RC3](#OQ-RC3)'s B a setup
+   is usually a provider, and a declared one is a variant of it.
 
    ```toml
    # A  run_on, and variants under their provider; the word "profile" leaves the config
@@ -420,8 +408,8 @@ default = "bedrock"
 
    A colleague publishes a pack called `tools`, and so does someone on another team. You list
    both. Today each is named by the last segment of its address, so the second is refused with
-   "give one an explicit `name`", and you rename it; you called that *"like Python imports, but
-   worse."* Homebrew and Claude Code never reach that step ([appendix A.5](#a5-how-other-tools-name-things-from-several-sources)).
+   "give one an explicit `name`", and you rename it. Homebrew and Claude Code never reach that
+   step ([appendix A.5](#a5-how-other-tools-name-things-from-several-sources)).
 
    ```toml
    # A  qualified by source; only shipped packs are bare; no collision can happen
@@ -447,8 +435,7 @@ default = "bedrock"
 7. 💬 <a id="OQ-RC16"></a>**OQ-RC16: May your config let a jail fetch from any repository, not only the project's own?**
 
    You write `[allow.git] fetch = true`. Today that reaches the project's remotes as approved at
-   launch; an agent that clones a second repository to read it is refused with the scope. You
-   read the line as "any Git repo is allowed to be fetched by the jail, which would be nice."
+   launch; an agent that clones a second repository to read it is refused with the scope.
    Widening it changes the broker's per-workspace scope; a fetch is read-only, so what it risks is
    a private repository's contents reaching a jail whose project never named it.
 
