@@ -187,6 +187,8 @@
 "internal/cli/*.go",
 "internal/cli/check/*",
 "internal/cli/run/*",
+"internal/cli/run/buildstatehousekeeping.go",
+"internal/cli/run/buildstatehousekeeping_test.go",
 "internal/cli/stores/*",
 "internal/config/*",
 "internal/containerbuilder/*",
@@ -272,6 +274,9 @@
 "internal/progress/*",
 "internal/provision/*",
 "internal/prune/*",
+"internal/prune/buildstate.go",
+"internal/prune/buildstate_test.go",
+"internal/prune/buildstatereport.go",
 "internal/pytext/*",
 "internal/render/*",
 "internal/reporoot/*",
@@ -1643,6 +1648,7 @@
 "internal/cli/run/brokercerts.go",
 "internal/cli/run/brokeredscope.go",
 "internal/cli/run/buildslot.go",
+"internal/cli/run/buildstatehousekeeping.go",
 "internal/cli/run/cachedgood.go",
 "internal/cli/run/callertokens.go",
 "internal/cli/run/captures.go",
@@ -2070,7 +2076,6 @@
 "internal/wirebridged",
 "packs/**",
 "scripts/**",
-"scripts/__pycache__",
 "tools/**",
 "userguide/**"
 ]
@@ -3273,6 +3278,8 @@
 "internal/cli/*.go",
 "internal/cli/check/*",
 "internal/cli/run/*",
+"internal/cli/run/buildstatehousekeeping.go",
+"internal/cli/run/buildstatehousekeeping_test.go",
 "internal/cli/stores/*",
 "internal/cli/userconfig.jsonc",
 "internal/config/*",
@@ -3362,6 +3369,9 @@
 "internal/progress/*",
 "internal/provision/*",
 "internal/prune/*",
+"internal/prune/buildstate.go",
+"internal/prune/buildstate_test.go",
+"internal/prune/buildstatereport.go",
 "internal/pytext/*",
 "internal/render/*",
 "internal/reporoot/*",
@@ -3607,8 +3617,7 @@
 "internal/wirebridge",
 "internal/wirebridged",
 "packs/**",
-"scripts/**",
-"scripts/__pycache__"
+"scripts/**"
 ]
 },
 {
@@ -5686,6 +5695,7 @@
 "internal/cli/run/brokersingleton_test.go",
 "internal/cli/run/buildlinedisclosure_test.go",
 "internal/cli/run/buildslot_test.go",
+"internal/cli/run/buildstatehousekeeping_test.go",
 "internal/cli/run/builtinskillpipath_test.go",
 "internal/cli/run/bundleflake_test.go",
 "internal/cli/run/cachedgood_test.go",
@@ -6933,7 +6943,8 @@
 },
 "internal/prune": {
 "TestOwnerLabelSpellingMatchesTheFlake": 4,
-"TestPrefixBinMountDestMatchesTheLauncher": 78
+"TestPrefixBinMountDestMatchesTheLauncher": 78,
+"TestRetiredPrefixOutLinksHaveNoWriter": 78
 },
 "internal/render": {
 "TestGuestNotchSentenceHasExactlyOneHome": 79,
