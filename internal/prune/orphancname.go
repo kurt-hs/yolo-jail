@@ -37,8 +37,8 @@ import (
 //     files remain on machines that ran it).
 //   - owners/<cname>, removed only on a clean exit (internal/cli/run/lifecycle.go).
 //
-// Measured in a development jail on 2026-10-24: 170,390 lock files, 44,919 current-image
-// pointers (176 MiB), 5,018 approval records, about 500 logs and 158 owner files.
+// In a development jail the lock files alone had reached six figures when this was written,
+// almost all of them the integration suite's and the nested build jails'.
 //
 // # WHEN A NAME IS AN ORPHAN — every term is required
 //
@@ -61,7 +61,12 @@ import (
 //     is safe but is a cost a returning workspace should never pay, so the record goes only when
 //     the workspace provably cannot return at that path. The pointer is kept by the same test
 //     because it is the evidence the approval decision reads: it is deleted after the approvals,
-//     in the same pass.
+//     in the same pass, and only when every approval part of the name went. A part that stayed
+//     (its recheck failed, or its removal did) keeps the pointer, so the next sweep can still
+//     prove the workspace gone and finish the record.
+//
+//     An unmounted workspace (a detached volume, an unmounted share) reads as gone: past the
+//     floor its approvals go and its next launch prompts again. That is the accepted limit.
 //
 // # LOCK FILES ARE REMOVED ONLY WHILE HELD
 //
@@ -293,10 +298,13 @@ func PruneOrphanCnameStateGuarded(dirs OrphanCnameDirs, known map[string]struct{
 		wsGone := workspaceGone(dirs.CurrentImages, cname)
 		// Approvals before the pointer: the pointer is the evidence the approval decision read.
 		sort.SliceStable(ents, func(i, j int) bool { return orphanOrder(ents[i].class) < orphanOrder(ents[j].class) })
-		removedAny := false
+		removedAny, approvalKept := false, false
 		for _, ent := range ents {
 			if (ent.class == OrphanClassApprovals || ent.class == OrphanClassCurrentImages) && !wsGone {
 				continue
+			}
+			if ent.class == OrphanClassCurrentImages && approvalKept {
+				continue // the evidence for the approval part that stayed
 			}
 			size := entrySize(ent.path)
 			if !apply {
@@ -318,6 +326,8 @@ func PruneOrphanCnameStateGuarded(dirs OrphanCnameDirs, known map[string]struct{
 				rep.Bytes += size
 				rep.ByClass[ent.class]++
 				removedAny = true
+			} else if ent.class == OrphanClassApprovals {
+				approvalKept = true
 			}
 		}
 		if removedAny {

@@ -3,6 +3,7 @@ package run
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,5 +125,116 @@ func TestReapOrphanCnameStateDeclinesUnstampedWhenTheRuntimeCannotBeAsked(t *tes
 	}
 	if due, _ := o.classDebounce("orphan-cname-state"); !due {
 		t.Error("a declined pass stamped its debounce")
+	}
+}
+
+// orphanSlotOptions is Options for one slot pass: podman answers "no containers", env is env.
+func orphanSlotOptions(t *testing.T, env map[string]string) *Options {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	o := &Options{}
+	fillDefaults(o)
+	o.Now = time.Now
+	o.Getenv = func(k string) string { return env[k] }
+	o.Exec = func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {
+		if len(argv) > 2 && argv[1] == "ps" && argv[2] == "-a" {
+			return ExecResult{Ran: true, RC: 0}
+		}
+		return ExecResult{Ran: false}
+	}
+	return o
+}
+
+func assertOrphanFiles(t *testing.T, files []string, wantGone bool) {
+	t.Helper()
+	for _, p := range files {
+		_, err := os.Lstat(p)
+		if gone := os.IsNotExist(err); gone != wantGone {
+			t.Errorf("%s: gone=%v, want %v (%v)", filepath.Base(p), gone, wantGone, err)
+		}
+	}
+}
+
+func agedOrphan(t *testing.T) []string {
+	return orphanAt(t, "yolo-orphan-11111111", time.Now().Add(-prune.OrphanCnameAgeFloor-24*time.Hour))
+}
+
+// The opt-out gate: under YOLO_NO_AUTO_IMAGE_REAP nothing is removed and no stamp is written.
+func TestReapOrphanCnameStateHonorsTheOptOut(t *testing.T) {
+	o := orphanSlotOptions(t, map[string]string{autoReapOptOutEnv: "1"})
+	files := agedOrphan(t)
+	o.reapOrphanCnameState("podman", "", nil)
+	assertOrphanFiles(t, files, false)
+	if _, err := os.Stat(HousekeepingStampPath(orphanCnameClass)); !os.IsNotExist(err) {
+		t.Errorf("the opted-out pass wrote its stamp (%v)", err)
+	}
+}
+
+// IN A JAIL IT RUNS: the jail's store and the nested runtime are both the jail's own.
+func TestReapOrphanCnameStateRunsInAJail(t *testing.T) {
+	o := orphanSlotOptions(t, map[string]string{"YOLO_VERSION": "9.9.9"})
+	files := agedOrphan(t)
+	o.reapOrphanCnameState("podman", "", nil)
+	assertOrphanFiles(t, files, true)
+}
+
+// A session listing that cannot be read declines the pass, unstamped.
+func TestReapOrphanCnameStateDeclinesWhenSessionsCannotBeListed(t *testing.T) {
+	o := orphanSlotOptions(t, nil)
+	saved := orphanSessionKeys
+	orphanSessionKeys = func(string) (map[string]bool, bool) { return nil, false }
+	t.Cleanup(func() { orphanSessionKeys = saved })
+	files := agedOrphan(t)
+	o.reapOrphanCnameState("podman", "", nil)
+	assertOrphanFiles(t, files, false)
+	if due, _ := o.classDebounce(orphanCnameClass); !due {
+		t.Error("a declined pass stamped its debounce")
+	}
+}
+
+// The macos-user slot: with no container runtime on PATH the known set is the tracking files and
+// sessions, and it sweeps; a runtime on PATH that cannot be asked declines; one that lists the
+// name (stopped) keeps it.
+func TestReapOrphanCnameStateMacosUser(t *testing.T) {
+	t.Run("no runtime on PATH sweeps", func(t *testing.T) {
+		o := orphanSlotOptions(t, nil)
+		o.LookPath = func(string) (string, bool) { return "", false }
+		o.Exec = func([]string, string, []string, time.Duration) ExecResult {
+			t.Error("asked a runtime with none on PATH")
+			return ExecResult{Ran: false}
+		}
+		files := agedOrphan(t)
+		o.reapOrphanCnameStateMacosUser(nil)
+		assertOrphanFiles(t, files, true)
+	})
+	t.Run("a runtime on PATH that cannot be asked declines", func(t *testing.T) {
+		o := orphanSlotOptions(t, nil)
+		o.LookPath = func(name string) (string, bool) { return "/usr/bin/" + name, name == "podman" }
+		o.Exec = func([]string, string, []string, time.Duration) ExecResult { return ExecResult{Ran: false} }
+		files := agedOrphan(t)
+		o.reapOrphanCnameStateMacosUser(nil)
+		assertOrphanFiles(t, files, false)
+	})
+	t.Run("a runtime on PATH that lists the name keeps it", func(t *testing.T) {
+		o := orphanSlotOptions(t, nil)
+		o.LookPath = func(name string) (string, bool) { return "/usr/bin/" + name, name == "podman" }
+		o.Exec = func([]string, string, []string, time.Duration) ExecResult {
+			return ExecResult{Ran: true, RC: 0, Stdout: "yolo-orphan-11111111\n"}
+		}
+		files := agedOrphan(t)
+		o.reapOrphanCnameStateMacosUser(nil)
+		assertOrphanFiles(t, files, false)
+	})
+}
+
+// The macos-user slot's call site.
+func TestMacosUserSlotRunsTheOrphanSweep(t *testing.T) {
+	src, err := os.ReadFile("housekeeping.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn := afterFunc(string(src), "func (o *Options) runMacosUserHousekeeping(")
+	if !strings.Contains(fn, "o.reapOrphanCnameStateMacosUser(guard)") {
+		t.Error("the macos-user slot no longer runs the orphaned per-jail state sweep")
 	}
 }

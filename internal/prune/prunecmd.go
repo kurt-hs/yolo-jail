@@ -1138,8 +1138,12 @@ func Run(opts Options) int {
 		switch {
 		case !macosUser && !live.Known:
 			p.line(fmt.Sprintf("  [dim]skipped — could not enumerate running jails (%s); declining to sweep[/dim]", rt))
+			p.line(runtimeDeclineNextStep(rt))
+			declinedSweep = true
 		case !sessionsKnown:
 			p.line("  [dim]skipped — could not list the host-services sessions; declining to sweep[/dim]")
+			p.line(sessionsDeclineNextStep())
+			declinedSweep = true
 		default:
 			known := TrackedContainerNames(opts.ContainerDir())
 			for name := range live.Names {
@@ -1182,8 +1186,12 @@ func Run(opts Options) int {
 		switch {
 		case !all.Known:
 			p.line(fmt.Sprintf("  [dim]skipped — could not list the runtime's containers (%s); declining to sweep[/dim]", rt))
+			p.line(runtimeDeclineNextStep(rt))
+			declinedSweep = true
 		case !sessionsKnown:
 			p.line("  [dim]skipped — could not list the host-services sessions; declining to sweep[/dim]")
+			p.line(sessionsDeclineNextStep())
+			declinedSweep = true
 		default:
 			known := TrackedContainerNames(opts.ContainerDir())
 			for name := range all.Names {
@@ -1673,4 +1681,24 @@ func realRelayKill(pidFile string) {
 		}
 	}
 	_ = os.Remove(pidFile)
+}
+
+// runtimeDeclineNextStep is the next step a sweep that declined because the container runtime
+// could not be asked names: the command that diagnoses the runtime, then this one again.
+func runtimeDeclineNextStep(rt string) string {
+	if rt == "" {
+		return "  [dim]No container runtime was found; `yolo check` says which one yolo looks for. Re-run `yolo prune` once it is installed.[/dim]"
+	}
+	probe := rt + " ps -a"
+	if rt == "container" {
+		probe = "container ls --all"
+	}
+	return fmt.Sprintf("  [dim]`%s` must answer for this sweep to run; `yolo check` diagnoses the runtime. Re-run `yolo prune` once it does.[/dim]", probe)
+}
+
+// sessionsDeclineNextStep is the next step a sweep that declined because the host-services
+// sessions could not be listed names.
+func sessionsDeclineNextStep() string {
+	return fmt.Sprintf("  [dim]The session directories under %s could not be listed; check that it is readable (`ls -ld %s`), then re-run `yolo prune`.[/dim]",
+		paths.HostServicesBase(paths.IsMacOS), paths.HostServicesBase(paths.IsMacOS))
 }

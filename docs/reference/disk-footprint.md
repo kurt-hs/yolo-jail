@@ -278,8 +278,9 @@ Three properties anything added must respect:
 - **Nothing that needs a terminal runs there.** The [offer](#the-offer) happens before the
   container attaches.
 
-**On `macos-user`** the launch runs a slot of its own for two classes only, the retired
-loophole-state generations and the shared cache's offered purge, started on its own goroutine
+**On `macos-user`** the launch runs a slot of its own for three classes only, the retired
+loophole-state generations, the shared cache's offered purge and [orphaned per-jail
+state](#orphaned-per-jail-state), started on its own goroutine
 before the backend's dispatch ([BF-D3](#BF-D3)). **`yolo host`** runs none: it execs into its
 program, and none of the slot's stores grows at that notch.
 
@@ -294,7 +295,7 @@ program, and none of the slot's stores grows at that notch.
 | Superseded vendor versions | automatic, in the launcher itself | the live symlink is complete evidence | two builds per program |
 | Agent staging, retired loophole state | automatic | tri-state gated; small | swept |
 | Development bundles (`just dev`) | automatic, and after each new bundle is published | the runtime and the process table say what is in use; regeneration is a rebuild | the newest three, plus any in use |
-| [Orphaned per-jail state](#orphaned-per-jail-state) | automatic, host-only | tri-state gated; the next launch writes each file again, and an approval or pointer goes only once its workspace is gone | swept once untouched past its age floor |
+| [Orphaned per-jail state](#orphaned-per-jail-state) | automatic, in a jail too | tri-state gated; the next launch writes each file again, and an approval or pointer goes only once its workspace is gone | swept once untouched past its age floor |
 | yolo's own unrooted store outputs | automatic, host-only | every running jail's prefix is rooted ([OQ-BF4](#why-its-this-way)), and nix refuses a live path | deleted by name |
 | Shared cache, older than its age cutoff | **offered**, then automatic | regeneration is a re-download of unknown size | age purge, once consented |
 | Unused mise tool versions | **offered**, then automatic | regeneration is a re-download for a workspace that returns | versions no jail used within the window, once consented |
@@ -695,19 +696,36 @@ removes a name's files only when all of the following hold:
   yolo keeps no registry of workspaces, and the name is a one-way hash, so the pointer is the
   one record of the path: a name with no readable pointer, or one whose recorded path does not
   hash back to the name, keeps both. Deleting an approval record makes a returning workspace
-  prompt again, which is safe but should never happen to a workspace that still exists.
+  prompt again, which is safe but should never happen to a workspace that still exists. The
+  pointer goes only after every approval part did, so a part that stayed keeps the evidence for
+  the next sweep.
+
+**The limit of "gone":** the test is that nothing exists at the recorded path, so an unmounted
+workspace (a detached volume, an unmounted share) reads as gone. Once the name's files pass the
+age floor, its approval record is removed and the workspace's next launch asks for approval
+again. That cost is accepted: it fails toward asking, and yolo has no other record that could
+tell an unmounted workspace from a deleted one.
 
 A lock file is removed only while the sweep holds its exclusive `flock`, and only if the path
 still names the inode it locked; a busy or replaced lock is skipped and counted. Only names of
 the container-name shape followed by a per-name suffix are candidates, so the machine-wide locks
 (`image-copy.lock`, `housekeeping.lock`, `housekeeping-pass.lock`, `host-apply.lock`,
-`capture-<program>.lock`, `fork-build-<id>.lock`, the `macos-user-*` files) never are. The slot
-runs it host-only, on a container launch; `yolo prune` lists it on a dry run and removes it
-with `--apply`, under `--no-build-roots` like agent staging. A `macos-user` launch's slot does not
-run it yet; `yolo prune` there does.
+`capture-<program>.lock`, `fork-build-<id>.lock`, the `macos-user-*` files) never are.
 
-`fork-build-<id>.lock`, one per fork build, accumulates too and is not swept: its key is a build,
-not a container name, and its reclaimer belongs with the fork-build store's.
+**Where it runs.** The container slot runs it on every container launch, **in a jail too**,
+unlike the other small classes: a jail's global storage is written by the launches nested inside
+it, and the nested runtime is the one that knows those names, so the store and its authority are
+the same jail's. That is where the leak was measured. The `macos-user` slot runs it with the
+tracking files and the sessions as its known set, as `yolo prune` reads that backend
+([BF-D2](#BF-D2)); a container runtime on `PATH` beside it adds its any-state listing, and one
+that is on `PATH` but cannot be asked declines the pass. `YOLO_NO_AUTO_IMAGE_REAP` turns it off
+with the other automatic classes. `yolo prune` lists it on a dry run and removes it with
+`--apply`, under `--no-build-roots` like agent staging; a declined sweep there names its next step
+and makes the command exit non-zero, as every declined section does.
+
+**Unverified on a Mac:** on Apple Container the any-state listing is `container ls --all`, read
+as a table whose first column is the container name (`runtime.ParseContainerLsLive`, the parser
+the running-only listing uses). Nobody has checked that `--all` keeps that layout.
 
 ## The levers
 
@@ -745,6 +763,13 @@ number; each is now one of the mechanisms above.
 ## Owed measurements and open gaps
 
 <a id="owed-measurements"></a>
+
+- **Per-build and test-named lock files are not swept.** `locks/fork-build-<id>.lock`, one per
+  fork build, accumulates: its key is a build, not a container name, so its reclaimer belongs
+  with the fork-build store's. Leftovers named `yolo-keeper-test…` (a `.lock` and a `.stopped`
+  per name, from the keeper unit tests) do not have the container-name shape, so the orphaned
+  per-jail state sweep never matches them; the tests that write them should write under a
+  temporary home instead.
 
 - **The machine re-measure, after every reclaimer shipped.** On a host and in a development jail,
   check the done conditions: the first terminal launch shows one dated offer and a `y` frees at

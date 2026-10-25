@@ -373,10 +373,45 @@ func TestPruneRunSweepsOrphanedPerJailState(t *testing.T) {
 		o.Exec = func([]string, time.Duration) ProbeResult { return ProbeResult{Ran: false} }
 		var buf bytes.Buffer
 		o.Out = &buf
-		Run(o)
+		if rc := Run(o); rc == 0 {
+			t.Errorf("a declined sweep exited 0 (OQ-LS2)")
+		}
 		if !hasLine(&buf, "  skipped — could not list the runtime's containers (podman); declining to sweep") {
 			t.Errorf("no decline line:\n%s", buf.String())
 		}
+		if !hasLine(&buf, "  `podman ps -a` must answer for this sweep to run; `yolo check` diagnoses the runtime. Re-run `yolo prune` once it does.") {
+			t.Errorf("the decline names no next step:\n%s", buf.String())
+		}
 		f.assertAll(t, false)
 	})
+}
+
+// An approval part that stayed (here its guarded deletion was refused) keeps the pointer, the
+// evidence the next sweep needs to prove the workspace gone and finish the record.
+func TestOrphanSweepKeepsThePointerWhileAnApprovalPartStays(t *testing.T) {
+	f := newOrphanFixture(t)
+	calls := 0
+	guard := Guard(func(recheck func() bool, del func()) bool {
+		calls++
+		if calls == 1 { // approvals go first: refuse the first part
+			return false
+		}
+		if !recheck() {
+			return false
+		}
+		del()
+		return true
+	})
+	f.sweep(nil, true, guard)
+	kept := 0
+	for _, p := range f.files[OrphanClassApprovals] {
+		if _, err := os.Lstat(p); err == nil {
+			kept++
+		}
+	}
+	if kept != 1 {
+		t.Fatalf("%d approval parts kept, want the 1 whose deletion was refused", kept)
+	}
+	f.assertClass(t, OrphanClassCurrentImages, false)
+	f.assertClass(t, OrphanClassLocks, true)
 }
