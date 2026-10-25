@@ -3,7 +3,7 @@ title: "Your config, one screen: packs, logins, and which setup each agent runs 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Approve the file in §2, then rule OQ-RC14 and OQ-RC15; OQ-RC1, RC3, RC4, RC13 and RC16 follow"
+next: "Rule OQ-RC14 and OQ-RC15; OQ-RC3, RC13 and RC16 follow"
 tags: [config, packs, providers, profiles, broker, grants, conventions, design]
 summary: "The user config as one annotated file, today and proposed, the principles it obeys, and the seven choices still open, each a choice between lines of that file. Part of the readable-config redesign; the ledger of rulings is in the front door and the evidence is in the appendix."
 ---
@@ -13,12 +13,13 @@ summary: "The user config as one annotated file, today and proposed, the princip
 **Status:** 2026-10-25. Nothing is built. The "today" file is the maintainer's effective config as
 this jail inherited it, condensed.
 
-**What you are approving:** the file in [§2](#2-the-file-proposed). **What is still open:** the
-seven questions in [§6](#6-open-questions), each a choice between lines of that file; the file is
-written with the leanings, and a `?` marks each line a question could change.
+**Approved 2026-10-25:** the shape of the file in [§2](#2-the-file-proposed), lever by lever, and
+`allow` as the logins section's name ([ledger](readable-config.md#decision-ledger)). **Still
+open:** the five questions in [§6](#6-open-questions), each a choice between lines of that file;
+the file is written with the leanings, and a `?` marks each line a question could change.
 
-**Needs your ruling:** [OQ-RC1](#OQ-RC1), [OQ-RC3](#OQ-RC3), [OQ-RC4](#OQ-RC4),
-[OQ-RC13](#OQ-RC13), [OQ-RC14](#OQ-RC14), [OQ-RC15](#OQ-RC15), [OQ-RC16](#OQ-RC16).
+**Needs your ruling:** [OQ-RC3](#OQ-RC3), [OQ-RC13](#OQ-RC13), [OQ-RC14](#OQ-RC14),
+[OQ-RC15](#OQ-RC15), [OQ-RC16](#OQ-RC16).
 
 > **In short.** Each section of your config names what you decided, in a word you would use, and
 > says it once. The file below is the whole proposal; the prose only says why.
@@ -74,7 +75,7 @@ packs = ["pi", "local/pi-fork", "codex", "git", "github", "bedrock", "aws-auth",
          "local/matt", { git = "https://github.com/mschulkind-oss/matt-craft" }, "claude"]
          # the only switch; local/<name> is ~/.config/yolo-jail/packs/<name>        (?OQ-RC15)
 
-[allow.git]                       # the most any project's jail may do with your logins   (?OQ-RC4)
+[allow.git]                       # the most any project's jail may do with your logins
 fetch = true                      # this project's own remotes                            (?OQ-RC16)
 push = true                       # a project may ask, branch by branch; never a grant by itself
 
@@ -254,41 +255,13 @@ a remote that does not answer is refused naming the `ref` to write.
 
 ## 6. Open questions
 
-1. 💬 <a id="OQ-RC1"></a>**OQ-RC1: Is the shape of the proposed file approved, lever by lever?**
-
-   A colleague copies the maintainer's config to get Bedrock. They find `bedrock` three times,
-   `"claude": null`, and an `aws-auth` that appears in `packs` and again under `loopholes` with
-   `enabled: true`. They delete the `loopholes` block as a duplicate, and their jail starts with no
-   AWS credentials and no message they can connect to it. Each lever below removes one such trap,
-   and each can be vetoed alone.
-
-   ```toml
-   # L1  no written defaults; yolo init writes a short file   (the 121-line template goes)
-   # L2  a key is the value it names
-   "global.anthropic.claude-opus-5-5" = { name = "Opus 5.5" }      # no id, no vendor
-   # L3  shared facts once
-   [providers.bedrock.every_model]
-   max_tokens = 128_000
-   # L4  packs is the only switch                                 # loopholes.aws-auth.enabled goes
-   # L5  words carry their meaning                                # brokered → allow/needs, cost → price,
-                                                                  #   input → accepts, "*" → default, null → false
-   # L6  a non-shipped pack is named by its source                # "local/matt", never a bare "matt"
-   ```
-
-   <!-- vantage: question id=OQ-RC1 leaning="All six. L4 is the only one that changes ruled rules, and the name in packs is the user saying so, which is what those rules protect." -->
-
-   _Leaning:_ All six. L4 is the only one that changes ruled rules, and the name in `packs` is the
-   user saying so, which is what those rules protect.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-2. 💬 <a id="OQ-RC3"></a>**OQ-RC3: Should you be able to pick a provider by its own name, without a profile?**
+1. 💬 <a id="OQ-RC3"></a>**OQ-RC3: Should you be able to pick a provider by its own name, without a profile?**
 
    The maintainer runs every agent on Bedrock, starting on Sol. Today that is three `bedrock`s. Seven
    of the nine shipped profiles are named after the provider they pick, so `-p bedrock` names one
    of two things. The providers doc leans toward keeping profiles as the only selectable thing,
-   because a provider has no place for the starting model; B gives it one.
+   because a provider has no place for the starting model; B gives it one. The spelling of a
+   variant is [OQ-RC14](#OQ-RC14)'s; B shows its option A.
 
    ```toml
    # A  profiles stay the only thing you select
@@ -301,8 +274,13 @@ a remote that does not answer is refused naming the `ref` to write.
    # B  a provider is selectable by name and starts on its own model; a profile is only for a variant
    [providers.bedrock]
    model = "global.openai.gpt-6.1-sol"
+   [providers.bedrock.variants.opus]              # defining one: the same provider, a different start
+   model = "global.anthropic.claude-opus-5-5"
+   [providers.bedrock.variants.bridge]            # or a different route to it
+   via = "wire-bridge"
    [run_on]
-   default = "bedrock"
+   default = "bedrock"                            # using them: the provider by name, …
+   claude = "bedrock/opus"                        #   a variant as provider/variant, and -p bedrock/opus
 
    # C  only providers; options ride the flag:  -p bedrock:model=opus
    ```
@@ -315,39 +293,14 @@ a remote that does not answer is refused naming the `ref` to write.
    **Answer:**
    > _(empty — fill in when decided)_
 
-3. 💬 🤷 <a id="OQ-RC4"></a>**OQ-RC4: What is the section for "what a jail may do with your logins" called?**
-
-   The maintainer reads `brokered.git.grants` and says *"I don't understand 'brokered'."* The
-   section holds git fetch and push, GitHub reads and writes, and the AWS login `aws-auth` serves.
-   The project-side word is `needs` whatever this is.
-
-   ```toml
-   [allow.git]          # A: reads as a sentence; the command is `yolo allow git fetch`
-   fetch = true
-
-   [logins.git]         # B: names what is lent
-   fetch = true
-
-   [host_logins.git]    # C: the same, saying whose
-   fetch = true
-   ```
-
-   <!-- vantage: question id=OQ-RC4 leaning="A, allow: it reads as a sentence with what follows, and the command verb and the section are then one word." -->
-
-   _Leaning:_ A, `allow`: it reads as a sentence with what follows, and the command verb and the
-   section are then one word.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-4. 💬 <a id="OQ-RC13"></a>**OQ-RC13: Which conventions go in?**
+2. 💬 <a id="OQ-RC13"></a>**OQ-RC13: Which conventions go in?**
 
    A colleague sets up a work machine and writes the file in [§2](#2-the-file-proposed). The six
    conventions of [§5](#5-lines-you-never-write) take lines off it that follow from what they
    already did. Two more would take more off, and both let a declaration act at a distance:
 
    ```toml
-   # C3  a section selects its pack  (§4's nudge covers this case instead)
+   # C3  a section selects its pack  (then §4's nudge never fires: the table selects instead of asking)
    packs = ["claude", "bedrock", "aws-auth"]                     # before
    packs = ["claude"]                                            # after: [allow.aws-auth] selected the rest
 
@@ -369,7 +322,7 @@ a remote that does not answer is refused naming the `ref` to write.
    **Answer:**
    > _(empty — fill in when decided)_
 
-5. 💬 🤷 <a id="OQ-RC14"></a>**OQ-RC14: What are the selection and the declarations called?**
+3. 💬 🤷 <a id="OQ-RC14"></a>**OQ-RC14: What are the selection and the declarations called?**
 
    Two keys mean different things: one maps each agent to a setup, the other describes a setup.
    Today they are `profile` and `profiles`, one letter apart. Under [OQ-RC3](#OQ-RC3)'s B a setup
@@ -404,7 +357,7 @@ a remote that does not answer is refused naming the `ref` to write.
    **Answer:**
    > _(empty — fill in when decided)_
 
-6. 💬 <a id="OQ-RC15"></a>**OQ-RC15: How is a pack that yolo does not ship named in your config?**
+4. 💬 <a id="OQ-RC15"></a>**OQ-RC15: How is a pack that yolo does not ship named in your config?**
 
    A colleague publishes a pack called `tools`, and so does someone on another team. You list
    both. Today each is named by the last segment of its address, so the second is refused with
@@ -432,7 +385,7 @@ a remote that does not answer is refused naming the `ref` to write.
    **Answer:**
    > _(empty — fill in when decided)_
 
-7. 💬 <a id="OQ-RC16"></a>**OQ-RC16: May your config let a jail fetch from any repository, not only the project's own?**
+5. 💬 <a id="OQ-RC16"></a>**OQ-RC16: May your config let a jail fetch from any repository, not only the project's own?**
 
    You write `[allow.git] fetch = true`. Today that reaches the project's remotes as approved at
    launch; an agent that clones a second repository to read it is refused with the scope.

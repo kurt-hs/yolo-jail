@@ -3,7 +3,7 @@ title: "Config that reads right the first time: the front door"
 date: 2026-10-24
 status: in-review
 stage: DESIGN
-next: "Walk the sixteen questions four at a time, each as the config you would write; start with config-user.md"
+next: "Fourteen questions remain, each in the document that shows its file; the maintainer rules by comment in the docs"
 tags: [config, packs, manifest, providers, profiles, broker, grants, format, toml, migration, editing, readability, design]
 summary: "The front door to the readable-config redesign: the thesis, the principles, the five documents (each one annotated config file with its questions), and the ledger of rulings made so far. The maintainer's config takes 178 lines to say about 20 things and is misread by its author; reshaped it is under 60, yolo can edit it one hunk at a time, and one command converts every file."
 vantage:
@@ -12,12 +12,12 @@ vantage:
 
 # Config that reads right the first time: the front door
 
-**Status:** 2026-10-25. Nothing is built. Ten rulings recorded ([ledger](#decision-ledger));
-sixteen questions open, each in the document that shows its file. Evidence verified at
+**Status:** 2026-10-25. Nothing is built. Twelve rulings recorded ([ledger](#decision-ledger));
+fourteen questions open, each in the document that shows its file. Evidence verified at
 `fa13f42d9` against this repository, the effective user config this jail inherited, the 21
 shipped packs, and the maintainer's twelve packs.
 
-**Needs your ruling:** sixteen questions, listed per document in [§2](#2-the-five-documents).
+**Needs your ruling:** fourteen questions, listed per document in [§2](#2-the-five-documents).
 
 > **In short.** A config a stranger reads correctly comes from its shape, not its file format, and
 > a config yolo can edit without a mess comes from touching only the bytes of one value. Neither
@@ -55,7 +55,7 @@ seed; incomplete while any question is open).
 
 | Document | The file it shows | Its questions |
 | :--- | :--- | :--- |
-| [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | [OQ-RC1](config-user.md#OQ-RC1) the shape levers · [OQ-RC3](config-user.md#OQ-RC3) a provider by name · [OQ-RC4](config-user.md#OQ-RC4) the logins section's name · [OQ-RC13](config-user.md#OQ-RC13) which conventions (nine) · [OQ-RC14](config-user.md#OQ-RC14) the two profile names · [OQ-RC15](config-user.md#OQ-RC15) how your packs are named · [OQ-RC16](config-user.md#OQ-RC16) fetch from any repository |
+| [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | [OQ-RC3](config-user.md#OQ-RC3) a provider by name · [OQ-RC13](config-user.md#OQ-RC13) which conventions (nine) · [OQ-RC14](config-user.md#OQ-RC14) the two profile names · [OQ-RC15](config-user.md#OQ-RC15) how your packs are named · [OQ-RC16](config-user.md#OQ-RC16) fetch from any repository |
 | [`config-project.md`](config-project.md) | `yolo-jail.toml` and `.local`: install, needs, mounts, ports, env, turning things off | [OQ-RC7](config-project.md#OQ-RC7) saying "off" with no `null` |
 | [`config-commands.md`](config-commands.md) | the command each "edit your config" message prints, what it does to the file, and the format underneath | [OQ-RC9](config-commands.md#OQ-RC9) may yolo write your file · [OQ-RC2](config-commands.md#OQ-RC2) TOML or JSONC · [OQ-RC10](config-commands.md#OQ-RC10) the verbs · [OQ-RC12](config-commands.md#OQ-RC12) what `yolo config` means |
 | [`config-migration.md`](config-migration.md) | the new file names, the release order, the migrate transcript | [OQ-RC11](config-migration.md#OQ-RC11) name or version key · [OQ-RC6](config-migration.md#OQ-RC6) older yolos · [OQ-RC8](config-migration.md#OQ-RC8) fetched packs |
@@ -87,6 +87,8 @@ seed; incomplete while any question is open).
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
+| OQ-RC4 | **The logins section is `allow`.** Ruled by taking the leaning: *"A, allow: it reads as a sentence with what follows, and the command verb and the section are then one word."* A project's side is `needs` | 2026-10-25 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |
+| OQ-RC1 | **The shape of the user config is approved, all six levers.** Ruled by taking the leaning: *"All six. L4 is the only one that changes ruled rules, and the name in packs is the user saying so, which is what those rules protect."* L1 no written defaults; L2 a key is the value it names; L3 shared facts once; L4 `packs` is the only switch; L5 the renames; L6 a non-shipped pack named by its source | 2026-10-25 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |
 | <a id="RC-D10"></a>RC-D10 | **An empty section means nothing.** Review comment on convention C4: *"you're saying an empty section is meaningful?"* Withdrawn: presence never stands for a value; `fetch = true` stays written | 2026-10-25 | [`config-user.md` §5](config-user.md#5-lines-you-never-write) | — |
 | <a id="RC-D9"></a>RC-D9 | **A settings table for an unselected pack is an error.** Review comment: *"if you say no, then this should turn into a fatal error because an allow.<foo> should error if not valid."* The nudge offers `yolo pack add`; declined, the check fails and a launch refuses. A table naming no pack at all is an error with "did you mean" | 2026-10-25 | [`config-user.md` §4](config-user.md#4-the-nudge-when-a-table-and-a-pack-disagree) | — |
 | <a id="RC-D8"></a>RC-D8 | **Two words for two scopes.** Review comment: *"we're using the exact same language here, and it means two different things in two different places."* The user-config ceiling is `allow`; a project's ask is `needs`, and must fit inside it | 2026-10-25 | [`config-user.md` §3](config-user.md#3-principles) | — |
@@ -95,5 +97,5 @@ seed; incomplete while any question is open).
 | <a id="RC-D5"></a>RC-D5 | **`false`, not `"own login"`,** for an agent yolo gives no setup. Review comment: *"don't like"* | 2026-10-25 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |
 | <a id="RC-D4"></a>RC-D4 | **`default`, not `everyone`,** for today's `"*"`. Review comment: *"don't like the name"* | 2026-10-25 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |
 | <a id="RC-D3"></a>RC-D3 | **Plural for a collection the user fills, singular for one thing.** Review comment: *"why is this plural and mcp singular?"* `mcp.<name>` becomes `mcp_servers.<name>` (today's name), `[[mount]]` becomes `[[mounts]]`; all-singular would collide the selection with the declarations | 2026-10-24 | [`config-user.md` §3](config-user.md#3-principles) | — |
-| <a id="RC-D2"></a>RC-D2 | **Not `as_you`.** Review comment: *"I hate the name 'as_you'."* The section's name stays open as [OQ-RC4](config-user.md#OQ-RC4) with `allow` as the placeholder | 2026-10-24 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |
+| <a id="RC-D2"></a>RC-D2 | **Not `as_you`.** Review comment: *"I hate the name 'as_you'."* The section's name was then ruled `allow` ([OQ-RC4](#decision-ledger)) | 2026-10-24 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |
 | <a id="RC-D1"></a>RC-D1 | **The `profile` key keeps its job.** Review comment on the draft's `use`: *"awful name … isn't this a profile?"* It is the agent-to-setup selection, and PP-D10's reason (the key mirrors `-p`) stands; its name is [OQ-RC14](config-user.md#OQ-RC14) | 2026-10-24 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |
