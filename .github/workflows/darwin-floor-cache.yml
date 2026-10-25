@@ -25,11 +25,13 @@ name: darwin floor cache
 # with `--option sandbox true` as a MEASUREMENT; this workflow never runs them, so what it
 # pushes is what a user's own unsandboxed launch would build.
 #
-# A RELEASE WAITS FOR THIS PUSH. The release request's darwin floor cache gate
-# (tools/release-wiring/darwin-floor-gate.sh, docs/reference/release-process.md#PTG-D4)
-# refuses to tag a commit whose two floor profiles are not in the cache, waiting while a
-# run of this workflow for that commit's flake inputs is in progress. Losing this cache
-# still costs time only, never function: a user without it builds the floor themselves.
+# A RELEASE REQUIRES THIS PUSH. The release request's darwin floor cache gate
+# (tools/release-wiring/darwin-floor-gate.sh, docs/reference/release-process.md#PTG-D5)
+# never tags a commit whose two floor profiles are not in the cache. It waits while a
+# run of this workflow for that commit's flake inputs is in progress; with none, it
+# dispatches this workflow from main with `sha` set to the release commit, waits, and
+# fails the request unless that run succeeds and the cache then serves both profiles.
+# For a user, losing this cache still costs time only, never function.
 on:
   push:
     branches: [main]
@@ -37,6 +39,17 @@ on:
       - flake.nix
       - flake.lock
   workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full commit SHA on main to build (default: the dispatched ref's head)"
+        required: false
+        type: string
+        default: ""
+
+# THE TITLE NAMES THE COMMIT THE RUN BUILDS, which is how the release gate finds the
+# run it dispatched and which runs build its floor: a push builds the pushed commit, a
+# dispatch the `sha` input or else the dispatched ref's head.
+run-name: darwin floor cache for ${{ inputs.sha || github.sha }}
 
 permissions:
   contents: read
@@ -46,9 +59,11 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 # One run per ref at a time; a newer flake change queues behind the one building, and a
-# queued run is replaced by a still newer one, which covers main's head either way.
+# queued run is replaced by a still newer one, which covers main's head either way. A
+# dispatch for a `sha` gets a group of its own, so a release's build is never the queued
+# run a later push replaces.
 concurrency:
-  group: darwin-floor-cache-${{ github.ref }}
+  group: darwin-floor-cache-${{ inputs.sha && format('sha-{0}', inputs.sha) || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -71,7 +86,33 @@ jobs:
     # these runners) plus the push.
     timeout-minutes: 90
     steps:
+      # The sha input reaches the shell through env, never by expansion into the script.
+      - name: Check the requested commit's form
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          if [ -n "$SHA" ] && ! printf '%s\n' "$SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::the sha input must be a full lowercase commit SHA, got '${SHA}'"
+            exit 1
+          fi
+
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # A SHA can name a commit only a fork has (GitHub serves fork commits through the
+      # parent repository), and this job holds the Cachix token: build only main's
+      # history. Nothing from the checkout has run before this check.
+      - name: Check the requested commit is on main
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          if [ -n "$SHA" ] && ! git merge-base --is-ancestor "$SHA" refs/remotes/origin/main; then
+            echo "::error::${SHA} is not on main; the darwin floor cache builds only main's commits"
+            exit 1
+          fi
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
@@ -82,12 +123,19 @@ jobs:
       # GATED ON THE TOKEN ALONE, and the NAME FROM THE `vars` CONTEXT, exactly as
       # nightly-macos.yml's gate (whose comment says why a shell expansion cannot see the
       # override). A fork without the secret builds nothing here.
+      # A dispatch for a sha is a release's build, which must push: without the token it
+      # fails rather than succeeding with nothing pushed.
       - name: Check Cachix is configured
         id: cachix
+        env:
+          SHA: ${{ inputs.sha }}
         run: |
           if [ -n "${{ secrets.CACHIX_AUTH_TOKEN }}" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
             echo "cache=${{ vars.CACHIX_CACHE || 'yolo-jail' }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "$SHA" ]; then
+            echo "::error::Cachix is not configured (no CACHIX_AUTH_TOKEN secret), so the floor of ${SHA} cannot be pushed; set the secret and request the release again."
+            exit 1
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "Cachix not configured (no CACHIX_AUTH_TOKEN). Skipping the floor build and push."

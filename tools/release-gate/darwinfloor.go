@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,15 +14,19 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // The darwin floor gate: before a release is tagged, both macOS floor profiles
-// for the target commit must already be in the project's Cachix cache, or every
+// for the target commit must be in the project's Cachix cache, or every
 // macos-user user of the release compiles the rustls mise on first launch. The
 // caller computes the store paths from the target flake (a nix eval, no build)
 // and the set of main commits whose flake inputs equal the target's; this code
 // asks the cache and, while a darwin-floor-cache.yml run for one of those
-// commits is still going, waits for it. It never dispatches a workflow.
+// commits is still going, waits for it. When the cache misses with no such run
+// pending, it dispatches one run that builds the exact target commit, waits for
+// it, and passes only when that run succeeded and the cache then serves every
+// path (docs/reference/release-process.md#PTG-D5). It dispatches at most once.
 
 const (
 	floorWorkflowFile = "darwin-floor-cache.yml"
@@ -28,11 +34,19 @@ const (
 	floorRunPages     = 3
 	maxWaitSHAs       = 5000
 	maxNarinfoBytes   = 64 << 10
+	// floorRunTitlePrefix is the start of the run-name darwin-floor-cache.yml
+	// gives every run; the full SHA of the commit the run checks out and builds
+	// follows it. The gate finds its own dispatched run by that title.
+	floorRunTitlePrefix = "darwin floor cache for "
+	// floorRunAppearMax bounds how long an accepted dispatch may take to show
+	// up as a run before the gate gives up on it.
+	floorRunAppearMax = 5 * time.Minute
 )
 
 var (
-	storePathPattern = regexp.MustCompile(`^/nix/store/([0-9a-df-np-sv-z]{32})-[A-Za-z0-9+._?=-]+$`)
-	cacheNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+	storePathPattern  = regexp.MustCompile(`^/nix/store/([0-9a-df-np-sv-z]{32})-[A-Za-z0-9+._?=-]+$`)
+	cacheNamePattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+	floorTitlePattern = regexp.MustCompile(`^` + floorRunTitlePrefix + `([0-9a-f]{40})$`)
 )
 
 type floorGate struct {
@@ -41,12 +55,8 @@ type floorGate struct {
 	cacheURL string
 	paths    []string
 	waitSHAs map[string]bool
-	// targetSHA is the commit being released, and laterFlakeChange, when set,
-	// the first main commit after it that changes the flake inputs. With one,
-	// a dispatch on main builds a different flake, so the next step names a
-	// dispatch on a ref at the target instead.
-	targetSHA        string
-	laterFlakeChange string
+	// targetSHA is the commit being released; a dispatched run builds exactly it.
+	targetSHA string
 	// progress receives one line per wait, so a log shows which run it is on.
 	progress io.Writer
 }
@@ -54,27 +64,41 @@ type floorGate struct {
 type floorProof struct {
 	Cache string   `json:"cache"`
 	Paths []string `json:"paths"`
+	// RunURL is the darwin-floor-cache.yml run this gate dispatched, when it
+	// had to dispatch one.
+	RunURL string `json:"run_url,omitempty"`
 }
 
 // floorRefusal is a final answer the release request must stop on; its text
-// names the next step.
+// names what to check and the retry.
 type floorRefusal struct{ msg string }
 
 func (r floorRefusal) Error() string { return r.msg }
 
-func (f *floorGate) dispatchStep() string {
-	if f.laterFlakeChange == "" {
-		return fmt.Sprintf("gh workflow run %s --repo %s --ref main", floorWorkflowFile, f.api.repo)
+// ownDispatch is the one run this gate dispatched. before holds the IDs of the
+// runs already titled for the target when it dispatched, so an older run with
+// the same title (an earlier request's) is never taken for it.
+type ownDispatch struct {
+	before map[int64]bool
+	at     time.Time
+	run    *run
+}
+
+func (f *floorGate) ownTitle() string { return floorRunTitlePrefix + f.targetSHA }
+
+func (f *floorGate) dispatchCommand() string {
+	return fmt.Sprintf("gh workflow run %s --repo %s --ref %s -f sha=%s", floorWorkflowFile, f.api.repo, branch, f.targetSHA)
+}
+
+// retryStep ends every refusal: what to check, and the retry.
+func (f *floorGate) retryStep(r *run) string {
+	check := "the log of the newest " + floorWorkflowFile + " run"
+	if r != nil {
+		check = fmt.Sprintf("the run's log (gh run view %d --repo %s --log-failed)", r.ID, f.api.repo)
 	}
-	short := f.targetSHA
-	if len(short) > 12 {
-		short = short[:12]
-	}
-	branch := "darwin-floor-" + short
-	return fmt.Sprintf("main has changed the flake inputs since %s (at %s), so a dispatch on main builds a different floor; "+
-		"push a branch at the target and dispatch there: git push origin %s:refs/heads/%s && gh workflow run %s --repo %s --ref %s "+
-		"(delete the branch once it has pushed)",
-		f.targetSHA, f.laterFlakeChange, f.targetSHA, branch, floorWorkflowFile, f.api.repo, branch)
+	return fmt.Sprintf("Check %s, that the CACHIX_AUTH_TOKEN repository secret is set and can push to https://%s.cachix.org, "+
+		"and that the macOS runners (macos-latest, macos-26-intel) are available; then request this release again, "+
+		"which builds the floor again (no tag was created, so the version is still unreserved)", check, f.cache)
 }
 
 func (f *floorGate) wait(parent context.Context) (floorProof, error) {
@@ -85,6 +109,9 @@ func (f *floorGate) wait(parent context.Context) (floorProof, error) {
 	if len(f.paths) == 0 {
 		return floorProof{}, errors.New("darwin floor gate was given no store paths")
 	}
+	if !shaPattern.MatchString(f.targetSHA) || strings.ToLower(f.targetSHA) != f.targetSHA {
+		return floorProof{}, errors.New("darwin floor gate was given no valid lowercase target commit")
+	}
 	ctx, cancel := context.WithTimeout(parent, g.timeout)
 	defer cancel()
 	deadline := g.now().Add(g.timeout)
@@ -92,51 +119,101 @@ func (f *floorGate) wait(parent context.Context) (floorProof, error) {
 	g.client = safeHTTPClient(g.client)
 
 	var watched *run
+	var own *ownDispatch
+	// fail reports err, or the timeout refusal once the deadline has passed.
+	fail := func(err error) (floorProof, error) {
+		if g.checkDeadline(ctx, deadline) != nil {
+			return floorProof{}, f.timedOut(watched, own)
+		}
+		return floorProof{}, err
+	}
 	for {
 		if err := g.checkDeadline(ctx, deadline); err != nil {
-			return floorProof{}, f.timedOut(watched)
+			return floorProof{}, f.timedOut(watched, own)
 		}
-		pending, latest, err := f.relevantRuns(ctx, &g)
+		runs, err := f.listRuns(ctx, &g)
 		if err != nil {
-			if g.checkDeadline(ctx, deadline) != nil {
-				return floorProof{}, f.timedOut(watched)
-			}
-			return floorProof{}, err
+			return fail(err)
 		}
-		missing, err := f.missingPaths(ctx, &g)
-		if err != nil {
-			if g.checkDeadline(ctx, deadline) != nil {
-				return floorProof{}, f.timedOut(watched)
+		if own == nil {
+			pending, latest := f.relevantRuns(runs)
+			missing, err := f.missingPaths(ctx, &g)
+			if err != nil {
+				return fail(err)
 			}
-			return floorProof{}, err
-		}
-		if pending == nil && len(missing) > 0 {
-			// The run may have finished its push between the two reads above:
-			// read the cache once more before refusing.
-			if missing, err = f.missingPaths(ctx, &g); err != nil {
-				if g.checkDeadline(ctx, deadline) != nil {
-					return floorProof{}, f.timedOut(watched)
+			if pending == nil && len(missing) > 0 {
+				// The run may have finished its push between the two reads above:
+				// read the cache once more before dispatching.
+				if missing, err = f.missingPaths(ctx, &g); err != nil {
+					return fail(err)
 				}
-				return floorProof{}, err
 			}
-		}
-		if pending == nil && len(missing) == 0 {
-			return floorProof{Cache: f.cache, Paths: append([]string(nil), f.paths...)}, nil
-		}
-		if pending == nil {
-			msg := fmt.Sprintf("darwin floor profile(s) %s are not in https://%s.cachix.org, and no %s run for this commit's flake inputs is queued or running",
-				strings.Join(missing, ", "), f.cache, floorWorkflowFile)
-			if latest != nil {
-				msg += fmt.Sprintf(" (the newest one, %s, concluded %q)", latest.HTMLURL, latest.Conclusion)
+			if pending == nil && len(missing) == 0 {
+				return floorProof{Cache: f.cache, Paths: append([]string(nil), f.paths...)}, nil
 			}
-			return floorProof{}, floorRefusal{msg + fmt.Sprintf(". Next step: %s; when it has pushed both profiles, request this release again", f.dispatchStep())}
-		}
-		watched = pending
-		if f.progress != nil {
-			if len(missing) == 0 {
-				fmt.Fprintf(f.progress, "The floor profiles are cached; waiting for %s run %d (%s) to finish its push\n", floorWorkflowFile, pending.ID, pending.Status)
+			if pending == nil {
+				// PTG-D5: build it, and require the build to pass. One dispatch,
+				// for the exact target; never a second.
+				before := map[int64]bool{}
+				for _, r := range runs {
+					if r.DisplayTitle == f.ownTitle() {
+						before[r.ID] = true
+					}
+				}
+				if err := f.dispatch(ctx, &g); err != nil {
+					return fail(err)
+				}
+				own = &ownDispatch{before: before, at: g.now()}
+				if f.progress != nil {
+					note := ""
+					if latest != nil {
+						note = fmt.Sprintf(" (the newest relevant one, %s, concluded %q)", latest.HTMLURL, latest.Conclusion)
+					}
+					fmt.Fprintf(f.progress, "%s are not in https://%s.cachix.org and no relevant %s run is pending%s; dispatched one to build %s: %s\n",
+						strings.Join(missing, ", "), f.cache, floorWorkflowFile, note, f.targetSHA, f.dispatchCommand())
+				}
 			} else {
-				fmt.Fprintf(f.progress, "Waiting for %s run %d (%s) to push %s\n", floorWorkflowFile, pending.ID, pending.Status, strings.Join(missing, ", "))
+				watched = pending
+				if f.progress != nil {
+					if len(missing) == 0 {
+						fmt.Fprintf(f.progress, "The floor profiles are cached; waiting for %s run %d (%s) to finish its push\n", floorWorkflowFile, pending.ID, pending.Status)
+					} else {
+						fmt.Fprintf(f.progress, "Waiting for %s run %d (%s) to push %s\n", floorWorkflowFile, pending.ID, pending.Status, strings.Join(missing, ", "))
+					}
+				}
+			}
+		} else {
+			if r := f.findOwnRun(runs, own); r != nil {
+				own.run, watched = r, r
+			}
+			switch {
+			case own.run == nil:
+				if g.now().Sub(own.at) >= floorRunAppearMax {
+					return floorProof{}, floorRefusal{fmt.Sprintf("GitHub accepted the %s dispatch for %s, but no run titled %q appeared within %s. %s",
+						floorWorkflowFile, f.targetSHA, f.ownTitle(), floorRunAppearMax, f.retryStep(nil))}
+				}
+				if f.progress != nil {
+					fmt.Fprintf(f.progress, "Waiting for the dispatched %s run for %s to appear\n", floorWorkflowFile, f.targetSHA)
+				}
+			case own.run.Status == "completed":
+				r := own.run
+				if r.Conclusion != "success" {
+					return floorProof{}, floorRefusal{fmt.Sprintf("the %s run this request dispatched to build %s, %s, concluded %q, so the darwin floor profiles are not in https://%s.cachix.org. %s",
+						floorWorkflowFile, f.targetSHA, r.HTMLURL, r.Conclusion, f.cache, f.retryStep(r))}
+				}
+				missing, err := f.missingPaths(ctx, &g)
+				if err != nil {
+					return fail(err)
+				}
+				if len(missing) > 0 {
+					return floorProof{}, floorRefusal{fmt.Sprintf("the %s run this request dispatched to build %s, %s, succeeded, but https://%s.cachix.org still does not serve %s. %s",
+						floorWorkflowFile, f.targetSHA, r.HTMLURL, f.cache, strings.Join(missing, ", "), f.retryStep(r))}
+				}
+				return floorProof{Cache: f.cache, Paths: append([]string(nil), f.paths...), RunURL: r.HTMLURL}, nil
+			default:
+				if f.progress != nil {
+					fmt.Fprintf(f.progress, "Waiting for the dispatched %s run %d (%s) to build and push the floor of %s\n", floorWorkflowFile, own.run.ID, own.run.Status, f.targetSHA)
+				}
 			}
 		}
 		remaining := deadline.Sub(g.now())
@@ -145,23 +222,70 @@ func (f *floorGate) wait(parent context.Context) (floorProof, error) {
 			pause = remaining
 		}
 		if pause <= 0 {
-			return floorProof{}, f.timedOut(watched)
+			return floorProof{}, f.timedOut(watched, own)
 		}
 		if err := g.sleep(ctx, pause); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return floorProof{}, f.timedOut(watched)
+				return floorProof{}, f.timedOut(watched, own)
 			}
 			return floorProof{}, fmt.Errorf("waiting for the darwin floor cache was interrupted: %w", err)
 		}
 	}
 }
 
-func (f *floorGate) timedOut(watched *run) error {
-	if watched == nil {
-		return floorRefusal{fmt.Sprintf("timed out waiting for the darwin floor profiles in https://%s.cachix.org. Next step: %s, then request this release again", f.cache, f.dispatchStep())}
+func (f *floorGate) timedOut(watched *run, own *ownDispatch) error {
+	switch {
+	case own != nil && own.run != nil:
+		return floorRefusal{fmt.Sprintf("timed out waiting for the %s run this request dispatched to build %s, %s, to push the darwin floor profiles. %s",
+			floorWorkflowFile, f.targetSHA, own.run.HTMLURL, f.retryStep(own.run))}
+	case own != nil:
+		return floorRefusal{fmt.Sprintf("timed out waiting for the %s run this request dispatched to build %s to appear. %s", floorWorkflowFile, f.targetSHA, f.retryStep(nil))}
+	case watched != nil:
+		return floorRefusal{fmt.Sprintf("timed out waiting for %s run %d (%s) to push the darwin floor profiles to https://%s.cachix.org. %s",
+			floorWorkflowFile, watched.ID, watched.HTMLURL, f.cache, f.retryStep(watched))}
 	}
-	return floorRefusal{fmt.Sprintf("timed out waiting for %s run %d to push the darwin floor profiles. Next step: inspect it with gh run view %d --repo %s; once it has pushed them, request this release again (or %s if it failed)",
-		floorWorkflowFile, watched.ID, watched.ID, f.api.repo, f.dispatchStep())}
+	return floorRefusal{fmt.Sprintf("timed out reading https://%s.cachix.org for the darwin floor profiles. %s", f.cache, f.retryStep(nil))}
+}
+
+// dispatch asks GitHub to run main's darwin-floor-cache.yml for the exact
+// target commit. The release-request job's GITHUB_TOKEN can start it: events
+// that token causes start no workflow run, except workflow_dispatch and
+// repository_dispatch, which always do
+// (https://docs.github.com/en/actions/concepts/security/github_token#when-github_token-triggers-workflow-runs).
+// It is never retried: a retried POST could start a second build.
+func (f *floorGate) dispatch(ctx context.Context, g *gate) error {
+	if err := g.checkDeadline(ctx, g.deadline); err != nil {
+		return err
+	}
+	body, err := json.Marshal(map[string]any{"ref": branch, "inputs": map[string]string{"sha": f.targetSHA}})
+	if err != nil {
+		return errors.New("could not encode the darwin floor dispatch")
+	}
+	endpoint := strings.TrimRight(g.baseURL, "/") + "/repos/" + g.repo + "/actions/workflows/" + floorWorkflowFile + "/dispatches"
+	requestContext, cancel := context.WithTimeout(ctx, g.requestMax)
+	defer cancel()
+	req, err := http.NewRequestWithContext(requestContext, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return errors.New("could not construct the darwin floor dispatch request")
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("Content-Type", "application/json")
+	if g.token != "" {
+		req.Header.Set("Authorization", "Bearer "+g.token)
+	}
+	response, err := g.client.Do(req)
+	if err != nil {
+		return floorRefusal{fmt.Sprintf("the %s dispatch to build %s did not reach the Actions API (it is not retried, so as not to start a second build). %s",
+			floorWorkflowFile, f.targetSHA, f.retryStep(nil))}
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+	response.Body.Close()
+	if response.StatusCode != http.StatusNoContent && response.StatusCode != http.StatusOK {
+		return floorRefusal{fmt.Sprintf("GitHub refused the %s dispatch to build %s (HTTP %d). Check that the release-request job's token has actions: write and that main's %s has the sha input (the dispatch was the equivalent of %s). %s",
+			floorWorkflowFile, f.targetSHA, response.StatusCode, floorWorkflowFile, f.dispatchCommand(), f.retryStep(nil))}
+	}
+	return nil
 }
 
 // missingPaths returns the store paths the cache does not serve: each profile
@@ -298,34 +422,33 @@ func narinfoNames(body []byte, path string) bool {
 	return false
 }
 
-// relevantRuns returns the newest still-pending darwin-floor-cache run for one
-// of the wait commits, and the newest relevant run of any status. A workflow
-// the default branch does not have yet has no runs.
-func (f *floorGate) relevantRuns(ctx context.Context, g *gate) (pending, latest *run, err error) {
+// listRuns returns the newest darwin-floor-cache.yml runs of this repository's
+// own workflow. A workflow the default branch does not have yet has no runs.
+func (f *floorGate) listRuns(ctx context.Context, g *gate) ([]run, error) {
 	var wf workflow
 	if _, err := g.getJSON(ctx, "/repos/"+g.repo+"/actions/workflows/"+floorWorkflowFile, nil, &wf); err != nil {
 		var status statusError
 		if errors.As(err, &status) && status.code == http.StatusNotFound {
-			return nil, nil, nil
+			return nil, nil
 		}
-		return nil, nil, err
+		return nil, err
 	}
 	if wf.ID <= 0 || wf.Path != floorWorkflowPath {
-		return nil, nil, errors.New("the Actions workflow identity did not match " + floorWorkflowPath)
+		return nil, errors.New("the Actions workflow identity did not match " + floorWorkflowPath)
 	}
 	endpoint := fmt.Sprintf("/repos/%s/actions/workflows/%d/runs", g.repo, wf.ID)
 	query := url.Values{"per_page": {strconv.Itoa(pageSize)}}
-	var matches []run
+	var out []run
 	for page := 1; page <= floorRunPages; page++ {
 		query.Set("page", strconv.Itoa(page))
 		var result runList
 		next, err := g.getJSON(ctx, endpoint, query, &result)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		for _, candidate := range result.WorkflowRuns {
-			if f.relevant(candidate, wf.ID) {
-				matches = append(matches, candidate)
+			if f.ours(candidate, wf.ID) {
+				out = append(out, candidate)
 			}
 		}
 		if next == nil {
@@ -333,33 +456,85 @@ func (f *floorGate) relevantRuns(ctx context.Context, g *gate) (pending, latest 
 		}
 		query = next
 	}
-	sort.Slice(matches, func(i, j int) bool {
-		if matches[i].RunNumber == matches[j].RunNumber {
-			return matches[i].ID > matches[j].ID
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].RunNumber == out[j].RunNumber {
+			return out[i].ID > out[j].ID
 		}
-		return matches[i].RunNumber > matches[j].RunNumber
+		return out[i].RunNumber > out[j].RunNumber
 	})
-	for i := range matches {
-		if latest == nil {
-			latest = &matches[i]
-		}
-		switch matches[i].Status {
-		case "queued", "in_progress", "waiting", "pending", "requested":
-			return &matches[i], latest, nil
-		}
-	}
-	return nil, latest, nil
+	return out, nil
 }
 
-// relevant: a run of this repository's workflow at one of the wait commits. A
-// push counts only on main; a dispatch on any branch, because when main has
-// moved its flake on, the next step is a dispatch on a branch at the target.
-func (f *floorGate) relevant(candidate run, workflowID int64) bool {
+// ours: a run of this repository's own darwin-floor-cache.yml, from this
+// repository rather than a fork.
+func (f *floorGate) ours(candidate run, workflowID int64) bool {
 	return candidate.ID > 0 && candidate.WorkflowID == workflowID &&
 		(candidate.Path == floorWorkflowPath || strings.HasPrefix(candidate.Path, floorWorkflowPath+"@")) &&
-		((candidate.Event == "push" && candidate.HeadBranch == branch) || (candidate.Event == "workflow_dispatch" && candidate.HeadBranch != "")) &&
-		candidate.Repository.FullName == f.api.repo && candidate.HeadRepository.FullName == f.api.repo &&
-		f.waitSHAs[candidate.HeadSHA]
+		candidate.Repository.FullName == f.api.repo && candidate.HeadRepository.FullName == f.api.repo
+}
+
+func pendingStatus(status string) bool {
+	switch status {
+	case "queued", "in_progress", "waiting", "pending", "requested":
+		return true
+	}
+	return false
+}
+
+// relevantRuns returns, of runs (newest first), the newest still-pending
+// relevant run and the newest relevant run of any status.
+func (f *floorGate) relevantRuns(runs []run) (pending, latest *run) {
+	for i := range runs {
+		if !f.relevant(runs[i]) {
+			continue
+		}
+		if latest == nil {
+			latest = &runs[i]
+		}
+		if pendingStatus(runs[i].Status) {
+			return &runs[i], latest
+		}
+	}
+	return nil, latest
+}
+
+// builtSHA is the commit a run checks out and builds. A run titled by the
+// workflow's run-name says it: a dispatch with a sha input builds that commit,
+// whatever main's tip was. A run from before the run-name existed builds its
+// head_sha.
+func builtSHA(candidate run) string {
+	if m := floorTitlePattern.FindStringSubmatch(candidate.DisplayTitle); m != nil {
+		return m[1]
+	}
+	return candidate.HeadSHA
+}
+
+// relevant: a run that builds one of the wait commits, so would push these
+// exact paths. A push counts only on main; a dispatch on any branch (a run
+// dispatched on a branch at the target, the step this gate named before it
+// dispatched for itself, still builds the target).
+func (f *floorGate) relevant(candidate run) bool {
+	return ((candidate.Event == "push" && candidate.HeadBranch == branch) || (candidate.Event == "workflow_dispatch" && candidate.HeadBranch != "")) &&
+		f.waitSHAs[builtSHA(candidate)]
+}
+
+// findOwnRun returns the run this gate's dispatch started: a workflow_dispatch
+// run of main's workflow titled for the target that was not there before the
+// dispatch. Should two appear (someone dispatched the same build by hand at the
+// same moment), the older is taken; both build the same commit from the same
+// workflow, and the cache read after it is the proof either way.
+func (f *floorGate) findOwnRun(runs []run, own *ownDispatch) *run {
+	var found *run
+	for i := range runs {
+		r := &runs[i]
+		if r.Event != "workflow_dispatch" || r.HeadBranch != branch || r.DisplayTitle != f.ownTitle() || own.before[r.ID] {
+			continue
+		}
+		if found == nil || r.ID < found.ID {
+			found = r
+		}
+	}
+	return found
 }
 
 // parseWaitSHAs reads one lowercase full commit SHA per line.

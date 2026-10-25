@@ -4,13 +4,17 @@
 # every macos-user user of the release compiles the floor (a ~27-minute mise
 # source build) themselves. darwin-floor-cache.yml pushes them on main pushes
 # that change flake.nix or flake.lock; this waits while such a run for the
-# target's flake inputs is queued or running, and otherwise refuses a miss with
-# the dispatch that fixes it. It dispatches nothing itself.
+# target's flake inputs is queued or running. On a miss with none pending it
+# dispatches main's darwin-floor-cache.yml once to build the exact target
+# (`-f sha=RELEASE_SHA`), waits for that run, and passes only when it succeeded
+# and the cache then serves every path; anything else fails the request with
+# no tag (docs/reference/release-process.md#PTG-D5).
 #
 # Inputs: DARWIN_FLOOR_PATHS (space-separated store paths from the read-only
 # prepare-target job's darwin-floor-paths.sh), CACHIX_CONFIGURED (true|false,
 # whether the repository has a CACHIX_AUTH_TOKEN secret), CACHIX_CACHE (the
-# cache name), GITHUB_REPOSITORY, RELEASE_SHA and a read-only GH_TOKEN.
+# cache name), GITHUB_REPOSITORY, RELEASE_SHA and a GH_TOKEN with actions: write
+# (the dispatch) and actions: read (watching runs).
 set -euo pipefail
 
 fail() {
@@ -46,11 +50,11 @@ done
 
 # The commits whose darwin-floor-cache runs build these exact paths: main's
 # commits from the last one at or before the target that changed the flake
-# inputs, up to the next one after it that changes them again. A push run's
-# head_sha is the tip of its push and a run dispatched on main has main's tip
-# at dispatch, so either can be any commit in that span; one dispatched on a
-# branch at the target (the step named when main has moved its flake on) has
-# the target itself.
+# inputs, up to the next one after it that changes them again. Every run's
+# title names the commit it builds: a push run's is the tip of its push, a
+# dispatch without a sha input builds main's tip at dispatch, and one with a
+# sha input builds that commit, so a run building these paths can name any
+# commit in that span.
 git fetch --quiet --no-tags origin main || fail "Could not refresh origin/main; retry after connectivity is restored."
 wait_file=$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/darwin-floor-wait.XXXXXX") || fail "Could not allocate runner temp space."
 trap 'rm -f "$wait_file"' EXIT
@@ -70,14 +74,9 @@ if [ -n "$flake_commit" ]; then
   } >> "$wait_file" || fail "Could not list main's commits since ${flake_commit}."
 fi
 
-# A later flake change on main means a dispatch on main builds another floor;
-# the gate then names a dispatch on a branch at the target instead.
-later_args=()
-if [ -n "${next_change:-}" ]; then
-  later_args=(--later-flake-change "$next_change")
-fi
+# 180 minutes: a pending run waited out at darwin-floor-cache.yml's 90-minute
+# job ceiling, then the build this gate dispatches at the same ceiling.
 if ! go run ./tools/release-gate darwin-floor --repo "$GITHUB_REPOSITORY" --cache "$cache" --sha "$RELEASE_SHA" \
-  "${later_args[@]}" "${path_args[@]}" \
-  --wait-shas "$wait_file" --timeout 100m --poll-interval 30s; then
-  fail "The darwin floor profiles of ${RELEASE_SHA} are not in https://${cache}.cachix.org (the step to take is above); request this version again once they are."
+  "${path_args[@]}" --wait-shas "$wait_file" --timeout 180m --poll-interval 30s; then
+  fail "The darwin floor profiles of ${RELEASE_SHA} are not in https://${cache}.cachix.org, and the build this request dispatched or waited for did not put them there (what to check is above). Fix that, then request this version again; it is still unreserved, and the request builds the floor again."
 fi

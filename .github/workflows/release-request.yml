@@ -108,10 +108,16 @@ jobs:
   create-tag-and-dispatch:
     needs: [eligibility, prepare-target]
     runs-on: ubuntu-latest
-    # Holds the CI wait (preflight.sh, 60m), the darwin floor cache wait
-    # (darwin-floor-gate.sh, 100m) and then the Release wait (request.sh, 90m)
-    # in one job; TestRequestJobTimeoutExceedsItsWaits pins it.
-    timeout-minutes: 270
+    # Holds the CI wait (preflight.sh, 60m), the darwin floor cache wait and
+    # build (darwin-floor-gate.sh, 180m) and then the Release wait (request.sh,
+    # 90m) in one job; TestRequestJobTimeoutExceedsItsWaits pins it. 360 is
+    # GitHub-hosted runners' job ceiling.
+    timeout-minutes: 360
+    # contents: write for the tag; actions: write to dispatch release.yml,
+    # publish.yml, tap-install.yml and, on a darwin floor cache miss,
+    # darwin-floor-cache.yml (which also covers reading runs). A dispatch made
+    # with GITHUB_TOKEN does start a run:
+    # https://docs.github.com/en/actions/concepts/security/github_token#when-github_token-triggers-workflow-runs
     permissions:
       contents: write
       actions: write
@@ -139,8 +145,9 @@ jobs:
           RELEASE_PRETAG: "1"
           RELEASE_ORDER_CHECK: "1"
           GH_TOKEN: ${{ github.token }}
-          # Whether the secret exists, never its value: the gate only reads the
-          # public cache, and a fork without Cachix skips it.
+          # Whether the secret exists, never its value: the gate reads the
+          # public cache and dispatches the build that pushes to it, and a fork
+          # without Cachix skips it.
           CACHIX_CONFIGURED: ${{ secrets.CACHIX_AUTH_TOKEN != '' }}
           CACHIX_CACHE: ${{ vars.CACHIX_CACHE || 'yolo-jail' }}
           DARWIN_FLOOR_PATHS: ${{ needs.prepare-target.outputs.darwin-floor-paths }}

@@ -5974,6 +5974,13 @@
 },
 {
 "read": [
+".github/workflows/darwin-floor-cache.yml",
+"tools/release-gate/darwinfloor.go"
+],
+"listed": []
+},
+{
+"read": [
 ".github/workflows/release-request.yml"
 ],
 "listed": []
@@ -6967,50 +6974,52 @@
 "TestTheRealReadmeKeepsNoRelativeLink": 89
 },
 "tools/release-wiring": {
-"TestAReleaseBuildPrintsItsVersionAndCommit": 92,
-"TestActualPublisherCallerRefusesDuplicatePartialOldAndFailedOriginalState": 95,
+"TestAReleaseBuildPrintsItsVersionAndCommit": 93,
+"TestActualPublisherCallerRefusesDuplicatePartialOldAndFailedOriginalState": 96,
 "TestActualTrustedUploadCallerPreservesAllAssetsNotesPrereleaseAndPartialState": 3,
 "TestClaimPublicationDependencyAndPyPIOIDCSourceCaller": 88,
 "TestConcurrentActualRequestCallersHaveOneCreateOnlyTagWinner": 3,
+"TestDarwinFloorCacheBuildsTheDispatchedCommitAndTitlesItsRun": 90,
 "TestDarwinFloorPathsEvaluatesTheFloorWithoutCredentials": 3,
 "TestFailedJobsOnlyPublisherRerunRefusesAtEachActualMutationJobEntry": 88,
-"TestGoReleaserPackagingScriptAcceptsOnlyItsDeclaredInertOutputSet": 94,
-"TestHomebrewBackfillIsExplicitAndRequiresThePublishedImmutableTag": 93,
-"TestHomebrewFormulaHeredocNeverExecutesLiteralYoloForNormalOrBackfill": 94,
+"TestGoReleaserPackagingScriptAcceptsOnlyItsDeclaredInertOutputSet": 95,
+"TestHomebrewBackfillIsExplicitAndRequiresThePublishedImmutableTag": 94,
+"TestHomebrewFormulaHeredocNeverExecutesLiteralYoloForNormalOrBackfill": 95,
 "TestHomebrewReleasePresenceGateRefusesDraftOrUnknown": 3,
 "TestHostJustReleaseRefusesAVersionArgument": 3,
 "TestHostJustReleaseSubmitsOnlyFrozenSHAAfterLocalChangelogCheck": 3,
 "TestImageCacheBuildRefusesAnUnexpectedOutputBeforeAnyCopy": 88,
 "TestImageCacheBuildUploadsExactlyTheImagesAndBothCopierOutputs": 88,
 "TestImageCacheImportAcceptsUnsignedRunnerBuiltPaths": 88,
-"TestMainBackfillCallerUsesTrustedToolsWhenOldTagHasNone": 94,
-"TestMainScopedReleaseCallerUsesAnchoredRunNamesAndTrustedMainInputs": 91,
-"TestOtherNormalPublicationJobsGuardBeforeCredentialSteps": 96,
+"TestMainBackfillCallerUsesTrustedToolsWhenOldTagHasNone": 95,
+"TestMainScopedReleaseCallerUsesAnchoredRunNamesAndTrustedMainInputs": 92,
+"TestOtherNormalPublicationJobsGuardBeforeCredentialSteps": 97,
 "TestReleaseArtifactHandoffFailsClosedOnUnexpectedPathsTypesAndDigests": 3,
-"TestReleaseRequestEligibilityAllowsAResumeToReachTheWriteJob": 90,
-"TestReleaseRequestHandsTheFloorPathsToTheWriteJob": 90,
-"TestReleaseWorkflowsAreMainDispatchedAndKeepWritesOffTargetSource": 91,
+"TestReleaseRequestEligibilityAllowsAResumeToReachTheWriteJob": 91,
+"TestReleaseRequestHandsTheFloorPathsToTheWriteJob": 91,
+"TestReleaseWorkflowsAreMainDispatchedAndKeepWritesOffTargetSource": 92,
 "TestRequestCallerRejectsWrongRefAndRerunBeforeAnyWrite": 3,
 "TestRequestHostRecipeDoesNotTagLocally": 29,
-"TestRequestJobTimeoutExceedsItsWaits": 90,
+"TestRequestJobCanDispatchTheFloorBuild": 91,
+"TestRequestJobTimeoutExceedsItsWaits": 91,
 "TestRequestMainCallerWaitsForExactOriginalReleaseSuccessBeforePublishDispatch": 3,
 "TestRequestResumesATagOnlyReleaseWithoutTouchingTheTag": 3,
 "TestRequestRunsTheDarwinFloorGateBeforeTheTag": 3,
 "TestRequestTapDispatchFailureLeavesTheRequestGreen": 3,
-"TestShellHelpersFailClosedAndAllWorkflowCommandsParse": 91,
+"TestShellHelpersFailClosedAndAllWorkflowCommandsParse": 92,
 "TestStandaloneCLIHasNoFixtureTrustHook": 3,
-"TestTrustedEligibilityRejectsUnmergedSourceBeforeHostileTargetCanRun": 90,
+"TestTrustedEligibilityRejectsUnmergedSourceBeforeHostileTargetCanRun": 91,
 "TestTrustedHelperCLIUsesOnlyExplicitFixtureRoots": 3,
 "TestValidateReleaseAssetDirectoryAgainstPinnedGoreleaserContract": 3,
-"TestWorkflowHelperCallsAreExecutableAndTargetCheckoutCannotPersistCredentials": 91
+"TestWorkflowHelperCallsAreExecutableAndTargetCheckoutCannotPersistCredentials": 92
 },
 "tools/tap-install-check": {
-"TestReleasePushesTheFormulaTheDocsInstall": 101,
-"TestReleaseRunNameTransportReachesTheProductionTapCaller": 94,
-"TestTheJudgeAcceptsWhatTheLastReleaseReportsOnABareMac": 97,
-"TestTheWorkflowCarriesNoSecrets": 100,
-"TestTheWorkflowInstallsWhatTheDocsSay": 98,
-"TestTheWorkflowRunsAfterEachReleaseWeeklyAndByHand": 99
+"TestReleasePushesTheFormulaTheDocsInstall": 102,
+"TestReleaseRunNameTransportReachesTheProductionTapCaller": 95,
+"TestTheJudgeAcceptsWhatTheLastReleaseReportsOnABareMac": 98,
+"TestTheWorkflowCarriesNoSecrets": 101,
+"TestTheWorkflowInstallsWhatTheDocsSay": 99,
+"TestTheWorkflowRunsAfterEachReleaseWeeklyAndByHand": 100
 }
 }
 }

@@ -15,15 +15,16 @@ if [ "${GITHUB_RUN_ATTEMPT:-1}" != 1 ]; then
   exit 1
 fi
 # For a first request and a resume alike: the macOS floor profiles of this
-# exact commit must be in Cachix (docs/reference/release-process.md#PTG-D4).
-# It runs BEFORE the final preflight, because it can wait up to 100 minutes:
-# the version-order, tag and exact-CI proof must stay the last read before the
-# tag write, or a release that lands during the wait would leave this tag
-# reserved and unpublishable.
+# exact commit must be in Cachix, and when they are not, the gate builds them
+# and requires that build to pass (docs/reference/release-process.md#PTG-D4,
+# #PTG-D5). It runs BEFORE the final preflight, because it can wait up to 180
+# minutes: the version-order, tag and exact-CI proof must stay the last read
+# before the tag write, or a release that lands during the wait would leave
+# this tag reserved and unpublishable.
 if ! GITHUB_REPOSITORY="$GITHUB_REPOSITORY" RELEASE_SHA="$RELEASE_SHA" GH_TOKEN="${GH_TOKEN:-}" \
   CACHIX_CONFIGURED="${CACHIX_CONFIGURED:-}" CACHIX_CACHE="${CACHIX_CACHE:-}" DARWIN_FLOOR_PATHS="${DARWIN_FLOOR_PATHS:-}" \
   tools/release-wiring/darwin-floor-gate.sh; then
-  echo "✗ The darwin floor cache gate refused ${RELEASE_VERSION}; take the step it names and request this version again. No tag was created or changed." >&2
+  echo "✗ The darwin floor cache gate failed ${RELEASE_VERSION}; check what it names, fix it, and request this version again. No tag was created or changed." >&2
   exit 1
 fi
 if ! GITHUB_REPOSITORY="$GITHUB_REPOSITORY" RELEASE_VERSION="$RELEASE_VERSION" \

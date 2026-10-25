@@ -256,7 +256,7 @@ case "$*" in
     while [ "$#" -gt 0 ]; do
       if [ "$1" = --wait-shas ]; then echo "wait-shas: $(tr '\n' ' ' < "$2")" >> "$TRACE"; shift 2; else shift; fi
     done
-    if [ "${FAIL_FLOOR_GATE:-}" = 1 ]; then echo "fake floor refusal: gh workflow run darwin-floor-cache.yml --ref main" >&2; exit 1; fi
+    if [ "${FAIL_FLOOR_GATE:-}" = 1 ]; then echo "fake floor failure: the dispatched darwin-floor-cache.yml run concluded failure; request this release again" >&2; exit 1; fi
     echo '{"cache":"yolo-jail"}'
     ;;
   *tools/release-gate*)

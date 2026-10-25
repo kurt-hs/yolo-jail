@@ -104,7 +104,9 @@ func (p *pathList) Set(value string) error {
 
 // runFloorCLI is `release-gate darwin-floor`: wait until every --path is in the
 // Cachix cache, polling while a darwin-floor-cache.yml run for one of the
-// --wait-shas commits is pending. configure, when non-nil, adjusts the gate
+// --wait-shas commits is pending, and otherwise dispatching one run that builds
+// --sha and requiring it to succeed and the cache then to serve every path.
+// The token needs actions: write for that dispatch. configure, when non-nil, adjusts the gate
 // before it runs (tests point it at stub servers).
 func runFloorCLI(args []string, stdout, stderr io.Writer, configure func(*floorGate)) int {
 	flags := flag.NewFlagSet("release-gate darwin-floor", flag.ContinueOnError)
@@ -114,7 +116,6 @@ func runFloorCLI(args []string, stdout, stderr io.Writer, configure func(*floorG
 	var paths pathList
 	flags.Var(&paths, "path", "store path that must be in the cache (repeatable)")
 	target := flags.String("sha", "", "the full commit SHA being released")
-	later := flags.String("later-flake-change", "", "the first main commit after --sha that changes the flake inputs, if any")
 	waitFile := flags.String("wait-shas", "", "file of main commits, one per line, whose darwin-floor-cache runs are worth waiting for")
 	timeout := flags.Duration("timeout", defaultTimeout, "total wait deadline (default 1h)")
 	poll := flags.Duration("poll-interval", defaultPoll, "poll interval (default 15s)")
@@ -126,9 +127,9 @@ func runFloorCLI(args []string, stdout, stderr io.Writer, configure func(*floorG
 	}
 	if flags.NArg() != 0 || !repositoryPattern.MatchString(*repo) || strings.Contains(*repo, "..") ||
 		!cacheNamePattern.MatchString(*cache) || len(paths) == 0 || *waitFile == "" ||
-		!shaPattern.MatchString(*target) || (*later != "" && !shaPattern.MatchString(*later)) ||
+		!shaPattern.MatchString(*target) ||
 		*timeout <= 0 || *timeout > maxTimeout || *poll <= 0 || *poll > maxPoll {
-		fmt.Fprintln(stderr, "release-gate darwin-floor: invalid arguments; provide --repo OWNER/REPO, --cache NAME, --sha FULL_SHA, one or more --path /nix/store/..., and --wait-shas FILE (and optionally --later-flake-change FULL_SHA), with positive bounded durations")
+		fmt.Fprintln(stderr, "release-gate darwin-floor: invalid arguments; provide --repo OWNER/REPO, --cache NAME, --sha FULL_SHA, one or more --path /nix/store/..., and --wait-shas FILE, with positive bounded durations")
 		return 2
 	}
 	for _, path := range paths {
@@ -158,7 +159,7 @@ func runFloorCLI(args []string, stdout, stderr io.Writer, configure func(*floorG
 			now: time.Now, sleep: sleepContext, timeout: *timeout, pollEvery: *poll, requestMax: defaultRequestMax,
 		},
 		cache: *cache, cacheURL: "https://" + *cache + ".cachix.org", paths: paths, waitSHAs: waitSHAs, progress: stderr,
-		targetSHA: strings.ToLower(*target), laterFlakeChange: strings.ToLower(*later),
+		targetSHA: strings.ToLower(*target),
 	}
 	if configure != nil {
 		configure(&f)

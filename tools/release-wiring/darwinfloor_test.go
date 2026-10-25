@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -17,7 +18,7 @@ var floorPathsEnv = "DARWIN_FLOOR_PATHS=" + floorArmPath + " " + floorIntelPath
 
 // The request runs the darwin floor gate before the final preflight (exact-SHA
 // CI, version order, tag identity), so that proof stays the last read before
-// the tag write however long the floor wait took; a refusal leaves no tag, a fork without Cachix skips with a
+// the tag write however long the floor wait or build took; a failure leaves no tag, a fork without Cachix skips with a
 // line saying so, and an unset or malformed hand-off refuses rather than skips.
 func TestRequestRunsTheDarwinFloorGateBeforeTheTag(t *testing.T) {
 	root := repositoryRoot(t)
@@ -30,8 +31,8 @@ func TestRequestRunsTheDarwinFloorGateBeforeTheTag(t *testing.T) {
 		wantOut   string
 	}{
 		{name: "cached profiles let the tag through", extra: []string{"CACHIX_CONFIGURED=true", floorPathsEnv}, wantGate: true},
-		{name: "a miss refuses before the tag", extra: []string{"CACHIX_CONFIGURED=true", floorPathsEnv, "FAIL_FLOOR_GATE=1"}, wantGate: true,
-			wantError: "gh workflow run darwin-floor-cache.yml --ref main"},
+		{name: "a floor build that does not land fails before the tag", extra: []string{"CACHIX_CONFIGURED=true", floorPathsEnv, "FAIL_FLOOR_GATE=1"}, wantGate: true,
+			wantError: "request this release again"},
 		{name: "a fork without Cachix skips and says so", extra: []string{"CACHIX_CONFIGURED=false"}, wantOut: "skipping the darwin floor cache gate"},
 		{name: "an unset Cachix flag refuses", extra: []string{"CACHIX_CONFIGURED="}, wantError: "CACHIX_CONFIGURED must be true or false"},
 		{name: "a missing path hand-off refuses", extra: []string{"CACHIX_CONFIGURED=true", "DARWIN_FLOOR_PATHS=" + floorArmPath}, wantError: "Expected the two darwin floor profile paths"},
@@ -52,7 +53,7 @@ func TestRequestRunsTheDarwinFloorGateBeforeTheTag(t *testing.T) {
 					t.Fatalf("request did not refuse with the next step: err=%v output=%s", err, out)
 				}
 				if tag >= 0 || traceIndex(lines, "workflow run") >= 0 {
-					t.Fatalf("a floor refusal still wrote a tag or dispatched: %v", lines)
+					t.Fatalf("a floor failure still wrote a tag or dispatched a release: %v", lines)
 				}
 				return
 			}
@@ -67,7 +68,7 @@ func TestRequestRunsTheDarwinFloorGateBeforeTheTag(t *testing.T) {
 			}
 			if tc.wantGate {
 				call := lines[floorGate]
-				for _, want := range []string{"--repo owner/repo", "--cache yolo-jail", "--path " + floorArmPath, "--path " + floorIntelPath, "--timeout 100m", "--sha " + testSHA} {
+				for _, want := range []string{"--repo owner/repo", "--cache yolo-jail", "--path " + floorArmPath, "--path " + floorIntelPath, "--timeout 180m", "--sha " + testSHA} {
 					if !strings.Contains(call, want) {
 						t.Fatalf("floor gate call %q lacks %q", call, want)
 					}
@@ -128,11 +129,10 @@ func TestDarwinFloorGateWaitsOnlyForRunsOfTheTargetsFlakeInputs(t *testing.T) {
 		name, sha string
 		want      []string
 		notWant   []string
-		later     string // the --later-flake-change the gate must be handed
 	}{
-		{"between two flake changes", release, []string{flake, c2, release, c4}, []string{c0, nextFlake, c6}, nextFlake},
-		{"the flake change itself", flake, []string{flake, c2, release, c4}, []string{c0, nextFlake, c6}, nextFlake},
-		{"after the last flake change", c6, []string{nextFlake, c6}, []string{c0, flake, release, c4}, ""},
+		{"between two flake changes", release, []string{flake, c2, release, c4}, []string{c0, nextFlake, c6}},
+		{"the flake change itself", flake, []string{flake, c2, release, c4}, []string{c0, nextFlake, c6}},
+		{"after the last flake change", c6, []string{nextFlake, c6}, []string{c0, flake, release, c4}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_ = os.Remove(trace)
@@ -144,11 +144,10 @@ func TestDarwinFloorGateWaitsOnlyForRunsOfTheTargetsFlakeInputs(t *testing.T) {
 			}
 			lines := readTrace(t, trace)
 			call := lines[traceIndex(lines, "tools/release-gate darwin-floor")]
-			if tc.later == "" && strings.Contains(call, "--later-flake-change") {
-				t.Errorf("gate call %q names a later flake change where main has none", call)
-			}
-			if tc.later != "" && !strings.Contains(call, "--later-flake-change "+tc.later) {
-				t.Errorf("gate call %q does not name the later flake change %s", call, tc.later)
+			// The gate dispatches a build of --sha itself, so it needs no
+			// later flake change to name a branch dispatch.
+			if !strings.Contains(call, "--sha "+tc.sha) || strings.Contains(call, "--later-flake-change") {
+				t.Errorf("gate call %q, want --sha %s and no --later-flake-change", call, tc.sha)
 			}
 			i := traceIndex(lines, "wait-shas:")
 			if i < 0 {
@@ -234,6 +233,71 @@ esac
 				}
 			}
 		})
+	}
+}
+
+// The gate dispatches darwin-floor-cache.yml from main with -f sha=<target>
+// and finds its run by title (PTG-D5), so the workflow must take that input,
+// build exactly that commit, title the run with it in the spelling
+// release-gate matches, and refuse a commit that is not on main before any
+// step that could run it.
+func TestDarwinFloorCacheBuildsTheDispatchedCommitAndTitlesItsRun(t *testing.T) {
+	workflow := readWorkflow(t, ".github/workflows/darwin-floor-cache.yml")
+	prefix := regexp.MustCompile(`floorRunTitlePrefix = "([^"]+)"`).FindSubmatch(mustRead(t, "tools/release-gate/darwinfloor.go"))
+	if prefix == nil {
+		t.Fatal("cannot find floorRunTitlePrefix in tools/release-gate/darwinfloor.go")
+	}
+	if want := string(prefix[1]) + "${{ inputs.sha || github.sha }}"; workflow.RunName != want {
+		t.Fatalf("run-name = %q, want %q (the title release-gate finds its run by)", workflow.RunName, want)
+	}
+	var dispatch struct {
+		Inputs map[string]struct {
+			Type     string `yaml:"type"`
+			Required bool   `yaml:"required"`
+		} `yaml:"inputs"`
+	}
+	node := workflow.On["workflow_dispatch"]
+	if err := node.Decode(&dispatch); err != nil || dispatch.Inputs["sha"].Type != "string" || dispatch.Inputs["sha"].Required {
+		t.Fatalf("workflow_dispatch inputs = %+v (%v), want an optional string sha", dispatch.Inputs, err)
+	}
+	if _, ok := workflow.On["push"]; !ok {
+		t.Fatal("the push trigger, which builds every flake change on main, is gone")
+	}
+	steps := workflow.Jobs["push-floor"].Steps
+	checkout, onMain, nix := -1, -1, -1
+	for i, step := range steps {
+		switch {
+		case strings.HasPrefix(step.Uses, "actions/checkout@"):
+			checkout = i
+			if step.With["ref"] != "${{ inputs.sha || github.sha }}" || step.With["fetch-depth"] != "0" {
+				t.Fatalf("checkout with = %v, want the sha input (else the event's commit) and full history", step.With)
+			}
+		case strings.Contains(step.Run, `merge-base --is-ancestor "$SHA" refs/remotes/origin/main`):
+			onMain = i
+			if step.Env["SHA"] != "${{ inputs.sha }}" {
+				t.Fatalf("the main-ancestry check reads SHA from %q", step.Env["SHA"])
+			}
+		case strings.HasPrefix(step.Uses, "cachix/install-nix-action@"):
+			nix = i
+		}
+		if strings.Contains(step.Run, "${{ inputs.sha") {
+			t.Fatalf("step %q expands the sha input into its script; pass it through env", step.Name)
+		}
+	}
+	if checkout < 0 || onMain < 0 || nix < 0 || !(checkout < onMain && onMain < nix) {
+		t.Fatalf("want checkout, then the main-ancestry check, then Nix; got indexes %d, %d, %d", checkout, onMain, nix)
+	}
+}
+
+// The request job dispatches the floor build with its own token, so it needs
+// actions: write, and its timeout cannot pass GitHub-hosted runners' ceiling.
+func TestRequestJobCanDispatchTheFloorBuild(t *testing.T) {
+	job := readWorkflow(t, ".github/workflows/release-request.yml").Jobs["create-tag-and-dispatch"]
+	if job.Permissions["actions"] != "write" {
+		t.Fatalf("create-tag-and-dispatch permissions = %v, want actions: write", job.Permissions)
+	}
+	if job.Timeout > 360 {
+		t.Fatalf("create-tag-and-dispatch timeout-minutes = %d, over the 360-minute job ceiling", job.Timeout)
 	}
 }
 

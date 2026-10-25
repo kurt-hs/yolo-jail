@@ -71,6 +71,7 @@ type run struct {
 	Event          string     `json:"event"`
 	Status         string     `json:"status"`
 	Conclusion     string     `json:"conclusion"`
+	DisplayTitle   string     `json:"display_title"`
 	HTMLURL        string     `json:"html_url"`
 	Repository     repository `json:"repository"`
 	HeadRepository repository `json:"head_repository"`
