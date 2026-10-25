@@ -178,6 +178,12 @@ and a pi-subagents registry several extensions can share stays in item 28.
     questions, [the pack conventions](../design/pack-conventions.md#OQ-PC1)' three and [what `-p`
     names](../design/providers-and-profiles-redesign.md#OQ-PP1). The broker-grant rework waits on it.
 
+12. [Rule the computed-briefings design](../design/computed-briefings.md) — the maintainer, 2026-10-24:
+    a pack's briefing should tell each workspace's agent exactly how to finish a change (commit
+    only, push a named branch, or push a new branch) according to the grants that workspace was
+    approved, now that push grants exist. It reads the grants by what the broker does, not by
+    their config spelling, so it does not wait on the readable-config redesign above.
+
 Native readiness and credential-store work retain their places below: assess
 [the privilege prerequisites](../research/sandvault-macos-privileges.md) without broad root
 cleanup, and rule [keychain scope/unlock/migration](../design/keychain-from-a-jail.md) without

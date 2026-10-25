@@ -353,6 +353,7 @@ func TestSlotRunsEveryAutomaticClass(t *testing.T) {
 		"o.reapSmallAutomaticClasses(rt, cname, guard)",
 		"o.reapImageTars(rt, guard)",
 		"o.reapFlakeBundleGenerations(rt, guard)",
+		"o.reapDevBundles(rt, guard)",
 	} {
 		if !strings.Contains(string(src), call) {
 			t.Errorf("the housekeeping slot no longer calls %s — that is a §5.2 automatic-tier "+
@@ -420,6 +421,26 @@ func TestBundleGenerationReapAsksWhatIsRunning(t *testing.T) {
 			t.Fatalf("the bundle-generation pass no longer calls %s. Generations exist so a "+
 				"`just install` cannot delete a running jail's binaries; a reap that does not "+
 				"ask the runtime what is mounted puts that failure straight back.", want)
+		}
+	}
+}
+
+// TestDevBundleReapAsksWhatIsRunning pins the slot's development-bundle class: it asks the
+// runtime and the process table (prune.DevBundleEvidence), deletes under the slot's guard, and
+// does not stamp a pass that could not ask. prune's own tests prove PruneDevBundles declines on
+// unknown liveness; nothing there notices this call site handing it evidence it made up.
+func TestDevBundleReapAsksWhatIsRunning(t *testing.T) {
+	src, err := os.ReadFile("housekeeping.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn := afterFunc(string(src), "func (o *Options) reapDevBundles(")
+	for _, want := range []string{"prune.DevBundleOSCanAnswer()", "prune.LiveYoloContainers(", "prune.DevBundleEvidence(",
+		"prune.PruneDevBundles(", "true, o.Now(), guard)", `if r.Unknown != "" || r.Declined != "" {`} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("the development-bundle pass no longer has %s. A bundle a running jail mounts "+
+				"or a live process executes out of must never be deleted, and only the runtime and "+
+				"the process table can say which those are.", want)
 		}
 	}
 }
