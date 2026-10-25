@@ -103,19 +103,30 @@ reasoning = true
 
 ### 2.1 Naming a pack that is not shipped
 
-Under [OQ-RC15](#OQ-RC15)'s leaning there is no bare path form: a pack lives in a place you
-named once, and a place may hold one pack.
+Under [OQ-RC15](#OQ-RC15)'s leaning a pack lives in a source you named once, and a source is a
+directory tree of packs, wherever it is: a folder on this machine, or a git repository, which is
+the same layout fetched (what Homebrew calls a tap and Claude Code a marketplace). There is no
+bare path form.
 
 ```toml
-pack_folders = { dotfiles = "~/.dotfiles/yolo-packs", src = "~/src" }   # places, named once
+[pack_sources]                                # named once; each is a tree of <pack>/ directories
+dotfiles = "~/.dotfiles/yolo-packs"
+src = "~/src"
+acme = { git = "https://github.com/acme/yolo-packs", ref = "main" }
+
 packs = [
   "claude",                                   # shipped: bare; yolo/claude is the explicit spelling
-  "local/matt",                               # ~/.config/yolo-jail/packs/matt; local is the one built-in place
+  "local/matt",                               # ~/.config/yolo-jail/packs/matt; local is the one built-in source
   "dotfiles/matt-fzf",                        # ~/.dotfiles/yolo-packs/matt-fzf
   "src/tools",                                # ~/src/tools: a folder you named that happens to hold one pack
-  { git = "https://github.com/acme/tools" },  # acme/tools, from the URL; no name to choose
-]
+  "acme/tools",                               # acme/yolo-packs' tools/ directory, fetched and locked as today
+  { git = "https://github.com/mschulkind-oss/matt-craft", ref = "main" },   # a repository that IS one pack:
+]                                             #   named mschulkind-oss/matt-craft from its URL, as today
 ```
+
+Two git forms, each with one reading: a repository *of* packs is a source, and a repository that
+*is* a pack is listed directly. Both are fetched and locked as git packs are today
+(`packs.lock.json`).
 
 The name is used wherever yolo names the pack back to you: the launch's pack line, `yolo pack
 ls`, `explain` and `footprint`, the nudge in [§4](#4-the-nudge-when-a-table-and-a-pack-disagree),
@@ -168,7 +179,7 @@ first five.
 
 ```toml
 # C1  your packs folder: ~/.config/yolo-jail/packs/<name> is local/<name>
-pack_folders = { dotfiles = "~/.dotfiles/yolo-packs" }       # before
+pack_sources = { dotfiles = "~/.dotfiles/yolo-packs" }       # before
 packs = ["dotfiles/matt"]
 packs = ["local/matt"]                                        # after: the folder is a symlink there
 
@@ -360,11 +371,11 @@ default = "bedrock"
 
    ```toml
    # A  qualified by source; only shipped packs are bare; no collision can happen
-   pack_folders = { dotfiles = "~/.dotfiles/yolo-packs" }
-   packs = ["claude", "dotfiles/matt", "local/x", { git = "https://github.com/acme/tools" }]   # named acme/tools
+   pack_sources = { dotfiles = "~/.dotfiles/yolo-packs", acme = { git = "https://github.com/acme/yolo-packs" } }
+   packs = ["claude", "dotfiles/matt", "local/x", "acme/tools"]
 
    # B  bare names, found in the shipped set or a folder; a name in both is refused and you rename one
-   pack_folders = ["~/.dotfiles/yolo-packs"]
+   pack_sources = ["~/.dotfiles/yolo-packs"]
    packs = ["claude", "matt", "x", { git = "https://github.com/acme/tools", name = "acme-tools" }]
 
    # C  paths, as today
