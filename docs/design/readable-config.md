@@ -12,7 +12,7 @@ vantage:
 
 # Config that reads right the first time: the front door
 
-**Status:** 2026-10-25. Nothing is built. Twelve rulings recorded ([ledger](#decision-ledger));
+**Status:** 2026-10-25. Nothing is built. Thirteen rulings recorded ([ledger](#decision-ledger));
 fourteen questions open, each in the document that shows its file. Evidence verified at
 `fa13f42d9` against this repository, the effective user config this jail inherited, the 21
 shipped packs, and the maintainer's twelve packs.
@@ -55,7 +55,7 @@ seed; incomplete while any question is open).
 
 | Document | The file it shows | Its questions |
 | :--- | :--- | :--- |
-| [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | [OQ-RC3](config-user.md#OQ-RC3) a provider by name · [OQ-RC13](config-user.md#OQ-RC13) which conventions (nine) · [OQ-RC14](config-user.md#OQ-RC14) the two profile names · [OQ-RC15](config-user.md#OQ-RC15) how your packs are named · [OQ-RC16](config-user.md#OQ-RC16) fetch from any repository |
+| [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | [OQ-RC3](config-user.md#OQ-RC3) a provider by name · [OQ-RC13](config-user.md#OQ-RC13) which of six conventions · [OQ-RC14](config-user.md#OQ-RC14) the two profile names · [OQ-RC15](config-user.md#OQ-RC15) how your packs are named · [OQ-RC16](config-user.md#OQ-RC16) fetch from any repository |
 | [`config-project.md`](config-project.md) | `yolo-jail.toml` and `.local`: install, needs, mounts, ports, env, turning things off | [OQ-RC7](config-project.md#OQ-RC7) saying "off" with no `null` |
 | [`config-commands.md`](config-commands.md) | the command each "edit your config" message prints, what it does to the file, and the format underneath | [OQ-RC9](config-commands.md#OQ-RC9) may yolo write your file · [OQ-RC2](config-commands.md#OQ-RC2) TOML or JSONC · [OQ-RC10](config-commands.md#OQ-RC10) the verbs · [OQ-RC12](config-commands.md#OQ-RC12) what `yolo config` means |
 | [`config-migration.md`](config-migration.md) | the new file names, the release order, the migrate transcript | [OQ-RC11](config-migration.md#OQ-RC11) name or version key · [OQ-RC6](config-migration.md#OQ-RC6) older yolos · [OQ-RC8](config-migration.md#OQ-RC8) fetched packs |
@@ -87,6 +87,7 @@ seed; incomplete while any question is open).
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
+| <a id="RC-D11"></a>RC-D11 | **A declaration never selects or chooses.** The maintainer, on seeing a section-selects-its-pack convention still offered: *"Didn't we already decide that the pack does have to be listed, but we're going to help you add it?"* Yes: RC-D7 and RC-D9 settle it, and RC-D10 settles the lone-provider-is-everyone's case the same way. Neither is an option under OQ-RC13 | 2026-10-25 | [`config-user.md` §5](config-user.md#5-lines-you-never-write) | — |
 | OQ-RC4 | **The logins section is `allow`.** Ruled by taking the leaning: *"A, allow: it reads as a sentence with what follows, and the command verb and the section are then one word."* A project's side is `needs` | 2026-10-25 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |
 | OQ-RC1 | **The shape of the user config is approved, all six levers.** Ruled by taking the leaning: *"All six. L4 is the only one that changes ruled rules, and the name in packs is the user saying so, which is what those rules protect."* L1 no written defaults; L2 a key is the value it names; L3 shared facts once; L4 `packs` is the only switch; L5 the renames; L6 a non-shipped pack named by its source | 2026-10-25 | [`config-user.md` §2](config-user.md#2-the-file-proposed) | — |
 | <a id="RC-D10"></a>RC-D10 | **An empty section means nothing.** Review comment on convention C4: *"you're saying an empty section is meaningful?"* Withdrawn: presence never stands for a value; `fetch = true` stays written | 2026-10-25 | [`config-user.md` §5](config-user.md#5-lines-you-never-write) | — |

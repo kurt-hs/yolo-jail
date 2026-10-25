@@ -193,7 +193,10 @@ A convention is a default that follows from something you already did, so the li
 say it is never written. Three rules bound every one: the explicit key still wins when written;
 `yolo config show` prints what a convention supplied, as `packs = [..., "local/matt"]   # by
 convention: local/ is ~/.config/yolo-jail/packs`; and no convention widens what a jail may do
-with a login. These six are proposed; [OQ-RC13](#OQ-RC13) takes or vetoes each, and offers two more.
+with a login. These six are proposed; [OQ-RC13](#OQ-RC13) takes or vetoes each. A heading or a
+declaration never stands for a value: a settings table does not select its pack
+([§4](#4-the-nudge-when-a-table-and-a-pack-disagree)), and a lone provider does not pick itself
+as everyone's setup.
 
 ```toml
 # C1  your packs folder: ~/.config/yolo-jail/packs/<name> is local/<name>
@@ -293,31 +296,23 @@ a remote that does not answer is refused naming the `ref` to write.
    **Answer:**
    > _(empty — fill in when decided)_
 
-2. 💬 <a id="OQ-RC13"></a>**OQ-RC13: Which conventions go in?**
+2. 💬 <a id="OQ-RC13"></a>**OQ-RC13: Which of the six conventions go in?**
 
    A colleague sets up a work machine and writes the file in [§2](#2-the-file-proposed). The six
    conventions of [§5](#5-lines-you-never-write) take lines off it that follow from what they
-   already did. Two more would take more off, and both let a declaration act at a distance:
+   already did: the pack-sources line (C1), the include line (C2), a project file with nothing to
+   say (C5), a manifest for a pack that is only files (C6), facts the catalog already knows (C7),
+   and a `ref` that is the default branch (C9). Each is still writable, and `yolo config show`
+   prints what a convention supplied.
 
-   ```toml
-   # C3  a section selects its pack  (then §4's nudge never fires: the table selects instead of asking)
-   packs = ["claude", "bedrock", "aws-auth"]                     # before
-   packs = ["claude"]                                            # after: [allow.aws-auth] selected the rest
-
-   # C8  one declared setup is everyone's
-   [run_on]                                                      # before
-   default = "bedrock"
-                                                                 # after: no line; [providers.bedrock] is the only setup
-   ```
-
-   - **A — The six, and C3 and C8 too.**
-   - **B — The six.** `packs` stays the one list of what is on; the selection stays a written line.
+   - **A — All six.**
+   - **B — Some.** Name the ones to drop; each stands alone.
    - **C — None.** Every line is written.
 
-   <!-- vantage: question id=OQ-RC13 leaning="B: packs stays the one list of what is on, and no heading looks a pack up or stands for a value; the six read only what the user already wrote." -->
+   <!-- vantage: question id=OQ-RC13 leaning="A: each of the six reads only what the user already wrote, and none lets a heading or a declaration stand for a value." -->
 
-   _Leaning:_ B: `packs` stays the one list of what is on, and no heading looks a pack up or
-   stands for a value; the six read only what the user already wrote.
+   _Leaning:_ A: each of the six reads only what the user already wrote, and none lets a heading
+   or a declaration stand for a value.
 
    **Answer:**
    > _(empty — fill in when decided)_
