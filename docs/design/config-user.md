@@ -254,7 +254,7 @@ a remote that does not answer is refused naming the `ref` to write.
 
 ## 6. Open questions
 
-1. 💬 <a id="OQ-RC1"></a>**OQ-RC1: Is the shape of the file in §2 approved, lever by lever?**
+1. 💬 <a id="OQ-RC1"></a>**OQ-RC1: Is the shape of the proposed file approved, lever by lever?**
 
    A colleague copies the maintainer's config to get Bedrock. They find `bedrock` three times,
    `"claude": null`, and an `aws-auth` that appears in `packs` and again under `loopholes` with
