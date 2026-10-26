@@ -583,8 +583,25 @@ const HostServicesSessionLockName = ".session.lock"
 // caller's home dir, so the constant *strings* are what the golden tests pins
 // (they don't vary by host) while the absolute paths resolve at runtime.
 const (
+	// Human-authored config and manifest filenames. These are constants only;
+	// legacy discovery behavior remains at each existing reader until activation.
+	UserConfigTOMLName                  = "config.toml"
+	UserConfigLegacyJSONCName           = "config.jsonc"
+	UserConfigLegacyJSONName            = "config.json"
+	WorkspaceConfigTOMLName             = "yolo-jail.toml"
+	WorkspaceLocalConfigTOMLName        = "yolo-jail.local.toml"
+	WorkspaceConfigLegacyJSONCName      = "yolo-jail.jsonc"
+	WorkspaceConfigLegacyJSONName       = "yolo-jail.json"
+	WorkspaceLocalConfigLegacyJSONCName = "yolo-jail.local.jsonc"
+	WorkspaceLocalConfigLegacyJSONName  = "yolo-jail.local.json"
+	PackManifestTOMLName                = "pack.toml"
+	PackManifestLegacyJSONCName         = "pack.jsonc"
+	PackManifestLegacyJSONName          = "pack.json"
+)
+
+const (
 	globalStorageSuffix = ".local/share/yolo-jail"
-	userConfigSuffix    = ".config/yolo-jail/config.jsonc"
+	userConfigSuffix    = ".config/yolo-jail/" + UserConfigLegacyJSONCName
 	// localPackLeaf is the CONVENTIONAL LOCAL PACK's directory name. It is deliberately
 	// not a suffix of its own: the convention is "beside config.jsonc" (that is the whole
 	// argument for the location — user-scope yolo config already lives there), so
@@ -1230,7 +1247,7 @@ func UserConfigPath() string {
 	if _, err := os.Stat(p); err == nil {
 		return p
 	}
-	jsonP := filepath.Join(home(), ".config/yolo-jail/config.json")
+	jsonP := filepath.Join(home(), ".config", "yolo-jail", UserConfigLegacyJSONName)
 	if _, err := os.Stat(jsonP); err == nil {
 		return jsonP
 	}

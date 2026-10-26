@@ -1,0 +1,87 @@
+package config
+
+// RenameTransform names a conversion operation for later migration code. Descriptors contain
+// data only; they do not convert, alias, or activate any authored spelling.
+type RenameTransform uint8
+
+const (
+	RenameUnspecified RenameTransform = iota
+	RenameKey
+	RenameMove
+	RenameSplit
+	RenameValueRewrite
+	RenameFoldWhenEqual
+	RenameProfileSelection
+	RenameProfileVariant
+	RenameUnmatchedFields
+	RenameUnrepresentable
+	RenameDropDefault
+	RenameDropDerived
+	RenameDrop
+)
+
+// RenameDescriptor describes one old key and its replacement(s) without implementing the
+// transformation. Field-sensitive entries intentionally defer value handling to a converter.
+type RenameDescriptor struct {
+	OldPath      string
+	Replacements []string
+	Scope        SchemaScope
+	Transform    RenameTransform
+}
+
+var configRenames = []RenameDescriptor{
+	{OldPath: "packages", Replacements: []string{"install.nix"}, Scope: SchemaScopeBoth, Transform: RenameMove},
+	{OldPath: "mise_tools", Replacements: []string{"install.mise"}, Scope: SchemaScopeBoth, Transform: RenameMove},
+	{OldPath: "gpu", Replacements: []string{"machine.gpu"}, Scope: SchemaScopeBoth, Transform: RenameMove},
+	{OldPath: "resources", Replacements: []string{"machine.resources"}, Scope: SchemaScopeBoth, Transform: RenameMove},
+	{OldPath: "network.ports", Replacements: []string{"machine.ports"}, Scope: SchemaScopeBoth, Transform: RenameMove},
+	{OldPath: "network.forward_host_ports", Replacements: []string{"machine.forward"}, Scope: SchemaScopeBoth, Transform: RenameMove},
+	{OldPath: "network.mode", Replacements: []string{"network.mode"}, Scope: SchemaScopeBoth, Transform: RenameKey},
+	{OldPath: "network", Replacements: []string{"network.mode", "machine.ports", "machine.forward"}, Scope: SchemaScopeBoth, Transform: RenameSplit},
+	{OldPath: "env_sources", Replacements: []string{"env.files", "env.set", "env.unset"}, Scope: SchemaScopeBoth, Transform: RenameSplit},
+	{OldPath: "brokered", Replacements: []string{"allow.*", "requests.*"}, Scope: SchemaScopeFieldSensitive, Transform: RenameValueRewrite},
+	{OldPath: "brokered.*.grants.*", Replacements: []string{"allow.*.always", "requests.*"}, Scope: SchemaScopeFieldSensitive, Transform: RenameValueRewrite},
+	{OldPath: "brokered.*.grant_kinds", Replacements: []string{"allow.*.on_request"}, Scope: SchemaScopeUserOnly, Transform: RenameMove},
+	{OldPath: "brokered.*.repos", Replacements: []string{"requests.github.repos"}, Scope: SchemaScopeWorkspaceOnly, Transform: RenameMove},
+	{OldPath: "brokered.*.workspaces", Replacements: []string{"requests.github.repos"}, Scope: SchemaScopeFieldSensitive, Transform: RenameValueRewrite},
+	{OldPath: "brokered.*.grants.*.kind", Replacements: []string{"allow.*.always", "allow.*.on_request"}, Scope: SchemaScopeFieldSensitive, Transform: RenameValueRewrite},
+	{OldPath: "brokered.*.grants.*.repo", Replacements: []string{"requests.github.repos"}, Scope: SchemaScopeWorkspaceOnly, Transform: RenameMove},
+	{OldPath: "brokered.*.grants.*.branch", Replacements: []string{"requests.git.push"}, Scope: SchemaScopeWorkspaceOnly, Transform: RenameValueRewrite},
+	{OldPath: "brokered.*.sets", Replacements: nil, Scope: SchemaScopeUserOnly, Transform: RenameUnrepresentable},
+	{OldPath: "brokered.*.sets.*", Replacements: nil, Scope: SchemaScopeUserOnly, Transform: RenameUnrepresentable},
+	{OldPath: "profile", Replacements: []string{"active_provider.default", "active_provider.*"}, Scope: SchemaScopeUserOnly, Transform: RenameProfileSelection},
+	{OldPath: "profile.*", Replacements: []string{"active_provider.default", "active_provider.*"}, Scope: SchemaScopeUserOnly, Transform: RenameProfileSelection},
+	{OldPath: "profiles.*", Replacements: []string{"providers.*", "providers.*.variants.*"}, Scope: SchemaScopeUserOnly, Transform: RenameProfileVariant},
+	{OldPath: "profiles.*.provider", Replacements: []string{"providers.*"}, Scope: SchemaScopeUserOnly, Transform: RenameValueRewrite},
+	{OldPath: "profiles.*.model", Replacements: []string{"providers.*.model", "providers.*.variants.*.model"}, Scope: SchemaScopeUserOnly, Transform: RenameValueRewrite},
+	{OldPath: "profiles.*.via", Replacements: []string{"providers.*.via", "providers.*.variants.*.via"}, Scope: SchemaScopeUserOnly, Transform: RenameValueRewrite},
+	{OldPath: "profiles.*.enforce_models", Replacements: []string{"providers.*.variants.*.enforce_models"}, Scope: SchemaScopeUserOnly, Transform: RenameMove},
+	{OldPath: "profiles.*.subagents", Replacements: []string{"providers.*.variants.*.subagents"}, Scope: SchemaScopeUserOnly, Transform: RenameMove},
+	{OldPath: "profiles.*.*", Replacements: []string{"providers.*.variants.*.*"}, Scope: SchemaScopeUserOnly, Transform: RenameUnmatchedFields},
+	{OldPath: "providers.*.base_url", Replacements: []string{"providers.*.endpoints.*.base_url"}, Scope: SchemaScopeUserOnly, Transform: RenameValueRewrite},
+	{OldPath: "model_facts.*", Replacements: []string{"providers.*.every_model"}, Scope: SchemaScopeUserOnly, Transform: RenameFoldWhenEqual},
+	{OldPath: "providers.*.models.*.extends", Replacements: []string{"providers.*.every_model"}, Scope: SchemaScopeBoth, Transform: RenameValueRewrite},
+	{OldPath: "providers.*.models.*.wire_id", Replacements: []string{"providers.*.models.*.twin_of"}, Scope: SchemaScopeBoth, Transform: RenameValueRewrite},
+	{OldPath: "providers.*.models.*.context_window", Replacements: []string{"providers.*.models.*.context", "providers.*.every_model.context"}, Scope: SchemaScopeBoth, Transform: RenameFoldWhenEqual},
+	{OldPath: "providers.*.models.*.input", Replacements: []string{"providers.*.models.*.accepts", "providers.*.every_model.accepts"}, Scope: SchemaScopeBoth, Transform: RenameFoldWhenEqual},
+	{OldPath: "providers.*.models.*.cost", Replacements: []string{"providers.*.models.*.price", "providers.*.every_model.price"}, Scope: SchemaScopeBoth, Transform: RenameFoldWhenEqual},
+	{OldPath: "providers.*.models.*.id", Replacements: []string{"providers.*.models.<id>"}, Scope: SchemaScopeBoth, Transform: RenameDropDerived},
+	{OldPath: "providers.*.models.*.vendor", Replacements: []string{"providers.*.models.<id>"}, Scope: SchemaScopeBoth, Transform: RenameDropDerived},
+	{OldPath: "providers.*.models.*.max_tokens", Replacements: []string{"providers.*.models.*.max_tokens", "providers.*.every_model.max_tokens"}, Scope: SchemaScopeBoth, Transform: RenameFoldWhenEqual},
+	{OldPath: "providers.*.models.*.reasoning", Replacements: []string{"providers.*.models.*.reasoning", "providers.*.every_model.reasoning"}, Scope: SchemaScopeBoth, Transform: RenameFoldWhenEqual},
+
+	{OldPath: "loopholes.*.enabled", Replacements: []string{"off"}, Scope: SchemaScopeFieldSensitive, Transform: RenameValueRewrite},
+	{OldPath: "loopholes.*.settings.*", Replacements: []string{"allow.*.*"}, Scope: SchemaScopeFieldSensitive, Transform: RenameValueRewrite},
+	{OldPath: "host_processes", Replacements: []string{"the host-processes pack"}, Scope: SchemaScopeUserOnly, Transform: RenameDrop},
+	{OldPath: "journal", Replacements: []string{"the journal pack"}, Scope: SchemaScopeUserOnly, Transform: RenameDrop},
+}
+
+// RenameDescriptors returns a detached copy of the migration metadata in declaration order.
+func RenameDescriptors() []RenameDescriptor {
+	out := make([]RenameDescriptor, len(configRenames))
+	for i, d := range configRenames {
+		out[i] = d
+		out[i].Replacements = append([]string(nil), d.Replacements...)
+	}
+	return out
+}

@@ -30,8 +30,16 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// ManifestName is the file a pack declares itself in, at its root.
-const ManifestName = "pack.json"
+const (
+	// ManifestLegacyJSONName is the legacy pack manifest filename.
+	ManifestLegacyJSONName = paths.PackManifestLegacyJSONName
+	// ManifestName is retained as the legacy filename used by existing JSON readers.
+	ManifestName = ManifestLegacyJSONName
+	// ManifestLegacyJSONCName is the transitional JSONC manifest filename.
+	ManifestLegacyJSONCName = paths.PackManifestLegacyJSONCName
+	// ManifestTOMLName is the grouped authoring manifest filename.
+	ManifestTOMLName = paths.PackManifestTOMLName
+)
 
 func cleanJSON5(data []byte) ([]byte, error) {
 	v, err := json5.Decode(data)
@@ -47,6 +55,8 @@ func cleanJSON5(data []byte) ([]byte, error) {
 // at all — that is the common case and it must stay zero-ceremony. A manifest is how a
 // pack asks for something more: a writable dir, a mount target, a host file.
 type Manifest struct {
+	// Origin identifies the manifest syntax that produced this normalized view.
+	Origin ManifestOrigin `json:"-"`
 	// Name is the pack's own name for itself, and it is INFORMATIONAL — nothing derives
 	// the pack's effective name from it.
 	//
@@ -634,6 +644,7 @@ func Decode(data []byte) (*Manifest, []string) {
 		return nil, []string{ManifestName + ": " + err.Error() + unknownFieldHint(err)}
 	}
 	problems := append(m.retiredFieldProblems(), m.installHintProblems()...)
+	m.setLegacyOrigin()
 	return &m, append(problems, m.Validate()...)
 }
 
@@ -774,6 +785,7 @@ func DecodeTolerant(data []byte) (m *Manifest, problems, skipped []string) {
 	if err := json.Unmarshal(clean, &man); err != nil {
 		return nil, []string{ManifestName + ": " + err.Error()}, nil
 	}
+	man.setLegacyOrigin()
 	// A FIELD this build does not know, which json.Unmarshal above ignores, is the same class as
 	// an unknown kind one level down, and is read as the host's use read reads it
 	// (DecodeForUse, docs/reference/patched-forks.md PF-D68 and PF-D69), so a jail renders what

@@ -486,7 +486,7 @@ func validateMountScope(config *jsonx.OrderedMap, workspace string, errs *[]stri
 	// merged record could only say where the `mounts` key is, in every file that writes one.
 	elements, indices := parseMountsIndexed(wsCfg)
 	for n, m := range elements {
-		if !m.RW || !workspaceScopeRestriction("config.mounts[*]", "mount is read-write") {
+		if !m.RW {
 			continue
 		}
 		msg := fmt.Sprintf("config.mounts: %s is in the workspace config, and a read-write "+

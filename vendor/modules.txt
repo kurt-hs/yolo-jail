@@ -2,6 +2,10 @@
 ## explicit; go 1.18
 github.com/BurntSushi/toml
 github.com/BurntSushi/toml/internal
+# github.com/pelletier/go-toml/v2 v2.4.3
+## explicit; go 1.21.0
+github.com/pelletier/go-toml/v2/internal/parserbridge
+github.com/pelletier/go-toml/v2/unstable
 # github.com/yuin/gopher-lua v1.1.2
 ## explicit; go 1.23
 github.com/yuin/gopher-lua

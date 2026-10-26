@@ -980,7 +980,7 @@ func validateHostFiles(config *jsonx.OrderedMap, workspace string, errs *[]strin
 	wsEntries, wsIndices, _ := checkHostFilesIndexed(wsValue, "workspace", false)
 	for n, e := range wsEntries {
 		i := wsIndices[n]
-		if !e.SourceBearing() || !workspaceScopeRestriction("config.host_files[*]", "entry names a host source (including string shorthand)") {
+		if !e.SourceBearing() {
 			continue
 		}
 		msg := fmt.Sprintf("config.%s[%d]: an entry that names a host source is "+

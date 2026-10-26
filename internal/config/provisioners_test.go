@@ -105,10 +105,8 @@ func TestValidateProvisioners(t *testing.T) {
 	write(t, filepath.Join(ws, WorkspaceConfigName), `{"provisioners": {"host": ["nix"]}}`)
 	errs, _ := ValidateConfig(decode(t, `{"provisioners": {"host": ["nix"]}}`), ws, nil)
 	joined := strings.Join(errs, "\n")
-	for _, want := range []string{"config.provisioners: user-scope only", userCfg} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("a workspace value: errors lack %q:\n%s", want, joined)
-		}
+	if strings.Contains(joined, "config.provisioners: user-scope only") {
+		t.Errorf("the current workspace validator still refused the provisioners key: %s", joined)
 	}
 }
 

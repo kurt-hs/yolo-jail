@@ -130,8 +130,7 @@ func loopholeSettingsScopeViolations(name string, spec *jsonx.OrderedMap, srcFil
 	var out []string
 	for _, key := range settings.Keys() {
 		decl, declared := loopholedecl.SettingByKey(info.Settings, key)
-		if !declared || decl.Scope != loopholedecl.SettingScopeUser ||
-			!workspaceScopeRestriction("config.loopholes.*.settings.*", "manifest declares the setting user-scope") {
+		if !declared || decl.Scope != loopholedecl.SettingScopeUser {
 			continue
 		}
 		out = append(out, path+".settings."+key+": user-scope only — "+pytext.Repr(name)+
