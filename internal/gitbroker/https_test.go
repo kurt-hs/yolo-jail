@@ -154,6 +154,8 @@ func newHTTPSFixture(t *testing.T, o httpsOpts) *httpsFixture {
 	h := &httpsFixture{srv: &httpsServer{}}
 	var ts *httptest.Server
 	var revokeOnce sync.Once
+	fixtureReady := make(chan struct{})
+	defer close(fixtureReady)
 	h.fixture = newFixtureOpts(t, fixtureOpts{
 		grants: o.grants,
 		noRead: o.noRead,
@@ -164,6 +166,7 @@ func newHTTPSFixture(t *testing.T, o httpsOpts) *httpsFixture {
 				Env: []string{"GIT_PROJECT_ROOT=" + srvRoot, "GIT_HTTP_EXPORT_ALL=1", "HOME=" + f.root,
 					"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null"}}
 			ts = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				<-fixtureReady
 				user, pass, ok := r.BasicAuth()
 				rec := seenRequest{Method: r.Method, URI: r.URL.RequestURI(), GitProtocol: r.Header.Get("Git-Protocol"),
 					Authed: ok && user == httpsUser && pass == httpsPass, AnyAuth: r.Header.Get("Authorization") != ""}
@@ -305,6 +308,51 @@ func readFile(t *testing.T, p string) string {
 	return string(b)
 }
 
+func TestHTTPSPublicCloneWithoutReadGrantOrApprovedURL(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{public: true, noRead: true})
+	h.setScope()
+	cloneDir := filepath.Join(h.root, "public-clone")
+
+	out, err := h.git("clone", h.url, cloneDir)
+	if err != nil {
+		t.Fatalf("public clone without grants or scope: %v\n%s\nrequests:\n%s", err, out, h.srv.log(t))
+	}
+	if got, want := mustGit(t, cloneDir, "rev-parse", "HEAD"), mustGit(t, h.bare, "rev-parse", "main"); got != want {
+		t.Fatalf("cloned HEAD %s, bare main %s", got, want)
+	}
+	if got := readFile(t, filepath.Join(cloneDir, "README")); got != "hello\n" {
+		t.Fatalf("cloned README %q, want the served repository content", got)
+	}
+	if reqs := h.srv.requests(); len(reqs) == 0 {
+		t.Fatal("git clone did not reach the smart HTTPS fixture")
+	} else {
+		for _, r := range reqs {
+			if r.AnyAuth {
+				t.Fatalf("anonymous public clone sent authorization:\n%s", h.srv.log(t))
+			}
+		}
+	}
+	if len(h.credCalls()) != 0 {
+		t.Fatalf("public clone ran the host credential helper: %v", h.credCalls())
+	}
+	if h.sshRan() {
+		t.Fatal("HTTPS public clone started host ssh")
+	}
+	scope, err := brokerscope.ReadFile(h.scopeFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scope.Repos) != 0 {
+		t.Fatalf("anonymous clone registered an approved repository: %v", scope.Repos)
+	}
+	if entries := liveEntries(t); len(entries) != 0 {
+		t.Fatalf("anonymous clone added working-set entries: %+v", entries)
+	}
+	if !strings.Contains(auditRaw(t), `"set":"read"`) || !strings.Contains(auditRaw(t), `"outcome":"ran"`) {
+		t.Fatalf("anonymous clone was not audited as a read:\n%s", auditRaw(t))
+	}
+}
+
 func TestHTTPSPublicFetchWithoutReadGrantOrApprovedURL(t *testing.T) {
 	h := newHTTPSFixture(t, httpsOpts{public: true, noRead: true})
 	h.setScope()
@@ -414,6 +462,38 @@ func TestHTTPSURLUserInfoIsNotCredentialHint(t *testing.T) {
 		if r.AnyAuth {
 			t.Fatalf("URL user-info became HTTP authorization:\n%s", h.srv.log(t))
 		}
+	}
+}
+
+func TestHTTPSCredentialFillIgnoresURLUserInfoAfterApproval(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{})
+	remote := strings.Replace(h.url, "https://", "https://urluser:urlpass@", 1)
+	leg, err := h.broker.newHTTPSLeg(context.Background(), remote, serviceUploadPack, nil, nil)
+	if err != nil {
+		t.Fatalf("create HTTPS leg: %v", err)
+	}
+	defer leg.client.CloseIdleConnections()
+	// Scope entries reject HTTPS user-info. Exercise the post-policy credential-fill seam with
+	// an approved result to ensure user-info cannot become a credential-helper username hint.
+	leg.credentialPolicy = func() (bool, string, error) { return true, "", nil }
+	resp, err := leg.do(http.MethodGet, "/info/refs?service=git-upload-pack", "", "", nil)
+	if err != nil {
+		t.Fatalf("private advertisement with approved credential fill: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("credential retry status %d, want 200", resp.StatusCode)
+	}
+	calls := h.credCalls()
+	if len(calls) != 2 || !strings.HasSuffix(calls[0], "-fill") || !strings.HasSuffix(calls[1], "-approve") {
+		t.Fatalf("private 401 did not fill then approve exactly once: %v", calls)
+	}
+	stdin := readFile(t, filepath.Join(calls[0], "stdin"))
+	if strings.Contains(stdin, "username=") || strings.Contains(stdin, "urluser") || strings.Contains(stdin, "urlpass") {
+		t.Fatalf("URL user-info leaked into credential fill:\n%s", stdin)
+	}
+	if reqs := h.srv.requests(); len(reqs) != 2 || reqs[0].AnyAuth || !reqs[1].Authed {
+		t.Fatalf("private 401 did not retry with only the credential-helper result:\n%s", h.srv.log(t))
 	}
 }
 
@@ -659,6 +739,9 @@ func TestCredentialFillRunsInAnEmptyBrokerDir(t *testing.T) {
 		if !strings.Contains(stdin, want) {
 			t.Fatalf("fill stdin lacks %q:\n%s", want, stdin)
 		}
+	}
+	if strings.Contains(stdin, "username=") {
+		t.Fatalf("credential fill received an unexpected username hint:\n%s", stdin)
 	}
 	if strings.Contains(stdin, "password") {
 		t.Fatalf("fill was handed a password:\n%s", stdin)
