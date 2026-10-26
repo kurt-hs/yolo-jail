@@ -22,7 +22,7 @@ summary: "How yolo derives, renders, stages and refreshes built-in guidance from
 
 # Jail mechanics — generated guidance for the applied environment
 
-**Status:** Implemented; source-backed against `1b986b4`.
+**Status:** Implemented. The source and permanent regression tests define the behavior below.
 
 **UNMEASURED:** Native macOS Seatbelt enforcement and a real rootless Linux Podman host have not
 been observed. Nested Podman evidence cannot certify those conditions or generic host reachability.
