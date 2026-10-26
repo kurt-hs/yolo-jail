@@ -9,6 +9,7 @@ package run
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -16,7 +17,9 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/broker"
 	"github.com/mschulkind-oss/yolo-jail/internal/claudeview"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/oauthbroker"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
 func viewEnv(val string) func(string) string {
@@ -100,6 +103,185 @@ func TestTheViewNeedsTheBrokerLoophole(t *testing.T) {
 	}
 	if args := o.claudeCredentialViewEnvArgs("podman", jsonx.NewOrderedMap()); len(args) != 0 {
 		t.Errorf("the jail was told it has a view with no broker to write it: %v", args)
+	}
+}
+
+func TestRegistrationUsesTheClaudeHomeForEachMode(t *testing.T) {
+	brokerFixtureDirs(t, true)
+	ws := t.TempDir()
+	o := goldenOptions(ws, t.TempDir())
+	var stderr bytes.Buffer
+	o.Stderr = &stderr
+	o.Getenv = viewEnv("1")
+	var got []claudeview.Location
+	saved := registerView
+	t.Cleanup(func() { registerView = saved })
+	registerView = func(loc claudeview.Location, rt, cname string) (oauthbroker.RegisterResult, error) {
+		got = append(got, loc)
+		if err := loc.EnsureDir(); err != nil {
+			return oauthbroker.RegisterResult{}, err
+		}
+		if err := loc.Write([]byte(`{"claudeAiOauth":{"accessToken":"fake-enrollment"}}`)); err != nil {
+			return oauthbroker.RegisterResult{}, err
+		}
+		return oauthbroker.RegisterResult{Wrote: true}, nil
+	}
+
+	for _, tc := range []struct {
+		name string
+		rt   string
+		mode macosuser.Mode
+		want string
+	}{
+		{name: "podman account home", rt: "podman", mode: macosuser.ModeAccount, want: "claude"},
+		{name: "podman self-configured options", rt: "podman", mode: macosuser.ModeSelf, want: "claude"},
+		{name: "macos-user account home", rt: "macos-user", mode: macosuser.ModeAccount, want: "claude"},
+		{name: "macos-user self home", rt: "macos-user", mode: macosuser.ModeSelf, want: ".claude"},
+		{name: "Apple Container home", rt: "container", mode: macosuser.ModeSelf, want: ".claude"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o.MacosUserMode = tc.mode
+			o.MacosUserHostHome = "/Users/you"
+			o.registerClaudeCredentialView(tc.rt, "yolo-ws", jsonx.NewOrderedMap())
+			loc := got[len(got)-1]
+			if loc.Workspace != ws || loc.Subdir != tc.want {
+				t.Fatalf("registered %+v, want workspace %q subdir %q", loc, ws, tc.want)
+			}
+			if tc.rt == "macos-user" && tc.mode == macosuser.ModeSelf {
+				homes := macosuser.LaunchHomes(macosuser.ModeSelf, ws, o.MacosUserHostHome)
+				if loc.Path() != filepath.Join(homes.Home, claudeview.ViewRel) {
+					t.Fatalf("registered view %q, Claude HOME reads %q", loc.Path(), filepath.Join(homes.Home, claudeview.ViewRel))
+				}
+			}
+			info, err := os.Lstat(loc.Path())
+			if err != nil || !info.Mode().IsRegular() {
+				t.Fatalf("fake enrollment at %q is not a regular file: info=%v err=%v", loc.Path(), info, err)
+			}
+			gotBytes, err := loc.Read()
+			if err != nil || !bytes.Contains(gotBytes, []byte("fake-enrollment")) {
+				t.Fatalf("registered location does not read its fake enrollment: bytes=%q err=%v", gotBytes, err)
+			}
+			if tc.rt == "macos-user" && tc.mode == macosuser.ModeSelf {
+				outside := filepath.Join(t.TempDir(), "outside.json")
+				if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(loc.Path()); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(outside, loc.Path()); err != nil {
+					t.Fatal(err)
+				}
+				o.registerClaudeCredentialView(tc.rt, "yolo-ws", jsonx.NewOrderedMap())
+				if outsideBytes, err := os.ReadFile(outside); err != nil || string(outsideBytes) != "outside" {
+					t.Fatalf("registration followed a symlink at the self-mode Claude path: bytes=%q err=%v", outsideBytes, err)
+				}
+				if err := os.Remove(loc.Path()); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+
+	before := len(got)
+	o.Getenv = viewEnv("")
+	o.registerClaudeCredentialView("macos-user", "yolo-ws", jsonx.NewOrderedMap())
+	if len(got) != before {
+		t.Errorf("view-off registration changed count from %d to %d", before, len(got))
+	}
+	brokerFixtureDirs(t, false)
+	o.Getenv = viewEnv("1")
+	o.registerClaudeCredentialView("macos-user", "yolo-ws", jsonx.NewOrderedMap())
+	if len(got) != before {
+		t.Errorf("registration occurred without selected broker pack: count %d, want %d", len(got), before)
+	}
+}
+
+func TestMacosUserViewNoticeReflectsMeasuredEnrollmentLimits(t *testing.T) {
+	brokerFixtureDirs(t, true)
+	for _, tc := range []struct {
+		name string
+		mode macosuser.Mode
+		want string
+		fn   func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error)
+	}{
+		{name: "self registration error", mode: macosuser.ModeSelf, want: "session-TMPDIR workaround", fn: func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
+			return oauthbroker.RegisterResult{}, os.ErrPermission
+		}},
+		{name: "self no canonical login", mode: macosuser.ModeSelf, want: "session TMPDIR", fn: func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
+			return oauthbroker.RegisterResult{}, nil
+		}},
+		{name: "account registration error", mode: macosuser.ModeAccount, want: "Keychain write hang", fn: func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
+			return oauthbroker.RegisterResult{}, os.ErrPermission
+		}},
+		{name: "account no canonical login", mode: macosuser.ModeAccount, want: "Keychain write hang", fn: func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
+			return oauthbroker.RegisterResult{}, nil
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o := goldenOptions(t.TempDir(), t.TempDir())
+			o.MacosUserMode = tc.mode
+			o.Getenv = viewEnv("1")
+			var stderr bytes.Buffer
+			o.Stderr = &stderr
+			saved := registerView
+			t.Cleanup(func() { registerView = saved })
+			registerView = tc.fn
+			o.registerClaudeCredentialView("macos-user", "yolo-ws", jsonx.NewOrderedMap())
+			message := stderr.String()
+			if !strings.Contains(message, tc.want) {
+				t.Errorf("notice omitted measured limitation %q:\n%s", tc.want, message)
+			}
+			if !strings.Contains(message, "YOLO_CLAUDE_CREDENTIAL_VIEW=0") {
+				t.Errorf("notice omitted the existing view-off path:\n%s", message)
+			}
+		})
+	}
+}
+
+func TestSelfMacosUserViewIsHandedToTheFinalEnvironment(t *testing.T) {
+	brokerFixtureDirs(t, true)
+	home := packHome(t)
+	writeUserPacks(t, home, `["claude"]`)
+	ws := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
+	o.DryRun = false
+	o.MacosUserMode = macosuser.ModeSelf
+	o.MacosUserHostHome = t.TempDir()
+	o.Getenv = func(k string) string {
+		switch k {
+		case claudeview.SwitchEnv:
+			return "1"
+		case "YOLO_RUNTIME":
+			return "macos-user"
+		default:
+			return ""
+		}
+	}
+	var got *jsonx.OrderedMap
+	o.MacosUserRun = func(_ *jsonx.OrderedMap, _ string, _, _ []string, _, _ string,
+		_ macosuser.HomeOverlay, _ macosuser.HostContext, _ bool, env *jsonx.OrderedMap,
+		_ []packload.BlockedTool, _ macosuser.JailDaemons) int {
+		got = env
+		return 0
+	}
+	saved := registerView
+	t.Cleanup(func() { registerView = saved })
+	registerView = func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
+		return oauthbroker.RegisterResult{Wrote: true}, nil
+	}
+	if rc := Run(*o); rc != 0 {
+		t.Fatalf("Run() = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
+	}
+	if got == nil {
+		t.Fatal("macos-user launch did not hand its final environment to the runner")
+	}
+	if v := envAt(got, claudeview.SwitchEnv); v != "1" {
+		t.Errorf("final %s = %q, want 1", claudeview.SwitchEnv, v)
+	}
+	if v := envAt(got, claudeview.SecureStorageEnv); v != "" {
+		t.Errorf("view-on final environment points Claude at a shared refresh-token store: %q", v)
 	}
 }
 

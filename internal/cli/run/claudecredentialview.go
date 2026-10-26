@@ -14,8 +14,11 @@ package run
 // Every line here, the switch and its readers are deleted with the interception (CL-D7).
 
 import (
+	"path/filepath"
+
 	"github.com/mschulkind-oss/yolo-jail/internal/claudeview"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/oauthbroker"
 )
 
@@ -58,9 +61,10 @@ var registerView = func(loc claudeview.Location, rt, cname string) (oauthbroker.
 // registration lives in. That broker is this jail's own where HD-R1 is built
 // (hostdaemonperjail.go), and it keeps every registered view current while the jail runs.
 //
-// Never fatal. A launch whose registration failed still starts, and says why: its Claude will
-// ask for /login, which is the failure the user can see and act on, and a refused launch would
-// be a bigger loss for a credential that is recoverable from inside the jail.
+// Never fatal. A launch whose registration failed still starts, and says why its Claude may lack
+// a login; on macos-user it preserves the view-off path, while distinguishing the self-mode
+// session-TMPDIR workaround from account mode's measured Keychain write hang. Refusing a launch
+// would be a bigger loss for a credential that may be recoverable from another supported path.
 //
 // OQ-CL2's "the next launch says so" is here: a workspace a jail's /logout signed out is signed
 // back in to the machine's login by this registration, and the line names both halves.
@@ -69,11 +73,29 @@ func (o *Options) registerClaudeCredentialView(rt, cname string, cfg *jsonx.Orde
 		return
 	}
 	out := o.pr(o.Stderr)
-	loc := claudeview.Location{Workspace: o.Workspace, Subdir: claudeview.HostSubdir(rt)}
+	subdir := claudeview.HostSubdir(rt)
+	if rt == "macos-user" && o.MacosUserMode == macosuser.ModeSelf { // parity: HonoredBy — registration follows MMP-D5 HOME; account mode keeps its undotted location
+		homes := macosuser.LaunchHomes(macosuser.ModeSelf, o.Workspace, o.macosUserHostHome())
+		// MMP-D5 makes self HOME the workspace's home state; place the view at the `.claude`
+		// directory under that HOME, where CL-D8 says Claude reads without env overrides.
+		subdir = filepath.Base(filepath.Join(homes.Home, filepath.Dir(claudeview.ViewRel)))
+	}
+	loc := claudeview.Location{Workspace: o.Workspace, Subdir: subdir}
 	res, err := registerView(loc, rt, cname)
 	if err != nil {
-		out.printf("[yellow]Warning: could not register this workspace's Claude credential view "+
-			"(%s); Claude in this jail will ask for /login.[/yellow]", err.Error())
+		if rt == "macos-user" && o.MacosUserMode == macosuser.ModeSelf { // parity: Warned — native self enrollment depended on the separate session-TMPDIR workaround
+			out.printf("[yellow]Warning: could not register this workspace's Claude credential view "+
+				"(%s); native self-mode /login enrolled only after Claude was started with a "+
+				"session-TMPDIR workaround, which this launcher does not yet set. Relaunch with "+
+				"YOLO_CLAUDE_CREDENTIAL_VIEW=0 to use the existing view-off path.[/yellow]", err.Error())
+		} else if rt == "macos-user" { // parity: Warned — account-mode Keychain writes hang; the launch recommends view-off rather than /login
+			out.printf("[yellow]Warning: could not register this workspace's Claude credential view "+
+				"(%s); account-mode /login has a measured Keychain write hang. Relaunch with "+
+				"YOLO_CLAUDE_CREDENTIAL_VIEW=0 to use the existing view-off path.[/yellow]", err.Error())
+		} else {
+			out.printf("[yellow]Warning: could not register this workspace's Claude credential view "+
+				"(%s); Claude in this jail will ask for /login.[/yellow]", err.Error())
+		}
 		return
 	}
 	if res.WasLoggedOut {
@@ -82,7 +104,18 @@ func (o *Options) registerClaudeCredentialView(rt, cname string, cfg *jsonx.Orde
 			"whole machine out.[/yellow]")
 	}
 	if !res.Wrote {
-		out.print("[dim]Claude: this machine has no Claude login yet; /login in the jail " +
-			"enrolls it for every workspace.[/dim]")
+		if rt == "macos-user" && o.MacosUserMode == macosuser.ModeSelf { // parity: Warned — self enrollment was measured only with the separate session-TMPDIR workaround
+			out.print("[dim]Claude: this machine has no Claude login yet; self-mode /login enrolled " +
+				"a view in the native test only after using Claude's session TMPDIR, which this " +
+				"launcher does not yet provide. Relaunch with YOLO_CLAUDE_CREDENTIAL_VIEW=0 " +
+				"to use the existing view-off path.[/dim]")
+		} else if rt == "macos-user" { // parity: Warned — account-mode Keychain writes hang; the launch recommends view-off rather than /login
+			out.print("[dim]Claude: this machine has no Claude login yet; account-mode /login has a " +
+				"measured Keychain write hang. Relaunch with YOLO_CLAUDE_CREDENTIAL_VIEW=0 " +
+				"to use the existing view-off path.[/dim]")
+		} else {
+			out.print("[dim]Claude: this machine has no Claude login yet; /login in the jail " +
+				"enrolls it for every workspace.[/dim]")
+		}
 	}
 }
