@@ -73,8 +73,8 @@ the entries below apply.
 - `launchFlagClaims` in `internal/packload/packload.go` assigns a bin's flag list; P4 makes it
   append unless `replace = true`.
 - Manifests at yolo ≤ 0.11.1 are decoded with `DisallowUnknownFields`, so any new field refuses
-  the pack; the new file name sidesteps that, and the next release must refuse a pack folder holding
-  `pack.toml` ([`config-migration.md` §3](config-migration.md#3-the-order-of-releases)).
+  the pack; the new file name sidesteps that; a yolo older than the TOML release stages a migrated pack as
+  manifest-less ([`config-migration.md` §3](config-migration.md#3-the-order-of-releases)).
 - `pack lint` findings the design asks for: an overlay key the surface's derive also writes
   (`subagents.defaultModel`, `defaultProvider`, `modelScope.*` on `pi/settings`), named with the
   winning layer; a pack copying files one by one into a folder pi loads as a package; a gzip ratio
