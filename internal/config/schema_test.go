@@ -362,6 +362,58 @@ func TestReadableSchemaModelFieldsMatchExecutableManifestModelTypes(t *testing.T
 	} {
 		assertReflectedSchemaFields(t, readable, nested.path, nested.typ)
 	}
+
+	// The legacy validator's supported shared-fact set is the source inventory. These names
+	// normalize to the typed D1 ProviderModel fields rather than being reflected as row keys.
+	sharedNames := map[string]string{
+		"name": "name", "description": "description", "reasoning": "reasoning",
+		"input": "accepts", "cost": "price", "context_window": "context",
+		"max_tokens": "max_tokens", "base": "base", "openrouter_routing": "openrouter_routing",
+	}
+	modelFields := make(map[string]reflect.StructField, modelType.NumField())
+	for i := 0; i < modelType.NumField(); i++ {
+		field := modelType.Field(i)
+		name := strings.Split(field.Tag.Get("json"), ",")[0]
+		if name != "" && name != "-" {
+			modelFields[name] = field
+		}
+	}
+	for supported := range knownSharedModelKeys {
+		manifestName, ok := sharedNames[supported]
+		if !ok {
+			t.Errorf("no D1 model field mapping for supported shared fact %q", supported)
+			continue
+		}
+		field, ok := modelFields[manifestName]
+		if !ok {
+			t.Errorf("D1 ProviderModel omits supported shared fact %q (field %q)", supported, manifestName)
+			continue
+		}
+		path := "providers.*.every_model." + manifestName
+		key, ok := readable[path]
+		if !ok {
+			t.Errorf("readable shared schema omits supported fact %q at %q", supported, path)
+		} else if want := schemaTypeForGo(field.Type); key.Type != want {
+			t.Errorf("readable shared schema type for %q = %v, D1 model shape is %v", path, key.Type, want)
+		}
+	}
+	// These typed D1 facts extend the legacy shared validator inventory. Check their actual
+	// ProviderModel field types; row-only fields such as wire_id, twin_of, and compact_at do
+	// not enter this shared census.
+	for _, name := range []string{"api", "thinking", "accepts"} {
+		field, ok := modelFields[name]
+		if !ok {
+			t.Errorf("D1 ProviderModel omits shared typed field %q", name)
+			continue
+		}
+		path := "providers.*.every_model." + name
+		key, ok := readable[path]
+		if !ok {
+			t.Errorf("readable shared schema omits D1 typed field %q", path)
+		} else if want := schemaTypeForGo(field.Type); key.Type != want {
+			t.Errorf("readable shared schema type for %q = %v, D1 model shape is %v", path, key.Type, want)
+		}
+	}
 }
 
 func TestReadableSchemaContainsLegacyValidatorFieldsAndExactMixedTypes(t *testing.T) {

@@ -232,6 +232,8 @@ func ReadableSchemaKeys() []SchemaKey {
 		{Path: "providers.*.every_model.max_tokens", Scope: both, Type: SchemaTypeNumber},
 		{Path: "providers.*.every_model.reasoning", Scope: both, Type: SchemaTypeBoolean},
 		{Path: "providers.*.every_model.context", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.every_model.base", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.every_model.openrouter_routing", Scope: both, Type: SchemaTypeObject},
 		{Path: "providers.*.every_model.description", Scope: both, Type: SchemaTypeString},
 		{Path: "providers.*.every_model.name", Scope: both, Type: SchemaTypeString},
 		{Path: "providers.*.every_model.price", Scope: both, Type: SchemaTypeObject},
