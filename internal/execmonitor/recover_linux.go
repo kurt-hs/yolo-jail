@@ -84,11 +84,11 @@ func Recover(name string, run Runner, ops Ops) (bool, error) {
 	}
 	resolvedConmonPath, err := filepath.EvalSymlinks(info.ConmonPath)
 	if err != nil {
-		return false, errors.New("Podman's Conmon.Path cannot be resolved")
+		return false, errors.New("podman's Conmon.Path cannot be resolved")
 	}
 	conmon, err := os.Stat(resolvedConmonPath)
 	if err != nil || !conmon.Mode().IsRegular() || conmon.Mode().Perm()&0111 == 0 {
-		return false, errors.New("Podman's Conmon.Path is not an executable regular file")
+		return false, errors.New("podman's Conmon.Path is not an executable regular file")
 	}
 	initial, err := inspect(name, run)
 	if err != nil || initial.State != "stopping" || !hasExec(initial) {

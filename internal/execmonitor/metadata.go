@@ -34,39 +34,39 @@ func ParseRuntimeInfo(raw []byte) (RuntimeInfo, error) {
 	}
 	version, ok := root["version"].(map[string]any)
 	if !ok {
-		return RuntimeInfo{}, errors.New("Podman info has no Version object")
+		return RuntimeInfo{}, errors.New("podman info has no Version object")
 	}
 	versionText, ok := version["Version"].(string)
 	if !ok || versionText != "5.8.9" {
-		return RuntimeInfo{}, errors.New("Podman info version is missing or unsupported")
+		return RuntimeInfo{}, errors.New("podman info version is missing or unsupported")
 	}
 	host, ok := root["host"].(map[string]any)
 	if !ok {
-		return RuntimeInfo{}, errors.New("Podman info has no host object")
+		return RuntimeInfo{}, errors.New("podman info has no host object")
 	}
 	remote, ok := host["serviceIsRemote"].(bool)
 	if !ok || remote {
-		return RuntimeInfo{}, errors.New("Podman info does not prove this client is local")
+		return RuntimeInfo{}, errors.New("podman info does not prove this client is local")
 	}
 	conmon, ok := host["conmon"].(map[string]any)
 	if !ok {
-		return RuntimeInfo{}, errors.New("Podman info has no conmon object")
+		return RuntimeInfo{}, errors.New("podman info has no conmon object")
 	}
 	path, ok := conmon["path"].(string)
 	if !ok || path == "" || !strings.HasPrefix(path, "/") {
-		return RuntimeInfo{}, errors.New("Podman info has no absolute Conmon.Path")
+		return RuntimeInfo{}, errors.New("podman info has no absolute Conmon.Path")
 	}
 	conmonVersionText, ok := conmon["version"].(string)
 	if !ok {
-		return RuntimeInfo{}, errors.New("Podman info has missing or unsupported conmon version")
+		return RuntimeInfo{}, errors.New("podman info has missing or unsupported conmon version")
 	}
 	versionAndCommit, ok := strings.CutPrefix(conmonVersionText, "conmon version ")
 	if !ok {
-		return RuntimeInfo{}, errors.New("Podman info has malformed conmon version output")
+		return RuntimeInfo{}, errors.New("podman info has malformed conmon version output")
 	}
 	semanticVersion, commit, ok := strings.Cut(versionAndCommit, ", commit: ")
 	if !ok || semanticVersion != "2.2.1" || strings.TrimSpace(commit) == "" || strings.ContainsAny(commit, "\r\n") {
-		return RuntimeInfo{}, errors.New("Podman info has missing or unsupported conmon version")
+		return RuntimeInfo{}, errors.New("podman info has missing or unsupported conmon version")
 	}
 	return RuntimeInfo{Version: versionText, ConmonVersion: semanticVersion, ServiceIsRemote: remote, ConmonPath: path}, nil
 }
