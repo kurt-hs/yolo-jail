@@ -506,7 +506,7 @@ func firstUnknownKey(fields map[string]any, allowed ...string) string {
 func normalizeProvider(name string, fields map[string]any, doc *configdoc.Document) (map[string]any, *providerShape, error) {
 	providerName := name
 	shape := &providerShape{}
-	if via, ok := fields["via"].(string); ok && via != "" && !ValidPackName(via) {
+	if via, ok := fields["via"].(string); ok && !ValidPackName(via) {
 		return nil, nil, fmt.Errorf("providers.%s.via must be a valid pack name", name)
 	}
 	if raw, ok := fields["alias"]; ok {
