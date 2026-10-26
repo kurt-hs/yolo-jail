@@ -217,6 +217,40 @@ func TestDecodeOrderedPreservesRepeatedNestedArrayTableAuthoredOrder(t *testing.
 			t.Errorf("variety %d field order = %v, want [name tail]", i, got)
 		}
 	}
+
+	const singletonSource = "[[fruit]]\nname = \"apple\"\n" +
+		"[[fruit.variety]]\nz = 1\na = 2\n" +
+		"[[fruit.variety]]\nz = 3\na = 4\n" +
+		"[[fruit.variety]]\nz = 5\na = 6\n"
+	singleton, err := DecodeOrdered([]byte(singletonSource))
+	if err != nil {
+		t.Fatal(err)
+	}
+	singletonFruits, _ := singleton.Get("fruit")
+	singletonRows, ok := singletonFruits.([]any)
+	if !ok || len(singletonRows) != 1 {
+		t.Fatalf("singleton fruit = %#v, want one parent", singletonFruits)
+	}
+	parent := singletonRows[0].(*jsonx.OrderedMap)
+	if got, _ := parent.Get("name"); got != "apple" {
+		t.Fatalf("singleton fruit name = %#v, want apple", got)
+	}
+	singletonVarieties, _ := parent.Get("variety")
+	singletonChildren, ok := singletonVarieties.([]any)
+	if !ok || len(singletonChildren) != 3 {
+		t.Fatalf("singleton varieties = %#v, want three rows", singletonVarieties)
+	}
+	for i, child := range singletonChildren {
+		row := child.(*jsonx.OrderedMap)
+		if got := row.Keys(); !reflect.DeepEqual(got, []string{"z", "a"}) {
+			t.Errorf("singleton variety %d field order = %v, want [z a]", i, got)
+		}
+		for key, want := range map[string]int64{"z": int64(2*i + 1), "a": int64(2*i + 2)} {
+			if got, _ := row.Get(key); got != want {
+				t.Errorf("singleton variety %d.%s = %#v, want %d", i, key, got, want)
+			}
+		}
+	}
 }
 
 func TestDecodeOrderedNULKeyDoesNotCollideWithDottedPath(t *testing.T) {
