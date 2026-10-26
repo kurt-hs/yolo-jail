@@ -3,7 +3,7 @@ title: "Config that reads right the first time: the front door"
 date: 2026-10-24
 status: in-review
 stage: DESIGN
-next: "Nine questions remain, each at the end of the section it is about; the maintainer rules by comment in the docs"
+next: "Every question is ruled; the maintainer accepts the five documents, then the plan seed grows into the build hand-off"
 tags: [config, packs, manifest, providers, profiles, broker, grants, format, toml, migration, editing, readability, design]
 summary: "The front door to the readable-config redesign: the thesis, the principles, the five documents (each one annotated config file with its questions), and the ledger of rulings made so far. The maintainer's config takes 178 lines to say about 20 things and is misread by its author; reshaped it is under 60, yolo can edit it one hunk at a time, and one command converts every file."
 vantage:
@@ -12,12 +12,12 @@ vantage:
 
 # Config that reads right the first time: the front door
 
-**Status:** 2026-10-25. Nothing is built. Forty-three rulings recorded ([ledger](#decision-ledger));
-one question open, each in the document that shows its file. Evidence verified at
+**Status:** 2026-10-25. Nothing is built. Forty-four rulings recorded ([ledger](#decision-ledger));
+no question open. Evidence verified at
 `fa13f42d9` against this repository, the effective user config this jail inherited, the 21
 shipped packs, and the maintainer's twelve packs.
 
-**Needs your ruling:** one question, listed per document in [§2](#2-the-five-documents).
+**Needs your ruling:** nothing; every question is in the ledger. Next is the build hand-off, [`readable-config-plan.md`](readable-config-plan.md).
 
 > **In short.** A config a stranger reads correctly comes from its shape, not its file format, and
 > a config yolo can edit without a mess comes from touching only the bytes of one value. Neither
@@ -29,13 +29,12 @@ config, and asked for automatic conversion of everyone's files and for commands 
 config file mechanically instead of *"places where we ask agents to edit config files."*
 
 **How to read this.** Each document below opens with the config file it is about, annotated,
-then takes it one section at a time. A section that still needs a decision ends with its
-question, each option written as the lines you would type; a section with no question is
-approved. The arguments and measurements are in each document's appendix, there to check and
-otherwise skippable.
+then takes it one section at a time. Every section is ruled, and the [ledger](#decision-ledger)
+holds each ruling in the maintainer's words with a link to the section it governs. The arguments
+and measurements are in each document's appendix, there to check and otherwise skippable.
 
 **Reads with:** [`readable-config-plan.md`](readable-config-plan.md) (the implementation plan's
-seed; incomplete while any question is open).
+seed; it grows into the hand-off once the five documents are accepted).
 
 ---
 
@@ -56,7 +55,7 @@ seed; incomplete while any question is open).
 
 | Document | The file it shows | Its questions |
 | :--- | :--- | :--- |
-| [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | [OQ-RC21](config-user.md#OQ-RC21) a public repository outside the scope |
+| [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | none; approved |
 | [`config-project.md`](config-project.md) | `yolo-jail.toml` and `.local`: install, requests, mounts, ports, env, turning things off | none; approved |
 | [`config-commands.md`](config-commands.md) | the command each "edit your config" message prints, what it does to the file, and the format underneath | none; approved |
 | [`config-migration.md`](config-migration.md) | the new file names, the release order, the migrate transcript | none; approved |
@@ -89,6 +88,7 @@ seed; incomplete while any question is open).
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
+| OQ-RC21 | **A public repository outside the scope passes through without asking: the broker tries with no credential first, and a fetch that lends nothing owes no prompt.** Ruled by taking the leaning: *"A: the broker exists to lend your logins; a fetch that lends none is not its concern, and the prompt protects what it protects either way."* A private repository outside the scope is still refused naming the request to add | 2026-10-25 | [`config-user.md` §6](config-user.md#6-what-a-jail-may-do-with-your-logins) | — |
 | OQ-RC19 | **The manifest shape is approved, all six levers: `home/` laid in file by file, overlays in their own files, grouped by kind with the identity once, contributions state only what they change (`replace = true` otherwise), a model declared once for every agent, the obvious unwritten.** Ruled by taking the leaning: *"Approve all six: the four smallest packs become folders, and the two largest keep every fact in a fifth of the lines."* Same round, the install hint's `all` (*"what does all mean here?"*) became `default`, and unwritten it is the bin name (*"have it just default to the bin name if not given"*) | 2026-10-25 | [`pack-manifests.md` §4](pack-manifests.md#4-flags-that-add-and-a-model-said-once) | — |
 | OQ-RC5 | **Manifests change in the same break as the configs; `yolo pack migrate` runs beside `yolo config migrate`.** Ruled by taking the leaning: *"A: one break, and the migrate command does the moving; packs are the bigger files and the same rules apply."* Closes [OQ-M1](manifest-language.md#OQ-M1) and [OQ-M2](manifest-language.md#OQ-M2) | 2026-10-25 | [`pack-manifests.md` §5](pack-manifests.md#5-the-migration) | — |
 | OQ-RC7 | **A table-valued thing is turned off by a string in its place: `mcp_servers.tavily = "off"`.** Ruled by taking the leaning: *"B, which you said you like: one line that reads at a glance, unambiguous wherever the value is a table, and a one-line diff from unset; A's only edge is sharing the word with the pack switch file, which yolo writes."* The one rule: a string where a table is expected is refused unless it is exactly `"off"` | 2026-10-25 | [`config-project.md` §3](config-project.md#3-the-local-file-and-turning-something-off) | — |
@@ -112,7 +112,7 @@ seed; incomplete while any question is open).
 | OQ-RC9 | **yolo may write your config file when you ask it to, by splice: one hunk, every other byte untouched.** Ruled by taking the leaning: *"A: the ruling's complaint was a mess left by a side effect; a one-hunk edit you asked for is neither, and B cannot remove anything because lists merge by union."* A side effect still never writes your file | 2026-10-25 | [`config-commands.md` §3](config-commands.md#3-what-a-command-does-to-the-file) | — |
 | <a id="RC-D16"></a>RC-D16 | **A comment is never read as belonging to anything.** Review comment: *"Are you suggesting some sort of implicit schema for comments so they can be linked to these packs? … I don't want that."* No command moves or removes a comment; the migration keeps them in document order | 2026-10-25 | [`config-commands.md` §3](config-commands.md#3-what-a-command-does-to-the-file) | — |
 | <a id="RC-D17"></a>RC-D17 | **A command earns its place by doing more than a text edit.** Review comment: *"you have just made a CLI for editing a generic TOML file … an agent can just as easily edit this file itself"*; the commands are the human-facing ones, `gh`-style, for decisions with a step after the edit | 2026-10-25 | [`config-commands.md` §4](config-commands.md#4-the-commands) | — |
-| OQ-RC16 | **`fetch` reaches the project's own repositories, plus what it requests; nothing else.** Ruled B, in the maintainer's words: *"nothing should escape having the user be prompted with the explicit thing being granted and saying yes … this should not be an exception."* An agent wanting another repository adds it to the project file and goes through check, apply and the prompt. The public-repository case is [OQ-RC21](config-user.md#OQ-RC21) | 2026-10-25 | [`config-user.md` §6](config-user.md#6-what-a-jail-may-do-with-your-logins) | — |
+| OQ-RC16 | **`fetch` reaches the project's own repositories, plus what it requests; nothing else.** Ruled B, in the maintainer's words: *"nothing should escape having the user be prompted with the explicit thing being granted and saying yes … this should not be an exception."* An agent wanting another repository adds it to the project file and goes through check, apply and the prompt. The public-repository case is [OQ-RC21](#decision-ledger) | 2026-10-25 | [`config-user.md` §6](config-user.md#6-what-a-jail-may-do-with-your-logins) | — |
 | OQ-RC20 | **`"native"` is the one reserved word: an agent set to it is left to its own login.** Ruled B: *"this means it's a fatal error to try to use that as a regular provider name."* A provider named `native` is refused | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |
 | OQ-RC14 | **The selection key is `active_provider`;** declarations are `providers.<name>` with `variants` under them. Ruled by taking the leaning: *"A: active_provider says both halves, a provider and the one in use, and pairs with providers.* as declared against selected."* | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |
 | <a id="RC-D15"></a>RC-D15 | **RC-D14 does not hold.** The maintainer: *"what's the thing going to be for Claude? And what if there's two different defaults that Claude could use? … it depends on other environment … so you can't really name it."* An agent left to itself is not a provider; how the file says so was then ruled: `"native"` ([OQ-RC20](#decision-ledger)) | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |

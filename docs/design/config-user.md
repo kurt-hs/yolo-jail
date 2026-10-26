@@ -3,9 +3,9 @@ title: "Your config, one screen: packs, logins, and which setup each agent runs 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC21 (§6); every other section of this document is approved"
+next: "Every question is ruled; the build hand-off is the implementation plan seeded in readable-config-plan.md"
 tags: [config, packs, providers, profiles, broker, grants, conventions, design]
-summary: "The user config as one annotated file, today and proposed, then one section per part of it. A section with a question carries that question at its end; a section without one is approved. Part of the readable-config redesign; the ledger of rulings is in the front door and the evidence is in the appendix."
+summary: "The user config as one annotated file, today and proposed, then one section per part of it. Every section is ruled. Part of the readable-config redesign; the ledger of rulings is in the front door and the evidence is in the appendix."
 ---
 
 # Your config, one screen: packs, logins, and which setup each agent runs on
@@ -15,10 +15,7 @@ this jail inherited it, condensed.
 
 **How to read this.** [§1](#1-the-file-today) and [§2](#2-the-file-proposed) are the whole file;
 [§4](#4-naming-a-pack-that-is-not-shipped) to [§8](#8-lines-you-never-write) take it one part at a
-time. A section that still needs a decision ends with its question; a section with no question
-is approved, and the [ledger](readable-config.md#decision-ledger) says when.
-
-**Needs your ruling:** [OQ-RC21](#OQ-RC21) in [§6](#6-what-a-jail-may-do-with-your-logins).
+time. Every section is approved; the [ledger](readable-config.md#decision-ledger) says when.
 
 > **In short.** Each section of your config names what you decided, in a word you would use, and
 > says it once. The file below is the whole proposal; the prose only says why.
@@ -284,29 +281,16 @@ fatal: github.com/acme/other is not in this workspace's scope.
   Add it: yolo config add requests.github.repos acme/other   (then yolo check, and the human runs yolo config apply)
 ```
 
-One case is left: a public repository, which needs no login of yours at all.
+**A public repository passes through without asking** (ruled 2026-10-25,
+[OQ-RC21](readable-config.md#decision-ledger)): the broker tries the fetch with no credential
+first, and if the remote serves it, nothing of yours was lent and no prompt is owed. A private
+repository outside the scope is refused as above. *"The broker exists to lend your logins; a fetch
+that lends none is not its concern, and the prompt protects what it protects either way."*
 
-1. 💬 <a id="OQ-RC21"></a>**OQ-RC21: May a jail fetch a public repository outside its scope without asking?**
-
-   An agent in a jail runs `git clone https://github.com/golang/go` to read something. In a jail
-   every `https://` remote is routed through the git broker on the host, which refuses a
-   repository outside the workspace's approved scope, so the clone fails even though the
-   repository is public and no login of yours would be used. The agent's way forward is the same
-   as for a private one: add it to `requests.github.repos`, check, apply, your `y`.
-
-   - **A — Pass a public repository through without asking.** The broker tries the fetch with no
-     credential first; if the remote serves it, nothing of yours was lent and no prompt is owed.
-     A private repository still goes through the scope and the prompt.
-   - **B — Every fetch is in scope or refused**, public or not, as today. One rule, one prompt;
-     reading a public repository costs an apply.
-
-   <!-- vantage: question id=OQ-RC21 leaning="A: the broker exists to lend your logins; a fetch that lends none is not its concern, and the prompt protects what it protects either way." -->
-
-   _Leaning:_ A: the broker exists to lend your logins; a fetch that lends none is not its
-   concern, and the prompt protects what it protects either way.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+```console
+$ git clone https://github.com/golang/go        # public: served with no credential, nothing asked
+$ git clone https://github.com/acme/private     # private: the refusal above, naming the request to add
+```
 
 ## 7. One switch, and the nudge
 

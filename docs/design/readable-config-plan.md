@@ -12,9 +12,11 @@ summary: "The parking lot for what the readable-config design surfaced below its
 
 **Status:** 2026-10-24 — seeded during design; not a hand-off, and incomplete until
 [`readable-config.md`](readable-config.md) and the five documents it fronts are accepted. The
-design wins on behavior; this file holds mechanism notes only. Blocked on
-[OQ-RC2](readable-config.md#decision-ledger) (ruled: TOML), [OQ-RC9](readable-config.md#decision-ledger) (ruled: splice) and [OQ-RC11](readable-config.md#decision-ledger) (ruled: a `format` key the reader knows and nothing writes), which decide which of
-the entries below apply.
+design wins on behavior; this file holds mechanism notes only. The rulings that decide which
+entries apply are in: [OQ-RC2](readable-config.md#decision-ledger) (TOML),
+[OQ-RC9](readable-config.md#decision-ledger) (splice) and [OQ-RC11](readable-config.md#decision-ledger)
+(a `format` key the reader knows and nothing writes); every other question is ruled too, so the
+next step is to grow this seed into the hand-off.
 
 ## What already exists for a splice
 
