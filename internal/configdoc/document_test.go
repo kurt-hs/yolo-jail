@@ -112,6 +112,27 @@ func TestIndexRejectsDuplicateKeysAndRetainsUnattachedComments(t *testing.T) {
 	}
 }
 
+func TestTOMLIndexRetainsAncestorArrayTableContext(t *testing.T) {
+	source := []byte("[[fruits]]\nname = \"apple\"\n[[fruits.varieties]]\nname = \"red\"\n[fruits.physical]\ncolor = \"red\"\n[[fruits]]\nname = \"banana\"\n")
+	doc, err := Parse(source, TOML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := []Step{{Key: "fruits"}, {Index: 0, IsIndex: true}, {Key: "physical"}, {Key: "color"}}
+	span, ok, err := doc.Index.Value(path...)
+	if err != nil || !ok || string(source[span.Start:span.End]) != `"red"` {
+		t.Fatalf("ancestor array-table value %q, %v, %v", source[span.Start:span.End], ok, err)
+	}
+	table, ok, err := doc.Index.Table(path[:3]...)
+	if err != nil || !ok || !bytes.Contains(source[table.Start:table.End], []byte("color = \"red\"")) {
+		t.Fatalf("ancestor table span %q, %v, %v", source[table.Start:table.End], ok, err)
+	}
+	second, ok, err := doc.Index.Value(Step{Key: "fruits"}, Step{Index: 1, IsIndex: true}, Step{Key: "name"})
+	if err != nil || !ok || string(source[second.Start:second.End]) != `"banana"` {
+		t.Fatalf("sibling array-table value %q, %v, %v", source[second.Start:second.End], ok, err)
+	}
+}
+
 func TestTOMLCommentsInsideStringsAreNotComments(t *testing.T) {
 	source := []byte("basic = \"inside # basic\"\nliteral = 'inside # literal'\nmultibasic = \"\"\"first # multiline\nsecond\"\"\"\nmultiliteral = '''first # literal multiline\nsecond''' # actual\n# trailing actual\n")
 	doc, err := Parse(source, TOML)
@@ -215,6 +236,8 @@ func TestTOMLIndexScansFourAndFiveQuoteMultilineStrings(t *testing.T) {
 		{`"""""body"""`, `""body`},
 		{`"""body""""`, `body"`},
 		{`"""body"""""`, `body""`},
+		{`'''body''''`, `body'`},
+		{`'''body'''''`, `body''`},
 	}
 	for _, tc := range cases {
 		source := []byte("value = " + tc.sourceValue + "\n")
