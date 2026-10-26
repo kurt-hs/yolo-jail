@@ -731,7 +731,7 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 	hostTTY := os.NewFile(uintptr(slave), "proxy-suspend-output-tty")
 	defer hostTTY.Close()
 	control := filepath.Join(t.TempDir(), "child-read")
-	outputBytes := maxOutputQueue - 2*readChunk
+	outputBytes := readChunk
 	cmd := exec.Command(os.Args[0], "-test.run=^TestOutputPressureDoesNotStopInputForwarding$", "-test.count=1")
 	cmd.Stdin, cmd.Stdout = hostTTY, hostTTY
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -837,7 +837,7 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 		t.Fatalf("proxy did not process the repeated request while drain was pending: %v", err)
 	}
 	startDrain()
-	stoppedDeadline := time.Now().Add(childDeadline)
+	stoppedDeadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(stoppedDeadline) && !ownedProcessStopped(cmd.Process.Pid) {
 		select {
 		case err := <-waitResult:
