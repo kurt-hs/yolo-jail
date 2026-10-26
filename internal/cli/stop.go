@@ -224,7 +224,7 @@ func stopJail(stdout, stderr io.Writer, ws, rt string,
 				return frc
 			}
 			// The keeper's teardown is done; the container may still be there (see stopContainerGone).
-			return stopContainerGone(stdout, stderr, rt, cname, run, p)
+			return stopContainerGone(stdout, stderr, rt, cname, run, p, force)
 		}
 		// A container of this name that EXISTS but is not running is not "no jail": it holds the
 		// name, so the next launch's create is refused (the wedge of a --rm container whose runtime
@@ -263,9 +263,15 @@ func stopJail(stdout, stderr io.Writer, ws, rt string,
 	_, ran, rc = run(stopArgv, stopRuntimeCommandTimeout)
 	sp.End()
 	if !ran {
-		fmt.Fprintf(stderr, "yolo stop: `%s stop %s` failed (rc %d); any message the runtime printed above "+
-			"says why. `yolo stop` again retries it.\n", rt, cname, rc)
-		return 1
+		if force && rt == "podman" {
+			if stopContainerGone(stdout, stderr, rt, cname, run, p, true) != 0 {
+				return 1
+			}
+		} else {
+			fmt.Fprintf(stderr, "yolo stop: `%s stop %s` failed (rc %d); any message the runtime printed above "+
+				"says why. `yolo stop` again retries it.\n", rt, cname, rc)
+			return 1
+		}
 	}
 	if rc != 0 {
 		// A NON-ZERO EXIT IS NOT BY ITSELF A FAILED STOP (JL-D82). Podman's SIGKILL/--rm path
@@ -275,9 +281,18 @@ func stopJail(stdout, stderr io.Writer, ws, rt string,
 		// a failed stop; one it cannot answer for is not proof of anything (JL-P3: "could not ask" is
 		// never "gone"), and is reported as the failure it may be.
 		if !probeJailGoneAfterStop(rt, cname, run) {
-			fmt.Fprintf(stderr, "yolo stop: `%s stop %s` failed (rc %d); any message the runtime printed "+
-				"above says why. `yolo stop` again retries it.\n", rt, cname, rc)
-			return 1
+			// An explicit Podman --force stop that remains unresolved gets one force-removal
+			// attempt. Its post-removal guard may recover only a fully identified exec monitor;
+			// confirmed typed absence remains the only success condition.
+			if force && rt == "podman" {
+				if stopContainerGone(stdout, stderr, rt, cname, run, p, true) != 0 {
+					return 1
+				}
+			} else {
+				fmt.Fprintf(stderr, "yolo stop: `%s stop %s` failed (rc %d); any message the runtime printed "+
+					"above says why. `yolo stop` again retries it.\n", rt, cname, rc)
+				return 1
+			}
 		}
 	}
 	// THE TEARDOWN, before the stop returns (docs/design/jail-lifetime-last-session-wins.md JL-D25):
@@ -293,7 +308,7 @@ func stopJail(stdout, stderr io.Writer, ws, rt string,
 	// The runtime's stop and the keeper's teardown can each return cleanly while a container of the
 	// name is still there, so neither is proof the jail ended. Judge the stop by the container's
 	// EXISTENCE before saying so (stopContainerGone).
-	if rc := stopContainerGone(stdout, stderr, rt, cname, run, p); rc != 0 {
+	if rc := stopContainerGone(stdout, stderr, rt, cname, run, p, force); rc != 0 {
 		return rc
 	}
 	fmt.Fprintf(stdout, "Stopped %s. The next yolo launch starts fresh.\n", cname)
@@ -417,6 +432,7 @@ func endLeftoverJail(stdout, stderr io.Writer, rt, cname, state string, force bo
 	}
 	_, ran, rc := run(argv, stopRuntimeCommandTimeout)
 	sp.End()
+	attemptExecMonitorRecoveryAfterRemoval(rt, cname, force, run)
 	gone, now := waitForJailContainerGone(rt, cname, run)
 	if gone {
 		fmt.Fprintf(stdout, "Ended the leftover container %s. The next yolo launch starts fresh.\n", cname)
@@ -457,7 +473,7 @@ var (
 // stopContainerGone verifies absence before success. Runtime stop and keeper teardown
 // returning cleanly do not prove that the container's name has been released.
 func stopContainerGone(stdout, stderr io.Writer, rt, cname string,
-	run stopCommandRunner, p *perf.Log) int {
+	run stopCommandRunner, p *perf.Log, explicitForce bool) int {
 	_, exists, answered := probeJailPresence(rt, cname, run, stopRuntimeCommandTimeout)
 	if answered && !exists {
 		return 0
@@ -469,6 +485,7 @@ func stopContainerGone(stdout, stderr io.Writer, rt, cname string,
 	sp := p.Span("stop.remove_container")
 	forceRemoveJailContainer(rt, cname, run)
 	sp.End()
+	attemptExecMonitorRecoveryAfterRemoval(rt, cname, explicitForce, run)
 	gone, leftover := waitForJailContainerGone(rt, cname, run)
 	if gone {
 		return 0
@@ -479,6 +496,20 @@ func stopContainerGone(stdout, stderr io.Writer, rt, cname string,
 	}
 	stopStillThere(stderr, rt, cname, leftover)
 	return 1
+}
+
+// attemptExecMonitorRecoveryAfterRemoval tries only after an explicit user force request leaves a
+// local Podman container present or unobservable after removal. Internal `rm --force` during an
+// ordinary stop does not grant host-process signaling authority; the helper itself rechecks all
+// runtime, process, and child identities before its pidfd signal.
+func attemptExecMonitorRecoveryAfterRemoval(rt, cname string, explicitForce bool, run stopCommandRunner) {
+	if !explicitForce || rt != "podman" {
+		return
+	}
+	_, exists, answered := probeJailPresence(rt, cname, run, stopRuntimeCommandTimeout)
+	if !answered || exists {
+		stopExecMonitorRecovery(rt, cname, run)
+	}
 }
 
 // forceRemoveJailContainer removes cname's container by force, running or not: this is `yolo stop`,

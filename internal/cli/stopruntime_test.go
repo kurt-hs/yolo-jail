@@ -243,7 +243,7 @@ func TestANoOpStopNamesTheOtherRuntimeWhenItCannotKnow(t *testing.T) {
 				}
 			}
 			var out, errb bytes.Buffer
-			s := &stopRun{stats: []string{"!Error: no such container", "!absent"}}
+			s := &stopRun{stats: []string{"!Error: no such container", "!absent", "!absent"}}
 			if rc := stopJail(&out, &errb, "/ws", "podman", s.run, nil, false); rc != 0 {
 				t.Fatalf("rc=%d", rc)
 			}

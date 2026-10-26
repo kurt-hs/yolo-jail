@@ -157,6 +157,10 @@ func TestStopJailDoesNotTreatUnknownAfterStopAsGone(t *testing.T) {
 			return "", true, 125
 		case argv[1] == "stop":
 			return "", true, 1
+		case argv[1] == "rm":
+			return "", true, 125
+		case argv[1] == "info":
+			return `{}`, true, 0
 		case len(argv) > 2 && argv[1] == "container" && argv[2] == "exists":
 			return "", true, 0
 		default:
@@ -174,8 +178,8 @@ func TestStopJailDoesNotTreatUnknownAfterStopAsGone(t *testing.T) {
 	if finished {
 		t.Fatal("unknown post-stop running state authorized keeper teardown")
 	}
-	if !strings.Contains(errb.String(), "failed") {
-		t.Fatalf("missing stop failure diagnosis: %s", errb.String())
+	if !strings.Contains(errb.String(), "still there") {
+		t.Fatalf("missing unresolved-container diagnosis: %s", errb.String())
 	}
 }
 
