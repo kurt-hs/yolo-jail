@@ -1,16 +1,17 @@
 ---
 title: "Pack manifests: the same rules, shown on the maintainer's own packs"
 date: 2026-10-25
-status: in-review
-stage: DESIGN
-next: "Every question is ruled; the build hand-off is the implementation plan seeded in readable-config-plan.md"
+status: accepted
+stage: DECIDED
+next: "Accepted; the work owed is the build, which starts with the implementation plan when the maintainer asks for it"
 tags: [packs, manifest, toml, conventions, design]
 summary: "Each of the maintainer's twelve packs, before and after: a manifest-less folder for the simple ones, a short TOML manifest for the rest, models declared once, and flags that add instead of replace. Every section is ruled. Part of the readable-config redesign."
 ---
 
 # Pack manifests: the same rules, shown on the maintainer's own packs
 
-**Status:** 2026-10-25. Nothing is built. The "today" manifests are the maintainer's twelve
+**Status:** accepted 2026-10-25 (the maintainer, after reading every document: *"it all sounds
+good and I want to move forward"*). Nothing is built. The "today" manifests are the maintainer's twelve
 packs, read on 2026-10-24.
 
 **How to read this.** [§1](#1-a-small-pack-luna-worker) to [§4](#4-flags-that-add-and-a-model-said-once)

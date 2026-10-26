@@ -1,16 +1,17 @@
 ---
 title: "A project's file: what it installs, what it asks for, and what it turns off"
 date: 2026-10-25
-status: in-review
-stage: DESIGN
-next: "Every question is ruled; the build hand-off is the implementation plan seeded in readable-config-plan.md"
+status: accepted
+stage: DECIDED
+next: "Accepted; the work owed is the build, which starts with the implementation plan when the maintainer asks for it"
 tags: [config, workspace, install, grants, mounts, design]
 summary: "The project config as annotated files, today and proposed: install, needs, mounts, ports, environment, and the local file. Every section is ruled. Part of the readable-config redesign."
 ---
 
 # A project's file: what it installs, what it asks for, and what it turns off
 
-**Status:** 2026-10-25. Nothing is built. The "today" files are this repository's and a composite
+**Status:** accepted 2026-10-25 (the maintainer, after reading every document: *"it all sounds
+good and I want to move forward"*). Nothing is built. The "today" files are this repository's and a composite
 team project's.
 
 **How to read this.** [§1](#1-the-file) is the file; [§2](#2-no-file-at-all) is no file;

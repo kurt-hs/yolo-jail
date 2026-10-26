@@ -1,19 +1,20 @@
 ---
 title: "The manifest language: declarations stay inert data, and the syntax should stop fighting us"
 date: 2026-09-20
-status: in-review
+status: accepted
 tags: [packs, manifest, config, format, lua, starlark, design]
 summary: "A pack manifest compresses to a quarter of its bytes — more redundant than the repo's own prose — because it is a flat tagged union that repeats the pack's identity and the `kind` tag on every entry, and spells mechanism rather than intent. The syntax and the MODEL are two independent decisions, and the model change (group by kind, state the agent name once per pack, keep distinct facts explicit) carries most of the gain under any syntax. This doc ARGUES both and rules neither yet: what a manifest may be written in (JSON restructured, data-only Lua, Starlark, or the heavier config languages), and the rule that compression may remove repetition but never a claim."
 vantage:
   status-chip: true
-stage: DESIGN
-next: "OQ-M1 and OQ-M2 were ruled in the readable-config redesign; OQ-M3 rests on a syntax ruled data-only and awaits the maintainer's word on whether it is moot"
+stage: DECIDED
+next: "Every question is ruled or moot; the work is the readable-config build, which owns the manifest change"
 ---
 
 # The manifest language: declarations stay inert data, and the syntax should stop fighting us
 
 **Status:** 2026-10-25 — [`OQ-M1`](#OQ-M1) and [`OQ-M2`](#OQ-M2) ruled in the readable-config
-redesign ([ledger](readable-config.md#decision-ledger)); [`OQ-M3`](#OQ-M3) is the one left;
+redesign ([ledger](readable-config.md#decision-ledger)), and [`OQ-M3`](#OQ-M3) closed as moot by
+the same ruling, when the maintainer accepted that redesign;
 [`OQ-M4`](#8-decision-ledger) was decided as an implementation choice ([MN-D1](#MN-D1)). Nothing built: re-checked
 2026-09-30, every shipped manifest is still one flat `contributes` list tagged by `kind`, and
 `packs/claude` still repeats `"agent": "claude"` on its own contributions. Re-checked against the tree
@@ -48,7 +49,7 @@ written today is a migration debt tomorrow, so the format should be chosen once.
 > pack "conventionally" mounts something removes a claim. The first is the goal; the second is
 > forbidden under every option below.
 
-**Needs your ruling:** [`OQ-M3`](#OQ-M3) (may a manifest be pure code that returns data?). [`OQ-M1`](#OQ-M1) (the model change) and [`OQ-M2`](#OQ-M2) (the syntax) were ruled 2026-10-25 by [OQ-RC19 and OQ-RC5](readable-config.md#decision-ledger): the model change goes, in TOML, in the same break as the configs. [`OQ-M4`](#8-decision-ledger) (does the user config share the language?) was decided as an implementation choice, [MN-D1](#MN-D1): it does not.
+**Needs your ruling:** nothing. [`OQ-M3`](#OQ-M3) (may a manifest be pure code that returns data?) is moot: the syntax is TOML, a data syntax. [`OQ-M1`](#OQ-M1) (the model change) and [`OQ-M2`](#OQ-M2) (the syntax) were ruled 2026-10-25 by [OQ-RC19 and OQ-RC5](readable-config.md#decision-ledger): the model change goes, in TOML, in the same break as the configs. [`OQ-M4`](#8-decision-ledger) (does the user config share the language?) was decided as an implementation choice, [MN-D1](#MN-D1): it does not.
 
 **Reads with:** [`pack-system.md`](../reference/pack-system.md) (the contribution model and the
 total-enumeration rule), [`trust-paths.md`](trust-paths.md) (the origin gate and why a pack
@@ -241,34 +242,13 @@ Dhall (total, typed).
 3. **E is rejected as a standalone answer** — it is the same data in another syntax, which is the
    complaint, not the cure. It may ride along inside A if JSONC's gaps bite.
 
-## 7. Open questions
+## 7. Questions, all closed
 
 1. **[OQ-M1](#OQ-M1) and [OQ-M2](#OQ-M2) are ruled**, in the [decision ledger](#8-decision-ledger): the model change goes,
    in TOML, in the same break as the configs ([`pack-manifests.md`](pack-manifests.md)).
 
-3. 💬 <a id="OQ-M3"></a>**OQ-M3: May a manifest be pure code that RETURNS data — executed to be read?**
-
-   <!-- vantage: question id=OQ-M3 leaning="Yes, if the sandbox is pure and the RESULT is validated and footprinted, so the total-claim rule survives by construction rather than by trust." -->
-
-   ⚠ **Restated 2026-09-30 with letters.** It matters only if [OQ-M2](#OQ-M2) picks (B) or (C);
-   M2 was ruled TOML on 2026-10-25, a data syntax, so this question is moot unless a code syntax
-   is proposed again.
-   **(A) Yes**, on M5's condition below. **(B) No**: a manifest is always a literal data file, which
-   leaves [OQ-M2](#OQ-M2) only (A). A third option, code for shipped packs but not fetched ones, is not
-   offered: [`OQ-PB4`](../reference/pack-system.md#oq-pb4) refused that shape for briefing defaults,
-   because a rule keyed on how a pack was fetched makes one pack behave two ways.
-
-   _Leaning:_ Yes — with M5 as the condition: the sandbox has no I/O and no effects, and the *value*
-   it returns goes through the same schema check and footprint as a literal manifest. This is the
-   one genuine trust-model change in the doc and it should be ruled explicitly, not slipped in with
-   a syntax choice. `derive.lua` already establishes the precedent: yolo runs a pack's `derive.lua`
-   in that sandbox today (`packload.DeriveScript` reads it from the pack's own tree), though what it
-   returns is config values, never a claim.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-### 7.1 Background to the open questions
+2. **[OQ-M3](#OQ-M3) is moot**, in the [decision ledger](#8-decision-ledger): the syntax is TOML, so no manifest
+   is executed to be read. M5's condition stands ready if a code syntax is ever proposed again.
 
 #### Background to [OQ-M1](#OQ-M1)
 
@@ -325,6 +305,6 @@ Neither restructuring reaches this doc's ~0.40 threshold, so the rule as written
 | :--- | :--- | :--- | :--- | :--- |
 | <a id="OQ-M1"></a>[OQ-M1](#OQ-M1) | **Yes: grouped by kind, the pack's identity stated once, in the same break as the configs.** Ruled 2026-10-25 as lever P3 of [OQ-RC19](readable-config.md#decision-ledger), landing under [OQ-RC5](readable-config.md#decision-ledger); the `exposes` split is not the break it waits for | 2026-10-25 | [`pack-manifests.md` §4](pack-manifests.md#4-flags-that-add-and-a-model-said-once) | — |
 | <a id="OQ-M2"></a>[OQ-M2](#OQ-M2) | **TOML, with the model change.** Ruled 2026-10-25 by [OQ-RC2](readable-config.md#decision-ledger) for every file a person writes, manifests included; option E was no fix on its own, and the model change ([OQ-M1](#OQ-M1)) is what rides with it | 2026-10-25 | [`pack-manifests.md`](pack-manifests.md) | — |
-| **OQ-M3** | — | — | — | — |
+| <a id="OQ-M3"></a>[OQ-M3](#OQ-M3) | **Moot: a manifest is a literal TOML file, so nothing is executed to be read.** The question mattered only if [OQ-M2](#OQ-M2) picked a code syntax; it picked TOML ([OQ-RC2](readable-config.md#decision-ledger)). Closed 2026-10-25 when the maintainer accepted the readable-config redesign; a code syntax proposed again reopens it with M5 as the condition | 2026-10-25 | [`pack-manifests.md`](pack-manifests.md) | nothing to build |
 | OQ-M4 | **No: the user and workspace config keep JSONC whatever [OQ-M2](#OQ-M2) rules.** Decided as an implementation choice, [MN-D1](#MN-D1), reversible; moving them would be a proposal of its own | 2026-09-30 | [§3](#3-what-is-actually-free-to-change) | nothing to build |
 | <a id="MN-D1"></a>MN-D1 | *Implementation decision, [OQ-M4](#8-decision-ledger).* **The user and workspace config keep JSONC, whatever [OQ-M2](#OQ-M2) rules for manifests.** The user config is settings, with no claims to enumerate, so the rule this doc exists to protect ([M2](#2-principles)) does not reach it. yolo already deleted the one scripted user config it had, `config.lua`, because it had no user ([`OQ-LT1`](../reference/pack-system.md#oq-lt1)). And coupling the two would make the manifest ruling wait on a rewrite of every user's config. Reversible: a proposal to move the user config would start from the manifest's ruling rather than wait for it. **Reversed 2026-10-25:** the configs move to TOML ([OQ-RC2](readable-config.md#decision-ledger)) | 2026-09-30 | [§3](#3-what-is-actually-free-to-change) | nothing to build |

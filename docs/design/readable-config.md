@@ -1,9 +1,9 @@
 ---
 title: "Config that reads right the first time: the front door"
 date: 2026-10-24
-status: in-review
-stage: DESIGN
-next: "Every question is ruled; the maintainer accepts the five documents, then the plan seed grows into the build hand-off"
+status: accepted
+stage: DECIDED
+next: "Accepted; the work owed is the build, which starts with the implementation plan when the maintainer asks for it"
 tags: [config, packs, manifest, providers, profiles, broker, grants, format, toml, migration, editing, readability, design]
 summary: "The front door to the readable-config redesign: the thesis, the principles, the five documents (each one annotated config file with its questions), and the ledger of rulings made so far. The maintainer's config takes 178 lines to say about 20 things and is misread by its author; reshaped it is under 60, yolo can edit it one hunk at a time, and one command converts every file."
 vantage:
@@ -12,12 +12,13 @@ vantage:
 
 # Config that reads right the first time: the front door
 
-**Status:** 2026-10-25. Nothing is built. Forty-four rulings recorded ([ledger](#decision-ledger));
+**Status:** accepted 2026-10-25, the five documents with it (the maintainer, after reading every
+one: *"it all sounds good and I want to move forward"*). Nothing is built. Forty-four rulings recorded ([ledger](#decision-ledger));
 no question open. Evidence verified at
 `fa13f42d9` against this repository, the effective user config this jail inherited, the 21
 shipped packs, and the maintainer's twelve packs.
 
-**Needs your ruling:** nothing; every question is in the ledger. Next is the build hand-off, [`readable-config-plan.md`](readable-config-plan.md).
+**Needs your ruling:** nothing. The work owed is the build; it starts with the implementation plan, grown from [`readable-config-plan.md`](readable-config-plan.md) when the maintainer asks for it.
 
 > **In short.** A config a stranger reads correctly comes from its shape, not its file format, and
 > a config yolo can edit without a mess comes from touching only the bytes of one value. Neither

@@ -1,16 +1,17 @@
 ---
 title: "Who writes the file: one command instead of 'edit your config', and the format it writes"
 date: 2026-10-25
-status: in-review
-stage: DESIGN
-next: "Nothing owed here; the plan seed carries the splice and parser notes"
+status: accepted
+stage: DECIDED
+next: "Accepted; the work owed is the build, which starts with the implementation plan when the maintainer asks for it"
 tags: [config, cli, editing, toml, jsonc, design]
 summary: "About sixty places tell a person or an agent to hand-edit a config file. This doc shows the command each would print instead, what it does to the file (one hunk, every other byte untouched), the verbs, and the format underneath. Each section ends with its question. Part of the readable-config redesign."
 ---
 
 # Who writes the file: one command instead of "edit your config", and the format it writes
 
-**Status:** 2026-10-25. Nothing is built; every question is ruled. The sessions below are what a
+**Status:** accepted 2026-10-25 (the maintainer, after reading every document: *"it all sounds
+good and I want to move forward"*). Nothing is built. The sessions below are what a
 person or an agent would see.
 
 **How to read this.** [§1](#1-what-youd-see) is the transcripts; [§2](#2-the-sixty-places-this-replaces)

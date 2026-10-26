@@ -1,16 +1,17 @@
 ---
 title: "Your config, one screen: packs, logins, and which setup each agent runs on"
 date: 2026-10-25
-status: in-review
-stage: DESIGN
-next: "Every question is ruled; the build hand-off is the implementation plan seeded in readable-config-plan.md"
+status: accepted
+stage: DECIDED
+next: "Accepted; the work owed is the build, which starts with the implementation plan when the maintainer asks for it"
 tags: [config, packs, providers, profiles, broker, grants, conventions, design]
 summary: "The user config as one annotated file, today and proposed, then one section per part of it. Every section is ruled. Part of the readable-config redesign; the ledger of rulings is in the front door and the evidence is in the appendix."
 ---
 
 # Your config, one screen: packs, logins, and which setup each agent runs on
 
-**Status:** 2026-10-25. Nothing is built. The "today" file is the maintainer's effective config as
+**Status:** accepted 2026-10-25 (the maintainer, after reading every document: *"it all sounds
+good and I want to move forward"*). Nothing is built. The "today" file is the maintainer's effective config as
 this jail inherited it, condensed.
 
 **How to read this.** [§1](#1-the-file-today) and [§2](#2-the-file-proposed) are the whole file;
