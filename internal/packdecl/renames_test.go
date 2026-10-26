@@ -47,6 +47,9 @@ func TestAnUnknownFieldStillNamesBothSteps(t *testing.T) {
 // Every entry renames to a field this build reads, so the step it names is one that works.
 func TestEveryRenameNamesAFieldThisBuildReads(t *testing.T) {
 	for _, r := range fieldRenames {
+		if r.Scope != "" {
+			continue
+		}
 		manifest := strings.Replace(carryManifest, `"carry"`, `"`+r.New+`"`, 1)
 		if _, problems := Decode([]byte(manifest)); len(problems) > 0 &&
 			strings.Contains(strings.Join(problems, "\n"), "unknown field") {

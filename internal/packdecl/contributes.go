@@ -32,6 +32,13 @@ import (
 // Hook) already used, so synthesis from them is a field copy, and JSON decoding
 // stays a plain struct with DisallowUnknownFields.
 type Contribution struct {
+	// Origin and Location retain the authoring source for diagnostics and downstream
+	// composition decisions. Replace is TOML's explicit opt-in to replacement semantics;
+	// legacy manifests are distinguished by Origin instead.
+	Origin   ManifestOrigin   `json:"-"`
+	Location ManifestLocation `json:"-"`
+	Replace  bool             `json:"-"`
+
 	// Kind selects from the closed set (KindProgram, KindSkills, …). Required.
 	Kind Kind `json:"kind"`
 
@@ -772,6 +779,16 @@ type Contribution struct {
 	// (kinds.go), so two packs shipping one name is a collision — while one pack shipping
 	// two names is two contributions, which is the ordinary multi-provider pack.
 	Name string `json:"name,omitempty"`
+	// ProviderAlias, ProviderModel, ProviderVariants, EveryProviderModel, ProviderModels,
+	// and the order slices are populated only by the grouped TOML codec. They are
+	// normalized provider facts, not legacy pack.json fields.
+	ProviderAlias        string                     `json:"-"`
+	ProviderModel        string                     `json:"-"`
+	ProviderVariants     map[string]ProviderVariant `json:"-"`
+	ProviderVariantOrder []string                   `json:"-"`
+	EveryProviderModel   *ProviderModel             `json:"-"`
+	ProviderModels       map[string]ProviderModel   `json:"-"`
+	ProviderModelOrder   []string                   `json:"-"`
 	// Endpoints carries the SERVICE FACTS by protocol: which URL speaks which wire
 	// protocol. An endpoint is {base_url, wire_api}, and the keys are protocol names —
 	// "anthropic" (Claude's native wire) and "openai" (the OpenAI-client shape) are the
@@ -1971,6 +1988,13 @@ type ProviderEndpoint struct {
 // NAME of the variable the user hydrates.
 type ProviderContribution struct {
 	Name          string
+	Alias         string
+	Model         string
+	Variants      map[string]ProviderVariant
+	VariantOrder  []string
+	EveryModel    *ProviderModel
+	ModelRows     map[string]ProviderModel
+	ModelOrder    []string
 	Endpoints     map[string]ProviderEndpoint
 	APIKeyEnvName EnvNames
 	// Platform is what service this provider is (OQ-BR2); see the field's own comment on
@@ -2011,6 +2035,13 @@ func (m *Manifest) Providers() []ProviderContribution {
 		}
 		out = append(out, ProviderContribution{
 			Name:          c.Name,
+			Alias:         c.ProviderAlias,
+			Model:         c.ProviderModel,
+			Variants:      c.ProviderVariants,
+			VariantOrder:  append([]string(nil), c.ProviderVariantOrder...),
+			EveryModel:    c.EveryProviderModel,
+			ModelRows:     c.ProviderModels,
+			ModelOrder:    append([]string(nil), c.ProviderModelOrder...),
 			Endpoints:     c.Endpoints,
 			APIKeyEnvName: c.APIKeyEnvName,
 			Platform:      c.Platform,

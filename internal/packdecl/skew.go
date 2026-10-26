@@ -49,6 +49,7 @@ func DecodeForUse(data []byte) (m *Manifest, problems, skipped []string) {
 	if err := json.Unmarshal(clean, &man); err != nil {
 		return nil, []string{ManifestName + ": " + err.Error()}, nil
 	}
+	man.setLegacyOrigin()
 	fields, skipped := unknownFields(clean)
 	kept := make([]Contribution, 0, len(man.Contributes))
 	index := make([]int, 0, len(man.Contributes))
