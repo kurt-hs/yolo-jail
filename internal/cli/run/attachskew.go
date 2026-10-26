@@ -42,14 +42,44 @@ func (o *Options) warnIfJailIsOlderThanTheLauncher(rt, cname, baked string) {
 		baked, host, stopRemedy(rt, cname)))
 }
 
-// stopRemedy names the command that stops cname's jail on rt, for a message that prescribes a
-// restart: `yolo stop` from the workspace, on every runtime (SK-D14,
-// docs/reference/attach-skew.md). Apple Container's was `container stop
-// <name>` while `yolo stop` read an AC jail through a Go-template inspect that runtime does not
-// take, and so said "No jail running" while the jail ran (G11, docs/plans/setup-support-gaps.md).
-// Since JL-D79 (docs/design/jail-lifetime-last-session-wins.md) `yolo stop` asks the runtime that
-// launched the jail, and Apple Container with `container ls`, and it waits for the jail's keeper to
-// finish its teardown, which a bare `container stop` does not.
-func stopRemedy(rt, cname string) string {
-	return "'yolo stop' from this workspace"
+// restartAction is the runnable command and the stable launcher wording for a restart.
+type restartAction struct {
+	command string
+	remedy  string
+}
+
+func restartActionFor(rt, cname string) restartAction {
+	if rt == "macos-user" { // parity: HonoredBy — end the native session and start a fresh one; there is no jail container to stop
+		return restartAction{
+			command: "yolo",
+			remedy:  "end this session, then run `yolo` from this workspace",
+		}
+	}
+	return restartAction{command: "yolo stop", remedy: "'yolo stop' from this workspace"}
+}
+
+// stopCommand is the runnable command generated guidance embeds. A native macos-user session
+// has no jail to stop: end it, then start a new session with `yolo`.
+func stopCommand(rt, cname string) string { return restartActionFor(rt, cname).command }
+
+// stopRemedy retains the launcher-facing wording; generated guidance uses stopCommand rather
+// than treating this descriptive phrase as runnable shell text.
+func stopRemedy(rt, cname string) string { return restartActionFor(rt, cname).remedy }
+
+// keyedStopRemedy is for native keeper refusals and reports: unlike an ordinary
+// macos-user session restart, `yolo stop` signals every session of this workspace key.
+func keyedStopRemedy(rt, cname string) string {
+	if rt == "macos-user" { // parity: HonoredBy — `yolo stop` signals this workspace's native sessions and keeper; no container exists to stop
+		return "'yolo stop' from this workspace"
+	}
+	return stopRemedy(rt, cname)
+}
+
+// mechanicsRestartRemedy describes restarting the current context without composing
+// a jail/container action with a native session restart.
+func mechanicsRestartRemedy(rt, cname string) string {
+	if rt == "macos-user" { // parity: HonoredBy — end the current native session before starting fresh; there is no container to stop
+		return "end this session, then run `yolo` from this workspace again"
+	}
+	return "restart this jail with " + stopRemedy(rt, cname) + ", then run `yolo` again"
 }

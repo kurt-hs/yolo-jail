@@ -301,10 +301,10 @@ func TestADryRunMakesNoDurableDir(t *testing.T) {
 }
 
 // THE CALL SITES, which the tests above cannot reach without a container: runContainer makes
-// the durable dir on the fresh path — after its last attach decision, before the briefing
-// that leads with it — and hands the same value to the argv; Run's macos-user arm makes it
-// before that arm's briefing and puts it on the launch env. Deleting any one of these leaves
-// every other test here green, so each is pinned by position.
+// the durable dir on the fresh path — after its last attach decision, before both the briefing
+// that consumes it and argv assembly; Run's macos-user arm makes it before that arm's briefing
+// and puts it on the launch env. Deleting any one of these leaves every other test here green,
+// so each is pinned by position.
 func TestTheDurableDirIsMadeOnEveryFreshLaunchPath(t *testing.T) {
 	rc := funcDecl(t, "run.go", "runContainer")
 	var ensure, lastAttach, refresh, assemble token.Pos
@@ -328,7 +328,7 @@ func TestTheDurableDirIsMadeOnEveryFreshLaunchPath(t *testing.T) {
 	if ensure == token.NoPos {
 		t.Fatal("runContainer never calls ensureDurableDir: no container launch makes the durable dir")
 	}
-	if !(lastAttach < ensure && ensure < refresh && refresh < assemble) {
+	if !(lastAttach < ensure && ensure < refresh && ensure < assemble) {
 		t.Errorf("runContainer's order is wrong (last attach %d, ensure %d, briefing %d, argv %d): the "+
 			"durable dir must be made on the fresh path only, before the briefing and the argv",
 			lastAttach, ensure, refresh, assemble)

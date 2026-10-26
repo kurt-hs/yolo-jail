@@ -14,9 +14,12 @@ package run
 // pointer to it (/workspace, ~/.cache, /mise, /run, /dev/shm).
 
 import (
+	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostcas"
 	"github.com/mschulkind-oss/yolo-jail/internal/jailcontent"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -89,43 +92,67 @@ var alwaysTmpfsDirs = []string{"/run", "/dev/shm"}
 // sealed is THE SEAL (seal.go): a fork's build jail has no machine tier. Its ~/.cache and /mise
 // are private directories of its own workspace (sealedStores), and no pack's machine-scope
 // directory is bound, so the map says this workspace for the two and names none of the rest.
-func persistenceMapFor(rt string, cfg *jsonx.OrderedMap, packs []*packload.Pack, workspace string, sealed bool) *jailcontent.PersistenceMap {
+type persistenceSources struct {
+	cacheSource      string
+	miseSource       string
+	cacheRelocations []config.CacheRelocation
+	hostCASAliases   []hostcas.Disposition
+	scratchID        string
+}
+
+func persistenceMapFor(rt string, cfg *jsonx.OrderedMap, packs []*packload.Pack, workspace string, sealed bool, cname ...string) *jailcontent.PersistenceMap {
+	return persistenceMapForSources(rt, cfg, packs, workspace, sealed, persistenceSources{}, cname...)
+}
+
+func persistenceMapForSources(rt string, cfg *jsonx.OrderedMap, packs []*packload.Pack, workspace string, sealed bool, sources persistenceSources, cname ...string) *jailcontent.PersistenceMap {
 	if slices.Contains(paths.NativeRuntimes, rt) { // parity: NotApplicable — macos-user mounts nothing; its section is the design's §8 step 5
 		return nil
 	}
-	m := &jailcontent.PersistenceMap{}
-	add := func(p string, c jailcontent.PathClass) {
+	m := &jailcontent.PersistenceMap{HostSources: make(map[string]string)}
+	add := func(p string, c jailcontent.PathClass, source string) {
 		m.Paths = append(m.Paths, jailcontent.PersistentPath{Path: p, Class: c})
+		m.HostSources[p] = source
 	}
 	home := func(rel string) string { return jailHome + "/" + rel }
+	wsState := filepath.Join(paths.WorkspaceStateDir(workspace), "home")
+	cacheSource := paths.GlobalCache()
+	miseSource := jailMiseStoreDir(false)
+	if sources.cacheSource != "" {
+		cacheSource = sources.cacheSource
+	}
+	if sources.miseSource != "" {
+		miseSource = sources.miseSource
+	}
 
 	// The workspace bind, `-v <workspace>:/workspace` on both backends: the host's own
 	// directory, its own class. The per-side shadows beneath it (/workspace/.venv,
 	// /workspace/node_modules, per_side_paths) are NOT the host's: each is a bind from
 	// <ws>/.yolo/home/venv-shadows, so per workspace — the set venvShadowMountArgs mounts,
 	// computed by the same rules (perSideShadowRels).
-	add("/workspace", jailcontent.PathProject)
+	add("/workspace", jailcontent.PathProject, workspace)
 	for _, rel := range perSideShadowRels(cfg, workspace) {
-		add("/workspace/"+rel, jailcontent.PathWorkspaceDurable)
+		backing := filepath.Join(wsState, "venv-shadows", strings.ReplaceAll(rel, "/", "__"))
+		add("/workspace/"+rel, jailcontent.PathWorkspaceDurable, backing)
 	}
 
 	if rt == "container" { // parity: HonoredBy — Apple Container binds wsState whole at the home, which is the per-workspace tier podman binds dir by dir
 		// Apple Container binds <ws>/.yolo/home read-write, WHOLE, at the home
 		// (appleContainerBaseMounts), so every home path not bound elsewhere is durable
 		// for this workspace, and there is no read-only base.
-		add(jailHome, jailcontent.PathWorkspaceDurable)
+		add(jailHome, jailcontent.PathWorkspaceDurable, wsState)
 	} else {
 		for _, b := range podmanEarlyHomeBinds() {
-			add(home(b.HomeRel), b.Class)
+			add(home(b.HomeRel), b.Class, filepath.Join(wsState, b.Subtree))
 		}
 		for _, b := range podmanLateHomeBinds() {
-			add(home(b.HomeRel), b.Class)
+			add(home(b.HomeRel), b.Class, filepath.Join(wsState, b.Subtree))
 		}
 		for _, rel := range sortedWritableHomeDirs(config.WritableHomeDirs(cfg, packs)) {
-			add(home(rel), jailcontent.PathWorkspaceDurable)
+			add(home(rel), jailcontent.PathWorkspaceDurable, filepath.Join(wsState, config.WritableHomeBackingSubdir, rel))
 		}
 		for _, dir := range packload.WritableDirs(packs) {
-			add(home(dir), jailcontent.PathWorkspaceDurable)
+			sourceRel := strings.TrimPrefix(filepath.FromSlash(dir), ".")
+			add(home(dir), jailcontent.PathWorkspaceDurable, filepath.Join(wsState, sourceRel))
 		}
 	}
 
@@ -135,28 +162,52 @@ func persistenceMapFor(rt string, cfg *jsonx.OrderedMap, packs []*packload.Pack,
 	// (OQ-MB1, actooldisk.go). Under the seal the two stores are the build's own and no shared
 	// dir is bound (assembleInput.cacheSource, miseSource, podmanBaseMounts).
 	if sealed {
-		add(home(".cache"), jailcontent.PathWorkspaceDurable)
-		add("/mise", jailcontent.PathWorkspaceDurable)
+		add(home(".cache"), jailcontent.PathWorkspaceDurable, cacheSource)
+		add("/mise", jailcontent.PathWorkspaceDurable, miseSource)
 	} else {
-		add(home(".cache"), jailcontent.PathMachineDurable)
+		add(home(".cache"), jailcontent.PathMachineDurable, cacheSource)
 		for _, dir := range packload.SharedDirs(packs) {
-			add(home(dir), jailcontent.PathMachineDurable)
+			add(home(dir), jailcontent.PathMachineDurable, filepath.Join(paths.GlobalHome(), filepath.FromSlash(dir)))
 		}
-		if rt == "container" { // parity: HonoredBy — every backend persists /mise; Apple Container keeps it on this workspace's own tool disk (appleContainerBaseMounts), since its disk attaches to one VM at a time
-			add("/mise", jailcontent.PathWorkspaceDurable)
+		if rt == "container" { // parity: HonoredBy — Apple Container's /mise is its per-workspace named tool volume, not the Podman machine store
+			volumeLabel := prune.MiseVolumeName(firstCname(cname))
+			if sources.miseSource != "" {
+				volumeLabel = sources.miseSource
+			}
+			add("/mise", jailcontent.PathWorkspaceDurable, volumeLabel)
 		} else {
-			add("/mise", jailcontent.PathMachineDurable)
+			add("/mise", jailcontent.PathMachineDurable, miseSource)
+		}
+		for _, rel := range sortedCacheRelocations(sources.cacheRelocations) {
+			add(home(".cache/"+rel.Subdir), jailcontent.PathWorkspaceDurable, rel.Target)
+		}
+		for _, alias := range hostcas.Aliased(sources.hostCASAliases) {
+			add(alias.Dest, jailcontent.PathMachineDurable, alias.Source)
 		}
 	}
 
-	// The per-launch set: the scratch slots (named per-launch volumes, or tmpfs) and the
-	// two dirs that are tmpfs on every launch.
-	for _, s := range prune.ScratchSlots {
-		add(s.Dest, jailcontent.PathPerLaunch)
+	// Scratch destinations use the exact volume identifiers emitted by this launch.
+	if rt != "container" && cfgStr(cfg, "ephemeral_storage") != "tmpfs" && sources.scratchID != "" { // parity: HonoredBy — Apple Container emits scratch slots as tmpfs, not named volumes
+		for i, name := range ScratchVolumeNames(cfgStr(cfg, "ephemeral_storage"), firstCname(cname), sources.scratchID) {
+			if i < len(prune.ScratchSlots) {
+				add(prune.ScratchSlots[i].Dest, jailcontent.PathPerLaunch, name)
+			}
+		}
+	} else {
+		for _, s := range prune.ScratchSlots {
+			add(s.Dest, jailcontent.PathPerLaunch, "tmpfs")
+		}
 	}
 	for _, d := range alwaysTmpfsDirs {
-		add(d, jailcontent.PathPerLaunch)
+		add(d, jailcontent.PathPerLaunch, "tmpfs")
 	}
-	m.PerLaunchInRAM = rt == "container" || cfgStr(cfg, "ephemeral_storage") == "tmpfs" // parity: NotApplicable — a fact about the backing, not a capability: Apple Container's scratch dirs are always tmpfs
+	m.PerLaunchInRAM = rt == "container" || cfgStr(cfg, "ephemeral_storage") == "tmpfs" // parity: HonoredBy — Apple Container's scratch slots are tmpfs in appleContainerBaseMounts
 	return m
+}
+
+func firstCname(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	return names[0]
 }

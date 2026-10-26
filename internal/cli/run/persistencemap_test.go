@@ -8,6 +8,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/durable"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostcas"
 	"github.com/mschulkind-oss/yolo-jail/internal/ioprio"
 	"github.com/mschulkind-oss/yolo-jail/internal/jailcontent"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -54,6 +55,10 @@ func TestThePersistenceMapIsTheMountPlan(t *testing.T) {
 			const scratchID = "0123456789abcdef"
 			in := relocationInput(t, tc.rt, "/ws/.yolo/home", nil)
 			in.cfg, in.packs, in.scratchID = cfg, packs, scratchID
+			if tc.rt == "podman" && !tc.sealed {
+				in.cacheRelocations = []config.CacheRelocation{{Subdir: "huggingface", Target: "/data/relocated/huggingface"}}
+				in.hostCASAlias = []hostcas.Disposition{{Aliased: true, Source: "/host/cache/cargo", Dest: "/home/agent/.cache/cargo"}}
+			}
 			in.writableHomeDirs = persistenceWritableHomeDirs(cfg, packs)
 			in.durableDir = durable.ContainerJailPath
 			if tc.sealed {
@@ -63,11 +68,26 @@ func TestThePersistenceMapIsTheMountPlan(t *testing.T) {
 				in.miseStore = filepath.Join(paths.WorkspaceStateDir("/ws"), sealedMiseLeaf)
 			}
 			argv := o.assembleRunCmd(in)
-			m := persistenceMapFor(tc.rt, cfg, packs, "/ws", tc.sealed)
+			miseSource := in.miseSource("")
+			if tc.rt == "container" {
+				miseSource = in.miseSource(prune.MiseVolumeName(in.cname))
+			}
+			m := persistenceMapForSources(tc.rt, cfg, packs, "/ws", tc.sealed, persistenceSources{
+				cacheSource: in.cacheSource(), miseSource: miseSource,
+				cacheRelocations: in.cacheRelocations, hostCASAliases: in.hostCASAlias, scratchID: scratchID,
+			}, in.cname)
 			if m == nil {
 				t.Fatalf("no persistence map for %s", tc.rt)
 			}
 
+			if len(m.HostSources) != len(m.Paths) {
+				t.Fatalf("map has %d paths but %d host sources", len(m.Paths), len(m.HostSources))
+			}
+			for _, entry := range m.Paths {
+				if m.HostSources[entry.Path] == "" {
+					t.Errorf("map entry %q has no host source", entry.Path)
+				}
+			}
 			mounts := writableMountsOf(argv)
 			if len(mounts) == 0 {
 				t.Fatal("parsed no writable mounts from the argv; the parser is broken")
@@ -75,6 +95,9 @@ func TestThePersistenceMapIsTheMountPlan(t *testing.T) {
 			dests := map[string]bool{}
 			for _, mt := range mounts {
 				dests[mt.dest] = true
+				if source := m.HostSources[mt.dest]; source != "" && !mt.tmpfs && source != mt.src {
+					t.Errorf("%q: map host source %q differs from argv source %q", mt.dest, source, mt.src)
+				}
 				got := persistenceClassOf(m, mt.dest)
 				if got == 0 {
 					t.Errorf("the argv mounts %q writable (from %q) and the persistence map does "+

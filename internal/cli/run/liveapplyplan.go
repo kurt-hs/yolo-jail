@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
+	"github.com/mschulkind-oss/yolo-jail/internal/changetiming"
 	"github.com/mschulkind-oss/yolo-jail/internal/ctxinject"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
@@ -55,47 +56,56 @@ func (a applyOutcome) String() string {
 // command's exit 3, as `yolo config drift`'s 3.
 func (a applyOutcome) pending() bool { return a == outcomeNextRestart || a == outcomeNextLaunch }
 
-// nextSessionKeys reach the next session on every backend: an attach already recomposes the
-// provider, profile and env channel from the current config (design §4, the A rows).
-var nextSessionKeys = map[string]bool{
-	"env_sources": true, "providers": true, "profiles": true, "profile": true,
-	"model_facts": true, "adapters": true,
-}
-
-// briefingKeys reach the next session through the briefing staging an attach re-renders; on
-// Apple Container the briefing is copied once, at boot, so they wait for a restart there.
-var briefingKeys = map[string]bool{"agents_md_extra": true, "briefing_provenance": true}
-
-// keyOutcome is the table's row for a workspace key that is neither `mounts` nor the
-// repository scope. Every key not named is restart-only. On macos-user every key reaches the
-// next session, because every invocation there is a fresh sandbox that runs the gate.
+// keyOutcome delegates the stable backend/key matrix to the shared mechanics contract.
+// Runtime observations remain inputs to Classify and can narrow its expectation.
 func keyOutcome(rt, key string) (applyOutcome, string) {
-	switch {
-	case rt == "macos-user": // parity: HonoredBy — every macos-user invocation is a fresh launch that runs the gate, so each key reaches the next session
-		return outcomeNextSession, ""
-	case nextSessionKeys[key]:
-		return outcomeNextSession, ""
-	case briefingKeys[key] && rt == "container": // parity: Warned — Apple Container copies its briefing once; the outcome line says it waits for a restart
-		return outcomeNextRestart, "Apple Container copies its briefing once, when the jail starts"
-	case briefingKeys[key]:
-		return outcomeNextSession, ""
+	row, err := changetiming.Classify(key, changetiming.Context{Backend: timingBackend(rt),
+		PackageDelivery: changetiming.BakedImage})
+	if err != nil {
+		return outcomeNextRestart, "no change-timing row is available for this key"
 	}
-	return outcomeNextRestart, ""
+	return applyOutcomeForTiming(row.Outcome), row.Reason
 }
 
-// mountsOutcome is the `mounts` row. The backend is decided BEFORE the jail's own answer
-// (live, reason: the C lane's ctxMountsLive), because Apple Container shares are fixed when
-// its VM boots whatever its contract tags say.
-func mountsOutcome(rt string, live bool, reason string) (applyOutcome, string) {
-	switch {
-	case rt == "macos-user": // parity: HonoredBy — macos-user has no mounts; the next session re-stages its links
-		return outcomeNextSession, ""
-	case rt == "container": // parity: Warned — Apple Container shares are fixed at VM boot; the outcome line says so
-		return outcomeNextRestart, "Apple Container shares are fixed when its VM boots"
-	case live:
-		return outcomeAppliedNow, ""
+func timingBackend(rt string) changetiming.Backend {
+	switch rt {
+	case "podman":
+		return changetiming.Podman
+	case "container":
+		return changetiming.AppleContainer
+	case "macos-user":
+		return changetiming.MacOSUser
+	default:
+		return changetiming.Backend(rt)
 	}
-	return outcomeNextRestart, reason
+}
+
+func applyOutcomeForTiming(outcome changetiming.Outcome) applyOutcome {
+	switch outcome {
+	case changetiming.AppliedNow:
+		return outcomeAppliedNow
+	case changetiming.NextSession:
+		return outcomeNextSession
+	case changetiming.AtNextLaunch:
+		return outcomeNextLaunch
+	default:
+		return outcomeNextRestart
+	}
+}
+
+// mountsOutcome is the `mounts` row. The shared contract owns backend expectations; live is
+// the runtime adapter's proven capability and reason preserves its probe-specific downgrade.
+func mountsOutcome(rt string, live bool, reason string) (applyOutcome, string) {
+	row, err := changetiming.Classify("mounts", changetiming.Context{
+		Backend: timingBackend(rt), LiveMounts: live,
+	})
+	if err != nil {
+		return outcomeNextRestart, "no change-timing row is available for mounts"
+	}
+	if reason != "" && row.Outcome == changetiming.AtNextRestart {
+		row.Reason = reason
+	}
+	return applyOutcomeForTiming(row.Outcome), row.Reason
 }
 
 // scopeChangeOutcome is the `brokered` and repository-scope row, over the live broker files of
@@ -103,24 +113,22 @@ func mountsOutcome(rt string, live bool, reason string) (applyOutcome, string) {
 // (LA-D11). macos-user's sessions each run their own gate and broker, so with no live session
 // the change reaches the next one.
 func scopeChangeOutcome(rt string, files []liveScopeFile) (applyOutcome, string) {
-	if rt == "container" { // parity: Warned — Apple Container starts no broker; the outcome line says so
-		return outcomeNextRestart, "no broker runs in this jail"
+	live := len(files) > 0
+	for _, file := range files {
+		live = live && file.LiveScope
 	}
-	if len(files) == 0 {
-		if rt == "macos-user" { // parity: HonoredBy — a macos-user session runs its own gate and broker at its next start
-			return outcomeNextSession, ""
-		}
-		return outcomeNextRestart, "no running broker of this jail was found"
+	row, err := changetiming.Classify("brokered", changetiming.Context{Backend: timingBackend(rt), LiveScope: live})
+	if err != nil {
+		return outcomeNextRestart, "no change-timing row is available for brokered scope"
 	}
-	for _, f := range files {
-		if !f.LiveScope {
-			if rt == "macos-user" { // parity: HonoredBy — a macos-user session runs its own gate and broker at its next start
-				return outcomeNextSession, "a running session's broker started before live scope existed"
-			}
-			return outcomeNextRestart, "this jail's broker started before it could take a scope change live"
-		}
+	if rt == "podman" && len(files) == 0 { // parity: HonoredBy — the Podman live-broker file scan found no broker for this jail
+		row.Reason = "no running broker of this jail was found"
+	} else if rt == "podman" && !live { // parity: HonoredBy — the Podman live-broker file scan found a broker without live scope
+		row.Reason = "this jail's broker started before it could take a scope change live"
+	} else if rt == "macos-user" && len(files) > 0 && !live { // parity: HonoredBy — native session broker files show a running broker without live scope
+		row.Reason = "a running session's broker started before live scope existed"
 	}
-	return outcomeAppliedNow, ""
+	return applyOutcomeForTiming(row.Outcome), row.Reason
 }
 
 func verifiedScopeOutcome(rt string, scopes []scopeDelta) (applyOutcome, string) {

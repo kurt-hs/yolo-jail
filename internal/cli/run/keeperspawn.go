@@ -342,7 +342,7 @@ func (o *Options) awaitKeeperUnwind(kp *keeperProcess, cname, rt string) {
 				if !endingOnAHangup() {
 					o.pr(terminalOnly(o.Stderr)).printf("[dim]Jail %s stays up: its keeper could not count this "+
 						"session, so it does not end the jail when its sessions leave; %s ends it.[/dim]",
-						cname, stopRemedy(rt, cname))
+						cname, keyedStopRemedy(rt, cname))
 				}
 				return
 			}
@@ -455,7 +455,7 @@ func (o *Options) endSession(cname, rt string, rc int, since time.Time, logFrom 
 	case quitUnkeptOthers:
 		out.printf("[yellow]This jail's keeper is gone, so its host services have been down since it "+
 			"died; the last of its other sessions to quit ends %s, or %s does now.[/yellow]",
-			cname, stopRemedy(rt, cname))
+			cname, keyedStopRemedy(rt, cname))
 	case quitUnknown:
 		out.printf("[dim]Could not tell whether other sessions remain in %s; it may be ending.[/dim]", cname)
 	}
@@ -488,7 +488,7 @@ func (o *Options) noteJailStaysUp(cname, rt string) {
 		o.sayJailStaysUpFor(cname, rt, othersUncounted)
 	default:
 		o.pr(terminalOnly(o.Stderr)).printf("[dim]Jail %s stays up; %s. `yolo -- <agent>` re-enters it, and %s ends them all.[/dim]",
-			cname, couldNotDetermineSessions, stopRemedy(rt, cname))
+			cname, couldNotDetermineSessions, keyedStopRemedy(rt, cname))
 	}
 }
 
@@ -499,7 +499,7 @@ const othersUncounted = "its other sessions"
 // others.
 func (o *Options) sayJailStaysUpFor(cname, rt, others string) {
 	o.pr(terminalOnly(o.Stderr)).printf("[dim]Jail %s stays up for %s; `yolo -- <agent>` re-enters it, and %s ends them all.[/dim]",
-		cname, others, stopRemedy(rt, cname))
+		cname, others, keyedStopRemedy(rt, cname))
 }
 
 // printKeeperRecords prints what the keeper logged since logFrom, on the terminal: its log holds the
@@ -1088,7 +1088,7 @@ func (o *Options) refuseUnaskableKey(key, rt, cname string) {
 	out.printf("[bold red]Refusing to launch: could not ask whether a keeper holds this workspace's "+
 		"macos-user host services (its lock %s cannot be taken).[/bold red]", livenessLockPath(key))
 	out.printf("[dim]Check that file's directory is yours and writable, then launch again; %s ends "+
-		"whatever holds it.[/dim]", stopRemedy(rt, cname))
+		"whatever holds it.[/dim]", keyedStopRemedy(rt, cname))
 }
 
 // refuseUnreadableRoster is an arrival at a live keeper whose roster is there and cannot be read.
@@ -1096,7 +1096,7 @@ func (o *Options) refuseUnreadableRoster(key, rt, cname string) {
 	out := o.pr(o.Stderr)
 	out.printf("[bold red]Refusing to launch: a keeper holds this workspace's macos-user host "+
 		"services, and its roster %s cannot be read.[/bold red]", keeperRecordPath(key))
-	out.printf("[dim]%s ends it, and the next launch starts fresh.[/dim]", capitalize(stopRemedy(rt, cname)))
+	out.printf("[dim]%s ends it, and the next launch starts fresh.[/dim]", capitalize(keyedStopRemedy(rt, cname)))
 }
 
 // refuseUnkeptKey is an arrival at an UNKEPT key: its keeper is gone and sessions still run without
@@ -1112,7 +1112,7 @@ func (o *Options) refuseUnkeptKey(key, rt, cname string) {
 		"gone, because %s is, and %s without them.[/bold red]", who,
 		sessionsThat(keptSessions(liveKeyedSessions(key)), "still runs", "still run"))
 	o.pr(o.Stderr).printf("[dim]%s ends them and removes what the keeper left; the next launch then "+
-		"starts fresh.[/dim]", capitalize(stopRemedy(rt, cname)))
+		"starts fresh.[/dim]", capitalize(keyedStopRemedy(rt, cname)))
 }
 
 // refuseRosterContract is an arrival at a keeper whose roster this build cannot read (JL-D45):
@@ -1128,7 +1128,7 @@ func (o *Options) refuseRosterContract(key, rt, cname string, rec keeperRecord) 
 		"read; %s.[/bold red]", rec.PID, build, rec.Contract, keeperBuildStamp(), keeperRosterContract,
 		sessionsThat(keptSessions(liveKeyedSessions(key)), "uses it", "use it"))
 	o.pr(o.Stderr).printf("[dim]%s ends them and their keeper; the next launch then starts fresh on "+
-		"this yolo.[/dim]", capitalize(stopRemedy(rt, cname)))
+		"this yolo.[/dim]", capitalize(keyedStopRemedy(rt, cname)))
 }
 
 // recordKeyedSession names this launch's session in key's records (JL-D44), for a refused arrival
@@ -1389,7 +1389,7 @@ func (o *Options) startMacosUserKeeper(arm *MacosUserArm, cfg *jsonx.OrderedMap,
 	plan.Uncounted = o.sessionLock == nil
 	if plan.Uncounted {
 		out.printf("[yellow]This workspace's macos-user keeper cannot count this session, so it will not end "+
-			"the host services when its sessions leave; %s ends them.[/yellow]", stopRemedy(rt, cname))
+			"the host services when its sessions leave; %s ends them.[/yellow]", keyedStopRemedy(rt, cname))
 	}
 	o.recordKeyedSession(m.key, true)
 	sp := o.Perf.Span("launch.start_keeper")
@@ -1445,7 +1445,7 @@ func (o *Options) startMacosUserKeeper(arm *MacosUserArm, cfg *jsonx.OrderedMap,
 			"cannot be read.[/bold red]", keeperRecordPath(m.key))
 		out.printf("[dim]Launch again: this launch's quit ends the keeper it started when no other session "+
 			"joined it; if one still holds this workspace's macos-user host services, %s ends it.[/dim]",
-			stopRemedy(rt, cname))
+			keyedStopRemedy(rt, cname))
 		return rec, 1, false
 	}
 	return rec, 0, true
@@ -1525,7 +1525,7 @@ func (o *Options) judgeKeeperLacks(rt, cname string, rec keeperRecord, lacks []s
 		"keeper (pid %d) does not run, and %s.[/bold red]", strings.Join(lacks, ", "), rec.PID,
 		sessionsThat(o.otherKeptSessions(), "uses it", "use it"))
 	out.printf("[dim]%s ends them and their keeper, and the next launch starts fresh with what this one "+
-		"needs; or %s=1 joins without it.[/dim]", capitalize(stopRemedy(rt, cname)), AllowAttachSkewEnv)
+		"needs; or %s=1 joins without it.[/dim]", capitalize(keyedStopRemedy(rt, cname)), AllowAttachSkewEnv)
 	return false
 }
 
@@ -1603,7 +1603,7 @@ func (o *Options) endMacosUserSession(rt string, rc int) int {
 			others = fmt.Sprintf("%d other %s", n, plural(n, "session", "sessions"))
 		}
 		out.printf("[dim]This workspace's macos-user host services stay up (keeper pid %s) for %s; %s ends "+
-			"them all.[/dim]", pid, others, stopRemedy(rt, cname))
+			"them all.[/dim]", pid, others, keyedStopRemedy(rt, cname))
 	case quitLast:
 		o.streamKeeperTeardown(m.key, m.logFrom)
 	case quitNoKeeper:
@@ -1632,7 +1632,7 @@ func (o *Options) endMacosUserSession(rt string, rc int) int {
 	case quitUnkeptOthers:
 		out.printf("[yellow]This workspace's macos-user keeper is gone, so its host services have been down "+
 			"since it died; the last of its other sessions to quit removes what it left, or %s does now.[/yellow]",
-			stopRemedy(rt, cname))
+			keyedStopRemedy(rt, cname))
 	case quitUnknown:
 		out.print("[dim]Could not tell whether other macos-user sessions of this workspace remain; its host " +
 			"services may be ending.[/dim]")

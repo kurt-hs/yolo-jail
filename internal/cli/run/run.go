@@ -23,6 +23,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	_ "github.com/mschulkind-oss/yolo-jail/internal/packreg" // registers the embedded packs with packload
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/prune"
 	"github.com/mschulkind-oss/yolo-jail/internal/render"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
@@ -1084,13 +1085,31 @@ func Run(opts Options) (rc int) {
 		if dir := o.claudeSecureStorageDir(rt, cfg, staged.packs, sharedHome); dir != "" {
 			launchEnv.Set(claudeview.SecureStorageEnv, dir)
 		}
-		// notchConfig, not cfg: the briefing states the notch, and `--at guest` names one the
-		// config's `confinement` key does not (EMP-D1). Everything else here reads cfg.
-		sp := o.Perf.Span("launch.refresh_jail_briefings")
-		staging, err := o.refreshJailBriefings(cname, o.notchConfig(cfg), rt, staged,
-			appliedIOPriority(rt, o.IsMacOS, cfgMap(cfg, "resources")))
+		// Host-file destination, source and backing facts must follow the native context
+		// producer, which resolves and copies these entries from the host. Its tree can be
+		// composed in the launch staging root before the skills suite exists; refreshing
+		// the suite then consumes the real delivery result rather than configured intent.
+		staging := filepath.Join(paths.AgentsDir(), cname)
+		sp := o.Perf.Span("launch.build_ctx_tree")
+		ctxDelivery, err := o.buildMacosCtxTree(staging, staged.packs, cfg, ctxCopies...)
 		sp.End()
 		if err != nil {
+			o.pr(o.Stderr).printf("[bold red]%s[/bold red]", err.Error())
+			return 1
+		}
+		ctxDelivery.ctx.HostImportExclusions = staged.hostImportExclusions
+		// notchConfig, not cfg: the briefing states the notch, and `--at guest` names one the
+		// config's `confinement` key does not (EMP-D1). Everything else here reads cfg.
+		sp = o.Perf.Span("launch.refresh_jail_briefings")
+		facts := o.mechanicsFactSheet(cname, o.notchConfig(cfg), rt, staged, storePackagesPlan{}, ctxDelivery.ctx.HostFiles)
+		mechanicsNativeHostFileBackings(facts, ctxDelivery.ctx, cname)
+		staging, err = o.refreshJailBriefings(cname, o.notchConfig(cfg), rt, staged,
+			appliedIOPriority(rt, o.IsMacOS, cfgMap(cfg, "resources")), facts)
+		sp.End()
+		if err != nil {
+			if ctxDelivery.ctx.Tree != "" {
+				_ = os.RemoveAll(ctxDelivery.ctx.Tree)
+			}
 			o.pr(o.Stderr).printf("[bold red]%s[/bold red]", err.Error())
 			return 1
 		}
@@ -1110,28 +1129,15 @@ func Run(opts Options) (rc int) {
 			})
 		sp.End()
 		if err != nil {
+			if ctxDelivery.ctx.Tree != "" {
+				_ = os.RemoveAll(ctxDelivery.ctx.Tree)
+			}
 			o.pr(o.Stderr).printf("[bold red]%s[/bold red]", err.Error())
 			return 1
 		}
-		// THE HOST BYTES, on this arm and only on this arm (DP-L1, macosctxtree.go).
-		// Composed here for the same three reasons the overlay above is: the container
-		// path delivers this content by MOUNTING it and returns below, the composition
-		// needs the resolved pack set this function already holds, and a --dry-run must
-		// describe the launch a user would really get rather than a smaller one.
-		//
-		// FATAL on failure, unlike the overlay's own sources: a `reads-host` grant whose
-		// bytes exist and could not be copied would compose the agent a settings file
-		// that looks like the human's and is not, which is the exact failure OQ-CO10
-		// made the jail's read fail closed over. An ABSENT source is not a failure and
-		// does not reach here. The pack files the decider chose to copy land in the same tree.
-		sp = o.Perf.Span("launch.build_ctx_tree")
-		ctxDelivery, err := o.buildMacosCtxTree(staging, staged.packs, cfg, ctxCopies...)
-		sp.End()
-		if err != nil {
-			o.pr(o.Stderr).printf("[bold red]%s[/bold red]", err.Error())
-			return 1
-		}
-		ctxDelivery.ctx.HostImportExclusions = staged.hostImportExclusions
+		// THE HOST BYTES were resolved before suite composition so their real source and
+		// backing already informed the map above. This point keeps the backend's disclosure
+		// and context-link handling beside the resulting plan.
 		// AND THE DISCLOSURE THAT MUST TRAVEL WITH THEM. Until DP-L1 nothing crossed
 		// here, so nothing had to be disclosed; now a pack reads the human's home on
 		// this backend exactly as it does on every other one, and the banner is the
@@ -1846,15 +1852,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// (durabledir.go). A failure is one printed line, never a refusal.
 	o.ensureDurableDir(rt, cfg)
 
-	sp := o.Perf.Span("launch.refresh_jail_briefings")
-	agentsPath, err := o.refreshJailBriefings(cname, cfg, rt, staged,
-		appliedIOPriority(rt, o.IsMacOS, cfgMap(cfg, "resources")))
-	sp.End()
-	if err != nil {
-		out.printf("[bold red]%s[/bold red]", err.Error())
-		lock.Close()
-		return 1
-	}
+	var agentsPath string
 
 	// Retire jail-made workspace venvs from the old shared-store model.
 	o.retireJailMadeVenv(cfg)
@@ -1869,7 +1867,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// would put the cheap failure behind the expensive success. And this is the
 	// mount whose absence means the container has no pid1 to exec — a launch that
 	// cannot produce it must refuse before it starts making a container at all.
-	sp = o.Perf.Span("launch.resolve_jail_prefix")
+	sp := o.Perf.Span("launch.resolve_jail_prefix")
 	jailPrefix, prefixOK := o.resolveJailPrefix(repoRoot, rt)
 	sp.End()
 	if !prefixOK {
@@ -2170,6 +2168,17 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 		o.scratchVolumes = ScratchVolumeNames(cfgStr(cfg, "ephemeral_storage"), cname, scratchID)
 		o.scratchRemovalOnce = &sync.Once{}
 	}
+	miseMountSource := miseStore
+	if !o.Sealed {
+		if rt == "container" { // parity: HonoredBy — Apple Container's per-jail mise volume replaces the host store bind
+			miseMountSource = prune.MiseVolumeName(cname)
+		} else if o.IsMacOS {
+			miseMountSource = miseStoreVolume
+		}
+	}
+	sources := persistenceSources{cacheSource: cacheDir, miseSource: miseMountSource,
+		cacheRelocations: relocations, hostCASAliases: hostCAS, scratchID: scratchID}
+	agentsPath = filepath.Join(paths.AgentsDir(), cname)
 	in := &assembleInput{
 		cfg:                  cfg,
 		rt:                   rt,
@@ -2266,9 +2275,29 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 		lock.Close()
 		return 1
 	}
+	sp = o.Perf.Span("launch.refresh_jail_briefings")
+	facts := o.mechanicsFactSheet(cname, cfg, rt, staged, storePkgs, hostFiles, sources)
+	facts.HostLoopback = hostLoopbackFromArgv(runCmd)
+	if rt != "macos-user" { // parity: NotApplicable — native macos-user shares the host nix paths without a bind
+		facts.NixDelivery = nixDelivery(rt, hostNixMountedFromArgv(runCmd))
+	}
+	mechanicsWorkspaceReadonlyFromArgv(o, facts, cfg, runCmd, rt)
+	mechanicsHostFileBackings(facts, hostFiles, runCmd, rt, wsState)
+	_, refreshErr := o.refreshJailBriefings(cname, cfg, rt, staged,
+		appliedIOPriority(rt, o.IsMacOS, cfgMap(cfg, "resources")), facts)
+	sp.End()
+	if refreshErr != nil {
+		out.printf("[bold red]%s[/bold red]", refreshErr.Error())
+		discardUnheldSkeleton(cname, in.homeSkeleton)
+		lock.Close()
+		return 1
+	}
 	if err := o.recordLaunchCtxMounts(in); err != nil {
 		out.printf("[yellow]Warning: live context mounts are off for this jail: %s. A `mounts` change "+
 			"will need `yolo stop`, then `yolo`.[/yellow]", richtext.Escape(err.Error()))
+	}
+	if err := writeMechanicsApplied(cname, in.ctxMountsToken, facts); err != nil {
+		out.printf("[yellow]Warning: applied guidance snapshot unavailable: %s[/yellow]", richtext.Escape(err.Error()))
 	}
 
 	// Every bind source against the macOS Podman Machine's share list, now that the argv
@@ -3084,7 +3113,20 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 		// An acknowledged skew is named in the briefing too (SK-D15): the session this attach
 		// starts reads it, where the stderr account above has scrolled away.
 		o.attachSkewNotice = o.attachSkewBriefing(acked, baked, rt, cname)
-		_, refreshErr = o.refreshJailBriefings(cname, cfg, rt, view.staged, o.launchedIOPriority(rt, envLines))
+		facts, factsOK := readMechanicsApplied(cname, envLines)
+		if factsOK && applyLiveMountsToMechanics(facts, cname, envLines) {
+			facts.Packs = mechanicsPackNames(view.staged.packs)
+			_, refreshErr = o.refreshJailBriefings(cname, cfg, rt, view.staged, o.launchedIOPriority(rt, envLines), facts)
+		} else {
+			if factsOK {
+				o.mechanicsRefreshWarning("the authenticated live-mount record is unavailable; the prior guidance was kept", mechanicsRestartRemedy(rt, cname))
+			} else {
+				o.mechanicsRefreshWarning("the applied mechanics snapshot is missing or does not match this jail; the prior guidance was kept", mechanicsRestartRemedy(rt, cname))
+			}
+			// The legacy briefing still describes the inspected running jail. Mechanics guidance
+			// stays byte-for-byte at its prior staging and no compatibility-default sheet is made.
+			_, refreshErr = o.refreshLegacyJailBriefings(cname, cfg, rt, view.staged, o.launchedIOPriority(rt, envLines))
+		}
 		o.attachSkewNotice = nil
 		sp.End()
 	}

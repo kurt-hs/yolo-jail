@@ -16,6 +16,68 @@ func versionSkewOptions(t *testing.T, host string) (*Options, *bytes.Buffer) {
 	return &Options{Stderr: &stderr}, &stderr
 }
 
+func TestRestartActionRemedyMatchesBackend(t *testing.T) {
+	for _, tc := range []struct {
+		name, runtime, command, remedy string
+	}{
+		{"podman", "podman", "yolo stop", "'yolo stop' from this workspace"},
+		{"container", "container", "yolo stop", "'yolo stop' from this workspace"},
+		{"macos-user", "macos-user", "yolo", "end this session, then run `yolo` from this workspace"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			action := restartActionFor(tc.runtime, "yolo-ws-abcd1234")
+			if action.command != tc.command || action.remedy != tc.remedy {
+				t.Fatalf("restart action = %#v, want command %q and remedy %q", action, tc.command, tc.remedy)
+			}
+			if got := stopCommand(tc.runtime, "yolo-ws-abcd1234"); got != action.command {
+				t.Errorf("stopCommand = %q, want restart action command %q", got, action.command)
+			}
+			if got := stopRemedy(tc.runtime, "yolo-ws-abcd1234"); got != action.remedy {
+				t.Errorf("stopRemedy = %q, want restart action remedy %q", got, action.remedy)
+			}
+		})
+	}
+}
+
+func TestKeyedStopRemedyIsDistinctFromSessionRestart(t *testing.T) {
+	const key = "yolo-ws-abcd1234"
+	if got, want := stopRemedy("macos-user", key), "end this session, then run `yolo` from this workspace"; got != want {
+		t.Fatalf("ordinary native restart = %q, want %q", got, want)
+	}
+	if got, want := keyedStopRemedy("macos-user", key), "'yolo stop' from this workspace"; got != want {
+		t.Fatalf("keyed native stop = %q, want %q", got, want)
+	}
+	if got, want := keyedStopRemedy("podman", key), stopRemedy("podman", key); got != want {
+		t.Fatalf("container keyed stop = %q, want ordinary stop remedy %q", got, want)
+	}
+	if got, want := mechanicsRestartRemedy("macos-user", key), "end this session, then run `yolo` from this workspace again"; got != want {
+		t.Fatalf("native mechanics remedy = %q, want %q", got, want)
+	}
+	if got, want := mechanicsRestartRemedy("podman", key), "restart this jail with 'yolo stop' from this workspace, then run `yolo` again"; got != want {
+		t.Fatalf("container mechanics remedy = %q, want %q", got, want)
+	}
+}
+
+// The refusal must use the same backend-aware remedy pinned above; otherwise
+// deleting its production callsite would leave only a callee test green.
+func TestAttachSkewRefusalUsesRestartRemedy(t *testing.T) {
+	fn := methodDecl(t, "contracttags.go", "refuseAttachSkew")
+	found := false
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if sel, ok := call.Fun.(*ast.Ident); ok && sel.Name == "stopRemedy" {
+			found = true
+		}
+		return true
+	})
+	if !found {
+		t.Fatal("refuseAttachSkew no longer uses stopRemedy; the refusal must give the backend's real restart action")
+	}
+}
+
 // TestAttachWarnsWhenTheJailIsOlderThanTheLauncher is the notice itself. It has
 // to carry BOTH versions and the remedy: the launch banner already prints the
 // baked one, so a line that only repeated it would say nothing new.

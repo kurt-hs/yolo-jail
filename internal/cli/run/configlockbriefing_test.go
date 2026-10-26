@@ -1,10 +1,7 @@
 package run
 
-// configlockbriefing_test.go pins that the jail briefing tells the agent its workspace config is
-// read-only when the launch locked it. Any `workspace_readonly` entry binds that file `:ro`
-// (workspaceConfigLockTarget), and a briefing that said "edit `/workspace/yolo-jail.jsonc`" sent the
-// agent straight into EROFS. Driven through refreshJailBriefings, the briefing's call site, and read
-// back from the file an agent reads.
+// configlockbriefing_test.go pins that generated mechanics guidance preserves the workspace config
+// lock. The production staging call consumes the same applied FactSheet as the renderer.
 
 import (
 	"os"
@@ -34,14 +31,14 @@ func TestBriefingSaysALockedWorkspaceConfigIsReadOnly(t *testing.T) {
 			if tc.readonly != nil {
 				cfg = appliedTestConfig("workspace_readonly", tc.readonly)
 			}
-			briefing := appliedBriefing(t, appliedOptions(t, ws, home, false), "podman", cfg)
-			const lockedSays = "`/workspace/yolo-jail.jsonc` is **read-only**"
-			const editSays = "edit `/workspace/yolo-jail.jsonc`"
-			if got := strings.Contains(briefing, lockedSays); got != tc.locked {
-				t.Errorf("briefing says the config is read-only = %v, want %v:\n%s", got, tc.locked, briefing)
+			recipe := appliedMechanicsRecipe(t, appliedOptions(t, ws, home, false), "podman", cfg, "workspace-config.md")
+			const lockedSays = "read-only"
+			const editSays = "Edit `/workspace/yolo-jail.jsonc`"
+			if got := strings.Contains(recipe, lockedSays); got != tc.locked {
+				t.Errorf("generated recipe says the config is read-only = %v, want %v:\n%s", got, tc.locked, recipe)
 			}
-			if got := strings.Contains(briefing, editSays); got == tc.locked {
-				t.Errorf("briefing tells the agent to edit the config = %v, want %v:\n%s", got, !tc.locked, briefing)
+			if got := strings.Contains(recipe, editSays); got == tc.locked {
+				t.Errorf("generated recipe tells the agent to edit the config = %v, want %v:\n%s", got, !tc.locked, recipe)
 			}
 		})
 	}

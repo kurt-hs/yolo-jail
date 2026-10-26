@@ -88,11 +88,8 @@ func TestWorkspaceReadonlyLocksTheConfigFileTheLoaderReads(t *testing.T) {
 	}
 }
 
-// The jail briefing tells the agent to edit the workspace config the loader READS: following
-// "edit `/workspace/yolo-jail.jsonc`" in a workspace that keeps `yolo-jail.json` creates a file
-// the next launch reads in its place, dropping every key the user's own file sets. Driven
-// through refreshJailBriefings, the briefing's call site, and read back from the file an agent
-// reads.
+// The generated workspace-config recipe names the exact file the loader READS, rather than
+// telling the agent to create a competing config file. Read it from production skill staging.
 func TestBriefingNamesTheWorkspaceConfigTheLoaderReads(t *testing.T) {
 	for _, tc := range []struct {
 		files []string
@@ -112,17 +109,14 @@ func TestBriefingNamesTheWorkspaceConfigTheLoaderReads(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			briefing := appliedBriefing(t, appliedOptions(t, ws, home, false), "podman", appliedTestConfig())
-			if want := "edit `/workspace/" + tc.want + "`"; !strings.Contains(briefing, want) {
-				t.Errorf("the briefing does not say %q:\n%s", want, briefing)
-			}
-			if want := "editing `" + tc.want + "`"; !strings.Contains(briefing, want) {
-				t.Errorf("the briefing does not say %q:\n%s", want, briefing)
+			recipe := appliedMechanicsRecipe(t, appliedOptions(t, ws, home, false), "podman", appliedTestConfig(), "workspace-config.md")
+			if want := "Edit `/workspace/" + tc.want + "`"; !strings.Contains(recipe, want) {
+				t.Errorf("the generated recipe does not name the exact config file %q:\n%s", want, recipe)
 			}
 			if other := map[string]string{"yolo-jail.json": "yolo-jail.jsonc",
-				"yolo-jail.jsonc": "yolo-jail.json"}[tc.want]; strings.Contains(briefing, "`/workspace/"+other+"`") {
-				t.Errorf("the briefing names /workspace/%s, which is not the file the loader reads here:\n%s",
-					other, briefing)
+				"yolo-jail.jsonc": "yolo-jail.json"}[tc.want]; strings.Contains(recipe, "`/workspace/"+other+"`") {
+				t.Errorf("the generated recipe names /workspace/%s, which is not the file the loader reads here:\n%s",
+					other, recipe)
 			}
 		})
 	}

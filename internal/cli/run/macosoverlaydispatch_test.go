@@ -53,12 +53,23 @@ func TestMacosUserLaunchComposesAndPassesTheHomeOverlay(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(gotOverlay.Tree, ".claude", "skills")); err != nil {
 		t.Errorf("the overlay carries no skills tree at .claude/skills: %v", err)
 	}
-	// Laid out by DESTINATION, never by staging name — the layout IS the manifest the
-	// bootstrap copies, so a staging-side name here would land in the home verbatim.
+	// Layout is by destination, never by staging name. A recipe named
+	// skills-and-briefing.md is valid content; only staging-directory components and
+	// briefing staging artifacts are forbidden in the delivered tree.
+	stagingSideName := func(name string, isDir bool) bool {
+		return isDir && (strings.HasPrefix(name, "skills-") || strings.HasPrefix(name, "briefings-")) ||
+			!isDir && (strings.HasPrefix(name, "briefing-") || strings.HasPrefix(name, "briefings-"))
+	}
+	if stagingSideName("skills-and-briefing.md", false) {
+		t.Fatal("ordinary recipe filename classified as a staging name")
+	}
+	if !stagingSideName("skills-claude", true) || !stagingSideName("briefings-claude", true) ||
+		!stagingSideName("briefings-claude", false) || !stagingSideName("briefing-.claude~1CLAUDE.md", false) {
+		t.Fatal("staging-side fixture names were not recognized")
+	}
 	var leaked []string
-	_ = filepath.Walk(gotOverlay.Tree, func(p string, _ os.FileInfo, _ error) error {
-		if strings.HasPrefix(filepath.Base(p), "briefing-") ||
-			strings.HasPrefix(filepath.Base(p), "skills-") {
+	_ = filepath.Walk(gotOverlay.Tree, func(p string, info os.FileInfo, _ error) error {
+		if info != nil && stagingSideName(filepath.Base(p), info.IsDir()) {
 			leaked = append(leaked, p)
 		}
 		return nil

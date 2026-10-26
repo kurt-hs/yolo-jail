@@ -468,7 +468,8 @@ func (o *Options) runApplySteps(run *applyRun, plan []applyChange) []applyChange
 			}
 		}
 	}
-	o.foldApplied(run, res)
+	folded := o.foldApplied(run, res)
+	o.updateMechanicsAfterApply(run, res, folded)
 	return res
 }
 
@@ -529,12 +530,20 @@ func (o *Options) applyStep(run *applyRun, c *applyChange, deadline time.Time) e
 	return nil
 }
 
+type foldedAppliedKey struct {
+	key     string
+	value   any
+	present bool
+}
+
 // foldApplied folds into the effective-config record every key whose every change took effect
 // (LA-D8): applied now, or reaching the next session. Container backends only, and only for a
-// jail known running; macos-user writes none (each session carries its own digest).
-func (o *Options) foldApplied(run *applyRun, res []applyChange) {
+// jail known running; macos-user writes none (each session carries its own baseline digest).
+// The returned values are the exact per-key producer results whose baseline writes succeeded;
+// consumers must not infer approval from the desired config or a timing outcome alone.
+func (o *Options) foldApplied(run *applyRun, res []applyChange) []foldedAppliedKey {
 	if run.rt == "macos-user" || !run.mode.running || run.mode.unknown || run.current == nil { // parity: HonoredBy — macos-user writes no record: each session carries its own baseline digest
-		return
+		return nil
 	}
 	ok := map[string]bool{}
 	var order []string
@@ -550,6 +559,7 @@ func (o *Options) foldApplied(run *applyRun, res []applyChange) {
 			ok[c.key] = false
 		}
 	}
+	var folded []foldedAppliedKey
 	for _, k := range order {
 		if !ok[k] {
 			continue
@@ -558,8 +568,15 @@ func (o *Options) foldApplied(run *applyRun, res []applyChange) {
 			o.pr(o.Stderr).printf("[dim]Warning: could not record %s as applied in %s: %s; `yolo config "+
 				"drift` will still list it.[/dim]", k, config.WorkspaceConfigBootPath(o.Workspace),
 				richtext.Escape(err.Error()))
+			continue
 		}
+		value, present := run.current.Get(k)
+		if present {
+			value = jsonx.DeepCopy(value)
+		}
+		folded = append(folded, foldedAppliedKey{key: k, value: value, present: present})
 	}
+	return folded
 }
 
 // attachPendingNotice is the one line a non-interactive attach prints when the workspace config

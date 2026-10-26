@@ -1115,6 +1115,7 @@ func TestOnlyTheListedFunctionsNameTheMachineStore(t *testing.T) {
 		"noteBrokenSharedClaudeLogin": "reads the shared Claude credentials file's condition to " +
 			"name a broken one, and writes nothing " +
 			"(TestAContainerLaunchSaysTheSharedClaudeLoginDoesNotParse checks the bytes are unchanged)",
+		"persistenceMapForSources": "reads paths.GlobalHome() only to describe the source paths for selected machine-scope shared dirs; it does not create, modify, or delete the machine store (the snapshot writer allowlist remains unchanged)",
 	}
 	files, err := filepath.Glob("*.go")
 	if err != nil {

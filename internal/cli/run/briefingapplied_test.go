@@ -49,21 +49,62 @@ func appliedOptions(t *testing.T, ws, home string, nested bool) *Options {
 	return o
 }
 
+func appliedStaging(t *testing.T, o *Options, rt string, cfg *jsonx.OrderedMap) string {
+	t.Helper()
+	staged := stagedPacks{packs: claudePackFixture(t)}
+	facts := o.mechanicsFactSheet("yolo-ws-abcd1234", cfg, rt, staged, storePackagesPlan{}, nil)
+	staging, err := o.refreshJailBriefings("yolo-ws-abcd1234", cfg, rt, staged,
+		appliedIOPriority(rt, o.IsMacOS, cfgMap(cfg, "resources")), facts)
+	if err != nil {
+		t.Fatalf("refreshJailBriefings: %v", err)
+	}
+	return staging
+}
+
+func appliedMechanicsRecipe(t *testing.T, o *Options, rt string, cfg *jsonx.OrderedMap, recipe string) string {
+	t.Helper()
+	staging := appliedStaging(t, o, rt, cfg)
+	path := filepath.Join(staging, "skills-claude", "jail-mechanics", "recipes", recipe)
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read generated mechanics recipe %s: %v", path, err)
+	}
+	return string(body)
+}
+
 // appliedBriefing writes the jail briefing for one (runtime, config) pair and returns the
 // text the claude pack's declared destination received — the bytes an agent actually
 // reads, not BriefingContent's return value, so nothing between the two can bypass it.
 func appliedBriefing(t *testing.T, o *Options, rt string, cfg *jsonx.OrderedMap) string {
 	t.Helper()
-	staging, err := o.refreshJailBriefings("yolo-ws-abcd1234", cfg, rt,
-		stagedPacks{packs: claudePackFixture(t)}, appliedIOPriority(rt, o.IsMacOS, cfgMap(cfg, "resources")))
-	if err != nil {
-		t.Fatalf("refreshJailBriefings: %v", err)
-	}
+	staging := appliedStaging(t, o, rt, cfg)
 	body, err := os.ReadFile(filepath.Join(staging, briefingStagingName(claudeBriefingDest)))
 	if err != nil {
 		t.Fatalf("no briefing was written for the claude pack: %v", err)
 	}
 	return string(body)
+}
+
+func TestNativeCooperativeCPUResourceGuidanceComesFromProductionStaging(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	ws := t.TempDir()
+	emptyLoopholeDirs(t)
+	o := appliedOptions(t, ws, home, false)
+	resources := jsonx.NewOrderedMap()
+	resources.Set("cpus", float64(2))
+	cfg := appliedTestConfig("resources", resources)
+
+	briefing := appliedBriefing(t, o, "macos-user", cfg)
+	if !strings.Contains(briefing, "Before editing the workspace config, asking for a restart, or relying on a file from the host: read **jail-mechanics**.") {
+		t.Fatal("production native briefing is missing the jail-mechanics pointer")
+	}
+	recipe := appliedMechanicsRecipe(t, o, "macos-user", cfg, "workspace-config.md")
+	for _, want := range append(append([]string(nil), macosuser.CooperativeCPUVars...), "cooperative parallelism defaults", "do not enforce a CPU cap") {
+		if !strings.Contains(recipe, want) {
+			t.Errorf("production native workspace recipe omits %q:\n%s", want, recipe)
+		}
+	}
 }
 
 // appliedArgv assembles the container argv for the same (runtime, config) pair.

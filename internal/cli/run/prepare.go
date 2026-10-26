@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/changetiming"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/ioprio"
@@ -38,7 +39,23 @@ import (
 // reaches a jail's processes only at its next fresh launch (docs/design/io-priority.md
 // §5.1). Deriving it here told an attached agent a class no process in its jail held.
 func (o *Options) refreshJailBriefings(cname string, cfg *jsonx.OrderedMap, rt string, staged stagedPacks,
+	io ioprio.Priority, factSheets ...*jailcontent.FactSheet) (string, error) {
+	return o.refreshJailBriefingsMode(cname, cfg, rt, staged, io, false, factSheets...)
+}
+
+// refreshLegacyJailBriefings refreshes the old attach briefing and compatible skills without
+// rendering mechanics from unauthenticated defaults or selecting new workspace-provided inputs.
+func (o *Options) refreshLegacyJailBriefings(cname string, cfg *jsonx.OrderedMap, rt string, staged stagedPacks,
 	io ioprio.Priority) (string, error) {
+	return o.refreshJailBriefingsMode(cname, cfg, rt, staged, io, true)
+}
+
+func (o *Options) refreshJailBriefingsMode(cname string, cfg *jsonx.OrderedMap, rt string, staged stagedPacks,
+	io ioprio.Priority, preserveLegacyMechanics bool, factSheets ...*jailcontent.FactSheet) (string, error) {
+	var facts *jailcontent.FactSheet
+	if len(factSheets) > 0 {
+		facts = factSheets[0]
+	}
 	netSec := cfgMap(cfg, "network")
 	netMode := o.resolveNetMode(cfg)
 
@@ -72,6 +89,11 @@ func (o *Options) refreshJailBriefings(cname string, cfg *jsonx.OrderedMap, rt s
 	blocked := blockedToolRecords(config.NormalizeBlockedToolsWith(cfgMap(cfg, "security"),
 		packload.BlockedTools(staged.packs)))
 
+	persistence := persistenceMapFor(rt, cfg, staged.packs, o.Workspace, o.Sealed, cname)
+	if facts != nil && facts.Persistence != nil {
+		persistence = facts.Persistence
+	}
+
 	// The context mounts this launch BINDS — config elements with their mode, and every pack
 	// `mount` grant with its pack — through the SAME decider the argv uses (ctxmounts.go), so
 	// an Apple Container skip, a missing source or a backend that binds nothing leaves the
@@ -104,6 +126,10 @@ func (o *Options) refreshJailBriefings(cname string, cfg *jsonx.OrderedMap, rt s
 	var loops []jailcontent.Loophole
 	if backendInertReason(rt) == "" {
 		loops = briefingLoopholes(cfgMap(cfg, "loopholes"))
+		availableSwitches := mechanicsLoopholeSwitches(cfgMap(cfg, "loopholes"), staged.packs)
+		for i := range loops {
+			loops[i].SwitchAvailable = availableSwitches[loops[i].Name]
+		}
 	}
 
 	// Pack staging (C3) already ran, ABOVE the backend dispatch, and its ordering
@@ -121,15 +147,6 @@ func (o *Options) refreshJailBriefings(cname string, cfg *jsonx.OrderedMap, rt s
 	// config itself. None under the seal (agentServerTables, seal.go): a build runs no agent.
 	lspServers, _ := agentServerTables(cfg, o.Sealed, nil)
 	jailcontent.SetLSPServers(lspServers)
-
-	// Skills staging — with the WORKSPACE as the lowest layer (docs/reference/agent-briefings.md),
-	// re-read from the workspace as it stands on every entry, attach included, and disclosed on
-	// every one that has something to say.
-	staging, wsSkills, err := jailcontent.PrepareSkillsWith(cname, o.workspaceSkillsFor(cfg, rt, loadedPacks))
-	if err != nil {
-		return "", err
-	}
-	o.noteWorkspaceSkills(wsSkills)
 
 	// Resource limits the backend actually IMPOSES (sorted-key rendering handled inside
 	// BriefingContent) — the same list assembleRunCmd turns into flags. Read straight
@@ -208,7 +225,7 @@ func (o *Options) refreshJailBriefings(cname string, cfg *jsonx.OrderedMap, rt s
 		// selected packs and config it is assembled from (persistencemap.go). It renders
 		// the storage-classes section and the Home line that points at it
 		// (docs/reference/jail-home.md#the-storage-class-briefing-section). Nil on macos-user.
-		Persistence: persistenceMapFor(rt, cfg, staged.packs, o.Workspace, o.Sealed),
+		Persistence: persistence,
 		// THE DURABLE DIR the section leads with (durabledir.go): the one this fresh launch
 		// made, or the one the running jail was started with on an attach, or why there is
 		// none. The same value the backend exports as $YOLO_DURABLE_DIR, so the briefing
@@ -225,9 +242,142 @@ func (o *Options) refreshJailBriefings(cname string, cfg *jsonx.OrderedMap, rt s
 	// Under the seal (seal.go, FP-D23) the briefing describes only what crosses, and carries none
 	// of the user's own text: it is staged where the build reads it.
 	extra := cfgStr(cfg, "agents_md_extra")
+	if preserveLegacyMechanics {
+		extra = ""
+	}
 	if o.Sealed {
 		in, extra = sealedBriefingInput(in), ""
 	}
+	hadAppliedFacts := facts != nil && facts.Briefing.Mechanism != ""
+	workspaceSkills := (*jailcontent.WorkspaceSkills)(nil)
+	if !preserveLegacyMechanics {
+		workspaceSkills = o.workspaceSkillsFor(cfg, rt, loadedPacks)
+	}
+	extra, workspaceSkills = appliedWorkspaceMechanics(facts, extra, workspaceSkills)
+	if facts != nil && !hadAppliedFacts {
+		facts.AppliedAgentsMDExtra = extra
+		facts.AppliedWorkspaceSkills = workspaceSkills
+	}
+	if hadAppliedFacts {
+		// An authenticated attach snapshot is the running jail's effective briefing state;
+		// current workspace edits are not applied merely by attaching.
+		applied := facts.Briefing
+		applied.Handoff = handoff
+		applied.AttachSkew = in.AttachSkew
+		applied.IOPriority = in.IOPriority
+		applied.ProvisioningFailed = in.ProvisioningFailed
+		in = applied
+	}
+	// Stage built-in guidance from the exact fact sheet decided by this launch/attach. Legacy
+	// callers without a sheet retain the embedded compatibility output.
+	var staging string
+	var wsSkills *jailcontent.WorkspaceSkillsReport
+	if facts != nil {
+		facts.Switches = mechanicsSwitchFacts(in.Loopholes)
+		if len(facts.Switches) > 0 {
+			for i := range facts.Timing {
+				if facts.Timing[i].Key == "loopholes" {
+					row, err := changetiming.Classify("loopholes", changetiming.Context{
+						Backend: facts.Timing[i].Backend, HostSwitch: true,
+					})
+					if err == nil {
+						facts.Timing[i] = row
+					}
+				}
+			}
+		}
+		facts.Briefing = in
+		if !hadAppliedFacts {
+			if in.Durable != nil && in.Durable.Path != "" {
+				delivery := "workspace bind through /workspace"
+				if rt == "macos-user" { // parity: NotApplicable — a native workspace filesystem has no workspace bind to map
+					delivery = "native workspace filesystem"
+				}
+				lifetime := in.Durable.Caveat
+				if lifetime == "" {
+					lifetime = "per workspace"
+				}
+				facts.Paths = append(facts.Paths, jailcontent.PathFact{Path: in.Durable.Path,
+					HostSource: filepath.Join(o.Workspace, ".yolo", "durable"), Mode: "read-write",
+					Lifetime: lifetime, Delivery: delivery, Origin: "durable workspace directory"})
+			}
+			for _, mount := range in.ContextMounts {
+				mode, delivery := "read-only", "read-only host bind"
+				if mount.ReadWrite {
+					mode = "read-write"
+				}
+				if mount.Copied {
+					delivery = "copied at launch"
+				} else if rt == "macos-user" { // parity: HonoredBy — native context links read the same host source without a copy
+					delivery = "native context link"
+				}
+				facts.Paths = append(facts.Paths, jailcontent.PathFact{Path: mount.Path, HostSource: mount.Host,
+					Mode: mode, Lifetime: "host filesystem", Delivery: delivery, Origin: mount.Pack})
+			}
+			pathHome := jailHome
+			if rt == "macos-user" { // parity: HonoredBy — native home paths use the selected account's launch home
+				pathHome = macosuser.LaunchHomes(o.MacosUserMode, o.Workspace, o.macosUserHostHome()).Home
+			}
+			for _, target := range packSkillTargets(loadedPacks) {
+				path := filepath.Join(paths.AgentsDir(), cname, target.Staging)
+				dest := filepath.Join(pathHome, target.Dest)
+				facts.WorkspaceProjectDirs = append(facts.WorkspaceProjectDirs, target.ProjectDirs...)
+				already := false
+				for _, fact := range facts.Paths {
+					if fact.Path == dest {
+						already = true
+						break
+					}
+				}
+				if !already {
+					facts.Paths = append(facts.Paths, jailcontent.PathFact{Path: dest, HostSource: path,
+						Mode: "read-only", Lifetime: "per workspace", Delivery: facts.SkillsDelivery, Origin: "pack skills staging"})
+				}
+			}
+			for _, dest := range briefingDestinations(loadedPacks) {
+				facts.Paths = append(facts.Paths, jailcontent.PathFact{
+					Path:       filepath.Join(pathHome, dest.Into),
+					HostSource: filepath.Join(paths.AgentsDir(), cname, briefingStagingName(dest.Into)),
+					Mode:       "read-only", Lifetime: "per workspace", Delivery: facts.SkillsDelivery, Origin: "pack briefing staging",
+				})
+			}
+			if facts.AppliedWorkspaceSkills != nil {
+				facts.WorkspaceProjectDirs = append(facts.WorkspaceProjectDirs, facts.AppliedWorkspaceSkills.Dirs...)
+			}
+		}
+		if facts.WorkspacePath == "" {
+			facts.WorkspacePath = o.Workspace
+		}
+		if facts.ConfigPath == "" {
+			facts.ConfigPath, _ = config.ResolveWorkspaceConfigPath(o.Workspace, config.WorkspaceConfigName)
+		}
+		if facts.HostWorkspace == "" {
+			facts.HostWorkspace = o.Workspace
+		}
+		var err error
+		if _, err = jailcontent.RenderBuiltinSkills(*facts); err != nil {
+			// A guidance-template failure must not refuse a usable jail or partially replace
+			// its prior skill tree. The briefing still stages, and the warning names recovery.
+			o.pr(o.Stderr).printf("[yellow]Warning: generated guidance could not be rendered: %s; the prior skills remain in place. Fix the guidance source, then run `yolo` again.[/yellow]", err.Error())
+			staging = filepath.Join(paths.AgentsDir(), cname)
+		} else {
+			staging, wsSkills, err = jailcontent.PrepareSkillsWithFactSheet(cname, workspaceSkills, facts)
+			if err != nil {
+				return "", err
+			}
+		}
+	} else {
+		var err error
+		if preserveLegacyMechanics {
+			staging, wsSkills, err = jailcontent.PrepareSkillsWithLegacyMechanics(cname)
+		} else {
+			staging, wsSkills, err = jailcontent.PrepareSkillsWith(cname, workspaceSkills)
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	o.noteWorkspaceSkills(wsSkills)
 	briefingBody := jailcontent.BriefingContent(in)
 	briefingBody = jailcontent.ComposeBriefing(briefingBody, extra)
 
@@ -355,6 +505,15 @@ func briefingPortsFor(netMode string, netSec, providers *jsonx.OrderedMap) (publ
 		forward = asAnyList(mapGet(netSec, "forward_host_ports"))
 	}
 	return publish, mergeHostForwards(forward, localProviderForwards(providers))
+}
+
+func mechanicsLoopholeSwitches(cfg *jsonx.OrderedMap, packs []*packload.Pack) map[string]bool {
+	set := loopholes.NewSelectedSet(cfg, packLoopholeModules(packs), packSupersessions(packs))
+	available := make(map[string]bool, len(set.All()))
+	for _, lp := range set.All() {
+		available[lp.Name] = loopholes.SwitchedByConfig(lp)
+	}
+	return available
 }
 
 // briefingLoopholes is the loophole list the jail's briefing advertises — census site 1

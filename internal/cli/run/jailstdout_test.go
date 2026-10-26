@@ -3,6 +3,7 @@ package run
 import (
 	"bytes"
 	"go/ast"
+	"io"
 	"os"
 	"testing"
 )
@@ -45,6 +46,29 @@ func TestASessionStderrTakesTheSessionsStderr(t *testing.T) {
 	}
 	if got.String() != "JAIL_SESSION_STDERR" {
 		t.Errorf("SessionStderr received %q, want the session's stderr (JAIL_SESSION_STDERR)", got.String())
+	}
+}
+
+func TestUnsetSessionStderrInheritsProcessStderr(t *testing.T) {
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prior := os.Stderr
+	os.Stderr = write
+	arm := armLaunchSignalsWith(nil, func(int) {})
+	rc, runErr := runArmedSession([]string{"sh", "-c", "printf INHERITED_SESSION_STDERR >&2"}, arm, &Options{})
+	arm.detach()
+	arm.disarm()
+	os.Stderr = prior
+	_ = write.Close()
+	got, readErr := io.ReadAll(read)
+	_ = read.Close()
+	if runErr != nil || rc != 0 {
+		t.Fatalf("runArmedSession = %d, %v", rc, runErr)
+	}
+	if readErr != nil || string(got) != "INHERITED_SESSION_STDERR" {
+		t.Errorf("unset SessionStderr output = %q (read error %v), want inherited process stderr", got, readErr)
 	}
 }
 
