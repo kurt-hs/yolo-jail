@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/json5"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -75,7 +76,7 @@ func loadJSONCFile(path, label string, strict bool, warn Warn, record bool, at r
 		warn(msg)
 		return jsonx.NewOrderedMap(), nil, nil, nil
 	}
-	f := &srcFile{path: path, data: data, contained: rel != "", rel: rel, via: at.via, seq: at.ws.nextSeq()}
+	f := &srcFile{path: path, data: data, format: configdoc.JSONC, contained: rel != "", rel: rel, via: at.via, seq: at.ws.nextSeq()}
 	if !record {
 		return m, f, nil, nil
 	}
@@ -241,7 +242,7 @@ func loadWithIncludes(path, label string, strict bool, warn Warn, seen map[strin
 	}
 	seen[resolved] = struct{}{}
 
-	raw, file, node, err := loadJSONCFile(path, label, strict, warn, record, at)
+	raw, file, node, err := loadConfigFile(path, label, strict, warn, record, at)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -313,14 +314,9 @@ func loadWithIncludes(path, label string, strict bool, warn Warn, seen map[strin
 	return result, node, nil
 }
 
-// ResolveWorkspaceConfigPath is where LoadWorkspaceConfig reads the workspace config file
-// baseName (WorkspaceConfigName or WorkspaceLocalConfigName) from, and the name it reads it
-// under: the `.jsonc` name when that file exists, else its `.json` fallback when that one does,
-// else the `.jsonc` name, which is the file to create.
-//
-// It is the loader's own answer, so every other reader of a workspace config file asks it rather
-// than joining a name of its own: a reader that joined the `.jsonc` name passed over a workspace
-// configured in `yolo-jail.json`, whose keys the launch honored all the same.
+// ResolveWorkspaceConfigPath remains the legacy filename projection for callers that still
+// report or write the JSON config during the compatibility window. The B2 loader uses its
+// private format-aware resolver; runtime consumers move to the new path contract with H.
 func ResolveWorkspaceConfigPath(workspace, baseName string) (path, name string) {
 	for _, name := range workspaceConfigCandidates(baseName) {
 		if p := filepath.Join(workspace, name); pathExists(p) {
@@ -330,8 +326,8 @@ func ResolveWorkspaceConfigPath(workspace, baseName string) (path, name string) 
 	return filepath.Join(workspace, baseName), baseName
 }
 
-// WorkspaceConfigFileNames is every file name LoadWorkspaceConfig can read, in its order: each
-// base name, then its `.json` fallback.
+// WorkspaceConfigFileNames is the legacy filename projection retained for current runtime
+// consumers until their format-aware activation is integrated.
 func WorkspaceConfigFileNames() []string {
 	var names []string
 	for _, base := range []string{WorkspaceConfigName, WorkspaceLocalConfigName} {
@@ -340,15 +336,40 @@ func WorkspaceConfigFileNames() []string {
 	return names
 }
 
-// workspaceConfigCandidates is the names baseName is read under, in the order the loader tries
-// them: the `.jsonc` name, then its `.json` fallback.
 func workspaceConfigCandidates(baseName string) []string {
 	return []string{baseName, strings.TrimSuffix(baseName, "c")}
 }
 
-// LoadWorkspaceConfig loads yolo-jail.jsonc (or yolo-jail.json) plus
-// yolo-jail.local.jsonc (or yolo-jail.local.json) (local wins), sharing the seen
-// set so a config that also includes the local file doesn't merge it twice.
+func readableWorkspaceConfigCandidates(baseName string) []string {
+	switch baseName {
+	case WorkspaceConfigName:
+		return []string{WorkspaceTOMLConfigName, WorkspaceConfigName, strings.TrimSuffix(WorkspaceConfigName, "c")}
+	case WorkspaceLocalConfigName:
+		return []string{WorkspaceLocalTOMLConfigName, WorkspaceLocalConfigName, strings.TrimSuffix(WorkspaceLocalConfigName, "c")}
+	default:
+		return []string{baseName, strings.TrimSuffix(baseName, "c")}
+	}
+}
+
+func resolveWorkspaceConfigPath(workspace, baseName string) (path, name string, err error) {
+	candidates := readableWorkspaceConfigCandidates(baseName)
+	var found []string
+	for _, candidate := range candidates {
+		if pathExists(filepath.Join(workspace, candidate)) {
+			found = append(found, candidate)
+		}
+	}
+	if len(found) > 1 && found[0] == candidates[0] {
+		return "", "", configErr("both %s and %s exist; config formats are never merged. Keep one file and run `yolo config migrate` to convert the legacy file", found[0], found[1])
+	}
+	if len(found) > 0 {
+		return filepath.Join(workspace, found[0]), found[0], nil
+	}
+	return filepath.Join(workspace, candidates[0]), candidates[0], nil
+}
+
+// LoadWorkspaceConfig loads the readable project file (when present) or its legacy JSONC/JSON
+// counterpart, followed by the local file. Formats are not merged; includes share one cycle set.
 func LoadWorkspaceConfig(workspace string, strict bool, warn Warn) (*jsonx.OrderedMap, error) {
 	m, _, err := loadWorkspaceConfig(workspace, strict, warn, false)
 	return m, err
@@ -377,12 +398,18 @@ func loadWorkspaceConfig(workspace string, strict bool, warn Warn, record bool) 
 		defer at.ws.close()
 	}
 	seen := map[string]struct{}{}
-	wsPath, wsLabel := ResolveWorkspaceConfigPath(workspace, WorkspaceConfigName)
+	wsPath, wsLabel, err := resolveWorkspaceConfigPath(workspace, WorkspaceConfigName)
+	if err != nil {
+		return nil, nil, err
+	}
 	wsCfg, wsNode, err := loadWithIncludes(wsPath, wsLabel, strict, warn, seen, record, at)
 	if err != nil {
 		return nil, nil, err
 	}
-	localPath, localLabel := ResolveWorkspaceConfigPath(workspace, WorkspaceLocalConfigName)
+	localPath, localLabel, err := resolveWorkspaceConfigPath(workspace, WorkspaceLocalConfigName)
+	if err != nil {
+		return nil, nil, err
+	}
 	localCfg, localNode, err := loadWithIncludes(localPath, localLabel, strict, warn, seen, record, at)
 	if err != nil {
 		return nil, nil, err

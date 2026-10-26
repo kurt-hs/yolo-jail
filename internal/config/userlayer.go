@@ -104,7 +104,7 @@ func ValidateUserLayer(path string) string {
 	if fi.IsDir() {
 		return "--user-layer: " + path + " is a directory; pass a single JSONC config file"
 	}
-	if _, err := LoadJSONCFile(abs, "--user-layer "+path, true, nil); err != nil {
+	if _, _, err := loadWithIncludes(abs, "--user-layer "+path, true, func(string) {}, nil, false, readAt{}); err != nil {
 		return err.Error()
 	}
 	return ""
@@ -184,9 +184,20 @@ func loadUserScopeConfig(path, label string, strict bool, warn Warn) (*jsonx.Ord
 // loadUserScope is loadUserScopeConfig with the provenance (sources.go) beside the map when
 // record is set.
 func loadUserScope(path, label string, strict bool, warn Warn, record bool) (*jsonx.OrderedMap, *srcNode, error) {
-	cfg, node, err := loadWithIncludes(path, label, strict, warn, nil, record, readAt{})
+	selectedPath, selectedLabel, readable, err := resolveUserConfigPath(path)
 	if err != nil {
 		return nil, nil, err
+	}
+	seen := map[string]struct{}{}
+	cfg, node, err := loadWithIncludes(selectedPath, selectedLabel, strict, warn, seen, record, readAt{})
+	if err != nil {
+		return nil, nil, err
+	}
+	if readable {
+		cfg, node, err = mergeUserConfigFragments(cfg, node, filepath.Dir(selectedPath), strict, warn, seen, record)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	cfg, node = applyInheritedLaunch(cfg, node, record)
 	cfg, node = applyUserLayer(cfg, node, record)

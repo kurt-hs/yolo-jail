@@ -66,30 +66,34 @@ func ParseDotenv(text string) *jsonx.OrderedMap {
 // pre-ruling assembled snapshot read verbatim, a hand-built config) fall back to the
 // workspace root — the pre-ruling behavior, deliberately, for artifacts a newer loader
 // never touched.
+// AnchorEnvSources rewrites relative dotenv file entries in legacy `env_sources` and readable
+// `env.files` to absolute paths under the directory of their declaring document.
 func AnchorEnvSources(cfg *jsonx.OrderedMap, dir string) {
 	if cfg == nil {
 		return
 	}
-	v, present := cfg.Get("env_sources")
-	if !present {
-		return
-	}
-	list, ok := asList(v)
-	if !ok {
-		return
-	}
-	changed := false
-	out := make([]any, len(list))
-	for i, e := range list {
-		if s, isStr := e.(string); isStr && !strings.HasPrefix(s, "/") && !strings.HasPrefix(s, "~") {
-			out[i] = filepath.Join(dir, s)
-			changed = true
+	for _, key := range []string{"env_sources", "env.files"} {
+		value, present := cfg.Get(key)
+		if !present {
 			continue
 		}
-		out[i] = e
-	}
-	if changed {
-		cfg.Set("env_sources", out)
+		list, ok := asList(value)
+		if !ok {
+			continue
+		}
+		changed := false
+		out := make([]any, len(list))
+		for i, entry := range list {
+			if s, isString := entry.(string); isString && !strings.HasPrefix(s, "/") && !strings.HasPrefix(s, "~") {
+				out[i] = filepath.Join(dir, s)
+				changed = true
+				continue
+			}
+			out[i] = entry
+		}
+		if changed {
+			cfg.Set(key, out)
+		}
 	}
 }
 
