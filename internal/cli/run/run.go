@@ -28,6 +28,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/storage"
+	"github.com/mschulkind-oss/yolo-jail/internal/ttyproxy"
 	"github.com/mschulkind-oss/yolo-jail/internal/version"
 )
 
@@ -2616,8 +2617,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	}
 	sp.End()
 	if execErr != nil {
-		out.printf("[bold red]Configured runtime '%s' not found on PATH.[/bold red]", rt)
-		out.print("[dim]Run `yolo check` to validate runtime availability before restarting.[/dim]")
+		reportSessionRunError(out, rt, execErr)
 		rc = 1
 	}
 	// ITS QUIT IS ANY SESSION'S (endSession): why the jail ended under it when it did, then its
@@ -2637,6 +2637,17 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 // whole life (the old single-Total block's comment recorded the debt), and a chain this repo cannot
 // unit-test is a chain whose spans can silently stop being emitted. Deleting any span below fails
 // TestTeardownChainEmitsShutdownSpans.
+func reportSessionRunError(out printer, rt string, err error) {
+	var outputErr *ttyproxy.OutputError
+	if errors.As(err, &outputErr) {
+		out.printf("[bold red]Could not forward terminal output: %v[/bold red]", outputErr.Err)
+		out.print("[dim]Retry from a working terminal in this workspace.[/dim]")
+		return
+	}
+	out.printf("[bold red]Configured runtime '%s' not found on PATH.[/bold red]", rt)
+	out.print("[dim]Run `yolo check` to validate runtime availability before restarting.[/dim]")
+}
+
 func (o *Options) teardownAfterExit(socatProcs []*forwardProc, portSocketDir string,
 	hostServices []loopholeDaemon, socketsDir, cname, rt, skeleton string, rc int) {
 	// FIRST: the scratch volumes' deletion, started detached and never awaited
@@ -3259,8 +3270,7 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 		select {} // the signal arm is ending this launch; never race it
 	}
 	if err != nil {
-		out.printf("[bold red]Configured runtime '%s' not found on PATH.[/bold red]", rt)
-		out.print("[dim]Run `yolo check` to validate runtime availability before restarting.[/dim]")
+		reportSessionRunError(out, rt, err)
 		return 1, false
 	}
 	// THE POST-MORTEM, on stderr and only when the exec itself failed. The
