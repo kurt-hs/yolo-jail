@@ -332,9 +332,9 @@ func (s *Store) remoteDefaultBranch(b budget, repo string) (string, error) {
 	if !head || !strings.HasPrefix(target, "refs/heads/") {
 		return "", fmt.Errorf("remote %s did not advertise a symbolic default branch — write an explicit ?ref= branch, tag, or commit", repo)
 	}
-	ref := strings.TrimPrefix(target, "refs/heads/")
+	ref := target
 	if _, err := refFromQuery("remote default branch", "ref="+url.QueryEscape(ref), false); err != nil {
-		return "", fmt.Errorf("remote %s advertised an invalid default branch %q: %w", repo, ref, err)
+		return "", fmt.Errorf("remote %s advertised an invalid default branch %q: %w", repo, strings.TrimPrefix(ref, "refs/heads/"), err)
 	}
 	return ref, nil
 }
@@ -386,7 +386,7 @@ func (s *Store) refreshMirror(repo string, items []refreshItem, outcomes []Outco
 				continue
 			}
 			item.addr.Ref = ref
-			outcomes[item.idx].Ref = ref
+			outcomes[item.idx].Ref = strings.TrimPrefix(ref, "refs/heads/")
 		}
 		resolved = append(resolved, item)
 	}
