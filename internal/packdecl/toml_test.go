@@ -347,6 +347,43 @@ via = 7
 				t.Fatalf("invalid provider via: manifest=%#v problems=%v skipped=%v", m, problems, skipped)
 			}
 		})
+		t.Run(decoder.name+" rejects invalid provider via name", func(t *testing.T) {
+			m, problems, skipped := decoder.decode([]byte(`[providers.meta]
+via = "bad/name"
+`))
+			joined := strings.Join(problems, "\n")
+			if m != nil || !strings.Contains(joined, "providers.meta.via must be a valid pack name") || len(skipped) != 0 {
+				t.Fatalf("invalid provider via name: problems=%v skipped=%v", problems, skipped)
+			}
+		})
+	}
+}
+
+func TestDecodeTOMLProviderEmptyViaMatchesOmitted(t *testing.T) {
+	decoders := []struct {
+		name   string
+		decode func([]byte) (*Manifest, []string, []string)
+	}{
+		{name: "strict", decode: func(data []byte) (*Manifest, []string, []string) {
+			m, problems := DecodeTOML(data)
+			return m, problems, nil
+		}},
+		{name: "use", decode: DecodeTOMLForUse},
+		{name: "tolerant", decode: DecodeTOMLTolerant},
+	}
+	for _, decoder := range decoders {
+		for name, body := range map[string]string{"omitted": "", "explicit empty": "via = \"\"\n"} {
+			t.Run(decoder.name+" "+name, func(t *testing.T) {
+				m, problems, skipped := decoder.decode([]byte("[providers.meta]\n" + body))
+				if m == nil || len(problems) != 0 || len(skipped) != 0 {
+					t.Fatalf("empty provider via: problems=%v skipped=%v", problems, skipped)
+				}
+				providers := m.Providers()
+				if len(providers) != 1 || providers[0].Via != "" {
+					t.Fatalf("Providers() = %#v, want empty optional via", providers)
+				}
+			})
+		}
 	}
 }
 
