@@ -95,10 +95,9 @@ Turning something off in one project:
 ```console
 $ yolo config unset mcp_servers.tavily --local
 /workspace/yolo-jail.local.toml
-@@ -1,2 +1,5 @@
+@@ -1,2 +1,3 @@
  # This machine only; not committed.
-+[mcp_servers.tavily]
-+off = true
++mcp_servers.tavily = "off"
 Written. Your config adds tavily; this project's jail will not see it.
 ```
 
@@ -183,7 +182,7 @@ $ yolo request git push main               # project config, then the check and 
 $ yolo request github repos acme/other
 $ yolo active-provider default bedrock     # validated against the providers the selected packs declare
 $ yolo active-provider claude native
-$ yolo config unset mcp_servers.tavily --local   # writes off = true into the right layer
+$ yolo config unset mcp_servers.tavily --local   # writes mcp_servers.tavily = "off" into the right layer
 $ yolo config migrate                      # the one whole-file rewrite, once
 $ yolo config why active_provider.claude   # which file set it
 ```

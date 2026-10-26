@@ -3,9 +3,9 @@ title: "A project's file: what it installs, what it asks for, and what it turns 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC7 (§3, how a table-valued thing says not here: off = true inside it, or = \"off\" as its value)"
+next: "Every question is ruled; the build hand-off is the implementation plan seeded in readable-config-plan.md"
 tags: [config, workspace, install, grants, mounts, design]
-summary: "The project config as annotated files, today and proposed: install, needs, mounts, ports, environment, and the local file. Each section ends with its question; a section with none is approved. Part of the readable-config redesign."
+summary: "The project config as annotated files, today and proposed: install, needs, mounts, ports, environment, and the local file. Every section is ruled. Part of the readable-config redesign."
 ---
 
 # A project's file: what it installs, what it asks for, and what it turns off
@@ -13,10 +13,9 @@ summary: "The project config as annotated files, today and proposed: install, ne
 **Status:** 2026-10-25. Nothing is built. The "today" files are this repository's and a composite
 team project's.
 
-**How to read this.** [§1](#1-the-file) is the file, approved; [§2](#2-no-file-at-all) is approved;
-[§3](#3-the-local-file-and-turning-something-off) ends with the one question about spelling "off".
-
-**Needs your ruling:** [OQ-RC7](#OQ-RC7) in [§3](#3-the-local-file-and-turning-something-off).
+**How to read this.** [§1](#1-the-file) is the file; [§2](#2-no-file-at-all) is no file;
+[§3](#3-the-local-file-and-turning-something-off) is the local file and the word "off". Every
+section is approved; the rulings are in the [ledger](readable-config.md#decision-ledger).
 
 > **In short.** A project file says what the project needs, inside what your own config allows,
 > and most projects need no file at all.
@@ -150,8 +149,7 @@ It is where a project turns off something your own config added:
 [mcp_servers.postgres]
 command = ["npx", "-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/acme"]
 
-[mcp_servers.tavily]
-off = true                        # your config adds it; not wanted here
+mcp_servers.tavily = "off"        # your config adds it; not wanted here
 
 [machine]
 resources = { memory = "32g" }
@@ -173,33 +171,14 @@ claude = "native"                 # an agent left to itself: the one reserved wo
 
 A reserved string is allowed only where a string is never a legal value. That leaves the
 table-valued things your config declares and a project does not want, an MCP server today and a
-provider tomorrow; the per-workspace pack switch is a file yolo writes, not this one.
+provider tomorrow, settled below; the per-workspace pack switch is a file yolo writes, not this
+one.
 
-1. 💬 <a id="OQ-RC7"></a>**OQ-RC7: How does a project say "not here" about a table-valued thing: a key inside it, or a string in its place?**
-
-   Your config declares the `tavily` MCP server as a table. In one project you don't want it.
-
-   ```toml
-   # A  a key inside the table
-   [mcp_servers.tavily]
-   off = true
-
-   # B  a string where the table would be; legal because a server is never a string
-   mcp_servers.tavily = "off"
-   ```
-
-   Under B the one rule is: a string where a table is expected is refused unless it is exactly
-   `"off"`. `yolo config unset mcp_servers.tavily --local` writes one line under B and three under
-   A.
-
-   <!-- vantage: question id=OQ-RC7 leaning="B, which you said you like: one line that reads at a glance, unambiguous wherever the value is a table, and a one-line diff from unset; A's only edge is sharing the word with the pack switch file, which yolo writes." -->
-
-   _Leaning:_ B, which you said you like: one line that reads at a glance, unambiguous wherever
-   the value is a table, and a one-line diff from `unset`; A's only edge is sharing the word with
-   the pack switch file, which yolo writes.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+Ruled 2026-10-25 ([OQ-RC7](readable-config.md#decision-ledger)): a string in the table's place.
+`mcp_servers.tavily = "off"` is legal because a server is never a string; the one rule is that a
+string where a table is expected is refused unless it is exactly `"off"`. The same spelling
+serves any table-valued thing your config declares, a provider or a variant included, and
+`yolo config unset mcp_servers.tavily --local` writes that one line.
 
 ## 4. Principles
 
@@ -228,4 +207,4 @@ provider tomorrow; the per-workspace pack switch is a file yolo writes, not this
   refusing a user-only key there (`internal/config/validate.go` and its siblings); there is no
   central list. The new shape states scope per section, so the refusal can name it.
 - **Config lists merge by union** (`internal/config/load.go`), so a lower layer can add to a list
-  and never remove from it; that is why `off = true` is a word on the thing and not a list edit.
+  and never remove from it; that is why `"off"` is a word on the thing and not a list edit.
