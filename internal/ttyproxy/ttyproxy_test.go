@@ -302,6 +302,23 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 		outputBytes := os.Getenv("YOLO_TTYPROXY_PRESSURE_BYTES")
 		observer := Observer{Env: []string{"YOLO_TTYPROXY_PRESSURE_FIFO=" + fifo, "YOLO_TTYPROXY_PRESSURE_BYTES=" + outputBytes, "YOLO_TTYPROXY_OUTPUT_ACK=" + os.Getenv("YOLO_TTYPROXY_OUTPUT_ACK")}}
 		if os.Getenv("YOLO_TTYPROXY_EXPECT_SUSPEND") == "1" {
+			if os.Getenv("YOLO_TTYPROXY_BG_FG") == "1" {
+				observer.ownsTTY = func(int) bool {
+					mode, err := os.ReadFile(fifo + ".ownership")
+					return err == nil && string(mode) == "foreground"
+				}
+			}
+			if os.Getenv("YOLO_TTYPROXY_SUSPEND_COMMIT_GATE") == "1" {
+				observer.beforeSuspend = func() {
+					_ = writePressureReceipt(fifo+".proxy", 'C')
+					for {
+						if _, err := os.Stat(fifo + ".release"); err == nil {
+							return
+						}
+						time.Sleep(time.Millisecond)
+					}
+				}
+			}
 			observer.Input = func(int, string) {
 				_ = writePressureReceipt(fifo+".input", 'I')
 			}
@@ -345,7 +362,7 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 			}
 		}
 		if err != nil {
-			if os.Getenv("YOLO_TTYPROXY_EXPECT_SINK_ERROR") == "1" && errors.Is(err, unix.ENOSPC) {
+			if os.Getenv("YOLO_TTYPROXY_EXPECT_SINK_ERROR") == "1" && (errors.Is(err, unix.ENOSPC) || errors.Is(err, unix.EPIPE)) {
 				if receiptErr := writePressureReceipt(fifo, 'E'); receiptErr != nil {
 					_, _ = fmt.Fprintln(os.Stderr, receiptErr)
 					os.Exit(2)
@@ -731,13 +748,16 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 	hostTTY := os.NewFile(uintptr(slave), "proxy-suspend-output-tty")
 	defer hostTTY.Close()
 	control := filepath.Join(t.TempDir(), "child-read")
+	if err := os.WriteFile(control+".ownership", []byte("foreground"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	outputBytes := readChunk
 	cmd := exec.Command(os.Args[0], "-test.run=^TestOutputPressureDoesNotStopInputForwarding$", "-test.count=1")
 	cmd.Stdin, cmd.Stdout = hostTTY, hostTTY
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = append(os.Environ(), "YOLO_TTYPROXY_PRESSURE_HELPER=1", "YOLO_TTYPROXY_PRESSURE_FIFO="+control,
 		"YOLO_TTYPROXY_PRESSURE_BYTES="+strconv.Itoa(outputBytes), "YOLO_TTYPROXY_EXPECT_SUSPEND=1",
-		"YOLO_TTYPROXY_OUTPUT_ACK=1", "YOLO_TTYPROXY_ACK_AFTER_WRITE=1")
+		"YOLO_TTYPROXY_BG_FG=1", "YOLO_TTYPROXY_OUTPUT_ACK=1", "YOLO_TTYPROXY_ACK_AFTER_WRITE=1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
@@ -871,19 +891,48 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 		t.Fatalf("open the owned stopped helper's terminal descriptor: %v", err)
 	}
 	termios := mustGetTermios(t, modeFD)
-	_ = unix.Close(modeFD)
 	if termios.Lflag&unix.ICANON == 0 || termios.Lflag&unix.ECHO == 0 || termios.Oflag&unix.OPOST == 0 {
 		t.Fatalf("host terminal was not cooked while the owned proxy was suspended: %+v", *termios)
+	}
+	if err := os.WriteFile(control+".ownership", []byte("background"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Kill(cmd.Process.Pid, syscall.SIGCONT); err != nil {
+		t.Fatal(err)
+	}
+	backgroundDeadline := time.Now().Add(time.Second)
+	for ownedProcessStopped(cmd.Process.Pid) && time.Now().Before(backgroundDeadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if ownedProcessStopped(cmd.Process.Pid) {
+		t.Fatal("background SIGCONT did not resume the owned proxy")
+	}
+	if after := mustGetTermios(t, modeFD); *after != *termios {
+		t.Fatalf("background SIGCONT changed the shell-equivalent cooked terminal: before=%+v after=%+v", *termios, *after)
+	}
+	if stage, err := os.ReadFile(control + ".proxy"); err != nil || !bytes.HasSuffix(stage, []byte{'Z'}) {
+		t.Fatalf("background SIGCONT unparked the proxy before foreground resume: stage=%q err=%v", stage, err)
+	}
+	childInput, err := os.ReadFile(control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(childInput, []byte{'R'}) {
+		t.Fatalf("background SIGCONT forwarded queued input before raw restoration: %q", childInput)
+	}
+	if err := os.WriteFile(control+".ownership", []byte("foreground"), 0600); err != nil {
+		t.Fatal(err)
 	}
 	if err := unix.Kill(cmd.Process.Pid, syscall.SIGCONT); err != nil {
 		t.Fatal(err)
 	}
 	if err := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(time.Second)); err != nil {
-		t.Fatalf("proxy did not resume its actual suspend path: %v", err)
+		t.Fatalf("foreground SIGCONT did not restore raw mode and unpark output: %v", err)
 	}
 	if mode, err := os.ReadFile(control + ".resumed-mode"); err != nil || string(mode) != "raw" {
-		t.Fatalf("host terminal mode after SIGCONT = %q err=%v, want raw before queued output resumes", mode, err)
+		t.Fatalf("host terminal mode after foreground SIGCONT = %q err=%v, want raw before queued output resumes", mode, err)
 	}
+	_ = unix.Close(modeFD)
 	select {
 	case err := <-waitResult:
 		if err != nil {
@@ -928,6 +977,171 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 	}
 }
 
+func TestSuspendCommitCancellationPreemptsStop(t *testing.T) {
+	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
+		t.Run(sig.String(), func(t *testing.T) { runSuspendCommitCancellation(t, sig) })
+	}
+}
+
+func runSuspendCommitCancellation(t *testing.T, sig syscall.Signal) {
+	master, slave, err := openPty()
+	if err != nil {
+		t.Skipf("cannot open pty: %v", err)
+	}
+	defer unix.Close(master)
+	hostTTY := os.NewFile(uintptr(slave), "proxy-suspend-commit-tty")
+	defer hostTTY.Close()
+	cooked := mustGetTermios(t, slave)
+	control := filepath.Join(t.TempDir(), "child-read")
+	outputBytes := readChunk
+	cmd := exec.Command(os.Args[0], "-test.run=^TestOutputPressureDoesNotStopInputForwarding$", "-test.count=1")
+	cmd.Stdin, cmd.Stdout = hostTTY, hostTTY
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Env = append(os.Environ(), "YOLO_TTYPROXY_PRESSURE_HELPER=1", "YOLO_TTYPROXY_PRESSURE_FIFO="+control,
+		"YOLO_TTYPROXY_PRESSURE_BYTES="+strconv.Itoa(outputBytes), "YOLO_TTYPROXY_EXPECT_SUSPEND=1",
+		"YOLO_TTYPROXY_SUSPEND_COMMIT_GATE=1", "YOLO_TTYPROXY_OUTPUT_ACK=1", "YOLO_TTYPROXY_ACK_AFTER_WRITE=1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitResult := make(chan error, 1)
+	waitDone := make(chan struct{})
+	go func() {
+		waitResult <- cmd.Wait()
+		close(waitDone)
+	}()
+	var outputMu sync.Mutex
+	var captured []byte
+	readStopped := make(chan struct{})
+	drainStart := make(chan struct{})
+	var drainStartOnce sync.Once
+	startDrainer := func() { drainStartOnce.Do(func() { close(drainStart) }) }
+	drainDone := make(chan struct{})
+	go func() {
+		defer close(drainDone)
+		select {
+		case <-drainStart:
+		case <-readStopped:
+			return
+		}
+		_ = unix.SetNonblock(master, true)
+		buf := make([]byte, 8192)
+		for {
+			select {
+			case <-readStopped:
+				return
+			default:
+			}
+			n, err := unix.Read(master, buf)
+			if n > 0 {
+				outputMu.Lock()
+				captured = append(captured, buf[:n]...)
+				outputMu.Unlock()
+			}
+			if n == 0 || errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) {
+				time.Sleep(time.Millisecond)
+			} else if err != nil && !errors.Is(err, syscall.EINTR) {
+				return
+			}
+		}
+	}()
+	drainStopped := false
+	defer func() {
+		if !drainStopped {
+			startDrainer()
+			_ = cmd.Process.Signal(syscall.SIGTERM)
+			select {
+			case <-waitDone:
+			case <-time.After(2 * time.Second):
+				_ = cmd.Process.Kill()
+				<-waitDone
+			}
+			close(readStopped)
+			<-drainDone
+		}
+	}()
+	if err := waitPressureMarker(t, control, 'S', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("target did not start before stop-commit cancellation: %v stderr=%q", err, stderr.String())
+	}
+	if err := waitPressureMarker(t, control, 'W', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("target did not finish its output prefix: %v stderr=%q", err, stderr.String())
+	}
+	if !waitForTTYOutputPressure(t, master) {
+		t.Fatal("host output PTY never saturated before stop-commit cancellation")
+	}
+	if _, err := unix.Write(master, []byte{0x1a, 'q'}); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForFile(control+".boundary", time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("proxy did not snapshot pending suspend before stop commit: %v", err)
+	}
+	if err := waitPressureMarker(t, control+".input", 'I', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("proxy did not consume the suspend input: %v", err)
+	}
+	startDrainer()
+	start := time.Now()
+	// Draining completes the accepted prefix and reset; the fixture hook then
+	// holds the session lock after the suspend transition but before its final
+	// cancellation check and targeted stop.
+	for !ownedProcessStopped(cmd.Process.Pid) {
+		if time.Since(start) > childDeadline {
+			t.Fatal("proxy did not enter actual stop after draining the accepted prefix")
+		}
+		if stage, err := os.ReadFile(control + ".proxy"); err == nil && bytes.Contains(stage, []byte{'C'}) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := waitPressureMarker(t, control+".proxy", 'C', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("proxy did not reach the stop-commit gate: %v", err)
+	}
+	if err := cmd.Process.Signal(sig); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(control+".release", []byte("release"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case waitErr := <-waitResult:
+		assertSignalExit(t, waitErr, sig)
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%s at the stop-commit boundary did not preempt self-stop", sig)
+	}
+	<-waitDone
+	close(readStopped)
+	<-drainDone
+	drainStopped = true
+	if after := mustGetTermios(t, slave); *after != *cooked {
+		t.Fatalf("%s at stop commit left host termios changed: before=%+v after=%+v", sig, *cooked, *after)
+	}
+	stage, err := os.ReadFile(control + ".proxy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(stage, []byte{'Z'}) || bytes.Contains(stage, []byte{'R'}) {
+		t.Fatalf("%s at stop commit left latent suspend/resume stages %q", sig, stage)
+	}
+	outputMu.Lock()
+	got := append([]byte(nil), captured...)
+	outputMu.Unlock()
+	want := append(outputPressurePrefix(outputBytes), []byte(termReset)...)
+	if !bytes.HasPrefix(got, want) {
+		t.Fatalf("stop-commit cancellation changed ordered prefix/reset: got=%d want-prefix=%d", len(got), len(want))
+	}
+	pidBytes, err := os.ReadFile(control + ".pid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(string(pidBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Kill(pid, 0); !errors.Is(err, unix.ESRCH) {
+		t.Fatalf("owned child pid %d survived stop-commit cancellation: %v", pid, err)
+	}
+}
+
 func ownedProcessStopped(pid int) bool {
 	status, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "status"))
 	if err != nil {
@@ -939,6 +1153,97 @@ func ownedProcessStopped(pid int) bool {
 		}
 	}
 	return false
+}
+
+func TestFatalOutputPreemptsPendingSuspend(t *testing.T) {
+	master, slave, err := openPty()
+	if err != nil {
+		t.Skipf("cannot open pty: %v", err)
+	}
+	defer unix.Close(master)
+	hostTTY := os.NewFile(uintptr(slave), "proxy-pending-fatal-tty")
+	defer hostTTY.Close()
+	cooked := mustGetTermios(t, slave)
+	control := filepath.Join(t.TempDir(), "child-read")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestOutputPressureDoesNotStopInputForwarding$", "-test.count=1")
+	cmd.Stdin = hostTTY
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pipeSize, err := unix.FcntlInt(stdout.(*os.File).Fd(), unix.F_GETPIPE_SZ, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.Env = append(os.Environ(), "YOLO_TTYPROXY_PRESSURE_HELPER=1", "YOLO_TTYPROXY_PRESSURE_FIFO="+control,
+		"YOLO_TTYPROXY_PRESSURE_BYTES="+strconv.Itoa(pipeSize*2), "YOLO_TTYPROXY_EXPECT_SINK_ERROR=1",
+		"YOLO_TTYPROXY_EXPECT_SUSPEND=1", "YOLO_TTYPROXY_SATURATE_RESET_TTY=1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitResult := make(chan error, 1)
+	go func() { waitResult <- cmd.Wait() }()
+	waited := false
+	defer func() {
+		if !waited {
+			_ = cmd.Process.Signal(syscall.SIGTERM)
+			_ = stdout.Close()
+			select {
+			case <-waitResult:
+			case <-time.After(2 * time.Second):
+				_ = cmd.Process.Kill()
+				<-waitResult
+			}
+		}
+	}()
+	if err := waitPressureMarker(t, control, 'F', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("fallback TTY was not saturated: %v stderr=%q", err, stderr.String())
+	}
+	if err := waitPressureMarker(t, control, 'S', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("fatal-output target did not start: %v stderr=%q", err, stderr.String())
+	}
+	if pressured, buffered := waitForOutputPressure(t, int(stdout.(*os.File).Fd()), pipeSize); !pressured {
+		t.Fatalf("stdout did not saturate before the suspend request (capacity=%d pending=%d)", pipeSize, buffered)
+	}
+	if _, err := unix.Write(master, []byte{0x1a}); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForFile(control+".boundary", time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("fatal path did not enter pending suspension: %v", err)
+	}
+	if err := stdout.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitPressureMarker(t, control, 'E', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("fatal output did not preempt pending suspension with its cause: %v stderr=%q", err, stderr.String())
+	}
+	if err := <-waitResult; err != nil {
+		t.Fatalf("helper did not recognize the EPIPE cause: %v stderr=%q", err, stderr.String())
+	}
+	waited = true
+	if after := mustGetTermios(t, slave); *after != *cooked {
+		t.Fatalf("fatal output during pending suspension changed host termios: before=%+v after=%+v", *cooked, *after)
+	}
+	stage, err := os.ReadFile(control + ".proxy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(stage, []byte{'Z'}) || bytes.Contains(stage, []byte{'R'}) {
+		t.Fatalf("fatal output during pending suspension left a latent stop stage %q", stage)
+	}
+	pidBytes, err := os.ReadFile(control + ".pid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(string(pidBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Kill(pid, 0); !errors.Is(err, unix.ESRCH) {
+		t.Fatalf("owned child pid %d survived fatal output: %v", pid, err)
+	}
 }
 
 func TestOutputSinkErrorWithSaturatedFallbackReturnsPromptly(t *testing.T) {
@@ -1723,22 +2028,26 @@ func TestHelperLargePasteChild(t *testing.T) {
 func TestLargePasteDeadlockPinsNonblockingMasterForwarding(t *testing.T) {
 	master, _ := fakeHostTTY(t)
 
-	// Child writes 128KB to stdout, then reads 64KB from stdin, then exits 0.
+	var inputObserved atomic.Int64
+	var outputObserved atomic.Int64
+	var pasteWritten atomic.Int64
 	run := startProxied(t, master, []string{os.Args[0], "-test.run=^TestHelperLargePasteChild$", "-test.count=1"},
-		Observer{Env: []string{"GO_WANT_LARGE_PASTE_CHILD=1"}})
+		Observer{Env: []string{"GO_WANT_LARGE_PASTE_CHILD=1"}, Input: func(n int, _ string) { inputObserved.Add(int64(n)) }})
 
 	if got, ok := readUntil(master, "READY\n", childDeadline); !ok {
 		t.Fatalf("child never signaled READY: %q", got)
+	} else {
+		outputObserved.Add(int64(len(got) - len("READY\n")))
 	}
 
-	// Drain host master output in background until the proxy run finishes,
-	// so the host pty buffer does not fill.
+	// Drain host master output in the background through the child's final byte,
+	// including bytes still buffered after the proxy run has returned.
 	stopDrain := make(chan struct{})
+	var stopDrainOnce sync.Once
+	stopOutputDrain := func() { stopDrainOnce.Do(func() { close(stopDrain) }) }
+	drainDone := make(chan struct{})
 	go func() {
-		<-run.finished
-		close(stopDrain)
-	}()
-	go func() {
+		defer close(drainDone)
 		buf := make([]byte, 4096)
 		for {
 			select {
@@ -1747,6 +2056,9 @@ func TestLargePasteDeadlockPinsNonblockingMasterForwarding(t *testing.T) {
 			default:
 				_ = unix.SetNonblock(master, true)
 				n, err := unix.Read(master, buf)
+				if n > 0 {
+					outputObserved.Add(int64(n))
+				}
 				if err != nil {
 					if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) {
 						time.Sleep(5 * time.Millisecond)
@@ -1784,6 +2096,7 @@ func TestLargePasteDeadlockPinsNonblockingMasterForwarding(t *testing.T) {
 				m, err := unix.Write(master, paste[written:])
 				if m > 0 {
 					written += m
+					pasteWritten.Add(int64(m))
 				}
 				if err != nil && !errors.Is(err, unix.EAGAIN) {
 					return
@@ -1791,13 +2104,55 @@ func TestLargePasteDeadlockPinsNonblockingMasterForwarding(t *testing.T) {
 			}
 		}
 	}()
+	t.Cleanup(func() {
+		stopOutputDrain()
+		<-drainDone
+		<-pasteDone
+	})
+	deadline := time.Now().Add(2 * time.Second)
 
 	select {
 	case rc := <-run.done:
 		if rc != 0 {
-			t.Fatalf("child exit code = %d, want 0", rc)
+			detail := fmt.Sprintf("child exit code = %d, want 0 (host input observed=%d/%d, paste written=%d/%d, output drained=%d)",
+				rc, inputObserved.Load(), len(paste), pasteWritten.Load(), len(paste), outputObserved.Load())
+			_, _ = fmt.Fprintln(os.Stderr, "LargePaste flow: "+detail)
+			t.Fatal(detail)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("proxyLoop deadlocked on large input paste while child was writing output")
+	case <-time.After(time.Until(deadline)):
+		detail := fmt.Sprintf("proxyLoop deadlocked on large input paste while child was writing (host input observed=%d/%d, paste written=%d/%d, output drained=%d)",
+			inputObserved.Load(), len(paste), pasteWritten.Load(), len(paste), outputObserved.Load())
+		_, _ = fmt.Fprintln(os.Stderr, "LargePaste flow: "+detail)
+		t.Fatal(detail)
+	}
+	select {
+	case <-run.finished:
+	case <-time.After(time.Until(deadline)):
+		detail := fmt.Sprintf("proxy returned an exit code but did not finish (input=%d paste=%d output=%d)", inputObserved.Load(), pasteWritten.Load(), outputObserved.Load())
+		_, _ = fmt.Fprintln(os.Stderr, "LargePaste flow: "+detail)
+		t.Fatal(detail)
+	}
+	expectedOutput := 128*1024 + len(termReset)
+	for outputObserved.Load() < int64(expectedOutput) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := outputObserved.Load(); got != int64(expectedOutput) {
+		detail := fmt.Sprintf("host output drainer saw %d/%d child-plus-reset bytes before the original two-second bound", got, expectedOutput)
+		_, _ = fmt.Fprintln(os.Stderr, "LargePaste flow: "+detail)
+		t.Fatal(detail)
+	}
+	stopOutputDrain()
+	<-drainDone
+	<-pasteDone
+	_, _ = fmt.Fprintf(os.Stderr, "LargePaste flow: host input=%d/%d paste-written=%d/%d output-drained=%d/%d\n",
+		inputObserved.Load(), len(paste), pasteWritten.Load(), len(paste), outputObserved.Load(), 128*1024+len(termReset))
+	if got := inputObserved.Load(); got != int64(len(paste)) {
+		t.Errorf("proxy observed %d/%d host input bytes before child exit", got, len(paste))
+	}
+	if got := pasteWritten.Load(); got != int64(len(paste)) {
+		t.Errorf("host paste writer completed %d/%d bytes", got, len(paste))
+	}
+	if got := outputObserved.Load(); got != int64(expectedOutput) {
+		t.Errorf("host output drainer captured %d/%d child-plus-reset bytes", got, expectedOutput)
 	}
 }

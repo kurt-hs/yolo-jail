@@ -184,6 +184,8 @@ const KeyCtrlC = "ctrl-c"
 type Observer struct {
 	Stage           StageHook
 	suspendBoundary func(uint64)
+	ownsTTY         func(int) bool
+	beforeSuspend   func()
 	outputSink      *outputSink
 	run             *session
 	// Input sees every chunk read from the host stdin and forwarded to the child:
@@ -286,18 +288,21 @@ func termiosMode(t *unix.Termios) string {
 // them owns the end of the run. Every host-termios write after the start goes through it
 // under mu: the terminate's restore, and the SIGCONT re-raw, which must never land after it.
 type session struct {
-	mu        sync.Mutex
-	state     sessionState
-	restored  chan struct{}
-	childDone chan struct{}
-	childOnce sync.Once
-	killOnce  sync.Once
-	suspended bool
-	output    *outputSink
-	inFd      int
-	cooked    *unix.Termios // nil on the plain path, which has no terminal to put back
-	c         *exec.Cmd
-	hook      StageHook
+	mu              sync.Mutex
+	state           sessionState
+	restored        chan struct{}
+	childDone       chan struct{}
+	childOnce       sync.Once
+	killOnce        sync.Once
+	cancelRequested atomic.Bool
+	suspended       bool
+	ownsTTY         func(int) bool
+	beforeSuspend   func()
+	output          *outputSink
+	inFd            int
+	cooked          *unix.Termios // nil on the plain path, which has no terminal to put back
+	c               *exec.Cmd
+	hook            StageHook
 }
 
 type sessionState int
@@ -309,7 +314,7 @@ const (
 )
 
 func newSession(inFd int, cooked *unix.Termios, c *exec.Cmd, hook StageHook) *session {
-	return &session{restored: make(chan struct{}), childDone: make(chan struct{}), inFd: inFd, cooked: cooked, c: c, hook: hook}
+	return &session{restored: make(chan struct{}), childDone: make(chan struct{}), ownsTTY: ownsTerminal, inFd: inFd, cooked: cooked, c: c, hook: hook}
 }
 
 // terminate is the proxy's half of a signal teardown. It returns true exactly once, to the
@@ -321,6 +326,7 @@ func newSession(inFd int, cooked *unix.Termios, c *exec.Cmd, hook StageHook) *se
 // its own: the child has exited and the caller is carrying on, so the signal is not the
 // proxy's to act on any more. That one waits for the proxy's own restore first.
 func (s *session) terminate() bool {
+	s.cancelRequested.Store(true)
 	s.mu.Lock()
 	switch s.state {
 	case sessionReturning:
@@ -336,7 +342,7 @@ func (s *session) terminate() bool {
 	if s.output != nil {
 		s.output.cancel()
 	}
-	if s.cooked != nil && ownsTerminal(s.inFd) {
+	if s.cooked != nil && s.ownsTTY(s.inFd) {
 		restoreTerminalForCancellation(s.inFd, s.cooked, s.output)
 	}
 	s.mu.Unlock()
@@ -367,6 +373,12 @@ func (s *session) reRaw() {
 		setRaw(s.inFd, s.cooked)
 		s.suspended = false
 	}
+}
+
+func (s *session) isSuspended() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state == sessionRunning && s.suspended
 }
 
 // kill SIGKILLs the child, TARGETED at its pid: a runtime client that outlived its container
@@ -453,6 +465,10 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 	// child has exited and the return is under way is not an arm's to act on
 	// (session.terminate).
 	sess := newSession(inFd, cooked, c, hook)
+	if obs.ownsTTY != nil {
+		sess.ownsTTY = obs.ownsTTY
+	}
+	sess.beforeSuspend = obs.beforeSuspend
 	sess.output = sink
 	obs.run = sess
 	callerArms := obs.Arm != nil
@@ -486,7 +502,7 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 				// from here would raise SIGTTOU and stop us again, and would put the
 				// shell's terminal in raw mode if it got through. `fg` sends another
 				// SIGCONT, from the foreground, and that one re-raws.
-				if !ownsTerminal(inFd) {
+				if !sess.ownsTTY(inFd) {
 					continue
 				}
 				sess.reRaw()
@@ -498,6 +514,7 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 				// trigger.
 				resyncWinsize(inFd, master, c)
 			case syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM:
+				sess.cancelRequested.Store(true)
 				// The terminate arm must reach os.Exit from the background too: that is
 				// where `kill %1` finds a job the user ^Z'd out of a lingering quit, and
 				// session.terminate ignores SIGTTOU/SIGTTIN and leaves the termios, which is
@@ -748,6 +765,8 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 	pendingSuspend := false
 	suspendResetQueued := false
 	var suspendOffset uint64
+	suspendResumePending := false
+	var resumeSuspendedInput func()
 	acceptOutput := func(data []byte) {
 		if outputFailed || len(data) == 0 {
 			return
@@ -786,12 +805,12 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 				pendingSuspend = false
 				return
 			}
-			pendingSuspend = false
-			suspendResetQueued = false
-			callStage(hook, StageResumed)
-			if len(pending) > 0 && enqueueToMaster != nil {
-				enqueueToMaster(pending)
-				pending = nil
+			if obs.run != nil && obs.run.isSuspended() {
+				suspendResumePending = true
+				return
+			}
+			if resumeSuspendedInput != nil {
+				resumeSuspendedInput()
 			}
 		}
 	}
@@ -866,6 +885,16 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 			toMaster = append(toMaster, data...)
 		}
 	}
+	resumeSuspendedInput = func() {
+		suspendResumePending = false
+		pendingSuspend = false
+		suspendResetQueued = false
+		callStage(hook, StageResumed)
+		if len(pending) > 0 {
+			enqueueToMaster(pending)
+			pending = nil
+		}
+	}
 
 	// Reap the child in the background so poll() equivalent works.
 	exitedCh := make(chan int, 1)
@@ -887,6 +916,9 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 		case result := <-outputResults:
 			completeOutput(result)
 		default:
+		}
+		if suspendResumePending && obs.run != nil && !obs.run.isSuspended() {
+			resumeSuspendedInput()
 		}
 		if pendingSuspend && !suspendResetQueued && outputBytes == 0 && acceptedOffset == suspendOffset && !outputBusy && !outputFailed {
 			fd := terminalResetFD(inFd)
@@ -1132,7 +1164,7 @@ func restoreTerminal(inFd int, cooked *unix.Termios) {
 func suspendAfterReset(inFd int, cooked *unix.Termios, sess *session, hook StageHook) bool {
 	if sess != nil {
 		sess.mu.Lock()
-		if sess.state != sessionRunning {
+		if sess.state != sessionRunning || sess.cancelRequested.Load() {
 			sess.mu.Unlock()
 			return false
 		}
@@ -1140,13 +1172,21 @@ func suspendAfterReset(inFd int, cooked *unix.Termios, sess *session, hook Stage
 			_ = unix.IoctlSetTermios(inFd, unix.TCSETS, cooked)
 		}
 		sess.suspended = true
-		sess.mu.Unlock()
+		if sess.beforeSuspend != nil {
+			sess.beforeSuspend()
+		}
+		if sess.cancelRequested.Load() {
+			sess.suspended = false
+			sess.mu.Unlock()
+			return false
+		}
 		callStage(hook, StageSuspended)
+		// Holding the session lock across this targeted stop makes the state
+		// check and stop issuance one commit relative to explicit termination.
 		_ = syscall.Kill(os.Getpid(), syscall.SIGTSTP)
-		sess.mu.Lock()
-		if sess.state == sessionRunning && sess.suspended {
-			// A SIGTSTP ignored by the kernel or its disposition did not suspend
-			// this process. Do not wait for a SIGCONT that can never arrive.
+		if sess.state == sessionRunning && sess.suspended && sess.ownsTTY(inFd) {
+			// SIGTSTP ignored by the kernel/disposition did not stop us, or a
+			// foreground continuation raced the signal arm; restore raw locally.
 			sess.suspended = false
 			setRaw(inFd, cooked)
 		}
