@@ -183,7 +183,7 @@ const KeyCtrlC = "ctrl-c"
 // recover-wrapped).
 type Observer struct {
 	Stage           StageHook
-	suspendBoundary func(int)
+	suspendBoundary func(uint64)
 	outputSink      *outputSink
 	run             *session
 	// Input sees every chunk read from the host stdin and forwarded to the child:
@@ -292,6 +292,7 @@ type session struct {
 	childDone chan struct{}
 	childOnce sync.Once
 	killOnce  sync.Once
+	suspended bool
 	output    *outputSink
 	inFd      int
 	cooked    *unix.Termios // nil on the plain path, which has no terminal to put back
@@ -364,6 +365,7 @@ func (s *session) reRaw() {
 	defer s.mu.Unlock()
 	if s.state == sessionRunning {
 		setRaw(s.inFd, s.cooked)
+		s.suspended = false
 	}
 }
 
@@ -416,15 +418,15 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 		setWinsize(slave, ws)
 	}
 
+	ptyFile := os.NewFile(uintptr(slave), "pty-slave")
 	c := obs.command(cmd)
-	c.Stdin, c.Stdout, c.Stderr = os.NewFile(uintptr(slave), "pty-slave"),
-		os.NewFile(uintptr(slave), "pty-slave"), os.NewFile(uintptr(slave), "pty-slave")
+	c.Stdin, c.Stdout, c.Stderr = ptyFile, ptyFile, ptyFile
 	if err := c.Start(); err != nil {
+		_ = ptyFile.Close()
 		unix.Close(master)
-		unix.Close(slave)
 		return 0, err
 	}
-	unix.Close(slave) // parent uses only the master end
+	_ = ptyFile.Close() // one owner for the slave fd; avoid competing finalizers after fd reuse
 	mode := &ptyMode{master: master}
 	if obs.Pty != nil {
 		func() {
@@ -487,7 +489,7 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 				if !ownsTerminal(inFd) {
 					continue
 				}
-				sess.reRaw() // host TTY was cooked while suspended; never after a teardown began
+				sess.reRaw()
 				// AND RESIZE. A window resized while we were stopped changed the
 				// host tty behind our back, and the resulting SIGWINCH is only
 				// delivered if one was pending — a resize that happened before the
@@ -526,7 +528,11 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 		afterReturnClaimed()
 	}
 
-	restoreCooked()
+	if proxyErr != nil {
+		restoreTerminalForCancellation(inFd, cooked, sink)
+	} else {
+		restoreCooked()
+	}
 	close(sess.restored)
 	callStage(hook, StageTermiosRestored)
 	mode.close()
@@ -586,8 +592,15 @@ const (
 	maxOutputQueue  = 1024 * 1024 // 1 MiB
 )
 
+type outputWriteRequest struct {
+	fd    int
+	data  []byte
+	reset bool
+}
+
 type outputWriteResult struct {
 	bytes int
+	reset bool
 	err   error
 }
 
@@ -624,13 +637,15 @@ type outputSink struct {
 	canceled atomic.Bool
 }
 
-func (s *outputSink) write(data []byte) error {
+func (s *outputSink) write(data []byte) error { return s.writeTo(s.fd, data) }
+
+func (s *outputSink) writeTo(fd int, data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.canceled.Load() {
 		return nil
 	}
-	return writeOutputChunk(s.fd, data)
+	return writeOutputChunk(fd, data)
 }
 
 func (s *outputSink) cancel() { s.canceled.Store(true) }
@@ -698,6 +713,7 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 	hook := obs.Stage
 	var pending []byte
 	var toMaster []byte
+	var enqueueToMaster func([]byte)
 	stdinClosed := false
 
 	// Set master to non-blocking so writes to the pty never hang proxyLoop in the
@@ -713,28 +729,33 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 	if sink == nil {
 		sink = &outputSink{fd: 1}
 	}
-	outputWrites := make(chan []byte)
+	outputWrites := make(chan outputWriteRequest)
 	outputResults := make(chan outputWriteResult, 1)
 	outputStopped := make(chan struct{})
 	go func() {
 		defer close(outputStopped)
-		for data := range outputWrites {
-			err := sink.write(data)
-			outputResults <- outputWriteResult{bytes: len(data), err: err}
+		for request := range outputWrites {
+			err := sink.writeTo(request.fd, request.data)
+			outputResults <- outputWriteResult{bytes: len(request.data), reset: request.reset, err: err}
 		}
 	}()
-	var pendingOutput [][]byte
+	var pendingOutput []outputWriteRequest
 	outputBytes := 0
+	var acceptedOffset uint64
 	outputBusy := false
 	outputFailed := false
 	var outputErr error
+	pendingSuspend := false
+	suspendResetQueued := false
+	var suspendOffset uint64
 	acceptOutput := func(data []byte) {
 		if outputFailed || len(data) == 0 {
 			return
 		}
 		copyOfData := append([]byte(nil), data...)
-		pendingOutput = append(pendingOutput, copyOfData)
+		pendingOutput = append(pendingOutput, outputWriteRequest{fd: sink.fd, data: copyOfData})
 		outputBytes += len(copyOfData)
+		acceptedOffset += uint64(len(copyOfData))
 	}
 	dispatchOutput := func() {
 		if outputBusy || len(pendingOutput) == 0 {
@@ -752,12 +773,25 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 			outputErr = &OutputError{Err: result.err}
 			pendingOutput = nil
 			outputBytes = 0
+			pendingSuspend = false
 			// This command is the child owned by this proxy invocation. The
 			// reaper goroutine remains the sole caller of Wait.
 			if obs.run != nil {
 				obs.run.kill()
 			} else {
 				_ = c.Process.Kill()
+			}
+		} else if result.reset && pendingSuspend {
+			if !suspendAfterReset(inFd, cooked, obs.run, hook) {
+				pendingSuspend = false
+				return
+			}
+			pendingSuspend = false
+			suspendResetQueued = false
+			callStage(hook, StageResumed)
+			if len(pending) > 0 && enqueueToMaster != nil {
+				enqueueToMaster(pending)
+				pending = nil
 			}
 		}
 	}
@@ -815,7 +849,7 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 		}
 	}
 
-	enqueueToMaster := func(data []byte) {
+	enqueueToMaster = func(data []byte) {
 		if len(data) == 0 {
 			return
 		}
@@ -854,17 +888,26 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 			completeOutput(result)
 		default:
 		}
+		if pendingSuspend && !suspendResetQueued && outputBytes == 0 && acceptedOffset == suspendOffset && !outputBusy && !outputFailed {
+			fd := terminalResetFD(inFd)
+			if fd >= 0 {
+				reset := []byte(termReset)
+				pendingOutput = append(pendingOutput, outputWriteRequest{fd: fd, data: reset, reset: true})
+				outputBytes += len(reset)
+				suspendResetQueued = true
+			}
+		}
 		dispatchOutput()
 
 		masterEvents := int16(0)
-		if outputFailed || outputBytes+readChunk <= maxOutputQueue {
+		if !pendingSuspend && (outputFailed || outputBytes+readChunk <= maxOutputQueue) {
 			masterEvents |= unix.POLLIN
 		}
 		if len(toMaster) > 0 {
 			masterEvents |= unix.POLLOUT
 		}
 		fds := []unix.PollFd{{Fd: int32(master), Events: masterEvents}}
-		if !stdinClosed && len(toMaster) < maxForwardQueue {
+		if !stdinClosed && len(toMaster)+len(pending) < maxForwardQueue {
 			fds = append(fds, unix.PollFd{Fd: int32(inFd), Events: unix.POLLIN})
 		}
 		_, err := unix.Poll(fds, 100)
@@ -877,7 +920,7 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 		}
 
 		// master readable
-		if fds[0].Revents&(unix.POLLIN|unix.POLLHUP) != 0 {
+		if !pendingSuspend && fds[0].Revents&(unix.POLLIN|unix.POLLHUP) != 0 {
 			n, rerr := unix.Read(master, buf)
 			if n > 0 {
 				acceptOutput(buf[:n])
@@ -914,6 +957,10 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 			// The observer gets the chunk's SIZE and at most the name of the one
 			// control key it is — never a byte of it.
 			obs.input(n, classifyInput(data))
+			if pendingSuspend {
+				pending = append(pending, stripSuspendKeys(data)...)
+				continue
+			}
 			// ^C IS FORWARDED LIKE ANY OTHER BYTE, and that is a 2026-09-19 ruling
 			// reversing what this loop used to do.
 			//
@@ -952,22 +999,46 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 			if start > 0 {
 				enqueueToMaster(data[:start])
 			}
-			pending = append([]byte(nil), data[stop:]...)
+			pending = append(pending, stripSuspendKeys(data[stop:])...)
 			if obs.suspendBoundary != nil {
 				func() {
 					defer func() { _ = recover() }()
-					obs.suspendBoundary(outputBytes)
+					obs.suspendBoundary(acceptedOffset)
 				}()
 			}
-			callStage(hook, StageSuspended)
-			selfSuspend(inFd, cooked)
-			callStage(hook, StageResumed)
-			if len(pending) > 0 {
-				enqueueToMaster(pending)
-				pending = nil
-			}
+			pendingSuspend = true
+			suspendOffset = acceptedOffset
 		}
 	}
+}
+
+func stripSuspendKeys(data []byte) []byte {
+	var filtered []byte
+	copiedUntil := 0
+	for i := 0; i < len(data); {
+		skip := 0
+		if data[i] == suspByte {
+			skip = 1
+		} else if data[i] == esc {
+			if n, matched := matchEscapedSuspend(data[i:]); matched {
+				skip = n
+			}
+		}
+		if skip == 0 {
+			i++
+			continue
+		}
+		if filtered == nil {
+			filtered = make([]byte, 0, len(data))
+		}
+		filtered = append(filtered, data[copiedUntil:i]...)
+		i += skip
+		copiedUntil = i
+	}
+	if filtered == nil {
+		return data
+	}
+	return append(filtered, data[copiedUntil:]...)
 }
 
 // termReset contains ANSI escape sequences that restore the terminal to a
@@ -1054,6 +1125,40 @@ func ownsTerminal(fd int) bool {
 func restoreTerminal(inFd int, cooked *unix.Termios) {
 	_ = unix.IoctlSetTermios(inFd, unix.TCSETS, cooked)
 	resetTerminal(inFd)
+}
+
+// suspendAfterReset is called only after the output writer has completed the ordered reset.
+// It restores cooked mode and stops this process only while the run still owns the terminal.
+func suspendAfterReset(inFd int, cooked *unix.Termios, sess *session, hook StageHook) bool {
+	if sess != nil {
+		sess.mu.Lock()
+		if sess.state != sessionRunning {
+			sess.mu.Unlock()
+			return false
+		}
+		if cooked != nil {
+			_ = unix.IoctlSetTermios(inFd, unix.TCSETS, cooked)
+		}
+		sess.suspended = true
+		sess.mu.Unlock()
+		callStage(hook, StageSuspended)
+		_ = syscall.Kill(os.Getpid(), syscall.SIGTSTP)
+		sess.mu.Lock()
+		if sess.state == sessionRunning && sess.suspended {
+			// A SIGTSTP ignored by the kernel or its disposition did not suspend
+			// this process. Do not wait for a SIGCONT that can never arrive.
+			sess.suspended = false
+			setRaw(inFd, cooked)
+		}
+		sess.mu.Unlock()
+	} else {
+		if cooked != nil {
+			_ = unix.IoctlSetTermios(inFd, unix.TCSETS, cooked)
+		}
+		callStage(hook, StageSuspended)
+		_ = syscall.Kill(os.Getpid(), syscall.SIGTSTP)
+	}
+	return true
 }
 
 // selfSuspend restores cooked termios and resets the terminal, then raises

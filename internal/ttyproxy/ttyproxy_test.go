@@ -239,6 +239,34 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 		}
 		_ = full.Close()
 	}
+	if os.Getenv("YOLO_TTYPROXY_SATURATE_RESET_TTY") == "1" {
+		ttyPath, err := os.Readlink("/proc/self/fd/0")
+		if err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, "find reset tty:", err)
+			os.Exit(2)
+		}
+		fd, err := unix.Open(ttyPath, unix.O_WRONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+		if err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, "open reset tty:", err)
+			os.Exit(2)
+		}
+		padding := bytes.Repeat([]byte{'f'}, 4096)
+		for {
+			_, err = unix.Write(fd, padding)
+			if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) {
+				break
+			}
+			if err != nil {
+				_, _ = fmt.Fprintln(os.Stderr, "saturate reset tty:", err)
+				os.Exit(2)
+			}
+		}
+		_ = unix.Close(fd)
+		if err := writePressureReceipt(os.Getenv("YOLO_TTYPROXY_PRESSURE_FIFO"), 'F'); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+	}
 	if os.Getenv("YOLO_TTYPROXY_EXPECT_SUSPEND") == "1" {
 		// Non-interactive Go test parents may ignore or block job-control signals;
 		// this owned fixture needs the production default and an unblocked thread.
@@ -274,8 +302,11 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 		outputBytes := os.Getenv("YOLO_TTYPROXY_PRESSURE_BYTES")
 		observer := Observer{Env: []string{"YOLO_TTYPROXY_PRESSURE_FIFO=" + fifo, "YOLO_TTYPROXY_PRESSURE_BYTES=" + outputBytes, "YOLO_TTYPROXY_OUTPUT_ACK=" + os.Getenv("YOLO_TTYPROXY_OUTPUT_ACK")}}
 		if os.Getenv("YOLO_TTYPROXY_EXPECT_SUSPEND") == "1" {
-			observer.suspendBoundary = func(n int) {
-				_ = os.WriteFile(fifo+".boundary", []byte(strconv.Itoa(n)), 0600)
+			observer.Input = func(int, string) {
+				_ = writePressureReceipt(fifo+".input", 'I')
+			}
+			observer.suspendBoundary = func(n uint64) {
+				_ = os.WriteFile(fifo+".boundary", []byte(strconv.FormatUint(n, 10)), 0600)
 			}
 			observer.Stage = func(stage string) {
 				if stage == StageResumed {
@@ -545,7 +576,7 @@ func runFullTTYSignalCancellation(t *testing.T, sig syscall.Signal) {
 	cmd := exec.Command(os.Args[0], "-test.run=^TestOutputPressureDoesNotStopInputForwarding$", "-test.count=1")
 	cmd.Stdin, cmd.Stdout = hostTTY, hostTTY
 	cmd.Env = append(os.Environ(), "YOLO_TTYPROXY_PRESSURE_HELPER=1", "YOLO_TTYPROXY_PRESSURE_FIFO="+control,
-		"YOLO_TTYPROXY_PRESSURE_BYTES="+strconv.Itoa(16*1024*1024))
+		"YOLO_TTYPROXY_PRESSURE_BYTES="+strconv.Itoa(16*1024*1024), "YOLO_TTYPROXY_EXPECT_SUSPEND=1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
@@ -587,6 +618,12 @@ func runFullTTYSignalCancellation(t *testing.T, sig syscall.Signal) {
 	}
 	if after, err := unix.FcntlInt(uintptr(slave), unix.F_GETFL, 0); err != nil || after != flagsBefore {
 		t.Fatalf("probe changed caller-owned TTY status flags: before=%#x after=%#x err=%v", flagsBefore, after, err)
+	}
+	if _, err := unix.Write(master, []byte{0x1a}); err != nil {
+		t.Fatalf("request suspension under %s terminal pressure: %v", sig, err)
+	}
+	if err := waitForFile(control+".boundary", time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("proxy did not enter pending suspension before %s: %v", sig, err)
 	}
 	if err := cmd.Process.Signal(sig); err != nil {
 		t.Fatal(err)
@@ -630,6 +667,9 @@ func runFullTTYSignalCancellation(t *testing.T, sig syscall.Signal) {
 	}
 	if err := unix.Kill(pid, 0); !errors.Is(err, unix.ESRCH) {
 		t.Fatalf("owned target pid %d still exists after signal exit: %v", pid, err)
+	}
+	if stage, err := os.ReadFile(control + ".proxy"); err != nil || string(stage) == "Z" || string(stage) == "R" {
+		t.Fatalf("signal %s left a latent suspend/resume stage %q (err=%v)", sig, stage, err)
 	}
 }
 
@@ -711,6 +751,7 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 	}()
 	var outputMu sync.Mutex
 	var captured []byte
+	var drainErr error
 	readStopped := make(chan struct{})
 	drain := func() {
 		_ = unix.SetNonblock(master, true)
@@ -730,13 +771,31 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 			if n == 0 || (err != nil && (errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK))) {
 				time.Sleep(2 * time.Millisecond)
 			} else if err != nil && !errors.Is(err, syscall.EINTR) {
+				outputMu.Lock()
+				drainErr = err
+				outputMu.Unlock()
 				return
 			}
 		}
 	}
 	var drainOnce, stopOnce sync.Once
-	startDrain := func() { drainOnce.Do(func() { go drain() }) }
-	stopDrain := func() { stopOnce.Do(func() { close(readStopped) }) }
+	var drainStarted atomic.Bool
+	drainDone := make(chan struct{})
+	startDrain := func() {
+		drainOnce.Do(func() {
+			drainStarted.Store(true)
+			go func() {
+				defer close(drainDone)
+				drain()
+			}()
+		})
+	}
+	stopDrain := func() {
+		stopOnce.Do(func() { close(readStopped) })
+		if drainStarted.Load() {
+			<-drainDone
+		}
+	}
 	cleanup := func() {
 		select {
 		case <-waitDone:
@@ -768,8 +827,17 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 	if _, err := unix.Write(master, []byte{0x1a, 'q'}); err != nil {
 		t.Fatal(err)
 	}
+	if err := waitForFile(control+".boundary", time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("proxy did not snapshot the accepted output boundary: %v", err)
+	}
+	if _, err := unix.Write(master, []byte{0x1a}); err != nil {
+		t.Fatalf("repeat suspend request while drain is pending: %v", err)
+	}
+	if err := waitForFileLength(control+".input", 2, time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("proxy did not process the repeated request while drain was pending: %v", err)
+	}
 	startDrain()
-	stoppedDeadline := time.Now().Add(3 * time.Second)
+	stoppedDeadline := time.Now().Add(childDeadline)
 	for time.Now().Before(stoppedDeadline) && !ownedProcessStopped(cmd.Process.Pid) {
 		select {
 		case err := <-waitResult:
@@ -780,10 +848,12 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 	}
 	if !ownedProcessStopped(cmd.Process.Pid) {
 		stages, _ := os.ReadFile(control + ".proxy")
+		boundary, _ := os.ReadFile(control + ".boundary")
 		outputMu.Lock()
 		seen := append([]byte(nil), captured...)
+		readErr := drainErr
 		outputMu.Unlock()
-		t.Fatalf("proxy did not stop after ordered terminal reset (stages=%q captured=%d reset-at=%d)", stages, len(seen), bytes.Index(seen, []byte(termReset)))
+		t.Fatalf("proxy did not stop after ordered terminal reset (stages=%q boundary=%q captured=%d reset-at=%d drain-err=%v)", stages, boundary, len(seen), bytes.Index(seen, []byte(termReset)), readErr)
 	}
 	if err := waitPressureMarker(t, control+".proxy", 'Z', time.Now().Add(time.Second)); err != nil {
 		t.Fatalf("proxy did not report the suspend boundary: %v", err)
@@ -792,8 +862,8 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	boundary, err := strconv.Atoi(string(boundaryBytes))
-	if err != nil || boundary <= 0 || boundary > outputBytes {
+	boundary, err := strconv.ParseUint(string(boundaryBytes), 10, 64)
+	if err != nil || boundary == 0 || boundary > uint64(outputBytes) {
 		t.Fatalf("suspend boundary %q is outside the accepted output prefix 1..%d", boundaryBytes, outputBytes)
 	}
 	modeFD, err := unix.Open(fmt.Sprintf("/proc/%d/fd/0", cmd.Process.Pid), unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
@@ -843,9 +913,9 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 	outputMu.Lock()
 	got := append([]byte(nil), captured...)
 	outputMu.Unlock()
-	boundaryPrefix := outputPressurePrefix(boundary)
+	boundaryPrefix := outputPressurePrefix(int(boundary))
 	boundaryPrefix = append(boundaryPrefix, []byte(termReset)...)
-	remainingPrefix := outputPressurePrefix(outputBytes - boundary)
+	remainingPrefix := outputPressurePrefix(outputBytes - int(boundary))
 	suffix := []byte("\x1b[200~paste\tbytes\x1b[201~\x1b[?2026hsync-body\x1b[?2026l\x03\x1a")
 	want := append(boundaryPrefix, remainingPrefix...)
 	want = append(want, suffix...)
@@ -869,6 +939,101 @@ func ownedProcessStopped(pid int) bool {
 		}
 	}
 	return false
+}
+
+func TestOutputSinkErrorWithSaturatedFallbackReturnsPromptly(t *testing.T) {
+	master, slave, err := openPty()
+	if err != nil {
+		t.Skipf("cannot open pty: %v", err)
+	}
+	defer unix.Close(master)
+	hostTTY := os.NewFile(uintptr(slave), "proxy-saturated-reset-tty")
+	defer hostTTY.Close()
+	cooked := mustGetTermios(t, slave)
+	control := filepath.Join(t.TempDir(), "child-read")
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestOutputPressureDoesNotStopInputForwarding$", "-test.count=1")
+	cmd.Stdin = hostTTY
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.Env = append(os.Environ(), "YOLO_TTYPROXY_PRESSURE_HELPER=1", "YOLO_TTYPROXY_PRESSURE_FIFO="+control,
+		"YOLO_TTYPROXY_PRESSURE_BYTES=4096", "YOLO_TTYPROXY_OUTPUT_ERROR=1", "YOLO_TTYPROXY_EXPECT_SINK_ERROR=1",
+		"YOLO_TTYPROXY_SATURATE_RESET_TTY=1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waited := false
+	defer func() {
+		if !waited {
+			_ = cmd.Process.Signal(syscall.SIGTERM)
+			_ = drainPTY(master)
+			wait := make(chan error, 1)
+			go func() { wait <- cmd.Wait() }()
+			select {
+			case <-wait:
+			case <-time.After(2 * time.Second):
+				_ = cmd.Process.Kill()
+				<-wait
+			}
+			_ = stdout.Close()
+		}
+	}()
+	if err := waitPressureMarker(t, control, 'F', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("fallback TTY was not saturated: %v stderr=%q", err, stderr.String())
+	}
+	if err := waitPressureMarker(t, control, 'S', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("fatal-output target did not start: %v stderr=%q", err, stderr.String())
+	}
+	prompt := make(chan error, 1)
+	go func() { prompt <- waitPressureMarker(t, control, 'E', time.Now().Add(750*time.Millisecond)) }()
+	select {
+	case err := <-prompt:
+		if err != nil {
+			t.Fatalf("fatal output did not return promptly with saturated fallback TTY: %v", err)
+		}
+	case <-time.After(time.Second):
+		_ = drainPTY(master)
+		t.Fatal("fatal output return blocked on reset to a saturated fallback TTY")
+	}
+	if _, err := io.Copy(io.Discard, stdout); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("helper did not preserve the terminal output error: %v stderr=%q", err, stderr.String())
+	}
+	waited = true
+	if after := mustGetTermios(t, slave); *after != *cooked {
+		t.Fatalf("fatal output return left host termios changed: before=%+v after=%+v", *cooked, *after)
+	}
+	pidBytes, err := os.ReadFile(control + ".pid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(string(pidBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Kill(pid, 0); !errors.Is(err, unix.ESRCH) {
+		t.Fatalf("owned child pid %d still exists after fatal-output return: %v", pid, err)
+	}
+}
+
+func drainPTY(master int) error {
+	_ = unix.SetNonblock(master, true)
+	buf := make([]byte, 8192)
+	for {
+		_, err := unix.Read(master, buf)
+		if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EIO) {
+			return nil
+		}
+		if err != nil && !errors.Is(err, syscall.EINTR) {
+			return err
+		}
+	}
 }
 
 func TestOutputSinkErrorKillsOwnedChildReturnsErrorAndRestoresTerminal(t *testing.T) {
@@ -1037,6 +1202,33 @@ func writePressureReceipt(path string, marker byte) error {
 	defer f.Close()
 	_, err = f.Write([]byte{marker})
 	return err
+}
+
+func waitForFileLength(path string, want int, deadline time.Time) error {
+	for time.Now().Before(deadline) {
+		info, err := os.Stat(path)
+		if err == nil {
+			if info.Size() >= int64(want) {
+				return nil
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return fmt.Errorf("timed out waiting for %s to reach %d bytes", path, want)
+}
+
+func waitForFile(path string, deadline time.Time) error {
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return fmt.Errorf("timed out waiting for %s", path)
 }
 
 func waitPressureMarker(t *testing.T, path string, want byte, deadline time.Time) error {
