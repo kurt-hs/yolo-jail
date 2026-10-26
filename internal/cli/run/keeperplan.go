@@ -28,6 +28,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/version"
 )
 
@@ -43,6 +44,9 @@ type keeperPlan struct {
 	Workspace string `json:"workspace"`
 	Cname     string `json:"cname"`
 	Runtime   string `json:"runtime"`
+	// MacosUserMode is the resolved mode of a macos-user launch. The keeper carries the launch's
+	// decision rather than re-reading config, which may no longer describe the resolved launch.
+	MacosUserMode macosuser.Mode `json:"macos_user_mode,omitempty"`
 	// Network is the launch's `--network` flag as typed (Options.Network), "" when none was:
 	// with the config it decides what a loopback-TLS daemon advertises (advertiseHostFor),
 	// through resolveNetMode, so the keeper resolves the mode its launch resolved only if

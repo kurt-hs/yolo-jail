@@ -1245,7 +1245,8 @@ func (o *Options) macosUserKeeperPlanFor(cfg *jsonx.OrderedMap, rt, cname string
 	}
 	plan := &keeperPlan{
 		Build: keeperBuildStamp(), Workspace: o.Workspace, Cname: cname, Runtime: rt, Network: o.Network,
-		Color: o.streamColor(), Config: raw, PackTree: staged.root, Packs: names, Services: services,
+		MacosUserMode: o.MacosUserMode,
+		Color:         o.streamColor(), Config: raw, PackTree: staged.root, Packs: names, Services: services,
 		Payload: payload, ApprovedScopes: o.approvedScopes, ApprovedGrants: o.approvedGrants,
 		PerfRecording: o.timingRecording(),
 		Settings:      o.frozenLoopholeSettings(), SettingsPrepared: o.settingsPrepared,

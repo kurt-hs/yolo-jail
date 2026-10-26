@@ -8,6 +8,7 @@ package run
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -239,49 +240,94 @@ func TestMacosUserViewNoticeReflectsMeasuredEnrollmentLimits(t *testing.T) {
 	}
 }
 
-func TestSelfMacosUserViewIsHandedToTheFinalEnvironment(t *testing.T) {
+func TestMacosUserKeeperRegistersModeSpecificLocationIntoTheFinalEnvironment(t *testing.T) {
 	brokerFixtureDirs(t, true)
-	home := packHome(t)
-	writeUserPacks(t, home, `["claude"]`)
-	ws := t.TempDir()
+	for _, tc := range []struct {
+		name   string
+		mode   macosuser.Mode
+		want   string
+		notice string
+	}{
+		{name: "self", mode: macosuser.ModeSelf, want: ".claude", notice: "native self-mode /login adopted the view with session-TMPDIR"},
+		{name: "account", mode: macosuser.ModeAccount, want: "claude", notice: "account-mode /login has a measured Keychain write hang"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := packHome(t)
+			writeUserPacks(t, home, `["claude"]`)
+			ws := t.TempDir()
+			var stdout, stderr bytes.Buffer
+			o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
+			o.DryRun = false
+			o.MacosUserMode = tc.mode
+			o.MacosUserHostHome = t.TempDir()
+			o.Getenv = func(k string) string {
+				switch k {
+				case claudeview.SwitchEnv:
+					return "1"
+				case "YOLO_RUNTIME":
+					return "macos-user"
+				default:
+					return ""
+				}
+			}
+			var got *jsonx.OrderedMap
+			var registered *claudeview.Location
+			o.MacosUserRun = func(_ *jsonx.OrderedMap, _ string, _, _ []string, _, _ string,
+				_ macosuser.HomeOverlay, _ macosuser.HostContext, _ bool, env *jsonx.OrderedMap,
+				_ []packload.BlockedTool, _ macosuser.JailDaemons) int {
+				got = env
+				return 0
+			}
+			saved := registerView
+			t.Cleanup(func() { registerView = saved })
+			registerView = func(loc claudeview.Location, rt, cname string) (oauthbroker.RegisterResult, error) {
+				registered = &loc
+				return oauthbroker.RegisterResult{}, errors.New("fixture enrollment")
+			}
+			if rc := Run(*o); rc != 0 {
+				t.Fatalf("Run() = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
+			}
+			if registered == nil || registered.Workspace != ws || registered.Subdir != tc.want {
+				t.Errorf("keeper registered %+v, want workspace %q subdir %q", registered, ws, tc.want)
+			}
+			if !strings.Contains(stderr.String(), tc.notice) || !strings.Contains(stderr.String(), "YOLO_CLAUDE_CREDENTIAL_VIEW=0") {
+				t.Errorf("keeper notice does not match %s mode or omit the view-off path:\n%s", tc.name, stderr.String())
+			}
+			if got == nil {
+				t.Fatal("macos-user launch did not hand its final environment to the runner")
+			}
+			if v := envAt(got, claudeview.SwitchEnv); v != "1" {
+				t.Errorf("final %s = %q, want 1", claudeview.SwitchEnv, v)
+			}
+			if v := envAt(got, claudeview.SecureStorageEnv); v != "" {
+				t.Errorf("view-on final environment points Claude at a shared refresh-token store: %q", v)
+			}
+		})
+	}
+}
+
+func TestMacosUserKeeperRoundTripsTheResolvedModeInsteadOfReadingConfig(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
-	o.DryRun = false
+	o := dispatchOptions(t, t.TempDir(), "macos-user", &stdout, &stderr, nil)
 	o.MacosUserMode = macosuser.ModeSelf
-	o.MacosUserHostHome = t.TempDir()
-	o.Getenv = func(k string) string {
-		switch k {
-		case claudeview.SwitchEnv:
-			return "1"
-		case "YOLO_RUNTIME":
-			return "macos-user"
-		default:
-			return ""
-		}
+	o.macosUserKey = &macosUserKeying{}
+	cfg := jsonx.NewOrderedMap()
+	cfg.Set("macos_user_mode", "account") // stale config must not override the resolved launch mode
+	plan, err := o.macosUserKeeperPlanFor(cfg, "macos-user", "yolo-mode-roundtrip", stagedPacks{}, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var got *jsonx.OrderedMap
-	o.MacosUserRun = func(_ *jsonx.OrderedMap, _ string, _, _ []string, _, _ string,
-		_ macosuser.HomeOverlay, _ macosuser.HostContext, _ bool, env *jsonx.OrderedMap,
-		_ []packload.BlockedTool, _ macosuser.JailDaemons) int {
-		got = env
-		return 0
+	path, err := writeKeeperPlan(plan)
+	if err != nil {
+		t.Fatal(err)
 	}
-	saved := registerView
-	t.Cleanup(func() { registerView = saved })
-	registerView = func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
-		return oauthbroker.RegisterResult{Wrote: true}, nil
+	read, err := readKeeperPlan(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if rc := Run(*o); rc != 0 {
-		t.Fatalf("Run() = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
-	}
-	if got == nil {
-		t.Fatal("macos-user launch did not hand its final environment to the runner")
-	}
-	if v := envAt(got, claudeview.SwitchEnv); v != "1" {
-		t.Errorf("final %s = %q, want 1", claudeview.SwitchEnv, v)
-	}
-	if v := envAt(got, claudeview.SecureStorageEnv); v != "" {
-		t.Errorf("view-on final environment points Claude at a shared refresh-token store: %q", v)
+	k := newKeeper(read, KeeperSeams{}, nil, nil, nil, nil)
+	if k.o.MacosUserMode != macosuser.ModeSelf {
+		t.Errorf("keeper resolved mode = %s, want the launch's self mode despite stale config", k.o.MacosUserMode)
 	}
 }
 
