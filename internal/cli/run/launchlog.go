@@ -47,12 +47,12 @@ package run
 // records the version instead, which is the same fact in the one place a reader of this
 // file will look for it). The live-overlay refusal, which is Run's first act and
 // refuses before any side effect — including this one. And the jailed command's own
-// output: the container is spawned with the process's real stdout/stderr (proxy_other.go,
-// ttyproxy), never with Options.Stdout, so an interactive session cannot end up in here.
-// The macos-user backend draws the same line in the same place — its Deps take the teed
-// writer below, while every child it starts keeps the process's own streams
-// (internal/macosuser/real.go's runReal) — so "what the launcher said" and "what the
-// session did" stay as separate here as they are on the container backends.
+// The container backend keeps the jailed command on the process's real stdout/stderr
+// (proxy_other.go, ttyproxy), never on Options.Stdout, so its interactive session is not
+// captured here. The macos-user backend has a separate native orchestration/output path:
+// its backend writer is published to the tee below. Automatic-capture's named session
+// stdout/stderr also use the tee, but that narrower parity does not establish whole-launch
+// macos-user stderr routing or command-stdout purity.
 
 import (
 	"fmt"
@@ -99,10 +99,10 @@ type launchLog struct {
 // left usable: on any failure they stay exactly what they were and the returned
 // *launchLog is nil, which every method accepts.
 //
-// THE RULE FOR WHICH STREAM A LINE TAKES: everything the launcher itself prints during a
-// launch goes to STDERR — every warning, refusal, note, disclosure and progress line, the
-// nix build and image delivery, the config diff and its prompt, the keeper's relayed
-// lines. Stdout carries only the jailed command's own output (which never passes through
+// THE CONTAINER LAUNCH ROUTING CONTRACT: for container launches, everything the launcher
+// itself prints goes to STDERR — warnings, refusals, notes, disclosures and progress lines,
+// the nix build and image delivery, the config diff and its prompt, and the keeper's relayed
+// lines. Stdout carries the jailed command's own output (which never passes through
 // Options.Stdout, above) and output that IS a verb's payload, which is short and named:
 //
 //   - `yolo config apply`'s report — "No jail is running ... recording the approval only",
@@ -116,6 +116,11 @@ type launchLog struct {
 // a piped payload (`yolo run -- cmd | jq`) and is read as the command's output by any test
 // that counts it (TestALaunchPrintsNothingOnTheCommandsStdout). A disclosure moves stream;
 // it is never suppressed (docs/reference/report-tiers.md, OQ-RO3).
+//
+// The container-only routing rule above does not describe native macos-user orchestration;
+// that backend's output and color routing are separate. The named session stdout/stderr
+// tee used by automatic-capture is narrower and is not a guarantee that all macOS command
+// stdout is payload-only.
 //
 // BOTH streams are teed anyway, because a verb's payload and the jail's own lines are part
 // of what happened, and a log of one stream would be a log of part of a launch.

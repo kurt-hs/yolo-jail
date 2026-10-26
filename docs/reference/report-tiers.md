@@ -382,11 +382,17 @@ A launch keeps its stream shape — a process narrated in time — and adopts th
 without the report layout. **Share the vocabulary, not the layout:** the launch does not get a
 verdict block, and the report does not get a progress stream.
 
-**Every line in the table below is written to stderr.** The launcher's stdout is the jailed
-command's (`yolo run -- cmd | jq`), so it carries only that command's output and the few outputs
-that are a verb's payload, which the doc comment on `attachLaunchLog`
+**For container launches, every launcher-owned line in the table below is written to stderr.** The
+container launcher's stdout carries the jailed command's output (`yolo run -- cmd | jq`) and the few
+outputs that are a verb's payload, which the doc comment on `attachLaunchLog`
 ([`launchlog.go`](../../internal/cli/run/launchlog.go)) lists. Both streams are still teed to
 `.yolo/launch.log`.
+
+> [!NOTE]
+> This complete stderr-routing contract does not cover native `macos-user` orchestration, whose
+> output and color routing are separate. Automatic-capture's named session stdout/stderr tee is
+> narrower: it does not establish routing for all native launch output or guarantee that macOS
+> command stdout is otherwise payload-only.
 
 | Line | Tier | Treatment |
 | :--- | :--- | :--- |
