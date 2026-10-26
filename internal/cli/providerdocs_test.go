@@ -11,11 +11,14 @@ package cli
 import (
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
 // providerKindEntry is config-ref's `provider` kind entry: its row and every continuation line
@@ -40,23 +43,193 @@ func providerKindEntry(t *testing.T) string {
 	return ""
 }
 
-// Every ProviderContribution field, spelled by the JSON name a manifest writes it under (the
-// matching Contribution field's tag), is named in the kind entry.
+// legacyProviderDocFields are the fields consumed by packload's legacy provider projection and
+// therefore part of config-ref's pack.json grammar. Grouped TOML's alias/model/catalog fields are
+// intentionally absent: config-ref describes the active JSONC user keys and legacy pack.json.
+var legacyProviderDocFields = map[string]string{
+	"Name": "name", "Endpoints": "endpoints", "APIKeyEnvName": "api_key_env_name",
+	"Platform": "platform", "Region": "region", "RegionEnvName": "region_env_name",
+	"RegionFile": "region_file", "Models": "models", "ModelOptions": "model_options",
+	"Options": "options", "Capabilities": "capabilities",
+}
+
+// groupedProviderFields are normalized fields populated by packdecl's grouped-TOML codec and
+// retained with json:"-" on Contribution. Their provenance is also exercised through DecodeTOML
+// and Providers() below; they are not legacy pack.json keys.
+var groupedProviderFields = map[string]string{
+	"Alias": "ProviderAlias", "Model": "ProviderModel", "Variants": "ProviderVariants",
+	"VariantOrder": "ProviderVariantOrder", "EveryModel": "EveryProviderModel",
+	"ModelRows": "ProviderModels", "ModelOrder": "ProviderModelOrder",
+}
+
+// Via shares Contribution's legacy program/profile field, but the legacy provider composer does
+// not consume it. Grouped TOML does populate the normalized accessor, so it is kept as a distinct
+// classification rather than advertised as a provider pack.json field.
+const sharedProviderViaField = "Via"
+
+// providerContributionDocProblems enforces a closed, format-specific classification. A new
+// projection field must be deliberately assigned to the legacy grammar, grouped TOML, or the
+// shared-but-not-provider Via case; json:"-" alone is never a reason to skip a field.
+func providerContributionDocProblems(entry string, projection, contribution reflect.Type) []string {
+	var problems []string
+	checkBacking := func(name, backing, wantTag string) {
+		f, ok := contribution.FieldByName(backing)
+		if !ok {
+			problems = append(problems, name+" has no Contribution."+backing+" backing field")
+			return
+		}
+		got := strings.Split(f.Tag.Get("json"), ",")[0]
+		if got != wantTag {
+			problems = append(problems, name+" is backed by Contribution."+backing+
+				" with JSON tag "+strconv.Quote(got)+", want "+strconv.Quote(wantTag))
+		}
+	}
+	for i := 0; i < projection.NumField(); i++ {
+		name := projection.Field(i).Name
+		if tag, ok := legacyProviderDocFields[name]; ok {
+			checkBacking(name, name, tag)
+			if !regexp.MustCompile(`\b` + regexp.QuoteMeta(tag) + `\b`).MatchString(entry) {
+				problems = append(problems, "legacy provider field "+strconv.Quote(tag)+" is not named in config-ref's `provider` entry")
+			}
+			continue
+		}
+		if backing, ok := groupedProviderFields[name]; ok {
+			checkBacking(name, backing, "-")
+			continue
+		}
+		if name == sharedProviderViaField {
+			checkBacking(name, name, "via")
+			continue
+		}
+		problems = append(problems, "ProviderContribution."+name+" has no provider documentation format classification")
+	}
+	for name := range legacyProviderDocFields {
+		if _, ok := projection.FieldByName(name); !ok {
+			problems = append(problems, "legacy provider doc classification names missing ProviderContribution."+name)
+		}
+	}
+	for name := range groupedProviderFields {
+		if _, ok := projection.FieldByName(name); !ok {
+			problems = append(problems, "grouped provider classification names missing ProviderContribution."+name)
+		}
+	}
+	// The kind's declaration is the legacy pack.json shape; keep the shared program/profile
+	// `via` spelling out of that provider grammar unless the provider runtime consumes it.
+	declaration := strings.SplitN(entry, " —", 2)[0]
+	if regexp.MustCompile(`\bvia\b`).MatchString(declaration) {
+		problems = append(problems, "legacy provider declaration advertises shared `via` without a provider reader")
+	}
+	return problems
+}
+
+// The drift gate is intentionally exact; do not turn json:"-" into a blanket exemption.
 func TestEveryProviderContributionFieldIsDocumented(t *testing.T) {
 	entry := providerKindEntry(t)
 	projection := reflect.TypeOf(packdecl.ProviderContribution{})
 	contribution := reflect.TypeOf(packdecl.Contribution{})
+	if problems := providerContributionDocProblems(entry, projection, contribution); len(problems) != 0 {
+		for _, problem := range problems {
+			t.Error(problem)
+		}
+	}
+}
+
+// The drift gate must fail if a legacy field disappears from config-ref, if the projection gains
+// an unclassified field, or if a grouped-only backing field is turned into a legacy JSON field.
+func TestProviderContributionDocGateRejectsFormatDrift(t *testing.T) {
+	entry := providerKindEntry(t)
+	projection := reflect.TypeOf(packdecl.ProviderContribution{})
+	contribution := reflect.TypeOf(packdecl.Contribution{})
+
+	withoutLegacyField := strings.ReplaceAll(entry, "api_key_env_name", "api-key-env-name")
+	if problems := providerContributionDocProblems(withoutLegacyField, projection, contribution); len(problems) == 0 {
+		t.Fatal("removing api_key_env_name from the provider entry passed the drift gate")
+	}
+	withLegacyVia := strings.Replace(entry, "{name, platform", "{name, via, platform", 1)
+	if problems := providerContributionDocProblems(withLegacyVia, projection, contribution); !containsProblem(problems, "advertises shared `via`") {
+		t.Fatalf("shared program/profile via was accepted as a legacy provider field: %v", problems)
+	}
+
+	fields := make([]reflect.StructField, projection.NumField()+1)
 	for i := 0; i < projection.NumField(); i++ {
-		name := projection.Field(i).Name
-		f, ok := contribution.FieldByName(name)
-		if !ok {
-			t.Errorf("ProviderContribution.%s has no Contribution field to read its JSON name from", name)
-			continue
+		fields[i] = projection.Field(i)
+	}
+	fields[len(fields)-1] = reflect.StructField{Name: "Unexpected", Type: reflect.TypeOf("")}
+	withUnknownProjection := reflect.StructOf(fields)
+	if problems := providerContributionDocProblems(entry, withUnknownProjection, contribution); !containsProblem(problems, "Unexpected has no provider documentation format classification") {
+		t.Fatalf("unknown projection field passed the closed classification: %v", problems)
+	}
+
+	contributionFields := make([]reflect.StructField, contribution.NumField())
+	for i := 0; i < contribution.NumField(); i++ {
+		contributionFields[i] = contribution.Field(i)
+		if contributionFields[i].Name == "ProviderAlias" {
+			contributionFields[i].Tag = `json:"alias,omitempty"`
 		}
-		tag := strings.Split(f.Tag.Get("json"), ",")[0]
-		if !regexp.MustCompile(`\b` + regexp.QuoteMeta(tag) + `\b`).MatchString(entry) {
-			t.Errorf("the provider kind's %q is not named in config-ref's `provider` entry:\n%s", tag, entry)
+	}
+	withGroupedJSONTag := reflect.StructOf(contributionFields)
+	if problems := providerContributionDocProblems(entry, projection, withGroupedJSONTag); !containsProblem(problems, `Alias is backed by Contribution.ProviderAlias with JSON tag "alias", want "-"`) {
+		t.Fatalf("grouped-only field accepted a legacy JSON tag: %v", problems)
+	}
+}
+
+func containsProblem(problems []string, want string) bool {
+	for _, problem := range problems {
+		if strings.Contains(problem, want) {
+			return true
 		}
+	}
+	return false
+}
+
+// The grouped classification is grounded in the real decoder/accessor path, while a legacy
+// provider's shared `via` value is proven not to enter the runtime provider table.
+func TestProviderContributionDocumentationTracksManifestFormats(t *testing.T) {
+	grouped, problems := packdecl.DecodeTOML([]byte(`[providers.fixture]
+alias = "fast"
+model = "fast-model"
+via = "wire-bridge"
+[providers.fixture.every_model]
+api = "openai-responses"
+[providers.fixture.models.fast-model]
+name = "Fast"
+[providers.fixture.variants.quick]
+model = "fast-model"
+`))
+	if len(problems) != 0 {
+		t.Fatalf("DecodeTOML: %v", problems)
+	}
+	providers := grouped.Providers()
+	if len(providers) != 1 {
+		t.Fatalf("grouped providers = %#v, want one", providers)
+	}
+	provider := providers[0]
+	if provider.Alias != "fast" || provider.Model != "fast-model" || provider.Via != "wire-bridge" ||
+		provider.EveryModel == nil || provider.EveryModel.API != "openai-responses" ||
+		provider.ModelRows["fast-model"].Name != "Fast" || provider.Variants["quick"].Model != "fast-model" ||
+		!reflect.DeepEqual(provider.ModelOrder, []string{"fast-model"}) ||
+		!reflect.DeepEqual(provider.VariantOrder, []string{"quick"}) {
+		t.Fatalf("grouped provider projection lost decoder-derived fields: %+v", provider)
+	}
+
+	legacy, legacyProblems := packdecl.Decode([]byte(`{"name":"fixture","contributes":[{"kind":"provider","name":"legacy","via":"wire-bridge","endpoints":{"openai":{"base_url":"https://example.invalid/v1"}}}]}`))
+	if len(legacyProblems) != 0 {
+		t.Fatalf("Decode legacy pack.json provider: %v", legacyProblems)
+	}
+	table, err := packload.ComposeProviders(nil, []*packload.Pack{{Name: "fixture", Decl: legacy}})
+	if err != nil {
+		t.Fatalf("ComposeProviders: %v", err)
+	}
+	value, ok := table.Get("legacy")
+	if !ok {
+		t.Fatal("legacy provider missing from composed table")
+	}
+	entry, ok := value.(*jsonx.OrderedMap)
+	if !ok {
+		t.Fatalf("legacy provider entry = %T, want ordered object", value)
+	}
+	if _, ok := entry.Get("via"); ok {
+		t.Fatal("legacy provider via unexpectedly reached the runtime provider table")
 	}
 }
 
