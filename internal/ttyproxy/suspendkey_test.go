@@ -162,7 +162,7 @@ func assertProxySuspends(t *testing.T, input string, want bool) {
 
 	go func() {
 		defer close(loopDone)
-		_, _ = proxyLoop(hostSlave, childMaster, c, cooked, Observer{})
+		_, _ = proxyLoop(hostSlave, childMaster, c, cooked, Observer{}, nil)
 	}()
 
 	if _, err := unix.Write(hostMaster, []byte(input)); err != nil {

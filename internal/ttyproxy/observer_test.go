@@ -178,7 +178,7 @@ func TestProxyLoopMarksTheSuspend(t *testing.T) {
 	loopDone := make(chan struct{})
 	go func() {
 		defer close(loopDone)
-		_, _ = proxyLoop(hostSlave, childMaster, c, cooked, Observer{Stage: rec.stage, Input: rec.input})
+		_, _ = proxyLoop(hostSlave, childMaster, c, cooked, Observer{Stage: rec.stage, Input: rec.input}, nil)
 	}()
 	// THE LOOP ENDS BEFORE ITS DESCRIPTORS CLOSE (this defer runs before the closes above). Left
 	// running, it drained its pty master's descriptor NUMBER once its child died — which by then

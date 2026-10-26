@@ -53,6 +53,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -150,8 +151,9 @@ const (
 	// how a user gets out of a lingering client (^Z, then `kill %1`, or
 	// `kill -9 %1`), and a SIGKILL records nothing after it — so the log has to
 	// hold the suspend itself, written as it happens.
-	StageSuspended = "suspended"
-	StageResumed   = "resumed"
+	StageSuspended       = "suspended"
+	StageResumed         = "resumed"
+	StageCancelRequested = "cancel_requested"
 )
 
 // StageHook observes the proxy's own transitions as they happen. It must not
@@ -293,6 +295,7 @@ type session struct {
 	restored        chan struct{}
 	childDone       chan struct{}
 	childOnce       sync.Once
+	childLifecycle  atomic.Uint32
 	killOnce        sync.Once
 	cancelRequested atomic.Bool
 	suspended       bool
@@ -326,7 +329,7 @@ func newSession(inFd int, cooked *unix.Termios, c *exec.Cmd, hook StageHook) *se
 // its own: the child has exited and the caller is carrying on, so the signal is not the
 // proxy's to act on any more. That one waits for the proxy's own restore first.
 func (s *session) terminate() bool {
-	s.cancelRequested.Store(true)
+	s.requestCancel()
 	s.mu.Lock()
 	switch s.state {
 	case sessionReturning:
@@ -372,6 +375,7 @@ func (s *session) reRaw() {
 	if s.state == sessionRunning {
 		setRaw(s.inFd, s.cooked)
 		s.suspended = false
+		s.clearSuspendStop()
 	}
 }
 
@@ -390,7 +394,51 @@ func (s *session) kill() {
 	<-s.childDone
 }
 
-func (s *session) childReaped() { s.childOnce.Do(func() { close(s.childDone) }) }
+func (s *session) requestCancel() {
+	s.updateChildLifecycle(lifecycleCancelled)
+	s.cancelRequested.Store(true)
+}
+
+func (s *session) childHasExited() bool {
+	return s.childLifecycle.Load()&lifecycleChildExited != 0
+}
+
+func (s *session) commitSuspendStop() bool {
+	return s.childLifecycle.CompareAndSwap(0, lifecycleStopCommitted)
+}
+
+func (s *session) clearSuspendStop() {
+	s.childLifecycle.CompareAndSwap(lifecycleStopCommitted, 0)
+}
+
+func (s *session) updateChildLifecycle(bit uint32) {
+	for {
+		state := s.childLifecycle.Load()
+		if s.childLifecycle.CompareAndSwap(state, state|bit) {
+			return
+		}
+	}
+}
+
+const (
+	lifecycleChildExited uint32 = 1 << iota
+	lifecycleCancelled
+	lifecycleStopCommitted
+)
+
+func (s *session) childReaped() {
+	s.updateChildLifecycle(lifecycleChildExited)
+	s.childOnce.Do(func() { close(s.childDone) })
+}
+
+func (s *session) canDrainOutput() bool {
+	if s == nil {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state == sessionRunning && !s.suspended && s.ownsTTY(s.inFd)
+}
 
 // Handle is a running child's half of a caller-owned signal teardown (Observer.Arm). Its
 // methods are safe from any goroutine, and harmless once the run is over.
@@ -471,6 +519,8 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 	sess.beforeSuspend = obs.beforeSuspend
 	sess.output = sink
 	obs.run = sess
+	// Reap before exposing a kill-waiting Handle to the synchronous Arm callback.
+	exitedCh := reapChild(c, sess)
 	callerArms := obs.Arm != nil
 	if callerArms {
 		func() {
@@ -514,7 +564,8 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 				// trigger.
 				resyncWinsize(inFd, master, c)
 			case syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM:
-				sess.cancelRequested.Store(true)
+				sess.requestCancel()
+				callStage(hook, StageCancelRequested)
 				// The terminate arm must reach os.Exit from the background too: that is
 				// where `kill %1` finds a job the user ^Z'd out of a lingering quit, and
 				// session.terminate ignores SIGTTOU/SIGTTIN and leaves the termios, which is
@@ -537,7 +588,7 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 		}
 	}()
 
-	rc, proxyErr := proxyLoop(inFd, master, c, cooked, obs)
+	rc, proxyErr := proxyLoop(inFd, master, c, cooked, obs, exitedCh)
 	if !sess.claimReturn() {
 		select {} // an arm is exiting the process; never race it
 	}
@@ -547,7 +598,7 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 
 	if proxyErr != nil {
 		restoreTerminalForCancellation(inFd, cooked, sink)
-	} else {
+	} else if !sess.isSuspended() {
 		restoreCooked()
 	}
 	close(sess.restored)
@@ -580,6 +631,7 @@ func runPlain(cmd []string, onStarted func(*os.Process), obs Observer) (int, err
 		return 0, err
 	}
 	sess := newSession(-1, nil, c, hook)
+	exitedCh := reapChild(c, sess)
 	if obs.Arm != nil {
 		func() {
 			defer func() { _ = recover() }()
@@ -590,14 +642,25 @@ func runPlain(cmd []string, onStarted func(*os.Process), obs Observer) (int, err
 	if onStarted != nil {
 		go safeCallback(onStarted, c.Process)
 	}
-	err := c.Wait()
-	sess.childReaped()
+	rc := <-exitedCh
 	callStage(hook, StageExited)
 	if !sess.claimReturn() {
 		select {} // the caller's arm is exiting the process; never race it
 	}
 	close(sess.restored)
-	return exitCode(err), nil
+	return rc, nil
+}
+
+func reapChild(c *exec.Cmd, sess *session) <-chan int {
+	exitedCh := make(chan int, 1)
+	go func() {
+		rc := exitCode(c.Wait())
+		if sess != nil {
+			sess.childReaped()
+		}
+		exitedCh <- rc
+	}()
+	return exitedCh
 }
 
 // maxForwardQueue is the backpressure threshold for host input queued for the
@@ -726,7 +789,7 @@ func restoreTerminalForCancellation(inFd int, cooked *unix.Termios, sink *output
 
 // proxyLoop pumps bytes between the host TTY and the master pty until the child
 // exits.
-func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer) (int, error) {
+func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer, exitedCh <-chan int) (int, error) {
 	hook := obs.Stage
 	var pending []byte
 	var toMaster []byte
@@ -825,8 +888,18 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 	finish := func(rc int) (int, error) {
 		callStage(hook, StageExited)
 		for {
+			if obs.run != nil && !obs.run.canDrainOutput() {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
 			for !outputFailed && outputBytes+readChunk > maxOutputQueue {
+				if obs.run != nil && !obs.run.canDrainOutput() {
+					break
+				}
 				waitOutput()
+			}
+			if obs.run != nil && !obs.run.canDrainOutput() {
+				continue
 			}
 			n, err := unix.Read(master, buf)
 			if n > 0 {
@@ -843,6 +916,10 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 			}
 		}
 		for outputBytes > 0 {
+			if obs.run != nil && !obs.run.canDrainOutput() {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
 			waitOutput()
 		}
 		callStage(hook, StageDrainDone)
@@ -896,15 +973,9 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 		}
 	}
 
-	// Reap the child in the background so poll() equivalent works.
-	exitedCh := make(chan int, 1)
-	go func() {
-		rc := exitCode(c.Wait())
-		if obs.run != nil {
-			obs.run.childReaped()
-		}
-		exitedCh <- rc
-	}()
+	if exitedCh == nil {
+		exitedCh = reapChild(c, obs.run)
+	}
 
 	for {
 		select {
@@ -929,17 +1000,20 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 				suspendResetQueued = true
 			}
 		}
-		dispatchOutput()
+		if obs.run == nil || obs.run.canDrainOutput() {
+			dispatchOutput()
+		}
 
 		masterEvents := int16(0)
-		if !pendingSuspend && (outputFailed || outputBytes+readChunk <= maxOutputQueue) {
+		if (obs.run == nil || obs.run.canDrainOutput()) && !pendingSuspend && (outputFailed || outputBytes+readChunk <= maxOutputQueue) {
 			masterEvents |= unix.POLLIN
 		}
-		if len(toMaster) > 0 {
+		inputAllowed := obs.run == nil || obs.run.canDrainOutput()
+		if inputAllowed && len(toMaster) > 0 {
 			masterEvents |= unix.POLLOUT
 		}
 		fds := []unix.PollFd{{Fd: int32(master), Events: masterEvents}}
-		if !stdinClosed && len(toMaster)+len(pending) < maxForwardQueue {
+		if inputAllowed && !stdinClosed && len(toMaster)+len(pending) < maxForwardQueue {
 			fds = append(fds, unix.PollFd{Fd: int32(inFd), Events: unix.POLLIN})
 		}
 		_, err := unix.Poll(fds, 100)
@@ -952,7 +1026,7 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 		}
 
 		// master readable
-		if !pendingSuspend && fds[0].Revents&(unix.POLLIN|unix.POLLHUP) != 0 {
+		if (obs.run == nil || obs.run.canDrainOutput()) && !pendingSuspend && fds[0].Revents&(unix.POLLIN|unix.POLLHUP) != 0 {
 			n, rerr := unix.Read(master, buf)
 			if n > 0 {
 				acceptOutput(buf[:n])
@@ -967,12 +1041,12 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 		}
 
 		// master writable
-		if fds[0].Revents&unix.POLLOUT != 0 {
+		if (obs.run == nil || obs.run.canDrainOutput()) && fds[0].Revents&unix.POLLOUT != 0 {
 			flushToMaster()
 		}
 
 		// stdin readable
-		if !stdinClosed && len(fds) > 1 && fds[1].Revents&unix.POLLIN != 0 {
+		if (obs.run == nil || obs.run.canDrainOutput()) && !stdinClosed && len(fds) > 1 && fds[1].Revents&unix.POLLIN != 0 {
 			n, rerr := unix.Read(inFd, buf)
 			if n == 0 || (rerr != nil && !errors.Is(rerr, syscall.EINTR) && !errors.Is(rerr, unix.EAGAIN) && !errors.Is(rerr, unix.EWOULDBLOCK)) {
 				// EOF on host stdin: stop reading stdin, keep pumping master
@@ -1164,7 +1238,7 @@ func restoreTerminal(inFd int, cooked *unix.Termios) {
 func suspendAfterReset(inFd int, cooked *unix.Termios, sess *session, hook StageHook) bool {
 	if sess != nil {
 		sess.mu.Lock()
-		if sess.state != sessionRunning || sess.cancelRequested.Load() {
+		if sess.state != sessionRunning || sess.cancelRequested.Load() || sess.childHasExited() {
 			sess.mu.Unlock()
 			return false
 		}
@@ -1180,15 +1254,40 @@ func suspendAfterReset(inFd int, cooked *unix.Termios, sess *session, hook Stage
 			sess.mu.Unlock()
 			return false
 		}
+		if sess.childHasExited() {
+			if sess.ownsTTY(inFd) {
+				setRaw(inFd, cooked)
+				sess.suspended = false
+			} else {
+				sess.suspended = true
+			}
+			sess.mu.Unlock()
+			return false
+		}
+		if !sess.commitSuspendStop() {
+			if sess.cancelRequested.Load() {
+				sess.suspended = false
+			} else if sess.childHasExited() {
+				if sess.ownsTTY(inFd) {
+					setRaw(inFd, cooked)
+					sess.suspended = false
+				} else {
+					sess.suspended = true
+				}
+			}
+			sess.mu.Unlock()
+			return false
+		}
 		callStage(hook, StageSuspended)
-		// Holding the session lock across this targeted stop makes the state
-		// check and stop issuance one commit relative to explicit termination.
+		// The lifecycle CAS linearizes the stop against cancellation and child
+		// reaping without making either publisher wait for this transition lock.
 		_ = syscall.Kill(os.Getpid(), syscall.SIGTSTP)
 		if sess.state == sessionRunning && sess.suspended && sess.ownsTTY(inFd) {
 			// SIGTSTP ignored by the kernel/disposition did not stop us, or a
 			// foreground continuation raced the signal arm; restore raw locally.
 			sess.suspended = false
 			setRaw(inFd, cooked)
+			sess.clearSuspendStop()
 		}
 		sess.mu.Unlock()
 	} else {

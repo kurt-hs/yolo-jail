@@ -338,7 +338,9 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 					}
 				}
 				marker := byte('?')
-				if stage == StageSuspended {
+				if stage == StageCancelRequested {
+					marker = 'A'
+				} else if stage == StageSuspended {
 					marker = 'Z'
 				} else if stage == StageResumed {
 					marker = 'R'
@@ -740,6 +742,11 @@ func waitForTTYOutputPressure(t *testing.T, master int) bool {
 }
 
 func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
+	t.Run("foreground-resume", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false) })
+	t.Run("background-child-exit", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, true) })
+}
+
+func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit bool) {
 	master, slave, err := openPty()
 	if err != nil {
 		t.Skipf("cannot open pty: %v", err)
@@ -757,7 +764,10 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = append(os.Environ(), "YOLO_TTYPROXY_PRESSURE_HELPER=1", "YOLO_TTYPROXY_PRESSURE_FIFO="+control,
 		"YOLO_TTYPROXY_PRESSURE_BYTES="+strconv.Itoa(outputBytes), "YOLO_TTYPROXY_EXPECT_SUSPEND=1",
-		"YOLO_TTYPROXY_BG_FG=1", "YOLO_TTYPROXY_OUTPUT_ACK=1", "YOLO_TTYPROXY_ACK_AFTER_WRITE=1")
+		"YOLO_TTYPROXY_BG_FG=1", "YOLO_TTYPROXY_SEGMENTED_SUSPEND=1", "YOLO_TTYPROXY_OUTPUT_ACK=1", "YOLO_TTYPROXY_ACK_AFTER_WRITE=1")
+	if backgroundChildExit {
+		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_BG_CHILD_EXIT=1")
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
@@ -838,11 +848,53 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 	if err := waitPressureMarker(t, control, 'S', time.Now().Add(childDeadline)); err != nil {
 		t.Fatalf("target did not start before suspend: %v stderr=%q", err, stderr.String())
 	}
+	if err := waitPressureMarker(t, control, 'D', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("target did not deliver the first distinct output segment: %v stderr=%q", err, stderr.String())
+	}
+	initial, err := readPTYBytes(master, 1024, time.Now().Add(childDeadline))
+	if err != nil || !bytes.Equal(initial, bytes.Repeat([]byte{'a'}, 1024)) {
+		t.Fatalf("initial output segment = %d bytes, err=%v", len(initial), err)
+	}
+	captured = append(captured, initial...)
+	probe, err := unix.Open(fmt.Sprintf("/proc/self/fd/%d", slave), unix.O_WRONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatalf("open independent nonblocking output OFD: %v", err)
+	}
+	filled, err := fillTTYUntilEAGAIN(probe)
+	if err != nil || filled == 0 {
+		_ = unix.Close(probe)
+		t.Fatalf("independent output OFD did not reach EAGAIN: bytes=%d err=%v", filled, err)
+	}
+	fillerBytes, err := readPTYAvailable(master, time.Now().Add(childDeadline))
+	if err != nil || len(fillerBytes) == 0 || !bytes.Equal(fillerBytes, bytes.Repeat([]byte{'f'}, len(fillerBytes))) {
+		t.Fatalf("capture the exact independently written pressure bytes: bytes=%d err=%v", len(fillerBytes), err)
+	}
+	_ = unix.Close(probe)
+	probe, err = unix.Open(fmt.Sprintf("/proc/self/fd/%d", slave), unix.O_WRONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatalf("reopen independent nonblocking output OFD after proving pressure: %v", err)
+	}
+	pressureCount := 0
+	for {
+		n, writeErr := unix.Write(probe, []byte{'f'})
+		if errors.Is(writeErr, unix.EAGAIN) || errors.Is(writeErr, unix.EWOULDBLOCK) {
+			break
+		}
+		if writeErr != nil || n != 1 {
+			_ = unix.Close(probe)
+			t.Fatalf("independent output OFD failed while recreating measured pressure: n=%d err=%v", n, writeErr)
+		}
+		pressureCount += n
+	}
+	_ = unix.Close(probe)
+	if err := os.WriteFile(control+".ack", []byte("ack"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := waitPressureMarker(t, control, 'W', time.Now().Add(childDeadline)); err != nil {
-		t.Fatalf("target did not finish enqueueing its output prefix: %v stderr=%q", err, stderr.String())
+		t.Fatalf("second distinct segment did not start after prefix ACK: %v stderr=%q", err, stderr.String())
 	}
 	if !waitForTTYOutputPressure(t, master) {
-		t.Fatal("host output PTY never saturated under the child stream")
+		t.Fatal("host output PTY never saturated under the second output segment")
 	}
 	if _, err := unix.Write(master, []byte{0x1a, 'q'}); err != nil {
 		t.Fatal(err)
@@ -883,8 +935,8 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	boundary, err := strconv.ParseUint(string(boundaryBytes), 10, 64)
-	if err != nil || boundary == 0 || boundary > uint64(outputBytes) {
-		t.Fatalf("suspend boundary %q is outside the accepted output prefix 1..%d", boundaryBytes, outputBytes)
+	if err != nil || boundary <= 1024 || boundary > uint64(1024+outputBytes) {
+		t.Fatalf("suspend boundary %q does not include delivered and outstanding segments within %d bytes", boundaryBytes, 1024+outputBytes)
 	}
 	modeFD, err := unix.Open(fmt.Sprintf("/proc/%d/fd/0", cmd.Process.Pid), unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -920,16 +972,48 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 	if bytes.Contains(childInput, []byte{'R'}) {
 		t.Fatalf("background SIGCONT forwarded queued input before raw restoration: %q", childInput)
 	}
+	if backgroundChildExit {
+		if err := os.WriteFile(control+".bgexit", []byte("exit"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := waitPressureMarker(t, control+".target", 'T', time.Now().Add(childDeadline)); err != nil {
+			t.Fatalf("background child did not queue final ordinary output and exit: %v", err)
+		}
+		pidBytes, err := os.ReadFile(control + ".pid")
+		if err != nil {
+			t.Fatal(err)
+		}
+		childPID, err := strconv.Atoi(string(pidBytes))
+		if err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(childDeadline)
+		for time.Now().Before(deadline) && !errors.Is(unix.Kill(childPID, 0), unix.ESRCH) {
+			time.Sleep(time.Millisecond)
+		}
+		if err := unix.Kill(childPID, 0); !errors.Is(err, unix.ESRCH) {
+			t.Fatalf("background child %d was not reaped: %v", childPID, err)
+		}
+		time.Sleep(50 * time.Millisecond)
+		outputMu.Lock()
+		backgroundOutput := bytes.Contains(captured, []byte("BG-TAIL\n"))
+		outputMu.Unlock()
+		if backgroundOutput {
+			t.Fatal("child-exit final drain wrote ordinary output while the proxy was background/cooked")
+		}
+	}
 	if err := os.WriteFile(control+".ownership", []byte("foreground"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := unix.Kill(cmd.Process.Pid, syscall.SIGCONT); err != nil {
 		t.Fatal(err)
 	}
-	if err := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(time.Second)); err != nil {
-		t.Fatalf("foreground SIGCONT did not restore raw mode and unpark output: %v", err)
+	if !backgroundChildExit {
+		if err := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(time.Second)); err != nil {
+			t.Fatalf("foreground SIGCONT did not restore raw mode and unpark output: %v", err)
+		}
 	}
-	if mode, err := os.ReadFile(control + ".resumed-mode"); err != nil || string(mode) != "raw" {
+	if mode, err := os.ReadFile(control + ".resumed-mode"); !backgroundChildExit && (err != nil || string(mode) != "raw") {
 		t.Fatalf("host terminal mode after foreground SIGCONT = %q err=%v, want raw before queued output resumes", mode, err)
 	}
 	_ = unix.Close(modeFD)
@@ -962,19 +1046,185 @@ func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
 	outputMu.Lock()
 	got := append([]byte(nil), captured...)
 	outputMu.Unlock()
-	boundaryPrefix := outputPressurePrefix(int(boundary))
+	boundarySegment := int(boundary) - 1024
+	boundaryPrefix := append(bytes.Repeat([]byte{'a'}, 1024), bytes.Repeat([]byte{'f'}, pressureCount)...)
+	boundaryPrefix = append(boundaryPrefix, bytes.Repeat([]byte{'b'}, boundarySegment)...)
 	boundaryPrefix = append(boundaryPrefix, []byte(termReset)...)
-	remainingPrefix := outputPressurePrefix(outputBytes - int(boundary))
-	suffix := []byte("\x1b[200~paste\tbytes\x1b[201~\x1b[?2026hsync-body\x1b[?2026l\x03\x1a")
+	remainingPrefix := bytes.Repeat([]byte{'b'}, outputBytes-boundarySegment)
 	want := append(boundaryPrefix, remainingPrefix...)
-	want = append(want, suffix...)
+	if backgroundChildExit {
+		want = append(want, []byte("BG-TAIL\n")...)
+	} else {
+		suffix := []byte("\x1b[200~paste\tbytes\x1b[201~\x1b[?2026hsync-body\x1b[?2026l\x03\x1a")
+		want = append(want, suffix...)
+	}
 	want = append(want, []byte(termReset)...)
 	if !bytes.Equal(got, want) {
 		at := firstByteDifference(got, want)
 		resetAt := bytes.Index(got, []byte(termReset))
 		start, end := max(0, at-16), min(len(got), at+len(termReset)+16)
-		t.Fatalf("suspend/resume changed terminal output ordering or bytes: got=%d want=%d first-difference=%d queued-boundary=%d reset-at=%d got-around-difference=%q want-around-difference=%q", len(got), len(want), at, boundary, resetAt, got[start:end], want[start:min(len(want), at+len(termReset)+16)])
+		t.Fatalf("suspend/resume changed terminal output ordering or bytes: got=%d want=%d first-difference=%d queued-boundary=%d independent-ofd-pressure-bytes=%d reset-at=%d got-around-difference=%q want-around-difference=%q", len(got), len(want), at, boundary, pressureCount, resetAt, got[start:end], want[start:min(len(want), at+len(termReset)+16)])
 	}
+}
+
+func TestOwnedChildExitPreemptsPendingSuspend(t *testing.T) {
+	master, slave, err := openPty()
+	if err != nil {
+		t.Skipf("cannot open pty: %v", err)
+	}
+	defer unix.Close(master)
+	hostTTY := os.NewFile(uintptr(slave), "proxy-owned-exit-tty")
+	defer hostTTY.Close()
+	cooked := mustGetTermios(t, slave)
+	control := filepath.Join(t.TempDir(), "child-read")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestOutputPressureDoesNotStopInputForwarding$", "-test.count=1")
+	cmd.Stdin, cmd.Stdout = hostTTY, hostTTY
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Env = append(os.Environ(), "YOLO_TTYPROXY_PRESSURE_HELPER=1", "YOLO_TTYPROXY_PRESSURE_FIFO="+control,
+		"YOLO_TTYPROXY_PRESSURE_BYTES="+strconv.Itoa(readChunk), "YOLO_TTYPROXY_EXPECT_SUSPEND=1",
+		"YOLO_TTYPROXY_SUSPEND_COMMIT_GATE=1", "YOLO_TTYPROXY_EXIT_GATE_NEWLINE=1", "YOLO_TTYPROXY_OUTPUT_ACK=1", "YOLO_TTYPROXY_ACK_AFTER_WRITE=1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- cmd.Wait() }()
+	helperDone := false
+	var capturedMu sync.Mutex
+	var captured []byte
+	stopDrain, drainDone := make(chan struct{}), make(chan struct{})
+	startDrain := func() {
+		go func() {
+			defer close(drainDone)
+			_ = unix.SetNonblock(master, true)
+			buf := make([]byte, 4096)
+			for {
+				select {
+				case <-stopDrain:
+					return
+				default:
+				}
+				n, err := unix.Read(master, buf)
+				if n > 0 {
+					capturedMu.Lock()
+					captured = append(captured, buf[:n]...)
+					capturedMu.Unlock()
+				}
+				if n == 0 || errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) {
+					time.Sleep(time.Millisecond)
+				} else if err != nil && !errors.Is(err, syscall.EINTR) {
+					return
+				}
+			}
+		}()
+	}
+	startedDrain := false
+	defer func() {
+		if !helperDone {
+			_ = cmd.Process.Signal(syscall.SIGCONT)
+			_ = cmd.Process.Signal(syscall.SIGTERM)
+			if !startedDrain {
+				startDrain()
+				startedDrain = true
+			}
+			select {
+			case <-waitDone:
+			case <-time.After(3 * time.Second):
+				_ = cmd.Process.Kill()
+				<-waitDone
+			}
+		}
+		if startedDrain {
+			close(stopDrain)
+			<-drainDone
+		}
+	}()
+	if err := waitPressureMarker(t, control, 'S', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("target did not start: %v stderr=%q", err, stderr.String())
+	}
+	if err := waitPressureMarker(t, control, 'W', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("target did not write its accepted prefix: %v", err)
+	}
+	if !waitForTTYOutputPressure(t, master) {
+		t.Fatal("output PTY did not become pressured")
+	}
+	if _, err := unix.Write(master, []byte{0x1a}); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForFile(control+".boundary", time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("proxy did not enter pending suspend: %v", err)
+	}
+	startDrain()
+	startedDrain = true
+	if err := waitPressureMarker(t, control+".proxy", 'C', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("proxy did not reach pre-stop gate: %v", err)
+	}
+	if err := os.WriteFile(control+".newline", []byte("write"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitPressureMarker(t, control+".target", 'N', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("owned child did not queue the distinguishing newline behind the stop gate: %v", err)
+	}
+	pidBytes, err := os.ReadFile(control + ".pid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(string(pidBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Kill(pid, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(childDeadline)
+	for time.Now().Before(deadline) && !errors.Is(unix.Kill(pid, 0), unix.ESRCH) {
+		time.Sleep(time.Millisecond)
+	}
+	if err := unix.Kill(pid, 0); !errors.Is(err, unix.ESRCH) {
+		t.Fatalf("owned child %d was not reaped at the stop gate: %v", pid, err)
+	}
+	if err := os.WriteFile(control+".release", []byte("release"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var helperErr error
+	select {
+	case helperErr = <-waitDone:
+		helperDone = true
+	case <-time.After(childDeadline):
+		t.Fatal("owned-child exit did not preempt pending suspend and finish drain")
+	}
+	if exitErr, ok := helperErr.(*exec.ExitError); !ok || exitErr.ExitCode() != 128+int(syscall.SIGKILL) {
+		t.Fatalf("proxy helper exit=%v, want owned child SIGKILL status", helperErr)
+	}
+	if ownedProcessStopped(cmd.Process.Pid) {
+		t.Fatal("proxy stopped after the owned child had already been reaped")
+	}
+	stages, _ := os.ReadFile(control + ".proxy")
+	if bytes.Contains(stages, []byte{'Z'}) || bytes.Contains(stages, []byte{'R'}) {
+		t.Fatalf("owned-child exit left a latent suspend stage %q", stages)
+	}
+	if after := mustGetTermios(t, slave); *after != *cooked {
+		t.Fatalf("owned-child exit did not leave the host terminal cooked: before=%+v after=%+v", *cooked, *after)
+	}
+	deadline = time.Now().Add(childDeadline)
+	for time.Now().Before(deadline) {
+		capturedMu.Lock()
+		newline := bytes.IndexByte(captured, '\n')
+		previous := byte(0)
+		if newline > 0 {
+			previous = captured[newline-1]
+		}
+		capturedMu.Unlock()
+		if newline >= 0 {
+			if previous == '\r' {
+				t.Fatal("owned-child exit drained the distinguishing newline while cooked termios was active")
+			}
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("final drain did not preserve the owned child's distinguishing newline")
 }
 
 func TestSuspendCommitCancellationPreemptsStop(t *testing.T) {
@@ -1098,6 +1348,9 @@ func runSuspendCommitCancellation(t *testing.T, sig syscall.Signal) {
 	}
 	if err := cmd.Process.Signal(sig); err != nil {
 		t.Fatal(err)
+	}
+	if err := waitPressureMarker(t, control+".proxy", 'A', time.Now().Add(childDeadline)); err != nil {
+		t.Fatalf("signal %s was not acknowledged at the cancellation gate: %v", sig, err)
 	}
 	if err := os.WriteFile(control+".release", []byte("release"), 0600); err != nil {
 		t.Fatal(err)
@@ -1427,19 +1680,80 @@ func TestOutputPressureTarget(t *testing.T) {
 	if err := writePressureReceipt(fifo, 'S'); err != nil {
 		t.Fatal(err)
 	}
+	segmented := os.Getenv("YOLO_TTYPROXY_SEGMENTED_SUSPEND") == "1"
 	outputDone := make(chan error, 1)
-	go func() { outputDone <- writeAllTTYProxy(int(os.Stdout.Fd()), outputPressurePrefix(pressureBytes)) }()
-	if os.Getenv("YOLO_TTYPROXY_OUTPUT_ACK") == "1" && os.Getenv("YOLO_TTYPROXY_ACK_AFTER_WRITE") == "1" {
+	if segmented {
+		if err := writeAllTTYProxy(int(os.Stdout.Fd()), bytes.Repeat([]byte{'a'}, 1024)); err != nil {
+			t.Fatalf("write initial acknowledged prefix: %v", err)
+		}
+		if err := writePressureReceipt(fifo, 'D'); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(childDeadline)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(fifo + ".ack"); err == nil {
+				break
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
+		if _, err := os.Stat(fifo + ".ack"); err != nil {
+			t.Fatalf("initial prefix was not acknowledged: %v", err)
+		}
+		if err := writePressureReceipt(fifo, 'W'); err != nil {
+			t.Fatal(err)
+		}
+		go func() { outputDone <- writeAllTTYProxy(int(os.Stdout.Fd()), bytes.Repeat([]byte{'b'}, pressureBytes)) }()
+	} else {
+		go func() { outputDone <- writeAllTTYProxy(int(os.Stdout.Fd()), outputPressurePrefix(pressureBytes)) }()
+	}
+	if !segmented && os.Getenv("YOLO_TTYPROXY_OUTPUT_ACK") == "1" && os.Getenv("YOLO_TTYPROXY_ACK_AFTER_WRITE") == "1" {
 		if err := <-outputDone; err != nil {
 			t.Fatalf("write pressured output before ACK: %v", err)
 		}
 		if err := writePressureReceipt(fifo, 'W'); err != nil {
 			t.Fatal(err)
 		}
-	} else if os.Getenv("YOLO_TTYPROXY_OUTPUT_ACK") == "1" {
+	} else if !segmented && os.Getenv("YOLO_TTYPROXY_OUTPUT_ACK") == "1" {
 		if err := writePressureReceipt(fifo, 'W'); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if os.Getenv("YOLO_TTYPROXY_EXIT_GATE_NEWLINE") == "1" {
+		deadline := time.Now().Add(childDeadline)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(fifo + ".newline"); err == nil {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if _, err := os.Stat(fifo + ".newline"); err != nil {
+			t.Fatalf("timed out waiting for exit-gate newline trigger: %v", err)
+		}
+		if err := writeAllTTYProxy(int(os.Stdout.Fd()), []byte("\n")); err != nil {
+			t.Fatalf("write exit-gate newline: %v", err)
+		}
+		if err := writePressureReceipt(fifo+".target", 'N'); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if os.Getenv("YOLO_TTYPROXY_BG_CHILD_EXIT") == "1" {
+		deadline := time.Now().Add(childDeadline)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(fifo + ".bgexit"); err == nil {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if _, err := os.Stat(fifo + ".bgexit"); err != nil {
+			t.Fatalf("timed out waiting for background child-exit trigger: %v", err)
+		}
+		if err := writeAllTTYProxy(int(os.Stdout.Fd()), []byte("BG-TAIL\n")); err != nil {
+			t.Fatalf("write queued background final output: %v", err)
+		}
+		if err := writePressureReceipt(fifo+".target", 'T'); err != nil {
+			t.Fatal(err)
+		}
+		os.Exit(0)
 	}
 	var input [1]byte
 	if _, err := unix.Read(int(os.Stdin.Fd()), input[:]); err != nil {
@@ -1451,7 +1765,7 @@ func TestOutputPressureTarget(t *testing.T) {
 	if err := writePressureReceipt(fifo, 'R'); err != nil {
 		t.Fatal(err)
 	}
-	if os.Getenv("YOLO_TTYPROXY_OUTPUT_ACK") != "1" || os.Getenv("YOLO_TTYPROXY_ACK_AFTER_WRITE") != "1" {
+	if segmented || os.Getenv("YOLO_TTYPROXY_OUTPUT_ACK") != "1" || os.Getenv("YOLO_TTYPROXY_ACK_AFTER_WRITE") != "1" {
 		if err := <-outputDone; err != nil {
 			t.Fatalf("write pressured output: %v", err)
 		}
@@ -1551,6 +1865,54 @@ func waitPressureMarker(t *testing.T, path string, want byte, deadline time.Time
 	return fmt.Errorf("timed out waiting for marker %q", want)
 }
 
+func readPTYAvailable(fd int, deadline time.Time) ([]byte, error) {
+	if err := unix.SetNonblock(fd, true); err != nil {
+		return nil, err
+	}
+	var got []byte
+	buf := make([]byte, 4096)
+	for time.Now().Before(deadline) {
+		n, err := unix.Read(fd, buf)
+		if n > 0 {
+			got = append(got, buf[:n]...)
+		}
+		if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) {
+			return got, nil
+		}
+		if err != nil && !errors.Is(err, syscall.EINTR) {
+			return got, err
+		}
+		if n == 0 {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	return got, fmt.Errorf("timed out draining PTY pressure bytes")
+}
+
+func readPTYBytes(fd, want int, deadline time.Time) ([]byte, error) {
+	if err := unix.SetNonblock(fd, true); err != nil {
+		return nil, err
+	}
+	got := make([]byte, 0, want)
+	buf := make([]byte, want)
+	for len(got) < want && time.Now().Before(deadline) {
+		n, err := unix.Read(fd, buf[:want-len(got)])
+		if n > 0 {
+			got = append(got, buf[:n]...)
+		}
+		if err != nil && !errors.Is(err, syscall.EINTR) && !errors.Is(err, unix.EAGAIN) && !errors.Is(err, unix.EWOULDBLOCK) {
+			return got, err
+		}
+		if n == 0 || errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if len(got) != want {
+		return got, fmt.Errorf("read %d of %d bytes", len(got), want)
+	}
+	return got, nil
+}
+
 func writeAllTTYProxy(fd int, data []byte) error {
 	for len(data) > 0 {
 		n, err := unix.Write(fd, data)
@@ -1618,6 +1980,73 @@ func TestNonTTYOnStarted(t *testing.T) {
 	case <-ran:
 	case <-time.After(2 * time.Second):
 		t.Error("onStarted did not run")
+	}
+}
+
+func TestHandleKillInSynchronousArm(t *testing.T) {
+	if mode := os.Getenv("YOLO_TTYPROXY_KILL_ARM"); mode != "" {
+		if mode == "pty" {
+			fakeHostTTY(t)
+		}
+		_, err := RunWithProxyObserved([]string{"true"}, nil, nil, Observer{Arm: func(handle Handle) { handle.Kill() }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	for _, mode := range []string{"plain", "pty"} {
+		t.Run(mode, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestHandleKillInSynchronousArm$")
+			cmd.Env = append(os.Environ(), "YOLO_TTYPROXY_KILL_ARM="+mode)
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() { done <- cmd.Wait() }()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("synchronous Arm Kill helper: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				_ = cmd.Process.Kill()
+				<-done
+				t.Fatal("synchronous Arm Kill deadlocked before the sole reaper ran")
+			}
+		})
+	}
+}
+
+func TestProxySlaveFinalizersCannotCloseReusedCallerFD(t *testing.T) {
+	if os.Getenv("YOLO_TTYPROXY_FD_REUSE") == "1" {
+		fakeHostTTY(t)
+		if _, err := RunWithProxy([]string{"true"}, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		var reused []*os.File
+		for i := 0; i < 256; i++ {
+			f, err := os.OpenFile(os.DevNull, os.O_RDONLY, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reused = append(reused, f)
+		}
+		runtime.GC()
+		for _, f := range reused {
+			if _, err := unix.FcntlInt(f.Fd(), unix.F_GETFD, 0); err != nil {
+				t.Fatalf("forced stale slave finalizer closed reused caller fd %d: %v", f.Fd(), err)
+			}
+		}
+		runtime.KeepAlive(reused)
+		for _, f := range reused {
+			_ = f.Close()
+		}
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestProxySlaveFinalizersCannotCloseReusedCallerFD$")
+	cmd.Env = append(os.Environ(), "YOLO_TTYPROXY_FD_REUSE=1")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("isolated forced-finalizer/fd-reuse regression: %v: %s", err, output)
 	}
 }
 
