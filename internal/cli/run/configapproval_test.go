@@ -81,6 +81,50 @@ func TestNonInteractiveConfigChangeRefusalIsActionable(t *testing.T) {
 	}
 }
 
+func TestConfigChangePromptRequiresTerminalStdinAndStderr(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		ttyIn, ttyOut, ttyErr bool
+		wantPrompt            bool
+	}{
+		{"stderr redirected", true, true, false, false},
+		{"stdout redirected", true, false, true, true},
+		{"stdin redirected", false, true, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws := t.TempDir()
+			o, buf := approvalOptions(t, ws, tc.ttyIn)
+			o.IsTTYStdout = func() bool { return tc.ttyOut }
+			o.IsTTYStderr = func() bool { return tc.ttyErr }
+			stdin := strings.NewReader("y\n")
+			o.Stdin = stdin
+			if ok, err := config.CheckConfigChanges(ws, approvalConfig(t, `{"packages": ["strace"]}`),
+				false, true, nil); err != nil || !ok {
+				t.Fatalf("seeding the baseline: ok=%v err=%v", ok, err)
+			}
+			writeWorkspaceConfig(t, ws, `{"packages": ["strace", "htop"]}`)
+
+			got := o.checkConfigChanges(nil, "podman")
+			if got != tc.wantPrompt {
+				t.Fatalf("config-change approval = %v, want %v; output:\n%s", got, tc.wantPrompt, buf)
+			}
+			if tc.wantPrompt {
+				if !strings.Contains(buf.String(), "Accept these workspace config changes?") || stdin.Len() != 0 {
+					t.Errorf("interactive prompt did not display on stderr and read stdin: output=%q remaining bytes=%d",
+						buf.String(), stdin.Len())
+				}
+			} else {
+				if stdin.Len() != len("y\n") {
+					t.Errorf("noninteractive refusal consumed scripted stdin: remaining bytes=%d", stdin.Len())
+				}
+				if !strings.Contains(buf.String(), config.AcceptConfigChangesFlag) {
+					t.Errorf("noninteractive refusal lacks explicit next step: %s", buf.String())
+				}
+			}
+		})
+	}
+}
+
 // THE SPLIT FILE MUST ACTUALLY BE DELIVERED. Moving the approval record host-side
 // (OQ-D1) left the in-jail LoadConfig short-circuit without a source, so the launch
 // now writes the merged config to <workspace>/.yolo/config-assembled.json for it.

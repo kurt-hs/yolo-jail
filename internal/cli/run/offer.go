@@ -301,7 +301,7 @@ func (o *Options) maybeOfferReclaim() reclaimConsent {
 	if len(ask) == 0 {
 		return consent
 	}
-	if !o.IsTTYStdout() {
+	if !o.IsTTYStdin() || !o.IsTTYStderr() {
 		// No prompt, no deletion, one line per class. Never an implicit yes.
 		for _, it := range ask {
 			o.pr(o.Stderr).printf("[dim]%s[/dim]", NonTTYOfferLine(it.class, it.detail(), it.m.Bytes))

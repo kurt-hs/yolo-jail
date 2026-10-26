@@ -146,6 +146,8 @@ func TestTheOfferAsksAboutToolVersions(t *testing.T) {
 	o := goldenOptions(t.TempDir(), home)
 	o.Now = time.Now
 	o.IsTTYStdout = func() bool { return true }
+	o.IsTTYStdin = func() bool { return true }
+	o.IsTTYStderr = func() bool { return true }
 	var out bytes.Buffer
 	o.Stderr, o.Stdin = &out, strings.NewReader("y\n")
 	RecordOfferMeasurement(miseVersionsClass, offerMeasurement{Bytes: 2 << 30, Detail: "3 versions: python 3.11.9, node 20.1.0, go 1.24.1", When: time.Now()})
@@ -175,6 +177,51 @@ func TestTheOfferAsksAboutToolVersions(t *testing.T) {
 	c = o.maybeOfferReclaim()
 	if out.Len() != 0 || !c.has(miseVersionsClass) || c.freshFor(miseVersionsClass) {
 		t.Errorf("after a yes the class must be automatic, unasked and not fresh: prompt %q, %+v", out.String(), c)
+	}
+}
+
+func TestOfferPromptRequiresTerminalStdinAndStderr(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		ttyIn, ttyOut, ttyErr bool
+		wantPrompt            bool
+	}{
+		{"stderr redirected", true, true, false, false},
+		{"stdout redirected", true, false, true, true},
+		{"stdin redirected", false, true, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o, present := miseSlotFixture(t)
+			o.IsTTYStdin = func() bool { return tc.ttyIn }
+			o.IsTTYStdout = func() bool { return tc.ttyOut }
+			o.IsTTYStderr = func() bool { return tc.ttyErr }
+			var out bytes.Buffer
+			stdin := strings.NewReader("yes\n")
+			o.Stderr, o.Stdin = &out, stdin
+			RecordOfferMeasurement(miseVersionsClass, offerMeasurement{Bytes: OfferThreshold,
+				Detail: "unused version", When: time.Now()})
+
+			consent := o.maybeOfferReclaim()
+			asked := strings.Contains(out.String(), "Reclaim now?")
+			if asked != tc.wantPrompt {
+				t.Fatalf("prompt shown=%v, want %v; output=%q", asked, tc.wantPrompt, out.String())
+			}
+			if tc.wantPrompt {
+				if !consent.has(miseVersionsClass) || stdin.Len() != 0 {
+					t.Errorf("terminal prompt did not record the yes: consent=%v remaining bytes=%d",
+						consent.has(miseVersionsClass), stdin.Len())
+				}
+			} else {
+				if consent.has(miseVersionsClass) || stdin.Len() != len("yes\n") {
+					t.Errorf("noninteractive path accepted or consumed scripted yes: consent=%v remaining bytes=%d",
+						consent.has(miseVersionsClass), stdin.Len())
+				}
+				o.measureAndPurgeMiseVersions("podman", consent, nil)
+				if !present("node/20.1.0") {
+					t.Error("the noninteractive path deleted a tool version without consent")
+				}
+			}
+		})
 	}
 }
 

@@ -216,6 +216,10 @@ type skewAttach struct {
 }
 
 func newSkewAttach(t *testing.T, ttyIn, ttyOut bool, stdin string, env map[string]string) *skewAttach {
+	return newSkewAttachWithTTY(t, ttyIn, ttyOut, ttyOut, stdin, env)
+}
+
+func newSkewAttachWithTTY(t *testing.T, ttyIn, ttyOut, ttyErr bool, stdin string, env map[string]string) *skewAttach {
 	t.Helper()
 	packs := zaiSelected(t)
 	o, cfg, channel, stderr := attachFixture(t, preGateEnv, packs, hydratedKey(),
@@ -227,6 +231,7 @@ func newSkewAttach(t *testing.T, ttyIn, ttyOut bool, stdin string, env map[strin
 	o.Exec = s.rt.exec
 	o.IsTTYStdin = func() bool { return ttyIn }
 	o.IsTTYStdout = func() bool { return ttyOut }
+	o.IsTTYStderr = func() bool { return ttyErr }
 	o.Getenv = func(k string) string { return env[k] }
 	s.envFile, s.before = seedLiveChannelFile(t, o)
 	s.execed = filepath.Join(t.TempDir(), "execed")
@@ -309,16 +314,31 @@ func TestAttachSkewDeclinedRefuses(t *testing.T) {
 	}
 }
 
+// A prompt is visible on stderr, so stdout's terminal state does not control it.
+func TestAttachSkewPromptsWithTerminalStdinAndStderr(t *testing.T) {
+	s := newSkewAttachWithTTY(t, true, false, true, "y\n", nil)
+	rc, restarted := s.attach()
+	if !restarted || rc != 0 {
+		t.Fatalf("terminal stdin+stderr must prompt and restart even with stdout redirected: rc=%d restarted=%v\n%s",
+			rc, restarted, s.stderr)
+	}
+	if !strings.Contains(s.stderr.String(), "Restart jail now? [Y/n]") || s.stdin.Len() != 0 {
+		t.Errorf("the restart prompt did not use stderr/read terminal stdin: stderr=%q remaining bytes=%d",
+			s.stderr.String(), s.stdin.Len())
+	}
+}
+
 // TestAttachSkewWithoutATerminalRefuses: no terminal on either end means no prompt — and no
 // read of stdin, whose "y" a script piped in is not a person — only the refusal, naming the
 // restart with the sessions it ends and the acknowledgment with what it costs.
 func TestAttachSkewWithoutATerminalRefuses(t *testing.T) {
 	for _, tc := range []struct {
-		name          string
-		ttyIn, ttyOut bool
-	}{{"neither", false, false}, {"stdin only", true, false}, {"stdout only", false, true}} {
+		name                  string
+		ttyIn, ttyOut, ttyErr bool
+	}{{"neither", false, false, false}, {"stdin only", true, false, false},
+		{"stdout only", false, true, false}, {"stdout and stdin, stderr redirected", true, true, false}} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := newSkewAttach(t, tc.ttyIn, tc.ttyOut, "y\n", nil)
+			s := newSkewAttachWithTTY(t, tc.ttyIn, tc.ttyOut, tc.ttyErr, "y\n", nil)
 			rc, restarted := s.attach()
 			if rc != 1 || restarted {
 				t.Fatalf("rc=%d restarted=%v\n%s", rc, restarted, s.stderr)

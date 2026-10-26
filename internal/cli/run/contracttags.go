@@ -44,7 +44,7 @@ import (
 //   - AllowAttachSkewEnv set: the one acknowledgment. The attach proceeds, says loudly on
 //     stderr what differs and what is withheld, and degrades on the host: this entry's channel
 //     is not written, so the jail keeps what its last entry gave it.
-//   - a terminal on stdin and stdout: `Restart jail now? [Y/n]`, naming the sessions a stop
+//   - a terminal on stdin and stderr: `Restart jail now? [Y/n]`, naming the sessions a stop
 //     ends. Yes stops the jail and this launch continues as a fresh one; no refuses.
 //   - anything else: refuse, naming `yolo stop` (stopRemedy) and then a launch.
 //
@@ -391,7 +391,7 @@ func (o *Options) settleAttachSkew(cname, rt string, skew attachSkew) skewDispos
 		o.discloseAcknowledgedAttachSkew(cname, rt, skew)
 		return skewAcknowledged
 	}
-	if o.IsTTYStdin() && o.IsTTYStdout() {
+	if o.IsTTYStdin() && o.IsTTYStderr() {
 		if !o.askToRestartJail(cname, rt, skew) {
 			err := o.pr(o.Stderr)
 			err.print("[bold red]Refusing to attach: the jail was not restarted.[/bold red]")

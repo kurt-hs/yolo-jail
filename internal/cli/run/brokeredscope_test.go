@@ -106,6 +106,7 @@ func brokeredFixtureBlock(t *testing.T, hostExecApproved bool, block string) (o 
 	o.Workspace, o.Stdout, o.Stderr = ws, buf, buf
 	o.IsTTYStdin = func() bool { return false }
 	o.IsTTYStdout = func() bool { return false }
+	o.IsTTYStderr = func() bool { return o.IsTTYStdin() }
 	o.IsMacOS = false
 	// The fixture's daemon (/bin/cp) exits 0 without serving, so readiness polls out its whole
 	// deadline; without this each test waits out the 5 s production default (loopholesruntime.go).

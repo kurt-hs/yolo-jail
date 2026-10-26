@@ -441,8 +441,8 @@ func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHook
 			pr.preQuestion = h.plan(read, scope)
 		}
 	}
-	ok, approved, err := config.ApproveConfigAndScope(o.Workspace, read.Config, scope, o.IsTTYStdin(),
-		o.AcceptConfigChanges, pr)
+	ok, approved, err := config.ApproveConfigAndScope(o.Workspace, read.Config, scope,
+		o.IsTTYStdin() && o.IsTTYStderr(), o.AcceptConfigChanges, pr)
 	if ok && err == nil {
 		o.recordApprovedScopes(approved, scope.ApprovedGrants())
 	}

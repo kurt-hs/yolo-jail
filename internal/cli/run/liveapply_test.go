@@ -112,6 +112,7 @@ func applyFixture(t *testing.T, bootConfig, wsConfig string, jail applyJail) (*O
 // answer makes the gate's question read a, as a person at a terminal answers it.
 func answer(o *Options, a string) {
 	o.IsTTYStdin = func() bool { return true }
+	o.IsTTYStderr = func() bool { return true }
 	o.Stdin = strings.NewReader(a + "\n")
 }
 
