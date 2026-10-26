@@ -9,6 +9,104 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
 
+func TestDecodeOrderedPreservesNestedArrayTableHeaderSegmentsRegardlessOfInlineSibling(t *testing.T) {
+	inline := `[[fruit]]
+name = "inline"
+variety = [{ z = 10, a = 11 }, { y = 12, x = 13 }]
+`
+	headers := `[[fruit]]
+name = "headers"
+[[fruit.variety]]
+z = 20
+a = 21
+[[fruit.variety]]
+y = 22
+x = 23
+`
+	for _, tc := range []struct {
+		name   string
+		source string
+	}{
+		{name: "inline parent before header parent", source: inline + headers},
+		{name: "header parent before inline parent", source: headers + inline},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ordered, err := DecodeOrdered([]byte(tc.source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := Decode([]byte(tc.source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := normalizeDecodedValue(ordered); !reflect.DeepEqual(got, normalizeDecodedValue(decoded)) {
+				t.Fatalf("ordered semantic value = %#v, Decode = %#v", got, normalizeDecodedValue(decoded))
+			}
+			parents, _ := ordered.Get("fruit")
+			rows := parents.([]any)
+			for i, row := range rows {
+				parent := row.(*jsonx.OrderedMap)
+				name, _ := parent.Get("name")
+				varieties, _ := parent.Get("variety")
+				children := varieties.([]any)
+				wantKeys := [][]string{{"z", "a"}, {"y", "x"}}
+				wantValues := [][]int64{{10, 11}, {12, 13}}
+				wantName := "inline"
+				if name == "headers" {
+					wantValues = [][]int64{{20, 21}, {22, 23}}
+					wantName = "headers"
+				}
+				if name != wantName || len(children) != 2 {
+					t.Fatalf("fruit[%d] = %#v, want %q parent with two children", i, parent, wantName)
+				}
+				for j, child := range children {
+					childMap := child.(*jsonx.OrderedMap)
+					if got := childMap.Keys(); !reflect.DeepEqual(got, wantKeys[j]) {
+						t.Errorf("%s child %d keys = %v, want %v", name, j, got, wantKeys[j])
+					}
+					for k, key := range wantKeys[j] {
+						if got, _ := childMap.Get(key); got != wantValues[j][k] {
+							t.Errorf("%s child %d.%s = %#v, want %d", name, j, key, got, wantValues[j][k])
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func normalizeDecodedValue(value any) any {
+	switch v := value.(type) {
+	case *jsonx.OrderedMap:
+		out := make(map[string]any, v.Len())
+		for _, key := range v.Keys() {
+			child, _ := v.Get(key)
+			out[key] = normalizeDecodedValue(child)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for key, child := range v {
+			out[key] = normalizeDecodedValue(child)
+		}
+		return out
+	case []map[string]any:
+		out := make([]any, len(v))
+		for i, child := range v {
+			out[i] = normalizeDecodedValue(child)
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, child := range v {
+			out[i] = normalizeDecodedValue(child)
+		}
+		return out
+	default:
+		return value
+	}
+}
+
 func TestDecodeOrderedPreservesSourceOrderRepeatedly(t *testing.T) {
 	for range 2 {
 		values, err := DecodeOrdered([]byte(`items = [{ z = "last", a = "first" }, { b = 2, a = 1 }]`))
@@ -248,6 +346,74 @@ func TestDecodeOrderedPreservesRepeatedNestedArrayTableAuthoredOrder(t *testing.
 		for key, want := range map[string]int64{"z": int64(2*i + 1), "a": int64(2*i + 2)} {
 			if got, _ := row.Get(key); got != want {
 				t.Errorf("singleton variety %d.%s = %#v, want %d", i, key, got, want)
+			}
+		}
+	}
+}
+
+func TestDecodeOrderedPreservesRepeatedParentAndThreeChildHeaderSegments(t *testing.T) {
+	source := `[[fruit]]
+name = "apple"
+[[fruit.variety]]
+z = 1
+a = 2
+[[fruit.variety]]
+m = 3
+b = 4
+[[fruit.variety]]
+y = 5
+x = 6
+[[fruit]]
+name = "banana"
+[[fruit.variety]]
+a = 11
+z = 12
+[[fruit.variety]]
+b = 13
+m = 14
+[[fruit.variety]]
+x = 15
+y = 16
+`
+	ordered, err := DecodeOrdered([]byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := Decode([]byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := normalizeDecodedValue(ordered), normalizeDecodedValue(decoded); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ordered semantic value = %#v, Decode = %#v", got, want)
+	}
+	parents, _ := ordered.Get("fruit")
+	rows := parents.([]any)
+	wantNames := []string{"apple", "banana"}
+	wantKeys := [][][]string{{{"z", "a"}, {"m", "b"}, {"y", "x"}}, {{"a", "z"}, {"b", "m"}, {"x", "y"}}}
+	wantValues := [][][]int64{{{1, 2}, {3, 4}, {5, 6}}, {{11, 12}, {13, 14}, {15, 16}}}
+	if len(rows) != len(wantNames) {
+		t.Fatalf("fruit rows = %d, want %d", len(rows), len(wantNames))
+	}
+	for i, row := range rows {
+		parent := row.(*jsonx.OrderedMap)
+		name, _ := parent.Get("name")
+		if name != wantNames[i] {
+			t.Errorf("fruit[%d].name = %#v, want %q", i, name, wantNames[i])
+		}
+		childrenValue, _ := parent.Get("variety")
+		children := childrenValue.([]any)
+		if len(children) != 3 {
+			t.Fatalf("fruit[%d] varieties = %d, want 3", i, len(children))
+		}
+		for j, child := range children {
+			childMap := child.(*jsonx.OrderedMap)
+			if got := childMap.Keys(); !reflect.DeepEqual(got, wantKeys[i][j]) {
+				t.Errorf("fruit[%d].variety[%d] keys = %v, want %v", i, j, got, wantKeys[i][j])
+			}
+			for k, key := range wantKeys[i][j] {
+				if got, _ := childMap.Get(key); got != wantValues[i][j][k] {
+					t.Errorf("fruit[%d].variety[%d].%s = %#v, want %d", i, j, key, got, wantValues[i][j][k])
+				}
 			}
 		}
 	}

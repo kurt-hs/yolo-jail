@@ -181,20 +181,6 @@ func convertTOMLValueOrdered(value any, order []toml.Key, prefix toml.Key) any {
 	switch values := value.(type) {
 	case []any:
 		out := make([]any, len(values))
-		if segments := arrayTableMetadataSegments(order, prefix); len(segments) > 1 {
-			for i, item := range values {
-				if i >= len(segments) {
-					out[i] = convertTOMLValue(item)
-					continue
-				}
-				if row, ok := item.(map[string]any); ok {
-					out[i] = orderedMapFromMetadata(row, prefix, segments[i])
-				} else {
-					out[i] = convertTOMLValue(item)
-				}
-			}
-			return out
-		}
 		remaining := order
 		for i, item := range values {
 			if m, ok := item.(map[string]any); ok {
@@ -218,11 +204,16 @@ func convertTOMLValueOrdered(value any, order []toml.Key, prefix toml.Key) any {
 		}
 		return out
 	case []map[string]any:
+		segments := arrayTableMetadataSegments(order, prefix)
 		items := make([]any, len(values))
-		for i, m := range values {
-			items[i] = m
+		for i, row := range values {
+			segment := order
+			if i < len(segments) {
+				segment = segments[i]
+			}
+			items[i] = orderedMapFromMetadata(row, prefix, segment)
 		}
-		return convertTOMLValueOrdered(items, order, prefix)
+		return items
 	case map[string]any:
 		return orderedMapFromMetadata(values, prefix, order)
 	default:
@@ -317,7 +308,7 @@ func arrayTableMetadataSegments(order []toml.Key, prefix toml.Key) [][]toml.Key 
 			starts = append(starts, i)
 		}
 	}
-	if len(starts) < 2 {
+	if len(starts) == 0 {
 		return nil
 	}
 	segments := make([][]toml.Key, len(starts))
