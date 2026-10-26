@@ -1,0 +1,422 @@
+===== configuring-the-jail/SKILL.md =====
+---
+name: configuring-the-jail
+description: "Configure the coding environment: add a permanent package or tool, set resources, ports, mounts, MCP/LSP, environment, or loophole policy. Not for one-off installs."
+---
+
+# Configuring the environment
+
+Use this when a change must be **baked into how the jail is built** so it
+survives a restart: a package/runtime the project always needs, a resource
+limit, a published port or mount, an MCP/LSP server, an env source, or enabling
+a host-capability loophole.
+
+**Do NOT use this for one-off installs.** The jail has internet and you can
+`npm i -g`, `pip install`, `uv pip install`, or `mise use` a tool right now with
+no config change and no restart. Only reach for `yolo-jail.jsonc` when the tool
+must persist across restarts or be present for every future session.
+
+## Change timing
+
+Before editing the config, read **jail-mechanics** for the applied facts and exact next steps. The change-timing recipe is generated from this jail's launch decisions.
+
+### Which file — and how the layers merge
+
+The user-scope configuration is `/home/test/.config/yolo-jail/config.jsonc`. The workspace configuration this launch reads is `/workspace/yolo-jail.jsonc` (`yolo-jail.jsonc`). The agent may edit this workspace config. No workspace-local override was present for this launch. The user config is the machine-wide base; workspace files add project-specific settings.
+
+## Two representative edits (then run `yolo check --no-build`)
+
+Add a CLI tool or runtime — the preferred, no-rebuild path:
+
+```jsonc
+"mise_tools": { "neovim": "stable", "kubectl": "latest" }
+```
+
+Add a nix package — only when no mise tool exists (triggers a rebuild):
+
+```jsonc
+"packages": ["ffmpeg", "postgresql"]
+```
+
+## Some files in your home are GENERATED — don't hand-edit them
+
+Your own agent config — `~/.claude/settings.json`, `~/.codex/config.toml`,
+`~/.copilot/config.json`, and friends — is **not a file you own**. yolo composes
+each one at every boot from an ordered stack of layers, so a change you make by
+hand may be silently reverted, preserved, or discarded according to the file's owner. Edit
+the *inputs*, not the output.
+
+Find out what is generated and how, before editing anything in `~`:
+
+```
+yolo config ls                      # every composed file, its mode, and its source
+yolo config render <agent> --explain   # which layer each key came from
+yolo config diff <agent>            # your in-jail edits vs what yolo generated
+```
+
+The `MODE` column in `yolo config ls` is the part that decides whether your edit
+survives. There are four values and every one of them means something different
+for your edit:
+
+- **capture** — your edit is recorded in a sidecar under `<workspace>/.yolo/prism/`
+  and re-applied on later boots. Editing works, but it is invisible to anyone
+  reading the config, so prefer changing the real input.
+- **copy** — regenerated from scratch every boot. **Your edit is silently gone
+  after a restart.** Never hand-edit these.
+- **rmw** — the file is the AGENT'S, and yolo only asserts its own managed keys
+  into it at boot, filling defaults where they are absent and preserving
+  everything else. So your edit survives *unless* it touches a key yolo manages.
+  This is the mode `~/.claude.json` is in, which is why `yolo config render` has
+  nothing to show for it: there is no layer fold, so there is no preview.
+- **unrendered** — yolo does not compose this file at all; the agent owns it.
+
+To make a change that *persists and is legible*, change the input instead: an MCP
+server belongs in `mcp_servers`, an LSP in `lsp_servers`, and an arbitrary host
+file you want composed into the jail belongs in `host_files` (user config only —
+`yolo config-ref` has the shape). If you edited a composed file and want to undo
+it, `yolo config reset <agent>` discards the captured edits.
+
+## Six things agents reliably get wrong
+
+Every one of these was a real wrong belief that reached a config edit. They are
+all *confidently* wrong — the shape of the mistake is being sure enough not to
+check, so check these even when you are sure.
+
+### 1. The directory you launch from IS `/workspace`. Don't mount it.
+
+`yolo` takes the **current working directory** as the workspace and bind-mounts
+it **read-write and live** at `/workspace`. Configuring a jail for
+`~/code/sysadmin` means `cd ~/code/sysadmin && yolo`, and that directory then
+*is* `/workspace` — the same files, not a copy, no sync step either way.
+
+It does **not** appear at `/ctx/sysadmin`, and putting it in `mounts` is wrong
+twice over: redundant, and `mounts` is read-only, so you would be asking for a
+crippled second view of a tree you can already write. **`mounts` is for paths
+outside the workspace.**
+
+Two consequences that follow from "it is literally the cwd":
+
+- There is no `--workspace` flag and no walk up the tree looking for
+  `yolo-jail.jsonc`. Launch from a subdirectory and *that subdirectory* is the
+  whole workspace, with its own config and its own jail.
+- `yolo-jail.jsonc` sits at the workspace root, so from inside a jail it is
+  always `/workspace/yolo-jail.jsonc` — whatever it is called on the host.
+
+### 2. A `mounts` entry lands at `/ctx/<basename>` — of the RESOLVED path
+
+`"mounts": ["~/code/sysadmin"]` mounts at `/ctx/sysadmin`. But the basename is
+taken **after symlink resolution**, so if `~/code/sysadmin` is a link to
+`~/src/sysadmin-config` it lands at `/ctx/sysadmin-config` instead. Write the
+explicit `"~/code/sysadmin:/ctx/sysadmin"` form whenever you care about the name
+— which is any time you are about to tell someone the path.
+
+### 3. A string `mounts` entry is read-only, and `:ro` is NOT a suffix you write
+
+Every string entry gets `:ro` appended for you. The one writable form is an
+object with a required mode — `{"host": "~/scratch", "at": "/ctx/scratch",
+"mode": "rw"}` — and it is **user-scope only**: in `yolo-jail.jsonc` (or the
+local file) it is a `yolo check` error and the launch refuses, so an agent
+cannot grant itself one. Ask the human to put it in
+`~/.config/yolo-jail/config.jsonc`. A docker-style third field **silently breaks
+the mount**: `"~/x:/ctx/x:ro"` parses as one host path literally named
+`~/x:/ctx/x:ro`, which does not exist, so the entry is skipped with a warning.
+`yolo check` only *warns* about it too — so the config looks accepted and mounts
+nothing. `":rw"` is refused outright. Two fields maximum. Wherever the backend
+puts context mounts, `$YOLO_CONTEXT_DIR` names the directory. `/ctx/packs`,
+`/ctx/captures`, `/ctx/host-user` and `/ctx/host-nvim-config` are yolo's own, so
+a mount landing at, inside or over one is a `yolo check` error; a bare path
+whose basename is one of those names needs an explicit destination.
+
+### 4. An in-jail `yolo check` CANNOT judge a `mounts` path
+
+`mounts` paths are resolved on the **host**, at launch. From inside a jail, `~`
+is the jail's home, so an in-jail `yolo check` warns
+
+```
+config.mounts[0]: host path does not exist and will be skipped: /home/agent/code/sysadmin
+```
+
+for every entry you add. **That warning is expected in here and is not a
+failure** — do not "fix" it by rewriting the path, and do not conclude the mount
+won't work. Only a host `yolo check` can judge these. (Same reason `mounts` is
+stripped from the in-jail user-config snapshot and is not inherited by a nested
+jail.)
+
+### 5. Networking: name the DIRECTION before you touch a port key
+
+Bridge mode gives the jail its own netns; it does not cut it off from the host.
+Two directions, one key each, and **the two keys put the ports in opposite
+orders**. Decide which row you are in before writing anything:
+
+| Who connects | Who listens | Key | Entry order |
+|---|---|---|---|
+| the host | the jail | `network.ports` | `"HOST:JAIL"` |
+| the jail | the host | *nothing* — dial `host.containers.internal:<port>` | — |
+| the jail | the host | `network.forward_host_ports` | `"JAIL:HOST"` |
+
+`network.ports` goes to the container runtime's port mapping verbatim, and the port order is host-first.
+`forward_host_ports` is yolo's own and is jail-first — the port you write is the
+one you will dial from in here. A transposed entry usually does not error; it
+forwards the wrong port and presents as a broken service, so **check the order
+before you debug the service.**
+
+**There are two loopbacks.** `localhost` / `127.0.0.1` inside the jail is the
+*jail's* loopback, always. The host's is a different interface reached by name.
+That single fact is true and is the seed of most of the confusion here.
+
+Two corollaries worth having:
+
+- **You usually need no config to reach the host.**
+  `host.containers.internal:<port>` already reaches host services *including*
+  ones bound only to the host's `127.0.0.1` — yolo has the rootless network stack
+  forward the host's loopback in, which is how yolo's own host daemons are
+  reached. **Not true before 2026-08-17**: if you "know" the host's localhost is
+  unreachable from a jail, that memory is stale. `$YOLO_HOST_LOOPBACK`
+  (`requested`/`shared` = forwarding is in place) settles it. Reach for
+  `forward_host_ports` only when something must literally see `localhost:<port>`.
+- **To publish a server *out* of the jail, bind `0.0.0.0` in here**, not
+  `127.0.0.1` — `network.ports` cannot publish a jail-loopback-only listener.
+  Binding wide inside the jail is safe: the published port is the only way in.
+
+### 6. Host `~` is NOT jail `/home/agent` — dotfiles do not project into the jail
+
+A fundamental invariant of YOLO is credential and filesystem isolation. Running
+`rcup` or managing dotfiles on the host into `~/.pi`, `~/.claude`, or `~/.codex`
+does **not** project those files into `/home/agent/` inside the jail.
+
+- Inside the jail, `/home/agent/.pi` (and similar agent state directories) is an isolated
+  per-workspace overlay (`<workspace>/.yolo/home/pi`),
+  not your host home.
+- Agent configs and briefings in the jail are composed exclusively by **YOLO packs**
+  and the config layering system (`yolo config ls`).
+- If you need agent-specific rules or briefings, choose among the three supported paths:
+  1. **Pack Briefing Audience** (Global: Host + Jails) — declare
+     `{"kind": "briefing", "agents": ["pi"], "from": "prose/pi.md"}` in a personal or shared pack
+     (e.g. `~/.config/yolo-jail/packs/matt`). The plural `"agents"` is the AUDIENCE — who your prose
+     is for — and is the only one of the two a content pack writes; the singular `"agent"` is the
+     IDENTITY an AGENT pack declares for a destination it OWNS, so it belongs to the pack that
+     installs pi, not to yours. Omit `"from"` to carry every `*.md` in the pack's `briefing/`
+     directory that no other entry names, and omit the audience entirely to reach every agent. A
+     root `AGENTS.md` is never shipped: it is the pack repository's own instructions, and a
+     `"from"` naming `AGENTS.md`, `CLAUDE.md` or `GEMINI.md` is refused. Each file has one
+     governing entry, so declaring one file's audience never stops the rest shipping.
+     YOLO composes these into `/home/agent/.pi/agent/AGENTS.md` in the jail and
+     `~/.pi/agent/AGENTS.md` on the host via `yolo host apply`.
+  2. **Workspace Project Files** (Per-repository) — place instructions in `<workspace>/AGENTS.md`
+     (or `<workspace>/.pi/`), committed directly into the project repository.
+  3. **Explicit Projections** (Per-jail bridge) — declare explicit host file projections in
+     `host_files` in user config (`yolo config-ref`). Ad-hoc agent dotfiles on the host
+     (like `~/.pi/agent/APPEND_SYSTEM.md`) are never read or mounted by YOLO.
+
+## Don't guess at keys — the schema lives in the CLI
+
+This skill shows two shapes on purpose. For **every** other key — `resources`,
+`network`/`ports`/`forward_host_ports`, `mounts`, `mcp_servers`,
+`lsp_servers`, `env_sources`, `loopholes`, and their exact fields, allowed
+values, and defaults — run the authoritative, always-current reference:
+
+```
+yolo config-ref
+```
+
+Read it before inventing a key name. `yolo check` will reject unknown keys, but
+reading first saves a slow, human-gated round-trip.
+
+===== diagnosing-the-jail/SKILL.md =====
+---
+name: diagnosing-the-jail
+description: "Diagnose a broken coding environment: provisioning failures, blocked tools, unavailable loopholes, or stale code, including jail-specific causes."
+---
+
+# Diagnose this environment
+
+When something inside the jail misbehaves, work this triage tree top to bottom.
+Each step points at a live command — run its `--help` for detail rather than
+guessing flags.
+
+## 1. Validate the config first
+
+```
+yolo check --no-build
+```
+
+This is the fast in-jail preflight: it validates the resolved workspace config `yolo-jail.jsonc` and the
+entrypoint without rebuilding the image. A `[FAIL]` here explains most
+"why won't it start / why did provisioning break" symptoms. Fix reported
+failures before anything else.
+
+## 2. Provisioning failed → read the startup log
+
+Read the startup log at `/home/test/project/.yolo/startup.log` and inspect the failure. Fix the failed tool or provision step, then retry the work.
+
+## 3. A tool is blocked or shimmed
+
+Some tools are intentionally shimmed (e.g. `grep -r` → use `rg`, `find` → use
+`fd`). If a command errors oddly or is "not found the way you expect":
+
+- List the active blockers: `ls ~/.yolo/bin/block/` (FIRST on PATH — these are
+  the refusals). Lazy-install launchers are a different mechanism in a different
+  dir: `ls ~/.yolo/bin/launch/` (SECOND on PATH, ahead of every install prefix,
+  so a launcher mediates every invocation of the name it carries — that is what
+  keeps an agent CLI up to date). Both live under one anchor at `~/.yolo/bin`,
+  which is deliberately NOT on PATH itself.
+- Run the real tool for a script/installer that needs it:
+  `YOLO_BYPASS_SHIMS=1 <cmd>`
+- **The `rg -r` trap:** in `rg`, `-r` means `--replace` and silently corrupts
+  match output. Never pass grep-style `-r`/`-rn`; use `rg -n <pattern> [path]`.
+
+## 4. A loophole (host capability) is down
+
+Loopholes wire host capabilities (audio, claude-oauth-broker, host-processes)
+into the jail. If one isn't working:
+
+```
+yolo loopholes list      # what's enabled + status
+yolo broker status       # for the claude-oauth-broker loophole specifically
+yolo broker logs         # recent broker output
+```
+
+## 5. A port isn't reachable → establish the DIRECTION first
+
+Half the time this is not a broken service, it is the wrong key or a transposed
+entry. **`network.ports` is `"HOST:JAIL"`, `network.forward_host_ports` is
+`"JAIL:HOST"` — opposite orders.** And there are two loopbacks: `localhost`
+inside the jail is the *jail's*, never the host's.
+
+**Jail → host** (you are in here, the service is out there). It should work with
+no config at all: `host.containers.internal` reaches the host, including services
+bound only to the host's `127.0.0.1`.
+
+```
+echo $YOLO_HOST_LOOPBACK     # requested | shared → forwarding is in place
+                             # unsupported | unknown → it may genuinely be absent
+(exec 3<>/dev/tcp/host.containers.internal/<port>) && echo CONNECT || echo FAIL
+```
+
+`requested` plus a service that does not answer is a **fault**, not a
+limitation — the jail-facing services yolo itself ships would have refused the
+launch — so suspect the service, its bind address, or its port. Only if something
+must literally see `localhost:<port>` in here do you need
+`network.forward_host_ports`; check that entry reads jail-port-first.
+
+**Host → jail** (your server is in here and the host's browser can't load it).
+Two causes, in this order:
+
+1. **It's bound to the jail's loopback.** `network.ports` cannot publish a
+   `127.0.0.1` listener. Confirm with `ss -ltnp` — you want `0.0.0.0:<port>`,
+   not `127.0.0.1:<port>` — and rebind. Most dev servers need an explicit flag
+   (`--host 0.0.0.0`). Binding wide inside the jail is safe.
+2. **The mapping is inverted or absent.** `"HOST:JAIL"`, host side first, and it
+   is applied at launch — adding it to the config does nothing until a restart.
+
+```
+ss -ltnp                                    # what is actually listening, and where
+(exec 3<>/dev/tcp/127.0.0.1/<port>) && echo LISTENING-IN-JAIL || echo NOT-LISTENING
+```
+
+That second probe splits the two: if the server does not even answer inside the
+jail, no port mapping was ever going to help.
+
+## 6. My fix isn't taking effect
+
+Run `yolo config drift` to see pending changes, then read the **jail-mechanics** skill for this jail's applied state and next steps.
+
+## 7. Orphans and logs
+
+- `yolo ps` — list running jails (catches orphaned containers).
+- Agent logs, for debugging a specific agent:
+  `~/.copilot/logs/`, `~/.claude/projects/`.
+
+===== jail-mechanics/SKILL.md =====
+---
+name: jail-mechanics
+description: "How this environment is wired and what to do after a change: confinement, host paths, what survives a restart, and exact next steps."
+---
+
+# This jail
+
+- Workspace: `/workspace` (host: `/home/test/project`).
+
+- Config: `/workspace/yolo-jail.jsonc` (`yolo-jail.jsonc`).
+- Restart: `yolo stop`.
+
+Run `yolo config drift` to see what is pending now. The command's own result is authoritative if runtime probes narrow an expected outcome.
+
+## Recipes
+- Workspace config → `recipes/workspace-config.md`
+- User-scope config → `recipes/user-config.md`
+- Packs and loopholes → `recipes/packs-and-loopholes.md`
+- Skills and briefing → `recipes/skills-and-briefing.md`
+- Host files → `recipes/host-files.md`
+- Tools → `recipes/tools.md`
+- Restart → `recipes/restart.md`
+- Host yolo update → `recipes/yolo-update.md`
+
+===== jail-mechanics/host-map.md =====
+# Paths in this environment
+
+| Path | Original host source | Backing source | Mode | Lifetime / class | Delivery |
+|---|---|---|---|---|---|
+| `/workspace/ctx` | `/home/test/shared` | `—` | read-only | kept | copy at launch |
+
+===== jail-mechanics/recipes/host-files.md =====
+# host files
+
+1. Edit the host source listed in `host-map.md`.
+2. Follow its recorded delivery mode and lifetime in the map.
+
+===== jail-mechanics/recipes/packs-and-loopholes.md =====
+# packs and loopholes
+
+Selected packs for this jail: claude. Edit the packs list in `/home/test/.config/yolo-jail/config.jsonc`, run `yolo check` there, then start a fresh `yolo` launch from `/home/test/project`; workspace `yolo config apply` does not apply user-scope pack changes. For brokered repository scope, edit `brokered.<source>.repos`; its timing is shown for `brokered` in the workspace-config recipe. A loophole enable/disable is a host-side switch, not a pack selection; use `yolo config-ref` for the exact switch command.
+
+===== jail-mechanics/recipes/restart.md =====
+# restart
+
+1. Save work that should survive the restart.
+2. Please run `yolo stop` in `/home/test/project` on the host; this ends the jail's sessions.
+3. Run `yolo` in `/home/test/project` to start the jail again.
+
+===== jail-mechanics/recipes/skills-and-briefing.md =====
+# skills and briefing
+
+1. Edit the skill or briefing source, not its staged copy.
+2. Delivery is read-only copy at next launch; the map lists exact paths and lifetimes.
+3. Start a fresh `yolo` launch from `/home/test/project` to receive the updated copy.
+
+===== jail-mechanics/recipes/tools.md =====
+# tools
+
+For a one-off tool, install it in the current environment; that installation follows the path lifetimes in `host-map.md`. Permanent tool delivery for this launch is baked image.
+For a permanent image package, edit `packages`, validate with `yolo check --no-build`, then ask the human to run `yolo config apply` and restart using `Please run `yolo stop` in `/home/test/project` on the host; this ends the jail's sessions.`; the image rebuilds first.
+
+===== jail-mechanics/recipes/user-config.md =====
+# user config
+
+1. Give the human the exact edit for `/home/test/.config/yolo-jail/config.jsonc`.
+2. Ask them to run `yolo check` there.
+3. Please run `yolo config apply` in `/home/test/project` on the host.
+4. Restart the jail from `/home/test/project` so the new user-scope settings are loaded.
+
+===== jail-mechanics/recipes/workspace-config.md =====
+# workspace config
+
+1. Edit `/workspace/yolo-jail.jsonc`.
+2. Run `yolo check --no-build` and resolve every failure.
+3. Please run `yolo config apply` in `/home/test/project` on the host.
+4. The command's report wins over the expected outcomes below.
+
+## `mounts`: at next restart
+
+1. Validate the edit with `yolo check --no-build`.
+2. Please run `yolo config apply` in `/home/test/project` on the host.
+3. Please run `yolo config apply` in `/home/test/project` on the host.
+4. Please run `yolo stop` in `/home/test/project` on the host; this ends the jail's sessions., then start a fresh `yolo` launch from `/home/test/project`. Expected: the change is applied at the next restart; the command's report wins.
+
+
+===== jail-mechanics/recipes/yolo-update.md =====
+# yolo update
+
+1. Ask the human to update the host yolo launcher.
+2. Please run `yolo stop` in `/home/test/project` on the host; this ends the jail's sessions.
+3. Run `yolo` in `/home/test/project` again.

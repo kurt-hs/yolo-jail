@@ -1,9 +1,9 @@
 ---
 name: configuring-the-jail
-description: "Bake a change into this jail's config (yolo-jail.jsonc): add a package/tool that survives restart, raise CPU/memory limits, open ports/mounts, wire MCP/LSP, set env, or enable a loophole. NOT for ephemeral npm/pip installs, which just work."
+description: "Configure the coding environment: add a permanent package or tool, set resources, ports, mounts, MCP/LSP, environment, or loophole policy. Not for one-off installs."
 ---
 
-# Configuring the Jail
+# Configuring the environment
 
 Use this when a change must be **baked into how the jail is built** so it
 survives a restart: a package/runtime the project always needs, a resource
@@ -73,7 +73,7 @@ wildcard, more than one: `*/*` is every repository the host login can reach,
 adding it, run `yolo check --no-build` and ask the human to run
 `yolo config apply` on the host in this workspace. Its existing approval prompt
 records the trust; a running broker that supports live scope takes the change
-at its next request, otherwise it remains pending for the next restart. The
+at its next request. When live scope is not available, the change remains pending for the next restart. The
 command never restarts the jail or offers to do so.
 
 ### Which file — and how the layers merge
@@ -82,7 +82,7 @@ Three layers merge, later wins:
 
 - `~/.config/yolo-jail/config.jsonc` — user/machine defaults.
 - `<workspace>/yolo-jail.jsonc` — the committed per-project config. **Edit this
-  one** unless told otherwise, or unless it is read-only in here (see above:
+  one** unless the human asks you not to, or unless it is read-only in here (see above:
   then propose the edit to the human instead).
 - `<workspace>/yolo-jail.local.jsonc` — per-machine tweaks, auto-merged when
   present. Conventionally untracked, but yolo does not git-ignore it: run
@@ -134,7 +134,7 @@ Add a nix package — only when no mise tool exists (triggers a rebuild):
 Your own agent config — `~/.claude/settings.json`, `~/.codex/config.toml`,
 `~/.copilot/config.json`, and friends — is **not a file you own**. yolo composes
 each one at every boot from an ordered stack of layers, so a change you make by
-hand may be silently reverted, preserved, or discarded depending on the file. Edit
+hand may be silently reverted, preserved, or discarded according to the file's owner. Edit
 the *inputs*, not the output.
 
 Find out what is generated and how, before editing anything in `~`:

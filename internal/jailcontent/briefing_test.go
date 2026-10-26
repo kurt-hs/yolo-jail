@@ -313,7 +313,7 @@ func TestTheJailBriefingTeachesHostRun(t *testing.T) {
 		t.Error("the host notch's briefing teaches host-run")
 	}
 	locked := BriefingContent(BriefingInput{Workspace: "/w", ConfigLocked: true})
-	if !strings.Contains(locked, "`yolo host-run -C <value of $YOLO_HOST_DIR> -- yolo check` sends that check's output back here.") {
-		t.Error("the locked-config request lacks the host-run line")
+	if strings.Contains(locked, "yolo host-run -C <value of $YOLO_HOST_DIR> -- yolo check") {
+		t.Error("the briefing still carries config-edit instructions instead of the mechanics pointer")
 	}
 }

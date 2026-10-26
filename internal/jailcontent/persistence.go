@@ -70,6 +70,8 @@ type PersistentPath struct {
 // hand).
 type PersistenceMap struct {
 	Paths []PersistentPath
+	// HostSources maps each jail destination to the host source selected by its mount emitter.
+	HostSources map[string]string
 	// PerLaunchInRAM is true when the per-launch paths are tmpfs rather than disk-backed
 	// volumes: `ephemeral_storage: "tmpfs"` on podman, and always on Apple Container.
 	PerLaunchInRAM bool

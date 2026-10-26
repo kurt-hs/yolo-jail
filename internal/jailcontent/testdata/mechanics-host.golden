@@ -1,0 +1,71 @@
+===== configuring-the-jail/SKILL.md =====
+---
+name: configuring-the-jail
+description: "Change applied host environment settings."
+---
+
+# Host environment
+
+## Apply a host configuration change
+
+1. Edit the user configuration at `/home/test/.config/yolo-jail/config.jsonc`. Use `yolo config-ref` for accepted keys and their scope.
+2. Run `yolo check` from `/home/test/project` and resolve every reported failure.
+3. Run `yolo host apply` from `/home/test/project`. Its output is the record of what changed.
+
+===== diagnosing-the-jail/SKILL.md =====
+---
+name: diagnosing-the-jail
+description: "Diagnose host configuration and apply failures."
+---
+
+# Diagnose host configuration
+
+## 1. Validate before applying
+
+Run `yolo check` from `/home/test/project`. Resolve each `[FAIL]` before applying; the check output names the config key and remedy.
+
+## 2. Inspect the host apply
+
+Run `yolo host apply` from `/home/test/project` and read its report for the exact files and skills applied. If it reports a failure, inspect the host log at `/home/test/.local/share/yolo-jail/host-apply.log` and address the named source or permission problem before retrying.
+
+===== jail-mechanics/SKILL.md =====
+---
+name: jail-mechanics
+description: "How this environment is wired and what to do after a change: confinement, host paths, what survives a restart, and exact next steps."
+---
+
+# This host
+
+- Workspace: `/home/test/project` (the real host directory).
+
+After editing host configuration, run `yolo host apply` from the host workspace.
+
+## Recipes
+- User-scope config → `recipes/user-config.md`
+- Host files → `recipes/host-files.md`
+- Tools → `recipes/tools.md`
+
+===== jail-mechanics/host-map.md =====
+# Paths in this environment
+
+| Path | Original host source | Backing source | Mode | Lifetime / class | Delivery |
+|---|---|---|---|---|---|
+| `/home/test/project` | `/home/test/project` | `—` | read-write | kept | native |
+
+===== jail-mechanics/recipes/host-files.md =====
+# host files
+
+1. Edit the host source listed in `host-map.md`.
+2. Follow its recorded delivery mode and lifetime in the map.
+
+===== jail-mechanics/recipes/tools.md =====
+# tools
+
+Install tools using the host's normal package manager. For a permanent host configuration change, run `yolo check` and then `yolo host apply` from `/home/test/project`.
+
+===== jail-mechanics/recipes/user-config.md =====
+# user config
+
+1. Give the human the exact edit for `/home/test/.config/yolo-jail/config.jsonc`.
+2. Ask them to run `yolo check` there.
+3. Run `yolo host apply` from `/home/test/project`.

@@ -72,6 +72,24 @@ func TestBuiltinSkillsEmbedMatchesTree(t *testing.T) {
 		t.Fatal("found no skill files in the checkout tree — test is broken")
 	}
 
+	if err := filepath.WalkDir(filepath.Join(treeRoot, "templates"), func(p string, d fs.DirEntry, werr error) error {
+		if werr != nil || d.IsDir() {
+			return werr
+		}
+		rel, rerr := filepath.Rel(treeRoot, p)
+		if rerr != nil {
+			return rerr
+		}
+		b, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return rerr
+		}
+		treeFiles[filepath.ToSlash(rel)] = b
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	embedFiles := map[string][]byte{}
 	err = fs.WalkDir(builtinskills.FS, ".", func(p string, d fs.DirEntry, werr error) error {
 		if werr != nil || d.IsDir() {
@@ -117,7 +135,7 @@ func TestBuiltinSkillSuiteIsGeneralPurpose(t *testing.T) {
 	}
 	var got []string
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir() && entry.Name() != "templates" {
 			got = append(got, entry.Name())
 		}
 	}
@@ -150,7 +168,7 @@ func TestSkillFrontmatter(t *testing.T) {
 	total := 0
 	seen := 0
 	for _, e := range entries {
-		if !e.IsDir() {
+		if !e.IsDir() || e.Name() == "templates" {
 			continue
 		}
 		dir := e.Name()

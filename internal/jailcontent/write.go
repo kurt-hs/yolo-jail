@@ -18,30 +18,55 @@ import (
 // tree a destination's skills are composed in (prepareSkillTarget), which then syncs the result
 // into the bound staging dir — every one except those whose top-level name is in taken, which a
 // higher layer (a pack's skill of the same name, a reserved child) already holds.
-func writeBuiltinSkills(dst string, taken map[string]string) error {
-	return fs.WalkDir(builtinskills.FS, ".", func(p string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if p == "." {
-			return nil
-		}
-		if top, _, _ := strings.Cut(p, "/"); taken[top] != "" {
-			if d.IsDir() {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		target := filepath.Join(dst, p)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		data, err := builtinskills.FS.ReadFile(p)
+func writeBuiltinSkills(dst string, taken map[string]string, facts *FactSheet, preserveMechanics bool) ([]string, error) {
+	var files map[string][]byte
+	if facts != nil {
+		var err error
+		files, err = renderBuiltinSkillFiles(*facts)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return os.WriteFile(target, data, 0o644)
-	})
+	} else {
+		files = map[string][]byte{}
+		if err := fs.WalkDir(builtinskills.FS, ".", func(p string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil || d.IsDir() || p == "." || strings.HasPrefix(p, "templates/") {
+				return walkErr
+			}
+			data, err := builtinskills.FS.ReadFile(p)
+			if err == nil {
+				files[p] = data
+			}
+			return err
+		}); err != nil {
+			return nil, err
+		}
+	}
+	var overridden []string
+	removedMechanics := false
+	for p, data := range files {
+		top, _, _ := strings.Cut(p, "/")
+		if preserveMechanics && top == "jail-mechanics" {
+			continue
+		}
+		if top != "jail-mechanics" && taken[top] != "" {
+			continue
+		}
+		if top == "jail-mechanics" && taken[top] != "" && !removedMechanics {
+			if err := os.RemoveAll(filepath.Join(dst, top)); err != nil {
+				return nil, err
+			}
+			removedMechanics = true
+			overridden = append(overridden, top)
+		}
+		target := filepath.Join(dst, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(target, data, 0o644); err != nil {
+			return nil, err
+		}
+	}
+	return overridden, nil
 }
 
 // WriteBriefing writes content to path, truncating in place to preserve the

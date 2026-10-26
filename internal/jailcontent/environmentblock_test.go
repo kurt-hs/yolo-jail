@@ -90,87 +90,19 @@ func environmentBlockOf(t *testing.T, briefing string) string {
 	return rest
 }
 
-// THE SAME DEFECT, ONE SECTION LOWER, AND THE 2026-09-13 FIX DID NOT REACH IT. `## Packages &
-// Resource Limits` tells the agent to edit `resources` for a "container-limit change" — on a
-// backend with no container, where no `resources` key is a kernel cap: `io` is a disk policy,
-// `memory` a sampled guard, `cpus` parallelism defaults, and `pids_limit` is read and IGNORED
-// ([DP-D1](../../docs/design/declaration-parity.md): RLIMIT_NPROC is per-USER and would collide
-// across concurrent sessions on the shared account; "a cap a user believes in but that does not
-// hold is worse than a documented absence"). TestTheMacosUserBriefingSaysWhatEachResourceKeyDoes
-// pins what the section says of each key.
-//
-// So the instruction was worse than a wrong path: it invited the agent to ask the human for a
-// limit that cannot be delivered, and the surrounding heading promised limits the launch does
-// not impose. MEASURED in a real briefing on hardware 2026-09-13 — this section was still
-// container-shaped in the file the sandbox actually read.
-//
-// ⚠ `/workspace` STAYS, and that is deliberate rather than an oversight: the 2026-09-13 ruling
-// keeps it canonical and spends the Environment bullet above explaining that it means the real
-// path. A second spelling here would fork the very convention that bullet exists to establish.
-func TestThePackagesSectionDoesNotPromiseLimitsThisBackendIgnores(t *testing.T) {
-	native := BriefingContent(BriefingInput{
-		Workspace: "/Users/Shared/yolo/proj",
-		Mechanism: "macos-user",
-		Home:      "/Users/_yolojail",
-	})
-
-	for _, gone := range []string{
-		"container-limit change",
-		"(`packages` / `resources`)",
-		"## Packages & Resource Limits",
+func TestBriefingDelegatesLifecycleGuidanceToMechanicsSkill(t *testing.T) {
+	for _, in := range []BriefingInput{
+		{Workspace: "/Users/Shared/yolo/proj", Mechanism: "macos-user"},
+		{Workspace: "/host/proj", Mechanism: "podman"},
 	} {
-		if strings.Contains(native, gone) {
-			t.Errorf("the macos-user briefing still says %q, on a backend with no container "+
-				"and no kernel-enforced resources.\n\nGot:\n%s", gone, packagesSectionOf(t, native))
+		out := BriefingContent(in)
+		if !strings.Contains(out, "read **jail-mechanics**") {
+			t.Error("briefing lacks the jail-mechanics pointer")
 		}
-	}
-	for _, want := range []string{
-		"## Packages",
-		"`/workspace/yolo-jail.jsonc`",
-		"`packages`",
-		// What the keys are NOT has to be named, by the same rule that governs every other
-		// cell of this backend: an agent that reads `resources` and plans around a kernel cap
-		// is the failure DP-D1's ruling describes.
-		"`resources` is not enforced here",
-	} {
-		if !strings.Contains(native, want) {
-			t.Errorf("the macos-user briefing does not say %q.\n\nGot:\n%s",
-				want, packagesSectionOf(t, native))
-		}
-	}
-}
-
-// And the container answer is untouched — same half-ruling as the Environment block: a jail
-// that HAS limits keeps being told how to change them.
-func TestThePackagesSectionIsUntouchedOnAContainer(t *testing.T) {
-	for _, mech := range []string{"podman", "container", ""} {
-		out := BriefingContent(BriefingInput{Workspace: "/host/proj", Mechanism: mech})
-		for _, want := range []string{
-			"## Packages & Resource Limits",
-			"container-limit change",
-			"(`packages` / `resources`)",
-		} {
-			if !strings.Contains(out, want) {
-				t.Errorf("mechanism %q lost %q:\n%s", mech, want, packagesSectionOf(t, out))
+		for _, stale := range []string{"## Packages", "container-limit change", "Please restart the jail"} {
+			if strings.Contains(out, stale) {
+				t.Errorf("briefing still includes moved lifecycle prose %q", stale)
 			}
 		}
-		if strings.Contains(out, "not enforced here") {
-			t.Errorf("mechanism %q got the native backend's absence line:\n%s",
-				mech, packagesSectionOf(t, out))
-		}
 	}
-}
-
-// packagesSectionOf is environmentBlockOf's twin, for the section this pair tests.
-func packagesSectionOf(t *testing.T, briefing string) string {
-	t.Helper()
-	i := strings.Index(briefing, "## Packages")
-	if i < 0 {
-		return briefing
-	}
-	rest := briefing[i:]
-	if j := strings.Index(rest[1:], "\n## "); j >= 0 {
-		return rest[:j+1]
-	}
-	return rest
 }

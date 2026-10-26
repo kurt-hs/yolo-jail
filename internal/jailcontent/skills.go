@@ -1,6 +1,7 @@
 package jailcontent
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,6 +13,12 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/pluginpack"
 	"github.com/mschulkind-oss/yolo-jail/internal/treesync"
 )
+
+var builtinFactSheet *FactSheet
+
+// SetBuiltinSkillFactSheet supplies the applied facts used by the compatibility staging APIs.
+// Passing nil restores the embedded compatibility output.
+func SetBuiltinSkillFactSheet(sheet *FactSheet) { builtinFactSheet = sheet }
 
 // PrepareSkills stages per-agent skills dirs on the host for :ro bind mounting.
 // Each pack-declared destination's staging dir gets the built-in skill suite
@@ -251,10 +258,31 @@ func PrepareSkills(cname, homeDir string, agentNames []string) (string, error) {
 // so a record that one launch set and the next forgot to reset would stage the first launch's
 // workspace into the second's jail. An argument cannot outlive its call.
 func PrepareSkillsWith(cname string, ws *WorkspaceSkills) (string, *WorkspaceSkillsReport, error) {
+	return PrepareSkillsWithFactSheet(cname, ws, builtinFactSheet)
+}
+
+// PrepareSkillsWithFactSheet stages built-in guidance from facts decided by the caller.
+func PrepareSkillsWithFactSheet(cname string, ws *WorkspaceSkills, facts *FactSheet) (string, *WorkspaceSkillsReport, error) {
 	if err := SkillCollisionError(packSkillDirs, packSkillTargets); err != nil {
 		return "", nil, err
 	}
 	plan := SkillPlan(packSkillDirs, packSkillTargets)
+	return prepareSkillsWithPlan(cname, ws, facts, plan, false)
+}
+
+// PrepareSkillsWithLegacyMechanics stages compatible legacy skills while preserving the
+// mechanics guidance already present in each running target. It never renders mechanics from
+// compatibility defaults when an attach lacks an authenticated applied snapshot.
+func PrepareSkillsWithLegacyMechanics(cname string) (string, *WorkspaceSkillsReport, error) {
+	if err := SkillCollisionError(packSkillDirs, packSkillTargets); err != nil {
+		return "", nil, err
+	}
+	plan := SkillPlan(packSkillDirs, packSkillTargets)
+	return prepareSkillsWithPlan(cname, nil, nil, plan, true)
+}
+
+func prepareSkillsWithPlan(cname string, ws *WorkspaceSkills, facts *FactSheet,
+	plan []hostskills.Destination, preserveMechanics bool) (string, *WorkspaceSkillsReport, error) {
 	staging := filepath.Join(paths.AgentsDir(), cname)
 	if err := os.MkdirAll(staging, 0o755); err != nil {
 		return "", nil, err
@@ -267,7 +295,7 @@ func PrepareSkillsWith(cname string, ws *WorkspaceSkills) (string, *WorkspaceSki
 
 	var notices []PackSkillNotice
 	for i, target := range packSkillTargets {
-		said, err := prepareSkillTarget(plan[i], target, filepath.Join(staging, target.Staging), layer)
+		said, err := prepareSkillTarget(plan[i], target, filepath.Join(staging, target.Staging), layer, facts, preserveMechanics)
 		if err != nil {
 			return "", nil, err
 		}
@@ -321,7 +349,7 @@ func groupPackNotices(notices []PackSkillNotice) []PackSkillNotice {
 // same order as before, so precedence is untouched, and treesync then changes only what
 // differs. skillsDir itself is never removed (the bind captured it).
 func prepareSkillTarget(dest hostskills.Destination, target SkillTarget, skillsDir string,
-	layer *workspaceLayer) ([]PackSkillNotice, error) {
+	layer *workspaceLayer, facts *FactSheet, preserveMechanics bool) ([]PackSkillNotice, error) {
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
 		return nil, err
 	}
@@ -334,9 +362,14 @@ func prepareSkillTarget(dest hostskills.Destination, target SkillTarget, skillsD
 	if err := os.Mkdir(composed, 0o755); err != nil {
 		return nil, err
 	}
-	notices, err := composeSkillLayers(dest, target, composed, layer)
+	notices, err := composeSkillLayers(dest, target, composed, layer, facts, preserveMechanics)
 	if err != nil {
 		return nil, err
+	}
+	if preserveMechanics {
+		if err := preserveLegacyMechanics(skillsDir, composed); err != nil {
+			return nil, err
+		}
 	}
 	_, err = treesync.Sync(composed, skillsDir)
 	return notices, err
@@ -357,7 +390,7 @@ func prepareSkillTarget(dest hostskills.Destination, target SkillTarget, skillsD
 // never replace one (OQ-WS2). Written first and overwritten, it would give the same tree — but
 // the report could not say which names were lost or to whom, and a shadow is a disclosure.
 func composeSkillLayers(dest hostskills.Destination, target SkillTarget, skillsDir string,
-	layer *workspaceLayer) ([]PackSkillNotice, error) {
+	layer *workspaceLayer, facts *FactSheet, preserveMechanics bool) ([]PackSkillNotice, error) {
 	// 1. PACK skills, in config order, each at its own tier, wrapped plugins included.
 	res, err := hostskills.ComposeInto(dest, skillsDir)
 	if err != nil {
@@ -387,10 +420,14 @@ func composeSkillLayers(dest hostskills.Destination, target SkillTarget, skillsD
 	}
 	// 2. The built-in skill suite, into every name the packs left (every skills-bearing agent
 	//    gets it). A pack may override a built-in, a legitimate reason to ship one.
-	if err := writeBuiltinSkills(skillsDir, taken); err != nil {
+	overrides, err := writeBuiltinSkills(skillsDir, taken, facts, preserveMechanics)
+	if err != nil {
 		return nil, err
 	}
-	for _, name := range builtinSkillNames() {
+	for _, name := range overrides {
+		notices = append(notices, PackSkillNotice{Name: name, Detail: "yolo's rendered built-in skill overrides the pack collision", In: []string{dest.Dir}})
+	}
+	for _, name := range builtinSkillNames(facts != nil, preserveMechanics) {
 		if _, ok := taken[name]; !ok {
 			taken[name] = "yolo's built-in skill"
 		}
@@ -412,13 +449,35 @@ func composeSkillLayers(dest hostskills.Destination, target SkillTarget, skillsD
 	return notices, layer.deliver(target, skillsDir, taken)
 }
 
-// builtinSkillNames lists the top-level skill directories of the built-in suite.
-func builtinSkillNames() []string {
-	entries, err := fs.ReadDir(builtinskills.FS, ".")
-	if err != nil {
-		return nil
+func preserveLegacyMechanics(sourceSkills, composedSkills string) error {
+	source := filepath.Join(sourceSkills, "jail-mechanics")
+	destination := filepath.Join(composedSkills, "jail-mechanics")
+	info, err := os.Lstat(source)
+	if os.IsNotExist(err) {
+		return os.RemoveAll(destination)
 	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("legacy mechanics staging %q is not a directory", source)
+	}
+	if _, err := treesync.Sync(source, destination); err != nil {
+		return fmt.Errorf("preserve legacy mechanics staging: %w", err)
+	}
+	return nil
+}
+
+// builtinSkillNames lists the top-level skill directories of the built-in suite.
+func builtinSkillNames(includeMechanics, preserveMechanics bool) []string {
+	entries, err := fs.ReadDir(builtinskills.FS, ".")
 	var out []string
+	if includeMechanics || preserveMechanics {
+		out = append(out, "jail-mechanics")
+	}
+	if err != nil {
+		return out
+	}
 	for _, e := range entries {
 		if e.IsDir() {
 			out = append(out, e.Name())

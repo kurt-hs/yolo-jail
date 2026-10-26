@@ -39,8 +39,9 @@ type BlockedTool struct {
 
 // Loophole is a (name, description) pair for the loopholes section.
 type Loophole struct {
-	Name string
-	Desc string
+	Name            string
+	Desc            string
+	SwitchAvailable bool
 }
 
 // ContextMount is one entry of the "Additional Context Mounts" section: a context mount
@@ -915,10 +916,8 @@ func BriefingContent(in BriefingInput) string {
 		"",
 	)
 	lines = append(lines, hostRunSection...)
-	lines = append(lines, packagesSection(in.Mechanism, in.configName(), in.ConfigLocked)...)
-	lines = append(lines,
-		"## Skills",
-		"",
+	lines = append(lines, "## Skills", "",
+		"Before editing the workspace config, asking for a restart, or relying on a file from the host: read **jail-mechanics**.", "",
 		"User-level skills dirs (`~/.<agent>/skills/`) are **read-only** in-jail",
 		"(kernel-enforced); workspace-level ones (`/workspace/.<agent>/skills/`) are",
 		"writable — develop there, then ask the human to promote to the host.",
@@ -930,69 +929,6 @@ func BriefingContent(in BriefingInput) string {
 	)
 
 	return strings.Join(lines, "\n") + "\n"
-}
-
-// packagesSection is how an agent asks for a tool — and, on a container, for a bigger cap.
-//
-// IT BRANCHES BECAUSE THE SECOND HALF IS FALSE OFF-CONTAINER, which the `## Environment` fix
-// above did not reach: it told every agent to request a "container-limit change" by editing
-// `resources`, on a backend with no container, where no `resources` key is a kernel cap. So the
-// native arm says what EACH key does there instead, because an agent planning around a limit
-// has to know which kind it is:
-//   - `io` is a macOS disk I/O policy the launcher sets on itself before the session starts,
-//     inherited by every process in it (docs/design/io-priority.md §5.5);
-//   - `memory` is a guard inside the sandbox that samples the session's resident memory and
-//     terminates its largest process when the total is over (macosuser/sessionguard.go). The
-//     agent whose build that guard just killed is the reader this sentence is for: told no
-//     limit exists, it would never ask its human for a bigger one;
-//   - `cpus` sets only the parallelism defaults macosuser.CooperativeCPUVars lists, which a
-//     program is free to ignore. The four names are spelled out below, because jailcontent
-//     cannot import macosuser, and a macosuser test pins them to that list;
-//   - `pids_limit` is read and IGNORED (DP-D1: RLIMIT_NPROC, its one stand-in, is per-USER and
-//     collides across concurrent sessions on the shared account). DP-D1's own words govern
-//     that one — "a cap a user believes in but that does not hold is worse than a documented
-//     absence" — so its absence is NAMED rather than left as silence.
-//
-// ⚠ `/workspace` IS KEPT ON BOTH ARMS, deliberately. The 2026-09-13 ruling made it canonical
-// and spends the Environment bullet explaining that it means the real path on a native backend;
-// a second spelling here would fork the convention that bullet exists to establish, and this
-// section is not the one place an agent learns its paths.
-//
-// configName is the workspace config file the agent edits (BriefingInput.ConfigName), and locked
-// is BriefingInput.ConfigLocked: a locked file cannot be edited from in here, so the request becomes
-// a proposal the human applies on the host.
-func packagesSection(mechanism, configName string, locked bool) []string {
-	if MechanismHasNoContainer(mechanism) {
-		request := []string{
-			"To request a tool: edit `/workspace/" + configName + "` (`packages`), ALWAYS run",
-			"`yolo check` after every config edit (`yolo check --no-build` is fine inside a",
-			"running jail), then ask the human to restart the jail. Reference: `yolo config-ref`.",
-		}
-		if locked {
-			request = lockedConfigRequest(configName, "a tool", "`packages`")
-		}
-		return append(append([]string{"## Packages", ""}, request...),
-			"⚠ `resources` is not enforced here the way a container enforces it: there is no",
-			"container, so no key is a kernel cap. What each one does on this backend: `io`",
-			"lowers the session's macOS disk I/O priority; `memory` is checked by sampling (not",
-			"kernel-enforced), and when the session goes over it its largest process is",
-			"terminated — a line naming `resources.memory` says so, and if the work needs more,",
-			"ask the human to raise it; `cpus` only sets the GOMAXPROCS, CARGO_BUILD_JOBS,",
-			"RAYON_NUM_THREADS and OMP_NUM_THREADS defaults, so a program that ignores them is",
-			"not limited; and `pids_limit` is read and ignored.",
-			"",
-		)
-	}
-	request := []string{
-		"To request a tool or a container-limit change: edit `/workspace/" + configName + "`",
-		"(`packages` / `resources`), ALWAYS run `yolo check` after every config edit",
-		"(`yolo check --no-build` is fine inside a running jail), then ask the human to",
-		"restart the jail. Reference: `yolo config-ref`.",
-	}
-	if locked {
-		request = lockedConfigRequest(configName, "a tool or a container-limit change", "`packages` / `resources`")
-	}
-	return append(append([]string{"## Packages & Resource Limits", ""}, request...), "")
 }
 
 // hostRunSection teaches the agent `yolo host-run` (docs/design/host-run-mailbox.md §4.1,
@@ -1013,20 +949,6 @@ var hostRunSection = []string{
 	"command reads). Typing the line here prints it ready to paste. If the host's yolo has no",
 	"`host-run`, ask the human to run the command and paste the output.",
 	"",
-}
-
-// lockedConfigRequest is the request paragraph for a jail whose workspace config is read-only
-// (BriefingInput.ConfigLocked). It names no way round the lock — `yolo-jail.local.jsonc` is not
-// locked, and the config-change approval at the next launch is what catches an edit there — because
-// a briefing that pointed at the unlocked file would be teaching the agent to unpick its protection.
-func lockedConfigRequest(configName, what, keys string) []string {
-	return []string{
-		"To request " + what + ": `/workspace/" + configName + "` is **read-only** in",
-		"here (`workspace_readonly` locks it, so you cannot edit your own sandbox). Write",
-		"out the edit (" + keys + ") and ask the human to apply it on the host, run",
-		"`yolo check` there, and restart the jail. Reference: `yolo config-ref`.",
-		"`yolo host-run -C <value of $YOLO_HOST_DIR> -- yolo check` sends that check's output back here.",
-	}
 }
 
 // HostBriefingBase is the host notch's base body for every briefing destination `yolo host apply`

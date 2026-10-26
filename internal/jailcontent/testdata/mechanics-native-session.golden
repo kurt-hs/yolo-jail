@@ -1,0 +1,240 @@
+===== configuring-the-jail/SKILL.md =====
+---
+name: configuring-the-jail
+description: "Configure the coding environment: add a permanent package or tool, set resources, ports, mounts, MCP/LSP, environment, or loophole policy. Not for one-off installs."
+---
+
+# Configuring the environment
+
+Use this when a change must be part of the permanent environment configuration so it
+survives a restart: a package/runtime the project always needs, a resource
+limit, a published port or mount, an MCP/LSP server, an env source, or enabling
+a host-capability loophole.
+
+**Do NOT use this for one-off installs.** The jail has internet and you can
+`npm i -g`, `pip install`, `uv pip install`, or `mise use` a tool right now with
+no config change and no restart. Only reach for `yolo-jail.jsonc` when the tool
+must persist across restarts or be present for every future session.
+
+## Change timing
+
+Before editing the config, read **jail-mechanics** for the applied facts and exact next steps. The change-timing recipe is generated from this jail's launch decisions.
+
+### Which file — and how the layers merge
+
+The user-scope configuration is `/Users/test/.config/yolo-jail/config.jsonc`. The workspace configuration this launch reads is `/Users/test/project/yolo-jail.jsonc` (`yolo-jail.jsonc`). The agent may edit this workspace config. No workspace-local override was present for this launch. The user config is the machine-wide base; workspace files add project-specific settings.
+
+## Two representative edits (then run `yolo check --no-build`)
+
+Use **jail-mechanics** for the exact current package delivery and change steps.
+
+## Some files in your home are GENERATED — don't hand-edit them
+
+Your own agent config — `~/.claude/settings.json`, `~/.codex/config.toml`,
+`~/.copilot/config.json`, and friends — is **not a file you own**. yolo composes
+each one at every boot from an ordered stack of layers, so a change you make by
+hand may be silently reverted, preserved, or discarded according to the file's owner. Edit
+the *inputs*, not the output.
+
+Find out what is generated and how, before editing anything in `~`:
+
+```
+yolo config ls                      # every composed file, its mode, and its source
+yolo config render <agent> --explain   # which layer each key came from
+yolo config diff <agent>            # your in-jail edits vs what yolo generated
+```
+
+The `MODE` column in `yolo config ls` is the part that decides whether your edit
+survives. There are four values and every one of them means something different
+for your edit:
+
+- **capture** — your edit is recorded in a sidecar under `<workspace>/.yolo/prism/`
+  and re-applied on later boots. Editing works, but it is invisible to anyone
+  reading the config, so prefer changing the real input.
+- **copy** — regenerated from scratch every boot. **Your edit is silently gone
+  after a restart.** Never hand-edit these.
+- **rmw** — the file is the AGENT'S, and yolo only asserts its own managed keys
+  into it at boot, filling defaults where they are absent and preserving
+  everything else. So your edit survives *unless* it touches a key yolo manages.
+  This is the mode `~/.claude.json` is in, which is why `yolo config render` has
+  nothing to show for it: there is no layer fold, so there is no preview.
+- **unrendered** — yolo does not compose this file at all; the agent owns it.
+
+To make a change that *persists and is legible*, change the input instead: an MCP
+server belongs in `mcp_servers`, an LSP in `lsp_servers`, and an arbitrary host
+file you want composed into the jail belongs in `host_files` (user config only —
+`yolo config-ref` has the shape). If you edited a composed file and want to undo
+it, `yolo config reset <agent>` discards the captured edits.
+
+## Six things agents reliably get wrong
+
+Every one of these was a real wrong belief that reached a config edit. They are
+all *confidently* wrong — the shape of the mistake is being sure enough not to
+check, so check these even when you are sure.
+
+### Workspace path
+
+This workspace is the host directory `/Users/test/project`; it is not a container bind mount.
+
+## Don't guess at keys — the schema lives in the CLI
+
+This skill shows two shapes on purpose. For **every** other key — `resources`,
+`network`/`ports`/`forward_host_ports`, `mounts`, `mcp_servers`,
+`lsp_servers`, `env_sources`, `loopholes`, and their exact fields, allowed
+values, and defaults — run the authoritative, always-current reference:
+
+```
+yolo config-ref
+```
+
+Read it before inventing a key name. `yolo check` will reject unknown keys, but
+reading first saves a slow, human-gated round-trip.
+
+===== diagnosing-the-jail/SKILL.md =====
+---
+name: diagnosing-the-jail
+description: "Diagnose a broken coding environment: provisioning failures, blocked tools, unavailable loopholes, or stale code, including jail-specific causes."
+---
+
+# Diagnose this environment
+
+When something inside the jail misbehaves, work this triage tree top to bottom.
+Each step points at a live command — run its `--help` for detail rather than
+guessing flags.
+
+## 1. Validate the config first
+
+```
+yolo check --no-build
+```
+
+This command checks the resolved workspace config `yolo-jail.jsonc` and entrypoint. A `[FAIL]` here explains most
+"why won't it start / why did provisioning break" symptoms. Fix reported
+failures before anything else.
+
+## 2. Provisioning failed → read the startup log
+
+Read the startup log at `/Users/test/project/.yolo/startup.log` and inspect the failure. Fix the failed tool or provision step, then retry the work.
+
+## 3. A tool is blocked or shimmed
+
+Some tools are intentionally shimmed (e.g. `grep -r` → use `rg`, `find` → use
+`fd`). If a command errors oddly or is "not found the way you expect":
+
+- List the active blockers: `ls ~/.yolo/bin/block/` (FIRST on PATH — these are
+  the refusals). Lazy-install launchers are a different mechanism in a different
+  dir: `ls ~/.yolo/bin/launch/` (SECOND on PATH, ahead of every install prefix,
+  so a launcher mediates every invocation of the name it carries — that is what
+  keeps an agent CLI up to date). Both live under one anchor at `~/.yolo/bin`,
+  which is deliberately NOT on PATH itself.
+- Run the real tool for a script/installer that needs it:
+  `YOLO_BYPASS_SHIMS=1 <cmd>`
+- **The `rg -r` trap:** in `rg`, `-r` means `--replace` and silently corrupts
+  match output. Never pass grep-style `-r`/`-rn`; use `rg -n <pattern> [path]`.
+
+## 4. A loophole (host capability) is down
+
+Loopholes wire host capabilities (audio, claude-oauth-broker, host-processes)
+into the jail. If one isn't working:
+
+```
+yolo loopholes list      # what's enabled + status
+yolo broker status       # for the claude-oauth-broker loophole specifically
+yolo broker logs         # recent broker output
+```
+
+## 6. My fix isn't taking effect
+
+Run `yolo config drift` to see pending changes, then read the **jail-mechanics** skill for this jail's applied state and next steps.
+
+## 7. Orphans and logs
+
+- `yolo ps` — list running jails (catches orphaned containers).
+- Agent logs, for debugging a specific agent:
+  `~/.copilot/logs/`, `~/.claude/projects/`.
+
+===== jail-mechanics/SKILL.md =====
+---
+name: jail-mechanics
+description: "How this environment is wired and what to do after a change: confinement, host paths, what survives a restart, and exact next steps."
+---
+
+# This jail
+
+- Workspace: `/Users/test/project` (host: `/Users/test/project`).
+
+- Config: `/Users/test/project/yolo-jail.jsonc` (`yolo-jail.jsonc`).
+- Restart: `yolo`.
+
+Run `yolo config drift` to see what is pending now. The command's own result is authoritative if runtime probes narrow an expected outcome.
+
+## Recipes
+- Workspace config → `recipes/workspace-config.md`
+- User-scope config → `recipes/user-config.md`
+- Skills and briefing → `recipes/skills-and-briefing.md`
+- Host files → `recipes/host-files.md`
+- Tools → `recipes/tools.md`
+- Restart → `recipes/restart.md`
+- Host yolo update → `recipes/yolo-update.md`
+
+===== jail-mechanics/host-map.md =====
+# Paths in this environment
+
+| Path | Original host source | Backing source | Mode | Lifetime / class | Delivery |
+|---|---|---|---|---|---|
+| `/Users/test/project` | `/Users/test/project` | `—` | read-write | kept | native |
+
+===== jail-mechanics/recipes/host-files.md =====
+# host files
+
+1. Edit the host source listed in `host-map.md`.
+2. Follow its recorded delivery mode and lifetime in the map.
+
+===== jail-mechanics/recipes/restart.md =====
+# restart
+
+1. Save work that should survive the restart.
+2. End this session.
+3. Run `yolo` in `/Users/test/project` to start a fresh session.
+
+===== jail-mechanics/recipes/skills-and-briefing.md =====
+# skills and briefing
+
+1. Edit the skill or briefing source, not its staged copy.
+2. Delivery is live filesystem; the map lists exact paths and lifetimes.
+3. The next `yolo` entry from `/Users/test/project` refreshes the live staging.
+
+===== jail-mechanics/recipes/tools.md =====
+# tools
+
+For a one-off tool, install it in the current environment; that installation follows the path lifetimes in `host-map.md`. Permanent tool delivery for this launch is native tools.
+For a permanent tool, update its environment config, validate with `yolo check`, then follow its timing class in `workspace-config`.
+
+===== jail-mechanics/recipes/user-config.md =====
+# user config
+
+1. Give the human the exact edit for `/Users/test/.config/yolo-jail/config.jsonc`.
+2. Ask them to run `yolo check` there.
+3. End this session; start a fresh `yolo` launch from `/Users/test/project` so it reads the user-scope change.
+
+===== jail-mechanics/recipes/workspace-config.md =====
+# workspace config
+
+1. Edit `/Users/test/project/yolo-jail.jsonc`.
+2. Run `yolo check --no-build` and resolve every failure.
+3. Please run `yolo config apply` in `/Users/test/project` on the host.
+4. The command's report wins over the expected outcomes below.
+
+## `mounts`: next session
+
+1. Validate the edit with `yolo check --no-build`.
+2. Please run `yolo config apply` in `/Users/test/project` on the host.
+3. End this session, then start a fresh `yolo` launch from `/Users/test/project` on the host. Expected: the change takes effect in the new session. takes effect in the next session
+
+
+===== jail-mechanics/recipes/yolo-update.md =====
+# yolo update
+
+1. Ask the human to update the host yolo launcher.
+2. End this session.
+3. Run `yolo` in `/Users/test/project` again.

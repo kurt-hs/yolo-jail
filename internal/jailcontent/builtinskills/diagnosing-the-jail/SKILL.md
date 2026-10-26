@@ -1,9 +1,9 @@
 ---
 name: diagnosing-the-jail
-description: "Diagnose a broken jail: provisioning failed, a tool is blocked/shimmed, a loophole is down, or a fix isn't taking effect (stale code). Use when a command errors unexpectedly inside the jail."
+description: "Diagnose a broken coding environment: provisioning failures, blocked tools, unavailable loopholes, or stale code, including jail-specific causes."
 ---
 
-# Diagnosing the Jail
+# Diagnose this environment
 
 When something inside the jail misbehaves, work this triage tree top to bottom.
 Each step points at a live command — run its `--help` for detail rather than
