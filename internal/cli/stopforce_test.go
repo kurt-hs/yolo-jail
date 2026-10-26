@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
@@ -87,6 +88,150 @@ func TestAForcedStopReachesTheRuntimeFromTheFrontDoor(t *testing.T) {
 	want := []string{"podman", "stop", "-t", "0", cname}
 	if len(s.calls) < 2 || !slices.Equal(s.calls[1], want) {
 		t.Errorf("the forced stop's argv = %v, want %v", s.calls, want)
+	}
+}
+
+func TestAForcedStopFailsClosedWhenPodmanInspectCannotDistinguishTheContainer(t *testing.T) {
+	cname, _ := stopWorkspace(t, `{"runtime": "podman"}`)
+	var calls [][]string
+	runner := func(argv []string, _ time.Duration) (string, bool, int) {
+		calls = append(calls, slices.Clone(argv))
+		switch {
+		case len(argv) > 1 && argv[1] == "inspect":
+			if slices.Contains(argv, "{{.State.Running}}") {
+				if slices.Contains(argv, "--type") {
+					return "", true, 125 // typed container inspect cannot answer
+				}
+				return "", true, 0 // a same-name volume has no Running field
+			}
+			return "", true, 125
+		case len(argv) > 2 && argv[1] == "container" && argv[2] == "exists":
+			return "", true, 0 // the typed container exists, but its running state is unknown
+		case len(argv) > 1 && (argv[1] == "stop" || argv[1] == "rm"):
+			return "", true, 0
+		default:
+			t.Fatalf("unexpected podman argv %v", argv)
+			return "", false, 1
+		}
+	}
+	useStopExec(t, runner)
+	var rc int
+	stdout, stderr := captureBoth(t, func() { rc = runStop([]string{"stop", "--force"}) })
+	if rc == 0 {
+		t.Fatalf("unknown container state was treated as stopped; calls=%v\nstdout:\n%s\nstderr:\n%s", calls, stdout, stderr)
+	}
+	for _, argv := range calls {
+		if len(argv) > 1 && (argv[1] == "stop" || argv[1] == "rm") {
+			t.Fatalf("unknown container state authorized teardown: %v", calls)
+		}
+		if len(argv) > 1 && argv[1] == "inspect" && slices.Contains(argv, "{{.State.Running}}") {
+			if !slices.Contains(argv, "--type") || !slices.Contains(argv, "container") || argv[len(argv)-1] != cname {
+				t.Fatalf("running-state inspect was not container-typed for %q: %v", cname, argv)
+			}
+		}
+	}
+}
+
+func TestStopJailDoesNotTreatUnknownAfterStopAsGone(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cname := runtime.FromWorkspace("/ws")
+	var calls [][]string
+	runningProbes := 0
+	finished := false
+	savedFinish := finishStop
+	finishStop = func(_, _ io.Writer, _, _ string, _ int64, _ func(string, string), _ bool) int {
+		finished = true
+		return 0
+	}
+	t.Cleanup(func() { finishStop = savedFinish })
+	runner := func(argv []string, _ time.Duration) (string, bool, int) {
+		calls = append(calls, slices.Clone(argv))
+		switch {
+		case argv[1] == "inspect":
+			if slices.Contains(argv, "{{.State.Running}}") {
+				runningProbes++
+				if runningProbes == 1 {
+					return "true", true, 0
+				}
+			}
+			return "", true, 125
+		case argv[1] == "stop":
+			return "", true, 1
+		case len(argv) > 2 && argv[1] == "container" && argv[2] == "exists":
+			return "", true, 0
+		default:
+			t.Fatalf("unexpected podman argv %v", argv)
+			return "", false, 1
+		}
+	}
+	var out, errb bytes.Buffer
+	if rc := stopJail(&out, &errb, "/ws", "podman", runner, nil, true); rc != 1 {
+		t.Fatalf("unknown post-stop running state returned %d, want failure\nstdout:\n%s\nstderr:\n%s", rc, out.String(), errb.String())
+	}
+	if !slices.Equal(calls[0], []string{"podman", "inspect", "--type", "container", "--format", "{{.State.Running}}", cname}) {
+		t.Fatalf("pre-stop running probe = %v", calls[0])
+	}
+	if finished {
+		t.Fatal("unknown post-stop running state authorized keeper teardown")
+	}
+	if !strings.Contains(errb.String(), "failed") {
+		t.Fatalf("missing stop failure diagnosis: %s", errb.String())
+	}
+}
+
+func TestProbeJailRunningRejectsMalformedSuccessfulInspectOutput(t *testing.T) {
+	for _, output := range []string{"", "running", "true false", "maybe"} {
+		t.Run(strconv.Quote(output), func(t *testing.T) {
+			cname := "jail-name"
+			var got []string
+			runner := func(argv []string, _ time.Duration) (string, bool, int) {
+				got = argv
+				return output, true, 0
+			}
+			running, answered, _ := probeJailRunning("podman", cname, runner)
+			if running || answered {
+				t.Fatalf("malformed successful inspect gave running=%v answered=%v", running, answered)
+			}
+			want := []string{"podman", "inspect", "--type", "container", "--format", "{{.State.Running}}", cname}
+			if !slices.Equal(got, want) {
+				t.Fatalf("running inspect argv = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestProbeJailRunningUsesTypedExistenceAfterInspectFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		presentRan bool
+		presentRC  int
+		wantKnown  bool
+	}{
+		{name: "absent", presentRan: true, presentRC: 1, wantKnown: true},
+		{name: "present-unknown", presentRan: true, presentRC: 0},
+		{name: "existence-error", presentRan: true, presentRC: 125},
+		{name: "existence-incomplete", presentRan: false, presentRC: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls [][]string
+			runner := func(argv []string, _ time.Duration) (string, bool, int) {
+				calls = append(calls, slices.Clone(argv))
+				if argv[1] == "inspect" {
+					return "", true, 125
+				}
+				if !slices.Equal(argv, []string{"podman", "container", "exists", "jail-name"}) {
+					t.Fatalf("unexpected fallback argv %v", argv)
+				}
+				return "", tc.presentRan, tc.presentRC
+			}
+			running, answered, _ := probeJailRunning("podman", "jail-name", runner)
+			if running || answered != tc.wantKnown {
+				t.Fatalf("probe returned running=%v answered=%v, want running=false answered=%v", running, answered, tc.wantKnown)
+			}
+			if len(calls) != 2 || !slices.Equal(calls[0], []string{"podman", "inspect", "--type", "container", "--format", "{{.State.Running}}", "jail-name"}) {
+				t.Fatalf("inspect/existence calls = %v", calls)
+			}
+		})
 	}
 }
 

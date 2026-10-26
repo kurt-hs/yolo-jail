@@ -99,7 +99,7 @@ func TestStopJail(t *testing.T) {
 	})
 	t.Run("no container at all is success too", func(t *testing.T) {
 		var out, err bytes.Buffer
-		s := &stopRun{stats: []string{"!Error: no such container", "!Error: no such container"}}
+		s := &stopRun{stats: []string{"!Error: no such container", "!Error: no such container", "!Error: no such container"}}
 		if rc := stopJail(&out, &err, "/ws", "podman", s.run, nil, false); rc != 0 {
 			t.Fatalf("an absent container must be success, rc=%d", rc)
 		}

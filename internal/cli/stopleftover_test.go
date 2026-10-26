@@ -28,9 +28,9 @@ func leftoverRuntime(cname, state string, rmArgv *[]string, removed *bool, rmFai
 				return "", true, 1
 			}
 			return "", true, 0
-		case len(argv) > 3 && argv[1] == "inspect" && argv[3] == "{{.State.Running}}":
+		case argv[1] == "inspect" && slices.Contains(argv, "{{.State.Running}}"):
 			return "false\n", true, 0
-		case len(argv) > 3 && argv[1] == "inspect" && argv[3] == "{{.State.Status}}":
+		case argv[1] == "inspect" && slices.Contains(argv, "{{.State.Status}}"):
 			if *removed {
 				return "", true, 125 // no such object: the removal took
 			}

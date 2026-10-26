@@ -307,20 +307,33 @@ var finishStop = run.FinishStop
 // it.
 var stopMacosUser = run.StopMacosUser
 
-// probeJailRunning asks rt whether cname is running. ran is false when the runtime could not be run, and
-// rc is its exit status. Podman answers a Go-template inspect, and a non-zero status there is "no
-// such container". Apple Container's `container inspect` takes no --format, so the template read
-// nothing there and every AC jail looked stopped (G11, docs/plans/setup-support-gaps.md); its
-// `container ls` lists the running containers, the question the attach decision asks it too
-// (probeRunningContainer), and a non-zero status there is "could not ask".
+// probeJailRunning asks rt whether cname is running. ran is false when the runtime could not provide a
+// trustworthy running state, and rc is the runtime's exit status. Podman's typed inspect prevents a
+// same-named volume from being mistaken for a container. If inspect fails, the typed existence probe
+// distinguishes a missing container from one whose running state is unknown. Apple Container's
+// `container inspect` takes no --format, so `container ls` answers whether the jail is running.
 func probeJailRunning(rt, cname string, run stopCommandRunner) (running, ran bool, rc int) {
 	if rt == "container" { // parity: HonoredBy — `container ls` lists the running containers, the question podman's template inspect answers
 		out, ran, rc := run([]string{"container", "ls"}, stopRuntimeCommandTimeout)
 		_, live := runtime.ParseContainerLsLive(out)[cname]
 		return ran && rc == 0 && live, ran, rc
 	}
-	state, ran, rc := run([]string{rt, "inspect", "--format", "{{.State.Running}}", cname}, stopRuntimeCommandTimeout)
-	return ran && rc == 0 && strings.TrimSpace(state) == "true", ran, rc
+	state, ran, rc := run([]string{rt, "inspect", "--type", "container", "--format", "{{.State.Running}}", cname}, stopRuntimeCommandTimeout)
+	if !ran || rc != 0 {
+		_, exists, answered := probeJailPresence(rt, cname, run, stopRuntimeCommandTimeout)
+		if answered && !exists {
+			return false, true, 0
+		}
+		return false, false, rc
+	}
+	switch strings.TrimSpace(state) {
+	case "true":
+		return true, true, 0
+	case "false":
+		return false, true, 0
+	default:
+		return false, false, rc
+	}
 }
 
 // probeJailGoneAfterStop answers, for a stop whose runtime stop returned non-zero, whether cname's
@@ -351,7 +364,7 @@ func probeJailExists(rt, cname string, run stopCommandRunner) (state string, exi
 	if rt == "container" || !answered || !exists {
 		return state, exists, answered
 	}
-	out, ran, rc := run([]string{rt, "inspect", "--format", "{{.State.Status}}", cname}, stopRuntimeCommandTimeout)
+	out, ran, rc := run([]string{rt, "inspect", "--type", "container", "--format", "{{.State.Status}}", cname}, stopRuntimeCommandTimeout)
 	if !ran || rc != 0 || strings.TrimSpace(out) == "" {
 		return "unknown", true, true
 	}

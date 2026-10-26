@@ -32,12 +32,12 @@ type stuckStopRuntime struct {
 func (s *stuckStopRuntime) run(argv []string, _ time.Duration) (string, bool, int) {
 	s.calls = append(s.calls, argv)
 	switch {
-	case len(argv) > 3 && argv[1] == "inspect" && argv[3] == "{{.State.Running}}":
+	case argv[1] == "inspect" && slices.Contains(argv, "{{.State.Running}}"):
 		if s.present {
 			return "true\n", true, 0
 		}
 		return "false\n", true, 0
-	case len(argv) > 3 && argv[1] == "inspect" && argv[3] == "{{.State.Status}}":
+	case argv[1] == "inspect" && slices.Contains(argv, "{{.State.Status}}"):
 		if s.present {
 			return "running\n", true, 0
 		}
@@ -152,7 +152,7 @@ func TestStopRefusesUnansweredExistenceAcrossPaths(t *testing.T) {
 				runner := func(argv []string, _ time.Duration) (string, bool, int) {
 					switch argv[1] {
 					case "inspect":
-						if argv[3] == "{{.State.Running}}" {
+						if slices.Contains(argv, "{{.State.Running}}") {
 							return strconv.FormatBool(path == "running" || path == "force"), true, 0
 						}
 						return "exited", true, 0
@@ -228,7 +228,7 @@ func TestStopAlreadyEndingKeeperStillRequiresAbsence(t *testing.T) {
 			t.Cleanup(func() { finishStop = saved })
 			stuck := &stuckStopRuntime{present: true}
 			runner := func(argv []string, _ time.Duration) (string, bool, int) {
-				if argv[1] == "inspect" && argv[3] == "{{.State.Running}}" {
+				if argv[1] == "inspect" && slices.Contains(argv, "{{.State.Running}}") {
 					return "false", true, 0
 				}
 				return stuck.run(argv, stopRuntimeCommandTimeout)
