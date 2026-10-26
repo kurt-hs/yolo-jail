@@ -56,11 +56,19 @@ func ParseRuntimeInfo(raw []byte) (RuntimeInfo, error) {
 	if !ok || path == "" || !strings.HasPrefix(path, "/") {
 		return RuntimeInfo{}, errors.New("Podman info has no absolute Conmon.Path")
 	}
-	conmonVersion, ok := conmon["version"].(string)
-	if !ok || conmonVersion != "2.2.1" {
+	conmonVersionText, ok := conmon["version"].(string)
+	if !ok {
 		return RuntimeInfo{}, errors.New("Podman info has missing or unsupported conmon version")
 	}
-	return RuntimeInfo{Version: versionText, ConmonVersion: conmonVersion, ServiceIsRemote: remote, ConmonPath: path}, nil
+	versionAndCommit, ok := strings.CutPrefix(conmonVersionText, "conmon version ")
+	if !ok {
+		return RuntimeInfo{}, errors.New("Podman info has malformed conmon version output")
+	}
+	semanticVersion, commit, ok := strings.Cut(versionAndCommit, ", commit: ")
+	if !ok || semanticVersion != "2.2.1" || strings.TrimSpace(commit) == "" || strings.ContainsAny(commit, "\r\n") {
+		return RuntimeInfo{}, errors.New("Podman info has missing or unsupported conmon version")
+	}
+	return RuntimeInfo{Version: versionText, ConmonVersion: semanticVersion, ServiceIsRemote: remote, ConmonPath: path}, nil
 }
 
 // ParseContainer accepts the v5.8.9 `{{json .}}` inspect object. The ID is the full ID supplied

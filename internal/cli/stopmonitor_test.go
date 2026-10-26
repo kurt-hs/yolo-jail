@@ -47,7 +47,7 @@ func TestRunStopForceRecoversUnresolvedRunningContainerThroughPinnedExecMonitor(
 		calls = append(calls, append([]string(nil), argv...))
 		switch {
 		case len(argv) > 1 && argv[1] == "info":
-			return fmt.Sprintf(`{"version":{"Version":"5.8.9"},"host":{"serviceIsRemote":false,"conmon":{"path":%q,"version":"2.2.1"}}}`, conmonPath), true, 0
+			return fmt.Sprintf(`{"version":{"Version":"5.8.9"},"host":{"serviceIsRemote":false,"conmon":{"path":%q,"version":"conmon version 2.2.1, commit: test-build"}}}`, conmonPath), true, 0
 		case len(argv) > 1 && argv[1] == "inspect" && slicesContains(argv, "{{.State.Running}}"):
 			return "true\n", true, 0
 		case len(argv) > 1 && argv[1] == "inspect" && slicesContains(argv, "{{.State.Status}}"):
@@ -113,7 +113,7 @@ func TestRunStopForceRecoversUnresolvedTypedLeftoverThroughPinnedExecMonitor(t *
 		calls = append(calls, append([]string(nil), argv...))
 		switch {
 		case len(argv) > 1 && argv[1] == "info":
-			return fmt.Sprintf(`{"version":{"Version":"5.8.9"},"host":{"serviceIsRemote":false,"conmon":{"path":%q,"version":"2.2.1"}}}`, conmonPath), true, 0
+			return fmt.Sprintf(`{"version":{"Version":"5.8.9"},"host":{"serviceIsRemote":false,"conmon":{"path":%q,"version":"conmon version 2.2.1, commit: test-build"}}}`, conmonPath), true, 0
 		case len(argv) > 1 && argv[1] == "inspect" && slicesContains(argv, "{{.State.Running}}"):
 			return "false\n", true, 0
 		case len(argv) > 1 && argv[1] == "inspect" && slicesContains(argv, "{{.State.Status}}"):

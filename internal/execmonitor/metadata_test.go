@@ -59,8 +59,21 @@ func TestParseContainerRequiresExactlyFullID(t *testing.T) {
 	}
 }
 
+const fixtureConmonVersion = "conmon version 2.2.1, commit: test-build"
+
+func TestParseRuntimeInfoAcceptsSupportedConmonProducerOutput(t *testing.T) {
+	base := fmt.Sprintf(`{"version":{"Version":"5.8.9"},"host":{"serviceIsRemote":false,"conmon":{"path":"/usr/bin/conmon","version":%q}}}`, fixtureConmonVersion)
+	info, err := ParseRuntimeInfo([]byte(base))
+	if err != nil {
+		t.Fatalf("ParseRuntimeInfo rejected conmon's source-defined output: %v", err)
+	}
+	if info.ConmonVersion != "2.2.1" {
+		t.Fatalf("ConmonVersion = %q, want semantic version 2.2.1", info.ConmonVersion)
+	}
+}
+
 func TestParseRuntimeInfoDeclinesUntrustedOrUnsupportedMetadata(t *testing.T) {
-	base := `{"version":{"Version":"5.8.9"},"host":{"serviceIsRemote":false,"conmon":{"path":"/usr/bin/conmon","version":"2.2.1"}}}`
+	base := fmt.Sprintf(`{"version":{"Version":"5.8.9"},"host":{"serviceIsRemote":false,"conmon":{"path":"/usr/bin/conmon","version":%q}}}`, fixtureConmonVersion)
 	for _, tc := range []struct {
 		name string
 		json string
@@ -68,8 +81,14 @@ func TestParseRuntimeInfoDeclinesUntrustedOrUnsupportedMetadata(t *testing.T) {
 		{"remote", strings.Replace(base, `"serviceIsRemote":false`, `"serviceIsRemote":true`, 1)},
 		{"missing locality", strings.Replace(base, `"serviceIsRemote":false,`, "", 1)},
 		{"unsupported version", strings.Replace(base, "5.8.9", "5.9.0", 1)},
-		{"missing conmon", strings.Replace(base, `,"conmon":{"path":"/usr/bin/conmon","version":"2.2.1"}`, "", 1)},
-		{"unsupported conmon", strings.Replace(base, `"version":"2.2.1"`, `"version":"2.2.2"`, 1)},
+		{"missing conmon", strings.Replace(base, fmt.Sprintf(`,"conmon":{"path":"/usr/bin/conmon","version":%q}`, fixtureConmonVersion), "", 1)},
+		{"missing conmon version", strings.Replace(base, fmt.Sprintf(`,"version":%q`, fixtureConmonVersion), "", 1)},
+		{"unsupported conmon", strings.Replace(base, fixtureConmonVersion, "conmon version 2.2.2, commit: test-build", 1)},
+		{"too-close conmon version", strings.Replace(base, fixtureConmonVersion, "conmon version 2.2.10, commit: test-build", 1)},
+		{"development conmon version", strings.Replace(base, fixtureConmonVersion, "conmon version dev, commit: test-build", 1)},
+		{"bare conmon version", strings.Replace(base, fixtureConmonVersion, "2.2.1", 1)},
+		{"missing conmon commit", strings.Replace(base, fixtureConmonVersion, "conmon version 2.2.1, commit: ", 1)},
+		{"malformed conmon output", strings.Replace(base, fixtureConmonVersion, "conmon 2.2.1; commit test-build", 1)},
 		{"duplicate remote key", strings.Replace(base, `"serviceIsRemote":false`, `"serviceIsRemote":false,"serviceIsRemote":true`, 1)},
 		{"bad JSON", base + " garbage"},
 	} {
@@ -122,7 +141,7 @@ func newFixture(t *testing.T) fixture {
 	}
 	return fixture{
 		proc:    proc,
-		info:    fmt.Sprintf(`{"version":{"Version":"5.8.9"},"host":{"serviceIsRemote":false,"conmon":{"path":%q,"version":"2.2.1"}}}`, bin),
+		info:    fmt.Sprintf(`{"version":{"Version":"5.8.9"},"host":{"serviceIsRemote":false,"conmon":{"path":%q,"version":%q}}}`, bin, fixtureConmonVersion),
 		inspect: fmt.Sprintf(`{"Id":%q,"State":{"Status":"stopping"},"ExecIDs":[%q]}`, fixtureCID, fixtureExec),
 	}
 }

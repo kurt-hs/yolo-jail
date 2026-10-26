@@ -30,9 +30,9 @@ func TestRunStopForceRecoveryDeclinesCallerMetadataAndIdentityNegatives(t *testi
 		inspectID               string
 		wantInfo                bool
 	}{
-		{name: "remote info", force: true, info: `{"version":{"Version":"5.8.9"},"host":{"serviceIsRemote":true,"conmon":{"path":"/bin/conmon","version":"2.2.1"}}}`, wantInfo: true},
+		{name: "remote info", force: true, info: `{"version":{"Version":"5.8.9"},"host":{"serviceIsRemote":true,"conmon":{"path":"/bin/conmon","version":"conmon version 2.2.1, commit: test-build"}}}`, wantInfo: true},
 		{name: "missing runtime facts", force: true, info: `{}`, wantInfo: true},
-		{name: "unknown version", force: true, info: `{"version":{"Version":"5.9.0"},"host":{"serviceIsRemote":false,"conmon":{"path":"/bin/conmon","version":"2.2.1"}}}`, wantInfo: true},
+		{name: "unknown version", force: true, info: `{"version":{"Version":"5.9.0"},"host":{"serviceIsRemote":false,"conmon":{"path":"/bin/conmon","version":"conmon version 2.2.1, commit: test-build"}}}`, wantInfo: true},
 		{name: "stored exec membership absent", force: true, execs: `[]`, wantInfo: true},
 		{name: "main monitor lacks exec mode", force: true, cmdline: "conmon\x00-c\x00" + stopMonitorTestCID + "\x00-u\x00" + stopMonitorTestCID + "\x00", wantInfo: true},
 		{name: "wrong container id", force: true, cmdline: "conmon\x00-c\x00" + strings.Repeat("f", 64) + "\x00-u\x00" + stopMonitorTestExecID + "\x00-e\x00", wantInfo: true},
@@ -66,6 +66,8 @@ func TestRunStopForceRecoveryDeclinesCallerMetadataAndIdentityNegatives(t *testi
 			}
 		}},
 		{name: "pid reuse after pidfd", force: true, wantInfo: true, mutateProc: func(t *testing.T, proc, _ string) { /* mutation occurs in pidfd seam below */ }},
+		{name: "unknown monitor state initially", force: true, wantInfo: true, mutateProc: func(t *testing.T, proc, _ string) { writeStopProcStat(t, proc, 100, 1, "?", 1000) }},
+		{name: "unknown monitor state at final recheck", force: true, wantInfo: true, mutateAfterFinalInspect: func(t *testing.T, proc string) { writeStopProcStat(t, proc, 100, 1, "?", 1000) }},
 		{name: "monitor changed after final inspect", force: true, wantInfo: true, mutateAfterFinalInspect: func(t *testing.T, proc string) { writeStopProcStat(t, proc, 100, 1, "S", 2000) }},
 		{name: "child changed after final inspect", force: true, wantInfo: true, mutateAfterFinalInspect: func(t *testing.T, proc string) { writeStopProcStat(t, proc, 200, 100, "S", 1001) }},
 		{name: "pidfd send ESRCH", force: true, wantInfo: true, signalErr: syscall.ESRCH},
@@ -122,7 +124,7 @@ func TestRunStopForceRecoveryDeclinesCallerMetadataAndIdentityNegatives(t *testi
 			t.Cleanup(func() { stopMonitorProcessOps = savedOps })
 			info := tc.info
 			if info == "" {
-				info = fmt.Sprintf(`{"version":{"Version":"5.8.9"},"host":{"serviceIsRemote":false,"conmon":{"path":%q,"version":"2.2.1"}}}`, conmon)
+				info = fmt.Sprintf(`{"version":{"Version":"5.8.9"},"host":{"serviceIsRemote":false,"conmon":{"path":%q,"version":"conmon version 2.2.1, commit: test-build"}}}`, conmon)
 			}
 			execs := tc.execs
 			if execs == "" {
@@ -199,6 +201,42 @@ func TestRunStopForceRecoveryDeclinesCallerMetadataAndIdentityNegatives(t *testi
 				t.Fatalf("Podman info called=%v, want %v", infoCalled, tc.wantInfo)
 			}
 		})
+	}
+}
+
+func TestRunStopForceUnresolvedAppleContainerDoesNotProbePodmanOrSignal(t *testing.T) {
+	cname, _ := stopWorkspace(t, `{"runtime":"container"}`)
+	shrinkStopGone(t)
+	procRoot := filepath.Join(t.TempDir(), "unused-proc")
+	var pidfdOpened, signaled, pidfdClosed bool
+	savedOps := stopMonitorProcessOps
+	stopMonitorProcessOps = execmonitor.Ops{
+		ProcRoot: procRoot, UID: os.Geteuid(), UIDSet: true, SelfPID: 99,
+		PidfdOpen:  func(int) (int, error) { pidfdOpened = true; return 77, nil },
+		SendSignal: func(int, syscall.Signal) error { signaled = true; return nil },
+		ClosePidfd: func(int) error { pidfdClosed = true; return nil },
+	}
+	t.Cleanup(func() { stopMonitorProcessOps = savedOps })
+	listing := "ID IMAGE OS ARCH STATE ADDR\n" + cname + " localhost/yolo-jail:abc linux arm64 running 192.168.64.3/24\n"
+	fake := &acStop{t: t, cname: cname, stopRC: 125, lsAfterStop: func(int) (string, int) { return listing, 0 }}
+	podmanCalled := false
+	runner := func(argv []string, timeout time.Duration) (string, bool, int) {
+		if len(argv) > 0 && argv[0] == "podman" {
+			podmanCalled = true
+		}
+		return fake.run(argv, timeout)
+	}
+	useStopExec(t, runner)
+	var rc int
+	stdout, stderr := captureBoth(t, func() { rc = runStop([]string{"stop", "--force"}) })
+	if rc != 1 {
+		t.Fatalf("runStop = %d, want unresolved failure\nstdout:\n%s\nstderr:\n%s", rc, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "`container stop "+cname+"` failed") || fake.lsAsks == 0 {
+		t.Fatalf("fake Apple Container did not remain present after its unresolved stop: asks=%d\nstderr:\n%s", fake.lsAsks, stderr)
+	}
+	if podmanCalled || pidfdOpened || signaled || pidfdClosed {
+		t.Fatalf("non-Podman force stop crossed the recovery boundary: podman=%v pidfd-open=%v signal=%v close=%v", podmanCalled, pidfdOpened, signaled, pidfdClosed)
 	}
 }
 

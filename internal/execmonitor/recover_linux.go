@@ -269,6 +269,9 @@ func readCandidate(o Ops, pid int, conmonPath string, conmon os.FileInfo, snapsh
 	if err != nil {
 		return process{}, err
 	}
+	if !supportedLiveMonitorState(p.State) {
+		return process{}, errors.New("candidate monitor state is unsupported or not live")
+	}
 	exePath := filepath.Join(o.ProcRoot, strconv.Itoa(pid), "exe")
 	resolvedExePath, err := filepath.EvalSymlinks(exePath)
 	if err != nil || resolvedExePath != conmonPath {
@@ -407,6 +410,15 @@ func readProcess(o Ops, pid int) (process, error) {
 		return process{}, errors.New("process stat identity is malformed")
 	}
 	return process{PID: pid, PPID: ppid, UID: uid, State: state, StartTime: start}, nil
+}
+
+func supportedLiveMonitorState(state byte) bool {
+	switch state {
+	case 'R', 'S', 'D', 'T', 't':
+		return true
+	default:
+		return false
+	}
 }
 
 func parseProcStat(data []byte) (pid, ppid int, state byte, start uint64, err error) {
