@@ -63,7 +63,7 @@ func TestARefusedFreshLaunchLeavesNoHostServicesDir(t *testing.T) {
 		t.Fatalf("Run() = %d, want 1 (the skeleton refusal)\nstdout:\n%s\nstderr:\n%s",
 			rc, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "home skeleton") {
+	if !strings.Contains(stderr.String(), "home skeleton") {
 		t.Fatalf("the launch did not refuse at the skeleton, so this test says nothing about "+
 			"the refusal path:\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
 	}
@@ -138,7 +138,7 @@ func TestTeardownRemovesTheHostServicesDirOnlyOnAnAnswer(t *testing.T) {
 				t.Fatal(err)
 			}
 			var buf strings.Builder
-			o := &Options{Stdout: &buf}
+			o := &Options{Stderr: &buf}
 			fillDefaults(o)
 			asked := false
 			o.Exec = func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {
@@ -199,7 +199,7 @@ func TestTeardownKeepsTheUpstreamSocketsWhenAContainerMayExist(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = os.Remove(upstream) })
-			o := &Options{Stdout: discardBuf()}
+			o := &Options{Stderr: discardBuf()}
 			fillDefaults(o)
 			o.Exec = func([]string, string, []string, time.Duration) ExecResult { return c.ps }
 
@@ -291,7 +291,7 @@ func reapFixture(t *testing.T, owners map[string]string,
 	}
 
 	stopped := map[string]bool{}
-	o := &Options{Stdout: discardBuf()}
+	o := &Options{Stderr: discardBuf()}
 	fillDefaults(o)
 	o.PIDAlive = func(pid int) bool { return pid == 4242 }
 	o.Exec = func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {

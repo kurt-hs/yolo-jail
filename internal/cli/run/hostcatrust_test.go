@@ -250,3 +250,26 @@ func TestAppleContainerGetsTheHostsCAsInItsHome(t *testing.T) {
 		t.Errorf("hostCAArgs = %v, want %v", args, want)
 	}
 }
+
+// THE LAUNCHER WRITES NOTHING ON STDOUT during a launch: `yolo run -- <cmd>`'s stdout IS the
+// command's stdout (the session runs with the process's own stream, never Options.Stdout), so
+// every line the launcher prints — a warning, a refusal, a note, a progress line, a disclosure —
+// goes to stderr, where launch.log still records it (launchlog.go). The whole launch runs over a
+// fixture whose config makes it warn, so a call site that hands a stdout printer a launch line
+// anywhere on the container path fails this.
+func TestALaunchPrintsNothingOnTheCommandsStdout(t *testing.T) {
+	ca := hostCATestCA(t, "Example Corp Inspection CA", catrust.SourceSystemKeychain)
+	stubHostTrust(t, hostTrust{cas: []catrust.CA{ca}, notes: []string{"3 certificate(s) were left out"}})
+	_, _, _, stdout, stderr := sealCrossingsFixture.launchStreams(t, false)
+	if stdout != "" {
+		t.Errorf("the launcher printed on stdout, which the jail command's output shares:\nstdout:\n%s", stdout)
+	}
+	// The fixture's device does not exist, so the config validator warns, and the device line
+	// discloses the KVM passthrough: both reached stdout before the launcher's lines moved.
+	for _, want := range []string{"device path does not exist", "KVM passthrough: /dev/kvm"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("the launch did not print %q on stderr, so it no longer shows where a launch "+
+				"line goes:\nstderr:\n%s", want, stderr)
+		}
+	}
+}

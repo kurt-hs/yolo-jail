@@ -112,7 +112,10 @@ There are three shapes, and each one ends at `tty.Color` or at its `NoColor` hal
   `internal/broker`, `yolo stores`, `check`, and the run pipeline) call `tty.Color` themselves,
   passing their requested color and their seam's answer (`IsTTYStdout`, in most of them). The seam
   defaults to the real probe on `os.Stdout`; a test replaces it, so the tests can drive the
-  terminal case and the pipe case without a real terminal.
+  terminal case and the pipe case without a real terminal. The run pipeline is the exception that
+  asks about stderr: every line a launch prints goes there, because its stdout is the jailed
+  command's, so its printer asks `IsTTYStderr` (`streamColor` in `internal/cli/run`), and only
+  `yolo config apply`'s stdout report asks `IsTTYStdout`.
 - **Text another process prints** takes the `NoColor` half alone, because the process deciding
   cannot probe the stream the text will reach. That covers the three lines the generated container
   script prints (the provisioning line, the provisioning failure and the `⚡ Executing` hand-over),

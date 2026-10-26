@@ -309,7 +309,7 @@ func TestAssemblePackFilesAbsentSourceWarns(t *testing.T) {
 	emptyLoopholeDirs(t)
 	o := goldenOptions("/ws", home)
 	var buf strings.Builder
-	o.Stdout = &buf
+	o.Stderr = &buf
 
 	// A pack whose `from` names a path its tree does not carry.
 	root := t.TempDir()
@@ -862,7 +862,7 @@ func TestPackFilesWarnsDifferentlyWhenTheStagedTreeVanished(t *testing.T) {
 	emptyLoopholeDirs(t)
 	o := goldenOptions("/ws", home)
 	var buf strings.Builder
-	o.Stdout = &buf
+	o.Stderr = &buf
 
 	pack := filesPack(t, "matt", "files/models.json", ".pi/agent/models.json", nil)
 	// The reap: the whole staged tree goes, not just this contribution's source.
@@ -901,7 +901,7 @@ func TestPackFilesWarnsAboutTheFromWhenTheTreeIsStaged(t *testing.T) {
 	emptyLoopholeDirs(t)
 	o := goldenOptions("/ws", home)
 	var buf strings.Builder
-	o.Stdout = &buf
+	o.Stderr = &buf
 
 	// The tree exists and carries content; only the declared `from` is absent.
 	pack := filesPack(t, "matt-fzf", "bin", ".claude/bin", nil)

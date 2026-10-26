@@ -191,7 +191,7 @@ func Run(opts Options) (rc int) {
 	repoRes, repoRootOK := o.RepoRoot()
 	repoRoot := repoRes.Root
 	if err := o.ensureStorage(); err != nil {
-		o.pr(o.Stdout).printf("[bold red]%s[/bold red]", err.Error())
+		o.pr(o.Stderr).printf("[bold red]%s[/bold red]", err.Error())
 		return 1
 	}
 	// THE PACK REFRESH, before anything resolves a pack (maintainer ruling, 2026-09-25):
@@ -250,7 +250,7 @@ func Run(opts Options) (rc int) {
 	// build, not an image), so it lives in the `else` arm below.
 	if rt != "macos-user" {
 		if o.DryRun {
-			o.pr(o.Stdout).print(
+			o.pr(o.Stderr).print(
 				"[bold red]--dry-run is only supported for the macos-user runtime.[/bold red]  " +
 					`Set runtime: "macos-user" (or YOLO_RUNTIME=macos-user) to use it.`)
 			return 1
@@ -500,7 +500,7 @@ func Run(opts Options) (rc int) {
 	if rt == "macos-user" {
 		o.noteRecoveryHatches(rt, false) // recoveryscope.go: what each set hatch reaches here, forks alone (PF-D97)
 		if o.MacosUserRun == nil {
-			o.pr(o.Stdout).print(
+			o.pr(o.Stderr).print(
 				"[bold red]macos-user runtime handler not wired.[/bold red]  " +
 					"This build cannot launch the native macOS backend.")
 			return 1
@@ -1106,7 +1106,7 @@ func Run(opts Options) (rc int) {
 		// inputs is returned as it is, each patched copy standing in by its store entry.
 		homeOverlay, err = buildMacosHomeOverlayDelivering(staging, staged.packs, o.patchedTreeDirs(),
 			o.patchedTreeIdentities(), o.macosUserInheritedScope(rt), func(line string) {
-				o.pr(o.Stdout).print("[yellow]" + line + "[/yellow]")
+				o.pr(o.Stderr).print("[yellow]" + line + "[/yellow]")
 			})
 		sp.End()
 		if err != nil {
@@ -1299,7 +1299,7 @@ func selectedHostImportExclusions(policy map[string][]string, packs []*packload.
 func (o *Options) stageRunPacks(cname string) (stagedPacks, bool) {
 	root, packs, briefings, err := o.stagePacks(cname)
 	if err != nil {
-		o.pr(o.Stdout).printf("[bold red]%s[/bold red]", err.Error())
+		o.pr(o.Stderr).printf("[bold red]%s[/bold red]", err.Error())
 		return stagedPacks{}, false
 	}
 	o.packTree = root
@@ -1550,7 +1550,7 @@ func (o *Options) ensureStorage() error {
 // assembly serializes and the native arm declines (packservices.go's jailDaemonsFor).
 func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string, staged stagedPacks,
 	injectedArgs []string, channel *packChannel, jailDaemons []loopholes.JailDaemonSpec) int {
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	// Staged above the dispatch (see Run): this path consumes the result rather than
 	// producing it. packStaging is this launch's own pack tree, the one /ctx/packs binds on a
 	// fresh launch; loadedPacks is what the mount assembler reads declarations from. An attach
@@ -2901,7 +2901,7 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 	} else {
 		o.logRecord("decision: attach to the running jail %s", cname)
 	}
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	if o.cachedGoodOwner != "" {
 		if release != nil {
 			release()

@@ -51,7 +51,7 @@ import (
 // launch, from stagePacks, after the vocabulary pre-flight and before anything is delivered.
 func (o *Options) reportUnmatchedAudiences(packs []*packload.Pack) {
 	for _, line := range unmatchedAudiences(packs) {
-		o.pr(o.Stdout).print("[yellow]Warning: " + line + "[/yellow]")
+		o.pr(o.Stderr).print("[yellow]Warning: " + line + "[/yellow]")
 	}
 }
 

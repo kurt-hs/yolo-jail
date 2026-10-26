@@ -43,8 +43,9 @@ func durableOptions(t *testing.T) (*Options, *bytes.Buffer) {
 		t.Fatal(err)
 	}
 	o := goldenOptions(ws, home)
+	// out is the launch stream: every launcher line goes to stderr, never the jailed command's stdout.
 	var out bytes.Buffer
-	o.Stdout = &out
+	o.Stderr = &out
 	return o, &out
 }
 

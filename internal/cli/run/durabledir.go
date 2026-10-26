@@ -45,7 +45,7 @@ func (o *Options) ensureDurableDir(rt string, cfg *jsonx.OrderedMap) *jailconten
 		d.Path = durable.ContainerJailPath
 	}
 	if d.Path == "" {
-		o.pr(o.Stdout).print("[yellow]" + durable.UnavailableLine(d.Unavailable) + "[/yellow]")
+		o.pr(o.Stderr).print("[yellow]" + durable.UnavailableLine(d.Unavailable) + "[/yellow]")
 		return d
 	}
 	d.Caveat = o.durableCaveat()

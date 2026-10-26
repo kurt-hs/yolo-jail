@@ -162,7 +162,7 @@ func (o *Options) hostLayerEnv(in *assembleInput) []string {
 		// Unreachable for a []string, and silence would be the wrong failure anyway: no
 		// variable means "unknown" in the jail, so the read degrades to the fail-open
 		// behaviour that shipped before it rather than refusing anything.
-		o.pr(o.Stdout).print("[yellow]Warning: host layers: " + err.Error() +
+		o.pr(o.Stderr).print("[yellow]Warning: host layers: " + err.Error() +
 			" — the jail cannot check that they arrived[/yellow]")
 		return nil
 	}
@@ -198,7 +198,7 @@ const acCtxDirRel = ".yolo-ctx"
 // this argv binds — pack mounts are listed there too now (context-mounts.md#what-the-briefing-says).
 func (o *Options) hostMountArgs(in *assembleInput) []string {
 	var args []string
-	for _, m := range o.packCtxMounts(in.rt, in.packs, o.pr(o.Stdout).print) {
+	for _, m := range o.packCtxMounts(in.rt, in.packs, o.pr(o.Stderr).print) {
 		if !m.file {
 			args = append(args, "-v", m.source+":"+m.dest+":ro")
 			continue

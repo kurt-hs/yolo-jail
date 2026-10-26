@@ -171,7 +171,7 @@ func TestAnArrivalSaysWhyItWaitsForThePreviousKeeper(t *testing.T) {
 	}()
 	o := goldenOptions("/ws", t.TempDir())
 	var out bytes.Buffer
-	o.Stdout = &out
+	o.Stderr = &out
 	o.holdLaunchLock(cname)
 	if !o.awaitPreviousKeeper(cname) {
 		t.Fatal("the arrival gave up on a keeper that ended")

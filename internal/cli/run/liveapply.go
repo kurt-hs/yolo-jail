@@ -176,14 +176,14 @@ func (o *Options) configApply(recordOnly bool) int {
 		case !known:
 			mode.running, mode.unknown = false, true
 			mode.recordOnly = "could not ask " + rt + " whether this jail is running"
-			out := o.pr(o.Stdout)
+			out := o.pr(o.Stderr)
 			out.printf("[yellow]Could not ask %s whether this workspace's jail (%s) is running: %s[/yellow]",
 				rt, cname, richtext.Escape(termsafe.Visible(failure)))
 			out.printf("[dim]Recording the approval only. Run `%s` to see why, then run "+
 				"`yolo config apply` again to apply what the jail can take.[/dim]", runningListCommand(rt))
 		case cid == "":
 			mode.running = false
-			o.pr(o.Stdout).print("[cyan]No jail is running for this workspace: recording the approval " +
+			o.prOut(o.Stdout).print("[cyan]No jail is running for this workspace: recording the approval " +
 				"only, and the next `yolo` here launches with these changes.[/cyan]")
 		default:
 			envLines, _ = o.inspectContainerEnv(rt, cname)
@@ -251,7 +251,7 @@ func (o *Options) liveApply(cfg *jsonx.OrderedMap, rt, cname string, envLines []
 		return 1
 	}
 	if moved {
-		out := o.pr(o.Stdout)
+		out := o.pr(o.Stderr)
 		out.print("[bold red]Nothing was applied: the workspace config changed while yolo was reading it.[/bold red]")
 		if mode.attach {
 			out.print("[dim]This session starts with the jail as it is. Run `yolo config apply` again " +
@@ -263,12 +263,18 @@ func (o *Options) liveApply(cfg *jsonx.OrderedMap, rt, cname string, envLines []
 	}
 	if len(plan) == 0 {
 		if !mode.attach {
-			o.pr(o.Stdout).print("[green]Nothing to apply: the jail already has this workspace's config.[/green]")
+			o.prOut(o.Stdout).print("[green]Nothing to apply: the jail already has this workspace's config.[/green]")
 		}
 		return 0
 	}
 	result := o.runApplySteps(run, plan)
-	out := o.pr(o.Stdout)
+	// THE RESULT IS `yolo config apply`'s PAYLOAD, so that verb prints it on stdout (prOut); an
+	// attach runs this sequence inside a launch, whose stdout is the session's, so there it is a
+	// launch line on stderr like every other (launchlog.go).
+	out := o.prOut(o.Stdout)
+	if mode.attach {
+		out = o.pr(o.Stderr)
+	}
 	out.print("[bold]Config apply result:[/bold]")
 	for _, line := range o.applyBlock(result, rt) {
 		out.print(line)
@@ -549,7 +555,7 @@ func (o *Options) foldApplied(run *applyRun, res []applyChange) {
 			continue
 		}
 		if err := config.FoldBootBaselineKey(o.Workspace, k, run.current); err != nil {
-			o.pr(o.Stdout).printf("[dim]Warning: could not record %s as applied in %s: %s; `yolo config "+
+			o.pr(o.Stderr).printf("[dim]Warning: could not record %s as applied in %s: %s; `yolo config "+
 				"drift` will still list it.[/dim]", k, config.WorkspaceConfigBootPath(o.Workspace),
 				richtext.Escape(err.Error()))
 		}
@@ -577,7 +583,7 @@ func (o *Options) applyAtAttach(cname, rt string, cfg *jsonx.OrderedMap, envLine
 		return
 	}
 	if o.configChangesPending(rt, cname, cfg, envLines) {
-		o.pr(o.Stdout).print("[yellow]" + attachPendingNotice + "[/yellow]")
+		o.pr(o.Stderr).print("[yellow]" + attachPendingNotice + "[/yellow]")
 	}
 }
 

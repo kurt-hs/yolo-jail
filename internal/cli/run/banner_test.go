@@ -65,7 +65,7 @@ func TestEmitLaunchBannerColorsOnATerminal(t *testing.T) {
 		o.Stderr = &buf
 		o.RepoRoot = func() (reporoot.Resolution, bool) { return reporoot.Resolution{}, false }
 		o.Color = color
-		o.IsTTYStdout = func() bool { return tty }
+		o.IsTTYStderr = func() bool { return tty }
 		o.Getenv = func(string) string { return "" } // no ambient NO_COLOR
 		o.emitLaunchBanner("podman", "yolo-x-abc", []string{"pids=32768"}, "")
 		return buf.String()

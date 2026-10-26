@@ -94,16 +94,13 @@ func TestAttachDeliversTheSelectedProfile(t *testing.T) {
 	if r.rc != 0 {
 		t.Fatalf("profiled attach failed: rc %d\n%s", r.rc, r.combined())
 	}
-	if got := r.combined(); !strings.Contains(got, "Attaching to existing jail") {
-		t.Errorf("the launch must report attaching to the running jail "+
-			"(otherwise this tested a fresh launch):\n%s", got)
+	if !strings.Contains(r.stderr, "Attaching to existing jail") {
+		t.Errorf("the launch must report attaching to the running jail on stderr "+
+			"(otherwise this tested a fresh launch):\n%s", r.combined())
 	}
-	// The attach banner is stdout's first line (the attach arm prints it there), so the
-	// exact-match discipline applies to everything AFTER it.
-	if !strings.HasPrefix(r.stdout, "Attaching to existing jail") {
-		t.Errorf("the attach report is not where the pair should follow it:\n%s", r.stdout)
-	}
-	tail := r.stdout[strings.IndexByte(r.stdout, '\n')+1:]
+	// Every launcher line, the attach banner included, is on stderr: stdout is the session's
+	// alone, so the exact-match discipline applies to the whole of it.
+	tail := r.stdout
 	want := "BARE-HAS-0\n" +
 		"ANTHROPIC_AUTH_TOKEN=integration-probe-not-a-real-key\n" +
 		"ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic\n"

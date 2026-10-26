@@ -28,7 +28,7 @@ func (o *Options) retireJailMadeVenv(cfg *jsonx.OrderedMap) {
 		"/mise/",
 		filepath.Join(homeDir(), ".local", "share", "mise"),
 	}
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	sorted := make([]string, 0, len(rels))
 	for r := range rels {
 		sorted = append(sorted, r)

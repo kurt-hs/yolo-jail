@@ -37,7 +37,7 @@ func (o *Options) prepareLoopholeSettings(discovered []*loopholes.Loophole, cfg 
 		supplied := suppliedSettings(loopCfg, lp.Name)
 		frozen, problems, err := loopholes.FrozenSettingsBytes(lp, supplied)
 		if err != nil {
-			o.pr(o.Stdout).print("[red]Could not resolve settings for loophole " + richtext.Escape(lp.Name) +
+			o.pr(o.Stderr).print("[red]Could not resolve settings for loophole " + richtext.Escape(lp.Name) +
 				": " + richtext.Escape(err.Error()) + " — its daemon will not start. " +
 				richtext.Escape(LoopholeSettingsFixStep(lp)) + "[/red]")
 			o.startupRefusal = &hostStartupRefusal{name: lp.Name, class: "settings-resolution",
@@ -46,7 +46,7 @@ func (o *Options) prepareLoopholeSettings(discovered []*loopholes.Loophole, cfg 
 			return nil
 		}
 		for _, problem := range problems {
-			o.pr(o.Stdout).print("[yellow]Warning: " + problem + "[/yellow]")
+			o.pr(o.Stderr).print("[yellow]Warning: " + problem + "[/yellow]")
 		}
 		values, _ := loopholes.ResolveSettings(lp, supplied)
 		o.discloseLoopholeSettingsResolved(lp, values)
@@ -111,7 +111,7 @@ func (o *Options) publishLoopholeSettings(plan *preparedLoopholeSettings) {
 			continue
 		}
 		if err := loopholes.WriteSettingsBytes(loopholes.SettingsFileFor(lp.Name), plan.bytes[lp.Name]); err != nil {
-			o.pr(o.Stdout).print("[red]Could not write settings for loophole " + lp.Name +
+			o.pr(o.Stderr).print("[red]Could not write settings for loophole " + lp.Name +
 				": " + err.Error() + " — it will start with its declared defaults[/red]")
 		}
 	}

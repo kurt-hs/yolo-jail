@@ -37,7 +37,7 @@ type packSkewRun struct {
 }
 
 // runPackSkew drives Run's attach against ws's running jail, whose frozen environment is env.
-// tty sets both terminal predicates, stdin is what a prompt reads, and getenv is the process
+// tty sets all three terminal predicates, stdin is what a prompt reads, and getenv is the process
 // environment the attach sees beside YOLO_RUNTIME.
 func runPackSkew(t *testing.T, ws, env string, tty bool, stdin string, getenv map[string]string,
 	mutate func(*Options)) packSkewRun {
@@ -60,6 +60,7 @@ func runPackSkew(t *testing.T, ws, env string, tty bool, stdin string, getenv ma
 	}
 	o.IsTTYStdin = func() bool { return tty }
 	o.IsTTYStdout = func() bool { return tty }
+	o.IsTTYStderr = func() bool { return tty }
 	o.Stdin = strings.NewReader(stdin)
 	o.Getenv = func(k string) string {
 		if k == "YOLO_RUNTIME" {
@@ -179,8 +180,8 @@ func TestAnAttachWhoseJailLacksTheSelectedPackTakesTheDisposition(t *testing.T) 
 				if r.rc != 0 || !r.execed || len(r.rt.stops) != 0 {
 					t.Fatalf("the acknowledgment must proceed: rc=%d execed=%v stops=%v\n%s", r.rc, r.execed, r.rt.stops, r.stderr)
 				}
-				if strings.Contains(r.stdout, "Restart jail now") {
-					t.Errorf("the acknowledgment asked:\n%s", r.stdout)
+				if strings.Contains(r.stderr, "Restart jail now") {
+					t.Errorf("the acknowledgment asked:\n%s", r.stderr)
 				}
 				for _, want := range []string{AllowAttachSkewEnv + " is set", "launched without zai", "delivers nothing",
 					"The jail's briefing names this difference as well"} {
@@ -200,14 +201,14 @@ func TestAnAttachWhoseJailLacksTheSelectedPackTakesTheDisposition(t *testing.T) 
 				if r.rc != 1 || r.execed || len(r.rt.stops) != 0 {
 					t.Fatalf("a declined restart must refuse: rc=%d execed=%v stops=%v\n%s", r.rc, r.execed, r.rt.stops, r.stderr)
 				}
-				if !strings.Contains(r.stdout, "Restart jail now? [Y/n]") || !strings.Contains(r.stdout, "launched without zai") {
-					t.Errorf("the terminal was not asked, naming the pack:\n%s", r.stdout)
+				if !strings.Contains(r.stderr, "Restart jail now? [Y/n]") || !strings.Contains(r.stderr, "launched without zai") {
+					t.Errorf("the terminal was not asked, naming the pack:\n%s", r.stderr)
 				}
 			case "restarted":
 				if !slices.Equal(r.rt.stops, []string{cname}) {
 					t.Fatalf("a yes did not stop the jail: stops=%v\nstdout:\n%s\nstderr:\n%s", r.rt.stops, r.stdout, r.stderr)
 				}
-				if !strings.Contains(r.stderr, "just build-dev-bundle") || r.execed || strings.Contains(r.stdout, "Attaching to existing jail") {
+				if !strings.Contains(r.stderr, "just build-dev-bundle") || r.execed || strings.Contains(r.stderr, "Attaching to existing jail") {
 					t.Errorf("a restart must continue into the fresh launch's helper refusal, not attach (execed=%v):\n%s\n%s",
 						r.execed, r.stdout, r.stderr)
 				}

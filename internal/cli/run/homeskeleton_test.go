@@ -1066,8 +1066,8 @@ func TestAttachLeavesTheSkeletonByteIdentical(t *testing.T) {
 		t.Fatalf("refreshJailBriefings on the attach: %v", err)
 	}
 	// The attach arm, against a jail `inspect` reports as running.
-	var stdout bytes.Buffer
-	o.Stdout = &stdout
+	var stderr bytes.Buffer
+	o.Stderr = &stderr
 	o.Exec = func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {
 		if len(argv) > 1 && argv[1] == "inspect" {
 			return ExecResult{Ran: true, RC: 0, Stdout: "YOLO_VERSION=9.9.9-test\n"}
@@ -1077,7 +1077,7 @@ func TestAttachLeavesTheSkeletonByteIdentical(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	channel := channelFor(t, o, changed, staged.packs, nil)
 	rc, _ := o.attachExisting(cname, "podman", "true", changed, staged, channel, false, nil)
-	if got := stdout.String(); rc != 1 || !strings.Contains(got, "Attaching to existing jail") ||
+	if got := stderr.String(); rc != 1 || !strings.Contains(got, "Attaching to existing jail") ||
 		!strings.Contains(got, "not found on PATH") {
 		t.Fatalf("the attach arm did not run through to its exec (rc=%d), so this test proves "+
 			"nothing about it:\n%s", rc, got)

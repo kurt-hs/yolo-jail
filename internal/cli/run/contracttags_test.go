@@ -265,7 +265,7 @@ func TestAttachSkewPromptsARestartInATerminal(t *testing.T) {
 			if !slices.Equal(s.rt.stops, []string{"yolo-ws-abcd1234"}) {
 				t.Errorf("the restart must stop this jail, once: %v", s.rt.stops)
 			}
-			out := s.stdout.String()
+			out := s.stderr.String()
 			for _, want := range []string{"Restart jail now? [Y/n]", "agent-env-files",
 				"claude (profile zai): ", "ZAI_API_KEY", "every session in it (3 running now)"} {
 				if !strings.Contains(out, want) {
@@ -336,8 +336,8 @@ func TestAttachSkewWithoutATerminalRefuses(t *testing.T) {
 					t.Errorf("the refusal must name %q:\n%s", want, out)
 				}
 			}
-			if strings.Contains(s.stdout.String(), "Restart jail now") {
-				t.Errorf("no terminal, no prompt:\n%s", s.stdout)
+			if strings.Contains(s.stderr.String(), "Restart jail now") {
+				t.Errorf("no terminal, no prompt:\n%s", s.stderr)
 			}
 			assertLiveChannelFileUnchanged(t, s.envFile, s.before)
 		})
@@ -354,8 +354,8 @@ func TestAttachSkewAcknowledgedProceedsWithoutDelivery(t *testing.T) {
 		t.Fatalf("the acknowledgment must proceed to the exec: rc=%d restarted=%v execed=%v\n%s",
 			rc, restarted, s.didExec(), s.stderr)
 	}
-	if len(s.rt.stops) != 0 || strings.Contains(s.stdout.String(), "Restart jail now") {
-		t.Errorf("the acknowledgment must neither stop nor ask:\n%s", s.stdout)
+	if len(s.rt.stops) != 0 || strings.Contains(s.stderr.String(), "Restart jail now") {
+		t.Errorf("the acknowledgment must neither stop nor ask:\n%s", s.stderr)
 	}
 	out := s.stderr.String()
 	for _, want := range []string{AllowAttachSkewEnv, "agent-env-files", "claude (profile zai): ",
@@ -493,8 +493,8 @@ func TestARestartedAttachContinuesAsAFreshLaunch(t *testing.T) {
 		t.Fatalf("the restarted fresh launch did not reach the paired-helper refusal\nstdout:\n%s\nstderr:\n%s",
 			s.stdout, s.stderr)
 	}
-	if strings.Contains(s.stdout.String(), "Attaching to existing jail") || s.didExec() {
-		t.Errorf("a restarted attach went on to attach:\n%s", s.stdout)
+	if strings.Contains(s.stderr.String(), "Attaching to existing jail") || s.didExec() {
+		t.Errorf("a restarted attach went on to attach:\n%s", s.stderr)
 	}
 }
 

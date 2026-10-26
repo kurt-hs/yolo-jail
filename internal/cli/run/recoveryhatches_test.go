@@ -64,7 +64,7 @@ func TestTheMissingBuildRefusalGolden(t *testing.T) {
 func TestTheMissingBuildRefusalColorsItsCommands(t *testing.T) {
 	_, printed := missingTreeLaunch(t, func(o *Options) {
 		o.Color = true
-		o.IsTTYStdout = func() bool { return true }
+		o.IsTTYStderr = func() bool { return true }
 	})
 	for _, w := range []string{
 		richtext.Render("[bold red]ERROR: 1 patched extension pack agentpack loads has no build on this machine[/bold red]", true),
@@ -78,7 +78,7 @@ func TestTheMissingBuildRefusalColorsItsCommands(t *testing.T) {
 	}
 	_, printed = missingTreeLaunch(t, func(o *Options) {
 		o.Color = true
-		o.IsTTYStdout = func() bool { return true }
+		o.IsTTYStderr = func() bool { return true }
 		withEnv(o, "NO_COLOR", "1")
 	})
 	if i := strings.Index(printed, "ERROR: 1 patched"); i < 0 || strings.Contains(printed[i:], "\x1b[") {

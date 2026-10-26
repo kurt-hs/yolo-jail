@@ -382,6 +382,12 @@ A launch keeps its stream shape — a process narrated in time — and adopts th
 without the report layout. **Share the vocabulary, not the layout:** the launch does not get a
 verdict block, and the report does not get a progress stream.
 
+**Every line in the table below is written to stderr.** The launcher's stdout is the jailed
+command's (`yolo run -- cmd | jq`), so it carries only that command's output and the few outputs
+that are a verb's payload, which the doc comment on `attachLaunchLog`
+([`launchlog.go`](../../internal/cli/run/launchlog.go)) lists. Both streams are still teed to
+`.yolo/launch.log`.
+
 | Line | Tier | Treatment |
 | :--- | :--- | :--- |
 | version banner, `Flake source:`, `Jail binaries:`, `Jail:` | provenance (a decision) | unchanged. Each answers a different question |

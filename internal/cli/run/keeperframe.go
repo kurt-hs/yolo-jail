@@ -22,8 +22,8 @@ package run
 // replaying the log, so every line reaches that terminal once (sayReady, JL-D78).
 //
 // ONE SWITCHABLE WRITER carries the keeper's o.Stdout and o.Stderr (keeperSink), because reused
-// code captures its writer when a service starts: startExternalService hands `o.pr(o.Stdout)` to
-// the stop closure that runs at the teardown, so pointing o.Stdout elsewhere after ready would not
+// code captures its writer when a service starts: startExternalService hands `o.pr(o.Stderr)` to
+// the stop closure that runs at the teardown, so pointing o.Stderr elsewhere after ready would not
 // move the teardown's lines. Only a writer that switches underneath does.
 
 import (

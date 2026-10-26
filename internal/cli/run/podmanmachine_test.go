@@ -127,7 +127,7 @@ func TestAPodmanMachineThatNeverAnswersIsNotCalledStopped(t *testing.T) {
 			if rt, ok := o.resolveRuntime(p.cfg); ok || rt != "" {
 				t.Fatalf("resolveRuntime = %q,%v; want a refusal", rt, ok)
 			}
-			got := stdout.String()
+			got := stderr.String()
 			for _, want := range []string{
 				"podman info did not answer within 60s",
 				"the Podman machine may be busy or still starting",
@@ -165,7 +165,7 @@ func TestAStoppedPodmanMachineIsRefusedAtOnceWithTheStartHint(t *testing.T) {
 			if rt, ok := o.resolveRuntime(p.cfg); ok || rt != "" {
 				t.Fatalf("resolveRuntime = %q,%v; want a refusal", rt, ok)
 			}
-			got := stdout.String()
+			got := stderr.String()
 			for _, want := range []string{"installed but not started", "`podman machine start`",
 				"connect: connection refused"} {
 				if !strings.Contains(got, want) {
@@ -198,7 +198,7 @@ func TestAPodmanMachineProbeThatNeverRanPodmanNamesYolosScratchFile(t *testing.T
 			if rt, ok := o.resolveRuntime(p.cfg); ok || rt != "" {
 				t.Fatalf("resolveRuntime = %q,%v; want a refusal", rt, ok)
 			}
-			got := stdout.String()
+			got := stderr.String()
 			for _, want := range []string{"Cannot query", "so podman info never ran (1 attempt",
 				"no space left on device", "Fix: free space in the temporary directory"} {
 				if !strings.Contains(got, want) {

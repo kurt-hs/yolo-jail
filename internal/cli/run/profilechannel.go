@@ -150,7 +150,7 @@ func (o *Options) composePackChannel(cfg *jsonx.OrderedMap, packs []*packload.Pa
 	userEnv *jsonx.OrderedMap) (*packChannel, error) {
 	if userEnv == nil {
 		userEnv = config.HydrateEnvSources(o.Workspace, cfg, func(msg string) {
-			o.pr(o.Stdout).print(msg)
+			o.pr(o.Stderr).print(msg)
 		})
 	}
 	// The fold effectiveUseProfiles returns the table of, kept whole for what a BARE list did in
@@ -163,7 +163,7 @@ func (o *Options) composePackChannel(cfg *jsonx.OrderedMap, packs []*packload.Pa
 	// is the right place to surface: the fatal form of the same problem already refused
 	// the launch in ValidateConfig.
 	userProfiles, err := config.LoadProfiles(func(msg string) {
-		o.pr(o.Stdout).print(msg)
+		o.pr(o.Stderr).print(msg)
 	})
 	if err != nil {
 		return nil, err

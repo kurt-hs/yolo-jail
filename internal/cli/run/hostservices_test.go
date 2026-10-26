@@ -169,7 +169,7 @@ func startExternalServiceHarness(t *testing.T, socketsDir, script, transport str
 	spec.Set("command", []any{"sh", "-c", script, "fake-svc", "{endpoint}"})
 	o := &Options{}
 	fillDefaults(o)
-	o.Stdout = io.Discard
+	o.Stderr = io.Discard
 	o.ServiceReadyTimeout = readyTimeout
 	return o.startExternalService("fake-svc", spec, socketsDir, transport, "127.0.0.1", nil)
 }
@@ -317,7 +317,7 @@ func TestExternalServiceReportsCrashImmediately(t *testing.T) {
 	var buf strings.Builder
 	o := &Options{}
 	fillDefaults(o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	spec := jsonx.NewOrderedMap()
 	spec.Set("command", []any{"sh", "-c", "exit 3"})
 	start := time.Now()
@@ -352,7 +352,7 @@ func TestExternalServiceWarnsOnReadinessTimeout(t *testing.T) {
 	var buf strings.Builder
 	o := &Options{}
 	fillDefaults(o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	o.ServiceReadyTimeout = 300 * time.Millisecond
 	spec := jsonx.NewOrderedMap()
 	spec.Set("command", []any{"sh", "-c", "sleep 30"})
@@ -455,7 +455,7 @@ func TestFrontedServiceComesUpBehindFront(t *testing.T) {
 	var buf strings.Builder
 	o := &Options{}
 	fillDefaults(o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	spec := jsonx.NewOrderedMap()
 	spec.Set("command", []any{os.Args[0], "-front-upstream-child", "line", "{socket}"})
 	hd := &loopholes.HostDaemon{
@@ -631,7 +631,7 @@ func TestBundledHostProcessesRunsBehindTheFront(t *testing.T) {
 	o := &Options{}
 	fillDefaults(o)
 	var buf strings.Builder
-	o.Stdout = &buf
+	o.Stderr = &buf
 	o.writeLoopholeSettings([]*loopholes.Loophole{lp}, settingsCfg)
 	if !fileExists(loopholes.SettingsFileFor("host-processes")) {
 		t.Fatalf("no settings file at %s; output: %q",
@@ -764,7 +764,7 @@ func TestConfigLoopholeComesUpBehindFront(t *testing.T) {
 	o := &Options{}
 	fillDefaults(o)
 	var buf strings.Builder
-	o.Stdout = &buf
+	o.Stderr = &buf
 	// No cgroup delegate (its gate is a PathExists probe), no journal (absent key), and
 	// a runtime that ANSWERS "no such container": the teardown below removes the sockets
 	// dir only on an answer, so a runtime that cannot be asked (Ran:false) would leave
@@ -913,7 +913,7 @@ func TestManifestEOFDaemonRoundTripsBehindFront(t *testing.T) {
 	o := &Options{}
 	fillDefaults(o)
 	var buf strings.Builder
-	o.Stdout = &buf
+	o.Stderr = &buf
 	h, ok := o.startExternalService("eofd", spec, socketsDir,
 		lp.Transport, "127.0.0.1", lp.HostDaemon)
 	if !ok {
@@ -993,7 +993,7 @@ func TestFrontedServiceStaleUpstreamNeitherSatisfiesNorBlocks(t *testing.T) {
 	var buf strings.Builder
 	o := &Options{}
 	fillDefaults(o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	o.ServiceReadyTimeout = 300 * time.Millisecond
 	upstream := frontSocketFile(frontShortHash(socketsDir), "fake-svc")
 	if err := os.WriteFile(upstream, nil, 0o600); err != nil {
@@ -1040,7 +1040,7 @@ func TestStopLoopholesRetiresFrontSockets(t *testing.T) {
 	defer os.Remove(sock)
 	o := &Options{}
 	fillDefaults(o)
-	o.Stdout = io.Discard
+	o.Stderr = io.Discard
 	o.PIDAlive = func(int) bool { return false }
 	o.stopLoopholes(nil, socketsDir, "", "podman")
 	if fileExists(sock) {
@@ -1225,7 +1225,7 @@ func TestExternalServiceRefusesADaemonInsideTheWorkspace(t *testing.T) {
 	var buf strings.Builder
 	o := &Options{Workspace: ws}
 	fillDefaults(o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	spec := jsonx.NewOrderedMap()
 	spec.Set("command", []any{daemon, "--socket", "{socket}"})
 
@@ -1255,7 +1255,7 @@ func TestExternalServiceStartsADaemonOutsideTheWorkspace(t *testing.T) {
 	var buf strings.Builder
 	o := &Options{Workspace: t.TempDir()}
 	fillDefaults(o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	spec := jsonx.NewOrderedMap()
 	spec.Set("command", []any{os.Args[0], "-front-upstream-child", "line", "{socket}"})
 	hd := &loopholes.HostDaemon{
@@ -1314,7 +1314,7 @@ func TestExternalServiceReportsCleanExitWithNoService(t *testing.T) {
 	var buf strings.Builder
 	o := &Options{}
 	fillDefaults(o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	o.ServiceReadyTimeout = 300 * time.Millisecond
 	spec := jsonx.NewOrderedMap()
 	spec.Set("command", []any{"sh", "-c", "exit 0"})

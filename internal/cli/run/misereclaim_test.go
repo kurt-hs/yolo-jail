@@ -147,7 +147,7 @@ func TestTheOfferAsksAboutToolVersions(t *testing.T) {
 	o.Now = time.Now
 	o.IsTTYStdout = func() bool { return true }
 	var out bytes.Buffer
-	o.Stdout, o.Stdin = &out, strings.NewReader("y\n")
+	o.Stderr, o.Stdin = &out, strings.NewReader("y\n")
 	RecordOfferMeasurement(miseVersionsClass, offerMeasurement{Bytes: 2 << 30, Detail: "3 versions: python 3.11.9, node 20.1.0, go 1.24.1", When: time.Now()})
 	RecordOfferMeasurement(cachePurgeClass, offerMeasurement{Bytes: 5 << 30, Detail: "120 files", When: time.Now()})
 
@@ -186,7 +186,7 @@ func TestBelowTheThresholdToolVersionsAreNotOffered(t *testing.T) {
 	o.Now = time.Now
 	o.IsTTYStdout = func() bool { return true }
 	var out bytes.Buffer
-	o.Stdout, o.Stdin = &out, strings.NewReader("y\n")
+	o.Stderr, o.Stdin = &out, strings.NewReader("y\n")
 	RecordOfferMeasurement(miseVersionsClass, offerMeasurement{Bytes: OfferThreshold - 1, Detail: "1 version: node 20.1.0", When: time.Now()})
 	if c := o.maybeOfferReclaim(); out.Len() != 0 || c.has(miseVersionsClass) {
 		t.Fatalf("a class under the threshold was offered: %q", out.String())

@@ -204,7 +204,7 @@ func (o *Options) gpuArgs(cfg *jsonx.OrderedMap, rt string, gpuEnabled bool, gpu
 	if !gpuEnabled {
 		return nil
 	}
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	var args []string
 
 	// memlock ulimit (clamp to the host hard cap, or -1:-1 when unlimited).

@@ -43,6 +43,7 @@ func inheritOptions(t *testing.T) *Options {
 	return &Options{
 		Workspace: t.TempDir(),
 		Stdout:    &strings.Builder{},
+		Stderr:    &strings.Builder{},
 		Now:       func() time.Time { return time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC) },
 	}
 }
@@ -404,7 +405,7 @@ func TestFailedStagingEmitsNoMount(t *testing.T) {
 	}
 	var out strings.Builder
 	o := inheritOptions(t)
-	o.Stdout = &out
+	o.Stderr = &out
 	args := o.userConfigMountArgs("podman", bad)
 	if len(args) != 0 {
 		t.Errorf("a failed stage emitted mounts %v — podman would refuse to start the jail", args)

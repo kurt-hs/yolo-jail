@@ -72,7 +72,7 @@ func TestAnAttachKeepsThePackTreeTheJailBootedWith(t *testing.T) {
 	if r.rc != 0 {
 		t.Fatalf("the attach failed: rc %d\n%s", r.rc, r.combined())
 	}
-	if !strings.Contains(r.stdout, "Attaching to existing jail") {
+	if !strings.Contains(r.stderr, "Attaching to existing jail") {
 		t.Fatalf("the launch did not attach, so it tested a fresh launch:\n%s", r.combined())
 	}
 	if !strings.Contains(r.stdout, "ATTACH-PACKS-zai") {

@@ -72,7 +72,7 @@ func freshLaunch(t *testing.T, path, started, psAnswer string) (ws, cname, stdou
 // forgetGoneContainer asks a runtime that cannot answer, which removes nothing.
 func TestARuntimeThatNeverStartedLeavesNoPackTree(t *testing.T) {
 	_, cname, stdout, stderr, rc := freshLaunch(t, t.TempDir(), "", "")
-	if rc != 1 || !strings.Contains(stdout, "not found on PATH") {
+	if rc != 1 || !strings.Contains(stderr, "not found on PATH") {
 		t.Fatalf("the launch did not reach the runtime's start and fail there, so this test says "+
 			"nothing about that branch: rc=%d\nstdout:\n%s\nstderr:\n%s", rc, stdout, stderr)
 	}
@@ -102,7 +102,7 @@ func TestATreeTheTeardownCannotProveGoneOutlivesRun(t *testing.T) {
 	if _, err := os.Stat(started); err != nil {
 		t.Fatalf("the launch never ran its runtime: rc=%d\nstdout:\n%s\nstderr:\n%s", rc, stdout, stderr)
 	}
-	if strings.Contains(stdout, "not found on PATH") || strings.Contains(stdout, "Refusing") {
+	if strings.Contains(stderr, "not found on PATH") || strings.Contains(stderr, "Refusing") {
 		t.Fatalf("the launch did not run its container: rc=%d\nstdout:\n%s\nstderr:\n%s", rc, stdout, stderr)
 	}
 	trees := packTreesUnder(t, cname)

@@ -65,11 +65,11 @@ func TestMacosUserLaunchGatesOnConfigApproval(t *testing.T) {
 			"with no terminal to approve it on and no " + config.AcceptConfigChangesFlag)
 	}
 	if rc != 1 {
-		t.Errorf("Run() = %d, want 1 (a refused launch)\nstdout:\n%s", rc, stdout.String())
+		t.Errorf("Run() = %d, want 1 (a refused launch)\nstderr:\n%s", rc, stderr.String())
 	}
-	if !bytes.Contains(stdout.Bytes(), []byte(config.AcceptConfigChangesFlag)) {
-		t.Errorf("the refusal must name %s — its reader cannot be prompted\nstdout:\n%s",
-			config.AcceptConfigChangesFlag, stdout.String())
+	if !bytes.Contains(stderr.Bytes(), []byte(config.AcceptConfigChangesFlag)) {
+		t.Errorf("the refusal must name %s — its reader cannot be prompted\nstderr:\n%s",
+			config.AcceptConfigChangesFlag, stderr.String())
 	}
 	if now, _ := os.ReadFile(config.ApprovalSnapshotPath(ws)); !bytes.Equal(approved, now) {
 		t.Error("a refused macos-user launch rewrote the approval record")

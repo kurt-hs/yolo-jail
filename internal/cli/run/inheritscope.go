@@ -149,7 +149,7 @@ func inheritScopeFiles(effective *jsonx.OrderedMap, src *config.Sources, rt, lau
 // stamped puts the launch time in each header (inheritStamp). A delivery reused across launches
 // while its bytes are unchanged passes false, because a timestamp makes every launch's bytes new.
 func (o *Options) inheritedScope(rt string, stamped bool) []inheritScopeFile {
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	stamp := ""
 	if stamped {
 		stamp = o.inheritStamp()
@@ -197,7 +197,7 @@ func (o *Options) userConfigMountArgs(rt, wsState string) []string {
 	// The GENERATED files. Written into wsState (the jail's own per-workspace state dir,
 	// which is where every other composed file goes — the gitconfig, the user-env script)
 	// and mounted from there, one bind per file.
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	for _, f := range o.inheritedScope(rt, true) {
 		// Both writes are BENEATH wsState (writeFileBeneath, wsstatebeneath.go): the jail can
 		// leave a link at either destination, or above the Apple Container one, for a plain

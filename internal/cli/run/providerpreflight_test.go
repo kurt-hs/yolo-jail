@@ -465,7 +465,7 @@ func TestPrintProviderRefusalBoldsEveryFindingsVerdict(t *testing.T) {
 	var stderr bytes.Buffer
 	o.Stderr = &stderr
 	o.Color = true
-	o.IsTTYStdout = func() bool { return true }
+	o.IsTTYStderr = func() bool { return true }
 	o.Getenv = shellWith(nil)
 	o.ProfileName = "bedrock"
 	selected := awsAuthSelected(t)

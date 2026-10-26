@@ -39,7 +39,7 @@ import (
 // the state a later "port already in use" is a symptom of.
 func TestStopLoopholesReportsAPanickingStop(t *testing.T) {
 	var buf strings.Builder
-	o := &Options{Stdout: &buf}
+	o := &Options{Stderr: &buf}
 	fillDefaults(o)
 	later := false
 	o.stopLoopholes([]loopholeDaemon{
@@ -75,7 +75,7 @@ func TestStopLoopholesSaysWhenItTearsDownUnlocked(t *testing.T) {
 	}
 	socketsDir := t.TempDir()
 	var buf strings.Builder
-	o := &Options{Stdout: &buf}
+	o := &Options{Stderr: &buf}
 	fillDefaults(o)
 	// The container check runs after the lock failure and must not shell out. It
 	// ANSWERS "no such container" (Ran, exit 0, nothing listed): a runtime that could
@@ -106,7 +106,7 @@ func TestStopLoopholesSaysWhenItTearsDownUnlocked(t *testing.T) {
 func TestStopLoopholesReportsASocketsDirItCouldNotRemove(t *testing.T) {
 	dir := t.TempDir()
 	var buf strings.Builder
-	o := &Options{Stdout: &buf}
+	o := &Options{Stderr: &buf}
 	fillDefaults(o)
 	o.stopLoopholes(nil, dir+"/.", "", "")
 	for _, want := range []string{"Warning", "host-services dir", "mislead the next launch"} {
@@ -128,7 +128,7 @@ func TestFrontCloseGraceReportsWhatOutlivesTheJail(t *testing.T) {
 	endpoint := "/tmp/yolo-host-services-abcd1234/svc" + paths.ServiceEndpointExt
 
 	var slow strings.Builder
-	o := &Options{Stdout: &slow}
+	o := &Options{Stderr: &slow}
 	fillDefaults(o)
 	o.awaitFrontClosed("host service", "svc", endpoint, make(chan struct{}), 25*time.Millisecond)
 	for _, want := range []string{"Warning", "host service", "svc", "25ms", endpoint, "credential"} {
@@ -138,7 +138,7 @@ func TestFrontCloseGraceReportsWhatOutlivesTheJail(t *testing.T) {
 	}
 
 	var fast strings.Builder
-	o2 := &Options{Stdout: &fast}
+	o2 := &Options{Stderr: &fast}
 	fillDefaults(o2)
 	done := make(chan struct{})
 	close(done)
@@ -245,7 +245,7 @@ func TestExternalServiceReportsAFrontThatCouldNotBind(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf strings.Builder
-	o := &Options{Stdout: &buf}
+	o := &Options{Stderr: &buf}
 	fillDefaults(o)
 	o.ServiceReadyTimeout = 3 * time.Second
 	spec := jsonx.NewOrderedMap()
@@ -298,7 +298,7 @@ func TestExternalServiceReportsAServiceThatIgnoresSIGTERM(t *testing.T) {
 	}
 	socketsDir := t.TempDir()
 	var buf strings.Builder
-	o := &Options{Stdout: &buf}
+	o := &Options{Stderr: &buf}
 	fillDefaults(o)
 	o.ServiceTermGrace = 250 * time.Millisecond
 	spec := jsonx.NewOrderedMap()
@@ -342,7 +342,7 @@ func TestExternalServiceSaysWhenItCannotOpenTheServiceLog(t *testing.T) {
 	}
 	socketsDir := t.TempDir()
 	var buf strings.Builder
-	o := &Options{Stdout: &buf}
+	o := &Options{Stderr: &buf}
 	fillDefaults(o)
 	o.ServiceTermGrace = 250 * time.Millisecond
 	spec := jsonx.NewOrderedMap()
@@ -374,7 +374,7 @@ func TestCgroupDelegateSaysWhyWhenTheKernelHasNoCgroupV2(t *testing.T) {
 		t.Skip("the in-process delegate is Linux-only; off Linux the inert report owns this")
 	}
 	var buf strings.Builder
-	o := &Options{Stdout: &buf}
+	o := &Options{Stderr: &buf}
 	fillDefaults(o)
 	o.IsMacOS = false
 	o.PathExists = func(string) bool { return false }
@@ -398,7 +398,7 @@ func TestCgroupDelegateReportsABindFailure(t *testing.T) {
 		t.Skip("the in-process delegate is Linux-only")
 	}
 	var buf strings.Builder
-	o := &Options{Stdout: &buf}
+	o := &Options{Stderr: &buf}
 	fillDefaults(o)
 	o.IsMacOS = false
 	o.PathExists = func(string) bool { return true } // pretend cgroup v2 is present

@@ -103,8 +103,11 @@ func TestNestedLaunchDeclinesNVIDIAPassthrough(t *testing.T) {
 			"on stderr, in the one line every other unavailable-GPU verdict uses:\nstderr: %s",
 			stderr.String())
 	}
-	if strings.Contains(stdout.String(), "GPU passthrough") {
-		t.Errorf("gpuArgs announced passthrough on a launch that has none:\nstdout: %s", stdout.String())
+	// The announcement ("GPU passthrough: devices=…") is a launch line, so it would land on
+	// stderr beside the skip warning; neither stream may carry it.
+	if strings.Contains(stderr.String(), "GPU passthrough:") || strings.Contains(stdout.String(), "GPU passthrough") {
+		t.Errorf("gpuArgs announced passthrough on a launch that has none:\nstdout: %s\nstderr: %s",
+			stdout.String(), stderr.String())
 	}
 }
 
@@ -113,7 +116,7 @@ func TestNestedLaunchDeclinesNVIDIAPassthrough(t *testing.T) {
 // feature. Without this row the test above passes for a fix that disabled NVIDIA
 // passthrough everywhere.
 func TestHostLaunchStillGetsNVIDIAPassthrough(t *testing.T) {
-	o, stdout, _ := nvidiaHostOptions(t, false)
+	o, stdout, stderr := nvidiaHostOptions(t, false)
 	got := strings.Join(o.assembleRunCmd(gpuInput(t, "nvidia")), " ")
 
 	for _, want := range []string{"nvidia.com/gpu=all", "--runtime runc", "NVIDIA_VISIBLE_DEVICES=all"} {
@@ -122,9 +125,13 @@ func TestHostLaunchStillGetsNVIDIAPassthrough(t *testing.T) {
 				"containment and nothing else:\nargv: %s", want, got)
 		}
 	}
-	if !strings.Contains(stdout.String(), "GPU passthrough") {
-		t.Errorf("the GPU announcement went missing on a launch that has passthrough:\nstdout: %s",
-			stdout.String())
+	// The announcement is a launch line, so it goes to stderr, never the jailed command's stdout.
+	if !strings.Contains(stderr.String(), "GPU passthrough:") {
+		t.Errorf("the GPU announcement went missing on a launch that has passthrough:\nstderr: %s",
+			stderr.String())
+	}
+	if strings.Contains(stdout.String(), "GPU passthrough") {
+		t.Errorf("the GPU announcement landed on the jailed command's stdout:\n%s", stdout.String())
 	}
 }
 

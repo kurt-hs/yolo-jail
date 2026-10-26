@@ -450,14 +450,14 @@ func (o *Options) refuseAttachSkew(cname, rt string, skew attachSkew) {
 // askToRestartJail is the terminal arm: what differs, what a restart ends, and the question.
 // Enter means yes (the ruled `[Y/n]`); end of input means no, since nobody answered.
 func (o *Options) askToRestartJail(cname, rt string, skew attachSkew) bool {
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	out.printf("[bold yellow]⚠  This jail %s.[/bold yellow]", skew.jail)
 	for _, l := range skew.lines {
 		out.print(l)
 	}
 	out.printf("Restarting stops the jail, ending %s, and this launch then starts it fresh.",
 		o.jailSessionsPhrase(rt, cname))
-	return tty.Confirm(o.Stdout, o.Stdin, "Restart jail now? [Y/n] ", true)
+	return tty.Confirm(o.Stderr, o.Stdin, "Restart jail now? [Y/n] ", true)
 }
 
 // discloseAcknowledgedAttachSkew is the acknowledgment's loud line: what differs, what is
@@ -538,7 +538,7 @@ var (
 // what keeps the stopped jail's own teardown from removing the host-services dir this launch is
 // about to publish into (stopLoopholes leaves the dir to a launch that holds the lock).
 func (o *Options) restartJailForAttach(cname, rt string) bool {
-	o.pr(o.Stdout).printf("[bold cyan]Stopping %s; this launch then starts it fresh...[/bold cyan]", cname)
+	o.pr(o.Stderr).printf("[bold cyan]Stopping %s; this launch then starts it fresh...[/bold cyan]", cname)
 	o.stopJail(cname, rt, attachRestartReason(o.Getpid()))
 	gone := false
 	for i := 0; i < restartPollAttempts && !gone; i++ {
@@ -563,7 +563,7 @@ func (o *Options) restartJailForAttach(cname, rt string) bool {
 	// lock, which is safe because a keeper never blocks on that lock, and which is what leaves the old
 	// keeper's guarded teardown backing off the host-services dir this launch is about to publish into.
 	if probeKeeper(cname) != keeperGone {
-		o.pr(o.Stdout).printf("[dim]Waiting for the keeper of the stopped jail to finish its teardown...[/dim]")
+		o.pr(o.Stderr).printf("[dim]Waiting for the keeper of the stopped jail to finish its teardown...[/dim]")
 		if !waitForKeeper(cname, 0, keeperTeardownWait, nil, nil) {
 			o.noteKeeperStillRunning(cname, keeperTeardownWait)
 			o.pr(o.Stderr).printf("[bold red]Refusing to launch: the keeper of the stopped %s is still running.[/bold red]", cname)

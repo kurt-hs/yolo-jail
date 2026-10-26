@@ -55,15 +55,15 @@ func TestHostFileDirSourceDeclinedWhereACIgnoresReadOnly(t *testing.T) {
 			o := goldenOptions("/ws", home)
 			ac, _ := acOptions(tc.version)
 			o.LookPath, o.Exec = ac.LookPath, ac.Exec
-			var stdout bytes.Buffer
-			o.Stdout = &stdout
+			var stderr bytes.Buffer
+			o.Stderr = &stderr
 
 			args := strings.Join(o.hostUserFileArgs(in), " ")
 			if strings.Contains(args, entry.Source+":") {
 				t.Errorf("a directory host_files source was bound on an Apple Container that "+
 					"cannot honor :ro, so the user's host tree is writable from the jail:\n%s", args)
 			}
-			msg := stdout.String()
+			msg := stderr.String()
 			if !strings.Contains(msg, "Skipping host_files") || !strings.Contains(msg, "~/certs") {
 				t.Errorf("the decline is silent or does not name the entry:\n%s", msg)
 			}
@@ -90,16 +90,16 @@ func TestHostFileDirSourceStillBoundWhereReadOnlyIsHonored(t *testing.T) {
 			o := goldenOptions("/ws", home)
 			ac, _ := acOptions(tc.version)
 			o.LookPath, o.Exec = ac.LookPath, ac.Exec
-			var stdout bytes.Buffer
-			o.Stdout = &stdout
+			var stderr bytes.Buffer
+			o.Stderr = &stderr
 
 			args := strings.Join(o.hostUserFileArgs(in), " ")
 			want := entry.Source + ":" + hostUserCtxDir + "/" + entry.Slug() + ":ro"
 			if !strings.Contains(args, want) {
 				t.Errorf("the directory bind was dropped where :ro is honored; want %q in:\n%s", want, args)
 			}
-			if strings.Contains(stdout.String(), "Skipping host_files") {
-				t.Errorf("a decline was printed where :ro is honored:\n%s", stdout.String())
+			if strings.Contains(stderr.String(), "Skipping host_files") {
+				t.Errorf("a decline was printed where :ro is honored:\n%s", stderr.String())
 			}
 		})
 	}
@@ -123,7 +123,7 @@ func TestAssembledACArgvCarriesNoWritableHostFileDir(t *testing.T) {
 	o.IsLinux = false
 	ac, _ := acOptions("container CLI version 0.12.3 (build: release)")
 	o.LookPath, o.Exec = ac.LookPath, ac.Exec
-	o.Stdout = &bytes.Buffer{}
+	o.Stderr = &bytes.Buffer{}
 	sec := jsonx.NewOrderedMap()
 	sec.Set("blocked_tools", []any{})
 

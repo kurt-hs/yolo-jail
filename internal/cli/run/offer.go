@@ -310,7 +310,7 @@ func (o *Options) maybeOfferReclaim() reclaimConsent {
 	}
 	// The same shape preflight.go's config-change prompt uses: write, read one
 	// line, and treat anything else as the non-destructive answer.
-	if _, err := o.Stdout.Write([]byte(offerPrompt(ask))); err != nil {
+	if _, err := o.Stderr.Write([]byte(offerPrompt(ask))); err != nil {
 		return consent
 	}
 	reply := ""

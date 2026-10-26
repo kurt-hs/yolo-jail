@@ -25,7 +25,7 @@ func (o *Options) mintBrokerCertificates(rt string, cfg *jsonx.OrderedMap) {
 		return
 	}
 	if err := mintBrokerCerts(); err != nil {
-		o.pr(o.Stdout).printf("[yellow]Warning: could not mint the Claude OAuth broker's certificate "+
+		o.pr(o.Stderr).printf("[yellow]Warning: could not mint the Claude OAuth broker's certificate "+
 			"before this launch (%v), so this jail starts without it and Claude's token refreshes "+
 			"fail in it. The jail's broker mints it when it starts, so the next launch mounts it; "+
 			"`yolo check` says why if this repeats.[/yellow]", err)

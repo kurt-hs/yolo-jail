@@ -212,7 +212,7 @@ func removeSocketSiblings(socketPath string) {
 // naming the file and what to do, rather than a daemon that would serve "not logged in" beside a
 // login it cannot see.
 func (o *Options) migrateLegacyOpenAIAuthState() bool {
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	legacy := broker.LegacyDeps(openaiauth.LoopholeName)
 	lock, err := takeStrictLock(legacy.LockPath)
 	if err != nil {

@@ -99,10 +99,26 @@ type launchLog struct {
 // left usable: on any failure they stay exactly what they were and the returned
 // *launchLog is nil, which every method accepts.
 //
-// BOTH streams, because the launch's own split is not a rule the reader can rely on:
-// the notices go to stderr and the nix build, the image delivery, the config diff and
-// its prompt go to stdout (§2.4). A log of one of them would be a log of half a launch,
-// and which half would depend on the line.
+// THE RULE FOR WHICH STREAM A LINE TAKES: everything the launcher itself prints during a
+// launch goes to STDERR — every warning, refusal, note, disclosure and progress line, the
+// nix build and image delivery, the config diff and its prompt, the keeper's relayed
+// lines. Stdout carries only the jailed command's own output (which never passes through
+// Options.Stdout, above) and output that IS a verb's payload, which is short and named:
+//
+//   - `yolo config apply`'s report — "No jail is running ... recording the approval only",
+//     "Nothing to apply", and the "Config apply result:" block (liveapply.go, prOut). Run
+//     inside an attach, the same result is a launch line, on stderr.
+//   - a macos-user `--dry-run`'s plan, which the macos-user backend prints on the stdout
+//     writer published to it below (macosuser.SetLaunchWriter); the dry run's own notes,
+//     printed here, are on stderr.
+//
+// `yolo run -- <cmd>`'s stdout IS the command's stdout, so a launch line there corrupts
+// a piped payload (`yolo run -- cmd | jq`) and is read as the command's output by any test
+// that counts it (TestALaunchPrintsNothingOnTheCommandsStdout). A disclosure moves stream;
+// it is never suppressed (docs/reference/report-tiers.md, OQ-RO3).
+//
+// BOTH streams are teed anyway, because a verb's payload and the jail's own lines are part
+// of what happened, and a log of one stream would be a log of part of a launch.
 //
 // AND IT PUBLISHES THE TEED STDOUT TO THE macos-user BACKEND, which is the one backend
 // the tee could not reach: it composes its own writer three packages away, in

@@ -59,7 +59,7 @@ func newSupervisedFixture(t *testing.T) *supervisedFixture {
 	f.o = &Options{}
 	fillDefaults(f.o)
 	// A LAUNCH'S WRITER, as attachLaunchLog installs it: the terminal, teed into launch.log.
-	f.o.Stdout = teeLog{w: f.terminal, log: f.launch}
+	f.o.Stderr = teeLog{w: f.terminal, log: f.launch}
 	return f
 }
 
@@ -378,7 +378,7 @@ func TestSupervisorAndTeardownOutputSurviveProgressLine(t *testing.T) {
 	f.o.ServiceTermGrace = 25 * time.Millisecond
 
 	spec := jsonx.NewOrderedMap()
-	spec.Set("command", []any{"sh", "-c", `echo $$ >> "$PIDS"; : > "$1"; if [ "$(wc -l < "$PIDS")" -eq 1 ]; then sleep 0.2; exit 3; fi; trap '' TERM; while :; do sleep 1; done`, "progress", "{socket}"})
+	spec.Set("command", []any{"sh", "-c", `echo $$ >> "$PIDS"; : > "$1"; if [ "$(wc -l < "$PIDS")" -eq 1 ]; then sleep 0.2; exit 3; fi; kill -STOP $$; while :; do sleep 1; done`, "progress", "{socket}"})
 	env := jsonx.NewOrderedMap()
 	env.Set("PIDS", f.pids)
 	spec.Set("env", env)
@@ -393,6 +393,16 @@ func TestSupervisorAndTeardownOutputSurviveProgressLine(t *testing.T) {
 	t.Cleanup(func() { h.stop() })
 	if !waitFor(10*time.Second, func() bool { return strings.Contains(f.launch.String(), "restart 1 of 5") }) {
 		t.Fatalf("the supervisor line did not reach launch.log after progress ended:\n%s", f.launch.String())
+	}
+	if !waitFor(5*time.Second, func() bool {
+		pids := f.spawned()
+		if len(pids) < 2 {
+			return false
+		}
+		state, alive := procState(pids[len(pids)-1])
+		return alive && state == "T"
+	}) {
+		t.Fatal("the restarted service did not stop itself before teardown")
 	}
 	h.stop()
 	if !strings.Contains(f.launch.String(), "ignored SIGTERM for 25ms") {
@@ -523,7 +533,7 @@ func TestADetachTeardownSignalsNoProcessAlreadyReaped(t *testing.T) {
 	o := &Options{}
 	fillDefaults(o)
 	var out syncBuffer
-	o.Stdout = &out
+	o.Stderr = &out
 	stranger := exec.Command("sleep", "30")
 	if err := stranger.Start(); err != nil {
 		t.Fatal(err)
@@ -534,14 +544,14 @@ func TestADetachTeardownSignalsNoProcessAlreadyReaped(t *testing.T) {
 	reaped := make(chan struct{})
 	close(reaped)
 	hd := &loopholes.HostDaemon{Detach: true}
-	o.stopService(o.pr(o.Stdout), "detached", hd, stranger, reaped)
+	o.stopService(o.pr(o.Stderr), "detached", hd, stranger, reaped)
 	select {
 	case <-strangerExited:
 		t.Fatal("the detach teardown signaled the pid of a process already reaped")
 	case <-time.After(200 * time.Millisecond):
 	}
 	// The control: while the child's exit is still unseen, detach signals it.
-	o.stopService(o.pr(o.Stdout), "detached", hd, stranger, make(chan struct{}))
+	o.stopService(o.pr(o.Stderr), "detached", hd, stranger, make(chan struct{}))
 	select {
 	case <-strangerExited:
 	case <-time.After(5 * time.Second):

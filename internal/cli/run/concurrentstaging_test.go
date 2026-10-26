@@ -367,7 +367,7 @@ func attachThroughRun(t *testing.T, ws string, mutate func(*Options)) attachRun 
 		mutate(o)
 	}
 	_ = Run(*o)
-	if !strings.Contains(out.String(), "Attaching to existing jail") {
+	if !strings.Contains(errOut.String(), "Attaching to existing jail") {
 		t.Fatalf("the launch did not take the attach arm, so this test says nothing about it\n"+
 			"stdout:\n%s\nstderr:\n%s", out.String(), errOut.String())
 	}

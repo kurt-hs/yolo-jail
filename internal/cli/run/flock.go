@@ -294,7 +294,7 @@ func (o *Options) holdLaunchLock(cname string) {
 	if o.launchLock != nil && !o.launchLock.isClosed() {
 		return
 	}
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	sp := o.Perf.Span("launch.acquire_workspace_lock")
 	defer sp.End()
 	path := launchLockPath(cname)

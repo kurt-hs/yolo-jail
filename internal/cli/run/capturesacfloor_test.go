@@ -29,7 +29,7 @@ func acCaptureArgs(t *testing.T, version, store string) (args []string, out stri
 	t.Helper()
 	o := goldenOptions("/ws", t.TempDir())
 	var buf strings.Builder
-	o.Stdout = &buf
+	o.Stderr = &buf
 	o.PathExists = func(string) bool { return true }
 	o.acVersion = &acVersionProbe{v: version, ok: version != ""}
 	return o.capturesArgs("container", store), buf.String()
@@ -86,7 +86,7 @@ func TestAppleContainerBelowTheFloorIsToldWhyThereIsNoStore(t *testing.T) {
 func TestPodmanIsUntouchedByTheAppleContainerFloor(t *testing.T) {
 	o := goldenOptions("/ws", t.TempDir())
 	var buf strings.Builder
-	o.Stdout = &buf
+	o.Stderr = &buf
 	o.PathExists = func(string) bool { return true }
 	o.acVersion = &acVersionProbe{v: "0.12.3", ok: true} // would refuse, were it consulted
 

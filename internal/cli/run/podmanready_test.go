@@ -106,7 +106,7 @@ func TestAPodmanStillRunningAtTheBudgetIsNamedAndLeftRunning(t *testing.T) {
 			if rt, ok := o.resolveRuntime(p.cfg); ok || rt != "" {
 				t.Fatalf("resolveRuntime = %q,%v; want a refusal", rt, ok)
 			}
-			got := stdout.String()
+			got := stderr.String()
 			for _, want := range []string{
 				"Cannot query", "podman info did not answer within 60s (1 attempt, 60.0s)",
 				"podman (pid 4242) is still running; yolo left it to finish.",
@@ -144,11 +144,11 @@ func TestEveryEarlyExitIsPrintedAndTheRefusalCarriesTheLast(t *testing.T) {
 				}
 			}
 			last := "the last attempt: exit 125: Error: storage busy, attempt " + string(rune('a'+n))
-			if !strings.Contains(stdout.String(), last) {
-				t.Errorf("the refusal does not carry the last stderr line %q:\n%s", last, stdout.String())
+			if !strings.Contains(stderr.String(), last) {
+				t.Errorf("the refusal does not carry the last stderr line %q:\n%s", last, stderr.String())
 			}
-			if !strings.Contains(stdout.String(), "attempts,") {
-				t.Errorf("the refusal does not count the attempts:\n%s", stdout.String())
+			if !strings.Contains(stderr.String(), "attempts,") {
+				t.Errorf("the refusal does not count the attempts:\n%s", stderr.String())
 			}
 		})
 	}
@@ -170,7 +170,7 @@ func TestAnAnswerThatCannotClearRefusesAtOnceNamingTheFix(t *testing.T) {
 			if strings.Contains(stderr.String(), "retrying") {
 				t.Errorf("a permanent error printed a retry:\n%s", stderr.String())
 			}
-			got := stdout.String()
+			got := stderr.String()
 			if !strings.Contains(got, "does not clear on its own") || !strings.Contains(got, "cannot clone: Operation not permitted") ||
 				!strings.Contains(got, "Fix: podman cannot create its user namespace") {
 				t.Errorf("refusal = %q", got)
@@ -191,19 +191,19 @@ func TestAPodmanThatCannotStartFailsAtOnce(t *testing.T) {
 			if _, ok := o.resolveRuntime(p.cfg); ok {
 				t.Fatal("an unstartable podman was accepted")
 			}
-			if gate.count() != 1 || !strings.Contains(stdout.String(), "podman info could not run") ||
-				!strings.Contains(stdout.String(), "Fix: a permission error") {
-				t.Errorf("attempts=%d refusal=%q", gate.count(), stdout.String())
+			if gate.count() != 1 || !strings.Contains(stderr.String(), "podman info could not run") ||
+				!strings.Contains(stderr.String(), "Fix: a permission error") {
+				t.Errorf("attempts=%d refusal=%q", gate.count(), stderr.String())
 			}
 
-			stdout.Reset()
+			stderr.Reset()
 			stderr.Reset()
 			o = gateOptions(p, &stdout, &stderr)
 			gate = scriptedPodman(o, yoloruntime.Attempt{StartErr: &os.PathError{Op: "fork/exec",
 				Path: "/usr/bin/podman", Err: syscall.ETXTBSY}}, yoloruntime.Attempt{Exited: true, RC: 0, Stdout: podmanInfoFixture})
 			if rt, ok := o.resolveRuntime(p.cfg); !ok || rt != "podman" || gate.count() != 2 {
-				t.Errorf("a busy binary: resolveRuntime = %q,%v after %d attempts\nstdout:\n%s", rt, ok,
-					gate.count(), stdout.String())
+				t.Errorf("a busy binary: resolveRuntime = %q,%v after %d attempts\nstderr:\n%s", rt, ok,
+					gate.count(), stderr.String())
 			}
 			if !strings.Contains(stderr.String(), "podman info: could not run: fork/exec /usr/bin/podman: text file busy; retrying in 1s") {
 				t.Errorf("the retry was not printed:\n%s", stderr.String())
@@ -337,9 +337,9 @@ func TestAnInterruptedWaitExitsWith130(t *testing.T) {
 	if rc := Run(*o); rc != 130 {
 		t.Fatalf("Run = %d, want 130\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "Interrupted while waiting for podman info to answer") ||
-		!strings.Contains(stdout.String(), "podman (pid 777) is still running; yolo left it to finish.") {
-		t.Errorf("stdout = %q", stdout.String())
+	if !strings.Contains(stderr.String(), "Interrupted while waiting for podman info to answer") ||
+		!strings.Contains(stderr.String(), "podman (pid 777) is still running; yolo left it to finish.") {
+		t.Errorf("stderr = %q", stderr.String())
 	}
 }
 
@@ -369,10 +369,10 @@ func TestARealCtrlCDuringTheWaitStopsTheWaitAndExitsWith130(t *testing.T) {
 		},
 	}
 	if rc := Run(*o); rc != 130 {
-		t.Fatalf("Run = %d, want 130: the SIGINT did not stop the wait\nstdout:\n%s", rc, stdout.String())
+		t.Fatalf("Run = %d, want 130: the SIGINT did not stop the wait\nstderr:\n%s", rc, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "podman (pid 4321) is still running; yolo left it to finish.") {
-		t.Errorf("the refusal does not name the podman it left running:\n%s", stdout.String())
+	if !strings.Contains(stderr.String(), "podman (pid 4321) is still running; yolo left it to finish.") {
+		t.Errorf("the refusal does not name the podman it left running:\n%s", stderr.String())
 	}
 	assertOneLaunchLine(t, ws, "tries=1", "outcome=interrupted", "rc=130")
 }
@@ -444,11 +444,11 @@ func TestTheAttachRefusalNamesEachRuntimesListCommand(t *testing.T) {
 			}
 			t.Cleanup(o.releaseLaunchLock)
 			if rc := o.runContainer(nil, tc.rt, t.TempDir(), cname, stagedPacks{}, nil, nil, nil); rc != 1 {
-				t.Fatalf("runContainer = %d, want the attach decision's refusal\nstdout:\n%s", rc, stdout.String())
+				t.Fatalf("runContainer = %d, want the attach decision's refusal\nstderr:\n%s", rc, stderr.String())
 			}
-			if !strings.Contains(stdout.String(), "could not ask "+tc.rt+" whether this workspace's jail") ||
-				!strings.Contains(stdout.String(), tc.want) {
-				t.Errorf("the refusal does not name %q:\n%s", tc.want, stdout.String())
+			if !strings.Contains(stderr.String(), "could not ask "+tc.rt+" whether this workspace's jail") ||
+				!strings.Contains(stderr.String(), tc.want) {
+				t.Errorf("the refusal does not name %q:\n%s", tc.want, stderr.String())
 			}
 			for _, a := range asked {
 				if strings.HasPrefix(a, tc.rt+" run") {
@@ -482,9 +482,9 @@ func TestAnAttachDecisionThatCannotAskRefuses(t *testing.T) {
 	if rc := Run(*o); rc != 1 {
 		t.Fatalf("Run = %d, want 1\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "could not ask podman whether this workspace's jail") ||
-		!strings.Contains(stdout.String(), "Run `podman ps` to diagnose") {
-		t.Errorf("stdout = %q", stdout.String())
+	if !strings.Contains(stderr.String(), "could not ask podman whether this workspace's jail") ||
+		!strings.Contains(stderr.String(), "Run `podman ps` to diagnose") {
+		t.Errorf("stderr = %q", stderr.String())
 	}
 	if started {
 		t.Error("a launch that could not ask whether its jail runs started a container")
@@ -586,7 +586,7 @@ func TestARefusalOnYolosScratchFileNamesNoPodmanStep(t *testing.T) {
 			if _, ok := o.resolveRuntime(p.cfg); ok {
 				t.Fatal("a launch whose gate never ran podman was accepted")
 			}
-			got := stdout.String()
+			got := stderr.String()
 			for _, want := range []string{"so podman info never ran", "no space left on device",
 				"Fix: free space in the temporary directory"} {
 				if !strings.Contains(got, want) {

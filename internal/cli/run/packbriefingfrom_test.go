@@ -51,7 +51,7 @@ func localBriefingPack(t *testing.T, from, file, prose string) *Options {
 func stagedBriefings(t *testing.T, o *Options) ([]jailcontent.PackBriefing, string) {
 	t.Helper()
 	var out bytes.Buffer
-	o.Stdout = &out
+	o.Stderr = &out
 	jailcontent.SetPackSkillDirs(nil)
 	_, _, briefings, err := o.stagePacks("yolo-test-briefingfrom")
 	if err != nil {
@@ -124,7 +124,7 @@ func TestJailBriefingNeverReadsARootInstructionFile(t *testing.T) {
 	for _, from := range []string{"AGENTS.md", "CLAUDE.md"} {
 		writePack(t, packDir, `{"contributes":[{"kind":"briefing","from":"`+from+
 			`","into":".claude/CLAUDE.md"}]}`)
-		o := &Options{Workspace: t.TempDir(), Stdout: &bytes.Buffer{}}
+		o := &Options{Workspace: t.TempDir(), Stderr: &bytes.Buffer{}}
 		jailcontent.SetPackSkillDirs(nil)
 		_, _, _, err := o.stagePacks("yolo-test-briefingfrom")
 		if err == nil || !strings.Contains(err.Error(), from) ||
@@ -195,7 +195,7 @@ func TestJailBriefingWarnsWhenADeclaredFromDeliversNothing(t *testing.T) {
 // rename.
 func TestJailBriefingRefusesAReservedNameInsideTheBriefingDir(t *testing.T) {
 	o := localBriefingPack(t, "", "briefing/AGENTS.md", "Dual use.\n")
-	o.Stdout = &bytes.Buffer{}
+	o.Stderr = &bytes.Buffer{}
 	jailcontent.SetPackSkillDirs(nil)
 	_, _, _, err := o.stagePacks("yolo-test-briefingfrom")
 	if err == nil || !strings.Contains(err.Error(), "briefing/AGENTS.md") ||

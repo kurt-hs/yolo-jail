@@ -312,7 +312,7 @@ func (o *Options) reapOrphanedJails(rt string) {
 	if !ok || len(live) == 0 {
 		return
 	}
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	for name := range live {
 		if rt == "container" { // parity: HonoredBy — only a keeper-era Apple Container jail has an owner-PID lifecycle, whose start record is the evidence
 			if _, keeperEra := readKeeperRecord(name); !keeperEra {
@@ -398,7 +398,7 @@ func (o *Options) maybeWarnAboutOOMKiller(exitCode int, rt string) {
 	name, memMB, ok := o.podmanMachineMemory()
 	msg, show := runtime.OOMKillerWarning(exitCode, rt, o.IsMacOS, name, memMB, ok)
 	if show {
-		o.pr(o.Stdout).print("[dim]" + msg + "[/dim]")
+		o.pr(o.Stderr).print("[dim]" + msg + "[/dim]")
 	}
 }
 

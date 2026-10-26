@@ -43,7 +43,7 @@ func (o *Options) hostFilesEnv(in *assembleInput) []string {
 	wire, err := config.MarshalHostFiles(in.hostFiles)
 	if err != nil || wire == "" {
 		if err != nil {
-			o.pr(o.Stdout).print("[yellow]Warning: host_files: " + err.Error() + " — skipping[/yellow]")
+			o.pr(o.Stderr).print("[yellow]Warning: host_files: " + err.Error() + " — skipping[/yellow]")
 		}
 		return nil
 	}
@@ -88,7 +88,7 @@ func (o *Options) hostUserFileArgs(in *assembleInput) []string {
 				continue
 			}
 			if reason := o.roBindsUnsupported(in.rt); reason != "" {
-				o.pr(o.Stdout).print("[yellow]Skipping host_files directory ~/" + entry.Path +
+				o.pr(o.Stderr).print("[yellow]Skipping host_files directory ~/" + entry.Path +
 					" (source " + entry.Source + " → " + target + "): " + reason + "[/yellow]")
 				continue
 			}

@@ -24,7 +24,7 @@ func (o *Options) workspaceReadonlyMountArgs(cfg *jsonx.OrderedMap, rt string) [
 	if len(entries) == 0 {
 		return nil
 	}
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	// THE SAME ANSWER THE ARGV AND THE BRIEFING USE, not a second `rt == "container"`.
 	// This branch was unconditional, so it warned on EVERY Apple Container launch that
 	// these paths "stay writable" — which stopped being true at acROBindsFloor
@@ -105,7 +105,7 @@ func (o *Options) workspaceConfigLocked(cfg *jsonx.OrderedMap, rt string) bool {
 func (o *Options) venvShadowMountArgs(cfg *jsonx.OrderedMap, wsState string) []string {
 	sorted := perSideShadowCandidates(cfg, o.Workspace)
 
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	var args []string
 	for _, rel := range sorted {
 		if !ValidPerSideRel(rel) {

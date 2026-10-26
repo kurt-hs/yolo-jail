@@ -530,6 +530,9 @@ type Options struct {
 	// Stdout/Stderr receive the human output (console.print goes to stderr in
 	// rich by default for status; run() uses console (stdout) for most lines).
 	// nil => os.Stdout / os.Stderr.
+	// Stderr is the LAUNCH STREAM: every line the launcher prints during a launch (pr).
+	// Stdout carries only output that IS a verb's payload (launchlog.go lists it), because
+	// the process's stdout is the jailed command's stdout. nil => os.Stdout / os.Stderr.
 	Stdout io.Writer
 	Stderr io.Writer
 	// JailStdout/JailStderr receive the JAIL'S OWN lines up to its ready: what the runtime client
@@ -606,12 +609,19 @@ type Options struct {
 	IsTTYStdin  func() bool
 	// IsTTYStderr reports whether the launch stream is a terminal, which is what
 	// decides whether a long step's progress redraws in place or is written as
-	// lines (progressConfig). nil => real isatty on os.Stderr.
+	// lines (progressConfig), and whether its lines may be colored (streamColor).
+	// nil => real isatty on os.Stderr.
 	IsTTYStderr func() bool
+	// streamTTY, when non-nil, answers streamColor's terminal question in place of IsTTYStderr:
+	// the keeper's, whose stderr is a pipe relayed to a launcher that decided color for it.
+	streamTTY func() bool
 	// Progress, when non-nil, replaces the rendering progressConfig derives from
 	// the stream — a test seam, so a call site can be shown to narrate a fake that
 	// returns in microseconds (progress.Config.Immediate). nil on every real launch.
 	Progress *progress.Config
+	// progressStderr is the writer beneath a temporary progress.Line. Services capture it
+	// for supervisor and teardown output that can outlive the progress step.
+	progressStderr io.Writer
 	// CapturesDir resolves the machine-wide install-capture store, which every
 	// launch binds :ro into the jail so a native launcher can MATERIALIZE an
 	// already-captured install instead of downloading it (program-delivery.md §6.3;

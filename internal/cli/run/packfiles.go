@@ -602,7 +602,7 @@ func planPackFilesMounts(packs []*packload.Pack, trees map[string]string, agents
 func (o *Options) packFilesMountArgs(in *assembleInput) []string {
 	plan := planPackFilesMounts(in.packs, in.treeDirs, in.agentsPath)
 	for _, t := range plan.Skipped {
-		o.pr(o.Stdout).print("[yellow]" + packFilesSkipWarning(t) + "[/yellow]")
+		o.pr(o.Stderr).print("[yellow]" + packFilesSkipWarning(t) + "[/yellow]")
 	}
 	var args []string
 	for _, m := range plan.Mounts {

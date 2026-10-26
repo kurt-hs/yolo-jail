@@ -137,7 +137,7 @@ func TestADetachedDaemonIsSignalledAndNotWaitedFor(t *testing.T) {
 	var buf strings.Builder
 	o := &Options{}
 	fillDefaults(o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	o.ServiceTermGrace = 30 * time.Second
 	h, pid, termed, release := lingeringDaemon(t, o, &loopholes.HostDaemon{
 		Publishes: loopholes.PublishesSocket, RequestEnd: loopholes.RequestEndFramed, Detach: true})
@@ -182,7 +182,7 @@ func TestADaemonWithoutDetachIsStillKilledAfterItsGrace(t *testing.T) {
 	var buf strings.Builder
 	o := &Options{}
 	fillDefaults(o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	o.ServiceTermGrace = 200 * time.Millisecond
 	h, pid, termed, _ := lingeringDaemon(t, o, &loopholes.HostDaemon{
 		Publishes: loopholes.PublishesSocket, RequestEnd: loopholes.RequestEndFramed})
@@ -241,7 +241,7 @@ func TestOnPodmanACredentialDaemonRunsAsTheJailsOwn(t *testing.T) {
 	var buf strings.Builder
 	o := &Options{}
 	fillDefaults(o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	o.IsMacOS = false
 
 	cname := "yolo-perjail-test"
@@ -317,7 +317,7 @@ func TestThePerJailOpenAIDaemonRunsTheLegacyMigrationFirst(t *testing.T) {
 	var buf strings.Builder
 	o := &Options{Workspace: workspace}
 	fillDefaults(o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	o.IsMacOS = false
 
 	cname := "yolo-perjail-migrate"
@@ -354,7 +354,7 @@ func TestAMigrationThatCannotCompleteStartsNoOpenAIDaemonAndSaysWhy(t *testing.T
 	var buf strings.Builder
 	o := &Options{Workspace: workspace}
 	fillDefaults(o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	o.IsMacOS = false
 
 	cname := "yolo-perjail-conflict"
@@ -389,7 +389,7 @@ func TestOnAppleContainerTheOpenAIServiceRunsAsTheJailsOwnDaemon(t *testing.T) {
 	var buf strings.Builder
 	o := &Options{Workspace: t.TempDir()}
 	fillDefaults(o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	o.IsMacOS = false
 
 	cname := "yolo-perjail-ac"
@@ -521,7 +521,7 @@ func TestAJailsOwnBrokerDaemonAnswersThroughItsFront(t *testing.T) {
 	var buf strings.Builder
 	o := &Options{}
 	fillDefaults(o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	h, ok := o.startExternalService(name, spec, socketsDir, loopholes.TransportLoopbackTLS, "127.0.0.1",
 		&loopholes.HostDaemon{Publishes: loopholes.PublishesSocket, RequestEnd: loopholes.RequestEndFramed,
 			Preamble: true, Detach: true})

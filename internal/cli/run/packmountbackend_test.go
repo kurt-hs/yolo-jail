@@ -92,7 +92,7 @@ func assembleMountPack(t *testing.T, rt string, packs []*packload.Pack) ([]strin
 	t.Helper()
 	o := goldenOptions("/ws", os.Getenv("HOME"))
 	var sb strings.Builder
-	o.Stdout = &sb
+	o.Stderr = &sb
 	args := o.hostMountArgs(&assembleInput{
 		rt:           rt,
 		packs:        packs,

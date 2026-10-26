@@ -155,7 +155,7 @@ func TestWarnIfNoPacksKeysOffPacksNotAgents(t *testing.T) {
 // (https://no-color.org). The environment is o.Getenv — the one every launch
 // decision reads — so the fixture's fake environment is what the gate sees.
 //
-// MUTATION: restore `o.Color && o.IsTTYStdout()` in Options.pr and the NO_COLOR
+// MUTATION: restore `o.Color && o.IsTTYStderr()` in Options.pr and the NO_COLOR
 // case fails; the unset case is the control that keeps it from passing vacuously.
 func TestLaunchNoticesHonorNoColor(t *testing.T) {
 	for _, tc := range []struct {
@@ -168,7 +168,7 @@ func TestLaunchNoticesHonorNoColor(t *testing.T) {
 		o.Stderr = &errBuf
 		o.Stdout = discardBuf()
 		o.Color = true
-		o.IsTTYStdout = func() bool { return true }
+		o.IsTTYStderr = func() bool { return true }
 		o.Getenv = func(k string) string {
 			if k == "NO_COLOR" {
 				return tc.noColor

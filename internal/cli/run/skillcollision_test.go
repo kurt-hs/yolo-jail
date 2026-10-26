@@ -85,7 +85,7 @@ func TestALaunchRefusesTwoPacksShippingOneSkillName(t *testing.T) {
 		t.Fatalf("Run() = %d, want 1: two packs shipping `dup` to ~/.claude/skills must refuse the "+
 			"launch\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
 	}
-	assertSkillCollisionRefusal(t, stdout.String())
+	assertSkillCollisionRefusal(t, stderr.String())
 	noContainerWork(t, execRec)
 }
 
@@ -115,9 +115,9 @@ func TestAnAttachRefusesTwoPacksShippingOneSkillName(t *testing.T) {
 			rc, stdout.String(), stderr.String())
 	}
 	if strings.Contains(stdout.String()+stderr.String(), "Attaching to existing jail") {
-		t.Errorf("the attach went ahead:\n%s", stdout.String())
+		t.Errorf("the attach went ahead:\n%s", stderr.String())
 	}
-	assertSkillCollisionRefusal(t, stdout.String())
+	assertSkillCollisionRefusal(t, stderr.String())
 	for _, argv := range execRec {
 		if len(argv) >= 2 && argv[1] == "exec" {
 			t.Errorf("the attach ran %v despite the collision", argv)
@@ -149,7 +149,7 @@ func stageJailSkills(t *testing.T, o *Options, cname string) (string, string) {
 	t.Cleanup(func() { jailcontent.SetPackSkillDirs(nil); jailcontent.SetPackSkillTargets(nil) })
 	root, packs, briefings, err := o.stagePacks(cname)
 	if err != nil {
-		t.Fatalf("stagePacks: %v\n%s", err, stdout.String())
+		t.Fatalf("stagePacks: %v\n%s", err, stderr.String())
 	}
 	staging, err := o.refreshJailBriefings(cname, jsonx.NewOrderedMap(), "podman",
 		stagedPacks{root: root, packs: packs, briefings: briefings}, ioprio.Normal)

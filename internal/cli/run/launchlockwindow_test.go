@@ -128,10 +128,10 @@ func TestAnAttachReleasesTheLaunchLockBeforeItsSession(t *testing.T) {
 					"make every other launch of this workspace wait until it exits")
 			}
 		}
-		return stdout.Write(p)
+		return stderr.Write(p)
 	})
 	o := dispatchOptions(t, ws, "podman", &stdout, &stderr, nil)
-	o.Stdout = watched
+	o.Stderr = watched
 	inspected, decided := false, false
 	o.Exec = func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {
 		switch {
@@ -157,13 +157,13 @@ func TestAnAttachReleasesTheLaunchLockBeforeItsSession(t *testing.T) {
 	}
 
 	_ = Run(*o)
-	if !strings.Contains(stdout.String(), "Attaching to existing jail") || !attachLineSeen {
+	if !strings.Contains(stderr.String(), "Attaching to existing jail") || !attachLineSeen {
 		t.Fatalf("the launch did not take the attach arm, so this test says nothing about it\n"+
 			"stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
 	}
 	if !inspected || !decided {
 		t.Fatalf("the attach arm asked the runtime nothing, so the lock was never read at it\n"+
-			"stdout:\n%s", stdout.String())
+			"stderr:\n%s", stderr.String())
 	}
 }
 

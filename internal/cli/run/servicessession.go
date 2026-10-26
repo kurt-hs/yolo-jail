@@ -184,7 +184,7 @@ func (o *Options) collectDeadServicesSessions(base string) {
 		}
 		retireFrontSockets(frontShortHash(dir))
 		if err := os.RemoveAll(dir); err != nil {
-			o.pr(o.Stdout).printf("[yellow]Warning: could not remove the host-services dir %s "+
+			o.pr(o.Stderr).printf("[yellow]Warning: could not remove the host-services dir %s "+
 				"of a macos-user session that has ended (%v).[/yellow]", dir, err)
 		}
 		_ = lock.Close()

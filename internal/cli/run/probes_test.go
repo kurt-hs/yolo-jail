@@ -131,7 +131,7 @@ func TestResolveRuntimeEnvWins(t *testing.T) {
 	o := Options{
 		Getenv:   func(k string) string { return map[string]string{"YOLO_RUNTIME": "podman"}[k] },
 		LookPath: func(string) (string, bool) { return "/usr/bin/podman", true },
-		Stdout:   discardBuf(),
+		Stderr:   discardBuf(),
 	}
 	fillDefaults(&o)
 	answeringPodman(&o, minimalPodmanInfo)
@@ -155,8 +155,8 @@ func TestResolveRuntimeExplicitNotStarted(t *testing.T) {
 	o := Options{
 		Getenv:   func(k string) string { return map[string]string{"YOLO_RUNTIME": "podman"}[k] },
 		LookPath: func(string) (string, bool) { return "/usr/bin/podman", true },
-		Stdout:   &buf,
-		Stderr:   discardBuf(),
+		Stderr:   &buf,
+		Stdout:   discardBuf(),
 		IsMacOS:  true,
 	}
 	fillDefaults(&o)
@@ -185,7 +185,7 @@ func TestResolveRuntimeExplicitNotInstalled(t *testing.T) {
 	o := Options{
 		Getenv:   func(k string) string { return map[string]string{"YOLO_RUNTIME": "podman"}[k] },
 		LookPath: func(string) (string, bool) { return "", false },
-		Stdout:   &buf,
+		Stderr:   &buf,
 	}
 	fillDefaults(&o)
 	o.Getenv = func(k string) string {
@@ -214,8 +214,8 @@ func TestResolveRuntimeExplicitLinuxProbeFailure(t *testing.T) {
 			return ""
 		},
 		LookPath: func(string) (string, bool) { return "/usr/bin/podman", true },
-		Stdout:   &buf,
-		Stderr:   discardBuf(),
+		Stderr:   &buf,
+		Stdout:   discardBuf(),
 	}
 	fillDefaults(&o)
 	// An error the readiness gate does not recognize: retried to the end of the budget
@@ -237,7 +237,7 @@ func TestResolveRuntimeNativePassesThrough(t *testing.T) {
 	o := Options{
 		Getenv:   func(k string) string { return map[string]string{"YOLO_RUNTIME": "macos-user"}[k] },
 		LookPath: func(string) (string, bool) { return "", false },
-		Stdout:   discardBuf(),
+		Stderr:   discardBuf(),
 	}
 	fillDefaults(&o)
 	o.Getenv = func(k string) string {
@@ -257,11 +257,11 @@ func TestResolveRuntimeNoneFound(t *testing.T) {
 	o := Options{
 		Getenv:   func(string) string { return "" },
 		LookPath: func(string) (string, bool) { return "", false },
-		Stdout:   &buf,
+		Stderr:   &buf,
 		IsMacOS:  false,
 	}
 	fillDefaults(&o)
-	o.Stdout = &buf
+	o.Stderr = &buf
 	rt, ok := o.resolveRuntime(nil)
 	if ok || rt != "" {
 		t.Errorf("resolveRuntime = %q,%v; want '',false", rt, ok)
@@ -289,8 +289,8 @@ func TestResolveRuntimeLinuxPodmanFailureDetails(t *testing.T) {
 			o := Options{
 				Getenv:   func(string) string { return "" },
 				LookPath: func(string) (string, bool) { return "/usr/bin/podman", true },
-				Stdout:   &buf,
-				Stderr:   discardBuf(),
+				Stderr:   &buf,
+				Stdout:   discardBuf(),
 				IsMacOS:  false,
 			}
 			fillDefaults(&o)
@@ -314,12 +314,12 @@ func TestResolveRuntimeAutoDetectNotStarted(t *testing.T) {
 	o := Options{
 		Getenv:   func(string) string { return "" },
 		LookPath: func(string) (string, bool) { return "/usr/bin/podman", true },
-		Stdout:   &buf,
+		Stderr:   &buf,
 		IsMacOS:  false,
 	}
 	fillDefaults(&o)
-	o.Stdout = &buf
-	o.Stderr = discardBuf()
+	o.Stderr = &buf
+	o.Stdout = discardBuf()
 	scriptedPodman(&o, yoloruntime.Attempt{Exited: true, RC: 1})
 	rt, ok := o.resolveRuntime(nil)
 	if ok || rt != "" {

@@ -430,7 +430,7 @@ func blockedToolRecords(blocked []any) []jailcontent.BlockedTool {
 // a real one and the launch says so, and the migrations and the seed sync never follow one.
 func (o *Options) prepareWsState(cfg *jsonx.OrderedMap, loadedPacks []*packload.Pack, rt string) string {
 	wsState := paths.WorkspaceHomeState(o.Workspace)
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	if linked := linkedWorkspaceState(o.Workspace); linked != "" {
 		out.print("[yellow]Warning: " + (&linkedStateRootError{Path: linked}).Error() +
 			"; nothing was prepared in this workspace's jail state[/yellow]")
@@ -482,7 +482,7 @@ func (o *Options) prepareWsState(cfg *jsonx.OrderedMap, loadedPacks []*packload.
 	// podman skeleton's (packFilesSkeletonEntries, buildHomeSkeleton). preparePackFiles
 	// follows the same per-backend layout itself (packFilesWorkspaceRel).
 	for _, archived := range preparePackFiles(loadedPacks, o.patchedTreeDirs(), wsState, rt) {
-		o.pr(o.Stdout).printf("[yellow]Archived an unclaimed zero-byte legacy pack-file mountpoint: %s[/yellow]", archived)
+		o.pr(o.Stderr).printf("[yellow]Archived an unclaimed zero-byte legacy pack-file mountpoint: %s[/yellow]", archived)
 	}
 
 	// No pack dir is seeded from the machine store any more: the Claude login below is the

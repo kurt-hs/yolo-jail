@@ -44,7 +44,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
-	"github.com/mschulkind-oss/yolo-jail/internal/tty"
 )
 
 // keeperSpawner starts a keeper for launch with a plan file and its descriptors (the launch lock
@@ -248,12 +247,6 @@ func (o *Options) keeperPlanFor(cfg *jsonx.OrderedMap, rt, cname string, staged 
 	}, nil
 }
 
-// streamColor is whether this launch renders color on its stream, which is what the printer asks
-// (Options.pr): the keeper's lines reach this terminal through the relay, so it renders them the same.
-func (o *Options) streamColor() bool {
-	return o.Color && tty.Color(o.Getenv, true, o.IsTTYStdout())
-}
-
 // unwindUnspawned is a fresh launch that got as far as its records and no further: no keeper
 // started, so no container ever held its skeleton or pack tree, and it takes them back itself, as
 // the runtime-not-found branch did before there was a keeper. After the launch lock is released,
@@ -278,7 +271,7 @@ func (o *Options) awaitPreviousKeeper(cname string) bool {
 	if rec, ok := readKeeperRecord(cname); ok {
 		who = fmt.Sprintf("its keeper (pid %d)", rec.PID)
 	}
-	o.pr(o.Stdout).printf("[bold cyan]The previous jail of this workspace (%s) is still shutting "+
+	o.pr(o.Stderr).printf("[bold cyan]The previous jail of this workspace (%s) is still shutting "+
 		"down; waiting for %s to finish...[/bold cyan]", cname, who)
 	sp := o.Perf.Span("launch.await_previous_keeper")
 	gone := waitForKeeper(cname, 0, keeperTeardownWait, nil, nil)
@@ -748,7 +741,7 @@ func FinishStop(stdout, stderr io.Writer, workspace, rt string, logFrom int64, c
 }
 
 func (o *Options) finishStop(cname, rt string, logFrom int64, force bool) int {
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	if probeKeeper(cname) != keeperGone {
 		out.printf("Waiting for the jail's keeper to finish its teardown...")
 		stop := make(chan struct{})
@@ -1047,7 +1040,7 @@ func (o *Options) peekMacosUserKey(rt, cname string) bool {
 // the workspace (acquireWorkspaceLock's notice). A lock that cannot be opened warns and is nil:
 // the launch goes on unserialised, as a workspace lock's degraded mode does.
 func (o *Options) takeArrivalLock(key string) *workspaceLock {
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	path := arrivalLockPath(key)
 	_ = os.MkdirAll(filepath.Dir(path), 0o755)
 	lock, err := acquireWorkspaceLock(path, o.Workspace, lockNotices{
@@ -1077,7 +1070,7 @@ func (o *Options) awaitEndingKey(key string, rec keeperRecord) bool {
 	if rec.PID > 0 {
 		who = fmt.Sprintf("its keeper (pid %d)", rec.PID)
 	}
-	o.pr(o.Stdout).printf("[bold cyan]This workspace's macos-user host services are still shutting down; "+
+	o.pr(o.Stderr).printf("[bold cyan]This workspace's macos-user host services are still shutting down; "+
 		"waiting for %s to finish...[/bold cyan]", who)
 	if waitForKeeper(key, 0, keeperTeardownWait, nil, nil) {
 		return true
@@ -1780,7 +1773,7 @@ func StopMacosUser(stdout, stderr io.Writer, workspace string) int {
 
 // stopMacosUserKey is StopMacosUser for one key. did reports whether there was anything to end.
 func (o *Options) stopMacosUserKey(cname, key string) (rc int, did bool) {
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	alive := probeKeeper(key) != keeperGone
 	rec, recorded := readKeeperRecord(key)
 	sessions := liveKeyedSessions(key)
@@ -1841,7 +1834,7 @@ func (o *Options) stopMacosUserKey(cname, key string) (rc int, did bool) {
 // that counted itself meanwhile is signalled too, since the reap waits for it. done reports that the
 // stop ends here, with rc: a refusal, or another reaper having taken the lock.
 func (o *Options) reapStoppedKey(cname, key string, rec keeperRecord, signalled map[string]bool) (rc int, done bool) {
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	live, err := holdLivenessLock(key)
 	if err != nil {
 		return 0, true // a keeper, or another reaper, took it in between: theirs to finish

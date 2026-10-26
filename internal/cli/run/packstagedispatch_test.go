@@ -63,6 +63,7 @@ func dispatchOptions(t *testing.T, workspace, ytoRuntime string, stdout, stderr 
 	o.Stderr = stderr
 	o.PathExists = func(string) bool { return false }
 	o.IsTTYStdout = func() bool { return false }
+	o.IsTTYStderr = func() bool { return false }
 	o.IsTTYStdin = func() bool { return false }
 	o.Now = func() time.Time { return time.Unix(0, 0) }
 	o.Getpid = func() int { return 1 }
@@ -239,10 +240,10 @@ func TestStagingFailureStopsBeforeAnyContainerWork(t *testing.T) {
 	rc := Run(*o)
 
 	if rc != 1 {
-		t.Fatalf("Run() = %d, want 1 (an unstageable pack is fail-closed)\nstdout:\n%s", rc, stdout.String())
+		t.Fatalf("Run() = %d, want 1 (an unstageable pack is fail-closed)\nstderr:\n%s", rc, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "ghost") {
-		t.Errorf("the failure does not name the pack that could not be staged:\n%s", stdout.String())
+	if !strings.Contains(stderr.String(), "ghost") {
+		t.Errorf("the failure does not name the pack that could not be staged:\n%s", stderr.String())
 	}
 	for _, argv := range execRec {
 		if len(argv) < 2 {

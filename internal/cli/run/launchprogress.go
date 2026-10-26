@@ -1,6 +1,7 @@
 package run
 
 import (
+	"io"
 	"os"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/progress"
@@ -45,6 +46,13 @@ func (o *Options) withStderrProgress(label string, step func() bool) bool {
 	})
 }
 
+func (o *Options) launchStderr() io.Writer {
+	if o.progressStderr != nil {
+		return o.progressStderr
+	}
+	return o.Stderr
+}
+
 // withProgressLine is withStderrProgress for a step that needs the line itself: to keep its
 // detail current (Line.Set) and to print a line above it (Line.Println), as the podman
 // readiness gate does (podmanready.go). step returns its success and the result the line
@@ -57,9 +65,14 @@ func (o *Options) withProgressLine(label string, step func(line *progress.Line) 
 		return ok
 	}
 	prev := o.Stderr
+	prevProgressStderr := o.progressStderr
+	if prevProgressStderr == nil {
+		o.progressStderr = prev
+	}
 	o.Stderr = line
 	ok, result := step(line)
 	o.Stderr = prev
+	o.progressStderr = prevProgressStderr
 	line.Done(result)
 	return ok
 }

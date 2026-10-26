@@ -269,6 +269,9 @@ func newKeeper(plan *keeperPlan, seams KeeperSeams, progress, lifeline, lock *os
 	color := plan.Color
 	o.IsTTYStdout = func() bool { return color }
 	o.IsTTYStderr = func() bool { return false }
+	// The launcher's stream color (streamColor), not this keeper's own stderr, which is a pipe:
+	// its lines are relayed to the launcher's terminal.
+	o.streamTTY = func() bool { return color }
 	recording := plan.PerfRecording
 	o.PerfLoggingConfig = func() bool { return recording }
 	if capture := seams.CaptureOnTerminate; capture != nil {
@@ -465,8 +468,8 @@ func (k *keeper) run() int {
 	jm, err := startJailMain(runCmd, keeperStream{k.sink, frameJailStdout},
 		keeperStream{k.sink, frameJailStderr}, func() { o.Perf.Mark("jail_main.exited") })
 	if err != nil {
-		o.pr(o.Stdout).printf("[bold red]Configured runtime '%s' not found on PATH.[/bold red]", p.Runtime)
-		o.pr(o.Stdout).print("[dim]Run `yolo check` to validate runtime availability before restarting.[/dim]")
+		o.pr(o.Stderr).printf("[bold red]Configured runtime '%s' not found on PATH.[/bold red]", p.Runtime)
+		o.pr(o.Stderr).print("[dim]Run `yolo check` to validate runtime availability before restarting.[/dim]")
 		return k.unwindUnstarted(1)
 	}
 	o.Perf.Mark("jail_main.spawned")

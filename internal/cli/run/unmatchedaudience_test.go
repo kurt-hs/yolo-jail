@@ -63,7 +63,7 @@ func unmatchedLaunch(t *testing.T, alphaExtra, houseContributes string, files ma
 		`[{"source":"file://`+alpha+`","name":"alphacli"},`+
 			`{"source":"file://`+beta+`","name":"betacli"},`+
 			`{"source":"file://`+house+`","name":"house"}]`)
-	return &Options{Workspace: t.TempDir(), Stdout: &strings.Builder{}}
+	return &Options{Workspace: t.TempDir(), Stdout: &strings.Builder{}, Stderr: &strings.Builder{}}
 }
 
 // THE CALL-SITE TEST: each kind's unmatched audience is reported by the launch, names the pack,
@@ -102,7 +102,7 @@ func TestLaunchReportsAnUnmatchedAudience(t *testing.T) {
 			if _, _, _, err := o.stagePacks("yolo-test-unmatched-" + tc.name); err != nil {
 				t.Fatalf("an unmatched audience must be REPORTED, never refused (R1): %v", err)
 			}
-			out := o.Stdout.(*strings.Builder).String()
+			out := o.Stderr.(*strings.Builder).String()
 			for _, want := range []string{
 				"Warning: pack house",
 				tc.name + " from `" + tc.source + "` is addressed to",
@@ -111,7 +111,7 @@ func TestLaunchReportsAnUnmatchedAudience(t *testing.T) {
 			} {
 				if !strings.Contains(out, want) {
 					t.Errorf("the launch did not report the unmatched %s audience (missing %q); "+
-						"stdout:\n%s", tc.name, want, out)
+						"stderr:\n%s", tc.name, want, out)
 				}
 			}
 		})
@@ -126,7 +126,7 @@ func TestLaunchDoesNotReportAMatchedAudience(t *testing.T) {
 	if _, _, _, err := o.stagePacks("yolo-test-matched"); err != nil {
 		t.Fatalf("a matched audience must launch: %v", err)
 	}
-	if out := o.Stdout.(*strings.Builder).String(); strings.Contains(out, "delivers it to no agent") {
+	if out := o.Stderr.(*strings.Builder).String(); strings.Contains(out, "delivers it to no agent") {
 		t.Errorf("a matched audience was reported as unmatched:\n%s", out)
 	}
 }
@@ -140,7 +140,7 @@ func TestLaunchDoesNotReportABroadcast(t *testing.T) {
 	if _, _, _, err := o.stagePacks("yolo-test-broadcast"); err != nil {
 		t.Fatalf("a broadcast must launch: %v", err)
 	}
-	if out := o.Stdout.(*strings.Builder).String(); strings.Contains(out, "delivers it to no agent") {
+	if out := o.Stderr.(*strings.Builder).String(); strings.Contains(out, "delivers it to no agent") {
 		t.Errorf("a broadcast was reported as an unmatched audience:\n%s", out)
 	}
 }

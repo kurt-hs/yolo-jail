@@ -445,7 +445,7 @@ func (o *Options) startLoopholesMatching(set loopholes.Set, cname, rt string, cf
 		if o.servicesSession == nil {
 			s, err := o.openServicesSession(cname, rt)
 			if err != nil {
-				o.pr(o.Stdout).print(servicesSessionFailure(err))
+				o.pr(o.Stderr).print(servicesSessionFailure(err))
 				return nil
 			}
 			o.servicesSession = s
@@ -508,7 +508,7 @@ func (o *Options) startLoopholesMatching(set loopholes.Set, cname, rt string, cf
 	for _, lp := range discovered {
 		for _, problem := range lp.PlacementProblems(o.Workspace) {
 			placementRefused[lp.Name] = true
-			o.pr(o.Stdout).print("[red]Refusing to start loophole " + lp.Name + ": " + problem + "[/red]")
+			o.pr(o.Stderr).print("[red]Refusing to start loophole " + lp.Name + ": " + problem + "[/red]")
 		}
 	}
 	// And for the same reason, a brokered loophole's scope file: {repository_scope} names it
@@ -711,7 +711,7 @@ func (o *Options) cgroupDelegateHonored(set loopholes.Set) bool {
 // whose stop() ran in the loop above, and the daemon behind it is this jail's own,
 // stopped (or detached) by that same stop() since HD-R1.
 func (o *Options) stopLoopholes(handles []loopholeDaemon, socketsDir, cname, rt string) {
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	for _, h := range handles {
 		// One span PER FRONT, not one for the loop: a fronted daemon's stop
 		// is front-close (≤2s) plus a process-group SIGTERM→5s→SIGKILL, and
@@ -1115,7 +1115,7 @@ const refusalExitGrace = time.Second
 func (o *Options) resolveDaemonArgv(name string, spec *jsonx.OrderedMap, daemonPath string) ([]string, bool) {
 	cmdTemplate := asAnyList(mapGet(spec, "command"))
 	if len(cmdTemplate) == 0 {
-		o.pr(o.Stdout).print("[red]Host service '" + name + "' has no command; skipping[/red]")
+		o.pr(o.Stderr).print("[red]Host service '" + name + "' has no command; skipping[/red]")
 		return nil, false
 	}
 	var cmdArgs []string
@@ -1140,7 +1140,7 @@ func (o *Options) resolveDaemonArgv(name string, spec *jsonx.OrderedMap, daemonP
 		// not start.
 		scoped, ok := o.scopeTokenArg(name, s)
 		if !ok {
-			o.pr(o.Stdout).print("[red]Host service '" + name + "' names its repository scope, and " +
+			o.pr(o.Stderr).print("[red]Host service '" + name + "' names its repository scope, and " +
 				"this launch wrote none for it; not starting it[/red]")
 			return nil, false
 		}
@@ -1157,7 +1157,7 @@ func (o *Options) resolveDaemonArgv(name string, spec *jsonx.OrderedMap, daemonP
 	// lives in the workspace.
 	if probs := config.LoopholePlacementProblems(
 		"loopholes."+name+".command", cmdArgs, o.Workspace); len(probs) > 0 {
-		p := o.pr(o.Stdout)
+		p := o.pr(o.Stderr)
 		for _, prob := range probs {
 			p.print("[red]Refusing to start host service '" + name + "': " + prob + "[/red]")
 		}
@@ -1186,7 +1186,7 @@ func (o *Options) resolveDaemonArgv(name string, spec *jsonx.OrderedMap, daemonP
 // is being cleaned of.
 func (o *Options) reportStaleRemoval(what, name, path string) {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		o.pr(o.Stdout).printf("[yellow]Warning: could not remove the stale %s for '%s' at %s "+
+		o.pr(o.Stderr).printf("[yellow]Warning: could not remove the stale %s for '%s' at %s "+
 			"(%v); a surviving one can make this launch report a service the jail "+
 			"cannot reach.[/yellow]", what, name, path, err)
 	}
@@ -1345,7 +1345,7 @@ func (o *Options) startExternalService(
 		var channelErr error
 		reasonConn, reasonChild, reasonAttempt, channelErr = hostservice.NewStartupReasonChannel()
 		if channelErr != nil {
-			o.pr(o.Stdout).print("[red]" + richtext.Escape(startupDiagnosticsFailure(name, channelErr)) + "[/red]")
+			o.pr(o.Stderr).print("[red]" + richtext.Escape(startupDiagnosticsFailure(name, channelErr)) + "[/red]")
 			outcome.ReasonRead = hostservice.StartupReasonReadOutcome{Kind: hostservice.StartupReasonReadChannelFault,
 				Phase: hostservice.StartupReasonReadPhaseUnknown, Fault: hostservice.StartupReasonFaultUnavailable}
 			return failed(hostservice.StartupKindChannelSetupFailed, hostservice.StartupPhaseChannel)
@@ -1361,7 +1361,7 @@ func (o *Options) startExternalService(
 		// every failure line below ends in "see <logPath>", and sending a reader to a
 		// file that was never opened is worse than the silence it replaced. So the one
 		// launch where that advice is false says so here, once, before it is given.
-		o.pr(o.Stdout).printf("[yellow]Warning: host service '%s' will run with no log: "+
+		o.pr(o.Stderr).printf("[yellow]Warning: host service '%s' will run with no log: "+
 			"could not open %s (%v).[/yellow]", name, logPath, logErr)
 	}
 	if reasonConn != nil {
@@ -1377,7 +1377,7 @@ func (o *Options) startExternalService(
 		if reasonConn != nil {
 			_ = reasonConn.Close()
 		}
-		o.pr(o.Stdout).print("[red]Failed to launch host service '" + name + "': " + err.Error() + "[/red]")
+		o.pr(o.Stderr).print("[red]Failed to launch host service '" + name + "': " + err.Error() + "[/red]")
 		return failed(hostservice.StartupKindDaemonStartFailed, hostservice.StartupPhaseSpawn)
 	}
 	outcome.Spawned = true
@@ -1574,9 +1574,9 @@ func (o *Options) startExternalService(
 				if outcome.Remedy != "" {
 					line += " Fix: " + richtext.Escape(outcome.Remedy)
 				}
-				o.pr(o.Stdout).print(line + "[/yellow]")
+				o.pr(o.Stderr).print(line + "[/yellow]")
 			}
-			o.pr(o.Stdout).print("[yellow]Warning: host service '" + name + "' " + failure +
+			o.pr(o.Stderr).print("[yellow]Warning: host service '" + name + "' " + failure +
 				" — " + o.unreachableBy() + " cannot reach it. Expected " + awaited +
 				"; see " + logPath + "[/yellow]")
 		}
@@ -1587,7 +1587,8 @@ func (o *Options) startExternalService(
 	// and only a give-up or a retired state directory leaves it down. Started below, once the
 	// handle is whole; a front that fails to publish stops the first process without it.
 	sup := newDaemonSupervisor(name, serviceLog, cmd, exited)
-	sup.say = supervisorSay(serviceLog, launchLogOnly(o.Stdout))
+	serviceStream := o.launchStderr()
+	sup.say = supervisorSay(serviceLog, launchLogOnly(serviceStream))
 	sup.wrapperExit = func(*exec.Cmd) bool { return reachable() }
 	if fronted {
 		// The copies `yolo host-daemon stop` acts on are the ones at a front socket, and its marker
@@ -1648,7 +1649,7 @@ func (o *Options) startExternalService(
 	if loopbackTLS {
 		envVar = hostServiceEnvVar(name)
 	}
-	out := o.pr(o.Stdout)
+	out := o.pr(o.launchStderr())
 	// stopCurrent is the teardown's stop of whichever process the supervisor holds now, marked
 	// stopping first so the stop is never read as a death and restarted.
 	stopCurrent := func() {
@@ -1700,7 +1701,7 @@ func (o *Options) startExternalService(
 			// in which the daemon is healthy and the jail still cannot reach it,
 			// and `failure` is what distinguishes a front that could not BIND from
 			// one that simply never published inside the deadline.
-			o.pr(o.Stdout).print("[yellow]Warning: the front for host service '" + name +
+			o.pr(o.Stderr).print("[yellow]Warning: the front for host service '" + name +
 				"' " + failure + " — " + o.unreachableBy() + " cannot reach it. See " +
 				logPath + "[/yellow]")
 			return loopholeDaemon{name: name, startupOutcome: outcome}, false
@@ -1871,7 +1872,7 @@ func (o *Options) awaitFrontClosed(kind, name, endpointPath string, done <-chan 
 	select {
 	case <-done:
 	case <-time.After(grace):
-		o.pr(o.Stdout).printf("[yellow]Warning: the front for %s '%s' did not close within "+
+		o.pr(o.Stderr).printf("[yellow]Warning: the front for %s '%s' did not close within "+
 			"%s; its endpoint file %s and the credential in it may outlive this "+
 			"jail.[/yellow]", kind, name, grace, endpointPath)
 	}

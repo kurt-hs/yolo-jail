@@ -117,7 +117,7 @@ func (o *Options) capturesArgs(rt, dir string) []string {
 		// A FORK'S BUILD LIVES IN THE SAME STORE (docs/design/forked-programs-as-packs.md), and
 		// has no download to fall back to, so the line says what that costs too: the forked
 		// program's launcher names this same reason in the jail (forkDeliveriesFor).
-		o.pr(o.Stdout).print("[yellow]Vendor-installer captures and fork builds are not mounted " +
+		o.pr(o.Stderr).print("[yellow]Vendor-installer captures and fork builds are not mounted " +
 			"on this runtime[/yellow] — " + reason + " Installs in the jail download as usual, and " +
 			"a program a fork builds is not delivered.")
 		return nil

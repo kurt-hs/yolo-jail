@@ -286,7 +286,7 @@ func TestEachHostServiceKindReportsItsEnd(t *testing.T) {
 		// die file stays, so the supervisor gives up, on a millisecond scale here.
 		fastHostDaemonRestarts(t, 5*time.Millisecond, 10*time.Second, 5)
 		var buf strings.Builder
-		o := &Options{Stdout: &buf}
+		o := &Options{Stderr: &buf}
 		fillDefaults(o)
 		o.ServiceTermGrace = 250 * time.Millisecond
 		held := heldDir(t)
@@ -320,7 +320,7 @@ func TestEachHostServiceKindReportsItsEnd(t *testing.T) {
 		var buf strings.Builder
 		o := &Options{}
 		fillDefaults(o)
-		o.Stdout = &buf
+		o.Stderr = &buf
 		// The wrapper ignores SIGTERM, so the process outlives its front by the whole grace: the
 		// front, which the stop closes first, is the end seen.
 		o.ServiceTermGrace = time.Second
@@ -351,7 +351,7 @@ func TestEachHostServiceKindReportsItsEnd(t *testing.T) {
 			t.Skip("no cgroup v2 here")
 		}
 		var buf strings.Builder
-		o := &Options{Stdout: &buf}
+		o := &Options{Stderr: &buf}
 		fillDefaults(o)
 		o.IsMacOS = false
 		o.PathExists = func(string) bool { return true }

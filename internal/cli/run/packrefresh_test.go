@@ -88,10 +88,10 @@ func TestLaunchFetchesANeverInstalledGitPack(t *testing.T) {
 		t.Fatalf("Run() = %d, want 0\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
 	}
 	if staged == "" || stagedErr != nil {
-		t.Errorf("the never-installed git pack was not staged under %q: %v\nstdout:\n%s", staged, stagedErr, stdout.String())
+		t.Errorf("the never-installed git pack was not staged under %q: %v\nstderr:\n%s", staged, stagedErr, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "Fetched pack gp: main → ") {
-		t.Errorf("the launch did not disclose the fetch:\n%s", stdout.String())
+	if !strings.Contains(stderr.String(), "Fetched pack gp: main → ") {
+		t.Errorf("the launch did not disclose the fetch:\n%s", stderr.String())
 	}
 	data, err := os.ReadFile(filepath.Join(ws, ".yolo", HostPerfLogName))
 	if err != nil {
@@ -176,10 +176,10 @@ func TestDryRunLaunchDoesNotRefreshPacks(t *testing.T) {
 	}
 	_ = Run(*o)
 	if _, err := os.Stat(filepath.Join(paths.PacksDir(), "mirrors")); err == nil {
-		t.Errorf("a --dry-run launch fetched a pack\nstdout:\n%s", stdout.String())
+		t.Errorf("a --dry-run launch fetched a pack\nstderr:\n%s", stderr.String())
 	}
-	if strings.Contains(stdout.String(), "Fetched pack") {
-		t.Errorf("a --dry-run launch disclosed a fetch:\n%s", stdout.String())
+	if strings.Contains(stderr.String(), "Fetched pack") {
+		t.Errorf("a --dry-run launch disclosed a fetch:\n%s", stderr.String())
 	}
 }
 

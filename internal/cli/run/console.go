@@ -68,22 +68,57 @@ func (o *Options) attachNoColorEnvArgs(envLines []string) []string {
 	return nil
 }
 
-// pr builds a color-aware printer for w, through the one gate (tty.Color).
-// Color is emitted only when the run requested it (o.Color) AND stdout is a
-// real terminal — never to a pipe/file, so redirected output stays clean — AND
-// the launch environment's NO_COLOR is unset or empty. That environment is
-// o.Getenv, the one every other launch decision reads, so a test's fake
-// environment governs color too.
+// pr builds a color-aware printer for w, a writer on the LAUNCH STREAM: o.Stderr, or a
+// writer derived from it. Every line the launcher itself prints during a launch is written
+// through it to stderr, because the launcher's stdout is the jailed command's stdout
+// (launchlog.go states the rule and lists the few outputs that are a verb's payload, which
+// take prOut instead).
+//
+// Color goes through the one gate (tty.Color, docs/reference/cli-color.md): emitted only
+// when the run requested it (o.Color) AND the launch stream is a real terminal — never to a
+// pipe/file, so redirected output stays clean — AND the launch environment's NO_COLOR is
+// unset or empty. That environment is o.Getenv, the one every other launch decision reads,
+// so a test's fake environment governs color too.
 func (o *Options) pr(w io.Writer) printer {
-	// Some staging-only callers have no presentation stream: their job is to
-	// collect derived paths, not render launch disclosure. A dependency closure
-	// may still have a truthful line to emit, and a nil writer must mean silent
-	// rather than a nil-interface panic.
-	if w == nil {
-		w = io.Discard
-	}
+	return printer{rt: richtext.Printer{W: orDiscard(w), Color: o.streamColor()}}
+}
+
+// prOut is pr for a writer on STDOUT, for output that IS a verb's payload rather than a
+// launch line (`yolo config apply`'s result report); its color asks whether stdout is a
+// terminal. A launch line never takes it.
+func (o *Options) prOut(w io.Writer) printer {
 	// o.Color is tested FIRST and alone: IsTTYStdout is consulted only when color was
-	// requested, as it always was, so a staging-only Options that never set the seam
-	// (and never asks for color) does not have to.
-	return printer{rt: richtext.Printer{W: w, Color: o.Color && tty.Color(o.Getenv, true, o.IsTTYStdout())}}
+	// requested, so an Options that never set the seam (and never asks for color) need not.
+	return printer{rt: richtext.Printer{W: orDiscard(w), Color: o.Color && tty.Color(o.Getenv, true, o.IsTTYStdout())}}
+}
+
+// streamColor is whether this launch renders color on its launch stream, which is what pr asks.
+// The keeper's lines reach the launcher's terminal through the relay, so the launcher hands this
+// answer to its keeper (keeperPlan.Color), whose own stderr is a pipe; the keeper answers with it
+// (streamTTY).
+func (o *Options) streamColor() bool {
+	// o.Color is tested FIRST and alone, as in prOut: a staging-only Options that never set the
+	// seams (and never asks for color) need not.
+	if !o.Color {
+		return false
+	}
+	terminal := false
+	switch {
+	case o.streamTTY != nil:
+		terminal = o.streamTTY()
+	case o.IsTTYStderr != nil:
+		terminal = o.IsTTYStderr()
+	}
+	return tty.Color(o.Getenv, true, terminal)
+}
+
+// orDiscard is w, or io.Discard for nil. Some staging-only callers have no presentation stream:
+// their job is to collect derived paths, not render launch disclosure. A dependency closure may
+// still have a truthful line to emit, and a nil writer must mean silent rather than a
+// nil-interface panic.
+func orDiscard(w io.Writer) io.Writer {
+	if w == nil {
+		return io.Discard
+	}
+	return w
 }

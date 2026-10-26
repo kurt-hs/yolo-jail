@@ -49,7 +49,7 @@ func (o *Options) brokeredScopeCheck(rt string, cfg *jsonx.OrderedMap, read *con
 			// empty because of a malformed worktree pointer is not the same as no remote. The
 			// problem can name a path the agent chose, so its markup is escaped (its control
 			// characters already are: brokerscope.Read).
-			o.pr(o.Stdout).print("[yellow]" + s.Label + ": " + richtext.Escape(s.Read.Problem) + "[/yellow]")
+			o.pr(o.Stderr).print("[yellow]" + s.Label + ": " + richtext.Escape(s.Read.Problem) + "[/yellow]")
 		}
 	}
 	return check
@@ -82,7 +82,7 @@ func (o *Options) recordApprovedScopes(approved map[string][]config.ScopeRepo, g
 // skipped the gate — gets no repository at all, so its broker runs only commands that name
 // none, and the launch says so.
 func (o *Options) writeScopeFiles(cname string, brokered []*loopholes.Loophole) {
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	// The names of the two workspace config files the loader reads, for the broker's
 	// out-of-scope refusal to name exactly (WW-D23). A name, never a path, and no config read.
 	_, configName := config.ResolveWorkspaceConfigPath(o.Workspace, config.WorkspaceConfigName)

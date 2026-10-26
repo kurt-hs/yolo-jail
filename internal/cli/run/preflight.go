@@ -21,7 +21,7 @@ import (
 // satisfies. Returns (config, ok). ok=false means the caller
 // must exit(1) — the messages were already printed.
 func (o *Options) loadAndValidateConfig() (*jsonx.OrderedMap, bool) {
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 
 	// WithSources: every refusal below names the file and line its key was written at
 	// (config's sources.go), since the config is composed from many files.
@@ -218,7 +218,7 @@ func (o *Options) resolveRuntime(cfg *jsonx.OrderedMap) (string, bool) {
 	// gets a headline of its own; nor is one whose probe ended on yolo's own scratch file and
 	// never ran podman (PR-D23), which yolo could not query.
 	if len(offline) > 0 {
-		out := o.pr(o.Stdout)
+		out := o.pr(o.Stderr)
 		var stopped, unqueried, unanswered []string
 		for i, rt := range offline {
 			switch d := downs[i]; {
@@ -247,7 +247,7 @@ func (o *Options) resolveRuntime(cfg *jsonx.OrderedMap) (string, bool) {
 		}
 		return "", false
 	}
-	o.pr(o.Stdout).print(
+	o.pr(o.Stderr).print(
 		"[bold red]No container runtime found. Install podman, or on macOS, Apple's container CLI.[/bold red]")
 	return "", false
 }
@@ -263,7 +263,7 @@ func (o *Options) validateExplicitRuntime(rt, source string) (string, bool) {
 	if inStrSlice(paths.NativeRuntimes, rt) {
 		return rt, true
 	}
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	if _, ok := o.LookPath(rt); !ok {
 		out.printf("[bold red]Configured runtime '%s' (from %s) is not installed.[/bold red]", rt, source)
 		out.printf("[dim]Install it, or unset %s to auto-detect. Run `yolo check` to validate.[/dim]", source)
@@ -426,7 +426,7 @@ func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHook
 	read, err := readWorkspaceForGateSeam(o.Workspace)
 	if err != nil {
 		// The file names come from the workspace, whose includes the agent names.
-		out := o.pr(o.Stdout)
+		out := o.pr(o.Stderr)
 		out.printf("[bold red]Cannot read this workspace's config for the config-change gate: %s[/bold red]",
 			richtext.Escape(termsafe.Visible(err.Error())))
 		out.print("[dim]Fix the file it names, then launch again; `yolo check` lists every problem " +
@@ -457,7 +457,7 @@ func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHook
 			o.printChangeRefusal(changed)
 			return false
 		}
-		o.pr(o.Stdout).printf("[bold red]%s[/bold red]", err.Error())
+		o.pr(o.Stderr).printf("[bold red]%s[/bold red]", err.Error())
 		return false
 	}
 	return ok
@@ -466,7 +466,7 @@ func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHook
 // printChangeRefusal renders the non-interactive refusal: headline, the diff in
 // the prompt's own colours, then the advice that names the flag.
 func (o *Options) printChangeRefusal(e *config.ChangedNonInteractiveError) {
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	out.printf("\n[bold red]⚠  %s[/bold red]\n", e.Headline())
 	printScopeBlock(out, e.ScopeBlock)
 	printScopeCounts(out, e.ScopeCounts)
@@ -535,7 +535,7 @@ func printScopeCounts(out printer, counts []string) {
 // hands it to its session (config.BootBaselineDigestEnv says why that backend needs it); the
 // container arm ignores it, since its baseline cannot be replaced while its jail runs.
 func (o *Options) writeLaunchConfigArtifacts(cfg *jsonx.OrderedMap) (baselineDigest string) {
-	out := o.pr(o.Stdout)
+	out := o.pr(o.Stderr)
 	assembled := o.assembledConfigFor(cfg)
 	if err := config.WriteAssembledConfig(o.Workspace, assembled); err != nil {
 		out.printf("[dim]Warning: could not write the assembled config for the jail: %s[/dim]", err.Error())
@@ -593,7 +593,7 @@ func (p *changePrompter) Prompt(diffLines []string) bool {
 // name the repository scope whenever it changed, and only the scope when the config did
 // not, and the scope block comes first. One y approves the whole bundle, as ruled.
 func (p *changePrompter) PromptReport(r config.ChangeReport) bool {
-	out := p.o.pr(p.o.Stdout)
+	out := p.o.pr(p.o.Stderr)
 	header, question := "Workspace config changed since last run:",
 		"Accept these workspace config changes? [y/N] "
 	switch {
@@ -612,7 +612,7 @@ func (p *changePrompter) PromptReport(r config.ChangeReport) bool {
 	for _, line := range p.preQuestion {
 		out.print(line)
 	}
-	if _, err := p.o.Stdout.Write([]byte(question)); err != nil {
+	if _, err := p.o.Stderr.Write([]byte(question)); err != nil {
 		return false
 	}
 	scanner := bufio.NewScanner(p.o.Stdin)
@@ -636,7 +636,7 @@ func (p *changePrompter) PromptReport(r config.ChangeReport) bool {
 // it is recorded (WW-D20): the repository scope block and its count lines, for remotes and
 // entries alike, so a scripted launch's log says which repositories it let in.
 func (p *changePrompter) ReportAccepted(r config.ChangeReport) {
-	out := p.o.pr(p.o.Stdout)
+	out := p.o.pr(p.o.Stderr)
 	out.print("\n[bold yellow]⚠  Repository scope changed since last run; " + config.AcceptConfigChangesFlag +
 		" records it as approved:[/bold yellow]\n")
 	printScopeBlock(out, r.ScopeBlock)

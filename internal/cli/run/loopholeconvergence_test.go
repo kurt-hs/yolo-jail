@@ -243,7 +243,7 @@ func TestFormerBuiltinNamesAreSpawnedNotSkipped(t *testing.T) {
 
 	var out bytes.Buffer
 	o := goldenOptions(t.TempDir(), t.TempDir())
-	o.Stdout = &out
+	o.Stderr = &out
 	o.ServiceReadyTimeout = 200 * time.Millisecond
 	o.startLoopholes("yolo-test-former-builtin", "podman", jsonx.NewOrderedMap())
 

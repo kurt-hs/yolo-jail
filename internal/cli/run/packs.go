@@ -120,7 +120,7 @@ func touchAgentStagingDir(cname string) {
 // next call. Ordering is therefore load-bearing: stagePacks runs first.
 func (o *Options) stagePacks(cname string) (string, []*packload.Pack, []jailcontent.PackBriefing, error) {
 	entries, err := config.LoadPacks(func(msg string) {
-		o.pr(o.Stdout).print("[yellow]Warning: packs: " + msg + "[/yellow]")
+		o.pr(o.Stderr).print("[yellow]Warning: packs: " + msg + "[/yellow]")
 	})
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("packs: %w", err)
@@ -915,7 +915,7 @@ func resolvePackSupersessions() []loopholes.PackSupersession {
 func (o *Options) packSkillSourceDirs(p *packload.Pack) []jailcontent.PackSkillSource {
 	sources, problems := p.SkillsSources()
 	for _, prob := range problems {
-		o.pr(o.Stdout).print("[yellow]Warning: " + prob + "[/yellow]")
+		o.pr(o.Stderr).print("[yellow]Warning: " + prob + "[/yellow]")
 	}
 	return jailSkillSources(p, sources)
 }
@@ -934,7 +934,7 @@ func (o *Options) stagePackEntry(entry config.PackEntry, dest string) (*packload
 		return nil, err
 	}
 	if len(res.Staged.Staged) == 0 {
-		o.pr(o.Stdout).print(fmt.Sprintf(
+		o.pr(o.Stderr).print(fmt.Sprintf(
 			"[yellow]Warning: pack %s staged 0 files (%d excluded by only/exclude) — "+
 				"check its filters[/yellow]", entry.Name, len(res.Staged.Excluded)))
 	}
@@ -1002,7 +1002,7 @@ func (o *Options) noteSkippedContributions(p *packload.Pack) {
 func (o *Options) packBriefingProses(name string, p *packload.Pack) []jailcontent.PackBriefing {
 	sources, problems := p.GovernedSources(packdecl.KindBriefing)
 	for _, prob := range problems {
-		o.pr(o.Stdout).print("[yellow]Warning: " + prob + "[/yellow]")
+		o.pr(o.Stderr).print("[yellow]Warning: " + prob + "[/yellow]")
 	}
 	out := make([]jailcontent.PackBriefing, 0, len(sources))
 	for _, src := range sources {

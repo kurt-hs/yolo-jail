@@ -54,7 +54,7 @@ func localSkillsPack(t *testing.T, srcDir, from string) *Options {
 func stagedSkillDirs(t *testing.T, o *Options) ([]string, string) {
 	t.Helper()
 	var out bytes.Buffer
-	o.Stdout = &out
+	o.Stderr = &out
 	jailcontent.SetPackSkillDirs(nil)
 	if _, _, _, err := o.stagePacks("yolo-test-skillsfrom"); err != nil {
 		t.Fatalf("stagePacks: %v", err)
@@ -149,7 +149,7 @@ func TestJailSkillsBroadcastSurvivesANarrowerTree(t *testing.T) {
 	writeSkillTree(t, filepath.Join(packDir, "pi-skills"), "pionly")
 	writeUserPacks(t, home, `["pi",{"source":"file://`+packDir+`","name":"sf"}]`)
 
-	o := &Options{Workspace: t.TempDir(), Stdout: &bytes.Buffer{}}
+	o := &Options{Workspace: t.TempDir(), Stderr: &bytes.Buffer{}}
 	jailcontent.SetPackSkillDirs(nil)
 	t.Cleanup(func() { jailcontent.SetPackSkillDirs(nil) })
 	if _, _, _, err := o.stagePacks("yolo-test-skillsbroadcast"); err != nil {

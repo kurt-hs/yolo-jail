@@ -224,7 +224,7 @@ func TestMacosUserArmWarnsAboutUnclassifiedInheritKeys(t *testing.T) {
 	o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
 	core := o.macosUserInheritedScope("macos-user")
 
-	if !strings.Contains(stdout.String(), "no inherit classification") || !strings.Contains(stdout.String(), key) {
+	if !strings.Contains(stderr.String(), "no inherit classification") || !strings.Contains(stderr.String(), key) {
 		t.Errorf("the macos-user arm dropped %s from the sandbox's user scope without saying so:\n"+
 			"stdout:\n%s\nstderr:\n%s", key, stdout.String(), stderr.String())
 	}
