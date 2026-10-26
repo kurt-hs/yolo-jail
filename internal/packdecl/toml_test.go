@@ -47,7 +47,7 @@ compact_at = 200_000
 [providers.meta.variants.fast]
 model = "muse-spark-1.3-contributor"
 options = { model = "spark", thinking = "high" }
-subagents = { default_model = "muse-spark-1.3-contributor", model_scope = { allow = ["muse-spark-1.3-contributor"] } }
+subagents = { default = "muse-spark-1.3-contributor", roles = { worker = "muse-spark-1.3-contributor" } }
 enforce_models = false
 capabilities = ["web_search"]
 protocols = ["openai"]
@@ -124,8 +124,12 @@ func TestDecodeTOMLGroupedManifestNormalizesAccessorsAndMetadata(t *testing.T) {
 		t.Fatalf("variants = %#v", p.Variants)
 	}
 	variant := p.Variants["fast"]
-	if variant.Options["model"].Value != "spark" || variant.Subagents["default_model"] != "muse-spark-1.3-contributor" || variant.EnforceModels == nil || *variant.EnforceModels || len(variant.Capabilities) != 1 || len(variant.Protocols) != 1 {
+	if variant.Options["model"].Value != "spark" || variant.Subagents["default"] != "muse-spark-1.3-contributor" || variant.EnforceModels == nil || *variant.EnforceModels || len(variant.Capabilities) != 1 || len(variant.Protocols) != 1 {
 		t.Fatalf("variant profile fields = %#v", variant)
+	}
+	roles, ok := variant.Subagents["roles"].(map[string]any)
+	if !ok || roles["worker"] != "muse-spark-1.3-contributor" {
+		t.Fatalf("variant subagent roles = %#v", variant.Subagents["roles"])
 	}
 	if len(p.VariantOrder) != 2 || p.VariantOrder[0] != "fast" || p.VariantOrder[1] != "routed" {
 		t.Fatalf("variant source order = %v", p.VariantOrder)
@@ -168,6 +172,98 @@ func equalStrings(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+func TestDecodeTOMLProviderVariantProfileValidationMatchesConfig(t *testing.T) {
+	decoders := []struct {
+		name   string
+		decode func([]byte) (*Manifest, []string, []string)
+	}{
+		{name: "strict", decode: func(data []byte) (*Manifest, []string, []string) {
+			m, problems := DecodeTOML(data)
+			return m, problems, nil
+		}},
+		{name: "use", decode: DecodeTOMLForUse},
+		{name: "tolerant", decode: DecodeTOMLTolerant},
+	}
+	valid := []byte(`[providers.meta.variants.worker]
+model = "fast"
+via = "wire-bridge"
+subagents.default = "fast"
+subagents.roles.worker = "fast"
+`)
+	for _, decoder := range decoders {
+		t.Run(decoder.name+" valid profile fields", func(t *testing.T) {
+			m, problems, skipped := decoder.decode(valid)
+			if len(problems) != 0 || len(skipped) != 0 || m == nil {
+				t.Fatalf("valid variant: manifest=%#v problems=%v skipped=%v", m, problems, skipped)
+			}
+			providers := m.Providers()
+			if len(providers) != 1 {
+				t.Fatalf("providers = %#v, want one", providers)
+			}
+			variant := providers[0].Variants["worker"]
+			if variant.Via != "wire-bridge" || variant.Subagents["default"] != "fast" {
+				t.Fatalf("variant profile fields = %#v", variant)
+			}
+			roles, ok := variant.Subagents["roles"].(map[string]any)
+			if !ok || roles["worker"] != "fast" {
+				t.Fatalf("variant subagent roles = %#v", variant.Subagents["roles"])
+			}
+		})
+	}
+
+	for name, test := range map[string]struct {
+		input string
+		want  string
+	}{
+		"unknown subagents field": {input: `[providers.meta.variants.worker]
+model = "fast"
+subagents.default_model = "fast"
+`, want: "subagents.default_model is unknown"},
+		"non-string default": {input: `[providers.meta.variants.worker]
+model = "fast"
+subagents.default = 7
+`, want: "subagents.default must be a non-empty string"},
+		"invalid role model": {input: `[providers.meta.variants.worker]
+model = "fast"
+subagents.roles.worker = 7
+`, want: "subagents.roles.worker must be a non-empty string"},
+		"empty subagents": {input: `[providers.meta.variants.worker]
+model = "fast"
+subagents = {}
+`, want: "subagents declares nothing"},
+		"invalid via name": {input: `[providers.meta.variants.worker]
+model = "fast"
+via = "bad/name"
+`, want: "variants.worker.via must be a valid pack name"},
+	} {
+		for _, decoder := range decoders {
+			t.Run(decoder.name+" rejects "+name, func(t *testing.T) {
+				m, problems, skipped := decoder.decode([]byte(test.input))
+				joined := strings.Join(problems, "\n")
+				if m != nil || !strings.Contains(joined, test.want) || len(skipped) != 0 {
+					t.Fatalf("malformed profile shape: problems=%v skipped=%v, want %q", problems, skipped, test.want)
+				}
+			})
+		}
+	}
+}
+
+func TestDecodeTOMLVariantUnknownFieldKeepsReaderModePolicy(t *testing.T) {
+	data := []byte(`[providers.meta.variants.fast]
+model = "fast"
+newer_field = true
+`)
+	if _, problems := DecodeTOML(data); len(problems) == 0 || !strings.Contains(strings.Join(problems, "\n"), `unknown provider model field "variants.fast.newer_field"`) {
+		t.Fatalf("strict reader should refuse unknown variant field, got %v", problems)
+	}
+	for name, decode := range map[string]func([]byte) (*Manifest, []string, []string){"use": DecodeTOMLForUse, "tolerant": DecodeTOMLTolerant} {
+		m, problems, skipped := decode(data)
+		if m == nil || len(problems) != 0 || len(skipped) != 1 || len(m.Providers()) != 0 {
+			t.Errorf("%s reader: manifest=%#v problems=%v skipped=%v", name, m, problems, skipped)
+		}
+	}
 }
 
 func TestDecodeTOMLReadersKeepStrictUseAndTolerantContracts(t *testing.T) {

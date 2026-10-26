@@ -546,6 +546,14 @@ func normalizeProvider(name string, fields map[string]any, doc *configdoc.Docume
 			if variant.Via == "" && hasKey(value, "via") {
 				return nil, nil, fmt.Errorf("variants.%s.via must be non-empty", name)
 			}
+			if variant.Via != "" && !ValidPackName(variant.Via) {
+				return nil, nil, fmt.Errorf("variants.%s.via must be a valid pack name", name)
+			}
+			if rawSubagents, present := mapValue(value, "subagents"); present {
+				if err := validateProviderSubagents(name, rawSubagents); err != nil {
+					return nil, nil, err
+				}
+			}
 			if err := uniqueNonempty("variants."+name+".capabilities", variant.Capabilities); err != nil {
 				return nil, nil, err
 			}
@@ -660,12 +668,60 @@ func validateProviderModel(label string, raw any, model ProviderModel) error {
 }
 
 func hasKey(value any, key string) bool {
+	_, exists := mapValue(value, key)
+	return exists
+}
+
+func mapValue(value any, key string) (any, bool) {
 	fields, ok := value.(map[string]any)
 	if !ok {
-		return false
+		return nil, false
 	}
-	_, exists := fields[key]
-	return exists
+	entry, exists := fields[key]
+	return entry, exists
+}
+
+func validateProviderSubagents(variant string, raw any) error {
+	path := "variants." + variant + ".subagents"
+	fields, ok := raw.(map[string]any)
+	if !ok {
+		return fmt.Errorf("%s must be a table declaring default and/or roles", path)
+	}
+	declares := false
+	for _, key := range sortedKeys(fields) {
+		value := fields[key]
+		switch key {
+		case "default":
+			model, valid := value.(string)
+			if !valid || model == "" {
+				return fmt.Errorf("%s.default must be a non-empty string", path)
+			}
+			declares = true
+		case "roles":
+			roles, valid := value.(map[string]any)
+			if !valid {
+				return fmt.Errorf("%s.roles must be a table mapping role names to models", path)
+			}
+			for _, role := range sortedKeys(roles) {
+				model, valid := roles[role].(string)
+				if role == "" {
+					return fmt.Errorf("%s.roles contains an empty role name", path)
+				}
+				if !valid || model == "" {
+					return fmt.Errorf("%s.roles.%s must be a non-empty string", path, role)
+				}
+			}
+			if len(roles) > 0 {
+				declares = true
+			}
+		default:
+			return fmt.Errorf("%s.%s is unknown; only default and roles are accepted", path, key)
+		}
+	}
+	if !declares {
+		return fmt.Errorf("%s declares nothing; set default or a roles entry", path)
+	}
+	return nil
 }
 
 func positiveInteger(value any) bool {
