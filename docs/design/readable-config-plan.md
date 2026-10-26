@@ -3,7 +3,7 @@ title: "Readable config: component implementation plan"
 date: 2026-10-26
 status: accepted
 stage: DECIDED
-next: "Complete targeted HIGH review and Root's final gates on the integrated candidate; then continue B2/E1/E2/D2 and the remaining bounded waves"
+next: "Prove the final documentation candidate preserves the HIGH-reviewed 91f3 foundation source; Root's final gates and landing remain pending, then continue B2/E1/E2/D2 and the remaining bounded waves"
 depends-on:
   - readable-config.md
   - config-user.md
@@ -12,13 +12,13 @@ depends-on:
   - config-migration.md
   - pack-manifests.md
 tags: [config, packs, migration, editing, plan]
-summary: "Tree-grounded implementation handoff for the readable-config redesign. A1/B1/D1 foundations are present in the candidate; F4 acceptance and every discovery, runtime, migration, CLI, asset and documentation wave remain owed."
+summary: "Tree-grounded implementation handoff for the readable-config redesign. A1/B1/D1 foundations and F4/F8 corrections are present; the 91f3 foundation source passed targeted HIGH review, while final-candidate source equality and Root gates remain. The full redesign's discovery, runtime, migration, CLI, asset and documentation waves remain owed."
 ---
 
 # Readable config: component implementation plan
 
 **Written against:** `c729692223d8d8a884887875b44da5639a154448`, 2026-10-26.
-The accepted-design tree and implementation seams were re-read at this foundation candidate. A1 document/index/fixture, B1 schema/rename and D1 grouped-manifest foundations are present. The F4 raw array-table ordering fix is in the lead-integrated source commit `91f3f81d8ea5b9a135aaf8f61d121d320db757b7`, not this docs worktree; its focused regressions are green, pending targeted HIGH review and Root's final gates/landing. The full redesign is not built: no TOML config discovery, pack discovery/selection activation, runtime consumer migration, CLI editing, migration, or shipped TOML assets are active.
+The accepted-design tree and implementation seams were re-read at this foundation candidate. A1 document/index/fixture, B1 schema/rename and D1 grouped-manifest foundations are present. F4/F8 are closed on the lead-integrated source commit `91f3f81d8ea5b9a135aaf8f61d121d320db757b7`; the targeted HIGH review passed there (17 `tomlx`, 3 schema, 4 `configdoc`, 2 `packdecl` checks; 72 original function bodies unchanged; see durable `config-recovery-evidence/final-high-review.md`). The final documentation candidate must prove source equality with that reviewed foundation; Root's final gates and landing remain pending. The full redesign is not built: no TOML config discovery, pack discovery/selection activation, runtime consumer migration, CLI editing, migration, or shipped TOML assets are active.
 
 **Foundation provenance:** the imported A1/B1/D1 series and correction commits come from the recovery ref frozen at `b245d266d717326c3c3d6e3353d25e7f3fad66f3`; the source-to-result SHA map and gate logs remain in the durable recovery evidence. The F4 fix is in the separate lead-integrated commit above; this plan writer did not import it into the c729 worktree.
 
@@ -40,8 +40,8 @@ unrelated subsystem or silently enlarge the fence. New files below are explicitl
 | [`load.go`](../../internal/config/load.go), [`userlayer.go`](../../internal/config/userlayer.go) | `loadWithIncludes`, `loadUserScope`, `MergeConfig`, `ReadWorkspaceForGate` are distinct reads. Change all user readers through their common boundary; do not fix only `LoadConfig`. Preserve explicit `--user-layer` above includes/fragments and below project scope. |
 | [`sources.go`](../../internal/config/sources.go), [`wsroot.go`](../../internal/config/wsroot.go) | Preserve `srcNode` merge order, duplicate writers, workspace containment, include origin and `Sources.Locations`. A format adapter must not turn a path outside the workspace into an eligible broker request. |
 | [`json5/locate.go`](../../internal/json5/locate.go) | `Index.Locate` already returns value spans, including array steps, and refuses ambiguous duplicate keys; sources uses it. Extend an adapter, not a second JSONC parser. |
-| [`tomlx.go`](../../internal/tomlx/tomlx.go) | `DecodeOrdered` retains source metadata for authored ordering. The c729 base exposed F4's singleton nested-array-table regression (`[a z]`, expected `[z a]`); lead-integrated commit `91f3f81d8ea5b9a135aaf8f61d121d320db757b7` keeps raw array-table identity through conversion and splits singleton rows. TOML dates remain invalid config scalars. Review and final candidate gates remain owed. |
-| [`configdoc/document.go`](../../internal/configdoc/document.go), [`configdoc/encode.go`](../../internal/configdoc/encode.go) | A1's positioned document/index and encoder exist; keep offsets byte-based and comments unattached. F4's targeted ordering fix is integrated separately; the shared API remains pending final HIGH review and Root acceptance gates. |
+| [`tomlx.go`](../../internal/tomlx/tomlx.go) | `DecodeOrdered` retains source metadata for authored ordering. The c729 base exposed F4's singleton nested-array-table regression (`[a z]`, expected `[z a]`); lead-integrated commit `91f3f81d8ea5b9a135aaf8f61d121d320db757b7` keeps raw array-table identity through conversion and splits singleton rows. The targeted HIGH review passed on that source; final-candidate equality and Root gates remain. TOML dates remain invalid config scalars. |
+| [`configdoc/document.go`](../../internal/configdoc/document.go), [`configdoc/encode.go`](../../internal/configdoc/encode.go) | A1's positioned document/index and encoder exist; keep offsets byte-based and comments unattached. The 91f3 foundation source, including F4, passed targeted HIGH review; final-candidate equality and Root acceptance gates remain. |
 | [`config/schema.go`](../../internal/config/schema.go), [`config/renames.go`](../../internal/config/renames.go), [`config/validateproviders.go`](../../internal/config/validateproviders.go) | B1 extracted schema/rename metadata and provider validators; preserve the extracted 72 validator bodies and all key scope/type/removal policy. These are library seams only: config readers still do not discover TOML. |
 | [`packdecl/toml.go`](../../internal/packdecl/toml.go), [`packdecl/packdecl.go`](../../internal/packdecl/packdecl.go) | D1 grouped TOML decoding and F8's two descriptors exist; no discovery/launch activation follows. D2's `[[launch]]`, install/run defaults, and contribution parity are still unbuilt. |
 | [`entrypoint/tomltrivia.go`](../../internal/entrypoint/tomltrivia.go) | Existing scanner attaches/drops comments on round-trip. It is **not** an editor or migration policy; importing entrypoint into config would also invert layering. Do not reuse its comment-ownership semantics. |
@@ -53,14 +53,14 @@ unrelated subsystem or silently enlarge the fence. New files below are explicitl
 | [`providers.go`](../../internal/packload/providers.go), [`profiles.go`](../../internal/packload/profiles.go), [`modellists.go`](../../internal/packload/modellists.go) | `ComposeProviders` is the one host composition; deep-copy ownership, endpoint adapters, all-add-before-only model narrowing and tombstones are load-bearing. Do not compose independently in the jail. |
 | [`modelcatalog.go`](../../internal/modelcatalog/modelcatalog.go), [`modelvendor.go`](../../internal/packdecl/modelvendor.go) | Catalog reader currently collects IDs, **not facts**. Maker validation does not infer maker. C7 and maker/default folding are new work, not existing helpers. |
 | [`brokered.go`](../../internal/config/brokered.go), [`gateread.go`](../../internal/config/gateread.go), [`scopeapproval.go`](../../internal/config/scopeapproval.go) | Keep user ceiling, workspace request, concrete scope and approved/live grant separate. Gate projects broker config out of JSON and uses scope + scope-sources records. A pretty rename must not skip that gate. |
-| [`https.go`](../../internal/gitbroker/https.go), [`broker.go`](../../internal/gitbroker/broker.go) | HTTPS already tries anonymously, but broker scope/read checks happen **before** that attempt. Public-outside-scope behavior requires changing the producer/callsite, not merely testing HTTP helper behavior. SSH must never lend host credentials for the anonymous route. |
+| [`https.go`](../../internal/gitbroker/https.go), [`broker.go`](../../internal/gitbroker/broker.go#L270-L327), [`https_test.go`](../../internal/gitbroker/https_test.go) | `Broker.Run` already admits HTTPS upload-pack anonymously before scope/read-grant checks; `credentialPolicy` rechecks live scope/grants before private credential fallback. `TestHTTPSPublicFetchWithoutReadGrantOrApprovedURL` and `TestHTTPSPrivateAnonymous401RefusesWithoutCredential` pin those caller-visible paths. G3 must preserve/consume them while adapting new vocabulary; do not reorder admission or add a second public transport. |
 | [`snapshot.go`](../../internal/config/snapshot.go), [`drift.go`](../../internal/config/drift.go), [`launchorigins.go`](../../internal/config/launchorigins.go) | Canonical JSON is approval-sensitive. Migration must respell config, scope-source file labels and origins, not silently bless new authority. macos-user boot digest identifies the session's baseline; stale-session evidence must not be relabeled current. |
 | [`liveapplyplan.go`](../../internal/cli/run/liveapplyplan.go), [`inheritscope.go`](../../internal/cli/run/inheritscope.go) | Keep per-key apply timing, boot-baseline folding, own-workspace assembled snapshot shortcut and preflight/nested inheritance separate. Generated user copy becomes TOML; machine-only records remain JSON in new vocabulary. |
 | [`config.go`](../../internal/cli/config.go), [`dispatch.go`](../../internal/cli/dispatch.go), [`pack.go`](../../internal/cli/pack.go), [`init.go`](../../internal/cli/init.go) | Six composition verbs move to surface; apply/drift/dump stay config. CLI registry also controls argv rewriting. `init` currently creates a long template and edits .gitignore; neither remains the default. |
 
 ### Verified implementation state at the candidate
 
-- A1's `configdoc`, `testconfig`, TOML index/encoder, filename constants and vendored parser are in the tree; B1's schema/rename descriptors and validator extraction are in the tree; D1's grouped pack manifest decoder is in the tree. F4 is implemented by lead-integrated commit `91f3f81d8ea5b9a135aaf8f61d121d320db757b7`; targeted tests are green, but the shared APIs await targeted HIGH review and Root's final candidate gates.
+- A1's `configdoc`, `testconfig`, TOML index/encoder, filename constants and vendored parser are in the tree; B1's schema/rename descriptors and validator extraction are in the tree; D1's grouped pack manifest decoder is in the tree. F4/F8 are closed on the 91f3 source, which passed targeted HIGH review. Root's final candidate must prove source equality and pass its final gates before acceptance.
 - On the c729 foundation base, `go test -mod=vendor -count=1 -short ./internal/configdoc ./internal/testconfig ./internal/tomlx ./internal/json5 ./internal/paths ./internal/config ./internal/packdecl ./internal/packload` failed only at `internal/tomlx.TestDecodeOrderedPreservesRepeatedNestedArrayTableAuthoredOrder`: the third singleton child had `[a z]`, expected `[z a]`. This is pre-fix evidence, not current candidate status.
 - The lead reports the singleton regression red before F4, and the full `tomlx`, `configdoc`, and `packdecl` suites green after the two-file fix. `go build -mod=vendor ./...` passed on c729; this proves compilation only, not redesign behavior or API acceptance.
 - No TOML config discovery, runtime activation, CLI editing, migration, or asset conversion has landed. Continue remaining waves only from a stable integrated base; H/K additionally wait for Root-landed runtime APIs.
@@ -68,11 +68,10 @@ unrelated subsystem or silently enlarge the fence. New files below are explicitl
 ## 2. First-landed contracts
 
 **A1/B1/D1 foundation is present; F4's repair is implemented in lead-integrated commit
-`91f3f81d8ea5b9a135aaf8f61d121d320db757b7`.** The pre-fix regression is recorded above; the
-post-fix `tomlx`, `configdoc` and `packdecl` suites are green. The shared APIs still await
-exact-candidate HIGH review and Root's final gates/landing. The signatures below describe the
-implemented code, not acceptance evidence; field factoring remains cheap, but byte ranges,
-original key steps and ordering guarantees are not.
+`91f3f81d8ea5b9a135aaf8f61d121d320db757b7`.** The targeted HIGH review passed on that source;
+the final documentation candidate must prove source equality, and Root's final gates/landing
+remain pending. The signatures below describe implemented code, not final acceptance evidence;
+field factoring remains cheap, but byte ranges, original key steps and ordering guarantees are not.
 
 ```go
 // internal/configdoc; imports jsonx/json5/tomlx, never config/cli/entrypoint.
@@ -310,15 +309,17 @@ and any actual fence or contract mismatch. Commit messages below are exact defau
 - **Settled:** “the bytes of one value … every other byte untouched”; filename is version.
 - **Change:** the candidate contains the configdoc adapter/index, TOML encoder, fixture helpers,
   filename constants and pinned/vendor dependency; no loader or launch activation. Do not treat
-  those APIs as accepted until final HIGH review and Root's gates.
+  those APIs as accepted until the final documentation candidate proves equality with the
+  HIGH-reviewed 91f3 source and Root completes the final gates.
 - **Evidence:** before F4, the focused foundation suite passed `configdoc`, `testconfig`, `json5`,
   `paths`, `config`, `packdecl`, and `packload` but failed the singleton ordering test in `tomlx`.
-  Lead-integrated F4 now makes `tomlx`, `configdoc`, and `packdecl` pass. Root's final candidate
-  gates and targeted HIGH review remain; captured command/output are in durable recovery evidence.
+  Lead-integrated F4 now makes `tomlx`, `configdoc`, and `packdecl` pass. The targeted HIGH review
+  passed on source 91f3; Root's final candidate gates remain. Captured review and test evidence is
+  in durable recovery evidence.
 - **Commit:** foundation arrived in the candidate's imported commit series; the original A1
   message was `feat(config): add positioned document and fixture contracts`.
 
-### F4 — preserve raw TOML array-table identity (implemented; final acceptance pending)
+### F4 — preserve raw TOML array-table identity (implemented; HIGH-reviewed source; final gate pending)
 
 - **Settled:** preserve the ordered semantic map, scalar values, `[]any` output and source spans.
   A raw `[]map[string]any` is an array of tables even when it has one row; an assigned/inline
@@ -333,14 +334,14 @@ and any actual fence or contract mismatch. Commit messages below are exact defau
   inline/nested/mixed array authored order, both inline-assignment/table-header uses of the same
   child path, and differing child key order/values. Semantic decode values and configdoc spans
   remain unchanged. The lead's captured candidate report carries exact command/output.
-- **Remaining gate:** targeted HIGH review of the exact integrated candidate and Root's final
-  gates/landing. Do not describe the APIs or full redesign as accepted/built until those gates.
+- **Remaining gate:** the targeted HIGH review passed on source `91f3f81d8ea5b9a135aaf8f61d121d320db757b7` (receipt in durable `config-recovery-evidence/final-high-review.md`). Prove the final documentation candidate preserves that source, then await Root's final gates/landing. Do not describe the full redesign as accepted/built until those gates.
 - **Fence:** no configdoc, schema, F8, packdecl, runtime, source parser/helper or vendor edits.
 
 ### B1/B2 — schema seam, then format-aware load/merge/scope
 
 - **B1 present in candidate:** schema keys, scope/type/removal policies, rename descriptors and
-  move-only validator extraction; no loader activation. Its acceptance is coupled to F4 review.
+  move-only validator extraction; no loader activation. Root's final candidate gates and
+  acceptance remain pending.
 - **B2 settled:** project installs/requests; user authority unchanged; empty lists clear;
   table-off distinct from literal strings. Implement discovery collision checking, format-aware
   includes/config.d, validation, source maps and schema-specific merge rules; preserve legacy
@@ -437,18 +438,14 @@ func TestLoadWorkspaceConfigReadsReadableInstall(t *testing.T) {
   Tests: `TestConcreteScopeBeforeInheritedGrants` parameterized independently per broker and
   launch/check/apply producer callers; mocks record gate input, not only its final output.
   Commit `fix(broker): materialize grants only for concrete workspace scope`.
-### G3 — anonymous public-read route (consume existing transport)
+### G3 — adapt readable scope to the existing anonymous public-read route
 
-- **Settled:** public fetch lends no login; private outside-scope must refuse before helper.
-  Current main already has an anonymous HTTPS public-fetch attempt. Preserve and consume that
-  route; the remaining G3 work is to order broker admission so the credential-free read can
-  pass outside scope, while private reads still refuse before credential fill. Do not duplicate
-  or replace the existing public HTTPS transport. Use controlled HTTP git server and helper/token
-  spies; SSH must never be used as an anonymous probe. Push still takes scope+grant+existing
-  policy; create_pr/issue retain their current refused-at-use status until separate delivery.
-- **Commit:** `feat(broker): allow credential-free public fetches outside approved scope`.
-- **Gates:** `go test -short ./internal/config ./internal/loopholes ./internal/loopholedecl ./internal/gitbroker ./internal/ghbroker ./internal/cli/check`.
-  Existing grant/scope/read tests asserting wildcard approvals must be rewritten, not weakened.
+- **Settled:** an HTTPS fetch tries anonymously before any scope/read-grant decision. Public content outside scope can pass without lending a login; a private 401 reaches the host credential helper only when the live `credentialPolicy` approves scope and read grant. This broker order and transport already exist; do not reimplement either.
+- **Change:** consume and protect the existing route while adapting new-vocabulary scope/remediation. No producer/admission-order implementation. Add a producer/launch/apply caller regression only if the new-vocabulary adapter could bypass or alter the current route; assert no phantom approval is created.
+- **Tests first:** existing `TestHTTPSPublicFetchWithoutReadGrantOrApprovedURL`, `TestHTTPSPrivateAnonymous401RefusesWithoutCredential`, `TestHTTPSCredentialFillRechecksLiveReadGrant` and `TestHTTPSCredentialApprovalRechecksLiveReadGrant` pin public, private and credential-fallback behavior. Any adapter-specific regression must exercise its production caller and retain those outcomes; no duplicate transport fixture is needed.
+- **Fences:** do not reorder `Broker.Run`, change the existing anonymous HTTPS leg or broaden private credential fallback. SSH and every push retain their existing hard scope/grant preconditions; `create_pr`/`issue` remain refused at use until their separately scheduled delivery.
+- **Commit:** `feat(config): adapt readable scopes to anonymous HTTPS`.
+- **Gate:** focused config/broker/caller tests for the changed adapter; run the existing `gitbroker` HTTPS cases above as a regression, not as proof of a new transport.
 
 ### I1/I2 — conventional content discovery, then append/replace and delivery
 
@@ -580,9 +577,10 @@ func TestLoadWorkspaceConfigReadsReadableInstall(t *testing.T) {
 
 ### Integration waves (not concurrent edits to a shared base)
 
-1. Review the lead-integrated **F4** fix against the reported algorithm and tests. Its two-file
-   implementation and focused suites are green; record any blocker against the exact candidate,
-   not against the pre-fix c729 base. The foundation APIs remain pending Root's final acceptance.
+1. Use the lead-integrated **F4** implementation already HIGH-reviewed on source
+   `91f3f81d8ea5b9a135aaf8f61d121d320db757b7`; do not commission or repeat that review. Final
+   documentation integration must prove source equality with 91f3. Root's acceptance gates and
+   landing remain pending; the foundation APIs are not yet called accepted in the final candidate.
 2. **Config/source/manifest contracts:** continue B2, E1/E2 and D2 from a stable integrated
    foundation, with each importer tested before the next step. Preserve distinct local source,
    authored handle, lock and staged identities. `[[launch]]` and default normalization belong to
@@ -590,8 +588,8 @@ func TestLoadWorkspaceConfigReadsReadableInstall(t *testing.T) {
 3. **Selection, models and scope:** F1 follows B1/D1; F2 implements actual catalog facts and
    consumer projections (not an assumed helper). G1/G2 follow their schema/source prerequisites;
    independently test git and github concrete scope, including no-Git/no-remotes and explicitly
-   allowed extra repositories. G3 consumes the existing anonymous public HTTPS route on current
-   main and changes its broker ordering; it must not duplicate that transport.
+   allowed extra repositories. G3 preserves the existing anonymous HTTPS route while adapting
+   the new vocabulary; it must not re-order broker admission or duplicate transport.
 4. **Pack composition and editing:** I1/I2 follow D2, E1 and F1. J1 may begin once F4's document
    spans are accepted; J2 follows B2/F2/G1 and verifies scope-targeted semantic equality under
    the write lock. Keep config and manifest list-merging semantics distinct.
@@ -687,31 +685,39 @@ CHANGELOG entry; change .vantage.toml; clear Go caches; deploy/install in jail; 
 with `gofmt`, runs its scoped seam tests and build checks, and asserts its owned-file/index
 fence. Writers do not run `just format`, `just done`, `just check-ci`, whole-tree snapshots or the
 full integration suite. Keep ordinary HOME and shared cache locations; do not reset or relocate
-caches. No env override is used for ordinary focused gates.
+caches. No env override is used for ordinary focused gates. Automated test harnesses retain their
+normal temporary fixture HOME/workspace directories; this does not relax the developer's manual
+matched-build fence below.
 
 **Final combined gate:** Root grants one serial activation lease only after committed handoffs,
-targeted HIGH review of the exact candidate, and a clean integrated tree. No whole-tree or
-completion gate runs before that lease. On the final combined candidate, first determine whether
-`just done` selects the complete `check-ci` gate. If so, run it once as
-`env -u TMPDIR -u NODE_OPTIONS just done`; if it selects only a completion subset, run
-`just check-ci` once instead. Do not run both, fake cache/ancestor state, or repeat the full slow
-suite per writer. The combined integration suite runs once on final activation. Preserve the
-ordinary HOME and shared-cache defaults; the two env removals above are only the authorized
-final completion invocation.
+source equality with the 91f3 HIGH-reviewed foundation, and a clean integrated tree. The targeted
+HIGH review already passed on that source; do not replay it. No whole-tree or completion gate runs
+before the lease. The combined integration suite runs once on final activation. Root's `just done`
+completion receipt remains owed after main landing: run `env -u TMPDIR -u NODE_OPTIONS just done`
+once on the clean landed candidate, record the commands it actually selects, and retain its output.
+If full `check-ci` has already run on this exact candidate, do not repeat it. If `just done` selects
+only a completion subset and full `check-ci` has not already run on this candidate, also run
+`env -u TMPDIR -u NODE_OPTIONS just check-ci` once. Inspect observed output; do not speculate or
+prohibit both commands. Preserve ordinary HOME and shared-cache defaults; remove TMPDIR/NODE_OPTIONS
+only for the authorized final completion invocations.
 
 ```bash
-# Root-authorized final activation only, on the clean integrated candidate:
-env -u TMPDIR -u NODE_OPTIONS just done  # only when it selects full check-ci
-# Otherwise, if just done selects only a completion subset:
-just check-ci
-# One combined slow suite at final activation; targeted integration cases run by their owner.
+# Root-authorized final activation only, on the clean integrated candidate.
+# Run the combined slow suite once; targeted integration cases run by their owner.
 go test -count=1 -timeout 0 ./integration
-just build-dev-bundle
+# Manual matched-bundle build: preserve normal HOME/shared Go caches; use durable paths.
+mkdir -p /workspace/.yolo/durable/readable-config/tmp /workspace/.yolo/durable/readable-config/bundle-home
+TMPDIR=/workspace/.yolo/durable/readable-config/tmp python3 scripts/matched-bundle.py build-dev --repo /absolute/path/to/owned-repository --home /workspace/.yolo/durable/readable-config/bundle-home
 # Use its emitted absolute launcher from a durable throwaway workspace for fresh launch,
-# attach, config apply/drift, migrated includes and pack-tree checks.
+# attach, config apply/drift, migrated includes and pack-tree checks. Do not publish this bundle
+# into real HOME or alter HOME. The automated harness keeps normal temporary fixture HOME dirs.
 uvx vantage-check docs/design/readable-config-plan.md docs/plans/roadmap.md
 uvx vantage-check index
 scripts/vantage-check.sh userguide/
+# Root-owned completion receipt after main landing; record commands selected:
+env -u TMPDIR -u NODE_OPTIONS just done
+# If this selected only a completion subset and full check-ci has not run on this candidate:
+env -u TMPDIR -u NODE_OPTIONS just check-ci
 ```
 
 - Builders run only integration tests reading their seam, e.g. packs/packfetch/profiles_options/
