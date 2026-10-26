@@ -1171,13 +1171,13 @@ func brokeredShapeProblems(v any) []string {
 			continue
 		}
 		reportUnknownKeysTo(&out, src, knownBrokeredSourceKeys, srcPath)
-		if _, has := src.Get(brokeredSetsKey); has {
+		if _, has := src.Get(brokeredSetsKey); has && workspaceScopeRestriction("config.brokered.*.sets", "") {
 			out = append(out, srcPath+"."+brokeredSetsKey+": user scope only — a set decides what a "+
 				"write grant hands over, and this workspace is the agent's to edit, so a workspace may "+
 				"not name one (BB-P9). Put it in the user config, "+paths.UserConfigPath()+", and remove "+
 				"this key.")
 		}
-		if _, has := src.Get(brokeredGrantKindsKey); has {
+		if _, has := src.Get(brokeredGrantKindsKey); has && workspaceScopeRestriction("config.brokered.*.grant_kinds", "") {
 			out = append(out, srcPath+"."+brokeredGrantKindsKey+": user scope only — it lists the kinds of "+
 				"grant a workspace may hold, and this workspace is the agent's to edit, so it may not "+
 				"allow itself one (BB-D96). Put it in the user config, "+paths.UserConfigPath()+", and "+

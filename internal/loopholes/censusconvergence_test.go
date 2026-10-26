@@ -216,3 +216,27 @@ func TestCensusIsSevenSurfaces(t *testing.T) {
 			"census is SEVEN over six files plus the walker)", n)
 	}
 }
+
+// The mechanics fact reader is a separate prepare consumer, not another one of the seven
+// host-discovery surfaces. Its explicit staged pack set must still share the constructor with
+// NewHostSet, while the historical briefing consumer remains on NewHostSet.
+func TestMechanicsPrepareUsesTheConvergedSelectedPackConstructor(t *testing.T) {
+	root := repoRootDir(t)
+	prepare, err := os.ReadFile(filepath.Join(root, "internal/cli/run/prepare.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(prepare), `loopholes.NewSelectedSet(cfg, packLoopholeModules(packs), packSupersessions(packs))`) {
+		t.Error("mechanics switch facts must discover over the staged packs and their supersessions")
+	}
+	if !strings.Contains(string(prepare), "loopholes.NewHostSet(loopholesCfg).Honored()") {
+		t.Error("the briefing's historical NewHostSet consumer must remain converged")
+	}
+	discover, err := os.ReadFile(filepath.Join(root, "internal/loopholes/discover.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(discover), "return NewSelectedSet(loopholesConfig, PackModules(), PackSupersessions())") {
+		t.Error("NewHostSet must delegate through the same selected-input constructor")
+	}
+}

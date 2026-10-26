@@ -327,7 +327,7 @@ func validateLoopholeEntryShape(name string, specV any, info *LoopholeInfo, supp
 func loopholeScopeKeyViolations(name string, spec *jsonx.OrderedMap, srcFile string, info *LoopholeInfo) []string {
 	manifestBacked := info != nil
 	path := "config.loopholes." + name
-	if hasKey(spec, "command") {
+	if hasKey(spec, "command") && workspaceScopeRestriction("config.loopholes.*", "entry declares a command (install)") {
 		// The whole entry is an install; one message covers it (its env and
 		// doctor_cmd fall with the command).
 		return []string{path + ": a loophole with a 'command' is INSTALLED here, and " +
@@ -335,7 +335,7 @@ func loopholeScopeKeyViolations(name string, spec *jsonx.OrderedMap, srcFile str
 			"cannot declare host execution. Move this entry to " + loopholeUserConfigHint + "."}
 	}
 	var out []string
-	if hasKey(spec, "env") {
+	if hasKey(spec, "env") && workspaceScopeRestriction("config.loopholes.*.env", "") {
 		out = append(out, path+".env: user-scope only — 'env' reaches a host daemon's "+
 			"spawn environment, and "+srcFile+" is agent-editable. Move this key to "+
 			loopholeUserConfigHint+".")
@@ -345,7 +345,7 @@ func loopholeScopeKeyViolations(name string, spec *jsonx.OrderedMap, srcFile str
 	// only advice that works (remove it). Adding a scope error here would send the
 	// reader to a user config that answers "unknown key", and would report the one
 	// mistake twice.
-	if hasKey(spec, "doctor_cmd") && !manifestBacked {
+	if hasKey(spec, "doctor_cmd") && !manifestBacked && workspaceScopeRestriction("config.loopholes.*.doctor_cmd", "entry is not backed by a manifest") {
 		out = append(out, path+".doctor_cmd: user-scope only — 'doctor_cmd' is a host "+
 			"command run by `yolo check` and `yolo loopholes status`, and "+srcFile+
 			" is agent-editable. Move this key to "+loopholeUserConfigHint+".")

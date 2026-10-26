@@ -49,7 +49,7 @@ func validateOnRequest(config *jsonx.OrderedMap, workspace string, errs *[]strin
 	if err != nil || wsCfg == nil {
 		return
 	}
-	if _, atWorkspace := wsCfg.Get(OnRequestKey); atWorkspace {
+	if _, atWorkspace := wsCfg.Get(OnRequestKey); atWorkspace && WorkspaceUserScopeOnlyKey(OnRequestKey) {
 		add(errs, "config."+OnRequestKey+": user-scope only — it names a command yolo runs on the host, "+
 			"as you, for every request a jail files, and the command it runs can call `yolo approve`, so a workspace "+
 			"config, which the agent can edit, may not name one. Put it in "+paths.UserConfigPath()+

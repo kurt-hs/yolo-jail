@@ -320,7 +320,7 @@ func validateProfiles(workspace string, errs *[]string) {
 	// beside its rename refusal, so a workspace that carries it is told both halves of the fix
 	// at once: rename it, and move it to user scope.
 	for _, key := range []string{profilesKey, ProfileKey, retiredUseProfilesKey} {
-		if _, atWorkspace := wsCfg.Get(key); atWorkspace {
+		if _, atWorkspace := wsCfg.Get(key); atWorkspace && WorkspaceUserScopeOnlyKey(key) {
 			add(errs, userScopeOnlyMessage(key))
 		}
 	}

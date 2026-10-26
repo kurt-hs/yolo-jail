@@ -177,7 +177,7 @@ func validateHostImportExclusions(config *jsonx.OrderedMap, workspace string, er
 	if err != nil || workspaceConfig == nil {
 		return
 	}
-	if _, declared := workspaceConfig.Get(hostImportExclusionsKey); declared {
+	if _, declared := workspaceConfig.Get(hostImportExclusionsKey); declared && WorkspaceUserScopeOnlyKey(hostImportExclusionsKey) {
 		add(errs, workspaceHostImportExclusionsRefusal())
 	}
 }

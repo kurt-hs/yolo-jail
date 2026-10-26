@@ -602,10 +602,9 @@ func validatePacks(workspace string, errs *[]string) {
 	if err != nil || wsCfg == nil {
 		return
 	}
-	if _, atWorkspace := wsCfg.Get(packsKey); atWorkspace {
+	if _, atWorkspace := wsCfg.Get(packsKey); atWorkspace && WorkspaceUserScopeOnlyKey(packsKey) {
 		add(errs, "config."+packsKey+": user-scope only — move it to "+
-			"~/.config/yolo-jail/config.jsonc. A workspace config travels with the repo "+
-			"and is agent-editable, so it cannot decide which packs stage content "+
+			"~/.config/yolo-jail/config.jsonc. A workspace config travels with the repo "+"and is agent-editable, so it cannot decide which packs stage content "+
 			"(skills and briefing prose an agent then follows) into the jail. A repo "+
 			"that wants to configure its own agents can just commit the files.")
 	}

@@ -979,10 +979,10 @@ func validateHostFiles(config *jsonx.OrderedMap, workspace string, errs *[]strin
 	// record (sources.go): the merged list's entry at this index is someone else's.
 	wsEntries, wsIndices, _ := checkHostFilesIndexed(wsValue, "workspace", false)
 	for n, e := range wsEntries {
-		if !e.SourceBearing() {
+		i := wsIndices[n]
+		if !e.SourceBearing() || !workspaceScopeRestriction("config.host_files[*]", "entry names a host source (including string shorthand)") {
 			continue
 		}
-		i := wsIndices[n]
 		msg := fmt.Sprintf("config.%s[%d]: an entry that names a host source is "+
 			"user-scope only — move it to ~/.config/yolo-jail/config.jsonc (a workspace "+
 			"config travels with the repo and is agent-editable, so it cannot decide which "+

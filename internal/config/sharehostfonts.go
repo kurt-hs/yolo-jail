@@ -40,7 +40,7 @@ func validateShareHostFonts(config *jsonx.OrderedMap, workspace string, errs *[]
 	if err != nil || wsCfg == nil {
 		return
 	}
-	if wsValue, atWorkspace := wsCfg.Get(shareHostFontsKey); atWorkspace && wsValue != nil {
+	if wsValue, atWorkspace := wsCfg.Get(shareHostFontsKey); atWorkspace && wsValue != nil && WorkspaceUserScopeOnlyKey(shareHostFontsKey) {
 		add(errs, "config."+shareHostFontsKey+": user-scope only — it shares your own font "+
 			"folder with the jail, so it is read from "+paths.UserConfigPath()+" and a "+
 			"workspace value has no effect. Move it there, or remove it from the workspace config.")

@@ -637,6 +637,17 @@ func NewSet(opts DiscoverOptions) Set {
 	}
 }
 
+// NewSelectedSet constructs the converged view for an explicit pack selection.
+// Use this when the caller already resolved the packs for a launch or a running jail;
+// it must not consult the process-wide store resolver in place of that selection.
+func NewSelectedSet(loopholesConfig *jsonx.OrderedMap, modules []PackModule, supersessions []PackSupersession) Set {
+	return NewSet(DiscoverOptions{
+		LoopholesConfig:   loopholesConfig,
+		PackModules:       modules,
+		PackSupersessions: supersessions,
+	})
+}
+
 // SupersessionProblems reports every `supersedes` claim in this Set that matched no
 // served capability — the typo case (docs/reference/pack-system.md §5).
 //
@@ -652,8 +663,8 @@ func (s Set) SupersessionProblems() []string {
 	return unmatchedSupersessions(s.all, s.supersessions)
 }
 
-// NewHostSet is THE constructor every host-side consumer uses: the packs this process
-// recorded (SetPackModules, or the lazy resolver) plus the given config block.
+// NewHostSet is the process-record-backed constructor for host-side consumers: the packs
+// this process recorded (SetPackModules, or the lazy resolver) plus the given config block.
 //
 // It is the convergence point. A consumer that calls this cannot assemble a DIFFERENT
 // view of what this machine has, cannot forget a source (it used to be able to forget
@@ -661,11 +672,7 @@ func (s Set) SupersessionProblems() []string {
 // it), and cannot bypass the origin gate — so the seven surfaces agree by construction
 // rather than by six call sites happening to pass the same struct literal.
 func NewHostSet(loopholesConfig *jsonx.OrderedMap) Set {
-	return NewSet(DiscoverOptions{
-		LoopholesConfig:   loopholesConfig,
-		PackModules:       PackModules(),
-		PackSupersessions: PackSupersessions(),
-	})
+	return NewSelectedSet(loopholesConfig, PackModules(), PackSupersessions())
 }
 
 // SetOf wraps an already-discovered slice. For tests and for a caller holding a slice

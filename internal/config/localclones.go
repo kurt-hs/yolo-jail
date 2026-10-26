@@ -195,7 +195,7 @@ func gitRead(dir string, args ...string) (string, error) {
 // validateLocalClones refuses a workspace value, and the user value's problems (localClonesProblems).
 func validateLocalClones(config *jsonx.OrderedMap, workspace string, errs *[]string) {
 	if wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {}); err == nil && wsCfg != nil {
-		if wsValue, atWorkspace := wsCfg.Get(localClonesKey); atWorkspace && wsValue != nil {
+		if wsValue, atWorkspace := wsCfg.Get(localClonesKey); atWorkspace && wsValue != nil && WorkspaceUserScopeOnlyKey(localClonesKey) {
 			add(errs, "config."+localClonesKey+": user-scope only — it points yolo at clones on this machine, and a "+
 				"workspace config must not point yolo at host paths. Move it to "+paths.UserConfigPath()+
 				", or remove it from the workspace config.")

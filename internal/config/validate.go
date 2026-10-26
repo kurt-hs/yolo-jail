@@ -513,7 +513,7 @@ func validateHostWrappers(config *jsonx.OrderedMap, workspace string, errs *[]st
 	if err != nil || wsCfg == nil {
 		return
 	}
-	if wsValue, atWorkspace := wsCfg.Get(hostWrappersKey); atWorkspace && wsValue != nil {
+	if wsValue, atWorkspace := wsCfg.Get(hostWrappersKey); atWorkspace && wsValue != nil && WorkspaceUserScopeOnlyKey(hostWrappersKey) {
 		add(errs, "config."+hostWrappersKey+": user-scope only — it puts generated "+
 			"executables on your PATH, so it is read from "+paths.UserConfigPath()+
 			" and a workspace value has no effect. Move it there, or remove it.")
@@ -545,7 +545,7 @@ func validateHostApplyOnLaunch(config *jsonx.OrderedMap, workspace string, errs 
 	if err != nil || wsCfg == nil {
 		return
 	}
-	if wsValue, atWorkspace := wsCfg.Get(hostApplyOnLaunchKey); atWorkspace && wsValue != nil {
+	if wsValue, atWorkspace := wsCfg.Get(hostApplyOnLaunchKey); atWorkspace && wsValue != nil && WorkspaceUserScopeOnlyKey(hostApplyOnLaunchKey) {
 		add(errs, "config."+hostApplyOnLaunchKey+": user-scope only — it lets a wrapped agent "+
 			"launch write into your real home, so it is read from "+paths.UserConfigPath()+
 			" and a workspace value has no effect. Move it there, or remove it.")
@@ -582,7 +582,7 @@ func validateHostManagement(config *jsonx.OrderedMap, workspace string, errs *[]
 	if err != nil || wsCfg == nil {
 		return
 	}
-	if wsValue, atWorkspace := wsCfg.Get(hostManagementKey); atWorkspace && wsValue != nil {
+	if wsValue, atWorkspace := wsCfg.Get(hostManagementKey); atWorkspace && wsValue != nil && WorkspaceUserScopeOnlyKey(hostManagementKey) {
 		add(errs, "config."+hostManagementKey+": user-scope only — it declares who owns the "+
 			"config files in your real home, so it is read from "+paths.UserConfigPath()+
 			" and a workspace value has no effect. Move it there, or remove it.")
@@ -621,7 +621,7 @@ func validateAgentUpdates(config *jsonx.OrderedMap, workspace string, errs *[]st
 	if err != nil || wsCfg == nil {
 		return
 	}
-	if wsValue, atWorkspace := wsCfg.Get(agentUpdatesKey); atWorkspace && wsValue != nil {
+	if wsValue, atWorkspace := wsCfg.Get(agentUpdatesKey); atWorkspace && wsValue != nil && WorkspaceUserScopeOnlyKey(agentUpdatesKey) {
 		add(errs, "config."+agentUpdatesKey+": user-scope only — /workspace is writable by "+
 			"whatever runs in the jail, so a workspace value would let an agent freeze its "+
 			"own updates. It is read from "+paths.UserConfigPath()+" and a workspace value "+
@@ -648,7 +648,7 @@ func validateHostFloor(config *jsonx.OrderedMap, workspace string, errs *[]strin
 	if err != nil || wsCfg == nil {
 		return
 	}
-	if wsValue, atWorkspace := wsCfg.Get(hostFloorKey); atWorkspace && wsValue != nil {
+	if wsValue, atWorkspace := wsCfg.Get(hostFloorKey); atWorkspace && wsValue != nil && WorkspaceUserScopeOnlyKey(hostFloorKey) {
 		add(errs, "config."+hostFloorKey+": user-scope only — it decides which programs yolo "+
 			"installs on your machine and `yolo host` runs, so it is read from "+
 			paths.UserConfigPath()+" and a workspace value has no effect. Move it there, or remove it.")
@@ -674,7 +674,7 @@ func validateHostPath(config *jsonx.OrderedMap, workspace string, errs *[]string
 	if err != nil || wsCfg == nil {
 		return
 	}
-	if wsValue, atWorkspace := wsCfg.Get(hostPathKey); atWorkspace && wsValue != nil {
+	if wsValue, atWorkspace := wsCfg.Get(hostPathKey); atWorkspace && wsValue != nil && WorkspaceUserScopeOnlyKey(hostPathKey) {
 		add(errs, "config."+hostPathKey+": user-scope only — a folder on it decides which program "+
 			"`yolo host` runs, so it is read from "+paths.UserConfigPath()+" and a workspace value "+
 			"has no effect. Move it there, or remove it.")
@@ -697,7 +697,7 @@ func validateUpdateCheck(config *jsonx.OrderedMap, workspace string, errs *[]str
 	if err != nil || wsCfg == nil {
 		return
 	}
-	if wsValue, atWorkspace := wsCfg.Get(updateCheckKey); atWorkspace && wsValue != nil {
+	if wsValue, atWorkspace := wsCfg.Get(updateCheckKey); atWorkspace && wsValue != nil && WorkspaceUserScopeOnlyKey(updateCheckKey) {
 		add(errs, "config."+updateCheckKey+": user-scope only — it is read on every host "+
 			"command, before any workspace config is loaded, and /workspace is writable from "+
 			"inside a jail, so a workspace value is never consulted. It is read from "+
@@ -727,7 +727,7 @@ func validatePerfLogging(config *jsonx.OrderedMap, workspace string, errs *[]str
 	if err != nil || wsCfg == nil {
 		return
 	}
-	if wsValue, atWorkspace := wsCfg.Get(perfLoggingKey); atWorkspace && wsValue != nil {
+	if wsValue, atWorkspace := wsCfg.Get(perfLoggingKey); atWorkspace && wsValue != nil && WorkspaceUserScopeOnlyKey(perfLoggingKey) {
 		add(errs, "config."+perfLoggingKey+": user-scope only — it is read at the top of "+
 			"a launch, before any workspace config is loaded, so a workspace value is "+
 			"never consulted. It is read from "+paths.UserConfigPath()+". Move it there, "+
@@ -752,7 +752,7 @@ func validatePromotionTarget(config *jsonx.OrderedMap, workspace string, errs *[
 	if err != nil || wsCfg == nil {
 		return
 	}
-	if wsValue, atWorkspace := wsCfg.Get(promotionTargetKey); atWorkspace && wsValue != nil {
+	if wsValue, atWorkspace := wsCfg.Get(promotionTargetKey); atWorkspace && wsValue != nil && WorkspaceUserScopeOnlyKey(promotionTargetKey) {
 		add(errs, "config."+promotionTargetKey+": user-scope only — it selects the pack "+
 			"that receives your captured personal settings, so it is read from "+paths.UserConfigPath()+
 			" and a workspace value has no effect. Move it there, or remove it.")
@@ -1653,9 +1653,11 @@ func validateProviderCredentialScope(workspace string, errs *[]string) {
 		return
 	}
 	if v == nil {
-		add(errs, providerCredentialScopeMessage("config."+providersKey, "as null it removes "+
-			"every provider your user config declares, and with them their claims on their "+
-			"credential variables, whose values then reach every process in the launch."))
+		if workspaceScopeRestriction("config.providers", "providers value is null") {
+			add(errs, providerCredentialScopeMessage("config."+providersKey, "as null it removes "+
+				"every provider your user config declares, and with them their claims on their "+
+				"credential variables, whose values then reach every process in the launch."))
+		}
 		return
 	}
 	providers, ok := asMap(v)
@@ -1666,9 +1668,11 @@ func validateProviderCredentialScope(workspace string, errs *[]string) {
 		entryV, _ := providers.Get(name)
 		path := "config." + providersKey + "." + name
 		if entryV == nil {
-			add(errs, providerCredentialScopeMessage(path, "as null it removes the provider, "+
-				"and with it its claim on its credential variables, whose values then reach "+
-				"every process in the launch."))
+			if workspaceScopeRestriction("config.providers.*", "provider value is null") {
+				add(errs, providerCredentialScopeMessage(path, "as null it removes the provider, "+
+					"and with it its claim on its credential variables, whose values then reach "+
+					"every process in the launch."))
+			}
 			continue
 		}
 		entry, ok := asMap(entryV)
@@ -1679,7 +1683,7 @@ func validateProviderCredentialScope(workspace string, errs *[]string) {
 		// `env` contribution's platform gate keys on, so aws-auth's credentials pointer reaches
 		// every agent whose selected provider says it is Bedrock (OQ-BR8). A workspace value
 		// could relabel a provider an agent already selects and hand that agent the pointer.
-		if _, has := entry.Get("platform"); has {
+		if _, has := entry.Get("platform"); has && workspaceScopeRestriction("config.providers.*.platform", "") {
 			add(errs, providerCredentialScopeMessage(path+".platform", "it says what service "+
 				"this provider is, and a pack's credential pointer for a platform (aws-auth's, for "+
 				"aws-bedrock) reaches every agent whose selected provider declares it; a workspace "+
@@ -1694,7 +1698,7 @@ func validateProviderCredentialScope(workspace string, errs *[]string) {
 		if r, has := entry.Get("region"); has && r != nil {
 			validateProviderRegion(r, path+".region", errs)
 		}
-		if _, has := entry.Get("api_key_env_name"); has {
+		if _, has := entry.Get("api_key_env_name"); has && workspaceScopeRestriction("config.providers.*.api_key_env_name", "") {
 			add(errs, providerCredentialScopeMessage(path+".api_key_env_name", "it names the "+
 				"variable this provider claims, whose value only the agents on this provider "+
 				"receive and send upstream; a workspace value could claim another credential "+
@@ -1705,7 +1709,7 @@ func validateProviderCredentialScope(workspace string, errs *[]string) {
 		// (validateProviderShorthandRetired), and telling someone their deleted key is in the
 		// wrong scope is two contradictory instructions about one line — the same call
 		// validateHostProcessesRetired makes about its own type checks.
-		if endpointsV, has := entry.Get("endpoints"); has {
+		if endpointsV, has := entry.Get("endpoints"); has && workspaceScopeRestriction("config.providers.*.endpoints", "") {
 			validateEndpointsScope(path+".endpoints", endpointsV, errs)
 		}
 	}
@@ -1731,7 +1735,7 @@ func validateEndpointsScope(path string, v any, errs *[]string) {
 			continue
 		}
 		for _, key := range ep.Keys() {
-			if key == "base_url" {
+			if key == "base_url" && workspaceScopeRestriction("config.providers.*.endpoints.*.base_url", "") {
 				add(errs, providerAddressScopeMessage(path+"."+proto+".base_url"))
 				continue
 			}
@@ -2577,7 +2581,7 @@ func validateCacheRelocations(config *jsonx.OrderedMap, workspace string, errs, 
 	// loaded (and any parse problem already reported) by whoever produced the
 	// merged config we were handed.
 	if wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {}); err == nil && wsCfg != nil {
-		if _, atWorkspace := wsCfg.Get(cacheRelocationsKey); atWorkspace {
+		if _, atWorkspace := wsCfg.Get(cacheRelocationsKey); atWorkspace && WorkspaceUserScopeOnlyKey(cacheRelocationsKey) {
 			add(errs, "config."+cacheRelocationsKey+": user-scope only — move it to "+
 				"~/.config/yolo-jail/config.jsonc (a workspace config is "+
 				"agent-editable, so it cannot grant read-write host mounts)")

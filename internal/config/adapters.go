@@ -149,7 +149,7 @@ func validateAdapters(workspace string, errs *[]string) {
 	if err != nil || wsCfg == nil {
 		return
 	}
-	if _, atWorkspace := wsCfg.Get(adaptersKey); atWorkspace {
+	if _, atWorkspace := wsCfg.Get(adaptersKey); atWorkspace && WorkspaceUserScopeOnlyKey(adaptersKey) {
 		add(errs, adapterScopeMessage())
 	}
 }

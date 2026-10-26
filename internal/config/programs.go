@@ -274,9 +274,8 @@ func validatePrograms(config *jsonx.OrderedMap, workspace string, errs *[]string
 		return
 	}
 	if wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {}); err == nil && wsCfg != nil {
-		if _, atWorkspace := wsCfg.Get(programsKey); atWorkspace {
-			add(errs, "config."+programsKey+": user-scope only — move it to "+
-				"~/.config/yolo-jail/config.jsonc. A workspace config travels with the "+
+		if _, atWorkspace := wsCfg.Get(programsKey); atWorkspace && WorkspaceUserScopeOnlyKey(programsKey) {
+			add(errs, "config."+programsKey+": user-scope only — move it to "+"~/.config/yolo-jail/config.jsonc. A workspace config travels with the "+
 				"repo and is agent-editable, so it cannot authorise deleting programs "+
 				"out of the jail's home, nor choose which bytes a program runs "+
 				"(programs.overrides).")

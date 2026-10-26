@@ -512,6 +512,54 @@ func TestActiveExcludesEnabledButUnmetRequirements(t *testing.T) {
 	}
 }
 
+// NewSelectedSet is the explicit-input form of NewHostSet for a launch or a running jail
+// whose selected tree is not the process-wide lazy resolution. Both the module set and the
+// supersession claims must come from that same selection.
+func TestNewSelectedSetUsesExplicitModulesAndSupersessions(t *testing.T) {
+	unsetJail(t)
+	isolateModules(t)
+	t.Cleanup(ResetPackSupersessions)
+
+	stale := writeModule(t, t.TempDir(), "stale-from-process", nil)
+	SetPackModules([]PackModule{{Dir: stale, HostExecApproved: true}})
+	SetPackSupersessions(nil)
+
+	selectedRoot := t.TempDir()
+	servingLoophole(t, selectedRoot, "selected-service", []string{"job-x"})
+	claim := PackSupersession{Pack: "selected-provider", Capability: "job-x", Because: "selected provider owns this work"}
+	set := NewSelectedSet(nil, []PackModule{{Dir: filepath.Join(selectedRoot, "selected-service"), HostExecApproved: true}}, []PackSupersession{claim})
+
+	lp, ok := set.Lookup("selected-service")
+	if !ok {
+		t.Fatal("explicit selected module is missing from discovery")
+	}
+	if !lp.Superseded() || lp.Active() {
+		t.Errorf("selected supersession did not deactivate the manifest: %+v", lp)
+	}
+	if reason, ok := lp.InactiveReason(); !ok || !strings.Contains(reason, "selected-provider") {
+		t.Errorf("selected supersession reason was not preserved: %q", reason)
+	}
+	if !set.MayRunHostCode(lp) {
+		t.Error("the selected module's origin gate was lost")
+	}
+	if len(set.SupersessionProblems()) != 0 {
+		t.Errorf("the selected claim was not retained by the set: %v", set.SupersessionProblems())
+	}
+	if _, ok := set.Lookup("stale-from-process"); ok {
+		t.Error("explicit selected discovery widened to the stale process pack record")
+	}
+
+	// The original process-wide constructor still describes its own recorded modules; the
+	// explicit selected constructor must not replace that shared state as a side effect.
+	hostSet := NewHostSet(nil)
+	if _, ok := hostSet.Lookup("stale-from-process"); !ok {
+		t.Error("NewSelectedSet altered the process-wide record used by NewHostSet")
+	}
+	if _, ok := hostSet.Lookup("selected-service"); ok {
+		t.Error("NewHostSet substituted the explicit selected modules for its process record")
+	}
+}
+
 // NewHostSet is the CONVERGENCE POINT, and what it supplies is the thing every hand-built
 // DiscoverOptions had to remember: the RECORDED pack modules (never a caller's own list),
 // the supersession claims, and the include-disabled superset so the narrow views are
