@@ -17,6 +17,9 @@ func TestReadableFilenameConstantsDoNotReplaceLegacyNames(t *testing.T) {
 	if paths.UserConfigTOMLName != "config.toml" || paths.UserConfigLegacyJSONCName != "config.jsonc" || paths.UserConfigLegacyJSONName != "config.json" {
 		t.Fatal("user config filename constants changed")
 	}
+	if paths.WorkspaceConfigLegacyJSONName != "yolo-jail.json" || paths.WorkspaceLocalConfigLegacyJSONName != "yolo-jail.local.json" {
+		t.Fatal("workspace JSON fallback filename constants changed")
+	}
 	if paths.PackManifestTOMLName != "pack.toml" || paths.PackManifestLegacyJSONCName != "pack.jsonc" || paths.PackManifestLegacyJSONName != "pack.json" {
 		t.Fatal("manifest filename constants changed")
 	}

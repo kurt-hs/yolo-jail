@@ -52,10 +52,13 @@ func scanTOMLValue(data []byte, offset int) Span {
 					escaped = true
 					continue
 				}
-				if multiline && i+2 < len(data) && data[i] == quote && data[i+1] == quote && data[i+2] == quote {
-					quote = 0
-					multiline = false
-					i += 2
+				if multiline && data[i] == quote {
+					run := quoteRun(data, i, quote)
+					if run >= 3 {
+						quote = 0
+						multiline = false
+						i += run - 1
+					}
 					continue
 				}
 				if !multiline && c == quote {
@@ -111,8 +114,13 @@ func scanTOMLString(data []byte, start int) int {
 			pos += 2
 			continue
 		}
-		if multiline && pos+2 < len(data) && data[pos] == quote && data[pos+1] == quote && data[pos+2] == quote {
-			return pos + 3
+		if multiline && data[pos] == quote {
+			run := quoteRun(data, pos, quote)
+			if run >= 3 {
+				return pos + run
+			}
+			pos += run
+			continue
 		}
 		if !multiline && data[pos] == quote {
 			return pos + 1
@@ -120,6 +128,14 @@ func scanTOMLString(data []byte, start int) int {
 		pos++
 	}
 	return len(data)
+}
+
+func quoteRun(data []byte, start int, quote byte) int {
+	end := start
+	for end < len(data) && data[end] == quote {
+		end++
+	}
+	return end - start
 }
 
 func tomlComments(data []byte) []Span {

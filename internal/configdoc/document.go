@@ -339,8 +339,10 @@ func (ix *Index) indexTOML(data []byte) error {
 	p := pelletier.Parser{KeepComments: true}
 	p.Reset(data)
 	var table []Step
-	var activeArrayKeys []string
-	var activeArrayPath []Step
+	arrayContexts := map[string]struct {
+		keys []string
+		path []Step
+	}{}
 	arrayTableCounts := map[string]int{}
 	type tableRange struct {
 		key   string
@@ -357,21 +359,28 @@ func (ix *Index) indexTOML(data []byte) error {
 		switch n.Kind {
 		case pelletier.Table, pelletier.ArrayTable:
 			keys := nodeKeys(n.Key())
-			next := make([]Step, 0, len(keys)+len(activeArrayPath))
-			if len(activeArrayKeys) > 0 && len(keys) > len(activeArrayKeys) && stringPrefix(keys, activeArrayKeys) {
-				next = append(next, activeArrayPath...)
-				next = append(next, stringSteps(keys[len(activeArrayKeys):])...)
-			} else {
-				next = append(next, stringSteps(keys)...)
-				activeArrayKeys, activeArrayPath = nil, nil
+			var parentKeys []string
+			var parentPath []Step
+			for _, context := range arrayContexts {
+				if len(context.keys) < len(keys) && len(context.keys) > len(parentKeys) && stringPrefix(keys, context.keys) {
+					parentKeys, parentPath = context.keys, context.path
+				}
 			}
+			next := append(append([]Step(nil), parentPath...), stringSteps(keys[len(parentKeys):])...)
 			if n.Kind == pelletier.ArrayTable {
 				k := pathKey(next)
 				idx := arrayTableCounts[k]
 				arrayTableCounts[k]++
 				next = append(next, Step{Index: idx, IsIndex: true})
-				activeArrayKeys = append([]string(nil), keys...)
-				activeArrayPath = append([]Step(nil), next...)
+				for name, context := range arrayContexts {
+					if len(context.keys) > len(keys) && stringPrefix(context.keys, keys) {
+						delete(arrayContexts, name)
+					}
+				}
+				arrayContexts[pathKey(stringSteps(keys))] = struct {
+					keys []string
+					path []Step
+				}{append([]string(nil), keys...), append([]Step(nil), next...)}
 			}
 			table = next
 			it := n.Key()

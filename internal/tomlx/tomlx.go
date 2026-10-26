@@ -93,7 +93,7 @@ func DecodeOrdered(data []byte) (*jsonx.OrderedMap, error) {
 					// Table node: ensure it exists (children fill it in order).
 					ensureChild(cur, p)
 				} else {
-					cur.Set(p, convertTOMLValue(val))
+					cur.Set(p, convertTOMLValueOrdered(val, keys[i+1:], key))
 				}
 			} else {
 				if _, isTable := val.(map[string]any); !isTable {
@@ -151,25 +151,16 @@ func ensureChild(m *jsonx.OrderedMap, key string) *jsonx.OrderedMap {
 }
 
 // convertTOMLValue converts BurntSushi-decoded leaves into the ordered model.
-// BurntSushi represents maps inside arrays with Go maps and provides no key
-// order for those elements, so those maps use lexical ordering consistently.
+// Maps in ordinary tables are assembled from MetaData.Keys; map order inside
+// arrays is supplied by the corresponding source-order metadata segment.
 func convertTOMLValue(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
-		om := jsonx.NewOrderedMap()
-		keys := make([]string, 0, len(t))
-		for k := range t {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			om.Set(k, convertTOMLValue(t[k]))
-		}
-		return om
+		return orderedMapLexical(t)
 	case []map[string]any:
 		arr := make([]any, len(t))
 		for i, e := range t {
-			arr[i] = convertTOMLValue(e)
+			arr[i] = orderedMapLexical(e)
 		}
 		return arr
 	case []any:
@@ -181,6 +172,132 @@ func convertTOMLValue(v any) any {
 	default:
 		return v
 	}
+}
+
+func convertTOMLValueOrdered(value any, order []toml.Key, prefix toml.Key) any {
+	switch values := value.(type) {
+	case []any:
+		out := make([]any, len(values))
+		remaining := trimExactPath(order, prefix)
+		for i, item := range values {
+			if m, ok := item.(map[string]any); ok {
+				n := metadataLeafCount(m)
+				if n > len(remaining) {
+					n = len(remaining)
+				}
+				out[i] = orderedMapFromMetadata(m, prefix, remaining[:n])
+				remaining = remaining[n:]
+			} else {
+				out[i] = convertTOMLValue(item)
+			}
+		}
+		return out
+	case []map[string]any:
+		items := make([]any, len(values))
+		for i, m := range values {
+			items[i] = m
+		}
+		return convertTOMLValueOrdered(items, order, prefix)
+	case map[string]any:
+		return orderedMapFromMetadata(values, prefix, order)
+	default:
+		return value
+	}
+}
+
+func orderedMapFromMetadata(raw map[string]any, prefix toml.Key, order []toml.Key) *jsonx.OrderedMap {
+	ordered := jsonx.NewOrderedMap()
+	for _, path := range order {
+		if !tomlKeyPrefix(path, prefix) || len(path) <= len(prefix) {
+			continue
+		}
+		key := path[len(prefix)]
+		if _, exists := raw[key]; exists {
+			if _, already := ordered.Get(key); !already {
+				ordered.Set(key, nil)
+			}
+		}
+	}
+	if ordered.Len() == 0 {
+		return orderedMapLexical(raw)
+	}
+	for _, key := range append([]string(nil), ordered.Keys()...) {
+		childPrefix := append(append(toml.Key(nil), prefix...), key)
+		childOrder := make([]toml.Key, 0)
+		for _, path := range order {
+			if tomlKeyPrefix(path, childPrefix) {
+				childOrder = append(childOrder, path)
+			}
+		}
+		ordered.Set(key, convertTOMLValueOrdered(raw[key], childOrder, childPrefix))
+	}
+	// Preserve any semantic field the parser reported without a metadata row.
+	for key, value := range raw {
+		if _, ok := ordered.Get(key); !ok {
+			ordered.Set(key, convertTOMLValue(value))
+		}
+	}
+	return ordered
+}
+
+func metadataLeafCount(value any) int {
+	switch v := value.(type) {
+	case map[string]any:
+		count := 0
+		for _, child := range v {
+			count += metadataLeafCount(child)
+		}
+		if count == 0 {
+			return 1
+		}
+		return count
+	case []any:
+		count := 1
+		for _, child := range v {
+			if _, ok := child.(map[string]any); ok {
+				count += metadataLeafCount(child)
+			}
+		}
+		return count
+	case []map[string]any:
+		count := 1
+		for _, child := range v {
+			count += metadataLeafCount(child)
+		}
+		return count
+	default:
+		return 1
+	}
+}
+
+func trimExactPath(order []toml.Key, prefix toml.Key) []toml.Key {
+	if len(order) > 0 && len(order[0]) == len(prefix) && tomlKeyPrefix(order[0], prefix) {
+		return order[1:]
+	}
+	return order
+}
+func tomlKeyPrefix(path, prefix toml.Key) bool {
+	if len(path) < len(prefix) {
+		return false
+	}
+	for i := range prefix {
+		if path[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
+}
+func orderedMapLexical(raw map[string]any) *jsonx.OrderedMap {
+	out := jsonx.NewOrderedMap()
+	keys := make([]string, 0, len(raw))
+	for key := range raw {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		out.Set(key, convertTOMLValue(raw[key]))
+	}
+	return out
 }
 
 // VenvValue extracts env._.python.venv from a parsed mise config, walking the

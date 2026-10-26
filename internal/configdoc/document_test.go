@@ -158,6 +158,51 @@ func TestTOMLIndexIndexesArrayTablesAndMultilineStrings(t *testing.T) {
 	}
 }
 
+func TestTOMLArrayTablesRetainNestedParentContext(t *testing.T) {
+	source := []byte("[[fruit]]\nname = \"apple\"\n[[fruit.variety]]\nname = \"red\"\n[[fruit.variety]]\nname = \"green\"\n[[fruit]]\nname = \"banana\"\n[[fruit.variety]]\nname = \"yellow\"\n")
+	doc, err := Parse(source, TOML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		path []Step
+		want string
+	}{
+		{[]Step{{Key: "fruit"}, {Index: 0, IsIndex: true}, {Key: "variety"}, {Index: 1, IsIndex: true}, {Key: "name"}}, `"green"`},
+		{[]Step{{Key: "fruit"}, {Index: 1, IsIndex: true}, {Key: "variety"}, {Index: 0, IsIndex: true}, {Key: "name"}}, `"yellow"`},
+	}
+	for _, tc := range cases {
+		span, ok, err := doc.Index.Value(tc.path...)
+		if err != nil || !ok || string(source[span.Start:span.End]) != tc.want {
+			t.Errorf("nested array-table value %q, %v, %v; want %s", source[span.Start:span.End], ok, err, tc.want)
+		}
+	}
+}
+
+func TestTOMLIndexScansFourAndFiveQuoteMultilineStrings(t *testing.T) {
+	cases := []struct{ sourceValue, want string }{
+		{`""""body"""`, `"body`},
+		{`"""""body"""`, `""body`},
+		{`"""body""""`, `body"`},
+		{`"""body"""""`, `body""`},
+	}
+	for _, tc := range cases {
+		source := []byte("value = " + tc.sourceValue + "\n")
+		doc, err := Parse(source, TOML)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", source, err)
+		}
+		span, ok, err := doc.Index.Value(Step{Key: "value"})
+		if err != nil || !ok || string(source[span.Start:span.End]) != tc.sourceValue {
+			t.Errorf("quote value span %q, %v, %v; want %q", source[span.Start:span.End], ok, err, tc.sourceValue)
+		}
+		value, _ := doc.Values.Get("value")
+		if value != tc.want {
+			t.Errorf("decoded quote value = %q, want %q", value, tc.want)
+		}
+	}
+}
+
 func TestEncodeTOMLFloatsKeepTheirType(t *testing.T) {
 	root := jsonx.NewOrderedMap()
 	root.Set("fraction", float64(1))

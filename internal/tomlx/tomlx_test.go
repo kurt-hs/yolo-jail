@@ -9,7 +9,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
 
-func TestDecodeOrderedSortsMapsInsideArrays(t *testing.T) {
+func TestDecodeOrderedPreservesSourceOrderRepeatedly(t *testing.T) {
 	for range 2 {
 		values, err := DecodeOrdered([]byte(`items = [{ z = "last", a = "first" }, { b = 2, a = 1 }]`))
 		if err != nil {
@@ -25,13 +25,80 @@ func TestDecodeOrderedSortsMapsInsideArrays(t *testing.T) {
 			if !ok {
 				t.Fatalf("item %d = %T", i, item)
 			}
-			want := []string{"a", "z"}
+			want := []string{"z", "a"}
 			if i == 1 {
-				want = []string{"a", "b"}
+				want = []string{"b", "a"}
 			}
 			if !reflect.DeepEqual(m.Keys(), want) {
 				t.Fatalf("item %d keys = %v, want %v", i, m.Keys(), want)
 			}
+		}
+	}
+}
+
+func TestDecodeOrderedPreservesSourceOrderInMapsInsideArrays(t *testing.T) {
+	values, err := DecodeOrdered([]byte(`items = [{ z = 1, a = 2 }, { m = 3, b = 4 }]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, _ := values.Get("items")
+	items, ok := value.([]any)
+	if !ok || len(items) != 2 {
+		t.Fatalf("items = %#v", value)
+	}
+	for i, item := range items {
+		m, ok := item.(*jsonx.OrderedMap)
+		if !ok {
+			t.Fatalf("item %d = %T", i, item)
+		}
+		want := []string{"z", "a"}
+		if i == 1 {
+			want = []string{"m", "b"}
+		}
+		if !reflect.DeepEqual(m.Keys(), want) {
+			t.Errorf("item %d source order = %v, want %v", i, m.Keys(), want)
+		}
+	}
+}
+
+func TestDecodeOrderedPreservesNestedMapOrderInsideArrays(t *testing.T) {
+	values, err := DecodeOrdered([]byte(`items = [{ outer = { z = 1, a = 2 }, tail = true }]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, _ := values.Get("items")
+	items := value.([]any)
+	row := items[0].(*jsonx.OrderedMap)
+	if !reflect.DeepEqual(row.Keys(), []string{"outer", "tail"}) {
+		t.Fatalf("row order = %v", row.Keys())
+	}
+	outer, _ := row.Get("outer")
+	if got := outer.(*jsonx.OrderedMap).Keys(); !reflect.DeepEqual(got, []string{"z", "a"}) {
+		t.Fatalf("nested row order = %v", got)
+	}
+}
+
+func TestDecodeOrderedPreservesArrayTableSourceOrder(t *testing.T) {
+	values, err := DecodeOrdered([]byte("[[program]]\nz = 1\na = 2\n[[program]]\nm = 3\nb = 4\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, _ := values.Get("program")
+	items, ok := value.([]any)
+	if !ok || len(items) != 2 {
+		t.Fatalf("program = %#v", value)
+	}
+	for i, item := range items {
+		row, ok := item.(*jsonx.OrderedMap)
+		if !ok {
+			t.Fatalf("row %d = %T", i, item)
+		}
+		want := []string{"z", "a"}
+		if i == 1 {
+			want = []string{"m", "b"}
+		}
+		if !reflect.DeepEqual(row.Keys(), want) {
+			t.Errorf("row %d order = %v, want %v", i, row.Keys(), want)
 		}
 	}
 }
