@@ -71,6 +71,34 @@ func writeTOMLTable(out *strings.Builder, table *jsonx.OrderedMap, path []string
 		out.WriteString("]\n")
 	}
 	keys := table.Keys()
+	inlineChildren := false
+	seenChildTable := false
+	for _, key := range keys {
+		value, _ := table.Get(key)
+		if asOrderedMap(value) != nil {
+			seenChildTable = true
+		} else if seenChildTable {
+			inlineChildren = true
+		}
+	}
+	if inlineChildren {
+		for _, key := range keys {
+			value, _ := table.Get(key)
+			keyText, err := tomlKey(key)
+			if err != nil {
+				return err
+			}
+			encoded, err := tomlValue(value)
+			if err != nil {
+				return fmt.Errorf("%s: %w", key, err)
+			}
+			out.WriteString(keyText)
+			out.WriteString(" = ")
+			out.WriteString(encoded)
+			out.WriteByte('\n')
+		}
+		return nil
+	}
 	for _, key := range keys {
 		value, _ := table.Get(key)
 		if asOrderedMap(value) != nil {

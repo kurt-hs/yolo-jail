@@ -450,11 +450,12 @@ func (ix *Index) indexTOML(data []byte) error {
 	if err := p.Error(); err != nil {
 		return err
 	}
-	// Complete table ranges to the next table header at the same or shallower level.
+	// Complete table ranges through their descendants, stopping at the next
+	// header outside this table's ancestry.
 	for i, tr := range tableRanges {
 		end := len(data)
 		for j := i + 1; j < len(tableRanges); j++ {
-			if len(tableRanges[j].path) <= len(tr.path) {
+			if !stepPrefix(tableRanges[j].path, tr.path) {
 				end = tableRanges[j].start
 				break
 			}
@@ -465,6 +466,18 @@ func (ix *Index) indexTOML(data []byte) error {
 		}
 	}
 	return nil
+}
+
+func stepPrefix(path, prefix []Step) bool {
+	if len(path) < len(prefix) {
+		return false
+	}
+	for i := range prefix {
+		if path[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func stringPrefix(value, prefix []string) bool {
@@ -497,6 +510,23 @@ func stringSteps(keys []string) []Step {
 	return out
 }
 
+func skipTOMLArrayTrivia(data []byte, offset int) int {
+	for {
+		offset = skipTOMLSpace(data, offset)
+		if offset < len(data) && data[offset] == ',' {
+			offset++
+			continue
+		}
+		if offset < len(data) && data[offset] == '#' {
+			for offset < len(data) && data[offset] != '\n' {
+				offset++
+			}
+			continue
+		}
+		return offset
+	}
+}
+
 func (ix *Index) walkTOMLValue(n *pelletier.Node, path []Step, span Span) {
 	if n == nil {
 		return
@@ -509,17 +539,26 @@ func (ix *Index) walkTOMLValue(n *pelletier.Node, path []Step, span Span) {
 	switch n.Kind {
 	case pelletier.Array:
 		idx := 0
+		cursor := span.Start + 1
 		it := n.Children()
 		for it.Next() {
 			child := it.Node()
-			cr := child.Raw
-			childSpan := scanTOMLValue(ix.data, int(cr.Offset))
+			if child.Kind == pelletier.Comment {
+				continue
+			}
+			cursor = skipTOMLArrayTrivia(ix.data, cursor)
+			childSpan := scanTOMLValue(ix.data, cursor)
+			if childSpan.End <= childSpan.Start {
+				childSpan = Span{cursor, cursor}
+			}
 			childPath := append(append([]Step(nil), path...), Step{Index: idx, IsIndex: true})
 			ix.walkTOMLValue(child, childPath, childSpan)
 			ix.items[pathKey(childPath)] = childSpan
 			idx++
+			cursor = childSpan.End
 		}
 	case pelletier.InlineTable:
+		ix.tables[key] = span
 		it := n.Children()
 		for it.Next() {
 			kv := it.Node()

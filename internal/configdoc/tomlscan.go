@@ -48,7 +48,7 @@ func scanTOMLValue(data []byte, offset int) Span {
 					escaped = false
 					continue
 				}
-				if quote == '"' && c == '\\' && !multiline {
+				if quote == '"' && c == '\\' {
 					escaped = true
 					continue
 				}

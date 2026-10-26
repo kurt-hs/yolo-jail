@@ -3,6 +3,7 @@ package configdoc
 import (
 	"bytes"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -265,6 +266,99 @@ func TestParseRejectsTOMLDateTimeValuesRecursively(t *testing.T) {
 		if _, err := Parse([]byte(source), TOML); err == nil {
 			t.Errorf("Parse(%q) accepted a TOML date/time config scalar", source)
 		}
+	}
+}
+
+func TestTOMLIndexArrayIndicesSkipCommentsAndNestedArraysHaveSpans(t *testing.T) {
+	source := []byte("items = [1, # comment\n 2]\nmatrix = [[1, 2], [3, 4]]\n")
+	doc, err := Parse(source, TOML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		path []Step
+		want string
+	}{
+		{[]Step{{Key: "items"}, {Index: 1, IsIndex: true}}, "2"},
+		{[]Step{{Key: "matrix"}, {Index: 1, IsIndex: true}, {Index: 0, IsIndex: true}}, "3"},
+		{[]Step{{Key: "matrix"}, {Index: 1, IsIndex: true}}, "[3, 4]"},
+	}
+	for _, tc := range cases {
+		span, ok, err := doc.Index.Value(tc.path...)
+		if err != nil || !ok || string(source[span.Start:span.End]) != tc.want {
+			t.Errorf("Value(%v) = %q, %v, %v; want %q", tc.path, source[span.Start:span.End], ok, err, tc.want)
+		}
+	}
+}
+
+func TestTOMLIndexEscapedMultilineQuoteDoesNotEndContainerString(t *testing.T) {
+	source := []byte(`items = ["""before \""" ] after""", "next"]` + "\n")
+	doc, err := Parse(source, TOML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	whole, ok, err := doc.Index.Value(Step{Key: "items"})
+	want := `["""before \""" ] after""", "next"]`
+	if err != nil || !ok || string(source[whole.Start:whole.End]) != want {
+		t.Fatalf("container span = %q, %v, %v; want %q", source[whole.Start:whole.End], ok, err, want)
+	}
+}
+
+func TestTOMLTableBoundaryStopsAtUnrelatedDescendantHeader(t *testing.T) {
+	source := []byte("[a]\none = 1\n[b.c]\ntwo = 2\n")
+	doc, err := Parse(source, TOML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	span, ok, err := doc.Index.Table(Step{Key: "a"})
+	if err != nil || !ok {
+		t.Fatalf("Table(a): %v, %v", ok, err)
+	}
+	if got := string(source[span.Start:span.End]); strings.Contains(got, "[b.c]") || strings.Contains(got, "two = 2") {
+		t.Fatalf("table a includes unrelated descendant table: %q", got)
+	}
+}
+
+func TestTOMLIndexRegistersNestedInlineTableBounds(t *testing.T) {
+	source := []byte("items = [{ x = 1, nested = { y = 2 } }]\n")
+	doc, err := Parse(source, TOML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		path []Step
+		want string
+	}{
+		{[]Step{{Key: "items"}, {Index: 0, IsIndex: true}}, "{ x = 1, nested = { y = 2 } }"},
+		{[]Step{{Key: "items"}, {Index: 0, IsIndex: true}, {Key: "nested"}}, "{ y = 2 }"},
+	}
+	for _, tc := range cases {
+		span, ok, err := doc.Index.Table(tc.path...)
+		if err != nil || !ok || string(source[span.Start:span.End]) != tc.want {
+			t.Errorf("Table(%v) = %q, %v, %v; want %q", tc.path, source[span.Start:span.End], ok, err, tc.want)
+		}
+	}
+}
+
+func TestEncodeTOMLPreservesMixedScalarAndTableAuthoredOrder(t *testing.T) {
+	nested := jsonx.NewOrderedMap()
+	nested.Set("x", int64(1))
+	root := jsonx.NewOrderedMap()
+	root.Set("a", nested)
+	root.Set("b", int64(2))
+	encoded, err := Encode(root, TOML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Index(string(encoded), "a") > strings.Index(string(encoded), "b") {
+		t.Fatalf("mixed table/scalar order changed: %s", encoded)
+	}
+	parsed, err := Parse(encoded, TOML)
+	if err != nil {
+		t.Fatalf("encoded document does not parse: %v\n%s", err, encoded)
+	}
+	if got := parsed.Values.Keys(); !reflect.DeepEqual(got, []string{"a", "b"}) {
+		t.Fatalf("root key order = %v, want [a b]", got)
 	}
 }
 
