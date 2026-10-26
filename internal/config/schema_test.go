@@ -1,8 +1,11 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 )
 
 func TestSchemaKeysCensusEveryLegacyLiveAndNestedField(t *testing.T) {
@@ -132,6 +135,22 @@ func TestRenameDescriptorsHaveScopeAndReplacement(t *testing.T) {
 		replacementContains(descriptors, "providers.*.models.*.max_tokens", "providers.*.every_model.max_tokens") == false {
 		t.Error("max_tokens rename must describe both row preservation and optional shared fold")
 	}
+	for _, path := range []string{"providers.*.models.*.context_window", "providers.*.models.*.cost"} {
+		if !renameHasTransform(descriptors, path, RenameFoldWhenEqual) {
+			t.Errorf("%s must retain row values and fold only equal shared facts", path)
+		}
+	}
+	if !replacementContains(descriptors, "providers.*.models.*.context_window", "providers.*.models.*.context") ||
+		!replacementContains(descriptors, "providers.*.models.*.context_window", "providers.*.every_model.context") {
+		t.Error("context_window rename omits its row-preserving or shared-fact destination")
+	}
+	if !replacementContains(descriptors, "providers.*.models.*.cost", "providers.*.models.*.price") ||
+		!replacementContains(descriptors, "providers.*.models.*.cost", "providers.*.every_model.price") {
+		t.Error("cost rename omits its row-preserving or shared-fact destination")
+	}
+	if !replacementContains(descriptors, "providers.*.models.*.input", "providers.*.every_model.accepts") {
+		t.Error("input rename omits its accepted shared-fact destination")
+	}
 	if replacementContains(descriptors, "network.mode", "machine.network") {
 		t.Error("network.mode has no accepted rename to machine.network")
 	}
@@ -258,6 +277,209 @@ func TestReadableSchemaKeysDescribeNewVocabularyWithoutActivatingIt(t *testing.T
 	}
 }
 
+func TestReadableSchemaMatchesWorkspaceProviderScopeAndSelectionReaders(t *testing.T) {
+	readable := schemaKeyMap(ReadableSchemaKeys())
+	for path, want := range map[string]SchemaScope{
+		"providers":                    SchemaScopeFieldSensitive,
+		"providers.*":                  SchemaScopeFieldSensitive,
+		"providers.*.models":           SchemaScopeBoth,
+		"providers.*.models.*.api":     SchemaScopeBoth,
+		"providers.*.models.*.vendor":  SchemaScopeBoth,
+		"providers.*.options":          SchemaScopeBoth,
+		"providers.*.region":           SchemaScopeBoth,
+		"providers.*.capabilities":     SchemaScopeBoth,
+		"providers.*.model":            SchemaScopeUserOnly,
+		"providers.*.via":              SchemaScopeUserOnly,
+		"providers.*.endpoints":        SchemaScopeUserOnly,
+		"providers.*.platform":         SchemaScopeUserOnly,
+		"providers.*.api_key_env_name": SchemaScopeUserOnly,
+		"mounts.*.write":               SchemaScopeUserOnly,
+		"active_provider.default":      SchemaScopeUserOnly,
+	} {
+		if got := readable[path].Scope; got != want {
+			t.Errorf("ReadableSchemaKeys()[%q].Scope = %v, want %v", path, got, want)
+		}
+	}
+	if got := readable["active_provider.default"].Type; got != SchemaTypeMixed {
+		t.Errorf("active_provider.default type = %v, want mixed string/list selection", got)
+	}
+
+	selection, ok := ProfileSelectionOf([]any{"bedrock", "codex"})
+	if !ok || !reflect.DeepEqual(selection.Default, []string{"bedrock", "codex"}) {
+		t.Fatalf("the executable profile selector no longer accepts the ordered default set: %#v, %v", selection, ok)
+	}
+
+	for _, tc := range []struct {
+		name, body string
+		refused    bool
+	}{
+		{"model facts", `{"providers":{"acme":{"models":{"m":{"id":"m","input":["text"]}}}}}`, false},
+		{"provider options", `{"providers":{"acme":{"options":{"context_window":"65536"}}}}`, false},
+		{"provider region", `{"providers":{"acme":{"region":"us-east-1"}}}`, false},
+		{"provider capabilities", `{"providers":{"acme":{"capabilities":["web_search"]}}}`, false},
+		{"provider endpoint", `{"providers":{"acme":{"endpoints":{"openai":{"base_url":"https://example.test/v1"}}}}}`, true},
+		{"provider platform", `{"providers":{"acme":{"platform":"aws-bedrock"}}}`, true},
+		{"provider credential variable", `{"providers":{"acme":{"api_key_env_name":"ACME_KEY"}}}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			errs := providerScopeErrors(t, tc.body, `{}`)
+			routed := strings.Contains(strings.Join(errs, "\n"), "user-scope only")
+			if routed != tc.refused {
+				t.Fatalf("ValidateConfig scope refusal = %v for %s; errors: %v", routed, tc.name, errs)
+			}
+		})
+	}
+}
+
+func TestReadableSchemaModelFieldsMatchExecutableManifestModelTypes(t *testing.T) {
+	readable := schemaKeyMap(ReadableSchemaKeys())
+	modelType := reflect.TypeOf(packdecl.ProviderModel{})
+	for i := 0; i < modelType.NumField(); i++ {
+		field := modelType.Field(i)
+		name := strings.Split(field.Tag.Get("json"), ",")[0]
+		if name == "" || name == "-" {
+			continue
+		}
+		if name == "wire_id" {
+			name = "twin_of"
+		}
+		path := "providers.*.models.*." + name
+		key, ok := readable[path]
+		if !ok {
+			t.Errorf("readable user schema omits executable model field %q", path)
+		} else if want := schemaTypeForGo(field.Type); key.Type != want {
+			t.Errorf("readable user schema type for %q = %v, manifest model shape is %v", path, key.Type, want)
+		}
+	}
+	for _, nested := range []struct {
+		typ  reflect.Type
+		path string
+	}{
+		{reflect.TypeOf(packdecl.ProviderPrice{}), "providers.*.models.*.price"},
+		{reflect.TypeOf(packdecl.ProviderPrice{}), "providers.*.every_model.price"},
+		{reflect.TypeOf(packdecl.ProviderImage{}), "providers.*.models.*.images"},
+		{reflect.TypeOf(packdecl.ProviderImage{}), "providers.*.every_model.images"},
+	} {
+		assertReflectedSchemaFields(t, readable, nested.path, nested.typ)
+	}
+}
+
+func TestReadableSchemaContainsLegacyValidatorFieldsAndExactMixedTypes(t *testing.T) {
+	legacy := schemaKeyMap(SchemaKeys())
+	for _, path := range []string{
+		"include_if_found", "include_if_found.*", "providers.*.models.*.input", "providers.*.models.*.input.*",
+		"packages.*.name", "packages.*.nixpkgs", "packages.*.version", "packages.*.url", "packages.*.hash",
+		"packages.*.outputs", "packages.*.platforms", "gpu.enabled", "gpu.devices", "gpu.capabilities",
+		"gpu.vendor", "gpu.mode", "gpu.hsa_override_gfx_version", "gpu.seccomp_unconfined", "gpu.vaapi",
+	} {
+		if _, ok := legacy[path]; !ok {
+			t.Errorf("legacy schema census omits executable validator path %q", path)
+		}
+	}
+	for _, path := range []string{
+		"packages.*.outputs.*", "packages.*.platforms.*",
+	} {
+		if _, ok := legacy[path]; !ok {
+			t.Errorf("legacy schema census omits executable package element path %q", path)
+		}
+	}
+	if legacy["include_if_found"].Type != SchemaTypeList || legacy["include_if_found.*"].Type != SchemaTypeString {
+		t.Errorf("include_if_found shape = %v / %v, want list of strings", legacy["include_if_found"].Type, legacy["include_if_found.*"].Type)
+	}
+	for _, field := range []string{"outputs", "platforms"} {
+		if legacy["packages.*."+field].Type != SchemaTypeList || legacy["packages.*."+field+".*"].Type != SchemaTypeString {
+			t.Errorf("legacy package %s shape = %v / %v, want list of strings", field,
+				legacy["packages.*."+field].Type, legacy["packages.*."+field+".*"].Type)
+		}
+	}
+	if legacy["providers.*.models.*.input"].Type != SchemaTypeList || legacy["providers.*.models.*.input.*"].Type != SchemaTypeString {
+		t.Errorf("legacy model input shape = %v / %v, want list of strings", legacy["providers.*.models.*.input"].Type, legacy["providers.*.models.*.input.*"].Type)
+	}
+	readable := schemaKeyMap(ReadableSchemaKeys())
+	for _, path := range []string{
+		"install.nix", "install.nix.*", "install.nix.*.outputs.*", "install.nix.*.platforms.*",
+		"machine.gpu", "mounts.*.write", "machine.resources.cpus", "machine.resources.io",
+		"machine.resources.io.priority",
+	} {
+		if _, ok := readable[path]; !ok {
+			t.Errorf("readable schema omits validator-backed or accepted path %q", path)
+		}
+	}
+	for path, want := range map[string]SchemaType{
+		"install.nix": SchemaTypeList, "install.nix.*": SchemaTypeMixed,
+		"install.nix.*.outputs.*": SchemaTypeString, "install.nix.*.platforms.*": SchemaTypeString,
+		"machine.gpu": SchemaTypeMixed, "machine.resources.cpus": SchemaTypeMixed,
+		"machine.resources.io": SchemaTypeMixed, "machine.resources.io.priority": SchemaTypeString,
+		"mounts.*.write": SchemaTypeBoolean,
+	} {
+		if got := readable[path].Type; got != want {
+			t.Errorf("readable schema type for %q = %v, want %v", path, got, want)
+		}
+	}
+	for field := range knownPackageKeys {
+		legacyPath := "packages.*." + field
+		readablePath := "install.nix.*." + field
+		if _, ok := legacy[legacyPath]; !ok {
+			t.Errorf("legacy schema omits executable package field %q", legacyPath)
+		}
+		key, ok := readable[readablePath]
+		if !ok {
+			t.Errorf("readable install schema omits validator field %q", readablePath)
+			continue
+		}
+		if want := legacySchemaType(legacyPath); key.Type != want {
+			t.Errorf("readable install schema type for %q = %v, legacy validator shape is %v", readablePath, key.Type, want)
+		}
+	}
+	for field := range knownGPUKeys {
+		legacyPath := "gpu." + field
+		readablePath := "machine." + legacyPath
+		if _, ok := legacy[legacyPath]; !ok {
+			t.Errorf("legacy schema omits executable GPU field %q", legacyPath)
+		}
+		key, ok := readable[readablePath]
+		if !ok {
+			t.Errorf("readable machine GPU schema omits validator field %q", readablePath)
+			continue
+		}
+		if want := legacySchemaType(legacyPath); key.Type != want {
+			t.Errorf("readable GPU schema type for %q = %v, legacy validator shape is %v", readablePath, key.Type, want)
+		}
+	}
+}
+
+func TestReadableSchemaRemovalPoliciesCoverAcceptedEmptyListsAndNativeSelection(t *testing.T) {
+	readable := schemaKeyMap(ReadableSchemaKeys())
+	for _, key := range readable {
+		if key.Type == SchemaTypeList && key.Removal != RemovalEmptyList {
+			t.Errorf("list path %q has removal policy %v, want empty-list clearing", key.Path, key.Removal)
+		}
+	}
+	if got := readable["env.set.*"].Removal; got != RemovalUnsetList {
+		t.Errorf("removing a set environment variable through env.unset has policy %v, want unset-list", got)
+	}
+	for path, want := range map[string]RemovalPolicy{
+		"env.unset":               RemovalEmptyList,
+		"env.set.*":               RemovalUnsetList,
+		"packs":                   RemovalEmptyList,
+		"mounts":                  RemovalEmptyList,
+		"env.files":               RemovalEmptyList,
+		"install.nix":             RemovalEmptyList,
+		"machine.ports":           RemovalEmptyList,
+		"machine.forward":         RemovalEmptyList,
+		"allow.*.always":          RemovalEmptyList,
+		"allow.*.on_request":      RemovalEmptyList,
+		"requests.git.push":       RemovalEmptyList,
+		"requests.github.repos":   RemovalEmptyList,
+		"active_provider.default": RemovalNativeString,
+		"active_provider.*":       RemovalNativeString,
+	} {
+		if got := readable[path].Removal; got != want {
+			t.Errorf("readable removal policy for %q = %v, want %v", path, got, want)
+		}
+	}
+}
+
 func TestReadableSchemaScopeAdapterIsNotWholeKeyAuthorization(t *testing.T) {
 	for _, key := range []string{"providers", "mounts", "loopholes", "brokered", "host_files"} {
 		if WorkspaceUserScopeOnlyKey(key) {
@@ -266,5 +488,59 @@ func TestReadableSchemaScopeAdapterIsNotWholeKeyAuthorization(t *testing.T) {
 	}
 	if !WorkspaceUserScopeOnlyKey("packs") || WorkspaceUserScopeOnlyKey("runtime") {
 		t.Fatal("whole-key scope adapter did not retain its narrow result")
+	}
+}
+
+func assertReflectedSchemaFields(t *testing.T, schema map[string]SchemaKey, path string, typ reflect.Type) {
+	t.Helper()
+	for typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	if typ.Kind() != reflect.Struct {
+		t.Fatalf("%s is not a struct: %s", path, typ)
+	}
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		name := strings.Split(field.Tag.Get("json"), ",")[0]
+		if name == "" || name == "-" {
+			continue
+		}
+		fieldPath := path + "." + name
+		key, ok := schema[fieldPath]
+		if !ok {
+			t.Errorf("schema omits reflected manifest field %q", fieldPath)
+			continue
+		}
+		if want := schemaTypeForGo(field.Type); key.Type != want {
+			t.Errorf("schema type for reflected field %q = %v, want %v", fieldPath, key.Type, want)
+		}
+	}
+}
+
+func schemaKeyMap(keys []SchemaKey) map[string]SchemaKey {
+	out := make(map[string]SchemaKey, len(keys))
+	for _, key := range keys {
+		out[key.Path] = key
+	}
+	return out
+}
+
+func schemaTypeForGo(typ reflect.Type) SchemaType {
+	for typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	switch typ.Kind() {
+	case reflect.String:
+		return SchemaTypeString
+	case reflect.Bool:
+		return SchemaTypeBoolean
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Float32, reflect.Float64:
+		return SchemaTypeNumber
+	case reflect.Slice, reflect.Array:
+		return SchemaTypeList
+	case reflect.Struct, reflect.Map:
+		return SchemaTypeObject
+	default:
+		return SchemaTypeAny
 	}
 }

@@ -83,6 +83,7 @@ func SchemaKeys() []SchemaKey {
 		"programs.overrides.*", "cache_relocations.*", "writable_home_dirs.*",
 		"include_if_found.*", "required_capabilities.*", "adapters.*", "local_clones.*",
 		"host_import_exclusions.*",
+		"packages.*.outputs.*", "packages.*.platforms.*",
 	} {
 		add(path)
 	}
@@ -95,12 +96,15 @@ func SchemaKeys() []SchemaKey {
 func ReadableSchemaKeys() []SchemaKey {
 	paths := map[string]SchemaKey{}
 	add := func(path string, scope SchemaScope, typ SchemaType) {
+		if strings.HasPrefix(path, "providers") {
+			scope = readableProviderScope(path)
+		}
 		paths[path] = SchemaKey{Path: path, Scope: scope, Type: typ, Removal: readableRemovalPolicy(path)}
 	}
 	// Keep unchanged legacy paths in the canonical schema, and omit only the paths whose
 	// accepted redesign explicitly gives them a new name or representation.
 	removedRoots := map[string]bool{}
-	for _, root := range []string{"packages", "mise_tools", "gpu", "resources", "env_sources", "brokered", "profile", "profiles", "loopholes", "include_if_found", "model_facts"} {
+	for _, root := range []string{"packages", "mise_tools", "gpu", "resources", "env_sources", "brokered", "profile", "profiles", "loopholes", "model_facts"} {
 		removedRoots[root] = true
 	}
 	for _, retired := range RetiredConfigKeys() {
@@ -118,7 +122,7 @@ func ReadableSchemaKeys() []SchemaKey {
 		}
 		scope := legacy.Scope
 		if root == "providers" {
-			scope = SchemaScopeUserOnly
+			scope = readableProviderScope(legacy.Path)
 		}
 		add(legacy.Path, scope, legacy.Type)
 	}
@@ -140,15 +144,36 @@ func ReadableSchemaKeys() []SchemaKey {
 		{Path: "pack_sources.*", Scope: user, Type: SchemaTypeMixed},
 		{Path: "install", Scope: both, Type: SchemaTypeObject},
 		{Path: "install.nix", Scope: both, Type: SchemaTypeList},
+		{Path: "install.nix.*", Scope: both, Type: SchemaTypeMixed},
+		{Path: "install.nix.*.name", Scope: both, Type: SchemaTypeString},
+		{Path: "install.nix.*.nixpkgs", Scope: both, Type: SchemaTypeString},
+		{Path: "install.nix.*.version", Scope: both, Type: SchemaTypeString},
+		{Path: "install.nix.*.url", Scope: both, Type: SchemaTypeString},
+		{Path: "install.nix.*.hash", Scope: both, Type: SchemaTypeString},
+		{Path: "install.nix.*.outputs", Scope: both, Type: SchemaTypeList},
+		{Path: "install.nix.*.outputs.*", Scope: both, Type: SchemaTypeString},
+		{Path: "install.nix.*.platforms", Scope: both, Type: SchemaTypeList},
+		{Path: "install.nix.*.platforms.*", Scope: both, Type: SchemaTypeString},
 		{Path: "install.mise", Scope: both, Type: SchemaTypeObject},
 		{Path: "install.mise.*", Scope: both, Type: SchemaTypeString},
 		{Path: "machine", Scope: both, Type: SchemaTypeObject},
-		{Path: "machine.gpu", Scope: both, Type: SchemaTypeBoolean},
+		{Path: "machine.gpu", Scope: both, Type: SchemaTypeMixed},
+		{Path: "machine.gpu.enabled", Scope: both, Type: SchemaTypeBoolean},
+		{Path: "machine.gpu.devices", Scope: both, Type: SchemaTypeString},
+		{Path: "machine.gpu.capabilities", Scope: both, Type: SchemaTypeString},
+		{Path: "machine.gpu.vendor", Scope: both, Type: SchemaTypeString},
+		{Path: "machine.gpu.mode", Scope: both, Type: SchemaTypeString},
+		{Path: "machine.gpu.hsa_override_gfx_version", Scope: both, Type: SchemaTypeString},
+		{Path: "machine.gpu.seccomp_unconfined", Scope: both, Type: SchemaTypeBoolean},
+		{Path: "machine.gpu.vaapi", Scope: both, Type: SchemaTypeBoolean},
+		{Path: "machine.resources.cpus", Scope: both, Type: SchemaTypeMixed},
+		{Path: "machine.resources.io", Scope: both, Type: SchemaTypeMixed},
+		{Path: "machine.resources.io.priority", Scope: both, Type: SchemaTypeString},
+		{Path: "machine.resources.io.*", Scope: both, Type: SchemaTypeAny},
+		{Path: "mounts.*.write", Scope: user, Type: SchemaTypeBoolean},
 		{Path: "machine.resources", Scope: both, Type: SchemaTypeObject},
 		{Path: "machine.resources.memory", Scope: both, Type: SchemaTypeString},
-		{Path: "machine.resources.cpus", Scope: both, Type: SchemaTypeNumber},
 		{Path: "machine.resources.pids_limit", Scope: both, Type: SchemaTypeNumber},
-		{Path: "machine.resources.io", Scope: both, Type: SchemaTypeString},
 		{Path: "machine.ports", Scope: both, Type: SchemaTypeList},
 		{Path: "machine.ports.*", Scope: both, Type: SchemaTypeObject},
 		{Path: "machine.ports.*.host", Scope: both, Type: SchemaTypeNumber},
@@ -180,10 +205,10 @@ func ReadableSchemaKeys() []SchemaKey {
 		{Path: "requests.github.create_pr", Scope: workspace, Type: SchemaTypeBoolean},
 		{Path: "requests.github.create_issue", Scope: workspace, Type: SchemaTypeBoolean},
 		{Path: "active_provider", Scope: user, Type: SchemaTypeObject},
-		{Path: "active_provider.default", Scope: user, Type: SchemaTypeString},
+		{Path: "active_provider.default", Scope: user, Type: SchemaTypeMixed},
 		{Path: "active_provider.*", Scope: user, Type: SchemaTypeMixed},
-		{Path: "providers", Scope: user, Type: SchemaTypeObject},
-		{Path: "providers.*", Scope: user, Type: SchemaTypeMixed},
+		{Path: "providers", Scope: mixed, Type: SchemaTypeObject},
+		{Path: "providers.*", Scope: mixed, Type: SchemaTypeMixed},
 		{Path: "providers.*.alias", Scope: user, Type: SchemaTypeString},
 		{Path: "providers.*.region", Scope: user, Type: SchemaTypeString},
 		{Path: "providers.*.model", Scope: user, Type: SchemaTypeString},
@@ -198,34 +223,59 @@ func ReadableSchemaKeys() []SchemaKey {
 		{Path: "providers.*.variants.*.subagents.roles", Scope: user, Type: SchemaTypeObject},
 		{Path: "providers.*.variants.*.subagents.roles.*", Scope: user, Type: SchemaTypeString},
 		{Path: "providers.*.variants.*.*", Scope: user, Type: SchemaTypeAny},
-		{Path: "providers.*.every_model", Scope: user, Type: SchemaTypeObject},
-		{Path: "providers.*.every_model.api", Scope: user, Type: SchemaTypeString},
-		{Path: "providers.*.every_model.thinking", Scope: user, Type: SchemaTypeList},
-		{Path: "providers.*.every_model.accepts", Scope: user, Type: SchemaTypeList},
-		{Path: "providers.*.every_model.max_tokens", Scope: user, Type: SchemaTypeNumber},
-		{Path: "providers.*.every_model.reasoning", Scope: user, Type: SchemaTypeBoolean},
+		{Path: "providers.*.every_model", Scope: both, Type: SchemaTypeObject},
+		{Path: "providers.*.every_model.api", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.every_model.thinking", Scope: both, Type: SchemaTypeList},
+		{Path: "providers.*.every_model.thinking.*", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.every_model.accepts", Scope: both, Type: SchemaTypeList},
+		{Path: "providers.*.every_model.accepts.*", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.every_model.max_tokens", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.every_model.reasoning", Scope: both, Type: SchemaTypeBoolean},
+		{Path: "providers.*.every_model.context", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.every_model.description", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.every_model.name", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.every_model.price", Scope: both, Type: SchemaTypeObject},
+		{Path: "providers.*.every_model.price.*", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.every_model.price.input", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.every_model.price.output", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.every_model.price.cache_read", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.every_model.price.cache_write", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.every_model.images", Scope: both, Type: SchemaTypeObject},
+		{Path: "providers.*.every_model.images.max_width", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.every_model.images.max_height", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.every_model.images.max_bytes", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.every_model.images.jpeg_quality", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.every_model.*", Scope: both, Type: SchemaTypeAny},
+		{Path: "providers.*.every_model.*.*", Scope: both, Type: SchemaTypeAny},
 		{Path: "providers.*.models", Scope: user, Type: SchemaTypeObject},
 		{Path: "providers.*.models.*", Scope: user, Type: SchemaTypeObject},
-		{Path: "providers.*.models.*.name", Scope: user, Type: SchemaTypeString},
-		{Path: "providers.*.models.*.accepts", Scope: user, Type: SchemaTypeList},
-		{Path: "providers.*.models.*.max_tokens", Scope: user, Type: SchemaTypeNumber},
-		{Path: "providers.*.models.*.reasoning", Scope: user, Type: SchemaTypeBoolean},
-		{Path: "providers.*.models.*.thinking", Scope: user, Type: SchemaTypeList},
-		{Path: "providers.*.models.*.context", Scope: user, Type: SchemaTypeNumber},
-		{Path: "providers.*.models.*.description", Scope: user, Type: SchemaTypeString},
-		{Path: "providers.*.models.*.price", Scope: user, Type: SchemaTypeObject},
-		{Path: "providers.*.models.*.price.*", Scope: user, Type: SchemaTypeNumber},
-		{Path: "providers.*.models.*.price.input", Scope: user, Type: SchemaTypeNumber},
-		{Path: "providers.*.models.*.twin_of", Scope: user, Type: SchemaTypeString},
-		{Path: "providers.*.models.*.compact_at", Scope: user, Type: SchemaTypeNumber},
-		{Path: "providers.*.models.*.images", Scope: user, Type: SchemaTypeObject},
-		{Path: "providers.*.models.*.images.max_width", Scope: user, Type: SchemaTypeNumber},
-		{Path: "providers.*.models.*.images.max_height", Scope: user, Type: SchemaTypeNumber},
-		{Path: "providers.*.models.*.images.max_bytes", Scope: user, Type: SchemaTypeNumber},
-		{Path: "providers.*.models.*.images.jpeg_quality", Scope: user, Type: SchemaTypeNumber},
-		{Path: "providers.*.models.*.base", Scope: user, Type: SchemaTypeString},
-		{Path: "providers.*.models.*.extends", Scope: user, Type: SchemaTypeString},
-		{Path: "providers.*.models.*.openrouter_routing", Scope: user, Type: SchemaTypeObject},
+		{Path: "providers.*.models.*.name", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.models.*.api", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.models.*.vendor", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.models.*.accepts", Scope: both, Type: SchemaTypeList},
+		{Path: "providers.*.models.*.accepts.*", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.models.*.max_tokens", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.models.*.reasoning", Scope: both, Type: SchemaTypeBoolean},
+		{Path: "providers.*.models.*.thinking", Scope: both, Type: SchemaTypeList},
+		{Path: "providers.*.models.*.thinking.*", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.models.*.context", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.models.*.description", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.models.*.price", Scope: both, Type: SchemaTypeObject},
+		{Path: "providers.*.models.*.price.*", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.models.*.price.input", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.models.*.price.output", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.models.*.price.cache_read", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.models.*.price.cache_write", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.models.*.twin_of", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.models.*.compact_at", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.models.*.images", Scope: both, Type: SchemaTypeObject},
+		{Path: "providers.*.models.*.images.max_width", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.models.*.images.max_height", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.models.*.images.max_bytes", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.models.*.images.jpeg_quality", Scope: both, Type: SchemaTypeNumber},
+		{Path: "providers.*.models.*.base", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.models.*.extends", Scope: both, Type: SchemaTypeString},
+		{Path: "providers.*.models.*.openrouter_routing", Scope: both, Type: SchemaTypeObject},
 		{Path: "network.mode", Scope: both, Type: SchemaTypeString},
 		{Path: "providers.*.api_key_env_name", Scope: user, Type: SchemaTypeMixed},
 		{Path: "providers.*.platform", Scope: user, Type: SchemaTypeString},
@@ -269,6 +319,22 @@ func ReadableSchemaKeys() []SchemaKey {
 	return out
 }
 
+func readableProviderScope(path string) SchemaScope {
+	if path == "providers" || path == "providers.*" {
+		return SchemaScopeFieldSensitive
+	}
+	for _, prefix := range []string{
+		"providers.*.alias", "providers.*.model", "providers.*.via",
+		"providers.*.base_url", "providers.*.wire_api", "providers.*.api_key_env_name",
+		"providers.*.platform", "providers.*.endpoints", "providers.*.variants",
+	} {
+		if path == prefix || strings.HasPrefix(path, prefix+".") {
+			return SchemaScopeUserOnly
+		}
+	}
+	return SchemaScopeBoth
+}
+
 func schemaKeys(paths map[string]struct{}, scope func(string) SchemaScope, typ func(string) SchemaType, removal func(string) RemovalPolicy) []SchemaKey {
 	out := make([]SchemaKey, 0, len(paths))
 	for path := range paths {
@@ -310,16 +376,19 @@ func legacySchemaType(path string) SchemaType {
 		"mounts.*.host", "mounts.*.at", "mounts.*.mode", "host_files.*.path", "host_files.*.source",
 		"host_files.*.content", "host_files.*.codec", "host_files.*.mode",
 		"devices.*.usb", "devices.*.description", "devices.*.cgroup_rule",
-		"gpu.vendor", "gpu.devices", "gpu.mode", "gpu.capabilities", "gpu.hsa_override_gfx_version",
+		"gpu.devices", "gpu.capabilities", "gpu.vendor", "gpu.mode", "gpu.hsa_override_gfx_version",
 		"network.mode", "resources.memory",
 		"brokered.*.grants.*.kind", "brokered.*.grants.*.repo", "brokered.*.grants.*.branch",
 		"brokered.*.sets.*.name", "brokered.*.sets.*.mode", "brokered.*.sets.*.window",
 		"brokered.*.sets.*.max_window":
 		return SchemaTypeString
+	case "include_if_found.*", "packages.*.name", "packages.*.nixpkgs", "packages.*.version", "packages.*.url", "packages.*.hash",
+		"packages.*.outputs.*", "packages.*.platforms.*", "providers.*.models.*.input.*":
+		return SchemaTypeString
 	case "packages", "env_sources", "include_if_found", "writable_home_dirs", "required_capabilities",
-		"providers.*.capabilities", "providers.*.models.*.input", "providers.*.models.*.input.*",
+		"providers.*.capabilities", "providers.*.models.*.input",
 		"brokered.*.repos", "brokered.*.grant_kinds", "brokered.*.grants", "network.ports", "network.forward_host_ports",
-		"devices":
+		"devices", "packages.*.outputs", "packages.*.platforms":
 		return SchemaTypeList
 	case "mounts.*.optional", "programs.autoprune", "programs.overrides.*.prebuilt", "profiles.*.enforce_models",
 		"gpu.enabled", "gpu.seccomp_unconfined", "gpu.vaapi", "providers.*.models.*.reasoning":
