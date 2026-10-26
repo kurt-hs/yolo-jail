@@ -288,6 +288,10 @@ func TestTOMLIndexArrayIndicesSkipCommentsAndNestedArraysHaveSpans(t *testing.T)
 		if err != nil || !ok || string(source[span.Start:span.End]) != tc.want {
 			t.Errorf("Value(%v) = %q, %v, %v; want %q", tc.path, source[span.Start:span.End], ok, err, tc.want)
 		}
+		item, ok, err := doc.Index.Item(tc.path...)
+		if err != nil || !ok || string(source[item.Start:item.End]) != tc.want {
+			t.Errorf("Item(%v) = %q, %v, %v; want %q", tc.path, source[item.Start:item.End], ok, err, tc.want)
+		}
 	}
 }
 
@@ -314,8 +318,8 @@ func TestTOMLTableBoundaryStopsAtUnrelatedDescendantHeader(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("Table(a): %v, %v", ok, err)
 	}
-	if got := string(source[span.Start:span.End]); strings.Contains(got, "[b.c]") || strings.Contains(got, "two = 2") {
-		t.Fatalf("table a includes unrelated descendant table: %q", got)
+	if got, want := string(source[span.Start:span.End]), "[a]\none = 1\n"; got != want {
+		t.Fatalf("table a = %q; want exactly %q", got, want)
 	}
 }
 
@@ -337,6 +341,24 @@ func TestTOMLIndexRegistersNestedInlineTableBounds(t *testing.T) {
 		if err != nil || !ok || string(source[span.Start:span.End]) != tc.want {
 			t.Errorf("Table(%v) = %q, %v, %v; want %q", tc.path, source[span.Start:span.End], ok, err, tc.want)
 		}
+	}
+}
+
+func TestTOMLMemberInlineTableReturnsExactAssignment(t *testing.T) {
+	source := []byte("sentinel = 9\nitems = [{ x = 1 }]\n")
+	doc, err := Parse(source, TOML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := []Step{{Key: "items"}, {Index: 0, IsIndex: true}, {Key: "x"}}
+	span, ok, err := doc.Index.Member(path...)
+	if err != nil || !ok {
+		t.Fatalf("Member(%v): %v, %v", path, ok, err)
+	}
+	start := bytes.Index(source, []byte("x = 1"))
+	want := Span{Start: start, End: start + len("x = 1")}
+	if span != want || string(source[span.Start:span.End]) != "x = 1" {
+		t.Fatalf("Member(%v) = %#v (%q); want %#v (%q)", path, span, source[span.Start:span.End], want, source[want.Start:want.End])
 	}
 }
 
