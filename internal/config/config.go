@@ -21,6 +21,7 @@ import (
 	"sort"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // ConfigError is the only error type users ever see when their yolo-jail.jsonc
@@ -36,12 +37,12 @@ func configErr(format string, args ...any) *ConfigError {
 // Config file names.
 const (
 	// Existing JSONC names stay active until the reader switch is implemented.
-	WorkspaceConfigName            = "yolo-jail.jsonc"
-	WorkspaceLocalConfigName       = "yolo-jail.local.jsonc"
-	WorkspaceLegacyConfigName      = WorkspaceConfigName
-	WorkspaceLocalLegacyConfigName = WorkspaceLocalConfigName
-	WorkspaceTOMLConfigName        = "yolo-jail.toml"
-	WorkspaceLocalTOMLConfigName   = "yolo-jail.local.toml"
+	WorkspaceConfigName            = paths.WorkspaceConfigLegacyJSONCName
+	WorkspaceLocalConfigName       = paths.WorkspaceLocalConfigLegacyJSONCName
+	WorkspaceLegacyConfigName      = paths.WorkspaceConfigLegacyJSONCName
+	WorkspaceLocalLegacyConfigName = paths.WorkspaceLocalConfigLegacyJSONCName
+	WorkspaceTOMLConfigName        = paths.WorkspaceConfigTOMLName
+	WorkspaceLocalTOMLConfigName   = paths.WorkspaceLocalConfigTOMLName
 )
 
 // ---------------------------------------------------------------------------
@@ -156,11 +157,6 @@ var ephemeralStorageModes = []string{"volume", "tmpfs"}
 // 2026-10-09, when the unified log became the `macos-log` loophole's
 // (packs/macos-log/README.md). Its type check went with it, for `journal`'s reason above.
 
-// knownEndpointKeys is the census for ONE protocol's entry inside a provider's
-// `endpoints` map — the two keys a derive can consume, which is also what the
-// pack-declared form of an endpoint carries (packdecl.ProviderEndpoint).
-var knownEndpointKeys = set("base_url", "wire_api")
-
 // knownPruneKeys is the census for the `prune` block — ONE key, because one key is
 // all anything reads (`yolo check`'s disk-usage nudge, sections_misc.go's
 // checkDiskUsage). The block was accepted with NO validator at all until 2026-09-16,
@@ -182,79 +178,7 @@ var (
 	knownPackageKeys     = set("name", "nixpkgs", "version", "url", "hash", "outputs", "platforms")
 	knownLSPServerKeys   = set("command", "args", "fileExtensions")
 	knownMCPServerKeys   = set("command", "args", "env", "requires_env", "provides")
-	// `api_key_env` was renamed to `api_key_env_name` on 2026-09-01 and is NOT listed here.
-	// It carried a by-name rename message for one day; the maintainer's call was that a key
-	// that never shipped in a release does not earn a deprecation path, so the old spelling
-	// is now an ordinary unknown key. `pack_profiles` is the rule's second application
-	// (renamed to `use_profiles` on 2026-09-02, having landed 2026-08-31 — after
-	// `v0.8.0`, 2026-08-13), and it is not listed here either. `agent_profiles` KEEPS its
-	// rename message — that one is written into every host-generated jail snapshot in
-	// existence, which is the distinction: a retired-key message is for a spelling that is
-	// out there, not for one that was briefly in the tree. `env_shape` is the rule's third
-	// application (deleted with its whole vocabulary on 2026-09-02, never in a release):
-	// a provider's delivery is the agent pack's env derive now (OQ-CS8), so the key is an
-	// ordinary unknown key and nothing checks its values.
-	// `base_url` STAYS in this set although it is REMOVED (validateProviderShorthandRetired),
-	// the same treatment `journal`, `host_processes` and `agents` get among the top-level
-	// keys: a bare "unknown key" reads like a typo and sends people hunting for the correct
-	// spelling of a key that no longer exists, so the retirement message is the only one the
-	// key earns. `wire_api` is still live but only INSIDE an `endpoints` entry; at the top
-	// level it was the shorthand's partner, and it stays listed for the same reason.
-	knownProviderKeys = set("base_url", "endpoints", "wire_api", "api_key_env_name",
-		"platform", "models", "region", "capabilities", "options")
-	// knownModelKeys is the closed field set an object-form `models.<alias>` may carry: the
-	// wire id every consumer needs, plus the model-capability facts a derive projects. It is
-	// CLOSED (an unknown key is refused), because an accepted-but-unread field is the exact
-	// silent drop the flat `options` surface was shaped to avoid (docs/reference/providers.md
-	// §"Profiles and options": there the provider declares the option NAMES and core
-	// validates no values, so an unread option is inert BY DESIGN — a model field must not
-	// be). A fact added here is a deliberate schema change, not a spelling a user can invent.
-	//
-	// `vendor` is the model's MAKER (docs/design/bedrock-plumbing.md OQ-BR9, "vendor" coined
-	// there): one lowercase token, open vocabulary, read by the derives of a provider that
-	// serves several makers' models, where an agent's own client can call only some of them
-	// (claude's Bedrock client serves Anthropic models alone). Core interprets none of it, and
-	// an entry with no vendor is offered to every agent.
-	//
-	// `base` and `openrouter_routing` are the two pi model-list facts (docs/reference/
-	// providers.md §"Per-model OpenRouter routing"): `base` names the model id whose pi CATALOG
-	// entry this row inherits from, so a variant id (`deepseek/…:floor`) keeps the catalog's
-	// `thinkingLevelMap` and the rest; `openrouter_routing` is an OBJECT sent verbatim as
-	// OpenRouter's request `provider` field, which is why it is the one object-valued model
-	// fact while `model_options` stays flat strings. Both are read by packs/pi's model-lists
-	// render, and by the extension that registers it; core only checks their shape.
-	//
-	// `extends` names a top-level `model_facts` entry, the facts this model's routes share
-	// (docs/design/model-lists-and-pickers.md OQ-ML5): the composition lays them under the
-	// entry's own facts, so each route can override any of them. A null fact anywhere in the
-	// entry is a TOMBSTONE (ML-D10): the model has no such fact, where leaving it out inherits.
-	//
-	// `wire_id` is the model id a row SENDS when its `id` is a client spelling: one provider then
-	// carries one model at two windows, the full-window alias and a narrowed twin naming the same
-	// wire id, each its own row with its own facts. pi's renders write it as the definition's
-	// `wireId`; core only checks its shape.
-	knownModelKeys = set("id", "name", "description", "vendor", "reasoning", "input", "cost", "context_window", "max_tokens",
-		"base", "openrouter_routing", "extends", "wire_id")
-	// unknownModelKeyHints is the next step for a model key a user is likely to write and yolo
-	// does not take: pi's own camelCase spelling of `wire_id`, and pi-fork's `variants`, which a
-	// row expresses as one alias per variant.
-	unknownModelKeyHints = map[string]string{
-		"wireId": "the wire id is spelled `wire_id`, like every other key here",
-		"variants": "declare each variant as its own alias under this provider's `models`, " +
-			"with `wire_id` naming the id it sends and `base` the catalog row it inherits from",
-	}
-	// knownSharedModelKeys is the closed field set a `model_facts.<name>` entry may carry: the
-	// facts a model keeps on every route, so knownModelKeys less what only a route can say — its
-	// wire `id`, its `vendor` (a route-level routing fact the bridge reads), its `wire_id`, and
-	// `extends` itself. `openrouter_routing` IS shared (fix 27): a 1M route and its 200k twin
-	// send one route and must send byte-identical requests, so the pin is written once; a
-	// route's own object replaces the shared one whole (packload.laySharedRouting).
-	knownSharedModelKeys = set("name", "description", "reasoning", "input", "cost", "context_window", "max_tokens", "base",
-		"openrouter_routing")
-	// knownModelCostKeys is the closed set of rates inside that `cost` object. Canonical
-	// snake; the consuming derive translates to its agent's spelling (pi's cacheRead/...).
-	knownModelCostKeys = set("input", "output", "cache_read", "cache_write")
-	knownDeviceKeys    = set("usb", "description", "cgroup_rule")
+	knownDeviceKeys      = set("usb", "description", "cgroup_rule")
 	// `io` is the disk I/O priority, read by internal/ioprio's Parse in validation and by
 	// every reader after it (docs/design/io-priority.md §4).
 	knownResourcesKeys = set("memory", "cpus", "pids_limit", "io")
