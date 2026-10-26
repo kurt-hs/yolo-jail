@@ -75,7 +75,8 @@ func DecodeOrdered(data []byte) (*jsonx.OrderedMap, error) {
 	}
 
 	root := jsonx.NewOrderedMap()
-	for _, key := range keys {
+	processedValues := make(map[string]bool)
+	for keyIndex, key := range keys {
 		parts := []string(key)
 		cur := root
 		var srcCur any = raw
@@ -93,7 +94,12 @@ func DecodeOrdered(data []byte) (*jsonx.OrderedMap, error) {
 					// Table node: ensure it exists (children fill it in order).
 					ensureChild(cur, p)
 				} else {
-					cur.Set(p, convertTOMLValueOrdered(val, keys[i+1:], key))
+					id := joinKey(key)
+					if processedValues[id] {
+						break
+					}
+					cur.Set(p, convertTOMLValueOrdered(val, keys[keyIndex+1:], key))
+					processedValues[id] = true
 				}
 			} else {
 				if _, isTable := val.(map[string]any); !isTable {
@@ -178,9 +184,10 @@ func convertTOMLValueOrdered(value any, order []toml.Key, prefix toml.Key) any {
 	switch values := value.(type) {
 	case []any:
 		out := make([]any, len(values))
-		remaining := trimExactPath(order, prefix)
+		remaining := order
 		for i, item := range values {
 			if m, ok := item.(map[string]any); ok {
+				remaining = trimExactPath(remaining, prefix)
 				n := metadataLeafCount(m)
 				if n > len(remaining) {
 					n = len(remaining)

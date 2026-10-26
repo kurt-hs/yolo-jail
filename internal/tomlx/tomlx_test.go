@@ -103,6 +103,55 @@ func TestDecodeOrderedPreservesArrayTableSourceOrder(t *testing.T) {
 	}
 }
 
+func TestDecodeOrderedPreservesOrderAfterEarlierTablesAndValues(t *testing.T) {
+	source := []byte("title = \"x\"\n[settings]\nenabled = true\nvalues = [{ z = 1, a = 2 }, { b = 3, a = 4 }]\n[[program]]\nz = 1\na = 2\n[[program]]\nm = 3\nb = 4\n")
+	values, err := DecodeOrdered(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, _ := values.Get("settings")
+	rows, _ := settings.(*jsonx.OrderedMap).Get("values")
+	for i, row := range rows.([]any) {
+		m := row.(*jsonx.OrderedMap)
+		want := []string{"z", "a"}
+		if i == 1 {
+			want = []string{"b", "a"}
+		}
+		if !reflect.DeepEqual(m.Keys(), want) {
+			t.Errorf("settings.values[%d] order = %v, want %v", i, m.Keys(), want)
+		}
+	}
+	programs, _ := values.Get("program")
+	for i, row := range programs.([]any) {
+		m := row.(*jsonx.OrderedMap)
+		want := []string{"z", "a"}
+		if i == 1 {
+			want = []string{"m", "b"}
+		}
+		if !reflect.DeepEqual(m.Keys(), want) {
+			t.Errorf("program[%d] order = %v, want %v", i, m.Keys(), want)
+		}
+	}
+}
+
+func TestDecodeOrderedPreservesOrderInNestedArraysOfInlineTables(t *testing.T) {
+	values, err := DecodeOrdered([]byte("title = \"x\"\nitems = [{ outer = { z = 1, a = 2 }, children = [{ y = 1, x = 2 }] }]"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, _ := values.Get("items")
+	row := items.([]any)[0].(*jsonx.OrderedMap)
+	outer, _ := row.Get("outer")
+	if got := outer.(*jsonx.OrderedMap).Keys(); !reflect.DeepEqual(got, []string{"z", "a"}) {
+		t.Fatalf("outer order = %v", got)
+	}
+	children, _ := row.Get("children")
+	child := children.([]any)[0].(*jsonx.OrderedMap)
+	if got := child.Keys(); !reflect.DeepEqual(got, []string{"y", "x"}) {
+		t.Fatalf("nested array order = %v", got)
+	}
+}
+
 func TestDecodeBasic(t *testing.T) {
 	m, err := Decode([]byte("[a]\nb = 1\nc = \"x\"\n"))
 	if err != nil {

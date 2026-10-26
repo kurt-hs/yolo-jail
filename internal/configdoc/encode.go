@@ -12,9 +12,9 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
 
-// Encode serializes an ordered object. TOML maps use document order except
-// maps nested in arrays, which use lexical order because TOML generic decoding
-// does not retain those key positions.
+// Encode serializes an ordered object. OrderedMap preserves authored order,
+// including maps nested in arrays; native Go maps use lexical key order as a
+// deterministic fallback because those values carry no key ordering.
 func Encode(values *jsonx.OrderedMap, format Format) ([]byte, error) {
 	if values == nil {
 		return nil, fmt.Errorf("configdoc: cannot encode a nil object")
@@ -198,10 +198,8 @@ func tomlValue(value any) (string, error) {
 func sortedNestedMapKeys(value any) any {
 	switch v := value.(type) {
 	case *jsonx.OrderedMap:
-		keys := append([]string(nil), v.Keys()...)
-		sort.Strings(keys)
 		out := jsonx.NewOrderedMap()
-		for _, key := range keys {
+		for _, key := range v.Keys() {
 			item, _ := v.Get(key)
 			out.Set(key, sortedNestedMapKeys(item))
 		}

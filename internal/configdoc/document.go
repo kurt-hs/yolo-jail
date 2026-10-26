@@ -5,6 +5,7 @@ package configdoc
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/json5"
@@ -76,6 +77,9 @@ func Parse(data []byte, format Format) (*Document, error) {
 		var err error
 		values, err = tomlx.DecodeOrdered(data)
 		if err != nil {
+			return nil, err
+		}
+		if err := validateTOMLConfigValues(values, nil); err != nil {
 			return nil, err
 		}
 		if err := ix.indexTOML(data); err != nil {
@@ -333,6 +337,28 @@ func jsonMemberStart(data []byte, valueStart int) (int, error) {
 		start++
 	}
 	return start, nil
+}
+
+func validateTOMLConfigValues(value any, path []string) error {
+	switch v := value.(type) {
+	case time.Time:
+		return fmt.Errorf("configdoc: TOML date/time at %s is not a supported config scalar", strings.Join(path, "."))
+	case *jsonx.OrderedMap:
+		for _, key := range v.Keys() {
+			child, _ := v.Get(key)
+			if err := validateTOMLConfigValues(child, append(append([]string(nil), path...), key)); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for i, child := range v {
+			name := fmt.Sprintf("[%d]", i)
+			if err := validateTOMLConfigValues(child, append(append([]string(nil), path...), name)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (ix *Index) indexTOML(data []byte) error {

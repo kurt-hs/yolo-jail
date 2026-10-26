@@ -126,6 +126,9 @@ func TestEncodeTOMLOrdersNestedMapsDeterministically(t *testing.T) {
 	for i, item := range items {
 		m, ok := item.(*jsonx.OrderedMap)
 		want := []string{"a", "z"}
+		if i == 1 {
+			want = []string{"z", "a"}
+		}
 		if !ok || !reflect.DeepEqual(m.Keys(), want) {
 			t.Fatalf("item %d ordering = %#v, want %v", i, item, want)
 		}
@@ -199,6 +202,18 @@ func TestTOMLIndexScansFourAndFiveQuoteMultilineStrings(t *testing.T) {
 		value, _ := doc.Values.Get("value")
 		if value != tc.want {
 			t.Errorf("decoded quote value = %q, want %q", value, tc.want)
+		}
+	}
+}
+
+func TestParseRejectsTOMLDateTimeValuesRecursively(t *testing.T) {
+	for _, source := range []string{
+		"date = 1979-05-27\n",
+		"[nested]\nclock = 07:32:00\n",
+		"events = [{ at = 1979-05-27T07:32:00Z }]\n",
+	} {
+		if _, err := Parse([]byte(source), TOML); err == nil {
+			t.Errorf("Parse(%q) accepted a TOML date/time config scalar", source)
 		}
 	}
 }
