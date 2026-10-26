@@ -680,7 +680,9 @@ type Options struct {
 	// making it an argument means the trigger cannot fire without one being decided. The
 	// PLATFORM likewise — only the pipeline knows which backend is about to run, and the
 	// one answer that looks right and is wrong is the host's own (containerJailPlatform).
-	AutoCapture func(bins []string, platform string)
+	// The presentation writer is the stable, teed launch stderr, and color is the launch
+	// stream's stderr-gated decision; capture's notices and build output stay off command stdout.
+	AutoCapture func(bins []string, platform string, stderr io.Writer, color bool)
 	// PreparePrograms supplies exact ordinary compatibility decisions before a fresh
 	// container starts. Capture jails and attaches never call it.
 	PreparePrograms func(ProgramCaptureRequest) (map[string]entrypoint.ProgramCaptureDelivery, error)

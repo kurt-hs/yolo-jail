@@ -17,29 +17,31 @@ const (
 )
 
 // TestPrinterColorGating verifies o.pr() — the launch-stream printer, which writes to
-// stderr — emits ANSI only when Color AND STDERR is a TTY, and strips otherwise, so
-// redirected output never carries escape codes. Stdout's tty-ness is not its question:
-// `yolo run -- cmd | jq` pipes stdout while the launch lines still reach a terminal, and
-// `yolo run -- cmd 2>log` the reverse.
+// stderr — emits ANSI only when Color AND STDERR is a TTY, and strips otherwise.
 func TestPrinterColorGating(t *testing.T) {
-	mk := func(color, stderrTTY, stdoutTTY bool) string {
+	mk := func(color, stderrTTY, stdoutTTY bool, noColor string) string {
 		var b strings.Builder
-		// Getenv pinned: the gate reads NO_COLOR through it, so an unpinned (nil) seam
-		// would make this test's answer the environment the suite runs in.
 		o := &Options{Color: color, IsTTYStderr: func() bool { return stderrTTY },
 			IsTTYStdout: func() bool { return stdoutTTY }, Stderr: &b,
-			Getenv: func(string) string { return "" }}
+			Getenv: func(key string) string {
+				if key == "NO_COLOR" {
+					return noColor
+				}
+				return ""
+			}}
 		o.pr(&b).print("[green]hi[/green]")
 		return b.String()
 	}
-	if got := mk(true, true, false); !strings.Contains(got, ansiGreen) {
+	if got := mk(true, true, false, ""); !strings.Contains(got, ansiGreen) {
 		t.Errorf("color+stderr tty: expected ANSI, got %q", got)
 	}
 	for _, tc := range []struct {
 		name                        string
 		color, stderrTTY, stdoutTTY bool
-	}{{"no-color", false, true, true}, {"no-tty", true, false, false}, {"stdout-tty-only", true, false, true}} {
-		if got := mk(tc.color, tc.stderrTTY, tc.stdoutTTY); strings.Contains(got, "\x1b[") {
+		noColor                     string
+	}{{"no-color", false, true, true, ""}, {"no-tty", true, false, false, ""},
+		{"stdout-tty-only", true, false, true, ""}, {"NO_COLOR", true, true, true, "1"}} {
+		if got := mk(tc.color, tc.stderrTTY, tc.stdoutTTY, tc.noColor); strings.Contains(got, "\x1b[") {
 			t.Errorf("%s: expected NO ANSI, got %q", tc.name, got)
 		} else if !strings.Contains(got, "hi") {
 			t.Errorf("%s: text dropped: %q", tc.name, got)
@@ -50,18 +52,29 @@ func TestPrinterColorGating(t *testing.T) {
 // TestPayloadPrinterColorGating is prOut, the printer for a verb's stdout payload: its
 // color asks whether STDOUT is a terminal.
 func TestPayloadPrinterColorGating(t *testing.T) {
-	mk := func(stdoutTTY, stderrTTY bool) string {
+	mk := func(stdoutTTY, stderrTTY bool, noColor string) string {
 		var b strings.Builder
 		o := &Options{Color: true, IsTTYStdout: func() bool { return stdoutTTY },
-			IsTTYStderr: func() bool { return stderrTTY }, Getenv: func(string) string { return "" }}
+			IsTTYStderr: func() bool { return stderrTTY }, Getenv: func(key string) string {
+				if key == "NO_COLOR" {
+					return noColor
+				}
+				return ""
+			}}
 		o.prOut(&b).print("[green]hi[/green]")
 		return b.String()
 	}
-	if got := mk(true, false); !strings.Contains(got, ansiGreen) {
+	if got := mk(true, false, ""); !strings.Contains(got, ansiGreen) {
 		t.Errorf("stdout tty: expected ANSI, got %q", got)
 	}
-	if got := mk(false, true); strings.Contains(got, "\x1b[") {
-		t.Errorf("stderr tty only: expected NO ANSI on the stdout payload, got %q", got)
+	for _, tc := range []struct {
+		name                 string
+		stdoutTTY, stderrTTY bool
+		noColor              string
+	}{{"stderr tty only", false, true, ""}, {"NO_COLOR", true, true, "1"}} {
+		if got := mk(tc.stdoutTTY, tc.stderrTTY, tc.noColor); strings.Contains(got, "\x1b[") {
+			t.Errorf("%s: expected NO ANSI on stdout payload, got %q", tc.name, got)
+		}
 	}
 }
 

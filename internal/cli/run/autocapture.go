@@ -72,7 +72,7 @@ import (
 // calls it, because only the arm knows which kind of jail is about to run.
 func (o *Options) autoCaptureInstallerPrograms(packs []*packload.Pack, platform string) {
 	if bins := o.autoCaptureBins(packs); len(bins) > 0 {
-		o.AutoCapture(bins, platform)
+		o.AutoCapture(bins, platform, o.launchStderr(), o.streamColor())
 	}
 }
 
@@ -119,7 +119,7 @@ func (o *Options) autoCaptureMacosUser(packs []*packload.Pack) {
 		return
 	}
 	defer release()
-	o.AutoCapture(bins, macosUserJailPlatform())
+	o.AutoCapture(bins, macosUserJailPlatform(), o.launchStderr(), o.streamColor())
 }
 
 // macosUserPreflight asks the macos-user backend's own first steps for this launch

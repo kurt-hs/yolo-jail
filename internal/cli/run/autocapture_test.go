@@ -2,6 +2,7 @@ package run
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -61,12 +62,26 @@ func TestALaunchAutoCapturesAnUncapturedInstallerProgram(t *testing.T) {
 	var gotBins []string
 	var gotPlatform string
 	called := 0
-	_, printed := fakePodmanLaunch(t, func(o *Options) {
-		o.AutoCapture = func(bins []string, platform string) {
+	ws := t.TempDir()
+	_, printed := fakePodmanLaunchIn(t, ws, "", func(o *Options) {
+		o.AutoCapture = func(bins []string, platform string, stderr io.Writer, _ bool) {
 			called++
 			gotBins, gotPlatform = bins, platform
+			if _, err := io.WriteString(stderr, "AUTO-CAPTURE-STREAM-TEST\n"); err != nil {
+				t.Errorf("write launch stderr: %v", err)
+			}
 		}
 	})
+	launchLogPath := filepath.Join(ws, ".yolo", LaunchLogName)
+	logBytes, logErr := os.ReadFile(launchLogPath)
+	if logErr != nil {
+		t.Fatalf("read parent launch log %s: %v", launchLogPath, logErr)
+	}
+	if !strings.Contains(string(logBytes), "AUTO-CAPTURE-STREAM-TEST") ||
+		!strings.Contains(printed, "AUTO-CAPTURE-STREAM-TEST") {
+		t.Fatalf("auto-capture presentation did not reach terminal stderr and the parent launch log:\nterminal:\n%s\nlog:\n%s",
+			printed, string(logBytes))
+	}
 
 	if called != 1 {
 		t.Fatalf("the launch invoked the auto-capture trigger %d times, want 1 — "+
@@ -87,6 +102,37 @@ func TestALaunchAutoCapturesAnUncapturedInstallerProgram(t *testing.T) {
 	// containerJailPlatform, which takes its "linux" from a literal and has no GOOS in it.
 	if want := "linux/" + goruntime.GOARCH; gotPlatform != want {
 		t.Errorf("trigger platform = %q, want %q (the JAIL's, not the host's)", gotPlatform, want)
+	}
+}
+
+func TestAutoCaptureColorFollowsLaunchStderr(t *testing.T) {
+	for _, tc := range []struct {
+		noColor   string
+		wantColor bool
+	}{{"", true}, {"1", false}} {
+		t.Run("NO_COLOR="+tc.noColor, func(t *testing.T) {
+			t.Setenv("NO_COLOR", tc.noColor)
+			installerLaunchHome(t)
+			gotColor := false
+			_, _ = fakePodmanLaunch(t, func(o *Options) {
+				o.Color = true
+				o.Getenv = func(key string) string {
+					if key == "NO_COLOR" {
+						return tc.noColor
+					}
+					return os.Getenv(key)
+				}
+				o.IsTTYStdout = func() bool { return false }
+				o.IsTTYStderr = func() bool { return true }
+				o.AutoCapture = func(_ []string, _ string, _ io.Writer, color bool) {
+					gotColor = color
+				}
+			})
+			if gotColor != tc.wantColor {
+				t.Errorf("AutoCapture color=%v, want %v for stderr TTY and NO_COLOR=%q",
+					gotColor, tc.wantColor, tc.noColor)
+			}
+		})
 	}
 }
 
@@ -113,7 +159,7 @@ func TestAnAttachTriggersNoAutoCapture(t *testing.T) {
 			}
 			return ExecResult{Ran: true, RC: 0}
 		}
-		o.AutoCapture = func([]string, string) { called++ }
+		o.AutoCapture = func([]string, string, io.Writer, bool) { called++ }
 	})
 	if !strings.Contains(printed, "Attaching to existing jail") {
 		t.Fatalf("the fixture did not attach, so the attach path is unexercised:\n%s", printed)
@@ -137,7 +183,7 @@ func TestACaptureJailDoesNotAutoCapture(t *testing.T) {
 	_, printed := fakePodmanLaunch(t, func(o *Options) {
 		// Exactly what internal/cli/capturehost.go's runCaptureJail sets.
 		o.CapturesDir = func() string { return "" }
-		o.AutoCapture = func([]string, string) { called++ }
+		o.AutoCapture = func([]string, string, io.Writer, bool) { called++ }
 	})
 
 	if called != 0 {
@@ -160,7 +206,7 @@ func TestAJailWithNoInstallerProgramsTriggersNothing(t *testing.T) {
 	var gotBins []string
 	called := 0
 	_, printed := fakePodmanLaunch(t, func(o *Options) {
-		o.AutoCapture = func(bins []string, _ string) { called++; gotBins = bins }
+		o.AutoCapture = func(bins []string, _ string, _ io.Writer, _ bool) { called++; gotBins = bins }
 	})
 
 	if called != 0 {
@@ -220,7 +266,7 @@ func macosUserCaptureSeams(rec *macosUserCaptureCalls) func(*Options) {
 		// this test on Linux has no macOS to ask).
 		o.MacosUserLaunchProbes = setUpMacProbes
 		o.CapturesDir = func() string { return "/Users/matt/.local/share/yolo-jail/captures" }
-		o.AutoCapture = func(bins []string, platform string) {
+		o.AutoCapture = func(bins []string, platform string, _ io.Writer, _ bool) {
 			rec.order = append(rec.order, "capture")
 			rec.captureBins, rec.capturePlatform = bins, platform
 		}
@@ -407,13 +453,13 @@ func TestAMacosUserAutoCaptureRespectsTheAccountHomeHold(t *testing.T) {
 	runMacosUserCapturingCtx(t, t.TempDir(), func(o *Options) {
 		seams(o)
 		capture := o.AutoCapture
-		o.AutoCapture = func(bins []string, platform string) {
+		o.AutoCapture = func(bins []string, platform string, stderr io.Writer, color bool) {
 			r, refusal := HoldAccountHome(otherWs, "yolo-other-workspace", "")
 			if refusal == "" {
 				r()
 			}
 			heldDuring = refusal
-			capture(bins, platform)
+			capture(bins, platform, stderr, color)
 		}
 	})
 	if len(rec.order) == 0 || rec.order[0] != "capture" {

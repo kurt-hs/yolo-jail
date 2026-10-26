@@ -233,17 +233,19 @@ func configRunW(args []string, out, errw io.Writer) int {
 		fmt.Fprintf(errw, "yolo config: unknown subcommand %q\n\n%s\n", verb, configUsage)
 		return 2
 	}
-	return run(t, rest, out, errw, colorForWriter(out))
+	// Most config verbs color their stdout payload based on that destination. Apply writes
+	// both launch diagnostics and a named stdout report, so pass color intent through and
+	// let its stderr/stdout printers independently check their own TTY and NO_COLOR gates.
+	color := verb == "apply" || colorForWriter(out)
+	return run(t, rest, out, errw, color)
 }
 
 // configColorVerbs is every `yolo config` verb that prints in color, each handed the
-// target and THE color decision configRunW makes once, through colorForWriter. `dump`
-// is not here because it prints JSON, which never colors.
+// target and color intent from configRunW. `dump` is not here because it prints JSON, which never colors.
 //
-// ONE CALL DECIDES COLOR FOR ALL SEVEN. Each verb used to make its own call at its own
-// case, so six of the seven could stop consulting the gate with no test failing.
-// TestEveryConfigVerbTakesTheOneColorDecision swaps each entry for a recorder and
-// fails when a verb is dispatched outside this table.
+// Stdout-only verbs receive colorForWriter(out); apply receives an ungated request so the
+// launch and payload printers can independently gate stderr and stdout. This table keeps every
+// dispatch explicit; TestEveryConfigVerbTakesTheOneColorDecision pins it.
 var configColorVerbs = map[string]func(t configTarget, args []string, out, errw io.Writer, color bool) int{
 	"render":  configRender,
 	"ls":      configLs,

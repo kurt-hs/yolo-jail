@@ -3,6 +3,7 @@ package run
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -59,7 +60,7 @@ func TestASubLaunchLeavesTheParentLaunchsPackRecordsAlone(t *testing.T) {
 		// The parent's own pack tree is one of those under its pack-tree root, and the only
 		// launch staging there is the parent's.
 		parentRoot = paths.PackTreeRoot(yoloruntime.FromWorkspace(o.Workspace))
-		o.AutoCapture = func([]string, string) {
+		o.AutoCapture = func([]string, string, io.Writer, bool) {
 			beforeMods, beforeSkills = loopholes.PackModules(), jailcontent.PackSkillDirs()
 			subs++
 			// EXACTLY what runCaptureJail configures: the ordinary pipeline, a throwaway

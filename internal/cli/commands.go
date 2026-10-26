@@ -1283,8 +1283,8 @@ func runRun(args []string) int {
 	opts.PreparePrograms = func(req run.ProgramCaptureRequest) (map[string]entrypoint.ProgramCaptureDelivery, error) {
 		return prepareOrdinaryForLaunch(req, launchBuildStream(req.Stderr))
 	}
-	opts.AutoCapture = func(bins []string, platform string) {
-		autoCapture(bins, platform, os.Stdout, os.Stderr, colorForWriter(os.Stdout))
+	opts.AutoCapture = func(bins []string, platform string, stderr io.Writer, color bool) {
+		autoCapture(bins, platform, stderr, stderr, color)
 	}
 	// And the macos-user launch's pick of what it stages from that store (install-capture.md
 	// hand-off H4): through the resolver the sandbox's `capture-materialize` asks, which lives

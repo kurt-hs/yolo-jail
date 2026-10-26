@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"path/filepath"
@@ -86,23 +87,6 @@ var noColorEntryPoints = []struct {
 		captureFixtureHome(t, captureFixtureInstaller)
 		withFakeCaptureJail(t, fakeCaptureJail(t, new(run.Options), probetoolEntries()))
 	}, run: func() int { return runCapture([]string{"capture", "probetool"}) }},
-	// The auto-capture trigger `yolo run` wires: the closure itself, driven the way
-	// TestALaunchWiresTheAutoCaptureTrigger drives it, so its color is the one the
-	// launch's own wiring decides.
-	{name: "run auto-capture", setup: func(t *testing.T) {
-		captureFixtureHome(t, captureFixtureInstaller)
-		withFakeCaptureJail(t, fakeCaptureJail(t, new(run.Options), probetoolEntries()))
-	}, run: func() int {
-		var seen run.Options
-		prev := launchRunPipeline
-		launchRunPipeline = func(o run.Options) int { seen = o; return 0 }
-		defer func() { launchRunPipeline = prev }()
-		if rc := runRun([]string{"run", "--", "true"}); rc != 0 || seen.AutoCapture == nil {
-			return 1
-		}
-		seen.AutoCapture([]string{"probetool"}, capturedPlatform)
-		return 0
-	}},
 	{name: "macos-setup", darwinOnlyEffect: true,
 		run: func() int { return runMacosSetup([]string{"macos-setup"}) }},
 	{name: "macos-teardown", darwinOnlyEffect: true,
@@ -211,6 +195,34 @@ func TestMacosLaunchDepsHonorNoColor(t *testing.T) {
 // JSON, which never colors.
 var colorVerbs = []string{"render", "ls", "diff", "reset", "capture", "promote", "drift", "apply"}
 
+func TestConfigApplyDispatchPassesUngatedColorIntent(t *testing.T) {
+	saved := configColorVerbs["apply"]
+	if saved == nil {
+		t.Fatal("configColorVerbs has no apply entry")
+	}
+	t.Cleanup(func() { configColorVerbs["apply"] = saved })
+	for _, noColor := range []string{"", "1"} {
+		t.Run("NO_COLOR="+noColor, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Chdir(t.TempDir())
+			t.Setenv("NO_COLOR", noColor)
+			called, gotColor := false, false
+			configColorVerbs["apply"] = func(_ configTarget, _ []string, _, _ io.Writer, color bool) int {
+				called, gotColor = true, color
+				return 0
+			}
+			var out, errw bytes.Buffer
+			if rc := configRunW([]string{"apply"}, &out, &errw); rc != 0 {
+				t.Fatalf("configRunW apply rc=%d stderr=%s", rc, errw.String())
+			}
+			if !called || !gotColor {
+				t.Errorf("apply dispatch got called=%v color=%v; want an ungated color request so each destination can apply its own TTY/NO_COLOR gate",
+					called, gotColor)
+			}
+		})
+	}
+}
+
 // TestEveryConfigVerbTakesTheOneColorDecision pins the `yolo config` dispatch:
 // every verb that colors is handed THE decision configRunW makes once, through
 // colorForWriter. TestEveryCommandHonorsNoColor drives `config drift` for real, and
@@ -247,9 +259,9 @@ func TestEveryConfigVerbTakesTheOneColorDecision(t *testing.T) {
 				if !called {
 					t.Fatalf("`yolo config %s` never reached its configColorVerbs entry", verb)
 				}
-				if got != tc.wantColor {
+				if got != (tc.wantColor || verb == "apply") {
 					t.Errorf("NO_COLOR=%q: `yolo config %s` was handed color = %v, want %v",
-						tc.noColor, verb, got, tc.wantColor)
+						tc.noColor, verb, got, tc.wantColor || verb == "apply")
 				}
 			}
 		})

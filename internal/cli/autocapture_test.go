@@ -2,7 +2,7 @@ package cli
 
 import (
 	"bytes"
-	"os"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -291,16 +291,21 @@ func TestALaunchWiresTheAutoCaptureTrigger(t *testing.T) {
 	jail := fakeCaptureJail(t, &jailSeen, probetoolEntries())
 	withFakeCaptureJail(t, func(o run.Options) int { captures++; return jail(o) })
 
-	// The real closure writes to os.Stdout/os.Stderr; what matters is where it lands.
-	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatal(err)
+	// The real closure writes through the launch stderr passed by Run; the test tee stands in
+	// for the terminal and parent launch log independently.
+	var stderr, parentLog bytes.Buffer
+	presentation := io.MultiWriter(&stderr, &parentLog)
+	output := captureStdout(t, func() {
+		seen.AutoCapture([]string{"probetool"}, capturedPlatform, presentation, false)
+	})
+	if output != "" {
+		t.Fatalf("auto-capture presentation leaked onto command stdout: %q", output)
 	}
-	defer devnull.Close()
-	stdout, stderr := os.Stdout, os.Stderr
-	os.Stdout, os.Stderr = devnull, devnull
-	seen.AutoCapture([]string{"probetool"}, capturedPlatform)
-	os.Stdout, os.Stderr = stdout, stderr
+	for name, got := range map[string]string{"launch stderr": stderr.String(), "parent launch log": parentLog.String()} {
+		if !strings.Contains(got, "auto-capture") || !strings.Contains(got, "captured probetool") {
+			t.Errorf("%s missed production auto-capture presentation: %q", name, got)
+		}
+	}
 
 	if captures != 1 {
 		t.Errorf("the wired closure ran %d capture jails, want 1 — it is wired to "+
