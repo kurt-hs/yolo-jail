@@ -7,12 +7,13 @@ summary: "A pack manifest compresses to a quarter of its bytes — more redundan
 vantage:
   status-chip: true
 stage: DESIGN
-next: "Rule OQ-M1, whether the syntax-free model change goes now, with the exposes split, or not at all; OQ-M2 and OQ-M3 follow it"
+next: "OQ-M1 and OQ-M2 were ruled in the readable-config redesign; OQ-M3 rests on a syntax ruled data-only and awaits the maintainer's word on whether it is moot"
 ---
 
 # The manifest language: declarations stay inert data, and the syntax should stop fighting us
 
-**Status:** 2026-09-30 — three rulings owed, [`OQ-M1`](#OQ-M1) to [`OQ-M3`](#OQ-M3);
+**Status:** 2026-10-25 — [`OQ-M1`](#OQ-M1) and [`OQ-M2`](#OQ-M2) ruled in the readable-config
+redesign ([ledger](readable-config.md#decision-ledger)); [`OQ-M3`](#OQ-M3) is the one left;
 [`OQ-M4`](#8-decision-ledger) was decided as an implementation choice ([MN-D1](#MN-D1)). Nothing built: re-checked
 2026-09-30, every shipped manifest is still one flat `contributes` list tagged by `kind`, and
 `packs/claude` still repeats `"agent": "claude"` on its own contributions. Re-checked against the tree
@@ -47,7 +48,7 @@ written today is a migration debt tomorrow, so the format should be chosen once.
 > pack "conventionally" mounts something removes a claim. The first is the goal; the second is
 > forbidden under every option below.
 
-**Needs your ruling:** [`OQ-M1`](#OQ-M1) (do the model change, and when?), [`OQ-M2`](#OQ-M2) (which syntax?), [`OQ-M3`](#OQ-M3) (may a manifest be pure code that returns data?). [`OQ-M4`](#8-decision-ledger) (does the user config share the language?) was decided as an implementation choice, [MN-D1](#MN-D1): it does not.
+**Needs your ruling:** [`OQ-M3`](#OQ-M3) (may a manifest be pure code that returns data?). [`OQ-M1`](#OQ-M1) (the model change) and [`OQ-M2`](#OQ-M2) (the syntax) were ruled 2026-10-25 by [OQ-RC19 and OQ-RC5](readable-config.md#decision-ledger): the model change goes, in TOML, in the same break as the configs. [`OQ-M4`](#8-decision-ledger) (does the user config share the language?) was decided as an implementation choice, [MN-D1](#MN-D1): it does not.
 
 **Reads with:** [`pack-system.md`](../reference/pack-system.md) (the contribution model and the
 total-enumeration rule), [`trust-paths.md`](trust-paths.md) (the origin gate and why a pack
@@ -242,63 +243,16 @@ Dhall (total, typed).
 
 ## 7. Open questions
 
-1. 💬 <a id="OQ-M1"></a>**OQ-M1: Do the syntax-free model change first?**
-
-   ⚠ **Restated 2026-09-30 with lettered options**, because the block named none. "The model change" is
-   [§3](#3-what-is-actually-free-to-change)'s three syntax-independent levers, spelled out in
-   [its background](#background-to-oq-m1). Under (A) or (B) every manifest is rewritten, a fetched
-   pack's included. The options:
-
-   - **(A) Yes, now, on its own**, before any syntax decision.
-   - **(B) Yes, but in the same breaking change as
-     [`slots-and-contributions.md`](slots-and-contributions.md)'s `exposes` split**, so every manifest
-     is rewritten once. That build is blocked on that doc's own open questions
-     ([`OQ-D6`](slots-and-contributions.md#OQ-D6) to [`OQ-D12`](slots-and-contributions.md#OQ-D12)).
-   - **(C) No.** The flat, `kind`-tagged list stays, and readability waits for [OQ-M2](#OQ-M2).
-
-   <!-- vantage: question id=OQ-M1 leaning="Yes. Grouping by kind and stating the pack's identity once are syntax-independent and are the two largest sources of redundancy." -->
-
-   _Leaning:_ Yes — it is independent of the syntax decision, needs no dependency, and removes the
-   bulk of the measured redundancy. The identity half of it has a recorded shape already:
-   [`OQ-D5`](slots-and-contributions.md#7-decision-ledger) ruled that a pack declares its agent once, so
-   what this question still decides is whether to make the change, and when. ⚠ **The re-measure this used to require was TAKEN 2026-09-22
-   without building anything, and it retired the gzip metric rather than answering with it** — see
-   [OQ-M2](#OQ-M2). So M1 no longer gates on a measurement, and M2 no longer gates on M1.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-2. 💬 <a id="OQ-M2"></a>**OQ-M2: Which syntax — JSON restructured, data-only Lua, or Starlark?**
-
-   <!-- vantage: question id=OQ-M2 leaning="JSON restructured if it reads well; else data-only Lua (already vendored); Starlark only if we accept a new dependency for a purpose-built hermetic language." -->
-
-   ⚠ **MEASURED 2026-09-22, and the result is that this question should be DISSOLVED rather than
-   answered on the stated rule** — the compression ratio it was to be answered by is orthogonal to
-   the complaint. The table and the three measurements: [background to this question](#background-to-oq-m2).
-
-   ⚠ **Restated 2026-09-30 with letters**, which are [§4](#4-the-options)'s own:
-
-   - **(A)** JSON (JSONC) restructured, the model change only;
-   - **(B)** data-only Lua in the sandbox `derive.lua` already runs in;
-   - **(C)** Starlark, a new dependency.
-
-   D (Jsonnet, CUE, Dhall) is set aside in [§4](#4-the-options)
-   as overpowered for data, and E (YAML or TOML) in [§6](#6-recommendation) as no fix on its own. B
-   and C also need [OQ-M3](#OQ-M3)'s yes.
-
-   _Leaning:_ **Strike the re-measure precondition and decide on readability, not ratio.** If a
-   language is still wanted, Lua remains the cheapest (vendored, familiar, comments + reuse) and
-   Starlark the best-designed at the cost of a dependency — but the measurement no longer argues for
-   either.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+1. **[OQ-M1](#OQ-M1) and [OQ-M2](#OQ-M2) are ruled**, in the [decision ledger](#8-decision-ledger): the model change goes,
+   in TOML, in the same break as the configs ([`pack-manifests.md`](pack-manifests.md)).
 
 3. 💬 <a id="OQ-M3"></a>**OQ-M3: May a manifest be pure code that RETURNS data — executed to be read?**
 
    <!-- vantage: question id=OQ-M3 leaning="Yes, if the sandbox is pure and the RESULT is validated and footprinted, so the total-claim rule survives by construction rather than by trust." -->
 
-   ⚠ **Restated 2026-09-30 with letters.** It matters only if [OQ-M2](#OQ-M2) picks (B) or (C).
+   ⚠ **Restated 2026-09-30 with letters.** It matters only if [OQ-M2](#OQ-M2) picks (B) or (C);
+   M2 was ruled TOML on 2026-10-25, a data syntax, so this question is moot unless a code syntax
+   is proposed again.
    **(A) Yes**, on M5's condition below. **(B) No**: a manifest is always a literal data file, which
    leaves [OQ-M2](#OQ-M2) only (A). A third option, code for shipped packs but not fetched ones, is not
    offered: [`OQ-PB4`](../reference/pack-system.md#oq-pb4) refused that shape for briefing defaults,
@@ -369,8 +323,8 @@ Neither restructuring reaches this doc's ~0.40 threshold, so the rule as written
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| **OQ-M1** | — | — | — | — |
-| **OQ-M2** | — | — | — | — |
+| <a id="OQ-M1"></a>[OQ-M1](#OQ-M1) | **Yes: grouped by kind, the pack's identity stated once, in the same break as the configs.** Ruled 2026-10-25 as lever P3 of [OQ-RC19](readable-config.md#decision-ledger), landing under [OQ-RC5](readable-config.md#decision-ledger); the `exposes` split is not the break it waits for | 2026-10-25 | [`pack-manifests.md` §4](pack-manifests.md#4-flags-that-add-and-a-model-said-once) | — |
+| <a id="OQ-M2"></a>[OQ-M2](#OQ-M2) | **TOML, with the model change.** Ruled 2026-10-25 by [OQ-RC2](readable-config.md#decision-ledger) for every file a person writes, manifests included; option E was no fix on its own, and the model change ([OQ-M1](#OQ-M1)) is what rides with it | 2026-10-25 | [`pack-manifests.md`](pack-manifests.md) | — |
 | **OQ-M3** | — | — | — | — |
 | OQ-M4 | **No: the user and workspace config keep JSONC whatever [OQ-M2](#OQ-M2) rules.** Decided as an implementation choice, [MN-D1](#MN-D1), reversible; moving them would be a proposal of its own | 2026-09-30 | [§3](#3-what-is-actually-free-to-change) | nothing to build |
 | <a id="MN-D1"></a>MN-D1 | *Implementation decision, [OQ-M4](#8-decision-ledger).* **The user and workspace config keep JSONC, whatever [OQ-M2](#OQ-M2) rules for manifests.** The user config is settings, with no claims to enumerate, so the rule this doc exists to protect ([M2](#2-principles)) does not reach it. yolo already deleted the one scripted user config it had, `config.lua`, because it had no user ([`OQ-LT1`](../reference/pack-system.md#oq-lt1)). And coupling the two would make the manifest ruling wait on a rewrite of every user's config. Reversible: a proposal to move the user config would start from the manifest's ruling rather than wait for it. **Reversed 2026-10-25:** the configs move to TOML ([OQ-RC2](readable-config.md#decision-ledger)) | 2026-09-30 | [§3](#3-what-is-actually-free-to-change) | nothing to build |

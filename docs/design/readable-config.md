@@ -12,12 +12,12 @@ vantage:
 
 # Config that reads right the first time: the front door
 
-**Status:** 2026-10-25. Nothing is built. Forty-one rulings recorded ([ledger](#decision-ledger));
-three questions open, each in the document that shows its file. Evidence verified at
+**Status:** 2026-10-25. Nothing is built. Forty-three rulings recorded ([ledger](#decision-ledger));
+one question open, each in the document that shows its file. Evidence verified at
 `fa13f42d9` against this repository, the effective user config this jail inherited, the 21
 shipped packs, and the maintainer's twelve packs.
 
-**Needs your ruling:** three questions, listed per document in [§2](#2-the-five-documents).
+**Needs your ruling:** one question, listed per document in [§2](#2-the-five-documents).
 
 > **In short.** A config a stranger reads correctly comes from its shape, not its file format, and
 > a config yolo can edit without a mess comes from touching only the bytes of one value. Neither
@@ -60,11 +60,11 @@ seed; incomplete while any question is open).
 | [`config-project.md`](config-project.md) | `yolo-jail.toml` and `.local`: install, requests, mounts, ports, env, turning things off | none; approved |
 | [`config-commands.md`](config-commands.md) | the command each "edit your config" message prints, what it does to the file, and the format underneath | none; approved |
 | [`config-migration.md`](config-migration.md) | the new file names, the release order, the migrate transcript | none; approved |
-| [`pack-manifests.md`](pack-manifests.md) | the maintainer's twelve packs, before and after | [OQ-RC19](pack-manifests.md#OQ-RC19) the manifest shape · [OQ-RC5](pack-manifests.md#OQ-RC5) manifests in the same break |
+| [`pack-manifests.md`](pack-manifests.md) | the maintainer's twelve packs, before and after | none; approved |
 
 ## 3. What this takes over, and what it reverses
 
-- [OQ-M1](manifest-language.md#OQ-M1) and [OQ-M2](manifest-language.md#OQ-M2) by [OQ-RC5](pack-manifests.md#OQ-RC5) and
+- [OQ-M1](manifest-language.md#OQ-M1) and [OQ-M2](manifest-language.md#OQ-M2) by [OQ-RC5](#decision-ledger) and
   [OQ-RC2](#decision-ledger), ruled TOML; [OQ-M3](manifest-language.md#OQ-M3) stays there.
 - [OQ-PC1](pack-conventions.md#OQ-PC1) to [OQ-PC3](pack-conventions.md#OQ-PC3) by the `home/`
   folder.
@@ -89,6 +89,8 @@ seed; incomplete while any question is open).
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
+| OQ-RC19 | **The manifest shape is approved, all six levers: `home/` laid in file by file, overlays in their own files, grouped by kind with the identity once, contributions state only what they change (`replace = true` otherwise), a model declared once for every agent, the obvious unwritten.** Ruled by taking the leaning: *"Approve all six: the four smallest packs become folders, and the two largest keep every fact in a fifth of the lines."* Same round, the install hint's `all` (*"what does all mean here?"*) became `default` | 2026-10-25 | [`pack-manifests.md` §4](pack-manifests.md#4-flags-that-add-and-a-model-said-once) | — |
+| OQ-RC5 | **Manifests change in the same break as the configs; `yolo pack migrate` runs beside `yolo config migrate`.** Ruled by taking the leaning: *"A: one break, and the migrate command does the moving; packs are the bigger files and the same rules apply."* Closes [OQ-M1](manifest-language.md#OQ-M1) and [OQ-M2](manifest-language.md#OQ-M2) | 2026-10-25 | [`pack-manifests.md` §5](pack-manifests.md#5-the-migration) | — |
 | OQ-RC7 | **A table-valued thing is turned off by a string in its place: `mcp_servers.tavily = "off"`.** Ruled by taking the leaning: *"B, which you said you like: one line that reads at a glance, unambiguous wherever the value is a table, and a one-line diff from unset; A's only edge is sharing the word with the pack switch file, which yolo writes."* The one rule: a string where a table is expected is refused unless it is exactly `"off"` | 2026-10-25 | [`config-project.md` §3](config-project.md#3-the-local-file-and-turning-something-off) | — |
 | <a id="RC-D23"></a>RC-D23 | **A reserved string never stands where a string is a legal value.** Review comments on `env.AWS_PROFILE = "off"`: *"this is problematic. now you can't set that var to 'off' literally"*, and on `mcp_servers.tavily = "off"`: *"this is possible and I think I like it, as long as a string isn't a valid setting to begin with."* A variable is unset by `env.unset`, a list cleared by `[]`, an agent left alone by `"native"`; [OQ-RC7](#decision-ledger) narrows to the table-valued case | 2026-10-25 | [`config-project.md` §3](config-project.md#3-the-local-file-and-turning-something-off) | — |
 | OQ-RC17 | **The project file's shape is approved: `[install]`, `mounts`, `[machine]`, `[env]`, `[requests.*]`.** Ruled by taking the leaning: *"Approve: each section names what the project decides, and the two string traps become keys."* Same round, on a bare `mounts` under `[install]` (*"but this wouldn't be under [install]?"*) and `[[mounts]]` beside it (*"this just an alt syntax for the { ...} form?"*): one top-level list before the first section, a path or a table per entry; `[[mounts]]` is the same key and a file uses one spelling | 2026-10-25 | [`config-project.md` §1](config-project.md#1-the-file) | — |

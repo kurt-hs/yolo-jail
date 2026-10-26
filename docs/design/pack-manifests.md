@@ -3,9 +3,9 @@ title: "Pack manifests: the same rules, shown on the maintainer's own packs"
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC19 (§4, the manifest shape) and OQ-RC5 (§5, in the same break as the configs?)"
+next: "Every question is ruled; the build hand-off is the implementation plan seeded in readable-config-plan.md"
 tags: [packs, manifest, toml, conventions, design]
-summary: "Each of the maintainer's twelve packs, before and after: a manifest-less folder for the simple ones, a short TOML manifest for the rest, models declared once, and flags that add instead of replace. Each section ends with its question; a section with none is approved. Part of the readable-config redesign."
+summary: "Each of the maintainer's twelve packs, before and after: a manifest-less folder for the simple ones, a short TOML manifest for the rest, models declared once, and flags that add instead of replace. Every section is ruled. Part of the readable-config redesign."
 ---
 
 # Pack manifests: the same rules, shown on the maintainer's own packs
@@ -14,11 +14,8 @@ summary: "Each of the maintainer's twelve packs, before and after: a manifest-le
 packs, read on 2026-10-24.
 
 **How to read this.** [§1](#1-a-small-pack-luna-worker) to [§4](#4-flags-that-add-and-a-model-said-once)
-are the shape, pack by pack, and [§4](#4-flags-that-add-and-a-model-said-once) ends with the
-question that approves it; [§5](#5-the-migration) ends with the question of when it lands.
-
-**Needs your ruling:** [OQ-RC19](#OQ-RC19) in [§4](#4-flags-that-add-and-a-model-said-once),
-[OQ-RC5](#OQ-RC5) in [§5](#5-the-migration).
+are the shape, pack by pack; [§5](#5-the-migration) is when it lands. Every section is approved;
+the rulings are in the [ledger](readable-config.md#decision-ledger).
 
 > **In short.** A pack's folders say what it is; the manifest says only what a folder cannot.
 > Four of the twelve packs need no manifest at all, and the two big ones lose four-fifths of
@@ -85,7 +82,7 @@ description = "Matt's fd|fzf custom file finder for Claude Code's @-file complet
 
 [[program]]
 bin = "fd"
-install = { all = "fd", apt = "fd-find", dnf = "fd-find" }
+install = { default = "fd", apt = "fd-find", dnf = "fd-find" }   # the package name every manager gets, and the two that differ
 
 [[program]]
 bin = "fzf"
@@ -158,33 +155,10 @@ price = { input = 0.1, output = 0.2, cache_read = 0.002, cache_write = 0 }
 `twin_of` takes every fact of the named row and sends its id on the wire; each agent's render
 writes its own file from these rows.
 
-1. 💬 <a id="OQ-RC19"></a>**OQ-RC19: Is the manifest shape approved, lever by lever?**
-
-   You open `matt/pack.json` to see what the pack does and meet 860 lines, 271 of them 39 `files`
-   entries and 425 of them pi's settings written inline; in `agy-capture`, deleting one restated
-   flag would make agy prompt for every tool; `meta-muse` writes the same model facts six times.
-   [§1](#1-a-small-pack-luna-worker) to [§4](#4-flags-that-add-and-a-model-said-once) show the
-   six levers on those packs; each can be vetoed alone.
-
-   ```toml
-   # P1  home/ is laid into the home directory, file by file          (32 of matt's 39 files entries go)
-   # P2  an overlay's content lives in its own file, in the agent's own format   (425 lines leave the manifest)
-   # P3  grouped by kind, the pack's identity stated once
-   [[program]]
-   bin = "fd"
-   # P4  a contribution states only what it changes; replace = true says otherwise
-   # P5  a model is declared once, in yolo's shape, for every agent  (twin_of, thinking, images, api)
-   # P6  the obvious is not written
-   install = "jq"                                   # one hint when every manager agrees
-   ```
-
-   <!-- vantage: question id=OQ-RC19 leaning="Approve all six: the four smallest packs become folders, and the two largest keep every fact in a fifth of the lines." -->
-
-   _Leaning:_ Approve all six: the four smallest packs become folders, and the two largest keep
-   every fact in a fifth of the lines.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+Approved 2026-10-25, all six levers ([OQ-RC19](readable-config.md#decision-ledger)): *"the four
+smallest packs become folders, and the two largest keep every fact in a fifth of the lines."* The
+install hint's `default` key was named in the same round, from `all` (*"what does all mean
+here?"*): it is the package name every manager gets, beside the managers that differ.
 
 ## 5. The migration
 
@@ -195,31 +169,11 @@ fetched one is refused once the old reader is gone, naming the author's migratio
 ([OQ-RC8](readable-config.md#decision-ledger)). A yolo of 0.11.1 or earlier refuses any new
 manifest field outright, so a new manifest shape is a new file name however it is done.
 
-1. 💬 <a id="OQ-RC5"></a>**OQ-RC5: Should pack manifests change in the same breaking change as the configs?**
-
-   You upgrade yolo. If the manifests change with the configs, one release pair covers both and
-   `yolo pack migrate` runs beside `yolo config migrate`; if the configs go first, your config is
-   new while your packs are old for a release, and you migrate twice.
-
-   ```text
-   # A  together: one migration
-   next release  reads both formats of config and manifest; config migrate and pack migrate
-   later         reads only the new ones
-
-   # B  configs first, packs next: two migrations; the configs land sooner
-   next release  reads both config formats
-   a later one   reads pack.toml too …
-
-   # C  packs stay as they are; the 860-line manifest stays
-   ```
-
-   <!-- vantage: question id=OQ-RC5 leaning="A: one break, and the migrate command does the moving; packs are the bigger files and the same rules apply." -->
-
-   _Leaning:_ A: one break, and the migrate command does the moving; packs are the bigger files
-   and the same rules apply.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+Ruled 2026-10-25 ([OQ-RC5](readable-config.md#decision-ledger)): together with the configs. *"one
+break, and the migrate command does the moving; packs are the bigger files and the same rules
+apply."* The next release reads both formats of config and manifest, `yolo pack migrate` runs
+beside `yolo config migrate`, and a later release reads only the new ones
+([`config-migration.md` §3](config-migration.md#3-the-order-of-releases)).
 
 ## 6. Principles
 
@@ -291,7 +245,7 @@ written more than once, and a compressed size that stays flat.
 ### A.4 What this takes over
 
 [OQ-M1](manifest-language.md#OQ-M1) and [OQ-M2](manifest-language.md#OQ-M2) by
-[OQ-RC5](#OQ-RC5) and [OQ-RC2](readable-config.md#decision-ledger), ruled TOML; [OQ-M3](manifest-language.md#OQ-M3)
+[OQ-RC5](readable-config.md#decision-ledger) and [OQ-RC2](readable-config.md#decision-ledger), ruled TOML; [OQ-M3](manifest-language.md#OQ-M3)
 stays there. [OQ-PC1](pack-conventions.md#OQ-PC1) to [OQ-PC3](pack-conventions.md#OQ-PC3) by the
 `home/` folder. [`pack-conventions.md`](pack-conventions.md#appendix-a-counts) counted ten
 single-file `files` entries in `matt` on 2026-10-05 and found about five lines saved; that count
