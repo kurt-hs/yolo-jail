@@ -504,12 +504,16 @@ every line of a build jail goes to `launch.log` (the stream's log half alone, `r
 and to the build's own `<workspace>/.yolo/build-<slug>.log`, whose last lines a failed build
 prints.
 
-**The launcher persists its half.** Everything the launcher prints is appended to
-`<workspace>/.yolo/launch.log` (`launchLog`, `LaunchLogName`), beside the entrypoint's `boot.log`,
-so both halves of one launch sit in one directory. "Too much on the terminal" is answered by
-reading the file rather than by hiding the line. The caveat is
-[`perf-logging.md`](perf-logging.md)'s D2, inherited whole: the directory is inside the live
-workspace bind, so a jail can write the host's record. Nothing reads it back to make a decision.
+**The launcher persists its presentation streams.** The launcher's own stdout and stderr, through its
+launch writers, are appended to `<workspace>/.yolo/launch.log` (`launchLog`, `LaunchLogName`),
+beside the entrypoint's `boot.log`, so both halves of one launch sit in one directory. This is not a
+transcript of ordinary command or session output: container-session processes use the process's real
+stdout and stderr, outside this tee. The installer/session stream for automatic capture is separate
+and reaches this log only when that caller explicitly routes it through the log writer; that is not
+ordinary session capture. "Too much on the terminal" is answered by reading the file rather than by
+hiding the line. The caveat is [`perf-logging.md`](perf-logging.md)'s D2, inherited whole: the
+directory is inside the live workspace bind, so a jail can write the host's record. Nothing reads it
+back to make a decision.
 
 **So does the host notch's launch, in a machine-wide file.** Since 2026-10-04 every
 `yolo host -- <cmd>` past its argument check appends one block to
