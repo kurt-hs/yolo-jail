@@ -52,7 +52,7 @@ func runArmedSession(cmd []string, arm *launchSignalArm, o *Options) (int, error
 	c := exec.Command(cmd[0], cmd[1:]...)
 	// The session's stdout (Options.SessionStdout): this process's, unless the caller named another
 	// writer for it.
-	c.Stdin, c.Stdout, c.Stderr = os.Stdin, o.sessionStdout(), os.Stderr
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, o.sessionStdout(), o.sessionStderr()
 	if len(o.runtimeClientEnv) > 0 {
 		c.Env = append(os.Environ(), o.runtimeClientEnv...)
 	}

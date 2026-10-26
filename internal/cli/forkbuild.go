@@ -574,19 +574,19 @@ func (e forkBuildLineFailed) Error() string {
 
 func (e forkBuildLineFailed) Unwrap() error { return e.exit }
 
-// captureStreams are the four writers a capture jail prints on: out and errw take the launch's own
+// captureStreams are the writers a capture jail prints on: out and errw take the launch's own
 // lines (run.Options.Stdout and Stderr), and jailOut and jailErr the JAIL'S OWN, what its runtime
 // client and pid 1 print up to its ready, which the launch relays apart from its own
 // (run.Options.JailStdout and JailStderr). A nil jail writer is the process's own stream, where any
-// launch relays them. sessionOut is where the jail's first session's stdout goes
-// (run.Options.SessionStdout), nil being this process's, through its terminal; a host verb's jails
-// name this process's stderr for it (hostJailStdout). jailReady, when non-nil, is called once the
-// jail's boot is done, after the last of its own lines (run.Options.OnJailReady).
+// launch relays them. sessionOut and sessionErr are where the jail's first session's stdout and
+// stderr go (run.Options.SessionStdout and SessionStderr), nil being this process's respective
+// stream; a host verb's jails name this process's stderr for stdout (hostJailStdout). jailReady, when
+// non-nil, is called once the jail's boot is done, after the last of its own lines (run.Options.OnJailReady).
 type captureStreams struct {
-	out, errw, jailOut, jailErr, sessionOut io.Writer
-	jailReady                               func()
-	cleanupUnconfirmed                      *bool
-	lifetimeReturned                        *bool
+	out, errw, jailOut, jailErr, sessionOut, sessionErr io.Writer
+	jailReady                                           func()
+	cleanupUnconfirmed                                  *bool
+	lifetimeReturned                                    *bool
 	// runtime is the runtime the build jail boots with (buildMode.runtime), "" for the one a launch
 	// resolves: what a build run as a child names to it (forkBuildChildArgv's --runtime).
 	runtime string

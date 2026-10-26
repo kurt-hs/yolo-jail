@@ -60,6 +60,7 @@ func runArmedSession(cmd []string, arm *launchSignalArm, o *Options) (int, error
 	// A session stdout the caller named takes the session's stdout, off the proxy
 	// (Options.SessionStdout).
 	obs.Stdout = o.SessionStdout
+	obs.Stderr = o.SessionStderr
 	return ttyproxy.RunWithProxyObserved(cmd, nil, nil, obs)
 }
 

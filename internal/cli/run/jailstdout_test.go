@@ -31,6 +31,23 @@ func TestASessionStdoutTakesTheSessionsStdout(t *testing.T) {
 	}
 }
 
+// TestASessionStderrTakesTheSessionsStderr: the session's client writes its stderr to
+// SessionStderr, not this process's stderr.
+func TestASessionStderrTakesTheSessionsStderr(t *testing.T) {
+	var got bytes.Buffer
+	arm := armLaunchSignalsWith(nil, func(int) {})
+	o := &Options{SessionStderr: &got}
+	rc, err := runArmedSession([]string{"sh", "-c", "printf JAIL_SESSION_STDERR >&2"}, arm, o)
+	arm.detach()
+	arm.disarm()
+	if err != nil || rc != 0 {
+		t.Fatalf("runArmedSession = %d, %v", rc, err)
+	}
+	if got.String() != "JAIL_SESSION_STDERR" {
+		t.Errorf("SessionStderr received %q, want the session's stderr (JAIL_SESSION_STDERR)", got.String())
+	}
+}
+
 // TestAJailStdoutAloneLeavesTheSessionOnTheProcesssStdout: a caller that only keeps the jail's own
 // boot lines apart (a build jail's act, cli's jailTail) does not take the session off the proxy.
 func TestAJailStdoutAloneLeavesTheSessionOnTheProcesssStdout(t *testing.T) {

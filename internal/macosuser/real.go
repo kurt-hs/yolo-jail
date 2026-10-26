@@ -101,6 +101,21 @@ func RunStdoutTo(w io.Writer) func(argv []string) int {
 	return func(argv []string) int { return runStdoutTo(w, argv) }
 }
 
+// RunStreamsTo is a Deps.Run that sends each command's stdout and stderr to the named writers.
+// A nil writer keeps the process's existing stream, as explicit captures and ordinary callers do.
+func RunStreamsTo(stdout, stderr io.Writer) func(argv []string) int {
+	return func(argv []string) int {
+		out, errw := stdout, stderr
+		if out == nil {
+			out = os.Stdout
+		}
+		if errw == nil {
+			errw = os.Stderr
+		}
+		return runOutputsTo(out, errw, argv)
+	}
+}
+
 // runStdoutTo runs argv with stdin and stderr inherited and its stdout on w, starting it through the
 // published foreground runner and returning its returncode; a start failure yields 1.
 func runStdoutTo(w io.Writer, argv []string) int { return runOutputsTo(w, os.Stderr, argv) }

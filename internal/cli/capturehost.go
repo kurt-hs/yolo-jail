@@ -128,13 +128,13 @@ type captureAct struct {
 	// inherit. "" is the runtime a launch resolves. The host floor on a Mac names macos-user (HP-D2):
 	// a container capture there records a Linux entry, which a Mac's floor cannot run.
 	runtime string
-	// jailStdout is where the capture jail's OWN stdout goes — pid 1's and the installer's in a
-	// container, the account's commands' on macos-user (run.Options.JailStdout and SessionStdout,
-	// captureStreams.jailOut and sessionOut) — when its caller
-	// names a stream for it. nil is this process's stdout, a typed `yolo capture`'s. A host verb
-	// names this process's stderr (hostJailStdout). The host arm needs none: its installer runs on
-	// the act's own out and errw.
+	// jailStdout is where the capture jail's own stdout goes when its caller names a stream for it.
+	// nil is this process's stdout, as in a typed `yolo capture`; the host floor names this process's
+	// stderr. The host arm's installer runs on the act's own out and errw.
 	jailStdout io.Writer
+	// sessionStderr, when set, routes the capture command's stderr to its caller. nil preserves a
+	// typed `yolo capture`'s existing process-stderr behavior.
+	sessionStderr io.Writer
 }
 
 // captureBusyStatus is `yolo capture`'s status when another capture of the program holds its lock:
@@ -256,7 +256,8 @@ func captureHostWith(args []string, out, errw io.Writer, color bool, act capture
 	pr.Printf("[bold]capture[/bold] [cyan]%s[/cyan]  [dim]%s[/dim]", bin, target.URL)
 	runJail := func() int {
 		return runCaptureJail(staging, bin, captureJailArgv(bin), nil,
-			captureStreams{out: out, errw: errw, jailOut: act.jailStdout, sessionOut: act.jailStdout}, color,
+			captureStreams{out: out, errw: errw, jailOut: act.jailStdout,
+				sessionOut: act.jailStdout, sessionErr: act.sessionStderr}, color,
 			captureAct{runtime: arm.runtime})
 	}
 	if arm.host() {
@@ -793,6 +794,7 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 	// launch it served, ahead of the agent's own.
 	opts.JailStdout, opts.JailStderr, opts.OnJailReady = s.jailOut, s.jailErr, s.jailReady
 	opts.SessionStdout = s.sessionOut
+	opts.SessionStderr = s.sessionErr
 	jailStdout := s.sessionOut
 	// NO CAPTURE STORE IN A CAPTURE JAIL. Every ordinary launch binds the store :ro so a
 	// native launcher can materialize instead of downloading (run/captures.go); this one
@@ -914,10 +916,12 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 		}
 		deps := macosuser.RealDeps(nil, nil, color)
 		deps.Out = out
-		// The act's commands — the account's setup, the bootstrap, the driver and the installer it
-		// runs — inherit this process's stdout, unless the caller named the jail's (the Mac floor).
-		if jailStdout != nil {
-			deps.Run = macosuser.RunStdoutTo(jailStdout)
+		// The act's commands — setup, bootstrap, the driver and installer — inherit this process's
+		// streams unless the caller names them. Automatic capture supplies the launch tee for both,
+		// because readiness can relay installer stdout through stderr; explicit capture keeps the
+		// inherited defaults.
+		if jailStdout != nil || s.sessionErr != nil {
+			deps.Run = macosuser.RunStreamsTo(jailStdout, s.sessionErr)
 		}
 		if seal != nil {
 			// A FORK'S BUILD, SEALED, FOR THIS MAC (FP-D24; a patched fork's too, PF-D97; a patched

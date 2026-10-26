@@ -299,7 +299,7 @@ func TestALaunchWiresTheAutoCaptureTrigger(t *testing.T) {
 			t.Error("macos-user capture act did not receive a command runner")
 			return 1
 		}
-		return deps.Run([]string{"/bin/sh", "-c", "printf AUTO-CAPTURE-MACOS-RUNNER-STDOUT"})
+		return deps.Run([]string{"/bin/sh", "-c", "printf AUTO-CAPTURE-MACOS-RUNNER-STDOUT; printf AUTO-CAPTURE-MACOS-RUNNER-STDERR >&2"})
 	}
 	t.Cleanup(func() { macCaptureAct = prevMacCaptureAct })
 	withFakeCaptureJail(t, func(o run.Options) int {
@@ -313,6 +313,11 @@ func TestALaunchWiresTheAutoCaptureTrigger(t *testing.T) {
 			}
 		}
 		writeChild(o.JailStdout, "AUTO-CAPTURE-JAIL-STDOUT")
+		if o.SessionStderr == nil {
+			t.Error("automatic capture did not route capture-session stderr through the launch stream")
+		} else {
+			writeChild(o.SessionStderr, "AUTO-CAPTURE-SESSION-STDERR")
+		}
 		writeChild(o.SessionStdout, "AUTO-CAPTURE-SESSION-STDOUT")
 		runtimeName := ""
 		if o.Getenv != nil {
@@ -333,24 +338,31 @@ func TestALaunchWiresTheAutoCaptureTrigger(t *testing.T) {
 	})
 
 	// The production closure writes through the launch stderr passed by Run; the test tee stands in
-	// for the terminal and parent launch log independently. The fake pipeline emits through both
-	// actual JailStdout/SessionStdout options and, on macos-user, the composed account command runner.
+	// for the terminal and parent launch log independently. The fake pipeline emits through the
+	// actual JailStdout/SessionStdout/SessionStderr options and, on macos-user, the composed account
+	// command runner.
 	var stderr, parentLog bytes.Buffer
 	presentation := io.MultiWriter(&stderr, &parentLog)
-	var output string
+	var output, processStderr string
 	for _, platform := range []string{capturedPlatform, "darwin/arm64"} {
 		output += captureStdout(t, func() {
-			seen.AutoCapture([]string{"probetool"}, platform, presentation, false)
+			processStderr += captureStderr(t, func() {
+				seen.AutoCapture([]string{"probetool"}, platform, presentation, false)
+			})
 		})
 	}
 	if output != "" {
 		t.Errorf("auto-capture child stdout leaked into the command payload: %q", output)
 	}
+	if strings.Contains(processStderr, "AUTO-CAPTURE-MACOS-RUNNER-STDERR") {
+		t.Errorf("macos-user auto-capture stderr bypassed the supplied launch tee: %q", processStderr)
+	}
 	for _, marker := range []string{"AUTO-CAPTURE-JAIL-STDOUT", "AUTO-CAPTURE-SESSION-STDOUT",
-		"AUTO-CAPTURE-MACOS-RUNNER-STDOUT"} {
+		"AUTO-CAPTURE-SESSION-STDERR",
+		"AUTO-CAPTURE-MACOS-RUNNER-STDOUT", "AUTO-CAPTURE-MACOS-RUNNER-STDERR"} {
 		for name, got := range map[string]string{"launch stderr": stderr.String(), "parent launch log": parentLog.String()} {
 			if !strings.Contains(got, marker) {
-				t.Errorf("%s missed automatic capture child stdout marker %q", name, marker)
+				t.Errorf("%s missed automatic capture output marker %q", name, marker)
 			}
 		}
 	}

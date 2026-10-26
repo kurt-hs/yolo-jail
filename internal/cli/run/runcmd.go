@@ -548,14 +548,11 @@ type Options struct {
 	// every launch but a build jail's, whose act tells a boot that went on to be done from one that
 	// stopped by it (cli's jailTail).
 	OnJailReady func()
-	// SessionStdout is where the jail's FIRST SESSION's standard output goes. nil is this process's
-	// stdout, through the terminal proxy when stdin is a terminal — an agent's session, whose output
-	// is the product. A caller whose jail prints progress for another command names its own writer,
-	// and the session then runs off the proxy, its stdin and stderr still this process's
-	// (ttyproxy.Observer.Stdout): the host floor's capture and build jails, which run before a
-	// `yolo host` launch execs an agent whose stdout is routinely parsed, take this process's stderr
-	// for it and for JailStdout alike (internal/cli's hostJailStdout).
+	// SessionStdout and SessionStderr name the first session's streams. nil defaults to this process's
+	// streams. A named destination runs the child off the terminal proxy (ttyproxy.Observer.Stdout / .Stderr):
+	// capture and build jails use this to preserve their output outside command stdout and stderr.
 	SessionStdout io.Writer
+	SessionStderr io.Writer
 	// Stdin is read for the config-change approval prompt. nil => os.Stdin.
 	Stdin io.Reader
 	// Color enables ANSI styling in the human output.
@@ -872,6 +869,15 @@ func (o *Options) sessionStdout() io.Writer {
 		return o.SessionStdout
 	}
 	return os.Stdout
+}
+
+// sessionStderr is where the first session's standard error goes (SessionStderr): the writer a
+// caller named, or this process's stderr.
+func (o *Options) sessionStderr() io.Writer {
+	if o.SessionStderr != nil {
+		return o.SessionStderr
+	}
+	return os.Stderr
 }
 
 // captureConfigOnTerminate runs the injected E3 capture for a jail that has just
