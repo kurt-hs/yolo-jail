@@ -33,6 +33,7 @@ func approvalOptions(t *testing.T, ws string, isTTY bool) (*Options, *bytes.Buff
 		Stderr:      &buf,
 		IsTTYStdin:  func() bool { return isTTY },
 		IsTTYStdout: func() bool { return false },
+		IsTTYStderr: func() bool { return false },
 	}, &buf
 }
 

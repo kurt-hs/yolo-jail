@@ -254,7 +254,7 @@ func (s *skewAttach) didExec() bool {
 	return err == nil
 }
 
-// TestAttachSkewPromptsARestartInATerminal: with a terminal on both ends, a missing contract
+// TestAttachSkewPromptsARestartInATerminal: with terminal stdin and stderr, a missing contract
 // asks `Restart jail now? [Y/n]`, naming what differs and the sessions the stop ends. Yes — or
 // Enter, the capital letter — stops the jail and reports restarted without an exec, a write, or
 // a release of the lock the fresh launch continues under.

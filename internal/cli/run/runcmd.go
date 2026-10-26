@@ -603,14 +603,13 @@ type Options struct {
 	// and a drain loop then SIGTERMs — and seconds later SIGKILLs — some unrelated
 	// process, quite possibly a sibling `go test` binary.
 	PIDAlive func(int) bool
-	// IsTTYStdout / IsTTYStdin report tty-ness (the -t flag, the approval
-	// prompt, the tty-proxy fallback). nil => real isatty.
+	// IsTTYStdout / IsTTYStdin report tty-ness (the -t flag, the stdin half of approval
+	// prompts, and the tty-proxy fallback). nil => real isatty.
 	IsTTYStdout func() bool
 	IsTTYStdin  func() bool
-	// IsTTYStderr reports whether the launch stream is a terminal, which is what
-	// decides whether a long step's progress redraws in place or is written as
-	// lines (progressConfig), and whether its lines may be colored (streamColor).
-	// nil => real isatty on os.Stderr.
+	// IsTTYStderr reports whether the launch stream is a terminal, which decides whether a
+	// launch prompt is visible, whether a long step redraws in place, and whether launch lines
+	// may be colored. nil => real isatty on os.Stderr.
 	IsTTYStderr func() bool
 	// streamTTY, when non-nil, answers streamColor's terminal question in place of IsTTYStderr:
 	// the keeper's, whose stderr is a pipe relayed to a launcher that decided color for it.
